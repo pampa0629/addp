@@ -4,8 +4,9 @@ import { formatFeatureProperties } from '../src/utils/mapFormatters.js'
 
 test('uses configured field presentations for map popup labels and values', () => {
   const html = formatFeatureProperties(
-    { district: '雨花区', area: 12.5, geometry: { type: 'Polygon' } },
+    { district: '雨花区', area: 12.5 },
     {
+      geometryType: 'Polygon',
       primaryField: 'district',
       fields: ['area'],
       fieldPresentations: [
@@ -24,8 +25,9 @@ test('uses configured field presentations for map popup labels and values', () =
 
 test('adds a controlled semantic state to map popup values', () => {
   const html = formatFeatureProperties(
-    { district: '雨花区', area: 125, geometry: { type: 'Polygon' } },
+    { district: '雨花区', area: 125 },
     {
+      geometryType: 'Polygon',
       primaryField: 'district', fields: ['area'],
       fieldPresentations: [{
         field: 'area', label: '面积', precision: 0,
@@ -38,4 +40,20 @@ test('adds a controlled semantic state to map popup values', () => {
   assert.match(html, /state-indicator state--danger/)
   assert.match(html, />重点关注</)
   assert.match(html, />125 /)
+})
+
+test('keeps arbitrary business names and receives geometry type separately', () => {
+  const properties = { id: 0, geometry: '<business & value>', geom: null, rowData: false, originalFeature: 17 }
+  const before = structuredClone(properties)
+  const html = formatFeatureProperties(properties, {
+    geometryType: 'LineString', primaryField: 'geometry',
+    fields: ['geom', 'rowData', 'originalFeature'],
+  })
+  assert.match(html, />LineString</)
+  assert.match(html, /&lt;business &amp; value&gt;/)
+  assert.match(html, />geometry</)
+  assert.match(html, />geom:</)
+  assert.match(html, />rowData:</)
+  assert.match(html, />originalFeature:</)
+  assert.deepEqual(properties, before)
 })

@@ -6,7 +6,6 @@ import TileLayer from 'ol/layer/Tile'
 import VectorLayer from 'ol/layer/Vector'
 import XYZ from 'ol/source/XYZ'
 import VectorSource from 'ol/source/Vector'
-import GeoJSON from 'ol/format/GeoJSON'
 import Overlay from 'ol/Overlay.js'
 import { unByKey } from 'ol/Observable.js'
 import { fromLonLat, toLonLat } from 'ol/proj'
@@ -15,6 +14,7 @@ import Fill from 'ol/style/Fill'
 import Stroke from 'ol/style/Stroke'
 import CircleStyle from 'ol/style/Circle'
 import { createHighlightStyle, createThematicFeatureStyle } from '../utils/mapStyles'
+import { readMapFeatures, mapFeatureOriginal, cloneMapFeature } from '../utils/openLayersFeatures.js'
 import { formatFeatureProperties } from '../utils/mapFormatters'
 import { createOSMBaseLayer } from '../config/mapLayers'
 
@@ -32,8 +32,6 @@ const polygonStyle = new Style({
   stroke: new Stroke({ color: '#67C23A', width: 2 }),
   fill: new Fill({ color: 'rgba(103, 194, 58, 0.25)' })
 })
-
-const geoJSONFormat = new GeoJSON()
 
 /**
  * OpenLayers 地图管理 Composable
@@ -260,14 +258,9 @@ export function useOpenLayersMap(config, options = {}) {
       return
     }
 
-    const featureCollection = {
-      type: 'FeatureCollection',
-      features
-    }
-
     let olFeatures = []
     try {
-      olFeatures = geoJSONFormat.readFeatures(featureCollection, {
+      olFeatures = readMapFeatures(features, {
         dataProjection: 'EPSG:4326',
         featureProjection: 'EPSG:3857'
       })
@@ -295,9 +288,7 @@ export function useOpenLayersMap(config, options = {}) {
       }
 
       const originalFeature = features[index]
-      feature.set('originalFeature', originalFeature)
       const rowData = originalFeature?.properties || {}
-      feature.set('rowData', rowData)
       const rowKey =
         rowData.__rowKey ||
         rowData.id ||
@@ -350,7 +341,7 @@ export function useOpenLayersMap(config, options = {}) {
         })
         if (feature) {
           highlightFeature(feature)
-          const originalFeature = feature.get('originalFeature')
+          const originalFeature = mapFeatureOriginal(feature)
           const geometry = feature.getGeometry()
           let coordinate = evt.coordinate
           if (geometry) {
@@ -365,10 +356,10 @@ export function useOpenLayersMap(config, options = {}) {
               coordinate = geometry.getClosestPoint(evt.coordinate)
             }
           }
-          const content = formatFeatureProperties({
-            ...(originalFeature?.properties || {}),
-            geometry: originalFeature?.geometry
-          }, options.popupOptions || {})
+          const content = formatFeatureProperties(originalFeature?.properties || {}, {
+            ...options.popupOptions,
+            geometryType: geometry?.getType()
+          })
           showPopup(content, coordinate)
           if (featureClickHandler) {
             featureClickHandler(originalFeature, coordinate)
@@ -391,7 +382,7 @@ export function useOpenLayersMap(config, options = {}) {
     if (!feature || !highlightSource.value) return
     clearHighlight()
     try {
-      const highlighted = feature.clone()
+      const highlighted = cloneMapFeature(feature)
       highlightSource.value.addFeature(highlighted)
     } catch (error) {
       console.warn('OpenLayers 高亮要素失败', error)

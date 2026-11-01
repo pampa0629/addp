@@ -469,8 +469,6 @@ const buildFeatureProperties = (row) => {
   geometryColumns.value.forEach((column) => {
     delete properties[column]
   })
-  // OpenLayers 默认使用 "geometry" 作为几何属性名，这个键必须移除，否则会覆盖真实几何对象。
-  delete properties.geometry
   return properties
 }
 

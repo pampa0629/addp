@@ -94,7 +94,7 @@ let hasShownMinZoomWarning = false  // 是否已显示过最小zoom警告
 let hasShownMaxZoomWarning = false  // 是否已显示过最大zoom警告
 
 // 使用 composables
-const { popupEl, popupContent, createPopup, showPopup, closePopup, extractFeatureId } = useMapPopup({ geomColumn: props.geom || undefined })
+const { popupEl, popupContent, createPopup, showPopup, closePopup, extractFeatureId } = useMapPopup()
 const { createHighlightLayer, focusFeatureById } = useFeatureHighlight()
 const { createVectorTileLayer, cleanup: cleanupTileLoader } = useVectorTileLoader()
 const { mapConfig, loadMapConfig } = useMapConfig()

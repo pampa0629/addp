@@ -1,6 +1,7 @@
 /**
  * 地图样式配置工具
  */
+import { mapFeatureProperties } from './openLayersFeatures.js'
 import Style from 'ol/style/Style.js'
 import Fill from 'ol/style/Fill.js'
 import Stroke from 'ol/style/Stroke.js'
@@ -58,8 +59,7 @@ export function createHighlightStyle() {
 
 export function createThematicFeatureStyle(feature, context) {
   if (!context?.valid || context.mode === 'uniform' || !context.field) return null
-  const original = feature.get?.('originalFeature')
-  const value = original?.properties?.[context.field]
+  const value = mapFeatureProperties(feature)[context.field]
   const index = thematicIndexForValue(value, context)
   const count = Math.max(1, context.entries?.length || 1)
   const variable = thematicColorVariable(index, count, context.palette)

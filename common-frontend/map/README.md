@@ -4,6 +4,14 @@
 
 `GeoJSONResultRenderer` 的服务消费边界是：geometry 字段、SRID 与 CRS 只来自 Consumer Descriptor；单次结果必须完整且不超过 1000 行。它不按 `geom` 等名称猜测字段，不拼接 cursor，也不承担批量空间计算。
 
+## 真实几何与业务属性隔离
+
+GeoJSON 的顶层 `geometry` 与 `properties` 分别表达真实几何和业务属性，不能相互覆盖。表格预览仅按响应明确声明的几何列提取几何，不按字段名称猜测；其余业务字段（包括 `geometry`、`geom`、`rowData`、`originalFeature`）保留原名、原值及 null。
+
+OpenLayers 适配器为每个要素选择不与任何业务字段重名的内部几何键，业务属性继续以原名读取；原始 GeoJSON 在独立的 WeakMap 中关联，不写入要素业务属性。统一属性读取器仅移除该要素实际的内部几何键，不设置保留业务字段名。主题样式读取业务属性，弹窗分别接收业务属性和真实几何类型；OpenLayers 与高德共用该格式化契约，不将几何对象混入业务字典。瓦片要素按其实际 Feature / RenderFeature 几何接口读取，不按源字段名称丢弃业务属性。
+
+共享契约由 `make test-common-frontend` 验证，真实 OpenLayers 几何、属性取值、主题样式、弹窗与表格联动由 `make test-manager-frontend` 自动发现；Service、Workbench 等消费者沿已有共享依赖 CI 验证，无新增依赖、API 或测试入口。
+
 ## CRS registry 边界
 
 普通 Manager 空间预览接收后端返回的源坐标 geometry 和 CRS 元数据，不要求后端把 geometry 转成 WGS84。

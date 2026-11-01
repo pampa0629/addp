@@ -3,7 +3,7 @@
  */
 import VectorLayer from 'ol/layer/Vector.js'
 import VectorSource from 'ol/source/Vector.js'
-import GeoJSON from 'ol/format/GeoJSON.js'
+import { readMapFeatures } from '../utils/openLayersFeatures.js'
 import { createHighlightStyle } from '../utils/mapStyles.js'
 import { fromLonLat } from '../utils/mapProjection.js'
 
@@ -49,8 +49,7 @@ export function useFeatureHighlight() {
     // 如果有GeoJSON几何，显示高亮
     if (geojsonString && highlightSource) {
       try {
-        const format = new GeoJSON()
-        const feature = format.readFeature(geojsonString, {
+        const [feature] = readMapFeatures([JSON.parse(geojsonString)], {
           dataProjection: 'EPSG:4326',
           featureProjection: 'EPSG:3857'
         })

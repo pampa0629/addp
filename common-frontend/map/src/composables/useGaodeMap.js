@@ -147,10 +147,10 @@ export function useGaodeMap(config, baseMapProfile = {}, options = {}) {
 
   const handleOverlayClick = (feature, position, options = {}) => {
     highlightFeatureByKey(getFeatureKey(feature))
-    const content = formatFeatureProperties({
-      ...(feature?.properties || {}),
-      geometry: feature?.geometry
-    }, options.popupOptions || {})
+    const content = formatFeatureProperties(feature?.properties || {}, {
+      ...options.popupOptions,
+      geometryType: feature?.geometry?.type
+    })
     showPopup(content, position)
     emitFeatureClick(options.onFeatureClick, feature, position)
   }

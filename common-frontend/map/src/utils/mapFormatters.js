@@ -23,8 +23,6 @@ const GEOMETRY_TYPE_LABELS = {
 
 const PRIMARY_FIELD_CANDIDATES = ['name', '名称', 'NAME', 'title', 'label', 'code']
 const ID_FIELDS = ['id', 'ID', '_id', 'uuid']
-const DEFAULT_GEOMETRY_COLUMNS = ['geom', 'geometry', 'the_geom', 'wkb_geometry']
-
 const escapeHTML = (value) => String(value)
   .replaceAll('&', '&amp;')
   .replaceAll('<', '&lt;')
@@ -32,28 +30,9 @@ const escapeHTML = (value) => String(value)
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#39;')
 
-const normalizeOptions = (options) => {
-  if (typeof options === 'string') {
-    return {
-      geomColumn: options
-    }
-  }
-  return options || {}
-}
-
-const normalizeGeometryColumns = (geomColumn) => {
-  const geometryColumns = new Set(DEFAULT_GEOMETRY_COLUMNS)
-  if (geomColumn) geometryColumns.add(geomColumn)
-  return geometryColumns
-}
-
-const isSkippedProperty = (key, { geometryColumns, primaryField }) => {
-  return geometryColumns.has(key) ||
-    key === primaryField ||
-    ID_FIELDS.includes(key) ||
-    key === 'originalFeature' ||
-    key === 'rowData'
-}
+const isSkippedProperty = (key, { primaryField }) => (
+  key === primaryField || ID_FIELDS.includes(key)
+)
 
 const formatDisplayValue = (value, labels, presentation, locale) => {
   if (value === null || value === undefined) {
@@ -70,13 +49,13 @@ const formatDisplayValue = (value, labels, presentation, locale) => {
 /**
  * 格式化要素属性为弹窗 HTML。
  * @param {Object} properties 要素属性对象。
- * @param {Object|string} options 格式化选项，或旧式几何列名。
- * @param {string} options.geomColumn 几何列名。
+ * @param {Object} options 格式化选项。
+ * @param {string} options.geometryType 真实几何类型，与业务属性分离。
  * @param {Object} options.labels UI 标签。
  * @returns {string} 格式化后的 HTML 字符串。
  */
 export function formatFeatureProperties(properties = {}, options = {}) {
-  const normalizedOptions = normalizeOptions(options)
+  const normalizedOptions = options
   const labels = {
     ...DEFAULT_LABELS,
     ...(normalizedOptions.labels || {})
@@ -85,13 +64,12 @@ export function formatFeatureProperties(properties = {}, options = {}) {
     ...GEOMETRY_TYPE_LABELS,
     ...(normalizedOptions.geometryTypeLabels || {})
   }
-  const geometryColumns = normalizeGeometryColumns(normalizedOptions.geomColumn)
   const presentations = normalizedOptions.fieldPresentations || []
   const locale = normalizedOptions.locale || 'zh-CN'
 
   const resolvedFeatureId = ID_FIELDS.map((field) => properties[field]).find((value) => value !== undefined && value !== null)
   const featureId = resolvedFeatureId ?? labels.unknown
-  const geometryType = properties.geometry?.type
+  const geometryType = normalizedOptions.geometryType
   const geometryTypeLabel = geometryTypeLabels[geometryType] || geometryType || labels.unknownGeometry
 
   let primaryField = ''
@@ -113,7 +91,7 @@ export function formatFeatureProperties(properties = {}, options = {}) {
 
   if (primaryValue === undefined || primaryValue === null) {
     for (const [key, value] of Object.entries(properties)) {
-      if (!isSkippedProperty(key, { geometryColumns, primaryField }) && value !== null && value !== undefined) {
+      if (!isSkippedProperty(key, { primaryField }) && value !== null && value !== undefined) {
         primaryField = key
         primaryValue = value
         break
@@ -126,7 +104,7 @@ export function formatFeatureProperties(properties = {}, options = {}) {
     ? configuredFields.map((key) => [key, properties[key]]).filter(([, value]) => value !== undefined)
     : Object.entries(properties)
   const attributeRows = attributeSource
-    .filter(([key]) => !isSkippedProperty(key, { geometryColumns, primaryField }) || (configuredFields.length > 0 && ID_FIELDS.includes(key) && key !== primaryField))
+    .filter(([key]) => !isSkippedProperty(key, { primaryField }) || (configuredFields.length > 0 && ID_FIELDS.includes(key) && key !== primaryField))
     .slice(0, 12)
     .map(([key, value]) => (
       '<div class="attribute-item">' +

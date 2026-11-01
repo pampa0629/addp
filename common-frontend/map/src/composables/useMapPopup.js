@@ -3,16 +3,16 @@
  */
 import { ref } from 'vue'
 import Overlay from 'ol/Overlay.js'
+import { mapFeatureProperties } from '../utils/openLayersFeatures.js'
 import { formatFeatureProperties } from '../utils/mapFormatters.js'
 
 /**
  * 创建和管理地图Popup
  * @param {Object} options - 配置选项
- * @param {string} options.geomColumn - 几何列名
  * @returns {Object} Popup相关的响应式数据和方法
  */
 export function useMapPopup(options = {}) {
-  const { geomColumn = 'geom', labels = {}, geometryTypeLabels = {} } = options
+  const { labels = {}, geometryTypeLabels = {} } = options
 
   const popupEl = ref(null)
   const popupContent = ref('')
@@ -46,9 +46,9 @@ export function useMapPopup(options = {}) {
   function showPopup(feature, coordinate) {
     if (!popup) return
 
-    const properties = feature.getProperties()
+    const properties = mapFeatureProperties(feature)
     popupContent.value = formatFeatureProperties(properties, {
-      geomColumn,
+      geometryType: feature.getGeometry()?.getType(),
       labels,
       geometryTypeLabels
     })
