@@ -786,3 +786,29 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 原生受控请求Go148、Python[75,29]，总252；各源failure／healthy尝试分别90／58、45／30、15／14，阶段与限额、计数及最后请求端点通过固定086的完整请求校验。来源localhost叶子／source IP两项TLS探针通过且叶子摘要匹配当次原子换证；两Python ASGI来源实际启动并导入原生依赖，无生产者清理错误。实际日志证明Go和两ASGI SDK来源的真实mTLS采集、身份隔离、Monitor查询、有权历史趋势、原生Prometheus窗口、503打开事件、签名通知失败后重试、成功窗口恢复同一事件及来源停止隔离通过。只计完整标准Linux HTTP T2功能门禁；这不是正式Agent/Copilot产品构建、密码／MFA、Console/Monitor真实浏览器页面或Hosted验收，也不关闭停源历史／长期保留及原容量缺口。
 
 原始归档／日志复用`/tmp/addp-ci-20261101-103029/http-quality-086ae-budget.zip`及`http-quality-086ae-job.log`，日志137252字节，SHA256=`45dbad4c85b452f0f590126d1bc3b153e455d400dd7ba7645119422b92f143f5`。本会话独立审计位于`/tmp/addp-p19-http-086-followup-20261101/verified-report.json`／`verified-audit.json`／`job-final.json`／`artifact-meta.json`及run快照（目录0700／文件0600），保留原输入、38份封闭确认及预算／请求／清理核验。仅更新两份证据文档，以42主题计数、唯一锚点／索引、固定输入／归档／实际日志／资源及首因清理检查和diff验证，不重复代码测试。已核对维护会话状态后按原授权回报；未手动rerun／dispatch、开本地窗口或运行Hosted／容量／定时。
+
+
+<a id="http-formal-admission-runner-linux-20261101"></a>
+
+## 2026-11-01 正式页面准入复核：Linux本地runner通过，真实产品链仍未验收
+
+本次按“继续核对正式产品页面剩余准入”的范围，只读核对源码、规范及既有自然CI，不执行本机标准入口、Docker命令、证书组或任何新环境。前节固定086的SDK Linux HTTP T2通过结论保持，不用它代替正式产品页面。发现另一项此前尚缺的证据已实际产生：[Platform CI run41259443660／Job124709465322](https://github.com/pampa0629/addp/actions/runs/41259443660/job/124709465322)，main／自然push／attempt 1，固定源码`086ae6ada785264813dec96ace94d64bc190ae5d`，本轮读取的最终API为completed／failure；实际运行区间为2026-11-01 09:34:48—09:43:07（Asia/Shanghai）。此处为本轮读取的终态，不沿用此前queued记录推定通过。
+
+完整日志确认原唯一`test-monitor-http-local-runner`在聚合失败前已完整返回：固定Make配方先检查OpenSSL，依次执行37项Python测试、两份JS语法、HTTP专属登记及System身份Go子门禁；第2349行37项及随后OK、第2429行System fixture包ok，随后make[3]正常返回并进入下一个Trace runner。此前第2346行实际HTTP TLS offline T1为OpenSSL3.0.13／35条命令／1.578248秒／材料与输出预留峰值127023字节，错误CA／用途／名称四反例拒绝，cleanup_removed=true，符合原40条／60秒／1 MiB。因每条原配方命令均带Make失败传播，静默的JS／登记命令与末尾Go成功返回共同支持这一次完整HTTP runner通过；不是只拼接本机分项。
+
+随后Trace runner136项、共享生命周期／预算133项也正常返回；整Job在之后的`test-common-frontend`失败，仍记聚合failure，不宣称Platform整体通过，不调查或修复该无关前端问题。原a517因来源漂移导致HTTP未执行、本机首次fixture失败及umask077造成Go负例失败继续保留；新固定086的这一完整Linux入口结果只关闭“尚无单次完整HTTP runner成功”的缺口，不抹去历史失败。
+
+当前仓库12项OWN_INPUTS逐项比较，工作区与当前已提交HEAD相同，且均与该固定086验证输入逐字节一致，包含HTTP入口／测试、身份夹具、共享Trace生命周期、正式浏览器用例与唯一页面断言。真实入口从已提交main创建独立clone并核验前后HEAD稳定，产品构建使用该快照；因此其他会话未提交的Agent／Common等修改不会混入，也不能被本轮快照的证据覆盖。原三个集成文件按提交内容检查标记，不能用工作区未提交的Make／登记改动替代正式入口准入。该核对只证明入口来源一致，不表示当前全部产品及依赖已构建。
+
+| 剩余准入／验收项 | 本轮核对结果与下一阶段通过要求 |
+| --- | --- |
+| HTTP入口及临时证书配置的确定性前置 | 固定086的Linux单次完整runner已通过；本机OpenSSL4.1.0的旧离线分项保持，不再将此项写成未执行 |
+| 当次本机资源与镜像准入 | 仍须新获授权的真实窗口内验证本机／daemon机型、既定Nginx缓存的摘要／不可变ID、独占网络及完整四秒采样；本次未执行，不能写已通过 |
+| 正式产品构建与启动 | 仍须从固定已提交快照构建System／Gateway／Monitor／Agent／Copilot及Console／System／Monitor／Nginx，验证镜像身份、完整Agent Python3.12／Copilot Python3.11依赖和pip check、实际注册及受保护指标采集；SDK两来源T2不覆盖完整产品依赖 |
+| 正式身份及API | 已在唯一入口写入密码／MFA／AuthContext、普通用户仅agent.session.read、管理员观测及安全管理员／Tenant拒绝、两源各60次只读2xx／4xx、真实增量／规范模板／排行／历史、注销后旧Token拒绝；仍缺真实环境运行回执 |
+| Console／Monitor页面与停源收窄边界 | 唯一浏览器用例及共享断言已具备：七项汇总／六项排行及趋势提示与同次API相符、Console和模块URL／刷新／单iframe恢复、中英文；一次Copilot正常停源后not_active／空观测／页面无旧数据，Agent保持停源后新鲜观测；live／stopped两阶段独立密码MFA回执仍未取得 |
+| 最终通过 | 当次完整守卫、全部业务／页面断言、旧会话拒绝及容器／网络／卷／私有材料清理均通过方可判该轮通过；缺任一项仍未验收 |
+
+后续真实入口仍仅`make test-monitor-http-local`，须另行获得原上限单次60分钟窗口授权，55分钟停新业务，8 CPU／12 GiB、私有可写4 GiB停止线、完整四秒、受控请求／身份浏览器总预算、首失败即停清理、不自动重试或续窗不变。当前授权仍是不新开本地窗口，本次没有开始计时或执行运行前Docker／服务检查，也不申请放宽条件。停源后历史读取、完整5／15分钟窗口、模型／工具、5xx／告警通知重演、Hosted、容量与长期保留继续另批。
+
+原始日志`/tmp/addp-p19-http-page-admission-086-platform.log`共425865字节，SHA256=`82cd34c5a7311e894968af3d7a71df8944b61aeed941d472f933cc9450a90e4d`；独立审计`/tmp/addp-p19-http-product-admission-20261101/audit.json`及`fixed-http-recipe.txt`保存固定Make配方、37项／Go及离线T1、12项来源比较（私有目录／文件）。仅更新两份证据文档，验证43主题、唯一锚点／索引、固定SHA／配方／实际日志及自有差异，不重跑任何代码或实链门禁，不设置定时。
