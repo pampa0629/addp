@@ -820,3 +820,10 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 
 参与集合修正已提交推送 `e67a33e7113bdb774fb6f417d0b11bc13601069c`。对应 [Execution online CI runner Job 124776297082](https://github.com/pampa0629/addp/actions/runs/41282229104/job/124776297082) 现已实际 success：push／attempt 1，鲜活 Job 元数据 UTC 2026-11-01 07:58:01—07:59:59。独立核验 checkout 强制回准确 e67 源码（原日志 112／118／202 行）、实际命中 runner 路径（255 行）、canonical `make test-execution-online-ci-runner`（272 行）、native 94 项与共享 164 项均 OK（278／284 行）、登记一致（320 行）、最终 selected:true（325 行），不是 skipped 或仅汇总成功。证据同目录 `owner-cause-ci-{proof,job-final,run-final}.json`、`owner-cause-ci-job.log`；日志 SHA-256 `8d167e5a09d012300728c385fc521192048d46e9c714bdce3e092f135a5f698f`。只计本专项的 Linux 确定性门禁，不外推其他 Job 或整个 workflow。第四轮 Hosted 正式仍为 0/7，父 assessment timeout 的具体缺回执 Owner 仍未定位，e67 的真实清理链路未验；未新增 Hosted 或切换环境。下一步应在单独确认同范围 Hosted 后读取修正后的两项已授权子执行诊断，再按证据修复超时，身份／操作范围／七项业务断言和等待预算保持不变。
+
+
+### 8.26 第五轮 transfer-engine 单次取证（已授权，待实际终态）
+
+用户明确同意再运行一次修正版 `transfer-engine`，读取子执行诊断定位评估超时；原三类普通 User／Engine 六项权限、操作范围、七项业务断言和等待预算不变，其他 Hosted、环境切换和权限边界变化仍单独确认。已单次 POST 创建 [Run 41290341666／Job 124800097799](https://github.com/pampa0629/addp/actions/runs/41290341666/job/124800097799)，workflow_dispatch／attempt 1，准确源码 `c5bf099eac88a3fc9b762a0a97fdf2877456de8e`。创建后为 queued、steps 为空，尚未执行，不计通过；已交 CI 会话只读跟进至终态，不重跑、不取消或修改调度。
+
+运行前复核：相对已实际通过 94／164 的 e67 源码，只增加运行日志接收测试、IAM gate 契约测试和本专题文档；相关产品、权限、夹具、runner、机器契约与 native Hosted Job 未变。鲜活核对 e67 runner Job 124776297082 及 1abab 的 IAM／Cleanup PG Job 124593738613／124593738618 均 success，并逐文件确认用途裁决／协调器输入未变后复用证据。共享未提交 AGENTS／清单修改不进入部署。私有记录 `/tmp/addp-transfer-engine-hosted-fifth-20261101/intent.json` 明确一次授权／一次 POST／一个 Run，`prerequisite-proof.json` 保存变更审阅、原权限与七断言，`handoff.json` 保存唯一 Job 与回传职责。最终需核对实际十四服务源码、父／两项授权可见子执行闭集诊断、七断言、恢复／清理和零残留；第四轮 0/7 与 timeout 缺口在本轮终态前保持不变。
