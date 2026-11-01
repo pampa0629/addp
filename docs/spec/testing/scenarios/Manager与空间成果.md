@@ -914,6 +914,23 @@ CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须�
 本地入口`make test-raster-zonal-percentile-online-runner`和标准Native内`test_online_zonal_percentile_fixture.py`，同步Online、changed gate、独立workflow、只读observer和矩阵／删断言拒绝检查。准备通过不计Hosted通过。
 
 
+## 矢量面分区加权统计独立 Hosted 验收
+
+`vector-zonal-weighted-persistence`为独立手工套件，复用NFS、同源默认入口Runtime、非默认租户普通User原12权限；不改产品、原套件、权限或安全投影。固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全量物理复核、原件归档及执行工作区／期望缓存清理；部署、静态播种和NFS／Runtime／registry／Infra退出沿既有隔离生命周期严格核验，清理失败整套失败。Linux全量与实际Hosted由CI会话协调，不自行触发、重试或扩预算，不计页面、容量或吞吐。
+
+固定16条成功GeoPackage保存链：非均匀权重中心覆盖／全部触及、权重×8、全1四条；对应中心／全部触及的原统计实际对照两条；权重重分类、数值重分类、重分类→转面→加权三条；自定义／空前缀两条；全零权重、数值全无效、带声明字段的空面批三条；Int64／UInt64原生NoData邻接数值及权重两条。14份加权成果追加原前缀三字段，2份原统计对照保持原八字段。共同覆盖完整旋转网格、跨二维读取块、显式第二波段、raw scale-offset、mask／部分alpha，以及孔洞、多部件、重叠、重复几何／属性、薄面、部分／完全出界、合法零和空组；重复内存索引单列Native，不冒充持久文件身份。
+
+固定43类各按中英文提交，共86次准确失败：权重成对缺失／显式null及percentile冲突6类；必需位置负权重／NoData／无效mask／透明alpha／NaN／Infinity6类；数值／权重各波段0／越界／布尔／字符串／alpha／复数数据12类；权重尺寸／CRS／偏移／旋转／缺CRS／缺仿射／奇异网格7类；矢量CRS不一致及数值缺CRS／缺仿射／奇异网格4类；非法覆盖参数／前缀4类；原统计字段和三个新增字段属性冲突4类。逐次核当前执行、analysis节点、准确真实原因、专业详情／Monitor与冻结提交语言，反向查询不改错误；加载、JSON或其他节点提前失败不能充数。沿用原有英文诊断不冒称新增翻译；数值极限、混合复数alpha、特殊JSON和内存索引保持另列Native。
+
+覆盖期望用独立像元中心／像元方格与面的关系计算，不调用产品栅格化或统计实现；重叠逐面独立，孔洞不贡献，不按交叠面积折算。只有面覆盖且数值有效的位置要求有效有限非负权重，面外或数值无效位置坏权重不误拒绝；合法数值零仍需权重。有有效值但全零权重0／0／null，无覆盖或无值三个null；原行／属性／几何／CRS／行序及空批声明Schema保持。独立2000位Decimal逐像元累计三个字段并核最终Float64精确值；全1按已确认契约精确复用原sum／mean，二者独立核原统计并与同源实际不加权成果逐值相等，不用理想算术均值覆盖原归约的位级结果。原八字段沿原精度与精确计数规则，全部权重×8使两个和×8、均值不变。
+
+每次成功后真实重读当前1至16份成果，每次失败后重读16份，固定136＋86×16＝1512次GeoPackage全检；加首次源检查共103轮物理检查。每轮核完整几何／属性／行序／字段类型、计数／统计／null，所有源原生像元／mask／NoData／仿射／CRS／scale-offset及矢量完整内容和hash；只冻结独立期望，不缓存实际成果。归档16份GeoPackage及全部源原字节、大小／SHA256清单、当前执行血缘和原始执行证据；篡改、缺失、额外文件或符号链接均拒绝，不覆盖、重建或静默修复。
+
+沿普通矢量保存路径，物理／Meta大小严格为相等正整数，不虚构RasterArtifact。自动扫描精确核父执行／用户／租户／引擎；直接加权三源，转面链仅数值和权重两份实际源，两个不加权对照仅面和数值。仅登记执行范围受控只读observer，完整内部save／derive和公开operations:null分别核验，Meta关系／Monitor另核；失败零发布／新增扫描／派生血缘，源及旧成果不变，所有退出零残留。
+
+标准入口`make test-vector-zonal-weighted-online-runner`和标准Native中的`test_online_vector_zonal_weighted_fixture.py`，同步Online、changed gate、独立手工workflow、observer与固定矩阵／删断言拒绝检查。本地标准Native专项266 passed／12219 deselected／36.45秒，0失败／跳过／warnings；共享登记合并后的标准Runner97项／40.928秒及完整Online登记通过。准备通过不计实际Hosted通过。
+
+
 ## 矢量面分区百分位独立 Hosted 验收
 
 `vector-zonal-percentile-persistence`为独立手工套件，复用NFS、同源产品默认入口Runtime和普通User原12权限；固定600秒业务预算覆盖源初始化扫描、首次独立期望、64条执行及查询、全部物理复核与执行工作区／期望缓存清理。部署、静态播种和NFS／Infra退出沿既有隔离生命周期分别核验，任何清理失败整套失败。原矢量分区／栅格百分位套件、产品逻辑、安全投影及权限不改；实际Hosted仍由CI会话协调，准备通过不计Hosted、UI或容量通过。
