@@ -1175,6 +1175,28 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_vector_zonal_area_weighted(self.repository, {'vector-zonal-area-weighted-persistence'})
             target.write_text(original)
 
+    def test_vector_zonal_area_weighted_stddev_requires_exact_gpkg_matrix_budget_and_regressions(self):
+        source = Path(__file__).resolve().parents[2]
+        required = CHECK.VECTOR_ZONAL_AREA_WEIGHTED_STDDEV_REQUIRED
+        for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml', *required):
+            target = self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source/relative,target)
+        CHECK.validate_vector_zonal_area_weighted_stddev(self.repository, {'vector-zonal-area-weighted-stddev-persistence'})
+        for relative, fragments in required.items():
+            target=self.repository/relative; original=target.read_text()
+            for fragment in fragments:
+                target.write_text(original.replace(fragment, 'omitted'))
+                with self.subTest(relative=relative,fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_vector_zonal_area_weighted_stddev(self.repository, {'vector-zonal-area-weighted-stddev-persistence'})
+                target.write_text(original)
+        target=self.repository/'business/scripts/online-vector-zonal-area-weighted-stddev-fixture.py';original=target.read_text()
+        for before,after in [("'survey.tif'", "'foot.tif'"), ("'weight_pair'", "'different'") ]:
+            self.assertIn(before,original);target.write_text(original.replace(before,after,1))
+            with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_vector_zonal_area_weighted_stddev(self.repository, {'vector-zonal-area-weighted-stddev-persistence'})
+            target.write_text(original)
+
     def test_variety_requires_exact_cog_matrix_budget_and_regressions(self):
         source = Path(__file__).resolve().parents[2]
         required = CHECK.VARIETY_REQUIRED
