@@ -11,11 +11,11 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import secrets
 import ssl
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -29,6 +29,64 @@ FIELDS = {
     'active_waiting_connections', 'active_lock_waiting_connections', 'active_io_waiting_connections',
     'max_connections', 'transactions_committed', 'transactions_rolled_back', 'deadlocks', 'database_bytes',
 }
+
+# No external commands, subshells or child processes: reads, timed waits and
+# filename expansion all execute in this one Bash process in the owned PG image.
+DIRECTORY_PROCESS_SCRIPT = r'''
+set -eu
+exec 2>/dev/null
+a=$1; b=$2
+first=$a; second=$b
+if [[ "$3" == b ]]; then first=$b; second=$a; fi
+sample() {
+    local phase=$1 av bv value uptime rest
+    if IFS= read -r value < "$a"; then av=$value; else av=unreadable; fi
+    if IFS= read -r value < "$b"; then bv=$value; else bv=unreadable; fi
+    case "$av" in before|after-version|unreadable) ;; *) av=other ;; esac
+    case "$bv" in before|after-version|unreadable) ;; *) bv=other ;; esac
+    IFS=' ' read -r uptime rest < /proc/uptime
+    printf '%s\t%s\t%s\t%s\t%s\n' "$phase" "$$" "$uptime" "$av" "$bv"
+}
+enumerate() {
+    local target=$1 entry found=0
+    local entries=("${target%/*}"/*)
+    for entry in "${entries[@]}"; do
+        if [[ "$entry" == "$target" ]]; then found=1; fi
+    done
+    [[ "$found" == 1 ]]
+}
+sample baseline
+IFS= read -r -t 2 signal
+[[ "$signal" == published ]]
+sample published
+if IFS= read -r -t 1 signal; then exit 75; fi
+sample control_before_enum
+enumerate "$first"
+sample enumerate_first
+if IFS= read -r -t 1 signal; then exit 75; fi
+sample control_before_enum_b
+enumerate "$second"
+sample enumerate_second
+'''
+
+
+def directory_process_observations(data):
+    phases = ['baseline','published','control_before_enum','enumerate_first','control_before_enum_b','enumerate_second']
+    lines = data.decode('ascii').splitlines()
+    assert len(lines)==len(phases), 'Owned directory process output incomplete'
+    rows, pids, times = [], set(), []
+    for phase,line in zip(phases,lines):
+        fields = line.split('\t')
+        assert len(fields)==5 and fields[0]==phase, 'Owned directory process phase mismatch'
+        _,pid,clock,a,b = fields
+        assert re.fullmatch(r'[1-9][0-9]{0,9}',pid) and re.fullmatch(r'[0-9]{1,12}\.[0-9]{1,6}',clock), 'Owned directory process clock or identity invalid'
+        assert a in ('before','after-version','unreadable','other') and b in ('before','after-version','unreadable','other'), 'Owned directory process state invalid'
+        pids.add(pid);times.append(float(clock))
+        rows.append({'phase':phase,'elapsed_ms':round((times[-1]-times[0])*1000,2),'a':a,'b':b})
+    assert len(pids)==1 and times==sorted(times) and times[-1]-times[0]<=8, 'Owned directory process identity or monotonic order changed'
+    assert round((times[2]-times[1])*1000)>=990 and round((times[4]-times[3])*1000)>=990, 'Owned directory no-enumeration interval incomplete'
+    assert rows[0]['a']==rows[0]['b']=='before', 'Owned directory process baseline differs'
+    return {'single_process':True,'samples':rows}
 
 
 def verifier(password):
@@ -631,50 +689,48 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
             record_file.unlink(missing_ok=True)
 
     def directory_publication_diagnostic(self):
-        """Test-owned ordinary files only; never an authentication fallback."""
+        """Counterbalanced observations; diagnostic success never releases HBA."""
+        return {'trials':[self.directory_process_trial(('a','b'),'a'),
+                          self.directory_process_trial(('c','d'),'b')]}
+
+    def directory_process_trial(self, sides, enumerate_first):
         runtime = self.auth_directory/'runtime'
-        before, after = 'before\n', 'after-version\n'
-        command = self.compose+['exec','-T','postgres']
-        def read(path):
-            result = subprocess.run(command+['head','-c','64',str(path)],capture_output=True,text=True,timeout=5)
-            return result.returncode==0 and result.stdout
-        def inspect(name):
-            path = '/etc/addp-postgres-auth/'+name
-            result = subprocess.run(command+['stat','-c','%a:%s:%i',path],capture_output=True,text=True,timeout=5)
-            return {'head_matches_replacement':read(path)==after,
-                    'stat_ok':result.returncode==0,
-                    'metadata':result.stdout.strip() if re.fullmatch(r'[0-7]{3,4}:[0-9]+:[0-9]+\n?',result.stdout) else 'unavailable'}
-        facts = {'canonical':inspect('publication-probe')}
-        listing = subprocess.run(command+['ls','-1A','/etc/addp-postgres-auth'],capture_output=True,text=True,timeout=5)
-        facts['initial_directory_list_ok'] = listing.returncode==0
-        facts['canonical_after_initial_listing'] = inspect('publication-probe')
-        for label,name in [('without_chown','publication-no-chown'),('plain_initial','publication-plain'),('fresh_name','publication-fresh')]:
-            target = runtime/name
-            if label=='fresh_name':
-                assert not os.path.lexists(target), 'Owned fresh comparison already exists'
-            else:
-                assert self.authentication._read(target,0o644)[0]==before
-                assert read('/etc/addp-postgres-auth/'+name)==before, 'Owned comparison file initially unavailable'
-            fd, temporary = tempfile.mkstemp(prefix='.pg-auth-',dir=runtime)
+        paths = [runtime/('publication-process-'+side)/'item' for side in sides]
+        deadline = time.monotonic()+8
+        process = subprocess.Popen(self.compose+['exec','-T','postgres','bash','--noprofile','--norc','-c',
+            DIRECTORY_PROCESS_SCRIPT,'owned-directory-observation',
+            *['/etc/addp-postgres-auth/publication-process-'+side+'/item' for side in sides],enumerate_first],
+            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+        data = bytearray()
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout,selectors.EVENT_READ)
+            def receive():
+                remaining = deadline-time.monotonic()
+                assert remaining>0 and selector.select(remaining), 'Owned directory process deadline reached'
+                chunk = os.read(process.stdout.fileno(),4096)
+                assert len(data)+len(chunk)<=8192, 'Owned directory process output exceeds budget'
+                data.extend(chunk)
+                return bool(chunk)
             try:
-                with os.fdopen(fd,'wb') as stream:
-                    stream.write(after.encode());stream.flush()
-                    # Identical publication operations except fchown; diagnostic only.
-                    os.fchmod(stream.fileno(),0o644);os.fsync(stream.fileno())
-                os.replace(temporary,target)
-                directory = os.open(runtime,os.O_RDONLY)
-                try:os.fsync(directory)
-                finally:os.close(directory)
-                facts[label] = inspect(name)
-                facts[label]['host_matches_replacement'] = self.authentication._read(target,0o644)[0]==after
+                while b'\n' not in data:
+                    assert receive(), 'Owned directory process ended before baseline'
+                # Validate the baseline before changing either test-owned file.
+                baseline = bytes(data).split(b'\n',1)[0].decode('ascii').split('\t')
+                assert len(baseline)==5 and baseline[0]=='baseline' and baseline[3:]==['before','before'], 'Owned directory baseline unavailable'
+                for path in paths:
+                    self.authentication._atomic(path,'after-version\n',0o644,previous='before\n')
+                    assert self.authentication._read(path,0o644)[0]=='after-version\n'
+                process.stdin.write(b'published\n');process.stdin.flush()
+                while receive():
+                    pass
+                remaining = deadline-time.monotonic()
+                assert remaining>0 and process.wait(timeout=remaining)==0, 'Owned directory process failed'
+                return dict(directory_process_observations(bytes(data)),enumerated_first=enumerate_first)
             finally:
-                Path(temporary).unlink(missing_ok=True)
-            facts[label]['canonical_after_step'] = inspect('publication-probe')
-        listing = subprocess.run(command+['ls','-1A','/etc/addp-postgres-auth'],capture_output=True,text=True,timeout=5)
-        facts['directory_list_ok'] = listing.returncode==0
-        facts['fresh_name_listed'] = listing.returncode==0 and 'publication-fresh' in listing.stdout.splitlines()
-        facts['canonical_after_listing'] = inspect('publication-probe')
-        return facts
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=2)
+                process.stdin.close();process.stdout.close()
 
     def check_directory_publication(self):
         target = self.auth_directory/'runtime/publication-probe'
@@ -704,7 +760,7 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
                 if not facts['container_matches_replacement']:
                     try:
                         diagnostic = self.directory_publication_diagnostic()
-                    except (OSError,AssertionError,subprocess.SubprocessError) as error:
+                    except (OSError,ValueError,AssertionError,subprocess.SubprocessError) as error:
                         diagnostic = {'unavailable':type(error).__name__}
                     print('PostgreSQL directory comparison '+json.dumps(diagnostic),flush=True)
                 assert all(value is True for key,value in facts.items() if key!='container_return_code'), \
@@ -712,17 +768,19 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
             except BaseException as error:
                 try:
                     target.unlink(missing_ok=True)
-                    target.with_name('publication-no-chown').unlink(missing_ok=True)
-                    target.with_name('publication-plain').unlink(missing_ok=True)
-                    target.with_name('publication-fresh').unlink(missing_ok=True)
+                    for side in ('a','b','c','d'):
+                        directory = target.parent/('publication-process-'+side)
+                        (directory/'item').unlink(missing_ok=True)
+                        if directory.exists():directory.rmdir()
                 except BaseException as cleanup:
                     error.add_note('Owned publication cleanup failed: '+type(cleanup).__name__)
                 raise
             else:
                 target.unlink()
-                target.with_name('publication-no-chown').unlink(missing_ok=True)
-                target.with_name('publication-plain').unlink(missing_ok=True)
-                target.with_name('publication-fresh').unlink(missing_ok=True)
+                for side in ('a','b','c','d'):
+                    directory = target.parent/('publication-process-'+side)
+                    (directory/'item').unlink(missing_ok=True)
+                    if directory.exists():directory.rmdir()
 
     def run(self):
         if self.auth_directory is not None:

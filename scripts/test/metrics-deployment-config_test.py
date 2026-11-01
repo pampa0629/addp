@@ -150,11 +150,14 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 original='local all all trust\n'
                 runtime=postgres_auth.prepare_business(directory,original)
                 postgres_auth._atomic(runtime/'publication-probe','before\n',0o644)
-                postgres_auth._atomic(runtime/'publication-no-chown','before\n',0o644)
+                for side in ('a','b','c','d'):
+                    child=runtime/('publication-process-'+side)
+                    child.mkdir(mode=0o755)
+                    postgres_auth._atomic(child/'item','before\n',0o644)
                 probe=postgres_probe.Probe.__new__(postgres_probe.Probe)
                 probe.auth_directory,probe.authentication=directory,postgres_auth
                 probe.compose=['docker','compose'];probe.read_hba=mock.Mock(return_value=original)
-                probe.directory_publication_diagnostic=mock.Mock(return_value={'without_chown':{'head_matches_replacement':True}})
+                probe.directory_publication_diagnostic=mock.Mock(return_value={'single_process':True,'samples':[]})
                 results=[subprocess.CompletedProcess([],0,'before\n',''),subprocess.CompletedProcess([],0 if visible else 1,'after-version\n' if visible else '', 'private-sentinel')]
                 output=io.StringIO()
                 with mock.patch.object(postgres_probe.subprocess,'run',side_effect=results) as run, redirect_stdout(output):
@@ -163,41 +166,55 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                         with self.assertRaisesRegex(AssertionError,'HBA acceptance not reached'):
                             probe.check_directory_publication()
                 self.assertFalse((runtime/'publication-probe').exists())
-                self.assertFalse((runtime/'publication-no-chown').exists())
+                self.assertFalse(any(runtime.glob('publication-process-*')))
                 self.assertEqual(probe.directory_publication_diagnostic.call_count,0 if visible else 1)
                 self.assertEqual((runtime/'pg_hba.conf').read_text(),original)
                 self.assertNotIn('sentinel',output.getvalue())
                 self.assertTrue(all(call.args[0][-1].endswith('/publication-probe') for call in run.call_args_list))
 
-    def test_directory_diagnostic_omits_chown_without_changing_hba(self):
+    def test_directory_diagnostic_runs_one_process_with_matched_waits(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory=Path(temporary).resolve()/'authentication'
             original='local all all trust\n'
             runtime=postgres_auth.prepare_business(directory,original)
-            postgres_auth._atomic(runtime/'publication-probe','after-version\n',0o644)
-            postgres_auth._atomic(runtime/'publication-no-chown','before\n',0o644)
-            (runtime/'publication-plain').write_text('before\n')
-            (runtime/'publication-plain').chmod(0o644)
+            for side in ('a','b','c','d'):
+                child=runtime/('publication-process-'+side)
+                child.mkdir(mode=0o755)
+                postgres_auth._atomic(child/'item','before\n',0o644)
             probe=postgres_probe.Probe.__new__(postgres_probe.Probe)
             probe.auth_directory,probe.authentication=directory,postgres_auth
             probe.compose=['docker','compose']
+            launch=subprocess.Popen
             def transport(command,**kwargs):
-                path=runtime/Path(command[-1]).name
-                if 'ls' in command:output='\n'.join(p.name for p in runtime.iterdir())+'\n'
-                elif command[-4]=='stat':
-                    info=path.stat();output=f'644:{info.st_size}:{info.st_ino}\n'
-                else:output=path.read_text()
-                return subprocess.CompletedProcess(command,0,output,'private-sentinel')
-            with mock.patch.object(postgres_probe.subprocess,'run',side_effect=transport), mock.patch.object(postgres_probe.os,'fchown',side_effect=AssertionError('must omit chown')):
+                script=command[-5].replace("IFS=' ' read -r uptime rest < /proc/uptime",'uptime=${SECONDS}.00')
+                return launch(['bash','--noprofile','--norc','-c',script,command[-4],
+                    *[str(runtime/Path(path).parent.name/'item') for path in command[-3:-1]],command[-1]],**kwargs)
+            with mock.patch.object(postgres_probe.subprocess,'Popen',side_effect=transport) as popen:
                 facts=probe.directory_publication_diagnostic()
-            self.assertTrue(facts['without_chown']['head_matches_replacement'])
-            self.assertTrue(facts['canonical']['head_matches_replacement'])
-            self.assertTrue(facts['without_chown']['host_matches_replacement'])
-            self.assertTrue(facts['plain_initial']['head_matches_replacement'])
-            self.assertTrue(facts['fresh_name']['head_matches_replacement'])
-            self.assertTrue(facts['fresh_name_listed'])
+            self.assertEqual(popen.call_count,2)
+            self.assertEqual([trial['enumerated_first'] for trial in facts['trials']],['a','b'])
+            for trial in facts['trials']:
+                self.assertTrue(trial['single_process'])
+                self.assertEqual(len(trial['samples']),6)
+                self.assertEqual(trial['samples'][0]['a'],'before')
+                self.assertTrue(all(row['a']==row['b']=='after-version' for row in trial['samples'][1:]))
             self.assertEqual((runtime/'pg_hba.conf').read_text(),original)
-            self.assertEqual(list(runtime.glob('.pg-auth-*')),[])
+            self.assertEqual(list(runtime.rglob('.pg-auth-*')),[])
+
+    def test_directory_process_rejects_unmatched_identity_time_and_output(self):
+        phases=['baseline','published','control_before_enum','enumerate_first','control_before_enum_b','enumerate_second']
+        rows=[f'{phase}\t17\t{clock}\t{state}\t{state}' for phase,clock,state in
+            zip(phases,['0.00','0.01','1.02','1.03','2.04','2.05'],['before']+['unreadable']*5)]
+        good=('\n'.join(rows)+'\n').encode()
+        self.assertTrue(postgres_probe.directory_process_observations(good)['single_process'])
+        negatives=[good.replace(b'17\t1.03',b'18\t1.03'),good.replace(b'1.02',b'0.02'),
+            good.replace(b'2.04',b'1.04'),good.replace(b'2.05',b'9.05'),
+            good.replace(b'enumerate_first',b'private-sentinel'),good.replace(b'unreadable',b'private-sentinel'),
+            good.replace(b'1.03',b'0.00'),b'\n'.join(good.splitlines()[:-1])]
+        for value in negatives:
+            with self.subTest(value=value),self.assertRaises(AssertionError) as caught:
+                postgres_probe.directory_process_observations(value)
+            self.assertNotIn('sentinel',str(caught.exception))
 
     def test_hba_readback_failure_restores_the_published_version(self):
         with tempfile.TemporaryDirectory() as temporary:
