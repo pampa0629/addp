@@ -234,15 +234,15 @@ CDC 固定使用 initial snapshot。有稳定非空主键的单表事件按以�
 | `c`、`u` | upsert |
 | `d` | delete |
 
-tombstone、truncate、message、来源身份不匹配和协议未知字段严格阻塞，不推进 committed position。完整 PostgreSQL/MySQL/Oracle 类型矩阵见基本概念及配置说明。Oracle 普通字段直接由 LogMiner 捕获；`MDSYS.SDO_GEOMETRY` 由同一 Oracle capture Provider 通过 generation-owned WKB 镜像表捕获，不建立第二套 consumer。Oracle 的类型与平台限制见[Oracle 源限制](#oracle-源限制)；ArcGIS SDE 保持后续独立 Provider。
+tombstone、truncate、message、来源身份不匹配和协议未知字段严格阻塞，不推进 committed position。各源类型矩阵与协议约束统一见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)，Oracle 的类型与平台限制见[Oracle 源限制](#oracle-源限制)；ArcGIS SDE 保持后续独立 Provider。
 
 ArcGIS SDE 后续数据面不进入上述 Oracle Debezium/LogMiner 分支。唯一规划路线是 workspace-scoped `SDELogicalChangeSourceProvider` 读取 enterprise geodatabase traditional versioning 的 registry、state lineage 和 adds/deletes 语义，由 Transfer capture adapter 将规范化变化及 SDE 原生位置写入 generation-owned Infra Kafka topic，再复用现有 continuous worker。SDE Provider 必须承担无空洞 initial bootstrap 和原生位置恢复；Transfer 的 `sync_states` 仍只提交 Kafka offset。branch versioning、真实数据面和公开任务选项在真实 ArcGIS Enterprise Geodatabase E2E 完成前保持关闭。
 
 #### Oracle 源限制
 
-Oracle CDC 普通源表字段明确拒绝 `CLOB`、`NCLOB`、`BLOB`、`BFILE`、`LONG`、`LONG RAW`、`XMLTYPE` 和原生 `JSON`。拒绝发生在 capture plan 冻结、generation 创建和外部资源创建之前。Oracle Spatial 镜像表使用的 WKB `BLOB` 是 generation-owned 内部传输实现，不是普通业务 LOB 支持，也不能作为旁路开放这些类型。
+Oracle 普通字段沿 LogMiner 捕获，`MDSYS.SDO_GEOMETRY` 由同一 Oracle capture Provider 通过 generation-owned 镜像进入现有 connector/consumer，不建立第二套消费链路。空间事实冻结、校验与镜像编码遵循上述正式契约；内部传输列不代表开放普通业务 LOB，也不得作为旁路。
 
-Oracle RAC 当前没有 capture/provider 契约。readiness 必须读取 `V$PARAMETER.cluster_database` 并只接受明确 `FALSE`；`TRUE` 或无法解释的值都在 capture generation 和外部资源创建前拒绝，不能把单实例 LogMiner 路线旁路复用于 RAC。
+普通业务 LOB、JSON/XML 等不支持的源字段，必须在 capture plan 冻结、generation 与外部资源创建前拒绝；RAC 或 readiness 无法确认单实例的源，同样在 generation 和外部资源创建前拒绝。能力声明不替代[实际验收](#十一验证范围)，Oracle 专项缺口见[标准入口说明](../README.md#oracle-cdc-专项入口缺口)。
 
 ### 6.4 生命周期
 
