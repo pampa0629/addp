@@ -2,7 +2,9 @@
 
 Transfer 是 ADDP 的数据传输中枢，负责传输任务配置、执行编排、字段映射、异步 worker、checkpoint 观测、执行日志、指标和写后 Meta 扫描触发。
 
-当前已实现 bounded snapshot、PostgreSQL/MySQL/OceanBase/TiDB/openGauss source 的 bounded watermark incremental（目标按幂等 upsert capability 选择，支持 PostgreSQL/MySQL/OceanBase/TiDB/openGauss；OceanBase/TiDB/openGauss 限非空间表）、业务 Kafka keyed JSON continuous upsert + DLQ、业务 Kafka bounded replay，以及 PostgreSQL/MySQL/Oracle 单表 CDC initial snapshot + upsert/delete。continuous worker 已接通严格 record/Debezium adapter、业务库 apply ledger、Infra `transfer.sync_states` CAS、lease/fencing、真实 pause/resume/stop，以及分区 latest offset、lag、retention horizon 和 degraded/critical 告警；Console Wizard 已开放业务 Kafka和数据库 CDC 两类 continuous 路线，数据库 CDC 目标支持 PostgreSQL/MySQL/Oracle。Oracle CDC 包含 generation-owned Spatial 镜像：XY 使用 WKB BLOB，XYZ 使用保留 Z 值的 GeoJSON CLOB，Transfer 统一归一化为标准 EWKB；Oracle 目标当前只接受 XY geometry，不支持独立 `TIME`，仍不包含普通业务 LOB、RAC 和 ArcGIS SDE。
+当前已实现 bounded snapshot、bounded watermark incremental、业务 Kafka keyed JSON continuous upsert + DLQ、业务 Kafka bounded replay，以及 PostgreSQL/MySQL/Oracle 单表 CDC initial snapshot + upsert/delete。引擎来源、目标与非空间限制统一见[当前支持矩阵](./docs/transfer-任务语义与同步模式.md#三当前支持矩阵)；continuous worker、Console Wizard 和诊断能力见[Continuous/Kafka 配置](./docs/transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)。
+
+Oracle 空间捕获与目标类型限制由[CDC 配置](./docs/transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)维护；普通 Oracle LOB、RAC 和 ArcGIS SDE 仍未支持。能力摘要不作为当前版本运行通过记录，证据与未覆盖项见[验证范围](./docs/transfer-任务语义与同步模式.md#十一验证范围)，标准门禁及 Oracle 专项缺口见本页[启动与验证](#启动与验证)。
 
 当前主路径采用 clean break：Transfer 不再维护私有 reader / writer 插件体系，不再兼容旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type` 等任务 JSON 字段。具体读写能力来自 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`。
 
