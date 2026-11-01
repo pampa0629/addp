@@ -66,7 +66,7 @@ func TestVFFSKCFixedUnknownTypesAndFacetsRemainUnproved(t *testing.T) {
 	}
 	f := skcTypedFixedFiles(t, "int", "1", "1")
 	f["Schemas/shared.xsd"] = []byte(strings.Replace(string(f["Schemas/shared.xsd"]), `type="x:int"`, `type="b:Restricted"`, 1))
-	f["Schemas/shared.xsd"] = []byte(strings.Replace(string(f["Schemas/shared.xsd"]), `<x:complexType name="Value">`, `<x:simpleType name="Restricted"><x:restriction base="x:int"><x:maxInclusive value="0"/></x:restriction></x:simpleType><x:complexType name="Value">`, 1))
+	f["Schemas/shared.xsd"] = []byte(strings.Replace(string(f["Schemas/shared.xsd"]), `<x:complexType name="Value">`, `<x:simpleType name="Restricted"><x:restriction base="x:int"><x:pattern value="0"/></x:restriction></x:simpleType><x:complexType name="Value">`, 1))
 	v := skcAttributeValue(t, f)
 	if len(v.fixedValues) != 1 || v.fixedValues[0].known || v.fixedValues[0].typeName.Space != "urn:b" || v.fixedValues[0].typeName.Local != "Restricted" || !strings.Contains(strings.Join(v.issues, " "), "typed value equality not proved") {
 		t.Fatal("named restriction/facet silently treated as builtin")

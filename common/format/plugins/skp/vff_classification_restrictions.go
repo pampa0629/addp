@@ -14,6 +14,7 @@ type vffSKCRestrictionProfile struct {
 	primitive xml.Name
 	levels    [][]vffSKCEnumerationValue
 	facets    []vffSKCDeclarationWitness
+	bounds    map[string]string
 	known     bool
 }
 type vffSKCRestrictionChecker struct {
@@ -128,6 +129,7 @@ func (c *vffSKCRestrictionChecker) profile(node *vffXMLNode, depth int) (*vffSKC
 	}
 	// Unknown children/attributes block the whole profile, not just one facet.
 	var enumerations []*vffXMLNode
+	var bounds []*vffXMLNode
 	for _, n := range node.children {
 		if err := b.tick(0); err != nil {
 			return nil, err
@@ -135,7 +137,7 @@ func (c *vffSKCRestrictionChecker) profile(node *vffXMLNode, depth int) (*vffSKC
 		if n.name.Local == "annotation" || n.name.Local == "simpleType" {
 			continue
 		}
-		if n.name.Local != "enumeration" {
+		if n.name.Local != "enumeration" && !vffSKCBoundFacet(n.name.Local) {
 			c.cache[node] = unknown
 			return unknown, nil
 		}
@@ -167,7 +169,11 @@ func (c *vffSKCRestrictionChecker) profile(node *vffXMLNode, depth int) (*vffSKC
 				return unknown, nil
 			}
 		}
-		enumerations = append(enumerations, n)
+		if n.name.Local == "enumeration" {
+			enumerations = append(enumerations, n)
+		} else {
+			bounds = append(bounds, n)
+		}
 	}
 	if len(enumerations) > 0 && base.primitive.Local == "boolean" {
 		return nil, fmt.Errorf("enumeration is not applicable to boolean in XSD 1.0")
@@ -182,6 +188,14 @@ func (c *vffSKCRestrictionChecker) profile(node *vffXMLNode, depth int) (*vffSKC
 		return nil, err
 	}
 	p := &vffSKCRestrictionProfile{primitive: base.primitive, known: true, levels: append([][]vffSKCEnumerationValue(nil), base.levels...), facets: facets}
+	proved, err := c.addBounds(p, base, bounds)
+	if err != nil {
+		return nil, err
+	}
+	if !proved {
+		c.cache[node] = unknown
+		return unknown, nil
+	}
 	var layer []vffSKCEnumerationValue
 	for _, n := range enumerations {
 		raw, present := n.attrs["value"]
@@ -233,6 +247,9 @@ func (c *vffSKCRestrictionChecker) evaluate(p *vffSKCRestrictionProfile, n *vffX
 		if !found {
 			return value, false, fmt.Errorf("attribute constraint violates enumeration facet")
 		}
+	}
+	if err := c.checkBounds(p, value); err != nil {
+		return value, false, err
 	}
 	return value, true, nil
 }
