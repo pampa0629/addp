@@ -130,8 +130,9 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 #### 成果事实与初始授权
 
-- PG bounded 产出事实在同 attempt／目标的成功提交时冻结实际读取会话的完整 ReadSet 与 Provider 的 `created_and_committed`；来源未知为 null，新建提交未证明为 false，不从配置、行数或血缘补造，不在此处确定 Grant 期限。私有 `target_production` v3 使用封闭 JSON 字符串保存在执行 metadata 中，避免通用 JSONMap 的浮点往返改变 Engine ID；仅通过 owner codec 读取，不兼容或补填旧事实，原生 CreationWitness 不持久化。固定 System／Meta 机器通过同一回执 v3 核验同一证据，不向普通执行详情或 TaskProvider 输出泄漏。任务期间不进行 schema 改名、迁移等结构运维；Provider 提交前检测已发生的路径异常，不增加父 schema 锁或承诺任意外部 DDL 原子性。
-- 初始授权续办只为本次成功完成且具备 v3 新建提交证明、完整人类来源的首次 bounded 执行初始化 `initial_authorization`；不回填历史成功任务。原 Worker 注册有效时独立领取待办，释放行锁后由统一 System client 核清／续办，正式 pending 才调用 Meta 精确 basic 补扫。30 秒至 5 分钟有界退避，迟到旧领取不能覆盖新状态，明确签发／拒绝终态停止；不重跑写入、不删除成果、不延长 System 冻结期限。通用 metadata／完成路径禁止自报该保留字段。HTTP 只投影 `status/code`，不暴露领取进度、Grant 引用或私有证据；任务详情将物理成功与授权状态分开显示，待办期间只读刷新。读取仍由同一 System Grant 与 Security 链裁决，T1/T2 和前端浏览器门禁不代替新成果完整 T4。
+- PG bounded 在同 attempt／实际目标的成功提交中冻结同次读取会话的完整 ReadSet 与 Provider `created_and_committed`；来源未知为 null，新建未证明为 false，不从配置、行数或血缘补造。新建与提交证明、schema 运维前提及外部 DDL 原子性限制沿[Provider 契约](../docs/spec/addp引擎插件接口规范.md#storeprovider)。私有 `target_production` v3 使用封闭 JSON 字符串和唯一 owner codec，避免 JSONMap 浮点往返改变 Engine ID；不兼容或补填旧事实，不持久化原生 CreationWitness。
+- 成果资格、System／Meta 窄机器回执权限、签发事务与期限裁决、续办及限定 basic 补扫统一见[初始使用权契约](../docs/spec/addp授权上下文规范.md#558-任务产出数据与初始使用权)。Transfer 只在本次成功完成事务为具备 v3 首次新建提交证明及完整人类来源的首次 bounded 执行初始化 `initial_authorization`；不回填历史。Worker 注册有效时独立领取、锁外核清／续办，仅正式 pending 才补扫；有界退避、旧领取围栏和终态规则沿该契约，不重跑写入、不删除成果或延长 System 冻结期限。
+- 通用 metadata／完成路径禁止自报保留的授权状态，HTTP 只投影 `status/code`，不泄露领取进度、Grant 引用或私有证据；普通详情／TaskProvider 不暴露产出证明。页面区分物理成功与授权状态，待办只读刷新；实际读取仍按 System Grant 与 Security 链裁决。完整链路与固定版本证据见[新成果初始授权验收](../docs/spec/testing/scenarios/授权与共享.md#新成果初始授权)，T1/T2 与前端门禁不代替真实产出→识别→签发→读取→撤销验收。
 
 #### 单次目标覆盖与稳定输出
 
