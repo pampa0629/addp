@@ -18,9 +18,9 @@ HOSTED = import_module('scripts.test.orchestrator-execution-faults')
 HTTP = import_module('scripts.test.security-transfer-protection-online')
 Client, SuiteError = HTTP.GatewayClient, HTTP.SuiteError
 ROOT = Path(__file__).resolve().parents[2]
-OWNERS = ('asset', 'develop', 'graph', 'manager', 'meta', 'model', 'quality', 'service', 'standard', 'transfer')
 TERMINAL = {'success', 'failed', 'timeout', 'cancelled'}
 CONTRACT = json.loads(Path(__file__).with_name('execution-online-contract.json').read_text())
+OWNERS = tuple(sorted({owner for owners in CONTRACT['cleanup_owners_by_cause'].values() for owner in owners}))
 CONTROL_CONTAINERS = {'graph-backend', 'graph-backend-peer', 'asset-backend', 'model3d-workflow-engine'}
 
 

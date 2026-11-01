@@ -168,5 +168,28 @@
       "old_attempt_not_replayed",
       "source_objects_unchanged"
     ]
+  },
+  "cleanup_owners_by_cause": {
+    "engine.deleting": [
+      "develop",
+      "graph",
+      "manager",
+      "meta",
+      "quality",
+      "service",
+      "transfer"
+    ],
+    "tenant.deleted": [
+      "asset",
+      "develop",
+      "graph",
+      "manager",
+      "meta",
+      "model",
+      "quality",
+      "service",
+      "standard",
+      "transfer"
+    ]
   }
 }

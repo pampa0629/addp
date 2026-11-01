@@ -52,6 +52,12 @@ def assert_proxy(value, run_id, key):
             'fault did not observe exactly one sent request and its real upstream response')
 
 
+def engine_owners_match(owners):
+    expected = S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']
+    return (type(owners) is list and all(type(owner) is str for owner in owners)
+            and len(owners) == len(expected) and set(owners) == set(expected))
+
+
 class EngineWorkflow:
     def __init__(self, user, tenant, report, checkpoint):
         self.user, self.tenant, self.report, self.checkpoint = user, S.positive(tenant), report, checkpoint
@@ -103,7 +109,7 @@ class EngineWorkflow:
             task = assessment['task']
             require(assessment['status'] == 'success' and task['context']['engine_id'] == engine_id
                     and task['requested_by'] == int(self.principal) and task['action'] == 'scan'
-                    and set(task['expected_modules']) == set(S.OWNERS), 'Engine assessment is incomplete or foreign')
+                    and engine_owners_match(task['expected_modules']), 'Engine assessment is incomplete or foreign')
         except Exception:
             self.report['engine_assessment_diagnostic'] = last
             self.checkpoint()
@@ -132,7 +138,7 @@ class EngineWorkflow:
         result = PROTOCOL.task(self.user, request_id)
         require(result['task']['context']['engine_id'] == engine_id
                 and result['task']['requested_by'] == int(self.principal)
-                and set(result['task']['expected_modules']) == set(S.OWNERS), 'Engine execute ownership changed')
+                and engine_owners_match(result['task']['expected_modules']), 'Engine execute ownership changed')
         return result
 
     def settled(self, engine_id, *, success):
@@ -162,8 +168,7 @@ def engine_assessment_observation(value, request_id, engine_id, principal):
         engine=type(context) is dict and type(context.get('engine_id')) is int and context['engine_id'] == engine_id,
         actor=type(task.get('requested_by')) is int and task['requested_by'] == int(principal),
         action=task.get('action') == 'scan',
-        owners=type(owners) is list and all(type(x) is str for x in owners)
-            and len(owners) == len(S.OWNERS) and set(owners) == set(S.OWNERS))
+        owners=engine_owners_match(owners))
     result.update(observation='observed' if all(bindings.values()) else 'identity_mismatch',
                   status=closed(value.get('status'), states), bindings=bindings)
     if not all(bindings.values()): return result
@@ -896,7 +901,7 @@ def run_late_writer(manager, workflow, controls, source, report, checkpoint):
     assessment = S.wait_for(lambda: workflow.user.request('GET', f'{ENGINE}/{engine_id}/deletion-assessments/{request_id}', (200,)).payload,
         lambda x: x.get('status') in S.TERMINAL, 'unresolved writer assessment did not settle')
     require(assessment['status'] == 'failed' and assessment['task']['context']['engine_id'] == engine_id
-            and set(assessment['task']['expected_modules']) == set(S.OWNERS)
+            and engine_owners_match(assessment['task']['expected_modules'])
             and assessment['task']['requested_by'] == int(workflow.principal), 'unresolved writer assessment was accepted or foreign')
     rows = assessment.get('module_executions', [])
     require(len([x for x in rows if x['module'] == 'manager' and x['status'] == 'failed']) == 1,

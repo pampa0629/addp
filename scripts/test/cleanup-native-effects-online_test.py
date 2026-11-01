@@ -17,10 +17,51 @@ ID = str(uuid.uuid4())
 
 
 class NativeCleanupRunnerTest(unittest.TestCase):
+    def test_owner_cause_contract_matches_all_runtime_declarations(self):
+        import re
+        declared = {'engine.deleting': [], 'tenant.deleted': []}
+        constants = {'CleanupCauseEngineDeleting': 'engine.deleting', 'CleanupCauseTenantDeleted': 'tenant.deleted'}
+        for path in sorted(S.ROOT.glob('*/backend/cmd/server/main.go')):
+            owner, text = path.relative_to(S.ROOT).parts[0], path.read_text()
+            blocks = re.findall(r'"cleanup_executor":\s*map\[string\]interface\{\}\{([^}]+?"causes":\s*\[\]string\{[^}]+\})', text)
+            if not blocks:
+                self.assertNotIn('"cleanup_executor"', text, owner)
+                continue
+            self.assertEqual(len(blocks), 1, owner)
+            self.assertRegex(blocks[0], r'"enabled":\s*true')
+            names = re.findall(r'\w+\.(CleanupCause\w+)', blocks[0])
+            self.assertTrue(names, owner)
+            self.assertEqual(len(set(names)), len(names), owner)
+            for name in names:
+                declared[constants[name]].append(owner)
+        self.assertEqual(S.CONTRACT['cleanup_owners_by_cause'], declared)
+        self.assertEqual(tuple(declared['tenant.deleted']), S.OWNERS)
+
+    def test_engine_execute_and_diagnostic_require_exact_cause_members(self):
+        expected = list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting'])
+        for owners in (expected, expected[::-1], expected[:-1], expected + ['asset'],
+                       expected + [expected[0]], list(S.OWNERS), tuple(expected), None, [True] + expected[1:]):
+            accepted = type(owners) is list and len(owners) == len(expected) and owners in (expected, expected[::-1])
+            parent = dict(task_id=ID, status='timeout', task=dict(task_id=ID, execution_id=ID,
+                context={'engine_id': 9}, requested_by=17, action='scan', expected_modules=owners),
+                module_executions=[])
+            with self.subTest(owners=owners), patch.object(S, 'user_identity', return_value='17'), \
+                    patch.object(M.PROTOCOL, 'task', return_value=parent):
+                observation = M.engine_assessment_observation(parent, ID, 9, '17')
+                self.assertEqual(observation['bindings']['owners'], accepted)
+                self.assertEqual(observation['status'], 'timeout')
+                self.assertEqual('children' in observation, accepted)
+                workflow = M.EngineWorkflow(object(), 2, {}, lambda: None)
+                workflow.engine = lambda _: {'deletion_execute_task_id': ID}
+                if accepted:
+                    self.assertIs(workflow.execution(9), parent)
+                else:
+                    with self.assertRaises(S.SuiteError): workflow.execution(9)
+
     def test_assessment_diagnostic_projects_only_bound_authorized_closed_states(self):
         parent, child = str(uuid.uuid4()), str(uuid.uuid4())
         value = dict(task_id=ID, status='failed', task=dict(task_id=ID, execution_id=parent,
-            context={'engine_id': 9}, requested_by=17, action='scan', expected_modules=list(S.OWNERS)),
+            context={'engine_id': 9}, requested_by=17, action='scan', expected_modules=list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting'])),
             module_executions=[dict(module='transfer', execution_id=child, parent_execution_id=parent,
                 task_type='cleanup_executor', status='failed', attempt=0, started_at=None,
                 error_details={'cleanup_authorization_denied': 'private timestamp', 'error': 'secret'},
@@ -77,7 +118,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                         return SimpleNamespace(payload=dict(task_id=self.request_id,
                             status='pending' if failed == 'after_pending' else 'failed' if failed == 'terminal' else 'success',
                             task=dict(task_id=self.request_id, execution_id=ID, context={'engine_id': 9},
-                                requested_by=99 if failed == 'identity' else 17, action='scan', expected_modules=list(S.OWNERS)),
+                                requested_by=99 if failed == 'identity' else 17, action='scan', expected_modules=list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting'])),
                             module_executions=[]))
                     engine = dict(id=9, tenant_id=2, lifecycle_state='active', version=3, name='secret')
                     if method == 'DELETE': engine['lifecycle_state'] = 'deleting'; return SimpleNamespace(payload={'engine': engine})
@@ -511,7 +552,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                         return SimpleNamespace(payload={'assessment_id': self.assessment})
                     if '/deletion-assessments/' in path:
                         return SimpleNamespace(payload=dict(status='success', task=dict(context={'engine_id': 9},
-                            requested_by=17, action='scan', expected_modules=list(S.OWNERS))))
+                            requested_by=17, action='scan', expected_modules=list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']))))
                     return SimpleNamespace(payload=engine)
             with self.subTest(failed=failed), patch.object(S, 'user_identity', return_value='17'):
                 workflow = M.EngineWorkflow(User(), 2, report, lambda: None); workflow.owned.add(9)
@@ -540,8 +581,8 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 self.assertEqual(calls, ['engine'] if failed == 'engine' else ['engine', 'parent'])
                 self.assertNotIn('secret', json.dumps(report))
 
-    def test_engine_workflow_keeps_name_version_assessment_and_ten_owner_identity(self):
-        for mutation in ('none', 'wrong_assessment', 'missing_owner', 'running', 'changed_version', 'foreign_engine', 'wrong_creator'):
+    def test_engine_workflow_keeps_name_version_assessment_and_cause_owner_identity(self):
+        for mutation in ('none', 'wrong_assessment', 'missing_owner', 'extra_owner', 'duplicate_owner', 'tenant_owners', 'running', 'changed_version', 'foreign_engine', 'wrong_creator'):
             calls = []; reads = 0; deleted = False
             class Client:
                 def request(self, method, path, expected, body=None):
@@ -558,8 +599,11 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                         self.assessment = body['request_id']
                         return SimpleNamespace(payload={'assessment_id': ID if mutation == 'wrong_assessment' else self.assessment})
                     if method == 'GET' and '/deletion-assessments/' in path:
-                        owners = list(S.OWNERS)
+                        owners = list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting'])
                         if mutation == 'missing_owner': owners.pop()
+                        elif mutation == 'extra_owner': owners.append('asset')
+                        elif mutation == 'duplicate_owner': owners.append(owners[0])
+                        elif mutation == 'tenant_owners': owners = list(S.OWNERS)
                         return SimpleNamespace(payload=dict(status='failed' if mutation == 'running' else 'success',
                             task=dict(context={'engine_id': 9}, requested_by=99 if mutation == 'wrong_creator' else 17,
                                       action='scan', expected_modules=owners)))
@@ -854,7 +898,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                         self.request_id = body['request_id']; return SimpleNamespace(payload={'assessment_id': self.request_id})
                     events.append('assessment_failed')
                     return SimpleNamespace(payload=dict(status='success' if mutation == 'cleanup_passed' else 'failed',
-                        task={'context': {'engine_id': 9}, 'expected_modules': list(S.OWNERS), 'requested_by': 17},
+                        task={'context': {'engine_id': 9}, 'expected_modules': list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']), 'requested_by': 17},
                         module_executions=[dict(module='manager', status='success' if mutation == 'other_owner_failed' else 'failed')]))
             workflow = SimpleNamespace(user=EngineUser(), principal='17',
                 engine=lambda engine: {'lifecycle_state': 'deleting' if mutation == 'engine_changed' else 'active'})
