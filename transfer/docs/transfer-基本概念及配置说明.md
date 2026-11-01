@@ -447,7 +447,7 @@ continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_s
 
 业务 Kafka bounded replay 使用唯一 `POST /task-definitions/:id/replay`。请求只能提交显式 per-partition `[start_offset,end_offset)` 与新 PostgreSQL 目标的 `parent_locator + name`；source、mapping、key、policy 和原目标全部继承 owner task 且不可覆盖。API 在创建 execution 前冻结并校验请求时 retention、拒绝原目标或已有目标；bounded worker 再次校验 retention 和目标不存在后，以 execution-scoped apply identity 写入隔离表。replay 不读写 `transfer.sync_states`、主 lease、主 apply identity、主目标或任务 `desired_state/status/last_execution*`，因此可与主 continuous runtime 并行。
 
-resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，取消事务不得留下业务行或目标 ledger 的半提交状态。数据库 CDC 遇到 schema drift 时，当前 execution 失败且任务进入 `blocked`；业务 Kafka record 路线按显式 `block|dead_letter` 处理确定性记录错误，不复用 CDC 的 schema change request 语义。
+resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，取消事务不得留下业务行或目标 ledger 的半提交状态。数据库 CDC 的阻塞与恢复见[Schema 变化](transfer-任务语义与同步模式.md#七schema-变化)；业务 Kafka record 路线按显式 `block|dead_letter` 处理确定性记录错误，不复用 CDC 的 schema change request 语义。
 
 diagnostics 采样间隔、degraded/critical retention 阈值和 checkpoint 停滞阈值由 Transfer 配置管理页面“连续任务策略”统一维护，不进入任务 JSON。指标计算、unknown 条件与真实 position commit 口径见[分区位置与 Kafka 恢复窗口](transfer-任务语义与同步模式.md#分区位置与-kafka-恢复窗口)，捕获健康与源日志窗口见[诊断专题](transfer-任务语义与同步模式.md#捕获健康与源日志窗口)。
 
@@ -487,11 +487,11 @@ Transfer 使用源 schema owner 账号创建 generation-owned 镜像表、行级
 
 上述摘要不作为当前 HEAD 的运行通过记录；源码版本、有效证据、失败与修复结论及未覆盖项统一见[模块验证](../CLAUDE.md#开发与验证)。[Oracle 专项入口说明](../README.md#oracle-cdc-专项入口缺口)区分独立用例的覆盖范围：目标生命周期用例当前仅覆盖 PostgreSQL/MySQL 源，不能与此处三类源的既有摘要混同；缺少标准调用与隔离清理门禁、未运行或跳过的项目均不计为通过。
 
-类型不兼容与字段增删、envelope/source 结构变化一样进入 `schema_change_blocked`，execution metadata 会记录 missing/unexpected/incompatible 字段，当前 Kafka 消息不会被跳过。任务同时进入 `status=blocked`，禁止直接启动、恢复或重试；connector 仍会继续采集，因此 backlog、Kafka retention 和磁盘风险继续存在。
+schema drift 的阻塞流程统一见[Schema 变化](transfer-任务语义与同步模式.md#七schema-变化)：execution 以 `schema_change_blocked` 结束并记录 missing/unexpected/incompatible diff，当前消息和 committed offset 不推进，任务进入 `status=blocked`，禁止直接启动、恢复或重试。connector 仍会继续采集，因此 backlog、Kafka retention 和磁盘风险继续存在。
 
-PostgreSQL/MySQL 原 capture generation 的唯一恢复路线是人工确认 additive migration。`GET /task-definitions/:id/schema-change` 返回当前请求与服务端重新检查后的建议字段；只有当前阻塞消息实际包含、源表中仍存在、允许 NULL、不是主键且不是 geometry 的新增字段可审批。`POST /task-definitions/:id/schema-change/approve` 必须逐字段提交 `source`、`target`、`target_type` 和 `nullable=true`，完整覆盖本次新增字段。服务端复用 `PartitionedTableChangeApplyProvider` 幂等新增目标列，追加唯一 field mapping、递增 generation schema revision，并把任务收敛为 `status=idle, desired_state=paused`；审批不会隐式恢复，用户需通过既有 Resume 从原 committed offset 继续。Oracle 第一期的任何 schema drift，以及 PostgreSQL/MySQL 的删除字段、类型或主键变化、非 nullable/geometry 新增和协议变化，均只能永久 Stop 后创建新任务和新目标表。
+只有 PostgreSQL/MySQL 原 capture generation 中，当前阻塞消息实际包含、源表仍存在、允许 NULL、非主键且非 geometry 的新增字段可以人工审批。使用 `GET /task-definitions/:id/schema-change` 读取当前请求和复查建议；`POST /task-definitions/:id/schema-change/approve` 必须逐字段提交 `source`、`target`、`target_type` 和 `nullable=true`，完整覆盖本次新增字段。实时源复核、Provider 幂等加列及 mapping/revision 的事务规则统一见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。审批后为 `status=idle, desired_state=paused`，不隐式恢复；用户显式 Resume 从原 committed offset 继续。Oracle 的任何 schema drift 及其他不可审批变化只能永久 Stop 后创建新任务和新目标表，具体范围见上述 Schema 变化专题。
 
-审批提交后的 Meta deep scan 使用 request 持久化 `pending -> running(token, lease) -> success|failed` claim。并发审批只有一个调用者触发 Meta；进程崩溃留下的过期 `running` 只由相同重复审批 POST 接管，GET 始终只读，旧 token 的迟到结果被拒绝。真实 Meta 调用失败进入 `failed` 且不由重复审批自动重试，用户可在 Meta 手动扫描；claim TTL 由统一的 `TRANSFER_META_SCAN_CLAIM_TTL` 配置，默认 2 分钟。
+审批后的 request 级 Meta 补扫 claim、CAS 接管和旧 token 拒绝统一见[审批补扫 claim 与失败边界](数据库架构.md#审批补扫-claim-与失败边界)及 CDC 正式契约；仅相同重复审批 POST 可接管过期 `running`，GET 始终只读。真实 Meta 调用失败为 `failed`，不由重复审批自动重试，可在 Meta 手动扫描；补扫失败不回滚已提交的 DDL/mapping revision。`TRANSFER_META_SCAN_CLAIM_TTL` 为部署配置，默认 2 分钟且必须大于 Meta client 的 HTTP 超时，不进入任务 JSON。扫描提交成功也不等于扫描完成或恢复成功，实际通过范围见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
 
 `pause` 停止目标应用，但 connector 继续把数据库日志变化写入 Infra Kafka 并推进捕获位置。正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口；connector/Kafka 故障时还必须分别观测 PostgreSQL slot/WAL、MySQL binlog 或 Oracle redo/archive log 容量风险。resume 只在 committed position 尚未过期时保证无损。
 
@@ -501,7 +501,7 @@ continuous task 初始同样保存 `desired_state=stopped`，所以该字段只�
 
 完整配置、envelope、schema drift、目标原子应用和资源 owner 约束以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准，运行语义见[数据库 CDC 专题](transfer-任务语义与同步模式.md#63-数据库-cdc)。普通 Oracle LOB/RAC、ArcGIS SDE、多表、无主键、数据库 CDC replay/DLQ、Schema Registry、Avro、Protobuf、自动 schema evolution 和 truncate 事件均未进入当前实现；业务 Kafka 的 DLQ 与 bounded replay已公开。
 
-capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理任务级 generation，状态登记在 `transfer.capture_resources`。continuous worker 从登记的内部 topic/group 消费 Debezium 3.6 schemaless JSON，严格处理 `r/c/u/d`，并在协议或 schema 变化时以 `schema_change_blocked` 阻塞而不推进 offset。人工 additive request 和 revision 审计保存在 `transfer.schema_change_requests`；公开任务配置仍不出现这些内部名称或 schema evolution 开关。
+capture supervisor 通过 Kafka Connect REST 和 Infra Kafka admin API 管理任务级 generation，状态登记在 `transfer.capture_resources`；continuous worker 从登记的内部 topic/group 消费 Debezium 3.6 schemaless JSON。人工 additive request 和 revision 审计保存在 `transfer.schema_change_requests`，状态与公共观测分工见[Schema Change Request](数据库架构.md#七cdc-schema-change-request)；公开任务配置不出现这些内部名称或 schema evolution 开关。
 
 ## 十、Checkpoint、进度和重试
 
