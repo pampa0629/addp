@@ -22,6 +22,7 @@ type vffSKCDeclarationWitness struct {
 	sha256                              [32]byte
 }
 type vffSKCFieldCandidate struct {
+	source      vffSKCDeclarationWitness
 	declaration vffSKCDeclarationWitness
 	via         []vffSKCDeclarationWitness
 	value       *vffSKCValueBinding
@@ -126,7 +127,7 @@ func (b *vffSKCBinder) readFilterBindings(filter vffSKCFilterFact) (*vffSKCFilte
 				field := vffSKCFieldBinding{name: name}
 				for _, kind := range []string{"element", "attribute", "attributeGroup"} {
 					if node := b.definitions[kind][name]; node != nil {
-						field.candidates = append(field.candidates, vffSKCFieldCandidate{declaration: b.witness(node)})
+						field.candidates = append(field.candidates, vffSKCFieldCandidate{source: b.witness(node), declaration: b.witness(node)})
 					}
 				}
 				if len(field.candidates) != 1 {
@@ -290,9 +291,15 @@ func (b *vffSKCBinder) expand(n *vffXMLNode, via []vffSKCDeclarationWitness, dep
 				b.issues = append(b.issues, "unsupported field declaration position")
 				continue
 			}
-			if child.attrs["use"] == "prohibited" {
-				b.issues = append(b.issues, "prohibited field not bound")
-				continue
+			if kind == "attribute" {
+				mode, err := vffSKCAttributeUse(child.attrs)
+				if err != nil {
+					return nil, err
+				}
+				if mode == "prohibited" {
+					b.issues = append(b.issues, "prohibited field not bound")
+					continue
+				}
 			}
 			name, ref := child.attrs["name"], child.attrs["ref"]
 			if (name == "") == (ref == "") {
@@ -311,7 +318,7 @@ func (b *vffSKCBinder) expand(n *vffXMLNode, via []vffSKCDeclarationWitness, dep
 			} else if !vffSKCBindingName(name) {
 				return nil, fmt.Errorf("invalid field name")
 			}
-			fields = append(fields, vffSKCFieldCandidate{declaration: b.witness(declaration), via: append([]vffSKCDeclarationWitness(nil), via...)})
+			fields = append(fields, vffSKCFieldCandidate{source: b.witness(child), declaration: b.witness(declaration), via: append([]vffSKCDeclarationWitness(nil), via...)})
 		case "attributeGroup", "group":
 			parent := n.name.Local
 			if kind == "attributeGroup" && parent != "complexType" && parent != "extension" && parent != "attributeGroup" || kind == "group" && parent != "complexType" && parent != "extension" && parent != "sequence" && parent != "choice" && parent != "all" {

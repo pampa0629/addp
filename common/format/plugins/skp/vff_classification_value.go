@@ -20,6 +20,7 @@ type vffSKCValueBinding struct {
 	issues               []string
 	structures           []vffSKCValueStructure
 	attributeSets        []*vffSKCValueAttributes
+	attributeUse         *vffSKCValueAttribute
 }
 
 func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error) {

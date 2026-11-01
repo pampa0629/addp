@@ -3,6 +3,7 @@ package skp
 import (
 	"encoding/xml"
 	"fmt"
+	"strings"
 )
 
 // Declaration identities in one complex type or attribute group, not a complete
@@ -11,6 +12,15 @@ import (
 type vffSKCValueAttribute struct {
 	name                xml.Name
 	source, declaration vffSKCDeclarationWitness
+	use                 string
+	constraint          vffSKCAttributeConstraint
+}
+
+// Decoded declaration text and its source, never a typed/canonical value.
+// Empty kind means absent; an empty lexical value can be explicitly present.
+type vffSKCAttributeConstraint struct {
+	kind, lexical string
+	source        vffSKCDeclarationWitness
 }
 type vffSKCValueAttributes struct {
 	source vffSKCDeclarationWitness
@@ -23,10 +33,73 @@ func (b *vffSKCBinder) valueAttribute(set *vffSKCValueAttributes, use, declarati
 	if err != nil {
 		return err
 	}
-	if set == nil || use.parent.name.Local == "schema" || use.attrs["use"] == "prohibited" {
+	mode, err := vffSKCAttributeUse(use.attrs)
+	if err != nil {
+		return err
+	}
+	if mode == "prohibited" {
 		return nil
 	}
-	return b.addValueAttribute(set, vffSKCValueAttribute{name, b.witness(use), b.witness(declaration)}, result)
+	constraint, err := b.attributeConstraint(use, declaration, result)
+	if err != nil {
+		return err
+	}
+	if use.parent.name.Local == "schema" {
+		return nil
+	}
+	fact := vffSKCValueAttribute{name: name, source: b.witness(use), declaration: b.witness(declaration), use: mode, constraint: constraint}
+	if set == nil {
+		result.attributeUse = &fact
+		return nil
+	}
+	return b.addValueAttribute(set, fact, result)
+}
+
+// One declaration-combination rule for both structural facts and actual uses.
+func vffSKCAttributeUse(attrs map[string]string) (string, error) {
+	mode := "optional"
+	if raw, present := attrs["use"]; present {
+		mode = strings.Trim(raw, " \t\r\n")
+		if mode != "optional" && mode != "required" && mode != "prohibited" {
+			return "", fmt.Errorf("invalid complex value attribute use")
+		}
+	}
+	_, def := attrs["default"]
+	_, fixed := attrs["fixed"]
+	if def && fixed {
+		return "", fmt.Errorf("conflicting complex value default and fixed declarations")
+	}
+	if def && mode != "optional" {
+		return "", fmt.Errorf("complex value attribute default requires optional use")
+	}
+	return mode, nil
+}
+
+func (b *vffSKCBinder) attributeConstraint(use, declaration *vffXMLNode, result *vffSKCValueBinding) (vffSKCAttributeConstraint, error) {
+	if _, err := vffSKCAttributeUse(declaration.attrs); err != nil {
+		return vffSKCAttributeConstraint{}, err
+	}
+	read := func(n *vffXMLNode) vffSKCAttributeConstraint {
+		for _, kind := range []string{"default", "fixed"} {
+			if raw, present := n.attrs[kind]; present {
+				return vffSKCAttributeConstraint{kind, raw, b.witness(n)}
+			}
+		}
+		return vffSKCAttributeConstraint{}
+	}
+	local, global := read(use), read(declaration)
+	if use != declaration && global.kind == "fixed" && local.kind != "" {
+		if local.kind != "fixed" {
+			return vffSKCAttributeConstraint{}, fmt.Errorf("attribute use cannot replace a fixed declaration with default")
+		}
+		// Equal strings can be different QName values in different scopes;
+		// different strings can denote equal numeric/boolean values.
+		result.issues = append(result.issues, "fixed attribute reference typed value equality not proved")
+	}
+	if local.kind != "" {
+		return local, nil
+	}
+	return global, nil
 }
 
 func (b *vffSKCBinder) valueAttributeName(n *vffXMLNode) (xml.Name, error) {

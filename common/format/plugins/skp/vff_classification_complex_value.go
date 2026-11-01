@@ -46,17 +46,13 @@ func (b *vffSKCBinder) valueStructure(n *vffXMLNode, result *vffSKCValueBinding)
 			result.issues = append(result.issues, "uninterpreted complex value declaration attribute: "+name)
 		}
 	}
-	if _, fixed := n.attrs["fixed"]; fixed {
+	if kind == "attribute" {
+		if _, err := vffSKCAttributeUse(n.attrs); err != nil {
+			return err
+		}
+	} else if _, fixed := n.attrs["fixed"]; fixed {
 		if _, def := n.attrs["default"]; def {
 			return fmt.Errorf("conflicting complex value default and fixed declarations")
-		}
-	}
-	if kind == "attribute" {
-		if use, ok := n.attrs["use"]; ok && use != "optional" && use != "required" && use != "prohibited" {
-			return fmt.Errorf("invalid complex value attribute use")
-		}
-		if _, def := n.attrs["default"]; def && n.attrs["use"] != "" && n.attrs["use"] != "optional" {
-			return fmt.Errorf("complex value attribute default requires optional use")
 		}
 	}
 	if kind == "sequence" || kind == "choice" || kind == "all" || kind == "element" && n.parent != nil && n.parent.name.Local != "schema" {

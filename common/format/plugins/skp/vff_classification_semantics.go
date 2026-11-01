@@ -94,7 +94,7 @@ func (b *vffSKCBinder) bindValues(field *vffSKCFieldBinding) error {
 			return err
 		}
 		candidate := &field.candidates[i]
-		node := b.nodes[vffSKCNodeKey{candidate.declaration.member, candidate.declaration.begin}]
+		node := b.nodes[vffSKCNodeKey{candidate.source.member, candidate.source.begin}]
 		if node == nil || node.name.Local != "element" && node.name.Local != "attribute" {
 			continue
 		}
