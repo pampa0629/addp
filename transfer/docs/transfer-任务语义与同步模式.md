@@ -2,11 +2,11 @@
 
 状态：正式
 
-更新时间：2026-10-31
+更新时间：2026-11-01
 
 本文定义 Transfer `sync` 任务的稳定语义、执行边界、状态所有权和当前支持范围。配置字段和类型矩阵见[配置说明](transfer-基本概念及配置说明.md)，API 入口、身份与动作权限见[任务表](tables/tasks表.md#五api)；公共任务与 execution 字段以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 为准；尚未实现的能力见 [Transfer 后续能力清单](../../docs/next/transfer后续能力清单.md)。
 
-阅读导航：[触发身份与调度授权](#触发身份与调度授权)、[状态与恢复](#五状态checkpoint-与-replay)、[continuous 生命周期](#64-生命周期)、[诊断与恢复窗口](#65-诊断与恢复窗口)、[验证范围](#十一验证范围)。
+阅读导航：[触发身份与调度授权](#触发身份与调度授权)、[状态与恢复](#五状态checkpoint-与-replay)、[业务 Kafka 与 DLQ](#62-业务-kafka)、[continuous 生命周期](#64-生命周期)、[诊断与恢复窗口](#65-诊断与恢复窗口)、[验证范围](#十一验证范围)。
 
 ## 一、模块定位
 
@@ -208,7 +208,7 @@ PostgreSQL 和 MySQL 的 `PartitionedTableChangeApplyProvider` 在目标业务�
 
 source/poll、目标数据库、fencing、retention 和 Infra 故障不能进入 DLQ。DLQ topic 不是 replay source。
 
-公开 DLQ 查询只返回 tenant/task scoped 的安全控制索引，不暴露 Infra Kafka payload reference 或原始 key/value/headers。原始 payload 由 Infra Kafka retention 管理；后台 reconciler 只有在 topic、partition、offset 明确消失或记录身份不匹配时才把 payload 标记为 unavailable，网络、认证和 broker 故障不能被误判为 payload 已丢失。
+公开 DLQ 查询只返回 tenant/task scoped 的安全控制索引，不暴露 Infra Kafka payload reference 或原始 key/value/headers。查询权限、来源隔离与字段范围见[公开查询说明](数据库架构.md#dlq-公开查询与来源隔离)，后台 availability 判定、瞬时失败语义与验收范围见[availability 专题](数据库架构.md#availability-失败与验收边界)；payload 与控制索引分工、查询和治理的完整契约统一见[DLQ 正式规范](../../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。
 
 ### 6.3 数据库 CDC
 
