@@ -134,6 +134,18 @@ def test_explicit_crs_regular_axes_and_nonlinear_unknown(tmp_path):
     classic_dataset(path,[('y',3),('x',4)],variables)
     version=netcdf.inspect(plan)['format_info']['source_version']
     assert netcdf.read_slice(plan,version,selection)['spatial'] is None
+    variables[3]['attrs']=[('spatial_ref',2,reference.ExportToWkt())]
+    # An invalid coordinate cannot authorize location; it does not change the
+    # separately preserved data-variable values/mask.
+    for declaration in [('_FillValue',6,[3000010.]), ('valid_min',6,[float('nan')])]:
+        variables[1]['attrs'].append(declaration)
+        classic_dataset(path,[('y',3),('x',4)],variables)
+        version=netcdf.inspect(plan)['format_info']['source_version']
+        result=netcdf.read_slice(plan,version,selection)
+        assert result['spatial'] is None
+        assert result['values']==[['5','6'],['9','10']]
+        assert result['valid']==[[True,True],[True,True]]
+        variables[1]['attrs'].pop()
 
 
 def test_cdf5_uint64_mask_and_value_are_exact(tmp_path):
@@ -226,3 +238,108 @@ def test_numeric_attribute_storage_values_do_not_use_string_or_double_conversion
     report = netcdf.inspect(source_plan(path, 'netcdf'))
     for kind, values in cases:
         assert report['format_info']['attributes'][f'number{kind}']['values'] == [str(v) for v in values]
+
+
+def _read_mask_fixture(path, kind, values, attrs, version=5):
+    classic_dataset(path, [('y', 2), ('x', len(values) // 2)],
+                    [dict(name='data', type=kind, dims=[0, 1], values=values, attrs=attrs)], version=version)
+    plan = source_plan(path, 'netcdf')
+    report = netcdf.inspect(plan)
+    return netcdf.read_slice(plan, report['format_info']['source_version'],
+                             dict(variable='/data', indices=[], x=0, y=0, width=len(values) // 2, height=2))
+
+
+@pytest.mark.parametrize('kind,values,fill', [
+    (1, [-128, -127, 126, 127], -128),
+    (3, [-32768, -32767, 32766, 32767], -32768),
+    (4, [-2147483648, -2147483647, 2147483646, 2147483647], -2147483648),
+    (5, [-1.25, -.5, .5, 1.25], -1.25),
+    (6, [-1.25, -.5, .5, 1.25], -1.25),
+    (7, [0, 1, 254, 255], 0),
+    (8, [0, 1, 65534, 65535], 0),
+    (9, [0, 1, 4294967294, 4294967295], 0),
+    (10, [-9223372036854775808, -9223372036854775807, 9007199254740993, 9223372036854775807], -9223372036854775808),
+    (11, [18446744073709551615, 18446744073709551614, 9007199254740993, 0], 18446744073709551615),
+])
+def test_native_mask_uses_exact_storage_without_gdal_mask(tmp_path, monkeypatch, kind, values, fill):
+    from osgeo import gdal
+    def forbidden(*args, **kwargs):
+        raise AssertionError('NetCDF masks must use one native-type implementation, not GDAL GetMask')
+    monkeypatch.setattr(gdal.MDArray, 'GetMask', forbidden)
+    result = _read_mask_fixture(tmp_path / 'mask.nc', kind, values, [('_FillValue', kind, [fill])])
+    assert result['values'] == [[str(v) for v in values[:2]], [str(v) for v in values[2:]]]
+    assert result['valid'] == [[False, True], [True, True]]
+
+
+@pytest.mark.parametrize('kind,base', [(10, -9007199254740996), (10, 9007199254740992), (11, 18446744073709551610)])
+@pytest.mark.parametrize('range_style', ['valid_range', 'min_max'])
+def test_native_mask_large_integer_bounds_and_multiple_missing_values(tmp_path, kind, base, range_style):
+    values = [base + i for i in range(6)]
+    bounds = [('valid_range', kind, [base + 1, base + 4])] if range_style == 'valid_range' else [
+        ('valid_min', kind, [base + 1]), ('valid_max', kind, [base + 4])]
+    result = _read_mask_fixture(tmp_path / 'range.nc', kind, values,
+                               bounds + [('missing_value', kind, [base + 2, base + 3])])
+    assert result['values'] == [[str(v) for v in values[:3]], [str(v) for v in values[3:]]]
+    assert result['valid'] == [[False, True, False], [False, True, False]]
+
+
+@pytest.mark.parametrize('version', [1, 2, 5])
+def test_native_mask_float_nan_infinity_raw_scale_and_exact_window(tmp_path, version):
+    values = [float('nan'), -9., -1., 0., 1., 2., float('inf'), -float('inf')]
+    result = _read_mask_fixture(tmp_path / 'float-mask.nc', 6, values,
+                               [('missing_value', 6, [-9., 1.]), ('valid_range', 6, [-1., 2.]),
+                                ('scale_factor', 6, [.5]), ('add_offset', 6, [100.])], version)
+    assert result['values'] == [['NaN', '-9.0', '-1.0', '0.0'], ['1.0', '2.0', 'Infinity', '-Infinity']]
+    assert result['valid'] == [[False, False, True, True], [False, True, False, False]]
+    path = tmp_path / 'float-mask.nc';plan = source_plan(path, 'netcdf')
+    result = netcdf.read_slice(plan, result['source_version'], dict(variable='/data', indices=[], x=2, y=0, width=2, height=2))
+    assert result['values'] == [['-1.0', '0.0'], ['Infinity', '-Infinity']]
+    assert result['valid'] == [[True, True], [False, False]]
+
+
+@pytest.mark.parametrize('attrs', [
+    [('_FillValue', 4, [1, 2])],
+    [('missing_value', 2, 'not-a-number')], [('valid_min', 4, [0, 1])],
+    [('valid_range', 4, [0])], [('valid_range', 4, [3, 1])],
+    [('valid_min', 4, [3]), ('valid_max', 4, [1])],
+    [('valid_range', 4, [0, 3]), ('valid_min', 4, [1])],
+    [('valid_range', 4, [0, 3]), ('valid_max', 4, [2])],
+    [('valid_min', 6, [float('nan')])],
+])
+def test_native_mask_rejects_ambiguous_declarations(tmp_path, attrs):
+    with pytest.raises(ValueError, match='mask'):
+        _read_mask_fixture(tmp_path / 'bad-mask.nc', 4, [0, 1, 2, 3], attrs)
+
+
+@pytest.mark.parametrize('name', ['_FillValue', 'missing_value', 'valid_min', 'valid_max', 'valid_range'])
+def test_native_mask_rejects_empty_attribute_descriptors(name):
+    # GDAL exposes a zero-length numeric NetCDF attribute as scalar rather
+    # than preserving its length. This only proves our descriptor validation,
+    # not detection of that malformed source encoding via the GDAL API.
+    with pytest.raises(ValueError, match='mask'):
+        netcdf._valid_mask(np.array([[0, 1]]), {name: {'type': 'Int32', 'values': []}})
+
+
+def test_native_mask_exact_mixed_numeric_declarations_do_not_coerce(tmp_path):
+    # Exact mathematical comparison; casting this Float64 marker to Float32
+    # would discard a real value. Integers must likewise never pass via double.
+    result = _read_mask_fixture(tmp_path / 'mixed.nc', 5, [.1, .5, 1., 2.], [('missing_value', 6, [.1])])
+    assert result['valid'] == [[True, True], [True, True]]
+    result = _read_mask_fixture(tmp_path / 'int-mixed.nc', 10, [9007199254740992, 9007199254740993, 0, 1],
+                               [('missing_value', 6, [9007199254740992.])])
+    assert result['valid'] == [[False, True], [True, True]]
+
+
+def test_native_mask_does_not_guess_undeclared_fill_or_mask_infinities(tmp_path):
+    result = _read_mask_fixture(tmp_path / 'no-fill.nc', 11, [18446744073709551615, 0, 1, 2], [])
+    assert result['valid'] == [[True, True], [True, True]]
+    result = _read_mask_fixture(tmp_path / 'infinities.nc', 6, [float('nan'), float('inf'), -float('inf'), 0.], [])
+    assert result['valid'] == [[False, True], [True, True]]
+
+
+def test_native_mask_coordinate_axes_share_the_same_implementation(tmp_path, monkeypatch):
+    from osgeo import gdal
+    def forbidden(*args, **kwargs):
+        raise AssertionError('coordinate axes cannot use a second mask implementation')
+    monkeypatch.setattr(gdal.MDArray, 'GetMask', forbidden)
+    test_explicit_crs_regular_axes_and_nonlinear_unknown(tmp_path)

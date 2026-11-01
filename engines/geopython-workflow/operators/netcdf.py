@@ -112,6 +112,46 @@ def _attributes(owner, selected=None):
     return result
 
 
+def _valid_mask(values, attributes):
+    """Interpret explicit storage-domain declarations without numeric promotion.
+
+    GDAL reads both the pixels and attributes, but its mask implementation can
+    round 64-bit integer declarations through double. Python scalar comparison
+    keeps integer/float comparisons exact, including mixed attribute types.
+    """
+    def numbers(name, count=None):
+        attribute = attributes.get(name)
+        if attribute is None:
+            return []
+        native = gdal.GetDataTypeByName(attribute["type"])
+        numeric_type = gdal_array.GDALTypeCodeToNumericTypeCode(native)
+        text = attribute["values"]
+        if (numeric_type is None or gdal.DataTypeIsComplex(native) or not text
+                or (count is not None and len(text) != count)):
+            raise ValueError(f"NetCDF mask has an invalid {name} declaration")
+        convert = int if np.issubdtype(numeric_type, np.integer) else float
+        return [convert(value) for value in text]
+
+    missing = set(numbers("_FillValue", 1) + numbers("missing_value"))
+    low, high = numbers("valid_min", 1), numbers("valid_max", 1)
+    bounds = numbers("valid_range", 2)
+    if bounds:
+        if low or high:
+            raise ValueError("NetCDF mask valid_range conflicts with valid_min/valid_max")
+        low, high = bounds[:1], bounds[1:]
+    if any(isinstance(v, float) and math.isnan(v) for v in low + high):
+        raise ValueError("NetCDF mask bounds cannot be NaN")
+    if low and high and low[0] > high[0]:
+        raise ValueError("NetCDF mask bounds are reversed")
+    return np.array([
+        not (isinstance(value, float) and math.isnan(value))
+        and value not in missing
+        and (not low or value >= low[0])
+        and (not high or value <= high[0])
+        for value in values.reshape(-1).tolist()
+    ], dtype=bool).reshape(values.shape)
+
+
 def _description(array, light=False):
     dimensions = array.GetDimensions()
     if len(dimensions) > MAX_DIMENSIONS:
@@ -187,12 +227,12 @@ def read_slice(access_plan, source_version, selection):
             raise SliceSelectionError("NetCDF window exceeds cell budget")
         starts, counts = indices + [y, x], [1] * len(indices) + [height, width]
         values = array.ReadAsArray(array_start_idx=starts, count=counts)
-        mask = array.GetMask().ReadAsArray(array_start_idx=starts, count=counts)
-        if values is None or mask is None or values.size != width * height or mask.size != width * height:
+        if values is None or values.size != width * height:
             raise ValueError("NetCDF returned an incomplete slice")
-        values, mask = values.reshape(height, width), mask.reshape(height, width)
+        values = values.reshape(height, width)
+        mask = _valid_mask(values, description["attributes"])
         return {"schema_version": SLICE_SCHEMA, "format": "netcdf", "source_version": version, "selection": selection,
-                "variable": description, "values": [[_numeric_text(v) for v in row] for row in values], "valid": (mask != 0).tolist(),
+                "variable": description, "values": [[_numeric_text(v) for v in row] for row in values], "valid": mask.tolist(),
                 "value_mode": "raw_storage", "spatial": _spatial(group, array, dimensions, x, y, width, height)}
 
 
@@ -235,11 +275,13 @@ def _spatial(group, array, dimensions, x, y, width, height):
                 expected_units = {"degrees_east", "degree_east", "degrees_E", "degree_E"} if dimension.GetType() == "HORIZONTAL_X" else {"degrees_north", "degree_north", "degrees_N", "degree_N"}
             if len(unit) != 1 or unit[0] not in expected_units or any(k in axis_attrs for k in ("scale_factor", "add_offset", "_Unsigned")):
                 return None
-            mask = axis.GetMask().ReadAsArray()
-            if mask is None or not np.all(mask):
-                return None
             raw = axis.ReadAsArray()
             if raw is None or not np.issubdtype(raw.dtype, np.number):
+                return None
+            try:
+                if not np.all(_valid_mask(raw, axis_attrs)):
+                    return None
+            except ValueError:
                 return None
             values = np.asarray(raw, dtype=np.float64).reshape(-1)
             step = values[1] - values[0]
