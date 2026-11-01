@@ -4,7 +4,7 @@
 
 `transfer.transfer_tasks` 存储 Transfer 任务定义。任务的执行历史不在本表中保存，统一写入 `common.task_executions`。
 
-阅读导航：[首次扫描](#首次扫描的提交与结果核对)、[配置结构](#二config-字段结构)、[任务状态](#四任务状态)、[用户入口](#用户任务定义与控制)、[TaskProvider 入口](#taskprovider-机器发现与执行)、[执行、恢复与验收](#执行恢复与验收边界)。
+阅读导航：[首次扫描](#首次扫描的提交与结果核对)、[配置结构](#二config-字段结构)、[endpoint 规则](#三endpoint-规则)、[任务状态](#四任务状态)、[用户入口](#用户任务定义与控制)、[TaskProvider 入口](#taskprovider-机器发现与执行)、[执行、恢复与验收](#执行恢复与验收边界)。
 
 ## 一、核心字段
 
@@ -92,20 +92,18 @@ bounded 与 continuous 扫描的固定版本、失败和清理结果分别见[SQ
 
 ## 三、endpoint 规则
 
-| 字段 | 说明 |
-|---|---|
-| `locator` | source 使用的 ResourceLocator URI，指向已存在资源。 |
-| `parent_locator` | target 父 node 的 ResourceLocator URI。 |
-| `name` | target 父 node 下待创建或待覆盖的资源名。 |
-| `data_type` | 当前稳定主链路为 `table`。 |
-| `representation` | `native` 或 `encoded`。 |
-| `format` | encoded endpoint 必填。 |
-| `options` | 格式读写选项。 |
-| `runtime.boundary` | 执行边界：`bounded` 或 `continuous`；continuous 业务 Kafka keyed JSON 契约支持 PostgreSQL/MySQL upsert。 |
-| `load.mode` | `snapshot` 或 PostgreSQL/MySQL/OceanBase/openGauss/TiDB native table 的 `incremental`；OceanBase/openGauss/TiDB 限非空间表。 |
-| `load.change_detection` | incremental 第一版只支持复合 watermark。 |
-| `target.policy.apply_mode` | `replace` / `append` / `upsert`；按任务组合和目标 Provider 校验。 |
-| `target.policy.keys` | upsert 的稳定目标键。 |
+本节定位 `config` 中的 endpoint 与运行维度；字段必填性、能力组合及未支持项由下列正文维护，不按某一种同步模式概括全部任务。
+
+| 配置主题 | 字段归属与权威正文 |
+| --- | --- |
+| 资源定位 | `source.locator` 指向已存在资源；`target.parent_locator` 指向已存在父 node，`target.name` 是其下待创建或待覆盖的资源名，见[Endpoint 字段](../transfer-基本概念及配置说明.md#22-endpoint-字段)。 |
+| 数据类型与表示 | `source` / `target` 的 `data_type`、`representation` 按[table 组合](../transfer-基本概念及配置说明.md#31-endpoint-组合)、[动态记录原始导出](../transfer-基本概念及配置说明.md#32-动态记录原始导出)和[raw copy](../transfer-基本概念及配置说明.md#四raw-copy-支持范围)分别校验；动态 collection 没有可复制的单一内容流，不复用 raw copy。 |
+| 格式与读写选项 | endpoint 的 `format`、`options` 见[Endpoint 字段](../transfer-基本概念及配置说明.md#22-endpoint-字段)与[格式支持](../transfer-基本概念及配置说明.md#33-格式)；raw copy target 的类型／格式省略继承、显式一致性与完整路径要求沿 [raw copy 契约](../transfer-基本概念及配置说明.md#四raw-copy-支持范围)。 |
+| 执行边界与装载方式 | `runtime.boundary`、`load.mode` 是顶层运行维度，不是 endpoint 字段；定义见[同步执行契约](../../../docs/spec/tasks/Transfer同步执行.md#transfer-同步执行契约)，可执行组合见[当前支持矩阵](../transfer-任务语义与同步模式.md#三当前支持矩阵)。 |
+| 变化识别 | 顶层 `load.change_detection` 分别沿[watermark 单／复合游标](../transfer-基本概念及配置说明.md#七watermark-bounded-incremental)、[业务 Kafka](../transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)及[数据库 CDC](../transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)；各自的源、目标、稳定键与非空间限制不互相推广。 |
+| 目标应用策略 | `target.policy.apply_mode`、`target.policy.keys` 的适用模式、稳定键与目标幂等／原子应用要求统一见[写入策略](../transfer-基本概念及配置说明.md#六写入策略)及上述各同步契约，必须按任务组合和目标 Provider/capability 校验。 |
+
+支持矩阵之外的组合由 planner 明确拒绝；CDC 的 Oracle 目标支持不扩展业务 Kafka 或 watermark 的目标范围。未支持项沿 [Kafka 当前边界](../transfer-基本概念及配置说明.md#当前能力与界面)与 [CDC 未支持项](../transfer-基本概念及配置说明.md#cdc-未支持项与运行事实)查阅，不以字段省略或运行时猜测放行。上述配置与能力导航不代表真实执行或授权已通过，验证入口与未覆盖项见[本表验收边界](#执行恢复与验收边界)。
 
 ## 四、任务状态
 
