@@ -526,7 +526,8 @@ print("--- PASS: TestScanPlanFactsAgainstPostgres (0.01s)")
     def test_manager_postgres_source_checkout_rejects_before_database_access(self) -> None:
         repository = SCRIPT.parents[2]
         environment = dict(os.environ)
-        environment.pop("MANAGER_POSTGRES_TEST_DSN", None)
+        for name in ("CI", "GITHUB_ACTIONS", "MANAGER_POSTGRES_CI_OWNED", "MANAGER_POSTGRES_TEST_DSN"):
+            environment.pop(name, None)
         for arguments, expected in ((["--source-root"], "requires a checkout path"),
                                     (["--source-root", str(self.repository)], "must have a source commit"),
                                     (["--source-root", str(repository)], "MANAGER_POSTGRES_TEST_DSN must reference")):
