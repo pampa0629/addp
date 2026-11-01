@@ -167,8 +167,9 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 #### 写后扫描触发与范围
 
-- `auto_scan_metadata=true` 的普通业务 Kafka continuous task 在目标结构建立后提交完整目标表 locator 的 `targets`，触发一次精确 Meta deep scan。数据库 CDC connector 必须把 Debezium `Initial Snapshot` 通知写入当前 generation-owned 单分区 data topic；合法通知统一作为 target `skip` 推进，只有严格匹配当前 connector 的 `COMPLETED` offset 在目标 ledger 和 Transfer position 提交后才触发首次扫描，空表同样适用，不使用 `source.snapshot=last` 或时间猜测。首次扫描使用 task 私有持久化 claim 防重复，Meta 提交失败不阻断数据面，失败或过期 claim 由后续 runtime session 重试。普通事件/batch 不扫描，schema 正式变化后另行扫描。
-- bounded 写后、continuous 首次扫描和结构变更审批后的扫描只覆盖实际目标表，不枚举所属 schema／database；缺少精确表身份时不得提交全引擎扫描。T1 通过实际 Meta HTTP 请求断言范围，沿现有 Transfer 后端与 CI 自动发现。
+- `auto_scan_metadata=true` 的触发时机及原生表 `targets`／encoded 内容 `ref_groups` 的精确范围统一见[写后扫描配置](docs/transfer-基本概念及配置说明.md#十一写后-meta-扫描)。CDC 必须在匹配当前 generation／connector 的 `COMPLETED` offset 完成目标 ledger 和 Transfer position 提交后才触发首次扫描，空表同样遵守该顺序；缺少精确目标不得扩大到父范围或全引擎。
+- continuous 首次扫描的 task 级防重 claim、后续 session 接管和 TTL 约束沿[同步执行契约](../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)。Meta API 提交失败不阻断数据面；仓储或 fencing 错误仍返回运行时处理，具体反馈见[扫描持久化与失败边界](docs/数据库架构.md#九写后-meta-扫描)，不能套用提交失败的非阻断语义。
+- 私有提交状态／Meta execution UUID 不代表扫描完成，也不授予 Meta 读取或执行权限，结果核对沿[首次扫描的提交与结果核对](docs/tables/tasks表.md#首次扫描的提交与结果核对)。Meta HTTP 精确范围的 T1 回归继续沿既有 Transfer 后端与 CI；真实扫描、目标事实和清理的分版本范围见[扫描验收证据](#continuous-精确扫描与审批归属)，不以提交成功或数据面继续运行代替验收。
 
 ### 查询源与构建器
 
