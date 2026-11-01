@@ -455,7 +455,9 @@ Console Wizard 已支持业务 Kafka 以及 PostgreSQL/MySQL/Oracle CDC 配置�
 
 独立 execution、execution-scoped apply identity 与主状态隔离统一见[Checkpoint 与 Replay](transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)，完整失败约束以上述 Kafka 与 DLQ 契约为准。replay 从原业务 topic 读取，DLQ topic 不是 replay source；它写独立隔离表，不读写主水位、lease、apply identity、目标及任务状态，可与主 continuous runtime 并行，失败不改变主任务状态或触发 continuous 恢复 circuit。DLQ 查询的 Tenant/task 隔离与 payload 安全见[公开查询与来源隔离](数据库架构.md#dlq-公开查询与来源隔离)；处理或查询成功不替代 replay、来源隔离和完整链路的[实际验收](transfer-任务语义与同步模式.md#十一验证范围)。
 
-resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，取消事务不得留下业务行或目标 ledger 的半提交状态。数据库 CDC 的阻塞与恢复见[Schema 变化](transfer-任务语义与同步模式.md#七schema-变化)；业务 Kafka record 路线按显式 `block|dead_letter` 处理确定性记录错误，不复用 CDC 的 schema change request 语义。
+resume 的新 execution 与位置核验见[用户运行控制](transfer-任务语义与同步模式.md#用户运行控制)；完整恢复条件以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。committed `next_offset` 必须落在当前 partition 的 `[earliest_offset,latest_offset]` 内；retention 已清除该位置或位置高于 latest 时均明确失败，不能自动重置到 earliest/latest，须人工处理。
+
+PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消，并回滚未完成的业务行与目标 ledger 事务；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，约束见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。位置诊断或取消请求返回不证明实际恢复、停止或回滚通过，按[验证范围](transfer-任务语义与同步模式.md#十一验证范围)核对。
 
 diagnostics 采样间隔、degraded/critical retention 阈值和 checkpoint 停滞阈值由 Transfer 配置管理页面“连续任务策略”统一维护，不进入任务 JSON。指标计算、unknown 条件与真实 position commit 口径见[分区位置与 Kafka 恢复窗口](transfer-任务语义与同步模式.md#分区位置与-kafka-恢复窗口)，捕获健康与源日志窗口见[诊断专题](transfer-任务语义与同步模式.md#捕获健康与源日志窗口)。
 
