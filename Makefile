@@ -1522,6 +1522,10 @@ test-common-redis: ## 独占 Redis 验证 Common、System、Meta、Manager 键�
 test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、故障恢复和持久化
 	@python3 scripts/test/metrics-http-budget.py bash scripts/test/monitor-metrics-gate.sh $(MONITOR_METRICS_TEST_ARGS)
 
+.PHONY: test-monitor-metrics-config
+test-monitor-metrics-config: ## 验证指标配置与服务部署意图 T1，不启动服务或实源
+	@python3 -m unittest scripts/test/metrics-deployment-config_test.py
+
 .PHONY: test-manager-online-runner
 test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
 	@node --check --input-type=module < console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js

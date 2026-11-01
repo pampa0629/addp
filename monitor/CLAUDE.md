@@ -78,6 +78,8 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 
 从仓库根目录使用 `make test-changed` 或明确 Owner 的 `make test-module MODULE=monitor`；快速 Go T1 使用 `make test-module MODULE=monitor GO_ONLY=1`，不替代完整模块门禁。
 
+配置与服务部署意图的确定性T1可单独使用 `make test-monitor-metrics-config`，不启动个人服务或实源；它不替代完整模块、来源T2或Hosted。
+
 持久化/真实指标分别沿 `make test-monitor-postgres`、`make test-monitor-metrics`，真实 HTTP Trace、Tempo 与日志关联沿 `make test-monitor-traces`；显式容量基线使用 `make test-monitor-traces MONITOR_TRACES_TEST_ARGS=--capacity`，负载、资源上限及外推判定沿运行观测规范 6.5（仅当次本地设施，不运行 Hosted），前端沿 `make test-monitor-frontend`，共享组件和真实 iframe 按影响扩散至 Common Frontend / Console。System IAM、运行日志及授权/Swagger 变化按规范扩散，不为文档整理重跑无关门禁。API 变更同时执行标准 Swagger 生成与路由覆盖检查。
 
 租户事件的 `TestIntegrationPostgresExecutionEventVisibility` 沿既有 PostgreSQL 服务测试自动发现，覆盖真实 SQL 上的 Owner 范围、历史／本人一次性执行、列表与统计总数、跨租户／类型／子执行隔离、三页事件游标、30 天读取窗口，以及翻页前撤权和 Owner 故障后重新授权。Owner HTTP 为受控协议夹具，仅计 T2，不代表真实 System／Gateway／Worker 的 T4，也不代表事件物理清理或 180 天概览删除已验收。

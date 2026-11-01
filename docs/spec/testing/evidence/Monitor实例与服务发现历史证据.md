@@ -385,3 +385,19 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 个人Safari第二个标签页沿真实Console打开当前Monitor进程，初始AuthContext无法确认后点击原“重试”恢复；无需重启。新版正文已直接生效，实际截图可见短状态“未接入资源组采集”、查询窗口、CPU曲线与标题旁问号；点击CPU问号实际显示核占用／非百分比／断点／缩放解释。该个人环境为原生macOS，不计容器限额或来源支持通过；当前页面提示自动刷新开启，但本轮只记布局及提示可见，不把一次截图计为新的刷新或Hosted验收。
 
 本批只改Monitor领域组合／中英文词条及相应Monitor／Console测试，未改共享组件、API、Swagger、后端、部署或IAM。现有Make前端门禁、浏览器目录自动发现和Monitor变更扩散至Console的路径登记已覆盖，无新入口、依赖或Workflow。局部标准T1／T3及Monitor构建是本次显示变更的最小充分验证，未重跑整套Monitor／Console聚合、未变的Go、来源T2或Online，不能记为本轮整套通过。CI和Hosted仍等专门会话回传，未自行查询、触发或重跑，也未设置定时任务、重启个人服务或修改账户／数据库／配置。
+
+## 停用意图顺序夹具隔离与配置 T1 入口（2026-11-01）
+
+独立 Mac 的 Docker 候选版本验证按用户要求暂缓，未执行、未通过。本轮只处理现有配置 T1 的宿主依赖：此前完整配置套件中，`test_standard_stop_publishes_selected_scope_before_the_first_stop_action` 曾超过原10秒期限；本轮原用例单独运行通过（4.819秒），不能据此认定旧超时已解决。
+
+临时夹具的阶段取证表明，空PID／监听者拓扑仍执行宿主真实 `ps -axo pid=,ppid=`；当次开发／生产假停止分别3.025／0.443秒。该证据确认无关宿主进程表依赖，不足以指定此前超时的唯一根因。现为同一夹具补明确的空快照替身，仅接受声明的快照查询，其他查询返回78；测试验证停用发布前不得有动作、模块范围精确、查询顺序及无实际停止命令。macOS允许随后检查空launchd清单，不将其当作停止动作；原8／10秒期限、失败拒绝、锁释放和声明断言保留。实际PID／后代／外来进程归属继续由既有开发生命周期专项覆盖，本批未修改产品停止逻辑。
+
+新增标准入口 `make test-monitor-metrics-config`，独立运行既有配置测试文件，不启动个人服务或真实来源；原 `test-dev-lifecycle` 和 Metrics T2 仍覆盖同一文件。该文件已在 Metrics 输入清单中，Platform沿原开发生命周期聚合执行，无新增依赖或workflow改动。
+
+实际验证与失败保留：
+
+- 首轮新入口136项中135项通过、1项失败：加强事件顺序断言时遗漏macOS已有的两次 `launchctl list`。仅修正测试为首两项精确匹配，后续只允许空launchd查询，未放宽停止动作检查；原失败日志 `/tmp/addp-monitor-config-isolated.log` 保留。
+- 最终 `make test-monitor-metrics-config`：136项全部通过，退出0，22.317秒；日志 `/tmp/addp-monitor-config-isolated-final.log`。其中打印的来源／T2阶段为受控配置夹具，不计真实来源T2通过。
+- 原用例独立结果及阶段证据：`/tmp/addp-monitor-stop-preflight.log`、`/tmp/addp-monitor-stop-stage-summary.json`。初次临时xtrace读取发生解码失败，未作时间结论；修正临时诊断解码后取得上述阶段记录，未改变产品或测试时限。
+
+本批仅证明配置T1及空拓扑夹具隔离，不将旧聚合超时改写为通过；未重跑完整开发生命周期、真实来源T2、CI或Hosted。未改Docker设置、个人数据库／凭据或服务启停，未设置定时任务；外部结果仍等专门会话回传。

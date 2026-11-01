@@ -2291,10 +2291,31 @@ class ServiceExpectationPublicationTest(unittest.TestCase):
             path = fake/name
             path.write_text('#!/bin/sh\nprintf "%s\\n" "'+name+' $*" >> "$STOP_EVENTS"\nexit 0\n')
             path.chmod(0o755)
+        # This fixture owns no PIDs or listeners. Never scan the host's process
+        # table; other lifecycle tests own PID/descendant/workspace semantics.
+        ps = fake/'ps'
+        ps.write_text('''#!/bin/sh
+if [ "$#" -eq 2 ] && [ "$1" = -axo ] && [ "$2" = pid=,ppid= ]; then
+  printf 'ps-snapshot\\n' >> "$STOP_EVENTS"
+  exit 0
+fi
+printf 'unexpected-ps\\n' >> "$STOP_EVENTS"
+exit 78
+''')
+        ps.chmod(0o755)
         env = dict(os.environ, PATH=str(fake)+os.pathsep+os.environ['PATH'], STOP_EVENTS=str(root/'events'))
         for key in ('ADDP_LIFECYCLE_LOCK_HELD','ADDP_LIFECYCLE_OWNER_PID','ADDP_LIFECYCLE_LOCK_ROOT'):
             env.pop(key, None)
         return root, target/'service-expectations.json', env
+
+    def test_stop_fixture_owns_an_empty_process_snapshot_and_rejects_unknown_queries(self):
+        root, path, env = self.stop_fixture('dev')
+        result = subprocess.run(['ps','-axo','pid=,ppid='],cwd=root,env=env,capture_output=True,text=True,timeout=5)
+        self.assertEqual((result.returncode,result.stdout,result.stderr),(0,'',''))
+        rejected = subprocess.run(['ps','-p','999999991','-o','command='],cwd=root,env=env,capture_output=True,text=True,timeout=5)
+        self.assertEqual(rejected.returncode,78)
+        self.assertEqual((root/'events').read_text().splitlines(),['ps-snapshot','unexpected-ps'])
+        self.assertTrue(all(row['desired_state']=='running' for row in json.loads(path.read_text())['groups']))
 
     def test_standard_dev_and_prod_stop_refuse_all_actions_when_intent_cannot_be_published(self):
         for kind in ('dev', 'prod'):
@@ -2323,7 +2344,11 @@ class ServiceExpectationPublicationTest(unittest.TestCase):
                                 capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([x['desired_state'] for x in json.loads(path.read_text())['groups']], ['planned_stopped','running'])
-        self.assertIn('checked-lsof', (root/'events').read_text())
+        events = (root/'events').read_text().splitlines()
+        self.assertEqual(events[:2],['checked-lsof','ps-snapshot'])
+        # Darwin also checks its empty launchd inventory; no stop command is
+        # expected because this fixture has no processes or launchd jobs.
+        self.assertTrue(all(event=='launchctl list' for event in events[2:]),events)
         root, path, env = self.stop_fixture('prod')
         docker = root/'tools/docker'
         docker.write_text('#!/bin/sh\npython3 - "$CHECK_INTENT" <<\'CHECK\'\nimport json,sys\nassert all(x["desired_state"]=="planned_stopped" for x in json.load(open(sys.argv[1]))["groups"])\nCHECK\n[ "$?" = 0 ] || exit 77\nprintf "%s\\n" "$*" >> "$STOP_EVENTS"\n')

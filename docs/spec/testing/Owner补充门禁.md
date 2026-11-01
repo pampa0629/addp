@@ -138,6 +138,8 @@ Common / Meta 的历史工作区门禁结果仅适用于其记录范围；其他
 
 ## 平台指标设施独占门禁
 
+确定性配置与服务部署意图沿 `make test-monitor-metrics-config` 单独执行，不启动观测设施或个人服务；既有完整部署／Metrics门禁继续覆盖同一测试文件。停用意图顺序夹具声明空进程拓扑，docker／launchctl／lsof／ps均使用当次替身；ps只允许声明的快照查询，意外查询必须失败，不读取宿主进程表。保留发布先于停止、发布失败不执行任何停止、精确模块范围及原8／10秒期限；真实PID／后代／其他工作区归属沿原开发生命周期专项验证，不由该空拓扑夹具代替。
+
 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=directory-publication` 是无数据库的共享目录原子替换复现：其T1仅执行配置／协议所属的 `MetricsDeploymentConfigTest`，其余case仍执行原完整配置套件；只使用既有固定PG镜像的Bash，覆盖入口直接替换为Bash，不启动PG或执行SQL，不读取应用配置、账号、HBA，不开放端口或网络。宿主只发布随机临时目录中的普通文件；同进程正反枚举协议与PG目录失败诊断复用唯一实现。容器只读、无额外能力，限制CPU／内存／进程数；屏蔽镜像的数据库VOLUME以免创建匿名卷。退出须核对明确拥有的容器、网络、卷及临时目录清零。首次读取失败即判共享契约失败，枚举后可读不算通过。复制 `scripts/test/directory-publication-probe.py` 到系统临时目录即可给外部维护人员独立复现，无ADDP包依赖；仓库验证仍以根Make入口为准，不能以复现成功代替完整来源／认证验收。
 
 默认 `make test-monitor-metrics` 仍顺序执行全部场景。CI 使用同一入口的八个互补分组，其中 `--case=directory-publication` 独立验证上述无数据库共享契约；`MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 覆盖专业来源、认证与生命周期；`--case=http-quality` 覆盖真实 SDK 进程、HTTP 查询与告警；`--case=process-alerts` 覆盖真实进程 CPU/RSS 规则触发、恢复与签名通知；`--case=host-resources` 覆盖 HTTP SD、主机/受限来源、中心恢复、总览与资源告警；`--case=cgroup-source` 覆盖显式选入的自身 cgroup v2 内核身份及 CPU／内存原始量，三个 SDK 来源与独立内核读取对照，明确共享组不证明独立容器或配额。各分组独占随机测试项目、保持原窗口/新鲜度/等待期限及退出零残留；共享传输与固定窗口前置条件可各自重验，领域场景不重复。Release 使用独立 Linux Runner 矩阵、`fail-fast: false`，每项维持 20 分钟 Job 上限；稳定名称 `Monitor metrics infrastructure` 只汇总真实结果，任一分组失败、取消或被跳过均不能计为已选门禁通过。旧的单 Job 串行全量编排删除，不靠增加超时或削减场景获得通过。
