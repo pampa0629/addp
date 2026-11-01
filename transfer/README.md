@@ -4,7 +4,7 @@ Transfer 是 ADDP 的数据传输中枢，负责传输任务配置、执行编�
 
 当前已实现 bounded snapshot、bounded watermark incremental、业务 Kafka keyed JSON continuous upsert + DLQ、业务 Kafka bounded replay，以及 PostgreSQL/MySQL/Oracle 单表 CDC initial snapshot + upsert/delete。引擎来源、目标与非空间限制统一见[当前支持矩阵](./docs/transfer-任务语义与同步模式.md#三当前支持矩阵)；continuous worker、Console Wizard 和诊断能力见[Continuous/Kafka 配置](./docs/transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)。
 
-Oracle 空间捕获与目标类型限制由[CDC 配置](./docs/transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)维护；普通 Oracle LOB、RAC 和 ArcGIS SDE 仍未支持。能力摘要不作为当前版本运行通过记录，证据与未覆盖项见[验证范围](./docs/transfer-任务语义与同步模式.md#十一验证范围)，标准门禁及 Oracle 专项缺口见本页[启动与验证](#启动与验证)。
+Oracle 空间捕获与目标类型限制由[CDC 配置](./docs/transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)维护；未支持项与待评估增强统一见[后续能力清单](../docs/next/transfer后续能力清单.md)。能力摘要不作为当前版本运行通过记录，证据与未覆盖项见[验证范围](./docs/transfer-任务语义与同步模式.md#十一验证范围)，标准门禁及 Oracle 专项缺口见本页[启动与验证](#启动与验证)。
 
 当前主路径采用 clean break：Transfer 不再维护私有 reader / writer 插件体系，不再兼容旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type` 等任务 JSON 字段。具体读写能力来自 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`。
 
@@ -90,7 +90,7 @@ CDC schema drift 使任务进入 `blocked` 且不推进当前 offset；PostgreSQ
 
 重跑和续读见[恢复分级](./docs/transfer-基本概念及配置说明.md#恢复分级)：snapshot replace 失败可从头 retry，append retry 被拒绝；watermark 与未阻塞的 continuous/CDC 从 `transfer.sync_states` committed position resume。retention 越界必须明确失败，不静默重置；目标锁等待须响应 context 取消并回滚未完成的业务行与 apply ledger，细则见[位置恢复与取消](./docs/transfer-基本概念及配置说明.md#位置恢复与取消)。
 
-当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。能力与配置说明不作为当前版本运行通过记录；提交顺序、DLQ/replay、来源隔离、恢复与回滚等须分别验收，标准入口与证据见[Continuous 验收边界](./docs/transfer-基本概念及配置说明.md#continuous-验收边界)及本页[启动与验证](#启动与验证)。
+能力与配置说明不作为当前版本运行通过记录；提交顺序、DLQ/replay、来源隔离、恢复与回滚等须分别验收，标准入口与证据见[Continuous 验收边界](./docs/transfer-基本概念及配置说明.md#continuous-验收边界)及本页[启动与验证](#启动与验证)。各后续增强的独有验收限制见[清单验收范围与证据](../docs/next/transfer后续能力清单.md#六验收范围与证据)。
 
 ## API
 
@@ -186,6 +186,8 @@ make test-arcgis-open-formats
 
 - [Transfer 模块说明](./CLAUDE.md)
 - [Transfer 当前架构设计](./docs/design.md)
+- [当前支持矩阵与任务语义](./docs/transfer-任务语义与同步模式.md#三当前支持矩阵)
+- [Transfer 后续能力清单](../docs/next/transfer后续能力清单.md)
 - [Transfer 基本概念及配置说明](./docs/transfer-基本概念及配置说明.md)
 - [table Transfer 配置](./docs/transfer-基本概念及配置说明.md#三table-transfer-支持范围)
 - [raw copy 配置](./docs/transfer-基本概念及配置说明.md#四raw-copy-支持范围)
