@@ -30,22 +30,31 @@ transfer/
 ├── authorization/
 │   └── permissions.yaml       # Transfer Permission Manifest，发布期聚合事实源
 ├── backend/
-│   ├── cmd/server/main.go
-│   ├── internal/api/          # tasks、executions、engines、capabilities
+│   ├── cmd/server/main.go     # Backend API、owner scheduler 与 CDC 捕获控制面
+│   ├── cmd/worker/main.go     # 独立 bounded worker；PostgreSQL execution claim
+│   ├── cmd/continuous-worker/main.go # 独立 continuous worker/supervisor
+│   ├── internal/api/          # 任务定义、执行、TaskProvider、capabilities 与只读预检
 │   ├── internal/planner/      # source/target endpoint -> table transfer plan
 │   ├── internal/executor/     # 基于 common engine/format/contentio 的 table transfer executor
 │   ├── internal/service/      # task、execution、system engine resolver、Meta scan 触发
-│   ├── internal/worker/       # PostgreSQL bounded runner；owner scheduler 位于 Backend
+│   ├── internal/worker/       # bounded runner 与 owner scheduler 实现；由各自进程装配
+│   ├── internal/continuous/   # continuous supervisor、数据应用与 bounded replay
+│   ├── internal/capture/      # CDC capture supervisor、Connect 与源端资源控制
+│   ├── internal/repository/   # 私有状态、租约、Capture/DLQ 与启动 schema 持久化辅助
 │   └── pkg/vfs/               # 底层虚拟文件辅助能力，非新 transfer reader/writer 主入口
 ├── docs/
+│   ├── design.md             # 架构说明
+│   ├── 快速开始.md           # 操作入口
 │   ├── 数据库架构.md
 │   ├── transfer-基本概念及配置说明.md
 │   ├── transfer-任务语义与同步模式.md
 │   └── tables/
 └── frontend/src/
-    ├── views/                 # TaskList、TaskWizard、TaskDetail、ExecutionDetail
+    ├── router/index.js       # 公开路由、权限落点与页面守卫
+    ├── views/                # TaskList、TaskWizard/、TaskDetail、ExecutionDetail
     ├── components/
-    └── api/
+    ├── api/
+    └── utils/moduleNavigation.js # 模块公开导航
 ```
 
 ## 核心 API
