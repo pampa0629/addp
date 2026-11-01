@@ -67,6 +67,10 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 				result.issues = append(result.issues, "unknown XSD 1.0 builtin type: "+name.Local)
 				return nil
 			}
+			if role == "simpleContentBase" && name.Local == "anyType" {
+				result.issues = append(result.issues, "complex builtin is not a simple-content base")
+				return nil
+			}
 			result.terminals = append(result.terminals, name)
 			if name.Local == "anyType" || name.Local == "anySimpleType" {
 				result.issues = append(result.issues, "open builtin value type")
@@ -85,7 +89,16 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 		w := b.witness(declaration)
 		result.references[index].target, result.references[index].via = &w, target.via
 		if declaration.name.Local == "complexType" {
-			if source.name.Local != "element" || role != "type" {
+			if role == "simpleContentBase" {
+				valid, err := b.simpleContentType(declaration)
+				if err != nil {
+					return err
+				}
+				if !valid {
+					result.issues = append(result.issues, "base is not a simple-content complex type")
+					return nil
+				}
+			} else if source.name.Local != "element" || role != "type" {
 				result.issues = append(result.issues, "complex value type outside element type position")
 				return nil
 			}
@@ -161,13 +174,75 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 				result.issues = append(result.issues, "empty complex value semantics not proved")
 			}
 			for _, child := range children {
+				if child.name.Local == "simpleContent" && len(children) != 1 {
+					return fmt.Errorf("conflicting complex content sources")
+				}
+			}
+			for _, child := range children {
 				switch child.name.Local {
-				case "sequence", "choice", "all", "attribute":
+				case "sequence", "choice", "all", "attribute", "simpleContent":
 					if err := visit(child, depth+1); err != nil {
 						return err
 					}
 				default:
 					result.issues = append(result.issues, "unsupported complex value child: "+child.name.Local)
+				}
+			}
+		case "simpleContent":
+			if err := b.valueStructure(node, result); err != nil {
+				return err
+			}
+			if node.parent == nil || node.parent.name.Local != "complexType" || len(children) != 1 {
+				return fmt.Errorf("simple content requires one derivation in a complex type")
+			}
+			if children[0].name.Local != "extension" {
+				result.issues = append(result.issues, "simple content derivation not proved")
+				return nil
+			}
+			return visit(children[0], depth+1)
+		case "extension":
+			if node.parent == nil || node.parent.name.Local != "simpleContent" {
+				result.issues = append(result.issues, "extension outside simple content not proved")
+				return nil
+			}
+			if err := b.valueStructure(node, result); err != nil {
+				return err
+			}
+			if err := reference(node, node.attrs["base"], "simpleContentBase", depth+1); err != nil {
+				return err
+			}
+			for _, child := range children {
+				if child.name.Local != "attribute" && child.name.Local != "attributeGroup" {
+					result.issues = append(result.issues, "unsupported simple content extension child: "+child.name.Local)
+					continue
+				}
+				if err := visit(child, depth+1); err != nil {
+					return err
+				}
+			}
+		case "attributeGroup":
+			if err := b.valueStructure(node, result); err != nil {
+				return err
+			}
+			name, named := node.attrs["name"]
+			ref, referenced := node.attrs["ref"]
+			if named == referenced || named && !vffSKCBindingName(name) || referenced && len(children) != 0 {
+				return fmt.Errorf("conflicting or missing value attribute group source")
+			}
+			if referenced {
+				return memberReference(node, ref, depth+1)
+			}
+			if node.parent == nil || node.parent.name.Local != "schema" {
+				return fmt.Errorf("named value attribute group must be global")
+			}
+			result.declarations = append(result.declarations, b.witness(node))
+			for _, child := range children {
+				if child.name.Local != "attribute" && child.name.Local != "attributeGroup" {
+					result.issues = append(result.issues, "unsupported value attribute group child: "+child.name.Local)
+					continue
+				}
+				if err := visit(child, depth+1); err != nil {
+					return err
 				}
 			}
 		case "sequence", "choice", "all":
@@ -254,6 +329,23 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 	}
 	b.values[n] = result
 	return result, nil
+}
+
+func (b *vffSKCBinder) simpleContentType(node *vffXMLNode) (bool, error) {
+	var content *vffXMLNode
+	for _, child := range node.children {
+		if err := b.tick(0); err != nil {
+			return false, err
+		}
+		if child.name.Local == "annotation" {
+			continue
+		}
+		if content != nil || child.name.Local != "simpleContent" {
+			return false, nil
+		}
+		content = child
+	}
+	return content != nil, nil
 }
 
 // XSD 1.0 reference names, not a coercion or instance validator.

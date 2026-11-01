@@ -26,6 +26,10 @@ func (b *vffSKCBinder) valueStructure(n *vffXMLNode, result *vffSKCValueBinding)
 	switch kind {
 	case "complexType":
 		allowed += "name "
+	case "extension":
+		allowed += "base "
+	case "attributeGroup":
+		allowed += "name ref "
 	case "sequence", "choice", "all":
 		allowed += "minOccurs maxOccurs "
 	case "element":

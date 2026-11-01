@@ -74,7 +74,7 @@ func TestVFFSKCComplexValuesResolveExactLocalMemberSymbolSpaces(t *testing.T) {
 func TestVFFSKCComplexValuesDoNotHideUnknownStructuresOrAttributes(t *testing.T) {
 	for _, body := range []string{
 		`<x:complexContent><x:extension base="e:Base"/></x:complexContent>`,
-		`<x:simpleContent><x:extension base="x:string"/></x:simpleContent>`,
+		`<x:simpleContent><x:restriction base="x:string"/></x:simpleContent>`,
 		`<x:sequence><x:any/></x:sequence>`,
 		`<x:attributeGroup ref="e:Attributes"/>`,
 		`<x:sequence><x:element ref="t:Missing"/></x:sequence>`,
