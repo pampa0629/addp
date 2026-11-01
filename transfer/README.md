@@ -187,6 +187,8 @@ make test-arcgis-open-formats
 - [Transfer 模块说明](./CLAUDE.md)
 - [Transfer 当前架构设计](./docs/design.md)
 - [Transfer 基本概念及配置说明](./docs/transfer-基本概念及配置说明.md)
+- [table Transfer 配置](./docs/transfer-基本概念及配置说明.md#三table-transfer-支持范围)
+- [raw copy 配置](./docs/transfer-基本概念及配置说明.md#四raw-copy-支持范围)
 - [Continuous/Kafka 配置](./docs/transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)
 - [数据库 CDC 配置](./docs/transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)
 - [Checkpoint 恢复分级](./docs/transfer-基本概念及配置说明.md#恢复分级)

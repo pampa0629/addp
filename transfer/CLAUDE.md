@@ -206,6 +206,8 @@ continuous 的 claim、累计提交计数与终态复用 `common.execution_event
 - [DLQ 公开查询与来源隔离](docs/数据库架构.md#dlq-公开查询与来源隔离)
 - [DLQ availability 失败与验收边界](docs/数据库架构.md#availability-失败与验收边界)
 - [基本概念及配置说明](docs/transfer-基本概念及配置说明.md)
+- [table Transfer 配置](docs/transfer-基本概念及配置说明.md#三table-transfer-支持范围)
+- [raw copy 配置](docs/transfer-基本概念及配置说明.md#四raw-copy-支持范围)
 - [Continuous/Kafka 配置](docs/transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)
 - [数据库 CDC 配置](docs/transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)
 - [Checkpoint 恢复分级](docs/transfer-基本概念及配置说明.md#恢复分级)
