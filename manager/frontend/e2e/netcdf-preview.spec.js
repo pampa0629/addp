@@ -8,6 +8,7 @@ for (const lang of ['zh-cn', 'en']) test(`NetCDF slices preserve exact values, i
   const root = { id: rootLocator, locator: rootLocator, label: 'NetCDF fixture', type: 'server', hasChildren: true, children: [item] }
   const variable = { name: '/temperature', type: 'Int64', dimensions: [{ name: '/time', size: '2' }, { name: '/y', size: '3' }, { name: '/x', size: '4' }], attributes: { units: { values: ['K'] }, calendar: { values: ['360_day'] } }, slice_supported: true }
   const slices = []
+  const parentReads = []
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), lang)
@@ -30,7 +31,9 @@ for (const lang of ['zh-cn', 'en']) test(`NetCDF slices preserve exact values, i
         const valid = [[true, true, true, true], [true, true, false, true], [true, true, true, true]]
         return json(route, { preview_type: 'object', data: { mode: 'object', object: { content: { kind: 'grid_slice', json: { selection, values, valid, variable, spatial: null } } } } })
       }
-      return json(route, { preview_type: 'object', data: { mode: 'object', object: { attributes: { item: { format: 'netcdf', data_type: 'container', layout: 'single' }, type_info: { container: { child_count: 1, children: [{ name: '/temperature', native: variable }] } } }, content: { kind: 'container', json: { format: 'netcdf', children: [] } } } } })
+      parentReads.push(url.searchParams.get('child_name') || '')
+      if (url.searchParams.has('child_name')) return json(route, { error: 'Array reads require an explicit grid_slice', error_code: 'grid_slice_selection_invalid' }, 400)
+      return json(route, { preview_type: 'object', data: { mode: 'object', object: { attributes: { item: { format: 'netcdf', data_type: 'container', layout: 'single' }, type_info: { container: { child_count: 1, children: [{ name: '/temperature', child_kind: 'array', data_type: 'media', native: variable }] } } }, content: { kind: 'container', json: { format: 'netcdf', default_child: lang === 'en' ? '/temperature' : '', children: [{ name: '/temperature', key: '/temperature', child_kind: 'array', data_type: 'media', native: variable }] } } } } })
     }
     if (path.endsWith('/quick-view')) return json(route, { is_scanned: true, data_type: 'container', format: 'netcdf', actions: [] })
     return json(route, {})
@@ -50,5 +53,6 @@ for (const lang of ['zh-cn', 'en']) test(`NetCDF slices preserve exact values, i
   await page.getByTestId('read-grid-slice').click()
   await expect(page.getByTestId('grid-slice-result')).toHaveCount(0)
   await expect(page.locator('.grid-controls').locator('..')).toContainText(lang === 'en' ? 'Source changed' : '源文件已变化')
+  expect(parentReads).toEqual([''])
   expect(errors).toEqual([])
 })

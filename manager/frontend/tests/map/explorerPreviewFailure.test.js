@@ -148,4 +148,21 @@ describe('explorer preview failure state', () => {
     expect(mocks.get.mock.lastCall[1].params).toEqual({ locator, page: 2, page_size: 20 })
     expect(store.selectedChildKey).toBe('')
   })
+  it.each(['', 'default_child', 'active_child'])('keeps an array index passive with %s selection until a grid is requested', async field => {
+    const store = useExplorerStore()
+    const index = { children: [{ name: '/temperature', key: '/temperature', child_kind: 'array' }] }
+    if (field) index[field] = '/temperature'
+    const container = { object: { content: { kind: 'container', json: index } } }
+    mocks.get.mockImplementation((_, { params }) => params.child_name
+      ? Promise.reject(failure(400))
+      : Promise.resolve(container))
+    await expect(store.loadPreview(locator)).resolves.toEqual(container)
+    expect(store.selectedChildName).toBe('')
+    expect(store.activeChildPreviewData).toBeNull()
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+    await expect(store.reloadPreview()).resolves.toEqual(container)
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+    expect(mocks.get.mock.calls.every(([, { params }]) => !params.child_name)).toBe(true)
+  })
+
 })

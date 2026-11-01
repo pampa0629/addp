@@ -539,9 +539,14 @@ export const useExplorerStore = defineStore('explorer', {
         return ''
       }
       const explicit = json.active_child || json.default_child
-      if (explicit) return explicit
       const children = Array.isArray(json.children) ? json.children : []
       const firstNamedChild = children.find(child => child?.key || child?.name || child?.table || child?.table_name || child?.tableName)
+      const selectedChild = explicit
+        ? children.find(child => child?.name === explicit || child?.key === explicit)
+        : firstNamedChild
+      // Array content requires leading indices and an XY window, never a bare child read.
+      if (selectedChild?.child_kind === 'array') return ''
+      if (explicit) return explicit
       return firstNamedChild?.key || firstNamedChild?.name || firstNamedChild?.table || firstNamedChild?.table_name || firstNamedChild?.tableName || ''
     },
 

@@ -21,7 +21,7 @@
 
 ## NetCDF 经典单文件只读
 
-`manager-internal-artifact-lineage` 的独立case `native-netcdf`验证CDF-1/2/5，保留其他case及其断言，不把独立case计为full模型场景通过。仅复用原有Manager隔离Linux x86-64部署、GeoPython、NFS和MinIO夹具，不启动Model3D/PointCloud/Document/Transfer。一次性普通消费用户严格六项已有权限：manager.content.read、manager.data_item.read、meta.catalog.read、meta.scan_task.execute、meta.scan_task.read、monitor.execution.read；不增加权限，源初始化身份复用现有标准初始化范围，普通原文件读取仍沿现行内容权限，不宣称精确组成源Grant已接入。
+`manager-internal-artifact-lineage` 的独立case `native-netcdf`验证CDF-1/2/5，保留其他case及其断言，不把独立case计为full模型场景通过。仅复用原有Manager隔离Linux x86-64部署、GeoPython、NFS和MinIO夹具，不额外启动Model3D/PointCloud/Document，不执行Transfer业务或任务；标准生命周期自动加载的既有平台依赖仍随部署清理，不计为其业务验收。一次性普通消费用户严格六项已有权限：manager.content.read、manager.data_item.read、meta.catalog.read、meta.scan_task.execute、meta.scan_task.read、monitor.execution.read；不增加权限，源初始化身份复用现有标准初始化范围，普通原文件读取仍沿现行内容权限，不宣称精确组成源Grant已接入。
 
 三个独立编码样例分别是CDF-1未知坐标、CDF-2显式UTM50N规则网格、CDF-5超2^53的Int64，均含两时间层、缺失值、比例/偏移和360_day时间维。两引擎上逐文件核规范身份、变量与维序、字节大小/SHA、二维完整数值/掩膜、指定小窗口、重复无持久缓存读取、越界/伪子数据集拒绝、源变化409与原件精确恢复、原文件API及真实按钮下载。父容器不得取得统一空间范围，无CRS切片不得定位；显式规则网格只在已证空间profile下显示范围，不据数据名称推4326。实际页面逐格核原值和valid状态、切时间层清掉旧图、下载哈希/截图，归档manager-netcdf.json与manager-netcdf-browser.json。源未改写、NFS文件/对象精确删除及外层identity/engine/deployment/Infra清理全部通过方可登记正式验收；无任务/业务产物不伪造缓存复用或任务删除记录。NetCDF-4/HDF5、跨文件聚合、输出和任意CF特性不在本轮。
 
