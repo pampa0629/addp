@@ -17305,3 +17305,297 @@ def test_vector_zonal_weighted_stddev_async_full_geopackage_all_properties_submi
         assert status['error']=='任务 stats 执行失败: '+cause
         assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
     assert client.post('/api/operators/raster_vector_zonal_statistics/invoke',json={'params':{}}).status_code==403
+
+
+_VECTOR_AREA_FIELDS = ['covered_area_m2','valid_area_m2','area_weighted_mean']
+
+
+def _area_faces(rectangles, grid, *, crs='EPSG:3857'):
+    import geopandas as gpd
+    from shapely.geometry import box, Polygon, MultiPolygon
+    from shapely.affinity import affine_transform
+    geometries=[]
+    for parts in rectangles:
+        faces=[]
+        for outer, holes in parts:
+            faces.append(Polygon(box(*outer).exterior.coords,[box(*hole).exterior.coords for hole in holes]))
+        shape=faces[0]if len(faces)==1 else MultiPolygon(faces)
+        geometries.append(affine_transform(shape,[grid[1],grid[2],grid[4],grid[5],grid[0],grid[3]]))
+    return gpd.GeoDataFrame({'identity':list(range(len(geometries))),'geometry':['original label']*len(geometries),'shape':geometries},geometry='shape',crs=crs,index=[7]*len(geometries))
+
+
+def _area_rectangle_oracle(values, valid, parts, scale):
+    from fractions import Fraction as Q
+    total=good=numerator=Q(0)
+    def clipped(rect,x,y):
+        return max(Q(0),min(Q(rect[2]),x+1)-max(Q(rect[0]),x))*max(Q(0),min(Q(rect[3]),y+1)-max(Q(rect[1]),y))
+    for y in range(values.shape[0]):
+        for x in range(values.shape[1]):
+            weight=sum((clipped(outer,x,y)-sum((clipped(h,x,y)for h in holes),Q(0))for outer,holes in parts),Q(0))
+            total+=weight
+            if valid[y,x]and weight:
+                good+=weight;numerator+=weight*Q(float(values[y,x]))
+    return [float(total*scale),float(good*scale),float(numerator/good)if good else None]
+
+
+@pytest.mark.parametrize('all_touched',[False,True])
+@pytest.mark.parametrize('grid',[(0,2,0,20,0,-4),(100,2,1,200,1,-1.5),(20,-2,0,0,0,4)])
+@pytest.mark.parametrize('units',[1.,.3048,1200/3937])
+def test_vector_area_weighted_complete_rectangle_oracle_holes_overlap_original_fields_units(tmp_path,grid,units,all_touched):
+    import pandas as pd,operators.raster_compute as c
+    from fractions import Fraction as Q
+    ref=osr.SpatialReference();ref.ImportFromEPSG(3857);ref.SetLinearUnits('metre'if units==1 else'custom known foot',units)
+    values=np.array([[0.,10.,-9999,30.],[4.,-6.,8.,12.],[16.,20.,24.,28.]])
+    path=create_raster(tmp_path/'values.tif',values,grid,ref.ExportToWkt());before=path.read_bytes()
+    rectangles=[ [((.125,.25,3.75,2.875),[(1.125,1.125,1.875,1.875)])],
+                 [((.125,.25,3.75,2.875),[])],
+                 [((-.5,-.5,.25,.75),[]),((2.5,1.5,4.5,3.5),[])],
+                 [((4.,0.,5.,3.),[])], [((2.125,.125,2.875,.875),[])],
+                 [((.125,.125,.375,.375),[])] ]
+    faces=_area_faces(rectangles,grid,crs=ref.ExportToWkt());original=faces.copy(deep=True)
+    with raster_workspace():
+        source=raster_load(source_plan(path));old=raster_vector_zonal_statistics(source,faces,1,all_touched,field_prefix='a_')
+        result=raster_vector_zonal_statistics(source,faces,1,all_touched,field_prefix='a_',include_area_weighted=True)
+    pd.testing.assert_frame_equal(result.iloc[:,:-3],old,check_exact=True);pd.testing.assert_frame_equal(faces,original,check_exact=True)
+    stored=gdal.Open(str(path));stored_units=stored.GetSpatialRef().GetLinearUnits();stored=None
+    assert math.isclose(stored_units,units,rel_tol=2e-15)
+    scale=abs(Q(grid[1])*Q(grid[5])-Q(grid[2])*Q(grid[4]))*Q(stored_units)**2
+    for i,parts in enumerate(rectangles):
+        expected=_area_rectangle_oracle(values,values!=-9999,parts,scale)
+        for field,wanted in zip(_VECTOR_AREA_FIELDS,expected):
+            actual=result.iloc[i]['a_'+field]
+            assert pd.isna(actual)if wanted is None else actual==wanted,(i,field,actual,wanted)
+    assert result.dtypes.iloc[-3:].astype(str).tolist()==['Float64']*3
+    assert result.geometry.name=='shape'and result.index.tolist()==[7]*len(rectangles)
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('touched',[False,True])
+def test_vector_area_weighted_partial_without_center_and_triangles_are_not_rasterized_approximations(tmp_path,touched):
+    import geopandas as gpd,operators.raster_compute as c
+    from shapely.geometry import Polygon,box
+    path=create_raster(tmp_path/'v.tif',np.array([[10.,30.]]),(0,1,0,0,0,1),'EPSG:3857')
+    faces=gpd.GeoDataFrame(geometry=[box(.875,0,1.5,1),Polygon([(0,0),(2,0),(0,1)])],crs="EPSG:3857")
+    with raster_workspace():
+        out=raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,touched,include_area_weighted=True)
+    assert out.zonal_covered_area_m2.tolist()==[.625,1.]
+    assert out.zonal_valid_area_m2.tolist()==[.625,1.]
+    assert out.zonal_area_weighted_mean.tolist()==[26.,15.]
+    if not touched:assert out.iloc[0].zonal_total_count!=2
+
+
+@pytest.mark.parametrize('flag',[None,0,1,.5,'true','false',[],{}])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_vector_area_weighted_strict_flag_before_io(monkeypatch,flag,language):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda *_:pytest.fail('invalid flag reached source'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:
+        raster_vector_zonal_statistics(None,None,1,include_area_weighted=flag)
+    assert str(error.value)==c._VECTOR_AREA_MESSAGES['flag'][language=='en']
+
+
+@pytest.mark.parametrize('params',[{'percentile':p}for p in(None,0,50)]+[{'weights_raster':p}for p in(None,object())]+[{'weights_band':p}for p in(None,1)]+[{'include_weighted_stddev':True}])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_vector_area_weighted_conflicting_modes_before_io(monkeypatch,params,language):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda *_:pytest.fail('conflict reached source'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:
+        raster_vector_zonal_statistics(None,None,1,include_area_weighted=True,**params)
+    assert str(error.value)==c._VECTOR_AREA_MESSAGES['conflict'][language=='en']
+
+
+@pytest.mark.parametrize('field',_VECTOR_AREA_FIELDS)
+@pytest.mark.parametrize('active',[False,True])
+def test_vector_area_weighted_column_conflict_before_source_and_false_preserves_property(tmp_path,monkeypatch,field,active):
+    import operators.raster_compute as c
+    path=create_raster(tmp_path/'v.tif',np.ones((2,2)),crs="EPSG:3857")
+    faces=_area_faces([[((0,2,2,4),[])]],(0,1,0,0,0,1))
+    key='zonal_'+field
+    if active:faces=faces.rename_geometry(key)
+    else:faces[key]=13
+    with raster_workspace():
+        old=raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,include_area_weighted=False)
+        assert old.geometry.name==faces.geometry.name
+        if not active:assert old[key].tolist()==[13]
+    monkeypatch.setattr(c,'_open',lambda *_:pytest.fail('collision opened source'))
+    with pytest.raises(ValueError,match='must not overwrite'):
+        raster_vector_zonal_statistics(None,faces,1,include_area_weighted=True)
+
+
+@pytest.mark.parametrize('crs',['EPSG:4326','EPSG:4978','EPSG:7415','LOCAL_CS["unknown",UNIT["unknown",1]]'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_vector_area_weighted_rejects_non_metric_projection_context(tmp_path,crs,language):
+    import operators.raster_compute as c
+    path=create_raster(tmp_path/'v.tif',np.ones((2,2)),crs=crs)
+    faces=_area_faces([[((0,2,2,4),[])]],(0,1,0,0,0,1),crs=crs)
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:
+        raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,include_area_weighted=True)
+    assert str(error.value)==c._VECTOR_AREA_MESSAGES['units'][language=='en']
+
+
+@pytest.mark.parametrize('mode',['plain','percentile','weights','weighted-stddev'])
+def test_vector_area_weighted_false_keeps_all_existing_modes_and_never_intersects(tmp_path,monkeypatch,mode):
+    import pandas as pd,operators.raster_compute as c
+    path=create_raster(tmp_path/'v.tif',np.arange(8.).reshape(2,4),crs="EPSG:4326")
+    faces=_area_faces([[((0,2,4,4),[])]],(0,1,0,0,0,1),crs="EPSG:4326")
+    with raster_workspace():
+        v=raster_load(source_plan(path));args={'percentile':50}if mode=='percentile'else({'weights_raster':v,'weights_band':1,'include_weighted_stddev':mode=='weighted-stddev'}if mode!='plain'else{})
+        old=raster_vector_zonal_statistics(v,faces,1,**args)
+        monkeypatch.setattr(c,'_vector_area_geometry',lambda *_:pytest.fail('disabled area invoked intersection'))
+        actual=raster_vector_zonal_statistics(v,faces,1,include_area_weighted=False,**args)
+        pd.testing.assert_frame_equal(actual,old,check_exact=True)
+
+
+@pytest.mark.parametrize('case',['empty','invalid','zero','negative'])
+def test_vector_area_weighted_empty_schema_null_and_legal_zero_negative(tmp_path,case):
+    import pandas as pd
+    values=np.full((2,2),{'empty':4,'invalid':-9999,'zero':0,'negative':-4}[case],dtype=float)
+    path=create_raster(tmp_path/'v.tif',values,crs="EPSG:3857");faces=_area_faces([[((.25,2.25,1.75,3.75),[])]],(0,1,0,0,0,1))
+    if case=='empty':faces=faces.iloc[:0]
+    with raster_workspace():out=raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,include_area_weighted=True,field_prefix='')
+    assert out.columns.tolist()==faces.columns.tolist()+_VECTOR_ORIGINAL_STATS+_VECTOR_AREA_FIELDS
+    if case=='empty':assert out.empty and out.dtypes.iloc[-3:].astype(str).tolist()==['Float64']*3
+    else:
+        assert out.iloc[0].covered_area_m2==2.25
+        assert out.iloc[0].valid_area_m2==(0 if case=='invalid'else 2.25)
+        value=out.iloc[0].area_weighted_mean
+        assert pd.isna(value)if case=='invalid'else value==values[0,0]
+
+
+@pytest.mark.parametrize('touched',[False,True])
+def test_vector_area_weighted_cross_block_complete_bounded_intersections_and_reads(tmp_path,monkeypatch,touched):
+    import operators.raster_compute as c
+    grid=(100,2,1,200,1,-1.5);values=np.full((515,519),4.)
+    values[:,256:]=8.;values[512:,512:]=-9999
+    path=create_raster(tmp_path/'v.tif',values,grid,'EPSG:3857');before=path.read_bytes()
+    parts=[((.25,.125,518.75,514.875),[])];faces=_area_faces([parts],grid)
+    blocks=c._blocks;reads=[]
+    def bounded(*args,**kwargs):
+        assert kwargs.get('native')is True
+        for x,y,arrays,masks in blocks(*args,**kwargs):
+            assert max(arrays[0].shape)<=512;reads.append((x,y));yield x,y,arrays,masks
+    monkeypatch.setattr(c,'_blocks',bounded)
+    import shapely
+    box=shapely.box
+    def bounded_boxes(*args,**kwargs):
+        assert np.size(args[0])<=4096
+        return box(*args,**kwargs)
+    monkeypatch.setattr(shapely,'box',bounded_boxes)
+    with raster_workspace():out=raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,touched,include_area_weighted=True)
+    from fractions import Fraction
+    expected=_area_rectangle_oracle(values,values!=-9999,parts,Fraction(4))
+    assert out.iloc[0][['zonal_'+v for v in _VECTOR_AREA_FIELDS]].tolist()==expected
+    assert reads==[(0,0),(512,0),(0,512),(512,512)]and path.read_bytes()==before
+
+
+@pytest.mark.parametrize('dtype,nodata',[('Int64',-2**63),('UInt64',2**64-2)])
+def test_vector_area_weighted_native_nodata_neighbor_before_float_conversion(tmp_path,dtype,nodata):
+    path=tmp_path/'v.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,getattr(gdal,'GDT_'+dtype));ds.SetGeoTransform((0,1,0,0,0,1));ref=osr.SpatialReference();ref.ImportFromEPSG(3857);ds.SetSpatialRef(ref)
+    b=ds.GetRasterBand(1);a=np.array([[nodata,nodata+1 if dtype=='Int64'else nodata-1,7]],dtype=np.int64 if dtype=='Int64'else np.uint64);b.WriteArray(a);(b.SetNoDataValueAsInt64 if dtype=='Int64'else b.SetNoDataValueAsUInt64)(nodata);b=ds=None
+    faces=_area_faces([[((0,0,3,1),[])]],(0,1,0,0,0,1))
+    with raster_workspace():out=raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,include_area_weighted=True)
+    from fractions import Fraction as Q
+    assert out.iloc[0].zonal_covered_area_m2==3 and out.iloc[0].zonal_valid_area_m2==2
+    assert out.iloc[0].zonal_area_weighted_mean==float((Q(float(a[0,1]))+7)/2)
+
+
+@pytest.mark.parametrize('case',['mask','alpha','raw','tiny'])
+def test_vector_area_weighted_second_band_raw_values_mask_and_partial_alpha_no_threshold(tmp_path,case):
+    values=np.array([[10.,30.,0.,-4.]])
+    path=create_raster(tmp_path/'v.tif',np.array([np.full_like(values,999),values,np.full_like(values,255)]),(0,1,0,0,0,1),'EPSG:3857')
+    ds=gdal.Open(str(path),gdal.GA_Update);b=ds.GetRasterBand(2);b.SetScale(17);b.SetOffset(500);a=ds.GetRasterBand(3);a.SetColorInterpretation(gdal.GCI_AlphaBand)
+    if case=='mask':
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        b.GetMaskBand().WriteArray(np.array([[255,0,255,255]],dtype=np.uint8))
+    if case=='alpha':a.WriteArray(np.array([[1,0,255,255]],dtype=float))
+    a=b=ds=None;before=path.read_bytes()
+    parts=[((1.-2**-40,0,1.5,1),[])]if case=='tiny'else[((0,0,4,1),[])]
+    faces=_area_faces([parts],(0,1,0,0,0,1))
+    with raster_workspace():out=raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,2,include_area_weighted=True)
+    from fractions import Fraction
+    valid=np.ones(values.shape,bool)
+    if case in('mask','alpha'):valid[0,1]=False
+    wanted=_area_rectangle_oracle(values,valid,parts,Fraction(1))
+    assert out.iloc[0][['zonal_'+f for f in _VECTOR_AREA_FIELDS]].tolist()==wanted
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('case',['overflow','cancellation','underflow-area','unrepresentable-geometry'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_vector_area_weighted_numeric_limits_are_explicit_native_evidence(tmp_path,case,language):
+    import operators.raster_compute as c
+    from fractions import Fraction as Q
+    if case=='unrepresentable-geometry':
+        from shapely.geometry import box
+        with raster_error_language(language),pytest.raises(ValueError)as error:
+            c._vector_area_geometry(box(1e20,1e20,1e20+32768,1e20+32768),(1e308,1,0,1e308,0,1))
+        assert str(error.value)==c._VECTOR_AREA_MESSAGES['geometry'][language=='en'];return
+    stats=c._VectorAreaStatistics()
+    if case=='cancellation':
+        stats.add(np.array([[1e308,1.,-1e308]]),np.ones((1,3),bool),np.full((1,3),.5))
+        assert stats.summary(Q(1))==[1.5,1.5,float(Q(1,3))];return
+    stats.add(np.ones((1,1)),np.ones((1,1),bool),np.array([[1.]]))
+    if case=='underflow-area':assert stats.summary(Q(1,2**2000))==[0.,0.,1.];return
+    with raster_error_language(language),pytest.raises(ValueError)as error:stats.summary(Q(2**2000))
+    assert str(error.value)==c._VECTOR_AREA_MESSAGES['numeric'][language=='en']
+
+
+@pytest.mark.parametrize('case',['direct','invalid','empty','conflict','column-collision','read-failure','summary-failure','save-existing'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_vector_area_weighted_async_full_geopackage_preview_failures_and_cleanup(tmp_path,monkeypatch,case,language):
+    import pandas as pd,geopandas as gpd,api_server,workflow_engine,operators.raster_compute as c
+    from shapely.geometry import box
+    values=np.tile([10.,30.],(6,12))
+    if case=='invalid':values[:]=-9999
+    path=create_raster(tmp_path/'v.tif',values,(0,1,0,0,0,1),'EPSG:3857');before=path.read_bytes()
+    geometries=[box(2*x+.875,y,2*x+1.5,y+1)for y in range(6)for x in range(12)]
+    if case=='empty':geometries=[]
+    properties=[{'row_id':i,**({'zonal_valid_area_m2':99}if case=='column-collision'else{})}for i in range(len(geometries))]
+    target=tmp_path/'area.gpkg';previous=tmp_path/'previous.gpkg';previous.write_bytes(b'prior original vector')
+    if case=='save-existing':target.write_bytes(b'existing exact target')
+    params={'input_raster':{'$ref':'values'},'input_gdf':{'$ref':'zones'},'band':1,'include_area_weighted':True}
+    if case=='conflict':params['percentile']=None
+    tasks=[{'id':'values','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
+           {'id':'zones','operator':'load_from_wkt','depends_on':[],'params':{'wkt_list':[g.wkt for g in geometries],'properties':properties,'crs':'EPSG:3857'}},
+           {'id':'stats','operator':'raster_vector_zonal_statistics','depends_on':['values','zones'],'params':params},
+           {'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}]
+    workspaces=[];execute=workflow_engine._execute_operator
+    def track(name,params):
+        if name=='raster_vector_zonal_statistics':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',track)
+    if case in('read-failure','summary-failure'):
+        def broken(*args,**kwargs):raise RuntimeError('injected area '+case)
+        monkeypatch.setattr(c,'_vector_area_fractions',broken)if case=='read-failure'else monkeypatch.setattr(c._VectorAreaStatistics,'summary',broken)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json;deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    success=case in('direct','invalid','empty');assert status['status']==('success'if success else'failed'),status
+    assert workspaces and all(not p.exists()for p in workspaces)and path.read_bytes()==before and previous.read_bytes()==b'prior original vector'and not c._DISK_RESERVATIONS
+    if success:
+        saved=gpd.read_file(target);assert target.stat().st_size>0 and len(saved)==len(geometries)and saved.crs.to_epsg()==3857
+        ds=ogr.Open(str(target));layer=ds.GetLayer(0);definition=layer.GetLayerDefn()
+        for f in _VECTOR_AREA_FIELDS:assert definition.GetFieldDefn(definition.GetFieldIndex('zonal_'+f)).GetType()==ogr.OFTReal
+        ds=layer=definition=None
+        assert saved.columns.tolist()==([]if case=='empty'else['row_id'])+['zonal_'+n for n in _VECTOR_ORIGINAL_STATS+_VECTOR_AREA_FIELDS]+['geometry']
+        preview=json.loads(status['all_results']['stats']);assert len(preview['features'])==len(geometries)
+        for i,row in saved.iterrows():
+            assert row.row_id==i and row.geometry.equals_exact(geometries[i],0)
+            assert row.zonal_covered_area_m2==.625 and row.zonal_valid_area_m2==(0 if case=='invalid'else .625)
+            assert pd.isna(row.zonal_area_weighted_mean)if case=='invalid'else row.zonal_area_weighted_mean==26.
+            for field in ['row_id',*['zonal_'+f for f in _VECTOR_ORIGINAL_STATS+_VECTOR_AREA_FIELDS]]:
+                actual=preview['features'][i]['properties'][field];wanted=row[field]
+                assert actual is None if pd.isna(wanted)else actual==wanted
+    elif case=='save-existing':assert target.read_bytes()==b'existing exact target'
+    else:
+        assert not target.exists()
+        if case=='column-collision':cause='Statistics columns must not overwrite input columns'
+        elif case in('read-failure','summary-failure'):cause='injected area '+case
+        else:
+            with raster_error_language(language):cause=str(c._vector_area_error('conflict'))
+        assert status['error']=='任务 stats 执行失败: '+cause
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    assert client.post('/api/operators/raster_vector_zonal_statistics/invoke',json={'params':{}}).status_code==403

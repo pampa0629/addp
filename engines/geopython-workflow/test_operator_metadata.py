@@ -1394,7 +1394,7 @@ def test_vector_percentile_single_existing_entry_keeps_coverage_prefix_and_optio
     specs = [spec for spec in list_operators() if spec['id']=='raster_vector_zonal_statistics']
     assert len(specs)==1
     spec = specs[0]; params = {item['name']:item for item in spec['parameters']}
-    assert set(params)=={'input_raster','input_gdf','band','all_touched','field_prefix','percentile','weights_raster','weights_band','include_weighted_stddev'}
+    assert set(params)=={'input_raster','input_gdf','band','all_touched','field_prefix','percentile','weights_raster','weights_band','include_weighted_stddev','include_area_weighted'}
     assert params['band']['required'] and params['input_gdf']['required']
     assert params['all_touched']['default'] is False and params['field_prefix']['default']=='zonal_'
     assert params['percentile']['type']=='float' and not params['percentile']['required'] and 'default' not in params['percentile']
@@ -1501,7 +1501,7 @@ def test_zonal_weighted_single_table_entry_optional_pair_and_original_example():
 def test_vector_zonal_weighted_single_existing_entry_optional_pair_and_original_example():
     specs=[s for s in list_operators()if s['id']=='raster_vector_zonal_statistics'];assert len(specs)==1
     spec=specs[0];params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_raster','input_gdf','band','all_touched','field_prefix','percentile','weights_raster','weights_band','include_weighted_stddev'}
+    assert set(params)=={'input_raster','input_gdf','band','all_touched','field_prefix','percentile','weights_raster','weights_band','include_weighted_stddev','include_area_weighted'}
     assert params['weights_raster']['type']=='raster'and params['weights_raster']['param_type']=='input'and not params['weights_raster']['required']
     assert params['weights_band']['type']=='integer'and not params['weights_band']['required']
     assert 'default'not in params['weights_raster']and 'default'not in params['weights_band']
@@ -1524,3 +1524,15 @@ def test_zonal_weighted_stddev_single_entry_explicit_bool_defaults_and_vector_ex
     vector_flag=next(p for p in vector['parameters']if p['name']=='include_weighted_stddev')
     assert vector_flag['type']=='boolean'and vector_flag['default']is False and not vector_flag['required']
     assert all(word in vector_flag['description']for word in ('总体','全1','null','原统计','重叠'))
+
+
+
+def test_vector_area_weighted_single_entry_explicit_flag_preserves_original_example():
+    specs=[s for s in list_operators()if s['id']=='raster_vector_zonal_statistics'];assert len(specs)==1
+    spec=specs[0];params={p['name']:p for p in spec['parameters']};flag=params['include_area_weighted']
+    assert flag['type']=='boolean'and flag['default']is False and not flag['required']
+    assert all(word in flag['description']for word in ('平方米','原八列','all_touched','互斥'))
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster']and spec['output_ports'][0]['type']=='GeoDataFrame'
+    assert 'include_area_weighted'not in spec['detailed_description']['workflow_example']['params']
+    assert not any(s['id']in ('raster_vector_area_weighted_statistics','vector_area_weighted_statistics')for s in list_operators())

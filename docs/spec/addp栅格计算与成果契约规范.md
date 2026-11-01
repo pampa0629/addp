@@ -393,3 +393,5 @@ DEM三维表面积统计`raster_surface_area`沿普通DataFrame契约返回面�
 栅格分区加权统计可通过严格布尔`include_weighted_stddev=True`追加总体标准差，默认关闭保持原Schema；总体分母Σw，全1复用原stddev，全零或无有效数值为null，一个正权重为0。沿既有三源准入、原统计和有界精确累计，直接舍入精确方差的平方根；不改变矢量分区统计。完整规则见[算子契约](workflow/栅格算子契约.md)。
 
 矢量面分区统计可显式`include_weighted_stddev=True`追加前缀化加权总体标准差，原面覆盖、重叠独立、八项原统计及三项加权保持；全1沿用原stddev，全零／无覆盖／无有效数值null，单正权重／常量0。默认关闭，启用字段冲突严格拒绝；复用原有界精确累计及直接平方根，完整语义见[算子契约](workflow/栅格算子契约.md)。
+
+矢量面分区统计可显式`include_area_weighted=True`，原八列保持，并追加前缀化covered_area_m2／valid_area_m2／area_weighted_mean；新面积口径独立于all_touched，按栅格范围内实际正交叠面积计量，孔洞扣除、重叠独立、有效面积零时均值null。面积限已知线性单位的二维投影，统一平方米；与外部权重、百分位、加权标准差互斥。完整边界见[栅格算子契约](workflow/栅格算子契约.md)，仍沿既有GeoDataFrame／GeoPackage路径，不新增权限或跨模块身份。
