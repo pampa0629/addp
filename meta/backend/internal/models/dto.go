@@ -221,7 +221,7 @@ type MetaNodeLite struct {
 	ScannedAt      *string                `json:"scanned_at,omitempty"`
 	ItemCount      int                    `json:"item_count"` // 当前有效子树的逻辑数据项数量 | Active logical items in the current subtree
 	HasChildren    bool                   `json:"has_children"`
-	TotalSizeBytes int64                  `json:"total_size_bytes"` // 子树内已知数据项大小合计 | Sum of known item sizes in the subtree
+	TotalSizeBytes int64                  `json:"total_size_bytes,omitempty"` // 子树内已知数据项大小合计 | Sum of known item sizes in the subtree
 	Attributes     map[string]interface{} `json:"attributes,omitempty"`
 }
 
@@ -251,8 +251,8 @@ type SpatialMetadataResponse struct {
 	CRSRef         string                  `json:"crs_ref,omitempty"`
 	CRSDefinition  *datatype.CRSDefinition `json:"crs_definition,omitempty"`
 	ExtentSRID     int                     `json:"extent_srid"`
-	Extent         []float64               `json:"extent"` // [minLng, minLat, maxLng, maxLat]
+	Extent         []float64               `json:"extent,omitempty"` // [minLng, minLat, maxLng, maxLat]
 	PrimaryKey     string                  `json:"primary_key"`
 	Fields         []datatype.FieldInfo    `json:"fields"`
-	RowCount       int64                   `json:"row_count"` // 表记录数（从 meta_item.row_count 获取）
+	RowCount       int64                   `json:"row_count,omitempty"` // 表记录数（从 meta_item.row_count 获取）
 }

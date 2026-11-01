@@ -18,7 +18,7 @@ func exerciseDevelopmentAuthorizationRetirement(t *testing.T, db *gorm.DB) {
 			t.Fatal(tx.Error)
 		}
 		defer tx.Rollback()
-		preserved := []string{"principals", "tenant_memberships", "role_assignments", "departments", "project_groups", "engine_access_delegations", "meta_collection_qualifications"}
+		preserved := []string{"principals", "tenant_memberships", "role_assignments", "departments", "project_groups", "engine_access_delegations"}
 		snapshot := func() string {
 			var result strings.Builder
 			for _, table := range preserved {
@@ -63,7 +63,7 @@ func exerciseDevelopmentAuthorizationRetirement(t *testing.T, db *gorm.DB) {
 			t.Fatalf("dangling issued outcome: %d %v", invalid, err)
 		}
 		if before != snapshot() {
-			t.Fatal("retirement changed unrelated IAM, delegation, collection qualification or approval configuration")
+			t.Fatal("retirement changed unrelated IAM, delegation or approval configuration")
 		}
 		var disabled int64
 		if err := tx.Raw(`SELECT count(*) FROM pg_trigger WHERE tgrelid IN ('system.engine_access_grants'::regclass,'system.engine_access_initial_grant_outcomes'::regclass,'system.engine_access_denies'::regclass) AND tgenabled='D'`).Scan(&disabled).Error; err != nil || disabled != 0 {

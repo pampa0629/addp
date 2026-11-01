@@ -20,6 +20,7 @@ import (
 // @Success 200 {object} models.ScanExecutionResponse "安全执行记录 | Safe execution"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "缺少当前用户来源 | Current User origin is required"
+// @Failure 401,403,404,409 {object} map[string]interface{} "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
@@ -44,13 +45,13 @@ func (h *Handler) TriggerScanTask(c *gin.Context) {
 
 	task, err := h.taskService.GetTask(tenantID, uint(taskID))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondScanManagementError(c, err)
 		return
 	}
 
-	run, err := h.executionService.CreateTaskManualRun(scanUserOriginContext(c), task, userID)
+	run, err := h.executionService.CreateTaskManualRun(h.scanManagementContext(c), task, userID)
 	if err != nil {
-		h.handleServiceError(c, err)
+		respondScanManagementError(c, err)
 		return
 	}
 
@@ -71,7 +72,7 @@ type taskProviderExecuteResponse struct {
 
 // ProviderExecuteScanTask 按 TaskProvider 标准协议触发 ScanTask。
 // @Summary 执行 TaskProvider 扫描任务 | Execute TaskProvider scan task
-// @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；task_type 仅支持 scan，请求必须提供 source=orchestrator 和 parent_execution_id，parameters 当前不支持覆盖。| Only accepts addp-orchestrator execution-lineage invocation; task_type only supports scan, source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.
+// @Description PG basic 本期拒绝编排触发。其他既有入口仅接受 addp-orchestrator 以父 execution 血缘触发；task_type 仅支持 scan，请求必须提供 source=orchestrator 和 parent_execution_id，parameters 当前不支持覆盖。| PG basic orchestration is rejected in this release. Other existing routes only accept addp-orchestrator execution-lineage invocation; task_type only supports scan, source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.
 // @Tags Meta Scan
 // @Accept json
 // @Produce json
@@ -80,6 +81,7 @@ type taskProviderExecuteResponse struct {
 // @Param request body taskProviderExecuteRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} taskProviderExecuteResponse "执行记录 | Execution"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401,403,404,409 {object} map[string]interface{} "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
@@ -131,13 +133,13 @@ func (h *Handler) ProviderExecuteScanTask(c *gin.Context) {
 
 	task, err := h.taskService.GetTask(tenantID, uint(taskID))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondScanManagementError(c, err)
 		return
 	}
 
 	run, err := h.executionService.CreateTaskRunWithContext(c.Request.Context(), task, userID, triggerType, source, parentExecutionID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondScanManagementError(c, err)
 		return
 	}
 

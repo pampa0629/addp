@@ -64,7 +64,7 @@ func prepareSourceDeny(input CreateDenyInput) (*SourceDeny, error) {
 	expires, expiryErr := shared.NormalizeSharingExpiry(input.ExpiryMode, input.ExpiresAt)
 	if err != nil || expiryErr != nil || input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID ||
 		input.DenyID == uuid.Nil || input.RecipientID <= 0 || !oneOfRecipient(input.RecipientType) ||
-		input.Action != "read" || !validReason(input.Reason) {
+		!shared.ValidSourceAccessAction(input.Action) || !validReason(input.Reason) {
 		return nil, commonapi.ErrBadRequest
 	}
 	return &SourceDeny{DenyID: input.DenyID, TenantID: input.Actor.TenantID, EngineID: input.EngineID,
@@ -104,6 +104,9 @@ func (s *Service) CreateDeny(ctx context.Context, input CreateDenyInput) (*Sourc
 	known := false
 	err = s.withEngineManagementScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessDenyCreate, false,
 		func(tx *Repository, check func() error) error {
+			if err := tx.checkSourceAccessAction(ctx, row.TenantID, row.EngineID, row.Action); err != nil {
+				return err
+			}
 			if err := tx.db.WithContext(ctx).Raw(`SELECT EXISTS (
  SELECT 1 FROM system.engine_access_grants WHERE tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND catalog_path = ?::jsonb
  UNION ALL SELECT 1 FROM system.engine_access_denies WHERE tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND catalog_path = ?::jsonb)`,
@@ -148,6 +151,9 @@ func (s *Service) CreateDeny(ctx context.Context, input CreateDenyInput) (*Sourc
 				return err
 			}
 			checkNew := func() error {
+				if err := tx.checkSourceAccessAction(ctx, row.TenantID, row.EngineID, row.Action); err != nil {
+					return err
+				}
 				if err := check(); err != nil {
 					return err
 				}

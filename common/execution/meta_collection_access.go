@@ -29,14 +29,13 @@ func (r MetaCollectionAccessRequest) Validate() error {
 type MetaCollectionAccessObservation struct {
 	ExecutionID         string    `json:"execution_id"`
 	ExecutionPlanDigest string    `json:"execution_plan_digest"`
-	QualificationID     string    `json:"qualification_id"`
 	ObservedAt          time.Time `json:"observed_at"`
 }
 
 func (o *MetaCollectionAccessObservation) UnmarshalJSON(raw []byte) error {
 	invalid := errors.New("invalid Meta collection observation")
 	object, err := jsonmap.DecodeObjectStrict(raw, 8192, 8)
-	if err != nil || !metaScanClosedObject(object, []string{"execution_id", "execution_plan_digest", "qualification_id", "observed_at"}, nil, nil) {
+	if err != nil || !metaScanClosedObject(object, []string{"execution_id", "execution_plan_digest", "observed_at"}, nil, nil) {
 		return invalid
 	}
 	type plain MetaCollectionAccessObservation
@@ -45,8 +44,7 @@ func (o *MetaCollectionAccessObservation) UnmarshalJSON(raw []byte) error {
 		return invalid
 	}
 	execID, err := uuid.Parse(result.ExecutionID)
-	qualID, qualErr := uuid.Parse(result.QualificationID)
-	if err != nil || execID == uuid.Nil || execID.String() != result.ExecutionID || qualErr != nil || qualID == uuid.Nil || qualID.String() != result.QualificationID || !authorizationfacts.ValidItemFingerprint(result.ExecutionPlanDigest) || result.ObservedAt.IsZero() {
+	if err != nil || execID == uuid.Nil || execID.String() != result.ExecutionID || !authorizationfacts.ValidItemFingerprint(result.ExecutionPlanDigest) || result.ObservedAt.IsZero() {
 		return invalid
 	}
 	*o = MetaCollectionAccessObservation(result)

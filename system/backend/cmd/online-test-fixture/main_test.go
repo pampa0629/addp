@@ -117,7 +117,7 @@ func TestPGAuthorizationFixtureSeparatesOperatorAndReader(t *testing.T) {
 			t.Fatalf("consumer gained control-plane permission: %s", key)
 		}
 	}
-	if len(permissions) != 9 || len(pgAuthorizationOperatorPermissions) != 6 || len(sourceInitializerPermissions) != 14 {
+	if len(permissions) != 10 || len(pgAuthorizationOperatorPermissions) != 9 || len(sourceInitializerPermissions) != 11 {
 		t.Fatal("PG fixture widened shared initializer or reader permissions")
 	}
 	for _, key := range []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read",
@@ -756,12 +756,12 @@ func TestManagerKMLExportFixtureReducesConsumerAndInitializerPermissions(t *test
 	if err != nil || !slices.Equal(actual, want) {
 		t.Fatalf("KML export consumer permissions: %v %v", actual, err)
 	}
-	if got := suiteSourceInitializerPermissions("manager-internal-artifact-lineage"); !slices.Equal(got, sourceInitializerPermissions) || len(got) != 14 {
+	if got := suiteSourceInitializerPermissions("manager-internal-artifact-lineage"); !slices.Equal(got, sourceInitializerPermissions) || len(got) != 11 {
 		t.Fatalf("KML source initialization expanded: %v", got)
 	}
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "full")
 	actual, err = suitePermissions("manager-internal-artifact-lineage")
-	if err != nil || len(actual) != 10 || len(suiteSourceInitializerPermissions("manager-internal-artifact-lineage")) != 16 {
+	if err != nil || len(actual) != 10 || len(suiteSourceInitializerPermissions("manager-internal-artifact-lineage")) != 13 {
 		t.Fatal("KML changed the full case identity")
 	}
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "unknown")
@@ -993,7 +993,7 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 			t.Fatalf("preparation permission leaked into consumer: %s", key)
 		}
 	}
-	if len(sourceInitializerPermissions) != 14 {
+	if len(sourceInitializerPermissions) != 11 {
 		t.Fatal("source initializer must have the exact formal engine authorization administrator permissions")
 	}
 	for _, key := range sourceInitializerPermissions {
@@ -1493,7 +1493,7 @@ func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 		}
 	}
 	issuer[0] = "mutated"
-	if !slices.Equal(suiteSourceInitializerPermissions("ftp-consumer-flow"), wantIssuer) || len(sourceInitializerPermissions) != 14 {
+	if !slices.Equal(suiteSourceInitializerPermissions("ftp-consumer-flow"), wantIssuer) || len(sourceInitializerPermissions) != 11 {
 		t.Fatal("FTP-specific lifecycle permissions must not mutate the shared initializer")
 	}
 	for _, suite := range []string{"highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow"} {

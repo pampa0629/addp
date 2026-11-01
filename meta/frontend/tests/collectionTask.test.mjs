@@ -49,10 +49,11 @@ test('PG task editor and task trigger replace the PG schedule shortcut without b
   assert.doesNotMatch(execute, /createManualScanRun|createScanTask/)
   assert.match(dialog, /dirty \|\| unsupported/)
   assert.match(dialog, /ScheduleConfig/)
+  assert.doesNotMatch(dialog, /openApproval|collection-qualifications|meta_collection_qualification/)
   assert.match(dialog, /scheduled: false/)
   for (const lang of ['zh-cn', 'en']) {
     const words = JSON.parse(fs.readFileSync(new URL(`../src/i18n/${lang}.json`, import.meta.url))).meta.scan.collection
-    for (const key of ['title', 'scope', 'save', 'saved', 'approval', 'approvalHint', 'execute', 'invalid', 'unsupported']) assert.ok(words[key])
+    for (const key of ['title', 'scope', 'save', 'saved', 'managementHint', 'execute', 'invalid', 'unsupported']) assert.ok(words[key])
   }
 })
 

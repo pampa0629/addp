@@ -8,6 +8,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scantask"
 )
@@ -80,12 +81,12 @@ func TestCreateTaskRunRejectsSecondActiveExecution(t *testing.T) {
 		t.Fatalf("create scan task: %v", err)
 	}
 
-	service := NewScanExecutionService(db, nil, nil, nil)
-	first, err := service.CreateTaskManualRun(withMetaTestUserOrigin(context.Background(), task.TenantID, 1), task, 1)
+	service := NewScanExecutionService(db, nil, leaseTestEngine("s3"), nil)
+	first, err := service.CreateTaskManualRun(allowScanManagement(withMetaTestUserOrigin(context.Background(), task.TenantID, 1)), task, 1)
 	if err != nil || first == nil {
 		t.Fatalf("first execution = %#v, %v", first, err)
 	}
-	second, err := service.CreateTaskManualRun(withMetaTestUserOrigin(context.Background(), task.TenantID, 1), task, 1)
+	second, err := service.CreateTaskManualRun(allowScanManagement(withMetaTestUserOrigin(context.Background(), task.TenantID, 1)), task, 1)
 	if !errors.Is(err, commonapi.ErrConflict) || second != nil {
 		t.Fatalf("second execution = %#v, %v; want conflict", second, err)
 	}
@@ -120,7 +121,7 @@ func TestCreateTaskRunInheritsOrchestratorParentActor(t *testing.T) {
 		t.Fatalf("create parent: %v", err)
 	}
 
-	execution, err := NewScanExecutionService(db, nil, nil, nil).CreateTaskRunWithContext(
+	execution, err := NewScanExecutionService(db, nil, leaseTestEngine("s3"), nil).CreateTaskRunWithContext(
 		context.Background(), task, 0, commonExecution.TriggerTypeManual,
 		commonExecution.ModuleOrchestrator, &parent.ExecutionID,
 	)
@@ -177,5 +178,32 @@ func TestScanCompletionRetainsFinalProgressSnapshot(t *testing.T) {
 				t.Fatalf("completion lost progress or summary: %+v", got.Metadata)
 			}
 		})
+	}
+}
+
+func leaseTestEngine(kind string) *EngineService {
+	s := NewEngineService(nil, nil)
+	tenant := uint(7)
+	s.cacheEngine(tenant, &commonmodels.Engine{ID: 9, TenantID: &tenant, Version: 1, EngineType: kind})
+	return s
+}
+func TestPGTaskRejectsOrchestratorBeforeCreatingExecution(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createTaskExecutionTable(t, db)
+	createScanTaskTable(t, db)
+	task := &models.ScanTask{TenantID: 7, EngineID: 9, Name: "PG orchestration rejection", Scope: models.JSONMap{"type": "engine"}, Parameters: models.JSONMap{"scan_depth": "basic"}}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	parent := "77777777-7777-4777-8777-777777777777"
+	s := NewScanExecutionService(db, nil, leaseTestEngine("postgresql"), nil)
+	run, err := s.CreateTaskRunWithContext(context.Background(), task, 0, "manual", "orchestrator", &parent)
+	if !errors.Is(err, commonapi.ErrForbidden) || run != nil {
+		t.Fatal("PG orchestration admitted", err)
+	}
+	var count int64
+	db.Model(&commonExecution.TaskExecution{}).Count(&count)
+	if count != 0 {
+		t.Fatal("rejected request persisted execution")
 	}
 }

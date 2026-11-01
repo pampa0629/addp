@@ -40,7 +40,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 	// 创建Handler
 	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, inspectService, lineageService)
-	handler.scanCancellationScope = systemClient
+	handler.scanManagementScope = systemClient
+	handler.metadataVisibility = systemClient
+	handler.lineageVisibility = systemClient
 	handler.dataItemChangeService = service.NewDataItemChangeService(db)
 
 	lifecycle.RegisterHealthRoutes(router)

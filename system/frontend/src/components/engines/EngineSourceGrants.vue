@@ -69,6 +69,7 @@
                 <p>{{ t('system.engine.sourceGrants.inspection.observedAt') }}：{{ formatTime(target.inspection.observed_at) }}</p>
                 <h4>{{ t('system.engine.sourceGrants.source') }}</h4>
                 <el-table :data="target.inspection.sources" :empty-text="t('system.engine.sourceGrants.inspection.noSources')">
+                  <el-table-column :label="t('system.engine.sourceGrants.action')" min-width="180"><template #default="{ row }">{{ actionLabel(row.action) }}</template></el-table-column>
                   <el-table-column :label="t('system.engine.sourceGrants.source')" min-width="220"><template #default="{ row }"><EngineGrantRecipient :type="row.recipient_type" :id="row.recipient_id" v-bind="recipientPresentation(row)" /></template></el-table-column>
                   <!-- Element Plus probes column slots with an empty row and $index -1. -->
                   <el-table-column :label="t('system.engine.dataAuthorization.mode')" min-width="150"><template #default="{ row, $index }"><span v-if="$index >= 0">{{ t(`system.engine.dataAuthorization.modes.${row.approval_mode}`) }}</span></template></el-table-column>
@@ -80,6 +81,7 @@
                   <h4>{{ t('system.engine.sourceGrants.deny.sources') }}</h4>
                   <el-table :data="target.inspection.denies" data-testid="account-source-denies">
                     <el-table-column :label="t('system.engine.sourceGrants.recipient')" min-width="220"><template #default="{ row }"><EngineGrantRecipient :type="row.recipient_type" :id="row.recipient_id" v-bind="recipientPresentation(row)" /></template></el-table-column>
+                    <el-table-column :label="t('system.engine.sourceGrants.action')" min-width="180"><template #default="{ row }">{{ actionLabel(row.action) }}</template></el-table-column>
                     <el-table-column :label="t('system.engine.sourceGrants.deny.validity')" min-width="180"><template #default="{ row }">{{ denyExpiryLabel(row) }}</template></el-table-column>
                     <el-table-column v-if="canReleaseDeny" width="130" fixed="right"><template #default="{ row }"><el-button data-testid="source-deny-release" link type="primary" @click="openDeny(target, row)">{{ t('system.engine.sourceGrants.deny.release') }}</el-button></template></el-table-column>
                   </el-table>
@@ -87,6 +89,7 @@
               </div>
             </template>
           </el-table-column>
+          <el-table-column :label="t('system.engine.sourceGrants.action')" min-width="180"><template #default="{ row }">{{ actionLabel(row.action) }}</template></el-table-column>
           <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row.catalog_path) }}</template></el-table-column>
           <el-table-column :label="t('system.engine.sourceGrants.recipient')" min-width="220"><template #default="{ row }"><EngineGrantRecipient :type="row.recipient_type" :id="row.recipient_id" v-bind="recipientPresentation(row)" /></template></el-table-column>
           <el-table-column v-if="accountScope" :label="t('system.engine.sourceGrants.source')" min-width="140"><template #default="{ row }"><el-button data-testid="account-grant-expand" link type="primary" @click="grantTable?.toggleRowExpansion(row)">{{ t('system.engine.sourceGrants.viewSources', { count: row.inspection.sources.length + row.inspection.denies.length }) }}</el-button></template></el-table-column>
@@ -96,7 +99,7 @@
           <el-table-column v-if="listMode === 'current' && !accountScope" :label="t('system.engine.sourceGrants.sourceCount')" min-width="120"><template #default="{ row }">{{ row.grant_count }}</template></el-table-column>
           <el-table-column v-if="listMode === 'history'" :label="t('system.engine.sourceGrants.command')" prop="request_id" min-width="220" show-overflow-tooltip />
           <el-table-column v-if="canRevoke && listMode === 'current' && !accountScope" width="100" fixed="right"><template #default="{ row }"><el-button data-testid="source-grant-revoke" link type="danger" @click="openRevoke(row)">{{ t('system.engine.sourceGrants.revoke') }}</el-button></template></el-table-column>
-          <el-table-column v-if="canCreateDeny && accountScope" width="130" fixed="right"><template #default="{ row }"><el-button data-testid="source-deny-create" link type="danger" :disabled="row.inspection.reason === 'source_unavailable' || row.inspection.denies.some(deny => deny.recipient_type === 'user' && deny.recipient_id === row.recipient_id)" @click="openDeny(row)">{{ t('system.engine.sourceGrants.deny.create') }}</el-button></template></el-table-column>
+          <el-table-column v-if="canCreateDeny && accountScope" width="130" fixed="right"><template #default="{ row }"><el-button data-testid="source-deny-create" link type="danger" :disabled="row.inspection.reason === 'source_unavailable' || row.inspection.denies.some(deny => deny.recipient_type === 'user' && deny.recipient_id === row.recipient_id && deny.action === row.action)" @click="openDeny(row)">{{ t(row.action === 'metadata_read' ? 'system.engine.sourceGrants.deny.createMetadata' : 'system.engine.sourceGrants.deny.create') }}</el-button></template></el-table-column>
         </el-table>
         <el-pagination layout="prev, pager, next, total" :total="total" :page-size="20" :current-page="page" @current-change="changePage" />
       </template>
@@ -107,16 +110,17 @@
       <EngineGrantRecipient v-if="revokeRow" :type="revokeRow.recipient_type" :id="revokeRow.recipient_id" v-bind="recipientPresentation(revokeRow)" />
       <el-alert type="warning" :closable="false" :title="t('system.engine.sourceGrants.revokeBoundary')" />
       <el-alert v-if="revokeRow && revokeRow.recipient_type !== 'user'" type="warning" :closable="false" :title="t('system.engine.sourceGrants.revokeOrganizationBoundary')" />
+      <p>{{ actionLabel(revokeRow?.action) }}</p>
       <p>{{ t('system.engine.sourceGrants.revokeCount', { count: revokeRow?.grant_count }) }}</p>
       <el-alert v-if="revokeError" type="error" :closable="false" :title="revokeError" />
       <el-form label-position="top"><el-form-item :label="t('system.engine.sourceGrants.reason')" required><el-input v-model="revokeReason" data-testid="source-grant-revoke-reason" type="textarea" maxlength="2000" :disabled="revoking" /></el-form-item></el-form>
       <template #footer><el-button ref="revokeCancel" :disabled="revoking" @click="revokeVisible = false">{{ t('common.cancel') }}</el-button><el-button type="danger" data-testid="source-grant-revoke-confirm" :loading="revoking" :disabled="!canRevoke" @click="revoke">{{ t('system.engine.sourceGrants.revoke') }}</el-button></template>
     </el-dialog>
     <el-dialog v-if="authorizationReady" v-model="denyVisible" class="addp-dialog" append-to-body width="min(600px, calc(100vw - 24px))"
-      :title="t(`system.engine.sourceGrants.deny.${denyRule ? 'release' : 'create'}`)" :close-on-click-modal="!denySaving && !denyAttempt" :close-on-press-escape="!denySaving && !denyAttempt" :show-close="!denySaving && !denyAttempt" @open-auto-focus="denyCancel?.$el?.focus()">
-      <p>{{ approvalPathLabel(denyTarget?.catalog_path) }}</p>
+      :title="t(`system.engine.sourceGrants.deny.${denyRule ? 'release' : denyTarget?.action === 'metadata_read' ? 'createMetadata' : 'create'}`)" :close-on-click-modal="!denySaving && !denyAttempt" :close-on-press-escape="!denySaving && !denyAttempt" :show-close="!denySaving && !denyAttempt" @open-auto-focus="denyCancel?.$el?.focus()">
+      <p>{{ approvalPathLabel(denyTarget?.catalog_path) }} · {{ actionLabel(denyRule?.action || denyTarget?.action) }}</p>
       <EngineGrantRecipient v-if="denyTarget" :type="denyRule?.recipient_type || denyTarget.recipient_type" :id="denyRule?.recipient_id || denyTarget.recipient_id" v-bind="recipientPresentation(denyRule || denyTarget)" />
-      <el-alert type="warning" :closable="false" :title="t(`system.engine.sourceGrants.deny.${denyRule ? 'releaseBoundary' : 'createBoundary'}`)" />
+      <el-alert type="warning" :closable="false" :title="t(`system.engine.sourceGrants.deny.${denyRule ? 'releaseBoundary' : denyTarget?.action === 'metadata_read' ? 'createMetadataBoundary' : 'createBoundary'}`)" />
       <el-alert v-if="denyRule && denyRule.recipient_type !== 'user'" type="warning" :closable="false" :title="t('system.engine.sourceGrants.deny.organizationBoundary')" />
       <p v-if="denyRule">{{ t('system.engine.sourceGrants.deny.validity') }}：{{ denyExpiryLabel(denyRule) }}</p>
       <el-alert v-if="denyError" type="error" :closable="false" :title="denyError" />
@@ -129,7 +133,7 @@
           <el-form-item :label="t('system.engine.sourceGrants.reason')" required><el-input v-model="denyForm.reason" data-testid="source-deny-reason" type="textarea" maxlength="2000" show-word-limit /></el-form-item>
         </div>
       </el-form>
-      <template #footer><el-button ref="denyCancel" :disabled="denySaving || !!denyAttempt" @click="denyVisible = false">{{ t('common.cancel') }}</el-button><el-button :type="denyRule ? 'primary' : 'danger'" data-testid="source-deny-confirm" :loading="denySaving" :disabled="denyRule ? !canReleaseDeny : !canCreateDeny" @click="submitDeny">{{ t(denyAttempt ? 'system.engine.sourceGrants.retry' : `system.engine.sourceGrants.deny.${denyRule ? 'release' : 'create'}`) }}</el-button></template>
+      <template #footer><el-button ref="denyCancel" :disabled="denySaving || !!denyAttempt" @click="denyVisible = false">{{ t('common.cancel') }}</el-button><el-button :type="denyRule ? 'primary' : 'danger'" data-testid="source-deny-confirm" :loading="denySaving" :disabled="denyRule ? !canReleaseDeny : !canCreateDeny" @click="submitDeny">{{ t(denyAttempt ? 'system.engine.sourceGrants.retry' : `system.engine.sourceGrants.deny.${denyRule ? 'release' : denyTarget?.action === 'metadata_read' ? 'createMetadata' : 'create'}`) }}</el-button></template>
     </el-dialog>
   </section>
 </template>
@@ -189,6 +193,7 @@ let generation = 0, readSequence = 0, candidateSequence = 0
 let filterTimer = null
 const message = e => e?.response?.data?.error || t('system.engine.sourceGrants.failed')
 const formatTime = value => new Date(value).toLocaleString(locale.value)
+const actionLabel = action => ['metadata_read', 'read'].includes(action) ? t(`system.engine.sourceGrants.actions.${action}`) : '—'
 const expiryLabel = row => row.expiry_mode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : row.expires_at ? formatTime(row.expires_at) : '—'
 const denyExpiryLabel = row => row.expiry_mode === 'until_revoked' ? t('system.engine.sourceGrants.deny.untilReleased') : row.expires_at ? formatTime(row.expires_at) : '—'
 const state = row => row.revocation ? 'revoked' : row.expires_at && new Date(row.expires_at).getTime() <= Date.now() ? 'expired' : 'issued'

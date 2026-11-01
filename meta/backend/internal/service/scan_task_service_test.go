@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/addp/meta/internal/metatest"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -286,9 +287,11 @@ func TestUpsertEngineScanTaskFromPolicyCreatesTask(t *testing.T) {
 	tenantID := uint(1)
 	taskSvc := NewScanTaskService(db)
 	task, err := taskSvc.UpsertEngineScanTaskFromPolicy(
+		allowScanManagement(context.Background()),
 		tenantID,
 		7,
 		9,
+		"minio",
 		"Business MinIO",
 		&commonModels.ScanPolicy{
 			Enabled:       true,
@@ -334,9 +337,11 @@ func TestUpsertEngineScanTaskFromPolicyDeletesDisabledSchedule(t *testing.T) {
 
 	taskSvc := NewScanTaskService(db)
 	task, err := taskSvc.UpsertEngineScanTaskFromPolicy(
+		allowScanManagement(context.Background()),
 		tenantID,
 		7,
 		9,
+		"minio",
 		"Business MinIO",
 		&commonModels.ScanPolicy{
 			Enabled:       false,
@@ -446,7 +451,10 @@ func TestComputeInheritedTargetsIgnoresManualTasks(t *testing.T) {
 
 	execSvc := NewScanExecutionService(db, nil, nil, nil)
 	scheduler := NewScanTaskScheduler(taskSvc, execSvc)
-	got := scheduler.computeInheritedTargets(parent)
+	got, err := scheduler.computeInheritedTargets(db, parent)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(got.CatalogPaths, []string{"bucket/a", "bucket/b"}) {
 		t.Fatalf("catalog paths = %#v", got.CatalogPaths)
 	}
@@ -466,11 +474,11 @@ func TestCreateTaskRejectsDuplicateEnabledScheduleScope(t *testing.T) {
 		Enabled:      true,
 		ScanDepth:    "deep",
 	}
-	if _, err := taskSvc.CreateTask(ctx, 1, 7, req); err != nil {
+	if _, err := taskSvc.CreateTask(allowScanManagement(ctx), 1, 7, req); err != nil {
 		t.Fatalf("CreateTask() first error = %v", err)
 	}
 
-	_, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+	_, err := taskSvc.CreateTask(allowScanManagement(ctx), 1, 7, &models.ScanTaskUpsertRequest{
 		Name:         "same bucket c",
 		EngineID:     9,
 		CatalogPaths: []string{"bucket/c"},
@@ -489,7 +497,7 @@ func TestCreateTaskAllowsDuplicateScopeWhenScheduleDisabled(t *testing.T) {
 
 	taskSvc := NewScanTaskService(db)
 	ctx := context.Background()
-	if _, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+	if _, err := taskSvc.CreateTask(allowScanManagement(ctx), 1, 7, &models.ScanTaskUpsertRequest{
 		Name:         "scheduled bucket",
 		EngineID:     9,
 		CatalogPaths: []string{"bucket/c"},
@@ -499,7 +507,7 @@ func TestCreateTaskAllowsDuplicateScopeWhenScheduleDisabled(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateTask() scheduled error = %v", err)
 	}
-	if _, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+	if _, err := taskSvc.CreateTask(allowScanManagement(ctx), 1, 7, &models.ScanTaskUpsertRequest{
 		Name:         "manual bucket",
 		EngineID:     9,
 		CatalogPaths: []string{"bucket/c"},
@@ -507,7 +515,7 @@ func TestCreateTaskAllowsDuplicateScopeWhenScheduleDisabled(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateTask() manual duplicate scope error = %v", err)
 	}
-	if _, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+	if _, err := taskSvc.CreateTask(allowScanManagement(ctx), 1, 7, &models.ScanTaskUpsertRequest{
 		Name:         "disabled bucket",
 		EngineID:     9,
 		CatalogPaths: []string{"bucket/c"},
@@ -525,7 +533,7 @@ func TestDeleteTaskRestoresParentScheduleInheritance(t *testing.T) {
 
 	taskSvc := NewScanTaskService(db)
 	ctx := context.Background()
-	parent, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+	parent, err := taskSvc.CreateTask(allowScanManagement(ctx), 1, 7, &models.ScanTaskUpsertRequest{
 		Name:         "parent",
 		EngineID:     9,
 		CatalogPaths: []string{"bucket/a", "bucket/b", "bucket/c"},
@@ -536,7 +544,7 @@ func TestDeleteTaskRestoresParentScheduleInheritance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask() parent error = %v", err)
 	}
-	child, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+	child, err := taskSvc.CreateTask(allowScanManagement(ctx), 1, 7, &models.ScanTaskUpsertRequest{
 		Name:         "child",
 		EngineID:     9,
 		CatalogPaths: []string{"bucket/c"},
@@ -550,15 +558,21 @@ func TestDeleteTaskRestoresParentScheduleInheritance(t *testing.T) {
 
 	execSvc := NewScanExecutionService(db, nil, nil, nil)
 	scheduler := NewScanTaskScheduler(taskSvc, execSvc)
-	beforeDelete := scheduler.computeInheritedTargets(parent)
+	beforeDelete, err := scheduler.computeInheritedTargets(db, parent)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(beforeDelete.CatalogPaths, []string{"bucket/a", "bucket/b"}) {
 		t.Fatalf("before delete catalog paths = %#v, want a/b", beforeDelete.CatalogPaths)
 	}
 
-	if err := taskSvc.DeleteTask(ctx, 1, child.ID); err != nil {
+	if err := taskSvc.DeleteTask(allowScanManagement(ctx), 1, child.ID); err != nil {
 		t.Fatalf("DeleteTask() error = %v", err)
 	}
-	afterDelete := scheduler.computeInheritedTargets(parent)
+	afterDelete, err := scheduler.computeInheritedTargets(db, parent)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(afterDelete.CatalogPaths, []string{"bucket/a", "bucket/b", "bucket/c"}) {
 		t.Fatalf("after delete catalog paths = %#v, want a/b/c", afterDelete.CatalogPaths)
 	}
@@ -569,7 +583,7 @@ func TestUpsertEngineScanTaskRejectsDuplicateEnabledEngineSchedule(t *testing.T)
 	createScanTaskTable(t, db)
 
 	taskSvc := NewScanTaskService(db)
-	if _, err := taskSvc.CreateTask(context.Background(), 1, 7, &models.ScanTaskUpsertRequest{
+	if _, err := taskSvc.CreateTask(allowScanManagement(context.Background()), 1, 7, &models.ScanTaskUpsertRequest{
 		Name:      "manual engine plan",
 		EngineID:  9,
 		Schedule:  "15 3 * * *",
@@ -580,9 +594,11 @@ func TestUpsertEngineScanTaskRejectsDuplicateEnabledEngineSchedule(t *testing.T)
 	}
 
 	_, err := taskSvc.UpsertEngineScanTaskFromPolicy(
+		allowScanManagement(context.Background()),
 		1,
 		7,
 		9,
+		"minio",
 		"Business MinIO",
 		&commonModels.ScanPolicy{
 			Enabled:       true,
@@ -605,33 +621,7 @@ func createTaskExecutionTable(t *testing.T, db *gorm.DB) {
 }
 
 func createScanTaskTable(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	if err := db.Exec(`
-		CREATE TABLE meta.scan_tasks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			engine_id INTEGER NOT NULL,
-			name TEXT NOT NULL,
-			description TEXT,
-			schedule TEXT,
-			enabled BOOLEAN,
-			scope JSON,
-			parameters JSON,
-			owner_module TEXT NOT NULL DEFAULT 'meta',
-			owner_ref TEXT,
-			last_run_at DATETIME,
-			next_run_at DATETIME,
-			last_execution_id TEXT,
-			last_execution_status TEXT,
-			created_by INTEGER,
-			updated_by INTEGER,
-			created_at DATETIME,
-			updated_at DATETIME,
-			deleted_at DATETIME
-		)
-	`).Error; err != nil {
-		t.Fatalf("create scan_tasks table: %v", err)
-	}
+	metatest.CreateScanTaskTable(t, db)
 }
 
 func jsonMapUint(m commonModels.JSONMap, key string) uint {
@@ -761,4 +751,8 @@ func TestManualItemHeaderModeCanBeDeclaredWithoutEncoding(t *testing.T) {
 			t.Fatal("header-only request invented an encoding override")
 		}
 	}
+}
+
+func allowScanManagement(ctx context.Context) context.Context {
+	return WithScanManagementCheck(ctx, func(context.Context, *models.ScanTask, string) error { return nil })
 }

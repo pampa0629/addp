@@ -122,3 +122,33 @@ func createLineageTables(t testing.TB, db *gorm.DB) {
 		}
 	}
 }
+
+func CreateScanTaskTable(t testing.TB, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`
+		CREATE TABLE meta.scan_tasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			engine_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			schedule TEXT,
+			enabled BOOLEAN,
+			scope JSON,
+			parameters JSON,
+			owner_module TEXT NOT NULL DEFAULT 'meta',
+			owner_ref TEXT,
+			last_run_at DATETIME,
+			next_run_at DATETIME,
+			last_execution_id TEXT,
+			last_execution_status TEXT,
+			created_by INTEGER,
+			updated_by INTEGER,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create scan_tasks table: %v", err)
+	}
+}

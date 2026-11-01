@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	shared "github.com/addp/common/authorization"
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -59,6 +60,104 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			}
 			return session, tokens
 		}
+		t.Run("metadata candidates use current User and no source details", func(t *testing.T) {
+			other := engineplugin.TabularItemPath(path.EngineID, "schema", "public", "ungranted_metadata")
+			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path, other}})
+			user, _ := newUser(t, time.Hour)
+			session, _ := issue(t, user, time.Minute)
+			request := shared.SourceMetadataCheckRequest{Targets: []engineplugin.EngineCatalogPath{path, other}}
+			if result, err := service.CheckMetaMetadataRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("missing metadata function: %+v %v", result, err)
+			}
+			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.metadata_query", Name: "Metadata observation fixture", PermissionKeys: []string{MetaCatalogReadPermission}, ActorPrincipalID: adminID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Metadata observation fixture"}); err != nil {
+				t.Fatal(err)
+			}
+			session, _ = issue(t, user, time.Minute)
+			delegation, err := iam.NewDelegationService(identity, systemauthorization.ToolAuthorizationCatalog{}, iam.DelegationServiceConfig{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			credentials := []string{session.AccessToken}
+			for _, scope := range []string{"resource.children.list", "resource.ancestors.get"} {
+				delegated, err := delegation.IssueDelegatedAccessToken(ctx, iam.IssueDelegatedAccessTokenInput{SourceAccessToken: session.AccessToken, Audience: "meta", Scopes: []string{scope}, AgentRunID: uuid.NewString(), ToolCallID: uuid.NewString()})
+				if err != nil || delegated == nil {
+					t.Fatalf("issue actual Meta delegate: %v", err)
+				}
+				credentials = append(credentials, delegated.AccessToken)
+			}
+			check := func(visible bool) {
+				t.Helper()
+				var before, after int64
+				if err := db.Table("system.audit_logs").Count(&before).Error; err != nil {
+					t.Fatal(err)
+				}
+				for _, credential := range credentials {
+					result, err := service.CheckMetaMetadataRead(ctx, credential, request)
+					if err != nil || result == nil || result.ObservedAt.IsZero() || len(result.Targets) != 2 || result.Targets[0].Visible != visible || result.Targets[1].Visible {
+						t.Fatalf("metadata candidate visibility=%+v err=%v", result, err)
+					}
+					if strings.HasPrefix(credential, "addp_dat_") {
+						if result, err := service.CheckMetaLineageRead(ctx, credential, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+							t.Fatalf("Meta delegate crossed into lineage: %+v %v", result, err)
+						}
+
+						if result, err := service.CheckManagerPreviewRead(ctx, credential, SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+							t.Fatalf("Meta delegate crossed into Manager: %v", err)
+						}
+					}
+				}
+				if err := db.Table("system.audit_logs").Count(&after).Error; err != nil || before != after {
+					t.Fatalf("observation changed audits %d/%d: %v", before, after, err)
+				}
+			}
+			check(false)
+			id := grant(t, "user", user.PrincipalID, nil)
+			check(true)
+			if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("metadata function became preview authority: %+v %v", result, err)
+			}
+			revoke(t, id)
+			check(false)
+			if result, err := service.CheckMetaMetadataRead(ctx, session.ResourceAccessTickets["manager"], request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+				t.Fatalf("ticket became metadata credential: %+v %v", result, err)
+			}
+		})
+		t.Run("lineage uses only its function and current data rules", func(t *testing.T) {
+			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
+			user, _ := newUser(t, time.Hour)
+			session, _ := issue(t, user, time.Minute)
+			request := shared.SourceMetadataCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}
+			if result, err := service.CheckMetaLineageRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("missing function: %+v %v", result, err)
+			}
+			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.lineage_query", Name: "Lineage observation fixture", PermissionKeys: []string{MetaLineageReadPermission}, ActorPrincipalID: adminID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Lineage observation fixture"}); err != nil {
+				t.Fatal(err)
+			}
+			session, _ = issue(t, user, time.Minute)
+			check := func(visible bool) {
+				t.Helper()
+				result, err := service.CheckMetaLineageRead(ctx, session.AccessToken, request)
+				if err != nil || !result.Matches(request) || result.Targets[0].Visible != visible {
+					t.Fatalf("lineage visibility: %+v %v", result, err)
+				}
+			}
+			check(false)
+			id := grant(t, "user", user.PrincipalID, nil)
+			check(true)
+			if result, err := service.CheckMetaMetadataRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("lineage became catalog permission: %+v %v", result, err)
+			}
+			revoke(t, id)
+			check(false)
+		})
 		t.Run("formal preview consumer intersects function permission and source rules", func(t *testing.T) {
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path, engineplugin.TabularItemPath(path.EngineID, "schema", "public", "formal_preview_ungranted_D")}})
 			request := SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}

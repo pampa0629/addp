@@ -282,12 +282,13 @@
 | query cursor | 查询游标 | 由 Service 签发、绑定发布版本、查询指纹、有效排序和最后一行排序值的 opaque 分页位置。 | 游标不承载 SQL、凭据或授权；已发布数据查询使用 keyset/cursor 分页，不以 OFFSET 作为主路径。 |
 | access index | 访问定位索引 | 为高效读取内容窗口而生成的定位索引。 | 标准落点为 `attributes.access_index.<data_type>`；例如 CSV / JSONL 表格的稀疏行号到字节偏移索引。它不是全文索引。 |
 | content hash | 内容哈希 | 对原始内容二进制流计算得到的哈希值。 | 标准落点为 `attributes.storage.content_hash`，用于判断内容是否变化；不用于定位外部全文索引记录。 |
-| basic scan | 基础扫描 | 低成本建立资源树、data item 身份与合法组成边界的扫描。 | 使用独立且限范围的基础识别资格，不要求尚未形成的 DataItem 先有内容 Grant。必要的有限 manifest／header 读取须声明用途、上限及引用边界；不允许业务内容采样、正文提取或全量内容哈希。 |
-| deep scan | 深度扫描 | 补充类型信息、格式信息、访问索引和横切能力的扫描。 | 内容读取须经 System 当前授权裁决及适用的 Security 检查，并遵守 Provider／reader 边界和成本控制；扫描操作权限、服务连接和执行来源均不代替源数据读取资格。 |
-| centralized metadata collection | 租户集中元数据采集 | 租户按统一范围维护技术事实的后台采集活动。 | PG basic 目标规则为采集功能权限加引擎管理范围，不依赖操作者的 DataItem 读取 Grant，不再逐任务批准。定时任务归租户，创建人离职不自动停止；结果查看另行授权，deep 不随本规则开放。 |
-| metadata viewing authorization | 元数据查看授权 | 允许接收方查看指定 DataItem 的资源身份与允许展示的技术结构。 | 不包含样本、正文、业务值和内容统计；数据读取包含必要元数据查看，但不隐式签发第二条 Grant。System 为唯一规则 owner，Catalog 复用既有业务批准流程。 |
+| basic scan | 基础扫描 | 低成本建立资源树、data item 身份与合法组成边界的扫描。 | 与 deep 使用相同扫描权限，区别在成本与结果完整度；按集中管理或精确目标刷新核验范围，不要求尚未形成的 DataItem 先有内容 Grant。必要的有限 manifest／header 读取须声明用途、上限及引用边界；不允许业务内容采样、正文提取或全量内容哈希。 |
+| deep scan | 深度扫描 | 补充类型信息、格式信息、访问索引和横切能力的扫描。 | 与 basic 使用相同扫描权限；须核验集中采集管理范围或精确目标刷新资格，并执行适用 Security、Provider／reader 与成本约束。采集资格不向操作者授予样本、统计或内容查看权。 |
+| centralized metadata collection | 租户集中元数据采集 | 租户按统一范围维护技术事实的后台采集活动。 | 目标规则为采集功能权限加引擎管理范围，不依赖操作者的 DataItem 读取 Grant，不再逐任务批准。basic／deep 不划分权限；定时任务归租户，创建人离职不自动停止，结果查看另行授权。首期落地 PG。 |
+| metadata viewing authorization | 元数据查看授权 | 允许接收方查看指定 DataItem 的资源身份与允许展示的技术结构。 | 不包含样本、正文、业务值和内容统计；数据读取包含必要元数据查看，但不隐式签发第二条 Grant。 元数据查看禁止同时阻止数据读取；数据读取禁止不消除独立有效的元数据查看授权。System 为唯一规则 owner，Catalog 复用既有业务批准流程。 |
 | exact-target collection | 精确目标采集 | 仅覆盖明确指定数据项及其经核验合法组成边界的采集。 | 不包含兄弟项或未来新增的独立 DataItem；有限 refs、locator 和执行来源都是范围事实，不是许可。 |
-| full-scope collection | 完整范围采集 | 对明确 Engine、schema 或目录边界内的资源开展统一采集。 | 范围内未来新增项属于采集范围，不因此向人员授予查看或读取权；范围声明不是许可，仍须核验操作功能权限、引擎管理范围及真实执行计划。当前只推进 PG 整引擎 basic，其他范围及 deep 不据此开放。 |
+| full-scope collection | 完整范围采集 | 对明确 Engine、schema 或目录边界内的资源开展统一采集。 | 范围内未来新增项属于采集范围，不因此向人员授予查看或读取权；范围声明不是许可，仍须核验操作功能权限、引擎管理范围及真实执行计划。首期推进 PG 整引擎计划；basic／deep 共用权限，其他引擎与节点计划不据此宣称已实现。 |
+| initial engine management scope | 初始引擎管理范围 | 引擎注册时为真实注册人的当前租户成员关系建立的本引擎管理资格。 | 持续至成员关系或引擎结束，也可由有权管理员显式撤销；不因重新登录或重新加入恢复，不授予功能角色或数据读取 Grant。其他账号通过现有委托取得管理范围。 |
 | scan depth | 扫描深度 | 本次扫描要达到的深度。 | 请求字段为 `scan_depth`，只允许 `basic` / `deep`。 |
 | scanned depth | 已扫深度 | 当前 `meta_node` / `meta_item` 已达到的元数据完整度。 | 落库字段为 `scanned_depth`，取值为 `none` / `basic` / `deep`。 |
 | scan status | 扫描状态 | 扫描任务或最近扫描过程的运行状态。 | node 表达最近一次覆盖其范围的过程状态，不表达当前数据可用性或扫描深度；局部 item 刷新不覆盖父 node 状态。 |

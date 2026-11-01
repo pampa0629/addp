@@ -1215,6 +1215,164 @@
                 "x-addp-auth-mode": "self"
             }
         },
+        "/engine-access/metadata-checks/meta-lineage": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅当前 Tenant 第一方或 OAuth User，固定核验 meta.lineage.read 与当前元数据权限；拒绝委托、机器和资源票据。不返回服务可见性或可缓存许可 | Current Tenant first-party or OAuth User only; checks fixed meta.lineage.read and current metadata access. Rejects delegates, Service and resource tickets. Returns neither service visibility nor cacheable authority",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "检查 PG 血缘端点可见性 | Check PG lineage endpoint visibility",
+                "parameters": [
+                    {
+                        "description": "1 至 200 个完整目标 | 1 to 200 complete targets",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SourceMetadataCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次可见性 | Current visibility",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SourceMetadataCheck"
+                        }
+                    },
+                    "400": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.lineage.read"
+                ]
+            }
+        },
+        "/engine-access/metadata-checks/meta-query": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前 Tenant 第一方或 OAuth API User，或唯一 meta audience 且仅含 resource.children.list 或 resource.ancestors.get 一种 Scope 的真实委托凭据；固定核验 meta.catalog.read 和 PostgreSQL DataItem 当前规则。拒绝机器、资源票据、自报身份或边界 | Current Tenant first-party or OAuth API User, or a real delegate with sole meta audience and exactly one resource.children.list or resource.ancestors.get scope. Checks fixed meta.catalog.read and current PostgreSQL DataItem rules. Rejects Service, Resource Ticket and caller-supplied identity or boundaries\n每个候选只返回原目标及可见布尔值；不返回授权来源或拒绝原因，不授予内容读取或扫描权限，不构成可缓存许可。调用方须在分页计数及安全字段投影前应用结果 | Returns each original candidate and its visibility only, without rule sources or denial reasons. Grants neither content read nor scan authority and is not a cacheable lease. Consumers must apply results before pagination, counting and safe-field projection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "检查 Meta 查询候选的当前元数据可见性 | Check current metadata visibility for Meta query candidates",
+                "parameters": [
+                    {
+                        "description": "1 至 200 个不重复完整目标，不支持 query 参数 | 1 to 200 unique complete targets; no query parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SourceMetadataCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次可见性观察 | Current visibility observation",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SourceMetadataCheck"
+                        }
+                    },
+                    "400": {
+                        "description": "身份、边界或依赖核验失败 | Identity, boundary or dependency validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "身份、边界或依赖核验失败 | Identity, boundary or dependency validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "身份、边界或依赖核验失败 | Identity, boundary or dependency validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "身份、边界或依赖核验失败 | Identity, boundary or dependency validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "身份、边界或依赖核验失败 | Identity, boundary or dependency validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "身份、边界或依赖核验失败 | Identity, boundary or dependency validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
+            }
+        },
         "/engine-access/read-checks/manager-preview": {
             "post": {
                 "security": [
@@ -2221,7 +2379,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前租户用户须同时具备独立创建权限和引擎管理资格（授权管理员或本引擎有效受托办理人）；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and engine management qualification (authorization administrator or effective delegated handler); recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO\n拒绝按当前 Tenant 与 Engine 内的稳定 DataItem 身份持续匹配，不绑定当前边界摘要。已存身份可以离线收权，新身份必须由 Meta 基础事实证明；不使用原生路径独立放行 | Deny continues matching the stable DataItem identity within the tenant and engine without requiring its current boundary digest. Stored identities permit offline restriction; new identities require Meta proof, never native-path access fallback\n必须显式选择未来到期时间或长期有效；同编号同参数重试恢复原不可变记录，不延长期限或重复审计。记录不证明执行侧已经拒绝数据读取 | Explicit future expiry or until-revoked mode is required; identical command retries recover immutable history without renewal or duplicate audit. History is not proof of execution-side access denial",
+                "description": "PG metadata_read 拒绝同时阻止元数据和内容；read 拒绝不阻止独立的元数据授权。其他引擎保留 read；不扩大操作人资格或接收方范围 | PG metadata_read Deny blocks metadata and content; read Deny preserves independent metadata access. Other engines retain read, with unchanged operator and recipient scope\n当前租户用户须同时具备独立创建权限和引擎管理资格（授权管理员或本引擎有效受托办理人）；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and engine management qualification (authorization administrator or effective delegated handler); recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO\n拒绝按当前 Tenant 与 Engine 内的稳定 DataItem 身份持续匹配，不绑定当前边界摘要。已存身份可以离线收权，新身份必须由 Meta 基础事实证明；不使用原生路径独立放行 | Deny continues matching the stable DataItem identity within the tenant and engine without requiring its current boundary digest. Stored identities permit offline restriction; new identities require Meta proof, never native-path access fallback\n必须显式选择未来到期时间或长期有效；同编号同参数重试恢复原不可变记录，不延长期限或重复审计。记录不证明执行侧已经拒绝数据读取 | Explicit future expiry or until-revoked mode is required; identical command retries recover immutable history without renewal or duplicate audit. History is not proof of execution-side access denial",
                 "consumes": [
                     "application/json"
                 ],
@@ -2231,7 +2389,7 @@
                 "tags": [
                     "源数据显式拒绝 | Source Data Explicit Deny"
                 ],
-                "summary": "建立精确源读取拒绝规则 | Establish a precise source read Deny",
+                "summary": "建立精确数据项拒绝规则 | Establish a precise DataItem Deny",
                 "parameters": [
                     {
                         "type": "string",
@@ -2406,7 +2564,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination\n具体用户查询保留只有有效拒绝的数据项；inspection.denies 仅返回当前适用的拒绝编号、接收主体及期限，不含原因或建立人。建立和解除仍由各自独立权限校验 | Selected-user queries retain Deny-only DataItems; inspection.denies exposes only applicable Deny anchors, recipients and validity, never reasons or operators. Establishment and release retain independent permissions\n按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification",
+                "description": "选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination\n具体用户查询保留只有有效拒绝的数据项；inspection.denies 仅返回当前适用的拒绝编号、接收主体、实际禁止动作及期限，不含原因或建立人。建立和解除仍由各自独立权限校验 | Selected-user queries retain Deny-only DataItems; inspection.denies exposes only applicable Deny anchors, recipients, actual prohibited actions and validity, never reasons or operators. Establishment and release retain independent permissions\n按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification",
                 "produces": [
                     "application/json"
                 ],
@@ -2533,7 +2691,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples\n同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy\n同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change",
+                "description": "当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples\n同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy\n同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change\nPG 支持 read（读取内容并包含必要元数据）及 metadata_read（仅查看元数据）；其他引擎仅支持现有 read。动作必须明确填写，不自动提升 | PG supports read (content including necessary metadata) and metadata_read (metadata only); other engines retain read only. Explicit action is required and never upgraded",
                 "consumes": [
                     "application/json"
                 ],
@@ -2543,7 +2701,7 @@
                 "tags": [
                     "源数据授权 | Source Data Grants"
                 ],
-                "summary": "显式签发独立只读授权 | Issue explicit independent read access",
+                "summary": "显式签发独立数据授权 | Issue explicit independent data access",
                 "parameters": [
                     {
                         "type": "string",
@@ -3423,378 +3581,6 @@
                 ]
             }
         },
-        "/engines/{id}/meta_collection_qualifications": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "持久状态不代表当前任务可执行；Worker 仍逐次核验任务、引擎版本、期限和租约 | Persistent state is not an execution Allow; Workers recheck the task, Engine version, expiry and lease",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "元数据采集资格 | Metadata Collection Qualifications"
-                ],
-                "summary": "查询采集资格与历史 | List collection qualifications and history",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码 | Page",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 10,
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "data": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.MetaCollectionQualification"
-                                    }
-                                },
-                                "page": {
-                                    "type": "integer"
-                                },
-                                "page_size": {
-                                    "type": "integer"
-                                },
-                                "total": {
-                                    "type": "integer"
-                                },
-                                "total_pages": {
-                                    "type": "integer"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.meta_collection_qualification.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "独立审批 Permission 与当前引擎管理资格取交集。首期仅 PG 整个引擎 basic；System 反查 Meta 当前任务摘要并冻结当前引擎版本，需明确用途和到期时间。重复执行不重新审批、不续期；同命令只恢复原历史，不恢复撤销。既有任务不自动获批，不创建数据 Grant | Requires approval permission and current engine management scope. Initially supports PG entire-engine basic tasks. System reads Meta's current task digest and freezes its own Engine version, purpose and explicit expiry. Repeated execution needs no new approval and never renews expiry; identical commands recover history without restoring revocation. Existing tasks are not auto-approved; no data Grant is issued",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "元数据采集资格 | Metadata Collection Qualifications"
-                ],
-                "summary": "批准 basic 采集任务 | Approve a basic collection task",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "任务摘要、用途和期限 | Task digest, purpose and expiry",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ApproveMetaCollectionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.MetaCollectionQualification"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.meta_collection_qualification.approve"
-                ]
-            }
-        },
-        "/engines/{id}/meta_collection_qualifications/{qualification_id}": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "当前权限、引擎管理资格及版本均须有效。撤销保留历史，不删除成果、不撤销用户数据 Grant，期限已过记录只读 | Requires current permission, engine management scope and matching version. Keeps history without deleting outputs or revoking user data Grants. Expired records are read-only",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "元数据采集资格 | Metadata Collection Qualifications"
-                ],
-                "summary": "撤销采集资格 | Revoke a collection qualification",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "资格 UUID | Qualification UUID",
-                        "name": "qualification_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "版本和原因 | Version and reason",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.RevokeMetaCollectionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.MetaCollectionQualification"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.meta_collection_qualification.revoke"
-                ]
-            }
-        },
-        "/engines/{id}/meta_collection_task_facts/{task_id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "当前 Tenant User 需采集资格读取 Permission 与引擎管理资格；通过统一 MetaClient 只读当前任务，不运行扫描或发放内容权限 | Requires current collection-read permission and engine management qualification. Reads current task facts through MetaClient without scanning or granting content access",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "元数据采集资格 | Metadata Collection Qualifications"
-                ],
-                "summary": "核对待批准的采集任务 | Inspect a collection task before approval",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "任务 ID | Task ID",
-                        "name": "task_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/execution.MetaScanTaskFacts"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.meta_collection_qualification.read"
-                ]
-            }
-        },
         "/engines/{id}/restore": {
             "post": {
                 "security": [
@@ -3863,21 +3649,21 @@
                 ]
             }
         },
-        "/engines/{id}/scan_cancellation_scope": {
+        "/engines/{id}/scan_cancel_scope": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "核对当前取消扫描功能权限及 PG 引擎管理范围，只返回本次观察，不批准任务或授予数据权限 | Checks the current scan cancellation permission and PG engine management scope. Returns only a current observation, not task approval or data access",
+                "description": "核对当次功能权限与 PG 引擎管理范围，不批准任务或授予数据权限 | Checks current function permission and PG engine management scope; does not approve tasks or grant data access",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "元数据集中采集 | Centralized Metadata Collection"
                 ],
-                "summary": "核验当前用户的扫描取消范围 | Check current User scan cancellation scope",
+                "summary": "核验当前用户的扫描取消范围 | Check current User scan cancel scope",
                 "parameters": [
                     {
                         "type": "string",
@@ -3928,6 +3714,278 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "meta.scan_task.cancel"
+                ]
+            }
+        },
+        "/engines/{id}/scan_create_scope": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "核对当次功能权限与 PG 引擎管理范围，不批准任务或授予数据权限 | Checks current function permission and PG engine management scope; does not approve tasks or grant data access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据集中采集 | Centralized Metadata Collection"
+                ],
+                "summary": "核验当前用户的扫描创建范围 | Check current User scan create scope",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前范围观察 | Current scope observation",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.EngineAccessHandlingScope"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.create"
+                ]
+            }
+        },
+        "/engines/{id}/scan_delete_scope": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "核对当次功能权限与 PG 引擎管理范围，不批准任务或授予数据权限 | Checks current function permission and PG engine management scope; does not approve tasks or grant data access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据集中采集 | Centralized Metadata Collection"
+                ],
+                "summary": "核验当前用户的扫描删除范围 | Check current User scan delete scope",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前范围观察 | Current scope observation",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.EngineAccessHandlingScope"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.delete"
+                ]
+            }
+        },
+        "/engines/{id}/scan_execute_scope": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "核对当次功能权限与 PG 引擎管理范围，不批准任务或授予数据权限 | Checks current function permission and PG engine management scope; does not approve tasks or grant data access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据集中采集 | Centralized Metadata Collection"
+                ],
+                "summary": "核验当前用户的扫描执行范围 | Check current User scan execute scope",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前范围观察 | Current scope observation",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.EngineAccessHandlingScope"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
+            }
+        },
+        "/engines/{id}/scan_update_scope": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "核对当次功能权限与 PG 引擎管理范围，不批准任务或授予数据权限 | Checks current function permission and PG engine management scope; does not approve tasks or grant data access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据集中采集 | Centralized Metadata Collection"
+                ],
+                "summary": "核验当前用户的扫描修改范围 | Check current User scan update scope",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前范围观察 | Current scope observation",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.EngineAccessHandlingScope"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.update"
                 ]
             }
         },
@@ -10339,7 +10397,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定 addp-meta Tenant Service；System 独立核验当前机器身份、Common 执行与 lease、Meta 计划和任务摘要及资格期限。200 仅为当次观察，不是可缓存凭据；重试和后续读取重新核验 | Restricted to addp-meta Tenant Service. Independently checks current machine identity, canonical Common execution and lease, Meta plan/task digest and qualification expiry. HTTP 200 is a current observation, never a cacheable credential; retries and subsequent reads recheck",
+                "description": "固定 addp-meta Tenant Service；System 独立核验当前机器身份、Common 执行与 lease、Meta 计划和任务摘要及取消状态。200 仅为当次观察，不是可缓存凭据；重试和后续读取重新核验 | Restricted to addp-meta Tenant Service. Independently checks current machine identity, canonical Common execution and lease, Meta plan/task digest and cancellation state. HTTP 200 is a current observation, never a cacheable credential; retries and subsequent reads recheck",
                 "consumes": [
                     "application/json"
                 ],
@@ -10347,7 +10405,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "元数据采集资格 | Metadata Collection Qualifications"
+                    "元数据集中采集 | Centralized Metadata Collection"
                 ],
                 "summary": "核验当前 Meta basic 采集资格 | Check current Meta basic collection access",
                 "parameters": [
@@ -10407,7 +10465,7 @@
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "system.meta_collection_qualification.execute"
+                    "system.meta_collection.execute"
                 ]
             }
         },
@@ -16069,6 +16127,42 @@
                 }
             }
         },
+        "authorization.SourceMetadataCheck": {
+            "type": "object",
+            "properties": {
+                "observed_at": {
+                    "type": "string"
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorization.SourceMetadataTargetCheck"
+                    }
+                }
+            }
+        },
+        "authorization.SourceMetadataCheckRequest": {
+            "type": "object",
+            "properties": {
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogPath"
+                    }
+                }
+            }
+        },
+        "authorization.SourceMetadataTargetCheck": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "visible": {
+                    "type": "boolean"
+                }
+            }
+        },
         "authorization.TokenFacts": {
             "type": "object",
             "properties": {
@@ -16981,9 +17075,6 @@
                 },
                 "observed_at": {
                     "type": "string"
-                },
-                "qualification_id": {
-                    "type": "string"
                 }
             }
         },
@@ -17000,54 +17091,6 @@
                     "type": "string"
                 },
                 "lease_token": {
-                    "type": "string"
-                }
-            }
-        },
-        "execution.MetaScanReadOptions": {
-            "type": "object",
-            "properties": {
-                "encoding": {
-                    "type": "string"
-                },
-                "has_header": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "execution.MetaScanTaskFacts": {
-            "type": "object",
-            "properties": {
-                "engine_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "force": {
-                    "type": "boolean"
-                },
-                "read_options": {
-                    "$ref": "#/definitions/execution.MetaScanReadOptions"
-                },
-                "scan_depth": {
-                    "type": "string",
-                    "enum": [
-                        "basic",
-                        "deep"
-                    ]
-                },
-                "schema_version": {
-                    "type": "string"
-                },
-                "scope_kind": {
-                    "type": "string",
-                    "enum": [
-                        "engine"
-                    ]
-                },
-                "task_definition_digest": {
-                    "type": "string"
-                },
-                "task_id": {
                     "type": "string"
                 }
             }
@@ -17444,65 +17487,6 @@
                 }
             }
         },
-        "github_com_addp_system_internal_engineaccess.MetaCollectionQualification": {
-            "type": "object",
-            "properties": {
-                "engine_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "engine_version": {
-                    "type": "string",
-                    "example": ""
-                },
-                "expires_at": {
-                    "type": "string"
-                },
-                "granted_at": {
-                    "type": "string"
-                },
-                "granted_by_principal_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "id": {
-                    "type": "string"
-                },
-                "purpose": {
-                    "type": "string"
-                },
-                "revoked_at": {
-                    "type": "string"
-                },
-                "revoked_by_principal_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "revoked_reason": {
-                    "type": "string"
-                },
-                "scan_depth": {
-                    "type": "string"
-                },
-                "scope_kind": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "task_definition_digest": {
-                    "type": "string"
-                },
-                "task_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "version": {
-                    "type": "string",
-                    "example": ""
-                }
-            }
-        },
         "github_com_addp_system_internal_engineaccess.SourceDeny": {
             "type": "object",
             "properties": {
@@ -17597,6 +17581,9 @@
         "github_com_addp_system_internal_engineaccess.SourceGrantInspectionDeny": {
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string"
+                },
                 "deny_id": {
                     "type": "string"
                 },
@@ -17618,6 +17605,9 @@
         "github_com_addp_system_internal_engineaccess.SourceGrantInspectionSource": {
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string"
+                },
                 "approval_mode": {
                     "type": "string"
                 },
@@ -20324,26 +20314,6 @@
                 }
             }
         },
-        "internal_api.ApproveMetaCollectionRequest": {
-            "type": "object",
-            "properties": {
-                "command_id": {
-                    "type": "string"
-                },
-                "expected_task_definition_digest": {
-                    "type": "string"
-                },
-                "expires_at": {
-                    "type": "string"
-                },
-                "purpose": {
-                    "type": "string"
-                },
-                "task_id": {
-                    "type": "string"
-                }
-            }
-        },
         "internal_api.CreateEngineAccessDelegationRequest": {
             "type": "object",
             "required": [
@@ -20372,7 +20342,8 @@
                 "action": {
                     "type": "string",
                     "enum": [
-                        "read"
+                        "read",
+                        "metadata_read"
                     ]
                 },
                 "catalog_path": {
@@ -20465,7 +20436,8 @@
                 "action": {
                     "type": "string",
                     "enum": [
-                        "read"
+                        "read",
+                        "metadata_read"
                     ]
                 },
                 "catalog_path": {
@@ -23282,17 +23254,6 @@
             ],
             "properties": {
                 "reason": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.RevokeMetaCollectionRequest": {
-            "type": "object",
-            "properties": {
-                "reason": {
-                    "type": "string"
-                },
-                "version": {
                     "type": "string"
                 }
             }

@@ -26,6 +26,7 @@ var (
 
 // GetResourceTree 获取标准资源树
 // @Summary 获取标准资源树 | Get resource tree
+// @Description PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics
 // @Description 获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine
 // @Description 委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters
 // @Tags Meta Resource Tree
@@ -36,6 +37,7 @@ var (
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Failure 503 {object} map[string]interface{} "授权核验暂不可用 | Authorization check unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "delegated_tool"
 // @x-addp-required-permissions ["meta.catalog.read"]
@@ -58,7 +60,7 @@ func (h *Handler) GetResourceTree(c *gin.Context) {
 		h.handleServiceError(c, err)
 		return
 	}
-	tree, err := h.resourceTreeService.GetTree(c.Request.Context(), tenantID, engineID, parseExpandDepth(c))
+	tree, err := h.resourceTreeService.GetTree(h.metadataBrowsingContext(c), tenantID, engineID, parseExpandDepth(c))
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
@@ -68,6 +70,7 @@ func (h *Handler) GetResourceTree(c *gin.Context) {
 
 // GetResourceTreeNode 获取标准资源树节点
 // @Summary 获取标准资源树节点 | Get resource tree node
+// @Description PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics
 // @Description 按 locator 获取资源树节点及直接子级，返回 common/resourcetree.TreeNode | Get resource tree node and direct children by locator
 // @Tags Meta Resource Tree
 // @Produce json
@@ -77,6 +80,7 @@ func (h *Handler) GetResourceTree(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Failure 503 {object} map[string]interface{} "授权核验暂不可用 | Authorization check unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
@@ -97,7 +101,7 @@ func (h *Handler) GetResourceTreeNode(c *gin.Context) {
 		h.handleServiceError(c, err)
 		return
 	}
-	node, err := h.resourceTreeService.GetNode(c.Request.Context(), tenantID, engineID, locator)
+	node, err := h.resourceTreeService.GetNode(h.metadataBrowsingContext(c), tenantID, engineID, locator)
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
@@ -107,6 +111,7 @@ func (h *Handler) GetResourceTreeNode(c *gin.Context) {
 
 // GetResourceTreeAncestors 获取标准资源树祖先链
 // @Summary 获取标准资源树祖先链 | Get resource tree ancestors
+// @Description PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics
 // @Description 按 locator 获取 root 到目标资源的标准资源树祖先链，并重写为当前 Meta 事实 locator | Get resource tree ancestor chain by locator and rewrite target locator from current Meta facts
 // @Tags Meta Resource Tree
 // @Produce json
@@ -116,6 +121,7 @@ func (h *Handler) GetResourceTreeNode(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Failure 503 {object} map[string]interface{} "授权核验暂不可用 | Authorization check unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
@@ -136,7 +142,7 @@ func (h *Handler) GetResourceTreeAncestors(c *gin.Context) {
 		h.handleServiceError(c, err)
 		return
 	}
-	result, err := h.resourceTreeService.GetAncestors(c.Request.Context(), tenantID, engineID, locator)
+	result, err := h.resourceTreeService.GetAncestors(h.metadataBrowsingContext(c), tenantID, engineID, locator)
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
@@ -146,6 +152,7 @@ func (h *Handler) GetResourceTreeAncestors(c *gin.Context) {
 
 // SearchResourceTree 搜索标准资源树
 // @Summary 搜索标准资源树 | Search resource tree
+// @Description PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics
 // @Description 在指定引擎的标准资源树中按关键词搜索节点 | Search nodes in a standard resource tree by keyword
 // @Tags Meta Resource Tree
 // @Produce json
@@ -157,6 +164,7 @@ func (h *Handler) GetResourceTreeAncestors(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Failure 503 {object} map[string]interface{} "授权核验暂不可用 | Authorization check unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
@@ -177,7 +185,7 @@ func (h *Handler) SearchResourceTree(c *gin.Context) {
 		h.handleServiceError(c, err)
 		return
 	}
-	result, err := h.resourceTreeService.Search(c.Request.Context(), tenantID, engineID, keyword, parseNodeTypes(c), parseSearchLimit(c))
+	result, err := h.resourceTreeService.Search(h.metadataBrowsingContext(c), tenantID, engineID, keyword, parseNodeTypes(c), parseSearchLimit(c))
 	if err != nil {
 		h.handleServiceError(c, err)
 		return

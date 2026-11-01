@@ -79,6 +79,10 @@ class Server:
                     result = {'next_action': 'session_issued', 'session': {'access_token': server.current_reader_token}}
                 elif path.endswith('/authorization-facts'):
                     status, result = 503, {'error': 'dependency unavailable', 'error_code': 'authorization_facts_unavailable'}
+                elif path.startswith('/api/v1/meta/items/'):
+                    status, result = 404, {'error': 'not found'}
+                    if server.fault == 'withdrawn_metadata_leaks':
+                        status, result = 200, {'id': 10, 'full_name': 'public.metric_people'}
                 elif path == READ_CHECK:
                     assert method == 'POST' and kind == 'reader' and body == {'targets': [ONLINE.table_path(2, 'metric_people')]}
                     result = {'observed_at': '2026-10-22T00:00:00Z'}
@@ -765,7 +769,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
 
     def test_content_changes_require_current_data_stable_binding_deny_and_withdrawal(self):
         for fault in ('stale_content', 'content_loses_deny', 'content_restores_withdrawn',
-                      'direct_replay_restores_revoked', 'content_changes_identity', 'content_changes_boundary'):
+                      'direct_replay_restores_revoked', 'content_changes_identity', 'content_changes_boundary',
+                      'withdrawn_metadata_leaks'):
             with self.subTest(fault=fault):
                 server, lifecycle = self.lifecycle(fault)
                 self.scans.side_effect = lambda *_: 'exact-content-basic'
@@ -967,7 +972,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
 
     def test_changed_boundary_after_basic_scan_fails_and_cleans_the_grant(self):
         ONLINE.REGISTRATION.read_exact_record_authorization_facts.side_effect = [
-            self.facts, dict(self.facts, boundary_hash='c' * 64)]
+            self.facts, self.facts, dict(self.facts, boundary_hash='c' * 64)]
         server, lifecycle = self.lifecycle()
         with self.assertRaisesRegex(ONLINE.SuiteError, 'boundary'):
             lifecycle.run({})
@@ -1439,51 +1444,6 @@ class PGBrowserObservationTest(unittest.TestCase):
                     observations=[{'closed_type': 'department', 'refreshes': 1, 'preview_status': 200},
                                   {'closed_type': 'project_group', 'refreshes': 1, 'preview_status': 403}])
 
-    def test_collection_browser_exact_report_and_private_operator_login(self):
-        environment = dict(self.environment, ADDP_ONLINE_PG_OPERATOR_USERNAME='external-online-pg-authorizer',
-                           ADDP_ONLINE_PG_OPERATOR_PASSWORD='operator-private-password')
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE.subprocess, 'Popen', return_value=self.process) as popen, \
-             patch.object(ONLINE.os, 'killpg'):
-            with ONLINE.CollectionObservation(2, '35', 1, 42, 'a' * 64, 'governance', '2099-01-01T00:00:00Z') as browser:
-                browser.command_id = str(uuid.uuid4())
-                expected = dict(browser.binding, schema_version='addp.pg-collection-browser/v1', result='passed',
-                    command_id=browser.command_id, checks=ONLINE.COLLECTION_BROWSER_CHECKS[:-1],
-                    login_requests=1, approval_requests=2, revocation_requests=1,
-                    dropped_approval_responses=1, navigation_writes=0, unchanged_identity=True)
-                browser.evidence.write_text(json.dumps(expected))
-                self.assertEqual(browser.finish(), expected)
-                env = popen.call_args.kwargs['env']
-                self.assertFalse(any('TOKEN' in key or 'SECRET' in key for key in env))
-                self.assertNotIn('ADDP_ONLINE_TEST_USER_PASSWORD', env)
-                self.assertEqual(env['ADDP_ONLINE_PG_OPERATOR_PASSWORD'], 'operator-private-password')
-                for changes in ({'command_id': str(uuid.uuid4())}, {'checks': []}, {'approval_requests': 3},
-                                {'revocation_requests': 0}, {'dropped_approval_responses': 0},
-                                {'navigation_writes': 1}, {'unchanged_identity': False}, {'login_requests': 2},
-                                {'task_id': '43'}, {'raw_token': 'untrusted'}):
-                    browser.evidence.write_text(json.dumps(dict(expected, **changes)))
-                    with self.subTest(changes=changes), self.assertRaises(ONLINE.SuiteError):
-                        browser.finish()
-                self.process.poll.return_value = 0
-
-    def test_collection_command_must_match_exact_pre_registered_scope_and_expiry(self):
-        with patch.dict(ONLINE.os.environ, self.environment):
-            browser = ONLINE.CollectionObservation(2, '35', 1, 42, 'a' * 64, 'governance', '2099-01-01T00:00:00Z')
-            body = {'command_id': str(uuid.uuid4()), 'task_id': '42', 'expected_task_definition_digest': 'a' * 64,
-                    'purpose': 'governance', 'expires_at': '2099-01-01T08:00:00+08:00'}
-            browser.read_ready = Mock(return_value=dict(browser.marker('command'), command=body))
-            self.assertEqual(browser.capture_command(), body)
-            for changes in ({'task_id': '43'}, {'purpose': 'different'}, {'expected_task_definition_digest': 'b' * 64},
-                            {'expires_at': '2099-01-01T00:00:00.000000001Z'}, {'command_id': 'unknown'},
-                            {'engine_id': 'foreign'}):
-                browser.command_id = None
-                browser.read_ready.return_value = dict(browser.marker('command'), command=dict(body, **changes))
-                with self.subTest(changes=changes), self.assertRaises(ONLINE.SuiteError):
-                    browser.capture_command()
-                self.assertIsNone(browser.command_id)
-            browser.read_ready.return_value = dict(browser.marker('command'), command=body, raw_token='forbidden')
-            with self.assertRaisesRegex(ONLINE.SuiteError, 'binding'):
-                browser.capture_command()
-
     def test_control_binding_private_process_scope_and_exact_report(self):
         with patch.dict(ONLINE.os.environ, self.environment), patch.object(ONLINE.subprocess, 'Popen', return_value=self.process) as popen, \
              patch.object(ONLINE.os, 'killpg') as kill:
@@ -1790,999 +1750,76 @@ class PGLoadAuditWindowTest(unittest.TestCase):
             ONLINE.AuditLatencyObservation({}, '33', phase='arbitrary')
 
 
-class MetaCollectionOnlineTest(unittest.TestCase):
+def production_lineage_graph(level, execution, *, visible=True):
+    def node(item_id):
+        value = {'kind': 'data_item' if level == 'item' else 'field_ref', 'item_id': item_id,
+                 'hidden_upstream_count': 0, 'hidden_downstream_count': 0}
+        if level == 'field':
+            value.update(field_name='person_id', schema_snapshot_hash='a' * 64)
+        return value
+    source, output = node(10), node(12)
+    return {'granularity': level, 'subject': output, 'nodes': [output, source] if visible else [output],
+            'edges': [{'source': source, 'target': output, 'relation_kind': 'derive', 'granularity': level,
+                       'status': 'active', 'last_observed_at': '2026-11-01T00:00:00Z',
+                       'evidence': {'execution_id': execution}}] if visible else [], 'truncated': False}
+
+
+class ProductionLineageObservationTest(unittest.TestCase):
     def setUp(self):
-        self.tasks, self.qualifications, self.runs, self.calls = {}, {}, {}, []
-        self.fault, self.lost = None, None
-        self.expiry_clock = None
-        self.schedule_dispatch = False
-        self.reader, self.operator = Mock(), Mock()
-        self.life = ONLINE.Lifecycle(self.operator, self.reader, 3, 2, '33', {}, Mock(), Mock(), Mock(),
-                                     'external-online-consumer', 'private-password')
-        self.life.listing = Mock(return_value={'total': 1, 'data': [{'request_id': 'persistent-history',
-                                                                   'revocation': {'reason': 'prior suite'}}]})
-        self.scenario = self.life.collection = ONLINE.MetaCollectionScenario(self.life, '35', 'fixture')
-        self.reader.request.side_effect = lambda *a, **kw: self.request('reader', *a, **kw)
-        self.operator.request.side_effect = lambda *a, **kw: self.request('operator', *a, **kw)
-        self.report = {'checks': []}
-        patch.object(ONLINE.time, 'sleep').start()
-        self.addCleanup(patch.stopall)
+        self.reader, self.outsider = Mock(token='unchanged'), Mock(token='outsider')
+        self.probe = ONLINE.ProductionLineageObservation(self.reader, self.outsider, 10, 12, 'execution')
 
-    def facts(self, task):
-        return {'schema_version': 'meta.scan_task_facts/v1', 'task_id': str(task), 'engine_id': '2',
-                'task_definition_digest': ('b' if self.tasks[task]['parameters']['force'] else 'a') * 64,
-                'scope_kind': 'engine', 'scan_depth': 'basic', 'read_options': {},
-                'force': self.tasks[task]['parameters']['force']}
+    def test_rejects_each_hidden_fact_and_wrong_execution(self):
+        for level in ('item', 'field'):
+            mutations = [
+                lambda g: g.update(truncated=True),
+                lambda g: g['subject'].update(hidden_upstream_count=1),
+                lambda g: g['nodes'].append(dict(g['subject'], item_id=99)),
+                lambda g: g['nodes'][0].update(kind='published_service', service_id=1),
+                lambda g: g['edges'][0].update(transformation='private SQL'),
+                lambda g: g['edges'][0]['evidence'].update(parameters={'password': 'private'}),
+                lambda g: g['edges'][0]['evidence'].update(execution_id='foreign'),
+                lambda g: g['edges'][0]['source'].update(item_id=99),
+                lambda g: g['edges'].append(deepcopy(g['edges'][0])),
+                lambda g: g['nodes'].pop(),
+            ]
+            if level == 'field':
+                mutations += [lambda g: g['subject'].update(field_name='other'),
+                              lambda g: g['subject'].update(schema_snapshot_hash='')]
+            for index, mutate in enumerate(mutations):
+                graph = production_lineage_graph(level, 'execution')
+                mutate(graph)
+                with self.subTest(level=level, mutation=index), self.assertRaises(ONLINE.SuiteError):
+                    self.probe.validate(graph, level, source_visible=True, pending=True)
 
-    def new_run(self, task, *, scheduled=False):
-        current = self.tasks[task]
-        approvals = [row for row in self.qualifications.values() if row['task_id'] == str(task)]
-        state = 'unapproved' if not approvals else 'revoked' if approvals[-1]['status'] == 'revoked' else (
-            'changed' if current['parameters']['force'] else 'allowed')
-        if state == 'allowed' and self.expiry_clock is not None and datetime.fromisoformat(
-                approvals[-1]['expires_at'].replace('Z', '+00:00')) <= self.expiry_clock.now(timezone.utc):
-            state = 'expired'
-        if current['name'].endswith('_copy'):
-            state = 'copied'
-        allowed = state == 'allowed' or self.fault == state + '_allowed'
-        execution = str(uuid.uuid4())
-        self.runs[execution] = {'execution_id': execution, 'module': 'meta', 'task_type': 'scan',
-            'source_task_id': str(task), 'tenant_id': 3, 'triggered_by': 33,
-            'scan_context': {'engine_id': 2, 'scan_depth': 'basic'},
-            'status': 'success' if allowed else 'failed', 'completed_at': '2026-10-23T00:00:00Z',
-            'metadata': {'items_scanned': 3, 'catalog_nodes_scanned': 2} if allowed else {},
-            'error_details': {} if allowed else {'category': 'connection_failed' if self.fault == 'general_failure' else 'permission_denied'}}
-        if self.expiry_clock is not None:
-            self.runs[execution].update(started_at=self.expiry_clock.now(timezone.utc).isoformat(),
-                                       completed_at=self.expiry_clock.now(timezone.utc).isoformat())
-        if self.fault == 'wrong_task':
-            self.runs[execution]['source_task_id'] = '999'
-        if self.fault == 'read_before_deny' and not allowed:
-            self.runs[execution]['metadata'] = {'items_scanned': 1}
-        if self.fault != 'stale_summary':
-            current.update(last_execution_id=execution, last_execution_status=self.runs[execution]['status'])
-        if state == 'allowed' and self.fault == 'repeat_renews':
-            approvals[-1]['expires_at'] = '2035-01-01T00:00:00Z'
-        if scheduled:
-            self.runs[execution].update(triggered_by=None, trigger_type='scheduled', source='meta', execution_boundary='bounded',
-                                        created_at=self.expiry_clock.now(timezone.utc).isoformat())
-            if self.fault == 'created_after_start': self.runs[execution]['created_at'] = (self.expiry_clock.now(timezone.utc) + timedelta(microseconds=1)).isoformat()
-            if self.fault == 'start_after_completion': self.runs[execution]['started_at'] = (self.expiry_clock.now(timezone.utc) + timedelta(microseconds=1)).isoformat()
-            if self.fault == 'missing_start': self.runs[execution].pop('started_at')
-            if self.fault == 'invalid_start': self.runs[execution]['started_at'] = 'token=private-secret https://private.invalid'
-            if self.fault == 'invalid_completion': self.runs[execution]['completed_at'] = {'token': 'private-secret'}
-            if self.fault == 'manual_run': self.runs[execution]['trigger_type'] = 'manual'
-            if self.fault == 'human_actor': self.runs[execution]['triggered_by'] = 35
-            if self.fault == 'early_run': self.runs[execution]['created_at'] = '2029-01-01T00:00:00Z'
-            if self.fault == 'wrong_source': self.runs[execution]['source'] = 'console'
-            if self.fault == 'wrong_boundary': self.runs[execution]['execution_boundary'] = 'continuous'
-            if self.fault == 'parent_run': self.runs[execution]['parent_execution_id'] = str(uuid.uuid4())
-            if self.fault == 'retry_run': self.runs[execution]['retry_of_execution_id'] = str(uuid.uuid4())
-        return self.runs[execution]
+    def test_withdrawal_never_accepts_old_graph_or_waits_for_acl(self):
+        for level in ('item', 'field'):
+            with self.assertRaises(ONLINE.SuiteError):
+                self.probe.validate(production_lineage_graph(level, 'execution'), level, source_visible=False)
+            hidden = production_lineage_graph(level, 'execution', visible=False)
+            self.assertTrue(self.probe.validate(hidden, level, source_visible=False))
+            self.assertFalse(self.probe.validate(hidden, level, source_visible=True, pending=True))
+            with self.assertRaises(ONLINE.SuiteError):
+                self.probe.validate(hidden, level, source_visible=True)
 
-    def request(self, actor, method, url, expected, body=None, **kwargs):
-        path, query = urlsplit(url).path, parse_qs(urlsplit(url).query)
-        self.calls.append((actor, method, path, deepcopy(body)))
-        status, result, operation = 200, {}, None
-        if path == '/api/v1/meta/scan/tasks':
-            if method == 'GET':
-                result = list(self.tasks.values())
-                if self.fault == 'foreign_task':
-                    for row in result:
-                        row['created_by'] = 999
-            else:
-                self.assertEqual(actor, 'operator')
-                task = 100 + len(self.tasks)
-                self.tasks[task] = dict(body, id=task, tenant_id=3, created_by=35,
-                                        parameters={'force': body['force']})
-                if self.expiry_clock is not None:
-                    self.tasks[task]['updated_at'] = self.expiry_clock.now(timezone.utc).isoformat()
-                status, result, operation = 201, self.tasks[task], 'create'
-        elif path.startswith('/api/v1/meta/scan/tasks/'):
-            task = int(path.split('/')[6])
-            if path.endswith('/trigger'):
-                self.assertEqual(actor, 'reader')
-                result, operation = self.new_run(task), 'trigger'
-            elif method == 'PUT':
-                if self.fault != 'disable_noop' or body['enabled'] is not False:
-                    self.tasks[task].update(body, parameters={'force': body['force']})
-                if self.expiry_clock is not None:
-                    self.tasks[task].update(updated_at=self.expiry_clock.now(timezone.utc).isoformat(),
-                        next_run_at=(self.expiry_clock.now(timezone.utc) + timedelta(seconds=60)).isoformat())
-                result, operation = self.tasks[task], 'enable' if body['enabled'] else 'disable'
-            elif method == 'DELETE':
-                self.tasks.pop(task)
-                operation = 'delete'
-        elif '/meta_collection_task_facts/' in path:
-            result = self.facts(int(path.split('/')[-1]))
-        elif '/meta_collection_qualifications' in path:
-            if method == 'GET':
-                result = {'data': list(self.qualifications.values()), 'total': len(self.qualifications),
-                          'page': int(query['page'][0]), 'page_size': 100}
-            elif method == 'POST':
-                if actor == 'reader':
-                    status, result = 403, {'error': 'permission denied', 'error_code': 'permission_denied'}
-                else:
-                    command = body['command_id']
-                    if command not in self.qualifications:
-                        self.qualifications[command] = dict(id=command, engine_id='2', task_id=body['task_id'],
-                            task_definition_digest=body['expected_task_definition_digest'], engine_version='1',
-                            purpose=body['purpose'], scan_depth='basic', scope_kind='engine', status='active', version='1',
-                            granted_at='2026-10-23T00:00:00Z', expires_at=body['expires_at'], granted_by_principal_id='35')
-                    elif self.fault == 'replay_revives':
-                        self.qualifications[command]['status'] = 'active'
-                    elif self.fault == 'expired_replay_renews':
-                        self.qualifications[command]['expires_at'] = '2099-01-01T00:00:00Z'
-                    status, result, operation = 201, self.qualifications[command], 'approve'
-                    if self.fault == 'different_timestamp_zone':
-                        # The POST's UTC time and a database read's local time
-                        # can encode exactly the same instant differently.
-                        result = deepcopy(result)
-                        for key in ('granted_at', 'expires_at', 'revoked_at'):
-                            if key in result:
-                                self.qualifications[command][key] = datetime.fromisoformat(result[key].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=8))).isoformat()
-            else:
-                row = self.qualifications[path.split('/')[-1]]
-                self.assertEqual(body['version'], row['version'])
-                if self.fault != 'revoke_noop':
-                    row.update(status='revoked', version=str(int(row['version']) + 1), revoked_at='2026-10-23T00:01:00Z',
-                               revoked_by_principal_id='35', revoked_reason=body['reason'])
-                    if self.expiry_clock is not None:
-                        row['revoked_at'] = self.expiry_clock.now(timezone.utc).isoformat()
-                result, operation = row, 'revoke'
-        elif path.startswith('/api/v1/meta/executions/'):
-            result = self.runs[path.split('/')[-1]]
-        elif path == '/api/v1/meta/scan/runs':
-            task = int(query['task_id'][0])
-            current = self.tasks.get(task)
-            if self.schedule_dispatch and current and current.get('enabled') and self.fault != 'scheduler_stalled' \
-                    and self.expiry_clock.now(timezone.utc) >= datetime.fromisoformat(current['next_run_at']):
-                self.new_run(task, scheduled=True)
-                if self.fault == 'duplicate_scheduled': self.new_run(task, scheduled=True)
-                current['next_run_at'] = (self.expiry_clock.now(timezone.utc) + timedelta(seconds=60)).isoformat()
-            rows = [row for row in self.runs.values() if row['source_task_id'] == query['task_id'][0]]
-            result = {'items': rows, 'total': len(rows)}
-            if self.fault == 'truncated_scheduled': result['total'] += 1
-        else:
-            self.fail('unexpected collection API ' + url)
-        self.assertIn(status, expected)
-        if operation and self.lost == operation:
-            self.lost = None
-            raise ONLINE.SuiteError('unknown ' + operation + ' response')
-        return SimpleNamespace(status=status, payload=deepcopy(result))
+    def test_failures_are_not_retried_and_collection_deadline_is_bounded(self):
+        self.reader.request.side_effect = ONLINE.SuiteError('authority unavailable')
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'authority unavailable'):
+            self.probe.issued()
+        self.assertEqual(self.reader.request.call_count, 1)
+        self.reader.request.side_effect = lambda method, url, expected: SimpleNamespace(
+            payload=production_lineage_graph(parse_qs(urlsplit(url).query)['granularity'][0],
+                                             'execution', visible=False))
+        with patch.object(ONLINE.time, 'monotonic', side_effect=[0, 121]), self.assertRaisesRegex(
+                ONLINE.SuiteError, 'before deadline'):
+            self.probe.issued()
 
-    def test_qualification_lifecycle_uses_one_approval_and_current_worker_results(self):
-        self.scenario.run(self.report)
-        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_CHECKS)
-        self.assertEqual(len(self.qualifications), 1)
-        self.assertEqual(len(self.runs), 6)
-        self.assertTrue(self.report['meta_collection']['source_rules_unchanged'])
-        self.scenario.cleanup()
-        self.assertFalse(self.tasks)
-        self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
-        self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
-
-    def collection_expiry_fixture(self, failure=None):
-        self.report['meta_collection'] = {'qualification_commands': []}
-        origin = datetime(2030, 1, 1, tzinfo=timezone.utc)
-        clock = SimpleNamespace(seconds=0.)
-        clock.now = lambda *_: origin + timedelta(seconds=clock.seconds if failure != 'clock_stalled' else 0)
-        def sleep(seconds):
-            clock.seconds += seconds
-            if failure == 'credential_changed': self.reader.token = 'changed-token'
-        self.expiry_clock = clock
-        fake_datetime = Mock(wraps=datetime)
-        fake_datetime.now.side_effect = clock.now
-        patch.object(ONLINE, 'datetime', fake_datetime).start()
-        patch.object(ONLINE.time, 'monotonic', side_effect=lambda: clock.seconds).start()
-        patch.object(ONLINE.time, 'sleep', side_effect=sleep).start()
-        self.reader.token = 'same-reader-token'
-        return clock
-
-    def test_collection_natural_expiry_uses_same_credential_without_revocation_or_renewal(self):
-        self.collection_expiry_fixture()
-        self.scenario.run_expiry(self.report)
-        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_EXPIRY_CHECKS)
-        self.assertEqual([x['status'] for x in self.runs.values()], ['success', 'failed'])
-        self.assertTrue(self.report['meta_collection']['natural_expiry']['same_credential'])
-        self.assertTrue(self.report['meta_collection']['natural_expiry']['history_unchanged'])
-        self.scenario.cleanup()
-        self.assertFalse(self.tasks)
-        self.assertEqual(len(self.qualifications), 1)
-        self.assertTrue(all(x['status'] == 'active' and x['version'] == '1' and 'revoked_at' not in x
-                            for x in self.qualifications.values()))
-        self.assertFalse(any(method == 'DELETE' and '/meta_collection_qualifications/' in path
-                             for _, method, path, _ in self.calls))
-
-    def test_collection_expiry_rejects_ignored_expiry_general_errors_and_changed_credentials(self):
-        for fault in ('expired_allowed', 'general_failure', 'credential_changed', 'clock_stalled', 'source_changed'):
-            with self.subTest(fault=fault):
-                self.setUp()
-                self.collection_expiry_fixture(fault)
-                self.fault = fault
-                if fault == 'source_changed': self.scenario.source_snapshot = Mock(side_effect=['before', 'after'])
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_expiry(self.report)
-                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_EXPIRY_CHECKS)
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
-
-    def test_collection_expiry_requires_server_times_on_correct_side_and_exact_execution(self):
-        for fault in ('before_late', 'after_early', 'missing_time', 'wrong_execution', 'wrong_module'):
-            with self.subTest(fault=fault):
-                self.setUp()
-                clock = self.collection_expiry_fixture()
-                original = self.reader.request.side_effect
-                def response(method, url, *args, **kwargs):
-                    result = original(method, url, *args, **kwargs)
-                    # The extra observation used for time proof follows the
-                    # terminal/task-summary verification in trigger().
-                    if method == 'GET' and '/meta/executions/' in url:
-                        count = sum(1 for _, m, p, _ in self.calls if m == 'GET' and p == url)
-                        if count == 2:
-                            run = result.payload
-                            if fault == 'before_late' and clock.seconds == 0:
-                                run['completed_at'] = (clock.now(timezone.utc) + timedelta(seconds=45)).isoformat()
-                            if fault == 'after_early' and clock.seconds >= 45:
-                                run['started_at'] = (clock.now(timezone.utc) - timedelta(seconds=1)).isoformat()
-                            if fault == 'missing_time': run.pop('started_at')
-                            if fault == 'wrong_execution': run['execution_id'] = str(uuid.uuid4())
-                            if fault == 'wrong_module': run['module'] = 'transfer'
-                    return result
-                self.reader.request.side_effect = response
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_expiry(self.report)
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-
-    def test_collection_expiry_keeps_cleanup_ownership_after_unknown_approval_or_trigger(self):
-        for operation in ('approve', 'trigger'):
-            with self.subTest(operation=operation):
-                self.setUp()
-                self.collection_expiry_fixture()
-                self.lost = operation
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_expiry(self.report)
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertEqual(len(self.qualifications), 1)
-                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
-
-    def test_expired_qualification_replay_must_not_renew_or_blindly_clean_corrupt_binding(self):
-        self.collection_expiry_fixture()
-        self.fault = 'expired_replay_renews'
-        with self.assertRaisesRegex(ONLINE.SuiteError, 'expired approval replay'):
-            self.scenario.run_expiry(self.report)
-        with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup'):
-            self.scenario.cleanup()
-        self.assertTrue(self.tasks)
-
-    def test_manual_qualification_revocation_cannot_stand_in_for_natural_expiry(self):
-        self.collection_expiry_fixture()
-        original = ONLINE.time.sleep.side_effect
-        def revoke_during_wait(seconds):
-            original(seconds)
-            row = next(iter(self.qualifications.values()))
-            row.update(status='revoked', version='2', revoked_at='2030-01-01T00:00:01Z',
-                       revoked_by_principal_id='35', revoked_reason='not natural expiry')
-        ONLINE.time.sleep.side_effect = revoke_during_wait
-        with self.assertRaisesRegex(ONLINE.SuiteError, 'manual revocation'):
-            self.scenario.run_expiry(self.report)
-        self.scenario.cleanup()
-        self.assertFalse(self.tasks)
-
-    def inflight_fixture(self, fault=None, *, natural_expiry=False):
-        clock = self.collection_expiry_fixture(fault)
-        self.report['meta_collection'] = {'qualification_commands': [], 'scheduled': {
-            'executions': {'approved_repeat': {'items_scanned': 3}}}}
-        barrier = SimpleNamespace(connection_observation=lambda *args: {'verified': True}, baseline={'reset_at': 'stable', 'calls': {}, 'other_statement_count': 0, 'other_statements': []}, closed=False, released=False)
-        selected = []
-        def open_source():
-            if fault == 'source_open': raise ONLINE.SuiteError('source preparation failed')
-            return {'pid': 123, 'locked': True, 'at': clock.now(timezone.utc).isoformat()}
-        def blocked():
-            if fault == 'barrier_missing': raise ONLINE.SuiteError('source did not reach lock')
-            execution = list(self.runs)[-1]
-            if selected:
-                if fault == 'lost_expiry_barrier': raise ONLINE.SuiteError('lock expired before release')
-                return {'pid': 999 if fault == 'changed_expiry_backend' else 124, 'blocker_pid': 123,
-                        'started_at': self.runs[execution]['started_at'],
-                        'observed_at': (clock.now(timezone.utc) - timedelta(seconds=1 if fault == 'early_source_clock' else 0)).isoformat()}
-            selected.append(execution)
-            self.runs[execution]['status'] = 'success' if fault == 'not_running' else 'running'
-            self.runs[execution].pop('completed_at')
-            if fault == 'admitted_after_expiry': clock.seconds += 13
-            return {'pid': 124, 'blocker_pid': 123, 'started_at': clock.now(timezone.utc).isoformat(),
-                    'observed_at': clock.now(timezone.utc).isoformat()}
-        def release():
-            # A successful expiry scenario never revokes; failures still revoke
-            # any qualification whose original deadline has not passed.
-            self.assertTrue(all(row['status'] == 'revoked' or natural_expiry and
-                datetime.fromisoformat(row['expires_at']) <= clock.now(timezone.utc)
-                for row in self.qualifications.values()))
-            if selected and self.runs[selected[0]]['status'] == 'running':
-                row = self.runs[selected[0]]
-                row.update(status='failed', completed_at=clock.now(timezone.utc).isoformat(),
-                    metadata={'items_scanned': 3, 'catalog_nodes_scanned': 1, 'fields_scanned': 0},
-                    error_details={'category': 'connection_failed' if fault == 'general_failure' else 'permission_denied'})
-                if fault == 'missing_partial': row['metadata'] = {}
-                if fault == 'too_many_items': row['metadata']['items_scanned'] = 4
-                self.tasks[int(row['source_task_id'])].update(last_execution_status='failed')
-            barrier.released = True
-        values = {'reset_at': 'changed' if fault == 'statistics_reset' else 'stable',
-                  'calls': {'namespaces': 1, 'tables': 2 if fault == 'another_catalog' else 1,
-                            'workspace_detection': 2, 'other': 1 if fault == 'other_sql' else 0}}
-        calls = []
-        def counts():
-            calls.append(True)
-            result = dict(deepcopy(values), other_statement_count=0, other_statements=[])
-            if fault == 'repeat_source_io' and len(calls) > 1: result['calls']['tables'] += 1
-            return result
-        def close():
-            release()
-            self.assertFalse(any(row['status'] == 'running' for row in self.runs.values()))
-            if fault == 'source_residual': raise ONLINE.SuiteError('source schema remains')
-            barrier.closed = True
-        barrier.open, barrier.wait_blocked, barrier.release = open_source, blocked, release
-        barrier.counts, barrier.close = counts, close
-        return barrier
-
-    def test_inflight_expiry_uses_original_deadline_denies_next_catalog_and_preserves_history(self):
-        barrier = self.inflight_fixture(natural_expiry=True)
-        with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier):
-            self.scenario.run_inflight_expiry(self.report)
-        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_INFLIGHT_EXPIRY_CHECKS)
-        evidence = self.report['meta_collection']['inflight_expiry']
-        self.assertTrue(evidence['no_revocation'] and barrier.closed and barrier.released)
-        self.assertEqual(evidence['stored_status'], 'active')
-        self.assertEqual([r['status'] for r in self.runs.values()], ['failed', 'failed'])
-        self.scenario.cleanup()
-        self.assertFalse(self.tasks)
-        self.assertTrue(all(r['status'] == 'active' and r['version'] == '1' for r in self.qualifications.values()))
-        self.assertFalse(any(method == 'DELETE' and '/meta_collection_qualifications/' in path
-                             for _, method, path, _ in self.calls))
-
-    def test_inflight_expiry_rejects_missing_barrier_read_leaks_history_changes_and_wrong_timing(self):
-        for fault in ('source_open', 'barrier_missing', 'not_running', 'general_failure', 'missing_partial',
-                      'too_many_items', 'statistics_reset', 'another_catalog', 'other_sql', 'repeat_source_io',
-                      'lost_expiry_barrier', 'changed_expiry_backend', 'admitted_after_expiry',
-                      'early_source_clock', 'clock_stalled', 'credential_changed', 'expired_allowed', 'expired_replay_renews'):
-            with self.subTest(fault=fault):
-                self.setUp()
-                barrier = self.inflight_fixture(fault, natural_expiry=True)
-                self.fault = fault if fault in {'expired_allowed', 'expired_replay_renews'} else None
-                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_inflight_expiry(self.report)
-                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_INFLIGHT_EXPIRY_CHECKS)
-                if fault == 'expired_replay_renews':
-                    # A corrupt binding must not be blindly revoked or deleted.
-                    with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup'): self.scenario.cleanup()
-                    self.assertTrue(self.tasks)
-                    continue
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertTrue(barrier.closed)
-
-    def test_inflight_expiry_cannot_be_replaced_by_manual_revocation(self):
-        barrier = self.inflight_fixture(natural_expiry=True)
-        sleep = ONLINE.time.sleep.side_effect
-        def revoke_while_waiting(seconds):
-            sleep(seconds)
-            row = next(iter(self.qualifications.values()))
-            row.update(status='revoked', version='2', revoked_at=self.expiry_clock.now(timezone.utc).isoformat())
-        ONLINE.time.sleep.side_effect = revoke_while_waiting
-        with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaisesRegex(
-                ONLINE.SuiteError, 'natural expiry changed qualification history'):
-            self.scenario.run_inflight_expiry(self.report)
-        self.scenario.cleanup()
-        self.assertFalse(self.tasks)
-
-    def test_connection_evidence_does_not_weaken_other_assertion_or_failure_cleanup(self):
-        for fault in ('other_sql', 'attribution_missing', 'log_read_failed'):
-            with self.subTest(fault=fault):
-                self.setUp()
-                barrier = self.inflight_fixture('other_sql' if fault == 'other_sql' else None, natural_expiry=True)
-                connection = {'verified': fault == 'other_sql', 'events': [{'module': 'system', 'category': 'other'}]}
-                barrier.connection_observation = Mock(return_value=connection)
-                if fault == 'log_read_failed':
-                    barrier.connection_observation.side_effect = ONLINE.SuiteError('private source log unavailable')
-                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_inflight_expiry(self.report)
-                evidence = self.report['meta_collection']['inflight_expiry']
-                if fault != 'log_read_failed': self.assertEqual(evidence['connection_observation'], connection)
-                self.assertFalse(self.report['checks'])
-                self.assertNotIn('next_catalog_denied', evidence)
-                self.scenario.cleanup()
-                self.assertTrue(barrier.closed and barrier.released)
-                self.assertFalse(self.tasks)
-
-    def test_inflight_counter_failures_retain_bounded_diagnostics_without_marking_passed(self):
-        for fault, stage in [('statistics_reset', 'reset_check'), ('another_catalog', 'delta_check'),
-                             ('counter_transport', 'query')]:
-            with self.subTest(fault=fault):
-                self.setUp()
-                barrier = self.inflight_fixture(fault, natural_expiry=True)
-                if fault == 'counter_transport':
-                    barrier.counts = Mock(side_effect=ONLINE.SuiteError('private SQL and credential text'))
-                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_inflight_expiry(self.report)
-                evidence = self.report['meta_collection']['inflight_expiry']
-                self.assertEqual(evidence['source_counter_stage'], stage)
-                self.assertNotIn('next_catalog_denied', evidence)
-                self.assertFalse(self.report['checks'])
-                self.assertNotIn('private SQL', json.dumps(evidence))
-                if fault != 'counter_transport':
-                    self.assertEqual(set(evidence['source_call_delta']),
-                                     {'namespaces', 'tables', 'workspace_detection', 'other'})
-                    self.assertEqual(set(evidence['source_counter_observed']), {'calls', 'reset_at', 'other_statement_count', 'other_statements'})
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-
-    def test_repeat_source_failure_keeps_last_snapshot_and_each_statement_change(self):
-        for natural_expiry in (False, True):
-            for fault in ('probe', 'reset', 'balanced_changes', 'removed', 'classification'):
-                with self.subTest(natural_expiry=natural_expiry, fault=fault):
-                    self.setUp()
-                    barrier = self.inflight_fixture(natural_expiry=natural_expiry)
-                    counts = barrier.counts
-                    before = dict(counts(), other_statement_count=2, other_statements=[
-                        {'query_id': '-123', 'top_level': True, 'kind': 'version_probe', 'calls': 8},
-                        {'query_id': '456', 'top_level': True, 'kind': 'unclassified', 'calls': 1}])
-                    before['calls']['other'] = 9
-                    barrier.baseline.update(other_statement_count=0, other_statements=[])
-                    barrier.baseline['calls']['other'] = 9
-                    after = deepcopy(before)
-                    if fault == 'reset': after['reset_at'] = 'new-reset'
-                    elif fault == 'removed':
-                        after['other_statements'].pop()
-                        after['other_statement_count'] = 1
-                        after['calls']['other'] -= 1
-                    elif fault == 'classification': after['other_statements'][0]['kind'] = 'unclassified'
-                    else:
-                        after['other_statements'][0]['calls'] += 1
-                        if fault == 'probe': after['calls']['other'] += 1
-                        else: after['other_statements'][1]['calls'] -= 1
-                    barrier.counts = Mock(side_effect=[before, after])
-                    run = self.scenario.run_inflight_expiry if natural_expiry else self.scenario.run_inflight
-                    with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaisesRegex(
-                            ONLINE.SuiteError, 'denied repeat touched source'):
-                        run(self.report)
-                    evidence = self.report['meta_collection']['inflight_expiry' if natural_expiry else 'inflight']
-                    self.assertEqual(evidence['repeat_source_counter_stage'], 'equality_check')
-                    self.assertTrue(evidence['repeat_source_counter_available'])
-                    self.assertEqual(evidence['source_counter_observed'], before)
-                    self.assertEqual(evidence['repeat_source_counter_observed'], after)
-                    self.assertEqual(evidence['repeat_source_call_delta']['other'], {'probe': 1, 'removed': -1}.get(fault, 0))
-                    changed = evidence['repeat_other_statement_delta']
-                    self.assertEqual(len(changed), {'probe': 1, 'reset': 0, 'balanced_changes': 2, 'removed': 1, 'classification': 1}[fault])
-                    if fault in ('probe', 'balanced_changes'):
-                        self.assertEqual(changed[0], {'query_id': '-123', 'top_level': True,
-                            'before': before['other_statements'][0], 'after': after['other_statements'][0], 'calls_delta': 1})
-                    if fault == 'removed':
-                        self.assertEqual(changed[0], {'query_id': '456', 'top_level': True,
-                            'before': before['other_statements'][1], 'after': None, 'calls_delta': -1})
-                    if fault == 'classification':
-                        self.assertEqual(changed[0]['calls_delta'], 0)
-                        self.assertEqual(changed[0]['before']['kind'], 'version_probe')
-                        self.assertEqual(changed[0]['after']['kind'], 'unclassified')
-                    self.assertEqual(len(self.report['checks']), 1)
-                    self.scenario.cleanup()
-                    self.assertTrue(barrier.closed)
-                    self.assertFalse(self.tasks)
-
-    def test_repeat_counter_transport_failure_is_distinct_from_zero_or_changed_counts(self):
-        for natural_expiry in (False, True):
-            with self.subTest(natural_expiry=natural_expiry):
-                self.setUp()
-                barrier = self.inflight_fixture(natural_expiry=natural_expiry)
-                first = dict(barrier.counts(), other_statement_count=0, other_statements=[])
-                barrier.counts = Mock(side_effect=[first, ONLINE.SuiteError('private SQL and credential text')])
-                run = self.scenario.run_inflight_expiry if natural_expiry else self.scenario.run_inflight
-                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
-                    run(self.report)
-                evidence = self.report['meta_collection']['inflight_expiry' if natural_expiry else 'inflight']
-                self.assertEqual(evidence['repeat_source_counter_stage'], 'query')
-                self.assertFalse(evidence['repeat_source_counter_available'])
-                self.assertNotIn('repeat_source_counter_observed', evidence)
-                self.assertNotIn('repeat_source_call_delta', evidence)
-                self.assertNotIn('private SQL', json.dumps(evidence))
-                self.assertEqual(len(self.report['checks']), 1)
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertTrue(barrier.closed)
-
-    def test_version_probe_diagnostic_never_exempts_an_extra_other_call(self):
-        for natural_expiry in (False, True):
-            with self.subTest(natural_expiry=natural_expiry):
-                self.setUp()
-                barrier = self.inflight_fixture('other_sql', natural_expiry=natural_expiry)
-                barrier.baseline.update(other_statement_count=0, other_statements=[])
-                counts = barrier.counts
-                row = {'query_id': '-123', 'top_level': True, 'kind': 'version_probe', 'calls': 1}
-                barrier.counts = lambda: dict(counts(), other_statement_count=1, other_statements=[row])
-                run = self.scenario.run_inflight_expiry if natural_expiry else self.scenario.run_inflight
-                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaisesRegex(
-                        ONLINE.SuiteError, 'source opened another Catalog read'):
-                    run(self.report)
-                evidence = self.report['meta_collection']['inflight_expiry' if natural_expiry else 'inflight']
-                self.assertEqual(evidence['source_counter_stage'], 'delta_check')
-                self.assertEqual(evidence['source_call_delta']['other'], 1)
-                self.assertEqual(evidence['source_counter_observed']['other_statements'], [row])
-                self.assertNotIn('next_catalog_denied', evidence)
-                self.assertFalse(self.report['checks'])
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertTrue(barrier.closed)
-
-    def test_inflight_expiry_unknown_responses_and_source_cleanup_fail_closed(self):
-        for operation in ('approve', 'trigger', 'replay', 'source_residual'):
-            with self.subTest(operation=operation):
-                self.setUp()
-                barrier = self.inflight_fixture(operation if operation == 'source_residual' else None, natural_expiry=True)
-                if operation == 'replay':
-                    request = self.operator.request.side_effect
-                    def lose_replay(*args, **kwargs):
-                        if args[0] == 'POST' and '/meta_collection_qualifications' in args[1] and self.qualifications:
-                            self.lost = 'approve'
-                        return request(*args, **kwargs)
-                    self.operator.request.side_effect = lose_replay
-                else:
-                    self.lost = operation
-                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_inflight_expiry(self.report)
-                if operation == 'source_residual':
-                    with self.assertRaisesRegex(ONLINE.SuiteError, 'source fixture cleanup'): self.scenario.cleanup()
-                else:
-                    self.scenario.cleanup()
-                    self.assertFalse(self.tasks)
-
-    def test_inflight_revocation_retains_admitted_results_denies_next_catalog_and_cleans_source(self):
-        barrier = self.inflight_fixture()
-        with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier):
-            self.scenario.run_inflight(self.report)
-        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_INFLIGHT_CHECKS)
-        self.assertTrue(barrier.closed and barrier.released)
-        self.assertEqual([x['status'] for x in self.runs.values()], ['failed', 'failed'])
-        self.assertEqual(self.report['meta_collection']['inflight']['source_call_delta']['tables'], 1)
-        self.assertEqual(self.scenario.attempts[0]['denial_boundary'], 'after_admitted_catalog')
-        self.scenario.cleanup()
-        self.assertFalse(self.tasks)
-
-    def test_inflight_revocation_cannot_accept_ordinary_errors_additional_reads_or_statistics_reset(self):
-        for fault in ('barrier_missing', 'source_open', 'not_running', 'general_failure', 'missing_partial',
-                      'too_many_items', 'statistics_reset', 'another_catalog', 'other_sql', 'repeat_source_io'):
-            with self.subTest(fault=fault):
-                self.setUp()
-                barrier = self.inflight_fixture(fault)
-                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_inflight(self.report)
-                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_INFLIGHT_CHECKS)
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertTrue(barrier.closed)
-                self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
-
-    def test_inflight_unknown_approval_and_trigger_preserve_cleanup_and_source_residual_is_failure(self):
-        for operation in ('approve', 'trigger', 'revoke', 'source_residual'):
-            with self.subTest(operation=operation):
-                self.setUp()
-                barrier = self.inflight_fixture(operation if operation == 'source_residual' else None)
-                self.lost = operation
-                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier):
-                    if operation == 'revoke':
-                        self.scenario.run_inflight(self.report)
-                    else:
-                        with self.assertRaises(ONLINE.SuiteError): self.scenario.run_inflight(self.report)
-                if operation == 'source_residual':
-                    with self.assertRaisesRegex(ONLINE.SuiteError, 'source fixture cleanup'):
-                        self.scenario.cleanup()
-                else:
-                    self.scenario.cleanup()
-                    self.assertFalse(self.tasks)
-                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
-
-    def browser_fixture(self, failure=None):
-        self.report['meta_collection'] = {'qualification_commands': []}
-        browser = Mock()
-        body, committed = {}, {}
-        def factory(tenant, issuer, engine, task, digest, purpose, expiry):
-            self.assertEqual((tenant, issuer, engine), (3, '35', 2))
-            body.update(command_id=str(uuid.uuid4()), task_id=str(task), expected_task_definition_digest=digest,
-                        purpose=purpose, expires_at=expiry)
-        # Special methods are looked up on the type, not the instance dictionary.
-        class Context:
-            def __enter__(self): return browser
-            def __exit__(self, *args): return False
-        def create(*args):
-            factory(*args)
-            return Context()
-        def capture():
-            if failure == 'capture': raise ONLINE.SuiteError('browser stopped before send')
-            return deepcopy(body)
-        def release(kind):
-            if kind == 'command':
-                self.assertEqual(self.scenario.commands[body['command_id']], body)
-                self.assertIn(body['command_id'], self.report['meta_collection']['qualification_commands'])
-                result = self.request('operator', 'POST', self.scenario.route, (201,), body)
-                committed.update(result.payload)
-                if failure == 'after_commit': raise ONLINE.SuiteError('browser stopped after commit')
-        def wait(kind):
-            if failure == kind: raise ONLINE.SuiteError('browser stopped at ' + kind)
-            if kind == 'approved':
-                self.request('operator', 'POST', self.scenario.route, (201,), body)
-                if failure == 'recovery_renews': self.qualifications[body['command_id']]['expires_at'] = '2099-01-01T00:00:00Z'
-            if kind == 'revoked':
-                self.request('operator', 'DELETE', self.scenario.route + '/' + body['command_id'], (200,),
-                             {'version': '1', 'reason': 'Disposable PG browser qualification withdrawal'})
-        browser.capture_command.side_effect = capture
-        browser.release.side_effect = release
-        browser.committed_row.side_effect = lambda: deepcopy(committed)
-        browser.wait.side_effect = wait
-        browser.finish.side_effect = ONLINE.SuiteError('incomplete browser report') if failure == 'finish' else None
-        browser.finish.return_value = {'result': 'passed'}
-        return create
-
-    def test_scheduled_collection_uses_real_scheduler_observation_without_manual_trigger(self):
-        self.collection_expiry_fixture()
-        self.schedule_dispatch = True
-        self.report['meta_collection'] = {'qualification_commands': []}
-        self.scenario.run_scheduled(self.report)
-        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_SCHEDULED_CHECKS)
-        self.assertEqual([row['status'] for row in self.runs.values()], ['failed', 'success', 'success', 'failed'])
-        self.assertTrue(all(row['trigger_type'] == 'scheduled' and row.get('triggered_by') is None
-                            for row in self.runs.values()))
-        self.assertFalse(any(path.endswith('/trigger') for _, _, path, _ in self.calls))
-        self.assertTrue(self.report['meta_collection']['scheduled']['history_unchanged'])
-        self.assertTrue(all(attempt['stage'] == 'verified' and len(attempt['server_times']) == 4
-                            for attempt in self.scenario.attempts))
-        self.scenario.cleanup()
-        self.assertFalse(self.tasks)
-        self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
-
-    def scheduled_fixture(self, fault=None):
-        self.collection_expiry_fixture()
-        self.schedule_dispatch = True
-        self.report['meta_collection'] = {'qualification_commands': []}
-        self.fault = fault
-
-    def test_scheduled_time_failures_keep_bounded_evidence_before_unchanged_assertion(self):
-        for fault in ('created_after_start', 'start_after_completion', 'missing_start', 'invalid_start', 'invalid_completion'):
-            with self.subTest(fault=fault):
-                self.setUp()
-                self.scheduled_fixture(fault)
-                self.report['meta_collection']['attempts'] = self.scenario.attempts
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_scheduled(self.report)
-                attempt = self.report['meta_collection']['attempts'][-1]
-                self.assertEqual(attempt['stage'], 'scheduled_timing')
-                self.assertTrue(attempt['summary_matches'])
-                times = attempt['server_times']
-                self.assertEqual(set(times), {'next_run_at', 'created_at', 'started_at', 'completed_at'})
-                self.assertEqual(times['next_run_at'], attempt['next_run_at'])
-                if fault in ('missing_start', 'invalid_start'):
-                    self.assertEqual(times['started_at'], 'absent_or_invalid')
-                if fault == 'invalid_completion':
-                    self.assertEqual(times['completed_at'], 'absent_or_invalid')
-                for key, value in times.items():
-                    if value != 'absent_or_invalid': ONLINE.collection_instant(value)
-                self.assertFalse(self.report['checks'])
-                self.assertEqual(self.report['meta_collection']['scheduled']['executions'], {})
-                self.assertNotIn('private-secret', json.dumps(self.report))
-                self.fault = None
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-
-    def test_scheduled_runs_reject_manual_identity_time_parent_retry_and_general_failures(self):
-        for fault in ('manual_run', 'human_actor', 'early_run', 'wrong_source', 'wrong_boundary', 'parent_run',
-                      'retry_run', 'unapproved_allowed', 'general_failure', 'read_before_deny', 'stale_summary',
-                      'duplicate_scheduled', 'truncated_scheduled', 'scheduler_stalled', 'wrong_task'):
-            with self.subTest(fault=fault):
-                self.setUp()
-                self.scheduled_fixture(fault)
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_scheduled(self.report)
-                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_SCHEDULED_CHECKS)
-                self.fault = None
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertFalse(any(path.endswith('/trigger') for _, _, path, _ in self.calls))
-                self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
-
-    def test_scheduled_approval_does_not_renew_or_revive_and_source_rules_stay_unchanged(self):
-        for fault in ('repeat_renews', 'replay_revives', 'revoked_allowed', 'source_changed', 'credential_changed'):
-            with self.subTest(fault=fault):
-                self.setUp()
-                self.scheduled_fixture(fault)
-                if fault == 'source_changed': self.scenario.source_snapshot = Mock(side_effect=['before', 'after'])
-                if fault == 'credential_changed':
-                    original = ONLINE.time.sleep.side_effect
-                    def changed(seconds):
-                        original(seconds)
-                        self.reader.token = 'another-credential'
-                    ONLINE.time.sleep.side_effect = changed
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_scheduled(self.report)
-                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_SCHEDULED_CHECKS)
-                if fault == 'repeat_renews':
-                    with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup'):
-                        self.scenario.cleanup()
-                    self.assertFalse(any(method == 'DELETE' and '/meta_collection_qualifications/' in path
-                                         for _, method, path, _ in self.calls))
-                    continue
-                self.fault = None
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-
-    def test_scheduled_unknown_enable_or_disable_response_remains_owned_and_paused_before_delete(self):
-        for operation in ('enable', 'disable', 'approve', 'revoke'):
-            with self.subTest(operation=operation):
-                self.setUp()
-                self.scheduled_fixture()
-                self.lost = operation
-                if operation in ('enable', 'approve'):
-                    with self.assertRaises(ONLINE.SuiteError):
-                        self.scenario.run_scheduled(self.report)
-                else:
-                    self.scenario.run_scheduled(self.report)
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
-                deletes = [i for i, (_, method, path, _) in enumerate(self.calls)
-                           if method == 'DELETE' and '/meta/scan/tasks/' in path]
-                self.assertTrue(deletes)
-                self.assertTrue(any(method == 'PUT' and body['enabled'] is False
-                    for _, method, path, body in self.calls[:deletes[0]]))
-
-    def test_scheduled_cleanup_refuses_to_delete_if_disable_did_not_commit(self):
-        self.scheduled_fixture('disable_noop')
-        with self.assertRaisesRegex(ONLINE.SuiteError, 'schedule did not stop'):
-            self.scenario.run_scheduled(self.report)
-        with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup'):
-            self.scenario.cleanup()
-        self.assertTrue(self.tasks)
-        self.assertFalse(any(method == 'DELETE' and '/meta/scan/tasks/' in path for _, method, path, _ in self.calls))
-        self.fault = None
-        self.scenario.cleanup()
-        self.assertFalse(self.tasks)
-
-    def test_scheduled_failed_poll_pauses_then_converges_inflight_execution_before_delete(self):
-        self.scheduled_fixture()
-        original = self.reader.request.side_effect
-        observed = []
-        def failed(method, url, *args, **kwargs):
-            if method == 'GET' and '/meta/executions/' in url and not observed:
-                execution = url.rsplit('/', 1)[1]
-                self.runs[execution]['status'] = 'running'
-                observed.append(execution)
-                raise ONLINE.SuiteError('failed execution observation')
-            return original(method, url, *args, **kwargs)
-        self.reader.request.side_effect = failed
-        with self.assertRaises(ONLINE.SuiteError):
-            self.scenario.run_scheduled(self.report)
-        self.assertTrue(observed)
-        self.assertTrue(all(row['enabled'] is False for row in self.tasks.values()))
-        sleep = ONLINE.time.sleep.side_effect
-        def complete(seconds):
-            self.assertTrue(self.tasks)  # Never delete while this execution is in flight.
-            sleep(seconds)
-            self.runs[observed[0]]['status'] = 'failed'
-        ONLINE.time.sleep.side_effect = complete
-        self.scenario.cleanup()
-        self.assertFalse(self.tasks)
-
-    def test_browser_approval_controls_current_worker_results_and_one_cleanup_identity(self):
-        with patch.object(ONLINE, 'CollectionObservation', side_effect=self.browser_fixture()):
-            self.scenario.run_browser(self.report)
-        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_BROWSER_CHECKS)
-        self.assertEqual(len(self.qualifications), 1)
-        self.assertEqual(len(self.runs), 5)
-        self.assertTrue(self.report['meta_collection']['browser_flow']['source_rules_unchanged'])
-        self.assertEqual([row['status'] for row in self.runs.values()], ['failed', 'success', 'success', 'failed', 'failed'])
-        approvals = [body for _, method, path, body in self.calls if method == 'POST' and path == self.scenario.route]
-        self.assertEqual(len(approvals), 2)
-        self.assertEqual(approvals[0], approvals[1])
-        self.scenario.cleanup()
-        self.assertFalse(self.tasks)
-        self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
-
-    def test_browser_failures_preserve_pre_send_cleanup_even_after_committed_lost_response(self):
-        for failure in ('capture', 'after_commit', 'approved', 'revoked', 'finish'):
-            with self.subTest(failure=failure):
-                self.setUp()
-                with patch.object(ONLINE, 'CollectionObservation', side_effect=self.browser_fixture(failure)), self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run_browser(self.report)
-                self.assertFalse(self.report['checks'])
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
-                self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
-
-    def test_browser_recovery_cannot_renew_and_corrupt_binding_does_not_authorize_blind_cleanup(self):
-        with patch.object(ONLINE, 'CollectionObservation', side_effect=self.browser_fixture('recovery_renews')), \
-             self.assertRaisesRegex(ONLINE.SuiteError, 'approved binding'):
-            self.scenario.run_browser(self.report)
-        self.assertFalse(self.report['checks'])
-        with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup'):
-            self.scenario.cleanup()
-        self.assertTrue(self.tasks)
-        self.assertFalse(any(method == 'DELETE' for _, method, _, _ in self.calls))
-
-    def test_equivalent_post_and_history_timestamp_zones_preserve_full_qualification_binding(self):
-        self.fault = 'different_timestamp_zone'
-        self.scenario.run(self.report)
-        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_CHECKS)
-        self.assertEqual(len(self.qualifications), 1)
-        self.assertFalse(self.report['meta_collection']['approval']['raw_equal'])
-        self.assertTrue(self.report['meta_collection']['approval']['semantic_equal'])
-        self.assertEqual(self.report['meta_collection']['approval']['stage'], 'verified')
-        self.scenario.cleanup()
-
-    def test_qualification_equality_preserves_all_fields_and_nanosecond_expiry(self):
-        original = {'id': 'stable-command', 'status': 'active', 'version': '1', 'task_definition_digest': 'a' * 64,
-                    'expires_at': '2026-10-23T03:33:18.123456700Z'}
-        same = dict(original, expires_at='2026-10-23T11:33:18.1234567+08:00')
-        self.assertTrue(ONLINE.same_collection_row(original, same))
-        for changes in ({'expires_at': '2026-10-23T03:33:18.123456701Z'}, {'status': 'revoked'},
-                        {'version': '2'}, {'task_definition_digest': 'b' * 64}, {'unexpected': True}):
-            with self.subTest(changes=changes):
-                self.assertFalse(ONLINE.same_collection_row(original, dict(same, **changes)))
-        for invalid in ('2026-10-23T03:33:18', '2026-10-23T03:33:18.1234567890Z', '2026-99-23T03:33:18Z', None):
-            with self.subTest(invalid=invalid), self.assertRaises(ONLINE.SuiteError):
-                ONLINE.same_collection_row(original, dict(same, expires_at=invalid))
-
-    def test_operator_approval_failure_preserves_http_stage_and_command_for_cleanup(self):
-        original = self.operator.request.side_effect
-        def failed(method, url, *args, **kwargs):
-            if method == 'POST' and url.endswith('/meta_collection_qualifications'):
-                raise ONLINE.SuiteError('POST /api/v1/system/engines/2/meta_collection_qualifications returned HTTP 503 (meta_collection_facts_unavailable)')
-            return original(method, url, *args, **kwargs)
-        self.operator.request.side_effect = failed
-        with self.assertRaises(ONLINE.SuiteError):
-            self.scenario.run(self.report)
-        approval = self.report['meta_collection']['approval']
-        self.assertEqual(approval['stage'], 'operator_post')
-        self.assertEqual(approval['http_status'], 503)
-        self.assertEqual(approval['http_error_code'], 'meta_collection_facts_unavailable')
-        self.assertIn(approval['command_id'], self.scenario.commands)
-        self.assertEqual(self.report['checks'], [ONLINE.COLLECTION_CHECKS[0]])
-        self.scenario.cleanup()
-
-    def test_approval_readback_failure_reports_unique_row_or_field_binding_and_still_cleans(self):
-        for fault in ('missing_row', 'wrong_digest'):
-            with self.subTest(fault=fault):
-                self.setUp()
-                original = self.operator.request.side_effect
-                injected = False
-                def changed(method, url, *args, **kwargs):
-                    nonlocal injected
-                    result = original(method, url, *args, **kwargs)
-                    if not injected and method == 'GET' and '/meta_collection_qualifications?' in url:
-                        injected = True
-                        if fault == 'missing_row':
-                            result.payload.update(data=[], total=0)
-                        else:
-                            result.payload['data'][0]['task_definition_digest'] = 'f' * 64
-                    return result
-                self.operator.request.side_effect = changed
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run(self.report)
-                approval = self.report['meta_collection']['approval']
-                self.assertEqual(approval['post_status'], 201)
-                self.assertEqual(approval['http_status'], 200)
-                self.assertEqual(approval['stage'], 'history_row_identity' if fault == 'missing_row' else 'history_row_binding')
-                if fault == 'wrong_digest':
-                    self.assertFalse(approval['binding']['digest'])
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
-
-    def test_rejects_missing_safety_checks_without_counting_partial_pass(self):
-        for fault in ('unapproved_allowed', 'changed_allowed', 'revoked_allowed', 'copied_allowed',
-                      'repeat_renews', 'replay_revives', 'general_failure', 'stale_summary',
-                      'read_before_deny', 'wrong_task', 'foreign_task'):
-            with self.subTest(fault=fault):
-                self.setUp()
-                self.fault = fault
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run(self.report)
-                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_CHECKS)
-
-    def test_unknown_write_responses_are_recovered_without_creating_new_commands(self):
-        for operation in ('create', 'approve', 'trigger'):
-            with self.subTest(operation=operation):
-                self.setUp()
-                self.lost = operation
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run(self.report)
-                self.scenario.cleanup()
-                self.assertFalse(self.tasks)
-                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
-                self.assertLessEqual(len(self.qualifications), 1)
-
-    def test_unknown_revoke_and_delete_are_read_back_not_retried(self):
-        for operation in ('revoke', 'delete'):
-            with self.subTest(operation=operation):
-                self.setUp()
-                self.lost = operation
-                self.scenario.run(self.report)
-                self.scenario.cleanup()
-                paths = [path for _, method, path, _ in self.calls if method == 'DELETE']
-                self.assertEqual(len(paths), len(set(paths)))
-                self.assertFalse(self.tasks)
-
-    def test_cleanup_does_not_hide_revocation_or_foreign_qualification_failures(self):
-        self.scenario.run(self.report)
-        row = next(iter(self.qualifications.values()))
-        row.update(status='active', version='1')
-        self.fault = 'revoke_noop'
-        with self.assertRaises(ONLINE.SuiteError):
-            self.scenario.cleanup()
-        self.assertTrue(self.tasks)
-        self.fault = None
-        foreign = deepcopy(row)
-        foreign['id'] = str(uuid.uuid4())
-        self.qualifications[foreign['id']] = foreign
-        with self.assertRaises(ONLINE.SuiteError):
-            self.scenario.cleanup()
-        self.assertEqual(foreign['status'], 'active')
-        self.assertTrue(self.tasks)
-
-    def test_source_history_mutation_is_not_mistaken_for_qualification(self):
-        self.scenario.source_snapshot = Mock(side_effect=['before', 'after'])
-        with self.assertRaisesRegex(ONLINE.SuiteError, 'modified source'):
-            self.scenario.run(self.report)
-        self.scenario.cleanup()
-
-    def test_failed_attempt_retains_exact_stage_without_raw_response_or_exception(self):
-        for fault, stage in (('unapproved_allowed', 'terminal_state'), ('wrong_task', 'execution_binding'),
-                             ('general_failure', 'authorization_denial'), ('stale_summary', 'task_summary')):
-            with self.subTest(fault=fault):
-                self.setUp()
-                self.fault = fault
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run(self.report)
-                attempt = self.report['meta_collection']['attempts'][0]
-                self.assertEqual(attempt['stage'], stage)
-                self.assertEqual(attempt['http_status'], 200)
-                self.assertEqual(attempt['execution_id'], next(iter(self.runs)))
-                self.assertNotIn('unapproved', self.report['meta_collection']['executions'])
-                self.assertNotIn('private-password', json.dumps(self.report))
-
-    def test_non_200_trigger_still_fails_and_only_publishes_bounded_machine_error(self):
-        for message, expected in (('POST /api/v1/meta/scan/tasks/100/trigger returned HTTP 500 (internal_error)',
-                                   {'http_status': 500, 'http_error_code': 'internal_error'}),
-                                  ('transport failed: token=private-secret https://private.invalid',
-                                   {'request_failed': True})):
-            with self.subTest(message=message):
-                self.setUp()
-                original = self.reader.request.side_effect
-                def failed(method, url, *args, **kwargs):
-                    if url.endswith('/trigger'):
-                        raise ONLINE.SuiteError(message)
-                    return original(method, url, *args, **kwargs)
-                self.reader.request.side_effect = failed
-                with self.assertRaises(ONLINE.SuiteError):
-                    self.scenario.run(self.report)
-                attempt = self.report['meta_collection']['attempts'][0]
-                self.assertEqual(attempt['stage'], 'trigger')
-                self.assertTrue(all(attempt[key] == value for key, value in expected.items()))
-                self.assertNotIn('private-secret', json.dumps(self.report))
-                self.assertFalse(self.report['checks'])
-                self.scenario.cleanup()
-
-    def test_cleanup_continues_other_tasks_after_one_delete_failure(self):
-        self.scenario.run(self.report)
-        original = self.operator.request.side_effect
-        primary = self.report['meta_collection']['task_id']
-        def failed(*args, **kwargs):
-            if args[:2] == ('DELETE', '/api/v1/meta/scan/tasks/' + primary):
-                raise ONLINE.SuiteError('delete did not commit')
-            return original(*args, **kwargs)
-        self.operator.request.side_effect = failed
-        with self.assertRaises(ONLINE.SuiteError):
-            self.scenario.cleanup()
-        self.assertEqual(list(self.tasks), [int(primary)])
+    def test_hidden_error_cannot_contain_facts_or_wrong_denial_code(self):
+        for payload in ({'error': 'absent', 'error_code': 'lineage_subject_not_found', 'item_id': 12},
+                        {'error': 'no function', 'error_code': 'permission_denied'}):
+            self.reader.request.return_value = SimpleNamespace(payload=payload)
+            with self.assertRaises(ONLINE.SuiteError):
+                self.probe.query(self.reader, 'item', expected=404)
 
 
 class InitialProductionOnlineTest(unittest.TestCase):
@@ -2805,7 +1842,11 @@ class InitialProductionOnlineTest(unittest.TestCase):
                                                report.update(authorization_load={}))
         self.lifecycle.require_batch_denied = Mock()
         self.reader.request.side_effect = self.request
-        patch.object(ONLINE, 'item', return_value={'id': 10, 'node_id': 7}).start()
+        self.operator.request.side_effect = self.request
+        self.lifecycle.outsider.request.return_value = SimpleNamespace(status=404, payload={
+            'error': 'not found', 'error_code': 'lineage_subject_not_found'})
+        patch.object(ONLINE, 'item', side_effect=lambda client, engine, name: {
+            'id': 10 if name == 'metric_people' else 12, 'node_id': 7}).start()
         patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', return_value=self.facts).start()
         self.preview = patch.object(ONLINE, 'preview', side_effect=self.read).start()
         patch.object(ONLINE.time, 'sleep').start()
@@ -2824,7 +1865,18 @@ class InitialProductionOnlineTest(unittest.TestCase):
     def request(self, method, url, expected, body=None, **kwargs):
         self.calls.append((method, url))
         status, result = 200, {}
-        if url.endswith('/items?branch=public'):
+        if url.endswith('/data-items?page=1&page_size=100'):
+            result = {'data': [], 'total': 0, 'page': 1, 'page_size': 100}
+        elif '/lineage/graph?' in url:
+            query = parse_qs(urlsplit(url).query)
+            if query['subject_kind'] == ['published_service']:
+                status, result = 403, {'error': 'forbidden'}
+            elif self.output_revoked or (query['item_id'] == ['10'] and self.source_revoked):
+                status, result = 404, {'error': 'not found', 'error_code': 'lineage_subject_not_found'}
+            else:
+                result = production_lineage_graph(query['granularity'][0], self.execution,
+                                                  visible=not self.source_revoked)
+        elif url.endswith('/items?branch=public'):
             result = []
         elif method == 'POST' and url.endswith('/task-definitions'):
             self.assertFalse(body['auto_scan_metadata'])
@@ -2882,7 +1934,11 @@ class InitialProductionOnlineTest(unittest.TestCase):
     def test_initial_output_checks_actual_reads_and_cleans_only_owned_task(self):
         report = {'checks': []}
         self.lifecycle.production_flow(report)
-        self.assertEqual(report['checks'], ONLINE.PRODUCTION_CHECKS)
+        self.assertEqual(report['checks'], ONLINE.PRODUCTION_CHECKS + ONLINE.LINEAGE_CHECKS)
+        self.assertTrue(report['lineage_visibility']['history_uses_current_visibility'])
+        lineage_calls = [url for method, url in self.calls if '/lineage/graph?' in url]
+        self.assertEqual(len(lineage_calls), 11)
+        self.assertEqual(sum('as_of=' in url for url in lineage_calls), 2)
         self.assertIn(self.command, self.lifecycle.grants)
         self.assertEqual(self.preview.call_count, 5)
         self.lifecycle.cleanup()
@@ -2904,6 +1960,20 @@ class InitialProductionOnlineTest(unittest.TestCase):
             self.bad = invalid
             with self.subTest(invalid=invalid), self.assertRaises(ONLINE.SuiteError):
                 self.lifecycle.production_flow({'checks': []})
+
+    def test_lineage_failure_keeps_original_cleanup_and_never_marks_pass(self):
+        original = self.request
+        def failed(method, url, expected, body=None, **kwargs):
+            if '/lineage/graph?' in url:
+                raise ONLINE.SuiteError('lineage failed')
+            return original(method, url, expected, body, **kwargs)
+        self.reader.request.side_effect = failed
+        report = {'checks': []}
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'lineage failed'):
+            self.lifecycle.production_flow(report)
+        self.assertEqual(report['checks'], [])
+        self.lifecycle.cleanup()
+        self.assertTrue(self.source_revoked and self.output_revoked)
 
     def test_load_failure_keeps_source_and_output_owned_for_final_cleanup(self):
         self.lifecycle.measure_read_load.side_effect = ONLINE.SuiteError('load failed')
@@ -2937,6 +2007,156 @@ class InitialProductionOnlineTest(unittest.TestCase):
             self.lifecycle.cleanup()
         self.assertFalse(self.output_revoked)
 
+
+class CentralScanServer:
+    """HTTP fixture for controller behavior, not a substitute for Hosted evidence."""
+    def __init__(self, fault=None):
+        self.tasks, self.runs, self.calls = {}, {}, []
+        self.fault = fault
+        self.cancelled = set()
+        self.rules_changed = False
+
+    def client(self, actor):
+        return SimpleNamespace(request=lambda *a, **kw: self.request(actor, *a, **kw))
+
+    def request(self, actor, method, path, expected=(200,), body=None, **kwargs):
+        self.calls.append((actor, method, path, deepcopy(body)))
+        route = urlsplit(path).path
+        if actor != 'operator':
+            if self.fault == 'denial_creates_execution':
+                identity = str(uuid.uuid4())
+                self.runs[identity] = {'execution_id': identity, 'source_task_id': '1', 'status': 'failed'}
+            payload, status = {'error_code': 'permission_denied', 'error': 'denied'}, 403
+        elif route == '/api/v1/meta/scan/tasks' and method == 'GET':
+            payload, status = list(deepcopy(self.tasks).values()), 200
+        elif route == '/api/v1/meta/scan/tasks' and method == 'POST':
+            task = dict(body, id=len(self.tasks)+1, tenant_id=7, created_by=31,
+                        parameters={'scan_depth': body['scan_depth'], 'force': body.get('force', False)})
+            self.tasks[task['id']] = task
+            if self.fault == 'unknown_create':
+                self.fault = None
+                raise ONLINE.SuiteError('unknown creation outcome')
+            payload, status = deepcopy(task), 201
+        elif route == '/api/v1/meta/scan/runs':
+            task = parse_qs(urlsplit(path).query)['task_id'][0]
+            rows = [deepcopy(run) for run in self.runs.values() if run['source_task_id'] == task]
+            payload, status = {'items': rows, 'total': len(rows)}, 200
+        elif route.startswith('/api/v1/meta/scan/tasks/'):
+            task = int(route.split('/')[6])
+            if route.endswith('/trigger'):
+                identity = str(uuid.uuid4())
+                run = dict(execution_id=identity, source_task_id=str(task), tenant_id=7, module='meta',
+                           task_type='scan', triggered_by=31, scan_context={'engine_id':9,'scan_depth':'basic'},
+                           status='success', completed_at='2026-11-01T00:00:01Z',
+                           metadata={'items_scanned':2,'catalog_nodes_scanned':1,'fields_scanned':0})
+                if self.fault == 'wrong_actor': run['triggered_by'] = 33
+                if self.fault == 'generic_failure': run.update(status='failed',error_details={'category':'execution_failed'})
+                self.runs[identity] = run
+                self.tasks[task].update(last_execution_id=identity,last_execution_status=run['status'])
+                if self.fault == 'source_rule_change': self.rules_changed = True
+                payload, status = {'execution_id':identity}, 200
+            elif method == 'PUT':
+                if body.get('scan_depth') != 'basic':
+                    if self.fault == 'denied_update_persists': self.tasks[task]['parameters']['scan_depth'] = 'deep'
+                    payload, status = {'error_code':'permission_denied'},403
+                else:
+                    if self.fault != 'pause_not_persisted': self.tasks[task].update(body)
+                    self.tasks[task]['parameters'] = {'scan_depth':body['scan_depth'],'force':body.get('force',False)}
+                    payload, status = deepcopy(self.tasks[task]),200
+            elif method == 'DELETE':
+                if self.fault == 'delete_failure': raise ONLINE.SuiteError('delete failed')
+                del self.tasks[task]
+                payload, status = {},200
+            else: raise AssertionError((method,path))
+        elif route.startswith('/api/v1/meta/executions/'):
+            identity = route.split('/')[5]
+            if route.endswith('/cancel'):
+                self.cancelled.add(identity)
+                self.runs[identity].update(status='cancelled',completed_at='2026-11-01T00:00:02Z')
+                payload, status = deepcopy(self.runs[identity]),202
+            else: payload, status = deepcopy(self.runs[identity]),200
+        else: raise AssertionError((actor,method,path))
+        if status not in expected: raise ONLINE.SuiteError(f'returned HTTP {status}')
+        return SimpleNamespace(payload=payload,status=status)
+
+
+class CentralScanControllerTest(unittest.TestCase):
+    def scenario(self, fault=None):
+        server = CentralScanServer(fault)
+        life = SimpleNamespace(operator=server.client('operator'), reader=server.client('reader'),
+            outsider=server.client('outsider'),engine=9,tenant=7,paths=['public/people'],recipients={('user','33')})
+        life.listing=lambda **kw: {'data':[{'inspection':{'state':'changed'}}] if server.rules_changed else [],
+                                  'total':1 if server.rules_changed else 0}
+        return server,ONLINE.MetaCollectionScenario(life,'31','central-fixture')
+
+    def test_repeated_basic_needs_management_but_no_approval_api(self):
+        server,scenario=self.scenario()
+        report={'checks':[]}
+        scenario.run(report)
+        self.assertEqual(report['checks'],ONLINE.COLLECTION_CHECKS)
+        self.assertEqual(len(server.runs),3)
+        self.assertTrue(all('qualification' not in path for _,_,path,_ in server.calls))
+        self.assertTrue(all(run['triggered_by']==31 for run in server.runs.values()))
+        scenario.cleanup()
+        self.assertFalse(server.tasks)
+
+    def test_wrong_actor_generic_failure_and_source_rule_change_fail_closed(self):
+        for fault in ('wrong_actor','generic_failure','source_rule_change','denial_creates_execution','denied_update_persists'):
+            with self.subTest(fault=fault):
+                server,scenario=self.scenario(fault)
+                with self.assertRaises(ONLINE.SuiteError): scenario.run({'checks':[]})
+                scenario.cleanup()
+                self.assertFalse(server.tasks)
+
+    def test_unknown_creation_is_owned_before_post_and_recovered_for_cleanup(self):
+        server,scenario=self.scenario('unknown_create')
+        with self.assertRaises(ONLINE.SuiteError):scenario.create_task('_unknown')
+        self.assertTrue(server.tasks)
+        scenario.cleanup()
+        self.assertFalse(server.tasks)
+
+    def test_cleanup_cancels_owned_running_execution_and_keeps_history(self):
+        server,scenario=self.scenario()
+        task=scenario.create_task('_active')
+        identity=str(uuid.uuid4())
+        server.runs[identity]={'execution_id':identity,'source_task_id':str(task['id']),'status':'running'}
+        scenario.cleanup()
+        self.assertEqual(server.cancelled,{identity})
+        self.assertEqual(server.runs[identity]['status'],'cancelled')
+        self.assertFalse(server.tasks)
+
+    def test_cleanup_never_deletes_foreign_recovery_match(self):
+        server,scenario=self.scenario()
+        task=scenario.create_task('_foreign')
+        server.tasks[task['id']]['tenant_id']=8
+        # An unknown outcome may not turn a same-name foreign task into owned data.
+        with self.assertRaises(ONLINE.SuiteError):scenario.cleanup()
+        self.assertTrue(server.tasks)
+        self.assertFalse(any(method=='DELETE' for _,method,_,_ in server.calls))
+
+    def test_cleanup_failure_is_not_reported_as_success(self):
+        for fault in ('delete_failure','pause_not_persisted'):
+            with self.subTest(fault=fault):
+                server,scenario=self.scenario(fault)
+                task=scenario.create_task('_cleanup')
+                server.tasks[task['id']]['enabled']=True
+                with self.assertRaises(ONLINE.SuiteError):scenario.cleanup()
+                self.assertTrue(server.tasks)
+
+    def test_cancelled_terminal_must_preserve_exact_admitted_count(self):
+        server,scenario=self.scenario()
+        task=scenario.create_task('_cancelled')
+        identity,attempt=scenario.start_execution(task['id'],'cancelled')
+        server.runs[identity]['status']='cancelled'
+        server.tasks[task['id']]['last_execution_status']='cancelled'
+        result=scenario.observe_execution(task['id'],identity,'cancelled',attempt,admitted_items=2)
+        self.assertEqual(result['status'],'cancelled')
+        for key,value in [('items_scanned',3),('catalog_nodes_scanned',2),('fields_scanned',1)]:
+            old=server.runs[identity]['metadata'][key]
+            server.runs[identity]['metadata'][key]=value
+            with self.assertRaises(ONLINE.SuiteError):scenario.observe_execution(task['id'],identity,'cancelled',attempt,admitted_items=2)
+            server.runs[identity]['metadata'][key]=old
+        scenario.cleanup()
 
 class PGSourceConnectionEvidenceTest(unittest.TestCase):
     def row(self, module='meta', category='tables', pid=185, kind='unclassified', query_id='12'):
@@ -3363,7 +2583,7 @@ class PGConnectionProbeControlTest(unittest.TestCase):
         self.barrier.close.assert_called_once_with()
         self.barrier.open.assert_not_called()
         self.assertEqual(self.calls, [('POST', '/api/v1/system/engines/2/test', None)])
-        self.assertFalse(self.scenario.tasks or self.scenario.commands)
+        self.assertFalse(self.scenario.tasks or self.scenario.executions)
 
     def test_rules_identity_and_engine_drift_are_not_passing_controls(self):
         for kind in ('rules', 'identity', 'engine'):

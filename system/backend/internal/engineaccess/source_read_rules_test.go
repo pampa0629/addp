@@ -68,14 +68,22 @@ func TestSourceReadRuleSQLPreservesGORMParameterPositions(t *testing.T) {
 func TestSourceReadSetPreservesPreciseTargets(t *testing.T) {
 	base := testFulfillmentRequest()
 	other := engineplugin.TabularItemPath(base.Path.EngineID, "schema", "业务.域", " 表/名")
-	request := sourceReadRequest{TenantID: base.TenantID, Source: base.Operator, Targets: []engineplugin.EngineCatalogPath{base.Path, other, base.Path}, Bindings: testReadBindings(base.Path, other)}
+	request := sourceReadRequest{Action: "read", TenantID: base.TenantID, Source: base.Operator, Targets: []engineplugin.EngineCatalogPath{base.Path, other, base.Path}, Bindings: testReadBindings(base.Path, other)}
 	paths, encoded, err := request.encode()
 	if err != nil || len(paths) != 2 || paths[0].Segments[2].Name != " 表/名 " || paths[1].Segments[2].Name != " 表/名" {
 		t.Fatalf("precise dedup=%+v %s %v", paths, encoded, err)
 	}
-	var decoded []authorizationfacts.Binding
+	var decoded []struct {
+		Binding authorizationfacts.Binding `json:"binding"`
+		Action  string                     `json:"requested_action"`
+	}
 	if err := json.Unmarshal(encoded, &decoded); err != nil || len(decoded) != 2 {
 		t.Fatalf("batch=%s %v", encoded, err)
+	}
+	for i, entry := range decoded {
+		if entry.Action != request.Action || !reflect.DeepEqual(entry.Binding, request.Bindings[i]) {
+			t.Fatalf("rule target lost action or boundary: %s", encoded)
+		}
 	}
 	request.Targets[0].Segments[2].Name = "changed"
 	if paths[0].Segments[2].Name != " 表/名 " {
@@ -113,7 +121,7 @@ func TestSourceReadSetRejectsIncompleteInputsBeforeDatabase(t *testing.T) {
 		},
 	} {
 		base := testFulfillmentRequest()
-		request := sourceReadRequest{TenantID: base.TenantID, Source: base.Operator, Targets: []engineplugin.EngineCatalogPath{base.Path}}
+		request := sourceReadRequest{Action: "read", TenantID: base.TenantID, Source: base.Operator, Targets: []engineplugin.EngineCatalogPath{base.Path}}
 		mutate(&request)
 		result, err := NewRepository(nil).readCurrentSourceRules(context.Background(), request)
 		if result != nil || !errors.Is(err, errSourceReadRules) {
@@ -158,7 +166,7 @@ func TestSourceReadRulesConsumeOnlyCanonicalGrantFacts(t *testing.T) {
 	if strings.Contains(currentSourceReadRulesSQL, "fulfillment_outcomes") || strings.Contains(currentSourceReadRulesSQL, "binding->") {
 		t.Fatal("source read rules must not reconstruct authorization from Catalog receipt history")
 	}
-	for _, fact := range []string{"g.item_fingerprint = target.item_fingerprint", "g.boundary_hash = target.boundary_hash", "g.recipient_type", "g.recipient_id", "g.action = 'read'", "g.expires_at", "engine_access_grant_revocations"} {
+	for _, fact := range []string{"g.item_fingerprint = target.item_fingerprint", "g.boundary_hash = target.boundary_hash", "g.recipient_type", "g.recipient_id", "g.action = target.requested_action", "g.expires_at", "engine_access_grant_revocations"} {
 		if !strings.Contains(currentSourceReadRulesSQL, fact) {
 			t.Fatalf("canonical Grant observation lost %s", fact)
 		}

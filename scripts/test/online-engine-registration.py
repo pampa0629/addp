@@ -35,9 +35,6 @@ SOURCE_INITIALIZER_PERMISSIONS = {
     'system.engine_access_grant.read',
     'system.engine_access_grant.revoke',
     'system.engine_catalog.read',
-    'system.meta_collection_qualification.approve',
-    'system.meta_collection_qualification.read',
-    'system.meta_collection_qualification.revoke',
 }
 
 

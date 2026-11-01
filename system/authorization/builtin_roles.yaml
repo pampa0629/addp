@@ -806,9 +806,6 @@ roles:
       - system.engine_access_grant.read
       - system.engine_access_grant.revoke
       - system.engine_catalog.read
-      - system.meta_collection_qualification.approve
-      - system.meta_collection_qualification.read
-      - system.meta_collection_qualification.revoke
   - key: tenant.engine_lifecycle_operator
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.engine_lifecycle_operator.name
@@ -983,7 +980,7 @@ roles:
       - system.engine.read
       - system.engine_catalog.read
       - system.engine_descriptor.read
-      - system.meta_collection_qualification.execute
+      - system.meta_collection.execute
       - transfer.production_receipt.read
   - key: tenant.model3d_runtime
     role_type: tenant_builtin

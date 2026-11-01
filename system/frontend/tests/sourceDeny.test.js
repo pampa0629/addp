@@ -4,7 +4,7 @@ import { captureSourceDeny } from '../src/utils/sourceDeny'
 const path = { engine_id: 2, version: 'catalog.path/v1', segments: [
   { term: 'server', kind: 'server', name: '' }, { term: 'schema', kind: 'namespace', name: 'outdoor' }, { term: 'table', kind: 'table', name: 'a"b/中文' }
 ] }
-const row = { catalog_path: path, item_fingerprint: 'a'.repeat(64), recipient_type: 'user', recipient_id: '9007199254740993' }
+const row = { action: 'read', catalog_path: path, item_fingerprint: 'a'.repeat(64), recipient_type: 'user', recipient_id: '9007199254740993' }
 const form = { expiryMode: 'at_time', expiresAt: new Date(2000), reason: ' Test restriction ' }
 describe('explicit source Deny command', () => {
   it('captures exact immutable identity and validity without a boundary digest or Grant', () => {
@@ -16,8 +16,14 @@ describe('explicit source Deny command', () => {
     expect(command.payload).toContain('Test restriction')
     expect(JSON.parse(captureSourceDeny('2', row, { ...form, expiryMode: 'until_revoked' }).payload).expires_at).toBeNull()
   })
+  it('preserves metadata-only restriction across an unknown-result retry', () => {
+    const target = { ...row, action: 'metadata_read' }
+    const command = captureSourceDeny('2', target, form, 1000)
+    target.action = 'read'
+    expect(JSON.parse(command.payload).action).toBe('metadata_read')
+  })
   it('rejects another engine, unsafe identifiers, missing identity, unspecified validity and invalid reasons', () => {
-    for (const changed of [{ catalog_path: { ...path, engine_id: 3 } }, { recipient_id: 9007199254740992 }, { recipient_id: '9223372036854775808' }, { recipient_type: 'department' }, { item_fingerprint: '' }]) {
+    for (const changed of [{ action: '' }, { action: 'write' }, { catalog_path: { ...path, engine_id: 3 } }, { recipient_id: 9007199254740992 }, { recipient_id: '9223372036854775808' }, { recipient_type: 'department' }, { item_fingerprint: '' }]) {
       expect(() => captureSourceDeny('2', { ...row, ...changed }, form, 1000)).toThrow()
     }
     for (const changed of [{ expiryMode: '' }, { expiresAt: new Date(500) }, { reason: ' ' }, { reason: '字'.repeat(2001) }]) {

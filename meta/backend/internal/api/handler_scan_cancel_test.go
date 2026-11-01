@@ -21,10 +21,10 @@ import (
 	"time"
 )
 
-type managementCheckFunc func(context.Context, int64, string) (*authorization.EngineAccessHandlingScope, error)
+type managementCheckFunc func(context.Context, int64, string, string) (*authorization.EngineAccessHandlingScope, error)
 
-func (f managementCheckFunc) GetMetaScanCancellationScope(ctx context.Context, id int64, token string) (*authorization.EngineAccessHandlingScope, error) {
-	return f(ctx, id, token)
+func (f managementCheckFunc) GetMetaScanManagementScope(ctx context.Context, id int64, operation, token string) (*authorization.EngineAccessHandlingScope, error) {
+	return f(ctx, id, operation, token)
 }
 
 func TestScanCancelChecksExactUserAndEngineBeforeRecordingIntent(t *testing.T) {
@@ -53,7 +53,7 @@ func TestScanCancelChecksExactUserAndEngineBeforeRecordingIntent(t *testing.T) {
 				t.Fatal(err)
 			}
 			calls := 0
-			h := &Handler{executionService: service.NewScanExecutionService(db, nil, nil, nil), scanCancellationScope: managementCheckFunc(func(_ context.Context, id int64, token string) (*authorization.EngineAccessHandlingScope, error) {
+			h := &Handler{executionService: service.NewScanExecutionService(db, nil, nil, nil), scanManagementScope: managementCheckFunc(func(_ context.Context, id int64, operation, token string) (*authorization.EngineAccessHandlingScope, error) {
 				calls++
 				if id != 9 || token != "addp_at_exact_user" {
 					t.Fatal("lost exact target or credential")

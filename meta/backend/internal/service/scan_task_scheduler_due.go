@@ -112,7 +112,10 @@ func (s *ScanTaskScheduler) claimDueScheduledTask(ctx context.Context, taskID ui
 				Updates(scantask.ScheduledTaskTriggerFields(now, next)).Error
 		}
 
-		targets := s.computeInheritedTargets(&task)
+		targets, err := s.computeInheritedTargets(tx, &task)
+		if err != nil {
+			return err
+		}
 		if (targets.ScopeType == "catalog_path" && len(targets.CatalogPaths) == 0) ||
 			(targets.ScopeType == "ref_group" && len(targets.RefGroups) == 0) {
 			next := s.taskService.nextTimeFromSpec(task.Schedule, now)
@@ -183,24 +186,23 @@ func scheduledExecutionExists(db *gorm.DB, taskID uint, plannedRunAt time.Time) 
 }
 
 // computeInheritedTargets 计算继承目标（排除已有独立调度的schema/bucket）
-func (s *ScanTaskScheduler) computeInheritedTargets(task *models.ScanTask) scanflow.TargetSet {
+func (s *ScanTaskScheduler) computeInheritedTargets(db *gorm.DB, task *models.ScanTask) (scanflow.TargetSet, error) {
 	if task == nil {
-		return scanflow.TargetSet{}
+		return scanflow.TargetSet{}, nil
 	}
 	if task.Scope == nil {
-		return scanflow.TargetSet{}
+		return scanflow.TargetSet{}, nil
 	}
 
 	var independentTasks []models.ScanTask
-	if err := s.taskService.db.Where("tenant_id = ? AND engine_id = ? AND id != ? AND enabled = ? AND schedule <> ''",
+	if err := db.Where("tenant_id = ? AND engine_id = ? AND id != ? AND enabled = ? AND schedule <> ''",
 		task.TenantID, task.EngineID, task.ID, true).Find(&independentTasks).Error; err != nil {
-		s.taskService.log.Warn("查询独立调度任务失败", "engine_id", task.EngineID, "error", err)
-		return scanflow.TargetsFromScope(task.Scope)
+		return scanflow.TargetSet{}, err
 	}
 
 	independentScopes := make([]models.JSONMap, 0, len(independentTasks))
 	for _, independent := range independentTasks {
 		independentScopes = append(independentScopes, independent.Scope)
 	}
-	return scanflow.InheritedTargets(task.Scope, independentScopes)
+	return scanflow.InheritedTargets(task.Scope, independentScopes), nil
 }

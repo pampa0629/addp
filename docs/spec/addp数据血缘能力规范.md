@@ -344,6 +344,13 @@ GET /api/v1/meta/lineage/graph
 
 该 API 必须执行 Tenant、Meta lineage read Permission 和 owner 资源可见性校验。不得因为用户能看到某个服务，就自动泄露该服务无权访问的上游数据项名称。
 
+用户查询首期仅开放 PostgreSQL DataItem／字段血缘，使用当前用户凭据由 System 固定核验 `meta.lineage.read` 和当前 `metadata_read` 裁决（有效 `read` 按授权规范蕴含元数据查看）。历史时点查询也不能恢复已撤销的查看权限。起点不可见与不存在统一返回 404；关系必须两端均可见，不能跨不可见节点继续遍历。可见集合须在遍历、limit、未展开邻居计数和 truncated 计算前应用；无权节点不进入上述计数。
+
+首期用户图不返回 published_service 节点、服务依赖或其数量，以服务为起点明确返回 403，等待 Service 自身可见性接入。其他引擎数据项不进入本期用户图。Service Principal 的内部事实查询继续遵循原机器权限契约。Meta Agent 的资源树／祖先委托 Scope 不因此扩大到血缘。
+
+用户图只返回授权端点的结构、关系类型和观察状态，不返回 transformation 表达式或任意 evidence 内容；执行标识、写入模式和字段血缘状态可作为摘要，访问执行详情仍由对应 owner 核验。
+
+
 ### 7.1 执行事实采集 API
 
 真实读写 owner 在成功 execution 和 `lineage_facts` 持久化后，可通知 Meta 立即采集指定 execution：

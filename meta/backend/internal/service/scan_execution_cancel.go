@@ -33,8 +33,12 @@ func (s *ScanExecutionService) CancelPGCollection(ctx context.Context, tenantID 
 	if tenantID == 0 || err != nil || parsed == uuid.Nil || parsed.String() != id || actor.PrincipalID <= 0 || actor.MembershipID == nil || *actor.MembershipID <= 0 || authorize == nil {
 		return nil, commonapi.ErrBadRequest
 	}
+	return s.cancelPGCollection(ctx, tenantID, id, commonmodels.JSONMap{"principal_id": strconv.FormatInt(actor.PrincipalID, 10), "tenant_membership_id": strconv.FormatInt(*actor.MembershipID, 10), "reason": "user_requested"}, authorize)
+}
+
+func (s *ScanExecutionService) cancelPGCollection(ctx context.Context, tenantID uint, id string, intent commonmodels.JSONMap, authorize func(context.Context, uint) error) (*execution.TaskExecution, error) {
 	var run execution.TaskExecution
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("tenant_id=? AND execution_id=? AND module=? AND task_type=? AND execution_boundary=?", tenantID, id, execution.ModuleMeta, execution.TaskTypeScan, execution.ExecutionBoundaryBounded).Clauses(clause.Locking{Strength: "UPDATE"}).Take(&run).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return commonapi.ErrNotFound
@@ -59,7 +63,8 @@ func (s *ScanExecutionService) CancelPGCollection(ctx context.Context, tenantID 
 			if run.Metadata == nil {
 				run.Metadata = commonmodels.JSONMap{}
 			}
-			run.Metadata[scanCancellationKey] = commonmodels.JSONMap{"requested_at": now.UTC().Format(time.RFC3339Nano), "principal_id": strconv.FormatInt(actor.PrincipalID, 10), "tenant_membership_id": strconv.FormatInt(*actor.MembershipID, 10), "reason": "user_requested"}
+			intent["requested_at"] = now.UTC().Format(time.RFC3339Nano)
+			run.Metadata[scanCancellationKey] = intent
 			if err := tx.Model(&execution.TaskExecution{}).Where("tenant_id=? AND execution_id=?", tenantID, id).Update("metadata", run.Metadata).Error; err != nil {
 				return err
 			}

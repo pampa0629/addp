@@ -19,7 +19,7 @@ type sourceReadEngineVersion struct {
 	Version int64
 }
 
-func (r *Repository) observeSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, expectedTenantID int64, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error, expectedEngine *sourceReadEngineVersion) (*sourceReadRules, error) {
+func (r *Repository) observeSourceRules(ctx context.Context, credential, action string, targets []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, expectedTenantID int64, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error, expectedEngine *sourceReadEngineVersion) (*sourceReadRules, error) {
 	paths, _, err := encodeSourceReadTargets(targets)
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func (r *Repository) observeSourceRules(ctx context.Context, credential string, 
 	if r == nil || r.db == nil {
 		return nil, errSourceReadRules
 	}
-	batch, err := encodeBoundSourceTargets(paths, bindings)
+	batch, err := encodeBoundSourceTargets(paths, bindings, action)
 	if err != nil || expectedTenantID <= 0 {
 		return nil, errSourceReadRules
 	}
@@ -95,7 +95,7 @@ func (r *Repository) observeSourceRules(ctx context.Context, credential string, 
 		if err != nil {
 			return err
 		}
-		observation, err := tx.queryCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID,
+		observation, err := tx.queryCurrentSourceRules(ctx, sourceReadRequest{Action: action, TenantID: tenantID,
 			Source: userProvenance{PrincipalID: principalID, MembershipID: membershipID, AuthorizationVersion: version}}, paths, batch)
 		if err != nil {
 			return err
@@ -116,4 +116,32 @@ func (r *Repository) observeSourceRules(ctx context.Context, credential string, 
 		return nil, err
 	}
 	return result, nil
+}
+
+// Resolve before Meta IO, then observeSourceRules re-resolves the exact same
+// credential with current rules. Never hold an IAM transaction across owner IO.
+func (r *Repository) resolveSourceCredentialTenant(ctx context.Context, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error) (int64, error) {
+	var tenantID int64
+	err := r.readCommitted(ctx, func(tx *Repository) error {
+		auth, err := iam.NewAuthContextService(tx.identity())
+		if err != nil {
+			return err
+		}
+		current, err := resolve(auth)
+		if err != nil {
+			return err
+		}
+		if current == nil || current.Context.TenantID == nil {
+			return commonapi.ErrForbidden
+		}
+		if err := qualify(*current); err != nil {
+			return err
+		}
+		tenantID, err = strconv.ParseInt(*current.Context.TenantID, 10, 64)
+		if err != nil || tenantID <= 0 || strconv.FormatInt(tenantID, 10) != *current.Context.TenantID {
+			return commonapi.ErrForbidden
+		}
+		return nil
+	})
+	return tenantID, err
 }

@@ -4,9 +4,10 @@ Graph 保护投影 Runtime（000218）：只向既有 `tenant.graph_runtime` 发
 
 # CLAUDE.md
 
-Meta basic 采集资格由 System 唯一保存及裁决，首期限定 PG entire-engine `ScanTask`，绑定真实任务功能摘要、引擎版本、用途和明确期限。独立批准／读取／撤销 Permission 与当前引擎管理资格取交集；Meta Runtime 的当次消费同时核对当前 Common execution／lease 和 Meta 事实，不签发普通源数据 Grant。000234 发布最小审批与双向机器事实读取职责，不自动分配账号、不批准旧任务、不改变现有 Grant／Deny。标准定向验证：`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test meta-collection"` 及 `--package migration --test meta-collection`，默认 T2 同样自动发现。审批工作区由 `EngineMetaCollectionQualifications.vue` 唯一拥有，入口为引擎授权 `tab=collection-qualifications`，只在 PG 存储引擎及独立 Permission 下提供。新增批准先读任务事实，原命令恢复不重签，撤销冲突必须显式刷新再确认；记录状态不等于执行 Allow。前端使用既有 `make test-system-frontend`，无需新路由或 CI 入口。职责与消费契约见 [IAM 数据模型规范](docs/IAM数据模型与迁移规范.md#meta-basic-采集资格)和[授权上下文规范](../docs/spec/addp授权上下文规范.md#557-dataitem-授权的统一目标契约)。
+当前已落地的 PG basic 集中扫描由当前采集功能权限与引擎管理范围共同控制，不再保存或消费逐任务采集批准。System 通过精确 `scan_create_scope / scan_update_scope / scan_delete_scope / scan_execute_scope / scan_cancel_scope` 人员入口核验当前 User；独立取消权限不自动分配。Meta Runtime 的 `system.meta_collection.execute` 只核验真实冻结计划、当前引擎和执行租约，不签发数据 Grant。旧审批页面、人员 API 与专用事实 DTO 已移除，259 迁移删除旧资格表和角色绑定；通用审计和数据授权不变。标准定向验证：`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test meta-collection"` 及 `--package migration --test meta-collection`。本次新规则的 Hosted T4 尚未验证；旧审批结果仅是[历史证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)。当前规则见[集中采集规范](../docs/spec/addp授权上下文规范.md#meta-集中采集权限与范围已确认)。
 
-采集资格的 API／Worker、审批页、下一次执行自然到期、Cron 及运行中撤销／到期，统一按[分版本验收导读](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)定位固定源码、完整证据、失败与未覆盖项，不合并为当前 HEAD 或完整矩阵通过。范围仍限 PG 整引擎 basic、一次 Catalog 枚举边界；排队／运行中配置变化竞态、逐 SQL 取消、deep、其他 selector／引擎和生产容量不能据此认定通过。非预期致命失败清理仍以确定性反例为证，不宣称 Hosted 已注入该故障。
+2026-11-01 最新目标另包含：basic／deep 共用扫描权限、元数据查看与内容读取分别授权，以及新注册人的原租户成员关系取得持续有效且可显式撤销的初始引擎管理范围。范围不附带读取 Grant，撤销后不因重新登录恢复。其中元数据动作及 PG 用户结构／血缘查询核验已实现，跨服务 T4 待验证；注册人初始管理范围与 deep 新准入仍待实现，不能沿用 PG basic 前置证据宣称完成。目标与来源生命周期统一引用[授权上下文规范](../docs/spec/addp授权上下文规范.md#552-接入阶段与-catalog-独立性)。
+
 
 数据授权办理员统一角色：`tenant.source_data_authorizer` 组合直接 Grant 创建、Catalog 人类办理和必要候选读取。直接办理须当前功能 Permission 与引擎管理资格；Catalog 办理须有效业务依据，两者分别核验功能 Permission 与当前引擎管理资格。角色不授予业务批准、Deny、机器 execute 或数据内容读取。当前模板以 `system/authorization/builtin_roles.yaml` 为准。
 
@@ -55,7 +56,7 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 
 2026-10-08：000198 将现有委派管理员模板完善为“引擎授权管理员”，显式组合初始化、Grant 创建／读取／撤销和候选读取权限。当前租户有效的 `system.engine_access_delegation.create` 表达管理员管理范围，管理员无需委托自己；具体功能仍逐项核验，不能仅凭角色名称放行。角色扩展不创建委托或读取 Grant；已分配账号的授权版本推进、旧会话撤销，需重新登录。000199 仅保存不可变初始化意图，不改变历史授权事实。
 
-引擎列表的“授权”操作与“详情”并列，无存储能力时禁用授权。独立授权窗口按功能权限提供“数据授权”“委托授权”和“采集资格”分区，详情不再混入授权操作。数据授权保留新增／当前／全部记录分区；新增使用共享 DataItem 搜索和资源树，支持多选及节点批量选择，默认仅当前节点直接子项，显式递归才包括更深层的当前数据项；选中后逐项查询 Meta 边界。schema/node 只展开本次已有普通表，最多 200 项，不包括未来表或视图；任一选中项身份或边界未知、读取失败，批次不能静默跳过它提交。引擎管理委托和内容 Grant 各自独立，不互相授予。
+引擎列表的“授权”操作与“详情”并列，无存储能力时禁用授权。独立授权窗口按功能权限提供“数据授权”和“委托授权”分区，详情不再混入授权操作。数据授权保留新增／当前／全部记录分区；新增使用共享 DataItem 搜索和资源树，支持多选及节点批量选择，默认仅当前节点直接子项，显式递归才包括更深层的当前数据项；选中后逐项查询 Meta 边界。schema/node 只展开本次已有普通表，最多 200 项，不包括未来表或视图；任一选中项身份或边界未知、读取失败，批次不能静默跳过它提交。引擎管理委托和内容 Grant 各自独立，不互相授予。
 
 引擎授权窗口的 `tab=delegations`（委托授权）提供管理委派分页查询、创建和撤销，分别要求 `system.engine_access_delegation.read/create/revoke`；进入引擎详情或授权窗口仍需 `system.engine.read`。接收账号复用 `TenantMemberSelect` 和有权读取的有效 Tenant Membership 候选，不手填 ID；创建要求显式未来到期时间及原因，不自动分配角色或数据读取权。管理委派变更会撤销接收账号的旧会话；撤销管理委派不撤销既有源数据 Grant。无权限的 Tab 规范化为基础信息，草稿不写入 URL 或浏览器存储。
 

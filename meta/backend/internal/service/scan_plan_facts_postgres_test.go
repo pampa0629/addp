@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"os"
 	"testing"
 
@@ -44,10 +45,20 @@ func TestScanPlanFactsAgainstPostgres(t *testing.T) {
 	if err := execution.EnsureStore(tx); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("disable_schedule_preserves_plan_and_execution", func(t *testing.T) {
+		rollback := errors.New("rollback schedule fixture")
+		err := tx.Transaction(func(fixture *gorm.DB) error {
+			exerciseDisablePGEngineSchedule(t, fixture)
+			return rollback
+		})
+		if !errors.Is(err, rollback) {
+			t.Fatal(err)
+		}
+	})
+	exerciseCollectionRetirement(t, tx)
 	exerciseCollectionDeniedAttempt(t, tx)
 	exerciseScanCancellation(t, tx)
 	exerciseScanPlanFacts(t, tx)
 	exerciseProductionScanPlanFacts(t, tx)
 	exerciseScanPlanTaskBinding(t, tx)
-	exerciseScanTaskFacts(t, tx)
 }

@@ -22,6 +22,7 @@ var _ = models.ScanTaskUpsertRequest{}
 // @Param request body models.ScanTaskUpsertRequest true "扫描任务请求 | Scan task request"
 // @Success 201 {object} map[string]interface{} "扫描任务 | Scan task"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401,403,404,409 {object} map[string]interface{} "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
@@ -43,9 +44,9 @@ func (h *Handler) CreateScanTask(c *gin.Context) {
 		return
 	}
 
-	task, err := h.taskService.CreateTask(c.Request.Context(), tenantID, userID, &req)
+	task, err := h.taskService.CreateTask(h.scanManagementContext(c), tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondScanManagementError(c, err)
 		return
 	}
 
@@ -62,6 +63,7 @@ func (h *Handler) CreateScanTask(c *gin.Context) {
 // @Param request body models.ScanTaskUpsertRequest true "扫描任务请求 | Scan task request"
 // @Success 200 {object} map[string]interface{} "扫描任务 | Scan task"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401,403,404,409 {object} map[string]interface{} "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
@@ -90,9 +92,9 @@ func (h *Handler) UpdateScanTask(c *gin.Context) {
 		return
 	}
 
-	task, err := h.taskService.UpdateTask(c.Request.Context(), tenantID, uint(taskID), userID, &req)
+	task, err := h.taskService.UpdateTask(h.scanManagementContext(c), tenantID, uint(taskID), userID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondScanManagementError(c, err)
 		return
 	}
 
@@ -107,6 +109,7 @@ func (h *Handler) UpdateScanTask(c *gin.Context) {
 // @Param task_id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除结果 | Delete result"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401,403,404,409 {object} map[string]interface{} "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
@@ -128,8 +131,8 @@ func (h *Handler) DeleteScanTask(c *gin.Context) {
 		return
 	}
 
-	if err := h.taskService.DeleteTask(c.Request.Context(), tenantID, uint(taskID)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.taskService.DeleteTask(h.scanManagementContext(c), tenantID, uint(taskID)); err != nil {
+		respondScanManagementError(c, err)
 		return
 	}
 
@@ -146,6 +149,7 @@ func (h *Handler) DeleteScanTask(c *gin.Context) {
 // @Success 200 {object} models.ProviderScanTask "扫描任务详情 | Scan task detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Failure 401,403,404,409 {object} map[string]interface{} "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.task_provider.read"]
@@ -187,6 +191,7 @@ func (h *Handler) ProviderGetScanTask(c *gin.Context) {
 // @Param task_type query string false "任务类型，固定为 scan | Task type, fixed to scan"
 // @Success 200 {array} map[string]interface{} "扫描任务列表 | Scan tasks"
 // @Failure 400 {object} map[string]interface{} "不支持的任务类型 | Unsupported task type"
+// @Failure 401,403,404,409 {object} map[string]interface{} "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
@@ -208,7 +213,7 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 
 	tasks, err := h.taskService.ListTasks(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondScanManagementError(c, err)
 		return
 	}
 
@@ -225,6 +230,7 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 // @Param page_size query int false "每页数量 | Page size" default(100)
 // @Success 200 {object} models.ListProviderScanTasksResponse "扫描任务列表 | Scan tasks"
 // @Failure 400 {object} map[string]interface{} "不支持的任务类型 | Unsupported task type"
+// @Failure 401,403,404,409 {object} map[string]interface{} "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
@@ -248,7 +254,7 @@ func (h *Handler) ListProviderScanTasks(c *gin.Context) {
 
 	tasks, err := h.taskService.ListTasks(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondScanManagementError(c, err)
 		return
 	}
 

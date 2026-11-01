@@ -318,8 +318,8 @@ elif args[:2] != ["volume", "ls"]:
     def test_meta_collection_filter_covers_current_scope_qualification_and_forward_migration(self):
         trace = self.root / "trace-1"
         for package, pattern in (
-            ("engineaccess", "^TestFulfillmentArbitrationAgainstPostgres$/^(meta_collection_qualification|collection_current_function_and_engine_scope)$"),
-            ("migration", "^TestMetaCollectionQualification(Runtime|Approval)ForwardMigrationAgainstPostgres$"),
+            ("engineaccess", "^TestFulfillmentArbitrationAgainstPostgres$/^(meta_collection_runtime|collection_current_function_and_engine_scope)$"),
+            ("migration", "^TestMetaCollectionRetirementForwardMigrationAgainstPostgres$"),
         ):
             trace.unlink(missing_ok=True)
             result = self.run_gate(arguments=("--package", package, "--test", "meta-collection"))

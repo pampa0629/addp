@@ -2,6 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
+	"github.com/addp/common/authorization"
+	commonClient "github.com/addp/common/client"
+	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
@@ -229,5 +233,102 @@ func TestLineageGraphRequestDefaultCapacityByGranularity(t *testing.T) {
 				t.Fatalf("limit=%d err=%v, want %d", request.Limit, err, entry.want)
 			}
 		})
+	}
+}
+
+func TestPGLineageHTTPUsesCurrentVisibilityAndSafeErrors(t *testing.T) {
+	tenant := uint(7)
+	allow, unavailable, checks := true, false, 0
+	caps := commonModels.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"postgresql","engine_family":"tabular","storage":{"store":{}}}`)
+	engine := commonModels.Engine{ID: 9, TenantID: &tenant, Name: "PG", EngineType: "postgresql", LifecycleState: "active", Capabilities: &caps}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/system/oauth/token":
+			json.NewEncoder(w).Encode(map[string]any{"access_token": "addp_at_meta_runtime", "token_type": "bearer", "expires_in": 300, "scope": "addp.api"})
+		case "/api/v1/system/engines":
+			json.NewEncoder(w).Encode([]commonModels.Engine{engine})
+		case "/api/v1/system/engines/9":
+			json.NewEncoder(w).Encode(engine)
+		case "/api/v1/system/engine-access/metadata-checks/meta-lineage":
+			checks++
+			if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer addp_at_viewer" || r.Header.Get("X-Tenant-ID") != "" {
+				t.Error("identity substituted")
+			}
+			if unavailable {
+				w.WriteHeader(503)
+				w.Write([]byte(`{"error":"private detail"}`))
+				return
+			}
+			var request authorization.SourceMetadataCheckRequest
+			if json.NewDecoder(r.Body).Decode(&request) != nil || !request.Valid() {
+				t.Fatal("invalid candidates")
+			}
+			result := authorization.SourceMetadataCheck{ObservedAt: time.Now()}
+			for _, target := range request.Targets {
+				result.Targets = append(result.Targets, authorization.SourceMetadataTargetCheck{Target: target, Visible: allow && target.Segments[len(target.Segments)-1].Name == "root"})
+			}
+			json.NewEncoder(w).Encode(result)
+		default:
+			t.Errorf("unexpected route %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(upstream.URL, "addp-meta", "meta-lineage-test-secret-32-bytes", upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commonClient.NewSystemServiceClient(upstream.URL, tokenSource, upstream.Client())
+	db := openLineageRouteTestDB(t)
+	createResourceTreeHandlerNode(t, db, models.MetaNode{ID: 1, TenantID: 7, EngineID: 9, NodeType: "schema", Name: "public", FullName: "public", Depth: 1})
+	root := createLineageRouteItem(t, db, 7, "root")
+	hidden := createLineageRouteItem(t, db, 7, "hidden")
+	now := time.Now().UTC()
+	if err := db.Create(&models.LineageItemRelation{TenantID: 7, SourceItemID: hidden.ID, TargetItemID: root.ID, RelationKind: "derive", Granularity: "item", Status: "active", FirstObservedAt: now, LastObservedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	engines := service.NewEngineService(db, client)
+	handler := NewHandler(engines, nil, nil, nil, service.NewMetadataQueryService(db), nil, service.NewLineageService(db, engines))
+	handler.lineageVisibility = client
+	router := gin.New()
+	installResourceTreeTenantContext(t, router, 7)
+	router.Use(func(c *gin.Context) {
+		current, _ := commonAuth.AuthContextFromGin(c)
+		current.Authorization.RoleAssignments = []authorization.RoleAssignment{{AssignmentID: "1", RoleKey: "tenant.lineage_viewer", SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute), Scope: authorization.AssignmentScope{Type: "tenant", TenantID: current.Context.TenantID}, Permissions: []string{"meta.lineage.read"}}}
+		if err := commonAuth.SetAuthContextForGin(c, current); err != nil {
+			t.Fatal(err)
+		}
+		c.Next()
+	})
+	router.GET("/graph", commonAuth.MustNewPermissionGuard("meta.lineage.read"), handler.GetLineageGraph)
+	query := fmt.Sprintf("subject_kind=data_item&item_id=%d", root.ID)
+	get := func(q string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", "/graph?"+q, nil)
+		req.Header.Set("Authorization", "Bearer addp_at_viewer")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+	response := get(query)
+	var graph models.LineageGraphResponse
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &graph) != nil || len(graph.Nodes) != 1 || len(graph.Edges) != 0 || graph.Subject.HiddenUpstreamCount != 0 || graph.Truncated {
+		t.Fatalf("visible graph: %d %s", response.Code, response.Body.String())
+	}
+	allow = false
+	response = get(query)
+	missing := get("subject_kind=data_item&item_id=9999")
+	if response.Code != 404 || missing.Code != 404 || response.Body.String() != missing.Body.String() {
+		t.Fatalf("existence leak: %s %s", response.Body.String(), missing.Body.String())
+	}
+	unavailable = true
+	response = get(query)
+	if response.Code != 503 || strings.Contains(response.Body.String(), "private detail") {
+		t.Fatalf("upstream failure: %d %s", response.Code, response.Body.String())
+	}
+	previous := checks
+	response = get("subject_kind=published_service&service_id=77&revision=v1")
+	if response.Code != 403 || checks != previous || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("service query: %d %s", response.Code, response.Body.String())
 	}
 }

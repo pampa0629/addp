@@ -143,7 +143,7 @@
         "cancelFailed": "Unable to cancel the scan. Refresh its status and try again.",
         "title": "PG basic collection task",
         "configure": "Collection task",
-        "boundary": "Configure → approve → execute. Saving only stores the task; it neither approves nor runs a scan.",
+        "boundary": "Configure PostgreSQL whole-engine basic scans only. Saving does not run a scan or grant metadata or data access.",
         "task": "Task ID",
         "new": "New task",
         "name": "Task name",
@@ -152,13 +152,12 @@
         "defaultName": "Basic collection",
         "save": "Save task configuration",
         "saved": "Task saved. No scan was triggered.",
-        "approvalHint": "Approve this task in engine collection qualifications before executing it. An unchanged configuration can run repeatedly within its approval period; unapproved, revoked or expired tasks are denied.",
-        "approval": "Open collection approval",
         "execute": "Execute saved task",
         "invalid": "Enter a task name and, when scheduling is enabled, a schedule.",
         "unsupported": "This task is not configured for basic scanning. Select or create a basic task; this editor cannot modify or execute it.",
         "failed": "Task save was not confirmed. Reopen the task list and check before continuing.",
-        "submitted": "Collection task submitted. Current collection qualification is checked during execution."
+        "submitted": "Scan submitted. Execution checks the current task configuration, engine state and cancellation status.",
+        "managementHint": "Configuration and manual execution require the matching function permission and engine management scope. Tenant schedules use the saved configuration."
       }
     },
     "status": {

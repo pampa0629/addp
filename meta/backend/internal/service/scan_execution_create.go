@@ -251,11 +251,6 @@ func (s *ScanExecutionService) CreateTaskRunWithContext(ctx context.Context, tas
 			return nil, err
 		}
 	}
-	resource := s.lookupScanEngine(task.EngineID, task.TenantID)
-	storageType := "unknown"
-	if resource != nil {
-		storageType = scantask.NormalizeStorageType(resource.EngineType)
-	}
 	var execution *commonExecution.TaskExecution
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -264,6 +259,19 @@ func (s *ScanExecutionService) CreateTaskRunWithContext(ctx context.Context, tas
 			Where("id = ? AND tenant_id = ?", task.ID, task.TenantID).
 			First(&current).Error; err != nil {
 			return err
+		}
+		resource := s.lookupScanEngine(current.EngineID, current.TenantID)
+		if resource == nil {
+			return ErrScanPlanFactsUnavailable
+		}
+		storageType := scantask.NormalizeStorageType(resource.EngineType)
+		if resource != nil && resource.EngineType == "postgresql" && (parentExecutionID != nil || source != commonExecution.ModuleMeta) {
+			return commonAPI.ErrForbidden
+		}
+		if normalizedTriggerType == commonExecution.TriggerTypeManual && parentExecutionID == nil {
+			if err := checkScanTaskManagement(ctx, &current, "execute"); err != nil {
+				return err
+			}
 		}
 		active, err := metaTaskActiveExecutionCount(tx, current.ID, current.TenantID)
 		if err != nil {

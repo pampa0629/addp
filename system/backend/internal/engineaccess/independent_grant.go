@@ -97,7 +97,7 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 	if err != nil || expiryErr != nil || input.RequestID == uuid.Nil ||
 		input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID || len(segments) < 2 ||
 		!independentReadTargetSegment(segments[len(segments)-1]) ||
-		input.RecipientID <= 0 || !oneOfRecipient(input.RecipientType) || input.Action != "read" || !validReason(input.Reason) {
+		input.RecipientID <= 0 || !oneOfRecipient(input.RecipientType) || !shared.ValidSourceAccessAction(input.Action) || !validReason(input.Reason) {
 		return nil, commonapi.ErrBadRequest
 	}
 	reason := strings.TrimSpace(input.Reason)
@@ -166,6 +166,9 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 	// current operator qualification, not a running source or current recipient.
 	err = s.withEngineManagementScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessGrantCreate, false,
 		func(tx *Repository, check func() error) error {
+			if err := tx.checkSourceAccessAction(ctx, row.TenantID, row.EngineID, row.Action); err != nil {
+				return err
+			}
 			prior, err := tx.matchIndependentGrant(ctx, row)
 			if qualificationErr := check(); qualificationErr != nil {
 				return qualificationErr
@@ -232,6 +235,9 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 				engine, err := tx.engine(ctx, row.TenantID, row.EngineID, false)
 				if err != nil {
 					return err
+				}
+				if !sourceAccessActionSupported(row.Action, engine.EngineType) {
+					return commonapi.ErrBadRequest
 				}
 				if engine.Version != engineVersion {
 					return ErrIndependentGrantEngineChanged

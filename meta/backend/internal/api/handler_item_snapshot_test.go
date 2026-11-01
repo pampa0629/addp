@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/common/authorization/authtest"
 	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	commonauth "github.com/addp/common/middleware/auth"
@@ -52,7 +51,7 @@ func TestItemSnapshotReadSeparatesMissingAndDatabaseFailure(t *testing.T) {
 				handler := &Handler{metadataQueryService: service.NewMetadataQueryService(db)}
 				router := gin.New()
 				router.Use(commoni18n.I18nMiddleware(), func(c *gin.Context) {
-					if err := commonauth.SetAuthContextForGin(c, authtest.NewTenantUserAuthContext("7", "91", []string{"meta.catalog.read"})); err != nil {
+					if err := commonauth.SetAuthContextForGin(c, authorizationFactsProjection("addp-manager", "7", "service_access_token", "meta.catalog.read")); err != nil {
 						t.Fatal(err)
 					}
 				})

@@ -41,17 +41,18 @@ type CreateIndependentEngineAccessGrantRequest struct {
 	ExpectedBoundaryHash string                         `json:"expected_boundary_hash" binding:"required"`
 	RecipientType        string                         `json:"recipient_type" enums:"user,department,project_group"`
 	RecipientID          string                         `json:"recipient_id"`
-	Action               string                         `json:"action" enums:"read"`
+	Action               string                         `json:"action" enums:"read,metadata_read"`
 	ExpiryMode           string                         `json:"expiry_mode" enums:"at_time,until_revoked"`
 	ExpiresAt            *time.Time                     `json:"expires_at"`
 	Reason               string                         `json:"reason"`
 }
 
 // Create godoc
-// @Summary 显式签发独立只读授权 | Issue explicit independent read access
+// @Summary 显式签发独立数据授权 | Issue explicit independent data access
 // @Description 当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples
 // @Description 同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy
 // @Description 同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change
+// @Description PG 支持 read（读取内容并包含必要元数据）及 metadata_read（仅查看元数据）；其他引擎仅支持现有 read。动作必须明确填写，不自动提升 | PG supports read (content including necessary metadata) and metadata_read (metadata only); other engines retain read only. Explicit action is required and never upgraded
 // @Tags 源数据授权 | Source Data Grants
 // @Accept json
 // @Produce json
@@ -95,7 +96,7 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 // List godoc
 // @Summary 查看当前源数据授权关系 | List current source-data authorization relations
 // @Description 选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination
-// @Description 具体用户查询保留只有有效拒绝的数据项；inspection.denies 仅返回当前适用的拒绝编号、接收主体及期限，不含原因或建立人。建立和解除仍由各自独立权限校验 | Selected-user queries retain Deny-only DataItems; inspection.denies exposes only applicable Deny anchors, recipients and validity, never reasons or operators. Establishment and release retain independent permissions
+// @Description 具体用户查询保留只有有效拒绝的数据项；inspection.denies 仅返回当前适用的拒绝编号、接收主体、实际禁止动作及期限，不含原因或建立人。建立和解除仍由各自独立权限校验 | Selected-user queries retain Deny-only DataItems; inspection.denies exposes only applicable Deny anchors, recipients, actual prohibited actions and validity, never reasons or operators. Establishment and release retain independent permissions
 // @Description 按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification
 // @Tags 源数据授权 | Source Data Grants
 // @Produce json

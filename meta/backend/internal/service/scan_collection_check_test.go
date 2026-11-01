@@ -57,7 +57,7 @@ func TestGovernanceBasicChecksCurrentQualificationOnEveryRead(t *testing.T) {
 		if rejected != nil {
 			return nil, rejected
 		}
-		return &execution.MetaCollectionAccessObservation{ExecutionID: input.ExecutionID, ExecutionPlanDigest: input.ExecutionPlanDigest, QualificationID: uuid.NewString(), ObservedAt: time.Now()}, nil
+		return &execution.MetaCollectionAccessObservation{ExecutionID: input.ExecutionID, ExecutionPlanDigest: input.ExecutionPlanDigest, ObservedAt: time.Now()}, nil
 	}))
 	ctx, err := s.bindCollectionRead(context.Background(), run, lease)
 	if err != nil || calls != 1 {

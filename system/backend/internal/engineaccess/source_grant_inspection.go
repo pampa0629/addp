@@ -25,6 +25,7 @@ type SourceGrantInspection struct {
 }
 
 type SourceGrantInspectionDeny struct {
+	Action        string     `json:"action"`
 	DenyID        uuid.UUID  `json:"deny_id"`
 	RecipientType string     `json:"recipient_type"`
 	RecipientID   int64      `json:"recipient_id,string" swaggertype:"string"`
@@ -33,6 +34,7 @@ type SourceGrantInspectionDeny struct {
 }
 
 type SourceGrantInspectionSource struct {
+	Action        string     `json:"action"`
 	RequestID     uuid.UUID  `json:"request_id"`
 	ApprovalMode  string     `json:"approval_mode"`
 	RecipientType string     `json:"recipient_type"`
@@ -47,22 +49,22 @@ type SourceGrantInspectionSource struct {
 const inspectionSourceCTE = `, observed_grants AS (SELECT * FROM matched_grants)` + inspectionSourceAggregationCTEs
 
 const inspectionSourceAggregationCTEs = `, sources AS (
- SELECT position, recipient_type, recipient_id, count(*) AS grant_count,
+ SELECT position, recipient_type, recipient_id, action, count(*) AS grant_count,
  (array_agg(request_id ORDER BY granted_at DESC, request_id DESC))[1] AS request_id,
  max(granted_at) AS granted_at,
  CASE WHEN count(DISTINCT approval_mode) = 1 THEN min(approval_mode) ELSE 'mixed' END AS approval_mode,
  CASE WHEN bool_or(expiry_mode = 'until_revoked') THEN 'until_revoked' ELSE 'at_time' END AS expiry_mode,
  CASE WHEN bool_or(expiry_mode = 'until_revoked') THEN NULL ELSE max(expires_at) END AS expires_at
- FROM observed_grants GROUP BY position, recipient_type, recipient_id
+ FROM observed_grants GROUP BY position, recipient_type, recipient_id, action
 ), source_sets AS (
  SELECT position, sum(grant_count) AS grant_count, max(granted_at) AS granted_at,
  CASE WHEN bool_or(expiry_mode = 'until_revoked') THEN 'until_revoked' ELSE 'at_time' END AS expiry_mode,
  CASE WHEN bool_or(expiry_mode = 'until_revoked') THEN NULL ELSE max(expires_at) END AS expires_at,
  CASE WHEN count(DISTINCT approval_mode) = 1 THEN min(approval_mode) ELSE 'mixed' END AS approval_mode,
  jsonb_agg(jsonb_build_object('request_id', request_id, 'approval_mode', approval_mode,
- 'recipient_type', recipient_type, 'recipient_id', recipient_id::text,
+ 'recipient_type', recipient_type, 'recipient_id', recipient_id::text, 'action', action,
  'grant_count', grant_count, 'expiry_mode', expiry_mode, 'expires_at', expires_at)
- ORDER BY recipient_type, recipient_id) AS sources
+ ORDER BY recipient_type, recipient_id, action) AS sources
  FROM sources GROUP BY position
 )`
 
@@ -83,36 +85,36 @@ const accountGrantRelationsPrefixSQL = `WITH clock AS MATERIALIZED (SELECT clock
 
 const accountDenyCandidatesSQL = `), active_denies AS MATERIALIZED (
  SELECT d.* FROM system.engine_access_denies d CROSS JOIN clock
- WHERE d.tenant_id = ? AND d.engine_id = ? AND d.action = 'read'
+ WHERE d.tenant_id = ? AND d.engine_id = ? AND d.action IN ('read', 'metadata_read')
  AND (d.expires_at IS NULL OR d.expires_at > clock.at)
  AND NOT EXISTS (SELECT 1 FROM system.engine_access_deny_releases r WHERE r.deny_id = d.deny_id)`
 
 const accountGrantRelationsSuffixSQL = `), candidate_bindings AS (
- SELECT catalog_path, item_fingerprint, boundary_hash FROM active
- UNION SELECT catalog_path, item_fingerprint, NULL::text AS boundary_hash FROM active_denies
+ SELECT catalog_path, item_fingerprint, boundary_hash, action FROM active
+ UNION SELECT catalog_path, item_fingerprint, NULL::text AS boundary_hash, action FROM active_denies
 ), input AS MATERIALIZED (
- SELECT account.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('native_target', catalog_path,
- 'item_fingerprint', item_fingerprint, 'boundary_hash', boundary_hash) ORDER BY item_fingerprint,boundary_hash)
+ SELECT account.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('binding', jsonb_build_object('native_target', catalog_path,
+ 'item_fingerprint', item_fingerprint, 'boundary_hash', boundary_hash), 'requested_action', action) ORDER BY item_fingerprint,action,boundary_hash)
  FROM candidate_bindings), '[]'::jsonb) AS targets,
  clock.at AS observed_at FROM account CROSS JOIN clock
 )` + sourceReadRuleCTEs + `, relation_targets AS (
- SELECT item_fingerprint, min(position) AS position, (array_agg(path ORDER BY position))[1] AS path
- FROM targets GROUP BY item_fingerprint
+ SELECT item_fingerprint, requested_action, min(position) AS position, (array_agg(path ORDER BY position))[1] AS path
+ FROM targets GROUP BY item_fingerprint, requested_action
 ), observed_grants AS (
- SELECT relation.position, g.recipient_type, g.recipient_id, g.request_id, g.granted_at, g.expiry_mode, g.expires_at, g.approval_mode
+ SELECT relation.position, g.recipient_type, g.recipient_id, g.request_id, g.granted_at, g.expiry_mode, g.expires_at, g.approval_mode, g.action
  FROM matched_grants g JOIN targets target ON target.position=g.position
- JOIN relation_targets relation ON relation.item_fingerprint=target.item_fingerprint
+ JOIN relation_targets relation ON relation.item_fingerprint=target.item_fingerprint AND relation.requested_action=target.requested_action
 ), relation_denies AS (
- SELECT DISTINCT relation.position, d.deny_id, d.recipient_type, d.recipient_id, d.expiry_mode, d.expires_at
+ SELECT DISTINCT relation.position, d.deny_id, d.recipient_type, d.recipient_id, d.expiry_mode, d.expires_at, d.action
  FROM matched_denies d JOIN targets target ON target.position=d.position
- JOIN relation_targets relation ON relation.item_fingerprint=target.item_fingerprint
+ JOIN relation_targets relation ON relation.item_fingerprint=target.item_fingerprint AND relation.requested_action=target.requested_action
  UNION ALL
- SELECT relation.position, d.deny_id, d.recipient_type, d.recipient_id, d.expiry_mode, d.expires_at
+ SELECT relation.position, d.deny_id, d.recipient_type, d.recipient_id, d.expiry_mode, d.expires_at, d.action
  FROM active_denies d JOIN relation_targets relation ON relation.item_fingerprint=d.item_fingerprint CROSS JOIN input
- WHERE NOT EXISTS (SELECT 1 FROM current_source) AND d.recipient_type='user' AND d.recipient_id=input.principal_id
+ WHERE (d.action = relation.requested_action OR d.action = 'metadata_read') AND NOT EXISTS (SELECT 1 FROM current_source) AND d.recipient_type='user' AND d.recipient_id=input.principal_id
 ), deny_sets AS (
  SELECT position, jsonb_agg(jsonb_build_object('deny_id', deny_id,
- 'recipient_type', recipient_type, 'recipient_id', recipient_id::text,
+ 'recipient_type', recipient_type, 'recipient_id', recipient_id::text, 'action', action,
  'expiry_mode', expiry_mode, 'expires_at', expires_at) ORDER BY recipient_type,recipient_id,deny_id) AS denies
  FROM relation_denies GROUP BY position
 ), relation_rules AS (
@@ -121,11 +123,11 @@ const accountGrantRelationsSuffixSQL = `), candidate_bindings AS (
  WHEN bool_or(r.reason='target_unavailable') THEN 'target_unavailable'
  WHEN bool_or(r.reason='explicit_deny') THEN 'explicit_deny'
  WHEN bool_or(r.reason='grant') THEN 'grant' ELSE 'no_grant' END AS reason
- FROM relation_targets relation JOIN targets target ON target.item_fingerprint=relation.item_fingerprint
+ FROM relation_targets relation JOIN targets target ON target.item_fingerprint=relation.item_fingerprint AND target.requested_action=relation.requested_action
  JOIN rules r ON r.position=target.position GROUP BY relation.position
 )` + inspectionSourceAggregationCTEs + `, applicable AS (
  SELECT target.path AS catalog_path, target.item_fingerprint, input.principal_id AS recipient_id,
- 'user'::text AS recipient_type, 'read'::text AS action,
+ 'user'::text AS recipient_type, target.requested_action AS action,
  COALESCE(s.grant_count, 0) AS grant_count, s.granted_at, s.expiry_mode, s.expires_at, s.approval_mode,
  jsonb_build_object('account_id', input.principal_id::text, 'catalog_path', target.path, 'item_fingerprint', target.item_fingerprint,
  'observed_at', rules.observed_at, 'rule_covered', rules.reason = 'grant', 'reason', rules.reason,
@@ -133,14 +135,16 @@ const accountGrantRelationsSuffixSQL = `), candidate_bindings AS (
  FROM relation_targets target CROSS JOIN input JOIN relation_rules rules ON rules.position = target.position
  LEFT JOIN source_sets s ON s.position = target.position
  LEFT JOIN deny_sets d ON d.position = target.position
- WHERE s.position IS NOT NULL OR d.position IS NOT NULL OR EXISTS (SELECT 1 FROM active g WHERE g.item_fingerprint = target.item_fingerprint
- AND g.recipient_type = 'user' AND g.recipient_id = input.principal_id)
+ WHERE EXISTS (SELECT 1 FROM active g WHERE g.item_fingerprint = target.item_fingerprint
+ AND g.action = target.requested_action AND ((g.recipient_type = 'user' AND g.recipient_id = input.principal_id)
+ OR EXISTS (SELECT 1 FROM recipients r WHERE r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id)))
+ OR EXISTS (SELECT 1 FROM relation_denies d WHERE d.position = target.position AND d.action = target.requested_action)
 ), page AS (
- SELECT * FROM applicable ORDER BY catalog_path::text LIMIT ? OFFSET ?
+ SELECT * FROM applicable ORDER BY catalog_path::text, action LIMIT ? OFFSET ?
 )
  SELECT EXISTS(SELECT 1 FROM account) AS account_exists,
  COALESCE((SELECT jsonb_agg(to_jsonb(p) || jsonb_build_object('recipient_id', p.recipient_id::text)
- ORDER BY p.catalog_path::text) FROM page p), '[]'::jsonb) AS items,
+ ORDER BY p.catalog_path::text, p.action) FROM page p), '[]'::jsonb) AS items,
  (SELECT count(*) FROM applicable) AS total`
 
 func (r *Repository) listAccountGrantRelations(ctx context.Context, tenantID, engineID, accountID int64, page, size int, filter SourceGrantFilter) ([]SourceGrantRelation, int64, error) {

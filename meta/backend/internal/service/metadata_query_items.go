@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/addp/common/dataprotection"
-	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
@@ -104,14 +103,6 @@ func (s *MetadataQueryService) ListItemsByBranch(engineID, tenantID uint, branch
 		result[i] = metaquery.ToMetaItemLite(item)
 	}
 	return result, nil
-}
-
-func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]datatype.FieldInfo, error) {
-	var item models.MetaItem
-	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
-		return nil, fmt.Errorf("metadata snapshot not found: %w", err)
-	}
-	return metaquery.FieldsFromMetaItem(item)
 }
 
 func (s *MetadataQueryService) GetItemByCatalogPath(tenantID, engineID uint, catalogPath string) (*models.MetaItemLite, error) {

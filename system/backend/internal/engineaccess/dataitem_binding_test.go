@@ -187,7 +187,7 @@ func (r *Repository) testReadCurrentUserSourceRules(ctx context.Context, credent
 	if err != nil {
 		return nil, err
 	}
-	return r.observeSourceRules(ctx, credential, paths, testReadBindings(paths...), tenant,
+	return r.observeSourceRules(ctx, credential, commonauth.SourceAccessRead, paths, testReadBindings(paths...), tenant,
 		func(auth *iam.AuthContextService) (*commonauth.AuthContext, error) {
 			return auth.ResolveUserAccessToken(ctx, credential)
 		}, nil, nil)

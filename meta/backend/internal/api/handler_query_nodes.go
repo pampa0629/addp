@@ -1,6 +1,7 @@
 package api
 
 import (
+	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 
@@ -17,12 +18,17 @@ var (
 // GetMetadataTree 获取存储引擎的完整元数据树
 // @Summary 获取元数据树 | Get metadata tree
 // @Description 获取指定引擎的完整元数据树 | Get metadata tree for an engine
+// @Description PG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
 // @Tags Meta Query
 // @Produce json
 // @Param engine_id path int true "存储引擎ID | Engine ID"
 // @Success 200 {object} models.MetadataTreeResponse "元数据树 | Metadata tree"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 401 {object} map[string]interface{} "认证失效 | Invalid credential"
+// @Failure 403 {object} map[string]interface{} "无查询权限 | Query forbidden"
+// @Failure 503 {object} map[string]interface{} "授权核验不可用 | Authorization check unavailable"
+// @Failure 404 {object} map[string]interface{} "目标不存在或不可见 | Target absent or hidden"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /engines/{engine_id}/tree [get]
@@ -36,28 +42,38 @@ func (h *Handler) GetMetadataTree(c *gin.Context) {
 	}
 	tenantID, err := h.effectiveTenantIDForEngine(c, uint(engineID))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.respondMetadataQueryError(c, err)
 		return
 	}
 
 	tree, err := h.metadataQueryService.GetMetadataTree(tenantID, uint(engineID))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.respondMetadataQueryError(c, err)
 		return
 	}
 
+	tree, err = h.resourceTreeService.FilterMetadataTree(h.metadataBrowsingContext(c), tenantID, uint(engineID), tree)
+	if err != nil {
+		h.respondMetadataQueryError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, tree)
 }
 
 // GetMetaNodeByID 获取单个节点详情
 // @Summary 获取节点详情 | Get node detail
 // @Description 按节点 ID 获取元数据节点详情 | Get metadata node detail by ID
+// @Description PG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
 // @Tags Meta Query
 // @Produce json
 // @Param node_id path int true "节点ID | Node ID"
 // @Success 200 {object} models.MetaNodeLite "节点详情 | Node detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "节点不存在 | Node not found"
+// @Failure 401 {object} map[string]interface{} "认证失效 | Invalid credential"
+// @Failure 403 {object} map[string]interface{} "无查询权限 | Query forbidden"
+// @Failure 503 {object} map[string]interface{} "授权核验不可用 | Authorization check unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /nodes/{node_id} [get]
@@ -74,22 +90,32 @@ func (h *Handler) GetMetaNodeByID(c *gin.Context) {
 
 	node, err := h.metadataQueryService.GetMetaNodeByID(tenantID, uint(nodeID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		h.respondMetadataQueryError(c, err)
 		return
 	}
 
+	node, err = h.visibleMetadataNode(c, node)
+	if err != nil {
+		h.respondMetadataQueryError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, node)
 }
 
 // GetNodeAncestors 获取节点祖先链
 // @Summary 获取节点祖先链 | Get node ancestor chain
 // @Description 按节点 ID 获取 root 到目标节点的元数据节点链，包含目标节点自身 | Get metadata node chain from root to target node, including the target node
+// @Description PG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
 // @Tags Meta Query
 // @Produce json
 // @Param node_id path int true "节点ID | Node ID"
 // @Success 200 {array} models.MetaNodeLite "节点祖先链 | Node ancestor chain"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "祖先链不存在 | Ancestor chain not found"
+// @Failure 401 {object} map[string]interface{} "认证失效 | Invalid credential"
+// @Failure 403 {object} map[string]interface{} "无查询权限 | Query forbidden"
+// @Failure 503 {object} map[string]interface{} "授权核验不可用 | Authorization check unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /nodes/{node_id}/ancestors [get]
@@ -106,22 +132,36 @@ func (h *Handler) GetNodeAncestors(c *gin.Context) {
 
 	ancestors, err := h.metadataQueryService.GetNodeAncestors(tenantID, uint(nodeID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		h.respondMetadataQueryError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, ancestors)
+	visible, err := h.resourceTreeService.FilterMetadataNodes(h.metadataBrowsingContext(c), tenantID, ancestors)
+	if err != nil {
+		h.respondMetadataQueryError(c, err)
+		return
+	}
+	if len(visible) != len(ancestors) {
+		h.respondMetadataQueryError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	c.JSON(http.StatusOK, visible)
 }
 
 // GetNodeChildren 获取节点的子节点
 // @Summary 获取子节点 | Get node children
 // @Description 获取指定节点的直接子节点 | Get direct children of a metadata node
+// @Description PG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
 // @Tags Meta Query
 // @Produce json
 // @Param node_id path int true "节点ID | Node ID"
 // @Success 200 {array} models.MetaNodeLite "子节点列表 | Children"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 401 {object} map[string]interface{} "认证失效 | Invalid credential"
+// @Failure 403 {object} map[string]interface{} "无查询权限 | Query forbidden"
+// @Failure 503 {object} map[string]interface{} "授权核验不可用 | Authorization check unavailable"
+// @Failure 404 {object} map[string]interface{} "目标不存在或不可见 | Target absent or hidden"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /nodes/{node_id}/children [get]
@@ -136,18 +176,33 @@ func (h *Handler) GetNodeChildren(c *gin.Context) {
 		return
 	}
 
-	nodes, err := h.metadataQueryService.GetNodeChildren(tenantID, uint(nodeID))
+	parent, err := h.metadataQueryService.GetMetaNodeByID(tenantID, uint(nodeID))
+	if err == nil {
+		_, err = h.visibleMetadataNode(c, parent)
+	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.respondMetadataQueryError(c, err)
 		return
 	}
 
+	nodes, err := h.metadataQueryService.GetNodeChildren(tenantID, uint(nodeID))
+	if err != nil {
+		h.respondMetadataQueryError(c, err)
+		return
+	}
+
+	nodes, err = h.resourceTreeService.FilterMetadataNodes(h.metadataBrowsingContext(c), tenantID, nodes)
+	if err != nil {
+		h.respondMetadataQueryError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, nodes)
 }
 
 // QueryNodeByCatalogPath 按 catalog path 查询节点
 // @Summary 按 catalog path 查询节点 | Query node by catalog path
 // @Description 按引擎和 catalog path 查询元数据节点 | Query metadata node by engine and catalog path
+// @Description PG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
 // @Tags Meta Query
 // @Produce json
 // @Param engine_id query int true "存储引擎ID | Engine ID"
@@ -155,6 +210,10 @@ func (h *Handler) GetNodeChildren(c *gin.Context) {
 // @Success 200 {object} models.MetaNodeLite "节点详情 | Node detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "节点不存在 | Node not found"
+// @Failure 401 {object} map[string]interface{} "认证失效 | Invalid credential"
+// @Failure 403 {object} map[string]interface{} "无查询权限 | Query forbidden"
+// @Failure 503 {object} map[string]interface{} "授权核验不可用 | Authorization check unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /nodes/by-catalog-path [get]
@@ -177,9 +236,14 @@ func (h *Handler) QueryNodeByCatalogPath(c *gin.Context) {
 
 	node, err := h.metadataQueryService.GetNodeByCatalogPath(tenantID, uint(engineID), catalogPath)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		h.respondMetadataQueryError(c, err)
 		return
 	}
 
+	node, err = h.visibleMetadataNode(c, node)
+	if err != nil {
+		h.respondMetadataQueryError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, node)
 }

@@ -37,6 +37,19 @@ func (s *ResourceTreeService) GetTree(ctx context.Context, tenantID, engineID ui
 	if err != nil {
 		return nil, err
 	}
+	if check, userQuery := metadataVisibility(ctx); userQuery && engine.EngineType == "postgresql" {
+		nodes := s.metadataTreeNodes(engine.EngineType, metaTree, -1)
+		tree, err := s.treeBuilder.BuildFromMeta(engine, nodes, -1)
+		if err != nil {
+			return nil, err
+		}
+		safe, err := filterPGResourceTree(ctx, tree, engineID, check)
+		if err != nil {
+			return nil, err
+		}
+		limitVisibleTreeDepth(safe, expandDepth)
+		return safe, nil
+	}
 	nodes := s.metadataTreeNodes(engine.EngineType, metaTree, expandDepth)
 	return s.treeBuilder.BuildFromMeta(engine, nodes, expandDepth)
 }
@@ -58,6 +71,20 @@ func (s *ResourceTreeService) GetNode(ctx context.Context, tenantID, engineID ui
 	if err != nil {
 		return nil, err
 	}
+	if _, userQuery := metadataVisibility(ctx); userQuery && engine.EngineType == "postgresql" {
+		tree, err := s.GetTree(ctx, tenantID, engineID, -1)
+		if err != nil {
+			return nil, err
+		}
+		path := findVisibleTreePath(tree, locatorURI)
+		if len(path) == 0 {
+			return nil, metaErrors.ErrNodeNotFound
+		}
+		node := path[len(path)-1]
+		limitVisibleTreeDepth(node, 1)
+		return node, nil
+	}
+
 	targetNode, err := s.metadataQueryService.GetMetaNodeByID(tenantID, *loc.NodeID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to get meta node: %v", metaErrors.ErrNodeNotFound, err)
@@ -114,6 +141,34 @@ func (s *ResourceTreeService) GetAncestors(ctx context.Context, tenantID, engine
 	engine, err := s.getEngine(engineID, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	if _, userQuery := metadataVisibility(ctx); userQuery && engine.EngineType == "postgresql" {
+		var canonical *metaModels.ResourceTreeAncestorsResponse
+		if loc.ItemID != nil && *loc.ItemID > 0 {
+			canonical, err = s.getItemAncestors(tenantID, engine, loc)
+		} else {
+			canonical, err = s.getNodeAncestors(tenantID, engine, loc)
+		}
+		if err != nil {
+			return nil, err
+		}
+		tree, err := s.GetTree(ctx, tenantID, engineID, -1)
+		if err != nil {
+			return nil, err
+		}
+		path := findVisibleTreePath(tree, canonical.TargetLocator)
+		if len(path) == 0 {
+			return nil, metaErrors.ErrNodeNotFound
+		}
+		target := path[len(path)-1]
+		kind := "node"
+		if loc.ItemID != nil {
+			kind = "item"
+		}
+		for _, node := range path {
+			node.Children = []*resourcetree.TreeNode{}
+		}
+		return &metaModels.ResourceTreeAncestorsResponse{EngineID: engineID, TargetLocator: target.Locator, TargetKind: kind, Ancestors: path}, nil
 	}
 	if loc.ItemID != nil && *loc.ItemID > 0 {
 		return s.getItemAncestors(tenantID, engine, loc)

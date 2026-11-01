@@ -189,7 +189,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		// DataItem boundary and remain independent of later source withdrawal.
 		checkCoverage := func(path plugin.EngineCatalogPath, want bool) {
 			t.Helper()
-			rules, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: actor.TenantID, Source: user,
+			rules, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: "read", TenantID: actor.TenantID, Source: user,
 				Targets: []plugin.EngineCatalogPath{path}, Bindings: []authorizationfacts.Binding{factstest.Binding(path)}})
 			if err != nil || rules.Covered != want {
 				t.Fatalf("covered=%+v want=%v error=%v", rules, want, err)

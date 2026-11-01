@@ -23,9 +23,8 @@
       <ScheduleConfig v-if="form.scheduled" v-model="form.schedule" />
       <template v-if="task">
         <p data-testid="collection-definition-id">{{ t('meta.scan.collection.task') }}：{{ task.id }}</p>
-        <p>{{ t('meta.scan.collection.approvalHint') }}</p>
+        <p>{{ t('meta.scan.collection.managementHint') }}</p>
         <div class="collection-actions">
-          <el-button v-if="canOpenApproval" :disabled="dirty || unsupported" @click="openApproval" data-testid="collection-definition-approval">{{ t('meta.scan.collection.approval') }}</el-button>
           <el-button v-if="canExecute" :disabled="dirty || unsupported" @click="emit('execute', task)" data-testid="collection-definition-execute">{{ t('meta.scan.collection.execute') }}</el-button>
           <el-button v-if="canCancel && activeExecution" :disabled="unsupported || cancellationRequested" @click="cancelExecution" data-testid="collection-definition-cancel">{{ t('meta.scan.collection.cancelExecution') }}</el-button>
           <MonitorExecutionsButton module="meta" task-type="scan" />
@@ -43,7 +42,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
-import { MonitorExecutionsButton, ScheduleConfig, openConsoleRoute, allowsConsoleRoute } from '@common-ui'
+import { MonitorExecutionsButton, ScheduleConfig } from '@common-ui'
 import metaApi from '../api/meta'
 import { useAuthStore } from '../store/auth'
 import { collectionTaskPayload, isEngineCollectionTask, saveCollectionTask, cancelCollectionTaskRun } from '../utils/collectionTask'
@@ -63,9 +62,6 @@ const form = reactive({ name: '', scheduled: false, schedule: '' })
 let baseline = ''
 const dirty = computed(() => !task.value || JSON.stringify(form) !== baseline)
 const unsupported = computed(() => !!task.value && task.value.parameters?.scan_depth !== 'basic')
-const approvalPath = computed(() => `/system/engines/${props.engine.id}?tab=collection-qualifications&collection_task_id=${task.value?.id || ''}`)
-const canOpenApproval = computed(() => allowsConsoleRoute(approvalPath.value, auth.contextType, auth.permissions) &&
-  ['read', 'approve'].some(action => auth.hasPermission(`system.meta_collection_qualification.${action}`)))
 function selectTask(id) {
   selectedID.value = id
   task.value = engineTasks.value.find(item => String(item.id) === id) || null
@@ -102,9 +98,7 @@ async function cancelExecution() {
   } catch (e) { error.value = e?.response?.data?.error || t('meta.scan.collection.cancelFailed') }
   finally { busy.value = false }
 }
-async function openApproval() {
-  if (!dirty.value && !unsupported.value && canOpenApproval.value) await openConsoleRoute(approvalPath.value)
-}
+
 </script>
 
 <style scoped>

@@ -521,12 +521,20 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 		if request.SubjectKind == "published_service" || len(request.ExpandUpstream)+len(request.ExpandDownstream) > 0 {
 			return models.LineageGraphResponse{}, fmt.Errorf("field granularity must be used with data_item or field_ref without item expansions")
 		}
-		return s.buildFieldLineageGraph(ctx, tenantID, request)
-	}
-	if request.SchemaSnapshotHash != "" {
+	} else if request.SchemaSnapshotHash != "" {
 		return models.LineageGraphResponse{}, fmt.Errorf("schema_snapshot_hash must be used with field granularity")
 	}
-	return s.buildLineageGraph(ctx, tenantID, request)
+	var err error
+	ctx, err = prepareLineageVisibility(ctx, request)
+	if err != nil {
+		return models.LineageGraphResponse{}, err
+	}
+	if request.Granularity == "field" {
+		graph, err := s.buildFieldLineageGraph(ctx, tenantID, request)
+		return projectUserLineage(ctx, graph), err
+	}
+	graph, err := s.buildLineageGraph(ctx, tenantID, request)
+	return projectUserLineage(ctx, graph), err
 }
 
 func (s *LineageService) lineageEngineNames(tenantID uint, items []models.MetaItem) (map[uint]string, error) {

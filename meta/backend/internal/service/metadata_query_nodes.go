@@ -1,7 +1,9 @@
 package service
 
 import (
+	"errors"
 	"fmt"
+	"gorm.io/gorm"
 
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
@@ -69,6 +71,9 @@ func (s *MetadataQueryService) GetNodeByCatalogPath(tenantID, engineID uint, cat
 			}
 			return &result[0], nil
 		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
 	}
 
 	trimmed := normalizeCatalogPath(catalogPath)
@@ -82,9 +87,12 @@ func (s *MetadataQueryService) GetNodeByCatalogPath(tenantID, engineID uint, cat
 			}
 			return &result[0], nil
 		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
 	}
 
-	return nil, fmt.Errorf("node not found")
+	return nil, gorm.ErrRecordNotFound
 }
 
 func (s *MetadataQueryService) GetNodeChildren(tenantID, nodeID uint) ([]models.MetaNodeLite, error) {

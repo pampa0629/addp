@@ -77,7 +77,7 @@ func exerciseScanCancellation(t *testing.T, db *gorm.DB) {
 				run = claimed
 				s.SetCollectionAuthorizationClient(collectionClientFunc(func(_ context.Context, _ uint, r execution.MetaCollectionAccessRequest) (*execution.MetaCollectionAccessObservation, error) {
 					checks++
-					return &execution.MetaCollectionAccessObservation{ExecutionID: r.ExecutionID, ExecutionPlanDigest: r.ExecutionPlanDigest, QualificationID: "fixture", ObservedAt: time.Now()}, nil
+					return &execution.MetaCollectionAccessObservation{ExecutionID: r.ExecutionID, ExecutionPlanDigest: r.ExecutionPlanDigest, ObservedAt: time.Now()}, nil
 				}))
 				readCtx, err = s.bindCollectionRead(ctx, run, *lease)
 				if err != nil {

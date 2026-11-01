@@ -22,7 +22,7 @@ func (p *collectionTokenProbe) PlatformToken(context.Context) (string, error) {
 
 func TestMetaCollectionCheckSingleBoundedRequest(t *testing.T) {
 	request := execution.MetaCollectionAccessRequest{ExecutionID: uuid.NewString(), Attempt: 1, LeaseToken: uuid.NewString(), ExecutionPlanDigest: strings.Repeat("a", 64)}
-	response := execution.MetaCollectionAccessObservation{ExecutionID: request.ExecutionID, ExecutionPlanDigest: request.ExecutionPlanDigest, QualificationID: uuid.NewString(), ObservedAt: time.Now().UTC()}
+	response := execution.MetaCollectionAccessObservation{ExecutionID: request.ExecutionID, ExecutionPlanDigest: request.ExecutionPlanDigest, ObservedAt: time.Now().UTC()}
 	raw, _ := json.Marshal(response)
 	for _, tc := range []struct {
 		name   string

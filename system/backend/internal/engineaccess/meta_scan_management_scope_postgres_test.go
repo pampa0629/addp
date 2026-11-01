@@ -21,7 +21,7 @@ func exerciseMetaCollectionManagement(t *testing.T, db *gorm.DB, tenantID, admin
 		if err := db.Raw("SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key='meta.scan_task.cancel'").Scan(&assigned).Error; err != nil || assigned != 0 {
 			t.Fatal("cancel must not be automatically assigned", assigned, err)
 		}
-		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.collection_cancel", Name: "Explicit cancellation fixture", PermissionKeys: []string{"meta.scan_task.cancel"}, ActorPrincipalID: adminID})
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.collection_management", Name: "Explicit management fixture", PermissionKeys: []string{"meta.scan_task.create", "meta.scan_task.update", "meta.scan_task.delete", "meta.scan_task.execute", "meta.scan_task.cancel"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -30,8 +30,10 @@ func exerciseMetaCollectionManagement(t *testing.T, db *gorm.DB, tenantID, admin
 		svc := NewService(NewRepository(db), nil)
 		checkDenied := func() {
 			t.Helper()
-			if _, err := svc.GetMetaScanCancellationScope(ctx, actor, int64(engine.ID)); !errors.Is(err, commonapi.ErrForbidden) {
-				t.Fatal("missing qualification allowed", err)
+			for _, operation := range []string{"create", "update", "delete", "execute", "cancel"} {
+				if _, err := svc.GetMetaScanManagementScope(ctx, actor, int64(engine.ID), operation); !errors.Is(err, commonapi.ErrForbidden) {
+					t.Fatal("missing function or scope allowed", operation, err)
+				}
 			}
 		}
 		checkDenied()
@@ -45,15 +47,25 @@ func exerciseMetaCollectionManagement(t *testing.T, db *gorm.DB, tenantID, admin
 		actor.AuthorizationVersion = principal.AuthorizationVersion
 		checkDenied() // function permission alone is insufficient
 		delegation := seedDelegation(t, user.MembershipID, expires.Add(-time.Second))
-		observation, err := svc.GetMetaScanCancellationScope(ctx, actor, int64(engine.ID))
-		if err != nil || observation == nil || observation.EngineID != int64(engine.ID) || observation.Operator.PrincipalID != user.PrincipalID {
-			t.Fatalf("current scope %v %v", observation, err)
+		for _, operation := range []string{"create", "update", "delete", "execute", "cancel"} {
+			observation, err := svc.GetMetaScanManagementScope(ctx, actor, int64(engine.ID), operation)
+			if err != nil || observation == nil || observation.EngineID != int64(engine.ID) || observation.Operator.PrincipalID != user.PrincipalID {
+				t.Fatalf("current scope %v %v", observation, err)
+			}
 		}
 		if err := db.Table("system.engines").Where("id=?", engine.ID).Update("lifecycle_state", models.EngineLifecycleDisabled).Error; err != nil {
 			t.Fatal(err)
 		}
-		if _, err := svc.GetMetaScanCancellationScope(ctx, actor, int64(engine.ID)); err != nil {
+		if _, err := svc.GetMetaScanManagementScope(ctx, actor, int64(engine.ID), "cancel"); err != nil {
 			t.Fatal("disabled engine must remain cancellable", err)
+		}
+		for _, operation := range []string{"create", "update", "execute"} {
+			if _, err := svc.GetMetaScanManagementScope(ctx, actor, int64(engine.ID), operation); !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatal("disabled engine allowed", operation, err)
+			}
+		}
+		if _, err := svc.GetMetaScanManagementScope(ctx, actor, int64(engine.ID), "delete"); err != nil {
+			t.Fatal("disabled task not deletable", err)
 		}
 		if err := db.Table("system.engines").Where("id=?", engine.ID).Update("lifecycle_state", engine.LifecycleState).Error; err != nil {
 			t.Fatal(err)

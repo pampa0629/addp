@@ -633,9 +633,6 @@
           <el-tab-pane v-if="renderedAuthorizationTabs.includes('delegations')" :label="t('system.engine.delegations.navigationTitle')" name="delegations">
             <EngineAccessDelegations v-if="detailTab === 'delegations'" :key="selectedEngine.id" :engine-id="selectedEngine.id" />
           </el-tab-pane>
-          <el-tab-pane v-if="renderedAuthorizationTabs.includes('collection-qualifications')" :label="t('system.engine.collection.title')" name="collection-qualifications">
-            <EngineMetaCollectionQualifications v-if="detailTab === 'collection-qualifications'" :key="authorizationKey" :engine="selectedEngine" :authorization-ready="authorizationReady" :initial-task-id="String(route.query.collection_task_id || '')" />
-          </el-tab-pane>
         </el-tabs>
       </div>
       <template #footer>
@@ -779,7 +776,6 @@ import { useAuthStore } from '../store/auth'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
 import EngineAccessDelegations from '../components/engines/EngineAccessDelegations.vue'
-import EngineMetaCollectionQualifications from '../components/engines/EngineMetaCollectionQualifications.vue'
 import EngineDataAuthorization from '../components/engines/EngineDataAuthorization.vue'
 import EngineFilterBar from '../components/engines/EngineFilterBar.vue'
 import { useEngineAuthorizationSession } from '../utils/engineAuthorizationSession'
@@ -882,7 +878,7 @@ const detailsVisible = ref(false)
 const selectedEngine = ref(null)
 const { authorizationPending, authorizationReady, authorizationKey } = useEngineAuthorizationSession(authStore, selectedEngine)
 const detailTab = ref('basic')
-const isAuthorizationView = computed(() => ['data-authorization', 'delegations', 'collection-qualifications'].includes(detailTab.value))
+const isAuthorizationView = computed(() => ['data-authorization', 'delegations'].includes(detailTab.value))
 useConsolePageDescriptor(router, 'system', {
   title: computed(() => t(isAuthorizationView.value ? 'system.engine.recentAuthorizationTitle' : 'system.engine.recentDetailTitle')),
   subject: computed(() => selectedEngine.value?.name || ''),
@@ -971,7 +967,8 @@ const syncEngineScanPolicy = async (engine, scanConfig, shouldTriggerImmediate) 
     action: 'sync',
     engine: {
       id: engine.id,
-      name: engine.name
+      name: engine.name,
+      engine_type: engine.engine_type
     },
     scanConfig: normalized,
     triggerImmediate: shouldTriggerImmediate
@@ -1989,11 +1986,10 @@ const availableAuthorizationTabs = computed(() => {
   const tabs = []
   if (['create', 'read', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_grant.${action}`))) tabs.push('data-authorization')
   if (['read', 'create', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_delegation.${action}`))) tabs.push('delegations')
-  if (['read', 'approve', 'revoke'].some(action => authStore.hasPermission(`system.meta_collection_qualification.${action}`))) tabs.push('collection-qualifications')
   return tabs
 })
 
-const applicableAuthorizationTabs = (engine, tabs = availableAuthorizationTabs.value) => tabs.filter(tab => tab !== 'collection-qualifications' || engine?.engine_type === 'postgresql')
+const applicableAuthorizationTabs = (engine, tabs = availableAuthorizationTabs.value) => tabs
 
 const settledAuthorizationTabs = ref([])
 watch([authorizationReady, availableAuthorizationTabs], ([ready, tabs]) => {

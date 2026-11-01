@@ -88,14 +88,15 @@ type CreateEngineAccessDenyRequest struct {
 	ItemFingerprint string                         `json:"item_fingerprint" binding:"required"`
 	RecipientType   string                         `json:"recipient_type" enums:"user,department,project_group"`
 	RecipientID     string                         `json:"recipient_id"`
-	Action          string                         `json:"action" enums:"read"`
+	Action          string                         `json:"action" enums:"read,metadata_read"`
 	ExpiryMode      string                         `json:"expiry_mode" enums:"at_time,until_revoked"`
 	ExpiresAt       *time.Time                     `json:"expires_at"`
 	Reason          string                         `json:"reason"`
 }
 
 // Create godoc
-// @Summary 建立精确源读取拒绝规则 | Establish a precise source read Deny
+// @Summary 建立精确数据项拒绝规则 | Establish a precise DataItem Deny
+// @Description PG metadata_read 拒绝同时阻止元数据和内容；read 拒绝不阻止独立的元数据授权。其他引擎保留 read；不扩大操作人资格或接收方范围 | PG metadata_read Deny blocks metadata and content; read Deny preserves independent metadata access. Other engines retain read, with unchanged operator and recipient scope
 // @Description 当前租户用户须同时具备独立创建权限和引擎管理资格（授权管理员或本引擎有效受托办理人）；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and engine management qualification (authorization administrator or effective delegated handler); recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO
 // @Description 拒绝按当前 Tenant 与 Engine 内的稳定 DataItem 身份持续匹配，不绑定当前边界摘要。已存身份可以离线收权，新身份必须由 Meta 基础事实证明；不使用原生路径独立放行 | Deny continues matching the stable DataItem identity within the tenant and engine without requiring its current boundary digest. Stored identities permit offline restriction; new identities require Meta proof, never native-path access fallback
 // @Description 必须显式选择未来到期时间或长期有效；同编号同参数重试恢复原不可变记录，不延长期限或重复审计。记录不证明执行侧已经拒绝数据读取 | Explicit future expiry or until-revoked mode is required; identical command retries recover immutable history without renewal or duplicate audit. History is not proof of execution-side access denial

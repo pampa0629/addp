@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -83,4 +84,20 @@ func createAncestorItem(t *testing.T, db *gorm.DB, item models.MetaItem) models.
 		t.Fatalf("create item: %v", err)
 	}
 	return item
+}
+
+func TestGetNodeByCatalogPathDoesNotHideDatabaseFailureAsNotFound(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	svc := NewMetadataQueryService(db)
+	if _, err := svc.GetNodeByCatalogPath(7, 9, "missing"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+	failure := errors.New("database read failed")
+	queries := 0
+	if err := db.Callback().Query().Before("gorm:query").Register("metadata_query_failure", func(tx *gorm.DB) { queries++; tx.AddError(failure) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.GetNodeByCatalogPath(7, 9, "public/table"); !errors.Is(err, failure) || queries != 1 {
+		t.Fatalf("database failure hidden or retried: %v calls=%d", err, queries)
+	}
 }

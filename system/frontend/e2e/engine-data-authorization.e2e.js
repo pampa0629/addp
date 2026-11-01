@@ -139,7 +139,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       if (request.method() === 'GET') {
         const grouped = new Map()
         for (const grant of grants.filter(item => !item.revocation && (!item.expires_at || new Date(item.expires_at) > new Date()))) {
-          const key = JSON.stringify([grant.catalog_path, grant.recipient_type, grant.recipient_id])
+          const key = JSON.stringify([grant.catalog_path, grant.recipient_type, grant.recipient_id, grant.action])
           const previous = grouped.get(key)
           grouped.set(key, { ...grant, grant_count: (previous?.grant_count || 0) + 1 })
         }
@@ -151,7 +151,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
           const activeDenies = restrictions.filter(item => !item.released && (!item.expires_at || new Date(item.expires_at) > new Date()))
           const candidates = [...current, ...activeDenies].filter(item => String(item.recipient_id) === account && (item.recipient_type === 'user' || organizationMember))
           for (const source of candidates) {
-            const key = JSON.stringify(source.catalog_path), target = expanded.get(key) || { ...source, recipient_type: 'user', recipient_id: account, grant_count: 0, inspection: { account_id: account, catalog_path: source.catalog_path, observed_at: '2026-10-09T08:00:00Z', rule_covered: inspectionReason === 'grant', reason: inspectionReason, sources: [], denies: [] } }
+            const key = JSON.stringify([source.catalog_path, source.action]), target = expanded.get(key) || { ...source, recipient_type: 'user', recipient_id: account, grant_count: 0, inspection: { account_id: account, catalog_path: source.catalog_path, observed_at: '2026-10-09T08:00:00Z', rule_covered: inspectionReason === 'grant', reason: inspectionReason, sources: [], denies: [] } }
             if (source.deny_id) { target.inspection.denies.push(source); target.inspection.reason = 'explicit_deny'; target.inspection.rule_covered = false }
             else {
               if (['grant', 'explicit_deny', 'target_unavailable'].includes(inspectionReason)) target.inspection.sources.push(source)
@@ -175,7 +175,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     if (path.includes('/access_grants/') && path.endsWith('/revoke')) {
       const body = request.postDataJSON(); writes.push({ path, body })
       const id = path.split('/').at(-2), anchor = grants.find(item => item.request_id === id)
-      const same = item => JSON.stringify([item.catalog_path, item.recipient_type, item.recipient_id]) === JSON.stringify([anchor.catalog_path, anchor.recipient_type, anchor.recipient_id])
+      const same = item => JSON.stringify([item.catalog_path, item.recipient_type, item.recipient_id, item.action]) === JSON.stringify([anchor.catalog_path, anchor.recipient_type, anchor.recipient_id, anchor.action])
       const ids = grants.filter(item => same(item) && !item.revocation).map(item => item.request_id)
       const revocation = { request_id: id, revoked_at: '2026-10-07T01:00:00Z', reason: body.reason, revoked_request_ids: ids }
       grants = grants.map(item => same(item) && !item.revocation ? { ...item, revocation: { ...revocation, request_id: item.request_id } } : item)
@@ -464,7 +464,7 @@ test('unknown Deny and release outcomes retry exactly the original commands', as
 })
 
 test('Deny-only data remains discoverable and organization release warns about its full scope', async ({ page }) => {
-  const deny = { deny_id: '17824529-7cbf-43db-bbe1-c31917836022', catalog_path: tablePath, item_fingerprint: historicalGrant().item_fingerprint,
+  const deny = { action: 'read', deny_id: '17824529-7cbf-43db-bbe1-c31917836022', catalog_path: tablePath, item_fingerprint: historicalGrant().item_fingerprint,
     recipient_type: 'department', recipient_id: '33', expiry_mode: 'until_revoked', expires_at: null }
   const { writes } = await fixture(page, { allowed: [...grantPermissions, 'iam.department.read', 'system.engine_access_deny.release'], organizationMember: true, denies: [deny] })
   await page.goto('/engines/2?tab=data-authorization')
@@ -486,7 +486,7 @@ test('Deny-only data remains discoverable and organization release warns about i
 })
 
 test('grant-read permission does not confer Deny creation or release', async ({ page }) => {
-  const deny = { deny_id: '17824529-7cbf-43db-bbe1-c31917836022', catalog_path: tablePath, recipient_type: 'user', recipient_id: '33', expiry_mode: 'until_revoked', expires_at: null }
+  const deny = { action: 'read', deny_id: '17824529-7cbf-43db-bbe1-c31917836022', catalog_path: tablePath, recipient_type: 'user', recipient_id: '33', expiry_mode: 'until_revoked', expires_at: null }
   const { writes } = await fixture(page, { allowed: grantPermissions, history: [historicalGrant()], denies: [deny] })
   await page.goto('/engines/2?tab=data-authorization')
   await selectAccountFilter(page)
@@ -563,7 +563,7 @@ test('only data authorization permission exposes the authorization action but no
 const grantPermissions = [...permissions, 'system.engine_access_grant.create', 'system.engine_access_grant.read', 'system.engine_access_grant.revoke', 'iam.tenant_membership.read']
 
 function historicalGrant(kind = 'user') {
-  return { request_id: `history-${kind}`, engine_id: '2', catalog_path: tablePath, recipient_type: kind, recipient_id: '33',
+  return { action: 'read', request_id: `history-${kind}`, engine_id: '2', catalog_path: tablePath, recipient_type: kind, recipient_id: '33',
     item_fingerprint: createHash('sha256').update('2:outdoor.activities').digest('hex'),
     approval_mode: 'independent', expiry_mode: 'until_revoked', granted_at: '2026-10-07T00:00:00Z', revocation: null }
 }
@@ -1437,4 +1437,35 @@ test('late signing facts cannot reopen confirmation after leaving the authorizat
     await expect(page.locator('.el-message-box')).toBeHidden()
     expect(writes).toEqual([])
   } finally { release() }
+})
+
+
+test('metadata relation preserves action when restricting and withdrawing, keeping content grants', async ({ page }) => {
+  const metadata = { ...historicalGrant(), action: 'metadata_read', request_id: 'metadata-command' }
+  const { writes } = await fixture(page, { allowed: [...grantPermissions, 'system.engine_access_deny.create'], history: [metadata, historicalGrant()] })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectAccountFilter(page)
+  const list = page.getByTestId('source-grant-list')
+  await expect(list.getByTestId('account-grant-expand')).toHaveCount(2)
+  const row = list.locator('.el-table__body tr').filter({ hasText: '仅查看元数据' }).first()
+  await row.getByTestId('source-deny-create').click()
+  const dialog = page.getByRole('dialog', { name: '禁止查看元数据', exact: true })
+  await expect(dialog).toContainText('同时禁止读取数据')
+  await dialog.getByTestId('source-deny-expiry').click()
+  await page.getByRole('option', { name: '长期有效，直到解除', exact: true }).click()
+  await dialog.getByTestId('source-deny-reason').fill('Metadata boundary fixture')
+  await dialog.getByTestId('source-deny-confirm').click()
+  await expect(dialog).toBeHidden()
+  expect(writes).toHaveLength(1)
+  expect(writes[0].body.action).toBe('metadata_read')
+  await row.getByTestId('account-grant-expand').click()
+  await page.getByTestId('account-grant-sources').getByTestId('source-grant-revoke').click()
+  const revoke = page.getByRole('dialog', { name: '撤销授权', exact: true })
+  await expect(revoke).toContainText('仅查看元数据')
+  await revoke.getByTestId('source-grant-revoke-reason').fill('Withdraw only metadata')
+  await revoke.getByTestId('source-grant-revoke-confirm').click()
+  await expect(revoke).toBeHidden()
+  expect(writes).toHaveLength(2)
+  expect(writes[1].path).toContain('/metadata-command/revoke')
+  await expect(list).toContainText('读取数据（含元数据）')
 })

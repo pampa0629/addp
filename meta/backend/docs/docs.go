@@ -186,7 +186,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户 active 存储引擎选择项、标准能力声明、连接状态及统计信息；非 online 项由前端展示并禁选 | Get active storage engine options with canonical capabilities, connection status, and statistics for the current tenant; clients must show but disable non-online options",
+                "description": "获取当前租户 active 存储引擎选择项、标准能力声明、连接状态及统计信息；PG 用户扫描统计仅计可见分支；非 online 项由前端展示并禁选 | Get active storage engine options with canonical capabilities, connection status, and statistics for the current tenant; PG user scan statistics include visible branches only; clients must show but disable non-online options",
                 "produces": [
                     "application/json"
                 ],
@@ -204,8 +204,29 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -225,7 +246,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定引擎下已扫描的数据项，可按 catalog 第一层业务分支过滤 | List scanned metadata items for an engine, optionally filtered by catalog first business branch",
+                "description": "获取指定引擎下已扫描的数据项，可按 catalog 第一层业务分支过滤 | List scanned metadata items for an engine, optionally filtered by catalog first business branch\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -265,8 +286,36 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "目标不存在或不可见 | Target absent or hidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -286,7 +335,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定引擎的完整元数据树 | Get metadata tree for an engine",
+                "description": "获取指定引擎的完整元数据树 | Get metadata tree for an engine\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -317,8 +366,36 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "目标不存在或不可见 | Target absent or hidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -590,7 +667,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按引擎和 catalog path 查询数据项 | Query metadata item by engine and catalog path",
+                "description": "按引擎和 catalog path 查询数据项 | Query metadata item by engine and catalog path\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -628,6 +705,20 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "数据项不存在 | Item not found",
                         "schema": {
@@ -637,6 +728,13 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "结构事实查询失败 | Structure facts query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -656,7 +754,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按数据项 ID 获取元数据项详情 | Get metadata item detail by ID",
+                "description": "按数据项 ID 获取元数据项详情 | Get metadata item detail by ID\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -687,6 +785,20 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "数据项不存在 | Item not found",
                         "schema": {
@@ -696,6 +808,13 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "结构事实查询失败 | Structure facts query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -715,7 +834,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按数据项 ID 获取数据项及 root 到其父节点的元数据节点链 | Get item and metadata node chain from root to its parent node by item ID",
+                "description": "按数据项 ID 获取数据项及 root 到其父节点的元数据节点链 | Get item and metadata node chain from root to its parent node by item ID\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -746,8 +865,36 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "祖先链不存在 | Ancestor chain not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -767,7 +914,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按数据项 ID 获取字段详情 | Get item field details by item ID",
+                "description": "按数据项 ID 获取字段详情 | Get item field details by item ID\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -799,8 +946,36 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "数据项不存在 | Item not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -897,7 +1072,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按数据项 ID 获取空间元数据 | Get spatial metadata by item ID",
+                "description": "按数据项 ID 获取空间元数据 | Get spatial metadata by item ID\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -928,8 +1103,36 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "空间元数据不存在 | Spatial metadata not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1005,7 +1208,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按数据项、精确字段引用或已发布服务版本查询血缘关系；字段边只返回执行 ID、写入模式、字段状态和转换摘要，不重复整份 operation 字段映射 | Query lineage for a data item, exact field reference or published service revision; field edges expose execution ID, write mode, field status and transformation summaries without full operation mappings",
+                "description": "用户查询仅返回当前可见的 PG 数据项与字段；两端可见才展示关系，计数与截断只基于可见关系。服务起点拒绝，表达式与任意证据不返回 | User queries return currently visible PG items and fields only. Both endpoints must be visible; counts and truncation use visible relations only. Service roots are denied; expressions and arbitrary evidence are omitted\n按数据项、精确字段引用或已发布服务版本查询血缘关系；字段边只返回执行 ID、写入模式、字段状态和转换摘要，不重复整份 operation 字段映射 | Query lineage for a data item, exact field reference or published service revision; field edges expose execution ID, write mode, field status and transformation summaries without full operation mappings",
                 "produces": [
                     "application/json"
                 ],
@@ -1109,6 +1312,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "可见性核验拒绝或不可用 | Visibility denied or unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "主体不存在 | Subject not found",
                         "schema": {
@@ -1117,6 +1326,12 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "可见性核验拒绝或不可用 | Visibility denied or unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
                         }
@@ -1187,7 +1402,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按引擎和 catalog path 查询元数据节点 | Query metadata node by engine and catalog path",
+                "description": "按引擎和 catalog path 查询元数据节点 | Query metadata node by engine and catalog path\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -1225,8 +1440,36 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "节点不存在 | Node not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1246,7 +1489,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按节点 ID 获取元数据节点详情 | Get metadata node detail by ID",
+                "description": "按节点 ID 获取元数据节点详情 | Get metadata node detail by ID\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -1277,8 +1520,36 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "节点不存在 | Node not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1298,7 +1569,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按节点 ID 获取 root 到目标节点的元数据节点链，包含目标节点自身 | Get metadata node chain from root to target node, including the target node",
+                "description": "按节点 ID 获取 root 到目标节点的元数据节点链，包含目标节点自身 | Get metadata node chain from root to target node, including the target node\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -1332,8 +1603,36 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "祖先链不存在 | Ancestor chain not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1353,7 +1652,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定节点的直接子节点 | Get direct children of a metadata node",
+                "description": "获取指定节点的直接子节点 | Get direct children of a metadata node\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -1387,8 +1686,36 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "目标不存在或不可见 | Target absent or hidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1408,7 +1735,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定节点下的数据项 | Get metadata items under a node",
+                "description": "获取指定节点下的数据项 | Get metadata items under a node\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -1442,8 +1769,36 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "目标不存在或不可见 | Target absent or hidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1463,7 +1818,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine\n委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters",
+                "description": "PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine\n委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters",
                 "produces": [
                     "application/json"
                 ],
@@ -1520,6 +1875,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "授权核验暂不可用 | Authorization check unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "delegated_tool",
@@ -1535,7 +1897,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 locator 获取 root 到目标资源的标准资源树祖先链，并重写为当前 Meta 事实 locator | Get resource tree ancestor chain by locator and rewrite target locator from current Meta facts",
+                "description": "PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n按 locator 获取 root 到目标资源的标准资源树祖先链，并重写为当前 Meta 事实 locator | Get resource tree ancestor chain by locator and rewrite target locator from current Meta facts",
                 "produces": [
                     "application/json"
                 ],
@@ -1593,6 +1955,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "授权核验暂不可用 | Authorization check unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1608,7 +1977,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 locator 获取资源树节点及直接子级，返回 common/resourcetree.TreeNode | Get resource tree node and direct children by locator",
+                "description": "PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n按 locator 获取资源树节点及直接子级，返回 common/resourcetree.TreeNode | Get resource tree node and direct children by locator",
                 "produces": [
                     "application/json"
                 ],
@@ -1662,6 +2031,13 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验暂不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1775,7 +2151,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "在指定引擎的标准资源树中按关键词搜索节点 | Search nodes in a standard resource tree by keyword",
+                "description": "PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n在指定引擎的标准资源树中按关键词搜索节点 | Search nodes in a standard resource tree by keyword",
                 "produces": [
                     "application/json"
                 ],
@@ -1841,6 +2217,13 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验暂不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2282,93 +2665,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/runtime/scan-tasks/{task_id}/authorization-facts": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "仅 addp-system Tenant Service；只读当前任务功能配置，不创建执行、访问 System 或读取源。首期仅支持整个引擎的显式任务范围；其他 selector 返回 409，不扩大范围。引擎版本由 System 独立冻结；200 不表示采集已批准 | Restricted to addp-system Tenant Service. Reads current task configuration without creating an execution, calling System or opening a source. Initially supports explicit entire-engine tasks only; other selectors return 409 without scope expansion. System independently freezes the Engine version. HTTP 200 is not approval",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta Runtime"
-                ],
-                "summary": "查询当前采集任务事实 | Read current collection task facts",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "任务 ID | Task ID",
-                        "name": "task_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "当前任务最小事实 | Minimal current task facts",
-                        "schema": {
-                            "$ref": "#/definitions/execution.MetaScanTaskFacts"
-                        }
-                    },
-                    "400": {
-                        "description": "查询失败 | Query failed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "查询失败 | Query failed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "查询失败 | Query failed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "查询失败 | Query failed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "409": {
-                        "description": "查询失败 | Query failed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "查询失败 | Query failed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "查询失败 | Query failed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "meta.task_provider.read"
-                ]
-            }
-        },
         "/runtime/transfer-productions/{execution_id}/basic-scan": {
             "post": {
                 "security": [
@@ -2717,6 +3013,34 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -2780,6 +3104,34 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -2808,7 +3160,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "为指定 engine 创建、更新或关闭绑定的 Meta 扫描计划 | Create, update or disable the Meta scan task bound to an engine",
+                "description": "为指定 engine 维护 Meta 扫描计划；PG 关闭定时保留配置与历史，不取消在途执行 | Maintain an engine scan plan; disabling PostgreSQL scheduling preserves the plan and history without cancelling in-flight executions",
                 "consumes": [
                     "application/json"
                 ],
@@ -2839,13 +3191,41 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "扫描任务 | Scan task",
+                        "description": "扫描任务；无绑定任务时返回状态对象 | Scan task, or a status object when no bound task exists",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanTask"
                         }
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2904,6 +3284,34 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2981,6 +3389,34 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -3034,6 +3470,34 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3098,8 +3562,29 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "403": {
-                        "description": "缺少当前用户来源 | Current User origin is required",
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3133,7 +3618,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户的元数据项总数 | Get metadata item count for current tenant",
+                "description": "获取当前租户有效元数据项数；PG 用户仅统计当前可见数据项 | Count active tenant metadata items; PG user counts include only currently visible items",
                 "produces": [
                     "application/json"
                 ],
@@ -3149,8 +3634,29 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无查询权限 | Query forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权核验不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3279,6 +3785,34 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -3345,8 +3879,29 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
-                        "description": "任务不存在 | Task not found",
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3373,7 +3928,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅接受 addp-orchestrator 以父 execution 血缘触发；task_type 仅支持 scan，请求必须提供 source=orchestrator 和 parent_execution_id，parameters 当前不支持覆盖。| Only accepts addp-orchestrator execution-lineage invocation; task_type only supports scan, source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.",
+                "description": "PG basic 本期拒绝编排触发。其他既有入口仅接受 addp-orchestrator 以父 execution 血缘触发；task_type 仅支持 scan，请求必须提供 source=orchestrator 和 parent_execution_id，parameters 当前不支持覆盖。| PG basic orchestration is rejected in this release. Other existing routes only accept addp-orchestrator execution-lineage invocation; task_type only supports scan, source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3418,6 +3973,34 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4066,43 +4649,6 @@ const docTemplate = `{
                         "exact",
                         "full"
                     ]
-                }
-            }
-        },
-        "execution.MetaScanTaskFacts": {
-            "type": "object",
-            "properties": {
-                "engine_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "force": {
-                    "type": "boolean"
-                },
-                "read_options": {
-                    "$ref": "#/definitions/execution.MetaScanReadOptions"
-                },
-                "scan_depth": {
-                    "type": "string",
-                    "enum": [
-                        "basic",
-                        "deep"
-                    ]
-                },
-                "schema_version": {
-                    "type": "string"
-                },
-                "scope_kind": {
-                    "type": "string",
-                    "enum": [
-                        "engine"
-                    ]
-                },
-                "task_definition_digest": {
-                    "type": "string"
-                },
-                "task_id": {
-                    "type": "string"
                 }
             }
         },

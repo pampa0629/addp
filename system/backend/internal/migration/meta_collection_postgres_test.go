@@ -59,3 +59,44 @@ func TestMetaCollectionQualificationApprovalForwardMigrationAgainstPostgres(t *t
 		}
 	})
 }
+
+func TestMetaCollectionRetirementForwardMigrationAgainstPostgres(t *testing.T) {
+	testAuthorizationFactsMigration(t, "000259_retire_meta_collection_approval.up.sql", 259, 1, func(db *sql.DB) func() {
+		user, tenant := seedInitializedMigrationTenant(t, db, "collection-retirement", "Collection retirement")
+		if _, err := db.Exec(`INSERT INTO system.role_assignments (principal_id,role_id,scope_type,tenant_id,status,valid_from,source_type,grant_reason,created_by_principal_id)
+  SELECT $1,id,'tenant',$2,'active',now(),'manual','retirement fixture',$1 FROM system.roles WHERE tenant_id IS NULL AND role_key='tenant.engine_access_delegation_administrator'`, user, tenant); err != nil {
+			t.Fatal(err)
+		}
+		var version, assignments, grants, denies int64
+		for query, target := range map[string]*int64{"SELECT count(*) FROM system.role_assignments": &assignments, "SELECT count(*) FROM system.engine_access_grants": &grants, "SELECT count(*) FROM system.engine_access_denies": &denies} {
+			if err := db.QueryRow(query).Scan(target); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := db.QueryRow("SELECT authorization_version FROM system.principals WHERE id=$1", user).Scan(&version); err != nil {
+			t.Fatal(err)
+		}
+		return func() {
+			var n int64
+			if err := db.QueryRow("SELECT authorization_version FROM system.principals WHERE id=$1", user).Scan(&n); err != nil || n <= version {
+				t.Fatal("old approval authority not invalidated", n, version, err)
+			}
+			for query, want := range map[string]int64{
+				"SELECT count(*) FROM system.role_assignments":     assignments,
+				"SELECT count(*) FROM system.engine_access_grants": grants,
+				"SELECT count(*) FROM system.engine_access_denies": denies,
+				"SELECT count(*) FROM system.permissions WHERE permission_key LIKE 'system.meta_collection_qualification.%' AND status='active'":                                                                                                                                                                                   0,
+				"SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key LIKE 'system.meta_collection_qualification.%'":                                                                                                                                          0,
+				"SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key='meta.scan_task.cancel'":                                                                                                                                                                0,
+				"SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id JOIN system.roles r ON r.id=rp.role_id WHERE p.permission_key='system.meta_collection.execute' AND r.role_key='tenant.meta_runtime' AND r.tenant_id IS NULL AND NOT p.delegable AND NOT p.tenant_customizable": 1,
+				"SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key='system.meta_collection.execute'":                                                                                                                                                       1,
+				"SELECT count(*) FROM pg_tables WHERE schemaname='system' AND tablename='meta_collection_qualifications'":                                                                                                                                                                                                          0,
+			} {
+				if err := db.QueryRow(query).Scan(&n); err != nil || n != want {
+					t.Fatal(query, n, want, err)
+				}
+			}
+			assertForeignKeyColumnsIndexed(t, db)
+		}
+	})
+}

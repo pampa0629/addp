@@ -25,7 +25,7 @@ func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.Exec
 	if err != nil {
 		return nil, commonapi.ErrForbidden
 	}
-	request := sourceReadRequest{TenantID: auth.TenantID, Source: userProvenance{PrincipalID: auth.ActorPrincipalID,
+	request := sourceReadRequest{Action: "read", TenantID: auth.TenantID, Source: userProvenance{PrincipalID: auth.ActorPrincipalID,
 		MembershipID: auth.TenantMembershipID, AuthorizationVersion: auth.IssuedAuthorizationVersion}, Targets: targets}
 	scope := auth.SourceReadScope.Clone()
 	paths, _, err := encodeSourceReadTargets(request.Targets)

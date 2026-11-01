@@ -149,8 +149,6 @@ export function resolveEngineDetailRouteState(availableTabs, routeQuery = {}) {
   const requestedTab = String(routeQuery.tab || '').trim()
   const activeTab = tabs.includes(requestedTab) ? requestedTab : 'basic'
   const query = activeTab === 'basic' ? {} : { tab: activeTab }
-  const taskID = String(routeQuery.collection_task_id || '').trim()
-  if (activeTab === 'collection-qualifications' && /^[1-9]\d*$/.test(taskID)) query.collection_task_id = taskID
 
   return {
     activeTab,

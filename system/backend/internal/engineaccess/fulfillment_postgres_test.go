@@ -188,10 +188,8 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	// business approval or approval-requirement service.
 	verified := func(*Repository) error { return nil }
 
-
-
 	exerciseMetaCollectionManagement(t, db, tenant.ID, user.ID, engine, newOperator, seedDelegation)
-	exerciseMetaCollectionQualifications(t, db, tenant.ID, user.ID, engine, newOperator, seedDelegation)
+	exerciseMetaCollectionRuntime(t, db, tenant.ID, user.ID, engine, newOperator, seedDelegation)
 	exerciseFulfillmentAcceptance(t, db, newRequest(), confirmation, newOperator, seedDelegation)
 	t.Run("real IAM role assignment does not deadlock qualification", func(t *testing.T) {
 		operator, _ := newOperator(t, time.Hour)
@@ -702,7 +700,9 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", "no_requirement")
 		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
 		r.RequestID = uuid.New()
-        if _, err := settle(r, true); err != nil { t.Fatalf("Catalog without direct configuration: %v", err) }
+		if _, err := settle(r, true); err != nil {
+			t.Fatalf("Catalog without direct configuration: %v", err)
+		}
 
 	})
 	t.Run("no owner transaction cannot create a result", func(t *testing.T) {

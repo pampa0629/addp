@@ -113,7 +113,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 				if err != nil || observation == nil || len(observation.Sources) != remaining || observation.RuleCovered != (remaining > 0) {
 					t.Fatalf("remaining=%d inspection=%+v err=%v", remaining, observation, err)
 				}
-				rules, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{path}, Bindings: testReadBindings(path)})
+				rules, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: "read", TenantID: tenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{path}, Bindings: testReadBindings(path)})
 				if err != nil || rules == nil || rules.Covered != (remaining > 0) {
 					t.Fatalf("remaining=%d actual rules=%+v err=%v", remaining, rules, err)
 				}
@@ -147,7 +147,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			if err := db.Model(&Delegation{}).Where("tenant_membership_id = ?", administrator.MembershipID).Count(&delegations).Error; err != nil || delegations != 0 {
 				t.Fatalf("manufactured self-delegation: %d %v", delegations, err)
 			}
-			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: userProvenance{PrincipalID: administrator.PrincipalID, MembershipID: administrator.MembershipID, AuthorizationVersion: administrator.AuthorizationVersion}, Targets: []engineplugin.EngineCatalogPath{path}, Bindings: testReadBindings(path)})
+			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: "read", TenantID: tenantID, Source: userProvenance{PrincipalID: administrator.PrincipalID, MembershipID: administrator.MembershipID, AuthorizationVersion: administrator.AuthorizationVersion}, Targets: []engineplugin.EngineCatalogPath{path}, Bindings: testReadBindings(path)})
 			if err != nil || result == nil || result.Targets[0].Reason != "no_grant" {
 				t.Fatalf("administrator automatically gained read access: %+v %v", result, err)
 			}
@@ -159,7 +159,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		calls = 0
 		assertRead := func(want string) {
 			t.Helper()
-			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{path}, Bindings: testReadBindings(path)})
+			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: "read", TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{path}, Bindings: testReadBindings(path)})
 			if err != nil || result == nil || result.Targets[0].Reason != want {
 				t.Fatalf("want %s: %+v %v", want, result, err)
 			}
@@ -213,7 +213,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 				if err != nil || row == nil || row.ItemFingerprint != binding.ItemFingerprint || row.BoundaryHash != binding.BoundaryHash {
 					t.Fatalf("typed grant=%+v err=%v", row, err)
 				}
-				result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{target}, Bindings: testReadBindings(target)})
+				result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: "read", TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{target}, Bindings: testReadBindings(target)})
 				if err != nil || result == nil || result.Targets[0].Reason != "grant" {
 					t.Fatalf("typed read denied after exact grant: %+v %v", result, err)
 				}

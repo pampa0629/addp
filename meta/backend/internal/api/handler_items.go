@@ -9,6 +9,7 @@ import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	metai18n "github.com/addp/meta/i18n"
+	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/gin-gonic/gin"
@@ -83,6 +84,7 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 // ListEngineItems 获取引擎下已扫描的数据项列表。
 // @Summary 列出引擎数据项 | List engine items
 // @Description 获取指定引擎下已扫描的数据项，可按 catalog 第一层业务分支过滤 | List scanned metadata items for an engine, optionally filtered by catalog first business branch
+// @Description PG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
 // @Tags Meta Query
 // @Produce json
 // @Param engine_id path int true "存储引擎ID | Engine ID"
@@ -90,6 +92,10 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 // @Success 200 {array} models.MetaItemLite "数据项列表 | Items"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 401 {object} map[string]interface{} "认证失效 | Invalid credential"
+// @Failure 403 {object} map[string]interface{} "无查询权限 | Query forbidden"
+// @Failure 503 {object} map[string]interface{} "授权核验不可用 | Authorization check unavailable"
+// @Failure 404 {object} map[string]interface{} "目标不存在或不可见 | Target absent or hidden"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /engines/{engine_id}/items [get]
@@ -103,34 +109,48 @@ func (h *Handler) ListEngineItems(c *gin.Context) {
 	}
 	tenantID, err := h.effectiveTenantIDForEngine(c, uint(engineID))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.respondMetadataQueryError(c, err)
 		return
 	}
 
 	branch := c.Query("branch")
 	var items []models.MetaItemLite
 	if branch != "" {
+		if err := h.resourceTreeService.CheckMetadataBranch(h.metadataBrowsingContext(c), tenantID, uint(engineID), branch); err != nil {
+			h.respondMetadataQueryError(c, err)
+			return
+		}
 		items, err = h.metadataQueryService.ListItemsByBranch(uint(engineID), tenantID, branch)
 	} else {
 		items, err = h.metadataQueryService.ListItemsByEngine(uint(engineID), tenantID)
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.respondMetadataQueryError(c, err)
 		return
 	}
 
+	items, err = h.resourceTreeService.FilterMetadataItems(h.metadataBrowsingContext(c), tenantID, items)
+	if err != nil {
+		h.respondMetadataQueryError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, items)
 }
 
 // GetItemFieldsByID 按 item_id 获取数据项字段。
 // @Summary 按 ID 获取数据项字段 | Get item fields by ID
 // @Description 按数据项 ID 获取字段详情 | Get item field details by item ID
+// @Description PG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
 // @Tags Meta Query
 // @Produce json
 // @Param item_id path int true "数据项ID | Item ID"
 // @Success 200 {object} map[string]interface{} "字段详情 | Field details"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
+// @Failure 401 {object} map[string]interface{} "认证失效 | Invalid credential"
+// @Failure 403 {object} map[string]interface{} "无查询权限 | Query forbidden"
+// @Failure 503 {object} map[string]interface{} "授权核验不可用 | Authorization check unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /items/{item_id}/fields [get]
@@ -145,9 +165,19 @@ func (h *Handler) GetItemFieldsByID(c *gin.Context) {
 		return
 	}
 
-	fields, err := h.metadataQueryService.GetItemFieldDetailsByID(tenantID, uint(itemID))
+	item, err := h.metadataQueryService.GetItemByID(tenantID, uint(itemID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		h.respondMetadataQueryError(c, err)
+		return
+	}
+	item, err = h.visibleMetadataItem(c, item)
+	if err != nil {
+		h.respondMetadataQueryError(c, err)
+		return
+	}
+	fields, err := metaquery.FieldsFromMetaItem(models.MetaItem{Attributes: item.Attributes})
+	if err != nil {
+		h.respondMetadataQueryError(c, err)
 		return
 	}
 

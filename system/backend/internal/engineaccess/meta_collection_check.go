@@ -17,7 +17,6 @@ import (
 	"github.com/addp/common/execution"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/models"
-	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -26,7 +25,7 @@ func (s *Service) CheckMetaCollection(ctx context.Context, actor Actor, request 
 		return nil, commonapi.ErrBadRequest
 	}
 	qualify := func(operation func(*Repository, func() error) error) error {
-		return s.withSourceRuntime(ctx, actor, "addp-meta", authorization.PermissionSystemMetaCollectionQualificationExecute, operation)
+		return s.withSourceRuntime(ctx, actor, "addp-meta", authorization.PermissionSystemMetaCollectionExecute, operation)
 	}
 	if err := qualify(func(_ *Repository, check func() error) error { return check() }); err != nil {
 		return nil, err
@@ -45,10 +44,6 @@ func (s *Service) CheckMetaCollection(ctx context.Context, actor Actor, request 
 	if facts == nil || facts.Validate() != nil || facts.ExecutionID != request.ExecutionID || facts.ExecutionPlanDigest != request.ExecutionPlanDigest || facts.TaskID == nil || facts.TaskDefinitionDigest == nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete || facts.ScanDepth != "basic" || facts.SourceScope == nil || facts.SourceScope.Mode != "full" || len(facts.SourceScope.Anchors) != 1 {
 		return nil, commonapi.ErrForbidden
 	}
-	taskID, err := collectionTaskID(*facts.TaskID)
-	if err != nil {
-		return nil, commonapi.ErrForbidden
-	}
 	root := plugin.EngineCatalogRootPath(plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema), facts.EngineID)
 	if !reflect.DeepEqual(facts.SourceScope.Anchors[0], root) || facts.ReadOptions.Encoding != "" || facts.ReadOptions.HasHeader != nil {
 		return nil, commonapi.ErrForbidden
@@ -62,24 +57,20 @@ func (s *Service) CheckMetaCollection(ctx context.Context, actor Actor, request 
 		if !collectionEngineAvailable(&engine) || strconv.FormatInt(engine.Version, 10) != facts.EngineVersion {
 			return commonapi.ErrForbidden
 		}
-		var qualification MetaCollectionQualification
-		if err := tx.db.WithContext(ctx).Where("tenant_id=? AND engine_id=? AND task_id=? AND task_definition_digest=? AND engine_version=? AND scan_depth='basic' AND scope_kind='engine' AND status='active' AND expires_at>clock_timestamp()", actor.TenantID, engine.ID, taskID, *facts.TaskDefinitionDigest, engine.Version).
-			Clauses(clause.Locking{Strength: "SHARE"}).Take(&qualification).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return commonapi.ErrForbidden
-			}
-			return mapError(err)
-		}
 		// Independently bind the canonical raw Common row and current lease.
 		var run struct {
-			SourceTaskID    *string
-			ExecutionConfig string
-			Attempt         int
-			LeaseToken      string
-			LeaseExpiresAt  *time.Time
-			Status          string
+			SourceTaskID      *string
+			ExecutionConfig   string
+			Attempt           int
+			LeaseToken        string
+			LeaseExpiresAt    *time.Time
+			Status            string
+			Source            string
+			TriggerType       string
+			ParentExecutionID *string
+			Metadata          string
 		}
-		if err := tx.db.WithContext(ctx).Table((execution.TaskExecution{}).TableName()).Select("source_task_id, execution_config, attempt, lease_token, lease_expires_at, status").Where("tenant_id=? AND execution_id=? AND module='meta' AND task_type='scan' AND execution_boundary='bounded'", actor.TenantID, request.ExecutionID).
+		if err := tx.db.WithContext(ctx).Table((execution.TaskExecution{}).TableName()).Select("source_task_id, execution_config, attempt, lease_token, lease_expires_at, status, source, trigger_type, parent_execution_id, metadata").Where("tenant_id=? AND execution_id=? AND module='meta' AND task_type='scan' AND execution_boundary='bounded'", actor.TenantID, request.ExecutionID).
 			Clauses(clause.Locking{Strength: "SHARE"}).Take(&run).Error; err != nil {
 			return mapError(err)
 		}
@@ -87,6 +78,11 @@ func (s *Service) CheckMetaCollection(ctx context.Context, actor Actor, request 
 		if err != nil {
 			return commonapi.ErrForbidden
 		}
+		var metadata map[string]json.RawMessage
+		if run.Metadata != "" && json.Unmarshal([]byte(run.Metadata), &metadata) != nil {
+			return commonapi.ErrForbidden
+		}
+		_, cancelled := metadata["scan_cancellation"]
 		validate := func() error {
 			if err := check(); err != nil {
 				return err
@@ -95,7 +91,7 @@ func (s *Service) CheckMetaCollection(ctx context.Context, actor Actor, request 
 			if err != nil {
 				return err
 			}
-			if digest != request.ExecutionPlanDigest || run.SourceTaskID == nil || *run.SourceTaskID != *facts.TaskID || run.Status != execution.ExecutionStatusRunning || run.Attempt != request.Attempt || subtle.ConstantTimeCompare([]byte(run.LeaseToken), []byte(request.LeaseToken)) != 1 || run.LeaseExpiresAt == nil || !run.LeaseExpiresAt.After(now) || !qualification.ExpiresAt.After(now) {
+			if run.Source != "meta" || run.ParentExecutionID != nil || (run.TriggerType != "manual" && run.TriggerType != "scheduled") || cancelled || digest != request.ExecutionPlanDigest || run.SourceTaskID == nil || *run.SourceTaskID != *facts.TaskID || run.Status != execution.ExecutionStatusRunning || run.Attempt != request.Attempt || subtle.ConstantTimeCompare([]byte(run.LeaseToken), []byte(request.LeaseToken)) != 1 || run.LeaseExpiresAt == nil || !run.LeaseExpiresAt.After(now) {
 				return commonapi.ErrForbidden
 			}
 			return nil
@@ -107,7 +103,7 @@ func (s *Service) CheckMetaCollection(ctx context.Context, actor Actor, request 
 		if err != nil {
 			return err
 		}
-		result = &execution.MetaCollectionAccessObservation{ExecutionID: request.ExecutionID, ExecutionPlanDigest: digest, QualificationID: qualification.ID.String(), ObservedAt: now}
+		result = &execution.MetaCollectionAccessObservation{ExecutionID: request.ExecutionID, ExecutionPlanDigest: digest, ObservedAt: now}
 		return validate()
 	})
 	return result, err

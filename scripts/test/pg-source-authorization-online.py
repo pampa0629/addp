@@ -26,7 +26,7 @@ PREFLIGHT = import_module('scripts.test.online-preflight')
 REGISTRATION = import_module('scripts.test.online-engine-registration')
 SuiteError = API.SuiteError
 SUITE = 'pg-source-authorization'
-READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read'}
+READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.lineage.read', 'meta.scan_task.execute', 'meta.scan_task.read'}
 READER_PERMISSIONS |= {'transfer.task.create', 'transfer.task.read', 'transfer.task.execute',
                        'transfer.task.delete', 'system.execution_authorization.create'}
 OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
@@ -34,8 +34,7 @@ OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
     'catalog.entry.read', 'catalog.inventory.read', 'system.engine_access_fulfillment.create',
     'system.engine.read', 'system.engine_catalog.read',
     'meta.scan_task.create', 'meta.scan_task.update', 'meta.scan_task.delete',
-    'system.meta_collection_qualification.read', 'system.meta_collection_qualification.approve',
-    'system.meta_collection_qualification.revoke',
+    'meta.scan_task.read', 'meta.scan_task.execute', 'meta.scan_task.cancel',
     'iam.tenant_membership.read', 'iam.department.read', 'iam.project_group.read'}
 CONFIRMER_PERMISSIONS = {'catalog.entry.read', 'catalog.entry.update', 'catalog.inventory.read',
                         'catalog.sharing_decision.create'}
@@ -49,20 +48,12 @@ WORKSPACE_CHECKS = ['exclusive_workspace_tabs', 'integrated_create_picker_withou
 PRODUCTION_CHECKS = ['new_pg_output_initial_grant_issued', 'new_pg_output_basic_only_identification',
                      'new_pg_output_manager_readable', 'output_survives_source_withdrawal',
                      'output_withdrawal_denies_read']
-COLLECTION_CHECKS = ['meta_collection_unapproved_denied', 'meta_collection_approved_repeat',
-                     'meta_collection_copied_task_denied', 'meta_collection_changed_configuration_denied',
-                     'meta_collection_revoked_denied', 'meta_collection_source_rules_unchanged']
-COLLECTION_BROWSER_CHECKS = ['collection_workspace_read_only_navigation', 'collection_browser_exact_task_facts',
-    'collection_browser_same_command_recovery', 'collection_browser_record_reload',
-    'collection_browser_revoke_and_history', 'collection_browser_worker_boundary']
-COLLECTION_EXPIRY_CHECKS = ['meta_collection_before_expiry_readable', 'meta_collection_natural_expiry_denied',
-                          'meta_collection_expired_replay_preserves_history']
-COLLECTION_SCHEDULED_CHECKS = ['meta_collection_scheduled_unapproved_denied', 'meta_collection_scheduled_approved_repeat',
-                             'meta_collection_scheduled_revoked_denied', 'meta_collection_scheduled_source_rules_unchanged']
-COLLECTION_INFLIGHT_CHECKS = ['meta_collection_inflight_revoke_stops_next_catalog',
-                             'meta_collection_inflight_retry_has_no_source_io', 'meta_collection_inflight_fixture_cleanup']
-COLLECTION_INFLIGHT_EXPIRY_CHECKS = ['meta_collection_inflight_expiry_stops_next_catalog',
-    'meta_collection_inflight_expired_replay_has_no_source_io', 'meta_collection_inflight_expiry_fixture_cleanup']
+LINEAGE_CHECKS = ['pg_item_and_field_lineage_visible', 'pg_lineage_ungranted_root_hidden',
+                  'pg_lineage_source_withdrawal_filters_current_and_history',
+                  'pg_lineage_output_withdrawal_hides_root', 'pg_lineage_service_root_denied']
+COLLECTION_CHECKS = ['meta_central_missing_management_denied', 'meta_central_manual_repeat',
+                     'meta_central_deep_rejected', 'meta_central_basic_configuration_update',
+                     'meta_central_source_rules_unchanged']
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
@@ -439,6 +430,120 @@ def item(reader, engine, name):
     return matches[0]
 
 
+def hidden_metadata(reader, item_id):
+    result = reader.request('GET', f'/api/v1/meta/items/{item_id}', (404,)).payload
+    require(set(result) <= {'error', 'error_code'} and bool(result.get('error')),
+            'withdrawn metadata exposed a hidden DataItem')
+
+
+class ProductionLineageObservation:
+    """Observe the existing production relation through current User credentials only."""
+
+    def __init__(self, reader, outsider, source_id, output_id, execution):
+        require(type(source_id) is int and type(output_id) is int and source_id > 0
+                and output_id > 0 and source_id != output_id, 'distinct lineage DataItem identities required')
+        self.reader, self.outsider = reader, outsider
+        self.source, self.output, self.execution = source_id, output_id, execution
+        self.token = reader.token
+        self.as_of = None
+
+    def query(self, client, granularity, *, root=None, expected=200, as_of=None):
+        query = {'subject_kind': 'data_item' if granularity == 'item' else 'field_ref',
+                 'granularity': granularity, 'item_id': self.output if root is None else root,
+                 'direction': 'upstream', 'depth': 2, 'limit': 2}
+        if granularity == 'field':
+            query['field_name'] = 'person_id'
+        if as_of is not None:
+            query['as_of'] = as_of
+        result = client.request('GET', '/api/v1/meta/lineage/graph?' + urlencode(query), (expected,)).payload
+        if expected != 200:
+            require(set(result) == {'error', 'error_code'} and bool(result['error'])
+                    and result['error_code'] == 'lineage_subject_not_found',
+                    'hidden lineage root must have the ordinary not-found response')
+        return result
+
+    def validate(self, graph, granularity, *, source_visible, pending=False):
+        require(isinstance(graph, dict) and set(graph) <= {
+                    'granularity', 'field_lineage_status', 'subject', 'nodes', 'edges', 'truncated', 'as_of'}
+                and graph.get('granularity') == granularity and graph.get('truncated') is False
+                and isinstance(graph.get('nodes'), list) and isinstance(graph.get('edges'), list),
+                'invalid or truncated lineage response')
+        kind = 'data_item' if granularity == 'item' else 'field_ref'
+        allowed = {self.output, self.source} if source_visible else {self.output}
+        def node(value):
+            require(isinstance(value, dict) and set(value) <= {
+                'kind', 'item_id', 'item_fingerprint', 'engine_id', 'engine_name', 'item_type', 'name', 'full_name',
+                'field_name', 'schema_snapshot_hash', 'field_lineage_status',
+                'hidden_upstream_count', 'hidden_downstream_count'}
+                and value.get('kind') == kind and type(value.get('item_id')) is int
+                and value['item_id'] in allowed
+                and value.get('hidden_upstream_count') == 0 and value.get('hidden_downstream_count') == 0,
+                'lineage leaked a hidden/service node or neighbor count')
+            if granularity == 'field':
+                require(value.get('field_name') == 'person_id'
+                        and re.fullmatch('[0-9a-f]{64}', value.get('schema_snapshot_hash', '')),
+                        'field lineage lost the exact field and schema identity')
+        node(graph.get('subject'))
+        require(graph['subject']['item_id'] == self.output, 'lineage root changed')
+        for value in graph['nodes']:
+            node(value)
+        ids = [value['item_id'] for value in graph['nodes']]
+        require(len(ids) == len(set(ids)) and self.output in ids, 'lineage nodes duplicated or root missing')
+        for edge in graph['edges']:
+            require(isinstance(edge, dict) and set(edge) <= {
+                        'source', 'target', 'relation_kind', 'granularity', 'status', 'last_observed_at', 'evidence'}
+                    and edge.get('granularity') == granularity and edge.get('relation_kind') == 'derive'
+                    and edge.get('status') == 'active', 'lineage leaked expressions or unexpected relation')
+            node(edge.get('source'))
+            node(edge.get('target'))
+            require(edge['source']['item_id'] == self.source and edge['target']['item_id'] == self.output,
+                    'lineage relation targets changed')
+            evidence = edge.get('evidence', {})
+            require(isinstance(evidence, dict) and set(evidence) <= {'execution_id', 'write_mode', 'field_lineage_status'}
+                    and evidence.get('execution_id') == self.execution
+                    and all(isinstance(value, str) for value in evidence.values()),
+                    'lineage evidence leaked details or belongs to another execution')
+        complete = set(ids) == allowed and len(graph['edges']) == (1 if source_visible else 0)
+        require(complete or (pending and source_visible and ids == [self.output] and not graph['edges']),
+                'lineage did not exactly match the currently visible endpoints')
+        return complete
+
+    def issued(self):
+        deadline = time.monotonic() + 120
+        while True:
+            complete = [self.validate(self.query(self.reader, level), level, source_visible=True, pending=True)
+                        for level in ('item', 'field')]
+            if all(complete):
+                break
+            require(time.monotonic() < deadline, 'production lineage was not collected before deadline')
+            time.sleep(1)
+        self.as_of = datetime.now(timezone.utc).isoformat()
+        for level in ('item', 'field'):
+            self.query(self.outsider, level, expected=404)
+        response = self.reader.request('GET', '/api/v1/meta/lineage/graph?' + urlencode({
+            'subject_kind': 'published_service', 'service_id': 1, 'revision': 'test'}), (403,)).payload
+        require(set(response) <= {'error', 'error_code'} and bool(response.get('error')),
+                'service lineage denial leaked facts')
+
+    def source_withdrawn(self):
+        require(self.as_of is not None, 'lineage visibility was not established before withdrawal')
+        for level in ('item', 'field'):
+            for at in (None, self.as_of):
+                self.validate(self.query(self.reader, level, as_of=at), level, source_visible=False)
+            self.query(self.reader, level, root=self.source, expected=404)
+
+    def output_withdrawn(self, report):
+        for level in ('item', 'field'):
+            self.query(self.reader, level, expected=404)
+        require(self.reader.token == self.token, 'lineage acceptance changed the consumer credential')
+        report['lineage_visibility'] = {'source_item_id': self.source, 'output_item_id': self.output,
+            'execution_id': self.execution, 'visible_item_nodes': 2, 'visible_field_nodes': 2,
+            'item_edges': 1, 'field_edges': 1, 'outsider_status': 404, 'service_root_status': 403,
+            'source_withdrawn_nodes': 1, 'source_withdrawn_edges': 0,
+            'history_uses_current_visibility': True, 'output_withdrawn_status': 404, 'same_credential': True}
+        report['checks'].extend(LINEAGE_CHECKS)
+
+
 def preview(reader, target, allowed, expected=None, *, columns=('person_id',), values=('A', 'B')):
     result = reader.request('GET', '/api/v1/manager/preview?' + urlencode({
         'locator': target, 'page': 1, 'page_size': 20}), (200,) if allowed else (403,)).payload
@@ -665,83 +770,15 @@ class WorkspaceObservation(BrowserObservation):
         return result
 
 
-class CollectionObservation(BrowserObservation):
-    """Real approval UI; register its command before allowing its network send."""
-    def __init__(self, tenant, issuer, engine, task, digest, purpose, expires_at):
-        super().__init__(tenant, issuer, '')
-        self.binding.pop('locator')
-        self.binding.update(engine_id=str(engine), task_id=str(task), task_definition_digest=digest,
-                            purpose=purpose, expires_at=expires_at)
-        self.evidence = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'pg-collection-browser.json'
-        self.test_name = 'PG collection qualification workspace'
-        self.login_keys = ('ADDP_ONLINE_PG_OPERATOR_USERNAME', 'ADDP_ONLINE_PG_OPERATOR_PASSWORD')
-        self.command_id = None
-
-    def marker(self, kind):
-        require(kind in {'command', 'committed', 'approved', 'revoked'}, 'invalid collection browser phase')
-        return dict(self.binding, phase=kind)
-
-    def capture_command(self):
-        marker = self.read_ready('command')
-        require(isinstance(marker, dict) and set(marker) == set(self.marker('command')) | {'command'}
-                and {key: value for key, value in marker.items() if key != 'command'} == self.marker('command'),
-                'collection browser command binding changed')
-        body = marker['command']
-        expected = {'task_id': self.binding['task_id'],
-            'expected_task_definition_digest': self.binding['task_definition_digest'],
-            'purpose': self.binding['purpose'], 'expires_at': self.binding['expires_at']}
-        require(isinstance(body, dict) and set(body) == set(expected) | {'command_id'}
-                and isinstance(body.get('command_id'), str)
-                and re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', body['command_id'])
-                and all(body.get(key) == value for key, value in expected.items() if key != 'expires_at')
-                and collection_instant(body.get('expires_at')) == collection_instant(expected['expires_at']),
-                'browser approval changed its inspected task, purpose or exact expiry')
-        self.command_id = body['command_id']
-        return body
-
-    def committed_row(self):
-        marker = self.read_ready('committed')
-        require(isinstance(marker, dict) and set(marker) == set(self.marker('committed')) | {'qualification'}
-                and {key: value for key, value in marker.items() if key != 'qualification'} == self.marker('committed')
-                and isinstance(marker.get('qualification'), dict), 'collection committed response binding changed')
-        return marker['qualification']
-
-    def finish(self):
-        try:
-            require(self.process.wait(timeout=180) == 0, 'PG collection browser acceptance failed')
-        except subprocess.TimeoutExpired as error:
-            raise SuiteError('PG collection browser acceptance timed out') from error
-        require(self.command_id is not None and self.evidence.is_file(), 'PG collection browser report missing')
-        result = json.loads(self.evidence.read_text())
-        expected = dict(self.binding, schema_version='addp.pg-collection-browser/v1', result='passed',
-            command_id=self.command_id, checks=COLLECTION_BROWSER_CHECKS[:-1], login_requests=1,
-            approval_requests=2, revocation_requests=1, dropped_approval_responses=1,
-            navigation_writes=0, unchanged_identity=True)
-        require(result == expected and all(type(result.get(key)) is int for key in (
-            'login_requests', 'approval_requests', 'revocation_requests', 'dropped_approval_responses', 'navigation_writes'))
-            and result.get('unchanged_identity') is True, 'PG collection browser evidence incomplete or changed binding')
-        return result
-
-
 def collection_instant(value):
     """One RFC3339 interpretation, without Python's fractional-second truncation."""
     match = re.fullmatch(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})', value) if type(value) is str else None
-    require(match is not None, 'invalid qualification timestamp')
+    require(match is not None, 'invalid scan timestamp')
     try:
         whole = datetime.fromisoformat(match[1] + match[3].replace('Z', '+00:00')).astimezone(timezone.utc)
     except ValueError:
-        raise SuiteError('invalid qualification timestamp') from None
+        raise SuiteError('invalid scan timestamp') from None
     return whole, int((match[2] or '').ljust(9, '0'))
-
-
-def same_collection_row(left, right):
-    if set(left) != set(right):
-        return False
-    left, right = dict(left), dict(right)
-    for key in ('granted_at', 'expires_at', 'revoked_at'):
-        if key in left:
-            left[key], right[key] = collection_instant(left[key]), collection_instant(right[key])
-    return left == right
 
 
 SOURCE_MODULES = {'system', 'gateway', 'meta', 'security', 'manager', 'catalog', 'transfer'}
@@ -1019,17 +1056,16 @@ class PGCollectionReadBarrier:
 
 
 class MetaCollectionScenario:
-    """Task-bound governance approval through real Users and the Meta Worker."""
+    """Tenant PG basic plans: current human management, tenant scheduling, explicit cancellation."""
     def __init__(self, lifecycle, issuer, run_id):
         self.life, self.issuer = lifecycle, issuer
-        self.route = lifecycle.base + '/meta_collection_qualifications'
         self.prefix = 'pg_collection_' + run_id + '_' + uuid.uuid4().hex[:12]
-        self.tasks, self.commands, self.executions = {}, {}, {}
+        self.tasks, self.executions = {}, {}
         self.attempts = []
         self.source_barriers = []
 
     def task_rows(self):
-        return self.life.reader.request('GET', '/api/v1/meta/scan/tasks', (200,), response_type=list).payload
+        return self.life.operator.request('GET', '/api/v1/meta/scan/tasks', (200,), response_type=list).payload
 
     def recover_tasks(self):
         rows = self.task_rows()
@@ -1045,49 +1081,9 @@ class MetaCollectionScenario:
                 owned['id'] = row['id']
         return rows
 
-    def qualification_rows(self, diagnostic=None):
-        rows = []
-        for page in range(1, 11):
-            path = self.route + f'?page={page}&page_size=100'
-            result = (self.life.operator.request('GET', path, (200,)).payload if diagnostic is None else
-                      self.observed_request(diagnostic, 'GET', path, client=self.life.operator))
-            require(type(result.get('total')) is int and result['total'] <= 1000
-                    and result.get('page') == page and result.get('page_size') == 100
-                    and isinstance(result.get('data'), list), 'invalid collection history pagination')
-            rows.extend(result['data'])
-            if len(rows) == result['total']:
-                require(len({row['id'] for row in rows}) == len(rows), 'duplicate qualification history')
-                return rows
-        raise SuiteError('collection history exceeded its bounded pages')
-
-    def row(self, command, diagnostic=None):
-        rows = [row for row in self.qualification_rows(diagnostic) if row.get('id') == command]
-        if diagnostic is not None:
-            diagnostic.update(stage='history_row_identity', matching_rows=len(rows))
-        require(len(rows) == 1, 'owned collection qualification missing')
-        row, body = rows[0], self.commands[command]
-        if diagnostic is not None:
-            diagnostic.update(stage='history_row_binding', binding={
-                'engine': row.get('engine_id') == str(self.life.engine), 'task': row.get('task_id') == body['task_id'],
-                'digest': row.get('task_definition_digest') == body['expected_task_definition_digest'],
-                'purpose': row.get('purpose') == body['purpose'], 'depth': row.get('scan_depth') == 'basic',
-                'scope': row.get('scope_kind') == 'engine', 'approver': row.get('granted_by_principal_id') == self.issuer,
-                'engine_version': bool(re.fullmatch(r'[1-9][0-9]*', row.get('engine_version', ''))),
-                'version': bool(re.fullmatch(r'[1-9][0-9]*', row.get('version', ''))),
-                'expiry': collection_instant(row.get('expires_at')) == collection_instant(body['expires_at'])})
-        require(row.get('engine_id') == str(self.life.engine) and row.get('task_id') == body['task_id']
-                and row.get('task_definition_digest') == body['expected_task_definition_digest']
-                and row.get('purpose') == body['purpose'] and row.get('scan_depth') == 'basic'
-                and row.get('scope_kind') == 'engine' and row.get('granted_by_principal_id') == self.issuer
-                and re.fullmatch(r'[1-9][0-9]*', row.get('engine_version', ''))
-                and re.fullmatch(r'[1-9][0-9]*', row.get('version', ''))
-                and collection_instant(row['expires_at']) == collection_instant(body['expires_at']),
-                'qualification changed its approved binding')
-        return row
-
     def create_task(self, suffix):
         name = self.prefix + suffix
-        body = {'name': name, 'description': 'Disposable Meta collection qualification acceptance',
+        body = {'name': name, 'description': 'Disposable centralized PG basic acceptance',
                 'engine_id': self.life.engine, 'scope': {'type': 'engine'}, 'scan_depth': 'basic',
                 'force': False, 'schedule': '', 'enabled': False}
         require(not any(row.get('name') == name for row in self.task_rows()), 'collection task already exists')
@@ -1097,16 +1093,6 @@ class MetaCollectionScenario:
         require(self.tasks[name]['id'] == row.get('id'), 'created collection task was not recovered exactly')
         return self.tasks[name]
 
-    def facts(self, task):
-        facts = self.life.operator.request('GET', self.life.base + f'/meta_collection_task_facts/{task}', (200,)).payload
-        require(facts.get('schema_version') == 'meta.scan_task_facts/v1'
-                and facts.get('task_id') == str(task) and facts.get('engine_id') == str(self.life.engine)
-                and facts.get('scope_kind') == 'engine' and facts.get('scan_depth') == 'basic'
-                and type(facts.get('force')) is bool and facts.get('read_options') == {}
-                and re.fullmatch(r'[a-f0-9]{64}', facts.get('task_definition_digest', '')),
-                'System did not return exact PG basic task facts')
-        return facts
-
     def update(self, task, **changes):
         task['body'] = dict(task['body'], **changes)
         row = self.life.operator.request('PUT', f'/api/v1/meta/scan/tasks/{task["id"]}', (200,), task['body']).payload
@@ -1114,7 +1100,7 @@ class MetaCollectionScenario:
 
     def observed_request(self, attempt, method, path, *, client=None, expected=(200,), body=None):
         try:
-            result = (self.life.reader if client is None else client).request(method, path, expected, body)
+            result = (self.life.operator if client is None else client).request(method, path, expected, body)
         except SuiteError as error:
             # Client errors can contain transport text. Publish only bounded
             # machine status/code, never the exception, response body or URL.
@@ -1132,7 +1118,7 @@ class MetaCollectionScenario:
         return self.observe_execution(task, execution, allowed, attempt)
 
     def start_execution(self, task, allowed):
-        attempt = {'task_id': str(task), 'expected_terminal': 'success' if allowed else 'failed', 'stage': 'trigger'}
+        attempt = {'task_id': str(task), 'expected_terminal': 'cancelled' if allowed == 'cancelled' else 'success' if allowed else 'failed', 'stage': 'trigger'}
         self.attempts.append(attempt)  # Keep the failing attempt, not only successful return values.
         created = self.observed_request(attempt, 'POST', f'/api/v1/meta/scan/tasks/{task}/trigger')
         attempt['stage'] = 'execution_identity'
@@ -1152,7 +1138,7 @@ class MetaCollectionScenario:
                        'module': run.get('module') == 'meta', 'task_type': run.get('task_type') == 'scan',
                        'tenant': run.get('tenant_id') == self.life.tenant,
                        'actor': (run.get('triggered_by') is None if scheduled_due is not None else
-                                 run.get('triggered_by') == int(self.life.recipient)),
+                                 run.get('triggered_by') == int(self.issuer)),
                        'scope': run.get('scan_context') == {'engine_id': self.life.engine, 'scan_depth': 'basic'}}
             if scheduled_due is not None:
                 binding.update(trigger=run.get('trigger_type') == 'scheduled', source=run.get('source') == 'meta',
@@ -1174,13 +1160,15 @@ class MetaCollectionScenario:
             require(all(binding.values()), 'collection execution changed its task, actor or scope')
             if run.get('status') not in {'pending', 'running'}:
                 attempt['stage'] = 'terminal_state'
-                require(run.get('status') == ('success' if allowed else 'failed') and run.get('completed_at'),
+                require(run.get('status') == ('cancelled' if allowed == 'cancelled' else 'success' if allowed else 'failed') and run.get('completed_at'),
                         'collection execution did not reach the expected terminal state')
                 attempt['stage'] = 'source_result' if allowed else 'authorization_denial'
-                if allowed:
+                if allowed == 'cancelled':
+                    require(metadata.get('items_scanned') == admitted_items and metadata.get('catalog_nodes_scanned') == 1 and metadata.get('fields_scanned') == 0, 'cancelled scan lost admitted results or read another catalog')
+                elif allowed:
                     require(type(metadata.get('items_scanned')) is int and metadata['items_scanned'] >= 2
                             and type(metadata.get('catalog_nodes_scanned')) is int and metadata['catalog_nodes_scanned'] > 0,
-                            'approved basic task did not enumerate the actual engine')
+                            'central basic task did not enumerate the actual engine')
                 else:
                     require(run.get('error_details', {}).get('category') == 'permission_denied'
                             and (all(metadata.get(key) in (None, 0) for key in
@@ -1216,23 +1204,6 @@ class MetaCollectionScenario:
             time.sleep(1)
         raise SuiteError('collection task exceeded its bounded terminal deadline')
 
-    def revoke(self, command):
-        prior = self.row(command)
-        if prior['status'] == 'active' and datetime.fromisoformat(prior['expires_at'].replace('Z', '+00:00')) > datetime.now(timezone.utc):
-            try:
-                self.life.operator.request('DELETE', self.route + '/' + command, (200,),
-                    {'version': prior['version'], 'reason': 'Disposable Meta collection acceptance cleanup'})
-            except Exception:
-                # A lost DELETE response is resolved by history, never by a blind retry.
-                require(self.row(command).get('status') == 'revoked', 'unknown collection revocation did not commit')
-            current = self.row(command)
-            require(current.get('status') == 'revoked' and current.get('version') == str(int(prior['version']) + 1)
-                    and current.get('revoked_at') and current.get('revoked_by_principal_id') == self.issuer,
-                    'collection revocation did not close the exact version')
-        else:
-            current = prior
-        return current
-
     def source_snapshot(self):
         result = []
         for path in self.life.paths:
@@ -1247,177 +1218,8 @@ class MetaCollectionScenario:
                                for row in current['data']])
         return json.dumps(result, sort_keys=True)
 
-    def run(self, report):
-        report['phase'] = 'meta_collection_qualification'
-        evidence = report['meta_collection'] = {'executions': {}, 'qualification_commands': [], 'attempts': self.attempts}
-        before = self.source_snapshot()
-        task = self.create_task('_primary')
-        evidence['task_id'] = str(task['id'])
-        facts = self.facts(task['id'])
-        evidence['task_definition_digest'] = facts['task_definition_digest']
-        evidence['executions']['unapproved'] = self.trigger(task['id'], False)
-        report['checks'].append(COLLECTION_CHECKS[0])
-        command = str(uuid.uuid4())
-        body = {'command_id': command, 'task_id': str(task['id']),
-                'expected_task_definition_digest': facts['task_definition_digest'],
-                'purpose': 'Disposable PG basic governance qualification',
-                'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()}
-        denied = self.life.reader.request('POST', self.route, (403,), body).payload
-        require(set(denied) <= {'error', 'error_code'} and denied.get('error'), 'executor can self-approve or denial leaks data')
-        self.commands[command] = body
-        evidence['qualification_commands'].append(command)
-        approval = evidence['approval'] = {'stage': 'operator_post', 'command_id': command}
-        issued = self.observed_request(approval, 'POST', self.route, client=self.life.operator, expected=(201,), body=body)
-        approval.update(stage='history_read', post_status=approval['http_status'])
-        original = self.row(command, approval)
-        approval.update(stage='post_history_comparison', raw_equal=issued == original,
-                        semantic_equal=same_collection_row(issued, original), key_set_matches=set(issued) == set(original),
-                        initial_state_matches=original.get('status') == 'active' and original.get('version') == '1',
-                        differing_fields=[key for key in sorted(set(issued) | set(original))
-                            if issued.get(key) != original.get(key) and key in {
-                                'id', 'engine_id', 'task_id', 'task_definition_digest', 'engine_version', 'scan_depth',
-                                'scope_kind', 'purpose', 'status', 'version', 'granted_at', 'expires_at',
-                                'granted_by_principal_id', 'revoked_at', 'revoked_by_principal_id', 'revoked_reason'}])
-        require(approval['semantic_equal'] and original.get('status') == 'active' and original.get('version') == '1',
-                'approval did not persist one immutable qualification')
-        approval['stage'] = 'verified'
-        evidence['expires_at'] = original['expires_at']
-        evidence['executions']['approved_first'] = self.trigger(task['id'], True)
-        self.update(task, description='Renamed metadata only; approval must not renew')
-        require(self.facts(task['id']) == facts, 'non-functional task change altered approval digest')
-        evidence['executions']['approved_repeat'] = self.trigger(task['id'], True)
-        require(same_collection_row(self.row(command), original), 'repeat run changed qualification or renewed its expiry')
-        report['checks'].append(COLLECTION_CHECKS[1])
-        copied = self.create_task('_copy')
-        evidence['copy_task_id'] = str(copied['id'])
-        evidence['executions']['copied'] = self.trigger(copied['id'], False)
-        report['checks'].append(COLLECTION_CHECKS[2])
-        self.update(task, force=True)
-        require(self.facts(task['id'])['task_definition_digest'] != facts['task_definition_digest'], 'force change did not change digest')
-        evidence['executions']['changed'] = self.trigger(task['id'], False)
-        require(same_collection_row(self.row(command), original), 'configuration change silently replaced approval')
-        report['checks'].append(COLLECTION_CHECKS[3])
-        self.update(task, force=False)
-        require(self.facts(task['id']) == facts, 'restored functional config differs')
-        revoked = self.revoke(command)
-        replay = self.life.operator.request('POST', self.route, (201,), body).payload
-        require(same_collection_row(replay, revoked), 'same command revived or renewed revoked qualification')
-        evidence['executions']['revoked'] = self.trigger(task['id'], False)
-        report['checks'].append(COLLECTION_CHECKS[4])
-        require(self.source_snapshot() == before, 'collection approval modified source Grant/Deny history')
-        evidence['source_rules_unchanged'] = True
-        report['checks'].append(COLLECTION_CHECKS[5])
-
-    def run_browser(self, report):
-        report['phase'] = 'meta_collection_browser'
-        evidence = report['meta_collection']['browser_flow'] = {'executions': {}}
-        before = self.source_snapshot()
-        task = self.create_task('_browser')
-        facts = self.facts(task['id'])
-        evidence['task_id'] = str(task['id'])
-        evidence['executions']['unapproved'] = self.trigger(task['id'], False)
-        expires = (datetime.now(timezone.utc) + timedelta(minutes=10)).replace(microsecond=0).isoformat()
-        with CollectionObservation(self.life.tenant, self.issuer, self.life.engine, task['id'],
-                facts['task_definition_digest'], 'Disposable PG browser basic qualification', expires) as browser:
-            body = browser.capture_command()
-            command = body['command_id']
-            require(command not in self.commands, 'browser reused an existing qualification command')
-            self.commands[command] = body  # Own the UI command before allowing any POST.
-            report['meta_collection']['qualification_commands'].append(command)
-            evidence['command_id'] = command
-            browser.release('command')
-            committed = browser.committed_row()
-            original = self.row(command)
-            require(same_collection_row(committed, original) and original['status'] == 'active'
-                    and original['version'] == '1', 'lost browser response did not commit the exact qualification')
-            browser.release('committed')
-            browser.wait('approved')
-            require(same_collection_row(self.row(command), original), 'browser recovery changed immutable approval')
-            evidence['executions']['approved_first'] = self.trigger(task['id'], True)
-            evidence['executions']['approved_repeat'] = self.trigger(task['id'], True)
-            self.update(task, force=True)
-            require(self.facts(task['id'])['task_definition_digest'] != facts['task_definition_digest'], 'browser task force did not change digest')
-            evidence['executions']['changed'] = self.trigger(task['id'], False)
-            require(same_collection_row(self.row(command), original), 'UI or execution silently renewed qualification')
-            self.update(task, force=False)
-            require(self.facts(task['id']) == facts, 'browser task config did not restore exactly')
-            browser.release('approved')
-            browser.wait('revoked')
-            revoked = self.row(command)
-            require(revoked['status'] == 'revoked' and revoked['version'] == '2'
-                    and revoked.get('revoked_by_principal_id') == self.issuer
-                    and revoked.get('revoked_reason') == 'Disposable PG browser qualification withdrawal'
-                    and collection_instant(revoked['expires_at']) == collection_instant(original['expires_at']),
-                    'UI revocation changed expiry or failed to close exact qualification')
-            evidence['executions']['revoked'] = self.trigger(task['id'], False)
-            browser.release('revoked')
-            evidence['browser'] = browser.finish()
-        require(self.source_snapshot() == before, 'collection browser modified source Grant/Deny rules')
-        evidence['source_rules_unchanged'] = True
-        report['checks'].extend(COLLECTION_BROWSER_CHECKS)
-
-    def run_expiry(self, report):
-        report['phase'] = 'meta_collection_natural_expiry'
-        evidence = report['meta_collection']['natural_expiry'] = {'executions': {}}
-        before, credential = self.source_snapshot(), self.life.reader.token
-        task = self.create_task('_expiry')
-        facts = self.facts(task['id'])
-        command = str(uuid.uuid4())
-        body = {'command_id': command, 'task_id': str(task['id']),
-                'expected_task_definition_digest': facts['task_definition_digest'],
-                'purpose': 'Disposable PG basic natural qualification expiry',
-                'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=45)).isoformat()}
-        self.commands[command] = body  # Unknown POST outcome must still be cleanable.
-        report['meta_collection']['qualification_commands'].append(command)
-        evidence.update(task_id=str(task['id']), command_id=command, task_definition_digest=facts['task_definition_digest'],
-                        expires_at=body['expires_at'])
-        issued = self.life.operator.request('POST', self.route, (201,), body).payload
-        original = self.row(command)
-        require(same_collection_row(issued, original) and original['status'] == 'active' and original['version'] == '1',
-                'expiry fixture did not approve one exact qualification')
-        expiry = collection_instant(original['expires_at'])
-
-        def observe_times(outcome, *, before_expiry):
-            run = self.life.reader.request('GET', f'/api/v1/meta/executions/{outcome["execution_id"]}', (200,)).payload
-            require(run.get('execution_id') == outcome['execution_id'] and run.get('source_task_id') == str(task['id'])
-                    and run.get('module') == 'meta' and run.get('task_type') == 'scan'
-                    and run.get('tenant_id') == self.life.tenant and run.get('triggered_by') == int(self.life.recipient)
-                    and run.get('scan_context') == {'engine_id': self.life.engine, 'scan_depth': 'basic'}
-                    and run.get('status') == outcome['status'], 'expiry execution time observation changed binding')
-            started, completed = collection_instant(run.get('started_at')), collection_instant(run.get('completed_at'))
-            require(started <= completed and (completed < expiry if before_expiry else started >= expiry),
-                    'execution did not occur on the required side of qualification expiry')
-            return dict(outcome, started_at=run['started_at'], completed_at=run['completed_at'])
-
-        evidence['executions']['before'] = observe_times(self.trigger(task['id'], True), before_expiry=True)
-        require(same_collection_row(self.row(command), original), 'pre-expiry run changed qualification history')
-        report['checks'].append(COLLECTION_EXPIRY_CHECKS[0])
-        started_wait = time.monotonic()
-        deadline = started_wait + 75
-        while collection_instant(datetime.now(timezone.utc).isoformat()) < expiry:
-            require(time.monotonic() < deadline, 'qualification natural expiry wait exceeded deadline')
-            time.sleep(1)
-        evidence['waited_ms'] = round((time.monotonic() - started_wait) * 1000, 3)
-        require(self.life.reader.token == credential and self.facts(task['id']) == facts,
-                'natural qualification expiry changed credential or task facts')
-        require(same_collection_row(self.row(command), original), 'manual revocation or renewal replaced natural expiry')
-        replay = self.life.operator.request('POST', self.route, (201,), body).payload
-        rows = [row for row in self.qualification_rows() if row.get('task_id') == str(task['id'])]
-        require(same_collection_row(replay, original) and len(rows) == 1 and same_collection_row(rows[0], original)
-                and same_collection_row(self.row(command), original),
-                'expired approval replay renewed or altered history')
-        # Run only after historical replay, so an accidental revival cannot hide
-        # behind a denial observed before the replay.
-        evidence['executions']['after'] = observe_times(self.trigger(task['id'], False), before_expiry=False)
-        require(self.life.reader.token == credential, 'expiry denial used another credential')
-        report['checks'].append(COLLECTION_EXPIRY_CHECKS[1])
-        require(self.source_snapshot() == before, 'qualification expiry changed source Grant/Deny rules')
-        evidence.update(same_credential=True, history_unchanged=True, source_rules_unchanged=True,
-                        stored_status=original['status'], version=original['version'], no_revocation=True)
-        report['checks'].append(COLLECTION_EXPIRY_CHECKS[2])
-
     def scheduled_rows(self, task):
-        result = self.life.reader.request('GET', f'/api/v1/meta/scan/runs?task_id={task}&page_size=100', (200,)).payload
+        result = self.life.operator.request('GET', f'/api/v1/meta/scan/runs?task_id={task}&page_size=100', (200,)).payload
         rows = result.get('items')
         require(isinstance(rows, list) and type(result.get('total')) is int and result['total'] == len(rows)
                 and len(rows) <= 100 and all(row.get('source_task_id') == str(task) for row in rows),
@@ -1444,7 +1246,7 @@ class MetaCollectionScenario:
         known = {run for run, owner in self.executions.items() if owner == task}
         require({row['execution_id'] for row in self.scheduled_rows(task)} == known,
                 'unexpected execution outside scheduled phase')
-        attempt = {'task_id': str(task), 'expected_terminal': 'success' if allowed else 'failed',
+        attempt = {'task_id': str(task), 'expected_terminal': 'cancelled' if allowed == 'cancelled' else 'success' if allowed else 'failed',
                    'stage': 'schedule_enable', 'trigger_type': 'scheduled'}
         self.attempts.append(attempt)
         self.update(owned, schedule='* * * * *', enabled=True)
@@ -1472,52 +1274,6 @@ class MetaCollectionScenario:
                 return
             time.sleep(1)
         raise SuiteError('scheduled collection exceeded its bounded creation deadline')
-
-    def run_scheduled(self, report):
-        report['phase'] = 'meta_collection_scheduled'
-        evidence = report['meta_collection']['scheduled'] = {'executions': {}}
-        before, credential = self.source_snapshot(), self.life.reader.token
-        task = self.create_task('_scheduled')
-        facts = self.facts(task['id'])
-        evidence.update(task_id=str(task['id']), task_definition_digest=facts['task_definition_digest'])
-        self.scheduled_run(task, False, evidence, 'unapproved')
-        require(self.facts(task['id']) == facts, 'schedule changed functional task facts')
-        report['checks'].append(COLLECTION_SCHEDULED_CHECKS[0])
-        command = str(uuid.uuid4())
-        body = {'command_id': command, 'task_id': str(task['id']),
-                'expected_task_definition_digest': facts['task_definition_digest'],
-                'purpose': 'Disposable PG basic scheduled qualification',
-                'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()}
-        self.commands[command] = body
-        report['meta_collection']['qualification_commands'].append(command)
-        evidence['command_id'] = command
-        issued = self.life.operator.request('POST', self.route, (201,), body).payload
-        original = self.row(command)
-        require(same_collection_row(issued, original) and original['status'] == 'active' and original['version'] == '1',
-                'scheduled approval did not persist exact qualification')
-        evidence['expires_at'] = original['expires_at']
-        for label in ('approved_first', 'approved_repeat'):
-            self.scheduled_run(task, True, evidence, label)
-            require(self.facts(task['id']) == facts and same_collection_row(self.row(command), original),
-                    'scheduled repeat changed task facts or qualification history')
-        report['checks'].append(COLLECTION_SCHEDULED_CHECKS[1])
-        revoked = self.revoke(command)
-        replay = self.life.operator.request('POST', self.route, (201,), body).payload
-        require(same_collection_row(replay, revoked), 'scheduled replay revived revoked qualification')
-        self.scheduled_run(task, False, evidence, 'revoked')
-        require(same_collection_row(self.row(command), revoked) and self.facts(task['id']) == facts,
-                'revoked scheduled execution changed task facts or history')
-        report['checks'].append(COLLECTION_SCHEDULED_CHECKS[2])
-        require(self.life.reader.token == credential and self.source_snapshot() == before,
-                'scheduled collection changed credential or source Grant/Deny rules')
-        evidence.update(same_credential=True, history_unchanged=True, source_rules_unchanged=True, schedule_disabled=True)
-        report['checks'].append(COLLECTION_SCHEDULED_CHECKS[3])
-
-    def run_inflight(self, report):
-        self._run_inflight(report, natural_expiry=False)
-
-    def run_inflight_expiry(self, report):
-        self._run_inflight(report, natural_expiry=True)
 
     def run_probe_control(self, report, controller):
         report['phase'] = 'pg_connection_probe_control'
@@ -1602,190 +1358,116 @@ class MetaCollectionScenario:
                         identity_unchanged=True, source_fixture_cleanup='zero_source_locks_and_schema')
         report['checks'].append('pg_connection_probe_other_increment_identified')
 
-    def _run_inflight(self, report, *, natural_expiry):
-        key = 'inflight_expiry' if natural_expiry else 'inflight'
-        checks = COLLECTION_INFLIGHT_EXPIRY_CHECKS if natural_expiry else COLLECTION_INFLIGHT_CHECKS
-        report['phase'] = 'meta_collection_' + key
-        evidence = report['meta_collection'][key] = {'executions': {}}
-        before, credential = self.source_snapshot(), self.life.reader.token
-        task = self.create_task('_' + key)
-        facts = self.facts(task['id'])
-        command = str(uuid.uuid4())
-        body = {'command_id': command, 'task_id': str(task['id']),
-                'expected_task_definition_digest': facts['task_definition_digest'],
-                'purpose': 'Disposable PG basic in-flight qualification ' + ('expiry' if natural_expiry else 'withdrawal'),
-                'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=12 if natural_expiry else 300)).isoformat()}
-        self.commands[command] = body
-        report['meta_collection']['qualification_commands'].append(command)
-        evidence.update(task_id=str(task['id']), command_id=command, task_definition_digest=facts['task_definition_digest'])
-        issued = self.life.operator.request('POST', self.route, (201,), body).payload
-        original = self.row(command)
-        require(same_collection_row(issued, original) and original['status'] == 'active' and original['version'] == '1',
-                'in-flight fixture did not approve exact qualification')
-        barrier = PGCollectionReadBarrier()
-        self.source_barriers.append(barrier)  # Own native resources before any creation or lock request.
-        evidence['lock'] = barrier.open()
-        execution, attempt = self.start_execution(task['id'], False)
-        attempt['denial_boundary'] = 'after_admitted_catalog'
-        evidence['blocked'] = barrier.wait_blocked()
-        running = self.life.reader.request('GET', f'/api/v1/meta/executions/{execution}', (200,)).payload
-        require(running.get('execution_id') == execution and running.get('source_task_id') == str(task['id'])
-                and running.get('tenant_id') == self.life.tenant and running.get('module') == 'meta'
-                and running.get('task_type') == 'scan' and running.get('triggered_by') == int(self.life.recipient)
-                and running.get('scan_context') == {'engine_id': self.life.engine, 'scan_depth': 'basic'}
-                and running.get('status') == 'running' and running.get('started_at') and not running.get('completed_at'),
-                'source barrier has no exact running Worker execution')
-        evidence['running_verified'] = True
-        expiry = collection_instant(original['expires_at'])
-        require(collection_instant(running['started_at']) <= collection_instant(evidence['blocked']['started_at'])
-                <= collection_instant(evidence['blocked']['observed_at']) < expiry,
-                'source enumeration was not admitted before qualification expiry')
-        if natural_expiry:
-            evidence['expires_at'] = original['expires_at']
-            waiting, deadline = time.monotonic(), time.monotonic() + 20
-            while collection_instant(datetime.now(timezone.utc).isoformat()) < expiry:
-                require(time.monotonic() < deadline, 'in-flight natural expiry wait exceeded deadline')
-                time.sleep(.1)
-            # Re-observe the SAME in-flight source after the original deadline;
-            # a local clock or a lock session that timed out is not proof.
-            after = barrier.wait_blocked()
-            require(all(after.get(k) == evidence['blocked'].get(k) for k in ('pid', 'blocker_pid'))
-                    and collection_instant(after['started_at']) == collection_instant(evidence['blocked']['started_at'])
-                    and collection_instant(after['observed_at']) >= expiry,
-                    'original enumeration did not remain blocked across natural expiry')
-            evidence.update(blocked_after_expiry=after, waited_ms=round((time.monotonic() - waiting) * 1000, 3))
-            terminal_history = original
-            require(same_collection_row(self.row(command), original), 'natural expiry changed qualification history')
-        else:
-            terminal_history = self.revoke(command)
-            require(terminal_history['status'] == 'revoked' and terminal_history['version'] == '2'
-                    and collection_instant(evidence['blocked']['observed_at']) <= collection_instant(terminal_history['revoked_at']) < expiry,
-                    'in-flight revocation did not precede release or expired instead')
-            evidence['revoked_at'] = terminal_history['revoked_at']
+
+    def run(self, report):
+        report['phase'] = 'meta_central_collection'
+        evidence = report['meta_collection'] = {'executions': {}, 'attempts': self.attempts}
+        before = self.source_snapshot()
+        task = self.create_task('_primary')
+        evidence['task_id'] = str(task['id'])
+        # Both reader and outsider have the execute function but no engine management
+        # scope. Neither may create an execution, even if it can read data.
+        prior = self.scheduled_rows(task['id'])
+        for actor in (self.life.reader, self.life.outsider):
+            response = actor.request('POST', f'/api/v1/meta/scan/tasks/{task["id"]}/trigger', (403,))
+            require(response.payload.get('error_code') == 'permission_denied', 'management denial is not explicit')
+        require(self.scheduled_rows(task['id']) == prior, 'denied trigger created an execution')
+        report['checks'].append(COLLECTION_CHECKS[0])
+        for label in ('first', 'repeat'):
+            evidence['executions'][label] = self.trigger(task['id'], True)
+        report['checks'].append(COLLECTION_CHECKS[1])
+        invalid = dict(task['body'], scan_depth='deep')
+        self.life.operator.request('PUT', f'/api/v1/meta/scan/tasks/{task["id"]}', (403,), invalid)
+        current = [row for row in self.task_rows() if row.get('id') == task['id']]
+        require(len(current)==1 and current[0].get('parameters',{}).get('scan_depth')=='basic', 'rejected config change persisted')
+        report['checks'].append(COLLECTION_CHECKS[2])
+        self.update(task, force=True)
+        evidence['executions']['changed_basic'] = self.trigger(task['id'], True)
+        report['checks'].append(COLLECTION_CHECKS[3])
+        require(self.source_snapshot()==before, 'central collection changed source grants or denies')
+        evidence['source_rules_unchanged']=True
+        report['checks'].append(COLLECTION_CHECKS[4])
+
+    def run_scheduled(self, report):
+        report['phase']='meta_central_scheduled'
+        evidence=report['meta_collection']['scheduled']={'executions':{}}
+        before=self.source_snapshot()
+        task=self.create_task('_scheduled')
+        for label in ('first','repeat'):
+            self.scheduled_run(task,True,evidence,label)
+        require(self.source_snapshot()==before,'tenant schedule changed data authorization')
+        report['checks'].append('meta_central_tenant_schedule_repeat')
+
+    def cancel(self, execution):
+        result=self.life.operator.request('POST',f'/api/v1/meta/executions/{execution}/cancel',(200,202)).payload
+        require(result.get('execution_id')==execution and result.get('status') in {'running','cancelled'},'cancellation target or state changed')
+        return result
+
+    def run_inflight(self, report):
+        report['phase']='meta_central_inflight_cancel'
+        evidence=report['meta_collection']['inflight']={'executions':{}}
+        before=self.source_snapshot()
+        task=self.create_task('_inflight')
+        barrier=PGCollectionReadBarrier()
+        self.source_barriers.append(barrier)
+        evidence['lock']=barrier.open()
+        execution,attempt=self.start_execution(task['id'],'cancelled')
+        evidence['blocked']=barrier.wait_blocked()
+        running=self.life.operator.request('GET',f'/api/v1/meta/executions/{execution}',(200,)).payload
+        require(running.get('status')=='running' and running.get('source_task_id')==str(task['id']) and running.get('triggered_by')==int(self.issuer) and not running.get('completed_at'),'no exact admitted running execution')
+        evidence['cancellation']=self.cancel(execution)
+        require(evidence['cancellation']['status']=='running','admitted enumeration was terminated before release')
         barrier.release()
-        admitted = report['meta_collection']['scheduled']['executions']['approved_repeat']['items_scanned']
-        require(type(admitted) is int and admitted > 0, 'missing prior successful source enumeration count')
-        evidence['executions']['inflight'] = self.observe_execution(task['id'], execution, False, attempt, admitted_items=admitted)
-        # Keep bounded observations before assertions: an incomplete report
-        # must distinguish transport, reset and unexpected native source I/O.
-        evidence['source_counter_stage'] = 'query'
-        evidence['source_counter_baseline'] = barrier.baseline
-        counts = barrier.counts()
-        evidence['source_counter_observed'] = counts
-        delta = {key: counts['calls'].get(key, 0) - barrier.baseline['calls'].get(key, 0)
-                 for key in ('namespaces', 'tables', 'workspace_detection', 'other')}
-        evidence.update(source_counter_stage='reset_check', source_call_delta=delta)
-        require(counts['reset_at'] == barrier.baseline['reset_at'], 'source statistics were reset during in-flight denial')
-        evidence['connection_observation'] = barrier.connection_observation(barrier.baseline, counts, evidence['blocked'])
-        evidence['source_counter_stage'] = 'delta_check'
-        require(delta == {'namespaces': 1, 'tables': 1, 'workspace_detection': 2, 'other': 0},
-                'source opened another Catalog read beyond the admitted enumeration')
-        require(evidence['connection_observation']['verified'] is True,
-                'in-flight source connection attribution is incomplete')
-        evidence.update(source_counter_stage='verified', next_catalog_denied=True, admitted_enumeration_finished=True)
-        report['checks'].append(checks[0])
-        if natural_expiry:
-            replay = self.life.operator.request('POST', self.route, (201,), body).payload
-            rows = [row for row in self.qualification_rows() if row.get('task_id') == str(task['id'])]
-            require(same_collection_row(replay, original) and len(rows) == 1 and same_collection_row(rows[0], original),
-                    'in-flight expired replay renewed or changed qualification')
-            evidence.update(stored_status=original['status'], version=original['version'], no_revocation=True)
-        evidence['executions']['expired_repeat' if natural_expiry else 'revoked_repeat'] = self.trigger(task['id'], False)
-        evidence.update(repeat_source_counter_stage='query', repeat_source_counter_available=False)
-        repeated = barrier.counts()
-        evidence.update(repeat_source_counter_observed=repeated, repeat_source_counter_available=True,
-                        repeat_source_counter_stage='equality_check')
-        evidence['repeat_source_call_delta'] = {
-            key: repeated['calls'].get(key, 0) - counts['calls'].get(key, 0)
-            for key in ('namespaces', 'tables', 'workspace_detection', 'other')}
-        prior_rows = {(row['query_id'], row['top_level']): row for row in counts['other_statements']}
-        repeated_rows = {(row['query_id'], row['top_level']): row for row in repeated['other_statements']}
-        evidence['repeat_other_statement_delta'] = [
-            {'query_id': key[0], 'top_level': key[1], 'before': prior_rows.get(key), 'after': repeated_rows.get(key),
-             'calls_delta': (repeated_rows[key]['calls'] if key in repeated_rows else 0)
-                           - (prior_rows[key]['calls'] if key in prior_rows else 0)}
-            for key in sorted(prior_rows.keys() | repeated_rows.keys())
-            if prior_rows.get(key) != repeated_rows.get(key)]
-        evidence['repeat_connection_observation'] = barrier.connection_observation(counts, repeated)
-        require(repeated == counts, 'denied repeat touched source or altered statistics')
-        require(evidence['repeat_connection_observation']['verified'] is True,
-                'denied repeat source connection attribution is incomplete')
-        evidence['repeat_source_counter_stage'] = 'verified'
-        report['checks'].append(checks[1])
+        admitted=report['meta_collection']['scheduled']['executions']['repeat']['items_scanned']
+        evidence['executions']['inflight']=self.observe_execution(task['id'],execution,'cancelled',attempt,admitted_items=admitted)
+        counts=barrier.counts()
+        evidence.update(source_counter_baseline=barrier.baseline,source_counter_observed=counts)
+        delta={key:counts['calls'].get(key,0)-barrier.baseline['calls'].get(key,0) for key in ('namespaces','tables','workspace_detection','other')}
+        evidence['source_call_delta']=delta
+        require(counts['reset_at']==barrier.baseline['reset_at'] and delta=={'namespaces':1,'tables':1,'workspace_detection':2,'other':0},'source read beyond admitted enumeration')
+        evidence['connection_observation']=barrier.connection_observation(barrier.baseline,counts,evidence['blocked'])
+        require(evidence['connection_observation']['verified'] is True,'source attribution incomplete')
+        report['checks'].append('meta_central_cancel_stops_next_catalog')
         barrier.close()
-        require(barrier.closed and barrier.released and self.facts(task['id']) == facts
-                and same_collection_row(self.row(command), terminal_history) and self.life.reader.token == credential
-                and self.source_snapshot() == before, 'in-flight cleanup changed source rules, facts or credential')
-        evidence.update(source_fixture_cleanup='zero_source_locks_and_schema', source_rules_unchanged=True,
-                        same_credential=True, history_unchanged=True)
-        report['checks'].append(checks[2])
+        require(barrier.closed and barrier.released and self.source_snapshot()==before,'source cleanup failed or rules changed')
+        evidence['source_fixture_cleanup']='zero_source_locks_and_schema'
+        report['checks'].append('meta_central_inflight_fixture_cleanup')
 
     def cleanup(self):
-        errors = []
+        errors=[]
+        ownership_verified=False
         try:
-            rows = self.recover_tasks()
+            rows=self.recover_tasks()
+            ownership_verified=True
             for owned in self.tasks.values():
-                if owned['id'] is not None and owned['body'].get('schedule'):
-                    if any(row.get('id') == owned['id'] for row in rows):
-                        self.pause_schedule(owned)
-        except Exception:
-            errors.append('collection schedule cleanup failed')
-        for command in self.commands:
-            try:
-                rows = [row for row in self.qualification_rows() if row.get('id') == command]
-                if rows:
-                    self.revoke(command)
-            except Exception:
-                errors.append('collection qualification cleanup failed')
+                if owned['id'] is not None and any(row.get('id')==owned['id'] for row in rows):
+                    self.pause_schedule(owned)
+                    for run in self.scheduled_rows(owned['id']):
+                        if run.get('status') in {'pending','running'}: self.cancel(run['execution_id'])
+        except Exception: errors.append('collection pause/cancel cleanup failed')
         for barrier in self.source_barriers:
+            try: barrier.release()
+            except Exception: errors.append('collection source lock release failed')
+        for owned in self.tasks.values() if ownership_verified else []:
             try:
-                barrier.release()
-            except Exception:
-                errors.append('collection source lock release failed')
-        try:
-            rows = self.recover_tasks()
-        except Exception:
-            rows = []
-            errors.append('collection task recovery failed')
-        settled = True
-        for owned in self.tasks.values():
-            try:
-                task = owned['id']
-                if task is None:
-                    continue
-                current_tasks = [row for row in self.task_rows() if row.get('id') == task]
-                require(not owned['body'].get('schedule') or not current_tasks or current_tasks[0].get('enabled') is False,
-                        'refusing to delete a still-enabled collection schedule')
-                qualifications = [row for row in self.qualification_rows() if row.get('task_id') == str(task)]
-                require(all(row['id'] in self.commands for row in qualifications), 'foreign qualification on owned task')
-                require(not any(row['status'] == 'active'
-                                and datetime.fromisoformat(row['expires_at'].replace('Z', '+00:00')) > datetime.now(timezone.utc)
-                                for row in qualifications), 'current collection qualification remains')
-                deadline = time.monotonic() + 120
-                while True:
-                    runs = self.life.reader.request('GET', f'/api/v1/meta/scan/runs?task_id={task}&page_size=100', (200,)).payload
-                    require(runs.get('total') == len(runs.get('items', []))
-                            and all(row.get('source_task_id') == str(task) for row in runs['items']), 'truncated or foreign collection runs')
-                    if not any(row.get('status') in {'pending', 'running'} for row in runs['items']):
-                        break
-                    require(time.monotonic() < deadline, 'collection cleanup left active executions')
+                task=owned['id']
+                if task is None: continue
+                deadline=time.monotonic()+120
+                while any(row.get('status') in {'pending','running'} for row in self.scheduled_rows(task)):
+                    require(time.monotonic()<deadline,'active collection execution remains')
                     time.sleep(1)
-                if any(row.get('id') == task for row in rows):
-                    try:
-                        self.life.operator.request('DELETE', f'/api/v1/meta/scan/tasks/{task}', (200,))
-                    except Exception:
-                        require(not any(row.get('id') == task for row in self.task_rows()), 'unknown task deletion did not commit')
-                require(not any(row.get('id') == task for row in self.task_rows()), 'collection task remains after cleanup')
-            except Exception:
-                settled = False
-                errors.append('collection task cleanup or residual verification failed')
-        if settled:
+                current=[row for row in self.task_rows() if row.get('id')==task]
+                require(not current or current[0].get('enabled') is False,'enabled schedule remains')
+                if current:
+                    try: self.life.operator.request('DELETE',f'/api/v1/meta/scan/tasks/{task}',(200,))
+                    except Exception: require(not any(row.get('id')==task for row in self.task_rows()),'unknown delete did not commit')
+                require(not any(row.get('id')==task for row in self.task_rows()),'owned task remains')
+            except Exception: errors.append('collection task cleanup failed')
+        if not errors:
             for barrier in self.source_barriers:
-                try:
-                    barrier.close()
-                except Exception:
-                    errors.append('collection source fixture cleanup failed')
-        require(not errors, '; '.join(errors))
+                try: barrier.close()
+                except Exception: errors.append('collection source fixture cleanup failed')
+        require(not errors,'; '.join(errors))
 
 
 class Lifecycle:
@@ -1825,15 +1507,18 @@ class Lifecycle:
 
     def production_flow(self, report):
         report['phase'] = 'initial_output_authorization'
-        source = item(self.reader, self.engine, 'metric_people')
         facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
         source_grant, source_body = self.grant(facts, seconds=600)
+        source = item(self.reader, self.engine, 'metric_people')
         name = 'pg_initial_' + uuid.uuid4().hex
         path = table_path(self.engine, name)
         self.paths.append(path)  # Register the exact cleanup target before any task write.
-        existing = self.reader.request('GET', f'/api/v1/meta/engines/{self.engine}/items?branch=public',
-                                       (200,), response_type=list).payload
-        require(not any(row.get('full_name') == 'public.' + name for row in existing), 'output already exists in Meta')
+        existing = self.operator.request('GET', self.base + '/data-items?page=1&page_size=100', (200,)).payload
+        require(isinstance(existing.get('data'), list) and existing.get('total') == len(existing['data'])
+                and existing.get('page') == 1 and existing.get('page_size') == 100,
+                'authorizer identity inventory is incomplete')
+        require(not any(row.get('full_name') == 'public.' + name for row in existing['data']),
+                'output already exists in Meta')
         task = self.reader.request('POST', '/api/v1/transfer/task-definitions', (201,),
                                    production_task(self.engine, source, name)).payload
         task_id = task.get('id')
@@ -1879,6 +1564,8 @@ class Lifecycle:
         target = locator(self.engine, name, output['id'])
         preview(self.reader, target, True, 2)
         preview(self.outsider, target, False)
+        lineage = ProductionLineageObservation(self.reader, self.outsider, source['id'], output['id'], execution)
+        lineage.issued()
         report['phase'] = 'concurrent_and_batch_read_load'
         self.measure_read_load(report, [(self.path, facts, source_grant),
                                        (path, output_facts, row['request_id'])])
@@ -1886,6 +1573,7 @@ class Lifecycle:
         self.revoke(source_grant)
         self.require_batch_denied(self.reader, [self.path, path])
         report['authorization_load']['mixed_withdrawn_batch_denied'] = True
+        lineage.source_withdrawn()
         preview(self.reader, locator(self.engine, 'metric_people', source['id']), False)
         preview(self.reader, target, True, 2)
         require(self.listing(history=True, state='active', catalog_path=path) == rows,
@@ -1901,6 +1589,7 @@ class Lifecycle:
             'scan_depth': 'basic', 'rows': 2, 'inherited_expiry': row['expires_at'],
             'source_withdrawn_output_readable': True, 'output_withdrawn_read_denied': True}
         report['checks'].extend(PRODUCTION_CHECKS)
+        lineage.output_withdrawn(report)
 
     def listing(self, *, history=False, state=None, recipient_type='user', recipient_id=None, catalog_path=None):
         query = {'catalog_path': json.dumps(self.path if catalog_path is None else catalog_path, separators=(',', ':')),
@@ -2214,7 +1903,7 @@ class Lifecycle:
                 'function boundary must use the existing independent business User')
         credential = business.token
         facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
-        target = locator(self.engine, 'metric_people', item(self.reader, self.engine, 'metric_people')['id'])
+        target = locator(self.engine, 'metric_people')
         command, body = self.grant(facts, recipient_id=principal)
         issued = self.listing(history=True, state='active', recipient_id=principal)
         require(issued.get('total') == 1 and len(issued.get('data', [])) == 1
@@ -2254,8 +1943,8 @@ class Lifecycle:
         report['workspace_isolation'] = 'zero_current_source_rules'
         report['phase'] = 'authorization_workspace_browser'
         facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
-        target = locator(self.engine, 'metric_people', item(self.reader, self.engine, 'metric_people')['id'])
         command, body = self.grant(facts, seconds=300)
+        target = locator(self.engine, 'metric_people', item(self.reader, self.engine, 'metric_people')['id'])
         with WorkspaceObservation(self.tenant, self.recipient, target, self.engine, issuer, command) as browser:
             report['workspace_browser'] = browser.finish()
         preview(self.reader, target, False)
@@ -2338,9 +2027,7 @@ class Lifecycle:
         path = table_path(self.engine, 'metric_events')
         self.paths.append(path)  # Cleanup owns every target before any possible write.
         facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, path)
-        row = item(self.reader, self.engine, 'metric_events')
-        require(row['fingerprint'] == facts['item_fingerprint'], 'business target differs from persisted DataItem')
-        target = locator(self.engine, 'metric_events', row['id'])
+        target = locator(self.engine, 'metric_events')
         def read(allowed):
             preview(self.reader, target, allowed, 4 if allowed else None,
                     columns=('event_id', 'event_date'), values=('e1', 'e2', 'e3', 'old'))
@@ -2423,6 +2110,8 @@ class Lifecycle:
         require(self.listing(history=True, state='active', catalog_path=path) == history,
                 'same-parameter fulfillment replay changed issuance history')
         read(True)
+        row = item(self.reader, self.engine, 'metric_events')
+        require(row['fingerprint'] == facts['item_fingerprint'], 'business target differs from persisted DataItem')
         preview(self.outsider, target, False)
         self.catalog_outage_flow(report, path=path, facts=facts, route=route, command=command,
                                  history=history, read=read, target=target)
@@ -2713,21 +2402,26 @@ class Lifecycle:
         grant, command = self.grant(facts)
         history = self.listing(history=True)
         scans = []
-        def rescan():
-            scans.append(basic_scan(self.reader, self.engine, ['metric_people']))
-            current = item(self.reader, self.engine, 'metric_people')
+        def rescan(*, visible=False):
+            scans.append(basic_scan(self.operator, self.engine, ['metric_people']))
             observed = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
-            require(current['id'] == original['id'] and current['fingerprint'] == original['fingerprint']
+            require(observed['item_fingerprint'] == original['fingerprint']
                     and observed['item_fingerprint'] == facts['item_fingerprint']
                     and observed['boundary_hash'] == facts['boundary_hash'],
                     'PG content update changed the approved DataItem identity or boundary')
+            if visible:
+                current = item(self.reader, self.engine, 'metric_people')
+                require(current['id'] == original['id'] and current['fingerprint'] == original['fingerprint'],
+                        'PG content update changed the persisted Meta identity')
+            else:
+                hidden_metadata(self.reader, original['id'])
             preview(self.reader, ungranted, False)
             preview(self.outsider, target, False)
         def unchanged(expected):
             require(self.listing(history=True) == expected, 'PG content update rewrote Grant history')
         try:
             mutate_source_content('content-change')
-            rescan()
+            rescan(visible=True)
             unchanged(history)
             preview(self.reader, target, True, 3, values=('A', 'B2', 'C'))
             report['phase'] = 'pg_content_change_deny'
@@ -2741,6 +2435,9 @@ class Lifecycle:
                     'Deny did not survive the content update and basic rescan')
             preview(self.reader, target, False)
             self.release(deny)
+            current = item(self.reader, self.engine, 'metric_people')
+            require(current['id'] == original['id'] and current['fingerprint'] == original['fingerprint'],
+                    'Deny-period scan changed the persisted Meta identity')
             preview(self.reader, target, True, 2)
             unchanged(history)
             self.revoke(grant)
@@ -2774,17 +2471,20 @@ class Lifecycle:
         report['phase'] = 'initial_protection_sync'
         API.wait_manager_read_boundary(self.reader, self.engine, time.monotonic() + 120)
         report['phase'] = 'initial_basic_scan'
-        report['initial_scan'] = basic_scan(self.reader, self.engine, ['metric_people', 'metric_events'])
-        original = item(self.reader, self.engine, 'metric_people')
-        other = item(self.reader, self.engine, 'metric_events')
-        target = locator(self.engine, 'metric_people', original['id'])
-        ungranted = locator(self.engine, 'metric_events', other['id'])
+        report['initial_scan'] = basic_scan(self.operator, self.engine, ['metric_people', 'metric_events'])
+        # Paths identify the request, never permission. Meta identities are read by
+        # the consumer only after the formal source Grant has been issued.
+        target = locator(self.engine, 'metric_people')
+        ungranted = locator(self.engine, 'metric_events')
+        REGISTRATION.read_exact_record_authorization_facts(self.operator, table_path(self.engine, 'metric_events'))
         preview(self.reader, target, False)
         preview(self.reader, ungranted, False)
         report['phase'] = 'grant_and_duplicate'
         facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
-        require(original.get('fingerprint') == facts['item_fingerprint'], 'Meta identity differs from trusted boundary')
         first, body = self.grant(facts)
+        original = item(self.reader, self.engine, 'metric_people')
+        require(original.get('fingerprint') == facts['item_fingerprint'], 'Meta identity differs from trusted boundary')
+        target = locator(self.engine, 'metric_people', original['id'])
         preview(self.reader, target, True, 2)
         preview(self.reader, ungranted, False)
         duplicate = dict(body, request_id=str(uuid.uuid4()))
@@ -2794,7 +2494,7 @@ class Lifecycle:
         report['phase'] = 'fixed_target_read_latency'
         self.measure_read_latency(report, facts, first)
         report['phase'] = 'basic_rescan'
-        report['basic_rescan'] = basic_scan(self.reader, self.engine, ['metric_people'])
+        report['basic_rescan'] = basic_scan(self.operator, self.engine, ['metric_people'])
         refreshed = item(self.reader, self.engine, 'metric_people')
         after = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
         require(refreshed['id'] == original['id'] and refreshed['fingerprint'] == original['fingerprint']
@@ -2894,14 +2594,11 @@ def main():
         lifecycle.production_flow(report)
         lifecycle.collection = MetaCollectionScenario(lifecycle, issuer, run_id)
         lifecycle.collection.run(report)
-        lifecycle.collection.run_browser(report)
-        lifecycle.collection.run_expiry(report)
         lifecycle.collection.run_scheduled(report)
         controller = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ.pop('ADDP_ONLINE_PG_PROBE_ACCESS_TOKEN'), timeout)
         lifecycle.collection.run_probe_control(report, controller)
         del controller
         lifecycle.collection.run_inflight(report)
-        lifecycle.collection.run_inflight_expiry(report)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)
@@ -2914,7 +2611,7 @@ def main():
                 lifecycle.cleanup()
                 report['cleanup'] = 'zero_current_source_rules'
                 if lifecycle.collection is not None:
-                    report['meta_collection']['cleanup'] = 'zero_current_qualifications_and_tasks'
+                    report['meta_collection']['cleanup'] = 'zero_owned_tasks_and_active_executions'
             except Exception:
                 report.update(result='failed', cleanup='failed')
         if evidence is not None:

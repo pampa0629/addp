@@ -138,6 +138,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterEngineAccessSourceReadCheckRoutes(api, runtime, &EngineAccessSourceReadCheckHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}
+	if err := RegisterEngineAccessMetadataCheckRoutes(api, runtime, &EngineAccessMetadataCheckHandler{service: fulfillmentService}); err != nil {
+		panic(err)
+	}
 	if err := RegisterIAMManagerModel3DAuthorizationRoutes(api, runtime, &IAMManagerModel3DAuthorizationHandler{
 		service: iam.NewManagerModel3DAuthorizationService(runtime.Repository, fulfillmentService.PrepareExecutionSourceRead),
 	}); err != nil {
@@ -170,7 +173,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterEngineAccessInitialGrantRoutes(api, runtime, &EngineAccessInitialGrantHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}
-	if err := RegisterMetaScanCancellationScopeRoute(api, runtime, &MetaScanCancellationScopeHandler{service: fulfillmentService}); err != nil {
+	if err := RegisterMetaScanManagementScopeRoute(api, runtime, &MetaScanManagementScopeHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}
 

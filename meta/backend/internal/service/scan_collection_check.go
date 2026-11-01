@@ -26,6 +26,9 @@ func (s *ScanExecutionService) bindCollectionRead(ctx context.Context, run *exec
 	if run.SourceTaskID == nil {
 		return ctx, nil
 	}
+	if run.Source != "meta" || run.ParentExecutionID != nil {
+		return nil, commonapi.ErrForbidden
+	}
 	if s.collectionAuthorization == nil {
 		return nil, ErrScanPlanFactsUnavailable
 	}
@@ -53,7 +56,7 @@ func (s *ScanExecutionService) bindCollectionRead(ctx context.Context, run *exec
 			}
 			return err
 		}
-		if observed == nil || observed.ExecutionID != request.ExecutionID || observed.ExecutionPlanDigest != request.ExecutionPlanDigest || observed.QualificationID == "" || observed.ObservedAt.IsZero() {
+		if observed == nil || observed.ExecutionID != request.ExecutionID || observed.ExecutionPlanDigest != request.ExecutionPlanDigest || observed.ObservedAt.IsZero() {
 			return commonapi.ErrForbidden
 		}
 		return nil

@@ -18,7 +18,7 @@ import (
 var DB *gorm.DB
 
 // InitDatabase 初始化数据库连接
-func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
+func InitDatabase(cfg *config.Config, retireCollectionApproval func(*gorm.DB) error) (*gorm.DB, error) {
 	if cfg.DBSchema != "meta" {
 		return nil, fmt.Errorf("meta module schema must be meta")
 	}
@@ -46,6 +46,12 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 			return err
 		}
 		if err := applySQLMigrations(tx); err != nil {
+			return err
+		}
+		if retireCollectionApproval == nil {
+			return fmt.Errorf("collection approval retirement migration is required")
+		}
+		if err := retireCollectionApproval(tx); err != nil {
 			return err
 		}
 		return cleanup.MigrateResults(tx, "meta")

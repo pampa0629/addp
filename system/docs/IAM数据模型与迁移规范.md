@@ -32,6 +32,14 @@ System 自身拥有引擎访问控制领域，`engine_access_grants` 是精确�
 
 首个正式同步检查为 `POST /api/v1/system/engine-access/read-checks/manager-preview`，接收当前 Tenant 普通 User Bearer，或精确 `manager` audience、唯一 `data.preview` Scope 的真实委托凭据，与 1–200 个完整目标；固定消费 Manager 已声明的 `manager.data_item.read`。委托凭据由 IAM 核验来源 Token Family、当前用户／成员／授权版本及 Client、Run／Tool 绑定，不降格成普通 User，也不开放其它 System API。功能／Client 条件、真实凭据和全部源规则在同一只读快照中核验；任一目标无有效 Grant 或命中 Deny 时整体拒绝。成功只返回不可缓存的当次 `observed_at`，不返回完整 Allow、规则详情或执行凭据。领域检查不写授权审计或请求副本；通用 HTTP 元信息审计仍由现有中间件执行，不记录 Token 或正文。Manager 的完整 Provider ReadSet、同一 PreparedQuery 实际执行及 Security 尚须接入，不能把此接口完成当作真实内容访问闭环完成。
 
+### PG 元数据查看动作与查询核验（实施中）
+
+`metadata_read` 与 `read` 共用不可变 Grant、Deny、期限、组织关系及撤销存储。迁移 000260 只扩展动作约束，不回填 Grant 或给账号补权；新增元数据动作首期只接受 PostgreSQL。读取包含元数据的计算及两类禁止的包含关系唯一沿授权上下文规范 5.5.1.1，当前关系按动作分组，来源与禁止都返回实际动作，撤销不能跨动作收回。
+
+Meta 面向用户的 PG 身份查询通过统一 System client 提交当前真实用户凭据和候选完整目标，使用固定 `POST /engine-access/metadata-checks/meta-query` 观察。接口固定要求 `meta.catalog.read`，首期普通第一方／OAuth User 使用自身凭据，Service 身份不能代替当前用户。现有 Meta `resource.children.list`／`resource.ancestors.get` 委托工具可进入该固定只读核验端点：必须是唯一 `meta` audience、两种既有 Scope 中恰好一种，绑定原用户、委托 Client、AgentRun 与 ToolCall；仍由 IAM 核验来源凭据族、成员和授权版本。不能访问相邻 System API，不能扩展到其他 Scope 或机器身份。请求只含 1–200 个目标，不含主体、权限、自报 Meta 边界或 Allow。System 在锁外读取自己的 Meta 身份事实，再以同一真实凭据和规则快照重核；每个目标只返回原目标和可见布尔值及统一观察时刻，不泄漏 Grant、Deny、组织来源或不可见原因，不形成缓存许可。
+
+Meta 必须在分页、计数和树祖先投影前取得完整候选的可见集合；失败不能回退租户全量结果。展示结果只含允许的结构白名单，样本和统计仍须数据读取及 Security 约束。后台扫描的机器查询与用户展示分属各自契约，不能用后台机器凭据替代浏览者。System 普通 User 核验入口与统一 client 已实现；Meta 查询出口尚未全部接入，不能视为查看隔离或跨服务验收已完成。
+
 迁移 000183 增加 `engine_access_grant_revocations`：以原办理 UUID 唯一引用 Grant，追加撤销者 Principal／Tenant Membership、数据库墙钟与必填原因；不复制或改写原目标、接收主体、动作和期限。行及整表历史不可 UPDATE／DELETE／TRUNCATE，插入核验撤销者为原 Tenant 的 User 成员。真实撤销命令发布独立 `system.engine_access_grant.revoke`，不默认分配 Role 或账号，不推进既有授权版本；服务核验当前账号、Token、Permission 和引擎管理委派，并同事务写入高风险撤销审计。引擎停用或失去实时目录能力仍允许收回旧授权，账号或委派失效则拒绝；不修改新授予的启用条件。撤销历史不是 Explicit Deny，也不表示执行侧数据权限已经接通。
 
 迁移 000184 只前向收紧撤销插入触发器：按数据库墙钟拒绝原 `at_time` Grant 到期后的首次撤销，不回填时间、不修改既有撤销／受理／签发历史，不新增或分配权限。服务写入前和审计后提交前同样检查授权期限，失败同时回滚撤销与审计；已成功撤销的原参重试优先读取历史，仅重新核验当前操作者资格，不受原授权后续到期或五分钟自动办理窗口限制。`until_revoked` 保持可主动撤销。
@@ -341,13 +349,15 @@ System 启动顺序固定为：
 
 ## 十一、管理端信息架构
 
-### Meta basic 采集资格
+### Meta PG basic 集中扫描
 
-`000234_meta_collection_qualifications` 新增独立的 `system.meta_collection_qualifications`。它不是源数据 Grant 或第二套 Meta ACL：同 Tenant／Engine／ScanTask 的批准冻结任务功能摘要和引擎版本，保存用途、明确期限、审批人及授权版本；配置及原期限不可变，只允许当前有效记录显式撤销，保留历史，不物理删除。同一任务的有效时间段不能重叠，服务与存储约束共用事务级任务锁，不依赖额外 PostgreSQL 扩展。
+集中扫描管理与数据读取分离。创建、修改、删除、手动执行、取消分别核验对应 `meta.scan_task.*` 功能权限和当前目标引擎管理范围；取消权限必须显式分配。System 使用当前 User 凭据在 `GET /engines/{id}/scan_{create|update|delete|execute|cancel}_scope` 返回本次管理范围观察，禁止机器代替人员或缓存权限。修改任务须分别核验旧、新引擎；不接受浏览器自报的主体作为依据。
 
-迁移只向既有引擎授权管理员角色发布 `system.meta_collection_qualification.approve/read/revoke`，向既有 Meta Runtime 发布不可委托且不可租户定制的 `execute`，向既有 System Runtime 增授 `meta.task_provider.read` 以读取固定的 Meta 任务／执行事实接口（TaskProvider 原入口仍只接受 Orchestrator，不能因此被 System 冒用）；不新增账号角色分配，不批准旧任务，不触碰源 Grant／Deny。角色发布沿既有触发器推进授权版本并撤销受影响 Refresh Token Family。外键具备前导索引。
+`POST /runtime/meta_collection_checks` 只接受 Meta Runtime 的独立机器 Permission `system.meta_collection.execute`，核验 PG basic 冻结计划、当前引擎版本和可用性、Common execution／lease 与取消意图。租户定时任务不依赖创建人当前角色；只支持 Meta 人员手动和自身定时触发，编排入口本期拒绝。所有路径相对 `/api/v1/system`。不签发数据 Grant，不取消 Security 或源读取执行边界。
 
-人类入口统一为 `GET /engines/{id}/meta_collection_task_facts/{task_id}`、`GET/POST /engines/{id}/meta_collection_qualifications` 和 `DELETE /engines/{id}/meta_collection_qualifications/{qualification_id}`；各自 Permission 与当前引擎管理范围取交集。机器只通过 `POST /runtime/meta_collection_checks` 消费当次观察，不接受自报任务摘要或主体作为事实。所有路径相对 `/api/v1/system`，请求／结果均不可缓存。首期只支持 PG entire-engine basic，不为 deep 或未支持 selector 兜底。标准定向存储验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test meta-collection"`；原默认门禁同样自动发现。
+`000259_retire_meta_collection_approval` 删除旧专用资格表与人员审批权限绑定，旧 Permission 留作禁用目录记录而不再参与 Guard；新增机器核验 Permission 只发布给既有 Meta Runtime。角色触发器推进受影响主体授权版本并撤销其 Refresh Token Family，不新增人员角色分配，不修改源 Grant／Deny。Meta schema revision 4 在启动事务内按 System 真实引擎事实关闭旧 PG 调度，经 Owner 取消链路停止旧 PG basic 执行，保留定义与执行历史，不创建新执行。迁移失败回滚并阻止 Owner 启动。
+
+标准定向验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test meta-collection"` 与 `--package migration --test meta-collection`；默认门禁同样发现。新规则 Hosted T4 尚未验证，旧审批验收不可替代。
 
 System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把每个管理对象平铺为一个左侧入口，也不能继续把全部对象放入单个工作台：
 

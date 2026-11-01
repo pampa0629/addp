@@ -41,7 +41,7 @@ func initialProductionSources(production *preparedTransferProduction) (sourceRea
 			return sourceReadRequest{}, errInitialProductionEvidence
 		}
 	}
-	return sourceReadRequest{TenantID: r.TenantID, Source: userProvenance{r.UserOrigin.PrincipalID,
+	return sourceReadRequest{Action: "read", TenantID: r.TenantID, Source: userProvenance{r.UserOrigin.PrincipalID,
 		r.UserOrigin.TenantMembershipID, r.UserOrigin.AuthorizationVersion}, Targets: paths}, nil
 }
 

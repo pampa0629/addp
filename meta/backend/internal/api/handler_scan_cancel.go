@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/client"
@@ -17,8 +18,8 @@ import (
 	"strconv"
 )
 
-type scanCancellationScopeClient interface {
-	GetMetaScanCancellationScope(context.Context, int64, string) (*authorization.EngineAccessHandlingScope, error)
+type scanManagementScopeClient interface {
+	GetMetaScanManagementScope(context.Context, int64, string, string) (*authorization.EngineAccessHandlingScope, error)
 }
 
 // CancelScanExecution godoc
@@ -47,7 +48,7 @@ func (h *Handler) CancelScanExecution(c *gin.Context) {
 		respondScanManagementError(c, commonapi.ErrForbidden)
 		return
 	}
-	if h.executionService == nil || h.scanCancellationScope == nil {
+	if h.executionService == nil || h.scanManagementScope == nil {
 		commonapi.RespondError(c, http.StatusServiceUnavailable, commoni18n.T(c, commoni18n.MsgAuthorizationServiceUnavailable))
 		return
 	}
@@ -61,7 +62,7 @@ func (h *Handler) CancelScanExecution(c *gin.Context) {
 	input := service.ScanCancellationActor{PrincipalID: principal, MembershipID: &membership}
 	tenant := commonAuth.GetTenantID(c)
 	run, err := h.executionService.CancelPGCollection(c.Request.Context(), tenant, c.Param("execution_id"), input, func(ctx context.Context, engineID uint) error {
-		observed, err := h.scanCancellationScope.GetMetaScanCancellationScope(ctx, int64(engineID), token)
+		observed, err := h.scanManagementScope.GetMetaScanManagementScope(ctx, int64(engineID), "cancel", token)
 		if err != nil {
 			return err
 		}
@@ -80,6 +81,9 @@ func (h *Handler) CancelScanExecution(c *gin.Context) {
 // Do not expose upstream payloads or connection details to the caller.
 func respondScanManagementError(c *gin.Context, err error) {
 	status := commonapi.MapErrorToHTTPStatus(err)
+	if errors.Is(err, service.ErrScanPlanFactsUnavailable) {
+		status = http.StatusServiceUnavailable
+	}
 	if remote, ok := client.TenantAPIStatusCode(err); ok {
 		switch remote {
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict:

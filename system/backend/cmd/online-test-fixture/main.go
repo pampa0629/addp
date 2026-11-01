@@ -115,9 +115,6 @@ var sourceInitializerPermissions = []string{
 	"system.engine_access_grant.read",
 	"system.engine_access_grant.revoke",
 	"system.engine_catalog.read",
-	"system.meta_collection_qualification.approve",
-	"system.meta_collection_qualification.read",
-	"system.meta_collection_qualification.revoke",
 }
 
 func suiteSourceInitializerPermissions(suite string) []string {
@@ -153,7 +150,7 @@ func sourceInitializerSupplement(effective []string) []string {
 }
 
 var pgAuthorizationConsumerPermissions = []string{
-	"manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+	"manager.data_item.read", "meta.catalog.read", "meta.lineage.read", "meta.scan_task.execute", "meta.scan_task.read",
 	"transfer.task.create", "transfer.task.read", "transfer.task.execute", "transfer.task.delete",
 	"system.execution_authorization.create",
 }
@@ -163,6 +160,7 @@ var pgAuthorizationConsumerPermissions = []string{
 var pgAuthorizationOperatorPermissions = []string{
 	"system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read",
 	"meta.scan_task.create", "meta.scan_task.update", "meta.scan_task.delete",
+	"meta.scan_task.read", "meta.scan_task.execute", "meta.scan_task.cancel",
 }
 
 var pgAuthorizationConfirmerPermissions = []string{

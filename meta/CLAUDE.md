@@ -6,6 +6,15 @@
 
 Meta 模块负责从 Engine Catalog 扫描并持久化 DataItem 技术事实，以及元数据查询、对象元数据提取、扫描任务调度和扫描运行记录。Meta 不拥有企业 `CatalogEntry`、业务语义关联、责任或治理状态，也不再向 Asset 提供自动发现接口。企业 Catalog 接入时，Meta 只提供 DataItem fingerprint 为身份的可恢复游标变化源和精确批量读取契约，不同步调用 Catalog，也不保存 `catalog_entry_id` 反向投影。Security 对显式纳管 DataItem 使用 `GET /api/v1/meta/runtime/data-items/{fingerprint}/security-facts` 精确读取无原值字段事实；无字段的文档则继续使用 `GET /api/v1/meta/runtime/data-items/{fingerprint}/security-sample` 临时读取有界正文样本。两个端点都固定 `addp-security` Client Guard 和 `meta.security_facts.read`，不提供列表或变化订阅；样本不写入 Meta attributes。PostgreSQL table 的 Catalog 变化摘要由 Meta 直接带出结构化 `schema_name + table_name`，供 Catalog 向 Quality 动态解析当前摘要；消费方不得拆分 `full_name` 猜测定位。
 
+## 用户资源树可见性
+
+PG 的资源树、节点、祖先链和树搜索统一通过当前 User 或现有 Meta Tool 的原始委托凭据向 System 核验 `metadata_read`／`read` 可见性；不由 Meta Runtime 身份替代用户。先取得完整候选的可见集合，再截取树深度、搜索数量并投影祖先。树仅输出身份和导航白名单，不复制原始 attributes、样本或源内容统计；不可见子树不进入数量。机器事实查询沿各自既有权限契约，不产生用户查看权。PG 数据项／字段血缘复用当前 User 的固定 `meta.lineage.read` 核验入口，两端可见才遍历、计数，隐藏起点返回 404；用户图不返回服务节点，服务起点返回 403。Meta Tool 委托不扩大到血缘；其他消费端仍在统一改造中，不能将本地验证视为全部元数据结果隔离完成。
+
+PG 用户的通用数据项列表、按 ID／路径查询、字段详情及节点查询采用同一可见性裁决，不能保留绕过资源树的 Tenant 全量读取。结构查询投影只包含身份、字段结构、主键和声明坐标系，删除原始 attributes 中的内容、统计、备注及默认／生成表达式；数据内容及统计仍由对应读取出口核验当前读取权和 Security，不由结构查询返回。不可见目标与不存在目标使用相同 404；列表先过滤，祖先和节点只保留可见后代所需导航，并重新计算可见数量。Meta 内部及原有受保护机器事实消费保持各自契约。上述结构查询和统计已有本地 Meta Go T1 证据；跨服务 T4 未验证。
+
+PG 用户元数据总数只计入当前可见的有效数据项；引擎选项保留注册身份，扫描节点统计和最近扫描时间仅来自可见分支，不返回原始检测错误文本。内部机器扫描统计不改变，不能用用户过滤后的数量推导引擎整体治理覆盖率。
+
+
 ## 技术栈与端口
 
 - 后端：Go + Gin + GORM，默认端口 `8082`，环境变量 `META_BACKEND_PORT`。
@@ -46,7 +55,7 @@ Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨
 
 ## Meta 扫描分层约定
 
-当前旧实现的集中治理 `ScanTask` 范围为已由 System 明确批准的 PG entire-engine basic；2026-11-01 已确认改为功能权限加引擎管理范围，尚未实施切换，当前资格与 Worker 重核统一沿[采集资格规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)。Meta 通过 `SystemServiceClient.CheckMetaCollection` 核对冻结摘要与当前 lease；不支持的深度／selector 拒绝，不降级，独立交互和可信成果补扫不借用该资格。定义在排队／运行中删除时仍须结束原 execution，不重建任务摘要，也不让缺失定义阻塞队列。
+集中扫描的目标为功能权限加引擎管理范围，basic／deep 不划分人员权限；逐任务批准退役和 PG basic 前置实现正在验证，PG deep 统一准入、元数据结果过滤和 Manager 精确刷新尚未完成。统一规则与完成边界见[集中扫描规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)。Meta 通过 `SystemServiceClient.CheckMetaCollection` 核对冻结摘要与当前 lease；不支持的 selector 拒绝，不降级。定义在排队／运行中删除时仍须结束原 execution，不重建任务摘要，也不让缺失定义阻塞队列。
 
 PG basic 的资格重核以一次 `EngineCatalogProvider.ListChildren` 枚举为读取单元，已放行调用可结束其内部 SQL，下一次调用须重核。中途明确拒绝立即结束后续 namespace 遍历，保留拒绝类型、失败目标诊断及已完成枚举计数，不把全范围标为完成。逐语句诊断不改变这一运行边界，也不表示已支持逐 SQL 取消；分版本验证从[采集资格验证范围](#采集资格验证范围)进入。
 
@@ -203,7 +212,7 @@ FalkorDB 图属性结构来自每个节点形态或关系类型的最多 100 条
 
 ## 服务身份与 System 调用
 
-- Meta Backend 与 Worker 统一使用 `addp-meta` Confidential OAuth Client，不读取 `INTERNAL_API_KEY`，不接收或代传 User Access Token。
+- Meta Backend 与 Worker 统一使用 `addp-meta` Confidential OAuth Client，不读取 `INTERNAL_API_KEY`，Worker 不接收或代传 User Access Token。Backend 仅在同步人员管理请求中，以该请求的当前 User Token 调用 System 管理范围核验；不保存到任务或交给 Worker。
 - Meta Backend 只提供 API、创建 execution 和运行 owner scheduler；独立 `meta-worker` 是 `meta/scan` 的唯一执行路线。Redis 只用于事件和扫描范围锁，不承担 execution 队列职责。
 - `meta-worker` 必须通过 `common.task_executions` 的 PostgreSQL claim 取得 `lease_token`，续租并以 attempt + token 条件写进度和终态；不得恢复 Asynq 或 Backend 本地 channel fallback。
 - 扫描、refresh 和 cleanup 按 execution/request 的 `tenant_id` 即时取得 Tenant Service Access Token，通过公开 `GET /api/v1/system/engines` 与 `GET /api/v1/system/engines/:id` 读取同 Tenant 引擎事实；业务请求只发送 Bearer。CAD 格式识别直接读取源文件头，不调用外部 runtime。
@@ -219,7 +228,7 @@ FalkorDB 图属性结构来自每个节点形态或关系类型的最多 100 条
 
 ### 人工来源与冻结计划
 
-人工扫描、任务手动触发、item 刷新和资源树刷新按[生产来源规范](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)从当前可信 AuthContext 固化完整人类来源，不能仅凭 userID、任务创建者或历史记录补齐身份。资源树刷新继续返回安全 `ScanExecutionResponse`，字段与读取范围沿[Meta 专业读取契约](../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应)。来源不授予扫描或源内容访问资格，交互入口与集中治理的范围、当前实现及目标替换、Worker 重核按[采集资格规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)独立裁决。
+人工扫描、任务手动触发、item 刷新和资源树刷新按[生产来源规范](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)从当前可信 AuthContext 固化完整人类来源，不能仅凭 userID、任务创建者或历史记录补齐身份。资源树刷新继续返回安全 `ScanExecutionResponse`，字段与读取范围沿[Meta 专业读取契约](../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应)。来源不授予扫描或源内容访问资格，交互入口与集中治理的范围、当前实现及目标替换、Worker 重核按[集中扫描规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)独立裁决。
 
 冻结计划事实通过 `GET /runtime/scan-executions/:execution_id/authorization-facts` 供固定 `addp-system` Tenant Service 以 `meta.task_provider.read` 读取，唯一 DTO／客户端仍是 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`。严格 wire、冻结版本与摘要、任务变化后的 needs_refresh/null scope、旧快照的 409 及 complete 支持范围统一见[冻结扫描计划事实契约](../docs/spec/addp元数据扫描机制规范.md#冻结扫描计划事实契约)。Meta 仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；未证明的范围保持非完整，200／complete 都不等于 Allow。
 
@@ -297,9 +306,9 @@ make test-meta-postgres
 
 Backend／Worker 服务正文使用[模块实例运行日志](../scripts/infra/docs/运行日志.md#模块实例运行日志)，扫描过程事件与专业结果仍通过 Monitor／Meta 的授权入口读取，不能用进程日志或空事件推断扫描已成功。
 
-### 采集资格验证范围
+### 集中扫描验证范围
 
-确定性入口与 authorization-facts PostgreSQL 专项见[专项验证入口](#专项验证入口)；API／Worker、审批页、自然到期、定时及在途门禁的固定源码、失败、清理和未覆盖项统一见[采集资格验收导读](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)。不在模块入口重复维护各轮通过状态，后续成功不能改记早轮失败或外推当前 HEAD 已复验。
+集中扫描按功能权限加引擎管理范围执行；逐任务审批入口已退役。PG basic 编排触发拒绝，自身定时不依赖创建人当前角色。独立取消权限显式分配，已放行枚举允许结束，下一次枚举停止。schema revision 4 关闭存量 PG 调度并经 Owner 取消旧执行，不自动运行任务。新规则 Hosted T4 尚未验证，下面链接仅是旧规则历史。确定性入口与 authorization-facts PostgreSQL 专项见[专项验证入口](#专项验证入口)；API／Worker、审批页、自然到期、定时及在途门禁的固定源码、失败、清理和未覆盖项统一见[采集资格验收导读](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)。不在模块入口重复维护各轮通过状态，后续成功不能改记早轮失败或外推当前 HEAD 已复验。
 
 ### 专项验证入口
 

@@ -10,7 +10,7 @@ import (
 )
 
 func TestMetaCollectionObservationIsStrictAndNotAnAuthorityEnvelope(t *testing.T) {
-	value := MetaCollectionAccessObservation{ExecutionID: uuid.NewString(), ExecutionPlanDigest: strings.Repeat("a", 64), QualificationID: uuid.NewString(), ObservedAt: time.Now().UTC()}
+	value := MetaCollectionAccessObservation{ExecutionID: uuid.NewString(), ExecutionPlanDigest: strings.Repeat("a", 64), ObservedAt: time.Now().UTC()}
 	raw, err := json.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
@@ -24,7 +24,7 @@ func TestMetaCollectionObservationIsStrictAndNotAnAuthorityEnvelope(t *testing.T
 		strings.Replace(string(raw), `"observed_at":`, `"allow":true,"observed_at":`, 1),
 		strings.Replace(string(raw), `"observed_at":`, `"execution_id":"`+value.ExecutionID+`","observed_at":`, 1),
 		strings.Replace(string(raw), value.ExecutionID, uuid.Nil.String(), 1),
-		strings.Replace(string(raw), value.QualificationID, "0", 1),
+		strings.Replace(string(raw), `"observed_at":`, `"qualification_id":"retired","observed_at":`, 1),
 		strings.Replace(string(raw), value.ExecutionPlanDigest, "bad", 1),
 		strings.Replace(string(raw), `"observed_at":"`+value.ObservedAt.Format(time.RFC3339Nano)+`"`, `"observed_at":null`, 1),
 	} {

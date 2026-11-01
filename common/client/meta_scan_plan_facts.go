@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/addp/common/execution"
@@ -25,22 +24,6 @@ func (c *MetaClient) ReadScanPlanFacts(ctx context.Context, tenantID uint, execu
 	}
 	if facts.ExecutionID != executionID {
 		return nil, errors.New("invalid Meta scan plan facts response")
-	}
-	return &facts, nil
-}
-
-// ReadScanTaskFacts does not trigger a scan in order to approve a task.
-func (c *MetaClient) ReadScanTaskFacts(ctx context.Context, tenantID uint, taskID string) (*execution.MetaScanTaskFacts, error) {
-	id, err := strconv.ParseInt(taskID, 10, 64)
-	if err != nil || id <= 0 || strconv.FormatInt(id, 10) != taskID {
-		return nil, errors.New("invalid Meta scan task facts request")
-	}
-	var facts execution.MetaScanTaskFacts
-	if err := c.readScanFacts(ctx, tenantID, "/api/v1/meta/runtime/scan-tasks/"+taskID+"/authorization-facts", &facts); err != nil {
-		return nil, err
-	}
-	if facts.TaskID != taskID {
-		return nil, errors.New("invalid Meta scan task facts response")
 	}
 	return &facts, nil
 }

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	commonapi "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	metai18n "github.com/addp/meta/i18n"
@@ -85,6 +87,8 @@ func (h *Handler) RecordServicePublication(c *gin.Context) {
 }
 
 // GetLineageGraph 查询数据项或已发布服务版本的血缘图。
+// @Description 用户查询仅返回当前可见的 PG 数据项与字段；两端可见才展示关系，计数与截断只基于可见关系。服务起点拒绝，表达式与任意证据不返回 | User queries return currently visible PG items and fields only. Both endpoints must be visible; counts and truncation use visible relations only. Service roots are denied; expressions and arbitrary evidence are omitted
+// @Failure 403,503 {object} models.LineageErrorResponse "可见性核验拒绝或不可用 | Visibility denied or unavailable"
 // @Summary 查询数据血缘图 | Get lineage graph
 // @Description 按数据项、精确字段引用或已发布服务版本查询血缘关系；字段边只返回执行 ID、写入模式、字段状态和转换摘要，不重复整份 operation 字段映射 | Query lineage for a data item, exact field reference or published service revision; field edges expose execution ID, write mode, field status and transformation summaries without full operation mappings
 // @Tags Meta Lineage
@@ -117,9 +121,13 @@ func (h *Handler) GetLineageGraph(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, models.LineageErrorResponse{Error: commoni18n.T(c, metai18n.MsgLineageInvalidQuery), ErrorCode: "invalid_lineage_query"})
 		return
 	}
-	graph, err := h.lineageService.GetGraph(c.Request.Context(), tenantID, request)
+	graph, err := h.lineageService.GetGraph(h.lineageBrowsingContext(c), tenantID, request)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, commonapi.ErrForbidden) || errors.Is(err, commonClient.ErrMetadataQueryDenied) || errors.Is(err, commonClient.ErrMetadataQueryUnavailable) || errors.Is(err, commonClient.ErrMetadataCredentialRejected) {
+			h.respondMetadataQueryError(c, err)
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, models.LineageErrorResponse{Error: commoni18n.T(c, metai18n.MsgLineageSubjectNotFound), ErrorCode: "lineage_subject_not_found"})
 			return
 		}

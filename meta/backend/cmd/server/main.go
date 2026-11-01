@@ -13,12 +13,14 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/meta/internal/api"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/service"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 
 	// 导入 general 引擎插件以触发自动注册
 	_ "github.com/addp/common/engine/plugins/builtin/general"
@@ -60,14 +62,6 @@ func main() {
 		"log_level", cfg.LogLevel,
 	)
 
-	// 初始化数据库
-	db, err := repository.InitDatabase(cfg)
-	if err != nil {
-		logger.L().Error("数据库初始化失败", "error", err)
-		os.Exit(1)
-	}
-
-	logger.L().Info("数据库连接初始化完成")
 	tokenSource, err := commonClient.NewOAuthServiceTokenSource(
 		cfg.SystemServiceURL,
 		"addp-meta",
@@ -79,6 +73,16 @@ func main() {
 		os.Exit(1)
 	}
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
+	// Resolve migration engine facts through the existing tenant-bound System client.
+	db, err := repository.InitDatabase(cfg, func(tx *gorm.DB) error {
+		return service.RetireCollectionApproval(context.Background(), tx, func(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error) {
+			return systemClient.WithTenantID(tenantID).GetEngine(ctx, engineID)
+		})
+	})
+	if err != nil {
+		logger.L().Error("数据库初始化失败", "error", err)
+		os.Exit(1)
+	}
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
 	var registration *commonClient.ModuleRegistrationLifecycle

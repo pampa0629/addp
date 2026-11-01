@@ -33,7 +33,7 @@ while [ "$#" -gt 0 ]; do
             echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
             echo "Transfer production receipt: --package migration --test production-receipt-runtime" >&2
             echo "PG production source observation: --package engineaccess --test production-sources" >&2
-            echo "Meta PG basic task qualification: --package engineaccess|migration --test meta-collection" >&2
+            echo "Meta PG basic centralized scanning: --package engineaccess|migration --test meta-collection" >&2
             echo "FTP/NFS file composition Grant/current read: --package engineaccess --test file-composition" >&2
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "Owned-container crash recovery: --test database-crash-recovery (no external DSN)" >&2
@@ -224,8 +224,8 @@ case "$TEST_FILTER" in
         ;;
     meta-collection)
         case "$PACKAGE_FILTER" in
-            engineaccess) test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^(meta_collection_qualification|collection_current_function_and_engine_scope)$' ;;
-            migration) test_pattern='^TestMetaCollectionQualification(Runtime|Approval)ForwardMigrationAgainstPostgres$' ;;
+            engineaccess) test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^(meta_collection_runtime|collection_current_function_and_engine_scope)$' ;;
+            migration) test_pattern='^TestMetaCollectionRetirementForwardMigrationAgainstPostgres$' ;;
             *) echo "meta-collection requires --package engineaccess or migration" >&2; exit 2 ;;
         esac
         ;;

@@ -171,7 +171,7 @@ import PortalHeader from '../components/portal/PortalHeader.vue'
 import PortalSidebar from '../components/portal/PortalSidebar.vue'
 import PortalHome from '../components/portal/PortalHome.vue'
 import { navigateGuide } from '../api/copilot'
-import { createManualScanRun, deleteEngineScanTask, getScanTasks, upsertEngineScanTask } from '../api/meta'
+import { handleEngineScanPolicyBridge } from '../utils/engineScanPolicy'
 import PortalIframe from '../components/portal/PortalIframe.vue'
 import ApiDocs from './ApiDocs.vue'
 import ConfigurationManagement from './ConfigurationManagement.vue'
@@ -365,68 +365,6 @@ const handleConsoleNavigationBridge = async (payload = {}, _message, event) => {
     recordRecentVisit(targetModule, resolvedRoute, payload.pageDescriptor)
   }
   return { route: resolvedRoute, history }
-}
-
-const normalizeScanConfig = (scanConfig) => {
-  if (!scanConfig) return null
-  return {
-    ...scanConfig,
-    enabled: Boolean(scanConfig.immediate_scan || scanConfig.scheduled_scan)
-  }
-}
-
-const scanConfigFromTask = (task) => {
-  if (!task) return null
-  const parameters = task.parameters || {}
-  return {
-    enabled: true,
-    immediate_scan: true,
-    immediate_depth: 'basic',
-    scheduled_scan: true,
-    schedule_mode: 'cron',
-    cron_expression: task.schedule || '',
-    schedule_time: '00:00',
-    schedule_value: [],
-    scan_depth: parameters.scan_depth || 'deep'
-  }
-}
-
-const handleEngineScanPolicyBridge = async (payload = {}) => {
-  if (payload.action === 'load') {
-    const engineId = Number(payload.engineId)
-    if (!engineId) throw new Error('engine_id is required')
-    const tasks = await getScanTasks(engineId)
-    const task = tasks.find(item => item.owner_module === 'system' && item.owner_ref === `engine:${engineId}`) || tasks[0]
-    return { scanConfig: scanConfigFromTask(task) }
-  }
-
-  if (payload.action === 'sync') {
-    const engine = payload.engine || {}
-    const engineId = Number(engine.id)
-    if (!engineId) throw new Error('engine_id is required')
-    const scanConfig = normalizeScanConfig(payload.scanConfig)
-    if (!scanConfig || !scanConfig.scheduled_scan) {
-      await deleteEngineScanTask(engineId)
-    } else {
-      await upsertEngineScanTask(engineId, {
-        engine_name: engine.name,
-        scan_policy: scanConfig
-      })
-    }
-
-    if (payload.triggerImmediate && scanConfig?.immediate_scan) {
-      await createManualScanRun(engineId, {
-        scan_depth: scanConfig.immediate_depth || scanConfig.scan_depth || 'basic',
-        trigger_type: 'manual',
-        source: 'console',
-        force: false
-      })
-    }
-
-    return {}
-  }
-
-  throw new Error(`unsupported action: ${payload.action || ''}`)
 }
 
 const handleGroupClick = (group) => {

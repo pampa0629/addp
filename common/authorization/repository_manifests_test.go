@@ -45,11 +45,11 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 543 {
-		t.Fatalf("descriptor count = %d, want 543", len(descriptors))
+	if len(descriptors) != 540 {
+		t.Fatalf("descriptor count = %d, want 540", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
-		if strings.HasPrefix(descriptor.Key, "system.meta_collection_qualification.") && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
+		if descriptor.Key == "system.meta_collection.execute" && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
 			t.Fatalf("collection permission escaped its fixed scope: %+v", descriptor)
 		}
 		if descriptor.Key == "meta.inspect.execute" && (descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
@@ -72,13 +72,10 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	for _, role := range roles {
 		for _, key := range role.Permissions {
 			if strings.HasPrefix(key, "system.meta_collection_qualification.") {
-				want := "tenant.engine_access_delegation_administrator"
-				if key == "system.meta_collection_qualification.execute" {
-					want = "tenant.meta_runtime"
-				}
-				if role.Key != want {
-					t.Fatalf("unexpected collection authority %s in %s", key, role.Key)
-				}
+				t.Fatalf("retired collection authority %s in %s", key, role.Key)
+			}
+			if strings.HasPrefix(key, "system.meta_collection.") && (key != "system.meta_collection.execute" || role.Key != "tenant.meta_runtime") {
+				t.Fatalf("unexpected collection authority %s in %s", key, role.Key)
 			}
 			if key == "system.engine_access_initial_grant.execute" && role.Key != "tenant.transfer_runtime" {
 				t.Fatalf("unexpected initial production runtime role %q", role.Key)
@@ -169,7 +166,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine_access_delegation.revoke",
 		"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke",
 		"system.engine_catalog.read",
-		"system.meta_collection_qualification.approve", "system.meta_collection_qualification.read", "system.meta_collection_qualification.revoke",
 	})
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -253,7 +249,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine.read",
 		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
-		"system.meta_collection_qualification.execute",
+		"system.meta_collection.execute",
 		"transfer.production_receipt.read",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.model_runtime", []string{"service_principal"})

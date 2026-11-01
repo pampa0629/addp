@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	commonapi "github.com/addp/common/api"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +12,8 @@ import (
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scantask"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // GetTask 获取单个任务
@@ -37,13 +39,13 @@ func (s *ScanTaskService) ListTasks(tenantID uint) ([]models.ScanTask, error) {
 // CreateTask 创建新的扫描任务
 func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint, req *models.ScanTaskUpsertRequest) (*models.ScanTask, error) {
 	if req == nil {
-		return nil, errors.New("请求不能为空")
+		return nil, commonapi.ErrBadRequest
 	}
 	if req.EngineID == 0 {
-		return nil, errors.New("engine_id 不能为空")
+		return nil, commonapi.ErrBadRequest
 	}
 	if req.Name == "" {
-		return nil, errors.New("任务名称不能为空")
+		return nil, commonapi.ErrBadRequest
 	}
 
 	reqCopy := *req
@@ -54,11 +56,14 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 
 	now := time.Now()
 	var nextRunAt *time.Time
-	if reqCopy.Schedule != "" {
+	if reqCopy.Enabled && reqCopy.Schedule != "" {
 		nextRunAt = s.nextTimeFromSpec(reqCopy.Schedule, now)
 	}
 	task := scantask.NewTaskFromUpsertRequest(tenantID, userID, &reqCopy, now, nextRunAt)
 
+	if err := checkScanTaskManagement(ctx, task, "create"); err != nil {
+		return nil, err
+	}
 	if err := s.db.Create(task).Error; err != nil {
 		return nil, err
 	}
@@ -67,36 +72,55 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 
 // UpdateTask 更新任务配置
 func (s *ScanTaskService) UpdateTask(ctx context.Context, tenantID, taskID, userID uint, req *models.ScanTaskUpsertRequest) (*models.ScanTask, error) {
-	task, err := s.GetTask(tenantID, taskID)
-	if err != nil {
-		return nil, err
+	if req == nil || req.EngineID == 0 || strings.TrimSpace(req.Name) == "" {
+		return nil, commonapi.ErrBadRequest
 	}
-
-	reqCopy := *req
-	reqCopy.Schedule = strings.TrimSpace(reqCopy.Schedule)
-	if err := s.validateScheduledTaskDefinition(tenantID, taskID, &reqCopy); err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	var nextRunAt *time.Time
-	if reqCopy.Schedule != "" {
-		nextRunAt = s.nextTimeFromSpec(reqCopy.Schedule, now)
-	}
-	scantask.ApplyUpsertRequest(task, userID, &reqCopy, now, nextRunAt)
-
-	if err := s.db.Save(task).Error; err != nil {
-		return nil, err
-	}
-	return task, nil
+	var result *models.ScanTask
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task models.ScanTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", tenantID, taskID).Take(&task).Error; err != nil {
+			return err
+		}
+		if err := checkScanTaskManagement(ctx, &task, "inspect-update"); err != nil {
+			return err
+		}
+		reqCopy := *req
+		reqCopy.Schedule = strings.TrimSpace(reqCopy.Schedule)
+		scoped := *s
+		scoped.db = tx
+		if err := scoped.validateScheduledTaskDefinition(tenantID, taskID, &reqCopy); err != nil {
+			return err
+		}
+		now := time.Now()
+		var next *time.Time
+		if reqCopy.Enabled && reqCopy.Schedule != "" {
+			next = s.nextTimeFromSpec(reqCopy.Schedule, now)
+		}
+		scantask.ApplyUpsertRequest(&task, userID, &reqCopy, now, next)
+		if err := checkScanTaskManagement(ctx, &task, "update"); err != nil {
+			return err
+		}
+		if err := tx.Save(&task).Error; err != nil {
+			return err
+		}
+		result = &task
+		return nil
+	})
+	return result, err
 }
 
-// DeleteTask 删除任务
+// DeleteTask checks the current locked target; deleting does not impersonate cancellation.
 func (s *ScanTaskService) DeleteTask(ctx context.Context, tenantID, taskID uint) error {
-	if _, err := s.GetTask(tenantID, taskID); err != nil {
-		return err
-	}
-	return s.db.Delete(&models.ScanTask{}, taskID).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task models.ScanTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", tenantID, taskID).Take(&task).Error; err != nil {
+			return err
+		}
+		if err := checkScanTaskManagement(ctx, &task, "delete"); err != nil {
+			return err
+		}
+		return tx.Delete(&task).Error
+	})
 }
 
 func (s *ScanTaskService) validateScheduledTaskDefinition(tenantID, excludeTaskID uint, req *models.ScanTaskUpsertRequest) error {

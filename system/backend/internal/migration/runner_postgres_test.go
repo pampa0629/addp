@@ -4498,7 +4498,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	}
 	if catalogTenantPermissions != "develop.catalog.read,iam.department.read,iam.project_group.read,iam.tenant_membership.read,meta.authorization_facts.read,meta.catalog.read,model.catalog.read,quality.catalog.read,service.catalog.read,standard.catalog.read,standard.domain.read,standard.element.read,standard.glossary.read,system.engine_access_fulfillment.execute,system.engine_descriptor.read,workbench.catalog.read" ||
 		managerTenantPermissions != "audit.tenant_event.create,inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.cleanup_authorization.execute,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute,transfer.execution.create,transfer.execution.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
-		metaTenantPermissions != "audit.tenant_event.create,manager.content_index.update,system.cleanup_authorization.execute,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,system.meta_collection_qualification.execute,transfer.production_receipt.read" ||
+		metaTenantPermissions != "audit.tenant_event.create,manager.content_index.update,system.cleanup_authorization.execute,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,system.meta_collection.execute,transfer.production_receipt.read" ||
 		serviceTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,model.metric_implementation.read,security.protection_projection.read,security.protection_projection.update,system.cleanup_authorization.execute,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
 		transferTenantPermissions != "audit.tenant_event.create,develop.export_provenance.read,manager.export_provenance.read,manager.import_provenance.read,meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.cleanup_authorization.execute,system.engine_access_initial_grant.execute,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute,system.task_authorization.execute" ||
 		developTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.cleanup_authorization.execute,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute,transfer.execution.create,transfer.execution.read" ||
@@ -4931,8 +4931,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 122 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 122", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 126 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 126", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -5629,14 +5629,15 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := make(map[string]string, len(manifest.Permissions)+13)
+	expected := make(map[string]string, len(manifest.Permissions)+17)
 	for _, permission := range manifest.Permissions {
 		expected[permission.Key] = permission.Status
 	}
 	// 000133 retired API consumers' predecessors; 000091 retired department delete;
 	// 000248 replaced the mutually exclusive approval-mode controls;
-	// 000257 retired the per-DataItem direct-permission controls.
-	for _, key := range []string{"iam.department.delete", "system.api_key.create", "system.api_key.read", "system.api_key.revoke", "system.application.create", "system.application.delete", "system.application.read", "system.application.update", "system.engine_access_approval_requirement.read", "system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.update", "system.engine_access_direct_permission.read", "system.engine_access_direct_permission.update"} {
+	// 000257 retired the per-DataItem direct-permission controls;
+	// 000259 retired per-task metadata collection approvals.
+	for _, key := range []string{"iam.department.delete", "system.api_key.create", "system.api_key.read", "system.api_key.revoke", "system.application.create", "system.application.delete", "system.application.read", "system.application.update", "system.engine_access_approval_requirement.read", "system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.update", "system.engine_access_direct_permission.read", "system.engine_access_direct_permission.update", "system.meta_collection_qualification.approve", "system.meta_collection_qualification.read", "system.meta_collection_qualification.revoke", "system.meta_collection_qualification.execute"} {
 		if _, exists := expected[key]; exists {
 			t.Fatalf("historical permission %s returned to current manifest", key)
 		}

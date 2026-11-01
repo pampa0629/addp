@@ -43,6 +43,13 @@ func qualifyManagerPreviewRead(current commonauth.AuthContext) error {
 		}
 		return commonapi.ErrForbidden
 	}
+	return qualifyOrdinarySourceUser(current, ManagerPreviewReadPermission)
+}
+
+func qualifyOrdinarySourceUser(current commonauth.AuthContext, permission string) error {
+	if current.Principal.Type != "user" || current.Context.Type != "tenant" || !commonauth.HasContextPermissions(current, permission) || len(current.Client.Audiences) != 1 {
+		return commonapi.ErrForbidden
+	}
 	if current.Delegation != nil || current.Client.Audiences[0] != "addp.api" {
 		return commonapi.ErrForbidden
 	}
@@ -119,30 +126,7 @@ func (s *Service) checkSourceRead(ctx context.Context, credential string, reques
 	if preview && request.ExpectedSource == nil {
 		qualify = qualifyManagerPreviewRead
 	}
-	var tenantID int64
-	// Release the initial credential snapshot before Meta IO. The final
-	// snapshot re-resolves the same credential and current source rules.
-	err = s.repository.readCommitted(ctx, func(tx *Repository) error {
-		auth, err := iam.NewAuthContextService(tx.identity())
-		if err != nil {
-			return err
-		}
-		current, err := resolve(auth)
-		if err != nil {
-			return err
-		}
-		if current == nil || current.Context.TenantID == nil {
-			return commonapi.ErrForbidden
-		}
-		if err := qualify(*current); err != nil {
-			return err
-		}
-		tenantID, err = strconv.ParseInt(*current.Context.TenantID, 10, 64)
-		if err != nil || tenantID <= 0 || strconv.FormatInt(tenantID, 10) != *current.Context.TenantID {
-			return commonapi.ErrForbidden
-		}
-		return nil
-	})
+	tenantID, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualify)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +137,7 @@ func (s *Service) checkSourceRead(ctx context.Context, credential string, reques
 	if request.ExpectedSource != nil && (len(bindings) != 1 || !reflect.DeepEqual(bindings[0].FileComposition, &request.ExpectedSource.FileComposition)) {
 		return nil, commonapi.ErrForbidden
 	}
-	result, err := s.repository.observeSourceRules(ctx, credential, paths, bindings, tenantID, resolve, qualify, expectedVersion)
+	result, err := s.repository.observeSourceRules(ctx, credential, commonauth.SourceAccessRead, paths, bindings, tenantID, resolve, qualify, expectedVersion)
 	if err != nil {
 		return nil, err
 	}

@@ -151,7 +151,7 @@ func (s *LineageService) buildFieldLineageGraph(ctx context.Context, tenantID ui
 				conditions = conditions.Or("r."+column+"_item_id = ? AND r."+column+"_field_name = ? AND r."+column+"_schema_hash = ?", *node.ItemID, node.FieldName, node.SchemaSnapshotHash)
 			}
 			var relations []models.LineageItemRelation
-			if err := query.Where(conditions).Order("r.id").Limit(request.Limit + 1).Find(&relations).Error; err != nil {
+			if err := visibleLineageRelations(ctx, query).Where(conditions).Order("r.id").Limit(request.Limit + 1).Find(&relations).Error; err != nil {
 				return response, err
 			}
 			observations, err := s.fieldLineageEvidence(ctx, tenantID, relations, request)

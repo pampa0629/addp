@@ -14,6 +14,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -50,7 +51,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 		}
 		read := func(t *testing.T, user userProvenance, paths ...engineplugin.EngineCatalogPath) *sourceReadRules {
 			t.Helper()
-			result, err := repo.readCurrentSourceRules(ctx, sourceReadRequest{TenantID: runtime.TenantID, Source: user, Targets: paths, Bindings: testReadBindings(paths...)})
+			result, err := repo.readCurrentSourceRules(ctx, sourceReadRequest{Action: "read", TenantID: runtime.TenantID, Source: user, Targets: paths, Bindings: testReadBindings(paths...)})
 			if err != nil || result == nil {
 				t.Fatalf("read=%+v %v", result, err)
 			}
@@ -82,7 +83,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			}
 			return requestID
 		}
-		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.rule_fixture", Name: "Explicit rule commands", PermissionKeys: []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_grant.revoke", "system.engine_access_grant.read"}, ActorPrincipalID: adminID})
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.rule_fixture", Name: "Explicit rule commands", PermissionKeys: []string{"system.engine_access_grant.create", "system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_grant.revoke", "system.engine_access_grant.read"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -193,6 +194,18 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				t.Fatal(err)
 			}
 		}
+		metadataService := NewService(repo, func(engine *models.Engine) bool { return engine.EngineType == "postgresql" }).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path}}).
+			WithIndependentTargetVerifier(independentVerifierFunc(func(c context.Context, tenant int64, path engineplugin.EngineCatalogPath) (int64, error) {
+				if tenant != runtime.TenantID || path.EngineID != base.Path.EngineID {
+					t.Fatal("unexpected metadata verification target")
+				}
+				engine, err := repo.engine(c, tenant, int64(path.EngineID), false)
+				if err != nil {
+					return 0, err
+				}
+				return engine.Version, nil
+			}))
+		exerciseMetadataRules(t, ctx, repo, metadataService, actor, base.Path, newUser, grant, deny, revoke, release)
 		t.Run("effective source deadline merges current personal and organization grants", func(t *testing.T) {
 			user, membershipExpiry := newUser(t, time.Hour)
 			group, err := organizations.CreateProjectGroup(ctx, iam.CreateProjectGroupInput{TenantID: runtime.TenantID, ActorPrincipalID: adminID, Code: "deadline_group", Name: "Deadline group"})
@@ -307,10 +320,10 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if _, err := json.Marshal(invalid); err == nil {
 				t.Fatal("native Binding accepted a digest not proven by its structure")
 			}
-			batch, err := json.Marshal([]map[string]any{{
+			batch, err := json.Marshal([]map[string]any{{"requested_action": "read", "binding": map[string]any{
 				"native_target": binding.NativeTarget, "item_fingerprint": binding.ItemFingerprint,
 				"boundary_hash": unapprovedHash,
-			}})
+			}}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -388,7 +401,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			wrong = user
 			wrong.MembershipID = commandUser.MembershipID
 			assert(t, wrong, "source_unavailable")
-			crossTenant := sourceReadRequest{TenantID: runtime.TenantID + 1000, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path)}
+			crossTenant := sourceReadRequest{Action: "read", TenantID: runtime.TenantID + 1000, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path)}
 			if result, err := repo.readCurrentSourceRules(ctx, crossTenant); err != nil || result == nil || result.Covered {
 				t.Fatalf("cross tenant=%+v %v", result, err)
 			}
@@ -432,7 +445,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if err != nil {
 				t.Fatal(err)
 			}
-			request := sourceReadRequest{TenantID: runtime.TenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path)}
+			request := sourceReadRequest{Action: "read", TenantID: runtime.TenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path)}
 			paths, encoded, err := request.encode()
 			if err != nil {
 				t.Fatal(err)
@@ -611,7 +624,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if err := tx.Create(&sourceGrant{RequestID: id, ApprovalMode: approvalModeCatalog}).Error; err != nil {
 				t.Fatal(err)
 			}
-			request := sourceReadRequest{TenantID: runtime.TenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path)}
+			request := sourceReadRequest{Action: "read", TenantID: runtime.TenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path)}
 			if result, err := NewRepository(tx).readCurrentSourceRules(ctx, request); result != nil || !errors.Is(err, errFulfillmentBinding) {
 				t.Fatalf("uncommitted own writes=%+v %v", result, err)
 			}
@@ -769,7 +782,7 @@ func (s *Service) InspectSourceGrants(ctx context.Context, actor Actor, engineID
 	if err != nil || accountID <= 0 || int64(path.EngineID) != engineID || len(path.Segments) != 3 {
 		return nil, commonapi.ErrBadRequest
 	}
-	batch, bindingErr := encodeBoundSourceTargets(paths, testReadBindings(path))
+	batch, bindingErr := encodeBoundSourceTargets(paths, testReadBindings(path), "read")
 	if bindingErr != nil {
 		return nil, commonapi.ErrBadRequest
 	}
