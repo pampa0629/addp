@@ -652,6 +652,11 @@ for (const [engineType, quote] of [['spark', '`'], ['duckdb', '"']]) {
     const locator = resourceTree().children[0].children[0].locator
     const parts = ['PostgreSQL_Demo', ' schema.with dot ', ' 中文"table` ']
     const calls = []
+    const executionRequests = []
+    await page.route('**/api/v1/develop/executions', route => {
+      executionRequests.push(route.request().postDataJSON())
+      return fulfillJSON(route, { execution_id: EXECUTION_ID })
+    })
     await page.route('**/api/v1/manager/resource-facts?*', route => {
       calls.push(new URL(route.request().url()).searchParams.get('locator'))
       return fulfillJSON(route, { engine_id: ENGINE.id, item_id: 1101, query_references: { federated_sql: { parts } } })
@@ -665,6 +670,15 @@ for (const [engineType, quote] of [['spark', '`'], ['duckdb', '"']]) {
     const expected = parts.map(part => quote + part.replaceAll(quote, quote + quote) + quote).join('.')
     await expect.poll(() => page.locator('.monaco-editor-container').evaluate(el => el.__vueParentComponent.setupState.editor.getValue())).toBe(expected)
     expect(calls).toContain(locator)
+    const editor = page.locator('.monaco-editor-container .inputarea')
+    await editor.press('ControlOrMeta+A')
+    await page.keyboard.insertText(`SELECT id FROM ${expected}`)
+    await page.getByRole('button', { name: '执行', exact: true }).click()
+    await expect.poll(() => executionRequests.length).toBe(1)
+    expect(executionRequests[0].execution_config.engine_id).toBe(runtime.id)
+    expect(executionRequests[0].content.target_locator).toBeUndefined()
+    expect(executionRequests[0].content.query).toBe(`SELECT id FROM ${expected}`)
+    await expect(page.getByText('Ada', { exact: true })).toBeVisible()
   })
 }
 
@@ -958,6 +972,10 @@ async function installMockBackend(page, {
       return fulfillJSON(route, { children: resourceTree().children })
     }
     if (path === '/api/v1/develop/query-preflight' && request.method() === 'POST') {
+      const submitted = request.postDataJSON()
+      if (submitted.target_locator && !submitted.target_locator.startsWith(`addp://engine/${submitted.engine_id}/`)) {
+        return fulfillJSON(route, { error: '所选资源不是当前引擎的可查询数据项', error_code: 'query_target_invalid' }, 400)
+      }
       return fulfillJSON(route, {
         allowed: true,
         effect: 'read',

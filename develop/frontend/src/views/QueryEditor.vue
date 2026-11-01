@@ -1119,6 +1119,12 @@ const allParameterNames = computed(() => queryParameters.value.map(parameter => 
 const hasUnresolvedParameters = computed(() => referencedParameterNames.value.some(name => !definedParameterNames.value.includes(name)))
 const hasUnusedParameters = computed(() => definedParameterNames.value.some(name => !referencedParameterNames.value.includes(name)))
 const hasRelationParameters = computed(() => relationQueryParameters.value.length > 0)
+// A federated catalog selection is a source context, not a native target.
+const queryExecutionTargetLocator = computed(() => (
+  federatedQuery.value || hasRelationParameters.value
+    ? ''
+    : (catalogSelection.value?.identity?.locator || targetLocator.value || '')
+))
 // Read absent default keys before checking ownership so Vue tracks later additions.
 const hasQueryParameterDefault = parameter => (
   parameter?.type === 'relation'
@@ -1165,7 +1171,7 @@ const refreshQueryDiagnostics = async () => {
       query_type: currentQueryLanguage.value,
       query,
       engine_id: selectedEngineId.value,
-      target_locator: hasRelationParameters.value ? undefined : (catalogSelection.value?.identity?.locator || targetLocator.value || undefined),
+      target_locator: queryExecutionTargetLocator.value || undefined,
       parameters: queryExecutionContract.value.input_defaults,
       query_parameters: queryParameters.value.map(queryParameterPayload)
     })
@@ -1201,7 +1207,7 @@ const currentSnapshot = computed(() => JSON.stringify({
   engine_id: selectedEngineId.value,
   language: currentQueryLanguage.value,
   query: queryContent.value,
-  target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
+  target_locator: queryExecutionTargetLocator.value,
   query_parameters: queryParameters.value.map(queryParameterPayload),
       protection_choices: protectionChoices.value,
       export_protection_choices: exportProtectionChoices.value,
@@ -1681,7 +1687,7 @@ const submitQuery = async (parameters = {}) => {
       query_type: currentQueryLanguage.value,
       query,
       engine_id: selectedEngineId.value,
-      target_locator: hasRelationParameters.value ? undefined : (catalogSelection.value?.identity?.locator || targetLocator.value || undefined),
+      target_locator: queryExecutionTargetLocator.value || undefined,
       parameters,
       query_parameters: queryParameters.value.map(queryParameterPayload)
     })
@@ -1726,7 +1732,7 @@ const submitQuery = async (parameters = {}) => {
       content: {
         query,
         query_type: currentQueryLanguage.value,
-        target_locator: hasRelationParameters.value ? undefined : (catalogSelection.value?.identity?.locator || targetLocator.value || undefined),
+        target_locator: queryExecutionTargetLocator.value || undefined,
         query_parameters: queryParameters.value.map(queryParameterPayload),
       protection_choices: protectionChoices.value,
       export_protection_choices: exportProtectionChoices.value
@@ -2294,7 +2300,7 @@ const handleSaveTask = async (taskData) => {
     const task = await saveQueryTask({
       ...taskData,
       query_type: currentQueryLanguage.value,
-      target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
+      target_locator: queryExecutionTargetLocator.value,
       query_parameters: queryParameters.value.map(queryParameterPayload),
       protection_choices: protectionChoices.value,
       export_protection_choices: exportProtectionChoices.value
@@ -2362,7 +2368,7 @@ const persistCurrentQueryTask = async () => {
       engine_id: selectedEngineId.value,
       query: queryContent.value,
       query_type: currentQueryLanguage.value,
-      target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
+      target_locator: queryExecutionTargetLocator.value,
       query_parameters: queryParameters.value.map(queryParameterPayload),
       protection_choices: protectionChoices.value,
       export_protection_choices: exportProtectionChoices.value,
