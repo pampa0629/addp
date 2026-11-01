@@ -493,7 +493,11 @@ class EngineSourceCommandTest(unittest.TestCase):
         self.bin.mkdir()
         for folder in ("scripts/test", "scripts/utils", "scripts/infra/postgres-observation", "business/postgres"):
             (self.repo / folder).mkdir(parents=True)
-        for relative in ("scripts/test/platform-node-metrics-fixture.py", "scripts/utils/deployment-inventory.py", "scripts/infra/postgres-observation/authentication.py", "scripts/infra/postgres-observation/source.py", "scripts/infra/postgres-observation/lifecycle.py", "scripts/infra/postgres-observation/000002_lifecycle.sql", "business/postgres/pg_hba.conf"):
+        for relative in ("scripts/test/platform-node-metrics-fixture.py", "scripts/utils/deployment-inventory.py",
+                         "scripts/utils/private-state.py", "scripts/utils/deployment-docker.py",
+                         "scripts/infra/postgres-observation/authentication.py", "scripts/infra/postgres-observation/source.py",
+                         "scripts/infra/postgres-observation/lifecycle.py", "scripts/infra/postgres-observation/000002_lifecycle.sql",
+                         "business/postgres/pg_hba.conf"):
             shutil.copy2(FIXTURE.ROOT / relative, self.repo / relative)
         # Only OS facts and Docker transport are fixtures. Execute the actual CLI,
         # module loader, source validation and ownership files in a fresh process.

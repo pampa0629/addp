@@ -128,3 +128,20 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 同次执行 `make test-build-registration` 发现既有4803的Dockerfile.redis-metrics未登记，按已有辅助镜像目录精确补登记及文件缺失拒绝用例，没有将任意Dockerfile豁免。新用例先红（`/tmp/addp-redis-observer-build-registration-red.log`），修复后60项登记器测试＋9项选择测试及实际仓库检查全部通过，26个Go服务／Worker与59个产品镜像登记一致（`/tmp/addp-minio-redis-build-registration-final.log`）。构建相关Dockerfile、Makefile、正式workflow没有其他工作区差异。现有Platform T0、MinIO fixed-source workflow的脚本／测试路径触发和缓存key已覆盖本次改动，注册测试同时核验唯一双Runner与精确cache-hit路线；不新增CI Job／Hosted用途，未扩时或放宽缓存断言。
 
 本地已证明输入解析回归及登记缺口修复；没有在macOS伪装GitHub Runner运行完整MinIO冷／热源码构建，也没有查询／重跑旧Job。推送后的唯一自然MinIO构建与新Runner复用仍等专门CI会话回传，不能把T0／原生解析通过计为镜像／cache-save／Hosted成功。此修复独立于未提交的Redis查询与261迁移，不包含其他会话前置迁移或共享功能WIP。
+
+
+### 92dcfe06f 的 MinIO Linux 实际构建回传
+
+专门CI会话回传 [run41311505167／fixed-source job124862692691](https://github.com/pampa0629/addp/actions/runs/41311505167/job/124862692691)，push／attempt1，固定 `92dcfe06fdfbaf98884946b76b06aa476472bc5f`，selected=true、completed/success。独立核对 `/tmp/addp-ci-20261101-220010/MinIO-92dc-actual-Linux-proof.json` 与原始日志 `/tmp/addp-ci-20261101-220010/pass-job-124862692691.log`，SHA-256为 `2fbee89b572afbc5f1e3920b1e12723a85d4e4c8a608ab3a1fcb0ad54b5cee13`。日志固定检出一致，builder／正式MinIO Compose构建、离线MinIO和mc二进制摘要及版本、普通Compose缓存核验、inline元数据导出、image save、Actions Cache save和artifact upload均实际执行成功。最终构建回执cache_hit=false、ordinary_compose_cached=true、两个预期镜像身份完整；这是当次冷准备及同Runner暖构建，不是另一次Run恢复命中。
+
+关闭旧4803引出的Redis必填插值与MinIO固定源码Linux构建缺口；保留跨Run缓存恢复尚未获得本次证据的边界，不将该单Job扩大为整个workflow、新Runnerreuse、Hosted或当前共享工作区全部通过。本会话只核验回传归档，不查询／重跑CI。
+
+## 独立引擎 CLI 临时树依赖闭包修复（2026-11-01）
+
+同固定92dc自然 [Platform run41311505152／job124862693255](https://github.com/pampa0629/addp/actions/runs/41311505152/job/124862693255) 的 `make test-platform → test-online-runner → test-node-metrics-online-runner` 失败，原始日志 `/tmp/addp-ci-20261101-220010/job-124862693255.log` 记录162项中的两项EngineSourceCommandTest失败：独立engine-up返回1、部分启动失败前缺少owner文件；未打印凭据。不能据外层安全错误猜测生产权限或改宽归属准入。
+
+标准 `make test-node-metrics-online-runner` 本地复现同两失败，日志 `/tmp/addp-platform-engine-cli-red.log`。有界临时诊断沿原独立CLI树和fake Docker执行，只报告固定阶段／依赖名：认证子进程在加载private-state.py时FileNotFoundError，发生在owner发布前。现有夹具复制了PG认证／生命周期代码，却漏掉4803抽取后的scripts/utils/private-state.py与deployment-docker.py，后者也是退出清理的必需依赖。修复仅在EngineSourceCommandTest的临时树复制这两个真实文件；不改生产CLI、动态加载器、错误脱敏、私有状态、精确所有权、fake Docker、原断言或任何期限，不设置PYTHONPATH兜底。
+
+初次本地标准聚合还存在系统LibreSSL3.3.6不支持证书-addext参数的六项环境错误，保留失败记录；未改系统配置／测试证书规则。仅为最终测试命令在PATH前置已安装OpenSSL3.6.4，执行 `PATH=/opt/homebrew/opt/openssl@3/bin:$PATH make test-node-metrics-online-runner`，162项及随后System Metrics身份Go夹具全部通过，日志 `/tmp/addp-platform-engine-cli-green.log`。原两项用例保留：无PYTHONPATH的真实新进程CLI启动／重启发现／清理，失败后owner保留、错误run／attempt拒绝、外来service拒绝且不回收，恢复本方事实后零fake资源；未连接个人Docker／数据库。
+
+另以仓库外冻结HEAD仅叠加该单文件修复，执行同一Python包的EngineSourceCommandTest两项，4.076秒全部通过，日志 `/tmp/addp-platform-engine-cli-frozen.log`，冻结目录退出删除；未依赖未提交Redis查询／261或其他会话WIP。现有标准入口已在Platform T0与Online runner登记并实际覆盖该测试文件和原注册约束，无新增测试入口、权限、CI Job或Hosted用途。差异格式检查通过；新自然Platform终态仍等专门会话回传，本地确定性夹具不计真实Hosted或整套Linux Platform已通过，不重跑旧CI、不设置定时任务或操作个人服务。
