@@ -29,9 +29,9 @@ encoded, immutable, archive_response = base.encoded, base.immutable, base.archiv
 _WEIGHTS=('weighted_stddev的weights必须为与3或5窗口同尺寸的二维列表，元素为有限非负数且至少一个为正，不能为布尔值', 'weighted_stddev weights must be a square list matching the 3 or 5 window, containing finite nonnegative numbers with at least one positive value, excluding booleans')
 MESSAGES={
  **{name:_WEIGHTS for name in FAILURES if name.startswith('weights_')},
- **{name:('只有method=weighted_mean或weighted_stddev时才能提供weights参数', 'weights is only accepted when method=weighted_mean or weighted_stddev')for name in ('unused_stddev','unused_variety_null')},
+ **{name:('只有method=weighted_mean、weighted_stddev或weighted_sum时才能提供weights参数', 'weights is only accepted when method=weighted_mean, weighted_stddev or weighted_sum')for name in ('unused_stddev','unused_variety_null')},
  'unused_percentile':('只有method=percentile时才能提供percentile参数', 'percentile is only accepted when method=percentile'),
- 'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean或weighted_stddev', 'method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean or weighted_stddev'),
+ 'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean、weighted_stddev或weighted_sum', 'method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean, weighted_stddev or weighted_sum'),
  **{name:('window_size must be the integer 3 or 5',)*2 for name in FAILURES if name.startswith('window_')},
  **{name:('band must be a valid one-based index',)*2 for name in FAILURES if name.startswith('band_')},
  'alpha':('Focal statistics require a data band, not alpha',)*2,
