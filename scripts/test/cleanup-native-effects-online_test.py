@@ -17,6 +17,95 @@ ID = str(uuid.uuid4())
 
 
 class NativeCleanupRunnerTest(unittest.TestCase):
+    def test_assessment_diagnostic_projects_only_bound_authorized_closed_states(self):
+        parent, child = str(uuid.uuid4()), str(uuid.uuid4())
+        value = dict(task_id=ID, status='failed', task=dict(task_id=ID, execution_id=parent,
+            context={'engine_id': 9}, requested_by=17, action='scan', expected_modules=list(S.OWNERS)),
+            module_executions=[dict(module='transfer', execution_id=child, parent_execution_id=parent,
+                task_type='cleanup_executor', status='failed', attempt=0, started_at=None,
+                error_details={'cleanup_authorization_denied': 'private timestamp', 'error': 'secret'},
+                cleanup_admission={'state': 'closed_rejected', 'observed_at': 'secret'},
+                receipt={'status': 'failed', 'reason': 'authorization_denied', 'statistics': {'secret': 1}},
+                metadata={'token': 'secret'})], error='secret', metadata={'secret': True})
+        observed = M.engine_assessment_observation(value, ID, 9, '17')
+        self.assertEqual(observed, dict(request_id=ID, observation='observed', status='failed',
+            bindings=dict(request=True, engine=True, actor=True, action=True, owners=True),
+            children_observation='observed', children=[dict(module='transfer', status='failed', attempt=0,
+                started=False, receipt_status='failed', receipt_reason='authorization_denied',
+                admission_state='closed_rejected', authorization_denied=True, authorization_unavailable=False)]))
+        self.assertNotIn('secret', json.dumps(observed)); self.assertNotIn('private', json.dumps(observed))
+        for mutation in ('request', 'engine', 'actor', 'action', 'owners', 'hidden', 'duplicate', 'parent', 'unsafe'):
+            candidate = copy.deepcopy(value)
+            if mutation == 'request': candidate['task_id'] = str(uuid.uuid4())
+            elif mutation == 'engine': candidate['task']['context']['engine_id'] = True
+            elif mutation == 'actor': candidate['task']['requested_by'] = 99
+            elif mutation == 'action': candidate['task']['action'] = 'execute'
+            elif mutation == 'owners': candidate['task']['expected_modules'].append('transfer')
+            elif mutation == 'hidden': candidate['module_executions'][0]['module'] = 'meta'
+            elif mutation == 'duplicate': candidate['module_executions'] *= 2
+            elif mutation == 'parent': candidate['module_executions'][0]['parent_execution_id'] = str(uuid.uuid4())
+            else:
+                row = candidate['module_executions'][0]
+                row.update(status='secret', attempt=True, receipt={'status': 'secret', 'reason': 'secret'},
+                    cleanup_admission={'state': 'secret'})
+                candidate['status'] = 'secret'
+            with self.subTest(mutation=mutation):
+                result = M.engine_assessment_observation(candidate, ID, 9, '17')
+                self.assertNotIn('secret', json.dumps(result))
+                if mutation in {'request', 'engine', 'actor', 'action', 'owners'}:
+                    self.assertEqual(result['observation'], 'identity_mismatch'); self.assertNotIn('children', result)
+                    self.assertFalse(result['bindings'][mutation])
+                elif mutation in {'hidden', 'duplicate', 'parent'}:
+                    self.assertEqual(result['children_observation'], 'invalid_response'); self.assertEqual(result['children'], [])
+                else:
+                    self.assertEqual(result['status'], 'unrecognized')
+                    self.assertEqual(result['children'][0]['attempt'], 'unrecognized')
+        self.assertEqual(M.engine_assessment_observation(None, ID, 9, '17'),
+                         dict(request_id=ID, observation='invalid_response'))
+
+    def test_assessment_failure_keeps_last_observation_without_extra_reads_or_changed_budget(self):
+        for failed in ('first_read', 'after_pending', 'terminal', 'identity', 'success'):
+            report, calls, checkpoints = {'requests': []}, [], []
+            class User:
+                def request(self, method, path, expected, body=None):
+                    calls.append((method, path, expected))
+                    if method == 'POST':
+                        self.request_id = body['request_id']; return SimpleNamespace(payload={'assessment_id': self.request_id})
+                    if '/deletion-assessments/' in path:
+                        if failed == 'first_read' or (failed == 'after_pending' and len(calls) == 4):
+                            raise S.SuiteError('GET /private returned HTTP 503 (secret)')
+                        return SimpleNamespace(payload=dict(task_id=self.request_id,
+                            status='pending' if failed == 'after_pending' else 'failed' if failed == 'terminal' else 'success',
+                            task=dict(task_id=self.request_id, execution_id=ID, context={'engine_id': 9},
+                                requested_by=99 if failed == 'identity' else 17, action='scan', expected_modules=list(S.OWNERS)),
+                            module_executions=[]))
+                    engine = dict(id=9, tenant_id=2, lifecycle_state='active', version=3, name='secret')
+                    if method == 'DELETE': engine['lifecycle_state'] = 'deleting'; return SimpleNamespace(payload={'engine': engine})
+                    return SimpleNamespace(payload=engine)
+            def wait(read, predicate, message, **kwargs):
+                self.assertEqual(kwargs, {})  # Original canonical 120s default; no extended budget.
+                value = read()
+                if failed == 'after_pending': self.assertFalse(predicate(value)); read()
+                self.assertTrue(predicate(value)); return value
+            with self.subTest(failed=failed), patch.object(S, 'user_identity', return_value='17'), patch.object(S, 'wait_for', side_effect=wait):
+                workflow = M.EngineWorkflow(User(), 2, report, lambda: checkpoints.append(copy.deepcopy(report)))
+                workflow.owned.add(9)
+                if failed == 'success':
+                    workflow.begin(9); self.assertNotIn('engine_assessment_diagnostic', report)
+                    self.assertTrue(all('engine_assessment_diagnostic' not in c for c in checkpoints)); self.assertEqual(len(calls), 5)
+                else:
+                    with self.assertRaises(S.SuiteError): workflow.begin(9)
+                    diagnostic = report['engine_assessment_diagnostic']
+                    self.assertEqual(diagnostic['observation'], 'not_observed' if failed == 'first_read' else
+                        'identity_mismatch' if failed == 'identity' else 'observed')
+                    if failed in {'after_pending', 'terminal'}:
+                        self.assertEqual(diagnostic['status'], 'pending' if failed == 'after_pending' else 'failed')
+                    self.assertEqual(len(calls), 4 if failed == 'after_pending' else 3)
+                    self.assertFalse(any(c[0] == 'DELETE' for c in calls))
+                    self.assertEqual(report['stage'], 'engine_assessment_read')
+                    self.assertEqual(checkpoints[-1]['engine_assessment_diagnostic'], diagnostic)
+                    self.assertNotIn('secret', json.dumps(report))
+
     def test_cdc_readiness_uses_engine_user_reads_and_same_scan_deadline(self):
         for case in ('transfer-engine', 'transfer-capture-unknown'):
             calls, engines = [], iter((9, 10))

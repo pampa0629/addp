@@ -139,6 +139,8 @@ Manager 通过普通 User 的正式源 Grant 和 Model3D Runtime 生成真实 GL
 
 Engine 工作流必须在原请求前分别记录评估受理／读取、删除确认、执行观察与墓碑读取的闭集阶段；Transfer 后续的停止证明、定义／DLQ 保留、专业结果、显式任务删除、删除后复核与业务行核验也分别定位。阶段不复制 URL、请求体、名称确认文本或错误原文，不增加请求、重发或等待。只有分支原七项全部完成才能通过；到达后续阶段只证明已越过的前置，不能把空 checks 报为部分业务通过。
 
+评估读取失败时，`engine_assessment_diagnostic` 仅保存原 GET 最后一次观测：本轮请求 ID、闭集父状态、请求／Engine／原用户／scan／十 Owner 集合匹配布尔值。仅当父绑定完整匹配时，投影该响应已经授权可见的 Manager／Transfer 子项闭集状态、attempt、是否开始、回执状态／安全原因、准入状态及授权拒绝／不可用标记；不补读隐藏 Owner，不新增专业结果请求或私表探针。首次读取前失败记为未观测，非法结构或绑定不符显式区分；原始错误、时间戳、Metadata、统计和凭据不归档。仅失败报告可含该诊断，成功 validator 连同空值也必须拒绝；不改变任何成功断言或原 120 秒读取预算。
+
 四个一次性代理在应用启动前固定指向本轮 Infra，只对准确关联操作发送一次真实变更后丢弃回包，并阻止重发。控制端点仅容器 loopback；Kafka 内部 advertised listener 经过代理，外部 listener 供独立只读原生探针直达。含凭据的 manifest、描述符、代理配置与展开 Compose 均保持私有 0600，不归档。退出先停产品/Worker/Runtime，再销毁代理、业务夹具和 Infra；恢复、销毁或零残留失败均导致 Job 失败。
 
 标准确定性入口为 `make test-cleanup-native-online-runner`，纳入现有 Online/平台登记链。该批代码与确定性测试不证明 Hosted 实际通过；真实旧 writer 晚写、原生写图回包与正向 reopen 不在六个 case 中，报告必须保持相应 `not_run` 边界。

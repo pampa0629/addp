@@ -91,12 +91,23 @@ class EngineWorkflow:
                                     {'request_id': request_id, 'external_artifact_policy': 'delete'}).payload
         require(accepted == {'assessment_id': request_id}, 'assessment identity changed')
         self._stage('engine_assessment_read')
-        assessment = S.wait_for(lambda: self.user.request('GET', f'{ENGINE}/{engine_id}/deletion-assessments/{request_id}', (200,)).payload,
-            lambda x: x.get('status') in S.TERMINAL, 'Engine assessment did not settle')
-        task = assessment['task']
-        require(assessment['status'] == 'success' and task['context']['engine_id'] == engine_id
-                and task['requested_by'] == int(self.principal) and task['action'] == 'scan'
-                and set(task['expected_modules']) == set(S.OWNERS), 'Engine assessment is incomplete or foreign')
+        last = dict(request_id=request_id, observation='not_observed')
+        def read_assessment():
+            nonlocal last
+            value = self.user.request('GET', f'{ENGINE}/{engine_id}/deletion-assessments/{request_id}', (200,)).payload
+            last = engine_assessment_observation(value, request_id, engine_id, self.principal)
+            return value
+        try:
+            assessment = S.wait_for(read_assessment,
+                lambda x: x.get('status') in S.TERMINAL, 'Engine assessment did not settle')
+            task = assessment['task']
+            require(assessment['status'] == 'success' and task['context']['engine_id'] == engine_id
+                    and task['requested_by'] == int(self.principal) and task['action'] == 'scan'
+                    and set(task['expected_modules']) == set(S.OWNERS), 'Engine assessment is incomplete or foreign')
+        except Exception:
+            self.report['engine_assessment_diagnostic'] = last
+            self.checkpoint()
+            raise
         # The server validates the complete committed impact digest. This User
         # reads only its two authorized Owners; do not reconstruct a full digest
         # from that deliberately filtered public projection.
@@ -135,6 +146,57 @@ class EngineWorkflow:
         else:
             require(self.engine(engine_id)['lifecycle_state'] == 'deleting', 'unknown effect incorrectly deleted Engine')
         return result
+
+
+def engine_assessment_observation(value, request_id, engine_id, principal):
+    """Project the existing authorized read; never query hidden Owner facts."""
+    result = dict(request_id=request_id)
+    if type(value) is not dict or type(value.get('task')) is not dict:
+        return {**result, 'observation': 'invalid_response'}
+    task = value['task']
+    def closed(candidate, allowed):
+        return candidate if type(candidate) is str and candidate in allowed else 'unrecognized'
+    states = {'pending', 'running', 'success', 'failed', 'timeout', 'cancelled'}
+    context, owners = task.get('context'), task.get('expected_modules')
+    bindings = dict(request=value.get('task_id') == task.get('task_id') == request_id,
+        engine=type(context) is dict and type(context.get('engine_id')) is int and context['engine_id'] == engine_id,
+        actor=type(task.get('requested_by')) is int and task['requested_by'] == int(principal),
+        action=task.get('action') == 'scan',
+        owners=type(owners) is list and all(type(x) is str for x in owners)
+            and len(owners) == len(S.OWNERS) and set(owners) == set(S.OWNERS))
+    result.update(observation='observed' if all(bindings.values()) else 'identity_mismatch',
+                  status=closed(value.get('status'), states), bindings=bindings)
+    if not all(bindings.values()): return result
+    result.update(children_observation='not_observed', children=[])
+    if 'module_executions' not in value: return result
+    rows = value['module_executions']
+    def identifier(candidate):
+        try: return type(candidate) is str and str(uuid.UUID(candidate)) == candidate and uuid.UUID(candidate).int != 0
+        except ValueError: return False
+    if (type(rows) is not list or len(rows) > 2 or not identifier(task.get('execution_id'))
+            or any(type(row) is not dict or type(row.get('module')) is not str
+                or row['module'] not in {'manager', 'transfer'} or row.get('task_type') != 'cleanup_executor'
+                or row.get('parent_execution_id') != task['execution_id'] or not identifier(row.get('execution_id')) for row in rows)
+            or len({row['module'] for row in rows}) != len(rows)
+            or len({row['execution_id'] for row in rows}) != len(rows)):
+        result['children_observation'] = 'invalid_response'
+        return result
+    result['children_observation'] = 'observed'
+    for row in sorted(rows, key=lambda row: row['module']):
+        receipt = row.get('receipt') if type(row.get('receipt')) is dict else {}
+        admission = row.get('cleanup_admission') if type(row.get('cleanup_admission')) is dict else {}
+        details = row.get('error_details') if type(row.get('error_details')) is dict else {}
+        result['children'].append(dict(module=row['module'], status=closed(row.get('status'), states),
+            attempt=row['attempt'] if type(row.get('attempt')) is int and row['attempt'] in {0, 1} else 'unrecognized',
+            started=row.get('started_at') is not None,
+            receipt_status=closed(receipt.get('status'), states) if receipt else 'not_observed',
+            receipt_reason=closed(receipt.get('reason', ''), {'', 'owner_failed', 'owner_unavailable', 'authorization_denied',
+                'active_execution', 'external_effect_uncertain', 'scope_changed', 'unsupported_scope'}) if receipt else 'not_observed',
+            admission_state=closed(admission.get('state'), {'rejected_unstarted', 'closed_rejected', 'closed_unclaimed'})
+                if admission else 'not_observed',
+            authorization_denied='cleanup_authorization_denied' in details,
+            authorization_unavailable='cleanup_authorization_unavailable' in details))
+    return result
 
 
 def professional(user, completed, module, tenant):
