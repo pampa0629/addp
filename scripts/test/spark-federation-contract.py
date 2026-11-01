@@ -7,6 +7,72 @@ import sys
 
 from pyspark.sql import SparkSession
 from pyspark.sql.types import DecimalType, LongType
+from query_guard import QueryValidationError, validate_query
+
+
+def verify_native_guard(spark):
+    class ParserOnlySession:
+        version = spark.version
+        _jsparkSession = spark._jsparkSession
+
+        def sql(self, *args, **kwargs):
+            raise AssertionError('validation must not execute SQL')
+
+    session = ParserOnlySession()
+    allowed = [
+        ('SELECT 1 AS n', set()),
+        ('SELECT o.id, abs(o.amount) FROM pg.public.orders o WHERE o.customer_id >= ?', {'pg'}),
+        ('SELECT count(*), sum(amount) FROM pg.public.orders GROUP BY customer_id HAVING count(*) > 0', {'pg'}),
+        ('SELECT id FROM pg.public.orders UNION ALL SELECT id FROM mysql.addp_test.customers', {'pg', 'mysql'}),
+        ('WITH a AS (SELECT id FROM pg.public.orders), b AS (SELECT * FROM a) SELECT * FROM b', {'pg'}),
+        ('SELECT (SELECT max(id) FROM pg.public.orders) AS id', {'pg'}),
+        ('SELECT id FROM pg.public.orders WHERE EXISTS (SELECT 1 FROM mysql.addp_test.customers)', {'pg', 'mysql'}),
+        ('SELECT id FROM pg.public.orders WHERE customer_id IN (SELECT id FROM mysql.addp_test.customers)', {'pg', 'mysql'}),
+        ("SELECT CASE WHEN id IS NULL THEN 0 ELSE CAST(id AS BIGINT) END FROM pg.public.orders ORDER BY id DESC LIMIT 2", {'pg'}),
+    ]
+    for query, expected in allowed:
+        try:
+            result = validate_query(session, query, {'pg', 'mysql'})
+        except QueryValidationError as error:
+            # This is a fixed disposable fixture, never a user query. Native
+            # class identities make version-specific admission failures clear.
+            plan = spark._jsparkSession.sessionState().sqlParser().parsePlan(query)
+            raise AssertionError('supported native fixture rejected: ' + plan.toJSON()) from error
+        assert result.sql == query and result.source_catalogs == expected, query
+    denied = [
+        'CREATE TEMP VIEW forbidden_view AS SELECT 1',
+        'DROP TABLE pg.public.orders', 'DELETE FROM pg.public.orders',
+        'INSERT INTO pg.public.orders VALUES (1,1,1)',
+        'UPDATE pg.public.orders SET customer_id = 99',
+        "SET spark.sql.shuffle.partitions=999", 'SHOW DATABASES',
+        "ADD JAR '/tmp/forbidden.jar'", "SELECT * FROM parquet.`/tmp/forbidden.parquet`",
+        'SELECT * FROM spark_catalog.default.forbidden', 'SELECT * FROM public.orders',
+        'SELECT * FROM global_temp.forbidden', 'SELECT * FROM range(3)',
+        "SELECT reflect('java.lang.System','getenv','PATH')",
+        "SELECT java_method('java.lang.System','getenv','PATH')",
+        'SELECT pg.public.custom_function(1)', 'SELECT explode(array(1,2))',
+        'WITH unused AS (SELECT * FROM unauthorized.public.orders) SELECT 1',
+        "WITH unused AS (SELECT reflect('java.lang.System','getenv','PATH')) SELECT 1",
+        'SELECT (SELECT count(*) FROM unauthorized.public.orders)',
+        'SELECT 1 WHERE EXISTS (SELECT * FROM unauthorized.public.orders)',
+        'SELECT 1 WHERE 1 IN (SELECT id FROM unauthorized.public.orders)',
+        'SELECT * FROM (SELECT * FROM unauthorized.public.orders) nested',
+        'WITH a AS (SELECT * FROM a) SELECT * FROM a',
+        'WITH a AS (SELECT * FROM b), b AS (SELECT 1) SELECT * FROM a',
+        'SELECT * FROM pg.public.orders VERSION AS OF 1',
+        'SELECT 1; DROP TABLE pg.public.orders',
+        'SELECT /*+ REPARTITION(1) */ * FROM pg.public.orders',
+    ]
+    for query in denied:
+        try:
+            validate_query(session, query, {'pg', 'mysql'})
+        except QueryValidationError as error:
+            assert query not in str(error), 'diagnostics must not expose SQL'
+        else:
+            raise AssertionError('native guard admitted forbidden SQL: ' + query)
+    assert not spark.catalog.tableExists('forbidden_view')
+    assert spark.conf.get('spark.sql.shuffle.partitions') != '999'
+    print('SPARK_FEDERATION_NATIVE_GUARD_PASS commands paths udf tvf nested_cte subqueries parameters no_sql_execution', flush=True)
 
 
 def bind_source(spark, alias, url, driver):
@@ -47,6 +113,34 @@ def bind_source(spark, alias, url, driver):
 
 
 def main(phase):
+    if phase == 'driver':
+        from query_process import run_driver
+        request = {
+            'master_url': 'spark://spark-master:7077', 'driver_host': 'spark-master',
+            'catalogs': [
+                {'alias': 'pg', 'url': 'jdbc:postgresql://postgres:5432/addp_test',
+                 'driver': 'org.postgresql.Driver', 'user': 'reader', 'password': 'admission-reader-only'},
+                {'alias': 'mysql', 'url': 'jdbc:mysql://mysql:3306/addp_test?sslMode=REQUIRED',
+                 'driver': 'com.mysql.cj.jdbc.Driver', 'user': 'reader', 'password': 'admission-reader-only'},
+            ],
+            'query': '''SELECT o.id, o.amount, c.label
+                FROM pg.public.orders o JOIN mysql.addp_test.customers c
+                ON o.customer_id = c.id WHERE o.customer_id >= ? ORDER BY o.id''',
+            'args': [1], 'limit': 10,
+        }
+        result = run_driver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
+        assert result.get('rows') == [
+            {'id': '-9007199254740993', 'amount': '-200.987654321098765432', 'label': None},
+            {'id': '9007199254740993', 'amount': '100.123456789012345678', 'label': '中文  '},
+        ], result
+        assert [(field['name'], field['type']) for field in result['fields']] == [
+            ('id', 'bigint'), ('amount', 'decimal'), ('label', 'string')], result
+        assert result['fields'][1]['precision'] == 38 and result['fields'][1]['scale'] == 18
+        request.update(query='WITH hidden AS (SELECT * FROM unauthorized.public.orders) SELECT 1', args=[])
+        denied = run_driver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
+        assert denied == {'error': 'query_source_not_authorized'}, denied
+        print('SPARK_FEDERATION_PRODUCTION_DRIVER_PASS native_guard_jdbc_join typed_bigint_decimal private_process', flush=True)
+        return
     if phase == 'supervised':
         from query_process import run_driver
         result = run_driver([sys.executable, __file__, 'child'], {'value': 9007199254740993}, timeout=90)
@@ -71,11 +165,14 @@ def main(phase):
         finally:
             spark.stop()
         return
-    if phase not in {'query', 'fresh'}:
+    if phase not in {'query', 'guard', 'fresh'}:
         raise ValueError('unknown admission phase')
     spark = SparkSession.builder.appName('ADDP-federation-admission-' + phase).getOrCreate()
     spark.sparkContext.setLogLevel('ERROR')
     try:
+        if phase == 'guard':
+            verify_native_guard(spark)
+            return
         workers = spark.sparkContext.parallelize([1, 2], 2).map(lambda _: socket.gethostname()).collect()
         assert workers and all(host != socket.gethostname() for host in workers), workers
         if phase == 'fresh':
@@ -89,6 +186,8 @@ def main(phase):
         query = '''SELECT o.id, o.amount, c.label
             FROM pg.public.orders o JOIN mysql.addp_test.customers c
             ON o.customer_id = c.id WHERE o.customer_id >= ? ORDER BY o.id'''
+        validated = validate_query(spark, query, {'pg', 'mysql'})
+        assert validated.source_catalogs == {'pg', 'mysql'}
         result = spark.sql(query, args=[1])
         assert result.schema['id'].dataType == LongType(), result.schema
         assert result.schema['amount'].dataType == DecimalType(38, 18), result.schema

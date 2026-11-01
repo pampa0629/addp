@@ -10,6 +10,8 @@ Spark Workflow 是基于 Apache Spark 和 Apache Sedona 的工作流运行时，
 
 同日新增内部 `query_process.py`，由现有 Runtime 管理每次查询的独立 Driver。请求只经标准输入传递；子进程环境只继承计算必需配置，不继承 Runtime Service Client Secret；结果有大小限制，保留原生整数与 Decimal。超时、取消、异常和正常返回统一清理进程组及私有临时目录，子进程原始输出不作为公开错误。该组件尚未连接 HTTP，不接受用户传入启动命令。`make test-spark-workflow` 119 项通过，含真实子进程及忽略 SIGTERM 的后代清理；扩展后的原生准入另验证该组件启动真实 Spark JVM、使用远端 Worker、返回精确 bigint 及正常清理。真实 JVM 的取消、多集群路由与正式授权/HTTP 仍待后续验收。
 
+2026-11-01，增加内部 `query_guard.py` 和 `query_driver.py`：固定 Spark 3.5.0 的 Catalyst 未解析树在执行前拒绝命令、外部路径、任意 UDF／TVF及未授权 Catalog，递归核验 CTE、子查询；每次 Driver 只挂载父进程已授权的 PG/MySQL JDBC Catalog，不继承工作流会话、扩展或临时视图。结果以真实 DataFrame schema 描述 bigint、Decimal precision/scale 及嵌套字段，JSON 边界按类型保留精确数值；重复列、未知结果类型和非有限浮点拒绝。Driver 与结果大小、行数及进程超时受限。此为内部准入代码，正式 HTTP 与工作台仍未开放；具体测试与未覆盖项见[验收证据](../../docs/spec/testing/evidence/引擎与空间计算历史证据.md#spark-原生只读查询-driver--独占-t2)。
+
 部署配置使用仓库根目录 `.env`，不读取引擎目录中的 `.env`。关键配置为 `SYSTEM_URL`、`SPARK_WORKFLOW_PORT`（默认 8098）、独立 `SPARK_WORKFLOW_SERVICE_CLIENT_SECRET`，以及应用固定的 HDFS Simple 身份 `HADOOP_USER_NAME`。默认不设置 `SPARK_MODE`，计算使用用户选择的 Spark general Engine。
 
 在仓库根目录启动；需要重启时，由用户在自己的终端执行对应命令：
@@ -36,7 +38,7 @@ Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 ex
 
 ## 资源绑定与执行
 
-2026-10-31，能力路由基础增加 `execution_audience/runtime_engine_type/target_engine_types`。Common 统一解析所选计算目标与唯一内置 Runtime；System 的脱敏描述不把委托目标连接当成 HTTP 端点；查询候选排除必须绑定外部目标的 Runtime。Develop 的直接/样例/父任务查询授权沿同一解析器取得受众，计算目标与真实源分别进入授权范围，HTTP 请求通过 `target_engine_id` 单独传递计算目标，不发送连接或调用方 Token 到请求体。Common、Develop、System、Service、DuckDB 的标准 Go T1 通过，覆盖缺失/重复/离线/能力不匹配拒绝、脱敏端点、受众与三类身份及受控 HTTP 派发。该层尚未切换 Spark 原生插件，也未提供 Spark 查询 HTTP 实现；实际 Runtime 绑定的执行快照冻结、集群登记迁移和页面运行验收仍待后续完成，不计为端到端查询已交付。
+2026-10-31，能力路由基础增加 `execution_audience/runtime_engine_type/target_engine_types`。Common 统一解析所选计算目标与唯一内置 Runtime；System 的脱敏描述不把委托目标连接当成 HTTP 端点；查询候选排除必须绑定外部目标的 Runtime。Develop 的直接/样例/父任务查询授权沿同一解析器取得受众，计算目标与真实源分别进入授权范围，HTTP 请求通过 `target_engine_id` 单独传递计算目标，不发送连接或调用方 Token 到请求体。Common、Develop、System、Service、DuckDB 的标准 Go T1 通过，覆盖缺失/重复/离线/能力不匹配拒绝、脱敏端点、受众与三类身份及受控 HTTP 派发。2026-11-01 已补充 execution 私有快照冻结，并完成 Master 登记与 Manager 按能力排除的本机页面验收；查询 HTTP 与真实工作台仍待完成，不计为端到端查询已交付。
 
 查询授权接线增加 `system_client.get_execution_engine_access()`，只消费当前 execution 的 `spark` 只读授权，不从用户请求接受连接配置，也不回退为引擎详情读取。响应逐项核对授权、execution、Engine、Tenant、audience、效果和有效期；401 仅刷新一次服务凭据，拒绝或异常响应不回显原始响应体。System 新增对应 audience、最小 Runtime 消费权限和迁移 256。相关 Common Go、System IAM/API/迁移 Go、122 项 Spark T1、IAM runner 34 项及真实 PostgreSQL 受众迁移分组通过；System 聚合因并行的角色清单排序失败，不能记作整体通过。当前正式查询 HTTP、集群/Runtime 路由与页面仍未开放。
 

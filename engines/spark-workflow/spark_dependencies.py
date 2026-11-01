@@ -16,11 +16,15 @@ DORIS_JAR_URL = "https://repo.maven.apache.org/maven2/org/apache/doris/spark-dor
 DORIS_JAR_SHA256 = "beb3834e7d8ae224bdb447ba36b3213c2405fe92842aa7baea1bd76742591cf8"
 _lock = threading.Lock()
 
+JDBC_MAVEN_PACKAGES = (
+    "org.postgresql:postgresql:42.7.4",
+    "com.mysql:mysql-connector-j:8.4.0",
+)
+
 SPARK_MAVEN_PACKAGES = ",".join([
     "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.3",
     "org.datasyslab:geotools-wrapper:1.5.3-28.2",
-    "org.postgresql:postgresql:42.7.4",
-    "com.mysql:mysql-connector-j:8.4.0",
+    *JDBC_MAVEN_PACKAGES,
     "org.apache.spark:spark-hadoop-cloud_2.12:3.5.0",
 ])
 

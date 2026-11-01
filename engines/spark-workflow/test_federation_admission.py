@@ -72,7 +72,7 @@ sys.exit(status)
                 self.assertFalse(state['active'])
                 self.assertEqual(result.returncode == 0, not failure, result.stderr)
                 if not failure:
-                    self.assertEqual(state['phases'], ['query', 'fresh', 'supervised'])
+                    self.assertEqual(state['phases'], ['query', 'guard', 'fresh', 'supervised', 'driver'])
                     self.assertIn('zero_residuals', result.stdout)
 
 
