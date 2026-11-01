@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
-      "sha256": "b10def2c1535277c188735acd3424b347cfde56b30edb13d4171ff436d1ac521",
+      "commit": "4f4959db80209f0e1b229e2012d789a612a5a82e",
+      "sha256": "fbb3d3e656e6c05ca6d11880bc2fececeeca05c4229a9bf5cc6d90584c18b5e2",
       "use": {
-        "zh-cn": "纯解释与原参数创建分离，同身份重读草稿且不继承授权；正式确认由 Runtime 推进。普通引擎/算子查询不以平台目录为前提。路由只做决定，普通问答与历史草稿解释进入真实正文流；表达偏好不改目标或 Tool 权限。",
-        "en": "Separates explanation from exact-draft creation and rereads scoped references without inherited authority. Runtime advances confirmed creation. Ordinary engine/operator queries do not require the platform catalog. Routing produces decisions; chat and historical explanations use a real answer stream. Preferences do not alter goals or Tool authority."
+        "zh-cn": "历史草稿动作先于通用领域分类；inspect不读平台目录或装配业务Tool，create仍重读原参数并进入当前平台语义。提示词与原互斥拒绝校验对齐，不自动纠正或重试矛盾路由。只记录封闭动作及布尔标志；不继承旧事实、确认或权限，原参数和创建路径不变。",
+        "en": "Historical draft actions precede generic domain classification. Inspect uses no platform directory or business tools; create re-reads exact arguments and current platform semantics. Prompts align with unchanged exclusive-route refusals, without auto-correction or retry. Logs contain only closed actions and flags; no historical facts, confirmation or authority are inherited."
       }
     },
     {
@@ -229,11 +229,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_drafts.py",
       "anchor": "class DraftScopeTests(",
-      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
-      "sha256": "6dbc38947213ef9b9af8c2bef599f22b0f4bcadc3f68f37e71373635a8e63a51",
+      "commit": "4f4959db80209f0e1b229e2012d789a612a5a82e",
+      "sha256": "224e465bce4a3a4f943731daaeeac7302abb069396d2c0d82a0787f6cca0bbae",
       "use": {
-        "zh-cn": "内存 SQL T1 验证同用户/租户/会话隔离与精确摘要；普通确认只关联本次调用唯一预检，拒绝缺失、歧义及改参，恢复重读引用。删除旧路由正文输入；非真实 PG/T4。",
-        "en": "In-memory SQL T1 verifies user/tenant/session scope and exact digests. Confirmation binds only the unique same-invocation check, rejecting missing, ambiguous or changed arguments; resume rereads references. Removes obsolete routing prose input; not real PG/T4."
+        "zh-cn": "保留全部原草稿范围与确认拒绝测试，新增历史解释真实流在结束前交付、原参数卡片一致且无业务Tool，以及矛盾路由在读取/装配前拒绝、日志不含用户正文/引用/凭据的反例。不作为真实模型或当前部署验收。",
+        "en": "Retain all prior draft-scope and confirmation-refusal tests. Add early historical explanation streaming with exact parameter cards and no business tools, plus invalid-route rejection before reads/tools and closed logs excluding text, references and credentials. Controlled tests do not prove a live model or deployment."
       }
     },
     {
@@ -320,11 +320,11 @@
       "kind": "contract",
       "path": "agent/backend/graph/state.py",
       "anchor": "class RouteDecision(",
-      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
-      "sha256": "71cba2a0790b8797a378dd6f6a6ed98a0a4d9f515dd82e90d3d3cfb30d9d22a1",
+      "commit": "4f4959db80209f0e1b229e2012d789a612a5a82e",
+      "sha256": "254a315179e76e9fd128b857cb925de2d57248e5941e7b115455b09c77aa3fa7",
       "use": {
-        "zh-cn": "请求级 TaskContext 携带服务端恢复标志与临时原参数；checkpoint 仅保存草稿引用，不复制参数或模型状态。删除 direct_reply，平台选择只保留内部回答依据。表达偏好和计划不扩展业务参数、长期记忆或批准。",
-        "en": "Request-local TaskContext carries server resume identity and temporary exact arguments. Checkpoints retain draft references, not duplicate arguments or model state. Removes direct_reply; platform selection keeps internal answer context only. Preferences/plans confer no business parameters, long-term memory or approval."
+        "zh-cn": "仅对齐RouteDecision的互斥字段说明：inspect要求skill=null且平台语义false，create要求skill=null且平台语义true；无草稿动作才通用分类。原字段、类型、默认值、封闭Schema及请求身份/原参数/检查点边界不变，不恢复direct_reply或新增授权。",
+        "en": "Align only RouteDecision field descriptions: inspect requires no skill and false platform semantics; create requires no skill and true semantics; generic classification applies without a draft action. Fields, types, defaults, closed schema, request identity, exact arguments and checkpoint boundaries stay unchanged; no direct_reply or added authority."
       }
     },
     {
