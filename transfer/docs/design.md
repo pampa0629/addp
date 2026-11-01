@@ -1,10 +1,10 @@
 # Transfer 当前架构设计
 
-更新时间：2026-11-01
+更新时间：2026-11-02
 
 本文记录 Transfer 模块当前稳定架构。旧的 Transfer 私有 Reader / Writer 插件体系、ConnectorRegistry、`pkg/pipeline` 和旧任务 JSON 不再作为主路径保留。
 
-阅读导航：[架构分层](#二架构分层)、[table 主路径](#四table-transfer-主路径)、[raw copy](#六raw-copy-主路径)、[持续运行时](#十持续运行时与后续方向)、[验收范围](#架构说明与验收范围)。配置示例与字段以[配置正文](transfer-基本概念及配置说明.md)为准，执行边界与状态所有权以[任务语义](transfer-任务语义与同步模式.md)为准。
+阅读导航：[架构分层](#二架构分层)、[table 主路径](#四table-transfer-主路径)、[raw copy](#六raw-copy-主路径)、[持续运行时](#十持续运行时与后续方向)、[验证导航与验收范围](#架构说明与验收范围)。配置示例与字段以[配置正文](transfer-基本概念及配置说明.md)为准，执行边界与状态所有权以[任务语义](transfer-任务语义与同步模式.md)为准；平台契约由[任务体系规范](../../docs/spec/addp任务体系规范.md#专题导航)统一导航。
 
 ## 一、模块定位
 
@@ -89,7 +89,7 @@ source encoded file/object
   -> target encoded file/object
 ```
 
-endpoint、类型继承与路径范围统一见[raw copy 配置](transfer-基本概念及配置说明.md#四raw-copy-支持范围)。当前仅支持 `document`、`media`、`cad`、`unknown` 的 encoded single file/object 和 `replace`；显式 target `data_type` / `format` 必须与 source 一致，目标须为完整 file/object 路径。
+支持类型、endpoint、类型继承、完整目标路径和 `replace` 限制统一见[raw copy 配置](transfer-基本概念及配置说明.md#四raw-copy-支持范围)。本节保留字节流链路与覆盖策略的职责分工。
 
 raw copy 的覆盖语义由 Transfer 执行：目标引擎必须提供 `ResourceDeleteProvider`，先删除目标资源再创建写入，不依赖 create 的隐式覆盖行为。
 
@@ -131,7 +131,7 @@ continuous worker 是独立常驻进程，一个进程承载多个 runtime sessi
   -> transfer.sync_states per-partition position CAS
 ```
 
-业务 Kafka 与 CDC 的来源／目标范围分别见[支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)；类型、协议、租约、交付与恢复约束由[Continuous 运行时](transfer-任务语义与同步模式.md#六continuous-运行时)及[配置正文](transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)维护。业务 Kafka 支持显式 `block|dead_letter`；bounded replay 由独立 bounded worker claim execution，从原业务 topic 读取显式 offset ranges，仅写不存在的新 PostgreSQL 隔离表，主状态与失败边界见[Replay](transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)。
+业务 Kafka 与 CDC 的来源／目标范围统一见[支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)；类型、协议、租约、交付与恢复约束由[Continuous 运行时](transfer-任务语义与同步模式.md#六continuous-运行时)及[配置正文](transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)维护。错误处理、DLQ 来源隔离及 replay 目标限制统一见[Kafka 与 DLQ 正式契约](../../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。bounded replay 仍由独立 bounded worker claim execution，其主状态与失败边界见[Replay](transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)。
 
 Oracle Spatial 在捕获侧使用 generation-owned 镜像，随后进入同一 Debezium 主路径。Oracle Free 对三维 `SDO_GEOMETRY` 的 `TO_WKBGEOMETRY` 会丢弃 Z，因此 XY 使用 WKB BLOB、XYZ 使用 `TO_GEOJSON` CLOB，adapter 在同一入口归一化为 EWKB；完整源约束见[Oracle CDC](transfer-基本概念及配置说明.md#oracle-cdc)。Oracle CDC target 与普通 bounded table write 分别消费 partitioned apply 和 table write session，不共享 CDC ledger 语义；schema、ledger 所有权与字段限制统一见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。
 
@@ -145,4 +145,13 @@ container child table transfer 已进入主链路：容器 item 仍保持 `data_
 
 ### 架构说明与验收范围
 
-本页的架构与能力摘要不作为当前版本的运行通过记录。标准门禁、固定版本证据、失败与修复结论及未覆盖项统一见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)和[模块验证](../CLAUDE.md#开发与验证)。目标数据、原子提交、来源隔离、真实停止／恢复与清理须按对应场景核验；未运行、失败、跳过或未覆盖项不计为通过。各后续增强的独有验收边界见[清单验收范围与证据](../../docs/next/transfer后续能力清单.md#六验收范围与证据)。
+本页说明链路和职责，架构或能力摘要不作为当前版本的运行通过记录。测试分层与公共入口遵循[测试与验收规范](../../docs/spec/addp测试与验收规范.md#三标准入口)，按目的直接查阅：
+
+| 阅读目的 | 权威入口与范围 |
+| --- | --- |
+| 常规模块、Go 定位、PostgreSQL 与 Hosted runner 回归 | [README 标准门禁](../README.md#常规模块与专项门禁)：统一维护命令、环境前提、身份与测试隔离要求；runner 回归不等于真实 Hosted 验收。 |
+| 格式集成与 Oracle CDC 专项 | [ArcGIS 门禁](../README.md#arcgis-开放格式专项)、[Oracle CDC 入口缺口](../README.md#oracle-cdc-专项入口缺口)：保留临时对象权限、清理与授权故障窗口；普通门禁成功或未激活专项不能证明 Oracle CDC 矩阵通过。 |
+| 固定版本证据、失败与修复、清理及未覆盖项 | [分版本证据索引](../CLAUDE.md#专项约束与分版本证据)：分别认定所列源码与运行尝试，不作为当前 HEAD 已重跑的证明。 |
+| 操作、身份与结果核对 | [任务表 API](tables/tasks表.md#五api)、[快速开始验证](快速开始.md#五开发验证)、[任务语义验证范围](transfer-任务语义与同步模式.md#十一验证范围)：区分用户与 TaskProvider 服务身份、对应 Permission 和完整执行链路。 |
+
+目标数据、原子提交、来源隔离、真实停止／恢复与清理须按对应场景核验；未运行、失败、跳过或未覆盖项不计为通过。各后续增强的独有验收边界见[清单验收范围与证据](../../docs/next/transfer后续能力清单.md#六验收范围与证据)。
