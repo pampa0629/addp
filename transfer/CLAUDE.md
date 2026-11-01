@@ -239,9 +239,9 @@ Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消�
 - 全局监控：模块全部执行列表、通用统计和通用详情统一归[Monitor 前端规范](../docs/spec/tasks/执行监控.md#执行监控前端所有权)；Transfer 不另建全局列表或面板。任务列表、任务详情及执行详情均复用 `MonitorExecutionsButton(module=transfer, task_type=sync)`，按实际任务身份附带筛选。`monitor.execution.read` 只是入口条件，仍须[逐 Owner 读取裁决](../docs/spec/tasks/执行监控.md#租户执行诊断)。
 - Transfer 专业页：`TaskDetail` 保留单任务执行历史、领域诊断、结果及重试，`ExecutionDetail` 展示单次领域详情。读取与重试的独立权限、恢复条件见[执行记录 API](docs/tables/task_executions表.md#用户专业读取与重试)，安全 DTO 沿[专业响应契约](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)；页面可读或跳转成功不代替[真实链路验收](#开发与验证)。
 
-- Transfer 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`。
-- Transfer 独立访问时同样以任务列表为有读取权限账号的唯一侧栏入口，创建由列表主按钮进入；仅有创建权限且具备 Meta 目录读取权限时，侧栏显示创建向导入口。Console iframe 模式仍由 Console 统一显示侧栏。
-- 任务和执行身份固定使用 path parameter：`/tasks/:id/edit|detail`、`/executions/:execution_id`；不得把编辑中的具体对象退化为列表 URL 或 iframe 私有状态。
+- 模块内公开导航统一通过 [moduleNavigation.js](frontend/src/utils/moduleNavigation.js) 复用共享能力；Console URL 与模块渲染的分工沿[公开路由事实源](../docs/spec/addp前端路由与可恢复状态规范.md#二公开路由事实源)，历史栈规则沿[浏览器历史语义](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义)，不在模块重复维护导航实现。
+- 权限落点：独立模式有 `transfer.task.read` 时以任务列表为唯一侧栏入口，创建由列表按钮进入；无读取但同时具备 `transfer.task.create` 与 `meta.catalog.read` 时显示创建向导入口，不跳转无权读取的列表。Console iframe 模式由 Console 统一显示侧栏；准入与动作权限见[任务授权](docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)。
+- 对象身份使用 `/tasks/:id/edit`、`/tasks/:id/detail` 与 `/executions/:execution_id`，不得退化为列表 URL 或 iframe 私有状态；通用要求沿[URL 状态规范](../docs/spec/addp前端路由与可恢复状态规范.md#三必须进入-url-的状态)。深链、刷新、前进后退及 Console／standalone 的验证沿[路由验收规范](../docs/spec/addp前端路由与可恢复状态规范.md#八实现与验收要求)，静态登记不代表实际运行通过。
 - 列表进入创建、编辑、详情和执行页使用 `push`；保存或取消后离开已失效的表单历史项使用 `replace`。
 
 ## 开发与验证
