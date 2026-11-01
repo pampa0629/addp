@@ -12,6 +12,8 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 ## 当前交付范围
 
+平台 Transfer 修订 48 仅复核正文增量实现 `2d6036a32` 涉及的九项 Agent 来源，保留全部 32 项来源、绑定与覆盖。路由不再生成正文，私有 answer_ready 在原预算内进入无工具回答阶段；安全正文与同消息投影事务提交后发送，未完成正文可回看但不进入未来上下文，完成与取消互斥。原参数创建、正式确认、固定预检收尾、权限与业务效果保持，不增加平台 Tool 或任务执行能力。其余九项既有来源漂移不在本次冻结范围，整套来源审查须按实际失败记录，不将本次项的更新计作整套通过；不声称修订已激活或真实模型已验收。
+
 平台 Transfer 修订 47 复核三项已提交规范来源：config 的 `bb3dabccb` 与 policy_spec 的 `ef280bb86` 将预检、调度授权、checkpoint／安全响应、continuous 恢复退避与 DLQ 诊断按正文归属组织并补充验收边界；batch_contract 的 `dd25826ef` 补充工作流调用身份导航和标准门禁覆盖。当前创建切片仍只保存停止态 bounded/snapshot/native table，预检三态、replace/append、权限交集、原参数确认、同批模型顺序及失败阻断不变；调度、运行恢复、encoded 读取和工作流身份守卫缺口不成为创建效果或通过声明。仅更新这三项来源的真实提交、摘要、用途和修订绑定；保留全部 32 项来源、完整覆盖与来源拒绝测试，定义除 revision 外不变。既有 `make test-platform-review` 和 Ontology Go T1、CI Go／Platform 自动发现覆盖本次修改，无新入口、依赖或权限。未改发布／投影内核、schema、前端或业务产品，不运行 Hosted、重启或切换环境，静态冻结不表示修订已激活。
 
 修订 47 验证：`make test-platform-review` 先准确复现 config／policy_spec／batch_contract 三个漂移子例，审查冻结后非缓存通过；现有 Node 24.11.1 下 `make test-module MODULE=ontology GO_ONLY=1` 通过。32 项来源与真实已提交字节、当前文件、摘要和锚点全匹配，只有三项来源变更，覆盖绑定与原拒绝测试未改。原 Platform Run `41256543143` 的 Go／Platform 失败保留；本地恢复不冒充该旧 Run 转绿。未运行完整 T0、PG／FalkorDB T2、前端 T3、拓扑专项或 Hosted T4，来源与修订更新不改变其运行内核。日志 `/tmp/addp-ontology-r47-{review-red.log,review-green.log,t1.log,source-audit.json}`，原失败证据 `/tmp/addp-line-trim-ci-41256543143/`；实际自然 CI 另按精确源码与步骤核验。

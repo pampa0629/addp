@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
-      "sha256": "8a88884f5636b814b860abfa0bddb0e5459046d3a8c59e27813a253517616cd4",
+      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
+      "sha256": "c2cd5c01071df8d17fdf60b8a036ff1e8b395382c9ef1dd8af344088d05d2892",
       "use": {
-        "zh-cn": "确认恢复重读原参数、本体及源/目标父节点事实，正式复检匹配指纹后沿唯一Adapter、确认消费与提交屏障创建一次。稳定内容变化重新确认，失败不重试。同批用前序完成屏障按模型顺序执行，搜索失败或取消阻断排队调用；显式检查仍固定展示并结束，不放宽权限。 计划/工作区展示不改变创建条件、确认或权限。 回复详略仅补充模型表达，固定预检、复核与创建提示不改写。",
-        "en": "Confirmed resume rereads exact parameters, ontology and source/target facts; checks and fingerprint precede one Adapter call with consumed confirmation and commit barrier. Changed facts require review; failures do not retry. Ordered batch barriers stop queued calls after search failure, pause or cancel. Explicit checks show fixed results and end. Expression preferences change only model wording, never fixed checks, reviews, creation messages, parameters or permissions."
+        "zh-cn": "确认恢复重读原参数、本体及源/目标事实，复检指纹、消费确认并经提交屏障创建一次；变化重确认、失败不重试。同批按模型顺序执行并在搜索失败或取消时阻断；显式预检固定展示并结束。私有 answer_ready 在原预算内进入无工具正文流；不公开决策，不改权限或固定提示。",
+        "en": "Confirmed resume rereads exact arguments, ontology and source/target facts, checks fingerprints and consumes review before one commit-gated Adapter creation. Changes require review; errors never retry. Ordered batches stop on search errors or cancellation; explicit checks end with fixed output. Private answer_ready enters tool-free text streaming within the original budget; decisions stay private and permissions/fixed messages stay unchanged."
       }
     },
     {
@@ -151,11 +151,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
-      "sha256": "a33fb461797e53c48c0f03e6c43fb5922eeccb667f6f0b4a23d49ae7b00a5750",
+      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
+      "sha256": "ed123d8844e31bc684bc964e9f65e6a6e648f3753d20de61a2288c63c05d8cf3",
       "use": {
-        "zh-cn": "真实 Harness/Manifest/SDK 受控回归覆盖确认恢复零模型调用、精确参数创建一次、修订/事实/报告变化重确认后继续、取消、权限拒绝、unsupported、提交失败与结果不明不重试；不代表真实部署或 Hosted 验收。 简洁偏好下正式三态预检与固定提示保持原样。",
-        "en": "Controlled real Harness/Manifest/SDK tests cover zero model calls and one exact-argument creation on confirmed resume, re-review after revision/fact/report changes, cancellation, denial, unsupported definitions, commit failure and uncertain writes without retry; not live-deployment or Hosted acceptance. Formal tri-state checks and fixed messages remain exact with concise preferences."
+        "zh-cn": "真实 Harness/Manifest/SDK 夹具覆盖确认恢复零模型调用、原参数创建一次、变化重确认、取消、权限拒绝、unsupported、提交失败和结果不明不重试。回答调用纳入原预算，正式预检与固定提示断言保持；非真实部署或 Hosted 验收。",
+        "en": "Real Harness/Manifest/SDK fixtures cover zero-model confirmed resume, one exact creation, changed-fact review, cancellation, denial, unsupported checks, failed commit and no uncertain-write retry. Answer calls count within the budget; formal checks and fixed-message assertions remain. Not live deployment or Hosted acceptance."
       }
     },
     {
@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
-      "sha256": "84ff804a94c2f6ecdf17cf3824c30a3be241686bab559b3f380a3d93cf1d663c",
+      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
+      "sha256": "b10def2c1535277c188735acd3424b347cfde56b30edb13d4171ff436d1ac521",
       "use": {
-        "zh-cn": "纯解释与原参数创建分离，恢复只重读同身份草稿，不继承历史授权；正式确认由 Runtime 推进。普通引擎/算子查询按本轮目标走普通 Skill，不以平台目录为前置条件，不新增目录失败回退或创建权限。 运行冻结的表达偏好不改用户原文、路由与工具权限。",
-        "en": "Separate explanation from exact-draft creation, re-read scoped references without historical authorization and advance confirmed creation in Runtime. Route ordinary engine/operator queries by the current goal without a platform-catalog prerequisite, catalog-failure fallback or new creation authority. Run-frozen expression preferences leave user text, routing and Tool permissions unchanged."
+        "zh-cn": "纯解释与原参数创建分离，同身份重读草稿且不继承授权；正式确认由 Runtime 推进。普通引擎/算子查询不以平台目录为前提。路由只做决定，普通问答与历史草稿解释进入真实正文流；表达偏好不改目标或 Tool 权限。",
+        "en": "Separates explanation from exact-draft creation and rereads scoped references without inherited authority. Runtime advances confirmed creation. Ordinary engine/operator queries do not require the platform catalog. Routing produces decisions; chat and historical explanations use a real answer stream. Preferences do not alter goals or Tool authority."
       }
     },
     {
@@ -216,11 +216,11 @@
       "kind": "implementation",
       "path": "agent/backend/api/chat.py",
       "anchor": "async def draft_reader(",
-      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
-      "sha256": "128eeb188c6df8c1a88506222511ab4e90fe36cbcac1afce839e9d679e69746e",
+      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
+      "sha256": "a7e5b6b8f284b5b01c081b093286d651cd95fbae687563137c3aacc001449e86",
       "use": {
-        "zh-cn": "同身份读取原草稿并经唯一 A2UI 路径展示，文字与成果保持原事件顺序。计划在同回复按稳定身份替换当前投影，不改变正式预检、确认、创建权限或业务效果。 AG-UI forwardedProps只接收封闭回复详略，新Run冻结到既有checkpoint，resume不得覆盖。",
-        "en": "Read exact scoped drafts through one A2UI path, retaining text and result order. Replace the current plan within one reply under a stable activity identity; prechecks, reviews, creation permissions and business effects are unchanged. AG-UI forwardedProps accepts only closed reply detail, frozen in the existing new Run checkpoint; resume cannot override it."
+        "zh-cn": "同身份读取原草稿，文字、卡片与最新计划按原事件顺序投影。forwardedProps 只接收封闭回复详略，冻结于新 Run，resume 不覆盖。正文批次与同消息投影先提交再发送；完成与取消互斥，未完成正文排除未来上下文和摘要，不改变预检、确认或业务效果。",
+        "en": "Reads scoped drafts and projects text, cards and the latest plan in event order. Closed reply detail is frozen in each new Run, never replaced on resume. Text batches and one message projection commit before delivery; completion is serialized against cancellation. Partial text stays visible but is excluded from later context/summary. Prechecks, review and business effects stay unchanged."
       }
     },
     {
@@ -229,11 +229,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_drafts.py",
       "anchor": "class DraftScopeTests(",
-      "commit": "68c687a4926cf034aa0702d7fb0ccb583b05e737",
-      "sha256": "97af555fde7640ba5fbb1e4aa82985e613b6742212776cb669e7c43fabac8fde",
+      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
+      "sha256": "6dbc38947213ef9b9af8c2bef599f22b0f4bcadc3f68f37e71373635a8e63a51",
       "use": {
-        "zh-cn": "内存 SQL T1 验证同用户/租户/会话隔离与精确摘要；普通确认只关联本次同协议调用的唯一预检，拒绝缺失、歧义及改参，绑定原稿恢复仍重读引用；不代表真实 PG/T4。",
-        "en": "In-memory SQL T1 verifies identity scope and exact digest restoration; ordinary confirmation binds only its unique same-invocation check, rejecting missing, ambiguous or changed arguments. Bound resume still re-reads the reference; not real PostgreSQL or T4 evidence."
+        "zh-cn": "内存 SQL T1 验证同用户/租户/会话隔离与精确摘要；普通确认只关联本次调用唯一预检，拒绝缺失、歧义及改参，恢复重读引用。删除旧路由正文输入；非真实 PG/T4。",
+        "en": "In-memory SQL T1 verifies user/tenant/session scope and exact digests. Confirmation binds only the unique same-invocation check, rejecting missing, ambiguous or changed arguments; resume rereads references. Removes obsolete routing prose input; not real PG/T4."
       }
     },
     {
@@ -242,11 +242,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_run_events.py",
       "anchor": "async def test_completed_precheck_mints_exact_scoped_snapshot_into_stream_and_history(",
-      "commit": "77442db2420a8b73f1e530f8078cc16e454ea8c6",
-      "sha256": "9c8b61d8cd895533b2024d41ca8ea1db9453effc33135a02cdf6e9a9e839ce51",
+      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
+      "sha256": "4c09a52ad63b5dee528cf7d90f41f540cf8ec89e1d4b7446f278c806362ee405",
       "use": {
-        "zh-cn": "受控持久层核对草稿引用、原参数、文字顺序和完整 content；多次计划更新共用身份，最终消息只保存最新投影，安全事件仍保留各次更新。不作为真实数据库或部署验收。",
-        "en": "Controlled persistence checks exact draft references, arguments, text order and complete content. Plan updates share one identity, retain every safe event and save only the latest message projection; not live database or deployment acceptance."
+        "zh-cn": "受控持久层核对草稿引用、原参数、文字顺序和完整 content；同消息逐批更新，计划按稳定身份替换，安全事件保留各次更新。正式卡片与固定提示断言保持；非真实数据库或部署验收。",
+        "en": "Controlled persistence checks exact draft references, arguments, text order and full content. One message updates incrementally; plans replace under stable identity while safe events retain updates. Formal cards and fixed-message assertions stay intact; not live database or deployment acceptance."
       }
     },
     {
@@ -307,11 +307,11 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "function ensureLiveTextPart(",
-      "commit": "85fc6d47e3bbb850b907c6bf6b0c9eb135cfb9f7",
-      "sha256": "79127e2fa594cdb8ae35b62b69e7d676676eb338beac14cb401040ce87afdceb",
+      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
+      "sha256": "768655183cc2af646713ab36c016bc5749736211a2126bcd94640ff7181d20e8",
       "use": {
-        "zh-cn": "文字与A2UI按事件顺序呈现，当前计划稳定替换且保留历史。设置使用既有addp-module导航；另开会话通过单次NavigationDraft跨iframe移交文字，领取完成前关闭输入、发送与会话切换，避免迟到覆盖。不复制确认、预检、引用或权限，不扩大白名单或创建效果。",
-        "en": "Preserves text/A2UI order and stable current-plan replacement with history. Settings uses addp-module navigation. New conversations transfer only text through the single-use NavigationDraft across iframe reloads. Editing, sending and session changes wait for draft receipt to prevent late overwrite. No inherited confirmations, prechecks, references or permissions; no expanded allowlists or creation effects."
+        "zh-cn": "文字与 A2UI 保持事件顺序，计划按稳定身份替换。设置复用 addp-module，单次 NavigationDraft 跨 iframe 只移交文字，领取前禁用编辑与发送；归档仍阻止交互提交。刷新按服务端标记展示未完成正文，不拼接重试，不继承确认、预检、资源或权限。",
+        "en": "Preserves text/A2UI order and stable plan replacement. Settings uses addp-module; one NavigationDraft transfers only text across iframes with editing/sending blocked until receipt. Archiving blocks interaction submission. Reload shows server-marked incomplete text without joining retries or inheriting confirmations, checks, resources or authority."
       }
     },
     {
@@ -320,11 +320,11 @@
       "kind": "contract",
       "path": "agent/backend/graph/state.py",
       "anchor": "class RouteDecision(",
-      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
-      "sha256": "69628fe0b510e29451bb968773a85170fc62b92187d466c39be299cf40f445ab",
+      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
+      "sha256": "71cba2a0790b8797a378dd6f6a6ed98a0a4d9f515dd82e90d3d3cfb30d9d22a1",
       "use": {
-        "zh-cn": "请求级 TaskContext 携带服务端 Interaction 恢复标志与临时原参数；语义 checkpoint 仅保存引用，不保存第二份参数或模型状态。 计划/工作区展示不改变创建条件、确认或权限。 仅增加表达偏好类型，不扩展业务参数或批准。",
-        "en": "Request-local TaskContext carries the server-owned Interaction resume flag and temporary exact arguments; semantic checkpoints retain only the reference, not duplicate arguments or model state. Workspace plans confer no creation authority. Adds only an expression preference type, without business arguments or approval."
+        "zh-cn": "请求级 TaskContext 携带服务端恢复标志与临时原参数；checkpoint 仅保存草稿引用，不复制参数或模型状态。删除 direct_reply，平台选择只保留内部回答依据。表达偏好和计划不扩展业务参数、长期记忆或批准。",
+        "en": "Request-local TaskContext carries server resume identity and temporary exact arguments. Checkpoints retain draft references, not duplicate arguments or model state. Removes direct_reply; platform selection keeps internal answer context only. Preferences/plans confer no business parameters, long-term memory or approval."
       }
     },
     {
@@ -398,11 +398,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_agent_factory_events.py",
       "anchor": "async def test_search_failure_stops_without_retry_enumeration_or_write(",
-      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
-      "sha256": "6f5c23314bffb724355d2134e1e009eb588961fa2532ece44619e1ce6392b0ef",
+      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
+      "sha256": "b379ec349951444d9bde79f5ad555aed9df15711f584c50474a7b881f76d1f17",
       "use": {
-        "zh-cn": "真实Harness受控倒序到达稳定复现五类搜索错误的同批枚举竞态；严格断言无备用调用、无下一轮模型，另验证成功顺序、取消阻断与重复身份执行前拒绝。 计划/工作区展示不改变创建条件、确认或权限。",
-        "en": "Real-Harness controlled reverse arrival reproduces same-batch enumeration for five search errors; strict assertions forbid fallback calls or another model turn, with successful-order, cancellation and duplicate-identity rejection regressions. Workspace plans confer no creation authority."
+        "zh-cn": "真实 Harness 受控倒序到达复现五类搜索错误竞态，严格禁止备用调用与下一轮模型；覆盖成功顺序、取消阻断及重复身份拒绝。夹具显式区分决策和回答并审计私有控制；计划与正文流不改变创建条件或权限。",
+        "en": "Real Harness reverse-arrival fixtures reproduce five search-error races and strictly forbid fallback calls or another decision round. Tests preserve successful order, cancellation stops and duplicate-ID rejection. Fixtures explicitly separate decisions/answers and audit private controls; plans and text streaming confer no creation authority."
       }
     },
     {
