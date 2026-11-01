@@ -17,6 +17,107 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 
+class PublicAPTBuildEvidence(unittest.TestCase):
+    def output(self,body,*,prefix='',step='7'):
+        return (prefix+'\n#'+step+' [3/9] RUN apt-get update && apt-get install -y gcc postgresql-client\n'+
+                '\n'.join('#'+step+' 1.0 '+line for line in body.splitlines())+'\n#'+step+
+                ' ERROR: process "/bin/sh -c apt-get update && apt-get install -y gcc postgresql-client" did not complete successfully: exit code: 100\nDockerfile:5\n').encode()
+
+    def test_scopes_only_the_unique_failed_apt_step(self):
+        prefix='#2 [1/3] RUN apt-get update\n#2 4.0 Err:1 http://deb.debian.org/debian/dists/bookworm/InRelease\n#2 4.0 E: Connection timed out\nCache image not found; timed out PRIVATE-TOKEN'
+        v=m.public_build_failure_diagnostic(self.output('E: Unable to locate package PRIVATE-PACKAGE',prefix=prefix))
+        self.assertIn('apt',v)
+        self.assertEqual(v['apt']['error_kinds'],['package_missing']);self.assertEqual(v['apt']['phase'],'unknown')
+        self.assertEqual(v['apt']['sources'],[]);self.assertNotIn('PRIVATE',repr(v))
+        self.assertEqual(v['process_exit_codes'],[100])
+
+    def test_missing_or_ambiguous_failure_number_does_not_guess(self):
+        v=m.public_build_failure_diagnostic(b'ERROR: failed to solve: apt-get timed out exit code: 100')
+        self.assertEqual(v['apt']['status'],'unavailable')
+        v=m.public_build_failure_diagnostic(self.output('E: Connection timed out')+self.output('E: Unable to locate package PRIVATE',step='8'))
+        self.assertEqual(v['apt']['status'],'ambiguous');self.assertEqual(v['apt']['error_kinds'],[])
+
+    def test_apt_phases_and_fixed_error_kinds(self):
+        cases=[('E: Failed to fetch http://deb.debian.org/debian/dists/trixie/InRelease Connection timed out','index_download',['timeout','download']),
+               ('E: Failed to fetch https://deb.debian.org/debian/pool/main/p/private_1_arm64.deb 503 Service Unavailable [IP: 1.2.3.4 443]','deb_download',['download','http']),
+               ('E: Sub-process /usr/bin/dpkg returned an error code (1)','dpkg',['dpkg']),
+               ('E: Temporary failure resolving PRIVATE','unknown',['dns']),
+               ('E: Could not connect to PRIVATE: Connection refused','unknown',['connection']),
+               ('E: Could not handshake: certificate verification failed','unknown',['tls']),
+               ('W: NO_PUBKEY PRIVATE','unknown',['signature']),
+               ('E: Could not get lock /private/SECRET','unknown',['lock']),
+               ('E: No space left on device','unknown',['no_space']),('E: PRIVATE-TOKEN','unknown',['other'])]
+        for body,phase,kinds in cases:
+            with self.subTest(phase=phase,kinds=kinds):
+                apt=m.public_build_failure_diagnostic(self.output(body))['apt']
+                self.assertEqual(apt['status'],'parsed');self.assertEqual(apt['phase'],phase);self.assertEqual(apt['error_kinds'],kinds)
+                self.assertNotIn('PRIVATE',repr(apt));self.assertNotIn('SECRET',repr(apt));self.assertNotIn('1.2.3.4',repr(apt))
+
+    def test_http_numbers_need_error_context_and_status_text(self):
+        body='Get:1 http://deb.debian.org/debian/pool/main/p/pkg_407_502_504_arm64.deb 407502 bytes\nE: Unable to locate package pkg502\nW: Failed to fetch http://deb.debian.org/debian/dists/trixie/by-hash/SHA256/407502PRIVATE Unknown error'
+        apt=m.public_build_failure_diagnostic(self.output(body))['apt']
+        self.assertEqual(apt['http_statuses'],[]);self.assertNotIn('http',apt['error_kinds'])
+        apt=m.public_build_failure_diagnostic(self.output('E: Failed to fetch http://deb.debian.org/debian/pool/main/p/a.deb 407 Proxy Authentication Required'))['apt']
+        self.assertEqual(apt['http_statuses'],[407])
+
+    def test_sources_are_closed_official_enums_without_urls(self):
+        body='Err:1 https://deb.debian.org/debian/dists/trixie-updates/InRelease\nErr:2 http://security.debian.org/debian-security/dists/bookworm-security/InRelease\nErr:3 https://PRIVATE@deb.debian.org/debian/dists/trixie/InRelease\nErr:4 http://deb.debian.org/debian/dists/trixie/InRelease?token=SECRET\nErr:5 http://deb.debian.org:PRIVATE/debian/dists/trixie/InRelease\nErr:6 http://private.invalid/repo\nE: Failed to fetch metadata'
+        apt=m.public_build_failure_diagnostic(self.output(body))['apt']
+        self.assertEqual(apt['sources'],[{'scheme':'http','repository':'debian_security','suite':'bookworm-security'},{'scheme':'https','repository':'debian','suite':'trixie-updates'}])
+        self.assertNotIn('PRIVATE',repr(apt));self.assertNotIn('SECRET',repr(apt));self.assertNotIn('://',repr(apt))
+
+    def test_only_public_python_from_digest_is_retained_and_never_current_tag(self):
+        prefix='#4 [1/9] FROM localhost:5001/python:3.12-slim@sha256:'+'a'*64
+        v=m.public_build_failure_diagnostic(self.output('E: PRIVATE',prefix=prefix))
+        self.assertEqual(v['base'],{'status':'resolved','kind':'python_3_12_slim','resolved_digest':'sha256:'+'a'*64})
+        prefix+='\n#5 [stage 1/2] FROM localhost:5001/python:3.11-slim@sha256:'+'b'*64
+        v=m.public_build_failure_diagnostic(self.output('E: PRIVATE',prefix=prefix))
+        self.assertEqual(v['base']['status'],'ambiguous');self.assertIsNone(v['base']['resolved_digest'])
+        v=m.public_build_failure_diagnostic(self.output('E: PRIVATE',prefix='#4 [1/9] FROM private.invalid/SECRET@sha256:'+'c'*64))
+        self.assertEqual(v['base']['status'],'unavailable');self.assertNotIn('c'*64,repr(v))
+
+    def test_input_and_collection_limits_do_not_truncate_to_complete(self):
+        for raw in (b'x'*131073,b'x'*131073+self.output('E: Unable to locate package PRIVATE')):
+            v=m.public_build_failure_diagnostic(raw);self.assertEqual(v['status'],'over_budget');self.assertEqual(v['limits_exceeded'],['input_bytes'])
+            self.assertEqual(v['apt']['status'],'unavailable');self.assertEqual(v['process_exit_codes'],[])
+        raw=self.output('E: PRIVATE');raw+=b'x'*(131072-len(raw))
+        self.assertEqual(m.public_build_failure_diagnostic(raw)['status'],'complete')
+        raw=self.output('E: PRIVATE')+b''.join(('Dockerfile:'+str(n)+'\n').encode()for n in range(1,10))
+        v=m.public_build_failure_diagnostic(raw);self.assertEqual(v['status'],'over_budget');self.assertEqual(v['dockerfile_lines'],[])
+        self.assertLessEqual(len(json.dumps(v).encode()),4096)
+
+    def test_proxy_facts_keep_validated_sources_but_no_values_or_secrets(self):
+        daemon=m.build_proxy_facts({'HTTP_PROXY':'http://http.docker.internal:3128','HTTPS_PROXY':'http://http.docker.internal:3128'},'docker_info')
+        client=m.build_proxy_facts({'HTTP_PROXY':'http://127.0.0.1:17890'},'host_environment')
+        v=m.public_build_failure_diagnostic(self.output('E: PRIVATE'),{'buildkit':daemon,'run_build_args':daemon,'host_cli':client})
+        self.assertEqual(v['proxy_provenance']['buildkit']['http'],'desktop_internal')
+        self.assertEqual(v['proxy_provenance']['host_cli']['http'],'loopback')
+        for raw in ('17890','3128','http.docker.internal','127.0.0.1','PRIVATE'):self.assertNotIn(raw,repr(v))
+        with self.assertRaises(m.GateError):m.build_proxy_facts({'HTTP_PROXY':'http://user:PRIVATE@127.0.0.1:17890'},'host_environment')
+        v=m.public_build_failure_diagnostic(b'',{'host_cli':{'source':'PRIVATE','http':'SECRET','https':'PRIVATE'}})
+        self.assertEqual(v['proxy_provenance']['host_cli']['status'],'unavailable');self.assertNotIn('PRIVATE',repr(v))
+
+    def test_serialized_limit_reports_over_budget_and_preserves_no_body(self):
+        with mock.patch.object(m.json,'dumps',return_value='x'*4097):
+            v=m.public_build_failure_diagnostic(self.output('E: PRIVATE'))
+        self.assertEqual(v['status'],'over_budget');self.assertEqual(v['limits_exceeded'],['structured_bytes'])
+
+    def test_failed_command_preserves_first_error_hash_and_proxy_provenance(self):
+        raw=self.output('E: Failed to fetch http://deb.debian.org/debian/dists/trixie/InRelease Connection timed out')
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.phase='product_image_agent_backend'
+            life.build_proxy_provenance={'run_build_args':m.build_proxy_facts({'HTTP_PROXY':'http://http.docker.internal:3128'},'docker_info')}
+            process=mock.Mock(pid=654321,returncode=2);process.poll.return_value=2
+            def start(*args,**kwargs):kwargs['stdout'].write(raw);return process
+            with mock.patch.object(m.time,'monotonic',return_value=1),mock.patch.object(m.subprocess,'Popen',side_effect=start),mock.patch.object(m.Lifecycle,'docker') as docker:
+                with self.assertRaisesRegex(m.GateError,'^command_failed_2$'):life.command(['make','build-images'])
+            docker.assert_not_called()
+            self.assertEqual(life.last_failure['exit_code'],2)
+            self.assertEqual(life.last_failure['output_sha256'],__import__('hashlib').sha256(raw).hexdigest())
+            self.assertEqual(life.last_failure['public_build']['apt']['phase'],'index_download')
+            self.assertEqual(life.last_failure['public_build']['proxy_provenance']['run_build_args']['http'],'desktop_internal')
+
+
 def row(cpu=1, memory=512 * 1024**2, *, status='running', exit_code=0, oom=False, service='system-backend'):
     return {'Id': 'owned-id', 'Config': {'Labels': {'com.docker.compose.service': service}},
             'HostConfig': {'NanoCpus': int(cpu * 1e9), 'Memory': memory},
@@ -1617,9 +1718,13 @@ class LocalTraceCleanupTests(unittest.TestCase):
         self.assertEqual(value['steps'], ['base_metadata'])
         self.assertEqual(value['http_statuses'], [404])
         self.assertNotIn('PRIVATE', repr(value))
-        self.assertNotIn('https', repr(value))
+        self.assertNotIn('https://', repr(value))
         unknown = m.public_build_failure_diagnostic(b'ERROR: PRIVATE-TOKEN /private/password SQL=SECRET')
-        self.assertEqual(unknown, {'reasons':['unclassified'], 'steps':[], 'inputs':[], 'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[]})
+        self.assertEqual(unknown['status'],'complete')
+        self.assertEqual(unknown['reasons'],['unclassified'])
+        self.assertTrue(all(unknown[k]==[] for k in ('steps','inputs','dockerfile_lines','http_statuses','process_exit_codes')))
+        self.assertEqual(unknown['apt']['status'],'unavailable');self.assertEqual(unknown['base']['status'],'unavailable')
+        self.assertNotIn('PRIVATE',repr(unknown));self.assertNotIn('SECRET',repr(unknown))
 
     def test_failed_product_image_command_adds_only_structured_public_diagnostic(self):
         with tempfile.TemporaryDirectory() as directory:

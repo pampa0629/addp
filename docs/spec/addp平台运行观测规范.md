@@ -606,7 +606,11 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 
 夹具只创建初始Tenant管理员和原业务用户，不提前授准备角色、不创建准备自定义角色，也不签发会话。入口从真实AuthContext读取准备Membership，核对既有角色的准确权限集合；MFA完成须替换HttpOnly Cookie与Access Token，并验证旧令牌拒绝。自分配前使用真实AAL2及未过期step-up，分配后沿正式Refresh与AuthContext重读同一User／Tenant／Membership和准确角色／权限；完成准备后再次确认普通执行User权限未变。失败诊断仅保留固定操作码／HTTP状态／稳定错误码，不保存密码、TOTP Secret、验证码、Cookie或响应正文。第七窗口的自定义准备角色方案已被本唯一主路径取代，原失败证据仍保留。
 
-产品镜像构建失败仅在`product_image_*`阶段补充封闭诊断：固定原因／失败步骤、已知产物输入名、Dockerfile行号及有界HTTP状态／进程退出码。未知原因明确记为未分类，不导出任意构建正文、URL、摘要值或凭据，不将其他身份／业务命令正文送入该分类。原输出哈希及固定标记继续服务全阶段诊断；单次构建复现通过只证明当前输入可构建，不能推定历史间歇失败的唯一根因已修复。
+产品镜像构建失败仅在`product_image_*`阶段沿唯一public_build分类器补充封闭诊断：固定原因／失败步骤、已知产物输入名、Dockerfile行号及有界HTTP状态／进程退出码。2026-11-01用户确认首批APT取证：仅在同一份完整BuildKit输出中，以唯一失败步骤编号关联其RUN apt-get及该编号输出；索引下载／deb下载／dpkg／unknown阶段只从该步骤实际错误推断，不能从未失败步骤、缓存提示或全局timed out／not found标记推定APT原因。固定错误类别涵盖DNS、超时、连接、HTTP、TLS、签名、包缺失、下载、dpkg、锁、空间及other；HTTP状态须带实际错误上下文，不从包名、版本、路径哈希或字节数中的数字提取。官方Debian源只输出HTTP／HTTPS、仓库类别及固定发行套件枚举，未知或含凭据／查询参数的URL不导出；不读取额外源文件或发探针。
+
+同一已捕获输出仅对已识别的公共Python3.11／3.12 slim（含bookworm变体）FROM步骤保留解析到的sha256；缺失或多个不同结果明确unavailable／ambiguous，不用当前可变tag或宿主机image inspect替代历史输入，不输出任意摘要或私有镜像名。代理证明只复用原prepare_builder的docker info及原宿主环境读取、既有无凭据本地代理校验结果，分别记录BuildKit／RUN构建参数／host CLI的来源和none／loopback／desktop_internal枚举，不保留端点、端口、代理值或完整环境，不追加Docker读取。
+
+解析输入整份合计最多128 KiB，超限整份记over_budget、不截尾冒充完整；集合上限或结构化诊断以紧凑JSON的UTF-8字节计，超过4 KiB同样明确超限，不截断为完整。缺失／无法唯一归属时明确不可用，不导出原始日志、URL、路径、任意符号或凭据；这些上限仅约束解析及结构化回执，不改变原命令输出捕获方式或声称捕获硬上限。原输出哈希、首失败、四秒与全部资源／清理要求不变，不将其他身份／业务命令正文送入分类。只修规范、取证和确定性回归，不改Agent／Copilot Dockerfile、apt源／包／重试／签名校验、基础镜像或代理，不触发产品镜像重试、联网验收或新窗口。真实构建验收另行确认；同时段日志、当前tag或HTTP200不能唯一证明历史正文下载／构建归属，单次通过也不能证明间歇失败根因已修复。
 
 新Tenant创建后，身份夹具必须在导出凭据前复用既有`waitForOwnerProtection`，只读等待当次Tenant的Develop持久保护初始化checkpoint，最长60秒并计入原窗口／身份准备预算。固定Owner为Develop，不开放额外Owner参数，不直接写投影或checkpoint，也不把业务拒绝重试为成功。实际Owner从Security完整消费后才可开始执行；实例`/health/ready`不能替代该Tenant状态。此要求沿数据安全规范既有初始化边界，不改变普通User权限、源读取授权或数据保护裁决。
 

@@ -833,3 +833,33 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 标准生命周期清理`zero_owned_resources=true`、failures=[]：原内核先停采样并等其退出，再回收当次只读测量助手、builder及其容器／卷、当次标签的容器／网络／卷和临时镜像标签，最后删除私有目录。报告4份清理阶段归属列表命令全部passed，缓存删除子进程已停止；本会话按同run_id只统计目录而非-report.json文件，独立确认私有工作目录残留0。没有把清理动作当作业务通过。原共享Infra仍保留，不删除其他会话资源。
 
 原报告1441711字节，SHA256=`520c31da1ceff3f601d66a617d63d80ff301a5a46ceaf2ca2bf681551c2eb2db`，原路径系统临时目录`addp-http-local-4b06f791f4f144f29fbdd9f0b9cf52ee-report.json`；归档`/tmp/addp-p19-http-product-window-20261101-x5tejves/`含launch.json／entry-started.json／completion.json／expected-inputs.json／infra-status.log／run.log／report.json／audit.json，目录0700／文件0600，无私钥、口令或完整环境。本次仅补两份证据文档，验证44主题、唯一锚点／索引、15固定输入、130样本／阶段／首因／清理及差异，不重复代码门禁或任何运行。下一步建议先调查Agent系统包构建的已有配置和取证，明确最小修正方案；不得在本轮剩余时间重试构建、改镜像／apt源／代理或另起环境。
+
+
+<a id="http-agent-apt-bounded-diagnostic-20261101"></a>
+
+## 2026-11-01 Agent apt失败调查与有界取证（本地门禁通过，未提交／推送）
+
+用户要求只调查既有失败，讨论后再实施；随后确认首批仅修规范／取证／确定性门禁，不改产品Dockerfile、apt源／包／重试／签名校验、基础镜像或代理，不重试构建、不开新窗口，不运行Hosted／容量／定时。本批实现仅在共享工作区，**未提交、未推送**。现有Platform workflow的product-build无路径跳过，每次push先编译产品，再按baseline选择包含Agent的镜像验证（platform-ci.yml原步骤及select-image-services.py基线）；推送会触发本轮尚未授权的实际构建，因此保留可审阅本地差异，不修改或绕过workflow。
+
+历史4b06窗口的首因及报告不变：Agent Dockerfile第5行同一个apt-get update／install RUN退出100，未到pip，原始构建正文仅留哈希及全局封闭标记，基础FROM解析摘要及APT错误原文未保留。旧public_build只从末尾通用BuildKit错误／框架提取步骤与退出码，未对APT自身E／W／Err行建立唯一步骤归属；全局not found也可能只是新镜像缓存不存在，不能等同缺包，timed out亦不能唯一归属某一源。APT的100是通用错误结果，不唯一确定网络原因。[Debian apt-get文档](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)
+
+本轮仅作有界只读元数据查询，无容器创建、拉取、构建或包管理：当前daemon为ARM64，HTTP／HTTPS代理均为无凭据Desktop内部类别，host CLI为无凭据回环代理，Desktop配置为manual。源码明确从原docker info读取并校验daemon代理，再用于BuildKit环境及RUN的大小写HTTP／HTTPS build-arg；host CLI另用宿主回环代理，私有Docker client不继承用户完整配置。无需在Dockerfile新增ARG即可使用预定义代理参数，[Docker官方说明](https://docs.docker.com/build/building/variables/#proxy-arguments)支持该语义；不能据Dockerfile未声明ARG判定漏传，也不将这份当前配置当成历史网络成功证明。
+
+当前本机Python3.12-slim镜像ID=`sha256:46cb7cc2877e60fbd5e21a9ae6115c30ace7a077b9f8772da879e4590c18c2e3`，本地Registry当前平台manifest为`sha256:5ca4bfc4580d33083387dfc582569b7ec8cf12438961469c74b765c49780aa02`、config为`sha256:9420c53ba876a39b83e2f08732920b62782c33d94cd04860a13c3eaf9dc1a5b0`，Linux ARM64／Python3.12.13，history提到trixie；这些是不同类型的摘要，不混作同一image ID。产品FROM采用可变本地tag，seeding看到tag存在会复用；没有原失败当次解析摘要，当前镜像／Registry内容不能唯一证明当时构建输入。未导出镜像层或启动容器读取apt源文件。
+
+另只读关联已有Docker Desktop httpproxy日志：在UTC 02:56:07—02:58:00粗时间段，60组公开deb.debian.org请求严格按“returning HTTP状态”解析均为200，含Trixie／updates／security及arm64 deb请求，使用应用HTTP代理；未见该段显式代理error／timeout。未用路径哈希、版本或字节数中的407／502／504子串作HTTP状态。该日志缺本次构建归属及主机／VM单调校时证明，200和日志successful不等同APT完整读完正文；既不能直接判代理故障，也不能排除后续正文／连接问题。仓库Document曾有官方HTTPS源的经验，但该次因果证据和重试设置不能直接套到本失败，当前不换源或增加重试。
+
+确认后先修运行观测及T0–T3条款，再扩展唯一public_build分类器：整份已捕获输入≤128 KiB；以唯一失败BuildKit编号绑定RUN apt-get及其输出，其他步骤／缓存警告不参与APT归因。提取索引下载／deb下载／dpkg／unknown阶段、固定错误类别及带错误上下文的HTTP状态；公开Debian源仅输出协议／仓库／固定套件枚举，私有、含凭据或查询参数、畸形端口URL不导出。公共Python FROM只保留唯一已解析sha256及固定kind，多个候选ambiguous、缺失unavailable，不查询当前tag兜底。代理三层证明复用原读取及无凭据校验，只保留来源及类别，不新增Docker调用或保存值。
+
+输入、集合或紧凑JSON UTF-8结构化诊断4 KiB超限时整组明确over_budget，不截尾或截断为完整；未知留空。原构建退出码／哈希及固定标记仍在同一首失败路径，新字段不把业务／身份命令送入公共解析。采样、监测、恢复、清理、资源校验及原Docker命令AST逐项保持，所有产品Dockerfile和workflow均无改动。本修正提高下一次失败的可定位性，不是已修复历史APT原因或已验证真实网络。
+
+| 本轮实际门禁 | 结果与范围 |
+| --- | --- |
+| 原解析器受控反证 | 原函数装入新步骤归属反例，1项按预期断言失败、0额外错误；仅字节替身 |
+| 新APT取证定向测试 | 最终10项通过，覆盖步骤归属、阶段／错误／官方源、隐私与畸形输入、基镜像缺失／多个摘要、代理来源、128 KiB／4 KiB和集合超限、原首因及哈希 |
+| `make test-monitor-traces-local-runner` | 最终146项、既有Online CI登记及System身份Go子门禁通过；共享内核单元／夹具，无真实Docker或产品构建 |
+| HTTP模拟回归 | `python3 -m unittest scripts.test.monitor-http-local-gate_test.HTTPProductLocalTests scripts.test.monitor-http-local-gate_test.HTTPPrivateTLSConfigTests scripts/test/monitor-http-local-online_test.py scripts/ci/check-http-quality-local-registration_test.py`36项通过；未重复真实离线证书组 |
+| `make test-build-registration` | 59项＋9项、26个Go服务／59个镜像静态登记通过，不是镜像构建 |
+| AST／语法／差异核对 | 仅原4个函数调整及1个纯代理摘要函数新增，其余函数定义、Docker调用及资源／清理逻辑未变；无新入口、依赖、注册或workflow变更 |
+
+本地改动为scripts/test/monitor-traces-local-gate.py及其测试、运行观测与T0–T3规范；证据另补本专题与索引，共6个自有路径。可审阅补丁、4份实现输入及脱敏调查收据位于`/tmp/addp-p19-http-apt-investigation-20261101/implementation.patch`／`implementation-inputs.json`／`investigation.json`（0700／0600），日志为`/tmp/addp-p19-http-apt-*-20261101.log`。历史报告哈希仍为520c31da1ceff3f601d66a617d63d80ff301a5a46ceaf2ca2bf681551c2eb2db。未触发自然镜像CI、未作任何构建重试或联网验收；真实构建及产品页面闭环仍待另行授权。仅核验45主题、唯一锚点／索引、最终代码输入／门禁／不可变项及差异，维护会话按部分实现与未提交范围回报。

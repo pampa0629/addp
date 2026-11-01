@@ -386,33 +386,94 @@ def diagnostic_markers(raw):
 
 
 
-def public_build_failure_diagnostic(raw):
-    """Closed fields from public BuildKit failures, never arbitrary log text."""
-    text = raw[-131072:].decode(errors='replace').lower()
-    errors = '\n'.join(line for line in text.splitlines() if 'error:' in line or 'failed to solve:' in line)
-    frames = '\n'.join(line.strip() for line in text.splitlines() if line.lstrip().startswith('> '))
-    reasons = [name for name, pattern in (
-        ('context_input_missing', r'failed to calculate checksum[^\n]*not found'),
-        ('content_digest_missing', r'content digest sha256:[a-f0-9]{64}[^\n]*not found'),
-        ('base_metadata_resolution', r'failed to resolve source metadata'),
-        ('registry_authorization', r'failed to authorize|failed to fetch anonymous token'),
-        ('registry_http_status', r'unexpected status from'),
-        ('dockerfile_process_exit', r'did not complete successfully: exit code:'),
-        ('export_failed', r'failed to export'),
-    ) if re.search(pattern, errors)]
-    steps = [name for name, pattern in (
-        ('base_metadata', r'load metadata for'), ('dockerfile', r'load build definition'),
-        ('context', r'load build context'), ('copy', r'\] copy '),
-        ('package_install', r'\] run .*apt-get'), ('run', r'\] run '),
-        ('export', r'exporting to (?:image|docker image format)|failed to export'),
-    ) if re.search(pattern, frames + '\n' + errors)]
-    inputs = sorted('dist/release-linux-arm64/' + name.removesuffix('-backend') for name in BACKENDS + ('runtime-log',)
-                    if 'dist/release-linux-arm64/' + name.removesuffix('-backend') in errors)
-    lines = sorted({int(number) for number in re.findall(r'(?m)^\s*(?:[^\s]+/)?dockerfile(?:\.prebuilt)?:([1-9][0-9]{0,4})\s*$', text)})
-    statuses = sorted({int(number) for number in re.findall(r'unexpected status[^\n]*?:\s+([45][0-9]{2})(?:\s|$)', errors)})
-    codes = sorted({int(number) for number in re.findall(r'did not complete successfully: exit code:\s*([0-9]{1,3})(?:\D|$)', errors) if int(number) <= 255})
-    return {'reasons': reasons or ['unclassified'], 'steps': steps, 'inputs': inputs,
-            'dockerfile_lines': lines[:8], 'http_statuses': statuses[:8], 'process_exit_codes': codes[:8]}
+def public_build_failure_diagnostic(raw, proxy_provenance=None):
+    """One bounded public BuildKit parser; never export arbitrary output or endpoints."""
+    proxies={}
+    proxy_provenance=proxy_provenance if isinstance(proxy_provenance,dict) else {}
+    for role,source in (('buildkit','docker_info'),('run_build_args','docker_info'),('host_cli','host_environment')):
+        item=(proxy_provenance or {}).get(role)
+        valid=(isinstance(item,dict) and set(item)=={'source','http','https'} and item['source']==source and
+               all(item[k] in ('none','loopback','desktop_internal') for k in ('http','https')) and
+               (role!='host_cli' or 'desktop_internal' not in (item['http'],item['https'])))
+        proxies[role]={'status':'observed',**item} if valid else {'status':'unavailable'}
+    value={'status':'complete','limits_exceeded':[], 'reasons':['unclassified'],'steps':[], 'inputs':[],
+           'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
+           'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'http_statuses':[], 'sources':[]},
+           'base':{'status':'unavailable','kind':None,'resolved_digest':None}, 'proxy_provenance':proxies}
+    def over_budget(reason):
+        return {**value,'status':'over_budget','limits_exceeded':[reason], 'reasons':['unclassified'],
+                'steps':[], 'inputs':[], 'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
+                'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'http_statuses':[], 'sources':[]},
+                'base':{'status':'unavailable','kind':None,'resolved_digest':None}}
+    if len(raw)>131072:return over_budget('input_bytes')
+    text=raw.decode(errors='replace').lower()
+    errors='\n'.join(line for line in text.splitlines() if 'error:' in line or 'failed to solve:' in line)
+    frames='\n'.join(line.strip() for line in text.splitlines() if line.lstrip().startswith('> '))
+    value['reasons']=[name for name,pattern in (
+        ('context_input_missing',r'failed to calculate checksum[^\n]*not found'),
+        ('content_digest_missing',r'content digest sha256:[a-f0-9]{64}[^\n]*not found'),
+        ('base_metadata_resolution',r'failed to resolve source metadata'),
+        ('registry_authorization',r'failed to authorize|failed to fetch anonymous token'),
+        ('registry_http_status',r'unexpected status from'),
+        ('dockerfile_process_exit',r'did not complete successfully: exit code:'),
+        ('export_failed',r'failed to export'),
+    ) if re.search(pattern,errors)] or ['unclassified']
+    value['steps']=[name for name,pattern in (
+        ('base_metadata',r'load metadata for'),('dockerfile',r'load build definition'),('context',r'load build context'),
+        ('copy',r'\] copy '),('package_install',r'\] run .*apt-get'),('run',r'\] run '),
+        ('export',r'exporting to (?:image|docker image format)|failed to export'),
+    ) if re.search(pattern,frames+'\n'+errors)]
+    value['inputs']=sorted('dist/release-linux-arm64/'+name.removesuffix('-backend') for name in BACKENDS+('runtime-log',)
+                          if 'dist/release-linux-arm64/'+name.removesuffix('-backend') in errors)
+    value['dockerfile_lines']=sorted({int(n) for n in re.findall(r'(?m)^\s*(?:[^\s]+/)?dockerfile(?:\.prebuilt)?:([1-9][0-9]{0,4})\s*$',text)})
+    value['http_statuses']=sorted({int(n) for n in re.findall(r'unexpected status[^\n]*?:\s+([45][0-9]{2})(?:\s|$)',errors)})
+    value['process_exit_codes']=sorted({int(n) for n in re.findall(r'did not complete successfully: exit code:\s*([0-9]{1,3})(?:\D|$)',errors) if int(n)<=255})
+    bases=set(re.findall(r'(?m)^#[0-9]+ \[[^\]\n]+\] from localhost:5001/python:(3\.(?:11|12)-slim(?:-bookworm)?)@sha256:([a-f0-9]{64})(?:\s|$)',text))
+    if len(bases)==1:
+        kind,digest=next(iter(bases));value['base']={'status':'resolved','kind':'python_'+kind.replace('.','_').replace('-','_'),'resolved_digest':'sha256:'+digest}
+    elif bases:value['base']['status']='ambiguous'
+    failed=set(re.findall(r'(?m)^#([0-9]+) error:',text))
+    apt_steps=set(re.findall(r'(?m)^#([0-9]+) \[[^\]\n]+\] run .*\bapt-get(?:\s|$)',text))
+    if len(failed)==1 and failed<=apt_steps:
+        step=next(iter(failed))
+        scoped='\n'.join(re.sub(r'^#'+step+r'\s+(?:[0-9]+(?:\.[0-9]+)?\s+)?','',line) for line in text.splitlines()
+                         if re.match(r'^#'+step+r'\s',line) and not re.match(r'^#'+step+r'\s+\[',line))
+        # HTTP status requires an actual APT error, never hashes/versions or a cached build warning.
+        error_lines='\n'.join(line for line in scoped.splitlines() if re.search(r'\b(?:e:|w:|err:[0-9]+|dpkg(?:-deb)?:)|failed to fetch|could not|timed out|temporary failure',line))
+        phases=set()
+        if re.search(r'(?:failed to fetch|err:[0-9]+)[^\n]*https?://\S*/dists/',error_lines):phases.add('index_download')
+        if re.search(r'failed to fetch[^\n]*https?://\S*\.deb(?:\s|$)',error_lines):phases.add('deb_download')
+        if re.search(r'dpkg(?:-deb)?:.*error|sub-process .*dpkg.*error',error_lines):phases.add('dpkg')
+        patterns=(('dns',r'temporary failure resolving|could not resolve|name or service not known'),
+                  ('timeout',r'timed out|connection timeout|i/o timeout'),
+                  ('connection',r'connection failed|could not connect|failed to connect|connection refused'),
+                  ('tls',r'could not handshake|certificate verification|certificate verify failed|certificate is not trusted'),
+                  ('signature',r'no_pubkey|expkeysig|badsig|not signed|signatures couldn.t be verified|clearsigned file isn.t valid'),
+                  ('package_missing',r'unable to locate package|has no installation candidate'),
+                  ('download',r'failed to fetch|index files failed to download|unable to fetch some archives'),
+                  ('dpkg',r'dpkg(?:-deb)?:.*error|sub-process .*dpkg.*error'),
+                  ('lock',r'could not get lock|unable to acquire[^\n]*lock'),('no_space',r'no space left on device'))
+        kinds=[kind for kind,pattern in patterns if re.search(pattern,error_lines)]
+        statuses=sorted({int(n)for n in re.findall(r'\b([45][0-9]{2}) (?:bad request|unauthorized|forbidden|not found|proxy authentication required|request timeout|too many requests|internal server error|bad gateway|service unavailable|gateway timeout)\b',error_lines)})
+        if statuses:kinds.append('http')
+        sources=set()
+        suites={'bullseye','bullseye-updates','bullseye-security','bookworm','bookworm-updates','bookworm-security','trixie','trixie-updates','trixie-security'}
+        for url in re.findall(r'https?://[^\s]+',scoped):
+            try:
+                parsed=urllib.parse.urlsplit(url);port=parsed.port
+            except ValueError:continue
+            if parsed.hostname not in ('deb.debian.org','security.debian.org') or parsed.username or parsed.password or parsed.query or parsed.fragment or port not in (None,80,443):continue
+            match=re.match(r'^/(debian(?:-security)?)/(?:dists/([^/\s]+)(?:/|$)|pool/)',parsed.path)
+            if not match:continue
+            suite=match[2] if match[2] in suites else 'unknown'
+            sources.add((parsed.scheme,'debian_security'if match[1]=='debian-security'else'debian',suite))
+        value['apt']={'status':'parsed','phase':next(iter(phases))if len(phases)==1 else'unknown','error_kinds':kinds or ['other'],
+                      'http_statuses':statuses,'sources':[{'scheme':scheme,'repository':repository,'suite':suite}for scheme,repository,suite in sorted(sources)]}
+        if len(sources)>8 or len(statuses)>8:return over_budget('apt_collections')
+    elif failed & apt_steps:value['apt']['status']='ambiguous'
+    if any(len(value[k])>8 for k in ('dockerfile_lines','http_statuses','process_exit_codes')):return over_budget('build_collections')
+    if len(json.dumps(value,separators=(',',':')).encode())>4096:return over_budget('structured_bytes')
+    return value
 
 
 def minio_product_contract(source):
@@ -495,6 +556,13 @@ def daemon_build_proxies(info, *, client=False):
                 not parsed.query and not parsed.fragment, 'credential_free_local_daemon_proxy_required')
         result[key] = value
     return result
+
+
+def build_proxy_facts(proxies,source):
+    require(source in ('docker_info','host_environment'),'build_proxy_source_invalid')
+    checked=daemon_build_proxies({'HTTPProxy':proxies.get('HTTP_PROXY'),'HTTPSProxy':proxies.get('HTTPS_PROXY')},client=source=='host_environment')
+    return {'source':source,**{name:('none'if key not in checked else 'desktop_internal'if urllib.parse.urlsplit(checked[key]).hostname=='http.docker.internal'else'loopback')
+                              for name,key in (('http','HTTP_PROXY'),('https','HTTPS_PROXY'))}}
 
 
 def private_docker_client(life, endpoint):
@@ -724,7 +792,7 @@ class Lifecycle:
                 self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest(),
                                      'diagnostic_markers': diagnostic_markers(raw)}
                 if self.phase.startswith('product_image_'):
-                    self.last_failure['public_build']=public_build_failure_diagnostic(raw)
+                    self.last_failure['public_build']=public_build_failure_diagnostic(raw,getattr(self,'build_proxy_provenance',None))
                 if args[0] == 'du':
                     diagnostics=[line for line in text.splitlines() if not re.fullmatch(r'\d+\s+.+',line)]
                     self.last_failure['du_missing_file'] = bool(diagnostics) and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics)
@@ -1115,6 +1183,8 @@ def prepare_builder(life):
     config.write_text('[registry."localhost:5001"]\n  http = true\n  insecure = true\n')
     proxies=daemon_build_proxies(json.loads(life.docker('info','--format',
         '{"HTTPProxy":{{json .HTTPProxy}},"HTTPSProxy":{{json .HTTPSProxy}}}')))
+    life.build_proxy_provenance={'buildkit':build_proxy_facts(proxies,'docker_info'),
+                                 'run_build_args':build_proxy_facts(proxies,'docker_info')}
     proxy_options=[part for key,value in proxies.items() for part in ('--driver-opt','env.'+key+'='+value)]
     life.docker('buildx', 'create', '--name', life.builder, '--driver', 'docker-container', '--driver-opt',
                 'network=host,cpu-period=100000,cpu-quota=100000,memory=2g', *proxy_options, '--buildkitd-config', str(config))
@@ -1216,6 +1286,8 @@ def build_products(life,env,proxies):
     # validated credential-free loopback proxy instead of inheriting the shell.
     client_proxies=daemon_build_proxies({'HTTPProxy':os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy'),
                                        'HTTPSProxy':os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')},client=True)
+    life.build_proxy_provenance={**getattr(life,'build_proxy_provenance',{}),
+                                 'host_cli':build_proxy_facts(client_proxies,'host_environment')}
     build_env={**env, **client_proxies, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':life.label+'='+life.run_id, 'TRACE_LOCAL_ROLE_LABEL':life.label+'.role=oneshot', 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
     life.phase='product_compile'
     life.docker('run', '--name', life.run_id+'-compile', '--label', f'{life.label}={life.run_id}', '--label', life.label+'.role=oneshot', '--cpus', '2', '--memory', '3g',
