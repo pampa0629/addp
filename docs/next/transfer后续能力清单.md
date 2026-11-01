@@ -41,13 +41,13 @@
 | 自动 DDL | 当前只支持人工确认的安全 additive migration | record 绑定的 schema version、目标 Provider DDL 原子性、回滚和审批策略 |
 | 多表 CDC | 当前一个任务只绑定一张源表和一张新目标表 | table identity、路由、每表 schema revision、部分失败和资源生命周期 |
 | 无主键 CDC | 当前要求稳定非空主键 | 事件身份、update/delete 定位、重复应用和目标一致性保证 |
-| PostgreSQL/MySQL/Oracle 类型矩阵扩展 | 当前只开放已完成真实 Debezium E2E 的无歧义类型集合 | Debezium wire schema、精度/时区、目标映射、键约束和全生命周期 E2E |
+| [PostgreSQL/MySQL/Oracle 类型矩阵扩展](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 当前开放范围见[源类型与空间捕获](../../transfer/docs/transfer-基本概念及配置说明.md#源类型与空间捕获)及[目标应用约束](../../transfer/docs/transfer-基本概念及配置说明.md#cdc-目标应用与位点)；未声明或不兼容类型仍拒绝 | Debezium wire schema、精度/时区、目标映射、键约束和全生命周期 E2E |
 | Oracle CDC 高级能力 | 当前支持单实例 CDB/PDB、普通字段与 Oracle Spatial 单表，并提供源恢复窗口和未提交事务压力观测；捕获与类型边界见下述专题 | RAC、普通业务 LOB、长事务阈值/告警策略、归档日志自动治理 |
 | [ArcGIS SDE 逻辑变化源](ArcGIS%20SDE支持设计.md) | 普通 Oracle/PostgreSQL 表日志不能等同版本化要素变化 | geodatabase 版本模型、A/D delta tables、空间类型、业务事务和许可边界 |
 
 Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不能包装成同一路径。Oracle Spatial 的捕获、冻结空间事实与源／目标限制统一见[CDC 正式契约](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)及[Oracle CDC 配置](../../transfer/docs/transfer-基本概念及配置说明.md#oracle-cdc)。ArcGIS 传统版本化编辑仍需独立验证版本、权限、事务和许可边界。基础 `MDSYS.SDO_GEOMETRY` Spatial 读取继续由 Oracle Engine Provider 独立支持。
 
-空间源捕获与目标写入能力须分别核对；既有数据面范围和未覆盖项见[Oracle 既有验证与验收边界](../../transfer/docs/transfer-基本概念及配置说明.md#oracle-既有验证与验收边界)，标准调用与隔离清理门禁缺口见[Oracle 专项入口说明](../../transfer/README.md#oracle-cdc-专项入口缺口)。能力声明、已有用例或部分结果不代表全部组合或当前版本已验收；未运行、失败、跳过或未覆盖项不计为通过。
+类型声明与实际验证须按源／目标组合、snapshot／insert／update／delete、精度／时区及空间维度分别核对，空间源捕获不代表目标写入同样受支持。固定源码版本、有效证据、失败与修复结论及未覆盖项沿[模块验证](../../transfer/CLAUDE.md#开发与验证)的原始场景认定，其他专项通过不能补作 CDC 类型矩阵通过；Oracle 的既有数据面范围见[Oracle 既有验证与验收边界](../../transfer/docs/transfer-基本概念及配置说明.md#oracle-既有验证与验收边界)，标准调用与隔离清理门禁缺口见[Oracle 专项入口说明](../../transfer/README.md#oracle-cdc-专项入口缺口)。能力声明、已有用例或部分结果不代表全部组合或当前版本已验收；未运行、失败、跳过或未覆盖项不计为通过。
 
 ## 四、Continuous 运行时与观测
 
