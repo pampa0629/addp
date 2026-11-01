@@ -634,7 +634,7 @@
             <EngineAccessDelegations v-if="detailTab === 'delegations'" :key="selectedEngine.id" :engine-id="selectedEngine.id" />
           </el-tab-pane>
           <el-tab-pane v-if="renderedAuthorizationTabs.includes('collection-qualifications')" :label="t('system.engine.collection.title')" name="collection-qualifications">
-            <EngineMetaCollectionQualifications v-if="detailTab === 'collection-qualifications'" :key="authorizationKey" :engine="selectedEngine" :authorization-ready="authorizationReady" />
+            <EngineMetaCollectionQualifications v-if="detailTab === 'collection-qualifications'" :key="authorizationKey" :engine="selectedEngine" :authorization-ready="authorizationReady" :initial-task-id="String(route.query.collection_task_id || '')" />
           </el-tab-pane>
         </el-tabs>
       </div>

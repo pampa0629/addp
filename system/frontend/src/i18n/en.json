@@ -1187,7 +1187,8 @@
         "failed": "Operation outcome is unconfirmed. Review the records before proceeding.",
         "unsupported": "Invalid task facts or a different engine. Initially only entire-PostgreSQL basic tasks without extra read options are supported.",
         "invalid": "Inspect a real task, enter a purpose (up to 2000 characters), and select a future expiry.",
-        "invalidReason": "Enter a revocation reason (up to 2000 characters) and review the current revocable version."
+        "invalidReason": "Enter a revocation reason (up to 2000 characters) and review the current revocable version.",
+        "openTask": "Return to task configuration and execution"
       },
       "dataAuthorization": {
         "newAuthorization": "New authorization",

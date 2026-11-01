@@ -61,6 +61,18 @@ async function fillApproval(page) {
   await date.fill('2098-01-01 00:00:00'); await date.press('Enter')
 }
 
+test('Meta task deep link preselects the task without approving or executing', async ({ page }) => {
+  const { reads, writes } = await fixture(page)
+  await page.goto('/engines/2?tab=collection-qualifications&collection_task_id=42')
+  await expect(page.getByTestId('collection-task')).toHaveValue('42')
+  await expect(page.getByTestId('collection-approve')).toBeDisabled()
+  await expect(page).toHaveURL(/collection_task_id=42/)
+  expect(reads.filter(path => path.includes('meta_collection_task_facts'))).toHaveLength(0)
+  await page.getByTestId('collection-inspect').click()
+  await expect(page.getByTestId('collection-facts')).toContainText('42')
+  expect(writes).toHaveLength(0)
+})
+
 test('collection-only permission opens a separate read-only workspace and navigation never writes or scans', async ({ page }) => {
   const { reads, writes } = await fixture(page)
   await page.goto('/engines'); await page.getByTestId('engine-authorization-open').click()

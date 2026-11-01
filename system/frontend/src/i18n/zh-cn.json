@@ -1187,7 +1187,8 @@
         "failed": "操作结果未确认，请核对记录后再操作。",
         "unsupported": "任务事实无效或不属于本引擎。首期仅支持整个 PG 引擎的 basic 任务，且不能包含额外读取选项。",
         "invalid": "请核对真实任务、填写用途并选择未来的到期时间；用途最多 2000 字。",
-        "invalidReason": "请填写撤销原因（最多 2000 字），并核对当前可撤销版本。"
+        "invalidReason": "请填写撤销原因（最多 2000 字），并核对当前可撤销版本。",
+        "openTask": "返回任务配置与执行"
       },
       "dataAuthorization": {
         "newAuthorization": "新增授权",

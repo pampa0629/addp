@@ -135,14 +135,14 @@
               <template #default="{ row }">
                 <div class="engine-actions">
                   <el-button
-                    v-if="canUpdateSchedule"
+                    v-if="canCreateSchedule || canUpdateSchedule"
                     type="success"
                     size="default"
                     plain
                     @click.stop="handleScheduleClick(row)"
                   >
                     <el-icon><Clock /></el-icon>
-                    {{ t('meta.scan.schedule') }}
+                    {{ t(row.resource_type === 'postgresql' ? 'meta.scan.collection.configure' : 'meta.scan.schedule') }}
                   </el-button>
                 </div>
               </template>
@@ -315,6 +315,9 @@
     <ManualScanDialog v-if="manualScanContext" :context="manualScanContext" :busy="scanning"
       @close="manualScanContext = null" @submit="submitManualScan" />
 
+    <CollectionTaskDialog v-if="collectionDialogVisible && selectedResource" :engine="selectedResource" :tasks="allScanTasks"
+      :initial-task-id="collectionTaskID" @close="closeCollectionTask" @saved="loadScanTasks" @execute="executeCollectionTask" />
+
     <el-dialog
       v-model="scheduleDialogVisible"
       :title="t('meta.scan.engineScheduleSettings')"
@@ -413,6 +416,7 @@ import { useI18n } from 'vue-i18n'
 import { Search, Refresh, CircleCheck, CircleClose, Warning, QuestionFilled, Clock, Link, Document } from '@element-plus/icons-vue'
 import { MonitorExecutionsButton, ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
 import metaApi from '../api/meta'
+import CollectionTaskDialog from '../components/CollectionTaskDialog.vue'
 import { useAuthStore } from '../store/auth'
 import { isDirectLeafCatalog } from '../utils/catalogScanView'
 import { navigateMetaRoute } from '../utils/moduleNavigation'
@@ -466,6 +470,8 @@ const allScanTasks = ref([])
 const openedRouteTaskID = ref('')
 const routeStateReady = ref(false)
 const scheduleDialogVisible = ref(false)
+const collectionDialogVisible = ref(false)
+const collectionTaskID = ref('')
 const savingSchedule = ref(false)
 const scheduleCron = ref('') // Cron 表达式
 const scheduleEnabled = ref(true) // 是否启用
@@ -510,7 +516,8 @@ const resourcePlanMap = computed(() => {
   for (const task of allScanTasks.value) {
     if (!task || typeof task.engine_id !== 'number') continue
     const desc = typeof task.description === 'string' ? task.description : ''
-    if (!desc.includes(AUTO_SCHEDULE_DESC_MARK)) continue
+    const engine = engines.value.find(engine => engine.id === task.engine_id)
+    if (engine?.resource_type === 'postgresql' ? task.scope?.type !== 'engine' : !desc.includes(AUTO_SCHEDULE_DESC_MARK)) continue
     map[task.engine_id] = {
       enabled: !!task.enabled,
       description: formatScheduleDescription(task),
@@ -649,11 +656,15 @@ const handleSelectResource = async (row) => {
 }
 
 const handleScheduleClick = async row => {
-  if (!row || !canUpdateSchedule.value) return
+  if (!row || (!canUpdateSchedule.value && !canCreateSchedule.value)) return
   if (!selectedResource.value || selectedResource.value.id !== row.id) {
     await handleSelectResource(row)
   }
   await loadScanTasks()
+  if (row.resource_type === 'postgresql') {
+    collectionTaskID.value = ''; collectionDialogVisible.value = true
+    return
+  }
   prefillScheduleForm(autoScheduleTask.value)
   scheduleDialogVisible.value = true
 }
@@ -665,6 +676,10 @@ const openScanTaskFromRoute = async () => {
   if (!task) return
 
   openedRouteTaskID.value = taskID
+  if (selectedResource.value?.resource_type === 'postgresql' && task.scope?.type === 'engine') {
+    collectionTaskID.value = taskID; collectionDialogVisible.value = true
+    return
+  }
   const catalogPaths = Array.isArray(task.parameters?.catalog_paths) ? task.parameters.catalog_paths : []
   if (catalogPaths.length === 1) {
     const target = catalogPaths[0]
@@ -682,6 +697,24 @@ const openScanTaskFromRoute = async () => {
 
   prefillScheduleForm(task)
   scheduleDialogVisible.value = true
+}
+
+const closeCollectionTask = async () => {
+  collectionDialogVisible.value = false
+  await handleScheduleDialogClose()
+}
+
+const executeCollectionTask = async task => {
+  if (!canExecuteScan.value || scanning.value || !task?.id) return
+  collectionDialogVisible.value = false
+  scanning.value = true
+  try {
+    const run = await metaApi.triggerScanTask(task.id)
+    startScanStatus(t('meta.scan.collection.submitted'), t('meta.scan.scanWaiting'), 5)
+    await waitForScanRun(run, { onProgress: latest => updateScanStatusFromRun(latest, task.name) })
+    completeScanStatus(t('meta.scan.manual.completed'), t('meta.scan.manual.completed'))
+  } catch (error) { failScanStatus(error) }
+  finally { scanning.value = false; if (!disposed) await loadEngines() }
 }
 
 const restoreRouteState = async () => {

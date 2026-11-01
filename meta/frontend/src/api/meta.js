@@ -88,6 +88,10 @@ export default {
     })
   },
 
+  triggerScanTask(taskId) {
+    return client.post(`/meta/scan/tasks/${taskId}/trigger`)
+  },
+
   createScanTask(engineId, payload) {
     return client
       .post('/meta/scan/tasks', {

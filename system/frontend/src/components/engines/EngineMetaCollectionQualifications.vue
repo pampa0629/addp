@@ -8,6 +8,7 @@
     <el-alert v-if="!canRead" type="warning" :closable="false" :title="t('system.engine.collection.readRequired')" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
     <StatusAnnouncer :message="success" />
+    <el-button v-if="taskID && canOpenTask" :disabled="saving" data-testid="collection-open-task" @click="openConsoleRoute(taskPath)">{{ t('system.engine.collection.openTask') }}</el-button>
     <el-alert v-if="success" type="success" :closable="false" :title="success" />
     <template v-if="view === 'create' && canApprove">
       <el-form label-position="top" @submit.prevent="approve">
@@ -67,12 +68,12 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { StatusAnnouncer } from '@common-ui'
+import { StatusAnnouncer, openConsoleRoute, allowsConsoleRoute } from '@common-ui'
 import { enginesAPI } from '../../api/engines'
 import { useAuthStore } from '../../store/auth'
 import { captureMetaCollectionApproval, captureMetaCollectionFacts, captureMetaCollectionRevocation, metaCollectionRecordState } from '../../utils/metaCollectionQualification'
 
-const props = defineProps({ engine: { type: Object, required: true }, authorizationReady: { type: Boolean, default: false } })
+const props = defineProps({ engine: { type: Object, required: true }, authorizationReady: { type: Boolean, default: false }, initialTaskId: { type: String, default: '' } })
 const auth = useAuthStore(), { t, locale } = useI18n()
 const canRead = computed(() => props.authorizationReady && auth.hasPermission('system.meta_collection_qualification.read'))
 const canApprove = computed(() => props.authorizationReady && auth.hasPermission('system.meta_collection_qualification.approve'))
@@ -80,6 +81,8 @@ const canRevoke = computed(() => props.authorizationReady && auth.hasPermission(
 const view = ref('records'), rows = ref([]), total = ref(0), page = ref(1)
 const loading = ref(false), inspecting = ref(false), saving = ref(false), error = ref(''), success = ref('')
 const taskID = ref(''), facts = ref(null), purpose = ref(''), expiresAt = ref(null), command = ref(null), revocation = ref(null)
+const taskPath = computed(() => `/meta/scan?engine_id=${props.engine.id}&task_id=${encodeURIComponent(taskID.value.trim())}`)
+const canOpenTask = computed(() => /^[1-9]\d*$/.test(taskID.value.trim()) && allowsConsoleRoute(taskPath.value, auth.contextType, auth.permissions))
 let generation = 0, listSequence = 0, factsSequence = 0
 const message = e => e?.response?.data?.error || t('system.engine.collection.failed')
 const formatTime = value => new Date(value).toLocaleString(locale.value)
@@ -181,6 +184,10 @@ watch(() => props.authorizationReady, ready => {
   }
   if (view.value === 'records') load()
 })
+watch(() => [props.initialTaskId, canApprove.value], ([id, allowed]) => {
+  if (!allowed || !/^[1-9]\d*$/.test(id) || taskID.value === id || saving.value || command.value) return
+  taskID.value = id; invalidateFacts(); view.value = 'create'
+}, { immediate: true })
 onBeforeUnmount(() => { generation++ })
 </script>
 

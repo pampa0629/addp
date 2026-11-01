@@ -135,7 +135,27 @@
       "entryScheduleTitleSuffix": " - Scheduled Scan Settings",
       "independentScheduleTooltip": "Independent schedule: {desc}\nNext run: {next}",
       "inheritEngineScheduleTooltip": "Inheriting engine schedule: {desc}",
-      "nextRun": "Next run: {time}"
+      "nextRun": "Next run: {time}",
+      "collection": {
+        "title": "PG basic collection task",
+        "configure": "Collection task",
+        "boundary": "Configure → approve → execute. Saving only stores the task; it neither approves nor runs a scan.",
+        "task": "Task ID",
+        "new": "New task",
+        "name": "Task name",
+        "scope": "Entire engine (including future schemas and tables)",
+        "scheduled": "Enable scheduled runs",
+        "defaultName": "Basic collection",
+        "save": "Save task configuration",
+        "saved": "Task saved. No scan was triggered.",
+        "approvalHint": "Approve this task in engine collection qualifications before executing it. An unchanged configuration can run repeatedly within its approval period; unapproved, revoked or expired tasks are denied.",
+        "approval": "Open collection approval",
+        "execute": "Execute saved task",
+        "invalid": "Enter a task name and, when scheduling is enabled, a schedule.",
+        "unsupported": "This task is not configured for basic scanning. Select or create a basic task; this editor cannot modify or execute it.",
+        "failed": "Task save was not confirmed. Reopen the task list and check before continuing.",
+        "submitted": "Collection task submitted. Current collection qualification is checked during execution."
+      }
     },
     "status": {
       "pending": "Pending",

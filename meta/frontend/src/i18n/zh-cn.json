@@ -135,7 +135,27 @@
       "entryScheduleTitleSuffix": " - 定时扫描设置",
       "independentScheduleTooltip": "独立调度：{desc}\n下次执行：{next}",
       "inheritEngineScheduleTooltip": "继承引擎调度：{desc}",
-      "nextRun": "下次执行：{time}"
+      "nextRun": "下次执行：{time}",
+      "collection": {
+        "title": "PG 基础采集任务",
+        "configure": "采集任务",
+        "boundary": "配置 → 批准 → 执行。保存只记录任务，不批准、不立即扫描。",
+        "task": "任务编号",
+        "new": "新建任务",
+        "name": "任务名称",
+        "scope": "整个引擎（包含后续新增 schema 和表）",
+        "scheduled": "启用定时运行",
+        "defaultName": "基础采集",
+        "save": "保存任务配置",
+        "saved": "任务已保存，未触发扫描。",
+        "approvalHint": "先在引擎采集资格中批准此任务，再显式执行。同一配置在批准期限内可重复运行；未批准、撤销或到期时执行会被拒绝。",
+        "approval": "前往采集批准",
+        "execute": "执行已保存任务",
+        "invalid": "请填写任务名称；启用定时时还须填写调度计划。",
+        "unsupported": "此任务不是 basic 配置，本入口不修改或执行它。请选择或新建 basic 任务。",
+        "failed": "任务保存未确认，请重新打开任务列表核对后再操作。",
+        "submitted": "已提交采集任务，执行时核验当前采集资格。"
+      }
     },
     "status": {
       "pending": "未扫描",
