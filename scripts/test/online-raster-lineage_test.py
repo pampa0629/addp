@@ -263,6 +263,20 @@ class RasterLineageTest(unittest.TestCase):
             elif fault == 'duplicate': changed['inputs'].append(changed['inputs'][0])
             else: changed['operations'][0]['operator'] = 'raster_save'
             with self.subTest(fault=fault), self.assertRaises(m.SuiteError): m.validate(changed, expected, public=False)
+    def test_zonal_weighted_stddev_approved_three_role_csv_facts_preserve_internal_and_public_boundaries(self):
+        self.assertEqual(m.SUITES['raster-zonal-weighted-stddev-persistence'], 'zonal-weighted-stddev-lineage')
+        expected = copy.deepcopy(EXPECTED)
+        expected['inputs'] = [{'port': 'input.values', 'locator': 'values'}, {'port': 'input.zones', 'locator': 'zones'}, {'port':'input.weights','locator':'weights'}]
+        expected['operations'][0].update(operator='save', input_ports=['input.values', 'input.weights', 'input.zones'])
+        m.validate(expected, expected, public=False)
+        m.validate({**expected, 'operations': None}, expected, public=True)
+        for fault in ('swap', 'missing', 'duplicate', 'operation'):
+            changed = copy.deepcopy(expected)
+            if fault == 'swap': changed['inputs'][0]['locator'], changed['inputs'][1]['locator'] = 'zones', 'values'
+            elif fault == 'missing': changed['inputs'].pop()
+            elif fault == 'duplicate': changed['inputs'].append(changed['inputs'][0])
+            else: changed['operations'][0]['operator'] = 'raster_save'
+            with self.subTest(fault=fault), self.assertRaises(m.SuiteError): m.validate(changed, expected, public=False)
     def test_vector_zonal_percentile_approved_two_role_gpkg_facts_preserve_internal_and_public_boundaries(self):
         self.assertEqual(m.SUITES['vector-zonal-percentile-persistence'], 'vector-zonal-percentile-lineage')
         expected = copy.deepcopy(EXPECTED)

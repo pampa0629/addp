@@ -428,6 +428,13 @@ SUITES: Mapping[str, Suite] = {
                   ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
                   ("security", "SECURITY_URL")),
     ),
+    "raster-zonal-weighted-stddev-persistence": Suite(
+        command=(sys.executable, "-m", "scripts.test.raster-zonal-weighted-stddev-persistence-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("develop", "DEVELOP_URL"), ("meta", "META_URL"),
+                  ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
+                  ("security", "SECURITY_URL")),
+    ),
     "vector-zonal-percentile-persistence": Suite(
         command=(sys.executable, "-m", "scripts.test.vector-zonal-percentile-persistence-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

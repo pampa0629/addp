@@ -880,6 +880,20 @@ NaN／Infinity参数、整数形式浮点[1.0]保护值、混合类型复数alph
 本地入口为`make test-raster-statistics-percentile-online-runner`及标准`make test-geopython-workflow`中的`test_online_statistics_percentile_fixture.py`；已同步Online registry、changed gate、独立workflow与固定矩阵／删除断言变异检查，仅登记不代表已运行Hosted。
 
 
+## 栅格分区加权总体标准差独立 Hosted 验收
+
+`raster-zonal-weighted-stddev-persistence`独立手工套件，复用NFS、同源默认入口产品Runtime、非默认租户普通User原12权限及既有隔离生命周期。固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全部物理复核、原件归档及执行工作区／期望缓存清理；退出严格核NFS／Runtime／registry／Infra零残留，清理失败整套失败。不改原套件、权限、安全投影或产品逻辑，Linux全量及实际Hosted仍由CI会话协调，不自行触发、重试或扩预算。
+
+固定16条CSV成功链：非均匀权重、整体×8、全1三条；默认关闭／显式False的原加权对照及原未加权对照三条；权重／分区重分类两条；全零、混合特殊组、数值全无效、分区全无效四条；显式第二波段／raw scale-offset／mask／部分alpha及非必需域坏权重、同旋转网格、Int64／UInt64原生NoData邻接值四条。13份13列启用表、2份12列原加权表及1份9列原统计表。混合组覆盖单正权重、正权重对应常量、零权重高差值仍计入原统计但不计新标准差、无有效数值与全零权重；主场景79分区完整表，预览仍最多50行。
+
+固定49类各中英文提交，共98次准确失败：原加权40类成对参数、必需域权重、三角色波段／alpha／复数、定位／网格与精确分类准入；新增开关null、0、1、0.5、字符串true／false、列表、对象八类，以及启用却无权重一类。核当前execution、analysis节点、真实准确原因、专业错误详情／Monitor和冻结提交语言，反向查询不改旧失败。提交、加载、其他节点或错误阶段不得充数；原英文诊断不冒称已新增翻译，非标准JSON、混合复数alpha及数值极限仍单列Native。
+
+独立高精度Decimal逐组偏差公式核总体分母及完整σ，不导入产品统计实现、不使用已舍入weighted_mean；原统计按原精度另核并与同源真实对照逐字段相等，全1的加权sum／mean／stddev必须精确等于原字段，不以理想算术值替换原IEEE归约。权重×8保持均值及标准差，前两个和同比变化。全零／无有效数值新标准差null，单正权重或常量0；关闭开关不加新列。CSV原十进制文本直接解析精确核验，公开15位JSON预览单列校验。
+
+每次成功后重读当前1至16份成果，98次失败后各重读16份，共136＋98×16＝1704次CSV全表检查；加首次源全检共115轮物理检查。每轮真实重读所有源像元／原生NoData／mask／alpha／类型／网格／CRS／scale-offset和hash，不缓存实际成果，仅冻结独立期望。归档16份CSV及全部源原字节、大小／SHA256清单、当前执行血缘和原始证据；篡改、缺失、额外文件及符号链接均拒绝，不重建或静默修复。
+
+沿原普通表save，物理／Meta大小为相等正整数，不虚构RasterArtifact。扫描精确核父执行／用户／租户／引擎；启用及关闭开关的加权链核值／分区／权重三份实际源，原统计对照只核两份。受控只读observer核完整内部save derive，公开operations:null、Meta关系及Monitor分别校验；失败零发布／新增扫描或派生，源和所有旧成果不变，所有退出严格清理。标准入口`make test-raster-zonal-weighted-stddev-online-runner`与标准Native显式登记`test_online_zonal_weighted_stddev_fixture.py`，Online／changed gate／独立手工workflow／observer和固定矩阵删断言检查同次覆盖。本地标准Native受影响256 passed／12485 deselected／108.23秒，0失败／跳过／warnings；独立Runner99项／27.529秒及完整Online登记通过，输入无漂移。准备通过不计Linux全量或实际Hosted通过。
+
 ## 栅格分区加权统计独立 Hosted 验收
 
 `raster-zonal-weighted-persistence`为独立手工套件，复用NFS、同源默认入口Runtime和非默认租户普通User原12权限；不改产品、原套件、权限或安全投影。固定600秒业务预算覆盖初始化扫描、首次独立期望、执行／查询、全部物理复核、归档及执行工作区／期望缓存清理；部署／播种和NFS／Runtime／registry／Infra退出沿既有隔离生命周期严格清理。实际Linux全量与Hosted由CI会话协调，不自动触发、重试或扩预算，不计页面或容量。
