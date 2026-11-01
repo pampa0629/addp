@@ -52,5 +52,5 @@ export function hasExpandableChildren(node) {
   if (Array.isArray(node.children) && node.children.length > 0) return true
   if (node.hasChildren === true) return true
   if (node.metadata?.has_children === true) return true
-  return Number(node.metadata?.item_count || 0) > 0
+  return false
 }

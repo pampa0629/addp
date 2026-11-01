@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { hasExpandableChildren } from '@common-ui/utils/resourceTreeState.mjs'
 import {
   catalogRootTypeForEngine,
   engineRootLocator,
@@ -979,7 +980,7 @@ export const useExplorerStore = defineStore('explorer', {
       delete tree.engine_id
       delete tree.engine_type
       delete tree.engine_name
-      tree.hasChildren = hasTreeNodeChildren(tree)
+      tree.hasChildren = hasExpandableChildren(tree)
 
       if (tree.children && tree.children.length > 0) {
         for (const child of tree.children) {
@@ -1028,14 +1029,6 @@ function findNodeByLocator(tree, locator) {
   }
 
   return null
-}
-
-function hasTreeNodeChildren(node) {
-  if (!node) return false
-  if (node.hasChildren === true) return true
-  if (node.metadata?.has_children === true) return true
-  if (Number(node.metadata?.item_count || 0) > 0) return true
-  return Array.isArray(node.children) && node.children.length > 0
 }
 
 function delay(ms) {

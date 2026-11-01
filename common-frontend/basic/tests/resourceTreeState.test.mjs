@@ -58,9 +58,22 @@ test('expansion transitions are idempotent and support a fully collapsed tree', 
 test('hasExpandableChildren accepts every resource-tree contract shape', () => {
   assert.equal(hasExpandableChildren({ hasChildren: true }), true)
   assert.equal(hasExpandableChildren({ metadata: { has_children: true } }), true)
-  assert.equal(hasExpandableChildren({ metadata: { item_count: 2 } }), true)
+  assert.equal(hasExpandableChildren({ metadata: { item_count: 2 } }), false)
   assert.equal(hasExpandableChildren({ children: [{ id: 'child' }] }), true)
   assert.equal(hasExpandableChildren({ hasChildren: false, children: [] }), false)
+})
+
+test('item counts do not turn resource-tree leaves into branches', () => {
+  for (const type of ['table', 'view', 'collection', 'object']) {
+    assert.equal(hasExpandableChildren({
+      type, hasChildren: false, children: [],
+      metadata: { item_id: 42, item_count: 1, has_children: false }
+    }), false)
+  }
+  assert.equal(hasExpandableChildren({
+    type: 'schema', hasChildren: true, children: [],
+    metadata: { item_count: 0 }
+  }), true)
 })
 
 test('resource tree does not model an engine as a resource node type', () => {
@@ -68,4 +81,11 @@ test('resource tree does not model an engine as a resource node type', () => {
 
   assert.doesNotMatch(resourceTree, /data\.type\s*===\s*['"]engine['"]/)
   assert.doesNotMatch(resourceTree, /resolveEngineIcon|getEngineIconName/)
+})
+
+test('Manager reuses the shared expansion predicate without an item-count fallback', () => {
+  const store = readFileSync(new URL('../../../manager/frontend/src/stores/explorer.js', import.meta.url), 'utf8')
+  assert.match(store, /import \{ hasExpandableChildren \} from '@common-ui\/utils\/resourceTreeState\.mjs'/)
+  assert.match(store, /tree\.hasChildren = hasExpandableChildren\(tree\)/)
+  assert.doesNotMatch(store, /function hasTreeNodeChildren|Number\(node\.metadata\?\.item_count/)
 })

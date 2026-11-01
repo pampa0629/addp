@@ -30,6 +30,15 @@ describe('explorer revealLocator', () => {
     vi.clearAllMocks()
   })
 
+  it('preserves leaf expansion facts when normalizing PostgreSQL visible item counts', () => {
+    const store = useExplorerStore()
+    const table = { type: 'table', hasChildren: false, children: [], metadata: { item_count: 1, has_children: false } }
+    const schema = { type: 'schema', hasChildren: true, children: [table], metadata: { item_count: 1 } }
+    store.normalizeResourceSubtree(schema)
+    expect(schema.hasChildren).toBe(true)
+    expect(table.hasChildren).toBe(false)
+  })
+
   it('keeps a newer node reload when an older child response arrives last', async () => {
     const store = useExplorerStore()
     const root = 'addp://engine/25/path/?type=server&node_id=250'

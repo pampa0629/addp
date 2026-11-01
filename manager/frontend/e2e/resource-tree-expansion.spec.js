@@ -12,7 +12,8 @@ const branch = (id, loaded = false) => ({
   children: loaded ? [{
     id: `addp://engine/${id}/path/business/customers?type=table&item_id=${id * 10 + 2}`,
     locator: `addp://engine/${id}/path/business/customers?type=table&item_id=${id * 10 + 2}`,
-    label: `customers ${id}`, type: 'table', hasChildren: false, children: []
+    label: `customers ${id}`, type: 'table', hasChildren: false, children: [],
+    metadata: { item_id: id * 10 + 2, item_count: 1, has_children: false }
   }] : []
 })
 const root = id => ({ id: rootKey(id), locator: rootKey(id), label: `Expansion engine ${id}`,
@@ -68,6 +69,17 @@ test('catalog roots start collapsed without fetching any resource tree', async (
   await expanded(page, engines[0].name, false)
   await expanded(page, engines[1].name, false)
   expect(backend.rootRequests).toEqual([])
+})
+
+test('a PostgreSQL table stays a leaf when its visible item count is one', async ({ page }) => {
+  await installBackend(page)
+  await page.goto('/data-explorer')
+  await arrow(page, engines[0].name).click()
+  await arrow(page, 'schema 25').click()
+  await expect(row(page, 'customers 25')).toBeVisible()
+  await expect(arrow(page, 'customers 25')).toHaveClass(/is-leaf/)
+  await expect(arrow(page, 'customers 25')).toHaveCSS('color', 'rgba(0, 0, 0, 0)')
+  await expect(row(page, 'customers 25').locator('.tree-node-wrapper')).not.toHaveClass(/resource-tree-unloaded-children-inline/)
 })
 
 test('a late search response cannot mix old and new keywords across engines', async ({ page }) => {
