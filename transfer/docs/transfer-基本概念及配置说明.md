@@ -449,9 +449,11 @@ Console Wizard 已支持业务 Kafka 以及 PostgreSQL/MySQL/Oracle CDC 配置�
 
 当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。能力摘要和详情展示不作为当前版本的运行通过记录，固定版本证据、失败与未覆盖项见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
 
-`dead_letter` 只处理业务 Kafka JSON 解码、字段/key 校验和类型转换阶段的确定性记录错误。处理顺序固定为 DLQ payload -> `transfer.dead_letters` 控制索引 -> 目标 `skip` ledger -> `transfer.sync_states` CAS；source/poll、目标、fencing、retention 和 Infra 故障仍严格阻塞。DLQ topic 不是 replay source。
+`dead_letter` 的错误分类、幂等身份和处理协议统一见[Kafka 与 DLQ 契约](../../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。顺序为 DLQ payload → `transfer.dead_letters` 控制索引 → 目标 `skip` ledger → `transfer.sync_states` CAS，任一步失败不得推进后续 position。仅业务 Kafka 确定性记录错误可以进入 DLQ；source/poll、目标、fencing、retention 和 Infra 故障仍严格阻塞。
 
-业务 Kafka bounded replay 使用唯一 `POST /task-definitions/:id/replay`。请求只能提交显式 per-partition `[start_offset,end_offset)` 与新 PostgreSQL 目标的 `parent_locator + name`；source、mapping、key、policy 和原目标全部继承 owner task 且不可覆盖。API 在创建 execution 前冻结并校验请求时 retention、拒绝原目标或已有目标；bounded worker 再次校验 retention 和目标不存在后，以 execution-scoped apply identity 写入隔离表。replay 不读写 `transfer.sync_states`、主 lease、主 apply identity、主目标或任务 `desired_state/status/last_execution*`，因此可与主 continuous runtime 并行。
+业务 Kafka bounded replay 的唯一入口为 `POST /task-definitions/:id/replay`，请求只提交显式 per-partition `[start_offset,end_offset)` 和不存在的新 PostgreSQL 目标 `parent_locator + name`。source、mapping、key、policy 与原目标事实从 owner task 冻结继承，不得覆盖；提交前校验 retention 并拒绝原目标或已有目标，bounded worker 执行时再次核验 retention 和目标不存在。
+
+独立 execution、execution-scoped apply identity 与主状态隔离统一见[Checkpoint 与 Replay](transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)，完整失败约束以上述 Kafka 与 DLQ 契约为准。replay 从原业务 topic 读取，DLQ topic 不是 replay source；它写独立隔离表，不读写主水位、lease、apply identity、目标及任务状态，可与主 continuous runtime 并行，失败不改变主任务状态或触发 continuous 恢复 circuit。DLQ 查询的 Tenant/task 隔离与 payload 安全见[公开查询与来源隔离](数据库架构.md#dlq-公开查询与来源隔离)；处理或查询成功不替代 replay、来源隔离和完整链路的[实际验收](transfer-任务语义与同步模式.md#十一验证范围)。
 
 resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，取消事务不得留下业务行或目标 ledger 的半提交状态。数据库 CDC 的阻塞与恢复见[Schema 变化](transfer-任务语义与同步模式.md#七schema-变化)；业务 Kafka record 路线按显式 `block|dead_letter` 处理确定性记录错误，不复用 CDC 的 schema change request 语义。
 
