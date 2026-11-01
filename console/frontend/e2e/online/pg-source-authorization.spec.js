@@ -84,7 +84,7 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
 
     phase = 'create_picker'
     const selectionTree = system.getByTestId('approval-resource-tree')
-    await selectionTree.locator('input').first().fill('metric_people')
+    await selectionTree.getByRole('textbox').fill('metric_people')
     await selectionTree.getByRole('checkbox', { name: 'metric_people', exact: true }).locator('..').click()
     await expect(system.getByTestId('approval-targets')).toContainText('metric_people')
     await expect(system.getByTestId('source-grant-form')).toBeVisible()

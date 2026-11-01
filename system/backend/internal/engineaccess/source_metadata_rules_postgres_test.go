@@ -80,14 +80,21 @@ func exerciseMetadataRules(t *testing.T, ctx context.Context, repo *Repository, 
 		check(shared.SourceAccessRead, "explicit_deny")
 		check(shared.SourceAccessMetadataRead, "no_grant")
 
-		expires := time.Now().UTC().Add(10 * time.Minute)
+		// Deliberately exercise sub-microsecond input on every platform. The
+		// public sharing contract truncates it before persistence; both the
+		// receipt and current rules must match that exact canonical deadline.
+		requestedExpiry := time.Now().UTC().Add(10 * time.Minute).Truncate(time.Second).Add(123456789 * time.Nanosecond)
+		expires := requestedExpiry.Truncate(time.Microsecond)
 		binding := factstest.Binding(path)
 		metadataInput := CreateIndependentGrantInput{Actor: actor, EngineID: int64(path.EngineID),
 			RequestID: uuid.New(), CatalogPath: path, ItemFingerprint: binding.ItemFingerprint, ExpectedBoundaryHash: binding.BoundaryHash,
-			RecipientType: "user", RecipientID: user.PrincipalID, Action: shared.SourceAccessMetadataRead, ExpiryMode: shared.SharingExpiryAtTime, ExpiresAt: &expires, Reason: "Metadata rule fixture"}
+			RecipientType: "user", RecipientID: user.PrincipalID, Action: shared.SourceAccessMetadataRead, ExpiryMode: shared.SharingExpiryAtTime, ExpiresAt: &requestedExpiry, Reason: "Metadata rule fixture"}
 		metadata, err := service.CreateIndependentGrant(ctx, metadataInput)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if metadata.ExpiresAt == nil || !metadata.ExpiresAt.Equal(expires) {
+			t.Fatalf("metadata receipt deadline: input=%s expected=%s returned=%v", requestedExpiry.Format(time.RFC3339Nano), expires.Format(time.RFC3339Nano), metadata.ExpiresAt)
 		}
 		if metadata.Action != shared.SourceAccessMetadataRead {
 			t.Fatal("metadata Grant action was upgraded")
@@ -106,7 +113,7 @@ func exerciseMetadataRules(t *testing.T, ctx context.Context, repo *Repository, 
 		}
 		observed := check(shared.SourceAccessMetadataRead, "grant")
 		if observed.ExpiresAt == nil || !observed.ExpiresAt.Equal(expires) {
-			t.Fatalf("denied read Grant extended independent metadata deadline: %+v", observed)
+			t.Fatalf("denied read Grant extended independent metadata deadline: input=%s returned=%s observed=%+v", requestedExpiry.Format(time.RFC3339Nano), metadata.ExpiresAt.Format(time.RFC3339Nano), observed)
 		}
 		check(shared.SourceAccessRead, "explicit_deny")
 		release(t, readDeny)

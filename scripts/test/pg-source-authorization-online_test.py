@@ -639,6 +639,45 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                                        capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_workspace_picker_search_ignores_preceding_recursive_checkbox(self):
+        spec = Path(__file__).resolve().parents[2] / 'console/frontend/e2e/online/pg-source-authorization.spec.js'
+        program = r"""
+            const { readFileSync } = require('node:fs')
+            const source = readFileSync(process.argv[1], 'utf8')
+            const block = source.match(/const selectionTree = system.getByTestId\('approval-resource-tree'\)([\s\S]*?)await expect\(system.getByTestId\('approval-targets'\)\)/)
+            if (!block) throw new Error('picker selection scenario missing')
+            const events = []
+            const recursive = { fill() { throw new Error('checkbox is not a text input') } }
+            const textbox = { async fill(value) { events.push(['search', value]) } }
+            const row = { locator(selector) {
+                if (selector !== '..') throw new Error('wrong row')
+                return { async click() { events.push(['select', 'metric_people']) } }
+            } }
+            const picker = {
+                locator(selector) {
+                    if (selector !== 'input') throw new Error('unexpected selector')
+                    return { first: () => recursive }
+                },
+                getByRole(role, options) {
+                    if (role === 'textbox') return textbox
+                    if (role === 'checkbox' && options.name === 'metric_people' && options.exact) return row
+                    throw new Error('wrong semantic control')
+                }
+            }
+            const system = { getByTestId(id) {
+                if (id !== 'approval-resource-tree') throw new Error('wrong picker')
+                return picker
+            } }
+            new (Object.getPrototypeOf(async function(){}).constructor)('system', block[0].split('await expect')[0])(system)
+              .then(() => {
+                if (JSON.stringify(events) !== JSON.stringify([['search','metric_people'],['select','metric_people']])) {
+                  throw new Error('search or selected item changed')
+                }
+              }).catch(error => { console.error(error.message); process.exitCode = 1 })
+        """
+        result = ONLINE.subprocess.run(['node', '-e', program, str(spec)], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_shared_manager_boundary_waits_only_for_initial_projection(self):
         client = SimpleNamespace(request=Mock(side_effect=[
             SimpleNamespace(status=403, payload={'error_code': 'security_protection_required'}),
