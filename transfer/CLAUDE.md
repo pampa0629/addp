@@ -372,7 +372,17 @@ continuous 双用户审批验收沿用现有 Hosted suite 和同租户 peer：�
 
 本地共享工作区通过标准浏览器入口 `node ../../scripts/test/frontend-browser-gate.mjs task-navigation.spec.js`（从 `transfer/frontend` 执行，14／14）、`make test-transfer-frontend`（131 项单元、50 项浏览器及构建）、`make test-module MODULE=transfer GO_ONLY=1`、`make test-transfer-postgres`（19 个主测试，零失败／跳过）和 `make test-frontend-ci-registration`（27 项、21 个前端登记）。五个自有文件的 SHA-256 与提交逐一一致；这是共享工作区验证，不是清洁提交隔离验证。原始证据清单与日志保存在临时目录 `/tmp/addp-transfer-route-20261101/`，非长期归档。
 
-T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与 API 响应为合成夹具，iframe 父层为受控 Console 协议夹具。覆盖可读无 update、仅创建、保存失败、取消／撤销确认、启动失败、历史项数量、单 iframe／无同步重载及深链／刷新／前进后退；不计真实账号、完整 Console 产品或 Hosted T4／T5 通过。完整 `make test-module MODULE=transfer` 在平台 T0 的 scoped-restart `restart.sh -asset -asset` 夹具 30 秒超时，尚未进入 owner 步骤，不计完整聚合通过；独立 owner 门禁结果不能抹去该失败。未启动或重启个人开发服务，也未据推送或 CI 排队认定 CI 通过。
+T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与 API 响应为合成夹具，iframe 父层为受控 Console 协议夹具。覆盖可读无 update、仅创建、保存失败、取消／撤销确认、启动失败、历史项数量、单 iframe／无同步重载及深链／刷新／前进后退；不计真实账号、完整 Console 产品或 Hosted T4／T5 通过。完整 `make test-module MODULE=transfer` 在平台 T0 的 scoped-restart `restart.sh -asset -asset` 夹具 30 秒超时，尚未进入 owner 步骤，不计完整聚合通过；独立 owner 门禁结果不能抹去该失败。未启动或重启个人开发服务。
+
+2026-11-02 补核同一提交的 [Platform CI run 41319279732](https://github.com/pampa0629/addp/actions/runs/41319279732)（attempt 1）：已完成，整轮结果为失败。以下 Job 已实际选中并执行，不以跳过步骤或汇总标记认定通过：
+
+| 提交级 CI 证据 | 结果与适用范围 |
+| --- | --- |
+| [Transfer frontend](https://github.com/pampa0629/addp/actions/runs/41319279732/job/124885844534) | `make test-transfer-frontend` 通过：131 项单元，零失败／跳过；50 项浏览器包含本次 14 项路由回归，Vite 构建通过。仍沿上述受控 T3 夹具边界。 |
+| [Execution online CI runner](https://github.com/pampa0629/addp/actions/runs/41319279732/job/124885844391) | `make test-execution-online-ci-runner` 两组确定性测试分别为 100、167 项，通过；这是验收入口与编排回归，不是 Hosted T4 实跑。 |
+| [Platform consistency](https://github.com/pampa0629/addp/actions/runs/41319279732/job/124885844463) | `ModuleGateTest.test_manager_postgres_source_checkout_rejects_before_database_access` 失败：`--source-root` 指向 Runner checkout 时，预期 `MANAGER_POSTGRES_TEST_DSN must reference`，实际为 `Manager CI requires its repository-built owned PostgreSQL`。该失败与上述本地生命周期夹具超时分别保留，不能计整轮 CI 或完整模块聚合通过。 |
+
+上述 CI 元数据与三份 Job 日志也保存在同一临时证据目录，API `head_sha` 与修复提交一致；真实账号、完整 Console、Hosted T4／T5 仍未验收。
 
 ## 相关文档
 
