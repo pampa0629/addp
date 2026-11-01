@@ -4,7 +4,7 @@
 
 本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、watermark bounded incremental 规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
-阅读导航：[Continuous/Kafka](#八continuouskafka-v1-契约与当前实现边界)、[数据库 CDC](#九数据库-cdc-v1-已冻结边界)、[恢复分级](#恢复分级)。
+阅读导航：[table Transfer](#三table-transfer-支持范围)、[raw copy](#四raw-copy-支持范围)、[Continuous/Kafka](#八continuouskafka-v1-契约与当前实现边界)、[数据库 CDC](#九数据库-cdc-v1-已冻结边界)、[恢复分级](#恢复分级)。
 
 ## 一、核心对象
 
