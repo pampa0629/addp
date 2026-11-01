@@ -111,9 +111,11 @@ Kafka poll 会分批读取，但不因此成为 bounded；数据库 CDC 的 init
 | bounded | incremental | watermark | PostgreSQL/MySQL/OceanBase/openGauss/TiDB native table；OceanBase/openGauss/TiDB 限非空间表 | PostgreSQL/MySQL/OceanBase/openGauss/TiDB native table `upsert`；OceanBase/openGauss/TiDB 限非空间表 |
 | continuous | incremental | kafka | 业务 Kafka keyed JSON object | PostgreSQL/MySQL native table `upsert` |
 | bounded | incremental | kafka offset range（replay execution） | 已有业务 Kafka continuous task 的原 topic | 不存在的新 PostgreSQL 隔离表 `upsert` |
-| continuous | incremental | cdc | PostgreSQL/MySQL/Oracle 有稳定主键的单表 | 不存在的新 PostgreSQL/MySQL 表 `upsert_delete` |
+| continuous | incremental | cdc | PostgreSQL/MySQL/Oracle 有稳定主键的单表 | 不存在的新 PostgreSQL/MySQL/Oracle 表 `upsert_delete` |
 
 矩阵之外的组合必须由 planner 明确拒绝，不能通过字段省略、兼容分支或运行时猜测放行。
+
+CDC 的源／目标能力、Oracle 目标 schema、字段与空间限制及未支持项统一见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。Oracle 目标支持仅适用于本表的数据库 CDC 组合，不扩展业务 Kafka 或 watermark 的目标范围；实际通过范围见[验证范围](#十一验证范围)，Oracle 专项仍须区分[标准入口缺口与未覆盖项](../README.md#oracle-cdc-专项入口缺口)。
 
 ## 四、Bounded 执行语义
 
@@ -191,7 +193,7 @@ at-least-once delivery
   + Infra state CAS/fencing
 ```
 
-PostgreSQL 和 MySQL 的 `PartitionedTableChangeApplyProvider` 在目标业务数据库内把业务行变化与 partition apply ledger 放入同一事务。Provider 跳过 ledger 已覆盖的记录并单调推进 `next_offset`，阻止重复批次或失效 worker 写回旧状态。ADDP 不宣称跨系统的通用端到端 exactly-once。
+PostgreSQL、MySQL 和 Oracle 的 `PartitionedTableChangeApplyProvider` 在目标业务数据库内把业务行变化与 partition apply ledger 放入同一事务；CDC 各目标的 ledger 归属和 Oracle 目标约束以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准。Provider 跳过 ledger 已覆盖的记录并单调推进 `next_offset`，阻止重复批次或失效 worker 写回旧状态。ADDP 不宣称跨系统的通用端到端 exactly-once。
 
 ### 6.2 业务 Kafka
 
@@ -219,7 +221,7 @@ PostgreSQL/MySQL/Oracle 单表
   -> 对应 Debezium Connector
   -> Infra Kafka
   -> Transfer Continuous Worker
-  -> PostgreSQL/MySQL 新目标表
+  -> PostgreSQL/MySQL/Oracle 新目标表
 ```
 
 Kafka Connect 管理数据库日志捕获位置，Transfer 管理目标已应用的 Infra Kafka position，两者不能互相替代。公开任务配置不出现 connector、slot、publication、server id、内部 topic、consumer group 或 ACL。
@@ -365,7 +367,7 @@ Meta 提交失败不回滚已经提交的数据或 schema。Transfer 只触发�
 - 不把 Infra Kafka topic 暴露为用户资源。
 - 不把 watermark 轮询称为 CDC。
 - 不因支持 Kafka 或数据库 CDC 整体引入 Flink。
-- 不为 PostgreSQL 和 MySQL 建立两套同形任务配置、API 或 continuous consumer。
+- PostgreSQL/MySQL/Oracle 复用同一任务配置、API 和 continuous consumer，不按数据库类型建立平行路线。
 - 不通过忽略未知字段维持表面成功。
 
 只有出现已验证的事件时间窗口、stream join、CEP、大规模有状态计算或当前 runtime 无法满足的并行规模时，才重新评估 Flink；评估也必须复用同一任务语义、ChangeEvent、execution 和 committed position 契约。
