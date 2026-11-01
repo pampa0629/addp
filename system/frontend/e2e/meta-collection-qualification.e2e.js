@@ -62,7 +62,7 @@ async function fillApproval(page) {
 }
 
 test('Meta task deep link preselects the task without approving or executing', async ({ page }) => {
-  const { reads, writes } = await fixture(page)
+  const { reads, writes } = await fixture(page, { allowed: [...permissions, 'meta.catalog.read', 'meta.scan_task.read', 'system.engine_catalog.read'] })
   await page.goto('/engines/2?tab=collection-qualifications&collection_task_id=42')
   await expect(page.getByTestId('collection-task')).toHaveValue('42')
   await expect(page.getByTestId('collection-approve')).toBeDisabled()
@@ -71,6 +71,11 @@ test('Meta task deep link preselects the task without approving or executing', a
   await page.getByTestId('collection-inspect').click()
   await expect(page.getByTestId('collection-facts')).toContainText('42')
   expect(writes).toHaveLength(0)
+  await expect(page.getByTestId('collection-open-task')).toBeVisible()
+  await fillApproval(page); await page.getByTestId('collection-approve').click()
+  await expect(page.getByTestId('collection-records')).toBeVisible()
+  await expect(page.getByTestId('collection-open-task')).toBeVisible()
+  expect(writes).toHaveLength(1)
 })
 
 test('collection-only permission opens a separate read-only workspace and navigation never writes or scans', async ({ page }) => {

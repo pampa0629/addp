@@ -126,7 +126,7 @@ async function approve() {
     const result = await enginesAPI.approveMetaCollection(props.engine.id, sent)
     if (epoch !== generation) return
     if (result.id !== sent.command_id || result.task_id !== sent.task_id || result.engine_id !== String(props.engine.id) || result.task_definition_digest !== sent.expected_task_definition_digest) throw new Error('unconfirmedMetaCollectionResponse')
-    command.value = facts.value = null; taskID.value = purpose.value = ''; expiresAt.value = null
+    command.value = facts.value = null; purpose.value = ''; expiresAt.value = null
     success.value = t('system.engine.collection.saved'); page.value = 1; view.value = 'records'; await load()
   } catch (e) {
     if (epoch !== generation) return
