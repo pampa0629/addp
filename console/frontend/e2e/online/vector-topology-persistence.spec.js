@@ -1073,7 +1073,7 @@ function nodesPanelExpectation(failure,locale) {
   }
   expect(Object.hasOwn(reason,d.reason)).toBe(true)
   const values=[reason[d.reason],en?'Execute operation':'执行操作',en?'Extract line nodes':'节点提取',en?'Node 1 in the workflow definition':'定义中的第 1 个节点',d.operator.parameter?(en?'Source layer (input_gdf)':'源图层（input_gdf）'):'',field,action[d.reason],'develop.workflow.invalid_params',failure.execution_id].filter(Boolean)
-  return {reason:reason[d.reason],action:action[d.reason],values,clipboard:values.join('\n')}
+  return {reason:reason[d.reason],action:action[d.reason],values,clipboard:values.join('\n'),copyButton:en?'Copy diagnostics':'复制诊断信息'}
 }
 
 async function verifyNodesCase(page,evidence,directory) {
@@ -1177,7 +1177,7 @@ async function verifyNodesCase(page,evidence,directory) {
         await expect(panel).toContainText(locale==='en'?'Node 1 in the workflow definition':'定义中的第 1 个节点')
         await expect(panel).not.toContainText(/source_shape|route_key|节点业务几何|Traceback|site-packages|\/tmp\//)
         await page.evaluate(()=>navigator.clipboard.writeText('NODES_CLIPBOARD_NOT_WRITTEN'))
-        await panel.getByRole('button',{name:locale==='en'?'Copy diagnostics':'复制诊断',exact:true}).click()
+        await panel.getByRole('button',{name:expected.copyButton,exact:true}).click()
         await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(expected.clipboard)
         const clipboard=await page.evaluate(()=>navigator.clipboard.readText())
         const screenshot=`line-nodes-${failure.key}-${owner}-${locale}.png`;await page.screenshot({path:resolve(directory,screenshot)})

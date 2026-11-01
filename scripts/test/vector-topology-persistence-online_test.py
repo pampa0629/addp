@@ -2239,6 +2239,8 @@ for(const locale of ['zh-cn','en']){
   const failure={execution_id:'same-current-uuid',expected_diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator}}
   const actual=executionFailurePresentation({code:'develop.workflow.invalid_params',diagnostic:failure.expected_diagnostic},t)
   const expected=expectedFor(failure,locale)
+  assert.equal(expected.copyButton,t('common.executionFailure.copy'))
+  assert.ok(source.includes("panel.getByRole('button',{name:expected.copyButton,exact:true}).click()"))
   assert.deepEqual(expected.values,[actual.reason,actual.stage,actual.operator,actual.node,actual.parameter,actual.field,actual.action,actual.code,failure.execution_id].filter(Boolean))
   assert.equal(expected.clipboard,expected.values.join('\n'))
  }
