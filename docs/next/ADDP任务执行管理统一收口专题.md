@@ -837,3 +837,12 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 
 本次消费修正的最小充分本地门禁已通过：两项新增反例在旧 runner 上先红；真实 PG `GetTaskStatus` 七子项 DTO 交给旧 c5 投影得到 invalid_response，交给修正投影得到 observed 且仅含 Manager／Transfer。该交叉验证现已写入 `TestIntegrationPostgresCleanupPublicScopeSerialization`，复用现有 PG 门禁已要求的 python3，以 stdin 传递纯测试公共事实，不新增脚本／入口／依赖。最终 `make test-execution-online-ci-runner` 退出 0，native 98 项、共享 165 项均 OK，登记一致；`make test-system-cleanup` 退出 0，六项顶层真实 PG 用例全部通过（无跳过），包括公共范围／序列化／原 Python 消费函数交叉验证。`make check-node-runtime`、自有差异检查通过；与实际 Hosted c5 源码 AST 比对，HTTP／wait／sleep 调用及原机器契约逐字节未变。私有证据同目录 `public-projection-{red,focused,final-gates,final-pg}.log`、`public-projection-{crosslanguage,red-green-real-dto,invariants,local-proof}.json`。既有 Platform Execution online CI runner 和 System Cleanup PostgreSQL Job 分别由 scripts／System 路径命中，无需新 CI 编排；新测试只模拟六权限来源并复用真实 Owner 读取裁决，不替代 IAM 或 Hosted。修正不新增产品行为、权限或 Swagger 契约，旧错误子集合主路径已替换；第五轮实际仍 0/7，具体 timeout Owner／原因仍无有效现场子状态证据，新源码真实清理链路未验，新的 Hosted 须另行确认。
+
+
+### 8.27 消费修正的 Linux 门禁与第六轮单次取证
+
+`cc640125db9b14d0e92bbd288272e7f905b8716e` 两项对应 Linux CI 均已实际 success：独立 [Execution online CI runner Job 124808235110](https://github.com/pampa0629/addp/actions/runs/41293094049/job/124808235110)，push／attempt 1，完整日志 checkout 准确 cc640、执行 canonical Make，native 98 项／共享 165 项均 OK、登记一致且 selected:true；以及 [System Cleanup PG Job 124814611289](https://github.com/pampa0629/addp/actions/runs/41293094028/job/124814611289)，同源码／push／attempt 1，执行 `make test-system-cleanup`，六项顶层测试及真实公共 DTO→Python 投影用例通过，无跳过，容器停止步骤及最终 Job success。两者原日志 SHA-256 分别为 `06544afb12550c466c7eb297cde31f91062888aefabf6c93b88d77f25013e449`、`e601749be3c1ef5ec390ef59bc12a184a53e87e3c92dcc3e2c1e8d6af65daca4`；只确认该专项确定性消费契约，不升级为完整 workflow 或业务通过。
+
+用户本轮明确同意上述两项实际通过后再运行一次修正版 `transfer-engine`。已按此顺序独立核验完整日志，再单次 POST 创建 [Run 41297025312／Job 124819910808](https://github.com/pampa0629/addp/actions/runs/41297025312/job/124819910808)，workflow_dispatch／attempt 1，准确源码 `393384457618d815d87dec5ee44e4cd9c6e2d0d2`；创建后 queued，未计通过。API 初次列表尚未显示新 Run，只重读列表定位唯一新 ID，没有重复 POST。保持原六权限、操作范围、七项业务断言与等待预算；其他 Hosted、环境或权限变化仍单独确认。
+
+部署前对 cc640 后增量审阅：Cleanup／IAM／公共执行／PG-Kafka runtime／当前夹具分支／机器契约与 native Hosted Job 未变，依赖版本未变；Manager 借用库只改自身 main／case 分支，Online dispatcher 函数 AST 相同、仅增加无关 raster suite，另有 NetCDF 预览／独立 Redis 观察／文档变更。共享未提交修改不进入部署。私有证据 `/tmp/addp-transfer-engine-hosted-sixth-20261101/` 的 `prerequisite-proof.json`、两项原日志／Job 元数据及 `intent.json` 明确一次授权／一次 POST／一个 Run；watch 与 CI 会话均只读跟进本 Job，真实终态后核对十四服务源码、父与两项选定子诊断、七断言及恢复／清理／零残留。第五轮 0/7 和评估 timeout 缺口在新终态前保持，不新增第七轮授权。
