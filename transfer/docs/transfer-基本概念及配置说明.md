@@ -437,9 +437,11 @@ Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和
 
 任务创建或编辑时可以显式请求 Manager 对 Topic 当前保留范围尾部做一次有界预览，并从返回的 JSON object 样本生成顶层字段、目标类型和可空性的候选建议。样本建议不是 Topic schema，不写入 Meta attributes，也不能自动进入任务配置；用户必须在确认对话框中检查建议，确认后才合并为正式 `field_mapping`。已有手工映射始终保留，样本未覆盖的字段不能据此删除。运行时仍只认已确认的完整映射，并继续按未知字段、缺失必填字段和类型不匹配的严格规则处理记录。
 
-目标必须声明原子、单调且覆盖任务所需 operation 的 `PartitionedTableChangeApplyProvider`，当前支持 PostgreSQL、MySQL 与 Oracle。每个 task 由服务端生成不可变 `apply_identity`；PostgreSQL Provider 在业务目标库维护 `addp_transfer.apply_positions`，MySQL Provider 在目标业务数据库维护 `_addp_transfer_apply_positions` InnoDB 私有表，Oracle Provider 在连接用户 schema 内维护 `_ADDP_TRANSFER_APPLY_POSITIONS`，并把单 partition 的目标变更与 `next_offset` 在同一事务提交。MySQL 不跨数据库创建私有账本；Oracle 目标 schema 必须等于连接用户，ledger 通过 ownership comment 从 Catalog 隐藏。任一同名 ledger 结构不符合唯一规范时直接失败。poll batch 必须先按 partition 拆分；同一批中相同目标 key 的有效记录保留最高 offset 的最后状态。普通 `TableUpsertProvider`、Infra state CAS 和 runtime lease 都不能替代该目标侧原子应用契约。
+目标必须声明原子、单调且覆盖任务所需 operation 的 `PartitionedTableChangeApplyProvider`；各路线的目标范围见[支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)。每个 task 的 `apply_identity` 由服务端生成且不可修改。目标变更与 partition `next_offset` 的原子提交、分区拆批及同键保留最高 offset 的规则统一见[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)与[交付保证](transfer-任务语义与同步模式.md#61-交付保证)，普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 不能替代目标侧原子应用。
 
-每个 partition 的主状态继续存储在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`。consumer auto commit 禁用；目标提交后才允许以 runtime fencing token + state version 做 CAS。首次无状态 partition 必须显式选择 `earliest|latest`。
+各目标 ledger 的表名与归属以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准：PostgreSQL ledger 位于业务目标库；MySQL 使用同一目标数据库的 InnoDB 私有表，不跨库；Oracle CDC 目标 schema 必须等于连接用户，ledger 通过 ownership comment 从 Catalog 隐藏。同名 ledger 结构不符合唯一规范时直接失败，不保留兼容路径。
+
+每个 partition 的主状态保存在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`；consumer auto commit 禁用。先提交目标业务行与 ledger，再以 runtime fencing token + state version 做 Infra CAS；两步之间崩溃会重放，由目标 ledger 吸收重复并阻止旧 worker 回写，不宣称分布式 exactly-once。首次无状态 partition 必须显式选择 `earliest|latest`。该顺序的实际通过范围、失败与未覆盖项见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
 
 业务 Kafka JSON upsert + DLQ 与 PostgreSQL/MySQL/Oracle CDC snapshot/upsert/delete 已实现，并共用同一个 consumer/apply/CAS 主循环；continuous worker 不使用 Asynq。独立进程角色、状态控制与租约归属见[Continuous 运行时](transfer-任务语义与同步模式.md#六continuous-运行时)，交付与恢复约束以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。
 
