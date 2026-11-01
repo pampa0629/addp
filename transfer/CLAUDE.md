@@ -276,11 +276,11 @@ Transfer schema 仅由 Backend 迁移；模块级数据库锁、成功提交的�
 
 #### continuous 过程事件与浏览器验收
 
-连续执行浏览器验收复用同一 Hosted suite 与 Console canonical 路由，在真实事件已提交后核对时间线、自动刷新的新增计数、恢复来源与失败原因。正式撤权仍由 Python 夹具沿既有 IAM 入口执行；浏览器先确认已展示授权详情，再核对旧内容清空和重新登录后的 Monitor-only 拒绝。私有阶段控制文件与浏览器原始输出不归档；只归档闭合报告和安全页面截图。门禁继续使用 `make test-transfer-continuous-online-runner`，新增 ES module 语法校验，真实部署入口准备 Chromium；登记校验同时检查这些接线。
+现行事件写入、Runtime lease／fencing 裁决、attempt、累计计数、预算、30 天清理与安全字段统一见[过程事件契约](../docs/spec/tasks/执行监控.md#通用执行读取与过程事件)，恢复与停止沿[continuous 生命周期](docs/transfer-任务语义与同步模式.md#64-生命周期)。Common 不读取 Transfer 私表，专业响应不暴露内部 `owner_instance_id`；事件与 System 平台日志、操作审计的生命周期分开，不由下列历史结果扩展契约。
 
-真实 continuous 事件验收登记为手工 Hosted suite `transfer-continuous-events`，复用独占生命周期、System IAM 测试身份与正式 Gateway／Owner／Worker。业务 Kafka 与 PostgreSQL CDC 均由独立 Business 物理夹具验证目标事实；事件只沿已授权的 Transfer／Monitor 接口读取。新入口的确定性回归归 `make test-transfer-continuous-online-runner` 和 `make test-online-runner`，CI／T0 登记同次完成；实际 Hosted 运行成功前不得计为 T4，通过 API 不代表浏览器已验收。通用诊断投影同时排除连续执行内部 `owner_instance_id`，保留已有安全恢复、分区和延迟事实；共享 Go 消费者及 Common／Monitor PostgreSQL 门禁按 Common 改动扩散。
+真实场景使用手工 Hosted suite [transfer-continuous-events](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)，沿独占生命周期、System IAM 测试身份和正式 Gateway／Owner／Worker；Business 物理夹具独立核对业务 Kafka 与 PostgreSQL CDC 目标事实。连续执行浏览器验收复用该 suite 与 Console canonical 路由，在事件已提交后核对时间线、自动刷新新增计数、恢复来源与失败原因；Python 夹具沿既有 IAM 入口撤权，浏览器先确认已展示授权详情，再核对旧内容清空和重新登录后的 Monitor-only 拒绝。私有阶段控制文件与浏览器原始输出不归档，只归档闭合报告和安全截图。
 
-continuous 的 claim、累计提交计数与终态复用 `common.execution_events`；Transfer 在同一事务持有任务、execution、Runtime lease 锁并校验当前 owner/fencing、执行归属及锁等待后的有效期，Common 不读取 Transfer 私有表。每个 session 新建 execution，实际 claim 写入 attempt 1；已有已开始的 attempt 0 记录由 execution store 标准迁移规范化，pending 取消只保留概览。过期 worker 不得续租或写入，supervisor 收敛过期 running；暂停／停止的过期运行会取消而不自动恢复。事件仅包含闭合状态和累计记录数，不含业务位点、partition、错误自由文本、Worker 或 lease 信息，心跳／诊断不追加。每日预算及 30 天维护沿共享实现，不改变 System 平台日志或操作审计。新增回归由现有 Common execution PostgreSQL 事件组及 `make test-transfer-postgres` 的 continuous 事件、fencing、恢复／结构阻塞组承接，Go T1 自动发现，Common 消费者沿 `make test-changed` 扩散；不新增 API、事件字段或基础设施。
+确定性入口 `make test-transfer-continuous-online-runner` 与 `make test-online-runner`、ES module 语法校验和真实部署的 Chromium 准备均沿既有登记；Transfer T1／T2、前端及共享消费者扩散见[标准门禁](README.md#常规模块与专项门禁)与[测试规范](../docs/spec/addp测试与验收规范.md#三标准入口)。此处事件接入未新增 API、事件字段或基础设施；门禁与 API 通过不代替真实 Hosted 或浏览器验收，下列结果仅适用于各自固定版本。
 
 2026-10-12 continuous 过程事件本地门禁通过：`make test-module MODULE=transfer` 完成平台 T0、后端 T1、前端 130 项单元／16 项浏览器及构建、PostgreSQL T2；`make test-go` 全仓 Go 消费者、`make test-common-postgres`、`make test-monitor-postgres` 和执行夹具门禁均通过。真实 PostgreSQL 覆盖 claim／进展／终态、错误码、错配 Tenant／模块／execution、过期及锁等待后的进展／终态／续租拒绝、事务回滚、并发每日预算、暂停过期收敛、恢复的新 execution 和唯一终态、清理保留概览与事件，并清除测试自有事实。`make test-changed` 因未配置隔离 MySQL／OceanBase 测试连接在环境预检退出，Common MySQL／OceanBase 与 Model MySQL 等聚合消费者 T2 未运行，不计为通过；由现有 Release and T2 gates 的 Hosted 门禁复验。真实 Kafka／CDC 认证及 continuous 事件 T4 本轮未运行，既有 T4 收据不覆盖本次事件接入；已同步现有 continuous 集成夹具的事件清理，未以编译通过代替真实数据面验收。
 
@@ -288,11 +288,11 @@ continuous 的 claim、累计提交计数与终态复用 `common.execution_event
 
 #### 专业执行读取与响应收敛
 
-连续执行的分区位点沿 `ChangeStreamPosition.Values` 的既有十进制字符串契约输出 `values.next_offset`，不接受另一套数字表示；专业页面只展示业务运行诊断，不展示 Worker 身份、租约或 fencing。创建、委托创建和任务配置预检约束不因执行响应收敛改变。
+连续位点使用 `ChangeStreamPosition.Values` 的十进制字符串 `values.next_offset`，不接受另一套数字表示，沿[ChangeStreamReaderProvider 契约](../docs/spec/addp引擎插件接口规范.md#changestreamreaderprovider)。专业读取、用户／机器授权及安全 DTO 沿[专业响应契约](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)，不由 Monitor 通用读取权扩大专业结果范围；创建、委托创建和配置预检约束不因响应收敛改变。continuous 事件接入另见[过程事件专题](#continuous-过程事件与浏览器验收)。
+
+T1 HTTP 隔离／投影、T2 PostgreSQL 与前端回归沿[标准门禁](README.md#常规模块与专项门禁)；新增 T2 须登记到 `scripts/test/transfer-postgres-gate.sh`，Swagger 同步沿[API 维护规则](#配置provider-与-api-维护)。下列本地、CI 与 Hosted 结果分别认定，不代替当前版本重跑或完整身份矩阵验收。
 
 2026-10-12 执行响应收敛已由 `c1f993b1fa7c5d5e403e463c371c46b2adf4ae80` 纳入 main；`task_handler.go` 的创建、委托创建及配置预检逻辑没有变化。位点字符串修正补充了 0、普通位点、int64 最大值和真实 PostgreSQL 详情读取回归；后端 `make test-transfer-backend`、`make test-transfer-postgres`、前端 `make test-transfer-frontend`（130 项单元、16 项浏览器及构建）、Swagger 35 个路由覆盖、执行夹具和 ETL runner 37 项均通过。模块聚合初次因 Ontology 来源冻结校验失败：handler 与来源清单引用的旧提交不一致，Agent/Skill 等来源亦有差异。Ontology owner 在共享工作区同步来源后，2026-10-12 本地完整 `make test-module MODULE=transfer`（Platform T0、Go T1、前端 T1/T3、PostgreSQL T2）及 `make test-online-runner` 均退出成功；本模块没有修改或放宽来源门禁。位点补修提交为 `301e421e64a8227ad39cb6705104163cc3e27198`。上述确定性验证不代替本轮专业读取契约的真实 T4。
-
-专业执行读取、用户／机器授权与安全 DTO 的字段范围统一沿[Transfer 专业读取与响应](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)，不由 Monitor 通用读取权扩大专业结果范围。对应 T1 HTTP 隔离／投影回归和 T2 PostgreSQL 回归均由现有 Transfer 门禁承接，新增 T2 必须登记到 `scripts/test/transfer-postgres-gate.sh`；前端继续由 `make test-transfer-frontend` 验证，Swagger 生成及覆盖检查同步执行。
 
 2026-10-12 真实 Hosted T4 [38186991049](https://github.com/pampa0629/addp/actions/runs/38186991049) 在提交 `301e421e64a8227ad39cb6705104163cc3e27198` 通过：8 个服务构建身份一致，Transfer 专业响应的根字段、metadata、冻结结构与字段映射白名单均由真实读取断言核对；三轮 Orchestrator 父子执行、MongoDB 嵌套字段、关系型多源 CTE/JOIN/UNION、500 字段宽表及结构演进历史和浏览器图均通过。11 个临时资源全部删除，suite 残留为 0，基础设施清理零残留；55 个归档文件未发现凭据文件或原始 JWT Bearer。跨用户、跨租户、删除定义历史、撤权及机器入口隔离由上述 HTTP/PostgreSQL 回归验证，不能将本 T4 扩大表述为这些场景均经过真实双用户浏览器验收。该 T4 验证了 continuous 的诊断快照和位点读取；运行当时 continuous 过程事件尚未接入 `common.execution_events`；当时事件写入仅支持 bounded lease，本轮扩展由 Transfer 现有 Runtime lease/fencing 原子裁决 continuous 写入（见本节接入说明），不直接套用 bounded helper。
 
