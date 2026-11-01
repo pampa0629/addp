@@ -389,6 +389,23 @@ def run_command(
     return result
 
 
+def run_browser_login(addp: Path, env: dict[str, str], fixture: OAuthFixture) -> subprocess.CompletedProcess[str]:
+    try:
+        return run_command([str(addp), "auth", "login"], env, "browser login")
+    except AssertionError as exc:
+        # Only fixture counts are safe here: commands, response bodies, callback
+        # URLs and subprocess output can contain OAuth credentials.
+        with fixture.lock:
+            progress = {
+                "authorization_requests": len(fixture.authorization_requests),
+                "pending_authorization_codes": len(fixture.authorization_codes),
+                "token_families": len(fixture.families),
+            }
+        raise AssertionError(
+            f"{exc}; browser_fixture_progress={json.dumps(progress, sort_keys=True, separators=(',', ':'))}"
+        ) from None
+
+
 def collect_process(
     process: subprocess.Popen[str], operation: str
 ) -> subprocess.CompletedProcess[str]:
@@ -497,7 +514,7 @@ def main(addp: Path) -> int:
         results.append(rejected_manual_token)
         assert_manual_token_rejected(rejected_manual_token)
 
-        browser_login = run_command([str(addp), "auth", "login"], env, "browser login")
+        browser_login = run_browser_login(addp, env, fixture)
         results.append(browser_login)
         assert_context(parse_json_output(browser_login), "101", "1001")
         if not keyring.get_password(KEYRING_SERVICE, fixture.base_url):

@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,7 @@ from cli_product_e2e import (
     capture_command,
     collect_process,
     parse_json_output,
+    run_browser_login,
 )
 
 
@@ -93,3 +95,33 @@ def test_process_timeout_diagnostic_discards_captured_output():
     assert_diagnostic_redacts(secret, lambda: collect_process(process, "refresh process"))
     assert process.communicate_count == 2
     assert process.returncode == -9
+
+
+@pytest.mark.parametrize("request_count,code_count,family_count", [(0, 0, 0), (1, 0, 0), (1, 1, 0), (1, 0, 1)])
+def test_browser_timeout_reports_only_fixture_counts(monkeypatch, request_count, code_count, family_count):
+    secret = "addp_rt_browser_timeout_secret"
+    fixture = OAuthFixture()
+    fixture.authorization_requests = {f"{secret}{i}": {"secret": secret} for i in range(request_count)}
+    fixture.authorization_codes = {f"{secret}{i}": {"secret": secret} for i in range(code_count)}
+    fixture.families = {f"{secret}{i}": {"secret": secret} for i in range(family_count)}
+
+    def time_out(command, **kwargs):
+        assert command == [secret, "auth", "login"]
+        assert kwargs["timeout"] == 30
+        raise subprocess.TimeoutExpired(command, 30, output=secret, stderr=secret)
+
+    monkeypatch.setattr(subprocess, "run", time_out)
+    with pytest.raises(AssertionError, match="browser login timed out") as exc_info:
+        run_browser_login(Path(secret), {}, fixture)
+    assert str(exc_info.value) == (
+        'browser login timed out; browser_fixture_progress={'
+        f'"authorization_requests":{request_count},"pending_authorization_codes":{code_count},'
+        f'"token_families":{family_count}' + '}'
+    )
+    assert secret not in str(exc_info.value)
+
+
+def test_browser_login_returns_original_command_result(monkeypatch):
+    result = subprocess.CompletedProcess(["addp", "auth", "login"], 0, stdout="{}", stderr="")
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: result)
+    assert run_browser_login(Path("addp"), {}, OAuthFixture()) is result
