@@ -22,6 +22,8 @@ type vffSKCValueBinding struct {
 	attributeSets        []*vffSKCValueAttributes
 	attributeUse         *vffSKCValueAttribute
 	fixedValues          []vffSKCFixedValueComparison
+	constraintValues     []vffSKCConstraintValue
+	scalarTypes          []vffSKCScalarTypeFact
 }
 
 func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error) {

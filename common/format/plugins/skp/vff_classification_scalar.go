@@ -15,6 +15,8 @@ type vffSKCFixedValueComparison struct {
 	typeName            xml.Name
 	useValue, baseValue vffSKCScalar
 	known               bool
+	primitive           xml.Name
+	facets              []vffSKCDeclarationWitness
 }
 
 // Only explicit builtins: no user facets, floating-point coercion, or source

@@ -19,36 +19,8 @@ func (b *vffSKCBinder) checkAttributeValues(result *vffSKCValueBinding) error {
 			refs[vffSKCTypeReferenceKey{ref.source, ref.role}] = ref
 		}
 	}
-	for i := range result.fixedValues {
-		comparison := &result.fixedValues[i]
-		if err := b.tick(0); err != nil {
-			return err
-		}
-		ref, exists := refs[vffSKCTypeReferenceKey{comparison.declaration, "type"}]
-		if exists {
-			comparison.typeName = ref.name
-		}
-		if exists && ref.name.Space == vffXSDNS {
-			use := b.nodes[vffSKCNodeKey{comparison.source.member, comparison.source.begin}]
-			decl := b.nodes[vffSKCNodeKey{comparison.declaration.member, comparison.declaration.begin}]
-			left, knownLeft, err := b.scalar(use, ref.name, use.attrs["fixed"])
-			if err != nil {
-				return err
-			}
-			right, knownRight, err := b.scalar(decl, ref.name, decl.attrs["fixed"])
-			if err != nil {
-				return err
-			}
-			if knownLeft && knownRight {
-				if left != right {
-					return fmt.Errorf("fixed attribute use disagrees with declaration value")
-				}
-				comparison.useValue, comparison.baseValue, comparison.known = left, right, true
-			}
-		}
-		if !comparison.known {
-			result.issues = append(result.issues, "fixed attribute reference typed value equality not proved")
-		}
+	if err := b.checkRestrictionValues(result, refs); err != nil {
+		return err
 	}
 	ids := map[*vffXMLNode]string{}
 	active := map[*vffXMLNode]bool{}
