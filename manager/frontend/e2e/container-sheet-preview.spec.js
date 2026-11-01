@@ -132,7 +132,7 @@ test('FileGDB child rows render after the independent child response arrives', a
   const rootLocator = 'addp://engine/14/path/?type=server&node_id=1'
   const item = { id: locator, locator, label: 'public_test.gdb', type: 'file', hasChildren: false }
   const root = { id: rootLocator, locator: rootLocator, label: 'FileGDB test engine', type: 'server', hasChildren: true, children: [item] }
-  const reads = [], errors = []
+  const reads = [], pageReads = [], errors = []
   let releaseChild
   const childResponse = new Promise(resolve => { releaseChild = resolve })
   page.on('pageerror', error => errors.push(error.message))
@@ -153,14 +153,19 @@ test('FileGDB child rows render after the independent child response arrives', a
       if (!child) return json(route, { preview_type: 'object', data: { mode: 'object', object: { content: { kind: 'container', json: {
         format: 'filegdb', default_child: 'initial_points', children: [
           { name: 'initial_points', key: 'initial_points', data_type: 'table', row_count: 2, column_count: 2 },
-          { name: 'added_points', key: 'added_points', data_type: 'table', row_count: 1, column_count: 2 }
-        ], summary: { child_count: 2, sampled_children: 2 }
+          { name: 'added_points', key: 'added_points', data_type: 'table', row_count: 1, column_count: 2 },
+          { name: 'paging_points', key: 'paging_points', data_type: 'table', row_count: 23, column_count: 2 }
+        ], summary: { child_count: 3, sampled_children: 3 }
       } } } } })
       await childResponse
-      const rows = child === 'initial_points'
+      const pageNumber = Number(url.searchParams.get('page')), pageSize = Number(url.searchParams.get('page_size'))
+      pageReads.push({ child, page: pageNumber, page_size: pageSize })
+      const allRows = child === 'initial_points'
         ? [{ label: 'initial_points_0', value: 1 }, { label: 'initial_points_1', value: 2 }]
+        : child === 'paging_points' ? Array.from({ length: 23 }, (_, i) => ({ label: `paging_points_${i}`, value: i + 1 }))
         : [{ label: 'added_points_0', value: 1 }]
-      return json(route, { preview_type: 'table', data: { mode: 'table', columns: ['label', 'value'], rows, total: rows.length, page: 1, page_size: 20 } })
+      const rows = allRows.slice((pageNumber - 1) * pageSize, pageNumber * pageSize)
+      return json(route, { preview_type: 'table', data: { mode: 'table', columns: ['label', 'value'], rows, total: allRows.length, page: pageNumber, page_size: pageSize } })
     }
     return json(route, {})
   })
@@ -181,6 +186,41 @@ test('FileGDB child rows render after the independent child response arrives', a
     await expect(count('当前页行数')).toHaveText('1')
     await expect(container.getByRole('cell', { name: 'initial_points_0', exact: true })).toHaveCount(0)
     expect(reads).toEqual(['', 'initial_points', 'added_points'])
+    const select = async child => {
+      await container.locator('.child-select').click()
+      await page.getByRole('option', { name: new RegExp('^' + child) }).click()
+    }
+    const pager = container.locator('.child-preview .data-pagination')
+    const verify = async (child, offset, size, total, number) => {
+      await expect(count('当前页行数')).toHaveText(String(size))
+      await expect(count('总行数')).toHaveText(String(total))
+      const rows = container.locator('.child-preview .el-table__body-wrapper tr.el-table__row')
+      await expect(rows).toHaveCount(size)
+      for (let i = 0; i < size; i++) {
+        await expect(rows.nth(i).getByText(`${child}_${i + offset}`, { exact: true })).toBeVisible()
+        await expect(rows.nth(i).locator('.scalar-cell').filter({ hasText: new RegExp('^' + (i + offset + 1) + '$') })).toBeVisible()
+      }
+      await expect(pager.locator('.el-pager li.is-active')).toHaveText(String(number))
+    }
+    await select('paging_points')
+    await verify('paging_points', 0, 20, 23, 1)
+    await pager.locator('.btn-next').click()
+    await verify('paging_points', 20, 3, 23, 2)
+    await expect(container.getByText('paging_points_0', { exact: true })).toHaveCount(0)
+    await pager.locator('.btn-prev').click()
+    await verify('paging_points', 0, 20, 23, 1)
+    await pager.locator('.btn-next').click()
+    await verify('paging_points', 20, 3, 23, 2)
+    await select('added_points')
+    await verify('added_points', 0, 1, 1, 1)
+    await expect(pager.locator('.btn-next')).toBeDisabled()
+    await expect(container.getByText('paging_points_20', { exact: true })).toHaveCount(0)
+    await select('paging_points')
+    await verify('paging_points', 0, 20, 23, 1)
+    expect(pageReads).toEqual([
+      ['initial_points', 1], ['added_points', 1], ['paging_points', 1], ['paging_points', 2],
+      ['paging_points', 1], ['paging_points', 2], ['added_points', 1], ['paging_points', 1]
+    ].map(([child, page]) => ({ child, page, page_size: 20 })))
     expect(errors).toEqual([])
   } finally {
     releaseChild()

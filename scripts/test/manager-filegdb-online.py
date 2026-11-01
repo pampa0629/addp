@@ -34,7 +34,7 @@ REQUIRED_CHECKS = {'basic_whole_identity', 'ungranted_child_denied', 'initial_ch
     'ungranted_directory_download_denied', 'directory_download_same_grant_and_new_child',
     'directory_download_account_isolation_and_deny', 'directory_download_revoke_expiry',
     'directory_download_failure_cleanup_and_recovery', 'real_browser_directory_download_saved',
-    'real_browser_ungranted_revoked_expired_denied', 'real_browser_child_cells_and_switch'}
+    'real_browser_ungranted_revoked_expired_denied', 'real_browser_child_cells_and_switch', 'real_browser_child_pagination_and_reset'}
 
 
 def require(value, message):
@@ -226,6 +226,28 @@ def validate_browser_report(payload, context, artifact):
                     current_user_bearer=True, cookie_absent=True, credential_in_url=False)
                     for child in ('initial_points', 'added_points')],
                 'FileGDB browser child requests or identity differ')
+        pagination = payload.get('child_pagination', {})
+        first = [dict(label='paging_points_' + str(i), value=str(i + 1)) for i in range(20)]
+        last = [dict(label='paging_points_' + str(i), value=str(i + 1)) for i in range(20, 23)]
+        states = pagination.get('states', [])
+        expected = (
+            ('first', 'paging_points', first, ['added_points_0'], 23, 1),
+            ('next', 'paging_points', last, [row['label'] for row in first], 23, 2),
+            ('previous', 'paging_points', first, [row['label'] for row in last], 23, 1),
+            ('next-again', 'paging_points', last, [row['label'] for row in first], 23, 2),
+            ('switch-small', 'added_points', [dict(label='added_points_0', value='1')], [row['label'] for row in last], 1, 1),
+            ('switch-back', 'paging_points', first, ['added_points_0'], 23, 1))
+        require(len(states) == len(expected), 'FileGDB browser pagination states missing or duplicated')
+        for actual, (key, child, rows, previous, total, page) in zip(states, expected):
+            screenshot = 'manager-filegdb-pagination-' + key + '.png'
+            require(actual == dict(key=key, child=child, current_rows=len(rows), total_rows=total, rows=rows,
+                    previous_labels_absent=previous, page=page, page_size=20, previous_disabled=page == 1,
+                    next_disabled=page == (total + 19) // 20, screenshot=screenshot),
+                    'FileGDB browser pagination cells, page or reset differ: ' + key)
+            require((artifact / screenshot).is_file(), 'FileGDB browser pagination screenshot missing: ' + key)
+        require(pagination.get('requests') == [dict(child=child, page=page, page_size=20, locator=context['locator'],
+                    status=200, current_user_bearer=True, cookie_absent=True, credential_in_url=False)
+                    for _, child, _, _, _, page in expected], 'FileGDB browser pagination requests or identity differ')
         require(payload.get('download_events') == 1 and payload.get('suggested_filename') == NAME + '.zip',
                 'FileGDB browser did not save the original attachment')
         raw = destination.read_bytes()
@@ -492,6 +514,7 @@ def run(repository, environment, owner):
         browser('granted', 200, first)
         check('real_browser_directory_download_saved')
         check('real_browser_child_cells_and_switch')
+        check('real_browser_child_pagination_and_reset')
         verify_account_isolation(authorization, client, outsider, outsider_id, locator, first,
             [('initial_points', 2), ('added_points', 1)], report)
         check('ungranted_account_new_child_denied')

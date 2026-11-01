@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, login } from './transfer-browser-support.js'
-import { assertFileGDBChild } from './manager-filegdb-preview.js'
+import { assertFileGDBChild, assertFileGDBPage } from './manager-filegdb-preview.js'
 import { observeFileGDBDownload } from './manager-filegdb-response.js'
 
 test('ordinary User saves or is denied the same FileGDB through the real download button', async ({ page }) => {
@@ -110,6 +110,49 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
         })
         expect(requests.map(request => request.child)).toEqual(['initial_points', 'added_points'])
         proof.child_preview = { initial, added, requests }
+        const allRows = Array.from({ length: 23 }, (_, i) => ({ label: `paging_points_${i}`, value: i + 1 }))
+        const firstRows = allRows.slice(0, 20), lastRows = allRows.slice(20)
+        const states = []
+        const selectChild = async child => {
+          await container.locator('.child-select').click()
+          await frame.getByRole('option', { name: new RegExp('^' + child) }).click()
+        }
+        const capturePage = async (key, child, rows, previous, total, number) => {
+          const state = await assertFileGDBPage(container, child, rows, previous, total, number)
+          state.screenshot = `manager-filegdb-pagination-${key}.png`
+          await container.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, state.screenshot) })
+          states.push({ key, ...state })
+        }
+        const pager = container.locator('.child-preview .data-pagination')
+        await selectChild('paging_points')
+        await capturePage('first', 'paging_points', firstRows, ['added_points_0'], 23, 1)
+        await pager.locator('.btn-next').click()
+        await capturePage('next', 'paging_points', lastRows, firstRows.map(row => row.label), 23, 2)
+        await pager.locator('.btn-prev').click()
+        await capturePage('previous', 'paging_points', firstRows, lastRows.map(row => row.label), 23, 1)
+        await pager.locator('.btn-next').click()
+        await capturePage('next-again', 'paging_points', lastRows, firstRows.map(row => row.label), 23, 2)
+        await selectChild('added_points')
+        await capturePage('switch-small', 'added_points', [{ label: 'added_points_0', value: 1 }], lastRows.map(row => row.label), 1, 1)
+        await selectChild('paging_points')
+        await capturePage('switch-back', 'paging_points', firstRows, ['added_points_0'], 23, 1)
+        expect(childResponses).toHaveLength(8)
+        const paginationRequests = childResponses.slice(2).map(response => {
+          const request = response.request(), url = new URL(response.url())
+          expect(response.status()).toBe(200)
+          expect(request.method()).toBe('GET')
+          expect(request.headers().authorization).toBe(capability.request().headers().authorization)
+          expect(request.headers().cookie).toBeUndefined()
+          expect([...url.searchParams.keys()].sort()).toEqual(['child_name', 'locator', 'page', 'page_size'])
+          expect(url.searchParams.get('page_size')).toBe('20')
+          return { child: url.searchParams.get('child_name'), page: Number(url.searchParams.get('page')),
+            page_size: Number(url.searchParams.get('page_size')), locator: url.searchParams.get('locator'),
+            status: response.status(), current_user_bearer: true, cookie_absent: true, credential_in_url: false }
+        })
+        expect(paginationRequests.map(({ child, page }) => [child, page])).toEqual([
+          ['paging_points', 1], ['paging_points', 2], ['paging_points', 1], ['paging_points', 2], ['added_points', 1], ['paging_points', 1]])
+        proof.child_pagination = { states, requests: paginationRequests }
+
       }
       const responsePromise = page.waitForResponse(sourceDownload)
       responsePromise.catch(() => {})
@@ -165,7 +208,7 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
       await expect(button).toBeEnabled()
       expect(downloadEvents).toBe(input.status === 200 ? 1 : 0)
       expect(downloadRequests).toBe(1)
-      if (input.status === 200) expect(childResponses).toHaveLength(2)
+      if (input.status === 200) expect(childResponses).toHaveLength(8)
       await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, input.screenshot) })
       proof.screenshot = input.screenshot
     } finally {

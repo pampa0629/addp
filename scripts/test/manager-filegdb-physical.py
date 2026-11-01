@@ -72,23 +72,25 @@ def native(action, root):
         require(driver is not None, 'OpenFileGDB driver unavailable')
         dataset = driver.CreateDataSource(str(path)) if action == 'seed' else driver.Open(str(path), 1)
         require(dataset is not None, 'FileGDB source could not be opened')
-        layer_name, count = ('initial_points', 2) if action == 'seed' else ('added_points', 1)
-        require(dataset.GetLayerByName(layer_name) is None, 'layer already exists')
-        crs = osr.SpatialReference(); require(crs.ImportFromEPSG(4326) == 0, 'CRS unavailable')
-        layer = dataset.CreateLayer(layer_name, srs=crs, geom_type=ogr.wkbPoint)
-        require(layer is not None, 'layer creation failed')
-        require(layer.CreateField(ogr.FieldDefn('label', ogr.OFTString)) == 0, 'label creation failed')
-        require(layer.CreateField(ogr.FieldDefn('value', ogr.OFTInteger)) == 0, 'value creation failed')
-        for index in range(count):
-            feature = ogr.Feature(layer.GetLayerDefn())
-            feature.SetField('label', layer_name + '_' + str(index))
-            feature.SetField('value', index + 1)
-            point = ogr.Geometry(ogr.wkbPoint); point.AddPoint_2D(index, index)
-            feature.SetGeometry(point)
-            require(layer.CreateFeature(feature) == 0, 'feature creation failed')
-            feature = None
-        layer = None; dataset = None
-        return {'layer': layer_name, 'rows': count}
+        layers = [('initial_points', 2)] if action == 'seed' else [('added_points', 1), ('paging_points', 23)]
+        for layer_name, count in layers:
+            require(dataset.GetLayerByName(layer_name) is None, 'layer already exists')
+            crs = osr.SpatialReference(); require(crs.ImportFromEPSG(4326) == 0, 'CRS unavailable')
+            layer = dataset.CreateLayer(layer_name, srs=crs, geom_type=ogr.wkbPoint)
+            require(layer is not None, 'layer creation failed')
+            require(layer.CreateField(ogr.FieldDefn('label', ogr.OFTString)) == 0, 'label creation failed')
+            require(layer.CreateField(ogr.FieldDefn('value', ogr.OFTInteger)) == 0, 'value creation failed')
+            for index in range(count):
+                feature = ogr.Feature(layer.GetLayerDefn())
+                feature.SetField('label', layer_name + '_' + str(index))
+                feature.SetField('value', index + 1)
+                point = ogr.Geometry(ogr.wkbPoint); point.AddPoint_2D(index, index)
+                feature.SetGeometry(point)
+                require(layer.CreateFeature(feature) == 0, 'feature creation failed')
+                feature = None
+            layer = None
+        dataset = None
+        return {'layers': [{'layer': name, 'rows': count} for name, count in layers]}
     require(action == 'snapshot' and path.is_dir(), 'source snapshot missing')
     files = sorted(path.iterdir())
     require(files and all(f.is_file() and not f.is_symlink() for f in files), 'unexpected source member')

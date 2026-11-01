@@ -61,6 +61,24 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                 payload['child_preview'][key] = dict(child=child, current_rows=count, total_rows=count,
                     rows=[dict(label=child+'_'+str(i), value=str(i+1)) for i in range(count)],
                     previous_labels_absent=previous, screenshot=screenshot)
+            first = [dict(label='paging_points_' + str(i), value=str(i + 1)) for i in range(20)]
+            last = [dict(label='paging_points_' + str(i), value=str(i + 1)) for i in range(20, 23)]
+            payload['child_pagination'] = {'states': [], 'requests': []}
+            for key, child, rows, previous, total, page in (
+                    ('first', 'paging_points', first, ['added_points_0'], 23, 1),
+                    ('next', 'paging_points', last, [r['label'] for r in first], 23, 2),
+                    ('previous', 'paging_points', first, [r['label'] for r in last], 23, 1),
+                    ('next-again', 'paging_points', last, [r['label'] for r in first], 23, 2),
+                    ('switch-small', 'added_points', [dict(label='added_points_0', value='1')], [r['label'] for r in last], 1, 1),
+                    ('switch-back', 'paging_points', first, ['added_points_0'], 23, 1)):
+                screenshot = 'manager-filegdb-pagination-' + key + '.png'
+                (directory / screenshot).write_bytes(b'screenshot-fixture')
+                payload['child_pagination']['states'].append(dict(key=key, child=child, rows=rows,
+                    current_rows=len(rows), total_rows=total, previous_labels_absent=previous,
+                    page=page, page_size=20, previous_disabled=page == 1, next_disabled=page == (total + 19) // 20,
+                    screenshot=screenshot))
+                payload['child_pagination']['requests'].append(dict(child=child, page=page, page_size=20,
+                    locator=context['locator'], status=200, current_user_bearer=True, cookie_absent=True, credential_in_url=False))
             raw = io.BytesIO()
             with zipfile.ZipFile(raw, 'w') as archive:
                 archive.writestr(M.NAME + '/', b''); archive.writestr(M.NAME + '/a.gdbtable', b'original')
@@ -126,6 +144,57 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                     M.validate_browser_report(wrong, context, root)
             (root / payload['child_preview']['added']['screenshot']).unlink()
             with self.assertRaisesRegex(ValueError, 'child screenshot missing'):
+                M.validate_browser_report(payload, context, root)
+
+    def test_native_fixture_preserves_original_layers_and_adds_twenty_three_rows(self):
+        created = {}
+        dataset = Mock()
+        dataset.GetLayerByName.return_value = None
+        def layer(name, **_):
+            created[name] = []
+            result = Mock()
+            result.CreateField.return_value = 0
+            result.CreateFeature.side_effect = lambda feature: created[name].append(dict(feature.fields)) or 0
+            return result
+        dataset.CreateLayer.side_effect = layer
+        ogr = Mock()
+        ogr.GetDriverByName.return_value.CreateDataSource.return_value = dataset
+        ogr.GetDriverByName.return_value.Open.return_value = dataset
+        def feature(_):
+            result = Mock(); result.fields = {}
+            result.SetField.side_effect = result.fields.__setitem__
+            return result
+        ogr.Feature.side_effect = feature
+        osr = Mock(); osr.SpatialReference.return_value.ImportFromEPSG.return_value = 0
+        with tempfile.TemporaryDirectory() as name, patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='fixture-run'), \
+                patch.dict('sys.modules', osgeo=SimpleNamespace(ogr=ogr, osr=osr)):
+            root = Path(name)
+            with patch.object(P, 'owned_root', return_value=(root, root)):
+                P.native('seed', root); P.native('add', root)
+        self.assertEqual(created, {child: [dict(label=child + '_' + str(i), value=i + 1) for i in range(count)]
+                                  for child, count in [('initial_points', 2), ('added_points', 1), ('paging_points', 23)]})
+
+    def test_browser_requires_pagination_cells_requests_reset_and_screenshots(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name); context, payload = self.browser_proof(root)
+            mutations = [lambda p: p.pop('child_pagination'),
+                lambda p: p['child_pagination']['states'].pop(),
+                lambda p: p['child_pagination']['states'][1].update(rows=p['child_pagination']['states'][0]['rows']),
+                lambda p: p['child_pagination']['states'][1]['rows'][0].update(value='1'),
+                lambda p: p['child_pagination']['states'][1].update(total_rows=3),
+                lambda p: p['child_pagination']['states'][4].update(page=2),
+                lambda p: p['child_pagination']['states'][5].update(page_size=10),
+                lambda p: p['child_pagination']['states'][4].update(previous_labels_absent=[]),
+                lambda p: p['child_pagination']['requests'].append(p['child_pagination']['requests'][0]),
+                lambda p: p['child_pagination']['requests'][1].update(page=1),
+                lambda p: p['child_pagination']['requests'][1].update(current_user_bearer=False),
+                lambda p: p['child_pagination']['requests'][4].update(child='paging_points')]
+            for mutation in mutations:
+                wrong = deepcopy(payload); mutation(wrong)
+                with self.assertRaisesRegex(ValueError, 'FileGDB browser pagination'):
+                    M.validate_browser_report(wrong, context, root)
+            (root / payload['child_pagination']['states'][4]['screenshot']).unlink()
+            with self.assertRaisesRegex(ValueError, 'pagination screenshot missing'):
                 M.validate_browser_report(payload, context, root)
 
     def test_browser_copy_must_exist_and_match_every_saved_byte(self):
