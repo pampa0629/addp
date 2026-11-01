@@ -794,15 +794,57 @@ async function assertExtensionLineMap(renderer,expected,probe=[2,0]) {
   return {...rendered,...pixels}
 }
 
+async function assertTrimRemovedSegment(renderer) {
+  let removed
+  await expect.poll(async()=>{
+    removed=await renderer.evaluate(element=>{
+      const ref=element.__vueParentComponent.setupState.mapInstance,map=ref?.value||ref
+      const position=map.getPixelFromCoordinate([0,0]),viewport=map.getViewport().getBoundingClientRect()
+      let pixels=0,observed=0
+      for(const layer of map.getLayers().getArray()){
+        if(!layer.getVisible()||layer.getOpacity()<=0||!layer.getSource?.()?.getFeatures?.()?.length)continue
+        const context=layer.getRenderer()?.context;if(!context)continue
+        const canvas=context.canvas,rect=canvas.getBoundingClientRect()
+        const x=Math.round((position[0]+viewport.left-rect.left)*canvas.width/rect.width),y=Math.round((position[1]+viewport.top-rect.top)*canvas.height/rect.height)
+        if(x<3||y<3||x>=canvas.width-3||y>=canvas.height-3)continue
+        observed++;const data=context.getImageData(x-3,y-3,7,7).data
+        for(let i=0;i<data.length;i+=4)if(data[i+3]>0&&data[i+1]>data[i]*1.1&&data[i+1]>data[i+2]*1.1)pixels++
+      }
+      return observed>0?pixels:-1
+    })
+    return removed
+  }).toBe(0)
+  return removed
+}
+
+async function assertTrimFailurePanel(panel,failure) {
+  const reasons={limit:'最大修剪路径距离必须为以源坐标系水平单位表示的有限正数。',
+    source:'输入图层不符合算子的类型、字段、几何或标识要求。',reference:'参考图层不符合算子的类型、几何或标识要求。',
+    crs:'两个图层须使用相同的已知投影坐标系和匹配的水平单位。',
+    self:'源部件存在内部自交或源线正长度重合，不能直接修剪。',overlap:'源部件存在内部自交或源线正长度重合，不能直接修剪。',
+    conflict:'两端修剪计划交错或相遇，会使原部件消失。',landing:'执行失败，未记录具体诊断'}
+  expect(Object.hasOwn(reasons,failure.key)).toBe(true)
+  await expect(panel).toBeVisible();await expect(panel.locator('h4')).toHaveText(reasons[failure.key])
+  await expect(panel).toContainText(failure.execution_id)
+  if(failure.expected_diagnostic){
+    await expect(panel).toContainText('线端修剪');await expect(panel).toContainText('定义中的第 1 个节点')
+    await expect(panel).toContainText('develop.workflow.invalid_params')
+    const parameter=failure.expected_diagnostic.operator.parameter
+    if(parameter)await expect(panel).toContainText(parameter)
+  }else await expect(panel).toContainText('develop.workflow.execution_failed')
+  await expect(panel).not.toContainText(/source_shape|reference_shape|route_key|ref_key|修剪属性|普通业务几何|Traceback|site-packages|\/tmp\//)
+}
+
 function persistExtensionEvidence(directory,raw,stage,result='incomplete') {
-  writeFileSync(resolve(directory,raw.case==='endpoint-snapping'?'topology-endpoint-browser-raw.json':'topology-extension-browser-raw.json'),JSON.stringify({...raw,stage,result},null,2)+'\n')
+  writeFileSync(resolve(directory,raw.case==='line-trimming'?'topology-trim-browser-raw.json':raw.case==='endpoint-snapping'?'topology-endpoint-browser-raw.json':'topology-extension-browser-raw.json'),JSON.stringify({...raw,stage,result},null,2)+'\n')
 }
 
 async function verifyLineEditCase(page,evidence,directory) {
-  const endpoint=evidence.case==='endpoint-snapping',prefix=endpoint?'endpoint':'line-extension',schema=endpoint?'addp.endpoint-snapping':'addp.line-extension'
-  expect(evidence.sources).toHaveLength(endpoint?7:3)
+  const trim=evidence.case==='line-trimming'
+  const endpoint=evidence.case==='endpoint-snapping',prefix=trim?'line-trimming':endpoint?'endpoint':'line-extension',schema=trim?'addp.line-trimming':endpoint?'addp.endpoint-snapping':'addp.line-extension'
+  expect(evidence.sources).toHaveLength(trim?11:endpoint?7:3)
   expect(evidence.outputs.map(o=>o.port)).toEqual(['result','details'])
-  expect(evidence.expected.result).toHaveLength(endpoint?12:7);expect(evidence.expected.details).toHaveLength(endpoint?10:8)
+  expect(evidence.expected.result).toHaveLength(trim?15:endpoint?12:7);expect(evidence.expected.details).toHaveLength(trim?9:endpoint?10:8)
   const identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
   const raw={schema_version:schema+'-browser-raw/v1',case:evidence.case,run_id:evidence.run_id,execution_id:evidence.execution_id,observations:[]}
   const persist=(stage,result='incomplete')=>persistExtensionEvidence(directory,raw,stage,result)
@@ -837,14 +879,16 @@ async function verifyLineEditCase(page,evidence,directory) {
     expect(data.rows.map(r=>({properties:Object.fromEntries(fields.map(key=>[key,r[key]])),geometry:decodePreviewEWKB(r[output.geometry_column])}))).toEqual(expected)
     const table=frame.locator('.table-preview');await expect(table).toBeVisible();await expect(table.locator('.map-placeholder')).toHaveCount(0)
     const renderer=table.locator('.openlayers-map-renderer')
-    if(endpoint&&output.port==='result'){
+    if((endpoint||trim)&&output.port==='result'){
       await expect.poll(async()=>renderer.evaluate(element=>{
         const ref=element.__vueParentComponent?.setupState?.mapInstance,map=ref?.value||ref
         if(!map)return false
         map.getView().setCenter([24.25,4]);map.getView().setResolution(.01);map.renderSync();return true
       })).toBe(true)
+      if(trim)await renderer.evaluate(element=>{const ref=element.__vueParentComponent.setupState.mapInstance,map=ref?.value||ref;map.getView().setCenter([1.5,1]);map.getView().setResolution(.02);map.renderSync()})
     }
-    observation.rendered=endpoint&&output.port==='details'?await assertProximityPointMap(renderer,expected):await assertExtensionLineMap(renderer,expected,endpoint?[24.25,4]:[2,0])
+    observation.rendered=(endpoint||trim)&&output.port==='details'?await assertProximityPointMap(renderer,expected):await assertExtensionLineMap(renderer,expected,trim?[1,0]:endpoint?[24.25,4]:[2,0])
+    if(trim&&output.port==='result')observation.removed_segment_pixels=await assertTrimRemovedSegment(renderer)
     await page.screenshot({path:resolve(directory,`${prefix}-${output.port}-map.png`)});persist(output.port+'_map_verified')
     await frame.getByRole('tab',{name:'属性',exact:true}).click();await expect(frame.locator('.attributes-tab-pane')).toContainText(output.layer_name)
     await page.screenshot({path:resolve(directory,`${prefix}-${output.port}-attributes.png`)})
@@ -868,8 +912,8 @@ async function verifyLineEditCase(page,evidence,directory) {
     await page.screenshot({path:resolve(directory,`${prefix}-${output.port}-lineage.png`)});persist(output.port+'_lineage_verified')
   }
   raw.failures=[]
-  const failures=endpoint?evidence.failures:[{key:'first-intersection',execution_id:evidence.failed_execution_id}]
-  expect(failures).toHaveLength(endpoint?4:1)
+  const failures=endpoint||trim?evidence.failures:[{key:'first-intersection',execution_id:evidence.failed_execution_id}]
+  expect(failures).toHaveLength(trim?8:endpoint?4:1)
   expect(new Set(failures.map(f=>f.execution_id)).size).toBe(failures.length)
   for(const failure of failures){
     const failureRead=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/develop/executions/${failure.execution_id}`)
@@ -881,8 +925,20 @@ async function verifyLineEditCase(page,evidence,directory) {
       record.monitor=await json(await failedAPI.get(`/api/v1/monitor/executions/by-execution-id/${failure.execution_id}`),'line edit failed Monitor');expect(record.monitor.execution_id).toBe(failure.execution_id);expect(record.monitor.triggered_by).toBe(Number(evidence.principal_id));expect(record.monitor.module).toBe('develop');expect(record.monitor.status).toBe('failed')
       for(const entry of [...evidence.sources,...evidence.outputs])expect(await json(await failedAPI.get(`/api/v1/meta/items/${entry.item_id||entry.id}`),'unchanged item after failure')).toEqual(entry.before)
     }finally{await failedAPI.dispose()}
-    await expect(frame.getByText('失败',{exact:true})).toBeVisible();await page.screenshot({path:resolve(directory,endpoint?`${prefix}-${failure.key}-failed.png`:'line-extension-failed.png')})
-    if(!endpoint){raw.failure=record.execution;raw.failed_monitor=record.monitor}
+    await expect(frame.getByText('失败',{exact:true})).toBeVisible()
+    if(trim)await assertTrimFailurePanel(frame.locator('.execution-detail-page > .execution-failure'),failure)
+    await page.screenshot({path:resolve(directory,endpoint||trim?`${prefix}-${failure.key}-failed.png`:'line-extension-failed.png')})
+    if(trim){
+      expect(record.execution.error_details).toEqual(failure.error_details);expect(record.monitor.error_details).toEqual(failure.error_details)
+      const monitorRead=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/monitor/executions/by-execution-id/${failure.execution_id}/tree`)
+      await page.goto(`${process.env.CONSOLE_URL}/monitor/executions?execution_id=${failure.execution_id}`)
+      const response=await monitorRead,api=await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)
+      try{record.monitor_page=await json(response,'trim real failed Monitor page')}finally{await api.dispose()}
+      expect(record.monitor_page.execution.execution_id).toBe(failure.execution_id);expect(record.monitor_page.execution.triggered_by).toBe(Number(evidence.principal_id));expect(record.monitor_page.execution.status).toBe('failed');expect(record.monitor_page.execution.error_details).toEqual(failure.error_details)
+      await assertTrimFailurePanel(frame.locator('.execution-detail-content > .execution-failure'),failure)
+      await page.screenshot({path:resolve(directory,`${prefix}-${failure.key}-monitor-failed.png`)})
+    }
+    if(!endpoint&&!trim){raw.failure=record.execution;raw.failed_monitor=record.monitor}
     persist('failed_'+failure.key+'_verified')
   }
   expect(writes).toEqual([]);persist('complete','passed')
@@ -983,4 +1039,12 @@ test('面界提取独立普通User单成果与两失败保护',async({page})=>{
   }
   expect(writes).toEqual([]);persist('complete','passed')
   writeFileSync(resolve(directory,'topology-browser.json'),JSON.stringify({...evidence,schema_version:'addp.polygon-rings-browser/v1',result:'passed'},null,2)+'\n')
+})
+
+
+test('线端修剪独立普通User线与Point双成果及八失败保护',async({page})=>{
+  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}'),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
+  expect(evidence.case).toBe('line-trimming')
+  await observeLineageCanvas(page)
+  await verifyLineEditCase(page,evidence,directory)
 })

@@ -495,3 +495,19 @@ class ProximityFixtureTest(unittest.TestCase):
             lambda r:r[4]['properties'].update(distance=0.)]:
             rows=copy.deepcopy(original);mutate(rows)
             with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.validate_proximity_features(rows)
+
+
+class TrimFixtureTest(unittest.TestCase):
+    def test_trim_selected_worker_never_runs_full_or_old_cases(self):
+        self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':m.TRIM_CASE}),m.TRIM_CASE)
+        self.assertEqual(m.network_profile(m.TRIM_CASE)['title'],m.TRIM_TITLE)
+        with patch.object(m,'trim_worker',return_value={'only':'trim'}) as worker,patch.object(m,'seed_snap',side_effect=AssertionError('old scenario')):
+            self.assertEqual(m.worker('seed',Path('/unused'),m.TRIM_CASE),{'only':'trim'});worker.assert_called_once()
+    def test_trim_frozen_expectation_rejects_missing_source_attribute_original_point_or_path_distance(self):
+        self.assertEqual([len(m.trim_features(k)) for k in ('source','reference','result','details')],[15,14,15,9])
+        self.assertEqual(sum(len(r['geometry']['coordinates']) for r in m.trim_features('source')),16)
+        for kind,change in [('result',lambda r:r.reverse()),('result',lambda r:r[0]['properties'].pop('geometry')),
+                ('details',lambda r:r[0]['geometry'].update(coordinates=[0,0])),('details',lambda r:r[3]['properties'].update(distance=2**.5)),
+                ('details',lambda r:r.pop(1)),('details',lambda r:r[0]['properties'].update(part_no=True))]:
+            rows=copy.deepcopy(m.trim_features(kind));change(rows)
+            with self.subTest(kind=kind),self.assertRaises(m.FixtureError):m.validate_extension_features(rows,kind,m.TRIM_CASE)

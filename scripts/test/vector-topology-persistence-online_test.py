@@ -1595,13 +1595,13 @@ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 const helper=source.slice(source.indexOf('async function verifyLineEditCase('),source.indexOf("test('线端延伸独立普通User双成果与精确首次交点拒绝'"));
 const run=new AsyncFunction('page','expect','process','observeLineageCanvas','login','writeFileSync','resolve',helper+';'+body);
 const events=[],stop=new Error('stop after first navigation'),page={on(){},waitForResponse(){events.push('read');return Promise.resolve({})}};
-const evidence={case:config.case,sources:Array(config.count),outputs:[{port:'result'},{port:'details'}],expected:{result:Array(config.case==='line-extension'?7:12),details:Array(config.case==='line-extension'?8:10)}};
+const evidence={case:config.case,sources:Array(config.count),outputs:[{port:'result'},{port:'details'}],expected:{result:Array(config.case==='line-trimming'?15:config.case==='line-extension'?7:12),details:Array(config.case==='line-trimming'?9:config.case==='line-extension'?8:10)}};
 const expect=value=>({toBe:x=>assert.equal(value,x),toHaveLength:x=>assert.equal(value.length,x),toEqual:x=>assert.deepEqual(value,x)});
 let installed=false;
 await assert.rejects(()=>run(page,expect,{env:{ADDP_ONLINE_TOPOLOGY_EVIDENCE:JSON.stringify(evidence)}},async actual=>{assert.equal(actual,page);await Promise.resolve();installed=true;events.push('observer')},async()=>{assert.ok(installed,'Canvas observer was not awaited before login');events.push('login');throw stop},()=>{},(...parts)=>parts.join('/')),error=>error===stop);
 assert.deepEqual(events,['observer','read','login']);
 '''
-        for config in ({'case':'line-extension','count':3,'title':m.fixture.EXTENSION_TITLE},{'case':m.fixture.ENDPOINT_CASE,'count':7,'title':m.fixture.ENDPOINT_TITLE}):
+        for config in ({'case':m.fixture.TRIM_CASE,'count':11,'title':m.fixture.TRIM_TITLE},{'case':'line-extension','count':3,'title':m.fixture.EXTENSION_TITLE},{'case':m.fixture.ENDPOINT_CASE,'count':7,'title':m.fixture.ENDPOINT_TITLE}):
             value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(config)],text=True,capture_output=True)
             self.assertEqual(value.returncode,0,value.stdout+value.stderr)
 
@@ -1748,7 +1748,7 @@ for(const expected of Object.values(expectations)){
  await assert.rejects(()=>run(changed,expected));
 }
 '''
-        value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps({'result':m.fixture.endpoint_features('result'),'rings':[{**row,'properties':{k:row['properties'][k] for k in ('parcel_key','source_id','part_no','ring_no','ring_id','is_hole')}} for row in m.fixture.rings_features('result')]}),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],text=True,capture_output=True)
+        value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps({'result':m.fixture.endpoint_features('result'),'trim':m.fixture.trim_features('result'),'rings':[{**row,'properties':{k:row['properties'][k] for k in ('parcel_key','source_id','part_no','ring_no','ring_id','is_hole')}} for row in m.fixture.rings_features('result')]}),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],text=True,capture_output=True)
         self.assertEqual(value.returncode,0,value.stdout+value.stderr)
 
 
@@ -1951,3 +1951,139 @@ class RingInputDiagnosticOnlineTest(unittest.TestCase):
                 before=copy.deepcopy(report);mutate(report)
                 with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
                 report=before
+
+
+def trim_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{n:{'size_bytes':98304,'sha256':n} for n in m.fixture.TRIM_SOURCES},
+        'targets':{name:{'size_bytes':98304,'sha256':name,'feature_count':len(m.fixture.trim_features(port)),'layer_name':name[:-5],
+            'geometry_column':'geom','fid_column':'fid','features':m.fixture.trim_features(port)}
+            for port,name in zip(m.fixture.EXTENSION_PORTS,m.fixture.TRIM_TARGETS)}}
+
+
+class TrimClient(InputDiagnosticClient):
+    def __init__(self):
+        super().__init__();self.sources=[];self.outputs=[];self.mutate_failed=None;self.failed_graph=None;self.mutate_graph=None;self.scan_actor=33;self.scan_tenant=2
+        for i,(name,kind) in enumerate(zip(m.fixture.TRIM_SOURCES,m.fixture.TRIM_KINDS)):
+            rows=m.fixture.trim_features(kind);item=base.item(name,10+i);item['full_name']=name
+            item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.sources.append(item)
+        for i,(name,port) in enumerate(zip(m.fixture.TRIM_TARGETS,m.fixture.EXTENSION_PORTS)):
+            rows=m.fixture.trim_features(port);item=base.item(name,30+i)
+            item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.outputs.append(item)
+        self.scans=['scan-'+n for n in m.fixture.TRIM_SOURCES]
+        self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}' for i,n in enumerate(m.fixture.TRIM_SOURCES)]
+        self.parent='addp://engine/3/path/outputs?type=directory'
+        targets={p:f'addp://engine/3/path/outputs/{n}?type=file' for p,n in zip(m.fixture.EXTENSION_PORTS,m.fixture.TRIM_TARGETS)}
+        self.success={'execution_id':'trim-run','status':'success','triggered_by':33,
+            'outputs':{'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()},
+            'execution_config':{'content':{'workflow_definition':m.trim_definition(self.locators,self.parent)}},
+            'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':p,'locator':l} for p,l in zip(['input.load_source','input.load_reference'],self.locators)],
+              'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]},'result':{'meta_scan_runs':[{'execution_id':'output-scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}}
+    def request(self,method,path,expected,body=None):
+        if method=='POST' and path.endswith('/develop/executions'):
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
+            if name.startswith('failed-'):
+                spec=next(v for v in m.fixture.TRIM_FAILURES if name.startswith('failed-'+v[0]+'-'))
+                value={'execution_id':'failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},
+                    'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params' if spec[3] else 'develop.workflow.execution_failed','message':'controlled'}}
+                if spec[3]:value['error_details']['diagnostic']=m.trim_diagnostic(spec)
+                if self.mutate_failed:self.mutate_failed(value)
+            else:value=self.success;self.scans.extend(['output-scan-result','output-scan-details'])
+            self.executions[value['execution_id']]=value;data={'execution_id':value['execution_id']}
+        elif path.endswith('/engines/3/items'):data=[*self.sources,*self.outputs]
+        elif path.startswith('/api/v1/meta/items/'):
+            item_id=int(path.rsplit('/',1)[1]);data=next(v for v in [*self.sources,*self.outputs] if v['id']==item_id)
+        elif '/meta/executions/' in path:data={'status':'success','tenant_id':self.scan_tenant,'triggered_by':self.scan_actor}
+        elif path.startswith('/api/v1/meta/lineage/graph?'):
+            if 'direction=downstream' in path:
+                data={'truncated':False,'nodes':[],'edges':[]}
+                if self.failed_graph:self.failed_graph(data)
+            else:
+                target=int(path.split('item_id=')[1].split('&')[0]);data={'truncated':False,'nodes':[],'edges':[{'source':{'item_id':v},'target':{'item_id':target},'relation_kind':'derive','status':'active','evidence':{'execution_id':'trim-run'}} for v in (10,11)]}
+                if self.mutate_graph:self.mutate_graph(data)
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+class TrimOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.TRIM_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=trim_physical,browser=lambda *a:a[2],diagnostic=None):
+        def check(repo,env,identifier,**kwargs):
+            self.assertEqual((kwargs['task'],kwargs['reason'],kwargs['cause']),('trim',m.fixture.TRIM_LANDING_FAILURE,'landing'))
+            return {'execution_id':identifier,'cause':kwargs['cause'],'source':'develop_runtime_log'}
+        return m.run_scenario(Path('.'),self.env,client or TrimClient(),physical,browser,diagnostic_runner=diagnostic or check)
+    def test_trim_one_success_eight_failures_exact_types_two_scans_four_edges(self):
+        c=TrimClient();report=self.run_case(c)
+        self.assertEqual(report['schema_version'],'addp.line-trimming/v1');self.assertEqual(report['result'],'passed')
+        self.assertEqual([len(report['browser']['expected'][p]) for p in ('result','details')],[15,9])
+        self.assertEqual([len(report[k]) for k in ['initial_scan_inventory','final_scan_inventory','meta_after']],[11,13,13])
+        self.assertEqual(sum(len(g['edges']) for g in report['raw_lineage'].values()),4)
+        self.assertEqual([f['key'] for f in report['failures']],[v[0] for v in m.fixture.TRIM_FAILURES])
+        self.assertEqual(len({f['execution_id'] for f in report['failures']}),8)
+        self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in c.calls),9)
+        self.assertEqual(len(report['browser']['failures']),8)
+    def test_trim_rejects_wrong_source_or_actor_and_missing_outputs_scans_and_current_edges(self):
+        changes=[lambda c:c.success.update(triggered_by=True),lambda c:setattr(c,'scan_actor',99),lambda c:setattr(c,'scan_tenant','2'),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(locator=c.locators[2]),
+            lambda c:c.success['outputs'].pop('save_details'),lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
+            lambda c:c.success['metadata']['result']['meta_scan_runs'].pop(),lambda c:c.outputs[0].update(size_bytes=0),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'][0]['evidence'].update(execution_id='old'))]
+        for change in changes:
+            c=TrimClient();change(c)
+            with patch.object(m.raster,'wait_lineage',return_value={}):
+                with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(c)
+        c=TrimClient();c.success['metadata']['lineage_facts']['inputs'].reverse();self.run_case(c)
+    def test_trim_rejects_failure_publication_wrong_tuple_private_data_and_incomplete_browser(self):
+        changes=[lambda v:v.update(outputs={'save_result':{}}),lambda v:v['metadata'].update(result={'meta_scan_runs':[{}]}),
+            lambda v:v['error_details'].update(diagnostic={'reason':'wrong'}),lambda v:v['error_details'].update(message='source_shape PRIVATE_DIAGNOSTIC_NODE')]
+        for change in changes:
+            c=TrimClient();c.mutate_failed=change
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(c)
+        c=TrimClient();c.failed_graph=lambda g:g['edges'].append({'relation_kind':'derive','evidence':{'execution_id':'failed-limit'}})
+        with self.assertRaises(m.SuiteError):self.run_case(c)
+        with self.assertRaisesRegex(m.SuiteError,'broken browser'):self.run_case(browser=lambda *a:(_ for _ in ()).throw(m.SuiteError('broken browser')))
+        checkpoint=json.loads((Path(self.directory.name)/'topology-trim-checkpoint.json').read_text())
+        self.assertEqual((checkpoint['result'],checkpoint['stage'],len(checkpoint['failures'])),('incomplete','before_browser',8))
+        with self.assertRaises(m.SuiteError):self.run_case(diagnostic=lambda *a,**k:{'execution_id':'other'})
+
+    def test_trim_raw_evidence_requires_final_maps_pixels_both_owner_pages_and_exact_identity(self):
+        report=self.run_case();e=report['browser'];c=TrimClient()
+        raw={'schema_version':m.fixture.TRIM_SCHEMA+'-browser-raw/v1','case':e['case'],'run_id':e['run_id'],'execution_id':e['execution_id'],
+            'result':'passed','stage':'complete','execution':c.success,'observations':[],'failures':[]}
+        for output in e['outputs']:
+            raw['observations'].append({'port':output['port'],'output_item_id':output['item_id'],'output':output['before'],
+                'sources':[{'item_id':s['id'],'item':s['before']} for s in e['sources']],
+                'graph':report['raw_lineage'][output['port']],'removed_segment_pixels':0,
+                'rendered':{'projection':'EPSG:3857','features':[{}]*len(e['expected'][output['port']]),'painted_pixels':50,'new_segment_pixels':3}})
+        for failure in report['failures']:
+            raw['failures'].append({'key':failure['key'],'execution_id':failure['execution_id'],'execution':failure['execution'],
+                'monitor':failure['monitor'],'monitor_page':{'execution':failure['monitor']}})
+        m.validate_trim_browser_raw(raw,e)
+        changes=[lambda v:v.update(stage='before_browser'),lambda v:v.update(execution_id='old'),lambda v:v['observations'].pop(),
+            lambda v:v['observations'][0].update(removed_segment_pixels=1),lambda v:v['observations'][0]['rendered'].update(painted_pixels=0),
+            lambda v:v['observations'][0]['graph']['edges'][0]['source'].update(item_id=12),lambda v:v['failures'].pop(),
+            lambda v:v['failures'][0]['monitor_page']['execution'].update(triggered_by=True),
+            lambda v:v['failures'][0]['execution']['error_details']['diagnostic']['operator'].update(node_index=True)]
+        for change in changes:
+            value=copy.deepcopy(raw);change(value)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):m.validate_trim_browser_raw(value,e)
+
+    def test_trim_removed_segment_guard_rejects_old_pixels_and_offscreen_witness(self):
+        import subprocess
+        script=r"""
+import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
+const source=readFileSync(process.argv[1],'utf8');const a=source.indexOf('async function assertTrimRemovedSegment('),b=source.indexOf('async function assertTrimFailurePanel(',a);
+const expect={poll:fn=>({async toBe(value){assert.equal(await fn(),value)}})};
+const check=new Function('expect',source.slice(a,b)+';return assertTrimRemovedSegment')(expect);
+async function run(old=false,offscreen=false){
+ const data=new Uint8ClampedArray(7*7*4);if(old)data.set([0,200,0,255]);
+ const canvas={width:100,height:100,getBoundingClientRect:()=>({left:0,top:0,width:100,height:100})};
+ const layer={getVisible:()=>true,getOpacity:()=>1,getSource:()=>({getFeatures:()=>[{}]}),getRenderer:()=>({context:{canvas,getImageData:()=>({data})}})};
+ const map={getPixelFromCoordinate:()=>offscreen?[-1,50]:[50,50],getViewport:()=>({getBoundingClientRect:()=>({left:0,top:0})}),getLayers:()=>({getArray:()=>[layer]})};
+ return check({evaluate:async(fn)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}})});
+}
+assert.equal(await run(),0);await assert.rejects(()=>run(true));await assert.rejects(()=>run(false,true));
+"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(Path(__file__).resolve().parents[2]/'console/frontend/e2e/online/vector-topology-persistence.spec.js')],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)

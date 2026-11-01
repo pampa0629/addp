@@ -5870,3 +5870,65 @@ def test_line_trim_custom_active_geometry_and_ordinary_geometry_business_column_
     pd.testing.assert_series_equal(out['result']['geometry'],before['geometry'])
     assert out['details'].geometry.name=='geometry' and out['details']['distance'].tolist()==[1.]*4
     assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('problem',[None,'coordinate','direction','source_id','reference_id','distance','part','null','integer_type','boolean_type','boolean_value','crs','missing','source_changed','extra_output'])
+def test_hosted_line_trim_case_dual_save_eight_failures_and_independent_oracle(tmp_path,problem):
+    import importlib
+    from osgeo import ogr
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture');acceptance=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch()
+    seeded=fixture.worker('seed',tmp_path,fixture.TRIM_CASE)
+    originals={name:(tmp_path/name).read_bytes() for name in fixture.TRIM_SOURCES}
+    def definition(failure=None):
+        workflow=acceptance.trim_definition(list(fixture.TRIM_SOURCES),'unused',failure=failure)
+        for task in workflow['tasks']:
+            if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
+            elif task['operator']=='save':
+                name=task['params'].pop('target_name');task['params'].pop('target_parent_locator')
+                task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+name)
+        return workflow
+    result=execute_workflow(definition());assert result['status']=='success',result
+    native=fixture.worker('verify',tmp_path,fixture.TRIM_CASE)
+    assert native['sources']==seeded['sources'] and [native['targets'][name]['feature_count'] for name in fixture.TRIM_TARGETS]==[15,9]
+    assert all((tmp_path/name).read_bytes()==raw for name,raw in originals.items())
+    if problem is None:
+        for spec in fixture.TRIM_FAILURES:
+            key=spec[0]
+            failed=execute_workflow(definition(key));assert failed['status']=='failed',failed
+            if spec[3]:
+                assert failed['error_code']=='INVALID_PARAMS' and failed['diagnostic']==acceptance.trim_diagnostic(spec),failed
+            else:
+                assert failed['error_code']=='EXECUTION_FAILED' and fixture.TRIM_LANDING_FAILURE in failed['error'] and not failed.get('diagnostic'),failed
+            assert not any((tmp_path/'outputs'/('failed-'+key+'-'+name)).exists() for name in fixture.TRIM_TARGETS)
+            assert fixture.worker('verify',tmp_path,fixture.TRIM_CASE)==native
+        archive=tmp_path.parent/(tmp_path.name+'-archive');fixture.archive_physical_evidence(tmp_path,archive,native,fixture.TRIM_CASE)
+        assert len(list((archive/'topology-physical').rglob('*.gpkg')))==13
+        return
+    path=tmp_path/'outputs'/fixture.TRIM_TARGETS[0 if problem in ('null','integer_type','boolean_type','boolean_value','direction') else 1]
+    if problem=='extra_output':(tmp_path/'outputs/extra.gpkg').write_bytes(b'rejected')
+    else:
+        if problem=='source_changed':path=tmp_path/fixture.TRIM_SOURCES[0]
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0)
+        if problem=='boolean_value':ds.ExecuteSQL('UPDATE "'+layer.GetName()+'" SET enabled=2 WHERE fid=1')
+        elif problem=='crs':ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem=='missing':layer.DeleteFeature(1)
+        elif problem in ('integer_type','boolean_type'):
+            field='grade' if problem=='integer_type' else 'enabled'
+            assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex(field),ogr.FieldDefn(field,ogr.OFTReal),ogr.ALTER_TYPE_FLAG)==0
+        else:
+            feature=layer.GetFeature(2 if problem=='null' else 1)
+            if problem=='null':feature.SetField('grade',99)
+            elif problem=='source_id':feature.SetField('source_id',1)
+            elif problem=='reference_id':feature.SetField('reference_id','foreign')
+            elif problem=='distance':feature.SetField('distance',0.)
+            elif problem=='part':feature.SetField('part_no',99)
+            elif problem=='source_changed':feature.SetField('note','changed')
+            else:
+                points=fixture.proximity_geometry(feature.GetGeometryRef())
+                if problem=='direction':points['coordinates'][0].reverse()
+                else:points['coordinates'][0]+=1
+                feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(points)))
+            layer.SetFeature(feature);feature=None
+        layer=None;ds=None
+    with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path,fixture.TRIM_CASE)

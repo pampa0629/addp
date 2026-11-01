@@ -138,6 +138,7 @@ on:
           - endpoint-snapping
           - polygon-rings
           - polygon-rings-input-diagnostics
+          - line-trimming
       manager_case:
         description: Manager acceptance case (full preserves all model assertions)
         required: true

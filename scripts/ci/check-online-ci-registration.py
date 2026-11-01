@@ -2220,6 +2220,19 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in diagnostics_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology operator input diagnostics contract incomplete: '+relative)
+    trim_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - line-trimming',),
+        'scripts/test/online-hosted-topology-gate.sh': ('line-trimming|full|line-network-normalize',),
+        'business/scripts/online-vector-topology-fixture.py': ('def trim_features(', 'def trim_worker(', 'TRIM_FAILURES', 'TRIM_LANDING_FAILURE'),
+        'scripts/test/vector-topology-persistence-online.py': ('def trim_definition(', 'def run_trim_scenario(', 'def validate_trim_failure(', 'def validate_trim_browser_raw(', 'trim_diagnostic(trim_spec)', "if trim:prefix='trim'"),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('线端修剪独立普通User线与Point双成果及八失败保护','topology-trim-browser-raw.json','assertTrimRemovedSegment', 'assertTrimFailurePanel', 'record.monitor_page.execution.error_details'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_line_trim_case_dual_save_eight_failures_and_independent_oracle',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class TrimOnlineTest', 'test_trim_one_success_eight_failures_exact_types_two_scans_four_edges'),
+        'scripts/test/online-hosted-topology-gate_test.py': ('test_trim_case_is_bound_without_old_business_or_capacity',),
+    }
+    for relative,fragments in trim_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology trim case contract incomplete: '+relative)
     extension_required = {
         '.github/workflows/online-t4-gates.yml': ('          - line-extension',),
         'scripts/test/online-hosted-topology-gate.sh': ('line-proximity|line-extension',),
@@ -2280,7 +2293,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     extension_script=(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js').read_text()
     helper=re.search(r"(?ms)^async function verifyLineEditCase\(.*?^\}",extension_script)
     shared=helper.group(0) if helper else ''
-    for title in ('线端延伸独立普通User双成果与精确首次交点拒绝','端点吸附独立普通User线与Point双成果及四失败保护'):
+    for title in ('线端修剪独立普通User线与Point双成果及八失败保护','线端延伸独立普通User双成果与精确首次交点拒绝','端点吸附独立普通User线与Point双成果及四失败保护'):
         match=re.search(r"(?ms)^test\('"+title+r"'.*?^\}\)",extension_script)
         body=match.group(0) if match else ''
         observer=body.find('await observeLineageCanvas(page)');verify=body.find('await verifyLineEditCase(')

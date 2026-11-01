@@ -316,6 +316,44 @@ def validate_extension_failure(execution,identifier,principal):
         raise SuiteError('extension failure must publish neither port nor facts/scans under the same User')
 
 
+def trim_definition(sources,parent,failure=None):
+    spec=next((v for v in fixture.TRIM_FAILURES if v[0]==failure),None)
+    if failure is not None and spec is None:raise SuiteError('unknown trim failure')
+    a,b=(spec[1:3] if spec else (0,1))
+    return {'tasks':[
+        {'id':'trim','operator':'trim_line_endpoints','params':{'input_gdf':{'$ref':'load_source'},'reference_gdf':{'$ref':'load_reference'},
+            'id_field':'route_key','reference_id_field':'ref_key','max_distance':0 if failure=='limit' else 4.},'depends_on':['load_source','load_reference']},
+        {'id':'load_source','operator':'load','params':{'locator':sources[a]},'depends_on':[]},
+        {'id':'load_reference','operator':'load','params':{'locator':sources[b]},'depends_on':[]},
+        *[{'id':'save_'+port,'operator':'save','params':{'input_df':{'$ref':'trim','port':port},'target_parent_locator':parent,
+            'target_name':('failed-'+failure+'-' if failure else '')+name,'mode':'fail'},'depends_on':['trim']}
+          for port,name in zip(fixture.EXTENSION_PORTS,fixture.TRIM_TARGETS)]]}
+
+
+def trim_diagnostic(spec):
+    return {'schema_version':'addp.execution-failure/v3','stage':'execution','reason':spec[3],
+        'operator':{'node_index':1,'operator_id':'trim_line_endpoints',**({'parameter':spec[4]} if spec[4] else {})}}
+
+
+def validate_trim_failure(execution,identifier,principal,spec):
+    validate_extension_failure(execution,identifier,principal)
+    details=obj(execution.get('error_details'),'trim failure error details')
+    if spec[3]:
+        if (details.get('code')!='develop.workflow.invalid_params' or details.get('diagnostic')!=trim_diagnostic(spec)
+            or type(obj(obj(details.get('diagnostic'),'trim diagnostic').get('operator'),'trim operator').get('node_index')) is not int):
+            raise SuiteError('trim exact typed diagnostic differs')
+    elif details.get('diagnostic') or details.get('code')!='develop.workflow.execution_failed':
+        raise SuiteError('trim numerical failure must remain execution failure')
+    if set(details)-{'code','category','message','diagnostic'}:raise SuiteError('trim public failure contains unknown fields')
+    if any(value in json.dumps(details,ensure_ascii=False) for value in (*DIAGNOSTIC_PRIVATE,'source_shape','reference_shape','route_key','ref_key','trim-source.gpkg','普通业务几何')):
+        raise SuiteError('trim public failure leaked private input context')
+    return details
+
+
+def run_trim_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner):
+    return run_line_edit_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner,fixture.TRIM_CASE)
+
+
 def run_extension_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner):
     return run_line_edit_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner,fixture.EXTENSION_CASE)
 
@@ -325,14 +363,16 @@ def run_endpoint_scenario(repository,env,client,physical_runner,browser_runner,d
 
 
 def run_line_edit_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner,case):
+    trim=case==fixture.TRIM_CASE
     endpoint=case==fixture.ENDPOINT_CASE
-    names=fixture.ENDPOINT_SOURCES if endpoint else fixture.EXTENSION_SOURCES
-    kinds=fixture.ENDPOINT_KINDS if endpoint else ('source','reference','failure_reference')
+    names=fixture.TRIM_SOURCES if trim else fixture.ENDPOINT_SOURCES if endpoint else fixture.EXTENSION_SOURCES
+    kinds=fixture.TRIM_KINDS if trim else fixture.ENDPOINT_KINDS if endpoint else ('source','reference','failure_reference')
     ports=fixture.ENDPOINT_PORTS if endpoint else fixture.EXTENSION_PORTS
-    targets_names=fixture.ENDPOINT_TARGETS if endpoint else fixture.EXTENSION_TARGETS
+    targets_names=fixture.TRIM_TARGETS if trim else fixture.ENDPOINT_TARGETS if endpoint else fixture.EXTENSION_TARGETS
     schema=fixture.network_profile(case)['schema'];prefix='endpoint' if endpoint else 'extension'
+    if trim:prefix='trim'
     expected=lambda kind:fixture.line_edit_features(case,kind)
-    definition=endpoint_definition if endpoint else extension_definition
+    definition=trim_definition if trim else endpoint_definition if endpoint else extension_definition
     tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
     if tenant<=1:raise SuiteError('extension forbids default Tenant')
     identity=raster.validate_identity(client,tenant,required_permissions=PERMISSIONS);principal=int(identity['principal_id'])
@@ -391,21 +431,24 @@ def run_line_edit_scenario(repository,env,client,physical_runner,browser_runner,
     expected_scans=sorted([*initial,*[s['execution_id'] for s in scans]])
     if scan_ids(client)!=expected_scans:raise SuiteError('extension scan inventory differs before failure')
     failures=[]
-    specs=fixture.ENDPOINT_FAILURES if endpoint else (('unrepresentable_first_intersection',fixture.EXTENSION_FAILURE),)
+    specs=[(v[0],fixture.TRIM_LANDING_FAILURE if not v[3] else '') for v in fixture.TRIM_FAILURES] if trim else fixture.ENDPOINT_FAILURES if endpoint else (('unrepresentable_first_intersection',fixture.EXTENSION_FAILURE),)
     checkpoint['failures']=failures
     for key,reason in specs:
-        failed_workflow=definition([s['locator'] for s in sources],parent,**({'failure':key} if endpoint else {'failed':True}))
+        failed_workflow=definition([s['locator'] for s in sources],parent,**({'failure':key} if endpoint or trim else {'failed':True}))
         failed_id=raster.submit(client,runtime,failed_workflow);failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed')
-        validate_extension_failure(failed,failed_id,principal)
+        trim_spec=next((v for v in fixture.TRIM_FAILURES if v[0]==key),None) if trim else None
+        if trim:validate_trim_failure(failed,failed_id,principal,trim_spec)
+        else:validate_extension_failure(failed,failed_id,principal)
         if obj(obj(failed.get('execution_config'),'failed config').get('content'),'failed content').get('workflow_definition')!=failed_workflow:raise SuiteError('failed frozen DAG differs')
-        diagnostic=diagnostic_runner(repository,env,failed_id,timeout=min(30,remaining()),task='snap' if endpoint else 'extend',reason=reason,cause=key)
-        if diagnostic!={'execution_id':failed_id,'cause':key,'source':'develop_runtime_log'}:raise SuiteError('exact failure diagnostic binding differs')
+        diagnostic=trim_diagnostic(trim_spec) if trim and trim_spec[3] else diagnostic_runner(repository,env,failed_id,timeout=min(30,remaining()),task='trim' if trim else 'snap' if endpoint else 'extend',reason=reason,cause=key)
+        if not (trim and trim_spec[3]) and diagnostic!={'execution_id':failed_id,'cause':key,'source':'develop_runtime_log'}:raise SuiteError('exact failure diagnostic binding differs')
         failed_monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{failed_id}',(200,)).payload,'failed Monitor')
         if failed_monitor.get('execution_id')!=failed_id or failed_monitor.get('status')!='failed' or failed_monitor.get('module')!='develop' or type(failed_monitor.get('triggered_by')) is not int or failed_monitor['triggered_by']!=principal:raise SuiteError('failure Monitor identity differs')
         failure={'key':key,'execution_id':failed_id,'definition':failed_workflow,'execution':failed,'monitor':failed_monitor,'diagnostic':diagnostic,'no_publication_or_scan':True}
-        if endpoint:
+        if endpoint or trim:
+            if trim:failure['expected_diagnostic']=trim_diagnostic(trim_spec) if trim_spec[3] else None
             failure['source_lineage']=[]
-            for source in (sources[2],sources[3+[k for k,_ in fixture.ENDPOINT_FAILURES].index(key)]):
+            for source in ([sources[i] for i in trim_spec[1:3]] if trim else (sources[2],sources[3+[k for k,_ in fixture.ENDPOINT_FAILURES].index(key)])):
                 graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={source["id"]}&direction=downstream',(200,)).payload,'failed source graph')
                 if graph.get('truncated') is not False or any(e.get('relation_kind')=='derive' and e.get('evidence',{}).get('execution_id')==failed_id for e in array(graph.get('edges'),'failed edges')):raise SuiteError('endpoint failure published derive or incomplete graph')
                 failure['source_lineage'].append({'source_item_id':source['id'],'graph':graph})
@@ -415,11 +458,11 @@ def run_line_edit_scenario(repository,env,client,physical_runner,browser_runner,
         if scan_ids(client)!=expected_scans or physical_runner(repository,env)!=native:raise SuiteError('failure changed physical files or scans')
     if len({f['execution_id'] for f in failures})!=len(specs):raise SuiteError('failure executions must be distinct')
     checkpoint.update(stage='before_browser',raw_lineage=graphs)
-    if not endpoint:checkpoint['failure']=failures[0]
+    if not endpoint and not trim:checkpoint['failure']=failures[0]
     path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
     evidence={'case':case,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'execution_id':identifier,'sources':sources,'outputs':outputs,
         'expected':{port:expected(port) for port in ports}}
-    if endpoint:evidence['failures']=[{'key':f['key'],'execution_id':f['execution_id']} for f in failures]
+    if endpoint or trim:evidence['failures']=[{'key':f['key'],'execution_id':f['execution_id'],**({'expected_diagnostic':f['expected_diagnostic'],'error_details':f['execution'].get('error_details')} if trim else {})} for f in failures]
     else:evidence['failed_execution_id']=failed_id
     remaining();browser_report=browser_runner(repository,env,evidence);remaining()
     final=physical_runner(repository,env)
@@ -813,6 +856,34 @@ def validate_item(item, native, name):
     return {'physical_size_bytes': size, 'meta_size_bytes': size}
 
 
+def validate_trim_browser_raw(raw,evidence):
+    if (raw.get('schema_version')!=fixture.TRIM_SCHEMA+'-browser-raw/v1' or raw.get('result')!='passed' or raw.get('stage')!='complete'
+        or any(raw.get(k)!=evidence.get(k) for k in ('case','run_id','execution_id'))):raise SuiteError('trim browser raw incomplete or foreign')
+    principal=positive(evidence['principal_id'],'trim browser principal')
+    execution=obj(raw.get('execution'),'trim browser success')
+    if execution.get('execution_id')!=evidence['execution_id'] or execution.get('status')!='success' or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:
+        raise SuiteError('trim browser success identity differs')
+    observations=array(raw.get('observations'),'trim browser observations')
+    if len(observations)!=2 or {v.get('port') for v in observations}!={'result','details'}:raise SuiteError('trim browser requires both actual maps')
+    for observation in observations:
+        output=next(v for v in evidence['outputs'] if v['port']==observation['port'])
+        if observation.get('output_item_id')!=output['item_id'] or observation.get('output')!=output['before'] or observation.get('sources')!=[{'item_id':v['id'],'item':v['before']} for v in evidence['sources']]:
+            raise SuiteError('trim browser source or output Meta differs')
+        validate_extension_graph(observation['graph'],evidence['sources'],output['item_id'],evidence['execution_id'])
+        rendered=obj(observation.get('rendered'),'trim actual OL render')
+        if rendered.get('projection')!='EPSG:3857' or len(array(rendered.get('features'),'trim OL features'))!=len(evidence['expected'][output['port']]) or type(rendered.get('painted_pixels')) is not int or rendered['painted_pixels']<=30:
+            raise SuiteError('trim browser actual render is incomplete')
+        if output['port']=='result' and (type(observation.get('removed_segment_pixels')) is not int or observation['removed_segment_pixels']!=0 or rendered.get('new_segment_pixels',0)<=0):
+            raise SuiteError('trim browser removed segment or cut point witness differs')
+    failures=array(raw.get('failures'),'trim raw failures')
+    if len(failures)!=8 or [f.get('key') for f in failures]!=[s[0] for s in fixture.TRIM_FAILURES]:raise SuiteError('trim browser requires all eight failures')
+    for observed,expected,spec in zip(failures,evidence['failures'],fixture.TRIM_FAILURES):
+        if observed.get('execution_id')!=expected['execution_id']:raise SuiteError('trim raw failure identity differs')
+        for value in (observed.get('execution'),observed.get('monitor'),obj(observed.get('monitor_page'),'trim Monitor page').get('execution')):
+            validate_trim_failure(obj(value,'trim browser failure'),expected['execution_id'],principal,spec)
+            if value.get('error_details')!=expected['error_details']:raise SuiteError('trim browser public error differs')
+
+
 def browser(repository, env, evidence):
     path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-browser.json'
     path.unlink(missing_ok=True)
@@ -842,6 +913,8 @@ def browser(repository, env, evidence):
     else:binding=report
     if binding != {**evidence, 'schema_version': schema, 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
+    if case==fixture.TRIM_CASE:
+        validate_trim_browser_raw(obj(json.loads((path.parent/'topology-trim-browser-raw.json').read_text()),'trim browser raw'),evidence)
     if case==fixture.RINGS_CASE:
         raw=obj(json.loads((path.parent/'topology-rings-browser-raw.json').read_text()),'rings browser raw')
         if (raw.get('stage')!='complete' or raw.get('result')!='passed' or any(raw.get(k)!=evidence.get(k) for k in ('case','run_id','execution_id'))):raise SuiteError('rings browser raw incomplete or foreign')
@@ -851,6 +924,8 @@ def browser(repository, env, evidence):
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
+    if fixture.topology_case(env)==fixture.TRIM_CASE:
+        return run_trim_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner)
     if fixture.topology_case(env)==fixture.RINGS_CASE:
         return run_rings_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner)
     if fixture.topology_case(env)==fixture.ENDPOINT_CASE:

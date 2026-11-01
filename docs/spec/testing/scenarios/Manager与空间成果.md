@@ -986,3 +986,12 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 `vector-topology-persistence` 新增 `polygon-rings-input-diagnostics` case，仅执行ring_id固定字段重名与实际无效面的两次真实失败，不执行旧成功链、旧参数诊断四场景或容量。复用原Hosted生命周期、普通User精确11权限、非默认Tenant和600秒业务预算；只准备rings-conflict.gpkg与rings-invalid.gpkg两源，保留实际parcel_shape及普通geometry业务列。失败节点置于冻结tasks数组首位，在load之后调度，下游save必须未执行。两次Develop及Monitor响应均须绑定当前UUID/同一User/冻结定义，准确返回v3、execution、INVALID_PARAMS对应develop.workflow.invalid_params；重名仅field=ring_id，无效面仅operator_geometry_invalid且无field。
 
 两执行分别在Develop/Monitor中英文实页刷新同一UUID，共8份原始响应、截图及真实剪贴板核验；复用现有唯一共享面板和浏览器当前请求身份绑定，不持有跨导航旧Token。核准确原因、人工重命名或先几何检查后显式修复建议、算子/节点/参数/固定字段、稳定码和UUID；不得包含自定义节点名、业务ID/值、坐标、路径或GEOS正文。两源物理字节/大小/SHA及Meta始终不变；两初始扫描库存不变、无新增文件/成果扫描/输出facts/本次derive。保存全部原始证据和源文件，最终报告不能由incomplete checkpoint替代；退出NFS/export/ownedroot/Runtime/registry/应用/Infra全部清0，不把清理当业务DELETE验收。该case更新原runner/Native/浏览器和CI登记，不新增suite、权限、产品API或容量入口。
+
+
+### 线端修剪独立普通User验收
+
+`vector-topology-persistence` 新增显式 `line-trimming` case，仅一成功与八失败，不执行full、旧业务T4或容量。复用Hosted隔离生命周期、同一非默认Tenant普通User精确11权限和600秒总业务预算。成功双源EPSG:3857、max_distance=4，源15条MultiLineString/16部件及14条参考要素；手写15条线结果与9条目标Point明细，覆盖原始两端冻结、累计路径而非直线距离、上限等号/略超界、首次交会/共线入口、同点全部来源/单参考重复段去重、分支阻止/命中分支、重复内点/部件/方向、已接触/闭环/非悬端/无目标不动及2^-20精确微距。业务ID为JSON安全Int64且不同于FID，真实source_shape/reference_shape与普通geometry业务列共存；可空Int64/Boolean/String属性保持。活动几何列名保留属于算子内存结果断言；GPKG物理几何名沿既有save驱动声明，文件及预览按实际声明绑定，不新增持久列名承诺。Point位于切点，原端位置保存在original_x/y，明细仅保双方ID、part_no/end、原端/切点XY及累计distance，不复制任意业务属性。
+
+八次独立失败为非正上限、源ID非法、参考ID非法、CRS不一致、单部件自交、源正长度重合、原始两端计划相遇、首交点不可精确表示且更晚有可表示交点。前七次按既有v3闭合参数诊断核精确原因/参数/冻结节点，无field或私有值；第八次保持EXECUTION_FAILED，并以同UUID隔离owner日志核首交点不能精确落线，不冒充参数错误。每DAG均含两个下游save；冲突夹具先有可修剪要素，仍须整批无发布。每次核Develop/Monitor同User/UUID失败、失败目标/输出事实/自动扫描/本次derive不存在、扫描库存不增、全部源与成功成果原字节/Meta不变。
+
+成功两稳定输出及facts均create，恰两成果自动扫描公开严格整数tenant_id/triggered_by同主体；每成果两源本execution active derive，共四边，失败夹具不进入成功图。逐原坐标/全部属性类型与空值/行序/方向/部件/3857独立OGR重载，不调用生产算法生成期望、不epsilon或舍入。11源与双成果原文件保存供归档审计，物理与Meta大小严格为相等正整数。真实Console核成功执行、线与Point两地图/属性/血缘页及八次Develop/Monitor失败页；原EWKB、完整OL坐标/属性、明显切点见证像素/Point图层像素、原图和截图归档，每次导航绑定当前浏览器请求身份。微距仅核物理/API/OL，不宣称亚像素单独可见；不认证内存索引、中间算子资源血缘、跨文件事务、业务DELETE、空批/英尺或容量。最终Owner/browser/raw报告同case/run/execution完整passed，incomplete仅阶段意义；源及成果末轮不变、NFS/export/ownedroot/Runtime/registry/部署/Infra清零。现有runner/Native/Console/CI登记同次适配，通过最小标准门禁后单次手工派发此case。

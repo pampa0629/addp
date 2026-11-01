@@ -94,7 +94,80 @@ def endpoint_features(kind):
         'geometry':{'type':'MultiLineString','coordinates':v}} for i,(key,v) in enumerate(lines)]
 
 
+TRIM_CASE = 'line-trimming'
+TRIM_SCHEMA = 'addp.line-trimming'
+TRIM_TITLE = '线端修剪独立普通User线与Point双成果及八失败保护'
+TRIM_KINDS = ('source','reference','bad_source','bad_reference','crs_reference','self_source','overlap_source',
+              'conflict_source','conflict_reference','landing_source','landing_reference')
+TRIM_SOURCES = tuple('trim-'+kind.replace('_','-')+'.gpkg' for kind in TRIM_KINDS)
+TRIM_TARGETS = ('trimmed-lines.gpkg','trim-details.gpkg')
+TRIM_FAILURES = (
+    ('limit',0,1,'operator_distance_limit_invalid','max_distance'),
+    ('source',2,1,'operator_input_invalid','input_gdf'),
+    ('reference',0,3,'operator_reference_invalid','reference_gdf'),
+    ('crs',0,4,'operator_crs_invalid',''),
+    ('self',5,1,'operator_source_topology_invalid','input_gdf'),
+    ('overlap',6,1,'operator_source_topology_invalid','input_gdf'),
+    ('conflict',7,8,'operator_trim_conflict',''),
+    ('landing',9,10,'',''),
+)
+TRIM_LANDING_FAILURE = '线端修剪的首个交点不能精确落在原线及参考线上；未生成任何成果。'
+TRIM_SOURCE_KINDS = ('source','bad_source','self_source','overlap_source','conflict_source','landing_source','result')
+
+
+def trim_features(kind):
+    """Handwritten original coordinates and complete expected output; no product calls."""
+    tiny=2**-20
+    keys=[9,3,7,1,5,13,11,17,15,21,19,23,29,27,25]
+    source=[[[[0,0],[0,0],[2,0],[2,2],[4,2],[4,2]]],
+        [[[100,0],[102,0],[102,4],[110,4]]],[[[200,0],[202,0],[202,4],[210,4]]],
+        [[[300,0],[310,0]]],[[[400,0],[420,0]]],[[[402,0],[402,10]]],
+        [[[500,0],[520,0]]],[[[502,0],[502,10]]],
+        [[[600,0],[601,0],[601,0],[610,0]],[[620,0],[630,0]]],
+        [[[700,0],[710,0]]],[[[800,0],[804,0],[804,4],[800,0]]],[[[900,0],[910,0]]],
+        [[[1000,0],[1004,0]]],[[[1004,0],[1014,0]]],[[[1100,0],[1110,0]]]]
+    result=[[[[1,0],[2,0],[2,2],[3,2]]],[[[102,2],[102,4],[110,4]]],source[2],
+        [[[302,0],[310,0]]],source[4],source[5],[[[502,0],[520,0]]],source[7],
+        [[[601,0],[601,0],[610,0]],[[620,0],[629,0]]],*source[9:14],[[[1100+tiny,0],[1110,0]]]]
+    if kind in TRIM_SOURCE_KINDS:
+        shapes=result if kind=='result' else source
+        if kind=='bad_source':shapes=[[[[2000,0],[2010,0]]],[[[2020,0],[2030,0]]]]
+        if kind=='self_source':shapes=[[[[0,0],[2,2],[0,2],[2,0]]]]
+        if kind=='overlap_source':shapes=[[[[0,0],[10,0]]],[[[2,0],[4,0]]]]
+        if kind=='conflict_source':shapes=[[[[2000,0],[2010,0]]],[[[2100,0],[2104,0]]]]
+        if kind=='landing_source':shapes=[[[[0,0],[8,0]]]]
+        return [{'properties':{'route_key':2**40+(keys[0] if kind=='bad_source' else keys[i]),
+            'grade':None if i%3==0 else 2**40+i,'enabled':None if i%3==0 else i%2==0,
+            'note':None if i%3==0 else '修剪属性'+str(i),'geometry':None if i%3==0 else '普通业务几何'+str(i)},
+            'geometry':{'type':'MultiLineString','coordinates':parts}} for i,parts in enumerate(shapes)]
+    if kind!='details':
+        refs=[('first',[[[1,-1],[1,1]]]),('duplicate',[[[1,1],[1,-1]]]),('end',[[[3,1],[3,3]]]),
+            ('limit',[[[101,2],[103,2]]]),('beyond',[[[201,2+tiny],[203,2+tiny]]]),
+            ('collinear',[[[302,0],[304,0]],[[304,0],[302,0]]]),('after-branch',[[[403,-1],[403,1]]]),
+            ('on-branch',[[[502,-1],[502,1]]]),('part-first',[[[601,-1],[601,1]]]),('part-last',[[[629,-1],[629,1]]]),
+            ('contact',[[[700,-1],[700,1]]]),('after-contact',[[[702,-1],[702,1]]]),
+            ('closed',[[[801,-1],[801,5]]]),('micro',[[[1100+tiny,-1],[1100+tiny,1]]])]
+        if kind=='bad_reference':refs=[('duplicate',[[[1,-1],[1,1]]]),('duplicate',[[[3,-1],[3,3]]])]
+        if kind=='conflict_reference':refs=[('first-row',[[[2001,-1],[2001,1]]]),('meet',[[[2102,-1],[2102,1]]])]
+        if kind=='landing_reference':refs=[('unrepresentable',[[[0,1],[1,-2]]]),('later',[[[1,-1],[1,1]]])]
+        return [{'properties':{'ref_key':key,'note':'固定参考'+str(i),'geometry':'参考业务几何'+str(i)},
+            'geometry':{'type':'MultiLineString','coordinates':parts}} for i,(key,parts) in enumerate(refs)]
+    entries=[(0,'first',1,'start',0,0,1,0,1),(0,'duplicate',1,'start',0,0,1,0,1),
+        (0,'end',1,'end',4,2,3,2,1),(1,'limit',1,'start',100,0,102,2,4),
+        (3,'collinear',1,'start',300,0,302,0,2),(6,'on-branch',1,'start',500,0,502,0,2),
+        (8,'part-first',1,'start',600,0,601,0,1),(8,'part-last',2,'end',630,0,629,0,1),
+        (14,'micro',1,'start',1100,0,1100+tiny,0,tiny)]
+    return [{'properties':{'source_id':2**40+keys[row],'reference_id':ref,'part_no':part,'end':end,
+        'original_x':float(x),'original_y':float(y),'target_x':float(tx),'target_y':float(ty),'distance':float(distance)},
+        'geometry':{'type':'Point','coordinates':[tx,ty]}} for row,ref,part,end,x,y,tx,ty,distance in entries]
+
+
+def trim_worker(action,root):
+    return line_edit_worker(action,root,TRIM_CASE)
+
+
 def line_edit_features(case,kind):
+    if case==TRIM_CASE:return trim_features(kind)
     return endpoint_features(kind) if case==ENDPOINT_CASE else extension_features(kind)
 
 
@@ -133,8 +206,11 @@ def extension_features(kind):
                 (5,'part-two',2,'end',61,62,1),(6,'micro',1,'end',71,71+2**-20,2**-20)]]
 
 
-def extension_field_types(kind):
+def extension_field_types(kind,case=EXTENSION_CASE):
     from osgeo import ogr
+    if case==TRIM_CASE and kind in (*TRIM_SOURCE_KINDS,*[k for k in TRIM_KINDS if k.endswith('reference')]):
+        base=extension_field_types('source' if kind in TRIM_SOURCE_KINDS else 'reference')
+        return {**base,'geometry':(ogr.OFTString,ogr.OFSTNone)}
     if kind in ('source','result','failure_source'):return {'route_key':(ogr.OFTInteger64,ogr.OFSTNone),'grade':(ogr.OFTInteger64,ogr.OFSTNone),
         'enabled':(ogr.OFTInteger,ogr.OFSTBoolean),'note':(ogr.OFTString,ogr.OFSTNone)}
     if kind.endswith('reference'):return {'ref_key':(ogr.OFTString,ogr.OFSTNone),'note':(ogr.OFTString,ogr.OFSTNone)}
@@ -144,12 +220,12 @@ def extension_field_types(kind):
 
 def seed_extension(path,kind,case=EXTENSION_CASE):
     from osgeo import ogr,osr
-    crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3395 if case==TRIM_CASE and kind=='crs_reference' else 3857)
     ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
     shape=line_edit_features(case,kind)[0]['geometry']['type']
     layer=ds.CreateLayer(path.stem,crs,{'MultiLineString':ogr.wkbMultiLineString,'LineString':ogr.wkbLineString,'Point':ogr.wkbPoint}[shape],
-        options=['GEOMETRY_NAME='+('source_shape' if kind in ('source','failure_source') else 'reference_shape')])
-    for name,(native,subtype) in extension_field_types(kind).items():
+        options=['GEOMETRY_NAME='+('source_shape' if kind in (TRIM_SOURCE_KINDS if case==TRIM_CASE else ('source','failure_source')) else 'reference_shape')])
+    for name,(native,subtype) in extension_field_types(kind,case).items():
         field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
         if layer.CreateField(field)!=0:raise FixtureError('cannot seed extension field')
     for row in line_edit_features(case,kind):
@@ -174,12 +250,12 @@ def verify_extension(path,kind,case=EXTENSION_CASE):
     from osgeo import ogr,osr
     ds=ogr.Open(str(path),0)
     if ds is None or ds.GetLayerCount()!=1:raise FixtureError('extension requires one physical layer')
-    layer=ds.GetLayer(0);crs=osr.SpatialReference();crs.ImportFromEPSG(3857);schema=layer.GetLayerDefn();types=extension_field_types(kind)
+    layer=ds.GetLayer(0);crs=osr.SpatialReference();crs.ImportFromEPSG(3395 if case==TRIM_CASE and kind=='crs_reference' else 3857);schema=layer.GetLayerDefn();types=extension_field_types(kind,case)
     if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('extension CRS differs')
     if [schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())]!=list(types):raise FixtureError('extension fields differ')
     if any((schema.GetFieldDefn(i).GetType(),schema.GetFieldDefn(i).GetSubType())!=pair for i,pair in enumerate(types.values())):
         raise FixtureError('extension physical field types differ')
-    if kind in ('source','result','failure_source'):
+    if kind in (TRIM_SOURCE_KINDS if case==TRIM_CASE else ('source','result','failure_source')):
         # OGR coerces a corrupt SQLite BOOLEAN value such as 2 to True. Check
         # the original physical values before its logical Boolean decoder.
         import sqlite3
@@ -201,9 +277,9 @@ def verify_extension(path,kind,case=EXTENSION_CASE):
     validate_extension_features(rows,kind,case)
     if layer.GetGeomType()!={'MultiLineString':ogr.wkbMultiLineString,'LineString':ogr.wkbLineString,'Point':ogr.wkbPoint}[line_edit_features(case,kind)[0]['geometry']['type']]:raise FixtureError('extension declared geometry type differs')
     geometry=layer.GetGeometryColumn()
-    if not geometry or (kind not in ('result','details') and geometry!=('source_shape' if kind in ('source','failure_source') else 'reference_shape')):raise FixtureError('extension geometry column differs')
+    if not geometry or (kind not in ('result','details') and geometry!=('source_shape' if kind in (TRIM_SOURCE_KINDS if case==TRIM_CASE else ('source','failure_source')) else 'reference_shape')):raise FixtureError('extension geometry column differs')
     result={**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geometry,'fid_column':layer.GetFIDColumn(),
-        'source_crs':'EPSG:3857','features':rows,'field_types':{name:ogr.GetFieldTypeName(native) for name,(native,_) in types.items()}}
+        'source_crs':'EPSG:3395' if case==TRIM_CASE and kind=='crs_reference' else 'EPSG:3857','features':rows,'field_types':{name:ogr.GetFieldTypeName(native) for name,(native,_) in types.items()}}
     ds=None
     return result
 
@@ -213,7 +289,7 @@ def extension_worker(action,root):
 
 
 def line_edit_worker(action,root,case):
-    sources,targets,kinds=(ENDPOINT_SOURCES,ENDPOINT_TARGETS,ENDPOINT_KINDS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS,('source','reference','failure_reference'))
+    sources,targets,kinds=(TRIM_SOURCES,TRIM_TARGETS,TRIM_KINDS) if case==TRIM_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS,ENDPOINT_KINDS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS,('source','reference','failure_reference'))
     if action=='seed':
         if any((root/name).exists() for name in sources) or list((root/'outputs').iterdir()):raise FixtureError('refusing existing line edit data')
         for name,kind in zip(sources,kinds):seed_extension(root/name,kind,case)
@@ -221,7 +297,7 @@ def line_edit_worker(action,root,case):
     if action!='verify':raise FixtureError('unknown line edit action')
     if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*sources]) or sorted(p.name for p in (root/'outputs').iterdir())!=sorted(targets):
         raise FixtureError('line edit requires exact sources and two outputs, no failed publication')
-    verify=verify_endpoint if case==ENDPOINT_CASE else verify_extension
+    verify=(lambda path,kind:verify_extension(path,kind,case))
     return {'sources':{name:digest(root/name) for name in sources},
         'source_tables':{name:verify(root/name,kind) for name,kind in zip(sources,kinds)},
         'targets':{name:verify(root/'outputs'/name,port) for name,port in zip(targets,EXTENSION_PORTS)},'exact_inventory_verified':True}
@@ -335,7 +411,7 @@ def rings_diagnostic_worker(action,root):
     return {'sources':{name:digest(root/name) for name in RINGS_DIAGNOSTIC_SOURCES},'targets':{},'exact_inventory_verified':True}
 
 
-INDEPENDENT_CASES = (RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+INDEPENDENT_CASES = (TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -349,6 +425,7 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==TRIM_CASE:return {"ports":EXTENSION_PORTS,"targets":TRIM_TARGETS,"schema":TRIM_SCHEMA,"title":TRIM_TITLE}
     if case==RINGS_DIAGNOSTIC_CASE:
         return {"schema":RINGS_DIAGNOSTIC_SCHEMA,"title":RINGS_DIAGNOSTIC_TITLE,"ports":(),"targets":(),"diagnostic_sources":RINGS_DIAGNOSTIC_SOURCES}
     if case==RINGS_CASE:return {"ports":("result",),"targets":(RINGS_TARGET,),"schema":RINGS_SCHEMA,"title":RINGS_TITLE}
@@ -637,6 +714,7 @@ def composition_expected_features(port):
 
 
 def network_features(case,kind):
+    if case==TRIM_CASE:return trim_features(kind)
     if case==ENDPOINT_CASE:return endpoint_features(kind)
     if case==EXTENSION_CASE:return extension_features(kind)
     if case==PROXIMITY_CASE:return proximity_features(kind)
@@ -1694,6 +1772,7 @@ def validate_features(name, features):
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
     if case==RINGS_DIAGNOSTIC_CASE:return rings_diagnostic_worker(action,root)
+    if case==TRIM_CASE:return trim_worker(action,root)
     if case==RINGS_CASE:return rings_worker(action,root)
     if case==ENDPOINT_CASE:return endpoint_worker(action,root)
     if case==EXTENSION_CASE:return extension_worker(action,root)
@@ -1805,7 +1884,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')
