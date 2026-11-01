@@ -66,19 +66,23 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 路由前缀：`/api/v1/transfer`。
 
 - 公共连通：`GET /ping`。
-- 资源选择与资源树：引擎列表及资源树统一使用 Meta engine / resource-tree / item API；Transfer 不保留私有引擎列表、数据源树、节点 children 或表 metadata 代理接口。
+- 资源选择与资源树：引擎列表、对象存储目录及其他资源树统一使用 Meta engine / resource-tree / item API；Transfer 不保留私有引擎列表、数据源树、节点 children、表 metadata 或 object-storage 浏览代理接口。
+- 能力发现：`GET /capabilities`，仅返回格式与同步能力矩阵；目录读取与动作权限另行核验，见[资源选择与页面入口](docs/transfer-基本概念及配置说明.md#资源选择与页面入口)。
 - TaskProvider 标准任务：独立 `/task-provider/` 端点与专用机器权限见[任务表 API](docs/tables/tasks表.md#taskprovider-机器发现与执行)；`task_type` 固定为 `sync`，不接受用户任务权限。
 - 用户任务定义：统一使用 `/task-definitions`，各动作与精确权限见[任务表 API](docs/tables/tasks表.md#用户任务定义与控制)。bounded pause/resume 只控制 owner schedule，不中断 active execution；continuous 的暂停、恢复和停止见[执行与恢复边界](docs/tables/tasks表.md#执行恢复与验收边界)。
-- 只读配置预检：`POST /task-config-checks`，请求、权限与只读边界见[只读配置预检](#只读配置预检)。
-- “传输任务”列表页提供传输任务创建助手，由 Copilot `/api/v1/copilot/transfer/generate` 只识别源资源意图；向导调用 Manager 搜索/资源事实和 Meta 祖先链得到真实候选，确认时重读 owner 事实，目标继续使用共享资源树。唯一候选也必须由用户确认；之后在助手内依次确认目标引擎、目标父位置、目标表、字段映射和任务配置。声明 `limits.table_write.decimal` 的新目标表复用 Transfer 字段定义推荐 API，按目标 capability 校验基于源数据生成并展示确认；不得按 MySQL、OceanBase 等 `engine_type` 建立名单。Copilot 接口只消费上下文，不调用资源 owner、不创建或启动任务；最终仍使用本模块 `task-definitions` API 和 `transfer.task.create` 权限，由 Transfer 独立校验。
-- Transfer 不提供模块级全局执行列表或监控面板；任务列表通过 `MonitorExecutionsButton(module=transfer, task_type=sync)` 进入统一 Monitor。任务详情保留当前任务的执行历史和 Transfer 领域诊断、结果、重试操作，单次领域详情继续使用 `ExecutionDetail`。
-- 数据库 CDC 结构变更：`GET /task-definitions/:id/schema-change` 查询当前请求，`POST /task-definitions/:id/schema-change/approve` 人工审批 additive migration。
+- 只读配置预检与角色保护选择：`POST /task-config-checks` 见[只读配置预检](#只读配置预检)；候选与选择检查见[角色专用导出选择](#角色专用导出选择)，两类入口的权限与读取范围分别核验。
+- 字段定义推荐：`POST /field-definition-recommendations` 要求当前 Tenant 的 `transfer.task.create`；由用户触发后全量读取所选源 decimal 字段的实际值，并按目标 capability 推荐，不属于仅使用 Meta 快照的配置预检。定义与确认规则见[field_mapping 配置](docs/transfer-基本概念及配置说明.md#五field_mapping-transform)。
+- 数据库 CDC 结构变更：`GET /task-definitions/:id/schema-change` 查询当前请求，`POST /task-definitions/:id/schema-change/approve` 人工审批 additive migration；审批、显式恢复与失败边界见[审批与恢复](docs/数据库架构.md#审批与显式恢复)和[补扫 claim](docs/数据库架构.md#审批补扫-claim-与失败边界)。
 - 业务 Kafka DLQ 只读管理：`GET /task-definitions/:id/dead-letters`、`GET /task-definitions/:id/dead-letters/:identity`。`transfer.task.read` 下的来源隔离与 payload 安全见[公开查询专题](docs/数据库架构.md#dlq-公开查询与来源隔离)，后台可用性治理、失败语义及验收边界见[availability 专题](docs/数据库架构.md#availability-失败与验收边界)。
-- 字段映射：字段映射写入 `config.transforms[type=field_mapping]`，不提供独立 mappings 主路径。
-- 对象存储目录选择统一走 Meta resource-tree；Transfer 不再保留私有 object-storage 浏览 API。
-- 执行记录：用户管理接口为 `GET /executions`、`GET /executions/statistics`、`GET /executions/:execution_id`；模块一次性 execution 的来源隔离回查接口为 `GET /executions/:execution_id/result`。
-- 执行管理：`POST /executions/:execution_id/retry`、`GET /executions/:execution_id/progress|events` 按统一 `execution_id` 定位执行记录；当前没有真实 worker 中断能力，因此不提供 cancel/stop API，TaskProvider 保持 `supports_cancel=false`。
-- 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。
+- 字段映射随任务定义写入 `config.transforms[type=field_mapping]`，配置见[field_mapping 专题](docs/transfer-基本概念及配置说明.md#五field_mapping-transform)；当前路由不挂载独立 mappings 或 `/transforms` API。
+- 用户专业执行：列表、统计、详情、进度、事件与重试统一见[用户专业读取与重试](docs/tables/task_executions表.md#用户专业读取与重试)，读取与重试使用各自权限。当前不提供 execution 级 cancel/stop API，不将任务 pause/stop 当作 bounded execution 的真实取消，TaskProvider 保持 `supports_cancel=false`。
+- 模块一次性执行：`POST /executions` 与 `GET /executions/:execution_id/result` 的 Service 身份、独立创建／读取权限、来源隔离及安全 DTO 见[模块一次性执行与来源隔离](docs/tables/task_executions表.md#模块一次性执行与来源隔离)，不套用用户专业读取或 TaskProvider 权限。
+- 执行读取范围：`GET /execution-read-scope` 仅供第一方 Tenant User 同步取得 Owner 范围，规则见[通用执行读取与过程事件](../docs/spec/tasks/执行监控.md#通用执行读取与过程事件)，不授予数据访问或子执行的额外读取权。
+- Cleanup 专业结果：`GET /cleanup-executions/:execution_id/result` 要求第一方 unrestricted Tenant User、`transfer.cleanup_result.read` 与 `system.cleanup.read`，并核验本人子执行归属；安全投影与失败边界沿[Cleanup 规范](../docs/spec/addp-cleanup体系规范.md)。
+- 产出回执：`GET /runtime/executions/:execution_id/production-receipt` 仅供当前 Tenant 的 `addp-system`、`addp-meta` Service 使用 `transfer.production_receipt.read`；证据范围、失败与保护边界见[初始使用权契约](../docs/spec/addp授权上下文规范.md#558-任务产出数据与初始使用权)。回执不是 Grant，也不扩大用户详情或 TaskProvider 输出。
+- 平台运行策略：`GET`／`PUT /settings/continuous-policy` 在 Platform Context 下分别要求 `transfer.configuration.read`／`transfer.configuration.update`；字段归属与生效范围见[连续任务策略](../docs/spec/configuration/执行与模块策略.md#transfer-continuous-运行观测配置)，不作为 Tenant task config。
+
+页面创建助手与统一 Monitor 入口见[前端公开路由](#前端公开路由)。路由登记、能力发现和读取范围不代表真实授权或执行通过；标准入口、固定版本证据及未覆盖项统一见[开发与验证](#开发与验证)。
 
 ### 只读配置预检
 
@@ -225,6 +229,10 @@ Manager 导入的创建/启动只在同步请求内转发 User 凭据。Manager 
 Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消费旧 Redis Cleanup 请求。外部效果先持久登记准确目标并复核原用户授权，未知效果不重发；原运行体迟到停止证明只更新私有控制事实。专业结果、公共回执及最终任务变更同事务提交。`runtime_sessions`／`cleanup_operations` 不随普通任务私有状态删除而抹除，不自动开放曾发生外部清理的任务。首期 closed Tenant 与无可信 User 来源的清理继续阻断。标准验证为 `make test-module MODULE=transfer GO_ONLY=1`、`make test-transfer-postgres`，后者按包串行执行并包含 Cleanup Owner 原子性与 runtime fencing 场景；不据此声称真实 Kafka/CDC 或 Hosted 清理通过。
 
 ## 前端公开路由
+
+- “传输任务”列表页提供传输任务创建助手，由 Copilot `/api/v1/copilot/transfer/generate` 只识别源资源意图；向导调用 Manager 搜索/资源事实和 Meta 祖先链得到真实候选，确认时重读 owner 事实，目标继续使用共享资源树。唯一候选也必须由用户确认；之后在助手内依次确认目标引擎、目标父位置、目标表、字段映射和任务配置。声明 `limits.table_write.decimal` 的新目标表复用 Transfer 字段定义推荐 API，按目标 capability 校验基于源数据生成并展示确认；不得按 MySQL、OceanBase 等 `engine_type` 建立名单。Copilot 接口只消费上下文，不调用资源 owner、不创建或启动任务；最终仍使用本模块 `task-definitions` API 和 `transfer.task.create` 权限，由 Transfer 独立校验。
+
+- Transfer 不提供模块级全局执行列表或监控面板；任务列表通过 `MonitorExecutionsButton(module=transfer, task_type=sync)` 进入统一 Monitor。任务详情保留当前任务的执行历史和 Transfer 领域诊断、结果、重试操作，单次领域详情继续使用 `ExecutionDetail`。
 
 - Transfer 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`。
 - Transfer 独立访问时同样以任务列表为有读取权限账号的唯一侧栏入口，创建由列表主按钮进入；仅有创建权限且具备 Meta 目录读取权限时，侧栏显示创建向导入口。Console iframe 模式仍由 Console 统一显示侧栏。
