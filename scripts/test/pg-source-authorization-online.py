@@ -2207,8 +2207,9 @@ class Lifecycle:
                 and all(source['grant_count'] == 1 for source in observed['sources']), 'Grant source anchors differ')
         actual_denies = {(deny['recipient_type'], deny['recipient_id']): deny['deny_id'] for deny in observed['denies']}
         require(actual_denies == denies and len(observed['denies']) == len(denies), 'Deny source anchors differ')
-        require(all(set(deny) == {'deny_id', 'recipient_type', 'recipient_id', 'expiry_mode', 'expires_at'}
-                    for deny in observed['denies']), 'Deny summary exposed establishment details')
+        require(all(set(deny) == {'action', 'deny_id', 'recipient_type', 'recipient_id', 'expiry_mode', 'expires_at'}
+                    and deny['action'] == 'read' for deny in observed['denies']),
+                'Deny summary action or safe fields differ')
         self.source_observations.append({key: observed[key] for key in ('reason', 'sources', 'denies')})
 
     def organization_flow(self, report, facts, target, ungranted):

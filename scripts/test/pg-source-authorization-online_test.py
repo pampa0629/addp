@@ -159,8 +159,14 @@ class Server:
                     if account:
                         sources = [{key: row[key] for key in ('recipient_type', 'recipient_id', 'request_id', 'expiry_mode', 'expires_at')}
                                    | {'grant_count': 1} for row in rows]
-                        denies = [{key: body[key] for key in ('recipient_type', 'recipient_id', 'deny_id', 'expiry_mode', 'expires_at')}
+                        denies = [{key: body[key] for key in ('action', 'recipient_type', 'recipient_id', 'deny_id', 'expiry_mode', 'expires_at')}
                                   for command, body in server.deny_bodies.items() if server.denies[command]]
+                        if denies and server.fault == 'deny_summary_missing_action':
+                            denies[0].pop('action')
+                        if denies and server.fault == 'deny_summary_wrong_action':
+                            denies[0]['action'] = 'metadata_read'
+                        if denies and server.fault == 'deny_summary_leaks_details':
+                            denies[0]['reason'] = 'private establishment details'
                         if server.fault == 'wrong_source_anchor' and any(row['recipient_type'] == 'project_group' for row in sources):
                             sources[-1]['request_id'] = 'wrong'
                         rows = []
@@ -866,7 +872,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
 
     def test_organization_projection_history_and_nonmember_oracles(self):
         for fault in ('wrong_source_anchor', 'nonmember_granted', 'release_all_denies', 'hide_deny_only',
-                      'history_expands_organizations', 'withdrawal_overreach'):
+                      'history_expands_organizations', 'withdrawal_overreach', 'deny_summary_missing_action',
+                      'deny_summary_wrong_action', 'deny_summary_leaks_details'):
             with self.subTest(fault=fault):
                 self.scans.side_effect = ['initial-basic', 'exact-basic']
                 server, lifecycle = self.lifecycle(fault)
