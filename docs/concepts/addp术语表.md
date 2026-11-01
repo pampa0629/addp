@@ -304,6 +304,7 @@
 | TaskExecution | 执行记录 | 某一次任务实际执行的运行态记录。 | 统一存储在 `common.task_executions`；Meta 扫描执行通过 `source_task_id` 关联 ScanTask。 |
 | cancellation intent | 取消意图 | Owner 持久受理、绑定确定 execution 的停止请求。 | 不等于 `cancelled`；真实运行体停止及在途效果核清后才可终结。Graph 未领取且能证明从未启动的 pending 例外见[执行契约](../spec/tasks/模块任务契约.md#graph-构建任务)。 |
 | effect reconciliation hold | 外部效果待核清 | Owner 对失联或结果不确定的运行体／外部操作保存的阻断事实。 | 不新增公共 execution 状态，不是持久队列；无未决操作才可解除，不靠 lease 过期、TTL 或确认布尔值放行。Graph 规则见[执行契约](../spec/tasks/模块任务契约.md#graph-构建任务)。 |
+| native graph target identity | 原生图目标身份 | 从原生引擎取得、可与首次绑定比较的图目标代际事实。 | 与 Engine ID／version／CatalogPath 的配置身份区分；不以名称、schema version、内容摘要或自建 UUID 代替。身份一致不证明某次写入结果或旧调用已停止；Graph 保留原绑定，Common Provider 提供原生观察，未验证能力继续拒绝恢复。见[Provider 契约](../spec/addp引擎插件接口规范.md#图目标身份与只读恢复证据)。 |
 | cleanup completion receipt | 资源回收完成回执 | 执行 Owner 对确定 cleanup 子 execution 提交的闭合、安全结果摘要。 | 已确认设计使用子 execution 的类型化有界 `metadata.cleanup_receipt`，不另建回执表／队列；与公共终态及可原子提交的 Owner PG 变更同事务，专业详情仍归 Owner。[正式契约](../spec/addp-cleanup体系规范.md#持久队列与完成回执)已确认，实现与验收未迁移。 |
 | execution display language | 执行显示语言 | 提交时冻结、用于生成该次执行文本的规范语言码。 | 唯一保存于 `execution_config.display_language`，取 `zh-cn` 或 `en`；编排子执行继承父执行，查看语言不改写已保存的执行文本。 |
 | module-wide execution list | 模块级执行列表 | 汇总某一模块多个任务定义或多个任务类型 execution 的列表视图。 | 属于 Monitor 的统一执行列表，不得由业务模块另设菜单、路由或页面；模块筛选通过 `module`、`task_type` 表达。 |

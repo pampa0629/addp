@@ -776,3 +776,30 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 本地最小充分门禁已通过：两项新增诊断用例先在旧 runner 上失败（缺失投影／缺失失败记录），随后通过；标准 `make test-execution-online-ci-runner` 退出 0，native 92 项、共享 160 项全部 OK，Shell／Node 及 Online CI 登记一致，`make check-node-runtime` 和六个自有文件的 `git diff --check` 通过。新增反例覆盖首次读取失败、保留上一 pending 观测、失败父终态、绑定不符、隐藏／重复／异父子项拒绝投影、未知值闭集化、成功不带失败字段及 validator 连空值也拒绝。与实际 Hosted 固定源码逐项 AST 比对，全部 HTTP 调用、wait 谓词／消息／预算、sleep 调用与权限／case 契约均未变。证据同目录 `diagnostic-{red,focused,gates}.log`、`diagnostic-invariants.json`。仅修复取证缺口，没有产品行为修改或新源码 Hosted；Linux 专项提交后单独核验，不将本地通过升级为真实全链通过。
 
 安全诊断已提交推送 `25bfb0f206a9be2a12ab1fd2839876978dc876b2`。对应独立 [Execution online CI runner Job 124701407594](https://github.com/pampa0629/addp/actions/runs/41256745364/job/124701407594) 已实际 success，push／attempt 1，北京时间 2026-11-01 08:52:20—08:54:41；此前排队不计执行或通过，曾有只读查询 EOF，最终以鲜活 Job 元数据及完整日志定案。日志 272 行真实选中 scripts/*，287—289 行 canonical Node／Make，295—297 行 native 92 项 OK（34.068 秒），301—303 行共享 160 项 OK（59.459 秒），337 行登记一致，342 行 selected:true。证据同目录 `diagnostic-{ci-proof,ci-job-final,local-proof}.json`、`diagnostic-ci-job.log`，日志 SHA-256 `a825e27ae79e3db90eee4efc083a1c5dd104665ddba9650aa8ba9c01130319e4`；只计本专项，不外推其他 Job 或整个 workflow。相关本地及 Linux 确定性门禁通过，但第三轮 Hosted 正式仍为 0/7，具体评估失败原因未取证，新诊断源码的真实清理链路仍未验。优先下一步是在单独确认后运行一次相同身份／范围／七断言／预算的 `transfer-engine`，读取最后评估状态后按证据收敛；未追加 Hosted、切换环境、重启服务或改变权限边界。
+
+### 8.24 Graph Provider 证据方案细化（只读分期方向已确认）
+
+用户要求与下一轮 `transfer-engine` 取证并行细化本方案；涉及边界变化先讨论。本节记录只读调查、候选接口职责和验收矩阵，不授权 Graph Hosted、业务图新增控制对象、原生管理权限或放行当前 reopen。已确认的职责与安全条件先统一正式契约／术语，再实施 Provider 能力。
+
+用户随后明确认可只读分期方向，业务图回执另议。已先补术语，再将职责、失败关闭、首次绑定／锁外观察／CAS、版本能力验证和禁止补造历史绑定写入正式 Provider 规范及模块任务契约，Graph 导航同步。该确认不等于原生身份候选已通过，也不等于 Provider／正向 reopen 已实现；当前只细化正式契约，代码与实际验收分别推进。
+
+**当前证据链。** Graph 已在派发前将准确 operation ID、Tenant／Graph、execution／attempt 或审核 command、Runner、请求摘要和配置目标摘要写入自己的 PG 表；配置目标包含 Engine／version／CatalogPath／index_management，不是原生物理身份。合法所有者的完整返回可提交 known；失权后的晚到摘要只追加，不能解除 unknown。`Reconcile` 只消费完整 known 操作，`Reopen` 最终仍返回 `ErrGraphPhysicalTargetUnverified`。Common `PropertyGraphProvider` 仅提供执行、索引和约束操作，没有原生目标代际或单次操作核清接口。
+
+**必须分别证明的三件事。** 一是当前仍为首次受理绑定的原生目标代际；二是准确操作的结果已确定，而非仅观察到相似业务数据；三是原运行体及在途／排队调用已结束，且不会在重新开放后迟到写入。目标身份、操作结果与停止证明不能互代；`SHOW TRANSACTIONS`／`GRAPH.INFO` 瞬时空列表、客户端超时、断开连接和 lease 过期都不能单独构成三项证明。恢复只追加 Graph 私有证据和准入事实，不修改已经终结的公共 execution、不自动重跑。
+
+| 原生能力／当前实现 | 已核实事实 | 方案约束 |
+| --- | --- | --- |
+| Neo4j | 官方 `db.info()` 提供数据库 id／name／creationDate，模式为 READ；`SHOW DATABASES` 另有 databaseID，但不能由最新 Enterprise 文档推定本仓库 `neo4j:5-community` 均可用 | 将 scoped `db.info()` 作为只读身份候选，先验证实际固定版本、普通连接权限及重启／同名重建；备份恢复、克隆、迁移是否保留 ID 尚未证明，不把该 ID 单独宣称为全部物理代际证明 |
+| Neo4j 写入 | 当前 Provider 调用 v5.28.4 `neo4j.ExecuteQuery`；本地 SDK 注释和官方手册明确其可自动重试瞬时失败 | 若实现操作证据能力，受控变更必须采用唯一、不自动重发的原生执行入口；候选为显式事务。不能仅记录一次本地 operation 就断言只有一次原生提交；只读查询路线与结果形状不因本提案改变 |
+| FalkorDB | 仓库固定 4.20.6，客户端 `MaxRetries=-1`；官方 `GRAPH.LIST` 只列当前 Redis DB 的 graph key，`GRAPH.INFO` 是运行／等待查询与对象池观察；`GRAPH.QUERY version` 用于 schema cache 版本检查 | graph 名、Redis DB 编号、server run ID、schema version 或内容摘要都不认作原图代际。尚未取得稳定原生图身份及单次提交回执，继续失败关闭；不能为两引擎表面一致伪造 UUID |
+| 索引／约束及 Copilot | Graph 分别登记 `graph`／`graph_indexes`／`graph_constraint`／`copilot`；FalkorDB 索引存在异步构建，Copilot 当前为同步抽取调用 | 数据写入回执不能覆盖索引后台工作，原生图 Provider 不能裁定 Copilot 请求已经结束。每类操作必须有自己的完整证据；无核验协议的种类保留阻断 |
+
+**建议首期范围。** Common 只承担原生只读身份观察、与准确操作绑定的原生事实投影以及可用能力／不支持的明确结果；Graph 独占原绑定、证据采信、当前权限、准入和 reconcile／reopen 的裁决。保持现有两个控制 API、version CAS 和既有 Permission，不新增客户端上传证据、force、人工“已确认”开关或跨读 Graph 私表的 System／Monitor API。两引擎共用一份窄 Provider 契约；不支持就是明确拒绝，不增加按名称／内容回退的第二路线。首期不写业务图控制节点或原生回执账本，也不增加管理员身份；因此不承诺未知操作的通用恢复。
+
+**未来实现的事务顺序。** 首次允许变更前，Graph 固化经核验的目标身份与范围；每个 operation 沿该绑定派发，不能在 reopen 时才临时采集“原身份”。reconcile／reopen 先在短 G 锁事务冻结当前 version、关闭状态和操作集合／摘要，再释放 PG 锁做有界 Provider 读取，最后重取 G，以同一 version／目标／操作集合 CAS 提交；期间任何新操作、目标变化或证据冲突都拒绝。开放前还须有全部原操作已停止的完整事实；仅一次身份读取不能防止读取后换库，后续变更必须在同一原生执行边界内验证原绑定。是否可以在实际引擎版本上做到原子身份核验与变更、如何处理原生恢复／复制，是实施前必须证实的条件，不能用两次相邻 GET 代替。
+
+**已确认的首期边界与后续另议项。** 新增 Common Provider 证据契约和 Graph 私有原生身份绑定，属于跨模块契约与持久事实变化，用户已确认按上述只读、严格失败关闭方向收敛正式契约；Neo4j 只有通过原生代际反例后才可声明支持，FalkorDB 证据不足继续拒绝。若目标要求两引擎都能核清提交回包丢失，可能需要在业务图写入与变更原子绑定的控制回执／代际围栏，以及其保留、备份／克隆语义；这会影响业务图内容、普通浏览／统计排除、外部写入边界和 Cleanup，必须作为后续独立设计确认，不能借本轮方案细化直接落地。原物理目标身份的严格含义不降级为名称、配置或自建标记相同。
+
+**最小验证及顺序。** 确认后先修正式模块任务契约／Provider 规范及必要术语，再做 Common／Graph T1（单次派发、未知结果不重发、跨图／旧代际／伪造证据拒绝）、既有 Graph PG 门禁（锁外读取、version／操作集合竞争、旧 attempt 只能追加、公共终态不变），以及 Common Neo4j／FalkorDB 原生 T2（重启、同名重建、缺失／重复身份、权限不足、提交回包丢失、索引后台未收敛）。复用 `make test-common-falkordb-unit`、`make test-module MODULE=graph GO_ONLY=1`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"`、`make test-common-neo4j`、`make test-common-falkordb`；实施前核对现有路径选择和登记覆盖，需要适配则同次完成。明确实际镜像版本／edition 后才做能力声明；T1／T2 通过不能代替另行确认的 Graph Hosted。
+
+原生事实来源（2026-11-01 只读核对）：[Neo4j db.info](https://neo4j.com/docs/operations-manual/current/procedures/built-in-procedures/)、[Neo4j ExecuteQuery 重试](https://neo4j.com/docs/go-manual/current/query-simple/)、[显式事务](https://neo4j.com/docs/go-manual/current/transactions/)、[事务观察与终止](https://neo4j.com/docs/operations-manual/current/database-internals/show-and-terminate-transactions/)、[FalkorDB GRAPH.LIST](https://docs.falkordb.com/commands/graph.list)、[GRAPH.INFO](https://docs.falkordb.com/commands/graph.info)、[GRAPH.QUERY](https://docs.falkordb.com/commands/graph.query)。这些资料证明候选命令及驱动行为，不代替本仓库固定版本的实际能力验收。

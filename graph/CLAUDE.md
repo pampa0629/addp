@@ -206,6 +206,8 @@ Graph 调用 Copilot 图谱抽取时必须从当前构建任务取得 `tenant_id
 
 Graph控制API只接受当前version，reconcile要求`graph.graph.reconcile`，reopen同时要求update与reconcile；该Permission不默认授予角色。现有Provider缺少原物理目标身份和完整失联核清协议，reopen失败关闭，不承诺全部失联场景可以恢复。
 
+2026-11-01 已确认[原生身份与恢复证据的只读分期契约](../docs/spec/tasks/模块任务契约.md#graph-原生身份与恢复证据)：Common 提供原生事实，Graph 独占原绑定与准入裁决；身份、操作结果和停止证明不能互代。Neo4j 候选身份先做固定版本验证，FalkorDB 无证据继续阻断；业务图原子回执另案讨论。本次为契约确认，尚未实现 Provider 证据能力或正向 reopen，不改公共终态、不新增权限、不自动重跑。
+
 本轮最小验证：`make test-module MODULE=graph GO_ONLY=1`、`make test-graph-frontend`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"`、`make test-common-falkordb`、`make test-common-neo4j`和`make test-authorization`。PG覆盖双实例精确领取、取消竞争、真实G锁等待跨租约、旧运行体拒绝／迟到证据与未决阻断；原生门禁覆盖部分写入及成功后回执丢失。HTTP 202只表示入队／取消受理，运行验收和新的Hosted须另行取得证据。
 
 ## 七、开发与调试
