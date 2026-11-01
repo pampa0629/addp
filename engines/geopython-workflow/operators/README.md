@@ -224,6 +224,8 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 
 `raster_zonal_statistics`可显式成对提供`weights_raster/weights_band`，与percentile互斥，在原九列后追加weight_sum／weighted_sum／weighted_mean；原统计不改写，全1复用原sum／mean。有效数值位置的权重须有效有限非负，缺失不补零；全零权重为0／0／null，无有效数值组新增三项null。三输入同网格／CRS、原生NoData先判定，按块精确累计并最终舍入，真实溢出明确失败；保留普通表／CSV、50行预览及清理，不增加面板入口或权限，详见栅格算子契约。
 
+`raster_zonal_statistics`可显式`include_weighted_stddev=True`追加nullable `weighted_stddev`，须提供原成对权重输入；总体分母Σw，全1与原stddev精确一致，全零权重为null。默认关闭，原统计、百分位和三项加权Schema保持；不扩展矢量面入口。
+
 `raster_zonal_statistics`可附加同一单个`percentile`，在原九列后追加`percentile/percentile_value`；按精确整数分区的全部有效数值独立计算，空组为null，分区全无效保留空表Schema。原统计口径、同网格双输入、普通表／CSV保存及最多50行预览保持；私有有界分块归并按分区与数值排序，复用磁盘账本及2GiB安全余量，成功失败均清理，不为每区保留全部像元或打开文件。
 
 `raster_vector_zonal_statistics`可成对显式提供`weights_raster/weights_band`，与percentile互斥；同网格权重按原覆盖逐面统计，重叠面分别计入，不按交叠面积分摊。原八字段保持，追加同前缀weight_sum／weighted_sum／weighted_mean，全1复用原sum／mean；必需位置缺失或负权重严格失败。全零权重0／0／null，无值三项null，空批Schema及几何／属性／索引保持；共用原生NoData、分块精确累计与既有矢量保存／清理，无新入口或权限，详见栅格算子契约。
