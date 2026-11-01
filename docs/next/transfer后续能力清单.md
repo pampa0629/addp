@@ -19,7 +19,7 @@
 | Watermark lookback | 当前严格从 committed 复合位置继续，不重读迟到窗口 | 时间回拨边界、窗口大小、目标幂等和状态推进规则 |
 | MySQL watermark 空间字段 | 当前 MySQL watermark 源不接受空间字段 | MySQL 空间 schema/row 表达、SRID 事实和目标 Provider 矩阵 |
 | Snapshot checkpoint resumable | snapshot checkpoint 当前只可观测，retry 从头执行 | Provider resume marker、目标重复写入边界、replace staging 与原子切换 |
-| Bounded execution cancel | 标准 TaskProvider 保持 `supports_cancel=false` | worker context 取消、目标事务回滚、任务状态收敛和 API 契约 |
+| [Bounded execution cancel](../spec/tasks/Transfer同步执行.md#transfer-同步执行契约) | 尚未开放针对当前 bounded execution 的真实取消；bounded Pause/Resume 只控制未来调度、不中断现有执行，见[状态与控制](../../transfer/docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay) | worker context 取消、目标事务回滚、任务状态收敛和 API 契约 |
 | Bounded 分区并行 | 当前主路径未提供跨 worker 的 source partition 协调 | 分区稳定性、上界冻结、失败重试、最终提交和资源限流 |
 
 ## 二、业务 Kafka
@@ -57,7 +57,7 @@ Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不�
 
 | 能力 | 当前缺口 | 进入实现前必须确认 |
 |---|---|---|
-| 标准 execution cancel | continuous task 有自己的 Pause/Stop，但 TaskProvider 标准 cancel 未开放 | cancel 与 Pause/Stop 的唯一语义、API owner 和 execution 终态 |
+| [标准 execution cancel](../spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约) | 尚未开放；`supports_cancel=false` 约束整个 `sync` 类型，bounded 具备并验证真实取消前不得注册标准 cancel endpoint；continuous Pause/Stop 的任务运行控制见[用户运行控制](../../transfer/docs/transfer-任务语义与同步模式.md#用户运行控制) | cancel 与 Pause/Stop 的唯一语义、API owner 和 execution 终态 |
 | 单任务跨实例 partition | 当前一个 task 的全部 partition 由同一 runtime owner 承载 | partition lease、全局 fencing、rebalance、状态聚合和吞吐证据 |
 | 低频 Meta 统计刷新 | continuous 只在首次建表和正式 schema 变化后自动扫描 | 统计新鲜度目标、扫描成本、去重和 owner scheduler |
 | 手工 Meta scan 关联回执 | 手工扫描完成结果目前不回写 Transfer schema change 请求 | 跨模块 correlation id、结果事件、幂等和 Monitor incident 恢复 |
@@ -85,4 +85,5 @@ Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不�
 | 业务 Kafka DLQ / replay | DLQ 查询成功或 `payload_available=true` 不证明 replay 通过，也不代表 CDC replay/DLQ 已开放。 | [DLQ availability 与验收](../../transfer/docs/数据库架构.md#availability-失败与验收边界) |
 | CDC 单表与待扩展能力 | 已有单表 snapshot/upsert/delete 结果不能补作多表、无主键或 Truncate 通过。 | [数据库 CDC 语义](../../transfer/docs/transfer-任务语义与同步模式.md#63-数据库-cdc) |
 | CDC 类型矩阵与 Oracle | 源／目标组合、snapshot／insert／update／delete、精度／时区及空间维度分别核对；空间源捕获不代表目标写入同样受支持，其他专项通过不能补作 CDC 类型矩阵通过。 | [Oracle 既有数据面范围](../../transfer/docs/transfer-基本概念及配置说明.md#oracle-既有验证与验收边界)、[专项调用与隔离清理门禁缺口](../../transfer/README.md#oracle-cdc-专项入口缺口) |
+| 取消与任务控制 | 调度暂停、continuous Pause/Stop 或写成 `cancelled` 不证明 bounded／标准 cancel 已实现；真实中断、未提交目标事务回滚、资源／lease 释放及一致终态须分别核验。 | [执行、恢复与验收边界](../../transfer/docs/tables/tasks表.md#执行恢复与验收边界) |
 | 容器子表 | Provider 声明和现行主路径不代表所有格式、任意目标或端到端场景已验收。 | [读取布局与入口](../../transfer/docs/transfer-基本概念及配置说明.md#读取布局与入口) |
