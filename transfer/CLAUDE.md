@@ -178,13 +178,17 @@ Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消�
 
 模块、Go 定位、PostgreSQL 专项与 Hosted runner 的标准命令、环境前提及覆盖范围统一见[README 门禁说明](README.md#常规模块与专项门禁)；测试连接必须指向核对后的实际映射，凭据按受控环境注入。原生 GDAL/Python、GeoPython Runtime、Business Oracle、样本和临时对象权限沿[ArcGIS 专项](README.md#arcgis-开放格式专项)，部分运行不计完整门禁通过。
 
+`make test-transfer-postgres` 的测试连接与覆盖范围统一见[README 门禁说明](README.md#常规模块与专项门禁)，无需 PostGIS。Planner 的通用 PostgreSQL 连接辅助函数只检查连接；PostGIS 前置检查仅属于 GeoJSON 坐标转换等空间测试。目标覆盖回归在自身连接的 `search_path=pg_catalog` 下执行，确保本地 `addp_test` 已安装的空间扩展不会掩盖非空间测试的错误依赖；不删除扩展、不创建额外 database，仍拒绝门禁中的任何 Skip。
+
 两类 Oracle CDC 显式开关用例仍缺专门登记的标准调用与隔离清理门禁，具体实现、数据面范围、环境及已授权故障窗口统一见[专项入口缺口](README.md#oracle-cdc-专项入口缺口)。普通模块、Go 或 PostgreSQL 门禁成功以及未激活用例的跳过，都不能计为这两类实测通过，也不以直接语言命令替代标准入口。
 
 真实 T4 的专用身份、最小权限与独占部署遵循[Online 规范](../docs/spec/testing/T4-Online验收规范.md)，不复用个人开发服务或扩大生产权限。以下分版本证据只适用于所列源码和运行尝试，不代表当前 HEAD 已重跑；标准门禁、runner 回归、实际运行与历史结论分别认定，未运行、失败、跳过和未覆盖项不计为通过。各后续增强的独有验收边界见[清单验收范围与证据](../docs/next/transfer后续能力清单.md#六验收范围与证据)。
 
 ### 专项约束与分版本证据
 
-专题导航：[bounded 失败诊断与配置预检](#bounded-失败诊断与配置预检)、[continuous 精确扫描与审批归属](#continuous-精确扫描与审批归属)、[bounded 定时授权验收](#bounded-定时授权验收)。
+专题导航：[continuous 过程事件与浏览器验收](#continuous-过程事件与浏览器验收)、[专业执行读取与响应收敛](#专业执行读取与响应收敛)、[SQL ETL 与 bounded 写后扫描](#sql-etl-与-bounded-写后扫描)、[bounded 失败诊断与配置预检](#bounded-失败诊断与配置预检)、[continuous 精确扫描与审批归属](#continuous-精确扫描与审批归属)、[bounded 定时授权验收](#bounded-定时授权验收)。
+
+#### continuous 过程事件与浏览器验收
 
 连续执行浏览器验收复用同一 Hosted suite 与 Console canonical 路由，在真实事件已提交后核对时间线、自动刷新的新增计数、恢复来源与失败原因。正式撤权仍由 Python 夹具沿既有 IAM 入口执行；浏览器先确认已展示授权详情，再核对旧内容清空和重新登录后的 Monitor-only 拒绝。私有阶段控制文件与浏览器原始输出不归档；只归档闭合报告和安全页面截图。门禁继续使用 `make test-transfer-continuous-online-runner`，新增 ES module 语法校验，真实部署入口准备 Chromium；登记校验同时检查这些接线。
 
@@ -196,6 +200,8 @@ continuous 的 claim、累计提交计数与终态复用 `common.execution_event
 
 2026-10-12 在提交 `a35e96a9116c8ac95fac7f08ae51773c4ffbaf15` 的 [Hosted T4 38269328262](https://github.com/pampa0629/addp/actions/runs/38269328262) 通过 continuous 过程事件完整链路，共 9 组真实检查：正式 Meta 源扫描、Kafka 目标提交与过程事件、同租户 Owner 权限及跨租户隔离、真实 Worker SIGKILL 后的 lease expiry／新 UUID／位点恢复、暂停恢复与坏记录、Owner 不可用、正式 IAM 撤权后的旧令牌及新 Monitor-only 会话、PostgreSQL CDC snapshot／增删改／确认停止，以及删除任务定义后的授权历史读取。坏记录的 `missing_source_key` 同时在 Transfer 和 Monitor 安全响应中核对；Supervisor 保留既有 RecordDataError 稳定码与安全 Message，不持久化 Cause 或外层包装文本，过程事件不新增错误文本或业务样本。原 Worker PID 50020 由标准生命周期替换为 57334，5 个服务构建身份均匹配测试提交；2 个任务定义清理通过，授权历史在独占部署销毁前保留核验，Hosted 容器／网络／卷零残留。30 个归档文件未含身份、描述及私有运行文件，未检出 JWT、addp_at 令牌和所检查的夹具密码模式。当前提交的干净副本通过 `make test-transfer-continuous-online-runner`（26 项及 System 夹具 Go 测试）和 `make test-transfer-backend`；本地 `make test-transfer-postgres`、`make test-go` 通过，七类记录错误码的持久化和安全投影已由 PostgreSQL 回归验证。本轮 `make test-module MODULE=transfer` 在平台日志生命周期夹具 `test_disabled_metrics_never_stop_foreign_container` 的 10 秒超时处失败，不计为通过；同提交 CI 的全仓 Go 与 Transfer 前端通过；[Platform CI 38269048586](https://github.com/pampa0629/addp/actions/runs/38269048586) 的 Platform consistency 在公共 Hosted 登记回归失败：ES/HDFS 的 `scripts/utils/hosted-online.sh` owner contract 不完整，栅格删除 `verify_online_product_runtime` 片段的负向用例未触发预期拒绝（3 errors、1 failure），未改动其他会话仍在修改的登记文件。Release/T2 的 [Transfer PostgreSQL 15 门禁](https://github.com/pampa0629/addp/actions/runs/38269048728) 已通过；完整自动 workflow 未计为通过。本 T4 不包含真实浏览器验收、180 天概览清理或确定性坏记录的恢复策略变更，System 平台进程日志与审计未改动。
 
+#### 专业执行读取与响应收敛
+
 连续执行的分区位点沿 `ChangeStreamPosition.Values` 的既有十进制字符串契约输出 `values.next_offset`，不接受另一套数字表示；专业页面只展示业务运行诊断，不展示 Worker 身份、租约或 fencing。创建、委托创建和任务配置预检约束不因执行响应收敛改变。
 
 2026-10-12 执行响应收敛已由 `c1f993b1fa7c5d5e403e463c371c46b2adf4ae80` 纳入 main；`task_handler.go` 的创建、委托创建及配置预检逻辑没有变化。位点字符串修正补充了 0、普通位点、int64 最大值和真实 PostgreSQL 详情读取回归；后端 `make test-transfer-backend`、`make test-transfer-postgres`、前端 `make test-transfer-frontend`（130 项单元、16 项浏览器及构建）、Swagger 35 个路由覆盖、执行夹具和 ETL runner 37 项均通过。模块聚合初次因 Ontology 来源冻结校验失败：handler 与来源清单引用的旧提交不一致，Agent/Skill 等来源亦有差异。Ontology owner 在共享工作区同步来源后，2026-10-12 本地完整 `make test-module MODULE=transfer`（Platform T0、Go T1、前端 T1/T3、PostgreSQL T2）及 `make test-online-runner` 均退出成功；本模块没有修改或放宽来源门禁。位点补修提交为 `301e421e64a8227ad39cb6705104163cc3e27198`。上述确定性验证不代替本轮专业读取契约的真实 T4。
@@ -206,13 +212,13 @@ continuous 的 claim、累计提交计数与终态复用 `common.execution_event
 
 2026-10-11 真实 Hosted T4 [38139520110](https://github.com/pampa0629/addp/actions/runs/38139520110) 在提交 `25ec6e336574de8d99956eeb6aae290a93297c51` 通过：8 个服务构建身份一致，三轮 Orchestrator 父子执行及结构演进、MongoDB／关系型字段血缘和浏览器图均通过；11 个临时资源全部删除，基础设施清理零残留。此结果验证安全父执行引用适配，不代替后续 Transfer 专业接口权限收敛的验收。
 
+#### SQL ETL 与 bounded 写后扫描
+
 关系型 SQL ETL 的真实 T4 `transfer-relational-sql-etl` 消费 Orchestrator 专业安全 DTO：父执行只核对执行／编排身份、成功步骤和规范的子 execution UUID，不要求 `tenant_id`、配置或子任务 outputs。Transfer／Develop 子执行分别经所属模块读取专业字段事实，并经 Monitor 独立核对 Owner、任务和父子关联；三轮执行及结构演进不能靠父步骤复制结果。确定性专用入口为 `make test-transfer-online-runner`，用例定位见[ETL runner 回归](../scripts/test/transfer-relational-sql-etl-online_test.py)；相关回归继续由根 `make test-online-runner`、Platform T0／CI 聚合，专用回归不能替代真实 Hosted T4。
 
 同一 ETL Hosted 套件在三次原生表写入前后，通过 Meta 正式只读接口验证源表这一兄弟项的身份、扫描时间／深度及数据统计不变，schema 到根节点的扫描状态、时间和深度不变；父节点当前子树统计允许随目标创建变化。秒精度读 DTO 的基线先跨过已观察时间刻度再启动任务，避免同秒截断掩盖扩大扫描。结果记录在 `field_lineage.precise_scan_scope`，确定性反例由现有 `make test-transfer-online-runner` 和 CI 自动发现；真实 Hosted 通过前不计为 T4 证据。
 
 2026-10-16，提交 `dcd74b58c` 的 [Hosted T4 38884014630](https://github.com/pampa0629/addp/actions/runs/38884014630) 已通过并下载报告独立核对：`field_lineage.precise_scan_scope` 验证三次原生表写入后，源表这一兄弟项及 schema／root 两级祖先的扫描事实和状态均不变；实际 Worker 日志的 12 次自动扫描全部提交完整表 locator，无父范围 `catalog_paths`。8 个服务构建提交一致，11 个领域资源全部删除，应用清理 passed、Infra zero_residuals；既有浏览器与血缘场景通过。此 T4 证明 bounded 原生表写后范围，continuous 初始化及结构变更补扫仍以现有 HTTP／Go 回归为依据，未扩大表述为已完成真实 CDC 扫描验收。
-
-`make test-transfer-postgres` 的测试连接与覆盖范围统一见[README 门禁说明](README.md#常规模块与专项门禁)，无需 PostGIS。Planner 的通用 PostgreSQL 连接辅助函数只检查连接；PostGIS 前置检查仅属于 GeoJSON 坐标转换等空间测试。目标覆盖回归在自身连接的 `search_path=pg_catalog` 下执行，确保本地 `addp_test` 已安装的空间扩展不会掩盖非空间测试的错误依赖；不删除扩展、不创建额外 database，仍拒绝门禁中的任何 Skip。
 
 #### bounded 失败诊断与配置预检
 
