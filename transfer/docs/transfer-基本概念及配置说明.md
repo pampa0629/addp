@@ -1,10 +1,10 @@
 # Transfer 模块基本概念及配置说明
 
-更新时间：2026-11-01
+更新时间：2026-11-02
 
 本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、watermark bounded incremental 规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
-阅读导航：[table Transfer](#三table-transfer-支持范围)、[raw copy](#四raw-copy-支持范围)、[Continuous/Kafka](#八continuouskafka-v1-契约与当前实现边界)、[数据库 CDC](#九数据库-cdc-v1-已冻结边界)、[恢复分级](#恢复分级)、[测试与验收](#测试与验收导航)。
+阅读导航：[配置维度与 Worker 分工](#21-顶层字段)、[table Transfer](#三table-transfer-支持范围)、[raw copy](#四raw-copy-支持范围)、[Continuous/Kafka](#八continuouskafka-v1-契约与当前实现边界)、[数据库 CDC](#九数据库-cdc-v1-已冻结边界)、[恢复分级](#恢复分级)、[测试与验收](#测试与验收导航)。
 
 ## 测试与验收导航
 
@@ -79,7 +79,7 @@ bounded pause/resume 只控制未来调度，不中断已有 execution，也不�
 
 ## 二、任务 Config JSON
 
-`config` 必须包含 `source` 和 `target` endpoint：
+`config` 必须包含 `source` 和 `target` endpoint；以下为 bounded snapshot 示例：
 
 ```json
 {
@@ -108,12 +108,16 @@ bounded pause/resume 只控制未来调度，不中断已有 execution，也不�
 
 | 字段 | 必填 | 说明 |
 |---|---:|---|
-| `runtime` | 是 | 执行边界；当前 worker 只支持 `boundary=bounded`。 |
-| `load` | 是 | 装载方式；支持 `mode=snapshot` 和 PostgreSQL/MySQL/OceanBase/openGauss/TiDB native table 的 `mode=incremental + change_detection.type=watermark`；OceanBase/openGauss/TiDB 限非空间表。 |
+| `runtime` | 是 | 执行边界为 `boundary=bounded` 或 `boundary=continuous`；两类 Worker 的分工遵循[同步执行规范](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)。 |
+| `load` | 是 | 装载方式为 `mode=snapshot` 或 `mode=incremental`；与执行边界、变化识别及源／目标能力的有效组合见[当前支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)。 |
 | `source` | 是 | 源 endpoint。 |
 | `target` | 是 | 目标 endpoint。 |
 | `transforms` | 否 | table batch transform 列表。 |
 | `batch_size` | 否 | 本任务批大小；为空时使用任务表 `batch_size`。 |
+
+bounded execution 由 `transfer-bounded-worker` 通过 PostgreSQL claim 领取；continuous execution 由独立 continuous worker/supervisor 承担长期 session，不进入 bounded claim，也不使用 Asynq。进程、领取和租约职责分别沿[正式执行契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)与[Continuous 运行时](transfer-任务语义与同步模式.md#六continuous-运行时)。
+
+上述维度不能任意组合，源／目标与非空间限制仍按支持矩阵及各专题校验。Kafka poll 分批读取不改变 continuous 边界，CDC initial snapshot 属于 continuous CDC 的 bootstrap，定义见[执行边界](transfer-任务语义与同步模式.md#21-执行边界)；`manifest` 尚未进入支持范围，见[变化识别方式](transfer-任务语义与同步模式.md#23-变化识别方式)。配置与进程分工不作为运行通过证据，标准入口和未覆盖项统一见[测试与验收导航](#测试与验收导航)。
 
 ### 2.2 Endpoint 字段
 
@@ -468,7 +472,7 @@ Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和
 
 ### 当前能力与界面
 
-业务 Kafka JSON upsert + DLQ 与 PostgreSQL/MySQL/Oracle CDC snapshot/upsert/delete 已实现，并共用同一个 consumer/apply/CAS 主循环；continuous worker 不使用 Asynq。独立进程角色、状态控制与租约归属见[Continuous 运行时](transfer-任务语义与同步模式.md#六continuous-运行时)，交付与恢复约束以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。
+业务 Kafka JSON upsert + DLQ 与 PostgreSQL/MySQL/Oracle CDC snapshot/upsert/delete 已实现，并共用同一个 consumer/apply/CAS 主循环。Worker 分工统一见[顶层字段](#21-顶层字段)，状态控制与租约归属见[Continuous 运行时](transfer-任务语义与同步模式.md#六continuous-运行时)，交付与恢复约束以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。
 
 Console Wizard 已支持业务 Kafka 以及 PostgreSQL/MySQL/Oracle CDC 配置。业务 Kafka 默认显式发送 `block`，公开 API 可显式选择 `dead_letter`，完整策略见[Kafka 与 DLQ 契约](../../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。execution 详情展示 owner、heartbeat、lease、fencing token、每个 partition 的 committed next offset 与最近提交时间。
 
