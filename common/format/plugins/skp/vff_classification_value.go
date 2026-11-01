@@ -10,6 +10,8 @@ type vffSKCValueReference struct {
 	role   string
 	name   xml.Name
 	source vffSKCDeclarationWitness
+	target *vffSKCDeclarationWitness
+	via    []vffSKCSchemaLink
 }
 type vffSKCValueBinding struct {
 	references           []vffSKCValueReference
@@ -36,17 +38,19 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 			return err
 		}
 		kind := source.name.Local
-		result.references = append(result.references, vffSKCValueReference{kind + "Ref", name, b.witness(source)})
-		if name.Space != b.namespace {
-			result.issues = append(result.issues, "external complex value "+kind+" reference: "+raw)
+		index := len(result.references)
+		result.references = append(result.references, vffSKCValueReference{role: kind + "Ref", name: name, source: b.witness(source)})
+		target, err := b.resolveValue(source, name, kind)
+		if err != nil {
+			return err
+		}
+		if target == nil {
+			result.issues = append(result.issues, "complex value "+kind+" reference not uniquely bound: "+raw)
 			return nil
 		}
-		declaration := b.definitions[kind][name.Local]
-		if declaration == nil {
-			result.issues = append(result.issues, "complex value "+kind+" declaration missing: "+raw)
-			return nil
-		}
-		return visit(declaration, depth+1)
+		w := b.witness(target.node)
+		result.references[index].target, result.references[index].via = &w, target.via
+		return visit(target.node, depth+1)
 	}
 	reference = func(source *vffXMLNode, raw, role string, depth int) error {
 		if err := b.tick(depth); err != nil {
@@ -56,7 +60,8 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 		if err != nil {
 			return err
 		}
-		result.references = append(result.references, vffSKCValueReference{role, name, b.witness(source)})
+		index := len(result.references)
+		result.references = append(result.references, vffSKCValueReference{role: role, name: name, source: b.witness(source)})
 		if name.Space == vffXSDNS {
 			if !vffSKCBuiltinType(name.Local) {
 				result.issues = append(result.issues, "unknown XSD 1.0 builtin type: "+name.Local)
@@ -68,22 +73,24 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 			}
 			return nil
 		}
-		if name.Space != b.namespace {
-			result.issues = append(result.issues, "external value type: "+raw)
+		target, err := b.resolveValue(source, name, "type")
+		if err != nil {
+			return err
+		}
+		if target == nil {
+			result.issues = append(result.issues, "value type reference not uniquely bound: "+raw)
 			return nil
 		}
-		if declaration := b.definitions["simpleType"][name.Local]; declaration != nil {
-			return visit(declaration, depth+1)
-		}
-		if declaration := b.definitions["complexType"][name.Local]; declaration != nil {
+		declaration := target.node
+		w := b.witness(declaration)
+		result.references[index].target, result.references[index].via = &w, target.via
+		if declaration.name.Local == "complexType" {
 			if source.name.Local != "element" || role != "type" {
 				result.issues = append(result.issues, "complex value type outside element type position")
 				return nil
 			}
-			return visit(declaration, depth+1)
 		}
-		result.issues = append(result.issues, "value type declaration missing: "+raw)
-		return nil
+		return visit(declaration, depth+1)
 	}
 	visit = func(node *vffXMLNode, depth int) error {
 		if err := b.tick(depth); err != nil {

@@ -52,7 +52,8 @@ type vffSKCBinder struct {
 	active            map[*vffXMLNode]bool
 	witnesses         map[*vffXMLNode]vffSKCDeclarationWitness
 	issues            []string
-	nodes             map[int]*vffXMLNode
+	nodes             map[vffSKCNodeKey]*vffXMLNode
+	graph             *vffSKCBindingGraph
 	groupUses         []vffSKCGroupUse
 	values            map[*vffXMLNode]*vffSKCValueBinding
 }
@@ -69,6 +70,10 @@ func readVFFClassificationBindings(ctx context.Context, c *vffContainer, limits 
 	visits := &vffSKCBindingBudget{limits.visits, limits.depth}
 	var result []vffSKCFilterBindings
 	for i, item := range documents.packages.packages {
+		graph, err := newVFFSKCBindingGraph(ctx, item.files, documents.documents[i], xmlBudget, visits)
+		if err != nil {
+			return nil, err
+		}
 		for _, filter := range documents.documents[i].filters {
 			schemaMember := strings.TrimSuffix(filter.member, ".filter")
 			var schema *vffSKCSchemaFact
@@ -82,7 +87,7 @@ func readVFFClassificationBindings(ctx context.Context, c *vffContainer, limits 
 			if schema == nil || sha256.Sum256(item.files[schemaMember]) != schema.sha256 || sha256.Sum256(item.files[filter.member]) != filter.sha256 {
 				return nil, fmt.Errorf("SKC binding source facts differ")
 			}
-			binding, err := readVFFSKCFilterBindings(ctx, schemaMember, item.files[schemaMember], filter, xmlBudget, visits)
+			binding, err := graph.binders[schemaMember].readFilterBindings(filter)
 			if err != nil {
 				return nil, err
 			}
@@ -101,38 +106,8 @@ func readVFFClassificationBindings(ctx context.Context, c *vffContainer, limits 
 	return result, nil
 }
 
-func readVFFSKCFilterBindings(ctx context.Context, member string, raw []byte, filter vffSKCFilterFact, xmlBudget *vffXMLBudget, budget *vffSKCBindingBudget) (*vffSKCFilterBindings, error) {
-	root, err := readVFFXML(ctx, raw, xmlBudget, map[string]bool{vffXSDNS: true}, nil)
-	if err != nil {
-		return nil, err
-	}
-	if root.name != (xml.Name{Space: vffXSDNS, Local: "schema"}) {
-		return nil, fmt.Errorf("binding requires exact XSD root")
-	}
-	b := &vffSKCBinder{ctx: ctx, member: member, namespace: root.attrs["targetNamespace"], raw: raw, definitions: map[string]map[string]*vffXMLNode{}, budget: budget, active: map[*vffXMLNode]bool{}, witnesses: map[*vffXMLNode]vffSKCDeclarationWitness{}, nodes: map[int]*vffXMLNode{}, values: map[*vffXMLNode]*vffSKCValueBinding{}}
-	if b.namespace == vffXSDNS {
-		return nil, fmt.Errorf("schema overriding the builtin XSD namespace is unsupported")
-	}
-	for _, child := range root.children {
-		if err := b.tick(0); err != nil {
-			return nil, err
-		}
-		kind := child.name.Local
-		if kind != "complexType" && kind != "simpleType" && kind != "element" && kind != "attribute" && kind != "attributeGroup" && kind != "group" {
-			continue
-		}
-		name := child.attrs["name"]
-		if !vffSKCBindingName(name) || child.attrs["ref"] != "" {
-			return nil, fmt.Errorf("unsupported XSD declaration name")
-		}
-		if b.definitions[kind] == nil {
-			b.definitions[kind] = map[string]*vffXMLNode{}
-		}
-		if b.definitions[kind][name] != nil || kind == "complexType" && b.definitions["simpleType"][name] != nil || kind == "simpleType" && b.definitions["complexType"][name] != nil {
-			return nil, fmt.Errorf("duplicate XSD declaration in one symbol space")
-		}
-		b.definitions[kind][name] = child
-	}
+func (b *vffSKCBinder) readFilterBindings(filter vffSKCFilterFact) (*vffSKCFilterBindings, error) {
+	member, raw := b.member, b.raw
 	result := &vffSKCFilterBindings{schemaMember: member, filterMember: filter.member, schemaSHA256: sha256.Sum256(raw), filterSHA256: filter.sha256}
 	for index, rule := range filter.rules {
 		if err := b.tick(0); err != nil {
@@ -142,6 +117,7 @@ func readVFFSKCFilterBindings(ctx context.Context, member string, raw []byte, fi
 		b.groupUses = nil
 		fact := vffSKCRuleBinding{rule: index}
 		var candidates []vffSKCFieldCandidate
+		var err error
 		if rule.typeName == "" {
 			for _, name := range rule.attributes {
 				if err := b.tick(0); err != nil {
@@ -209,9 +185,10 @@ func (b *vffSKCBinder) witness(n *vffXMLNode) vffSKCDeclarationWitness {
 	if prior, ok := b.witnesses[n]; ok {
 		return prior
 	}
-	w := vffSKCDeclarationWitness{b.member, b.namespace, n.name.Local, n.attrs["name"], n.begin, n.end, sha256.Sum256(b.raw[n.begin:n.end])}
+	owner := b.graph.owners[n]
+	w := vffSKCDeclarationWitness{owner.member, owner.namespace, n.name.Local, n.attrs["name"], n.begin, n.end, sha256.Sum256(owner.raw[n.begin:n.end])}
 	b.witnesses[n] = w
-	b.nodes[n.begin] = n
+	b.nodes[vffSKCNodeKey{w.member, n.begin}] = n
 	return w
 }
 

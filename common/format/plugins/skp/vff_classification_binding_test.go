@@ -14,6 +14,16 @@ func skcBindingLimits() vffSKCBindingLimits {
 	return vffSKCBindingLimits{documents: skcDocumentLimits(), xml: skcDocumentLimits().xml, visits: 10000, depth: 32}
 }
 
+// Single-schema test control; production has only the complete current-SKC graph path.
+func skcSingleSchemaBindings(ctx context.Context, member string, raw []byte, filter vffSKCFilterFact, xmlBudget *vffXMLBudget, budget *vffSKCBindingBudget) (*vffSKCFilterBindings, error) {
+	doc := vffSKCDocumentFact{schemas: []vffSKCSchemaFact{{vffSKCMemberFact: vffSKCMemberFact{member, sha256.Sum256(raw)}}}}
+	graph, err := newVFFSKCBindingGraph(ctx, map[string][]byte{member: raw}, doc, xmlBudget, budget)
+	if err != nil {
+		return nil, err
+	}
+	return graph.binders[member].readFilterBindings(filter)
+}
+
 func skcBindingFiles(t *testing.T) map[string][]byte {
 	f := skcDocumentFiles(t)
 	f["Schemas/root.xsd"] = []byte(`<x:schema xmlns:x="` + vffXSDNS + `" xmlns:t="urn:type" targetNamespace="urn:type"><x:complexType name="Base"><x:sequence><x:element name="Name"/></x:sequence><x:attribute name="Id"/></x:complexType><x:attributeGroup name="Audit"><x:attribute name="Created"/></x:attributeGroup><x:group name="Shape"><x:sequence><x:element name="Height"/></x:sequence></x:group><x:attribute name="Global"/><x:complexType name="Beam"><x:complexContent><x:extension base="t:Base"><x:attributeGroup ref="t:Audit"/><x:sequence><x:group ref="t:Shape"/><x:element name="Wrapper"><x:complexType><x:attribute name="Hidden"/></x:complexType></x:element></x:sequence><x:attribute ref="t:Global"/></x:extension></x:complexContent></x:complexType><x:element name="Beam" type="t:Beam"/></x:schema>`)
@@ -156,7 +166,7 @@ func TestVFFSKCBindingBudgetsRemainCumulativeAcrossExactPackages(t *testing.T) {
 		t.Fatal(err)
 	}
 	work := &vffSKCBindingBudget{10000, 32}
-	if _, err := readVFFSKCFilterBindings(context.Background(), "Schemas/root.xsd", f["Schemas/root.xsd"], *filter, &vffXMLBudget{limits: skcBindingLimits().xml}, work); err != nil {
+	if _, err := skcSingleSchemaBindings(context.Background(), "Schemas/root.xsd", f["Schemas/root.xsd"], *filter, &vffXMLBudget{limits: skcBindingLimits().xml}, work); err != nil {
 		t.Fatal(err)
 	}
 	used := 10000 - work.remaining
