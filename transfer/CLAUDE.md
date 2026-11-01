@@ -121,12 +121,12 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 #### bounded 读写与恢复
 
-- overwrite / append 是 Transfer policy；删除指定资源由 `common/engine` ResourceDeleteProvider 提供。
-- native target 在删除／准备之前消费 Provider 可选的纯 `TableWriteDefinitionChecker`，拒绝已知不支持的字段声明；PostgreSQL、openGauss、KingbaseES、TiDB 与 OceanBase 已实现；openGauss／KingbaseES 沿同一 PG 协议检查，TiDB／OceanBase 沿同一 MySQL 非空间写入核心检查，均保留各自的空间限制。MySQL 非空间核心在连接前拒绝原生 array，不靠默认 TEXT 映射或自动改成 JSON 兜底。没有检查接口或实际值未知不能当作通过，逐值编码、现有授权／Security 和执行时结构校验继续生效。合成 PostgreSQL 数组源到 replace 目标的拒绝及既有目标 OID／哨兵保留，由 `make test-transfer-postgres` 自动覆盖；不意味着 replace 全流程原子回滚。
-- checkpoint 当前只用于进度展示、故障定位和 provider marker 观测；失败执行 retry 按 restartable 从头重新入队，append 任务 retry 会被拒绝。不得宣称 table Transfer 已支持 checkpoint resumable。
+- `replace` / `append` 是 Transfer policy，删除由 `common/engine` 的 `ResourceDeleteProvider` 提供；策略及能力要求见[写入策略](docs/transfer-基本概念及配置说明.md#六写入策略)与[目标能力](docs/transfer-基本概念及配置说明.md#目标能力与写入策略)。
+- native target 在删除／准备前消费可选 `TableWriteDefinitionChecker`，拒绝已知不支持的声明；Provider 覆盖、空间与原生 array 限制统一见[StoreProvider 契约](../docs/spec/addp引擎插件接口规范.md#storeprovider)。无接口或实际值未知不能当作通过，逐值编码、授权／Security 和实时结构检查仍须执行，见[运行期定义检查](docs/transfer-基本概念及配置说明.md#运行期定义检查)。PostgreSQL 数组源在 replace 删除前拒绝及原目标 OID／哨兵保留由 `make test-transfer-postgres` 覆盖，不证明 replace 全流程原子回滚。
+- snapshot checkpoint 仅作观测，失败 `replace` retry 创建新 execution 从头执行，`append` 拒绝 retry；watermark 从 committed position 续读，不能称作 snapshot checkpoint resumable。恢复分级与独立验收沿[恢复契约](docs/transfer-基本概念及配置说明.md#恢复分级)，租约过期是否可安全恢复沿[公共领取与恢复契约](../docs/spec/tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)。
 - 大数据传输要优先考虑批大小、连续读取 / 写入 session、进度日志和 restartable retry。
 - bounded Worker 不使用消息载荷；以 `common.task_executions` 中冻结的执行配置为唯一输入，并通过 `lease_token` 条件写入。
-- bounded watermark source 必须消费声明 `bounded_watermark_read` 的 common engine Provider；PostgreSQL、MySQL、MySQL 模式 OceanBase、openGauss 与 TiDB 都在源数据库一致性快照内冻结游标上界。单字段游标仅同步新增且必须自身是非空唯一键，复合游标同步新增和更新且 tie breaker 必须是非空唯一键；OceanBase 与 TiDB 限定目录报告为 InnoDB-compatible 的非空间基表，openGauss 当前只开放非空间表。目标只按幂等 `TableUpsertProvider` 能力选择，当前 PostgreSQL、MySQL、MySQL 模式 OceanBase、openGauss 与 TiDB 可作为目标，其中 OceanBase、openGauss 与 TiDB 只支持非空间表；Transfer 不按源或目标引擎类型建立专用执行分支。
+- watermark 只消费 `bounded_watermark_read`，在源一致性快照内冻结上界、按完整游标稳定排序；目标按幂等 `TableUpsertProvider` 能力选择，成功提交后才 CAS/fencing 推进主状态。单／复合游标、键与引擎／非空间限制及未覆盖项统一见[watermark 配置](docs/transfer-基本概念及配置说明.md#七watermark-bounded-incremental)和[执行语义](docs/transfer-任务语义与同步模式.md#42-watermark-incremental)，Transfer 不按源或目标引擎类型分叉。
 
 #### 成果事实与初始授权
 
