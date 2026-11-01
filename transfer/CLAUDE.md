@@ -99,6 +99,10 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 ## 执行规则
 
+执行导航：[一次性执行与来源隔离](#一次性执行与来源隔离)、[通用执行约束](#通用执行约束)、[查询源与构建器](#查询源与构建器)、[字段血缘与导出保护](#字段血缘与导出保护)、[bounded 失败诊断](#bounded-失败诊断)、[生产来源与写后扫描](#生产来源与写后扫描)、[Cleanup 执行边界](#cleanup-执行边界)。
+
+公共验收导读：[开发与验证](#开发与验证)维护标准门禁、固定源码版本、失败与修复结论及未覆盖项；以下各节保留对应能力、权限与失败场景的独有验收边界，不以契约、入队或局部检查推定真实链路通过。
+
 ### 一次性执行与来源隔离
 
 - 一次性执行入口只允许已认证且具备不可委派 `transfer.execution.create` Permission 的模块 Service Client 调用，execution 的 `source` 必须由 `addp-<module>` Client ID 推导，调用方请求不得自报 `source_module`。同一模块使用不可委派 `transfer.execution.read` 回查自己创建的 execution，Transfer 必须再次按 Client ID 校验 `source`，不能借此读取其他模块或用户任务 execution。入口接受强类型 source / target / fields 契约，并在 Transfer 内转换为唯一 planner 配置；查询调用方必须把已解析的全部关系输入按稳定顺序写入 `source.query.inputs[]`。Transfer 不自行解析 SQL/MQL 反推资源，但必须使用同一 `PreparedQuery` 的 Provider `ReadSet` 验证调用方声明；未声明 `inputs` 的 Console 单源查询必须精确只读取所选 source leaf。通过验证的输入才能写入血缘。调用方不得创建临时 Transfer task，也不得保存 Transfer task ID。bounded worker 必须同时执行有任务定义和无任务定义的 `sync` execution，并只在 `source_task_id` 存在时更新任务摘要。
@@ -138,7 +142,7 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 - bounded snapshot 的目标覆盖与 source 是直接表、SQL 或 MQL 正交；已存在默认目标、append 限制及仅覆盖本 execution 的配置沿[单次执行目标覆盖](docs/transfer-基本概念及配置说明.md#24-单次执行目标覆盖)。Worker 按通用 Engine capability 严格核验实际目标的字段名称、顺序与类型，只用 `TableWriteSessionProvider` append，不调用 delete、truncate、prepare 或 DDL；覆盖执行的 lease 过期不自动重试。Transfer 不保存 LogicalTable ID、不调用 Model API、不持有 Model Permission。
 - bounded `sync` 的稳定输出 `execution_id + target_locator + row_count`、闭合输入与默认值沿[模块任务契约](../docs/spec/tasks/模块任务契约.md#跨模块任务边界)。`target_locator` 必须是本 execution 的实际目标；业务与 Infra 父 Locator 保持各自体系及解析器，下游不从私有配置、任务 ID 或物理字段拼接目标。
-- 稳定输出唯一持久事实及顶层 `outputs` 投影沿[TaskProvider 标准响应](../docs/spec/tasks/TaskProvider接口.md#标准响应体)，统一复用 `common/taskprovider`；用户执行详情仍使用 Transfer DTO，不包装机器契约。身份、精确 Permission 与实际执行验收边界见[任务表 API](docs/tables/tasks表.md#五api)及[开发与验证](#开发与验证)，契约声明或入队不等于真实目标写入与编排链路通过。
+- 稳定输出唯一持久事实及顶层 `outputs` 投影沿[TaskProvider 标准响应](../docs/spec/tasks/TaskProvider接口.md#标准响应体)，统一复用 `common/taskprovider`；用户执行详情仍使用 Transfer DTO，不包装机器契约。身份、精确 Permission 与入口验收边界见[任务表 API](docs/tables/tasks表.md#五api)，契约声明或入队不等于真实目标写入与编排链路通过。
 
 #### continuous 运行、提交与观测
 
@@ -146,13 +150,13 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 - 业务 Kafka 注册为 System Engine，topic 使用 `type=topic` ResourceLocator；partition 只属于 runtime assignment/position/diagnostics。Infra Kafka 来自 ADDP 部署配置，不进入 System engines、资源树或用户任务 JSON。
 - 目标必须消费声明原子、单调及所需 operations 的 `PartitionedTableChangeApplyProvider`，先在目标库原子提交业务行与 partition ledger，再以 runtime fencing token + state version 做 Infra CAS；普通 `TableUpsertProvider` 不足以阻止失效 worker 写回。各目标 ledger 归属与类型限制沿[CDC 契约](../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)，Oracle CDC partitioned apply 不与 bounded table write session 共享 ledger 语义。崩溃重放由目标 ledger 吸收，不宣称跨系统 exactly-once，见[交付保证](docs/transfer-任务语义与同步模式.md#61-交付保证)。
 - continuous session 不进入 bounded claim 或 Asynq；单 task 的 owner lease／heartbeat／fencing 与 partition position 分离，见[运行时契约](docs/transfer-任务语义与同步模式.md#六continuous-运行时)。用户控制、新 execution、自动恢复及退避／circuit 审计沿[生命周期](docs/transfer-任务语义与同步模式.md#64-生命周期)。PostgreSQL/MySQL/Oracle 锁等待须响应 context 取消并回滚未完成业务写入及 ledger；Oracle `FOR UPDATE NOWAIT` 有界重试见[位置恢复与取消](docs/transfer-基本概念及配置说明.md#位置恢复与取消)。
-- Transfer 沿同一 `ChangeStreamReader` 采集并判定分区诊断，计算与健康口径见[诊断与恢复窗口](docs/transfer-任务语义与同步模式.md#65-诊断与恢复窗口)。Monitor 只消费公共 execution 安全投影，不直连业务 Kafka 或 Transfer 私表；权限、来源隔离与字段裁剪沿[专业执行规范](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)。能力、状态或诊断展示不证明实际提交、恢复、停止或权限链路通过；分版本证据与门禁见[开发与验证](#开发与验证)。
+- Transfer 沿同一 `ChangeStreamReader` 采集并判定分区诊断，计算与健康口径见[诊断与恢复窗口](docs/transfer-任务语义与同步模式.md#65-诊断与恢复窗口)。Monitor 只消费公共 execution 安全投影，不直连业务 Kafka 或 Transfer 私表；权限、来源隔离与字段裁剪沿[专业执行规范](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)。能力、状态或诊断展示不证明实际提交、恢复、停止或权限链路通过。
 
 #### 业务 Kafka DLQ 与 replay
 
 - DLQ 的确定性记录错误分类和 payload → 控制索引 → 目标 `skip` ledger → Infra CAS 顺序沿[正式契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)，任一步失败不得推进后续 position。查询的 Tenant/task 权限与 payload 安全沿[公开查询与来源隔离](docs/数据库架构.md#dlq-公开查询与来源隔离)；索引读取权不授予原始 payload 访问权。
 - availability 由 continuous worker 唯一低频 reconciler 管理，精确引用 CAS、瞬时故障保留状态及 payload 不留副本沿[availability 专题](docs/数据库架构.md#availability-失败与验收边界)；不进入 HTTP 链路或提交 Kafka offset。`payload_available=true` 不等于 replay 已验收，具体证据范围见该专题。
-- replay 的唯一 API、显式 offset ranges、retention 复核与新 PostgreSQL 隔离目标沿[配置专题](docs/transfer-基本概念及配置说明.md#dlq-与-bounded-replay)。它从原业务 topic 读取，使用独立 bounded execution／apply identity，不动主状态、lease、水位或目标；失败不改变主任务或触发 continuous 恢复 circuit，见[独立执行契约](docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)及上述正式契约。查询、availability 与 replay 的验收分别认定，固定版本与未覆盖项见[开发与验证](#开发与验证)。
+- replay 的唯一 API、显式 offset ranges、retention 复核与新 PostgreSQL 隔离目标沿[配置专题](docs/transfer-基本概念及配置说明.md#dlq-与-bounded-replay)。它从原业务 topic 读取，使用独立 bounded execution／apply identity，不动主状态、lease、水位或目标；失败不改变主任务或触发 continuous 恢复 circuit，见[独立执行契约](docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)及上述正式契约。查询、availability 与 replay 的验收分别认定。
 
 #### CDC 捕获与审批
 
@@ -165,7 +169,7 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 - 用户显式删除按当前 Tenant 与 `transfer.task.delete` 独立授权，见[任务定义入口](docs/tables/tasks表.md#用户任务定义与控制)；Engine 生命周期 Cleanup 保留命中的任务定义，供后续重绑定或显式删除，不能按 physical mode 一概删除。Transfer-owned 捕获／DLQ 资源与 Infra 共享资源的所有权、用户目标及审计保留统一见[Cleanup 的 Transfer 职责](../docs/spec/addp-cleanup体系规范.md#transfer)。
 - 删除运行控制状态前须收敛 continuous task 为 desired stopped，并取得所有原 invocation 的实际停止证明；lease 过期、cancel 或进程消失均不构成证明。pending／running bounded 执行阻断清理。外部效果先登记精确目标并复核原用户授权，未知不重发；Runner、持久围栏及验收边界见[Cleanup 执行边界](#cleanup-执行边界)和[正式 Owner 约束](../docs/spec/addp-cleanup体系规范.md#十五已确认决策)。
-- 显式任务删除的 capture → DLQ → 私有状态／定义收口、失败保留及最终事务沿[任务资源契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)和[私有状态与任务删除](docs/transfer-任务语义与同步模式.md#51-私有状态与任务删除)。外部删除失败不得先删索引或任务，公共 execution、目标业务数据及目标 ledger 保留；`runtime_sessions`／`cleanup_operations` 不随普通私有状态抹除。门禁、真实停止、外部资源与零残留须分别验收，不以 lease 或 API 返回证明清理通过。
+- 显式任务删除的 capture → DLQ → 私有状态／定义收口、失败保留及最终事务沿[任务资源契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)和[私有状态与任务删除](docs/transfer-任务语义与同步模式.md#51-私有状态与任务删除)。外部删除失败不得先删索引或任务，公共 execution、目标业务数据及目标 ledger 保留。门禁、真实停止、外部资源与零残留须分别验收，不以 lease 或 API 返回证明清理通过。
 
 #### 写后扫描触发与范围
 
@@ -184,7 +188,7 @@ Console 基础构建器只编写同一 `source.query`，不保存第二份 DSL �
 
 行粒度、字段候选、能力驱动入口及不支持的编辑／计算范围统一见[query source 与轻量 ETL 配置](docs/transfer-基本概念及配置说明.md#23-bounded-query-source-与轻量-etl-构造)。两者仅对严格可逆且符合当前 Meta 事实的子集开放结构化编辑，其余已有合法只读查询只读展示，不提供高级编辑或保存入口。
 
-只读会话与来源证明沿[Provider 契约](../docs/spec/addp引擎插件接口规范.md#queryruntimeprovider)，资源选择、创建与执行的独立权限沿[任务授权](docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)。能力声明或表单回显不证明真实读写、保护或完整链路已通过；标准门禁与分版本证据见[开发与验证](#开发与验证)。
+只读会话与来源证明沿[Provider 契约](../docs/spec/addp引擎插件接口规范.md#queryruntimeprovider)，资源选择、创建与执行的独立权限沿[任务授权](docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)。能力声明或表单回显不证明真实读写、保护或完整链路已通过。
 
 ### 字段血缘与导出保护
 
@@ -192,7 +196,7 @@ bounded 字段血缘复用同次 Provider 证据与实际 field mapping；多来
 
 `export` 是受保护数据离开源 DataItem 的保护动作，任务类型仍为 `sync`。命中纳管来源的 `bounded + snapshot` Native TablePipeline 按精确 Locator 与当前源结构，在字段映射、类型转换、空间处理和 Writer 前执行保护，不按 `engine_type` 分叉；查询保护消费同一 `PreparedQuery` 的完整 ReadSet/OutputLineage。开放形态、查询证明子集与未接入形态的资源级失效关闭边界统一见[Transfer export 契约](../docs/spec/addp数据安全与隐私保护实现规范.md#104-transfer-export-动作)。MongoDB 原始记录须在保留 BSON 标量的对象上先保护、再编码 Canonical Extended JSON，不解析已编码的 EJSON；端点与类型保真格式见[动态记录原始导出](docs/transfer-基本概念及配置说明.md#32-动态记录原始导出)。
 
-专业读取权限与安全 DTO 沿[专业执行契约](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)，分版本证据见[开发与验证](#开发与验证)；Provider 证明不等同真实写入、血缘采集或完整权限链路验收通过。
+专业读取权限与安全 DTO 沿[专业执行契约](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)；Provider 证明不等同真实写入、血缘采集或完整权限链路验收通过。
 
 ### bounded 失败诊断
 
@@ -210,7 +214,7 @@ Transfer bounded 保护失败在实际边界保留类型化准备／结果标记
 
 Manager 导入的创建/启动只在同步请求内转发 User 凭据。Manager 导入的 Infra source 由当前 bounded execution 的完整 User 来源和绑定任务经 Manager Owner 核验后读取，使用 `manager.import_provenance.read`；未知、未绑定、跨租户、非上传者或 Owner 不可用时拒绝。通用 content／format reader 保持唯一实现，业务来源仍走既有 Security Gate，不以 Infra 路径作为许可。
 
-标准门禁及分版本结果见[开发与验证](#开发与验证)，精确范围、双用户审批归属与清理的实际证据见[扫描与审批验收](#continuous-精确扫描与审批归属)；T1/T2、单用户与双用户 Hosted 的覆盖范围分别认定。
+精确范围、双用户审批归属与清理的实际证据见[扫描与审批验收](#continuous-精确扫描与审批归属)；T1/T2、单用户与双用户 Hosted 的覆盖范围分别认定。
 
 ### Cleanup 执行边界
 
