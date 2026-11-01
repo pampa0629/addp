@@ -60,8 +60,8 @@ func (e *DevExecutor) notifyPendingExecution() {
 
 type federatedQueryExecutor interface {
 	IsRuntime(ctx context.Context, tenantID, engineID uint) bool
-	ReferencedEngineIDs(ctx context.Context, tenantID, runtimeEngineID uint, query string) ([]uint, error)
-	ExecuteQuery(ctx context.Context, tenantID, runtimeEngineID uint, executionID uuid.UUID, authorizationID int64, query string, timeout int, limit int, sourceEngineIDs []uint) (*FederatedQueryResult, error)
+	FreezeBinding(ctx context.Context, tenantID, selectedEngineID uint, query string) (*models.FederatedQueryBinding, error)
+	ExecuteQuery(ctx context.Context, tenantID uint, binding *models.FederatedQueryBinding, executionID uuid.UUID, authorizationID int64, query string, timeout int, limit int) (*FederatedQueryResult, error)
 }
 
 type preparedContentExecution struct {
@@ -387,6 +387,9 @@ func (e *DevExecutor) prepareSQLExecutionAuthorization(
 	if strings.TrimSpace(userAccessToken) == "" {
 		return nil, fmt.Errorf("异步 SQL 执行必须由当前 User Access Token 派生 Execution Authorization")
 	}
+	if err := e.freezeFederatedExecution(ctx, devTask, tenantID); err != nil {
+		return nil, err
+	}
 	if e.isFederatedQuery(ctx, devTask, tenantID) {
 		engineIDs, err := e.federatedReadEngineIDs(ctx, devTask, tenantID)
 		if err != nil || len(engineIDs) == 0 {
@@ -397,7 +400,7 @@ func (e *DevExecutor) prepareSQLExecutionAuthorization(
 			return nil, fmt.Errorf("执行 ID 无效: %w", err)
 		}
 		return e.sqlEngine.IssueFederatedReadExecutionAuthorization(
-			ctx, tenantID, userAccessToken, parsedExecutionID, engineIDs, devTask.Timeout, *devTask.GetEngineID(),
+			ctx, tenantID, userAccessToken, parsedExecutionID, devTask.FederatedBinding, devTask.Timeout,
 		)
 	}
 	engineID := devTask.GetEngineID()
@@ -426,6 +429,9 @@ func (e *DevExecutor) isFederatedQuery(ctx context.Context, devTask *models.DevT
 	if e == nil || e.federatedQuery == nil || devTask == nil || devTask.DevType != commonExecution.TaskTypeQuery || devTask.GetQueryType() != "sql" {
 		return false
 	}
+	if devTask.FederatedBinding != nil {
+		return true
+	}
 	engineID := devTask.GetEngineID()
 	return engineID != nil && e.federatedQuery.IsRuntime(ctx, tenantID, *engineID)
 }
@@ -434,18 +440,13 @@ func (e *DevExecutor) federatedReadEngineIDs(ctx context.Context, devTask *model
 	if !e.isFederatedQuery(ctx, devTask, tenantID) {
 		return nil, fmt.Errorf("无效的联邦查询任务")
 	}
-	sqlContent, ok := devTask.Content["query"].(string)
-	if !ok || strings.TrimSpace(sqlContent) == "" {
-		return nil, fmt.Errorf("无效的查询内容")
+	if devTask.GetEngineID() == nil {
+		return nil, federatedBindingError(ctx)
 	}
-	effect, err := ClassifySQLExecutionEffect(sqlContent)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrSQLExecutionUnclassifiable, err)
+	if err := validateFederatedBinding(devTask.FederatedBinding, *devTask.GetEngineID()); err != nil {
+		return nil, federatedBindingError(ctx)
 	}
-	if effect != SQLExecutionEffectRead {
-		return nil, fmt.Errorf("联邦查询 Runtime 仅支持只读 SQL")
-	}
-	return e.federatedQuery.ReferencedEngineIDs(ctx, tenantID, *devTask.GetEngineID(), sqlContent)
+	return append([]uint(nil), devTask.FederatedBinding.SourceEngineIDs...), nil
 }
 
 func applySQLExecutionAuthorizationFacts(
@@ -879,8 +880,8 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 			return nil, nil, fmt.Errorf("联邦查询 Runtime Engine 无效")
 		}
 		federatedResult, executeErr := e.federatedQuery.ExecuteQuery(
-			ctx, uint(tenantID), *runtimeEngineID, parsedExecutionID, authorization.AuthorizationID,
-			sqlContent, devTask.Timeout, (devTask.QueryResultLimit + 1), authorization.EngineIDs,
+			ctx, uint(tenantID), devTask.FederatedBinding, parsedExecutionID, authorization.AuthorizationID,
+			sqlContent, devTask.Timeout, (devTask.QueryResultLimit + 1),
 		)
 		if executeErr != nil {
 			return nil, nil, fmt.Errorf("联邦查询执行失败: %w", executeErr)
@@ -1535,6 +1536,9 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 			return nil, err
 		}
 	}
+	if err := e.freezeFederatedExecution(ctx, task, tenantID); err != nil {
+		return nil, err
+	}
 	if task.DevType == commonExecution.TaskTypeScript {
 		if err := e.notebookExecutionService.FreezeContent(ctx, task); err != nil {
 			return nil, err
@@ -1633,6 +1637,9 @@ func devTaskExecutionRecordConfig(devTask *models.DevTask, inputs commonModels.J
 		config["timeout"] = devTask.Timeout
 		if devTask.DevType == commonExecution.TaskTypeQuery {
 			config["query_result_limit"] = devTask.QueryResultLimit
+			if devTask.FederatedBinding != nil {
+				config["federated_query_binding"] = cloneFederatedBinding(devTask.FederatedBinding)
+			}
 		}
 		if devTask.RuntimeParameters != nil {
 			config["runtime_parameters"] = devTask.RuntimeParameters

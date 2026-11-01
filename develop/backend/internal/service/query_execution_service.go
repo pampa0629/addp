@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -52,6 +53,9 @@ func (s *QueryExecutionService) Execute(
 	}
 	devTask, err := devQueryTaskFromExecution(execution)
 	if err != nil {
+		if errors.Is(err, errFederatedBindingInvalid) {
+			err = federatedBindingError(ctx)
+		}
 		return s.completeFailure(ctx, execution, lease, err, "develop.query.snapshot_invalid")
 	}
 	ctx = contextWithQuerySnapshot(ctx, devTask)
@@ -119,13 +123,9 @@ func (s *QueryExecutionService) ordinaryAuthorization(
 		return nil, false, fmt.Errorf("invalid parent execution: %w", err)
 	}
 	if s.executor.isFederatedQuery(ctx, devTask, uint(execution.TenantID)) {
-		engineIDs, err := s.executor.federatedReadEngineIDs(ctx, devTask, uint(execution.TenantID))
-		if err != nil {
-			return nil, false, err
-		}
 		authorization, err := s.executor.sqlEngine.IssueFederatedReadExecutionAuthorizationFromExecution(
-			ctx, uint(execution.TenantID), parentExecutionID, executionID, engineIDs,
-			lease.Attempt, lease.Token, devTask.Timeout, *devTask.GetEngineID(),
+			ctx, uint(execution.TenantID), parentExecutionID, executionID, devTask.FederatedBinding,
+			lease.Attempt, lease.Token, devTask.Timeout,
 		)
 		return authorization, true, err
 	}
@@ -510,6 +510,9 @@ func devQueryTaskFromExecution(execution *commonExecution.TaskExecution) (*model
 	}
 	if err := validateDevTaskExecutionConfig(task.DevType, task.Content, task.ExecutionConfig); err != nil {
 		return nil, &querySnapshotError{"query_template_invalid", err}
+	}
+	if err := restoreFederatedExecution(execution, task); err != nil {
+		return nil, &querySnapshotError{"federated_binding_invalid", err}
 	}
 	if runtimeInputs, exists := execution.ExecutionConfig["runtime_inputs"]; exists {
 		task.ExecutionConfig["runtime_inputs"] = runtimeInputs

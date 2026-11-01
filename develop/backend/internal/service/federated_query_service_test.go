@@ -67,6 +67,10 @@ func TestFederatedQueryServiceResolvesOnlyReferencedSupportedSources(t *testing.
 	if !reflect.DeepEqual(ids, []uint{12, 13}) {
 		t.Fatalf("engine IDs = %#v, want [12 13]", ids)
 	}
+	frozen, err := svc.FreezeBinding(context.Background(), 7, 90, "SELECT t.id FROM Business_PostgreSQL.public.cities AS t JOIN Business_MySQL.sales.orders AS o ON o.id = t.id")
+	if err != nil || frozen.SelectedEngineID != 90 || frozen.RuntimeEngineID != 90 || frozen.Audience != "duckdb" || !reflect.DeepEqual(frozen.SourceEngineIDs, []uint{12, 13}) {
+		t.Fatalf("admission binding=%+v error=%v", frozen, err)
+	}
 }
 
 func TestFederatedQueryCandidatesComeFromCurrentCatalogSources(t *testing.T) {

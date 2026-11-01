@@ -16,6 +16,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/config"
+	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/protection"
 	"github.com/google/uuid"
 )
@@ -146,21 +147,20 @@ func (s *SQLEngineService) IssueFederatedReadExecutionAuthorization(
 	tenantID uint,
 	userAccessToken string,
 	executionID uuid.UUID,
-	engineIDs []uint,
+	binding *models.FederatedQueryBinding,
 	timeout int,
-	targetEngineID uint,
 ) (*IssuedSQLExecutionAuthorization, error) {
 	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
 	if err != nil {
 		return nil, err
 	}
-	engineIDs, audience, err := s.federatedAuthorizationBoundary(ctx, tenantID, targetEngineID, engineIDs)
+	engineIDs, err := federatedAuthorizationEngineIDs(binding)
 	if err != nil {
-		return nil, err
+		return nil, federatedBindingError(ctx)
 	}
 	return s.issueExecutionAuthorization(
 		ctx, tenantID, userAccessToken, executionID, engineIDs, []SQLExecutionEffect{SQLExecutionEffectRead},
-		int64(timeout+30), audience,
+		int64(timeout+30), binding.Audience,
 	)
 }
 
@@ -277,24 +277,23 @@ func (s *SQLEngineService) IssueFederatedReadExecutionAuthorizationFromExecution
 	tenantID uint,
 	parentExecutionID uuid.UUID,
 	executionID uuid.UUID,
-	engineIDs []uint,
+	binding *models.FederatedQueryBinding,
 	attempt int,
 	leaseToken string,
 	timeout int,
-	targetEngineID uint,
 ) (*IssuedSQLExecutionAuthorization, error) {
 	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
 	if err != nil {
 		return nil, err
 	}
-	engineIDs, audience, err := s.federatedAuthorizationBoundary(ctx, tenantID, targetEngineID, engineIDs)
+	engineIDs, err := federatedAuthorizationEngineIDs(binding)
 	if err != nil {
-		return nil, err
+		return nil, federatedBindingError(ctx)
 	}
 	return s.issueExecutionAuthorizationFromExecution(
 		ctx, tenantID, parentExecutionID, executionID, attempt, leaseToken,
 		engineIDs, []SQLExecutionEffect{SQLExecutionEffectRead},
-		int64(timeout+30), audience,
+		int64(timeout+30), binding.Audience,
 	)
 }
 
@@ -780,21 +779,4 @@ func (s *SQLEngineService) executeTableResult(ctx context.Context, tenantID uint
 		defer end()
 	}
 	return prepared.Execute(ctx)
-}
-
-func (s *SQLEngineService) federatedAuthorizationBoundary(ctx context.Context, tenantID, targetEngineID uint, sourceEngineIDs []uint) ([]uint, string, error) {
-	binding, _, err := resolveFederatedRuntime(ctx, s.systemService, tenantID, targetEngineID)
-	if err != nil {
-		return nil, "", err
-	}
-	ids := append([]uint(nil), sourceEngineIDs...)
-	if binding.TargetEngineID != 0 {
-		for _, id := range ids {
-			if id == binding.TargetEngineID {
-				return nil, "", fmt.Errorf("计算目标不能作为联邦数据源")
-			}
-		}
-		ids = append(ids, binding.TargetEngineID)
-	}
-	return ids, binding.Audience, nil
 }

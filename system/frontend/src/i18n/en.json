@@ -1717,6 +1717,7 @@
           "mongodbExtendedJsonl": "MongoDB Canonical Extended JSON Lines"
         },
         "engineFamily": {
+          "compute": "Compute Engine",
           "tabular": "Tabular",
           "object": "Object Storage",
           "file": "File System",

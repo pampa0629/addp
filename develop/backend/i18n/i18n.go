@@ -11,6 +11,7 @@ var localeFS embed.FS
 
 // Develop 模块消息 key 常量
 const (
+	MsgFederatedBindingInvalid         = "develop.query.federated_binding_invalid"
 	MsgQueryExportChoiceInvalid        = "develop.query.export_choice_invalid"
 	MsgQueryExportRolesUnavailable     = "develop.query.export_roles_unavailable"
 	MsgQueryProtectionChoiceInvalid    = "develop.query.protection_choice_invalid"

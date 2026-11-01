@@ -49,6 +49,17 @@ type DevTask struct {
 	ExecutionContract *taskprovider.ExecutionContract `gorm:"-" json:"execution_contract,omitempty"`
 	QueryResultLimit  int                             `gorm:"-" json:"-"`
 	RuntimeParameters map[string]interface{}          `gorm:"-" json:"-"`
+	FederatedBinding  *FederatedQueryBinding          `gorm:"-" json:"-"`
+}
+
+// FederatedQueryBinding belongs to an execution snapshot, never a task definition.
+// It contains identities only; connections and credentials remain in System.
+type FederatedQueryBinding struct {
+	SchemaVersion    string `json:"schema_version"`
+	SelectedEngineID uint   `json:"selected_engine_id"`
+	RuntimeEngineID  uint   `json:"runtime_engine_id"`
+	Audience         string `json:"audience"`
+	SourceEngineIDs  []uint `json:"source_engine_ids"`
 }
 
 type QueryParameterDefinition struct {

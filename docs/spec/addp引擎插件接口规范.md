@@ -728,6 +728,8 @@ type FederatedQueryRequest struct {
 
 Spark 采用该协议时，HTTP 查询入口集成在现有内置 Spark Runtime，而不是 Business Spark 集群的 Thrift 端口。Develop 必须区分用户选择的集群执行目标和受信控制面解析的 Runtime 端点，并将两者绑定到本次 execution；Runtime 仅提交到该获授权集群。查询与工作流复用服务，不复用任务会话。Source Engine 身份、连接取用和凭据限制保持本节统一契约；具体集群适配尚须完成技术准入，不能以文档目标代替已实现声明。
 
+Develop 在联邦查询入队前，将所选目标 ID、实际 Runtime ID、执行受众及独立的 Source Engine ID 集合冻结到 execution 私有快照。执行领取后只复核这些固定身份的当前有效性与能力，不按同名源或当前候选重新选取；缺失或不完整的快照直接拒绝，不兼容旧快照。计算目标可作为执行授权中的独立访问范围，但不得混入发送给 Runtime 的数据源集合。此规则同时适用于目标自身就是 Runtime 的 DuckDB 与委托内置 Runtime 的计算集群，不按引擎名称分支。
+
 查询请求必须绑定唯一 execution。Runtime 按 Execution Authorization 逐个取得 Source Engine 连接，限制可挂载引擎、对象物理路径、内存、线程、临时目录、超时和最大返回行数。HTTP JSON 解码必须保留整数精度，参数只能通过数据库驱动绑定。HTTP 请求取消必须传递到 DuckDB 查询上下文；若未提供独立取消资源端点，`supports_cancel` 不得声明为 true。
 
 联邦对象表消费必须显式区分 Source Engine 与 Query Runtime。对象表由 Meta 的 `item.data_type=table`、`item.format`、`item.layout`、`storage.physical_path` 等标准事实确定，不能恢复 `lake_table` item type 或 `lake_mode`。当前 DuckDB 对象表仅开放 Parquet、single/whole；普通 object/file 的目录叶子身份不随表格内容语义改变。

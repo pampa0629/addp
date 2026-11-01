@@ -1717,6 +1717,7 @@
           "mongodbExtendedJsonl": "MongoDB Canonical Extended JSON Lines"
         },
         "engineFamily": {
+          "compute": "计算引擎",
           "tabular": "表格数据",
           "object": "对象存储",
           "file": "文件系统",

@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/httptrace"
 	"github.com/addp/common/httptrace/tracetest"
 	"github.com/addp/common/models"
+	devmodels "github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -161,10 +162,10 @@ type traceQueryProvider struct {
 }
 
 func (*traceQueryProvider) IsRuntime(context.Context, uint, uint) bool { return true }
-func (*traceQueryProvider) ReferencedEngineIDs(context.Context, uint, uint, string) ([]uint, error) {
-	return []uint{9}, nil
+func (*traceQueryProvider) FreezeBinding(_ context.Context, _ uint, selected uint, _ string) (*devmodels.FederatedQueryBinding, error) {
+	return &devmodels.FederatedQueryBinding{SchemaVersion: federatedBindingSchema, SelectedEngineID: selected, RuntimeEngineID: selected, Audience: "duckdb", SourceEngineIDs: []uint{12}}, nil
 }
-func (p *traceQueryProvider) ExecuteQuery(ctx context.Context, tenant, engine uint, id uuid.UUID, authorization int64, query string, timeout, limit int, sources []uint) (*FederatedQueryResult, error) {
+func (p *traceQueryProvider) ExecuteQuery(ctx context.Context, tenant uint, binding *devmodels.FederatedQueryBinding, id uuid.UUID, authorization int64, query string, timeout, limit int) (*FederatedQueryResult, error) {
 	p.calls++
 	if httptrace.CurrentTraceReference(ctx) != nil {
 		p.t.Error("query inherited a live execution phase")
@@ -206,7 +207,7 @@ func testQueryTraceCheckpointFailure(t *testing.T, dsn string) {
 	expires := time.Now().UTC().Add(time.Minute)
 	item := &execution.TaskExecution{TenantID: 7, ExecutionID: uuid.NewString(), Module: "develop", TaskType: "query", Source: "develop", Status: "pending", ExecutionBoundary: "bounded", TriggerType: "manual", MaxAttempts: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version, ExecutionAuthorizationID: &authorization, AuthorizationExpiresAt: &expires,
-		ExecutionConfig: models.JSONMap{"engine_id": 9, "timeout": 30, "query_result_limit": 10, "display_language": "zh-cn", "content": models.JSONMap{"query_type": "sql", "query": "SELECT 1 AS trace_private_query_sentinel"}},
+		ExecutionConfig: models.JSONMap{"federated_query_binding": &devmodels.FederatedQueryBinding{SchemaVersion: federatedBindingSchema, SelectedEngineID: 9, RuntimeEngineID: 9, Audience: "duckdb", SourceEngineIDs: []uint{12}}, "engine_id": 9, "timeout": 30, "query_result_limit": 10, "display_language": "zh-cn", "content": models.JSONMap{"query_type": "sql", "query": "SELECT 1 AS trace_private_query_sentinel"}},
 	}
 	if err := createDevelopExecution(t.Context(), execution.NewTaskExecutionRepository(db), item); err != nil {
 		t.Fatal(err)

@@ -384,3 +384,6 @@ other = "JPEG quality"
 
 [develop.workflow.raster_jpeg_quality_description]
 other = "An integer from 1 to 100, default 90. JPEG is lossy; higher quality usually produces larger files."
+
+[develop.query.federated_binding_invalid]
+other = "The federated query execution binding is missing, changed, or unavailable. Start a new execution."

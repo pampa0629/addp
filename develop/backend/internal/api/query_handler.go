@@ -241,9 +241,16 @@ func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtime
 	candidates := h.federated.CandidateQueries(sources)
 	var firstFailure error
 	for _, candidate := range candidates {
+		binding, freezeErr := h.federated.FreezeBinding(c.Request.Context(), tenantID, runtimeEngineID, candidate.Query)
+		if freezeErr != nil {
+			if firstFailure == nil {
+				firstFailure = freezeErr
+			}
+			continue
+		}
 		executionID := uuid.New()
 		authorization, issueErr := h.sqlEngine.IssueFederatedReadExecutionAuthorization(
-			c.Request.Context(), tenantID, userAccessToken, executionID, []uint{candidate.EngineID}, 30, runtimeEngineID,
+			c.Request.Context(), tenantID, userAccessToken, executionID, binding, 30,
 		)
 		if issueErr != nil {
 			if h.writeExecutionAuthorizationError(c, issueErr) {
@@ -255,8 +262,8 @@ func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtime
 			continue
 		}
 		result, executeErr := h.federated.ExecuteQuery(
-			c.Request.Context(), tenantID, runtimeEngineID, executionID,
-			authorization.AuthorizationID, candidate.Query, 30, 1, []uint{candidate.EngineID},
+			c.Request.Context(), tenantID, binding, executionID,
+			authorization.AuthorizationID, candidate.Query, 30, 1,
 		)
 		if executeErr == nil && result != nil && result.RowCount > 0 {
 			c.JSON(http.StatusOK, gin.H{"query": candidate.Query, "language": "sql"})

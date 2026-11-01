@@ -10,6 +10,7 @@ import (
 	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/federatedquery"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -103,6 +104,10 @@ func (s *FederatedQueryService) ReferencedEngineIDs(
 	if err != nil {
 		return nil, err
 	}
+	return s.referencedEngineIDs(ctx, tenantID, runtimeEngineID, query, provider)
+}
+
+func (s *FederatedQueryService) referencedEngineIDs(ctx context.Context, tenantID, runtimeEngineID uint, query string, provider plugin.FederatedQueryRuntimeProvider) ([]uint, error) {
 	descriptors, err := s.systemClient.WithTenantID(tenantID).ListEngineRuntimeDescriptors(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("获取源引擎列表失败: %w", err)
@@ -124,24 +129,88 @@ func (s *FederatedQueryService) ReferencedEngineIDs(
 	return ids, nil
 }
 
+// FreezeBinding resolves identities before enqueueing, without storing connections.
+func (s *FederatedQueryService) FreezeBinding(ctx context.Context, tenantID, selectedID uint, query string) (*models.FederatedQueryBinding, error) {
+	binding, provider, err := s.runtime(ctx, tenantID, selectedID)
+	if err != nil {
+		return nil, err
+	}
+	sources, err := s.referencedEngineIDs(ctx, tenantID, selectedID, query, provider)
+	if err != nil {
+		return nil, err
+	}
+	frozen := &models.FederatedQueryBinding{SchemaVersion: federatedBindingSchema, SelectedEngineID: selectedID, RuntimeEngineID: binding.Runtime.ID, Audience: binding.Audience, SourceEngineIDs: append([]uint(nil), sources...)}
+	if err := validateFederatedBinding(frozen, selectedID); err != nil {
+		return nil, federatedBindingError(ctx)
+	}
+	return frozen, nil
+}
+
+// Revalidate only the frozen target and actor; never discover a replacement.
+func (s *FederatedQueryService) frozenRuntime(ctx context.Context, tenantID uint, frozen *models.FederatedQueryBinding) (*federatedquery.ExecutionBinding, plugin.FederatedQueryRuntimeProvider, error) {
+	if s == nil || s.systemClient == nil || tenantID == 0 {
+		return nil, nil, federatedBindingError(ctx)
+	}
+	if frozen == nil {
+		return nil, nil, federatedBindingError(ctx)
+	}
+	if err := validateFederatedBinding(frozen, frozen.SelectedEngineID); err != nil {
+		return nil, nil, federatedBindingError(ctx)
+	}
+	target, err := s.systemClient.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, frozen.SelectedEngineID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if target.ID != frozen.SelectedEngineID {
+		return nil, nil, federatedBindingError(ctx)
+	}
+	var candidates []commonModels.EngineRuntimeDescriptor
+	if frozen.RuntimeEngineID != frozen.SelectedEngineID {
+		actor, err := s.systemClient.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, frozen.RuntimeEngineID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if actor.ID != frozen.RuntimeEngineID {
+			return nil, nil, federatedBindingError(ctx)
+		}
+		candidates = append(candidates, *actor)
+	}
+	binding, err := federatedquery.ResolveExecutionBinding(target, candidates)
+	if err != nil {
+		return nil, nil, err
+	}
+	if binding.Runtime.ID != frozen.RuntimeEngineID || binding.Audience != frozen.Audience {
+		return nil, nil, federatedBindingError(ctx)
+	}
+	enginePlugin, err := plugin.Get(target.EngineType)
+	if err != nil {
+		return nil, nil, err
+	}
+	provider, ok := enginePlugin.(plugin.FederatedQueryRuntimeProvider)
+	if !ok {
+		return nil, nil, federatedBindingError(ctx)
+	}
+	return binding, provider, nil
+}
+
 func (s *FederatedQueryService) ExecuteQuery(
 	ctx context.Context,
-	tenantID, runtimeEngineID uint,
+	tenantID uint,
+	frozen *models.FederatedQueryBinding,
 	executionID uuid.UUID,
 	authorizationID int64,
 	query string,
 	timeout int,
 	limit int,
-	sourceEngineIDs []uint,
 ) (*FederatedQueryResult, error) {
-	binding, provider, err := s.runtime(ctx, tenantID, runtimeEngineID)
+	binding, provider, err := s.frozenRuntime(ctx, tenantID, frozen)
 	if err != nil {
 		return nil, err
 	}
-	if executionID == uuid.Nil || authorizationID <= 0 || len(sourceEngineIDs) == 0 {
+	if executionID == uuid.Nil || authorizationID <= 0 {
 		return nil, fmt.Errorf("联邦查询 Execution Authorization 无效")
 	}
-	for _, sourceID := range sourceEngineIDs {
+	for _, sourceID := range frozen.SourceEngineIDs {
 		if binding.TargetEngineID != 0 && sourceID == binding.TargetEngineID {
 			return nil, fmt.Errorf("计算目标不能作为联邦数据源")
 		}
@@ -168,7 +237,7 @@ func (s *FederatedQueryService) ExecuteQuery(
 	result, err := provider.ExecuteFederatedQuery(ctx, plugin.ConnectionInfo(binding.Runtime.AsEngine().ConnectionInfo), plugin.FederatedQueryRequest{
 		TargetEngineID: binding.TargetEngineID,
 		ExecutionID:    executionID.String(), ExecutionAuthorizationID: fmt.Sprintf("%d", authorizationID),
-		SourceEngineIDs: append([]uint(nil), sourceEngineIDs...), Query: query, Language: "sql",
+		SourceEngineIDs: append([]uint(nil), frozen.SourceEngineIDs...), Query: query, Language: "sql",
 		Options:           plugin.QueryOptions{Limit: limit, Timeout: time.Duration(timeout) * time.Second, ReadOnly: true},
 		CallerAccessToken: callerToken,
 	})
