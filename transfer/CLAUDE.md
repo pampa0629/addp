@@ -300,9 +300,9 @@ T1 HTTP 隔离／投影、T2 PostgreSQL 与前端回归沿[标准门禁](README.
 
 #### SQL ETL 与 bounded 写后扫描
 
-关系型 SQL ETL 的真实 T4 `transfer-relational-sql-etl` 消费 Orchestrator 专业安全 DTO：父执行只核对执行／编排身份、成功步骤和规范的子 execution UUID，不要求 `tenant_id`、配置或子任务 outputs。Transfer／Develop 子执行分别经所属模块读取专业字段事实，并经 Monitor 独立核对 Owner、任务和父子关联；三轮执行及结构演进不能靠父步骤复制结果。确定性专用入口为 `make test-transfer-online-runner`，用例定位见[ETL runner 回归](../scripts/test/transfer-relational-sql-etl-online_test.py)；相关回归继续由根 `make test-online-runner`、Platform T0／CI 聚合，专用回归不能替代真实 Hosted T4。
+现行场景见 [SQL ETL／字段血缘验收](../docs/spec/testing/scenarios/同步与引擎消费.md#字段级血缘验收)；父步骤的身份与子 execution UUID 沿[Orchestrator 专业响应](../docs/spec/tasks/执行监控.md#orchestrator-专业执行读取与响应)，不从父响应索取 `tenant_id`、配置或子任务 outputs。Transfer／Develop 子执行经各自 Owner 读取专业事实，Monitor 独立核对 Owner、任务和父子关联，不以父步骤复制结果证明三轮执行或结构演进。`make test-transfer-online-runner` 的[ETL 回归](../scripts/test/transfer-relational-sql-etl-online_test.py)沿既有 `make test-online-runner`、Platform T0／CI 聚合；确定性入口与真实 Hosted T4 分别认定。
 
-同一 ETL Hosted 套件在三次原生表写入前后，通过 Meta 正式只读接口验证源表这一兄弟项的身份、扫描时间／深度及数据统计不变，schema 到根节点的扫描状态、时间和深度不变；父节点当前子树统计允许随目标创建变化。秒精度读 DTO 的基线先跨过已观察时间刻度再启动任务，避免同秒截断掩盖扩大扫描。结果记录在 `field_lineage.precise_scan_scope`，确定性反例由现有 `make test-transfer-online-runner` 和 CI 自动发现；真实 Hosted 通过前不计为 T4 证据。
+精确扫描的来源与目标沿[生产来源契约](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)和[写后扫描配置](docs/transfer-基本概念及配置说明.md#十一写后-meta-扫描)。两套 Transfer suite 均须经 Meta 正式只读接口核对兄弟项身份、扫描时间／深度和数据统计不变，schema 到 root 的扫描状态、时间和深度不变；父节点当前子树统计可随新目标创建变化。秒精度 DTO 的基线须跨过已观察时间刻度后再触发，不能让同秒截断掩盖扩大扫描；共享检查见[Online API 边界辅助](../scripts/utils/online-api.py)。bounded 场景核对三次原生表写入，结果为 `field_lineage.precise_scan_scope`；continuous 的阶段与独立证据见[首次扫描与审批归属](#continuous-精确扫描与审批归属)，不互相替代验收。
 
 2026-10-16，提交 `dcd74b58c` 的 [Hosted T4 38884014630](https://github.com/pampa0629/addp/actions/runs/38884014630) 已通过并下载报告独立核对：`field_lineage.precise_scan_scope` 验证三次原生表写入后，源表这一兄弟项及 schema／root 两级祖先的扫描事实和状态均不变；实际 Worker 日志的 12 次自动扫描全部提交完整表 locator，无父范围 `catalog_paths`。8 个服务构建提交一致，11 个领域资源全部删除，应用清理 passed、Infra zero_residuals；既有浏览器与血缘场景通过。此 T4 证明 bounded 原生表写后范围，continuous 初始化及结构变更补扫仍以现有 HTTP／Go 回归为依据，未扩大表述为已完成真实 CDC 扫描验收。
 
@@ -326,7 +326,7 @@ T1 HTTP 隔离／投影、T2 PostgreSQL 与前端回归沿[标准门禁](README.
 
 来源约束见[生产来源与写后扫描](#生产来源与写后扫描)。
 
-continuous 精确扫描范围验收沿用 `transfer-continuous-events` Hosted suite：启用 `auto_scan_metadata`，先正式扫描独立兄弟表并冻结 schema／root 扫描事实，再观察 Kafka 建表首次扫描和 CDC snapshot COMPLETED 首次扫描。目标必须从基线中不存在收敛到 deep 字段事实；恢复、普通事件和再次 resume 不得重复首次扫描，每阶段兄弟项与祖先扫描状态保持不变。两套 Transfer suite 复用 `scripts/utils/online-api.py` 的只读边界检查，API 秒精度时间先跨 tick 再触发。标准回归入口为 `make test-transfer-continuous-online-runner`，共享检查同时由 `make test-transfer-online-runner` 验证；真实 Hosted 成功后另记运行收据，不把 runner 通过当作 T4。结构变更审批补扫沿同一套件新增真实结构变更、审批和恢复场景核验。
+continuous 精确扫描沿现有 [transfer-continuous-events 场景](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)与[写后扫描触发规则](#写后扫描触发与范围)：启用 `auto_scan_metadata`，先正式扫描独立兄弟表、冻结 schema／root 基线，再分别观察 Kafka 建表和 CDC snapshot COMPLETED 后的首次扫描。目标须从基线不存在收敛到 deep 字段事实，恢复、普通事件及再次 resume 不重复首次扫描；各阶段的兄弟项、祖先与时间基线核对沿[精确扫描方法](#sql-etl-与-bounded-写后扫描)。结构审批补扫另核对真实变更、审批和恢复，不与首次扫描合并认定。标准回归为 `make test-transfer-continuous-online-runner`，共享检查同时由 `make test-transfer-online-runner` 覆盖；真实运行结果按下列固定版本收据分别认定，runner 通过不计为 T4。
 
 continuous Hosted 物理源准备以最终 TCP 服务成功查询 `continuous_fixture` 为就绪条件，不使用会命中 PostgreSQL 镜像临时初始化服务的 Unix socket `pg_isready`。有界等待耗尽必须在建源表及启动业务 Kafka 前失败，Hosted 退出路径继续清除当次资源。临时服务误判和耗尽拒绝由 `make test-transfer-continuous-online-runner` 中既有夹具回归覆盖，无新增入口或数据库。
 
