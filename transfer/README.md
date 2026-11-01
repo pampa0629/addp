@@ -40,9 +40,11 @@ endpoint 只决定 reader / writer 来源：
 | encoded multi file/object | contentio + `[]format.RelatedRef` + `common/format` multi table reader / writer |
 | encoded whole scope | contentio reader/lister + `common/format` scope table reader |
 
-当前已经接入的 table 格式包括 CSV / TSV、JSON / JSONL、Parquet / GeoParquet、Shapefile。Parquet writer 默认使用 ZSTD 列式压缩，可选 codec 由 `GET /capabilities` 动态声明。native table 写侧已经接入 PostgreSQL、MySQL、Doris、ClickHouse 第一版。
+table 格式与原生目标写侧统一见[格式支持](./docs/transfer-基本概念及配置说明.md#33-格式)和[原生目标写侧](./docs/transfer-基本概念及配置说明.md#已接入的原生目标写侧)；Parquet 默认压缩及动态 codec 声明见[Parquet 列式压缩](./docs/transfer-基本概念及配置说明.md#parquet-列式压缩)。
 
-non-table raw copy 已形成第一版最小闭环：`document`、`media`、`cad`、`unknown` 的 encoded single file/object 可按原始字节复制。raw copy 不进入 `common/format` table reader / writer，不解析正文、不抽取媒体元数据，也不做格式转换；目标应用只支持 `replace`。
+non-table raw copy 的 endpoint 与格式继承见[raw copy 支持范围](./docs/transfer-基本概念及配置说明.md#四raw-copy-支持范围)；当前限定 `document`、`media`、`cad`、`unknown` 的 encoded single file/object，按原始字节复制，目标仅支持 `replace`。它不进入 `common/format` table reader / writer，不解析正文、不抽取媒体元数据，也不做格式转换。
+
+模块与 Provider 分工以[任务语义](./docs/transfer-任务语义与同步模式.md#一模块定位)为准。本节主链路、支持声明或单项读写结果不代表完整运行链路已验收；标准入口见[启动与验证](#启动与验证)，固定版本证据、失败及未覆盖项见[验证范围](./docs/transfer-任务语义与同步模式.md#十一验证范围)。
 
 ## 任务配置
 
