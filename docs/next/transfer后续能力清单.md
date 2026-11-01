@@ -2,7 +2,7 @@
 
 状态：待评估能力
 
-更新时间：2026-08-04
+更新时间：2026-11-01
 
 本文只记录尚未进入 Transfer 当前支持范围的能力，不是排期或兼容路线。当前正式语义见 [Transfer 任务语义与同步模式](../../transfer/docs/transfer-任务语义与同步模式.md)，当前配置与限制见 [Transfer 模块基本概念及配置说明](../../transfer/docs/transfer-基本概念及配置说明.md)。
 
@@ -59,12 +59,13 @@ Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不�
 
 ## 五、通用目标与执行增强
 
-以下能力已在 Transfer 当前架构文档中记录，但不属于本次同步模式设计的既定交付：
+以下目标写侧与执行增强能力仍待评估，模块职责以[当前架构](../../transfer/docs/design.md)为准：
 
 - `row_filter` / predicate 的统一语义。
 - Doris Stream Load。
 - ClickHouse 排序键、分区键和原生批量接口。
 - raw copy 端到端样例任务和更完整的执行展示。
-- container child table transfer。
 
 这些能力应在出现具体使用场景时分别确认 Provider 归属和测试矩阵，不能借同步模式扩展在 Transfer 内建立引擎专用旁路。
+
+容器子表的现行主路径与身份边界见[架构约束](../../transfer/docs/design.md#容器子表约束)，具体读取入口见[读取布局与入口](../../transfer/docs/transfer-基本概念及配置说明.md#读取布局与入口)。实际格式与目标能力仍由对应 Provider 声明决定；这些约束不代表所有格式、任意目标或端到端场景已验收。标准门禁、固定版本证据、失败与未覆盖项见[模块验证](../../transfer/CLAUDE.md#开发与验证)，未运行、失败、跳过或未覆盖项不计为通过。
