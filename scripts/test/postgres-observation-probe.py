@@ -14,6 +14,7 @@ import re
 import secrets
 import ssl
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -185,16 +186,49 @@ trap - EXIT
         else:
             subprocess.run(self.compose + ['exec', '-T', 'postgres', 'sh', '-c', script, 'owned-observation-hba', digest],
                            input=replacement, capture_output=True, text=True, check=True, timeout=10)
-        assert self.read_hba() == replacement
-        assert subprocess.run(metadata_command, capture_output=True, text=True, check=True, timeout=10).stdout == metadata
-        assert self.sql('SELECT count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL;') == '0'
-        before = self.sql('SELECT pg_conf_load_time();')
-        assert self.sql('SELECT pg_reload_conf();') == 't'
-        deadline = time.monotonic() + 3
-        while self.sql('SELECT pg_conf_load_time();') == before:
-            if time.monotonic() >= deadline:
-                raise AssertionError('owned observation authentication reload timed out')
-            time.sleep(.05)
+        # Publication and consumer validation are separate facts. Cleanup must
+        # compare against the published version even when readback fails.
+        self.hba_current = replacement
+        try:
+            assert self.read_hba() == replacement
+            assert subprocess.run(metadata_command, capture_output=True, text=True, check=True, timeout=10).stdout == metadata
+            assert self.sql('SELECT count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL;') == '0'
+            before = self.sql('SELECT pg_conf_load_time();')
+            assert self.sql('SELECT pg_reload_conf();') == 't'
+            deadline = time.monotonic() + 3
+            while self.sql('SELECT pg_conf_load_time();') == before:
+                if time.monotonic() >= deadline:
+                    raise AssertionError('owned observation authentication reload timed out')
+                time.sleep(.05)
+        except BaseException as error:
+            print('PostgreSQL HBA publication diagnostic '+json.dumps(self.hba_publication_diagnostic(error, replacement)),
+                  file=sys.stderr, flush=True)
+            raise
+
+    def hba_publication_diagnostic(self, error, replacement):
+        def kind(error):
+            message = getattr(error, 'stderr', '') or ''
+            return ('not_found' if 'No such file' in message else 'permission_denied' if 'Permission denied' in message
+                    else 'unclassified')
+        facts = {'read_error_kind': kind(error), 'return_code': getattr(error, 'returncode', None)}
+        if self.auth_directory is None:
+            return facts
+        try:
+            hba = self.auth_directory/'runtime/pg_hba.conf'
+            value, _ = self.authentication._read(hba, 0o644)
+            facts['host'] = {'matches_replacement': value==replacement, 'bytes': hba.stat().st_size, 'mode': '644'}
+            mounts = subprocess.run(['docker','inspect','--format','{{json .Mounts}}',self.postgres_identity],
+                capture_output=True,text=True,check=True,timeout=5)
+            mounts = [m for m in json.loads(mounts.stdout) if m['Destination']=='/etc/addp-postgres-auth']
+            facts['mount'] = {'unique': len(mounts)==1, 'readonly_bind': len(mounts)==1 and mounts[0]['Type']=='bind' and mounts[0]['RW'] is False,
+                'source_matches': len(mounts)==1 and Path(mounts[0]['Source']).resolve()==self.auth_directory/'runtime'}
+            result = subprocess.run(self.compose+['exec','-T','postgres','stat','-c','%a:%s:%u:%g','/etc/addp-postgres-auth/pg_hba.conf'],
+                capture_output=True,text=True,timeout=5)
+            facts['container'] = {'return_code':result.returncode,'error_kind':kind(result),
+                'metadata':result.stdout.strip() if re.fullmatch(r'[0-7]{3,4}:[0-9]+:[0-9]+:[0-9]+\n?',result.stdout) else 'unavailable'}
+        except (OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError):
+            facts['diagnostic_unavailable'] = True
+        return facts
 
     def install_authentication(self, scope, user):
         networks = json.loads(subprocess.run(['docker', 'inspect', '--format', '{{json .NetworkSettings.Networks}}', self.postgres_identity],
@@ -219,12 +253,9 @@ trap - EXIT
         # No "all" database is created, and no business object is accessed.
         literal = self.source.authentication_configuration(self.hba_original, scope, allowed, database='all')
         self.write_hba(self.hba_current, literal)
-        self.hba_current = literal
         self.assert_authentication_rejected(user, database='postgres')
         self.write_hba(self.hba_current, self.hba_original)
-        self.hba_current = self.hba_original
         self.write_hba(self.hba_current, replacement)
-        self.hba_current = replacement
         assert self.source.authentication_configuration(replacement, scope, allowed, database='addp_test') == replacement
         for database, socket in [('postgres', False), ('addp_test', True)]:
             self.assert_authentication_rejected(user, database=database, socket=socket)
@@ -293,7 +324,13 @@ trap - EXIT
     def run_scope(self, scope):
         try:
             self.run_scope_case(scope)
-        finally:
+        except BaseException as error:
+            try:
+                self.restore_authentication()
+            except BaseException as cleanup:
+                error.add_note('Owned PostgreSQL HBA cleanup failed: '+type(cleanup).__name__)
+            raise
+        else:
             self.restore_authentication()
 
     def run_scope_case(self, scope):

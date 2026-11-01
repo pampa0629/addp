@@ -143,6 +143,65 @@ def run_business_postgres_compose(environment, case):
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_hba_readback_failure_restores_the_published_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()/'authentication'
+            baseline = 'local all all trust\n'
+            hba = postgres_auth.prepare_business(directory, baseline)/'pg_hba.conf'
+            replacement = postgres_source.authentication_configuration(baseline,'business',['127.0.0.1/32'],database='all')
+            probe = postgres_probe.Probe.__new__(postgres_probe.Probe)
+            probe.compose, probe.auth_directory, probe.authentication = ['docker','compose'], directory, postgres_auth
+            probe.hba_original = probe.hba_current = baseline
+            original = subprocess.CalledProcessError(1, ['owned-hba-read'], stderr='private-error-sentinel')
+            probe.read_hba = mock.Mock(side_effect=original)
+            probe.hba_publication_diagnostic = mock.Mock(return_value={'read_error_kind':'not_found'})
+            probe.sql = mock.Mock(side_effect=['0','before','t','after'])
+            with mock.patch.object(postgres_probe.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'501:20:644','')), mock.patch.object(postgres_probe.sys,'stderr',io.StringIO()):
+                with self.assertRaises(subprocess.CalledProcessError) as caught:
+                    probe.write_hba(baseline,replacement)
+                self.assertIs(caught.exception,original)
+                self.assertEqual(probe.hba_current,replacement)
+                self.assertEqual(hba.read_text(),replacement)
+                probe.read_hba = mock.Mock(return_value=baseline)
+                probe.restore_authentication()
+            self.assertEqual(hba.read_text(),baseline)
+            self.assertIsNone(probe.hba_current)
+
+    def test_hba_cleanup_preserves_first_failure_and_reports_cleanup_only_when_primary(self):
+        probe = postgres_probe.Probe.__new__(postgres_probe.Probe)
+        first = AssertionError('original readback failure')
+        probe.run_scope_case = mock.Mock(side_effect=first)
+        cleanup = ValueError('private-cleanup-sentinel')
+        probe.restore_authentication = mock.Mock(side_effect=cleanup)
+        with self.assertRaises(AssertionError) as caught:
+            probe.run_scope('business')
+        self.assertIs(caught.exception,first)
+        self.assertEqual(first.__notes__,['Owned PostgreSQL HBA cleanup failed: ValueError'])
+        probe.run_scope_case.side_effect=None
+        with self.assertRaises(ValueError) as caught:
+            probe.run_scope('business')
+        self.assertIs(caught.exception,cleanup)
+
+    def test_hba_publication_diagnostic_reports_only_closed_mount_and_file_facts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary).resolve()/'authentication'
+            replacement='local all all trust\n'
+            postgres_auth.prepare_business(directory,replacement)
+            probe=postgres_probe.Probe.__new__(postgres_probe.Probe)
+            probe.auth_directory,probe.authentication=directory,postgres_auth
+            probe.compose,probe.postgres_identity=['docker','compose'],'a'*64
+            mounts=[{'Destination':'/etc/addp-postgres-auth','Source':str(directory/'runtime'),'Type':'bind','RW':False}]
+            results=[subprocess.CompletedProcess([],0,json.dumps(mounts),''),
+                     subprocess.CompletedProcess([],1,'','stat: private-path-sentinel: No such file')]
+            error=subprocess.CalledProcessError(1,[],stderr='cat: private-password-sentinel: No such file')
+            with mock.patch.object(postgres_probe.subprocess,'run',side_effect=results):
+                facts=probe.hba_publication_diagnostic(error,replacement)
+            self.assertTrue(facts['host']['matches_replacement'])
+            self.assertEqual(facts['mount'],{'unique':True,'readonly_bind':True,'source_matches':True})
+            self.assertEqual(facts['read_error_kind'],'not_found')
+            self.assertNotIn('sentinel',json.dumps(facts))
+            self.assertNotIn(str(directory),json.dumps(facts))
+
     def test_postgres_unclassified_failure_diagnostic_excludes_private_command_output(self):
         probe = postgres_probe.Probe.__new__(postgres_probe.Probe)
         probe.compose, probe.postgres_identity = ['docker','compose'], 'a'*64
