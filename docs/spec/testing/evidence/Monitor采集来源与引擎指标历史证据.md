@@ -337,3 +337,15 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 本机Docker.app版本只读确认为4.49.0；现有Business容器的认证挂载在 `/proc/self/mountinfo` 显示只读fakeowner，未读取业务内容或操作SQL。该层级不能直接等同于VirtioFS／gRPC FUSE的设置值；设置文件读取未成功，已中止该次读取，原生窗口工具也超时，未宣称核对了实际选择。当前证据定位为“宿主原子替换后，容器文件共享视图未呈现新文件”，尚不据此指定某个Docker内部缺陷或声称升级版本即可解决。已请用户只查看文件共享实现，不应用或重启；应用设置可能涉及整套容器，须另定窗口。官方选项说明见[Docker Desktop设置](https://docs.docker.com/desktop/settings-and-maintenance/settings/)。
 
 当前交付为夹具恢复版本／首失败保留与安全取证已修复；目录HBA正向读回及后续专业来源／容器重启恢复验收仍未通过，新CI／Hosted未运行或读取。保持既定原子目录发布与不可见即拒绝，不加等待重试、不改为原地覆盖、不放宽认证，也不反复重启数据库。建议先核对并修复本机Docker文件共享环境，再沿同一标准入口补齐正向验收；重复问题的稳定诊断步骤建议汇入现有故障排查指南。
+
+## Docker Desktop 实际共享设置与普通文件对照（2026-11-01）
+
+按用户要求只读查看原生 Docker Desktop 4.49.0 设置：General 当前选择 Apple Virtualization framework 与 VirtioFS，Docker VMM、gRPC FUSE、osxfs 均未选，Enhanced Container Isolation 关闭。Resources／File sharing 列出 `/Users`、`/Volumes`、`/private`、`/tmp`、`/var/folders`；没有已列出的同步缓存共享，界面提示登录后使用 Synchronized file shares。Apply 始终禁用，Engine running；未更改选项、应用设置或重启。设置页保留在 File sharing 供用户查看。
+
+只读运行核对确认 context 为 desktop-linux、本地 Unix socket，VM 进程实际带五项 `--virtiofs` 参数；未输出其路径内容。容器的 fakeowner 挂载层和内核中 grpcfuse 模块不能据此当作 gRPC FUSE 被选择的证据。现有个人 Business 认证目录仍只读；限定读取当前 HBA 的结果是宿主与容器各1367字节且内容一致，未输出内容、密码摘要或凭据，未执行SQL。故障范围是发布替换后的可见性，不能表述为现有HBA持续不可读，也不能归因于临时路径未共享。
+
+沿原有来源T2增加普通文件对照：在挂载前准备 `publication-probe`，容器先读到旧内容，再用现有原子发布器替换该文件；同时核验HBA在两侧均不变。失败仍使原门禁失败，不跳过后续认证、不增加等待或重试，不修改产品安装器或HBA。该夹具、配置回归与门禁文档已在原有CI输入登记中，无新入口、依赖、权限或Workflow。
+
+执行 `PATH=/opt/homebrew/opt/openssl@3/bin:$PATH make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation`，日志 `/tmp/addp-hba-publication-control.log`：129项配置T1、26项生命周期T1通过；Infra／Business原生认证、固定汇总、拒绝越权、幂等、轮换与归属用例均通过。目录前置对照失败：`host_inode_changed=true`、`host_matches_replacement=true`，但容器读取返回1、`container_matches_replacement=false`；`hba_host_unchanged=true`且`hba_container_unchanged=true`。该结果独立排除HBA解析、账号SQL及重载作为本次普通文件故障的触发条件，仍不足以指定Docker上游缺陷或承诺升级修复。
+
+目录HBA正向验收尚未进入，整体T2失败；不将普通分支成功或安全拒绝记为完整通过。项目 `addp-metrics-t2-b8a5b53b8a2d4255ac93ca69559904e5` 标准退出清理后，按项目标签独立确认容器、网络、卷均为零。`py_compile`、`bash -n`及`git diff --check`通过。本轮不修改个人数据库或服务、不轮询／触发CI和Hosted、不设置定时任务。下一步以专门会话回传的原生Linux目录分支结果作对照，再确定共享层维护窗口；本机正向读回及完整来源恢复验收继续保留缺口。

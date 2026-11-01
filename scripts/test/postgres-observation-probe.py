@@ -629,7 +629,45 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
                 time.sleep(1)
             record_file.unlink(missing_ok=True)
 
+    def check_directory_publication(self):
+        target = self.auth_directory/'runtime/publication-probe'
+        before, after = 'before\n', 'after-version\n'
+        with self.authentication.locked(self.auth_directory):
+            try:
+                hba = self.auth_directory/'runtime/pg_hba.conf'
+                original = self.authentication._read(hba,0o644)[0]
+                assert self.read_hba()==original, 'HBA initially differs across the owned mount'
+                assert self.authentication._read(target,0o644)[0]==before
+                inode = target.stat().st_ino
+                command = self.compose+['exec','-T','postgres','head','-c','64','/etc/addp-postgres-auth/publication-probe']
+                first = subprocess.run(command,capture_output=True,text=True,timeout=5)
+                assert first.returncode==0 and first.stdout==before, 'Owned control file initially unavailable'
+                self.authentication._atomic(target,after,0o644,previous=before)
+                result = subprocess.run(command,capture_output=True,text=True,timeout=5)
+                facts = {'host_inode_changed':target.stat().st_ino!=inode,
+                    'host_matches_replacement':self.authentication._read(target,0o644)[0]==after,
+                    'container_read_ok':result.returncode==0,'container_return_code':result.returncode,
+                    'container_matches_replacement':result.returncode==0 and result.stdout==after,
+                    'hba_host_unchanged':self.authentication._read(hba,0o644)[0]==original}
+                try:
+                    facts['hba_container_unchanged']=self.read_hba()==original
+                except (AssertionError,subprocess.SubprocessError):
+                    facts['hba_container_unchanged']=False
+                print('PostgreSQL directory publication '+json.dumps(facts),flush=True)
+                assert all(value is True for key,value in facts.items() if key!='container_return_code'), \
+                    'Owned directory does not present an atomic host replacement; HBA acceptance not reached'
+            except BaseException as error:
+                try:
+                    target.unlink(missing_ok=True)
+                except BaseException as cleanup:
+                    error.add_note('Owned publication cleanup failed: '+type(cleanup).__name__)
+                raise
+            else:
+                target.unlink()
+
     def run(self):
+        if self.auth_directory is not None:
+            self.check_directory_publication()
         self.absent()
         self.sql('''CREATE SCHEMA observation_business;
 CREATE TABLE observation_business.private_rows (secret text);

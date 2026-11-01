@@ -151,8 +151,11 @@ import sys
 spec = importlib.util.spec_from_file_location('owned_auth_directory', Path(sys.argv[1]) / 'scripts/infra/postgres-observation/authentication.py')
 authentication = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(authentication)
-authentication.prepare_business(Path(sys.argv[2]).resolve() / 'postgres-auth',
+runtime = authentication.prepare_business(Path(sys.argv[2]).resolve() / 'postgres-auth',
                                 'local all all trust\nhost all all 0.0.0.0/0 scram-sha-256\nhost all all ::0/0 scram-sha-256\n')
+# Prepare before mounting: the directory probe later changes only this ordinary
+# file, independently of HBA parsing, roles, SQL and reload.
+authentication._atomic(runtime / 'publication-probe', 'before\n', 0o644)
 PGAUTH
 postgres_directory_probe(){
   # Recreate only this gate's disposable database and data. Never use shared PG.

@@ -143,6 +143,28 @@ def run_business_postgres_compose(environment, case):
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_directory_publication_checks_an_ordinary_file_and_preserves_hba(self):
+        for visible in (True,False):
+            with self.subTest(visible=visible), tempfile.TemporaryDirectory() as temporary:
+                directory=Path(temporary).resolve()/'authentication'
+                original='local all all trust\n'
+                runtime=postgres_auth.prepare_business(directory,original)
+                postgres_auth._atomic(runtime/'publication-probe','before\n',0o644)
+                probe=postgres_probe.Probe.__new__(postgres_probe.Probe)
+                probe.auth_directory,probe.authentication=directory,postgres_auth
+                probe.compose=['docker','compose'];probe.read_hba=mock.Mock(return_value=original)
+                results=[subprocess.CompletedProcess([],0,'before\n',''),subprocess.CompletedProcess([],0 if visible else 1,'after-version\n' if visible else '', 'private-sentinel')]
+                output=io.StringIO()
+                with mock.patch.object(postgres_probe.subprocess,'run',side_effect=results) as run, redirect_stdout(output):
+                    if visible:probe.check_directory_publication()
+                    else:
+                        with self.assertRaisesRegex(AssertionError,'HBA acceptance not reached'):
+                            probe.check_directory_publication()
+                self.assertFalse((runtime/'publication-probe').exists())
+                self.assertEqual((runtime/'pg_hba.conf').read_text(),original)
+                self.assertNotIn('sentinel',output.getvalue())
+                self.assertTrue(all(call.args[0][-1].endswith('/publication-probe') for call in run.call_args_list))
+
     def test_hba_readback_failure_restores_the_published_version(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary).resolve()/'authentication'
