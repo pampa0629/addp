@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "c0153c89a23b988bc5788e6476cd61c9ab73558e",
-      "sha256": "b413377dc81dc5a9e9b83a7c4cd67e8460abdc86bb2e429bf95487e24b65ff5e",
+      "commit": "bb3dabccb906368b9180260c26c862661c491dc4",
+      "sha256": "89dac68f0fb035ad86f558e84934399a77168e813560e68342137f688c5e534d",
       "use": {
-        "zh-cn": "任务/执行与预检权限及三态；replace需实例、插件及Provider，unsupported优先，写后仅扫目标表。表头/动态reader复用当前同格式Describe并保留Meta类型；已纳管native运行前按同投影核对实时结构，未纳管不加Catalog读取。以上执行行为不扩展停止态native创建，仍不执行、调度或扫描，encoded执行未建模。",
-        "en": "Task/execution and read-only tri-state precheck; replace needs instance/plugin delete support and Provider, unsupported precedes unknown. Post-write scans target only. Headers/dynamic readers reuse same-format Describe results, preserving Meta types. Managed native execution checks live schema against the same projection; unmanaged reads add no catalog access. Execution details do not expand stopped native creation: no execution, schedules or scans; encoded execution remains unmodeled."
+        "zh-cn": "任务／执行、预检权限及三态；replace需实例、插件和Provider删除能力，unsupported优先。表头／动态reader复用同格式Describe并保留Meta类型；已纳管native运行前按同投影核对实时结构，未纳管不加Catalog读取。写后只扫目标表。布局、调度恢复、安全响应及门禁正文归整不扩展停止态native创建，仍无执行、调度或扫描，encoded执行未建模。",
+        "en": "Tri-state precheck and permissions; replace needs instance/plugin delete support and Provider; unsupported wins. Same-format Describe preserves Meta types; managed native execution checks live schema against the same protection projection, unmanaged adds no Catalog reads. Post-write scans target only. Reorganized layout, schedule/recovery, safe DTO and gate references do not expand stopped native creation: no execution, schedule or scan; encoded execution remains unmodeled."
       }
     },
     {
@@ -125,11 +125,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-任务语义与同步模式.md",
       "anchor": "## 三、当前支持矩阵",
-      "commit": "001b0a4db63c93c5c9e1f6efb2d91965c19e77f5",
-      "sha256": "cf8cb515609a0fcbbcda2b548b1b36677bdc0d25e14c1b009dc8896935987770",
+      "commit": "ef280bb8645c59209e84551b3de8b171d22e202c",
+      "sha256": "7c0d0dfc47acebc105c98f95f93c80b188342d097f5622c0a20ed0c09545a3ff",
       "use": {
-        "zh-cn": "正式支持矩阵区分快照 replace/append 与增量 upsert，不混用装载和写入方式；复核运行后仅扫描目标表，不扩大 schema／database；创建切片仍禁用自动扫描",
-        "en": "Formal matrix distinguishes snapshot replace/append from incremental upsert; reviewed post-write scans restricted to the target table, without schema/database expansion; creation still disables automatic scanning"
+        "zh-cn": "支持矩阵仍区分快照replace/append与增量upsert，写后只扫描目标表，创建仍禁扫描。新增调度身份、continuous恢复／退避与DLQ诊断正文导航及验收边界，不扩展停止态native创建，不把状态或静态声明当运行通过。",
+        "en": "The matrix still separates snapshot replace/append from incremental upsert; post-write scans target only and creation disables scans. Scheduling identity, continuous recovery/backoff, DLQ diagnostics and acceptance references are reorganized without expanding stopped native creation or treating state and static declarations as runtime proof."
       }
     },
     {
@@ -411,11 +411,11 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "同批 Tool 按模型返回顺序进入唯一 Runtime 调用路径",
-      "commit": "01435b1554120d1c00c6d092681ddec0979af93f",
-      "sha256": "340dbf77446028d3ee0324c8659419cc7fc8b5d68ab2d382fe0f16df049e556b",
+      "commit": "dd25826ef0f397c4d354f51b44ad10ab34c5d211",
+      "sha256": "d2e51fd0f487d122358a391b4d3b6ebf88ffbe76fe0f8ca983f2c2169ce020ad",
       "use": {
-        "zh-cn": "搜索失败立即终止；同批按模型顺序执行，前序使Runtime失败/暂停/终止或取消后，后续不得进入Adapter，不以锁到达顺序或目录枚举替代。",
-        "en": "Search failures terminate immediately; batches execute in model order and queued calls never enter adapters after Runtime failure, pause, termination or cancellation, without lock-arrival ordering or directory fallback."
+        "zh-cn": "搜索失败立即终止；同批按模型顺序进入Runtime，前序失败、暂停、终止或取消后不进Adapter，不以锁顺序或目录枚举替代。工作流身份导航及标准门禁覆盖不改上述约束；守卫缺口、离线与真实验收分别认定。",
+        "en": "Search failure terminates; batches enter Runtime in model order and no queued call reaches Adapter after failure, pause, termination or cancellation, without lock-order or directory fallback. Workflow identity references and standard-gate coverage do not change these rules; guard gaps, offline evidence and live acceptance remain distinct."
       }
     }
   ],
