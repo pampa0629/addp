@@ -38,7 +38,7 @@
 | CDC replay | 当前只允许从 committed position resume | 历史范围、独立 apply identity、隔离目标、capture generation 与 retention |
 | CDC DLQ | schema/protocol/source/target 错误当前全部阻塞 | 哪些错误允许跳过、删除事件完整性、原始 envelope 审计和 position 推进规则 |
 | Truncate | Debezium truncate 事件当前拒绝 | 目标清空权限、事务边界、并发事件顺序和不可逆确认 |
-| 自动 DDL | 当前只支持人工确认的安全 additive migration | record 绑定的 schema version、目标 Provider DDL 原子性、回滚和审批策略 |
+| [自动 DDL](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 尚未开放；人工 additive 审批限 PostgreSQL/MySQL 源当前阻塞消息中的新增 nullable、非主键、非 geometry 字段，Oracle 源 drift 须 Stop 后新建任务与目标表；完整准入、状态转换及失败语义见[审批恢复配置](../../transfer/docs/transfer-基本概念及配置说明.md#schema-drift-与审批恢复) | record 绑定的 schema version、目标 Provider DDL 原子性、回滚和审批策略 |
 | 多表 CDC | 当前一个任务只绑定一张源表和一张新目标表 | table identity、路由、每表 schema revision、部分失败和资源生命周期 |
 | 无主键 CDC | 当前要求稳定非空主键 | 事件身份、update/delete 定位、重复应用和目标一致性保证 |
 | [PostgreSQL/MySQL/Oracle 类型矩阵扩展](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 当前开放范围见[源类型与空间捕获](../../transfer/docs/transfer-基本概念及配置说明.md#源类型与空间捕获)及[目标应用约束](../../transfer/docs/transfer-基本概念及配置说明.md#cdc-目标应用与位点)；未声明或不兼容类型仍拒绝 | Debezium wire schema、精度/时区、目标映射、键约束和全生命周期 E2E |
