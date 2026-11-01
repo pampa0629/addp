@@ -51,6 +51,7 @@ func TestLaunchPreservesPIDExitAndCapturesBeforeRegistration(t *testing.T) {
 		t.Fatalf("exit: %v", e)
 	}
 	var lines []runtimelog.Entry
+	receiverReleased := false
 	until := time.Now().Add(3 * time.Second)
 	for time.Now().Before(until) {
 		files, _ := filepath.Glob(filepath.Join(root, "manager", "*", "*.jsonl"))
@@ -65,17 +66,76 @@ func TestLaunchPreservesPIDExitAndCapturesBeforeRegistration(t *testing.T) {
 			}
 		}
 		if len(lines) == 2 {
-			break
+			receiverReleased, e = startupCaptureReleased(files)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if receiverReleased {
+				break
+			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	if len(lines) != 2 {
 		t.Fatalf("startup entries: %d", len(lines))
 	}
+	if !receiverReleased {
+		t.Fatal("startup receiver has not released its log files")
+	}
 	for _, line := range lines {
 		if line.Channel == "stdout" && line.Message != fmt.Sprintf("%s %s", line.InstanceID, strconv.Itoa(pid)) {
 			t.Fatal("business PID or identity changed")
 		}
+	}
+}
+
+func startupCaptureReleased(files []string) (bool, error) {
+	if len(files) == 0 {
+		return false, nil
+	}
+	for _, path := range files {
+		file, err := os.Open(path)
+		if err != nil {
+			return false, err
+		}
+		// Capture keeps this lock through its final status write. Readable
+		// entries alone do not mean that TempDir cleanup can safely begin.
+		err = syscall.Flock(int(file.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+		closeErr := file.Close()
+		if err == syscall.EWOULDBLOCK {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if closeErr != nil {
+			return false, closeErr
+		}
+	}
+	return true, nil
+}
+
+func TestStartupCaptureWaitsForReceiverRelease(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "startup.jsonl")
+	writer, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	if _, err := writer.WriteString("startup output is already readable\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Flock(int(writer.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	if released, err := startupCaptureReleased([]string{path}); err != nil || released {
+		t.Fatalf("readable output accepted while receiver still owns the file: released=%v error=%v", released, err)
+	}
+	if err := syscall.Flock(int(writer.Fd()), syscall.LOCK_UN); err != nil {
+		t.Fatal(err)
+	}
+	if released, err := startupCaptureReleased([]string{path}); err != nil || !released {
+		t.Fatalf("finished receiver rejected: released=%v error=%v", released, err)
 	}
 }
 
