@@ -19,6 +19,7 @@ type vffSKCValueBinding struct {
 	terminals            []xml.Name
 	issues               []string
 	structures           []vffSKCValueStructure
+	attributeSets        []*vffSKCValueAttributes
 }
 
 func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error) {
@@ -27,6 +28,8 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 	}
 	result := &vffSKCValueBinding{}
 	active := map[*vffXMLNode]bool{}
+	var attributes *vffSKCValueAttributes
+	attributeSets := map[*vffXMLNode]*vffSKCValueAttributes{}
 	var visit func(*vffXMLNode, int) error
 	var reference func(*vffXMLNode, string, string, int) error
 	memberReference := func(source *vffXMLNode, raw string, depth int) error {
@@ -50,6 +53,11 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 		}
 		w := b.witness(target.node)
 		result.references[index].target, result.references[index].via = &w, target.via
+		if kind == "attribute" {
+			if err := b.valueAttribute(attributes, source, target.node, result); err != nil {
+				return err
+			}
+		}
 		return visit(target.node, depth+1)
 	}
 	reference = func(source *vffXMLNode, raw, role string, depth int) error {
@@ -103,7 +111,13 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 				return nil
 			}
 		}
-		return visit(declaration, depth+1)
+		if err := visit(declaration, depth+1); err != nil {
+			return err
+		}
+		if role == "simpleContentBase" && declaration.name.Local == "complexType" {
+			return b.mergeValueAttributes(attributes, attributeSets[declaration], result)
+		}
+		return nil
 	}
 	visit = func(node *vffXMLNode, depth int) error {
 		if err := b.tick(depth); err != nil {
@@ -122,6 +136,13 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 			if child.name.Local != "annotation" {
 				children = append(children, child)
 			}
+		}
+		parentAttributes := attributes
+		if node.name.Local == "complexType" || node.name.Local == "attributeGroup" && node.attrs["name"] != "" {
+			attributes = &vffSKCValueAttributes{source: b.witness(node), names: map[xml.Name][]int{}}
+			attributeSets[node] = attributes
+			result.attributeSets = append(result.attributeSets, attributes)
+			defer func() { attributes = parentAttributes }()
 		}
 		switch kind := node.name.Local; kind {
 		case "element", "attribute":
@@ -146,10 +167,16 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 			}
 			typeName, typed := node.attrs["type"]
 			if ref, exists := node.attrs["ref"]; exists {
-				if _, named := node.attrs["name"]; named || typed || len(inline) > 0 {
+				_, formed := node.attrs["form"]
+				if _, named := node.attrs["name"]; named || typed || len(inline) > 0 || kind == "attribute" && formed {
 					return fmt.Errorf("conflicting complex value member reference")
 				}
 				return memberReference(node, ref, depth+1)
+			}
+			if kind == "attribute" {
+				if err := b.valueAttribute(attributes, node, node, result); err != nil {
+					return err
+				}
 			}
 			if typed && len(inline) > 0 || len(inline) > 1 {
 				return fmt.Errorf("conflicting field value type declarations")
@@ -245,6 +272,7 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 					return err
 				}
 			}
+			return b.mergeValueAttributes(parentAttributes, attributes, result)
 		case "sequence", "choice", "all":
 			if err := b.valueStructure(node, result); err != nil {
 				return err
