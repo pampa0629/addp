@@ -43,6 +43,7 @@ type vffSKCXMLFact struct {
 
 type vffSKCDependency struct {
 	kind, location, namespace string
+	namespaceDeclared         bool
 	begin, end                int
 	// Empty member means unresolved. No filesystem/network lookup is attempted.
 	member string
@@ -56,10 +57,11 @@ type vffSKCOpaqueXML struct {
 
 type vffSKCSchemaFact struct {
 	vffSKCMemberFact
-	targetNamespace string
-	dependencies    []vffSKCDependency
-	opaque          []vffSKCOpaqueXML
-	resources       []vffSKCResourceDeclaration
+	targetNamespace   string
+	namespaceDeclared bool
+	dependencies      []vffSKCDependency
+	opaque            []vffSKCOpaqueXML
+	resources         []vffSKCResourceDeclaration
 }
 
 type vffSKCResourceDeclaration struct {
@@ -76,6 +78,7 @@ type vffSKCDocumentFact struct {
 	schemas          []vffSKCSchemaFact
 	filters          []vffSKCFilterFact
 	unexplained      []vffSKCMemberFact
+	links            []vffSKCSchemaLink
 }
 
 type vffClassificationDocumentFacts struct {
@@ -205,6 +208,11 @@ func readVFFSKCDocument(ctx context.Context, item vffClassificationPackage, budg
 			result.filters = append(result.filters, *fact)
 		}
 	}
+	links, err := bindVFFSKCSchemaLinks(ctx, item, result.schemas)
+	if err != nil {
+		return nil, err
+	}
+	result.links = links
 	var unclaimed []string
 	for name := range item.files {
 		if !claimed[name] {
@@ -308,6 +316,7 @@ func readVFFSKCSchema(ctx context.Context, member string, files map[string][]byt
 		}
 	}
 	result := &vffSKCSchemaFact{vffSKCMemberFact: vffSKCMemberFact{member, sha256.Sum256(raw)}, targetNamespace: root.attrs["targetNamespace"]}
+	_, result.namespaceDeclared = root.attrs["targetNamespace"]
 	resources, err := vffSKCSchemaResources(ctx, root, raw, dependencies)
 	if err != nil {
 		return nil, err
@@ -348,6 +357,7 @@ func readVFFSKCSchema(ctx context.Context, member string, files map[string][]byt
 			return nil, fmt.Errorf("missing required SKC dependency location")
 		}
 		dependency := vffSKCDependency{kind: kind, location: location, namespace: child.attrs["namespace"], begin: child.begin, end: child.end}
+		_, dependency.namespaceDeclared = child.attrs["namespace"]
 		// Canonical relative URI subset only. Unsupported forms are retained as
 		// unresolved facts, never basename/local fallback or percent-decoded.
 		if location != "" && vffMemberName([]byte(location), 0x800) == nil && !strings.ContainsAny(location, "%?# \t\r\n") {
