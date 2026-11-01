@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 16 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 39 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 40 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -730,3 +730,10 @@
 [完整记录、失败与验收边界](MonitorHTTP质量与采样历史证据.md#http-private-openssl-config-20261031)
 
 2026-11-01补充固定a517自然CI最终结果：OpenSSL准备通过，聚合在无关来源漂移前置失败，HTTP runner未执行；Linux完整入口及正式页面闭环仍未验收。
+
+
+### 2026-11-01 自然 Linux HTTP 停止确认超时复发：取得真实 D／T 快照，根因未定
+
+[完整记录、失败与验收边界](MonitorHTTP质量与采样历史证据.md#http-stop-confirmation-real-dt-20261101)
+
+固定11db自然HTTP Job已失败并清理，464次完整确认读取、末次D1／T2；未通过停止确认，不是单次读取耗尽四秒的证明。后续最小取证方案待用户确认，尚未修复实际超时根因。

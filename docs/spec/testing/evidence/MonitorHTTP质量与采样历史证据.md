@@ -720,3 +720,24 @@ OpenSSL依赖在原HTTP runner先检查，Platform consistency既有准备步骤
 实际`make test-platform`在靠前的`test-platform-review`失败：`TestTransferReviewSourceDrift/config`与`batch_contract`分别报告`transfer/docs/transfer-基本概念及配置说明.md`及`docs/spec/addp智能体Tool开放规范.md`来源漂移，make退出2。按固定源码的顺序及完整日志，尚未调用`test-monitor-http-local-runner`，本专项37项、实际离线证书组和Go身份子门禁在这次Linux运行均**未执行**；不能把聚合失败误写为HTTP断言失败，也不能用OpenSSL安装或既有Mac分项结果补齐Linux单次完整入口。仅定位到阻断本专项的首个前置，不调查、修复或跟踪上述无关功能。
 
 本次只读取得Job／run元数据与完整原始日志；日志301934字节，SHA256=`7ec710605d99cef3d09a0e664efecce71b4a550d6dfd550c6f12c579d0bbdd4c`，本机`/tmp/addp-p19-http-platform-124547494998.log`及同前缀`-job.json`／`-run.json`／`-audit.json`保存最终证据与独立核对（文件0600）。仅补充原记录及索引，39主题不变，验证唯一锚点／索引、固定SHA／attempt／步骤、日志散列及本专项差异；没有重跑代码门禁或实际证书组，没有手动CI重跑／dispatch、新开本地窗口、Hosted、容量或定时。Linux完整runner与正式产品到页面验收仍未通过；下一步建议只手动核对后续自然CI中本专项实际执行结果，须重新核验固定输入，不能将后续主分支状态直接归给a517。
+
+
+<a id="http-stop-confirmation-real-dt-20261101"></a>
+
+## 2026-11-01 自然 Linux HTTP 停止确认超时复发：取得真实 D／T 快照，根因未定
+
+本次只读核对收到的既有失败线索，未运行或重试任何场景。此前九次通过、f49取证后的31份成功确认及fe105失败各按原范围保留，不代表后续运行或间歇问题已修复。本专题及守卫变更记录尚未记载本次失败；当前预算内核及其测试与失败源码相同，未发现已有后续修复覆盖，故不重复实现既有修正。
+
+fresh API确认[run41215610415／HTTP Job124583446674](https://github.com/pampa0629/addp/actions/runs/41215610415/job/124583446674)为自然main／push／attempt 1，固定源码`11db5f98b47f38d462e59190885f39e62ab4be57`。HTTP Job于2026-11-01 00:12:48—00:14:22（Asia/Shanghai）completed／failure，实际`Verify isolated metrics lifecycle`失败，预算归档步骤成功；整条workflow最终cancelled与此已结束Job的failure分列，不混为本专项取消。不是OpenSSL local runner结果，也不是TLS证书准备或业务HTTP断言失败。
+
+独立下载artifact13048079382：18956字节，ZIP SHA256=`6c48f3adfd375a7f52d2459b249c85b8cdb1e235068a5607283e77091349d5a0`与API登记一致，CRC与唯一JSON成员通过；完整报告59402字节，SHA256=`815ebc8f427346fcf1091faada6d907785ccc5404b4529f3d254c593a70dcf7b`。353个输入逐文件匹配固定11db源码，日志第838行封闭摘要逐字段匹配完整归档（缺省null按原字段语义比较），不借当前HEAD替代。现有预算内核／测试与该固定源码逐字节相同。
+
+报告failed／`http_compile_coordination_deadline`，failure_detail.stage=compile_inventory、kind=deadline；process_source只见开始64441724093ns、incomplete，http_query／http_alert均not_started；业务请求总数0，Python来源未启动，source_tls_proof为空，不能计三源或页面闭环通过。总73.734208567秒，保存15个已完成资源样本，最长0.468122751秒，硬配额峰值2.25 CPU／2952790016字节内存、私有可写保守上界729915455字节。这些先前完整样本不包含失败的第16次完整采样，不能以其峰值或均小于四秒判本轮通过。
+
+失败协调98241788821..102246550508ns，跨度4.004761687秒；stop_sent／resumed=true，无confirmed或resume_error，未进入该次du。confirmation attempts=465、completed=464、membership_changes=0；最后一次完整清单102235123288..102238637234ns，耗时0.003513946秒，状态计数D=1、T=2，其余七类0。最后一次尝试起点102241774854ns，距开始恢复102241793372ns仅0.000018518秒；它未完整返回，不能把约四秒归因于这最后一次清单读取卡了四秒，也无法从现有字段确定是归属核验、枚举还是读取前的截止检查失败。现有取证表明曾反复成功返回清单却未满足停止确认，但仅保留最后完整状态，不能宣称464次均为同一个D成员或同一状态组合。
+
+members=2仅为发停止前的初始清单，末次完整计数合计3；membership_changes只比较停止后的确认清单，0不代表暂停前后成员未变。没有PID／成员角色／父子关系／等待位置，不能判D来自组长还是后代、I/O还是启动等待。[Linux官方proc文档](https://www.kernel.org/doc/html/latest/filesystems/proc.html)说明D为不可中断等待，wchan可提供等待位置但可能为0；[上游Linux v7.0的fork实现](https://github.com/torvalds/linux/blob/v7.0/kernel/fork.c)保留vfork父进程等待子进程完成的路径，但上游代码与容器日志所见7.0.0-1017-azure版本名不能证明此runner具体补丁及现场阻塞栈。仅属待检验机制，不将D视为安全，不变更停止顺序、补发信号、放宽四秒或声称根因已定位。
+
+恢复成功后原首因保留；exit143为失败后的取消结果，failure_during_cleanup=false，compile_cleanup_error／cleanup_overdue为空，inputs_unchanged／cleanup_verified／private_directory_removed=true。原4 CPU／4 GiB、私有可写小于2 GiB、1200秒和全量统计、失败清理口径保持；清理成功不补算业务通过。已向用户提出只补一次有界等待位置与成员关系取证的建议，涉及超出现行“只复用清单”的读取范围，等待确认后才修规范／代码；本记录不授权或宣称已实施该方案。
+
+`/tmp/addp-p19-http-stop-recurrence-20261101.zip`／同前缀`-report.json`／`-audit.json`保存原始归档和独立核验（0600），原日志复用`/tmp/addp-ci-20261101-020424/job-124583446674.log`，SHA256=`12713459415001ed41cfa22a798b1074446722fcfe824cd67d05b036b68f195c`。仅更新两份证据文档，验证40主题计数、唯一锚点／索引、归档散列／353输入／计数端点／日志摘要与diff，不重跑代码或运行门禁，不修改守卫。没有手动CI重跑／dispatch、新本地窗口、Hosted、容量或定时；正式Agent/Copilot到Console/Monitor页面、停源历史及其余原缺口保持。
