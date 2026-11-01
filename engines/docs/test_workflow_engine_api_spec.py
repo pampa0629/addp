@@ -160,7 +160,12 @@ def test_typed_operator_diagnostic_spec_matches_the_single_runtime_contract():
     context = props['operator']
     assert context['additionalProperties'] is False
     assert context['required'] == ['node_index', 'operator_id']
-    assert context['properties']['field']['enum'] == ['distance', 'source_id', 'part_no', 'ring_no', 'ring_id', 'is_hole']
+    assert set(context['properties']['operator_id']['enum']) == {op for op, _, _ in OPERATOR_INPUT_RULES}
+    assert set(context['properties']['parameter']['enum']) == {parameter for parameter in OPERATOR_INPUT_RULES.values() if parameter}
+    assert context['properties']['field']['enum'] == ['distance', 'source_id', 'part_no', 'ring_no', 'ring_id', 'is_hole', 'node_id', 'degree', 'source_part_no', 'end']
+    assert set(context['properties']['field']['enum']) == {field for _, _, field in OPERATOR_INPUT_RULES if field}
+    for enum in (props['reason']['enum'], *(context['properties'][name]['enum'] for name in ('operator_id', 'parameter', 'field'))):
+        assert len(enum) == len(set(enum))
     assert context['properties']['node_index']['minimum'] == 1
     assert context['properties']['node_index']['maximum'] == 65535
     assert spec['ExecutionStatusResponse']['properties']['diagnostic'] == {'$ref':'#/components/schemas/WorkflowInputDiagnostic'}
