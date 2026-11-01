@@ -4,19 +4,13 @@
 
 ## 模块定位
 
-Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和执行运行时。bounded execution 由独立 `transfer-bounded-worker` 通过 PostgreSQL execution claim 承担；continuous execution 由独立 `transfer-continuous-worker`/supervisor 承担。导入 / 导出是 Manager、Develop 等调用方的用户动作语义，不是 Transfer 的 `task_type`。可复用同步配置才创建 `transfer.transfer_tasks`；一次性导出使用 `POST /api/v1/transfer/executions` 直接创建 `source_task_id=null` 的 bounded `sync` execution，响应只暴露统一 `execution_id`。
+Transfer 是 ADDP 的数据传输中枢，统一负责 `sync` 任务的配置、planner、policy、字段映射／转换编排、worker、checkpoint、日志、指标和写后 Meta 扫描触发。bounded execution 由独立 `transfer-bounded-worker` 通过 PostgreSQL execution claim 承担；continuous execution 由独立 `transfer-continuous-worker`/supervisor 承担。
 
-当前主路径基于 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`：
+导入 / 导出是 Manager、Develop 等调用方的用户动作语义，不是 Transfer 的 `task_type`。可复用任务定义与一次性执行的区分统一见[任务与执行记录](docs/transfer-基本概念及配置说明.md#12-执行记录)；调用身份与来源隔离见[一次性执行与来源隔离](#一次性执行与来源隔离)。
 
-- Transfer 负责任务 JSON、planner、policy、transform、worker、checkpoint、日志、指标和写后 Meta 扫描触发。
-- 具体 engine-native 读写由 `common/engine` 提供。
-- 具体格式和数据类型读写由 `common/format` 提供。
-- content 的定位、读取、写入、range 和 scope list 由 `common/contentio` 表达；multi ref 的组织规则和读写语义由 `common/format` / `common/dataitem` / Transfer 编排层表达；engine content provider 到 contentio 的桥接由 `common/engine/contentadapter` 提供。
-- 旧 Transfer 私有 reader / writer 插件体系、旧 `pkg/pipeline`、旧 `pkg/plugin_loader` 不作为新功能入口。
+具体读写复用 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`；职责分工统一见[任务语义](docs/transfer-任务语义与同步模式.md#一模块定位)与[内容 I/O 归属](../docs/spec/addp内容IO抽象规范.md#命名和位置)。native table、encoded single/multi/whole 的入口组合见[table 主链路](README.md#已稳定的-table-transfer-主链路)，planner 与扩展约束见[配置、Provider 与 API 维护](#配置provider-与-api-维护)。
 
-table 类型 Transfer 主链路已经稳定：native table、encoded single file/object、encoded multi refs 和 encoded whole scope 都统一走 planner + executor + common provider，不按具体引擎组合建立专用通道。后续新增 table 能力应优先补 `common/engine` 或 `common/format`，不要在 Transfer 内恢复私有 reader / writer。
-
-一次性执行的身份与来源隔离见[一次性执行与来源隔离](#一次性执行与来源隔离)；查询执行、构建器及保护约束见[查询源与构建器](#查询源与构建器)和[字段血缘与导出保护](#字段血缘与导出保护)。
+查询执行、构建器及保护约束见[查询源与构建器](#查询源与构建器)和[字段血缘与导出保护](#字段血缘与导出保护)。能力概览不代表当前版本运行通过；标准门禁、固定版本证据与未覆盖项见[开发与验证](#开发与验证)。
 
 ## 技术栈与端口
 
@@ -116,7 +110,7 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 #### 配置、Provider 与 API 维护
 
 - 配置字段与 endpoint 结构沿[任务 Config JSON](docs/transfer-基本概念及配置说明.md#二任务-config-json)，旧字段出现即拒绝，不做兼容转换。任务类型固定为 `sync`，不得新增或兼容 `import`、`export`、`transfer` 等旧任务类型，定义见[传输任务](docs/transfer-基本概念及配置说明.md#11-传输任务)。
-- table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / layout 分叉，不按具体引擎组合分叉。encoded 读写的 engine／format 接入与 multi refs 组合统一见[Provider 消费规则](../docs/spec/addp引擎插件接口规范.md#五上层消费规则)和[内容 I/O 调用链](../docs/spec/addp内容IO抽象规范.md#调用链)，不在 Transfer 中新增私有 reader / writer。
+- table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / layout 分叉，不按具体引擎组合分叉。encoded 读写的 engine／format 接入与 multi refs 组合统一见[Provider 消费规则](../docs/spec/addp引擎插件接口规范.md#五上层消费规则)和[内容 I/O 调用链](../docs/spec/addp内容IO抽象规范.md#调用链)，不在 Transfer 中新增私有 reader / writer。新增 table 能力应优先补 `common/engine` 或 `common/format`；旧 `pkg/pipeline`、`pkg/plugin_loader` 不作为新功能入口。
 - FileGDB/PGeo 等 container table 源只接受通用 `source.options.child_name`；planner 必须从 Meta `type_info.container.children` 校验 child 并解析 `native.table`，任务配置不得直接保存 `layer` 或 `child_table` 等 provider 私有入口。布局与运行时入口见[读取布局与入口](docs/transfer-基本概念及配置说明.md#读取布局与入口)。
 - API 契约同步沿[API 实施要求](../docs/spec/api/文档与实施.md#新接口开发)与[Swagger 强制同步要求](../docs/spec/addp-Swagger集成指南.md#强制同步要求)；Transfer 从仓库根目录执行 `bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。生成或覆盖检查失败均须阻断；生成成功不等于覆盖完整，覆盖通过不代替权限与真实读写验收。
 
