@@ -64,7 +64,7 @@ GeoTIFF 与 COG 是 TIFF 的布局 profile。COG 编码复用唯一实现，压�
 | `raster_statistics` | raster、从 1 开始的 band、可选单个 percentile | 原min/max/mean/总体标准差及有效／无效计数与比例保持；可附加0–100固定线性百分位，全量私有分块排序，不采样；全无效时统计值为null。 |
 | `raster_zonal_statistics` | 同网格数值／整数分区 raster、必填数值／分区波段 | 同类非连通区域合并，分区无效像元排除；输出每类像元计数及 sum/min/max/mean/总体标准差普通表，全无效数值为 null；可选同网格权重栅格／波段追加weight_sum／weighted_sum／weighted_mean，与percentile互斥，原统计保持，全1等价原sum／mean，缺失或非法权重明确失败，沿既有保存。Native 与真实跨模块验收分别记账。 |
 | `raster_focal_statistics` | raster、必填数据波段、3／5 像元窗口、sum/mean/min/max/stddev/mode/median/percentile/variety/weighted_mean/weighted_stddev/weighted_sum | 首期已实现；同网格单波段 Float64，中心无效保留 NaN，忽略无效邻居，外缘只计实际像元；median扩展按有效邻居排序，偶数取两中值平均；加权求和显式非负矩阵、不归一化，全1等价原sum，真正溢出像元沿sum写NaN，保留原十一方法并复用原入口和COG；各扩展详见栅格算子契约；mode 分类众数扩展已实现并经独立 Hosted 验证，最高频并列优先中心原分类、否则取较小分类；Native 与真实跨模块验收分别记账。 |
-| `raster_vector_zonal_statistics` | raster、同 CRS 有效二维面、必填数据波段，可选覆盖规则及列前缀 | 首期已实现；每面独立，重叠分别计入，保留原面／属性／顺序并追加计数与五项统计，复用矢量保存；Native 与真实跨模块验收分别记账。 |
+| `raster_vector_zonal_statistics` | raster、同 CRS 有效二维面、必填数据波段，可选覆盖／列前缀及互斥的百分位或同网格权重栅格／波段 | 每面独立、重叠分别计入，保留原面／属性／顺序和八项统计；权重追加三个字段、全1等价原sum／mean、必需位置缺失或负权重失败，复用矢量保存；Native与真实跨模块验收分别记账。 |
 | `raster_proximity` | raster、必填不超过 32 位的整数数据波段、显式目标分类值 | 首期已实现；投影北向方形网格，最近有效目标像元中心的米制 Float64 欧氏距离；源无效位置保留 NoData，不作为障碍，无有效目标失败；Native 与真实链路分开记账。 |
 | `raster_recommend_band_combination` | raster、显式 3–16 个候选数据波段 | 首期已实现并通过独立 Hosted；全量共同有效像元的 OIF 三波段组合排名及推荐 object，原始存储值，不自动 RGB 或宣称专题最优。 |
 | `raster_nibble` | raster、显式分类数据波段、目标分类列表 | 首期已实现并通过独立 Hosted；全图最近有效非目标供体替换，等距按源行列，保持无效覆盖；限投影北向方形网格，沿既有 COG。 |
@@ -387,3 +387,5 @@ DEM三维表面积统计`raster_surface_area`沿普通DataFrame契约返回面�
 ### 分类栅格小斑块筛除
 
 `raster_sieve`按原始4／8邻接连通斑块像元数筛除小斑块，只选择原始达标的直接相邻供体；无供体保留原值，单轮冻结，不填洞或传播。保留原无效覆盖／网格／CRS，沿既有COG。精确分类、并列选择、资源与失败清理边界见[算子契约](workflow/栅格算子契约.md#分类栅格小斑块筛除)。本地验证见专题；独立Hosted按6成功／28中英准确失败／189全检、6原COG及600秒准备，见[测试场景](testing/scenarios/Manager与空间成果.md#分类栅格小斑块筛除独立-hosted-验收)；Linux及实际Hosted继续由CI会话协调。
+
+矢量面分区统计可成对显式提供同网格权重栅格及波段，与percentile互斥；沿原中心／全部触及覆盖，重叠面独立统计，不按面积分摊。追加前缀化权重和／加权和／加权均值，原八列和几何属性保持，全1精确沿用原sum／mean；必需位置缺失或负权重严格失败，不补零。零权重与空组区别、数值和清理边界以[栅格算子契约](workflow/栅格算子契约.md)为准；仍走GeoDataFrame／GeoPackage，不新增资源身份、权限或自动对齐，Linux全量与Hosted由CI会话协调，独立加权Hosted尚未新增。

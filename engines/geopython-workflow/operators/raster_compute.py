@@ -1273,11 +1273,71 @@ _ZONAL_WEIGHT_MESSAGES = {
                  'Weights at valid values in valid zones must be nonnegative'),
     'numeric': ('栅格分区加权统计结果超出有限Float64范围',
                 'Weighted zonal statistics exceed the finite Float64 output range'),
+    'vector_percentile': ('矢量面分区统计的权重与percentile参数不能同时提供',
+                          'Vector zonal statistics weights and percentile cannot be provided together'),
+    'vector_grid': ('权重栅格必须与数值栅格具有相同尺寸、完整网格及语义等价CRS',
+                    'The weight raster must match the value raster in dimensions, complete grid and equivalent CRS'),
+    'vector_band': ('矢量面分区权重必须显式选择有效的一基数据波段',
+                    'Vector zonal weights require a valid explicit one-based data band'),
+    'vector_complex': ('矢量面分区权重不支持所选复数数据或复数alpha',
+                       'Vector zonal weights do not support selected complex data or complex alpha'),
+    'vector_alpha': ('矢量面分区权重必须选择数据波段，不能选择alpha',
+                     'Vector zonal weights require a data band, not alpha'),
+    'vector_coverage': ('面覆盖且数值有效的位置必须具有有效且有限的权重，不能补零',
+                        'Every valid value covered by a zone must have a valid finite weight; missing weights cannot be filled with zero'),
+    'vector_negative': ('面覆盖且数值有效的位置的权重必须非负',
+                        'Weights at valid values covered by a zone must be nonnegative'),
+    'vector_numeric': ('矢量面分区加权统计结果超出有限Float64范围',
+                       'Weighted vector zonal statistics exceed the finite Float64 output range'),
 }
 
 
 def _zonal_weight_error(code):
     return ValueError(_ZONAL_WEIGHT_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _vector_zonal_weight_error(code):
+    return _zonal_weight_error(code if code == 'pair' else 'vector_' + code)
+
+
+def _zonal_weights_requested(weights_raster, weights_band, requested, error):
+    weighted = weights_raster is not _ZONAL_WEIGHTS_UNSET or weights_band is not _ZONAL_WEIGHTS_UNSET
+    if weighted:
+        if (weights_raster is _ZONAL_WEIGHTS_UNSET or weights_band is _ZONAL_WEIGHTS_UNSET
+                or weights_raster is None or weights_band is None):
+            raise error('pair')
+        if requested:
+            raise error('percentile')
+    return weighted
+
+
+def _zonal_weights_source(dataset, weights_raster, weights_band, error):
+    source = _open(weights_raster)
+    try:
+        _require_same_grid(dataset, source)
+    except ValueError as cause:
+        raise error('grid') from cause
+    if type(weights_band) is not int or not 1 <= weights_band <= source.RasterCount:
+        raise error('band')
+    selected = source.GetRasterBand(weights_band)
+    if gdal.DataTypeIsComplex(selected.DataType):
+        raise error('complex')
+    if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
+        raise error('alpha')
+    for index in range(1, source.RasterCount + 1):
+        alpha = source.GetRasterBand(index)
+        if alpha.GetColorInterpretation() == gdal.GCI_AlphaBand and gdal.DataTypeIsComplex(alpha.DataType):
+            raise error('complex')
+    return source
+
+
+def _zonal_weight_block(source, band, window, required, error):
+    _, _, arrays, valid = next(_blocks(source, [band], window=window, native=True))
+    if np.any(required & ~valid[0]):
+        raise error('coverage')
+    if np.any(arrays[0][required] < 0):
+        raise error('negative')
+    return arrays[0]
 
 
 def _dyadic_units(values):
@@ -1304,7 +1364,7 @@ class _ZoneWeights:
         self.mass += Fraction(sum(weight_units.flat), 1 << weight_shift)
         self.total += Fraction(sum((values_units * weight_units).flat), 1 << (value_shift + weight_shift))
 
-    def summary(self, original):
+    def summary(self, original, *, error=_zonal_weight_error):
         if not original[1]:
             return [None, None, None]
         if not self.mass:
@@ -1313,22 +1373,16 @@ class _ZoneWeights:
             result = ([float(self.mass), original[3], original[6]] if self.all_one else
                       [float(self.mass), float(self.total), float(self.total / self.mass)])
         except OverflowError as cause:
-            raise _zonal_weight_error('numeric') from cause
+            raise error('numeric') from cause
         if not all(math.isfinite(value) for value in result):
-            raise _zonal_weight_error('numeric')
+            raise error('numeric')
         return result
 
 
 def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percentile=_PERCENTILE_UNSET,
                             *, weights_raster=_ZONAL_WEIGHTS_UNSET, weights_band=_ZONAL_WEIGHTS_UNSET):
     requested = percentile is not _PERCENTILE_UNSET
-    weighted = weights_raster is not _ZONAL_WEIGHTS_UNSET or weights_band is not _ZONAL_WEIGHTS_UNSET
-    if weighted:
-        if (weights_raster is _ZONAL_WEIGHTS_UNSET or weights_band is _ZONAL_WEIGHTS_UNSET
-                or weights_raster is None or weights_band is None):
-            raise _zonal_weight_error('pair')
-        if requested:
-            raise _zonal_weight_error('percentile')
+    weighted = _zonal_weights_requested(weights_raster, weights_band, requested, _zonal_weight_error)
     if requested:
         percentile = _percentile_parameter(percentile)
     dataset, zones = _open(input_raster), _open(zones_raster)
@@ -1339,25 +1393,7 @@ def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percen
         for i in range(1, source.RasterCount + 1):
             if source.GetRasterBand(i).GetColorInterpretation() == gdal.GCI_AlphaBand:
                 _band(source, i)
-    weights_source = None
-    if weighted:
-        weights_source = _open(weights_raster)
-        try:
-            _require_same_grid(dataset, weights_source)
-        except ValueError as cause:
-            raise _zonal_weight_error('grid') from cause
-        if type(weights_band) is not int or not 1 <= weights_band <= weights_source.RasterCount:
-            raise _zonal_weight_error('band')
-        selected = weights_source.GetRasterBand(weights_band)
-        if gdal.DataTypeIsComplex(selected.DataType):
-            raise _zonal_weight_error('complex')
-        if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
-            raise _zonal_weight_error('alpha')
-        for index in range(1, weights_source.RasterCount + 1):
-            alpha = weights_source.GetRasterBand(index)
-            if alpha.GetColorInterpretation() == gdal.GCI_AlphaBand and gdal.DataTypeIsComplex(alpha.DataType):
-                raise _zonal_weight_error('complex')
-        selected = alpha = None
+    weights_source = _zonal_weights_source(dataset, weights_raster, weights_band, _zonal_weight_error) if weighted else None
     statistics, weighted_statistics = {}, {}
     with _percentile_runs(dataset, zonal=True) if requested else nullcontext() as runs:
         for x, y, arrays, masks in _blocks(zones, [zones_band], native=True):
@@ -1367,14 +1403,9 @@ def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percen
             selected_valid = valid[0][masks[0]]
             selected_values = values[0][masks[0]].astype(np.float64)
             if weighted:
-                _, _, mass_values, mass_valid = next(_blocks(weights_source, [weights_band],
-                    window=(x, y, width, height), native=True))
-                required = masks[0] & valid[0]
-                if np.any(required & ~mass_valid[0]):
-                    raise _zonal_weight_error('coverage')
-                if np.any(mass_values[0][required] < 0):
-                    raise _zonal_weight_error('negative')
-                selected_weights = mass_values[0][masks[0]].astype(np.float64)
+                mass_values = _zonal_weight_block(weights_source, weights_band, (x, y, width, height),
+                                                  masks[0] & valid[0], _zonal_weight_error)
+                selected_weights = mass_values[masks[0]].astype(np.float64)
             # Sort once per block; never scan the full block once per classification.
             order = np.argsort(classes, kind='stable')
             codes, starts, counts = np.unique(classes[order], return_index=True, return_counts=True)
@@ -1429,8 +1460,10 @@ def _zone_window(dataset, bounds):
     return (x, y, end_x-x, end_y-y) if x < end_x and y < end_y else None
 
 
-def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=False, field_prefix='zonal_', percentile=_PERCENTILE_UNSET):
+def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=False, field_prefix='zonal_', percentile=_PERCENTILE_UNSET,
+                                   *, weights_raster=_ZONAL_WEIGHTS_UNSET, weights_band=_ZONAL_WEIGHTS_UNSET):
     requested = percentile is not _PERCENTILE_UNSET
+    weighted = _zonal_weights_requested(weights_raster, weights_band, requested, _vector_zonal_weight_error)
     if requested:
         percentile = _percentile_parameter(percentile)
     geometries = _polygon_geometries(input_gdf)
@@ -1442,6 +1475,8 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
                                           'sum', 'min', 'max', 'mean', 'stddev')]
     if requested:
         names.extend(field_prefix+name for name in ('percentile', 'percentile_value'))
+    if weighted:
+        names.extend(field_prefix+name for name in ('weight_sum', 'weighted_sum', 'weighted_mean'))
     if any(name in input_gdf.columns for name in names):
         raise ValueError('Statistics columns must not overwrite input columns')
     dataset = _open(input_raster)
@@ -1453,11 +1488,13 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
     for index in range(1, dataset.RasterCount+1):
         if dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand:
             _band(dataset, index)
+    weights_source = _zonal_weights_source(dataset, weights_raster, weights_band, _vector_zonal_weight_error) if weighted else None
     rows = []
     vector = layer = feature = coverage = None
     try:
         for geometry in geometries:
             statistics = _ZoneStatistics()
+            weighted_statistics = _ZoneWeights() if weighted else None
             window = _zone_window(dataset, geometry.bounds)
             with _percentile_runs(dataset, window=window) if requested and window is not None else nullcontext() as runs:
                 if window is not None:
@@ -1481,18 +1518,25 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
                         if gdal.RasterizeLayer(coverage, [1], layer, burn_values=[1], options=options) != 0:
                             raise ValueError('Zone coverage rasterization failed')
                         covered = coverage.GetRasterBand(1).ReadAsArray() != 0
-                        values = arrays[0][covered & masks[0]].astype(np.float64)
+                        required = covered & masks[0]
+                        values = arrays[0][required].astype(np.float64)
                         statistics.add(values, int(covered.sum()))
+                        if weighted:
+                            masses = _zonal_weight_block(weights_source, weights_band, (x, y, width, height),
+                                                         required, _vector_zonal_weight_error)
+                            weighted_statistics.add(values, masses[required].astype(np.float64))
                         if runs is not None:
                             runs.add(values)
                         coverage = None
                     layer = vector = None
                 row = statistics.summary()
+                if weighted:
+                    row.extend(weighted_statistics.summary(row, error=_vector_zonal_weight_error))
                 if requested:
                     row.extend([percentile, runs.value(statistics.count, percentile) if runs is not None else None])
                 rows.append(row)
     finally:
-        feature = layer = vector = coverage = dataset = None
+        feature = layer = vector = coverage = dataset = weights_source = None
     result = input_gdf.copy()
     for index, name in enumerate(names):
         result[name] = pd.array([row[index] for row in rows], dtype='int64' if index < 3 else 'Float64')
@@ -5233,7 +5277,7 @@ _SPECS = [
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对显式提供；有限非负，缺失权重不补零，与percentile互斥', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；追加权重总和、加权求和与加权均值，原统计不改写', None, False), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）/weighted_stddev（非负矩阵加权总体标准差）/weighted_sum（非负矩阵加权求和；不归一化）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev', 'weighted_sum']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean/weighted_stddev/weighted_sum必填：同窗口3×3或5×5有限非负二维权重，至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean', 'weighted_stddev', 'weighted_sum']}})], 'raster', ['read']),
-    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
+    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对提供且与percentile互斥；沿原面覆盖，重叠面独立统计，缺失权重不补零', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；有限非负，追加三项加权统计，原统计不改写', None, False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_FLOW, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_direction_d8, OperatorCategory.RASTER_FLOW, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
