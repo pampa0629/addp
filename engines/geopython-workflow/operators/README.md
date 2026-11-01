@@ -230,6 +230,8 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 
 `raster_vector_zonal_statistics`可成对显式提供`weights_raster/weights_band`，与percentile互斥；同网格权重按原覆盖逐面统计，重叠面分别计入，不按交叠面积分摊。原八字段保持，追加同前缀weight_sum／weighted_sum／weighted_mean，全1复用原sum／mean；必需位置缺失或负权重严格失败。全零权重0／0／null，无值三项null，空批Schema及几何／属性／索引保持；共用原生NoData、分块精确累计与既有矢量保存／清理，无新入口或权限，详见栅格算子契约。
 
+`raster_vector_zonal_statistics`可显式`include_weighted_stddev=True`追加前缀weighted_stddev，采用总体分母，全1精确沿用原stddev，全零／空组null；默认False保留原Schema，沿原面覆盖／重叠独立规则及GeoPackage路径，启用列冲突严格拒绝。
+
 `raster_vector_zonal_statistics`可附加同一单个`percentile`，逐原始面全量固定线性插值，在原八个统计字段后按原前缀追加`percentile/percentile_value`，同名冲突失败。原中心／全部触及覆盖、孔洞、重叠分别计入及属性／几何／行序／索引保持；无覆盖／无有效数值保留行且值null，原生NoData先判定，逐面私有外排序后释放，沿磁盘账本保留2GiB。结果仍走原矢量保存路径，不增加面板入口、权限或自动重投影。
 
 ## 线端延伸
