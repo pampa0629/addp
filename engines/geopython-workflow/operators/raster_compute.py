@@ -1253,8 +1253,82 @@ class _ZoneStatistics:
         return [self.total, self.count, self.total - self.count, *stats]
 
 
-def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percentile=_PERCENTILE_UNSET):
+_ZONAL_WEIGHTS_UNSET = object()
+_ZONAL_WEIGHT_MESSAGES = {
+    'pair': ('weights_raster和weights_band必须同时显式提供且不能为null',
+             'weights_raster and weights_band must be explicitly provided together and cannot be null'),
+    'percentile': ('栅格分区统计的权重与percentile参数不能同时提供',
+                   'Zonal statistics weights and percentile cannot be provided together'),
+    'grid': ('权重栅格必须与数值和分区栅格具有相同尺寸、完整网格及语义等价CRS',
+             'The weight raster must match the value and zone rasters in dimensions, complete grid and equivalent CRS'),
+    'band': ('栅格分区权重必须显式选择有效的一基数据波段',
+             'Zonal weights require a valid explicit one-based data band'),
+    'complex': ('栅格分区权重不支持所选复数数据或复数alpha',
+                'Zonal weights do not support selected complex data or complex alpha'),
+    'alpha': ('栅格分区权重必须选择数据波段，不能选择alpha',
+              'Zonal weights require a data band, not alpha'),
+    'coverage': ('分区有效且数值有效的位置必须具有有效且有限的权重，不能补零',
+                 'Every valid value in a valid zone must have a valid finite weight; missing weights cannot be filled with zero'),
+    'negative': ('分区有效且数值有效的位置的权重必须非负',
+                 'Weights at valid values in valid zones must be nonnegative'),
+    'numeric': ('栅格分区加权统计结果超出有限Float64范围',
+                'Weighted zonal statistics exceed the finite Float64 output range'),
+}
+
+
+def _zonal_weight_error(code):
+    return ValueError(_ZONAL_WEIGHT_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _dyadic_units(values):
+    """Encode one bounded finite Float64 block as exact integers / 2**shift."""
+    ratios = [float(value).as_integer_ratio() for value in values.flat]
+    shift = max((denominator.bit_length() - 1 for _, denominator in ratios), default=0)
+    units = np.fromiter((numerator << (shift - (denominator.bit_length() - 1))
+                         for numerator, denominator in ratios), dtype=object, count=values.size).reshape(values.shape)
+    return units, shift
+
+
+@dataclass
+class _ZoneWeights:
+    mass: Fraction = Fraction(0)
+    total: Fraction = Fraction(0)
+    all_one: bool = True
+
+    def add(self, values, weights):
+        if not values.size:
+            return
+        self.all_one = self.all_one and bool(np.all(weights == 1.))
+        values_units, value_shift = _dyadic_units(values)
+        weight_units, weight_shift = _dyadic_units(weights)
+        self.mass += Fraction(sum(weight_units.flat), 1 << weight_shift)
+        self.total += Fraction(sum((values_units * weight_units).flat), 1 << (value_shift + weight_shift))
+
+    def summary(self, original):
+        if not original[1]:
+            return [None, None, None]
+        if not self.mass:
+            return [0., 0., None]
+        try:
+            result = ([float(self.mass), original[3], original[6]] if self.all_one else
+                      [float(self.mass), float(self.total), float(self.total / self.mass)])
+        except OverflowError as cause:
+            raise _zonal_weight_error('numeric') from cause
+        if not all(math.isfinite(value) for value in result):
+            raise _zonal_weight_error('numeric')
+        return result
+
+
+def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percentile=_PERCENTILE_UNSET,
+                            *, weights_raster=_ZONAL_WEIGHTS_UNSET, weights_band=_ZONAL_WEIGHTS_UNSET):
     requested = percentile is not _PERCENTILE_UNSET
+    weighted = weights_raster is not _ZONAL_WEIGHTS_UNSET or weights_band is not _ZONAL_WEIGHTS_UNSET
+    if weighted:
+        if (weights_raster is _ZONAL_WEIGHTS_UNSET or weights_band is _ZONAL_WEIGHTS_UNSET
+                or weights_raster is None or weights_band is None):
+            raise _zonal_weight_error('pair')
+        if requested:
+            raise _zonal_weight_error('percentile')
     if requested:
         percentile = _percentile_parameter(percentile)
     dataset, zones = _open(input_raster), _open(zones_raster)
@@ -1265,7 +1339,26 @@ def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percen
         for i in range(1, source.RasterCount + 1):
             if source.GetRasterBand(i).GetColorInterpretation() == gdal.GCI_AlphaBand:
                 _band(source, i)
-    statistics = {}
+    weights_source = None
+    if weighted:
+        weights_source = _open(weights_raster)
+        try:
+            _require_same_grid(dataset, weights_source)
+        except ValueError as cause:
+            raise _zonal_weight_error('grid') from cause
+        if type(weights_band) is not int or not 1 <= weights_band <= weights_source.RasterCount:
+            raise _zonal_weight_error('band')
+        selected = weights_source.GetRasterBand(weights_band)
+        if gdal.DataTypeIsComplex(selected.DataType):
+            raise _zonal_weight_error('complex')
+        if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
+            raise _zonal_weight_error('alpha')
+        for index in range(1, weights_source.RasterCount + 1):
+            alpha = weights_source.GetRasterBand(index)
+            if alpha.GetColorInterpretation() == gdal.GCI_AlphaBand and gdal.DataTypeIsComplex(alpha.DataType):
+                raise _zonal_weight_error('complex')
+        selected = alpha = None
+    statistics, weighted_statistics = {}, {}
     with _percentile_runs(dataset, zonal=True) if requested else nullcontext() as runs:
         for x, y, arrays, masks in _blocks(zones, [zones_band], native=True):
             classes = _classification_values(arrays[0], masks[0])
@@ -1273,6 +1366,15 @@ def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percen
             _, _, values, valid = next(_blocks(dataset, [band], window=(x, y, width, height), native=True))
             selected_valid = valid[0][masks[0]]
             selected_values = values[0][masks[0]].astype(np.float64)
+            if weighted:
+                _, _, mass_values, mass_valid = next(_blocks(weights_source, [weights_band],
+                    window=(x, y, width, height), native=True))
+                required = masks[0] & valid[0]
+                if np.any(required & ~mass_valid[0]):
+                    raise _zonal_weight_error('coverage')
+                if np.any(mass_values[0][required] < 0):
+                    raise _zonal_weight_error('negative')
+                selected_weights = mass_values[0][masks[0]].astype(np.float64)
             # Sort once per block; never scan the full block once per classification.
             order = np.argsort(classes, kind='stable')
             codes, starts, counts = np.unique(classes[order], return_index=True, return_counts=True)
@@ -1280,13 +1382,22 @@ def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percen
                 group = order[start:start + count]
                 statistics.setdefault(int(code), _ZoneStatistics()).add(
                     selected_values[group][selected_valid[group]], int(count))
+                if weighted:
+                    weighted_statistics.setdefault(int(code), _ZoneWeights()).add(
+                        selected_values[group][selected_valid[group]], selected_weights[group][selected_valid[group]])
             if runs is not None:
                 records = np.empty(int(selected_valid.sum()), dtype=_ZONAL_PERCENTILE_DTYPE)
                 records['zone'] = classes[selected_valid]
                 records['value'] = selected_values[selected_valid]
                 runs.add(records)
         columns = ['zone_value', 'total_count', 'valid_count', 'invalid_count', 'sum', 'min', 'max', 'mean', 'stddev']
-        result = pd.DataFrame([[code, *statistics[code].summary()] for code in sorted(statistics)], columns=columns)
+        rows = []
+        for code in sorted(statistics):
+            original = statistics[code].summary()
+            rows.append([code, *original, *(weighted_statistics[code].summary(original) if weighted else [])])
+        if weighted:
+            columns += ['weight_sum', 'weighted_sum', 'weighted_mean']
+        result = pd.DataFrame(rows, columns=columns)
         result = result.astype({name: 'int64' if i < 4 else 'Float64' for i, name in enumerate(columns)})
         if requested:
             result['percentile'] = pd.array([percentile] * len(result), dtype='Float64')
@@ -1834,10 +1945,7 @@ def _focal_weight_kernel(weights, window_size, *, method='weighted_mean'):
 def _focal_weighted_values(values, valid, cx, cy, shape, window_size, units, center_valid, *, method, weight_scale):
     """Bounded exact products/moments; round only the final weighted result."""
     stddev = method == 'weighted_stddev'
-    ratios = [float(value).as_integer_ratio() for value in values.flat]
-    shift = max(denominator.bit_length() - 1 for _, denominator in ratios)
-    encoded = np.fromiter((numerator << (shift - (denominator.bit_length() - 1))
-                           for numerator, denominator in ratios), dtype=object, count=values.size).reshape(values.shape)
+    encoded, shift = _dyadic_units(values)
     numerator = np.zeros(shape, dtype=object)
     denominator = np.zeros(shape, dtype=object)
     squares = np.zeros(shape, dtype=object) if stddev else None
@@ -5123,7 +5231,7 @@ _SPECS = [
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('percentile', 'float', '可选单个0至100的有限百分位；全量固定线性插值，50为中位数；未提供时只返回原统计', None, False)], 'object', ['read']),
     (raster_cut_fill, OperatorCategory.RASTER_STATISTICS, '双DEM填挖方统计', [_INPUT(), _param('after_raster', 'raster', '施工后DEM，须与施工前同CRS、尺寸和完整网格，由用户保证相同高程基准', role='input'), _param('band', 'int', '显式施工前高程数据波段'), _param('after_band', 'int', '显式施工后高程数据波段'), _param('elevation_unit', 'str', '显式施工前高程单位', enum=list(_ELEVATION_METRES)), _param('after_elevation_unit', 'str', '显式施工后高程单位；挖填体积各非负，净增加为填方减挖方，统一立方米', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
-    (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
+    (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对显式提供；有限非负，缺失权重不补零，与percentile互斥', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；追加权重总和、加权求和与加权均值，原统计不改写', None, False), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）/weighted_stddev（非负矩阵加权总体标准差）/weighted_sum（非负矩阵加权求和；不归一化）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev', 'weighted_sum']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean/weighted_stddev/weighted_sum必填：同窗口3×3或5×5有限非负二维权重，至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean', 'weighted_stddev', 'weighted_sum']}})], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),

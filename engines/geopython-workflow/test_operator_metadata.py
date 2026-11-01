@@ -1379,7 +1379,7 @@ def test_zonal_percentile_keeps_single_table_entry_optional_parameter_and_origin
     specs = [spec for spec in list_operators() if spec['id'] == 'raster_zonal_statistics']
     assert len(specs) == 1
     spec = specs[0]; params = {param['name']: param for param in spec['parameters']}
-    assert set(params) == {'input_raster', 'zones_raster', 'band', 'zones_band', 'percentile'}
+    assert set(params) == {'input_raster', 'zones_raster', 'band', 'zones_band', 'percentile', 'weights_raster', 'weights_band'}
     assert all(params[name]['required'] for name in ('input_raster', 'zones_raster', 'band', 'zones_band'))
     assert params['percentile']['type'] == 'float' and not params['percentile']['required']
     assert 'default' not in params['percentile']
@@ -1481,3 +1481,18 @@ def test_focal_weighted_sum_single_entry_preserves_eleven_methods_and_weight_vis
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
     assert spec['detailed_description']['workflow_example']['params']['method']=='mean'
     assert not any(s['id']in ('raster_weighted_sum','raster_focal_weighted_sum')for s in list_operators())
+
+
+def test_zonal_weighted_single_table_entry_optional_pair_and_original_example():
+    specs=[s for s in list_operators()if s['id']=='raster_zonal_statistics'];assert len(specs)==1
+    spec=specs[0];params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','zones_raster','band','zones_band','percentile','weights_raster','weights_band'}
+    assert params['weights_raster']['type']=='raster'and params['weights_raster']['param_type']=='input'and not params['weights_raster']['required']
+    assert params['weights_band']['type']=='integer'and not params['weights_band']['required']
+    assert 'default'not in params['weights_raster']and 'default'not in params['weights_band']
+    assert '互斥'in params['weights_raster']['description']and '原统计'in params['weights_band']['description']
+    assert spec['effects']==['read']and spec['execution_modes']==['workflow']and spec['attributes']['resource_groups']==['raster']
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='DataFrame'
+    example=spec['detailed_description']['workflow_example']['params']
+    assert 'weights_raster'not in example and 'weights_band'not in example
+    assert not any(s['id']in ('raster_zonal_weighted_statistics','raster_weighted_zonal_statistics')for s in list_operators())

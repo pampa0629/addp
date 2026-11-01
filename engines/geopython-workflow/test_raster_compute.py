@@ -15913,3 +15913,309 @@ def test_focal_weighted_sum_mixed_complex_alpha_rejected_before_allocating_outpu
 def test_focal_weighted_sum_invalid_window_and_band_remain_strict(tmp_path,parameter,value):
     path=create_raster(tmp_path/'source.tif',np.ones((2,2)));params={'band':1,'window_size':3,'method':'weighted_sum','weights':[[1]*3]*3,parameter:value}
     with raster_workspace(),pytest.raises(ValueError):raster_focal_statistics(raster_load(source_plan(path)),**params)
+
+
+_ZONAL_ORIGINAL_COLUMNS=['zone_value','total_count','valid_count','invalid_count','sum','min','max','mean','stddev']
+_ZONAL_WEIGHT_COLUMNS=['weight_sum','weighted_sum','weighted_mean']
+
+
+def _zonal_weight_oracle(values,zones,weights,zone_valid,value_valid):
+    """Independent scalar Decimal sum of products, grouped by original integers."""
+    from decimal import Decimal,localcontext
+    answer={}
+    with localcontext()as context:
+        context.prec=2000
+        for code in sorted(set(int(v)for v in zones[zone_valid])):
+            pairs=[(Decimal.from_float(float(values[y,x])),Decimal.from_float(float(weights[y,x])))
+                   for y,x in zip(*np.nonzero(zone_valid & value_valid & (zones==code)))]
+            mass=sum((w for v,w in pairs),Decimal(0));total=sum((v*w for v,w in pairs),Decimal(0))
+            answer[code]=[float(mass),float(total),float(total/mass)if mass else None]if pairs else[None,None,None]
+    return answer
+
+
+def _zonal_weight_result(paths,*,weights_band=1,band=1,zones_band=1):
+    import operators.raster_compute as compute
+    v,z,w=[raster_load(source_plan(p))for p in paths]
+    return compute.raster_zonal_statistics(v,z,band,zones_band,weights_raster=w,weights_band=weights_band)
+
+
+def _assert_zonal_weight_table(table,expected):
+    import pandas as pd
+    assert table.columns.tolist()==_ZONAL_ORIGINAL_COLUMNS+_ZONAL_WEIGHT_COLUMNS
+    assert table.dtypes.astype(str).tolist()==['int64']*4+['Float64']*8
+    assert table.zone_value.tolist()==list(expected)
+    for row in table.itertuples(index=False):
+        wanted=expected[row.zone_value]
+        for name,value in zip(_ZONAL_WEIGHT_COLUMNS,wanted):
+            actual=getattr(row,name)
+            if value is None:assert pd.isna(actual)
+            else:assert actual==value
+
+
+@pytest.mark.parametrize('seed',[7,19,31])
+@pytest.mark.parametrize('rotated',[False,True])
+def test_zonal_weighted_independent_decimal_all_rows_original_nine_columns_and_source_immutable(tmp_path,seed,rotated):
+    import pandas as pd,operators.raster_compute as compute
+    rng=np.random.default_rng(seed);values=rng.normal(size=(9,13))*31.25;zones=rng.integers(-3,5,size=values.shape)
+    weights=rng.integers(0,9,size=values.shape).astype(float)/4;zvalid=rng.random(values.shape)>.13;vvalid=rng.random(values.shape)>.21
+    values[2,3]=0;values[3,4]=-2;zvalid[2,3]=vvalid[2,3]=True
+    grid=(100,2,.25,200,-.5,-3)if rotated else(100,2,0,200,0,-3)
+    paths=[create_raster(tmp_path/(name+'.tif'),array,grid,'EPSG:3857')for name,array in
+           [('v',np.where(vvalid,values,-9999)),('z',np.where(zvalid,zones,-9999)),('w',weights)]]
+    snapshots=[p.read_bytes()for p in paths]
+    with raster_workspace():
+        source,zone,weight=[raster_load(source_plan(p))for p in paths]
+        original=compute.raster_zonal_statistics(source,zone,1,1)
+        actual=compute.raster_zonal_statistics(source,zone,1,1,weights_raster=weight,weights_band=1)
+        pd.testing.assert_frame_equal(original,actual[_ZONAL_ORIGINAL_COLUMNS],check_exact=True)
+        _assert_zonal_weight_table(actual,_zonal_weight_oracle(values,zones,weights,zvalid,vvalid))
+    assert snapshots==[p.read_bytes()for p in paths]
+
+
+@pytest.mark.parametrize('case',['one','zero','empty-table','single','ignored-bad-weights'])
+def test_zonal_weighted_all_one_zero_and_empty_rules_preserve_schema_and_original_counts(tmp_path,case):
+    import pandas as pd,operators.raster_compute as compute
+    values=np.array([[0.,4.,-2.,3.,-9999.]]);zones=np.array([[0.,0.,-3.,2.,7.]]);weights=np.ones(values.shape)
+    if case=='zero':weights[:]=0
+    if case=='empty-table':zones[:]=-9999
+    if case=='single':weights[:]=0;weights[0,2]=3
+    if case=='ignored-bad-weights':weights[0,4]=-4;zones[0,3]=-9999;weights[0,3]=math.nan
+    paths=[create_raster(tmp_path/(n+'.tif'),a)for n,a in [('v',values),('z',zones),('w',weights)]]
+    with raster_workspace():
+        v,z,w=[raster_load(source_plan(p))for p in paths];original=compute.raster_zonal_statistics(v,z,1,1)
+        actual=compute.raster_zonal_statistics(v,z,1,1,weights_raster=w,weights_band=1)
+        pd.testing.assert_frame_equal(actual[_ZONAL_ORIGINAL_COLUMNS],original,check_exact=True)
+        _assert_zonal_weight_table(actual,_zonal_weight_oracle(values,zones,weights,zones!=-9999,values!=-9999))
+        if case=='one':
+            for new,old in [('weighted_sum','sum'),('weighted_mean','mean')]:pd.testing.assert_series_equal(actual[new],original[old],check_names=False,check_exact=True)
+        if case=='zero':assert actual.weight_sum.iloc[0]==0 and actual.weighted_sum.iloc[0]==0 and pd.isna(actual.weighted_mean.iloc[0])
+
+
+@pytest.mark.parametrize('factor',[.5,2.,8.])
+def test_zonal_weighted_absolute_mass_and_sum_scale_but_mean_does_not(tmp_path,factor):
+    import pandas as pd
+    values=np.array([[2.,4.,-3.,5.]]);zones=np.array([[0.,0.,7.,7.]]);weights=np.array([[1.,3.,0.,2.]])
+    vp=create_raster(tmp_path/'v.tif',values);zp=create_raster(tmp_path/'z.tif',zones);answers=[]
+    with raster_workspace():
+        for index,w in enumerate((weights,weights*factor)):
+            wp=create_raster(tmp_path/f'w{index}.tif',w);actual=_zonal_weight_result([vp,zp,wp]);answers.append(actual)
+            _assert_zonal_weight_table(actual,_zonal_weight_oracle(values,zones,w,np.ones(zones.shape,bool),np.ones(zones.shape,bool)))
+        pd.testing.assert_series_equal(answers[0].weight_sum*factor,answers[1].weight_sum,check_exact=True)
+        pd.testing.assert_series_equal(answers[0].weighted_sum*factor,answers[1].weighted_sum,check_exact=True)
+        pd.testing.assert_series_equal(answers[0].weighted_mean,answers[1].weighted_mean,check_exact=True)
+        assert answers[0].iloc[0].weighted_sum==14 and answers[0].iloc[0].weighted_mean==3.5
+
+
+@pytest.mark.parametrize('case',['cancel-overflow','subnormal','tiny-mass','mixed-scales','weighted-overflow','negative-overflow','mass-overflow'])
+def test_zonal_weighted_numerical_extremes_and_explicit_finite_output_failure(tmp_path,case):
+    import operators.raster_compute as compute
+    maximum=np.finfo(float).max;tiny=float(np.nextafter(0.,1.))
+    data={'cancel-overflow':([maximum,-maximum],[2.,2.]),'subnormal':([-tiny],[.5]),'tiny-mass':([1e308],[tiny]),
+          'mixed-scales':([1e308,1e-300],[1e-300,1e308]),'weighted-overflow':([maximum],[2.]),
+          'negative-overflow':([-maximum],[2.]),'mass-overflow':([0.,0.],[maximum,maximum])}
+    v,w=data[case];values=np.array([v]);weights=np.array([w]);zones=np.zeros(values.shape)
+    paths=[create_raster(tmp_path/(n+'.tif'),a)for n,a in [('v',values),('z',zones),('w',weights)]]
+    with raster_workspace(),raster_error_language('en'):
+        if case.endswith('overflow')and case!='cancel-overflow':
+            with pytest.raises(ValueError,match='Weighted zonal statistics exceed the finite Float64'):_zonal_weight_result(paths)
+        else:
+            with np.errstate(over='raise',invalid='raise'):actual=_zonal_weight_result(paths)
+            _assert_zonal_weight_table(actual,_zonal_weight_oracle(values,zones,weights,np.ones(zones.shape,bool),np.ones(zones.shape,bool)))
+
+
+@pytest.mark.parametrize('weights',[{'weights_band':1},{'weights_raster':object()},{'weights_raster':None,'weights_band':1},{'weights_raster':object(),'weights_band':None},{'weights_raster':None,'weights_band':None}])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_weighted_pair_contract_fails_before_opening_or_allocating(monkeypatch,weights,language):
+    import operators.raster_compute as compute
+    monkeypatch.setattr(compute,'_open',lambda *_:pytest.fail('invalid pair opened an input'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:compute.raster_zonal_statistics(None,None,1,1,**weights)
+    with raster_error_language(language):assert str(error.value)==str(compute._zonal_weight_error('pair'))
+
+
+@pytest.mark.parametrize('percentile',[0,50,100,None,True,'50'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_weighted_percentile_is_explicitly_mutually_exclusive_before_open(monkeypatch,percentile,language):
+    import operators.raster_compute as compute
+    monkeypatch.setattr(compute,'_open',lambda *_:pytest.fail('conflicting request opened inputs'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:compute.raster_zonal_statistics(None,None,1,1,percentile,weights_raster=object(),weights_band=1)
+    with raster_error_language(language):assert str(error.value)==str(compute._zonal_weight_error('percentile'))
+
+
+@pytest.mark.parametrize('fault',['missing','mask','alpha','nan','infinity','negative'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_weighted_required_weight_rejects_missing_nonfinite_or_negative_exactly(tmp_path,fault,language):
+    import operators.raster_compute as compute
+    paths=[create_raster(tmp_path/(n+'.tif'),a)for n,a in [('v',np.array([[0.,4.]])),('z',np.zeros((1,2))),('w',np.stack([np.ones((1,2)),np.full((1,2),128.)]))]]
+    ds=gdal.Open(str(paths[2]),gdal.GA_Update)
+    if fault=='alpha':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(2).WriteArray(np.array([[0.,128.]]))
+    elif fault=='mask':
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        ds.GetRasterBand(1).GetMaskBand().WriteArray(np.array([[0,255]],np.uint8))
+    else:ds.GetRasterBand(1).WriteArray(np.array([[{'missing':-9999.,'nan':math.nan,'infinity':math.inf,'negative':-1.}.get(fault,1.),1.]]))
+    ds=None;before=[p.read_bytes()for p in paths]
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:_zonal_weight_result(paths)
+    with raster_error_language(language):assert str(error.value)==str(compute._zonal_weight_error('negative'if fault=='negative'else'coverage'))
+    assert before==[p.read_bytes()for p in paths]
+
+
+@pytest.mark.parametrize('band',[0,True,1.,'1',99])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_weighted_explicit_weight_band_remains_strict(tmp_path,band,language):
+    import operators.raster_compute as compute
+    paths=[create_raster(tmp_path/(n+'.tif'),np.ones((2,3)))for n in ('v','z','w')]
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:_zonal_weight_result(paths,weights_band=band)
+    with raster_error_language(language):assert str(error.value)==str(compute._zonal_weight_error('band'))
+
+
+@pytest.mark.parametrize('fault',['grid','size','crs','no-grid','no-crs','singular','alpha','complex'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_weighted_weight_grid_and_band_type_accurate_rejection(tmp_path,fault,language):
+    import operators.raster_compute as compute
+    paths=[create_raster(tmp_path/(n+'.tif'),np.ones((2,3)))for n in ('v','z','w')]
+    if fault=='size':paths[2]=create_raster(paths[2],np.ones((2,4)))
+    elif fault=='no-grid':paths[2]=create_raster(paths[2],np.ones((2,3)),transform=None)
+    elif fault=='complex':
+        reference=gdal.Open(str(paths[0]));ds=gdal.GetDriverByName('GTiff').Create(str(paths[2]),3,2,1,gdal.GDT_CFloat64);ds.SetGeoTransform(reference.GetGeoTransform());ds.SetProjection(reference.GetProjection());ds.GetRasterBand(1).WriteArray(np.ones((2,3),np.complex128)*(1+2j));reference=ds=None
+    else:
+        ds=gdal.Open(str(paths[2]),gdal.GA_Update)
+        if fault=='grid':ds.SetGeoTransform((1,1,0,4,0,-1))
+        elif fault=='singular':ds.SetGeoTransform((0,1,1,4,1,1))
+        elif fault=='crs':reference=osr.SpatialReference();assert reference.ImportFromEPSG(3857)==0;ds.SetSpatialRef(reference)
+        elif fault=='no-crs':ds.SetProjection('')
+        else:ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+        ds=None
+    key=fault if fault in ('alpha','complex')else'grid'
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:_zonal_weight_result(paths)
+    with raster_error_language(language):assert str(error.value)==str(compute._zonal_weight_error(key))
+
+
+@pytest.mark.parametrize('role',['values','zones','weights'])
+@pytest.mark.parametrize('dtype,nodata',[('Int64',-2**63),('UInt64',2**64-2)])
+def test_zonal_weighted_each_role_native_nodata_membership_precedes_float_conversion(tmp_path,role,dtype,nodata):
+    import operators.raster_compute as compute
+    arrays={'values':np.array([[2.,3.,4.]]),'zones':np.array([[0.,7.,-3.]]),'weights':np.array([[1.,2.,3.]])}
+    arrays[role]=np.array([[nodata,nodata+1 if dtype=='Int64'else nodata-1,7]],dtype=np.int64 if dtype=='Int64'else np.uint64)
+    # Weight NoData is legal only where a value is not required.
+    if role=='weights':arrays['values'][0,0]=-9999
+    paths=[]
+    for key in ('values','zones','weights'):
+        path=tmp_path/(key+'.tif')
+        if key==role:
+            ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,getattr(gdal,'GDT_'+dtype));reference=osr.SpatialReference();assert reference.ImportFromEPSG(4326)==0;ds.SetSpatialRef(reference);ds.SetGeoTransform((0,1,0,4,0,-1))
+            band=ds.GetRasterBand(1);band.WriteArray(arrays[key]);(band.SetNoDataValueAsInt64 if dtype=='Int64'else band.SetNoDataValueAsUInt64)(nodata);band=ds=None
+        else:create_raster(path,arrays[key])
+        paths.append(path)
+    if role=='zones'and dtype=='UInt64':
+        with raster_workspace(),pytest.raises(ValueError,match='signed Int64'):_zonal_weight_result(paths)
+        return
+    zvalid=arrays['zones']!=(nodata if role=='zones'else-9999);vvalid=arrays['values']!=(nodata if role=='values'else-9999)
+    if role=='weights'and dtype=='Int64':
+        with raster_workspace(),raster_error_language('en'),pytest.raises(ValueError,match='must be nonnegative'):_zonal_weight_result(paths)
+        return
+    with raster_workspace():actual=_zonal_weight_result(paths)
+    _assert_zonal_weight_table(actual,_zonal_weight_oracle(arrays['values'],arrays['zones'],arrays['weights'],zvalid,vvalid))
+
+
+@pytest.mark.parametrize('rotated',[False,True])
+def test_zonal_weighted_cross_block_full_table_exact_cancellation_and_bounded_three_input_reads(tmp_path,monkeypatch,rotated):
+    import pandas as pd,operators.raster_compute as compute
+    values=np.zeros((515,1030));zones=np.full(values.shape,7.);weights=np.zeros(values.shape)
+    values[0,[0,512,1024]]=[1e16,1.,-1e16];weights[0,[0,512,1024]]=[2.,3.,2.]
+    grid=(100,2,.25,200,-.5,-3)if rotated else(100,2,0,200,0,-3)
+    paths=[create_raster(tmp_path/(n+'.tif'),a,grid,'EPSG:3857')for n,a in [('v',values),('z',zones),('w',weights)]]
+    snapshots=[p.read_bytes()for p in paths];reads=[];blocks=compute._blocks
+    def bounded(*args,**kwargs):
+        assert kwargs.get('native')is True
+        for x,y,arrays,masks in blocks(*args,**kwargs):
+            assert arrays[0].shape[0]<=512 and arrays[0].shape[1]<=512;reads.append((x,y));yield x,y,arrays,masks
+    with raster_workspace():
+        loaded=[raster_load(source_plan(p))for p in paths];original=compute.raster_zonal_statistics(loaded[0],loaded[1],1,1)
+        monkeypatch.setattr(compute,'_blocks',bounded)
+        actual=compute.raster_zonal_statistics(loaded[0],loaded[1],1,1,weights_raster=loaded[2],weights_band=1)
+        pd.testing.assert_frame_equal(original,actual[_ZONAL_ORIGINAL_COLUMNS],check_exact=True)
+        assert actual.iloc[0].weight_sum==7 and actual.iloc[0].weighted_sum==3 and actual.iloc[0].weighted_mean==float(__import__('fractions').Fraction(3,7))
+        assert len(reads)==18 and set(reads)=={(x,y)for x in(0,512,1024)for y in(0,512)}
+    assert snapshots==[p.read_bytes()for p in paths]and all(not v.workspace.exists()for v in loaded)
+
+
+@pytest.mark.parametrize('role',['values','zones','weights'])
+def test_zonal_weighted_explicit_three_role_bands_raw_values_masks_and_partial_alpha(tmp_path,role):
+    values=np.arange(15,dtype=float).reshape(3,5)/4-1;zones=np.tile(np.arange(5)%2,(3,1)).astype(float);weights=np.tile(np.arange(5)%4+1,(3,1)).astype(float)
+    if role=='weights':values[0,:2]=-9999
+    valid=values!=-9999;zvalid=np.ones(zones.shape,bool);paths=[]
+    for key,array in [('values',values),('zones',zones),('weights',weights)]:
+        path=create_raster(tmp_path/(key+'.tif'),np.stack([np.full(array.shape,np.nan),array,np.full(array.shape,255.)]));ds=gdal.Open(str(path),gdal.GA_Update)
+        ds.GetRasterBand(2).SetScale(0);ds.GetRasterBand(2).SetOffset(999)
+        ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+        if key==role:
+            alpha=np.full(array.shape,255.);alpha[0,0]=0;alpha[0,2]=128;ds.GetRasterBand(3).WriteArray(alpha)
+            with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+            mask=np.full(array.shape,255,np.uint8);mask[0,1]=0;ds.GetRasterBand(2).GetMaskBand().WriteArray(mask)
+            if role=='values':valid[0,:2]=False
+            elif role=='zones':zvalid[0,:2]=False
+        ds=None;paths.append(path)
+    before=[p.read_bytes()for p in paths]
+    with raster_workspace():actual=_zonal_weight_result(paths,band=2,zones_band=2,weights_band=2)
+    _assert_zonal_weight_table(actual,_zonal_weight_oracle(values,zones,weights,zvalid,valid))
+    assert before==[p.read_bytes()for p in paths]
+
+
+def test_zonal_weighted_mixed_complex_alpha_on_weights_fails_before_accumulation(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'v.tif',np.ones((2,2)));marker=object();source=gdal.Open(str(path))
+    mixed=gdal.GetDriverByName('VRT').Create('',2,2,0);mixed.SetGeoTransform(source.GetGeoTransform());mixed.SetProjection(source.GetProjection());mixed.AddBand(gdal.GDT_Float64);mixed.AddBand(gdal.GDT_CFloat64);mixed.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    original=compute._open;monkeypatch.setattr(compute,'_open',lambda value:mixed if value is marker else original(value))
+    monkeypatch.setattr(compute._ZoneWeights,'add',lambda *a:pytest.fail('complex alpha reached accumulation'))
+    with raster_workspace(),raster_error_language('en'),pytest.raises(ValueError,match='complex alpha'):
+        value=raster_load(source_plan(path));compute.raster_zonal_statistics(value,value,1,1,weights_raster=marker,weights_band=1)
+
+
+@pytest.mark.parametrize('case',['direct','reclassify-weights','zero','negative','missing','bad-band','conflict','save-existing','summary-failure'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_weighted_async_full_csv_preview_submitted_language_source_and_old_result_cleanup(tmp_path,monkeypatch,case,language):
+    import pandas as pd,api_server,workflow_engine,operators.raster_compute as compute
+    values=np.arange(72,dtype=float).reshape(6,12)/4-3;zones=np.arange(72,dtype=float).reshape(6,12);weights=(zones%4)/2
+    if case=='zero':weights[:]=0
+    if case=='negative':weights[0,0]=-1
+    if case=='missing':weights[0,0]=-9999
+    paths=[create_raster(tmp_path/(n+'.tif'),a)for n,a in [('values',values),('zones',zones),('weights',weights)]];snapshots=[p.read_bytes()for p in paths]
+    target=tmp_path/'weighted.csv'
+    if case=='save-existing':target.write_bytes(b'previous exact CSV bytes')
+    tasks=[{'id':n,'operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(p)}}for n,p in zip(('values','zones','weights'),paths)];prior='weights';expected_weights=weights
+    if case=='reclassify-weights':
+        tasks.append({'id':'mass','operator':'raster_reclassify','depends_on':['weights'],'params':{'input_raster':{'$ref':'weights'},'band':1,'rules':[{'min':None,'max':1,'class':0},{'min':1,'max':None,'class':2}]}});prior='mass';expected_weights=np.where(weights<1,0.,2.)
+    params={'input_raster':{'$ref':'values'},'zones_raster':{'$ref':'zones'},'band':1,'zones_band':1,'weights_raster':{'$ref':prior},'weights_band':99 if case=='bad-band'else 1}
+    if case=='conflict':params['percentile']=50
+    tasks.extend([{'id':'stats','operator':'raster_zonal_statistics','depends_on':['values','zones',prior],'params':params},
+        {'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def track(name,params):
+        if name=='raster_zonal_statistics':workspaces.extend(params[key].workspace for key in ('input_raster','zones_raster','weights_raster'))
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',track)
+    if case=='summary-failure':
+        def broken(*args):raise RuntimeError('injected weighted summary failure')
+        monkeypatch.setattr(compute._ZoneWeights,'summary',broken)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json;deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    success=case in('direct','reclassify-weights','zero')
+    assert status['status']==('success'if success else'failed'),status
+    assert workspaces and all(not p.exists()for p in workspaces)and snapshots==[p.read_bytes()for p in paths]
+    if success:
+        frame=pd.read_csv(target,dtype={n:'int64'if i<4 else'Float64'for i,n in enumerate(_ZONAL_ORIGINAL_COLUMNS+_ZONAL_WEIGHT_COLUMNS)})
+        expected=_zonal_weight_oracle(values,zones,expected_weights,np.ones(zones.shape,bool),np.ones(values.shape,bool));_assert_zonal_weight_table(frame,expected)
+        assert frame['sum'].tolist()==values.ravel().tolist()and(frame.valid_count==1).all()and(frame.stddev==0).all()
+        preview=json.loads(status['all_results']['stats']);assert preview['type']=='pandas_dataframe'and preview['row_count']==72 and preview['truncated']is True
+        assert preview['preview_limit']==len(preview['preview_rows'])==50 and [f['name']for f in preview['schema']]==frame.columns.tolist()
+        assert json.loads(status['result'])==preview
+    elif case=='save-existing':assert target.read_bytes()==b'previous exact CSV bytes'
+    else:
+        assert not target.exists()
+        with raster_error_language(language):cause='injected weighted summary failure'if case=='summary-failure'else str(compute._zonal_weight_error({'negative':'negative','missing':'coverage','bad-band':'band','conflict':'percentile'}[case]))
+        assert status['error']=='任务 stats 执行失败: '+cause
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    assert client.post('/api/operators/raster_zonal_statistics/invoke',json={'params':{}}).status_code==403

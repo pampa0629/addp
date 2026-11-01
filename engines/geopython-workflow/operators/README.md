@@ -222,6 +222,8 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 
 `raster_statistics`可附加单个`percentile`（0–100有限实数），使用同一固定线性插值并返回`percentile/percentile_value`，未提供时保持原统计对象字段。全量分块读取与执行内有界归并排序，不采样、不作直方图近似；全无效时百分位值为null，原生NoData先判定，随后沿Float64数值边界。临时排序沿原磁盘账本保留2GiB、成功失败均清理；空间不足／不可读或统计范围失败明确报错。仅只读对象，不生成持久化成果，详细边界见栅格算子契约。
 
+`raster_zonal_statistics`可显式成对提供`weights_raster/weights_band`，与percentile互斥，在原九列后追加weight_sum／weighted_sum／weighted_mean；原统计不改写，全1复用原sum／mean。有效数值位置的权重须有效有限非负，缺失不补零；全零权重为0／0／null，无有效数值组新增三项null。三输入同网格／CRS、原生NoData先判定，按块精确累计并最终舍入，真实溢出明确失败；保留普通表／CSV、50行预览及清理，不增加面板入口或权限，详见栅格算子契约。
+
 `raster_zonal_statistics`可附加同一单个`percentile`，在原九列后追加`percentile/percentile_value`；按精确整数分区的全部有效数值独立计算，空组为null，分区全无效保留空表Schema。原统计口径、同网格双输入、普通表／CSV保存及最多50行预览保持；私有有界分块归并按分区与数值排序，复用磁盘账本及2GiB安全余量，成功失败均清理，不为每区保留全部像元或打开文件。
 
 `raster_vector_zonal_statistics`可附加同一单个`percentile`，逐原始面全量固定线性插值，在原八个统计字段后按原前缀追加`percentile/percentile_value`，同名冲突失败。原中心／全部触及覆盖、孔洞、重叠分别计入及属性／几何／行序／索引保持；无覆盖／无有效数值保留行且值null，原生NoData先判定，逐面私有外排序后释放，沿磁盘账本保留2GiB。结果仍走原矢量保存路径，不增加面板入口、权限或自动重投影。
