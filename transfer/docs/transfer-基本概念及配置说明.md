@@ -431,7 +431,7 @@ bounded + incremental + watermark + upsert
 
 ## 八、Continuous/Kafka v1 契约与当前实现边界
 
-第一条 continuous 实现路径为业务 Kafka keyed JSON record -> PostgreSQL/MySQL native table upsert。业务 Kafka 作为 System Engine 暴露 `service -> topic` catalog；用户选择 `type=topic` locator，partition 不进入资源树或 locator。Infra Kafka 是数据库 CDC 的内部实现，不进入公开任务配置。
+业务 Kafka continuous 路径为 keyed JSON record -> PostgreSQL/MySQL native table upsert。业务 Kafka 作为 System Engine 暴露 `service -> topic` catalog；用户选择 `type=topic` locator，partition 不进入资源树或 locator。Infra Kafka 是数据库 CDC 的内部实现，不进入公开任务配置。
 
 Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和 per-partition provider position；Transfer adapter 只接受 JSON object，从 value 的显式非空字段提取稳定 key，并归一化为 `operation=upsert` ChangeEvent。任务必须提供完整 `field_mapping` 固定目标 schema，source key 映射后必须与目标 keys 一一对应，并显式提交 `runtime.record_failure.mode=block|dead_letter`，不得依赖字段省略猜默认值。
 
@@ -441,7 +441,11 @@ Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和
 
 每个 partition 的主状态继续存储在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`。consumer auto commit 禁用；目标提交后才允许以 runtime fencing token + state version 做 CAS。首次无状态 partition 必须显式选择 `earliest|latest`。
 
-continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_state`、原子 start/pause/resume/stop、session owner/lease/heartbeat/fencing、supervisor、业务 Kafka JSON upsert + DLQ 和 PostgreSQL/MySQL/Oracle CDC snapshot/upsert/delete 已实现。业务 Kafka与数据库 CDC 共用同一个 consumer/apply/CAS 主循环；Oracle 捕获边界见[数据库 CDC 语义](transfer-任务语义与同步模式.md#63-数据库-cdc)。consumer group 只负责 partition assignment，Kafka auto commit 禁用。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。Console Wizard 已支持业务 Kafka 以及 PostgreSQL/MySQL/Oracle CDC 配置，业务 Kafka 默认显式发送 `block`；公开 API 可显式选择 `dead_letter`。execution 详情展示 owner、heartbeat、lease、fencing token、每个 partition 的 committed next offset 与最近提交时间。当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。
+业务 Kafka JSON upsert + DLQ 与 PostgreSQL/MySQL/Oracle CDC snapshot/upsert/delete 已实现，并共用同一个 consumer/apply/CAS 主循环；continuous worker 不使用 Asynq。独立进程角色、状态控制与租约归属见[Continuous 运行时](transfer-任务语义与同步模式.md#六continuous-运行时)，交付与恢复约束以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。
+
+Console Wizard 已支持业务 Kafka 以及 PostgreSQL/MySQL/Oracle CDC 配置。业务 Kafka 默认显式发送 `block`，公开 API 可显式选择 `dead_letter`，完整策略见[Kafka 与 DLQ 契约](../../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。execution 详情展示 owner、heartbeat、lease、fencing token、每个 partition 的 committed next offset 与最近提交时间。
+
+当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。能力摘要和详情展示不作为当前版本的运行通过记录，固定版本证据、失败与未覆盖项见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
 
 `dead_letter` 只处理业务 Kafka JSON 解码、字段/key 校验和类型转换阶段的确定性记录错误。处理顺序固定为 DLQ payload -> `transfer.dead_letters` 控制索引 -> 目标 `skip` ledger -> `transfer.sync_states` CAS；source/poll、目标、fencing、retention 和 Infra 故障仍严格阻塞。DLQ topic 不是 replay source。
 
