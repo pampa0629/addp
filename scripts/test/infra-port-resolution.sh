@@ -210,11 +210,15 @@ trap 'result=$?; if [[ $result != 0 && -f "$TEST_DIR/online.log" ]]; then cat "$
 mkdir -p "$TEST_DIR/bin" "$TEST_DIR/repo/scripts/infra"
 cp "${SCRIPT_DIR}/../infra/down.sh" "$TEST_DIR/repo/scripts/infra/down.sh"
 cp -R "${SCRIPT_DIR}/../infra/postgres-observation" "$TEST_DIR/repo/scripts/infra/"
-printf 'ADDP_POSTGRES_METRICS_ENABLED=false\n' > "$TEST_DIR/online.env"
+cp "${SCRIPT_DIR}/../infra/redis-metrics.py" "$TEST_DIR/repo/scripts/infra/redis-metrics.py"
+printf 'ADDP_POSTGRES_METRICS_ENABLED=false\nADDP_REDIS_METRICS_ENABLED=false\n' > "$TEST_DIR/online.env"
 mkdir -p "$TEST_DIR/repo/scripts/utils"
-cp "${SCRIPT_DIR}/../utils/deployment-inventory.py" "$TEST_DIR/repo/scripts/utils/deployment-inventory.py"
+for dependency in deployment-inventory.py private-state.py deployment-docker.py; do
+  cp "${SCRIPT_DIR}/../utils/$dependency" "$TEST_DIR/repo/scripts/utils/$dependency"
+done
 export ADDP_DEPLOYMENT_DISCOVERY_DIR="$TEST_DIR/repo/.dev-state/deployment-discovery"
 export ADDP_POSTGRES_METRICS_STATE_DIR="$TEST_DIR/postgres-state"
+export ADDP_REDIS_METRICS_STATE_DIR="$TEST_DIR/redis-state"
 cat > "$TEST_DIR/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -286,5 +290,6 @@ env GITHUB_ACTIONS=true ADDP_ONLINE_HOST=1 ADDP_ONLINE_TEST=1 \
   MOCK_WORKING_DIR="$TEST_DIR/repo" \
   bash "$DOWN_SCRIPT" --volumes --force </dev/null >"$TEST_DIR/online.log" 2>&1
 [ "$(cat "$MOCK_MARKER")" = -v ]
+grep -Fq "Redis metrics infra: not installed; disabled" "$TEST_DIR/online.log"
 
 echo 'ADDP Infra down safety OK'
