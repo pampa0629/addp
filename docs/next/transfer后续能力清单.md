@@ -29,14 +29,16 @@
 | Schema Registry | 当前不连接 Registry | Registry 类型、认证、subject/version 选择、兼容策略和缓存失效 |
 | Avro / Protobuf | 当前只解码 JSON object | 编码与 envelope 分离、逻辑类型、schema version 与历史消息绑定 |
 | Kafka target | 当前 Kafka 只能作为业务 source | writer Provider、partition key、交付确认、幂等、事务和目标资源 owner |
-| Replay 扩展到其他目标 | bounded replay 当前只写不存在的新 PostgreSQL 隔离表 | 其他目标的 execution-scoped ledger、隔离保证和能力声明 |
+| [Replay 扩展到其他目标](../spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约) | 当前仅业务 Kafka record/json 的显式 offset ranges 可写入不存在的新 PostgreSQL 隔离表，不含 CDC 重放或 DLQ topic 读取 | 其他目标的 execution-scoped ledger、隔离保证和能力声明 |
+
+业务 Kafka 的记录错误策略与 replay 分工见[业务 Kafka 语义](../../transfer/docs/transfer-任务语义与同步模式.md#62-业务-kafka)及[Checkpoint 与 Replay](../../transfer/docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)，完整约束以[Kafka 与 DLQ 契约](../spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)为准。replay 从原业务 topic 读取，DLQ topic 不是 replay source；它使用独立 bounded execution、execution-scoped apply identity 和隔离目标，不改主状态、水位、lease、主 apply identity 或主目标，可与主 runtime 并行，失败不改变主任务状态或触发 continuous 恢复 circuit。DLQ 的 Tenant/task 查询隔离与 payload 安全见[公开查询与来源隔离](../../transfer/docs/数据库架构.md#dlq-公开查询与来源隔离)。DLQ 查询成功或 `payload_available=true` 不证明 replay 通过，也不代表 CDC replay/DLQ 已开放；固定版本证据、失败与未覆盖项按[模块验证](../../transfer/CLAUDE.md#开发与验证)的原始场景认定。
 
 ## 三、数据库 CDC
 
 | 能力 | 当前缺口 | 进入实现前必须确认 |
 |---|---|---|
-| CDC replay | 当前只允许从 committed position resume | 历史范围、独立 apply identity、隔离目标、capture generation 与 retention |
-| CDC DLQ | schema/protocol/source/target 错误当前全部阻塞 | 哪些错误允许跳过、删除事件完整性、原始 envelope 审计和 position 推进规则 |
+| [CDC replay](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 尚未开放历史范围重放；现有 committed position resume 受[生命周期](../../transfer/docs/transfer-任务语义与同步模式.md#64-生命周期)和审批准入约束，不能替代 replay | 历史范围、独立 apply identity、隔离目标、capture generation 与 retention |
+| [CDC DLQ](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 尚未开放；schema/protocol/source/target 错误仍失败／阻塞，不能套用业务 Kafka 的 `dead_letter` 跳过 | 哪些错误允许跳过、删除事件完整性、原始 envelope 审计和 position 推进规则 |
 | Truncate | Debezium truncate 事件当前拒绝 | 目标清空权限、事务边界、并发事件顺序和不可逆确认 |
 | [自动 DDL](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 尚未开放；人工 additive 审批限 PostgreSQL/MySQL 源当前阻塞消息中的新增 nullable、非主键、非 geometry 字段，Oracle 源 drift 须 Stop 后新建任务与目标表；完整准入、状态转换及失败语义见[审批恢复配置](../../transfer/docs/transfer-基本概念及配置说明.md#schema-drift-与审批恢复) | record 绑定的 schema version、目标 Provider DDL 原子性、回滚和审批策略 |
 | 多表 CDC | 当前一个任务只绑定一张源表和一张新目标表 | table identity、路由、每表 schema revision、部分失败和资源生命周期 |
