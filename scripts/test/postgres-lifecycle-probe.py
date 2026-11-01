@@ -73,6 +73,53 @@ try:
             assert password not in sample()
             probe.password(user, password)
             assert probe.sql('SELECT current_user;', user) == user
+            recovery = module.SourceLifecycle(docker, scope, state, lambda: module.ObservationDatabase(
+                docker, probe.project, ROOT/'scripts/test', scope, maintenance='addp_test'), project=probe.project)
+            def account_state():
+                return probe.sql(f"SELECT json_build_object('canlogin',r.rolcanlogin,'inherit',r.rolinherit,'limit',r.rolconnlimit,'config',r.rolconfig, 'password',md5(a.rolpassword)) FROM pg_catalog.pg_authid a JOIN pg_catalog.pg_roles r USING(oid) WHERE a.rolname='{user}';")
+            account_before = account_state()
+            hba_before = probe.read_hba()
+            ids_before = manager.source_containers()
+            files_before = {str(p.relative_to(state)):(p.read_bytes(),p.stat().st_ino,p.stat().st_mtime_ns)
+                            for p in state.rglob('*') if p.is_file()}
+            assert recovery.recover(environment).startswith('healthy')
+            assert manager.source_containers() == ids_before, 'healthy recovery recreated sources'
+            assert all((state/name).read_bytes()==facts[0] and (state/name).stat().st_ino==facts[1]
+                       and (state/name).stat().st_mtime_ns==facts[2] for name,facts in files_before.items())
+            manager.stop_sources()
+            assert recovery.recover(environment).startswith('source recovered')
+            assert password not in sample()
+            assert account_state()==account_before and probe.read_hba()==hba_before, 'recovery changed account or HBA'
+            # An existing login with expanded permissions must not be repaired or reused.
+            probe.sql(f'GRANT pg_read_all_stats TO {user};')
+            try:
+                try:
+                    recovery.recover(environment)
+                except module.LifecycleError as error:
+                    assert 'installation drift' in str(error), str(error)
+                else:
+                    raise AssertionError('Recovery accepted observer membership drift')
+                assert probe.sql(f"SELECT pg_has_role('{user}','pg_read_all_stats','MEMBER');")=='t'
+            finally:
+                probe.sql(f'REVOKE pg_read_all_stats FROM {user};')
+            # Restart only this disposable database; the same container ID must
+            # receive a new startup binding without any account/HBA installation.
+            before = database().facts
+            subprocess.run(probe.compose+['restart','postgres'],check=True,capture_output=True,text=True,timeout=30)
+            deadline=time.monotonic()+20
+            while True:
+                ready=docker.run(['exec',before['id'],'pg_isready','-U','postgres'],check=False)
+                if ready.returncode==0:break
+                assert time.monotonic()<deadline, 'Disposable PostgreSQL did not return ready'
+                time.sleep(.1)
+            after=database().facts
+            assert before['id']==after['id'] and before['started_at']!=after['started_at']
+            assert recovery.recover(environment).startswith('source recovered')
+            assert password not in sample()
+            assert account_state()==account_before and probe.read_hba()==hba_before, 'restart recovery changed account or HBA'
+            assert all(docker.fact(identity)['labels']['io.addp.postgres-metrics.database-started-at']==after['started_at']
+                       for _,identity in manager.source_containers())
+            print('PostgreSQL recovery T2: '+scope+' healthy no-op, stopped source, same-container restart, current binding and unchanged account/HBA passed', flush=True)
             manager.up(environment)
             assert (state/'password').read_text() == password, 'up silently rotated the credential'
             assert password not in sample()
@@ -89,6 +136,15 @@ try:
             manager.down()
             assert probe.sql(f"SELECT rolcanlogin FROM pg_roles WHERE rolname='{user}';") == 'f'
             assert not manager.source_containers(), 'Owned test project retained observation sources'
+            try:
+                recovery.recover(environment)
+            except module.LifecycleError:
+                pass
+            else:
+                raise AssertionError('Recovery re-enabled a deliberately disabled observer')
+            assert not manager.source_containers()
+            assert probe.sql(f"SELECT rolcanlogin FROM pg_roles WHERE rolname='{user}';")=='f'
+
             refused = subprocess.run(probe.command(user), input='SELECT 1;', capture_output=True, text=True, timeout=10)
             assert refused.returncode != 0 and 'not permitted to log in' in refused.stderr
             manager.up(environment)
@@ -132,7 +188,7 @@ try:
             else:
                 raise AssertionError('Lost credentials must not silently reset an existing account')
             assert probe.sql(f"SELECT rolcanlogin FROM pg_roles WHERE rolname='{user}';") == 'f'
-            print('PostgreSQL lifecycle T2: '+scope+' install, mTLS, idempotence, NOLOGIN, reenable, session refusal and lost-secret rejection passed', flush=True)
+            print('PostgreSQL lifecycle T2: '+scope+' install, mTLS, healthy no-op, stopped-source and same-container restart recovery, unchanged account/HBA, permission-drift and disabled-account refusal, idempotence, NOLOGIN, reenable, session refusal and lost-secret rejection passed', flush=True)
         finally:
             manager.down()
             current = probe.read_hba()

@@ -14,6 +14,7 @@ import secrets
 import subprocess
 import sys
 import time
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -38,7 +39,8 @@ ACTIVATION_STAGES = frozenset({'session-check', 'transport-check', 'private-stat
 FACT = ('{"id":{{json .Id}},"running":{{json .State.Running}},'
         '"started_at":{{json .State.StartedAt}},'
         '"labels":{{json .Config.Labels}},"networks":{{json .NetworkSettings.Networks}},'
-        '"mounts":{{json .Mounts}}}')
+        '"mounts":{{json .Mounts}},"network_mode":{{json .HostConfig.NetworkMode}},'
+        '"ports":{{json .HostConfig.PortBindings}}}')
 
 
 class LifecycleError(ValueError):
@@ -61,6 +63,62 @@ def install_input(scope, password, enabled):
         raise LifecycleError('Invalid observation installation intent')
     return (f"\\set observer_scope '{scope}'\n\\set observer_enabled '{str(enabled).lower()}'\n"
             + "\\set observer_verifier '" + verifier(password) + "'\n" + SQL.read_text())
+
+
+def recovery_verification(scope):
+    """Fixed catalog-only predicate, evaluated as the existing observer login."""
+    if scope not in ('infra', 'business'):
+        raise LifecycleError('Invalid observation verification scope')
+    body = SQL.read_text().split('$snapshot$')[1]
+    body_hash = hashlib.md5(body.encode()).hexdigest()
+    return f"""WITH r AS (SELECT * FROM pg_catalog.pg_roles WHERE rolname=current_user),
+ o AS (SELECT * FROM pg_catalog.pg_roles WHERE rolname='addp_observation_owner'),
+ n AS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname='addp_observation'),
+ p AS (SELECT * FROM pg_catalog.pg_proc WHERE oid=pg_catalog.to_regprocedure('addp_observation.snapshot()'))
+SELECT current_user='addp_{scope}_observer'
+ AND pg_catalog.current_setting('server_version_num')::integer BETWEEN 150000 AND 159999
+ AND r.rolcanlogin AND NOT r.rolinherit AND NOT r.rolsuper AND NOT r.rolcreatedb
+ AND NOT r.rolcreaterole AND NOT r.rolreplication AND NOT r.rolbypassrls AND r.rolconnlimit=2
+ AND pg_catalog.shobj_description(r.oid,'pg_authid')='addp.postgres-observation/v1:{scope}:reader'
+ AND r.rolconfig @> ARRAY['default_transaction_read_only=on','statement_timeout=3s',
+   'idle_in_transaction_session_timeout=5s','search_path=pg_catalog, pg_temp']
+ AND NOT o.rolcanlogin AND o.rolinherit AND NOT o.rolsuper AND NOT o.rolcreatedb
+ AND NOT o.rolcreaterole AND NOT o.rolreplication AND NOT o.rolbypassrls
+ AND pg_catalog.shobj_description(o.oid,'pg_authid')='addp.postgres-observation/v1:{scope}:owner'
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members m WHERE m.member=r.oid OR m.roleid IN(r.oid,o.oid)
+   OR (m.member=o.oid AND (m.roleid<>'pg_read_all_stats'::regrole OR m.admin_option)))
+ AND EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members m WHERE m.member=o.oid AND m.roleid='pg_read_all_stats'::regrole)
+ AND n.nspowner=o.oid AND pg_catalog.obj_description(n.oid,'pg_namespace')='addp.postgres-observation/v1:{scope}'
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class WHERE relnamespace=n.oid)
+ AND (SELECT count(*) FROM pg_catalog.pg_proc WHERE pronamespace=n.oid)=1
+ AND p.pronamespace=n.oid AND p.proowner=o.oid AND p.pronargs=0 AND p.prosecdef AND p.provolatile='s'
+ AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql')
+ AND pg_catalog.md5(p.prosrc)='{body_hash}'
+ AND p.proconfig @> ARRAY['search_path=pg_catalog, pg_temp','stats_fetch_consistency=snapshot']
+ AND cardinality(p.proconfig)=3 AND EXISTS(SELECT 1 FROM unnest(p.proconfig) c WHERE lower(c)='timezone=utc')
+ AND p.proallargtypes=ARRAY[1184,1184,25,16,20,20,20,20,20,20,20,23,20,20,20,20]::oid[]
+ AND p.proargnames=ARRAY['observed_at','server_started_at','statistics_generation','track_counts_enabled',
+ 'connections','active_connections','idle_connections','idle_in_transaction_connections','active_waiting_connections',
+ 'active_lock_waiting_connections','active_io_waiting_connections','max_connections','transactions_committed',
+ 'transactions_rolled_back','deadlocks','database_bytes']
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(n.nspacl,pg_catalog.acldefault('n',n.nspowner))) a
+ WHERE a.grantee<>o.oid AND (a.grantee<>r.oid OR a.privilege_type<>'USAGE' OR a.is_grantable))
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a
+ WHERE a.grantee<>o.oid AND (a.grantee<>r.oid OR a.privilege_type<>'EXECUTE' OR a.is_grantable))
+ AND NOT pg_catalog.has_database_privilege(current_user,current_database(),'CREATE')
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace a WHERE a.nspname !~ '^pg_'
+ AND a.nspname NOT IN('information_schema','addp_observation') AND pg_catalog.has_schema_privilege(current_user,a.oid,'CREATE'))
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace a ON a.oid=c.relnamespace
+ WHERE a.nspname !~ '^pg_' AND a.nspname<>'information_schema' AND CASE WHEN c.relkind='S' THEN
+ pg_catalog.has_sequence_privilege(current_user,c.oid,'USAGE,SELECT,UPDATE') ELSE false END)
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace a ON a.oid=c.relnamespace
+ WHERE a.nspname !~ '^pg_' AND a.nspname<>'information_schema' AND CASE WHEN c.relkind IN('r','p','v','m','f') THEN
+ pg_catalog.has_table_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+ OR pg_catalog.has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES') ELSE false END)
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc f JOIN pg_catalog.pg_namespace a ON a.oid=f.pronamespace
+ WHERE a.nspname !~ '^pg_' AND a.nspname NOT IN('information_schema','addp_observation')
+ AND f.prosecdef AND pg_catalog.has_function_privilege(current_user,f.oid,'EXECUTE'))
+FROM r,o,n,p;"""
 
 
 class Docker:
@@ -98,15 +156,14 @@ class Docker:
         return value
 
 
-class Database:
-    """Owned PG15 transport. No environment, application row or SQL discovery."""
-    def __init__(self, docker, project, working_dir, scope, admin, *, maintenance='postgres', authentication=None):
-        if (scope not in ('infra', 'business') or not re.fullmatch('[a-zA-Z_][a-zA-Z0-9_]{0,62}', admin or '')
+class ObservationDatabase:
+    """Owned container/network facts and observer-only checks; no admin SQL."""
+    def __init__(self, docker, project, working_dir, scope, *, maintenance='postgres'):
+        if (scope not in ('infra', 'business')
                 or not re.fullmatch('[a-zA-Z0-9_]{1,63}', maintenance)):
             raise LifecycleError('Invalid deployment PostgreSQL identity')
-        self.docker, self.scope, self.admin, self.maintenance = docker, scope, admin, maintenance
+        self.docker, self.scope, self.maintenance = docker, scope, maintenance
         self.project, self.working_dir = project, str(Path(working_dir).resolve())
-        self.authentication = authentication
         identities = docker.run(['ps', '-aq', '--no-trunc', '--filter', 'label=com.docker.compose.project='+project,
                                  '--filter', 'label=com.docker.compose.service=postgres']).split()
         if len(identities) != 1 or not re.fullmatch('[0-9a-f]{64}', identities[0]):
@@ -130,6 +187,36 @@ class Database:
         self.networks = ['127.0.0.1/32', '::1/128'] + [item['Subnet'] for item in network['IPAM']['Config']]
         source.authentication_configuration('', scope, self.networks, database=maintenance)
         source.configuration(scope, self.address, 5432, '0' * 64, database=maintenance)
+
+    def authenticate(self, password):
+        user = f'addp_{self.scope}_observer'
+        path = '/tmp/addp-observer-check-' + secrets.token_hex(16)
+        self.docker.run(['exec', '-i', self.identity, 'sh', '-c', 'umask 077; cat > "$1"',
+                         'observation-password', path], input=f'127.0.0.1:5432:*:{user}:{password}\n')
+        try:
+            args = ['exec', '-i', '-e', 'PGPASSFILE='+path, '-e', 'PGCONNECT_TIMEOUT=3', self.identity,
+                    'psql', '-X', '-q', '-A', '-t', '-w', '-v', 'ON_ERROR_STOP=1', '-U', user, '-h', '127.0.0.1', '-d']
+            verified = self.docker.run(args + [self.maintenance], input=recovery_verification(self.scope), timeout=8)
+            if verified.strip() != 't':
+                raise LifecycleError('PostgreSQL observation installation drift; use the standard deployment entry')
+            value = self.docker.run(args + [self.maintenance], input='SELECT count(*) FROM addp_observation.snapshot();', timeout=8)
+            if value.strip() != '1':
+                raise LifecycleError('PostgreSQL observation authentication failed')
+            other = 'postgres' if self.maintenance != 'postgres' else 'template1'
+            result = self.docker.run(args + [other], input='SELECT 1;', timeout=8, check=False)
+            if result.returncode == 0 or 'pg_hba.conf rejects connection' not in result.stderr:
+                raise LifecycleError('PostgreSQL cross-database authentication boundary failed')
+        finally:
+            self.docker.run(['exec', self.identity, 'rm', '-f', path])
+
+
+class Database(ObservationDatabase):
+    """Explicit installer only; automatic recovery never constructs this class."""
+    def __init__(self, docker, project, working_dir, scope, admin, *, maintenance='postgres', authentication=None):
+        if not re.fullmatch('[a-zA-Z_][a-zA-Z0-9_]{0,62}', admin or ''):
+            raise LifecycleError('Invalid deployment PostgreSQL administrator')
+        self.admin, self.authentication = admin, authentication
+        super().__init__(docker, project, working_dir, scope, maintenance=maintenance)
         self.settings = json.loads(self.sql("""SELECT json_build_object(
  'version', current_setting('server_version_num')::integer,
  'data', current_setting('data_directory'), 'hba', current_setting('hba_file'),
@@ -232,23 +319,6 @@ trap - EXIT''', 'observation-hba', self.settings['hba'], auth.digest(expected)],
                 raise LifecycleError('PostgreSQL authentication reload timed out')
             time.sleep(.05)
 
-    def authenticate(self, password):
-        user = f'addp_{self.scope}_observer'
-        path = '/tmp/addp-observer-check-' + secrets.token_hex(16)
-        self.docker.run(['exec', '-i', self.identity, 'sh', '-c', 'umask 077; cat > "$1"',
-                         'observation-password', path], input=f'127.0.0.1:5432:*:{user}:{password}\n')
-        try:
-            args = ['exec', '-i', '-e', 'PGPASSFILE='+path, '-e', 'PGCONNECT_TIMEOUT=3', self.identity,
-                    'psql', '-X', '-q', '-A', '-t', '-w', '-U', user, '-h', '127.0.0.1', '-d']
-            value = self.docker.run(args + [self.maintenance], input='SELECT count(*) FROM addp_observation.snapshot();', timeout=8)
-            if value.strip() != '1':
-                raise LifecycleError('PostgreSQL observation authentication failed')
-            other = 'postgres' if self.maintenance != 'postgres' else 'template1'
-            result = self.docker.run(args + [other], input='SELECT 1;', timeout=8, check=False)
-            if result.returncode == 0 or 'pg_hba.conf rejects connection' not in result.stderr:
-                raise LifecycleError('PostgreSQL cross-database authentication boundary failed')
-        finally:
-            self.docker.run(['exec', self.identity, 'rm', '-f', path])
 
 
 def state_directory(env, scope):
@@ -257,6 +327,17 @@ def state_directory(env, scope):
     if not parent.is_absolute() or '..' in parent.parts or parent.resolve().is_relative_to(ROOT):
         raise LifecycleError('PostgreSQL metrics state requires a repository-external absolute directory')
     return parent / scope
+
+
+def read_json(path, mode=0o600):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise LifecycleError('Duplicate PostgreSQL source state field')
+            result[key] = value
+        return result
+    return json.loads(auth._read(path, mode)[0], object_pairs_hook=unique)
 
 
 def file_write(path, value, mode):
@@ -340,6 +421,123 @@ class SourceLifecycle:
                 database.disable()
                 database.no_sessions()
 
+    def source_document(self, database, ip, port, *, started_at=None):
+        labels = {OWNER: str(ROOT), SCOPE: self.scope,
+                  'io.addp.postgres-metrics.database-id': database.identity,
+                  'io.addp.postgres-metrics.database-started-at': started_at or database.facts['started_at']}
+        template = str(ROOT / 'scripts/infra/postgres-metrics.yml')
+        compose = {'services': {
+            'postgres-metrics': {'extends': {'file': template, 'service': 'postgres-metrics'},
+                'labels': labels, 'networks': ['database'],
+                'ports': [{'host_ip': ip, 'published': str(port), 'target': 9443}]},
+            'postgres-metrics-web': {'extends': {'file': template, 'service': 'postgres-metrics-web'}, 'labels': labels}},
+            'networks': {'database': {'external': True, 'name': database.network}}}
+        return compose
+
+
+    def start_sources(self, database, tls, ip, port, password):
+        stage = 'source-files'
+        try:
+            runtime = self.state / 'runtime'
+            auth._directory(runtime, 0o755)
+            for name in ('source', 'web'):
+                auth._directory(runtime / name, 0o755)
+            file_write(runtime / 'source/sql-exporter.yml', json.dumps(source.configuration(
+                self.scope, database.address, 5432, password, database=database.maintenance)), 0o644)
+            for name in ('ca.crt', 'server.crt', 'server.key'):
+                file_write(runtime / 'web' / name, (tls / name).read_bytes().decode('utf-8'), 0o644)
+            compose = self.source_document(database, ip, port)
+            compose_file = self.state / 'compose.json'
+            file_write(compose_file, json.dumps(compose), 0o600)
+            stage = 'identity-recheck'
+            if self.docker.fact(database.identity) != database.facts:
+                raise LifecycleError('PostgreSQL source facts changed during installation')
+            uid, gid = (os.getuid(), os.getgid()) if os.getuid() else (65534, 65534)
+            stage = 'source-start'
+            self.docker.run(['compose', '--env-file', '/dev/null', '-p', self.project, '-f', str(compose_file),
+                             'up', '-d', '--force-recreate', '--no-deps', 'postgres-metrics', 'postgres-metrics-web'],
+                            timeout=180, extra_env={'ADDP_POSTGRES_METRICS_USER': f'{uid}:{gid}',
+                            'ADDP_POSTGRES_METRICS_SOURCE_DIR': str(runtime/'source'),
+                            'ADDP_POSTGRES_METRICS_WEB_DIR': str(runtime/'web')})
+            # A running source is not evidence of a successful scrape.
+            stage = 'source-health'
+            time.sleep(.5)
+            sources = self.docker.run(['ps', '-q', '--filter', 'label=com.docker.compose.project='+self.project,
+                                       '--filter', 'label='+OWNER+'='+str(ROOT), '--filter', 'label='+SCOPE+'='+self.scope]).split()
+            if len(sources) != 2 or any(not self.docker.fact(identity)['running'] for identity in sources):
+                raise LifecycleError('PostgreSQL source containers did not stay running')
+        except Exception as error:
+            error.observation_stage = stage
+            raise
+
+    def recover(self, env):
+        """Recover a previously installed source, without installer capabilities."""
+        with auth.locked(self.state):
+            database = self.database_factory()
+            expected_owner = {'schema': 'addp.postgres-metrics/v1', 'workspace': str(ROOT), 'scope': self.scope,
+                              'source_key': {'docker_engine_id': self.docker.info['id'], 'project': database.project, 'service': 'postgres'}}
+            if read_json(self.state / 'owner.json') != expected_owner:
+                raise LifecycleError('PostgreSQL recovery ownership mismatch; use the standard deployment entry')
+            tls, ip, port = transport(env)
+            document = read_json(self.state / 'compose.json')
+            previous = document['services']['postgres-metrics']['labels']
+            old_start = previous['io.addp.postgres-metrics.database-started-at']
+            if (previous.get('io.addp.postgres-metrics.database-id') != database.identity
+                    or not isinstance(old_start, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z', old_start)
+                    or document != self.source_document(database, ip, port, started_at=old_start)):
+                raise LifecycleError('PostgreSQL recovery declaration changed; use the standard deployment entry')
+            password = auth._read(self.state / 'password', 0o600)[0]
+            if not re.fullmatch('[0-9a-f]{64}', password):
+                raise LifecycleError('Invalid private observation credential')
+            runtime = self.state / 'runtime'
+            for directory in (runtime, runtime/'source', runtime/'web'):
+                if not directory.is_dir():
+                    raise LifecycleError('PostgreSQL recovery installation is incomplete')
+                auth._directory(directory, 0o755)
+            installed = read_json(runtime / 'source/sql-exporter.yml', 0o644)
+            old_host = urlsplit(installed['target']['data_source_name']).hostname
+            # Only a prior canonical fixed configuration can authorize reuse.
+            ipaddress.ip_address(old_host)
+            if installed != source.configuration(self.scope, old_host, 5432, password, database=database.maintenance):
+                raise LifecycleError('PostgreSQL recovery source configuration drift')
+            for name in ('ca.crt', 'server.crt', 'server.key'):
+                if auth._read(runtime/'web'/name, 0o644)[0] != (tls/name).read_text():
+                    raise LifecycleError('PostgreSQL recovery TLS changed; use the standard deployment entry')
+            database.authenticate(password)
+            selected = self.source_containers()
+            facts = {service: self.docker.fact(identity) for service, identity in selected}
+            if len(facts) != len(selected):
+                raise LifecycleError('Duplicate PostgreSQL recovery sources')
+            for fact in facts.values():
+                if any(fact['labels'].get(key) != value for key, value in previous.items()):
+                    raise LifecycleError('PostgreSQL recovery source ownership drift')
+            healthy = (set(facts) == SERVICES and all(fact['running'] for fact in facts.values())
+                       and old_start == database.facts['started_at'] and old_host == database.address
+                       and facts['postgres-metrics-web']['network_mode'] == 'container:'+facts['postgres-metrics']['id']
+                       and facts['postgres-metrics']['network_mode'] == database.network
+                       and facts['postgres-metrics']['ports'] == {'9443/tcp': [{'HostIp': ip, 'HostPort': str(port)}]}
+                       and not facts['postgres-metrics-web']['ports'])
+            if self.docker.fact(database.identity) != database.facts:
+                raise LifecycleError('PostgreSQL recovery database facts changed')
+            if healthy:
+                return 'healthy; source unchanged'
+            # All prior files, observer checks and immutable container identities
+            # were validated before removing any source. Never start a database.
+            try:
+                for _, identity in selected:
+                    self.docker.run(['rm', '-f', identity], timeout=20)
+                self.start_sources(database, tls, ip, port, password)
+                database.authenticate(password)
+                if self.docker.fact(database.identity) != database.facts:
+                    raise LifecycleError('PostgreSQL recovery database facts changed')
+            except Exception as error:
+                try:
+                    self.stop_sources()
+                except Exception:
+                    error.observation_cleanup_failed = True
+                raise
+            return 'source recovered; successful scraping requires Monitor verification'
+
     def up(self, env):
         with auth.locked(self.state):
             self.stop_sources()
@@ -358,7 +556,7 @@ class SourceLifecycle:
                              'source_key': {'docker_engine_id': self.docker.info['id'], 'project': database.project, 'service': 'postgres'}}
                     owner_file = self.state / 'owner.json'
                     if os.path.lexists(owner_file):
-                        if json.loads(auth._read(owner_file, 0o600)[0]) != owner:
+                        if read_json(owner_file) != owner:
                             raise LifecycleError('PostgreSQL source state ownership mismatch')
                     else:
                         if any(path.name != 'control.lock' for path in self.state.iterdir()):
@@ -385,47 +583,11 @@ class SourceLifecycle:
                     stage = 'connection-check'
                     database.authenticate(password)
                     stage = 'source-files'
-                    runtime = self.state / 'runtime'
-                    auth._directory(runtime, 0o755)
-                    for name in ('source', 'web'):
-                        auth._directory(runtime / name, 0o755)
-                    file_write(runtime / 'source/sql-exporter.yml', json.dumps(source.configuration(
-                        self.scope, database.address, 5432, password, database=database.maintenance)), 0o644)
-                    for name in ('ca.crt', 'server.crt', 'server.key'):
-                        file_write(runtime / 'web' / name, (tls / name).read_bytes().decode('utf-8'), 0o644)
-                    labels = {OWNER: str(ROOT), SCOPE: self.scope,
-                              'io.addp.postgres-metrics.database-id': database.identity,
-                              'io.addp.postgres-metrics.database-started-at': database.facts['started_at']}
-                    template = str(ROOT / 'scripts/infra/postgres-metrics.yml')
-                    compose = {'services': {
-                        'postgres-metrics': {'extends': {'file': template, 'service': 'postgres-metrics'},
-                            'labels': labels, 'networks': ['database'],
-                            'ports': [{'host_ip': ip, 'published': str(port), 'target': 9443}]},
-                        'postgres-metrics-web': {'extends': {'file': template, 'service': 'postgres-metrics-web'}, 'labels': labels}},
-                        'networks': {'database': {'external': True, 'name': database.network}}}
-                    compose_file = self.state / 'compose.json'
-                    file_write(compose_file, json.dumps(compose), 0o600)
-                    stage = 'identity-recheck'
-                    if self.docker.fact(database.identity) != database.facts:
-                        raise LifecycleError('PostgreSQL source facts changed during installation')
-                    uid, gid = (os.getuid(), os.getgid()) if os.getuid() else (65534, 65534)
-                    stage = 'source-start'
-                    self.docker.run(['compose', '--env-file', '/dev/null', '-p', self.project, '-f', str(compose_file),
-                                     'up', '-d', '--force-recreate', '--no-deps', 'postgres-metrics', 'postgres-metrics-web'],
-                                    timeout=180, extra_env={'ADDP_POSTGRES_METRICS_USER': f'{uid}:{gid}',
-                                    'ADDP_POSTGRES_METRICS_SOURCE_DIR': str(runtime/'source'),
-                                    'ADDP_POSTGRES_METRICS_WEB_DIR': str(runtime/'web')})
-                    # A running source is not evidence of a successful scrape.
-                    stage = 'source-health'
-                    time.sleep(.5)
-                    sources = self.docker.run(['ps', '-q', '--filter', 'label=com.docker.compose.project='+self.project,
-                                               '--filter', 'label='+OWNER+'='+str(ROOT), '--filter', 'label='+SCOPE+'='+self.scope]).split()
-                    if len(sources) != 2 or any(not self.docker.fact(identity)['running'] for identity in sources):
-                        raise LifecycleError('PostgreSQL source containers did not stay running')
+                    self.start_sources(database, tls, ip, port, password)
                 except Exception as error:
                     # Retain the original failure for callers; publish only a
                     # closed stage, never raw SQL, HBA, paths or subprocess output.
-                    error.observation_stage = stage
+                    error.observation_stage = getattr(error, 'observation_stage', stage)
                     try:
                         self.stop_sources()
                         database.disable()
@@ -438,14 +600,29 @@ class SourceLifecycle:
 
 def run(action, scope, env):
     flag = env.get('ADDP_POSTGRES_METRICS_ENABLED', 'false')
+    state = state_directory(env, scope)
+    if action == 'recover':
+        if flag == 'false':
+            print('PostgreSQL metrics '+scope+': recovery not selected')
+            return
+        if flag != 'true':
+            raise LifecycleError('ADDP_POSTGRES_METRICS_ENABLED must be true or false')
+        if any(path.is_symlink() for path in (state, *state.parents)):
+            raise LifecycleError('Linked PostgreSQL recovery state')
+        if not state.exists() or not any(state.iterdir()):
+            print('PostgreSQL metrics '+scope+': not installed; recovery skipped')
+            return
     docker = Docker(env)
     project, working = inventory.SCOPES[scope]
-    state = state_directory(env, scope)
 
     def database():
         return Database(docker, project, working, scope, env.get('POSTGRES_USER', 'business' if scope == 'business' else ''),
                         authentication=auth.state_directory(env) if scope == 'business' else None)
 
+    if action == 'recover':
+        manager = SourceLifecycle(docker, scope, state, lambda: ObservationDatabase(docker, project, working, scope))
+        print('PostgreSQL metrics '+scope+': '+manager.recover(env))
+        return
     manager = SourceLifecycle(docker, scope, state, database)
     if action == 'down' or flag == 'false':
         manager.down()
@@ -464,7 +641,7 @@ def run(action, scope, env):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['up', 'down'])
+    parser.add_argument('action', choices=['up', 'down', 'recover'])
     parser.add_argument('--scope', choices=['infra', 'business'], required=True)
     args = parser.parse_args()
     try:

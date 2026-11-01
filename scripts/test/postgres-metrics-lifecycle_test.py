@@ -9,6 +9,8 @@ import tempfile
 import unittest
 import subprocess
 import io
+import copy
+from contextlib import contextmanager
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +20,149 @@ spec.loader.exec_module(module)
 
 
 class LifecycleTest(unittest.TestCase):
+    @contextmanager
+    def recovery_fixture(self, *, running=True, restarted=False):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary).resolve()/'state'
+            module.auth._directory(state, 0o700)
+            tls = Path(temporary).resolve()/'tls'
+            tls.mkdir()
+            for name in ('ca.crt', 'server.crt', 'server.key'):
+                (tls/name).write_text('fixture-'+name)
+            database = mock.Mock(spec=module.ObservationDatabase)
+            database.project, database.maintenance, database.address, database.network = 'fixture', 'postgres', '10.2.3.4', 'fixture-network'
+            database.identity = 'a'*64
+            database.facts = {'id':database.identity, 'running':True, 'started_at':'2026-11-01T00:00:00Z'}
+            if restarted:
+                database.facts['started_at'] = '2026-11-01T01:00:00Z'
+            objects = {}
+            commands = []
+            docker = mock.Mock(info={'id':'fixture-engine'})
+            manager = module.SourceLifecycle(docker, 'infra', state, lambda:database)
+            document = manager.source_document(database, '127.0.0.1', 9443, started_at='2026-11-01T00:00:00Z')
+            def populate(document):
+                for index, service in enumerate(sorted(module.SERVICES)):
+                    identity = str(index+1)*64
+                    labels = dict(document['services'][service]['labels'], **{
+                        'com.docker.compose.project':manager.project,'com.docker.compose.service':service,'com.docker.compose.oneoff':'False'})
+                    objects[identity] = {'id':identity,'labels':labels,'running':running,
+                        'network_mode':database.network if service=='postgres-metrics' else 'container:'+'1'*64,
+                        'ports':{'9443/tcp':[{'HostIp':'127.0.0.1','HostPort':'9443'}]} if service=='postgres-metrics' else {}}
+            populate(document)
+            def run(args, **kwargs):
+                commands.append(args)
+                if args[0]=='ps':return '\n'.join(objects)
+                if args[0]=='rm':objects.pop(args[-1]);return ''
+                if args[0]=='compose':
+                    objects.clear();populate(module.read_json(state/'compose.json'))
+                    for obj in objects.values():obj['running']=True
+                    return ''
+                raise AssertionError('Unexpected Docker command '+repr(args))
+            docker.run.side_effect = run
+            docker.fact.side_effect = lambda identity:copy.deepcopy(database.facts if identity==database.identity else objects[identity])
+            module.file_write(state/'owner.json',json.dumps({'schema':'addp.postgres-metrics/v1','workspace':str(ROOT),'scope':'infra',
+                'source_key':{'docker_engine_id':'fixture-engine','project':'fixture','service':'postgres'}}),0o600)
+            module.file_write(state/'password','b'*64,0o600)
+            module.file_write(state/'compose.json',json.dumps(document),0o600)
+            for directory in (state/'runtime',state/'runtime/source',state/'runtime/web'):
+                module.auth._directory(directory,0o755)
+            module.file_write(state/'runtime/source/sql-exporter.yml',json.dumps(module.source.configuration('infra',database.address,5432,'b'*64)),0o644)
+            for name in ('ca.crt','server.crt','server.key'):
+                module.file_write(state/'runtime/web'/name,(tls/name).read_text(),0o644)
+            with mock.patch.object(module,'transport',return_value=(tls,'127.0.0.1',9443)), mock.patch.object(module.time,'sleep'):
+                yield manager,database,docker,objects,commands
+
+    def test_healthy_recovery_does_not_recreate_or_rewrite_sources(self):
+        with self.recovery_fixture() as (manager,db,docker,objects,commands):
+            paths=[p for p in manager.state.rglob('*') if p.is_file()]
+            before={p:(p.read_bytes(),p.stat().st_ino,p.stat().st_mtime_ns) for p in paths}
+            self.assertTrue(manager.recover({}).startswith('healthy'))
+            self.assertFalse(any(c[0] in ('rm','compose') for c in commands))
+            self.assertEqual(before,{p:(p.read_bytes(),p.stat().st_ino,p.stat().st_mtime_ns) for p in paths})
+            db.authenticate.assert_called_once_with('b'*64)
+            self.assertFalse(hasattr(db,'sql'))
+
+    def test_stopped_or_restarted_source_uses_shared_creation_and_current_boot(self):
+        for running,restarted in ((False,False),(True,True)):
+            with self.subTest(running=running,restarted=restarted), self.recovery_fixture(running=running,restarted=restarted) as (manager,db,docker,objects,commands):
+                self.assertTrue(manager.recover({}).startswith('source recovered'))
+                self.assertEqual(sum(c[0]=='compose' for c in commands),1)
+                self.assertTrue(all(o['running'] for o in objects.values()))
+                self.assertTrue(all(o['labels']['io.addp.postgres-metrics.database-started-at']==db.facts['started_at'] for o in objects.values()))
+                self.assertEqual((manager.state/'password').read_text(),'b'*64)
+                self.assertFalse(hasattr(db,'disable'))
+
+    def test_missing_source_pair_recovers_but_failed_readonly_check_never_mutates(self):
+        with self.recovery_fixture() as (manager,db,docker,objects,commands):
+            objects.clear()
+            manager.recover({})
+            self.assertEqual(sum(c[0]=='compose' for c in commands),1)
+        with self.recovery_fixture(running=False) as (manager,db,docker,objects,commands):
+            db.authenticate.side_effect=module.LifecycleError('disabled or drifted observer')
+            with self.assertRaises(module.LifecycleError):manager.recover({})
+            self.assertFalse(any(c[0] in ('rm','compose') for c in commands))
+
+    def test_recovery_refuses_foreign_missing_drifted_or_replaced_installation(self):
+        for problem in ('new-database','foreign-source','lost-password','tls-drift','config-drift','duplicate-json','foreign-engine'):
+            with self.subTest(problem=problem), self.recovery_fixture() as (manager,db,docker,objects,commands):
+                if problem=='new-database':db.identity='c'*64
+                if problem=='foreign-source':objects['1'*64]['labels'][module.OWNER]='/foreign'
+                if problem=='lost-password':(manager.state/'password').unlink()
+                if problem=='tls-drift':(manager.state/'runtime/web/server.crt').write_text('drift')
+                if problem=='config-drift':(manager.state/'runtime/source/sql-exporter.yml').write_text('{}')
+                if problem=='duplicate-json':(manager.state/'compose.json').write_text('{"services":{},"services":{}}')
+                if problem=='foreign-engine':docker.info={'id':'foreign'}
+                with self.assertRaises((ValueError,OSError,KeyError)):manager.recover({})
+                self.assertFalse(any(c[0] in ('rm','compose') for c in commands))
+
+    def test_recovery_cleans_new_sources_after_racing_database_change_without_admin(self):
+        with self.recovery_fixture(running=False) as (manager,db,docker,objects,commands):
+            # Capture startup facts separately; changing the live fact must not change the expected snapshot.
+            live=copy.deepcopy(db.facts)
+            docker.fact.side_effect=lambda identity:copy.deepcopy(live if identity==db.identity else objects[identity])
+            def changed(_):
+                if db.authenticate.call_count==2:live['started_at']='2026-11-01T02:00:00Z'
+            db.authenticate.side_effect=changed
+            with self.assertRaisesRegex(module.LifecycleError,'facts changed'):manager.recover({})
+            self.assertFalse(objects)
+            self.assertFalse(hasattr(db,'sql'))
+
+    def test_recovery_lock_contention_refuses_before_database_access(self):
+        with self.recovery_fixture() as (manager,db,docker,objects,commands):
+            factory=mock.Mock(side_effect=AssertionError('database read under competing lock'))
+            manager.database_factory=factory
+            with module.auth.locked(manager.state), self.assertRaisesRegex(ValueError,'busy'):
+                manager.recover({})
+            factory.assert_not_called()
+            self.assertFalse(commands)
+
+    def test_unselected_or_uninstalled_recovery_never_constructs_docker(self):
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(module,'Docker') as docker:
+            for enabled in ('false','true'):
+                module.run('recover','infra',{'ADDP_POSTGRES_METRICS_ENABLED':enabled,'ADDP_POSTGRES_METRICS_STATE_DIR':str(Path(temporary).resolve()/'absent')})
+            docker.assert_not_called()
+
+    def test_full_start_recovery_selection_and_optional_failure_are_executable(self):
+        script=(ROOT/'scripts/dev/start.sh').read_text()
+        block=script[script.index('# Only full local startup may recover'):script.index('# Refresh deployment-side facts')]
+        for full,online,selected in [('true','0',True),('false','0',False),('true','1',False)]:
+            command="source() { :; }; addp_recover_postgres_sources() { echo RECOVER; return 1; };\n"+block+'\necho CONTINUED'
+            result=subprocess.run(['bash','-eu','-c',command],env=dict(os.environ,START_ALL=full,ADDP_ONLINE_HOST=online,ROOT_DIR='/fixture'),capture_output=True,text=True,check=True,timeout=5)
+            self.assertEqual('RECOVER' in result.stdout,selected)
+            self.assertIn('CONTINUED',result.stdout)
+
+    def test_recovery_configuration_isolation_and_both_scopes_survive_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'business').mkdir();(root/'tools').mkdir()
+            (root/'.env').write_text('ADDP_POSTGRES_METRICS_ENABLED=true\nADDP_POSTGRES_METRICS_LISTEN=127.0.0.1:9991\n')
+            (root/'business/.env').write_text('ADDP_POSTGRES_METRICS_ENABLED=false\n')
+            stub=root/'tools/python3'
+            stub.write_text('#!/bin/bash\nprintf \'%s|%s|%s\\n\' "$4" "${ADDP_POSTGRES_METRICS_ENABLED-unset}" "${ADDP_POSTGRES_METRICS_LISTEN-unset}"\n[[ "$4" != infra ]]\n')
+            stub.chmod(0o700)
+            result=subprocess.run(['bash','-eu','-c','source "$1"; addp_recover_postgres_sources','test',str(ROOT/'scripts/utils/observability-env.sh')],env=dict(os.environ,PROJECT_ROOT=str(root),PATH=str(root/'tools')+os.pathsep+os.environ['PATH'],ADDP_POSTGRES_METRICS_ENABLED='true',ADDP_POSTGRES_METRICS_LISTEN='127.0.0.1:8888'),capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode,1)
+            self.assertEqual(result.stdout.splitlines(),['infra|true|127.0.0.1:9991','business|false|unset'])
+
     def test_activation_failure_reports_only_closed_stage_and_keeps_cleanup(self):
         from contextlib import nullcontext, redirect_stderr
         with tempfile.TemporaryDirectory() as temporary:

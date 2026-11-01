@@ -989,6 +989,12 @@ fi
 
 echo ""
 
+# Only full local startup may recover already-installed optional sources.
+if [[ "$START_ALL" == true && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
+  source "$ROOT_DIR/scripts/utils/observability-env.sh"
+  addp_recover_postgres_sources || echo 'PostgreSQL source recovery unavailable; business startup continues' >&2
+fi
+
 # Refresh deployment-side facts even when healthy Infra was reused above.
 export ADDP_DEPLOYMENT_DISCOVERY_DIR="${ADDP_DEPLOYMENT_DISCOVERY_DIR:-${ROOT_DIR}/.dev-state/deployment-discovery}"
 addp_dev_publish_service_expectations || echo 'Service expectations unavailable; business startup continues' >&2

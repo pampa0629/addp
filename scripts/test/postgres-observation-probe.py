@@ -115,12 +115,33 @@ class Probe:
             if result.returncode == 0 or expected not in result.stderr:
                 state = re.search(r'(?:ERROR|FATAL):\s+([A-Z0-9]{5})(?:\s|$)', result.stderr)
                 raise AssertionError('expected observation SQLSTATE ' + expected + ', actual '
-                                     + (state.group(1) if state else 'unclassified'))
+                                     + (state.group(1) if state else 'unclassified '+json.dumps(self.sql_failure_diagnostic(result))))
             return None
         if result.returncode:
             state = re.search(r'ERROR:\s+([A-Z0-9]{5})', result.stderr)
             raise AssertionError('observation SQL failed: ' + (state.group(1) if state else 'unknown'))
         return result.stdout.strip()
+
+    def sql_failure_diagnostic(self, result):
+        """Closed facts only; never echo SQL, connection errors or credentials."""
+        facts = {'return_code': result.returncode, 'stderr_characters': len(result.stderr), 'database': 'unavailable'}
+        try:
+            state = subprocess.run(['docker', 'inspect', '--format',
+                '{"running":{{json .State.Running}},"oom":{{json .State.OOMKilled}},"exit":{{json .State.ExitCode}}}',
+                self.postgres_identity], capture_output=True, text=True, check=True, timeout=5)
+            state = json.loads(state.stdout)
+            if not isinstance(state, dict):
+                return facts
+            if (set(state)=={'running','oom','exit'} and type(state['running']) is bool
+                    and type(state['oom']) is bool and type(state['exit']) is int):
+                facts['database'] = state
+            if state.get('running') is True:
+                memory = subprocess.run(self.compose + ['exec', '-T', 'postgres', 'cat', '/sys/fs/cgroup/memory.events'],
+                    capture_output=True, text=True, check=True, timeout=3)
+                facts['memory'] = {key:int(value) for key,value in re.findall(r'(?m)^(oom|oom_kill|oom_group_kill) ([0-9]+)$', memory.stdout)}
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+        return facts
 
     def password(self, user, password):
         value = ''.join(f'127.0.0.1:5432:{database}:{user}:{password}\n' for database in ('addp_test', 'postgres'))
@@ -498,6 +519,18 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
         assert password not in logs, 'source logs exposed credentials'
         print('PostgreSQL source T2: ' + scope + ' fixed metrics, mTLS, restricted HTTP, failure and fresh recovery passed', flush=True)
 
+    def publish_query_discovery(self, text):
+        # Nginx must observe the same atomic rename. Host-side replacement over
+        # a Desktop bind mount can leave its Linux view pointing at an absent
+        # inode. Publish through this owned fixture as the directory's owner.
+        result = subprocess.run(self.compose + ['exec', '-T', '--user', f'{os.getuid()}:{os.getgid()}',
+            'metrics-source', 'sh', '-ec',
+            'umask 022; pending=/source/discovery.pending; trap \'rm -f "$pending"\' EXIT; '
+            'cat > "$pending"; chmod 644 "$pending"; mv -f "$pending" /source/discovery.json; cat /source/discovery.json'],
+            input=text, capture_output=True, text=True, check=True, timeout=10)
+        if result.stdout != text:
+            raise AssertionError('owned query discovery publication differs from intent')
+
     def professional_queries(self, work, user):
         """Actual PG -> exporter -> sole Prometheus SD -> Monitor query formulas."""
         cid = subprocess.check_output(self.compose + ['ps', '-q', 'postgres'], text=True).strip()
@@ -515,12 +548,6 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
         discovery = work / 'source/discovery.json'
         original = discovery.read_text()
 
-        def publish(text):
-            temporary = discovery.with_suffix('.pending')
-            temporary.write_text(text)
-            temporary.chmod(0o644)
-            temporary.replace(discovery)
-
         port = subprocess.check_output(self.compose + ['port', 'prometheus', '9090'], text=True).strip().rsplit(':', 1)[1]
         base = 'https://localhost:' + port
         environment = dict(os.environ, GOWORK='off', GOMAXPROCS='2', ADDP_POSTGRES_QUERY_INTEGRATION='1',
@@ -537,7 +564,7 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
         center_tls = ssl.create_default_context(cafile=str(work / 'tls/ca.crt'))
         center_tls.load_cert_chain(str(work / 'tls/health.crt'), str(work / 'tls/health.key'))
         try:
-            publish(json.dumps([{'targets': ['postgres-metrics:9443'], 'labels': {
+            self.publish_query_discovery(json.dumps([{'targets': ['postgres-metrics:9443'], 'labels': {
                 '__scheme__': 'https', '__metrics_path__': '/metrics', 'addp_monitor_kind': 'engine_resources',
                 'addp_source': 'postgresql', 'addp_deployment_id': deployment,
                 'addp_database_container_id': facts['container_id'],
@@ -553,7 +580,7 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
             check('recovered')
             print('PostgreSQL query T2: twelve native metrics, current-container trends, summary, reset gaps and SQL failure/recovery passed', flush=True)
         finally:
-            publish(original)
+            self.publish_query_discovery(original)
             deadline = time.monotonic() + 45
             while True:
                 with urllib.request.urlopen(base + '/api/v1/targets', context=center_tls, timeout=5) as response:

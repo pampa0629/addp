@@ -38,12 +38,12 @@ services:
     command: [postgres, -c, "hba_file=${METRICS_T2_HBA_FILE:-/var/lib/postgresql/data/pg_hba.conf}"]
     volumes:
       - ${METRICS_T2_WORK}/postgres-auth/runtime:/etc/addp-postgres-auth:ro
+      - postgres_data:/var/lib/postgresql/data
     secrets: [metrics-postgres-password]
     ports: ["127.0.0.1::5432"]
     security_opt: [no-new-privileges:true]
     cpus: 0.5
     mem_limit: 256m
-    tmpfs: ["/var/lib/postgresql/data:size=256m"]
     healthcheck:
       test: [CMD-SHELL, "pg_isready -U addp -d addp_test"]
       interval: 1s
@@ -126,6 +126,7 @@ volumes:
     labels:
       io.addp.node-metrics.owner: ${ADDP_NODE_METRICS_OWNER:-t2}
   prometheus_data:
+  postgres_data:
 secrets:
   metrics-postgres-password:
     file: ${METRICS_T2_WORK}/postgres-password

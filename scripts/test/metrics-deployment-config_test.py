@@ -143,6 +143,49 @@ def run_business_postgres_compose(environment, case):
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_postgres_unclassified_failure_diagnostic_excludes_private_command_output(self):
+        probe = postgres_probe.Probe.__new__(postgres_probe.Probe)
+        probe.compose, probe.postgres_identity = ['docker','compose'], 'a'*64
+        result = subprocess.CompletedProcess([], 137, 'private-row-sentinel', 'private-password-sentinel')
+        replies = [subprocess.CompletedProcess([], 0, '{"running":true,"oom":false,"exit":0}', ''),
+                   subprocess.CompletedProcess([], 0, 'oom 2\noom_kill 1\nprivate-password-sentinel\n', '')]
+        with mock.patch.object(postgres_probe.subprocess, 'run', side_effect=replies):
+            facts = probe.sql_failure_diagnostic(result)
+        self.assertEqual(facts['return_code'], 137)
+        self.assertEqual(facts['memory'], {'oom':2,'oom_kill':1})
+        self.assertNotIn('sentinel', json.dumps(facts))
+
+    def test_postgres_restart_fixture_preserves_data_and_releases_owned_volume(self):
+        compose = (ROOT/'scripts/test/docker-compose.monitor-metrics-t2.yml').read_text()
+        postgres = compose.split('  postgres:\n', 1)[1].split('  block-capacity:', 1)[0]
+        self.assertIn('- postgres_data:/var/lib/postgresql/data', postgres)
+        self.assertNotIn('tmpfs:', postgres)
+        self.assertIn('cpus: 0.5', postgres)
+        self.assertIn('mem_limit: 256m', postgres)
+        self.assertIn('  postgres_data:\n', compose)
+        gate = (ROOT/'scripts/test/monitor-metrics-gate.sh').read_text()
+        directory = gate.split('postgres_directory_probe(){', 1)[1].split('\n}', 1)[0]
+        self.assertLess(directory.index('compose rm -sf postgres'), directory.index('docker volume rm "${COMPOSE_PROJECT}_postgres_data"'))
+        self.assertLess(directory.index('docker volume rm "${COMPOSE_PROJECT}_postgres_data"'), directory.index('compose up'))
+        self.assertIn('down --volumes --remove-orphans', gate)
+
+    def test_postgres_query_discovery_publishes_atomically_in_owned_linux_view(self):
+        probe = postgres_probe.Probe.__new__(postgres_probe.Probe)
+        probe.compose = ['docker', 'compose', '-p', 'owned-fixture']
+        text = '[{"targets":[]}]'
+        with mock.patch.object(postgres_probe.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, text, '')) as run:
+            probe.publish_query_discovery(text)
+            args, kwargs = run.call_args
+            self.assertEqual(args[0][:4], probe.compose)
+            self.assertIn('metrics-source', args[0])
+            self.assertIn('mv -f "$pending" /source/discovery.json', args[0][-1])
+            self.assertEqual(kwargs['input'], text)
+            self.assertTrue(kwargs['check'])
+            self.assertEqual(kwargs['timeout'], 10)
+            run.return_value.stdout = 'different'
+            with self.assertRaisesRegex(AssertionError, 'publication differs'):
+                probe.publish_query_discovery(text)
+
     def test_python_http_tmpfs_allows_native_loading_without_other_privilege_changes(self):
         text=(ROOT/'scripts/test/docker-compose.monitor-metrics-t2.yml').read_text()
         shared=text.split('services:',1)[0]

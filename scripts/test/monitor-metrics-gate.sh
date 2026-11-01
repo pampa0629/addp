@@ -155,9 +155,10 @@ authentication.prepare_business(Path(sys.argv[2]).resolve() / 'postgres-auth',
                                 'local all all trust\nhost all all 0.0.0.0/0 scram-sha-256\nhost all all ::0/0 scram-sha-256\n')
 PGAUTH
 postgres_directory_probe(){
-  # Recreate only this gate's disposable tmpfs database. Never use shared PG.
+  # Recreate only this gate's disposable database and data. Never use shared PG.
   compose stop postgres-metrics-web postgres-metrics
   compose rm -sf postgres
+  docker volume rm "${COMPOSE_PROJECT}_postgres_data"
   export METRICS_T2_DIRECTORY_AUTH=true METRICS_T2_HBA_FILE=/etc/addp-postgres-auth/pg_hba.conf
   compose up -d --wait --wait-timeout 90 postgres
   python3 "$ROOT_DIR/scripts/test/postgres-observation-probe.py"

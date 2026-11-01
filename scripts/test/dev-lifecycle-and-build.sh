@@ -979,7 +979,7 @@ addp_metrics_preflight() {{ ! addp_metrics_enabled || [[ "$MODE" != invalid-metr
 printf 'up\n' >> "$ROOT_DIR/infra-up-calls"
 [[ "$MODE" != core-failed ]]
 ''')
-        environment = {**os.environ, 'ROOT_DIR': str(workspace), 'MODE': mode,
+        environment = {**os.environ, 'ROOT_DIR': str(workspace), 'MODE': mode, 'START_ALL': 'false',
                        'ADDP_OBSERVABILITY_LOGS_ENABLED': logs,
                        'ADDP_OBSERVABILITY_METRICS_ENABLED': metrics}
         result = subprocess.run(['bash', '-c', 'set -euo pipefail\nYELLOW= GREEN= RED= NC=\n' + phase +
@@ -1011,7 +1011,7 @@ phase = source[start:end]
 for online, hosted in [('0', '0'), ('1', '0'), ('1', '1')]:
     workspace = temporary / f'start-ownership-{online}-{hosted}'
     workspace.mkdir()
-    environment = {**os.environ, 'ROOT_DIR': str(workspace), 'SCRIPT_DIR': str(root / 'scripts/dev'),
+    environment = {**os.environ, 'ROOT_DIR': str(workspace), 'SCRIPT_DIR': str(root / 'scripts/dev'), 'START_ALL': 'false',
                    'ADDP_ONLINE_HOST': online, 'ADDP_ONLINE_HOSTED': hosted,
                    'POINTCLOUD_WORKFLOW_PORT': '18102', 'ADDP_DEV_PORTS_RESOLVED': ''}
     script = '''
