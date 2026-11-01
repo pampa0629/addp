@@ -1337,7 +1337,8 @@ def test_focal_median_keeps_one_entry_required_parameters_old_methods_and_exampl
     from operators import list_operators
     specs=[s for s in list_operators()if s['id']=='raster_focal_statistics'];assert len(specs)==1;spec=specs[0]
     params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_raster','band','window_size','method','percentile','weights'}and all(params[n]['required']for n in ('band','window_size','method'))
+    assert set(params)=={'input_raster','band','window_type','window_size','radius_metres','method','percentile','weights'}and all(params[n]['required']for n in ('band','method'))
+    assert not params['window_size']['required'] and params['window_size']['show_when']=={'window_type':['square_pixels']}
     assert all(v in params['method']['description']for v in ('sum','mean','min','max','stddev','mode','median','中位数','偶数'))
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']and spec['attributes']['resource_groups']==['raster']
     assert spec['output_ports'][0]['type']=='raster'and len(spec['output_ports'])==1
@@ -1408,8 +1409,9 @@ def test_focal_variety_single_existing_entry_keeps_old_eight_methods_and_port():
     assert len(specs)==1;spec=specs[0];params={p['name']:p for p in spec['parameters']}
     assert params['method']['enum']==['sum','mean','min','max','stddev','mode','median','percentile','variety','weighted_mean','weighted_stddev','weighted_sum']
     assert '分类种类数' in params['method']['description'] and '去重' in params['method']['description']
-    assert set(params)=={'input_raster','band','window_size','method','percentile','weights'}
-    assert all(params[key]['required'] for key in ('band','window_size','method'))
+    assert set(params)=={'input_raster','band','window_type','window_size','radius_metres','method','percentile','weights'}
+    assert all(params[key]['required'] for key in ('band','method'))
+    assert not params['window_size']['required'] and params['window_size']['show_when']=={'window_type':['square_pixels']}
     assert params['percentile']['show_when']=={'method':['percentile']}
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
@@ -1557,3 +1559,19 @@ def test_vector_area_stddev_single_existing_entry_explicit_flag_default_example_
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']and spec['attributes']['resource_groups']==['raster']
     assert spec['output_ports'][0]['type']=='GeoDataFrame'and'include_area_weighted_stddev'not in spec['detailed_description']['workflow_example']['params']
     assert not any(s['id']in('raster_vector_area_weighted_stddev','vector_area_weighted_stddev')for s in list_operators())
+
+
+def test_focal_circle_single_entry_conditional_windows_preserves_twelve_methods():
+    specs=[s for s in list_operators()if s['id']=='raster_focal_statistics'];assert len(specs)==1
+    spec=specs[0];params={p['name']:p for p in spec['parameters']}
+    assert params['window_type']['enum']==['square_pixels','circle_metres']and params['window_type']['default']=='square_pixels'
+    assert params['window_type']['type']=='string'and not params['window_type']['required']
+    for name,mode in [('window_size','square_pixels'),('radius_metres','circle_metres')]:
+        assert not params[name]['required']and 'default'not in params[name]
+        assert params[name]['show_when']=={'window_type':[mode]}
+    assert params['radius_metres']['type']=='float'and '5×5'in params['radius_metres']['description']and 'epsilon'in params['radius_metres']['description']
+    assert params['method']['enum']==['sum','mean','min','max','stddev','mode','median','percentile','variety','weighted_mean','weighted_stddev','weighted_sum']
+    assert params['percentile']['show_when']=={'method':['percentile']}and params['weights']['show_when']=={'method':['weighted_mean','weighted_stddev','weighted_sum']}
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']and len(spec['output_ports'])==1
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'band':1,'window_size':3,'method':'mean'}
+    assert not any(s['id']in('raster_focal_circle','raster_circle_statistics')for s in list_operators())

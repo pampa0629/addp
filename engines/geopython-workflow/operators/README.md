@@ -253,3 +253,5 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 ## 节点提取
 
 `extract_line_nodes`对已打断且无重合线网，按原始部件首尾提取Point节点、度数及完整端部来源Point明细。闭环首尾计两次，同源多部件分别计，拒绝未打断交会／自交／正长度重合，不去重或修复。两端口及原属性、来源与诊断边界见[节点提取契约](../../../docs/spec/workflow/矢量算子契约.md#节点提取契约)。
+
+`raster_focal_statistics`通过`window_type=circle_metres`及显式正`radius_metres`支持米制圆窗，按实际中心距离精确纳入边界，候选外接窗口最多5×5；九种非加权方法共用原halo／归约／输出。仅北向无旋转、已知线性单位二维投影，允许矩形像元，半径与window_size互斥；默认square_pixels保持原十二方法、3／5窗口及原结果。完整数值、有效性与失败边界见栅格算子契约，Linux／Hosted分别验收。

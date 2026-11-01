@@ -5216,7 +5216,8 @@ def test_focal_statistics_metadata_and_executable_example(tmp_path):
     spec=next(item for item in list_operators() if item['id']=='raster_focal_statistics')
     params={p['name']:p for p in spec['parameters']}
     assert params['input_raster']['param_type']=='input' and params['input_raster']['type']=='raster'
-    assert all(params[key]['required'] for key in ('band','window_size','method'))
+    assert all(params[key]['required'] for key in ('band','method'))
+    assert not params['window_size']['required'] and params['window_size']['show_when']=={'window_type':['square_pixels']}
     assert 'mode' in params['method']['description'] and '并列' in params['method']['description']
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
     assert spec['attributes']['resource_groups']==['raster'] and spec['output_ports'][0]['type']=='raster'
@@ -18097,3 +18098,227 @@ def test_vector_area_stddev_async_full_geopackage_preview_failures_and_cleanup(t
         assert status['error']=='任务 stats 执行失败: '+cause
         assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
     assert client.post('/api/operators/raster_vector_zonal_statistics/invoke',json={'params':{}}).status_code==403
+
+
+# Metre circle: independent centre enumeration; never call the product offset helper.
+def _focal_circle_oracle(values, valid, dx, dy, units, radius, method, percentile=25.):
+    from decimal import Decimal, localcontext
+    from collections import Counter
+    def d(value): return Decimal.from_float(float(value))
+    result = np.full(values.shape, np.nan)
+    with localcontext() as ctx:
+        ctx.prec = 2000
+        xstep, ystep, limit = d(dx)*d(units), d(dy)*d(units), d(radius)**2
+        for row, col in zip(*np.nonzero(valid)):
+            samples = [float(values[y,x]) for y in range(max(0,row-2),min(values.shape[0],row+3))
+                       for x in range(max(0,col-2),min(values.shape[1],col+3))
+                       if valid[y,x] and ((int(x-col)*xstep)**2+(int(y-row)*ystep)**2 <= limit)]
+            if method == 'mode':
+                counts=Counter(samples); modes=[v for v,n in counts.items()if n==max(counts.values())]
+                answer=float(values[row,col])if values[row,col]in modes else min(modes)
+            elif method == 'variety': answer=len(set(samples))
+            elif method in ('median','percentile'):
+                ordered=sorted(samples);position=Decimal(len(ordered)-1)*d(50. if method=='median'else percentile)/100
+                low=int(position);weight=position-low;high=low+bool(weight)
+                answer=float(d(ordered[low])*(1-weight)+d(ordered[high])*weight)
+            elif method == 'stddev':
+                mean=sum(map(d,samples))/len(samples)
+                answer=float((sum((d(v)-mean)**2 for v in samples)/len(samples)).sqrt())
+            else:
+                answer={'sum':lambda:math.fsum(samples),'mean':lambda:statistics.fmean(samples),
+                        'min':lambda:min(samples),'max':lambda:max(samples)}[method]()
+            result[row,col]=answer
+    return result
+
+
+@pytest.mark.parametrize('method',['sum','mean','min','max','stddev','mode','median','percentile','variety'])
+@pytest.mark.parametrize('crs,dx,dy,radius_units',[
+    ('EPSG:3857',3.,4.,5.), ('EPSG:3857',1.,2.,2.),
+    ('EPSG:3857',2.,1.,2.), ('EPSG:3857',1.,1.,.25),
+    ('EPSG:2222',1.,1.,2.), ('EPSG:2277',1.,1.,2.),
+])
+def test_focal_circle_full_oracle_units_rectangles_band_mask_and_old_source(tmp_path,method,crs,dx,dy,radius_units):
+    reference=osr.SpatialReference();reference.SetFromUserInput(crs);units=reference.GetLinearUnits()
+    radius=radius_units*units;transform=(200.,dx,0.,300.,0.,-dy)
+    values=(np.arange(56).reshape(7,8)%11-5).astype(float)
+    values[1,1]=-9999;values[2,1]=np.nan;values[2,2]=np.inf
+    alpha=np.full(values.shape,128.);alpha[3,1]=0.;alpha[3,2]=np.inf;alpha[3,3]=-1.
+    mask=np.full(values.shape,255,np.uint8);mask[4,3]=0
+    source=create_raster(tmp_path/'circle.tif',np.stack([np.full(values.shape,np.nan),values,alpha]),transform,crs)
+    ds=gdal.Open(str(source),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds.GetRasterBand(2).SetScale(7.);ds.GetRasterBand(2).SetOffset(100.)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(2).GetMaskBand().WriteArray(mask);ds=None;before=source.read_bytes()
+    valid=np.isfinite(values)&(values!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
+    expected=_focal_circle_oracle(values,valid,dx,dy,units,radius,method)
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(source)),2,method=method,
+            window_type='circle_metres',radius_metres=radius,**({'percentile':25.}if method=='percentile'else{}))
+        ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);actual=read_band_values(band)
+        np.testing.assert_allclose(actual,expected,rtol=2e-14,atol=1e-14,equal_nan=True)
+        np.testing.assert_array_equal(read_band_values(band.GetMaskBand())!=0,valid)
+        assert ds.GetGeoTransform()==transform and ds.GetSpatialRef().IsSame(reference)
+        assert ds.RasterCount==1 and band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetScale()is None and band.GetOffset()is None and band.GetColorTable()is None
+        assert band.GetColorInterpretation()!=gdal.GCI_AlphaBand
+        band=None;ds=None
+    assert source.read_bytes()==before
+
+
+@pytest.mark.parametrize('radius,expected_center',[(np.nextafter(5.,0.),5.),(5.,9.),(np.nextafter(5.,np.inf),9.)])
+def test_focal_circle_boundary_exact_equality_and_one_ulp_no_epsilon(tmp_path,radius,expected_center):
+    source=create_raster(tmp_path/'boundary.tif',np.ones((5,5)),(1e12,3.,0.,-1e12,0.,-4.),'EPSG:3857')
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(source)),1,method='sum',window_type='circle_metres',radius_metres=float(radius))
+        ds=gdal.Open(str(result.path));assert ds.ReadAsArray()[2,2]==expected_center;ds=None
+
+
+@pytest.mark.parametrize('case',['just-below','equal','tiny','underflow-step','overflow-step'])
+def test_focal_circle_five_by_five_bound_not_clipped_and_exact_step_products(tmp_path,case):
+    radius=float(np.nextafter(3.,0.));pitch=1.;expected=25.
+    if case=='equal':radius=3.
+    elif case=='tiny':radius=float(np.nextafter(0.,1.));expected=1.
+    elif case=='underflow-step':pitch=float(np.nextafter(0.,1.));radius=pitch;expected=5.
+    elif case=='overflow-step':pitch=1e308;radius=1e308;expected=5.
+    # Use a valid GDAL grid, but isolate unit product extremes from GDAL inverse determinant limitations.
+    source=create_raster(tmp_path/'limit.tif',np.ones((5,5)),(0,1,0,5,0,-1),'EPSG:3857')
+    import operators.raster_compute as c
+    if case in ('underflow-step','overflow-step'):
+        # Helper tested directly with exact fake grid facts; real admission is tested separately.
+        class Grid:
+            def GetGeoTransform(self):return(0,pitch,0,0,0,-pitch)
+        from unittest.mock import patch
+        with patch.object(c,'_projected_north_up_grid',return_value=.5 if case=='underflow-step'else 2.):
+            size,offsets=c._focal_circle_window(Grid(),radius)
+        assert (size,len(offsets))==((5,13)if case=='underflow-step'else(1,1));return
+    with raster_workspace():
+        if case=='equal':
+            with pytest.raises(ValueError,match='5'):
+                raster_focal_statistics(raster_load(source_plan(source)),1,method='mean',window_type='circle_metres',radius_metres=radius)
+        else:
+            result=raster_focal_statistics(raster_load(source_plan(source)),1,method='sum',window_type='circle_metres',radius_metres=radius)
+            ds=gdal.Open(str(result.path));assert ds.ReadAsArray()[2,2]==expected;ds=None
+
+
+@pytest.mark.parametrize('shape',[(1,1),(1,7),(7,1),(2,2)])
+@pytest.mark.parametrize('invalid',[False,True])
+def test_focal_circle_thin_all_invalid_and_radius_limit_even_on_small_image(tmp_path,shape,invalid):
+    values=np.full(shape,np.nan if invalid else 0.);source=create_raster(tmp_path/'thin.tif',values,(0,1,0,0,0,-4),'EPSG:3857')
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(source)),1,method='stddev',window_type='circle_metres',radius_metres=2.)
+        ds=gdal.Open(str(result.path));actual=ds.ReadAsArray();ds=None
+        np.testing.assert_array_equal(actual,values)
+        with pytest.raises(ValueError,match='5'):
+            raster_focal_statistics(raster_load(source_plan(source)),1,method='mean',window_type='circle_metres',radius_metres=3.)
+
+
+@pytest.mark.parametrize('params,code',[
+    ({'window_type':None},'window_type'),({'window_type':True},'window_type'),({'window_type':'circle'},'window_type'),
+    ({'window_type':[]},'window_type'),({'window_type':'circle_metres'},'radius'),
+    *[({'window_type':'circle_metres','radius_metres':v},'radius') for v in (None,True,False,0,-1,'1',[],{},float('nan'),float('inf'),-float('inf'),10**1000)],
+    *[({'window_type':'circle_metres','radius_metres':1.,'window_size':v},'window_unused') for v in (None,3,5)],
+    ({'window_size':3,'radius_metres':None},'radius_unused'),({'window_size':3,'radius_metres':1.},'radius_unused'),
+    *[({'window_type':'circle_metres','radius_metres':1.,'method':m},'circle_method') for m in ('weighted_mean','weighted_stddev','weighted_sum')],
+])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_focal_circle_exact_bilingual_parameter_errors_before_source_or_output(params,code,language):
+    import operators.raster_compute as c
+    args={'method':'mean',**params}
+    with raster_error_language(language),pytest.raises(ValueError)as caught:raster_focal_statistics(None,1,**args)
+    assert str(caught.value)==c._FOCAL_MESSAGES[code][language=='en']
+
+
+@pytest.mark.parametrize('kind',['geographic','compound','missing-crs','missing-grid','rotated','reverse-x','reverse-y','singular','unknown-units'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_focal_circle_exact_bilingual_grid_rejection_before_output(tmp_path,monkeypatch,kind,language):
+    import operators.raster_compute as c
+    transform=(0,1,0,5,0,-1);crs='EPSG:3857'
+    if kind=='geographic':crs='EPSG:4326'
+    elif kind=='compound':crs='EPSG:7415'
+    elif kind=='missing-crs':crs=None
+    elif kind=='missing-grid':transform=None
+    elif kind=='rotated':transform=(0,1,.1,5,.1,-1)
+    elif kind=='reverse-x':transform=(0,-1,0,5,0,-1)
+    elif kind=='reverse-y':transform=(0,1,0,5,0,1)
+    elif kind=='singular':transform=(0,1,1,5,1,1)
+    elif kind=='unknown-units':
+        ref=osr.SpatialReference();ref.SetProjCS('Unspecified linear unit grid');ref.SetWellKnownGeogCS('WGS84');ref.SetMercator(0,13,1,0,0);ref.SetLinearUnits('unknown',1.23456789);crs=ref.ExportToWkt()
+    path=create_raster(tmp_path/'bad-grid.tif',np.ones((3,3)),transform,crs);before=path.read_bytes()
+    monkeypatch.setattr(c,'_numeric_output',lambda *a,**kw:pytest.fail('output created before grid admission'))
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as caught:
+        raster_focal_statistics(raster_load(source_plan(path)),1,method='mean',window_type='circle_metres',radius_metres=1.)
+    assert str(caught.value)==c._FOCAL_MESSAGES['circle_grid'][language=='en']and path.read_bytes()==before
+
+
+@pytest.mark.parametrize('method',['mean','median','mode','variety','percentile','stddev'])
+def test_focal_circle_both_block_axes_full_oracle_bounded_reads(tmp_path,monkeypatch,method):
+    import operators.raster_compute as c
+    shape=(515,519);rows,cols=np.indices(shape);values=((cols+3*rows)%13-6).astype(float)
+    values[(cols%101==0)&(rows%67==0)]=-9999
+    valid=values!=-9999;source=create_raster(tmp_path/'blocks.tif',values,(10,1,0,20,0,-2),'EPSG:3857')
+    # Independent scalar oracle only for a small repeating pattern and full-image neighbourhood shifts.
+    from fractions import Fraction
+    offsets=[(dr,dc)for dr in range(-2,3)for dc in range(-2,3)if dc*dc+4*dr*dr<=4]
+    expected=np.full(shape,np.nan);original=c._blocks;reads=[]
+    # Enumerate rows with a small bounded list of samples independently of product halo offsets.
+    for y in range(shape[0]):
+        for x in range(shape[1]):
+            if not valid[y,x]:continue
+            sample=[float(values[y+dr,x+dc])for dr,dc in offsets if 0<=y+dr<shape[0]and 0<=x+dc<shape[1]and valid[y+dr,x+dc]]
+            if method=='percentile':
+                ordered=sorted(sample);h=Fraction(len(sample)-1,4);lo=h.numerator//h.denominator;w=h-lo
+                answer=float(Fraction(ordered[lo])*(1-w)+Fraction(ordered[lo+bool(w)])*w)
+            elif method=='mode':
+                from collections import Counter
+                n=Counter(sample);best=[v for v,k in n.items()if k==max(n.values())];answer=values[y,x]if values[y,x]in best else min(best)
+            elif method=='variety':answer=len(set(sample))
+            else:answer={'mean':statistics.fmean,'median':statistics.median,'stddev':statistics.pstdev}[method](sample)
+            expected[y,x]=answer
+    def read(*args,**kwargs):
+        window=kwargs.get('window');reads.append(window)
+        return original(*args,**kwargs)
+    monkeypatch.setattr(c,'_blocks',read)
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(source)),1,method=method,window_type='circle_metres',radius_metres=2.,**({'percentile':25.}if method=='percentile'else{}))
+        ds=gdal.Open(str(result.path));np.testing.assert_allclose(ds.ReadAsArray(),expected,rtol=2e-14,atol=1e-14,equal_nan=True);ds=None
+    assert reads
+    for window in reads:
+        if window:assert window[2]<=512 and window[3]<=512
+
+
+@pytest.mark.parametrize('failure',[None,'radius','read','write'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_focal_circle_async_cog_and_all_exit_cleanup(tmp_path,monkeypatch,failure,language):
+    import api_server,workflow_engine,operators.raster_compute as c
+    values=(np.arange(56).reshape(7,8)-20).astype(float);values[2,3]=-9999
+    source=create_raster(tmp_path/'async.tif',values,(0,3,0,0,0,-4),'EPSG:3857');before=source.read_bytes()
+    previous=tmp_path/'previous.tif';previous.write_bytes(b'prior artifact');target=tmp_path/'circle.cog.tif'
+    params={'input_raster':{'$ref':'source'},'band':1,'method':'mean','window_type':'circle_metres','radius_metres':9. if failure=='radius'else 5.}
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
+           {'id':'circle','operator':'raster_focal_statistics','depends_on':['source'],'params':params},
+           {'id':'save','operator':'raster_save','depends_on':['circle'],'params':{'input_raster':{'$ref':'circle'},'access_plan':target_plan(target),'profile':'cog'}}]
+    workspaces=[];execute=workflow_engine._execute_operator
+    def observe(name,arguments):
+        if name=='raster_focal_statistics':workspaces.append(arguments['input_raster'].workspace)
+        return execute(name,arguments)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',observe)
+    if failure=='read':monkeypatch.setattr(c,'_blocks',lambda *a,**kw:(_ for _ in ()).throw(OSError('injected source read failure')))
+    if failure=='write':monkeypatch.setattr(c,'translate_cog',lambda *a,**kw:(_ for _ in ()).throw(OSError('injected COG failure')))
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'zh-cn'if language=='en'else'en'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed'if failure else'success'),status
+    assert workspaces and all(not path.exists()for path in workspaces)
+    assert source.read_bytes()==before and previous.read_bytes()==b'prior artifact'
+    if failure:
+        assert not target.exists()
+        if failure=='radius':assert c._FOCAL_MESSAGES['circle_size'][language=='en']in status['error']
+    else:
+        artifact=json.loads(status['result']);assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));np.testing.assert_allclose(ds.ReadAsArray(),_focal_circle_oracle(values,values!=-9999,3,4,1.,5.,'mean'),equal_nan=True);assert ds.GetGeoTransform()==(0,3,0,0,0,-4);ds=None
+    assert client.post('/api/operators/raster_focal_statistics/invoke',json={'params':{}}).status_code==403
