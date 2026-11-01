@@ -390,25 +390,40 @@ def run_command(
     return result
 
 
-def browser_timeout_imports(error: BaseException | None) -> dict[str, int]:
+def browser_timeout_import_progress(error: BaseException | None) -> dict[str, Any]:
+    progress = {
+        "timeout_context": isinstance(error, subprocess.TimeoutExpired),
+        "stream": "none",
+        "captured_length": 0,
+        "examined_length": 0,
+        "profile_rows": 0,
+        "truncated": False,
+        "completed_import_us": {},
+    }
     if not isinstance(error, subprocess.TimeoutExpired):
-        return {}
+        return progress
     stderr = error.stderr
     if not isinstance(stderr, (str, bytes)):
-        return {}
-    stderr = stderr[-65536:]
-    if isinstance(stderr, bytes):
-        stderr = stderr.decode("utf-8", errors="replace")
-    completed = {}
-    for line in stderr.splitlines():
-        match = re.fullmatch(
-            r"import time:\s+[0-9]{1,12}\s+\|\s+([0-9]{1,12})\s+\|\s+"
-            r"(asyncio|httpx|keyring|addp_common(?:\.oauth|\.tools|\.cli)?)\s*",
-            line,
-        )
-        if match:
-            completed[match[2]] = int(match[1])
-    return completed
+        return progress
+    progress.update(stream="bytes" if isinstance(stderr, bytes) else "text", captured_length=len(stderr))
+    progress["truncated"] = len(stderr) > 65536
+    # Keep the total inspection bound while retaining early startup imports.
+    # Parse chunks separately so truncation cannot assemble a synthetic row.
+    chunks = [stderr[:32768], stderr[-32768:]] if progress["truncated"] else [stderr]
+    for chunk in chunks:
+        progress["examined_length"] += len(chunk)
+        if isinstance(chunk, bytes):
+            chunk = chunk.decode("utf-8", errors="replace")
+        for line in chunk.splitlines():
+            progress["profile_rows"] += line.startswith("import time:")
+            match = re.fullmatch(
+                r"import time:\s+[0-9]{1,12}\s+\|\s+([0-9]{1,12})\s+\|\s+"
+                r"(asyncio|httpx|keyring|addp_common(?:\.oauth|\.tools|\.cli)?)\s*",
+                line,
+            )
+            if match:
+                progress["completed_import_us"][match[2]] = int(match[1])
+    return progress
 
 
 def run_browser_login(addp: Path, env: dict[str, str], fixture: OAuthFixture) -> subprocess.CompletedProcess[str]:
@@ -429,8 +444,8 @@ def run_browser_login(addp: Path, env: dict[str, str], fixture: OAuthFixture) ->
             }
         raise AssertionError(
             f"{exc}; browser_fixture_progress={json.dumps(progress, sort_keys=True, separators=(',', ':'))}"
-            "; browser_completed_import_us="
-            + json.dumps(browser_timeout_imports(exc.__context__), sort_keys=True, separators=(',', ':'))
+            "; browser_import_progress="
+            + json.dumps(browser_timeout_import_progress(exc.__context__), sort_keys=True, separators=(',', ':'))
         ) from None
 
 

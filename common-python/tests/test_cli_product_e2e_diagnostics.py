@@ -1,3 +1,4 @@
+import json
 import subprocess
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from cli_product_e2e import (
     assert_no_secrets,
     assert_refresh_process_succeeded,
     assert_refresh_rotation_serialized,
-    browser_timeout_imports,
+    browser_timeout_import_progress,
     capture_command,
     collect_process,
     parse_json_output,
@@ -115,11 +116,16 @@ def test_browser_timeout_reports_only_fixture_counts(monkeypatch, request_count,
     monkeypatch.setattr(subprocess, "run", time_out)
     with pytest.raises(AssertionError, match="browser login timed out") as exc_info:
         run_browser_login(Path(secret), {}, fixture)
-    assert str(exc_info.value) == (
+    assert str(exc_info.value).startswith(
         'browser login timed out; browser_fixture_progress={'
         f'"authorization_requests":{request_count},"pending_authorization_codes":{code_count},'
-        f'"token_families":{family_count}' + '}; browser_completed_import_us={}'
+        f'"token_families":{family_count}' + '}; browser_import_progress='
     )
+    progress = json.loads(str(exc_info.value).split("browser_import_progress=", 1)[1])
+    assert progress["timeout_context"] is True
+    assert progress["completed_import_us"] == {}
+    assert progress["profile_rows"] == 0
+    assert progress["captured_length"] == len(secret)
     assert secret not in str(exc_info.value)
 
 
@@ -157,14 +163,35 @@ def test_browser_timeout_import_diagnostic_is_closed_and_redacted(monkeypatch, a
     with pytest.raises(AssertionError) as exc_info:
         run_browser_login(Path(secret), {}, OAuthFixture())
     message = str(exc_info.value)
-    assert message.endswith('browser_completed_import_us={"addp_common.oauth":400,"keyring":100}')
+    progress = json.loads(message.split("browser_import_progress=", 1)[1])
+    assert progress["completed_import_us"] == {"addp_common.oauth": 400, "keyring": 100}
+    assert progress["profile_rows"] == 4
+    assert progress["stream"] == ("bytes" if as_bytes else "text")
+    assert progress["captured_length"] == len(stderr)
+    assert progress["examined_length"] == len(stderr)
+    assert progress["truncated"] is False
     assert secret not in message
 
 
 def test_browser_timeout_import_diagnostic_bounds_input_and_ignores_other_errors():
-    output = "import time: 1 | 2 | keyring\n" + "x" * 65536
+    output = "import time: 1 | 2 | keyring\n" + "x" * 65536 + "\nimport time: 3 | 4 | asyncio\n"
     error = subprocess.TimeoutExpired(["addp"], 30, stderr=output)
-    assert browser_timeout_imports(error) == {}
-    assert browser_timeout_imports(None) == {}
-    assert browser_timeout_imports(RuntimeError("private")) == {}
-    assert browser_timeout_imports(subprocess.TimeoutExpired(["addp"], 30)) == {}
+    progress = browser_timeout_import_progress(error)
+    assert progress["completed_import_us"] == {"keyring": 2, "asyncio": 4}
+    assert progress["captured_length"] == len(output)
+    assert progress["examined_length"] == 65536
+    assert progress["profile_rows"] == 2
+    assert progress["truncated"] is True
+    for error in [None, RuntimeError("private"), subprocess.TimeoutExpired(["addp"], 30)]:
+        progress = browser_timeout_import_progress(error)
+        assert progress["timeout_context"] is isinstance(error, subprocess.TimeoutExpired)
+        assert progress["stream"] == "none"
+        assert progress["captured_length"] == progress["examined_length"] == progress["profile_rows"] == 0
+        assert progress["completed_import_us"] == {}
+
+
+def test_browser_timeout_import_diagnostic_does_not_join_truncated_rows():
+    output = "x" * 32755 + "\nimport time:" + "x" * 65536 + " 1 | 2 | keyring\n" + "x" * 32751
+    progress = browser_timeout_import_progress(subprocess.TimeoutExpired(["addp"], 30, stderr=output))
+    assert progress["examined_length"] == 65536
+    assert progress["completed_import_us"] == {}
