@@ -493,11 +493,11 @@ schema drift 的阻塞流程统一见[Schema 变化](transfer-任务语义与同
 
 审批后的 request 级 Meta 补扫 claim、CAS 接管和旧 token 拒绝统一见[审批补扫 claim 与失败边界](数据库架构.md#审批补扫-claim-与失败边界)及 CDC 正式契约；仅相同重复审批 POST 可接管过期 `running`，GET 始终只读。真实 Meta 调用失败为 `failed`，不由重复审批自动重试，可在 Meta 手动扫描；补扫失败不回滚已提交的 DDL/mapping revision。`TRANSFER_META_SCAN_CLAIM_TTL` 为部署配置，默认 2 分钟且必须大于 Meta client 的 HTTP 超时，不进入任务 JSON。扫描提交成功也不等于扫描完成或恢复成功，实际通过范围见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
 
-`pause` 停止目标应用，但 connector 继续把数据库日志变化写入 Infra Kafka 并推进捕获位置。正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口；connector/Kafka 故障时还必须分别观测 PostgreSQL slot/WAL、MySQL binlog 或 Oracle redo/archive log 容量风险。resume 只在 committed position 尚未过期时保证无损。
+CDC pause/resume 的捕获与位置边界统一见[用户运行控制](transfer-任务语义与同步模式.md#用户运行控制)。pause 不暂停 connector，仍须观测 Kafka backlog、磁盘、retention 及源事务日志窗口；只有 connector 健康且 committed position 未被 retention 清除时才允许无损恢复，不保证无限期暂停。
 
-`stop` 是 CDC task 的不可逆终态：删除 ADDP-owned connector、provider 专属捕获资源、data/schema-history topic、consumer group 和 ACL，任务不得再次 start/resume。重新同步必须创建新任务、新目标表并重新 initial snapshot。服务端 Stop API 必须要求 `confirmed=true` 且 `confirmation_text` 与任务名称完全一致，Console 同时使用 danger 二次确认并要求输入任务名称；stop 不删除目标业务表、目标 ledger、任务定义、execution 或审计记录。
+CDC stop 不可逆，ADDP-owned 捕获资源的清理范围与顺序以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准。已停止任务不能再次 start/resume，重新同步须新建任务、目标表并重新 initial snapshot。请求必须由服务端校验 `confirmed=true` 和与任务名称完全一致的 `confirmation_text`；Console 同时使用 danger 二次确认并要求输入任务名称。Stop 保留目标业务表、目标 ledger、任务定义、execution 和审计记录。
 
-continuous task 初始同样保存 `desired_state=stopped`，所以该字段只表达用户期望状态，不能证明数据库 CDC 已被永久停止。CDC 的不可逆终态以 `transfer.capture_resources.status=stopped` 为事实；尚无 capture generation 的新任务可以首次启动。`cleanup_failed` 表示 Stop 清理尚未完成，只允许重试清理，不允许重新启动或恢复。
+`desired_state=stopped` 也用于新任务，不能证明 CDC 已永久停止；终态以当前 generation 的 `transfer.capture_resources.status=stopped` 为准，尚无 generation 的新任务允许首次启动。`cleanup_failed` 只允许重试 Stop 清理，禁止 start/resume。状态保存或清理请求返回不代替[实际停止、资源清理与恢复验收](transfer-任务语义与同步模式.md#十一验证范围)。
 
 完整配置、envelope、schema drift、目标原子应用和资源 owner 约束以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准，运行语义见[数据库 CDC 专题](transfer-任务语义与同步模式.md#63-数据库-cdc)。普通 Oracle LOB/RAC、ArcGIS SDE、多表、无主键、数据库 CDC replay/DLQ、Schema Registry、Avro、Protobuf、自动 schema evolution 和 truncate 事件均未进入当前实现；业务 Kafka 的 DLQ 与 bounded replay已公开。
 
