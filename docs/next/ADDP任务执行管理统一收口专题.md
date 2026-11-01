@@ -861,3 +861,27 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 
 本轮最终本地门禁已通过：`make test-manager-postgres` 退出 0，31 项顶层 PG 用例、零跳过，包含生产 schema／所有 Cleanup 仓库／真实 owned Meili／Common 领取／完整 Manager handler／结果回执，以及五种失败阶段、SQL 回滚和终态原 lease 不能追加证据。首次阶段事件写入被共享事件的“步骤必须先存在”守卫拒绝，已按其唯一协议改为同一 C 事务先保存步骤、后追加事件，前后均校验原 lease；最终 PG 反例通过。`make test-manager-backend` 退出 0；`make test-execution-online-ci-runner` 退出 0，native 100 项／共享 166 项均 OK、登记一致，Python focused 43 项通过。`make check-node-runtime`、自有差异检查通过；与 Hosted 固定源码 AST 对比，HTTP／wait／sleep 调用不变，原六权限与七断言机器契约逐字节不变。私有证据同目录 `manager-production-{prerequisite-missing,plan-native-pass}.log`、`manager-production-repro.log`、`manager-failure-stage-{red,focused,pg-red,final-pg,final-unit,final-runner}.log`、`authorization-code-red.log` 及 `manager-failure-stage-{invariants,local-proof}.json`。这些结果修复了确定的失败阶段丢失／授权原因消费缺陷，但未复现并修复现场 Manager 底层错误，整体仍为部分实现。新的精确源码 Linux CI 将只跟 Execution runner、Manager PG 及 Go workspace 中实际覆盖 Manager 的部分；不调查或修复无关 Job。API／Permission／Swagger 沿既有安全 Observation 契约，不新增字段或管理能力；第七次 Hosted、其他环境及权限变化没有授权。
+
+
+### 8.29 bf015 Linux 终态与 Manager PG 依赖缺口（CI 基线修正待确认）
+
+已独立 fresh 核验 `bf015feb9f33199c0c2063f8dd24e2c0c8b413b4`／push／attempt 1 的三项实际终态：
+
+- [Execution runner Job 124841858996](https://github.com/pampa0629/addp/actions/runs/41304445989/job/124841858996) success，准确 checkout／selected:true／canonical Make，100 native＋166 shared 均 OK，登记一致；日志 SHA-256 `d509594465e2b44bfa311f8cb589649a40f0baf1b48f6b66bae31b33f5c35e6b`。
+- [Go workspace Job 124841858923](https://github.com/pampa0629/addp/actions/runs/41304445989/job/124841858923) success；Manager 实际包覆盖已执行，internal/api 0.424s、internal/service 4.940s，均非 cached；日志 SHA-256 `062495a443c0045f4c6af9d57df00dfab6f6efa84d0c6374826206a109acf47a`。只确认 Manager Go 覆盖，不替代 PG／Hosted。
+- [Manager PG Job 124842044872](https://github.com/pampa0629/addp/actions/runs/41304445798/job/124842044872) failure，唯一顶层失败为本批新增的 `TestIntegrationPostgresManagerCleanupProductionRepositories`：生产 `repository.InitDatabase` 在 `ensureEmbeddingArtifactStateSchema` 的 `CREATE EXTENSION IF NOT EXISTS vector SCHEMA manager` 报 `extension "vector" is not available`／SQLSTATE 0A000。原日志 2359—2362 行，SHA-256 `dba10c6cb4928b19e52e908288d3f2816fb07af70624e0a20edbe08edca7881e`。原件 `/tmp/addp-ci-20261101-200009/`，独立总证明沿第六轮目录 `bf015-three-scopes-independent-proof.json`。
+
+这项真实生产初始化用例由本会话新增，但实施前只核对了 PostGIS／Meili 登记和路径覆盖，遗漏了生产初始化还要求 pgvector 的 CI Service 能力；应由本批补齐，不把依赖集成留给其他会话。该失败发生在 Owner 用例执行前，不是现场 Manager 已开始后失败的复现，也不能将本地 31 项通过外推为 Linux PG 通过。已有新阶段、租约、回滚、原六权限、七项业务断言及预算全部保留，不跳过／删除新用例，不伪造扩展、不加 `--no-deps` 或放松初始化。
+
+**已核实的唯一既有安装路线。** 本地 Infra／Linux Hosted 复用 `scripts/infra/Dockerfile.postgres`：PostgreSQL 15 bookworm、PostGIS 3、源码构建 pgvector v0.8.0；Manager PG workflow 仍只声明固定摘要的 `postgis/postgis:15-3.4` Service，因而缺少 vector 扩展文件。生产 Manager 对 vector 的要求是既有事实，本批新增的是首次在这个 CI 中执行完整初始化。不得为了测试拆出禁用向量的生产初始化第二路径，也不临时在个人共享 PostgreSQL 安装或更换镜像。
+
+**建议待确认范围。** 仅调整 `manager-postgres` Job 的独占测试数据库供给：由同一个标准 `make test-manager-postgres`／脚本沿仓库 Dockerfile 构建本 Job 自有 Linux amd64 镜像，显式固定构建基础输入并保存准确源码／版本／镜像 ID，启动新鲜 `addp_manager_disposable`；保留原 GitHub Meilisearch Service 和全部测试。版本轨道对齐仓库现有 PostgreSQL 15／PostGIS 3／pgvector 0.8.0；不声称纯 PostGIS Service 的旧 3.4 小版本天然等于当前仓库构建结果，实际版本必须核验并归档。不新增镜像发布／注册仓库权限或个人服务操作。
+
+数据库创建须由该 workflow 调用的标准生命周期完成；新容器、临时数据、镜像标记绑定本 Job／Run／attempt，ready 与真实 extension 能力核验后才测试；失败、取消和正常退出均按准确资源身份销毁，不复用个人实例或旧测试卷。删除 Manager Job 原来的纯 PostGIS Service，避免两个数据库供给路线并存。本地标准入口仍只用已核归属的 `addp_test`，不切换或重启个人 Infra，不创建新本地 database。针对这一 repo-built Postgres 供给同步 T2 服务登记／路径选择与反例验证，不能借不存在或未使用的旧 Service 假登记；不影响其他 Owner Job 的服务或镜像。
+
+**最小实施与验证。** 修改范围限 `.github/workflows/release-and-t2-gates.yml` 的 Manager Job、`scripts/test/manager-postgres-gate.sh`、既有 T2 登记／module gate 测试及对应说明；不新增产品 API、权限、持久数据实体或业务路径。离线验证 CI 所有权／拒绝个人环境／真实扩展前置／失败与取消回收／原 full-suite 和 skip 拒绝，复用 `make test-t2-ci-registration` 与已有 module-gate 标准测试；保留本地标准 Manager PG／Go 验证，再由自然 Manager PG CI 执行新的准确镜像及 31 项完整用例。其他必要 CI 只核本批实际覆盖。新的 Hosted 未获授权，不运行第七次。
+
+**确认点。** 用户已明确“其他环境和权限边界变化仍单独确认”；上述切换改变的是 Manager 专属 CI 数据库测试基线与供给生命周期，实施及推送触发该新基线前须确认。当前仅完成只读事实核验、证据收口和本节具体方案，没有构建、运行或发布新镜像，没有改变 CI／个人环境。runner／Manager Go 已验，Manager PG 仍失败，整条 Engine 清理链路仍为第六轮 0/7、现场 Manager 底层原因待足够证据。
+
+
+确认前的独立核验已完成：未修改实现情况下，标准 `make test-t2-ci-registration` 74 项和当前登记检查通过（24 个 hosted-service、14 个 gate-owned Compose、9 个 hosted-only、2 个 owner-managed）。这只证明原登记自身一致，不能弥补原 Manager Service 实际缺 vector。实施应优先复用现有 `ADDP_T2_OWNED_SERVICES`／Compose／lifecycle 登记模式，不新建平行服务目录；严格保留其固定基础镜像、源码构建输入、无不受控覆盖和唯一资源清理的反例，不能为了接纳当前未固定默认 ARG／git tag 而放宽构建来源校验。源码固定与已有 Dockerfile 复用方式需同次落实，并且保持其他 Job 的现有环境供给不变。当前仅本节文档变更，确认请求已发出，依赖该决定的代码及 CI 环境实施仍暂停。
