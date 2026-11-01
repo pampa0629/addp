@@ -102,9 +102,7 @@ T1 覆盖授权隔离、零任务副作用、完整配置／结构摘要及缺�
 
 Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角色，以该用户 EA 获取源和目标引擎访问，在字段映射与 Writer 前应用 export 保护。选项、资格或来源失效明确拒绝，不回落默认。Develop 全量导出使用独立 export 选择与共享会话精确摘要核验来源，再绑定签发的真实用户执行授权；默认导出仅保留已有观察来源，不自动提升为执行权限。原值授权、应用凭据和角色变更不在本轮范围。T1、真实 PostgreSQL 和前端门禁见 Security 同日记录；真实账号全链路 T4 需单独验收，不能由上述门禁推定。
 
-2026-10-25，既有隔离 suite 领域 v30 增加角色资格自然到期专项：期限内独立任务输出和经 Develop/Transfer 生成的实际 CSV 均全遮盖；同一登录会话自然到期后任务启动、名称更新及直接选择核验409/transfer_protection_roles_unavailable，任务不新增执行且目标保持；旧文件/会话与再次导出经现有 Develop BFF 为409/query_protection_choice_invalid，不把合并提示声称为已细分。显式清除选择后默认任务/新CSV恢复，旧特殊文件仍拒绝。主功能权限、Policy与投影保持，成功不撤销/重登/续期；失败/中断先删任务再清理仍有效资格，精确保留其他用户审计。新增场景及凭据隔离沿[Online规范](../scripts/docs/Online数据保护.md#transfer-资格自然到期与旧文件)；`make test-security-online-runner` 的38/55/30/274项Python、相关Go及登记通过（T0/T1），真实HTTP/Hosted未运行，不新增浏览器通过声明。本轮未变更产品API、授权规则或服务生命周期。
-
-2026-10-25，Common Transfer BFF现已严格保留资格/方式两类已声明409，Develop导出创建、状态及文件分别映射query_protection_roles_unavailable和query_protection_choice_invalid，源Transfer自己的错误码和裁决保持。未知码或异常响应不再伪报方式失效。隔离领域v31已将自然到期的导出断言改为角色精确码，Runner T0/T1通过；新真实Hosted T4未运行。详见Security原因细分记录及Online数据保护规范，v30合并提示仅是历史事实。
+分版本验证记录见[角色资格到期与导出拒绝证据](#角色资格到期与导出拒绝证据)。
 
 ## 执行规则
 
@@ -186,7 +184,7 @@ Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消�
 
 ### 专项约束与分版本证据
 
-专题导航：[continuous 过程事件与浏览器验收](#continuous-过程事件与浏览器验收)、[专业执行读取与响应收敛](#专业执行读取与响应收敛)、[SQL ETL 与 bounded 写后扫描](#sql-etl-与-bounded-写后扫描)、[bounded 失败诊断与配置预检](#bounded-失败诊断与配置预检)、[continuous 精确扫描与审批归属](#continuous-精确扫描与审批归属)、[bounded 定时授权验收](#bounded-定时授权验收)。
+专题导航：[continuous 过程事件与浏览器验收](#continuous-过程事件与浏览器验收)、[专业执行读取与响应收敛](#专业执行读取与响应收敛)、[SQL ETL 与 bounded 写后扫描](#sql-etl-与-bounded-写后扫描)、[bounded 失败诊断与配置预检](#bounded-失败诊断与配置预检)、[角色资格到期与导出拒绝证据](#角色资格到期与导出拒绝证据)、[continuous 精确扫描与审批归属](#continuous-精确扫描与审批归属)、[bounded 定时授权验收](#bounded-定时授权验收)。
 
 #### continuous 过程事件与浏览器验收
 
@@ -227,6 +225,14 @@ continuous 的 claim、累计提交计数与终态复用 `common.execution_event
 上述安全诊断链路已在 `c322167b8` 的 [Hosted T4 38219829612](https://github.com/pampa0629/addp/actions/runs/38219829612) 经真实 MongoDB 血缘拒绝验证，既有正常保护和 Security 不可达期间的查询搬运均通过；不可证明派生查询返回稳定 `query_output_lineage_unresolved` code，零写入且目标前后为空。`make test-transfer-backend`、`make test-transfer-postgres`、Swagger 35 路由覆盖及隔离已提交前端的单元／20 项浏览器／构建验证通过，同提交 Platform CI 33 项通过。共享工作区模块聚合曾因另一轮前端迁移的四个翻译键用例失败，未计为通过；不将工作区未完成的迁移纳入本次交付。
 
 2026-10-15 原生快照配置预检按写入策略核验目标能力：replace 除普通写入外，还要求实例已登记删除能力、当前插件声明删除能力及实现 `ResourceDeleteProvider`；缺少 Meta 快照不能覆盖已知不支持，诊断定位 `/config/target/policy/apply_mode`。append 与源读取不额外要求删除。沿既有 `make test-transfer-backend` 验证新增 11 场景及全部后端用例通过；`make test-transfer-postgres` 的 11 项真实集成、`make test-transfer-frontend` 的 130 项测试／20 项浏览器／构建、Swagger 35 路由覆盖和平台来源审查均通过，Ontology Go T1 通过。完整 `make test-module MODULE=transfer` 在共享 GDAL 生命周期的 `test_failed_sync_removes_record_and_recovers/FAIL_CHECK` 和 `test_launch_owns_listener_and_cleans_up_failure` 两项 20 秒超时处失败（本组 70 项），不得计完整模块通过；未修改该共享测试或阈值。未新增测试入口、依赖或 CI 路线，原 Transfer／Platform CI 自动发现覆盖本修复。用户按标准入口重启 Transfer 后，已通过真实 Console 复验：任务 13 原 append 配置返回 supported；仅在未保存草稿改为 replace 后返回 unsupported，诊断为 `registered_native_access_not_supported`，位置 `/config/target/policy/apply_mode`。取消编辑后未更新或重新执行任务，Manager 数据项 44575 的目标预览仍为三行七字段；本轮预检修复的本机运行复验完成，不计为隔离 T4 或完整模块门禁通过。
+
+#### 角色资格到期与导出拒绝证据
+
+当前能力与权限见[角色专用导出选择](#角色专用导出选择)；以下按 v30／v31 保留各自的错误映射、确定性验证和未覆盖范围。
+
+2026-10-25，既有隔离 suite 领域 v30 增加角色资格自然到期专项：期限内独立任务输出和经 Develop/Transfer 生成的实际 CSV 均全遮盖；同一登录会话自然到期后任务启动、名称更新及直接选择核验409/transfer_protection_roles_unavailable，任务不新增执行且目标保持；旧文件/会话与再次导出经现有 Develop BFF 为409/query_protection_choice_invalid，不把合并提示声称为已细分。显式清除选择后默认任务/新CSV恢复，旧特殊文件仍拒绝。主功能权限、Policy与投影保持，成功不撤销/重登/续期；失败/中断先删任务再清理仍有效资格，精确保留其他用户审计。新增场景及凭据隔离沿[Online规范](../scripts/docs/Online数据保护.md#transfer-资格自然到期与旧文件)；`make test-security-online-runner` 的38/55/30/274项Python、相关Go及登记通过（T0/T1），真实HTTP/Hosted未运行，不新增浏览器通过声明。本轮未变更产品API、授权规则或服务生命周期。
+
+2026-10-25，Common Transfer BFF现已严格保留资格/方式两类已声明409，Develop导出创建、状态及文件分别映射query_protection_roles_unavailable和query_protection_choice_invalid，源Transfer自己的错误码和裁决保持。未知码或异常响应不再伪报方式失效。隔离领域v31已将自然到期的导出断言改为角色精确码，Runner T0/T1通过；新真实Hosted T4未运行。详见Security原因细分记录及Online数据保护规范，v30合并提示仅是历史事实。
 
 #### continuous 精确扫描与审批归属
 
