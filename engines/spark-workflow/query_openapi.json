@@ -1,15 +1,15 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Spark synchronous query protocol / Spark 同步查询协议",
+    "title": "Spark prepared query protocol / Spark 已准备查询协议",
     "version": "addp.query-runtime/v1",
-    "description": "Documents the new synchronous query route only. Existing workflow routes are specified in the shared workflow protocol. / 仅描述新增同步查询入口，既有工作流入口见共享工作流协议。"
+    "description": "One retained Driver per query, prepare/protect/execute, bounded lifetime. / 每次查询保留同一Driver，准备、保护检查后执行，有界生命周期。"
   },
   "paths": {
     "/api/v1/queries": {
       "post": {
-        "operationId": "executeSparkFederatedQuery",
-        "summary": "Execute one read-only federated query / 执行一次只读联邦查询",
+        "operationId": "prepareSparkFederatedQuery",
+        "summary": "Prepare native read facts without collecting rows / 准备原生读取事实，不取数据行",
         "x-addp-auth-mode": "internal",
         "security": [
           {
@@ -23,6 +23,123 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/QueryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "Invalid or unsupported query / 查询无效或不支持",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid service credential / 服务凭据无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller or execution access denied / 调用方或执行授权拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request too large / 请求体过大",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "JSON content type required / 必须使用 JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Driver or result failure / Driver 或结果异常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime busy or dependency unavailable / 运行时繁忙或依赖不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Query timeout / 查询超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Retained query and provider-owned read facts / 保留的查询及运行时读取事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparedQuery"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/queries/{query_id}/execute": {
+      "post": {
+        "operationId": "executePreparedSparkQuery",
+        "summary": "Execute the same protected plan once / 执行保护校验通过的同一计划一次",
+        "x-addp-auth-mode": "internal",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "description": "Requires the tenant addp-develop Service Principal and an exact Spark read Execution Authorization. / 需要租户 addp-develop 服务身份和本次 Spark 只读执行授权。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "maxProperties": 0
               }
             }
           }
@@ -110,6 +227,75 @@
           },
           "504": {
             "description": "Query timeout / 查询超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/queries/{query_id}": {
+      "delete": {
+        "operationId": "closePreparedSparkQuery",
+        "summary": "Release Driver and source metadata locks / 释放Driver及来源元数据锁",
+        "x-addp-auth-mode": "internal",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Released / 已释放"
+          },
+          "401": {
+            "description": "Invalid service credential / 服务凭据无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller or execution access denied / 调用方或执行授权拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime busy or dependency unavailable / 运行时繁忙或依赖不可用",
             "content": {
               "application/json": {
                 "schema": {
@@ -334,6 +520,124 @@
           "error_code": {
             "type": "string",
             "pattern": "^query_[a-z_]+$"
+          }
+        }
+      },
+      "PreparedQuery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "query_id",
+          "sources",
+          "engine_read_scope",
+          "read_set"
+        ],
+        "properties": {
+          "query_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "engine_id",
+                "engine_type"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "engine_id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "engine_type": {
+                  "type": "string",
+                  "enum": [
+                    "postgresql",
+                    "mysql"
+                  ]
+                }
+              }
+            }
+          },
+          "engine_read_scope": {
+            "type": "object",
+            "nullable": true,
+            "required": [
+              "engine_ids"
+            ],
+            "properties": {
+              "engine_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "read_set": {
+            "type": "object",
+            "nullable": true,
+            "required": [
+              "paths"
+            ],
+            "properties": {
+              "paths": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CatalogLeaf"
+                }
+              }
+            }
+          }
+        }
+      },
+      "CatalogLeaf": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "engine_id",
+          "segments"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "enum": [
+              "catalog.path/v1"
+            ]
+          },
+          "engine_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "segments": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "term",
+                "kind"
+              ],
+              "properties": {
+                "term": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Exact physical name, including spaces and punctuation / 包含空格与标点的真实原名"
+                }
+              }
+            }
           }
         }
       }

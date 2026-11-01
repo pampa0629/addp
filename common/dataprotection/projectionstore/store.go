@@ -295,6 +295,22 @@ func (s *Store) engineScopeDisjoint(tenantID int64, scope *plugin.QueryEngineRea
 // exclusion as ordinary queries. A possible protected graph is refused until
 // its provider can prove an exact unmanaged read set.
 func (s *Store) RequireReadPlanUnmanaged(ctx context.Context, tenantID int64, model plugin.EngineCatalogModelSpec, prepared plugin.QueryReadPlan, now time.Time) error {
+	return s.requireReadPlanUnmanaged(ctx, tenantID, func(uint) (plugin.EngineCatalogModelSpec, error) { return model, nil }, prepared, now)
+}
+
+// RequireFederatedReadPlanUnmanaged uses each real source's catalog model;
+// a compute runtime has no storage catalog model of its own.
+func (s *Store) RequireFederatedReadPlanUnmanaged(ctx context.Context, tenantID int64, models map[uint]plugin.EngineCatalogModelSpec, prepared plugin.QueryReadPlan, now time.Time) error {
+	return s.requireReadPlanUnmanaged(ctx, tenantID, func(id uint) (plugin.EngineCatalogModelSpec, error) {
+		model, ok := models[id]
+		if !ok {
+			return plugin.EngineCatalogModelSpec{}, plugin.ErrQueryReadSetUnresolved
+		}
+		return model, nil
+	}, prepared, now)
+}
+
+func (s *Store) requireReadPlanUnmanaged(ctx context.Context, tenantID int64, modelFor func(uint) (plugin.EngineCatalogModelSpec, error), prepared plugin.QueryReadPlan, now time.Time) error {
 	if prepared == nil {
 		return errors.New("prepared query read plan is required")
 	}
@@ -315,9 +331,20 @@ func (s *Store) RequireReadPlanUnmanaged(ctx context.Context, tenantID int64, mo
 	if err != nil {
 		return err
 	}
-	targets, err := dataprotection.DataItemTargetsFromQueryReadSet(model, readSet)
-	if err != nil {
-		return err
+	if readSet == nil {
+		return plugin.ErrQueryReadSetUnresolved
+	}
+	targets := make([]dataprotection.ResourceReference, 0, len(readSet.Paths))
+	for _, path := range readSet.Paths {
+		model, err := modelFor(path.EngineID)
+		if err != nil {
+			return err
+		}
+		target, err := dataprotection.DataItemTargetFromCatalogPath(model, path)
+		if err != nil {
+			return err
+		}
+		targets = append(targets, target)
 	}
 	if match := s.GateAny(tenantID, targets, now); match != nil {
 		return unsupportedManagedRead(match.Gate)

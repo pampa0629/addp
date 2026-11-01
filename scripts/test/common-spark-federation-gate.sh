@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=postgres,mysql,spark-master,spark-worker
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.spark-federation-t2.yml
-# ADDP_T2_INPUT_FILES=engines/spark-workflow/ common/engine/plugins/spark/ scripts/test/spark-federation-contract.py
+# ADDP_T2_INPUT_FILES=engines/spark-workflow/ common/engine/plugins/spark/ common/engine/plugin/http_prepared_query.go common/engine/plugin/federated_prepared_query.go scripts/test/spark-federation-contract.py
 # Native admission only: disposable services, no personal Business or Infra access.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -64,10 +64,14 @@ INSERT INTO orders VALUES (9007199254740993,1,100.123456789012345678),(-90071992
 CREATE SCHEMA " schema.with dot ";
 CREATE TABLE " schema.with dot "." 中文""table` " AS SELECT * FROM orders;
 ALTER TABLE " schema.with dot "." 中文""table` " RENAME COLUMN customer_id TO " customer""id ";
+CREATE TABLE read_plan_parent (id integer PRIMARY KEY);
+INSERT INTO read_plan_parent VALUES (1);
+CREATE TABLE read_plan_child (id integer PRIMARY KEY);
+INSERT INTO read_plan_child VALUES (999);
 CREATE USER reader WITH PASSWORD 'admission-reader-only';
 GRANT CONNECT ON DATABASE addp_test TO reader;
 GRANT USAGE ON SCHEMA public TO reader;
-GRANT SELECT ON orders TO reader;
+GRANT SELECT ON orders, read_plan_parent TO reader;
 GRANT USAGE ON SCHEMA " schema.with dot " TO reader;
 GRANT SELECT ON " schema.with dot "." 中文""table` " TO reader;
 SQL
@@ -76,8 +80,10 @@ CREATE TABLE customers (id int PRIMARY KEY, label varchar(64));
 INSERT INTO customers VALUES (1,'中文  '),(2,NULL);
 CREATE TABLE `custom``ers` AS SELECT * FROM customers;
 ALTER TABLE `custom``ers` CHANGE COLUMN id `customer``id` int, CHANGE COLUMN label `中文``label` varchar(64);
+CREATE VIEW read_plan_view AS SELECT id FROM customers;
 CREATE USER 'reader'@'%' IDENTIFIED BY 'admission-reader-only';
 GRANT SELECT ON addp_test.customers TO 'reader'@'%';
+GRANT SELECT ON addp_test.read_plan_view TO 'reader'@'%';
 GRANT SELECT ON addp_test.`custom``ers` TO 'reader'@'%';
 SQL
 label_hex=$(compose exec -T mysql mysql -uroot -powned-test-only --batch --skip-column-names addp_test -e 'SELECT HEX(label) FROM customers WHERE id=1')

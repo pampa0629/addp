@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/addp/common/dataprotection"
@@ -112,6 +113,38 @@ func (g *Gate) BeginCatalogPath(ctx context.Context, tenantID uint, enginePlugin
 		return nil, fmt.Errorf("%w: %w", ErrRequired, err)
 	}
 	return end, nil
+}
+
+// BeginFederatedQuery holds the same installation barrier through native
+// preparation and execution. Prepared sessions never return rows before allow.
+func (g *Gate) BeginFederatedQuery(ctx context.Context, tenantID uint, prepare func(context.Context) (plugin.PreparedFederatedQuery, error)) (plugin.PreparedFederatedQuery, func(), error) {
+	end, err := g.begin(tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	prepared, err := prepare(ctx)
+	if err != nil {
+		end()
+		return nil, nil, err
+	}
+	if prepared == nil {
+		end()
+		return nil, nil, ErrRequired
+	}
+	var once sync.Once
+	finish := func() {
+		once.Do(func() {
+			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = prepared.Close(cleanup)
+			end()
+		})
+	}
+	if err := g.store.RequireFederatedReadPlanUnmanaged(ctx, int64(tenantID), prepared.SourceCatalogModels(), prepared, time.Now().UTC()); err != nil {
+		finish()
+		return nil, nil, fmt.Errorf("%w: %w", ErrRequired, err)
+	}
+	return prepared, finish, nil
 }
 
 // BeginUnresolvedRead is the fail-closed boundary for federated reads whose current Provider contract cannot prove a complete

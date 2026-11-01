@@ -112,15 +112,22 @@ def bind_source(spark, alias, url, driver):
         spark.conf.set(prefix + key, value)
 
 
+def _jdbc_properties(spark, user, password):
+    properties = spark._jvm.java.util.Properties()
+    properties.setProperty('user', user)
+    properties.setProperty('password', password)
+    return properties
+
+
 def main(phase):
     if phase == 'driver':
-        from query_process import run_driver
+        from query_process import PreparedDriver, QueryDriverError
         request = {
             'master_url': 'spark://spark-master:7077', 'driver_host': 'spark-master',
             'catalogs': [
-                {'alias': 'Business_PostgreSQL', 'url': 'jdbc:postgresql://postgres:5432/addp_test',
+                {'engine_id': 11, 'engine_type': 'postgresql', 'alias': 'Business_PostgreSQL', 'url': 'jdbc:postgresql://postgres:5432/addp_test',
                  'driver': 'org.postgresql.Driver', 'user': 'reader', 'password': 'admission-reader-only'},
-                {'alias': 'Business_MySQL', 'url': 'jdbc:mysql://mysql:3306/addp_test?sslMode=REQUIRED',
+                {'engine_id': 12, 'engine_type': 'mysql', 'alias': 'Business_MySQL', 'url': 'jdbc:mysql://mysql:3306/addp_test?sslMode=REQUIRED',
                  'driver': 'com.mysql.cj.jdbc.Driver', 'user': 'reader', 'password': 'admission-reader-only'},
             ],
             'query': '''SELECT o.id, o.amount, c.`中文``label` AS label
@@ -128,7 +135,16 @@ def main(phase):
                 ON o.` customer"id ` = c.`customer``id` WHERE o.` customer"id ` >= ? ORDER BY o.id''',
             'args': [1], 'limit': 10,
         }
-        result = run_driver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
+        prepared = PreparedDriver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
+        try:
+            assert prepared.facts['engine_read_scope'] == {'engine_ids': [11, 12]}, prepared.facts
+            paths = prepared.facts['read_set']['paths']
+            assert [(p['engine_id'], p['segments'][1]['name'], p['segments'][2]['name']) for p in paths] == [
+                (11, ' schema.with dot ', ' 中文"table` '), (12, 'addp_test', 'custom`ers')], paths
+            assert not prepared.path.exists(), 'prepare cannot materialize results'
+            result = prepared.execute()
+        finally:
+            prepared.close()
         assert result.get('rows') == [
             {'id': '-9007199254740993', 'amount': '-200.987654321098765432', 'label': None},
             {'id': '9007199254740993', 'amount': '100.123456789012345678', 'label': '中文  '},
@@ -136,9 +152,50 @@ def main(phase):
         assert [(field['name'], field['type']) for field in result['fields']] == [
             ('id', 'bigint'), ('amount', 'decimal'), ('label', 'string')], result
         assert result['fields'][1]['precision'] == 38 and result['fields'][1]['scale'] == 18
+        # While the same Driver is waiting for permission, attach a child
+        # with a sentinel row. SELECT parent sees both rows, ONLY must see one.
+        admin_spark = SparkSession.builder.master('local[1]').appName('ADDP-read-plan-ddl-fixture').getOrCreate()
+        admin = admin_spark._jvm.org.postgresql.Driver().connect('jdbc:postgresql://postgres:5432/addp_test',
+            _jdbc_properties(admin_spark, 'fixture_admin', 'owned-test-only'))
+        try:
+            original = dict(request)
+            request = dict(original, catalogs=[original['catalogs'][0]],
+                query='SELECT id FROM Business_PostgreSQL.public.read_plan_parent ORDER BY id', args=[])
+            prepared = PreparedDriver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
+            try:
+                assert prepared.facts['engine_read_scope'] == {'engine_ids': [11]}, prepared.facts
+                assert not prepared.path.exists()
+                statement = admin.createStatement()
+                try:
+                    statement.setQueryTimeout(10)
+                    statement.execute('ALTER TABLE read_plan_child INHERIT read_plan_parent')
+                    rs = statement.executeQuery('SELECT (SELECT count(*) FROM read_plan_parent), (SELECT count(*) FROM ONLY read_plan_parent)')
+                    assert rs.next() and rs.getInt(1) == 2 and rs.getInt(2) == 1
+                    rs.close()
+                finally:
+                    statement.close()
+                assert prepared.execute()['rows'] == [{'id': 1}], 'concurrent inherited row escaped ONLY boundary'
+            finally:
+                prepared.close()
+            # Initial inheritance and a MySQL View never become complete facts.
+            for denied_request in [request, dict(original, catalogs=[original['catalogs'][1]],
+                    query='SELECT id FROM Business_MySQL.addp_test.read_plan_view', args=[])]:
+                try:
+                    PreparedDriver([sys.executable, '/addp/query_driver.py'], denied_request, timeout=120)
+                    raise AssertionError('unsupported relation yielded prepared read facts')
+                except QueryDriverError as error:
+                    assert error.code == 'query_source_not_supported', error.code
+        finally:
+            admin.close()
+            admin_spark.stop()
+        request = original
+        print('SPARK_READ_PLAN_ONLY_PASS same_driver concurrent_inheritance isolated_table no_extra_reader_privileges unknown_view_refused', flush=True)
         request.update(query='WITH hidden AS (SELECT * FROM unauthorized.public.orders) SELECT 1', args=[])
-        denied = run_driver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
-        assert denied == {'error': 'query_source_not_authorized'}, denied
+        try:
+            PreparedDriver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
+            raise AssertionError('unauthorized source prepared')
+        except QueryDriverError as error:
+            assert error.code == 'query_source_not_authorized', error.code
         print('SPARK_FEDERATION_PRODUCTION_DRIVER_PASS native_guard_jdbc_join typed_bigint_decimal exact_quoted_names private_process', flush=True)
         return
     if phase == 'supervised':

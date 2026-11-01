@@ -14,7 +14,7 @@ var ErrQueryEngineReadScopeUnresolved = errors.New("query engine read scope unre
 // that owns the immutable execution plan. It contains no authorization facts.
 // A non-nil empty scope proves that no engine data can be read; nil is unknown.
 type QueryEngineReadScope struct {
-	EngineIDs []uint
+	EngineIDs []uint `json:"engine_ids"`
 }
 
 func NewQueryEngineReadScope(engineIDs ...uint) (*QueryEngineReadScope, error) {

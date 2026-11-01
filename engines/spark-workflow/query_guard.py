@@ -61,6 +61,7 @@ _SUBQUERIES = frozenset(_EXPRESSION + name for name in ('ScalarSubquery', 'ListQ
 class ValidatedQuery:
     sql: str
     source_catalogs: frozenset[str]
+    source_relations: frozenset[tuple[str, str, str]]
 
 
 def _sequence(value):
@@ -86,6 +87,7 @@ def validate_query(spark, query, catalogs):
         root = spark._jsparkSession.sessionState().sqlParser().parsePlan(query)
         pending = [('plan', root, frozenset(), 0)]
         used = set()
+        relations = set()
         remaining = 10000
         while pending:
             kind, node, ctes, depth = pending.pop()
@@ -117,6 +119,7 @@ def validate_query(spark, query, catalogs):
                     pass
                 elif len(parts) == 3 and parts[0] in catalogs and all(parts):
                     used.add(parts[0])
+                    relations.add(parts)
                 else:
                     raise QueryValidationError('query_source_not_authorized')
             if class_name == _ANALYSIS + 'UnresolvedFunction':
@@ -130,7 +133,7 @@ def validate_query(spark, query, catalogs):
                                for expression in _sequence(node.expressions()))
             pending.extend((kind, child, ctes, depth + 1)
                            for child in _sequence(node.children()))
-        return ValidatedQuery(query, frozenset(used))
+        return ValidatedQuery(query, frozenset(used), frozenset(relations))
     except QueryValidationError:
         raise
     except Exception:

@@ -50,7 +50,11 @@ def validate_request(request):
     seen = set()
     for catalog in catalogs:
         if not isinstance(catalog, dict) or set(catalog) != {
-                'alias', 'url', 'driver', 'user', 'password'}:
+                'alias', 'url', 'driver', 'user', 'password', 'engine_id', 'engine_type'}:
+            raise ValueError('query_driver_request_invalid')
+        if (type(catalog['engine_id']) is not int or catalog['engine_id'] <= 0
+                or catalog['engine_type'] not in {'postgresql', 'mysql'}
+                or catalog['driver'] != {'postgresql': 'org.postgresql.Driver', 'mysql': 'com.mysql.cj.jdbc.Driver'}[catalog['engine_type']]):
             raise ValueError('query_driver_request_invalid')
         alias = catalog['alias']
         if (not isinstance(alias, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', alias)
@@ -121,7 +125,7 @@ def result_schema(schema):
     return columns, fields
 
 
-def execute(request):
+def execute(request, approve):
     validate_request(request)
     # This process owns an independent gateway. Do not inherit the workflow's
     # submit JARs, SQL extensions, UDFs, session catalogs or cached JVM.
@@ -151,30 +155,49 @@ def execute(request):
              .config('spark.jars.packages', ','.join(JDBC_MAVEN_PACKAGES))
              .getOrCreate())
     try:
-        validate_query(spark, request['query'], {source['alias'] for source in request['catalogs']})
+        validated = validate_query(spark, request['query'], {source['alias'] for source in request['catalogs']})
         for source in request['catalogs']:
             prefix = 'spark.sql.catalog.' + source['alias']
-            spark.conf.set(prefix, 'org.apache.spark.sql.execution.datasources.v2.jdbc.JDBCTableCatalog')
+            spark.conf.set(prefix, 'com.addp.spark.query.ExactIdentifierDialects$OnlyPostgresCatalog'
+                           if source['engine_type'] == 'postgresql' else
+                           'org.apache.spark.sql.execution.datasources.v2.jdbc.JDBCTableCatalog')
             for name in ('url', 'driver', 'user', 'password'):
                 spark.conf.set(prefix + '.' + name, source[name])
-        result = spark.sql(request['query'], args=request['args']).limit(request['limit'])
-        columns, fields = result_schema(result.schema)
-        rows = [{field['name']: result_value(field, row[i]) for i, field in enumerate(fields)}
-                for row in result.collect()]
-        return {'columns': columns, 'fields': fields, 'rows': rows}
+        # Metadata guards survive the prepare/allow handshake and collect.
+        # Unknown relation closure is never advertised as a complete scope.
+        from query_read_plan import lock_read_plan
+        with lock_read_plan(spark, request['catalogs'], validated.source_relations) as facts:
+            # No Spark SQL is analyzed against a View/foreign source before the
+            # owner decides whether an unknown read can be admitted at all.
+            if facts['read_set'] is None:
+                raise QueryValidationError('query_source_not_supported')
+            result = spark.sql(request['query'], args=request['args']).limit(request['limit'])
+            if not approve(facts):
+                raise QueryValidationError('query_permission_denied')
+            columns, fields = result_schema(result.schema)
+            rows = [{field['name']: result_value(field, row[i]) for i, field in enumerate(fields)}
+                    for row in result.collect()]
+            return {'columns': columns, 'fields': fields, 'rows': rows}
     finally:
         spark.stop()
 
 
 def main():
     try:
-        raw = sys.stdin.buffer.read(1024 * 1024 + 1)
+        raw = sys.stdin.buffer.readline(1024 * 1024 + 1)
         if len(raw) > 1024 * 1024:
             raise ValueError('query_request_too_large')
         def reject_constant(_value):
             raise ValueError('query_driver_request_invalid')
         request = json.loads(raw, parse_float=Decimal, parse_constant=reject_constant)
-        result = execute(request)
+        def approve(facts):
+            # Atomic publication; the owner cannot observe a partial read set.
+            facts_path = Path(sys.argv[1] + '.facts')
+            temporary = facts_path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(facts, ensure_ascii=False), encoding='utf-8')
+            temporary.replace(facts_path)
+            return sys.stdin.buffer.readline(32) == b'execute\n'
+        result = execute(request, approve)
         encoded = json.dumps(result, ensure_ascii=False, allow_nan=False).encode('utf-8')
         if len(encoded) > 4 * 1024 * 1024:
             raise ValueError('query_result_too_large')

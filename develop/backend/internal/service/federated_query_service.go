@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/federatedquery"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
+	"github.com/addp/develop/backend/internal/protection"
 	"github.com/google/uuid"
 )
 
@@ -220,11 +221,6 @@ func (s *FederatedQueryService) ExecuteQuery(
 	if s.protectionGate == nil {
 		return nil, fmt.Errorf("Develop 联邦查询保护门禁未配置")
 	}
-	endProtection, err := s.protectionGate.BeginUnresolvedRead(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	defer endProtection()
 	if timeout <= 0 {
 		timeout = 30
 	}
@@ -236,13 +232,37 @@ func (s *FederatedQueryService) ExecuteQuery(
 		return nil, fmt.Errorf("获取 Develop Runtime 凭据失败: %w", err)
 	}
 	start := time.Now()
-	result, err := provider.ExecuteFederatedQuery(ctx, plugin.ConnectionInfo(binding.Runtime.AsEngine().ConnectionInfo), plugin.FederatedQueryRequest{
+	req := plugin.FederatedQueryRequest{
 		TargetEngineID: binding.TargetEngineID,
 		ExecutionID:    executionID.String(), ExecutionAuthorizationID: fmt.Sprintf("%d", authorizationID),
 		SourceEngineIDs: append([]uint(nil), frozen.SourceEngineIDs...), Query: query, Language: "sql",
 		Options:           plugin.QueryOptions{Limit: limit, Timeout: time.Duration(timeout) * time.Second, ReadOnly: true},
 		CallerAccessToken: callerToken,
-	})
+	}
+	var result *plugin.QueryResult
+	if preparer, ok := provider.(plugin.PreparedFederatedQueryProvider); ok {
+		gate, ok := s.protectionGate.(interface {
+			BeginFederatedQuery(context.Context, uint, func(context.Context) (plugin.PreparedFederatedQuery, error)) (plugin.PreparedFederatedQuery, func(), error)
+		})
+		if !ok {
+			return nil, fmt.Errorf("%w: prepared federation gate unavailable", protection.ErrRequired)
+		}
+		prepared, finish, err := gate.BeginFederatedQuery(ctx, tenantID, func(ctx context.Context) (plugin.PreparedFederatedQuery, error) {
+			return preparer.PrepareFederatedQuery(ctx, plugin.ConnectionInfo(binding.Runtime.AsEngine().ConnectionInfo), req)
+		})
+		if err != nil {
+			return nil, err
+		}
+		defer finish()
+		result, err = prepared.Execute(ctx)
+	} else {
+		finish, gateErr := s.protectionGate.BeginUnresolvedRead(ctx, tenantID)
+		if gateErr != nil {
+			return nil, gateErr
+		}
+		defer finish()
+		result, err = provider.ExecuteFederatedQuery(ctx, plugin.ConnectionInfo(binding.Runtime.AsEngine().ConnectionInfo), req)
+	}
 	if err != nil {
 		return nil, err
 	}

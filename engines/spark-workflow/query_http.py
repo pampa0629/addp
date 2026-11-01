@@ -12,7 +12,7 @@ import re
 import sys
 import threading
 import time
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from addp_common.auth import resolve_authorization_context
 from flask import jsonify, request
@@ -21,7 +21,7 @@ import requests
 
 from query_guard import MAX_QUERY_BYTES
 from query_messages import MESSAGES, message
-from query_process import QueryDriverError, run_driver
+from query_process import QueryDriverError, PreparedDriver
 from spark_connector import cluster_master_url
 from storage_adapters import DatabaseAdapter, resolve_storage_host
 from system_client import ExecutionAccessError, get_execution_engine_access
@@ -29,6 +29,8 @@ from system_client import ExecutionAccessError, get_execution_engine_access
 MAX_BODY_BYTES = 1024 * 1024
 MAX_TIMEOUT = 120
 _slots = threading.BoundedSemaphore(2)
+_queries = {}
+_queries_lock = threading.Lock()
 
 
 class QueryRequestError(ValueError):
@@ -165,7 +167,7 @@ def _http_result(result, limit):
     return dict(result, rows=[row(result['fields'], item) for item in result['rows']])
 
 
-def execute_authorized(body, tenant_id, limit, timeout, args):
+def prepare_authorized(body, tenant_id, limit, timeout, args):
     deadline = time.monotonic() + timeout
     authorization, execution = body['execution_authorization_id'], body['execution_id']
 
@@ -194,7 +196,7 @@ def execute_authorized(body, tenant_id, limit, timeout, args):
             connection = dict(engine['connection_info'])
             connection['host'] = resolve_storage_host(connection['host'])
             url, driver = DatabaseAdapter._jdbc_config(engine['engine_type'], connection)
-            catalogs.append({'alias': _source_alias(engine['name']), 'url': url, 'driver': driver,
+            catalogs.append({'engine_id': engine['id'], 'engine_type': engine['engine_type'], 'alias': _source_alias(engine['name']), 'url': url, 'driver': driver,
                              'user': connection['user'], 'password': connection.get('password', '')})
         expires = min(datetime.fromisoformat(granted['expires_at'].replace('Z', '+00:00')) for granted in accesses)
         budget = deadline - time.monotonic()
@@ -213,22 +215,41 @@ def execute_authorized(body, tenant_id, limit, timeout, args):
         raise
     except (KeyError, ValueError, TypeError, AttributeError):
         raise QueryRequestError('query_source_not_supported') from None
-    result = run_driver([sys.executable, str(Path(__file__).with_name('query_driver.py'))],
-                        driver_request, timeout=remaining)
-    if set(result) == {'error'}:
-        code = result['error']
-        raise QueryRequestError(code if code in MESSAGES else 'query_driver_failed')
-    result = _http_result(result, limit)
-    # A revoked/expired grant or changed source connection must discard all rows.
-    for engine_id, identity in zip(ids, frozen):
-        if _identity(access(engine_id)['engine']) != identity:
+    driver = PreparedDriver([sys.executable, str(Path(__file__).with_name('query_driver.py'))],
+                            driver_request, timeout=remaining)
+    try:
+        if set(driver.facts) != {'engine_read_scope', 'read_set'}:
+            raise QueryRequestError('query_result_invalid', 502)
+        return {'driver': driver, 'access': access, 'ids': ids, 'frozen': frozen,
+                'tenant': tenant_id, 'limit': limit,
+                'sources': [{'engine_id': source['engine_id'], 'engine_type': source['engine_type']} for source in catalogs]}
+    except Exception:
+        driver.close()
+        raise
+
+
+def _recheck(entry):
+    for engine_id, identity in zip(entry['ids'], entry['frozen']):
+        if _identity(entry['access'](engine_id)['engine']) != identity:
             raise QueryRequestError('query_permission_denied', 403)
-    return result
+
+
+def _release(query_id):
+    with _queries_lock:
+        entry = _queries.pop(query_id, None)
+    if entry is not None:
+        entry['timer'].cancel()
+        try:
+            entry['driver'].close()
+        finally:
+            _slots.release()
 
 
 def register_query_routes(app):
     @app.post('/api/v1/queries')
-    def execute_query():
+    @app.post('/api/v1/queries/<query_id>/execute')
+    @app.delete('/api/v1/queries/<query_id>')
+    def execute_query(query_id=None):
         def fail(code, status):
             return jsonify({'error': message(code, request.headers.get('Accept-Language', '')),
                             'error_code': code}), status
@@ -247,28 +268,78 @@ def register_query_routes(app):
             return fail('query_authentication_unavailable', 503)
         if (context.principal_type != 'service_principal' or context.token_type != 'service_access_token'
                 or context.client_id != 'addp-develop' or context.context_type != 'tenant'
-                or not _positive_id(context.tenant_id)):
+                or not _positive_id(context.tenant_id) or not _positive_id(context.principal_id)):
             return fail('query_permission_denied', 403)
         acquired = False
+        entry = None
         try:
+            if query_id is not None:
+                try:
+                    if str(UUID(query_id)) != query_id:
+                        raise ValueError()
+                except (ValueError, TypeError):
+                    raise QueryRequestError('query_permission_denied', 403)
+                with _queries_lock:
+                    entry = _queries.get(query_id)
+                    if entry is None:
+                        if request.method == 'DELETE':
+                            return '', 204
+                        raise QueryRequestError('query_permission_denied', 403)
+                    if entry['tenant'] != context.tenant_id or entry['principal'] != context.principal_id:
+                        raise QueryRequestError('query_permission_denied', 403)
+                    if request.method == 'POST':
+                        if request.mimetype != 'application/json' or request.stream.read(3) != b'{}':
+                            raise QueryRequestError('query_invalid')
+                        if entry['executing']:
+                            raise QueryRequestError('query_permission_denied', 403)
+                        entry['executing'] = True
+                if request.method == 'DELETE':
+                    _release(query_id)
+                    return '', 204
+                try:
+                    _recheck(entry)
+                    result = entry['driver'].execute()
+                    if set(result) == {'error'}:
+                        code = result['error']
+                        raise QueryRequestError(code if code in MESSAGES else 'query_driver_failed')
+                    result = _http_result(result, entry['limit'])
+                    _recheck(entry)
+                    return jsonify(result), 200
+                finally:
+                    _release(query_id)
             if request.mimetype != 'application/json':
                 raise QueryRequestError('query_invalid', 415)
             body, limit, timeout, args = parse_request(request.stream.read(MAX_BODY_BYTES + 1))
             acquired = _slots.acquire(blocking=False)
             if not acquired:
                 raise QueryRequestError('query_runtime_busy', 503)
-            result = execute_authorized(body, context.tenant_id, limit, timeout, args)
-            return jsonify(result), 200
+            entry = prepare_authorized(body, context.tenant_id, limit, timeout, args)
+            _recheck(entry)
+            query_id = str(uuid4())
+            entry.update(principal=context.principal_id, executing=False)
+            entry['timer'] = threading.Timer(max(.001, entry['driver'].deadline - time.monotonic()), _release, args=(query_id,))
+            entry['timer'].daemon = True
+            with _queries_lock:
+                _queries[query_id] = entry
+            entry['timer'].start()
+            acquired = False  # retained until execute/delete/expiry
+            return jsonify(dict(entry['driver'].facts, query_id=query_id, sources=entry['sources'])), 201
         except QueryRequestError as error:
             return fail(error.code, error.status)
         except ExecutionAccessError as error:
             return fail('query_permission_denied' if error.status_code == 403 else 'query_runtime_unavailable',
                         error.status_code)
         except QueryDriverError as error:
+            validation = {'query_invalid', 'query_source_not_supported', 'query_source_not_authorized',
+                          'query_not_read_only', 'query_function_not_supported', 'query_complexity_exceeded'}
+            if error.code in validation:
+                return fail(error.code, 400)
             return fail('query_timeout' if error.code == 'query_timeout' else 'query_driver_failed',
                         504 if error.code == 'query_timeout' else 502)
         except (requests.RequestException, ValueError, OSError, KeyError, TypeError, AttributeError):
             return fail('query_runtime_unavailable', 503)
         finally:
             if acquired:
+                if entry is not None:
+                    entry['driver'].close()
                 _slots.release()

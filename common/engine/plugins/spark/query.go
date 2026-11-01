@@ -36,5 +36,14 @@ func (*Plugin) ExecuteFederatedQuery(ctx context.Context, runtimeConn plugin.Con
 	if request.TargetEngineID == 0 {
 		return nil, commoni18n.NewMessageError("engine.spark.query_invalid")
 	}
-	return plugin.HTTPExecuteFederatedQuery(ctx, runtimeConn, request)
+	prepared, err := plugin.HTTPPrepareFederatedQuery(ctx, runtimeConn, request)
+	if err != nil {
+		return nil, err
+	}
+	defer prepared.Close(ctx)
+	return prepared.Execute(ctx)
+}
+
+func (*Plugin) PrepareFederatedQuery(ctx context.Context, conn plugin.ConnectionInfo, req plugin.FederatedQueryRequest) (plugin.PreparedFederatedQuery, error) {
+	return plugin.HTTPPrepareFederatedQuery(ctx, conn, req)
 }

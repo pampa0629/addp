@@ -12,7 +12,7 @@ from query_driver import result_field, result_schema, result_value, validate_req
 class QueryDriverTest(unittest.TestCase):
     def request(self):
         return {'master_url': 'spark://cluster:7077', 'driver_host': 'driver',
-                'catalogs': [{'alias': 'source', 'url': 'jdbc:postgresql://db:5432/data',
+                'catalogs': [{'engine_id': 11, 'engine_type': 'postgresql', 'alias': 'source', 'url': 'jdbc:postgresql://db:5432/data',
                               'driver': 'org.postgresql.Driver', 'user': 'reader', 'password': 'test-only'}],
                 'query': 'SELECT * FROM source.public.orders', 'args': [], 'limit': 10}
 

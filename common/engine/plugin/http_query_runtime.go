@@ -59,6 +59,10 @@ func HTTPExecuteFederatedQuery(
 	if err != nil {
 		return nil, err
 	}
+	return decodeFederatedQueryResult(resp.StatusCode, respBody)
+}
+
+func decodeFederatedQueryResult(status int, respBody []byte) (*QueryResult, error) {
 	var payload federatedQueryHTTPResponse
 	decoder := json.NewDecoder(bytes.NewReader(respBody))
 	decoder.UseNumber()
@@ -68,11 +72,11 @@ func HTTPExecuteFederatedQuery(
 	if decoder.Decode(new(interface{})) != io.EOF {
 		return nil, commoni18n.NewMessageError("engine.query_runtime.output_invalid")
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if status < 200 || status >= 300 {
 		if payload.Error == "" {
 			payload.Error = string(respBody)
 		}
-		return nil, fmt.Errorf("federated query runtime returned HTTP %d: %s", resp.StatusCode, payload.Error)
+		return nil, fmt.Errorf("federated query runtime returned HTTP %d: %s", status, payload.Error)
 	}
 	if len(payload.Columns) != len(payload.Fields) {
 		return nil, commoni18n.NewMessageError("engine.query_runtime.output_invalid")

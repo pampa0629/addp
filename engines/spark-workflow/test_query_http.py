@@ -5,6 +5,8 @@ from decimal import Decimal
 from pathlib import Path
 import json
 import os
+import time
+import threading
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -37,9 +39,22 @@ class QueryHTTPTest(unittest.TestCase):
                        'rows': [{'id': '9007199254740993'}]}
         self.auth = patch.object(query_http, 'resolve_authorization_context', new=AsyncMock(return_value=self.context)).start()
         self.access = patch.object(query_http, 'get_execution_engine_access', side_effect=self.grant).start()
-        self.driver = patch.object(query_http, 'run_driver', return_value=deepcopy(self.result)).start()
+        self.output = deepcopy(self.result)
+        self.driver = patch.object(query_http, 'PreparedDriver', side_effect=self.new_driver).start()
+        self.addCleanup(self.release_queries)
         self.environment = patch.dict(os.environ, SPARK_WORKFLOW_SHARED_HOST='host.docker.internal').start()
         self.addCleanup(patch.stopall)
+
+    def new_driver(self, *args, **kwargs):
+        driver = Mock()
+        driver.deadline = time.monotonic() + kwargs['timeout']
+        driver.facts = {'engine_read_scope': {'engine_ids': [11]}, 'read_set': {'paths': []}}
+        driver.execute.side_effect = lambda: deepcopy(self.output)
+        return driver
+
+    def release_queries(self):
+        for query_id in list(query_http._queries):
+            query_http._release(query_id)
 
     def grant(self, authorization, execution, engine, tenant, **kwargs):
         self.assertEqual((authorization, execution, tenant), ('8', self.body['execution_id'], 7))
@@ -48,24 +63,28 @@ class QueryHTTPTest(unittest.TestCase):
         return {'engine': deepcopy(self.engines[engine]),
                 'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()}
 
-    def post(self, body=None, **kwargs):
+    def post(self, body=None, prepare_only=False, **kwargs):
         headers = {'Authorization': 'Bearer private-caller-token'}
         headers.update(kwargs.pop('headers', {}))
-        return self.client.post('/api/v1/queries', json=self.body if body is None else body,
-                                headers=headers, **kwargs)
+        response = self.client.post('/api/v1/queries', json=self.body if body is None else body,
+                                    headers=headers, **kwargs)
+        if response.status_code == 201 and not prepare_only:
+            return self.client.post('/api/v1/queries/' + response.json['query_id'] + '/execute',
+                                    data='{}', content_type='application/json', headers=headers)
+        return response
 
     def test_dispatches_only_authorized_connections_and_rechecks_before_returning_rows(self):
         with patch('system_client.get_engine', side_effect=AssertionError('no engine-wide fallback')):
             response = self.post()
         self.assertEqual(response.status_code, 200, response.json)
         self.assertEqual(response.json, self.result)
-        self.assertEqual([call.args[2] for call in self.access.call_args_list], [4, 11, 4, 11])
+        self.assertEqual([call.args[2] for call in self.access.call_args_list], [4, 11, 4, 11, 4, 11, 4, 11])
         command, internal = self.driver.call_args.args
         self.assertTrue(command[1].endswith('/query_driver.py'))
         self.assertNotIn('private-source-password', repr(command))
         self.assertNotIn('private-caller-token', repr(self.driver.call_args))
         self.assertEqual(internal['master_url'], 'spark://cluster:7077')
-        self.assertEqual(internal['catalogs'], [{'alias': 'Business_PostgreSQL',
+        self.assertEqual(internal['catalogs'], [{'engine_id': 11, 'engine_type': 'postgresql', 'alias': 'Business_PostgreSQL',
             'url': 'jdbc:postgresql://host.docker.internal:5433/data',
             'driver': 'org.postgresql.Driver', 'user': 'reader', 'password': 'private-source-password'}])
 
@@ -73,7 +92,7 @@ class QueryHTTPTest(unittest.TestCase):
         response = self.client.post('/api/v1/queries', json=self.body)
         self.assertEqual(response.status_code, 401)
         for change in ({'principal_type': 'user'}, {'client_id': 'addp-service'},
-                       {'context_type': 'platform'}, {'tenant_id': None}, {'token_type': 'oauth_access_token'}):
+                       {'context_type': 'platform'}, {'tenant_id': None}, {'principal_id': None}, {'principal_id': True}, {'token_type': 'oauth_access_token'}):
             self.auth.return_value = AuthorizationContext(**(dict(self.context.__dict__) | change))
             with self.subTest(change=change):
                 self.assertEqual(self.post().status_code, 403)
@@ -111,9 +130,13 @@ class QueryHTTPTest(unittest.TestCase):
         self.driver.assert_called_once()
 
     def test_source_credentials_change_during_driver_execution_discards_rows(self):
-        def changed(*_args, **_kwargs):
-            self.engines[11]['connection_info']['password'] = 'rotated-private-password'
-            return deepcopy(self.result)
+        def changed(*args, **kwargs):
+            driver = self.new_driver(*args, **kwargs)
+            def execute():
+                self.engines[11]['connection_info']['password'] = 'rotated-private-password'
+                return deepcopy(self.result)
+            driver.execute.side_effect = execute
+            return driver
         self.driver.side_effect = changed
         response = self.post()
         self.assertEqual(response.status_code, 403)
@@ -144,7 +167,7 @@ class QueryHTTPTest(unittest.TestCase):
         self.driver.assert_not_called()
 
     def test_floating_numbers_stay_numbers_while_exact_decimal_and_bigint_stay_strings(self):
-        self.driver.return_value = {'columns': ['ratio', 'amount', 'id'], 'fields': [
+        self.output = {'columns': ['ratio', 'amount', 'id'], 'fields': [
             {'name': 'ratio', 'type': 'double', 'nullable': True},
             {'name': 'amount', 'type': 'decimal', 'nullable': True, 'precision': 38, 'scale': 18},
             {'name': 'id', 'type': 'bigint', 'nullable': True}],
@@ -154,11 +177,11 @@ class QueryHTTPTest(unittest.TestCase):
         self.assertIs(type(response.json['rows'][0]['ratio']), float)
         self.assertEqual(response.json['rows'][0], {'ratio': 0.125, 'amount': '100.123456789012345678', 'id': '9007199254740993'})
         for malformed in ({'ratio': Decimal('NaN'), 'amount': '1', 'id': '1'}, {'ratio': '0.125', 'amount': '1', 'id': '1'}, {'unexpected': 1}):
-            self.driver.return_value['rows'] = [malformed]
+            self.output['rows'] = [malformed]
             self.assertEqual(self.post().status_code, 502)
 
     def test_nested_output_keeps_numeric_wire_types_and_exact_values(self):
-        self.driver.return_value = {'columns': ['nested'], 'fields': [{'name': 'nested', 'type': 'json', 'nullable': True, 'fields': [
+        self.output = {'columns': ['nested'], 'fields': [{'name': 'nested', 'type': 'json', 'nullable': True, 'fields': [
             {'name': 'ratios', 'type': 'array', 'nullable': True, 'element': {'name': '', 'type': 'double', 'nullable': True}},
             {'name': 'ids', 'type': 'array', 'nullable': True, 'element': {'name': '', 'type': 'bigint', 'nullable': True}}]}],
             'rows': [{'nested': {'ratios': [Decimal('0.125'), None], 'ids': ['9007199254740993', None]}}]}
@@ -171,10 +194,10 @@ class QueryHTTPTest(unittest.TestCase):
 
     def test_query_openapi_describes_the_actual_service_route_and_bounds(self):
         schema = json.loads(Path(__file__).with_name('query_openapi.json').read_text())
-        self.assertEqual(set(schema['paths']), {'/api/v1/queries'})
+        self.assertEqual(set(schema['paths']), {'/api/v1/queries', '/api/v1/queries/{query_id}', '/api/v1/queries/{query_id}/execute'})
         operation = schema['paths']['/api/v1/queries']['post']
         self.assertEqual(operation['x-addp-auth-mode'], 'internal')
-        self.assertEqual(set(operation['responses']), {'200', '400', '401', '403', '413', '415', '502', '503', '504'})
+        self.assertEqual(set(operation['responses']), {'201', '400', '401', '403', '413', '415', '502', '503', '504'})
         request = schema['components']['schemas']['QueryRequest']
         self.assertFalse(request['additionalProperties'])
         self.assertEqual(set(request['required']), set(self.body))
@@ -184,7 +207,15 @@ class QueryHTTPTest(unittest.TestCase):
         self.assertEqual(options['limit']['maximum'], 10000)
         result = schema['components']['schemas']['QueryResult']
         self.assertEqual(set(result['required']), set(self.result))
-        self.assertIn('/api/v1/queries', {rule.rule for rule in api_server.app.url_map.iter_rules()})
+        actual = {(rule.rule.replace('<query_id>', '{query_id}'), method)
+                  for rule in api_server.app.url_map.iter_rules() if rule.rule.startswith('/api/v1/queries')
+                  for method in rule.methods if method not in {'HEAD', 'OPTIONS'}}
+        documented = {(path, method.upper()) for path, methods in schema['paths'].items() for method in methods}
+        self.assertEqual(actual, documented)
+        for methods in schema['paths'].values():
+            for method in methods.values():
+                self.assertEqual(method['x-addp-auth-mode'], 'internal')
+                self.assertEqual(method['security'], [{'serviceBearer': []}])
 
     def test_mismatched_target_and_duplicate_source_alias_never_start_driver(self):
         self.engines[4]['engine_type'] = 'duckdb'
@@ -202,8 +233,8 @@ class QueryHTTPTest(unittest.TestCase):
         self.assertEqual(response.status_code, 504)
         self.assertEqual(response.json, {'error_code': 'query_timeout',
                                         'error': 'The query timed out without returning results.'})
-        self.driver.side_effect = None
-        self.driver.return_value = {'error': 'query_function_not_supported'}
+        self.driver.side_effect = self.new_driver
+        self.output = {'error': 'query_function_not_supported'}
         self.assertEqual(self.post().json['error_code'], 'query_function_not_supported')
         slots = Mock()
         slots.acquire.return_value = False
@@ -211,6 +242,52 @@ class QueryHTTPTest(unittest.TestCase):
             response = self.post()
         self.assertEqual(response.status_code, 503)
         slots.release.assert_not_called()
+
+    def test_preparation_returns_only_facts_and_delete_never_executes(self):
+        response = self.post(prepare_only=True)
+        self.assertEqual(response.status_code, 201, response.json)
+        self.assertNotIn('rows', response.json)
+        key = response.json['query_id']
+        driver = query_http._queries[key]['driver']
+        driver.execute.assert_not_called()
+        response = self.client.delete('/api/v1/queries/' + key, headers={'Authorization': 'Bearer fixture'})
+        self.assertEqual(response.status_code, 204)
+        driver.execute.assert_not_called()
+        driver.close.assert_called_once()
+        self.assertNotIn(key, query_http._queries)
+        self.assertEqual(self.client.delete('/api/v1/queries/' + key, headers={'Authorization': 'Bearer fixture'}).status_code, 204)
+
+    def test_retained_plan_is_one_shot_and_bound_to_principal_and_tenant(self):
+        key = self.post(prepare_only=True).json['query_id']
+        path = '/api/v1/queries/' + key + '/execute'
+        self.auth.return_value = AuthorizationContext(**(dict(self.context.__dict__) | {'principal_id': 20}))
+        self.assertEqual(self.client.post(path, data='{}', content_type='application/json', headers={'Authorization': 'Bearer fixture'}).status_code, 403)
+        self.auth.return_value = self.context
+        self.assertEqual(self.client.post(path, data='{}', content_type='application/json', headers={'Authorization': 'Bearer fixture'}).status_code, 200)
+        self.assertEqual(self.client.post(path, data='{}', content_type='application/json', headers={'Authorization': 'Bearer fixture'}).status_code, 403)
+
+    def test_expired_waiting_preparation_is_released_without_execute(self):
+        closed = threading.Event()
+        def expiring(*args, **kwargs):
+            driver = self.new_driver(*args, **kwargs)
+            driver.deadline = time.monotonic() + .05
+            driver.close.side_effect = closed.set
+            return driver
+        self.driver.side_effect = expiring
+        response = self.post(prepare_only=True)
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(closed.wait(2), 'retained Driver expiry did not release it')
+        self.assertNotIn(response.json['query_id'], query_http._queries)
+
+    def test_native_prepare_rejection_keeps_closed_diagnostic_and_no_retained_session(self):
+        before = set(query_http._queries)
+        for code in ('query_source_not_supported', 'query_not_read_only', 'query_source_not_authorized'):
+            self.driver.side_effect = QueryDriverError(code)
+            response = self.post(prepare_only=True)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json['error_code'], code)
+            self.assertNotIn('rows', response.json)
+            self.assertEqual(set(query_http._queries), before)
 
     def test_duplicate_json_keys_are_rejected_before_authority_consumption(self):
         response = self.client.post('/api/v1/queries', data='{"target_engine_id":4,"target_engine_id":5}',

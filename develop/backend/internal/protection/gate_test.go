@@ -475,3 +475,70 @@ func (q *actorBoundTestQuery) BindOutputTransforms(_ context.Context, operations
 	q.operations = append([]plugin.QueryOutputTransform(nil), operations...)
 	return nil
 }
+
+type retainedFederatedFixture struct {
+	plugin.PreparedQuery
+	models           map[uint]plugin.EngineCatalogModelSpec
+	closed, executed int
+}
+
+func (p *retainedFederatedFixture) SourceCatalogModels() map[uint]plugin.EngineCatalogModelSpec {
+	return p.models
+}
+func (p *retainedFederatedFixture) Close(context.Context) error { p.closed++; return nil }
+
+func TestFederatedPreparedGateProtectsBeforeCollectAndReleasesDeniedDriver(t *testing.T) {
+	for _, tc := range []struct {
+		name, table string
+		known, deny bool
+	}{
+		{"neighbor", "public", true, false}, {"managed", "protected", true, true}, {"unknown", "public", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := developProjectionStore(t)
+			model := plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema)
+			installDevelopProjection(t, store, models.GenerateItemFingerprint(11, "exact.protected"))
+			gate := NewGate(store)
+			f := &retainedFederatedFixture{models: map[uint]plugin.EngineCatalogModelSpec{11: model}}
+			f.PreparedQuery, _ = plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+				func(context.Context) (*plugin.QueryEngineReadScope, error) {
+					if !tc.known {
+						return nil, plugin.ErrQueryEngineReadScopeUnresolved
+					}
+					return plugin.NewQueryEngineReadScope(11)
+				},
+				func(context.Context) (*plugin.QueryReadSet, error) {
+					if !tc.known {
+						return nil, plugin.ErrQueryReadSetUnresolved
+					}
+					return plugin.NewQueryReadSet(plugin.TabularItemPath(11, "schema", "exact", tc.table))
+				}, nil,
+				func(context.Context) (*plugin.QueryResult, error) { f.executed++; return &plugin.QueryResult{}, nil })
+			prepared, finish, err := gate.BeginFederatedQuery(t.Context(), 7, func(context.Context) (plugin.PreparedFederatedQuery, error) {
+				if !gate.HasActiveExecutionsForTenant(7) {
+					t.Fatal("preparation escaped installation barrier")
+				}
+				return f, nil
+			})
+			if f.executed != 0 {
+				t.Fatal("gate collected rows")
+			}
+			if tc.deny {
+				if !errors.Is(err, ErrRequired) || f.closed != 1 || gate.HasActiveExecutionsForTenant(7) {
+					t.Fatalf("err=%v close=%d", err, f.closed)
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := prepared.Execute(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				finish()
+				if f.executed != 1 || f.closed != 1 || gate.HasActiveExecutionsForTenant(7) {
+					t.Fatal("retained lifecycle mismatch")
+				}
+			}
+		})
+	}
+}

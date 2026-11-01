@@ -191,3 +191,58 @@ func TestEngineScopeRetainsOtherTargetsAfterOneRelease(t *testing.T) {
 		t.Fatal("explicit last release did not remove engine scope")
 	}
 }
+
+func TestFederatedReadSetUsesEachSourceModelAndNeverAdmitsManagedNeighbor(t *testing.T) {
+	store, err := Migrate(openProjectionStoreDB(t), "develop", "develop", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pg, my := plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema), plugin.TabularCatalogModel(plugin.EngineCatalogTermDatabase)
+	protected := plugin.EngineCatalogBranchLeafPath(pg, 11, "schema", " same.schema ", "table", "table", "private.table")
+	target, err := dataprotection.DataItemTargetFromCatalogPath(pg, protected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection := enrollingProjection(t, "develop", target)
+	projection.TargetEngineID = 11
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1, NextCursor: "one", Changes: []dataprotection.ProjectionChange{{ChangeID: "one", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	models := map[uint]plugin.EngineCatalogModelSpec{11: pg, 12: my}
+	cases := []struct {
+		name   string
+		paths  []plugin.EngineCatalogPath
+		denied bool
+	}{
+		{"different engine", []plugin.EngineCatalogPath{plugin.EngineCatalogBranchLeafPath(my, 12, "database", " same.schema ", "table", "table", "private.table")}, false},
+		{"same engine unrelated table", []plugin.EngineCatalogPath{plugin.EngineCatalogBranchLeafPath(pg, 11, "schema", " same.schema ", "table", "table", "public.table")}, false},
+		{"protected join member", []plugin.EngineCatalogPath{protected, plugin.EngineCatalogBranchLeafPath(my, 12, "database", "db", "table", "table", "public")}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ids := []uint{}
+			for _, p := range tc.paths {
+				ids = append(ids, p.EngineID)
+			}
+			plan, err := plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+				func(context.Context) (*plugin.QueryEngineReadScope, error) {
+					return plugin.NewQueryEngineReadScope(ids...)
+				},
+				func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(tc.paths...) }, nil,
+				func(context.Context) (*plugin.QueryResult, error) {
+					t.Fatal("protection gate must not execute")
+					return nil, nil
+				})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = store.RequireFederatedReadPlanUnmanaged(t.Context(), 7, models, plan, time.Now())
+			if (err != nil) != tc.denied {
+				t.Fatalf("deny=%v error=%v", tc.denied, err)
+			}
+		})
+	}
+}

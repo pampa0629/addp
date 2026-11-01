@@ -132,6 +132,8 @@ Develop 独立访问根路径或登录后未指定回跳地址时，在 AuthCont
 
 Develop 普通查询保护只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `OutputLineage()`，不自行解析 SQL/MQL。当前 Tenant 没有任何本地纳管目标时不读取二者；存在纳管目标但本次 ReadSet 未命中时执行原路径；精确命中后必须用 Provider 实时 source fields 校验 Projection，并在 QueryResult 写 execution metadata、返回 Workbench 或 Notebook Kernel 前执行独立 `query` 规则。identity/direct 输出可遮盖或抑制；受保护字段参与 derived/opaque 输出、结构漂移、规则缺失或 lineage unresolved 时拒绝当前查询。首期字段级执行覆盖 PostgreSQL 直接列/别名/单来源 wildcard 与 MongoDB find/count/distinct；其他查询保持单次请求级 fail-closed，不恢复资源级永久拒绝或 Owner 私有解析旁路。
 
+支持已准备读取计划的联邦 Provider 在同一在途读取屏障内准备 Runtime 会话，按 Source Engine 的真实 Catalog Model 消费来源范围和表级读取集合，并复用 Common 的范围排除与 DataItem 判断。未命中纳管数据才执行同一 Driver 的同一计划；命中表、投影不可用或闭包未知均拒绝，结束／拒绝释放会话。首期 Spark 的 PG 读取使用受控 `ONLY`，MySQL 仅 InnoDB 基础表；不按结果列名猜字段保护，不降低未知 Runtime 的原有保守拒绝。
+
 Develop 查询的角色可选脱敏方式沿用同一普通查询路径。候选 `GET /query-protection-options` 仅观察用户显式选中数据项，使用本人当前角色自查；`content.protection_choices` 只保存精确源字段与方式身份／修订。保存、仅改名称的更新与执行均重新核验，后台执行只能使用绑定当前 Execution Authorization、attempt、lease 的角色事实，不借用任务作者、Worker 或发布人角色。未选择继续默认保护；旧引用、资格失效、未消费来源、派生／opaque 来源或不支持路径明确拒绝，不自动换默认算法。特殊方式首期覆盖 SQL／MQL 的已证明直接字段及别名，联邦、关系结果写入、Notebook 与经 Transfer 执行的全量导出不消费此选择。
 
 Develop 全量导出与查询方式独立：`content.export_protection_choices` 保存精确源字段和 Transfer export 选项，保存及名称更新通过同步 BFF 原样转发当前已认证 User Bearer 复核，不借用 Service Token。前端在同一共享选择抽屉分别展示查询与导出方式，保存后由后续查询执行快照冻结；全量导出使用该快照，未选导出方式则采用导出默认保护。角色专用导出按本次共享会话的确切 UUID 签发用户 Transfer EA，需要现有执行授权创建、Transfer 执行和源引擎读资格；源、主体、Membership／Version 或资格不一致拒绝。导出创建、状态与文件交付分别保留409/query_protection_roles_unavailable（当前角色资格失效或无法确认）和409/query_protection_choice_invalid（所选方式/修订已变更或失效）；使用导出专用双语文案和处理建议。上游未知码或异常协议为核验暂不可用，不解析正文猜测具体原因。Get/Open 在实际交付前再次核验；特殊文件使用同一文件路由的当前 User Bearer，经共享认证客户端获取 Blob 后下载，Resource Ticket 不能替代完整角色资格。普通默认导出继续既有路径。历史预览始终默认脱敏，查询专用选项不跨出口复用。

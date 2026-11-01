@@ -123,3 +123,101 @@ def run_driver(command, request, *, timeout, cancel=None, max_result_bytes=4 * 1
                 _stop_group(process)
                 if process.stdin is not None:
                     process.stdin.close()
+
+
+class PreparedDriver:
+    """One retained process: facts first, explicit owner allow, then rows.
+
+    Its absolute deadline includes waiting for the protection decision. Close is
+    idempotent and kills the JVM even if the HTTP caller never returns.
+    """
+    def __init__(self, command, request, *, timeout):
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError('invalid query timeout')
+        self.deadline = time.monotonic() + timeout
+        self.directory = tempfile.TemporaryDirectory(prefix='addp-spark-query-')
+        self.path = Path(self.directory.name) / 'result.json'
+        self.process = None
+        self.consumed = False
+        self.closed = False
+        try:
+            payload = json.dumps(request, ensure_ascii=False, allow_nan=False).encode('utf-8')
+            if len(payload) > 1024 * 1024:
+                raise QueryDriverError('query_request_too_large')
+            self.process = subprocess.Popen([*command, str(self.path)], cwd=self.directory.name,
+                env={k: v for k, v in os.environ.items() if k in DRIVER_ENV_KEYS},
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True)
+            # Nonblocking writes keep the absolute startup deadline effective
+            # even if an OS loader stalls before the child can read stdin.
+            os.set_blocking(self.process.stdin.fileno(), False)
+            pending = memoryview(payload + b'\n')
+            while pending:
+                try:
+                    written = os.write(self.process.stdin.fileno(), pending)
+                    pending = pending[written:]
+                except BlockingIOError:
+                    self._pause()
+            facts = Path(str(self.path) + '.facts')
+            while not facts.is_file():
+                if self.process.poll() is not None:
+                    error = self._read_result()
+                    raise QueryDriverError(error.get('error', 'query_driver_failed'))
+                self._pause()
+            self.facts = self._read(facts)
+        except Exception:
+            self.close()
+            raise
+
+    def _pause(self):
+        if self.closed:
+            raise QueryDriverError('query_cancelled')
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise QueryDriverError('query_timeout')
+        time.sleep(min(.02, remaining))
+
+    def _read(self, path):
+        if path.is_symlink():
+            raise QueryDriverError('query_result_invalid')
+        with path.open('rb') as result_file:
+            raw = result_file.read(4 * 1024 * 1024 + 1)
+        if len(raw) > 4 * 1024 * 1024:
+            raise QueryDriverError('query_result_too_large')
+        try:
+            result = json.loads(raw, parse_float=Decimal, parse_constant=_reject_json_constant)
+        except (ValueError, UnicodeError):
+            raise QueryDriverError('query_result_invalid') from None
+        if not isinstance(result, dict):
+            raise QueryDriverError('query_result_invalid')
+        return result
+
+    def _read_result(self):
+        if self.process.returncode != 0 or not self.path.is_file():
+            raise QueryDriverError('query_driver_failed')
+        return self._read(self.path)
+
+    def execute(self):
+        if self.consumed or self.closed:
+            raise QueryDriverError('query_permission_denied')
+        self.consumed = True
+        try:
+            self._pause()
+            if os.write(self.process.stdin.fileno(), b'execute\n') != 8:
+                raise QueryDriverError('query_driver_io_failed')
+            while self.process.poll() is None:
+                self._pause()
+            return self._read_result()
+        finally:
+            self.close()
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            if self.process is not None:
+                _stop_group(self.process)
+                self.process.stdin.close()
+        finally:
+            self.directory.cleanup()
