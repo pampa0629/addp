@@ -126,3 +126,63 @@ test('basic FileGDB index is unknown rather than empty and does not request a ch
   expect(reads).toEqual([''])
   expect(writes.filter(path => !path.endsWith('/system/refresh'))).toEqual([])
 })
+
+test('FileGDB child rows render after the independent child response arrives', async ({ page }) => {
+  const locator = 'addp://engine/14/path/exports/public_test.gdb?type=file&item_id=44740'
+  const rootLocator = 'addp://engine/14/path/?type=server&node_id=1'
+  const item = { id: locator, locator, label: 'public_test.gdb', type: 'file', hasChildren: false }
+  const root = { id: rootLocator, locator: rootLocator, label: 'FileGDB test engine', type: 'server', hasChildren: true, children: [item] }
+  const reads = [], errors = []
+  let releaseChild
+  const childResponse = new Promise(resolve => { releaseChild = resolve })
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.route('**/plugins/manifest.json', route => json(route, { scripts: ['/plugins/container-preview.js', '/plugins/table-preview.js'] }))
+  await page.route('**/api/v1/**', async route => {
+    const url = new URL(route.request().url()), path = url.pathname
+    if (path.endsWith('/system/refresh')) return json(route, { access_token: 'filegdb-fixture', expires_in: 3600 })
+    if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'FileGDB fixture' })
+    if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
+    if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 14, name: root.label, engine_type: 'nfs', lifecycle_state: 'active', connection_status: 'online' }] })
+    if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ ...root, children: [] }, item] })
+    if (path.endsWith('/meta/resource-tree/14') || path.endsWith('/meta/resource-tree/14/node')) return json(route, root)
+    if (path.endsWith('/manager/preview')) {
+      const child = url.searchParams.get('child_name') || ''
+      reads.push(child)
+      if (!child) return json(route, { preview_type: 'object', data: { mode: 'object', object: { content: { kind: 'container', json: {
+        format: 'filegdb', default_child: 'initial_points', children: [
+          { name: 'initial_points', key: 'initial_points', data_type: 'table', row_count: 2, column_count: 2 },
+          { name: 'added_points', key: 'added_points', data_type: 'table', row_count: 1, column_count: 2 }
+        ], summary: { child_count: 2, sampled_children: 2 }
+      } } } } })
+      await childResponse
+      const rows = child === 'initial_points'
+        ? [{ label: 'initial_points_0', value: 1 }, { label: 'initial_points_1', value: 2 }]
+        : [{ label: 'added_points_0', value: 1 }]
+      return json(route, { preview_type: 'table', data: { mode: 'table', columns: ['label', 'value'], rows, total: rows.length, page: 1, page_size: 20 } })
+    }
+    return json(route, {})
+  })
+  try {
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+    const container = page.locator('.container-preview')
+    const count = label => container.locator('.child-meta').getByRole('cell', { name: label, exact: true }).locator('+ td')
+    await expect.poll(() => reads).toEqual(['', 'initial_points'])
+    await expect(count('总行数')).toHaveText('2')
+    await expect(count('当前页行数')).toHaveText('0')
+    releaseChild()
+    await expect(container.getByRole('cell', { name: 'initial_points_0', exact: true })).toBeVisible()
+    await expect(container.getByRole('cell', { name: 'initial_points_1', exact: true })).toBeVisible()
+    await expect(count('当前页行数')).toHaveText('2')
+    await container.locator('.child-select').click()
+    await page.getByRole('option', { name: /^added_points/ }).click()
+    await expect(container.getByRole('cell', { name: 'added_points_0', exact: true })).toBeVisible()
+    await expect(count('当前页行数')).toHaveText('1')
+    await expect(container.getByRole('cell', { name: 'initial_points_0', exact: true })).toHaveCount(0)
+    expect(reads).toEqual(['', 'initial_points', 'added_points'])
+    expect(errors).toEqual([])
+  } finally {
+    releaseChild()
+  }
+})
