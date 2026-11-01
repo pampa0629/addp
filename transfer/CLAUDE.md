@@ -23,9 +23,14 @@ Security 对 Transfer 的稳定动作名为 `export`，它表示受保护数据�
 
 只读原生查询结果到 table 的 bounded 搬运属于同一主链路：source 必须消费 `common/engine.QueryReadSessionProvider`，target 继续消费 table write session。MongoDB 嵌套 BSON 的路径投影、数组展开、去重和关系合并由只读 MQL 在源端完成；Transfer 只搬运最终扁平行、执行显式字段映射和严格类型转换，不提供递归 JSON 自动摊平器。
 
-MongoDB 查询的 Console 基础结构整形构建器只是一种 MQL authoring 能力：通用支持 `可选单次 $unwind -> $project`，保存事实仍只有 `source.query` 中的标准 MQL command object。基础界面只决定文档/单数组的行粒度和源字段选择；单数组模式只允许展开一个数组，可以选择多个数组元素叶子字段，并可选择多个不位于任何数组下的父文档叶子字段随每个元素行重复携带；文档标识自动携带。查询输出名由全部源路径按稳定顺序统一编译，不得因选择顺序改变；PostgreSQL 目标名称和类型只在后续 `field_mapping` 配置。构建器不得暴露筛选、排序、空数组保留、投影别名、原生 MQL 编辑或查询参数等拼装细节，不得保存第二份 DSL、硬编码业务 collection/字段、猜测多数组粒度或承担业务聚合。只有严格属于可逆子集、且 collection、数组和投影路径均与当前 Meta 事实一致的 MQL 才能结构化编辑；其他已有查询在 Transfer Console 中只读展示，复杂查询开发归 Develop。
+Console 基础构建器只编写同一 `source.query`，不保存第二份 DSL 或建立另一条执行路线；目标字段名和类型归后续 `field_mapping`，复杂数据开发归 Develop。
 
-关系型查询的 Console 基础构建器只承担 Transfer 的轻量 ETL authoring：源关系固定为用户已经选择的一个 native table，通用支持字段投影和一层 `all|any` 行过滤，过滤值全部编译为 `source.query.parameters` 中的类型化参数。可用查询语言、默认语言、标识符引号和参数类型必须来自所选 Engine Instance 的 `compute.query` capability；`bigint/decimal` 必须作为十进制字符串通过 `string` capability 无损传递，Planner 必须在调用 Provider 前再次校验参数开关、语言和值类型。单语言引擎不提供语言选择，未声明 `read_session` 的引擎不开放查询源。保存事实仍只有标准 `source.query.language=sql`、SQL `statement` 和 `parameters`，不得保存第二份可视化 DSL。基础构建器不得提供 Join、多表输入、聚合、计算字段、别名、排序、Limit 或方言私有函数；目标字段名和类型继续只由后续 `field_mapping` 配置，复杂数据开发归 Develop。只有严格属于可逆子集的 SQL 才能显示和编辑为基础表单；其他合法只读 SQL 只允许在 Transfer Console 中只读展示，不提供高级 SQL 编辑或保存入口。
+- MongoDB：基于 Meta 已识别字段，按文档或单数组行粒度编译 `可选单次 $unwind -> $project`；文档标识自动携带。查询输出名由全部源路径按稳定顺序统一编译，不得因选择顺序改变；基础界面不开放查询参数。
+- 关系型 SQL：只为所选单表生成字段投影与一层 `all|any` 行过滤，过滤值全部编译为 `source.query.parameters` 中的类型化参数。语言、标识符引号和参数类型来自实例 `compute.query`；`bigint/decimal` 使用十进制字符串通过 `string` 无损传递，Planner 在调用 Provider 前再次校验参数开关、语言和值类型。
+
+行粒度、字段候选、能力驱动入口及不支持的编辑／计算范围统一见[query source 与轻量 ETL 配置](docs/transfer-基本概念及配置说明.md#23-bounded-query-source-与轻量-etl-构造)。两者仅对严格可逆且符合当前 Meta 事实的子集开放结构化编辑，其余已有合法只读查询只读展示，不提供高级编辑或保存入口。
+
+只读会话与来源证明沿[Provider 契约](../docs/spec/addp引擎插件接口规范.md#queryruntimeprovider)，资源选择、创建与执行的独立权限沿[任务授权](docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)。能力声明或表单回显不证明真实读写、保护或完整链路已通过；标准门禁与分版本证据见[开发与验证](#开发与验证)。
 
 ## 技术栈与端口
 
