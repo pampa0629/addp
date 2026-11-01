@@ -46,7 +46,7 @@ Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨
 
 ## Meta 扫描分层约定
 
-集中治理 `ScanTask` 首期范围为已由 System 明确批准的 PG entire-engine basic，当前资格与 Worker 重核统一沿[采集资格规范](../docs/spec/addp元数据扫描机制规范.md#采集资格与两种范围语义)。Meta 通过 `SystemServiceClient.CheckMetaCollection` 核对冻结摘要与当前 lease；不支持的深度／selector 拒绝，不降级，独立交互和可信成果补扫不借用该资格。定义在排队／运行中删除时仍须结束原 execution，不重建任务摘要，也不让缺失定义阻塞队列。
+当前旧实现的集中治理 `ScanTask` 范围为已由 System 明确批准的 PG entire-engine basic；2026-11-01 已确认改为功能权限加引擎管理范围，尚未实施切换，当前资格与 Worker 重核统一沿[采集资格规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)。Meta 通过 `SystemServiceClient.CheckMetaCollection` 核对冻结摘要与当前 lease；不支持的深度／selector 拒绝，不降级，独立交互和可信成果补扫不借用该资格。定义在排队／运行中删除时仍须结束原 execution，不重建任务摘要，也不让缺失定义阻塞队列。
 
 PG basic 的资格重核以一次 `EngineCatalogProvider.ListChildren` 枚举为读取单元，已放行调用可结束其内部 SQL，下一次调用须重核。中途明确拒绝立即结束后续 namespace 遍历，保留拒绝类型、失败目标诊断及已完成枚举计数，不把全范围标为完成。逐语句诊断不改变这一运行边界，也不表示已支持逐 SQL 取消；分版本验证从[采集资格验证范围](#采集资格验证范围)进入。
 
@@ -219,7 +219,7 @@ FalkorDB 图属性结构来自每个节点形态或关系类型的最多 100 条
 
 ### 人工来源与冻结计划
 
-人工扫描、任务手动触发、item 刷新和资源树刷新按[生产来源规范](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)从当前可信 AuthContext 固化完整人类来源，不能仅凭 userID、任务创建者或历史记录补齐身份。资源树刷新继续返回安全 `ScanExecutionResponse`，字段与读取范围沿[Meta 专业读取契约](../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应)。来源不授予扫描或源内容访问资格，交互入口与集中治理的范围、批准和 Worker 重核按[采集资格规范](../docs/spec/addp元数据扫描机制规范.md#采集资格与两种范围语义)独立裁决。
+人工扫描、任务手动触发、item 刷新和资源树刷新按[生产来源规范](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)从当前可信 AuthContext 固化完整人类来源，不能仅凭 userID、任务创建者或历史记录补齐身份。资源树刷新继续返回安全 `ScanExecutionResponse`，字段与读取范围沿[Meta 专业读取契约](../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应)。来源不授予扫描或源内容访问资格，交互入口与集中治理的范围、当前实现及目标替换、Worker 重核按[采集资格规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)独立裁决。
 
 冻结计划事实通过 `GET /runtime/scan-executions/:execution_id/authorization-facts` 供固定 `addp-system` Tenant Service 以 `meta.task_provider.read` 读取，唯一 DTO／客户端仍是 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`。严格 wire、冻结版本与摘要、任务变化后的 needs_refresh/null scope、旧快照的 409 及 complete 支持范围统一见[冻结扫描计划事实契约](../docs/spec/addp元数据扫描机制规范.md#冻结扫描计划事实契约)。Meta 仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；未证明的范围保持非完整，200／complete 都不等于 Allow。
 

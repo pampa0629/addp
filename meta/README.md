@@ -38,7 +38,7 @@ bash scripts/dev/start.sh -meta
 
 ### 扫描任务
 
-`ScanTask` 是可复用定义，一次性手动扫描只创建 execution。定义创建使用 `POST /scan/tasks`，更新使用 `PUT /scan/tasks/:task_id`，分别要求 `meta.scan_task.create` 与 `meta.scan_task.update`；字段见[请求 DTO](backend/internal/models/dto.go)与[任务表](docs/tables/scan_tasks表.md)。集中治理任务当前仅覆盖 PG 整引擎 basic，采集资格与实际源读取要求沿[正式规范](../docs/spec/addp元数据扫描机制规范.md#采集资格与两种范围语义)，保存定义不表示可执行或已获批。
+`ScanTask` 是可复用定义，一次性手动扫描只创建 execution。定义创建使用 `POST /scan/tasks`，更新使用 `PUT /scan/tasks/:task_id`，分别要求 `meta.scan_task.create` 与 `meta.scan_task.update`；字段见[请求 DTO](backend/internal/models/dto.go)与[任务表](docs/tables/scan_tasks表.md)。集中治理任务当前仅覆盖 PG 整引擎 basic；2026-11-01 已确认取消逐任务批准，目标与旧实现状态见正式规范，采集控制与实际源读取要求沿[正式规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)，保存定义不触发执行，也不证明实际源读取已放行。
 
 以下示例为当前 Tenant User 的一次性手动扫描，需要 `meta.scan_task.execute`，源读取仍受本人当前权限约束。`META_BASE_URL` 表示本次实际 Backend 地址（不含 API 前缀），`TOKEN` 为该用户凭据；将引擎 ID `1` 和 `public` 替换为已核对、获授权的实际目标。这里的 `catalog_paths` 明确选择该路径范围；单项或叶子目标使用完整 `targets`，不扩大为父目录，具体形状见[API 约束](../docs/spec/addp元数据扫描机制规范.md#api-约束)。
 

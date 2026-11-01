@@ -159,6 +159,14 @@ Tenant Role 管理界面展示 Permission 时，必须按“owner 模块 → 资
 3. System 只维护资源段和动作段的展示词汇，不复制 Permission 集合、风险等级、允许 Scope 或其他授权事实；
 4. 发布门禁必须校验所有 `tenant_customizable=true` 的 active Permission 在 `zh-cn` 和 `en` 下都有资源名称，不允许运行时回退为 snake_case 技术标识。
 
+### 元数据查看与 PG basic 集中采集的权限边界（2026-11-01，目标已确认）
+
+元数据查看与数据读取是 System 的 DataItem 资源授权动作，不以新建一套人员 Role 代替。两类授权复用既有直接办理和 Catalog 业务办理功能权限及引擎管理范围；读取包含必要元数据查看，不自动签发第二条 Grant。元数据查看不包含样本、正文或内容统计；具体展示规则见[授权规范](addp授权上下文规范.md#5511-元数据查看与数据读取2026-11-01-已确认待实现)。
+
+PG basic 集中采集的配置与人员执行沿 Meta 对应操作 Permission 加 System 当前引擎管理范围，不要求个人 DataItem Grant，不新增逐任务批准角色。既有引擎管理资格／委派不自动附带 Meta 功能权限。定时任务归租户，不因创建人离职自动停止；人员失权后不能继续操作。固定 Meta Runtime 的机器权限与人类操作权限分开，不能以机器凭据接受任意任务或范围。
+
+实施切换时，旧 `system.meta_collection_qualification.approve/read/revoke/execute` 模型必须按实际消费者同步退出 Manifest、角色组合、路由、Swagger、常量和页面，并通过向前迁移停用旧权限、处理受影响授权版本及会话，不为避开迁移重写历史 SQL。不自动给已有账号增加人员权限。机器执行的唯一新契约及消费者应与实现同时发布，不先发占位 Permission。当前仅更新规范，发布目录和数据库尚未变更。
+
 ## 六、Role Assignment 与 Scope
 
 Role Assignment 绑定 Principal、Role、Scope、来源、有效期和生命周期状态。Scope 类型固定为：

@@ -45,7 +45,7 @@
 - `trigger_type = manual` 或 `scheduled`
 - `execution_config` 保存本次执行的 engine、scope、depth、force、planned_run_at 等私有运行参数，不直接返回给用户或 Monitor
 
-具体执行与源读取仍须通过[采集资格和范围核验](../../../docs/spec/addp元数据扫描机制规范.md#采集资格与两种范围语义)；保存定义、存在 execution 或启用调度都不代表已批准、已读取源或已执行成功。专业历史与安全 DTO 沿[Meta 读取契约](../../../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应)，定义删除不抹去 Common 已有执行事实。
+具体执行与源读取仍须通过[集中采集权限和范围核验](../../../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)；目标规则取消逐任务批准，但当前旧实现尚待切换；保存定义、存在 execution 或启用调度都不代表已读取源或已执行成功。专业历史与安全 DTO 沿[Meta 读取契约](../../../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应)，定义删除不抹去 Common 已有执行事实。
 
 验证入口与分层范围见[模块开发与验证](../../CLAUDE.md#开发与验证)，固定版本、失败与未覆盖项见[历史证据](../../../docs/spec/testing/evidence/资源读取与预览历史证据.md#meta-专业扫描读取--t4)；源码字段或迁移文件存在不等于当前数据库已执行、真实 Worker 链路已验收。
 

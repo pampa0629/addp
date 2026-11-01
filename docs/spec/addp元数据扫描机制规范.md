@@ -82,27 +82,28 @@ Meta 扫描只保留四个核心维度：
 
 精确 file/object leaf 必须把已解析的 `EngineCatalogEntry` 交给内容运行时，复用完整扫描的 entry → 存储资源 → processor 路径，保留大小、修改时间、MIME 和对象 ETag 等可用存储事实；不得降为仅含路径的 `ref_groups` 后以零值落库。`ref_groups` 继续只表达显式多内容引用边界，不能承载调用方自报的存储事实。
 
-### 采集资格与两种范围语义
+### 集中采集权限与两种范围语义
 
-System 负责当前采集资格及源读取裁决；Meta 不以服务连接、扫描 Permission、执行来源或 Worker lease 代替该裁决。User 交互扫描的内容读取按本人当前权限；租户集中采集按明确批准的范围、用途及深度执行，不永久借用创建人的个人读取权，也不向操作人授予源内容读取权。完整规则见[授权上下文规范的 Meta 采集资格与范围](addp授权上下文规范.md#meta-采集资格与范围已确认)。
+**2026-11-01 目标已确认，产品实现待切换。** PG basic 集中采集使用采集功能权限加引擎管理范围，取消逐任务采集批准，不要求操作者具有目标 DataItem 的查看或读取 Grant。配置和人员操作时由 System 核验当前功能与管理范围，Meta 约束真实任务和 Provider 计划；连接、租约或浏览器声明本身不提供许可。完整职责与迁移见[Meta 集中采集权限与范围](addp授权上下文规范.md#meta-集中采集权限与范围已确认)。
 
-交互采集遵守当前 User、部门与项目组的 Deny；治理采集不绑定创建人的个人 Deny，按独立资格的范围、用途、深度、期限、撤销和适用 Security 约束执行。本期不增加治理专用 Deny，不把创建人的个人拒绝或离职推导成租户后台禁扫，也不因治理采集可运行而允许操作人读取内容或结果。
+租户集中计划不按创建人、部门或项目组重复配置。任务归租户，创建人离职或失权不自动停止原定时计划，但不能继续修改或手动执行；当前有权管理员负责关闭定时和显式取消在途执行。关闭定时不取消已入队／运行中的执行，取消后下一次 Catalog 枚举不得发起，已放行枚举可结束。不把历史操作人或其个人 Grant／Deny 当作后台运行身份，也不伪造人类 Actor。
 
 - **精确目标采集**仅覆盖指定 DataItem 及其经核验的合法组成；item、leaf 或显式 refs 不因位于同一目录而获得兄弟项权限。
-- **完整范围采集**须明确批准 Engine、schema 或目录等边界，并包含范围内未来新增项；不另设未来成员开关，不把普通 node 变为 whole 或自动向用户签发内容 Grant。现有 root／branch selector 只声明请求范围，不能单独证明已经获得完整范围资格。
-- Worker 在实际读取前及重试／接管时重核当前资格，核验对象与实际 Provider／reader 计划一致。目录遍历、实际成员及外部引用受该边界约束，不能以路径字符串前缀替代 Provider 的类型化路径与归属核验。
-- 新产物先凭可信实际产出事实做精确 basic，再由 System 裁决读取授权；内容 deep 必须获权。覆盖、追加、同名重建、扫描新增行不推导首次产出资格；临时执行结果不伪造为业务 DataItem。
-- deep 申请不能在缺权时静默降为 basic 并报成功。采集与结果读取分别控制，样本、正文及含业务值的派生结果不进入普通目录或通用执行诊断。
+- **完整范围采集**在允许管理的 Engine、schema 或目录边界内发现当前及未来新增项，不把普通 node 变为 whole，不自动向人员授予元数据或内容权限。当前仅推进 PG 整引擎 basic，不从目标规范外推其他 selector 已可执行。
+- Worker 在实际读取及重试／接管前核对固定 Runtime、Tenant、真实任务、当前引擎、冻结计划和有效 lease，以及取消／删除状态；计划变化不得让旧执行扩大读取，不缓存 Allow。当前 PG 一次 `EngineCatalogProvider.ListChildren` 是读取单元，不承诺逐 SQL 中断。
+- 新产物仍先凭可信实际产出事实做精确 basic，再由 System 裁决读取授权；内容 deep 必须获权。覆盖、追加、同名重建或扫描新增行不推导首次产出资格。
+- deep 暂不扩展，受保护内容的既有拒绝与 Security 约束不变。缺权不能静默降级为 basic 成功；样本、正文及业务值不进入普通目录、执行详情或通用日志。
+- 结果查看按[元数据查看与数据读取](addp授权上下文规范.md#5511-元数据查看与数据读取2026-11-01-已确认待实现)独立控制。资源身份和允许展示的结构使用查看授权；样本、正文与统计使用数据读取授权；采集深度不充当展示权限。
 
-首期集中采集的后端契约仅覆盖 PG entire-engine basic `ScanTask`，不把范围解析当作已批准。System 以唯一资格表保存任务／配置摘要、引擎版本、用途、期限与撤销；Worker 经固定 `addp-meta` Service 的 `POST /api/v1/system/runtime/meta_collection_checks` 核验当前 Common execution／lease 与 Meta 事实。初始核验以及根目录、每个 schema 枚举前均重新核验，拒绝先于 Provider 调用；初始拒绝写入失败终态，不等待租约过期。交互扫描、可信成果补扫不借用这项资格，deep 与其他 selector 尚未接入。复用受影响 owner 的 Go T1、PostgreSQL T2 及真实 Online 标准入口分别验收，不以规范落地或局部门禁代替完整真实运行验收。
+旧实现仍使用 `meta_collection_qualifications` 及逐任务批准检查，须在同一实施切片移除其页面、人员／机器权限、路由、Swagger、持久模型及旧测试主路径。原冻结计划、当前 execution／lease、真实源读取前核验和失败终态继续复用；只取消批准，不取消执行控制。历史批准／撤销／到期验收保留为旧版本证据，不能宣称新规则已通过。存量 PG 集中任务保留配置与历史、关闭定时，通过现有 Owner 取消链路终止按旧批准规则排队／运行的执行，不直接改写为终态；已放行枚举可结束，由当前有权人员按新规则显式重新开启，不静默恢复。任务 1 保留且关闭定时，不自动执行。
 
 ### 冻结扫描计划事实契约
 
-批准具体采集任务前，System 通过同一 MetaClient 的 `ReadScanTaskFacts` 读取 `GET /api/v1/meta/runtime/scan-tasks/{task_id}/authorization-facts`，使用相同的固定 `addp-system` Tenant Service 与 `meta.task_provider.read`。该接口只读真实任务，不要求创建或执行扫描，也不调用 System、Provider 或获取源连接。`meta.scan_task_facts/v1` 只返回任务 ID、功能定义摘要、Engine ID、范围类型、请求深度、force 和读取选项；不返回原始配置、来源人或凭据。引擎当前版本归 System，在批准时独立冻结。首期此接口只投影整个引擎的任务声明，原始 path／ref group 等尚未证明的 selector 返回 409，不能降为整个引擎。深度字段只是当前任务请求，不是已批准深度。任务事实与执行事实使用相同功能摘要算法；200 均不表示 Allow。
+旧逐任务审批使用 `ReadScanTaskFacts` 及 `GET /api/v1/meta/runtime/scan-tasks/{task_id}/authorization-facts` 读取真实配置；该审批专用消费随批准模型退出，不以改名保留另一条审批路线。实施时核查唯一消费者并删除无消费者的接口／DTO／客户端，不能删除 Worker 仍消费的执行计划事实。以下执行事实契约继续用于实际计划和运行条件核验，不作为持久批准。
 
-System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/runtime/scan-executions/{execution_id}/authorization-facts`，使用当前 Tenant 的独立 `addp-system` Service 凭据及既有 `meta.task_provider.read`。接口不接受 query、请求体、Actor 或附加 selector；响应 `Cache-Control: no-store`。200 只表示事实投影，不能代替 System 的采集资格批准、授权签发或 Worker 消费。客户端只发一次请求，不跟随重定向或隐式重试，不传播错误体、凭据及连接。
+System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/runtime/scan-executions/{execution_id}/authorization-facts`，使用当前 Tenant 的独立 `addp-system` Service 凭据及既有 `meta.task_provider.read`。接口不接受 query、请求体、Actor 或附加 selector；响应 `Cache-Control: no-store`。200 只表示事实投影，不能代替 System 的权限与引擎管理范围裁决、授权签发或 Worker 消费。客户端只发一次请求，不跟随重定向或隐式重试，不传播错误体、凭据及连接。
 
-共享 wire 为 `execution.MetaScanPlanFacts`，`schema_version=meta.scan_plan_facts/v1`，包含 execution UUID、可空 task ID／功能定义摘要、完整原始执行配置摘要、字符串 Engine ID／冻结版本、basic／deep、source scope、read options 和 basis state。任务功能定义显式包含 Engine、扫描 selector 和读取参数，排除名称、创建人及最近执行摘要；它是内容标识，不冒充任务资源 Version。执行摘要覆盖完整原始 JSON，保留数字精度，拒绝重复键，不能经宽松 JSONMap 重新序列化后求值。事实不返回原始配置、Actor、Grant 或连接；System 独立读取统一执行事实并核对当前引擎与资格。
+共享 wire 为 `execution.MetaScanPlanFacts`，`schema_version=meta.scan_plan_facts/v1`，包含 execution UUID、可空 task ID／功能定义摘要、完整原始执行配置摘要、字符串 Engine ID／冻结版本、basic／deep、source scope、read options 和 basis state。任务功能定义显式包含 Engine、扫描 selector 和读取参数，排除名称、创建人及最近执行摘要；它是内容标识，不冒充任务资源 Version。执行摘要覆盖完整原始 JSON，保留数字精度，拒绝重复键，不能经宽松 JSONMap 重新序列化后求值。事实不返回原始配置、Actor、Grant 或连接；System 独立读取统一执行事实并核对当前引擎与执行条件。
 
 `source_scope` 为 `exact`／`full` 和 1–200 个同 Engine 的完整 typed anchors，按 `json.Marshal(path)` 字节顺序排列，拒绝重复；名字保持原字节。complete 必须有可证明的 scope，incomplete／unsupported／needs_refresh 必须为 null。纯值校验只证明结构，实际类型、父链和归属由 Meta 持久事实或可信生产回执证明。原始路径、ref group 或不完整组成不能猜成完整范围，也不能为获得 typed path 而先访问源。当前投影支持已完整识别的单项 native 边界和已冻结引擎类型的 whole 根；其他 selector 保持非完整，后续随对应可信计划接线补齐，不以此宣称全部采集范围已获授权。
 
@@ -125,7 +126,7 @@ System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/r
 
 ## ScanTask 与 Execution 边界
 
-PG 整引擎 basic 的任务配置由 Meta 元数据扫描工作区提供，显式保存 `scope.type=engine`，不把当前已枚举 schema 固化为范围。新任务默认关闭定时、Cron 为空，保存仅创建任务定义，不批准、不触发执行。任务配置、System 采集批准和手动执行为三个显式动作：保存后携带任务编号前往现有采集资格页；审批页仍须读取真实任务事实并明确用途、期限，批准后可返回同一 Meta 任务。手动执行使用该 ScanTask 的 trigger 接口，不能转为无任务的一次性交互扫描绕过资格。功能权限分别核验创建、修改、执行及批准；未批准、失效或配置不匹配仍由原 Worker 门禁拒绝。既有非 PG 配置入口不在本次改动范围。
+PG 整引擎 basic 任务由 Meta 扫描工作区统一配置，显式保存 `scope.type=engine`，不把当前 schema 清单固化为范围。新任务默认关闭定时、Cron 为空；保存只创建定义，不立即执行。目标流程为“有权人员保存配置 → 手动执行或显式开启定时”，不再跳转 System 批准任务。创建、修改、执行和取消沿对应功能权限与当前引擎管理范围核验；手动执行使用该 ScanTask 的 trigger 接口，不转为一次性交互入口。执行与配置不匹配仍由 Worker 拒绝。当前产品三步审批实现尚未切换，其他引擎及 deep 不借此开放。
 
 此处关闭定时的 Meta 自主管理任务可以保留用于人工触发；它不是 Console 注册入口的 engine-bound 自动调度，后者关闭定时时仍按既有规范删除绑定任务。
 
@@ -220,7 +221,8 @@ Meta 中的调度不属于 engine、schema、bucket 或其他 node 本身；调�
 5. 某个下级范围没有独立调度时，默认继承上级范围的调度；不得要求用户为所有 node 显式创建调度定义。
 6. `enabled=false` 只表示该 `ScanTask` 自身不参与调度；不得被解释为“显式排除父级调度”。
 7. 如需表达“某个下级范围不独立调度，且也不继承父级调度”，必须单独设计显式排除语义；在专题规范完成前不得用 disabled 任务、空 schedule 或其他旁路状态偷渡该语义。
-8. 同一稳定范围只允许一条启用的独立定时 `ScanTask` 作为权威计划，避免同 scope 多条计划互相重叠。
+8. 同一租户、引擎和稳定范围只允许一条启用的独立 basic 定时 `ScanTask` 作为权威计划，不按账号、部门或项目组重复创建。创建人不参与范围唯一性判断。
+9. 不同深度／采集职责不能只按路径互相排除：deep 内容增强不自动替代 basic 身份发现。父子重叠必须保留上级发现新增节点的能力；当前只推进 PG 整引擎 basic，节点独立采集及跨深度计划协调不得凭本条提前开放。
 
 推荐理解方式：
 
