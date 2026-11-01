@@ -1,8 +1,10 @@
 # Transfer 当前架构设计
 
-更新时间：2026-07-23
+更新时间：2026-11-01
 
 本文记录 Transfer 模块当前稳定架构。旧的 Transfer 私有 Reader / Writer 插件体系、ConnectorRegistry、`pkg/pipeline` 和旧任务 JSON 不再作为主路径保留。
+
+阅读导航：[架构分层](#二架构分层)、[table 主路径](#四table-transfer-主路径)、[raw copy](#六raw-copy-主路径)、[持续运行时](#十持续运行时与后续方向)、[验收范围](#架构说明与验收范围)。配置示例与字段以[配置正文](transfer-基本概念及配置说明.md)为准，执行边界与状态所有权以[任务语义](transfer-任务语义与同步模式.md)为准。
 
 ## 一、模块定位
 
@@ -41,49 +43,11 @@ Transfer API / Frontend
 
 ## 三、任务配置模型
 
-任务配置存放在 `transfer.transfer_tasks.config` 中。新配置以 source / target endpoint 为核心：
+`transfer.transfer_tasks.config` 是任务配置事实，source / target endpoint 经唯一 planner 转为 table、raw copy 或对应的运行计划。字段和可执行示例统一见[Config JSON](transfer-基本概念及配置说明.md#二任务-config-json)，组合范围见[当前支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)。
 
-```json
-{
-  "runtime": {"boundary": "bounded"},
-  "load": {"mode": "snapshot"},
-  "source": {
-    "locator": "addp://engine/1/path/public/roads?type=table",
-    "data_type": "table",
-    "representation": "native"
-  },
-  "target": {
-    "parent_locator": "addp://engine/2/path/bucket/exports?type=prefix",
-    "name": "roads.shp",
-    "data_type": "table",
-    "representation": "encoded",
-    "format": "shapefile",
-    "policy": {"apply_mode": "replace"}
-  },
-  "transforms": [
-    {
-      "type": "field_mapping",
-      "version": "v1",
-      "mode": "project",
-      "fields": [
-        {"source": "name", "target": "name", "target_type": "string"},
-        {"source": "geom", "target": "geometry", "target_type": "geometry"}
-      ]
-    }
-  ],
-  "batch_size": 10000
-}
-```
+`source.locator` 指向已存在资源；`target.parent_locator` 指向已存在父 node，`target.name` 表达待写入资源名，不接受待创建资源的虚拟 locator。`data_type`、`representation` 和 layout 决定 Provider 组合；`format` 只属于 encoded endpoint，具体约束见[Endpoint 字段](transfer-基本概念及配置说明.md#22-endpoint-字段)。
 
-关键规则：
-
-- `source.locator` 使用 common resource tree 的 ResourceLocator URI，指向已存在资源。
-- `target.parent_locator` 指向已存在父 node，`target.name` 表达待写入资源名；target 不提交待创建资源的虚拟 locator。
-- `data_type` 稳定支持 `table`；`document`、`media`、`cad`、`unknown` 已支持 encoded single raw copy。
-- `representation` 支持 `native` 和 `encoded`。
-- `format` 只用于 encoded endpoint。
-- `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；watermark incremental 按 source `bounded_watermark_read` 与 target 幂等 `table_upsert` 能力组合，当前 PostgreSQL/MySQL/OceanBase/openGauss/TiDB 源可写入 PostgreSQL/MySQL/OceanBase/openGauss/TiDB 目标，OceanBase/openGauss/TiDB 限非空间表；业务 Kafka continuous 使用幂等 `upsert`，PostgreSQL/MySQL/Oracle CDC 使用 `upsert_delete`。
-- 旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
+旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 
 ## 四、table Transfer 主路径
 
@@ -105,42 +69,13 @@ source endpoint
 | encoded multi file/object | contentio + `[]format.RelatedRef` + `MultiTableReaderProvider` / `MultiTableWriterProvider` |
 | encoded whole scope | contentio Reader / Lister + `ScopeTableReaderProvider` |
 
-当前已接入的 table 格式：
-
-| 格式 | Transfer 能力 |
-|---|---|
-| CSV / TSV | single table read / write |
-| JSON / JSONL | single table read / write |
-| Parquet | single table read / write；whole scope dataset read；field_selection 下推 |
-| Shapefile | multi table read / write；range source 可利用 `.shx` / `.dbf` 窗口 |
-
-当前已接入的 native table 写侧：
-
-| 引擎 | 写侧能力 |
-|---|---|
-| PostgreSQL | table prepare、COPY session、batch insert、空间字段写入 |
-| MySQL | table prepare、事务内批量 insert、write session |
-| Doris | table prepare、DUPLICATE KEY 明细表、MySQL 协议 insert |
-| ClickHouse | table prepare、MergeTree 普通表、批量 insert |
+格式与原生目标写侧分别由[格式支持](transfer-基本概念及配置说明.md#33-格式)和[原生目标写侧](transfer-基本概念及配置说明.md#已接入的原生目标写侧)维护。Parquet 保留 single table 与 whole scope dataset 的读取边界及 `field_selection` 下推；Shapefile 沿 multi reader / writer，range source 可利用 `.shx` / `.dbf` 窗口，不能把这些布局合并为普通单文件路径。
 
 ## 五、Transform
 
-当前稳定 transform 为 `field_mapping`。它只处理 table batch 的字段级变换：
+`field_mapping` 只作用于 table batch，承担字段投影、重命名、默认值、目标类型声明与 geometry schema 同步。`project` 只输出声明字段并可下推 source `field_selection`；`passthrough` 保留源 row 后再覆盖／新增映射字段，不下推该选择。完整配置见[field_mapping](transfer-基本概念及配置说明.md#五field_mapping-transform)。
 
-- 字段投影。
-- 字段重命名。
-- 默认值。
-- 目标字段类型声明。
-- geometry 字段 schema 同步。
-
-`mode` 支持：
-
-| mode | 语义 |
-|---|---|
-| `project` | 只输出 `fields` 声明的目标字段；planner 可由此推导 source `field_selection`。 |
-| `passthrough` | 保留源 row 全字段，再应用字段映射覆盖 / 新增字段；不下推 `field_selection`。 |
-
-过滤、表达式、聚合、空间坐标转换等 ETL 能力尚未进入稳定主链路。
+过滤、表达式、聚合与 CRS transform 不属于该 transform。源端只读查询和轻量 ETL 构造见[query source](transfer-基本概念及配置说明.md#23-bounded-query-source-与轻量-etl-构造)，不能把源查询能力记成另一套 Transfer transform。
 
 ## 六、raw copy 主路径
 
@@ -154,17 +89,7 @@ source encoded file/object
   -> target encoded file/object
 ```
 
-第一版支持范围：
-
-| 维度 | 支持范围 |
-|---|---|
-| `data_type` | `document`、`media`、`cad`、`unknown` |
-| `representation` | `encoded` |
-| `layout` | `single` |
-| locator `type` | `file`、`object` |
-| target `data_type` / `format` | 可省略并继承 source；显式声明时必须和 source 一致 |
-| target path | 必须是完整 file / object 路径 |
-| `target.policy.apply_mode` | 只支持 `replace` |
+endpoint、类型继承与路径范围统一见[raw copy 配置](transfer-基本概念及配置说明.md#四raw-copy-支持范围)。当前仅支持 `document`、`media`、`cad`、`unknown` 的 encoded single file/object 和 `replace`；显式 target `data_type` / `format` 必须与 source 一致，目标须为完整 file/object 路径。
 
 raw copy 的覆盖语义由 Transfer 执行：目标引擎必须提供 `ResourceDeleteProvider`，先删除目标资源再创建写入，不依赖 create 的隐式覆盖行为。
 
@@ -172,52 +97,49 @@ raw copy 的覆盖语义由 Transfer 执行：目标引擎必须提供 `Resource
 
 replace / append / upsert / upsert_delete 是 Transfer apply policy；upsert 和 upsert_delete 必须由 common engine 的强类型 Provider 真实实现。
 
-| 模式 | 当前语义 |
-|---|---|
-| `replace` | 写入前由 Transfer 规划删除目标资源或重建目标，再执行写入。 |
-| `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写。 |
-| `upsert` | 按稳定键幂等新增或更新；第一版仅 PostgreSQL native table。 |
-| `upsert_delete` | 按稳定键新增、更新和物理删除；数据库 CDC 支持 PostgreSQL/MySQL/Oracle 源到 PostgreSQL/MySQL/Oracle 新目标表。 |
+`replace`、`append`、`upsert`、`upsert_delete` 的适用组合、目标能力和失败重试统一见[写入策略](transfer-基本概念及配置说明.md#六写入策略)与[支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)，不再按单一数据库维护独立能力摘要。
 
 `TableWritePreparer` 只做 ensure / create table / schema evolution，不承载 replace / append 策略。DeleteResource 是 common engine 提供的原子删除能力；watermark upsert 使用独立强类型 Provider。
 
 ## 八、Checkpoint 和重试
 
-当前 checkpoint 是观测点，不是可恢复提交点：
+checkpoint、进度字段和 Provider marker 是观测事实，不是可恢复提交点；定义见[Checkpoint、进度和重试](transfer-基本概念及配置说明.md#十checkpoint进度和重试)。raw copy 成功按单个 content 回写 `records_read=1`、`records_written=1`、`bytes_read`、`bytes_written` 和 `checkpoint_offset=1`。
 
-- batch 写入成功后回写 `records_read`、`records_written`、`checkpoint_offset`、`checkpoint_state` 和简短日志。
-- raw copy 成功后回写 `records_read=1`、`records_written=1`、`bytes_read` 和 `bytes_written`；`checkpoint_offset=1` 表示该单个 content 已复制完成。
-- `checkpoint_offset` 表示累计读取记录数，用于展示和故障定位。
-- reader / writer 如实现 marker provider，Transfer 可保存 `resume_marker` / `commit_marker`。
-- 保存 marker 不表示已经启用 checkpoint resumable。
-
-失败执行 retry 当前按 restartable 处理：
-
-1. 创建新的 execution。
-2. 重新入队。
-3. replace snapshot 从头执行；watermark upsert 从同步主状态 resume。
-4. append 写入模式拒绝 retry。
-
-snapshot checkpoint resumable 尚未进入主链路。PostgreSQL watermark incremental 的 resume 不消费 execution marker，而是读取 `transfer.sync_states` 的 committed position。
+失败 snapshot retry 创建新 execution 并从头执行，append 拒绝 retry；snapshot checkpoint resumable 尚未开放。watermark 与 continuous 的 resume 读取 `transfer.sync_states` committed position，不消费 execution marker，准入条件与独立动作边界见[恢复分级](transfer-基本概念及配置说明.md#恢复分级)及[状态、Checkpoint 与 Replay](transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)。
 
 ## 九、写后 Meta 扫描
 
-任务成功后，如果 `auto_scan_metadata=true`，Transfer 触发 Meta deep scan。
+启用 `auto_scan_metadata` 后，bounded 写后、continuous 首次目标建立／CDC 初始快照完成和审批后的补扫按各自时机提交；完整条件、claim 与失败语义见[写后 Meta 扫描](transfer-基本概念及配置说明.md#十一写后-meta-扫描)及[Meta Scan 时机](transfer-任务语义与同步模式.md#八meta-scan-时机)。
 
-| 目标 | 扫描范围 |
-|---|---|
-| PostgreSQL native table | 所在 schema |
-| MySQL / Doris / ClickHouse native table | 所在 database |
-| NFS encoded/raw file | 单文件 `ref_groups` |
-| NFS Shapefile refs | 本次实际生成的 refs group |
-| MinIO / S3 encoded/raw object | 单对象 `ref_groups` |
-| MinIO / S3 Shapefile refs | 本次实际生成的 refs group |
+Transfer 只提交实际目标边界：native table 使用完整表 locator 的 `targets`，encoded/raw content 使用实际写出文件／对象的 `ref_groups`，Shapefile 只带本次生成的 refs，不扩大到父 schema、database 或目录。Meta 提交失败不回滚已提交的数据或 schema，也不能把提交成功记作扫描完成。
 
 Transfer 不直接写目标 Meta attributes。目标 item 的 `data_type`、`format`、`layout`、`type_info`、`format_info` 和 capabilities 由 Meta scan 重新识别。
 
 ## 十、持续运行时与后续方向
 
-table Transfer 主链路已经稳定。后续增强包括：
+### 持续运行时
+
+continuous worker 是独立常驻进程，一个进程承载多个 runtime session；`transfer.runtime_leases` 维护 owner/lease/heartbeat/fencing，不进入 bounded execution claim。业务 Kafka 与 PostgreSQL/MySQL/Oracle CDC 共用唯一 consumer/apply/CAS 主循环，不建立第二套 CDC consumer：
+
+```text
+业务 Kafka topic / 数据库 CDC 的 Infra Kafka topic
+  -> ChangeStreamReaderProvider
+  -> 对应 record / Debezium ChangeEvent adapter
+  -> 同一 Continuous Worker / ChangeApplyWriter
+  -> 目标 PartitionedTableChangeApplyProvider
+  -> business table + apply ledger (one target transaction)
+  -> transfer.sync_states per-partition position CAS
+```
+
+业务 Kafka 与 CDC 的来源／目标范围分别见[支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)；类型、协议、租约、交付与恢复约束由[Continuous 运行时](transfer-任务语义与同步模式.md#六continuous-运行时)及[配置正文](transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)维护。业务 Kafka 支持显式 `block|dead_letter`；bounded replay 由独立 bounded worker claim execution，从原业务 topic 读取显式 offset ranges，仅写不存在的新 PostgreSQL 隔离表，主状态与失败边界见[Replay](transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)。
+
+Oracle Spatial 在捕获侧使用 generation-owned 镜像，随后进入同一 Debezium 主路径。Oracle Free 对三维 `SDO_GEOMETRY` 的 `TO_WKBGEOMETRY` 会丢弃 Z，因此 XY 使用 WKB BLOB、XYZ 使用 `TO_GEOJSON` CLOB，adapter 在同一入口归一化为 EWKB；完整源约束见[Oracle CDC](transfer-基本概念及配置说明.md#oracle-cdc)。Oracle CDC target 与普通 bounded table write 分别消费 partitioned apply 和 table write session，不共享 CDC ledger 语义；schema、ledger 所有权与字段限制统一见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。
+
+### 容器子表约束
+
+container child table transfer 已进入主链路：容器 item 仍保持 `data_type=container`，任务端点以 `data_type=table` 加 `source.options.child_name` 选择已由 Meta 深扫确认的 child；不得把 child 展开为平行的 Meta item 或使用 provider 私有 layer/table 参数。
+
+### 尚未完成的增强
 
 - `row_filter` / predicate 统一语义。
 - 分区并行读取和多 worker 协调。
@@ -225,63 +147,9 @@ table Transfer 主链路已经稳定。后续增强包括：
 - Doris Stream Load。
 - ClickHouse 排序键 / 分区键 / 原生批量接口。
 - raw copy 端到端样例任务和更完整的执行展示。
-- container child table transfer 已进入主链路：容器 item 仍保持 `data_type=container`，任务端点以 `data_type=table` 加 `source.options.child_name` 选择已由 Meta 深扫确认的 child；不得把 child 展开为平行的 Meta item 或使用 provider 私有 layer/table 参数。
 
-continuous/Kafka 工作包 2A-2D 已完成第一版。业务 Kafka 主路径固定为：
+当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。
 
-```text
-Business Kafka topic
-  -> ChangeStreamReaderProvider
-  -> keyed JSON ChangeEvent(operation=upsert)
-  -> Transfer ChangeApplyWriter
-  -> PostgreSQL/MySQL/Oracle PartitionedTableChangeApplyProvider
-  -> business target apply ledger + table upsert (one transaction)
-  -> per-partition kafka_offset/v1 next_offset CAS
-```
+### 架构说明与验收范围
 
-PostgreSQL CDC 工作包 3A-3D 已完成第一版，主路径固定为：
-
-```text
-PostgreSQL 单表
-  -> Debezium PostgreSQL Connector
-  -> Infra Kafka 单分区 CDC topic
-  -> 同一个 Transfer Continuous Worker
-  -> snapshot/upsert/delete ChangeEvent
-  -> PostgreSQL/MySQL/Oracle PartitionedTableChangeApplyProvider
-  -> business target apply ledger + table upsert/delete (one transaction)
-  -> per-partition kafka_offset/v1 next_offset CAS
-```
-
-MySQL CDC 工作包 3E 已完成，并复用同一主路径：
-
-```text
-MySQL 8.0 单表
-  -> Debezium MySQL Connector + generation-owned schema-history topic
-  -> Infra Kafka 单分区 CDC data topic
-  -> 同一个 Transfer Continuous Worker
-  -> snapshot/upsert/delete ChangeEvent
-  -> PostgreSQL/MySQL/Oracle PartitionedTableChangeApplyProvider
-  -> business target apply ledger + table upsert/delete (one transaction)
-  -> per-partition kafka_offset/v1 next_offset CAS
-```
-
-Oracle CDC 复用同一主路径；普通表直接捕获，Spatial 表先由 capture Provider 建立 generation-owned 镜像。二维值使用 WKB BLOB；Oracle Free 对三维 `SDO_GEOMETRY` 的 `TO_WKBGEOMETRY` 会丢弃 Z，因此 XYZ 使用 `TO_GEOJSON` CLOB，adapter 在同一入口归一化为 EWKB：
-
-```text
-Oracle 普通单表
-  -> Debezium Oracle Connector + generation-owned schema-history topic
-  -> Infra Kafka 单分区 CDC data topic
-  -> 同一个 Transfer Continuous Worker
-  -> snapshot/upsert/delete ChangeEvent
-  -> PostgreSQL/MySQL/Oracle PartitionedTableChangeApplyProvider
-  -> business target apply ledger + table upsert/delete (one transaction)
-  -> per-partition kafka_offset/v1 next_offset CAS
-
-Oracle Spatial 单表
-  -> source schema 内 generation-owned trigger + WKB/GeoJSON mirror table
-  -> 同一个 Debezium Oracle Connector / Infra Kafka / Continuous Worker / target apply 主路径
-```
-
-Oracle target 只实现 `PartitionedTableChangeApplyProvider`，不开放普通 bounded table write。目标 schema 必须等于连接用户，业务行与 `_ADDP_TRANSFER_APPLY_POSITIONS` 在同一 Oracle 事务提交；ledger 使用 ownership comment 从 Catalog 隐藏。目标字段拒绝独立 `time`、decimal precision > 38 和非 XY geometry，EWKB 由 Provider 校验冻结 SRID/type/dimension 后通过 `SDO_UTIL.FROM_WKBGEOMETRY` 写入 `MDSYS.SDO_GEOMETRY`。
-
-continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不进入 bounded execution claim。业务 Kafka 与 PostgreSQL/MySQL/Oracle CDC 复用同一个 consumer/apply/CAS 主循环，不建立第二套 CDC consumer。Oracle Spatial 由 capture Provider 在源 schema 内维护 generation-owned WKB 镜像表，再进入相同 Debezium 主路径。业务 Kafka 已支持显式 `block|dead_letter`；bounded replay 通过独立 `transfer-bounded-worker` PostgreSQL claim execution，从原业务 Kafka 读取显式 offset ranges，并只写不存在的新 PostgreSQL 隔离表。当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。
+本页的架构与能力摘要不作为当前版本的运行通过记录。标准门禁、固定版本证据、失败与修复结论及未覆盖项统一见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)和[模块验证](../CLAUDE.md#开发与验证)。目标数据、原子提交、来源隔离、真实停止／恢复与清理须按对应场景核验；未运行、失败、跳过或未覆盖项不计为通过。
