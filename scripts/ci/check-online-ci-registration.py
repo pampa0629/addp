@@ -4940,6 +4940,38 @@ def validate_vector_zonal_weighted_stddev(repository: Path, registered: set[str]
         raise RegistrationError('zonal weighted stddev oracle must remain independent')
 
 
+VECTOR_ZONAL_AREA_WEIGHTED_REQUIRED = {'scripts/test/online-hosted-vector-zonal-area-weighted-gate.sh': ('start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare', 'online-vector-zonal-area-weighted-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'business/scripts/online-vector-zonal-area-weighted-fixture.py': ('NFSExport', 'owned_root', 'WIDTH,HEIGHT=519,515', 'context.prec=2000', 'Decimal.from_float', 'Counter', 'EPSG:2222', 'EPSG:2277', 'clipped_triangle', 'analytic_coverage', 'rectangle_area', 'numerator/mass', 'abs(Fraction(grid[1])*Fraction(grid[5])-Fraction(grid[2])*Fraction(grid[4]))', 'classified_rows', 'np.array_equal', 'GDAL_TIFF_INTERNAL_MASK', 'full_gpkg_checks', 'full_source_pixels_verified', 'full_source_vectors_verified', 'runtime_workspaces_removed', 'archive_files', 'oracle cache hash changed', 'source file changed', 'area mode changed original eight fields', 'area statistics changed with all_touched', 'exact area statistic differs', 'vector-zonal-area-weighted-gpkgs', 'kept_valid_area_m2', 'stat_columns(name)'), 'scripts/test/vector-zonal-area-weighted-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'budget != 600', 'BudgetClient', 'remaining()', 'validate_preview', 'legacy.validate_success', 'lineage.collect', 'lineage.validate(facts, wanted, public=True)', 'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage', 'source_edges', 'readonly.no_publication', 'query language rewrote stored failure', 'previous complete GeoPackage changed', 'fixture_call', 'cleanup-oracle', 'oracle cleanup also failed', 'full_checks != 1352', 'physical_calls != 93', 'len(cases) != 16', 'len(failures) != 76', 'exact_cause', 'Monitor current output lineage differs', 'vector_persistence.validate_item', 'flag_fraction', 'include_area_weighted', 'fixture.case_crs(name)', 'vector projection CRS differs', 'collision_area_mean', 'weight_pair'), 'engines/geopython-workflow/test_online_vector_zonal_area_weighted_fixture.py': ('test_vector_zonal_area_weighted_sixteen_real_gpkgs_complete_independent_oracle_and_raw_archive', 'test_vector_zonal_area_weighted_seventy_six_exact_submitted_failures_and_no_output', 'test_vector_zonal_area_weighted_real_physical_corruption_is_rejected', 'one-ulp', 'test_vector_zonal_area_weighted_gpkg_archive_never_repairs_or_overwrites', 'test_vector_zonal_area_weighted_worker_stdin_frozen_oracle_poison_and_cleanup', 'test_vector_zonal_area_weighted_independent_oracle_rejects_wrong_semantics_and_links', 'covered-as-valid', 'unit-factor', 'ignore-fractions', 'directory-symlink', 'disabled-original-property', 'source-vector', 'test_vector_zonal_area_weighted_closed_form_oracle_does_not_call_geos_intersection_or_product'), 'scripts/test/vector-zonal-area-weighted-persistence-online_test.py': ('test_full_matrix_16_success_76_failures_1352_checks_and_cleanup', 'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection', 'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken', 'test_failures_preserve_primary_and_cleanup_error', 'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced', 'test_area_flag_eleven_or_eight_stat_columns_and_exact_conflicts', 'test_preview_crs_cannot_be_missing_or_foreign'), 'scripts/utils/online_raster_lineage.py': ("'vector-zonal-area-weighted-persistence': 'vector-zonal-area-weighted-lineage'",), 'scripts/test/online-raster-lineage_test.py': ('test_vector_zonal_area_weighted_approved_two_role_gpkg_facts_preserve_internal_and_public_boundaries',), 'Makefile': ('test_online_vector_zonal_area_weighted_fixture.py', '@$(MAKE) test-vector-zonal-area-weighted-online-runner', 'scripts/test/vector-zonal-area-weighted-persistence-online_test.py', 'scripts/test/online-vector-zonal-area-weighted-fixture_test.py', 'scripts/test/online-hosted-vector-zonal-area-weighted-gate_test.py', 'test_vector_zonal_area_weighted_requires_exact_gpkg_matrix_budget_and_regressions'), 'business/scripts/online-raster-zonal-percentile-fixture.py': ('previous archive was deleted', 'previous archived bytes changed')}
+
+def validate_vector_zonal_area_weighted(repository: Path, registered: set[str]) -> None:
+    suite = 'vector-zonal-area-weighted-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  vector-zonal-area-weighted-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'vector-zonal-area-weighted-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'vector-zonal-area-weighted-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('zonal area weighted requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_vector_zonal_area_weighted_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('zonal area weighted Native omitted from standard recipe')
+    for relative, fragments in VECTOR_ZONAL_AREA_WEIGHTED_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('zonal area weighted strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-vector-zonal-area-weighted-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES')}
+    expected_cases = {'area-center.gpkg': ('values.tif', 'zones.geojson', False, 'zonal_'), 'area-touched.gpkg': ('values.tif', 'zones.geojson', True, 'zonal_'), 'control-default.gpkg': ('values.tif', 'zones.geojson', False, 'zonal_'), 'control-false.gpkg': ('values.tif', 'zones.geojson', True, 'kept_'), 'foot.gpkg': ('foot.tif', 'foot.gpkg', False, 'zonal_'), 'survey.gpkg': ('survey.tif', 'survey.gpkg', False, 'zonal_'), 'rotated.gpkg': ('rotated.tif', 'rotated.geojson', False, 'zonal_'), 'reversed.gpkg': ('reversed.tif', 'reversed.geojson', False, 'zonal_'), 'values-reclassified.gpkg': ('values.tif', 'zones.geojson', False, 'custom_'), 'classified.gpkg': ('values.tif', None, False, 'zonal_'), 'empty-prefix.gpkg': ('values.tif', 'zones.geojson', False, ''), 'zero-negative.gpkg': ('zero-negative.tif', 'zones.geojson', False, 'zonal_'), 'invalid-values.gpkg': ('invalid.tif', 'small.geojson', False, 'zonal_'), 'empty-zones.gpkg': ('small.tif', 'empty.gpkg', False, 'zonal_'), 'int64.gpkg': ('int64.tif', 'small.geojson', False, 'zonal_'), 'uint64.gpkg': ('uint64.tif', 'small.geojson', False, 'zonal_')}
+    expected_failures = ('flag_null', 'flag_zero', 'flag_one', 'flag_fraction', 'flag_string_true', 'flag_string_false', 'flag_list', 'flag_object', 'percentile_null', 'percentile_value', 'raster_null', 'raster_reference', 'band_null', 'band_value', 'weight_pair', 'stddev_enabled', 'values_band_zero', 'values_band_high', 'values_band_boolean', 'values_band_string', 'values_alpha', 'values_complex', 'different_crs', 'geographic', 'compound', 'missing_crs', 'missing_grid', 'singular_grid', 'collision_covered', 'collision_valid', 'collision_area_mean', 'collision_stats', 'invalid_face', 'nonpolygon', 'touched_numeric', 'touched_null', 'prefix_null', 'prefix_boolean')
+    if (any(len(nodes) != 1 for nodes in actual.values()) or repr(ast.literal_eval(actual['CASES'][0])) != repr(expected_cases)
+        or repr(ast.literal_eval(actual['FAILURES'][0])) != repr(expected_failures)): raise RegistrationError('zonal area weighted fixed 16/76 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize', 'shapely.intersection', 'shapely.contains')):
+        raise RegistrationError('zonal area weighted oracle must remain independent')
+
+
+
 
 
 STATISTICS_PERCENTILE_REQUIRED = {
@@ -6162,6 +6194,7 @@ def check_registration(repository: Path) -> None:
     validate_vector_zonal_percentile(repository, registered)
     validate_vector_zonal_weighted(repository, registered)
     validate_vector_zonal_weighted_stddev(repository, registered)
+    validate_vector_zonal_area_weighted(repository, registered)
     validate_raster_focal_variety(repository, registered)
     validate_raster_focal_weighted_mean(repository, registered)
     validate_raster_focal_weighted_stddev(repository, registered)
