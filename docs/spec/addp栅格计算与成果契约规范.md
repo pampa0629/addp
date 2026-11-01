@@ -394,4 +394,4 @@ DEM三维表面积统计`raster_surface_area`沿普通DataFrame契约返回面�
 
 矢量面分区统计可显式`include_weighted_stddev=True`追加前缀化加权总体标准差，原面覆盖、重叠独立、八项原统计及三项加权保持；全1沿用原stddev，全零／无覆盖／无有效数值null，单正权重／常量0。默认关闭，启用字段冲突严格拒绝；复用原有界精确累计及直接平方根，完整语义见[算子契约](workflow/栅格算子契约.md)。
 
-矢量面分区统计可显式`include_area_weighted=True`，原八列保持，并追加前缀化covered_area_m2／valid_area_m2／area_weighted_mean；新面积口径独立于all_touched，按栅格范围内实际正交叠面积计量，孔洞扣除、重叠独立、有效面积零时均值null。面积限已知线性单位的二维投影，统一平方米；与外部权重、百分位、加权标准差互斥。完整边界见[栅格算子契约](workflow/栅格算子契约.md)，仍沿既有GeoDataFrame／GeoPackage路径，不新增权限或跨模块身份。
+矢量面分区统计可显式`include_area_weighted=True`，原八列保持，并追加前缀化covered_area_m2／valid_area_m2／area_weighted_mean；新面积口径独立于all_touched，按栅格范围内实际正交叠面积计量，孔洞扣除、重叠独立、有效面积零时均值null。面积限已知线性单位的二维投影，统一平方米；与外部权重、百分位、加权标准差互斥。面积模式可另以严格布尔include_area_weighted_stddev=True追加area_weighted_stddev，总体分母、未舍入面积均值，单位沿数值；正有效面积常量／单像元0，无有效面积null，原八列和面积三列保持，关闭不计算二阶矩。完整边界见[栅格算子契约](workflow/栅格算子契约.md)，仍沿既有GeoDataFrame／GeoPackage路径，不新增权限或跨模块身份。

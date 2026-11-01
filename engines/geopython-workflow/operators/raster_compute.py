@@ -1490,6 +1490,9 @@ def _zone_window(dataset, bounds):
 _VECTOR_AREA_COLUMNS = ('covered_area_m2', 'valid_area_m2', 'area_weighted_mean')
 _VECTOR_AREA_MESSAGES = {
     'flag': ('include_area_weighted必须是布尔值', 'include_area_weighted must be a boolean'),
+    'stddev_flag': ('include_area_weighted_stddev必须是布尔值', 'include_area_weighted_stddev must be a boolean'),
+    'stddev_area': ('面积加权总体标准差须显式启用include_area_weighted',
+                    'Area-weighted population standard deviation requires include_area_weighted enabled'),
     'conflict': ('矢量面分区面积加权与百分位、外部权重及加权标准差互斥',
                  'Vector zonal area weighting is mutually exclusive with percentile, external weights and weighted standard deviation'),
     'units': ('矢量面分区面积加权要求已知线性单位的二维非复合投影CRS，请显式重投影',
@@ -1571,16 +1574,28 @@ class _VectorAreaStatistics:
             raise _vector_area_error('numeric') from cause
         if any(v is not None and not math.isfinite(v) for v in values):
             raise _vector_area_error('numeric')
+        if self.weighted.include_stddev:
+            deviation = None
+            if self.weighted.mass:
+                variance = self.weighted.squares/self.weighted.mass - (self.weighted.total/self.weighted.mass)**2
+                if variance < 0:
+                    raise _vector_area_error('numeric')
+                deviation = _sqrt_fraction(variance, error=lambda: _vector_area_error('numeric'), allow_rounded_zero=True)
+            values.append(deviation)
         return values
 
 
 def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=False, field_prefix='zonal_', percentile=_PERCENTILE_UNSET,
                                    *, weights_raster=_ZONAL_WEIGHTS_UNSET, weights_band=_ZONAL_WEIGHTS_UNSET,
-                                   include_weighted_stddev=False, include_area_weighted=False):
+                                   include_weighted_stddev=False, include_area_weighted=False, include_area_weighted_stddev=False):
     if type(include_weighted_stddev) is not bool:
         raise _vector_zonal_weight_error('stddev_flag')
     if type(include_area_weighted) is not bool:
         raise _vector_area_error('flag')
+    if type(include_area_weighted_stddev) is not bool:
+        raise _vector_area_error('stddev_flag')
+    if include_area_weighted_stddev and not include_area_weighted:
+        raise _vector_area_error('stddev_area')
     if include_area_weighted and (percentile is not _PERCENTILE_UNSET
             or weights_raster is not _ZONAL_WEIGHTS_UNSET or weights_band is not _ZONAL_WEIGHTS_UNSET
             or include_weighted_stddev):
@@ -1606,6 +1621,8 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
             names.append(field_prefix+'weighted_stddev')
     if include_area_weighted:
         names.extend(field_prefix+name for name in _VECTOR_AREA_COLUMNS)
+        if include_area_weighted_stddev:
+            names.append(field_prefix+'area_weighted_stddev')
     if any(name in input_gdf.columns for name in names):
         raise ValueError('Statistics columns must not overwrite input columns')
     dataset = _open(input_raster)
@@ -1624,7 +1641,7 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
     try:
         for geometry in geometries:
             statistics = _ZoneStatistics()
-            area_statistics = _VectorAreaStatistics() if include_area_weighted else None
+            area_statistics = _VectorAreaStatistics(weighted=_ZoneWeights(include_stddev=include_area_weighted_stddev)) if include_area_weighted else None
             area_geometry = _vector_area_geometry(geometry, transform) if include_area_weighted else None
             weighted_statistics = _ZoneWeights(include_stddev=include_weighted_stddev) if weighted else None
             window = _zone_window(dataset, geometry.bounds)
@@ -5462,7 +5479,7 @@ _SPECS = [
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对显式提供；有限非负，缺失权重不补零，与percentile互斥', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；追加权重总和、加权求和与加权均值，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用加权总体标准差，须提供权重；总体分母，全1沿用原stddev，全零为null，原统计保持', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）/weighted_stddev（非负矩阵加权总体标准差）/weighted_sum（非负矩阵加权求和；不归一化）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev', 'weighted_sum']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean/weighted_stddev/weighted_sum必填：同窗口3×3或5×5有限非负二维权重，至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean', 'weighted_stddev', 'weighted_sum']}})], 'raster', ['read']),
-    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对提供且与percentile互斥；沿原面覆盖，重叠面独立统计，缺失权重不补零', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；有限非负，追加三项加权统计，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用逐面加权总体标准差，须提供权重；全1沿用原stddev，全零null，原统计和重叠面独立规则保持', False, False), _param('include_area_weighted', 'bool', '显式追加覆盖平方米、有效覆盖平方米及面积加权均值；原八列保持，新面积独立于all_touched；与外部权重、百分位及加权标准差互斥', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
+    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对提供且与percentile互斥；沿原面覆盖，重叠面独立统计，缺失权重不补零', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；有限非负，追加三项加权统计，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用逐面加权总体标准差，须提供权重；全1沿用原stddev，全零null，原统计和重叠面独立规则保持', False, False), _param('include_area_weighted', 'bool', '显式追加覆盖平方米、有效覆盖平方米及面积加权均值；原八列保持，新面积独立于all_touched；与外部权重、百分位及加权标准差互斥', False, False), _param('include_area_weighted_stddev', 'bool', '仅面积模式显式启用总体标准差；正有效面积常量0、无有效面积null，单位沿数值，保留原十一列及重叠独立规则', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_FLOW, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_direction_d8, OperatorCategory.RASTER_FLOW, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
