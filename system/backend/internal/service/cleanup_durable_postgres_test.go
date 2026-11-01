@@ -5,9 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"github.com/addp/common/authorization/authtest"
+	commonauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +28,7 @@ import (
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/models"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -559,4 +565,112 @@ func testCleanupMetaPairPostgres(t *testing.T) {
 	if after != before || requests != 0 || children != executionsBefore {
 		t.Fatalf("denial produced effects: facts=%d/%d requests=%d children=%d", before, after, requests, children)
 	}
+}
+
+// The native runner consumes this public DTO, not the professional-result ACL.
+// IAM issuance is covered separately; the fixture retains the six approved
+// permissions and uses the real shared Owner decision and PG read projection.
+func TestIntegrationPostgresCleanupPublicScopeSerialization(t *testing.T) {
+	_, source, _, _ := runtime.Caller(0)
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(source), "../../../../scripts/test/execution-online-contract.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contract struct {
+		NativePermissions map[string][]string `json:"native_permissions"`
+		Owners            map[string][]string `json:"cleanup_owners_by_cause"`
+	}
+	if err := json.Unmarshal(data, &contract); err != nil {
+		t.Fatal(err)
+	}
+	if len(contract.NativePermissions["engine"]) != 6 || len(contract.Owners["engine.deleting"]) != 7 {
+		t.Fatal("native contract scope changed")
+	}
+	f := newCleanupPGFixture(t, 500*time.Millisecond)
+	f.input.ExpectedModules = contract.Owners["engine.deleting"]
+	f.input.CauseEvent, f.input.Context.EngineID = events.CleanupCauseEngineDeleting, 9
+	if err := f.input.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	f.accept(t)
+	if err := f.db.Exec("SELECT pg_sleep(0.55)").Error; err != nil {
+		t.Fatal(err)
+	}
+	f.advance(t, "public-contract")
+	facts := authtest.NewTenantUserAuthContext(strconv.FormatUint(uint64(f.input.TenantID), 10), strconv.FormatUint(uint64(f.input.RequestedBy), 10), contract.NativePermissions["engine"])
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	if err := commonauth.SetAuthContextForGin(c, facts); err != nil {
+		t.Fatal(err)
+	}
+	scopes := []execution.ReadScope{}
+	for _, owner := range f.input.ExpectedModules {
+		scope, ok := execution.OwnerReadScopeFromGin(c, owner, map[string]string{execution.TaskTypeCleanupExecutor: "system.cleanup.read"})
+		if !ok || len(scope.Grants) != 1 || !scope.Grants[0].OwnAdHoc {
+			t.Fatalf("public Owner scope denied: %s", owner)
+		}
+		scopes = append(scopes, *scope)
+		if owner != "manager" && owner != "transfer" && commonauth.HasRolePermission(c, owner+".cleanup_result.read") {
+			t.Fatal("professional permission expanded")
+		}
+	}
+	api := &CleanupOrchestratorService{coordinator: f.coordinator, reads: &cleanupReadResolverStub{scopes: scopes}}
+	response, err := api.GetTaskStatus(f.ctx, f.input.RequestID, CleanupReader{TenantID: f.input.TenantID, UserID: f.input.RequestedBy, OwnerProtocol: true, Bearer: "Bearer test-request-only"})
+	if err != nil || response == nil {
+		t.Fatalf("public projection: %v", err)
+	}
+	if response.Status != "timeout" || response.ModuleExecutions == nil || len(*response.ModuleExecutions) != 7 {
+		t.Fatal("public projection was incorrectly narrowed to professional permissions")
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Task struct {
+			ExecutionID string `json:"execution_id"`
+		} `json:"task"`
+		Children []struct {
+			ExecutionID       string `json:"execution_id"`
+			ParentExecutionID string `json:"parent_execution_id"`
+			Module            string `json:"module"`
+			TaskType          string `json:"task_type"`
+		} `json:"module_executions"`
+	}
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, child := range wire.Children {
+		if _, err := uuid.Parse(child.ExecutionID); err != nil {
+			t.Fatal(err)
+		}
+		if child.ParentExecutionID != wire.Task.ExecutionID || child.TaskType != "cleanup_executor" || seen[child.Module] {
+			t.Fatal("invalid serialized child binding")
+		}
+		seen[child.Module] = true
+	}
+	if len(seen) != 7 || !seen["manager"] || !seen["transfer"] {
+		t.Fatal("serialized public Owner set differs")
+	}
+	// The standard PG gate already requires python3. Pass only dummy public
+	// fixture facts through stdin, using the real Hosted consumer function.
+	command := exec.CommandContext(f.ctx, "python3", "-c", `
+import importlib, json, sys
+value = json.load(sys.stdin)
+runner = importlib.import_module('scripts.test.cleanup-native-effects-online')
+observed = runner.engine_assessment_observation(value, value['task_id'], 9, '7')
+assert observed['status'] == 'timeout' and all(observed['bindings'].values())
+assert observed['children_observation'] == 'observed'
+assert [row['module'] for row in observed['children']] == ['manager', 'transfer']
+assert all(row['status'] == 'pending' and row['attempt'] == 0 and not row['started']
+           and row['admission_state'] == 'closed_unclaimed' for row in observed['children'])
+print(json.dumps(observed, sort_keys=True))
+`)
+	command.Dir = filepath.Clean(filepath.Join(filepath.Dir(source), "../../../.."))
+	command.Stdin = strings.NewReader(string(encoded))
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("real public DTO rejected by Hosted consumer: %v: %s", err, output)
+	}
+	t.Logf("cleanup_native_public_contract_projection=%s", output)
 }

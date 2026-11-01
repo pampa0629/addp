@@ -114,9 +114,9 @@ class EngineWorkflow:
             self.report['engine_assessment_diagnostic'] = last
             self.checkpoint()
             raise
-        # The server validates the complete committed impact digest. This User
-        # reads only its two authorized Owners; do not reconstruct a full digest
-        # from that deliberately filtered public projection.
+        # The server validates the complete committed impact digest. Public
+        # observations are independently scoped; professional reads remain
+        # limited to Manager/Transfer and cannot reconstruct that digest.
         self._stage('engine_before_delete_read')
         current = self.engine(engine_id)
         require(current['version'] == before['version'], 'Engine changed after assessment')
@@ -154,6 +154,37 @@ class EngineWorkflow:
         return result
 
 
+def engine_selected_children(value):
+    """Validate the complete authorized public projection; select no extra reads."""
+    task, rows = value.get('task'), value.get('module_executions')
+    owners = S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']
+    def identifier(candidate):
+        try: return type(candidate) is str and str(uuid.UUID(candidate)) == candidate and uuid.UUID(candidate).int != 0
+        except ValueError: return False
+    if type(task) is not dict or not identifier(task.get('execution_id')):
+        return None, 'invalid_parent_identity'
+    if type(rows) is not list or len(rows) > len(owners):
+        return None, 'invalid_collection'
+    modules, identities = set(), set()
+    for row in rows:
+        if type(row) is not dict or type(row.get('module')) is not str:
+            return None, 'invalid_child_shape'
+        if row['module'] not in owners:
+            return None, 'unexpected_owner'
+        if row.get('task_type') != 'cleanup_executor':
+            return None, 'wrong_task_type'
+        if row.get('parent_execution_id') != task['execution_id']:
+            return None, 'foreign_parent'
+        if not identifier(row.get('execution_id')):
+            return None, 'invalid_execution_identity'
+        if row['module'] in modules:
+            return None, 'duplicate_owner'
+        if row['execution_id'] in identities:
+            return None, 'duplicate_execution'
+        modules.add(row['module']); identities.add(row['execution_id'])
+    return [row for row in rows if row['module'] in {'manager', 'transfer'}], None
+
+
 def engine_assessment_observation(value, request_id, engine_id, principal):
     """Project the existing authorized read; never query hidden Owner facts."""
     result = dict(request_id=request_id)
@@ -174,17 +205,9 @@ def engine_assessment_observation(value, request_id, engine_id, principal):
     if not all(bindings.values()): return result
     result.update(children_observation='not_observed', children=[])
     if 'module_executions' not in value: return result
-    rows = value['module_executions']
-    def identifier(candidate):
-        try: return type(candidate) is str and str(uuid.UUID(candidate)) == candidate and uuid.UUID(candidate).int != 0
-        except ValueError: return False
-    if (type(rows) is not list or len(rows) > 2 or not identifier(task.get('execution_id'))
-            or any(type(row) is not dict or type(row.get('module')) is not str
-                or row['module'] not in {'manager', 'transfer'} or row.get('task_type') != 'cleanup_executor'
-                or row.get('parent_execution_id') != task['execution_id'] or not identifier(row.get('execution_id')) for row in rows)
-            or len({row['module'] for row in rows}) != len(rows)
-            or len({row['execution_id'] for row in rows}) != len(rows)):
-        result['children_observation'] = 'invalid_response'
+    rows, failure = engine_selected_children(value)
+    if failure is not None:
+        result.update(children_observation='invalid_response', children_failure_kind=failure)
         return result
     result['children_observation'] = 'observed'
     for row in sorted(rows, key=lambda row: row['module']):
@@ -205,9 +228,10 @@ def engine_assessment_observation(value, request_id, engine_id, principal):
 
 
 def professional(user, completed, module, tenant):
-    rows = completed.get('module_executions')
-    require(type(rows) is list and {row['module'] for row in rows} == {'manager', 'transfer'},
-            'Engine User must see exactly its two authorized Owner children')
+    rows, failure = engine_selected_children(completed)
+    require(module in {'manager', 'transfer'} and failure is None
+            and {row['module'] for row in rows} == {'manager', 'transfer'},
+            'Engine professional result references are incomplete or foreign')
     row, = [row for row in rows if row['module'] == module]
     value = user.request('GET', f"/api/v1/{module}/cleanup-executions/{S.identifier(row['execution_id'])}/result", (200,)).payload
     PROTOCOL.assert_result(value, row, completed['task_id'], tenant)

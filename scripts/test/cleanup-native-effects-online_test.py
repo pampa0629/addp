@@ -37,6 +37,12 @@ class NativeCleanupRunnerTest(unittest.TestCase):
         self.assertEqual(S.CONTRACT['cleanup_owners_by_cause'], declared)
         self.assertEqual(tuple(declared['tenant.deleted']), S.OWNERS)
 
+    def test_public_cleanup_permission_matches_every_engine_owner_declaration(self):
+        import re
+        for owner in S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']:
+            text = (S.ROOT / owner / 'backend/internal/api/execution_read_scope.go').read_text()
+            self.assertRegex(text, r'(?:"cleanup_executor"|execution\.TaskTypeCleanupExecutor):\s*"system\.cleanup\.read"', owner)
+
     def test_engine_execute_and_diagnostic_require_exact_cause_members(self):
         expected = list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting'])
         for owners in (expected, expected[::-1], expected[:-1], expected + ['asset'],
@@ -82,7 +88,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             elif mutation == 'actor': candidate['task']['requested_by'] = 99
             elif mutation == 'action': candidate['task']['action'] = 'execute'
             elif mutation == 'owners': candidate['task']['expected_modules'].append('transfer')
-            elif mutation == 'hidden': candidate['module_executions'][0]['module'] = 'meta'
+            elif mutation == 'hidden': candidate['module_executions'][0]['module'] = 'asset'
             elif mutation == 'duplicate': candidate['module_executions'] *= 2
             elif mutation == 'parent': candidate['module_executions'][0]['parent_execution_id'] = str(uuid.uuid4())
             else:
@@ -103,6 +109,84 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     self.assertEqual(result['children'][0]['attempt'], 'unrecognized')
         self.assertEqual(M.engine_assessment_observation(None, ID, 9, '17'),
                          dict(request_id=ID, observation='invalid_response'))
+
+    def test_public_owner_scopes_are_distinct_from_two_professional_permissions(self):
+        parent = str(uuid.uuid4())
+        owners = S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']
+        value = dict(task_id=ID, status='timeout', task=dict(task_id=ID, execution_id=parent,
+            context={'engine_id': 9}, requested_by=17, action='scan', expected_modules=owners),
+            module_executions=[dict(module=owner, execution_id=str(uuid.uuid4()), parent_execution_id=parent,
+                task_type='cleanup_executor', status='pending', attempt=0,
+                metadata={'private': 'secret'}, error_details={'private': 'secret'}) for owner in owners])
+        observation = M.engine_assessment_observation(value, ID, 9, '17')
+        self.assertEqual(observation['children_observation'], 'observed')
+        self.assertEqual([r['module'] for r in observation['children']], ['manager', 'transfer'])
+        self.assertNotIn('secret', json.dumps(observation))
+        for mutation in ('foreign', 'duplicate', 'parent', 'identity', 'task_type'):
+            bad = copy.deepcopy(value); row = next(r for r in bad['module_executions'] if r['module'] == 'meta')
+            if mutation == 'foreign': row['module'] = 'asset'
+            elif mutation == 'duplicate': bad['module_executions'].append(copy.deepcopy(row))
+            elif mutation == 'parent': row['parent_execution_id'] = str(uuid.uuid4())
+            elif mutation == 'identity': row['execution_id'] = 'secret'
+            else: row['task_type'] = 'scan'
+            with self.subTest(mutation=mutation):
+                result = M.engine_assessment_observation(bad, ID, 9, '17')
+                self.assertEqual(result['children_observation'], 'invalid_response')
+                self.assertEqual(result['children'], []); self.assertNotIn('secret', json.dumps(result))
+
+    def test_invalid_public_children_report_only_closed_guard_reasons(self):
+        parent, child = str(uuid.uuid4()), str(uuid.uuid4())
+        value = dict(task_id=ID, status='timeout', task=dict(task_id=ID, execution_id=parent,
+            context={'engine_id': 9}, requested_by=17, action='scan',
+            expected_modules=S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']),
+            module_executions=[dict(module='manager', execution_id=child, parent_execution_id=parent,
+                task_type='cleanup_executor', status='pending', attempt=0)])
+        for reason in ('invalid_parent_identity', 'invalid_collection', 'invalid_child_shape', 'unexpected_owner',
+                       'wrong_task_type', 'foreign_parent', 'invalid_execution_identity', 'duplicate_owner', 'duplicate_execution'):
+            bad = copy.deepcopy(value); row = bad['module_executions'][0]
+            if reason == 'invalid_parent_identity': bad['task']['execution_id'] = 'secret'
+            elif reason == 'invalid_collection': bad['module_executions'] = {'secret': True}
+            elif reason == 'invalid_child_shape': bad['module_executions'] = ['secret']
+            elif reason == 'unexpected_owner': row['module'] = 'secret'
+            elif reason == 'wrong_task_type': row['task_type'] = 'secret'
+            elif reason == 'foreign_parent': row['parent_execution_id'] = 'secret'
+            elif reason == 'invalid_execution_identity': row['execution_id'] = 'secret'
+            elif reason == 'duplicate_owner': bad['module_executions'].append({**row, 'execution_id': str(uuid.uuid4())})
+            else: bad['module_executions'].append({**row, 'module': 'transfer'})
+            with self.subTest(reason=reason):
+                result = M.engine_assessment_observation(bad, ID, 9, '17')
+                self.assertEqual(result['children_failure_kind'], reason)
+                self.assertEqual(result['children'], [])
+                self.assertNotIn('secret', json.dumps(result))
+
+    def test_professional_read_selects_only_its_existing_two_owner_permissions(self):
+        parent, calls = str(uuid.uuid4()), []
+        completed = dict(task_id=ID, task={'execution_id': parent}, module_executions=[])
+        for owner in S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']:
+            execution_id = str(uuid.uuid4())
+            receipt = dict(schema='addp.cleanup-receipt/v1', tenant_id=2, parent_execution_id=parent,
+                request_id=ID, execution_id=execution_id, module=owner, attempt=1,
+                action='scan', cleanup_mode='', status='success', summary={}, reason='')
+            completed['module_executions'].append(dict(module=owner, execution_id=execution_id,
+                parent_execution_id=parent, task_type='cleanup_executor', status='success', attempt=1, receipt=receipt))
+        class User:
+            def request(self, method, path, expected):
+                calls.append((method, path, expected))
+                row, = [r for r in completed['module_executions'] if r['execution_id'] in path]
+                if row['module'] not in {'manager', 'transfer'}: raise AssertionError('extra professional read')
+                result = {k: v for k, v in row['receipt'].items() if k in M.PROTOCOL.RESULT_KEYS}
+                return SimpleNamespace(payload={**result, 'schema': 'addp.cleanup-professional-result/v1', 'statistics': {}})
+        for owner in ('manager', 'transfer'):
+            result = M.professional(User(), completed, owner, 2)
+            self.assertEqual(result['module'], owner)
+        self.assertEqual(len(calls), 2)
+        for mutation in ('missing_selected', 'duplicate_other', 'foreign_parent'):
+            bad = copy.deepcopy(completed)
+            if mutation == 'missing_selected': bad['module_executions'] = [r for r in bad['module_executions'] if r['module'] != 'transfer']
+            elif mutation == 'duplicate_other': bad['module_executions'].append(copy.deepcopy(bad['module_executions'][0]))
+            else: bad['module_executions'][0]['parent_execution_id'] = str(uuid.uuid4())
+            with self.subTest(mutation=mutation), self.assertRaises(S.SuiteError): M.professional(User(), bad, 'manager', 2)
+        self.assertEqual(len(calls), 2)
 
     def test_assessment_failure_keeps_last_observation_without_extra_reads_or_changed_budget(self):
         for failed in ('first_read', 'after_pending', 'terminal', 'identity', 'success'):
