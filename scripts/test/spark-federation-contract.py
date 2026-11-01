@@ -158,7 +158,24 @@ def main(phase):
         admin = admin_spark._jvm.org.postgresql.Driver().connect('jdbc:postgresql://postgres:5432/addp_test',
             _jdbc_properties(admin_spark, 'fixture_admin', 'owned-test-only'))
         try:
+            # A source role can put public before pg_catalog. Spark pure
+            # built-ins must not become shadowed database aggregates.
+            statement = admin.createStatement()
+            try:
+                statement.execute("CREATE FUNCTION public.read_plan_shadow_sum(numeric,numeric) RETURNS numeric LANGUAGE SQL IMMUTABLE AS 'SELECT 999::numeric'")
+                statement.execute("CREATE AGGREGATE public.sum(numeric) (sfunc=public.read_plan_shadow_sum, stype=numeric, initcond='0')")
+
+                statement.execute("CREATE FUNCTION public.read_plan_equal(integer,integer) RETURNS boolean LANGUAGE SQL IMMUTABLE AS 'SELECT true'")
+                statement.execute('CREATE OPERATOR public.= (FUNCTION=public.read_plan_equal, LEFTARG=integer, RIGHTARG=integer)')
+                statement.execute('ALTER ROLE reader SET search_path=public,pg_catalog')
+                statement.execute('SET search_path=public,pg_catalog')
+                rs = statement.executeQuery('SELECT sum(amount) FROM public.orders')
+                assert rs.next() and str(rs.getBigDecimal(1)) == '999'
+                rs.close()
+            finally:
+                statement.close()
             original = dict(request)
+            original['catalogs'][0] = dict(original['catalogs'][0], url=original['catalogs'][0]['url']+'?currentSchema=public')
             request = dict(original, catalogs=[original['catalogs'][0]],
                 query='SELECT id FROM Business_PostgreSQL.public.read_plan_parent ORDER BY id', args=[])
             prepared = PreparedDriver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
@@ -177,6 +194,20 @@ def main(phase):
                 assert prepared.execute()['rows'] == [{'id': 1}], 'concurrent inherited row escaped ONLY boundary'
             finally:
                 prepared.close()
+            aggregate = dict(original, catalogs=[original['catalogs'][0]],
+                query='SELECT sum(amount) AS total FROM Business_PostgreSQL.public.orders', args=[])
+            prepared = PreparedDriver([sys.executable, '/addp/query_driver.py'], aggregate, timeout=120)
+            try:
+                assert prepared.execute()['rows'] == [{'total': '-100.864197532086419754'}], 'source role shadowed a Spark built-in'
+            finally:
+                prepared.close()
+            predicate = dict(original, catalogs=[original['catalogs'][0]],
+                query='SELECT id FROM Business_PostgreSQL.public.orders WHERE customer_id=999', args=[])
+            prepared = PreparedDriver([sys.executable, '/addp/query_driver.py'], predicate, timeout=120)
+            try:
+                assert prepared.execute()['rows'] == [], 'source role shadowed an operator in a JDBC predicate'
+            finally:
+                prepared.close()
             # Initial inheritance and a MySQL View never become complete facts.
             for denied_request in [request, dict(original, catalogs=[original['catalogs'][1]],
                     query='SELECT id FROM Business_MySQL.addp_test.read_plan_view', args=[])]:
@@ -189,7 +220,7 @@ def main(phase):
             admin.close()
             admin_spark.stop()
         request = original
-        print('SPARK_READ_PLAN_ONLY_PASS same_driver concurrent_inheritance isolated_table no_extra_reader_privileges unknown_view_refused', flush=True)
+        print('SPARK_READ_PLAN_ONLY_PASS same_driver concurrent_inheritance isolated_table no_extra_reader_privileges unknown_view_refused pinned_builtin_operator_path', flush=True)
         request.update(query='WITH hidden AS (SELECT * FROM unauthorized.public.orders) SELECT 1', args=[])
         try:
             PreparedDriver([sys.executable, '/addp/query_driver.py'], request, timeout=120)

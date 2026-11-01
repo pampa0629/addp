@@ -46,6 +46,16 @@ public final class ExactIdentifierDialects implements SparkPlugin {
         JdbcDialects.registerDialect(new ExactDialect("jdbc:postgresql:", "\""));
         JdbcDialects.registerDialect(new ExactDialect("jdbc:mysql:", "`"));
     }
+    /** Startup parameter, also used by the Python metadata guard. Native
+     * functions/operators must not resolve through the source role's path.
+     */
+    public static String withBuiltinSearchPath(String url) {
+        if (url == null || !url.startsWith("jdbc:postgresql:")) {
+            throw new IllegalArgumentException("query catalog source invalid");
+        }
+        return url + (url.contains("?") ? "&" : "?") + "currentSchema=pg_catalog";
+    }
+
     /** Native JDBC scan builder and type mapping, with explicit PG ONLY scope.
      * Never resolve metadata via super.loadTable: that would first inspect a
      * potentially expanded inheritance tree before applying the constraint.
@@ -66,6 +76,7 @@ public final class ExactIdentifierDialects implements SparkPlugin {
             }
             String table = quote(identifier.namespace()[0]) + "." + quote(identifier.name());
             Map<String, String> values = new HashMap<>(connection);
+            values.put("url", withBuiltinSearchPath(connection.get("url")));
             values.put("dbtable", "(SELECT * FROM ONLY " + table + ") AS addp_exact_source");
             scala.collection.immutable.Map<String, String> parameters =
                 JavaConverters.mapAsScalaMapConverter(values).asScala()

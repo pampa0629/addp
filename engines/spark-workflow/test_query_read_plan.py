@@ -54,6 +54,7 @@ class QueryReadPlanTest(unittest.TestCase):
             with lock_read_plan(spark,[source],{('pg','public','ordinary')}) as facts:
                 self.assertEqual(facts['engine_read_scope'], {'engine_ids':[11]})
                 self.assertEqual(facts['read_set']['paths'][0]['segments'][2]['name'], 'ordinary')
+        spark._jvm.com.addp.spark.query.ExactIdentifierDialects.withBuiltinSearchPath.assert_called_once_with(source['url'])
 
     def test_identifier_quotes_are_escaped_without_trimming_and_no_rows_are_read(self):
         for engine, schema, table, expected in [

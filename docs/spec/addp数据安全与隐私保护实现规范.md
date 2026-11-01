@@ -582,7 +582,7 @@ Security 为 Graph 发布独立 `graph_read` 保守拒绝投影（不把基线�
 
 Spark 联邦查询复用同一共享门禁，首期只准入未命中纳管 DataItem 的读取。现有 Runtime 内部先准备独立 Driver，返回原生 Catalyst 树覆盖的来源引擎范围及表级读取集合；Develop 持有在途读取屏障，按各 Source Engine 的真实 Catalog Model 调用共享范围排除和 DataItem 判断，通过后才允许同一 Driver 的同一已准备查询取数。命中纳管表、范围／读取集合未知、投影同步无效均拒绝，不把未实现的字段血缘当作可脱敏证据。Security 不解析 Spark SQL，前端所选来源和预检引用不充当读取证明。
 
-准备和执行使用现有8098 Runtime 的一次性查询资源：`POST /api/v1/queries` 准备、`POST /api/v1/queries/{query_id}/execute` 执行、`DELETE /api/v1/queries/{query_id}` 释放；不增加独立服务或可持久任务。资源绑定租户 Develop 服务主体、本次 execution／execution authorization、SQL、参数及全部连接快照；执行请求不接收新SQL或连接。原最长120秒和2个并发限制覆盖准备与等待，逾期、拒绝、释放及执行后清理 Driver。取数前后重新消费原执行授权并核对连接，失败不得交付结果。首期准入对象为普通本地 PostgreSQL heap 表（无继承、分区或RLS，字段类型属于内置目录）及 MySQL InnoDB 基础表；使用原生目录及持有到结束的元数据锁防止表替换为View／外部来源。PostgreSQL 的 ACCESS SHARE 锁不能阻止并发新增继承关系，因此已确认的普通表统一由现有 JVM 适配中的受控 JDBC Catalog 构造 `FROM ONLY` 扫描，元数据查询和真实 Worker 取数均限定到该表自身。不能仅以准备时没有子表宣称完整；已有继承／分区表仍不准入，不增加账号权限。其他关系同样保持未知，不能省略它们后宣称完整。
+准备和执行使用现有8098 Runtime 的一次性查询资源：`POST /api/v1/queries` 准备、`POST /api/v1/queries/{query_id}/execute` 执行、`DELETE /api/v1/queries/{query_id}` 释放；不增加独立服务或可持久任务。资源绑定租户 Develop 服务主体、本次 execution／execution authorization、SQL、参数及全部连接快照；执行请求不接收新SQL或连接。原最长120秒和2个并发限制覆盖准备与等待，逾期、拒绝、释放及执行后清理 Driver。取数前后重新消费原执行授权并核对连接，失败不得交付结果。首期准入对象为普通本地 PostgreSQL heap 表（无继承、分区或RLS，字段类型属于内置目录）及 MySQL InnoDB 基础表；使用原生目录及持有到结束的元数据锁防止表替换为View／外部来源。PostgreSQL 的 ACCESS SHARE 锁不能阻止并发新增继承关系，因此已确认的普通表统一由现有 JVM 适配中的受控 JDBC Catalog 构造 `FROM ONLY` 扫描，元数据查询和真实 Worker 取数均限定到该表自身。不能仅以准备时没有子表宣称完整；已有继承／分区表仍不准入，不增加账号权限。受控PG连接的原生目录核验、schema解析与Worker读取均固定 `currentSchema=pg_catalog`，防止账号默认search_path中的同名函数／运算符改变已验证的内置表达式语义或引入隐藏来源；完整schema／表名仍显式引用，不修改账号或数据库的持久配置。其他关系同样保持未知，不能省略它们后宣称完整。
 
 共享门禁按以下唯一顺序执行：
 

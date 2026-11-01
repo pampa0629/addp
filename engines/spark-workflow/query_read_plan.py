@@ -69,7 +69,10 @@ def lock_read_plan(spark, catalogs, relations):
                 properties = spark._jvm.java.util.Properties()
                 properties.setProperty('user', source['user'])
                 properties.setProperty('password', source['password'])
-                connection = driver.connect(source['url'], properties)
+                url = source['url']
+                if source['engine_type'] == 'postgresql':
+                    url = spark._jvm.com.addp.spark.query.ExactIdentifierDialects.withBuiltinSearchPath(url)
+                connection = driver.connect(url, properties)
                 connection.setReadOnly(True)
                 connection.setTransactionIsolation(2)  # READ_COMMITTED: recheck after lock.
                 connection.setAutoCommit(False)
