@@ -863,3 +863,24 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 | AST／语法／差异核对 | 仅原4个函数调整及1个纯代理摘要函数新增，其余函数定义、Docker调用及资源／清理逻辑未变；无新入口、依赖、注册或workflow变更 |
 
 本地改动为scripts/test/monitor-traces-local-gate.py及其测试、运行观测与T0–T3规范；证据另补本专题与索引，共6个自有路径。可审阅补丁、4份实现输入及脱敏调查收据位于`/tmp/addp-p19-http-apt-investigation-20261101/implementation.patch`／`implementation-inputs.json`／`investigation.json`（0700／0600），日志为`/tmp/addp-p19-http-apt-*-20261101.log`。历史报告哈希仍为520c31da1ceff3f601d66a617d63d80ff301a5a46ceaf2ca2bf681551c2eb2db。未触发自然镜像CI、未作任何构建重试或联网验收；真实构建及产品页面闭环仍待另行授权。仅核验45主题、唯一锚点／索引、最终代码输入／门禁／不可变项及差异，维护会话按部分实现与未提交范围回报。
+
+<a id="http-trace-apt-natural-linux-1d15-20261102"></a>
+
+## 2026-11-02 HTTP／Trace取证自然Linux门禁通过（正式产品闭环仍未验收）
+
+本记录补核后续自然push CI的原始日志，不重跑任何作业或本地窗口。上一专题的“未提交／推送”描述保留为初始交付状态；用户随后授权发布，六个自有路径已提交并推送为`5dbd12a3c3a85b2da70111107cb56241573710e4`。该固定提交的Platform检查在前置无关`TestTransferReviewSourceDrift`失败，HTTP／Trace runner未执行，不能计通过。
+
+后续自然push／main、attempt 1的[Platform consistency作业124885911941](https://github.com/pampa0629/addp/actions/runs/41319301973/job/124885911941)实际checkout为`1d15c0b44a9314783ab3efaeecd59009ade818b7`，北京时间2026-11-01 23:24:07—23:52:08完成且success；2026-11-02手动取得原始作业日志。核对固定Makefile调用链`test-platform → test-dev-lifecycle → test-infra-runtime-log-lifecycle`及实际顺序，以下两项均执行完成：
+
+| 实际标准入口／检查 | 原始输出及通过范围 |
+| --- | --- |
+| `make test-monitor-http-local-runner` | 23:28:24，37项／2.163秒，`OK`；后续JS语法、HTTP Online登记校验和System身份Go子门禁完成，23:29:34退出该子Make |
+| HTTP离线证书T1 | OpenSSL 3.0.13，35条命令／2.108583秒，材料及输出峰值127023字节，4次预期拒绝，`cleanup_removed=true`；未启动正式产品环境 |
+| `make test-monitor-traces-local-runner` | 23:29:39，146项／4.563秒，`OK`；包含已发布APT有界取证测试，JS语法、Online CI登记及System身份Go子门禁通过，23:29:43退出该子Make |
+| 作业最终结果 | `Run platform consistency gate`及整个命名作业均success；不由此推导尚未完成的整个workflow或其他专项结论 |
+
+逐字节比较两组runner实现／测试、Online与登记测试共8个Python路径，以及HTTP页面脚本，共9个路径：`5dbd12a3c`、实际CI提交`1d15c0b44`与本次工作区内容一致。因此上述取证实现已有自然Linux确定性门禁证据，不只依赖本地测试。原始日志为`/tmp/addp-p19-natural-124885911941-20261102.log`（0600），701844字节，SHA256=`ada6b2b904c86fd5e7336f17b05198c1327217304f11c7dfe821a976cd936563`。
+
+另沿用已核验的固定`5dbd12a3c`[Product binary build作业124740304489](https://github.com/pampa0629/addp/actions/runs/41269887330/job/124740304489)证据：基线选中Agent，Linux/amd64镜像实际构建exit 0、117.69秒；APT步骤完成10.8秒，Python依赖安装、`pip check`及应用导入／技能注册／OpenAPI检查通过，image ID为`sha256:130d7b75fa1835e4e23c235eebd655c4465e00eadafb776850b563b17d072d2d`，镜像仅在CI加载、未推送。原始日志`/tmp/addp-p19-5dbd-product-20261101.log`为428418字节，SHA256=`b7f29fdd1050bbba626ba3f07c08d50ecef76f53dc2fc42cc359863b7cb7ff3c`。这是不同提交／作业的构建证据，不与本轮runner合并为同一端到端验收。
+
+当前仍为部分实现／部分验收：APT取证的错误分类由确定性反例验证，本次成功构建未触发真实失败解析，不能宣称历史ARM64 APT退出100的原因已定位或修复。正式Agent/Copilot构建后的真实密码／MFA、采集API、Console／Monitor页面、停源、注销与清理闭环仍未验收；停源历史读取仍为另批产品缺口。本轮只读取已有自然CI并更新两份证据文档，未改产品、构建、采样或资源守卫，未手动重跑、开本地窗口、运行Hosted／容量／定时。
