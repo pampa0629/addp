@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, login } from './transfer-browser-support.js'
+import { assertFileGDBChild } from './manager-filegdb-preview.js'
 import { observeFileGDBDownload } from './manager-filegdb-response.js'
 
 test('ordinary User saves or is denied the same FileGDB through the real download button', async ({ page }) => {
@@ -18,6 +19,7 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
   const engine = /^addp:\/\/engine\/([1-9][0-9]*)\/path\/authorization\.gdb\?type=file&item_id=[1-9][0-9]*$/.exec(input.locator)?.[1]
   expect(engine).toBeTruthy()
   let businessStarted = false, anonymousRefresh = 0, downloadEvents = 0, downloadRequests = 0
+  const childResponses = []
   const warnings = [], pageErrors = [], unexpected = [], writes = [], previewDenials = []
   const proof = { schema_version: 'addp.manager-filegdb-browser/v1', result: 'failed',
     run_id: input.run_id, phase: input.phase, locator: input.locator, identity: input.identity }
@@ -38,6 +40,7 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
   page.on('response', response => {
     if (isAnonymousRefreshResponse(response, businessStarted)) { anonymousRefresh++; return }
     const url = new URL(response.url())
+    if (url.pathname === '/api/v1/manager/preview' && exactSource(url) && url.searchParams.has('child_name')) childResponses.push(response)
     if (!url.pathname.startsWith('/api/v1/') || response.status() < 400) return
     if (input.status === 403 && response.status() === 403) {
       if (sourceDownload(response)) return
@@ -80,6 +83,34 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
       const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
       const button = frame.getByRole('button', { name: /^(下载|Download)$/ })
       await expect(button).toBeEnabled()
+      if (input.status === 200) {
+        const container = frame.locator('.container-preview')
+        const initial = await assertFileGDBChild(container, 'initial_points', [
+          { label: 'initial_points_0', value: 1 }, { label: 'initial_points_1', value: 2 }])
+        initial.screenshot = 'manager-filegdb-preview-initial.png'
+        await container.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, initial.screenshot) })
+        await container.locator('.child-select').click()
+        await frame.getByRole('option', { name: /^added_points/ }).click()
+        const added = await assertFileGDBChild(container, 'added_points', [{ label: 'added_points_0', value: 1 }],
+          ['initial_points_0', 'initial_points_1'])
+        added.screenshot = 'manager-filegdb-preview-added.png'
+        await container.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, added.screenshot) })
+        expect(childResponses).toHaveLength(2)
+        const requests = childResponses.map(response => {
+          const request = response.request(), url = new URL(response.url())
+          expect(response.status()).toBe(200)
+          expect(request.method()).toBe('GET')
+          expect(request.headers().authorization).toBe(capability.request().headers().authorization)
+          expect(request.headers().authorization).toMatch(/^Bearer addp_at_\S+$/)
+          expect(request.headers().cookie).toBeUndefined()
+          expect([...url.searchParams.keys()].sort()).toEqual(['child_name', 'locator', 'page', 'page_size'])
+          expect(url.searchParams.get('page')).toBe('1')
+          return { child: url.searchParams.get('child_name'), locator: url.searchParams.get('locator'),
+            status: response.status(), current_user_bearer: true, cookie_absent: true, credential_in_url: false }
+        })
+        expect(requests.map(request => request.child)).toEqual(['initial_points', 'added_points'])
+        proof.child_preview = { initial, added, requests }
+      }
       const responsePromise = page.waitForResponse(sourceDownload)
       responsePromise.catch(() => {})
       const downloadPromise = input.status === 200 ? page.waitForEvent('download') : null
@@ -134,6 +165,7 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
       await expect(button).toBeEnabled()
       expect(downloadEvents).toBe(input.status === 200 ? 1 : 0)
       expect(downloadRequests).toBe(1)
+      if (input.status === 200) expect(childResponses).toHaveLength(2)
       await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, input.screenshot) })
       proof.screenshot = input.screenshot
     } finally {

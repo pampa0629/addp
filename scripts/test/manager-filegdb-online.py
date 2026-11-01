@@ -34,7 +34,7 @@ REQUIRED_CHECKS = {'basic_whole_identity', 'ungranted_child_denied', 'initial_ch
     'ungranted_directory_download_denied', 'directory_download_same_grant_and_new_child',
     'directory_download_account_isolation_and_deny', 'directory_download_revoke_expiry',
     'directory_download_failure_cleanup_and_recovery', 'real_browser_directory_download_saved',
-    'real_browser_ungranted_revoked_expired_denied'}
+    'real_browser_ungranted_revoked_expired_denied', 'real_browser_child_cells_and_switch'}
 
 
 def require(value, message):
@@ -210,6 +210,22 @@ def validate_browser_report(payload, context, artifact):
     response_file = context['download_file'] + '.response'
     response_path = artifact / response_file
     if context['status'] == 200:
+        preview = payload.get('child_preview', {})
+        for phase, child, rows, previous in (
+                ('initial', 'initial_points', [{'label': 'initial_points_0', 'value': '1'},
+                                              {'label': 'initial_points_1', 'value': '2'}], []),
+                ('added', 'added_points', [{'label': 'added_points_0', 'value': '1'}],
+                 ['initial_points_0', 'initial_points_1'])):
+            actual = preview.get(phase, {})
+            screenshot = 'manager-filegdb-preview-' + phase + '.png'
+            require(actual == dict(child=child, current_rows=len(rows), total_rows=len(rows), rows=rows,
+                                   previous_labels_absent=previous, screenshot=screenshot),
+                    'FileGDB browser child cells or switch differ: ' + phase)
+            require((artifact / screenshot).is_file(), 'FileGDB browser child screenshot missing: ' + phase)
+        require(preview.get('requests') == [dict(child=child, locator=context['locator'], status=200,
+                    current_user_bearer=True, cookie_absent=True, credential_in_url=False)
+                    for child in ('initial_points', 'added_points')],
+                'FileGDB browser child requests or identity differ')
         require(payload.get('download_events') == 1 and payload.get('suggested_filename') == NAME + '.zip',
                 'FileGDB browser did not save the original attachment')
         raw = destination.read_bytes()
@@ -475,6 +491,7 @@ def run(repository, environment, owner):
         check('directory_download_same_grant_and_new_child')
         browser('granted', 200, first)
         check('real_browser_directory_download_saved')
+        check('real_browser_child_cells_and_switch')
         verify_account_isolation(authorization, client, outsider, outsider_id, locator, first,
             [('initial_points', 2), ('added_points', 1)], report)
         check('ungranted_account_new_child_denied')

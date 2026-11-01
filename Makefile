@@ -1507,6 +1507,7 @@ test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物�
 	@node --check --input-type=module < console/frontend/e2e/online/manager-kml-export.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-filegdb.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-filegdb-response.js
+	@node --check --input-type=module < console/frontend/e2e/online/manager-filegdb-preview.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-orc.spec.js
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"

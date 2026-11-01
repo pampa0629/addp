@@ -51,6 +51,16 @@ class FileGDBAcceptanceTest(unittest.TestCase):
             'download_events': int(phase == 'granted')}
         (directory / context['screenshot']).write_bytes(b'screenshot-fixture')
         if phase == 'granted':
+            payload['child_preview'] = {'requests': [dict(child=child, locator=context['locator'], status=200,
+                current_user_bearer=True, cookie_absent=True, credential_in_url=False)
+                for child in ('initial_points', 'added_points')]}
+            for key, child, count, previous in (('initial', 'initial_points', 2, []),
+                    ('added', 'added_points', 1, ['initial_points_0', 'initial_points_1'])):
+                screenshot = 'manager-filegdb-preview-' + key + '.png'
+                (directory / screenshot).write_bytes(b'screenshot-fixture')
+                payload['child_preview'][key] = dict(child=child, current_rows=count, total_rows=count,
+                    rows=[dict(label=child+'_'+str(i), value=str(i+1)) for i in range(count)],
+                    previous_labels_absent=previous, screenshot=screenshot)
             raw = io.BytesIO()
             with zipfile.ZipFile(raw, 'w') as archive:
                 archive.writestr(M.NAME + '/', b''); archive.writestr(M.NAME + '/a.gdbtable', b'original')
@@ -97,6 +107,26 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                 else:
                     (root/context['download_file']).write_bytes(b'leaked')
                 with self.assertRaises(ValueError): M.validate_browser_report(payload, context, root)
+
+    def test_browser_requires_real_child_cells_switch_identity_and_screenshots(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name); context, payload = self.browser_proof(root)
+            mutations = [lambda p: p.pop('child_preview'),
+                lambda p: p['child_preview']['initial'].update(current_rows=0, rows=[]),
+                lambda p: p['child_preview']['initial']['rows'][0].update(value='2'),
+                lambda p: p['child_preview']['added'].update(rows=p['child_preview']['initial']['rows']),
+                lambda p: p['child_preview']['added'].update(previous_labels_absent=[]),
+                lambda p: p['child_preview']['requests'].append(p['child_preview']['requests'][0]),
+                lambda p: p['child_preview']['requests'][1].update(locator='other'),
+                lambda p: p['child_preview']['requests'][1].update(current_user_bearer=False),
+                lambda p: p['child_preview']['requests'][1].update(status=403)]
+            for mutation in mutations:
+                wrong = deepcopy(payload); mutation(wrong)
+                with self.assertRaisesRegex(ValueError, 'FileGDB browser child'):
+                    M.validate_browser_report(wrong, context, root)
+            (root / payload['child_preview']['added']['screenshot']).unlink()
+            with self.assertRaisesRegex(ValueError, 'child screenshot missing'):
+                M.validate_browser_report(payload, context, root)
 
     def test_browser_copy_must_exist_and_match_every_saved_byte(self):
         with tempfile.TemporaryDirectory() as name:
