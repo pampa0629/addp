@@ -100,6 +100,7 @@ AUXILIARY_DOCKERFILES = {
     "engines/supermap-workflow/Dockerfile.base": "SuperMap SDK base image build",
     "scripts/infra/Dockerfile.postgres": "infra PostgreSQL image build",
     "scripts/infra/Dockerfile.minio": "infra MinIO image build",
+    "scripts/infra/Dockerfile.redis-metrics": "deployment-owned fixed Redis INFO metrics source",
     "scripts/infra/Dockerfile.runtime-log": "shared runtime log capture and source housekeeping",
 }
 

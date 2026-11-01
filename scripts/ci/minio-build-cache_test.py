@@ -183,15 +183,26 @@ class MinioBuildCacheTest(unittest.TestCase):
         self.assertEqual("failed", current["result"])
         self.assertEqual("corrupt cache", current["error"])
 
-    def test_compose_build_does_not_read_a_real_unselected_service_password(self):
+    def test_compose_build_uses_fresh_isolated_required_passwords_only_in_environment(self):
         command = ["docker", "compose", "build", "minio"]
-        with patch.dict(os.environ, {"INFRA_FALKORDB_PASSWORD": "do-not-use"}), \
-                patch.object(CACHE.subprocess, "run", return_value=subprocess.CompletedProcess(command, 0, "")) as run:
-            CACHE.execute(self.repository, command)
-        value = run.call_args.kwargs["env"]["INFRA_FALKORDB_PASSWORD"]
-        self.assertGreater(len(value), 30)
-        self.assertNotEqual("do-not-use", value)
-        self.assertNotIn(value, run.call_args.args[0])
+        required = ("INFRA_FALKORDB_PASSWORD", "REDIS_PASSWORD")
+        originals = {key: "inherited-do-not-use-" + key for key in required}
+        issued = []
+        with patch.dict(os.environ, originals), \
+                patch.object(CACHE.subprocess, "run", return_value=subprocess.CompletedProcess(command, 0, "")) as run, \
+                patch("builtins.print") as output:
+            for _ in range(2):
+                CACHE.execute(self.repository, command)
+                environment = run.call_args.kwargs["env"]
+                for key in required:
+                    value = environment[key]
+                    self.assertGreater(len(value), 30)
+                    self.assertNotEqual(originals[key], value)
+                    self.assertNotIn(value, run.call_args.args[0])
+                    self.assertNotIn(value, str(output.call_args_list))
+                    issued.append(value)
+            self.assertEqual(originals, {key: os.environ[key] for key in required})
+        self.assertEqual(len(issued), len(set(issued)))
 
     def test_standard_registration_keeps_two_runners_and_manager_pilot(self):
         make = (ROOT / "Makefile").read_text()

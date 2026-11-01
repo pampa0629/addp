@@ -102,3 +102,29 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 固定版本的 `monitor/frontend/e2e/process-comparison.spec.js` 与 `d7ec3e9ffac1761c60fd0a5f76dc0063a6354398` 字节一致，SHA-256 为 `4e6560c91f6a1ab2e8c72294776296a2918391f6f1817b987eca8c5f2b378954`。复核关闭环比时先挂起实际 `process_resource_summaries` 响应，断言旧四次趋势请求与 `23:50:15` 起点仍保留，释放后等待第五次请求再断言 `23:55:15`；这项同步修正已在后继完整 Linux 门禁通过。原 `35f` 失败记录保留，原 `d7ec` Platform 39952965397 已取消，不计通过，亦不重复派发已修正事项。
 
 原始日志 `/tmp/addp-ci-manual-20261023-155348/job-120436001184.log` SHA-256 为 `e1ccc444f59ff2203f8bc8e1453fdba19ce55f36a5d216573bf8d6e14aed49e8`；同目录 `Monitor-9bf-frontend-independent-audit.json` 为回传审计，`Monitor-9bf-domain-audit.json` 为本次领域核对。核对使用原始日志哈希、`git show` 固定源码字节比较及执行项断言，没有重跑或查询／调度 CI、Hosted，也未操作个人服务或设置定时。这是受控 HTTP 下的前端 T1／T3／构建证据，不替代新摘要实源或正式身份 T4、长窗、容量及生产验收，不外推当前共享 HEAD。父 Platform 的无关 FTP 失败不在本会话修复范围，不将该 workflow 写为全绿；该次核对时个人 Safari 右侧两列截图与前台自动刷新尚未完成，后续实景结果见下一节。
+
+
+## Monitor 前端整套门禁超时复核（2026-11-01，0e69a25b1）
+
+专门会话回传固定源码 `0e69a25b17e18fbb9a6a0b29b88c0827eb50d714` 的 [Platform run41304702173／Monitor job124842615491](https://github.com/pampa0629/addp/actions/runs/41304702173/job/124842615491)。已只读核对归档job／annotations／receipt与原始日志哈希 `02abf702b4c2d3df615ccdb9b386b49a252215f2a9dc345224c1e5c50d0ad826`，三者源码一致。Job为completed/cancelled，annotation明确超过30分钟最大执行时间；不是人工取消，不计整套门禁通过。
+
+日志131项单测通过。浏览器声明561项、单Worker，连续启动序号为1至560；最后启动uptime-units的中文用例，未启动561、没有最终浏览器成功汇总，后续build未执行。仅凭启动序号不能为任一新增场景或整套补认成功。最大相邻启动间隔12.84853秒，未见断言失败块；不能把最后打印位置推断为该用例挂死或产品回归。
+
+耗时拆分：checkout为12:10:40—12:15:32 UTC（292秒），含全分支／标签历史fetch；正式门禁步为12:15:59—12:40:53（1494秒）。浏览器首项12:16:04.025356、末项12:40:50.612102，启动跨度1486.586746秒。证据说明仓库获取与大套串行运行共同耗尽30分钟上限；不证明冷checkout的具体网络／对象耗时根因，也不将“接近跑完”算作通过。后续应先核对如何减少仓库获取开销、保留固定事件before/head及完整变更选择；当前不改预算、Worker数、断言、用例集合或共享CI编排。
+
+原始文件在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-line-nodes-q5rkxkgn/terminal-ci/124842615491/`，独立有界审计为 `/tmp/addp-monitor-0e69-frontend-timeout-audit.json`。审计脚本验证日志哈希、固定SHA、序号连续性和时间差；本次证据增量另经 `git diff --check`。未查询／重跑CI、Hosted或容量验收，未设置定时任务；不把本地Redis专项证据升级为该旧输入的整套Linux前端通过。
+
+
+## Redis 必填认证与 MinIO 隔离构建闭包修复（2026-11-01）
+
+专门会话移交 [Infra MinIO run41298861954／fixed-source job124825429970](https://github.com/pampa0629/addp/actions/runs/41298861954/job/124825429970)，源 `4803bb7221f4dc505aea8dba8b097469c47ecc0a`。原始日志 `/tmp/addp-ci-20261101-200009/job-124825429970.log` 的固定检出SHA一致；650—665行表明builder已构建成功，正式Infra Compose的MinIO build随后在完整模型插值时拒绝未提供的REDIS_PASSWORD，cache-save跳过。不是镜像拉取、缓存淘汰或可盲重试的瞬时错误。
+
+唯一修复沿既有minio-build-cache.py执行入口：每次Compose子进程为INFRA_FALKORDB_PASSWORD和REDIS_PASSWORD分别生成独立随机、仅解析用途的值，覆盖而不复用继承的部署密码；父环境、正式Redis必填认证和真实Infra Compose构建路线不变，不把随机值加入命令参数或MinIO构建定义。未读取个人.env、安装账号、改镜像／权限、启动数据库、调用keepalive或操作数据卷。
+
+标准 `make test-infra-minio-cache` 红绿验证：修复前新增约束准确捕获REDIS_PASSWORD仍等于继承输入，`/tmp/addp-minio-redis-input-red.log`；修复后最终15项全部通过，`/tmp/addp-minio-redis-input-final.log`。覆盖每次独立值、不沿用父值、父环境不变、命令／输出不含生成值，以及原冷／热缓存、精确输入、二进制一致、损坏与失败传播。
+
+仓库外 `/tmp/addp-minio-compose-input-proof.py` 使用当前真实Infra Compose与其extends YAML副本，清除两个必填输入、显式--env-file /dev/null，经同一execute调用原生 `docker compose config --format json`。修复前准确复现缺少REDIS_PASSWORD（`/tmp/addp-minio-compose-input-red.log`），最终修复后完整模型解析通过、两随机值不同且非空、MinIO build仅保留原context／Dockerfile且不含这些值（`/tmp/addp-minio-compose-input-green.log`）。只解析配置，不连接daemon或执行build／up；临时目录退出删除，完整渲染模型不写日志。验证脚本中Compose警告与JSON分离、macOS路径规范化的两次审计失败未计为通过，最终保留严格同目录与字段断言。
+
+同次执行 `make test-build-registration` 发现既有4803的Dockerfile.redis-metrics未登记，按已有辅助镜像目录精确补登记及文件缺失拒绝用例，没有将任意Dockerfile豁免。新用例先红（`/tmp/addp-redis-observer-build-registration-red.log`），修复后60项登记器测试＋9项选择测试及实际仓库检查全部通过，26个Go服务／Worker与59个产品镜像登记一致（`/tmp/addp-minio-redis-build-registration-final.log`）。构建相关Dockerfile、Makefile、正式workflow没有其他工作区差异。现有Platform T0、MinIO fixed-source workflow的脚本／测试路径触发和缓存key已覆盖本次改动，注册测试同时核验唯一双Runner与精确cache-hit路线；不新增CI Job／Hosted用途，未扩时或放宽缓存断言。
+
+本地已证明输入解析回归及登记缺口修复；没有在macOS伪装GitHub Runner运行完整MinIO冷／热源码构建，也没有查询／重跑旧Job。推送后的唯一自然MinIO构建与新Runner复用仍等专门CI会话回传，不能把T0／原生解析通过计为镜像／cache-save／Hosted成功。此修复独立于未提交的Redis查询与261迁移，不包含其他会话前置迁移或共享功能WIP。

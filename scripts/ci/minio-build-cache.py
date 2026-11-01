@@ -71,9 +71,11 @@ def execute(repository: Path, command: list[str], log: Path | None = None) -> st
     print("MinIO cache: " + " ".join(command), flush=True)
     environment = os.environ.copy()
     if command[:2] == ["docker", "compose"]:
-        # Compose interpolates unselected services too. No FalkorDB service is
-        # started, and its throwaway build-only value never enters an image.
-        environment["INFRA_FALKORDB_PASSWORD"] = secrets.token_urlsafe(32)
+        # Compose interpolates unselected services too. Use fresh build-only
+        # values instead of deployment credentials. Neither database is started,
+        # and these values are not MinIO build arguments or image inputs.
+        for name in ("INFRA_FALKORDB_PASSWORD", "REDIS_PASSWORD"):
+            environment[name] = secrets.token_urlsafe(32)
     result = subprocess.run(command, cwd=repository, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, check=False, env=environment)
     if log:

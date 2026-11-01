@@ -26,6 +26,13 @@ SPEC.loader.exec_module(MODULE)
 
 
 class BuildRegistrationTest(unittest.TestCase):
+    def test_redis_observer_image_has_an_owned_auxiliary_classification(self):
+        path = "scripts/infra/Dockerfile.redis-metrics"
+        self.assertIn(path, MODULE.AUXILIARY_DOCKERFILES)
+        (self.repository / path).unlink()
+        self.assertTrue(any(path + ": auxiliary Dockerfile is missing" in error
+                            for error in MODULE.validate_registration(self.repository)))
+
     def test_gaussdb_business_image_has_an_owned_auxiliary_classification(self):
         path = "business/gaussdb/Dockerfile"
         self.assertIn(path, MODULE.AUXILIARY_DOCKERFILES)
