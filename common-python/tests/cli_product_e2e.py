@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -389,9 +390,34 @@ def run_command(
     return result
 
 
+def browser_timeout_imports(error: BaseException | None) -> dict[str, int]:
+    if not isinstance(error, subprocess.TimeoutExpired):
+        return {}
+    stderr = error.stderr
+    if not isinstance(stderr, (str, bytes)):
+        return {}
+    stderr = stderr[-65536:]
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode("utf-8", errors="replace")
+    completed = {}
+    for line in stderr.splitlines():
+        match = re.fullmatch(
+            r"import time:\s+[0-9]{1,12}\s+\|\s+([0-9]{1,12})\s+\|\s+"
+            r"(asyncio|httpx|keyring|addp_common(?:\.oauth|\.tools|\.cli)?)\s*",
+            line,
+        )
+        if match:
+            completed[match[2]] = int(match[1])
+    return completed
+
+
 def run_browser_login(addp: Path, env: dict[str, str], fixture: OAuthFixture) -> subprocess.CompletedProcess[str]:
     try:
-        return run_command([str(addp), "auth", "login"], env, "browser login")
+        return run_command(
+            [str(addp), "auth", "login"],
+            {**env, "PYTHONPROFILEIMPORTTIME": "1"},
+            "browser login",
+        )
     except AssertionError as exc:
         # Only fixture counts are safe here: commands, response bodies, callback
         # URLs and subprocess output can contain OAuth credentials.
@@ -403,6 +429,8 @@ def run_browser_login(addp: Path, env: dict[str, str], fixture: OAuthFixture) ->
             }
         raise AssertionError(
             f"{exc}; browser_fixture_progress={json.dumps(progress, sort_keys=True, separators=(',', ':'))}"
+            "; browser_completed_import_us="
+            + json.dumps(browser_timeout_imports(exc.__context__), sort_keys=True, separators=(',', ':'))
         ) from None
 
 

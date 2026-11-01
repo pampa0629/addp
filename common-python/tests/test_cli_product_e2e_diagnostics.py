@@ -11,6 +11,7 @@ from cli_product_e2e import (
     assert_no_secrets,
     assert_refresh_process_succeeded,
     assert_refresh_rotation_serialized,
+    browser_timeout_imports,
     capture_command,
     collect_process,
     parse_json_output,
@@ -108,6 +109,7 @@ def test_browser_timeout_reports_only_fixture_counts(monkeypatch, request_count,
     def time_out(command, **kwargs):
         assert command == [secret, "auth", "login"]
         assert kwargs["timeout"] == 30
+        assert kwargs["env"]["PYTHONPROFILEIMPORTTIME"] == "1"
         raise subprocess.TimeoutExpired(command, 30, output=secret, stderr=secret)
 
     monkeypatch.setattr(subprocess, "run", time_out)
@@ -116,12 +118,53 @@ def test_browser_timeout_reports_only_fixture_counts(monkeypatch, request_count,
     assert str(exc_info.value) == (
         'browser login timed out; browser_fixture_progress={'
         f'"authorization_requests":{request_count},"pending_authorization_codes":{code_count},'
-        f'"token_families":{family_count}' + '}'
+        f'"token_families":{family_count}' + '}; browser_completed_import_us={}'
     )
     assert secret not in str(exc_info.value)
 
 
 def test_browser_login_returns_original_command_result(monkeypatch):
     result = subprocess.CompletedProcess(["addp", "auth", "login"], 0, stdout="{}", stderr="")
-    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: result)
-    assert run_browser_login(Path("addp"), {}, OAuthFixture()) is result
+    env = {"NO_PROXY": "127.0.0.1"}
+
+    def succeed(command, **kwargs):
+        assert command == result.args
+        assert kwargs["timeout"] == 30
+        assert kwargs["env"] == {**env, "PYTHONPROFILEIMPORTTIME": "1"}
+        return result
+
+    monkeypatch.setattr(subprocess, "run", succeed)
+    assert run_browser_login(Path("addp"), env, OAuthFixture()) is result
+    assert env == {"NO_PROXY": "127.0.0.1"}
+
+
+@pytest.mark.parametrize("as_bytes", [False, True])
+def test_browser_timeout_import_diagnostic_is_closed_and_redacted(monkeypatch, as_bytes):
+    secret = "addp_rt_import_diagnostic_secret"
+    stderr = (
+        f"{secret}\nimport time: 10 | 100 | keyring\n"
+        f"import time: 20 | 200 | {secret}\n"
+        f"import time: 30 | 300 | addp_common.cli{secret}\n"
+        "import time: 40 | 400 | addp_common.oauth\n"
+    )
+    if as_bytes:
+        stderr = stderr.encode()
+
+    def time_out(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"], output=secret, stderr=stderr)
+
+    monkeypatch.setattr(subprocess, "run", time_out)
+    with pytest.raises(AssertionError) as exc_info:
+        run_browser_login(Path(secret), {}, OAuthFixture())
+    message = str(exc_info.value)
+    assert message.endswith('browser_completed_import_us={"addp_common.oauth":400,"keyring":100}')
+    assert secret not in message
+
+
+def test_browser_timeout_import_diagnostic_bounds_input_and_ignores_other_errors():
+    output = "import time: 1 | 2 | keyring\n" + "x" * 65536
+    error = subprocess.TimeoutExpired(["addp"], 30, stderr=output)
+    assert browser_timeout_imports(error) == {}
+    assert browser_timeout_imports(None) == {}
+    assert browser_timeout_imports(RuntimeError("private")) == {}
+    assert browser_timeout_imports(subprocess.TimeoutExpired(["addp"], 30)) == {}
