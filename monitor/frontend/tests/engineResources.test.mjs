@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { engineMetrics, engineSummaryMetrics, resolveEngineRoute, validateEnginePage, validateEngineResources, engineTrendParameters } from '../src/utils/engineResources.js'
+import { engineMetrics, engineSummaryMetrics, redisMetrics, engineDetailMetrics, engineSummaryFor, resolveEngineRoute, validateEnginePage, validateEngineResources, engineTrendParameters } from '../src/utils/engineResources.js'
 
 const id = '10000000-0000-4000-8000-000000000001', node = '10000000-0000-4000-8000-000000000002'
 const owner = { deployment_id: id, display_name: 'Infra PostgreSQL', version: 1, enabled: true, node_id: node, host_binding_state: 'bound', engine_type: 'postgresql' }
@@ -38,7 +38,7 @@ test('engine URL retains exact deployment, metric, range and bounded refresh', (
 test('current page rejects duplicate, malformed and wrong-page owner references', () => {
   const page = { data: [owner], page: 1, page_size: 20, total: 1 }
   assert.equal(validateEnginePage(page, 1), page)
-  for (const value of [{ ...page, data: [owner, owner], total: 2 }, { ...page, page: 2 }, { ...page, data: [{ ...owner, node_id: '' }] }, { ...page, data: [{ ...owner, engine_type: 'redis' }] }]) assert.throws(() => validateEnginePage(value, 1), /invalid_resource_response/)
+  for (const value of [{ ...page, data: [owner, owner], total: 2 }, { ...page, page: 2 }, { ...page, data: [{ ...owner, node_id: '' }] }, { ...page, data: [{ ...owner, engine_type: 'mysql' }] }]) assert.throws(() => validateEnginePage(value, 1), /invalid_resource_response/)
 })
 test('valid zero is preserved; foreign, stale, fractional connection or incomplete evidence is rejected', () => {
   const good = response()
@@ -61,4 +61,15 @@ test('current-container trend accepts clipping and null gaps without inventing z
   assert.equal(validateEngineResources(value, [owner], [metric], params), value)
   value.data[0].series[0].points[1].value = 0
   assert.throws(() => validateEngineResources(value, [owner], [metric], params), /invalid_resource_response/)
+})
+
+test('Redis has a fixed 22-metric catalog and explicit groups within the existing 12-metric budget',()=>{
+ assert.equal(redisMetrics.length,22)
+ assert.equal(new Set(redisMetrics.map(m=>m.key)).size,22)
+ for(const [key,count] of [['redis.memory.used_percent',10],['redis.commands.per_second',7],['redis.persistence.aof_enabled',5]])assert.equal(engineDetailMetrics('redis',key).length,count)
+ assert.equal(engineSummaryFor('redis').length,4)
+ const route=resolveEngineRoute({engine_type:'redis',deployment_id:id,metric:'redis.commands.per_second',range:'1h'})
+ assert.equal(route.engineType,'redis');assert.equal(route.metric,'redis.commands.per_second');assert.equal(route.changed,false)
+ assert.equal(resolveEngineRoute({engine_type:'redis',metric:'postgresql.connections.total'}).metric,'redis.memory.used_percent')
+ assert.equal(validateEnginePage({data:[{...owner,engine_type:'redis'}],total:1,page:1,page_size:20},1).data.length,1)
 })

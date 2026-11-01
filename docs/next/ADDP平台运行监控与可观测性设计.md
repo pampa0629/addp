@@ -21,7 +21,7 @@
 | 主机资源规则 | CPU/内存规则 CRUD、CAS、后台连续窗口评估、未知保护和恢复 | 本地、受控来源／签名通知 T2、个人操作及 CPU／内存实压 T4 的独立范围见[主机规则证据](../spec/testing/evidence/Monitor综合验收历史证据.md#节点实例与资源告警)；仅覆盖测试阈值与单台 VM，生产 T5 未覆盖 |
 | 服务实例资源规则 | 当前运行实例 CPU 核消耗／RSS 规则、持续窗口、未知保护及原事件恢复，复用统一事件和通知链路 | 固定 `dfa4ad161` 的原生 Linux 实源 T2 已回传并独立复核，覆盖真实触发／释放／恢复、签名重试、对等进程隔离及退出清零，见[专项证据](../spec/testing/evidence/Monitor告警与规则历史证据.md#服务实例-cpurss-告警原生-linux-固定版本复核2026-10-23)；原失败保留，不外推当前 HEAD、正式身份页面 T4、长窗或生产 T5；不新增退出结束状态，不将 RSS 超限解释为泄漏诊断 |
 | 服务组失联规则 | 当前部署同模块／角色／用途全副本失联判定、当前运行确认持久化、规则四权限及默认停用CRUD，复用统一事件与显式通知订阅 | 规则与个人页面范围见[告警证据][monitor-alert]，真实租约故障、正式身份和 Hosted 未验。首次未确认保持等待，未知和计划停用不伪造恢复 |
-| 引擎与容器专业观测 | Infra／Business 只读发现、单容器 PostgreSQL 批量确认与显式主机关联，见[规范 4.4](../spec/addp平台运行观测规范.md#44-平台引擎部署登记)及[4.5](../spec/addp平台运行观测规范.md#45-部署侧自动发现来源)；当前主机导航沿[6.3][monitor-presentation]，无需导出／导入文件。 | 自动接入、专业 T4 与来源 T2 按[引擎指标证据][monitor-engine]的各自固定版本认定，不外推当前 main。新增主机导航仅 T1/T3；个人 Infra／Business 来源与 Business 页面已分别复验，Business 改名及专业趋势缩放见[本轮证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#business-部署改名与专业趋势时间缩放2026-10-30)，已补个人 Safari 拖动、手动／自动刷新保持及指标切换重置；后续[原位刷新](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#引擎监控原位刷新2026-10-30)消除同上下文请求中的清空／整块遮罩，完整前端门禁通过，用户重启后已补个人 Safari 详情手动／自动刷新结果与缩放保持，在途画布保留由 T3 验证，仍不外推 Hosted；其他引擎／集群未开放。容器详情与证明的实现／未验范围见[实例证据][monitor-instance]，不由 PostgreSQL 专业验收代替 |
+| 引擎与容器专业观测 | Infra／Business 只读发现、单容器 PostgreSQL 批量确认与显式主机关联；Redis 类型扩展、22项查询及分组页面已在工作区接通，待前置迁移提交后发布，见[规范 4.4](../spec/addp平台运行观测规范.md#44-平台引擎部署登记)及[4.5](../spec/addp平台运行观测规范.md#45-部署侧自动发现来源)；当前主机导航沿[6.3][monitor-presentation]，无需导出／导入文件。 | 自动接入、专业 T4 与来源 T2 按[引擎指标证据][monitor-engine]的各自固定版本认定，不外推当前 main。新增主机导航仅 T1/T3；个人 Infra／Business 来源与 Business 页面已分别复验，Business 改名及专业趋势缩放见[本轮证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#business-部署改名与专业趋势时间缩放2026-10-30)，已补个人 Safari 拖动、手动／自动刷新保持及指标切换重置；后续[原位刷新](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#引擎监控原位刷新2026-10-30)消除同上下文请求中的清空／整块遮罩，完整前端门禁通过，用户重启后已补个人 Safari 详情手动／自动刷新结果与缩放保持，在途画布保留由 T3 验证，仍不外推 Hosted；Redis分层状态及待确认的正式验收范围见下文，其余引擎／集群未开放。容器详情与证明的实现／未验范围见[实例证据][monitor-instance]，不由 PostgreSQL 专业验收代替 |
 | 平台 HTTP 接口质量与慢接口 | Common 统一全量采集，Monitor 固定窗口、实例/模板排行及趋势；HTTP 规则、持续慢接口标记、平台事件与 outbox | 公共 mTLS 前置失败、后续 Linux T2 及清理结果见[HTTP 证据][monitor-http]；旧失败不改判，也不代替个人本地实链、完整 Agent/Copilot 正式 backend 登录／页面、正式密码／MFA T4、Hosted、容量或长期保留。Tenant 发布服务质量仍归 Service 对象权限 |
 | Trace 与调用拓扑 | 可选 Go 平台 backend/ingress 与 Agent/Copilot Python backend 同步 HTTP Trace，经同一 Alloy 尾采样后进入 Tempo；Monitor 查询及实际 Client/Server 调用边，复用 System 精确日志关联 | 各批及正式身份本地第十窗口见[Trace 证据][monitor-trace]；本机隔离闭环已验，首次失败与 Link 目标未保留的 404 仍分别保留。`formal_runner_t4=false`，不代替 Hosted／专用 Runner T4 或 T5；真实 72 小时留存／删除、长期合并、其他 Runtime、continuous、Python 异步及 SQL Span 未覆盖，原 Go HTTP 容量外推不扩展至后续批次 |
 | 健康评分、功能热度、泄漏诊断 | 暂缓 | 先确定事实来源和可解释口径，不由资源阈值直接推导 |
@@ -97,7 +97,19 @@ Linux VM 单新 Monitor 绑定的固定版本、失败和覆盖限制见[清单�
 
 ### Redis 专业指标实施状态
 
-Redis 后续范围已确认：首批 Infra／Business 单机 Redis 7，独立账号只授 HELLO／PING／INFO，无业务键和频道访问。已补固定采集内核、原生ACL持久化、独立mTLS来源与Infra／Business标准启停；正式契约见[Redis 首期边界](../spec/addp平台运行观测规范.md#redis-专业观测首期边界2026-11-01-确认分阶段实施)。本批[账号与来源证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01)与正式页面分层；System 类型与私有投影、自动发现、Monitor 查询／页面尚未接通，不将来源通过计为已纳管或专业监控完成。
+Redis 后续范围已确认：首批 Infra／Business 单机 Redis 7，独立账号只授 HELLO／PING／INFO，无业务键和频道访问。已补固定采集内核、原生ACL持久化、独立mTLS来源与Infra／Business标准启停；正式契约见[Redis 首期边界](../spec/addp平台运行观测规范.md#redis-专业观测首期边界2026-11-01-确认分阶段实施)。本批[账号与来源证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01)与正式页面分层；工作区已补同一部署发现、System确认及私有来源精确投影和HTTP SD，见[本批证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-自动发现与-system-精确来源关联2026-11-01)；前置迁移259／260已由其他会话提交于`7da941ee6`，本批261按连续Catalog发布。工作区已补同一三项API的22项Redis目录、分组详情、四项列表摘要和趋势，复用现有授权重核、预算、提示、缩放及无闪烁刷新；见[查询与页面证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-专业指标查询与页面2026-11-01)。本地Go、原生PromQL边界、两作用域真实来源T2及受控页面T3通过，正式User／Prometheus／Console全链路与Hosted未运行；不将来源通过计为正式专业监控完成。
+
+### Redis 正式全链路验收（2026-11-01 已确认，本地验证）
+
+用户已确认在同一 suite 增加独立的 `redis-engine-admission` 人工 profile，复用正式三员 Bootstrap、真实密码／MFA、既有权限、独立 Prometheus 和共享生命周期；不改原 PG profile，也不把旧 PG 验收当作 Redis 通过。
+
+- **允许用途**：临时平台管理员只确认、读取、修改及停用当次 Infra／Business 两个单机 Redis 部署与当次主机关联；按原平台权限读取三项 `engine_resource_*` GET 及真实 Console 引擎页。已有账号保留既有角色，测试只行使这些限定用途；不新增 Permission、角色或生产授权，不接触 Tenant Engine／数据。
+- **真实链路**：标准 Redis 部署入口安装当次独立观察账号并启动本方 mTLS 来源，同一只读发现文件→System 明确确认与私有投影→Monitor HTTP SD→Prometheus→当前 User→Console。不得伪造发现／指标、注入 Token 或拦截业务 API。观察命令仍只有 HELLO／PING／INFO；不读取或写入业务键、频道、SQL，不加压。
+- **固定断言**：两部署身份、类型、主机和来源不可互换；22项按10／7／5组读取、四项摘要、当前容器趋势、单位／状态／tip及列表／详情返回正确。完整一分钟后验证速率；maxmemory为零、无键查找时分别验证比例缺失，不能把所有22项都强制为有效值，也不为制造比率执行业务命令。已有T1／T2的固定样本边界不冒充实源数据。
+- **变化及清理**：只对当次Business Redis纳管对象／观察来源做停用和恢复，验证旧值清空、Infra不受影响及新鲜数据重新出现；不停止个人或其他profile的数据库，不操纵指标／系统时钟或写IAM表。沿原System拒绝身份和查询结束前重核证明权限边界。所有退出销毁当次身份、容器、网络、卷及私有凭据，独立核验零残留，失败清理不能计通过。
+- **交付与执行**：保留1800秒场景预算、既有浏览器期限及60分钟Job上限；先修订现有场景规范，再复用runner／物理夹具／Console核对函数实现并做本地确定性验证，登记到现有唯一人工workflow。实际CI和Hosted仍由专门会话安排／回传，本会话不手工触发、不重跑、不设置定时任务。前置259／260已提交，本批261和查询／页面按本方路径精确发布。
+
+本批按上述限定用途实现，标准Online runner、共享清理及注册检查的本地证据见[Redis验收准备](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-正式全链路验收准备2026-11-01)。正式验收边界已同步至[Redis场景规范](../spec/testing/scenarios/平台观测与语义生命周期.md#redis-自管接入专业观测与页面)。实际Hosted尚未运行，身份总边界依据为[T4规范](../spec/testing/T4-Online验收规范.md#开关身份与拓扑预检)“平台管理员 Token 默认禁止”，以及[现有PG限定用途](../spec/testing/scenarios/平台观测与语义生命周期.md#自管引擎部署的自动接入)。
 
 ### PostgreSQL 专业指标实施状态
 

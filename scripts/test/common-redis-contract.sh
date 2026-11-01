@@ -6,7 +6,7 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 export ADDP_REDIS_INTEGRATION=1
 [[ $# == 0 || ( $# == 1 && "$1" == --monitor-only ) ]] || { echo 'Redis T2: unsupported scope' >&2; exit 2; }
 specifications=('common engine/plugins/redis' 'system/backend internal/service' 'meta/backend internal/scanruntime' 'manager/backend internal/preview')
-if [[ $# == 1 ]]; then specifications=('monitor/backend internal/redissource'); fi
+if [[ $# == 1 ]]; then specifications=('monitor/backend internal/redissource' 'monitor/backend internal/resourcequery'); fi
 for specification in "${specifications[@]}"; do
     read -r owner package <<< "$specification"
     (cd "$ROOT_DIR/$owner" && GOWORK=off go test "./$package" -run '^TestIntegrationRedis' -count=1 -v) 2>&1 | tee "$WORK_DIR/${owner//\//-}.log"

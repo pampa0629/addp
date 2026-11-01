@@ -284,4 +284,65 @@ func TestEngineDeploymentDeclarationsAgainstPostgres(t *testing.T) {
 		}
 	})
 
+	t.Run("redis_declaration_uses_existing_host_CAS_and_projection", func(t *testing.T) {
+		var inventory models.EngineDeploymentInventory
+		if err := json.Unmarshal([]byte(fixture), &inventory); err != nil {
+			t.Fatal(err)
+		}
+		inventory.Services[0].Service, inventory.Services[0].EngineType = "redis", "redis"
+		inventory.Services[0].Containers[0].PublishedPorts[0].ContainerPort = 6379
+		inventory.Source.DockerEngineID = "redis-daemon"
+		enabled := true
+		row, err := svc.Create(ctx, models.EngineDeploymentInput{DisplayName: "Business Redis", Enabled: &enabled, DeclaredNodeID: node.NodeID, Inventory: inventory}, iam.AuditMetadata{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		filtered, err := svc.List(ctx, 1, 1, models.EngineDeploymentFilter{EngineType: "redis"})
+		if err != nil || filtered.Total != 1 || len(filtered.Data) != 1 || filtered.Data[0].DeploymentID != row.DeploymentID {
+			t.Fatal("Redis count or page included PostgreSQL", err)
+		}
+		current, err := svc.Get(ctx, row.DeploymentID)
+		if err != nil || current.HostBindingState != "bound" || current.NodeID != node.NodeID || current.EngineType != "redis" {
+			t.Fatal("Redis host association", err)
+		}
+		if _, err = svc.Create(ctx, models.EngineDeploymentInput{DisplayName: "duplicate", Enabled: &enabled, DeclaredNodeID: node.NodeID, Inventory: inventory}, iam.AuditMetadata{}); !errors.Is(err, repository.ErrDeploymentSourceOccupied) {
+			t.Fatal("Redis duplicate accepted", err)
+		}
+		projection, err := repository.NewModuleRegistryRepository(db).ObservabilityIdentities(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, engine := range projection.EngineDeployments {
+			if engine.DeploymentID == row.DeploymentID {
+				found = engine.EngineType == "redis" && engine.NodeID == node.NodeID && engine.SourceKey.Service == "redis" && engine.SourceKey.DockerEngineID == "redis-daemon"
+			}
+		}
+		if !found {
+			t.Fatal("Redis missing from current bound private identity projection")
+		}
+		disabled := false
+		updated, err := svc.Update(ctx, row.DeploymentID, models.EngineDeploymentUpdateRequest{DisplayName: "Redis disabled", Enabled: &disabled, DeclaredNodeID: node.NodeID, Version: 1}, iam.AuditMetadata{})
+		if err != nil || updated.Version != 2 {
+			t.Fatal("Redis disable", err)
+		}
+		if _, err = svc.Update(ctx, row.DeploymentID, models.EngineDeploymentUpdateRequest{DisplayName: "stale", Enabled: &enabled, DeclaredNodeID: node.NodeID, Version: 1}, iam.AuditMetadata{}); err == nil {
+			t.Fatal("Redis stale CAS accepted")
+		}
+		current, err = svc.Get(ctx, row.DeploymentID)
+		if err != nil || current.HostBindingState != "rejected" || current.NodeID != "" {
+			t.Fatal("disabled Redis kept host eligibility", err)
+		}
+		projection, err = repository.NewModuleRegistryRepository(db).ObservabilityIdentities(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, engine := range projection.EngineDeployments {
+			if engine.DeploymentID == row.DeploymentID {
+				t.Fatal("disabled Redis kept private identity eligibility")
+			}
+		}
+
+	})
+
 }

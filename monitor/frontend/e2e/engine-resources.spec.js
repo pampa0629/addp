@@ -216,7 +216,7 @@ for (const locale of ['zh-cn', 'en']) test(`engine text filters debounce and cle
   expect(queries).toHaveLength(1)
   await page.clock.fastForward(301)
   await expect.poll(() => queries.length).toBe(2)
-  expect(queries.at(-1)).toEqual({ page: '1', page_size: '20', search: 'PostgreSQL' })
+  expect(queries.at(-1)).toEqual({ engine_type: 'postgresql', page: '1', page_size: '20', search: 'PostgreSQL' })
   await expect(page).toHaveURL(url => !url.searchParams.has('page') && url.searchParams.get('search') === 'PostgreSQL' && url.searchParams.get('refresh') === 'off')
   await input.hover(); await page.locator('form .el-input__clear').click()
   await expect.poll(() => queries.length).toBe(3)

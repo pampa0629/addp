@@ -2222,14 +2222,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅当前已纳管且有效绑定主机的 Infra/Business PostgreSQL；固定十二项指标，逐请求用当前 User 向 System 核验并在返回前重核；不读取业务数据或凭据 | Only admitted and currently host-bound Infra/Business PostgreSQL; twelve fixed metrics, current User authorization and completion-time recheck; no business data or credentials",
+                "description": "仅当前已纳管且有效绑定主机的 Infra/Business PostgreSQL／Redis；按类型使用固定目录，单次最多十二项，逐请求用当前 User 向 System 核验并在返回前重核；不读取业务数据或凭据 | Only admitted and currently host-bound Infra/Business PostgreSQL/Redis; fixed per-type catalogs, up to twelve metrics per request, current User authorization and completion-time recheck; no business data or credentials",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "平台运行监控 | Platform Runtime Monitoring"
                 ],
-                "summary": "读取 PostgreSQL 即时指标 | Read current PostgreSQL metrics",
+                "summary": "读取引擎即时指标 | Read current engine metrics",
                 "parameters": [
                     {
                         "type": "string",
@@ -2240,7 +2240,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "逗号分隔的固定 PostgreSQL 指标键，最多十二项 | Up to twelve comma-separated fixed PostgreSQL metric keys",
+                        "description": "逗号分隔的同一引擎类型的固定指标键，最多十二项 | Up to twelve comma-separated fixed same-engine metric keys",
                         "name": "metrics",
                         "in": "query",
                         "required": true
@@ -2321,14 +2321,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前页总连接、活跃连接、每秒提交和总容量；数量乘四计入同一预算，整批超限拒绝，System 用当前 User 逐一裁决 | Current-page total and active connections, commits/second and total size; four metrics per deployment under one budget, reject the whole over-budget batch; System authorizes each current User read",
+                "description": "PG：总连接、活跃连接、每秒提交和总容量；Redis：分配内存、限额占用率、连接和每秒命令；数量乘四计入同一预算，整批超限拒绝，System 用当前 User 逐一裁决 | PG: total/active connections, commits/second and size; Redis: allocated memory, limit usage, connections and commands/second; four metrics per deployment under one budget, reject the whole over-budget batch; System authorizes each current User read",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "平台运行监控 | Platform Runtime Monitoring"
                 ],
-                "summary": "读取当前页 PostgreSQL 资源摘要 | Read current-page PostgreSQL summaries",
+                "summary": "读取当前页引擎资源摘要 | Read current-page engine summaries",
                 "parameters": [
                     {
                         "type": "string",
@@ -2420,7 +2420,7 @@
                 "tags": [
                     "平台运行监控 | Platform Runtime Monitoring"
                 ],
-                "summary": "读取当前 PostgreSQL 容器段趋势 | Read current PostgreSQL container trends",
+                "summary": "读取当前引擎容器段趋势 | Read current engine container trends",
                 "parameters": [
                     {
                         "type": "string",
@@ -2431,7 +2431,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "逗号分隔的固定 PostgreSQL 指标键，最多十二项 | Up to twelve fixed PostgreSQL metric keys",
+                        "description": "逗号分隔的同一引擎类型的固定指标键，最多十二项 | Up to twelve fixed same-engine metric keys",
                         "name": "metrics",
                         "in": "query",
                         "required": true

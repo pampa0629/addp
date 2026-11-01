@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/models"
 	"github.com/google/uuid"
 )
 
@@ -44,7 +45,8 @@ func (c *SystemServiceClient) GetEngineDeploymentsForUser(ctx context.Context, i
 		if err != nil {
 			return nil, err
 		}
-		if status != http.StatusOK || ref.DeploymentID != id || ref.Version < 1 || ref.Enabled == nil || ref.EngineType != "postgresql" {
+		_, port := models.PlatformEngineService(ref.EngineType)
+		if status != http.StatusOK || ref.DeploymentID != id || ref.Version < 1 || ref.Enabled == nil || port == 0 {
 			return nil, invalid
 		}
 		switch ref.HostBindingState {

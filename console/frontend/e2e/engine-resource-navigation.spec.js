@@ -1,6 +1,29 @@
 import { expect, test } from '@playwright/test'
 import { engineBackend, engineOwner } from '../../../monitor/frontend/e2e/engine-resources.fixture'
 
+test('Redis group navigation and refresh retain the Console iframe and typed route', async ({ page }) => {
+  const state = await engineBackend(page, { owner: { ...engineOwner, engine_type: 'redis', display_name: 'Business Redis' } })
+  await page.goto(`/monitor/engine-resources?engine_type=redis&deployment_id=${engineOwner.deployment_id}&refresh=off`)
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('engine-value-redisAllocated')).toHaveText('1.00 GiB')
+  const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin)
+  for (const [group, count] of [['持久化状态', 5], ['吞吐与命中', 7]]) {
+    await monitor.getByRole('tab', { name: group, exact: true }).click()
+    await expect(monitor.getByTestId('engine-metrics').locator('article')).toHaveCount(count)
+    await expect(page).toHaveURL(url => url.searchParams.get('engine_type') === 'redis' && url.searchParams.get('deployment_id') === engineOwner.deployment_id)
+  }
+  const url = page.url()
+  await monitor.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(monitor.getByTestId('engine-value-redisCommands')).toHaveText('0.00 命令/秒')
+  expect(page.url()).toBe(url)
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+  await monitor.getByRole('button', { name: '返回引擎列表', exact: true }).click()
+  await expect(monitor.getByTestId('engine-list')).toContainText('Business Redis')
+  expect(state.queries.at(-1).engine_type).toBe('redis')
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+})
+
 test('engine detail tips follow Console language without reloading the iframe or querying again', async ({ page }) => {
   const state = await engineBackend(page)
   await page.goto(`/monitor/engine-resources?deployment_id=${engineOwner.deployment_id}&refresh=off`)
@@ -50,7 +73,7 @@ for (const locale of ['zh-cn', 'en']) test(`engine automatic filters retain one 
   await page.clock.fastForward(301)
   await expect.poll(() => queries.length).toBe(2)
   await expect(page).toHaveURL('/monitor/engine-resources?search=PostgreSQL&refresh=off')
-  expect(queries.at(-1)).toEqual({ page: '1', page_size: '20', search: 'PostgreSQL' })
+  expect(queries.at(-1)).toEqual({ engine_type: 'postgresql', page: '1', page_size: '20', search: 'PostgreSQL' })
   await input.hover(); await monitor.locator('form .el-input__clear').click()
   await expect.poll(() => queries.length).toBe(3)
   await expect(page).toHaveURL('/monitor/engine-resources?refresh=off')

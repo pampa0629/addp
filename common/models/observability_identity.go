@@ -42,20 +42,21 @@ type ObservabilityEngineIdentity struct {
 	EngineType   string                       `json:"engine_type"`
 	NodeID       string                       `json:"node_id"`
 	SourceKey    ObservabilityEngineSourceKey `json:"source_key"`
-	Metrics      *PostgreSQLMetricsSource     `json:"metrics,omitempty"`
+	Metrics      *EngineMetricsSource         `json:"metrics,omitempty"`
 }
 
 var observabilityDockerEngineID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9:_.-]{0,127}$`)
 
-// Validate checks the single supported platform engine identity contract.
+// Validate checks the supported platform engine identity contract.
 // Snapshot consumers must additionally check node references and uniqueness.
 func (i ObservabilityEngineIdentity) Validate() error {
 	validID := func(value string) bool {
 		id, err := uuid.Parse(value)
 		return err == nil && id != uuid.Nil && id.String() == value
 	}
-	if !validID(i.DeploymentID) || !validID(i.NodeID) || i.Version < 1 || i.EngineType != "postgresql" ||
-		!observabilityDockerEngineID.MatchString(i.SourceKey.DockerEngineID) || i.SourceKey.Service != "postgres" ||
+	service, port := PlatformEngineService(i.EngineType)
+	if !validID(i.DeploymentID) || !validID(i.NodeID) || i.Version < 1 || port == 0 ||
+		!observabilityDockerEngineID.MatchString(i.SourceKey.DockerEngineID) || i.SourceKey.Service != service ||
 		!((i.Scope == "infra" && i.SourceKey.Project == "addp-infra") || (i.Scope == "business" && i.SourceKey.Project == "business")) {
 		return errors.New("invalid observability engine identity")
 	}

@@ -119,6 +119,9 @@ func (r *EngineDeploymentRepository) List(ctx context.Context, page, size int, f
 	var total int64
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Model(&models.EngineDeployment{})
+		if filter.EngineType != "" {
+			query = query.Where("engine_type = ?", filter.EngineType)
+		}
 		if filter.Search != "" {
 			pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(filter.Search)) + "%"
 			query = query.Where("LOWER(display_name) LIKE ? ESCAPE '!'", pattern)

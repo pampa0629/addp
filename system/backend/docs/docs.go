@@ -6776,6 +6776,16 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "postgresql",
+                            "redis"
+                        ],
+                        "type": "string",
+                        "description": "引擎类型 | Engine type",
+                        "name": "engine_type",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "声明的主机 UUID | Declared host UUID",
                         "name": "node_id",
@@ -23415,6 +23425,23 @@ const docTemplate = `{
                 }
             }
         },
+        "models.EngineMetricsSource": {
+            "type": "object",
+            "properties": {
+                "container_id": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "models.JSONMap": {
             "type": "object",
             "additionalProperties": true
@@ -23429,7 +23456,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "metrics": {
-                    "$ref": "#/definitions/models.PostgreSQLMetricsSource"
+                    "$ref": "#/definitions/models.EngineMetricsSource"
                 },
                 "node_id": {
                     "type": "string"
@@ -23525,23 +23552,6 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
-                }
-            }
-        },
-        "models.PostgreSQLMetricsSource": {
-            "type": "object",
-            "properties": {
-                "container_id": {
-                    "type": "string"
-                },
-                "endpoint": {
-                    "type": "string"
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "state": {
-                    "type": "string"
                 }
             }
         },

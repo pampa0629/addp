@@ -1,3 +1,5 @@
+const servicePorts = { postgres: { type: 'postgresql', port: 5432 }, redis: { type: 'redis', port: 6379 } }
+const supported = service => Object.hasOwn(servicePorts, service?.service) && servicePorts[service.service].type === service.engine_type
 const fields = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
 const invalid = () => { throw new Error('invalid_engine_deployment') }
@@ -14,7 +16,7 @@ export function validateDeploymentInventory(value) {
     || !['desktop_linux_vm', 'linux_docker'].includes(value.source.runtime) || typeof value.source.docker_engine_id !== 'string'
     || !/^[A-Za-z0-9][A-Za-z0-9:_.-]{0,127}$/u.test(value.source.docker_engine_id) || !Array.isArray(value.services) || value.services.length !== 1) invalid()
   const service = value.services[0]
-  if (!fields(service, ['service', 'engine_type', 'containers']) || service.service !== 'postgres' || service.engine_type !== 'postgresql'
+  if (!fields(service, ['service', 'engine_type', 'containers']) || !supported(service)
     || !Array.isArray(service.containers) || service.containers.length !== 1) invalid()
   const container = service.containers[0]
   if (!fields(container, ['container_id', 'started_at', 'restart_count', 'published_ports']) || typeof container.container_id !== 'string'
@@ -24,7 +26,7 @@ export function validateDeploymentInventory(value) {
     || !container.published_ports.length || container.published_ports.length > 8) invalid()
   for (const port of container.published_ports) {
     if (!fields(port, ['address', 'port', 'container_port', 'protocol']) || typeof port.address !== 'string' || !port.address
-      || /[^0-9a-f:.]/iu.test(port.address) || !Number.isSafeInteger(port.port) || port.port < 1 || port.port > 65535 || port.container_port !== 5432 || port.protocol !== 'tcp') invalid()
+      || /[^0-9a-f:.]/iu.test(port.address) || !Number.isSafeInteger(port.port) || port.port < 1 || port.port > 65535 || port.container_port !== servicePorts[service.service].port || port.protocol !== 'tcp') invalid()
   }
   return value
 }
@@ -43,8 +45,8 @@ export function validateDeploymentDiscovery(value) {
     const service = scope?.services.find(service => service.service === item.service)
     const key = item.scope+'/'+item.service
     if (!source || scope.state !== 'available' || !service || keys.has(key) || typeof item.service !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/u.test(item.service) || !/^[a-f0-9]{64}$/u.test(item.fingerprint) || typeof item.eligible !== 'boolean' || (item.deployment_id && !isDeploymentUUID(item.deployment_id))) invalid()
-    if (!item.eligible && !['unsupported_engine','unsupported_topology','not_running','sql_port_missing'].includes(item.reason)) invalid()
-    if (item.eligible && (service.service !== 'postgres' || service.engine_type !== 'postgresql' || service.containers.length !== 1 || service.containers[0].status !== 'running')) invalid()
+    if (!item.eligible && !['unsupported_engine','unsupported_topology','not_running','database_port_missing'].includes(item.reason)) invalid()
+    if (item.eligible && (!supported(service) || service.containers.length !== 1 || service.containers[0].status !== 'running')) invalid()
     keys.add(key)
   }
   return value
@@ -63,7 +65,7 @@ export function resolveDeploymentSource(inventory, discovery, now = Date.now()) 
   if (['type', 'runtime', 'docker_engine_id', 'project'].some(key => scope.source?.[key] !== inventory.source[key])) return unavailable('source_mismatch')
   const services = scope.services.filter(item => item.service === inventory.services[0].service)
   if (!services.length) return unavailable('not_found')
-  if (services.length !== 1 || services[0].engine_type !== 'postgresql' || !Array.isArray(services[0].containers)) invalid()
+  if (services.length !== 1 || services[0].engine_type !== inventory.services[0].engine_type || !Array.isArray(services[0].containers)) invalid()
   if (!services[0].containers.length) return unavailable('not_found')
   if (services[0].containers.length !== 1) return unavailable('unsupported_topology')
   const container = services[0].containers[0]

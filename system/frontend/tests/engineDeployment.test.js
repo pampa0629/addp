@@ -39,3 +39,15 @@ it('never substitutes admission facts or another Docker engine when a current so
   expect(resolveDeploymentSource(inventory,value)).toMatchObject({state,container:null,changed:false})
  }
 })
+
+it('uses the same declaration and source matching for Redis without admitting SQL ports or credentials',()=>{
+ const value=structuredClone(inventory)
+ value.services[0].service='redis';value.services[0].engine_type='redis';value.services[0].containers[0].published_ports[0].container_port=6379
+ expect(validateDeploymentInventory(value)).toBe(value)
+ const discovery=discoveryFixture();const scope=discovery.scopes[1];scope.services=scope.services.filter(s=>s.service!=='redis');discovery.candidates=discovery.candidates.filter(c=>!(c.scope==='business'&&c.service==='redis'));scope.services[0]={...value.services[0],containers:value.services[0].containers.map(c=>({...c,status:'running'}))}
+ const candidate=discovery.candidates.find(c=>c.scope==='business'&&c.service==='postgres');candidate.service='redis'
+ expect(validateDeploymentDiscovery(discovery)).toBe(discovery)
+ expect(resolveDeploymentSource(value,discovery,Date.parse(scope.observed_at)).state).toBe('running')
+ value.services[0].containers[0].published_ports[0].container_port=5432
+ expect(()=>validateDeploymentInventory(value)).toThrow()
+})

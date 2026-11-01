@@ -25,7 +25,7 @@ func TestEngineProjectionUsesSharedAdmissionAndReservations(t *testing.T) {
 	started := time.Now().UTC().Add(-time.Hour)
 	snapshot.EngineDeployments = []models.ObservabilityEngineIdentity{{DeploymentID: uuid.NewString(), Version: 1, Scope: "infra", EngineType: "postgresql", NodeID: target.Subject.NodeID,
 		SourceKey: models.ObservabilityEngineSourceKey{DockerEngineID: "daemon", Project: "addp-infra", Service: "postgres"},
-		Metrics:   &models.PostgreSQLMetricsSource{State: "available", Endpoint: target.Source.Endpoint, ContainerID: strings.Repeat("a", 64), StartedAt: &started}}}
+		Metrics:   &models.EngineMetricsSource{State: "available", Endpoint: target.Source.Endpoint, ContainerID: strings.Repeat("a", 64), StartedAt: &started}}}
 	policy := testPolicy(t, pki, port)
 	projector := NewNodeProjector(true, policy, identityReaderFunc(func(context.Context) (*models.ObservabilityIdentitySnapshot, error) { return snapshot, nil }))
 	groups, err := projector.Project(context.Background(), nil)
@@ -35,7 +35,13 @@ func TestEngineProjectionUsesSharedAdmissionAndReservations(t *testing.T) {
 	if _, err := projector.Project(context.Background(), []NodeTarget{target}); err != ErrInvalidTarget {
 		t.Fatalf("duplicate physical endpoint accepted: %v", err)
 	}
-	snapshot.EngineDeployments[0].Metrics = &models.PostgreSQLMetricsSource{State: "unavailable"}
+	snapshot.EngineDeployments[0].EngineType = "redis"
+	snapshot.EngineDeployments[0].SourceKey.Service = "redis"
+	groups, err = projector.Project(context.Background(), nil)
+	if err != nil || len(groups) != 1 || groups[0].Labels["addp_source"] != "redis" {
+		t.Fatal("Redis source mislabeled", err)
+	}
+	snapshot.EngineDeployments[0].Metrics = &models.EngineMetricsSource{State: "unavailable"}
 	groups, err = projector.Project(context.Background(), []NodeTarget{target})
 	if err != nil || len(groups) != 1 || groups[0].Labels["addp_monitor_kind"] != "host_resources" {
 		t.Fatal("optional unavailable engine suppressed host")

@@ -57,6 +57,18 @@ def process_units():
 
 
 POSTGRES_PORTS = {"infra": 19401, "business": 19402}
+ENGINE_PROFILES = {
+    "engine-admission": {"kind": "postgresql", "service": "postgres", "prefix": "POSTGRES", "folder": "postgres", "ports": POSTGRES_PORTS},
+    "redis-engine-admission": {"kind": "redis", "service": "redis", "prefix": "REDIS", "folder": "redis", "ports": POSTGRES_PORTS},
+}
+
+
+def engine_profile():
+    profile = ENGINE_PROFILES.get(os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE"))
+    if profile is None:
+        raise ValueError("Business fixture requires a supported engine admission case")
+    return profile
+
 
 
 def boundary():
@@ -268,7 +280,8 @@ def prepare(directory):
     ip = ipaddress.ip_address(address)
     if ip.version != 4 or not ip.is_private or ip.is_loopback or ip.is_link_local:
         raise ValueError("Hosted metrics requires its native private Docker bridge gateway")
-    engine_case = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "engine-admission"
+    engine = ENGINE_PROFILES.get(os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE"))
+    engine_case = engine is not None
     units = process_units()
     for port in (9444, 19100, *(entry[2] for entry in units.values()), *(POSTGRES_PORTS.values() if engine_case else ())):
         with socket.socket() as sock:
@@ -302,10 +315,11 @@ def prepare(directory):
         certificate(issuer, directory / folder, "server", True)
     if engine_case:
         for scope in POSTGRES_PORTS:
-            folder = directory / ("postgres-" + scope)
+            folder = directory / (engine["folder"] + "-" + scope)
             folder.mkdir(mode=0o755)
             (folder / "ca.crt").write_bytes(Path(str(source)+".crt").read_bytes())
             certificate(source, folder, "server", True)
+            if engine["kind"] == "redis": (folder / "server.key").chmod(0o600)
     certificate(center, directory / "center-tls", "health")
     certificate(center, directory / "query", "client")
     (directory / "query/client.key").chmod(0o600)
@@ -347,8 +361,9 @@ def prepare(directory):
         values.update(profile["env"])
     if engine_case:
         values["MONITOR_METRICS_ALLOWED_PORTS"] += "," + ",".join(map(str, POSTGRES_PORTS.values()))
-        values["ADDP_POSTGRES_METRICS_STATE_DIR"] = str(directory / "postgres-sources")
-        values["ADDP_POSTGRES_AUTH_STATE_DIR"] = str(directory / "postgres-auth")
+        values["ADDP_" + engine["prefix"] + "_METRICS_STATE_DIR"] = str(directory / (engine["folder"] + "-sources"))
+        if engine["kind"] == "postgresql":
+            values["ADDP_POSTGRES_AUTH_STATE_DIR"] = str(directory / "postgres-auth")
     os.environ.update(values)
     command(["python3", str(ROOT / "scripts/infra/generate-metrics-config.py")])
     # The center belongs to the standard Infra lifecycle; this fixture only
@@ -582,41 +597,63 @@ def engine_compose(directory, *args):
 
 
 def engine_metrics_action(directory, action):
-    """Use the production deployment owner; never install via SQL test hooks."""
-    require_state = str(directory / "postgres-sources")
-    if os.environ.get("ADDP_POSTGRES_METRICS_STATE_DIR") != require_state:
-        raise ValueError("PostgreSQL source state must belong to this Hosted fixture")
+    """Use the sole production deployment owner for each supported engine."""
+    profile = engine_profile()
+    kind, prefix, folder = profile["kind"], profile["prefix"], profile["folder"]
+    require_state = str(directory / (folder + "-sources"))
+    if os.environ.get("ADDP_" + prefix + "_METRICS_STATE_DIR") != require_state:
+        raise ValueError("Engine source state must belong to this Hosted fixture")
     operation = "down" if action in ("engine-down", "engine-metrics-pause") else "up"
     scopes = ("business",) if action in ("engine-metrics-pause", "engine-metrics-resume") else ("business", "infra")
     failed = False
     for scope in scopes:
-        env = dict(SOURCE.observer_environment(), POSTGRES_USER="business" if scope == "business" else os.environ["POSTGRES_USER"],
-                   ADDP_POSTGRES_METRICS_ENABLED="true", ADDP_POSTGRES_METRICS_STATE_DIR=require_state,
-                   ADDP_POSTGRES_AUTH_STATE_DIR=str(directory / "postgres-auth"),
-                   ADDP_POSTGRES_METRICS_TLS_DIR=str(directory / ("postgres-" + scope)),
-                   ADDP_POSTGRES_METRICS_LISTEN=os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":"+str(POSTGRES_PORTS[scope]))
         try:
-            subprocess.run([sys.executable, str(ROOT / "scripts/infra/postgres-observation/lifecycle.py"), operation, "--scope", scope],
+            env = dict(SOURCE.observer_environment())
+            env.update({"ADDP_"+prefix+"_METRICS_ENABLED": "true", "ADDP_"+prefix+"_METRICS_STATE_DIR": require_state,
+                        "ADDP_"+prefix+"_METRICS_TLS_DIR": str(directory / (folder+"-"+scope)),
+                        "ADDP_"+prefix+"_METRICS_LISTEN": os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":"+str(profile["ports"][scope])})
+            if kind == "postgresql":
+                env.update(POSTGRES_USER="business" if scope == "business" else os.environ["POSTGRES_USER"],
+                           ADDP_POSTGRES_AUTH_STATE_DIR=str(directory / "postgres-auth"))
+                script = ROOT / "scripts/infra/postgres-observation/lifecycle.py"
+            else:
+                script = ROOT / "scripts/infra/redis-metrics.py"
+                if scope == "infra":
+                    env["REDIS_PASSWORD"] = os.environ["REDIS_PASSWORD"]
+                else:
+                    spec = spec_from_file_location("metrics_private_state", ROOT / "scripts/utils/private-state.py")
+                    private = module_from_spec(spec); spec.loader.exec_module(private)
+                    text, _ = private.read(directory / "engine-source.env", 0o600)
+                    pairs = [line.split("=", 1) for line in text.splitlines()]
+                    if (len(pairs) != 3 or {pair[0] for pair in pairs} != {"BUSINESS_REDIS_ADMIN_PASSWORD", "BUSINESS_REDIS_READER_PASSWORD", "BUSINESS_REDIS_PORT"}
+                            or any(len(pair) != 2 for pair in pairs)):
+                        raise ValueError("Owned Redis deployment credentials differ")
+                    values = dict(pairs)
+                    if (values["BUSINESS_REDIS_PORT"] != "6380" or values["BUSINESS_REDIS_ADMIN_PASSWORD"] == values["BUSINESS_REDIS_READER_PASSWORD"]
+                            or any(re.fullmatch(r"[A-Za-z0-9_-]{43}", values[key]) is None for key in ("BUSINESS_REDIS_ADMIN_PASSWORD", "BUSINESS_REDIS_READER_PASSWORD"))):
+                        raise ValueError("Owned Redis deployment credentials differ")
+                    env["BUSINESS_REDIS_ADMIN_PASSWORD"] = values["BUSINESS_REDIS_ADMIN_PASSWORD"]
+            subprocess.run([sys.executable, str(script), operation, "--scope", scope],
                            env=env, check=True, capture_output=True, text=True, timeout=210)
-        except (OSError, subprocess.SubprocessError):
-            if action != "engine-down": raise ValueError("Owned PostgreSQL source lifecycle failed") from None
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+            if action != "engine-down": raise ValueError("Owned engine source lifecycle failed") from None
             failed = True
         if action != "engine-down":
             subprocess.run([sys.executable, str(ROOT / "scripts/utils/deployment-inventory.py"), "refresh", "--scope", scope,
                             "--directory", os.environ.get("ADDP_DEPLOYMENT_DISCOVERY_DIR") or str(ROOT / ".dev-state/deployment-discovery")],
                            env=SOURCE.observer_environment(), check=True, capture_output=True, text=True, timeout=40)
     if failed:
-        raise ValueError("Owned PostgreSQL source cleanup failed")
+        raise ValueError("Owned " + ("PostgreSQL" if kind == "postgresql" else "Redis") + " source cleanup failed")
 
 
 def engine_source_action(directory, action):
-    if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") != "engine-admission":
-        raise ValueError("Business fixture requires the engine-admission case")
+    profile = engine_profile()
+    service = profile["service"]
     print("Engine source " + action + ": validate workflow ownership", flush=True)
     if any(re.fullmatch(r"[1-9][0-9]{0,19}", os.environ.get(key, "")) is None for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")):
         raise ValueError("engine source requires its Hosted workflow run and attempt")
     expected = {"github_run_id": os.environ["GITHUB_RUN_ID"], "github_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
-                "repository": str(ROOT), "project": "business"}
+                "repository": str(ROOT), "project": "business", "service": service}
     print("Engine source " + action + ": validate local Docker", flush=True)
     SOURCE.local_docker(env=SOURCE.observer_environment())
     owner = directory/"engine-source-owner.json"
@@ -628,16 +665,20 @@ def engine_source_action(directory, action):
                 raise ValueError("refusing an existing Business source")
         # Normal Business engine initialization only; no application queries or sample generators.
         envfile=directory/"engine-source.env"
-        auth = subprocess.run([sys.executable, str(ROOT / "scripts/infra/postgres-observation/authentication.py"), "prepare-business"],
-                              env=dict(SOURCE.observer_environment(), ADDP_POSTGRES_AUTH_STATE_DIR=str(directory / "postgres-auth")),
-                              check=True, capture_output=True, text=True, timeout=15).stdout.strip()
-        if auth != str(directory / "postgres-auth/runtime"):
-            raise ValueError("Business authentication directory escaped the owned fixture")
+        if service == "postgres":
+            auth = subprocess.run([sys.executable, str(ROOT / "scripts/infra/postgres-observation/authentication.py"), "prepare-business"],
+                                  env=dict(SOURCE.observer_environment(), ADDP_POSTGRES_AUTH_STATE_DIR=str(directory / "postgres-auth")),
+                                  check=True, capture_output=True, text=True, timeout=15).stdout.strip()
+            if auth != str(directory / "postgres-auth/runtime"):
+                raise ValueError("Business authentication directory escaped the owned fixture")
+            body = "POSTGRES_USER=business\nPOSTGRES_DB=business\nPOSTGRES_PORT=5433\nPOSTGRES_IMAGE=postgis/postgis:15-3.4\nPOSTGRES_PASSWORD="+secrets.token_urlsafe(32)+"\nADDP_BUSINESS_POSTGRES_AUTH_DIR="+auth+"\n"
+        else:
+            body = "BUSINESS_REDIS_ADMIN_PASSWORD="+secrets.token_urlsafe(32)+"\nBUSINESS_REDIS_READER_PASSWORD="+secrets.token_urlsafe(32)+"\nBUSINESS_REDIS_PORT=6380\n"
         owner.write_text(json.dumps(expected)); owner.chmod(0o600)
-        envfile.write_text("POSTGRES_USER=business\nPOSTGRES_DB=business\nPOSTGRES_PORT=5433\nPOSTGRES_IMAGE=postgis/postgis:15-3.4\nPOSTGRES_PASSWORD="+secrets.token_urlsafe(32)+"\nADDP_BUSINESS_POSTGRES_AUTH_DIR="+auth+"\n")
+        envfile.write_text(body)
         envfile.chmod(0o600)
-        print("Engine source engine-up: start owned PostgreSQL", flush=True)
-        engine_compose(directory,"up","-d","--wait","--wait-timeout","120","postgres")
+        print("Engine source engine-up: start owned " + profile["kind"], flush=True)
+        engine_compose(directory,"up","-d","--wait","--wait-timeout","120",service)
         return
     if not owner.exists():
         for args in (["ps","-aq"],["network","ls","-q"],["volume","ls","-q"]):
@@ -651,20 +692,21 @@ def engine_source_action(directory, action):
     for container in ids:
         labels=json.loads(command(["docker","inspect","--format",'{{json .Config.Labels}}',container]))
         if (labels.get("com.docker.compose.project.working_dir")!=str(ROOT/"business")
-                or labels.get("com.docker.compose.service")!="postgres"):
+                or labels.get("com.docker.compose.service")!=service):
             raise ValueError("refusing a foreign Business component")
     if action in ("engine-metrics-up", "engine-metrics-pause", "engine-metrics-resume"):
         engine_metrics_action(directory, action)
         return
     if action=="engine-restart":
+        if service != "postgres": raise ValueError("Redis profile does not restart database containers")
         if len(ids)!=1: raise ValueError("Business PostgreSQL identity is not unique")
         print("Engine source engine-restart: restart owned PostgreSQL and refresh source", flush=True)
         engine_compose(directory,"restart","--timeout","10","postgres")
-        engine_compose(directory,"up","-d","--wait","--wait-timeout","120","postgres")
+        engine_compose(directory,"up","-d","--wait","--wait-timeout","120",service)
         subprocess.run([sys.executable,str(ROOT/"scripts/utils/deployment-inventory.py"),"refresh","--scope","business","--directory",os.environ.get("ADDP_DEPLOYMENT_DISCOVERY_DIR") or str(ROOT/".dev-state/deployment-discovery")],
                        env=SOURCE.observer_environment(), check=True, capture_output=True, text=True, timeout=40)
         return
-    print("Engine source engine-down: remove owned PostgreSQL and verify zero residuals", flush=True)
+    print("Engine source engine-down: remove owned " + profile["kind"] + " and verify zero residuals", flush=True)
     metrics_failed = False
     try:
         engine_metrics_action(directory, action)
@@ -676,7 +718,7 @@ def engine_source_action(directory, action):
             raise ValueError("Business source has residual resources")
     owner.unlink(); (directory/"engine-source.env").unlink(missing_ok=True)
     if metrics_failed:
-        raise ValueError("PostgreSQL source cleanup failed; core Business destruction was still attempted")
+        raise ValueError("Engine source cleanup failed; core Business destruction was still attempted")
 
 
 # Fault injection is a private fixture action, never a product lifecycle option.

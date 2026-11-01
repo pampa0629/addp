@@ -238,7 +238,7 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		physical[resolved.Address] = true
 		groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
 			"__scheme__": "https", "__metrics_path__": "/metrics",
-			"addp_monitor_kind": "engine_resources", "addp_source": "postgresql",
+			"addp_monitor_kind": "engine_resources", "addp_source": engine.EngineType,
 			"addp_deployment_id": engine.DeploymentID, "addp_database_container_id": engine.Metrics.ContainerID,
 			"addp_database_container_started_at": engine.Metrics.StartedAt.UTC().Format(time.RFC3339Nano),
 		}})

@@ -7,22 +7,36 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ONLINE_SUITE=platform-node-metrics
 ADDP_ONLINE_NODE_METRICS_CASE=${ADDP_ONLINE_NODE_METRICS_CASE-regression}
 case "$ADDP_ONLINE_NODE_METRICS_CASE" in
-  regression|complete-comparison|cpu-pressure|host-admission|engine-admission|meta-workers|transfer-workers|quality-workers|service-availability) export ADDP_ONLINE_NODE_METRICS_CASE ;;
-  *) echo 'Hosted node metrics case must be regression, complete-comparison, cpu-pressure, host-admission, engine-admission, meta-workers, transfer-workers, quality-workers or service-availability' >&2; exit 2 ;;
+  regression|complete-comparison|cpu-pressure|host-admission|engine-admission|redis-engine-admission|meta-workers|transfer-workers|quality-workers|service-availability) export ADDP_ONLINE_NODE_METRICS_CASE ;;
+  *) echo 'Hosted node metrics case must be regression, complete-comparison, cpu-pressure, host-admission, engine-admission, redis-engine-admission, meta-workers, transfer-workers, quality-workers or service-availability' >&2; exit 2 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=()
 HOSTED_FIXTURE_IMAGES=()
+HOSTED_FIXTURE_VOLUMES=()
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-node-metrics addp-metrics-online)
 node_owned=0
 engine_owned=0
 if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ]; then
   HOSTED_FIXTURE_COMPOSE_PROJECTS+=(business addp-postgres-metrics-infra addp-postgres-metrics-business)
 fi
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then
+  # Read-only names from the production owner; never duplicate its hash scheme.
+  redis_projects=$(python3 -B -c 'import importlib.util; s=importlib.util.spec_from_file_location("inventory","scripts/utils/deployment-inventory.py"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.redis_metrics_project("infra"),m.redis_metrics_project("business"))')
+  read -r redis_infra_project redis_business_project <<< "$redis_projects"
+  [[ "$redis_infra_project" =~ ^addp-redis-metrics-[a-f0-9]{16}-infra$ && "$redis_business_project" =~ ^addp-redis-metrics-[a-f0-9]{16}-business$ ]] || exit 2
+  HOSTED_FIXTURE_COMPOSE_PROJECTS+=(business "$redis_infra_project" "$redis_business_project")
+  HOSTED_FIXTURE_VOLUMES+=("$redis_infra_project-private" "$redis_business_project-private")
+fi
 stop_online_fixture() {
   local status=0
   if [ "$engine_owned" -eq 1 ]; then
     run_logged python3 scripts/test/platform-node-metrics-fixture.py engine-down || status=1
   fi
+  for volume in "${HOSTED_FIXTURE_VOLUMES[@]:-}"; do
+    [ -n "$volume" ] || continue
+    remaining=$(docker volume ls -q --filter "name=^$volume$") || status=1
+    [ -z "$remaining" ] || status=1
+  done
   run_logged python3 scripts/test/platform-node-metrics-fixture.py down || status=1
   if [ "$node_owned" -eq 1 ]; then
     run_logged python3 scripts/infra/node-metrics.py down || status=1
@@ -53,6 +67,9 @@ fi
 export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1800
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 # Core Infra is created independently; metrics preparation and startup follow.
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then
+  export REDIS_PASSWORD="$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
+fi
 infra_owned=1
 run_logged env ADDP_OBSERVABILITY_METRICS_ENABLED=false ADDP_OBSERVABILITY_LOGS_ENABLED=false bash scripts/infra/up.sh
 fixture_owned=1
@@ -65,13 +82,13 @@ run_logged python3 scripts/test/platform-node-metrics-fixture.py up
 run_logged bash scripts/infra/up.sh
 run_logged python3 scripts/test/platform-node-metrics-fixture.py query
 source "$ADDP_ONLINE_SECRET_DIR/metrics.env"
-if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ]; then
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then
   engine_owned=1
   run_logged python3 scripts/test/platform-node-metrics-fixture.py engine-up
 fi
 application_owned=1
 modules=(-monitor)
-if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ]; then modules+=(-system); fi
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then modules+=(-system); fi
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "${modules[@]}"
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite platform-node-metrics --output "$1"' _ "$IDENTITY_ENV"

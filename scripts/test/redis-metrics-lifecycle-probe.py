@@ -13,6 +13,7 @@ import time
 import traceback
 import urllib.error
 import urllib.request
+from unittest import mock
 
 ROOT=Path(__file__).resolve().parents[2]
 spec=importlib.util.spec_from_file_location('redis_metrics_probe',ROOT/'scripts/infra/redis-metrics.py')
@@ -92,12 +93,20 @@ def probe(scope,docker,root,tls):
     manager=module.Lifecycle(docker,scope,state,factory,project=PROJECT+'-metrics-'+scope)
     env={'ADDP_REDIS_METRICS_ENABLED':'true','ADDP_REDIS_METRICS_LISTEN':f'127.0.0.1:{port}','ADDP_REDIS_METRICS_TLS_DIR':str(tls)}
     ctx=context(root)
+    def discovered():
+        database=factory()
+        current={database.identity:('redis',{'container_id':database.identity,'started_at':database.facts['started_at'],'status':'running'})}
+        # Only substitute the disposable namespace; the production collector
+        # reads actual Docker facts and uses its unchanged validation path.
+        with mock.patch.object(module.inventory,'redis_metrics_project',return_value=manager.project):
+            return module.inventory.redis_metrics(lambda *args:docker.run(list(args)),scope,current)
     initial=factory()
     if initial.cli(['SET','addp:observation:preserve','retained'])!='OK':raise AssertionError('disposable marker failed')
     try:
         manager.run('up',env)
         saved=module.decode(module.private.read(state/'owner.json',0o600)[0]);password=saved['password']
         body=ready(port,ctx)
+        if discovered()!={'state':'available','endpoint':f'https://127.0.0.1:{port}/metrics','container_id':factory().identity,'started_at':factory().facts['started_at']}:raise AssertionError('actual Redis source discovery failed')
         if password in body or os.environ['BUSINESS_REDIS_ADMIN_PASSWORD'] in body or 'run_id' in body:raise AssertionError('secret or raw identity escaped metrics')
         epoch=re.search(r'counter_epoch="([0-9a-f]{64})"',body)
         if not epoch:raise AssertionError('counter runtime identity absent')
@@ -122,6 +131,7 @@ def probe(scope,docker,root,tls):
             except ValueError:pass
             if time.monotonic()>=deadline:raise AssertionError('owned Redis did not restart')
             time.sleep(.1)
+        if discovered()!={'state':'unavailable'}:raise AssertionError('old source remained eligible after database restart')
         after=ready(port,ctx)
         if epoch.group(1) in after:raise AssertionError('Redis restart mixed counter generations')
         if current.cli(['GET','addp:observation:preserve'])!='retained':raise AssertionError('Redis restart lost data')
@@ -130,7 +140,9 @@ def probe(scope,docker,root,tls):
         manager.run('up',env)
         if module.decode(module.private.read(state/'owner.json',0o600)[0])['password']!=password:raise AssertionError('restart rotated credential')
         ready(port,ctx)
+        if discovered().get('state')!='available':raise AssertionError('reapplied source did not restore discovery')
         manager.run('down',env);assert_clean(docker,manager)
+        if discovered()!={'state':'not_deployed'}:raise AssertionError('stopped source remained discovered')
         if not module.matches(factory().account(),p['password_hash'],False):raise AssertionError('observer not disabled')
         command(COMPOSE+['restart',service]);current=factory()
         deadline=time.monotonic()+15
@@ -175,7 +187,7 @@ def probe(scope,docker,root,tls):
             if time.monotonic()>=deadline:raise AssertionError('restored owned record did not reload')
             time.sleep(.1)
         manager.run('down',env)
-        print('Redis lifecycle T2 '+scope+': mTLS, restart persistence, fixed runtime generation, stop, corrupt-record isolation and failure cleanup passed',flush=True)
+        print('Redis lifecycle T2 '+scope+': mTLS, exact live discovery, restart persistence, fixed runtime generation, stop, corrupt-record isolation and failure cleanup passed',flush=True)
     finally:
         try:manager.run('down',env)
         finally:manager.stop_sources();assert_clean(docker,manager)

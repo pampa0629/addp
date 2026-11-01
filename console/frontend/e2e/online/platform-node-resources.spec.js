@@ -8,7 +8,7 @@ import { processMetrics, validateProcessInstances, validateProcessSummaries, val
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
 import { scalarResourceReceipts, readFilesystemMountTable, readResourceHeatmap, readBlockCapacityTable } from './node-resource-receipts.js'
-import { engineMetrics, engineSummaryMetrics, validateEngineResources } from '../../../../monitor/frontend/src/utils/engineResources.js'
+import { engineMetricsFor, engineSummaryFor, engineDetailMetrics, validateEngineResources } from '../../../../monitor/frontend/src/utils/engineResources.js'
 
 // Login failures must never capture MFA input or credentials.
 test.use({ screenshot: 'off', trace: 'off' })
@@ -141,28 +141,55 @@ test('platform node resources through real Console password MFA and Monitor ifra
     }
     if (expected.engine_resources) {
       const owners = expected.engine_resources.owners
+      const kind = owners[0].engine_type, catalog = engineMetricsFor(kind)
+      const trendKey = kind === 'redis' ? 'redis.commands.per_second' : 'postgresql.transactions.committed_per_second'
+      const typeQuery = kind === 'redis' ? '&engine_type=redis' : ''
       save('engine-professional-list')
-      await page.goto('/monitor/engine-resources?refresh=off')
+      await page.goto('/monitor/engine-resources?refresh=off' + typeQuery)
       await expect(monitor.getByTestId('engine-list').getByRole('button', { name: '查看监控', exact: true })).toHaveCount(2)
       for (const owner of owners) await expect(monitor.getByTestId('engine-list')).toContainText(owner.display_name)
       await page.screenshot({ path: resolve(artifact, 'engine-resources-list.png'), fullPage: true, animations: 'disabled' })
       for (const owner of owners) {
         save('engine-professional-detail')
-        const path = '/monitor/engine-resources?refresh=off&deployment_id=' + owner.deployment_id
+        const path = '/monitor/engine-resources?refresh=off' + typeQuery + '&deployment_id=' + owner.deployment_id
         await page.goto(path)
-        await expect(monitor.getByTestId('engine-metrics').locator('strong')).toHaveCount(12)
-        for (const metric of engineMetrics) await expect(monitor.getByTestId('engine-value-' + metric.name)).not.toHaveText('—')
-        await expect(monitor.getByTestId('engine-value-total')).toHaveText(/^\d[\d,]* 个$/)
-        await expect(monitor.getByTestId('engine-value-capacity')).toHaveText(/^\d[\d,.]* (?:MiB|GiB|TiB)$/)
-        // No workload fabricates this zero: the owned databases have no deadlocks.
-        await expect(monitor.getByTestId('engine-value-deadlocks')).toHaveText('0.00 次/秒')
-        await expect(monitor.getByTestId('engine-trend').getByRole('img', { name: '每秒事务提交', exact: true })).toBeVisible()
-        await expect(monitor.getByTestId('engine-trend')).toContainText('当前数据库容器')
+        const verifyCards = async (metrics) => {
+          await expect(monitor.getByTestId('engine-metrics').locator('strong')).toHaveCount(metrics.length)
+          for (const metric of metrics) {
+            const field = monitor.getByTestId('engine-value-' + metric.name)
+            if (kind === 'redis' && metric.name === 'redisPercent' && owner.inventory.source.project === 'addp-infra') await expect(field).toHaveText('—')
+            else if (metric.name !== 'redisHitPercent') await expect(field).not.toHaveText('—')
+            await expect(monitor.getByTestId('engine-metric-' + metric.name).getByRole('heading').getByRole('button')).toBeVisible()
+          }
+        }
+        if (kind === 'redis') {
+          await verifyCards(engineDetailMetrics(kind, 'redis.memory.used_percent'))
+          await expect(monitor.getByTestId('engine-value-redisAllocated')).toHaveText(/^\d[\d,.]* (?:B|KiB|MiB|GiB)$/)
+          await expect(monitor.getByTestId('engine-value-redisConnections')).toHaveText(/^\d[\d,]* 个$/)
+          if (owner.inventory.source.project === 'addp-infra') await expect(monitor.getByTestId('engine-value-redisLimit')).toHaveText('未设置内存上限')
+          await monitor.getByRole('tab', { name: '持久化状态', exact: true }).click()
+          await verifyCards(engineDetailMetrics(kind, 'redis.persistence.aof_enabled'))
+          await expect(monitor.getByTestId('engine-value-redisAOF')).toHaveText(owner.inventory.source.project === 'business' ? '已启用' : '已关闭')
+          await monitor.getByRole('tab', { name: '吞吐与命中', exact: true }).click()
+          await verifyCards(engineDetailMetrics(kind, trendKey))
+          await expect(monitor.getByTestId('engine-value-redisEvictions')).toHaveText('0.00 次/秒')
+        } else {
+          await verifyCards(catalog)
+          await expect(monitor.getByTestId('engine-value-total')).toHaveText(/^\d[\d,]* 个$/)
+          await expect(monitor.getByTestId('engine-value-capacity')).toHaveText(/^\d[\d,.]* (?:MiB|GiB|TiB)$/)
+          await expect(monitor.getByTestId('engine-value-deadlocks')).toHaveText('0.00 次/秒')
+        }
+        const trendMetric = catalog.find(metric => metric.key === trendKey)
+        await expect(monitor.getByTestId('engine-trend').getByRole('img', { name: kind === 'redis' ? '每秒处理命令' : '每秒事务提交', exact: true })).toBeVisible()
+        const scopeHelp = monitor.getByTestId('engine-range-help').getByRole('button')
+        await scopeHelp.focus()
+        await expect(monitor.getByRole('tooltip')).toContainText('当前数据库容器')
+        await scopeHelp.blur()
         await expect(monitor.getByTestId('engine-metrics')).not.toContainText('/metrics')
         await page.reload()
-        await expect(page).toHaveURL(new RegExp('deployment_id=' + owner.deployment_id + '$'))
-        await expect(monitor.getByTestId('engine-value-total')).not.toHaveText('—')
-        await expect(monitor.getByTestId('engine-trend').getByRole('img', { name: '每秒事务提交', exact: true })).toBeVisible()
+        await expect(page).toHaveURL(new RegExp('deployment_id=' + owner.deployment_id))
+        await expect(monitor.getByTestId('engine-value-' + trendMetric.name)).not.toHaveText('—')
+        await expect(monitor.getByTestId('engine-trend').locator('canvas')).toBeVisible()
       }
       await page.screenshot({ path: resolve(artifact, 'engine-resources-detail.png'), fullPage: true, animations: 'disabled' })
       await Promise.all(pending)
@@ -170,7 +197,9 @@ test('platform node resources through real Console password MFA and Monitor ifra
         expect(receipt.status).toBe(200)
         const summary = receipt.path.endsWith('_summaries'), trend = receipt.path.endsWith('_trends')
         const subjects = summary ? owners : owners.filter(owner => owner.deployment_id === receipt.query.deployment_id)
-        validateEngineResources(receipt.value, subjects, summary ? engineSummaryMetrics : trend ? [engineMetrics[8]] : engineMetrics, trend ? receipt.query : null)
+        const metrics = summary ? engineSummaryFor(kind) : catalog.filter(metric => receipt.query.metrics.split(',').includes(metric.key))
+        expect(metrics).toHaveLength(summary ? 4 : trend ? 1 : engineDetailMetrics(kind, receipt.query.metrics.split(',')[0]).length)
+        validateEngineResources(receipt.value, subjects, metrics, trend ? receipt.query : null)
       }
       save('engine-professional-permission-denied')
       const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
@@ -200,7 +229,13 @@ test('platform node resources through real Console password MFA and Monitor ifra
       expect((await discovered).status()).toBe(200)
       await expect(system.getByTestId('deployment-file')).toHaveCount(0)
       for (const item of input.items) await system.getByRole('textbox', { name: `${item.scope} ${item.service}`, exact: true }).fill(item.display_name)
-      await system.getByTestId('deployment-candidates').locator('.el-table__header .el-checkbox').click()
+      for (const item of input.items) {
+        const scope = item.scope === 'infra' ? 'Infra' : 'Business'
+        const row = system.getByTestId('deployment-candidates').getByRole('row').filter({ hasText: `${scope} / ${item.service}` })
+        await expect(row).toHaveCount(1)
+        await expect(row.locator('.el-checkbox')).toBeEnabled()
+        await row.locator('.el-checkbox').click()
+      }
       await system.getByRole('dialog').getByRole('combobox', { name: '承载主机', exact: true }).press('Enter')
       await system.getByRole('option', { name: input.host.display_name, exact: true }).click()
       const submitted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/platform/engine_deployments' && response.request().method() === 'POST')
@@ -238,7 +273,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       }
       await system.getByTestId('deployment-create').click()
       for (const scope of ['Infra', 'Business']) {
-        const row = system.getByTestId('deployment-candidates').getByRole('row').filter({ hasText: `${scope} / postgres` })
+        const row = system.getByTestId('deployment-candidates').getByRole('row').filter({ hasText: `${scope} / ${input.items[0].service}` })
         await expect(row).toContainText('已接入')
         await expect(row.locator('.el-checkbox')).toBeDisabled()
       }

@@ -281,6 +281,26 @@ class MetricsFixtureTest(unittest.TestCase):
             subprocess.run(['openssl','verify','-verify_ip','172.17.0.1','-purpose','sslserver','-CAfile',str(folder/'ca.crt'),str(folder/'server.crt')],check=True,capture_output=True)
         self.assertFalse((self.secret/'postgres-sources').exists())  # TLS preparation performs no SQL or source startup.
 
+    def test_redis_profile_prepares_only_current_source_tls_and_ports(self):
+        original = FIXTURE.command
+        def command(args):
+            if args[:4] == ["docker", "network", "inspect", "bridge"]:
+                return '[{"IPAM":{"Config":[{"Gateway":"172.17.0.1"}]}}]'
+            return original(args)
+        with patch.dict(os.environ, dict(self.env, ADDP_ONLINE_NODE_METRICS_CASE="redis-engine-admission")), patch.object(FIXTURE, "command", side_effect=command), patch.object(FIXTURE.socket, "socket"):
+            FIXTURE.prepare(self.secret)
+        import shlex
+        values = {key:shlex.split(value)[0] for key,value in (line.removeprefix('export ').split('=',1) for line in (self.secret/'metrics.env').read_text().splitlines())}
+        self.assertEqual(values['MONITOR_METRICS_ALLOWED_PORTS'], '19100,19101,19102,19401,19402')
+        self.assertEqual(values['ADDP_REDIS_METRICS_STATE_DIR'], str(self.secret/'redis-sources'))
+        self.assertNotIn('ADDP_POSTGRES_METRICS_STATE_DIR', values)
+        for scope in ('infra','business'):
+            folder = self.secret/('redis-'+scope)
+            self.assertEqual((folder/'server.key').stat().st_mode & 0o777, 0o600)
+            self.assertEqual((folder/'ca.crt').read_bytes(), (self.secret/'admission/ca.crt').read_bytes())
+            subprocess.run(['openssl','verify','-verify_ip','172.17.0.1','-purpose','sslserver','-CAfile',str(folder/'ca.crt'),str(folder/'server.crt')],check=True,capture_output=True)
+        self.assertFalse((self.secret/'redis-sources').exists())
+
     def test_cleanup_refuses_foreign_container_before_compose(self):
         with patch.object(FIXTURE, "command", side_effect=["foreign-id", '[{"Config":{"Labels":{}}}]']) as command:
             with self.assertRaises(ValueError):
@@ -399,7 +419,7 @@ class EngineSourceFixtureTest(unittest.TestCase):
     def test_professional_source_dispatch_uses_two_private_scopes_without_platform_passwords(self):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder).resolve()
-            env = {"ADDP_POSTGRES_METRICS_STATE_DIR":str(directory/"postgres-sources"), "POSTGRES_USER":"owned_admin",
+            env = {"ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission", "ADDP_POSTGRES_METRICS_STATE_DIR":str(directory/"postgres-sources"), "POSTGRES_USER":"owned_admin",
                    "POSTGRES_PASSWORD":"private-sentinel", "SYSTEM_SERVICE_CLIENT_SECRET":"private-sentinel", "ADDP_ONLINE_METRICS_NODE_IP":"172.17.0.1"}
             with patch.dict(os.environ, env), patch.object(FIXTURE.subprocess, "run") as run:
                 FIXTURE.engine_metrics_action(directory, "engine-metrics-up")
@@ -422,7 +442,7 @@ class EngineSourceFixtureTest(unittest.TestCase):
     def test_cleanup_attempts_both_sources_and_reports_closed_failure(self):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder).resolve()
-            env = {"ADDP_POSTGRES_METRICS_STATE_DIR":str(directory/"postgres-sources"), "POSTGRES_USER":"owned_admin", "ADDP_ONLINE_METRICS_NODE_IP":"172.17.0.1"}
+            env = {"ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission", "ADDP_POSTGRES_METRICS_STATE_DIR":str(directory/"postgres-sources"), "POSTGRES_USER":"owned_admin", "ADDP_ONLINE_METRICS_NODE_IP":"172.17.0.1"}
             with patch.dict(os.environ, env), patch.object(FIXTURE.subprocess, "run", side_effect=[subprocess.CalledProcessError(1, ['private-sentinel'], stderr='private-sentinel'), None]) as run:
                 with self.assertRaisesRegex(ValueError, '^Owned PostgreSQL source cleanup failed$'): FIXTURE.engine_metrics_action(directory, "engine-down")
                 self.assertEqual([call.args[0][-1] for call in run.call_args_list], ['business', 'infra'])
@@ -481,6 +501,82 @@ class EngineSourceFixtureTest(unittest.TestCase):
             self.assertIn("--project-directory",run.call_args.args[0]);self.assertIn("business",run.call_args.args[0])
 
 
+class RedisEngineSourceFixtureTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="addp-redis-hosted-test-")
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name).resolve()
+        self.env = {"ADDP_ONLINE_NODE_METRICS_CASE":"redis-engine-admission", "GITHUB_RUN_ID":"12345", "GITHUB_RUN_ATTEMPT":"1",
+                    "ADDP_REDIS_METRICS_STATE_DIR":str(self.directory/"redis-sources"), "ADDP_ONLINE_METRICS_NODE_IP":"172.17.0.1",
+                    "REDIS_PASSWORD":"infra-only-secret", "POSTGRES_PASSWORD":"must-not-propagate", "SYSTEM_SERVICE_CLIENT_SECRET":"must-not-propagate"}
+        self.environment = patch.dict(os.environ, self.env); self.environment.start(); self.addCleanup(self.environment.stop)
+
+    def prepare(self):
+        with patch.object(FIXTURE.SOURCE, "local_docker"), patch.object(FIXTURE, "command", return_value=""), patch.object(FIXTURE, "engine_compose") as compose:
+            FIXTURE.engine_source_action(self.directory, "engine-up")
+            compose.assert_called_once_with(self.directory, "up", "-d", "--wait", "--wait-timeout", "120", "redis")
+        self.assertFalse((self.directory/"postgres-auth").exists())
+        values = dict(line.split("=", 1) for line in (self.directory/"engine-source.env").read_text().splitlines())
+        self.assertEqual(set(values), {"BUSINESS_REDIS_ADMIN_PASSWORD", "BUSINESS_REDIS_READER_PASSWORD", "BUSINESS_REDIS_PORT"})
+        self.assertNotEqual(values['BUSINESS_REDIS_ADMIN_PASSWORD'], values['BUSINESS_REDIS_READER_PASSWORD'])
+        return values
+
+    def test_standard_owner_installs_only_each_scopes_credentials_and_pause_is_business_only(self):
+        values = self.prepare()
+        with patch.object(FIXTURE.subprocess, "run") as run:
+            FIXTURE.engine_metrics_action(self.directory, "engine-metrics-up")
+            installs = [call for call in run.call_args_list if call.args[0][1].endswith('/redis-metrics.py')]
+            self.assertEqual([call.args[0][-1] for call in installs], ['business','infra'])
+            for call in installs:
+                env = call.kwargs['env']; scope = call.args[0][-1]
+                self.assertEqual(env['ADDP_REDIS_METRICS_LISTEN'], '172.17.0.1:'+str(FIXTURE.POSTGRES_PORTS[scope]))
+                self.assertEqual(env['ADDP_REDIS_METRICS_TLS_DIR'], str(self.directory/('redis-'+scope)))
+                self.assertNotIn('must-not-propagate', json.dumps(env))
+                if scope == 'infra':
+                    self.assertEqual(env['REDIS_PASSWORD'], 'infra-only-secret')
+                    self.assertNotIn('BUSINESS_REDIS_ADMIN_PASSWORD', env)
+                else:
+                    self.assertEqual(env['BUSINESS_REDIS_ADMIN_PASSWORD'], values['BUSINESS_REDIS_ADMIN_PASSWORD'])
+                    self.assertNotIn('REDIS_PASSWORD', env)
+                    self.assertNotIn('BUSINESS_REDIS_READER_PASSWORD', env)
+                self.assertNotIn(env.get('REDIS_PASSWORD', env.get('BUSINESS_REDIS_ADMIN_PASSWORD')), str(call.args))
+            run.reset_mock()
+            FIXTURE.engine_metrics_action(self.directory, 'engine-metrics-pause')
+            pauses = [call for call in run.call_args_list if call.args[0][1].endswith('/redis-metrics.py')]
+            self.assertEqual(len(pauses), 1)
+            self.assertEqual(pauses[0].args[0][-3:], ['down','--scope','business'])
+            self.assertEqual(run.call_count, 2)  # lifecycle plus the same scope's read-only refresh
+
+    def test_redis_database_restart_and_cross_profile_or_foreign_cleanup_are_rejected(self):
+        self.prepare()
+        identifier = 'a'*64
+        def facts(args):
+            if args[:3] == ['docker','ps','-aq']: return identifier
+            return json.dumps({'com.docker.compose.project.working_dir':str(FIXTURE.ROOT/'business'),'com.docker.compose.service':'redis'})
+        with patch.object(FIXTURE.SOURCE,'local_docker'), patch.object(FIXTURE,'command',side_effect=facts), patch.object(FIXTURE,'engine_compose') as compose:
+            with self.assertRaisesRegex(ValueError, 'does not restart'): FIXTURE.engine_source_action(self.directory,'engine-restart')
+            with patch.dict(os.environ, ADDP_ONLINE_NODE_METRICS_CASE='engine-admission'), self.assertRaisesRegex(ValueError, 'owner differs'):
+                FIXTURE.engine_source_action(self.directory,'engine-down')
+            compose.assert_not_called()
+
+    def test_insecure_private_credentials_reject_before_source_start(self):
+        self.prepare()
+        (self.directory/'engine-source.env').chmod(0o644)
+        with patch.object(FIXTURE.subprocess,'run') as run, self.assertRaises(ValueError):
+            FIXTURE.engine_metrics_action(self.directory,'engine-metrics-up')
+        run.assert_not_called()
+
+    def test_cleanup_attempts_infra_when_business_credentials_cannot_be_read(self):
+        self.prepare()
+        (self.directory/'engine-source.env').chmod(0o644)
+        with patch.object(FIXTURE.subprocess, 'run') as run, self.assertRaisesRegex(ValueError, 'Redis source cleanup failed'):
+            FIXTURE.engine_metrics_action(self.directory, 'engine-down')
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0][-3:], ['down', '--scope', 'infra'])
+        self.assertEqual(run.call_args.kwargs['env']['REDIS_PASSWORD'], 'infra-only-secret')
+        self.assertNotIn('BUSINESS_REDIS_ADMIN_PASSWORD', run.call_args.kwargs['env'])
+
+
 class EngineSourceCommandTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="addp-engine-command-")
@@ -494,14 +590,14 @@ class EngineSourceCommandTest(unittest.TestCase):
         for folder in ("scripts/test", "scripts/utils", "scripts/infra/postgres-observation", "business/postgres"):
             (self.repo / folder).mkdir(parents=True)
         for relative in ("scripts/test/platform-node-metrics-fixture.py", "scripts/utils/deployment-inventory.py",
-                         "scripts/utils/private-state.py", "scripts/utils/deployment-docker.py",
+                         "scripts/utils/private-state.py", "scripts/utils/deployment-docker.py", "scripts/infra/redis-metrics.py",
                          "scripts/infra/postgres-observation/authentication.py", "scripts/infra/postgres-observation/source.py",
                          "scripts/infra/postgres-observation/lifecycle.py", "scripts/infra/postgres-observation/000002_lifecycle.sql",
                          "business/postgres/pg_hba.conf"):
             shutil.copy2(FIXTURE.ROOT / relative, self.repo / relative)
         # Only OS facts and Docker transport are fixtures. Execute the actual CLI,
         # module loader, source validation and ownership files in a fresh process.
-        for folder in ("scripts/test", "scripts/utils", "scripts/infra/postgres-observation"):
+        for folder in ("scripts/test", "scripts/utils", "scripts/infra", "scripts/infra/postgres-observation"):
             (self.repo / folder / "platform.py").write_text('def system(): return "Linux"\ndef machine(): return "x86_64"\n')
         self.env = dict(PATH=str(self.bin), GITHUB_ACTIONS="true", RUNNER_OS="Linux", ADDP_ONLINE_HOSTED="1",
                         ADDP_ONLINE_HOST="1", ONLINE_SUITE="platform-node-metrics", POSTGRES_DB="addp_online",
@@ -522,11 +618,13 @@ if args[:2] == ["context", "show"]: print("default")
 elif args[:2] == ["context", "inspect"]: print(json.dumps("unix:///var/run/docker.sock"))
 elif args[0] == "info": print(json.dumps(dict(id="fixture-daemon", os_type="linux", operating_system="Linux")))
 elif args[0] == "ps":
-    if state.exists() and not any("addp-postgres-metrics-" in arg for arg in args): print("a" * 64)
+    if state.exists() and not any("addp-postgres-metrics-" in arg or "addp-redis-metrics-" in arg for arg in args): print("a" * 64)
 elif args[0] in ("network", "volume"):
-    if state.exists(): print("owned-resource")
+    if state.exists() and not any("addp-redis-metrics-" in arg for arg in args): print("owned-resource")
 elif args[0] == "inspect":
-    service = "redis" if (root / "foreign").exists() else "postgres"
+    import os
+    service = "redis" if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "redis-engine-admission" else "postgres"
+    if (root / "foreign").exists(): service = "postgres" if service == "redis" else "redis"
     working_dir = str(root / "repository/business")
     if args[args.index("--format") + 1] == "{{json .Config.Labels}}":
         print(json.dumps({"com.docker.compose.project.working_dir": working_dir, "com.docker.compose.service": service}))
@@ -551,6 +649,24 @@ else: sys.exit(19)
         if success: self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else: self.assertNotEqual(result.returncode, 0)
         return result
+
+    def test_redis_standalone_cli_uses_standard_start_and_refuses_foreign_cleanup(self):
+        self.env.update(ADDP_ONLINE_NODE_METRICS_CASE="redis-engine-admission", ADDP_REDIS_METRICS_STATE_DIR=str(self.secret/'redis-sources'), REDIS_PASSWORD='infra-private-fixture')
+        self.cli('engine-up')
+        self.assertFalse((self.secret/'postgres-auth').exists())
+        owner = json.loads((self.secret/'engine-source-owner.json').read_text())
+        self.assertEqual(owner['service'], 'redis')
+        self.env['GITHUB_RUN_ATTEMPT'] = '2'
+        self.cli('engine-down', success=False)
+        self.assertTrue((self.root/'docker-state').exists())
+        self.env['GITHUB_RUN_ATTEMPT'] = '1'
+        (self.root/'foreign').touch()
+        self.cli('engine-down', success=False)
+        self.assertTrue((self.root/'docker-state').exists())
+        (self.root/'foreign').unlink()
+        self.cli('engine-down')
+        self.assertFalse((self.root/'docker-state').exists())
+        self.assertEqual({p.name for p in self.secret.iterdir()}, {'redis-sources'})
 
     def test_standalone_cli_starts_refreshes_and_cleans_without_pythonpath(self):
         self.cli("engine-up")

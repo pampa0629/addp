@@ -113,7 +113,7 @@ func TestEngineDeploymentAPIRejectsUnauthorizedAndMalformedInput(t *testing.T) {
 		request("POST", path, body, 400)
 	}
 
-	for _, query := range []string{"page=", "page=0", "page_size=101", "page=1&page=2", "tenant_id=1", "node_id=wrong", "search=%00", "search=%ZZ"} {
+	for _, query := range []string{"engine_type=", "engine_type=redis&engine_type=postgresql", "engine_type=mysql", "page=", "page=0", "page_size=101", "page=1&page=2", "tenant_id=1", "node_id=wrong", "search=%00", "search=%ZZ"} {
 		request("GET", path+"?"+query, "", 400)
 	}
 	request("GET", path, "{}", 400)

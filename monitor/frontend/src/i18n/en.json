@@ -1345,7 +1345,7 @@
       "title": "Engine monitoring",
       "denied": "This account cannot read platform engine monitoring",
       "search": "Search deployment name",
-      "empty": "No admitted PostgreSQL deployments",
+      "empty": "No admitted deployments of this type",
       "name": "Engine deployment",
       "collection": "Collection status",
       "details": "View monitoring",
@@ -1358,7 +1358,11 @@
       "units": {
         "connections": "connections",
         "transactions_per_second": "transactions/s",
-        "events_per_second": "events/s"
+        "events_per_second": "events/s",
+        "percent": "%",
+        "seconds": "s",
+        "commands_per_second": "commands/s",
+        "status": ""
       },
       "states": {
         "collecting": "Collecting",
@@ -1382,7 +1386,29 @@
         "committed": "Commits per second",
         "rolledBack": "Rollbacks per second",
         "deadlocks": "Deadlocks per second",
-        "capacity": "Total database size"
+        "capacity": "Total database size",
+        "redisUptime": "Redis uptime",
+        "redisAllocated": "Redis allocated memory",
+        "redisRSS": "Resident memory (RSS)",
+        "redisLimit": "Redis memory limit",
+        "redisExcluded": "Memory excluded from limit",
+        "redisCounted": "Memory counted against limit",
+        "redisPercent": "Redis memory limit usage",
+        "redisConnections": "Current connections",
+        "redisMaximum": "Maximum connections",
+        "redisBlocked": "Blocked connections",
+        "redisCommands": "Commands per second",
+        "redisHits": "Key hits per second",
+        "redisMisses": "Key misses per second",
+        "redisHitPercent": "Key lookup hit rate (1 minute)",
+        "redisEvictions": "Evictions per second",
+        "redisRejected": "Rejected connections per second",
+        "redisOOM": "OOM errors per second",
+        "redisLoading": "Data loading",
+        "redisAOF": "AOF enabled",
+        "redisRDB": "Last RDB save result",
+        "redisAOFWrite": "Last AOF write result",
+        "redisAOFRewrite": "Last AOF rewrite result"
       },
       "hints": {
         "total": "Client connections excluding this observation session.",
@@ -1396,7 +1422,58 @@
         "committed": "Full one-minute commit rate, including observation traffic; not business throughput.",
         "rolledBack": "Full one-minute rollback rate; not directly a count of business failures.",
         "deadlocks": "Full one-minute deadlock rate; missing or reset statistics are not zero-filled.",
-        "capacity": "Total size of non-template databases, without tenant attribution."
+        "capacity": "Total size of non-template databases, without tenant attribution.",
+        "redisUptime": "Uptime of the current Redis process; resets after a process restart.",
+        "redisAllocated": "Memory allocated by Redis; differs from RSS and container limits.",
+        "redisRSS": "Resident memory of the Redis process, not the memory counted against maxmemory.",
+        "redisLimit": "A zero maxmemory means no Redis limit, not unlimited host or container memory.",
+        "redisExcluded": "mem_not_counted_for_evict, excluded from the Redis maxmemory calculation.",
+        "redisCounted": "Allocated memory minus excluded memory; host memory is not used as a denominator.",
+        "redisPercent": "Counted memory divided by maxmemory; unavailable without a limit and may exceed 100%. Not RSS usage or an OOM safety guarantee.",
+        "redisConnections": "Includes observation connections across the Redis instance; not business or tenant connections.",
+        "redisMaximum": "Configured maxclients, not the number of active business connections.",
+        "redisBlocked": "Connections waiting in blocking operations; alone this does not establish a fault.",
+        "redisCommands": "Instance-wide rate over a complete minute, including observation commands; not business QPS. Gaps, resets and restarts leave no value.",
+        "redisHits": "Rate of keyspace_hits over a complete minute, without reading key names or values.",
+        "redisMisses": "Rate of keyspace_misses over a complete minute.",
+        "redisHitPercent": "Hits divided by hits plus misses in the same complete window. No lookups means no ratio, not 0%.",
+        "redisEvictions": "Instance-wide eviction rate over a complete minute, without key enumeration or tenant attribution.",
+        "redisRejected": "Rate of rejected_connections over a complete minute.",
+        "redisOOM": "OOM error rate over a complete minute; missing or disabled error statistics are not zero-filled.",
+        "redisLoading": "Redis loading flag; loading and failure are distinct conditions.",
+        "redisAOF": "AOF being disabled is not a write failure; last-write status may not be relevant while disabled.",
+        "redisRDB": "Result of the last save; success does not prove scheduled saves or a recoverable backup.",
+        "redisAOFWrite": "Read together with the AOF setting; past success does not mean AOF is enabled now.",
+        "redisAOFRewrite": "Result of the last rewrite, without implying backup or recovery verification."
+      },
+      "engineType": "Engine type",
+      "noLimit": "No Redis memory limit",
+      "groups": {
+        "resources": "Resources and connections",
+        "throughput": "Throughput and hits",
+        "persistence": "Persistence status"
+      },
+      "statusValues": {
+        "redisLoading": {
+          "0": "Not loading",
+          "1": "Loading"
+        },
+        "redisAOF": {
+          "0": "Disabled",
+          "1": "Enabled"
+        },
+        "redisRDB": {
+          "0": "Failed",
+          "1": "OK"
+        },
+        "redisAOFWrite": {
+          "0": "Failed",
+          "1": "OK"
+        },
+        "redisAOFRewrite": {
+          "0": "Failed",
+          "1": "OK"
+        }
       }
     },
     "processRules": {

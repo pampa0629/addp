@@ -135,7 +135,7 @@ func TestSystemObservabilityClientValidatesPlatformEngineProjection(t *testing.T
 		},
 		"zero version":       func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].Version = 0 },
 		"tenant scope":       func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].Scope = "tenant" },
-		"unsupported type":   func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].EngineType = "redis" },
+		"unsupported type":   func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].EngineType = "mysql" },
 		"cross scope source": func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].SourceKey.Project = "business" },
 		"unsafe source": func(s *models.ObservabilityIdentitySnapshot) {
 			s.EngineDeployments[0].SourceKey.DockerEngineID = "postgres://secret@host"

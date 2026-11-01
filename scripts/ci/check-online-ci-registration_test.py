@@ -2071,6 +2071,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             original.replace("      node_metrics_case:\n", "      removed_metrics_case:\n"),
             original.replace("          - cpu-pressure\n", "          - unbounded-pressure\n"),
             original.replace("          - host-admission\n", ""),
+            original.replace("          - redis-engine-admission\n", ""),
             original.replace("          - meta-workers\n", ""),
             original.replace("          - transfer-workers\n", ""),
             original.replace("          - quality-workers\n", ""),

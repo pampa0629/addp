@@ -14,13 +14,13 @@ import (
 )
 
 // EngineInstant godoc
-// @Summary 读取 PostgreSQL 即时指标 | Read current PostgreSQL metrics
-// @Description 仅当前已纳管且有效绑定主机的 Infra/Business PostgreSQL；固定十二项指标，逐请求用当前 User 向 System 核验并在返回前重核；不读取业务数据或凭据 | Only admitted and currently host-bound Infra/Business PostgreSQL; twelve fixed metrics, current User authorization and completion-time recheck; no business data or credentials
+// @Summary 读取引擎即时指标 | Read current engine metrics
+// @Description 仅当前已纳管且有效绑定主机的 Infra/Business PostgreSQL／Redis；按类型使用固定目录，单次最多十二项，逐请求用当前 User 向 System 核验并在返回前重核；不读取业务数据或凭据 | Only admitted and currently host-bound Infra/Business PostgreSQL/Redis; fixed per-type catalogs, up to twelve metrics per request, current User authorization and completion-time recheck; no business data or credentials
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
 // @Param deployment_id query string true "部署 UUID | Deployment UUID"
-// @Param metrics query string true "逗号分隔的固定 PostgreSQL 指标键，最多十二项 | Up to twelve comma-separated fixed PostgreSQL metric keys"
+// @Param metrics query string true "逗号分隔的同一引擎类型的固定指标键，最多十二项 | Up to twelve comma-separated fixed same-engine metric keys"
 // @Success 200 {object} service.EngineResourceResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -39,8 +39,8 @@ func (h *ResourceObservationHandler) EngineInstant(c *gin.Context) {
 }
 
 // EngineSummaries godoc
-// @Summary 读取当前页 PostgreSQL 资源摘要 | Read current-page PostgreSQL summaries
-// @Description 当前页总连接、活跃连接、每秒提交和总容量；数量乘四计入同一预算，整批超限拒绝，System 用当前 User 逐一裁决 | Current-page total and active connections, commits/second and total size; four metrics per deployment under one budget, reject the whole over-budget batch; System authorizes each current User read
+// @Summary 读取当前页引擎资源摘要 | Read current-page engine summaries
+// @Description PG：总连接、活跃连接、每秒提交和总容量；Redis：分配内存、限额占用率、连接和每秒命令；数量乘四计入同一预算，整批超限拒绝，System 用当前 User 逐一裁决 | PG: total/active connections, commits/second and size; Redis: allocated memory, limit usage, connections and commands/second; four metrics per deployment under one budget, reject the whole over-budget batch; System authorizes each current User read
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
@@ -63,13 +63,13 @@ func (h *ResourceObservationHandler) EngineSummaries(c *gin.Context) {
 }
 
 // EngineTrend godoc
-// @Summary 读取当前 PostgreSQL 容器段趋势 | Read current PostgreSQL container trends
+// @Summary 读取当前引擎容器段趋势 | Read current engine container trends
 // @Description 最长七天；排除本容器启动前的时间，不拼接旧容器；一分钟速率在缺样、重启或统计重置处留空，固定查询目录和整批预算 | At most seven days; exclude time before the current container start, never join an old container; one-minute rates leave gaps across missing samples, restarts or statistics resets; fixed catalog and bounded query budget
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
 // @Param deployment_id query string true "部署 UUID | Deployment UUID"
-// @Param metrics query string true "逗号分隔的固定 PostgreSQL 指标键，最多十二项 | Up to twelve fixed PostgreSQL metric keys"
+// @Param metrics query string true "逗号分隔的同一引擎类型的固定指标键，最多十二项 | Up to twelve fixed same-engine metric keys"
 // @Param start query string true "RFC3339 开始时间 | RFC3339 start time"
 // @Param end query string true "RFC3339 结束时间 | RFC3339 end time"
 // @Success 200 {object} service.EngineResourceResponse

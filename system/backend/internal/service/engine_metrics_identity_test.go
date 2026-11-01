@@ -25,8 +25,8 @@ func TestEngineMetricsPrivateProjectionDoesNotChangeAdmissionOrBrowser(t *testin
 		t.Fatalf("private-port collision fixture changed: %s", fingerprint)
 	}
 	started, _ := time.Parse(time.RFC3339, base.Services[0].Containers[0].StartedAt)
-	metrics := &commonmodels.PostgreSQLMetricsSource{State: "available", Endpoint: "https://127.0.0.1:19443/metrics", ContainerID: strings.Repeat("a", 64), StartedAt: &started}
-	encode := func(m *commonmodels.PostgreSQLMetricsSource) []byte {
+	metrics := &commonmodels.EngineMetricsSource{State: "available", Endpoint: "https://127.0.0.1:19443/metrics", ContainerID: strings.Repeat("a", 64), StartedAt: &started}
+	encode := func(m *commonmodels.EngineMetricsSource) []byte {
 		raw, _ := json.Marshal(base)
 		var document map[string]interface{}
 		if err := json.Unmarshal(raw, &document); err != nil {
@@ -72,7 +72,7 @@ func TestEngineMetricsPrivateProjectionDoesNotChangeAdmissionOrBrowser(t *testin
 		t.Fatal("public discovery scope shape changed")
 	}
 	for index, scope := range public.Scopes {
-		if _, exists := wire.Scopes[index]["postgresql_metrics"]; exists || scope.PostgreSQLMetrics != nil {
+		if _, exists := wire.Scopes[index]["postgresql_metrics"]; exists || scope.PostgreSQLMetrics != nil || scope.RedisMetrics != nil {
 			t.Fatalf("private source field leaked into browser scope %s", scope.Scope)
 		}
 	}
@@ -83,7 +83,7 @@ func TestEngineMetricsPrivateProjectionDoesNotChangeAdmissionOrBrowser(t *testin
 		t.Fatal("source configuration changed admission fingerprint")
 	}
 	key := commonmodels.ObservabilityEngineSourceKey{DockerEngineID: base.Source.DockerEngineID, Project: base.Source.Project, Service: "postgres"}
-	snapshot := &commonmodels.ObservabilityIdentitySnapshot{ObservedAt: now, EngineDeployments: []commonmodels.ObservabilityEngineIdentity{{Scope: "infra", SourceKey: key}}}
+	snapshot := &commonmodels.ObservabilityIdentitySnapshot{ObservedAt: now, EngineDeployments: []commonmodels.ObservabilityEngineIdentity{{Scope: "infra", EngineType: "postgresql", SourceKey: key}}}
 	s := &ModuleRegistryService{deploymentDiscovery: reader}
 	s.enrichEngineMetrics(context.Background(), snapshot)
 	if got := snapshot.EngineDeployments[0].Metrics; got == nil || got.State != "available" || got.Endpoint != metrics.Endpoint {
@@ -109,5 +109,73 @@ func TestEngineMetricsPrivateProjectionDoesNotChangeAdmissionOrBrowser(t *testin
 	parsed = parseDeploymentDiscovery([]byte(strings.Replace(string(encode(metrics)), "/v2", "/v1", 1)), "infra", now)
 	if parsed.State == "available" {
 		t.Fatal("old protocol accepted")
+	}
+}
+
+func TestRedisMetricsExactPrivateAssociationAndFailureIsolation(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	base := discoveryTestValue(now)
+	redis := base.Services[0]
+	redis.Service, redis.EngineType = "redis", "redis"
+	redis.Containers = append([]models.DiscoveredDeploymentContainer(nil), redis.Containers...)
+	redis.Containers[0].ContainerID = strings.Repeat("b", 64)
+	redis.Containers[0].PublishedPorts = []models.EngineDeploymentPort{{Address: "127.0.0.1", Port: 16379, ContainerPort: 6379, Protocol: "tcp"}}
+	base.Services = append(base.Services, redis)
+	started, _ := time.Parse(time.RFC3339Nano, redis.Containers[0].StartedAt)
+	metrics := commonmodels.EngineMetricsSource{State: "available", Endpoint: "https://127.0.0.1:19444/metrics", ContainerID: redis.Containers[0].ContainerID, StartedAt: &started}
+	directory := t.TempDir()
+	os.Chmod(directory, 0700)
+	reader := &DeploymentDiscoveryService{Directory: directory}
+	write := func(value commonmodels.EngineMetricsSource) {
+		raw, _ := json.Marshal(base)
+		var doc map[string]interface{}
+		json.Unmarshal(raw, &doc)
+		doc["redis_metrics"] = value
+		raw, _ = json.Marshal(doc)
+		if err := os.WriteFile(filepath.Join(directory, "infra.json"), raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	key := commonmodels.ObservabilityEngineSourceKey{DockerEngineID: base.Source.DockerEngineID, Project: base.Source.Project, Service: "redis"}
+	snapshot := &commonmodels.ObservabilityIdentitySnapshot{ObservedAt: now, EngineDeployments: []commonmodels.ObservabilityEngineIdentity{{Scope: "infra", EngineType: "redis", SourceKey: key}}}
+	registry := &ModuleRegistryService{deploymentDiscovery: reader}
+	write(metrics)
+	registry.enrichEngineMetrics(context.Background(), snapshot)
+	if snapshot.EngineDeployments[0].Metrics.State != "available" {
+		t.Fatal("Redis source not associated")
+	}
+	public := reader.Read(context.Background())
+	raw, _ := json.Marshal(public)
+	if strings.Contains(string(raw), metrics.Endpoint) || public.Scopes[0].RedisMetrics != nil {
+		t.Fatal("private source entered browser DTO")
+	}
+	for _, kind := range []string{"container", "start", "future", "type", "key", "stale", "disabled"} {
+		next := metrics
+		snapshot.EngineDeployments[0].SourceKey = key
+		snapshot.EngineDeployments[0].EngineType = "redis"
+		switch kind {
+		case "container":
+			next.ContainerID = strings.Repeat("c", 64)
+		case "start":
+			at := started.Add(time.Second)
+			next.StartedAt = &at
+		case "future":
+			at := now.Add(time.Second)
+			next.StartedAt = &at
+		case "type":
+			snapshot.EngineDeployments[0].EngineType = "postgresql"
+		case "key":
+			snapshot.EngineDeployments[0].SourceKey.DockerEngineID = "foreign"
+		case "stale":
+			base.ObservedAt = now.Add(-121 * time.Second).Format(time.RFC3339)
+		case "disabled":
+			base.ObservedAt = now.Format(time.RFC3339)
+			next = commonmodels.EngineMetricsSource{State: "not_deployed"}
+		}
+		write(next)
+		registry.enrichEngineMetrics(context.Background(), snapshot)
+		if snapshot.EngineDeployments[0].Metrics.State == "available" {
+			t.Fatal("invalid Redis source associated", kind)
+		}
 	}
 }

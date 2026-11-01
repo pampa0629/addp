@@ -87,15 +87,15 @@ Prometheus 只通过 Monitor 的单一认证 HTTP SD 获取全量有界快照；
 
 ### 4.4 平台引擎部署登记
 
-引擎部署属于平台运维对象，与租户 Engine Instance 分开。System `/platform/engine_deployments` 提供集合 POST 批量确认、GET 分页/详情和 PUT 管理更新，分配稳定 `deployment_id`；首批支持 Infra 与 Business 的单容器 PostgreSQL，显式关联一个已纳管主机。其他服务只显示发现事实与未适配原因；集群多主机、云服务及租户引擎关联尚未开放。不接受 `tenant_id/engine_id`、连接凭据或 SQL，不从 Web 请求执行 Docker 或数据库探测。
+引擎部署属于平台运维对象，与租户 Engine Instance 分开。System `/platform/engine_deployments` 提供集合 POST 批量确认、GET 分页/详情和 PUT 管理更新，分配稳定 `deployment_id`；支持 Infra 与 Business 的标准单容器 PostgreSQL／Redis，显式关联一个已纳管主机。其他服务只显示发现事实与未适配原因；集群多主机、云服务及租户引擎关联尚未开放。不接受 `tenant_id/engine_id`、连接凭据或 SQL，不从 Web 请求执行 Docker 或数据库探测。
 
-管理员在“平台引擎部署”读取部署侧发现结果，选择待接入服务、核对名称和实际承载主机后批量确认，无需运行导出命令或导入文件。来源项目、容器运行身份、状态及 SQL 端口来自 4.5 的唯一发现链路；Docker Desktop 只可关联 virtual 主机，不按地址、名称或容器 ID 猜测承载关系。发现可用与纳管、专业采集成功分别表达。
+管理员在“平台引擎部署”读取部署侧发现结果，选择待接入服务、核对名称和实际承载主机后批量确认，无需运行导出命令或导入文件。来源项目、容器运行身份、状态及对应数据库端口来自 4.5 的唯一发现链路；Docker Desktop 只可关联 virtual 主机，不按地址、名称或容器 ID 猜测承载关系。发现可用与纳管、专业采集成功分别表达。
 
 POST 仅接受 `items`，每次 1—16 个显式成员；成员为 `scope/service/fingerprint/display_name/enabled/declared_node_id`。服务端重读来源，验证 120 秒时效和预览事实摘要，再按来源键排序、整批事务写入；任何来源过期、变化、重复、主机无效或写入失败均整批回滚。摘要不含每次刷新时间，不代替持久资源版本。确认后的规范快照为 `addp.engine-deployment-inventory/v1`；旧根记录由前向迁移规范化，不改稳定身份、版本或不可变历史。
 
 部署详情通过同一只读发现接口展示最近一次来源，按已确认的 Docker Engine、Compose 项目和服务匹配；不按名称、端口或地址猜测。来源过期、不可用、运行环境不符或服务未发现时不展示旧容器为当前结果；容器运行身份变化只更新来源展示，不改部署 ID、声明版本、主机关联或历史。容器运行状态不等于数据库可用或专业采集成功。来源单独刷新不清除管理草稿，也不解除写入冲突阻断；切换账号、对象或关闭详情后，迟到响应不得恢复旧来源。
 
-来源按 Docker Engine ID、Compose 项目和服务唯一，停用也不可重复登记。PUT 仅接受名称、纳管意图、主机与当前 `version`，不接受客户端重写来源；实时运行变化由发现结果表达。列表只接受 `page/page_size/search/node_id`，名称按字面片段搜索，主机筛选按声明身份；详情不接受 query。请求正文最多 32 KiB，拒绝未知字段、重复键、大小写别名及附加 query。结果未知或来源变化时保留草稿并停止提交，必须显式重读核对，不自动重试创建。
+来源按 Docker Engine ID、Compose 项目和服务唯一，停用也不可重复登记。PUT 仅接受名称、纳管意图、主机与当前 `version`，不接受客户端重写来源；实时运行变化由发现结果表达。列表只接受 `page/page_size/search/node_id/engine_type`，类型精确限定postgresql或redis并在计数／分页前过滤，名称按字面片段搜索，主机筛选按声明身份；详情不接受 query。请求正文最多 32 KiB，拒绝未知字段、重复键、大小写别名及附加 query。结果未知或来源变化时保留草稿并停止提交，必须显式重读核对，不自动重试创建。
 
 创建与更新在同一 PostgreSQL 事务保存根版本、声明有效区间及统一审计；并发旧版本返回 409，不自动刷新版本重试。声明时间统一取数据库时间，表示管理员声明的生效/结束时刻，不能回填为实际部署历史。闭合历史不可更改或删除；首批不物理删除部署。读取在同一快照核对当前主机和部署纳管状态：有效关联为 `bound`，停用或 Desktop 主机类型变化为 `rejected`，保留原声明；这些状态均不表示服务在线、专业指标采集成功或租户业务可用性，不参与业务 Ready。
 
@@ -119,9 +119,11 @@ System `GET /platform/engine_deployments/discovery` 仅接受非委托 Platform 
 
 SIGTERM／SIGINT处理器只锁存停止请求，由非阻塞唤醒管道打断原30秒空闲等待；不在异步处理器直接抛退出异常，避免信号命中Python析构器时成为被忽略异常。主循环、锁等待和Docker读取在显式检查点响应停止；Docker命令仍仅启动一次，分段等待同一子进程，不重置原单次10秒／整轮30秒预算。取消读取先回收当次自有子进程，再按原非阻塞失效及退出核验流程清理；归属、单次停止信号与未退出保留记录不变。
 
-PostgreSQL 专业来源沿同一发现文件发布：部署侧仅核对两个自有采集容器的 Owner、scope、project、数据库容器完整 ID／启动时刻及显式 HTTPS 发布端口；不读环境、Secret 或 SQL。采集身份不加入管理员确认摘要或不可变部署声明，公开发现 DTO 排除专业端点。
+PostgreSQL／Redis 专业来源沿同一发现文件发布：部署侧仅核对 PostgreSQL 配对来源或 Redis 单来源的 Owner、scope、project、数据库容器完整 ID／启动时刻及显式 HTTPS 发布端口；不读环境、Secret 或 SQL。采集身份不加入管理员确认摘要或不可变部署声明，公开发现 DTO 排除专业端点。
 
 该接口不创建纳管身份、不更改管理员声明、历史或租户权限；管理员批量确认遵循 [4.4](#44-平台引擎部署登记)，专业来源的私有投影与准入见 [4.7](#47-postgresql-受保护的固定指标来源)。候选读取、来源自动发布、专业采集与用户查询分别验证，不以发现成功代替产品接入验收。
+
+Redis 私有来源字段沿同一v2文件的 `redis_metrics` 发布，形状复用唯一 `EngineMetricsSource`：状态、HTTPS端点、当前数据库容器完整ID和启动时刻。只读发现核对工作区摘要分隔的唯一来源项目、Owner／scope／服务标签、数据库私网网络身份、单个显式9443映射及前后事实一致；无源为not_deployed，错配或重复为unavailable，不读取采集密码／TLS文件或容器环境。System独立校验与单个运行中redis容器精确相符、快照时效、来源键及已纳管主机绑定，仅向既有Monitor后台身份提供该最小字段；普通浏览器发现和持久声明均不含专业端点。Redis与PostgreSQL分别失效，不能互相顶替；Monitor仍沿唯一准入和HTTP SD，以真实引擎类型标记来源，不新增并行查询入口或租户归算。
 
 ### 4.6 PostgreSQL 数据库侧汇总读取边界
 
@@ -167,7 +169,7 @@ PostgreSQL 专业来源经 [4.5](#45-部署侧自动发现来源) 的同一发�
 
 ### Redis 专业观测首期边界（2026-11-01 确认，分阶段实施）
 
-Infra 与平台自管 Business 的 Redis 是两个独立 Platform 运维对象；首期仅支持标准部署中的单机 Redis 7，不包含 Cluster、Sentinel、FalkorDB、外部租户引擎或租户用量归算。沿既有管理员确认、System 当前部署／主机关联、私有来源投影、Monitor HTTP SD、Prometheus、当前 User 授权查询及 Console 引擎页接入；不得另建手填连接、JSON 导入或 Monitor 直连数据库路径。System 当前可登记类型和后台投影仍仅开放 PostgreSQL，Redis 扩展在对应代码及验证落地前不视为已开放。
+Infra 与平台自管 Business 的 Redis 是两个独立 Platform 运维对象；首期仅支持标准部署中的单机 Redis 7，不包含 Cluster、Sentinel、FalkorDB、外部租户引擎或租户用量归算。沿既有管理员确认、System 当前部署／主机关联、私有来源投影、Monitor HTTP SD、Prometheus、当前 User 授权查询及 Console 引擎页接入；不得另建手填连接、JSON 导入或 Monitor 直连数据库路径。System 沿同一管理员确认接口接入 Redis，仍只允许 Platform 自管 Infra／Business、显式有效主机关联和既有平台权限；不因部署发现直接创建纳管身份。
 
 数据库侧分别使用独立的 `addp_infra_observer`、`addp_business_observer`；不同物理引擎中的同名账号不共享密码或权限。部署 owner 持有私有凭据及管理身份，采集进程只持本方采集凭据，不复用默认用户、Business admin 或可读业务键的 reader。准确命令白名单为 `HELLO`、`PING`、`INFO`：HELLO 用于现有 Go Redis 客户端的 RESP3 认证握手，关闭客户端名称／版本上报、维护通知、自动重试和数据库切换。账号无键模式、频道或其他 selector，不授 `@read/@connection` 类别、GET／SCAN／KEYS、脚本、CONFIG、ACL、CLIENT LIST、SLOWLOG、MONITOR、持久化管理或写命令。账号配方从完整 reset 构建，停用配方同时清空命令／键／频道／密码，不仅设 off；既有会话不能因 off 继续读取。配方生成不代表正式部署已经安装，账号归属、启停、持久化及凭据丢失拒绝必须在部署生命周期接通后另验。
 
@@ -175,9 +177,15 @@ Infra 与平台自管 Business 的 Redis 是两个独立 Platform 运维对象�
 
 固定读取包括运行时长、Redis 分配内存、RSS、maxmemory、参与限额判定的内存、当前连接／maxclients、阻塞连接、处理命令、键查找命中／未命中、淘汰、拒绝连接及 OOM 累计值，以及 loading、AOF 开关／最近写入／重写、最近 RDB 保存结果。当前连接包含采集连接，命令累计包含采集命令；不虚构业务连接数或业务 QPS。阻塞连接不直接表示故障。OOM 仅在有效 errorstats 分区内没有 OOM 记录时表示零；缺分区／字段、ERRORSTATS_DISABLED、无效整数／状态、重复字段、非 standalone 模式或启动身份不一致须拒绝相应快照，不能补零。输入解析上限256 KiB，不输出原始内容。
 
-后续查询的内存限额占用率为 `(used_memory-mem_not_counted_for_evict)/maxmemory`，不剪裁100%；扣减大于分配内存时拒绝，不制造负数或有效零。maxmemory=0时不计算比例，不用主机／容器内存作分母。该比例不是RSS／容器硬限额或OOM安全保证。命中率沿完整评估窗口的hits／misses增量，无查找请求时不计算；计数速率是Redis实例整体值。AOF关闭与失败分开解释；RDB返回ok不证明配置已启用或已有可恢复备份。不请求SLOWLOG正文、keyspace扫描、大键／热键或自动阈值告警。
+查询的内存限额占用率为 `(used_memory-mem_not_counted_for_evict)/maxmemory`，不剪裁100%；扣减大于分配内存时拒绝，不制造负数或有效零。maxmemory=0时不计算比例，不用主机／容器内存作分母。该比例不是RSS／容器硬限额或OOM安全保证。命中率沿完整评估窗口的hits／misses增量，无查找请求时不计算；计数速率是Redis实例整体值。AOF关闭与失败分开解释；RDB返回ok不证明配置已启用或已有可恢复备份。不请求SLOWLOG正文、keyspace扫描、大键／热键或自动阈值告警。
 
 专业趋势限当前容器运行段、最多七天，且以 INFO run_id 分隔同容器内的进程重启；来源重启不伪造数据库重启，采样前后须核对同一run_id。缺样、重置可见或身份变化处不计算速率；离散INFO不能保证识别采样间所有统计重置。run_id仅为私有采样身份，不作为用户标签；来源端点身份和当前容器仍由部署侧及System裁决，不以run_id替代主机关联。采集默认关闭，失败不影响数据库／业务Ready；来源启停、账号漂移拒绝和清理沿部署owner职责，不由Web或只读发现进程实施。
+
+Redis专业查询复用engine_resource_observations／engine_resource_summaries／engine_resource_trends，按System当前User裁决的引擎类型选择固定目录，查询后重核用户、部署版本、有效主机、容器及来源；不从浏览器提供类型或端点取得授权。固定目录22项：运行时长；分配内存、RSS、maxmemory、不计入限额的内存、参与限额的内存及限额占用率；当前／最大／阻塞连接；一分钟处理命令、键命中／未命中、淘汰、拒绝连接和OOM速率，以及一分钟键命中率；loading、AOF开关、最近RDB保存／AOF写入／AOF重写结果。布尔状态保持0／1；RDB成功仍不证明备份可恢复。比率使用百分数，maxmemory=0或无查找增量时留空，不输出0％。
+
+一分钟指标沿现有15秒采样与完整窗口要求：至少四样本、有一分钟前边界、当前及历史边界快照新鲜且完整、无可见重置、counter_epoch精确相同；同一容器内Redis进程重启也留空。INFO计数不可证明观察间未发生不可见重置；不夸大此覆盖。来源up必须唯一且为1，所有固定原始字段同次scrape且采样时刻贴近scrape；错误、缺样、重复代际或不一致快照不得带出旧值。Redis与PG共用唯一Prometheus传输、批量摘要、归一化、并发／点数预算和结束前授权重核。
+
+单次最多12项的现有预算不扩大。Redis详情按“资源与连接”（10项）、“吞吐与命中”（7项）、“持久化状态”（5项）显式切换，仅查询当前组；趋势仅查询选中指标，不暗中拆分全目录请求绕预算。列表按类型筛选后分页，Redis摘要固定为分配内存、限额占用率、当前连接、每秒命令四项；两类摘要均每对象四项，统一预留整批预算。类型、指标／分组及趋势范围随原URL恢复，未知类型和跨类型指标拒绝。说明位于指标旁tip；零内存限额显示未设置上限，状态按各自语义显示，容量和时长用共享格式化。
 
 账号持久化由标准 Redis 启动和唯一 `scripts/infra/redis-metrics.py` 生命周期管理。Infra保留default账号的原密码／权限，Business保留原admin／reader配方；两者生成唯一运行ACL文件，不同时使用requirepass或旧ACL文件路线。采集账号的两行受管记录位于Redis数据卷的私有目录：无凭据的随机部署owner标识和唯一账号规则，启动时严格校验后合成到运行ACL。采集记录损坏时跳过该可选账号并输出固定诊断，保留原业务认证；生命周期拒绝接管，不能把启动成功视为观测恢复。只在VM内原子替换本方记录，不依赖macOS共享目录动态更新；不调用会持久化所有用户运行修改的ACL SAVE，不重写其他用户规则。首次切换由用户沿标准入口重建Redis容器并保留数据卷，AI不重启个人服务。
 
@@ -187,7 +195,7 @@ Infra 与平台自管 Business 的 Redis 是两个独立 Platform 运维对象�
 
 来源为独立、非特权、只读、限额的部署容器，复用固定采集内核和现有Go客户端；仅连接当前Redis实际私网IP。配置／采集密码／TLS材料经有归属标签的专用临时卷传入，长期来源不挂载Docker Socket、Redis数据卷或管理员凭据；停用清理本方容器和该配置卷。对外只提供mTLS GET /metrics，无query、动态目标或其他管理入口，证书由部署方提供，不签发或扩大CA信任。固定数值、采样时间及私有运行代际输出不包含原始INFO／run_id／错误文本；传输可达不代表当前读取成功。标准Infra／Business启停接续调用生命周期；未配置且无本方状态时不操作Redis，不引入定时任务或只读发现进程写职责。
 
-已接通账号配方、固定采集内核、原生ACL持久化及标准Infra／Business来源启停；具体本地分层证据见[采集来源历史证据](testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01)。发现／System类型扩展、Monitor目录／页面、真实身份T4仍分别实施和验收。T1沿Monitor Go和配置入口自动发现；T2沿 `make test-monitor-redis-source` 复用现有Redis独占夹具、固定镜像、随机密码及物理零残留核验，不读取或修改个人Redis。Monitor门禁、根串行集成及Release作业自动发现同一专项，禁止使用局部协议通过代替已部署来源、页面、CI或Hosted通过。
+已接通账号配方、固定采集内核、原生ACL持久化及标准Infra／Business来源启停；具体本地分层证据见[采集来源历史证据](testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01)。发现／System类型扩展、Monitor目录／页面已在工作区接通，迁移261须待前置259／260提交后发布；本地来源T2、原生PromQL边界与受控页面T3分层记录，真实身份T4未运行。T1沿Monitor Go和配置入口自动发现；T2沿 `make test-monitor-redis-source` 复用现有Redis独占夹具、固定镜像、随机密码及物理零残留核验，不读取或修改个人Redis。Monitor门禁、根串行集成及Release作业自动发现同一专项，禁止使用局部协议通过代替已部署来源、页面、CI或Hosted通过。
 
 ### 4.8 服务部署预期与分组租约观测
 

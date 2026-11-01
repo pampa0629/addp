@@ -1345,7 +1345,7 @@
       "title": "引擎监控",
       "denied": "当前账号无权查看平台引擎监控",
       "search": "搜索部署名称",
-      "empty": "暂无已接入的 PostgreSQL 部署",
+      "empty": "尚无该类型的已纳管部署",
       "name": "引擎部署",
       "collection": "采集状态",
       "details": "查看监控",
@@ -1358,7 +1358,11 @@
       "units": {
         "connections": "个",
         "transactions_per_second": "次/秒",
-        "events_per_second": "次/秒"
+        "events_per_second": "次/秒",
+        "percent": "%",
+        "seconds": "秒",
+        "commands_per_second": "命令/秒",
+        "status": ""
       },
       "states": {
         "collecting": "正在采集",
@@ -1382,7 +1386,29 @@
         "committed": "每秒事务提交",
         "rolledBack": "每秒事务回滚",
         "deadlocks": "每秒死锁",
-        "capacity": "数据库总容量"
+        "capacity": "数据库总容量",
+        "redisUptime": "Redis 运行时长",
+        "redisAllocated": "Redis 分配内存",
+        "redisRSS": "进程驻留内存（RSS）",
+        "redisLimit": "Redis 内存上限",
+        "redisExcluded": "不计入上限的内存",
+        "redisCounted": "计入上限的内存",
+        "redisPercent": "Redis 内存上限占用率",
+        "redisConnections": "当前连接数",
+        "redisMaximum": "最大连接数",
+        "redisBlocked": "阻塞连接数",
+        "redisCommands": "每秒处理命令",
+        "redisHits": "每秒键命中",
+        "redisMisses": "每秒键未命中",
+        "redisHitPercent": "键查找命中率（1分钟）",
+        "redisEvictions": "每秒淘汰键数",
+        "redisRejected": "每秒拒绝连接",
+        "redisOOM": "每秒 OOM 错误",
+        "redisLoading": "数据加载状态",
+        "redisAOF": "AOF 开关",
+        "redisRDB": "最近 RDB 保存结果",
+        "redisAOFWrite": "最近 AOF 写入结果",
+        "redisAOFRewrite": "最近 AOF 重写结果"
       },
       "hints": {
         "total": "客户端连接总数，不含本次采集连接。",
@@ -1396,7 +1422,58 @@
         "committed": "最近完整一分钟的提交速率；包含采集产生的事务，不等同于业务吞吐。",
         "rolledBack": "最近完整一分钟的事务回滚速率；不直接代表业务失败次数。",
         "deadlocks": "最近完整一分钟的死锁速率；统计重置或缺样时不补零。",
-        "capacity": "全部非模板数据库容量合计；不按租户归算。"
+        "capacity": "全部非模板数据库容量合计；不按租户归算。",
+        "redisUptime": "当前 Redis 进程的运行时长；进程重启后重新计时。",
+        "redisAllocated": "Redis 分配的内存，区别于进程 RSS 和容器限额。",
+        "redisRSS": "Redis 进程的驻留内存，不等于参与 maxmemory 判定的内存。",
+        "redisLimit": "maxmemory 为零表示未设置上限；不代表容器或主机没有限制。",
+        "redisExcluded": "mem_not_counted_for_evict；不纳入 Redis 的 maxmemory 判定。",
+        "redisCounted": "分配内存减去不计入上限的部分；不以主机内存作分母。",
+        "redisPercent": "计入上限的内存除以 maxmemory；未设置上限时无比例，可超过100%。不代表 RSS 或 OOM 安全保证。",
+        "redisConnections": "包含采集连接，是整个 Redis 实例的连接数，不是业务或租户连接数。",
+        "redisMaximum": "Redis 配置的 maxclients，不表示当前活跃业务连接数。",
+        "redisBlocked": "正在阻塞操作中等待的连接数，不能单凭此值判定故障。",
+        "redisCommands": "完整一分钟的实例级命令速率，包含采集命令，不是业务 QPS；缺样、重置或重启时留空。",
+        "redisHits": "完整一分钟的 keyspace_hits 增量速率，不读取键名或值。",
+        "redisMisses": "完整一分钟的 keyspace_misses 增量速率。",
+        "redisHitPercent": "同一完整窗口内命中增量占命中加未命中增量的比例；没有键查找时无比例，不显示0%。",
+        "redisEvictions": "完整一分钟的实例级淘汰速率，不枚举键或归算租户。",
+        "redisRejected": "完整一分钟的 rejected_connections 增量速率。",
+        "redisOOM": "完整一分钟的 OOM 错误增量；错误统计缺失或停用时不能补零。",
+        "redisLoading": "Redis 的 loading 标志；加载中与异常分别理解。",
+        "redisAOF": "AOF 关闭不表示写入失败；关闭时最近写入状态可能没有实际参考意义。",
+        "redisRDB": "最近保存命令的状态；成功不能证明已启用定时保存或已有可恢复备份。",
+        "redisAOFWrite": "与 AOF 开关分别查看；历史成功不等于当前已启用 AOF。",
+        "redisAOFRewrite": "最近重写的结果，不推断已执行备份或恢复验证。"
+      },
+      "engineType": "引擎类型",
+      "noLimit": "未设置内存上限",
+      "groups": {
+        "resources": "资源与连接",
+        "throughput": "吞吐与命中",
+        "persistence": "持久化状态"
+      },
+      "statusValues": {
+        "redisLoading": {
+          "0": "未加载中",
+          "1": "加载中"
+        },
+        "redisAOF": {
+          "0": "已关闭",
+          "1": "已启用"
+        },
+        "redisRDB": {
+          "0": "失败",
+          "1": "成功"
+        },
+        "redisAOFWrite": {
+          "0": "失败",
+          "1": "成功"
+        },
+        "redisAOFRewrite": {
+          "0": "失败",
+          "1": "成功"
+        }
       }
     },
     "processRules": {

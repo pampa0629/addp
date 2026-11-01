@@ -16,21 +16,28 @@ func (s *ModuleRegistryService) enrichEngineMetrics(ctx context.Context, snapsho
 	if snapshot == nil {
 		return
 	}
-	byScope := map[string]commonmodels.ObservabilityEngineSourceKey{}
-	metrics := map[string]*commonmodels.PostgreSQLMetricsSource{}
+	type source struct {
+		key     commonmodels.ObservabilityEngineSourceKey
+		metrics *commonmodels.EngineMetricsSource
+	}
+	byScope := map[string]map[string]source{}
 	for _, scope := range []string{"infra", "business"} {
 		value := s.deploymentDiscovery.readScope(ctx, scope)
-		if value.State == "available" && value.Source != nil {
-			byScope[scope] = commonmodels.ObservabilityEngineSourceKey{DockerEngineID: value.Source.DockerEngineID, Project: value.Source.Project, Service: "postgres"}
-			metrics[scope] = value.PostgreSQLMetrics
+		if value.State != "available" || value.Source == nil {
+			continue
+		}
+		byScope[scope] = map[string]source{}
+		for engineType, metrics := range map[string]*commonmodels.EngineMetricsSource{"postgresql": value.PostgreSQLMetrics, "redis": value.RedisMetrics} {
+			service, _ := commonmodels.PlatformEngineService(engineType)
+			byScope[scope][engineType] = source{commonmodels.ObservabilityEngineSourceKey{DockerEngineID: value.Source.DockerEngineID, Project: value.Source.Project, Service: service}, metrics}
 		}
 	}
 	for index := range snapshot.EngineDeployments {
 		engine := &snapshot.EngineDeployments[index]
-		engine.Metrics = &commonmodels.PostgreSQLMetricsSource{State: "unavailable"}
-		if engine.SourceKey == byScope[engine.Scope] && metrics[engine.Scope] != nil &&
-			(metrics[engine.Scope].StartedAt == nil || !metrics[engine.Scope].StartedAt.After(snapshot.ObservedAt)) {
-			engine.Metrics = metrics[engine.Scope]
+		engine.Metrics = &commonmodels.EngineMetricsSource{State: "unavailable"}
+		current := byScope[engine.Scope][engine.EngineType]
+		if engine.SourceKey == current.key && current.metrics != nil && (current.metrics.StartedAt == nil || !current.metrics.StartedAt.After(snapshot.ObservedAt)) {
+			engine.Metrics = current.metrics
 		}
 	}
 }

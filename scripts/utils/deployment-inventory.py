@@ -39,6 +39,8 @@ METRICS_CONTAINER = CONTAINER[:-1] + (
     ',"database_id":{{json (index .Config.Labels "io.addp.postgres-metrics.database-id")}}'
     ',"database_started_at":{{json (index .Config.Labels "io.addp.postgres-metrics.database-started-at")}}'
     ',"network_mode":{{json .HostConfig.NetworkMode}}}')
+REDIS_METRICS_CONTAINER = METRICS_CONTAINER.replace('io.addp.postgres-metrics.', 'io.addp.redis-metrics.')[:-1] + ',"networks":{{json .NetworkSettings.Networks}}}'
+
 SCOPES = {'infra': ('addp-infra', REPOSITORY), 'business': ('business', ROOT)}
 DISCOVERY_LIMIT = 256 * 1024
 _observer_children = {}  # Reap observers started by this interpreter when stopped.
@@ -234,21 +236,59 @@ def postgres_metrics(docker, scope, containers):
                 or len(ports['9443/tcp']) != 1 or any(bindings for port, bindings in ports.items() if port != '9443/tcp')
                 or any((web.get('ports') or {}).values())):
             return unavailable
-        binding = ports['9443/tcp'][0]
-        if not isinstance(binding, dict) or set(binding) != {'HostIp', 'HostPort'}:
-            return unavailable
-        ip, port = ipaddress.ip_address(binding['HostIp']), binding['HostPort']
-        if (str(ip) != binding['HostIp'] or ip.is_unspecified or ip.is_multicast or ip.is_link_local
-                or getattr(ip, 'ipv4_mapped', None) or '%' in str(ip)
-                or not (ip.is_loopback or any(ip in network for network in
-                    (ipaddress.ip_network('10.0.0.0/8'), ipaddress.ip_network('172.16.0.0/12'), ipaddress.ip_network('192.168.0.0/16'), ipaddress.ip_network('fc00::/7')) if ip.version == network.version))
-                or not isinstance(port, str) or not re.fullmatch(r'[1-9][0-9]{0,4}', port) or int(port) > 65535):
-            return unavailable
-        host = '['+str(ip)+']' if ip.version == 6 else str(ip)
-        return {'state': 'available', 'endpoint': 'https://'+host+':'+port+'/metrics',
-                'container_id': database['container_id'], 'started_at': database['started_at']}
+        endpoint = metrics_endpoint(ports['9443/tcp'][0])
+        if endpoint is None: return unavailable
+        return {'state': 'available', 'endpoint': endpoint, 'container_id': database['container_id'], 'started_at': database['started_at']}
     except (ValueError, TypeError, KeyError, OSError):
         return unavailable
+
+
+def metrics_endpoint(binding):
+    if not isinstance(binding, dict) or set(binding) != {'HostIp', 'HostPort'}:
+        return None
+    ip, port = ipaddress.ip_address(binding['HostIp']), binding['HostPort']
+    if (str(ip) != binding['HostIp'] or ip.is_unspecified or ip.is_multicast or ip.is_link_local
+            or getattr(ip, 'ipv4_mapped', None) or '%' in str(ip)
+            or not (ip.is_loopback or any(ip in network for network in
+                (ipaddress.ip_network('10.0.0.0/8'), ipaddress.ip_network('172.16.0.0/12'), ipaddress.ip_network('192.168.0.0/16'), ipaddress.ip_network('fc00::/7')) if ip.version == network.version))
+            or not isinstance(port, str) or not re.fullmatch(r'[1-9][0-9]{0,4}', port) or int(port) > 65535):
+        return None
+    host = '['+str(ip)+']' if ip.version == 6 else str(ip)
+    return 'https://'+host+':'+port+'/metrics'
+
+
+def redis_metrics_project(scope):
+    return 'addp-redis-metrics-'+hashlib.sha256(str(REPOSITORY).encode()).hexdigest()[:16]+'-'+scope
+
+
+def redis_metrics(docker, scope, containers):
+    unavailable = {'state':'unavailable'}
+    project = redis_metrics_project(scope)
+    try:
+        ids=docker('ps','--all','--no-trunc','--filter','label=com.docker.compose.project='+project,'--format','{{.ID}}').splitlines()
+        if not ids:return {'state':'not_deployed'}
+        if len(ids)!=1 or not identifier(ids[0]):return unavailable
+        databases=[value for service,value in containers.values() if service=='redis']
+        if len(databases)!=1 or databases[0]['status']!='running':return unavailable
+        database=databases[0]
+        source=json.loads(docker('inspect','--type','container','--format',REDIS_METRICS_CONTAINER,ids[0]))
+        if (source.get('id')!=ids[0] or source.get('project')!=project or source.get('oneoff')!='False'
+            or source.get('owner')!=str(REPOSITORY) or source.get('scope')!=scope or source.get('service')!='redis-metrics'
+            or source.get('database_id')!=database['container_id'] or source.get('database_started_at')!=database['started_at']
+            or source.get('running') is not True or source.get('status')!='running'):return unavailable
+        current=json.loads(docker('inspect','--type','container','--format',REDIS_METRICS_CONTAINER,database['container_id']))
+        networks,current_networks=source.get('networks'),current.get('networks')
+        if (current.get('id')!=database['container_id'] or current.get('started_at')!=database['started_at']
+            or current.get('running') is not True or not isinstance(networks,dict) or len(networks)!=1
+            or not isinstance(current_networks,dict) or set(networks)!=set(current_networks)
+            or any(not isinstance(value,dict) or not isinstance(current_networks[name],dict) or not identifier(value.get('NetworkID')) or value['NetworkID']!=current_networks[name].get('NetworkID') for name,value in networks.items())):return unavailable
+        ports=source.get('ports')
+        if (not isinstance(ports,dict) or len(ports)>8 or not isinstance(ports.get('9443/tcp'),list)
+            or len(ports['9443/tcp'])!=1 or any(bindings for port,bindings in ports.items() if port!='9443/tcp')):return unavailable
+        endpoint=metrics_endpoint(ports['9443/tcp'][0])
+        if endpoint is None:return unavailable
+        return {'state':'available','endpoint':endpoint,'container_id':database['container_id'],'started_at':database['started_at']}
+    except (ValueError,TypeError,KeyError,OSError):return unavailable
 
 
 def discover(scope, *, env=None, reader=None, system=None, root=None):
@@ -277,7 +317,8 @@ def discover(scope, *, env=None, reader=None, system=None, root=None):
 
     first = read()
     metrics = postgres_metrics(docker, scope, first)
-    if (read() != first or postgres_metrics(docker, scope, first) != metrics or ids() != container_ids
+    redis = redis_metrics(docker, scope, first)
+    if (read() != first or postgres_metrics(docker, scope, first) != metrics or redis_metrics(docker, scope, first) != redis or ids() != container_ids
             or json.loads(docker('info', '--format', INFO)) != info):
         raise InventoryError('部署发现期间来源发生变化')
     services = {}
@@ -287,7 +328,7 @@ def discover(scope, *, env=None, reader=None, system=None, root=None):
         raise InventoryError('部署发现服务数量超出预算')
     result = {'schema': 'addp.deployment-discovery/v2', 'scope': scope, 'state': 'available',
               'observed_at': observed_at(),
-              'postgresql_metrics': metrics,
+              'postgresql_metrics': metrics, 'redis_metrics': redis,
               'source': {'type': 'docker_compose', 'runtime': kind, 'docker_engine_id': info['id'], 'project': project},
               'services': [{'service': service, 'engine_type': ENGINE_TYPES.get(service, 'unclassified'),
                             'containers': containers} for service, containers in sorted(services.items())]}

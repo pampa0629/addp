@@ -431,3 +431,81 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 过程失败均未计通过：最初Redis CLI `--json`实际协商RESP3对象，而部署代码按数组读取，已改为显式RESP3并只接受对象；当前Python严格TLS验证拒绝缺少密钥标识的测试证书，已补SKI／AKI，未放宽验证；损坏记录恢复测试原先只恢复文件、未重新加载Redis，已补一次性夹具重启后再验停用。Infra配置渲染夹具补齐本身必需的Redis密码。最终标准门禁覆盖这些修正，早期失败项目均清理，不以等待、补零、自动接管或放宽ACL处理。
 
 范围仍为来源与账号生命周期。System Redis部署类型／私有投影、部署发现、Prometheus HTTP SD、Monitor查询／Console尚未接通；正式用户链路、CI及Hosted未在本会话查询、触发或重跑，等待专门会话回传。当前个人环境未应用本批Redis部署，也未声明正式页面已可用。推荐下一批接通Redis部署发现与System精确来源关联，再接查询展示。
+
+
+## Redis 自动发现与 System 精确来源关联（2026-11-01）
+
+本批为共享工作区实现，尚未提交／推送。Redis复用唯一v2发现文件、System批量确认与CAS／审计／主机绑定、既有Monitor后台最小投影和HTTP SD；不新增权限、角色、租户引擎或业务键读取。发现校验本方工作区摘要项目、scope／Owner／服务、实际数据库容器ID及启动时刻、唯一私网网络身份与显式HTTPS发布端口，前后不一致时拒绝。来源与账号共享唯一项目命名函数；来源缺失／停用、数据库重启导致的标签失配分别表达，不借旧容器或PostgreSQL来源补齐Redis。System私有源只关联有效纳管部署，浏览器发现／声明不含端点。
+
+相同形状的私有来源已统一为Common `EngineMetricsSource`，删除原PostgreSQL专属类型／文件，不保留别名；固定平台单容器目录集中定义PostgreSQL／postgres／5432和Redis／redis／6379。现有列表新增engine_type精确过滤，在计数／分页前执行；Monitor当前PostgreSQL页显式请求postgresql，Redis不被送入PG查询，也不提供尚未实现的专业页面入口。数据库端口缺失原因统一为database_port_missing，不保留旧SQL专用原因。System的原管理员确认界面已可同时确认两个作用域的Redis，默认名称按真实服务类型生成。
+
+实际验证：
+
+- `make test-module MODULE=system GO_ONLY=1`、`make test-module MODULE=monitor GO_ONLY=1`：Go T1退出0，日志 `/tmp/addp-redis-discovery-system-t1-filter.log`、`/tmp/addp-redis-discovery-monitor-t1.log`。Common `go test ./models ./client -count=1` 两包通过，日志 `/tmp/addp-redis-discovery-common-final.log`；包括Redis类型与来源键严格匹配及原Client完整性校验。
+- `python3 scripts/test/business-deployments_test.py`：44项通过，覆盖两作用域实际形状、错误Owner／scope／数据库身份／启动时间／网络／端口、重复源／停用及PG事实独立性，日志 `/tmp/addp-redis-discovery-python-final2.log`。
+- `make test-monitor-redis-source-unit`：两Go包及11项生命周期T1通过，日志 `/tmp/addp-redis-discovery-lifecycle-unit.log`。`make test-monitor-redis-source`：标准独占Redis T2退出0，日志 `/tmp/addp-redis-discovery-actual-source-final.log`。沿真实来源及数据库容器的Docker只读事实调用同一发现校验，只将项目命名函数替换为一次性命名空间，不放宽归属／身份／网络／端口规则。两作用域启动后available、数据库重启后旧源unavailable、重应用后恢复available且来源可读、停用后not_deployed均通过；沿用原mTLS、清权、重启持久化、损坏记录隔离和数据保留检查。项目 `addp-redis-t2-48920-48925` 及两套来源容器／网络／卷、私有配置卷退出后精确核对全零。
+- 标准 `make test-system-iam-postgres` 的 `--package repository --test engine-deployments`、`--package api --test engine-deployments`、`--package migration --test engine-deployments` 分包串行退出0，实际连接经Infra归属／映射核验的addp_iam_test。日志 `/tmp/addp-redis-discovery-pg-filter.log`（repository/API）及 `/tmp/addp-redis-discovery-pg-final.log`（migration）。覆盖Redis登记／重复来源／CAS／停用、当前有效主机与后台身份加入及移除、类型过滤的计数／分页；迁移前拒绝Redis、261后允许、跨类型／服务清单拒绝、重复迁移和授权快照不变。没有操作addp开发库或新建database。
+- `make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS=e2e/engine-deployments.e2e.js`：156项单测、14项页面T3和构建通过，日志 `/tmp/addp-redis-discovery-system-browser-redis.log`。最终按真实类型限制专业跳转后，`SYSTEM_FRONTEND_BROWSER_ARGS="e2e/engine-deployments.e2e.js --grep Redis"` 再验156项单测、1项Redis批量确认／PG专用跳转T3及构建通过，日志 `/tmp/addp-redis-discovery-system-browser-redis-final.log`。此前13项原PG流程也通过，不把受控浏览器当正式用户T4。
+- Monitor完整前端单测131项通过（`/tmp/addp-redis-discovery-monitor-frontend.log`）；同一标准 `scripts/test/frontend-browser-gate.mjs e2e/engine-resources.spec.js` 专项27项通过，含显式类型查询、自动筛选／刷新及返回；构建退出0，日志 `/tmp/addp-redis-discovery-monitor-build.log`。最初System／Monitor全量231／561场景已主动中断并由共享入口清理，不计全量通过、不修改其他会话浏览器进程。
+- System标准Swagger生成和覆盖校验退出0，247个公开路由方法一致；日志 `/tmp/addp-redis-discovery-swagger.log`、`/tmp/addp-redis-discovery-swagger-coverage.log`。T2注册事实检查通过，日志 `/tmp/addp-redis-discovery-registration-final.log`；沿现有System IAM、Monitor及发现配置门禁自动发现，不新增CI Job或外部依赖。
+- 完整 `make test-monitor-metrics-config` 的136项聚合本轮失败：两项既有ServiceExpectationPublicationTest停止夹具分别在fake ps的5秒和stop脚本10秒期限超时，未修复／延长超时，未计聚合通过，日志 `/tmp/addp-redis-discovery-config.log`。本批实际涉及的 `MetricsDeploymentConfigTest` 77项通过，日志 `/tmp/addp-redis-discovery-config-source.log`。脚本编译、语法与差异格式检查通过。
+
+发布依赖：本批000261只扩展平台部署类型／清单约束，不更新任何声明、身份、权限或角色；当前259／260为其他会话未提交WIP，Catalog要求从000001连续编号，因此不能单独提交／推送261。保存本批路径与共享文件基线于 `/tmp/addp-redis-discovery-owned-paths.json`、`/tmp/addp-redis-discovery-baseline/`，后续提交须精确隔离共享catalog、System文档／i18n／Swagger中的他人变更。未擅自提交前置迁移、改号避开或发布缺号main。清单维护会话进展及依赖协调已尝试发送，但工具以空闲会话无活动turn拒绝，未声称送达。
+
+Redis专业指标查询／页面仍待下一批；CI、Hosted和正式产品运行未在本会话查询、触发或重跑，等待专门会话回传；未设置定时任务、安装个人Redis账号或重启个人服务。推荐先完成前置迁移的发布顺序，再提交本批和开展Redis查询／专业页面。
+
+
+## Redis 专业指标查询与页面（2026-11-01）
+
+沿上一批共享工作区继续实现，功能尚未提交／推送：前置迁移259／260仍为其他会话未提交WIP，本批261不能越过连续Catalog发布。当前User、部署／有效主机、当前容器和来源在查询前后均重核，沿同一engine_resource_observations／summaries／trends接口和唯一Prometheus传输接入，不新增权限、租户归算或Monitor直连Redis。PG专用查询传输文件已删除，PG／Redis只保留各自固定目录及表达式，共用计划／预算、传输、批量摘要和归一化；不保留旧类型或方法别名。
+
+Redis目录共22项：运行时长、五项内存容量及限额占用率、三项连接、六项计数速率及命中率、五项持久化／加载状态。详情分组10／7／5项，显式切换后只查当前组，沿用单次最多12项预算；列表按System类型过滤后分页，摘要固定四项。内存限额占用率不截断100％，maxmemory为零时无比例；无查找请求时无命中率。六项速率及命中率需要完整一分钟、至少四样本与边界、同一counter_epoch和完整新鲜快照；缺样、状态非法、重复／缺少代际、容器身份不符和可见重置均不输出旧值或补零。沿用当前容器运行段趋势，不宣称识别不可见重置。
+
+Console原引擎页增加类型筛选、Redis分组、指标旁中英tip及语义状态；容量／时长复用共享格式化。趋势沿用现有共享缩放，手动／自动刷新保留图表DOM和视窗，失败或权限撤销清除旧值；System Redis部署的查看监控入口已开放。没有为Redis另建查询页或重复图表实现。
+
+本地验证分层如下：
+
+- `make test-module MODULE=monitor GO_ONLY=1`：最终全Monitor Go T1退出0，日志 `/tmp/addp-redis-query-go-final3.log`，含PG／Redis相同服务授权、版本／容器／来源／策略变化拒绝、12项预算和跨类型拒绝，以及Redis内存比例180％保留／非法状态拒绝。非本入口运行条件的集成用例仍由相应T2证明，不算T1已执行实源。
+- `make test-monitor-redis-source`：最终标准门禁退出0，日志 `/tmp/addp-redis-query-t2-final2.log`。同一受管独占Redis夹具中，Infra／Business账号真实读取／越权拒绝、mTLS来源、精确发现、重启持久化、运行代际、停用清权、损坏记录隔离和失败清理全部通过。新增同一固定Prometheus镜像内promtool原生表达式15场景：内存比例、命令速率、命中率、AOF关闭及运行时长正确；零上限、零查找、重置、代际更换／重复／缺失、边界缺失、错误身份、非法状态及缺字段均无结果。该表达式层采用受控固定样本，不等同于真实HTTP SD持续采集或正式用户HTTP链路。专属promtool无网络、只读根目录及有限tmpfs，不新增镜像／运行依赖。
+- 该最终项目 `addp-redis-t2-95846-95851` 及两个 `-metrics-infra／-metrics-business` 来源按精确标签独立复核容器／网络／卷均为零，两套私有配置卷亦为零；标准入口报告私有临时文件已删除。Prometheus浮点速率按原生45秒观测向一分钟外推的精确结果断言，不对产品取整／放宽；初次只读根目录缺少promtool临时目录已补限额tmpfs，不放宽长期容器权限。
+- Monitor前端 `npm test` 132项通过，日志 `/tmp/addp-redis-query-ui-unit-final3.log`；标准 `node ../../scripts/test/frontend-browser-gate.mjs e2e/engine-resources.spec.js e2e/redis-resources.spec.js` PG27＋Redis5共32项通过，日志 `/tmp/addp-redis-query-ui-final2.log`。补齐owner类型归一跳转前的过期请求检查并整理目录后，Redis专项5项T3再次通过，日志 `/tmp/addp-redis-query-ui-redis-final3.log`，覆盖双语言／直接详情按owner类型归一、分组10／5／7项、tip、零上限／无查找、类型列表返回、撤权清空及手动／自动刷新保留真实canvas和缩放。`npm run build`通过，日志 `/tmp/addp-redis-query-ui-build-final3.log`。这些为受控后端浏览器证据，不是个人Safari或正式用户T4。
+- System `make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS="e2e/engine-deployments.e2e.js --grep Redis"`：156项单测、1项Redis确认及PG／Redis监控跳转T3和构建通过，日志 `/tmp/addp-redis-query-system-link.log`。未重跑／声称全System浏览器或全Monitor浏览器通过。
+- 标准Monitor Swagger生成及覆盖校验通过，96个公开路由方法一致，日志 `/tmp/addp-redis-query-swagger.log`、`/tmp/addp-redis-query-swagger-coverage.log`。既有Monitor Go／前端和Release Redis来源门禁已覆盖本批；Redis T2登记增加resourcequery输入及同一夹具内promtool服务，注册事实检查通过（24／14／9／2），日志 `/tmp/addp-redis-query-registration.log`。无新CI Job、Hosted身份、权限或自动化。
+
+另收到既有Platform CI的确切失败证据（源0e69a25b1，run41304702173／job124842615454），根因在infra-port-resolution.sh临时停止夹具未复制观察来源新依赖。已仅补齐Redis入口及唯一共享私有状态／Docker／发现帮助文件，显式隔离并关闭本夹具Redis来源，再断言未安装停用状态。现工作区和冻结HEAD加单文件改动均沿 `bash scripts/test/infra-port-resolution.sh` 通过，日志 `/tmp/addp-redis-query-ci-fixture-fix.log`、`/tmp/addp-redis-query-ci-fix-frozen-head-final.log`；独立提交并推送 `db402ce4c965c402854ab6a008b6bd276b89349e`，不包含Redis功能或前置迁移。未查询／重跑该CI，不把本地修复当作线上Job已通过。
+
+正式System确认→Prometheus真实HTTP SD→当前User查询→Console全链路、CI／Hosted和个人Redis应用未在本会话运行；继续由专门会话回传，不新增定时任务、不启停个人服务。前置提交后应先精确隔离共享文件并发布本批，再讨论／安排Redis正式全链路验收；现有PG的Hosted用途不能自动扩大为Redis。
+
+本批已按湖南项目约定主动发送上述进展至p0维护会话；消息工具仍以“without an active turn id”拒绝空闲会话投递，未送达、未改XLSX。证据和发布依赖已保存在本节及现有设计状态中。
+
+
+### Redis 查询发布前的混合摘要与超限呈现复核（2026-11-01）
+
+用户继续推进后，只读确认前置259／260仍未提交，本批261及Redis查询／页面继续保留工作区，不越过发布条件。补足新共享查询路径的有意义边界验证，不扩大产品目录、权限、预算或Hosted用途：同一次PG／Redis批量摘要只发两次共享form读取，按类型分别归一化；有效零值和180％Redis内存占用率保留，Redis快照失败仅清空本部署，外来deployment标签或跨类型指标导致整批拒绝返回。`make test-module MODULE=monitor GO_ONLY=1` 全部通过，日志 `/tmp/addp-redis-query-summary-transport-go.log`。
+
+Console同一Redis受控夹具补中英文“超过100％→未设置上限”场景，验证列表／详情保留180.00％、趋势真实props不裁剪且原生悬停显示180.00％，切换无上限后比例为空并显示未设置上限；未更改产品公式、展示或轴逻辑。标准 `node ../../scripts/test/frontend-browser-gate.mjs e2e/redis-resources.spec.js` 最终7项T3通过（15.9秒），日志 `/tmp/addp-redis-query-over-limit-browser-final.log`；复用原刷新／缩放／tip／分组五项，不计正式Safari、User认证或实源页面T4。只有测试夹具及断言新增，前一轮产品构建／原生PromQL与实源T2输入未改变，不重复运行仍有效的T2或扩大为整套浏览器通过。
+
+System说明已同步为PG／Redis按当前User事实选择固定目录，未混入同文件的其他会话IAM变更。既有路径清单仍在 `/tmp/addp-redis-discovery-owned-paths.json`，发布前有界工作区摘要在 `/tmp/addp-redis-publication-review-snapshot.json`：72项本方路径、共享文件仅按本方hunk处理、前置迁移未提交状态；它是复核快照，不是已暂存／提交内容或永久证据来源。索引保持不动、格式检查通过。CI和Hosted继续等待专门会话回传，未查询／触发／重跑或设置定时任务，未修改个人服务／数据库／配置。
+
+
+2026-11-01 22:50（Asia/Shanghai）继续只读核对：259／260仍未提交，本批索引未暂存。现有设计增加“Redis正式全链路验收提案（待用户确认，尚未实施）”，具体列出同suite独立redis-engine-admission的当次两Redis、原管理员／Prometheus身份用途、固定指标／缺比率、真实页面、Business来源停用恢复及完整清理；没有修改有效T4身份例外或实现该profile，不将一般继续开发解释为扩大管理员测试用途。提案边界检查确认当前runner及人工workflow都未增加此名称。仅修正Monitor即时指标Swagger标题的多余空格，标准gen-swagger和覆盖校验通过，96个公开路由方法一致（`/tmp/addp-redis-query-swagger-final-review.log`、`/tmp/addp-redis-query-swagger-coverage-final-review.log`）；未改变API行为，不重复仍有效的Go／T2／页面验证，未运行CI／Hosted或定时任务。先请求限定测试用途确认，其他现有授权的发布准备继续保留。
+
+## Redis 正式全链路验收准备（2026-11-01）
+
+用户确认限定用途后，先更新既有《平台观测与语义生命周期》Redis条款，再为同一`platform-node-metrics`增加唯一人工`redis-engine-admission`选项。沿既有正式三员／真实密码MFA、独立Prometheus与当前User链路，不新增权限、角色、测试身份旁路或定时任务。复用原PG的登记／查询／浏览器核对流程，按真实类型选择固定目录；Redis三组10／7／5项、四项摘要和当前容器趋势均须读取，不因单次12项预算拆成隐式后台扫描。PG原profile继续独立。
+
+物理夹具只调用标准Business Redis Compose和唯一`redis-metrics.py`生命周期，生成当次且相互独立的管理／只读凭据；来源进程仅收到自身作用域所需管理凭据，不带业务只读密码、其他数据库密码或System身份。Redis不走PG认证目录，不增加数据库重启场景、键流量或加压。Business纳管停用／恢复和采集来源暂停／恢复各自验证旧值清空、Infra仍有效及新鲜采样恢复。候选确认按精确作用域／服务选择当次两行，不使用表头全选混入另一类引擎。
+
+来源项目名复用生产解析内核，解析禁止写Python缓存，以免改变Hosted只读预检的干净工作区。除Compose项目外，对生产owner管理的两个专属私有输入卷做启动前占用拒绝和退出零残留核对，不盲删外来卷。Business凭据不可读取时仍尝试清理Infra，并保留整体失败；本地模拟Docker测试不能证明真实Linux退出已清零。
+
+本批本地证据：
+
+- `PATH=/opt/homebrew/opt/openssl@3/bin:$PATH make test-node-metrics-online-runner`退出0：173项Python确定性测试及System Metrics身份Go夹具通过；包含真实OpenSSL证书准备、独立Python CLI、严格scope／owner／私有文件、成功与各阶段失败清理、既有PG回归、人工选项登记、22项目录／分组、零上限／无查询比例缺失、私有字段拒绝、两作用域全部三组及趋势浏览器回执。日志`/tmp/addp-redis-hosted-runner-final.log`。其中CLI使用模拟Docker，不冒充实际来源／Hosted。
+- `make test-protection-deployment-runner`退出0，39项通过，证明共享Hosted生命周期新增的空专属卷列表不破坏其他既有使用方；日志`/tmp/addp-redis-hosted-shared-lifecycle-final.log`。没有启动或重跑这些场景的真实Hosted。
+- `python3 scripts/ci/check-online-ci-registration.py --repository .`退出0，日志`/tmp/addp-redis-hosted-registration-final.log`；现有手工workflow／标准owner入口已登记，无新Job、schedule或放宽期限。shell、Online浏览器脚本语法及`git diff --check`通过。
+- Console标准 `npm run test:e2e -- e2e/engine-resource-navigation.spec.js`最终4项T3全部通过（34.9秒），日志`/tmp/addp-redis-hosted-console-navigation-final2.log`。新增Redis分组／刷新／返回保持同一iframe与类型，保留原PG双语自动筛选及语言tip场景；这是受控后端集成T3，不是正式身份T4。
+- 前置259／260已由其他会话提交于`7da941ee6`；本批261和产品链路可顺序发布。该提交后`make test-module MODULE=common GO_ONLY=1`、`MODULE=system`、`MODULE=monitor`均退出0，日志依次为`/tmp/addp-redis-release-common-go-final.log`、`/tmp/addp-redis-release-system-go-final.log`、`/tmp/addp-redis-release-monitor-go-final.log`。这些只证明Go T1，不代替先前独立T2或未运行T4。
+
+最初聚合runner在实现中曾因旧PG回执缺少metrics、临时CLI操作系统探测和Bash空数组／解析产生缓存而失败；均按根因补齐唯一生产依赖或严格回执后再由上述最终完整入口验证，不放宽值／身份／清理断言。Console首次专项中新Redis集成和既有语言tip通过，另两项原PG筛选精确请求断言遗漏本批新增engine_type；只同步明确的类型契约，不放松请求次数、URL或iframe断言。
+
+本地Redis实源T2／原生PromQL和Monitor／System受控页面证据仍按前节有效范围独立保留。正式RedisSystem确认→HTTP SD→Prometheus→当前User→真实Console以及全部真实退出清理尚未运行，CI／Hosted等待专门会话安排及回传；未查询、触发或重跑CI／Hosted，未应用到个人Redis或重启服务。

@@ -5192,6 +5192,17 @@ definitions:
       started_at:
         type: string
     type: object
+  models.EngineMetricsSource:
+    properties:
+      container_id:
+        type: string
+      endpoint:
+        type: string
+      started_at:
+        type: string
+      state:
+        type: string
+    type: object
   models.JSONMap:
     additionalProperties: true
     type: object
@@ -5202,7 +5213,7 @@ definitions:
       engine_type:
         type: string
       metrics:
-        $ref: '#/definitions/models.PostgreSQLMetricsSource'
+        $ref: '#/definitions/models.EngineMetricsSource'
       node_id:
         type: string
       scope:
@@ -5265,17 +5276,6 @@ definitions:
         type: string
       version:
         type: integer
-    type: object
-  models.PostgreSQLMetricsSource:
-    properties:
-      container_id:
-        type: string
-      endpoint:
-        type: string
-      started_at:
-        type: string
-      state:
-        type: string
     type: object
   models.ProcessMetricsDeclaration:
     properties:
@@ -10700,6 +10700,13 @@ paths:
       - description: 部署名称片段 | Deployment name fragment
         in: query
         name: search
+        type: string
+      - description: 引擎类型 | Engine type
+        enum:
+        - postgresql
+        - redis
+        in: query
+        name: engine_type
         type: string
       - description: 声明的主机 UUID | Declared host UUID
         in: query

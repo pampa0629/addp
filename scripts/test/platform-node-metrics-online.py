@@ -1377,8 +1377,68 @@ ENGINE_METRICS.update({"postgresql.deadlocks.per_second": ("events_per_second", 
 ENGINE_SUMMARY_KEYS = {"postgresql.connections.total", "postgresql.connections.active", "postgresql.transactions.committed_per_second", "postgresql.database.total_bytes"}
 
 
+REDIS_METRICS = {
+    "redis.uptime_seconds": ("seconds", 0),
+    **{"redis.memory."+key: ("bytes", 0) for key in ("allocated_bytes", "rss_bytes", "limit_bytes", "excluded_bytes", "counted_bytes")},
+    "redis.memory.used_percent": ("percent", 0),
+    **{"redis.connections."+key: ("connections", 0) for key in ("total", "maximum", "blocked")},
+    "redis.commands.per_second": ("commands_per_second", 60),
+    **{key: ("events_per_second", 60) for key in ("redis.keyspace.hits_per_second", "redis.keyspace.misses_per_second", "redis.evictions.per_second", "redis.connections.rejected_per_second", "redis.oom.per_second")},
+    "redis.keyspace.hit_percent": ("percent", 60),
+    **{key: ("status", 0) for key in ("redis.loading", "redis.persistence.aof_enabled", "redis.persistence.rdb_save_ok", "redis.persistence.aof_write_ok", "redis.persistence.aof_rewrite_ok")},
+}
+REDIS_SUMMARY_KEYS = {"redis.memory.allocated_bytes", "redis.memory.used_percent", "redis.connections.total", "redis.commands.per_second"}
+
+
+def engine_catalog(kind):
+    require(kind in {"postgresql", "redis"}, "unsupported professional engine type")
+    return ENGINE_METRICS if kind == "postgresql" else REDIS_METRICS
+
+
+def engine_summary_keys(kind):
+    engine_catalog(kind)
+    return ENGINE_SUMMARY_KEYS if kind == "postgresql" else REDIS_SUMMARY_KEYS
+
+
+def engine_trend_key(kind):
+    engine_catalog(kind)
+    return "postgresql.transactions.committed_per_second" if kind == "postgresql" else "redis.commands.per_second"
+
+
+def engine_metric_groups(kind):
+    catalog = engine_catalog(kind)
+    if kind == "postgresql": return [set(catalog)]
+    resources = {key for key, (unit, _) in catalog.items() if unit != "status" and catalog[key][1] == 0}
+    throughput = {key for key, (_, window) in catalog.items() if window == 60}
+    persistence = {key for key, (unit, _) in catalog.items() if unit == "status"}
+    return [resources, throughput, persistence]
+
+
+def allowed_empty_ratio(owner, series, rows):
+    key = series["metric_key"]
+    if key == "redis.memory.used_percent":
+        # The standard Infra Redis entry has no maxmemory setting. Business
+        # retains its fixed 256 MiB setting; do not relax either assertion.
+        return owner["inventory"]["source"]["project"] == "addp-infra"
+    if key == "redis.keyspace.hit_percent":
+        evidence = {row["metric_key"]: row["points"][0] for row in rows}
+        points = [evidence.get("redis.keyspace."+name+"_per_second", {}) for name in ("hits", "misses")]
+        return all(point.get("data_state") == "valid" and point.get("value") == 0 for point in points)
+    return False
+
+
+def engine_query_paths(owner, trend=False):
+    kind = owner["engine_type"]
+    if trend: return [engine_query_path(owner["deployment_id"], True, kind=kind)]
+    return [engine_query_path(owner["deployment_id"], kind=kind, keys=group) for group in engine_metric_groups(kind)]
+
+
 def assert_engine_resources(value, owners, *, keys=None, trend=False, fresh=False, absent=False):
-    keys = set(keys or ENGINE_METRICS)
+    require(owners and len({owner["engine_type"] for owner in owners}) == 1, "engine response type scope differs")
+    kind = owners[0]["engine_type"]
+    catalog = engine_catalog(kind)
+    keys = set(keys or catalog)
+    require(keys and keys <= set(catalog) and len(keys) <= 12, "engine query metric group differs")
     require(isinstance(value, dict) and isinstance(value.get("data"), list) and len(value["data"]) == len(owners), "engine response scope differs")
     start, end, queried = (utc_timestamp(value.get(key)) for key in ("start", "end", "queried_at"))
     step = value.get("step_seconds")
@@ -1393,7 +1453,7 @@ def assert_engine_resources(value, owners, *, keys=None, trend=False, fresh=Fals
         owner = next((item for item in owners if item["deployment_id"] == identifier), None)
         require(owner is not None and identifier not in seen, "engine response contains another deployment")
         seen.add(identifier)
-        require(row["subject"] == {"kind":"engine_deployment", "deployment_id":identifier, "display_name":owner["display_name"], "engine_type":"postgresql"}
+        require(row["subject"] == {"kind":"engine_deployment", "deployment_id":identifier, "display_name":owner["display_name"], "engine_type":kind}
                 and row.get("node_id") == owner["node_id"] and set(row) == {"subject", "node_id", "collection", "series"}, "engine subject changed or private fields escaped")
         require(isinstance(row.get("series"), list) and len(row["series"]) == len(keys)
                 and {series.get("metric_key") for series in row["series"]} == keys, "engine fixed catalog differs")
@@ -1403,7 +1463,7 @@ def assert_engine_resources(value, owners, *, keys=None, trend=False, fresh=Fals
         container_start = utc_timestamp(owner["inventory"]["services"][0]["containers"][0]["started_at"])
         if trend and not absent: require(start >= math.ceil(container_start) and end-start <= 7*86400, "engine trend includes a previous container run")
         for series in row["series"]:
-            unit, window = ENGINE_METRICS[series["metric_key"]]
+            unit, window = catalog[series["metric_key"]]
             require(series.get("unit") == unit and series.get("window_seconds") == window and series.get("dimensions") == {}
                     and isinstance(series.get("points"), list) and len(series["points"]) == count, "engine series contract differs")
             for index, point in enumerate(series["points"]):
@@ -1414,51 +1474,78 @@ def assert_engine_resources(value, owners, *, keys=None, trend=False, fresh=Fals
                 elif status == "valid":
                     require(type(number) in (int, float) and math.isfinite(number) and number >= 0
                             and (unit != "connections" or int(number) == number)
+                            and (unit != "status" or number in (0, 1))
+                            and (series["metric_key"] != "redis.keyspace.hit_percent" or number <= 100)
                             and 0 <= start+index*step-utc_timestamp(sample) <= 60, "engine value or sample is invalid")
                 else:
-                    require(not fresh or trend, "engine current window is incomplete")
+                    optional = not trend and status == "no_data" and allowed_empty_ratio(owner, series, row["series"])
+                    require(not fresh or trend or optional, "engine current window is incomplete")
                     require(status in {"no_data", "no_sample", "stale"}, "engine missing state differs")
                     if status != "stale": require(number is None and sample is None, "engine missing value fabricated")
                     else: require(type(number) in (int, float) and math.isfinite(number) and number >= 0 and start+index*step-utc_timestamp(sample) > 60, "stale engine point is invalid")
-            if trend and not absent: require(any(point["data_state"] == "valid" for point in series["points"]), "engine trend contains no valid sample")
+            if trend and not absent and not (series["metric_key"] == "redis.memory.used_percent" and owner["inventory"]["source"]["project"] == "addp-infra"):
+                require(any(point["data_state"] == "valid" for point in series["points"]), "engine trend contains no valid sample")
+        if kind == "redis" and fresh and not trend:
+            points = {series["metric_key"]: series["points"][0] for series in row["series"]}
+            if "redis.memory.limit_bytes" in points:
+                limit = points["redis.memory.limit_bytes"]["value"]
+                require(limit == (0 if owner["inventory"]["source"]["project"] == "addp-infra" else 256*1024**2), "owned Redis startup memory limit differs")
+                ratio = points["redis.memory.used_percent"]
+                if limit == 0: require(ratio["data_state"] == "no_data" and ratio["value"] is None, "unlimited Redis fabricated a ratio")
+                else: require(ratio["data_state"] == "valid" and abs(ratio["value"] - 100*points["redis.memory.counted_bytes"]["value"]/limit) < 1e-6, "Redis limit ratio differs")
+            if "redis.keyspace.hit_percent" in points:
+                hits, misses = (points["redis.keyspace."+key+"_per_second"]["value"] for key in ("hits", "misses"))
+                ratio = points["redis.keyspace.hit_percent"]
+                if hits+misses == 0: require(ratio["data_state"] == "no_data" and ratio["value"] is None, "no lookup fabricated a ratio")
+                else: require(ratio["data_state"] == "valid" and abs(ratio["value"] - 100*hits/(hits+misses)) < 1e-6, "Redis lookup ratio differs")
     return value
 
 
-def engine_query_path(identifier, trend=False):
-    params = {"deployment_id": identifier, "metrics": ",".join(ENGINE_METRICS)}
+def engine_query_path(identifier, trend=False, *, kind="postgresql", keys=None):
+    params = {"deployment_id": identifier, "metrics": ",".join(sorted(keys or engine_metric_groups(kind)[0]))}
     if trend:
         end = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
-        params.update(metrics="postgresql.transactions.committed_per_second", start=(end-datetime.timedelta(minutes=5)).isoformat().replace("+00:00", "Z"), end=end.isoformat().replace("+00:00", "Z"))
+        params.update(metrics=engine_trend_key(kind), start=(end-datetime.timedelta(minutes=5)).isoformat().replace("+00:00", "Z"), end=end.isoformat().replace("+00:00", "Z"))
     return (ENGINE_TRENDS if trend else ENGINE_OBSERVATIONS)+"?"+urllib.parse.urlencode(params)
 
 
 def assert_engine_cleared(admin, owner):
-    identifier = owner["deployment_id"]
-    assert_engine_resources(admin.request("GET", engine_query_path(identifier), (200,)).payload, [owner], absent=True)
-    assert_engine_resources(admin.request("GET", ENGINE_SUMMARIES+"?deployment_ids="+identifier, (200,)).payload, [owner], keys=ENGINE_SUMMARY_KEYS, absent=True)
-    assert_engine_resources(admin.request("GET", engine_query_path(identifier, True), (200,)).payload, [owner], keys={"postgresql.transactions.committed_per_second"}, trend=True, absent=True)
+    identifier, kind = owner["deployment_id"], owner["engine_type"]
+    for path, keys in zip(engine_query_paths(owner), engine_metric_groups(kind)):
+        assert_engine_resources(admin.request("GET", path, (200,)).payload, [owner], keys=keys, absent=True)
+    assert_engine_resources(admin.request("GET", ENGINE_SUMMARIES+"?deployment_ids="+identifier, (200,)).payload, [owner], keys=engine_summary_keys(kind), absent=True)
+    assert_engine_resources(admin.request("GET", engine_query_paths(owner, True)[0], (200,)).payload, [owner], keys={engine_trend_key(kind)}, trend=True, absent=True)
 
 
 def wait_engine_samples(admin, owners):
-    # SD 30s + scrape 15s + SQL 5s + complete 60s window + margin.
+    # SD 30s + scrape 15s + bounded source read + full 60s window + margin.
     deadline = time.monotonic()+130
     while True:
-        values = [assert_engine_resources(admin.request("GET", engine_query_path(row["deployment_id"]), (200,)).payload, [row]) for row in owners]
-        if all(point.get("data_state") == "valid" for value in values for row in value["data"] for series in row["series"] for point in series["points"]):
-            for value, owner in zip(values, owners): assert_engine_resources(value, [owner], fresh=True)
-            return values
-        require(time.monotonic() < deadline, "PostgreSQL complete sampling window did not converge")
+        values = []
+        ready = True
+        for owner in owners:
+            for path, keys in zip(engine_query_paths(owner), engine_metric_groups(owner["engine_type"])):
+                value = assert_engine_resources(admin.request("GET", path, (200,)).payload, [owner], keys=keys)
+                values.append(value)
+                try: assert_engine_resources(value, [owner], keys=keys, fresh=True)
+                except SuiteError as error:
+                    if str(error) not in {"engine current window is incomplete", "engine snapshot is not collecting"}: raise
+                    ready = False
+        if ready: return values
+        require(time.monotonic() < deadline, "Engine complete sampling window did not converge")
         time.sleep(3)
 
 
 def run_engine_professional_case(base, directory, admin, actor, denied, owners, report):
     report["stage"] = "engine-professional-current-container-queries"; write_evidence(report)
+    kind = owners[0]["engine_type"]
+    summary_keys, trend_key = engine_summary_keys(kind), engine_trend_key(kind)
     values = wait_engine_samples(admin, owners)
     summary_path = ENGINE_SUMMARIES+"?"+urllib.parse.urlencode({"deployment_ids":",".join(row["deployment_id"] for row in owners)})
-    summary = assert_engine_resources(admin.request("GET", summary_path, (200,)).payload, owners, keys=ENGINE_SUMMARY_KEYS, fresh=True)
-    trends = [assert_engine_resources(admin.request("GET", engine_query_path(row["deployment_id"], True), (200,)).payload, [row], keys={"postgresql.transactions.committed_per_second"}, trend=True) for row in owners]
+    summary = assert_engine_resources(admin.request("GET", summary_path, (200,)).payload, owners, keys=summary_keys, fresh=True)
+    trends = [assert_engine_resources(admin.request("GET", engine_query_paths(row, True)[0], (200,)).payload, [row], keys={trend_key}, trend=True) for row in owners]
     for client in [*denied, API.GatewayClient(base, "", 10)]:
-        for path in (engine_query_path(owners[0]["deployment_id"]), summary_path, engine_query_path(owners[0]["deployment_id"], True)):
+        for path in [*engine_query_paths(owners[0]), summary_path, *engine_query_paths(owners[0], True)]:
             client.request("GET", path, (403,) if client.token else (401,))
     artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
     security_id = denied[0].request("GET", "/api/v1/system/auth/context", (200,)).payload["principal"]["id"]
@@ -1470,19 +1557,34 @@ def run_engine_professional_case(base, directory, admin, actor, denied, owners, 
     admin = renew_admin(base, actor["principal"]["id"])
     report["stage"] = "engine-professional-source-stop-and-recovery"; write_evidence(report)
     business = next(row for row in owners if row["inventory"]["source"]["project"] == "business")
+    if kind == "redis":
+        path = ENGINE_DEPLOYMENTS+"/"+business["deployment_id"]
+        body = {key: business[key] for key in ("display_name", "declared_node_id", "version")}
+        disabled = admin.request("PUT", path, (200,), dict(body, enabled=False)).payload
+        require(disabled.get("version") == business["version"]+1 and disabled.get("enabled") is False, "Redis managed stop differs")
+        assert_engine_cleared(admin, disabled)
+        infra = next(row for row in owners if row["inventory"]["source"]["project"] == "addp-infra")
+        wait_engine_samples(admin, [infra])
+        restored = admin.request("PUT", path, (200,), dict(body, enabled=True, version=disabled["version"])).payload
+        require(restored.get("version") == disabled["version"]+1 and restored.get("enabled") is True and restored.get("node_id") == business["node_id"]
+                and restored.get("inventory") == business["inventory"], "Redis managed recovery changed its source or host")
+        business.clear(); business.update(restored)
+        wait_engine_samples(admin, owners)
     try:
         FIXTURE.engine_source_action(directory, "engine-metrics-pause")
         def stopped():
-            value = admin.request("GET", engine_query_path(business["deployment_id"]), (200,)).payload
+            value = admin.request("GET", engine_query_paths(business)[0], (200,)).payload
             if value.get("data", [{}])[0].get("collection", {}).get("state") not in {"not_connected", "source_unavailable"}: return False
-            assert_engine_resources(value, [business], absent=True)
+            assert_engine_resources(value, [business], keys=engine_metric_groups(kind)[0], absent=True)
             assert_engine_cleared(admin, business)
             return True
-        eventually(stopped, "stopped PostgreSQL source retained current values")
+        eventually(stopped, "stopped engine source retained current values")
+        infra = next(row for row in owners if row["inventory"]["source"]["project"] == "addp-infra")
+        wait_engine_samples(admin, [infra])
     finally:
         FIXTURE.engine_source_action(directory, "engine-metrics-resume")
     wait_engine_samples(admin, owners)
-    report["engine_resources"] = {"result":"passed", "deployments":2, "instant_metrics":12, "summary_metrics":4,
+    report["engine_resources"] = {"result":"passed", "deployments":2, "instant_metrics":len(engine_catalog(kind)), "summary_metrics":4,
                                   "current_container_trends":True, "source_stop_clears":True, "source_restored":True,
                                   "identity_denials":True, "browser":True}
     return admin
@@ -1498,6 +1600,7 @@ def validate_engine_professional_browser(value, expected, artifacts):
     detail = value.get("engine_resources", {})
     require(detail.get("reloaded") is True and detail.get("zero_and_units") is True and detail.get("denied") is True, "engine professional browser assertions missing")
     owners = expected["engine_resources"]["owners"]
+    kind = owners[0]["engine_type"]
     reads = detail.get("reads", [])
     require(isinstance(reads, list) and len(reads) >= 5, "engine professional browser reads missing")
     covered = set()
@@ -1506,15 +1609,18 @@ def validate_engine_professional_browser(value, expected, artifacts):
         path, query = item.get("path"), item.get("query", {})
         if path == ENGINE_SUMMARIES:
             require(set(query.get("deployment_ids", "").split(",")) == {row["deployment_id"] for row in owners}, "browser summary scope differs")
-            assert_engine_resources(item.get("value"), owners, keys=ENGINE_SUMMARY_KEYS, fresh=True)
+            assert_engine_resources(item.get("value"), owners, keys=engine_summary_keys(kind), fresh=True)
             covered.add((path, "all"))
         else:
             owner = next((row for row in owners if row["deployment_id"] == query.get("deployment_id")), None)
             require(owner is not None and path in {ENGINE_OBSERVATIONS, ENGINE_TRENDS}, "browser read another engine")
             trend = path == ENGINE_TRENDS
-            assert_engine_resources(item.get("value"), [owner], keys={"postgresql.transactions.committed_per_second"} if trend else None, trend=trend, fresh=not trend)
-            covered.add((path, owner["deployment_id"]))
-    require((ENGINE_SUMMARIES, "all") in covered and all((path, row["deployment_id"]) in covered for row in owners for path in (ENGINE_OBSERVATIONS, ENGINE_TRENDS)), "browser missed a professional endpoint or deployment")
+            keys = set(query.get("metrics", "").split(","))
+            require((len(keys) == 1 and keys <= set(engine_catalog(kind))) if trend else keys in engine_metric_groups(kind), "browser engine group differs")
+            assert_engine_resources(item.get("value"), [owner], keys=keys, trend=trend, fresh=not trend)
+            covered.add((path, owner["deployment_id"], frozenset(keys)))
+    require((ENGINE_SUMMARIES, "all") in covered and all((ENGINE_TRENDS, row["deployment_id"], frozenset({engine_trend_key(kind)})) in covered
+                and all((ENGINE_OBSERVATIONS, row["deployment_id"], frozenset(group)) in covered for group in engine_metric_groups(kind)) for row in owners), "browser missed a professional endpoint or deployment")
     for name in ("engine-resources-list.png", "engine-resources-detail.png"):
         path = artifacts/name
         require(path.is_file() and path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), "engine professional screenshot missing")
@@ -1525,11 +1631,11 @@ def engine_candidates(admin):
     while True:
         value=admin.request("GET",ENGINE_DEPLOYMENTS+"/discovery",(200,)).payload
         require(isinstance(value,dict) and isinstance(value.get("scopes"),list) and isinstance(value.get("candidates"),list) and all(isinstance(row,dict) for row in value["candidates"]),"engine discovery envelope differs")
-        candidates=[row for row in value["candidates"] if row.get("service")=="postgres" and row.get("eligible") is True]
+        candidates=[row for row in value["candidates"] if row.get("service")==FIXTURE.engine_profile()["service"] and row.get("eligible") is True]
         if len(candidates)==2 and {row.get("scope") for row in candidates}=={"infra","business"}:
             require(all(re.fullmatch(r"[a-f0-9]{64}",row.get("fingerprint","")) and not row.get("deployment_id") for row in candidates),"engine candidate is already registered or malformed")
             return value, sorted(candidates,key=lambda row:row["scope"])
-        require(time.monotonic()<deadline,"both owned PostgreSQL sources did not become available")
+        require(time.monotonic()<deadline,"both owned engine sources did not become available")
         time.sleep(2)
 
 
@@ -1548,7 +1654,7 @@ def validate_engine_admission_browser(value,expected,artifacts):
     require(isinstance(created,list) and len(created)==2 and all(isinstance(row,dict) and isinstance(row.get("inventory"),dict) and isinstance(row["inventory"].get("source"),dict) for row in created) and len({row.get("deployment_id") for row in created})==2,"engine browser deployment identities differ")
     for row,item in zip(sorted(created,key=lambda row:row.get("inventory",{}).get("source",{}).get("project","")),sorted(wanted,key=lambda item: "addp-infra" if item["scope"]=="infra" else "business")):
         require(canonical_uuid(row.get("deployment_id")) and type(row.get("version")) is int and row["version"]==1
-                and row.get("enabled") is True and row.get("engine_type")=="postgresql" and row.get("display_name")==item["display_name"] and row.get("declared_node_id")==item["declared_node_id"]
+                and row.get("enabled") is True and row.get("engine_type")==("redis" if item["service"] == "redis" else "postgresql") and row.get("display_name")==item["display_name"] and row.get("declared_node_id")==item["declared_node_id"]
                 and row.get("node_id")==item["declared_node_id"] and row.get("host_binding_state")=="bound"
                 and row.get("inventory",{}).get("schema")=="addp.engine-deployment-inventory/v1"
                 and row["inventory"]["source"].get("project")==("addp-infra" if item["scope"]=="infra" else "business"),"engine admission receipt changed")
@@ -1572,12 +1678,14 @@ def run_engine_admission_case(base,directory,admin,actor,denied,report):
     require(FIXTURE.boundary()==directory,"engine admission requires owned Hosted deployment")
     artifacts=Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
     report["stage"]="engine-source-discovery"; write_evidence(report)
+    if FIXTURE.engine_profile()["kind"] == "redis":
+        FIXTURE.engine_source_action(directory, "engine-metrics-up")
     require(admin.request("GET",ENGINE_DEPLOYMENTS,(200,)).payload.get("total")==0,"engine inventory is not empty")
     discovery,candidates=engine_candidates(admin)
     node_input={"display_name":"Online engine host "+os.environ["ADDP_ONLINE_TEST_RUN_ID"],"node_kind":"virtual","addresses":[],"enabled":True,"allowed_module_bindings":[]}
     host=admin.request("POST",NODES,(201,),node_input).payload
     require(canonical_uuid(host.get("node_id")) and host.get("version")==1,"engine host creation differs")
-    items=[{k:row[k] for k in ("scope","service","fingerprint")} | {"display_name":"Online "+row["scope"]+" PostgreSQL "+os.environ["ADDP_ONLINE_TEST_RUN_ID"],"enabled":True,"declared_node_id":host["node_id"]} for row in candidates]
+    items=[{k:row[k] for k in ("scope","service","fingerprint")} | {"display_name":"Online "+row["scope"]+" "+FIXTURE.engine_profile()["kind"]+" "+os.environ["ADDP_ONLINE_TEST_RUN_ID"],"enabled":True,"declared_node_id":host["node_id"]} for row in candidates]
     report["stage"]="engine-batch-rejection-and-rollback"; write_evidence(report)
     invalid=[dict(row) for row in items]; next(row for row in invalid if row["scope"]=="business")["declared_node_id"]=str(uuid.uuid4())
     failure=admin.request("POST",ENGINE_DEPLOYMENTS,(409,),{"items":invalid}).payload
@@ -1589,16 +1697,17 @@ def run_engine_admission_case(base,directory,admin,actor,denied,report):
         for path in (ENGINE_DEPLOYMENTS,ENGINE_DEPLOYMENTS+"/discovery"):
             client.request("GET",path,expected_status)
         client.request("POST",ENGINE_DEPLOYMENTS,expected_status,{"items":items})
-    report["stage"]="engine-real-source-change"; write_evidence(report)
-    FIXTURE.engine_source_action(directory,"engine-restart")
-    FIXTURE.engine_source_action(directory,"engine-metrics-up")
-    changed,new_candidates=engine_candidates(admin)
-    old={row["scope"]:row["fingerprint"] for row in items}; new={row["scope"]:row["fingerprint"] for row in new_candidates}
-    require(old["business"]!=new["business"] and old["infra"]==new["infra"],"actual Business restart did not change only its source facts")
-    failure=admin.request("POST",ENGINE_DEPLOYMENTS,(409,),{"items":items}).payload
-    require(failure.get("error_code")=="engine_deployment_source_changed","stale source was not rejected")
-    require(admin.request("GET",ENGINE_DEPLOYMENTS,(200,)).payload.get("total")==0,"stale confirmation created an identity")
-    for row in items: row["fingerprint"]=new[row["scope"]]
+    if FIXTURE.engine_profile()["kind"] == "postgresql":
+        report["stage"]="engine-real-source-change"; write_evidence(report)
+        FIXTURE.engine_source_action(directory,"engine-restart")
+        FIXTURE.engine_source_action(directory,"engine-metrics-up")
+        changed,new_candidates=engine_candidates(admin)
+        old={row["scope"]:row["fingerprint"] for row in items}; new={row["scope"]:row["fingerprint"] for row in new_candidates}
+        require(old["business"]!=new["business"] and old["infra"]==new["infra"],"actual Business restart did not change only its source facts")
+        failure=admin.request("POST",ENGINE_DEPLOYMENTS,(409,),{"items":items}).payload
+        require(failure.get("error_code")=="engine_deployment_source_changed","stale source was not rejected")
+        require(admin.request("GET",ENGINE_DEPLOYMENTS,(200,)).payload.get("total")==0,"stale confirmation created an identity")
+        for row in items: row["fingerprint"]=new[row["scope"]]
     expected={"run_id":os.environ["ADDP_ONLINE_TEST_RUN_ID"],"admin_id":actor["principal"]["id"],"engine_admission":{"items":items,"host":host}}
     (artifacts/"node-resources-browser-input.json").write_text(json.dumps(expected))
     report["stage"]="engine-console-batch-admission"; write_evidence(report)
@@ -1612,20 +1721,20 @@ def run_engine_admission_case(base,directory,admin,actor,denied,report):
         path=ENGINE_DEPLOYMENTS+"/"+receipt["deployment_id"]
         stored=admin.request("GET",path,(200,)).payload
         require(all(stored.get(k)==receipt.get(k) for k in ("deployment_id","display_name","inventory","declared_node_id","version")),"engine browser receipt differs from Owner")
-        body={"display_name":stored["display_name"]+" verified","enabled":True,"declared_node_id":host["node_id"],"version":1}
+        body={"display_name":stored["display_name"]+" verified","enabled":True,"declared_node_id":host["node_id"],"version":stored["version"]}
         updated=admin.request("PUT",path,(200,),body).payload
-        require(updated.get("version")==2 and updated.get("display_name")==body["display_name"] and updated.get("inventory")==stored["inventory"],"engine management changed its source or did not advance version")
+        require(updated.get("version")==stored["version"]+1 and updated.get("display_name")==body["display_name"] and updated.get("inventory")==stored["inventory"],"engine management changed its source or did not advance version")
         admin.request("PUT",path,(409,),body)
         for client in denied:
-            client.request("GET",path,(403,)); client.request("PUT",path,(403,),dict(body,version=2))
+            client.request("GET",path,(403,)); client.request("PUT",path,(403,),dict(body,version=updated["version"]))
         unchanged=admin.request("GET",path,(200,)).payload
         require(all(unchanged.get(k)==updated.get(k) for k in ("version","display_name","inventory","declared_node_id","enabled")),"rejected engine writes changed current state")
-        retired=admin.request("PUT",path,(200,),dict(body,enabled=False,version=2)).payload
-        require(retired.get("version")==3 and retired.get("host_binding_reason")=="deployment_disabled","engine retirement differs")
+        retired=admin.request("PUT",path,(200,),dict(body,enabled=False,version=updated["version"])).payload
+        require(retired.get("version")==updated["version"]+1 and retired.get("host_binding_reason")=="deployment_disabled","engine retirement differs")
         assert_engine_cleared(admin, retired)
     final_host=admin.request("PUT",NODES+"/"+host["node_id"],(200,),dict(node_input,enabled=False,version=1)).payload
     require(final_host.get("version")==2 and final_host.get("enabled") is False,"engine host was not retired")
-    report.update(engine_admission={"result":"passed","batch_size":2,"failed_batch_no_roots":True,"source_changed":True,"duplicate_rejected":True,"browser_reload":True,"owner_reads":True,"cas":True,"retired":True},stage="complete",result="passed")
+    report.update(engine_admission={"result":"passed","batch_size":2,"failed_batch_no_roots":True,"source_changed":FIXTURE.engine_profile()["kind"] == "postgresql","duplicate_rejected":True,"browser_reload":True,"owner_reads":True,"cas":True,"retired":True},stage="complete",result="passed")
     write_evidence(report)
 
 def run_host_admission_case(base, directory, admin_identity, report):
@@ -2519,7 +2628,7 @@ def run_workers_case(base, directory, admin, admin_identity, machine, denied, re
 
 def acceptance_case():
     value = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE", "regression")
-    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability"}, "unsupported Hosted metrics acceptance case")
+    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "redis-engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability"}, "unsupported Hosted metrics acceptance case")
     return value
 
 
@@ -2608,7 +2717,7 @@ def run(base, directory, report):
     if selected_case in FIXTURE.WORKER_PROFILES:
         run_workers_case(base, directory, admin, admin_identity, machine, [security, machine, *tenant_clients], report)
         return
-    if selected_case == "engine-admission":
+    if selected_case in FIXTURE.ENGINE_PROFILES:
         run_engine_admission_case(base,directory,admin,admin_identity,[security,machine,*tenant_clients],report)
         return
     if selected_case == "host-admission":

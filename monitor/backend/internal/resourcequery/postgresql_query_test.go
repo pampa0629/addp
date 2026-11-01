@@ -13,9 +13,9 @@ import (
 	"github.com/addp/common/models"
 )
 
-func queryPostgreSQLScope() PostgreSQLScope {
+func queryEngineScope() EngineScope {
 	started := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
-	return PostgreSQLScope{DeploymentID: "10000000-0000-4000-8000-000000000001", Instance: "127.0.0.1:9443", Source: models.PostgreSQLMetricsSource{State: "available", Endpoint: "https://127.0.0.1:9443/metrics", ContainerID: strings.Repeat("a", 64), StartedAt: &started}}
+	return EngineScope{EngineType: "postgresql", DeploymentID: "10000000-0000-4000-8000-000000000001", Instance: "127.0.0.1:9443", Source: models.EngineMetricsSource{State: "available", Endpoint: "https://127.0.0.1:9443/metrics", ContainerID: strings.Repeat("a", 64), StartedAt: &started}}
 }
 
 func TestPostgreSQLQueriesRequireSnapshotAndCompleteCounterGeneration(t *testing.T) {
@@ -28,7 +28,7 @@ func TestPostgreSQLQueriesRequireSnapshotAndCompleteCounterGeneration(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	expression, err := queryPostgreSQLScope().expression(p)
+	expression, err := queryEngineScope().expression(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestPostgreSQLQueriesRequireSnapshotAndCompleteCounterGeneration(t *testing
 	}))
 	defer server.Close()
 	c := &Client{origin: server.URL, http: server.Client()}
-	result, err := c.PostgreSQLQuery(context.Background(), p, queryPostgreSQLScope(), DefaultBudget())
+	result, err := c.EngineQuery(context.Background(), p, queryEngineScope(), DefaultBudget())
 	if err != nil || result.Collection.State != "snapshot_unavailable" || calls != 2 {
 		t.Fatalf("SQL failure evidence %+v %v", result.Collection, err)
 	}
@@ -72,7 +72,7 @@ func TestPostgreSQLQueriesRequireSnapshotAndCompleteCounterGeneration(t *testing
 		}
 	}
 	validSnapshot = true
-	result, err = c.PostgreSQLQuery(context.Background(), p, queryPostgreSQLScope(), DefaultBudget())
+	result, err = c.EngineQuery(context.Background(), p, queryEngineScope(), DefaultBudget())
 	if err != nil || result.Collection.State != "collecting" || len(result.Series) != 12 {
 		t.Fatal("valid snapshot lost", err)
 	}

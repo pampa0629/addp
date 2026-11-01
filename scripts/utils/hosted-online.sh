@@ -177,6 +177,14 @@ for hosted_project in "${HOSTED_FIXTURE_COMPOSE_PROJECTS[@]:-}"; do
       fail "refusing existing Compose project $kind: $hosted_project"
   done
 done
+# Deployment owners can publish private input volumes outside Compose labels.
+# Refuse reuse before creating any identities; owner cleanup removes only its own.
+for fixture_volume in "${HOSTED_FIXTURE_VOLUMES[@]:-}"; do
+  [ -n "$fixture_volume" ] || continue
+  fixture_remaining=$(docker volume ls -q --filter "name=^$fixture_volume$") ||
+    fail "cannot inspect private fixture volume"
+  [ -z "$fixture_remaining" ] || fail "refusing existing private fixture volume"
+done
 for fixture_image in "${HOSTED_FIXTURE_IMAGES[@]:-}"; do
   [ -n "$fixture_image" ] || continue
   if docker image inspect "$fixture_image" >/dev/null 2>&1; then

@@ -33,7 +33,7 @@ func (s *DeploymentDiscoveryService) Read(ctx context.Context) models.Deployment
 	result := models.DeploymentDiscovery{Scopes: make([]models.DeploymentDiscoveryScope, 0, 2), Candidates: []models.EngineDeploymentCandidate{}}
 	for _, scope := range []string{"infra", "business"} {
 		value := s.readScope(ctx, scope)
-		value.PostgreSQLMetrics = nil // The browser projection has no professional source endpoint.
+		value.PostgreSQLMetrics, value.RedisMetrics = nil, nil // The browser projection has no professional source endpoint.
 		result.Scopes = append(result.Scopes, value)
 		if value.State == "available" {
 			for _, service := range value.Services {
@@ -60,7 +60,8 @@ func deploymentFingerprint(scope string, source *models.EngineDeploymentSource, 
 
 func deploymentCandidate(scope string, source *models.EngineDeploymentSource, service models.DiscoveredDeploymentService) models.EngineDeploymentCandidate {
 	value := models.EngineDeploymentCandidate{Scope: scope, Service: service.Service, Fingerprint: deploymentFingerprint(scope, source, service), Reason: "unsupported_engine"}
-	if source == nil || service.Service != "postgres" || service.EngineType != "postgresql" {
+	expected, expectedPort := commonmodels.PlatformEngineService(service.EngineType)
+	if source == nil || expectedPort == 0 || service.Service != expected {
 		return value
 	}
 	if len(service.Containers) != 1 {
@@ -73,12 +74,12 @@ func deploymentCandidate(scope string, source *models.EngineDeploymentSource, se
 	}
 	count := 0
 	for _, port := range service.Containers[0].PublishedPorts {
-		if port.ContainerPort == 5432 && port.Protocol == "tcp" {
+		if port.ContainerPort == expectedPort && port.Protocol == "tcp" {
 			count++
 		}
 	}
 	if count < 1 || count > 8 {
-		value.Reason = "sql_port_missing"
+		value.Reason = "database_port_missing"
 		return value
 	}
 	value.Eligible, value.Reason = true, ""
@@ -175,6 +176,7 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 	var document struct {
 		models.DeploymentDiscoveryScope
 		Metrics json.RawMessage `json:"postgresql_metrics,omitempty"`
+		Redis   json.RawMessage `json:"redis_metrics,omitempty"`
 	}
 	if len(raw) > deploymentDiscoveryLimit || DecodeDeploymentJSON(raw, &document) != nil {
 		return bad
@@ -245,27 +247,32 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 	if value.Services == nil {
 		value.Services = []models.DiscoveredDeploymentService{}
 	}
-	value.PostgreSQLMetrics = &commonmodels.PostgreSQLMetricsSource{State: "not_deployed"}
-	if len(document.Metrics) != 0 {
-		var metrics commonmodels.PostgreSQLMetricsSource
-		if DecodeDeploymentJSON(document.Metrics, &metrics) != nil || metrics.Validate() != nil ||
-			(metrics.StartedAt != nil && metrics.StartedAt.After(at)) {
-			metrics = commonmodels.PostgreSQLMetricsSource{State: "unavailable"}
-		}
-		if metrics.State == "available" {
-			matched := false
-			for _, service := range value.Services {
-				if service.Service == "postgres" && service.EngineType == "postgresql" && len(service.Containers) == 1 {
-					container := service.Containers[0]
-					started, err := time.Parse(time.RFC3339Nano, container.StartedAt)
-					matched = err == nil && container.Status == "running" && container.ContainerID == metrics.ContainerID && started.Equal(*metrics.StartedAt)
-				}
-			}
-			if !matched {
-				metrics = commonmodels.PostgreSQLMetricsSource{State: "unavailable"}
-			}
-		}
-		value.PostgreSQLMetrics = &metrics
-	}
+	value.PostgreSQLMetrics = parseEngineMetrics(document.Metrics, value.Services, "postgresql", at)
+	value.RedisMetrics = parseEngineMetrics(document.Redis, value.Services, "redis", at)
 	return value
+}
+
+func parseEngineMetrics(raw json.RawMessage, services []models.DiscoveredDeploymentService, engineType string, at time.Time) *commonmodels.EngineMetricsSource {
+	metrics := commonmodels.EngineMetricsSource{State: "not_deployed"}
+	if len(raw) == 0 {
+		return &metrics
+	}
+	if DecodeDeploymentJSON(raw, &metrics) != nil || metrics.Validate() != nil || (metrics.StartedAt != nil && metrics.StartedAt.After(at)) {
+		return &commonmodels.EngineMetricsSource{State: "unavailable"}
+	}
+	if metrics.State == "available" {
+		expected, _ := commonmodels.PlatformEngineService(engineType)
+		matched := false
+		for _, service := range services {
+			if service.Service == expected && service.EngineType == engineType && len(service.Containers) == 1 {
+				container := service.Containers[0]
+				started, err := time.Parse(time.RFC3339Nano, container.StartedAt)
+				matched = err == nil && container.Status == "running" && container.ContainerID == metrics.ContainerID && started.Equal(*metrics.StartedAt)
+			}
+		}
+		if !matched {
+			metrics = commonmodels.EngineMetricsSource{State: "unavailable"}
+		}
+	}
+	return &metrics
 }

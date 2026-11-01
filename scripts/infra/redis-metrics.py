@@ -208,8 +208,7 @@ def matches(account, password_hash, enabled):
 class Lifecycle:
     def __init__(self, docker, scope, state, database, *, project=None):
         self.docker, self.scope, self.state, self.database = docker, scope, Path(state), database
-        suffix = hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]+'-'+scope
-        self.project = project or 'addp-redis-metrics-'+suffix
+        self.project = project or inventory.redis_metrics_project(scope)
         self.config_volume = self.project+'-private'
 
     def stop_sources(self):

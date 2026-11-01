@@ -1431,7 +1431,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                      'common/client/system_runtime_instances.go',
                      'common/client/system_observability_identity.go',
                      'common/client/system_engine_deployments.go',
-                     'common/models/postgresql_metrics.go',
+                     'common/models/engine_metrics.go',
                      'common/client/system_host_node.go',
                      'common/client/system_host_node_scope.go',
                      'common/models/module_runtime_query.go',

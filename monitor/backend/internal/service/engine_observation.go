@@ -16,8 +16,8 @@ type UserEngineDeploymentReader interface {
 	GetEngineDeploymentsForUser(context.Context, []string, string) ([]client.EngineDeploymentReference, error)
 }
 type EngineResourceBackend interface {
-	PostgreSQLQuery(context.Context, resourcequery.Plan, resourcequery.PostgreSQLScope, resourcequery.Budget) (resourcequery.Summary, error)
-	PostgreSQLSummaries(context.Context, []resourcequery.PostgreSQLScope, time.Time, resourcequery.Budget) (map[string]resourcequery.Summary, error)
+	EngineQuery(context.Context, resourcequery.Plan, resourcequery.EngineScope, resourcequery.Budget) (resourcequery.Summary, error)
+	EngineSummaries(context.Context, []resourcequery.EngineScope, time.Time, resourcequery.Budget) (map[string]resourcequery.Summary, error)
 }
 type EngineObservationDependencies struct {
 	Users      UserEngineDeploymentReader
@@ -52,8 +52,8 @@ type EngineResourceResponse struct {
 	LookbackSeconds int64                       `json:"lookback_seconds"`
 }
 
-// EngineResources is the single path for current-page summaries, a complete
-// instant observation and trends. Human owner reads precede private discovery,
+// EngineResources is the single path for current-page summaries, fixed instant
+// observations and trends. Human owner reads precede private discovery,
 // and both human authorization and source identity are checked after querying.
 func (s *ResourceObservationService) EngineResources(ctx context.Context, principal, token string, ids, keys []string, start, end time.Time, trend, summary bool) (EngineResourceResponse, error) {
 	result := EngineResourceResponse{}
@@ -84,23 +84,6 @@ func (s *ResourceObservationService) EngineResources(ctx context.Context, princi
 	}
 	ctx, budgetCancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
 	defer budgetCancel()
-	now := s.now().UTC()
-	var plan resourcequery.Plan
-	if summary {
-		plan, err = resourcequery.NewPostgreSQLSummaryPlan(len(ids), now.Truncate(time.Second), cfg.Budget)
-	} else {
-		if !trend {
-			start = now.Truncate(time.Second)
-			end = start
-		}
-		plan, err = resourcequery.NewPostgreSQLPlan(keys, start, end, now, trend, cfg.Budget)
-	}
-	if err != nil {
-		return result, err
-	}
-	if err = s.limiter.Check(principal, cfg.Budget); err != nil {
-		return result, err
-	}
 	references, err := s.engines.Users.GetEngineDeploymentsForUser(ctx, ids, token)
 	if err != nil {
 		return result, err
@@ -110,10 +93,27 @@ func (s *ResourceObservationService) EngineResources(ctx context.Context, princi
 	}
 	users := map[string]client.EngineDeploymentReference{}
 	for _, ref := range references {
-		if !wanted[ref.DeploymentID] || users[ref.DeploymentID].DeploymentID != "" || ref.Enabled == nil || ref.Version < 1 || ref.EngineType != "postgresql" {
+		if !wanted[ref.DeploymentID] || users[ref.DeploymentID].DeploymentID != "" || ref.Enabled == nil || ref.Version < 1 || len(resourcequery.EngineCatalog(ref.EngineType)) == 0 {
 			return result, metricsdiscovery.ErrIdentityUnavailable
 		}
 		users[ref.DeploymentID] = ref
+	}
+	now := s.now().UTC()
+	var plan resourcequery.Plan
+	if summary {
+		plan, err = resourcequery.NewEngineSummaryPlan(users[ids[0]].EngineType, len(ids), now.Truncate(time.Second), cfg.Budget)
+	} else {
+		if !trend {
+			start = now.Truncate(time.Second)
+			end = start
+		}
+		plan, err = resourcequery.NewEnginePlan(users[ids[0]].EngineType, keys, start, end, now, trend, cfg.Budget)
+	}
+	if err != nil {
+		return result, err
+	}
+	if err = s.limiter.Check(principal, cfg.Budget); err != nil {
+		return result, err
 	}
 	if !s.enabled {
 		return result, metricsdiscovery.ErrDisabled
@@ -125,7 +125,7 @@ func (s *ResourceObservationService) EngineResources(ctx context.Context, princi
 	if err != nil {
 		return result, err
 	}
-	scopes := []resourcequery.PostgreSQLScope{}
+	scopes := []resourcequery.EngineScope{}
 	physical := map[string]bool{}
 	for _, id := range ids {
 		ref := users[id]
@@ -133,7 +133,7 @@ func (s *ResourceObservationService) EngineResources(ctx context.Context, princi
 		if *ref.Enabled && ref.HostBindingState == "bound" {
 			state = "not_connected"
 			owner, ok := current[id]
-			if !ok || owner.Version != ref.Version || owner.NodeID != ref.NodeID {
+			if !ok || owner.Version != ref.Version || owner.NodeID != ref.NodeID || owner.EngineType != ref.EngineType {
 				return result, metricsdiscovery.ErrIdentityUnavailable
 			}
 			if owner.Metrics != nil {
@@ -149,7 +149,7 @@ func (s *ResourceObservationService) EngineResources(ctx context.Context, princi
 						return result, resourcequery.ErrUnavailable
 					}
 					physical[resolved.Address] = true
-					scope := resourcequery.PostgreSQLScope{DeploymentID: id, Instance: resolved.Address, Source: *owner.Metrics}
+					scope := resourcequery.EngineScope{EngineType: ref.EngineType, DeploymentID: id, Instance: resolved.Address, Source: *owner.Metrics}
 					if scope.Validate() != nil {
 						return result, metricsdiscovery.ErrIdentityUnavailable
 					}
@@ -161,15 +161,22 @@ func (s *ResourceObservationService) EngineResources(ctx context.Context, princi
 				}
 			}
 		}
-		result.Data = append(result.Data, EngineResourceObservation{Subject: EngineResourceSubject{Kind: "engine_deployment", DeploymentID: id, DisplayName: ref.DisplayName, EngineType: ref.EngineType}, NodeID: ref.NodeID, Collection: ProcessCollection{State: state}, Series: resourcequery.Empty(plan, state)})
+		rowPlan := plan
+		if summary {
+			rowPlan, err = resourcequery.NewEngineSummaryPlan(ref.EngineType, 1, plan.End, cfg.Budget)
+			if err != nil {
+				return result, err
+			}
+		}
+		result.Data = append(result.Data, EngineResourceObservation{Subject: EngineResourceSubject{Kind: "engine_deployment", DeploymentID: id, DisplayName: ref.DisplayName, EngineType: ref.EngineType}, NodeID: ref.NodeID, Collection: ProcessCollection{State: state}, Series: resourcequery.Empty(rowPlan, state)})
 	}
 	observed := map[string]resourcequery.Summary{}
 	if len(scopes) > 0 {
 		if summary {
-			observed, err = s.engines.Backend.PostgreSQLSummaries(ctx, scopes, plan.End, cfg.Budget)
+			observed, err = s.engines.Backend.EngineSummaries(ctx, scopes, plan.End, cfg.Budget)
 		} else {
 			var row resourcequery.Summary
-			row, err = s.engines.Backend.PostgreSQLQuery(ctx, plan, scopes[0], cfg.Budget)
+			row, err = s.engines.Backend.EngineQuery(ctx, plan, scopes[0], cfg.Budget)
 			observed[scopes[0].DeploymentID] = row
 		}
 		if err != nil {

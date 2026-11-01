@@ -88,8 +88,9 @@ type EngineDeploymentPage struct {
 	TotalPages int64              `json:"total_pages"`
 }
 type EngineDeploymentFilter struct {
-	Search string
-	NodeID string
+	Search     string
+	NodeID     string
+	EngineType string
 }
 
 // DeploymentDiscovery is a deployment-side snapshot, never a management grant.
@@ -108,14 +109,15 @@ type EngineDeploymentCandidate struct {
 type DeploymentDiscoveryScope struct {
 	// Only the private observation projection consumes this field. Neither the
 	// public discovery JSON nor an immutable deployment inventory contains it.
-	PostgreSQLMetrics *commonmodels.PostgreSQLMetricsSource `json:"-"`
-	Schema            string                                `json:"schema"`
-	Scope             string                                `json:"scope"`
-	State             string                                `json:"state"`
-	ObservedAt        string                                `json:"observed_at,omitempty"`
-	Reason            string                                `json:"reason,omitempty"`
-	Source            *EngineDeploymentSource               `json:"source,omitempty"`
-	Services          []DiscoveredDeploymentService         `json:"services"`
+	PostgreSQLMetrics *commonmodels.EngineMetricsSource `json:"-"`
+	RedisMetrics      *commonmodels.EngineMetricsSource `json:"-"`
+	Schema            string                            `json:"schema"`
+	Scope             string                            `json:"scope"`
+	State             string                            `json:"state"`
+	ObservedAt        string                            `json:"observed_at,omitempty"`
+	Reason            string                            `json:"reason,omitempty"`
+	Source            *EngineDeploymentSource           `json:"source,omitempty"`
+	Services          []DiscoveredDeploymentService     `json:"services"`
 }
 type DiscoveredDeploymentService struct {
 	Service    string                          `json:"service"`

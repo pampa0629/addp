@@ -36,14 +36,14 @@ func TestIntegrationMetricsPostgreSQLSource(t *testing.T) {
 	}
 	defer c.Close()
 	var record struct {
-		DeploymentID string                         `json:"deployment_id"`
-		Source       models.PostgreSQLMetricsSource `json:"source"`
-		Instance     string                         `json:"instance"`
+		DeploymentID string                     `json:"deployment_id"`
+		Source       models.EngineMetricsSource `json:"source"`
+		Instance     string                     `json:"instance"`
 	}
 	if err = json.Unmarshal(read("ADDP_POSTGRES_QUERY_RECORD"), &record); err != nil {
 		t.Fatal(err)
 	}
-	scope := PostgreSQLScope{DeploymentID: record.DeploymentID, Source: record.Source, Instance: record.Instance}
+	scope := EngineScope{EngineType: "postgresql", DeploymentID: record.DeploymentID, Source: record.Source, Instance: record.Instance}
 	if scope.Validate() != nil {
 		t.Fatal("invalid owned source record")
 	}
@@ -66,7 +66,7 @@ func TestIntegrationMetricsPostgreSQLSource(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		result, err = c.PostgreSQLQuery(context.Background(), p, scope, budget)
+		result, err = c.EngineQuery(context.Background(), p, scope, budget)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -129,7 +129,7 @@ func TestIntegrationMetricsPostgreSQLSource(t *testing.T) {
 			t.Fatal("capacity missing")
 		}
 	}
-	summary, err := c.PostgreSQLSummaries(context.Background(), []PostgreSQLScope{scope}, now, budget)
+	summary, err := c.EngineSummaries(context.Background(), []EngineScope{scope}, now, budget)
 	if err != nil || len(summary) != 1 || len(summary[scope.DeploymentID].Series) != 4 || summary[scope.DeploymentID].Collection.State != "collecting" {
 		t.Fatalf("real summary: %+v %v", summary, err)
 	}
@@ -138,7 +138,7 @@ func TestIntegrationMetricsPostgreSQLSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	p = LimitTrendStart(p, *scope.Source.StartedAt)
-	trend, err := c.PostgreSQLQuery(context.Background(), p, scope, budget)
+	trend, err := c.EngineQuery(context.Background(), p, scope, budget)
 	if err != nil || len(trend.Series) != 2 {
 		t.Fatal("real trend", err)
 	}
@@ -159,8 +159,8 @@ func TestIntegrationMetricsPostgreSQLSource(t *testing.T) {
 	foreign := scope
 	foreign.Source.ContainerID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	instant, _ := NewPostgreSQLSummaryPlan(1, now, budget)
-	for _, wrong := range []PostgreSQLScope{foreign, func() PostgreSQLScope { value := scope; value.DeploymentID = uuid.NewString(); return value }()} {
-		row, err := c.PostgreSQLQuery(context.Background(), instant, wrong, budget)
+	for _, wrong := range []EngineScope{foreign, func() EngineScope { value := scope; value.DeploymentID = uuid.NewString(); return value }()} {
+		row, err := c.EngineQuery(context.Background(), instant, wrong, budget)
 		if err != nil || row.Collection.State != "no_sample" {
 			t.Fatal("foreign current identity reused", err)
 		}
@@ -172,7 +172,7 @@ func TestIntegrationMetricsPostgreSQLSource(t *testing.T) {
 	}
 }
 
-func logPostgreSQLWindowEvidence(t *testing.T, c *Client, scope PostgreSQLScope, at time.Time, budget Budget) {
+func logPostgreSQLWindowEvidence(t *testing.T, c *Client, scope EngineScope, at time.Time, budget Budget) {
 	t.Helper()
 	raw := scope.selector("transactions_committed_total")
 	for key, expression := range map[string]string{

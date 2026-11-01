@@ -177,7 +177,7 @@ async function loadDiscovery() {
     const value=validateDeploymentDiscovery(await discoveryRequests.request(config=>engineDeploymentsAPI.discover(config)))
     if(!discoveryRequests.current(ticket))return
     discoveryScopes.value=value.scopes
-    candidates.value=value.candidates.map(item=>({...item,key:item.scope+'/'+item.service,display_name:`${item.scope==='infra'?'Infra':'Business'} PostgreSQL`}))
+    candidates.value=value.candidates.map(item=>({...item,key:item.scope+'/'+item.service,display_name:`${item.scope==='infra'?'Infra':'Business'} ${item.service==='redis'?'Redis':'PostgreSQL'}`}))
     blocked.value=false
   }catch{if(discoveryRequests.current(ticket))saveError.value=t('system.engineDeployments.readFailed')}
   finally{if(discoveryRequests.current(ticket))reading.value=false}

@@ -40,7 +40,7 @@ class Source:
         if args[2] == 'info':
             return json.dumps(self.info)
         if args[2] == 'ps':
-            if 'label=com.docker.compose.project=addp-postgres-metrics-' in ' '.join(args):
+            if any(prefix in ' '.join(args) for prefix in ('label=com.docker.compose.project=addp-postgres-metrics-','label=com.docker.compose.project=addp-redis-metrics-')):
                 return ''
             return self.ids
         if args[2] == 'inspect':
@@ -69,6 +69,22 @@ class MetricsSource(Source):
         if len(args) > 2 and args[2] == 'inspect' and args[-1] in self.metrics:
             self.commands.append(args)
             return json.dumps(self.metrics[args[-1]])
+        return super().__call__(*args)
+
+
+class RedisMetricsSource(Source):
+    def __init__(self,scope='business'):
+        super().__init__()
+        self.container.update(service='redis',project=inventory.SCOPES[scope][0],working_dir=str(inventory.SCOPES[scope][1]),networks={'private':{'NetworkID':'e'*64}})
+        self.container['ports']={'6379/tcp':[{'HostIp':'127.0.0.1','HostPort':'16379'}]}
+        self.project='addp-redis-metrics-'+inventory.hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]+'-'+scope
+        self.metrics=dict(self.container,id='b'*64,project=self.project,service='redis-metrics',owner=str(ROOT),scope=scope,database_id=CID,database_started_at=self.container['started_at'],ports={'9443/tcp':[{'HostIp':'127.0.0.1','HostPort':'19443'}]})
+        self.source_ids='b'*64
+    def __call__(self,*args):
+        if len(args)>2 and args[2]=='ps' and self.project in ' '.join(args):
+            self.commands.append(args);return self.source_ids
+        if len(args)>2 and args[2]=='inspect' and args[-1]=='b'*64:
+            self.commands.append(args);return json.dumps(self.metrics)
         return super().__call__(*args)
 
 
@@ -149,6 +165,23 @@ class DiscoveryTests(unittest.TestCase):
         source = MetricsSource()
         del source.metrics['c'*64]
         self.assertEqual(self.discover(source)['postgresql_metrics'], {'state': 'unavailable'})
+
+    def test_redis_source_requires_exact_scope_database_network_and_publication(self):
+        for scope in inventory.SCOPES:
+            source=RedisMetricsSource(scope)
+            value=self.discover(source,scope)
+            self.assertEqual(value['redis_metrics'],{'state':'available','endpoint':'https://127.0.0.1:19443/metrics','container_id':CID,'started_at':source.container['started_at']})
+            self.assertEqual(value['postgresql_metrics'],{'state':'not_deployed'})
+        for key,value in [('owner','foreign'),('scope','infra'),('database_id','d'*64),('database_started_at','2026-01-01T00:00:00Z'),('running',False),('service','postgres-metrics'),('networks',{'foreign':{'NetworkID':'f'*64}}),('ports',{'9443/tcp':[{'HostIp':'0.0.0.0','HostPort':'19443'}]})]:
+            source=RedisMetricsSource();source.metrics[key]=value
+            result=self.discover(source)
+            self.assertEqual(result['state'],'available');self.assertEqual(result['redis_metrics'],{'state':'unavailable'},key)
+        source=RedisMetricsSource();source.source_ids+='\n'+'c'*64
+        self.assertEqual(self.discover(source)['redis_metrics'],{'state':'unavailable'})
+        source=RedisMetricsSource();source.source_ids=''
+        self.assertEqual(self.discover(source)['redis_metrics'],{'state':'not_deployed'})
+        self.assertNotIn('.Config.Env',inventory.REDIS_METRICS_CONTAINER)
+        self.assertNotIn('.Mounts',inventory.REDIS_METRICS_CONTAINER)
 
     def test_both_scopes_use_actual_runtime_and_project(self):
         for scope in inventory.SCOPES:

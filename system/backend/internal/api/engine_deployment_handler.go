@@ -93,6 +93,7 @@ func engineDeploymentError(c *gin.Context, err error) {
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Param search query string false "部署名称片段 | Deployment name fragment"
+// @Param engine_type query string false "引擎类型 | Engine type" Enums(postgresql,redis)
 // @Param node_id query string false "声明的主机 UUID | Declared host UUID"
 // @Success 200 {object} models.EngineDeploymentPage
 // @Failure 400 {object} models.ErrorResponse
@@ -113,7 +114,7 @@ func (h *EngineDeploymentHandler) List(c *gin.Context) {
 		return
 	}
 	for key, values := range query {
-		if (key != "page" && key != "page_size" && key != "search" && key != "node_id") || len(values) != 1 || values[0] == "" {
+		if (key != "page" && key != "page_size" && key != "search" && key != "node_id" && key != "engine_type") || len(values) != 1 || values[0] == "" {
 			engineDeploymentError(c, commonapi.ErrBadRequest)
 			return
 		}
@@ -133,7 +134,7 @@ func (h *EngineDeploymentHandler) List(c *gin.Context) {
 			return
 		}
 	}
-	value, err := h.service.List(c.Request.Context(), page, size, models.EngineDeploymentFilter{Search: query.Get("search"), NodeID: query.Get("node_id")})
+	value, err := h.service.List(c.Request.Context(), page, size, models.EngineDeploymentFilter{Search: query.Get("search"), NodeID: query.Get("node_id"), EngineType: query.Get("engine_type")})
 	if err != nil {
 		engineDeploymentError(c, err)
 		return

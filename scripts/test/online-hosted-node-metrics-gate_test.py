@@ -17,6 +17,7 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.addCleanup(self.host.tearDown)
         self.host.prepare_run_fixture()
         shutil.copy2(SCRIPT, self.host.repository / "scripts/test" / SCRIPT.name)
+        shutil.copy2(SCRIPT.parents[1] / "utils/deployment-inventory.py", self.host.repository / "scripts/utils/deployment-inventory.py")
         self.host._executable("python3", '''
             #!/usr/bin/env bash
             if [[ "${1:-}" == *platform-node-metrics-fixture.py ]]; then
@@ -65,6 +66,7 @@ class HostedMetricsGateTest(unittest.TestCase):
               [ "${ADDP_TEST_RESIDUAL_NODE:-0}" != 1 ] || echo residual
             fi
             if [[ "$*" == *"label=com.docker.compose.project=${ADDP_TEST_OCCUPIED_PROJECT:-never}"* ]]; then echo occupied; fi
+            if [[ "$*" == *"name=^${ADDP_TEST_OCCUPIED_VOLUME:-never}$"* ]]; then echo occupied; fi
             exit 0
         ''')
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
@@ -185,6 +187,27 @@ class HostedMetricsGateTest(unittest.TestCase):
             with self.subTest(occupied=project):
                 result=self.run_gate(check=True,ADDP_ONLINE_NODE_METRICS_CASE="engine-admission",ADDP_TEST_OCCUPIED_PROJECT=project)
                 self.assertNotEqual(result.returncode,0)
+
+    def test_redis_admission_keeps_an_independent_profile_and_private_volume_closure(self):
+        import hashlib
+        prefix = "addp-redis-metrics-" + hashlib.sha256(str(self.host.repository).encode()).hexdigest()[:16]
+        for failure in (None, "ADDP_TEST_ENGINE_UP_FAIL", "ADDP_TEST_ENGINE_DOWN_FAIL", "ADDP_TEST_SUITE_FAIL"):
+            with self.subTest(failure=failure):
+                self.host.trace.unlink(missing_ok=True)
+                result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="redis-engine-admission", **({failure:"1"} if failure else {}))
+                self.assertEqual(result.returncode == 0, failure is None, result.stdout+result.stderr)
+                trace = self.host.trace.read_text()
+                self.assertIn("metrics-case:redis-engine-admission", trace) if failure is None else None
+                self.assertIn("metrics-fixture:engine-down", trace)
+                self.assertIn("infra-down", trace)
+                self.assertFalse(self.host.secrets.exists())
+                if failure != "ADDP_TEST_ENGINE_UP_FAIL": self.assertIn("start:-monitor -system", trace)
+        for scope in ("infra", "business"):
+            for variable, value in (("ADDP_TEST_OCCUPIED_PROJECT", prefix+"-"+scope), ("ADDP_TEST_OCCUPIED_VOLUME", prefix+"-"+scope+"-private")):
+                with self.subTest(variable=variable, scope=scope):
+                    result = self.run_gate(check=True, ADDP_ONLINE_NODE_METRICS_CASE="redis-engine-admission", **{variable:value})
+                    self.assertNotEqual(result.returncode, 0, result.stdout+result.stderr)
+                    self.assertFalse(self.host.secrets.exists())
 
     def test_failure_at_each_stage_still_cleans_owned_deployment(self):
         for variable in ("ADDP_TEST_PREPARE_FAIL", "ADDP_TEST_NODE_FAIL", "ADDP_TEST_QUERY_FAIL", "ADDP_TEST_APP_FAIL", "ADDP_TEST_BROWSER_PREPARE_FAIL", "ADDP_TEST_SUITE_FAIL", "ADDP_TEST_CLEANUP_FAIL", "ADDP_TEST_INSPECTION_FAIL", "ADDP_TEST_RESIDUAL_NODE"):

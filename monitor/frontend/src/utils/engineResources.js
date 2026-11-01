@@ -12,19 +12,52 @@ export const engineMetrics = [
   ['deadlocks.per_second', 'deadlocks', 'events_per_second', 60], ['database.total_bytes', 'capacity', 'bytes']
 ].map(([key, name, unit, windowSeconds = 0]) => ({ key: `postgresql.${key}`, name, unit, windowSeconds }))
 export const engineSummaryMetrics = engineMetrics.filter(item => ['total', 'active', 'committed', 'capacity'].includes(item.name))
+export const redisMetrics = [
+  ['uptime_seconds', 'redisUptime', 'seconds', 'resources'],
+  ['memory.allocated_bytes', 'redisAllocated', 'bytes', 'resources'],
+  ['memory.rss_bytes', 'redisRSS', 'bytes', 'resources'],
+  ['memory.limit_bytes', 'redisLimit', 'bytes', 'resources'],
+  ['memory.excluded_bytes', 'redisExcluded', 'bytes', 'resources'],
+  ['memory.counted_bytes', 'redisCounted', 'bytes', 'resources'],
+  ['memory.used_percent', 'redisPercent', 'percent', 'resources'],
+  ['connections.total', 'redisConnections', 'connections', 'resources'],
+  ['connections.maximum', 'redisMaximum', 'connections', 'resources'],
+  ['connections.blocked', 'redisBlocked', 'connections', 'resources'],
+  ['commands.per_second', 'redisCommands', 'commands_per_second', 'throughput', 60],
+  ['keyspace.hits_per_second', 'redisHits', 'events_per_second', 'throughput', 60],
+  ['keyspace.misses_per_second', 'redisMisses', 'events_per_second', 'throughput', 60],
+  ['keyspace.hit_percent', 'redisHitPercent', 'percent', 'throughput', 60],
+  ['evictions.per_second', 'redisEvictions', 'events_per_second', 'throughput', 60],
+  ['connections.rejected_per_second', 'redisRejected', 'events_per_second', 'throughput', 60],
+  ['oom.per_second', 'redisOOM', 'events_per_second', 'throughput', 60],
+  ['loading', 'redisLoading', 'status', 'persistence'],
+  ['persistence.aof_enabled', 'redisAOF', 'status', 'persistence'],
+  ['persistence.rdb_save_ok', 'redisRDB', 'status', 'persistence'],
+  ['persistence.aof_write_ok', 'redisAOFWrite', 'status', 'persistence'],
+  ['persistence.aof_rewrite_ok', 'redisAOFRewrite', 'status', 'persistence']
+].map(([key, name, unit, group, windowSeconds = 0]) => ({ key: `redis.${key}`, name, unit, group, windowSeconds }))
+export const engineMetricsFor = kind => kind === 'redis' ? redisMetrics : kind === 'postgresql' ? engineMetrics : []
+export const engineSummaryFor = kind => kind === 'redis' ? redisMetrics.filter(metric => ['redisAllocated', 'redisPercent', 'redisConnections', 'redisCommands'].includes(metric.name)) : kind === 'postgresql' ? engineSummaryMetrics : []
+export const defaultEngineMetric = kind => kind === 'redis' ? 'redis.memory.used_percent' : 'postgresql.transactions.committed_per_second'
+export function engineDetailMetrics(kind, metric) {
+  const catalog = engineMetricsFor(kind)
+  const selected = catalog.find(item => item.key === metric)
+  return kind === 'redis' ? catalog.filter(item => item.group === selected?.group) : catalog
+}
 const invalid = () => { throw new Error('invalid_resource_response') }
 export function resolveEngineRoute(input = {}) {
   const page = typeof input.page === 'string' && /^[1-9]\d{0,5}$/.test(input.page) ? Number(input.page) : 1
   const deploymentID = isTargetUUID(input.deployment_id) ? input.deployment_id : ''
-  const metric = engineMetrics.some(item => item.key === input.metric) ? input.metric : engineMetrics[8].key
+  const engineType = input.engine_type === 'redis' ? 'redis' : 'postgresql'
+  const metric = engineMetricsFor(engineType).some(item => item.key === input.metric) ? input.metric : defaultEngineMetric(engineType)
   const range = typeof input.range === 'string' && Object.hasOwn(resourceRanges, input.range) ? input.range : '5m'
   const refresh = autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
   const search = typeof input.search === 'string' && input.search.length <= 255 && !/[\u0000-\u001f]/u.test(input.search) ? input.search.trim() : ''
-  const query = { ...(page !== 1 ? { page: String(page) } : {}), ...(search ? { search } : {}), ...(refresh !== '15' ? { refresh } : {}), ...(deploymentID ? { deployment_id: deploymentID, ...(metric !== engineMetrics[8].key ? { metric } : {}), ...(range !== '5m' ? { range } : {}) } : {}) }
-  return { page, deploymentID, metric, range, refresh, search, query, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => query[key] !== input[key]) }
+  const query = { ...(engineType==='redis'?{engine_type:'redis'}:{}), ...(page !== 1 ? { page: String(page) } : {}), ...(search ? { search } : {}), ...(refresh !== '15' ? { refresh } : {}), ...(deploymentID ? { deployment_id: deploymentID, ...(metric !== defaultEngineMetric(engineType) ? { metric } : {}), ...(range !== '5m' ? { range } : {}) } : {}) }
+  return { engineType, page, deploymentID, metric, range, refresh, search, query, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => query[key] !== input[key]) }
 }
 export function validateEngineDeployment(row) {
-  if (!isTargetUUID(row?.deployment_id) || typeof row.display_name !== 'string' || !row.display_name || row.display_name.length > 1024 || row.engine_type !== 'postgresql' || typeof row.enabled !== 'boolean' || !Number.isSafeInteger(row.version) || row.version < 1 || !['bound', 'rejected'].includes(row.host_binding_state) || (row.host_binding_state === 'bound' ? !isTargetUUID(row.node_id) : row.node_id !== '')) invalid()
+  if (!isTargetUUID(row?.deployment_id) || typeof row.display_name !== 'string' || !row.display_name || row.display_name.length > 1024 || !['postgresql','redis'].includes(row.engine_type) || typeof row.enabled !== 'boolean' || !Number.isSafeInteger(row.version) || row.version < 1 || !['bound', 'rejected'].includes(row.host_binding_state) || (row.host_binding_state === 'bound' ? !isTargetUUID(row.node_id) : row.node_id !== '')) invalid()
   return row
 }
 export function validateEnginePage(value, page) {
@@ -35,7 +68,7 @@ export function validateEnginePage(value, page) {
 }
 export function engineTrendParameters(id, metric, range, queriedAt) {
   const end = Math.floor(Date.parse(queriedAt) / 1000) * 1000
-  if (!isTargetUUID(id) || !engineMetrics.some(item => item.key === metric) || !Object.hasOwn(resourceRanges, range) || !Number.isFinite(end)) invalid()
+  if (!isTargetUUID(id) || ![...engineMetrics,...redisMetrics].some(item => item.key === metric) || !Object.hasOwn(resourceRanges, range) || !Number.isFinite(end)) invalid()
   return { deployment_id: id, metrics: metric, start: new Date(end - resourceRanges[range] * 1000).toISOString().replace('.000Z', 'Z'), end: new Date(end).toISOString().replace('.000Z', 'Z') }
 }
 export function validateEngineResources(value, owners, metrics, params = null) {
@@ -63,7 +96,7 @@ export function validateEngineResources(value, owners, metrics, params = null) {
         const evaluated = Date.parse(point?.evaluated_at), sampled = Date.parse(point?.sampled_at)
         if (evaluated !== start + index * step * 1000 || !['valid', 'stale', 'no_data', 'not_active', 'not_connected', 'source_unavailable', 'no_sample'].includes(point.data_state)) invalid()
         if (['valid', 'stale'].includes(point.data_state)) {
-          if (typeof point.value !== 'number' || !Number.isFinite(point.value) || point.value < 0 || (metric.unit === 'connections' && !Number.isSafeInteger(point.value)) || !Number.isFinite(sampled) || sampled > evaluated || (point.data_state === 'valid' ? evaluated - sampled > 60000 : evaluated - sampled <= 60000) || (!params && state !== 'collecting')) invalid()
+          if (typeof point.value !== 'number' || !Number.isFinite(point.value) || point.value < 0 || (metric.unit === 'connections' && !Number.isSafeInteger(point.value)) || (metric.unit==='status' && ![0,1].includes(point.value)) || !Number.isFinite(sampled) || sampled > evaluated || (point.data_state === 'valid' ? evaluated - sampled > 60000 : evaluated - sampled <= 60000) || (!params && state !== 'collecting')) invalid()
         } else if (point.value !== null || point.sampled_at !== null) invalid()
       }
     }

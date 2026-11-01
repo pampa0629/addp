@@ -199,6 +199,7 @@ on:
           - cpu-pressure
           - host-admission
           - engine-admission
+          - redis-engine-admission
           - meta-workers
           - transfer-workers
           - quality-workers

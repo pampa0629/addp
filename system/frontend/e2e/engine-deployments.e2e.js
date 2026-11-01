@@ -1,6 +1,6 @@
 import { expect,test } from '@playwright/test'
 import { HOST_NODE_ID } from './host-nodes.fixture'
-import { DEPLOYMENT_ID,mockDeployments,discoveryFixture } from './engine-deployments.fixture'
+import { DEPLOYMENT_ID,mockDeployments,discoveryFixture,deploymentPermissions } from './engine-deployments.fixture'
 
 async function selectHost(page){
  await page.getByRole('dialog').getByRole('combobox',{name:'承载主机',exact:true}).press('Enter')
@@ -156,4 +156,20 @@ test('closing details discards a delayed source response',async({page})=>{
  await page.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}).click();release()
  await expect(page).toHaveURL(/\/engine-deployments$/)
  await expect(page.getByTestId('deployment-current-source')).toHaveCount(0)
+})
+
+test('confirms Infra and Business Redis through the same explicit host admission',async({page})=>{
+ const {writes}=await mockDeployments(page,{empty:true,redisSources:true,permissions:[...deploymentPermissions,'monitor.resource_observation.read']})
+ await page.goto('/engine-deployments');await page.getByTestId('deployment-create').click()
+ await selectSources(page)
+ await expect(page.getByRole('textbox',{name:'infra redis',exact:true})).toHaveValue('Infra Redis')
+ await expect(page.getByRole('textbox',{name:'business redis',exact:true})).toHaveValue('Business Redis')
+ await selectHost(page);await page.getByTestId('deployment-save').click()
+ await expect.poll(()=>writes.length).toBe(1)
+ expect(writes[0].items.filter(i=>i.service==='redis')).toEqual([
+  {scope:'infra',service:'redis',fingerprint:'b'.repeat(64),display_name:'Infra Redis',enabled:true,declared_node_id:HOST_NODE_ID},
+  {scope:'business',service:'redis',fingerprint:'a'.repeat(64),display_name:'Business Redis',enabled:true,declared_node_id:HOST_NODE_ID},
+ ])
+ await expect(page.getByRole('dialog')).toHaveCount(0)
+ await expect(page.getByRole('button',{name:'查看监控',exact:true})).toHaveCount(4)
 })

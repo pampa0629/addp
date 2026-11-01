@@ -1349,7 +1349,7 @@ class CompleteComparisonCaseTest(unittest.TestCase):
         return value
 
     def test_case_selection_is_closed_and_rejects_before_login(self):
-        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability"):
+        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "redis-engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability"):
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value):
                 self.assertEqual(ONLINE.acceptance_case(), value)
         for value in ("", "unknown", "cpu-pressure ", "regression "):
@@ -2050,7 +2050,7 @@ class EngineAdmissionEvidenceTest(unittest.TestCase):
 class EngineProfessionalEvidenceTest(unittest.TestCase):
     def setUp(self):
         self.at = "2026-10-21T00:05:00Z"
-        self.owner = {"deployment_id":"20000000-0000-4000-8000-000000000001", "display_name":"Owned Infra PG", "node_id":"10000000-0000-4000-8000-000000000001",
+        self.owner = {"deployment_id":"20000000-0000-4000-8000-000000000001", "display_name":"Owned Infra PG", "engine_type":"postgresql", "node_id":"10000000-0000-4000-8000-000000000001",
                       "inventory":{"services":[{"containers":[{"started_at":"2026-10-21T00:01:00.123Z"}]}]}}
 
     def response(self, keys=None, *, trend=False, absent=False):
@@ -2117,8 +2117,8 @@ class EngineProfessionalEvidenceTest(unittest.TestCase):
         wanted = {"run_id":"run", "admin_id":"admin", "security_id":"security", "engine_resources":{"owners":[self.owner]}}
         reads = [{"path":ONLINE.ENGINE_SUMMARIES, "query":{"deployment_ids":self.owner["deployment_id"]}, "value":self.response(ONLINE.ENGINE_SUMMARY_KEYS), "status":200}]
         for _ in range(2):
-            reads.extend([{"path":ONLINE.ENGINE_OBSERVATIONS, "query":{"deployment_id":self.owner["deployment_id"]}, "value":self.response(), "status":200},
-                          {"path":ONLINE.ENGINE_TRENDS, "query":{"deployment_id":self.owner["deployment_id"]}, "value":self.response({"postgresql.transactions.committed_per_second"}, trend=True), "status":200}])
+            reads.extend([{"path":ONLINE.ENGINE_OBSERVATIONS, "query":{"deployment_id":self.owner["deployment_id"], "metrics":",".join(ONLINE.ENGINE_METRICS)}, "value":self.response(), "status":200},
+                          {"path":ONLINE.ENGINE_TRENDS, "query":{"deployment_id":self.owner["deployment_id"], "metrics":"postgresql.transactions.committed_per_second"}, "value":self.response({"postgresql.transactions.committed_per_second"}, trend=True), "status":200}])
         value = {"schema_version":"addp.node-resources-browser/v1", "run_id":"run", "result":"passed", "stage":"complete", "identity":actor, "negative_identity":denied,
                  "engine_resources":{"reads":reads, "reloaded":True, "zero_and_units":True, "denied":True}}
         with tempfile.TemporaryDirectory() as folder:
@@ -2432,6 +2432,106 @@ class CapacitySourceLifecycleTest(unittest.TestCase):
         with patch.object(ONLINE.FIXTURE,"boundary",side_effect=ValueError("personal")),patch.object(ONLINE.FIXTURE,"command") as command:
             with self.assertRaises(ValueError):ONLINE.source_action("stop")
             command.assert_not_called()
+
+
+
+
+class RedisEngineProfessionalEvidenceTest(unittest.TestCase):
+    at = "2026-10-21T00:05:00Z"
+
+    def owner(self, scope="infra"):
+        return {"deployment_id":"20000000-0000-4000-8000-00000000000"+str(1 if scope == "infra" else 2),
+                "display_name":"Owned "+scope+" Redis", "engine_type":"redis", "node_id":"10000000-0000-4000-8000-000000000001",
+                "inventory":{"source":{"project":"addp-infra" if scope == "infra" else "business"},
+                             "services":[{"containers":[{"started_at":"2026-10-21T00:01:00Z"}]}]}}
+
+    def response(self, owner, keys, *, trend=False, absent=False):
+        limit = 0 if owner["inventory"]["source"]["project"] == "addp-infra" else 256*1024**2
+        numbers = {"redis.memory.allocated_bytes":80*1024**2, "redis.memory.excluded_bytes":10*1024**2,
+                   "redis.memory.counted_bytes":70*1024**2, "redis.memory.limit_bytes":limit,
+                   "redis.memory.used_percent":None if not limit else 100*70*1024**2/limit, "redis.keyspace.hit_percent":None}
+        series = []
+        for key in keys:
+            number = numbers.get(key, 0)
+            missing = absent or number is None
+            points = [{"evaluated_at":self.at, "sampled_at":None if missing else self.at, "value":None if missing else number,
+                       "data_state":"not_connected" if absent else "no_data" if missing else "valid"}]
+            series.append({"metric_key":key,"unit":ONLINE.REDIS_METRICS[key][0],"window_seconds":ONLINE.REDIS_METRICS[key][1],"dimensions":{},"points":points})
+        return {"data":[{"subject":{"kind":"engine_deployment","deployment_id":owner["deployment_id"],"display_name":owner["display_name"],"engine_type":"redis"},
+                         "node_id":owner["node_id"], "collection":{"state":"not_connected" if absent else "no_sample" if trend else "collecting","sampled_at":None if absent or trend else self.at}, "series":series}],
+                "start":self.at,"end":self.at,"queried_at":self.at,"step_seconds":15,"policy_version":1,"lookback_seconds":300}
+
+    def test_redis_groups_and_current_container_paths_preserve_budget_and_type(self):
+        from urllib.parse import urlsplit,parse_qs
+        self.assertEqual(len(ONLINE.REDIS_METRICS),22)
+        self.assertEqual(list(map(len,ONLINE.engine_metric_groups('redis'))),[10,7,5])
+        owner = self.owner()
+        for path, keys in zip(ONLINE.engine_query_paths(owner), ONLINE.engine_metric_groups('redis')):
+            query=parse_qs(urlsplit(path).query)
+            self.assertEqual(set(query),{'deployment_id','metrics'})
+            self.assertEqual(set(query['metrics'][0].split(',')), keys)
+            self.assertEqual(query['deployment_id'],[owner['deployment_id']])
+        trend = parse_qs(urlsplit(ONLINE.engine_query_paths(owner,True)[0]).query)
+        self.assertEqual(trend['metrics'],['redis.commands.per_second'])
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.engine_catalog('falkordb')
+
+    def test_fresh_redis_all_groups_allow_only_proven_missing_ratios(self):
+        for scope in ('infra','business'):
+            owner=self.owner(scope)
+            for keys in ONLINE.engine_metric_groups('redis'):
+                value=self.response(owner,keys)
+                self.assertIs(ONLINE.assert_engine_resources(value,[owner],keys=keys,fresh=True),value)
+                invalid=copy.deepcopy(value)
+                next(s for s in invalid['data'][0]['series'] if s['metric_key'] not in {'redis.memory.used_percent','redis.keyspace.hit_percent'})['points'][0].update(value=None,sampled_at=None,data_state='no_data')
+                with self.assertRaises(ONLINE.SuiteError):ONLINE.assert_engine_resources(invalid,[owner],keys=keys,fresh=True)
+        owner=self.owner()
+        for key,group in [('redis.memory.used_percent',0),('redis.keyspace.hit_percent',1)]:
+            keys=ONLINE.engine_metric_groups('redis')[group];value=self.response(owner,keys)
+            next(s for s in value['data'][0]['series'] if s['metric_key']==key)['points'][0].update(value=0,sampled_at=self.at,data_state='valid')
+            with self.assertRaises(ONLINE.SuiteError):ONLINE.assert_engine_resources(value,[owner],keys=keys,fresh=True)
+        owner=self.owner('business');keys=ONLINE.engine_metric_groups('redis')[0];value=self.response(owner,keys)
+        next(s for s in value['data'][0]['series'] if s['metric_key']=='redis.memory.used_percent')['points'][0].update(value=None,sampled_at=None,data_state='no_data')
+        with self.assertRaises(ONLINE.SuiteError):ONLINE.assert_engine_resources(value,[owner],keys=keys,fresh=True)
+
+    def test_ratio_evidence_status_and_ownership_cannot_be_invented(self):
+        owner=self.owner('business')
+        mutations=[(0,lambda v:v['data'][0]['subject'].update(engine_type='postgresql')),
+                   (0,lambda v:v['data'][0].update(source='https://private/metrics')),
+                   (0,lambda v:next(s for s in v['data'][0]['series'] if s['metric_key']=='redis.memory.used_percent')['points'][0].update(value=20)),
+                   (2,lambda v:v['data'][0]['series'][0]['points'][0].update(value=.5))]
+        for group,change in mutations:
+            keys=ONLINE.engine_metric_groups('redis')[group];value=self.response(owner,keys);change(value)
+            with self.assertRaises(ONLINE.SuiteError):ONLINE.assert_engine_resources(value,[owner],keys=keys,fresh=True)
+        for keys in ONLINE.engine_metric_groups('redis'):
+            value=self.response(owner,keys,absent=True)
+            ONLINE.assert_engine_resources(value,[owner],keys=keys,absent=True)
+            value['data'][0]['series'][0]['points'][0]['value']=0
+            with self.assertRaises(ONLINE.SuiteError):ONLINE.assert_engine_resources(value,[owner],keys=keys,absent=True)
+
+    def test_browser_receipts_require_all_three_groups_for_both_redis_deployments(self):
+        owners=[self.owner('infra'),self.owner('business')]
+        actor,denied=identity(),identity('platform.security_administrator')
+        actor['principal']['id']='admin';denied['principal']['id']='security'
+        wanted={'run_id':'run','admin_id':'admin','security_id':'security','engine_resources':{'owners':owners}}
+        summary=self.response(owners[0],ONLINE.REDIS_SUMMARY_KEYS)
+        summary['data']+=self.response(owners[1],ONLINE.REDIS_SUMMARY_KEYS)['data']
+        reads=[{'path':ONLINE.ENGINE_SUMMARIES,'query':{'deployment_ids':','.join(o['deployment_id'] for o in owners)},'value':summary,'status':200}]
+        for owner in owners:
+            for keys in ONLINE.engine_metric_groups('redis'):
+                reads.append({'path':ONLINE.ENGINE_OBSERVATIONS,'query':{'deployment_id':owner['deployment_id'],'metrics':','.join(keys)},'value':self.response(owner,keys),'status':200})
+            keys={'redis.commands.per_second'}
+            reads.append({'path':ONLINE.ENGINE_TRENDS,'query':{'deployment_id':owner['deployment_id'],'metrics':','.join(keys)},'value':self.response(owner,keys,trend=True),'status':200})
+        value={'schema_version':'addp.node-resources-browser/v1','result':'passed','stage':'complete','run_id':'run','identity':actor,'negative_identity':denied,
+               'engine_resources':{'reads':reads,'reloaded':True,'zero_and_units':True,'denied':True}}
+        with tempfile.TemporaryDirectory() as folder:
+            directory=Path(folder)
+            for name in ('engine-resources-list.png','engine-resources-detail.png'):(directory/name).write_bytes(b'\x89PNG\r\n\x1a\n')
+            ONLINE.validate_engine_professional_browser(value,wanted,directory)
+            for change in [lambda v:v['engine_resources']['reads'].pop(1),
+                           lambda v:v['engine_resources']['reads'][1]['query'].update(deployment_id=owners[1]['deployment_id']),
+                           lambda v:v['engine_resources'].update(denied=False)]:
+                invalid=copy.deepcopy(value);change(invalid)
+                with self.assertRaises(ONLINE.SuiteError):ONLINE.validate_engine_professional_browser(invalid,wanted,directory)
 
 
 if __name__ == "__main__":

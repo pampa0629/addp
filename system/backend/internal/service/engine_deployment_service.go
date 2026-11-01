@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	commonapi "github.com/addp/common/api"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -47,7 +48,8 @@ func validateEngineDeployment(input models.EngineDeploymentInput) (models.Engine
 		return bad()
 	}
 	service := i.Services[0]
-	if service.Service != "postgres" || service.EngineType != "postgresql" || len(service.Containers) != 1 {
+	expected, portNumber := commonmodels.PlatformEngineService(service.EngineType)
+	if portNumber == 0 || service.Service != expected || len(service.Containers) != 1 {
 		return bad()
 	}
 	container := service.Containers[0]
@@ -58,7 +60,7 @@ func validateEngineDeployment(input models.EngineDeploymentInput) (models.Engine
 	seen := map[models.EngineDeploymentPort]bool{}
 	for _, port := range container.PublishedPorts {
 		ip, err := netip.ParseAddr(port.Address)
-		if err != nil || ip.Zone() != "" || port.Port < 1 || port.Port > 65535 || port.ContainerPort != 5432 || port.Protocol != "tcp" {
+		if err != nil || ip.Zone() != "" || port.Port < 1 || port.Port > 65535 || port.ContainerPort != portNumber || port.Protocol != "tcp" {
 			return bad()
 		}
 		canonical := port
@@ -68,7 +70,7 @@ func validateEngineDeployment(input models.EngineDeploymentInput) (models.Engine
 		}
 		seen[canonical] = true
 	}
-	return models.EngineDeployment{DisplayName: name, EngineType: "postgresql", Enabled: *input.Enabled, Inventory: i, DeclaredNodeID: input.DeclaredNodeID}, nil
+	return models.EngineDeployment{DisplayName: name, EngineType: service.EngineType, Enabled: *input.Enabled, Inventory: i, DeclaredNodeID: input.DeclaredNodeID}, nil
 }
 
 func (s *EngineDeploymentService) Get(ctx context.Context, id string) (*models.EngineDeployment, error) {
@@ -78,6 +80,10 @@ func (s *EngineDeploymentService) Get(ctx context.Context, id string) (*models.E
 	return s.repo.Get(ctx, id)
 }
 func (s *EngineDeploymentService) List(ctx context.Context, page, size int, filter models.EngineDeploymentFilter) (*models.EngineDeploymentPage, error) {
+	_, filterPort := commonmodels.PlatformEngineService(filter.EngineType)
+	if filter.EngineType != "" && filterPort == 0 {
+		return nil, commonapi.ErrBadRequest
+	}
 	if page < 1 || page > 1000000 || size < 1 || size > 100 || utf8.RuneCountInString(filter.Search) > 255 || strings.IndexFunc(filter.Search, unicode.IsControl) >= 0 || (filter.NodeID != "" && validateNodeID(filter.NodeID) != nil) {
 		return nil, commonapi.ErrBadRequest
 	}
@@ -183,9 +189,10 @@ func buildDeploymentAdmissions(input models.EngineDeploymentAdmissionRequest, di
 				if !deploymentCandidate(item.Scope, current.Source, service).Eligible || deploymentFingerprint(item.Scope, current.Source, service) != item.Fingerprint {
 					return nil, ErrDeploymentSourceChanged
 				}
+				_, databasePort := commonmodels.PlatformEngineService(service.EngineType)
 				ports := []models.EngineDeploymentPort{}
 				for _, port := range service.Containers[0].PublishedPorts {
-					if port.ContainerPort == 5432 && port.Protocol == "tcp" {
+					if port.ContainerPort == databasePort && port.Protocol == "tcp" {
 						ports = append(ports, port)
 					}
 				}
