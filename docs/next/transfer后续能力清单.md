@@ -68,8 +68,8 @@ Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不�
 以下目标写侧与执行增强能力仍待评估，模块职责以[当前架构](../../transfer/docs/design.md)为准：
 
 - 通用 `row_filter` / predicate：尚未开放通用行过滤 transform；现有 `bounded + native table` 源查询已有下推能力，关系型 Console 支持单表、一层 `all|any` 参数化过滤，MongoDB 基础构建器不生成筛选。现行范围见[query source 配置](../../transfer/docs/transfer-基本概念及配置说明.md#23-bounded-query-source-与轻量-etl-构造)与[Provider 契约](../spec/addp引擎插件接口规范.md#queryruntimeprovider)，不将其记作 `field_mapping` 或其他源形态的通用过滤能力。
-- Doris Stream Load。
-- ClickHouse 排序键、分区键和原生批量接口。
+- Doris Stream Load：当前 Provider 已提供 DUPLICATE KEY 明细表与 MySQL 协议批量 INSERT；待评估的是 Stream Load 写入方式，现有 snapshot 目标范围见[原生目标写侧](../../transfer/docs/transfer-基本概念及配置说明.md#已接入的原生目标写侧)。
+- ClickHouse 排序键、分区键和原生批量接口：当前已提供 MergeTree 普通表与批量 INSERT，建表固定 `ORDER BY tuple()`；自定义排序／分区键及区别于现有 SQL INSERT 的原生批量接口仍待评估。现行配置见[原生目标写侧](../../transfer/docs/transfer-基本概念及配置说明.md#已接入的原生目标写侧)，定义与会话约束见[StoreProvider 契约](../spec/addp引擎插件接口规范.md#storeprovider)。
 - raw copy 端到端样例任务和更完整的执行展示。
 
 这些能力应在出现具体使用场景时分别确认 Provider 归属和测试矩阵，不能借同步模式扩展在 Transfer 内建立引擎专用旁路。
@@ -89,4 +89,5 @@ Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不�
 | 并行与分区归属 | 多 Worker 进程或多任务并发不证明单 execution／task 跨实例分片。bounded 须核验分区覆盖、冻结上界与最终提交；continuous 须核验分区归属、租约接管、旧 owner fencing、rebalance 与状态聚合，吞吐结果不能代替一致性验证。 | [Bounded claim/lease](../spec/tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)、[Continuous 运行时](../../transfer/docs/transfer-任务语义与同步模式.md#六continuous-运行时) |
 | Meta 刷新与回执 | 触发与精确目标、提交成功与执行完成、统计更新与回执回写分别验收；Meta 提交失败不回滚已提交数据／schema，首次扫描与审批补扫的重试条件分别按专题核对。手工完成尚不回写，不据提交失败创建 Monitor incident，也不以 Resume、新 execution 或等待判定恢复。 | [写后扫描与失败边界](../../transfer/docs/数据库架构.md#九写后-meta-扫描)、[审批补扫 claim](../../transfer/docs/数据库架构.md#审批补扫-claim-与失败边界)、[来源与精确目标绑定](../spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源) |
 | 查询过滤与通用 predicate | 参数化查询过滤通过不代表通用 transform、encoded／raw copy 或 continuous/CDC 过滤已开放；须分别核验 capability 与参数类型、同一 PreparedQuery 的 ReadSet 精确比对及纳管源的 `export`／OutputLineage 拒绝条件。目录可见或任务创建成功不等于获准执行。 | [查询配置与输入校验](../../transfer/docs/transfer-基本概念及配置说明.md#23-bounded-query-source-与轻量-etl-构造)、[任务与资源权限](../../transfer/docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)、[导出保护契约](../spec/addp数据安全与隐私保护实现规范.md#104-transfer-export-动作) |
+| Doris／ClickHouse 写侧 | 现有 INSERT 结果不证明上述专用写入增强通过；snapshot `replace/append` 之外的 upsert、可恢复增量、空间与 CDC 不由此开放。执行权限与实际操作所需的数据库写入／建表／删除权限须独立核验；失败或无提交标记不证明零写入、整批回滚或 replace 恢复，已提交 chunk 不因 Abort 撤销。 | [能力声明](../spec/addp引擎能力声明规范.md#一基本原则)、[写入与失败契约](../spec/addp引擎插件接口规范.md#storeprovider)、[任务与资源权限](../../transfer/docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)、[写入策略](../../transfer/docs/transfer-基本概念及配置说明.md#六写入策略) |
 | 容器子表 | Provider 声明和现行主路径不代表所有格式、任意目标或端到端场景已验收。 | [读取布局与入口](../../transfer/docs/transfer-基本概念及配置说明.md#读取布局与入口) |
