@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 17)
+  assert.equal(canonical.length, 23)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -193,6 +193,23 @@ test('ring diagnostics provide controlled bilingual reasons and explicit repair 
       if(field) { assert.ok(presentation.reason.includes(field));assert.match(presentation.action,locale==='zh-cn'?/重命名/:/[Rr]ename/) }
       else { assert.match(presentation.reason,locale==='zh-cn'?/未通过有效性检查/:/failed the validity check/);assert.match(presentation.action,locale==='zh-cn'?/显式修复/:/explicitly repair/);assert.equal(presentation.field,'') }
       assert.doesNotMatch(JSON.stringify(presentation),/private|GEOS|source-id/)
+    }
+  }
+})
+
+test('line trimming uses closed bilingual input facts and never publishes numerical error text', () => {
+  for (const locale of ['zh-cn','en']) {
+    const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate=(key,params={})=>key.replace('common.executionFailure.','').split('.').reduce((node,part)=>node[part],messages).replace(/\{(\w+)\}/g,(_,key)=>params[key])
+    for (const [operator_id,reason,parameter,field] of operatorInputRules.filter(([name])=>name==='trim_line_endpoints')) {
+      const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:1,operator_id,...(parameter?{parameter}:{})}}
+      const got=executionFailurePresentation({diagnostic,message:'PRIVATE GEOS coordinates'},translate)
+      assert.equal(got.operator,locale==='zh-cn'?'线端修剪':'Line endpoint trimming')
+      assert.equal(got.field,'');assert.ok(got.reason && got.action)
+      assert.doesNotMatch(JSON.stringify(got),/PRIVATE|GEOS|coordinates/)
+      if(parameter) assert.ok(got.parameter.includes(parameter))
+      const bad={...diagnostic,operator:{...diagnostic.operator,field:'distance'}}
+      assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
     }
   }
 })

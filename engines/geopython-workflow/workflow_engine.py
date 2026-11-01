@@ -10,7 +10,7 @@ from operators import OPERATORS, get_operator
 from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.spatial_relations import DistanceInputError
 from operators.data_operations import MultiBufferInputError
-from operators.geometric_operators import NearLineInputError, EndpointSnapError, LineExtensionError, PolygonRingInputError
+from operators.geometric_operators import NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -81,8 +81,11 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
             return _execute_workflow_operator(operator, params)
         except (EndpointSnapError, LineExtensionError) as exc:
             raise ValueError(exc.message(self.language)) from exc
-        except (DistanceInputError, NearLineInputError, MultiBufferInputError, PolygonRingInputError) as exc:
+        except (DistanceInputError, NearLineInputError, MultiBufferInputError, PolygonRingInputError, LineTrimError) as exc:
             reasons = {
+                LineTrimError: {'tolerance': 'operator_distance_limit_invalid', 'source': 'operator_input_invalid',
+                                'reference': 'operator_reference_invalid', 'crs': 'operator_crs_invalid',
+                                'topology': 'operator_source_topology_invalid', 'conflict': 'operator_trim_conflict'},
                 PolygonRingInputError: {"field_conflict": "operator_field_conflict", "geometry_invalid": "operator_geometry_invalid"},
                 MultiBufferInputError: {'source': 'operator_input_invalid', 'distance_conflict': 'operator_field_conflict',
                                        'distances': 'operator_number_array_invalid', 'resolution': 'operator_positive_integer_required'},

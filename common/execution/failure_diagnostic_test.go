@@ -230,3 +230,30 @@ func TestPolygonRingObservationRetainsOnlyConfirmedContractFacts(t *testing.T) {
 		}
 	}
 }
+
+func TestLineTrimObservationRetainsOnlyTypedFacts(t *testing.T) {
+	for reason, parameter := range map[string]string{
+		"operator_distance_limit_invalid": "max_distance", "operator_input_invalid": "input_gdf",
+		"operator_reference_invalid": "reference_gdf", "operator_crs_invalid": "",
+		"operator_source_topology_invalid": "input_gdf", "operator_trim_conflict": "",
+	} {
+		operator := map[string]interface{}{"node_index": 1, "operator_id": "trim_line_endpoints"}
+		if parameter != "" {
+			operator["parameter"] = parameter
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": operator}
+		item := &execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"message": "PRIVATE source coordinates GEOS", "diagnostic": diagnostic}}
+		got := execution.Observe(item).ErrorDetails
+		if got["diagnostic"] == nil {
+			t.Fatalf("lost typed trim reason: %s", reason)
+		}
+		encoded, _ := json.Marshal(got)
+		if strings.Contains(string(encoded), "PRIVATE") || strings.Contains(string(encoded), "GEOS") {
+			t.Fatal("private payload leaked")
+		}
+		operator["field"] = "distance"
+		if execution.Observe(item).ErrorDetails["diagnostic"] != nil {
+			t.Fatal("accepted foreign field")
+		}
+	}
+}

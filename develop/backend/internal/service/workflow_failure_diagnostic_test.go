@@ -66,3 +66,32 @@ func TestPolygonRingDiagnosticBindsFrozenDefinitionAndRejectsForgedContext(t *te
 		}
 	}
 }
+
+func TestLineTrimDiagnosticMatchesDefinitionPositionAndRejectsForgedParameter(t *testing.T) {
+	for reason, parameter := range map[string]string{
+		"operator_distance_limit_invalid": "max_distance", "operator_input_invalid": "input_gdf",
+		"operator_reference_invalid": "reference_gdf", "operator_crs_invalid": "",
+		"operator_source_topology_invalid": "input_gdf", "operator_trim_conflict": "",
+	} {
+		context := map[string]interface{}{"node_index": 1, "operator_id": "trim_line_endpoints"}
+		if parameter != "" {
+			context["parameter"] = parameter
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": context}
+		raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+		frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "PRIVATE", "operator": "trim_line_endpoints", "depends_on": []string{"load"}}, map[string]interface{}{"operator": "load"}}}
+		got := executionFailureDetails("workflow", "execution_failed", "PRIVATE GEOS /source.gpkg", raw, frozen)
+		if got["diagnostic"] == nil || got["code"] != "develop.workflow.invalid_params" {
+			t.Fatalf("lost trim context: %+v", got)
+		}
+		context["node_index"] = 2
+		if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+			t.Fatal("trusted scheduling position instead of definition position")
+		}
+		context["node_index"] = 1
+		context["parameter"] = "tolerance"
+		if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+			t.Fatal("trusted foreign parameter")
+		}
+	}
+}

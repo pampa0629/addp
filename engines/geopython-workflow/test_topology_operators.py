@@ -5573,3 +5573,300 @@ def test_hosted_polygon_ring_diagnostics_only_two_real_file_rejections(tmp_path,
     assert not list((tmp_path/'outputs').iterdir())
     (tmp_path/'outputs/forbidden.gpkg').touch()
     with pytest.raises(fixture.FixtureError,match='no physical publication'):fixture.worker('verify',tmp_path,fixture.RINGS_DIAGNOSTIC_CASE)
+
+
+# Line trimming: original-path distance, branch boundaries and exact immutable plans.
+def line_trim(source, reference, maximum=2.):
+    return get_operator('trim_line_endpoints')(
+        input_gdf=source, reference_gdf=reference,
+        id_field='route_key', reference_id_field='ref_key', max_distance=maximum)
+
+
+def line_trim_frames(crs='EPSG:3857'):
+    source, _ = endpoint_snap_frames(crs)
+    source[source.geometry.name] = [LineString([(0,0),(0,0),(2,0),(2,2),(4,2),(4,2)]),
+                                    LineString([(20,0),(20,10)])]
+    reference = gpd.GeoDataFrame({'ref_key':pd.Series(['first','duplicate','later','end','other'],dtype='string')},
+        geometry=[LineString([(1,-1),(1,1)]),LineString([(1,1),(1,-1)]),
+                  LineString([(2,.5),(3,.5)]),LineString([(3,1),(3,3)]),
+                  LineString([(19,1),(21,1)])],crs=crs).rename_geometry('reference_shape')
+    return source,reference
+
+
+def test_line_trim_frozen_both_ends_all_owners_point_details_and_attribute_types():
+    source,reference=line_trim_frames();before=source.copy(deep=True);ref_before=reference.copy(deep=True)
+    out=line_trim(source,reference)
+    result,details=out.values()
+    assert result.geometry.iloc[0].coords[:]==[(1.,0.),(2.,0.),(2.,2.),(3.,2.)]
+    assert result.geometry.iloc[1].coords[:]==[(20.,1.),(20.,10.)]
+    assert details.source_id.tolist()==[2**53+1]*3+[9]
+    assert details.reference_id.tolist()==['first','duplicate','end','other']
+    assert details['end'].tolist()==['start','start','end','start']
+    assert details['distance'].tolist()==[1.]*4 and details.part_no.tolist()==[1]*4
+    assert [tuple(g.coords[0]) for g in details.geometry]==[(1.,0.),(1.,0.),(3.,2.),(20.,1.)]
+    assert details.source_id.dtype==source.route_key.dtype and details.reference_id.dtype==reference.ref_key.dtype
+    assert str(details.part_no.dtype)=='int64' and str(details['end'].dtype)=='string'
+    assert all(str(details[c].dtype)=='float64' for c in ['original_x','original_y','target_x','target_y','distance'])
+    assert result.geometry.name==source.geometry.name and result.index.equals(source.index)
+    pd.testing.assert_frame_equal(pd.DataFrame(result.drop(columns=result.geometry.name)),pd.DataFrame(source.drop(columns=source.geometry.name)))
+    assert_geodataframe_equal(source,before);assert_geodataframe_equal(reference,ref_before)
+
+
+@pytest.mark.parametrize('maximum,changed',[(4.,True),(np.nextafter(4.,0.),False),(np.nextafter(4.,5.),True)])
+def test_line_trim_path_length_not_endpoint_distance_and_inclusive_limit(maximum,changed):
+    source=line_overlap_frame([LineString([(0,0),(2,0),(2,4),(10,4)])])
+    reference=line_overlap_frame([LineString([(1,2),(3,2)])]).rename(columns={'route_key':'ref_key'})
+    result=line_trim(source,reference,maximum)
+    assert result['result'].geometry.iloc[0].coords[0]==((2.,2.) if changed else (0.,0.))
+    assert result['details']['distance'].tolist()==([4.] if changed else [])
+
+
+@pytest.mark.parametrize('target_x,trimmed',[(1.,True),(2.,True),(3.,False)])
+def test_line_trim_first_branch_stops_search_but_reference_on_branch_allowed(target_x,trimmed):
+    source=line_overlap_frame([LineString([(0,0),(6,0)]),LineString([(2,0),(2,4)])])
+    reference=line_overlap_frame([LineString([(target_x,-1),(target_x,1)])]).rename(columns={'route_key':'ref_key'})
+    out=line_trim(source,reference,3.)
+    assert out['result'].geometry.iloc[0].coords[0]==((target_x,0.) if trimmed else (0.,0.))
+    assert out['result'].geometry.iloc[0].coords[-1]==((3.,0.) if target_x==3. else (6.,0.))
+
+
+@pytest.mark.parametrize('refs',[[(2,0),(4,0)],[(4,0),(2,0)]])
+def test_line_trim_collinear_entry_and_dedup_reference_segments(refs):
+    source=line_overlap_frame([LineString([(0,0),(10,0)])])
+    reference=line_overlap_frame([MultiLineString([refs,refs[::-1]])]).rename(columns={'route_key':'ref_key'})
+    out=line_trim(source,reference,2.)
+    assert out['result'].geometry.iloc[0].coords[:]==[(2.,0.),(10.,0.)]
+    assert out['details'].reference_id.tolist()==[0] and out['details']['distance'].tolist()==[2.]
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:2263'])
+def test_line_trim_vertex_cut_keeps_inner_repeats_multipart_order_and_native_units(crs):
+    source=line_overlap_frame([MultiLineString([[(0,0),(1,0),(1,0),(5,0)],[(10,0),(15,0)]]),
+                               LineString([(30,0),(31,0),(31,1),(30,0)])],crs=crs)
+    reference=line_overlap_frame([LineString([(1,-1),(1,1)]),LineString([(14,-1),(14,1)])],crs=crs).rename(columns={'route_key':'ref_key'})
+    out=line_trim(source,reference,1.)
+    assert [p.coords[:] for p in out['result'].geometry.iloc[0].geoms]==[[(1.,0.),(1.,0.),(5.,0.)],[(10.,0.),(14.,0.)]]
+    assert out['details'].part_no.tolist()==[1,2] and out['details']['end'].tolist()==['start','end']
+    assert out['result'].geometry.iloc[1].wkb==source.geometry.iloc[1].wkb and out['result'].crs==source.crs
+
+
+@pytest.mark.parametrize('which',['source','reference','both'])
+def test_line_trim_empty_batches_keep_exact_schema(which):
+    source,reference=line_trim_frames()
+    if which in ('source','both'):source=source.iloc[:0]
+    if which in ('reference','both'):reference=reference.iloc[:0]
+    out=line_trim(source,reference)
+    assert_geodataframe_equal(out['result'],source);assert out['details'].empty
+    assert out['details'].source_id.dtype==source.route_key.dtype and out['details'].reference_id.dtype==reference.ref_key.dtype
+    assert out['details'].columns.tolist()==['source_id','reference_id','part_no','end','original_x','original_y','target_x','target_y','distance','geometry']
+
+
+@pytest.mark.parametrize('bad',[0,-1,True,np.bool_(False),float('inf'),float('nan'),'1',None])
+def test_line_trim_limit_rejection_is_typed(bad):
+    from operators.geometric_operators import LineTrimError
+    source,reference=line_trim_frames()
+    with pytest.raises(LineTrimError) as error:line_trim(source,reference,bad)
+    assert error.value.code=='tolerance'
+
+
+@pytest.mark.parametrize('shapes',[
+    [LineString([(0,0),(2,2),(0,2),(2,0)])],
+    [LineString([(0,0),(2,0),(1,0),(1,2)])],
+    [LineString([(0,0),(4,0)]),LineString([(1,0),(3,0)])],
+    [MultiLineString([[(0,0),(4,0)],[(3,0),(1,0)]])],
+])
+def test_line_trim_rejects_internal_self_intersections_or_any_source_overlap_even_without_target(shapes):
+    from operators.geometric_operators import LineTrimError
+    source=line_overlap_frame(shapes);reference=source.iloc[:0].rename(columns={'route_key':'ref_key'})
+    with pytest.raises(LineTrimError) as error:line_trim(source,reference)
+    assert error.value.code=='topology'
+
+
+def test_line_trim_two_original_plans_meet_entire_part_rejected_without_mutating_previous_result():
+    from operators.geometric_operators import LineTrimError
+    source=line_overlap_frame([LineString([(10,0),(20,0)]),LineString([(0,0),(4,0)])])
+    reference=line_overlap_frame([LineString([(11,-1),(11,1)]),LineString([(2,-1),(2,1)])]).rename(columns={'route_key':'ref_key'})
+    before=source.copy(deep=True)
+    with pytest.raises(LineTrimError) as error:line_trim(source,reference,2.)
+    assert error.value.code=='conflict';assert_geodataframe_equal(source,before)
+
+
+def test_line_trim_already_covered_end_no_target_and_degree_two_non_dangles_do_not_move():
+    source=line_overlap_frame([LineString([(0,0),(4,0)]),LineString([(4,0),(8,0)])])
+    reference=line_overlap_frame([LineString([(0,0),(0,1)]),LineString([(5,-1),(5,1)])]).rename(columns={'route_key':'ref_key'})
+    out=line_trim(source,reference,1.)
+    assert_geodataframe_equal(out['result'],source);assert out['details'].empty
+
+
+def test_line_trim_exact_tiny_binary_target_and_unrepresentable_first_hit_rejected():
+    from operators.geometric_operators import LineTrimError
+    tiny=2.**-500
+    source=line_overlap_frame([LineString([(0,0),(8*tiny,0)])])
+    reference=line_overlap_frame([LineString([(tiny,-tiny),(tiny,tiny)])]).rename(columns={'route_key':'ref_key'})
+    out=line_trim(source,reference,tiny)
+    assert out['result'].geometry.iloc[0].coords[0]==(tiny,0.) and out['details']['distance'].tolist()==[tiny]
+    source=line_overlap_frame([LineString([(0,0),(8,0)])])
+    reference=line_overlap_frame([LineString([(0,1),(1,-2)]),LineString([(1,-1),(1,1)])]).rename(columns={'route_key':'ref_key'})
+    with pytest.raises(LineTrimError) as error:line_trim(source,reference)
+    assert error.value.code=='landing'
+
+
+def test_line_trim_reference_reverse_order_and_source_reverse_preserve_targets_and_duplicate_index():
+    source,reference=line_trim_frames();source.index=[7,7]
+    source[source.geometry.name]=source.geometry.map(shapely.reverse)
+    reference=reference.iloc[::-1].copy();reference[reference.geometry.name]=reference.geometry.map(shapely.reverse)
+    out=line_trim(source,reference)
+    assert out['result'].geometry.iloc[0].coords[:]==[(3.,2.),(2.,2.),(2.,0.),(1.,0.)]
+    assert out['result'].index.tolist()==[7,7]
+    assert out['details'].reference_id.tolist()==['end','duplicate','first','other']
+
+
+@pytest.mark.parametrize('problem,reason,parameter',[
+    ('limit','operator_distance_limit_invalid','max_distance'),('source','operator_input_invalid','input_gdf'),
+    ('reference','operator_reference_invalid','reference_gdf'),('crs','operator_crs_invalid',''),
+    ('topology','operator_source_topology_invalid','input_gdf'),('conflict','operator_trim_conflict',''),
+    ('landing',None,''),
+])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_line_trim_runner_typed_diagnostics_bind_frozen_position_never_leak_or_classify_calculation(problem,reason,parameter,language):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source,reference=line_trim_frames();maximum=2.
+    if problem=='limit':maximum=0
+    elif problem=='source':source['route_key']=None
+    elif problem=='reference':reference['ref_key']=None
+    elif problem=='crs':reference=reference.set_crs('EPSG:2263',allow_override=True)
+    else:
+        source=line_overlap_frame([LineString([(0,0),(4,0)])])
+        if problem=='topology':source[source.geometry.name]=[LineString([(0,0),(2,2),(0,2),(2,0)])]
+        ref=LineString([(0,1),(1,-2)]) if problem=='landing' else LineString([(2,-1),(2,1)])
+        reference=line_overlap_frame([ref]).rename(columns={'route_key':'ref_key'})
+    params=dict(input_gdf=source,reference_gdf=reference,id_field='route_key',reference_id_field='ref_key',max_distance=maximum)
+    task={'id':'PRIVATE_NODE','operator':'trim_line_endpoints','params':params,'depends_on':[]}
+    with pytest.raises(WorkflowExecutionError) as error:GeoPythonWorkflowRunner(language=language).execute({'tasks':[task]})
+    failure=error.value
+    if reason is None:
+        assert failure.error_code=='EXECUTION_FAILED' and failure.diagnostic is None
+    else:
+        assert failure.error_code=='INVALID_PARAMS'
+        assert failure.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+            'operator':{'operator_id':'trim_line_endpoints','node_index':1,**({'parameter':parameter} if parameter else {})}}
+        assert 'PRIVATE' not in json.dumps(failure.diagnostic)
+
+
+def test_line_trim_metadata_explicit_two_ports_one_owner_and_no_direct_invoke():
+    spec=next(op for op in list_operators() if op['id']=='trim_line_endpoints')
+    assert spec['display_name']=='线端修剪' and spec['category_path']==['矢量处理','几何整理']
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert [(p['name'],p['is_default']) for p in spec['output_ports']]==[('result',True),('details',False)]
+    assert {p['name'] for p in spec['parameters']}=={'input_gdf','reference_gdf','id_field','reference_id_field','max_distance'}
+
+
+@pytest.mark.parametrize('problem',[None,'conflict','limit','topology','landing'])
+def test_line_trim_workflow_dual_save_independent_ogr_failure_no_publish(tmp_path,problem):
+    from osgeo import ogr
+    source,reference=line_trim_frames()
+    if problem in ('conflict','topology','landing'):
+        source=line_overlap_frame([LineString([(0,0),(4,0)])])
+        if problem=='topology':source[source.geometry.name]=[LineString([(0,0),(2,2),(0,2),(2,0)])]
+        reference=line_overlap_frame([LineString([(0,1),(1,-2)]) if problem=='landing' else LineString([(2,-1),(2,1)])]).rename(columns={'route_key':'ref_key'})
+    for name,frame in [('source',source),('reference',reference)]:frame.to_file(tmp_path/f'{name}.gpkg',driver='GPKG',index=False)
+    originals={name:(tmp_path/f'{name}.gpkg').read_bytes() for name in ('source','reference')}
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':name,'operator':'load','params':{'connection_info':conn,'path':f'{name}.gpkg'},'depends_on':[]} for name in ('source','reference')]
+    tasks.insert(0,{'id':'trim','operator':'trim_line_endpoints','params':{'input_gdf':{'$ref':'source'},'reference_gdf':{'$ref':'reference'},'id_field':'route_key','reference_id_field':'ref_key','max_distance':0 if problem=='limit' else 2.},'depends_on':['source','reference']})
+    for name,ref in [('lines',{'$ref':'trim'}),('details',{'$ref':'trim','port':'details'})]:
+        tasks.append({'id':f'save_{name}','operator':'save','params':{'input_df':ref,'connection_info':conn,'path':f'{name}.gpkg','mode':'fail'},'depends_on':['trim']})
+    outcome=execute_workflow({'tasks':tasks})
+    assert all((tmp_path/f'{name}.gpkg').read_bytes()==value for name,value in originals.items())
+    if problem:
+        assert outcome['status']=='failed'
+        assert outcome['error_code']==('EXECUTION_FAILED' if problem=='landing' else 'INVALID_PARAMS')
+        if problem!='landing':assert outcome['diagnostic']['operator']['node_index']==1
+        assert not (tmp_path/'lines.gpkg').exists() and not (tmp_path/'details.gpkg').exists()
+        return
+    assert outcome['status']=='success',outcome
+    ds=ogr.Open(str(tmp_path/'lines.gpkg'));layer=ds.GetLayer(0);rows=list(layer)
+    assert layer.GetSpatialRef().GetAuthorityCode(None)=='3857' and len(rows)==2
+    assert rows[0].GetGeometryRef().GetPoints()==[(1.,0.),(2.,0.),(2.,2.),(3.,2.)]
+    assert rows[0].GetField('route_key')==2**53+1 and rows[0].GetField('grade')==3
+    assert rows[1].GetField('grade') is None and rows[1].GetField('enabled') is None
+    assert layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex('grade')).GetType()==ogr.OFTInteger64
+    ds2=ogr.Open(str(tmp_path/'details.gpkg'));details=ds2.GetLayer(0);features=list(details)
+    assert details.GetSpatialRef().GetAuthorityCode(None)=='3857' and len(features)==4
+    assert [f.GetGeometryRef().GetPoint_2D() for f in features]==[(1.,0.),(1.,0.),(3.,2.),(20.,1.)]
+    assert [f.GetField('reference_id') for f in features]==['first','duplicate','end','other']
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_line_trim_async_runtime_admission_uses_unified_diagnostic_and_rejects_direct_invocation(language,monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    source,reference=line_trim_frames()
+    params={'input_gdf':json.loads(source.to_json()),'reference_gdf':json.loads(reference.to_json()),
+            'id_field':'route_key','reference_id_field':'ref_key','max_distance':0}
+    workflow={'tasks':[{'id':'PRIVATE_NODE','operator':'trim_line_endpoints','params':params,'depends_on':[]}]}
+    with api_server.app.test_client() as client:
+        assert client.post('/api/operators/trim_line_endpoints/invoke',json={'params':params}).status_code==403
+        assert client.post('/api/workflow',json={'workflow_def':workflow}).status_code==400
+        reply=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':workflow,
+            'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert reply.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            state=client.get('/api/executions/'+reply.get_json()['execution_id']).get_json()
+            if state['status'] in {'success','failed'}:break
+            time.sleep(.01)
+        assert state['status']=='failed' and state['error_code']=='INVALID_PARAMS'
+        assert state['diagnostic']['operator']=={'node_index':1,'operator_id':'trim_line_endpoints','parameter':'max_distance'}
+        assert 'PRIVATE' not in json.dumps(state['diagnostic'])
+        assert ('最大路径距离' if language=='zh-cn' else 'maximum trim path distance') in state['error']
+
+
+@pytest.mark.parametrize('problem',['source_id','reference_id','source_crs','empty_geometry','z','point'])
+def test_line_trim_rejects_source_reference_admission_without_guessing_fields(problem):
+    from operators.geometric_operators import LineTrimError
+    source,reference=line_trim_frames()
+    if problem=='source_id':source['route_key']=[1,1]
+    elif problem=='reference_id':reference['ref_key']=None
+    elif problem=='source_crs':source=source.set_crs(None,allow_override=True)
+    elif problem=='empty_geometry':source.loc[source.index[0],source.geometry.name]=LineString()
+    elif problem=='z':source.loc[source.index[0],source.geometry.name]=LineString([(0,0,0),(1,0,0)])
+    else:source.loc[source.index[0],source.geometry.name]=Point(0,0)
+    with pytest.raises(LineTrimError) as error:line_trim(source,reference)
+    assert error.value.code==('reference' if problem=='reference_id' else 'source')
+
+
+def test_line_trim_distinct_parts_touch_at_degree_two_without_becoming_eligible_dangles():
+    source=line_overlap_frame([MultiLineString([[(0,0),(4,0)],[(4,0),(8,0)]])])
+    reference=line_overlap_frame([LineString([(5,-1),(5,1)])]).rename(columns={'route_key':'ref_key'})
+    out=line_trim(source,reference,2.)
+    assert_geodataframe_equal(out['result'],source);assert out['details'].empty
+
+
+def test_line_trim_inexact_branch_before_inexact_reference_stops_without_rounding_or_false_landing():
+    source=line_overlap_frame([LineString([(0,0),(10,0)]),LineString([(0,1),(1,-2)])])
+    reference=line_overlap_frame([LineString([(1,1),(2,-2)])]).rename(columns={'route_key':'ref_key'})
+    out=line_trim(source,reference,2.)
+    assert out['result'].geometry.iloc[0].coords[:]==[(0.,0.),(10.,0.)]
+
+
+def test_line_trim_partial_distance_does_not_underflow_the_segment_parameter():
+    source=line_overlap_frame([LineString([(0,0),(1e200,0)])])
+    reference=line_overlap_frame([LineString([(1e-200,-1),(1e-200,1)])]).rename(columns={'route_key':'ref_key'})
+    out=line_trim(source,reference,1e-200)
+    assert out['result'].geometry.iloc[0].coords[0]==(1e-200,0.)
+    assert out['details']['distance'].tolist()==[1e-200]
+
+
+def test_line_trim_custom_active_geometry_and_ordinary_geometry_business_column_never_collide():
+    source,reference=line_trim_frames()
+    source=source.rename_geometry('distance')
+    source['geometry']=pd.Series(['ordinary',None],index=source.index,dtype='string')
+    before=source.copy(deep=True)
+    out=line_trim(source,reference)
+    assert out['result'].geometry.name=='distance'
+    pd.testing.assert_series_equal(out['result']['geometry'],before['geometry'])
+    assert out['details'].geometry.name=='geometry' and out['details']['distance'].tolist()==[1.]*4
+    assert_geodataframe_equal(source,before)

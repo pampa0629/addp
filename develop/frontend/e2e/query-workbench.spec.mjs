@@ -1109,12 +1109,13 @@ for (const locale of ['zh-cn','en']) {
     ['distance_to','operator_geometry_field_conflict','input_gdf','distance', locale === 'zh-cn' ? '距离计算' : 'Distance calculation'],
     ['check_line_proximity','operator_positive_number_required','tolerance','', locale === 'zh-cn' ? '近接检查' : 'Line proximity check'],
     ...['source_id','part_no','ring_no','ring_id','is_hole'].map(field => ['extract_polygon_rings','operator_field_conflict','input_gdf',field,locale === 'zh-cn' ? '面界提取' : 'Extract polygon rings']),
-    ['extract_polygon_rings','operator_geometry_invalid','input_gdf','',locale === 'zh-cn' ? '面界提取' : 'Extract polygon rings']
+    ['extract_polygon_rings','operator_geometry_invalid','input_gdf','',locale === 'zh-cn' ? '面界提取' : 'Extract polygon rings'],
+    ...[['operator_distance_limit_invalid','max_distance'],['operator_source_topology_invalid','input_gdf'],['operator_trim_conflict','']].map(([reason,parameter])=>['trim_line_endpoints',reason,parameter,'',locale==='zh-cn'?'线端修剪':'Line endpoint trimming'])
   ]) test(`operator input diagnostics show controlled context and copy it (${operator_id}, ${reason}, ${field}, ${locale})`, async ({ page }) => {
     await page.addInitScript(() => { window.copiedDiagnostic=''; Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true}) })
     await installMockBackend(page,{ resultKind:'table',executionType:'workflow',locale,errorDetails:{
       category:'execution_failed',code:'develop.workflow.invalid_params',message:'private-password /private/input.gpkg',
-      diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,parameter,...(field?{field}:{})}}
+      diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,...(parameter?{parameter}:{}),...(field?{field}:{})}}
     }})
     await page.goto(`/executions/${EXECUTION_ID}`)
     const panel=page.locator('.execution-failure')
@@ -1125,7 +1126,9 @@ for (const locale of ['zh-cn','en']) {
     else if(reason==='operator_geometry_invalid') {
       await expect(panel).toContainText(locale==='zh-cn'?'未通过有效性检查':'failed the validity check')
       await expect(panel).toContainText(locale==='zh-cn'?'显式修复':'explicitly repair')
-    } else await expect(panel).toContainText(locale==='zh-cn'?'有限正数':'finite positive')
+    } else if(reason==='operator_source_topology_invalid') await expect(panel).toContainText(locale==='zh-cn'?'内部自交':'internal self-intersections')
+    else if(reason==='operator_trim_conflict') await expect(panel).toContainText(locale==='zh-cn'?'交错或相遇':'cross or meet')
+    else await expect(panel).toContainText(locale==='zh-cn'?'有限正数':'finite positive')
     await expect(panel).not.toContainText('private-password')
     await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
     const copied=await page.evaluate(()=>window.copiedDiagnostic)

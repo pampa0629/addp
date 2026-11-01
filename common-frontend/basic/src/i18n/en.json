@@ -187,6 +187,9 @@
         "result": "Save execution result"
       },
       "reasons": {
+        "operator_distance_limit_invalid": "The maximum trim path distance must be a finite positive number in horizontal CRS units.",
+        "operator_source_topology_invalid": "Source parts have internal self-intersections or positive-length overlaps and cannot be trimmed directly.",
+        "operator_trim_conflict": "The two trim plans cross or meet and would remove an original part.",
         "configuration_missing": "Required execution configuration is missing; the query was not submitted to the engine.",
         "configuration_invalid": "Execution configuration is invalid; the query was not submitted to the engine.",
         "timeout_invalid": "The execution timeout is missing or invalid.",
@@ -240,6 +243,9 @@
         "operator_geometry_invalid": "The input layer contains geometry that failed the validity check."
       },
       "actions": {
+        "operator_distance_limit_invalid": "Set a finite positive max_distance in horizontal CRS units before submitting a new execution.",
+        "operator_source_topology_invalid": "Check source self-intersections and overlaps, then normalize explicitly to meet the operator requirements; no automatic repair is performed.",
+        "operator_trim_conflict": "Review reference intersections at both ends and the maximum path distance, preserving a positive-length original part before submitting a new execution.",
         "configuration_missing": "Start a new execution. If it fails again, ask an administrator to check configuration preparation.",
         "configuration_invalid": "Check the query engine and parameters, then execute again. Contact an administrator if it persists.",
         "timeout_invalid": "Ask an administrator to check the query timeout policy, then execute again.",
@@ -302,12 +308,14 @@
       "field": "Conflicting field",
       "operatorNodeIndex": "Node {index} in the workflow definition",
       "operatorNames": {
+        "trim_line_endpoints": "Line endpoint trimming",
         "batch_buffer": "Multi-distance buffer",
         "distance_to": "Distance calculation",
         "check_line_proximity": "Line proximity check",
         "extract_polygon_rings": "Extract polygon rings"
       },
       "operatorParameters": {
+        "max_distance": "Maximum trim path distance (max_distance)",
         "input_gdf": "Source layer (input_gdf)",
         "reference_gdf": "Reference layer (reference_gdf)",
         "distances": "Distances (distances)",

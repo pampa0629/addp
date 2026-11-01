@@ -187,6 +187,9 @@
         "result": "保存执行结果"
       },
       "reasons": {
+        "operator_distance_limit_invalid": "最大修剪路径距离必须为以源坐标系水平单位表示的有限正数。",
+        "operator_source_topology_invalid": "源部件存在内部自交或源线正长度重合，不能直接修剪。",
+        "operator_trim_conflict": "两端修剪计划交错或相遇，会使原部件消失。",
         "configuration_missing": "缺少必要的执行配置，查询尚未提交到引擎。",
         "configuration_invalid": "执行配置无效，查询尚未提交到引擎。",
         "timeout_invalid": "执行配置中的超时时间缺失或无效。",
@@ -240,6 +243,9 @@
         "operator_geometry_invalid": "输入图层包含未通过有效性检查的几何。"
       },
       "actions": {
+        "operator_distance_limit_invalid": "按投影坐标系水平单位设置有限且大于零的max_distance，再提交新的执行。",
+        "operator_source_topology_invalid": "先检查源线内部自交及重合，显式规整到首版要求后再执行；不会自动修复。",
+        "operator_trim_conflict": "检查两端参考交会及最大路径距离，保留正长度原部件后再提交新的执行。",
         "configuration_missing": "重新发起执行；若仍失败，请联系管理员检查执行配置生成过程。",
         "configuration_invalid": "确认查询引擎和参数配置后重新执行；若仍失败，请联系管理员。",
         "timeout_invalid": "请管理员检查查询超时策略后重新执行。",
@@ -302,12 +308,14 @@
       "field": "冲突字段",
       "operatorNodeIndex": "定义中的第 {index} 个节点",
       "operatorNames": {
+        "trim_line_endpoints": "线端修剪",
         "batch_buffer": "多距缓冲",
         "distance_to": "距离计算",
         "check_line_proximity": "近接检查",
         "extract_polygon_rings": "面界提取"
       },
       "operatorParameters": {
+        "max_distance": "最大修剪路径距离（max_distance）",
         "input_gdf": "源图层（input_gdf）",
         "reference_gdf": "参考图层（reference_gdf）",
         "distances": "距离列表（distances）",

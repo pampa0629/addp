@@ -266,3 +266,20 @@ def test_ring_diagnostic_uses_definition_position_and_stops_before_save(reason,f
     diagnostic=failure.value.diagnostic
     assert diagnostic['operator']['node_index']==1 and diagnostic['reason']==reason
     assert diagnostic['operator'].get('field','')==field
+
+
+@pytest.mark.parametrize('reason,parameter',[
+    ('operator_distance_limit_invalid','max_distance'),('operator_input_invalid','input_gdf'),
+    ('operator_reference_invalid','reference_gdf'),('operator_crs_invalid',''),
+    ('operator_source_topology_invalid','input_gdf'),('operator_trim_conflict',''),
+])
+def test_trim_diagnostics_closed_tuple_drops_private_context_and_keeps_original_definition_position(reason,parameter):
+    from addp_common.workflow_runtime.errors import OperatorInputError,validated_operator_diagnostic
+    value=OperatorInputError(reason,'PRIVATE source coordinates').diagnostic('trim_line_endpoints',1)
+    assert value=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+                  'operator':{'node_index':1,'operator_id':'trim_line_endpoints',**({'parameter':parameter} if parameter else {})}}
+    assert validated_operator_diagnostic(value)==value
+    for field in ['distance','private','']:
+        changed={**value,'operator':{**value['operator'],'field':field}}
+        assert validated_operator_diagnostic(changed) is None
+    assert OperatorInputError(reason,'PRIVATE').diagnostic('foreign',1) is None

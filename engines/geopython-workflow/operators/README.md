@@ -52,7 +52,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
 | 矢量处理 | 几何构造 | 6 | `buffer`、`centroid`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer` |
-| 矢量处理 | 几何整理 | 7 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints` |
+| 矢量处理 | 几何整理 | 8 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints`、`trim_line_endpoints` |
 | 矢量处理 | 拓扑检查 | 8 | `check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
 | 矢量处理 | 线网处理 | 6 | `polygonize`、`extract_polygon_rings`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
@@ -233,3 +233,7 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 `raster_focal_statistics`扩展`weighted_sum`邻域加权求和：固定3／5非负矩阵，按有效正权重位置求Σ(w×x)，不归一化；保留权重绝对大小，全1与原sum逐像元／mask一致。中心无效／有效支持空为NaN，合法零和负结果保留；非全1使用精确乘积累计最终舍入，真正超出Float64范围的像元沿原sum写NaN。原十一方法、有界halo、原网格／COG及清理保持；不含负权重卷积、距离核或新权限，详见栅格算子契约。Linux／Hosted仍分别验收。
 
 `raster_focal_statistics`扩展`weighted_stddev`加权总体标准差：固定3／5窗口，复用非负二维权重与有效位置重新归一化；中心无效／无有效正权重为NaN，常量或单样本为0，全1与原stddev完全一致。非均匀权重精确一阶／二阶矩及共享平方根最终舍入，原十方法保持；不含样本标准差或新权限，详见栅格算子契约。Native、Linux与Hosted分别记账。
+
+## 线端修剪
+
+`trim_line_endpoints` 沿原始悬端向内按原路径搜索首个精确参考交会，共线取入口，累计长度上限含等号，不跨部件或越过原线网分支。保留源属性、方向、行与部件；result为修剪线，details为目标Point及逐端点全部参考来源明细。内部自交／源正长度重合、两端冲突／整段消失或不能精确落线整批拒绝。复用统一参数诊断，详见[线端修剪契约](../../../docs/spec/workflow/矢量算子契约.md#线端修剪契约)。不自动补缝、吸附或修复。

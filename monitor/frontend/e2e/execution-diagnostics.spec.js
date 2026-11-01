@@ -441,3 +441,22 @@ for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field] of [
   if(field) expect(copied).toContain(field)
   expect(copied).not.toContain('private-password')
 })
+
+for (const locale of ['zh-cn','en']) for (const [reason,parameter,zh,en] of [
+  ['operator_distance_limit_invalid','max_distance','有限正数','finite positive'],
+  ['operator_source_topology_invalid','input_gdf','内部自交','internal self-intersections'],
+  ['operator_trim_conflict','','交错或相遇','cross or meet']
+]) test(`line trimming controlled diagnosis in Monitor (${reason}, ${locale})`,async({page})=>{
+  await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
+  await installBackend(page,{locale,empty:true,targetExists:true,errorDetails:{category:'execution_failed',code:'develop.workflow.invalid_params',message:'PRIVATE GEOS /input.gpkg',
+    diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id:'trim_line_endpoints',...(parameter?{parameter}:{})}}}})
+  await page.goto('/executions?execution_id=diagnostic-run')
+  const panel=page.locator('.execution-detail-content > .execution-failure')
+  await expect(panel).toContainText(locale==='zh-cn'?'线端修剪':'Line endpoint trimming')
+  await expect(panel).toContainText(locale==='zh-cn'?zh:en)
+  await expect(panel).not.toContainText('PRIVATE')
+  await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
+  expect(await page.evaluate(()=>window.copiedDiagnostic)).toContain(locale==='zh-cn'?zh:en)
+  await page.setViewportSize({width:620,height:700})
+  expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
+})

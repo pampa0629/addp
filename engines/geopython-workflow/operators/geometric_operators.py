@@ -1320,6 +1320,227 @@ def _extend_line_endpoints(input_gdf, reference_gdf, id_field, reference_id_fiel
     return {'result':result,'details':details}
 
 
+class LineTrimError(_LineReferenceError):
+    """Typed admission facts are distinguished from numerical calculation failures."""
+
+    _messages = {
+        'zh-cn': {
+            'tolerance': '线端修剪的最大路径距离必须是以坐标系水平单位表示的有限正数。',
+            'source': '线端修剪的源图层须具有有效有限二维线、已知投影坐标系及非空唯一标识。',
+            'reference': '线端修剪的参考图层须具有有效有限二维线、已知投影坐标系及非空唯一标识。',
+            'crs': '线端修剪要求两个图层使用相同的已知投影坐标系和匹配的水平单位。',
+            'topology': '线端修剪不接受源部件内部自交或源线正长度重合；请先显式检查规整。',
+            'conflict': '线端修剪的两端计划交错或相遇，会使原部件消失；未生成任何成果。',
+            'landing': '线端修剪的首个交点不能精确落在原线及参考线上；未生成任何成果。',
+            'invalid': '线端修剪产生塌缩、无效或非有限几何；未生成任何成果。',
+            'calculation': '线端修剪无法可靠计算有限的首个交点及路径长度；未生成任何成果。',
+        },
+        'en': {
+            'tolerance': 'The maximum trim path distance must be a finite positive number in horizontal CRS units.',
+            'source': 'Line trimming requires valid finite XY source lines, a known projected CRS and unique non-null IDs.',
+            'reference': 'Line trimming requires valid finite XY reference lines, a known projected CRS and unique non-null IDs.',
+            'crs': 'Line trimming requires the same known projected CRS and matching horizontal units.',
+            'topology': 'Line trimming rejects internal self-intersections or positive-length source overlaps; check and normalize explicitly first.',
+            'conflict': 'The two trim plans cross or meet and would remove an original part; no result was produced.',
+            'landing': 'The first trim intersection cannot lie exactly on both the original source and reference lines; no result was produced.',
+            'invalid': 'Line trimming produced collapsed, invalid or non-finite geometry; no result was produced.',
+            'calculation': 'Line trimming cannot reliably compute a finite first intersection and path length; no result was produced.',
+        },
+    }
+
+
+def _trim_segment_contact(start, end, other):
+    """Return the exact closed-segment entry and exit parameters (binary XY)."""
+    origin, finish = tuple(map(Fraction, start)), tuple(map(Fraction, end))
+    a, b = (tuple(map(Fraction, xy)) for xy in other.coords)
+    direction = tuple(finish[i] - origin[i] for i in (0, 1))
+    edge = tuple(b[i] - a[i] for i in (0, 1))
+    delta = tuple(a[i] - origin[i] for i in (0, 1))
+    denominator = _cross_xy(direction, edge)
+    if denominator:
+        t, u = _cross_xy(delta, edge) / denominator, _cross_xy(delta, direction) / denominator
+        return (t, t) if 0 <= t <= 1 and 0 <= u <= 1 else None
+    if _cross_xy(delta, direction):
+        return None
+    axis = 0 if direction[0] else 1
+    low, high = sorted(((a[axis] - origin[axis]) / direction[axis],
+                        (b[axis] - origin[axis]) / direction[axis]))
+    low, high = max(Fraction(0), low), min(Fraction(1), high)
+    return (low, high) if low <= high else None
+
+
+def _trim_source_network(parts):
+    """Reject overlaps and count exact incident half-edges without rounded noding."""
+    segments, incidence, entries = [], {}, {}
+    for index, (_, _, part, coords) in enumerate(parts):
+        if not part.is_simple:
+            raise LineTrimError('topology')
+        for offset, (a, b) in enumerate(pairwise(coords)):
+            if a == b:
+                continue
+            segment = shapely.LineString([a, b])
+            number = len(segments)
+            segments.append(segment)
+            entries[index, offset] = number
+            for xy in (a, b):
+                incidence.setdefault(tuple(map(Fraction, xy)), set()).add(number)
+    tree = shapely.STRtree(segments)
+    for left, segment in enumerate(segments):
+        start, end = segment.coords
+        for right in tree.query(segment):
+            if right <= left:
+                continue
+            contact = _trim_segment_contact(start, end, segments[right])
+            if contact is None:
+                continue
+            low, high = contact
+            if low < high:
+                raise LineTrimError('topology')
+            point = tuple(Fraction(start[i]) + low * (Fraction(end[i]) - Fraction(start[i])) for i in (0, 1))
+            incidence.setdefault(point, set()).update((left, int(right)))
+    degrees = {}
+    branches = {}
+    for point, members in incidence.items():
+        degree = sum(1 if point in {tuple(map(Fraction, xy)) for xy in segments[i].coords} else 2 for i in members)
+        degrees[point] = degree
+        if degree >= 3:
+            for i in members:
+                branches.setdefault(i, []).append(point)
+    return entries, degrees, branches
+
+
+def _trim_endpoint_plan(coords, end, index, entries, branches, segments, owners, tree, maximum):
+    """Walk the original path once, bounded by the first branch and reference hit."""
+    oriented = coords if end == 'start' else coords[::-1]
+    lengths = []
+    for offset, (a, b) in enumerate(pairwise(oriented)):
+        if a == b:
+            continue
+        source_offset = offset if end == 'start' else len(coords) - 2 - offset
+        segment_no = entries[index, source_offset]
+        axis = 0 if a[0] != b[0] else 1
+        delta = Fraction(b[axis]) - Fraction(a[axis])
+        branch = min(((point[axis] - Fraction(a[axis])) / delta
+                      for point in branches.get(segment_no, [])), default=None)
+        segment = shapely.LineString([a, b])
+        first, selected = None, set()
+        for ref_index in tree.query(segment):
+            contact = _trim_segment_contact(a, b, segments[ref_index])
+            if contact is None:
+                continue
+            t = contact[0]
+            if first is None or t < first:
+                first, selected = t, {owners[ref_index]}
+            elif t == first:
+                selected.add(owners[ref_index])
+        length = hypot(b[0] - a[0], b[1] - a[1])
+        if not np.isfinite(length):
+            raise LineTrimError('calculation')
+        if first is not None and (branch is None or first <= branch):
+            partial = hypot(*(float(first * (Fraction(b[i]) - Fraction(a[i]))) for i in (0, 1)))
+            distance = fsum([*lengths, partial])
+            if not np.isfinite(distance):
+                raise LineTrimError('calculation')
+            if distance == 0:
+                if not lengths and first == 0:
+                    # Already touching a reference at the original endpoint.
+                    return None
+                raise LineTrimError('calculation')
+            if distance > maximum:
+                return None
+            exact = tuple(Fraction(a[i]) + first * (Fraction(b[i]) - Fraction(a[i])) for i in (0, 1))
+            target = tuple(map(float, exact))
+            if any(Fraction(value) != rational for value, rational in zip(target, exact)):
+                raise LineTrimError('landing')
+            point = shapely.Point(target)
+            covered = {owners[i] for i in tree.query(point, predicate='intersects')}
+            if not selected <= covered or not segment.covers(point):
+                raise LineTrimError('landing')
+            position = Fraction(offset) + first
+            if end == 'end':
+                position = len(coords) - 1 - position
+            return position, target, distance, sorted(selected)
+        if branch is not None:
+            return None
+        lengths.append(length)
+        if fsum(lengths) > maximum:
+            return None
+    return None
+
+
+def trim_line_endpoints(
+    input_gdf: gpd.GeoDataFrame, reference_gdf: gpd.GeoDataFrame,
+    id_field: str, reference_id_field: str, max_distance: float,
+) -> dict[str, gpd.GeoDataFrame]:
+    """Trim frozen original dangles along their path, preserving all target owners."""
+    try:
+        return _trim_line_endpoints(input_gdf, reference_gdf, id_field, reference_id_field, max_distance)
+    except (shapely.errors.GEOSException, OverflowError, ZeroDivisionError) as exc:
+        raise LineTrimError('calculation') from exc
+
+
+def _trim_line_endpoints(input_gdf, reference_gdf, id_field, reference_id_field, max_distance):
+    _, reference, reference_ids, maximum = _line_reference_inputs(
+        input_gdf, reference_gdf, id_field, reference_id_field, max_distance, LineTrimError)
+    parts = [(row, number, part, list(part.coords)) for row, shape in enumerate(input_gdf.geometry.array)
+             for number, part in enumerate(shapely.get_parts(shape), 1)]
+    entries, degrees, branches = _trim_source_network(parts)
+    segments, owners, tree = _reference_line_segments(reference)
+    rebuilt = {}
+    rows, references, numbers, ends, originals, targets, distances = [], [], [], [], [], [], []
+    for index, (row, number, part, coords) in enumerate(parts):
+        plans = {}
+        if not part.is_closed:
+            for end, coordinate in [('start', coords[0]), ('end', coords[-1])]:
+                if degrees[tuple(map(Fraction, coordinate))] != 1:
+                    continue
+                plan = _trim_endpoint_plan(coords, end, index, entries, branches,
+                                           segments, owners, tree, maximum)
+                if plan is not None:
+                    plans[end] = plan
+        start = plans['start'][0] if 'start' in plans else Fraction(0)
+        stop = plans['end'][0] if 'end' in plans else Fraction(len(coords) - 1)
+        if start >= stop:
+            raise LineTrimError('conflict')
+        values = [xy for i, xy in enumerate(coords) if start <= i <= stop]
+        if start.denominator != 1:
+            values.insert(0, plans['start'][1])
+        if stop.denominator != 1:
+            values.append(plans['end'][1])
+        if len(values) < 2 or not any(xy != values[0] for xy in values[1:]):
+            raise LineTrimError('conflict')
+        rebuilt.setdefault(row, []).append(part if not plans else shapely.LineString(values))
+        for end in ('start', 'end'):
+            if end not in plans:
+                continue
+            _, target, distance, selected = plans[end]
+            for owner in selected:
+                rows.append(row); references.append(owner); numbers.append(number); ends.append(end)
+                originals.append(coords[0] if end == 'start' else coords[-1])
+                targets.append(target); distances.append(distance)
+    output = input_gdf.geometry.array.copy()
+    for row, row_parts in rebuilt.items():
+        output[row] = row_parts[0] if input_gdf.geometry.iloc[row].geom_type == 'LineString' else shapely.MultiLineString(row_parts)
+    result = input_gdf.copy()
+    result[result.geometry.name] = gpd.GeoSeries(output, index=input_gdf.index, crs=input_gdf.crs)
+    try:
+        _finite_xy_geometry(result, 'result')
+        _require_nonempty_valid_lines(result.geometry)
+    except ValueError as exc:
+        raise LineTrimError('invalid') from exc
+    details = gpd.GeoDataFrame({
+        'source_id': input_gdf[id_field].iloc[rows].reset_index(drop=True),
+        'reference_id': reference_ids.iloc[references].reset_index(drop=True),
+        'part_no': pd.Series(numbers, dtype='int64'), 'end': pd.Series(ends, dtype='string'),
+        'original_x': pd.Series([xy[0] for xy in originals], dtype='float64'),
+        'original_y': pd.Series([xy[1] for xy in originals], dtype='float64'),
+        'target_x': pd.Series([xy[0] for xy in targets], dtype='float64'),
+        'target_y': pd.Series([xy[1] for xy in targets], dtype='float64'),
+        'distance': pd.Series(distances, dtype='float64'),
+    }, geometry=gpd.GeoSeries([shapely.Point(xy) for xy in targets], crs=input_gdf.crs))
+    return {'result': result, 'details': details}
+
+
 def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report each positive-area polygon pair once, retaining explicit source IDs."""
     geometry = _finite_xy_geometry(input_gdf)
@@ -1726,6 +1947,27 @@ EXTEND_LINE_ENDPOINTS_METADATA = OperatorMetadata(
     use_cases=["沿端部原方向连接参考线断口", "审计新增延伸段和全部参考来源"],
     notes=["只处理全图悬点；两源冻结，一次计算，不连锁", "首次参考点命中或共线区间入口即停止，不能越过首个不可精确表示的交点", "同点全部参考来源保留，同一参考重复段去重；朝外方向不一致或原始内部覆盖整批失败", "不使用epsilon、网格或舍入；不插入参考节点、不打断新增交叉、不合并链路", "两输出分别连接既有save，不提供跨文件事务或固定规模容量"],
     workflow_example={"id":"extend", "operator":"extend_line_endpoints", "params":{"input_gdf":{"$ref":"source"},"reference_gdf":{"$ref":"reference"},"id_field":"line_id","reference_id_field":"ref_id","max_distance":2.0},"depends_on":["source","reference"]},
+)
+
+TRIM_LINE_ENDPOINTS_METADATA = OperatorMetadata(
+    name="trim_line_endpoints", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
+    description="线端修剪", brief_description="沿原悬端向内修剪到距离上限内首次参考交会，分支处停止并保留全部来源",
+    execution_modes=["workflow"], effects=["read"],
+    overview="按原路径累计长度搜索首次精确参考交会，共线取入口，上限含等号，不跨部件或越过分支。两端冻结同时计划，返回保留属性的线与目标Point明细。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待修剪源线图层", notes="有效有限二维线、已知投影CRS、实际活动几何列；允许空批，内部自交或源线正长度重合拒绝"),
+        OperatorParam(name="reference_gdf", type="input", data_type="GeoDataFrame", required=True, description="固定参考线图层", notes="相同已知投影CRS，参考线不动"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="源线唯一非空标识字段"),
+        OperatorParam(name="reference_id_field", type="param", data_type="str", required=True, description="参考线唯一非空标识字段"),
+        OperatorParam(name="max_distance", type="param", data_type="float", required=True, description="每端最大修剪路径长度", notes="有限正数，沿投影水平单位；0＜原路径累计长度≤上限，包含等号"),
+    ],
+    output_ports=[
+        OutputPort(name="result", type="geodataframe", description="保留来源属性、行序、索引、部件、方向、活动几何列及CRS的线", is_default=True),
+        OutputPort(name="details", type="geodataframe", description="目标Point及全部source_id/reference_id、part_no/end、original_x/y、target_x/y、distance路径长度", is_default=False),
+    ],
+    use_cases=["按固定参考线显式修剪悬端过冲", "审计各端修剪长度和全部参考来源"],
+    notes=["只处理原全图悬端；已在参考上、无目标或分支先到时保持原状，参考命中分支可剪到该点", "原始路径首交点不能精确落线、两端计划冲突／整部件消失或无效时整批失败，不舍入或选更晚交点", "不吸附、补缝、跨部件追线或隐式修复；不承诺跨文件事务或固定容量", "result和details分别接既有save；已知输入及计划冲突沿统一参数诊断，数值计算失败不误作参数错误"],
+    workflow_example={"id":"trim", "operator":"trim_line_endpoints", "params":{"input_gdf":{"$ref":"source"},"reference_gdf":{"$ref":"reference"},"id_field":"line_id","reference_id_field":"ref_id","max_distance":2.0},"depends_on":["source","reference"]},
 )
 
 CHECK_POLYGON_OVERLAP_METADATA = OperatorMetadata(
@@ -2339,6 +2581,7 @@ OPERATORS = dict([
     register_operator(SNAP_GEOMETRY_METADATA, snap_geometry),
     register_operator(SNAP_LINE_ENDPOINTS_METADATA, snap_line_endpoints),
     register_operator(EXTEND_LINE_ENDPOINTS_METADATA, extend_line_endpoints),
+    register_operator(TRIM_LINE_ENDPOINTS_METADATA, trim_line_endpoints),
     register_operator(CHECK_POLYGON_OVERLAP_METADATA, check_polygon_overlap),
     register_operator(CHECK_POLYGON_GAP_METADATA, check_polygon_gap),
     register_operator(CHECK_DANGLING_POINTS_METADATA, check_dangling_points),
