@@ -346,7 +346,9 @@ continuous 双用户审批验收沿用现有 Hosted suite 和同租户 peer：�
 
 #### bounded 定时授权验收
 
-2026-10-17 自有 bounded 定时授权闭环已由 `5593d42ae`、`f277fa894` 接入现有 System Task Authorization Subject；来源冻结为 revision 27（`c05431787`）。带 Cron 定义的保存与恢复绑定本次 User 和完整定义摘要，触发前重核当前 IAM，领取事务再核对定义及主体；暂停清除调度授权，恢复只更新未来计划，不改 active execution 的配置、状态或身份。旧定义缺少主体时拒绝触发，不借创建人或旧执行补齐。任务主体的 User／Service 请求拒绝重定向，失效 User 凭据保持 401；没有新增授权实体、API 路线或测试数据库。System 000216 只支持严格 owner/type 二元组，并向 Transfer Runtime 增授既有主体解析 Permission。
+现行主体绑定、完整定义摘要、触发／领取重核、暂停清除与旧定义拒绝规则统一见[Transfer 定时任务授权](../docs/spec/tasks/任务定义与授权.md#transfer-定时任务授权)。恢复仅更新未来计划和授权，不改已有 pending／running execution；扫描来源另沿[生产来源契约](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)。以下按固定版本分别认定门禁与真实 Cron／扫描结果，不推定当前 HEAD 已重跑。
+
+2026-10-17 自有 bounded 定时授权闭环已由 `5593d42ae`、`f277fa894` 接入现有 System Task Authorization Subject；来源冻结为 revision 27（`c05431787`）。任务主体的 User／Service 请求拒绝重定向，失效 User 凭据保持 401；没有新增授权实体、API 路线或测试数据库。System 000216 只支持严格 owner/type 二元组，并向 Transfer Runtime 增授既有主体解析 Permission。
 
 [Hosted 38987715068](https://github.com/pampa0629/addp/actions/runs/38987715068) 在运行时代码提交 `c0543178726054fa4245e566cadff13bf46385e0` 真实通过，独立核验了 5 个服务构建身份、13 项检查、6 个不同 Transfer UUID 与 4 次精确目标扫描。定时 execution `d2a77c47-c63e-4660-83a5-a51ea59a928b` 由真实 Cron 触发，发起人为当前授权 User 33；Meta 扫描 `835fbbf7-acfd-4713-8a2f-68d9446b90ba` 继承同一 User 和这个直接父执行。拥有读取权限的 peer 可读父执行，对该一次性子扫描仍返回 404。实际写入两行，扫描只新增 `addp://engine/1/path/public/continuous_scheduled_target?type=table`（DataItem 5，id／label 两字段）；原 Kafka／CDC 目标、兄弟项和 schema／root 两级祖先扫描事实不变。此前双用户审批、初次扫描与 live／recovery／revocation 三组浏览器验证继续通过，3 个定义删除成功，suite 残留 0、Infra `zero_residuals`。37 个归档文件未检出凭据前缀、Service Secret 赋值或业务行哨兵。
 
