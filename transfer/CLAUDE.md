@@ -107,40 +107,68 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 ### 通用执行约束
 
+主题导航：[配置、Provider 与 API 维护](#配置provider-与-api-维护)、[bounded 读写与恢复](#bounded-读写与恢复)、[成果事实与初始授权](#成果事实与初始授权)、[单次目标覆盖与稳定输出](#单次目标覆盖与稳定输出)、[continuous 运行、提交与观测](#continuous-运行提交与观测)、[业务 Kafka DLQ 与 replay](#业务-kafka-dlq-与-replay)、[CDC 捕获与审批](#cdc-捕获与审批)、[任务删除与物理清理](#任务删除与物理清理)、[写后扫描触发与范围](#写后扫描触发与范围)。
+
+#### 配置、Provider 与 API 维护
+
 - 新任务配置必须使用 `runtime.boundary`、`load.mode`、source / target endpoint 和 `target.policy.apply_mode` JSON；旧顶层 `mode`、`write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 - Transfer 任务类型固定为 `sync`；不得新增或兼容 `import`、`export`、`transfer` 等旧任务类型。
 - table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / layout 分叉，不按具体引擎组合分叉。
 - encoded file/object 读写必须通过 `common/engine` content provider + `common/engine/contentadapter` + `common/format` provider，不在 Transfer 中新增私有 reader / writer。
 - Shapefile 等 multi 文件格式通过 `contentio.Reader` / `contentio.Writer` + `[]format.RelatedRef` 与 `common/format` multi table provider 接入。
 - FileGDB/PGeo 等 container table 源只接受通用 `source.options.child_name`；planner 必须从 Meta `type_info.container.children` 校验 child 并解析 `native.table`，任务配置不得直接保存 `layer` 或 `child_table` 等 provider 私有入口。
+- 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。
+
+#### bounded 读写与恢复
+
 - overwrite / append 是 Transfer policy；删除指定资源由 `common/engine` ResourceDeleteProvider 提供。
 - native target 在删除／准备之前消费 Provider 可选的纯 `TableWriteDefinitionChecker`，拒绝已知不支持的字段声明；PostgreSQL、openGauss、KingbaseES、TiDB 与 OceanBase 已实现；openGauss／KingbaseES 沿同一 PG 协议检查，TiDB／OceanBase 沿同一 MySQL 非空间写入核心检查，均保留各自的空间限制。MySQL 非空间核心在连接前拒绝原生 array，不靠默认 TEXT 映射或自动改成 JSON 兜底。没有检查接口或实际值未知不能当作通过，逐值编码、现有授权／Security 和执行时结构校验继续生效。合成 PostgreSQL 数组源到 replace 目标的拒绝及既有目标 OID／哨兵保留，由 `make test-transfer-postgres` 自动覆盖；不意味着 replace 全流程原子回滚。
 - checkpoint 当前只用于进度展示、故障定位和 provider marker 观测；失败执行 retry 按 restartable 从头重新入队，append 任务 retry 会被拒绝。不得宣称 table Transfer 已支持 checkpoint resumable。
 - 大数据传输要优先考虑批大小、连续读取 / 写入 session、进度日志和 restartable retry。
 - bounded Worker 不使用消息载荷；以 `common.task_executions` 中冻结的执行配置为唯一输入，并通过 `lease_token` 条件写入。
+- bounded watermark source 必须消费声明 `bounded_watermark_read` 的 common engine Provider；PostgreSQL、MySQL、MySQL 模式 OceanBase、openGauss 与 TiDB 都在源数据库一致性快照内冻结游标上界。单字段游标仅同步新增且必须自身是非空唯一键，复合游标同步新增和更新且 tie breaker 必须是非空唯一键；OceanBase 与 TiDB 限定目录报告为 InnoDB-compatible 的非空间基表，openGauss 当前只开放非空间表。目标只按幂等 `TableUpsertProvider` 能力选择，当前 PostgreSQL、MySQL、MySQL 模式 OceanBase、openGauss 与 TiDB 可作为目标，其中 OceanBase、openGauss 与 TiDB 只支持非空间表；Transfer 不按源或目标引擎类型建立专用执行分支。
+
+#### 成果事实与初始授权
+
 - PG bounded 产出事实在同 attempt／目标的成功提交时冻结实际读取会话的完整 ReadSet 与 Provider 的 `created_and_committed`；来源未知为 null，新建提交未证明为 false，不从配置、行数或血缘补造，不在此处确定 Grant 期限。私有 `target_production` v3 使用封闭 JSON 字符串保存在执行 metadata 中，避免通用 JSONMap 的浮点往返改变 Engine ID；仅通过 owner codec 读取，不兼容或补填旧事实，原生 CreationWitness 不持久化。固定 System／Meta 机器通过同一回执 v3 核验同一证据，不向普通执行详情或 TaskProvider 输出泄漏。任务期间不进行 schema 改名、迁移等结构运维；Provider 提交前检测已发生的路径异常，不增加父 schema 锁或承诺任意外部 DDL 原子性。
 - 初始授权续办只为本次成功完成且具备 v3 新建提交证明、完整人类来源的首次 bounded 执行初始化 `initial_authorization`；不回填历史成功任务。原 Worker 注册有效时独立领取待办，释放行锁后由统一 System client 核清／续办，正式 pending 才调用 Meta 精确 basic 补扫。30 秒至 5 分钟有界退避，迟到旧领取不能覆盖新状态，明确签发／拒绝终态停止；不重跑写入、不删除成果、不延长 System 冻结期限。通用 metadata／完成路径禁止自报该保留字段。HTTP 只投影 `status/code`，不暴露领取进度、Grant 引用或私有证据；任务详情将物理成功与授权状态分开显示，待办期间只读刷新。读取仍由同一 System Grant 与 Security 链裁决，T1/T2 和前端浏览器门禁不代替新成果完整 T4。
+
+#### 单次目标覆盖与稳定输出
+
 - bounded snapshot 可声明通用“单次执行覆盖既有目标表”能力，且与 source 是直接表、SQL 还是 MQL 正交。任务定义必须保存已存在原生表作为可直接执行的默认目标；默认目标和覆盖目标都只允许 append。TaskProvider 将 `target_locator` 声明为带默认值的可选输入，未提交时使用任务默认目标，Orchestrator 提交时只覆盖本 execution。Worker 通过通用 Engine capability 校验实际目标表结构，严格校验 field mapping 的目标列名称、顺序和类型，再仅用 `TableWriteSessionProvider` append；不得调用 delete、truncate、prepare 或 DDL。使用覆盖的 execution lease 过期后不自动重试。Transfer 不保存 LogicalTable ID，不调用 Model API，不持有 Model Permission。
 - 所有 bounded `sync` 任务统一声明稳定输出 `execution_id + target_locator + row_count`，其中 `target_locator` 是本 execution 实际目标。普通固定目标任务使用闭合空输入契约；允许目标覆盖的任务声明可选 `target_locator` 并在 `input_defaults` 返回默认目标。创建子资源时必须保留父 locator 体系，`addp://engine/...` 与 `addp-infra://...` 分别使用各自解析器，Infra 目标不得经过业务 ResourceLocator 解析。下游只能消费稳定输出，不能读取 Transfer 私有配置或拼接物理路径。
 - 所有 TaskProvider 稳定输出只写入 `common.task_executions.metadata.outputs`；`GET /task-provider/executions/:execution_id` 使用 `common/taskprovider` 标准状态响应把同一对象投影为顶层 `outputs`。用户执行详情继续使用 Transfer DTO，不复用或包装 TaskProvider 机器契约。
+
+#### continuous 运行、提交与观测
+
 - 业务 Kafka keyed JSON record -> PostgreSQL/MySQL monotonic upsert 与数据库 CDC 的 PostgreSQL/MySQL/Oracle Debezium envelope -> PostgreSQL/MySQL/Oracle snapshot/upsert/delete，复用同一 continuous worker 主循环。两条路线共用 `ChangeStreamReaderProvider`、partition position、目标 ledger、Infra state CAS、runtime lease/fencing 和 retention 防护，不得新增第二套 CDC consumer；语义与捕获拓扑见[业务 Kafka](docs/transfer-任务语义与同步模式.md#62-业务-kafka)、[数据库 CDC](docs/transfer-任务语义与同步模式.md#63-数据库-cdc)和[CDC 正式契约](../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。能力说明不代替[分版本验收证据与当前门禁覆盖](#开发与验证)。
+- 业务 Kafka 注册为 System Engine，topic 使用 `type=topic` ResourceLocator；partition 只属于 runtime assignment/position/diagnostics。Infra Kafka 来自 ADDP 部署配置，不进入 System engines、资源树或用户任务 JSON。
+- continuous source 必须消费 common `ChangeStreamReaderProvider`；原始 ChangeRecord 到 ChangeEvent 的解码以及 ChangeApplyWriter 归 Transfer runtime。目标必须消费声明原子、单调及所需 operations 的 `PartitionedTableChangeApplyProvider`。PostgreSQL 把业务行与业务库 `addp_transfer.apply_positions` 原子提交；MySQL 把业务行与同一目标数据库的 `_addp_transfer_apply_positions` InnoDB 私有表原子提交；Oracle 把业务行与连接用户 schema 内的 `_ADDP_TRANSFER_APPLY_POSITIONS` 原子提交。Oracle CDC target 使用 partitioned apply；普通 bounded target 使用 Oracle `TableWriteSessionProvider`，两者复用统一字段/空间映射，但不共享 CDC ledger 语义。当前均拒绝 `time`、decimal precision > 38 和非 XY geometry。普通 `TableUpsertProvider` 不足以阻止失效 worker 写回旧状态。
+- continuous session 不进入 Asynq；使用 `transfer.runtime_leases` 做 owner lease、heartbeat 和 fencing，并使用 `transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。
 - continuous 用户控制与恢复准入统一见[生命周期](docs/transfer-任务语义与同步模式.md#64-生命周期)，新 execution、自动退避、circuit 与审计分工见[自动恢复与退避](docs/transfer-任务语义与同步模式.md#自动恢复与退避)和[恢复审计与运行状态](docs/transfer-任务语义与同步模式.md#恢复审计与运行状态)。PostgreSQL/MySQL/Oracle 目标被锁时必须响应 context 取消并回滚业务写入与 apply ledger；Oracle 通过 `FOR UPDATE NOWAIT` 有界重试检查 runtime context。
+- continuous 分区指标沿同一 `ChangeStreamReader` 采样，计算与健康口径统一见[诊断与恢复窗口](docs/transfer-任务语义与同步模式.md#65-诊断与恢复窗口)。Transfer 是采集与判定 owner，Monitor 只消费已声明的公共 execution 安全投影，不直连业务 Kafka 或 Transfer 私表；字段裁剪与读取授权以[专业执行规范](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)为准，诊断展示不替代[实际验收](docs/transfer-任务语义与同步模式.md#十一验证范围)。
+
+#### 业务 Kafka DLQ 与 replay
+
 - 业务 Kafka DLQ 的处理顺序与显式记录错误策略统一见[业务 Kafka 语义](docs/transfer-任务语义与同步模式.md#62-业务-kafka)和[DLQ 正式契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。唯一 replay API 为 `POST /task-definitions/:id/replay`，只接受显式 partition offset ranges 与不存在的新 PostgreSQL `parent_locator + name`，并通过独立 bounded execution/apply identity 写隔离目标，不能触碰主任务状态、水位或目标。
 - DLQ payload availability 由 continuous worker 内唯一 reconciler 管理，精确引用核验、CAS、瞬时故障与 payload 安全统一见[availability 专题](docs/数据库架构.md#availability-失败与验收边界)及[DLQ 正式契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)；核验不提交 Kafka offset，也不进入 HTTP 请求链路。
-- task 直接删除与 System physical cleanup 必须复用同一 task-owned resource cleanup：CDC capture（如适用）→ 业务 Kafka 确定性 DLQ topic → tenant/task scoped `transfer.dead_letters` → task definition。logical cleanup、pause/stop 保留 DLQ；Kafka 删除失败时不得先删索引或任务。
-- physical cleanup 在删除私有状态前必须把 continuous task 收敛到 desired stopped，并取得所有原 runtime invocation 的实际停止证明；lease 过期、cancel 或进程消失不构成证明。pending／running bounded task 无真实 cancel 能力，必须拒绝清理。外部资源清理后，`dead_letters/sync_states/runtime_leases/schema_change_requests/capture_resources` 在同一事务删除，公共 execution 和目标业务事实继续保留。
-- continuous 分区指标沿同一 `ChangeStreamReader` 采样，计算与健康口径统一见[诊断与恢复窗口](docs/transfer-任务语义与同步模式.md#65-诊断与恢复窗口)。Transfer 是采集与判定 owner，Monitor 只消费已声明的公共 execution 安全投影，不直连业务 Kafka 或 Transfer 私表；字段裁剪与读取授权以[专业执行规范](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)为准，诊断展示不替代[实际验收](docs/transfer-任务语义与同步模式.md#十一验证范围)。
+
+#### CDC 捕获与审批
+
 - CDC Capture 的持久事实与 Provider 资源归属见[Capture 资源登记](docs/数据库架构.md#六cdc-capture-generation-与资源登记)：`transfer.capture_resources` 是 engine-neutral generation 主事实，一对一 `postgresql_capture_resources` / `mysql_capture_resources` / `oracle_capture_resources` 保存 provider 私有资源；generic 主表不得恢复 provider 字段或使用伪资源占位。数据库 CDC 任务 JSON 只使用唯一 `DatabaseCDCTaskSpec`，provider 必须由 System Engine 解析，不能用配置形态推断；PostgreSQL/MySQL/Oracle 共用唯一 capture supervisor、continuous worker、API、capability 和 Console 路线。
 - 数据库 CDC pause 时 connector 继续捕获，主要风险是 Infra Kafka retention；stop 是不可逆终态，必须由服务端显式确认并清理 ADDP-owned connector、provider 专属资源、data/schema-history topic、group 和 ACL，已停止任务不得重新 start/resume。重新同步创建新任务和新目标表，不保留兼容分支。
 - 数据库 CDC 数据面固定接受 Debezium Connect 3.6.0.Final schemaless JSON；`r -> snapshot/upsert`、`c|u -> upsert`、`d -> delete`，tombstone、truncate、message、来源身份不匹配和未知字段严格阻塞且不得推进 offset。PostgreSQL、MySQL、Oracle 使用各自严格 source adapter 和类型矩阵，Decimal/Oracle NUMBER 固定 string、时间固定 Connect 毫秒编码，MySQL binary 固定 base64；Oracle Spatial 由 capture Provider 使用 generation-owned 镜像表把 `SDO_GEOMETRY` 转为 base64 WKB，再由 Oracle adapter 转成标准 EWKB。字段、类型或 envelope/source 漂移统一以 `schema_change_blocked` 阻塞。PostgreSQL/MySQL 当前阻塞消息中的新增 nullable 非 geometry 字段可通过专用 API 人工审批；Oracle schema drift 只阻塞，必须 Stop 后创建新任务和新目标表。当前公开能力仍不支持 CDC replay/DLQ、Schema Registry、Avro、Protobuf、Kafka target、普通 Oracle LOB/RAC 或 ArcGIS SDE。
 - additive migration 提交后的 Meta deep scan 使用 `schema_change_requests` 中唯一 `pending -> running(token, lease) -> success|failed` claim；并发审批不能重复触发，过期 claim 只由相同重复审批 POST 接管，GET 保持只读，迟到 token 不得覆盖新结果。真实 Meta 失败不自动重试；统一的 `TRANSFER_META_SCAN_CLAIM_TTL` 必须大于 Meta client 60 秒超时。
-- 业务 Kafka 注册为 System Engine，topic 使用 `type=topic` ResourceLocator；partition 只属于 runtime assignment/position/diagnostics。Infra Kafka 来自 ADDP 部署配置，不进入 System engines、资源树或用户任务 JSON。
-- continuous source 必须消费 common `ChangeStreamReaderProvider`；原始 ChangeRecord 到 ChangeEvent 的解码以及 ChangeApplyWriter 归 Transfer runtime。目标必须消费声明原子、单调及所需 operations 的 `PartitionedTableChangeApplyProvider`。PostgreSQL 把业务行与业务库 `addp_transfer.apply_positions` 原子提交；MySQL 把业务行与同一目标数据库的 `_addp_transfer_apply_positions` InnoDB 私有表原子提交；Oracle 把业务行与连接用户 schema 内的 `_ADDP_TRANSFER_APPLY_POSITIONS` 原子提交。Oracle CDC target 使用 partitioned apply；普通 bounded target 使用 Oracle `TableWriteSessionProvider`，两者复用统一字段/空间映射，但不共享 CDC ledger 语义。当前均拒绝 `time`、decimal precision > 38 和非 XY geometry。普通 `TableUpsertProvider` 不足以阻止失效 worker 写回旧状态。
-- continuous session 不进入 Asynq；使用 `transfer.runtime_leases` 做 owner lease、heartbeat 和 fencing，并使用 `transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。
-- bounded watermark source 必须消费声明 `bounded_watermark_read` 的 common engine Provider；PostgreSQL、MySQL、MySQL 模式 OceanBase、openGauss 与 TiDB 都在源数据库一致性快照内冻结游标上界。单字段游标仅同步新增且必须自身是非空唯一键，复合游标同步新增和更新且 tie breaker 必须是非空唯一键；OceanBase 与 TiDB 限定目录报告为 InnoDB-compatible 的非空间基表，openGauss 当前只开放非空间表。目标只按幂等 `TableUpsertProvider` 能力选择，当前 PostgreSQL、MySQL、MySQL 模式 OceanBase、openGauss 与 TiDB 可作为目标，其中 OceanBase、openGauss 与 TiDB 只支持非空间表；Transfer 不按源或目标引擎类型建立专用执行分支。
+
+#### 任务删除与物理清理
+
+- task 直接删除与 System physical cleanup 必须复用同一 task-owned resource cleanup：CDC capture（如适用）→ 业务 Kafka 确定性 DLQ topic → tenant/task scoped `transfer.dead_letters` → task definition。logical cleanup、pause/stop 保留 DLQ；Kafka 删除失败时不得先删索引或任务。
+- physical cleanup 在删除私有状态前必须把 continuous task 收敛到 desired stopped，并取得所有原 runtime invocation 的实际停止证明；lease 过期、cancel 或进程消失不构成证明。pending／running bounded task 无真实 cancel 能力，必须拒绝清理。外部资源清理后，`dead_letters/sync_states/runtime_leases/schema_change_requests/capture_resources` 在同一事务删除，公共 execution 和目标业务事实继续保留。
+
+#### 写后扫描触发与范围
+
 - `auto_scan_metadata=true` 的普通业务 Kafka continuous task 在目标结构建立后提交完整目标表 locator 的 `targets`，触发一次精确 Meta deep scan。数据库 CDC connector 必须把 Debezium `Initial Snapshot` 通知写入当前 generation-owned 单分区 data topic；合法通知统一作为 target `skip` 推进，只有严格匹配当前 connector 的 `COMPLETED` offset 在目标 ledger 和 Transfer position 提交后才触发首次扫描，空表同样适用，不使用 `source.snapshot=last` 或时间猜测。首次扫描使用 task 私有持久化 claim 防重复，Meta 提交失败不阻断数据面，失败或过期 claim 由后续 runtime session 重试。普通事件/batch 不扫描，schema 正式变化后另行扫描。
 - bounded 写后、continuous 首次扫描和结构变更审批后的扫描只覆盖实际目标表，不枚举所属 schema／database；缺少精确表身份时不得提交全引擎扫描。T1 通过实际 Meta HTTP 请求断言范围，沿现有 Transfer 后端与 CI 自动发现。
-- 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。
 
 ### 查询源与构建器
 
