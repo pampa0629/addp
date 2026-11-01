@@ -135,9 +135,9 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 #### 单次目标覆盖与稳定输出
 
-- bounded snapshot 可声明通用“单次执行覆盖既有目标表”能力，且与 source 是直接表、SQL 还是 MQL 正交。任务定义必须保存已存在原生表作为可直接执行的默认目标；默认目标和覆盖目标都只允许 append。TaskProvider 将 `target_locator` 声明为带默认值的可选输入，未提交时使用任务默认目标，Orchestrator 提交时只覆盖本 execution。Worker 通过通用 Engine capability 校验实际目标表结构，严格校验 field mapping 的目标列名称、顺序和类型，再仅用 `TableWriteSessionProvider` append；不得调用 delete、truncate、prepare 或 DDL。使用覆盖的 execution lease 过期后不自动重试。Transfer 不保存 LogicalTable ID，不调用 Model API，不持有 Model Permission。
-- 所有 bounded `sync` 任务统一声明稳定输出 `execution_id + target_locator + row_count`，其中 `target_locator` 是本 execution 实际目标。普通固定目标任务使用闭合空输入契约；允许目标覆盖的任务声明可选 `target_locator` 并在 `input_defaults` 返回默认目标。创建子资源时必须保留父 locator 体系，`addp://engine/...` 与 `addp-infra://...` 分别使用各自解析器，Infra 目标不得经过业务 ResourceLocator 解析。下游只能消费稳定输出，不能读取 Transfer 私有配置或拼接物理路径。
-- 所有 TaskProvider 稳定输出只写入 `common.task_executions.metadata.outputs`；`GET /task-provider/executions/:execution_id` 使用 `common/taskprovider` 标准状态响应把同一对象投影为顶层 `outputs`。用户执行详情继续使用 Transfer DTO，不复用或包装 TaskProvider 机器契约。
+- bounded snapshot 的目标覆盖与 source 是直接表、SQL 或 MQL 正交；已存在默认目标、append 限制及仅覆盖本 execution 的配置沿[单次执行目标覆盖](docs/transfer-基本概念及配置说明.md#24-单次执行目标覆盖)。Worker 按通用 Engine capability 严格核验实际目标的字段名称、顺序与类型，只用 `TableWriteSessionProvider` append，不调用 delete、truncate、prepare 或 DDL；覆盖执行的 lease 过期不自动重试。Transfer 不保存 LogicalTable ID、不调用 Model API、不持有 Model Permission。
+- bounded `sync` 的稳定输出 `execution_id + target_locator + row_count`、闭合输入与默认值沿[模块任务契约](../docs/spec/tasks/模块任务契约.md#跨模块任务边界)。`target_locator` 必须是本 execution 的实际目标；业务与 Infra 父 Locator 保持各自体系及解析器，下游不从私有配置、任务 ID 或物理字段拼接目标。
+- 稳定输出唯一持久事实及顶层 `outputs` 投影沿[TaskProvider 标准响应](../docs/spec/tasks/TaskProvider接口.md#标准响应体)，统一复用 `common/taskprovider`；用户执行详情仍使用 Transfer DTO，不包装机器契约。身份、精确 Permission 与实际执行验收边界见[任务表 API](docs/tables/tasks表.md#五api)及[开发与验证](#开发与验证)，契约声明或入队不等于真实目标写入与编排链路通过。
 
 #### continuous 运行、提交与观测
 
