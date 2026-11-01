@@ -879,7 +879,7 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 数据库创建须由该 workflow 调用的标准生命周期完成；新容器、临时数据、镜像标记绑定本 Job／Run／attempt，ready 与真实 extension 能力核验后才测试；失败、取消和正常退出均按准确资源身份销毁，不复用个人实例或旧测试卷。删除 Manager Job 原来的纯 PostGIS Service，避免两个数据库供给路线并存。本地标准入口仍只用已核归属的 `addp_test`，不切换或重启个人 Infra，不创建新本地 database。针对这一 repo-built Postgres 供给同步 T2 服务登记／路径选择与反例验证，不能借不存在或未使用的旧 Service 假登记；不影响其他 Owner Job 的服务或镜像。
 
-**最小实施与验证。** 修改范围限 `.github/workflows/release-and-t2-gates.yml` 的 Manager Job、`scripts/test/manager-postgres-gate.sh`、既有 T2 登记／module gate 测试及对应说明；不新增产品 API、权限、持久数据实体或业务路径。离线验证 CI 所有权／拒绝个人环境／真实扩展前置／失败与取消回收／原 full-suite 和 skip 拒绝，复用 `make test-t2-ci-registration` 与已有 module-gate 标准测试；保留本地标准 Manager PG／Go 验证，再由自然 Manager PG CI 执行新的准确镜像及 31 项完整用例。其他必要 CI 只核本批实际覆盖。新的 Hosted 未获授权，不运行第七次。
+**最小实施与验证。** 修改范围为 `.github/workflows/release-and-t2-gates.yml` 的 Manager Job、`scripts/test/manager-postgres-gate.sh`、专属 Compose、复用 Dockerfile 的同版本源码固定、根 Make 及 T2 登记／生命周期／module gate 测试与对应说明；不新增产品 API、权限、持久数据实体或业务路径。离线验证 CI 所有权／拒绝个人环境／真实扩展前置／失败与取消回收／原 full-suite 和 skip 拒绝，复用 `make test-t2-ci-registration` 与已有 module-gate 标准测试；保留本地标准 Manager PG／Go 验证，再由自然 Manager PG CI 执行新的准确镜像及 31 项完整用例。其他必要 CI 只核本批实际覆盖。新的 Hosted 未获授权，不运行第七次。
 
 **授权与证据边界。** 此次确认仅涵盖 Manager 专属 CI 数据库测试基线与供给生命周期；其他环境和权限边界变化仍单独确认。runner／Manager Go 已验，旧 Manager PG 失败事实保留，新 CI 必须取得实际终态才能计通过。整条 Engine 清理链路仍为第六轮 0/7、现场 Manager 底层原因待足够证据；本轮不追加 Hosted。
 
@@ -895,3 +895,11 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 **继承环境补查。** 基线修正提交为 `9c64c571541bf086556d9b5f03c0778689c46633`。继续提前使用 `CI=true GITHUB_ACTIONS=true` 验证，已复现既有 Manager 本地入口 fixture 的适配遗漏：它继承 CI 标志，使新增正式 CI 专属 guard 先拒绝，未到预期缺 DSN 的本地拒绝。仅在该测试中显式移除 CI／GitHub／owned 标志及 DSN，完整保留正式门禁拒绝规则；两个 Manager 入口／完整测试保留契约在该继承环境下定向复验 OK（0.954s）。额外整组 41 项的同标志本机实验在 Common／Meta mock 子进程出现超时及锁拒绝（16 error、16 failure），未计通过，不延长预算或修改其他 Owner；此前正常本地 41 项成功与本次定向结果分别保留，准确 Linux 结果另核对。
 
 `9c64c5715` 的独立 [Execution runner Job 124881105410](https://github.com/pampa0629/addp/actions/runs/41317682965/job/124881105410) 已实际 success：准确 checkout、selected:true、canonical Make，100 native＋167 shared 均 OK；原始日志 SHA-256 `f04724396fe0256425a6541e7781a8d54818efcee362f45152e7f7ae9fc98390`。Manager PG／Platform 尚在执行，本项成功不能替代它们。
+
+**后续实际终态与当前缺口（2026-11-01 23:21）。** `9c64c5715` 的 [Manager PG Job 124881638812](https://github.com/pampa0629/addp/actions/runs/41317682955/job/124881638812) 已实际 success，完整生产初始化等 31 个顶层 PASS、0 skip、0 fail；实际 PostgreSQL **15.19**、PostGIS **3.7.0**、pgvector **0.8.0**，不是旧纯 PostGIS Service 的 3.4 小版本。归档 `13088970164` 的源码准确为 `9c64c571541bf086556d9b5f03c0778689c46633`、镜像 ID `sha256:53a2025e2dcaa6ec2adc228ab56ac36b459b1e4d7513cb060028df6ae43ce695`、pgvector 源码提交准确，`test_exit_code=0`、`cleanup=zero_residuals`，原始日志也有真实扩展与退出零残留输出。日志 SHA-256 `728c1fb930c537ad9a2446b7be06d287f61b7cc6ca1568190cefaf2b78748337`、ZIP `e8e0643e8ade6160ce71a9f5abf227199d6b2304d9af6b62a2706d63ba58e2a3`、JSON `ba5f0563211789afae14529155f90d9237da099f2ed7bb517d7246fe35d037a4`，主责与 CI 会话独立下载一致。Manager CI 缺 vector 的基线问题已实证收口；不将其认作 Hosted 现场原因。
+
+原 [Platform Job 124881105301](https://github.com/pampa0629/addp/actions/runs/41317682965/job/124881105301) 实际 failure；其中本批 75 项登记反例、9 项生命周期及登记检查均实际 OK，随后模块门禁 41 项仅上述 Manager 继承 CI 标志的 fixture 失败。日志 SHA-256 `ca1e2e2b390a9cffd62fd22cef70861bce99719e0afc811fff2987cc382c3f15`；这是本批适配遗漏，不归为无关前置失败，不以 75＋9 局部成功覆盖该终态。
+
+夹具补修 `1d15c0b44a9314783ab3efaeecd59009ade818b7` 已提交推送，仅调整该本地测试的环境隔离及专题记录；其 [Platform Job 124885911941](https://github.com/pampa0629/addp/actions/runs/41319301973/job/124885911941) 截至本记录仍排队、无 runner、未计通过，由 CI 会话持续核对实际 41 项及 Manager 契约。已逐项比较 Manager、Common、System 与 PG 生命周期输入，`9c64c5715` 至 `1d15c0b44` 均无变化，保留前述 PG 实测证据；测试夹具的本地定向通过不能替代新 Linux 结果。
+
+独立原件沿第六轮目录 `manager-ci-baseline/`，包括 `manager-independent-final-proof.json`、`execution-runner-independent-proof.json`、`platform-original-independent-proof.json` 及输入一致性证明。CI 与 M327 维护会话已收到增量回报；功能仍为部分实现。剩余为夹具补修的实际 Linux 复验，以及第六轮 Hosted **0/7** 的 Manager 现场底层原因取证；没有追加 Hosted，也没有改变原六项身份权限、操作范围、七项断言或等待预算。
