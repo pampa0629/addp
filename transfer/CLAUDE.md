@@ -115,13 +115,10 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 #### 配置、Provider 与 API 维护
 
-- 新任务配置必须使用 `runtime.boundary`、`load.mode`、source / target endpoint 和 `target.policy.apply_mode` JSON；旧顶层 `mode`、`write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
-- Transfer 任务类型固定为 `sync`；不得新增或兼容 `import`、`export`、`transfer` 等旧任务类型。
-- table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / layout 分叉，不按具体引擎组合分叉。
-- encoded file/object 读写必须通过 `common/engine` content provider + `common/engine/contentadapter` + `common/format` provider，不在 Transfer 中新增私有 reader / writer。
-- Shapefile 等 multi 文件格式通过 `contentio.Reader` / `contentio.Writer` + `[]format.RelatedRef` 与 `common/format` multi table provider 接入。
-- FileGDB/PGeo 等 container table 源只接受通用 `source.options.child_name`；planner 必须从 Meta `type_info.container.children` 校验 child 并解析 `native.table`，任务配置不得直接保存 `layer` 或 `child_table` 等 provider 私有入口。
-- 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。
+- 配置字段与 endpoint 结构沿[任务 Config JSON](docs/transfer-基本概念及配置说明.md#二任务-config-json)，旧字段出现即拒绝，不做兼容转换。任务类型固定为 `sync`，不得新增或兼容 `import`、`export`、`transfer` 等旧任务类型，定义见[传输任务](docs/transfer-基本概念及配置说明.md#11-传输任务)。
+- table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / layout 分叉，不按具体引擎组合分叉。encoded 读写的 engine／format 接入与 multi refs 组合统一见[Provider 消费规则](../docs/spec/addp引擎插件接口规范.md#五上层消费规则)和[内容 I/O 调用链](../docs/spec/addp内容IO抽象规范.md#调用链)，不在 Transfer 中新增私有 reader / writer。
+- FileGDB/PGeo 等 container table 源只接受通用 `source.options.child_name`；planner 必须从 Meta `type_info.container.children` 校验 child 并解析 `native.table`，任务配置不得直接保存 `layer` 或 `child_table` 等 provider 私有入口。布局与运行时入口见[读取布局与入口](docs/transfer-基本概念及配置说明.md#读取布局与入口)。
+- API 契约同步沿[API 实施要求](../docs/spec/api/文档与实施.md#新接口开发)与[Swagger 强制同步要求](../docs/spec/addp-Swagger集成指南.md#强制同步要求)；Transfer 从仓库根目录执行 `bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。生成或覆盖检查失败均须阻断；生成成功不等于覆盖完整，覆盖通过不代替权限与真实读写验收。
 
 #### bounded 读写与恢复
 
