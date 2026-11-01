@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, login } from './transfer-browser-support.js'
+import { observeFileGDBDownload } from './manager-filegdb-response.js'
 
 test('ordinary User saves or is denied the same FileGDB through the real download button', async ({ page }) => {
   const env = process.env
@@ -16,7 +17,7 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
     'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read'])
   const engine = /^addp:\/\/engine\/([1-9][0-9]*)\/path\/authorization\.gdb\?type=file&item_id=[1-9][0-9]*$/.exec(input.locator)?.[1]
   expect(engine).toBeTruthy()
-  let businessStarted = false, anonymousRefresh = 0, downloadEvents = 0
+  let businessStarted = false, anonymousRefresh = 0, downloadEvents = 0, downloadRequests = 0
   const warnings = [], pageErrors = [], unexpected = [], writes = [], previewDenials = []
   const proof = { schema_version: 'addp.manager-filegdb-browser/v1', result: 'failed',
     run_id: input.run_id, phase: input.phase, locator: input.locator, identity: input.identity }
@@ -28,6 +29,7 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
   page.on('download', () => downloadEvents++)
   page.on('request', request => {
     const url = new URL(request.url()), path = url.pathname
+    if (path === '/api/v1/manager/downloads/file' && exactSource(url)) downloadRequests++
     if (path === '/api/v1/system/auth/context' && request.headers().authorization) businessStarted = true
     const readOnlyCatalog = request.method() === 'POST' && path === `/api/v1/system/engines/${engine}/catalog/children`
     if (!['GET', 'HEAD'].includes(request.method()) && !readOnlyCatalog &&
@@ -60,6 +62,8 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
       message: message.text().slice(0, 500).replace(/Bearer\s+\S+/gi, '[redacted]') })
   })
   page.on('pageerror', error => pageErrors.push(error.message))
+  const downloadPath = '/api/v1/manager/downloads/file?' + new URLSearchParams({ locator: input.locator })
+  const responseObserver = await observeFileGDBDownload(page, downloadPath)
   try {
     await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, '/')
     const observed = page.waitForResponse(response => {
@@ -70,6 +74,7 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
     await page.goto('/manager/data-explorer?locator=' + encodeURIComponent(input.locator))
     const capability = await observed
     const api = await browserAPIFromResponse(capability, env.GATEWAY_URL, expected)
+    const responseFrame = capability.request().frame()
     try {
       expect((await capability.json()).actions.download).toEqual({ supported: true, requires_current_user: true })
       const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
@@ -88,6 +93,16 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
       expect(request.headers().authorization).toBe(capability.request().headers().authorization)
       expect(request.headers().authorization).toMatch(/^Bearer addp_at_\S+$/)
       expect(request.headers().cookie).toBeUndefined()
+      const copies = await responseObserver.read(responseFrame)
+      expect(copies).toHaveLength(1)
+      const copy = copies[0]
+      expect(copy.error).toBeUndefined()
+      expect(copy.url).toBe(response.url())
+      expect(copy.status).toBe(response.status())
+      for (const name of ['content-type', 'content-disposition', 'content-length']) {
+        expect(copy.headers[name]).toBe(response.headers()[name])
+      }
+      const responseBytes = Buffer.from(copy.bytes)
       Object.assign(proof, { status: response.status(), current_user_bearer: true, cookie_absent: true, credential_in_url: false })
       if (input.status === 200) {
         const download = await downloadPromise
@@ -96,16 +111,20 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
           expect(download.suggestedFilename()).toBe('authorization.gdb.zip')
           await download.saveAs(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, input.download_file))
           const raw = readFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, input.download_file))
-          expect(raw).toEqual(await response.body())
+          expect(raw).toEqual(responseBytes)
           expect(response.headers()['content-type']).toBe('application/zip')
           expect(response.headers()['content-disposition']).toBe('attachment; filename=authorization.gdb.zip')
           expect(response.headers()['content-length']).toBe(String(raw.length))
-          Object.assign(proof, { suggested_filename: download.suggestedFilename(), size: raw.length,
+          const responseFile = input.download_file + '.response'
+          writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, responseFile), responseBytes)
+          Object.assign(proof, { response_capture: 'same_response_clone', response_file: responseFile,
+            response_size: responseBytes.length, response_sha256: createHash('sha256').update(responseBytes).digest('hex'),
+            suggested_filename: download.suggestedFilename(), size: raw.length,
             sha256: createHash('sha256').update(raw).digest('hex') })
         } finally { await download.delete() }
         await expect(frame.getByText(/^(下载已开始|Download started)$/)).toBeVisible()
       } else {
-        const error = await response.json()
+        const error = JSON.parse(responseBytes.toString('utf8'))
         expect(Object.keys(error)).toEqual(['error'])
         expect(typeof error.error).toBe('string'); expect(error.error.length).toBeGreaterThan(0)
         await expect(frame.locator('.el-message--error')).toBeVisible()
@@ -114,15 +133,18 @@ test('ordinary User saves or is denied the same FileGDB through the real downloa
       }
       await expect(button).toBeEnabled()
       expect(downloadEvents).toBe(input.status === 200 ? 1 : 0)
+      expect(downloadRequests).toBe(1)
       await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, input.screenshot) })
       proof.screenshot = input.screenshot
-    } finally { await api.dispose() }
+    } finally {
+      try { await responseObserver.dispose(responseFrame) } finally { await api.dispose() }
+    }
     expect(writes).toEqual([]); expect(unexpected).toEqual([])
     expect(warnings).toEqual([]); expect(pageErrors).toEqual([])
     expect(anonymousRefresh).toBeLessThanOrEqual(1)
     proof.result = 'passed'
   } finally {
-    Object.assign(proof, { download_events: downloadEvents, anonymous_refresh_401: anonymousRefresh,
+    Object.assign(proof, { download_events: downloadEvents, download_requests: downloadRequests, anonymous_refresh_401: anonymousRefresh,
       warnings, page_errors: pageErrors, unexpected_responses: unexpected, business_writes: writes,
       expected_preview_denials: previewDenials })
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-filegdb-browser-' + input.phase + '.json'), JSON.stringify(proof, null, 2) + '\n')

@@ -202,18 +202,29 @@ def validate_browser_report(payload, context, artifact):
             'FileGDB browser has unexpected activity or diagnostics')
     anonymous = payload.get('anonymous_refresh_401')
     require(type(anonymous) is int and 0 <= anonymous <= 1, 'FileGDB browser refresh boundary differs')
+    require(type(payload.get('download_requests')) is int and payload['download_requests'] == 1,
+            'FileGDB browser must make exactly one download request')
     require(payload.get('screenshot') == context['screenshot'] and (artifact / context['screenshot']).is_file(),
             'FileGDB browser screenshot missing')
     destination = artifact / context['download_file']
+    response_file = context['download_file'] + '.response'
+    response_path = artifact / response_file
     if context['status'] == 200:
         require(payload.get('download_events') == 1 and payload.get('suggested_filename') == NAME + '.zip',
                 'FileGDB browser did not save the original attachment')
-        physical = validate_directory_zip(destination.read_bytes(), context['source'])
+        raw = destination.read_bytes()
+        require(payload.get('response_capture') == 'same_response_clone' and payload.get('response_file') == response_file
+                and response_path.is_file(), 'FileGDB original response copy is missing')
+        response_bytes = response_path.read_bytes()
+        require(raw == response_bytes and payload.get('response_size') == len(response_bytes)
+                and payload.get('response_sha256') == hashlib.sha256(response_bytes).hexdigest(),
+                'FileGDB browser download differs from the same response copy')
+        physical = validate_directory_zip(raw, context['source'])
         require(payload.get('size') == physical['size'] and payload.get('sha256') == physical['sha256'],
                 'FileGDB browser saved bytes differ from its proof')
         return dict(payload, physical=physical)
     require(payload.get('download_events') == 0 and payload.get('error_visible') is True
-            and payload.get('success_visible') is False and not destination.exists(),
+            and payload.get('success_visible') is False and not destination.exists() and not response_path.exists(),
             'FileGDB rejected browser request saved a file or claimed success')
     return payload
 
@@ -221,7 +232,8 @@ def validate_browser_report(payload, context, artifact):
 def run_browser(repository, environment, context):
     artifact = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
     report_path = artifact / ('manager-filegdb-browser-' + context['phase'] + '.json')
-    require(not report_path.exists() and not (artifact / context['download_file']).exists(),
+    require(not report_path.exists() and not (artifact / context['download_file']).exists()
+            and not (artifact / (context['download_file'] + '.response')).exists(),
             'FileGDB browser phase evidence already exists')
     browser_env = {key: value for key, value in environment.items()
                    if not key.startswith(('ADDP_ONLINE_FIXTURE_', 'ADDP_ONLINE_ADMIN_USER_'))

@@ -47,15 +47,19 @@ class FileGDBAcceptanceTest(unittest.TestCase):
         payload = {**context, 'schema_version': 'addp.manager-filegdb-browser/v1', 'result': 'passed',
             'actual_button_clicked': True, 'current_user_bearer': True, 'cookie_absent': True,
             'credential_in_url': False, 'business_writes': [], 'unexpected_responses': [], 'warnings': [],
-            'page_errors': [], 'anonymous_refresh_401': 1, 'download_events': int(phase == 'granted')}
+            'page_errors': [], 'anonymous_refresh_401': 1, 'download_requests': 1,
+            'download_events': int(phase == 'granted')}
         (directory / context['screenshot']).write_bytes(b'screenshot-fixture')
         if phase == 'granted':
             raw = io.BytesIO()
             with zipfile.ZipFile(raw, 'w') as archive:
                 archive.writestr(M.NAME + '/', b''); archive.writestr(M.NAME + '/a.gdbtable', b'original')
             (directory / context['download_file']).write_bytes(raw.getvalue())
+            (directory / (context['download_file'] + '.response')).write_bytes(raw.getvalue())
             payload.update(suggested_filename=M.NAME+'.zip', size=len(raw.getvalue()),
-                           sha256=hashlib.sha256(raw.getvalue()).hexdigest())
+                           sha256=hashlib.sha256(raw.getvalue()).hexdigest(),
+                           response_capture='same_response_clone', response_file=context['download_file']+'.response',
+                           response_size=len(raw.getvalue()), response_sha256=hashlib.sha256(raw.getvalue()).hexdigest())
         else:
             payload.update(error_visible=True, success_visible=False)
         return context, payload
@@ -70,8 +74,11 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                     lambda p: p.update(credential_in_url=True), lambda p: p.update(actual_button_clicked=False),
                     lambda p: p.update(business_writes=['grant']), lambda p: p.update(unexpected_responses=[503]),
                     lambda p: p.update(warnings=['error']), lambda p: p.update(page_errors=['crash']),
-                    lambda p: p.update(anonymous_refresh_401=2), lambda p: p.update(result='failed')]
+                    lambda p: p.update(anonymous_refresh_401=2), lambda p: p.update(result='failed'),
+                    lambda p: p.pop('download_requests'), lambda p: p.update(download_requests=2)]
                 changes += ([lambda p: p.update(sha256='wrong'), lambda p: p.update(size=0),
+                             lambda p: p.update(response_capture='refetch'), lambda p: p.update(response_file='other'),
+                             lambda p: p.update(response_size=0), lambda p: p.update(response_sha256='wrong'),
                              lambda p: p.update(download_events=0), lambda p: p.update(suggested_filename='other.zip')]
                             if phase == 'granted' else [lambda p: p.update(download_events=1),
                              lambda p: p.update(error_visible=False), lambda p: p.update(success_visible=True)])
@@ -84,10 +91,32 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                     with zipfile.ZipFile(raw, 'w') as archive:
                         archive.writestr(M.NAME+'/', b''); archive.writestr(M.NAME+'/a.gdbtable', b'changed')
                     (root/context['download_file']).write_bytes(raw.getvalue())
-                    payload.update(size=len(raw.getvalue()), sha256=hashlib.sha256(raw.getvalue()).hexdigest())
+                    (root/(context['download_file']+'.response')).write_bytes(raw.getvalue())
+                    payload.update(size=len(raw.getvalue()), sha256=hashlib.sha256(raw.getvalue()).hexdigest(),
+                                   response_size=len(raw.getvalue()), response_sha256=hashlib.sha256(raw.getvalue()).hexdigest())
                 else:
                     (root/context['download_file']).write_bytes(b'leaked')
                 with self.assertRaises(ValueError): M.validate_browser_report(payload, context, root)
+
+    def test_browser_copy_must_exist_and_match_every_saved_byte(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name); context, payload = self.browser_proof(root)
+            path = root / payload['response_file']
+            original = path.read_bytes()
+            # Equal sizes and a matching receipt hash cannot hide a changed byte.
+            changed = bytes([original[0] ^ 1]) + original[1:]
+            path.write_bytes(changed)
+            payload['response_sha256'] = hashlib.sha256(changed).hexdigest()
+            with self.assertRaisesRegex(ValueError, 'same response copy'):
+                M.validate_browser_report(payload, context, root)
+            path.unlink()
+            with self.assertRaisesRegex(ValueError, 'copy is missing'):
+                M.validate_browser_report(payload, context, root)
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name); context, payload = self.browser_proof(root, 'revoked')
+            (root / (context['download_file'] + '.response')).write_bytes(b'leaked')
+            with self.assertRaisesRegex(ValueError, 'saved a file'):
+                M.validate_browser_report(payload, context, root)
 
     def test_browser_runner_drops_issuer_and_tokens_uses_current_login_and_rejects_failure(self):
         with tempfile.TemporaryDirectory() as name:
