@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { approvalTargetFromSelection, approvalTargetsEqual, approvalNodeItems, createApprovalCatalogAdapter, isApprovalSelection } from '../src/utils/engineApprovalCatalog'
+import { approvalTargetFromSelection, approvalTargetsEqual, createApprovalCatalogAdapter, isApprovalSelection } from '../src/utils/engineApprovalCatalog'
 const engine = { id: '2', name: 'NFS', engine_type: 'nfs' }
 const fingerprint = name => createHash('sha256').update(`2:${name}`).digest('hex')
 const ancestors = [{ id: '1', name: 'NFS', node_type: 'root' }, { id: '2', name: 'exports', node_type: 'dir' }]
@@ -28,13 +28,10 @@ describe('Meta DataItem authorization picker', () => {
     expect(list.mock.calls).toEqual([['2', { page: 1, page_size: 100 }]])
     expect(isApprovalSelection(root)).toBe(true)
   })
-  it('selects direct children by default, recurses only explicitly, and never includes parent nodes', async () => {
+  it('declares a complete identity snapshot and still rejects incomplete authorization facts', async () => {
     const { adapter, read } = fixture()
-    const root = await adapter.getTreeRoot(), directory = root.children[0], leaf = directory.children[0]
-    expect(approvalNodeItems(root)).toEqual([])
-    expect(approvalNodeItems(directory)).toEqual([leaf])
-    expect(approvalNodeItems(root, true)).toEqual([leaf])
-    expect(approvalNodeItems(leaf, true)).toEqual([leaf])
+    expect(adapter.completeTree).toBe(true)
+    const root = await adapter.getTreeRoot(), leaf = root.children[0].children[0]
     expect(read).not.toHaveBeenCalled()
     read.mockResolvedValue({ ...facts, basis_state: 'needs_refresh', boundary: null, boundary_hash: null })
     await expect(adapter.resolveTarget(leaf)).rejects.toThrow('invalidDataItemBoundary')

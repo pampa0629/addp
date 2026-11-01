@@ -994,6 +994,9 @@
     "elements": "{count} 个元素"
   },
   "resourcePicker": {
+    "recursive": "递归选择下级节点",
+    "resourceSelectionLimit": "最多选择 {count} 项，本次未加入任何资源",
+    "resourceSelectionIncompleteTree": "完整资源树尚不可用，不能执行节点批量选择",
     "removeSelection": "移除 {name}"
   },
   "roles": {

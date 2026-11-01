@@ -74,9 +74,9 @@ test('System authorization owns Meta identities; Meta scanning owns native disco
   assert.match(system, /readDataItemIdentityTree/)
   assert.match(system, /buildDataItemIdentityTree/)
   assert.doesNotMatch(system, /createEngineCatalogTreeAdapter|catalog_entry|listCatalogChildren/)
-  const permission = fs.readFileSync(new URL('../../../system/frontend/src/utils/directPermission.js', import.meta.url), 'utf8')
-  assert.match(permission, /buildDataItemIdentityTree/)
-  assert.doesNotMatch(permission, /const nodes = new Map/)
+  assert.equal(fs.existsSync(new URL('../../../system/frontend/src/utils/directPermission.js', import.meta.url)), false)
+  assert.match(system, /completeTree: true/)
+
 
   assert.match(meta, /:adapter="catalogAdapter"/)
   assert.match(meta, /createEngineCatalogTreeAdapter\(props.context.engine,/)

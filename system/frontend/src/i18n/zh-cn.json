@@ -1226,8 +1226,7 @@
           "catalog": "业务批准",
           "task_production": "任务产出初始授权",
           "mixed": "多种授权来源"
-        },
-        "recursive": "递归选择下级节点"
+        }
       },
       "delegations": {
         "new": "新增委托",

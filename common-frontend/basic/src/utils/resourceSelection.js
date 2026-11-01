@@ -70,3 +70,29 @@ export function selectionFromResourceTreeNode(node, engine = null) {
     raw: { engine, node }
   }
 }
+
+// A selectable node is a terminal resource, even when its physical format is a container.
+export function collectSelectableResources(node, isSelectable, recursive = false) {
+  if (!node) return []
+  if (isSelectable(node)) return [node]
+  return (node.children || []).flatMap(child => isSelectable(child)
+    ? [child] : recursive ? collectSelectableResources(child, isSelectable, true) : [])
+}
+
+export function resourceSelectionState(selections, nodes) {
+  const selected = new Set(selections.map(selection => selection.identity.locator))
+  const count = nodes.filter(node => selected.has(node.locator)).length
+  return { checked: nodes.length > 0 && count === nodes.length, indeterminate: count > 0 && count < nodes.length }
+}
+
+export function updateResourceSelection(selections, changes, selected, limit = Infinity) {
+  const next = new Map(selections.map(selection => [selection.identity.locator, selection]))
+  for (const selection of changes) {
+    const locator = selection?.identity?.locator
+    if (!locator) throw new Error('invalidResourceSelection')
+    if (selected) next.set(locator, selection)
+    else next.delete(locator)
+  }
+  if (next.size > limit) throw new Error('resourceSelectionLimit')
+  return [...next.values()]
+}

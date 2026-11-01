@@ -994,6 +994,9 @@
     "elements": "{count} entries"
   },
   "resourcePicker": {
+    "recursive": "Include descendant nodes",
+    "resourceSelectionLimit": "Select at most {count} resources. No resources were added.",
+    "resourceSelectionIncompleteTree": "A complete resource tree is required for branch selection.",
     "removeSelection": "Remove {name}"
   },
   "roles": {

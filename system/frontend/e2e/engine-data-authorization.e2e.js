@@ -620,7 +620,7 @@ async function selectData(page, schema = false, incomplete = false) {
   const tree = page.getByTestId('approval-resource-tree')
   if (schema) await tree.getByRole('checkbox', { name: 'outdoor', exact: true }).locator('..').click()
   else {
-    await tree.locator('input').first().fill('activities')
+    await tree.getByRole('textbox').fill('activities')
     await tree.getByRole('checkbox', { name: 'activities', exact: true }).locator('..').click()
   }
   if (!incomplete) await expect(page.getByTestId('approval-targets')).toBeVisible()
@@ -629,10 +629,10 @@ async function selectData(page, schema = false, incomplete = false) {
 test('new authorization filters Meta identities and selects only explicit checkboxes without writes', async ({ page }, testInfo) => {
   const { reads, writes } = await fixture(page, { allowed: grantPermissions, secondTable: true })
   await page.goto('/engines/2?tab=data-authorization'); await page.getByTestId('authorization-new').click()
-  const tree = page.getByTestId('approval-resource-tree'), input = tree.locator('input').first()
+  const tree = page.getByTestId('approval-resource-tree'), input = tree.getByRole('textbox')
   await input.fill('arbitrary table')
   await expect(page.getByTestId('approval-targets')).toHaveCount(0)
-  await input.fill('activities')
+  await input.fill(' outdoor.activities ')
   await tree.getByRole('checkbox', { name: 'activities', exact: true }).locator('..').click()
   await expect(page.getByTestId('approval-targets')).toContainText('outdoor / activities')
   await input.fill('persons')
@@ -657,19 +657,71 @@ test('node selection covers its current items despite filtering, while root recu
   await expect(targets.getByTestId('approval-basis-status')).toHaveCount(2)
   await expect(targets).toContainText('persons')
   await tree.getByRole('textbox').fill('')
-  await page.getByTestId('approval-recursive').click()
+  await page.getByTestId('resource-picker-recursive').click()
   await expect(root).toBeChecked()
   await root.locator('..').click()
   await expect(targets).toHaveCount(0)
   await root.locator('..').click()
   await expect(targets.getByTestId('approval-basis-status')).toHaveCount(2)
-  await page.getByTestId('approval-recursive').click()
+  await page.getByTestId('resource-picker-recursive').click()
   await expect(root).toBeDisabled()
   await expect(targets.getByTestId('approval-basis-status')).toHaveCount(2)
   await node.locator('..').click()
   await expect(targets).toHaveCount(0)
   expect(writes).toEqual([])
 })
+test('shared picker shows half selection and preserves it when another item fails boundary validation', async ({ page }) => {
+  const { writes, setFactsState } = await fixture(page, { allowed: grantPermissions, secondTable: true })
+  await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
+  const tree = page.getByTestId('approval-resource-tree')
+  const node = tree.getByRole('checkbox', { name: 'outdoor', exact: true })
+  await expect(node.locator('..')).toHaveClass(/is-indeterminate/)
+  setFactsState('incomplete')
+  await node.locator('..').click()
+  await expect(page.getByTestId('engine-data-authorization')).toContainText('本次未加入任何数据项')
+  await expect(page.getByTestId('approval-targets').getByTestId('approval-basis-status')).toHaveCount(1)
+  await expect(tree.getByRole('checkbox', { name: 'activities', exact: true })).toBeChecked()
+  await expect(node.locator('..')).toHaveClass(/is-indeterminate/)
+  expect(writes).toEqual([])
+})
+
+test('leaving during shared picker boundary validation discards the late selection', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions })
+  await page.goto('/engines/2?tab=data-authorization'); await page.getByTestId('authorization-new').click()
+  let release, started
+  const pending = new Promise(resolve => { release = resolve }), observed = new Promise(resolve => { started = resolve })
+  await page.route('**/authorization-facts', async route => { started(); await pending; await route.fallback() })
+  try {
+    const tree = page.getByTestId('approval-resource-tree')
+    await tree.getByRole('textbox').fill('activities')
+    await tree.getByRole('checkbox', { name: 'activities', exact: true }).locator('..').click()
+    await observed
+    await expect(tree.getByRole('checkbox', { name: 'activities', exact: true })).toBeDisabled()
+    await page.goto('/engines')
+    release()
+    await page.goto('/engines/2?tab=data-authorization'); await page.getByTestId('authorization-new').click()
+    await expect(page.getByTestId('approval-targets')).toHaveCount(0)
+    expect(writes).toEqual([])
+  } finally { release() }
+})
+
+test('shared picker exposes no selectable partial tree when the second identity page fails', async ({ page }) => {
+  const identityRows = Array.from({ length: 101 }, (_, i) => ({ engine_id: '2', name: `t${i}`, full_name: `outdoor.t${i}`, item_type: 'table', item_fingerprint: createHash('sha256').update(`2:outdoor.t${i}`).digest('hex') }))
+  const { reads, writes } = await fixture(page, { allowed: grantPermissions, identityRows })
+  await page.route('**/system/engines/2/data-items?**', route => {
+    if (new URL(route.request().url()).searchParams.get('page') === '2') return route.fulfill({ status: 503, json: { error: 'Identity page unavailable' } })
+    return route.fallback()
+  })
+  await page.goto('/engines/2?tab=data-authorization'); await page.getByTestId('authorization-new').click()
+  const panel = page.getByTestId('engine-data-authorization'), tree = page.getByTestId('approval-resource-tree')
+  await expect(panel).toContainText('Identity page unavailable')
+  await expect(tree.locator('.picker-node input[type="checkbox"]')).toHaveCount(0)
+  await expect(tree.getByTestId('resource-picker-recursive').getByRole('checkbox')).toBeDisabled()
+  await expect(page.getByTestId('approval-targets')).toHaveCount(0)
+  expect(reads.filter(path => path.includes('/authorization-facts'))).toEqual([])
+  expect(writes).toEqual([])
+})
+
 test('node selection over the 200-item limit adds nothing and makes no facts or signing requests', async ({ page }) => {
   const identityRows = Array.from({ length: 201 }, (_, i) => ({ engine_id: '2', name: `t${i}`, full_name: `outdoor.t${i}`, item_type: 'table', item_fingerprint: createHash('sha256').update(`2:outdoor.t${i}`).digest('hex') }))
   const { reads, writes } = await fixture(page, { allowed: grantPermissions, identityRows })
@@ -710,7 +762,7 @@ async function confirmGrant(page, cancel = false) {
 async function selectFTPModel(page, format) {
   await page.goto('/engines/2?tab=data-authorization'); await page.getByTestId('authorization-new').click()
   const tree = page.getByTestId('approval-resource-tree')
-  await tree.locator('input').first().fill(`model.${format}`)
+  await tree.getByRole('textbox').fill(`model.${format}`)
   await tree.getByRole('checkbox', { name: `model.${format}`, exact: true }).locator('..').click()
 }
 for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds'], ['minio','dae'], ['ftp','obj'], ['minio','obj'], ['ftp','stl'], ['nfs','stl'], ['minio','stl'], ['ftp','glb'], ['nfs','glb'], ['minio','glb'], ['ftp','fbx'], ['nfs','fbx'], ['minio','fbx'], ['nfs','gdb']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {

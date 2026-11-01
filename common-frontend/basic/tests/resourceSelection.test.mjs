@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { formatLocatorDisplayPath, getParentLocator, parseLocator } from '../src/types/resourceLocator.js'
-import { geometryColumnFactsFromSelection, selectionFromResourceTreeNode, toggleResourceSelection } from '../src/utils/resourceSelection.js'
+import { collectSelectableResources, resourceSelectionState, updateResourceSelection, geometryColumnFactsFromSelection, selectionFromResourceTreeNode, toggleResourceSelection } from '../src/utils/resourceSelection.js'
 
 test('multiple resource selection preserves click order and uses locator identity across tree and search', () => {
   const first = { identity: { locator: 'addp://engine/1/path/a.tif?type=object&item_id=1' } }
@@ -74,4 +74,29 @@ test('resource spatial facts do not infer undeclared geometry field names', () =
 
 test('display preserves whitespace-only physical segments and filename padding', () => {
   assert.equal(formatLocatorDisplayPath('addp://engine/33/path/%20/%20TEST.PNG%20?type=file'), ' / TEST.PNG ')
+})
+
+// Branch selection uses the complete snapshot; callers never pass filtered clones.
+test('branch selection stops at eligible containers, distinguishes direct children, and reports partial state', () => {
+  const a = { locator: 'a', eligible: true, children: [{ locator: 'internal', eligible: true }] }
+  const b = { locator: 'b', eligible: true }
+  const directory = { children: [a, { children: [b] }] }
+  const eligible = node => !!node.eligible
+  assert.deepEqual(collectSelectableResources(directory, eligible), [a])
+  assert.deepEqual(collectSelectableResources(directory, eligible, true), [a, b])
+  assert.deepEqual(collectSelectableResources(a, eligible, true), [a])
+  const selected = [{ identity: { locator: 'a' } }]
+  assert.deepEqual(resourceSelectionState(selected, [a, b]), { checked: false, indeterminate: true })
+  assert.deepEqual(resourceSelectionState(selected, [a]), { checked: true, indeterminate: false })
+  assert.deepEqual(resourceSelectionState(selected, []), { checked: false, indeterminate: false })
+})
+
+test('batch selection deduplicates by locator, preserves order and rejects overflow without mutating the original', () => {
+  const a = { identity: { locator: 'a' } }, b = { identity: { locator: 'b' } }, c = { identity: { locator: 'c' } }
+  const selected = [a]
+  assert.deepEqual(updateResourceSelection(selected, [a, b], true, 2), [a, b])
+  assert.throws(() => updateResourceSelection(selected, [b, c], true, 2), /resourceSelectionLimit/)
+  assert.deepEqual(selected, [a])
+  assert.deepEqual(updateResourceSelection([a, b], [a], false, 2), [b])
+  assert.throws(() => updateResourceSelection(selected, [{}], true), /invalidResourceSelection/)
 })

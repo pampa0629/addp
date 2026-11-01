@@ -4,13 +4,6 @@ import { readNativeApprovalFacts } from '@common-ui'
 export const isApprovalTarget = node => !!node?.metadata?.data_item
 export const isApprovalSelection = node => isApprovalTarget(node) || !!node?.metadata?.identity_node
 
-// Node selection is a snapshot of current DataItems, never a parent ACL.
-export function approvalNodeItems(node, recursive = false) {
-  if (isApprovalTarget(node)) return [node]
-  if (!isApprovalSelection(node)) return []
-  return (node.children || []).flatMap(child => isApprovalTarget(child) ? [child] : recursive ? approvalNodeItems(child, true) : [])
-}
-
 export async function approvalTargetFromSelection(selection, engineID, adapter) {
   const node = selection?.raw?.node
   if (!isApprovalTarget(node) || String(node.metadata.data_item.engine_id) !== String(engineID)) throw new Error('invalidCatalogTarget')
@@ -42,6 +35,7 @@ export function createApprovalCatalogAdapter(engine, listItems, readFacts) {
     const locator = buildLocator({ engineId: id, path, type: current.type })
     const node = { id: current.id, locator, label: current.label, type: current.type, hasChildren: !current.item,
       metadata: { engine_id: id, engine_type: engine.engine_type, engine_name: engine.name, has_children: !current.item,
+        path: current.item?.full_name || path.join('/'),
         ...(current.item ? { data_item: current.item } : { identity_node: current.id }) } }
     node.children = children.map(child => convert(child, index, path))
     index.set(node.id, node)
@@ -71,6 +65,7 @@ export function createApprovalCatalogAdapter(engine, listItems, readFacts) {
     return current
   }
   return {
+    completeTree: true,
     listEngines: async () => [{ ...engine, id }],
     getTreeRoot: root,
     invalidate() { generation++; snapshot = null; nodes = new Map() },

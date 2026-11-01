@@ -6,6 +6,7 @@
         v-model="selectedEngineValue"
         :placeholder="enginePlaceholder"
         :loading="loadingEngines"
+        :disabled="interactionDisabled"
         filterable
         :multiple="engineMultiple"
         collapse-tags
@@ -25,7 +26,7 @@
     </el-form-item>
 
     <el-input
-      v-if="showSearch"
+      v-if="showSearch && !branchSelection"
       ref="searchInputRef"
       v-model="searchKeyword"
       class="picker-search"
@@ -33,6 +34,9 @@
       clearable
       :prefix-icon="Search"
     />
+
+    <el-checkbox v-if="branchSelection" v-model="recursive" :disabled="interactionDisabled || !snapshotReady"
+      data-testid="resource-picker-recursive">{{ t('resourcePicker.recursive') }}</el-checkbox>
 
     <div class="tree-panel" :style="{ height: treeHeight }">
       <div v-if="isSearchMode" class="search-results" v-loading="searching">
@@ -43,6 +47,7 @@
             type="button"
             class="search-result"
             :class="{ 'is-disabled': !isSelectableNode(result.node, result.engine) }"
+            :disabled="interactionDisabled"
             :aria-pressed="multiple ? isResourceSelected(result.node) : undefined"
             @click="handleSearchResultClick(result)"
           >
@@ -68,7 +73,10 @@
         :default-expand-root="true"
         :default-expand-all="false"
         :show-count="showCount"
-        :lazy="true"
+        :lazy="!branchSelection"
+        :filter-text="branchSelection && showSearch ? searchKeyword.trim() : undefined"
+        :filter-placeholder="activeSearchPlaceholder"
+        @update:filter-text="searchKeyword = $event"
         :load="loadNode"
         :title="title"
         :height="treeHeight"
@@ -80,16 +88,18 @@
         <template #node="{ data }">
           <span
             class="picker-node"
-            :class="{ 'is-disabled': !isSelectableTreeNode(data) }"
+            :class="{ 'is-disabled': interactionDisabled || (branchSelection ? !nodeResources(data).length : !isSelectableTreeNode(data)) }"
             @dblclick.stop="handleNodeDblclick(data)"
           >
             <el-checkbox
-              v-if="multiple && isSelectableTreeNode(data)"
-              :model-value="isResourceSelected(data)"
+              v-if="multiple && (branchSelection || isSelectableTreeNode(data))"
+              :model-value="branchSelection ? nodeSelectionState(data).checked : isResourceSelected(data)"
+              :indeterminate="branchSelection && nodeSelectionState(data).indeterminate"
+              :disabled="interactionDisabled || (branchSelection && (!snapshotReady || !nodeResources(data).length))"
               :aria-label="data.label"
               @click.stop
               @dblclick.stop
-              @change="selectNode(data, engineForNode(data))"
+              @change="selected => branchSelection ? selectBranch(data, selected) : selectNode(data, engineForNode(data))"
             >{{ data.label }}</el-checkbox>
             <span v-else class="picker-node-label">{{ data.label }}</span>
             <el-tag v-if="showDisabledLabel && disabledLabel && !isSelectableTreeNode(data)" size="small" type="info">
@@ -103,7 +113,7 @@
     <ol v-if="showSelectionSummary && multiple && selectedResources.length" class="selected-resources">
       <li v-for="selection in selectedResources" :key="selection.identity.locator">
         <span :title="selection.display.path">{{ selection.display.label }} · {{ selection.display.engine_name }}</span>
-        <el-button text :icon="Close"
+        <el-button text :icon="Close" :disabled="interactionDisabled"
           :aria-label="t('resourcePicker.removeSelection', { name: selection.display.label })"
           @click="toggleSelectedResource(selection)" />
       </li>
@@ -144,7 +154,7 @@ import {
   listResourceTreeEngines,
   searchResourceTree
 } from '../api/resourceTree.js'
-import { selectionFromResourceTreeNode, toggleResourceSelection } from '../utils/resourceSelection.js'
+import { selectionFromResourceTreeNode, toggleResourceSelection, collectSelectableResources, resourceSelectionState, updateResourceSelection } from '../utils/resourceSelection.js'
 import { isResourceTreeSearchReady } from '../utils/resourceTreeSearch.mjs'
 import ResourceTree from './ResourceTree.vue'
 
@@ -167,6 +177,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  branchSelection: Boolean,
+  disabled: Boolean,
+  maxSelections: { type: Number, default: Infinity },
+  validateSelection: { type: Function, default: null },
   engineId: {
     type: [Number, String, Array],
     default: null
@@ -273,7 +287,10 @@ const emit = defineEmits([
   'node-click',
   'node-expand',
   'node-dblclick',
-  'error'
+  'error',
+  'busy',
+  'loading',
+  'ready'
 ])
 
 const engines = ref([])
@@ -291,6 +308,56 @@ const loadingTree = ref(false)
 const searching = ref(false)
 const searchKeyword = ref('')
 const searchResults = ref([])
+const recursive = ref(false)
+const selectionPending = ref(false)
+const snapshotReady = ref(false)
+let selectionRequestSeq = 0
+const interactionDisabled = computed(() => props.disabled || selectionPending.value)
+const originalNodes = computed(() => {
+  const index = new Map()
+  const visit = nodes => { for (const node of nodes) { index.set(node.id, node); visit(node.children || []) } }
+  visit(treeData.value)
+  return index
+})
+const nodeResources = node => collectSelectableResources(originalNodes.value.get(node.id), isSelectableTreeNode, recursive.value)
+const nodeSelectionState = node => resourceSelectionState(selectedResources.value, nodeResources(node))
+function cancelSelection() {
+  selectionRequestSeq++
+  selectionPending.value = false
+}
+async function commitSelection(next) {
+  if (interactionDisabled.value) return
+  const request = ++selectionRequestSeq
+  selectionPending.value = true
+  try {
+    if (next.length > props.maxSelections) throw new Error('resourceSelectionLimit')
+    await props.validateSelection?.(next)
+    if (request !== selectionRequestSeq || props.disabled) return
+    selectedResources.value = next
+    emit('update:modelValue', [...next])
+    emit('select', [...next])
+  } catch (error) {
+    if (request === selectionRequestSeq) handleError(error, { silent: Boolean(props.validateSelection) })
+  } finally {
+    if (request === selectionRequestSeq) selectionPending.value = false
+  }
+}
+async function selectBranch(node, selected) {
+  if (interactionDisabled.value || !snapshotReady.value) return
+  try {
+    const changes = nodeResources(node).map(item => selectionFromResourceTreeNode(item, engineForNode(item)))
+    const next = updateResourceSelection(selectedResources.value, changes, selected, props.maxSelections)
+    await commitSelection(next)
+  } catch (error) { handleError(error, { silent: Boolean(props.validateSelection) }) }
+}
+function removeSelection(locator) {
+  return commitSelection(selectedResources.value.filter(selection => selection.identity.locator !== locator))
+}
+function requireCompleteTree() {
+  if (props.branchSelection && (!props.multiple || resourceTreeAdapter.value.completeTree !== true)) {
+    throw new Error('resourceSelectionIncompleteTree')
+  }
+}
 let treeLoadRequestSeq = 0
 let restoreRequestSeq = 0
 let searchRequestSeq = 0
@@ -310,7 +377,7 @@ const selectedEngines = computed(() => {
 })
 
 const selectedEngineId = computed(() => selectedEngineIds.value[0] || null)
-const isSearchMode = computed(() => searchKeyword.value.trim().length > 0)
+const isSearchMode = computed(() => !props.branchSelection && searchKeyword.value.trim().length > 0)
 const activeSearchPlaceholder = computed(() => {
   if (props.engineMultiple) {
     return selectedEngineIds.value.length > 0 ? props.searchPlaceholder : props.enginePlaceholder
@@ -384,6 +451,8 @@ const engineOptionLabel = engine => (
 )
 
 const loadTree = async (engineId) => {
+  if (props.branchSelection) return loadSelectedTrees()
+  cancelSelection()
   const requestSeq = ++treeLoadRequestSeq
   if (!engineId) {
     treeData.value = []
@@ -413,6 +482,8 @@ const loadTree = async (engineId) => {
 }
 
 const loadSelectedTrees = async () => {
+  cancelSelection()
+  snapshotReady.value = false
   const requestSeq = ++treeLoadRequestSeq
   const selectableIDs = new Set(engines.value.filter(isEngineSelectable).map(engine => normalizeEngineId(engine.id)))
   const engineIds = selectedEngineIds.value.filter(engineID => selectableIDs.has(engineID))
@@ -423,12 +494,15 @@ const loadSelectedTrees = async () => {
     return
   }
   loadingTree.value = true
+  if (props.branchSelection) treeData.value = []
   try {
+    requireCompleteTree()
     const roots = await Promise.all(engineIds.map(async engineId => {
       try {
         const root = await resourceTreeAdapter.value.getTreeRoot(engineId, { expandDepth: 1 })
         return normalizeVisibleTree(root)
       } catch (error) {
+        if (props.branchSelection) throw error
         handleError(error, { silent: engineIds.length > 1 })
         return null
       }
@@ -438,6 +512,12 @@ const loadSelectedTrees = async () => {
     }
     treeData.value = roots.filter(Boolean)
     expandedKeys.value = defaultExpandedKeys(treeData.value, { expandRoot: true })
+    snapshotReady.value = roots.every(Boolean)
+  } catch (error) {
+    if (requestSeq === treeLoadRequestSeq) {
+      treeData.value = []
+      handleError(error)
+    }
   } finally {
     if (requestSeq === treeLoadRequestSeq) {
       loadingTree.value = false
@@ -446,6 +526,7 @@ const loadSelectedTrees = async () => {
 }
 
 const handleEngineChange = async () => {
+  cancelSelection()
   restoreRequestSeq += 1
   searchRequestSeq += 1
   searching.value = false
@@ -497,6 +578,7 @@ const loadNode = async (treeNode, resolve, reject) => {
 
 const handleNodeClick = (node) => {
   emit('node-click', node)
+  if (interactionDisabled.value || props.branchSelection) return
   const engine = engineForNode(node)
   if (!isSelectableNode(node, engine)) {
     return
@@ -509,6 +591,7 @@ const handleNodeExpand = (node) => {
 }
 
 const handleNodeDblclick = (node) => {
+  if (interactionDisabled.value) return
   const engine = engineForNode(node)
   if (!isSelectableNode(node, engine)) return
   // 多选使用勾选动作；双击不能再次切换已选状态或确认整批。
@@ -523,6 +606,7 @@ const handleNodeDblclick = (node) => {
 }
 
 const handleSearchResultClick = async (result) => {
+  if (interactionDisabled.value) return
   emit('node-click', result.node)
   if (!isSelectableNode(result.node, result.engine)) {
     return
@@ -544,6 +628,7 @@ const handleSearchResultClick = async (result) => {
 }
 
 const selectNode = (node, engine = selectedEngine.value) => {
+  if (interactionDisabled.value) return
   const selection = selectionFromResourceTreeNode(node, engine)
   currentSelection.value = selection
   currentNodeKey.value = node.id
@@ -558,9 +643,7 @@ const selectNode = (node, engine = selectedEngine.value) => {
 const isResourceSelected = node => selectedResources.value.some(selection => selection.identity.locator === node.locator)
 
 const toggleSelectedResource = selection => {
-  selectedResources.value = toggleResourceSelection(selectedResources.value, selection)
-  emit('update:modelValue', [...selectedResources.value])
-  emit('select', [...selectedResources.value])
+  return commitSelection(toggleResourceSelection(selectedResources.value, selection))
 }
 
 const isSelectableNode = (node, engine = selectedEngine.value) => {
@@ -610,6 +693,7 @@ const normalizeVisibleChildren = (children) => {
 }
 
 const runSearch = async () => {
+  if (props.branchSelection) return
   const keyword = searchKeyword.value.trim()
   const requestSeq = ++searchRequestSeq
   if (!isResourceTreeSearchReady(keyword)) {
@@ -758,6 +842,7 @@ const restoreInitialLocator = async (locator) => {
 }
 
 const loadExternalEngine = async (engineId) => {
+  cancelSelection()
   restoreRequestSeq += 1
   searchRequestSeq += 1
   searching.value = false
@@ -977,7 +1062,8 @@ const handleError = (error, options = {}) => {
     emit('error', error)
     return
   }
-  ElMessage.error(error?.message || '资源树加载失败')
+  ElMessage.error(['resourceSelectionLimit', 'resourceSelectionIncompleteTree'].includes(error?.message)
+    ? t(`resourcePicker.${error.message}`, { count: props.maxSelections }) : error?.message || '资源树加载失败')
   emit('error', error)
 }
 
@@ -993,6 +1079,7 @@ const scheduleSearch = () => {
 watch(() => props.searchQuery, value => { searchKeyword.value = value }, { immediate: true })
 
 watch(() => props.modelValue, value => {
+  cancelSelection()
   if (props.multiple) {
     selectedResources.value = Array.isArray(value) ? [...value] : []
   } else {
@@ -1009,8 +1096,14 @@ watch(
 )
 
 watch(searchKeyword, () => {
-  scheduleSearch()
+  if (!props.branchSelection) scheduleSearch()
 })
+
+watch(() => props.disabled, () => { cancelSelection() }, { flush: 'sync' })
+watch(() => props.adapter, () => { cancelSelection(); loadSelectedTrees() })
+watch(selectionPending, value => emit('busy', value), { flush: 'sync' })
+watch([loadingTree, loadingEngines], ([tree, engines]) => emit('loading', tree || engines))
+watch(snapshotReady, value => emit('ready', value))
 
 onMounted(async () => {
   await loadEngines()
@@ -1020,6 +1113,10 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  cancelSelection()
+  treeLoadRequestSeq++
+  restoreRequestSeq++
+  searchRequestSeq++
   engineLoadRequestSeq += 1
   loadingEngines.value = false
   if (searchTimer) {
@@ -1030,6 +1127,8 @@ onBeforeUnmount(() => {
 defineExpose({
   loadEngines,
   loadTree,
+  reload: loadSelectedTrees,
+  removeSelection,
   focus: async () => {
     await nextTick()
     const target = props.showSearch ? searchInputRef.value : engineSelectRef.value

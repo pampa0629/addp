@@ -14,17 +14,13 @@
       <el-alert v-if="!canBrowse" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.browseRequired')" />
       <el-alert v-else-if="!adapter" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.unsupported')" />
       <template v-else>
-        <el-checkbox v-model="recursive" :disabled="busy || !ready" data-testid="approval-recursive">{{ t('system.engine.dataAuthorization.recursive') }}</el-checkbox>
-        <ResourceTree :tree-data="tree" :loading="loading" :title="engine.name" :show-count="false" :show-refresh-button="false"
-          :filter-text="query" :filter-method="matchesQuery" @update:filter-text="query = $event"
-          :filter-placeholder="t('system.engine.sourceGrants.tableSearch')" :default-expand-root="true" height="min(44vh, 480px)"
-          data-testid="approval-resource-tree">
-          <template #node="{ data }">
-            <el-checkbox :model-value="checked(data)" :indeterminate="mixed(data)" :disabled="busy || !ready || !nodeItems(data).length"
-              :aria-label="data.label" :data-testid="data.metadata?.data_item ? 'approval-item-check' : 'approval-node-check'"
-              @click.stop @dblclick.stop @change="value => toggleNode(data, value)">{{ data.label }}</el-checkbox>
-          </template>
-        </ResourceTree>
+        <ResourceTreePicker ref="picker" :key="authorizationKey" :model-value="selections" multiple branch-selection
+          :engine-id="engine.id" :adapter="adapter" mode="any" :selectable-filter="isApprovalTarget"
+          :max-selections="200" :validate-selection="validateSelection" :disabled="!authorizationReady || grantBusy"
+          :show-engine-selector="false" :show-selection-summary="false" :show-count="false" :title="engine.name"
+          :search-placeholder="t('system.engine.sourceGrants.tableSearch')" tree-height="min(44vh, 480px)"
+          data-testid="approval-resource-tree" @update:model-value="applySelection" @busy="selecting = $event"
+          @loading="loading = $event" @ready="selectionReady" @error="selectionError" />
         <template v-if="workspaceView === 'create'">
           <p class="hint">{{ t('system.engine.dataAuthorization.snapshotOnly') }}</p>
           <el-table v-if="targets.length" :data="targets" data-testid="approval-targets">
@@ -48,10 +44,10 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ResourceTree, serializeEngineCatalogTarget, readNativeApprovalFacts } from '@common-ui'
+import { ResourceTreePicker, serializeEngineCatalogTarget, readNativeApprovalFacts } from '@common-ui'
 import { enginesAPI } from '../../api/engines'
 import { useAuthStore } from '../../store/auth'
-import { approvalPathLabel, approvalTargetsEqual, approvalNodeItems, createApprovalCatalogAdapter } from '../../utils/engineApprovalCatalog'
+import { approvalPathLabel, approvalTargetsEqual, approvalTargetFromSelection, isApprovalTarget, createApprovalCatalogAdapter } from '../../utils/engineApprovalCatalog'
 import EngineSourceGrants from './EngineSourceGrants.vue'
 
 const props = defineProps({ engine: { type: Object, required: true }, authorizationKey: { type: String, required: true }, authorizationReady: Boolean })
@@ -63,8 +59,9 @@ const workspaceView = computed(() => workspaceTab.value === 'create' ? 'create' 
 const currentTab = ref(null)
 const canBrowse = computed(() => canReadGrants.value)
 const loading = ref(false), ready = ref(false), error = ref(''), selecting = ref(false), grantBusy = ref(false)
-const targets = ref([]), generation = ref(0), tree = ref([]), query = ref(''), recursive = ref(false)
-const targetNodes = ref(new Map())
+const targets = ref([]), generation = ref(0), selections = ref([]), picker = ref(null)
+// Domain cache contains only independently resolved signing boundaries.
+const targetPaths = new Map()
 const basisStates = ref({}), basisRequests = new Map()
 let basisSequence = 0
 // jsonb may reorder object keys; UI identity follows ordered path values, not
@@ -84,10 +81,9 @@ const directRequirements = ref([])
 watch([() => props.authorizationReady, directRequirementCandidates], ([isReady, requirements]) => {
   if (isReady) directRequirements.value = requirements
 }, { immediate: true })
-const message = e => e?.response?.data?.error || t('system.engine.dataAuthorization.failed')
 function changeWorkspace(tab) {
   error.value = ''
-  if (tab !== 'create') { query.value = ''; recursive.value = false; targets.value = []; basisStates.value = {}; basisRequests.clear(); targetNodes.value = new Map() }
+  if (tab !== 'create') { generation.value++; selections.value = []; targets.value = []; basisStates.value = {}; basisRequests.clear(); targetPaths.clear() }
 }
 function closeGrant() {
   if (busy.value) return
@@ -99,58 +95,44 @@ async function reloadAfterGrant() {
   grantBusy.value = false
   closeGrant(); await nextTick(); load()
 }
-const originalNodes = computed(() => {
-  const index = new Map()
-  function visit(nodes) { for (const node of nodes) { index.set(node.id, node); visit(node.children || []) } }
-  visit(tree.value); return index
-})
-function nodeItems(node) {
-  const original = originalNodes.value.get(node.id)
-  if (!original) return []
-  return approvalNodeItems(original, recursive.value)
+function selectionError(e) {
+  error.value = e?.response?.data?.error || t('system.engine.dataAuthorization.selectionFailed')
 }
-const checked = node => { const items = nodeItems(node); return items.length > 0 && items.every(item => targetNodes.value.has(item.id)) }
-const mixed = node => { const items = nodeItems(node); return items.some(item => targetNodes.value.has(item.id)) && !checked(node) }
-const matchesQuery = (node, keyword) => String(node.metadata?.data_item?.full_name || node.label).toLocaleLowerCase().includes(keyword.trim().toLocaleLowerCase())
+function selectionReady(value) {
+  ready.value = value
+  if (value) inspectTargets(targets.value)
+}
 async function load() {
   if (busy.value) return
-  adapter.value?.invalidate(); const epoch = ++generation.value
-  ready.value = false; error.value = ''; loading.value = true; tree.value = []
-  try {
-    if (!adapter.value) return
-    const root = await adapter.value.getTreeRoot()
-    if (epoch !== generation.value) return
-    tree.value = [root]; ready.value = true
-    await inspectTargets(targets.value)
-  } catch (e) { if (epoch === generation.value) error.value = message(e) }
-  finally { if (epoch === generation.value) loading.value = false }
+  generation.value++; ready.value = false; error.value = ''
+  adapter.value?.invalidate()
+  await picker.value?.reload()
 }
-async function toggleNode(node, selected) {
-  if (busy.value || !ready.value || !adapter.value) return
-  const epoch = generation.value, items = nodeItems(node), next = new Map(targetNodes.value)
-  selecting.value = true; error.value = ''
-  try {
-    if (selected) {
-      const additions = items.filter(item => !next.has(item.id))
-      if (next.size + additions.length > 200) throw new Error('tooManyTargets')
-      for (const item of additions) {
-        const path = await adapter.value.resolveTarget(item)
-        if (epoch !== generation.value || !props.authorizationReady) return
-        next.set(item.id, path)
-      }
-    } else { for (const item of items) next.delete(item.id) }
-    if (epoch !== generation.value) return
-    targetNodes.value = next; targets.value = [...next.values()]
-    await inspectTargets(targets.value)
-  } catch (e) { if (epoch === generation.value) error.value = e?.response?.data?.error || t('system.engine.dataAuthorization.selectionFailed') }
-  finally { if (epoch === generation.value) selecting.value = false }
+async function validateSelection(next) {
+  const epoch = generation.value, resolved = new Map()
+  error.value = ''
+  for (const selection of next) {
+    const key = selection.identity.locator
+    // Retained selections keep their exact boundary; a refresh is checked separately.
+    const path = targetPaths.get(key) || await approvalTargetFromSelection(selection, props.engine.id, adapter.value)
+    if (epoch !== generation.value || !props.authorizationReady) throw new Error('selectionContextChanged')
+    resolved.set(key, path)
+  }
+  targetPaths.clear()
+  for (const [key, path] of resolved) targetPaths.set(key, path)
+}
+function applySelection(next) {
+  selections.value = next
+  targets.value = next.map(selection => targetPaths.get(selection.identity.locator)).filter(Boolean)
+  inspectTargets(targets.value)
 }
 function remove(index) {
   if (busy.value) return
-  const key = basisKey(targets.value[index])
+  const path = targets.value[index], key = basisKey(path)
+  const selection = selections.value.find(item => approvalTargetsEqual(targetPaths.get(item.identity.locator), path))
+  if (!selection) return
   basisRequests.delete(key); delete basisStates.value[key]
-  targetNodes.value = new Map([...targetNodes.value].filter(([, path]) => !approvalTargetsEqual(path, targets.value[index])))
-  targets.value = targets.value.filter((_, i) => i !== index)
+  picker.value?.removeSelection(selection.identity.locator)
 }
 async function inspectTargets(paths) {
   if (!props.authorizationReady) return
@@ -177,7 +159,7 @@ async function inspectTargets(paths) {
 }
 watch(() => props.authorizationKey, () => {
   basisStates.value = {}; basisRequests.clear()
-  generation.value++; targets.value = []; targetNodes.value = new Map(); tree.value = []; query.value = ''; recursive.value = false
+  generation.value++; targets.value = []; selections.value = []; targetPaths.clear()
   workspaceTab.value = 'current'
   ready.value = loading.value = selecting.value = grantBusy.value = false
   load()

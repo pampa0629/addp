@@ -19,7 +19,7 @@ test('malformed IDs never serialize', () => {
 test('System retains one target and boundary implementation without an initializer', () => {
   const root = resolve(import.meta.dirname, '../../..')
   const panel = readFileSync(resolve(root, 'system/frontend/src/components/engines/EngineDataAuthorization.vue'), 'utf8')
-  assert.match(panel, /ResourceTreeSelect/)
+  assert.match(panel, /ResourceTreePicker/)
   assert.match(panel, /readNativeApprovalFacts/)
   assert.doesNotMatch(panel, /serializeEngineApprovalInitialization|initializeApprovalRequirement|<el-tree\b|\/meta\//)
 })

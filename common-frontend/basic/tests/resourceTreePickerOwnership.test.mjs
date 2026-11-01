@@ -41,11 +41,10 @@ test('compact resource selection has one shared input and tree owner across Syst
   assert.match(select, /@keydown\.esc\.stop="close"/)
   assert.match(select, /@keydown\.down\.prevent="browse"/)
   assert.match(source('common-frontend/basic/src/index.js'), /export .*ResourceTreeSelect/)
-  for (const file of ['EngineDataAuthorization.vue', 'EngineSourceGrants.vue']) {
-    const consumer = source(`system/frontend/src/components/engines/${file}`)
-    assert.match(consumer, /<ResourceTreeSelect\s/)
-    assert.doesNotMatch(consumer, /<ResourceTreePicker\s|<el-popover\b|<el-tree\b/)
-  }
+  const query = source('system/frontend/src/components/engines/EngineSourceGrants.vue')
+  assert.match(query, /<ResourceTreeSelect\s/)
+  assert.doesNotMatch(query, /<ResourceTreePicker\s|<el-popover\b|<el-tree\b/)
+
 })
 
 test('manager resource-selection forms compose ResourceTreePicker instead of rebuilding resource trees', () => {
@@ -71,27 +70,22 @@ test('manager keeps direct ResourceTree ownership only in the Data Explorer brow
   assert.doesNotMatch(explorerTree, /ResourceTreePicker/)
 })
 
-test('System permission editing composes the shared tree without becoming another resource picker', () => {
-  const editor = source('system/frontend/src/components/engines/EngineDirectPermissions.vue')
-  const treeTag = editor.match(/<ResourceTree\s[\s\S]*?>/)?.[0]
-
-  // The checkbox edits effective permission state, not a locator selection.
-  assert.match(editor, /import \{ ResourceTree, filterTree \} from '@common-ui'/)
-  assert.equal((editor.match(/<ResourceTree(?:\s|>)/g) || []).length, 1)
-  assert.match(editor, /<template #node="\{ data \}">/)
-  assert.match(editor, /:model-value="checked\(data\)"/)
-  assert.match(editor, /:indeterminate="mixed\(data\)"/)
-  assert.match(editor, /permissionNodeItems\(originalNodes\.value\.get\(node\.id\)/)
-  assert.match(editor, /filterTree\(tree\.value,/)
-  assert.match(treeTag, /:tree-data="visibleTree"/)
-  assert.match(treeTag, /:filter-text="query"/)
-  assert.match(treeTag, /:filter-method="matchesQuery"/)
-
-  // Rendering, search input, expansion and generic resource selection stay shared.
-  assert.doesNotMatch(editor, /<el-tree\b|ResourceTreePicker|ResourceTreeSelect|defineEmits\(/)
-  assert.doesNotMatch(editor, /<el-input\b[^>]*v-model="query"/)
-  assert.doesNotMatch(editor, /expandedKeys|@node-(?:expand|collapse|dblclick)|:lazy=|:load=/)
-  assert.doesNotMatch(editor, /dataExplorerAPI|getResourceTree|createEngineCatalogTreeAdapter/)
+test('System grant selection uses the shared picker while retaining exact domain boundary validation', () => {
+  const editor = source('system/frontend/src/components/engines/EngineDataAuthorization.vue')
+  assert.equal(existsSync(resolve(repositoryRoot, 'system/frontend/src/components/engines/EngineDirectPermissions.vue')), false)
+  assert.match(editor, /<ResourceTreePicker\s/)
+  assert.match(editor, /multiple branch-selection/)
+  assert.match(editor, /:max-selections="200"/)
+  assert.match(editor, /:validate-selection="validateSelection"/)
+  assert.match(editor, /approvalTargetFromSelection/)
+  assert.match(editor, /readNativeApprovalFacts/)
+  assert.doesNotMatch(editor, /<ResourceTree\s|<el-tree\b|originalNodes|targetNodes|toggleNode|nodeItems|indeterminate|v-model="recursive"/)
+  assert.doesNotMatch(editor, /dataExplorerAPI|getResourceTree|createEngineCatalogTreeAdapter|<el-input\b/)
+  const picker = source('common-frontend/basic/src/components/ResourceTreePicker.vue')
+  assert.match(picker, /originalNodes\.value\.get\(node\.id\)/)
+  assert.match(picker, /completeTree !== true/)
+  assert.match(picker, /props\.validateSelection\?\.\(next\)/)
+  assert.doesNotMatch(picker, /authorization-facts|Grant|enginesAPI/)
 })
 
 test('direct ResourceTree composition has an explicit repository-wide owner list', () => {
@@ -110,8 +104,7 @@ test('direct ResourceTree composition has an explicit repository-wide owner list
   assert.deepEqual(directOwners, [
     'common-frontend/basic/src/components/ResourceTreePicker.vue',
     'manager/frontend/src/components/explorer/ExplorerTree.vue',
-    'orchestrator/frontend/src/components/TaskPanel.vue',
-    'system/frontend/src/components/engines/EngineDirectPermissions.vue'
+    'orchestrator/frontend/src/components/TaskPanel.vue'
   ])
 })
 
