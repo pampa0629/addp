@@ -141,15 +141,8 @@ container child table transfer 已进入主链路：容器 item 仍保持 `data_
 
 ### 尚未完成的增强
 
-- `row_filter` / predicate 统一语义。
-- 分区并行读取和多 worker 协调。
-- snapshot checkpoint resumable；watermark resume 已完成。
-- Doris Stream Load。
-- ClickHouse 排序键 / 分区键 / 原生批量接口。
-- raw copy 端到端样例任务和更完整的执行展示。
-
-当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。
+后续增强的当前缺口、未支持项及实施前置条件统一由[后续能力清单](../../docs/next/transfer后续能力清单.md)维护，按以下主题查阅：[Bounded 同步](../../docs/next/transfer后续能力清单.md#一bounded-同步)、[业务 Kafka](../../docs/next/transfer后续能力清单.md#二业务-kafka)、[数据库 CDC](../../docs/next/transfer后续能力清单.md#三数据库-cdc)、[Continuous 运行时与观测](../../docs/next/transfer后续能力清单.md#四continuous-运行时与观测)、[通用目标与执行增强](../../docs/next/transfer后续能力清单.md#五通用目标与执行增强)。现有能力的可执行组合仍以[当前支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)和相应 Provider 声明为准。
 
 ### 架构说明与验收范围
 
-本页的架构与能力摘要不作为当前版本的运行通过记录。标准门禁、固定版本证据、失败与修复结论及未覆盖项统一见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)和[模块验证](../CLAUDE.md#开发与验证)。目标数据、原子提交、来源隔离、真实停止／恢复与清理须按对应场景核验；未运行、失败、跳过或未覆盖项不计为通过。
+本页的架构与能力摘要不作为当前版本的运行通过记录。标准门禁、固定版本证据、失败与修复结论及未覆盖项统一见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)和[模块验证](../CLAUDE.md#开发与验证)。目标数据、原子提交、来源隔离、真实停止／恢复与清理须按对应场景核验；未运行、失败、跳过或未覆盖项不计为通过。各后续增强的独有验收边界见[清单验收范围与证据](../../docs/next/transfer后续能力清单.md#六验收范围与证据)。
