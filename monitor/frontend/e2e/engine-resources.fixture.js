@@ -51,7 +51,7 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
             points: Array.from({ length: count }, (_, index) => {
               const at = new Date(Date.parse(start) + index * 15000).toISOString()
               // A failed current scrape can coexist with valid earlier history.
-              const missing = absentState || mode === 'no-sample' || failure && (!trend || index >= count - 2)
+              const missing = mode==='minio-unpublished' && ['minioOffline','minioInflight','minio4xx','minio5xx','minioErrorPercent'].includes(metric.name) || mode==='no-scan' && ['minioObjectBytes','minioObjects','minioBuckets','minioScanAge'].includes(metric.name) || absentState || mode === 'no-sample' || failure && (!trend || index >= count - 2)
                 || mode === 'no-limit' && metric.name === 'redisPercent' || mode === 'no-lookups' && metric.name === 'redisHitPercent' || trend && index === 2
               return {
                 evaluated_at: at, sampled_at: missing ? null : at,

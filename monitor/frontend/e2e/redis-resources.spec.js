@@ -10,10 +10,10 @@ const sourceStates = [
   ['snapshot-unavailable', '未取得有效数据库快照', 'No valid database snapshot'],
   ['stale', '样本已过期', 'Stale samples']
 ]
-for (const locale of ['zh-cn', 'en']) for (const detail of [false, true]) test(`Redis ${detail ? 'detail' : 'list'} separates source states and restores current values (${locale})`, async ({ page }) => {
-  const en = locale === 'en', state = await engineBackend(page, { locale, owner: { ...engineOwner, engine_type: 'redis', display_name: 'Business Redis' } })
-  await page.goto(`/engine-resources?engine_type=redis&refresh=off${detail ? '&deployment_id=' + engineID : ''}`)
-  const content = detail ? page.getByTestId('engine-value-redisAllocated') : page.getByTestId('engine-list')
+for (const kind of ['redis','minio']) for (const locale of ['zh-cn', 'en']) for (const detail of [false, true]) test(`${kind} ${detail ? 'detail' : 'list'} separates source states and restores current values (${locale})`, async ({ page }) => {
+  const en = locale === 'en', state = await engineBackend(page, { locale, owner: { ...engineOwner, engine_type: kind, display_name: 'Business Redis' } })
+  await page.goto(`/engine-resources?engine_type=${kind}&refresh=off${detail ? '&deployment_id=' + engineID : ''}`)
+  const content = detail ? page.getByTestId('engine-value-'+(kind==='redis'?'redisAllocated':'minioTotal')) : page.getByTestId('engine-list')
   const refresh = async () => {
     const before = state.calls.length
     await page.getByRole('button', { name: en ? 'Refresh' : '刷新', exact: true }).click()
@@ -41,15 +41,15 @@ for (const locale of ['zh-cn', 'en']) for (const detail of [false, true]) test(`
   await expect(content).not.toContainText('GiB')
   state.owner.enabled = true; state.owner.version++; state.setCapacity(8 * 1024 ** 3); await refresh()
   await expect(content).toContainText('8.00 GiB')
-  expect(state.queries.every(query => query.engine_type === 'redis')).toBe(true)
+  expect(state.queries.every(query => query.engine_type === kind)).toBe(true)
   if (!detail) expect(state.calls.some(path => path.endsWith('_trends') || path.endsWith('_observations'))).toBe(false)
 })
 
-for (const locale of ['zh-cn', 'en']) test(`Redis automatic recovery pauses while hidden and stops after permission denial (${locale})`, async ({ page }) => {
-  const en = locale === 'en', state = await engineBackend(page, { locale, owner: { ...engineOwner, engine_type: 'redis', display_name: 'Infra Redis' } })
+for (const kind of ['redis','minio']) for (const locale of ['zh-cn', 'en']) test(`${kind} automatic recovery pauses while hidden and stops after permission denial (${locale})`, async ({ page }) => {
+  const en = locale === 'en', state = await engineBackend(page, { locale, owner: { ...engineOwner, engine_type: kind, display_name: 'Infra Redis' } })
   await page.clock.install()
-  await page.goto(`/engine-resources?engine_type=redis&deployment_id=${engineID}`)
-  const field = page.getByTestId('engine-value-redisAllocated')
+  await page.goto(`/engine-resources?engine_type=${kind}&deployment_id=${engineID}`)
+  const field = page.getByTestId('engine-value-'+(kind==='redis'?'redisAllocated':'minioTotal'))
   const reads = () => state.calls.filter(path => path.endsWith('_observations')).length
   const visibility = hidden => page.evaluate(hidden => {
     Object.defineProperty(document, 'hidden', { configurable: true, value: hidden })
@@ -126,11 +126,11 @@ test('Redis missing ratios stay blank and type filter applies before paging',asy
  await expect(page.getByTestId('engine-list')).toBeVisible()
 })
 
-for(const automatic of [false,true])test(`Redis ${automatic?'automatic':'manual'} refresh keeps data, zoom and DOM`,async({page})=>{
+for(const kind of ['redis','minio'])for(const automatic of [false,true])test(`${kind} ${automatic?'automatic':'manual'} refresh keeps data, zoom and DOM`,async({page})=>{
  trackResourceChart(page)
- const state=await engineBackend(page,{owner:{...engineOwner,engine_type:'redis',display_name:'Infra Redis'}})
+ const state=await engineBackend(page,{owner:{...engineOwner,engine_type:kind,display_name:'Infra Redis'}})
  if(automatic)await page.clock.install()
- await page.goto(`/engine-resources?engine_type=redis&deployment_id=${engineID}&refresh=${automatic?'60':'off'}`)
+ await page.goto(`/engine-resources?engine_type=${kind}&deployment_id=${engineID}&refresh=${automatic?'60':'off'}`)
  const chart=page.getByTestId('engine-trend').locator('.chart-renderer')
  await expect(chart.locator('canvas')).toBeVisible();await dragResourceChartZoom(page,0.55,chart)
  const beforeZoom=(await resourceChartState(page,null,chart)).start
@@ -140,9 +140,9 @@ for(const automatic of [false,true])test(`Redis ${automatic?'automatic':'manual'
  if(automatic)await page.clock.fastForward(60001)
  else await page.getByRole('button',{name:'刷新',exact:true}).click()
  await expect.poll(reads).toBe(before+1)
- await expect(page.getByTestId('engine-value-redisAllocated')).toHaveText('1.00 GiB')
+ await expect(page.getByTestId('engine-value-'+(kind==='redis'?'redisAllocated':'minioTotal'))).toHaveText('1.00 GiB')
  expect(await canvas.evaluate(node=>node.isConnected)).toBe(true)
- state.release();await expect(page.getByTestId('engine-value-redisAllocated')).toHaveText('2.00 GiB')
+ state.release();await expect(page.getByTestId('engine-value-'+(kind==='redis'?'redisAllocated':'minioTotal'))).toHaveText('2.00 GiB')
  expect(await canvas.evaluate(node=>node.isConnected)).toBe(true)
  expect((await resourceChartState(page,null,chart)).start).toBeCloseTo(beforeZoom,1)
 })

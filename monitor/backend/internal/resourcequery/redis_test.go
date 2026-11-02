@@ -52,13 +52,40 @@ func TestRedisFixedCatalogPreservesQueryBudgetAndTypeIsolation(t *testing.T) {
 	}
 }
 
-func TestRedisMemoryRatioDoesNotClampAndStateValuesStayDiscrete(t *testing.T) {
+func TestMinIOCatalogPreservesGroupsBudgetAndTypeIsolation(t *testing.T) {
+	at := time.Now().UTC().Truncate(time.Second)
+	keys := []string{}
+	for _, metric := range MinIOCatalog() {
+		keys = append(keys, metric.Key)
+	}
+	if len(keys) != 17 {
+		t.Fatal("MinIO catalog size", len(keys))
+	}
+	for _, group := range [][]string{keys[:10], keys[10:]} {
+		if _, err := NewEnginePlan("minio", group, at, at, at, false, DefaultBudget()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := NewEnginePlan("minio", keys, at, at, at, false, DefaultBudget()); !errors.Is(err, ErrBudget) {
+		t.Fatal("whole catalog bypassed budget", err)
+	}
+	if _, err := NewEngineSummaryPlan("minio", 26, at, DefaultBudget()); !errors.Is(err, ErrBudget) {
+		t.Fatal("summary bypassed budget", err)
+	}
+	for _, key := range []string{"postgresql.connections.total", "redis.commands.per_second", "minio.scan.bucket_name"} {
+		if _, err := NewEnginePlan("minio", []string{key}, at, at, at, false, DefaultBudget()); !errors.Is(err, ErrInvalid) {
+			t.Fatal("non-catalog metric", err)
+		}
+	}
+}
+
+func TestEngineValuesKeepCapacityCountsAndStatesInTheirDomains(t *testing.T) {
 	at := time.Now().UTC().Truncate(time.Second)
 	for _, tc := range []struct {
 		key, value string
 		valid      bool
-	}{{"redis.memory.used_percent", "180", true}, {"redis.keyspace.hit_percent", "180", false}, {"redis.persistence.aof_enabled", "0.5", false}, {"redis.persistence.aof_enabled", "0", true}} {
-		p, err := NewEnginePlan("redis", []string{tc.key}, at, at, at, false, DefaultBudget())
+	}{{"redis.memory.used_percent", "180", true}, {"redis.keyspace.hit_percent", "180", false}, {"redis.persistence.aof_enabled", "0.5", false}, {"redis.persistence.aof_enabled", "0", true}, {"minio.capacity.used_percent", "101", false}, {"minio.drives.online", "0.5", false}, {"minio.scan.objects", "9007199254740992", false}, {"minio.drives.offline", "0", true}} {
+		p, err := NewEnginePlan(strings.Split(tc.key, ".")[0], []string{tc.key}, at, at, at, false, DefaultBudget())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -84,7 +111,11 @@ func TestEngineSummaryTransportSeparatesTypesAndRejectsForeignEvidence(t *testin
 	redis.EngineType = "redis"
 	redis.DeploymentID = "10000000-0000-4000-8000-000000000002"
 	redis.Instance = "127.0.0.2:9443"
-	for _, mode := range []string{"valid", "redis-snapshot-failed", "foreign-id", "cross-type-metric"} {
+	minio := redis
+	minio.EngineType = "minio"
+	minio.DeploymentID = "10000000-0000-4000-8000-000000000003"
+	minio.Instance = "127.0.0.3:9443"
+	for _, mode := range []string{"valid", "redis-snapshot-failed", "minio-snapshot-failed", "foreign-id", "cross-type-metric"} {
 		t.Run(mode, func(t *testing.T) {
 			calls := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +124,7 @@ func TestEngineSummaryTransportSeparatesTypesAndRejectsForeignEvidence(t *testin
 					t.Error("batch query left the shared form transport")
 				}
 				expression := r.PostForm.Get("query")
-				if !strings.Contains(expression, `addp_source="postgresql"`) || !strings.Contains(expression, `addp_source="redis"`) {
+				if !strings.Contains(expression, `addp_source="postgresql"`) || !strings.Contains(expression, `addp_source="redis"`) || !strings.Contains(expression, `addp_source="minio"`) {
 					t.Error("batch lost an authoritative engine type")
 				}
 				rows := []map[string]any{}
@@ -101,14 +132,14 @@ func TestEngineSummaryTransportSeparatesTypesAndRejectsForeignEvidence(t *testin
 					labels["addp_summary_engine"] = id
 					rows = append(rows, map[string]any{"metric": labels, "value": []any{at.Unix(), value}})
 				}
-				for _, scope := range []EngineScope{postgres, redis} {
+				for _, scope := range []EngineScope{postgres, redis, minio} {
 					id := scope.DeploymentID
 					if mode == "foreign-id" && scope.EngineType == "redis" {
 						id = "10000000-0000-4000-8000-000000000099"
 					}
 					if strings.Contains(expression, `"signal"`) {
 						valid := "1"
-						if mode == "redis-snapshot-failed" && scope.EngineType == "redis" {
+						if (mode == "redis-snapshot-failed" && scope.EngineType == "redis") || (mode == "minio-snapshot-failed" && scope.EngineType == "minio") {
 							valid = "0"
 						}
 						for key, value := range map[string]string{"up_count": "1", "up": "1", "sampled_at": fmt.Sprint(at.Unix()), "snapshot_valid": valid} {
@@ -137,19 +168,19 @@ func TestEngineSummaryTransportSeparatesTypesAndRejectsForeignEvidence(t *testin
 			}))
 			defer server.Close()
 			client := &Client{origin: server.URL, http: server.Client()}
-			result, err := client.EngineSummaries(context.Background(), []EngineScope{postgres, redis}, at, DefaultBudget())
+			result, err := client.EngineSummaries(context.Background(), []EngineScope{postgres, redis, minio}, at, DefaultBudget())
 			if mode == "foreign-id" || mode == "cross-type-metric" {
 				if err == nil || result != nil {
 					t.Fatal("foreign batch evidence returned values", err)
 				}
 				return
 			}
-			if err != nil || calls != 2 || len(result) != 2 {
+			if err != nil || calls != 2 || len(result) != 3 {
 				t.Fatal("batch did not use two shared reads", calls, err)
 			}
-			for _, scope := range []EngineScope{postgres, redis} {
+			for _, scope := range []EngineScope{postgres, redis, minio} {
 				row := result[scope.DeploymentID]
-				failed := mode == "redis-snapshot-failed" && scope.EngineType == "redis"
+				failed := (mode == "redis-snapshot-failed" && scope.EngineType == "redis") || (mode == "minio-snapshot-failed" && scope.EngineType == "minio")
 				expectedState := "collecting"
 				if failed {
 					expectedState = "snapshot_unavailable"

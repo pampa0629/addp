@@ -19,7 +19,7 @@ type EngineScope struct {
 func (s EngineScope) Validate() error {
 	_, port := models.PlatformEngineService(s.EngineType)
 	id, err := uuid.Parse(s.DeploymentID)
-	if port == 0 || err != nil || id == uuid.Nil || id.String() != s.DeploymentID || s.Instance == "" || len(s.Instance) > 512 || strings.ContainsAny(s.Instance, "\r\n") || s.Source.State != "available" || s.Source.Validate() != nil {
+	if port == 0 || len(EngineCatalog(s.EngineType)) == 0 || err != nil || id == uuid.Nil || id.String() != s.DeploymentID || s.Instance == "" || len(s.Instance) > 512 || strings.ContainsAny(s.Instance, "\r\n") || s.Source.State != "available" || s.Source.Validate() != nil {
 		return ErrInvalid
 	}
 	return nil
@@ -174,6 +174,9 @@ func (s EngineScope) snapshotGuard(offset string) string {
 	if s.EngineType == "redis" {
 		return s.redisSnapshotGuard(offset)
 	}
+	if s.EngineType == "minio" {
+		return s.minioSnapshotGuard(offset)
+	}
 	return s.postgresqlSnapshotGuard(offset)
 }
 func (s EngineScope) expression(p Plan) (string, error) {
@@ -182,6 +185,9 @@ func (s EngineScope) expression(p Plan) (string, error) {
 	}
 	if s.EngineType == "redis" {
 		return s.redisExpression(p)
+	}
+	if s.EngineType == "minio" {
+		return s.minioExpression(p)
 	}
 	return s.postgresqlExpression(p)
 }

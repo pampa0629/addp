@@ -187,5 +187,5 @@ test('confirms Infra and Business MinIO through the same explicit host admission
   {scope:'business',service:'minio',fingerprint:'a'.repeat(64),display_name:'Business MinIO',enabled:true,declared_node_id:HOST_NODE_ID},
  ])
  await expect(page.getByRole('dialog')).toHaveCount(0)
- await expect(page.getByRole('button',{name:'查看监控',exact:true})).toHaveCount(2)
+ await expect(page.getByRole('button',{name:'查看监控',exact:true})).toHaveCount(4)
 })

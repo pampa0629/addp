@@ -1362,7 +1362,13 @@
         "percent": "%",
         "seconds": "秒",
         "commands_per_second": "命令/秒",
-        "status": ""
+        "status": "",
+        "drives": "块",
+        "objects": "个",
+        "buckets": "个",
+        "requests": "个",
+        "requests_per_second": "次/秒",
+        "bytes_per_second": "B/s"
       },
       "states": {
         "collecting": "正在采集",
@@ -1408,7 +1414,24 @@
         "redisAOF": "AOF 开关",
         "redisRDB": "最近 RDB 保存结果",
         "redisAOFWrite": "最近 AOF 写入结果",
-        "redisAOFRewrite": "最近 AOF 重写结果"
+        "redisAOFRewrite": "最近 AOF 重写结果",
+        "minioUptime": "MinIO 进程运行时长",
+        "minioOnline": "在线盘数",
+        "minioOffline": "离线盘数",
+        "minioTotal": "MinIO 可用总容量",
+        "minioFree": "MinIO 剩余容量",
+        "minioPercent": "空间占用率",
+        "minioObjectBytes": "最近扫描对象容量",
+        "minioObjects": "最近扫描对象数",
+        "minioBuckets": "最近扫描桶数量",
+        "minioScanAge": "扫描统计距今",
+        "minioRequests": "S3 请求速率",
+        "minioInflight": "S3 在途请求",
+        "minio4xx": "S3 4xx 错误速率",
+        "minio5xx": "S3 5xx 错误速率",
+        "minioErrorPercent": "S3 5xx 占比",
+        "minioSent": "S3 发送速率",
+        "minioReceived": "S3 接收速率"
       },
       "hints": {
         "total": "客户端连接总数，不含本次采集连接。",
@@ -1444,14 +1467,33 @@
         "redisAOF": "AOF 关闭不表示写入失败；关闭时最近写入状态可能没有实际参考意义。",
         "redisRDB": "最近保存命令的状态；成功不能证明已启用定时保存或已有可恢复备份。",
         "redisAOFWrite": "与 AOF 开关分别查看；历史成功不等于当前已启用 AOF。",
-        "redisAOFRewrite": "最近重写的结果，不推断已执行备份或恢复验证。"
+        "redisAOFRewrite": "最近重写的结果，不推断已执行备份或恢复验证。",
+        "minioUptime": "当前数据库容器内的 MinIO 进程已运行多久；进程重启后重新计时。",
+        "minioOnline": "MinIO 报告的在线盘数，不是物理磁盘总数；上游未发布时留空，不补零。",
+        "minioOffline": "上游会省略零值；空白不代表零块离线盘，也不能据此判定健康。",
+        "minioTotal": "MinIO 可见的存储总容量，不是对象占用或独占物理盘容量。Infra 与 Business 共享底层时不能相加。",
+        "minioFree": "MinIO 报告的剩余容量；上游未发布时留空，不能当作零剩余。",
+        "minioPercent": "（总容量－剩余容量）÷总容量。两项均有效且总量大于零才计算，不等于对象容量占比。",
+        "minioObjectBytes": "来自最近一次扫描，不是实时对象容量；结合统计距今查看，无扫描时留空。",
+        "minioObjects": "最近一次扫描的对象数量，不读取对象名称或内容；缺样不补零。",
+        "minioBuckets": "最近一次扫描的桶数量，不展示桶名称或租户归属；缺样不补零。",
+        "minioScanAge": "当前评估时刻距最近扫描的时间。采集成功不代表刚刚扫描，无扫描事实时留空。",
+        "minioRequests": "当前部署完整一分钟的请求计数速率；缺样、进程重启、重置或代际变化时留空，不归算租户。",
+        "minioInflight": "当前仍在处理的 S3 请求数。上游省略零值，空白不能解释为没有请求。",
+        "minio4xx": "完整一分钟的 4xx 计数速率；4xx 不直接代表存储故障。未发布不补零。",
+        "minio5xx": "完整一分钟的 5xx 计数速率；未发布、缺样或重置时留空。",
+        "minioErrorPercent": "同一完整窗口、同代计数的 5xx 增量占请求增量的比例；请求增量为零或任一计数缺失时不计算。",
+        "minioSent": "MinIO 向客户端发送的字节速率，使用完整一分钟；不是主机总网卡流量。",
+        "minioReceived": "MinIO 从客户端接收的字节速率，使用完整一分钟；不是主机总网卡流量。"
       },
       "engineType": "引擎类型",
       "noLimit": "未设置内存上限",
       "groups": {
         "resources": "资源与连接",
         "throughput": "吞吐与命中",
-        "persistence": "持久化状态"
+        "persistence": "持久化状态",
+        "minioResources": "容量与状态",
+        "minioTraffic": "请求与流量"
       },
       "statusValues": {
         "redisLoading": {

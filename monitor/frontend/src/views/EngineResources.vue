@@ -10,7 +10,7 @@
       <el-alert v-if="errorKey" :title="t(errorKey)" type="warning" :closable="false" data-testid="engine-error" />
       <template v-if="!state.deploymentID">
         <form class="toolbar" @submit.prevent="filterInput.submit">
-          <el-select :model-value="state.engineType" :aria-label="t('monitor.engines.engineType')" @update:model-value="engine_type=>navigate({engine_type,refresh:state.refresh})"><el-option value="postgresql" label="PostgreSQL"/><el-option value="redis" label="Redis"/></el-select>
+          <el-select :model-value="state.engineType" :aria-label="t('monitor.engines.engineType')" @update:model-value="engine_type=>navigate({engine_type,refresh:state.refresh})"><el-option value="postgresql" label="PostgreSQL"/><el-option value="redis" label="Redis"/><el-option value="minio" label="MinIO"/></el-select>
           <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" />
         </form>
         <el-table :data="owners" v-loading="loading && !observed" :empty-text="t('monitor.engines.empty')" data-testid="engine-list">
@@ -28,7 +28,7 @@
       <template v-else>
         <div class="toolbar"><el-button @click="back">{{ t('monitor.engines.back') }}</el-button><h3>{{ owners[0]?.display_name }}</h3><span>{{ collection(state.deploymentID) }}</span></div>
         <div v-if="owners.length" class="toolbar"><span>{{ t('monitor.resources.associatedHost') }}:</span><MonitoredHostLink data-testid="engine-host" :node-id="owners[0].node_id" :host="hostReferences[owners[0].node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></div>
-        <el-tabs v-if="state.engineType==='redis'" :model-value="selectedMetric.group" @update:model-value="group=>navigate({...state.query,metric:engineMetricsFor('redis').find(m=>m.group===group).key})"><el-tab-pane v-for="group in ['resources','throughput','persistence']" :key="group" :name="group" :label="t(`monitor.engines.groups.${group}`)"/></el-tabs>
+        <el-tabs v-if="groups.length" :model-value="selectedMetric.group" @update:model-value="group=>navigate({...state.query,metric:engineMetricsFor(state.engineType).find(m=>m.group===group).key})"><el-tab-pane v-for="group in groups" :key="group" :name="group" :label="t(`monitor.engines.groups.${group}`)"/></el-tabs>
         <div v-loading="loading && !observed" class="metric-grid" data-testid="engine-metrics">
           <article v-for="metric in detailMetrics" :key="metric.key" class="metric-card" :data-testid="`engine-metric-${metric.name}`">
             <h3 class="metric-heading" :aria-label="t(`monitor.engines.metrics.${metric.name}`)"><span>{{ t(`monitor.engines.metrics.${metric.name}`) }}</span><FieldHelp :content="t(`monitor.engines.hints.${metric.name}`)" /></h3>
@@ -74,7 +74,7 @@ import { engineResourcesAPI as api } from '../api/engineResources'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import { loadHostReferences } from '../utils/hostReferences'
 import MonitoredHostLink from '../components/MonitoredHostLink.vue'
-import { engineMetricsFor, engineSummaryFor, engineDetailMetrics, defaultEngineMetric, resolveEngineRoute, validateEnginePage, validateEngineDeployment, validateEngineResources, engineTrendParameters } from '../utils/engineResources'
+import { engineGroups, engineMetricsFor, engineSummaryFor, engineDetailMetrics, defaultEngineMetric, resolveEngineRoute, validateEnginePage, validateEngineDeployment, validateEngineResources, engineTrendParameters } from '../utils/engineResources'
 import { currentResourceValue, resourceErrorKey, resourceChartRows, resourceRanges } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
@@ -89,6 +89,7 @@ const trendZoom = ref(null)
 const requests = createLatestRequestScope()
 let disposed = false, dataContext = ''
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : blocked.value ? 'stopped' : !visible.value ? 'paused' : 'automatic')
+const groups = computed(() => engineGroups(state.value.engineType))
 const detailMetrics = computed(() => engineDetailMetrics(state.value.engineType, state.value.metric))
 const summaryMetrics = computed(() => engineSummaryFor(state.value.engineType))
 const selectedMetric = computed(() => engineMetricsFor(state.value.engineType).find(item => item.key === state.value.metric))
@@ -101,14 +102,14 @@ function value(point, metric) {
   if (metric.unit === 'status') return t(`monitor.engines.statusValues.${metric.name}.${number}`)
   if (metric.name === 'redisLimit' && number === 0) return t('monitor.engines.noLimit')
   if (metric.unit === 'seconds') return formatDurationSeconds(number, locale.value)
-  return metric.unit === 'bytes' ? formatBytes(number, null, locale.value) : formatFieldPresentationValue(number, { precision: metric.windowSeconds || metric.unit==='percent' ? 2 : 0, unit: t(`monitor.engines.units.${metric.unit}`) }, locale.value)
+  return ['bytes','bytes_per_second'].includes(metric.unit) ? formatBytes(number, null, locale.value) + (metric.unit==='bytes_per_second'?'/s':'') : formatFieldPresentationValue(number, { precision: metric.windowSeconds || metric.unit==='percent' ? 2 : 0, unit: t(`monitor.engines.units.${metric.unit}`) }, locale.value)
 }
 const chart = computed(() => {
   const series = history.value?.data[0]?.series[0]
   if (!series) return null
   const metric = selectedMetric.value
-  const scale = metric.unit === 'bytes' ? scaleByteValue(Math.max(0, ...series.points.map(point => currentResourceValue(point) ?? 0))) : null
-  return { rows: resourceChartRows(series).map(row => ({ ...row, value: row.value === null ? null : row.value / (scale?.divisor || 1) })), config: { chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { field: 'value', label: t(`monitor.engines.metrics.${metric.name}`), unit: scale?.unit || t(`monitor.engines.units.${metric.unit}`), precision: metric.windowSeconds || metric.unit==='percent' ? 2 : 0 }] } }
+  const scale = ['bytes','bytes_per_second'].includes(metric.unit) ? scaleByteValue(Math.max(0, ...series.points.map(point => currentResourceValue(point) ?? 0))) : null
+  return { rows: resourceChartRows(series).map(row => ({ ...row, value: row.value === null ? null : row.value / (scale?.divisor || 1) })), config: { chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { field: 'value', label: t(`monitor.engines.metrics.${metric.name}`), unit: scale ? scale.unit+(metric.unit==='bytes_per_second'?'/s':'') : t(`monitor.engines.units.${metric.unit}`), precision: metric.windowSeconds || metric.unit==='percent' ? 2 : 0 }] } }
 })
 const navigate = (query, history = 'replace') => {
   filterInput.cancel()

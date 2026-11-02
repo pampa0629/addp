@@ -15,7 +15,7 @@ import (
 
 // EngineInstant godoc
 // @Summary 读取引擎即时指标 | Read current engine metrics
-// @Description 仅当前已纳管且有效绑定主机的 Infra/Business PostgreSQL／Redis；按类型使用固定目录，单次最多十二项，逐请求用当前 User 向 System 核验并在返回前重核；不读取业务数据或凭据 | Only admitted and currently host-bound Infra/Business PostgreSQL/Redis; fixed per-type catalogs, up to twelve metrics per request, current User authorization and completion-time recheck; no business data or credentials
+// @Description 仅当前已纳管且有效绑定主机的 Infra/Business PostgreSQL／Redis／MinIO；按类型使用固定目录，单次最多十二项，逐请求用当前 User 向 System 核验并在返回前重核；不读取业务数据或凭据 | Only admitted and currently host-bound Infra/Business PostgreSQL/Redis/MinIO; fixed per-type catalogs, up to twelve metrics per request, current User authorization and completion-time recheck; no business data or credentials
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
@@ -40,7 +40,7 @@ func (h *ResourceObservationHandler) EngineInstant(c *gin.Context) {
 
 // EngineSummaries godoc
 // @Summary 读取当前页引擎资源摘要 | Read current-page engine summaries
-// @Description PG：总连接、活跃连接、每秒提交和总容量；Redis：分配内存、限额占用率、连接和每秒命令；数量乘四计入同一预算，整批超限拒绝，System 用当前 User 逐一裁决 | PG: total/active connections, commits/second and size; Redis: allocated memory, limit usage, connections and commands/second; four metrics per deployment under one budget, reject the whole over-budget batch; System authorizes each current User read
+// @Description PG：总连接、活跃连接、每秒提交和总容量；Redis：分配内存、限额占用率、连接和每秒命令；MinIO：总／剩余容量、空间占用率及请求速率；数量乘四计入同一预算，整批超限拒绝，System 用当前 User 逐一裁决 | PG: total/active connections, commits/second and size; Redis: allocated memory, limit usage, connections and commands/second; MinIO: total/free capacity, space usage and requests/second; four metrics per deployment under one budget, reject the whole over-budget batch; System authorizes each current User read
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth

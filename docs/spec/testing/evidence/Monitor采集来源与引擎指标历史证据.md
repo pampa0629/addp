@@ -575,3 +575,17 @@ Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部�
 - Swagger：`bash scripts/swagger/gen-swagger.sh system`和`bash scripts/swagger/check-route-coverage.sh system`通过，248个公开路由方法覆盖一致，类型筛选枚举加入minio。`make test-t2-ci-registration test-build-registration`通过；既有门禁已登记公共模型、发现脚本、System迁移及前端路径，无需新增入口或Workflow。
 - 本地日志：`/tmp/addp-minio-discovery-{python-final,common-t1,monitor-t1,system-t1-pass,system-pg,system-migration-final,t2-final,redis-t2,system-frontend,admission-ui,swagger,registration}.log`。临时路径不是长期交付附件；上述可重放标准命令和断言范围为证据正文。
 - 剩余：MinIO固定查询、17项指标与Console专业页尚未实现；当前来源受上游零值省略约束，不能补造0。CI／Hosted由专门会话安排回传，本会话未触发、重跑或轮询，不建立定时任务。
+
+
+## MinIO 固定查询与专业监控页面（2026-11-02）
+
+- 已实现：沿原engine_resource_observations／summaries／trends接入17项固定目录，仍由System当前User裁决、有效主机关联及现有私有来源准入，查询完成前重核用户、来源、版本与策略。列表固定总容量／剩余容量／占用率／请求速率四项；详情容量／状态10项、请求／流量7项按需查询，不突破单次12项和现有批量预算。System原监控跳转已开放MinIO；不增加路由、权限、租户归算、告警或Hosted用途。
+- MinIO独立基础采样守卫复用同一EngineScope和POST查询内核，校验唯一up、observed_at、start_time／uptime和当前容器边界。可选单项缺席不抹去其他有效项，不把上游省略的零值补为0。速率复用一分钟／四样本／边界／重置保护，并核对相同进程和counter_epoch；5xx占比无分母或计数错代时留空。扫描值要求真实最近扫描时间，允许该统计早于本容器，统计距今按评估时间计算。计数值拒绝小数或超出JS安全整数，容量和速率使用合适单位；提示紧贴指标。
+- Go T1：`make test-module MODULE=monitor GO_ONLY=1`最终通过，包括MinIO两组／预算／跨类型拒绝、数值域、三类型混合摘要隔离及MinIO当前User撤权／来源／版本／策略变化丢弃旧值回归。没有把缺少T2环境时的跳过算作外部服务通过。
+- 实源／PromQL T2：`make test-monitor-minio-observation`最终通过原双MinIO真实mTLS、账号权限／来源发现／持久化与清理，另由同一独占项目的固定Prometheus promtool通过40项（17项目录及23项缺样、重置、代际、容量、扫描和身份边界）。首次只有“扫描早于容器”夹具错误：更新容器启动身份后未同步输入系列标签，按现有精确身份守卫正确返回空；修正测试系列身份后40项通过，未放宽产品身份或断言。首次自有容器／网络／卷已只读核对0；最终门禁容器／网络／卷／私有材料=0。
+- 共享回归：`make test-monitor-redis-source`通过原15项真实PromQL、Redis权限、mTLS、精确发现、生命周期及物理清理。Redis与MinIO的测试共用唯一promtool启动／临时文件／脱敏失败诊断实现，产品协议和各自目录保持独立。
+- Monitor前端：最终`cd monitor/frontend && npm test`通过133项单元。完整`make test-monitor-frontend`首轮600/602通过，两项新增MinIO测试因tip选择器同时匹配“查看趋势”而失败；只修正为实际可访问名称。随后标准浏览器入口三类引擎专项61/62通过，剩余英文返回按钮的测试预期名写错，改为真实“Back to engines”后`npm run test:e2e -- e2e/minio-resources.spec.js`两项通过（含此前失败英文路径），并且`npm run build`通过。保留原始失败，不把原完整命令记为通过；600项未变场景与分批专项分别保留有效证据，未重复运行整套602项。
+- 页面覆盖：MinIO中英分组与10／7精确请求、指标旁tip、无扫描／上游未发布单项空值、UUID直达时按System当前真实类型恢复及返回列表；PG／Redis／MinIO来源失效恢复、合法历史、权限撤销停止、隐藏暂停／恢复、手工和自动刷新保留DOM与缩放。受控浏览器不是Safari实际部署数据或正式身份T4。
+- System前端：`make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS='e2e/engine-deployments.e2e.js'`通过158项单元、15项登记页浏览器及构建，MinIO管理行沿原监控入口跳转。Swagger标准生成及96个Monitor公开路由覆盖通过。`make test-t2-ci-registration test-build-registration`通过；原MinIO独占T2入口已同步resourcequery输入与受限promtool服务，退出显式包含该profile并再次以真实门禁验证零残留；既有自动发现可命中新增Go／浏览器用例，无新Workflow或并行路线。
+- 日志：`/tmp/addp-minio-query-{go-verified,t2,t2-final,t2-cleanup-final,redis-t2,frontend,ui-targeted,ui-verified,system-ui,registration-final,swagger}.log`。临时路径不代替正文的可重放标准入口。
+- 尚未验证：个人MinIO采集配置应用／真实Console数值与曲线、Safari及正式身份全链路。未修改个人数据库／配置或启停服务。CI与Hosted等专门会话回传，本会话未触发、重跑或轮询，未设置定时任务。

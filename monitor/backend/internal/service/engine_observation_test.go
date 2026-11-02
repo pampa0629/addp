@@ -70,7 +70,7 @@ func (b *engineBackend) EngineSummaries(ctx context.Context, scopes []resourcequ
 }
 
 func TestEngineObservationRevocationAndRuntimeChangesDiscardAllValues(t *testing.T) {
-	for _, kind := range []string{"postgresql", "redis"} {
+	for _, kind := range []string{"postgresql", "redis", "minio"} {
 		for _, change := range []string{"valid", "denied-before", "denied-after", "version", "runtime", "source", "policy", "disabled"} {
 			t.Run(kind+"/"+change, func(t *testing.T) {
 				now := time.Now().UTC().Truncate(time.Second)
@@ -78,8 +78,8 @@ func TestEngineObservationRevocationAndRuntimeChangesDiscardAllValues(t *testing
 				yes := true
 				users := &engineUsers{row: client.EngineDeploymentReference{DeploymentID: uuid.NewString(), DisplayName: "Infra PostgreSQL", EngineType: kind, Version: 1, Enabled: &yes, NodeID: uuid.NewString(), HostBindingState: "bound"}}
 				identity := commonmodels.ObservabilityEngineIdentity{DeploymentID: users.row.DeploymentID, Version: 1, Scope: "infra", EngineType: kind, NodeID: users.row.NodeID, SourceKey: commonmodels.ObservabilityEngineSourceKey{DockerEngineID: "fixture", Project: "addp-infra", Service: func() string {
-					if kind == "redis" {
-						return "redis"
+					if kind == "redis" || kind == "minio" {
+						return kind
 					}
 					return "postgres"
 				}()}, Metrics: &commonmodels.EngineMetricsSource{State: "available", Endpoint: "https://127.0.0.1:9100/metrics", ContainerID: strings.Repeat("a", 64), StartedAt: &started}}

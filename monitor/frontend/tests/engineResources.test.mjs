@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { engineMetrics, engineSummaryMetrics, redisMetrics, engineDetailMetrics, engineSummaryFor, resolveEngineRoute, validateEnginePage, validateEngineResources, engineTrendParameters } from '../src/utils/engineResources.js'
+import { engineMetrics, engineSummaryMetrics, redisMetrics, minioMetrics, engineDetailMetrics, engineSummaryFor, resolveEngineRoute, validateEnginePage, validateEngineResources, engineTrendParameters } from '../src/utils/engineResources.js'
 
 const id = '10000000-0000-4000-8000-000000000001', node = '10000000-0000-4000-8000-000000000002'
 const owner = { deployment_id: id, display_name: 'Infra PostgreSQL', version: 1, enabled: true, node_id: node, host_binding_state: 'bound', engine_type: 'postgresql' }
@@ -72,4 +72,19 @@ test('Redis has a fixed 22-metric catalog and explicit groups within the existin
  assert.equal(route.engineType,'redis');assert.equal(route.metric,'redis.commands.per_second');assert.equal(route.changed,false)
  assert.equal(resolveEngineRoute({engine_type:'redis',metric:'postgresql.connections.total'}).metric,'redis.memory.used_percent')
  assert.equal(validateEnginePage({data:[{...owner,engine_type:'redis'}],total:1,page:1,page_size:20},1).data.length,1)
+})
+
+test('MinIO uses a bounded two-group catalog, exact type and current-unit metadata',()=>{
+ assert.equal(minioMetrics.length,17)
+ assert.equal(new Set(minioMetrics.map(metric=>metric.key)).size,17)
+ assert.equal(engineDetailMetrics('minio','minio.capacity.used_percent').length,10)
+ assert.equal(engineDetailMetrics('minio','minio.requests.per_second').length,7)
+ assert.equal(engineSummaryFor('minio').length,4)
+ const query={engine_type:'minio',deployment_id:id,metric:'minio.traffic.sent_bytes_per_second',range:'1h'}
+ const state=resolveEngineRoute(query);assert.equal(state.changed,false);assert.deepEqual(state.query,query)
+ assert.equal(resolveEngineRoute({engine_type:'minio',metric:'redis.commands.per_second'}).metric,'minio.capacity.used_percent')
+ assert.equal(validateEnginePage({data:[{...owner,engine_type:'minio'}],total:1,page:1,page_size:20},1).data.length,1)
+ assert.equal(engineTrendParameters(id,query.metric,'1h',at).metrics,query.metric)
+ const metrics=engineSummaryFor('minio'), value=response(metrics);value.data[0].subject.engine_type='minio'
+ assert.equal(validateEngineResources(value,[{...owner,engine_type:'minio'}],metrics),value)
 })

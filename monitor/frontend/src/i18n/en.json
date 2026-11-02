@@ -1362,7 +1362,13 @@
         "percent": "%",
         "seconds": "s",
         "commands_per_second": "commands/s",
-        "status": ""
+        "status": "",
+        "drives": "drives",
+        "objects": "objects",
+        "buckets": "buckets",
+        "requests": "requests",
+        "requests_per_second": "requests/s",
+        "bytes_per_second": "B/s"
       },
       "states": {
         "collecting": "Collecting",
@@ -1408,7 +1414,24 @@
         "redisAOF": "AOF enabled",
         "redisRDB": "Last RDB save result",
         "redisAOFWrite": "Last AOF write result",
-        "redisAOFRewrite": "Last AOF rewrite result"
+        "redisAOFRewrite": "Last AOF rewrite result",
+        "minioUptime": "MinIO process uptime",
+        "minioOnline": "Online drives",
+        "minioOffline": "Offline drives",
+        "minioTotal": "MinIO usable total capacity",
+        "minioFree": "MinIO free capacity",
+        "minioPercent": "Space usage",
+        "minioObjectBytes": "Last-scanned object bytes",
+        "minioObjects": "Last-scanned objects",
+        "minioBuckets": "Last-scanned buckets",
+        "minioScanAge": "Scan age",
+        "minioRequests": "S3 request rate",
+        "minioInflight": "S3 inflight requests",
+        "minio4xx": "S3 4xx rate",
+        "minio5xx": "S3 5xx rate",
+        "minioErrorPercent": "S3 5xx share",
+        "minioSent": "S3 sent rate",
+        "minioReceived": "S3 received rate"
       },
       "hints": {
         "total": "Client connections excluding this observation session.",
@@ -1444,14 +1467,33 @@
         "redisAOF": "AOF being disabled is not a write failure; last-write status may not be relevant while disabled.",
         "redisRDB": "Result of the last save; success does not prove scheduled saves or a recoverable backup.",
         "redisAOFWrite": "Read together with the AOF setting; past success does not mean AOF is enabled now.",
-        "redisAOFRewrite": "Result of the last rewrite, without implying backup or recovery verification."
+        "redisAOFRewrite": "Result of the last rewrite, without implying backup or recovery verification.",
+        "minioUptime": "Uptime of the MinIO process in the current container; resets after a process restart.",
+        "minioOnline": "Online drives reported by MinIO, not physical disk count. Missing native series remain blank.",
+        "minioOffline": "The native source omits zeroes. A blank value does not mean zero offline drives or prove health.",
+        "minioTotal": "Storage capacity visible to MinIO, not object bytes or dedicated physical capacity. Shared Infra and Business storage must not be added.",
+        "minioFree": "Free capacity reported by MinIO. An omitted native series is blank, not zero free space.",
+        "minioPercent": "(Total minus free) / total, only with valid inputs and positive total. This is not object-byte usage.",
+        "minioObjectBytes": "From the last scan, not live object bytes. Check scan age; blank without scan evidence.",
+        "minioObjects": "Object count from the last scan; no object names or content are read. Missing is not zero.",
+        "minioBuckets": "Bucket count from the last scan; no bucket names or tenant attribution. Missing is not zero.",
+        "minioScanAge": "Time since the last scan at evaluation. A fresh scrape does not mean a fresh scan; blank without scan evidence.",
+        "minioRequests": "Per-deployment request rate over a complete minute. Gaps, restarts, resets or epoch changes leave blanks; no tenant attribution.",
+        "minioInflight": "S3 requests currently being processed. Native zeroes may be omitted; blank does not mean no requests.",
+        "minio4xx": "4xx rate over a complete minute. A 4xx response does not itself indicate storage failure. Missing is not zero.",
+        "minio5xx": "5xx rate over a complete minute; blank when omitted, incomplete or reset.",
+        "minioErrorPercent": "5xx/request increments in the same complete window and epoch. No percentage for zero request increments or missing counters.",
+        "minioSent": "Bytes sent from MinIO to clients over a complete minute, not total host network traffic.",
+        "minioReceived": "Bytes received by MinIO from clients over a complete minute, not total host network traffic."
       },
       "engineType": "Engine type",
       "noLimit": "No Redis memory limit",
       "groups": {
         "resources": "Resources and connections",
         "throughput": "Throughput and hits",
-        "persistence": "Persistence status"
+        "persistence": "Persistence status",
+        "minioResources": "Capacity and status",
+        "minioTraffic": "Requests and traffic"
       },
       "statusValues": {
         "redisLoading": {

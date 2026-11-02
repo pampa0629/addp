@@ -160,12 +160,18 @@ func TestIntegrationRedisMetricQueries(t *testing.T) {
 		}
 		tests = append(tests, map[string]any{"name": tc.name, "interval": "15s", "input_series": rows, "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "2m", "exp_samples": expected}}})
 	}
-	directory := t.TempDir()
-	if err := os.Chmod(directory, 0755); err != nil {
-		t.Fatal(err)
-	}
 	document, err := json.Marshal(map[string]any{"evaluation_interval": "15s", "tests": tests})
 	if err != nil {
+		t.Fatal(err)
+	}
+	runEnginePromQLTests(t, document, project, "redis", "redis-observation")
+	t.Logf("Redis fixed PromQL: %d cases passed; owned promtool removed", len(cases))
+}
+
+func runEnginePromQLTests(t *testing.T, document []byte, project, fixture, profile string) {
+	t.Helper()
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(directory, "rules.json"), document, 0644); err != nil {
@@ -177,7 +183,7 @@ func TestIntegrationRedisMetricQueries(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "docker", "compose", "--profile", "redis-observation", "-p", project, "-f", filepath.Join(root, "scripts/test/docker-compose.redis-t2.yml"), "run", "--rm", "--no-deps", "-v", directory+":/rules:ro", "promtool", "test", "rules", "/rules/rules.json")
+	cmd := exec.CommandContext(ctx, "docker", "compose", "--profile", profile, "-p", project, "-f", filepath.Join(root, "scripts/test/docker-compose."+fixture+"-t2.yml"), "run", "--rm", "--no-deps", "-v", directory+":/rules:ro", "promtool", "test", "rules", "/rules/rules.json")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		lines := []string{}
@@ -192,5 +198,4 @@ func TestIntegrationRedisMetricQueries(t *testing.T) {
 		}
 		t.Fatalf("Prometheus engine proof failed: %v\n%s", err, diagnosis)
 	}
-	t.Logf("Redis fixed PromQL: %d cases passed; owned promtool removed", len(cases))
 }
