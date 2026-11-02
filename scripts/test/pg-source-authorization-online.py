@@ -54,6 +54,11 @@ LINEAGE_CHECKS = ['pg_item_and_field_lineage_visible', 'pg_lineage_ungranted_roo
 COLLECTION_CHECKS = ['meta_central_missing_management_denied', 'meta_central_manual_repeat',
                      'meta_central_deep_rejected', 'meta_central_basic_configuration_update',
                      'meta_central_source_rules_unchanged']
+METADATA_CHECKS = ['metadata_only_visible_content_denied', 'read_withdrawal_preserves_metadata_grant',
+                   'metadata_withdrawal_hides_identity', 'metadata_natural_expiry_hides_identity',
+                   'catalog_metadata_confirmation_does_not_grant', 'catalog_metadata_issuance_cannot_upgrade',
+                   'catalog_metadata_withdrawal_replay_stays_denied']
+
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
@@ -434,6 +439,43 @@ def hidden_metadata(reader, item_id):
     result = reader.request('GET', f'/api/v1/meta/items/{item_id}', (404,)).payload
     require(set(result) <= {'error', 'error_code'} and bool(result.get('error')),
             'withdrawn metadata exposed a hidden DataItem')
+
+
+def metadata_identity(reader, tenant, engine, name, facts, *, expected_id=None):
+    rows = reader.request('GET', f'/api/v1/meta/engines/{engine}/items', (200,), response_type=list).payload
+    require(isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict)
+            and type(rows[0].get('id')) is int and rows[0]['id'] > 0,
+            'metadata list leaked an adjacent identity or omitted the approved DataItem')
+    row = rows[0]
+    detail = reader.request('GET', f'/api/v1/meta/items/{row["id"]}', (200,)).payload
+    root_keys = {'id', 'tenant_id', 'engine_id', 'node_id', 'item_type', 'name', 'full_name',
+                 'fingerprint', 'scanned_at', 'scanned_depth', 'attributes'}
+    forbidden = {'row_count', 'size_bytes', 'data_updated_at', 'statistics', 'samples', 'sample_data',
+                 'description', 'comment', 'default', 'default_value', 'expression', 'generated_expression',
+                 'extent', 'bbox', 'bounds', 'min', 'max', 'null_count'}
+    def inspect(value):
+        if isinstance(value, dict):
+            require(not (set(value) & forbidden), 'metadata observation leaked content or statistics')
+            for child in value.values(): inspect(child)
+        elif isinstance(value, list):
+            for child in value: inspect(child)
+    for value in (row, detail):
+        require(isinstance(value, dict) and set(value) <= root_keys and value.get('id') == row['id']
+                and value.get('tenant_id') == tenant and value.get('name') == name
+                and value.get('engine_id') == engine and value.get('full_name') == 'public.' + name
+                and value.get('item_type') == 'table' and value.get('fingerprint') == facts['item_fingerprint'],
+                'metadata observation changed identity or leaked non-structural fields')
+        attributes = value.get('attributes', {})
+        require(isinstance(attributes, dict) and set(attributes) <= {'schema_version', 'item', 'type_info', 'capabilities'},
+                'metadata attributes leaked an unrecognized section')
+        inspect(value)
+    require(expected_id is None or row['id'] == expected_id, 'metadata Grant changed DataItem identity')
+    return row['id']
+
+
+def hidden_metadata_list(reader, engine):
+    rows = reader.request('GET', f'/api/v1/meta/engines/{engine}/items', (200,), response_type=list).payload
+    require(rows == [], 'ungranted metadata list exposed an identity')
 
 
 def production_lineage_schemas(current, engine, source, output, source_path, output_path):
@@ -1636,15 +1678,16 @@ class Lifecycle:
                                      + '?' + urlencode(query), (200,)).payload
 
     def grant_command(self, facts, *, seconds=300, recipient_type='user', recipient_id=None,
-                      catalog_path=None):
+                      catalog_path=None, action='read'):
+        require(action in {'read', 'metadata_read'}, 'unsupported isolated Grant action')
         path = self.path if catalog_path is None else catalog_path
         command = str(uuid.uuid4())
         expires = datetime.now(timezone.utc) + timedelta(seconds=seconds)
-        body = {'request_id': command, 'catalog_path': self.path if catalog_path is None else catalog_path,
+        body = {'request_id': command, 'catalog_path': path,
                 'item_fingerprint': facts['item_fingerprint'],
                 'expected_boundary_hash': facts['boundary_hash'], 'recipient_type': recipient_type,
                 'recipient_id': self.recipient if recipient_id is None else recipient_id,
-                'action': 'read', 'expiry_mode': 'at_time', 'expires_at': expires.isoformat(),
+                'action': action, 'expiry_mode': 'at_time', 'expires_at': expires.isoformat(),
                 'reason': 'Disposable PG source authorization lifecycle'}
         self.grants.append(command)  # Track before the write, including unknown outcomes.
         self.recipients.add((body['recipient_type'], body['recipient_id']))
@@ -2055,6 +2098,128 @@ class Lifecycle:
             except Exception:
                 errors.append('production task cleanup failed')
         require(not errors, '; '.join(errors))
+
+    def metadata_access_flow(self, report, business, confirmer):
+        report['phase'] = 'metadata_access_boundary'
+        token = self.reader.token
+        context = self.reader.request('GET', '/api/v1/system/auth/context', (200,)).payload
+        evidence = report['metadata_access'] = {'direct': {}, 'catalog': {}}
+        facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
+        require(self.listing(history=True, state='active')['total'] == 0, 'metadata scenario requires no current Grant')
+        hidden_metadata_list(self.reader, self.engine)
+        hidden_metadata_list(self.outsider, self.engine)
+        target = locator(self.engine, 'metric_people')
+        preview(self.reader, target, False)
+        meta, _ = self.grant(facts, action='metadata_read')
+        active = self.listing(history=True, state='active')
+        require(active['total'] == 1 and active['data'][0]['action'] == 'metadata_read'
+                and active['data'][0]['request_id'] == meta, 'metadata Grant history mismatch')
+        item_id = metadata_identity(self.reader, self.tenant, self.engine, 'metric_people', facts)
+        hidden_metadata_list(self.outsider, self.engine)
+        preview(self.reader, target, False)
+        read, _ = self.grant(facts, action='read')
+        preview(self.reader, target, True, 2)
+        metadata_identity(self.reader, self.tenant, self.engine, 'metric_people', facts, expected_id=item_id)
+        self.revoke(read)
+        require(self.listing(history=True, state='active') == active,
+                'withdrawing read changed the independent metadata Grant')
+        metadata_identity(self.reader, self.tenant, self.engine, 'metric_people', facts, expected_id=item_id)
+        preview(self.reader, target, False)
+        self.revoke(meta)
+        hidden_metadata(self.reader, item_id)
+        hidden_metadata_list(self.reader, self.engine)
+        preview(self.reader, target, False)
+        expiring, _ = self.grant(facts, action='metadata_read', seconds=45)
+        metadata_identity(self.reader, self.tenant, self.engine, 'metric_people', facts, expected_id=item_id)
+        deadline = time.monotonic() + 75
+        while time.monotonic() < deadline:
+            expired = self.listing(history=True, state='expired')
+            rows = [row for row in expired['data'] if row.get('request_id') == expiring]
+            if rows: break
+            time.sleep(1)
+        else: raise SuiteError('metadata Grant did not naturally expire')
+        require(len(rows) == 1 and rows[0].get('action') == 'metadata_read' and rows[0].get('revocation') is None,
+                'metadata expiry was replaced or manually revoked')
+        require(self.listing(history=True, state='active')['total'] == 0, 'expired metadata Grant is still active')
+        hidden_metadata(self.reader, item_id)
+        hidden_metadata_list(self.reader, self.engine)
+        preview(self.reader, target, False)
+        evidence['direct'] = {'item_id': item_id, 'item_fingerprint': facts['item_fingerprint'],
+            'boundary_hash': facts['boundary_hash'], 'metadata_grant': meta, 'read_grant': read,
+            'expired_grant': expiring, 'metadata_unchanged_after_read_withdrawal': True}
+
+        report['phase'] = 'catalog_metadata_approval'
+        path = table_path(self.engine, 'metric_events')
+        if path not in self.paths: self.paths.append(path)  # Own cleanup before any possible issuance.
+        facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, path)
+        route = '/api/v1/catalog/entries/' + report['catalog_approval']['entry_id']
+        entry = business.request('GET', route, (200,)).payload
+        decision_id, request_id = str(uuid.uuid4()), str(uuid.uuid4())
+        body = {'action': 'metadata_read', 'decision_id': decision_id, 'version': str(entry['version']),
+            'recipient_type': 'user', 'recipient_id': self.recipient, 'expiry_mode': 'at_time',
+            'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+            'expected_boundary_hash': facts['boundary_hash'], 'reason': 'Disposable PG metadata business approval'}
+        decision = business.request('POST', route + '/sharing_decisions', (201,), body).payload
+        require(decision.get('id') == decision_id and decision.get('action') == body['action']
+                and decision.get('confirmed_by') == confirmer and decision.get('recipient_id') == self.recipient
+                and decision.get('item_fingerprint') == facts['item_fingerprint']
+                and decision.get('boundary_hash') == facts['boundary_hash'], 'metadata business approval binding changed')
+        hidden_metadata_list(self.reader, self.engine)
+        require(self.listing(history=True, state='active', catalog_path=path)['total'] == 0,
+                'metadata business confirmation issued a Grant')
+        self.grants.append(request_id)
+        command = {'request_id': request_id, 'decision_id': decision_id}
+        self.operator.request('POST', route + '/sharing_fulfillments', (400,), dict(command, action='read'))
+        require(self.listing(history=True, state='active', catalog_path=path)['total'] == 0,
+                'action override attempt issued a Grant')
+        report['phase'] = 'catalog_metadata_issuance'
+        first = self.operator.request('POST', route + '/sharing_fulfillments', (200, 202), command).payload
+        require(first.get('request_id') == request_id and first.get('state') in {'pending', 'accepted'},
+                'metadata fulfillment response changed the original command')
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            history = self.listing(history=True, state='active', catalog_path=path)
+            if history['total']: break
+            time.sleep(1)
+        else: raise SuiteError('metadata business Grant was not issued')
+        require(history['total'] == 1, 'metadata business approval issued multiple Grants')
+        grant = history['data'][0]
+        require(all(grant.get(key) == value for key, value in {
+            'request_id': request_id, 'catalog_request_id': request_id, 'approval_mode': 'catalog',
+            'engine_id': str(self.engine), 'catalog_path': path, 'action': 'metadata_read',
+            'recipient_type': 'user', 'recipient_id': self.recipient, 'expiry_mode': body['expiry_mode'],
+            'item_fingerprint': facts['item_fingerprint'], 'boundary_hash': facts['boundary_hash'],
+            'operator_principal_id': report['principals']['operator'], 'revocation': None}.items())
+            and bool(grant.get('granted_at'))
+            and datetime.fromisoformat(grant['expires_at'].replace('Z', '+00:00')) == datetime.fromisoformat(body['expires_at']),
+            'metadata business Grant changed its action, identity, recipient or expiry')
+        settled = self.operator.request('GET', route + '/sharing_fulfillments/' + request_id, (200,)).payload
+        require(settled.get('request_id') == request_id and settled.get('decision_id') == decision_id
+                and settled.get('state') == 'accepted' and settled.get('action') == 'metadata_read'
+                and settled.get('recipient_id') == self.recipient and settled.get('granted_at') == grant['granted_at'],
+                'metadata fulfillment history differs from its approval and Grant')
+        event_id = metadata_identity(self.reader, self.tenant, self.engine, 'metric_events', facts)
+        target = locator(self.engine, 'metric_events', event_id)
+        preview(self.reader, target, False)
+        hidden_metadata_list(self.outsider, self.engine)
+        self.operator.request('POST', route + '/sharing_fulfillments', (200,), command)
+        require(self.listing(history=True, state='active', catalog_path=path) == history,
+                'metadata fulfillment replay changed its Grant')
+        self.revoke(request_id)
+        self.operator.request('POST', route + '/sharing_fulfillments', (200,), command)
+        hidden_metadata(self.reader, event_id)
+        hidden_metadata_list(self.reader, self.engine)
+        preview(self.reader, target, False)
+        revoked = self.listing(history=True, state='revoked', catalog_path=path)
+        require(any(row['request_id'] == request_id and row.get('granted_at') == grant['granted_at']
+                    and row.get('revocation') for row in revoked['data']), 'metadata replay restored a revoked Grant')
+        require(self.reader.token == token and self.reader.request('GET', '/api/v1/system/auth/context', (200,)).payload == context,
+                'metadata scenario changed the original identity or permissions')
+        evidence['catalog'] = {'entry_id': entry['id'], 'decision_id': decision_id, 'request_id': request_id,
+            'item_id': event_id, 'item_fingerprint': facts['item_fingerprint'], 'boundary_hash': facts['boundary_hash'],
+            'action': 'metadata_read', 'replay_unchanged': True, 'revoked_replay_denied': True}
+        evidence['same_credential'] = True
+        report['checks'].extend(METADATA_CHECKS)
 
     def catalog_flow(self, report, business, confirmer):
         report['phase'] = 'catalog_source_convergence'
@@ -2627,6 +2792,7 @@ def main():
         lifecycle.function_permission_flow(report, business, confirmer)
         lifecycle.catalog_flow(report, business, confirmer)
         lifecycle.workspace_flow(report, issuer)
+        lifecycle.metadata_access_flow(report, business, confirmer)
         lifecycle.production_flow(report)
         lifecycle.collection = MetaCollectionScenario(lifecycle, issuer, run_id)
         lifecycle.collection.run(report)

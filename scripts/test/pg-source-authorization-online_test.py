@@ -116,6 +116,7 @@ class Server:
                             server.grants[body['request_id']]['revocation'] = None
                     elif any(row['revocation'] is None and key not in server.expired_grants
                            and (row['recipient_type'], row['recipient_id']) == (body['recipient_type'], body['recipient_id'])
+                           and row['action'] == body['action']
                            for key, row in server.grants.items()):
                         status, result = 409, {'error_code': 'engine_access_grant_relation_exists'}
                     else:
@@ -189,7 +190,7 @@ class Server:
                 elif path == '/api/v1/manager/preview':
                     target = query['locator'][0]
                     matching = [row for key, row in server.grants.items()
-                                if row['revocation'] is None and key not in server.expired_grants
+                                if row['revocation'] is None and key not in server.expired_grants and row['action'] == 'read'
                                 and row['catalog_path']['segments'][-1]['name'] + '?' in target]
                     active = any(server.inherited(row, '33' if kind.startswith('reader') else '36' if kind == 'business' else '34') for row in matching)
                     allowed = (kind.startswith('reader') or kind == 'outsider') and active and not any(server.denies.values())
@@ -2685,3 +2686,163 @@ class PGConnectionProbeControlTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MetadataAccessServer(Server):
+    entry_id = '553f9868-9021-4d23-bae2-43d5a9fbc030'
+
+    def __init__(self, fault=None):
+        super().__init__(fault)
+        self.decisions = {}
+        self.version = 1
+
+    @staticmethod
+    def facts(path):
+        people = path['segments'][-1]['name'] == 'metric_people'
+        return {'item_fingerprint': ('a' if people else 'c') * 64,
+                'boundary_hash': ('b' if people else 'd') * 64}
+
+    def visible(self, kind, name):
+        active = [g for key, g in self.grants.items() if g['revocation'] is None and key not in self.expired_grants]
+        if self.fault == 'outsider_metadata_leak' and kind == 'outsider' and active: return True
+        return kind == 'reader' and any(g['recipient_type'] == 'user' and g['recipient_id'] == '33'
+            and g['catalog_path']['segments'][-1]['name'] == name for g in active)
+
+    def client(self, kind):
+        client = super().client(kind)
+        original = client.request
+        def request(method, url, expected, body=None, **kwargs):
+            path = urlsplit(url).path
+            if path.startswith('/api/v1/meta/'):
+                self.calls.append((kind, method, path, body))
+                values = []
+                for number, name in [(10, 'metric_people'), (11, 'metric_events')]:
+                    if not self.visible(kind, name): continue
+                    facts = self.facts(ONLINE.table_path(2, name))
+                    row = {'id': number, 'tenant_id': 3, 'engine_id': 2, 'node_id': 1, 'name': name,
+                           'full_name': 'public.' + name, 'item_type': 'table', 'fingerprint': facts['item_fingerprint'],
+                           'scanned_depth': 'basic', 'attributes': {'schema_version': 1, 'item': {'data_type': 'table'}}}
+                    if self.fault == 'metadata_stats_leak': row['row_count'] = 2
+                    if self.fault == 'metadata_nested_content_leak': row['attributes']['type_info'] = {'table': {'fields': [{'name': 'id', 'comment': 'private'}]}}
+                    if self.fault == 'metadata_identity_changed': row['fingerprint'] = 'f' * 64
+                    values.append(row)
+                status, payload = 200, values
+                if path.startswith('/api/v1/meta/items/'):
+                    matches = [row for row in values if str(row['id']) == path.rsplit('/', 1)[-1]]
+                    status, payload = (200, matches[0]) if matches else (404, {'error': 'not found'})
+                if status not in expected: raise ONLINE.SuiteError('unexpected metadata status')
+                return SimpleNamespace(status=status, payload=payload)
+            if '/api/v1/catalog/' in path:
+                self.calls.append((kind, method, path, body))
+                status, payload = 200, {}
+                if path.endswith('/sharing_decisions'):
+                    assert kind == 'business' and body['action'] == 'metadata_read'
+                    self.decisions[body['decision_id']] = deepcopy(body)
+                    payload, status = dict(body, id=body['decision_id'], confirmed_by='36',
+                        item_fingerprint='c' * 64, boundary_hash='d' * 64), 201
+                    if self.fault == 'business_action_changed': payload['action'] = 'read'
+                    if self.fault == 'confirmation_creates_grant': self.issue('unrequested', body['decision_id'])
+                elif path.endswith('/sharing_fulfillments'):
+                    assert kind == 'operator'
+                    if 'action' in body:
+                        status, payload = 400, {'error': 'invalid request'}
+                        if self.fault == 'action_override_accepted': status, payload = 202, {'state': 'pending'}
+                    else:
+                        key = body['request_id']
+                        if key not in self.grants: self.issue(key, body['decision_id'])
+                        elif self.fault == 'metadata_replay_restores': self.grants[key]['revocation'] = None
+                        payload = {'request_id': key, 'state': 'accepted'}
+                        if self.fault == 'business_wrong_receipt': payload['request_id'] = 'wrong-request'
+                        if self.fault == 'business_lost_response': raise ONLINE.SuiteError('lost metadata fulfillment response')
+                elif '/sharing_fulfillments/' in path:
+                    payload = dict(self.grants[path.rsplit('/', 1)[-1]], state='accepted')
+                    if self.fault == 'business_settled_action_changed': payload['action'] = 'read'
+                else:
+                    payload = {'id': self.entry_id, 'version': '2'}
+                if status not in expected: raise ONLINE.SuiteError('unexpected metadata Catalog status')
+                return SimpleNamespace(status=status, payload=payload)
+            result = original(method, url, expected, body, **kwargs)
+            if method == 'GET' and path.endswith('/history'):
+                for row in result.payload['data']:
+                    if row.get('approval_mode') == 'catalog':
+                        if self.fault == 'business_grant_action_changed': row['action'] = 'read'
+                        if self.fault == 'business_grant_recipient_changed': row['recipient_id'] = '34'
+                        if self.fault == 'business_grant_boundary_changed': row['boundary_hash'] = 'f' * 64
+                        if self.fault == 'business_grant_expiry_changed': row['expires_at'] = '2099-01-01T00:00:00Z'
+            if method == 'POST' and path.endswith('/revoke') and self.fault == 'read_withdrawal_clears_metadata':
+                for row in self.grants.values():
+                    if row['action'] == 'metadata_read': row['revocation'] = {'reason': 'wrong overreach'}
+            if method == 'POST' and path.endswith('/access_grants') and body['action'] == 'metadata_read' and self.fault == 'metadata_lost_response':
+                raise ONLINE.SuiteError('lost metadata issuance response')
+            if method == 'POST' and path.endswith('/access_grants') and body['action'] == 'metadata_read' and self.fault == 'direct_action_changed':
+                result.payload['action'] = 'read'
+            if method == 'GET' and path.endswith('/history') and 'state=expired' in url and self.fault == 'expiry_manually_revoked':
+                for row in result.payload['data']: row['revocation'] = {'reason': 'wrong expiry'}
+            if kind == 'reader' and path == '/api/v1/manager/preview' and self.fault == 'metadata_allows_content':
+                active = any(g['revocation'] is None and key not in self.expired_grants for key, g in self.grants.items())
+                if active and result.status == 403: return SimpleNamespace(status=200, payload={'preview_type': 'table', 'data': {'rows': [{'private': 'value'}]}})
+            return result
+        client.request = request
+        return client
+
+    def issue(self, key, decision_id):
+        decision = self.decisions[decision_id]
+        row = dict(decision, request_id=key, catalog_request_id=key, approval_mode='catalog',
+            engine_id='2', operator_principal_id='35', catalog_path=ONLINE.table_path(2, 'metric_events'),
+            item_fingerprint='c' * 64, boundary_hash='d' * 64, revocation=None,
+            granted_at='2026-10-16T01:00:00Z')
+        self.grants[key] = row
+
+
+class PGMetadataAccessTest(unittest.TestCase):
+    def run_flow(self, fault=None):
+        server = MetadataAccessServer(fault)
+        life = ONLINE.Lifecycle(server.client('operator'), server.client('reader'), 3, 2, '33',
+            {'department': '41', 'project_group': '51'}, server.client('outsider'), server.client('coordinator'),
+            server.client('login'), 'external-online-consumer', 'private-password')
+        report = {'checks': [], 'principals': {'operator': '35'},
+                  'catalog_approval': {'entry_id': server.entry_id}}
+        self.last_server, self.last_life, self.last_report = server, life, report
+        counter = itertools.count()
+        with patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts',
+                          side_effect=lambda actor, path: server.facts(path)), \
+             patch.object(ONLINE.time, 'sleep'), patch.object(ONLINE.time, 'monotonic', side_effect=lambda: next(counter)):
+            try:
+                life.metadata_access_flow(report, server.client('business'), '36')
+            finally:
+                life.cleanup()
+        return server, life, report
+
+    def test_separate_metadata_and_content_and_business_approval_keep_one_identity_and_cleanup(self):
+        server, life, report = self.run_flow()
+        self.assertEqual(report['checks'], ONLINE.METADATA_CHECKS)
+        self.assertTrue(report['metadata_access']['same_credential'])
+        self.assertEqual(len(life.grants), 4)
+        self.assertFalse(any(g['revocation'] is None and key not in server.expired_grants for key, g in server.grants.items()))
+        commands = [row for row in server.calls if row[1] == 'POST' and row[2].endswith('/sharing_fulfillments')]
+        self.assertEqual(commands[0][3]['action'], 'read')
+        self.assertEqual(set(commands[1][3]), {'request_id', 'decision_id'})
+        self.assertEqual(commands[1][3], commands[-1][3])
+        self.assertNotIn('private-token', json.dumps(report))
+        self.assertNotIn('person_id', json.dumps(report))
+
+    def test_leaks_wrong_binding_and_replay_cannot_pass(self):
+        for fault in ['metadata_stats_leak', 'metadata_nested_content_leak', 'metadata_identity_changed',
+                      'metadata_allows_content', 'read_withdrawal_clears_metadata', 'never_expire',
+                      'outsider_metadata_leak', 'direct_action_changed', 'expiry_manually_revoked',
+                      'business_action_changed', 'business_grant_action_changed', 'business_grant_recipient_changed',
+                      'business_grant_boundary_changed', 'business_grant_expiry_changed',
+                      'business_wrong_receipt', 'business_settled_action_changed',
+                      'confirmation_creates_grant', 'action_override_accepted', 'metadata_replay_restores']:
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                self.run_flow(fault)
+
+    def test_lost_responses_preserve_pre_registered_command_and_target_cleanup(self):
+        for fault in ['metadata_lost_response', 'business_lost_response']:
+            with self.subTest(fault=fault):
+                with self.assertRaises(ONLINE.SuiteError): self.run_flow(fault)
+                self.assertTrue(self.last_life.grants)
+                self.assertFalse(any(row['revocation'] is None and key not in self.last_server.expired_grants
+                                     for key, row in self.last_server.grants.items()))
+                if fault == 'business_lost_response':
+                    self.assertIn(ONLINE.table_path(2, 'metric_events'), self.last_life.paths)
