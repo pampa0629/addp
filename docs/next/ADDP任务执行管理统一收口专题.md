@@ -1115,3 +1115,14 @@ Manager和Transfer统一复用Common的C围栏安全失败步骤写入；诊断�
 **静态检查与汇总边界。** 本次Platform consistency Job125218817052在其它Owner的既有来源检查失败，未到达授权／Swagger入口；本地 `make test-authorization` 与System249路由Swagger已通过，但本次远端该项未执行，不计CI通过。System IAM verification已实际通过，另一个不运行产品测试的[System IAM gate汇总Job125233011585](https://github.com/pampa0629/addp/actions/runs/41427877912/job/125233011585)最初归档时queued，现已于北京时间19:09:07实际completed/success；主责fresh Job API及重新下载原日志独立核验，准确8ce源码，selected／selection／verification均success，标准 `report-selected-gate.sh` 实际执行。原日志19689字节，SHA-256 `b223abd111f73d0743422e95756850b2509ce48a0e493f437046d237e9b954bd`。它只汇总，不新增产品测试数、不替代verification证明。主责逐项证明与原日志保存在 `/tmp/addp-cleanup-connection-20261102/root-final-ci-proof.json` 及同目录 `final-job-*.log`。
 
 **剩余缺口与下一步。** 本批窄用途修正和相关产品T1／T2已获得当前准确源码的实际Linux证据；新原生Hosted仍未运行，第十一轮仍为failure0/7，不声称现场唯一原因已穷尽或完整清理链路已验收。优先下一步是在另行确认后运行一次同六权限、同范围、同七断言、同预算的修正版transfer-engine Hosted；本轮没有派发、重跑或环境切换。Graph原生写图、正向reopen及其它既有未验收项保持，不随本批关闭。
+
+
+### 8.37 第十二轮 transfer-engine 窄连接用途原生验收
+
+**授权更新。** 用户于2026-11-02明确同意继续本次修正版transfer-engine Hosted，并说明“后续无需单独确认”。本会话据此在同一修复范围、原六权限、操作范围、七断言和等待预算内按证据推进后续Hosted，不再逐轮重复询问；不把该授权扩大为其它环境切换、权限或模块边界变更。失败仍先定位并修复、完成相关门禁，不以无依据重跑替代诊断。
+
+已唯一POST创建 [Run41458076890／Job125319788652](https://github.com/pampa0629/addp/actions/runs/41458076890/job/125319788652)，准确源码 `df9dabfcae6bd392b13f25f4cd63023fe2dc722e`，workflow_dispatch／attempt1，选定 `cleanup-native-effects + transfer-engine`。派发前并行提交曾使准确main检查退出，两次保护均发生在POST之前；重新核验后只有一次POST，返回0、唯一新Run及准确原生Job均已确认，未重发业务操作或Hosted派发。终态前不得计七项通过，第十一轮failure0/7保持为历史实际结果。
+
+**已核对输入与审计。** 本次31项产品／runner代码与已实际通过相关Linux门禁的8ce修正逐字节相同；机器契约仍为 `b6aa6485a164cb7005b3ab13d696f7f1cac001d02b7726944c15fcdad28b2356`，三User、六权限、业务删除语义、七断言和等待预算不变。提交源码3d733501b的隔离干净快照沿标准 `make test-execution-online-ci-runner` 实际exit0，115＋172及登记一致；这是预检快照的确定性证据，不改写8ce Linux的115＋171。后续主干仅有无Cleanup消费的clip算子诊断、文档和独立raster套件登记增量；对额外套件做AST／YAML归一，既有Online语义及完整Cleanup Native Job保持相同，其它22项关键输入逐字节相同。未部署工作区未提交的文件源授权重构、夹具、配置或表格。
+
+私有目录 `/tmp/addp-transfer-engine-hosted-twelfth-20261102/` 保存准确source、前提证明、单次intent、前后Run快照和冻结的canonical validator／契约／安全审计。私有Engine诊断审计覆盖Transfer原12个闭集失败阶段，12合法样例通过、84越界反例拒绝；评估审计复用同一Owner校验，另12合法／48越界反例通过，避免旧“仅Manager可有失败步骤”的私有限制误拒已批准诊断。不改产品接口／权限或七项成功断言。CI会话仅只读跟进该唯一Job；主责核对十四服务同SHA、checks、专业回执、控制恢复及零残留，并在下文登记实际终态。
