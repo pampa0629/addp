@@ -262,3 +262,5 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 `raster_sample_points`以同CRS二维Point命中的原始像元读取显式波段，保留全部点、属性、顺序、索引和active geometry，追加nullable Float64 `sample_value`及`sample_status=ok/outside/nodata`。支持旋转网格，以原存储坐标／仿射精确判半开像元边界，不插值或隐式应用scale／offset；原生NoData／mask／alpha先判定，不精确可表达的有效命中值明确拒绝。输出沿现有GeoDataFrame／GeoPackage保存，不新增权限、配置或Hosted脚本；详见[点位栅格采样契约](../../../docs/spec/workflow/栅格算子契约.md#点位栅格采样)。
 
 `raster_sample_points`沿同一入口显式支持`method=cell/bilinear`，默认cell取所在像元原值；bilinear在原仿射行列坐标按像元中心插值，只有正权重支持参与，全部有效才计算，不补边／外推或重新归一化。精确中心只需一格有效；范围外仍outside，范围内支持缺失为nodata，保留全部点、原属性与几何及nullable值／状态字段。原生NoData先判断，整数沿原Float64精确准入，插值精确累计最后舍入，数值极限严格失败；源／旧成果及清理保持。复用原读块／GeoPackage，不增加面板入口、权限或依赖；独立Hosted另议，原cell固定证据不替代新方法。
+
+`raster_zonal_statistics`以同一入口的`method=summary/class_frequency`区分原数值统计与分类频数，默认summary原九列、百分位及加权结果保持。分类模式输出按分区／类别升序的长表，比例以分区内有效分类数为分母；全无效分区保留null类别、0计数、null比例诊断行，空分区返回完整Schema。原生分区保持Int64，类别限精确安全整数；同编码非连通区域合并，原生NoData／mask／全部alpha先判定，不应用scale/offset，不自动对齐。复用分块读取及CSV／50行轻量预览，内存随实际分区—类别组合增长；首期与百分位／外部权重／加权标准差互斥，不新增入口、权限或容量承诺，独立Hosted另议。

@@ -18973,3 +18973,287 @@ def test_sample_points_bilinear_adjacent_center_float_support_has_no_epsilon(tmp
     with raster_workspace():result=c.raster_sample_points(raster_load(source_plan(source)),_sampling_points(coordinates),1,'bilinear')
     assert result.sample_status.tolist()==['ok','nodata','nodata','nodata','nodata','nodata','outside','outside']
     assert result.sample_value.iloc[0]==7. and result.sample_value.iloc[1:].isna().all()
+
+
+# Independent scalar counts, never the product reducer or NumPy unique/grouping.
+def _zonal_frequency_oracle(values,zones,value_valid,zone_valid):
+    import pandas as pd
+    from fractions import Fraction as Q
+    totals,groups={},{}
+    for row in range(zones.shape[0]):
+        for col in range(zones.shape[1]):
+            if not zone_valid[row,col]:continue
+            zone=int(zones[row,col]);totals[zone]=totals.get(zone,0)+1
+            if value_valid[row,col]:
+                category=int(values[row,col]);key=(zone,category);groups[key]=groups.get(key,0)+1
+    rows=[]
+    for zone,total in sorted(totals.items()):
+        members=[(category,count)for(z,category),count in sorted(groups.items())if z==zone];valid=sum(n for _,n in members)
+        if members:rows.extend([zone,category,n,float(Q(n,valid)),total,valid,total-valid]for category,n in members)
+        else:rows.append([zone,None,0,None,total,0,total])
+    names=['zone_value','class_value','count','proportion','total_count','valid_count','invalid_count']
+    return pd.DataFrame(rows,columns=names).astype({n:'Int64'if n=='class_value'else'Float64'if n=='proportion'else'int64'for n in names})
+
+@pytest.mark.parametrize('grid',[(0,2,0,9,0,-3),(100,2,.5,200,.25,-3),(0,-2,0,0,0,3)])
+@pytest.mark.parametrize('epsg',[4326,3857])
+def test_zonal_frequency_complete_scalar_counts_valid_denominator_diagnostic_and_order(tmp_path,grid,epsg):
+    import pandas as pd,operators.raster_compute as c
+    zones=np.array([[2,2,0,0,-9999],[2,0,0,-1,-1],[7,7,7,-1,-1]],dtype=float)
+    values=np.array([[1,2,0,0,1.5],[1,-3,-9999,2,2],[-9999,-9999,-9999,0,np.nan]])
+    paths=[create_raster(tmp_path/(name+'.tif'),array,grid,'EPSG:'+str(epsg))for name,array in(('v',values),('z',zones))];before=[p.read_bytes()for p in paths]
+    expected=_zonal_frequency_oracle(values,zones,np.isfinite(values)&(values!=-9999),zones!=-9999)
+    with raster_workspace():result=c.raster_zonal_statistics(*(raster_load(source_plan(p))for p in paths),1,1,method='class_frequency')
+    pd.testing.assert_frame_equal(result,expected,check_exact=True)
+    assert result.loc[result.zone_value==7,'class_value'].isna().all()and result.loc[result.zone_value==7,'count'].tolist()==[0]
+    assert result.loc[(result.zone_value==0)&(result.class_value==0),'proportion'].tolist()==[2/3]
+    for zone,group in result.groupby('zone_value'):
+        assert int(group['count'].sum())==int(group.valid_count.iloc[0])and group.total_count.iloc[0]==group.valid_count.iloc[0]+group.invalid_count.iloc[0]
+    assert [p.read_bytes()for p in paths]==before
+
+@pytest.mark.parametrize('case',['empty-zones','invalid-values','one-category','zero-category'])
+def test_zonal_frequency_empty_and_diagnostic_schema_and_real_zero(tmp_path,case):
+    import pandas as pd,operators.raster_compute as c
+    zones=np.array([[0.,1.,1.],[0.,1.,2.]]);values=np.ones((2,3))*7
+    if case=='empty-zones':zones[:]=-9999;values[:]=.25
+    if case=='invalid-values':values[:]=-9999
+    if case=='zero-category':values[:]=0
+    vp,zp=create_raster(tmp_path/'v.tif',values),create_raster(tmp_path/'z.tif',zones)
+    with raster_workspace():result=c.raster_zonal_statistics(raster_load(source_plan(vp)),raster_load(source_plan(zp)),1,1,method='class_frequency')
+    pd.testing.assert_frame_equal(result,_zonal_frequency_oracle(values,zones,values!=-9999,zones!=-9999),check_exact=True)
+    assert result.dtypes.astype(str).tolist()==['int64','Int64','int64','Float64','int64','int64','int64']
+    if case=='invalid-values':assert result.class_value.isna().all()and result.proportion.isna().all()and result['count'].tolist()==[0,0,0]
+    if case=='zero-category':assert result.class_value.tolist()==[0,0,0]and result.proportion.tolist()==[1.,1.,1.]
+
+@pytest.mark.parametrize('method',[None,True,1,1.,'',[],{},'CLASS_FREQUENCY','histogram'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_frequency_strict_method_before_io(monkeypatch,method,language):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda *a:pytest.fail('no opening before invalid method'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics(object(),object(),1,1,method=method)
+    assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['method'][language=='en']
+
+@pytest.mark.parametrize('kwargs',[{'percentile':None},{'percentile':50},{'weights_raster':None},{'weights_band':1},{'weights_raster':object(),'weights_band':1},{'include_weighted_stddev':True}])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_frequency_unused_numeric_options_conflict_before_io(monkeypatch,kwargs,language):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda *a:pytest.fail('no opening before conflict'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics(object(),object(),1,1,method='class_frequency',**kwargs)
+    assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['conflict'][language=='en']
+
+@pytest.mark.parametrize('role',['values','zones'])
+@pytest.mark.parametrize('fault',['zero','negative','high','boolean','string','null','list','alpha','complex','complex-alpha'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_frequency_both_roles_exact_band_diagnostics_before_read(monkeypatch,role,fault,language):
+    import operators.raster_compute as c
+    datasets={};reference=osr.SpatialReference();reference.ImportFromEPSG(3857)
+    for name in('values','zones'):
+        ds=gdal.GetDriverByName('MEM').Create('',2,2,0);ds.AddBand(gdal.GDT_CFloat64 if name==role and fault=='complex'else gdal.GDT_Float64);ds.GetRasterBand(1).Fill(1)
+        ds.AddBand(gdal.GDT_CFloat64 if name==role and fault=='complex-alpha'else gdal.GDT_Float64);ds.GetRasterBand(2).Fill(128);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+        ds.SetGeoTransform((0,1,0,2,0,-1));ds.SetProjection(reference.ExportToWkt());datasets[name]=ds
+    monkeypatch.setattr(c,'_open',lambda token:datasets[token]);monkeypatch.setattr(c,'_blocks',lambda *a,**k:pytest.fail('no read before admission'))
+    band={'zero':0,'negative':-1,'high':3,'boolean':True,'string':'1','null':None,'list':[1],'alpha':2}.get(fault,1)
+    code='alpha'if fault=='alpha'else'complex'if fault.startswith('complex')else'band'if role=='values'else'zones_band'
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics('values','zones',band if role=='values'else 1,band if role=='zones'else 1,method='class_frequency')
+    assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES[code][language=='en']
+
+@pytest.mark.parametrize('fault',['dimensions','grid','crs','missing-crs','missing-grid','singular'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_frequency_grid_admission_is_exact_and_bilingual(monkeypatch,fault,language):
+    import operators.raster_compute as c
+    sources=[]
+    for i in range(2):
+        ds=gdal.GetDriverByName('MEM').Create('',3 if i and fault=='dimensions'else 2,2,1)
+        crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if i and fault=='crs'else 3857)
+        if not(i and fault=='missing-crs'):ds.SetProjection(crs.ExportToWkt())
+        if not(i and fault=='missing-grid'):ds.SetGeoTransform((0,1,2,0,2,4)if i and fault=='singular'else(0,2,0,2,0,-1)if i and fault=='grid'else(0,1,0,2,0,-1))
+        sources.append(ds)
+    sentinel=object();monkeypatch.setattr(c,'_open',lambda token:sources[0]if token is sentinel else sources[1]);monkeypatch.setattr(c,'_blocks',lambda *a,**k:pytest.fail('grid rejected before read'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics(sentinel,object(),1,1,method='class_frequency')
+    assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['grid'][language=='en']
+
+@pytest.mark.parametrize('role',['values','zones'])
+@pytest.mark.parametrize('dtype,nodata,code',[(gdal.GDT_Int64,-2**63,-2**63+1),(gdal.GDT_UInt64,2**64-1,2**64-2)])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_frequency_native_nodata_neighbor_checked_before_float_conversion(monkeypatch,role,dtype,nodata,code,language):
+    import operators.raster_compute as c
+    sources={};reference=osr.SpatialReference();reference.ImportFromEPSG(3857)
+    for name in('values','zones'):
+        ds=gdal.GetDriverByName('MEM').Create('',3,1,1,dtype if name==role else gdal.GDT_Float64);ds.SetGeoTransform((0,1,0,1,0,-1));ds.SetProjection(reference.ExportToWkt())
+        if name==role:
+            band=ds.GetRasterBand(1);band.WriteArray(np.array([[nodata,code,0]],dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64));(band.SetNoDataValueAsInt64 if dtype==gdal.GDT_Int64 else band.SetNoDataValueAsUInt64)(nodata);band=None
+        else:ds.GetRasterBand(1).Fill(0.)
+        sources[name]=ds
+    monkeypatch.setattr(c,'_open',lambda token:sources[token])
+    with raster_error_language(language):
+        if role=='zones'and dtype==gdal.GDT_Int64:
+            result=c.raster_zonal_statistics('values','zones',1,1,method='class_frequency');assert result.zone_value.tolist()==[code,0]and result['count'].tolist()==[1,1]
+        else:
+            with pytest.raises(ValueError)as error:c.raster_zonal_statistics('values','zones',1,1,method='class_frequency')
+            assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['classes'if role=='values'else'zones'][language=='en']
+
+@pytest.mark.parametrize('role',['values','zones'])
+@pytest.mark.parametrize('value',[.5,float(2**53),-float(2**53)])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_frequency_fractional_or_unsafe_float_codes_fail_exactly(tmp_path,role,value,language):
+    import operators.raster_compute as c
+    arrays={'values':np.ones((2,2)),'zones':np.zeros((2,2))};arrays[role][0,0]=value
+    paths={n:create_raster(tmp_path/(n+'.tif'),a)for n,a in arrays.items()}
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics(raster_load(source_plan(paths['values'])),raster_load(source_plan(paths['zones'])),1,1,method='class_frequency')
+    assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['classes'if role=='values'else'zones'][language=='en']
+
+@pytest.mark.parametrize('case',['limit','overflow','invalid-count'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_frequency_synthetic_integer_count_limit_remains_strict(case,language):
+    import operators.raster_compute as c
+    total=2**63-1 if case!='overflow'else 2**63;counts={-1:1,0:total-1}if case!='invalid-count'else{0:total+1}
+    with raster_error_language(language):
+        if case=='limit':
+            result=c._zonal_frequency_frame({0:total},{0:counts});assert result['count'].tolist()==[1,total-1]and result.proportion.iloc[0]==float(1/total)
+        else:
+            with pytest.raises(ValueError)as error:c._zonal_frequency_frame({0:total},{0:counts})
+            assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['numeric'][language=='en']
+
+@pytest.mark.parametrize('case',['plain','percentile','weighted','weighted-stddev'])
+def test_zonal_frequency_explicit_summary_preserves_all_original_fields_and_results(tmp_path,case):
+    import pandas as pd,operators.raster_compute as c
+    values=create_raster(tmp_path/'v.tif',np.array([[0.,2.,-9999],[4.,-2.,8.]]));zones=create_raster(tmp_path/'z.tif',np.array([[0.,0.,1.],[1.,1.,1.]]));weights=create_raster(tmp_path/'w.tif',np.array([[0.,2.,5.],[2.,1.,1.]]))
+    with raster_workspace():
+        v,z,w=(raster_load(source_plan(p))for p in(values,zones,weights));kwargs={'percentile':25}if case=='percentile'else{'weights_raster':w,'weights_band':1,'include_weighted_stddev':case=='weighted-stddev'}if case.startswith('weighted')else{}
+        pd.testing.assert_frame_equal(c.raster_zonal_statistics(v,z,1,1,**kwargs),c.raster_zonal_statistics(v,z,1,1,method='summary',**kwargs),check_exact=True)
+
+
+def test_zonal_frequency_explicit_second_bands_raw_values_all_alpha_masks_and_cross_blocks(tmp_path,monkeypatch):
+    import pandas as pd,operators.raster_compute as c
+    y,x=np.indices((515,519));values=((x+y)%3-1).astype(float);zones=((x//3+y//2)%4-2).astype(float)
+    values[0,1]=-9999;zones[0,2]=-9999;paths={};masks={};alphas={}
+    for role,array in(('values',values),('zones',zones)):
+        alpha=np.full(array.shape,128.);alpha[3,4]=99.;alpha[512,511]=0.;mask=np.full(array.shape,255,np.uint8);mask[511,512]=0
+        path=create_raster(tmp_path/(role+'.tif'),np.stack([np.full(array.shape,.25),array,alpha]),(100,2,.5,200,.25,-3),'EPSG:3857',nodata=99)
+        ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+        # TIFF uses one shared native NoData; keep it positive to exercise alpha NoData.
+        for i in range(1,4):ds.GetRasterBand(i).SetNoDataValue(99);ds.GetRasterBand(i).SetScale(17);ds.GetRasterBand(i).SetOffset(500)
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+        # Replace the explicit missing value by the actual shared TIFF NoData.
+        array[array==-9999]=99;ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).WriteArray(array);ds=None
+        paths[role]=path;masks[role]=mask;alphas[role]=alpha
+    snapshots={n:p.read_bytes()for n,p in paths.items()};blocks=c._blocks;reads=[]
+    def bounded(ds,indices,**kwargs):
+        assert indices==[2,3]and kwargs['native']is True
+        for a,b,arrays,valid in blocks(ds,indices,**kwargs):assert max(arrays[0].shape)<=512;reads.append((ds.GetDescription(),a,b));yield a,b,arrays,valid
+    monkeypatch.setattr(c,'_blocks',bounded)
+    with raster_workspace():result=c.raster_zonal_statistics(raster_load(source_plan(paths['values'])),raster_load(source_plan(paths['zones'])),2,2,method='class_frequency')
+    valid={n:(a!=99)&(masks[n]!=0)&(alphas[n]>0)&(alphas[n]!=99)for n,a in(('values',values),('zones',zones))}
+    pd.testing.assert_frame_equal(result,_zonal_frequency_oracle(values,zones,valid['values'],valid['zones']),check_exact=True)
+    assert len(reads)==8 and len(set(reads))==8 and {n:p.read_bytes()for n,p in paths.items()}==snapshots
+
+@pytest.mark.parametrize('case',['full','diagnostic','empty','fractional','conflict','method','read','save-existing'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_frequency_async_complete_csv_light_preview_exact_language_and_cleanup(tmp_path,monkeypatch,case,language):
+    import pandas as pd,api_server,workflow_engine,operators.raster_compute as c
+    zones=np.tile(np.arange(72,dtype=float),(3,1));values=np.tile(np.array([[-1.],[0.],[2.]]),(1,72))
+    if case=='diagnostic':values[:]=-9999
+    if case=='empty':zones[:]=-9999
+    if case=='fractional':values[0,0]=.25
+    vp,zp=create_raster(tmp_path/'v.tif',values),create_raster(tmp_path/'z.tif',zones);target=tmp_path/'table.csv';old=tmp_path/'old.csv';old.write_bytes(b'old remains unchanged')
+    if case=='save-existing':target.write_bytes(b'current target unchanged')
+    snapshots=[p.read_bytes()for p in(vp,zp,old)]
+    params={'input_raster':{'$ref':'values'},'zones_raster':{'$ref':'zones'},'band':1,'zones_band':1,'method':'CLASS_FREQUENCY'if case=='method'else'class_frequency'}
+    if case=='conflict':params['percentile']=None
+    tasks=[{'id':name,'operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}for name,path in(('values',vp),('zones',zp))]
+    tasks.extend([{'id':'stats','operator':'raster_zonal_statistics','depends_on':['values','zones'],'params':params},{'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}])
+    workspaces=[];original=workflow_engine._execute_operator
+    def observe(name,params):
+        if name=='raster_zonal_statistics':workspaces.extend(params[k].workspace for k in('input_raster','zones_raster'))
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',observe)
+    if case=='read':
+        def fail(*a,**kw):raise RuntimeError('injected frequency read failure')
+        monkeypatch.setattr(c,'_blocks',fail)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    success=case in('full','diagnostic','empty');assert status['status']==('success'if success else'failed'),status
+    assert workspaces and all(not p.exists()for p in workspaces)and [p.read_bytes()for p in(vp,zp,old)]==snapshots
+    if success:
+        expected=_zonal_frequency_oracle(values,zones,values!=-9999,zones!=-9999)
+        actual=pd.read_csv(target,dtype={n:str(d)for n,d in expected.dtypes.items()},float_precision='round_trip')
+        pd.testing.assert_frame_equal(actual,expected,check_exact=True)
+        preview=json.loads(status['all_results']['stats']);assert preview['type']=='pandas_dataframe'and preview['row_count']==len(expected)and preview['preview_limit']==50 and preview['truncated']==(len(expected)>50)
+        assert preview['schema']==[{'name':n,'type':str(d)}for n,d in expected.dtypes.items()]
+        assert preview['preview_rows']==json.loads(expected.head(50).to_json(orient='records',double_precision=15))
+        if case=='full':assert preview['preview_rows'][0]['proportion']==.333333333333333
+        if case=='diagnostic':assert all(v['class_value']is None and v['count']==0 and v['proportion']is None for v in preview['preview_rows'])
+    elif case=='save-existing':assert target.read_bytes()==b'current target unchanged'
+    else:
+        assert not target.exists();cause='injected frequency read failure'if case=='read'else c._ZONAL_FREQUENCY_MESSAGES[{'fractional':'classes','conflict':'conflict','method':'method'}[case]][language=='en'];assert status['error']=='任务 stats 执行失败: '+cause
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    assert client.post('/api/operators/raster_zonal_statistics/invoke',json={'params':{}}).status_code==403
+
+@pytest.mark.parametrize('role',['values','zones'])
+@pytest.mark.parametrize('fault',['partial-alpha','alpha-zero','alpha-nodata','alpha-nan','alpha-negative','mask'])
+def test_zonal_frequency_each_role_mask_and_native_alpha_validity(role,fault,monkeypatch):
+    import operators.raster_compute as c
+    sources={};reference=osr.SpatialReference();reference.ImportFromEPSG(3857)
+    for name in('values','zones'):
+        ds=gdal.GetDriverByName('MEM').Create('',2,2,3,gdal.GDT_Float64);ds.SetGeoTransform((0,1,0,2,0,-1));ds.SetProjection(reference.ExportToWkt())
+        ds.GetRasterBand(1).Fill(.25);ds.GetRasterBand(2).Fill(0 if name=='values'else 1);ds.GetRasterBand(2).CreateMaskBand(0);mask=np.full((2,2),255,np.uint8)
+        alpha=np.full((2,2),128.)
+        if name==role:
+            if fault=='mask':mask[0,0]=0
+            elif fault!='partial-alpha':alpha[0,0]={'alpha-zero':0,'alpha-nodata':99,'alpha-nan':np.nan,'alpha-negative':-1}[fault]
+        ds.GetRasterBand(2).GetMaskBand().WriteArray(mask);ds.GetRasterBand(3).WriteArray(alpha);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(3).SetNoDataValue(99);sources[name]=ds
+    monkeypatch.setattr(c,'_open',lambda token:sources[token]);result=c.raster_zonal_statistics('values','zones',2,2,method='class_frequency')
+    removed=fault!='partial-alpha';assert result['count'].tolist()==[3 if removed else 4]and result.proportion.tolist()==[1.]
+    assert result.total_count.tolist()==[3 if removed and role=='zones'else 4]and result.invalid_count.tolist()==[1 if removed and role=='values'else 0]
+
+@pytest.mark.parametrize('role',['values','zones'])
+def test_zonal_frequency_multiple_native_uint64_alpha_nodata_does_not_drop_adjacent_value(monkeypatch,role):
+    import operators.raster_compute as c
+    sources={};reference=osr.SpatialReference();reference.ImportFromEPSG(3857);nodata=2**64-1
+    for name in('values','zones'):
+        ds=gdal.GetDriverByName('MEM').Create('',3,1,0);ds.AddBand(gdal.GDT_Float64);ds.AddBand(gdal.GDT_UInt64);ds.AddBand(gdal.GDT_Float64);ds.SetGeoTransform((0,1,0,1,0,-1));ds.SetProjection(reference.ExportToWkt())
+        ds.GetRasterBand(1).Fill(0 if name=='values'else 1);a=np.array([[nodata,nodata-1,128]],np.uint64)if name==role else np.full((1,3),128,np.uint64)
+        ds.GetRasterBand(2).WriteArray(a);ds.GetRasterBand(2).SetNoDataValueAsUInt64(nodata);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+        ds.GetRasterBand(3).Fill(128);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand);sources[name]=ds
+    monkeypatch.setattr(c,'_open',lambda token:sources[token]);result=c.raster_zonal_statistics('values','zones',1,1,method='class_frequency')
+    assert result['count'].tolist()==[2]and result.proportion.tolist()==[1.]
+    assert result.total_count.tolist()==[2 if role=='zones'else 3]
+
+
+def test_zonal_frequency_signed_zone_and_safe_class_extremes_keep_exact_identifiers(tmp_path):
+    import pandas as pd,operators.raster_compute as c
+    zones=np.array([[-2**63+1,2**63-1,2**63-1]],np.int64);values=np.array([[-(2**53-1),2**53-1,0]],np.int64);paths=[]
+    for name,array in(('v',values),('z',zones)):
+        path=tmp_path/(name+'.tif');ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,gdal.GDT_Int64);ds.SetGeoTransform((0,1,0,1,0,-1));reference=osr.SpatialReference();reference.ImportFromEPSG(3857);ds.SetProjection(reference.ExportToWkt());ds.GetRasterBand(1).WriteArray(array);ds=None;paths.append(path)
+    with raster_workspace():result=c.raster_zonal_statistics(*(raster_load(source_plan(p))for p in paths),1,1,method='class_frequency')
+    pd.testing.assert_frame_equal(result,_zonal_frequency_oracle(values,zones,np.ones(values.shape,bool),np.ones(zones.shape,bool)),check_exact=True)
+
+@pytest.mark.parametrize('flag',[None,0,1,'false',[],{}])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_frequency_preserves_strict_bool_parameter_before_read(monkeypatch,flag,language):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda *a:pytest.fail('strict bool before opening'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics(object(),object(),1,1,method='class_frequency',include_weighted_stddev=flag)
+    assert str(error.value)==c._ZONAL_WEIGHT_MESSAGES['stddev_flag'][language=='en']
+
+@pytest.mark.parametrize('stage',['open-zones','frame'])
+def test_zonal_frequency_partial_failure_closes_execution_and_preserves_old_results(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as c
+    paths=[create_raster(tmp_path/(n+'.tif'),np.ones((2,2)))for n in('v','z')];old=tmp_path/'old.csv';old.write_bytes(b'unchanged result');before=[p.read_bytes()for p in(*paths,old)]
+    work=None
+    with pytest.raises(RuntimeError,match='frequency injected'),raster_workspace():
+        v,z=(raster_load(source_plan(p))for p in paths);work=v.workspace
+        def fail(*a,**k):raise RuntimeError('frequency injected')
+        if stage=='frame':monkeypatch.setattr(c,'_zonal_frequency_frame',fail)
+        else:
+            original=c._open
+            def opening(token):
+                if token is z:fail()
+                return original(token)
+            monkeypatch.setattr(c,'_open',opening)
+        c.raster_zonal_statistics(v,z,1,1,method='class_frequency')
+    assert work is not None and not work.exists()and [p.read_bytes()for p in(*paths,old)]==before
