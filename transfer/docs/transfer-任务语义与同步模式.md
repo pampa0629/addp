@@ -115,7 +115,7 @@ Kafka poll 会分批读取，但不因此成为 bounded；数据库 CDC 的 init
 
 矩阵之外的组合必须由 planner 明确拒绝，不能通过字段省略、兼容分支或运行时猜测放行。
 
-CDC 的源／目标能力、Oracle 目标 schema、字段与空间限制及未支持项统一见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。Oracle 目标支持仅适用于本表的数据库 CDC 组合，不扩展业务 Kafka 或 watermark 的目标范围；实际通过范围见[验证范围](#十一验证范围)，Oracle 专项仍须区分[标准入口缺口与未覆盖项](../README.md#oracle-cdc-专项入口缺口)。
+CDC 的源／目标能力与未支持项见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)；Oracle 目标 schema、字段与空间限制见[目标应用契约](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-目标应用约束)。Oracle 目标支持仅适用于本表的数据库 CDC 组合，不扩展业务 Kafka 或 watermark 的目标范围；实际通过范围见[验证范围](#十一验证范围)，Oracle 专项仍须区分[标准入口缺口与未覆盖项](../README.md#oracle-cdc-专项入口缺口)。
 
 ## 四、Bounded 执行语义
 
@@ -193,7 +193,7 @@ at-least-once delivery
   + Infra state CAS/fencing
 ```
 
-PostgreSQL、MySQL 和 Oracle 的 `PartitionedTableChangeApplyProvider` 在目标业务数据库内把业务行变化与 partition apply ledger 放入同一事务；CDC 各目标的 ledger 归属和 Oracle 目标约束以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准。Provider 跳过 ledger 已覆盖的记录并单调推进 `next_offset`，阻止重复批次或失效 worker 写回旧状态。ADDP 不宣称跨系统的通用端到端 exactly-once。
+PostgreSQL、MySQL 和 Oracle 的 `PartitionedTableChangeApplyProvider` 在目标业务数据库内把业务行变化与 partition apply ledger 放入同一事务；CDC 各目标的 ledger 归属见[数据面与捕获约束](../../docs/spec/tasks/Transfer数据库CDC.md#数据面与捕获约束)，Oracle 写入能力与目标事务边界见[目标应用契约](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-目标应用约束)。Provider 跳过 ledger 已覆盖的记录并单调推进 `next_offset`，阻止重复批次或失效 worker 写回旧状态。ADDP 不宣称跨系统的通用端到端 exactly-once。
 
 ### 6.2 业务 Kafka
 

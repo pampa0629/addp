@@ -4,7 +4,7 @@
 
 定义 PostgreSQL / MySQL / Oracle CDC 的配置、身份、捕获、位点、结构审批与恢复边界。通用连续同步规则见[Transfer 同步执行](Transfer同步执行.md)。
 
-阅读导航：[契约与配置](#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)、[数据面与捕获约束](#数据面与捕获约束)、[源类型与空间捕获](#源类型与空间捕获)、[Schema 漂移与审批](#schema-漂移审批与补扫)、[补扫 claim](#审批补扫-claim-接管与失败)、[显式恢复](#审批落库与显式恢复)、[捕获生命周期](#捕获资源与生命周期)、[审批验收边界](#审批补扫验证与验收边界)。
+阅读导航：[契约与配置](#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)、[数据面与捕获约束](#数据面与捕获约束)、[源类型与空间捕获](#源类型与空间捕获)、[Oracle 目标应用](#oracle-目标应用约束)、[Schema 漂移与审批](#schema-漂移审批与补扫)、[补扫 claim](#审批补扫-claim-接管与失败)、[显式恢复](#审批落库与显式恢复)、[捕获生命周期](#捕获资源与生命周期)、[审批验收边界](#审批补扫验证与验收边界)。
 
 ## Transfer 数据库 CDC v1 契约（PostgreSQL/MySQL/Oracle）
 
@@ -66,7 +66,6 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 6. Debezium `op=r` 归一化为 `snapshot` 并按 upsert 应用，`op=c|u` 归一化为 `upsert`，`op=d` 使用 Kafka record key 归一化为 `delete`。`Initial Snapshot` 的 `STARTED|IN_PROGRESS|TABLE_SCAN_COMPLETED|COMPLETED|SKIPPED` 通知归一化为 `skip`，必须严格校验通知字段、类型和当前 generation connector name；只有 `COMPLETED` 同时产生初始快照完成语义，`SKIPPED` 只表示 connector 重启时无需再次执行初始快照。未知或畸形通知、`op=t|m`、空 value tombstone、来源表身份不匹配和未知 op 均视为协议错误，不得静默推进 offset。
 7. delete 只按映射后的稳定目标 key 执行物理行删除，不依赖 `before` 包含完整旧行。目标必须使用 `apply_mode=upsert_delete`，目标 `PartitionedTableChangeApplyProvider` 必须真实声明并实现 `operations=[upsert,delete,skip]` 后才可开放 CDC capability；`skip` 只推进目标 ledger，不写业务行。
 8. snapshot/upsert/delete 必须与目标 Provider 的业务库 apply ledger 在同一事务按 partition monotonic apply；PostgreSQL 使用 `addp_transfer.apply_positions`，MySQL 使用目标业务数据库内的 `_addp_transfer_apply_positions` InnoDB 私有表，Oracle 使用目标 schema 内的 `_ADDP_TRANSFER_APPLY_POSITIONS` 私有表。`transfer.sync_states` 继续保存 `kafka_offset/v1.next_offset`，目标提交后才允许以 runtime fencing + state version 做 CAS 推进。
-	Oracle target schema 必须等于连接用户；ledger 必须带固定 ownership comment 并从 Engine Catalog 隐藏。Oracle CDC 目标继续使用 `PartitionedTableChangeApplyProvider`；普通 bounded table write 使用同一 Oracle Engine 的 `TableWriteSessionProvider`，只创建或写入普通表和 `MDSYS.SDO_GEOMETRY`，不得注册 SDE feature class 或修改 geodatabase system tables。两条能力复用同一 Oracle 字段/空间类型校验与 EWKB → SDO 转换规则，不建立 Transfer 私有 Oracle writer。当前支持 `string|int|bigint|float|double|decimal|bool|date|timestamp|json|uuid|bytes|geometry`，明确拒绝独立 `time`、decimal precision > 38 和非 XY geometry。geometry 边界仍是 EWKB + 冻结 `SpatialInfo`，Provider 必须校验 SRID/type/dimension 后转换为标准 WKB，并使用 `SDO_UTIL.FROM_WKBGEOMETRY` 写入 `MDSYS.SDO_GEOMETRY`。CDC ledger 行锁必须使用 `FOR UPDATE NOWAIT` 有界重试并检查 runtime context；锁等待取消与任何业务写失败都必须回滚业务行和 ledger。
 9. Kafka Connect offset 是捕获位点，回答源数据库日志已捕获到哪里；Transfer committed position 是消费位点，回答目标已应用到哪个 Infra Kafka offset。两者由各自 owner 管理，任何一方都不能代替另一方。
 10. PostgreSQL LSN、MySQL binlog file/position/GTID、Oracle SCN、事务 ID 和事件时间可以进入 ChangeEvent 诊断信息，但不得替代 Kafka partition offset，也不承诺把一个源数据库事务跨多行原子提交到目标；交付保证仍是 at-least-once + target monotonic apply。
 
@@ -126,6 +125,30 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 - connector 对镜像表固定 `lob.enabled=true`、`binary.handling.mode=base64`；adapter 只把 insert/update `after` 中的 XY base64 WKB 或 XYZ GeoJSON 转为标准 EWKB，并按冻结事实校验 SRID、几何类型和维度。
 - Debezium 对 BLOB 的 update/delete `before` 可能给出 unavailable placeholder；Oracle Spatial adapter 只校验完整字段集合和稳定主键，不读取该旧空间值，delete 仍只按 record key 应用。
 - 这里的 BLOB/CLOB 是 Provider-owned 内部载体，不代表开放用户 LOB CDC。
+
+### Oracle 目标应用约束
+
+阅读导航：[schema 与 ledger 身份](#oracle-目标-schema-与-ledger-身份)、[CDC 与 bounded 写入能力](#oracle-cdc-与-bounded-写入能力)、[字段与空间转换](#oracle-目标字段与空间转换)、[锁等待与事务回滚](#oracle-目标锁等待与事务回滚)。
+
+#### Oracle 目标 schema 与 ledger 身份
+
+- Oracle target schema 必须等于连接用户；ledger 必须带固定 ownership comment 并从 Engine Catalog 隐藏。
+
+#### Oracle CDC 与 bounded 写入能力
+
+- Oracle CDC 目标继续使用 `PartitionedTableChangeApplyProvider`；普通 bounded table write 使用同一 Oracle Engine 的 `TableWriteSessionProvider`，只创建或写入普通表和 `MDSYS.SDO_GEOMETRY`，不得注册 SDE feature class 或修改 geodatabase system tables。
+- 两条能力复用同一 Oracle 字段/空间类型校验与 EWKB → SDO 转换规则，不建立 Transfer 私有 Oracle writer。
+
+#### Oracle 目标字段与空间转换
+
+- 当前支持 `string|int|bigint|float|double|decimal|bool|date|timestamp|json|uuid|bytes|geometry`，明确拒绝独立 `time`、decimal precision > 38 和非 XY geometry。
+- geometry 边界仍是 EWKB + 冻结 `SpatialInfo`，Provider 必须校验 SRID/type/dimension 后转换为标准 WKB，并使用 `SDO_UTIL.FROM_WKBGEOMETRY` 写入 `MDSYS.SDO_GEOMETRY`。
+
+#### Oracle 目标锁等待与事务回滚
+
+- CDC ledger 行锁必须使用 `FOR UPDATE NOWAIT` 有界重试并检查 runtime context；锁等待取消与任何业务写失败都必须回滚业务行和 ledger。
+
+各目标的业务行／ledger 原子提交与 Infra 位点 CAS 顺序仍沿[数据面与捕获约束](#数据面与捕获约束)。本节不扩大业务 Kafka 或 watermark 的目标范围，适用组合见[支持矩阵](../../../transfer/docs/transfer-任务语义与同步模式.md#三当前支持矩阵)；Oracle 源空间捕获维度不代表目标写入维度。既有数据面摘要、不同源／目标覆盖范围及当前标准入口缺口见[Oracle 验收边界](../../../transfer/docs/transfer-基本概念及配置说明.md#oracle-既有验证与验收边界)，不据能力或类型声明认定真实运行通过。
 
 ### Schema 漂移、审批与补扫
 

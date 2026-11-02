@@ -478,7 +478,7 @@ Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和
 
 目标必须声明原子、单调且覆盖任务所需 operation 的 `PartitionedTableChangeApplyProvider`；各路线的目标范围见[支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)。每个 task 的 `apply_identity` 由服务端生成且不可修改。目标变更与 partition `next_offset` 的原子提交、分区拆批及同键保留最高 offset 的规则统一见[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)与[交付保证](transfer-任务语义与同步模式.md#61-交付保证)，普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 不能替代目标侧原子应用。
 
-各目标 ledger 的表名与归属以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准：PostgreSQL ledger 位于业务目标库；MySQL 使用同一目标数据库的 InnoDB 私有表，不跨库；Oracle CDC 目标 schema 必须等于连接用户，ledger 通过 ownership comment 从 Catalog 隐藏。同名 ledger 结构不符合唯一规范时直接失败，不保留兼容路径。
+各目标 ledger 的表名与归属以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准：PostgreSQL ledger 位于业务目标库；MySQL 使用同一目标数据库的 InnoDB 私有表，不跨库；Oracle CDC 的 schema 与 ledger 身份限制见[目标身份契约](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-目标-schema-与-ledger-身份)。同名 ledger 结构不符合唯一规范时直接失败，不保留兼容路径。
 
 每个 partition 的主状态保存在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`；consumer auto commit 禁用。先提交目标业务行与 ledger，再以 runtime fencing token + state version 做 Infra CAS；两步之间崩溃会重放，由目标 ledger 吸收重复并阻止旧 worker 回写，不宣称分布式 exactly-once。首次无状态 partition 必须显式选择 `earliest|latest`。
 
@@ -502,7 +502,7 @@ Console Wizard 已支持业务 Kafka 以及 PostgreSQL/MySQL/Oracle CDC 配置�
 
 resume 的新 execution 与位置核验见[用户运行控制](transfer-任务语义与同步模式.md#用户运行控制)；完整恢复条件以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。committed `next_offset` 必须落在当前 partition 的 `[earliest_offset,latest_offset]` 内；retention 已清除该位置或位置高于 latest 时均明确失败，不能自动重置到 earliest/latest，须人工处理。
 
-PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消，并回滚未完成的业务行与目标 ledger 事务；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，约束见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。
+PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消，并回滚未完成的业务行与目标 ledger 事务；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，约束见[目标锁等待与事务回滚](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-目标锁等待与事务回滚)。
 
 ### 诊断与安全投影
 
@@ -542,7 +542,7 @@ PostgreSQL/MySQL/Oracle 单表
 
 ### CDC 目标应用与位点
 
-第一版只支持有稳定主键的单表。Debezium `op=r` 作为 snapshot upsert，`op=c|u` 作为 upsert，`op=d` 使用 record key 做物理 delete；目标固定为 `apply_mode=upsert_delete`，可选择声明完整原子应用能力的 PostgreSQL、MySQL 或 Oracle。目标必须是不存在的新表，由 bootstrap 创建；不清空或接管已有目标表。Oracle CDC 目标的字段、精度、空间维度与原子应用约束以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准，不保留兼容映射或旁路。捕获位点由 Kafka Connect 管理，Transfer 只在 `transfer.sync_states` 保存目标已应用的 Infra Kafka `next_offset`，两类位点不能互相代替。
+第一版只支持有稳定主键的单表。Debezium `op=r` 作为 snapshot upsert，`op=c|u` 作为 upsert，`op=d` 使用 record key 做物理 delete；目标固定为 `apply_mode=upsert_delete`，可选择声明完整原子应用能力的 PostgreSQL、MySQL 或 Oracle。目标必须是不存在的新表，由 bootstrap 创建；不清空或接管已有目标表。Oracle CDC 目标的字段、精度、空间维度与原子应用约束以[Oracle 目标应用契约](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-目标应用约束)为准，不保留兼容映射或旁路。捕获位点由 Kafka Connect 管理，Transfer 只在 `transfer.sync_states` 保存目标已应用的 Infra Kafka `next_offset`，两类位点不能互相代替。
 
 ### 源类型与空间捕获
 
