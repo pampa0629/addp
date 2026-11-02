@@ -14,6 +14,7 @@
 | Topic 保留、压缩、部署参数与 principal 隔离 | [留存与命名空间](#dlq-留存与命名空间) |
 | Task scoped 查询、分页、过滤和安全字段 | [公开查询与安全投影](#dlq-公开查询与安全投影) |
 | 精确位置核验、瞬时故障、CAS 与可用性恢复 | [Payload availability 治理](#dlq-payload-availability-治理) |
+| Reconciler 部署参数、合法值与治理范围 | [DLQ 部署配置](../configuration/执行与模块策略.md#dlq-reconciler-部署配置) |
 | 物理清理范围、失败保留、实际停止与最终事务 | [任务资源清理](#任务资源清理范围与失败保留)、[停止与最终事务](#清理前停止与最终事务) |
 | 业务 Kafka ranges、隔离目标、独立 execution 与主状态边界 | [Replay 请求与来源](#bounded-replay-请求与来源)、[Replay 执行与目标隔离](#bounded-replay-执行与目标隔离) |
 | 版本、拓扑、容量、网络与 Capture 资源归属 | [Kafka 与 Kafka Connect 部署基线](#kafka-与-kafka-connect-部署基线) |

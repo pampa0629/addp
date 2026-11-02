@@ -508,7 +508,7 @@ PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消，并回滚�
 
 ### 诊断与安全投影
 
-diagnostics 采样间隔、degraded/critical retention 阈值和 checkpoint 停滞阈值由 Transfer 配置管理页面“连续任务策略”统一维护，不进入任务 JSON。指标计算、unknown 条件与真实 position commit 口径见[采样与健康诊断](../../docs/spec/tasks/Transfer同步执行.md#continuous-采样与健康诊断)，捕获健康与源日志窗口见[诊断专题](transfer-任务语义与同步模式.md#捕获健康与源日志窗口)。
+diagnostics 采样间隔、degraded/critical retention 阈值和 checkpoint 停滞阈值由 Transfer 配置管理页面“连续任务策略”统一维护，不进入任务 JSON；归属、生效时机与合法值校验见[运行观测配置](../../docs/spec/configuration/执行与模块策略.md#transfer-配置归属与生效)及[阈值校验](../../docs/spec/configuration/执行与模块策略.md#transfer-运行阈值校验)。指标计算、unknown 条件与真实 position commit 口径见[采样与健康诊断](../../docs/spec/tasks/Transfer同步执行.md#continuous-采样与健康诊断)，捕获健康与源日志窗口见[诊断专题](transfer-任务语义与同步模式.md#捕获健康与源日志窗口)。
 
 诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`；Monitor 只读取 execution metadata，不直连业务 Kafka 或 Transfer 私有状态表。允许公开的字段与敏感信息排除统一见[安全投影与读取边界](transfer-任务语义与同步模式.md#安全投影与读取边界)。
 
@@ -516,7 +516,7 @@ diagnostics 采样间隔、degraded/critical retention 阈值和 checkpoint 停�
 
 continuous worker 的重启恢复、领取条件与 circuit 状态统一见[自动恢复与退避](transfer-任务语义与同步模式.md#自动恢复与退避)，不可变审计与可变状态见[恢复审计与运行状态](transfer-任务语义与同步模式.md#恢复审计与运行状态)；唯一 pending execution、租约及恢复约束以[自动恢复契约](../../docs/spec/tasks/Transfer同步执行.md#continuous-自动恢复退避与-circuit)为准。
 
-指数退避、最大连续失败次数、circuit 冷却时间和稳定运行窗口由“连续任务策略”配置页统一维护，属于 Transfer-owned 平台运行配置，不进入任务 JSON。
+指数退避、最大连续失败次数、circuit 冷却时间和稳定运行窗口由“连续任务策略”配置页统一维护，属于 Transfer-owned 平台运行配置，不进入任务 JSON；生效时机与阈值校验沿[运行观测配置](../../docs/spec/configuration/执行与模块策略.md#transfer-配置归属与生效)及[阈值校验](../../docs/spec/configuration/执行与模块策略.md#transfer-运行阈值校验)。
 
 ### Continuous 验收边界
 
