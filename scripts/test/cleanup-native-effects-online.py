@@ -314,6 +314,37 @@ def wait_transfer_runtime(user, task_id, execution_id, report, checkpoint):
         raise
 
 
+def wait_initial_records(user, task_id, execution_id, kind, report, checkpoint):
+    """Keep the physical predicate; observe only the same owned execution."""
+    require(kind in {'cdc', 'kafka'}, 'invalid native initial record kind')
+    deadline = time.monotonic() + 120  # The unchanged canonical wait window.
+    diagnostic = dict(task_kind=kind, physical_probe='not_observed', runtime=dict(
+        execution_id=execution_id, task_id=task_id, observation='not_observed'))
+
+    def probe():
+        diagnostic['physical_probe'] = 'not_observed'
+        ready = TRANSFER.physical('verify-' + kind + '-initial',
+            observe=lambda outcome: diagnostic.update(physical_probe=outcome))
+        remaining = deadline - time.monotonic()
+        if not ready and remaining > 0:
+            diagnostic.pop('runtime_read_failure', None)
+            try:
+                reader = S.local_client(user.base_url, user.token, min(user.timeout, remaining))
+                value = reader.request('GET', f'/api/v1/transfer/executions/{execution_id}', (200,)).payload
+                diagnostic['runtime'] = transfer_runtime_observation(value, task_id, execution_id)
+            except Exception as error:
+                # A diagnostic read must not change the original row predicate.
+                diagnostic['runtime_read_failure'] = failure_diagnostics(error)
+        return ready
+
+    try:
+        S.wait_for(probe, bool, 'native ' + ('CDC' if kind == 'cdc' else 'Kafka') + ' target rows were not committed')
+    except Exception:
+        report['initial_records_diagnostic'] = diagnostic
+        checkpoint()
+        raise
+
+
 def wait_transfer_engines(workflow, pg, kafka, deadline, report, checkpoint):
     """Observe registration readiness inside the existing source-scan budget."""
     engines = [(pg, 'postgresql'), (kafka, 'kafka')]
@@ -384,7 +415,7 @@ def prepare_task(user, controls, pg, kafka, kind, run_id, report, checkpoint):
     if kind == 'kafka':
         report['stage'] = 'transfer_initial_records'; checkpoint()
         controls.produce_initial()
-        S.wait_for(lambda: TRANSFER.physical('verify-kafka-initial'), bool, 'native Kafka target rows were not committed')
+        wait_initial_records(user, task_id, execution_id, kind, report, checkpoint)
         report['stage'] = 'transfer_dlq_records'; checkpoint()
         controls.produce_invalid()
         S.wait_for(lambda: user.request('GET', f'{TASKS}/{task_id}/dead-letters?page=1&page_size=10', (200,)).payload,
@@ -393,7 +424,7 @@ def prepare_task(user, controls, pg, kafka, kind, run_id, report, checkpoint):
         controls.topic(task_id, present=True)
     else:
         report['stage'] = 'transfer_initial_records'; checkpoint()
-        S.wait_for(lambda: TRANSFER.physical('verify-cdc-initial'), bool, 'native CDC target rows were not committed')
+        wait_initial_records(user, task_id, execution_id, kind, report, checkpoint)
         report['stage'] = 'transfer_capture_native_verify'; checkpoint()
         controls.capture(task_id, present=True)
     report['stage'] = 'transfer_task_pause'; checkpoint()

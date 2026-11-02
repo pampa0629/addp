@@ -121,8 +121,8 @@ PY
       verify-cdc-mutated) expected='1|business-value-sentinel-updated
 3|business-value-sentinel-inserted'; table=continuous_cdc_target ;;
     esac
-    actual=$(psql_owned -c "SELECT id,label FROM public.$table ORDER BY id" 2>/dev/null) || exit 1
-    [ "$actual" = "$expected" ] || exit 1
+    actual=$(psql_owned -c "SELECT id,label FROM public.$table ORDER BY id" 2>/dev/null) || exit 2
+    [ "$actual" = "$expected" ] || exit 3
     ;;
   verify-scheduled)
     actual=$(psql_owned -c "SELECT id,label FROM public.continuous_scheduled_target ORDER BY id" 2>/dev/null) || exit 1

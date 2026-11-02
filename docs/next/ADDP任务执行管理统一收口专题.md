@@ -938,7 +938,7 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 本批已实证收口代理正常传输缺陷及其 Manager／native 回归；**第七轮 Hosted 仍为失败 0/7，修复后真实整链七项尚未验收**。现场公开诊断仅到库存阶段，不能将本地复现认定为唯一现场原因；既有 Graph 原生证据及正向 reopen 缺口也未由本批收口。下一步仅建议单独确认一次修正版 transfer-engine Hosted，保持原六权限、操作范围、七断言和等待预算；本批不自动追加 Hosted、切换环境或改变权限。M327 维护会话已核对保存部分实现，Linux 终态增量另报。
 
-### 8.31 第八轮 transfer-engine 代理修复后单次 Hosted 验收（已授权，运行中）
+### 8.31 第八轮 transfer-engine 终态与初始行阶段诊断
 
 用户于 2026-11-02 单独确认再运行一次修正版 `transfer-engine Hosted`，验证代理修复及完整清理链路，保持原六项身份权限、操作范围、七项断言和等待预算；其他 Hosted、环境切换和权限边界变化仍单独确认。已单次 POST 创建 [Run 41364581693／Job 125021924813](https://github.com/pampa0629/addp/actions/runs/41364581693/job/125021924813)，workflow_dispatch／attempt 1，准确源码 `161a26cdd65a7a434f2acfd8994d6dcc98cf837a`；记录时运行中，不计通过。本次授权已使用，不自动追加第九轮。
 
@@ -947,3 +947,13 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 本次验收仍要求完整 `real_capture_created`、`actual_invocations_returned`、`native_capture_absent`、`engine_retains_task_and_dlq`、`professional_receipt_equal`、`explicit_task_delete_removes_dlq`、`target_business_rows_preserved` 七项，无放宽、重试或追加等待。先核对真实 CDC 创建／停止和 Engine 删除保留语义，再沿普通用户显式任务删除验证 DLQ 清理及目标业务行保持；代理修复后的初始化／盘点是否通过由本次实际结果判定，不以本地红绿或旧 CI 替代。
 
 私有证据目录 `/tmp/addp-transfer-engine-hosted-eighth-20261102/` 保存 `intent.json`（一次授权／一次 POST／唯一 Run）、`invariants.json`、`prerequisite-proof.json` 及冻结于准确源码的报告审计。CI 会话仅只读跟进该唯一 Job；终态后独立核对十四服务同 SHA、原授权可见的父／Manager／Transfer 诊断、七项 checks 及控制恢复／清理／零残留。旧第七轮失败 **0/7**、本次 Linux T2 登记 75＋9 未执行及 Graph 既有缺口分别保留，不提前记为通过。
+
+**第八轮实际终态（2026-11-02 08:16）。** 上述准确源码、attempt 1 的唯一 Job 实际 failure，北京时间 **07:57:15—08:16:22**；十四服务同 `161a26cdd`、repository_clean=true。只有一项 CDC Task 和一项 execution，正式 requests／checks 均为空，仍为 **0/7**；失败为 `transfer_initial_records`／SuiteError／assertion_failed。它已越过原 running 观测，但初始目标行未在原 120 秒窗口匹配；**尚未发起 Engine 评估，故没有 Manager 子执行诊断，本轮不能验证或否定代理修复**。不得将它解释为库存失败复发、Capture 一定失败或目标表一定为空。公开报告没有该等待结束时的 execution 状态、错误类别或具体物理不匹配原因，现场根因尚未确定。
+
+主责 fresh Job／Run API、原始日志和 ZIP 独立核验完毕，三份冻结审计均退出 0，失败报告被正式 validator 拒绝计为通过。control_cleanup、control_recovery、cleanup 均 passed，infra_cleanup=zero_residuals，仅证明控制与退出。日志 SHA-256 `4d0ea6a765dfc6f78606ee06b8d901ef9af6b1f2b45f89daae23927de8683c0d`，归档 `13107820158`／ZIP `96edbd616438fd37904b3201ab6ea021592fbbbc247085a3b12d6c2f202ceb98`，native JSON `e9ff962265c1714858c7925e0a71a065a53cf70a29701bdd70df53a19ebb2809`；原件及完整五文件哈希沿本轮目录 `raw-manifest.json`、`audit.json`、`terminal-proof.json`。单次授权已消费，不追加第九轮。
+
+**后续诊断范围与门禁。** 先在正式 T4 规范冻结 `initial_records_diagnostic`，再实现 CDC／Kafka 共用的初始行观察：保留同一物理探针、原 bool 成功谓词和 canonical 120 秒 wait；仅在探针不匹配且仍有余额时，用原 Transfer User 读取同一个自有 execution。每次诊断 HTTP timeout 上限为 `min(原60秒, 原窗口余额)`，读取耗时计入原窗口；窗口耗尽不补读，不增加 sleep、业务重试、身份或权限。额外读取只诊断既有自有 execution，不扩展 Engine 六权限、源授权用途、专业结果或物理目标范围；诊断读取失败／外国身份不能替代或放宽原目标行断言。失败字段只含闭集状态及安全原因，成功报告即使该字段为空也拒绝。此项补足取证能力，不宣称已修复未知的 CDC 现场故障。
+
+实施前已确认受影响标准入口为 `make test-execution-online-ci-runner`：覆盖 native 编排、HTTP／预算／安全诊断和汇总 validator，既有 `scripts/*` 路径选择与 Online 登记已覆盖，无需新增工作流。未修改 Manager、Transfer 或其他生产后端，既有 Manager PG／15 包证据保持原已执行范围，不重复运行数据库或接管个人服务。定向回归验证两种初始探针、最后闭集状态、余额限流、成功／读失败／外国 execution 不改变物理谓词、窗口耗尽不补读及原始错误／凭据不外泄。另由 Business 在原 SELECT／原精确行值比较的退出状态中区分 query_failed 与 rows_mismatch，原 bool 结果不变；共享物理 helper 只向初始探针的诊断回调传递闭集结果，不输出 SQL、行值或 stderr，不增 SQL／HTTP 请求。该共享 helper 同次验证 `make test-transfer-continuous-online-runner`，既有路径登记已覆盖。完整标准 runner 和准确提交的独立 Linux 结果另记。
+
+**提交前实际验证。** 最终源码的 `make test-execution-online-ci-runner` **109 native＋169 shared** 均 OK，`make test-transfer-continuous-online-runner` **60 项及既有 System fixture Go 测试**退出 0；Shell／Python 语法与自有差异检查通过。Business 分类反例用相同标准测试和只读 fake CLI 对照旧脚本：旧版 6 个子例确实失败，新版同一组全部通过，原精确行值断言及无原始输出均保留。初次新增测试误用了另一个模块的 SuiteError 类型而报一项 error，已按实际 helper 异常类型修正；该失败不计通过，最终完整门禁覆盖修正后的文件。最终日志及哈希、原 120／60／20 秒上限和额外只读范围沿本轮目录 `initial-records-local-proof.json`、`initial-records-scope-proof.json`；无测试请求真实个人 Infra，无新 Hosted。相关根 Make 命令与已提交版本逐块一致，其他会话的未提交 Makefile／环境／监控改动未进入本次提交。准确修复提交的独立 Linux runner 另核对，取证补充不能替代 CDC 根因或本轮七项实际验收。

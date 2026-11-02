@@ -202,11 +202,15 @@ def task_config(kind, pg, kafka):
                                        {'source': 'label', 'target': 'label', 'target_type': 'string', 'nullable': False}]}]}
 
 
-def physical(action):
+def physical(action, *, observe=None):
     require(action in PHYSICAL_ACTIONS, 'invalid physical fixture action')
+    require(observe is None or action in {'verify-cdc-initial', 'verify-kafka-initial'},
+            'physical observation is limited to initial target probes')
     result = subprocess.run(['bash', 'business/scripts/online-continuous-fixture.sh', action], cwd=ROOT,
                             capture_output=True, timeout=20)
     # stdout/stderr can contain business values or database connection facts; never publish them.
+    if observe is not None:
+        observe({0: 'matched', 2: 'query_failed', 3: 'rows_mismatch'}.get(result.returncode, 'command_failed'))
     return result.returncode == 0
 
 

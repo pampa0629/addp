@@ -985,7 +985,7 @@ def validate_native_cleanup_report(report: dict[str, object], environment: Mappi
     if any(field in report for field in ('failure_kind', 'failure_http_status', 'failure_stage',
                                          'error_type', 'cleanup_error_type', 'runtime_start_diagnostic',
                                          'engine_readiness_diagnostic', 'task_create_diagnostic',
-                                         'engine_assessment_diagnostic')):
+                                         'engine_assessment_diagnostic', 'initial_records_diagnostic')):
         raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid',
                                'passed native Cleanup report contains failure diagnostics')
     contract = json.loads(Path(__file__).with_name('execution-online-contract.json').read_text())

@@ -51,7 +51,9 @@ elif args[0]=='exec' and 'psql' in args:
     elif '-c' in args:
         sql=args[args.index('-c')+1]
         if 'pg_replication_slots' in sql: print(os.environ.get('RESIDUAL_CAPTURE','0'))
-        elif 'SELECT id,label' in sql: print(os.environ.get('PHYSICAL_ROWS',''))
+        elif 'SELECT id,label' in sql:
+            if os.environ.get('PHYSICAL_QUERY_FAIL'): raise SystemExit('private business query details')
+            print(os.environ.get('PHYSICAL_ROWS',''))
     else:
         sql=sys.stdin.read()
         if os.environ.get('REQUIRE_FINAL_PG') and not (root / 'pg-final-ready').exists():
@@ -150,6 +152,17 @@ elif args[0]=='exec' and 'produce' in args:
         self.assertNotIn('business-value-sentinel', result.stderr)
         self.assertNotEqual(self.run_fixture('verify-cdc-mutated', PHYSICAL_ROWS=rows + '\n4|unexpected').returncode, 0)
         self.assertNotEqual(self.run_fixture('verify-cdc-mutated', PHYSICAL_ROWS='').returncode, 0)
+
+    def test_initial_probe_codes_distinguish_query_failure_from_mismatch_without_values(self):
+        for action, rows in [('verify-cdc-initial', '1|business-value-sentinel-initial\n2|business-value-sentinel-delete'),
+                             ('verify-kafka-initial', '1|business-value-sentinel-first\n2|business-value-sentinel-second')]:
+            for options, code in [({'PHYSICAL_ROWS': rows}, 0), ({'PHYSICAL_ROWS': 'private-wrong-row'}, 3),
+                                  ({'PHYSICAL_QUERY_FAIL': '1'}, 2), ({'BAD_OWNER': '1'}, 2)]:
+                with self.subTest(action=action, code=code):
+                    result = self.run_fixture(action, **options)
+                    self.assertEqual(result.returncode, code)
+                    self.assertEqual(result.stdout, '')
+                    self.assertNotIn('private', result.stderr); self.assertNotIn('business-value-sentinel', result.stderr)
 
     def test_additive_schema_and_values_have_exact_physical_oracle(self):
         self.assertEqual(self.run_fixture('alter-cdc').returncode, 0)

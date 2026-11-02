@@ -549,6 +549,132 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 self.assertNotIn('status', diagnostic)
                 self.assertEqual(set(diagnostic), {'execution_id', 'task_id', 'observation'})
 
+    def test_initial_physical_probe_observation_preserves_boolean_and_never_exports_output(self):
+        for code, outcome in [(0, 'matched'), (1, 'command_failed'), (2, 'query_failed'),
+                              (3, 'rows_mismatch'), (127, 'command_failed')]:
+            observed = []
+            with self.subTest(code=code), patch.object(M.TRANSFER.subprocess, 'run',
+                    return_value=SimpleNamespace(returncode=code, stdout=b'private row', stderr=b'private connection')) as run:
+                self.assertEqual(M.TRANSFER.physical('verify-cdc-initial', observe=observed.append), code == 0)
+                self.assertEqual(observed, [outcome])
+                self.assertEqual(run.call_args.kwargs['timeout'], 20)
+                self.assertTrue(run.call_args.kwargs['capture_output'])
+                self.assertEqual(M.TRANSFER.physical('verify-cdc-mutated'), code == 0)
+                self.assertNotIn('private', json.dumps(observed))
+        with patch.object(M.TRANSFER.subprocess, 'run') as run, self.assertRaises(M.TRANSFER.SuiteError):
+            M.TRANSFER.physical('mutate-cdc', observe=lambda _: None)
+        run.assert_not_called()
+
+    def test_initial_rows_keep_120s_predicate_and_last_bound_runtime_within_remaining_budget(self):
+        for kind in ('cdc', 'kafka'):
+            report, snapshots, reads, timeouts = {}, [], [], []
+            values = iter(('pending', 'failed'))
+            class Reader:
+                def request(self, method, path, expected):
+                    reads.append((method, path, expected))
+                    return SimpleNamespace(payload=dict(execution_id=ID, task_id=7, status=next(values),
+                        error_details={'category': 'connection_failed', 'code': 'lease_expired', 'message': 'private'},
+                        metadata={'stop_reason': 'execution_failed', 'password': 'private'}, token='private'))
+            def reader(url, token, timeout):
+                self.assertEqual((url, token), ('http://127.0.0.1:8000', 'private-token'))
+                timeouts.append(timeout); return Reader()
+            user = SimpleNamespace(base_url='http://127.0.0.1:8000', token='private-token', timeout=60)
+            with self.subTest(kind=kind), patch.object(S.time, 'monotonic', side_effect=[0, 0, 0, 5, 70, 90, 120]), \
+                    patch.object(S.time, 'sleep') as sleep, patch.object(S, 'local_client', side_effect=reader), \
+                    patch.object(M.TRANSFER, 'physical', side_effect=lambda _, observe: observe('rows_mismatch') or False) as physical:
+                with self.assertRaisesRegex(S.SuiteError, 'target rows were not committed'):
+                    M.wait_initial_records(user, 7, ID, kind, report, lambda: snapshots.append(copy.deepcopy(report)))
+                self.assertEqual([call.args for call in physical.call_args_list], [('verify-' + kind + '-initial',)] * 2)
+                self.assertEqual(reads, [('GET', f'/api/v1/transfer/executions/{ID}', (200,))] * 2)
+                self.assertEqual(timeouts, [60, 30])
+                self.assertEqual(sleep.call_args_list, [unittest.mock.call(.2)] * 2)
+                self.assertEqual(report['initial_records_diagnostic'], dict(task_kind=kind, physical_probe='rows_mismatch',
+                    runtime=dict(execution_id=ID, task_id=7, observation='observed', status='failed',
+                        error_details={'category': 'connection_failed', 'code': 'lease_expired'},
+                        metadata={'stop_reason': 'execution_failed'})))
+                self.assertEqual(snapshots, [report]); self.assertNotIn('private', json.dumps(report))
+
+    def test_initial_rows_success_has_no_failure_fields_and_never_reads_after_match(self):
+        for first in ('matched', 'failed_execution', 'read_failed', 'foreign_execution'):
+            report = {}
+            class Reader:
+                def request(self, *_):
+                    if first == 'read_failed': raise S.SuiteError('GET /private returned HTTP 503 (secret)')
+                    return SimpleNamespace(payload=dict(execution_id=str(uuid.uuid4()) if first == 'foreign_execution' else ID,
+                        task_id=7, status='failed', error_details={'message': 'private'}))
+            user = SimpleNamespace(base_url='http://127.0.0.1:8000', token='private-token', timeout=60)
+            values = iter([True] if first == 'matched' else [False, True])
+            def physical(_, *, observe):
+                value = next(values); observe('matched' if value else 'rows_mismatch'); return value
+            with self.subTest(first=first), patch.object(S.time, 'monotonic', return_value=0), \
+                    patch.object(S.time, 'sleep'), patch.object(S, 'local_client', return_value=Reader()) as client, \
+                    patch.object(M.TRANSFER, 'physical', side_effect=physical):
+                M.wait_initial_records(user, 7, ID, 'cdc', report, lambda: self.fail('success must not publish diagnostics'))
+                self.assertEqual(client.call_count, 0 if first == 'matched' else 1)
+                self.assertEqual(report, {})
+
+    def test_initial_rows_expired_window_does_not_add_a_final_diagnostic_read(self):
+        report = {}
+        self.assertEqual(S.wait_for.__defaults__, (120,))
+        with patch.object(S.time, 'monotonic', side_effect=[0, 0, 0, 120, 120]), \
+                patch.object(S.time, 'sleep'), patch.object(S, 'local_client') as client, \
+                patch.object(M.TRANSFER, 'physical', side_effect=lambda _, observe: observe('rows_mismatch') or False):
+            with self.assertRaises(S.SuiteError): M.wait_initial_records(object(), 7, ID, 'cdc', report, lambda: None)
+            client.assert_not_called()
+            self.assertEqual(report['initial_records_diagnostic'], dict(task_kind='cdc', physical_probe='rows_mismatch',
+                runtime=dict(execution_id=ID, task_id=7, observation='not_observed')))
+
+    def test_initial_rows_retains_observed_state_when_later_read_fails_or_window_expires(self):
+        for ending in ('read_failed', 'expired'):
+            report, reads = {}, []
+            class Reader:
+                def request(self, *_):
+                    reads.append(True)
+                    if len(reads) == 2: raise S.SuiteError('GET /private returned HTTP 503 (secret)')
+                    return SimpleNamespace(payload=dict(execution_id=ID, task_id=7, status='failed', error_details={}, metadata={}))
+            def wait(read, predicate, message, **kwargs):
+                self.assertEqual(kwargs, {})
+                self.assertFalse(predicate(read())); self.assertFalse(predicate(read())); raise S.SuiteError(message)
+            user = SimpleNamespace(base_url='http://127.0.0.1:8000', token='private-token', timeout=60)
+            with self.subTest(ending=ending), patch.object(S.time, 'monotonic', side_effect=[0, 1, 120 if ending == 'expired' else 2]), \
+                    patch.object(S, 'wait_for', side_effect=wait), patch.object(S, 'local_client', return_value=Reader()), \
+                    patch.object(M.TRANSFER, 'physical', side_effect=lambda _, observe: observe('rows_mismatch') or False):
+                with self.assertRaises(S.SuiteError): M.wait_initial_records(user, 7, ID, 'cdc', report, lambda: None)
+                diagnostic = report['initial_records_diagnostic']
+                self.assertEqual(diagnostic['runtime']['status'], 'failed')
+                self.assertEqual(len(reads), 1 if ending == 'expired' else 2)
+                self.assertEqual('runtime_read_failure' in diagnostic, ending == 'read_failed')
+                self.assertNotIn('private', json.dumps(report)); self.assertNotIn('secret', json.dumps(report))
+
+    def test_initial_rows_failure_keeps_safe_read_errors_or_rejects_foreign_identity(self):
+        for failure in ('read', 'identity', 'shape', 'physical'):
+            report, calls = {}, []
+            class Reader:
+                def request(self, method, path, expected):
+                    calls.append((method, path, expected))
+                    if failure == 'read': raise S.SuiteError('GET /private returned HTTP 503 (secret)')
+                    return SimpleNamespace(payload=[] if failure == 'shape' else
+                        dict(execution_id=str(uuid.uuid4()), task_id=7, status='failed', password='private'))
+            def wait(read, predicate, message, **kwargs):
+                self.assertEqual(kwargs, {}); self.assertIs(predicate, bool)
+                self.assertFalse(predicate(read())); raise S.SuiteError(message)
+            def physical(_, *, observe):
+                if failure == 'physical': raise RuntimeError('private connection details')
+                observe('rows_mismatch'); return False
+            user = SimpleNamespace(base_url='http://127.0.0.1:8000', token='private-token', timeout=60)
+            with self.subTest(failure=failure), patch.object(S.time, 'monotonic', return_value=0), \
+                    patch.object(S, 'wait_for', side_effect=wait), patch.object(S, 'local_client', return_value=Reader()), \
+                    patch.object(M.TRANSFER, 'physical', side_effect=physical):
+                with self.assertRaises(Exception): M.wait_initial_records(user, 7, ID, 'cdc', report, lambda: None)
+                diagnostic = report['initial_records_diagnostic']; runtime = diagnostic['runtime']
+                self.assertEqual(calls, [] if failure == 'physical' else [('GET', f'/api/v1/transfer/executions/{ID}', (200,))])
+                self.assertEqual(runtime['observation'], {'read': 'not_observed', 'identity': 'identity_mismatch',
+                    'shape': 'invalid_response', 'physical': 'not_observed'}[failure])
+                self.assertNotIn('status', runtime)
+                if failure == 'read': self.assertEqual(diagnostic['runtime_read_failure'],
+                    {'failure_kind': 'http_unexpected_status', 'failure_http_status': 503})
+                self.assertNotIn('private', json.dumps(report)); self.assertNotIn('secret', json.dumps(report))
+
     def test_failure_diagnostics_publish_only_closed_categories_and_http_status(self):
         cases = [
             (S.SuiteError('POST /private?token=secret returned HTTP 403 (private_code)'),
