@@ -135,3 +135,50 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 复用现有模块、PG/FalkorDB、Agent eval 与 Online 标准入口；本地共享 PG 只使用 addp_test/addp_iam_test，disposable 图服务失败/中断均清理。真实评估比较同一模型、数据快照与授权下 Skill+Tool 和增加语义的效果，覆盖正确率、无依据断言、澄清、版本与拒绝；不只检查回答流畅性。
 
 完成能力迁入正式规范；专题只更新最终范围、证据和缺口，不追加逐修订、重启或 CI 流水。
+
+## 八、平台 Transfer 一次性同步闭环（代码实现，待运行验收）
+
+本节规定首期实施契约。Owner 审批、Agent 内手动决定、确定性启动及受限读取已有代码实现，运行态激活与真实同步尚须单独验收。`transfer.task.create` 仍只创建停止态定义；不得仅修改本体 effects 或 Skill 就宣告 Agent 已能执行。首期目标为用户用简短自然语言配置两个 Business 引擎间的 `bounded + snapshot + native table` 同步，显式选择 `replace|append`，确认后运行并查询结果。不要求已建设 Tenant 领域本体或 Standard、Model、Catalog 内容；源目标发现及结构事实仍须经当前可访问的 owner 能力取得。增量、CDC、定时、自动重试、特殊角色保护方式及 encoded 文件不在首期范围。
+
+### 8.1 操作与事实所有权
+
+| 操作 | 目标契约 | 不包含的效果 |
+| --- | --- | --- |
+| `transfer.task.create`（已有） | 沿现有完整参数预检、配置复核及确定性提交，保存停止态定义 | 启动、运行授权、业务读写、扫描、调度 |
+| `transfer.task.start` | 复用 Transfer 唯一 `POST /task-definitions/:id/start`，先建立 owner 运行审批，批准后一次性消费并启动，返回真实 execution 身份 | 不重新创建或修改任务，不启用调度，不把受理当作同步成功 |
+| `transfer.execution.get` | 复用 Transfer 唯一 `GET /executions/:execution_id`，返回经 owner 授权的受限状态、计数、时间及类型化诊断 | 不返回原始配置、业务值、凭据、checkpoint 或无界日志，不借用 Develop 的 `execution.get` |
+
+HTTP 路由归 Transfer，Tool 名称、输入输出、audience 与 Permission 交集归 Manifest，SDK 为唯一 HTTP 客户端。Ontology 发布各操作的条件、依赖与效果，关联创建和执行概念；不复制 API 地址、Provider 物理规则或运行实例状态。PG 保留权威不可变定义，FalkorDB 投影同版操作和依赖；运行审批、执行记录及真实结果留在 owner，不写入静态本体图。
+
+### 8.2 运行审批边界（已确认）
+
+现行 [OAuth 规范 9.1](../spec/addp%20OAuth授权规范.md#91-委托写操作审批)要求委托写操作的审批由业务 owner 持有；已有 Transfer 创建复核只是元数据配置确认，不能作为实际运行的批准。本轮仅将 Transfer 执行／专业读取 Permission 开放给精确 Tool 委托，并同步 Manifest、精确路由及 Owner 校验；用户决定审批的路由拒绝委托及 Service，不以绕过 Guard、代传用户 Token 执行业务或 Service 身份代替用户执行。
+
+用户已确认采用 Transfer 持有的一次性运行审批，运行前必须由用户在 Agent 页面手动确认，无需跳转 Transfer 页面。沿用 owner-policy 两阶段语义：
+
+1. Agent 请求运行确定任务。Transfer 校验当前主体与首期支持范围，只创建 pending 运行审批，返回受限影响摘要、审批引用、指纹及到期时间；不创建 execution、不触碰业务库。
+2. Agent 复用共享审批卡片，展示 Transfer 返回的源、目标、行粒度、映射和写入策略；`replace` 明确说明运行可能清空目标数据。用户手动点击批准或拒绝，浏览器以本人当前 User 身份直接调用 Transfer 正式决定接口；Agent 后端、LLM 和委托 Tool 不能代用户批准。模型文本、“确认配置”、客户端 `check` 或委托令牌均不能构造批准事实。
+3. Transfer 审批绑定当前 Tenant、Principal、Membership、授权版本、AgentRun、确定 task ID，以及全部保存的任务执行输入（含源目标标识、查询、映射及写入策略）。Runtime 另绑定当前启动本体修订／摘要；配置、授权版本或语义变化必须重新复核，不能自动套用旧批准。审批不冻结实时业务结构或所有业务值，运行时仍由既有授权、Security 和 Provider 校验当前事实，不能将审批说成实时结构或逐值转换已检查通过。
+4. Agent 仅提交审批引用与指纹恢复启动，不能再次提交另一套执行参数。Transfer 从自己保存的依据取原配置，重新验证当前资格与任务状态，并以 owner 事务保证一次性消费与执行记录关联，不能出现“批准已消费、任务却按另一版启动”。需要的 System 执行授权及 Worker 校验沿现行执行体系，不由 Ontology 签发或由图查询推导。
+5. 明确拒绝、过期、取消、配置漂移或跨主体／AgentRun 重放不得启动。网络失败、输出校验失败或响应丢失都不能自动重发启动；只有查到确定 execution 后才能继续观察，查不清时报告结果不明。任务已经创建而启动失败，应保留原任务身份，不重建一份任务。
+
+审批不是新增用户角色或通用执行许可。审批 API、持久化与状态机归 Transfer，前端复用共享审批卡片和交互协议，保留 Transfer 对任务配置和执行事务的所有权；不复制 Develop 业务执行器。
+
+### 8.3 Runtime 与结果解释
+
+用户可以只说“把业务 MongoDB 的 Outdoor.Persons 同步到业务 PostgreSQL 的 outdoor.persons，先让我确认，再运行”。LLM 负责意图、候选映射和解释；缺少或不唯一的引擎、数据项、目标父位置、字段保留范围与写入策略再逐项澄清，不要求用户输入内部 Tool 名称或前置条件清单。
+
+Runtime 读取当前能力和正式资源事实，沿现有预检及创建复核确定配置；创建与运行是两个独立效果，只有明确的运行要求和 owner 批准才能进入启动。`unknown` 的知情创建确认不等于运行预检通过，`supported` 也不是执行保证。批准后由确定性 Runtime 经原 Tool 链提交，LLM 不负责补写批准字段、决定重放写请求或改变已确认配置。
+
+启动返回只表示 owner 已受理。后续按原 execution 身份查询，区分 pending、运行中、失败和成功；AgentRun 的 `completed` 只表示对话步骤结束。终态报告引用真实执行身份、owner 记录的读写计数及受限诊断，失败时保留目标可能已变化的事实。执行计数不等于业务语义正确或逐行全量一致；目标实际内容核验需要另经正式读取能力和当前权限，不通过偷偷扫描、样本查询或直接访问业务库补证。
+
+### 8.4 分层实施与门禁
+
+| 顺序 | 同次交付 | 最小验证与证据边界 |
+| --- | --- | --- |
+| 1. 运行审批与执行契约 | 确认上述边界；补正式规范、owner 审批、唯一 start 入口、受限读取、Permission／Swagger／发布投影 | Transfer T0/T1；PG T2 覆盖同版启动、审批消费与执行关联、并发、过期、权限失效及零业务副作用的拒绝 |
+| 2. Tool／SDK 与本体 | Manifest、唯一 SDK／Executor 映射、平台能力来源审查和 PG／FalkorDB 同版依赖投影 | `make test-common-python`、授权及 Swagger 门禁、`make test-platform-review`、Ontology owner 与 PG／FalkorDB T2；不提前发布不可消费的执行能力 |
+| 3. Agent 交互 | owner 审批的正式 UI／协议接入、确定性提交、受限状态与失败解释，Skill 与能力装配同步 | Agent eval、前端 T1/T3、Agent PG；覆盖只创建不运行、拒绝不启动、配置变化重确认、结果不明不重试、刷新恢复及无权读取不泄露 |
+| 4. 真实闭环 | 简短输入、真实候选澄清、完整配置和写入影响确认、批准、启动、终态及目标结果核实 | 在已登记隔离 Online 标准入口实现相应场景，按 T4 规则独立运行；T0-T3、来源冻结或页面可打开均不算真实同步通过 |
+
+实施前按改动范围核对根 Make、模块自动发现与 CI 登记；已覆盖则复用，无覆盖则同次登记。PG T2 仅使用标准入口和允许的测试 database，FalkorDB 使用标准 disposable 资源及清理规则。不得使用个人 Outdoor 库运行测试或为验收自动扩权、扫描、建索引；真实业务执行需明确的任务配置和写入范围授权。

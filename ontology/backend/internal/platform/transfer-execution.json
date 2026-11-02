@@ -1,0 +1,74 @@
+{
+  "schema_version": "addp.platform-capability-context/v1",
+  "knowledge_kind": "platform_definition",
+  "capability": "transfer.execution.get",
+  "revision": 1,
+  "digest": "",
+  "availability": "not_observed",
+  "concepts": [
+    {
+      "id": "execution",
+      "name": {
+        "zh-cn": "确定的 Transfer 执行身份",
+        "en": "A definite Transfer execution identity"
+      }
+    },
+    {
+      "id": "execution_identity",
+      "name": {
+        "zh-cn": "使用 Owner 返回的真实 execution_id，不从任务或对话状态猜测",
+        "en": "Use the real owner-returned execution_id, never infer it from task or conversation status"
+      }
+    },
+    {
+      "id": "current_read_access",
+      "name": {
+        "zh-cn": "由 Transfer 裁决当前 Tenant 任务历史或本人一次性执行读取资格",
+        "en": "Transfer decides current-tenant task-history or own ad-hoc read eligibility"
+      }
+    },
+    {
+      "id": "result_observation",
+      "name": {
+        "zh-cn": "受限状态、计数、时间及类型化诊断，不含业务行、配置、凭据或任意 metadata",
+        "en": "Bounded state, counts, timestamps and typed diagnostics, excluding business rows, configuration, credentials and arbitrary metadata"
+      }
+    }
+  ],
+  "relations": [
+    {
+      "from": "execution",
+      "kind": "requires",
+      "to": "execution_identity"
+    },
+    {
+      "from": "execution",
+      "kind": "requires",
+      "to": "current_read_access"
+    },
+    {
+      "from": "execution",
+      "kind": "observed_as",
+      "to": "result_observation"
+    }
+  ],
+  "operation": {
+    "owner": "transfer",
+    "skill": "transfer-generation",
+    "tool": "transfer.execution.get",
+    "inputs_required": [
+      "execution_identity",
+      "current_read_access"
+    ],
+    "effects": [
+      "execution.observed"
+    ],
+    "excluded_effects": [
+      "execution.created",
+      "business_data.written",
+      "metadata.scan_started",
+      "permission.granted"
+    ]
+  },
+  "requirements": []
+}

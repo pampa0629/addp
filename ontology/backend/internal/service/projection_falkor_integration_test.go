@@ -194,6 +194,7 @@ func TestPostgresProjectionRuntime(t *testing.T) {
 			t.Fatal("rebuilt publication not readable", got, err)
 		}
 	})
+	t.Run("deployed_transfer_operations_real_graph", func(t *testing.T) { testTransferOperationPublication(t, db, graph) })
 }
 
 type rejectVerifiedProjection struct{ *falkor.Client }

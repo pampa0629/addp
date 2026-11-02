@@ -16,23 +16,28 @@ import (
 )
 
 func TestTransferReviewSourceDrift(t *testing.T) {
-	snapshot, err := CompileTransferRelease()
-	if err != nil {
-		t.Fatal(err)
-	}
-	review, _ := snapshot.Review()
-	root := filepath.Clean("../../../..")
-	for _, source := range review.Sources {
-		t.Run(source.ID, func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(source.Path)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := checkSource(data, source); err != nil {
-				t.Fatalf("%v; review semantics and update provenance/revision, do not regenerate blindly", err)
-			}
-			if err := checkSourceAtRevision(root, source); err != nil {
-				t.Fatalf("%v; commit reviewed sources before freezing provenance", err)
+	for _, compile := range ReleaseCompilers() {
+		snapshot, err := compile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		definition, _ := snapshot.Context()
+		t.Run(definition.Capability, func(t *testing.T) {
+			review, _ := snapshot.Review()
+			root := filepath.Clean("../../../..")
+			for _, source := range review.Sources {
+				t.Run(source.ID, func(t *testing.T) {
+					data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(source.Path)))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := checkSource(data, source); err != nil {
+						t.Fatalf("%v; review semantics and update provenance/revision, do not regenerate blindly", err)
+					}
+					if err := checkSourceAtRevision(root, source); err != nil {
+						t.Fatalf("%v; commit reviewed sources before freezing provenance", err)
+					}
+				})
 			}
 		})
 	}

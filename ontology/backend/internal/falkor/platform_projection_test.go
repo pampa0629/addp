@@ -100,7 +100,7 @@ func TestPlatformPlan(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(p, q) || !strings.HasPrefix(p.key, prefix) || strings.Contains(p.key, "t0:") {
 		t.Fatal("unstable or unscoped plan", p, err)
 	}
-	if len(p.nodes) != 92 || len(p.edges) != 132 || len(p.dependencyRows) != 27 || len(p.conditionRows) != 9 {
+	if len(p.nodes) != 98 || len(p.edges) != 140 || len(p.dependencyRows) != 29 || len(p.conditionRows) != 9 {
 		t.Fatal("missing capability dependencies", len(p.nodes), len(p.edges), len(p.dependencyRows), len(p.conditionRows))
 	}
 	for _, want := range [][]any{
@@ -116,6 +116,9 @@ func TestPlatformPlan(t *testing.T) {
 		{"requirement:config_precheck", "concept:config_precheck", "described_by"},
 		{"requirement:config_precheck", "tool:transfer.task.config.check", "uses_tool"},
 		{"concept:user_review", "concept:user_confirmation", "confirmed_by"},
+		{"concept:execution", "concept:optional_run", "requested_via"},
+		{"requirement:optional_run", "tool:transfer.task.start", "uses_tool"},
+		{"requirement:optional_run", "tool:transfer.execution.get", "uses_tool"},
 	} {
 		if !slices.ContainsFunc(p.edgeRows, func(row []any) bool { return reflect.DeepEqual(row, want) }) {
 			t.Fatal("missing declared dependency", want)
@@ -163,7 +166,7 @@ func TestPlatformPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(maximum.nodeRows) != 576 || len(maximum.edgeRows) != 640 {
+	if len(maximum.nodeRows) != 579 || len(maximum.edgeRows) != 643 {
 		t.Fatal("platform plan maximum fixture", len(maximum.nodeRows), len(maximum.edgeRows), err)
 	}
 	if len(maximum.conditionRows) != 0 {

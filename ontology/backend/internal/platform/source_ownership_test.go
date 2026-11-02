@@ -28,7 +28,7 @@ func TestRuntimeConsumersCannotReadDeploymentSource(t *testing.T) {
 			}
 			ast.Inspect(file, func(n ast.Node) bool {
 				selector, ok := n.(*ast.SelectorExpr)
-				if ok && (selector.Sel.Name == "CompileTransferRelease" || selector.Sel.Name == "TransferContext") {
+				if ok && (selector.Sel.Name == "CompileTransferRelease" || selector.Sel.Name == "ReleaseCompilers" || selector.Sel.Name == "TransferContext") {
 					t.Errorf("runtime source access in %s", name)
 				}
 				return true

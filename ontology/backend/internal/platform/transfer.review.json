@@ -21,11 +21,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "151e6a263aad93d7ad5d40becc8eb26261772f39",
-      "sha256": "d73b9ffbbfc46c98e0f4392cc00e6c0387eff908d6d28e0ae28425451fd47002",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "9506ecc0f6bb6bddbe8207831dccf636a1fd9a30837021e0887a4f41713ffa55",
       "use": {
-        "zh-cn": "委托创建仍限租户内停止态 bounded/snapshot/native table，无调度、扫描或执行，固化当前 AuthContext。人工启动／恢复因未核清 Cleanup 围栏返回 409 和安全双语 transfer_cleanup_unresolved；删除清理失败仍优先 503。人工运行／角色及 Cleanup 未纳入创建能力，不扩权、不借用角色或解除围栏。",
-        "en": "Delegated creation stays tenant-scoped stopped bounded/snapshot/native table without schedules, scans or execution, using current AuthContext. Manual start/resume cleanup-fence refusals return 409 and safe localized transfer_cleanup_unresolved; failed delete cleanup retains 503 precedence. Manual execution, roles and Cleanup remain outside creation scope: no wider grants, borrowed roles or fence release."
+        "zh-cn": "本次新增独立的委托启动分支：首次仅申请 Owner 审批，批准后按原引用消费；不改变创建为执行。",
+        "en": "This change adds a separate delegated start branch: request owner approval first, then consume its approved reference; creation still does not execute."
       }
     },
     {
@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "4c9e1e53ee1e895c398dd0e0aaa46de54d832422",
-      "sha256": "66231213ede45a280924dea632d7a627cf5e2aef2bdaa742ae459a0446148850",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "56ab1c95f50b5279a75bafd3021024a25ab555bb527cb1bcbf4c65dcb499ef20",
       "use": {
-        "zh-cn": "创建仍只保存 idle/stopped 定义：默认无新增角色或 EA 依赖，显式方式复核本人角色，委托不借用角色。新增私有保护记录仅用于已核验 Manager/Develop 来源的 ExportSession 一次性执行，不授予权限、不变换字段或写业务数据。导出生成与再次交付仍未建模，创建 Tool 的条件、确认和效果不变。",
-        "en": "Creation still saves an idle/stopped definition; default choices add no role or EA dependency, explicit choices check the current User, and delegation borrows no roles. A private protection receipt is initialized only for verified Manager/Develop ExportSession ad-hoc executions: no grants, field changes or business writes. Export generation and redelivery remain unmodeled; create Tool conditions, confirmation and effects are unchanged."
+        "zh-cn": "本次运行审批经唯一启动路径，在原任务 claim 事务内核对并消费；创建仍保存停止态定义。",
+        "en": "Run approval uses the sole start path and is verified and consumed in the existing task-claim transaction; creation still saves a stopped definition."
       }
     },
     {
@@ -60,11 +60,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.task.create\"",
-      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
-      "sha256": "ea7925ef5b09674a15365ad7408cfd0b337fd8f87a1add9faa9047f14ca9b94b",
+      "commit": "34faad72da00695f6ee51048651cc39e5f5ca470",
+      "sha256": "23dacb0f99a91e4d1181efcb27d5fc688ac48707cd6da33d198c2881d0af5d83",
       "use": {
-        "zh-cn": "创建v3与正式预检的输入、权限及模式边界未变；Owner事实v3和可选草稿v4改用原始分段query_references，拒绝旧平面字段。Source Engine ID契约未变，不新增写入、执行、调度或扫描效果。",
-        "en": "Create v3 and formal precheck retain input, permission and mode boundaries. Owner facts v3 and optional draft v4 use exact query_references parts and reject the old flat field. Source Engine ID is unchanged; no write, execution, schedule or scan effect is added."
+        "zh-cn": "创建 v3 与预检保持原边界；本次仅增加独立 start/get 契约及按确切能力身份读取上下文，不继承创建确认作为运行批准。",
+        "en": "Create v3 and precheck retain their boundaries; separate start/get contracts and exact-capability context reads do not turn creation confirmation into run approval."
       }
     },
     {
@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
-      "sha256": "517c666f3f0abe4ad4cd40e62b92253f2a34c15b418fc7c7ac2975b28287a232",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "2e1bacfc302f04451083be249a71536ecc9e73ea290d47f121da4074c42ec18a",
       "use": {
-        "zh-cn": "源MQL集合仅取Owner的query_references.mql.parts唯一原始元素，不拆full_name或locator；原草稿参数沿用、正式复核、创建一次及失败不重试流程未变，事实表示变化不能借机改写原参数。",
-        "en": "Take the source MQL collection only from the unique exact owner query_references.mql.parts element, never by splitting full_name or locator. Original draft parameters, formal review, single creation and no retry remain; a fact-format change does not authorize rewriting arguments."
+        "zh-cn": "本次增加独立运行审批与受限结果观察的步骤；按所选能力读语义，用户手动批准，不由模型决定重放。",
+        "en": "Separate run approval and bounded result observation read the selected semantics and require a manual User decision, without model-controlled write replay."
       }
     },
     {
@@ -112,11 +112,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_platform_conditions.py",
       "anchor": "class PlatformConditionTests(",
-      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
-      "sha256": "014cd454e824172543797c4043cda63027d6e59a6d2a967bd729dd478b917a1c",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "6a39d72833325d453fce81786bf6c374810dcaf97379ab4a6e7a381f334df44e",
       "use": {
-        "zh-cn": "结构化事实夹具仍核验缺失证据、样本补位、旧确认、参数或事实变化拒绝；快照仅replace/append、upsert和keys拒绝及unknown知情确认边界保持。",
-        "en": "Structured-fact fixtures retain refusals for missing evidence, sample substitution, stale review and changed arguments or facts. Snapshot replace/append only, upsert and keys refusal, and informed unknown precheck confirmation remain."
+        "zh-cn": "夹具明确创建能力身份，原条件和拒绝断言不变。",
+        "en": "Fixtures explicitly select creation capability; existing condition and refusal assertions are unchanged."
       }
     },
     {
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
-      "sha256": "c2cd5c01071df8d17fdf60b8a036ff1e8b395382c9ef1dd8af344088d05d2892",
+      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
+      "sha256": "66bb7356009e0898be34c4073cbaf66eeaab860c2b95f3993f64c8909db76f89",
       "use": {
-        "zh-cn": "确认恢复重读原参数、本体及源/目标事实，复检指纹、消费确认并经提交屏障创建一次；变化重确认、失败不重试。同批按模型顺序执行并在搜索失败或取消时阻断；显式预检固定展示并结束。私有 answer_ready 在原预算内进入无工具正文流；不公开决策，不改权限或固定提示。",
-        "en": "Confirmed resume rereads exact arguments, ontology and source/target facts, checks fingerprints and consumes review before one commit-gated Adapter creation. Changes require review; errors never retry. Ordered batches stop on search errors or cancellation; explicit checks end with fixed output. Private answer_ready enters tool-free text streaming within the original budget; decisions stay private and permissions/fixed messages stay unchanged."
+        "zh-cn": "本次按正式所选能力和依赖收窄 Tool 白名单；创建仍确定性提交一次；运行通过正式 Owner 状态及提交屏障独立消费，拒绝或未知不重发。",
+        "en": "Tools narrow to the selected capability and dependencies; creation still commits once deterministically, while run consumption separately requires formal owner state and the commit barrier, without retries after rejection or uncertainty."
       }
     },
     {
@@ -151,11 +151,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
-      "sha256": "ed123d8844e31bc684bc964e9f65e6a6e648f3753d20de61a2288c63c05d8cf3",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "2babbacf9975312867741703f00f4fc6503a6f82ea5d3adae95811b2e1a31b4c",
       "use": {
-        "zh-cn": "真实 Harness/Manifest/SDK 夹具覆盖确认恢复零模型调用、原参数创建一次、变化重确认、取消、权限拒绝、unsupported、提交失败和结果不明不重试。回答调用纳入原预算，正式预检与固定提示断言保持；非真实部署或 Hosted 验收。",
-        "en": "Real Harness/Manifest/SDK fixtures cover zero-model confirmed resume, one exact creation, changed-fact review, cancellation, denial, unsupported checks, failed commit and no uncertain-write retry. Answer calls count within the budget; formal checks and fixed-message assertions remain. Not live deployment or Hosted acceptance."
+        "zh-cn": "夹具显式传递创建能力，不要求运行本体已发布；正式预检和原参数创建断言保留。",
+        "en": "Fixtures explicitly pass creation capability without requiring published run semantics; formal precheck and exact-parameter creation assertions remain."
       }
     },
     {
@@ -164,11 +164,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
-      "sha256": "9cc6567713e5f3ebe819378c1901bb96292d518dd8ab0e8fb8910a03e0176615",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "24155a5458abc011e743ae65697aeb8b2f9848b7fdaf8f202759bf44c2d3cbca",
       "use": {
-        "zh-cn": "显式预检的双语三态完成提示，以及确认恢复后仅基于正式创建响应的固定成功提示；失败不宣称已创建，unknown 不标为通过。 计划/工作区展示不改变创建条件、确认或权限。 仅新增回复偏好不能覆盖恢复中运行的双语输入错误。",
-        "en": "Localized tri-state explicit-check completion and fixed confirmed-resume completion based only on the formal creation response; failure never claims creation, and unknown is not passed. Workspace plans confer no creation authority. Adds only a localized input error forbidding reply preference overrides on resume."
+        "zh-cn": "本次补充独立运行的拒绝、结果不明和真实 execution 身份／状态文案，pending 不称为完成；创建文案边界不变。",
+        "en": "Adds separate run refusal, uncertainty and real execution identity/state messages without calling pending complete; creation wording retains its boundary."
       }
     },
     {
@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "4f4959db80209f0e1b229e2012d789a612a5a82e",
-      "sha256": "fbb3d3e656e6c05ca6d11880bc2fececeeca05c4229a9bf5cc6d90584c18b5e2",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "2aca7a4dd19899bd0be802162534d05f9ea1ec017a95f3c2fdc581684665b678",
       "use": {
-        "zh-cn": "历史草稿动作先于通用领域分类；inspect不读平台目录或装配业务Tool，create仍重读原参数并进入当前平台语义。提示词与原互斥拒绝校验对齐，不自动纠正或重试矛盾路由。只记录封闭动作及布尔标志；不继承旧事实、确认或权限，原参数和创建路径不变。",
-        "en": "Historical draft actions precede generic domain classification. Inspect uses no platform directory or business tools; create re-reads exact arguments and current platform semantics. Prompts align with unchanged exclusive-route refusals, without auto-correction or retry. Logs contain only closed actions and flags; no historical facts, confirmation or authority are inherited."
+        "zh-cn": "本次将目录核验的所选能力身份传入 Runtime 并在同一 Run 恢复，不从同 Skill 的其他 Tool 猜操作；历史原参数路由保持。",
+        "en": "Passes the catalog-validated selected capability into Runtime and restores it within the Run instead of guessing from other tools in the Skill; historical exact-parameter routing remains."
       }
     },
     {
@@ -216,11 +216,11 @@
       "kind": "implementation",
       "path": "agent/backend/api/chat.py",
       "anchor": "async def draft_reader(",
-      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
-      "sha256": "a7e5b6b8f284b5b01c081b093286d651cd95fbae687563137c3aacc001449e86",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "237743b92c1cb9c92ff47ac8ced1e3e5097dfe30e475ea7235ef06d2449aa640",
       "use": {
-        "zh-cn": "同身份读取原草稿，文字、卡片与最新计划按原事件顺序投影。forwardedProps 只接收封闭回复详略，冻结于新 Run，resume 不覆盖。正文批次与同消息投影先提交再发送；完成与取消互斥，未完成正文排除未来上下文和摘要，不改变预检、确认或业务效果。",
-        "en": "Reads scoped drafts and projects text, cards and the latest plan in event order. Closed reply detail is frozen in each new Run, never replaced on resume. Text batches and one message projection commit before delivery; completion is serialized against cancellation. Partial text stays visible but is excluded from later context/summary. Prechecks, review and business effects stay unchanged."
+        "zh-cn": "本次按 owner 精确读取审批状态，User 决定后恢复 Transfer；不把客户端 check 当批准，不代批，权限与依赖失败分开。",
+        "en": "Approval reads are keyed by owner and Transfer resumes after a User decision; client check is not approval, the backend cannot approve, and authorization failure is distinct from dependency failure."
       }
     },
     {
@@ -294,11 +294,11 @@
       "kind": "test",
       "path": "common-frontend/agent-ui/tests/draftSnapshot.test.js",
       "anchor": "describe('exact readonly checked draft snapshot'",
-      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
-      "sha256": "f2396ba7de98ddfacdd4261a64a2326a7707a68827a13d126ee27d871d58df29",
+      "commit": "c8917e7c70de0132f6fa57a6d44bd508ecf0c570",
+      "sha256": "30b5b5973cfc44cd46bb2c41416f947a9b0a0891db8144991ef9144e4b95798d",
       "use": {
-        "zh-cn": "核对概要和原参数一致、双语、路径与名称转义、缺失事实不猜测、完整 JSON 和无 action；Catalog 拒绝越界和额外属性",
-        "en": "Verify same-argument facts, languages, escaped paths and names, no invented missing facts, complete JSON and no actions; Catalog rejects oversized and extra properties"
+        "zh-cn": "本次纳入已提交的 fake timer 清理，等待表格延迟布局后拆卸 DOM；原完整快照、映射和只读断言未删改。",
+        "en": "Includes committed fake-timer cleanup that flushes table layout before DOM teardown; full-snapshot, mapping and readonly assertions are retained."
       }
     },
     {
@@ -307,11 +307,11 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "function ensureLiveTextPart(",
-      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
-      "sha256": "768655183cc2af646713ab36c016bc5749736211a2126bcd94640ff7181d20e8",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "61c46bad77efee1e978ba9e9795c77673ed544216b34b4289edb0d792feb6f29",
       "use": {
-        "zh-cn": "文字与 A2UI 保持事件顺序，计划按稳定身份替换。设置复用 addp-module，单次 NavigationDraft 跨 iframe 只移交文字，领取前禁用编辑与发送；归档仍阻止交互提交。刷新按服务端标记展示未完成正文，不拼接重试，不继承确认、预检、资源或权限。",
-        "en": "Preserves text/A2UI order and stable plan replacement. Settings uses addp-module; one NavigationDraft transfers only text across iframes with editing/sending blocked until receipt. Archiving blocks interaction submission. Reload shows server-marked incomplete text without joining retries or inheriting confirmations, checks, resources or authority."
+        "zh-cn": "本次新增 Agent 内用户手动批准／拒绝：以 User 身份直达 Transfer 决定，核验响应后只请求状态恢复，不跳转；复用共享 DataPagination。",
+        "en": "Adds manual User approve/reject within Agent: submit directly to Transfer, verify the response, then request status-based resume without navigation; uses shared DataPagination."
       }
     },
     {
@@ -320,11 +320,11 @@
       "kind": "contract",
       "path": "agent/backend/graph/state.py",
       "anchor": "class RouteDecision(",
-      "commit": "4f4959db80209f0e1b229e2012d789a612a5a82e",
-      "sha256": "254a315179e76e9fd128b857cb925de2d57248e5941e7b115455b09c77aa3fa7",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "ddb3e6ec62ab53fcc2eab1a860b9086424cb74633a4b16532bd6d587d88732f3",
       "use": {
-        "zh-cn": "仅对齐RouteDecision的互斥字段说明：inspect要求skill=null且平台语义false，create要求skill=null且平台语义true；无草稿动作才通用分类。原字段、类型、默认值、封闭Schema及请求身份/原参数/检查点边界不变，不恢复direct_reply或新增授权。",
-        "en": "Align only RouteDecision field descriptions: inspect requires no skill and false platform semantics; create requires no skill and true semantics; generic classification applies without a draft action. Fields, types, defaults, closed schema, request identity, exact arguments and checkpoint boundaries stay unchanged; no direct_reply or added authority."
+        "zh-cn": "本次增加私有所选能力身份，不添加可由客户端提供的批准。",
+        "en": "Adds private selected-capability identity, without client-supplied approval."
       }
     },
     {
@@ -333,11 +333,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/checkpoint.py",
       "anchor": "def normalize_checkpoint(",
-      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
-      "sha256": "54aad692b333b25269bcddaedab78f0eb7de23e4d17306120fa8bb9b346ec159",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "f7b933f9d89db4ee1bbb08eaa3c1ba880c7455571dcc97c8ac6e78f0e4b70a9c",
       "use": {
-        "zh-cn": "保留当前Run事实与原草稿控制引用，不持久化第二份参数；正式事实捕获仅投影共享模型验证的query_references原始分段，非法引用不补齐，旧平面字段不转换为新证据。normalize_checkpoint、确认记录及reply_detail边界未变。",
-        "en": "Retain current-run facts and the original draft control reference, without a second argument payload. Formal fact capture projects only model-validated exact query_references parts; invalid references are not filled and legacy flat fields are not upgraded into evidence. normalize_checkpoint, confirmation records and reply_detail boundaries are unchanged."
+        "zh-cn": "本次保存经 Manifest 核验的所选能力和正式 Owner 审批引用；不保存批准凭据，缺失能力身份明确拒绝，不推测旧 Run。",
+        "en": "Stores the manifest-validated selected capability and formal owner review reference, not approval credentials; a missing operation identity is refused rather than inferred from an old Run."
       }
     },
     {
@@ -346,11 +346,11 @@
       "kind": "test",
       "path": "agent/frontend/e2e/clarification-resume.spec.js",
       "anchor": "test('exact checked draft streams and reloads",
-      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
-      "sha256": "4828baea84192d2c78270af9ec6558d6ed4ca766344927454ec14e69c481a66b",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "942deed1b929b9aac268f4a1513b9f8cac3965c001a7aacdf9aaad566c64587c",
       "use": {
-        "zh-cn": "T3 使用生产 UI/协议客户端与受控 HTTP/SSE 核对文字、卡片顺序、刷新后的原参数与引用；长草稿名在窄屏不溢出。禁止夹具访问个人服务，不作为真实模型或 Hosted T4 验收。 受控浏览器验证IME和快捷键、新消息携带偏好、澄清仍恢复原身份且不覆盖偏好。",
-        "en": "T3 uses production UI/client with controlled HTTP/SSE to verify content order and reloaded exact arguments/references, including narrow long-name layout. Fixtures forbid personal service calls and do not prove live-model or Hosted T4 acceptance. Controlled browser checks IME/shortcuts and preferences on new messages; clarification preserves its identity without overriding the preference."
+        "zh-cn": "本次增加 Agent 内批准／拒绝、刷新不重发、零直接启动／扫描和不跳转的受控浏览器断言；原创建复核继续保留。",
+        "en": "Adds controlled-browser assertions for inline approve/reject, no refresh replay, no direct start/scan and no navigation, while retaining creation review coverage."
       }
     },
     {
@@ -385,11 +385,11 @@
       "kind": "implementation",
       "path": "agent/backend/services/runs.py",
       "anchor": "async def resume_agent_run(",
-      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
-      "sha256": "6a2e71f1b45315b6d043d896808fd834e63cf3ece71d1fbd6a9c90e6a944a0d5",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "ecab0bd6863b07f84077a1d8fee2e9cbaab3571a1a9a858f6b694ed79d541513",
       "use": {
-        "zh-cn": "只接受已持久化的正式 Interaction 确认，普通创建绑定本次唯一预检引用后恢复原 Run；文字回答清除复核，不构成批准，不复制第二份参数。 新Run持久表达偏好；恢复与重试不覆盖，不新增确认来源。",
-        "en": "Accepts persisted formal Interaction confirmation, binding the exact check reference before resuming the same run; text clears review rather than approving, with no duplicate argument store. New Runs persist expression preferences, preserved on resume/retry without a new confirmation source."
+        "zh-cn": "本次仅从已完成正式 Owner Interaction 写入运行确认引用，普通文本清除该引用；原创建消费与失败屏障保持。",
+        "en": "Run confirmation references come only from a completed formal owner interaction and are cleared by ordinary text; existing creation consumption and failure barriers remain."
       }
     },
     {
@@ -398,11 +398,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_agent_factory_events.py",
       "anchor": "async def test_search_failure_stops_without_retry_enumeration_or_write(",
-      "commit": "2d6036a32a582f777225f5c165a9012bf405a5c9",
-      "sha256": "b379ec349951444d9bde79f5ad555aed9df15711f584c50474a7b881f76d1f17",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "9b6f14952b99ab54068ae2a94007a21dd657263bb74ec7e455d232ad4f2686cc",
       "use": {
-        "zh-cn": "真实 Harness 受控倒序到达复现五类搜索错误竞态，严格禁止备用调用与下一轮模型；覆盖成功顺序、取消阻断及重复身份拒绝。夹具显式区分决策和回答并审计私有控制；计划与正文流不改变创建条件或权限。",
-        "en": "Real Harness reverse-arrival fixtures reproduce five search-error races and strictly forbid fallback calls or another decision round. Tests preserve successful order, cancellation stops and duplicate-ID rejection. Fixtures explicitly separate decisions/answers and audit private controls; plans and text streaming confer no creation authority."
+        "zh-cn": "受控批次夹具显式传入创建能力；搜索失败不得重试、枚举或写入等原断言保持。",
+        "en": "Controlled batch fixtures explicitly select creation capability; original no-retry, no-enumeration and no-write assertions after search failure remain."
       }
     },
     {
@@ -411,21 +411,89 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "同批 Tool 按模型返回顺序进入唯一 Runtime 调用路径",
-      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
-      "sha256": "211213b2a32fb502db0b216ef355f620fa1d8a2c254fa3d167f170a21d13a964",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "4739bf695a0ec6c47b8a2dae0f5bb882bda440b6be757a4d5144a10988dc7eb6",
       "use": {
-        "zh-cn": "明确Owner事实v3/可选草稿v4及结构化查询引用，Source Engine身份不替换为Query Runtime；同批模型顺序、前序失败/暂停/终止/取消阻断条款逐字未变。事实、草稿和查询引用均不授予权限，也不扩大停止态native创建范围。",
-        "en": "Specify owner facts v3, optional drafts v4 and structured query references without replacing Source Engine identity with a Query Runtime. The model-order batch and prior failure/pause/termination/cancellation barrier paragraph is byte-for-byte unchanged. Facts, drafts and query references grant no authority and do not expand stopped native creation."
+        "zh-cn": "本次规定独立运行／读取 Tool、用户手动 Owner 审批与确定性恢复，并按已选能力收窄白名单；创建／预检仍不授运行权。",
+        "en": "Defines separate run/read tools, manual User owner approval and deterministic resume, with tools narrowed by selected capability; creation/precheck still confer no run authority."
       }
     }
   ],
   "bindings": [
-    {"subject": "concept/readonly_config_check", "sources": ["config", "manifest", "conditions", "condition_test", "skill", "runtime", "runtime_test", "runtime_messages", "draft_snapshot", "draft_routing", "draft_protocol", "draft_snapshot_test", "draft_protocol_test", "message_parts", "message_parts_test", "draft_renderer", "draft_renderer_test", "chat_renderer", "chat_renderer_test"]},
-    {"subject": "concept/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
-    {"subject": "condition/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
-    {"subject": "relation/transfer_task/requires/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
-    {"subject": "relation/readonly_config_check/reads_via/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
-    {"subject": "requirement/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
+    {
+      "subject": "concept/readonly_config_check",
+      "sources": [
+        "config",
+        "manifest",
+        "conditions",
+        "condition_test",
+        "skill",
+        "runtime",
+        "runtime_test",
+        "runtime_messages",
+        "draft_snapshot",
+        "draft_routing",
+        "draft_protocol",
+        "draft_snapshot_test",
+        "draft_protocol_test",
+        "message_parts",
+        "message_parts_test",
+        "draft_renderer",
+        "draft_renderer_test",
+        "chat_renderer",
+        "chat_renderer_test"
+      ]
+    },
+    {
+      "subject": "concept/config_precheck",
+      "sources": [
+        "config",
+        "manifest",
+        "skill",
+        "runtime",
+        "runtime_test"
+      ]
+    },
+    {
+      "subject": "condition/readonly_config_check",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill",
+        "runtime",
+        "runtime_test"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/requires/readonly_config_check",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill",
+        "runtime",
+        "runtime_test"
+      ]
+    },
+    {
+      "subject": "relation/readonly_config_check/reads_via/config_precheck",
+      "sources": [
+        "config",
+        "manifest",
+        "skill",
+        "runtime",
+        "runtime_test"
+      ]
+    },
+    {
+      "subject": "requirement/config_precheck",
+      "sources": [
+        "config",
+        "manifest",
+        "skill",
+        "runtime",
+        "runtime_test"
+      ]
+    },
     {
       "subject": "concept/source_discovery",
       "sources": [
@@ -438,17 +506,105 @@
         "batch_boundary_test"
       ]
     },
-    {"subject": "concept/target_parent_discovery", "sources": ["skill", "conditions", "condition_test", "manifest"]},
-    {"subject": "concept/user_confirmation", "sources": ["skill", "conditions", "condition_test", "runtime", "runtime_test", "draft_routing", "draft_snapshot", "draft_snapshot_test", "draft_state", "draft_checkpoint", "confirmation_resume"]},
-    {"subject": "relation/confirmed_source/reads_via/source_discovery", "sources": ["skill", "conditions", "condition_test"]},
-    {"subject": "relation/confirmed_target_parent_and_name/reads_via/target_parent_discovery", "sources": ["skill", "conditions", "condition_test"]},
-    {"subject": "relation/confirmed_target_parent_and_name/configured_by/target", "sources": ["skill", "conditions", "manifest"]},
-    {"subject": "relation/confirmed_row_grain_and_fields/reads_via/source_discovery", "sources": ["skill", "conditions", "condition_test"]},
-    {"subject": "relation/confirmed_row_grain_and_fields/configured_by/field_mapping", "sources": ["skill", "conditions", "manifest"]},
-    {"subject": "relation/bounded/configured_by/runtime_boundary", "sources": ["manifest", "conditions", "condition_test"]},
-    {"subject": "relation/snapshot/configured_by/load_mode", "sources": ["manifest", "conditions", "condition_test", "planner"]},
-    {"subject": "relation/explicit_apply_policy/configured_by/apply_policy", "sources": ["manifest", "conditions", "policy_spec", "planner"]},
-    {"subject": "relation/user_review/confirmed_by/user_confirmation", "sources": ["skill", "conditions", "condition_test"]},
+    {
+      "subject": "concept/target_parent_discovery",
+      "sources": [
+        "skill",
+        "conditions",
+        "condition_test",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "concept/user_confirmation",
+      "sources": [
+        "skill",
+        "conditions",
+        "condition_test",
+        "runtime",
+        "runtime_test",
+        "draft_routing",
+        "draft_snapshot",
+        "draft_snapshot_test",
+        "draft_state",
+        "draft_checkpoint",
+        "confirmation_resume"
+      ]
+    },
+    {
+      "subject": "relation/confirmed_source/reads_via/source_discovery",
+      "sources": [
+        "skill",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "relation/confirmed_target_parent_and_name/reads_via/target_parent_discovery",
+      "sources": [
+        "skill",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "relation/confirmed_target_parent_and_name/configured_by/target",
+      "sources": [
+        "skill",
+        "conditions",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "relation/confirmed_row_grain_and_fields/reads_via/source_discovery",
+      "sources": [
+        "skill",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "relation/confirmed_row_grain_and_fields/configured_by/field_mapping",
+      "sources": [
+        "skill",
+        "conditions",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "relation/bounded/configured_by/runtime_boundary",
+      "sources": [
+        "manifest",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "relation/snapshot/configured_by/load_mode",
+      "sources": [
+        "manifest",
+        "conditions",
+        "condition_test",
+        "planner"
+      ]
+    },
+    {
+      "subject": "relation/explicit_apply_policy/configured_by/apply_policy",
+      "sources": [
+        "manifest",
+        "conditions",
+        "policy_spec",
+        "planner"
+      ]
+    },
+    {
+      "subject": "relation/user_review/confirmed_by/user_confirmation",
+      "sources": [
+        "skill",
+        "conditions",
+        "condition_test"
+      ]
+    },
     {
       "subject": "operation",
       "sources": [
@@ -846,6 +1002,33 @@
         "skill",
         "tool_test"
       ]
+    },
+    {
+      "subject": "concept/optional_run",
+      "sources": [
+        "batch_contract",
+        "skill",
+        "manifest",
+        "runtime"
+      ]
+    },
+    {
+      "subject": "relation/execution/requested_via/optional_run",
+      "sources": [
+        "batch_contract",
+        "skill",
+        "manifest",
+        "runtime"
+      ]
+    },
+    {
+      "subject": "requirement/optional_run",
+      "sources": [
+        "batch_contract",
+        "skill",
+        "manifest",
+        "runtime"
+      ]
     }
   ],
   "coverage": [
@@ -895,8 +1078,8 @@
       "id": "transfer.execution",
       "state": "not_modeled",
       "summary": {
-        "zh-cn": "执行、重试、调度及运行结果尚未纳入本能力定义",
-        "en": "Execution, retry, scheduling and runtime results is not modeled in this capability"
+        "zh-cn": "该创建能力不包含执行；运行审批与结果查询由独立 transfer.task.start 和 transfer.execution.get 能力声明，不继承创建确认。",
+        "en": "This creation capability excludes execution; independent transfer.task.start and transfer.execution.get describe owner-approved running and observation, without inheriting creation review."
       },
       "sources": [
         "config"

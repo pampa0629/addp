@@ -12,6 +12,12 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 ## 当前交付范围
 
+平台 Transfer 创建修订 52 加入显式可选后续运行／结果依赖，创建效果仍只保存停止态定义；运行 `transfer.task.start` 修订 1 和结果 `transfer.execution.get` 修订 1 独立发布。运行条件为已保存的首期支持任务、Transfer 持有且用户在 Agent 内手动决定的一次性审批、当前执行授权；本体不保存审批、execution 或业务数据。Runtime 只主动读取本次选中能力，再按操作与 requirements 收窄 Skill Tool 白名单；运行审批恢复由 Runtime 确定性提交，受理不当作成功，失败或结果不明不重试。缺少明确能力身份的旧 Run 拒绝恢复，使用新会话验收。审批绑定完整保存配置和身份版本，不证明实时结构、业务值或实际写入资格已通过检查。
+
+发布来源为创建原 32 项、运行 14 项、读取 8 项，逐项冻结已提交字节、整文件 SHA-256、锚点与用途。共享 UI 的分页收敛及测试计时器清理按已提交交接单独核对；创建的完整参数／预检／确认／提交屏障保持。三个发布入口仅用于部署，运行读取仍以 PG 激活记录选择同版 FalkorDB 依赖，无 JSON 回退；标准 PG 与独占 FalkorDB 门禁新增真实三项发布及读取断言，不放宽原漂移、字节、隔离和清理限制。验证状态以本轮实际门禁和运行验收分别记录，不能复用以下旧修订的证据作为新功能通过。
+
+本轮本地验证通过：`make test-platform-review`、`GOFLAGS=-count=1 make test-module MODULE=ontology GO_ONLY=1`、串行 `make test-ontology-postgres`／`make test-ontology-falkor`、Transfer Go T1／PG T2、System IAM `--package migration --test transfer-run`、`make test-system-iam-runner`、`make test-agent-eval`、Agent PG、共享前端及 Agent 前端 T1/T3。运行与读取均拒绝未知本体条件；批准恢复不请求模型，不确定结果不重发。全局授权／Swagger 检查和 System 全包 T1 因并行 System／Meta 的停用权限旧引用及未同步路由文档未通过，已交对应 owner 协调，本轮不修改其实现。运行态激活、自由模型端到端、用户手动批准后的真实业务执行、Hosted/T4 尚未验证；本轮未运行或写入个人 Business 库。
+
 平台 Transfer 修订 51 复核并冻结 config `3307ff4b5` 与 policy_spec `1c7217925` 两项正文来源。全文差异涉及测试／验收导航、既有 bounded／continuous Worker 分工、encoded 格式声明与 raw copy 继承区分、continuous 提交／租约／恢复／观测、Oracle／CDC 及扫描／清理的权威正文归属；旧的只支持 bounded 摘要纠正为已实现的分 Worker 契约。任务核心对象与授权、五项预检章节、Agent 三态后果段、完整支持矩阵和 bounded 执行语义均逐项确认不变；当前停止态 bounded/snapshot/native 创建、replace/append、权限交集、原参数复核和效果不扩张。没有将 raw copy、encoded、continuous 运行能力纳入创建切片，也不将观测、配置或历史记录当作当前运行通过。仅更新两项真实提交／整文件 SHA-256／锚点用途及修订断言；其余 30 项、全部 32 来源、原 bindings／coverage、字节上限与拒绝测试保持，定义除 revision 外逐字段相同。新 revision／digest 仍使旧确认需重新复核。已有来源门禁、Ontology Go T1 及自然 Go／Platform CI 自动发现覆盖，无新入口或依赖；不改正文 owner、Query／Agent／Transfer 产品或裁剪／差集实现，不做激活、服务重启、模型、PG／FalkorDB 或 Hosted。
 
 修订 51 验证：`make test-platform-review` 非缓存先准确复现 config／policy_spec 两项漂移，审核冻结后同一入口通过；已有 Node 24.11.1 下 `GOFLAGS=-count=1 make test-module MODULE=ontology GO_ONLY=1` 全通过。测试后全部 32 项来源的真实提交字节、当前文件、摘要和锚点匹配，只有两项来源变化、其余 30 项及原绑定／覆盖和拒绝断言保持。证据 `/tmp/addp-ontology-r51-{review-red.log,review-green.log,t1.log,semantic-audit.json,source-audit.json}`，两份全文差异 `/tmp/addp-ontology-r51-{config,policy_spec}.diff`。既有 CI 自动发现覆盖原入口，无新增 Job。完整平台 T0、PG／FalkorDB T2、前端 T3、模型、Hosted、裁剪／差集复验、发布激活与服务重启本轮均未运行；当前自然 Linux CI 后续按新精确提交与实际步骤核对，不拿旧 r50 通过或其它领域失败代替本轮证据。

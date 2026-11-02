@@ -1,0 +1,126 @@
+{
+  "schema_version": "addp.platform-capability-context/v1",
+  "knowledge_kind": "platform_definition",
+  "capability": "transfer.task.start",
+  "revision": 1,
+  "digest": "",
+  "availability": "not_observed",
+  "concepts": [
+    {
+      "id": "saved_task",
+      "name": {
+        "zh-cn": "已保存的传输任务定义",
+        "en": "Saved Transfer task definition"
+      }
+    },
+    {
+      "id": "run_approval",
+      "name": {
+        "zh-cn": "用户在 Agent 页面手动决定、Transfer 持有的一次性运行审批",
+        "en": "One-shot Transfer owner approval manually decided in Agent"
+      }
+    },
+    {
+      "id": "execution",
+      "name": {
+        "zh-cn": "一次实际执行及其真实身份",
+        "en": "An actual execution and its real identity"
+      }
+    },
+    {
+      "id": "saved_supported_task",
+      "name": {
+        "zh-cn": "停止态、无调度、无自动扫描的 bounded/snapshot/native table，显式 replace 或 append，不含特殊角色保护方式",
+        "en": "Stopped unscheduled bounded/snapshot/native table without automatic scanning or special role choices; explicit replace or append"
+      }
+    },
+    {
+      "id": "owner_run_approval",
+      "name": {
+        "zh-cn": "首次只申请运行审批；用户手动批准后，原 AgentRun 按原任务配置和指纹消费一次；不明结果不重试",
+        "en": "Initially request approval only; after explicit User approval, the original AgentRun consumes it once for the unchanged task and fingerprint; no uncertain-write retry"
+      }
+    },
+    {
+      "id": "current_execution_authorization",
+      "name": {
+        "zh-cn": "Owner 与现有执行体系核验当前身份、实际源读目标写及安全条件；审批和本体不授予权限",
+        "en": "Owner and existing execution runtime check current identity, source read, target write and protection; approval and ontology grant no permissions"
+      }
+    },
+    {
+      "id": "execution_observation",
+      "name": {
+        "zh-cn": "按原 execution_id 读取状态、计数及受限诊断，受理不等于成功",
+        "en": "Read state, counts and bounded diagnostics by original execution_id; admission is not success"
+      }
+    }
+  ],
+  "relations": [
+    {
+      "from": "execution",
+      "kind": "runs",
+      "to": "saved_task"
+    },
+    {
+      "from": "execution",
+      "kind": "requires",
+      "to": "saved_supported_task"
+    },
+    {
+      "from": "execution",
+      "kind": "requires",
+      "to": "owner_run_approval"
+    },
+    {
+      "from": "execution",
+      "kind": "requires",
+      "to": "current_execution_authorization"
+    },
+    {
+      "from": "saved_supported_task",
+      "kind": "configured_by",
+      "to": "saved_task"
+    },
+    {
+      "from": "owner_run_approval",
+      "kind": "confirmed_by",
+      "to": "run_approval"
+    },
+    {
+      "from": "execution",
+      "kind": "observed_via",
+      "to": "execution_observation"
+    }
+  ],
+  "operation": {
+    "owner": "transfer",
+    "skill": "transfer-generation",
+    "tool": "transfer.task.start",
+    "inputs_required": [
+      "saved_supported_task",
+      "owner_run_approval",
+      "current_execution_authorization"
+    ],
+    "effects": [
+      "run_approval.requested",
+      "execution.created_after_owner_approval",
+      "business_data.may_change_after_owner_approval"
+    ],
+    "excluded_effects": [
+      "task_definition.modified",
+      "schedule.enabled",
+      "metadata.scan_started",
+      "permission.granted",
+      "execution.cancelled"
+    ]
+  },
+  "requirements": [
+    {
+      "id": "execution_observation",
+      "tools": [
+        "transfer.execution.get"
+      ]
+    }
+  ]
+}

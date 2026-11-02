@@ -2,7 +2,7 @@
   "schema_version": "addp.platform-capability-context/v1",
   "knowledge_kind": "platform_definition",
   "capability": "transfer.task.create",
-  "revision": 51,
+  "revision": 52,
   "digest": "",
   "availability": "not_observed",
   "concepts": [
@@ -25,7 +25,8 @@
     {"id": "config_precheck", "name": {"zh-cn": "Transfer 完整配置的正式只读预检入口；草稿明确要求检查时也使用，不进入创建复核或批准创建；不读取业务行或保证执行成功", "en": "Formal read-only check entry for complete Transfer arguments, also used when a draft check is explicitly requested without creation review or approval; no business rows or execution guarantee"}},
     {"id": "source_discovery", "name": {"zh-cn": "源身份与结构取证入口：搜索定位后读取正式结构事实，不以候选代替事实", "en": "Source evidence entry: discover identity, then read formal schema facts; candidates are not facts"}},
     {"id": "target_parent_discovery", "name": {"zh-cn": "目标父节点取证入口：读取真实目录与祖先，不读取尚未创建的目标", "en": "Target parent evidence entry: read actual children and ancestors, not a nonexistent target"}},
-    {"id": "user_confirmation", "name": {"zh-cn": "用户对 Runtime 绑定的确切参数与当前事实进行确认，不能由读取 Tool 代替", "en": "User confirmation of Runtime-bound exact arguments and current facts; no read Tool can replace it"}}
+    {"id": "user_confirmation", "name": {"zh-cn": "用户对 Runtime 绑定的确切参数与当前事实进行确认，不能由读取 Tool 代替", "en": "User confirmation of Runtime-bound exact arguments and current facts; no read Tool can replace it"}},
+    {"id": "optional_run", "name": {"zh-cn": "用户明确要求运行时，单独申请 Transfer 运行审批并查询真实执行；创建确认不批准运行", "en": "When the user explicitly requests a run, separately request Transfer owner run approval and observe the real execution; creation review does not approve running"}}
   ],
   "relations": [
     {"from": "transfer_task", "kind": "reads_from", "to": "source"},
@@ -52,7 +53,8 @@
     {"from": "bounded", "kind": "configured_by", "to": "runtime_boundary"},
     {"from": "snapshot", "kind": "configured_by", "to": "load_mode"},
     {"from": "explicit_apply_policy", "kind": "configured_by", "to": "apply_policy"},
-    {"from": "user_review", "kind": "confirmed_by", "to": "user_confirmation"}
+    {"from": "user_review", "kind": "confirmed_by", "to": "user_confirmation"},
+    {"from": "execution", "kind": "requested_via", "to": "optional_run"}
   ],
   "operation": {
     "owner": "transfer",
@@ -67,6 +69,7 @@
     {"id": "source_discovery", "tools": ["data.search", "resource.ancestors.get", "resource.facts.get"]},
     {"id": "target_parent_discovery", "tools": ["resource.children.list", "resource.ancestors.get"]},
     {"id": "config_precheck", "tools": ["transfer.task.config.check"]},
-    {"id": "optional_draft_assistance", "tools": ["transfer.draft.generate"]}
+    {"id": "optional_draft_assistance", "tools": ["transfer.draft.generate"]},
+    {"id": "optional_run", "tools": ["transfer.task.start", "transfer.execution.get"]}
   ]
 }

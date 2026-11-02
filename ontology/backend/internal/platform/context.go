@@ -10,6 +10,18 @@ var transferDefinition []byte
 //go:embed transfer.review.json
 var transferReview []byte
 
+//go:embed transfer-start.json
+var transferStartDefinition []byte
+
+//go:embed transfer-start.review.json
+var transferStartReview []byte
+
+//go:embed transfer-execution.json
+var transferExecutionDefinition []byte
+
+//go:embed transfer-execution.review.json
+var transferExecutionReview []byte
+
 type Concept struct {
 	ID   string            `json:"id"`
 	Name map[string]string `json:"name"`
@@ -59,3 +71,13 @@ type Catalog struct {
 // CompileTransferRelease is the deployment-only source entry. Runtime semantic
 // reads restore the authoritative active PG revision, never this embedded file.
 func CompileTransferRelease() (*Snapshot, error) { return Compile(transferDefinition, transferReview) }
+
+// ReleaseCompilers is used only by deployment publication. Runtime reads use
+// active authoritative PG snapshots and never this list as a fallback catalog.
+func ReleaseCompilers() []func() (*Snapshot, error) {
+	return []func() (*Snapshot, error){
+		CompileTransferRelease,
+		func() (*Snapshot, error) { return Compile(transferStartDefinition, transferStartReview) },
+		func() (*Snapshot, error) { return Compile(transferExecutionDefinition, transferExecutionReview) },
+	}
+}

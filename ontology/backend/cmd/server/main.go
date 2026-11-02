@@ -116,10 +116,16 @@ func run() error {
 		defer close(publicationDone)
 		// Publication failure is local to platform definitions. Do not disable
 		// Tenant authoring or log definition payloads and authorization facts.
-		if err := platformPublisher.PublishOnReady(ctx, canWork, platform.CompileTransferRelease); err != nil {
-			if ctx.Err() == nil {
-				log.Print("ontology platform publication failed; inspect platform publication records before retrying")
+		failed := false
+		for _, compile := range platform.ReleaseCompilers() {
+			if err := platformPublisher.PublishOnReady(ctx, canWork, compile); err != nil {
+				failed = true
+				if ctx.Err() == nil {
+					log.Print("ontology platform publication failed; inspect platform publication records before retrying")
+				}
 			}
+		}
+		if failed {
 			return
 		}
 		log.Print("ontology platform publication completed")

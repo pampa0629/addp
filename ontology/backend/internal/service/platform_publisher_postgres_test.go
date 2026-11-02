@@ -522,10 +522,56 @@ CREATE TRIGGER test_platform_ready_audit BEFORE INSERT ON ontology.platform_proj
 		assertActive(capability, old, 1)
 	})
 	var executionsAfter, tenantProjectionsAfter int64
+	t.Run("deployed_transfer_operations", func(t *testing.T) { testTransferOperationPublication(t, db, testPlatformGraph{}) })
 	if err := db.Table("common.task_executions").Count(&executionsAfter).Error; err != nil || executionsAfter != executionsBefore {
 		t.Fatal("platform created Tenant task", err)
 	}
 	if err := db.Model(&models.Projection{}).Count(&tenantProjectionsAfter).Error; err != nil || tenantProjectionsAfter != tenantProjectionsBefore {
 		t.Fatal("platform touched Tenant projection", err)
+	}
+}
+
+// Both PG and the owned real-Falkor gate consume the actual deployment sources,
+// not copies of the start/get definitions assembled by a test.
+func testTransferOperationPublication(t *testing.T, db *gorm.DB, graph interface {
+	ProjectionGraph
+	PlatformContextGraph
+}) {
+	t.Helper()
+	ctx := context.Background()
+	actor := platformMachineActor()
+	repo := repository.NewPlatformRevisionRepository(db)
+	authorizer := testPlatformAuthorizer(func(ctx context.Context, _ *platform.Snapshot) (models.PlatformActor, error) { return actor, ctx.Err() })
+	publisher, err := NewPlatformPublisher(repo, graph, authorizer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := NewPlatformRevisionService(repo, graph)
+	seen := map[string]bool{}
+	for _, compile := range platform.ReleaseCompilers() {
+		snapshot, err := compile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		definition, err := snapshot.Context()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if seen[definition.Capability] {
+			t.Fatal("duplicate deployment capability")
+		}
+		seen[definition.Capability] = true
+		if _, err := publisher.Publish(ctx, snapshot); err != nil {
+			t.Fatal(err)
+		}
+		actual, err := reader.PlatformCapabilityContext(ctx, definition.Capability)
+		if err != nil || !reflect.DeepEqual(actual, definition) {
+			t.Fatalf("PG-selected graph dependencies differ for %s: %v", definition.Capability, err)
+		}
+	}
+	for _, capability := range []string{"transfer.task.create", "transfer.task.start", "transfer.execution.get"} {
+		if !seen[capability] {
+			t.Fatal("missing independent deployment operation", capability)
+		}
 	}
 }

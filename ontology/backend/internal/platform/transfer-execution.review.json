@@ -1,0 +1,291 @@
+{
+  "method": "curated",
+  "scope": "selected_capability",
+  "sources": [
+    {
+      "id": "run_spec",
+      "owner": "agent",
+      "kind": "normative",
+      "path": "docs/spec/addp智能体Tool开放规范.md",
+      "anchor": "### 4.8 Transfer 运行审批与执行读取",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "4739bf695a0ec6c47b8a2dae0f5bb882bda440b6be757a4d5144a10988dc7eb6",
+      "use": {
+        "zh-cn": "运行审批、精确委托与受限结果，受理不等于成功",
+        "en": "Owner approval, exact delegation and bounded results; admission is not success"
+      }
+    },
+    {
+      "id": "manifest",
+      "owner": "common-python",
+      "kind": "contract",
+      "path": "common-python/addp_common/tools/manifest.json",
+      "anchor": "\"name\": \"transfer.execution.get\"",
+      "commit": "34faad72da00695f6ee51048651cc39e5f5ca470",
+      "sha256": "23dacb0f99a91e4d1181efcb27d5fc688ac48707cd6da33d198c2881d0af5d83",
+      "use": {
+        "zh-cn": "唯一 Tool 输入输出、风险和权限交集",
+        "en": "Sole Tool input/output, risk and permission intersection"
+      }
+    },
+    {
+      "id": "read_scope",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/api/execution_read_scope.go",
+      "anchor": "func installTransferUserReadScope(",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "ad26fd882dbfdb708f42bdb3cc22256d54fb470249a95886b2a7a8a9dad870a2",
+      "use": {
+        "zh-cn": "精确查询委托与 Owner 当前读取范围",
+        "en": "Exact read delegation and current owner visibility"
+      }
+    },
+    {
+      "id": "sdk",
+      "owner": "common-python",
+      "kind": "implementation",
+      "path": "common-python/addp_common/client/transfer.py",
+      "anchor": "async def get_execution(",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "4c7e67d4d651f3e7091892abcd4ba75f21932527edf85b8b892770ed99d0a5e3",
+      "use": {
+        "zh-cn": "唯一 HTTP 映射，无启动重试，受限结果投影",
+        "en": "Sole HTTP mapping, no start retry, bounded result projection"
+      }
+    },
+    {
+      "id": "sdk_test",
+      "owner": "common-python",
+      "kind": "test",
+      "path": "common-python/tests/test_transfer_run_tools.py",
+      "anchor": "def test_start_write_is_not_retried_after_uncertain_response(",
+      "commit": "34faad72da00695f6ee51048651cc39e5f5ca470",
+      "sha256": "1e361f21077b9be33f525f5120d69e00389ab2e981fa8e4cc25b0955cda8c6fa",
+      "use": {
+        "zh-cn": "无不确定写重试，受限结果不泄露配置或原始错误",
+        "en": "No uncertain-write retry; results omit config and raw errors"
+      }
+    },
+    {
+      "id": "runtime",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/agents/transfer_run.py",
+      "anchor": "def platform_identity(",
+      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
+      "sha256": "1190e217023e828f077fba1f042d498e26110a72e6e95f445eda2fa7136b2d4d",
+      "use": {
+        "zh-cn": "读取也必须核对当前独立本体条件身份，缺少或未知条件拒绝，不把 Schema 当作完整语义判断",
+        "en": "Reads also validate the current independent ontology condition identities, refusing missing or unknown conditions rather than treating Schema as all semantics"
+      }
+    },
+    {
+      "id": "runtime_boundary",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/graph/factory.py",
+      "anchor": "async def _resume_confirmed_start(",
+      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
+      "sha256": "66bb7356009e0898be34c4073cbaf66eeaab860c2b95f3993f64c8909db76f89",
+      "use": {
+        "zh-cn": "批准恢复由 Runtime 确定性调用一次，原状态不明不重发，查询不装入启动 Tool",
+        "en": "Runtime deterministically submits approved resume once, does not retry uncertainty, and omits start tools for observations"
+      }
+    },
+    {
+      "id": "runtime_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_transfer_run_runtime.py",
+      "anchor": "async def test_unknown_read_condition_stops_before_owner_observation(",
+      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
+      "sha256": "f1142a3c040384d1a0ddf3e57eb71ce7c9cce1cfe8feadaad297573e408bd9af",
+      "use": {
+        "zh-cn": "真实 Harness/SDK 的受控调用验证未知读取条件在 Owner GET 前被拒绝，查询时不装配创建／启动工具",
+        "en": "Controlled real Harness/SDK verifies unknown read conditions refuse before owner GET and that observations do not receive create/start tools"
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "subject": "operation",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test",
+        "runtime",
+        "runtime_boundary",
+        "runtime_test"
+      ]
+    },
+    {
+      "subject": "concept/execution",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "concept/execution_identity",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "concept/current_read_access",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "concept/result_observation",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "relation/execution/requires/execution_identity",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "relation/execution/requires/current_read_access",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "relation/execution/observed_as/result_observation",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "condition/execution_identity",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test",
+        "runtime",
+        "runtime_boundary",
+        "runtime_test"
+      ]
+    },
+    {
+      "subject": "condition/current_read_access",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test",
+        "runtime",
+        "runtime_boundary",
+        "runtime_test"
+      ]
+    },
+    {
+      "subject": "effect/execution.observed",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/execution.created",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/business_data.written",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/metadata.scan_started",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/permission.granted",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test"
+      ]
+    }
+  ],
+  "coverage": [
+    {
+      "id": "transfer.execution.get",
+      "state": "modeled",
+      "summary": {
+        "zh-cn": "独立操作的首期有界范围，不替代当前授权或真实运行验收",
+        "en": "Initial bounded scope of this independent operation; not current authorization or live acceptance"
+      },
+      "sources": [
+        "run_spec",
+        "manifest",
+        "read_scope",
+        "sdk",
+        "sdk_test",
+        "runtime",
+        "runtime_boundary",
+        "runtime_test"
+      ]
+    }
+  ]
+}

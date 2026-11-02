@@ -1,0 +1,495 @@
+{
+  "method": "curated",
+  "scope": "selected_capability",
+  "sources": [
+    {
+      "id": "run_spec",
+      "owner": "agent",
+      "kind": "normative",
+      "path": "docs/spec/addp智能体Tool开放规范.md",
+      "anchor": "### 4.8 Transfer 运行审批与执行读取",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "4739bf695a0ec6c47b8a2dae0f5bb882bda440b6be757a4d5144a10988dc7eb6",
+      "use": {
+        "zh-cn": "运行审批、精确委托与受限结果，受理不等于成功",
+        "en": "Owner approval, exact delegation and bounded results; admission is not success"
+      }
+    },
+    {
+      "id": "manifest",
+      "owner": "common-python",
+      "kind": "contract",
+      "path": "common-python/addp_common/tools/manifest.json",
+      "anchor": "\"name\": \"transfer.task.start\"",
+      "commit": "34faad72da00695f6ee51048651cc39e5f5ca470",
+      "sha256": "23dacb0f99a91e4d1181efcb27d5fc688ac48707cd6da33d198c2881d0af5d83",
+      "use": {
+        "zh-cn": "唯一 Tool 输入输出、风险和权限交集",
+        "en": "Sole Tool input/output, risk and permission intersection"
+      }
+    },
+    {
+      "id": "owner_approval",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/service/run_approval.go",
+      "anchor": "func (s *TaskService) StartApprovedTask(",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "c9c7d866e1f02277b8dfd607a2af547c715c5996bb8b1ed7c9b5e2988b71e5d8",
+      "use": {
+        "zh-cn": "一次性审批绑定身份版本和任务配置，消费进入唯一启动路径",
+        "en": "One-shot approval bound to identity version and config, consumed in the sole start path"
+      }
+    },
+    {
+      "id": "claim",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/repository/task_repository.go",
+      "anchor": "func (r *TaskRepository) ClaimExecutionWithReview(",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "5240270707a1d173df9a675dad4004a3b8a7c5faf59f45955c70f3db6f4189cb",
+      "use": {
+        "zh-cn": "任务锁下复核，审批消费与执行原子提交",
+        "en": "Task-locked review with atomic approval consumption and execution"
+      }
+    },
+    {
+      "id": "owner_api",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/api/run_approval_handler.go",
+      "anchor": "func (h *TaskHandler) DecideRunApproval(",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "f7869883b50784450080d70bc823e76a7dad6a28be1a03026bf21c21921231d7",
+      "use": {
+        "zh-cn": "浏览器用户决定，决定不启动，委托不能代批",
+        "en": "Browser User decision does not start; delegation cannot approve"
+      }
+    },
+    {
+      "id": "read_scope",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/api/execution_read_scope.go",
+      "anchor": "func installTransferUserReadScope(",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "ad26fd882dbfdb708f42bdb3cc22256d54fb470249a95886b2a7a8a9dad870a2",
+      "use": {
+        "zh-cn": "精确查询委托与 Owner 当前读取范围",
+        "en": "Exact read delegation and current owner visibility"
+      }
+    },
+    {
+      "id": "sdk",
+      "owner": "common-python",
+      "kind": "implementation",
+      "path": "common-python/addp_common/client/transfer.py",
+      "anchor": "async def start_task(",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "4c7e67d4d651f3e7091892abcd4ba75f21932527edf85b8b892770ed99d0a5e3",
+      "use": {
+        "zh-cn": "唯一 HTTP 映射，无启动重试，受限结果投影",
+        "en": "Sole HTTP mapping, no start retry, bounded result projection"
+      }
+    },
+    {
+      "id": "runtime",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/agents/transfer_run.py",
+      "anchor": "def validate_start(",
+      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
+      "sha256": "1190e217023e828f077fba1f042d498e26110a72e6e95f445eda2fa7136b2d4d",
+      "use": {
+        "zh-cn": "当前本体与正式审批引用核对，不接受模型代批",
+        "en": "Current semantics and formal review references, no model approval"
+      }
+    },
+    {
+      "id": "owner_test",
+      "owner": "transfer",
+      "kind": "test",
+      "path": "transfer/backend/internal/service/run_approval_test.go",
+      "anchor": "func TestRunApprovalRequiresUserClickAndConsumesOnce(",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "c8083f71a98c6da5df63039b4f1ef39efde9bc7bf36ab3c54830121a06355e2a",
+      "use": {
+        "zh-cn": "未批准零执行，身份和配置漂移拒绝，一次消费及回滚",
+        "en": "No execution before approval; identity/config drift refusal, one consumption and rollback"
+      }
+    },
+    {
+      "id": "sdk_test",
+      "owner": "common-python",
+      "kind": "test",
+      "path": "common-python/tests/test_transfer_run_tools.py",
+      "anchor": "def test_start_write_is_not_retried_after_uncertain_response(",
+      "commit": "34faad72da00695f6ee51048651cc39e5f5ca470",
+      "sha256": "1e361f21077b9be33f525f5120d69e00389ab2e981fa8e4cc25b0955cda8c6fa",
+      "use": {
+        "zh-cn": "无不确定写重试，受限结果不泄露配置或原始错误",
+        "en": "No uncertain-write retry; results omit config and raw errors"
+      }
+    },
+    {
+      "id": "approval_ui",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/frontend/src/views/ChatView.vue",
+      "anchor": "if (action.name === 'owner.decide')",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "61c46bad77efee1e978ba9e9795c77673ed544216b34b4289edb0d792feb6f29",
+      "use": {
+        "zh-cn": "用户点击后浏览器以本人身份直接提交 Transfer 决定，核验响应后才请求 Runtime 读取 Owner 状态",
+        "en": "After a user click, the browser submits the Transfer decision as that User, checks the response, then asks Runtime to read owner status"
+      }
+    },
+    {
+      "id": "runtime_boundary",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/graph/factory.py",
+      "anchor": "async def _resume_confirmed_start(",
+      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
+      "sha256": "66bb7356009e0898be34c4073cbaf66eeaab860c2b95f3993f64c8909db76f89",
+      "use": {
+        "zh-cn": "批准恢复由 Runtime 确定性调用一次，原状态不明不重发，查询不装入启动 Tool",
+        "en": "Runtime deterministically submits approved resume once, does not retry uncertainty, and omits start tools for observations"
+      }
+    },
+    {
+      "id": "runtime_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_transfer_run_runtime.py",
+      "anchor": "async def test_approved_resume_is_deterministic_and_consumes_local_confirmation(",
+      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
+      "sha256": "f1142a3c040384d1a0ddf3e57eb71ce7c9cce1cfe8feadaad297573e408bd9af",
+      "use": {
+        "zh-cn": "受控真实 Harness/SDK 验证手动决定后零模型、一次启动及拒绝／漂移／提交失败阻断",
+        "en": "Controlled real Harness/SDK verifies zero model calls, one approved start and refusal after rejection, drift or failed checkpoint commit"
+      }
+    },
+    {
+      "id": "owner_pg_test",
+      "owner": "transfer",
+      "kind": "test",
+      "path": "transfer/backend/internal/service/run_approval_postgres_test.go",
+      "anchor": "func TestIntegrationPostgresRunApprovalAtomicity(",
+      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
+      "sha256": "3e9be0003fcbbfa11d47bd2785ad42a1f85efe38d035304b8e83c6f041506369",
+      "use": {
+        "zh-cn": "标准 PG 门禁验证并发只能消费一次，执行身份关联且无 Worker 或业务库写入",
+        "en": "Standard PG gate verifies single concurrent consumption and associated execution identity without workers or business writes"
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "subject": "operation",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test",
+        "approval_ui",
+        "runtime_boundary",
+        "runtime_test",
+        "owner_pg_test"
+      ]
+    },
+    {
+      "subject": "concept/saved_task",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "concept/run_approval",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "owner_api",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "concept/execution",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "concept/saved_supported_task",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "concept/owner_run_approval",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "owner_api",
+        "runtime",
+        "owner_test",
+        "approval_ui",
+        "runtime_boundary",
+        "runtime_test",
+        "owner_pg_test"
+      ]
+    },
+    {
+      "subject": "concept/current_execution_authorization",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "concept/execution_observation",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "relation/execution/runs/saved_task",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "relation/execution/requires/saved_supported_task",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "relation/execution/requires/owner_run_approval",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "owner_api",
+        "runtime",
+        "owner_test",
+        "approval_ui"
+      ]
+    },
+    {
+      "subject": "relation/execution/requires/current_execution_authorization",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "relation/saved_supported_task/configured_by/saved_task",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "relation/owner_run_approval/confirmed_by/run_approval",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "owner_api",
+        "runtime",
+        "owner_test",
+        "approval_ui"
+      ]
+    },
+    {
+      "subject": "relation/execution/observed_via/execution_observation",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "condition/saved_supported_task",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "condition/owner_run_approval",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "owner_api",
+        "runtime",
+        "owner_test",
+        "approval_ui"
+      ]
+    },
+    {
+      "subject": "condition/current_execution_authorization",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "effect/run_approval.requested",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "owner_api",
+        "runtime",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "effect/execution.created_after_owner_approval",
+      "sources": [
+        "run_spec",
+        "owner_approval",
+        "claim",
+        "owner_test",
+        "runtime_boundary",
+        "runtime_test",
+        "owner_pg_test"
+      ]
+    },
+    {
+      "subject": "effect/business_data.may_change_after_owner_approval",
+      "sources": [
+        "run_spec",
+        "owner_approval",
+        "claim",
+        "owner_test",
+        "runtime_boundary",
+        "runtime_test",
+        "owner_pg_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/task_definition.modified",
+      "sources": [
+        "run_spec",
+        "owner_approval",
+        "sdk",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/schedule.enabled",
+      "sources": [
+        "run_spec",
+        "owner_approval",
+        "sdk",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/metadata.scan_started",
+      "sources": [
+        "run_spec",
+        "owner_approval",
+        "sdk",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/permission.granted",
+      "sources": [
+        "run_spec",
+        "owner_approval",
+        "sdk",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/execution.cancelled",
+      "sources": [
+        "run_spec",
+        "owner_approval",
+        "sdk",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "requirement/execution_observation",
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "runtime",
+        "owner_test"
+      ]
+    }
+  ],
+  "coverage": [
+    {
+      "id": "transfer.task.start",
+      "state": "modeled",
+      "summary": {
+        "zh-cn": "首期有界运行要求用户在 Agent 内手动决定 Owner 审批，配置与身份版本绑定、原子一次消费；审批不冻结实时数据结构或所有业务值，当前 EA／Security／Provider 仍在执行时核验，受理不代表成功。",
+        "en": "Initial bounded runs require a manual User owner decision in Agent, bind config and identity version, and consume once atomically. Approval does not freeze live schema or all values; current EA, Security and Provider checks still occur at execution, and admission is not success."
+      },
+      "sources": [
+        "run_spec",
+        "manifest",
+        "owner_approval",
+        "owner_test",
+        "runtime_boundary",
+        "runtime_test",
+        "owner_pg_test"
+      ]
+    }
+  ]
+}
