@@ -126,21 +126,17 @@
 
 ### 6. Transfer（数据传输）
 
-**职责定位**：数据同步、搬运和格式转换任务管理
+**职责定位**：数据同步、搬运和格式转换任务管理，统一任务类型为 `sync`。
 
-**核心能力**：
-- 数据同步（source endpoint 到 target endpoint）：PostgreSQL、MySQL、MinIO、S3、CSV、Shapefile
-- 格式转换（同一 data type 内 representation / format 转换）：CSV、GeoJSON、Parquet、Shapefile 等
-- 全量同步；增量、水位、CDC 等高级能力后续专题设计
-- 字段映射和类型转换
-- PostgreSQL bounded execution claim（attempt、lease token、heartbeat、过期恢复）
-- 定时调度（Cron 表达式配置）
+**核心能力与边界**：
+- bounded snapshot、watermark、业务 Kafka continuous／bounded replay 与数据库 CDC 的当前组合和未支持项统一见[支持矩阵](../../transfer/docs/transfer-任务语义与同步模式.md#三当前支持矩阵)，不在概览维护另一份源／目标名单。
+- table 格式转换、原始字节复制与动态记录导出按各自配置形态处理，见[Transfer 配置](../../transfer/docs/transfer-基本概念及配置说明.md)；字段映射与类型转换沿[field_mapping](../../transfer/docs/transfer-基本概念及配置说明.md#五field_mapping-transform)。
+- bounded 与 continuous 使用各自的 Worker、租约和恢复机制，职责见[模块契约](../../transfer/CLAUDE.md#模块定位)，不由 checkpoint 或 Worker 存活推断恢复成功。
+- Cron 调度及暂停／恢复须按当前 User 授权，调度控制与执行重跑／增量续读分别认定，见[任务控制与恢复边界](../../transfer/docs/tables/tasks表.md#执行恢复与验收边界)。
 
-**端口**：
-- Backend：8083
-- Frontend：5176 (dev)
+**端口**：Backend `8083`、Frontend `5176` 为开发首选值；实际监听与公开入口沿[端口规范](../spec/addp端口分配.md)，不从首选值推断可达性。
 
-**详细文档**：`transfer/CLAUDE.md`
+**详细文档**：[模块入口](../../transfer/README.md)与[模块契约](../../transfer/CLAUDE.md)。标准门禁、固定版本证据、失败与未覆盖项见[启动与验证](../../transfer/README.md#启动与验证)，能力摘要不代表真实执行链路已通过。
 
 ---
 

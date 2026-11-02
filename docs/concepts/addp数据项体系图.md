@@ -221,16 +221,9 @@ Manager 不重新识别 item。multi 读取使用 `attributes.item.refs`；whole
 
 ### Transfer
 
-```text
-source / target data item
-  -> TransferPlan(engine, resource, data_type, format, capabilities, policy)
-  -> contentio.Reader / Writer
-  -> 格式能力
-  -> 内容 reader / writer
-  -> pipeline reader / writer
-```
+Transfer 消费源 data item、Engine capability 和内容／格式能力事实，并结合目标 endpoint 生成执行计划，职责见[任务配置模型](../../transfer/docs/design.md#三任务配置模型)。table 读写、raw copy 与动态记录导出分别沿[table 主路径](../../transfer/docs/design.md#四table-transfer-主路径)、[字节流主路径](../../transfer/docs/design.md#六raw-copy-主路径)和[动态记录导出契约](../../transfer/docs/transfer-基本概念及配置说明.md#32-动态记录原始导出)，不由一条通用 pipeline 示意替代各形态的 Provider 边界。
 
-Transfer 可以根据目标能力选择编码格式，但不能绕过标准字段、类型信息和横切能力事实源。
+Transfer 可以根据目标能力选择编码格式，但不能绕过标准字段、类型信息和横切能力事实源。实际支持组合与验收范围分别见[支持矩阵](../../transfer/docs/transfer-任务语义与同步模式.md#三当前支持矩阵)、[模块验证](../../transfer/README.md#启动与验证)。
 
 ## 设计约束
 
