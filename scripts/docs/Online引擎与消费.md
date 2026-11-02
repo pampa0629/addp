@@ -22,9 +22,17 @@
 
 ### 关系型 SQL ETL
 
-`transfer-relational-sql-etl` 唯一使用 GitHub Hosted `ubuntu-24.04` x86_64 临时部署，在 `Online T4 gates` 手工选择该 suite 即可，不需要自托管 Runner、永久账号或外部环境文件。`online-hosted-transfer-gate.sh` 复用 Hosted 公共生命周期，建立独立 Infra、非默认 Tenant、具备精确 10 项 Permission 的真实测试 User，并通过独立 Provisioner 和 System API 注册当次 PostgreSQL Engine Instance。Business Fixture 使用本轮独占的 tmpfs 容器；数据库用户只读取源表并在指定 schema 创建自己的目标表。正式启动脚本启动 Transfer、Meta、Manager、System、Gateway 和 Console，业务断言仍只有 `make test-online ONLINE_SUITE=transfer-relational-sql-etl` 一条入口。
+`transfer-relational-sql-etl` 唯一使用 GitHub Hosted `ubuntu-24.04` x86_64 临时部署，在 `Online T4 gates` 手工选择该 suite 即可，不需要自托管 Runner、永久账号或外部环境文件。
 
-同一 suite 验证原生表字段改名、decimal 精度转换、常量生成、replace 旧入边关闭和两跳自动采集，并从 Console Manager iframe 验证字段图与结构快照；SQL 查询源由真实浏览器构造投影和参数化过滤，验证 2 行结果及字段血缘 unavailable。四个临时任务通过正式 API 删除，Business owner 校验三个目标表的数据与精度。成功、失败和中断路径均销毁业务容器、Infra 数据卷及 owner-only 凭据目录，残留使门禁失败；强制终止不能声称清理完成。Actions Artifact 仅归档报告、截图、脱敏日志和清理证据。确定性验证使用 `make test-online-runner` 与 `make test-platform`；首次真实 T4 成功前只登记手工触发。
+`online-hosted-transfer-gate.sh` 复用 Hosted 公共生命周期，建立独立 Infra、非默认 Tenant、具备精确 10 项 Permission 的真实测试 User，并通过独立 Provisioner 和 System API 注册当次 PostgreSQL Engine Instance。Business Fixture 使用本轮独占的 tmpfs 容器；数据库用户只读取源表并在指定 schema 创建自己的目标表。正式启动脚本启动 Transfer、Meta、Manager、System、Gateway 和 Console，业务断言仍只有 `make test-online ONLINE_SUITE=transfer-relational-sql-etl` 一条入口。
+
+同一 suite 验证原生表字段改名、decimal 精度转换、常量生成、replace 旧入边关闭和两跳自动采集，并从 Console Manager iframe 验证字段图与结构快照。
+
+SQL 查询源由真实浏览器构造投影和参数化过滤，验证 2 行结果及字段血缘 unavailable。
+
+四个临时任务通过正式 API 删除，Business owner 校验三个目标表的数据与精度。
+
+成功、失败和中断路径均销毁业务容器、Infra 数据卷及 owner-only 凭据目录，残留使门禁失败；强制终止不能声称清理完成。Actions Artifact 仅归档报告、截图、脱敏日志和清理证据。确定性验证使用 `make test-online-runner` 与 `make test-platform`；首次真实 T4 成功前只登记手工触发。
 
 ### 指标修订生命周期
 
@@ -42,19 +50,45 @@
 
 ### OceanBase 消费
 
-`oceanbase-consumer-flow` 要求全量 System、Gateway、Meta、Manager、Transfer、Develop 和 Service，并使用 `business/scripts/online-oceanbase-consumer-fixture.sh` 管理独立 OceanBase CE。专用环境预置永久 `engine_type=oceanbase` Engine Instance；Fixture 固定维护 5 行 InnoDB watermark 源表和同构空目标表。suite 经 Gateway 和 Meta 获取正式 ResourceLocator，只创建一条 bounded watermark + upsert Transfer 任务，连续执行并精确断言 5 行首批、2 行增量和 0 行空增量；Manager 表预览、Develop SQL 与临时 Query Service 通过各自正式数据出口读取同一目标表，最终必须得到相同的 6 行 checksum，Manager 还校验扫描列顺序。任务和服务按捕获 ID 删除并确认 404，Fixture 在退出路径恢复源表基线和空目标表。该 suite 仅可从手工 workflow 运行，首次真实通过前不得增加 schedule。
+`oceanbase-consumer-flow` 要求全量 System、Gateway、Meta、Manager、Transfer、Develop 和 Service，并使用 `business/scripts/online-oceanbase-consumer-fixture.sh` 管理独立 OceanBase CE。
+
+专用环境预置永久 `engine_type=oceanbase` Engine Instance；Fixture 固定维护 5 行 InnoDB watermark 源表和同构空目标表。
+
+suite 经 Gateway 和 Meta 获取正式 ResourceLocator，只创建一条 bounded watermark + upsert Transfer 任务，连续执行并精确断言 5 行首批、2 行增量和 0 行空增量；Manager 表预览、Develop SQL 与临时 Query Service 通过各自正式数据出口读取同一目标表，最终必须得到相同的 6 行 checksum，Manager 还校验扫描列顺序。
+
+任务和服务按捕获 ID 删除并确认 404，Fixture 在退出路径恢复源表基线和空目标表。该 suite 仅可从手工 workflow 运行，首次真实通过前不得增加 schedule。
 
 ### openGauss 消费
 
-`opengauss-consumer-flow` 使用同一个 `relational-consumer-flow-online.py` 断言 Manager、Transfer、Develop 和 Service，上层流程只通过通用 Engine Plugin/Provider 和 SQLDialect 工作。由于 openGauss 6.0.6 官方容器的 NUMA 限制，该 suite 使用 GitHub Hosted `ubuntu-24.04` x86_64 profile：`online-hosted-opengauss-gate.sh` 通过正式 Infra 生命周期在镜像缺失时从 `scripts/infra/Dockerfile.postgres` 构建 x86_64 PostgreSQL 镜像，再从固定 SHA-256 官方介质创建独占 openGauss，启动 disposable `addp_online` Infra 及 Manager/Transfer/Develop/Service 参与链路；Business Fixture 只输出 owner-only Engine 描述，System IAM owner helper 创建非默认 Tenant、仅含租户可定制业务 Permission 的最小消费 User，并把一次性 Engine Provisioner 绑定到正式内置 `tenant.infrastructure_administrator` Role。通用 `online-engine-registration.py` 使用 Provisioner Token 通过正式 System API 注册并验证当次 Engine Instance，随后立即从业务断言环境清除该 Token 与数据库凭据；consumer 不访问 System Engine 控制面，只验证 Manager、Transfer、Develop 和 Service 的消费路径，证据另写入 artifact 目录。成功、失败和中断均停止应用、删除 openGauss 容器并销毁 Infra 数据卷。它不读取根 `.env`、Business `.env`、GitHub Environment 或外部实例。2026-09-10 的 [Online T4 run 34469670386](https://github.com/pampa0629/addp/actions/runs/34469670386) 已确认构建身份、5/2/0 watermark、三出口同 checksum、清理和零残留全部通过，因此当前同时保留手工 `workflow_dispatch`，并在每日 `20:30 UTC` 只调度该 Hosted profile。
+`opengauss-consumer-flow` 使用同一个 `relational-consumer-flow-online.py` 断言 Manager、Transfer、Develop 和 Service，上层流程只通过通用 Engine Plugin/Provider 和 SQLDialect 工作。
+
+由于 openGauss 6.0.6 官方容器的 NUMA 限制，该 suite 使用 GitHub Hosted `ubuntu-24.04` x86_64 profile：`online-hosted-opengauss-gate.sh` 通过正式 Infra 生命周期在镜像缺失时从 `scripts/infra/Dockerfile.postgres` 构建 x86_64 PostgreSQL 镜像，再从固定 SHA-256 官方介质创建独占 openGauss，启动 disposable `addp_online` Infra 及 Manager/Transfer/Develop/Service 参与链路。
+
+Business Fixture 只输出 owner-only Engine 描述，System IAM owner helper 创建非默认 Tenant、仅含租户可定制业务 Permission 的最小消费 User，并把一次性 Engine Provisioner 绑定到正式内置 `tenant.infrastructure_administrator` Role。通用 `online-engine-registration.py` 使用 Provisioner Token 通过正式 System API 注册并验证当次 Engine Instance，随后立即从业务断言环境清除该 Token 与数据库凭据；consumer 不访问 System Engine 控制面，只验证 Manager、Transfer、Develop 和 Service 的消费路径，证据另写入 artifact 目录。
+
+成功、失败和中断均停止应用、删除 openGauss 容器并销毁 Infra 数据卷。它不读取根 `.env`、Business `.env`、GitHub Environment 或外部实例。
+
+2026-09-10 的 [Online T4 run 34469670386](https://github.com/pampa0629/addp/actions/runs/34469670386) 已确认构建身份、5/2/0 watermark、三出口同 checksum、清理和零残留全部通过，因此当前同时保留手工 `workflow_dispatch`，并在每日 `20:30 UTC` 只调度该 Hosted profile。
 
 ### TiDB 消费
 
-`tidb-consumer-flow` 与 OceanBase/openGauss 复用同一个 `relational-consumer-flow-online.py`，只新增 `engine_type=tidb` 的 database catalog profile，不在 Manager、Transfer、Develop 或 Service 增加数据库分支。macOS 专用 Runner 预置永久 TiDB Engine Instance，并在仓库外环境文件提供 `ADDP_ONLINE_TIDB_ENGINE_ID`、`ADDP_ONLINE_TIDB_PORT`、`ADDP_ONLINE_TIDB_DATABASE`、`ADDP_ONLINE_TIDB_USER` 和可为空的 `ADDP_ONLINE_TIDB_PASSWORD`；`online-tidb-consumer-fixture.sh` 复用 T2 的固定 digest、无卷 PD/TiKV/TiDB Compose，重建 5 行源和空目标，推进 2 行 watermark 后由同一 Transfer 任务得到 5/2/0 读取计数，并由 Manager、Develop、Service 比较 6 行同 checksum。任务、服务和三组件在退出路径清理并验证零残留。首次真实通过前仅允许手工 `workflow_dispatch`，不得加入 schedule。
+`tidb-consumer-flow` 与 OceanBase/openGauss 复用同一个 `relational-consumer-flow-online.py`，只新增 `engine_type=tidb` 的 database catalog profile，不在 Manager、Transfer、Develop 或 Service 增加数据库分支。
+
+macOS 专用 Runner 预置永久 TiDB Engine Instance，并在仓库外环境文件提供 `ADDP_ONLINE_TIDB_ENGINE_ID`、`ADDP_ONLINE_TIDB_PORT`、`ADDP_ONLINE_TIDB_DATABASE`、`ADDP_ONLINE_TIDB_USER` 和可为空的 `ADDP_ONLINE_TIDB_PASSWORD`。
+
+`online-tidb-consumer-fixture.sh` 复用 T2 的固定 digest、无卷 PD/TiKV/TiDB Compose，重建 5 行源和空目标，推进 2 行 watermark 后由同一 Transfer 任务得到 5/2/0 读取计数，并由 Manager、Develop、Service 比较 6 行同 checksum。
+
+任务、服务和三组件在退出路径清理并验证零残留。首次真实通过前仅允许手工 `workflow_dispatch`，不得加入 schedule。
 
 ### Transfer 仅新增写入
 
-`transfer-insert-only-mysql` 要求全量 System、Gateway、Meta、Transfer 和 Console，并使用 `business/scripts/online-transfer-insert-only-fixture.sh` 同时管理专用 PostgreSQL 源表和可写 MySQL 目标库。suite 以真实 User 登录 Console，经 Transfer 向导选择两端资源；字段映射阶段必须调用正式推荐接口，把无声明精度的 `numeric` 当前值分析为 `DECIMAL(6,2)`，配置阶段再选择仅新增并自动派生 `id` 水位和目标键。页面创建后首轮必须写入 6 行；Fixture 修改旧 `id=1` 并新增 `id=7` 后，从任务详情再次执行只能写入 1 行，最终目标共 7 行、旧值不变、新值存在且无重复键。任务按捕获 ID 删除并确认 404，复合 Fixture 在所有退出路径删除固定表并停止两个容器。该 suite 仅可从手工 workflow 运行，首次真实通过前不得增加 schedule。
+`transfer-insert-only-mysql` 要求全量 System、Gateway、Meta、Transfer 和 Console，并使用 `business/scripts/online-transfer-insert-only-fixture.sh` 同时管理专用 PostgreSQL 源表和可写 MySQL 目标库。
+
+suite 以真实 User 登录 Console，经 Transfer 向导选择两端资源；字段映射阶段必须调用正式推荐接口，把无声明精度的 `numeric` 当前值分析为 `DECIMAL(6,2)`，配置阶段再选择仅新增并自动派生 `id` 水位和目标键。
+
+页面创建后首轮必须写入 6 行；Fixture 修改旧 `id=1` 并新增 `id=7` 后，从任务详情再次执行只能写入 1 行，最终目标共 7 行、旧值不变、新值存在且无重复键。
+
+任务按捕获 ID 删除并确认 404，复合 Fixture 在所有退出路径删除固定表并停止两个容器。该 suite 仅可从手工 workflow 运行，首次真实通过前不得增加 schedule。
 
 ## Redis 消费
 
