@@ -10,6 +10,7 @@
 | --- | --- |
 | 配置维度与通用同步约束 | [Transfer 同步执行契约](#transfer-同步执行契约) |
 | continuous 配置、目标提交、位点与观测规则 | [continuous 主契约](#transfer-continuous-sync-v1-契约) |
+| 分区位置、窗口估算、retention／checkpoint 与安全样本 | [采样与健康诊断](#continuous-采样与健康诊断) |
 | 通用规则目标、失败判定、模式切换与统一评估 | [通用告警规则](#通用执行告警规则与统一评估) |
 | 租户告警通知、Webhook／邮件投递与送达验收 | [通知与渠道投递](#租户告警通知与渠道投递) |
 | continuous Owner 信号、告警恢复与过程事件分工 | [观测信号、告警与过程事件](#continuous-观测信号告警与过程事件分工) |
@@ -100,12 +101,11 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 12. consumer auto commit 禁用。Kafka consumer group 只用于分区分配，不是 Transfer committed position 的事实源。
 13. 业务 Kafka 已开放 `dead_letter` 和写入新隔离目标的 bounded replay，唯一契约见[Kafka 与 DLQ](Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。数据库 CDC、Kafka target、物理删除和 continuous append 仍不得借用业务 Kafka 的 DLQ/replay 路线绕过各自边界。
 14. resume 前必须验证 committed `next_offset` 仍位于 Kafka partition 的 `[earliest_offset, latest_offset]` 范围；低于 earliest 表示 retention 已破坏连续恢复条件，execution 必须明确失败，不得静默重置到 earliest 或 latest。高于 latest 视为状态损坏，同样失败。
-15. continuous worker 必须由 source Provider 读取每分区 `earliest_offset` 和 `latest_offset`，并以目标已成功应用且已提交的 `next_offset` 计算 `lag_records = latest_offset - next_offset`。consumer fetch position、预取位置或 Kafka consumer group committed offset 不得冒充 Transfer committed position。
-16. retention 恢复余量以 `recovery_headroom_records = next_offset - earliest_offset` 表示。时间余量只能在同一 worker session 内至少存在两次有效 source latest 样本时，按 `recovery_headroom_records / source_rate_records_per_second` 估算；冷启动、无已提交位置、样本时间非正或写入速率为零时必须返回未知，不得伪造为无限安全。
-17. continuous retention health 只允许 `healthy|degraded|critical|unknown`。`next_offset < earliest_offset` 立即为 `critical`；有效时间余量不大于 critical 阈值时为 `critical`，不大于 degraded 阈值时为 `degraded`，其余为 `healthy`；不能完成判定时为 `unknown`。第一版统一服务端默认阈值为 degraded `6h`、critical `1h`，并要求 critical 小于 degraded；阈值是 Transfer runtime 配置，不进入用户任务 JSON。
-18. 观测样本写入 `common.task_executions.metadata.continuous`，至少包含样本时间、总体 retention health、总体 checkpoint health，以及每分区 earliest/latest/committed/lag/headroom/source rate/retention horizon/checkpoint age/checkpoint health。Transfer 是采集和判定 owner；Monitor 只读取统一 execution metadata 并展示，不直连业务 Kafka，不读取或改写 `transfer.sync_states` 与 `transfer.runtime_leases`。
-    数据库 CDC 在同一次样本中额外写入唯一公共投影 `metadata.continuous.capture`，固定包含 capture `generation`，以及类型化、安全裁剪后的 `source_recovery` 和 `source_transactions`；尚无有效事实的字段省略。该投影不得包含 connector/source 私有错误、连接信息、凭据、Provider 私有资源名或未声明字段。非数据库 continuous execution 不得保留 `capture`。Monitor 只消费该公共投影，不得读取 `transfer.capture_resources` 或 Provider 私表补判。
-19. retention health 与 checkpoint health 是两个正交指标。retention health 回答“当前 committed position 是否仍在源保留窗口内，以及按当前写入速率还剩多少恢复时间”；checkpoint health 回答“存在 source lag 时，目标 committed position 是否长期未推进”。checkpoint health 只允许 `healthy|degraded|unknown`：lag 为 0 时为 `healthy`；lag 大于 0 且最近真实 position commit 距采样时间超过部署阈值时为 `degraded`；缺少真实 position commit 时间或无法计算时为 `unknown`。不得用 execution `updated_at`、worker heartbeat、consumer fetch position 或 diagnostics 采样时间冒充 position commit 时间。
+15. source 分区位置、目标已提交位置与 lag 计算见[分区位置与 lag 事实](#分区位置与-lag-事实)。
+16. 恢复余量、时间估算与 unknown 条件见[恢复余量与未知时间估算](#恢复余量与未知时间估算)。
+17. retention 健康状态与部署阈值见[retention 健康判定与阈值](#retention-健康判定与阈值)。
+18. 观测样本、Owner 归属与 Capture 安全裁剪见[诊断样本与 Capture 安全投影](#诊断样本与-capture-安全投影)。
+19. retention／checkpoint 正交口径与真实提交时间见[checkpoint 健康与真实提交时间](#checkpoint-健康与真实提交时间)。
 20. continuous 与数据库 CDC 的无状态观测信号、严重级别与 Owner 边界见[实时观测信号](#continuous-owner-实时观测信号)。
 21. 最新根 execution、incident 去重、确认／抑制与恢复规则见[continuous 告警生命周期](#continuous-告警生命周期与最新根执行)。
 22. 告警生命周期、事务 outbox 与 dispatcher 领取见[通知生命周期与事务 outbox](#通知生命周期与事务-outbox)。
@@ -136,6 +136,50 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 47. 数据库 CDC schema-change 的公共投影及与私有状态同事务更新见[公共事实投影](#schema-change-公共事实投影)。
 48. 最新根执行的 schema blocked 信号、恢复与 Stop／Finish／lease expiry 竞态见[告警恢复与停止竞态](#schema-blocked-告警恢复与停止竞态)。
 49. 自动扫描提交失败与实际扫描结果、Monitor incident 的边界见[扫描提交失败限制](#扫描提交失败的告警限制)。
+
+### continuous 采样与健康诊断
+
+- 位置与窗口：[分区位置与 lag](#分区位置与-lag-事实)、[恢复余量与 unknown](#恢复余量与未知时间估算)。
+- 健康判定：[retention](#retention-健康判定与阈值)、[checkpoint 与真实提交时间](#checkpoint-健康与真实提交时间)。
+- 读取与使用：[样本与 Capture 安全投影](#诊断样本与-capture-安全投影)、[观测验收边界](#采样诊断的读取与验收边界)。
+
+#### 分区位置与 lag 事实
+
+- continuous worker 必须由 source Provider 读取每分区 `earliest_offset` 和 `latest_offset`，并以目标已成功应用且已提交的 `next_offset` 计算 `lag_records = latest_offset - next_offset`。
+- consumer fetch position、预取位置或 Kafka consumer group committed offset 不得冒充 Transfer committed position。
+
+#### 恢复余量与未知时间估算
+
+- retention 恢复余量以 `recovery_headroom_records = next_offset - earliest_offset` 表示。
+- 时间余量只能在同一 worker session 内至少存在两次有效 source latest 样本时，按 `recovery_headroom_records / source_rate_records_per_second` 估算；冷启动、无已提交位置、样本时间非正或写入速率为零时必须返回未知，不得伪造为无限安全。
+
+#### retention 健康判定与阈值
+
+- continuous retention health 只允许 `healthy|degraded|critical|unknown`。
+- `next_offset < earliest_offset` 立即为 `critical`；有效时间余量不大于 critical 阈值时为 `critical`，不大于 degraded 阈值时为 `degraded`，其余为 `healthy`；不能完成判定时为 `unknown`。
+- 第一版统一服务端默认阈值为 degraded `6h`、critical `1h`，并要求 critical 小于 degraded；阈值是 Transfer runtime 配置，不进入用户任务 JSON。
+
+#### checkpoint 健康与真实提交时间
+
+- retention health 与 checkpoint health 是两个正交指标。
+- retention health 回答“当前 committed position 是否仍在源保留窗口内，以及按当前写入速率还剩多少恢复时间”；checkpoint health 回答“存在 source lag 时，目标 committed position 是否长期未推进”。
+- checkpoint health 只允许 `healthy|degraded|unknown`：lag 为 0 时为 `healthy`；lag 大于 0 且最近真实 position commit 距采样时间超过部署阈值时为 `degraded`；缺少真实 position commit 时间或无法计算时为 `unknown`。
+- 不得用 execution `updated_at`、worker heartbeat、consumer fetch position 或 diagnostics 采样时间冒充 position commit 时间。
+
+#### 诊断样本与 Capture 安全投影
+
+- 观测样本写入 `common.task_executions.metadata.continuous`，至少包含样本时间、总体 retention health、总体 checkpoint health，以及每分区 earliest/latest/committed/lag/headroom/source rate/retention horizon/checkpoint age/checkpoint health。
+- Transfer 是采集和判定 owner；Monitor 只读取统一 execution metadata 并展示，不直连业务 Kafka，不读取或改写 `transfer.sync_states` 与 `transfer.runtime_leases`。
+- 数据库 CDC 在同一次样本中额外写入唯一公共投影 `metadata.continuous.capture`，固定包含 capture `generation`，以及类型化、安全裁剪后的 `source_recovery` 和 `source_transactions`；尚无有效事实的字段省略。
+- 该投影不得包含 connector/source 私有错误、连接信息、凭据、Provider 私有资源名或未声明字段。
+- 非数据库 continuous execution 不得保留 `capture`。
+- Monitor 只消费该公共投影，不得读取 `transfer.capture_resources` 或 Provider 私表补判。
+
+#### 采样诊断的读取与验收边界
+
+`position_committed_at` 的持久事实与采样展示见[分区诊断说明](../../../transfer/docs/transfer-任务语义与同步模式.md#分区位置与-kafka-恢复窗口)，采样间隔、阈值和策略配置页面沿[运行配置](../../../transfer/docs/transfer-基本概念及配置说明.md#诊断与安全投影)。数据库捕获健康、源日志窗口和事务压力分别沿[CDC 观测契约](Transfer数据库CDC.md#捕获线程与源连接健康)及其相邻专题，不与 Kafka retention 或 checkpoint health 混用。
+
+公共与专业响应的允许字段、身份与读取授权沿[专业读取规范](执行监控.md#transfer-专业执行读取与响应)，不能由原始 metadata、私有位置或诊断字段的持久化推定访问权。健康状态或时间余量估算不证明暂停后仍可恢复、实际位点已提交或目标数据正确；恢复前仍按[位置恢复边界](../../../transfer/docs/transfer-任务语义与同步模式.md#用户运行控制)核对，固定版本、失败、清理及未覆盖项沿[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。
 
 ### 通用执行告警规则与统一评估
 

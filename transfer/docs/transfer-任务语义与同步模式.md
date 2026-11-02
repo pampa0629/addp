@@ -278,25 +278,17 @@ Pause 停止目标应用并结束当前 session；启动或 Resume 创建新 exe
 
 ### 6.5 诊断与恢复窗口
 
-本节区分 Kafka 分区位置、数据库捕获健康、源日志恢复窗口与未提交事务压力；判定规则见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)，公共观测范围见[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)。
+本节区分 Kafka 分区位置、数据库捕获健康、源日志恢复窗口与未提交事务压力；分区采样与健康口径见[采样诊断契约](../../docs/spec/tasks/Transfer同步执行.md#continuous-采样与健康诊断)，数据库捕获见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#捕获线程与源连接健康)，公共样本范围见[诊断安全投影](../../docs/spec/tasks/Transfer同步执行.md#诊断样本与-capture-安全投影)。
 
 阅读导航：[分区位置与 Kafka 恢复窗口](#分区位置与-kafka-恢复窗口)、[捕获健康与源日志窗口](#捕获健康与源日志窗口)、[安全投影与读取边界](#安全投影与读取边界)。
 
 #### 分区位置与 Kafka 恢复窗口
 
-continuous worker 定期读取每个 partition 的 earliest/latest position，并以目标已提交 `next_offset` 计算：
+continuous worker 的分区位置与目标已提交 `next_offset`、lag 计算统一见[位置事实](../../docs/spec/tasks/Transfer同步执行.md#分区位置与-lag-事实)；恢复余量、时间估算和 unknown 条件见[窗口估算](../../docs/spec/tasks/Transfer同步执行.md#恢复余量与未知时间估算)。retention 与 checkpoint 的不同判定分别见[retention 健康](../../docs/spec/tasks/Transfer同步执行.md#retention-健康判定与阈值)和[checkpoint 健康](../../docs/spec/tasks/Transfer同步执行.md#checkpoint-健康与真实提交时间)。
 
-- lag records。
-- recovery headroom records。
-- source rate。
-- retention horizon。
-- checkpoint age 与 health。
+`transfer.sync_states.position_committed_at` 单独保存真实 position commit 时间。
 
-时间余量使用连续 latest 样本的增长率估算；冷启动、无 committed position 或写入速率为零时显示 unknown。
-
-`transfer.sync_states.position_committed_at` 单独保存真实 position commit 时间；只有存在 source lag 且 commit age 超过配置的 checkpoint 停滞阈值时 checkpoint health 才进入 degraded，lag 为 0 时保持 healthy。
-
-采样间隔与阈值的管理入口见[配置说明](transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)。
+采样间隔与阈值的管理入口见[配置说明](transfer-基本概念及配置说明.md#诊断与安全投影)。
 
 #### 捕获健康与源日志窗口
 
@@ -312,7 +304,7 @@ capture 是否 `running`、恢复窗口的 `healthy/critical/unknown`、FRA 空�
 
 #### 安全投影与读取边界
 
-诊断写入 `common.task_executions.metadata.continuous`。数据库 CDC 在同一次诊断采样中把当前 capture generation 的安全摘要写入唯一 `metadata.continuous.capture`，仅包含 `generation`、类型化 `source_recovery` 和 `source_transactions`；私有错误、连接信息、凭据、Provider 资源名和未知字段不得进入公共 execution。非数据库 continuous execution 不保留该对象。Monitor 只读取公共 execution metadata，不直连 Kafka，也不读取 Transfer 的 `sync_states`、`runtime_leases`、`capture_resources` 或 Provider 私表。
+公共采样对象、同一次样本中的唯一 `metadata.continuous.capture`、类型化字段与敏感信息排除统一见[诊断样本与 Capture 安全投影](../../docs/spec/tasks/Transfer同步执行.md#诊断样本与-capture-安全投影)。User、模块结果与 TaskProvider 的身份、读取范围及专业响应裁剪沿[专业读取契约](../../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)；Monitor 只消费 Owner 公共投影，不直连 Kafka 或读取 Transfer 私表补判。
 
 恢复前的位置核验统一见[生命周期](#64-生命周期)；诊断展示不替代恢复资格或实际恢复结果。完整链路与未覆盖项按[验证范围](#十一验证范围)认定。
 
