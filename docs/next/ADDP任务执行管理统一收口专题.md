@@ -1023,3 +1023,8 @@ System真实Handler回归另发现精确缺失被误报400：Repository已将GOR
 新独立System Go Job125097761936已实际failure，失败点为标准Make前提 `check-node-runtime`，尚未执行Go测试；新增Job遗漏了该入口要求的Node准备，已按仓库 `.node-version` 补齐固定版本Node，保留原检查并把版本文件登记为选择输入，不修改个人环境或产品等待预算。新Job再次实际执行前不计通过。
 
 **数量说明校正。** 机器契约及三个受验源码逐项核验：Engine删除必需七Owner，全部Cleanup Runtime为十Owner。文中晚近Engine诊断段落误写“十Owner”的数量已校正，实际runner始终按同一cause契约验证完整集合，机器契约b6aa6485不变，不调整六权限、操作范围或七项业务断言。
+
+
+**预评估与 validation 影响一致性修正。** 生命周期事实读取修复后，又用受控索引／真实脱敏描述契约复现确定缺陷：active Engine 的删除预评估未计入其现有索引，转入 deleting 后相同库存被计入，导致本应相同的影响摘要漂移。已先补正式 Cleanup 规范，再仅对 `scan + engine.deleting + 精确 EngineID` 计入将失效投影；普通 scan 不扩围，execute 对仍 active 的存储 Engine 继续拒绝，不放宽摘要匹配，不新增权限／效果。新回归对旧实现明确失败，修正后 `make test-manager-backend` exit0，覆盖两阶段相同 digest 和 active execute 拒绝。
+
+最新3f281d49c依赖基线的隔离源码 Manager PG 首次29主项PASS／1FAIL／0SKIP，唯一 ExecutionEvents expired 断言 recovered0。只读时钟探针实测数据库比宿主机慢2.91秒，夹具却用宿主机减1秒制造过期，而生产按数据库时钟判定；已把该夹具改用共享 `DatabaseNow`，保留原数量与迟到写入拒绝断言。没有调整时钟、环境、生产租约或等待预算；标准入口复验实际exit0、31主项PASS／0FAIL／0SKIP，ExecutionEvents与Cleanup原子性均通过。历史e779及3f的Linux门禁与本次新增代码分开记录，不把旧源码通过冒充当前新增修正通过。

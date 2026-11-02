@@ -260,7 +260,12 @@ func runManagerExecutionEvents(t *testing.T, database func(*testing.T) *gorm.DB)
 			case "owner_failure":
 				err = queue.FailClaimed(t.Context(), claimed, *lease, "manager.execution.test_failed", "private-event-sentinel", time.Now().UTC())
 			case "expired":
-				if err := db.Model(item).Update("lease_expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+				// Lease validity uses the database clock, including in fixtures.
+				databaseNow, clockErr := commonExecution.DatabaseNow(db)
+				if clockErr != nil {
+					t.Fatal(clockErr)
+				}
+				if err := db.Model(item).Update("lease_expires_at", databaseNow.Add(-time.Second)).Error; err != nil {
 					t.Fatal(err)
 				}
 				var count int

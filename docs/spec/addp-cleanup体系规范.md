@@ -749,6 +749,8 @@ cleanup 不等于所有生命周期事件都必须由 System 同步调度。
 
 ### Engine 删除工作流
 
+Manager 在 Engine 仍 active 的只读删除预评估中，必须把同一显式目标在删除后将失效的现有索引计入计划影响。该投影仅用于 `action=scan` 且 `cause_event=engine.deleting`、精确 Engine 上下文匹配的评估；普通手工 scan 不扩大到 active 存储 Engine，active 存储 Engine 的 execute 仍被确认范围复核拒绝。进入 deleting 后，对未变化的索引应得到相同影响摘要；新增记录、范围变化或库存证据不完整继续阻断，不能放宽 digest 比对。
+
 Engine 删除必须遵循单一的两阶段顺序：
 
 ```text

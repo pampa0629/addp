@@ -63,7 +63,11 @@ func (s *CleanupService) assessCleanupIndex(ctx context.Context, input events.Cl
 				if err != nil || capabilities == nil {
 					return nil, nil, fmt.Errorf("%w: capabilities unavailable", errCleanupEngineFacts)
 				}
-				candidates[id] = capabilities.Storage == nil
+				// The deletion assessment describes the confirmed future
+				// retirement. Execution still requires the real invalid state.
+				deletionAssessment := input.Action == events.CleanupActionScan &&
+					input.CauseEvent == events.CleanupCauseEngineDeleting && input.Context.EngineID == id
+				candidates[id] = capabilities.Storage == nil || deletionAssessment
 			default:
 				return nil, nil, fmt.Errorf("%w: lifecycle unavailable", errCleanupEngineFacts)
 			}

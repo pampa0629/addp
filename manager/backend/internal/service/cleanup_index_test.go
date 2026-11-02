@@ -115,3 +115,63 @@ func TestCleanupIndexScopeUsesExactEngineFactsAndConfirmedInventory(t *testing.T
 		})
 	}
 }
+
+func TestCleanupEngineDeletionAssessmentKeepsProjectedIndexImpactStable(t *testing.T) {
+	search, db := contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/indexes/content/documents/fetch" {
+			t.Error("assessment must not mutate the index")
+			w.WriteHeader(500)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"offset": 0, "limit": 256, "total": 1, "results": []any{map[string]any{"id": "owned-projection", "document_id": "owned-projection", "tenant_id": 7, "engine_id": 9}}})
+	}))
+	lifecycle := "active"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/system/runtime/engine-descriptors/9" || r.Header.Get("Authorization") != "Bearer fixture" {
+			t.Error("Engine fact read escaped exact descriptor scope")
+			w.WriteHeader(403)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 9, "lifecycle_state": lifecycle, "capabilities": map[string]any{"schema_version": "engine.capabilities/v1", "engine_type": "test", "engine_family": "test", "storage": map[string]any{}}})
+	}))
+	defer server.Close()
+	svc := &CleanupService{db: db, search: search, systemClient: client.NewSystemServiceClient(server.URL, cleanupIndexToken{}, server.Client())}
+	input := events.CleanupRequest{RequestID: "index-preflight", TenantID: 7, RequestedBy: 7, Action: events.CleanupActionScan, Context: events.CleanupContext{EngineID: 9}}
+	ordinary, _, err := svc.assessCleanupIndex(t.Context(), input)
+	if err != nil || ordinary.CandidateCount != 0 {
+		t.Fatal("ordinary scan broadened to active storage Engine")
+	}
+	input.CauseEvent = events.CleanupCauseEngineDeleting
+	preflight, _, err := svc.assessCleanupIndex(t.Context(), input)
+	if err != nil || preflight.CandidateCount != 1 || len(preflight.EngineIDs) != 1 || preflight.EngineIDs[0] != 9 {
+		t.Fatal("Engine deletion assessment omitted its future invalid projection")
+	}
+	before, err := events.BuildCleanupImpactData(cleanupIndexImpact(preflight), "/manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle = "deleting"
+	input.RequestID = "index-validation"
+	validation, _, err := svc.assessCleanupIndex(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := events.BuildCleanupImpactData(cleanupIndexImpact(validation), "/manager")
+	if err != nil || before.Digest != after.Digest {
+		t.Fatal("unchanged index impact drifted across Engine retirement transition")
+	}
+	if err := db.Create(validation).Error; err != nil {
+		t.Fatal(err)
+	}
+	input.Action = events.CleanupActionExecute
+	input.BasedOnScan = input.RequestID
+	input.RequestID = "index-execute"
+	lifecycle = "active"
+	if _, _, err := svc.prepareCleanupIndex(t.Context(), &cleanup.Run{Input: input}); err == nil {
+		t.Fatal("planned assessment authorized deletion while Engine remained active")
+	}
+	lifecycle = "deleting"
+	if _, _, err := svc.prepareCleanupIndex(t.Context(), &cleanup.Run{Input: input}); err != nil {
+		t.Fatal(err)
+	}
+}
