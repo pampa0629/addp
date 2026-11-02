@@ -87,7 +87,7 @@ Prometheus 只通过 Monitor 的单一认证 HTTP SD 获取全量有界快照；
 
 ### 4.4 平台引擎部署登记
 
-引擎部署属于平台运维对象，与租户 Engine Instance 分开。System `/platform/engine_deployments` 提供集合 POST 批量确认、GET 分页/详情和 PUT 管理更新，分配稳定 `deployment_id`；支持 Infra 与 Business 的标准单容器 PostgreSQL／Redis，显式关联一个已纳管主机。其他服务只显示发现事实与未适配原因；集群多主机、云服务及租户引擎关联尚未开放。不接受 `tenant_id/engine_id`、连接凭据或 SQL，不从 Web 请求执行 Docker 或数据库探测。
+引擎部署属于平台运维对象，与租户 Engine Instance 分开。System `/platform/engine_deployments` 提供集合 POST 批量确认、GET 分页/详情和 PUT 管理更新，分配稳定 `deployment_id`；支持 Infra 与 Business 的标准单容器 PostgreSQL／Redis／MinIO，显式关联一个已纳管主机。其他服务只显示发现事实与未适配原因；集群多主机、云服务及租户引擎关联尚未开放。不接受 `tenant_id/engine_id`、连接凭据或 SQL，不从 Web 请求执行 Docker 或数据库探测。
 
 管理员在“平台引擎部署”读取部署侧发现结果，选择待接入服务、核对名称和实际承载主机后批量确认，无需运行导出命令或导入文件。来源项目、容器运行身份、状态及对应数据库端口来自 4.5 的唯一发现链路；Docker Desktop 只可关联 virtual 主机，不按地址、名称或容器 ID 猜测承载关系。发现可用与纳管、专业采集成功分别表达。
 
@@ -95,7 +95,7 @@ POST 仅接受 `items`，每次 1—16 个显式成员；成员为 `scope/servic
 
 部署详情通过同一只读发现接口展示最近一次来源，按已确认的 Docker Engine、Compose 项目和服务匹配；不按名称、端口或地址猜测。来源过期、不可用、运行环境不符或服务未发现时不展示旧容器为当前结果；容器运行身份变化只更新来源展示，不改部署 ID、声明版本、主机关联或历史。容器运行状态不等于数据库可用或专业采集成功。来源单独刷新不清除管理草稿，也不解除写入冲突阻断；切换账号、对象或关闭详情后，迟到响应不得恢复旧来源。
 
-来源按 Docker Engine ID、Compose 项目和服务唯一，停用也不可重复登记。PUT 仅接受名称、纳管意图、主机与当前 `version`，不接受客户端重写来源；实时运行变化由发现结果表达。列表只接受 `page/page_size/search/node_id/engine_type`，类型精确限定postgresql或redis并在计数／分页前过滤，名称按字面片段搜索，主机筛选按声明身份；详情不接受 query。请求正文最多 32 KiB，拒绝未知字段、重复键、大小写别名及附加 query。结果未知或来源变化时保留草稿并停止提交，必须显式重读核对，不自动重试创建。
+来源按 Docker Engine ID、Compose 项目和服务唯一，停用也不可重复登记。PUT 仅接受名称、纳管意图、主机与当前 `version`，不接受客户端重写来源；实时运行变化由发现结果表达。列表只接受 `page/page_size/search/node_id/engine_type`，类型精确限定postgresql、redis或minio并在计数／分页前过滤，名称按字面片段搜索，主机筛选按声明身份；详情不接受 query。请求正文最多 32 KiB，拒绝未知字段、重复键、大小写别名及附加 query。结果未知或来源变化时保留草稿并停止提交，必须显式重读核对，不自动重试创建。
 
 创建与更新在同一 PostgreSQL 事务保存根版本、声明有效区间及统一审计；并发旧版本返回 409，不自动刷新版本重试。声明时间统一取数据库时间，表示管理员声明的生效/结束时刻，不能回填为实际部署历史。闭合历史不可更改或删除；首批不物理删除部署。读取在同一快照核对当前主机和部署纳管状态：有效关联为 `bound`，停用或 Desktop 主机类型变化为 `rejected`，保留原声明；这些状态均不表示服务在线、专业指标采集成功或租户业务可用性，不参与业务 Ready。
 
@@ -119,11 +119,13 @@ System `GET /platform/engine_deployments/discovery` 仅接受非委托 Platform 
 
 SIGTERM／SIGINT处理器只锁存停止请求，由非阻塞唤醒管道打断原30秒空闲等待；不在异步处理器直接抛退出异常，避免信号命中Python析构器时成为被忽略异常。主循环、锁等待和Docker读取在显式检查点响应停止；Docker命令仍仅启动一次，分段等待同一子进程，不重置原单次10秒／整轮30秒预算。取消读取先回收当次自有子进程，再按原非阻塞失效及退出核验流程清理；归属、单次停止信号与未退出保留记录不变。
 
-PostgreSQL／Redis 专业来源沿同一发现文件发布：部署侧仅核对 PostgreSQL 配对来源或 Redis 单来源的 Owner、scope、project、数据库容器完整 ID／启动时刻及显式 HTTPS 发布端口；不读环境、Secret 或 SQL。采集身份不加入管理员确认摘要或不可变部署声明，公开发现 DTO 排除专业端点。
+PostgreSQL／Redis／MinIO 专业来源沿同一发现文件发布：部署侧仅核对 PostgreSQL 配对来源或 Redis／MinIO 单来源的 Owner、scope、project、数据库容器完整 ID／启动时刻及显式 HTTPS 发布端口；不读环境、Secret 或 SQL。采集身份不加入管理员确认摘要或不可变部署声明，公开发现 DTO 排除专业端点。
 
 该接口不创建纳管身份、不更改管理员声明、历史或租户权限；管理员批量确认遵循 [4.4](#44-平台引擎部署登记)，专业来源的私有投影与准入见 [4.7](#47-postgresql-受保护的固定指标来源)。候选读取、来源自动发布、专业采集与用户查询分别验证，不以发现成功代替产品接入验收。
 
 Redis 私有来源字段沿同一v2文件的 `redis_metrics` 发布，形状复用唯一 `EngineMetricsSource`：状态、HTTPS端点、当前数据库容器完整ID和启动时刻。只读发现核对工作区摘要分隔的唯一来源项目、Owner／scope／服务标签、数据库私网网络身份、单个显式9443映射及前后事实一致；无源为not_deployed，错配或重复为unavailable，不读取采集密码／TLS文件或容器环境。System独立校验与单个运行中redis容器精确相符、快照时效、来源键及已纳管主机绑定，仅向既有Monitor后台身份提供该最小字段；普通浏览器发现和持久声明均不含专业端点。Redis与PostgreSQL分别失效，不能互相顶替；Monitor仍沿唯一准入和HTTP SD，以真实引擎类型标记来源，不新增并行查询入口或租户归算。
+
+MinIO 复用上述平台部署登记、主机绑定与私有来源链路，平台部署类型沿已有发现协议使用 `minio`（不是租户 S3 插件标识）。`minio_metrics` 复用同一私有字段形状，唯一来源项目由工作区摘要和scope确定；核对Owner、scope、服务、数据库容器完整ID／启动时刻、唯一来源私网及显式9443发布。Infra数据库可在多个网络，但来源必须只加入同一数据库的标准 `addp-network`；Business为 `business-network`。只读核对网络ID及Compose归属，不以网络名称猜测。登记只保留9000 API端口，不接收9001控制台端口。来源缺失、错配或关闭独立失效，公开DTO及声明不含端点；Monitor沿同一准入和HTTP SD发布真实minio类型。本批不新增权限、角色、租户关联、查询指标或页面指标。前向迁移只扩展平台部署类型和来源服务匹配约束，保留既有身份、历史与权限。
 
 ### 4.6 PostgreSQL 数据库侧汇总读取边界
 

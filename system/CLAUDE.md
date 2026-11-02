@@ -76,7 +76,7 @@ PG 任务产出初始授权沿同一源 Grant 表与读取／撤销链管理，�
 - 资源回收管理（跨模块评估和执行资源回收）
 - 模块注册与发现（供 Gateway 动态路由）
 - 平台节点台账：`/platform/host_nodes` 创建/分页读取/版本更新；独立 `platform.host_node.*`，Platform User、默认平台系统管理员。模块实例通过部署 `ADDP_HOST_NODE_ID` 声明，System 从真实 Client 校验节点允许集合；首次声明不可改挂，拒绝/撤销关联不影响登记与租约。节点基础不含 SSH 或采集；引擎部署另走独立登记与显式承载声明，见平台运行观测规范 4.1、4.4。
-- 平台引擎部署：`/platform/engine_deployments` 管理 Infra／Business PostgreSQL 来源快照与明确的单主机承载声明；稳定部署 UUID 与租户 Engine 分开。独立平台权限、版本 CAS、数据库时间声明区间和审计同事务，不探测 SQL/Docker、不授予业务数据读取。System 前端“平台引擎部署”提供自动发现、批量确认及详情的最近来源展示；T2 精确入口 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test engine-deployments"`，权限迁移用同入口 `--package migration`，均由既有门禁自动发现。
+- 平台引擎部署：`/platform/engine_deployments` 管理 Infra／Business PostgreSQL／Redis／MinIO 来源快照与明确的单主机承载声明；稳定部署 UUID 与租户 Engine 分开。独立平台权限、版本 CAS、数据库时间声明区间和审计同事务，不探测 SQL/Docker、不授予业务数据读取。System 前端“平台引擎部署”提供自动发现、批量确认及详情的最近来源展示；T2 精确入口 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test engine-deployments"`，权限迁移用同入口 `--package migration`，均由既有门禁自动发现。
 - PostgreSQL 专业观测沿唯一私有观测投影增加已纳管、主机关联有效的 Infra／Business 指标 HTTPS 端点与当前数据库容器 ID／启动时刻。部署发现 v2 的专业来源字段仅在该投影使用，不进入普通浏览器 DTO、管理员确认摘要或部署声明；后台身份不代替当前用户读取授权。
 - TaskProvider 模块角色声明与动态发现（供 Orchestrator 查询调用）
 - 数据存储在 PostgreSQL 数据库（system schema）
@@ -125,7 +125,7 @@ PG 任务产出初始授权沿同一源 Grant 表与读取／撤销链管理，�
 
 - `GET /api/v1/system/runtime/observability-identities` 只允许固定 `addp-monitor` 的非委托 Platform Service Access Token 与 `system.observability_identity.read`，不允许 User、Gateway、日志观测器或 Tenant Context。该 Permission 只授予 `platform.monitor_runtime`。
 - 同一私有响应的 `service_groups` 子域只增加标准部署入口声明的模块／Backend或Worker角色／用途、预期副本数、运行意图、变更时间和正式租约计数；不返回实例Metadata、端点、凭据或租户内容。System 使用既有受管发现目录只读核验 `service-expectations.json`，前后重读拒绝来源变化；缺失、非法、用途不明及超量仅使该子域不可判定，不把零在线解释为告警或恢复。协议、预算和状态见《addp平台运行观测规范》4.8；不增加身份、权限或普通用户DTO。
-- 只读可重复读事务返回启用节点的 UUID/版本与有效节点绑定、启用模块、UP 且未过期的 Backend/Worker/Scheduler/Ingress 实例身份和租约时间；另含启用且有效主机绑定的平台引擎部署 UUID/版本、Infra/Business 作用域、PostgreSQL／Redis引擎类型及 Docker 引擎／项目／服务来源键，不含名称、地址、端口、业务 URL、Metadata、Engine Connection、租户引擎或凭据。不持久化新副本，不续租，不参与业务 Ready。
+- 只读可重复读事务返回启用节点的 UUID/版本与有效节点绑定、启用模块、UP 且未过期的 Backend/Worker/Scheduler/Ingress 实例身份和租约时间；另含启用且有效主机绑定的平台引擎部署 UUID/版本、Infra/Business 作用域、PostgreSQL／Redis／MinIO引擎类型及 Docker 引擎／项目／服务来源键，不含名称、地址、端口、业务 URL、Metadata、Engine Connection、租户引擎或凭据。不持久化新副本，不续租，不参与业务 Ready。
 - 节点上限 1,000、带节点声明的当前候选实例上限 10,000、启用引擎部署候选上限 1,000、响应上限 4 MiB、总超时 5 秒。超限/控制面失败返回 503，超时 504；无成功空快照兜底或截断。真实空数组为 200，所有投影响应禁止缓存。Common 的唯一服务 Client 校验完整性、时间、重复身份、节点引用与响应体预算。
 
 部署容器证明沿相同受管文件目录只读消费，不调用 Docker。迁移 000240 只扩展进程声明的严格 JSONB CHECK，允许选中的真实 cgroup 内核身份；不变更不可变触发器、既有数据或 IAM。当前实例的不可变声明附带真实 cgroup 内核身份；仅与标准单应用容器的完整层级证明、module／role、启动边界及有效租约精确匹配时，向既有 Monitor 后台投影增加私有 ContainerProof。重复证明、共享边界、缺失／过期／不可读证明均不关联，不推断承载主机、不进入浏览器实例 DTO，也不新增权限。证明字段与时限见平台运行观测规范 6.1；System T1／既有进程登记 PostgreSQL 门禁覆盖。
@@ -586,4 +586,4 @@ ES Hosted T4 的 System-owned `cmd/online-test-fixture --suite elasticsearch-con
 
 本人角色自查：`GET /api/v1/system/auth/subject-roles` 仅消费当前第一方 Tenant User Bearer，不接收主体、租户、角色筛选或正文，不增加功能权限或读取其他人角色的能力。复用执行角色核验的同一有效 Assignment 查询，包含没有功能权限的业务角色；AuthContext v1 仍只投影功能权限角色，不扩张认证协议。身份锁后与角色读取后复核当前 Token Family、Principal、Membership、授权版本及数据库墙钟，期限取令牌、Family、Membership 和返回角色的最早期限。响应 `no-store`；Common 客户端不缓存、不跟随重定向、不隐藏重试、不回退 Service 凭据，并与当前 AuthContext 精确比对主体、租户、成员和版本。异步执行仍必须走已有 execution/attempt/lease 绑定接口。真实 PostgreSQL 用例与 `execution-subject-roles` 标准 IAM 子组共入口执行，覆盖纯业务角色、授权版本、自然到期、登出与非本人凭据拒绝。
 
-平台引擎部署的标准单容器目录包含PostgreSQL／Redis；复用原管理员确认、来源唯一性、CAS、审计和有效主机关联。迁移000261只扩展类型／清单约束，不变更权限、角色或声明历史。唯一受管发现v2文件分别提供postgresql_metrics／redis_metrics私有来源；同一解析内核核对当前数据库容器ID、启动时刻和来源键，只向既有Monitor身份投影，浏览器排除专业端点。来源缺失／过期／错配不改变已确认部署。列表可按engine_type=postgresql|redis在计数和分页前精确筛选；Monitor专业查询按System当前User裁决的真实类型选择PG／Redis固定目录，不能把Redis当作PostgreSQL查询；本地专项与正式身份全链路验收分别记录。正式约束见平台运行观测规范4.4—4.5及Redis节。
+平台引擎部署的标准单容器目录包含PostgreSQL／Redis／MinIO；复用原管理员确认、来源唯一性、CAS、审计和有效主机关联。迁移000261／000262只扩展类型／清单约束，不变更权限、角色或声明历史。唯一受管发现v2文件分别提供postgresql_metrics／redis_metrics／minio_metrics私有来源；同一解析内核核对当前数据库容器ID、启动时刻和来源键，只向既有Monitor身份投影，浏览器排除专业端点。来源缺失／过期／错配不改变已确认部署。列表可按engine_type=postgresql|redis|minio在计数和分页前精确筛选；Monitor专业查询按System当前User裁决的真实类型选择PG／Redis固定目录，不能把Redis当作PostgreSQL查询；本地专项与正式身份全链路验收分别记录。MinIO已接同一发现、确认、绑定及HTTP SD，专业查询／指标页另批实现，管理列表暂不向MinIO提供未适配的监控跳转。正式约束见平台运行观测规范4.4—4.5及各引擎节。

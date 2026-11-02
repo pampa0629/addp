@@ -35,11 +35,14 @@ func TestEngineProjectionUsesSharedAdmissionAndReservations(t *testing.T) {
 	if _, err := projector.Project(context.Background(), []NodeTarget{target}); err != ErrInvalidTarget {
 		t.Fatalf("duplicate physical endpoint accepted: %v", err)
 	}
-	snapshot.EngineDeployments[0].EngineType = "redis"
-	snapshot.EngineDeployments[0].SourceKey.Service = "redis"
-	groups, err = projector.Project(context.Background(), nil)
-	if err != nil || len(groups) != 1 || groups[0].Labels["addp_source"] != "redis" {
-		t.Fatal("Redis source mislabeled", err)
+	for _, engineType := range []string{"redis", "minio"} {
+		snapshot.EngineDeployments[0].EngineType = engineType
+		snapshot.EngineDeployments[0].SourceKey.Service = engineType
+		groups, err = projector.Project(context.Background(), nil)
+		if err != nil || len(groups) != 1 || groups[0].Labels["addp_source"] != engineType {
+			t.Fatal("Redis source mislabeled", err)
+		}
+
 	}
 	snapshot.EngineDeployments[0].Metrics = &models.EngineMetricsSource{State: "unavailable"}
 	groups, err = projector.Project(context.Background(), []NodeTarget{target})

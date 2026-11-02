@@ -561,3 +561,17 @@ Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部�
 最初一轮编译因扫描时刻参数替换误触JWT调用失败，在启动夹具前修复；随后来源T2的保卷重建检查要求请求计数，但新进程还无S3调用，固定原生端点按正值发布规则没有计数代际。夹具补入重建后对自有对象的真实GET，同时验证对象持久化及新计数；不改产品输出、补零、降低边界或等待伪造样本。最终上述来源T2完整通过，前次失败及物理清理结果独立保留。
 
 本批没有自动发现／System精确来源投影、Monitor固定查询和Console专业页的MinIO实现；不计作完整17项专业监控或正式用户T4／生产T5。没有应用个人配置、安装个人账号、改数据库／Docker设置、重启个人服务、查询或触发CI／Hosted，继续等专门会话回传；没有设置定时任务。
+
+
+## MinIO 自动发现与 System 精确来源关联（2026-11-02）
+
+- 范围：Infra／平台自管Business单容器MinIO，沿唯一部署发现v2、管理员确认及既有主机关联、私有投影和HTTP SD。无自动纳管、租户Engine／S3数据读取或新增IAM权限。平台目录沿发现协议使用minio，登记只保留9000 API端口；000262仅扩展类型与服务匹配约束，不改历史迁移、声明或权限。
+- 只读发现核验工作区／scope唯一来源项目、Owner、数据库完整容器ID／启动时刻、单一来源网络、Compose网络归属及显式HTTPS端口。Infra数据库多网络时来源仍只加入addp-network，Business为business-network。Redis／MinIO复用单来源发现内核，保留Redis原网络集合约束；缺失、错配与停用分别失效，不跨类型顶替。端点不进入公开DTO、确认摘要或持久声明。
+- System严格JSON白名单增加minio_metrics，仍拒绝未知、重复和大小写别名字段；当前来源只与单个运行容器精确匹配。私有投影须先有有效纳管主机关联，再经原Monitor准入进入HTTP SD，标签保留真实minio类型。管理列表支持MinIO候选和名称，专业指标页未适配前不展示错误跳转。
+- T0／T1：`make test-deployment-discovery`通过45项发现测试和6项容器证明测试；`make test-monitor-minio-observation-unit`通过21项账号／来源Python及现有Go来源测试。`make test-module MODULE=common GO_ONLY=1`、同入口Monitor和System均通过。初次System失败包括目录版本断言未同步，以及JSON白名单遗漏，均已修正后复验；不把初次失败记为通过。
+- T2：`make test-monitor-minio-observation`最终版本通过真实独占双来源mTLS、发现available／not_deployed、精确容器身份／启动时刻／HTTPS端点、重建恢复和原最小权限拒绝，容器／网络／卷／私有材料=0。`make test-monitor-redis-source`通过原真实发现、15项固定查询、生命周期及退出清理回归。均未启停或安装个人MinIO。
+- PostgreSQL T2：标准入口`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package <migration|repository|api> --test engine-deployments"`三包串行通过，实际addp-postgres映射25432、数据库仅addp_iam_test。覆盖Redis／MinIO前向发布及重复执行、权限不变、类型／服务错配拒绝、来源唯一性、有效主机关联、CAS及停用后退出私有投影、原HTTP审计事务。迁移回归参数化后再次通过migration包；未应用个人addp开发库。
+- 前端T1／T3：`make test-system-frontend`通过158项单元、原233项受控浏览器和构建；新增MinIO确认场景后，`make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS='e2e/engine-deployments.e2e.js'`通过158项单元、15项登记页浏览器和构建，包含Infra／Business MinIO显式主机关联、名称和确认请求。不是Safari真实运行或正式身份T4。
+- Swagger：`bash scripts/swagger/gen-swagger.sh system`和`bash scripts/swagger/check-route-coverage.sh system`通过，248个公开路由方法覆盖一致，类型筛选枚举加入minio。`make test-t2-ci-registration test-build-registration`通过；既有门禁已登记公共模型、发现脚本、System迁移及前端路径，无需新增入口或Workflow。
+- 本地日志：`/tmp/addp-minio-discovery-{python-final,common-t1,monitor-t1,system-t1-pass,system-pg,system-migration-final,t2-final,redis-t2,system-frontend,admission-ui,swagger,registration}.log`。临时路径不是长期交付附件；上述可重放标准命令和断言范围为证据正文。
+- 剩余：MinIO固定查询、17项指标与Console专业页尚未实现；当前来源受上游零值省略约束，不能补造0。CI／Hosted由专门会话安排回传，本会话未触发、重跑或轮询，不建立定时任务。

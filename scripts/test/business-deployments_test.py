@@ -40,7 +40,7 @@ class Source:
         if args[2] == 'info':
             return json.dumps(self.info)
         if args[2] == 'ps':
-            if any(prefix in ' '.join(args) for prefix in ('label=com.docker.compose.project=addp-postgres-metrics-','label=com.docker.compose.project=addp-redis-metrics-')):
+            if any(prefix in ' '.join(args) for prefix in ('label=com.docker.compose.project=addp-postgres-metrics-','label=com.docker.compose.project=addp-redis-metrics-','label=com.docker.compose.project=addp-minio-metrics-')):
                 return ''
             return self.ids
         if args[2] == 'inspect':
@@ -85,6 +85,21 @@ class RedisMetricsSource(Source):
             self.commands.append(args);return self.source_ids
         if len(args)>2 and args[2]=='inspect' and args[-1]=='b'*64:
             self.commands.append(args);return json.dumps(self.metrics)
+        return super().__call__(*args)
+
+
+class MinIOMetricsSource(RedisMetricsSource):
+    def __init__(self, scope='business'):
+        super().__init__(scope)
+        self.container.update(service='minio', ports={'9000/tcp':[{'HostIp':'127.0.0.1','HostPort':'19000'}], '9001/tcp':[{'HostIp':'127.0.0.1','HostPort':'19001'}]})
+        self.project = inventory.minio_metrics_project(scope)
+        self.metrics.update(project=self.project, service='minio-metrics')
+        self.metrics['networks'] = copy.deepcopy(self.metrics['networks'])
+        self.container['networks']['unrelated'] = {'NetworkID':'f'*64}
+        self.network = {'id':'e'*64,'name':'private','driver':'bridge','project':inventory.SCOPES[scope][0],'network':{'infra':'addp-network','business':'business-network'}[scope]}
+    def __call__(self,*args):
+        if len(args)>3 and args[2:4]==('network','inspect'):
+            self.commands.append(args);return json.dumps(self.network)
         return super().__call__(*args)
 
 
@@ -165,6 +180,26 @@ class DiscoveryTests(unittest.TestCase):
         source = MetricsSource()
         del source.metrics['c'*64]
         self.assertEqual(self.discover(source)['postgresql_metrics'], {'state': 'unavailable'})
+
+    def test_minio_exact_source_and_owned_network_with_multinetwork_database(self):
+        for scope in ('infra', 'business'):
+            source = MinIOMetricsSource(scope)
+            result = self.discover(source, scope=scope)
+            self.assertEqual(result['minio_metrics'], {'state':'available','endpoint':'https://127.0.0.1:19443/metrics','container_id':CID,'started_at':source.container['started_at']})
+            self.assertEqual(result['redis_metrics'], {'state':'not_deployed'})
+            self.assertFalse(any('Config.Env' in ' '.join(command) or command[2] not in ('info','ps','inspect','network') for command in source.commands if command[:2]==('--context','desktop-linux')))
+        for field, value in [('owner','foreign'),('scope','infra'),('database_id','d'*64),('database_started_at','2026-01-01T00:00:00Z'),('running',False),('service','redis-metrics'),('networks',{'foreign':{'NetworkID':'f'*64}}),('ports',{'9443/tcp':[{'HostIp':'0.0.0.0','HostPort':'19443'}]})]:
+            source=MinIOMetricsSource();source.metrics[field]=value
+            result=self.discover(source)
+            self.assertEqual(result['state'],'available')
+            self.assertEqual(result['minio_metrics'],{'state':'unavailable'},field)
+        for field, value in [('id','f'*64),('driver','host'),('project','foreign'),('network','foreign'),('name','foreign')]:
+            source=MinIOMetricsSource();source.network[field]=value
+            self.assertEqual(self.discover(source)['minio_metrics'],{'state':'unavailable'},field)
+        source=MinIOMetricsSource();source.source_ids+='\n'+'c'*64
+        self.assertEqual(self.discover(source)['minio_metrics'],{'state':'unavailable'})
+        source.source_ids=''
+        self.assertEqual(self.discover(source)['minio_metrics'],{'state':'not_deployed'})
 
     def test_redis_source_requires_exact_scope_database_network_and_publication(self):
         for scope in inventory.SCOPES:

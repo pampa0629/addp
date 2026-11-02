@@ -33,7 +33,7 @@ func (s *DeploymentDiscoveryService) Read(ctx context.Context) models.Deployment
 	result := models.DeploymentDiscovery{Scopes: make([]models.DeploymentDiscoveryScope, 0, 2), Candidates: []models.EngineDeploymentCandidate{}}
 	for _, scope := range []string{"infra", "business"} {
 		value := s.readScope(ctx, scope)
-		value.PostgreSQLMetrics, value.RedisMetrics = nil, nil // The browser projection has no professional source endpoint.
+		value.PostgreSQLMetrics, value.RedisMetrics, value.MinIOMetrics = nil, nil, nil // The browser projection has no professional source endpoint.
 		result.Scopes = append(result.Scopes, value)
 		if value.State == "available" {
 			for _, service := range value.Services {
@@ -177,6 +177,7 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 		models.DeploymentDiscoveryScope
 		Metrics json.RawMessage `json:"postgresql_metrics,omitempty"`
 		Redis   json.RawMessage `json:"redis_metrics,omitempty"`
+		MinIO   json.RawMessage `json:"minio_metrics,omitempty"`
 	}
 	if len(raw) > deploymentDiscoveryLimit || DecodeDeploymentJSON(raw, &document) != nil {
 		return bad
@@ -249,6 +250,7 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 	}
 	value.PostgreSQLMetrics = parseEngineMetrics(document.Metrics, value.Services, "postgresql", at)
 	value.RedisMetrics = parseEngineMetrics(document.Redis, value.Services, "redis", at)
+	value.MinIOMetrics = parseEngineMetrics(document.MinIO, value.Services, "minio", at)
 	return value
 }
 

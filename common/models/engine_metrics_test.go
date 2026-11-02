@@ -36,13 +36,17 @@ func TestEngineMetricsSourcePrivateShape(t *testing.T) {
 	}
 }
 
-func TestRedisObservabilityIdentityRequiresItsOwnCanonicalService(t *testing.T) {
-	identity := ObservabilityEngineIdentity{DeploymentID: "10000000-0000-4000-8000-000000000001", NodeID: "20000000-0000-4000-8000-000000000001", Version: 1, Scope: "business", EngineType: "redis", SourceKey: ObservabilityEngineSourceKey{DockerEngineID: "daemon", Project: "business", Service: "redis"}}
-	if err := identity.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	identity.SourceKey.Service = "postgres"
-	if identity.Validate() == nil {
-		t.Fatal("Redis accepted PostgreSQL source key")
+func TestSingleEngineObservabilityIdentityRequiresItsOwnCanonicalService(t *testing.T) {
+	for _, engineType := range []string{"redis", "minio"} {
+		t.Run(engineType, func(t *testing.T) {
+			identity := ObservabilityEngineIdentity{DeploymentID: "10000000-0000-4000-8000-000000000001", NodeID: "20000000-0000-4000-8000-000000000001", Version: 1, Scope: "business", EngineType: engineType, SourceKey: ObservabilityEngineSourceKey{DockerEngineID: "daemon", Project: "business", Service: engineType}}
+			if err := identity.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			identity.SourceKey.Service = "postgres"
+			if identity.Validate() == nil {
+				t.Fatal("Redis accepted PostgreSQL source key")
+			}
+		})
 	}
 }

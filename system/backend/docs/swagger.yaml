@@ -10705,6 +10705,7 @@ paths:
         enum:
         - postgresql
         - redis
+        - minio
         in: query
         name: engine_type
         type: string

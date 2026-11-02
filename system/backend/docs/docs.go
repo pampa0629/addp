@@ -6778,7 +6778,8 @@ const docTemplate = `{
                     {
                         "enum": [
                             "postgresql",
-                            "redis"
+                            "redis",
+                            "minio"
                         ],
                         "type": "string",
                         "description": "引擎类型 | Engine type",

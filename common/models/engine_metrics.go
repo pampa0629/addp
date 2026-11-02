@@ -43,6 +43,8 @@ func PlatformEngineService(engineType string) (string, int) {
 		return "postgres", 5432
 	case "redis":
 		return "redis", 6379
+	case "minio":
+		return "minio", 9000
 	default:
 		return "", 0
 	}

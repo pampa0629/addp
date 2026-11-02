@@ -362,7 +362,7 @@ def run(action, scope, env):
     docker = deployment.Docker(env)
     project, working = deployment.inventory.SCOPES[scope]
     factory = lambda: Database(docker, project, working, env.get('MINIO_ROOT_USER', ''), env.get('MINIO_ROOT_PASSWORD', ''))
-    source_project = 'addp-minio-metrics-'+hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]+'-'+scope
+    source_project = deployment.inventory.minio_metrics_project(scope)
     Lifecycle(docker, scope, directory, factory, source_project).run(enabled, env)
     print('MinIO observation '+scope+(': source deployed; successful scraping requires Monitor verification' if enabled else ': source and account disabled'))
 

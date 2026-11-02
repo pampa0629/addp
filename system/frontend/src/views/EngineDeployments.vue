@@ -15,7 +15,7 @@
       <el-table-column :label="t('system.engineDeployments.state')" min-width="170"><template #default="{ row }">{{ t(`system.engineDeployments.states.${bindingState(row)}`) }}</template></el-table-column>
       <el-table-column :label="t('system.engineDeployments.observed')" min-width="190"><template #default="{ row }">{{ formatDateTime(row.inventory.observed_at) }}</template></el-table-column>
       <el-table-column :label="t('system.engineDeployments.detailAction')" width="110" fixed="right"><template #default="{ row }"><el-button text type="primary" :data-testid="`deployment-detail-${row.deployment_id}`" @click="event => openDetail(row.deployment_id, event)">{{ t('system.engineDeployments.detailAction') }}</el-button></template></el-table-column>
-      <el-table-column v-if="canObserve" :label="t('system.engineDeployments.monitor')" width="110"><template #default="{ row }"><el-button text type="primary" @click="openMonitoring(row.deployment_id)">{{ t('system.engineDeployments.monitor') }}</el-button></template></el-table-column>
+      <el-table-column v-if="canObserve" :label="t('system.engineDeployments.monitor')" width="110"><template #default="{ row }"><el-button v-if="['postgresql','redis'].includes(row.engine_type)" text type="primary" @click="openMonitoring(row.deployment_id)">{{ t('system.engineDeployments.monitor') }}</el-button></template></el-table-column>
       <template #empty><el-empty :description="t(listLoaded ? 'system.engineDeployments.empty' : 'system.hostNodes.notLoaded')" :image-size="72" /></template>
     </el-table>
     <el-pagination v-if="listLoaded" :current-page="state.page" :page-size="state.pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="page => setQuery({page:String(page)})" @size-change="size => setQuery({page:'1',page_size:String(size)})" />
@@ -177,7 +177,7 @@ async function loadDiscovery() {
     const value=validateDeploymentDiscovery(await discoveryRequests.request(config=>engineDeploymentsAPI.discover(config)))
     if(!discoveryRequests.current(ticket))return
     discoveryScopes.value=value.scopes
-    candidates.value=value.candidates.map(item=>({...item,key:item.scope+'/'+item.service,display_name:`${item.scope==='infra'?'Infra':'Business'} ${item.service==='redis'?'Redis':'PostgreSQL'}`}))
+    candidates.value=value.candidates.map(item=>({...item,key:item.scope+'/'+item.service,display_name:`${item.scope==='infra'?'Infra':'Business'} ${({postgres:'PostgreSQL',redis:'Redis',minio:'MinIO'})[item.service]||item.service}`}))
     blocked.value=false
   }catch{if(discoveryRequests.current(ticket))saveError.value=t('system.engineDeployments.readFailed')}
   finally{if(discoveryRequests.current(ticket))reading.value=false}

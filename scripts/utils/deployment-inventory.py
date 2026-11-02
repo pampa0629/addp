@@ -41,6 +41,9 @@ METRICS_CONTAINER = CONTAINER[:-1] + (
     ',"network_mode":{{json .HostConfig.NetworkMode}}}')
 REDIS_METRICS_CONTAINER = METRICS_CONTAINER.replace('io.addp.postgres-metrics.', 'io.addp.redis-metrics.')[:-1] + ',"networks":{{json .NetworkSettings.Networks}}}'
 
+MINIO_METRICS_CONTAINER = REDIS_METRICS_CONTAINER.replace('io.addp.redis-metrics.', 'io.addp.minio-metrics.')
+METRICS_NETWORK = '{"id":{{json .Id}},"name":{{json .Name}},"driver":{{json .Driver}},"project":{{json (index .Labels "com.docker.compose.project")}},"network":{{json (index .Labels "com.docker.compose.network")}}}'
+
 SCOPES = {'infra': ('addp-infra', REPOSITORY), 'business': ('business', ROOT)}
 DISCOVERY_LIMIT = 256 * 1024
 _observer_children = {}  # Reap observers started by this interpreter when stopped.
@@ -257,31 +260,52 @@ def metrics_endpoint(binding):
     return 'https://'+host+':'+port+'/metrics'
 
 
-def redis_metrics_project(scope):
-    return 'addp-redis-metrics-'+hashlib.sha256(str(REPOSITORY).encode()).hexdigest()[:16]+'-'+scope
+def engine_metrics_project(kind, scope):
+    return 'addp-'+kind+'-metrics-'+hashlib.sha256(str(REPOSITORY).encode()).hexdigest()[:16]+'-'+scope
 
+def redis_metrics_project(scope):
+    return engine_metrics_project('redis', scope)
+
+def minio_metrics_project(scope):
+    return engine_metrics_project('minio', scope)
 
 def redis_metrics(docker, scope, containers):
+    return single_engine_metrics(docker, scope, containers, 'redis', redis_metrics_project(scope))
+
+def minio_metrics(docker, scope, containers, *, network_key=None):
+    return single_engine_metrics(docker, scope, containers, 'minio', minio_metrics_project(scope), network_key=network_key)
+
+
+def single_engine_metrics(docker, scope, containers, kind, project, *, network_key=None):
     unavailable = {'state':'unavailable'}
-    project = redis_metrics_project(scope)
     try:
         ids=docker('ps','--all','--no-trunc','--filter','label=com.docker.compose.project='+project,'--format','{{.ID}}').splitlines()
         if not ids:return {'state':'not_deployed'}
         if len(ids)!=1 or not identifier(ids[0]):return unavailable
-        databases=[value for service,value in containers.values() if service=='redis']
+        databases=[value for service,value in containers.values() if service==kind]
         if len(databases)!=1 or databases[0]['status']!='running':return unavailable
         database=databases[0]
-        source=json.loads(docker('inspect','--type','container','--format',REDIS_METRICS_CONTAINER,ids[0]))
-        if (source.get('id')!=ids[0] or source.get('project')!=project or source.get('oneoff')!='False'
-            or source.get('owner')!=str(REPOSITORY) or source.get('scope')!=scope or source.get('service')!='redis-metrics'
+        inspection = {'redis': REDIS_METRICS_CONTAINER, 'minio': MINIO_METRICS_CONTAINER}[kind]
+        source=json.loads(docker('inspect','--type','container','--format',inspection,ids[0]))
+        if (not isinstance(source, dict) or source.get('id')!=ids[0] or source.get('project')!=project or source.get('oneoff')!='False'
+            or source.get('owner')!=str(REPOSITORY) or source.get('scope')!=scope or source.get('service')!=kind+'-metrics'
             or source.get('database_id')!=database['container_id'] or source.get('database_started_at')!=database['started_at']
             or source.get('running') is not True or source.get('status')!='running'):return unavailable
-        current=json.loads(docker('inspect','--type','container','--format',REDIS_METRICS_CONTAINER,database['container_id']))
+        current=json.loads(docker('inspect','--type','container','--format',inspection,database['container_id']))
+        if not isinstance(current, dict): return unavailable
         networks,current_networks=source.get('networks'),current.get('networks')
-        if (current.get('id')!=database['container_id'] or current.get('started_at')!=database['started_at']
+        if (not isinstance(current, dict) or current.get('id')!=database['container_id'] or current.get('started_at')!=database['started_at']
             or current.get('running') is not True or not isinstance(networks,dict) or len(networks)!=1
-            or not isinstance(current_networks,dict) or set(networks)!=set(current_networks)
+            or not isinstance(current_networks,dict) or not set(networks).issubset(current_networks)
+            or (kind=='redis' and set(networks)!=set(current_networks))
             or any(not isinstance(value,dict) or not isinstance(current_networks[name],dict) or not identifier(value.get('NetworkID')) or value['NetworkID']!=current_networks[name].get('NetworkID') for name,value in networks.items())):return unavailable
+        if kind == 'minio':
+            name, attachment = next(iter(networks.items()))
+            network = json.loads(docker('network', 'inspect', '--format', METRICS_NETWORK, attachment['NetworkID']))
+            expected = network_key or {'infra':'addp-network','business':'business-network'}[scope]
+            if (not isinstance(network, dict) or network.get('id') != attachment['NetworkID'] or network.get('name') != name
+                    or network.get('driver') != 'bridge' or network.get('project') != SCOPES[scope][0]
+                    or network.get('network') != expected): return unavailable
         ports=source.get('ports')
         if (not isinstance(ports,dict) or len(ports)>8 or not isinstance(ports.get('9443/tcp'),list)
             or len(ports['9443/tcp'])!=1 or any(bindings for port,bindings in ports.items() if port!='9443/tcp')):return unavailable
@@ -318,7 +342,8 @@ def discover(scope, *, env=None, reader=None, system=None, root=None):
     first = read()
     metrics = postgres_metrics(docker, scope, first)
     redis = redis_metrics(docker, scope, first)
-    if (read() != first or postgres_metrics(docker, scope, first) != metrics or redis_metrics(docker, scope, first) != redis or ids() != container_ids
+    minio = minio_metrics(docker, scope, first)
+    if (read() != first or postgres_metrics(docker, scope, first) != metrics or redis_metrics(docker, scope, first) != redis or minio_metrics(docker, scope, first) != minio or ids() != container_ids
             or json.loads(docker('info', '--format', INFO)) != info):
         raise InventoryError('部署发现期间来源发生变化')
     services = {}
@@ -328,7 +353,7 @@ def discover(scope, *, env=None, reader=None, system=None, root=None):
         raise InventoryError('部署发现服务数量超出预算')
     result = {'schema': 'addp.deployment-discovery/v2', 'scope': scope, 'state': 'available',
               'observed_at': observed_at(),
-              'postgresql_metrics': metrics, 'redis_metrics': redis,
+              'postgresql_metrics': metrics, 'redis_metrics': redis, 'minio_metrics': minio,
               'source': {'type': 'docker_compose', 'runtime': kind, 'docker_engine_id': info['id'], 'project': project},
               'services': [{'service': service, 'engine_type': ENGINE_TYPES.get(service, 'unclassified'),
                             'containers': containers} for service, containers in sorted(services.items())]}

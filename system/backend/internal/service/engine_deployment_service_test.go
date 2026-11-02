@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	commonmodels "github.com/addp/common/models"
 	"strings"
 	"testing"
 	"time"
@@ -140,31 +141,42 @@ func TestEngineDeploymentDeclarationValidation(t *testing.T) {
 	}
 }
 
-func TestRedisDeploymentUsesCanonicalServicePortAndAdmission(t *testing.T) {
-	input := deploymentTestInput()
-	service := &input.Inventory.Services[0]
-	service.Service, service.EngineType = "redis", "redis"
-	service.Containers[0].PublishedPorts[0].ContainerPort = 6379
-	value, err := validateEngineDeployment(input)
-	if err != nil || value.EngineType != "redis" {
-		t.Fatalf("Redis declaration rejected: %v", err)
-	}
-	now := time.Now().UTC().Truncate(time.Second)
-	discovery := discoveryTestValue(now)
-	discovery.Services[0].Service, discovery.Services[0].EngineType = "redis", "redis"
-	discovery.Services[0].Containers[0].PublishedPorts[0].ContainerPort = 6379
-	candidate := deploymentCandidate("infra", discovery.Source, discovery.Services[0])
-	if !candidate.Eligible {
-		t.Fatal("Redis admission not eligible", candidate)
-	}
-	enabled := true
-	request := models.EngineDeploymentAdmissionRequest{Items: []models.EngineDeploymentAdmissionItem{{Scope: "infra", Service: "redis", Fingerprint: candidate.Fingerprint, DisplayName: "Infra Redis", Enabled: &enabled, DeclaredNodeID: input.DeclaredNodeID}}}
-	rows, err := buildDeploymentAdmissions(request, models.DeploymentDiscovery{Scopes: []models.DeploymentDiscoveryScope{discovery}}, now)
-	if err != nil || len(rows) != 1 || rows[0].Inventory.Services[0].EngineType != "redis" {
-		t.Fatal("Redis admission failed", err)
-	}
-	service.Containers[0].PublishedPorts[0].ContainerPort = 5432
-	if _, err := validateEngineDeployment(input); err == nil {
-		t.Fatal("Redis SQL port accepted")
+func TestSingleEngineDeploymentUsesCanonicalServicePortAndAdmission(t *testing.T) {
+	for _, engineType := range []string{"redis", "minio"} {
+		t.Run(engineType, func(t *testing.T) {
+			_, portNumber := commonmodels.PlatformEngineService(engineType)
+			input := deploymentTestInput()
+			service := &input.Inventory.Services[0]
+			service.Service, service.EngineType = engineType, engineType
+			service.Containers[0].PublishedPorts[0].ContainerPort = portNumber
+			value, err := validateEngineDeployment(input)
+			if err != nil || value.EngineType != engineType {
+				t.Fatalf("Redis declaration rejected: %v", err)
+			}
+			now := time.Now().UTC().Truncate(time.Second)
+			discovery := discoveryTestValue(now)
+			discovery.Services[0].Service, discovery.Services[0].EngineType = engineType, engineType
+			discovery.Services[0].Containers[0].PublishedPorts[0].ContainerPort = portNumber
+			if engineType == "minio" {
+				discovery.Services[0].Containers[0].PublishedPorts = append(discovery.Services[0].Containers[0].PublishedPorts, models.EngineDeploymentPort{Address: "127.0.0.1", Port: 19001, ContainerPort: 9001, Protocol: "tcp"})
+			}
+			candidate := deploymentCandidate("infra", discovery.Source, discovery.Services[0])
+			if !candidate.Eligible {
+				t.Fatal("Redis admission not eligible", candidate)
+			}
+			enabled := true
+			request := models.EngineDeploymentAdmissionRequest{Items: []models.EngineDeploymentAdmissionItem{{Scope: "infra", Service: engineType, Fingerprint: candidate.Fingerprint, DisplayName: "Infra Redis", Enabled: &enabled, DeclaredNodeID: input.DeclaredNodeID}}}
+			rows, err := buildDeploymentAdmissions(request, models.DeploymentDiscovery{Scopes: []models.DeploymentDiscoveryScope{discovery}}, now)
+			if err != nil || len(rows) != 1 || rows[0].Inventory.Services[0].EngineType != engineType {
+				t.Fatal("Redis admission failed", err)
+			}
+			if len(rows[0].Inventory.Services[0].Containers[0].PublishedPorts) != 1 {
+				t.Fatal("non-API port entered declaration")
+			}
+			service.Containers[0].PublishedPorts[0].ContainerPort = 5432
+			if _, err := validateEngineDeployment(input); err == nil {
+				t.Fatal("Redis SQL port accepted")
+			}
+		})
 	}
 }

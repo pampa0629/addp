@@ -1,4 +1,5 @@
 """Real native MinIO account lifecycle and denial proof in owned T2 containers."""
+from unittest import mock
 import importlib.util
 from datetime import datetime, timezone
 import hashlib
@@ -108,10 +109,26 @@ def ready(port, ctx):
             time.sleep(.1)
 
 
+def discover_source(scope, manager, expected):
+    inv = M.deployment.inventory
+    db = database(scope)
+    containers = {db.identity: ('minio', {'container_id':db.identity, 'status':'running', 'started_at':db.facts['started_at']})}
+    # Only owned fixture project/network selectors differ from standard deployment.
+    # All identity, ownership, endpoint and network reads use the actual Docker daemon.
+    with mock.patch.object(inv, 'minio_metrics_project', return_value=manager.source.project), mock.patch.dict(inv.SCOPES, {scope:(project, working)}):
+        value = inv.minio_metrics(lambda *args: docker.run(list(args)), scope, containers, network_key='default')
+    assert value['state'] == expected, 'MinIO exact discovery state rejected'
+    if expected == 'available':
+        assert value['container_id'] == db.identity and value['started_at'] == db.facts['started_at'], 'MinIO discovery substituted container identity'
+    return value
+
+
 def source_read(scope, manager, environment, context):
     manager.run(True, environment)
     port = int(environment['ADDP_MINIO_METRICS_LISTEN'].rsplit(':', 1)[1])
     body = ready(port, context)
+    discovered = discover_source(scope, manager, 'available')
+    assert discovered['endpoint'] == f'https://127.0.0.1:{port}/metrics', 'MinIO discovery substituted endpoint'
     state = manager.account.read(); db = database(scope)
     M.bind_source(db, scope, network_key='default')
     assert all(value not in body for value in (state['access_key'], state['secret_key'], db.parent, db.identity, 'permission-fixture', db.address)), 'private source identity escaped'
@@ -156,6 +173,7 @@ def source_contracts(managers, environments, contexts, roots):
         assert ready(port, ctx), 're-enabled observer failed to recover'
         manager.run(False, environment)
         assert not docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+manager.source.project]).strip(), 'disabled source remains'
+        discover_source(scope, manager, 'not_deployed')
         assert database(scope).probe(M.jwt(manager.account.read()['access_key'], manager.account.read()['secret_key'])) == 403, 'stop left native identity enabled'
         manager.run(True, environment); ready(port, ctx)
         try: manager.run(True, dict(environment, ADDP_MINIO_METRICS_TLS_DIR=str(state_root/'missing-tls')))

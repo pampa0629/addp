@@ -1,4 +1,4 @@
-const servicePorts = { postgres: { type: 'postgresql', port: 5432 }, redis: { type: 'redis', port: 6379 } }
+const servicePorts = { postgres: { type: 'postgresql', port: 5432 }, redis: { type: 'redis', port: 6379 }, minio: { type: 'minio', port: 9000 } }
 const supported = service => Object.hasOwn(servicePorts, service?.service) && servicePorts[service.service].type === service.engine_type
 const fields = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))

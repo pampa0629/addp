@@ -173,3 +173,19 @@ test('confirms Infra and Business Redis through the same explicit host admission
  await expect(page.getByRole('dialog')).toHaveCount(0)
  await expect(page.getByRole('button',{name:'查看监控',exact:true})).toHaveCount(4)
 })
+
+test('confirms Infra and Business MinIO through the same explicit host admission',async({page})=>{
+ const {writes}=await mockDeployments(page,{empty:true,minioSources:true,permissions:[...deploymentPermissions,'monitor.resource_observation.read']})
+ await page.goto('/engine-deployments');await page.getByTestId('deployment-create').click()
+ await selectSources(page)
+ await expect(page.getByRole('textbox',{name:'infra minio',exact:true})).toHaveValue('Infra MinIO')
+ await expect(page.getByRole('textbox',{name:'business minio',exact:true})).toHaveValue('Business MinIO')
+ await selectHost(page);await page.getByTestId('deployment-save').click()
+ await expect.poll(()=>writes.length).toBe(1)
+ expect(writes[0].items.filter(i=>i.service==='minio')).toEqual([
+  {scope:'infra',service:'minio',fingerprint:'b'.repeat(64),display_name:'Infra MinIO',enabled:true,declared_node_id:HOST_NODE_ID},
+  {scope:'business',service:'minio',fingerprint:'a'.repeat(64),display_name:'Business MinIO',enabled:true,declared_node_id:HOST_NODE_ID},
+ ])
+ await expect(page.getByRole('dialog')).toHaveCount(0)
+ await expect(page.getByRole('button',{name:'查看监控',exact:true})).toHaveCount(2)
+})

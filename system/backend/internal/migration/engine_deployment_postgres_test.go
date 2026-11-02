@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,38 +141,40 @@ func TestEngineDeploymentPublicationAgainstPostgres(t *testing.T) {
 		t.Fatal("canonical admission migration changed identity, history or authorization")
 	}
 
-	t.Run("Redis_constraint_only_forward_publication", func(t *testing.T) {
-		reset()
-		before, through := migrationFilesBeforeAndThrough(t, "000261_platform_redis_deployments.up.sql")
-		if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(`INSERT INTO system.host_nodes VALUES($1,'VM','virtual','[]',true,'[]',1,now(),now())`, node); err != nil {
-			t.Fatal(err)
-		}
-		const redis = `{"schema":"addp.engine-deployment-inventory/v1","source":{"type":"docker_compose","runtime":"linux_docker","docker_engine_id":"migration-daemon","project":"business"},"services":[{"service":"redis","engine_type":"redis","containers":[]}]}`
-		if _, err := db.Exec(`INSERT INTO system.engine_deployments VALUES($1,'Redis','redis',true,$2,$3,1,now(),now())`, deployment, redis, node); err == nil {
-			t.Fatal("Redis accepted before publication")
-		}
-		prior := snapshot()
-		runner := &Runner{DSN: dsn, FS: through, Root: DefaultMigrationsRoot}
-		for range 2 {
-			if err := runner.Run(ctx); err != nil {
+	for _, item := range []struct{ kind, file string }{{"redis", "000261_platform_redis_deployments.up.sql"}, {"minio", "000262_platform_minio_deployments.up.sql"}} {
+		t.Run(item.kind+"_constraint_only_forward_publication", func(t *testing.T) {
+			reset()
+			before, through := migrationFilesBeforeAndThrough(t, item.file)
+			if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
 				t.Fatal(err)
 			}
-		}
-		if snapshot() != prior {
-			t.Fatal("Redis publication changed authorization")
-		}
-		if _, err := db.Exec(`INSERT INTO system.engine_deployments VALUES($1,'Redis','redis',true,$2,$3,1,now(),now())`, deployment, redis, node); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(`UPDATE system.engine_deployments SET engine_type='postgresql' WHERE deployment_id=$1`, deployment); err == nil {
-			t.Fatal("cross-type inventory accepted")
-		}
-		if _, err := db.Exec(`UPDATE system.engine_deployments SET inventory=jsonb_set(inventory,'{services,0,service}','"postgres"') WHERE deployment_id=$1`, deployment); err == nil {
-			t.Fatal("cross-service inventory accepted")
-		}
-	})
+			if _, err := db.Exec(`INSERT INTO system.host_nodes VALUES($1,'VM','virtual','[]',true,'[]',1,now(),now())`, node); err != nil {
+				t.Fatal(err)
+			}
+			inventory := strings.ReplaceAll(`{"schema":"addp.engine-deployment-inventory/v1","source":{"type":"docker_compose","runtime":"linux_docker","docker_engine_id":"migration-daemon","project":"business"},"services":[{"service":"redis","engine_type":"redis","containers":[]}]}`, "redis", item.kind)
+			if _, err := db.Exec(`INSERT INTO system.engine_deployments VALUES($1,'Engine',$4,true,$2,$3,1,now(),now())`, deployment, inventory, node, item.kind); err == nil {
+				t.Fatal("engine type accepted before publication")
+			}
+			prior := snapshot()
+			runner := &Runner{DSN: dsn, FS: through, Root: DefaultMigrationsRoot}
+			for range 2 {
+				if err := runner.Run(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if snapshot() != prior {
+				t.Fatal("engine type publication changed authorization")
+			}
+			if _, err := db.Exec(`INSERT INTO system.engine_deployments VALUES($1,'Engine',$4,true,$2,$3,1,now(),now())`, deployment, inventory, node, item.kind); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`UPDATE system.engine_deployments SET engine_type='postgresql' WHERE deployment_id=$1`, deployment); err == nil {
+				t.Fatal("cross-type inventory accepted")
+			}
+			if _, err := db.Exec(`UPDATE system.engine_deployments SET inventory=jsonb_set(inventory,'{services,0,service}','"postgres"') WHERE deployment_id=$1`, deployment); err == nil {
+				t.Fatal("cross-service inventory accepted")
+			}
+		})
+	}
 
 }

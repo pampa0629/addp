@@ -27,7 +27,7 @@ func (s *ModuleRegistryService) enrichEngineMetrics(ctx context.Context, snapsho
 			continue
 		}
 		byScope[scope] = map[string]source{}
-		for engineType, metrics := range map[string]*commonmodels.EngineMetricsSource{"postgresql": value.PostgreSQLMetrics, "redis": value.RedisMetrics} {
+		for engineType, metrics := range map[string]*commonmodels.EngineMetricsSource{"postgresql": value.PostgreSQLMetrics, "redis": value.RedisMetrics, "minio": value.MinIOMetrics} {
 			service, _ := commonmodels.PlatformEngineService(engineType)
 			byScope[scope][engineType] = source{commonmodels.ObservabilityEngineSourceKey{DockerEngineID: value.Source.DockerEngineID, Project: value.Source.Project, Service: service}, metrics}
 		}

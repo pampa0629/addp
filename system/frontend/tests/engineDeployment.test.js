@@ -40,12 +40,12 @@ it('never substitutes admission facts or another Docker engine when a current so
  }
 })
 
-it('uses the same declaration and source matching for Redis without admitting SQL ports or credentials',()=>{
+it.each([['redis',6379],['minio',9000]])('uses exact %s source matching without admitting unrelated ports', (kind,port)=>{
  const value=structuredClone(inventory)
- value.services[0].service='redis';value.services[0].engine_type='redis';value.services[0].containers[0].published_ports[0].container_port=6379
+ value.services[0].service=kind;value.services[0].engine_type=kind;value.services[0].containers[0].published_ports[0].container_port=port
  expect(validateDeploymentInventory(value)).toBe(value)
- const discovery=discoveryFixture();const scope=discovery.scopes[1];scope.services=scope.services.filter(s=>s.service!=='redis');discovery.candidates=discovery.candidates.filter(c=>!(c.scope==='business'&&c.service==='redis'));scope.services[0]={...value.services[0],containers:value.services[0].containers.map(c=>({...c,status:'running'}))}
- const candidate=discovery.candidates.find(c=>c.scope==='business'&&c.service==='postgres');candidate.service='redis'
+ const discovery=discoveryFixture();const scope=discovery.scopes[1];scope.services=scope.services.filter(s=>s.service!==kind);discovery.candidates=discovery.candidates.filter(c=>!(c.scope==='business'&&c.service===kind));scope.services[0]={...value.services[0],containers:value.services[0].containers.map(c=>({...c,status:'running'}))}
+ const candidate=discovery.candidates.find(c=>c.scope==='business'&&c.service==='postgres');candidate.service=kind
  expect(validateDeploymentDiscovery(discovery)).toBe(discovery)
  expect(resolveDeploymentSource(value,discovery,Date.parse(scope.observed_at)).state).toBe('running')
  value.services[0].containers[0].published_ports[0].container_port=5432

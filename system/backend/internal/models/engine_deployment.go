@@ -111,6 +111,7 @@ type DeploymentDiscoveryScope struct {
 	// public discovery JSON nor an immutable deployment inventory contains it.
 	PostgreSQLMetrics *commonmodels.EngineMetricsSource `json:"-"`
 	RedisMetrics      *commonmodels.EngineMetricsSource `json:"-"`
+	MinIOMetrics      *commonmodels.EngineMetricsSource `json:"-"`
 	Schema            string                            `json:"schema"`
 	Scope             string                            `json:"scope"`
 	State             string                            `json:"state"`
