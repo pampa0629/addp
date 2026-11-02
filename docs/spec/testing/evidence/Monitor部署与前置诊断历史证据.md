@@ -144,3 +144,20 @@
 现有Make和Metrics标准入口均自动发现新增测试，原T2输入登记已覆盖该测试文件及部署发现源，无需新增入口、依赖或workflow。`changed-gate.py --dry-run`退出0只计选择，含其他会话WIP，不计对应门禁执行。本轮未运行原生Metrics T2／Hosted或重跑、调度、轮询CI，没有重启个人服务、修改个人数据库／Docker配置或设置定时；原Linux15秒失败仍未修复，等待专门会话回传新证据。清单实际第40行／B39“监控／总述”维持部分实现，本次只补测试诊断，不计产品采集自诊断或业务功能新增。
 
 最终日志 `/tmp/addp-compose-config-{reader-final,dev-lifecycle-final,selection-final}.log`；输入及分层验证收据 `/tmp/addp-compose-config-receipt.json` SHA-256 `c1bee48f6de49ce3c9a5b0535c05cdbdeeb2635d63c8be0796d335aaf92d4ae7`。尚未证明原超时根因，后续优先核对同一失败命令的新阶段／私有进程树证据，不能将本机未复现或测试回收通过写成原CI故障闭环。
+
+
+## 本机 Monitor 浏览器超时与系统休眠诊断（2026-11-02）
+
+专门CI会话回传固定`22f8b8ef6fdc3e5ced8974cbccf90cd469deba51`叠加拓扑会话自有overlay的本机`make test-monitor-frontend`结果：132项T1通过，592项浏览器589通过／3失败，构建未到达；不是Linux CI结果。失败分别为进程unavailable恢复后的`readyChart.finished`、Redis英语列表初始1.00GiB、Redis手动刷新场景的初始canvas，均为原5秒断言；原始终态日志SHA256为`ad68d053a4b22686a4894548dd06c40ff2ce1085228684aaf9990f66fdfd29d9`，不可变日志／截图／上下文见`/tmp/addp-ci-monitor-three-local-20261102/`，首次中断、无终态的记录另留存，不计通过。
+
+本会话独立检查三幅原图及上下文。Redis英语列表的失败截图仍空白，但稍后上下文已出现正确1.00GiB；Redis详情的上下文仍处加载，之后截图出现数值与图表；进程图已绘出，但完成谓词仍false。逐字节核对原overlay与当前工作区的Monitor src／e2e、Common Frontend Chart src及Basic src中257个JS／Vue／JSON／CSS输入全部相同，且两者node_modules指向同一真实目录，不仅核对两个失败spec。未据这些现象猜测产品逻辑或“偶发”，先用原标准入口附加trace取证。
+
+- 当前工作区只选原三个场景，`npm --prefix monitor/frontend run test:e2e -- e2e/process-trend-zoom.spec.js e2e/redis-resources.spec.js --grep 'process unavailable clears|Redis list.*\(en\)|Redis manual refresh' --trace=on`：3项通过（12.0秒，`/tmp/addp-monitor-three-diagnostic.log`）。同一命令在原overlay仅切工作目录，3项通过（16.9秒，`/tmp/addp-monitor-three-overlay-diagnostic.log`）。两者均使用临时reporter把成功trace复制到OS临时目录后由标准runner清理；没有改断言、增加重试或预算，单次通过不覆盖原失败。
+- 为核对前序场景影响，在原overlay按原文件顺序完整运行这两份spec、仍附trace：20项19通过／1失败（2.7分钟，`/tmp/addp-monitor-three-ordered-diagnostic.log`）。进程unavailable在原第132行再次失败。trace记录恢复接口已成功；最后一次完成检查仍false，随后轮询／截图记录存在约5.7秒空档，直到断言失败，原5秒预算已被消耗。Redis原两项本轮通过，不改写原三项整批失败。
+- 仅在一次原overlay诊断子命令中临时预加载Node内置`perf_hooks`，记录本方npm／标准启动器／Playwright CLI／Vite／Worker的事件循环延迟、CPU时间及idle增量，不修改全局环境、应用配置或源码。该次20项14通过／6失败（2.4分钟，`/tmp/addp-monitor-three-delay-diagnostic.log`），作为有诊断开销的失败取证，不计功能验收通过。其中13:11:01.294，五种进程角色同时经历约9.35秒停顿，Worker的9.374秒窗口只消耗3.652毫秒CPU、idle为9.372秒；13:12:31.770另一共同停顿约17秒。不存在只凭一个完成谓词推测CPU忙循环的依据。
+
+随后只读`pmset -g log`，原生日志确认上述诊断窗口反复出现Sleep／DarkWake，休眠理由为`Thermal Emergency Sleep`或`Dark Wake Thermal Emergency`，并与全部本方进程同步恢复时刻吻合。原三幅失败截图的完成时间（Asia/Shanghai）为12:49:03.955、12:49:46.334、12:50:05.999；相邻原生休眠／暗唤醒区间分别是12:48:53→12:49:04（11秒）、12:49:28→12:49:46（18秒）、12:49:54→12:50:06（12秒）。同源复现和跨进程采样确认本轮存在吞掉5秒预算的真实系统休眠干扰，原三项也紧邻这些恢复点；原失败没有trace，无法重建各请求／动画的精确停顿点，不能进一步声称已排除全部其他因素或诊断硬件温度、合盖状态及具体电源设置。
+
+本批未修改产品、测试、完成谓词、版本依赖或等待预算，未启用重试、禁用动画或以一次通过覆盖失败；未更改Mac／Docker配置、强制保活、重启个人服务或接管其他夹具。临时诊断随该测试子命令退出，没有设置定时任务。原两个文件的标准runner只清理当次服务／缓存／端口租约，失败trace及有界诊断材料保留。闭合字段的系统事件、257输入摘要、同步延迟及独立结论位于`/tmp/addp-monitor-three-delay-diagnostic-20261102/{closed-power-events,synchronized-pauses,diagnostic-proof}.json`；其余三轮成功／失败trace在对应`addp-monitor-three-*-diagnostic-20261102/`目录，未把原始全日系统日志纳入仓库。
+
+进一步本机验收先等待Mac恢复稳定唤醒，再原样复验原三项；未自行改变电源策略或重复运行完整592项。已有自然Linux运行继续由专门会话回传，本会话未查询、触发、取消或重跑CI／Hosted。固定74ed的592项＋构建通过但后置缓存归档取消的旧证据不变，也不覆盖新本机反例；本次休眠诊断不计当前完整Monitor前端、MinIO专业监控或正式身份验收通过。

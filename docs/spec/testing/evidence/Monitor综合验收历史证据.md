@@ -145,3 +145,8 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 初次本地标准聚合还存在系统LibreSSL3.3.6不支持证书-addext参数的六项环境错误，保留失败记录；未改系统配置／测试证书规则。仅为最终测试命令在PATH前置已安装OpenSSL3.6.4，执行 `PATH=/opt/homebrew/opt/openssl@3/bin:$PATH make test-node-metrics-online-runner`，162项及随后System Metrics身份Go夹具全部通过，日志 `/tmp/addp-platform-engine-cli-green.log`。原两项用例保留：无PYTHONPATH的真实新进程CLI启动／重启发现／清理，失败后owner保留、错误run／attempt拒绝、外来service拒绝且不回收，恢复本方事实后零fake资源；未连接个人Docker／数据库。
 
 另以仓库外冻结HEAD仅叠加该单文件修复，执行同一Python包的EngineSourceCommandTest两项，4.076秒全部通过，日志 `/tmp/addp-platform-engine-cli-frozen.log`，冻结目录退出删除；未依赖未提交Redis查询／261或其他会话WIP。现有标准入口已在Platform T0与Online runner登记并实际覆盖该测试文件和原注册约束，无新增测试入口、权限、CI Job或Hosted用途。差异格式检查通过；新自然Platform终态仍等专门会话回传，本地确定性夹具不计真实Hosted或整套Linux Platform已通过，不重跑旧CI、不设置定时任务或操作个人服务。
+
+
+## 后续本机浏览器三项失败的独立诊断（2026-11-02）
+
+固定22f8叠加拓扑自有overlay的标准Monitor前端入口实际132项T1通过、589／592项浏览器通过、构建未到；原三项失败和首次中断记录保留。本会话同源取证确认诊断期间存在macOS整机休眠、多个本方测试进程同步5—17秒停顿，超过原5秒断言预算；原失败产物完成时间紧邻11／18／12秒休眠恢复点。单独三项通过不覆盖原组合失败，原失败无trace不能逐调用复原；当前没有产品或测试修复，不放宽预算、不重跑完整门禁，稳定唤醒后的本机复验仍待完成。原图、源码闭包、分层结果及只读电源证据见[专项诊断](Monitor部署与前置诊断历史证据.md#本机-monitor-浏览器超时与系统休眠诊断2026-11-02)。自然Linux与Hosted继续等专门会话回传，不把旧74ed的固定产品通过或MinIO来源T2合并为本轮通过。
