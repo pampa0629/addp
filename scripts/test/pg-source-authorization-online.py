@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, parse_qs
 
 API = import_module('scripts.utils.online-api')
 PREFLIGHT = import_module('scripts.test.online-preflight')
@@ -436,16 +436,47 @@ def hidden_metadata(reader, item_id):
             'withdrawn metadata exposed a hidden DataItem')
 
 
+def production_lineage_schemas(current, engine, source, output, source_path, output_path):
+    facts = current.get('metadata', {}).get('lineage_facts')
+    require(isinstance(facts, dict) and facts.get('schema_version') == 'addp.lineage-facts/v1',
+            'production execution lineage evidence missing')
+    schemas = {}
+    for key, identity, path in (('inputs', source, source_path), ('outputs', output, output_path)):
+        refs = facts.get(key)
+        require(isinstance(refs, list) and len(refs) == 1 and isinstance(refs[0], dict),
+                'production lineage must bind one exact input and output')
+        ref = refs[0]
+        require(isinstance(ref.get('locator'), str), 'execution lineage locator missing')
+        uri = urlsplit(ref['locator'])
+        query = parse_qs(uri.query)
+        expected_path = '/' + str(engine) + '/path/' + '/'.join(segment['name'] for segment in path['segments'] if segment['name'])
+        require(uri.scheme == 'addp' and uri.netloc == 'engine' and uri.path == expected_path
+                and query.get('type') == ['table'] and not uri.fragment
+                and ('item_id' not in query or query['item_id'] == [str(identity)])
+                and ('item_id' not in ref or ref['item_id'] == identity),
+                'execution schema evidence belongs to a different DataItem')
+        schema = ref.get('schema_snapshot')
+        require(isinstance(schema, dict) and re.fullmatch('[0-9a-f]{64}', schema.get('hash', ''))
+                and isinstance(schema.get('fields'), list)
+                and len(schema['fields']) == 1 and isinstance(schema['fields'][0], dict)
+                and schema['fields'][0].get('name') == 'person_id',
+                'production field schema evidence missing or changed')
+        schemas[identity] = schema['hash']
+    return schemas
+
+
 class ProductionLineageObservation:
     """Observe the existing production relation through current User credentials only."""
 
-    def __init__(self, reader, outsider, source_id, output_id, execution):
+    def __init__(self, reader, outsider, source_id, output_id, execution, schemas):
         require(type(source_id) is int and type(output_id) is int and source_id > 0
                 and output_id > 0 and source_id != output_id, 'distinct lineage DataItem identities required')
         self.reader, self.outsider = reader, outsider
         self.source, self.output, self.execution = source_id, output_id, execution
         self.token = reader.token
         self.as_of = None
+        require(set(schemas) == {source_id, output_id}, 'lineage schema identities differ')
+        self.schemas = dict(schemas)
 
     def query(self, client, granularity, *, root=None, expected=200, as_of=None):
         query = {'subject_kind': 'data_item' if granularity == 'item' else 'field_ref',
@@ -453,6 +484,7 @@ class ProductionLineageObservation:
                  'direction': 'upstream', 'depth': 2, 'limit': 2}
         if granularity == 'field':
             query['field_name'] = 'person_id'
+            query['schema_snapshot_hash'] = self.schemas[query['item_id']]
         if as_of is not None:
             query['as_of'] = as_of
         result = client.request('GET', '/api/v1/meta/lineage/graph?' + urlencode(query), (expected,)).payload
@@ -481,7 +513,7 @@ class ProductionLineageObservation:
                 'lineage leaked a hidden/service node or neighbor count')
             if granularity == 'field':
                 require(value.get('field_name') == 'person_id'
-                        and re.fullmatch('[0-9a-f]{64}', value.get('schema_snapshot_hash', '')),
+                        and value.get('schema_snapshot_hash') == self.schemas[value['item_id']],
                         'field lineage lost the exact field and schema identity')
         node(graph.get('subject'))
         require(graph['subject']['item_id'] == self.output, 'lineage root changed')
@@ -511,9 +543,11 @@ class ProductionLineageObservation:
     def issued(self):
         deadline = time.monotonic() + 120
         while True:
-            complete = [self.validate(self.query(self.reader, level), level, source_visible=True, pending=True)
-                        for level in ('item', 'field')]
-            if all(complete):
+            item_complete = self.validate(self.query(self.reader, 'item'), 'item', source_visible=True, pending=True)
+            # An explicit schema hash must be proven by the collected execution.
+            # Wait for that exact item relation before asking for its fields;
+            # authorization/protocol errors are still immediate failures.
+            if item_complete and self.validate(self.query(self.reader, 'field'), 'field', source_visible=True):
                 break
             require(time.monotonic() < deadline, 'production lineage was not collected before deadline')
             time.sleep(1)
@@ -1564,7 +1598,8 @@ class Lifecycle:
         target = locator(self.engine, name, output['id'])
         preview(self.reader, target, True, 2)
         preview(self.outsider, target, False)
-        lineage = ProductionLineageObservation(self.reader, self.outsider, source['id'], output['id'], execution)
+        schemas = production_lineage_schemas(current, self.engine, source['id'], output['id'], self.path, path)
+        lineage = ProductionLineageObservation(self.reader, self.outsider, source['id'], output['id'], execution, schemas)
         lineage.issued()
         report['phase'] = 'concurrent_and_batch_read_load'
         self.measure_read_load(report, [(self.path, facts, source_grant),

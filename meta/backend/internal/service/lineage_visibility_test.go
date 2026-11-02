@@ -116,6 +116,28 @@ func exerciseUserFieldLineageVisibility(t *testing.T, db *gorm.DB) {
 	if err != nil || raw.Edges[0].Evidence["transformation"] != "direct" {
 		t.Fatalf("machine contract changed: %+v %v", raw, err)
 	}
+	// Basic identification need not persist deep field structure. The existing
+	// explicit-hash query must prove its fields from the execution observation.
+	if err := db.Model(&models.MetaItem{}).Where("id IN ?", []uint{source.ID, target.ID}).UpdateColumn("attributes", "{}").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.GetGraph(ctx, 7, req); err == nil || err.Error() != "table schema fields are required" {
+		t.Fatalf("basic-only current-schema query: %v", err)
+	}
+	req.SchemaSnapshotHash = schema.Hash
+	graph, err = svc.GetGraph(ctx, 7, req)
+	if err != nil || len(graph.Nodes) != 2 || len(graph.Edges) != 1 || graph.Truncated {
+		t.Fatalf("proven execution schema without deep metadata: %+v %v", graph, err)
+	}
+	allow = []uint{target.ID}
+	graph, err = svc.GetGraph(ctx, 7, req)
+	if err != nil || len(graph.Nodes) != 1 || len(graph.Edges) != 0 || graph.Truncated {
+		t.Fatalf("execution schema bypassed source withdrawal: %+v %v", graph, err)
+	}
+	allow = nil
+	if _, err := svc.GetGraph(ctx, 7, req); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("execution schema bypassed root withdrawal: %v", err)
+	}
 }
 
 func TestUserLineageVisibilityAgainstPostgres(t *testing.T) {
