@@ -57,7 +57,7 @@ CSV 使用原结果有序列名构造同名字段投影，`unknown` 表示“不
 | `POST /executions/{execution_id}/exports` | 从成功查询快照创建全量导出会话 |
 | `GET /exports/{id}`、`GET /exports/{id}/file` | 当前用户的会话状态和文件交付 |
 
-任务 CRUD、列表筛选与手动执行请求统一见[任务表 API](tables/dev_tasks表.md#四api-端点说明)；创建、更新都不保存 Source Engine 连接或 Token，执行目标与冻结来源沿模块契约。查询参数不通过字符串插值替换字段名或 SQL 片段。
+任务 CRUD、列表筛选与手动执行请求统一见[任务表 API](tables/dev_tasks表.md#四api-端点说明)；创建、更新都不保存 Source Engine 连接或 Token，执行目标与冻结来源沿模块契约。查询参数不通过字符串插值替换字段名或 SQL 片段。 开发调用顺序及当次／历史读取示例见[SQL 开发场景](../../CLAUDE.md#场景-1执行-sql-查询)。
 
 ## 数据库结构
 

@@ -300,8 +300,8 @@ Develop 执行记录归 `common.task_executions`，不维护私有执行表。�
 ### API 路由文件
 
 - [backend/internal/api/router.go](backend/internal/api/router.go) - HTTP 路由定义
-- [backend/internal/api/query_handler.go](backend/internal/api/query_handler.go) - 查询执行 API
-- [backend/internal/api/execution_handler.go](backend/internal/api/execution_handler.go) - 执行管理 API
+- [backend/internal/api/query_handler.go](backend/internal/api/query_handler.go) - 查询预检、真实模板与连接测试
+- [backend/internal/api/execution_handler.go](backend/internal/api/execution_handler.go) - execution 创建、当次／历史读取与导出
 - [backend/internal/api/operator_handler.go](backend/internal/api/operator_handler.go) - 算子发现 API
 - [backend/internal/api/notebook_handler.go](backend/internal/api/notebook_handler.go) - Jupyter Notebook API
 
@@ -326,103 +326,66 @@ Develop 执行记录归 `common.task_executions`，不维护私有执行表。�
 
 ### 场景 1：执行 SQL 查询
 
+目标发现和临时执行使用同一查询主路径：
+
+| 步骤 | 入口与要求 |
+| --- | --- |
+| 发现目标和模板 | `GET /api/v1/develop/engines` 返回真实实例；`GET /api/v1/develop/engines/{id}/sample-query` 可用 `locator` 指定数据项。查询语言、原生／联邦来源上下文及模板保护见[工作台与预检](#查询工作台与预检)。 |
+| 提交本次查询 | `POST /api/v1/develop/executions` 使用 `dev_type=query`、`content.query_type`／`content.query` 与真实 `execution_config.engine_id`；字段、冻结输入及 `source_task_id=null` 沿[Develop 任务契约](../docs/spec/tasks/模块任务契约.md#develop-开发任务)。 |
+| 选择执行目标 | 原生查询绑定该查询 Engine；DuckDB 等联邦查询绑定真实 Runtime Engine，来源由后端解析和授权，不另复制请求形态或使用虚拟 ID。 |
+
+参数定义与本次覆盖见[参数契约](../docs/spec/tasks/TaskProvider接口.md#标准响应体)，超时和预览上限沿[执行快照](../docs/spec/configuration/执行与模块策略.md#develop-执行快照与部署边界)。创建响应只用于取得本次 execution UUID；随后按读取目的选择入口：
+
 ```bash
-# 0. 查询目标发现
-# 真实查询引擎来自 System 注册实例
+# 工作台：读取当次结果，重新核对当前身份、保护和有效期
 curl -H "Authorization: Bearer <token>" \
-  "http://localhost:8185/api/v1/develop/engines"
+  "http://localhost:8185/api/v1/develop/executions/<execution_id>/result"
 
-# 1. 创建 ad-hoc 查询 execution
-curl -X POST http://localhost:8185/api/v1/develop/executions \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "dev_type": "query",
-    "trigger_type": "manual",
-    "content": {
-      "query_type": "sql",
-      "query": "<sample-query 返回的 query>"
-    },
-    "execution_config": {
-      "engine_id": 1
-    },
-    "timeout": 30
-  }'
-
-# DuckDB 联邦查询使用同一 execution 入口和真实 Runtime Engine ID
-curl -X POST http://localhost:8185/api/v1/develop/executions \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "dev_type": "query",
-    "trigger_type": "manual",
-    "content": {
-      "query_type": "sql",
-      "query": "SELECT * FROM <source_engine>.<schema>.<table> LIMIT 10"
-    },
-    "execution_config": {
-      "engine_id": 2
-    },
-    "timeout": 30
-  }'
-
-# 2. 创建响应返回 execution_id；按 ID 回查状态和受限结果预览
+# 历史专业详情：读取默认保护的持久预览与诊断
 curl -H "Authorization: Bearer <token>" \
   "http://localhost:8185/api/v1/develop/executions/<execution_id>"
 
-# 3. 查看执行历史
+# 本人查询执行列表；Develop 专业列表使用 dev_type 过滤
 curl -H "Authorization: Bearer <token>" \
   "http://localhost:8185/api/v1/develop/executions?dev_type=query&page=1&page_size=20"
 ```
 
+当次结果与历史的保护和暂存规则见[结果交付契约](#实时结果历史与日志)，完整结果另走[全量导出](#查询全量导出)，不把列表摘要或历史预览当作当次原值。页面操作与公开入口见[查询指南](frontend/docs/SQL任务功能说明.md#操作步骤)；真实授权、完整结果、清理及 HTTPS 覆盖按[验收索引](#开发与验证)认定。
+
 ### 场景 2：创建算子工作流
 
-```bash
-# 1. 获取可用工作流引擎实例
-curl -H "Authorization: Bearer <token>" \
-  http://localhost:8185/api/v1/develop/workflow-engines
+按同一运行时与同一候选定义完成发现、校验、保存和执行：
 
-# 2. 按具体工作流引擎实例获取可用算子
-curl -H "Authorization: Bearer <token>" \
-  http://localhost:8185/api/v1/develop/workflow-engines/{workflow_engine_id}/operators
+| 阶段 | 入口 | 取值与边界 |
+| --- | --- | --- |
+| 发现实例和算子 | `GET /api/v1/develop/workflow-engines`；`GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators` | 算子和公开参数取自所选实例的 Public Operator Spec，分层与派生沿[算子发现服务](#算子发现服务)。 |
+| 校验候选 | `POST /api/v1/develop/workflow-validations` | 提交 `workflow_engine_id` 和完整 `workflow_definition`；不创建 execution。校验结果与后续保存必须对应同一候选，修改后重新校验。 |
+| 保存定义 | `POST /api/v1/develop/task-definitions` | `dev_type=workflow`，将已校验 definition 放入 `content.workflow_definition`，同一 Runtime ID 写入 `execution_config.engine_id`；返回任务定义 ID。 |
+| 手动执行 | `POST /api/v1/develop/task-definitions/{id}/execute` | `{id}` 来自保存响应；可不提供覆盖，或按详情的 `execution_contract` 提交本次 `parameters`，不能传入未声明的 `input_table` 等字段。 |
 
-# 3. 创建工作流（JSON 定义）
-curl -X POST http://localhost:8185/api/v1/develop/task-definitions \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "缓冲区分析",
-    "dev_type": "workflow",
-    "content": {
-      "workflow_definition": {
-        "tasks": [
-          {"id": "load_data", "operator": "load", "params": {"locator": "addp://engine/12/path/public/cities?type=table"}, "depends_on": []},
-          {"id": "buffer", "operator": "buffer", "params": {"input_gdf": {"$ref": "load_data"}, "distance": 1000}, "depends_on": ["load_data"]},
-          {"id": "to_geojson", "operator": "to_geojson", "params": {"input_gdf": {"$ref": "buffer"}}, "depends_on": ["buffer"]}
-        ]
-      },
-      "inputs": {}
-    }
-  }'
+以下是保存请求的字段示意。Runtime `12`、存储 Engine `3`、资源路径、算子与参数均须按实际发现结果替换；两个 Engine ID 分别承担运行与资源绑定，不能互相推定：
 
-# 4. 执行前按目标运行时 Public Operator Spec 校验候选 definition
-curl -X POST http://localhost:8185/api/v1/develop/workflow-validations \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "workflow_engine_id": 12,
+```json
+{
+  "name": "缓冲区分析",
+  "dev_type": "workflow",
+  "content": {
     "workflow_definition": {
       "tasks": [
-        {"id": "load_data", "operator": "load", "params": {"locator": "addp://engine/3/path/public/cities?type=table"}, "depends_on": []}
+        {"id": "load_data", "operator": "load", "params": {"locator": "addp://engine/3/path/public/cities?type=table"}, "depends_on": []},
+        {"id": "buffer", "operator": "buffer", "params": {"input_gdf": {"$ref": "load_data"}, "distance": 1000}, "depends_on": ["load_data"]},
+        {"id": "to_geojson", "operator": "to_geojson", "params": {"input_gdf": {"$ref": "buffer"}}, "depends_on": ["buffer"]}
       ]
-    }
-  }'
-
-# 5. 执行工作流
-curl -X POST http://localhost:8185/api/v1/develop/task-definitions/123/execute \
-  -H "Authorization: Bearer <token>" \
-  -d '{"parameters": {"input_table": "public.cities"}}'
+    },
+    "inputs": {}
+  },
+  "execution_config": {"engine_id": 12}
+}
 ```
+
+完整公开参数必须先保存在任务定义；执行覆盖不补齐不完整任务，也不改写默认值。内部 `$ref`、DAG 结构与 Runtime 绑定不属于可覆盖输入；动态契约、资源重校验和稳定输出统一见[工作流任务输入与输出](../docs/spec/workflow/Develop资源与执行.md#工作流任务执行输入与输出)。
+
+该示意展示工作流内部数据流，不承诺 `to_geojson` 的内存结果已经成为业务资源或跨任务稳定输出；需要持久结果时，使用目标实例的保存算子与标准 ResourceLocator。执行受理、Runtime 返回、业务产物和血缘／扫描各按[执行监督](#执行输出与运行监督)及[验收索引](#开发与验证)分别核对。
 
 ### 场景 3：调试工作流执行失败
 
