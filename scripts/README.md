@@ -30,7 +30,7 @@
 | 场景选择、日常开发、容器测试、发布与常见问题 | [工作流与常见问题](docs/工作流与常见问题.md) |
 | 测试脚本目录、T0–T3、CI 登记、Agent 评测和 CLI 发布 | [测试与发布入口](docs/测试与发布入口.md) |
 | Online 分发、预检、Runner 隔离、报告、日志和节点指标 | [Online编排与观测](docs/Online编排与观测.md) |
-| 标准/模型引用、企业目录 ECV 矩阵与质量动态绑定 | [Online目录与治理](docs/Online目录与治理.md) |
+| 标准/模型引用、企业目录 ECV 矩阵与质量动态绑定 | [Online目录与治理](docs/Online目录与治理.md)、[目录验证入口](docs/Online目录与治理.md#目录验证入口与证据)、[Quality 身份](docs/Online目录与治理.md#部署与身份分工)、[Quality 清理与验证](docs/Online目录与治理.md#报告清理与验证) |
 | 模块/消费方恢复、SQL ETL、指标、Workbench、关系引擎与 Redis | [Online引擎与消费](docs/Online引擎与消费.md) |
 | Manager 内部产物、内容边界、矢量与栅格工作流、容量 | [Online成果与栅格](docs/Online成果与栅格.md) |
 | 字段保护、原值访问、角色撤销／到期及拒绝矩阵 | [Online数据保护](docs/Online数据保护.md) |
