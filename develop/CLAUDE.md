@@ -320,6 +320,8 @@ Develop 执行记录归 `common.task_executions`，不维护私有执行表。�
 
 ## 常见开发场景
 
+查询工作台的编写、参数执行、保存与导出步骤见[查询任务操作指南](frontend/docs/SQL任务功能说明.md)，接口与持久字段分别引用现行专题。
+
 以下请求中的 `8185` 是 Develop Backend 的开发首选端口，须按启动输出和 `.dev-state/ports.env` 替换为实际地址；公开入口另按[端口规范](../docs/spec/addp端口分配.md#前端-docker-端口规则)确认。使用当前有权调用相应入口的 User Bearer，任务定义 ID 与 execution UUID 分别取自对应响应，不沿用示例数字。专业读取范围见[本人执行读取](#专业执行结果读取)；保存任务、创建 execution 或 HTTP 请求成功均不代表业务执行完成。
 
 ### 场景 1：执行 SQL 查询
