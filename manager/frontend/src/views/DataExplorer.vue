@@ -4,9 +4,9 @@
     data-testid="data-explorer"
     :data-engine-load-state="engineLoadState"
   >
-    <div class="split-container" :style="{ gridTemplateColumns: treeWidth + 'px 8px 1fr' }">
+    <div class="split-container" :style="{ '--explorer-tree-width': treeWidth + 'px' }">
       <!-- 左侧资源树区域 -->
-      <div class="tree-container">
+      <div ref="treePanelRef" class="tree-container">
         <!-- 搜索组件 -->
         <ExplorerSearch
           v-if="showSearch"
@@ -118,7 +118,15 @@ import { navigateManagerRoute } from '@/utils/moduleNavigation'
 const { t } = useI18n()
 
 // 树形面板宽度
-const { size: treeWidth, startResize: startTreeResize } = useResizable(320, 220, 600, 'horizontal')
+const treePanelRef = ref(null)
+const treeResize = useResizable(320, 220, 600, 'horizontal')
+const { size: treeWidth } = treeResize
+function startTreeResize(event) {
+  // CSS may constrain the requested width after the host panel shrinks.
+  // Resume from the visible divider instead of an offscreen requested width.
+  treeResize.setSize(treePanelRef.value.getBoundingClientRect().width)
+  treeResize.startResize(event)
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -522,7 +530,9 @@ watch(() => route.query.locator, async (locator) => {
 <style scoped>
 .data-explorer {
   height: 100%;
+  min-width: 0;
   min-height: 0;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   background: var(--addp-bg-secondary) !important;
@@ -534,6 +544,8 @@ watch(() => route.query.locator, async (locator) => {
   gap: 0;
   overflow: hidden;
   grid-template-rows: 1fr;
+  grid-template-columns: min(var(--explorer-tree-width), 40%) 8px minmax(0, 1fr);
+  min-width: 0;
   min-height: 0;
   background: var(--addp-bg-secondary) !important;
 }
@@ -553,7 +565,19 @@ watch(() => route.query.locator, async (locator) => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
+}
+
+@container (max-width: 550px) {
+  .split-container {
+    grid-template-columns: 40% 8px minmax(0, 1fr);
+  }
+
+  .split-container > .splitter {
+    pointer-events: none;
+    cursor: default;
+  }
 }
 
 .engine-unavailable-panel {

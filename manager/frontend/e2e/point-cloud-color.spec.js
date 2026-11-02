@@ -22,7 +22,86 @@ async function inspect(page) {
       const colors = object.geometry?.attributes?.color
       if (colors) { for (const value of colors.array) max = Math.max(value, max); count += colors.count }
     })
-    return { max, count, position: instance?.view.camera.position.toArray(), attribute: cloud?.getActiveAttributes()[0]?.attribute.name }
+    return { max, count, sourceID: cloud?.source.id, position: instance?.view.camera.position.toArray(), attribute: cloud?.getActiveAttributes()[0]?.attribute.name }
+  })
+}
+
+for (const domain of ['quick_view', 'basic_preview']) {
+  test(`constrained explorer keeps painted COPC visible and retains its scene in ${domain}`, async ({ page }, testInfo) => {
+    const { unexpected } = await backend(page, 'en', domain)
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+    await expect.poll(async () => (await inspect(page)).count).toBeGreaterThan(100)
+    const select = page.getByRole('combobox', { name: 'Point cloud coloring' })
+    await select.press('ArrowDown')
+    await page.getByRole('option', { name: 'RGB 8-bit', exact: true }).click()
+    await expect.poll(async () => (await inspect(page)).max).toBeGreaterThan(0.8)
+    await select.press('Tab')
+    const initial = await inspect(page)
+    const explorer = page.getByTestId('data-explorer')
+    const canvas = page.locator('.point-cloud-preview canvas')
+    const tree = page.locator('.split-container > .tree-container')
+    const initialTreeWidth = (await tree.boundingBox()).width
+
+    // Constrain the module container while the browser stays wide: an iframe
+    // or split panel can shrink without matching a top-level media query.
+    await explorer.evaluate(element => { element.style.width = '350px' })
+    await expect.poll(async () => (await page.locator('.point-cloud-preview').boundingBox()).width).toBeGreaterThan(100)
+    await expect.poll(async () => {
+      const view = await canvas.boundingBox(), panel = await explorer.boundingBox()
+      return view.x >= panel.x && view.x + view.width <= panel.x + panel.width + 1
+    }).toBe(true)
+    await expect.poll(async () => {
+      const png = await canvas.screenshot()
+      return page.evaluate(async encoded => {
+        const image = new Image()
+        image.src = `data:image/png;base64,${encoded}`
+        await image.decode()
+        const scratch = document.createElement('canvas')
+        scratch.width = image.width; scratch.height = image.height
+        const context = scratch.getContext('2d')
+        context.drawImage(image, 0, 0)
+        // Exclude the coloring selector and summary overlays. Count actual
+        // colored point pixels in the middle of the rendered canvas.
+        const pixels = context.getImageData(0, 60, image.width, image.height - 140).data
+        let colored = 0
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) - Math.min(pixels[i], pixels[i + 1], pixels[i + 2]) > 40) colored++
+        }
+        return colored
+      }, png.toString('base64'))
+    }).toBeGreaterThan(30)
+    await testInfo.attach(`narrow-${domain}`, { body: await explorer.screenshot(), contentType: 'image/png' })
+
+    await explorer.evaluate(element => { element.style.width = '' })
+    await expect.poll(async () => (await tree.boundingBox()).width).toBeCloseTo(initialTreeWidth, 0)
+    const splitter = page.locator('.split-container > .splitter')
+    const drag = async delta => {
+      const box = await splitter.boundingBox()
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(box.x + box.width / 2 + delta, box.y + box.height / 2)
+      await page.mouse.up()
+    }
+    await drag(500)
+    await explorer.evaluate(element => { element.style.width = '650px' })
+    const beforeDrag = await tree.boundingBox()
+    await drag(-30)
+    await expect.poll(async () => (await tree.boundingBox()).width).toBeCloseTo(beforeDrag.width - 30, 0)
+    await explorer.evaluate(element => { element.style.width = '350px' })
+    await expect.poll(async () => (await canvas.boundingBox()).width).toBeGreaterThan(100)
+    const resized = await inspect(page)
+    expect(resized.sourceID).toBe(initial.sourceID)
+    for (const [axis, value] of resized.position.entries()) expect(value).toBeCloseTo(initial.position[axis], 8)
+    await explorer.evaluate(element => { element.style.width = '' })
+    await expect.poll(async () => (await tree.boundingBox()).width).toBeCloseTo(beforeDrag.width - 30, 0)
+    await explorer.evaluate(element => { element.style.width = '350px' })
+    await page.getByRole('treeitem', { name: 'other.copc.laz', exact: true }).click()
+    await expect.poll(async () => (await inspect(page)).count).toBeGreaterThan(100)
+    expect((await inspect(page)).sourceID).not.toBe(initial.sourceID)
+    expect(unexpected).toEqual([])
+    expect(errors).toEqual([])
   })
 }
 
