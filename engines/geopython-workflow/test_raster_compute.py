@@ -13598,7 +13598,7 @@ def test_sieve_unsafe_classes_in_later_block_cleanup(tmp_path,value):
 def test_sieve_partial_private_labels_and_output_removed_after_failure(tmp_path,monkeypatch,stage):
     import operators.raster_compute as compute
     path=create_raster(tmp_path/'source.tif',np.ones((3,4)))
-    target={'components':'_sieve_components','donors':'_sieve_donors','output':'_numeric_output','metadata':'_raster','write':'_numeric_output'}[stage]
+    target={'components':'_classification_components','donors':'_sieve_donors','output':'_numeric_output','metadata':'_raster','write':'_numeric_output'}[stage]
     original=getattr(compute,target)
     def failure(*args,**kwargs):raise RuntimeError('injected sieve failure')
     with raster_workspace():
@@ -14871,7 +14871,7 @@ def test_sieve_protected_explicit_band_alpha_mask_raw_scale_and_invalid_coverage
 def test_sieve_protected_private_labels_and_output_cleanup_remain_strict(tmp_path,monkeypatch,stage):
     import operators.raster_compute as compute
     path=create_raster(tmp_path/'source.tif',np.array([[7.,1.,1.]]))
-    target={'components':'_sieve_components','donors':'_sieve_donors','output':'_numeric_output','metadata':'_raster','write':'_numeric_output'}[stage]
+    target={'components':'_classification_components','donors':'_sieve_donors','output':'_numeric_output','metadata':'_raster','write':'_numeric_output'}[stage]
     def failure(*args,**kwargs):raise RuntimeError('injected protected sieve failure')
     with raster_workspace():
         source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
@@ -15104,7 +15104,7 @@ def test_sieve_area_private_labels_partial_output_failure_cleanup(tmp_path, monk
     import operators.raster_compute as compute
     path = create_raster(tmp_path/'source-area.tif', np.ones((3,4)), (0,2,0,10,0,-3), 'EPSG:3857')
     def failure(*args, **kwargs): raise RuntimeError('injected area sieve failure')
-    target = {'components':'_sieve_components','donors':'_sieve_donors','output':'_numeric_output','metadata':'_raster'}
+    target = {'components':'_classification_components','donors':'_sieve_donors','output':'_numeric_output','metadata':'_raster'}
     with raster_workspace():
         source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
         monkeypatch.setattr(gdal.Band if stage == 'write' else compute, 'WriteArray' if stage == 'write' else target[stage], failure)
@@ -18322,3 +18322,253 @@ def test_focal_circle_async_cog_and_all_exit_cleanup(tmp_path,monkeypatch,failur
         with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
         ds=gdal.Open(str(target));np.testing.assert_allclose(ds.ReadAsArray(),_focal_circle_oracle(values,values!=-9999,3,4,1.,5.,'mean'),equal_nan=True);assert ds.GetGeoTransform()==(0,3,0,0,0,-4);ds=None
     assert client.post('/api/operators/raster_focal_statistics/invoke',json={'params':{}}).status_code==403
+
+
+# Independent row-major flood fill; does not use product run labels, roots or anchors.
+def _region_group_oracle(values, valid, connectivity):
+    from collections import deque
+    answer=np.full(values.shape,np.nan);seen=np.zeros(values.shape,bool);number=0;components=[]
+    steps=[(-1,0),(0,-1),(0,1),(1,0)]
+    if connectivity==8:steps+=[(-1,-1),(-1,1),(1,-1),(1,1)]
+    height,width=values.shape
+    for y in range(height):
+        for x in range(width):
+            if not valid[y,x]or seen[y,x]:continue
+            number+=1;cells=[];queue=deque([(y,x)]);seen[y,x]=True
+            while queue:
+                row,col=queue.popleft();cells.append((row,col));answer[row,col]=number
+                for dy,dx in steps:
+                    yy,xx=row+dy,col+dx
+                    if 0<=yy<height and 0<=xx<width and valid[yy,xx]and not seen[yy,xx]and values[yy,xx]==values[y,x]:
+                        seen[yy,xx]=True;queue.append((yy,xx))
+            components.append((values[y,x],cells))
+    return answer,components
+
+
+@pytest.mark.parametrize('connectivity',[4,8])
+@pytest.mark.parametrize('seed',range(5))
+def test_region_group_independent_bfs_complete_labels_membership_and_counts(tmp_path,seed,connectivity):
+    import operators.raster_compute as c
+    rng=np.random.default_rng(seed);values=rng.choice([-7.,0.,1.,2**53-1],size=(13,17));valid=rng.random(values.shape)>.17
+    path=create_raster(tmp_path/'classes.tif',np.where(valid,values,-9999),(10,2,.5,20,.25,-3),'EPSG:4326');before=path.read_bytes()
+    expected,components=_region_group_oracle(values,valid,connectivity)
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=c.raster_region_group(source,1,connectivity)
+        actual=_twi_read(result);np.testing.assert_array_equal(actual,expected)
+        np.testing.assert_array_equal(_twi_read(c.raster_region_group(source,1,connectivity)),expected)
+        labels=np.unique(actual[np.isfinite(actual)]);np.testing.assert_array_equal(labels,np.arange(1,len(components)+1))
+        assert sum(len(cells)for _,cells in components)==np.count_nonzero(valid)
+        anchors=[]
+        for label,(category,cells)in enumerate(components,1):
+            selected=actual==label;assert np.count_nonzero(selected)==len(cells)
+            assert np.all(values[selected]==category);anchors.append(min(cells))
+        assert anchors==sorted(anchors)
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('connectivity',[4,8])
+@pytest.mark.parametrize('values',[
+    [[0,0,-9999,0,0]], [[-7],[-9999],[-7]], [[2]], [[-9999]],
+    [[1,0],[0,1]], [[1,2,1],[1,2,1]], [[1,2,2,1],[1,1,1,1]],
+])
+def test_region_group_analytic_diagonals_zeros_disconnected_classes_and_late_root_merges(tmp_path,connectivity,values):
+    import operators.raster_compute as c
+    values=np.asarray(values,dtype=float);valid=values!=-9999;path=create_raster(tmp_path/'analytic.tif',values)
+    expected,components=_region_group_oracle(values,valid,connectivity)
+    with raster_workspace():np.testing.assert_array_equal(_twi_read(c.raster_region_group(raster_load(source_plan(path)),1,connectivity)),expected)
+    if values.shape==(2,2):assert len(components)==(4 if connectivity==4 else 2)
+
+
+@pytest.mark.parametrize('connectivity',[4,8])
+@pytest.mark.parametrize('transform,crs',[(None,None),((100,2,.5,200,.25,-3),'EPSG:3857'),((110,.01,0,30,0,-.02),'EPSG:4326')])
+def test_region_group_selected_band_raw_storage_mask_alpha_and_metadata(tmp_path,connectivity,transform,crs):
+    import operators.raster_compute as c
+    values=(np.arange(56).reshape(7,8)%5-2).astype(float);values[1,1]=-9999;values[2,2]=np.nan;values[2,3]=np.inf
+    alpha=np.full(values.shape,128.);alpha[3,1]=0.;alpha[3,2]=np.inf;alpha[3,3]=-1
+    mask=np.full(values.shape,255,np.uint8);mask[4,3]=0
+    source=create_raster(tmp_path/'selected.tif',np.stack([np.full(values.shape,.25),values,alpha]),transform,crs)
+    ds=gdal.Open(str(source),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds.GetRasterBand(2).SetScale(17.);ds.GetRasterBand(2).SetOffset(.5);ds.GetRasterBand(2).SetUnitType('category')
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None;before=source.read_bytes()
+    valid=np.isfinite(values)&(values!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0);expected,_=_region_group_oracle(values,valid,connectivity)
+    with raster_workspace():
+        result=c.raster_region_group(raster_load(source_plan(source)),2,connectivity);ds=gdal.Open(str(result.path));b=ds.GetRasterBand(1)
+        np.testing.assert_array_equal(b.ReadAsArray(),expected);np.testing.assert_array_equal(b.GetMaskBand().ReadAsArray()!=0,valid)
+        assert ds.GetGeoTransform(can_return_null=True)==transform and ds.RasterCount==1
+        original=gdal.Open(str(source));assert ds.GetProjection()==original.GetProjection();original=None
+        assert b.DataType==gdal.GDT_Float64 and np.isnan(b.GetNoDataValue())and b.GetUnitType()==''
+        assert b.GetScale()is None and b.GetOffset()is None and b.GetColorTable()is None and b.GetColorInterpretation()!=gdal.GCI_AlphaBand
+        b=ds=None
+    assert source.read_bytes()==before
+
+
+@pytest.mark.parametrize('connectivity',[4,8])
+def test_region_group_cross_blocks_global_anchors_cog_and_bounded_native_reads(tmp_path,monkeypatch,connectivity):
+    import operators.raster_compute as c
+    values=np.zeros((515,519));values[1:-1,511:513]=1;values[511,:]=1;values[4,4]=-7;valid=np.ones(values.shape,bool);valid[500,500]=False
+    source=create_raster(tmp_path/'blocks.tif',np.where(valid,values,-9999),(100,2,.5,200,.25,-3),'EPSG:3857');before=source.read_bytes()
+    expected,_=_region_group_oracle(values,valid,connectivity);blocks=c._blocks;reads=[]
+    def bounded(*args,**kwargs):
+        for x,y,arrays,masks in blocks(*args,**kwargs):
+            assert kwargs.get('native')is True and arrays[0].shape[0]==1 and arrays[0].shape[1]<=512
+            reads.append((x,y));yield x,y,arrays,masks
+    monkeypatch.setattr(c,'_blocks',bounded)
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));prior=set(loaded.workspace.iterdir());result=c.raster_region_group(loaded,1,connectivity)
+        assert set(loaded.workspace.iterdir())==prior|{result.path}
+        target=tmp_path/'labels.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0
+        assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));b=ds.GetRasterBand(1);np.testing.assert_array_equal(b.ReadAsArray(),expected)
+        np.testing.assert_array_equal(b.GetMaskBand().ReadAsArray()!=0,valid);assert b.GetOverviewCount()>0;b=ds=None
+    assert len(reads)==515*2 and source.read_bytes()==before
+
+
+@pytest.mark.parametrize('dtype,code,nodata',[(gdal.GDT_Int64,-(2**53-1),-2**63),(gdal.GDT_UInt64,2**53-1,2**64-1)])
+def test_region_group_native64_nodata_and_valid_safe_classes(tmp_path,dtype,code,nodata):
+    import operators.raster_compute as c
+    path=tmp_path/'native.tif';values=np.array([[code,nodata,code]],dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64)
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,dtype);b=ds.GetRasterBand(1);b.WriteArray(values)
+    (b.SetNoDataValueAsInt64 if dtype==gdal.GDT_Int64 else b.SetNoDataValueAsUInt64)(nodata);b=ds=None
+    with raster_workspace():np.testing.assert_array_equal(_twi_read(c.raster_region_group(raster_load(source_plan(path)),1,4)),[[1,np.nan,2]])
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('role,value',[('connectivity',None),('connectivity',True),('connectivity',4.),('connectivity','4'),('connectivity',0),('connectivity',3),('connectivity',[]),('band',None),('band',True),('band',0),('band',3),('band',1.),('band','1')])
+def test_region_group_exact_bilingual_parameter_errors_no_private_result(tmp_path,language,role,value):
+    import operators.raster_compute as c
+    path=create_raster(tmp_path/'bad.tif',np.ones((3,4)));before=path.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        params={'band':1,'connectivity':4};params[role]=value
+        with pytest.raises(ValueError)as caught:c.raster_region_group(source,**params)
+        assert str(caught.value)==c._REGION_GROUP_MESSAGES[role][language=='en']and set(source.workspace.iterdir())==prior
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('fault',['alpha','complex','complex-alpha','fractional','unsafe-positive','unsafe-negative','uint64-adjacent-nodata'])
+def test_region_group_exact_class_and_band_rejection_cleanup(tmp_path,language,fault):
+    import operators.raster_compute as c
+    dtype=gdal.GDT_CFloat64 if fault.startswith('complex')else gdal.GDT_UInt64 if fault=='uint64-adjacent-nodata'else gdal.GDT_Float64
+    path=tmp_path/'reject.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,2,dtype)
+    data=np.array([[1,1,1]],dtype=np.uint64 if dtype==gdal.GDT_UInt64 else float)
+    if fault=='fractional':data[0,0]=.5
+    if fault=='unsafe-positive':data[0,0]=2**53
+    if fault=='unsafe-negative':data[0,0]=-2**53
+    if fault=='uint64-adjacent-nodata':data[0,0]=2**64-2;data[0,1]=2**64-1;ds.GetRasterBand(1).SetNoDataValueAsUInt64(2**64-1)
+    ds.GetRasterBand(1).WriteArray(data);ds.GetRasterBand(2).Fill(128);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand);ds=None
+    code='alpha'if fault=='alpha'else'complex'if fault.startswith('complex')else'classes'
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as caught:c.raster_region_group(source,2 if fault=='alpha'else 1,4)
+        assert str(caught.value)==c._REGION_GROUP_MESSAGES[code][language=='en']and set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_region_group_synthetic_label_precision_limit_before_output_and_cleanup(tmp_path,monkeypatch,language):
+    import operators.raster_compute as c
+    assert c._REGION_GROUP_MAX_LABEL==2**53-1
+    source=create_raster(tmp_path/'count.tif',np.array([[1.,0.,1.]]))
+    with raster_workspace(),raster_error_language(language):
+        loaded=raster_load(source_plan(source));prior=set(loaded.workspace.iterdir());monkeypatch.setattr(c,'_REGION_GROUP_MAX_LABEL',3)
+        result=c.raster_region_group(loaded,1,4);np.testing.assert_array_equal(_twi_read(result),[[1,2,3]])
+        expected=set(loaded.workspace.iterdir());monkeypatch.setattr(c,'_REGION_GROUP_MAX_LABEL',2)
+        with pytest.raises(ValueError)as caught:c.raster_region_group(loaded,1,4)
+        assert str(caught.value)==c._REGION_GROUP_MESSAGES['numeric'][language=='en']and set(loaded.workspace.iterdir())==expected
+
+
+@pytest.mark.parametrize('stage',['components','numbers','read','output','write','metadata'])
+def test_region_group_all_failures_remove_shared_label_and_private_output(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as c
+    source=create_raster(tmp_path/'failure.tif',np.array([[1.,0.,1.],[1,0,1]]));before=source.read_bytes()
+    target={'components':'_classification_components','numbers':'_region_group_numbers','read':'_blocks','output':'_numeric_output','write':'_numeric_output','metadata':'_raster'}[stage]
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));prior=set(loaded.workspace.iterdir());original=getattr(c,target)
+        def fail(*args,**kwargs):raise RuntimeError('injected region failure')
+        if stage=='write':
+            class Band:
+                def WriteArray(self,*a,**kw):raise RuntimeError('injected region failure')
+            class Dataset:
+                def __init__(self,*a,**kw):self.output=original(*a,**kw)
+                def GetDescription(self):return self.output.GetDescription()
+                def GetRasterBand(self,n):return Band()
+            monkeypatch.setattr(c,target,Dataset)
+        else:monkeypatch.setattr(c,target,fail)
+        with pytest.raises(RuntimeError,match='injected region failure'):c.raster_region_group(loaded,1,4)
+        assert set(loaded.workspace.iterdir())==prior
+    assert source.read_bytes()==before
+
+
+def test_region_group_root_size_cannot_change_first_anchor_order():
+    import operators.raster_compute as c
+    # Representatives 4 and 2 deliberately differ from creation and anchor ordering.
+    numbers=c._region_group_numbers(np.array([0,4,2,4,4]),[0,99,4,99,0])
+    assert numbers[4]==1 and numbers[2]==2 and np.isnan(numbers[0])
+
+
+@pytest.mark.parametrize('case',['direct','reclassify','all-invalid','invalid-connectivity'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_region_group_async_cog_failure_language_and_workspace_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine,operators.raster_compute as c
+    values=np.array([[0,0,-9999,1,1],[1,0,-9999,0,1],[1,1,1,0,0]],dtype=float)
+    if case=='all-invalid':values[:]=-9999
+    source=create_raster(tmp_path/'workflow.tif',values,(10,2,.5,20,.25,-3),'EPSG:3857');before=source.read_bytes();target=tmp_path/'groups.cog.tif'
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}}];prior='source'
+    selected=values.copy()
+    if case=='reclassify':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'rules':[{'min':None,'max':1,'class':0},{'min':1,'max':None,'class':7}]}});prior='classes';selected=np.where(values<1,0.,7.)
+    tasks.extend([{'id':'regions','operator':'raster_region_group','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'connectivity':3 if case=='invalid-connectivity'else 8}},
+        {'id':'save','operator':'raster_save','depends_on':['regions'],'params':{'input_raster':{'$ref':'regions'},'access_plan':target_plan(target),'profile':'cog'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def observe(name,params):
+        if name=='raster_region_group':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',observe);client=api_server.app.test_client()
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'zh-cn'if language=='en'else'en'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed'if case=='invalid-connectivity'else'success'),status
+    assert workspaces and all(not p.exists()for p in workspaces)and source.read_bytes()==before
+    if case=='invalid-connectivity':assert not target.exists()and c._REGION_GROUP_MESSAGES['connectivity'][language=='en']in status['error']
+    else:
+        artifact=json.loads(status['result']);assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));expected,_=_region_group_oracle(selected,values!=-9999,8);np.testing.assert_array_equal(ds.ReadAsArray(),expected);assert ds.GetGeoTransform()==(10,2,.5,20,.25,-3);ds=None
+    assert client.post('/api/operators/raster_region_group/invoke',json={'params':{}}).status_code==403
+
+
+def test_region_group_labels_connect_existing_zonal_statistics_per_patch(tmp_path):
+    import operators.raster_compute as c
+    values=np.array([[7,7,-9999,7],[0,0,-9999,7],[-1,0,7,7]],dtype=float);source=create_raster(tmp_path/'zonal.tif',values)
+    expected,components=_region_group_oracle(values,values!=-9999,4)
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));labels=c.raster_region_group(loaded,1,4);table=c.raster_zonal_statistics(loaded,labels,1,1)
+        assert len(table)==len(components)
+        for row,(category,cells)in zip(table.itertuples(index=False),components):
+            assert row.total_count==row.valid_count==len(cells)and row.invalid_count==0
+            assert row.min==row.max==category
+
+
+def test_region_group_ignores_unselected_data_and_its_independent_mask(tmp_path,monkeypatch):
+    import operators.raster_compute as c
+    ds=gdal.GetDriverByName('MEM').Create('',3,2,2,gdal.GDT_Float64)
+    ds.GetRasterBand(1).Fill(.25);ds.GetRasterBand(1).CreateMaskBand(0);ds.GetRasterBand(1).GetMaskBand().Fill(0)
+    ds.GetRasterBand(2).WriteArray(np.array([[1.,1.,0.],[0.,1.,0.]]));ds.GetRasterBand(2).CreateMaskBand(0);ds.GetRasterBand(2).GetMaskBand().Fill(255)
+    monkeypatch.setattr(c,'_open',lambda token:ds)
+    with raster_workspace():np.testing.assert_array_equal(_twi_read(c.raster_region_group(object(),2,4)),[[1,1,2],[3,1,2]])
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_region_group_native_mixed_type_complex_alpha_rejects_before_output(monkeypatch,language):
+    import operators.raster_compute as c
+    ds=gdal.GetDriverByName('MEM').Create('',3,2,0);ds.AddBand(gdal.GDT_Float64);ds.AddBand(gdal.GDT_CFloat64)
+    ds.GetRasterBand(1).Fill(1.);ds.GetRasterBand(2).Fill(128.);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    monkeypatch.setattr(c,'_open',lambda token:ds)
+    monkeypatch.setattr(c,'_numeric_output',lambda *a,**kw:pytest.fail('output before complex alpha admission'))
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as caught:c.raster_region_group(object(),1,4)
+    assert str(caught.value)==c._REGION_GROUP_MESSAGES['complex'][language=='en']

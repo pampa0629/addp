@@ -2457,7 +2457,7 @@ def _sieve_error(code):
     return ValueError(_SIEVE_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _sieve_rows(dataset, band):
+def _classification_rows(dataset, band, *, error):
     """Native validity first; source reads are at most 512 by one pixel."""
     width = dataset.RasterXSize
     for row in range(dataset.RasterYSize):
@@ -2468,14 +2468,14 @@ def _sieve_rows(dataset, band):
             try:
                 checked = _safe_classification_values(arrays[0][0], mask)
             except ValueError as cause:
-                raise _sieve_error('classes') from cause
+                raise error('classes') from cause
             span = slice(x, x + len(mask))
             values[span][mask] = checked
             valid[span] = mask
         yield values, valid
 
 
-def _sieve_components(dataset, band, connectivity, labels):
+def _classification_components(dataset, band, connectivity, labels, *, error):
     """Scanline runs and union by size, with exact counts and first-cell anchors."""
     parents, sizes, classes, anchors = [0], [0], [0], [0]
 
@@ -2502,7 +2502,7 @@ def _sieve_components(dataset, band, connectivity, labels):
     previous = []
     padding = 1 if connectivity == 8 else 0
     width = dataset.RasterXSize
-    for row, (values, valid) in enumerate(_sieve_rows(dataset, band)):
+    for row, (values, valid) in enumerate(_classification_rows(dataset, band, error=error)):
         # False sentinels split invalid pixels as well as adjacent differing classes.
         starts = np.flatnonzero(valid & np.r_[True, ~valid[:-1] | (values[1:] != values[:-1])])
         ends = np.flatnonzero(valid & np.r_[~valid[1:] | (values[1:] != values[:-1]), True])
@@ -2527,6 +2527,22 @@ def _sieve_components(dataset, band, connectivity, labels):
         previous = current
     roots = np.asarray([find(i) for i in range(len(parents))], dtype=np.int64)
     return roots, sizes, classes, anchors
+
+
+@contextmanager
+def _classification_labels(dataset, band, connectivity, *, error):
+    """One owned disk-label lifecycle for both component consumers."""
+    path = _path('.labels')
+    labels = None
+    try:
+        labels = np.memmap(path, dtype=np.int64, mode='w+', shape=(dataset.RasterYSize, dataset.RasterXSize))
+        yield (labels, *_classification_components(dataset, band, connectivity, labels, error=error))
+    finally:
+        try:
+            if labels is not None:
+                labels._mmap.close()
+        finally:
+            path.unlink(missing_ok=True)
 
 
 def _sieve_donors(labels, roots, sizes, classes, anchors, min_pixels, connectivity, protected):
@@ -2616,38 +2632,97 @@ def raster_sieve(input_raster, band, min_pixels=_SIEVE_THRESHOLD_UNSET, connecti
     selected = candidate = None
     if area_mode:
         minimum = _sieve_area_minimum(dataset, minimum)
-    label_path = _path('.labels')
-    labels = output = destination = None
+    output = destination = None
     output_path = None
     completed = False
     try:
-        labels = np.memmap(label_path, dtype=np.int64, mode='w+', shape=(dataset.RasterYSize, dataset.RasterXSize))
-        roots, sizes, classes, anchors = _sieve_components(dataset, band, connectivity, labels)
-        donors = _sieve_donors(labels, roots, sizes, classes, anchors, minimum, connectivity, protected)
-        replacement = np.asarray(classes, dtype=np.float64)
-        replacement[0] = np.nan
-        for small, donor in donors.items():
-            replacement[small] = classes[donor]
-        output = _numeric_output(dataset, 1)
-        output_path = Path(output.GetDescription())
-        destination = output.GetRasterBand(1)
-        for row in range(dataset.RasterYSize):
-            for x in range(0, dataset.RasterXSize, 512):
-                result = replacement[roots[np.asarray(labels[row, x:x + 512])]]
-                destination.WriteArray(result.reshape(1, -1), x, row)
-        destination = None
-        output.FlushCache()
-        output = None
-        result = _raster(output_path)
+        with _classification_labels(dataset, band, connectivity, error=_sieve_error) as (labels, roots, sizes, classes, anchors):
+            donors = _sieve_donors(labels, roots, sizes, classes, anchors, minimum, connectivity, protected)
+            replacement = np.asarray(classes, dtype=np.float64)
+            replacement[0] = np.nan
+            for small, donor in donors.items():
+                replacement[small] = classes[donor]
+            output = _numeric_output(dataset, 1)
+            output_path = Path(output.GetDescription())
+            destination = output.GetRasterBand(1)
+            for row in range(dataset.RasterYSize):
+                for x in range(0, dataset.RasterXSize, 512):
+                    result = replacement[roots[np.asarray(labels[row, x:x + 512])]]
+                    destination.WriteArray(result.reshape(1, -1), x, row)
+            destination = None
+            output.FlushCache()
+            output = None
+            result = _raster(output_path)
         completed = True
         return result
     finally:
         destination = output = dataset = None
-        if labels is not None:
-            labels._mmap.close()
-            labels = None
-        label_path.unlink(missing_ok=True)
         if output_path is not None and not completed:
+            output_path.unlink(missing_ok=True)
+
+
+_REGION_GROUP_MESSAGES = {
+    'band': ('连通斑块编号必须显式选择有效的一基数据波段', 'Raster region grouping requires an explicit valid one-based data band'),
+    'connectivity': ('连通斑块编号必须显式选择整数4或8邻接', 'Raster region grouping requires explicit integer connectivity 4 or 8'),
+    'alpha': ('连通斑块编号不能选择alpha作为数据波段', 'Raster region grouping cannot use an alpha band as data'),
+    'complex': ('连通斑块编号不支持复数数据或复数alpha', 'Raster region grouping does not support complex data or alpha'),
+    'classes': ('连通斑块编号的有效分类必须为安全范围内的精确整数', 'Raster region grouping valid classes must be exact integers within the safe range'),
+    'numeric': ('连通斑块数量超出Float64精确正整数编号范围', 'Raster region count exceeds the exact positive Float64 integer label range'),
+}
+_REGION_GROUP_MAX_LABEL = 2**53 - 1
+
+
+def _region_group_error(code):
+    return ValueError(_REGION_GROUP_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _region_group_numbers(roots, anchors):
+    ordered = sorted((i for i in range(1, len(roots)) if roots[i] == i), key=anchors.__getitem__)
+    if len(ordered) > _REGION_GROUP_MAX_LABEL:
+        raise _region_group_error('numeric')
+    numbers = np.full(len(roots), np.nan)
+    for number, root in enumerate(ordered, 1):
+        numbers[root] = number
+    return numbers
+
+
+def raster_region_group(input_raster, band, connectivity):
+    """Label exact same-class components by first original row/column."""
+    if type(connectivity) is not int or connectivity not in (4, 8):
+        raise _region_group_error('connectivity')
+    dataset = _open(input_raster)
+    if type(band) is not int or not 1 <= band <= dataset.RasterCount:
+        raise _region_group_error('band')
+    selected = dataset.GetRasterBand(band)
+    if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
+        raise _region_group_error('alpha')
+    for index in range(1, dataset.RasterCount+1):
+        candidate = dataset.GetRasterBand(index)
+        if (index == band or candidate.GetColorInterpretation() == gdal.GCI_AlphaBand) and gdal.DataTypeIsComplex(candidate.DataType):
+            raise _region_group_error('complex')
+    selected = candidate = None
+    destination = output = None
+    output_path = None
+    completed = False
+    try:
+        with _classification_labels(dataset, band, connectivity, error=_region_group_error) as (labels, roots, _, _, anchors):
+            numbers = _region_group_numbers(roots, anchors)
+            output = _numeric_output(dataset, 1)
+            output_path = Path(output.GetDescription())
+            destination = output.GetRasterBand(1)
+            for row in range(dataset.RasterYSize):
+                for x in range(0, dataset.RasterXSize, 512):
+                    result = numbers[roots[np.asarray(labels[row, x:x+512])]]
+                    destination.WriteArray(result.reshape(1, -1), x, row)
+            destination = None
+            output.FlushCache()
+            output = None
+            result = _raster(output_path)
+        completed = True
+        return result
+    finally:
+        destination = output = dataset = None
+        if not completed and output_path is not None:
             output_path.unlink(missing_ok=True)
 
 
@@ -5525,6 +5600,7 @@ _SPECS = [
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
     (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '正整数像元数阈值；与min_area_m2必须且只能提供一个，等于阈值保留', None, False), _param('min_area_m2', 'float', '有限正平方米阈值；与min_pixels互斥，北向无旋转投影网格、按CRS线性单位换算，精确比较且等于阈值保留', None, False), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结'), _param('protected_values', 'list[int]', '免于替换的安全整数分类，列表不可重复；空列表保持原结果，保护斑块作为供体仍须原始大小达标', [], False)], 'raster', ['read']),
+    (raster_region_group, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格连通斑块编号', [_INPUT(), _param('band', 'int', '显式分类数据波段，安全整数；零和负分类有效，不应用scale/offset'), _param('connectivity', 'int', '显式4或8邻接；同类连通斑块按最前行列从1编号，保留无效覆盖')], 'raster', ['read']),
     (raster_thin, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格细化', [_INPUT(), _param('band', 'int', '显式分类数据波段，不能选择 alpha'), _param('foreground_value', 'float', '单个精确安全整数前景分类；Guo–Hall 八邻域收敛，输出骨架1／背景0／原无效NaN')], 'raster', ['read']),
     (raster_aggregate, OperatorCategory.RASTER_CALCULATION, '栅格聚合', [_INPUT(), _param('factors', 'list[int]', '相邻像元的列、行聚合倍数，例如 [2,2]'), _param('method', 'str', '聚合方法；忽略无效像元并保留边缘组', enum=['sum', 'mean', 'min', 'max'])], 'raster', ['read']),
     (raster_footprint, OperatorCategory.RASTER_EXTENT, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
@@ -5587,6 +5663,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'target_values': [0, 1]})
     if name == 'raster_thin':
         examples.update({'band': 1, 'foreground_value': 1})
+    if name == 'raster_region_group':
+        examples.update({'band': 1, 'connectivity': 4})
     if name == 'raster_sieve':
         examples.update({'band': 1, 'min_pixels': 10, 'connectivity': 4, 'protected_values': [7]})
     if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_drainage_basins_d8'):

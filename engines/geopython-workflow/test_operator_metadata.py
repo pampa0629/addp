@@ -1082,7 +1082,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint"),
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
         (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity"),
-        (("栅格处理", "分类处理"), "raster_reclassify raster_nibble raster_boundary_clean raster_sieve raster_thin"),
+        (("栅格处理", "分类处理"), "raster_reclassify raster_nibble raster_boundary_clean raster_sieve raster_region_group raster_thin"),
         (("栅格处理", "地形分析"), "raster_slope raster_aspect raster_hillshade raster_curvature raster_tpi raster_tri raster_roughness raster_twi raster_spi raster_contour"),
         (("栅格处理", "水流分析"), "raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8"),
         (("栅格处理", "汇水分析"), "raster_drainage_basins_d8 raster_snap_pour_points raster_watershed_d8 raster_subcatchments_d8"),
@@ -1575,3 +1575,19 @@ def test_focal_circle_single_entry_conditional_windows_preserves_twelve_methods(
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']and len(spec['output_ports'])==1
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'band':1,'window_size':3,'method':'mean'}
     assert not any(s['id']in('raster_focal_circle','raster_circle_statistics')for s in list_operators())
+
+
+def test_region_group_single_workflow_entry_explicit_params_example_and_shared_core():
+    from pathlib import Path
+    specs=[s for s in list_operators()if s['id']=='raster_region_group'];assert len(specs)==1
+    spec=specs[0];params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','band','connectivity'}and all(p['required']for p in params.values())
+    assert params['connectivity']['type']=='integer'and 'enum'not in params['connectivity']and 'default'not in params['connectivity']
+    assert '4或8'in params['connectivity']['description']
+    assert spec['category_path']==['栅格处理','分类处理']and spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster']and len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'band':1,'connectivity':4}
+    assert not any(s['id']in('raster_clump','raster_region_labels')for s in list_operators())
+    source=(Path(__file__).parent/'operators/raster_compute.py').read_text()
+    assert 'def _sieve_components('not in source and 'def _sieve_rows('not in source
+    assert source.count('with _classification_labels(dataset, band, connectivity, error=')==2

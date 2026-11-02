@@ -69,7 +69,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 栅格处理 | 范围处理 | 5 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint` |
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
 | 栅格处理 | 基础计算 | 3 | `raster_band_math`、`raster_aggregate`、`raster_proximity` |
-| 栅格处理 | 分类处理 | 5 | `raster_reclassify`、`raster_nibble`、`raster_boundary_clean`、`raster_sieve`、`raster_thin` |
+| 栅格处理 | 分类处理 | 6 | `raster_reclassify`、`raster_nibble`、`raster_boundary_clean`、`raster_sieve`、`raster_region_group`、`raster_thin` |
 | 栅格处理 | 地形分析 | 10 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_twi`、`raster_spi`、`raster_contour` |
 | 栅格处理 | 水流分析 | 5 | `raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8` |
 | 栅格处理 | 汇水分析 | 4 | `raster_drainage_basins_d8`、`raster_snap_pour_points`、`raster_watershed_d8`、`raster_subcatchments_d8` |
@@ -211,6 +211,8 @@ make test-geopython-workflow
 TWI只有`raster_twi`一个工作流入口：显式面积m2与degree/percent坡度两源，固定A/方形像元米制边长，零坡度NoData、非零无阈值；既有坡度与D8面积可直接连接，结果是潜在湿润倾向指标，不代表含水量。
 
 SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度，固定(A/米制方形像元边长)×tanβ，零坡度0，非零无阈值，输出metre；不取对数或表示实际侵蚀量，原TWI结果保持。
+
+`raster_region_group`对相同有效分类的4／8邻接斑块分别编号，按最前原始行列从1排序；保留合法零／负分类、无效覆盖、网格／旋转和CRS／缺定位事实。仅输出同网格Float64／NaN标签，可接现有分区统计和COG保存；编号是本幅局部标签。与筛除共用唯一游程／连通标记和临时文件生命周期，不改变原筛除规则，不新增映射表、权限或依赖；完整数值、清理及验收边界见栅格算子契约。
 
 `raster_sieve`显式波段／4或8邻接，min_pixels与min_area_m2必须且只能提供一个；后者使用已知线性单位的北向无旋转投影网格平面平方米，允许非方形像元，精确比较、等于阈值保留；原像元模式仍支持旋转及缺定位。按原始连通斑块大小一次冻结，只合并到相邻达标供体，大小并列按较小分类／最前行列决定；无供体保留、不跨无效区、不填洞。可选protected_values保护整类有效像元免于替换，供体仍须原始大小达标；空列表／省略保持原结果，未命中分类允许，非法／重复保护值明确失败。原边界清理／蚕食结果保持。
 
