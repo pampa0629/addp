@@ -128,7 +128,7 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 #### 配置、Provider 与 API 维护
 
-- 配置字段与 endpoint 结构沿[任务 Config JSON](docs/transfer-基本概念及配置说明.md#二任务-config-json)，旧字段出现即拒绝，不做兼容转换。任务类型固定为 `sync`，不得新增或兼容 `import`、`export`、`transfer` 等旧任务类型，定义见[传输任务](docs/transfer-基本概念及配置说明.md#11-传输任务)。
+- 配置字段与 endpoint 结构沿[任务 Config JSON](docs/transfer-基本概念及配置说明.md#二任务-config-json)；格式来源、目标声明与省略规则分别沿[format 声明与来源](docs/transfer-基本概念及配置说明.md#format-声明与来源)、[raw copy 目标继承与一致性](docs/transfer-基本概念及配置说明.md#raw-copy-目标继承与一致性)，不在模块规则中重复维护。旧字段出现即拒绝，不做兼容转换。任务类型固定为 `sync`，不得新增或兼容 `import`、`export`、`transfer` 等旧任务类型，定义见[传输任务](docs/transfer-基本概念及配置说明.md#11-传输任务)。
 - table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / layout 分叉，不按具体引擎组合分叉。encoded 读写的 engine／format 接入与 multi refs 组合统一见[Provider 消费规则](../docs/spec/addp引擎插件接口规范.md#五上层消费规则)和[内容 I/O 调用链](../docs/spec/addp内容IO抽象规范.md#调用链)，不在 Transfer 中新增私有 reader / writer。新增 table 能力应优先补 `common/engine` 或 `common/format`；旧 `pkg/pipeline`、`pkg/plugin_loader` 不作为新功能入口。
 - FileGDB/PGeo 等 container table 源只接受通用 `source.options.child_name`；planner 必须从 Meta `type_info.container.children` 校验 child 并解析 `native.table`，任务配置不得直接保存 `layer` 或 `child_table` 等 provider 私有入口。布局与运行时入口见[读取布局与入口](docs/transfer-基本概念及配置说明.md#读取布局与入口)。
 - API 契约同步沿[API 实施要求](../docs/spec/api/文档与实施.md#新接口开发)与[Swagger 强制同步要求](../docs/spec/addp-Swagger集成指南.md#强制同步要求)；Transfer 从仓库根目录执行 `bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。生成或覆盖检查失败均须阻断；生成成功不等于覆盖完整，覆盖通过不代替权限与真实读写验收。
@@ -393,7 +393,9 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 - [DLQ availability 失败与验收边界](docs/数据库架构.md#availability-失败与验收边界)
 - [基本概念及配置说明](docs/transfer-基本概念及配置说明.md)
 - [table Transfer 配置](docs/transfer-基本概念及配置说明.md#三table-transfer-支持范围)
+- [format 声明与来源](docs/transfer-基本概念及配置说明.md#format-声明与来源)
 - [raw copy 配置](docs/transfer-基本概念及配置说明.md#四raw-copy-支持范围)
+- [raw copy 目标继承与一致性](docs/transfer-基本概念及配置说明.md#raw-copy-目标继承与一致性)
 - [Continuous/Kafka 配置](docs/transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)
 - [数据库 CDC 配置](docs/transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)
 - [Checkpoint 恢复分级](docs/transfer-基本概念及配置说明.md#恢复分级)
