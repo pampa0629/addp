@@ -40,9 +40,9 @@ endpoint 只决定 reader / writer 来源：
 | encoded multi file/object | contentio + `[]format.RelatedRef` + `common/format` multi table reader / writer |
 | encoded whole scope | contentio reader/lister + `common/format` scope table reader |
 
-table 格式与原生目标写侧统一见[格式支持](./docs/transfer-基本概念及配置说明.md#33-格式)和[原生目标写侧](./docs/transfer-基本概念及配置说明.md#已接入的原生目标写侧)；Parquet 默认压缩及动态 codec 声明见[Parquet 列式压缩](./docs/transfer-基本概念及配置说明.md#parquet-列式压缩)。
+table 的格式声明与源事实统一见[format 声明与来源](./docs/transfer-基本概念及配置说明.md#format-声明与来源)，支持格式与原生目标写侧分别见[格式支持](./docs/transfer-基本概念及配置说明.md#33-格式)、[原生目标写侧](./docs/transfer-基本概念及配置说明.md#已接入的原生目标写侧)；Parquet 默认压缩及动态 codec 声明见[Parquet 列式压缩](./docs/transfer-基本概念及配置说明.md#parquet-列式压缩)。
 
-non-table raw copy 的 endpoint 与格式继承见[raw copy 支持范围](./docs/transfer-基本概念及配置说明.md#四raw-copy-支持范围)；当前限定 `document`、`media`、`cad`、`unknown` 的 encoded single file/object，按原始字节复制，目标仅支持 `replace`。它不进入 `common/format` table reader / writer，不解析正文、不抽取媒体元数据，也不做格式转换。
+non-table raw copy 按原始字节复制 encoded single file/object，目标仅支持 `replace`；支持类型与 endpoint 统一见[raw copy 支持范围](./docs/transfer-基本概念及配置说明.md#四raw-copy-支持范围)，目标类型／格式的省略与一致性见[目标继承正文](./docs/transfer-基本概念及配置说明.md#raw-copy-目标继承与一致性)。它不进入 `common/format` table reader / writer，不解析正文、不抽取媒体元数据，也不做格式转换。
 
 模块与 Provider 分工以[任务语义](./docs/transfer-任务语义与同步模式.md#一模块定位)为准。本节主链路、支持声明或单项读写结果不代表完整运行链路已验收；标准入口见[启动与验证](#启动与验证)，固定版本证据、失败及未覆盖项见[验证范围](./docs/transfer-任务语义与同步模式.md#十一验证范围)。
 
@@ -192,7 +192,9 @@ make test-arcgis-open-formats
 - [Transfer 后续能力清单](../docs/next/transfer后续能力清单.md)
 - [Transfer 基本概念及配置说明](./docs/transfer-基本概念及配置说明.md)
 - [table Transfer 配置](./docs/transfer-基本概念及配置说明.md#三table-transfer-支持范围)
+- [format 声明与来源](./docs/transfer-基本概念及配置说明.md#format-声明与来源)
 - [raw copy 配置](./docs/transfer-基本概念及配置说明.md#四raw-copy-支持范围)
+- [raw copy 目标继承与一致性](./docs/transfer-基本概念及配置说明.md#raw-copy-目标继承与一致性)
 - [Continuous/Kafka 配置](./docs/transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)
 - [数据库 CDC 配置](./docs/transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)
 - [Checkpoint 恢复分级](./docs/transfer-基本概念及配置说明.md#恢复分级)
