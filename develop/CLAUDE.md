@@ -416,16 +416,11 @@ Develop 不再把“数据库连接账号可以做什么”视为用户授权。
 
 ### 3. GeoPython Workflow 内存管理
 
-GeoPython Workflow 运行时在内存中处理空间数据（GeoDataFrame）：
+GeoPython 的矢量数据与部分中间结果在进程内存中处理；资源成本随输入规模、几何复杂度、算子及实际并发变化。原生开发按宿主进程环境评估，产品容器按实际部署限制评估，环境与部署入口见[GeoPython 运行说明](../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md)。
 
-- **内存限制** - 受 Python 进程内存限制（默认 4GB）
-- **大数据处理** - 对于超大数据集（>100万行），使用 Spark Workflow 运行时，并绑定 Spark 通用引擎资源
-- **OOM 风险** - 多个并发工作流可能导致内存不足
+栅格调用的进程共享运行／等待额度、Tenant 额度和 GDAL 块缓存统一见[资源策略](../docs/spec/configuration/System安全与引擎策略.md#栅格引擎资源策略)及[Runtime 准入契约](../docs/spec/workflow/栅格算子契约.md#geopython-栅格资源准入)。GDAL 块缓存不是进程 RSS 上限，资源建议不保证所有算子内存安全；纯矢量工作流不计入栅格额度。Develop 的 Workflow 领取并发另由[执行策略](../docs/spec/configuration/执行与模块策略.md#develop-并发热更新)管理，不把 Backend 槽位当作 Runtime 内存配额。
 
-**优化建议**：
-- 限制输入数据大小（前端提示用户先筛选数据）
-- 配置 GeoPython Workflow 运行时的最大内存限制
-- 使用 Spark Workflow 运行时处理大规模数据
+按实际输入与资源约束选择运行时，控制读取范围和中间结果规模。选择 Spark Workflow 时，仍须在执行时显式绑定已登记的 Spark 通用引擎资源，见[Spark 运行与架构说明](../engines/spark-workflow/README.md)。配置保存、健康探针或单个算子通过不代表容量验收完成；实际运行、产物与清理按对应标准门禁分别认定，不据固定行数承诺安全容量。
 
 ### 4. 与其他模块的交互
 

@@ -87,7 +87,7 @@ Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Not
 
 ### 内存不足错误？
 
-大数据集建议使用 Spark Workflow 运行时，并在执行时绑定已注册的 Spark 通用引擎资源。详见 [CLAUDE.md#3-geopython-workflow-内存管理](./CLAUDE.md#3-geopython-workflow-内存管理)
+按[内存与准入说明](CLAUDE.md#3-geopython-workflow-内存管理)核对实际输入、部署限制、Develop 并发与 Runtime 额度；GDAL 缓存不等于进程总内存上限，运行时选择与 Spark 显式绑定也按该节确认。
 
 ## 📚 相关文档
 
