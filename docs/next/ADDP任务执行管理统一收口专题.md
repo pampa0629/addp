@@ -988,3 +988,12 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 **独立 Linux 实际终态。** 修正提交 `6487837e7fb5ddf8df6c3b8dac9aed411969502b` 已推送 main；[Run 41378965722／Execution online CI runner Job 125065338426](https://github.com/pampa0629/addp/actions/runs/41378965722/job/125065338426) 于北京时间2026-11-02 10:40:19—10:42:35实际 completed/success。主责 fresh API、原始日志分别核对准确SHA、`selected: true`、标准 `make test-execution-online-ci-runner` 确实执行、114＋169全部OK及登记一致；日志27390字节，SHA-256 `a9290d51253de90392e43a54143e1fc7a55cc0b00e9e2d7ac466892995ed7d8c`。私有原件和逐项断言在本轮 `/tmp` 目录的 `diagnostic-ci-job.json`／`.log` 与 `diagnostic-ci-proof.json`，同时已同步CI会话。此处仅本专项受影响独立门禁通过，不扩称聚合工作流通过。
 
 **仍未闭合。** 第九轮0/7终态保持，完整 Engine 清理链路未验收；第八轮CDC失败的具体原因本轮未复现，删除受理后是否停于 validation、具体Owner及其安全原因亦因旧报告缺失而不能确认。本次补的是有界安全取证，不宣称修复未知产品根因。下一优先项是用户另行确认后，再用此诊断运行一次同身份、同范围、同七断言、同预算的 transfer-engine Hosted；在确认之前不得追加。Graph真实原生写图回包、正向reopen等未验收范围没有新增证据。
+
+
+### 8.33 第十轮 transfer-engine 删除后 validation／execute 新诊断取证（已授权，运行中）
+
+用户于2026-11-02单独确认再运行一次携带新诊断的 transfer-engine Hosted，定位 Engine 删除受理后 validation／execute 失败原因；保持原六项身份权限、操作范围、七项断言和等待预算不变，按证据修复；其它 Hosted、环境和权限变化仍单独确认。已唯一派发并核对 [Run41379980834／Job125068442244](https://github.com/pampa0629/addp/actions/runs/41379980834/job/125068442244)，workflow_dispatch／attempt1，准确源码 `8da8b979b9c8ad6d8f35292eb75088f9d6a0e8bb`，记录时 in_progress，不计通过。本次单次授权已消费，不自动追加第十一轮。
+
+**已核对前提与边界。** 先 fresh 核验上节独立 Execution runner Job125065338426实际success、准确6487837e7、114＋169和登记一致。待运行版本24项关键输入与该已验源码逐字节一致，契约SHA-256仍为 `b6aa6485a164cb7005b3ab13d696f7f1cac001d02b7726944c15fcdad28b2356`；其后 main 增量仅文档及此场景不消费的 Monitor 本地测试。Infra、三User夹具、proxy、原始业务行探针及标准隔离生命周期不变，共享工作区未提交代码／表格／权限草稿不部署。GitHub预派发只读GET曾遇EOF，在POST前退出、计数仍0；有界重取只读状态成功后只发出一次POST，返回0且定位唯一新Run，未重发业务或Hosted操作。
+
+本轮私有目录 `/tmp/addp-transfer-engine-hosted-tenth-20261102/` 保存 intent、invariants、前提证明、唯一派发及前后Run快照，冻结本版本 canonical validator／契约及五份审计；新Engine诊断审计只接受同一PG Engine、闭集lifecycle／deletion_error／引用状态、完整绑定后的Manager／Transfer安全任务投影，合法样例1项通过、越界／泄露反例6项拒绝。CI会话仅只读跟进唯一Job；终态后主责核对十四服务同SHA、七项实际checks、新validation／execute诊断、控制恢复和零残留。第九轮failure0/7、完整清理未验收及旧CDC原因未复现的缺口在本轮终态前保持。
