@@ -170,6 +170,7 @@ Transfer 已实现的资源回收执行方当前治理 Transfer-owned 任务定�
 PostgreSQL CDC v1 capture control plane 已实现，Transfer cleanup executor 必须治理由 capture supervisor 明确登记的任务级捕获资源：
 
 - ADDP-created Kafka Connect connector、replication slot、publication、Infra Kafka CDC topic 和 consumer group 归 Transfer owner；按 `task_id + capture_generation` 精确定位，不按 topic prefix 或数据库名称猜测。
+- Kafka consumer group 删除后，仅接受同一准确非空 group 的原生缺失证据：`GROUP_ID_NOT_FOUND`，或成功 DescribeGroups 的完整缺失描述（`State=Dead`、protocol type／protocol 为空、members 为空）。必须核对响应自身 group 身份；任意 Dead 状态、Empty／Stable、残留协议或成员、漏项、错误目标、权限失败和传输失败均不能作为缺失。观察仍沿原10秒上限和更早的授权／租约截止，不重发删除、不以列表为空兜底。此判定仅服务于合法删除响应后的既有缺失观察，不核清已登记的unknown操作，也不替代旧运行体停止证明。此描述对应固定 Redpanda 的 [make_dead_described_group](https://github.com/redpanda-data/redpanda/blob/v24.3.18/src/v/kafka/protocol/describe_groups.h)，不按引擎版本保留两条实现路线。
 - CDC stop 与 System Cleanup 使用同一套准确目标操作登记。外部结果未知不重发；明确成功的原操作回执可用于后续收口，不能据此重新删除或自动重新开放任务。
 - 新 producer 因已有外部清理操作而被持久围栏拒绝时，启动／恢复接口返回 HTTP 409、稳定 `error_code=transfer_cleanup_unresolved` 和按请求语言翻译的安全 `error`，不返回底层包装错误。用户显式删除任务时外部清理失败仍返回 HTTP 503；该分类调整不开放任务、不重发未知效果，也不改变 Engine 删除保留任务与 DLQ 的语义。
 - Kafka Connect config/offset/status 等共享内部 topic、Kafka broker 数据目录和 ACL 基础配置归 Infra 部署 owner，不得由单个 Transfer task cleanup 删除。

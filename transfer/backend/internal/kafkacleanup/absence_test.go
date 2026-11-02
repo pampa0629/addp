@@ -54,20 +54,39 @@ func TestExactAbsenceRequired(t *testing.T) {
 		values kadm.DescribedGroups
 		pass   bool
 	}{
-		{"exact_missing", kadm.DescribedGroups{"owned": {Err: kerr.GroupIDNotFound}}, true},
+		{"exact_missing", kadm.DescribedGroups{"owned": {Group: "owned", Err: kerr.GroupIDNotFound}}, true},
+		{"exact_dead_missing", kadm.DescribedGroups{"owned": {Group: "owned", State: "Dead"}}, true},
 		{"omitted", kadm.DescribedGroups{}, false},
-		{"other_target", kadm.DescribedGroups{"other": {Err: kerr.GroupIDNotFound}}, false},
-		{"permission", kadm.DescribedGroups{"owned": {Err: kerr.GroupAuthorizationFailed}}, false},
-		{"exists", kadm.DescribedGroups{"owned": {}}, false},
+		{"other_target", kadm.DescribedGroups{"other": {Group: "other", Err: kerr.GroupIDNotFound}}, false},
+		{"wrong_identity", kadm.DescribedGroups{"owned": {Group: "other", Err: kerr.GroupIDNotFound}}, false},
+		{"omitted_identity", kadm.DescribedGroups{"owned": {Err: kerr.GroupIDNotFound}}, false},
+		{"permission", kadm.DescribedGroups{"owned": {Group: "owned", State: "Dead", Err: kerr.GroupAuthorizationFailed}}, false},
+		{"empty_is_not_absent", kadm.DescribedGroups{"owned": {Group: "owned", State: "Empty"}}, false},
+		{"stable_is_not_absent", kadm.DescribedGroups{"owned": {Group: "owned", State: "Stable"}}, false},
+		{"dead_protocol_type", kadm.DescribedGroups{"owned": {Group: "owned", State: "Dead", ProtocolType: "consumer"}}, false},
+		{"dead_protocol", kadm.DescribedGroups{"owned": {Group: "owned", State: "Dead", Protocol: "range"}}, false},
+		{"dead_members", kadm.DescribedGroups{"owned": {Group: "owned", State: "Dead", Members: []kadm.DescribedGroupMember{{MemberID: "live"}}}}, false},
+		{"exists", kadm.DescribedGroups{"owned": {Group: "owned"}}, false},
 	} {
 		t.Run("group_"+tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
+			budget := time.Millisecond
+			if tc.pass {
+				budget = time.Second
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), budget)
 			defer cancel()
 			err := WaitGroupAbsent(ctx, groupObservation{tc.values, nil}, "owned")
 			if (err == nil) != tc.pass {
 				t.Fatalf("err=%v pass=%v", err, tc.pass)
 			}
 		})
+	}
+}
+
+func TestGroupAbsenceRejectsEmptyTarget(t *testing.T) {
+	err := WaitGroupAbsent(t.Context(), groupObservation{values: kadm.DescribedGroups{"": {Err: kerr.GroupIDNotFound}}}, "")
+	if err == nil {
+		t.Fatal("empty group target was accepted as exact absence")
 	}
 }
 func TestCancelledObservationDoesNotRun(t *testing.T) {

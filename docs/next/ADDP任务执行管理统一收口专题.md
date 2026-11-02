@@ -1126,3 +1126,17 @@ Manager和Transfer统一复用Common的C围栏安全失败步骤写入；诊断�
 **已核对输入与审计。** 本次31项产品／runner代码与已实际通过相关Linux门禁的8ce修正逐字节相同；机器契约仍为 `b6aa6485a164cb7005b3ab13d696f7f1cac001d02b7726944c15fcdad28b2356`，三User、六权限、业务删除语义、七断言和等待预算不变。提交源码3d733501b的隔离干净快照沿标准 `make test-execution-online-ci-runner` 实际exit0，115＋172及登记一致；这是预检快照的确定性证据，不改写8ce Linux的115＋171。后续主干仅有无Cleanup消费的clip算子诊断、文档和独立raster套件登记增量；对额外套件做AST／YAML归一，既有Online语义及完整Cleanup Native Job保持相同，其它22项关键输入逐字节相同。未部署工作区未提交的文件源授权重构、夹具、配置或表格。
 
 私有目录 `/tmp/addp-transfer-engine-hosted-twelfth-20261102/` 保存准确source、前提证明、单次intent、前后Run快照和冻结的canonical validator／契约／安全审计。私有Engine诊断审计覆盖Transfer原12个闭集失败阶段，12合法样例通过、84越界反例拒绝；评估审计复用同一Owner校验，另12合法／48越界反例通过，避免旧“仅Manager可有失败步骤”的私有限制误拒已批准诊断。不改产品接口／权限或七项成功断言。CI会话仅只读跟进该唯一Job；主责核对十四服务同SHA、checks、专业回执、控制恢复及零残留，并在下文登记实际终态。
+
+
+**第十二轮实际终态。** 唯一Job北京时间22:01:49—22:24:35实际failure，checks仍为空、0/7；十四服务同准确df9源码且repository_clean=true，控制恢复／control_cleanup／cleanup均passed，infra_cleanup=zero_residuals。原日志429419字节／SHA-256 `3f0b333409c83374443924336d8beca9c58080e138a360aa8e03f673353cdc5b`；artifact13150100444／ZIP3287字节，SHA-256 `9c4162cec15c78ed57699c917a8875249925ce27ed707d5817046d419c29a3bf`。五份冻结审计全部exit0，失败报告继续被canonical validator拒绝。
+
+仍为engine_cleanup_task_read、execute父timeout；Engine deleting，validation／execute引用均存在、deletion_error为空。Manager success及成功回执，Transfer attempt1／started／failed、无回执；绑定全true，公开授权拒绝／不可用标记均false。新唯一失败步骤为 `transfer_cleanup_capture_group`，执行顺序已越过连接计划、connector与源端调用，尚不能把此前阶段换算为七项正式断言通过，也没有现场底层Kafka错误码的直接归档。
+
+**已查实的协议缺陷及修复范围。** 当前WaitGroupAbsent只接受GroupIDNotFound；固定Redpanda v24.3.18对不存在的精确group返回成功Dead缺失描述，故原观察器会耗尽原窗口而误报失败。已只读核对固定版本源码的group_manager缺失分支与make_dead_described_group，现有同版本Infra的随机未创建group经原生rpk只读查询也实测exit0／Dead；未创建或清理任何本地资源、不重启或切换验收环境，不把该只读事实当Hosted通过。早先只读探针因stdin配置未提供SASL失败，原件保留，不计通过；按现有认证方式及实测内部listener核对后取得上述结果，凭据未落盘。
+
+先同步正式Cleanup规范，再仅修Transfer的精确缺失解释，保留原10秒观察／外部授权更早截止、不重发原生删除；Dead但带协议／成员等矛盾事实继续阻断，同时补响应自身group身份核验。预期受影响门禁为既有Transfer Go标准Owner、Transfer PG及独立Execution runner，现有路径／T2登记自动覆盖，无新依赖、权限、API、环境或CI服务。先取得旧代码功能反例、再修正并运行相关门禁，之后按用户持续授权推进同范围Hosted；不以当前阶段推断现场唯一底层错误。
+
+
+**确定性反例与本地门禁进展。** 标准Transfer后端在干净已提交源码快照仅叠加新增测试后实际失败：完整Dead缺失描述耗尽测试窗口，错／空响应身份及空目标被错误接受；没有编译失败冒充反例。按上述唯一原生解释修正后，完整 `make test-transfer-backend` 实际exit0。`make test-transfer-postgres` 现工作区标准入口实际19主项PASS／0FAIL／0SKIP；首次隔离源码目录调用因Infra归属检查拒绝而未执行测试，原件保留、不计通过，未绕过归属检查。独立runner已在同一干净源码快照完整复验exit0，115＋173及登记一致；新增共享数量来自后续已登记套件，未改变本case七项断言。变化只涉及Transfer缺失观察及其反例和正式文档；既有Transfer Go／PG及Execution runner的路径选择已覆盖，无需修改编排。
+
+本地完整门禁全部通过后提交本批四个自有文件，后续只跟进准确修正提交的Transfer Go／Transfer PG／独立Execution runner实际CI，不以本地、旧源码或其它owner聚合状态替代；新的同范围Hosted依用户持续授权由主责在相关门禁实际通过后推进。

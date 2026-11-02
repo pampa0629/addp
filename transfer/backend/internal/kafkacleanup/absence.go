@@ -35,19 +35,28 @@ func WaitTopicAbsent(ctx context.Context, admin topicObserver, topic string) err
 }
 
 func WaitGroupAbsent(ctx context.Context, admin groupObserver, group string) error {
+	if group == "" {
+		return fmt.Errorf("Kafka group observation requires an exact target")
+	}
 	return waitAbsent(ctx, func(ctx context.Context) (bool, error) {
 		details, err := admin.DescribeGroups(ctx, group)
 		if err != nil {
 			return false, err
 		}
 		detail, ok := details[group]
-		if !ok {
+		if !ok || detail.Group != group {
 			return false, fmt.Errorf("Kafka group observation omitted exact target")
 		}
 		if detail.Err == kerr.GroupIDNotFound {
 			return true, nil
 		}
-		return false, detail.Err
+		if detail.Err != nil {
+			return false, detail.Err
+		}
+		// A missing classic group can be described successfully as Dead. Require
+		// the complete missing descriptor; Dead with protocol or members is not
+		// absence evidence and must remain blocked.
+		return detail.State == "Dead" && detail.ProtocolType == "" && detail.Protocol == "" && len(detail.Members) == 0, nil
 	})
 }
 
