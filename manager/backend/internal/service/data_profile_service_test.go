@@ -284,6 +284,13 @@ func TestDataProfileServiceReturnsProtectedManagedCurrentResult(t *testing.T) {
 	if storedProfile.FieldCount != 2 || len(storedProfile.Fields) != 2 {
 		t.Fatal("stored profile was mutated")
 	}
+	// ReplaceCurrent persists the protected result, not the raw source profile.
+	// A subsequent read must still succeed without requiring phone to reappear.
+	profiles.profile = response.Profile
+	reread, err := profileService.GetCurrent(context.Background(), profileAuthContextForTest(), "addp_at_user", DataProfileCurrentRequest{Locator: target.Locator})
+	if err != nil || reread.Profile == nil || reread.Profile.FieldCount != 1 || reread.Profile.Fields[0].Name != "name" {
+		t.Fatalf("read already-protected profile: response=%#v err=%v", reread, err)
+	}
 }
 
 func TestDataProfileServiceAllowsManagedAllScopeAndRejectsConditionScope(t *testing.T) {

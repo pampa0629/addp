@@ -278,7 +278,9 @@
         "baselineHint": "Default protection applies without a valid field rule. Field rules must also meet the current default protection constraints.",
         "parameters": "View parameters and invalid-value handling",
         "unreadable": "Your account cannot read field configurations. Refer to the outlet rules."
-      }
+      },
+      "profileLinkedSuppress": "Preview applies the selected treatment to field values. Profiling hides statistics for this sensitive field and its parent containers while retaining other fields. Source data stays unchanged.",
+      "profileLinkedDeny": "Denying preview also denies profiling. This entry configures both actions; no separate profiling algorithm is needed."
     },
     "options": {
       "effects": {
@@ -453,7 +455,7 @@
         "released": "Removed"
       },
       "owners": {
-        "manager": "Data preview",
+        "manager": "Data preview and profiling",
         "transfer": "Data export",
         "develop": "Query workbench",
         "service": "Data service",

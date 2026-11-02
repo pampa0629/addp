@@ -646,3 +646,10 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 针对默认掩码与 Manager 专用 SM3 被拼接成长句的问题，按正式规范10.5整理唯一展示路径：Finding 卡片首先显示后端返回的当前各出口算法及独立同步状态，再展示识别／治理依据；默认方式和每个出口的已配置字段专用方式分别成行，参数及异常值处理通过原生 details 展开。配置存在不等同于投影采用，前端不重算基线与Policy裁决；配置读取权限不足时明确提示，仍如实展示可读的出口事实。自动发现与人工指定字段共用 `EnrollmentProtectionConfiguration.vue`，删除两处旧长句渲染及只为该渲染保留的模型字段，保留策略编辑／恢复对话框所需的既有摘要。没有新增API、权限、算法或授权，Swagger不变，不需后端重启。
 
 验证：`make test-security-frontend`退出0，262项T1单元、37项T3受控浏览器及生产构建通过。新增／加强配置与实际出口算法不同、不可读取专用配置、基线缺失、人工评估不捏造出口事实、两个消费组件唯一复用及当前规则优先的断言。中英文、深／浅主题、四个出口（Manager SM3，其余前后掩码）、参数初始折叠／展开及480px窄窗口无横向溢出经浏览器验证，四张合成夹具截图已目视核对；无Security写请求。初始新增结构模型测试实际失败，旧三栏／长句架构断言按获批新布局修订后通过；截图检查发现旧合成Finding未带正式评估说明，补齐夹具事实后完整复验，不改变产品保护行为。标准Make入口与现有testDir自动发现覆盖，无新增CI编排。日志 `/tmp/p145-protection-layout-{red,green}.log`，截图 `/tmp/p145-protection-layout-visual/`。限定路径diff及文档链接检查通过。仅T1/T3及构建，不计个人环境实源或Hosted T4；CI仍由专门会话跟进。
+
+
+2026-11-02，修复 Manager 受保护剖析结果二次读取误拒绝。`ProtectProfile` 统一接收完整源字段快照，严格校验组件路径、类型和结构指纹后执行幂等统计移除，写前及读后共用该执行器；不要求已移除的敏感统计重新出现。保留当前投影及源授权检查，不恢复原值或旧采样路径。读取失败后不继续显示旧执行进度，重试只读取结果。Security 的 Manager 配置入口改称“数据预览与剖析”，说明预览脱敏／移除时隐藏敏感及父级容器统计，预览拒绝时拒绝剖析；不新增独立策略、算法或授权。
+
+本轮验证：`make test-manager-backend` 通过；`make test-manager-postgres` 33 项真实 PostgreSQL 检查通过，新增保护前处理→持久化→解码→重复保护及结构漂移拒绝检查；`make test-manager-frontend` 405 单元、321 独立浏览器及构建通过；`make test-security-frontend` 262 单元、37 独立浏览器及构建通过。首次回归先重现旧缺陷；接口签名遗漏调用和新浏览器夹具缺少表类型事实已修正并通过最终完整门禁，不把初次失败记为通过。标准入口与 CI 自动发现已覆盖新增测试，无新增登记路线。
+
+用户重启 Manager 后，Chrome 实际读取 PostgreSQL engine #2 / `outdoor.p145_native_default_20261024` / Meta #44720 的成功执行 `2043d7b3-167b-4956-ac1f-ddde49102e5a`：HTTP 200、字段数 3，仅 `_id`、`nick_name`、`gender`；样本 2,000、扫描 2,188，观察记录不指向 `phone`。切换预览／剖析后同一执行再次 HTTP 200，无新建执行响应。限定本地证据 `/tmp/p145-pg-profile-fixed-20261102/read-proof.json`、`repeat-proof.json`、`profile-result.jpg` 与日志 `/tmp/p145-profile-{backend-final,postgres-final,manager-frontend-final,security-frontend-final}.log`。原纳管记录 `03a9a977-7c55-4149-8573-b1023f92a3fa` 保持长期保护，本轮未更改任何源／原值授权或源数据。实际配置页刷新被浏览器文档响应暂停阻断，新配置说明只有独立浏览器证据，未声称个人 Chrome 配置页通过；未运行新增 Hosted，CI 继续由专门会话跟进。剩余优先项为未支持剖析来源的能力提示与具体错误分类。

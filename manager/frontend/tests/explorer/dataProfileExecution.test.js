@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { profileFailureMessage } from '../../src/utils/dataProfileExecution.js'
+import { profileFailureMessage, profileReadFailureMessage } from '../../src/utils/dataProfileExecution.js'
 import zh from '../../src/i18n/zh-cn.json'
 import en from '../../src/i18n/en.json'
 
@@ -23,5 +23,19 @@ describe('data profile execution feedback', () => {
     const execution = { status: 'failed', error_code: 'source_authorization_required', error: 'unsafe source details' }
     expect(profileFailureMessage(execution, translate(zh))).toBe('剖析执行的源数据授权尚未接通，本次未读取源数据。已有成功结果不受影响。')
     expect(profileFailureMessage(execution, translate(en))).toBe('Source authorization for profiling execution is not yet available. No source data was read; existing successful results are unchanged.')
+  })
+})
+
+
+describe('profile result read failures', () => {
+  const translate = messages => key => key.split('.').reduce((value, part) => value[part], messages)
+  it('distinguishes protection rejection from source authorization and execution progress', () => {
+    for (const messages of [zh,en]) {
+      const t = translate(messages)
+      const error = code => ({response:{data:{error_code:code,error:'stale generic backend wording'}}})
+      expect(profileReadFailureMessage(error('security_protection_required'),t)).toBe(t('manager.explorer.profile.protectionReadFailed'))
+      expect(profileReadFailureMessage(error('source_authorization_required'),t)).toBe(t('manager.explorer.profile.sourceAuthorizationRequired'))
+      expect(profileReadFailureMessage(error('other'),t)).toBe('stale generic backend wording')
+    }
   })
 })

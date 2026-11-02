@@ -218,7 +218,7 @@ for (const [owner, action, label] of [['develop', 'query', '查询工作台'], [
 
 test('reads all outlet policy revisions including revoked policies without changing protection', async ({ page }) => {
   const backend = await installMockBackend(page, { governanceValidation: true })
-  const outlets = [['manager', 'preview', '数据预览'], ['develop', 'query', '查询工作台'], ['service', 'service_execute', '数据服务'], ['transfer', 'export', '数据导出']]
+  const outlets = [['manager', 'preview', '数据预览与剖析'], ['develop', 'query', '查询工作台'], ['service', 'service_execute', '数据服务'], ['transfer', 'export', '数据导出']]
   backend.policies = outlets.map(([consumer_owner, action], index) => ({
     id: `history-policy-${index}`, assessment_id: assessmentID, consumer_owner, action,
     state: 'revoked', current_revision: 2,
@@ -1026,6 +1026,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
 
   const policyDialog = page.getByRole('dialog', { name: '资源级保护策略' })
   await expect(formCombobox(policyDialog, '生效出口')).toContainText('数据预览')
+  await expect(policyDialog.getByText(/剖析隐藏该敏感字段及其父级容器的统计/)).toBeVisible()
   await policyDialog.getByText('移除', { exact: true }).click()
   await expect(policyDialog.getByRole('radio', { name: '移除' })).toBeChecked()
   await policyDialog.getByRole('button', { name: '保存策略' }).click()
@@ -1067,6 +1068,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await expect(policyDialog.getByText('该资源级保护策略已被其他操作更新；当前选择和依据已保留，不会覆盖最新修订。', { exact: true })).toHaveCount(0)
 
   await policyDialog.getByText('拒绝', { exact: true }).click()
+  await expect(policyDialog.getByText(/预览拒绝访问时，剖析也拒绝执行/)).toBeVisible()
   await formTextbox(policyDialog, '调整依据').fill('重新加载后确认收紧为拒绝访问')
   await policyDialog.getByRole('button', { name: '保存策略' }).click()
 
@@ -1099,7 +1101,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await restoreDialog.getByRole('button', { name: '放弃当前输入并加载最新策略' }).click()
   await expect.poll(() => backend.policyDetailRequests).toBe(2)
   await expect(formTextbox(restoreDialog, '恢复依据')).toHaveValue('')
-  await expect(restoreDialog.getByText(/^数据预览：默认 前后保留掩码.*字段规则配置为 移除；执行时遵守当前基线约束$/)).toBeVisible()
+  await expect(restoreDialog.getByText(/^数据预览与剖析：默认 前后保留掩码.*字段规则配置为 移除；执行时遵守当前基线约束$/)).toBeVisible()
   await expect(restoreDialog.getByText('该资源级保护策略已被其他操作更新；当前恢复依据已保留，不会撤销最新修订。', { exact: true })).toHaveCount(0)
 
   await formTextbox(restoreDialog, '恢复依据').fill('重新加载后确认恢复平台默认规则')

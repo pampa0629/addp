@@ -7,3 +7,9 @@ export const profileFailureMessage = (execution, translate) => {
     ? 'manager.explorer.profile.protectionVersionChanged'
     : 'manager.explorer.profile.latestFailed')
 }
+
+export const profileReadFailureMessage = (error, translate) => {
+  if (error?.response?.data?.error_code === 'security_protection_required') return translate('manager.explorer.profile.protectionReadFailed')
+  if (error?.response?.data?.error_code === 'source_authorization_required') return translate('manager.explorer.profile.sourceAuthorizationRequired')
+  return error?.response?.data?.error || error?.message || translate('manager.explorer.profile.requestFailed')
+}

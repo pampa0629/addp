@@ -3,6 +3,7 @@ package protection
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -24,11 +25,14 @@ func TestProtectProfileSuppressesWholeSensitiveFieldWithoutMutatingSource(t *tes
 		},
 	}
 	rules := []dataprotection.Rule{{
-		Action: ActionProfile, Component: dataprotection.Component{Key: "userInfo.phone"},
+		Action: ActionProfile, Component: dataprotection.Component{Key: "userInfo.phone", ValueType: "string", Path: []dataprotection.PathSegment{{Name: "userInfo", Container: "object"}, {Name: "phone", Container: "scalar"}}},
 		Decision: dataprotection.Decision{Effect: dataprotection.EffectSuppress},
 	}}
 
-	protected, err := ProtectProfile(profile, rules)
+	sourceFields := []datatype.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}, {Name: "userInfo", Type: datatype.FieldTypeJSON}, {Name: "userInfo.phone", Path: []string{"userInfo", "phone"}, Type: datatype.FieldTypeString}, {Name: "userInfo.nickName", Path: []string{"userInfo", "nickName"}, Type: datatype.FieldTypeString}}
+	rules[0].Component.ValueType = "string"
+	rules[0].Component.SchemaFingerprint, _ = dataprotection.ComponentSchemaFingerprint(sourceFields, rules[0].Component)
+	protected, err := ProtectProfile(profile, rules, sourceFields)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +54,7 @@ func TestProtectProfileFailsClosedForDenyUnknownAndMissingComponent(t *testing.T
 		{Action: ActionProfile, Component: dataprotection.Component{Key: "name"}, Decision: dataprotection.Decision{Effect: dataprotection.EffectMask}},
 		{Action: ActionProfile, Component: dataprotection.Component{Key: "missing"}, Decision: dataprotection.Decision{Effect: dataprotection.EffectSuppress}},
 	} {
-		if _, err := ProtectProfile(profile, []dataprotection.Rule{rule}); !errors.Is(err, ErrRequired) {
+		if _, err := ProtectProfile(profile, []dataprotection.Rule{rule}, []datatype.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}}); !errors.Is(err, ErrRequired) {
 			t.Fatalf("ProtectProfile(%#v) error = %v", rule, err)
 		}
 	}
@@ -74,12 +78,48 @@ func TestProtectProfileSuppressesAncestorContainerThatCanAggregateSensitiveLeaf(
 		Decision: dataprotection.Decision{Effect: dataprotection.EffectSuppress},
 	}}
 
-	protected, err := ProtectProfile(profile, rules)
+	sourceFields := []datatype.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}, {Name: "userInfo", Type: datatype.FieldTypeJSON}, {Name: "userInfo.phone", Path: []string{"userInfo", "phone"}, Type: datatype.FieldTypeString}, {Name: "userInfo.nickName", Path: []string{"userInfo", "nickName"}, Type: datatype.FieldTypeString}}
+	rules[0].Component.ValueType = "string"
+	rules[0].Component.SchemaFingerprint, _ = dataprotection.ComponentSchemaFingerprint(sourceFields, rules[0].Component)
+	protected, err := ProtectProfile(profile, rules, sourceFields)
 	if err != nil {
 		t.Fatal(err)
 	}
 	payload, _ := json.Marshal(protected)
 	if strings.Contains(string(payload), "13661384499") || protected.FieldCount != 1 || protected.Fields[0].Name != "userInfo.nickName" {
 		t.Fatalf("protected profile = %s", payload)
+	}
+	reread, err := ProtectProfile(protected, rules, sourceFields)
+	if err != nil || !reflect.DeepEqual(protected, reread) {
+		t.Fatalf("nested protected result was rejected on reread: %v", err)
+	}
+}
+
+func TestProtectProfileRepeatedReadPreservesSuppressionAndRejectsSchemaDrift(t *testing.T) {
+	fields := []datatype.FieldInfo{{Name: "phone", Type: datatype.FieldTypeString}, {Name: "name", Type: datatype.FieldTypeString}}
+	component := dataprotection.Component{Key: "phone", ValueType: "string", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}}
+	component.SchemaFingerprint, _ = dataprotection.ComponentSchemaFingerprint(fields, component)
+	rules := []dataprotection.Rule{{Action: ActionProfile, Component: component, Decision: dataprotection.Decision{Effect: dataprotection.EffectSuppress}}}
+	raw := &dataprofile.Profile{FieldCount: 2, Fields: []dataprofile.FieldProfile{{Name: "phone"}, {Name: "name"}}, Observations: []dataprofile.Observation{{Field: "phone"}, {Field: "name"}}}
+	once, err := ProtectProfile(raw, rules, fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	twice, err := ProtectProfile(once, rules, fields)
+	if err != nil || !reflect.DeepEqual(once, twice) || len(twice.Fields) != 1 || len(twice.Observations) != 1 {
+		t.Fatalf("repeated protection failed: %#v %v", twice, err)
+	}
+	// Empty statistics remain valid when all source fields have been suppressed.
+	if empty, err := ProtectProfile(&dataprofile.Profile{}, rules, fields); err != nil || len(empty.Fields) != 0 || empty.FieldCount != 0 {
+		t.Fatalf("fully suppressed result rejected: %v", err)
+	}
+	for _, drift := range [][]datatype.FieldInfo{nil, {{Name: "name", Type: datatype.FieldTypeString}}, {{Name: "phone", Type: datatype.FieldTypeBigInt}}} {
+		if _, err := ProtectProfile(once, rules, drift); !errors.Is(err, ErrRequired) {
+			t.Fatalf("source schema drift accepted: %v", err)
+		}
+	}
+	rules[0].Component.Key = "different"
+	if _, err := ProtectProfile(once, rules, fields); !errors.Is(err, ErrRequired) {
+		t.Fatal("component key/path mismatch accepted")
 	}
 }

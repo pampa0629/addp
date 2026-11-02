@@ -76,7 +76,7 @@ func TestIntegrationManagerMongoOutdoorPersonsPreviewMasksPhone(t *testing.T) {
 		Mode: dataprofile.ModeSample, DataScope: dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll},
 		SampleMethod: "integration_fixture", RowsScanned: int64(len(table.Rows)), TopN: 10, HistogramBins: 10, ProfiledAt: now,
 	})
-	protectedProfile, err := managerprotection.ProtectProfile(&profile, profileRules)
+	protectedProfile, err := managerprotection.ProtectProfile(&profile, profileRules, table.Fields)
 	if err != nil {
 		t.Fatalf("MongoDB profile protection failed: %v", err)
 	}

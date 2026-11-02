@@ -1340,6 +1340,9 @@
       "attributeJsonTitle": "Full Attributes JSON",
       "dynamicSchemaNotice": "Dynamic schema collection: previewed as records; fields are sampled profiles, not a strict schema.",
       "profile": {
+        "retryRead": "Retry reading result",
+        "readFailed": "The profile result could not be read. The current execution status is unknown.",
+        "protectionReadFailed": "The profile result cannot be read because data protection validation failed. Check rule validity, synchronization and field structure. This does not mean profiling is still running.",
         "title": "Data Profile",
         "refresh": "Refresh Profile",
         "refreshSubmitted": "Profile refresh submitted",

@@ -231,7 +231,7 @@ func (s *DataProfileService) GetCurrent(
 	if managed && profile != nil && profile.DataScope.Kind == dataprofile.DataScopeKindCondition {
 		return nil, ErrDataProfileProtectionRequired
 	}
-	profile, err = managerprotection.ProtectProfile(profile, profileRules)
+	profile, err = managerprotection.ProtectProfile(profile, profileRules, target.Fields)
 	if err != nil {
 		return nil, ErrDataProfileProtectionRequired
 	}
@@ -619,7 +619,7 @@ func (s *DataProfileService) runExecution(
 		if managed && dataScope.Kind == dataprofile.DataScopeKindCondition {
 			return ErrDataProfileProtectionRequired
 		}
-		protected, err := managerprotection.ProtectProfile(&profile, rules)
+		protected, err := managerprotection.ProtectProfile(&profile, rules, sample.Fields)
 		if err != nil {
 			return ErrDataProfileProtectionRequired
 		}

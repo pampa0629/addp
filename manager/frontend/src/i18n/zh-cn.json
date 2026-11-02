@@ -1340,6 +1340,9 @@
       "attributeJsonTitle": "完整属性 JSON",
       "dynamicSchemaNotice": "动态 schema 集合：按记录集合预览，字段为采样画像，不代表强 schema。",
       "profile": {
+        "retryRead": "重新读取结果",
+        "readFailed": "剖析结果读取失败，当前无法确认执行状态。",
+        "protectionReadFailed": "无法读取剖析结果：数据保护校验未通过。请检查保护规则有效期、同步状态和字段结构是否匹配；这不表示剖析执行仍在进行。",
         "title": "数据剖析",
         "refresh": "刷新剖析",
         "refreshSubmitted": "剖析刷新已提交",

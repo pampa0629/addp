@@ -10,7 +10,7 @@ Manager 模块负责数据探查、数据预览、表格数据剖析、混合检
 
 预览必须使用当前 User 或固定 `data.preview` 委托身份，经同一 Provider PreparedQuery 证明完整 ReadSet、核验 System 源授权并执行本地 Security 保护；不回退 ReadBatch 或借用服务身份。保护必须在响应输出前执行，空页也不能暴露被抑制列；具体规则见[预览实现规范](docs/数据预览与资源树实现规范.md)。
 
-预览、剖析和全文索引只消费本地持久保护投影，Tenant HTTP／有界执行生命周期与 Security 回执屏障保持独立。剖析的保护版本核验与结果落库使用同一 checkpoint 事务；Meilisearch 投递使用持久关联标记和完成回执，未知状态不得重发或提前开放搜索。完整规则及多 Backend／HA 未认证边界见[数据安全规范](../docs/spec/addp数据安全与隐私保护实现规范.md)和[剖析规范](docs/数据剖析规范.md)。旧 Meilisearch 数据卷迁移须按[Infra 说明](../scripts/infra/README.md)另行确认。
+预览、剖析和全文索引只消费本地持久保护投影，Tenant HTTP／有界执行生命周期与 Security 回执屏障保持独立。剖析的保护版本核验与结果落库使用同一 checkpoint 事务；统计移除以完整源字段快照核验组件路径、类型与指纹，写前和读后使用同一幂等执行器，不要求已移除的敏感统计在结果中重新出现。结果读取失败停止轮询并显示读取失败，不保留旧的执行中状态；重试读取不创建新执行。Meilisearch 投递使用持久关联标记和完成回执，未知状态不得重发或提前开放搜索。完整规则及多 Backend／HA 未认证边界见[数据安全规范](../docs/spec/addp数据安全与隐私保护实现规范.md)和[剖析规范](docs/数据剖析规范.md)。旧 Meilisearch 数据卷迁移须按[Infra 说明](../scripts/infra/README.md)另行确认。
 
 Manager 导入使用持久 Transfer `sync` 任务并保持上传者私有来源；来源记录只保存成功上传的 Tenant、Uploader、UUID、精确 source locator 与一次绑定的 Transfer task ID，未绑定或主体／任务不符时拒绝，不从路径推断所有权。一次性导出使用 Common `exportartifact` 与 Transfer bounded `sync` ad-hoc execution，导出会话只保存 execution ID，不保存 Transfer task ID。两类操作不共用状态机；来源核验、进度与扫描完成、导航顺序见[预览与资源动作规范](docs/数据预览与资源树实现规范.md#4-与导入和导出)。
 

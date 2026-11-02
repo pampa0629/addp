@@ -278,7 +278,9 @@
         "baselineHint": "未配置有效专用规则时采用默认保护；专用规则也须满足当前默认保护的约束。",
         "parameters": "查看参数与异常值处理",
         "unreadable": "当前账号无法读取字段专用配置，请以各出口规则为准。"
-      }
+      },
+      "profileLinkedSuppress": "预览按所选方式处理字段值；剖析隐藏该敏感字段及其父级容器的统计，其余字段继续展示。源数据不变。",
+      "profileLinkedDeny": "预览拒绝访问时，剖析也拒绝执行。此处共同配置预览与剖析，无需另选剖析算法。"
     },
     "options": {
       "effects": {
@@ -453,7 +455,7 @@
         "released": "已解除"
       },
       "owners": {
-        "manager": "数据预览",
+        "manager": "数据预览与剖析",
         "transfer": "数据导出",
         "develop": "查询工作台",
         "service": "数据服务",

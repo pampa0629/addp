@@ -11,10 +11,10 @@
         v-if="profile || latestExecution"
         size="small"
         :icon="Refresh"
-        :loading="submitting || executionActive"
+        :loading="submitting || (executionActive && !readFailed)"
         @click="refreshProfile"
       >
-        {{ t('manager.explorer.profile.refresh') }}
+        {{ t(readFailed ? 'manager.explorer.profile.retryRead' : 'manager.explorer.profile.refresh') }}
       </el-button>
     </div>
 
@@ -137,7 +137,7 @@
       class="profile-alert"
     />
 
-    <div v-if="executionActive" class="execution-strip">
+    <div v-if="executionActive && !readFailed" class="execution-strip">
       <div>
         <div class="execution-title">{{ t('manager.explorer.profile.running') }}</div>
         <div class="execution-id">{{ activeExecution.execution_id }}</div>
@@ -289,13 +289,13 @@
       </div>
     </template>
 
-    <div v-else-if="executionActive || submitting" class="empty-state">
+    <div v-else-if="!readFailed && (executionActive || submitting)" class="empty-state">
       <el-empty :description="t('manager.explorer.profile.waitingForFirstResult')" />
     </div>
     <div v-else class="empty-state">
-      <el-empty :description="latestFailureText || t('manager.explorer.profile.noResult')">
+      <el-empty :description="readFailed ? t('manager.explorer.profile.readFailed') : latestFailureText || t('manager.explorer.profile.noResult')">
         <el-button type="primary" :icon="Refresh" :loading="submitting" @click="refreshProfile">
-          {{ t('manager.explorer.profile.retry') }}
+          {{ t(readFailed ? 'manager.explorer.profile.retryRead' : 'manager.explorer.profile.retry') }}
         </el-button>
       </el-empty>
     </div>
@@ -309,7 +309,7 @@ import { Delete, Filter, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import DataProfileChart from '@/components/explorer/DataProfileChart.vue'
 import { dataExplorerAPI } from '@/api/dataExplorer'
-import { profileFailureMessage } from '@/utils/dataProfileExecution'
+import { profileFailureMessage, profileReadFailureMessage } from '@/utils/dataProfileExecution'
 import {
   buildProfileDataScope,
   isNumericProfileType,
@@ -332,6 +332,7 @@ const current = ref(null)
 const loading = ref(false)
 const submitting = ref(false)
 const errorText = ref('')
+const readFailed = ref(false)
 const fieldSearch = ref('')
 const fieldTypeFilter = ref('')
 const observationFilter = ref('')
@@ -352,7 +353,7 @@ const selection = computed(() => ({
   nestedChildPath: props.nestedChildPath
 }))
 const targetKey = computed(() => [props.locator, props.childName, props.refPath, props.nestedChildPath].join('|'))
-const profile = computed(() => current.value?.profile || null)
+const profile = computed(() => readFailed.value ? null : current.value?.profile || null)
 const activeExecution = computed(() => current.value?.active_execution || null)
 const latestExecution = computed(() => current.value?.latest_execution || null)
 const profileExecution = computed(() => current.value?.profile_execution || null)
@@ -608,6 +609,7 @@ const loadCurrent = async (allowAutoStart = true) => {
       await loadCurrent(false)
       return
     }
+    readFailed.value = false
     current.value = response
     if (response?.profile?.data_scope?.kind === 'condition') {
       scopeMode.value = 'condition'
@@ -628,13 +630,15 @@ const loadCurrent = async (allowAutoStart = true) => {
   } catch (error) {
     if (sequence !== requestSequence) return
     clearPoll()
-    errorText.value = error.response?.data?.error || error.message || t('manager.explorer.profile.requestFailed')
+    readFailed.value = true
+    errorText.value = profileReadFailureMessage(error, t)
   } finally {
     if (sequence === requestSequence) loading.value = false
   }
 }
 
 const refreshProfile = () => {
+  if (readFailed.value) return loadCurrent(false)
   autoRequested.value = true
   startExecution(true)
 }
@@ -643,6 +647,7 @@ watch(targetKey, () => {
   clearPoll()
   requestSequence += 1
   current.value = null
+  readFailed.value = false
   errorText.value = ''
   selectedFieldName.value = ''
   autoRequested.value = false

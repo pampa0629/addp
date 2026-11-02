@@ -17,6 +17,7 @@
         <el-option v-for="scope in presentation.scopeOptions" :key="scope.value" :value="scope.value" :label="scope.label" :disabled="scope.disabled" />
       </el-select>
     </el-form-item>
+    <el-alert v-if="presentation.scopeValue === 'manager/preview'" :title="t(linkedProfileEffect === 'deny' ? 'security.policy.profileLinkedDeny' : 'security.policy.profileLinkedSuppress')" type="info" :closable="false" />
     <template v-if="mode === 'tighten'">
       <el-form-item :label="t('security.policy.effect')" prop="effect" required>
         <el-radio-group v-model="form.effect">
@@ -78,6 +79,7 @@ const roleOptionsEditor = ref(null)
 const hintKey = computed(() => props.mode === 'restore' ? 'security.policy.restoreHint' : 'security.policy.hint')
 const conflictKey = computed(() => props.mode === 'restore' ? 'security.policy.restoreVersionConflict' : 'security.policy.versionConflict')
 const reloadKey = computed(() => props.mode === 'restore' ? 'security.policy.reloadLatestForRestore' : 'security.policy.reloadLatest')
+const linkedProfileEffect = computed(() => props.mode === 'restore' ? props.presentation.baseline?.effect : props.form.effect)
 const selectedEffectImpact = computed(() => props.presentation.effectOptions
   .find(option => option.value === props.form.effect)?.impact || '')
 
