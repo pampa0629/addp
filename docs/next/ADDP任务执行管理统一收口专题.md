@@ -961,3 +961,13 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 **取证补充的 Linux 实际终态。** `1b68a401fc1e4838d7cab05cff9dcfa2dbccbe4b` 已提交推送，仅含本轮九个自有文件。[独立 Execution runner Job 125032305071](https://github.com/pampa0629/addp/actions/runs/41368036163/job/125032305071) 实际 completed/success：准确 checkout、selected:true、标准 `make test-execution-online-ci-runner`、**109 native＋169 shared** 和 Online 登记检查均核实。主责 fresh API、独立下载原始日志，27446 字节，SHA-256 `3080a7a7df0b5347323992505095da933f5f98a8cb780eaaa8d9ee9ae6dc1722`；同目录 `initial-records-ci-proof.json` 保存分层证据。旧共享计数 168 不沿用到本次结果。
 
 本批安全诊断、Business 分类和原 bool 谓词／预算回归已有本地及该专项 Linux 证据；连续任务 **60 项仅计本地**，不升级为 Linux 整套通过。没有修改产品后端、身份角色或权限，没有根据未取得的执行错误猜测 CDC 修复。**第八轮仍为失败 0/7，初始目标行的具体现场根因及代理修复后的完整清理链路仍待验**；本轮未发起 Engine 评估，不能将 Manager 未执行当作通过。下一步建议单独确认一次携带该诊断的 transfer-engine Hosted；不自动追加，原六权限、目标范围、七断言和等待预算继续冻结，Graph 既有缺口仍保留。
+
+### 8.32 第九轮 transfer-engine 初始目标行新诊断取证（已授权，运行中）
+
+用户于 2026-11-02 再单独确认一次携带新诊断的 `transfer-engine Hosted`，定位 CDC 初始目标行核验失败；原六项身份权限、操作范围、七项断言和等待预算不变，其他 Hosted／环境切换／权限边界变化仍单独确认。已唯一 POST 创建 [Run 41374606245／Job 125052028372](https://github.com/pampa0629/addp/actions/runs/41374606245/job/125052028372)，workflow_dispatch／attempt 1，准确源码 `7e2bfc5ffdb40425c79ffbb900dc39a61a561081`，记录时 in_progress，不计通过。单次授权已使用，不自动追加第十轮。
+
+**派发前前提。** 新诊断与原机器契约字节不变，三普通 User／Engine 六权限、七检查、120 秒初始行窗口／原 HTTP60 秒上限及额度内诊断读取保持上节实现。主责 fresh 核对含最新 Infra 增量的 `aee6bcc427f714aefb97b58090789a8e6acb3fab` 独立 Execution runner Job `125032898426` 实际 success／109＋169，日志 SHA-256 `02a96d11dd064eb42a60b7bc36872c257ba799359afda8b7ed69ca7a5765bc52`；当前核心 runner、身份夹具、proxy、标准部署和 Infra 输入逐项哈希与该已验源码一致，其后 main 增量仅文档或本场景不消费的前端。个人工作区的未提交 fixture、AGENTS、表格或前端改动不进入部署。
+
+**Infra 依赖增量核查。** 上节之后的 MinIO 观测改动为固定 MinIO／MC 构建增加状态工具和默认关闭的生命周期入口；本专项 `.env.example` 精确为 `ADDP_MINIO_METRICS_ENABLED=false`，全新 Hosted 无 owner 状态时入口在 Docker／账号操作之前返回，不安装观测账号，不改变本轮业务身份、端口或物理目标。固定服务／客户端版本未变，状态 binary 不调用。受本次部署实际影响的 MinIO 构建／生命周期 Job `125033211264`（同 aee6）已实际 success，日志有真实构建与容器／网络／卷／私有状态零残留，SHA-256 `dcfb076de98f68081625f03dc451982f7dbff156385519b41e1e5f5024dafe64`；标准 `make test-monitor-minio-observation-unit` 的 14 项本地通过，包括关闭且无状态时不接触 Docker。仅核对该依赖前提，不把其所属工作流的其它失败改记为通过，不启用新观测环境或权限。
+
+本轮私有目录 `/tmp/addp-transfer-engine-hosted-ninth-20261102/` 保存 `intent.json`、`invariants.json`、`prerequisite-proof.json` 和两项依赖的独立原件；原三份审计外新增冻结的 `audit-initial-records.py`，验证任务／execution 序位绑定、闭集状态／原因、物理探针结果和读失败字段，合法样例通过、六个越界／泄露样例拒绝。CI 会话仅只读跟进唯一 Job；终态后核对十四服务同 SHA、正式七断言、控制恢复和退出零残留。第八轮失败0/7、原 CDC 具体根因和完整清理未验收的缺口在本轮终态前保持，不提前认定代理修复通过。
