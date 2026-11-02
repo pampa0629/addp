@@ -418,7 +418,11 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 
 本地完整 `make test-module MODULE=transfer` 同样在上述平台 T0 失败，未进入 Owner 步骤，不计完整模块聚合通过。`transfer/docs/transfer-基本概念及配置说明.md` 在修复提交及其父提交中逐字节一致，SHA-256 为 `a6cf6796d32eaff2cde1499e892057e90189ca862f16e5d2f4becb87af77c060`，与审查冻结值 `762d8458eb59b2c10a4d5bb623840fde9c96e19ff09ee8bc80261895f75c0f85` 不符；该文档不在本次七个改动中，未修改 Ontology 审查基线或扩范围修复。
 
-新增文案只取得静态核对、本地及 CI 的受控回归证据；本会话与专项会话均未重授已结束的真实账号权限、重启服务或运行新的日常 Console／隔离 Hosted 验收。前述任务 `17`／`18`／`51` 的真实手工记录仍对应修正前页面，不能套作新文案实机通过；临时证据不保证长期留存。
+**新文案日常 Console 部分验收（2026-11-02 17:54 +08:00 检查点）**：现有管理员账号的真实 AuthContext 具备创建、读取、执行与 `meta.catalog.read`，未调整权限。Step 4 选项、Step 5 摘要与警告均显示立即执行一次；北京时间 17:52:31 一次提交创建任务 `52`，创建返回 201，随后唯一一次 `/task-definitions/52/start` 返回 200。未截断的创建窗口记录为一次创建、一次启动；唯一 execution `2e78bcc4-fdd7-4f24-9309-ecbbdcff4cd1` 于 17:52:32 成功，Owner 记录读取／写入各 3 行、`trigger_type=manual`、`trigger_by=31`，执行列表总数为 1。源为既有 `public.test_pk_source`，仅映射 `id/name`，独立新目标为 `public.hint_execute_20261102_c83f7e`；本检查点没有独立源目标逐行物理对账，不由执行计数扩展为完整数据一致性验收。
+
+仅创建权限分支仍未运行：原临时账号的租户访问已结束、无生效角色，新账号邀请草稿尚未提交，仍待用户本轮访问确认及登录，不计该分支通过。前述任务 `17`／`18`／`51` 对应修正前页面，不能套作新文案实机证据。任务 `52`、一次执行、新目标及其写入均保留审阅，未删除任务或数据，不宣称零残留；后续清理与最终结果单独认定。
+
+原件位于 `/tmp/addp-transfer-execution-hint-20261102/console-real/`，检查点 `report.json` 的 SHA-256 为 `c4a05c691935d6d97b90d1041cdcd5bb515671515e2e5bb67085c971c83d0405`；本会话冻结该报告及 Owner 身份、创建网络、执行、DOM／截图共 12 份原件，校验创建／启动计数、终态与页面文案。五个产品前端文件逐字节匹配修复提交 `90fbcfc16bac188ebfc72f6b1629c9940d7ae8d8`；System／Gateway／Meta／Transfer 的 Ready 报告均为 `39059d2ed2d711b992947c1debee6872a0d60578`，前后端不是同一构建版本。本会话与专项会话未重启服务、重授已结束账号权限或运行新的隔离 Hosted；`acceptance_complete=false`，不计全部分支、同 SHA T4／Hosted 或完整产品通过。临时证据不保证长期留存。
 
 ## 相关文档
 
