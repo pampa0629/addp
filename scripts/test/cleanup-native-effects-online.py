@@ -63,6 +63,7 @@ class EngineWorkflow:
         self.user, self.tenant, self.report, self.checkpoint = user, S.positive(tenant), report, checkpoint
         self.principal = S.user_identity(user, tenant, S.CONTRACT['native_permissions']['engine'])
         self.owned = set()
+        self.cleanup_observation = {}
 
     def _stage(self, stage):
         self.report['stage'] = stage
@@ -101,7 +102,7 @@ class EngineWorkflow:
         def read_assessment():
             nonlocal last
             value = self.user.request('GET', f'{ENGINE}/{engine_id}/deletion-assessments/{request_id}', (200,)).payload
-            last = engine_assessment_observation(value, request_id, engine_id, self.principal)
+            last = engine_task_observation(value, request_id, engine_id, self.principal, action='scan')
             return value
         try:
             assessment = S.wait_for(read_assessment,
@@ -128,30 +129,73 @@ class EngineWorkflow:
                 'Engine deletion was not accepted for the exact target')
         return request_id
 
-    def execution(self, engine_id):
-        self._stage('engine_cleanup_engine_read')
+    def _cleanup_engine(self, engine_id):
         engine = self.engine(engine_id)
+        def reference(field):
+            value = engine.get(field)
+            if value is None: return 'absent'
+            try: S.identifier(value)
+            except Exception: return 'invalid'
+            return 'present'
+        lifecycle, reason = engine.get('lifecycle_state'), engine.get('deletion_error', '')
+        self.cleanup_observation['engine'] = dict(
+            lifecycle_state=lifecycle if type(lifecycle) is str and lifecycle in {'active', 'deleting', 'deleted'} else 'unrecognized',
+            deletion_error=reason if type(reason) is str and reason in {'', 'cleanup_scan_incomplete_or_failed',
+                'cleanup_execution_rejected', 'cleanup_execution_incomplete_or_failed', 'engine_deletion_finalize_failed'} else 'unrecognized',
+            validation_reference=reference('deletion_scan_task_id'), execute_reference=reference('deletion_execute_task_id'))
+        return engine
+
+    def execution(self, engine_id, *, deadline):
+        self._stage('engine_cleanup_engine_read')
+        engine = self._cleanup_engine(engine_id)
+        diagnostic = self.cleanup_observation
         request_id = engine.get('deletion_execute_task_id')
-        if request_id is None: return None
+        if request_id is None:
+            remaining = deadline - time.monotonic()
+            if diagnostic['engine']['validation_reference'] == 'present' and remaining > 0:
+                self._stage('engine_cleanup_validation_read')
+                diagnostic.pop('task_read_failure', None)
+                try:
+                    reader = S.local_client(self.user.base_url, self.user.token, min(self.user.timeout, remaining))
+                    validation_id = engine['deletion_scan_task_id']
+                    value = PROTOCOL.task(reader, validation_id)
+                    diagnostic.update(task_phase='validation', task=engine_task_observation(
+                        value, validation_id, engine_id, self.principal, action='scan'))
+                except Exception as error:
+                    diagnostic['task_read_failure'] = failure_diagnostics(error)
+            return None
         S.identifier(request_id)
         self._stage('engine_cleanup_task_read')
         result = PROTOCOL.task(self.user, request_id)
+        diagnostic.update(task_phase='execute', task=engine_task_observation(
+            result, request_id, engine_id, self.principal, action='execute'))
+        diagnostic.pop('task_read_failure', None)
         require(result['task']['context']['engine_id'] == engine_id
                 and result['task']['requested_by'] == int(self.principal)
+                and result['task']['action'] == 'execute'
                 and engine_owners_match(result['task']['expected_modules']), 'Engine execute ownership changed')
         return result
 
     def settled(self, engine_id, *, success):
-        result = S.wait_for(lambda: self.execution(engine_id), lambda x: x is not None and x['status'] in S.TERMINAL,
-                            'Engine execute did not settle', timeout=360)
-        require((result['status'] == 'success') is success, 'Engine execute has an unexpected outcome')
-        self._stage('engine_tombstone_read')
-        if success:
-            S.wait_for(lambda: self.engine(engine_id), lambda x: x['lifecycle_state'] == 'deleted',
-                       'strict Engine completion did not create the tombstone')
-        else:
-            require(self.engine(engine_id)['lifecycle_state'] == 'deleting', 'unknown effect incorrectly deleted Engine')
-        return result
+        self.cleanup_observation = dict(engine_id=engine_id, engine={'observation': 'not_observed'},
+                                        task_phase='not_observed')
+        deadline = time.monotonic() + 360
+        try:
+            result = S.wait_for(lambda: self.execution(engine_id, deadline=deadline),
+                lambda x: x is not None and x['status'] in S.TERMINAL,
+                'Engine execute did not settle', timeout=360)
+            require((result['status'] == 'success') is success, 'Engine execute has an unexpected outcome')
+            self._stage('engine_tombstone_read')
+            if success:
+                S.wait_for(lambda: self._cleanup_engine(engine_id), lambda x: x['lifecycle_state'] == 'deleted',
+                           'strict Engine completion did not create the tombstone')
+            else:
+                require(self._cleanup_engine(engine_id)['lifecycle_state'] == 'deleting', 'unknown effect incorrectly deleted Engine')
+            return result
+        except Exception:
+            self.report['engine_cleanup_diagnostic'] = self.cleanup_observation
+            self.checkpoint()
+            raise
 
 
 def engine_selected_children(value):
@@ -185,8 +229,9 @@ def engine_selected_children(value):
     return [row for row in rows if row['module'] in {'manager', 'transfer'}], None
 
 
-def engine_assessment_observation(value, request_id, engine_id, principal):
+def engine_task_observation(value, request_id, engine_id, principal, *, action):
     """Project the existing authorized read; never query hidden Owner facts."""
+    require(action in {'scan', 'execute'}, 'invalid Engine task observation action')
     result = dict(request_id=request_id)
     if type(value) is not dict or type(value.get('task')) is not dict:
         return {**result, 'observation': 'invalid_response'}
@@ -198,7 +243,7 @@ def engine_assessment_observation(value, request_id, engine_id, principal):
     bindings = dict(request=value.get('task_id') == task.get('task_id') == request_id,
         engine=type(context) is dict and type(context.get('engine_id')) is int and context['engine_id'] == engine_id,
         actor=type(task.get('requested_by')) is int and task['requested_by'] == int(principal),
-        action=task.get('action') == 'scan',
+        action=task.get('action') == action,
         owners=engine_owners_match(owners))
     result.update(observation='observed' if all(bindings.values()) else 'identity_mismatch',
                   status=closed(value.get('status'), states), bindings=bindings)

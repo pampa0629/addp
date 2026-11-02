@@ -962,12 +962,24 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 本批安全诊断、Business 分类和原 bool 谓词／预算回归已有本地及该专项 Linux 证据；连续任务 **60 项仅计本地**，不升级为 Linux 整套通过。没有修改产品后端、身份角色或权限，没有根据未取得的执行错误猜测 CDC 修复。**第八轮仍为失败 0/7，初始目标行的具体现场根因及代理修复后的完整清理链路仍待验**；本轮未发起 Engine 评估，不能将 Manager 未执行当作通过。下一步建议单独确认一次携带该诊断的 transfer-engine Hosted；不自动追加，原六权限、目标范围、七断言和等待预算继续冻结，Graph 既有缺口仍保留。
 
-### 8.32 第九轮 transfer-engine 初始目标行新诊断取证（已授权，运行中）
+### 8.32 第九轮 transfer-engine 初始目标行新诊断终态与 Engine validation 观测补齐
 
-用户于 2026-11-02 再单独确认一次携带新诊断的 `transfer-engine Hosted`，定位 CDC 初始目标行核验失败；原六项身份权限、操作范围、七项断言和等待预算不变，其他 Hosted／环境切换／权限边界变化仍单独确认。已唯一 POST 创建 [Run 41374606245／Job 125052028372](https://github.com/pampa0629/addp/actions/runs/41374606245/job/125052028372)，workflow_dispatch／attempt 1，准确源码 `7e2bfc5ffdb40425c79ffbb900dc39a61a561081`，记录时 in_progress，不计通过。单次授权已使用，不自动追加第十轮。
+用户于 2026-11-02 再单独确认一次携带新诊断的 `transfer-engine Hosted`，定位 CDC 初始目标行核验失败；原六项身份权限、操作范围、七项断言和等待预算不变，其他 Hosted／环境切换／权限边界变化仍单独确认。已唯一 POST 创建 [Run 41374606245／Job 125052028372](https://github.com/pampa0629/addp/actions/runs/41374606245/job/125052028372)，workflow_dispatch／attempt 1，准确源码 `7e2bfc5ffdb40425c79ffbb900dc39a61a561081`，现已 completed/failure。单次授权已使用，不自动追加第十轮。
 
 **派发前前提。** 新诊断与原机器契约字节不变，三普通 User／Engine 六权限、七检查、120 秒初始行窗口／原 HTTP60 秒上限及额度内诊断读取保持上节实现。主责 fresh 核对含最新 Infra 增量的 `aee6bcc427f714aefb97b58090789a8e6acb3fab` 独立 Execution runner Job `125032898426` 实际 success／109＋169，日志 SHA-256 `02a96d11dd064eb42a60b7bc36872c257ba799359afda8b7ed69ca7a5765bc52`；当前核心 runner、身份夹具、proxy、标准部署和 Infra 输入逐项哈希与该已验源码一致，其后 main 增量仅文档或本场景不消费的前端。个人工作区的未提交 fixture、AGENTS、表格或前端改动不进入部署。
 
 **Infra 依赖增量核查。** 上节之后的 MinIO 观测改动为固定 MinIO／MC 构建增加状态工具和默认关闭的生命周期入口；本专项 `.env.example` 精确为 `ADDP_MINIO_METRICS_ENABLED=false`，全新 Hosted 无 owner 状态时入口在 Docker／账号操作之前返回，不安装观测账号，不改变本轮业务身份、端口或物理目标。固定服务／客户端版本未变，状态 binary 不调用。受本次部署实际影响的 MinIO 构建／生命周期 Job `125033211264`（同 aee6）已实际 success，日志有真实构建与容器／网络／卷／私有状态零残留，SHA-256 `dcfb076de98f68081625f03dc451982f7dbff156385519b41e1e5f5024dafe64`；标准 `make test-monitor-minio-observation-unit` 的 14 项本地通过，包括关闭且无状态时不接触 Docker。仅核对该依赖前提，不把其所属工作流的其它失败改记为通过，不启用新观测环境或权限。
 
-本轮私有目录 `/tmp/addp-transfer-engine-hosted-ninth-20261102/` 保存 `intent.json`、`invariants.json`、`prerequisite-proof.json` 和两项依赖的独立原件；原三份审计外新增冻结的 `audit-initial-records.py`，验证任务／execution 序位绑定、闭集状态／原因、物理探针结果和读失败字段，合法样例通过、六个越界／泄露样例拒绝。CI 会话仅只读跟进唯一 Job；终态后核对十四服务同 SHA、正式七断言、控制恢复和退出零残留。第八轮失败0/7、原 CDC 具体根因和完整清理未验收的缺口在本轮终态前保持，不提前认定代理修复通过。
+本轮私有目录 `/tmp/addp-transfer-engine-hosted-ninth-20261102/` 保存 `intent.json`、`invariants.json`、`prerequisite-proof.json` 和两项依赖的独立原件；原三份审计外新增冻结的 `audit-initial-records.py`，验证任务／execution 序位绑定、闭集状态／原因、物理探针结果和读失败字段，合法样例通过、六个越界／泄露样例拒绝。CI 会话仅只读跟进唯一 Job；终态后核对十四服务同 SHA、正式七断言、控制恢复和退出零残留。第八轮失败0/7、原 CDC 具体根因和完整清理未验收的缺口保持独立登记，不以阶段前进替代完整验收。
+
+
+**实际终态。** 北京时间 2026-11-02 09:51:14—10:14:56，唯一第九轮 Job 实际 failure，正式 checks 为空、0/7。十四服务均为同一准确 7e2bfc5 SHA、repository_clean=true；control_cleanup、control_recovery、cleanup 均 passed、infra_cleanup=zero_residuals，这些仅为控制恢复和退出证据。日志 SHA-256 `19b2b52ef7fcaa855168e52419cd35edd03f0e652eed8c2bbc667d8f11b70708`，artifact `13111317029` ZIP SHA-256 `556927f34f37f94a3aa1a8bc99135e10371e7cc40c92fad979e89f78ee8940e5`，冻结原件审计及终态审计四项 exit0；失败报告仍被 canonical validator 拒绝。
+
+**证据与边界。** 本轮创建两任务、两 execution 和一 preflight 请求，源码执行序表明 CDC／Kafka 初始物理行、实际暂停、初始 Engine 评估及 DELETE202 已越过，随后失败在 `engine_cleanup_engine_read`，SuiteError／assertion_failed，无 HTTP 状态。初始行和评估均未失败，因此没有对应失败诊断；不能据此反推第八轮 CDC 现场原因，也不能把已越过的准备阶段充作七项正式断言。
+
+**已确认的观测缺口。** System 在 DELETE 受理后先持久化第二个 validation scan，再由 supervisor 派生 execute；Engine 的两个引用及固定 deletion_error 已在普通 User GET 公开，未发现字段契约不一致。旧 runner 仅等待 execute 引用，未归档 Engine／validation 状态，因此本轮不能判定具体 Owner 或产品根因。按既定边界先补 T4 正式契约和 `engine_cleanup_diagnostic`：原 Engine GET 留存闭集状态；只有 execute 尚未出现、validation 引用合法且原 360 秒尚有余额时，由原 Engine User 读取该已发布 validation 请求，不新增专业读取或隐藏 Owner 读取。复用唯一任务观测器，以 scan／execute 精确 action 绑定；仅父绑定完整时投影原响应的 Manager／Transfer 安全子状态。诊断读失败保留最近已取得状态，validation 任意终态始终不能替代 execute；原六权限、七断言、成功谓词、等待上限及操作范围保持。只有等待／墓碑失败报告保留诊断，成功 validator 连空字段亦拒绝。
+
+**受影响门禁。** 改动仅专项 Python runner、报告 validator、对应测试和现有文档；标准 `make test-execution-online-ci-runner` 覆盖本地与独立 Linux Execution online CI runner，既有 scripts 路径选择及递归输入发现已命中，无需变更 Makefile／workflow／环境。未修改产品后端，不用无关 Go／PG／聚合 Platform 结果替代本门禁。新的 Hosted 尚未授权，本轮不再运行。
+
+
+**本地实际验证。** 当前实现的 `make test-execution-online-ci-runner` exit0：原生 runner／proxy／Infra／Hosted 编排反例共114项，报告／前置／安全／CI登记共169项，Node语法、Shell语法及 `Online CI registration is consistent` 均通过；新测试对旧源码的反例验证明确失败。覆盖 validation 所有终态仍不能替代 execute、同 User 同发布引用、诊断 HTTP 受余额限制、窗口耗尽无额外读、读503保留最近状态、非法引用不发请求、健康 execute 路径不额外读 validation、scan／execute 精确绑定、私密字段不归档和成功报告拒绝失败字段。此层不证明真实 Engine validation／完整清理通过；独立 Linux CI 待该提交实际终态，新的 Hosted 不运行。

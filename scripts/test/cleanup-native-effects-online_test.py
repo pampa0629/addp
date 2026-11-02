@@ -53,16 +53,17 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 module_executions=[])
             with self.subTest(owners=owners), patch.object(S, 'user_identity', return_value='17'), \
                     patch.object(M.PROTOCOL, 'task', return_value=parent):
-                observation = M.engine_assessment_observation(parent, ID, 9, '17')
+                observation = M.engine_task_observation(parent, ID, 9, '17', action='scan')
                 self.assertEqual(observation['bindings']['owners'], accepted)
                 self.assertEqual(observation['status'], 'timeout')
                 self.assertEqual('children' in observation, accepted)
+                parent['task']['action'] = 'execute'
                 workflow = M.EngineWorkflow(object(), 2, {}, lambda: None)
                 workflow.engine = lambda _: {'deletion_execute_task_id': ID}
                 if accepted:
-                    self.assertIs(workflow.execution(9), parent)
+                    self.assertIs(workflow.execution(9, deadline=0), parent)
                 else:
-                    with self.assertRaises(S.SuiteError): workflow.execution(9)
+                    with self.assertRaises(S.SuiteError): workflow.execution(9, deadline=0)
 
     def test_assessment_diagnostic_projects_only_bound_authorized_closed_states(self):
         parent, child = str(uuid.uuid4()), str(uuid.uuid4())
@@ -74,7 +75,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 cleanup_admission={'state': 'closed_rejected', 'observed_at': 'secret'},
                 receipt={'status': 'failed', 'reason': 'authorization_denied', 'statistics': {'secret': 1}},
                 metadata={'token': 'secret'})], error='secret', metadata={'secret': True})
-        observed = M.engine_assessment_observation(value, ID, 9, '17')
+        observed = M.engine_task_observation(value, ID, 9, '17', action='scan')
         self.assertEqual(observed, dict(request_id=ID, observation='observed', status='failed',
             bindings=dict(request=True, engine=True, actor=True, action=True, owners=True),
             children_observation='observed', children=[dict(module='transfer', status='failed', attempt=0,
@@ -97,7 +98,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     cleanup_admission={'state': 'secret'})
                 candidate['status'] = 'secret'
             with self.subTest(mutation=mutation):
-                result = M.engine_assessment_observation(candidate, ID, 9, '17')
+                result = M.engine_task_observation(candidate, ID, 9, '17', action='scan')
                 self.assertNotIn('secret', json.dumps(result))
                 if mutation in {'request', 'engine', 'actor', 'action', 'owners'}:
                     self.assertEqual(result['observation'], 'identity_mismatch'); self.assertNotIn('children', result)
@@ -107,7 +108,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 else:
                     self.assertEqual(result['status'], 'unrecognized')
                     self.assertEqual(result['children'][0]['attempt'], 'unrecognized')
-        self.assertEqual(M.engine_assessment_observation(None, ID, 9, '17'),
+        self.assertEqual(M.engine_task_observation(None, ID, 9, '17', action='scan'),
                          dict(request_id=ID, observation='invalid_response'))
 
     def test_public_owner_scopes_are_distinct_from_two_professional_permissions(self):
@@ -118,7 +119,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             module_executions=[dict(module=owner, execution_id=str(uuid.uuid4()), parent_execution_id=parent,
                 task_type='cleanup_executor', status='pending', attempt=0,
                 metadata={'private': 'secret'}, error_details={'private': 'secret'}) for owner in owners])
-        observation = M.engine_assessment_observation(value, ID, 9, '17')
+        observation = M.engine_task_observation(value, ID, 9, '17', action='scan')
         self.assertEqual(observation['children_observation'], 'observed')
         self.assertEqual([r['module'] for r in observation['children']], ['manager', 'transfer'])
         self.assertNotIn('secret', json.dumps(observation))
@@ -130,7 +131,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             elif mutation == 'identity': row['execution_id'] = 'secret'
             else: row['task_type'] = 'scan'
             with self.subTest(mutation=mutation):
-                result = M.engine_assessment_observation(bad, ID, 9, '17')
+                result = M.engine_task_observation(bad, ID, 9, '17', action='scan')
                 self.assertEqual(result['children_observation'], 'invalid_response')
                 self.assertEqual(result['children'], []); self.assertNotIn('secret', json.dumps(result))
 
@@ -154,7 +155,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             elif reason == 'duplicate_owner': bad['module_executions'].append({**row, 'execution_id': str(uuid.uuid4())})
             else: bad['module_executions'].append({**row, 'module': 'transfer'})
             with self.subTest(reason=reason):
-                result = M.engine_assessment_observation(bad, ID, 9, '17')
+                result = M.engine_task_observation(bad, ID, 9, '17', action='scan')
                 self.assertEqual(result['children_failure_kind'], reason)
                 self.assertEqual(result['children'], [])
                 self.assertNotIn('secret', json.dumps(result))
@@ -168,7 +169,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 module_executions=[dict(module='manager', execution_id=child, parent_execution_id=parent,
                     task_type='cleanup_executor', status='failed', attempt=1, started_at='present',
                     error_details={'code': code})])
-            row = M.engine_assessment_observation(value, ID, 9, '17')['children'][0]
+            row = M.engine_task_observation(value, ID, 9, '17', action='scan')['children'][0]
             self.assertEqual(row['authorization_denied'], code == 'cleanup_authorization_denied')
             self.assertEqual(row['authorization_unavailable'], code == 'cleanup_authorization_unavailable')
             self.assertNotIn('secret', json.dumps(row))
@@ -184,7 +185,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             candidate = copy.deepcopy(value); row = candidate['module_executions'][0]
             row.update(current_step='manager_cleanup_'+stage,
                 steps=[dict(id='manager_cleanup_'+stage, status='failed', phase='terminal', error_code='secret')])
-            result = M.engine_assessment_observation(candidate, ID, 9, '17')
+            result = M.engine_task_observation(candidate, ID, 9, '17', action='scan')
             self.assertEqual(result['children'][0]['failure_step'], 'manager_cleanup_'+stage)
             self.assertNotIn('secret', json.dumps(result))
         for bad in ('unknown', 'missing_step', 'duplicate', 'wrong_status', 'wrong_phase', 'not_failed', 'not_started', 'not_attempt', 'transfer'):
@@ -200,7 +201,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             elif bad == 'not_attempt': row['attempt'] = True
             else: row['module'] = 'transfer'
             with self.subTest(bad=bad):
-                result = M.engine_assessment_observation(candidate, ID, 9, '17')
+                result = M.engine_task_observation(candidate, ID, 9, '17', action='scan')
                 self.assertNotIn('failure_step', result['children'][0]); self.assertNotIn('secret', json.dumps(result))
 
     def test_professional_read_selects_only_its_existing_two_owner_permissions(self):
@@ -816,6 +817,94 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 self.assertEqual(M.failure_diagnostics(caught.exception), {'failure_kind': 'http_unexpected_status', 'failure_http_status': 400})
                 self.assertNotIn('private', json.dumps(report))
 
+    def test_validation_observation_never_substitutes_for_execute_and_caps_http_budget(self):
+        for status in ('pending', 'running', 'success', 'failed', 'timeout', 'cancelled'):
+            value = dict(task_id=ID, status=status, task=dict(task_id=ID, execution_id=ID,
+                context={'engine_id': 9}, requested_by=17, action='scan',
+                expected_modules=list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting'])), module_executions=[])
+            user = SimpleNamespace(base_url='http://127.0.0.1:8000', token='private', timeout=60)
+            with self.subTest(status=status), patch.object(S, 'user_identity', return_value='17'), \
+                    patch.object(M.time, 'monotonic', return_value=100), \
+                    patch.object(S, 'local_client', return_value=user) as client, \
+                    patch.object(M.PROTOCOL, 'task', return_value=value) as read:
+                workflow = M.EngineWorkflow(user, 2, {}, lambda: None)
+                workflow.engine = lambda _: dict(lifecycle_state='deleting', deletion_scan_task_id=ID,
+                    deletion_error='cleanup_scan_incomplete_or_failed', connection_info={'password': 'private'})
+                self.assertIsNone(workflow.execution(9, deadline=107))
+                client.assert_called_once_with(user.base_url, user.token, 7)
+                read.assert_called_once_with(user, ID)
+                self.assertEqual(workflow.cleanup_observation['task_phase'], 'validation')
+                self.assertEqual(workflow.cleanup_observation['task']['status'], status)
+                self.assertNotIn('private', json.dumps(workflow.cleanup_observation))
+
+    def test_validation_diagnostic_preserves_last_state_on_read_failure_and_expiry(self):
+        user = SimpleNamespace(base_url='http://127.0.0.1:8000', token='private', timeout=60)
+        value = dict(task_id=ID, status='failed', task=dict(task_id=ID, execution_id=ID,
+            context={'engine_id': 9}, requested_by=17, action='scan',
+            expected_modules=list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting'])), module_executions=[])
+        report = {}
+        def wait(read, predicate, message, timeout):
+            self.assertEqual(timeout, 360)
+            self.assertFalse(predicate(read()))
+            self.assertFalse(predicate(read()))
+            raise S.SuiteError(message)
+        with patch.object(S, 'user_identity', return_value='17'), \
+                patch.object(M.time, 'monotonic', return_value=100), \
+                patch.object(S, 'local_client', return_value=user), \
+                patch.object(M.PROTOCOL, 'task', side_effect=[value, S.SuiteError('GET /private returned HTTP 503 (private)')]) as read, \
+                patch.object(S, 'wait_for', side_effect=wait):
+            workflow = M.EngineWorkflow(user, 2, report, lambda: None)
+            workflow.engine = lambda _: dict(lifecycle_state='deleting', deletion_scan_task_id=ID)
+            with self.assertRaises(S.SuiteError): workflow.settled(9, success=False)
+            diagnostic = report['engine_cleanup_diagnostic']
+            self.assertEqual(diagnostic['task']['status'], 'failed')
+            self.assertEqual(diagnostic['task_read_failure'], {'failure_kind': 'http_unexpected_status', 'failure_http_status': 503})
+            self.assertNotIn('private', json.dumps(report))
+            self.assertIsNone(workflow.execution(9, deadline=100))
+            self.assertEqual(read.call_count, 2)
+            self.assertEqual(diagnostic['task']['status'], 'failed')
+
+    def test_invalid_validation_reference_and_unsafe_engine_values_cannot_expand_reads(self):
+        for reference in (None, 'private', True, {}, ''):
+            with self.subTest(reference=reference), patch.object(S, 'user_identity', return_value='17'), \
+                    patch.object(M.PROTOCOL, 'task') as read:
+                workflow = M.EngineWorkflow(object(), 2, {}, lambda: None)
+                workflow.engine = lambda _: dict(deletion_scan_task_id=reference,
+                    lifecycle_state='private', deletion_error='private')
+                self.assertIsNone(workflow.execution(9, deadline=float('inf')))
+                read.assert_not_called()
+                self.assertEqual(workflow.cleanup_observation['engine']['deletion_error'], 'unrecognized')
+                self.assertNotIn('private', json.dumps(workflow.cleanup_observation))
+
+    def test_healthy_execute_reads_original_task_only_and_publishes_no_failure_field(self):
+        value = dict(task_id=ID, status='success', task=dict(task_id=ID, execution_id=ID,
+            context={'engine_id': 9}, requested_by=17, action='execute',
+            expected_modules=list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting'])), module_executions=[])
+        report, reads = {}, []
+        def wait(read, predicate, message, timeout=120):
+            reads.append(timeout)
+            value = read()
+            self.assertTrue(predicate(value))
+            return value
+        with patch.object(S, 'user_identity', return_value='17'), \
+                patch.object(M.PROTOCOL, 'task', return_value=value) as task, \
+                patch.object(S, 'local_client') as clone, patch.object(S, 'wait_for', side_effect=wait):
+            user = object(); workflow = M.EngineWorkflow(user, 2, report, lambda: None)
+            workflow.engine = lambda _: dict(lifecycle_state='deleted', deletion_scan_task_id=str(uuid.uuid4()),
+                deletion_execute_task_id=ID)
+            self.assertIs(workflow.settled(9, success=True), value)
+            task.assert_called_once_with(user, ID); clone.assert_not_called()
+            self.assertEqual(reads, [360, 120])
+            self.assertNotIn('engine_cleanup_diagnostic', report)
+
+    def test_engine_task_observation_requires_explicit_exact_phase(self):
+        value = dict(task_id=ID, status='failed', task=dict(task_id=ID, execution_id=ID,
+            context={'engine_id': 9}, requested_by=17, action='execute',
+            expected_modules=list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting'])), module_executions=[])
+        self.assertEqual(M.engine_task_observation(value, ID, 9, '17', action='execute')['observation'], 'observed')
+        self.assertEqual(M.engine_task_observation(value, ID, 9, '17', action='scan')['observation'], 'identity_mismatch')
+        with self.assertRaises(S.SuiteError): M.engine_task_observation(value, ID, 9, '17', action='private')
+
     def test_engine_execution_separates_engine_lookup_from_parent_read(self):
         for failed in ('engine', 'parent'):
             report, calls = {}, []
@@ -830,7 +919,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     patch.object(M.PROTOCOL, 'task', side_effect=parent):
                 workflow = M.EngineWorkflow(object(), 2, report, lambda: None)
                 workflow.engine = engine
-                with self.assertRaises(S.SuiteError): workflow.execution(9)
+                with self.assertRaises(S.SuiteError): workflow.execution(9, deadline=0)
                 self.assertEqual(report['stage'], 'engine_cleanup_engine_read' if failed == 'engine' else 'engine_cleanup_task_read')
                 self.assertEqual(calls, ['engine'] if failed == 'engine' else ['engine', 'parent'])
                 self.assertNotIn('secret', json.dumps(report))
