@@ -11,7 +11,9 @@ import { GridContainerPreview } from '@common-ui/previews'
 import { GeoJsonPreview } from '@common-ui-map'
 import dataExplorerAPI from '../../api/dataExplorer'
 const props = defineProps({ data: { type: Object, required: true }, locator: { type: String, required: true } })
-const variables = computed(() => (props.data.object?.attributes?.type_info?.container?.children || []).map(child => child.native).filter(Boolean))
+const variables = computed(() => (props.data.object?.attributes?.type_info?.container?.children || [])
+  .filter(child => child?.native)
+  .map(child => ({ ...child.native, name: child.name })))
 async function readSlice(selection, signal) {
   const response = await dataExplorerAPI.getGridSlice(props.locator, selection, signal)
   const preview = response?.preview_type && response?.data ? response.data : (response?.data || response)
