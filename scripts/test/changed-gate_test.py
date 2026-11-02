@@ -71,6 +71,9 @@ class ChangedGateTest(unittest.TestCase):
         for path in ("scripts/dev/gdal-env.sh", "scripts/dev/gdal-arrow.py"):
             self.assertEqual(["engines", "manager"], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual(["engines"], MODULE.affected_modules(self.repository, ["scripts/dev/geopython-workflow.sh"]))
+        for path in ("engines/geopython-workflow/native/netcdf_preflight.c",
+                     "business/scripts/online-netcdf-fixture.py", "business/testdata/netcdf4/nc4-int32.nc"):
+            self.assertEqual(["engines"], MODULE.affected_modules(self.repository, [path]))
 
     def test_common_changes_expand_to_go_consumers(self) -> None:
         self.assertEqual(

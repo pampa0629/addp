@@ -96,6 +96,7 @@ class SelectImageServicesTest(unittest.TestCase):
 
     def test_model3d_change_selects_hosted_native_image_build(self) -> None:
         self.assertIn("model3d-workflow-engine", self._select("engines/model3d-workflow/docker/converter/Dockerfile"))
+        self.assertIn("geopython-workflow-engine", self._select("engines/geopython-workflow/native/netcdf_preflight.c"))
 
     def test_shared_go_change_selects_go_product_images(self) -> None:
         selected = self._select("common/client/system.go")

@@ -10,9 +10,20 @@ RUN apt-get update && apt-get install -y \
     libproj-dev \
     gdal-bin \
     libgdal-dev \
+    libhdf5-dev \
+    libnetcdf-dev \
+    pkg-config \
     unixodbc \
     odbc-mdbtools \
     && rm -rf /var/lib/apt/lists/*
+
+# Metadata-only HDF5 composition check, linked to this Runtime's native stack.
+COPY engines/geopython-workflow/native/netcdf_preflight.c /tmp/netcdf_preflight.c
+RUN mkdir -p /usr/local/libexec \
+    && cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror /tmp/netcdf_preflight.c \
+        -o /usr/local/libexec/addp-netcdf-preflight $(pkg-config --cflags --libs hdf5 netcdf) \
+    && rm /tmp/netcdf_preflight.c
+ENV GEOPYTHON_NETCDF_PREFLIGHT_BIN=/usr/local/libexec/addp-netcdf-preflight
 
 # GDAL PGeo probes the standard Microsoft Access ODBC driver names. Debian's
 # MDB Tools package registers only MDBTools, so expose the same driver under
@@ -80,6 +91,29 @@ with pyorc.Writer(stream, 'struct<id:bigint>') as writer:
 stream.seek(0)
 assert pyorc.Reader(stream).read() == [(2**63-1,), (None,)]
 PYORC
+
+# Admit the linked NetCDF-4 checker and the same GDAL reader in the actual image.
+RUN python - <<'PYNETCDF'
+import json, os, tempfile
+from pathlib import Path
+import numpy as np
+from osgeo import gdal
+from operators import _native_process
+with tempfile.TemporaryDirectory(prefix='addp-netcdf-build-') as temporary:
+    path=Path(temporary)/'input.nc'
+    ds=gdal.GetDriverByName('netCDF').CreateMultiDimensional(str(path),options=['FORMAT=NC4'])
+    root=ds.GetRootGroup();y=root.CreateDimension('y','','',2);x=root.CreateDimension('x','','',3)
+    grid=root.CreateMDArray('grid',[y,x],gdal.ExtendedDataType.Create(gdal.GDT_Int32))
+    grid.Write(np.arange(6,dtype=np.int32).reshape(2,3))
+    grid=None;x=None;y=None;root=None;ds=None
+    checked=_native_process.run([os.environ['GEOPYTHON_NETCDF_PREFLIGHT_BIN'],str(path)],capture_output=True,text=True,check=True,timeout=30)
+    assert json.loads(checked.stdout)=={'schema':'addp.netcdf4.composition/v1','profile':'root_numeric_v1','complete':True}
+    ds=gdal.OpenEx(f'NETCDF:"{path}"',gdal.OF_MULTIDIM_RASTER|gdal.OF_READONLY,allowed_drivers=['netCDF'])
+    root=ds.GetRootGroup();grid=root.OpenMDArray('grid')
+    assert grid.ReadAsArray().tolist()==[[0,1,2],[3,4,5]]
+    grid=None;root=None;ds=None
+print('NetCDF-4 root numeric composition and GDAL image smoke passed')
+PYNETCDF
 
 # Verify the packaged API and health route without starting a service or contacting System.
 RUN python -c "import api_server; assert api_server.app.test_client().get('/health').status_code == 200"

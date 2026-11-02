@@ -29,6 +29,38 @@ class GDALCIPreparationTests(unittest.TestCase):
                 self.assertIn(expected, block)
                 self.assertNotIn('-m pip install "GDAL==', block)
 
+    def test_netcdf_native_dependency_is_packaged_and_registered(self):
+        # Check the actual owner section independently of the full workflow.
+        workflow=re.split(r'\n  (?=\S)',(ROOT/'.github/workflows/platform-ci.yml').read_text().split('\n  geopython-workflow-tests:\n',1)[1],maxsplit=1)[0]
+        for package in ('libhdf5-dev','libnetcdf-dev','build-essential'):
+            self.assertIn(package,workflow)
+        docker=(ROOT/'engines/geopython-workflow/Dockerfile').read_text()
+        self.assertIn('native/netcdf_preflight.c',docker)
+        self.assertIn('GEOPYTHON_NETCDF_PREFLIGHT_BIN=/usr/local/libexec/addp-netcdf-preflight',docker)
+
+
+class NetCDFNativePreparationTests(unittest.TestCase):
+    def test_checker_build_cache_source_invalidation_and_failure(self):
+        with tempfile.TemporaryDirectory(prefix='addp-netcdf-lifecycle-') as temporary:
+            work=Path(temporary);source=work/'engines/geopython-workflow/native/netcdf_preflight.c'
+            source.parent.mkdir(parents=True);source.write_text('first source')
+            tools=work/'tools';tools.mkdir()
+            (tools/'pkg-config').write_text('#!/bin/sh\ncase "$1" in --modversion) echo 1.14.6; echo 4.9.3;; --cflags) echo "-I/native/include -L/native/lib -lhdf5 -lnetcdf";; *) exit 2;; esac\n')
+            (tools/'cc').write_text('#!/bin/sh\nprintf "build\\n" >> "$ROOT_DIR/build-trace"\n[ "${FAIL_CC:-0}" = 0 ] || exit 1\nwhile [ "$1" != -o ]; do shift; done\nshift\nprintf "#!/bin/sh\\nexit 0\\n" > "$1"\n')
+            for path in tools.iterdir():path.chmod(0o755)
+            env=dict(os.environ,ROOT_DIR=str(work),SOURCE_ROOT=str(ROOT),PATH=str(tools)+':'+os.environ['PATH'])
+            script='source "$SOURCE_ROOT/scripts/dev/geopython-workflow.sh"; addp_geopython_netcdf_checker || exit 1; printf "%s\\n" "$GEOPYTHON_NETCDF_PREFLIGHT_BIN"'
+            first=subprocess.run(['bash','-c',script],env=env,capture_output=True,text=True,check=True).stdout.strip()
+            second=subprocess.run(['bash','-c',script],env=env,capture_output=True,text=True,check=True).stdout.strip()
+            self.assertEqual(first,second);self.assertEqual((work/'build-trace').read_text().splitlines(),['build'])
+            source.write_text('changed source')
+            third=subprocess.run(['bash','-c',script],env=env,capture_output=True,text=True,check=True).stdout.strip()
+            self.assertNotEqual(first,third);self.assertTrue(Path(first).is_file());self.assertTrue(Path(third).is_file())
+            source.write_text('unbuildable source')
+            failed=subprocess.run(['bash','-c',script],env=dict(env,FAIL_CC='1'),capture_output=True,text=True)
+            self.assertNotEqual(failed.returncode,0);self.assertEqual(failed.stdout,'')
+            self.assertEqual(list((work/'.dev-state/geopython-netcdf').rglob('.compile.*')),[])
+
 
 class RasterNativeLifecycleTests(unittest.TestCase):
     @classmethod

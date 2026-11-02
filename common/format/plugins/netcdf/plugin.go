@@ -18,7 +18,9 @@ type Plugin struct{}
 
 func (*Plugin) Format() format.FormatType { return format.FormatNetCDF }
 func (p *Plugin) Descriptor() format.FormatDescriptor {
-	return format.FormatDescriptor{ID: "builtin-netcdf", Format: p.Format(), I18nKey: "format.netcdf", DataType: datatype.Container, Layouts: []string{format.LayoutSingle}, Identification: format.FormatIdentification{Extensions: []string{".nc", ".cdf"}, MimeTypes: []string{"application/x-netcdf"}, ContentSignatures: []string{"hex:43444601", "hex:43444602", "hex:43444605"}}}
+	// HDF5's shared signature is not a NetCDF identity. The exact .nc/.cdf
+	// candidate is refined by the Runtime's NetCDF-4 composition inspection.
+	return format.FormatDescriptor{ID: "builtin-netcdf", Format: p.Format(), I18nKey: "format.netcdf", DataType: datatype.Container, Layouts: []string{format.LayoutSingle}, Identification: format.FormatIdentification{Extensions: []string{".nc", ".cdf", ".nc4"}, MimeTypes: []string{"application/x-netcdf"}, ContentSignatures: []string{"hex:43444601", "hex:43444602", "hex:43444605"}}}
 }
 func (*Plugin) RequiredContainerInfoOperators() []string  { return []string{"netcdf.inspect"} }
 func (*Plugin) RequiredContainerSliceOperators() []string { return []string{"netcdf.read_slice"} }
@@ -102,7 +104,7 @@ func (b *bound) DescribeContainer(ctx context.Context, _ *format.ParseOptions) (
 	if err = json.Unmarshal(raw, &description); err != nil {
 		return nil, err
 	}
-	if description.Container == nil || description.Container.ChildCount != len(description.Container.Children) || len(description.Container.Children) > 256 || description.FormatInfo["scan_complete"] != true || description.FormatInfo["driver"] != "netCDF" || !validVersion(description.FormatInfo["source_version"]) {
+	if description.Container == nil || description.Container.ChildCount != len(description.Container.Children) || len(description.Container.Children) > 256 || description.FormatInfo["scan_complete"] != true || description.FormatInfo["driver"] != "netCDF" || !validVersion(description.FormatInfo["source_version"]) || !validEncoding(description.FormatInfo) {
 		return nil, fmt.Errorf("NetCDF inspection facts incomplete")
 	}
 	seen := map[string]bool{}
@@ -113,6 +115,17 @@ func (b *bound) DescribeContainer(ctx context.Context, _ *format.ParseOptions) (
 		seen[child.Name] = true
 	}
 	return &format.ContainerDescribeResult{Container: description.Container, FormatInfo: description.FormatInfo}, nil
+}
+func validEncoding(info map[string]interface{}) bool {
+	switch info["encoding"] {
+	case "CDF-1", "CDF-2", "CDF-5":
+		return info["composition"] == nil
+	case "NetCDF-4":
+		proof, ok := info["composition"].(map[string]interface{})
+		return ok && len(proof) == 2 && proof["profile"] == "root_numeric_v1" && proof["complete"] == true
+	default:
+		return false
+	}
 }
 func validVersion(value interface{}) bool {
 	s, ok := value.(string)

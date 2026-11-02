@@ -2,6 +2,27 @@
 # Shared native development entry, sourced after actual ports are resolved.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gdal-env.sh"
 
+addp_geopython_netcdf_checker() {
+  local source="$ROOT_DIR/engines/geopython-workflow/native/netcdf_preflight.c" flags versions key directory temporary
+  local -a native_flags
+  flags=$(unset PKG_CONFIG_PATH PKG_CONFIG_LIBDIR; pkg-config --cflags --libs hdf5 netcdf) || return 1
+  versions=$(unset PKG_CONFIG_PATH PKG_CONFIG_LIBDIR; pkg-config --modversion hdf5 netcdf) || return 1
+  key=$({ cat "$source"; printf '%s\n' "$flags" "$versions"; } | shasum -a 256) || return 1
+  key=${key%% *}
+  directory="$ROOT_DIR/.dev-state/geopython-netcdf/$key"
+  export GEOPYTHON_NETCDF_PREFLIGHT_BIN="$directory/netcdf-preflight"
+  if [ ! -x "$GEOPYTHON_NETCDF_PREFLIGHT_BIN" ]; then
+    mkdir -p "$directory" || return 1
+    temporary=$(mktemp "$directory/.compile.XXXXXX") || return 1
+    read -r -a native_flags <<< "$flags"
+    if ! cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror "$source" -o "$temporary" "${native_flags[@]}"; then
+      rm -f "$temporary"
+      return 1
+    fi
+    chmod 755 "$temporary" && mv "$temporary" "$GEOPYTHON_NETCDF_PREFLIGHT_BIN" || { rm -f "$temporary"; return 1; }
+  fi
+}
+
 addp_geopython_native_environment() {
   local prefix driver candidate
   unset GEOPYTHON_WORKFLOW_LOOPBACK_HOST
@@ -23,6 +44,7 @@ addp_geopython_native_environment() {
   for candidate in 'Microsoft Access Driver (*.mdb, *.accdb)' 'Microsoft Access Driver (*.mdb)'; do
     printf '[%s]\nDescription=MDBTools for GeoPython PGeo\nDriver=%s\nFileUsage=1\n\n' "$candidate" "$driver"
   done > "$ODBCSYSINI/odbcinst.ini"
+  addp_geopython_netcdf_checker
 }
 
 addp_prepare_geopython_workflow() {

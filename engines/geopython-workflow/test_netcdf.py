@@ -1,5 +1,6 @@
 """Independent classic-CDF bytes, not a GDAL round-trip fixture."""
 import hashlib
+import json
 from pathlib import Path
 import struct
 from unittest.mock import patch
@@ -9,6 +10,125 @@ import pytest
 
 from operators import netcdf
 from test_raster_compute import source_plan
+
+
+@pytest.fixture(scope='session')
+def nc4_tools(tmp_path_factory):
+    """Compile only private test tools; the standard gate supplies native libraries."""
+    from operators import _native_process
+    root=Path(__file__).resolve().parent
+    work=tmp_path_factory.mktemp('netcdf4-native')
+    flags=_native_process.run(['pkg-config','--cflags','--libs','hdf5','netcdf'],capture_output=True,text=True,check=True).stdout.split()
+    for name,source,extra in [('preflight',root/'native/netcdf_preflight.c',[]),('fixture',root/'tests/netcdf_fixture.c',['-lhdf5_hl'])]:
+        _native_process.run(['cc','-std=c11','-D_POSIX_C_SOURCE=200809L','-Wall','-Wextra','-Werror',str(source),'-o',str(work/name),*flags,*extra],capture_output=True,text=True,check=True)
+    return work
+
+
+def nc4_source(nc4_tools,tmp_path,kind='int32'):
+    from operators import _native_process
+    path=tmp_path/'input.nc'
+    _native_process.run([str(nc4_tools/'fixture'),'create',str(path),kind],capture_output=True,text=True,check=True,timeout=30)
+    return path
+
+
+@pytest.mark.parametrize('kind',['int32','int64','uint64','contiguous','classic_model','projected'])
+def test_netcdf4_composition_and_raw_windows(nc4_tools,tmp_path,monkeypatch,kind):
+    from operators import _native_process
+    path=nc4_source(nc4_tools,tmp_path,kind)
+    completed=_native_process.run([str(nc4_tools/'preflight'),str(path)],capture_output=True,text=True,timeout=30)
+    assert completed.returncode==0,completed.stderr
+    monkeypatch.setenv('GEOPYTHON_NETCDF_PREFLIGHT_BIN',str(nc4_tools/'preflight'))
+    original=path.read_bytes();plan=source_plan(path,'netcdf');report=netcdf.inspect(plan)
+    assert report['format_info']['encoding']=='NetCDF-4'
+    assert report['format_info']['composition']=={'profile':'root_numeric_v1','complete':True}
+    for layer in (0,1):
+        result=netcdf.read_slice(plan,report['format_info']['source_version'],dict(variable='/temperature',indices=[layer],x=0,y=0,width=4,height=3))
+        base=9007199254740993 if kind=='int64' else 18446744073709551580 if kind=='uint64' else 0
+        fill='18446744073709551615' if kind=='uint64' else '-9999'
+        assert result['values']==[[fill if layer==0 and y==1 and x==2 else str(base+layer*12+y*4+x) for x in range(4)] for y in range(3)]
+        assert result['valid']==[[not(layer==0 and y==1 and x==2) for x in range(4)] for y in range(3)]
+        if kind=='projected':assert result['spatial']['transform']==[499995.,10.,0.,2999995.,0.,10.]
+        else:assert result['spatial'] is None
+        assert result['variable']['attributes']['scale_factor']['values']==['0.5']
+    assert path.read_bytes()==original
+
+
+@pytest.mark.parametrize('mode',['external_link','soft_link','alias','group','reference_attr','external_raw','virtual',
+    'unknown_filter','oversized_chunk','missing_dimensions','missing_backrefs','wrong_dimid','dangling_dimension',
+    'vlen_text_attribute','oversized_attribute','compound','enum','vlen','multiple_scales','wrong_backref','duplicate_backrefs'])
+def test_netcdf4_rejects_incomplete_composition_before_gdal(nc4_tools,tmp_path,monkeypatch,mode):
+    from operators import _native_process
+    path=nc4_source(nc4_tools,tmp_path)
+    _native_process.run([str(nc4_tools/'fixture'),mode,str(path),str(tmp_path/'absent')],capture_output=True,text=True,check=True,timeout=30)
+    completed=_native_process.run([str(nc4_tools/'preflight'),str(path)],capture_output=True,text=True,timeout=30)
+    assert completed.returncode==1 and not completed.stdout and 'profile rejected' in completed.stderr,completed.stderr
+    monkeypatch.setenv('GEOPYTHON_NETCDF_PREFLIGHT_BIN',str(nc4_tools/'preflight'))
+    with patch.object(netcdf.gdal,'OpenEx') as opened:
+        with pytest.raises(ValueError):netcdf.inspect(source_plan(path,'netcdf'))
+        opened.assert_not_called()
+
+
+def test_netcdf4_gdal_created_product_smoke(nc4_tools,tmp_path,monkeypatch):
+    from osgeo import gdal
+    path=tmp_path/'gdal-created.nc'
+    ds=gdal.GetDriverByName('netCDF').CreateMultiDimensional(str(path),options=['FORMAT=NC4'])
+    root=ds.GetRootGroup();y=root.CreateDimension('y','','',2);x=root.CreateDimension('x','','',3)
+    grid=root.CreateMDArray('grid',[y,x],gdal.ExtendedDataType.Create(gdal.GDT_Int32))
+    grid.Write(np.arange(6,dtype=np.int32).reshape(2,3))
+    grid=None;x=None;y=None;root=None;ds=None
+    monkeypatch.setenv('GEOPYTHON_NETCDF_PREFLIGHT_BIN',str(nc4_tools/'preflight'))
+    plan=source_plan(path,'netcdf');report=netcdf.inspect(plan)
+    sliced=netcdf.read_slice(plan,report['format_info']['source_version'],dict(variable='/grid',indices=[],x=0,y=0,width=3,height=2))
+    assert sliced['values']==[['0','1','2'],['3','4','5']] and sliced['valid']==[[True]*3]*2
+
+
+def test_netcdf4_native_dispatch_drift_and_cleanup(nc4_tools,tmp_path,monkeypatch):
+    from operators import get_operator
+    path=nc4_source(nc4_tools,tmp_path,'uint64');private=tmp_path/'private';private.mkdir()
+    monkeypatch.setenv('GEOPYTHON_NETCDF_PREFLIGHT_BIN',str(nc4_tools/'preflight'))
+    monkeypatch.setenv('TMPDIR',str(private));monkeypatch.setenv('HDF5_DRIVER','untrusted-driver')
+    monkeypatch.setenv('HDF5_VOL_CONNECTOR','untrusted-connector')
+    original=path.read_bytes();plan=source_plan(path,'netcdf')
+    info=get_operator('netcdf.inspect')(access_plan=plan)
+    selection=dict(variable='/temperature',indices=[0],x=0,y=0,width=4,height=3)
+    result=get_operator('netcdf.read_slice')(access_plan=plan,source_version=info['format_info']['source_version'],selection=selection)
+    assert result['values'][1][2]=='18446744073709551615' and result['valid'][1][2] is False
+    path.write_bytes(original[:-1]+bytes([original[-1]^1]))
+    changed=get_operator('netcdf.read_slice')(access_plan=plan,source_version=info['format_info']['source_version'],selection=selection)
+    assert changed['error_code']=='NETCDF_SOURCE_CHANGED'
+    path.write_bytes(original)
+    assert not list(private.iterdir())
+
+
+def test_netcdf4_missing_checker_fails_closed_without_gdal(nc4_tools,tmp_path,monkeypatch):
+    path=nc4_source(nc4_tools,tmp_path)
+    monkeypatch.delenv('GEOPYTHON_NETCDF_PREFLIGHT_BIN',raising=False)
+    with patch.object(netcdf.gdal,'OpenEx') as opened:
+        with pytest.raises(ValueError,match='checker is unavailable'):netcdf.inspect(source_plan(path,'netcdf'))
+        opened.assert_not_called()
+
+
+@pytest.mark.parametrize('kind',['float32','float64'])
+def test_netcdf4_floating_values_and_nan_mask(nc4_tools,tmp_path,monkeypatch,kind):
+    path=nc4_source(nc4_tools,tmp_path,kind)
+    monkeypatch.setenv('GEOPYTHON_NETCDF_PREFLIGHT_BIN',str(nc4_tools/'preflight'))
+    plan=source_plan(path,'netcdf');info=netcdf.inspect(plan)
+    result=netcdf.read_slice(plan,info['format_info']['source_version'],dict(variable='/temperature',indices=[0],x=0,y=0,width=4,height=3))
+    assert result['variable']['type']==('Float32' if kind=='float32' else 'Float64')
+    assert result['values']==[['0.25','1.25','2.25','NaN'],['4.25','5.25','-9999.0','7.25'],['8.25','9.25','10.25','11.25']]
+    assert result['valid']==[[True,True,True,False],[True,True,False,True],[True]*4]
+
+
+@pytest.mark.parametrize('change',[{'complete':1},{'complete':False},{'profile':'unproved'},{'schema':'unknown'},{'extra':True}])
+def test_netcdf4_incomplete_checker_proof_never_reaches_gdal(nc4_tools,tmp_path,monkeypatch,change):
+    from types import SimpleNamespace
+    path=nc4_source(nc4_tools,tmp_path)
+    monkeypatch.setenv('GEOPYTHON_NETCDF_PREFLIGHT_BIN',str(nc4_tools/'preflight'))
+    proof=dict(schema='addp.netcdf4.composition/v1',profile='root_numeric_v1',complete=True);proof.update(change)
+    with patch.object(netcdf._native_process,'run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps(proof))):
+        with patch.object(netcdf.gdal,'OpenEx') as opened:
+            with pytest.raises(ValueError,match='evidence is incomplete'):netcdf.inspect(source_plan(path,'netcdf'))
+            opened.assert_not_called()
 
 
 def classic_dataset(path, dimensions, variables, version=1, global_attributes=()):
@@ -176,12 +296,12 @@ def test_hosted_independent_classic_sources_match_native_and_exact_oracle(tmp_pa
     module_path=Path(__file__).resolve().parents[2]/'business/scripts/online-netcdf-fixture.py'
     spec=importlib.util.spec_from_file_location('netcdf_online_fixture',module_path);fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
     for source in fixture.sources():
-        path=tmp_path/source['name'];path.write_bytes(fixture.build(source['version'],source['projected']))
+        path=tmp_path/source['name'];path.write_bytes(fixture.source_bytes(source))
         plan=source_plan(path,'netcdf');report=netcdf.inspect(plan)
         assert len(report['container']['children'])==(5 if source['projected'] else 2)
         for layer in (0,1):
             result=netcdf.read_slice(plan,report['format_info']['source_version'],dict(variable='/temperature',indices=[layer],x=0,y=0,width=4,height=3))
-            assert result['values']==fixture.expected_values(source['version'],layer)
+            assert result['values']==fixture.expected_values(source,layer)
             assert result['valid']==[[not(layer==0 and y==1 and x==2) for x in range(4)] for y in range(3)]
             assert (result['spatial'] is not None)==source['projected']
 

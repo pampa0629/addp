@@ -44,6 +44,8 @@ GeoPython Workflow 开发环境使用独立 Python 3.12 venv 和同版本原生 
 
 GeoPython 的必要原生子进程统一经 `operators/_native_process.py` 启动：父进程仅调用公开 `os.posix_spawn`，新解释器先关闭非标准文件描述符，再切换工作目录及 exec 目标，短命令和 cwd 不可回退到 fork。凭据仍走 stdin；保留流式输出、独立 env、超时回收和退出码。该启动器随现有 operators 目录进入产品镜像，健康资源观测不得借助 sysctl 子进程；无法读取物理内存时沿原契约保留未知值，容器祖先限额仍取最严格值。测试通过与运行期间无新增原生崩溃报告须分别核验。
 
+NetCDF-4沿现有GeoPython/GDAL数值读取路线，只增加Runtime内部的原生HDF5组成检查器`native/netcdf_preflight.c`。开发唯一准备入口按源码及hdf5/netcdf原生版本与链接参数生成`.dev-state/geopython-netcdf/<fingerprint>/netcdf-preflight`，原子构建且不替换已有指纹的文件；测试使用同一标准环境准备，正式镜像在构建时链接自身原生库并验证真实NC4读取。`GEOPYTHON_NETCDF_PREFLIGHT_BIN`由生命周期或镜像内部派生，不是用户源文件参数，也不提供全局工具或第二解析服务回退。数值仍只经GDAL读取；组成检查失败、进程失败或证据不完整均拒绝NC4，经典CDF不借此开放外部/复杂类型。当前根组静态数值profile与门禁范围见[内置格式规范](../docs/spec/builtin-formats/媒体与地图数据集.md#netcdf-单文件只读)。
+
 Spark Workflow 本地开发使用 Python 3.11/3.12 虚拟环境与原生 OpenJDK 11，`start.sh -spark-workflow` 和 `restart.sh -spark-workflow` 共用 `scripts/dev/spark-workflow.sh`，通过已有依赖安装互斥锁同步完整 requirements 与 editable Common Python。`stop.sh` 按原生 PID 停止；HTTP 绑定回环，就绪核对 PID、监听和 HTTP。macOS 需要本机 `/etc/hosts` 的 `127.0.0.1 host.docker.internal` 映射，Docker Worker 仍用内置解析。生产与 Hosted 产品验收保留镜像默认入口，使用 `scripts/utils/hosted-online.sh` 的独立产品启动，不依赖开发脚本构建 Spark 镜像。
 
 Spark 产品镜像使用 Python 3.11 Bookworm 和官方 Temurin Java 11 JRE，安装同一仓库的 `common-python`。唯一构建入口为 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"`，使用根目录构建上下文；本地缓存与 CI 影响选择均覆盖共享 Python 包。镜像构建包含依赖一致性、Flask API 导入及本地 Spark 计算检查；该构建检查不代表分布式 Worker 验收。

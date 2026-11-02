@@ -1277,6 +1277,7 @@ set -euo pipefail
 source "$SOURCE_ROOT/scripts/dev/geopython-workflow.sh"
 uname() { echo Darwin; }
 brew() { [ "$1" = --prefix ]; printf '%s/%s\\n' "$FAKE_BREW_ROOT" "$2"; }
+addp_geopython_netcdf_checker() { :; }
 addp_geopython_native_environment
 printf '%s\\n' "$(gdal-config --version)" "$GDAL_DATA" "$PROJ_DATA" "$ODBCSYSINI"
 [ -z "${GDAL_DRIVER_PATH:-}${PROJ_LIB:-}${GEOPYTHON_WORKFLOW_LOOPBACK_HOST:-}" ]

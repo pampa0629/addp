@@ -4,11 +4,11 @@ import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, json, login } from './transfer-browser-support.js'
 
-test('ordinary user selects classic NetCDF time slices and downloads exact original files', async ({ page }) => {
+test('ordinary user selects classic and NetCDF-4 time slices and downloads exact originals', async ({ page }) => {
   test.setTimeout(300000)
   const env = process.env, context = JSON.parse(env.ADDP_ONLINE_MANAGER_NETCDF_JSON || '{}')
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
-  expect(context.cases.length).toBe(6)
+  expect(context.cases.length).toBe(14)
   const identity = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id, permissions: new Set(context.identity.permissions_verified) }
   expect(identity.permissions.size).toBe(6)
   const outcomes = [], browserErrors = []
@@ -27,7 +27,7 @@ test('ordinary user selects classic NetCDF time slices and downloads exact origi
       const api = await browserAPIFromResponse(response, env.GATEWAY_URL, identity)
       try {
         const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
-        await expect(frame.getByTestId('grid-variable-details')).toContainText(source.spec.version === 5 ? 'Int64' : 'Int32')
+        await expect(frame.getByTestId('grid-variable-details')).toContainText(source.spec.native_type)
         await frame.locator('.child-select .el-select__wrapper').click()
         await frame.getByRole('option', { name: '/time', exact: true }).click()
         await expect(frame.getByTestId('grid-variable-details')).toContainText('360_day')
@@ -46,8 +46,8 @@ test('ordinary user selects classic NetCDF time slices and downloads exact origi
           }); observed.catch(() => {})
           await frame.getByTestId('read-grid-slice').click()
           const result = (await json(await observed, 'NetCDF actual slice button')).data.object.content.json
-          const base = source.spec.version === 5 ? 9007199254740993n : 0n
-          const values = Array.from({ length: 3 }, (_, y) => Array.from({ length: 4 }, (_, x) => layer === 0 && y === 1 && x === 2 ? '-9999' : String(base + BigInt(layer * 12 + y * 4 + x))))
+          const base = BigInt(source.spec.value_base)
+          const values = Array.from({ length: 3 }, (_, y) => Array.from({ length: 4 }, (_, x) => layer === 0 && y === 1 && x === 2 ? source.spec.fill : String(base + BigInt(layer * 12 + y * 4 + x))))
           expect(result.selection).toEqual({ variable: '/temperature', indices: [layer], x: 0, y: 0, width: 4, height: 3 })
           expect(result.values).toEqual(values)
           expect(result.valid).toEqual(Array.from({ length: 3 }, (_, y) => Array.from({ length: 4 }, (_, x) => !(layer === 0 && y === 1 && x === 2))))
@@ -72,7 +72,7 @@ test('ordinary user selects classic NetCDF time slices and downloads exact origi
           }
         }
         if (source.spec.projected) {
-          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `netcdf-${source.source_case}-${source.spec.version}-grid.png`) })
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `netcdf-${source.source_case}-${source.spec.case_id}-grid.png`) })
           await frame.locator('.geojson-preview').scrollIntoViewIfNeeded()
         }
         const ready = page.waitForEvent('download')
@@ -86,7 +86,7 @@ test('ordinary user selects classic NetCDF time slices and downloads exact origi
           expect(digest).toBe(source.spec.sha256); expect(raw.length).toBe(source.spec.size_bytes)
           const original = await api.get('/api/v1/manager/downloads/file?locator=' + encodeURIComponent(source.locator))
           expect(original.status()).toBe(200); expect(await original.body()).toEqual(raw)
-          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `netcdf-${source.source_case}-${source.spec.version}-page.png`) })
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `netcdf-${source.source_case}-${source.spec.case_id}-page.png`) })
           outcomes.push({ locator: source.locator, values_verified: true, mask_verified: true, time_index_button_verified: true, download_sha256: digest, download_size: raw.length })
         } finally { await download.delete() }
       } finally { await api.dispose() }

@@ -780,7 +780,7 @@ jobs:
         if: steps.selection.outputs.run == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gdal-bin libgdal-dev pkg-config unixodbc odbc-mdbtools
+          sudo apt-get install -y gdal-bin libgdal-dev libhdf5-dev libnetcdf-dev build-essential pkg-config unixodbc odbc-mdbtools
 
       - name: Prepare GeoPython test environment
         if: steps.selection.outputs.run == 'true'

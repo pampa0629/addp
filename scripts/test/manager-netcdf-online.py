@@ -1,4 +1,4 @@
-"""Classic NetCDF ordinary-user metadata, raw grid, source version and UI acceptance."""
+"""NetCDF ordinary-user metadata, raw grid, source version and UI acceptance."""
 from __future__ import annotations
 import hashlib
 import importlib
@@ -18,7 +18,7 @@ def require(value,message):
 def validate_slice(result,spec,layer,x=0,y=0,width=4,height=3):
     require(result.get('schema_version')=='gdal.netcdf.slice/v1' and result.get('source_version')=='sha256:'+spec['sha256'] and result.get('format')=='netcdf' and result.get('value_mode')=='raw_storage','NetCDF slice identity mismatch')
     require(result['selection']==dict(variable='/temperature',indices=[layer],x=x,y=y,width=width,height=height),'NetCDF slice selection mismatch')
-    require(result['values']==FIXTURE.expected_values(spec['version'],layer,x,y,width,height),'NetCDF exact grid values changed')
+    require(result['values']==FIXTURE.expected_values(spec,layer,x,y,width,height),'NetCDF exact grid values changed')
     require(result['valid']==[[not(layer==0 and row==1 and col==2) for col in range(x,x+width)] for row in range(y,y+height)],'NetCDF valid mask changed')
     require(result['variable']['attributes']['scale_factor']['values']==['0.5'] and result['variable']['attributes']['add_offset']['values']==['273.15'],'NetCDF scale/offset facts changed')
     if spec['projected']:
@@ -50,10 +50,12 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 detail=client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload;attrs=detail.get('attributes',{})
                 require({k:attrs.get('item',{}).get(k) for k in ('data_type','format','layout')}=={'data_type':'container','format':'netcdf','layout':'single'},'NetCDF canonical identity changed')
                 info=attrs.get('format_info',{}).get('netcdf',{})
-                require(info.get('source_version')=='sha256:'+spec['sha256'] and info.get('scan_complete') is True and info.get('encoding')==f"CDF-{spec['version']}",'NetCDF content version missing')
+                require(info.get('source_version')=='sha256:'+spec['sha256'] and info.get('scan_complete') is True and info.get('encoding')==spec['encoding'],'NetCDF content version missing')
+                if spec['encoding']=='NetCDF-4':require(info.get('composition')=={'profile':'root_numeric_v1','complete':True},'NetCDF-4 composition evidence missing')
                 require(not attrs.get('capabilities',{}).get('spatial'),'parent container gained unified spatial extent')
                 children=attrs.get('type_info',{}).get('container',{}).get('children',[])
                 temperature,=[v['native'] for v in children if v.get('name')=='/temperature']
+                require(temperature['type']==spec['native_type'],'NetCDF original numeric type changed')
                 require([(d['name'],d['size']) for d in temperature['dimensions']]==[('/time','2'),('/y','3'),('/x','4')],'NetCDF dimension order or size changed')
                 coordinate,=[v['native'] for v in children if v.get('name')=='/time']
                 require(coordinate['attributes']['calendar']['values']==['360_day'] and coordinate['slice_supported'] is False,'time coordinate silently converted to Gregorian or grid')
@@ -62,17 +64,17 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 for layer in (0,1):
                     selection['indices']=[layer];result=read(client,locator,selection);validate_slice(result,spec,layer)
                     require(read(client,locator,selection)==result,'repeated stateless slice changed')
-                    (artifact/f"netcdf-{storage}-{spec['version']}-layer{layer}.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+                    (artifact/f"netcdf-{storage}-{spec['case_id']}-layer{layer}.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
                 selection.update(indices=[1],x=1,y=1,width=2,height=2);validate_slice(read(client,locator,selection),spec,1,1,1,2,2)
                 for change in ({'indices':[2]},{'variable':'NETCDF:/etc/passwd:secret'},{'width':129}):
                     invalid=dict(selection,**change);denied=read(client,locator,invalid,400);require(denied.get('error_code')=='grid_slice_selection_invalid','invalid window was not a controlled rejection')
                 stage='download';raw=client.request('GET','/api/v1/manager/downloads/file?'+urlencode({'locator':locator}),(200,)).raw
                 require(len(raw)==spec['size_bytes'] and hashlib.sha256(raw).hexdigest()==spec['sha256'],'NetCDF original download differs')
-                (artifact/f"netcdf-{storage}-{spec['version']}.nc").write_bytes(raw)
+                (artifact/f"netcdf-{storage}-{spec['case_id']}.nc").write_bytes(raw)
                 require(client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload==detail,'NetCDF preview changed metadata')
                 report['cases'].append(dict(source_case=storage,locator=locator,item_id=item['id'],spec=spec,metadata_verified=True,values_verified=True,mask_verified=True,repeat_stateless_verified=True,window_verified=True,invalid_selection_denied=True,original_download_verified=True))
         stage='source_drift';physical('drift')
-        for case in [c for c in report['cases'] if c['spec']['version']==5]:
+        for case in [c for c in report['cases'] if c['spec']['name'] in ('cdf5-int64.nc','nc4-int64.nc')]:
             changed=read(client,case['locator'],dict(variable='/temperature',indices=[0],x=0,y=0,width=4,height=3),409)
             require(changed.get('error_code')=='preview_source_refresh_required','changed NetCDF did not stop preview')
         physical('restore');report['source_drift_denied']=True
@@ -82,7 +84,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         else:
             subprocess.run(['npm','exec','--','playwright','test','e2e/online/manager-netcdf.spec.js','--config=playwright.online.config.js'],cwd=Path(repository)/'console/frontend',env=dict(environment,ADDP_ONLINE_MANAGER_NETCDF_JSON=json.dumps(context)),check=True)
             browser=json.loads((artifact/'manager-netcdf-browser.json').read_text())
-        require(browser.get('result')=='passed' and browser.get('run_id')==report['run_id'] and len(browser.get('cases',[]))==6,'NetCDF browser report incomplete')
+        require(browser.get('result')=='passed' and browser.get('run_id')==report['run_id'] and len(browser.get('cases',[]))==2*len(FIXTURE.sources()),'NetCDF browser report incomplete')
         for case,observed in zip(report['cases'],browser['cases']):
             require(observed.get('locator')==case['locator'] and observed.get('values_verified') is True and observed.get('download_sha256')==case['spec']['sha256'] and observed.get('download_size')==case['spec']['size_bytes'],'NetCDF real UI or original button download incomplete')
         if not physical_runner:

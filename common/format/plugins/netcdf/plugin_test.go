@@ -42,7 +42,7 @@ func boundFixture(t *testing.T, r *runtimeStub) *bound {
 	return p.(*bound)
 }
 func TestNetCDFDescribeAndBindingRejectIncompleteFacts(t *testing.T) {
-	r := &runtimeStub{response: map[string]interface{}{"schema_version": "gdal.netcdf.inspect/v1", "format": "netcdf", "container": datatype.ContainerInfo{ChildCount: 1, Children: []datatype.ContainerChildInfo{{Name: "/v", ChildKind: "array", DataType: datatype.Media, Format: "netcdf", Native: map[string]interface{}{"name": "/v"}}}}, "format_info": map[string]interface{}{"driver": "netCDF", "scan_complete": true, "source_version": "sha256:" + strings.Repeat("a", 64)}}}
+	r := &runtimeStub{response: map[string]interface{}{"schema_version": "gdal.netcdf.inspect/v1", "format": "netcdf", "container": datatype.ContainerInfo{ChildCount: 1, Children: []datatype.ContainerChildInfo{{Name: "/v", ChildKind: "array", DataType: datatype.Media, Format: "netcdf", Native: map[string]interface{}{"name": "/v"}}}}, "format_info": map[string]interface{}{"driver": "netCDF", "encoding": "CDF-1", "scan_complete": true, "source_version": "sha256:" + strings.Repeat("a", 64)}}}
 	b := boundFixture(t, r)
 	described, err := b.DescribeContainer(context.Background(), nil)
 	if err != nil || described.Container.ChildCount != 1 || r.path != "/data/exact.nc" {
@@ -54,6 +54,36 @@ func TestNetCDFDescribeAndBindingRejectIncompleteFacts(t *testing.T) {
 	}
 	if _, err := format.GetModel3DCompositionProvider(format.FormatSKP); err == nil {
 		t.Fatal("unrelated SKP admission opened")
+	}
+}
+func TestNetCDFEncodingRequiresCompleteComposition(t *testing.T) {
+	info := map[string]interface{}{"driver": "netCDF", "scan_complete": true, "source_version": "sha256:" + strings.Repeat("a", 64)}
+	r := &runtimeStub{response: map[string]interface{}{"schema_version": "gdal.netcdf.inspect/v1", "format": "netcdf", "container": datatype.ContainerInfo{}, "format_info": info}}
+	b := boundFixture(t, r)
+	for _, encoding := range []string{"CDF-1", "CDF-2", "CDF-5"} {
+		info["encoding"] = encoding
+		if _, err := b.DescribeContainer(context.Background(), nil); err != nil {
+			t.Fatal("classic container rejected", encoding, err)
+		}
+	}
+	info["encoding"] = "NetCDF-4"
+	for _, proof := range []interface{}{nil, true, map[string]interface{}{"profile": "root_numeric_v1", "complete": false}, map[string]interface{}{"profile": "unknown", "complete": true}} {
+		info["composition"] = proof
+		if _, err := b.DescribeContainer(context.Background(), nil); err == nil {
+			t.Fatal("incomplete NetCDF-4 composition accepted", proof)
+		}
+	}
+	info["composition"] = map[string]interface{}{"profile": "root_numeric_v1", "complete": true}
+	if _, err := b.DescribeContainer(context.Background(), nil); err != nil {
+		t.Fatal("verified NetCDF-4 container rejected", err)
+	}
+	if got := format.DetectFormat("sample.NC4", []byte("\x89HDF\r\n\x1a\n")); got != format.FormatNetCDF {
+		t.Fatal("nc4 candidate not recognized", got)
+	}
+	for _, signature := range (&Plugin{}).Descriptor().Identification.ContentSignatures {
+		if strings.Contains(strings.ToLower(signature), "89484446") {
+			t.Fatal("generic HDF5 signature claimed as NetCDF")
+		}
 	}
 }
 func TestNetCDFSliceVersionShapeAndOriginalNumericText(t *testing.T) {

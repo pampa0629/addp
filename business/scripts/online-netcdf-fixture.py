@@ -1,4 +1,4 @@
-"""Exact independent classic CDF fixture and physical cleanup in Hosted isolation."""
+"""Independent classic/NetCDF-4 fixtures and exact Hosted physical cleanup."""
 from __future__ import annotations
 import hashlib
 import io
@@ -10,7 +10,9 @@ import struct
 import subprocess
 import sys
 
-NAMES = ('cdf1-unknown.nc', 'cdf2-projected.nc', 'cdf5-int64.nc')
+CLASSIC_NAMES = ('cdf1-unknown.nc', 'cdf2-projected.nc', 'cdf5-int64.nc')
+NC4_NAMES = ('nc4-int32.nc','nc4-int64.nc','nc4-uint64.nc','nc4-projected.nc')
+NAMES = CLASSIC_NAMES + NC4_NAMES
 
 def build(version, projected=False):
     # Encoder follows Unidata/PnetCDF framing; does not invoke the product reader.
@@ -58,13 +60,43 @@ def build(version, projected=False):
     return header(begins)+b''.join(data)
 
 
-def expected_values(version, layer, x=0,y=0,width=4,height=3):
-    base=9007199254740993 if version==5 else 0
-    return [[str(-9999 if layer==0 and row==1 and col==2 else base+layer*12+row*4+col) for col in range(x,x+width)] for row in range(y,y+height)]
+def expected_values(spec, layer, x=0,y=0,width=4,height=3):
+    base=int(spec['value_base'])
+    return [[spec['fill'] if layer==0 and row==1 and col==2 else str(base+layer*12+row*4+col) for col in range(x,x+width)] for row in range(y,y+height)]
+
+
+def source_bytes(spec):
+    if spec['encoding']=='NetCDF-4':
+        if spec['name'] not in NC4_NAMES:raise ValueError('unknown NetCDF-4 fixture')
+        return (Path(__file__).resolve().parents[1]/'testdata/netcdf4'/spec['name']).read_bytes()
+    return build(spec['version'],spec['projected'])
 
 
 def sources():
-    return [dict(name=name,version=version,projected=version==2,size_bytes=len(build(version,version==2)),sha256=hashlib.sha256(build(version,version==2)).hexdigest()) for name,version in zip(NAMES,(1,2,5))]
+    specs=[dict(name=name,version=version,case_id=str(version),encoding=f'CDF-{version}',projected=version==2,
+        native_type='Int64' if version==5 else 'Int32',value_base=str(9007199254740993 if version==5 else 0),fill='-9999')
+        for name,version in zip(CLASSIC_NAMES,(1,2,5))]
+    for name,kind in zip(NC4_NAMES,('int32','int64','uint64','projected')):
+        specs.append(dict(name=name,version=4,case_id='4-'+kind,encoding='NetCDF-4',projected=kind=='projected',
+            native_type={'int64':'Int64','uint64':'UInt64'}.get(kind,'Int32'),
+            value_base=str(9007199254740993 if kind=='int64' else 18446744073709551580 if kind=='uint64' else 0),
+            fill='18446744073709551615' if kind=='uint64' else '-9999'))
+    for spec in specs:
+        raw=source_bytes(spec);spec.update(size_bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+    return specs
+
+
+def _owned_sources(request):
+    specs=request['sources'];raws=request['source_bytes']
+    if len(specs)!=len(NAMES) or {s['name'] for s in specs}!=set(NAMES) or set(raws)!=set(NAMES):
+        raise ValueError('incomplete NetCDF fixture inventory')
+    result=[]
+    for spec in specs:
+        raw=bytes.fromhex(raws[spec['name']])
+        if len(raw)!=spec['size_bytes'] or hashlib.sha256(raw).hexdigest()!=spec['sha256']:
+            raise ValueError('fixture bytes differ from declared independent source')
+        result.append((spec,raw))
+    return result
 
 
 def worker(request):
@@ -73,24 +105,27 @@ def worker(request):
     root=Path(request['nfs_root']);bucket=storage['bucket'];action=request['action']
     directory=root/'netcdf'
     if action=='seed':
+        owned=_owned_sources(request)
         directory.mkdir(mode=0o755,exist_ok=False)
-        for spec in sources():
-            raw=build(spec['version'],spec['projected']);path=directory/spec['name'];path.write_bytes(raw);path.chmod(0o644)
+        for spec,raw in owned:
+            path=directory/spec['name'];path.write_bytes(raw);path.chmod(0o644)
             client.put_object(bucket,'netcdf/'+spec['name'],io.BytesIO(raw),len(raw),content_type='application/x-netcdf')
-        return {'sources':sources()}
+        return {'sources':[spec for spec,_ in owned]}
     if action in ('drift','restore'):
-        spec=sources()[-1];raw=build(5)
-        if action=='drift':raw=raw[:-8]+struct.pack('>q',777)
-        path=directory/spec['name'];path.write_bytes(raw);path.chmod(0o644)
-        client.put_object(bucket,'netcdf/'+spec['name'],io.BytesIO(raw),len(raw),content_type='application/x-netcdf')
-        return {'sha256':hashlib.sha256(raw).hexdigest(),'changed':action=='drift'}
+        for spec,raw in _owned_sources(request):
+            if spec['name'] not in ('cdf5-int64.nc','nc4-int64.nc'):continue
+            if action=='drift':raw=raw[:-1]+bytes([raw[-1]^1])
+            path=directory/spec['name'];path.write_bytes(raw);path.chmod(0o644)
+            client.put_object(bucket,'netcdf/'+spec['name'],io.BytesIO(raw),len(raw),content_type='application/x-netcdf')
+        return {'changed':action=='drift'}
     if action=='verify':
-        for spec in sources():
+        owned=_owned_sources(request)
+        for spec,expected in owned:
             raw=(directory/spec['name']).read_bytes();response=client.get_object(bucket,'netcdf/'+spec['name'])
             try:remote=response.read()
             finally:response.close();response.release_conn()
-            assert raw==remote and len(raw)==spec['size_bytes'] and hashlib.sha256(raw).hexdigest()==spec['sha256'],'source_changed'
-        return {'sources_unchanged':True,'sources':sources()}
+            assert raw==remote==expected and len(raw)==spec['size_bytes'] and hashlib.sha256(raw).hexdigest()==spec['sha256'],'source_changed'
+        return {'sources_unchanged':True,'sources':[spec for spec,_ in owned]}
     if action=='delete':
         for name in NAMES:
             (directory/name).unlink(missing_ok=True);client.remove_object(bucket,'netcdf/'+name)
@@ -110,7 +145,8 @@ def physical(action,repository,environment):
     root=Path(state.read_text().strip())
     if not re.fullmatch(r'/tmp/addp-online-manager-nfs\.[A-Za-z0-9]{6}',str(root)) or root.is_symlink() or (root/'.addp-online-owner').read_text().strip()!=environment['ADDP_ONLINE_TEST_RUN_ID']:
         raise ValueError('NetCDF fixture ownership mismatch')
-    config={'action':action,'nfs_root':str(root),'storage':{'endpoint':'127.0.0.1:'+environment['ADDP_ONLINE_MANAGER_MINIO_PORT'],'access_key':environment['ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY'],'secret_key':environment['ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY'],'bucket':environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']}}
+    specs=sources()
+    config={'action':action,'nfs_root':str(root),'sources':specs,'source_bytes':{spec['name']:source_bytes(spec).hex() for spec in specs},'storage':{'endpoint':'127.0.0.1:'+environment['ADDP_ONLINE_MANAGER_MINIO_PORT'],'access_key':environment['ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY'],'secret_key':environment['ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY'],'bucket':environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']}}
     script=Path(repository)/'business/scripts/online-netcdf-fixture.py'
     result=subprocess.run(['docker','run','--rm','-i','--user',f'{os.getuid()}:{os.getgid()}','--name','addp-manager-raster-verifier','--network','host','--label','com.addp.online-fixture=manager-internal-artifact-lineage','--mount',f'type=bind,src={script},dst=/fixture.py,readonly','--mount',f'type=bind,src={root},dst={root}',environment['ADDP_ONLINE_RASTER_RUNTIME_IMAGE'],'python','/fixture.py','worker'],input=json.dumps(config),text=True,capture_output=True,timeout=120)
     if result.returncode:raise ValueError(f'NetCDF physical {action} failed (exit {result.returncode})')

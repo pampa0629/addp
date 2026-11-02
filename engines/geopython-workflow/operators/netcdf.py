@@ -1,9 +1,10 @@
-"""Bounded classic NetCDF inspection and raw numeric windows, solely via GDAL."""
+"""Bounded NetCDF inspection and raw numeric windows, solely via GDAL."""
 from __future__ import annotations
 
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -34,6 +35,29 @@ class SourceChanged(ValueError):
     pass
 
 
+def _native_environment():
+    env=dict(os.environ)
+    for key in ('HDF5_VOL_CONNECTOR','HDF5_DRIVER','HDF5_PLUGIN_PATH','NCRCENV_HOME','NCRCENV_RC'):
+        env.pop(key,None)
+    env.update(HDF5_PLUGIN_PRELOAD='::',NCRCENV_IGNORE='1')
+    return env
+
+
+def _composition(path):
+    binary=os.environ.get('GEOPYTHON_NETCDF_PREFLIGHT_BIN')
+    if not binary or not Path(binary).is_file():
+        raise ValueError('NetCDF-4 composition checker is unavailable')
+    checked=_native_process.run([binary,str(path)],env=_native_environment(),capture_output=True,text=True,timeout=30)
+    if checked.returncode!=0:
+        raise ValueError('NetCDF-4 is outside the supported self-contained root numeric profile')
+    result=json.loads(checked.stdout)
+    if (not isinstance(result,dict) or set(result)!={'schema','profile','complete'}
+            or result['schema']!='addp.netcdf4.composition/v1' or result['profile']!='root_numeric_v1'
+            or result['complete'] is not True):
+        raise ValueError('NetCDF-4 composition evidence is incomplete')
+    return {'profile':result['profile'],'complete':True}
+
+
 def _integer(value, name, low, high):
     if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
         raise SliceSelectionError(f"{name} outside supported bounds")
@@ -50,19 +74,21 @@ def _source(access_plan, source_version=None):
         path = Path(work) / "input.nc"
         staged.rename(path)
         with path.open("rb") as stream:
-            signature = stream.read(4)
-        if signature not in (b"CDF\x01", b"CDF\x02", b"CDF\x05"):
-            raise ValueError("only classic CDF-1/2/5 is supported; NetCDF-4/HDF5 is not admitted")
+            signature = stream.read(8)
+        classic=signature[:4] in (b"CDF\x01", b"CDF\x02", b"CDF\x05")
+        if not classic and signature!=b'\x89HDF\r\n\x1a\n':
+            raise ValueError('unsupported NetCDF encoding')
         with path.open("rb") as stream:
             version = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
         if source_version is not None and version != source_version:
             raise SourceChanged("NetCDF source changed; refresh metadata")
+        facts={'encoding':f'CDF-{signature[3]}'} if classic else {'encoding':'NetCDF-4','composition':_composition(path)}
         with gdal.config_options({"GDAL_PAM_ENABLED": "NO", "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR", "GDAL_NETCDF_ASSUME_LONGLAT": "NO"}):
             dataset = gdal.OpenEx(f'NETCDF:"{path}"', gdal.OF_MULTIDIM_RASTER | gdal.OF_READONLY, allowed_drivers=["netCDF"])
             if dataset is None:
-                raise ValueError("invalid classic NetCDF")
+                raise ValueError("invalid NetCDF")
             try:
-                yield dataset, version, signature[-1]
+                yield dataset, version, facts
             finally:
                 dataset = None
 
@@ -174,7 +200,7 @@ def _description(array, light=False):
 def _catalog(dataset):
     group = dataset.GetRootGroup()
     if group.GetGroupNames():
-        raise ValueError("classic NetCDF must not contain nested groups")
+        raise ValueError("nested NetCDF groups are outside the supported profile")
     names = group.GetMDArrayNames(["SHOW_ALL=YES"]) or []
     if len(names) > MAX_VARIABLES:
         raise ValueError("NetCDF variable count exceeds inspection budget")
@@ -193,11 +219,11 @@ def _catalog(dataset):
 
 
 def inspect(access_plan):
-    with _source(access_plan) as (dataset, version, encoding):
+    with _source(access_plan) as (dataset, version, facts):
         group, variables, dimensions = _catalog(dataset)
         children = [{"name": v["name"], "child_kind": "array", "data_type": "media" if v["slice_supported"] else "unknown", "format": "netcdf", "native": v} for v in variables]
         return {"schema_version": SCHEMA, "format": "netcdf", "container": {"child_count": len(children), "resource_count": 1, "children": children},
-                "format_info": {"driver": "netCDF", "encoding": f"CDF-{encoding}", "scan_complete": True, "source_version": version, "dimensions": dimensions, "attributes": _attributes(group), "value_mode": "raw_storage"}}
+                "format_info": {"driver": "netCDF", **facts, "scan_complete": True, "source_version": version, "dimensions": dimensions, "attributes": _attributes(group), "value_mode": "raw_storage"}}
 
 
 def read_slice(access_plan, source_version, selection):
@@ -322,13 +348,13 @@ def _native_main():
 
 def _register(name, function, params):
     metadata = OperatorMetadata(name=name, type=OperatorType.GENERAL, category=OperatorCategory.COMMON_IO,
-        description=name, brief_description="NetCDF classic single-file read", execution_modes=["direct"], effects=["read"],
+        description=name, brief_description="NetCDF self-contained single-file read", execution_modes=["direct"], effects=["read"],
         params=[OperatorParam(name="access_plan", type="param", data_type="object", description="Authorized source-only plan", required=True), *params],
-        overview="受控经典NetCDF单文件只读", use_cases=["变量和维度查看", "有界原始值切片"],
-        notes=["CDF-1/2/5 only", "No implicit coordinate system or time conversion"], workflow_example={})
+        overview="受控NetCDF单文件只读", use_cases=["变量和维度查看", "有界原始值切片"],
+        notes=["CDF-1/2/5 and validated NetCDF-4 root numeric profile", "No implicit coordinate system or time conversion"], workflow_example={})
     def invoke(**kwargs):
         completed = _native_process.run([sys.executable, "-c", "from operators.netcdf import _native_main; _native_main()"],
-            input=json.dumps({"operation": function.__name__, "params": kwargs}, allow_nan=False), capture_output=True, text=True, timeout=120)
+            input=json.dumps({"operation": function.__name__, "params": kwargs}, allow_nan=False), env=_native_environment(), capture_output=True, text=True, timeout=120)
         if completed.returncode != 0:
             raise RuntimeError("NetCDF native process failed")
         response = json.loads(completed.stdout)

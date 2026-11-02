@@ -152,6 +152,12 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     } for path in files):
         affected.add("engines")
 
+    # NetCDF Native tests consume the independent byte encoder and fixed NC4
+    # files. Fixture-only edits must select the real GDAL owner as well.
+    if any(path == "business/scripts/online-netcdf-fixture.py" or
+           path.startswith("business/testdata/netcdf4/") for path in files):
+        affected.add("engines")
+
     # Owned disposable service definitions are gate inputs, regardless of their
     # filename. Resolve their owner from the gate declaration, not a DB list.
     for script in MODULE_GATE.repository_files(repository, "scripts/test/*-gate.sh"):
