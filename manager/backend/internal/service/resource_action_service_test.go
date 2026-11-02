@@ -6,7 +6,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
@@ -17,6 +20,26 @@ type fakeResourceActionSystemClient struct {
 }
 
 type actionDownloadPlan func(context.Context, string, *uint) (*StorageDataItem, *models.DownloadPlan, error)
+
+func TestResourceActionsENVIDownloadRequiresCurrentUser(t *testing.T) {
+	for _, tc := range []struct {
+		format string
+		kind   datatype.DataType
+		user   bool
+	}{{"envi", datatype.Media, true}, {"gltf", datatype.Model3D, true}, {"tiff", datatype.Media, false}} {
+		t.Run(tc.format, func(t *testing.T) {
+			svc := NewResourceActionService(fakeResourceActionSystemClient{engines: map[uint]*commonModels.Engine{
+				3: {ID: 3, TenantID: uintPtr(7), EngineType: "minio", LifecycleState: "active"},
+			}}, actionDownloadPlan(func(context.Context, string, *uint) (*StorageDataItem, *models.DownloadPlan, error) {
+				return &StorageDataItem{Descriptor: dataitem.ItemDescriptor{Format: tc.format, DataType: tc.kind, Layout: format.LayoutMulti}}, &models.DownloadPlan{Kind: models.DownloadKindBundle}, nil
+			}))
+			got, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/scene.img?type=object&item_id=8", uintPtr(7))
+			if err != nil || !got.Actions["download"].Supported || got.Actions["download"].RequiresCurrentUser != tc.user {
+				t.Fatalf("download must match actual source credential contract: actions=%#v err=%v", got, err)
+			}
+		})
+	}
+}
 
 func (f actionDownloadPlan) ResolveStorageDownloadPlanByLocator(ctx context.Context, locator string, tenant *uint) (*StorageDataItem, *models.DownloadPlan, error) {
 	return f(ctx, locator, tenant)

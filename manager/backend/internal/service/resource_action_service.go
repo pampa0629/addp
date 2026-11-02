@@ -109,7 +109,7 @@ func (s *ResourceActionService) GetResourceActions(ctx context.Context, locatorU
 			} else if target == nil || plan == nil {
 				return nil, fmt.Errorf("download planner returned no data item or plan")
 			} else {
-				resp.Actions["download"] = ResourceActionStatus{Supported: true, RequiresCurrentUser: target.Descriptor.DataType == datatype.Model3D || plan.DirectoryRoot != nil}
+				resp.Actions["download"] = ResourceActionStatus{Supported: true, RequiresCurrentUser: storageFileSourceRequiresUser(target) || plan.DirectoryRoot != nil}
 			}
 		} else if isStorageItemType(loc.Type) {
 			resp.Actions["download"] = unsupported("engine does not support content read")

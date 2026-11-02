@@ -26,6 +26,12 @@ type fileStorageReadChecker interface {
 	CheckManagerFileRead(context.Context, string, commonClient.ManagerFileExpectedSource) error
 }
 
+// This credential requirement is also exposed by resource-actions so the page
+// sends the current User through the same authenticated source read path.
+func storageFileSourceRequiresUser(target *StorageDataItem) bool {
+	return target.Descriptor.DataType == datatype.Model3D || target.Descriptor.Format == "envi"
+}
+
 func (s *MetadataService) SetFileSourceReadChecker(checker fileStorageReadChecker) {
 	s.fileSourceChecker = checker
 }
@@ -50,7 +56,7 @@ func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *
 	if target.Descriptor.Format == "filegdb" {
 		return s.prepareWholeStorageRead(read, credential, human)
 	}
-	if target.Descriptor.DataType != datatype.Model3D && target.Descriptor.Format != "envi" {
+	if !storageFileSourceRequiresUser(target) {
 		return read, nil
 	}
 	if !human || !strings.HasPrefix(credential, "addp_at_") || strings.ContainsAny(credential, " \t\r\n") {

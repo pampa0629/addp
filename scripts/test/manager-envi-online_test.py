@@ -87,6 +87,8 @@ class ENVIHostedCaseTest(unittest.TestCase):
         browser=(root/'console/frontend/e2e/online/manager-img.spec.js').read_text()
         self.assertIn("envi: ['minio-bsq','minio-bil','minio-bip','nfs-bsq','nfs-bil','nfs-bip']",browser)
         self.assertIn('source.download_members',browser)
+        self.assertIn('actual.current_user_download_verified = true',browser)
+        self.assertIn('await browserAPIFromResponse(response, env.GATEWAY_URL, expectedIdentity)',browser)
         self.assertIn('manager-envi-online_test.py',(root/'Makefile').read_text())
 
     def test_source_revocation_rechecks_current_grant_and_preserves_cached_bytes(self):

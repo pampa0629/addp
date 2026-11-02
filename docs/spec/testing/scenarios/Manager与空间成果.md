@@ -70,6 +70,8 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 ### ENVI 双文件 COG（实施中，尚未正式验收）
 
+ENVI 原件出口要求当前普通 User，资源动作声明与实际受控读取复用同一认证准入判断。真实页面按钮须走既有 authenticated-fetch／Blob 保存路径；核同一账号、无 Cookie、无 URL 凭据、精确 locator 请求及完整 ZIP 保存字节，不把 Blob URL 当作服务端下载入口，也不以 API 单独下载代替按钮验收。六份页面证据逐一记录 `current_user_download_verified=true`。
+
 失败清理须先观察终态执行实际拥有的结果，再经正式 API 删除并返回该精确清单，供物理核对。生成在成果创建前失败时记录 `results_observed=0`，不得虚构对象已删除；部分失败成果仍逐项核物理删除。所有已知任务清理后，额外只读核验本次独占租户 COG namespace 及暂存输入均无残留，记录 `artifact_residuals`。业务首错与清理错误分别保存，不能用清理异常覆盖生成异常，也不能由外层 Infra 零残留替代内部成果核验。
 
 同一 Manager Hosted suite 的独立 `native-envi` case 复用现有十项普通 User 权限、独立授权办理用户、Business MinIO／NFS、GeoPython 产品 Runtime、Console 和现有退出清理；不启动 Model3D／文档／点云，不新增服务或权限。三份独立字节构造的 256×256 三波段 Byte ENVI 分别采用 BSQ/WGS84、BIL/UTM50N、BIP/无定位，NFS 与 MinIO 各一套。Meta 必须输出 media/envi/multi、唯一双 ref、完整扫描、原始尺寸和两个 SHA；未批准时下载拒绝，完整清单批准后下载 ZIP 的两份原件逐字节／哈希核对。四份定位 COG 沿正式 action、当前 User 来源及独立目的 EA，完整核 196608 值与掩膜、源 CRS、网格、COG 全布局、HTTP／物理哈希和 Range；按现行已退役源 Deny 的契约，撤销当前完整组成 Grant 后派生 COG 读取必须拒绝；重新按同一精确清单批准后，须恢复原成果同一 Range 字节，不生成新产物。源初始化身份严格复用统一初始化器当前发布的权限集合，不要求已禁用的 Deny 权限。两种存储各以 BSQ 样例变更头文件命名，重新扫描后旧清单不能读取；撤销旧 Grant、按新精确清单批准后才能下载，最后恢复原组成并重新批准。已发布 COG 还须在同名头文件内容变化后拒绝缓存读取，恢复原始字节并重扫后才恢复旧缓存。真实 Console 复用现有媒体栅格页面验收：三色像元、属性、无定位边界、ZIP 原件按钮、截图、重开同一缓存且零额外生成请求。按 API 删除任务与成果，再核物理成果缺失、精确临时输入零残留，撤销本轮 Grant，删除本轮 NFS／MinIO 源；最终部署及 Infra 仍由同一 Hosted 生命周期清理。退出清理前保存本独占部署的 Redpanda 固定状态字段和末 80 行脱敏日志（至多 8 KiB），拒绝读取其他 Compose 归属；诊断失败记录为 unavailable，不替代业务结果或清理证明。业务报告协议为 `addp.manager-envi/v2`，明确记录当前 Grant 撤销与重新批准证明，旧 Deny 报告不充当该证明。报告 `manager-envi.json` 和 `manager-envi-browser.json`，任一步失败不登记通过。

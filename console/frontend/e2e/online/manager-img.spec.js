@@ -162,14 +162,35 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         actual.reopened = true
         actual.reused_result = true
       }
+      const authenticatedSource = evidence.source_format === 'envi' ? page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return response.request().method() === 'GET' && url.pathname === '/api/v1/manager/downloads/file'
+          && url.searchParams.get('locator') === source.locator
+      }) : null
+      authenticatedSource?.catch(() => {})
       const downloadEvent = page.waitForEvent('download')
       await frame.getByRole('button', { name: /^(?:下载|Download)$/, exact: true }).click()
       const download = await downloadEvent
       expect(await download.failure()).toBeNull()
+      if (authenticatedSource) {
+        const response = await authenticatedSource
+        expect(response.status()).toBe(200)
+        expect(await response.finished()).toBeNull()
+        const headers = await response.request().allHeaders()
+        expect(/^Bearer addp_at_/.test(headers.authorization || '')).toBe(true)
+        expect(Object.hasOwn(headers, 'cookie')).toBe(false)
+        expect([...new URL(response.url()).searchParams.keys()]).toEqual(['locator'])
+        const downloadAPI = await browserAPIFromResponse(response, env.GATEWAY_URL, expectedIdentity)
+        await downloadAPI.dispose()
+        expect(new URL(download.url()).protocol).toBe('blob:')
+        actual.current_user_download_verified = true
+      }
       const raw = readFileSync(await download.path())
       if (isTiff || evidence.source_format === 'envi') {
-        expect(new URL(download.url()).pathname).toBe('/api/v1/manager/downloads/file')
-        expect(new URL(download.url()).searchParams.get('locator')).toBe(source.locator)
+        if (isTiff) {
+          expect(new URL(download.url()).pathname).toBe('/api/v1/manager/downloads/file')
+          expect(new URL(download.url()).searchParams.get('locator')).toBe(source.locator)
+        }
         const code = `import sys,json,importlib
 sys.path.insert(0,sys.argv[1])
 owner=importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
