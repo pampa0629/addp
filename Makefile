@@ -1637,6 +1637,7 @@ test-highgo-online-runner: ## 验证瀚高 Online 场景、普通身份、物理
 
 .PHONY: test-common-neo4j
 test-common-neo4j: ## 独占 Neo4j 验证只读范围证明、图结果与拒绝边界
+	@python3 -m unittest scripts.ci.check-t2-ci-registration_test.Neo4jStartupDiagnosticsTest
 	@bash scripts/test/common-neo4j-gate.sh
 
 
