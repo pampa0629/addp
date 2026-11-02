@@ -241,7 +241,8 @@
         "operator_projected_crs_required": "两个输入均须具有已知投影坐标系及匹配的有限正水平线性单位。",
         "operator_crs_mismatch": "两个输入的投影坐标系不同。",
         "operator_crs_invalid": "两个图层须使用相同的已知投影坐标系和匹配的水平单位。",
-        "operator_geometry_invalid": "输入图层包含未通过有效性检查的几何。"
+        "operator_geometry_invalid": "输入图层包含未通过有效性检查的几何。",
+        "operator_overlay_fields_conflict": "相交叠加的业务字段、固定来源字段或结果几何列发生重名。"
       },
       "actions": {
         "operator_endpoint_network_invalid": "先显式打断交会并处理自交或重合，再提取节点；不会自动打断、去重或修复。",
@@ -298,7 +299,8 @@
         "operator_projected_crs_required": "先显式重投影到符合要求的同一投影坐标系，再重新执行。",
         "operator_crs_mismatch": "先显式统一两个输入的投影坐标系；不能仅因单位相同就直接计算。",
         "operator_crs_invalid": "先显式统一两个图层的投影坐标系与水平单位，再重新执行。",
-        "operator_geometry_invalid": "先运行几何检查，确认问题后显式修复；修复结果须满足算子说明，再提交新的执行。"
+        "operator_geometry_invalid": "先运行几何检查，确认问题后显式修复；修复结果须满足算子说明，再提交新的执行。",
+        "operator_overlay_fields_conflict": "先在上游手动重命名冲突字段；不会自动加后缀、覆盖或丢弃字段。"
       },
       "write": "写入字段",
       "writeColumn": "本次写入第 {column_index} 列（声明类型：{declared_type}）",
@@ -315,7 +317,8 @@
         "batch_buffer": "多距缓冲",
         "distance_to": "距离计算",
         "check_line_proximity": "近接检查",
-        "extract_polygon_rings": "面界提取"
+        "extract_polygon_rings": "面界提取",
+        "intersection": "相交叠加"
       },
       "operatorParameters": {
         "max_distance": "最大修剪路径距离（max_distance）",
@@ -323,7 +326,8 @@
         "reference_gdf": "参考图层（reference_gdf）",
         "distances": "距离列表（distances）",
         "resolution": "圆弧段数（resolution）",
-        "tolerance": "容差（tolerance）"
+        "tolerance": "容差（tolerance）",
+        "gdf_b": "图层 B（gdf_b）"
       }
     },
     "executionSteps": {

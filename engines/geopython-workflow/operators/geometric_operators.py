@@ -40,18 +40,82 @@ def buffer(input_gdf: gpd.GeoDataFrame, distance: float, resolution: int = 16) -
     return result
 
 
-def intersection(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    几何相交（叠加分析）
+class IntersectionInputError(ValueError):
+    """Known overlay admission facts, without source data in public messages."""
 
-    Args:
-        input_gdf: 输入图层 A（主图层）
-        gdf_b: 输入图层 B（叠加图层）
+    _messages = {
+        'zh-cn': {
+            'source': '相交叠加的图层 A 须具有唯一几何列、有效非空有限二维几何，以及显式唯一非空来源标识。',
+            'reference': '相交叠加的图层 B 须具有唯一几何列、有效非空有限二维几何，以及显式唯一非空来源标识。',
+            'crs': '相交叠加要求两个输入使用相同的已知投影坐标系和有限正水平线性单位；请先显式重投影。',
+            'fields': '相交叠加的业务字段、固定来源字段或结果几何列发生重名；请先在上游手动改名，不会自动加后缀或覆盖。',
+        },
+        'en': {
+            'source': 'Overlay input A requires one geometry column, valid non-empty finite XY geometries and an explicit unique non-null source identifier.',
+            'reference': 'Overlay input B requires one geometry column, valid non-empty finite XY geometries and an explicit unique non-null source identifier.',
+            'crs': 'Intersection requires the same known projected CRS and finite positive horizontal linear units on both inputs; reproject explicitly first.',
+            'fields': 'Overlay business fields conflict with each other, fixed source fields or the result geometry column; rename them upstream explicitly, without automatic suffixes or replacement.',
+        },
+    }
 
-    Returns:
-        GeoDataFrame 交集结果
-    """
-    return gpd.overlay(input_gdf, gdf_b, how='intersection')
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
+def intersection(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
+                 id_field: str, reference_id_field: str) -> gpd.GeoDataFrame:
+    """One complete exact intersection per original A/B feature pair."""
+    geometries, identifiers = [], []
+    for frame, field, code in ((input_gdf, id_field, 'source'), (gdf_b, reference_id_field, 'reference')):
+        try:
+            geometry = _finite_xy_geometry(frame)
+            if (not frame.columns.is_unique
+                    or sum(isinstance(dtype, gpd.array.GeometryDtype) for dtype in frame.dtypes) != 1
+                    or geometry.isna().any() or geometry.is_empty.any()
+                    or not shapely.is_valid(geometry.array).all()):
+                raise ValueError('invalid overlay input')
+            ids = _source_identifiers(frame, field)
+        except ValueError as exc:
+            raise IntersectionInputError(code) from exc
+        geometries.append(geometry)
+        identifiers.append(ids)
+    left, right = geometries
+    try:
+        _require_projected_xy_crs(left.crs)
+        _require_projected_xy_crs(right.crs)
+        if left.crs != right.crs:
+            raise ValueError('overlay CRS mismatch')
+    except ValueError as exc:
+        raise IntersectionInputError('crs') from exc
+    left_fields = [name for name in input_gdf.columns if name != left.name]
+    right_fields = [name for name in gdf_b.columns if name != right.name]
+    if (any(name in frame.columns for frame in (input_gdf, gdf_b) for name in ('source_id_a', 'source_id_b'))
+            or set(left_fields).intersection(right_fields) or left.name in right_fields):
+        raise IntersectionInputError('fields')
+
+    tree = shapely.STRtree(right.array)
+    left_rows, right_rows, values = [], [], []
+    for a, geometry in enumerate(left.array):
+        for b in sorted(tree.query(geometry).tolist()):
+            value = shapely.intersection(geometry, right.iloc[b])
+            if value.is_empty:
+                continue
+            if not value.is_valid or not np.isfinite(shapely.get_coordinates(value)).all():
+                raise RuntimeError('intersection produced invalid or non-finite geometry')
+            left_rows.append(a)
+            right_rows.append(b)
+            values.append(value)
+    result = input_gdf.iloc[left_rows].copy().reset_index(drop=True)
+    result[left.name] = gpd.GeoSeries(values, crs=left.crs)
+    for name in right_fields:
+        result[name] = gdf_b[name].iloc[right_rows].reset_index(drop=True)
+    result['source_id_a'] = identifiers[0].iloc[left_rows].reset_index(drop=True)
+    result['source_id_b'] = identifiers[1].iloc[right_rows].reset_index(drop=True)
+    return result
 
 
 def union(gdf_list: List[gpd.GeoDataFrame]) -> gpd.GeoDataFrame:
@@ -2251,56 +2315,29 @@ BUFFER_METADATA = OperatorMetadata(
 
 
 INTERSECTION_METADATA = OperatorMetadata(
-    name="intersection",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_OVERLAY,
-    description="几何相交",
-    brief_description="计算两个几何图层的空间交集,提取重叠区域,常用于叠加分析",
-    execution_modes=["workflow"],
-    effects=["read"],
-
-    overview="计算输入图层A与图层B的几何交集,返回两者重叠的部分。结果保留图层A的属性,可选择性保留图层B的属性。",
-
+    name="intersection", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_OVERLAY,
+    description="相交叠加", brief_description="逐对保留两个图层的完整精确交集、双方来源和业务属性",
+    execution_modes=["workflow"], effects=["read"],
+    overview="按 A 原行、B 原行顺序，每个非空交集输出一行；点、线、面及 GeometryCollection 全部保留，多部件不拆行。保留双方业务属性和原类型来源，输入不变。",
     params=[
-        OperatorParam(
-            name="input_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="输入图层A(被裁剪对象)"
-        ),
-        OperatorParam(
-            name="gdf_b",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="输入图层B(裁剪对象)"
-        )
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="图层 A", notes="唯一活动几何；有效非空有限二维 XY，允许空批；相同已知投影 CRS"),
+        OperatorParam(name="gdf_b", type="input", data_type="GeoDataFrame", required=True, description="图层 B", notes="准入同 A，使用本侧实际活动几何列"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="A 的唯一来源标识列", notes="显式非几何唯一非空标量列，不推断索引或 FID"),
+        OperatorParam(name="reference_id_field", type="param", data_type="str", required=True, description="B 的唯一来源标识列", notes="标识类型和值保持不变"),
     ],
-
-    use_cases=[
-        "土地利用分析: 提取保护区内的耕地",
-        "行政区划统计: 提取某市范围内的河流",
-        "灾害风险评估: 提取洪水淹没区内的建筑物",
-        "多图层叠加: 提取同时满足多个条件的区域"
-    ],
-
+    use_cases=["土地利用与保护区逐对叠加", "河流与行政区完整几何交集", "含接触线点的多维度交集追溯"],
     notes=[
-        "两个图层的坐标系必须一致,不一致需先用 to_crs 统一",
-        "结果只包含有交集的要素,无交集的要素会被剔除",
-        "如果需要保留无交集的要素,使用 spatial_join 代替",
-        "大数据集建议先用空间索引优化性能"
+        "保留 A 的活动几何列名、双方属性及 source_id_a/source_id_b，重建 RangeIndex；每对至多一行，不按维度过滤或拆分 GeometryCollection",
+        "同名业务字段、固定来源名和 B 属性占用结果几何名时明确报错；请先上游手动改名，不自动加后缀或覆盖",
+        "无效、缺失、空、Z/M、非有限几何和不匹配投影 CRS 拒绝；不自动修复、吸附、重投影或舍入",
+        "目标格式须能表达实际混合几何；纯计算不保存扫描，空间索引不代表固定内存或容量认证",
     ],
-
     workflow_example={
-        'id': 'intersect_protected_area',
-        'operator': 'intersection',
-        'params': {
-            'input_gdf': {'$ref': 'load_farmland'},
-            'gdf_b': {'$ref': 'load_protected_area'}
-        },
-        'depends_on': ['load_farmland', 'load_protected_area']
-    }
+        'id': 'intersect_area', 'operator': 'intersection',
+        'params': {'input_gdf': {'$ref': 'load_source'}, 'gdf_b': {'$ref': 'load_reference'},
+                   'id_field': 'source_key', 'reference_id_field': 'reference_key'},
+        'depends_on': ['load_source', 'load_reference'],
+    },
 )
 
 

@@ -7,7 +7,7 @@ export const failureReasons = Object.freeze([
   'type_mismatch', 'permission_denied', 'connection_failed',
   'json_invalid', 'array_invalid', 'bytes_invalid', 'table_write_failed', 'execution_failed',
   'target_exists',
-  'operator_endpoint_network_invalid', 'operator_distance_limit_invalid', 'operator_source_topology_invalid', 'operator_trim_conflict',
+  'operator_overlay_fields_conflict', 'operator_endpoint_network_invalid', 'operator_distance_limit_invalid', 'operator_source_topology_invalid', 'operator_trim_conflict',
   'operator_input_invalid', 'operator_reference_invalid', 'operator_field_conflict', 'operator_geometry_field_conflict',
   'operator_number_array_invalid', 'operator_positive_integer_required', 'operator_positive_number_required',
   'operator_projected_crs_required', 'operator_crs_mismatch', 'operator_crs_invalid', 'operator_geometry_invalid',
@@ -53,6 +53,10 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["intersection", "operator_input_invalid", "input_gdf", ""],
+  ["intersection", "operator_reference_invalid", "gdf_b", ""],
+  ["intersection", "operator_crs_invalid", "", ""],
+  ["intersection", "operator_overlay_fields_conflict", "", ""],
   ["extract_line_nodes", "operator_input_invalid", "input_gdf", ""],
   ["extract_line_nodes", "operator_projected_crs_required", "", ""],
   ["extract_line_nodes", "operator_endpoint_network_invalid", "input_gdf", ""],

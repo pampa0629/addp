@@ -40,6 +40,19 @@ from pyproj import CRS
 from operators.io_operators import load, save
 
 
+def test_intersection_overlay_metadata_requires_both_explicit_sources_and_full_dimensions():
+    spec=next(item for item in list_operators() if item['name']=='intersection')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_gdf','gdf_b','id_field','reference_id_field'}
+    assert all(p['required'] for p in params.values())
+    assert all('default' not in params[name] for name in ('id_field','reference_id_field'))
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['is_default']
+    assert spec['output_ports'][0]['name']=='default' and spec['output_ports'][0]['type']=='geodataframe'
+    assert params['id_field']['type']==params['reference_id_field']['type']=='string'
+    assert 'GeometryCollection' in spec['detailed_description']['overview']
+
+
 def test_progress_reporter_uses_tenant_service_access_token(monkeypatch):
     calls = []
 

@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 31)
+  assert.equal(canonical.length, 35)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -214,6 +214,27 @@ test('line trimming uses closed bilingual input facts and never publishes numeri
   }
 })
 
+
+test('intersection overlay presents closed admissions in both languages without arbitrary fields', () => {
+  for (const locale of ['zh-cn','en']) {
+    const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate=(key,params={})=>key.replace('common.executionFailure.','').split('.').reduce((node,part)=>node[part],messages).replace(/\{(\w+)\}/g,(_,key)=>params[key])
+    const rules=operatorInputRules.filter(([name])=>name==='intersection')
+    assert.equal(rules.length,4)
+    for (const [operator_id,reason,parameter] of rules) {
+      const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,...(parameter?{parameter}:{})}}
+      const got=executionFailurePresentation({diagnostic,message:'PRIVATE field_id source GEOS'},translate)
+      assert.equal(got.operator,locale==='zh-cn'?'相交叠加':'Intersection overlay')
+      assert.ok(got.reason&&got.action&&got.node)
+      assert.doesNotMatch(JSON.stringify(got),/PRIVATE|field_id|GEOS/)
+      if(parameter==='gdf_b')assert.ok(got.parameter.includes('gdf_b'))
+      for (const patch of [{field:'source_id_a'},{field:'PRIVATE_FIELD'},{parameter:'reference_gdf'},{operator_id:'union'}]) {
+        const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}
+        assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
+      }
+    }
+  }
+})
 
 test('node extraction presents all closed input facts bilingually without source data', () => {
   for (const locale of ['zh-cn','en']) {

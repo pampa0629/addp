@@ -241,7 +241,8 @@
         "operator_projected_crs_required": "Both inputs require known projected CRSs with matching finite positive horizontal linear units.",
         "operator_crs_mismatch": "The input projected CRSs differ.",
         "operator_crs_invalid": "Both layers require the same known projected CRS and matching horizontal units.",
-        "operator_geometry_invalid": "The input layer contains geometry that failed the validity check."
+        "operator_geometry_invalid": "The input layer contains geometry that failed the validity check.",
+        "operator_overlay_fields_conflict": "Overlay business fields conflict with each other, fixed source fields or the result geometry column."
       },
       "actions": {
         "operator_endpoint_network_invalid": "Explicitly split intersections and resolve self-intersections or overlaps before extracting nodes; no automatic splitting, deduplication or repair is performed.",
@@ -298,7 +299,8 @@
         "operator_projected_crs_required": "Explicitly reproject both inputs to the same suitable projected CRS before submitting a new execution.",
         "operator_crs_mismatch": "Explicitly align the projected CRSs; equal units alone do not make the CRSs equivalent.",
         "operator_crs_invalid": "Explicitly align both projected CRSs and horizontal units before submitting a new execution.",
-        "operator_geometry_invalid": "Run geometry checks first, explicitly repair confirmed issues, and verify the result meets the operator requirements before submitting a new execution."
+        "operator_geometry_invalid": "Run geometry checks first, explicitly repair confirmed issues, and verify the result meets the operator requirements before submitting a new execution.",
+        "operator_overlay_fields_conflict": "Manually rename conflicting source fields upstream; fields are not suffixed, replaced or discarded automatically."
       },
       "write": "Write column",
       "writeColumn": "Write column {column_index} (declared type: {declared_type})",
@@ -315,7 +317,8 @@
         "batch_buffer": "Multi-distance buffer",
         "distance_to": "Distance calculation",
         "check_line_proximity": "Line proximity check",
-        "extract_polygon_rings": "Extract polygon rings"
+        "extract_polygon_rings": "Extract polygon rings",
+        "intersection": "Intersection overlay"
       },
       "operatorParameters": {
         "max_distance": "Maximum trim path distance (max_distance)",
@@ -323,7 +326,8 @@
         "reference_gdf": "Reference layer (reference_gdf)",
         "distances": "Distances (distances)",
         "resolution": "Arc segments (resolution)",
-        "tolerance": "Tolerance (tolerance)"
+        "tolerance": "Tolerance (tolerance)",
+        "gdf_b": "Input layer B (gdf_b)"
       }
     },
     "executionSteps": {

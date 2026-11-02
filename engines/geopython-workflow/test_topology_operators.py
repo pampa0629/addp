@@ -15,6 +15,270 @@ from operators import get_operator, list_operators
 from workflow_engine import execute_workflow
 
 
+def overlay_inputs(a=None, b=None):
+    a = [box(0, 0, 2, 2)] if a is None else a
+    b = [box(1, 1, 3, 3)] if b is None else b
+    left = gpd.GeoDataFrame({'a_key': pd.Series(range(1, len(a)+1), dtype='Int64')},
+                            geometry=a, crs='EPSG:3857').rename_geometry('source_shape')
+    right = gpd.GeoDataFrame({'b_key': pd.Series(range(11, 11+len(b)), dtype='string')},
+                             geometry=b, crs='EPSG:3857').rename_geometry('reference_shape')
+    return left, right
+
+
+def exact_overlay(a, b):
+    return get_operator('intersection')(a, b, 'a_key', 'b_key')
+
+
+@pytest.mark.parametrize('a,b,expected', [
+    (Point(1,0), Point(1,0), Point(1,0)),
+    (Point(1,0), LineString([(0,0),(2,0)]), Point(1,0)),
+    (Point(1,0), box(0,-1,2,1), Point(1,0)),
+    (LineString([(0,0),(2,0)]), Point(1,0), Point(1,0)),
+    (LineString([(0,0),(2,0)]), LineString([(1,-1),(1,1)]), Point(1,0)),
+    (LineString([(-1,0),(3,0)]), box(0,-1,2,1), LineString([(0,0),(2,0)])),
+    (box(0,-1,2,1), Point(1,0), Point(1,0)),
+    (box(0,-1,2,1), LineString([(-1,0),(3,0)]), LineString([(0,0),(2,0)])),
+    (box(0,0,2,2), box(1,1,3,3), box(1,1,2,2)),
+    (box(0,0,1,1), box(1,0,2,1), LineString([(1,0),(1,1)])),
+    (box(0,0,1,1), box(1,1,2,2), Point(1,1)),
+])
+def test_intersection_overlay_keeps_every_intersection_dimension(a,b,expected):
+    left,right=overlay_inputs([a],[b]);result=exact_overlay(left,right)
+    assert len(result)==1 and result.geometry.iloc[0].equals(expected)
+    assert result.source_id_a.tolist()==[1] and result.source_id_b.tolist()==['11']
+    assert result.geometry.name=='source_shape' and result.crs==left.crs
+
+
+def test_intersection_overlay_geometry_collection_and_multipart_are_one_pair_row():
+    a=shapely.MultiPolygon([box(0,0,2,2),box(4,0,5,1),box(7,0,8,1)])
+    b=shapely.MultiPolygon([box(1,1,3,3),box(5,0,6,1),box(8,1,9,2)])
+    expected=shapely.GeometryCollection([box(1,1,2,2),LineString([(5,0),(5,1)]),Point(8,1)])
+    left,right=overlay_inputs([a],[b]);result=exact_overlay(left,right)
+    assert len(result)==1 and result.geometry.iloc[0].geom_type=='GeometryCollection'
+    assert result.geometry.iloc[0].equals(expected)
+    left,right=overlay_inputs([expected],[box(-1,-1,10,10)])
+    assert exact_overlay(left,right).geometry.iloc[0].equals(expected)
+    left,right=overlay_inputs([shapely.MultiPoint([(0,0),(1,0),(3,0)])],[box(-1,-1,2,1)])
+    assert len(exact_overlay(left,right))==1
+    assert exact_overlay(left,right).geometry.iloc[0].equals(shapely.MultiPoint([(0,0),(1,0)]))
+
+
+def test_intersection_overlay_pairs_keep_original_types_attributes_and_source_order():
+    left,right=overlay_inputs([box(0,0,4,4),box(0,0,4,4)], [Point(3,3),Point(1,1),Point(2,2)])
+    left['a_key']=pd.Series([2**60+1,2**60+3],dtype='Int64')
+    left['grade']=pd.Series([None,2**53+1],dtype='Int64')
+    left['enabled']=pd.Series([None,False],dtype='boolean')
+    left['geometry']=pd.Series(['普通业务',None],dtype='string')
+    right['kind']=pd.Categorical(['c','a','b'])
+    right['note']=pd.Series([None,'甲','乙'],dtype='string')
+    right=right.rename_geometry('geometry')
+    left.index=[9,9];right.index=[4,-2,4]
+    originals=[f.copy(deep=True) for f in (left,right)]
+    result=exact_overlay(left,right)
+    assert list(result.columns)==[*left.columns,*[c for c in right.columns if c!=right.geometry.name],'source_id_a','source_id_b']
+    assert result.source_id_a.tolist()==[2**60+1]*3+[2**60+3]*3
+    assert result.source_id_b.tolist()==['11','12','13']*2
+    assert [tuple(g.coords[0]) for g in result.geometry]==[(3,3),(1,1),(2,2)]*2
+    for name in left.columns:
+        if name!=left.geometry.name:
+            pd.testing.assert_series_equal(result[name],left[name].iloc[[0,0,0,1,1,1]].reset_index(drop=True))
+    for name in right.columns:
+        if name!=right.geometry.name:
+            pd.testing.assert_series_equal(result[name],right[name].iloc[[0,1,2,0,1,2]].reset_index(drop=True))
+    assert result.source_id_a.dtype==left.a_key.dtype and result.source_id_b.dtype==right.b_key.dtype
+    assert result.index.equals(pd.RangeIndex(6))
+    for current,before in zip((left,right),originals):assert_geodataframe_equal(current,before)
+
+
+@pytest.mark.parametrize('empty',['left','right','both','disjoint'])
+def test_intersection_overlay_empty_preserves_full_schema_and_admission(empty):
+    left,right=overlay_inputs()
+    left['flag']=pd.Series([None],dtype='boolean');right['value']=pd.Series([None],dtype='Int64')
+    if empty in ['left','both']:left=left.iloc[:0]
+    if empty in ['right','both']:right=right.iloc[:0]
+    if empty=='disjoint':right[right.geometry.name]=gpd.GeoSeries([Point(99,99)],crs=right.crs)
+    result=exact_overlay(left,right)
+    assert len(result)==0 and result.geometry.name==left.geometry.name and result.crs==left.crs
+    for frame in [left,right]:
+        for name in frame.columns:
+            if name!=frame.geometry.name:assert result[name].dtype==frame[name].dtype
+    assert result.source_id_a.dtype==left.a_key.dtype and result.source_id_b.dtype==right.b_key.dtype
+    right=right.set_crs(None,allow_override=True)
+    with pytest.raises(ValueError):exact_overlay(left,right)
+
+
+def test_intersection_overlay_retains_binary_tiny_nonempty_results():
+    step=2**-20
+    left,right=overlay_inputs([box(0,0,step,step)],[box(0,0,1,1)])
+    assert exact_overlay(left,right).geometry.iloc[0].area==2**-40
+    left,right=overlay_inputs([Point(2**-40,0)],[LineString([(0,0),(1,0)])])
+    assert tuple(exact_overlay(left,right).geometry.iloc[0].coords[0])==(2**-40,0)
+
+
+def test_intersection_overlay_bbox_candidates_are_not_intersections_and_pairs_are_not_deduplicated():
+    hole=Polygon([(0,0),(4,0),(4,4),(0,4),(0,0)],holes=[[(1,1),(2,1),(2,2),(1,2),(1,1)]])
+    left,right=overlay_inputs([hole],[Point(1.5,1.5)])
+    assert len(exact_overlay(left,right))==0
+    left,right=overlay_inputs([box(0,0,1,1)]*2,[box(0,0,1,1)]*2)
+    result=exact_overlay(left,right)
+    assert list(zip(result.source_id_a,result.source_id_b))==[(1,'11'),(1,'12'),(2,'11'),(2,'12')]
+
+
+@pytest.mark.parametrize('side',['a','b'])
+def test_intersection_overlay_explicit_identifiers_cannot_be_duplicates_or_index_fallback(side):
+    left,right=overlay_inputs([Point(0,0),Point(1,0)],[Point(0,0),Point(1,0)])
+    frame=left if side=='a' else right;field='a_key' if side=='a' else 'b_key'
+    frame[field]=[7,7]
+    with pytest.raises(ValueError):exact_overlay(left,right)
+    frame.index.name=field;frame.drop(columns=[field],inplace=True)
+    with pytest.raises(ValueError):exact_overlay(left,right)
+
+
+@pytest.mark.parametrize('bad',[Point(float('inf'),0),Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)])])
+def test_intersection_overlay_invalid_computed_geometry_fails_without_repair(monkeypatch,bad):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    left,right=overlay_inputs();monkeypatch.setattr(shapely,'intersection',lambda *a,**k:bad)
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner().execute({'tasks':[
+        {'id':'overlay','operator':'intersection','params':{'input_gdf':left,'gdf_b':right,'id_field':'a_key','reference_id_field':'b_key'},'depends_on':[]}]})
+    assert caught.value.error_code=='EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('side',['a','b'])
+@pytest.mark.parametrize('problem',['null','empty','invalid','z','m','nonfinite','missing_id','null_id','empty_id','object_id','geometry_id','duplicate_columns','second_geometry'])
+def test_intersection_overlay_rejects_input_without_repair(side,problem):
+    from operators.geometric_operators import IntersectionInputError
+    left,right=overlay_inputs();frame=left if side=='a' else right;field='a_key' if side=='a' else 'b_key'
+    shapes={'null':None,'empty':Point(),'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),
+            'z':shapely.from_wkt('POINT Z (0 0 1)'), 'm':shapely.from_wkt('POINT M (0 0 1)'),
+            'nonfinite':shapely.from_wkt('LINESTRING (0 0,Infinity 1)')}
+    if problem in shapes:frame[frame.geometry.name]=gpd.GeoSeries([shapes[problem]],crs=frame.crs)
+    elif problem=='missing_id':frame.drop(columns=[field],inplace=True)
+    elif problem=='null_id':frame[field]=pd.Series([None],dtype='string')
+    elif problem=='empty_id':frame[field]=[' ']
+    elif problem=='object_id':frame[field]=[{'private':1}]
+    elif problem=='geometry_id':
+        frame[field]=gpd.GeoSeries([Point(0,0)],crs=frame.crs)
+    elif problem=='duplicate_columns':frame.columns=[frame.columns[0]]*len(frame.columns)
+    elif problem=='second_geometry':frame['other_shape']=gpd.GeoSeries([Point(0,0)],crs=frame.crs)
+    with pytest.raises(IntersectionInputError) as caught:exact_overlay(left,right)
+    assert caught.value.code==('source' if side=='a' else 'reference')
+
+
+@pytest.mark.parametrize('side',['a','b'])
+@pytest.mark.parametrize('crs',[None,'EPSG:4326','EPSG:4978','EPSG:2263'])
+def test_intersection_overlay_requires_matching_known_projected_crs(side,crs):
+    from operators.geometric_operators import IntersectionInputError
+    left,right=overlay_inputs();frame=left if side=='a' else right
+    frame.set_crs(crs,allow_override=True,inplace=True)
+    with pytest.raises(IntersectionInputError) as caught:exact_overlay(left,right)
+    assert caught.value.code=='crs'
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:2263'])
+def test_intersection_overlay_semantic_crs_and_original_units_are_preserved(crs):
+    left,right=overlay_inputs();left=left.set_crs(crs,allow_override=True)
+    right=right.set_crs(left.crs.to_wkt(),allow_override=True)
+    result=exact_overlay(left,right)
+    assert result.crs==left.crs and result.geometry.iloc[0].equals(box(1,1,2,2))
+    assert result.geometry.iloc[0].area==1
+
+
+def test_intersection_overlay_unsigned_identifier_is_not_coerced_to_float():
+    left,right=overlay_inputs();left['a_key']=pd.Series([2**64-1],dtype='UInt64')
+    result=exact_overlay(left,right)
+    assert result.source_id_a.dtype==left.a_key.dtype and result.source_id_a.iloc[0]==2**64-1
+
+
+@pytest.mark.parametrize('conflict',['business','result_geometry','a_reserved','b_reserved','geometry_reserved'])
+def test_intersection_overlay_never_suffixes_or_overwrites_conflicts(conflict):
+    from operators.geometric_operators import IntersectionInputError
+    left,right=overlay_inputs()
+    if conflict=='business':right['a_key']=[1]
+    if conflict=='result_geometry':right[left.geometry.name]=['PRIVATE']
+    if conflict=='a_reserved':left['source_id_a']=[1]
+    if conflict=='b_reserved':right['source_id_b']=[1]
+    if conflict=='geometry_reserved':left=left.rename_geometry('source_id_a')
+    with pytest.raises(IntersectionInputError) as caught:exact_overlay(left,right)
+    assert caught.value.code=='fields'
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('problem,reason,parameter',[('source','operator_input_invalid','input_gdf'),
+    ('reference','operator_reference_invalid','gdf_b'),('crs','operator_crs_invalid',''),('fields','operator_overlay_fields_conflict','')])
+def test_intersection_overlay_typed_diagnostic_is_bound_and_contains_no_source_data(language,problem,reason,parameter):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    left,right=overlay_inputs()
+    if problem=='source':left['a_key']=None
+    elif problem=='reference':right['b_key']=None
+    elif problem=='crs':right=right.set_crs(None,allow_override=True)
+    else:right['a_key']=['PRIVATE']
+    task={'id':'PRIVATE_NODE','operator':'intersection','params':{'input_gdf':left,'gdf_b':right,'id_field':'a_key','reference_id_field':'b_key'},'depends_on':[]}
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner(language=language).execute({'tasks':[task]})
+    assert caught.value.error_code=='INVALID_PARAMS'
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+        'operator':{'operator_id':'intersection','node_index':1,**({'parameter':parameter} if parameter else {})}}
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+    assert ('overlay' in str(caught.value).lower() or 'intersection' in str(caught.value).lower()) if language=='en' else '相交叠加' in str(caught.value)
+
+
+def test_intersection_overlay_native_error_is_not_a_parameter_error(monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    def fail(*args,**kwargs):raise shapely.errors.GEOSException('PRIVATE original source')
+    left,right=overlay_inputs();monkeypatch.setattr(shapely,'intersection',fail)
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner().execute({'tasks':[
+        {'id':'overlay','operator':'intersection','params':{'input_gdf':left,'gdf_b':right,'id_field':'a_key','reference_id_field':'b_key'},'depends_on':[]}]})
+    assert caught.value.error_code=='EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+def test_intersection_overlay_mixed_geometries_save_reload_independent_ogr_and_fail_before_save(tmp_path):
+    from osgeo import ogr
+    a=shapely.MultiPolygon([box(0,0,2,2),box(4,0,5,1),box(7,0,8,1)])
+    b=shapely.MultiPolygon([box(1,1,3,3),box(5,0,6,1),box(8,1,9,2)])
+    expected=[shapely.GeometryCollection([box(1,1,2,2),LineString([(5,0),(5,1)]),Point(8,1)]),
+              LineString([(11,0),(11,1)]),Point(20,0),Point(31,0)]
+    left,right=overlay_inputs([a,box(10,0,11,1),Point(20,0),LineString([(30,0),(32,0)])],
+                              [b,box(11,0,12,1),LineString([(20,-1),(20,1)]),Point(31,0)])
+    left['a_key']=pd.Series([2**60+1,2**60+3,2**60+5,2**60+7],dtype='Int64')
+    left['grade']=pd.Series([None,2**53+1,0,-1],dtype='Int64')
+    left['enabled']=pd.Series([None,False,True,False],dtype='boolean')
+    left['geometry']=pd.Series(['普通业务',None,'点','线'],dtype='string')
+    for name,frame in [('a',left),('b',right)]:frame.to_file(tmp_path/(name+'.gpkg'),driver='GPKG',index=False)
+    originals={name:(tmp_path/(name+'.gpkg')).read_bytes() for name in ('a','b')}
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'overlay','operator':'intersection','params':{'input_gdf':{'$ref':'a'},'gdf_b':{'$ref':'b'},'id_field':'a_key','reference_id_field':'b_key'},'depends_on':['a','b']}]
+    tasks += [{'id':name,'operator':'load','params':{'connection_info':conn,'path':name+'.gpkg'},'depends_on':[]} for name in ('a','b')]
+    tasks += [{'id':'save','operator':'save','params':{'input_df':{'$ref':'overlay'},'connection_info':conn,'path':'result.gpkg','mode':'fail'},'depends_on':['overlay']}]
+    result=execute_workflow({'tasks':tasks});assert result['status']=='success',result
+    ds=ogr.Open(str(tmp_path/'result.gpkg'));layer=ds.GetLayer(0);rows=list(layer)
+    assert len(rows)==4 and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    assert layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex('source_id_a')).GetType()==ogr.OFTInteger64
+    assert layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex('enabled')).GetSubType()==ogr.OFSTBoolean
+    for i,row in enumerate(rows):
+        assert row.GetGeometryRef().Normalize().ExportToIsoWkb()==ogr.CreateGeometryFromWkt(expected[i].wkt).Normalize().ExportToIsoWkb()
+        assert row.GetField('source_id_a')==2**60+1+2*i and row.GetField('a_key')==2**60+1+2*i
+        assert row.GetField('source_id_b')==str(11+i)
+        assert row.GetField('grade')==[None,2**53+1,0,-1][i]
+        assert row.GetField('enabled')==[None,False,True,False][i]
+        assert row.GetField('geometry')==['普通业务',None,'点','线'][i]
+    physical_geometry=layer.GetGeometryColumn();assert physical_geometry
+    ds=None
+    loaded=get_operator('load')(connection_info=conn,path='result.gpkg')
+    assert loaded.geometry.name==physical_geometry and len(loaded)==4
+    assert loaded.grade.dtype=='Int64' and loaded.enabled.dtype=='boolean'
+    assert [g.equals(e) for g,e in zip(loaded.geometry,expected)]==[True]*4
+    for name,original in originals.items():assert (tmp_path/(name+'.gpkg')).read_bytes()==original
+    tasks[0]['params']['reference_id_field']='PRIVATE_MISSING'
+    tasks[-1]['params']['path']='forbidden.gpkg'
+    failed=execute_workflow({'tasks':tasks})
+    assert failed['status']=='failed' and failed['error_code']=='INVALID_PARAMS'
+    assert failed['diagnostic']['reason']=='operator_reference_invalid'
+    assert not (tmp_path/'forbidden.gpkg').exists()
+    for name,original in originals.items():assert (tmp_path/(name+'.gpkg')).read_bytes()==original
+
+
 def lines(geometries, crs="EPSG:3857"):
     return gpd.GeoDataFrame(
         {"source_name": [f"line-{i}" for i in range(len(geometries))]},
