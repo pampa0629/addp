@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "7feee9333ca369ab99d4354fc827f5aa5393ac6a",
-      "sha256": "762d8458eb59b2c10a4d5bb623840fde9c96e19ff09ee8bc80261895f75c0f85",
+      "commit": "3307ff4b538c94009629a25f9fa54e11a2c3c389",
+      "sha256": "36add8bc22e3734cf3c2e4594daf6cc49af505d87866fd1f22256a01c5a1ad53",
       "use": {
-        "zh-cn": "任务／执行、预检权限与三态；replace需实例、插件和Provider删除能力，unsupported优先。表头／动态reader复用Describe并保留Meta类型，运行保护核对不扩权。复核continuous／CDC正文归属、提交顺序、恢复与审批扫描、Oracle及验收边界；停止态native创建仍无执行、调度或扫描，encoded执行未建模。",
-        "en": "Task/execution, tri-state precheck and permissions; replace needs instance/plugin delete support and Provider; unsupported wins. Describe preserves Meta types and runtime protection adds no grants. Reviewed continuous/CDC organization, commit ordering, recovery/approval scans, Oracle limits and acceptance boundaries retain stopped native creation: no execution, scheduling or scans; encoded execution remains unmodeled."
+        "zh-cn": "任务／执行、预检权限与三态；replace需实例、插件和Provider删除能力，unsupported优先。Describe保留Meta类型，运行保护核对不扩权。复核已有bounded/continuous Worker分工、格式与raw copy继承差别、CDC扫描及运行策略正文归属；停止态native创建仍无执行、调度或扫描，encoded执行未建模。",
+        "en": "Task/execution, tri-state precheck and permissions; replace needs instance/plugin delete support and Provider; unsupported wins. Describe preserves Meta types and runtime protection adds no grants. Reviewed existing worker split, encoded/raw-copy distinctions, CDC scans and runtime-policy references retain stopped native creation: no execution, schedule or scan; encoded execution remains unmodeled."
       }
     },
     {
@@ -125,11 +125,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-任务语义与同步模式.md",
       "anchor": "## 三、当前支持矩阵",
-      "commit": "43d424f7f6e653957c8cfa31bae4daf8a8f4bcf8",
-      "sha256": "7e637938b4e79a706bf01a7894af04205ca6dec010536979dd1add7835b3500a",
+      "commit": "1c721792592bc21f50ce42cf1e8300ca20ccc0ed",
+      "sha256": "400db0ce69703d67dba2cdc7fd636650183c171a862faa5155038d5094436771",
       "use": {
-        "zh-cn": "支持矩阵区分快照replace/append与增量upsert，写后只扫描目标表；创建仍禁扫描。Oracle目标修订对齐已有continuous/incremental CDC契约，源LOB/RAC与空间限制保留；不扩业务Kafka、watermark或停止态native创建，不将能力声明当运行验收。",
-        "en": "The matrix separates snapshot replace/append from incremental upsert; post-write scans target only and creation disables scans. Oracle targets align with existing continuous/incremental CDC, retaining source LOB/RAC and spatial limits. This does not extend business Kafka, watermark or stopped native creation, nor prove runtime acceptance."
+        "zh-cn": "支持矩阵、bounded语义及快照replace/append与增量upsert区分保持。复核continuous提交、租约恢复、诊断、停止清理与扫描的权威正文引用；Oracle及运行限制保留。写后仅扫目标表，创建仍禁扫描，不扩业务Kafka、watermark或停止态native创建，不把观测或声明当运行验收。",
+        "en": "The matrix, bounded semantics and snapshot replace/append versus incremental upsert remain. Reviewed canonical references for continuous commits, leases/recovery, diagnostics, stop/cleanup and scans preserve Oracle/runtime limits. Post-write scans target only; creation disables scans. No expansion of business Kafka, watermark or stopped native creation, and no runtime proof from observations or declarations."
       }
     },
     {
