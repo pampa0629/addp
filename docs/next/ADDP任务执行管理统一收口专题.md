@@ -990,10 +990,24 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 **仍未闭合。** 第九轮0/7终态保持，完整 Engine 清理链路未验收；第八轮CDC失败的具体原因本轮未复现，删除受理后是否停于 validation、具体Owner及其安全原因亦因旧报告缺失而不能确认。本次补的是有界安全取证，不宣称修复未知产品根因。下一优先项是用户另行确认后，再用此诊断运行一次同身份、同范围、同七断言、同预算的 transfer-engine Hosted；在确认之前不得追加。Graph真实原生写图回包、正向reopen等未验收范围没有新增证据。
 
 
-### 8.33 第十轮 transfer-engine 删除后 validation／execute 新诊断取证（已授权，运行中）
+### 8.33 第十轮 transfer-engine validation 失败实证与 Manager 生命周期读取修正
 
-用户于2026-11-02单独确认再运行一次携带新诊断的 transfer-engine Hosted，定位 Engine 删除受理后 validation／execute 失败原因；保持原六项身份权限、操作范围、七项断言和等待预算不变，按证据修复；其它 Hosted、环境和权限变化仍单独确认。已唯一派发并核对 [Run41379980834／Job125068442244](https://github.com/pampa0629/addp/actions/runs/41379980834/job/125068442244)，workflow_dispatch／attempt1，准确源码 `8da8b979b9c8ad6d8f35292eb75088f9d6a0e8bb`，记录时 in_progress，不计通过。本次单次授权已消费，不自动追加第十一轮。
+用户于2026-11-02单独确认再运行一次携带新诊断的 transfer-engine Hosted，定位 Engine 删除受理后 validation／execute 失败原因；保持原六项身份权限、操作范围、七项断言和等待预算不变，按证据修复；其它 Hosted、环境和权限变化仍单独确认。已唯一派发并核对 [Run41379980834／Job125068442244](https://github.com/pampa0629/addp/actions/runs/41379980834/job/125068442244)，workflow_dispatch／attempt1，准确源码 `8da8b979b9c8ad6d8f35292eb75088f9d6a0e8bb`，已实际 completed/failure。本次单次授权已消费，不自动追加第十一轮。
 
 **已核对前提与边界。** 先 fresh 核验上节独立 Execution runner Job125065338426实际success、准确6487837e7、114＋169和登记一致。待运行版本24项关键输入与该已验源码逐字节一致，契约SHA-256仍为 `b6aa6485a164cb7005b3ab13d696f7f1cac001d02b7726944c15fcdad28b2356`；其后 main 增量仅文档及此场景不消费的 Monitor 本地测试。Infra、三User夹具、proxy、原始业务行探针及标准隔离生命周期不变，共享工作区未提交代码／表格／权限草稿不部署。GitHub预派发只读GET曾遇EOF，在POST前退出、计数仍0；有界重取只读状态成功后只发出一次POST，返回0且定位唯一新Run，未重发业务或Hosted操作。
 
 本轮私有目录 `/tmp/addp-transfer-engine-hosted-tenth-20261102/` 保存 intent、invariants、前提证明、唯一派发及前后Run快照，冻结本版本 canonical validator／契约及五份审计；新Engine诊断审计只接受同一PG Engine、闭集lifecycle／deletion_error／引用状态、完整绑定后的Manager／Transfer安全任务投影，合法样例1项通过、越界／泄露反例6项拒绝。CI会话仅只读跟进唯一Job；终态后主责核对十四服务同SHA、七项实际checks、新validation／execute诊断、控制恢复和零残留。第九轮failure0/7、完整清理未验收及旧CDC原因未复现的缺口在本轮终态前保持。
+
+
+**实际终态和新诊断。** 本轮北京时间10:52:10—11:15:48实际failure，正式checks仍为空、0/7。十四服务同准确8da8b979b、repository_clean=true；控制恢复、control_cleanup、cleanup均passed，infra_cleanup=zero_residuals，仅为控制和退出证据。日志449758字节／SHA-256 `3c0bb0696e0e41fbdea9cbc53b57a986ba27ddd5582df3d2cf83002e3053a7b5`；artifact13113643283／ZIP3305字节，SHA-256 `659bc9f7e1eb5f742bc34313da3f7dc433201e4f44d972763ef29cd129c7d565`。五份冻结审计全部exit0，失败报告继续被canonical validator拒绝。
+
+失败阶段为 `engine_cleanup_validation_read`：Engine仍deleting，`deletion_error=cleanup_scan_incomplete_or_failed`，validation引用存在、execute引用缺失。validation父请求`1b018b66-f636-45d6-94b0-63eda4944d6d`为timeout，请求／Engine／用户／scan／十Owner绑定全true；Manager已开始、attempt1、failed，唯一安全失败步骤`manager_cleanup_inventory`，无回执；Transfer已开始、attempt1、success且成功回执，无授权拒绝／不可用标记。因此已定位到validation复扫、Manager库存核验阶段，而非execute受理或效果；本轮未提供底层HTTP状态，不能据此排除其它库存读／代次核验失败，也不能反推第八轮CDC现场原因。
+
+**已复现的确定缺陷及修正。** Manager的索引Engine核验调用Service Principal `GetEngine`，真实System Handler转入`GetForConnection`并在deleting／deleted时返回409；原测试直接mock返回deleting详情，掩盖用途冲突。已先同步Cleanup／T4规范，再把Manager唯一路径替换为现有 `GetEngineRuntimeDescriptor`；它按原固定Tenant Token和System精确对象可见性核验读取脱敏控制面事实，Manager核对准确ID、生命周期和能力。原Manager Runtime已具有descriptor.read，三User／六权限与角色不变，不新增HTTP接口、不读取列表推断缺失、不开放连接消费，不增加目标、重试或等待。Manager测试按真实旧接口409复现失败，再验证替换通过，并保留403／503、错误ID、未知生命周期、无能力及确认范围变化的阻断。新闭集scan失败阶段`manager_cleanup_engine_facts`与inventory区分，沿原C租约保护的安全step写入，专项runner复用同一闭集观察器。
+
+System真实Handler回归另发现精确缺失被误报400：Repository已将GORM缺失转换为Common `ErrNotFound`，Descriptor Service仍检查原GORM sentinel；仅修正该读取方法按共享错误映射到既有ResourceNotFound／HTTP404，移除该方法的错误检查旧路径。既有接口、权限和Swagger声明未变，无需生成新API或迁移。真正原因是否已全部解释、修正后完整七断言是否通过，仍需另行授权的Hosted验收。
+
+**验证范围。** 标准Manager后端、Manager PostgreSQL、System Go T1及独立Execution runner自动发现已覆盖此次改动，既有Manager/System Go CI、Manager PG和独立Execution runner为受影响门禁；不新增依赖、环境或CI注册。本地Manager后端已通过；System共享工作区全量出现另一会话的未提交engineaccess测试失败，未触碰该WIP，改以已提交源码加本会话改动的临时快照运行同一 `make test-module MODULE=system GO_ONLY=1` 已实际exit0（API等全部包通过）。原生runner首次并行验证出现fixture错误后中止，不计通过；单项代理和Hosted退出fixture复查通过，正串行复验完整标准入口。Manager PG沿已核对的共享PostgreSQL25432／addp_test及标准一次性Meili夹具验证，不创建数据库，不接管个人服务；最终结果后续补记。
+
+
+**本地最终门禁。** `make test-manager-backend`实际exit0；干净源码快照的 `make test-module MODULE=system GO_ONLY=1`实际exit0，包含真实User／Service Principal Handler下active／disabled／deleting／deleted脱敏描述、原连接详情409、跨Tenant403和精确缺失404。`make test-execution-online-ci-runner`完整串行复验exit0：114＋169、登记一致。Manager PG首次共享源码执行为28 PASS／2 FAIL／0 SKIP，原件保留、不计通过；随后通过标准 `bash scripts/test/manager-postgres-gate.sh --source-root <干净源码快照>`，仅排除其他会话未提交代码、保留原addp_test／端口／夹具／断言／预算，完整取得31 PASS／0 FAIL／0 SKIP及exit0，两个先前失败主项也实际通过；不据此给前次失败作未经证明的原因归属。该临时测试源使用当前仓库可核验祖先和本会话改动，八个已改代码／测试文件与工作区逐字节一致，后续main增量仅文档。修正后未运行新的Hosted。四类受影响CI待提交实际终态后登记，聚合工作流不作为本专项通过依据。

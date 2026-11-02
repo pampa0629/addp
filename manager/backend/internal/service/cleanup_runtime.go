@@ -115,6 +115,9 @@ func (s *CleanupService) runCleanupExecution(ctx context.Context, run *cleanup.R
 	if run.Input.Action == events.CleanupActionScan {
 		stage = "manager_cleanup_inventory"
 		index, inventory, err = s.assessCleanupIndex(ctx, run.Input)
+		if errors.Is(err, errCleanupEngineFacts) {
+			stage = "manager_cleanup_engine_facts"
+		}
 	} else {
 		stage = "manager_cleanup_confirmation"
 		index, inventory, err = s.prepareCleanupIndex(ctx, run)
@@ -226,7 +229,7 @@ func (s *CleanupService) runCleanupExecution(ctx context.Context, run *cleanup.R
 // cannot add evidence or alter the original outcome.
 func (s *CleanupService) recordCleanupFailureStage(ctx context.Context, lease execution.Lease, stage string) error {
 	switch stage {
-	case "manager_cleanup_plan", "manager_cleanup_inventory", "manager_cleanup_confirmation", "manager_cleanup_commit", "manager_cleanup_artifact", "manager_cleanup_index_effect", "manager_cleanup_finalize":
+	case "manager_cleanup_plan", "manager_cleanup_inventory", "manager_cleanup_engine_facts", "manager_cleanup_confirmation", "manager_cleanup_commit", "manager_cleanup_artifact", "manager_cleanup_index_effect", "manager_cleanup_finalize":
 	default:
 		return errors.New("invalid Manager cleanup failure stage")
 	}

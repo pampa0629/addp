@@ -546,3 +546,79 @@ func TestSparkMasterRegistrationUsesNativeStateAndLocalizedErrors(t *testing.T) 
 		t.Fatal("invalid legacy config reached native service")
 	}
 }
+
+// Cleanup needs lifecycle facts after deleting has closed connection access.
+// Exercise the real handlers rather than a mock that returns decrypted details
+// for a Service Principal's deleting Engine.
+func TestCleanupEngineLifecycleUsesMaskedDescriptorForServicePrincipal(t *testing.T) {
+	for _, principal := range []string{"user", "service_principal"} {
+		t.Run(principal, func(t *testing.T) {
+			tenant, foreign := uint(3), uint(8)
+			capabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"postgresql","engine_family":"relational","storage":{}}`)
+			rows := []models.Engine{}
+			for i, state := range []string{"active", "disabled", "deleting", "deleted"} {
+				rows = append(rows, models.Engine{ID: uint(i + 1), TenantID: &tenant, Name: "owned", EngineType: "postgresql", LifecycleState: state, Capabilities: &capabilities, ConnectionInfo: models.ConnectionInfo{"password": "private-secret", "host": "private-host"}})
+			}
+			rows = append(rows, models.Engine{ID: 9, TenantID: &foreign, Name: "foreign", EngineType: "postgresql", LifecycleState: "deleting", Capabilities: &capabilities})
+			db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pool, err := db.DB()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer pool.Close()
+			if err := db.AutoMigrate(&models.Engine{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&rows).Error; err != nil {
+				t.Fatal(err)
+			}
+			router := gin.New()
+			router.Use(commoni18n.I18nMiddleware())
+			router.Use(func(c *gin.Context) {
+				actor := testIAMActorContext("tenant")
+				if principal == "service_principal" {
+					actor = testIAMServiceActorContext("tenant", "addp-manager")
+				}
+				if err := sharedauth.SetAuthContextForGin(c, actor); err != nil {
+					t.Fatal(err)
+				}
+				c.Next()
+			})
+			handler := NewEngineHandler(service.NewEngineService(repository.NewEngineRepository(db), nil, nil))
+			router.GET("/engines/:id", handler.GetByID)
+			router.GET("/runtime/engine-descriptors/:id", handler.GetRuntimeDescriptor)
+			for i, state := range []string{"active", "disabled", "deleting", "deleted"} {
+				request := httptest.NewRequest(http.MethodGet, "/runtime/engine-descriptors/"+strconv.Itoa(i+1), nil)
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, request)
+				if response.Code != 200 {
+					t.Fatalf("%s descriptor status=%d", state, response.Code)
+				}
+				if strings.Contains(response.Body.String(), "private-") || strings.Contains(response.Body.String(), "connection_info") {
+					t.Fatal("descriptor exposed connection data")
+				}
+				var descriptor models.EngineRuntimeDescriptor
+				if err := json.Unmarshal(response.Body.Bytes(), &descriptor); err != nil || descriptor.ID != uint(i+1) || descriptor.LifecycleState != state {
+					t.Fatal("descriptor identity/lifecycle differs")
+				}
+				if principal == "service_principal" && (state == "deleting" || state == "deleted") {
+					blocked := httptest.NewRecorder()
+					router.ServeHTTP(blocked, httptest.NewRequest(http.MethodGet, "/engines/"+strconv.Itoa(i+1), nil))
+					if blocked.Code != 409 {
+						t.Fatalf("%s connection detail status=%d", state, blocked.Code)
+					}
+				}
+			}
+			for path, status := range map[string]int{"/runtime/engine-descriptors/9": 403, "/runtime/engine-descriptors/99": 404} {
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+				if response.Code != status {
+					t.Fatalf("descriptor visibility status=%d, want %d", response.Code, status)
+				}
+			}
+		})
+	}
+}

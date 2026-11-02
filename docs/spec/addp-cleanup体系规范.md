@@ -128,6 +128,8 @@ Manager 资源回收执行方只治理 Manager-owned 派生产物和缓存：
 
 Manager 同时独占本域搜索索引中失效 Engine 投影的回收，包括 Meta 记录已消失的残留。不得依据 Meta 节点／任务集合推断索引完整范围；Meta Cleanup 不再调用 Manager 删除索引。Manager scan 必须完整核验本 Tenant 的索引身份与出口代次，分页截断、未决写入、服务不可用和生命周期不明均不得作为零候选成功；execute 只按确认范围执行，未知效果不自动重发，效果前仍复核 Manager 子执行的原用户授权。
 
+核验索引所属 Engine 的生命周期时，Manager 仅复用现有 `GET /api/v1/system/runtime/engine-descriptors/{id}` 脱敏控制面描述，不调用 Service Principal 用于获取解密连接的 Engine 详情。原 Manager Runtime 已具有 `system.engine_descriptor.read`；同 Tenant 边界由该 Runtime 的固定 Tenant Token 与 System 的精确对象可见性裁决共同核验，Manager 另核对返回的 Engine ID。deleting／deleted 不表示可重新取得连接。不存在必须由精确对象 GET 的404证明，不以列表遗漏、403、409或依赖故障推断；未知生命周期或能力仍阻断。该复用不增加接口、角色、用户六权限或清理目标。scan 的 Engine事实读取／身份／能力核验失败归入闭集阶段 `manager_cleanup_engine_facts`，与索引库存读取／稳定代次核验的 `manager_cleanup_inventory` 分开；安全阶段记录不授予任何效果权。
+
 手动 execute 的原 scan 范围包含 Meta 时，必须同时显式包含 Manager；不满足时返回 HTTP 409，并提示使用 Meta＋Manager 重新评估。不创建隐藏子项、不自动扩大范围。Meta-only scan 仍可执行；Engine 删除流程继续沿原完整必选集合。配对本身不证明索引已评估或已清理，必须具有 Manager 的实际候选及效果证据。
 
 Manager 任务定义残留治理规则：

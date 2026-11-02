@@ -181,7 +181,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             expected_modules=S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']),
             module_executions=[dict(module='manager', execution_id=child, parent_execution_id=parent,
                 task_type='cleanup_executor', status='failed', attempt=1, started_at='present')])
-        for stage in ('plan', 'inventory', 'confirmation', 'commit', 'artifact', 'index_effect', 'finalize'):
+        for stage in ('plan', 'inventory', 'engine_facts', 'confirmation', 'commit', 'artifact', 'index_effect', 'finalize'):
             candidate = copy.deepcopy(value); row = candidate['module_executions'][0]
             row.update(current_step='manager_cleanup_'+stage,
                 steps=[dict(id='manager_cleanup_'+stage, status='failed', phase='terminal', error_code='secret')])

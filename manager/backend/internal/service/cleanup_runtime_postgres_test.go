@@ -98,7 +98,7 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 					_ = json.NewEncoder(w).Encode(map[string]any{"results": docs, "total": len(docs), "offset": 0, "limit": 256})
 					return
 				}
-				if r.URL.Path == "/api/v1/system/engines/9" && r.Method == "GET" {
+				if r.URL.Path == "/api/v1/system/runtime/engine-descriptors/9" && r.Method == "GET" {
 					w.WriteHeader(404)
 					return
 				}

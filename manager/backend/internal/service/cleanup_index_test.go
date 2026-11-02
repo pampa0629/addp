@@ -21,7 +21,7 @@ func (cleanupIndexToken) PlatformToken(context.Context) (string, error) {
 }
 
 func TestCleanupIndexScopeUsesExactEngineFactsAndConfirmedInventory(t *testing.T) {
-	for _, mode := range []string{"missing", "deleting", "active", "forbidden", "unavailable", "wrong_identity", "changed_inventory", "changed_engine", "changed_tenant"} {
+	for _, mode := range []string{"missing", "deleting", "disabled", "deleted", "active", "forbidden", "unavailable", "wrong_identity", "unknown_lifecycle", "bad_capabilities", "changed_inventory", "changed_engine", "changed_tenant"} {
 		t.Run(mode, func(t *testing.T) {
 			docID := "orphan-projection"
 			search, db := contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +34,13 @@ func TestCleanupIndexScopeUsesExactEngineFactsAndConfirmedInventory(t *testing.T
 			}))
 			lifecycle := "deleting"
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/api/v1/system/engines/9" || r.Header.Get("Authorization") != "Bearer fixture" {
+				if r.URL.Path == "/api/v1/system/engines/9" {
+					// Real Service Principal detail semantics reject deleting;
+					// Cleanup must never request decrypted connection details.
+					w.WriteHeader(http.StatusConflict)
+					return
+				}
+				if r.URL.Path != "/api/v1/system/runtime/engine-descriptors/9" || r.Header.Get("Authorization") != "Bearer fixture" {
 					t.Error("must read exact Engine with runtime identity")
 					w.WriteHeader(403)
 					return
@@ -49,22 +55,29 @@ func TestCleanupIndexScopeUsesExactEngineFactsAndConfirmedInventory(t *testing.T
 				case "unavailable":
 					w.WriteHeader(503)
 					return
-				case "active":
-					lifecycle = "active"
+				case "active", "disabled", "deleted":
+					lifecycle = mode
+				case "unknown_lifecycle":
+					lifecycle = "unrecognized"
 				}
 				id := 9
 				if mode == "wrong_identity" {
 					id = 10
 				}
-				_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "tenant_id": 7, "lifecycle_state": lifecycle, "capabilities": map[string]any{"schema_version": "engine.capabilities/v1", "engine_type": "test", "engine_family": "test", "storage": map[string]any{}}})
+				capabilities := map[string]any{"schema_version": "engine.capabilities/v1", "engine_type": "test", "engine_family": "test", "storage": map[string]any{}}
+				if mode == "bad_capabilities" {
+					lifecycle = "active"
+					capabilities = nil
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "lifecycle_state": lifecycle, "capabilities": capabilities})
 			}))
 			defer server.Close()
 			svc := &CleanupService{db: db, search: search, systemClient: client.NewSystemServiceClient(server.URL, cleanupIndexToken{}, server.Client())}
 			input := events.CleanupRequest{RequestID: "scan-fixture", TenantID: 7, RequestedBy: 7, Action: events.CleanupActionScan}
 			plan, _, err := svc.assessCleanupIndex(t.Context(), input)
-			if mode == "forbidden" || mode == "unavailable" || mode == "wrong_identity" {
-				if err == nil {
-					t.Fatal("unavailable fact interpreted as missing")
+			if mode == "forbidden" || mode == "unavailable" || mode == "wrong_identity" || mode == "unknown_lifecycle" || mode == "bad_capabilities" {
+				if err == nil || !errors.Is(err, errCleanupEngineFacts) {
+					t.Fatal("unavailable fact interpreted as missing or failure phase lost")
 				}
 				return
 			}

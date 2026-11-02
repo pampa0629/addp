@@ -270,7 +270,7 @@ def engine_task_observation(value, request_id, engine_id, principal, *, action):
             authorization_denied=details.get('code') == 'cleanup_authorization_denied',
             authorization_unavailable=details.get('code') == 'cleanup_authorization_unavailable'))
         step = row.get('current_step')
-        stages = {'manager_cleanup_plan', 'manager_cleanup_inventory', 'manager_cleanup_confirmation',
+        stages = {'manager_cleanup_plan', 'manager_cleanup_inventory', 'manager_cleanup_engine_facts', 'manager_cleanup_confirmation',
                   'manager_cleanup_commit', 'manager_cleanup_artifact', 'manager_cleanup_index_effect', 'manager_cleanup_finalize'}
         steps = row.get('steps')
         if (row['module'] == 'manager' and row.get('status') == 'failed' and row.get('started_at') is not None

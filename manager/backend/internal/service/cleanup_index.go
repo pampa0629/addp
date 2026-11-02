@@ -17,6 +17,8 @@ import (
 	"gorm.io/gorm"
 )
 
+var errCleanupEngineFacts = errors.New("cleanup Engine facts could not be verified")
+
 // assessCleanupIndex discovers Manager's own projection scope, independently of
 // Meta rows. A missing list entry is never evidence that an Engine was deleted.
 func (s *CleanupService) assessCleanupIndex(ctx context.Context, input events.CleanupRequest) (*models.CleanupIndexAssessment, *ContentIndexInventory, error) {
@@ -41,15 +43,17 @@ func (s *CleanupService) assessCleanupIndex(ctx context.Context, input events.Cl
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	invalid := make([]uint, 0, len(ids))
 	for _, id := range ids {
-		engine, err := s.systemClient.WithTenantID(input.TenantID).GetEngine(ctx, id)
+		// System verifies this exact object against the bound Tenant token.
+		// The descriptor intentionally has no connection or Tenant override.
+		engine, err := s.systemClient.WithTenantID(input.TenantID).GetEngineRuntimeDescriptor(ctx, id)
 		if err != nil {
 			if code, ok := commonclient.SystemAPIStatusCode(err); !ok || code != http.StatusNotFound {
-				return nil, nil, err
+				return nil, nil, fmt.Errorf("%w: %w", errCleanupEngineFacts, err)
 			}
 			candidates[id] = true
 		} else {
-			if engine == nil || engine.ID != id || engine.TenantID != nil && *engine.TenantID != input.TenantID {
-				return nil, nil, errors.New("cleanup Engine identity mismatch")
+			if engine == nil || engine.ID != id {
+				return nil, nil, fmt.Errorf("%w: identity mismatch", errCleanupEngineFacts)
 			}
 			switch engine.LifecycleState {
 			case "disabled", "deleting", "deleted":
@@ -57,11 +61,11 @@ func (s *CleanupService) assessCleanupIndex(ctx context.Context, input events.Cl
 			case "active":
 				capabilities, err := selection.ParseCapabilities(engine.Capabilities)
 				if err != nil || capabilities == nil {
-					return nil, nil, fmt.Errorf("cleanup Engine capabilities unavailable")
+					return nil, nil, fmt.Errorf("%w: capabilities unavailable", errCleanupEngineFacts)
 				}
 				candidates[id] = capabilities.Storage == nil
 			default:
-				return nil, nil, fmt.Errorf("cleanup Engine lifecycle unavailable")
+				return nil, nil, fmt.Errorf("%w: lifecycle unavailable", errCleanupEngineFacts)
 			}
 		}
 		if candidates[id] {

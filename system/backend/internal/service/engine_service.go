@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dbbridge"
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
@@ -314,7 +315,7 @@ func (s *EngineService) ListRuntimeDescriptors(
 func (s *EngineService) GetRuntimeDescriptor(id, tenantID uint) (*models.EngineRuntimeDescriptor, error) {
 	engine, err := s.repo.GetByID(id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			return nil, ErrResourceNotFound
 		}
 		return nil, err
