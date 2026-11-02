@@ -930,3 +930,23 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 | AST／差异核验 | 唯一共享解析函数改变；其他顶层定义及生命周期、资源、恢复、清理、Docker调用不变，产品Dockerfile、Make入口与workflow未调整 |
 
 现有Platform调用链及自动登记已覆盖该共享解析器和测试，无需新增入口或CI编排。本轮代码、两份规范及两份证据共6个自有路径保留为未提交／未推送差异；现有Platform product-build每次push还会按baseline构建Agent；本轮只授权确定性门禁，因此不以推送触发实际镜像构建。日志位于`/tmp/addp-p19-apt-transport-{red,directed,trace-runner,http-runner}-20261102.log`。本地门禁通过只证明新增封闭分类，不代表自然Linux新版本已验证、历史APT根因修复或正式身份／API／页面闭环通过；真实构建另行讨论确认。原四秒、资源／请求／清理预算均保持，未执行APT、Docker探针、产品构建、新窗口、Hosted、容量或定时。
+
+
+<a id="http-apt-transport-natural-linux-20261103"></a>
+
+## 2026-11-03 APT连接／正文取证自然Linux通过（仅确定性门禁）
+
+本轮手动读取后续自然push CI，不重跑作业。前述连接／正文环节取证的“未提交／推送”保留为初始交付状态；用户随后授权发布，六个自有路径已提交并推送为`d5a9a3f219d528395f8f4d35560898687f253f83`。该提交及早期后继作业在前置检查退出，未执行runner，历史未运行结论不改写。
+
+本次独立核验[Platform consistency作业125494234191](https://github.com/pampa0629/addp/actions/runs/41508601094/job/125494234191)的完整原始日志，实际checkout为`f1a50c03ad178c6cdbf87d42251a000f5110abee`，自然push／main／attempt 1。作业于北京时间2026-11-03 03:17:51—03:46:33运行；固定Makefile的`test-platform → test-dev-lifecycle → test-infra-runtime-log-lifecycle`顺序与日志中的嵌套子Make边界一致。命令由Make的`@`隐藏，故不以日志没有入口名称推断未执行；以下测试输出、身份结果及子Make成功退出共同确认实际执行。
+
+| 实际标准入口／检查 | 原始输出及范围 |
+| --- | --- |
+| `make test-monitor-http-local-runner` | 03:23:17，37项／2.536秒，`OK`；后续两项JS语法、HTTP Online登记校验和System身份Go子门禁完成，03:24:54退出该子Make |
+| HTTP离线证书T1 | OpenSSL 3.0.13，35条命令／2.427082秒，材料与输出峰值127011字节，4次预期拒绝，`cleanup_removed=true`；仅临时证书检查 |
+| `make test-monitor-traces-local-runner` | 03:24:59，154项／4.845秒，`OK`；包括PublicAPTBuildEvidence中的8项新增transport反例；两项JS语法、Online CI登记及System身份Go子门禁通过，03:25:23退出该子Make |
+| 整个命名作业／workflow | 作业后续其他runner失败，最终failure；本轮不调查或修复，不将本专项通过扩大为Platform整体通过 |
+
+两组runner实现／单元／Online／登记测试共8个Python路径与HTTP页面脚本共9项逐字节比较：发布提交`d5a9a3f21`、实际CI提交`f1a50c03a`及本次工作区均一致，包含新增封闭的连接／正文与端点分类。原始日志505397字节，SHA256=`58fb981a256759f8ed70fecd103f838bbd45044d640b470c7327dcc8992251dc`；日志、收据及9项来源摘要保存在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-trace-natural-20261103-xed4ix9r/`（目录0700、文件0600）。同目录其他作业日志不与本固定提交合并为一次验收。
+
+本次补齐新增APT取证的自然Linux确定性门禁证据，不代表真实APT失败分支已运行、历史Copilot下载根因已定位或修复。正式Agent/Copilot构建后的真实密码／MFA、采集API、Console／Monitor页面、停源、注销与清理闭环仍未验收；停源历史读取仍为另批产品缺口。原四秒及资源预算未变；未改产品、构建策略或守卫，未手动重跑、新开本地窗口、运行Hosted／容量／定时。当前仍为部分实现／部分验收。

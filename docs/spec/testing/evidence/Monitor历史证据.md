@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 17 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 48 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 49 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -800,3 +800,10 @@ Common Python测试改用私有OpenSSL配置及明确CA／叶子约束，同四�
 
 
 固定a5945380c自然Linux Common Python命名作业实际执行完整标准门禁，461通过、1跳过、54子测试通过；源码匹配本地修正，原四项回归已恢复。不将该作业结论扩大到整个workflow、HTTP产品页面或容量。
+
+
+### 2026-11-03 APT连接／正文取证自然Linux通过（正式产品闭环仍未验收）
+
+[完整记录、固定来源及原始日志](MonitorHTTP质量与采样历史证据.md#http-apt-transport-natural-linux-20261103)
+
+取证改动已发布为d5a9a3f21；自然CI固定f1a50c03a实际执行HTTP37项、Trace154项及JS／身份／登记子门禁并通过，9项专项来源与发布版本一致。命名作业后续其他检查失败，不计Platform整体通过；历史APT根因及正式Agent/Copilot身份／API／页面闭环仍未验收，无构建重试或新窗口。
