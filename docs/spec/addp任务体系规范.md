@@ -12,7 +12,7 @@
 | owner 任务类型、Manager / Develop / Graph 与跨模块交接 | [模块任务契约](tasks/模块任务契约.md) |
 | Transfer 的同步维度、bounded / continuous 执行 | [Transfer 同步执行](tasks/Transfer同步执行.md) |
 | 数据库 CDC、捕获位点、结构审批与恢复 | [Transfer 数据库 CDC](tasks/Transfer数据库CDC.md) |
-| 业务 Kafka DLQ、重放与 Kafka 部署基线 | [Transfer Kafka 与 DLQ](tasks/Transfer-Kafka与DLQ.md) |
+| 业务 Kafka DLQ、重放与 Kafka 部署基线 | [DLQ 查询](tasks/Transfer-Kafka与DLQ.md#dlq-公开查询与安全投影)、[availability 治理](tasks/Transfer-Kafka与DLQ.md#dlq-payload-availability-治理)、[bounded replay](tasks/Transfer-Kafka与DLQ.md#bounded-replay-请求与来源)、[部署基线](tasks/Transfer-Kafka与DLQ.md#kafka-与-kafka-connect-部署基线) |
 | 任务发现、标准接口、参数契约与能力声明 | [TaskProvider 接口](tasks/TaskProvider接口.md) |
 | 任务编排、可靠派发、调度和执行边界 | [编排与调度](tasks/编排与调度.md) |
 | 编排参数来源、画布连线与绑定操作示例 | [Orchestrator 执行参数专题](../../orchestrator/docs/参数化模板说明.md)（模块操作说明） |

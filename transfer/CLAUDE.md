@@ -164,9 +164,9 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 #### 业务 Kafka DLQ 与 replay
 
-- DLQ 的确定性记录错误分类和 payload → 控制索引 → 目标 `skip` ledger → Infra CAS 顺序沿[正式契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)，任一步失败不得推进后续 position。查询的 Tenant/task 权限与 payload 安全沿[公开查询与来源隔离](docs/数据库架构.md#dlq-公开查询与来源隔离)；索引读取权不授予原始 payload 访问权。
+- DLQ 的确定性记录错误分类和 payload → 控制索引 → 目标 `skip` ledger → Infra CAS 顺序沿[错误准入](../docs/spec/tasks/Transfer-Kafka与DLQ.md#dlq-错误准入)与[提交顺序](../docs/spec/tasks/Transfer-Kafka与DLQ.md#dlq-提交顺序与崩溃恢复)，任一步失败不得推进后续 position。查询的 Tenant/task 权限与 payload 安全沿[公开查询与来源隔离](docs/数据库架构.md#dlq-公开查询与来源隔离)；索引读取权不授予原始 payload 访问权。
 - availability 由 continuous worker 唯一低频 reconciler 管理，精确引用 CAS、瞬时故障保留状态及 payload 不留副本沿[availability 专题](docs/数据库架构.md#availability-失败与验收边界)；不进入 HTTP 链路或提交 Kafka offset。`payload_available=true` 不等于 replay 已验收，具体证据范围见该专题。
-- replay 的唯一 API、显式 offset ranges、retention 复核与新 PostgreSQL 隔离目标沿[配置专题](docs/transfer-基本概念及配置说明.md#dlq-与-bounded-replay)。它从原业务 topic 读取，使用独立 bounded execution／apply identity，不动主状态、lease、水位或目标；失败不改变主任务或触发 continuous 恢复 circuit，见[独立执行契约](docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)及上述正式契约。查询、availability 与 replay 的验收分别认定。
+- replay 的唯一 API、显式 offset ranges、retention 复核与新 PostgreSQL 隔离目标沿[配置专题](docs/transfer-基本概念及配置说明.md#dlq-与-bounded-replay)。它从原业务 topic 读取，使用独立 bounded execution／apply identity，不动主状态、lease、水位或目标；失败不改变主任务或触发 continuous 恢复 circuit，见[独立执行契约](docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)及[Replay 契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#bounded-replay-执行与目标隔离)。查询、availability 与 replay 的验收分别认定。
 
 #### CDC 捕获与审批
 
@@ -179,7 +179,7 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 - 用户显式删除按当前 Tenant 与 `transfer.task.delete` 独立授权，见[任务定义入口](docs/tables/tasks表.md#用户任务定义与控制)；Engine 生命周期 Cleanup 保留命中的任务定义，供后续重绑定或显式删除，不能按 physical mode 一概删除。Transfer-owned 捕获／DLQ 资源与 Infra 共享资源的所有权、用户目标及审计保留统一见[Cleanup 的 Transfer 职责](../docs/spec/addp-cleanup体系规范.md#transfer)。
 - 删除运行控制状态前须收敛 continuous task 为 desired stopped，并取得所有原 invocation 的实际停止证明；lease 过期、cancel 或进程消失均不构成证明。pending／running bounded 执行阻断清理。外部效果先登记精确目标并复核原用户授权，未知不重发；Runner、持久围栏及验收边界见[Cleanup 执行边界](#cleanup-执行边界)和[正式 Owner 约束](../docs/spec/addp-cleanup体系规范.md#十五已确认决策)。
-- 显式任务删除的 capture → DLQ → 私有状态／定义收口、失败保留及最终事务沿[任务资源契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)和[私有状态与任务删除](docs/transfer-任务语义与同步模式.md#51-私有状态与任务删除)。外部删除失败不得先删索引或任务，公共 execution、目标业务数据及目标 ledger 保留。门禁、真实停止、外部资源与零残留须分别验收，不以 lease 或 API 返回证明清理通过。
+- 显式任务删除的 capture → DLQ → 私有状态／定义收口、失败保留及最终事务沿[任务资源契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#任务资源清理范围与失败保留)、[停止与最终事务](../docs/spec/tasks/Transfer-Kafka与DLQ.md#清理前停止与最终事务)和[私有状态与任务删除](docs/transfer-任务语义与同步模式.md#51-私有状态与任务删除)。外部删除失败不得先删索引或任务，公共 execution、目标业务数据及目标 ledger 保留。门禁、真实停止、外部资源与零残留须分别验收，不以 lease 或 API 返回证明清理通过。
 
 #### 写后扫描触发与范围
 
