@@ -96,6 +96,7 @@ Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Not
 - **[system/CLAUDE.md](../system/CLAUDE.md)** - 数据库连接与认证
 - [共享数据库桥接目录](../common/dbbridge/) - 数据库桥接实现
 - [执行记录保留与清理](CLAUDE.md#5-执行记录清理) - 30 天事件维护、180 天概览目标、只读评估与历史验收边界
+- [任务定义、执行快照与并发缺口](frontend/docs/tables/dev_tasks表.md#25-定义覆盖执行快照与并发缺口) - 当前定义、冻结输入与正式服务端版本的区别
 
 ---
 

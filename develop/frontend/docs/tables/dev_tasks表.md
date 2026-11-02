@@ -137,6 +137,24 @@ DuckDB 是 System 中 `tenant_id=NULL`、`is_builtin=true` 的真实联邦查询
 
 执行 DuckDB 任务时，Develop 根据 `execution_config.engine_id` 解析 Runtime，从 `content.query` 解析所引用的 Source Engine，为本次 execution 签发只读 Execution Authorization；独立 DuckDB Runtime 按 Source Engine 即时消费连接。`execution_config` 只保存 Runtime Engine ID，不得保存 Source Engine ID 列表、连接信息或 Token；每次执行都必须重新解析并授权。
 
+### 2.5 定义覆盖、执行快照与并发缺口
+
+#### 当前定义与执行快照
+
+`dev_tasks` 保存任务的当前定义。普通更新提交非空 `content` 时整体替换该 JSONB 内容，不为每次编辑生成独立定义修订；任务模型和更新 DTO 均没有任务级 `metadata` 字段，不能按旧建议在此前端自建版本。
+
+每次执行把内容、执行配置、超时和有效参数冻结到自己的 `common.task_executions.execution_config`；监督器从该 execution 还原运行输入，不重新读取可变任务定义。该快照固定的是本次输入，不是任务定义的版次或恢复接口，也不替代当前执行授权复核；队列、租约、授权与 Notebook 当前限制沿[执行监督契约](../../../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。
+
+#### 正式并发要求与当前缺口
+
+可变主资源的服务端正整数 `version`、事务校验／递增、`409/resource_version_conflict` 和前端保留草稿要求，以[资源版本与并发更新规范](../../../../docs/spec/api/资源版本与并发更新.md#资源版本与并发更新)为准。并发版本不代表业务版次或历史定义修订。
+
+当前 `DevTask`、更新 DTO 和普通任务更新没有接入该 `version` 契约，普通更新仍调用无版本条件的 `Save`。工作流存储 Engine 重绑只使用本次服务端读取的 `updated_at` 做条件更新，冲突返回其既有 HTTP 409；它只保护该次读取至写入之间的窗口，不校验客户端编辑基线，也不能代表普通更新或全部任务写入已符合版本规范。此处记录实现缺口，不建立规范例外或前端替代路线。
+
+#### 验证与证据边界
+
+标准门禁与分版本结果见[Develop 验证入口](../../../../docs/spec/configuration/执行与模块策略.md#develop-验证入口与证据边界)。执行快照、重绑局部 CAS 或现有门禁通过，不得计为旧版本 409、冲突无副作用、版本迁移或前端草稿保留已验收；这些缺口按正式规范分别验证，不将本节事实说明作为实现已完成的证据。
+
 ---
 
 ## 三、DevType 与 TaskProvider task_type 边界
@@ -213,7 +231,7 @@ DuckDB 是 System 中 `tenant_id=NULL`、`is_builtin=true` 的真实联邦查询
 }
 ```
 
-Develop 校验任务归属、目标 Engine 生命周期和存储能力，并以目标 Engine 的 `storage.catalog_model` 校验全部 Locator type 的路径语义兼容性后，一次原子替换任务中指向 `source_engine_id` 的全部标准 ResourceLocator。响应返回更新后的任务和替换数量；并发修改时返回 `409 Conflict`。
+Develop 校验任务归属、目标 Engine 生命周期和存储能力，并以目标 Engine 的 `storage.catalog_model` 校验全部 Locator type 的路径语义兼容性后，一次原子替换任务中指向 `source_engine_id` 的全部标准 ResourceLocator。响应返回更新后的任务和替换数量；本次服务端读取至写入之间发生并发修改时返回 `409 Conflict`。其时间戳 CAS 与正式 `version` 的差异见[当前并发缺口](#正式并发要求与当前缺口)，不能据此认定通用任务版本契约已接通。
 
 ---
 

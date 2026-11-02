@@ -410,10 +410,9 @@ Develop 不再把“数据库连接账号可以做什么”视为用户授权。
 
 ### 2. 工作流版本管理
 
-工作流定义存储在 `develop.dev_tasks` 表的 `content` 字段（JSONB）：
+工作流当前定义保存在 `develop.dev_tasks.content.workflow_definition`。定义覆盖、执行快照与当前并发缺口统一见[任务表说明](frontend/docs/tables/dev_tasks表.md#25-定义覆盖执行快照与并发缺口)；执行快照只固定本次输入，不构成可浏览、恢复的任务定义修订库。
 
-- 每次修改工作流会覆盖原内容（不保留历史版本）
-- 如需版本管理，可在前端实现版本号逻辑（存储到 `metadata` 字段）
+正式并发 `version` 仍遵循[资源版本规范](../docs/spec/api/资源版本与并发更新.md#资源版本与并发更新)；当前任务定义尚未接入该契约，不能用前端编号、历史 execution 或重绑的局部时间戳 CAS 代替，也不因本文记录现状而豁免规范。
 
 ### 3. GeoPython Workflow 内存管理
 
