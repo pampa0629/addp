@@ -1,5 +1,6 @@
 """ENVI exact pair, ordinary User source rights, COG/cache and owned cleanup."""
 from __future__ import annotations
+import hashlib
 import importlib
 import json
 from pathlib import Path
@@ -13,6 +14,17 @@ MEDIA=importlib.import_module('scripts.test.manager-img-online')
 def require(value,message):
     if not value:raise ValueError(message)
 
+def verify_source_revocation(client,authorization,receipt,model,preview_url):
+    before=client.request('GET',preview_url,(206,),headers={'Range':'bytes=0-63'}).raw
+    require(len(before)==64,'exact cached Range required before withdrawal')
+    authorization.revoke(receipt['request_id'])
+    client.request('GET',preview_url,(403,))
+    renewed=authorization.grant(model)
+    require(renewed['request_id']!=receipt['request_id'] and renewed['boundary_hash']==receipt['boundary_hash'],'reapproval must be a new command for the same exact composition')
+    restored=client.request('GET',preview_url,(206,),headers={'Range':'bytes=0-63'}).raw
+    require(restored==before,'reapproval must preserve the existing cached COG bytes')
+    return renewed,dict(revoked_request_id=receipt['request_id'],renewed_request_id=renewed['request_id'],boundary_hash=renewed['boundary_hash'],range_bytes=64,range_sha256=hashlib.sha256(before).hexdigest())
+
 def run(repository,environment,owner,*,physical_runner=None,browser_runner=None):
     require(environment.get('ADDP_ONLINE_MANAGER_CASE')=='native-envi','independent ENVI case required')
     physical=physical_runner or (lambda action,request=None:FIXTURE.physical(action,repository,environment,request))
@@ -20,7 +32,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     client=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30)
     identity=owner.validate_user_identity(client,tenant)
     issuer=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30)
-    report=dict(schema_version='addp.manager-envi/v1',case='native-envi',run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],result='incomplete',identity=identity,cases=[],cleanup={})
+    report=dict(schema_version='addp.manager-envi/v2',case='native-envi',run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],result='incomplete',identity=identity,cases=[],cleanup={})
     grants=[];fixtures=[];seeded=False;stage='seed'
     timeout=float(environment.get('ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS','180'))
     try:
@@ -28,7 +40,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         for storage,key,prefix in [('minio','ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID',environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']+'/'),('nfs','ADDP_ONLINE_MANAGER_NFS_ENGINE_ID','')]:
             engine=owner.positive_int(environment[key],storage+' Engine')
             stage='scan';owner.wait_for_meta_scan(client,engine,time.monotonic()+timeout,scope={'catalog_paths':[prefix+'envi']})
-            grant=GRANTS.ModelSourceAuthorization(issuer,client,{'tenant_id':tenant,'engine_id':engine,'principal_id':str(identity['principal_id'])},source_type=storage,consumer_permissions=owner.REQUIRED_PERMISSIONS)
+            grant=GRANTS.ModelSourceAuthorization(issuer,client,{'tenant_id':tenant,'engine_id':engine,'principal_id':str(identity['principal_id'])},source_type=storage,consumer_permissions=owner.REQUIRED_PERMISSIONS,issuer_permissions=GRANTS.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
             grants.append(grant)
             for spec in seed['sources']:
                 stage='metadata';name=prefix+'envi/'+spec['name'];header=prefix+'envi/'+spec['header']
@@ -87,10 +99,9 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 owner.generate_raster_cog(client,fixture,tenant,timeout,physical_cog,source_facts=spec)
                 result=client.request('GET',f'/api/v1/manager/raster_cog/{fixture.result_id}',(200,)).payload
                 case.update(task_id=fixture.task_id,execution_id=fixture.execution_id,result_id=fixture.result_id,preview_url=fixture.artifact['preview_url'],artifact=fixture.artifact,result=result)
-                # The same stable source Deny must also stop reads of derived COG.
-                denied=grant.deny(model);client.request('GET',case['preview_url'],(403,));grant.release(denied)
-                client.request('GET',case['preview_url'],(206,),headers={'Range':'bytes=0-63'})
-                case['current_source_deny_verified']=True
+                # Cached bytes remain subject to the current exact source Grant.
+                receipt,withdrawal=verify_source_revocation(client,grant,receipt,model,case['preview_url'])
+                case.update(current_source_revocation_verified=True,source_revocation=withdrawal)
                 if spec['case']=='bsq':
                     stage='cache-source-version'
                     mutation=dict(source_type=storage,case='bsq',changed=True)

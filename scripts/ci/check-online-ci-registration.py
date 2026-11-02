@@ -532,7 +532,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     if ("if case == 'native-envi':" not in netcdf_case_owner
         or 'scripts/test/manager-envi-online_test.py' not in netcdf_make
         or 'test_online_envi_fixture.py' not in netcdf_make
-        or any(value not in envi_owner for value in ('validate_model_bundle','current_source_deny_verified','deleted-cog','grant.cleanup()','manager-envi.json'))):
+        or any(value not in envi_owner for value in ('addp.manager-envi/v2','validate_model_bundle','current_source_revocation_verified','issuer_permissions=GRANTS.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS','deleted-cog','grant.cleanup()','manager-envi.json'))):
         raise RegistrationError('ENVI requires page/download/current authorization/cache/cleanup through standard gates')
     if hosted.index('full|native-raster-media|native-table-orc|native-netcdf|native-envi|kml-export|filegdb-authorization)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Manager acceptance case must reject invalid input before Hosted lifecycle')

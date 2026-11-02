@@ -32,7 +32,7 @@
 
 ## ENVI 精确文件扩展（实施中）
 
-前向迁移扩展同一 `valid_source_file_composition`：ENVI 仅同目录、两个必需文件，主角色 `raster`、另一角色 `header` 且扩展名 `.hdr`。SQL 的唯一 `valid_manager_file_scope` 替换模型专用函数，保留原模型闭合范围，SKP 不开放。pending 触发器按真实 task type 区分 Model3D 和 COG 配置版本与组成；不重建 Grant、EA 或新增权限。验证沿 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test file-composition"`，覆盖 NFS／MinIO 完整批准、旧清单失效、Deny、当前用户与目的隔离；没有实际 Hosted 前不记完成。
+前向迁移扩展同一 `valid_source_file_composition`：ENVI 仅同目录、两个必需文件，主角色 `raster`、另一角色 `header` 且扩展名 `.hdr`。SQL 的唯一 `valid_manager_file_scope` 替换模型专用函数，保留原模型闭合范围，SKP 不开放。pending 触发器按真实 task type 区分 Model3D 和 COG 配置版本与组成；不重建 Grant、EA 或新增权限。验证沿 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test file-composition"`，覆盖 NFS／MinIO 完整批准、旧清单失效、当前 Grant 撤销、当前用户与目的隔离；没有实际 Hosted 前不记完成。
 
 ## 一、事实边界
 
