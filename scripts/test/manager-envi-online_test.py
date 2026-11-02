@@ -2,6 +2,8 @@ import hashlib
 import importlib
 from pathlib import Path
 import unittest
+import tempfile
+import json
 from types import SimpleNamespace
 
 FIXTURE=importlib.import_module('business.scripts.online-envi-fixture')
@@ -66,3 +68,33 @@ class ENVIHostedCaseTest(unittest.TestCase):
         self.assertNotIn('grant.deny(',runner)
         self.assertNotIn('grant.release(',runner)
         self.assertIn('addp.manager-envi/v2',runner)
+
+    def test_infra_failure_diagnostic_is_owned_bounded_and_redacted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env=dict(ADDP_ONLINE_HOSTED='1',GITHUB_ACTIONS='true',RUNNER_OS='Linux',ADDP_ONLINE_MANAGER_CASE='native-envi',ONLINE_SUITE='manager-internal-artifact-lineage',ADDP_ONLINE_ARTIFACT_DIR=directory,INFRA_KAFKA_ADMIN_PASSWORD='private-fixture-password')
+            calls=[]
+            def docker(command,**options):
+                calls.append(command)
+                self.assertEqual(options,dict(capture_output=True,text=True,timeout=5))
+                if command[1]=='container':
+                    data=[{'Config':{'Labels':{'com.docker.compose.project':'addp-infra'},'Env':['DO_NOT_PUBLISH=private-fixture-password']},'State':{'Status':'exited','ExitCode':1,'OOMKilled':False,'Error':'failure private-fixture-password','Health':{'Status':'unhealthy','Log':['DO_NOT_PUBLISH']}}}]
+                    return SimpleNamespace(returncode=0,stdout=json.dumps(data))
+                self.assertEqual(command,['docker','logs','--tail','80','addp-redpanda'])
+                return SimpleNamespace(returncode=0,stdout='x'*10000+'\nboot failure private-fixture-password',stderr='')
+            result=FIXTURE.capture_infra_diagnostic(env,runner=docker)
+            saved=Path(directory,'envi-infra-redpanda.json').read_text()
+            self.assertEqual(json.loads(saved),result)
+            self.assertEqual(result['status'],'captured')
+            self.assertEqual(result['state']['ExitCode'],1)
+            self.assertLessEqual(len(result['log_tail'].encode()),8192)
+            self.assertIn('[REDACTED]',saved)
+            self.assertNotIn('private-fixture-password',saved)
+            self.assertNotIn('DO_NOT_PUBLISH',saved)
+            self.assertEqual(len(calls),2)
+            calls.clear()
+            with self.assertRaises(ValueError):FIXTURE.capture_infra_diagnostic(dict(env,GITHUB_ACTIONS='false'),runner=docker)
+            self.assertEqual(calls,[])
+            def foreign(command,**options):
+                self.assertEqual(command,['docker','container','inspect','addp-redpanda'])
+                return SimpleNamespace(returncode=0,stdout=json.dumps([{'Config':{'Labels':{'com.docker.compose.project':'personal'}}}]))
+            self.assertEqual(FIXTURE.capture_infra_diagnostic(env,runner=foreign)['status'],'not_owned')

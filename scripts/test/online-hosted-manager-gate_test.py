@@ -26,6 +26,10 @@ class HostedManagerGateTest(unittest.TestCase):
             [ "${ADDP_TEST_PROTECTION_WAIT_FAIL:-0}" != 1 ] || exit 1
             previous=''', 1))
         shutil.copy2(SCRIPT, self.host.repository / "scripts/test/online-hosted-manager-gate.sh")
+        fixture=SCRIPT.resolve().parents[2]/'business/scripts/online-envi-fixture.py'
+        target=self.host.repository/'business/scripts/online-envi-fixture.py'
+        target.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(fixture,target)
         self.host._write_repository_script("business/scripts/online-manager-minio-fixture.sh", '''
             #!/usr/bin/env bash
             echo "source-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"

@@ -121,6 +121,36 @@ def worker(request):
         return {'objects_removed':True,'files_removed':True}
     raise ValueError('unknown action')
 
+def capture_infra_diagnostic(environment,*,runner=subprocess.run):
+    # The existing exclusive Hosted lifecycle owns this Compose deployment.
+    require(all(environment.get(k)==v for k,v in {'ADDP_ONLINE_HOSTED':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux','ADDP_ONLINE_MANAGER_CASE':'native-envi','ONLINE_SUITE':'manager-internal-artifact-lineage'}.items()),'exclusive ENVI diagnostic required')
+    artifact=Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])/'envi-infra-redpanda.json'
+    evidence={'schema_version':'addp.manager-envi-infra-diagnostic/v1','container':'addp-redpanda','status':'unavailable'}
+    secrets=[value for key,value in environment.items() if value and re.search(r'password|secret|token|access_key',key,re.I)]
+    def redact(text):
+        for secret in sorted(secrets,key=len,reverse=True):text=text.replace(secret,'[REDACTED]')
+        return text
+    try:
+        inspected=runner(['docker','container','inspect','addp-redpanda'],capture_output=True,text=True,timeout=5)
+        if inspected.returncode:
+            evidence['status']='absent'
+        else:
+            container=json.loads(inspected.stdout)[0]
+            if container.get('Config',{}).get('Labels',{}).get('com.docker.compose.project')!='addp-infra':
+                evidence['status']='not_owned'
+            else:
+                state=container['State']
+                selected={key:state.get(key) for key in ('Status','ExitCode','OOMKilled','Error')}
+                selected['Health']=(state.get('Health') or {}).get('Status')
+                logs=runner(['docker','logs','--tail','80','addp-redpanda'],capture_output=True,text=True,timeout=5)
+                selected={key:redact(value) if isinstance(value,str) else value for key,value in selected.items()}
+                tail=redact(logs.stdout+'\n'+logs.stderr).encode('utf-8')[-8192:].decode('utf-8','ignore')
+                evidence.update(status='captured',state=selected,log_exit_code=logs.returncode,log_tail=tail)
+    except (OSError,ValueError,KeyError,subprocess.SubprocessError) as error:
+        evidence['diagnostic_error']=type(error).__name__
+    artifact.write_text(json.dumps(evidence,indent=2)+'\n')
+    return evidence
+
 def physical(action,repository,environment,request=None):
     require(action in ('seed','verify','delete','cog','deleted-cog','header-layout','header-version'),'unknown physical action')
     require(all(environment.get(k)==v for k,v in {'ADDP_ONLINE_HOSTED':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux','ADDP_ONLINE_MANAGER_CASE':'native-envi'}.items()),'exclusive Hosted ENVI case required')
@@ -136,5 +166,8 @@ def physical(action,repository,environment,request=None):
     return json.loads(result.stdout)
 
 if __name__=='__main__':
-    try:print(json.dumps(worker(json.load(sys.stdin))))
+    try:
+        require(sys.argv[1:] in ([],['--infra-diagnostic']),'unknown ENVI fixture command')
+        result=capture_infra_diagnostic(os.environ) if sys.argv[1:] else worker(json.load(sys.stdin))
+        print(json.dumps({'diagnostic_status':result['status']} if sys.argv[1:] else result))
     except Exception as error:print(json.dumps({'error_code':type(error).__name__}));raise SystemExit(1)
