@@ -11,6 +11,7 @@
 | Owner / Common / Monitor 职责、执行存储与运行时角色 | [执行架构与存储](monitoring/执行架构与存储.md) |
 | 执行状态、生命周期和模块任务类型 | [执行状态与任务类型](monitoring/执行状态与任务类型.md) |
 | 跨模块读取、诊断、租户告警与通知 | [执行诊断与租户告警](monitoring/执行诊断与租户告警.md) |
+| Transfer 专业执行读取、恢复与验收 | [专业响应契约](../spec/tasks/执行监控.md#transfer-专业执行读取与响应)、[Owner 恢复语义](../../transfer/docs/tables/task_executions表.md#五恢复语义)及[实际验收边界](../../transfer/docs/tables/task_executions表.md#验证边界)；专业字段、恢复事实与通用投影分别认定 |
 | 执行统计、趋势与运行指标 | [正式统计契约](../spec/tasks/执行监控.md#执行统计与运行指标)维护 API 分工、聚合口径、权限和验收边界 |
 | 运行日志、操作审计、平台观测及平台告警 | [平台日志与运行观测](monitoring/平台日志与运行观测.md) |
 | Platform 当前能力与剩余范围 | [后续事项能力表](../next/ADDP平台运行监控与可观测性设计.md#一当前实现与剩余工作)；来源、OS 与容器支持见[正式运行环境边界](../spec/addp平台运行观测规范.md#52-部署与运行环境) |
@@ -22,4 +23,5 @@
 - [返回核心概念关系图](addp核心概念关系图.md)
 - [ADDP 任务编排体系图](addp任务编排体系图.md)
 - [ADDP 任务体系规范](../spec/addp任务体系规范.md)
+- [Transfer 模块入口](../../transfer/README.md)：标准门禁、固定版本证据、失败与未覆盖项沿模块导航查阅。
 - [Monitor 模块架构说明](../../monitor/docs/Monitor模块架构说明.md)
