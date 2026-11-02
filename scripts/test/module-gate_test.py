@@ -52,11 +52,24 @@ class ModuleGateTest(unittest.TestCase):
         self.assertEqual(steps[0].command, ('go', 'test', './...'))
         self.assertEqual(steps[0].cwd, repository / 'system/backend')
         self.assertEqual(steps[0].excluded_environment, MODULE.GO_T1_EXCLUDED_ENVIRONMENT)
-        for path in ("'system/*'", "'common/*'", "'Makefile'", "'.github/*'", "'scripts/ci/*'", "'scripts/test/module-gate*'"):
+        for path in ("'system/*'", "'common/*'", "'Makefile'", "'.node-version'", "'.github/*'", "'scripts/ci/*'", "'scripts/test/module-gate*'"):
             self.assertIn(path, block)
-        self.assertEqual(block.count("if: steps.selection.outputs.run == 'true'"), 2)
+        self.assertEqual(block.count("if: steps.selection.outputs.run == 'true'"), 3)
+        self.assertIn('node-version-file: .node-version', block)
         self.assertIn('selected: ${{ steps.selection.outputs.run }}', block)
         self.assertIn('status: ${{ job.status }}', block)
+
+    def test_system_cleanup_declares_its_real_hosted_consumer_inputs(self) -> None:
+        repository = SCRIPT.resolve().parents[2]
+        gate = (repository / 'scripts/test/system-cleanup-gate.sh').read_text()
+        match = re.search(r'(?m)^# ADDP_T2_INPUT_FILES=([^\n]+)$', gate)
+        self.assertIsNotNone(match)
+        declarations = match.group(1).split()
+        for path in ('scripts/test/cleanup-native-effects-online.py',
+                     'scripts/test/execution-online-support.py',
+                     'scripts/test/execution-online-contract.json'):
+            self.assertTrue(MODULE.gate_input_covers(declarations, path))
+            self.assertTrue((repository / path).is_file())
 
     def test_go_only_selects_existing_go_steps_without_t2_preflight(self) -> None:
         steps = MODULE.plan_module(self.repository, "sample", go_only=True)

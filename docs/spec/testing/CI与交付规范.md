@@ -10,7 +10,9 @@ Push 使用事件的 `before...sha`，PR 使用 base 与本次 SHA 的 merge-bas
 
 验证调度修复时，应在相关门禁执行和排队期间追加无关文档提交，再核对前序 Job 继续完成、排队 Job 实际启动，以及文档运行只跳过自身未命中的门禁。
 
-System 的 Go T1 使用 Platform CI 的独立 `System Go CI runner` Job，按System／Common及标准模块入口依赖路径选择，直接复用 `make test-module MODULE=system GO_ONLY=1`；它不依赖Go workspace聚合Job，不启用外部数据库、个人服务或Hosted验收。聚合workspace继续承担全模块依赖及组合测试，其失败保持失败；不能把它在其它owner提前退出解释为System已经执行或通过。独立Job须同时核对selected、标准命令和实际终态。
+System 的 Go T1 使用 Platform CI 的独立 `System Go CI runner` Job，按System／Common及标准模块入口依赖路径选择，直接复用 `make test-module MODULE=system GO_ONLY=1`；因根Make入口仍校验Node版本，按 `.node-version` 准备同一固定Node版本并登记其输入，不绕过前提检查；它不依赖Go workspace聚合Job，不启用外部数据库、个人服务或Hosted验收。聚合workspace继续承担全模块依赖及组合测试，其失败保持失败；不能把它在其它owner提前退出解释为System已经执行或通过。独立Job须同时核对selected、标准命令和实际终态。
+
+System Cleanup PostgreSQL 的公共DTO回归实际调用Hosted的唯一任务观察器。该T2入口通过 `ADDP_T2_INPUT_FILES` 显式登记观察器、共享支持和机器契约等运行时脚本依赖，使脚本变更也命中System门禁；函数改名同步全部真实消费者，不恢复旧别名。
 
 产品镜像构建继续由 `make build-images` 唯一入口负责。构建调度最多同时执行两个任务，基础镜像预热先于任务启动；单路和两路使用同一实现。前端 Node 版本来自根 `.node-version`，仅使用锁文件安装依赖。`make test-platform` 校验这些契约，并验证并发上限、失败汇总、日志隔离及中断时的进程和临时目录清理。现有 Platform CI 产品构建 Job 复用该入口验证实际镜像；Node 版本变更必须通过影响选择命中全部前端镜像，不缩减受影响服务范围。
 

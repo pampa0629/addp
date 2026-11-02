@@ -1001,7 +1001,7 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 **实际终态和新诊断。** 本轮北京时间10:52:10—11:15:48实际failure，正式checks仍为空、0/7。十四服务同准确8da8b979b、repository_clean=true；控制恢复、control_cleanup、cleanup均passed，infra_cleanup=zero_residuals，仅为控制和退出证据。日志449758字节／SHA-256 `3c0bb0696e0e41fbdea9cbc53b57a986ba27ddd5582df3d2cf83002e3053a7b5`；artifact13113643283／ZIP3305字节，SHA-256 `659bc9f7e1eb5f742bc34313da3f7dc433201e4f44d972763ef29cd129c7d565`。五份冻结审计全部exit0，失败报告继续被canonical validator拒绝。
 
-失败阶段为 `engine_cleanup_validation_read`：Engine仍deleting，`deletion_error=cleanup_scan_incomplete_or_failed`，validation引用存在、execute引用缺失。validation父请求`1b018b66-f636-45d6-94b0-63eda4944d6d`为timeout，请求／Engine／用户／scan／十Owner绑定全true；Manager已开始、attempt1、failed，唯一安全失败步骤`manager_cleanup_inventory`，无回执；Transfer已开始、attempt1、success且成功回执，无授权拒绝／不可用标记。因此已定位到validation复扫、Manager库存核验阶段，而非execute受理或效果；本轮未提供底层HTTP状态，不能据此排除其它库存读／代次核验失败，也不能反推第八轮CDC现场原因。
+失败阶段为 `engine_cleanup_validation_read`：Engine仍deleting，`deletion_error=cleanup_scan_incomplete_or_failed`，validation引用存在、execute引用缺失。validation父请求`1b018b66-f636-45d6-94b0-63eda4944d6d`为timeout，请求／Engine／用户／scan／Engine完整七Owner绑定全true；Manager已开始、attempt1、failed，唯一安全失败步骤`manager_cleanup_inventory`，无回执；Transfer已开始、attempt1、success且成功回执，无授权拒绝／不可用标记。因此已定位到validation复扫、Manager库存核验阶段，而非execute受理或效果；本轮未提供底层HTTP状态，不能据此排除其它库存读／代次核验失败，也不能反推第八轮CDC现场原因。
 
 **已复现的确定缺陷及修正。** Manager的索引Engine核验调用Service Principal `GetEngine`，真实System Handler转入`GetForConnection`并在deleting／deleted时返回409；原测试直接mock返回deleting详情，掩盖用途冲突。已先同步Cleanup／T4规范，再把Manager唯一路径替换为现有 `GetEngineRuntimeDescriptor`；它按原固定Tenant Token和System精确对象可见性核验读取脱敏控制面事实，Manager核对准确ID、生命周期和能力。原Manager Runtime已具有descriptor.read，三User／六权限与角色不变，不新增HTTP接口、不读取列表推断缺失、不开放连接消费，不增加目标、重试或等待。Manager测试按真实旧接口409复现失败，再验证替换通过，并保留403／503、错误ID、未知生命周期、无能力及确认范围变化的阻断。新闭集scan失败阶段`manager_cleanup_engine_facts`与inventory区分，沿原C租约保护的安全step写入，专项runner复用同一闭集观察器。
 
@@ -1016,3 +1016,10 @@ System真实Handler回归另发现精确缺失被误报400：Repository已将GOR
 **修正提交与CI接入补齐。** 产品／runner修正 `e7793b65f581b22dab062f45a5682c9301028fb1` 已push main。独立Execution Job125092058597（Run41387687254）实际success，114＋169、selected:true及登记一致；Manager PG Job125092316111（Run41387687238）实际success。Go workspace Job125092058648已实际执行并通过Manager模块，随后在其它owner的来源冻结检查失败而提前退出，System未运行，不计System通过，也不调查／修复该无关缺陷。
 
 为补齐本修复受影响的System Go CI，在既有Platform工作流中加入独立 `System Go CI runner`，复用 `make test-module MODULE=system GO_ONLY=1`，按System／Common及标准入口依赖选择；现有Ubuntu24、Go版本、角色和个人／Hosted运行环境保持，不依赖workspace聚合结果，不跳过或掩盖其失败。单一标准Owner入口和既有自动模块发现继续生效，无新脚本、外部服务或权限。现有模块门禁测试同步验证独立Job、准确Owner、Go-only配置、必需路径与选择／终态汇报；42项实际通过，`make test-workflow-security` exit0，Online CI登记检查exit0。独立System的实际Linux终态待该编排提交后核对。
+
+
+**补齐漏同步的System Cleanup T2消费方。** CI发现648诊断重命名后，`cleanup_durable_postgres_test.go` 的真实公共DTO回归仍调用已删除的 `engine_assessment_observation`，导致AttributeError；已统一到唯一 `engine_task_observation(..., action='scan')`，不恢复别名。标准System Cleanup gate补登该真实消费者及共享支持／机器契约输入，模块门禁增加输入覆盖回归。`make test-system-cleanup`本地实际6个主项全部PASS、无FAIL／SKIP；模块门禁43项及T2登记检查实际通过。此前仅列四类CI的范围不完整，System Cleanup PostgreSQL同样属于本会话必须验证的相关门禁，原失败保留。
+
+新独立System Go Job125097761936已实际failure，失败点为标准Make前提 `check-node-runtime`，尚未执行Go测试；新增Job遗漏了该入口要求的Node准备，已按仓库 `.node-version` 补齐固定版本Node，保留原检查并把版本文件登记为选择输入，不修改个人环境或产品等待预算。新Job再次实际执行前不计通过。
+
+**数量说明校正。** 机器契约及三个受验源码逐项核验：Engine删除必需七Owner，全部Cleanup Runtime为十Owner。文中晚近Engine诊断段落误写“十Owner”的数量已校正，实际runner始终按同一cause契约验证完整集合，机器契约b6aa6485不变，不调整六权限、操作范围或七项业务断言。

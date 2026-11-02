@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_INPUT_FILES=scripts/test/cleanup-native-effects-online.py scripts/test/execution-online-support.py scripts/test/execution-online-contract.json scripts/test/cleanup-execution-online.py scripts/test/manager-internal-artifact-lineage-online.py scripts/test/transfer-continuous-events-online.py scripts/test/ftp-consumer-flow-online.py scripts/test/online-engine-registration.py scripts/test/online-gate.py
 # ADDP_T2_REQUIRED_ENV=ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN
 # Hosted CI: addp_test or *disposable* database; local shared: addp_test only.
 set -euo pipefail

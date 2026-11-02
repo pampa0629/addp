@@ -658,7 +658,7 @@ func TestIntegrationPostgresCleanupPublicScopeSerialization(t *testing.T) {
 import importlib, json, sys
 value = json.load(sys.stdin)
 runner = importlib.import_module('scripts.test.cleanup-native-effects-online')
-observed = runner.engine_assessment_observation(value, value['task_id'], 9, '7')
+observed = runner.engine_task_observation(value, value['task_id'], 9, '7', action='scan')
 assert observed['status'] == 'timeout' and all(observed['bindings'].values())
 assert observed['children_observation'] == 'observed'
 assert [row['module'] for row in observed['children']] == ['manager', 'transfer']
