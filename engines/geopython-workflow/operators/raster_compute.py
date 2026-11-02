@@ -1059,6 +1059,104 @@ def _rasterize_value(value):
     return number
 
 
+_SAMPLE_POINTS_MESSAGES = {
+    'gdf': ('点位栅格采样需要具有活动几何列的GeoDataFrame', 'Raster point sampling requires a GeoDataFrame with an active geometry column'),
+    'geometry': ('点位栅格采样仅接受非空、有效、有限XY的二维Point', 'Raster point sampling requires non-empty valid finite XY two-dimensional Points'),
+    'columns': ('点位栅格采样不允许重复列名或覆盖sample_value／sample_status列', 'Raster point sampling forbids duplicate columns or overwriting sample_value/sample_status'),
+    'crs': ('点位与栅格必须具有相同的明确CRS', 'Points and raster must have the same explicit CRS'),
+    'grid': ('点位栅格采样需要有限可逆的完整仿射网格', 'Raster point sampling requires a complete finite invertible affine grid'),
+    'band': ('点位栅格采样必须显式选择有效的一基数据波段', 'Raster point sampling requires an explicit valid one-based data band'),
+    'alpha': ('点位栅格采样不能选择alpha作为数据波段', 'Raster point sampling cannot select alpha as data'),
+    'complex': ('点位栅格采样不支持所选复数数据或复数alpha', 'Raster point sampling does not support selected complex data or complex alpha'),
+    'numeric': ('有效采样值无法由Float64精确表示', 'A valid sampled value cannot be represented exactly as Float64'),
+}
+
+
+def _sample_points_error(code):
+    return ValueError(_SAMPLE_POINTS_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _sample_point_groups(geometries, width, height, transform):
+    """Invert the stored binary affine exactly; never round across a pixel edge."""
+    origin_x, a, b, origin_y, c, d = map(Fraction, transform)
+    determinant = a*d - b*c
+    if not determinant:
+        raise _sample_points_error('grid')
+    groups = {}
+    for position, point in enumerate(geometries):
+        x, y = Fraction(point.x)-origin_x, Fraction(point.y)-origin_y
+        col, row = (d*x-b*y)/determinant, (a*y-c*x)/determinant
+        if not (0 <= col < width and 0 <= row < height):
+            continue
+        col, row = math.floor(col), math.floor(row)
+        block = (col//512*512, row//512*512)
+        groups.setdefault(block, []).append((position, col-block[0], row-block[1]))
+    return groups
+
+
+def raster_sample_points(input_raster, input_gdf, band):
+    """Keep every source Point; sample its containing cell's unscaled native value."""
+    if not isinstance(input_gdf, gpd.GeoDataFrame):
+        raise _sample_points_error('gdf')
+    try:
+        geometries = input_gdf.geometry
+    except AttributeError as cause:
+        raise _sample_points_error('gdf') from cause
+    if not input_gdf.columns.is_unique or any(name in input_gdf.columns for name in ('sample_value', 'sample_status')):
+        raise _sample_points_error('columns')
+    for point in geometries:
+        if (point is None or point.is_empty or point.geom_type != 'Point' or has_z(point) or has_m(point)
+                or not point.is_valid or not np.isfinite(get_coordinates(point)).all()):
+            raise _sample_points_error('geometry')
+    dataset = _open(input_raster)
+    try:
+        try:
+            if input_gdf.crs is None or not _crs(input_gdf.crs.to_wkt()).IsSame(_crs(dataset.GetProjection())):
+                raise _sample_points_error('crs')
+        except (ValueError, RuntimeError) as cause:
+            raise _sample_points_error('crs') from cause
+        transform = dataset.GetGeoTransform(can_return_null=True)
+        if transform is None or len(transform) != 6 or not all(math.isfinite(value) for value in transform):
+            raise _sample_points_error('grid')
+        if type(band) is not int or not 1 <= band <= dataset.RasterCount:
+            raise _sample_points_error('band')
+        if dataset.GetRasterBand(band).GetColorInterpretation() == gdal.GCI_AlphaBand:
+            raise _sample_points_error('alpha')
+        indices = [band]
+        for index in range(1, dataset.RasterCount+1):
+            candidate = dataset.GetRasterBand(index)
+            if index != band and candidate.GetColorInterpretation() != gdal.GCI_AlphaBand:
+                continue
+            if gdal.DataTypeIsComplex(candidate.DataType):
+                raise _sample_points_error('complex')
+            if index != band:
+                indices.append(index)
+        candidate = None
+        groups = _sample_point_groups(geometries, dataset.RasterXSize, dataset.RasterYSize, transform)
+        values, statuses = [None]*len(geometries), ['outside']*len(geometries)
+        for (x, y), points in sorted(groups.items()):
+            width, height = min(512, dataset.RasterXSize-x), min(512, dataset.RasterYSize-y)
+            for _, _, arrays, masks in _blocks(dataset, indices, window=(x, y, width, height), native=True):
+                valid = masks[0].copy()
+                for alpha, coverage in zip(arrays[1:], masks[1:]):
+                    valid &= coverage & (alpha > 0)
+                for position, col, row in points:
+                    statuses[position] = 'nodata'
+                    if not valid[row, col]:
+                        continue
+                    original = arrays[0][row, col]
+                    number = float(original)
+                    if not math.isfinite(number) or (np.issubdtype(arrays[0].dtype, np.integer) and int(number) != int(original)):
+                        raise _sample_points_error('numeric')
+                    values[position], statuses[position] = number, 'ok'
+        result = input_gdf.copy()
+        result['sample_value'] = pd.array(values, dtype='Float64')
+        result['sample_status'] = pd.array(statuses, dtype='string')
+        return result
+    finally:
+        candidate = dataset = None
+
+
 def _polygon_geometries(input_gdf):
     if not isinstance(input_gdf, gpd.GeoDataFrame):
         raise ValueError('input_gdf must be a GeoDataFrame')
@@ -5612,6 +5710,7 @@ _SPECS = [
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对显式提供；有限非负，缺失权重不补零，与percentile互斥', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；追加权重总和、加权求和与加权均值，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用加权总体标准差，须提供权重；总体分母，全1沿用原stddev，全零为null，原统计保持', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_type', 'str', 'square_pixels为像元方窗，circle_metres为米制圆窗；保留原十二方法，圆窗仅九种非加权方法', 'square_pixels', False, enum=['square_pixels', 'circle_metres']), _param('window_size', 'int', 'square_pixels时必须显式提供以像元为单位的正方形窗口边长3或5；圆窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['square_pixels']}}), _param('radius_metres', 'float', 'circle_metres时必须显式提供有限正米制半径；中心距离等于半径纳入、不设epsilon，候选外接窗口最多5×5；方窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['circle_metres']}}), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）/weighted_stddev（非负矩阵加权总体标准差）/weighted_sum（非负矩阵加权求和；不归一化）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev', 'weighted_sum']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean/weighted_stddev/weighted_sum必填：同窗口3×3或5×5有限非负二维权重，至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean', 'weighted_stddev', 'weighted_sum']}})], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对提供且与percentile互斥；沿原面覆盖，重叠面独立统计，缺失权重不补零', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；有限非负，追加三项加权统计，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用逐面加权总体标准差，须提供权重；全1沿用原stddev，全零null，原统计和重叠面独立规则保持', False, False), _param('include_area_weighted', 'bool', '显式追加覆盖平方米、有效覆盖平方米及面积加权均值；原八列保持，新面积独立于all_touched；与外部权重、百分位及加权标准差互斥', False, False), _param('include_area_weighted_stddev', 'bool', '仅面积模式显式启用总体标准差；正有效面积常量0、无有效面积null，单位沿数值，保留原十一列及重叠独立规则', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
+    (raster_sample_points, OperatorCategory.RASTER_STATISTICS, '点位栅格采样', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同CRS的有效二维Point，保留全部点、几何及属性；新增列冲突拒绝', role='input'), _param('band', 'int', '显式一基数据波段，取所在像元原值；sample_status区分ok／outside／nodata')], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_FLOW, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_direction_d8, OperatorCategory.RASTER_FLOW, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
@@ -5663,6 +5762,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'target_values': [0, 1]})
     if name == 'raster_thin':
         examples.update({'band': 1, 'foreground_value': 1})
+    if name == 'raster_sample_points':
+        examples.update({'input_gdf': {'$ref': 'points'}, 'band': 1})
     if name == 'raster_region_group':
         examples.update({'band': 1, 'connectivity': 4})
     if name == 'raster_sieve':

@@ -18572,3 +18572,250 @@ def test_region_group_native_mixed_type_complex_alpha_rejects_before_output(monk
     monkeypatch.setattr(c,'_numeric_output',lambda *a,**kw:pytest.fail('output before complex alpha admission'))
     with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as caught:c.raster_region_group(object(),1,4)
     assert str(caught.value)==c._REGION_GROUP_MESSAGES['complex'][language=='en']
+
+
+# Independent quadrilateral half-plane oracle: no product inverse or cell grouping.
+def _sample_cell_oracle(point,grid,width,height):
+    from decimal import Decimal,localcontext
+    with localcontext()as context:
+        context.prec=5000;d=Decimal.from_float;gt=list(map(d,grid));px,py=d(point.x),d(point.y)
+        orientation=1 if gt[1]*gt[5]-gt[2]*gt[4]>0 else -1
+        def corner(x,y):return(gt[0]+x*gt[1]+y*gt[2],gt[3]+x*gt[4]+y*gt[5])
+        for row in range(height):
+            for col in range(width):
+                polygon=[corner(col,row),corner(col+1,row),corner(col+1,row+1),corner(col,row+1)]
+                inside=True
+                for edge,(a,b)in enumerate(zip(polygon,polygon[1:]+polygon[:1])):
+                    cross=orientation*((b[0]-a[0])*(py-a[1])-(b[1]-a[1])*(px-a[0]))
+                    if cross<0 or cross==0 and edge in(1,2):inside=False;break
+                if inside:return row,col
+    return None
+
+
+def _sampling_points(coords,crs=4326):
+    import pandas as pd,geopandas as gpd
+    from shapely.geometry import Point
+    n=len(coords)
+    return gpd.GeoDataFrame({'row_id':pd.array(range(n),dtype='Int64'),'label':pd.array(['原始'if i%2 else None for i in range(n)],dtype='string'),
+        'geometry':['unchanged business attribute']*n,'shape':[Point(x,y)for x,y in coords]},geometry='shape',crs=crs,index=[7]*n)
+
+
+@pytest.mark.parametrize('grid',[(0.,1.,0.,3.,0.,-1.),(0.,-2.,0.,0.,0.,3.),(100.,2.,.5,200.,.25,-3.),
+    (0.,0.,2.,0.,3.,0.),(110.,.1,0.,30.,0.,-.2),(1e9,.1,.03,1e9,.02,-.1)])
+@pytest.mark.parametrize('crs',[4326,3857])
+def test_sample_points_complete_independent_halfplanes_edges_rotation_and_original_properties(tmp_path,grid,crs):
+    import pandas as pd,geopandas as gpd,operators.raster_compute as c
+    from fractions import Fraction as Q
+    values=np.arange(12,dtype=float).reshape(3,4)-4;source=create_raster(tmp_path/'cells.tif',values,grid,'EPSG:'+str(crs));before=source.read_bytes()
+    coordinates=[]
+    for row in(-.5,0.,.5,1.,1.5,2.5,3.):
+        for col in(-.5,0.,.5,1.,3.5,4.):
+            coordinates.append((float(Q(grid[0])+Q(col)*Q(grid[1])+Q(row)*Q(grid[2])),float(Q(grid[3])+Q(col)*Q(grid[4])+Q(row)*Q(grid[5]))))
+    points=_sampling_points(coordinates,crs);original=points.copy(deep=True)
+    with raster_workspace():result=c.raster_sample_points(raster_load(source_plan(source)),points,1)
+    assert len(result)==len(points)and result.index.equals(points.index)and result.geometry.name=='shape'and result.crs==points.crs
+    pd.testing.assert_frame_equal(result[points.columns],original,check_exact=True);pd.testing.assert_frame_equal(points,original,check_exact=True)
+    assert result.columns.tolist()==points.columns.tolist()+['sample_value','sample_status']
+    assert result.dtypes.iloc[-2:].astype(str).tolist()==['Float64','string']
+    for i,point in enumerate(points.geometry):
+        cell=_sample_cell_oracle(point,grid,4,3)
+        assert result.sample_status.iloc[i]==('outside'if cell is None else'ok')
+        assert pd.isna(result.sample_value.iloc[i])if cell is None else result.sample_value.iloc[i]==values[cell]
+    assert source.read_bytes()==before
+
+
+def test_sample_points_internal_and_external_boundaries_one_ulp_no_epsilon(tmp_path):
+    import pandas as pd,operators.raster_compute as c
+    source=create_raster(tmp_path/'edge.tif',np.array([[0.,-2.,8.],[3.,4.,5.]]),(0,1,0,2,0,-1))
+    coords=[(0,2),(1,2),(0,1),(3,2),(0,0),(np.nextafter(0.,-np.inf),1.5),(np.nextafter(3.,-np.inf),1.5),
+        (np.nextafter(1.,-np.inf),1.5),(np.nextafter(1.,np.inf),1.5),(1.5,np.nextafter(1.,np.inf)),(1.5,np.nextafter(1.,-np.inf))]
+    with raster_workspace():result=c.raster_sample_points(raster_load(source_plan(source)),_sampling_points(coords),1)
+    assert result.sample_status.tolist()==['ok','ok','ok','outside','outside','outside','ok','ok','ok','ok','ok']
+    expected=[0.,-2.,3.,None,None,None,8.,0.,-2.,-2.,4.]
+    for actual,wanted in zip(result.sample_value,expected):assert pd.isna(actual)if wanted is None else actual==wanted
+
+
+def test_sample_points_native_band_mask_alpha_nodata_nonfinite_and_unscaled_values(tmp_path,monkeypatch):
+    import pandas as pd,operators.raster_compute as c
+    values=np.array([[0.,-2.5,-9999.,np.nan,np.inf,6.,7.,8.,9.,10.]])
+    alpha=np.array([[128.,255,255,255,255,0,np.nan,-1,255,255]])
+    source=create_raster(tmp_path/'coverage.tif',np.stack([np.full(values.shape,.25),values,alpha]),(0,1,0,1,0,-1))
+    ds=gdal.Open(str(source),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(2).SetScale(17);ds.GetRasterBand(2).SetOffset(99)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    mask=np.full(values.shape,255,np.uint8);mask[0,8]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None;before=source.read_bytes()
+    with raster_workspace():actual=c.raster_sample_points(raster_load(source_plan(source)),_sampling_points([(i+.5,.5)for i in range(10)]),2)
+    assert actual.sample_status.tolist()==['ok','ok']+['nodata']*7+['ok']
+    assert actual.sample_value.iloc[0]==0 and actual.sample_value.iloc[1]==-2.5 and actual.sample_value.iloc[9]==10
+    assert actual.sample_value.iloc[2:9].isna().all()and source.read_bytes()==before
+
+
+def test_sample_points_selected_band_independent_masks_and_positive_alpha_nodata(monkeypatch):
+    import operators.raster_compute as c
+    ds=gdal.GetDriverByName('MEM').Create('',4,1,3,gdal.GDT_Float64);ds.SetGeoTransform((0,1,0,1,0,-1));ds.SetProjection(_sampling_points([]).crs.to_wkt())
+    ds.GetRasterBand(1).Fill(.25);ds.GetRasterBand(1).CreateMaskBand(0);ds.GetRasterBand(1).GetMaskBand().Fill(0)
+    ds.GetRasterBand(2).WriteArray(np.array([[0.,-7.,2.,3.]]));ds.GetRasterBand(2).CreateMaskBand(0);ds.GetRasterBand(2).GetMaskBand().Fill(255)
+    ds.GetRasterBand(3).WriteArray(np.array([[128.,99.,255.,0.]]));ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(3).SetNoDataValue(99.)
+    monkeypatch.setattr(c,'_open',lambda token:ds)
+    actual=c.raster_sample_points(object(),_sampling_points([(i+.5,.5)for i in range(4)]),2)
+    assert actual.sample_status.tolist()==['ok','nodata','ok','nodata']and actual.sample_value.iloc[0]==0 and actual.sample_value.iloc[2]==2
+
+
+@pytest.mark.parametrize('dtype,nodata,exact,bad',[(gdal.GDT_Int64,2**63-1,2**63-1024,2**63-2),(gdal.GDT_UInt64,2**64-1,2**64-2048,2**64-2)])
+def test_sample_points_native_64_nodata_adjacent_precision_and_unhit_values(tmp_path,dtype,nodata,exact,bad):
+    import pandas as pd,operators.raster_compute as c
+    source=tmp_path/'native64.tif';ds=gdal.GetDriverByName('GTiff').Create(str(source),3,1,1,dtype);ds.SetGeoTransform((0,1,0,1,0,-1));ds.SetProjection(_sampling_points([]).crs.to_wkt());band=ds.GetRasterBand(1)
+    band.WriteArray(np.array([[nodata,exact,bad]],dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64));(band.SetNoDataValueAsInt64 if dtype==gdal.GDT_Int64 else band.SetNoDataValueAsUInt64)(nodata);band=ds=None;before=source.read_bytes()
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));result=c.raster_sample_points(loaded,_sampling_points([(.5,.5),(1.5,.5),(4.,4.)]),1)
+        assert result.sample_status.tolist()==['nodata','ok','outside']and pd.isna(result.sample_value.iloc[0])and int(result.sample_value.iloc[1])==exact
+        for language in('zh-cn','en'):
+            with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_sample_points(loaded,_sampling_points([(2.5,.5)]),1)
+            assert str(error.value)==c._SAMPLE_POINTS_MESSAGES['numeric'][language=='en']
+    assert source.read_bytes()==before
+
+
+@pytest.mark.parametrize('value,accepted',[(2**53,True),(2**53+1,False),(2**53+2,True),(-2**53,True),(-2**53-1,False),(-2**53-2,True)])
+def test_sample_points_exact_integer_roundtrip_not_blanket_safe_range(tmp_path,value,accepted):
+    import operators.raster_compute as c
+    source=tmp_path/'integer.tif';ds=gdal.GetDriverByName('GTiff').Create(str(source),1,1,1,gdal.GDT_Int64);ds.SetProjection(_sampling_points([]).crs.to_wkt());ds.SetGeoTransform((0,1,0,1,0,-1));ds.GetRasterBand(1).WriteArray(np.array([[value]],np.int64));ds=None
+    with raster_workspace():
+        loaded=raster_load(source_plan(source))
+        if accepted:assert int(c.raster_sample_points(loaded,_sampling_points([(.5,.5)]),1).sample_value.iloc[0])==value
+        else:
+            with pytest.raises(ValueError,match='Float64'):c.raster_sample_points(loaded,_sampling_points([(.5,.5)]),1)
+
+
+def test_sample_points_float_extremes_and_empty_or_outside_never_read_pixels(tmp_path,monkeypatch):
+    import operators.raster_compute as c
+    source=create_raster(tmp_path/'extreme.tif',np.array([[np.nextafter(0.,1.),np.finfo(float).max,-np.finfo(float).max]]),(0,1,0,1,0,-1))
+    ds=gdal.Open(str(source),gdal.GA_Update);ds.GetRasterBand(1).DeleteNoDataValue();ds=None
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));actual=c.raster_sample_points(loaded,_sampling_points([(.5,.5),(1.5,.5),(2.5,.5)]),1)
+        np.testing.assert_array_equal(actual.sample_value.to_numpy(float),[np.nextafter(0.,1.),np.finfo(float).max,-np.finfo(float).max])
+        monkeypatch.setattr(c,'_blocks',lambda *a,**kw:pytest.fail('outside or empty requested pixels'))
+        for points in(_sampling_points([]),_sampling_points([(-1.,0.),(3.,0.)])):
+            result=c.raster_sample_points(loaded,points,1);assert len(result)==len(points)and result.sample_value.isna().all()
+            assert result.sample_status.tolist()==['outside']*len(points)and result.dtypes.iloc[-2:].astype(str).tolist()==['Float64','string']
+
+
+def test_sample_points_sparse_block_groups_bounded_native_reads_and_duplicate_index(tmp_path,monkeypatch):
+    import operators.raster_compute as c
+    values=np.arange(515*1030,dtype=float).reshape(515,1030);source=create_raster(tmp_path/'blocks.tif',np.stack([np.full(values.shape,np.nan),values]),(0,1,0,0,0,1));before=source.read_bytes()
+    coords=[(.5,.5),(512.5,512.5),(1029.5,514.5),(512.5,512.5),(-1.,0.)];points=_sampling_points(coords);calls=[];original=c._blocks
+    def observe(ds,indices,**kw):
+        assert indices==[2]and kw['native']is True;calls.append(kw['window'])
+        for block in original(ds,indices,**kw):assert block[2][0].shape[0]<=512 and block[2][0].shape[1]<=512;yield block
+    monkeypatch.setattr(c,'_blocks',observe)
+    with raster_workspace():result=c.raster_sample_points(raster_load(source_plan(source)),points,2)
+    assert calls==[(0,0,512,512),(512,512,512,3),(1024,512,6,3)]
+    assert result.sample_value.iloc[:4].tolist()==[values[0,0],values[512,512],values[514,1029],values[512,512]]and result.sample_status.iloc[-1]=='outside'
+    assert result.index.tolist()==[7]*5 and source.read_bytes()==before
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('fault',['not-gdf','no-active','none','empty-geometry','multipoint','line','polygon','z','m','nonfinite','duplicate','value-column','status-column','geometry-column','point-crs','other-crs','raster-crs','grid-missing','grid-singular','grid-nonfinite','band-zero','band-high','band-bool','band-string','band-null','band-float','alpha','complex','complex-alpha'])
+def test_sample_points_exact_bilingual_admission_no_mutation_or_private_result(tmp_path,monkeypatch,language,fault):
+    import pandas as pd,geopandas as gpd,operators.raster_compute as c
+    from shapely import from_wkt
+    from shapely.geometry import Point,MultiPoint,LineString,Polygon
+    points=_sampling_points([(.5,.5)]);ds=gdal.GetDriverByName('MEM').Create('',2,2,2,gdal.GDT_Float64);ds.SetGeoTransform((0,1,0,1,0,-1));ds.SetProjection(points.crs.to_wkt());ds.GetRasterBand(1).Fill(1.);band=1;code='geometry'
+    if fault=='not-gdf':points=pd.DataFrame({'x':[1]});code='gdf'
+    elif fault=='no-active':points=gpd.GeoDataFrame({'x':[1]});code='gdf'
+    elif fault in('none','empty-geometry','multipoint','line','polygon','z','m','nonfinite'):
+        geometry={'none':None,'empty-geometry':Point(),'multipoint':MultiPoint([(0,0),(1,1)]),'line':LineString([(0,0),(1,1)]),'polygon':Polygon([(0,0),(1,0),(0,1)]),'z':Point(0,0,1),'m':from_wkt('POINT M (0 0 1)'),'nonfinite':Point(np.inf,0)}[fault];points.geometry=[geometry]
+    elif fault in('duplicate','value-column','status-column','geometry-column'):
+        code='columns'
+        if fault=='duplicate':points.columns=['row_id','row_id','geometry','shape']
+        elif fault=='geometry-column':points=points.rename_geometry('sample_value')
+        else:points['sample_value'if fault=='value-column'else'sample_status']=0
+    elif fault in('point-crs','other-crs','raster-crs'):
+        code='crs'
+        if fault=='raster-crs':ds.SetProjection('')
+        else:points=points.set_crs(None if fault=='point-crs'else 3857,allow_override=True)
+    elif fault.startswith('grid-'):
+        code='grid'
+        if fault=='grid-missing':ds=gdal.GetDriverByName('MEM').Create('',2,2,1);ds.SetProjection(points.crs.to_wkt())
+        else:ds.SetGeoTransform((0,1,2,0,2,4)if fault=='grid-singular'else(0,np.nan,0,0,0,-1))
+    elif fault.startswith('band-'):code='band';band={'band-zero':0,'band-high':3,'band-bool':True,'band-string':'1','band-null':None,'band-float':1.}[fault]
+    elif fault=='alpha':code='alpha';ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+    else:
+        code='complex';ds=gdal.GetDriverByName('MEM').Create('',2,2,0);ds.SetGeoTransform((0,1,0,1,0,-1));ds.SetProjection(points.crs.to_wkt());ds.AddBand(gdal.GDT_CFloat64 if fault=='complex'else gdal.GDT_Float64);ds.AddBand(gdal.GDT_CFloat64);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    original=points.copy(deep=True);monkeypatch.setattr(c,'_open',lambda token:ds);monkeypatch.setattr(c,'_blocks',lambda *a,**kw:pytest.fail('read before admission'))
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:c.raster_sample_points(object(),points,band)
+    assert str(error.value)==c._SAMPLE_POINTS_MESSAGES[code][language=='en'];pd.testing.assert_frame_equal(points,original,check_exact=True)
+
+
+@pytest.mark.parametrize('grid',[(0.,1e-200,0.,0.,0.,1e-200),(0.,1e200,0.,0.,0.,1e200)])
+def test_sample_points_exact_affine_does_not_depend_on_float_determinant_range(monkeypatch,grid):
+    import operators.raster_compute as c
+    points=_sampling_points([(grid[1]/2,grid[5]/2)]);ds=gdal.GetDriverByName('MEM').Create('',1,1,1,gdal.GDT_Float64);ds.SetGeoTransform(grid);ds.SetProjection(points.crs.to_wkt());ds.GetRasterBand(1).Fill(7)
+    monkeypatch.setattr(c,'_open',lambda token:ds)
+    assert c.raster_sample_points(object(),points,1).sample_value.tolist()==[7.]
+
+
+@pytest.mark.parametrize('case',['direct','nodata','outside','empty','band','collision','numeric','read-failure','save-existing'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_sample_points_async_geopackage_complete_properties_status_language_and_cleanup(tmp_path,monkeypatch,case,language):
+    import pandas as pd,geopandas as gpd,api_server,workflow_engine,operators.raster_compute as c
+    values=np.array([[0.,-2.,-9999.],[3.,4.,5.]]);source=create_raster(tmp_path/'source.tif',values,(0,1,0,2,0,-1),'EPSG:3857');before=source.read_bytes();target=tmp_path/'samples.gpkg';prior=tmp_path/'prior.gpkg';prior.write_bytes(b'previous unchanged')
+    if case=='numeric':
+        ds=gdal.GetDriverByName('GTiff').Create(str(source),3,2,1,gdal.GDT_Int64);ds.SetGeoTransform((0,1,0,2,0,-1));ds.SetProjection(_sampling_points([],3857).crs.to_wkt());ds.GetRasterBand(1).WriteArray(np.full((2,3),2**53+1,np.int64));ds=None;before=source.read_bytes()
+    coordinates=[(.5,1.5),(1.5,1.5),(2.5,1.5),(3.,1.5)]
+    if case=='nodata':coordinates=[(2.5,1.5)]
+    if case=='outside':coordinates=[(3.,1.5)]
+    if case=='empty':coordinates=[]
+    points=_sampling_points(coordinates,3857);properties=[{'row_id':i,'label':'保留'+str(i),**({'sample_status':'old'}if case=='collision'else{})}for i in range(len(points))]
+    if case=='save-existing':target.write_bytes(b'existing target')
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
+        {'id':'points','operator':'load_from_wkt','depends_on':[],'params':{'wkt_list':[g.wkt for g in points.geometry],'properties':properties,'crs':'EPSG:3857'}},
+        {'id':'sample','operator':'raster_sample_points','depends_on':['source','points'],'params':{'input_raster':{'$ref':'source'},'input_gdf':{'$ref':'points'},'band':99 if case=='band'else 1}},
+        {'id':'save','operator':'save','depends_on':['sample'],'params':{'input_df':{'$ref':'sample'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}]
+    workspaces=[];original=workflow_engine._execute_operator
+    def track(name,params):
+        if name=='raster_sample_points':workspaces.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',track)
+    if case=='read-failure':
+        def fail(*args,**kwargs):raise RuntimeError('injected sampling read failure')
+        monkeypatch.setattr(c,'_blocks',fail)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    success=case in('direct','nodata','outside','empty');assert status['status']==('success'if success else'failed'),status
+    assert workspaces and all(not p.exists()for p in workspaces)and source.read_bytes()==before and prior.read_bytes()==b'previous unchanged'
+    if success:
+        saved=gpd.read_file(target);assert len(saved)==len(points)and saved.crs.to_epsg()==3857 and target.stat().st_size>0
+        assert saved.sample_status.tolist()==({'direct':['ok','ok','nodata','outside'],'nodata':['nodata'],'outside':['outside'],'empty':[]}[case])
+        for i,row in saved.iterrows():
+            assert row.geometry.equals_exact(points.geometry.iloc[i],0)and row.row_id==i and row.label=='保留'+str(i)
+            assert pd.isna(row.sample_value)if row.sample_status!='ok'else row.sample_value==values[0,i]
+        ds=ogr.Open(str(target));fields=ds.GetLayer(0).GetLayerDefn();assert fields.GetFieldDefn(fields.GetFieldIndex('sample_value')).GetType()==ogr.OFTReal and fields.GetFieldDefn(fields.GetFieldIndex('sample_status')).GetType()==ogr.OFTString;ds=None
+        preview=json.loads(status['all_results']['sample']);assert len(preview['features'])==len(points)
+        for feature,row in zip(preview['features'],saved.itertuples()):
+            props=feature['properties'];assert props['sample_status']==row.sample_status
+            assert props['sample_value']is None if pd.isna(row.sample_value)else props['sample_value']==row.sample_value
+    elif case=='save-existing':assert target.read_bytes()==b'existing target'
+    else:
+        assert not target.exists();cause='injected sampling read failure'if case=='read-failure'else c._SAMPLE_POINTS_MESSAGES[{'band':'band','collision':'columns','numeric':'numeric'}[case]][language=='en']
+        assert status['error']=='任务 sample 执行失败: '+cause
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    assert client.post('/api/operators/raster_sample_points/invoke',json={'params':{}}).status_code==403
+
+
+@pytest.mark.parametrize('stage',['groups','read','output'])
+def test_sample_points_kernel_failures_preserve_inputs_previous_results_and_workspace(tmp_path,monkeypatch,stage):
+    import pandas as pd,operators.raster_compute as c
+    points=_sampling_points([(.5,.5)]);original=points.copy(deep=True);source=create_raster(tmp_path/'input.tif',np.ones((2,2)),(0,1,0,1,0,-1));before=source.read_bytes();previous=tmp_path/'previous.gpkg';previous.write_bytes(b'old original result')
+    def fail(*a,**kw):raise RuntimeError('injected sampling '+stage)
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));prior=set(loaded.workspace.iterdir())
+        with monkeypatch.context()as patch:
+            if stage=='output':patch.setattr(c.pd,'array',fail)
+            else:patch.setattr(c,'_sample_point_groups'if stage=='groups'else'_blocks',fail)
+            with pytest.raises(RuntimeError,match='injected sampling '+stage):c.raster_sample_points(loaded,points,1)
+        assert set(loaded.workspace.iterdir())==prior
+    assert source.read_bytes()==before and previous.read_bytes()==b'old original result'
+    pd.testing.assert_frame_equal(points,original,check_exact=True)

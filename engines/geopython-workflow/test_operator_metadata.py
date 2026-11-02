@@ -1101,7 +1101,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "汇水分析"), "raster_drainage_basins_d8 raster_snap_pour_points raster_watershed_d8 raster_subcatchments_d8"),
         (("栅格处理", "河网分析"), "raster_stream_order_d8 raster_stream_link_d8 raster_stream_to_vector_d8 raster_distance_to_stream_d8 raster_hand_d8"),
         (("栅格处理", "格式转换"), "raster_polygonize vector_rasterize"),
-        (("栅格处理", "栅格统计"), "raster_statistics raster_cut_fill raster_surface_area raster_zonal_statistics raster_focal_statistics raster_vector_zonal_statistics raster_recommend_band_combination raster_histogram"),
+        (("栅格处理", "栅格统计"), "raster_statistics raster_cut_fill raster_surface_area raster_zonal_statistics raster_focal_statistics raster_vector_zonal_statistics raster_sample_points raster_recommend_band_combination raster_histogram"),
         (("栅格处理", "栅格检查"), "raster_info validate_cog"),
         (("栅格处理", "成果生成"), "raster_to_cog raster_build_overviews build_raster_mosaic"),
     ]
@@ -1604,3 +1604,17 @@ def test_region_group_single_workflow_entry_explicit_params_example_and_shared_c
     source=(Path(__file__).parent/'operators/raster_compute.py').read_text()
     assert 'def _sieve_components('not in source and 'def _sieve_rows('not in source
     assert source.count('with _classification_labels(dataset, band, connectivity, error=')==2
+
+
+def test_sample_points_single_workflow_entry_two_inputs_typed_example_and_no_aliases():
+    from operators import OPERATORS
+    specs=[s for s in list_operators()if s['id']=='raster_sample_points'];assert len(specs)==1
+    spec=specs[0];params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','input_gdf','band'}and all(p['required']for p in params.values())
+    assert params['input_raster']['type']=='raster'and params['input_gdf']['type']=='object'and params['band']['type']=='integer'
+    assert params['input_gdf']['param_type']=='input'and OPERATORS['raster_sample_points']['param_schema'][1]['type']=='GeoDataFrame'
+    assert params['input_raster']['type']!=params['input_gdf']['type']and 'default'not in params['band']
+    assert spec['category_path']==['栅格处理','栅格统计']and spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster']and len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='GeoDataFrame'
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'input_gdf':{'$ref':'points'},'band':1}
+    assert not any(s['id']in('sample_raster','raster_extract_values','raster_sample')for s in list_operators())
