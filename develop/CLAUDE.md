@@ -1,5 +1,7 @@
 # Develop 模块说明
 
+阅读导航：[关键架构](#关键架构)、[数据库文档](#数据库文档)、[开发场景](#常见开发场景)、[注意事项](#注意事项)、[开发与验证](#开发与验证)、[相关文档](#相关文档)。
+
 查询编辑器的 Monaco 配色读取已应用的共享主题 CSS 变量，经浏览器解析为十六进制后，通过 `defineTheme` 原位刷新背景、行号、选择区及补全/悬浮控件；不能把 Element Plus 的 RGB 变量直接交给仅接受十六进制的主题接口。不接受固定主题 prop，不复制 Console 主题协议或系统偏好监听。切换四主题或系统深浅偏好不得替换模型、查询内容、光标、视口及撤销历史，组件卸载时清理主题观察器。回归由现有 `make test-develop-frontend` 和 Develop Frontend CI 自动覆盖。
 
 正式部署 `graph-protection` 的 Develop 四主题验收还必须检查真实编辑区、行号、补全菜单及其选中行配色，并确认打开/关闭补全后查询文本保留。已有浏览器报告增加必需事实 `theme_editor_colors=true` 和 `theme_completion_colors=true`；缺失、非布尔或失败值均拒绝，不以旧图结果画布配色证据代替编辑器验收。复用相同普通 User、合成图、正式构建/Nginx 和清理范围，未增加业务写入、账号或验收入口。最小确定性入口为 `make test-graph-online-runner`，真实结果由同一 Neo4j Hosted T4 单独记录。
@@ -56,6 +58,8 @@ TaskExecutionRepository（统一执行记录持久化）
 
 Query、Workflow、Notebook 的每 Backend 额度、默认值、租户覆盖范围与热更新统一见[Develop 执行策略](../docs/spec/configuration/执行与模块策略.md#develop-执行策略)，唯一队列、额度隔离与失联处理见[执行监督与授权](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。持久队列和 lease 不等于远端强制停止：本地失联收敛失败后不自动重放，不能承诺远端程序已经停止。
 
+FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authorization、PreparedGraphQuery、共享图结果与保护门禁，必须显式传递目标 graph locator；无需先创建 Graph 知识图谱实例。`make test-common-falkordb` 的独占真实引擎场景调用 DevExecutor 正式 query 分支，验证执行期连接、表格／图结果、类型化参数、写语句拒绝及受保护目标零结果。该 T2 不是登录／Gateway／浏览器 Hosted T4。支持版本与本地只读语法边界以引擎插件和技术栈规范为准。
+
 ### 执行过程事件与当前边界
 
 Query、Workflow、Notebook（script）共用 bounded lease 队列和 `common.execution_events`：实际 claim 写 started，完成和过期收敛写唯一终态；Notebook 当前只收敛授权不可用的失败，不调用 Runtime。Query 与 Workflow 仅在已有受控执行阶段记录 progress 百分比，不把自由文本 current_step 复制为 step_id。事件与对应 execution 及任务最近执行摘要在同一事务提交；事件存储失败回滚这些事实，过期或错配 lease 不得写入。授权附加、Workflow 远端执行回执与心跳不追加事件；事件不包含查询、参数、业务结果、Runtime 完整响应或授权引用。无有效 lease 的遗留 running 记录只收敛失败概览，不补造过程。读取继续使用 Monitor 的 Owner 授权入口与共享 30 天维护。验证使用 `make test-module MODULE=develop` 与 `make test-develop-postgres`，新增 PostgreSQL 事件回归必须由后者的名称筛选命中；既有 Go／Develop PostgreSQL CI 自动覆盖，确定性验证不代替真实 T4。
@@ -94,6 +98,8 @@ Spark MinIO 保存固定普通 Parquet + create，由执行 UUID 和节点身份
 
 工作流资源血缘由 Develop 根据本次 execution 冻结并应用参数后的 DAG 生成。读取、实际输出分别使用节点专属端口，每个产出节点只关联直接读取及沿标准 `$ref` 数据流追溯到的来源；嵌套数组、串联节点和批量产物复用同一路径。`depends_on` 只表示执行顺序，独立分支不得互连。Meta 继续消费既有 `lineage_facts`，不反向解析工作流。回归由现有 `make test-module MODULE=develop` 的 Go T1 自动发现；无需新增 CI 入口。
 
+工作流实际产物自动扫描必须先保存本次 execution 的 `metadata.outputs`，再用 Service Bearer 将直接父执行 UUID 传给 Meta；不得自行填写扫描发起人。Meta 原子校验来源并继承归属，提交失败只记录扫描反馈。
+
 画布导入或重开后，纯 `depends_on` 顺序边以虚线保留，保存时只写回依赖，不合成输入 `$ref` 或占用输入参数。实际数据连线继续使用现有输入端口主路径；保存、重开后的参数保真回归由 `make test-develop-frontend` 及既有 Develop Frontend CI 自动发现。
 
 Model3D 的 DAE、3DS、MAX 转 GLB，SuperMap 的 SGM 转 OSGB，以及 Document 的 PPTX 转 PDF 均通过显式 Adapter 接入。DAE、3DS、MAX 从所选主文件定位父目录并保留 entrypoint，以供运行时读取相邻资源；SGM 和 PPTX 使用单文件源。MAX 公开 `source_unit` 与 `texture_files`，PPTX 公开 `strip_embedded_media`；选项的名称和说明使用 Develop 国际化消息，算子发现按请求语言返回。输出只写用户选择的业务存储，复用现有授权、稳定输出与 Meta 扫描，不登记 Manager 私有快显结果，也不在单引擎工作流中隐式调用另一运行时。验证沿用 `make test-module MODULE=develop`，新增 Go 测试由现有 Go CI 自动发现，无新增依赖或门禁。
@@ -124,13 +130,19 @@ Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规�
 
 Develop 独立访问根路径或登录后未指定回跳地址时，在 AuthContext 加载后按侧栏顺序选择第一个有权进入的页面：`/sql`、`/notebook`、`/workflow`、`/tasks`。页面准入复用 Console 权限映射；均不可访问时进入 `/forbidden`。显式业务地址仍按原目标独立校验权限。
 
+查询和工作流编辑器统一使用共享 `useUnsavedChangesGuard`，删除原模块内路由确认与 beforeunload 实现；修改状态仍由编辑器定义。Console 导航与 standalone 导航消费同一共享保护契约。
+
 查询工作台固定使用左侧 Meta 技术资源树、右侧编辑器与结果上下分栏。资源树直接消费 Meta resource-tree，不新增 Develop 私有 Engine Catalog API；native query engine 同时是 Runtime Engine 与 Source Engine，因此只展示当前 Engine 的原生路径；声明 `compute.query.federation.supported=true` 的共享 Runtime 不拥有可导航的 Engine Catalog，工作台必须按 `federation.source_engine_types` 过滤并展示当前 Tenant 的 Source Engine 资源树。查询语言、默认语言和结果类型从 `capabilities.compute.query` 读取。即时查询只调用 `POST /api/v1/develop/executions` 创建 `task_type=query`、`source_task_id=null` 的 execution，再按 execution ID 回查结果；不保留 `/develop/execute`。查询任务统一在 `/develop/tasks` 管理，不保留 `/develop/sql-tasks`。
 
 查询编辑器的目录选择是来源上下文；声明联邦查询能力时，选中的 Source locator 只用于资源事实、模板和 Copilot，不得作为原生 `target_locator` 进入预检、即时执行或任务保存。`execution_config.engine_id` 仍绑定所选计算目标，Source 集合由后端解析并冻结；原生查询保留同引擎 `target_locator` 校验，关系参数查询也不携带该原生提示。前端统一使用同一能力驱动的投影，不能按 Spark 或 DuckDB 名称分支。
 
 查询工作台语句诊断统一消费 `POST /api/v1/develop/query-preflight` 返回的 Provider `QueryAnalysis`。前端不得按关键字、正则、通用分词或 Meta 样本字段自行诊断 SQL、MQL、Cypher；`schema_coverage` 为 `sampled` 或 `unknown` 时不得显示“字段不存在”。关系参数编辑态只由 Develop PostgreSQL AST 编译器校验已声明的裸关系参数名、CTE 和作用域结构，覆盖度固定为 `unknown`；执行期 locator 绑定后的真实语义仍由同一 Provider 计划验证。查询编辑器以唯一“查询参数”面板按定义顺序展示全部参数；面板只把裸 `name` 作为唯一参数名，不显示第二套“参数名称”“引用标识”或语言语法字段。`type=relation` 在界面中显示为“数据表”，其余类型显示对应值类型，不再建立“任务输入”“关系输入”“数据输入”“值参数”等平行入口；插入动作按当前查询语言和参数类型生成正确语法。
 
+ES DSL 查询沿用普通 query 执行及 TaskProvider 契约主路径；`POST /query-preflight` 的请求校验与 Swagger 枚举必须包含 `sql`、`mql`、`cypher`、`es_dsl`，预检仍由当前 Engine Provider 判定只读子集。首版不声明参数能力，公共引用分析返回空引用集，空定义形成闭合空输入契约；任何非空参数定义或本次参数覆盖都拒绝，JSON 与受控只读子集仍由 ES Provider 校验。对应回归纳入 `make test-common-elasticsearch-unit` 和既有 Go workspace CI。
+
 Develop 普通查询保护只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `OutputLineage()`，不自行解析 SQL/MQL。当前 Tenant 没有任何本地纳管目标时不读取二者；存在纳管目标但本次 ReadSet 未命中时执行原路径；精确命中后必须用 Provider 实时 source fields 校验 Projection，并在 QueryResult 写 execution metadata、返回 Workbench 或 Notebook Kernel 前执行独立 `query` 规则。identity/direct 输出可遮盖或抑制；受保护字段参与 derived/opaque 输出、结构漂移、规则缺失或 lineage unresolved 时拒绝当前查询。首期字段级执行覆盖 PostgreSQL 直接列/别名/单来源 wildcard 与 MongoDB find/count/distinct；其他查询保持单次请求级 fail-closed，不恢复资源级永久拒绝或 Owner 私有解析旁路。
+
+查询保护引擎范围排除采用 Projection v4：Security 在发布前核对 Enrollment 的引擎 ID／完整名称前像与 DataItem 指纹，Owner 由投影派生范围索引。Owner 首次同步及旧协议重放须消费到 `has_more=false` 后持久确认 initialized，期间拒绝读取；重放只在最后一页 ack，保持 Security 确认游标单调。Neo4j 用标准 openCypher 9 AST、物理数据库与内置函数事实证明本地只读范围，模板和正式图查询执行同一不可变计划；同引擎纳管而精确 ReadSet 未覆盖时仍拒绝。验证使用对应 Go 模块门禁、Common／Security／Develop PostgreSQL 门禁和 `make test-common-neo4j`，新增 Compose 门禁已接入标准自动发现与 T2 CI。
 
 支持已准备读取计划的联邦 Provider 在同一在途读取屏障内准备 Runtime 会话，按 Source Engine 的真实 Catalog Model 消费来源范围和表级读取集合，并复用 Common 的范围排除与 DataItem 判断。未命中纳管数据才执行同一 Driver 的同一计划；命中表、投影不可用或闭包未知均拒绝，结束／拒绝释放会话。首期 Spark 的 PG 读取使用受控 `ONLY`，MySQL 仅 InnoDB 基础表；不按结果列名猜字段保护，不降低未知 Runtime 的原有保守拒绝。
 
@@ -145,10 +157,6 @@ Backend 与查询执行进程共用的数据库连接必须使用 `common/logger
 数据保护拒绝沿既有 `error_details.diagnostic` 和共享 `ExecutionFailure` 展示：稳定码 `develop.query.protection_required`，通用原因 `data_protection_required`，已证明的具体原因按下文细分。Gate 准备失败标记 `preparation`，已执行结果的保护失败标记 `result`，保留原始错误链用于内部判定；不解析原始错误正文、不混同数据项权限不足，也不放宽保护规则。标准验证为 `make test-module MODULE=develop`、`make test-common-frontend` 和 `make test-go`；共享组件的 Monitor 消费由 `make test-monitor-frontend` 验证。现有单测、浏览器和 Develop PostgreSQL 入口自动覆盖，不增加新门禁。
 
 数据保护诊断从原始类型化错误链细分敏感计算不支持、读取／输出来源未能验证、保护尚未就绪、已到期、尚未生效、结构不匹配及当前操作不支持保护处理，详见[执行监控规范](../docs/spec/tasks/执行监控.md)。无法证明具体原因时仍明确说明“数据脱敏保护校验未通过”，不要求用户核查数据访问资格。已证明的读取／写入权限不足仍使用 `permission_denied`，执行授权缺失、过期或不匹配仍使用 `authorization_invalid`；共享组件以受控诊断为准，不被通用错误类别覆盖。旧历史通用原因不反推、不补写；保护错误码、实际失败阶段、拦截和授权规则保持不变，三处界面共用一套中英文原因与处理建议。
-
-2026-10-20 提示区分修正验证：旧文案未明确脱敏且要求核查访问资格的红测已复现；修正共享中英文词条和现有浏览器验收断言后，`make test-common-frontend` 241 项、`make test-develop-frontend` 确定性检查／88 项浏览器及构建、`make test-monitor-frontend` 81 项确定性／238 项浏览器及构建全部通过。新增 Monitor 中英文三原因对照还覆盖通用 category 与诊断原因不一致、私有正文不展示及 390 px 窄屏；查询历史准备／结果两个阶段的中英文回归保持通过。Online 浏览器断言同步使用新文案，`python3 -m unittest scripts/test/security-mysql-owner-protection-online_test.py` 95 项及对应 JS 语法检查通过；既有 Makefile／CI 入口覆盖，无新增登记。无痕 outdoor开发者打开同一执行 `4c4a0dd7-4002-45c2-8b49-233371eef127`，Monitor 和 Develop 历史均显示新提示、原错误码和暂无执行结果，未重跑查询或改写历史；两张原生 JPEG 已核验并目视核对 Monitor 图，证据 `/tmp/addp-protection-message-ACacSM/acceptance.json`。本轮只改前端词条、测试及说明，不要求后端重启；没有改动数据保护、原值授权、数据访问权限或诊断 DTO。未重跑 Hosted T4、后端 Go／数据库门禁或完整平台聚合，不将本次界面补证扩大为这些门禁的新结果。
-
-2026-10-16 保护拒绝诊断验证：`make test-go` 的 22 个 Go 模块通过；修正 Provider 原因优先级后，`make test-module MODULE=develop GO_ONLY=1` 与 `make test-develop-postgres` 再次通过，保留真实表名／函数错误、错误链和失败零结果。`make test-common-frontend` 203 项、`make test-develop-frontend` 53 项浏览器及构建、`make test-monitor-frontend` 148 项浏览器及构建通过；新场景覆盖中英文、准备／结果阶段、原始值不展示与窄屏换行。Develop／Monitor Swagger 重新生成无产物差异，58／70 个公开路由覆盖一致。完整 `make test-module MODULE=develop` 在平台日志生命周期夹具的两项超时退出，聚合入口未通过，不以分项结果替代。首次 PostgreSQL 分类优先级及英文窄屏回归失败已修正并按上述入口复验；用户重启后，在实际构建 `23754bafa` 的无痕 Chrome、`outdoor开发者` 会话中，以本地 MySQL `business.security_persons_acceptance_20261015` 发起新查询：直接字段别名返回 20 行（9 行掩码、11 行空值／抑制，未发现明文手机号）；`CONCAT(phone, '')` 派生查询在准备阶段被保护校验拒绝，返回 0 行，页面展示专门说明、修正建议与 `develop.query.protection_required`。执行 `46faafdb-39e9-4aec-853f-3bdbbe461295` 经原生新标签页跳转 Monitor 后显示同一受控诊断。对应 Platform CI `38846252112` 的平台一致性、Go workspace、Develop／Monitor 前端和产品构建通过；未回填历史失败，也未重复 Security 全套 Hosted。
 
 所选资源的查询模板必须经过一次有界的真实执行才能返回。该验证读取与普通查询共用同一个 `PreparedQuery -> BeginPreparedQuery -> Execute -> protectResult` 路径；受保护资源不得因模板生成而走 `BeginCatalogPath` 的“仅允许未纳管资源”门禁，验证执行也不得绕过字段级保护。
 
@@ -179,6 +187,12 @@ Develop 前端不提供模块级执行列表。`/develop/tasks` 和 Notebook 工
 TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一只接受 Bearer Service Access Token 和 canonical AuthContext。TaskProvider 固定由 `addp-orchestrator` 调用，Asset 发现固定由 `addp-asset` 调用；两者还要校验各自精确 Permission。代表用户创建或继续执行任务时必须引用由原 User AuthContext 派生、绑定唯一 execution 的 Execution Authorization；内部调用不能凭 Service Principal 自身权限伪造 User、Tenant、`triggered_by` 或数据访问能力。旧 `/api/v1/develop/internal`、`X-Internal-API-Key` 和 `X-Tenant-ID` 已删除，不保留双轨。
 
 Copilot ResourceFact 必须保留 Owner 提供的 `source_engine_type`、`full_name`、`query_references` 和 `schema_coverage`；查询引用逐段保留Owner确认的原名，前端或Copilot不得从locator/full_name猜测或改写；渲染复用common-frontend唯一实现。Query Runtime 与 Source Engine 分开传递，联邦 Runtime 按 `federation.source_engine_types` 校验来源。未注册 validator 的查询语言直接澄清，不生成候选。
+
+### 固定目标写入契约
+
+Develop 关系查询写入通过执行契约显式配置固定正式表 `target_locator` 与 `write_mode=overwrite|append`。所有输入和输出必须位于同一 PostgreSQL Engine，输出不得同时作为输入。overwrite 在一个事务内锁定目标、删除旧记录并插入完整计算结果；失败或取消回滚该表写入。append 只追加。多个任务分别提交，不保证跨任务、多表同时可见。
+
+Query Execution Service 在业务写入提交后，以本次冻结并经编译校验的全部 relation 绑定和实际目标构造统一 `lineage_facts`，覆盖写入映射为 `replace`，追加映射为 `append`。事实与成功终态一起通过 lease 校验落库，随后复用 Develop 的 Meta 采集通知；通知失败由 Meta 周期采集器重试。建表依赖不产生数据派生边，失败和失去 lease 的执行不发布成功事实。回归测试由现有 `make test-module MODULE=develop` 和 CI Go 模块自动发现门禁覆盖。
 
 ### 执行授权与效果
 
@@ -469,6 +483,18 @@ curl -H "Authorization: Bearer <token>" \
 # 6. 校验响应同时包含纯 runtime parameters 和 Develop 聚合的 public_parameters
 ```
 
+## 开发与验证
+
+标准门禁、环境前提与能力边界统一见[Develop 验证入口](../docs/spec/configuration/执行与模块策略.md#develop-验证入口与证据边界)。历史记录按主题查阅：
+
+| 历史主题 | 原记录与范围 |
+| --- | --- |
+| Query／Workflow 监督器、过程事件和 Notebook 排队缺口 | [2026-10-13 阶段记录及 10-15 状态核对](../docs/spec/testing/evidence/引擎与空间计算历史证据.md#2026-10-13-执行监督器第一期工作区验证尚未发布) |
+| 图查询工作台旧 v3 验收契约 | [原五 Permission 与浏览器覆盖要求](../docs/spec/testing/evidence/引擎与空间计算历史证据.md#develop-图查询工作台旧-v3-验收契约记录) |
+| 保护拒绝诊断、原值历史与角色资格／导出 | [Develop 查询保护历史记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#develop-查询保护与导出历史记录) |
+
+各记录的源码或原工作区、失败与修复、清理及未覆盖项分别认定；旧契约、排队或分项结果不代表当前 HEAD、完整 T4 或生产验收通过。
+
 ## 相关文档
 
 - **GeoPython Workflow 运行时说明** - [engines/geopython-workflow](../engines/geopython-workflow)
@@ -477,53 +503,3 @@ curl -H "Authorization: Bearer <token>" \
 - **共享数据库桥接** - `common/dbbridge`
 - [启动脚本指南](../scripts/docs/启动脚本使用指南.md) - 启停边界、进程归属与实例日志排查
 - [模块服务运行日志规范](../docs/spec/addp模块服务运行日志规范.md) - 正文来源、独立读取授权与验证范围
-
-### 固定目标写入契约
-
-Develop 关系查询写入通过执行契约显式配置固定正式表 `target_locator` 与 `write_mode=overwrite|append`。所有输入和输出必须位于同一 PostgreSQL Engine，输出不得同时作为输入。overwrite 在一个事务内锁定目标、删除旧记录并插入完整计算结果；失败或取消回滚该表写入。append 只追加。多个任务分别提交，不保证跨任务、多表同时可见。
-
-Query Execution Service 在业务写入提交后，以本次冻结并经编译校验的全部 relation 绑定和实际目标构造统一 `lineage_facts`，覆盖写入映射为 `replace`，追加映射为 `append`。事实与成功终态一起通过 lease 校验落库，随后复用 Develop 的 Meta 采集通知；通知失败由 Meta 周期采集器重试。建表依赖不产生数据派生边，失败和失去 lease 的执行不发布成功事实。回归测试由现有 `make test-module MODULE=develop` 和 CI Go 模块自动发现门禁覆盖。
-
-查询和工作流编辑器统一使用共享 `useUnsavedChangesGuard`，删除原模块内路由确认与 beforeunload 实现；修改状态仍由编辑器定义。Console 导航与 standalone 导航消费同一共享保护契约。
-
-ES DSL 查询沿用普通 query 执行及 TaskProvider 契约主路径；`POST /query-preflight` 的请求校验与 Swagger 枚举必须包含 `sql`、`mql`、`cypher`、`es_dsl`，预检仍由当前 Engine Provider 判定只读子集。首版不声明参数能力，公共引用分析返回空引用集，空定义形成闭合空输入契约；任何非空参数定义或本次参数覆盖都拒绝，JSON 与受控只读子集仍由 ES Provider 校验。对应回归纳入 `make test-common-elasticsearch-unit` 和既有 Go workspace CI。
-
-工作流实际产物自动扫描必须先保存本次 execution 的 `metadata.outputs`，再用 Service Bearer 将直接父执行 UUID 传给 Meta；不得自行填写扫描发起人。Meta 原子校验来源并继承归属，提交失败只记录扫描反馈。
-
-### 2026-10-13 执行监督器第一期工作区验证（尚未发布）
-
-- Query 与 Workflow 已收敛到同一个 Backend 内嵌监督器；Workflow 父执行授权在 claim 后绑定 attempt/token，Runtime receipt 在查询状态前持久化。Notebook 的运行许可契约仍待确认，当前工作区拒绝 Notebook 实际派发，不能将本批整体发布为已完成。
-- `make test-go` 中 Develop 所有包通过，包含 Workflow 成功、远端失败、撤权、授权过期、lease 丢失，独立容量缩容和冻结文件摘要回归；早期整仓门禁曾在其他会话修改中的 Security `datatype.FieldTypeObject` 编译处失败；该会话修正后，最新 `make test-go` 整仓完成并返回 0。
-- `make test-develop-postgres` 通过三类执行的 33 组事件事务回归、现有查询队列/结果门禁和查询策略表到执行策略表的单向迁移；`make test-console-frontend` 通过 170 单元、131 浏览器与构建；`make test-jupyter` 16 项通过，`make test-python-ci-registration` 通过；Swagger 生成与 Develop 58 个公开路由覆盖通过；新文件纳入索引后 execution fixture 门禁通过（1490 个测试文件）。
-- 完整 `make test-module MODULE=develop` 在平台 T0 的两个 HDFS fixture 用例 15 秒超时，未进入本轮 Develop 子门禁，不能以分层结果替代整轮通过。本轮不修改该外部失败。
-- 上一批 continuous Hosted T4 `38333943949`（提交 `dcb802e4`）：live/recovery、撤权后旧内容清空通过；新 Monitor-only 浏览器拒绝展示失败，后续场景未执行；场景清理通过、残留 0。该结果只覆盖上一批源码；新增 Workflow/Notebook 本批尚未执行真实 T4。
-
-continuous T4 的新鲜登录阶段已增加闭合阶段标识（身份、权限、iframe、拒绝提示、无详情、无事件），断言不放宽；仅该诊断改动以 `b0765f802` 提交并推送，复验 `38337857450` 已排队。Workflow/Notebook 的本批工作区改造未提交或发布。
-
-上一批 Query 事件 Hosted T4 `38333947835`（`dcb802e4236dc32aaf82c79341430efb609504e3`）已通过：三轮各验证两个 Query execution 的 started/progress/completed 事件，浏览器与专业成果/血缘断言通过、残留 0；58 个公开归档文件未发现私有控制文件或访问令牌标记。这不替代本批 Workflow/Notebook 的 T4。
-
-2026-10-15 当前 main 状态核对：以上“工作区尚未发布”是 10 月 13 日的历史快照；共享执行监督器实现现已随 `afeb312ed` 进入 main。`ExecutionService.Execute` 的 script 分支仍固定以 `authorization_unavailable` 失败，不会派发 Notebook Runtime，因此不能将该批计为 Notebook 排队执行已完成。其运行许可契约及 System IAM 实现仍须由对应 Owner 衔接确认，Develop 消费许可并补齐真实执行验收；不得借用 Notebook Session 或数据读取授权、保存用户 Token，或恢复旧请求外 goroutine 绕过。现有 Query 与 continuous 的历史通过证据不能外推到该 Notebook 路径。
-
-查询保护引擎范围排除采用 Projection v4：Security 在发布前核对 Enrollment 的引擎 ID／完整名称前像与 DataItem 指纹，Owner 由投影派生范围索引。Owner 首次同步及旧协议重放须消费到 `has_more=false` 后持久确认 initialized，期间拒绝读取；重放只在最后一页 ack，保持 Security 确认游标单调。Neo4j 用标准 openCypher 9 AST、物理数据库与内置函数事实证明本地只读范围，模板和正式图查询执行同一不可变计划；同引擎纳管而精确 ReadSet 未覆盖时仍拒绝。验证使用对应 Go 模块门禁、Common／Security／Develop PostgreSQL 门禁和 `make test-common-neo4j`，新增 Compose 门禁已接入标准自动发现与 T2 CI。
-
-
-FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authorization、PreparedGraphQuery、共享图结果与保护门禁，必须显式传递目标 graph locator；无需先创建 Graph 知识图谱实例。`make test-common-falkordb` 的独占真实引擎场景调用 DevExecutor 正式 query 分支，验证执行期连接、表格／图结果、类型化参数、写语句拒绝及受保护目标零结果。该 T2 不是登录／Gateway／浏览器 Hosted T4。支持版本与本地只读语法边界以引擎插件和技术栈规范为准。
-
-普通账号查询工作台 T4 纳入既有 `graph-protection` Hosted suite 的 v3 契约，使用独立的五 Permission Develop User；Graph 原有账号仍仅持 `graph.graph.read`。两个浏览器阶段均通过正式登录、真实 Meta 图选择、preflight、execution 创建及本人结果轮询验证，不能以 API 直接执行替代工作台操作。纳管前覆盖图/表视图与文本/整数参数，纳管后覆盖 preparation 保护拒绝、零结果与同引擎未纳管图成功；报告必须绑定同一 User、Tenant、Engine 和两次实际 execution，并保留四张截图。入口、必需证据与销毁边界见 `graph/CLAUDE.md`；最小确定性验证为 `make test-security-online-runner` 和 `make test-module MODULE=system GO_ONLY=1`，真实 T4 独立报告，不将代码落地计为通过。
-
-2026-10-17 原值查询与历史保护：develop/query 消费当前用户显式获批的原值范围。执行记录只保存默认脱敏预览；当次获权结果仅在同一 Backend 有界内存中暂存，通过独立 result 接口每次按当前用户及本地投影重判。历史详情和列表始终默认保护，原值需要重新执行查询。暂存最多五分钟，容量淘汰或重启后不恢复。旧 protected_query_history 通过 Develop 数据迁移移除。通用 Observe、Monitor、TaskProvider 与导出不暴露私有暂存；Notebook 的交互请求继续按当前 session 主体消费统一保护。工作台在暂存或授权截止时清空展示并复核。旧 Hosted v5 只代表旧历史规则，当前规范 10.2 的 T1/T2/T3/T4 须分别验证。
-
-2026-10-17 用户确认收敛查询结果保存：执行记录仅保存默认脱敏预览，原值只在 Backend 有界进程内暂存，通过当次结果接口按当前授权重判；历史不还原原值，需要原值重新查询。规范见数据安全实现规范 10.2，旧私有历史通过单向数据迁移移除。本次实现的 Common／Develop Go、全仓 22 模块 Go、Common／Develop PostgreSQL、Develop 前端 80 项浏览器与构建、IAM／Swagger 及新版 Online 夹具门禁已通过；当时真实 Hosted v6 和重启后的本地验收尚待运行；2026-10-18 的新版验证结果见下文，旧 Hosted v5 只代表旧历史规则。
-
-2026-10-17 原值历史迁移的 PostgreSQL 测试复用 `common/execution.EnsureStore` 和正式 `TaskExecution` 模型，不得自行删建简化的共享执行表；断言仅核对本轮 UUID，夹具和迁移在同一测试事务回滚。`make test-execution-fixtures`、Develop Go 与 Develop PostgreSQL 门禁通过。本项仅修正测试夹具，不改变生产实现或新版 v6 待验状态。
-
-
-2026-10-18 新历史规则验收闭环：[Hosted v6 39041158723](https://github.com/pampa0629/addp/actions/runs/39041158723) 通过，Job `117420768709`，运行源码 `293fdafe2290955c15272056b627c8fad721be2a`。领域 `addp.security-plaintext-access-online/v6` 与浏览器 `addp.security-plaintext-access-browser/v2` 归档均经独立校验。两个真实 User 验证获批当次结果接口返回原值，而授权有效时的历史接口已经默认脱敏；同一历史在自然到期、主动撤销后仍脱敏，另一用户不继承授权，Manager 单出口授权不扩大至 Develop，Security 不可达期间本地授权期限继续生效。浏览器 v2 证明 Console 申请／审批及 Manager 保护状态，不扩大为 Develop 当次原值工作台的真实浏览器专项。Hosted 生命周期 `cleanup=passed`、`infra_cleanup=zero_residuals`；新 Develop 日志 9,681 条中测试手机号原值命中为零，旧私有历史键的两处命中均为单向迁移 SQL。
-
-同日用户重启后的本地 Develop／Security ready/registered，运行构建 `53be389c5e434b8e1f045796b7f892dd9aef7b1b` 已包含本次实现。只读数据库核对迁移 `2026101701` 已安装、Develop Query 旧私有历史键剩余零条；旧执行 `a812f451-4f09-4d11-862e-86c351ae6675` 与旧获批执行 `00adf789-ec22-4f01-9875-add997566ebd` 均保留成功状态和十行默认预览，完整手机号行数为零。Chrome 管理员真实打开前一执行的历史详情，十行预览保持掩码／NULL。本地未新增原值授权或重跑源查询；旧获批执行的移除事实来自只读数据库核对。结合已通过的 Common／Develop Go、全仓 Go、真实 PostgreSQL、Develop 前端、授权／Swagger 和 Online 夹具门禁，本切片已验收；不外推为 SQL 自动重写或透明加密已实现。
-
-2026-10-25，导出创建/状态/文件三入口已保留角色资格与方式失效的独立类型化409错误和导出专用双语建议，未知/异常响应按暂不可用处理。Common/Develop/Transfer Go T1、共享前端277项、Develop最终106项隔离浏览器及workflow测试/构建通过；首轮两个既有交互超时复核通过，未修改相关实现。新增12项提示场景覆盖三入口×两原因×双语，直接读取后端译文；完整中文图已目视核对。Swagger生成及60路由覆盖通过，既有Hosted套件升级v31的原因断言，Runner T0/T1通过；新版真实Hosted T4及重启后本地真实账号尚未验证，CI仍由专门会话跟进。详见 `security/CLAUDE.md` 同日原因细分记录，不把受控浏览器当作真实后端运行通过。
-
-2026-10-25，角色资格自然到期已纳入既有隔离 suite 的领域 v29：独立普通 Develop 测试用户的主功能角色保持有效，仅第二个脱敏选择资格 Assignment 自然到期。场景分别检查旧实时结果 409/query_protection_roles_unavailable、新执行 preparation/protection_role_choice_unavailable 且同一历史无结果、旧成功历史始终默认脱敏，以及显式清空选择后同一会话默认五行恢复；不以会话或功能权限失效替代资格拒绝。测试使用真实 IAM/Develop HTTP 主路径，配置先同步再开始 90 秒期限，成功不 revoke/重登/续期，失败或中断精确清理；详见 [Online 场景](../scripts/docs/Online数据保护.md#develop-角色资格自然到期)。`make test-security-online-runner` 的 38/50/28/268 项 Python、相关 Go 夹具及登记检查通过（T0/T1）；新 HTTP T4 尚未运行，CI 归专门会话，本轮不变更产品协议或本地服务生命周期。
-
-2026-10-22 角色方式选择阶段验证：本人自查、选择保存／重载、绑定执行角色复核、同次实时／默认历史以及有界交付已落地。Common／Develop／System Go T1、既有 IAM／Common PG query-read-set／Common MySQL／Develop PG T2 及 Develop 92 项浏览器／构建、Monitor 289+2 项浏览器和共享前端 259 项通过；详见 `security/CLAUDE.md` 同日记录。当前特殊选择仅限已证明的 SQL／MQL 普通查询；其他 Owner 业务选择、受选查询全量导出与本地真实账号／Hosted T4 尚未完成，不以此阶段记录宣称整体数据保护清单已完成。
