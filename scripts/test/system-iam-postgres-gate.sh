@@ -333,7 +333,7 @@ case "$TEST_FILTER" in
             echo "engine-access-coordination test requires --package migration" >&2
             exit 2
         fi
-        test_pattern='^Test(SourceDeny|SourceDenyRelease|FulfillmentOutcome|FulfillmentGrant|FulfillmentGrantRevocation|FulfillmentGrantRevocationExpiry|FulfillmentRecoveryPermission|FulfillmentHandlingPermission|FulfillmentBasis|ApprovalRequirement|SharingExpiry|SourceGrantRelations)ForwardMigrationAgainstPostgres$'
+        test_pattern='^Test(NodeSourceGrants|SourceDeny|SourceDenyRelease|FulfillmentOutcome|FulfillmentGrant|FulfillmentGrantRevocation|FulfillmentGrantRevocationExpiry|FulfillmentRecoveryPermission|FulfillmentHandlingPermission|FulfillmentBasis|ApprovalRequirement|SharingExpiry|SourceGrantRelations)ForwardMigrationAgainstPostgres$'
         ;;
     ontology-backend)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

@@ -520,7 +520,6 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			}
 		})
 
-
 		beforeRetry := calls
 		service.WithIndependentTargetVerifier(nil)
 		retried, err := service.CreateIndependentGrant(ctx, input)
@@ -561,5 +560,6 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		if err := db.Table("system.engine_access_fulfillment_outcomes").Where("request_id=?", input.RequestID).Count(&receiptCount).Error; err != nil || receiptCount != 0 {
 			t.Fatalf("fake Catalog receipt=%d %v", receiptCount, err)
 		}
+		exercisePersistentNodeGrants(t, db, service, actor, base, newUser)
 	})
 }

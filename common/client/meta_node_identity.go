@@ -34,3 +34,42 @@ func (c *MetaClient) ResolveNodeIdentity(ctx context.Context, tenantID uint, que
 	}
 	return &result, nil
 }
+
+// QueryNodeIdentities is one bounded, non-retrying child-node identity query.
+func (c *MetaClient) QueryNodeIdentities(ctx context.Context, tenantID uint, query authorizationfacts.NodeIdentityPageQuery) (*authorizationfacts.NodeIdentityPage, error) {
+	if c == nil || c.httpClient == nil || c.baseURL == "" || tenantID == 0 || query.Validate() != nil {
+		return nil, errors.New("invalid Meta child node query")
+	}
+	encoded, err := c.postIdentityQuery(ctx, tenantID, "/api/v1/meta/runtime/node-identities/query", query, authorizationfacts.MaxNodeIdentityPageBytes)
+	if err != nil {
+		return nil, err
+	}
+	shape, err := jsonmap.DecodeObjectStrict(encoded, authorizationfacts.MaxNodeIdentityPageBytes, 8)
+	if err != nil || len(shape) != 5 || !validNodeIdentityShape(shape["parent"]) {
+		return nil, errors.New("invalid Meta child node response")
+	}
+	nodes, ok := shape["nodes"].([]any)
+	if !ok {
+		return nil, errors.New("invalid Meta child node list")
+	}
+	for _, node := range nodes {
+		if !validNodeIdentityShape(node) {
+			return nil, errors.New("invalid Meta child node observation")
+		}
+	}
+	var result authorizationfacts.NodeIdentityPage
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&result) != nil || result.Validate(tenantID, query) != nil {
+		return nil, errors.New("invalid Meta child node response")
+	}
+	return &result, nil
+}
+func validNodeIdentityShape(value any) bool {
+	object, ok := value.(map[string]any)
+	if !ok || len(object) != 3 {
+		return false
+	}
+	_, ok = object["exists"].(bool)
+	return ok
+}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +19,7 @@ import (
 )
 
 // Under the existing engineaccess PG gate: formal acceptance, grant issuance,
-// organization commands, revocation and Deny commands create the facts. No
+// organization commands and revocation create the facts. No
 // business source is connected, and no HTTP/current-credential claim is made.
 func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, runtime FulfillmentRuntimeActor,
 	base shared.SharingFulfillmentBinding, roles *iam.TenantRoleService, fulfillmentRoleID, adminID int64,
@@ -83,7 +82,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			}
 			return requestID
 		}
-		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.rule_fixture", Name: "Explicit rule commands", PermissionKeys: []string{"system.engine_access_grant.create", "system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_grant.revoke", "system.engine_access_grant.read"}, ActorPrincipalID: adminID})
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.rule_fixture", Name: "Explicit rule commands", PermissionKeys: []string{"system.engine_access_grant.create", "system.engine_access_grant.revoke", "system.engine_access_grant.read"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,23 +170,6 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				t.Fatalf("outside account=%+v %v", result, err)
 			}
 		})
-		deny := func(t *testing.T, kind string, id int64, expiry *time.Time) uuid.UUID {
-			t.Helper()
-			input := CreateDenyInput{ItemFingerprint: factstest.Binding(base.Path).ItemFingerprint, Actor: actor, EngineID: int64(base.Path.EngineID), DenyID: uuid.New(), CatalogPath: base.Path, RecipientType: kind, RecipientID: id, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit precise restriction"}
-			if expiry != nil {
-				input.ExpiryMode, input.ExpiresAt = shared.SharingExpiryAtTime, expiry
-			}
-			if _, err := service.CreateDeny(ctx, input); err != nil {
-				t.Fatal(err)
-			}
-			return input.DenyID
-		}
-		release := func(t *testing.T, id uuid.UUID) {
-			t.Helper()
-			if _, err := service.ReleaseDeny(ctx, ReleaseDenyInput{Actor: actor, EngineID: int64(base.Path.EngineID), DenyID: id, Reason: "Restriction no longer needed"}); err != nil {
-				t.Fatal(err)
-			}
-		}
 		revoke := func(t *testing.T, id uuid.UUID) {
 			t.Helper()
 			if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(base.Path.EngineID), RequestID: id, Reason: "End precise grant"}); err != nil {
@@ -205,7 +187,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				}
 				return engine.Version, nil
 			}))
-		exerciseMetadataRules(t, ctx, repo, metadataService, actor, base.Path, newUser, grant, deny, revoke, release)
+		exerciseMetadataRules(t, ctx, repo, metadataService, actor, base.Path, newUser, grant, revoke)
 		t.Run("effective source deadline merges current personal and organization grants", func(t *testing.T) {
 			user, membershipExpiry := newUser(t, time.Hour)
 			group, err := organizations.CreateProjectGroup(ctx, iam.CreateProjectGroupInput{TenantID: runtime.TenantID, ActorPrincipalID: adminID, Code: "deadline_group", Name: "Deadline group"})
@@ -234,12 +216,6 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if !frozenObservation.ExpiresAt.Equal(late) {
 				t.Fatal("a later observation changed the original deadline")
 			}
-			denyID := deny(t, "user", user.PrincipalID, nil)
-			blocked := read(t, user, base.Path)
-			if blocked.Covered || blocked.ExpiresAt != nil || blocked.Targets[0].ExpiresAt != nil {
-				t.Fatalf("Deny returned a usable deadline: %+v", blocked)
-			}
-			release(t, denyID)
 			checkDeadline(&early)
 			// Until-revoked organization access still has the current account's
 			// known tenant-membership limit. No date sentinel represents infinity.
@@ -258,55 +234,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				t.Fatalf("missing Grant interpreted as unlimited: %+v", missing)
 			}
 		})
-		t.Run("current account lists minimal Deny anchors without a remaining Grant", func(t *testing.T) {
-			user, _ := newUser(t, time.Hour)
-			grantID := grant(t, "user", user.PrincipalID, nil)
-			denyID := deny(t, "user", user.PrincipalID, nil)
-			filter := SourceGrantFilter{RecipientType: "user", RecipientID: user.PrincipalID}
-			check := func(grantCount int64) {
-				t.Helper()
-				rows, total, err := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1, filter)
-				if err != nil || total != 1 || len(rows) != 1 || rows[0].GrantCount != grantCount || rows[0].Inspection == nil {
-					t.Fatalf("current Deny relation: %+v total=%d err=%v", rows, total, err)
-				}
-				if (rows[0].GrantedAt == nil) != (grantCount == 0) {
-					t.Fatalf("Deny-only data manufactured a Grant timestamp: %+v", rows[0])
-				}
-				observation := rows[0].Inspection
-				if observation.Reason != "explicit_deny" || observation.RuleCovered || len(observation.Denies) != 1 || observation.Denies[0].DenyID != denyID || observation.Denies[0].RecipientID != user.PrincipalID || observation.Denies[0].RecipientType != "user" || observation.Denies[0].ExpiryMode != "until_revoked" {
-					t.Fatalf("Deny anchors lost or duplicated: %+v", observation)
-				}
-				encoded, err := json.Marshal(observation.Denies)
-				if err != nil || strings.Contains(string(encoded), "reason") || strings.Contains(string(encoded), "established_by") || strings.Contains(string(encoded), "established_at") {
-					t.Fatalf("Deny body leaked: %s %v", encoded, err)
-				}
-				filter.TableSearch = "never-match-this-path"
-				_, count, err := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1, filter)
-				if err != nil || count != 0 {
-					t.Fatalf("Deny target filter ignored: %d %v", count, err)
-				}
-				filter.TableSearch = ""
-			}
-			check(1)
-			revoke(t, grantID)
-			check(0)
-			// Restricting/disabled recipients remain manageable; the actual rule
-			// observation still reports their invalid identity, never an Allow.
-			if err := db.Table("system.principals").Where("id=?", user.PrincipalID).Update("status", "suspended").Error; err != nil {
-				t.Fatal(err)
-			}
-			rows, total, err := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1, filter)
-			if err != nil || total != 1 || len(rows) != 1 || rows[0].Inspection.Reason != "source_unavailable" || len(rows[0].Inspection.Denies) != 1 {
-				t.Fatalf("disabled recipient lost release anchor: %+v %d %v", rows, total, err)
-			}
-			release(t, denyID)
-			assert(t, user, "source_unavailable")
-			rows, total, err = service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1, filter)
-			if err != nil || total != 0 || len(rows) != 0 {
-				t.Fatalf("released Deny survived: %+v %d %v", rows, total, err)
-			}
-		})
-		t.Run("Grant matches the approved hash while Deny survives a changed hash", func(t *testing.T) {
+		t.Run("Grant matches only its approved boundary hash", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
 			id := grant(t, "user", user.PrincipalID, nil)
 			assert(t, user, "grant")
@@ -335,9 +263,6 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				}
 			}
 			check("no_grant")
-			denyID := deny(t, "user", user.PrincipalID, nil)
-			check("explicit_deny")
-			release(t, denyID)
 			check("no_grant")
 			revoke(t, id)
 		})
@@ -435,41 +360,10 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			}
 			user = refresh(t, user)
 			assert(t, user, "grant")
-			denyID := deny(t, "user", user.PrincipalID, nil)
-			assert(t, user, "explicit_deny")
-			// Test-only clock substitution uses the exact production SQL and
-			// committed facts, never changes the server clock or immutable history.
-			// Establishment is not ValidFrom: a small wall-clock rollback must
-			// not ignore an already committed Deny and expose the personal Allow.
-			row, err := repo.findSourceDeny(ctx, denyID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			request := sourceReadRequest{Action: "read", TenantID: runtime.TenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path)}
-			paths, encoded, err := request.encode()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if strings.Count(currentSourceReadRulesSQL, "clock_timestamp()") != 1 {
-				t.Fatal("observation must have exactly one database clock")
-			}
-			var rows []sourceReadRuleRow
-			err = repo.readCommitted(ctx, func(tx *Repository) error {
-				return tx.db.Raw(strings.Replace(currentSourceReadRulesSQL, "clock_timestamp()", "?::timestamptz", 1),
-					request.TenantID, user.PrincipalID, user.MembershipID, user.AuthorizationVersion, string(encoded), row.EstablishedAt.Add(-time.Microsecond)).Scan(&rows).Error
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			rolledBackClock, err := sourceReadObservation(paths, rows)
-			if err != nil || rolledBackClock == nil || rolledBackClock.Covered || rolledBackClock.Targets[0].Reason != "explicit_deny" {
-				t.Fatalf("wall-clock rollback bypassed Deny=%+v %v", rolledBackClock, err)
-			}
 			revoke(t, grantID)
-			release(t, denyID)
-			assert(t, user, "no_grant") // Release is not restoration.
+			assert(t, user, "no_grant")
 		})
-		t.Run("group Allow personal Deny and current membership", func(t *testing.T) {
+		t.Run("independent group and personal grants follow current membership", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
 			group, err := organizations.CreateProjectGroup(ctx, iam.CreateProjectGroupInput{TenantID: runtime.TenantID, ActorPrincipalID: adminID, Code: "rule_group", Name: "Rule group"})
 			if err != nil {
@@ -489,28 +383,6 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			revoke(t, personal)
 			inspect(t, user, "grant", "project_group")
 			assert(t, user, "grant") // Another independent Allow remains.
-			denyID := deny(t, "user", user.PrincipalID, nil)
-			inspect(t, user, "explicit_deny", "project_group")
-			assert(t, user, "explicit_deny")
-			release(t, denyID)
-			assert(t, user, "grant")
-			groupDeny := deny(t, "project_group", group.ID, nil)
-			assert(t, user, "explicit_deny")
-			checkDenySources := func(expected int) {
-				t.Helper()
-				rows, total, err := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1, SourceGrantFilter{RecipientType: "user", RecipientID: user.PrincipalID})
-				if err != nil || total != 1 || len(rows) != 1 || len(rows[0].Inspection.Denies) != expected {
-					t.Fatalf("current organization Deny sources: %+v %d %v", rows, total, err)
-				}
-			}
-			checkDenySources(1)
-			anotherPersonalDeny := deny(t, "user", user.PrincipalID, nil)
-			checkDenySources(2)
-			release(t, anotherPersonalDeny)
-			checkDenySources(1)
-			assert(t, user, "explicit_deny") // Releasing one source leaves the group Deny.
-			release(t, groupDeny)
-			checkDenySources(0)
 			if _, err := organizations.CloseProjectGroupMembership(ctx, iam.CloseOrganizationMembershipInput{TenantID: runtime.TenantID, OrganizationID: group.ID, MembershipID: member.ID, Version: member.Version, ActorPrincipalID: adminID, Reason: "End collaboration"}); err != nil {
 				t.Fatal(err)
 			}
@@ -525,20 +397,16 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			}
 			assert(t, refresh(t, user), "no_grant")
 		})
-		t.Run("new Grant cannot bypass an existing personal Deny", func(t *testing.T) {
+		t.Run("new explicit Grant after withdrawal does not revive old history", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
 			original := grant(t, "user", user.PrincipalID, nil)
-			denyID := deny(t, "user", user.PrincipalID, nil)
-			assert(t, user, "explicit_deny")
 			revoke(t, original)
-			assert(t, user, "explicit_deny")
+			assert(t, user, "no_grant")
 			replacement := grant(t, "user", user.PrincipalID, nil)
 			if replacement == original {
 				t.Fatal("expected an explicit new Grant, not historical recovery")
 			}
-			inspect(t, user, "explicit_deny", "user")
-			assert(t, user, "explicit_deny")
-			release(t, denyID)
+			inspect(t, user, "grant", "user")
 			assert(t, user, "grant")
 			revoke(t, replacement)
 			assert(t, user, "no_grant")
@@ -556,20 +424,26 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if _, err := organizations.CreateDepartmentMembership(ctx, iam.CreateDepartmentMembershipInput{TenantID: runtime.TenantID, DepartmentID: child.ID, TenantMembershipID: user.MembershipID, ActorPrincipalID: adminID, MembershipType: "primary", RelationRole: "member"}); err != nil {
 				t.Fatal(err)
 			}
-			grant(t, "user", user.PrincipalID, nil)
-			deny(t, "department", parent.ID, nil)
+			grantDepartment := func(id int64) {
+				t.Helper()
+				binding := testReadBindings(base.Path)[0]
+				if _, err := metadataService.CreateIndependentGrant(ctx, CreateIndependentGrantInput{Actor: actor, EngineID: int64(base.Path.EngineID), RequestID: uuid.New(), CatalogPath: base.Path, ItemFingerprint: binding.ItemFingerprint, ExpectedBoundaryHash: binding.BoundaryHash, RecipientType: "department", RecipientID: id, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit department grant"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			grantDepartment(parent.ID)
 			user = refresh(t, user)
+			assert(t, user, "no_grant")
+			grantDepartment(child.ID)
 			assert(t, user, "grant")
-			inspect(t, user, "grant", "user")
-			deny(t, "department", child.ID, nil)
-			assert(t, user, "explicit_deny")
+			inspect(t, user, "grant", "department")
 			if _, err := organizations.DisableDepartment(ctx, iam.ChangeDepartmentStatusInput{TenantID: runtime.TenantID, DepartmentID: child.ID, Version: child.Version, ActorPrincipalID: adminID, Reason: "Disable recipient department"}); err != nil {
 				t.Fatal(err)
 			}
-			assert(t, refresh(t, user), "grant")
-			inspect(t, user, "grant", "user")
+			assert(t, refresh(t, user), "no_grant")
+			inspect(t, user, "no_grant")
 		})
-		t.Run("database expiry of Grant and Deny", func(t *testing.T) {
+		t.Run("database expiry of Grant", func(t *testing.T) {
 			waitUntil := func(expires time.Time) {
 				t.Helper()
 				if err := db.Exec("SELECT pg_sleep(GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz - clock_timestamp()))) + 0.01)", expires).Error; err != nil {
@@ -591,15 +465,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			assert(t, user, "no_grant")
 			inspect(t, user, "no_grant")
 			grant(t, "user", user.PrincipalID, nil)
-			now, err = repo.wallClock(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			expires = now.Add(5 * time.Second)
-			deny(t, "user", user.PrincipalID, &expires)
-			assert(t, user, "explicit_deny")
-			waitUntil(expires)
-			assert(t, user, "grant")
+
 		})
 		t.Run("committed read only snapshot no target lock or side effects", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
@@ -740,8 +606,8 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				})
 			}
 		})
-		exerciseSourceReadCredentials(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, deny, revoke)
-		exerciseManagerProfileAuthorization(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, deny, revoke)
+		exerciseSourceReadCredentials(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, revoke)
+		exerciseManagerProfileAuthorization(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, revoke)
 		t.Run("later handler suspension does not revoke recipient Grant", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
 			binding := base

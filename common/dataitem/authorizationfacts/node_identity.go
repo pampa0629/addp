@@ -10,6 +10,7 @@ import (
 )
 
 const MaxNodeIdentityBytes = 16 << 10
+const MaxNodeIdentityPageBytes = 128 << 10
 
 // NodeIdentityQuery identifies one owner node. It carries no ACL or source connection.
 type NodeIdentityQuery struct {
@@ -19,7 +20,7 @@ type NodeIdentityQuery struct {
 // ValidNodeIdentityTarget admits the first supported node profile: PG root/schema.
 // Names remain opaque; a dot or slash inside a quoted schema is not a hierarchy.
 func ValidNodeIdentityTarget(path plugin.EngineCatalogPath) bool {
-	if path.EngineID == 0 || uint64(path.EngineID) > 1<<32-1 || len(path.Segments) < 1 || len(path.Segments) > 2 {
+	if path.EngineID == 0 || uint64(path.EngineID) > 1<<63-1 || len(path.Segments) < 1 || len(path.Segments) > 2 {
 		return false
 	}
 	model := plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema)
@@ -51,6 +52,61 @@ type NodeIdentity struct {
 func (f NodeIdentity) Validate(tenantID uint, query NodeIdentityQuery) error {
 	if tenantID == 0 || f.TenantID != tenantID || query.Validate() != nil || !reflect.DeepEqual(f.Target, query.Target) {
 		return errors.New("invalid node identity response")
+	}
+	return nil
+}
+
+// NodeIdentityPageQuery lists only immediate owner nodes, never child items.
+type NodeIdentityPageQuery struct {
+	Target   plugin.EngineCatalogPath `json:"target"`
+	Page     int                      `json:"page"`
+	PageSize int                      `json:"page_size"`
+}
+
+func (q NodeIdentityPageQuery) Validate() error {
+	if !ValidNodeIdentityTarget(q.Target) || q.Page < 1 || q.PageSize < 1 || q.PageSize > 100 || q.Page > int(^uint(0)>>1)/q.PageSize {
+		return errors.New("invalid node identity page query")
+	}
+	return nil
+}
+
+type NodeIdentityPage struct {
+	Parent   NodeIdentity   `json:"parent"`
+	Nodes    []NodeIdentity `json:"nodes"`
+	Total    int            `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"page_size"`
+}
+
+func (p NodeIdentityPage) Validate(tenantID uint, q NodeIdentityPageQuery) error {
+	if q.Validate() != nil || p.Parent.Validate(tenantID, NodeIdentityQuery{Target: q.Target}) != nil || p.Page != q.Page || p.PageSize != q.PageSize || p.Total < 0 || p.Nodes == nil {
+		return errors.New("invalid node identity page")
+	}
+	remaining := p.Total - (q.Page-1)*q.PageSize
+	if remaining < 0 {
+		remaining = 0
+	}
+	if remaining > q.PageSize {
+		remaining = q.PageSize
+	}
+	if len(p.Nodes) != remaining || (!p.Parent.Exists && p.Total != 0) || (len(q.Target.Segments) == 2 && p.Total != 0) {
+		return errors.New("invalid node identity page size")
+	}
+	seen := make(map[string]bool, len(p.Nodes))
+	for _, node := range p.Nodes {
+		if !node.Exists || node.TenantID != tenantID || !ValidNodeIdentityTarget(node.Target) || node.Target.EngineID != q.Target.EngineID || len(node.Target.Segments) != len(q.Target.Segments)+1 {
+			return errors.New("invalid child node identity")
+		}
+		for i, segment := range q.Target.Segments {
+			if node.Target.Segments[i] != segment {
+				return errors.New("invalid child node scope")
+			}
+		}
+		name := node.Target.Segments[len(node.Target.Segments)-1].Name
+		if seen[name] {
+			return errors.New("duplicate child node identity")
+		}
+		seen[name] = true
 	}
 	return nil
 }

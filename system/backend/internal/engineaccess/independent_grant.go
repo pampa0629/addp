@@ -43,8 +43,9 @@ type SourceGrantView struct {
 	CatalogRequestID      *uuid.UUID       `json:"catalog_request_id"`
 	EngineID              int64            `json:"engine_id,string" swaggertype:"string"`
 	CatalogPath           json.RawMessage  `json:"catalog_path" swaggertype:"object"`
-	ItemFingerprint       string           `json:"item_fingerprint"`
-	BoundaryHash          string           `json:"boundary_hash"`
+	NodeRecursive         *bool            `json:"node_recursive,omitempty"`
+	ItemFingerprint       string           `json:"item_fingerprint,omitempty"`
+	BoundaryHash          string           `json:"boundary_hash,omitempty"`
 	FileComposition       json.RawMessage  `json:"file_composition,omitempty" swaggertype:"object"`
 	ScopeBoundary         json.RawMessage  `json:"scope,omitempty" swaggertype:"object"`
 	RecipientType         string           `json:"recipient_type"`
@@ -64,7 +65,7 @@ type SourceGrantView struct {
 
 func sourceGrantView(row *sourceGrant) SourceGrantView {
 	return SourceGrantView{RequestID: row.RequestID, GrantedAt: row.GrantedAt, ApprovalMode: row.ApprovalMode,
-		CatalogRequestID: row.CatalogRequestID, EngineID: row.EngineID, CatalogPath: row.CatalogPath,
+		CatalogRequestID: row.CatalogRequestID, EngineID: row.EngineID, CatalogPath: row.CatalogPath, NodeRecursive: row.NodeRecursive,
 		ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash, FileComposition: row.FileComposition, ScopeBoundary: row.ScopeBoundary,
 		RecipientType: row.RecipientType, RecipientID: row.RecipientID, Action: row.Action,
 		ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt,
@@ -78,6 +79,7 @@ type CreateIndependentGrantInput struct {
 	EngineID                   int64
 	RequestID                  uuid.UUID
 	CatalogPath                engineplugin.EngineCatalogPath
+	NodeRecursive              *bool
 	ItemFingerprint            string
 	ExpectedBoundaryHash       string
 	RecipientType              string
@@ -88,22 +90,22 @@ type CreateIndependentGrantInput struct {
 }
 
 func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, error) {
-	if err := validateExpectedPrimary(input.CatalogPath, input.ItemFingerprint, input.ExpectedBoundaryHash); err != nil {
+	if err := validateIndependentGrantTarget(input); err != nil {
 		return nil, commonapi.ErrBadRequest
 	}
-	path, err := shared.EncodeSharingTarget(input.CatalogPath)
+	path, err := encodeIndependentGrantTarget(input.CatalogPath, input.NodeRecursive)
 	expires, expiryErr := shared.NormalizeSharingExpiry(input.ExpiryMode, input.ExpiresAt)
 	segments := input.CatalogPath.Segments
 	if err != nil || expiryErr != nil || input.RequestID == uuid.Nil ||
-		input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID || len(segments) < 2 ||
-		!independentReadTargetSegment(segments[len(segments)-1]) ||
+		input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID ||
+		(input.NodeRecursive == nil && (len(segments) < 2 || !independentReadTargetSegment(segments[len(segments)-1]))) ||
 		input.RecipientID <= 0 || !oneOfRecipient(input.RecipientType) || !shared.ValidSourceAccessAction(input.Action) || !validReason(input.Reason) {
 		return nil, commonapi.ErrBadRequest
 	}
 	reason := strings.TrimSpace(input.Reason)
 	return &sourceGrant{RequestID: input.RequestID, ApprovalMode: approvalModeIndependent,
 		TenantID: input.Actor.TenantID, EngineID: input.EngineID, CatalogPath: path,
-		ItemFingerprint: input.ItemFingerprint, BoundaryHash: input.ExpectedBoundaryHash,
+		ItemFingerprint: input.ItemFingerprint, BoundaryHash: input.ExpectedBoundaryHash, NodeRecursive: cloneBool(input.NodeRecursive),
 		RecipientType: input.RecipientType, RecipientID: input.RecipientID, Action: input.Action,
 		ExpiryMode: input.ExpiryMode, ExpiresAt: expires,
 		OperatorPrincipalID: input.Actor.PrincipalID, OperatorMembershipID: input.Actor.MembershipID,
@@ -117,7 +119,7 @@ func independentReadTargetSegment(segment engineplugin.EngineCatalogSegment) boo
 func sameIndependentGrant(a, b *sourceGrant) bool {
 	return a.ApprovalMode == approvalModeIndependent && a.CatalogRequestID == nil &&
 		a.RequestID == b.RequestID && a.TenantID == b.TenantID && a.EngineID == b.EngineID && equalJSON(a.CatalogPath, b.CatalogPath) &&
-		a.ItemFingerprint == b.ItemFingerprint && a.BoundaryHash == b.BoundaryHash &&
+		a.ItemFingerprint == b.ItemFingerprint && a.BoundaryHash == b.BoundaryHash && sameOptionalBool(a.NodeRecursive, b.NodeRecursive) &&
 		a.RecipientType == b.RecipientType && a.RecipientID == b.RecipientID &&
 		a.Action == b.Action && a.OperatorPrincipalID == b.OperatorPrincipalID && a.OperatorMembershipID == b.OperatorMembershipID &&
 		a.Reason != nil && b.Reason != nil && *a.Reason == *b.Reason &&
@@ -182,31 +184,9 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 	if err != nil || result != nil {
 		return result, err
 	}
-	binding, err := s.resolveApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash)
+	engineVersion, err := s.verifyNewIndependentGrantTarget(ctx, input, row)
 	if err != nil {
 		return nil, err
-	}
-	if binding.Scope != nil {
-		row.ScopeBoundary, err = json.Marshal(binding.Scope)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if binding.FileComposition != nil {
-		row.FileComposition, err = json.Marshal(binding.FileComposition)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if s.independentTarget == nil {
-		return nil, ErrIndependentGrantSourceUnavailable
-	}
-	engineVersion, err := s.independentTarget.VerifyIndependentReadTarget(ctx, input.Actor.TenantID, input.CatalogPath)
-	if err != nil {
-		return nil, err
-	}
-	if engineVersion <= 0 {
-		return nil, ErrIndependentGrantSourceUnavailable
 	}
 	recipient := &fulfillmentRequest{TenantID: row.TenantID, RecipientType: row.RecipientType, RecipientID: row.RecipientID}
 	err = s.withEngineManagementRecipientScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessGrantCreate, true, recipient,
@@ -236,7 +216,7 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 				if err != nil {
 					return err
 				}
-				if !sourceAccessActionSupported(row.Action, engine.EngineType) {
+				if !sourceAccessActionSupported(row.Action, engine.EngineType) || (row.NodeRecursive != nil && engine.EngineType != "postgresql") {
 					return commonapi.ErrBadRequest
 				}
 				if engine.Version != engineVersion {
@@ -268,7 +248,7 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 				EventName: "system.engine_access_grant.issued", Result: iam.AuditResultSucceeded, RiskLevel: iam.AuditRiskHigh,
 				ModuleName: "system", EntityType: "engine_access_grant", EntityID: row.RequestID.String(),
 				Details: map[string]any{"request_id": row.RequestID, "engine_id": row.EngineID, "approval_mode": row.ApprovalMode,
-					"catalog_path": input.CatalogPath, "recipient_type": row.RecipientType, "recipient_id": row.RecipientID,
+					"catalog_path": input.CatalogPath, "node_recursive": row.NodeRecursive, "recipient_type": row.RecipientType, "recipient_id": row.RecipientID,
 					"action": row.Action, "expiry_mode": row.ExpiryMode, "expires_at": row.ExpiresAt, "reason": *row.Reason},
 			}); err != nil {
 				return err

@@ -2452,191 +2452,6 @@
                 ]
             }
         },
-        "/engines/{id}/access_denies": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "PG metadata_read 拒绝同时阻止元数据和内容；read 拒绝不阻止独立的元数据授权。其他引擎保留 read；不扩大操作人资格或接收方范围 | PG metadata_read Deny blocks metadata and content; read Deny preserves independent metadata access. Other engines retain read, with unchanged operator and recipient scope\n当前租户用户须同时具备独立创建权限和引擎管理资格（授权管理员或本引擎有效受托办理人）；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and engine management qualification (authorization administrator or effective delegated handler); recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO\n拒绝按当前 Tenant 与 Engine 内的稳定 DataItem 身份持续匹配，不绑定当前边界摘要。已存身份可以离线收权，新身份必须由 Meta 基础事实证明；不使用原生路径独立放行 | Deny continues matching the stable DataItem identity within the tenant and engine without requiring its current boundary digest. Stored identities permit offline restriction; new identities require Meta proof, never native-path access fallback\n必须显式选择未来到期时间或长期有效；同编号同参数重试恢复原不可变记录，不延长期限或重复审计。记录不证明执行侧已经拒绝数据读取 | Explicit future expiry or until-revoked mode is required; identical command retries recover immutable history without renewal or duplicate audit. History is not proof of execution-side access denial",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "源数据显式拒绝 | Source Data Explicit Deny"
-                ],
-                "summary": "建立精确数据项拒绝规则 | Establish a precise DataItem Deny",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "拒绝编号、精确路径、主体、动作、期限与原因 | Deny ID, precise path, subject, action, expiry and reason",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.CreateEngineAccessDenyRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "原有或新建的不可变拒绝事实 | Original or newly established immutable Deny",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceDeny"
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_deny.create"
-                ]
-            }
-        },
-        "/engines/{id}/access_denies/{deny_id}/release": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "当前租户用户须同时具备独立解除权限和引擎管理资格（授权管理员或本引擎有效受托办理人），不要求为原建立人；停用引擎及失效接收主体不阻断解除，不访问源端或 Catalog。仅追加不可变解除记录，不创建、恢复或续期 Grant | Current tenant user needs independent release Permission and engine management qualification (authorization administrator or effective delegated handler), not original creator identity. Disabled engines and unavailable recipients permit release without source or Catalog IO. Adds immutable release history without creating, restoring or renewing Grants\n自然到期后首次解除返回 409 engine_access_deny_expired，无新记录或成功审计；到期前已解除的同操作者、同成员关系及同规范化原因重试返回原历史，当前资格仍须有效。异参返回 409 engine_access_deny_release_conflict，跨租户或引擎隐藏为 404 | First release after natural expiry returns 409 engine_access_deny_expired with no history or success audit; identical operator, membership and normalized reason retries recover earlier history subject to current qualification. Changed parameters return 409 engine_access_deny_release_conflict; other tenant or engine history stays hidden as 404",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "源数据显式拒绝 | Source Data Explicit Deny"
-                ],
-                "summary": "解除指定源读取拒绝规则 | Release a specific source read Deny",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "原拒绝 UUID | Original Deny UUID",
-                        "name": "deny_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "解除原因 | Release reason",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ReleaseEngineAccessDenyRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "不可变解除事实，不代表允许访问 | Immutable release fact, not an access verdict",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.DenyRelease"
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_deny.release"
-                ]
-            }
-        },
         "/engines/{id}/access_grants": {
             "get": {
                 "security": [
@@ -2644,7 +2459,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination\n具体用户查询保留只有有效拒绝的数据项；inspection.denies 仅返回当前适用的拒绝编号、接收主体、实际禁止动作及期限，不含原因或建立人。建立和解除仍由各自独立权限校验 | Selected-user queries retain Deny-only DataItems; inspection.denies exposes only applicable Deny anchors, recipients, actual prohibited actions and validity, never reasons or operators. Establishment and release retain independent permissions\n按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification",
+                "description": "选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination\n节点和数据项保持原签发目标；具体账号的 sources 显示当前个人与组织的真实来源及各自撤销编号，不逐项伪造节点签发历史。来源取并集，撤销一个来源不收回其他有效来源 | Nodes and DataItems retain their original targets. A selected account shows current personal/organization source scopes and withdrawal anchors, without fabricated leaf issuance history. Valid sources form a union; withdrawing one preserves the others\n按原目标、递归选项、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by original target, recursion, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification",
                 "produces": [
                     "application/json"
                 ],
@@ -2680,7 +2495,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "精确叶子 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | Exact leaf EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine",
+                        "description": "DataItem 或节点 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | DataItem or node EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine",
                         "name": "catalog_path",
                         "in": "query"
                     },
@@ -2771,7 +2586,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples\n同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy\n同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change\nPG 支持 read（读取内容并包含必要元数据）及 metadata_read（仅查看元数据）；其他引擎仅支持现有 read。动作必须明确填写，不自动提升 | PG supports read (content including necessary metadata) and metadata_read (metadata only); other engines retain read only. Explicit action is required and never upgraded",
+                "description": "当前 Tenant User 需授予功能和目标引擎管理范围。精确 DataItem 提交指纹及预期边界摘要，System 独立读取 Meta 完整边界并按已接入 profile 核验；PG 持续节点范围显式提交 node_recursive，不带指纹或摘要，System 独立核对 Meta 真实 server/schema。节点在期限内覆盖当前及以后新识别项；非递归只覆盖直属项。两种目标互斥，无需企业 Catalog 编目 | Current Tenant User needs Grant creation permission and target engine management scope. Exact DataItems carry fingerprint and expected boundary hash, independently verified from complete Meta facts for admitted profiles. Persistent PG server/schema scopes carry explicit node_recursive and no item fingerprint/hash; Meta independently proves the node. Covers current and future identified items during validity; nonrecursive scopes cover direct DataItems only. The variants are mutually exclusive and require no enterprise Catalog curation\n同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, current identity or security policy\n同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change\nPG 支持 read（读取内容并包含必要元数据）及 metadata_read（仅查看元数据）；其他引擎仅支持现有 read。动作必须明确填写，不自动提升 | PG supports read (content including necessary metadata) and metadata_read (metadata only); other engines retain read only. Explicit action is required and never upgraded",
                 "consumes": [
                     "application/json"
                 ],
@@ -2791,7 +2606,7 @@
                         "required": true
                     },
                     {
-                        "description": "显式命令、精确 DataItem 主目标、边界摘要、许可来源及版本、接收方、只读动作、期限与原因 | Explicit command, exact primary DataItem target, boundary hash, permission source and version, recipient, read action, expiry and reason",
+                        "description": "命令、精确数据项或显式节点范围、接收方、动作、期限与原因 | Command, exact DataItem or explicit node scope, recipient, action, expiry and reason",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -2899,7 +2714,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "精确叶子 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | Exact leaf EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine",
+                        "description": "DataItem 或节点 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | DataItem or node EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine",
                         "name": "catalog_path",
                         "in": "query"
                     },
@@ -3154,6 +2969,98 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.engine_access_fulfillment.create"
+                ]
+            }
+        },
+        "/engines/{id}/authorization-nodes/query": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前Tenant User须具有源授权读取功能和目标引擎管理范围。仅查询Meta已识别PG server/schema的直接子节点身份，不枚举数据项、源目录、内容、属性或统计；查询前后重核当前人员资格。结果不是Grant，签发仍独立核对真实节点 | Current Tenant User needs source-grant read permission and target engine management scope, rechecked before and after Meta IO. Lists only immediate Meta-identified PG server/schema node identities. No DataItem enumeration, native source browsing, content, attributes or statistics. Not a Grant; issuance independently verifies the exact node",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据授权 | Source Data Grants"
+                ],
+                "summary": "浏览授权候选节点 | Browse authorization candidate nodes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "节点路径及分页 | Node path and pagination",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.NodeIdentityPageQuery"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.NodeIdentityPage"
+                        }
+                    },
+                    "400": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_grant.read"
                 ]
             }
         },
@@ -16615,6 +16522,57 @@
                 }
             }
         },
+        "authorizationfacts.NodeIdentity": {
+            "type": "object",
+            "properties": {
+                "exists": {
+                    "type": "boolean"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "authorizationfacts.NodeIdentityPage": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.NodeIdentity"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "parent": {
+                    "$ref": "#/definitions/authorizationfacts.NodeIdentity"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "authorizationfacts.NodeIdentityPageQuery": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
         "authorizationfacts.ScopeBoundary": {
             "type": "object",
             "properties": {
@@ -17755,28 +17713,6 @@
                 }
             }
         },
-        "github_com_addp_system_internal_engineaccess.DenyRelease": {
-            "type": "object",
-            "properties": {
-                "deny_id": {
-                    "type": "string"
-                },
-                "reason": {
-                    "type": "string"
-                },
-                "released_at": {
-                    "type": "string"
-                },
-                "released_by_membership_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "released_by_principal_id": {
-                    "type": "string",
-                    "example": ""
-                }
-            }
-        },
         "github_com_addp_system_internal_engineaccess.GrantRevocation": {
             "type": "object",
             "properties": {
@@ -17805,54 +17741,6 @@
                 }
             }
         },
-        "github_com_addp_system_internal_engineaccess.SourceDeny": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string"
-                },
-                "catalog_path": {
-                    "type": "object"
-                },
-                "deny_id": {
-                    "type": "string"
-                },
-                "engine_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "established_at": {
-                    "type": "string"
-                },
-                "established_by_membership_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "established_by_principal_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "expires_at": {
-                    "type": "string"
-                },
-                "expiry_mode": {
-                    "type": "string"
-                },
-                "item_fingerprint": {
-                    "type": "string"
-                },
-                "reason": {
-                    "type": "string"
-                },
-                "recipient_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "recipient_type": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_system_internal_engineaccess.SourceGrantInspection": {
             "type": "object",
             "properties": {
@@ -17863,14 +17751,11 @@
                 "catalog_path": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
                 },
-                "denies": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantInspectionDeny"
-                    }
-                },
                 "item_fingerprint": {
                     "type": "string"
+                },
+                "node_recursive": {
+                    "type": "boolean"
                 },
                 "observed_at": {
                     "type": "string"
@@ -17880,7 +17765,6 @@
                     "enum": [
                         "grant",
                         "no_grant",
-                        "explicit_deny",
                         "source_unavailable",
                         "target_unavailable"
                     ]
@@ -17896,30 +17780,6 @@
                 }
             }
         },
-        "github_com_addp_system_internal_engineaccess.SourceGrantInspectionDeny": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string"
-                },
-                "deny_id": {
-                    "type": "string"
-                },
-                "expires_at": {
-                    "type": "string"
-                },
-                "expiry_mode": {
-                    "type": "string"
-                },
-                "recipient_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "recipient_type": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_system_internal_engineaccess.SourceGrantInspectionSource": {
             "type": "object",
             "properties": {
@@ -17929,6 +17789,9 @@
                 "approval_mode": {
                     "type": "string"
                 },
+                "catalog_path": {
+                    "type": "object"
+                },
                 "expires_at": {
                     "type": "string"
                 },
@@ -17937,6 +17800,9 @@
                 },
                 "grant_count": {
                     "type": "integer"
+                },
+                "node_recursive": {
+                    "type": "boolean"
                 },
                 "recipient_id": {
                     "type": "string",
@@ -17979,6 +17845,9 @@
                 },
                 "item_fingerprint": {
                     "type": "string"
+                },
+                "node_recursive": {
+                    "type": "boolean"
                 },
                 "recipient_id": {
                     "type": "string",
@@ -18036,6 +17905,9 @@
                 },
                 "item_fingerprint": {
                     "type": "string"
+                },
+                "node_recursive": {
+                    "type": "boolean"
                 },
                 "operator_membership_id": {
                     "type": "string",
@@ -20651,54 +20523,6 @@
                 }
             }
         },
-        "internal_api.CreateEngineAccessDenyRequest": {
-            "type": "object",
-            "required": [
-                "item_fingerprint"
-            ],
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "read",
-                        "metadata_read"
-                    ]
-                },
-                "catalog_path": {
-                    "$ref": "#/definitions/plugin.EngineCatalogPath"
-                },
-                "deny_id": {
-                    "type": "string"
-                },
-                "expires_at": {
-                    "type": "string"
-                },
-                "expiry_mode": {
-                    "type": "string",
-                    "enum": [
-                        "at_time",
-                        "until_revoked"
-                    ]
-                },
-                "item_fingerprint": {
-                    "type": "string"
-                },
-                "reason": {
-                    "type": "string"
-                },
-                "recipient_id": {
-                    "type": "string"
-                },
-                "recipient_type": {
-                    "type": "string",
-                    "enum": [
-                        "user",
-                        "department",
-                        "project_group"
-                    ]
-                }
-            }
-        },
         "internal_api.CreateExecuteTaskRequest": {
             "type": "object",
             "required": [
@@ -20746,10 +20570,6 @@
         },
         "internal_api.CreateIndependentEngineAccessGrantRequest": {
             "type": "object",
-            "required": [
-                "expected_boundary_hash",
-                "item_fingerprint"
-            ],
             "properties": {
                 "action": {
                     "type": "string",
@@ -20776,6 +20596,9 @@
                 },
                 "item_fingerprint": {
                     "type": "string"
+                },
+                "node_recursive": {
+                    "type": "boolean"
                 },
                 "reason": {
                     "type": "string"
@@ -23571,17 +23394,6 @@
                     "description": "Waiting 为 null 时继承平台默认值 | Null inherits the platform default.",
                     "type": "integer",
                     "x-nullable": true
-                }
-            }
-        },
-        "internal_api.ReleaseEngineAccessDenyRequest": {
-            "type": "object",
-            "required": [
-                "reason"
-            ],
-            "properties": {
-                "reason": {
-                    "type": "string"
                 }
             }
         },

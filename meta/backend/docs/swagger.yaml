@@ -146,6 +146,30 @@ definitions:
       tenant_id:
         type: integer
     type: object
+  authorizationfacts.NodeIdentityPage:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/authorizationfacts.NodeIdentity'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      parent:
+        $ref: '#/definitions/authorizationfacts.NodeIdentity'
+      total:
+        type: integer
+    type: object
+  authorizationfacts.NodeIdentityPageQuery:
+    properties:
+      page:
+        type: integer
+      page_size:
+        type: integer
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
   authorizationfacts.NodeIdentityQuery:
     properties:
       target:
@@ -3315,6 +3339,62 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.scan_task.execute
+  /runtime/node-identities/query:
+    post:
+      consumes:
+      - application/json
+      description: 仅当前租户 addp-system Service 通过独立机器权限查询指定 PG server/schema 的直接子节点；不返回数据项、内容、属性、统计或权限裁决。分页最多100项，正文最多16KiB，不接受query或额外字段
+        | Fixed tenant addp-system Service with the node identity permission. Returns
+        immediate PG owner nodes only; no DataItems, content, attributes, statistics
+        or access decisions. At most 100 nodes per page and 16KiB request body; query
+        and extra fields are rejected
+      parameters:
+      - description: 节点查询及分页 | Node query and pagination
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorizationfacts.NodeIdentityPageQuery'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/authorizationfacts.NodeIdentityPage'
+        "400":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "413":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询直接子节点身份 | Query immediate child node identities
+      tags:
+      - Meta Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.node_identity.read
   /runtime/node-identities/resolve:
     post:
       consumes:

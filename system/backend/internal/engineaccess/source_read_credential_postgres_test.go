@@ -25,7 +25,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 	newUser func(*testing.T, time.Duration) (userProvenance, time.Time),
 	grant func(*testing.T, string, int64, *time.Time) uuid.UUID,
 	roles *iam.TenantRoleService, tenantID, adminID int64,
-	deny func(*testing.T, string, int64, *time.Time) uuid.UUID, revoke func(*testing.T, uuid.UUID),
+	revoke func(*testing.T, uuid.UUID),
 ) {
 	t.Run("trusted current User credential and precise rules", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -312,11 +312,10 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				}
 			}
 			grant(t, "user", user.PrincipalID, nil)
-			deny(t, "user", user.PrincipalID, nil)
-			checkProfile(session.AccessToken, request.Targets, commonapi.ErrForbidden)
+			checkProfile(session.AccessToken, request.Targets, nil)
 			for _, credential := range credentials {
-				if result, err := service.CheckManagerPreviewRead(ctx, credential, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
-					t.Fatalf("Deny priority lost=%+v %v", result, err)
+				if result, err := service.CheckManagerPreviewRead(ctx, credential, request); err != nil || result == nil {
+					t.Fatalf("new explicit Grant not observed=%+v %v", result, err)
 				}
 			}
 			if _, err := roles.RevokeAssignment(ctx, iam.RevokeTenantRoleAssignmentInput{TenantID: tenantID, AssignmentID: assignment.ID, ActorPrincipalID: adminID, Reason: "End preview fixture"}); err != nil {

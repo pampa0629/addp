@@ -86,3 +86,20 @@ it('requires an explicit action and freezes metadata separately from read', () =
  expect(command.action).toBe('metadata_read')
  expect(JSON.parse(command.payload).action).toBe('metadata_read')
 })
+
+
+it('captures a persistent node scope independently of DataItem boundaries', () => {
+ const node = { engine_id: '2', version: 'catalog.path/v1', segments: path.segments.slice(0,2) }
+ for (const recursive of [false,true]) {
+  const captured=captureIndependentGrant('2',{engine_id:'2',catalog_path:node,node_recursive:recursive},form,candidates)
+  const body=JSON.parse(captured.payload)
+  expect(body.node_recursive).toBe(recursive);expect(captured.nodeRecursive).toBe(recursive)
+  expect(body).not.toHaveProperty('item_fingerprint');expect(body).not.toHaveProperty('expected_boundary_hash')
+  expect(captured.compositionPaths).toEqual([])
+  expect(() => captureIndependentGrant('2',{engine_id:'2',catalog_path:path,node_recursive:recursive},form,candidates)).toThrow()
+  expect(() => captureIndependentGrant('2',{engine_id:'2',catalog_path:node,node_recursive:recursive,binding},form,candidates)).toThrow()
+ }
+ expect(() => captureIndependentGrant('2',{engine_id:'2',catalog_path:node},form,candidates)).toThrow()
+ expect(zh.system.engine.sourceGrants.confirmNode).toContain('以后新识别')
+ expect(en.system.engine.sourceGrants.confirmNode).toContain('newly identified')
+})

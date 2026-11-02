@@ -1891,7 +1891,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[3], 'catalog_offline_explicit_direct_grant_and_revocation'),
                                    (paths[3], 'catalog_recovery_preserves_original_rules'),
                                    (paths[3], 'self.content_change_flow('),
-                                   (paths[3], 'deny_survives_content_change_and_basic_rescan'),
+                                   (paths[3], 'existing_grant_reads_reset_content'),
                                    (paths[6], 'LOCK TABLE public.metric_people'),
                                    (paths[6], 'pg-content:baseline'),
                                    (paths[2], 'export CATALOG_SERVICE_CLIENT_SECRET=')):

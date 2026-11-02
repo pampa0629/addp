@@ -21,7 +21,7 @@ import (
 // restriction and revocation facts use their production owner services.
 func exerciseManagerProfileAuthorization(t *testing.T, db *gorm.DB, path plugin.EngineCatalogPath,
 	newUser func(*testing.T, time.Duration) (userProvenance, time.Time), grant func(*testing.T, string, int64, *time.Time) uuid.UUID,
-	roles *iam.TenantRoleService, tenantID, adminID int64, deny func(*testing.T, string, int64, *time.Time) uuid.UUID, revoke func(*testing.T, uuid.UUID),
+	roles *iam.TenantRoleService, tenantID, adminID int64, revoke func(*testing.T, uuid.UUID),
 ) {
 	t.Run("Manager complete source execution authorization", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
@@ -285,9 +285,9 @@ func exerciseManagerProfileAuthorization(t *testing.T, db *gorm.DB, path plugin.
 			t.Fatalf("revoked source allowed: %v %v", observed, err)
 		}
 		grant(t, "user", user.PrincipalID, nil)
-		deny(t, "user", user.PrincipalID, nil)
-		if observed, err := service.Authorize(ctx, claim); !observed.IsZero() || !errors.Is(err, commonapi.ErrForbidden) {
-			t.Fatalf("Deny allowed: %v %v", observed, err)
+		if observed, err := service.Authorize(ctx, claim); observed.IsZero() || err != nil {
+			t.Fatalf("new explicit source Grant not observed: %v %v", observed, err)
 		}
+
 	})
 }

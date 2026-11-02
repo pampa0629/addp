@@ -47,6 +47,8 @@ type Service struct {
 	independentTarget       IndependentTargetVerifier
 	authorizationFacts      AuthorizationFactsReader
 	dataItemIdentities      DataItemIdentityReader
+	nodeIdentities          NodeIdentityReader
+	nodeIdentityPages       NodeIdentityPageReader
 	productionReceipts      TransferProductionReceiptReader
 	metaScanFacts           MetaScanFactsReader
 	executionEngineSnapshot func(*models.Engine) (*models.Engine, error)

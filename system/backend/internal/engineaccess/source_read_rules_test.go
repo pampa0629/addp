@@ -32,16 +32,14 @@ func TestSourceReadRuleSQLPreservesGORMParameterPositions(t *testing.T) {
 			filter.TableSearch = "table ? 'literal'_%"
 		}
 		predicate, args := filter.targetPredicate()
-		parameters := append([]any{int64(1), int64(2), int64(1), int64(3)}, args...)
-		parameters = append(parameters, int64(1), int64(3))
-		parameters = append(parameters, args...)
+		parameters := append([]any{int64(1), int64(2), int64(3)}, args...)
 		parameters = append(parameters, 17, 34)
 		tests = append(tests, struct {
 			name  string
 			query string
 			args  []any
 		}{fmt.Sprintf("account_list_filtered_%t", filtered),
-			accountGrantRelationsPrefixSQL + " AND " + predicate + accountDenyCandidatesSQL + " AND " + predicate + accountGrantRelationsSuffixSQL,
+			fmt.Sprintf(accountGrantRelationsSQL, predicate),
 			parameters})
 	}
 	for _, test := range tests {
@@ -134,7 +132,7 @@ func TestSourceReadObservationFailsClosedForPartialOrMixedResults(t *testing.T) 
 	paths := []engineplugin.EngineCatalogPath{testFulfillmentRequest().Path, testFulfillmentRequest().Path}
 	now := time.Now().UTC()
 	base := []sourceReadRuleRow{{Position: 1, ObservedAt: now, Reason: "grant"}, {Position: 2, ObservedAt: now, Reason: "grant"}}
-	for _, reason := range []string{"explicit_deny", "no_grant", "source_unavailable", "target_unavailable"} {
+	for _, reason := range []string{"no_grant", "source_unavailable", "target_unavailable"} {
 		rows := append([]sourceReadRuleRow(nil), base...)
 		rows[1].Reason = reason
 		result, err := sourceReadObservation(paths, rows)
@@ -151,6 +149,7 @@ func TestSourceReadObservationFailsClosedForPartialOrMixedResults(t *testing.T) 
 		},
 		func(rows []sourceReadRuleRow) []sourceReadRuleRow { rows[0].ObservedAt = time.Time{}; return rows },
 		func(rows []sourceReadRuleRow) []sourceReadRuleRow { rows[1].Reason = "unknown"; return rows },
+		func(rows []sourceReadRuleRow) []sourceReadRuleRow { rows[1].Reason = "explicit_deny"; return rows },
 	} {
 		result, err := sourceReadObservation(paths, mutate(append([]sourceReadRuleRow(nil), base...)))
 		if result != nil || !errors.Is(err, errSourceReadRules) {
@@ -190,7 +189,6 @@ func TestSourceReadObservationCombinesEffectiveDeadlines(t *testing.T) {
 		{"earliest required source", &late, &early, "grant", true, &early},
 		{"same deadline", &early, &early, "grant", true, &early},
 		{"missing source", &late, nil, "no_grant", false, nil},
-		{"denied source", &late, nil, "explicit_deny", false, nil},
 		{"unavailable source", &late, nil, "target_unavailable", false, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -30,7 +30,7 @@ READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.linea
 READER_PERMISSIONS |= {'transfer.task.create', 'transfer.task.read', 'transfer.task.execute',
                        'transfer.task.delete', 'system.execution_authorization.create'}
 OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
-    'system.engine_access_grant.revoke', 'system.engine_access_deny.create', 'system.engine_access_deny.release',
+    'system.engine_access_grant.revoke',
     'catalog.entry.read', 'catalog.inventory.read', 'system.engine_access_fulfillment.create',
     'system.engine.read', 'system.engine_catalog.read',
     'meta.scan_task.create', 'meta.scan_task.update', 'meta.scan_task.delete',
@@ -642,7 +642,7 @@ def mutate_source_content(action):
     repository = Path(__file__).resolve().parents[2]
     required = {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_HOSTED': '1',
                 'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_TEST': '1', 'POSTGRES_DB': 'addp_online'}
-    require(action in {'content-change', 'content-reset'} and sys.platform == 'linux'
+    require(action in {'content-change', 'content-reset', 'node-future-create'} and sys.platform == 'linux'
             and os.uname().machine == 'x86_64' and not (repository / '.env').exists()
             and all(os.environ.get(key) == value for key, value in required.items()),
             'PG content changes require the isolated Hosted suite')
@@ -653,7 +653,7 @@ def mutate_source_content(action):
             cwd=repository, env=environment, capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise SuiteError('PG content fixture did not complete') from exc
-    receipt = 'pg-content:changed' if action == 'content-change' else 'pg-content:baseline'
+    receipt = {'content-change': 'pg-content:changed', 'content-reset': 'pg-content:baseline', 'node-future-create': 'pg-node:created'}[action]
     require(result.returncode == 0 and result.stdout.strip() == receipt, 'PG content fixture failed its source oracle')
 
 
@@ -1461,7 +1461,7 @@ class MetaCollectionScenario:
         self.update(task, force=True)
         evidence['executions']['changed_basic'] = self.trigger(task['id'], True)
         report['checks'].append(COLLECTION_CHECKS[3])
-        require(self.source_snapshot()==before, 'central collection changed source grants or denies')
+        require(self.source_snapshot()==before, 'central collection changed source grants')
         evidence['source_rules_unchanged']=True
         report['checks'].append(COLLECTION_CHECKS[4])
 
@@ -1558,7 +1558,7 @@ class Lifecycle:
         self.path = table_path(engine, 'metric_people')
         self.paths = [self.path]
         self.base = f'/api/v1/system/engines/{engine}'
-        self.grants, self.denies = [], []
+        self.grants = []
         self.recipients = {('user', recipient)}
         self.source_observations = []
         self.expiry_grant = None
@@ -2035,27 +2035,6 @@ class Lifecycle:
                 'browser withdrawal did not preserve its exact Grant history')
         report['checks'].extend(WORKSPACE_CHECKS)
 
-    def deny(self, facts, *, recipient_type='user', recipient_id=None, catalog_path=None):
-        command = str(uuid.uuid4())
-        self.denies.append(command)
-        body = {'deny_id': command, 'catalog_path': self.path if catalog_path is None else catalog_path, 'item_fingerprint': facts['item_fingerprint'],
-                'recipient_type': recipient_type, 'recipient_id': self.recipient if recipient_id is None else recipient_id,
-                'action': 'read', 'expiry_mode': 'at_time',
-                'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=180)).isoformat(),
-                'reason': 'Disposable PG lifecycle Deny priority'}
-        self.recipients.add((body['recipient_type'], body['recipient_id']))
-        receipt = self.operator.request('POST', self.base + '/access_denies', (200,), body).payload
-        require(receipt.get('deny_id') == command, 'Deny receipt identity changed')
-        return command
-
-    def release(self, command, *, cleanup=False):
-        response = self.operator.request('POST', self.base + f'/access_denies/{command}/release', (200, 404, 409) if cleanup else (200,),
-                                         {'reason': 'Disposable PG lifecycle Deny release'})
-        require(response.status != 200 or response.payload.get('deny_id') == command,
-                'Deny release receipt identity changed')
-        require(response.status != 409 or response.payload.get('error_code') == 'engine_access_deny_expired',
-                'Deny cleanup conflict is not natural expiry')
-
     def cleanup(self):
         errors = []
         if self.collection is not None:
@@ -2073,11 +2052,6 @@ class Lifecycle:
                 self.collect_production_grants()
             except Exception:
                 errors.append('initial production Grant recovery failed')
-        for command in self.denies:
-            try:
-                self.release(command, cleanup=True)
-            except Exception:
-                errors.append('Deny release failed')
         for path, kind, recipient in ((path, kind, recipient) for path in self.paths for kind, recipient in sorted(self.recipients)):
             try:
                 active = self.listing(history=True, state='active', recipient_type=kind, recipient_id=recipient, catalog_path=path)
@@ -2101,6 +2075,101 @@ class Lifecycle:
             except Exception:
                 errors.append('production task cleanup failed')
         require(not errors, '; '.join(errors))
+
+    def node_grant(self, path, *, recursive, action='read', seconds=300):
+        require(type(recursive) is bool and action in {'read', 'metadata_read'}, 'explicit node scope required')
+        command = str(uuid.uuid4())
+        body = {'request_id': command, 'catalog_path': path, 'node_recursive': recursive,
+                'recipient_type': 'user', 'recipient_id': self.recipient, 'action': action,
+                'expiry_mode': 'at_time', 'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat(),
+                'reason': 'Disposable PG persistent node scope'}
+        self.grants.append(command)
+        if path not in self.paths: self.paths.append(path)
+        receipt = self.operator.request('POST', self.base + '/access_grants', (201,), body).payload
+        require(all(receipt.get(key) == body[key] for key in ('request_id', 'catalog_path', 'node_recursive', 'recipient_type', 'recipient_id', 'action', 'expiry_mode'))
+                and type(receipt.get('node_recursive')) is bool and receipt.get('approval_mode') == 'independent'
+                and receipt.get('granted_at') and receipt.get('revocation') is None
+                and not receipt.get('item_fingerprint') and not receipt.get('boundary_hash')
+                and datetime.fromisoformat(receipt['expires_at'].replace('Z', '+00:00')) == datetime.fromisoformat(body['expires_at']),
+                'persistent node Grant changed its scope or gained an item binding')
+        return command, body
+
+    def node_scope_flow(self, report):
+        report['phase'] = 'persistent_pg_node_scope'
+        token = self.reader.token
+        schema = dict(self.path, segments=self.path['segments'][:2])
+        root = dict(self.path, segments=self.path['segments'][:1])
+        future = table_path(self.engine, 'metric_node_future')
+        self.paths.append(future)  # Own the exact cleanup path before source creation.
+        for path in self.paths:
+            for kind, recipient in self.recipients:
+                require(self.listing(history=True, state='active', catalog_path=path, recipient_type=kind, recipient_id=recipient)['total'] == 0,
+                        'node scope scenario requires zero current source rules')
+        nodes = self.operator.request('POST', self.base + '/authorization-nodes/query', (200,),
+                {'target': schema, 'page': 1, 'page_size': 100}).payload
+        require(nodes == {'parent': {'tenant_id': self.tenant, 'target': schema, 'exists': True},
+                          'nodes': [], 'total': 0, 'page': 1, 'page_size': 100},
+                'schema navigation is not an identity-only node page')
+        def visible(name, facts, expected_id=None):
+            row = item(self.reader, self.engine, name)
+            require(row.get('tenant_id') == self.tenant and row.get('engine_id') == self.engine
+                    and row.get('fingerprint') == facts['item_fingerprint']
+                    and (expected_id is None or row['id'] == expected_id), 'node metadata identity changed')
+            return row['id']
+        meta, _ = self.node_grant(schema, recursive=False, action='metadata_read')
+        hidden_metadata_list(self.outsider, self.engine)
+        facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
+        visible('metric_people', facts)
+        preview(self.reader, locator(self.engine, 'metric_people'), False)
+        direct, _ = self.node_grant(root, recursive=False)
+        preview(self.reader, locator(self.engine, 'metric_people'), False)
+        self.revoke(direct)  # A non-recursive server never reaches schema tables.
+        read, body = self.node_grant(root, recursive=True)
+        preview(self.reader, locator(self.engine, 'metric_people'), True, 2)
+        mutate_source_content('node-future-create')  # Only the disposable Business owner writes source SQL.
+        scan = basic_scan(self.operator, self.engine, ['metric_node_future'])
+        future_facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, future)
+        future_item = visible('metric_node_future', future_facts)
+        target = locator(self.engine, 'metric_node_future', future_item)
+        preview(self.reader, target, True, 2, values=('N1', 'N2'))
+        preview(self.outsider, target, False)
+        history = self.listing(history=True, catalog_path=future)
+        require(history['total'] == 2 and len(history['data']) == 2
+                and {row['request_id'] for row in history['data']} == {meta, read}
+                and all(row.get('node_recursive') is not None and row['catalog_path'] in (root, schema)
+                        and not row.get('item_fingerprint') for row in history['data']),
+                'future item created a leaf Grant or lost original node scope history')
+        self.revoke(read)
+        visible('metric_node_future', future_facts, expected_id=future_item)
+        preview(self.reader, target, False)
+        # The original revoked command may be observed, but never renewed.
+        replay = self.operator.request('POST', self.base + '/access_grants', (201,), body).payload
+        require(replay.get('request_id') == read and replay.get('revocation'), 'node replay restored withdrawn access')
+        preview(self.reader, target, False)
+        expiring, _ = self.node_grant(root, recursive=True, seconds=45)
+        preview(self.reader, target, True, 2, values=('N1', 'N2'))
+        deadline = time.monotonic() + 75
+        while time.monotonic() < deadline:
+            rows = self.listing(history=True, state='expired', catalog_path=root)['data']
+            expired = [row for row in rows if row.get('request_id') == expiring]
+            if expired: break
+            time.sleep(1)
+        else: raise SuiteError('persistent node Grant did not naturally expire')
+        require(len(expired) == 1 and expired[0].get('node_recursive') is True and expired[0].get('revocation') is None,
+                'node natural expiry was replaced by withdrawal')
+        preview(self.reader, target, False)
+        visible('metric_node_future', future_facts, expected_id=future_item)
+        self.revoke(meta)
+        hidden_metadata(self.reader, future_item)
+        require(self.reader.token == token and self.listing(catalog_path=future)['total'] == 0,
+                'node scope changed credentials or left current sources')
+        report['node_scope'] = {'metadata_grant': meta, 'nonrecursive_server_grant': direct, 'recursive_grant': read,
+            'expiry_grant': expiring, 'future_item_id': future_item, 'future_basic_scan': scan,
+            'same_credential': True, 'future_item_rows': 2, 'no_leaf_grants': True, 'natural_expiry_without_revocation': True}
+        report['checks'].extend(['node_identity_page_without_items', 'node_metadata_only_cannot_read',
+            'node_nonrecursive_server_excludes_schema_tables', 'node_future_item_covered_without_leaf_grant',
+            'node_ungranted_account_denied', 'node_withdrawal_preserves_metadata',
+            'node_replay_cannot_restore_withdrawn_scope', 'node_natural_expiry_denies_read'])
 
     def metadata_access_flow(self, report, business, confirmer):
         report['phase'] = 'metadata_access_boundary'
@@ -2328,7 +2397,7 @@ class Lifecycle:
                          'grant_replay_unchanged': True, 'revoked_replay_denied': True})
         report['checks'].extend(['catalog_confirmation_alone_denied', 'catalog_automatic_grant_bound_to_dataitem',
             'catalog_grant_actual_preview_readable', 'catalog_replay_preserves_issuance',
-            'catalog_grant_deny_release_and_withdrawal', 'catalog_replay_does_not_restore_revoked_grant'])
+            'catalog_grant_withdrawal', 'catalog_replay_does_not_restore_revoked_grant'])
 
     def catalog_outage_flow(self, report, *, path, facts, route, command, history, read, target):
         report['phase'] = 'catalog_outage_existing_grant'
@@ -2364,11 +2433,7 @@ class Lifecycle:
             preview(self.outsider, target, False)
             require(self.listing(history=True, state='active', catalog_path=path) == history,
                     'independent direct command changed the original business Grant')
-            report['phase'] = 'catalog_outage_deny_release_and_withdrawal'
-            deny = self.deny(facts, catalog_path=path)
-            read(False)
-            self.release(deny)
-            read(True)
+            report['phase'] = 'catalog_outage_withdrawal'
             self.revoke(command['request_id'])
             read(False)
         report['phase'] = 'catalog_recovery_preserves_withdrawal'
@@ -2385,14 +2450,14 @@ class Lifecycle:
         evidence.update(unavailable_status=unavailable.status, direct_granted_and_revoked=True,
                         same_credential=True, before=outage.before, after=outage.after)
         report['checks'].extend(['existing_grant_readable_without_catalog', 'catalog_offline_new_fulfillment_unavailable',
-            'catalog_offline_explicit_direct_grant_and_revocation', 'catalog_offline_deny_release_withdrawal',
+            'catalog_offline_explicit_direct_grant_and_revocation', 'catalog_offline_withdrawal',
             'catalog_recovery_preserves_original_rules'])
 
-    def inspect_sources(self, facts, sources, denies, reason='grant'):
+    def inspect_sources(self, facts, sources, reason='grant'):
         current = self.listing()
-        if not sources and not denies:
+        if not sources:
             require(current['total'] == 0 and current['data'] == [], 'source-free account still has a current relation')
-            self.source_observations.append({'reason': 'no_grant', 'sources': [], 'denies': []})
+            self.source_observations.append({'reason': 'no_grant', 'sources': []})
             return
         require(current['total'] == 1 and len(current['data']) == 1, 'current sources were not merged to one DataItem')
         row = current['data'][0]
@@ -2408,12 +2473,8 @@ class Lifecycle:
         actual = {(source['recipient_type'], source['recipient_id']): source['request_id'] for source in observed['sources']}
         require(actual == sources and len(observed['sources']) == len(sources)
                 and all(source['grant_count'] == 1 for source in observed['sources']), 'Grant source anchors differ')
-        actual_denies = {(deny['recipient_type'], deny['recipient_id']): deny['deny_id'] for deny in observed['denies']}
-        require(actual_denies == denies and len(observed['denies']) == len(denies), 'Deny source anchors differ')
-        require(all(set(deny) == {'action', 'deny_id', 'recipient_type', 'recipient_id', 'expiry_mode', 'expires_at'}
-                    and deny['action'] == 'read' for deny in observed['denies']),
-                'Deny summary action or safe fields differ')
-        self.source_observations.append({key: observed[key] for key in ('reason', 'sources', 'denies')})
+        require('denies' not in observed, 'retired Deny leaked into current source inspection')
+        self.source_observations.append({key: observed[key] for key in ('reason', 'sources')})
 
     def organization_flow(self, report, facts, target, ungranted):
         report['phase'] = 'organization_sources'
@@ -2421,52 +2482,35 @@ class Lifecycle:
         report['organization_recipients'] = self.organizations
         before = self.reader.token
         preview(self.outsider, target, False)
-        sources, denies = {}, {}
+        sources = {}
         personal = ('user', self.recipient)
         department = ('department', self.organizations['department'])
         project = ('project_group', self.organizations['project_group'])
         for source in (department, project, personal):
             sources[source], _ = self.grant(facts, recipient_type=source[0], recipient_id=source[1])
-            self.inspect_sources(facts, sources, denies)
+            self.inspect_sources(facts, sources)
             preview(self.reader, target, True, 2)
             preview(self.outsider, target, False)
             preview(self.reader, ungranted, False)
         report['checks'].append('three_sources_merged_and_nonmember_denied')
         personal_id = sources.pop(personal)
         self.revoke(personal_id)
-        self.inspect_sources(facts, sources, denies)
+        self.inspect_sources(facts, sources)
         require(self.listing(history=True, state='active')['total'] == 0,
                 'history expanded current organization sources into personal Grants')
         preview(self.reader, target, True, 2)
         report['checks'].append('personal_withdrawal_preserves_organizations')
-        for source in (personal, project):
-            denies[source] = self.deny(facts, recipient_type=source[0], recipient_id=source[1])
-            self.inspect_sources(facts, sources, denies, 'explicit_deny')
-            preview(self.reader, target, False)
-        self.release(denies.pop(personal))
-        self.inspect_sources(facts, sources, denies, 'explicit_deny')
-        preview(self.reader, target, False)
-        report['checks'].append('one_deny_release_preserves_other_deny')
-        self.release(denies.pop(project))
-        self.inspect_sources(facts, sources, denies)
-        preview(self.reader, target, True, 2)
-        report['checks'].append('all_denies_released_restore_organization_read')
         self.revoke(sources.pop(department))
-        self.inspect_sources(facts, sources, denies)
+        self.inspect_sources(facts, sources)
         preview(self.reader, target, True, 2)
         report['checks'].append('department_withdrawal_preserves_project')
-        denies[personal] = self.deny(facts)
         self.revoke(sources.pop(project))
-        self.inspect_sources(facts, sources, denies, 'explicit_deny')
-        preview(self.reader, target, False)
-        report['checks'].append('last_grant_withdrawn_preserves_deny_only_anchor')
-        self.release(denies.pop(personal))
-        self.inspect_sources(facts, sources, denies)
+        self.inspect_sources(facts, sources)
         preview(self.reader, target, False)
         preview(self.outsider, target, False)
         preview(self.reader, ungranted, False)
         require(self.reader.token == before, 'organization authorization changed the reader credential')
-        report['checks'].append('all_sources_withdrawn_and_release_does_not_grant')
+        report['checks'].append('all_sources_withdrawn_denies_read')
 
     def close_membership(self, kind, before):
         collection = 'departments' if kind == 'department' else 'project_groups'
@@ -2519,7 +2563,7 @@ class Lifecycle:
         for kind, recipient in self.organizations.items():
             sources[(kind, recipient)], _ = self.grant(facts, recipient_type=kind, recipient_id=recipient)
         issued_sources = dict(sources)
-        self.inspect_sources(facts, sources, {})
+        self.inspect_sources(facts, sources)
         preview(self.reader, target, True, 2)
         remaining = dict(self.organizations)
         observations = report['membership_observations'] = []
@@ -2531,7 +2575,7 @@ class Lifecycle:
                 remaining.pop(kind)
                 self.relogin_reader(before, target, remaining)
                 sources.pop((kind, self.organizations[kind]))
-                self.inspect_sources(facts, sources, {})
+                self.inspect_sources(facts, sources)
                 preview(self.reader, target, bool(sources), 2)
                 preview(self.reader, ungranted, False)
                 preview(self.outsider, target, False)
@@ -2571,9 +2615,6 @@ class Lifecycle:
                 'locator': target, 'page': 1, 'page_size': 20}), (503,)).payload
             require(set(response) == {'error', 'error_code'} and response['error_code'] == 'authorization_service_unavailable',
                     'Meta outage leaked content or masqueraded as an absent scan')
-            report['phase'] = 'meta_outage_known_target_deny'
-            deny = self.deny(facts)
-            evidence['deny_id'] = deny
             report['phase'] = 'meta_dependency_restart'
         # No scan, re-login, new Grant, or rule repair is permitted during recovery.
         evidence['after'] = outage.after
@@ -2584,21 +2625,18 @@ class Lifecycle:
         active = self.listing(history=True, state='active')['data']
         require(len(active) == 1 and active[0]['request_id'] == grant and active[0].get('revocation') is None
                 and active[0]['boundary_hash'] == facts['boundary_hash'], 'recovery altered the original Grant')
-        report['phase'] = 'meta_recovered_deny_still_blocks'
-        preview(self.reader, target, False)
-        preview(self.reader, ungranted, False)
-        report['phase'] = 'meta_recovery_explicit_release_and_withdrawal'
-        self.release(deny)
+        report['phase'] = 'meta_recovered_original_grant_readable'
         preview(self.reader, target, True, 2)
+        preview(self.reader, ungranted, False)
+        report['phase'] = 'meta_recovery_explicit_withdrawal'
         self.revoke(grant)
         preview(self.reader, target, False)
         evidence.update({
-            'facts_status': 503, 'unavailable_preview_status': 503, 'recovered_preview_status': 403,
-            'released_preview_status': 200, 'same_credential': True, 'verified_without_rescan': True,
-            'grant_id': grant, 'deny_id': deny})
-        report['checks'].extend(['meta_outage_blocks_existing_grant', 'known_target_deny_created_offline',
-            'meta_recovery_preserves_identity_boundary_and_grant', 'deny_survives_meta_recovery_without_rescan',
-            'explicit_release_restores_original_grant_then_withdrawal_denies'])
+            'facts_status': 503, 'unavailable_preview_status': 503, 'recovered_preview_status': 200, 'same_credential': True, 'verified_without_rescan': True,
+            'grant_id': grant})
+        report['checks'].extend(['meta_outage_blocks_existing_grant',
+            'meta_recovery_preserves_identity_boundary_and_grant', 'original_grant_recovers_without_rescan',
+            'meta_recovery_withdrawal_denies'])
 
     def content_change_flow(self, report, facts, original, target, ungranted):
         report['phase'] = 'pg_content_change_grant'
@@ -2628,22 +2666,11 @@ class Lifecycle:
             rescan(visible=True)
             unchanged(history)
             preview(self.reader, target, True, 3, values=('A', 'B2', 'C'))
-            report['phase'] = 'pg_content_change_deny'
-            deny = self.deny(facts)
+            report['phase'] = 'pg_content_reset_existing_grant'
             mutate_source_content('content-reset')
-            rescan()
+            rescan(visible=True)
             unchanged(history)
-            current = self.listing()['data']
-            require(len(current) == 1 and current[0]['inspection']['reason'] == 'explicit_deny'
-                    and [row['deny_id'] for row in current[0]['inspection']['denies']] == [deny],
-                    'Deny did not survive the content update and basic rescan')
-            preview(self.reader, target, False)
-            self.release(deny)
-            current = item(self.reader, self.engine, 'metric_people')
-            require(current['id'] == original['id'] and current['fingerprint'] == original['fingerprint'],
-                    'Deny-period scan changed the persisted Meta identity')
             preview(self.reader, target, True, 2)
-            unchanged(history)
             self.revoke(grant)
             withdrawn = self.listing(history=True)
             report['phase'] = 'pg_content_change_withdrawn'
@@ -2654,7 +2681,7 @@ class Lifecycle:
             self.operator.request('POST', self.base + '/access_grants', (201,), command)
             preview(self.reader, target, False)
             unchanged(withdrawn)
-            require(self.listing()['total'] == 0, 'withdrawn Grant or released Deny returned after content change')
+            require(self.listing()['total'] == 0, 'withdrawn Grant returned after content change')
         finally:
             mutate_source_content('content-reset')
         report['phase'] = 'pg_content_baseline_restored'
@@ -2665,9 +2692,9 @@ class Lifecycle:
                 'content acceptance changed the credential or left a current source rule')
         report['content_changes'] = {'basic_scans': scans, 'same_identity_and_boundary': True,
             'same_credential': True, 'changed_row_count': 3, 'baseline_row_count': 2, 'source_baseline_restored': True,
-            'grant_request_id': grant, 'deny_id': deny}
+            'grant_request_id': grant}
         report['checks'].extend(['content_change_preserves_identity_and_boundary', 'old_grant_reads_changed_content',
-            'deny_survives_content_change_and_basic_rescan', 'release_restores_current_content',
+            'existing_grant_reads_reset_content',
             'content_change_and_replay_do_not_restore_withdrawn_grant', 'source_baseline_restored_without_read_access'])
 
     def run(self, report):
@@ -2704,12 +2731,8 @@ class Lifecycle:
         require(refreshed['id'] == original['id'] and refreshed['fingerprint'] == original['fingerprint']
                 and after['boundary_hash'] == facts['boundary_hash'], 'basic rescan changed the approved DataItem boundary')
         preview(self.reader, target, True, 2)
-        report['phase'] = 'deny_release_revoke'
-        deny = self.deny(facts)
-        preview(self.reader, target, False)
-        require(self.listing(history=True, state='active')['total'] == 1, 'Deny test lost its active Grant')
-        self.release(deny)
-        preview(self.reader, target, True, 2)
+        report['phase'] = 'grant_withdrawal'
+        require(self.listing(history=True, state='active')['total'] == 1, 'active Grant missing before withdrawal')
         self.revoke(first)
         preview(self.reader, target, False)
         require(self.listing(history=True, state='revoked')['total'] == 1, 'withdrawal history is missing')
@@ -2733,7 +2756,7 @@ class Lifecycle:
         report.update(grant_commands=self.grants, item_fingerprint=facts['item_fingerprint'], boundary_hash=facts['boundary_hash'],
                       rows=2, same_credential_through_grant_expiry=True, exact_target_only=True,
                       checks=['ungranted_denied', 'granted_readable', 'duplicate_rejected', 'basic_rescan_readable',
-                              'deny_overrides_grant', 'release_restores_read', 'revoke_denies_read', 'natural_expiry_denies_read'])
+                              'revoke_denies_read', 'natural_expiry_denies_read'])
         self.organization_flow(report, facts, target, ungranted)
         self.membership_flow(report, facts, target, ungranted)
         self.meta_recovery_flow(report, facts, target, ungranted)
@@ -2804,12 +2827,13 @@ def main():
         lifecycle.collection.run_probe_control(report, controller)
         del controller
         lifecycle.collection.run_inflight(report)
+        lifecycle.node_scope_flow(report)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)
     finally:
         if lifecycle is not None:
-            report.update(grant_commands=lifecycle.grants, deny_commands=lifecycle.denies)
+            report.update(grant_commands=lifecycle.grants)
             if lifecycle.collection is not None:
                 report['meta_collection']['cleanup'] = 'failed'
             try:

@@ -1,6 +1,7 @@
 package authorizationfacts
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -42,5 +43,51 @@ func TestNodeIdentityRequiresCanonicalRootOrSchema(t *testing.T) {
 		if (NodeIdentityQuery{Target: target}).Validate() == nil {
 			t.Fatal("noncanonical node accepted")
 		}
+	}
+}
+
+func TestNodeIdentityPageRejectsScopeAndPaginationDrift(t *testing.T) {
+	root := plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), 9)
+	query := NodeIdentityPageQuery{Target: root, Page: 1, PageSize: 1}
+	original := NodeIdentityPage{Parent: NodeIdentity{TenantID: 7, Target: root, Exists: true}, Nodes: []NodeIdentity{{TenantID: 7, Target: plugin.TabularNamespacePath(9, "schema", "a.schema/"), Exists: true}}, Total: 2, Page: 1, PageSize: 1}
+	if original.Validate(7, query) != nil {
+		t.Fatal("valid partial node page rejected")
+	}
+	for name, mutate := range map[string]func(*NodeIdentityPage){
+		"tenant":         func(p *NodeIdentityPage) { p.Nodes[0].TenantID++ },
+		"engine":         func(p *NodeIdentityPage) { p.Nodes[0].Target.EngineID++ },
+		"missing parent": func(p *NodeIdentityPage) { p.Parent.Exists = false },
+		"missing child":  func(p *NodeIdentityPage) { p.Nodes[0].Exists = false },
+		"item":           func(p *NodeIdentityPage) { p.Nodes[0].Target = plugin.TabularItemPath(9, "schema", "s", "t") },
+		"page drift":     func(p *NodeIdentityPage) { p.Page++ },
+		"size drift":     func(p *NodeIdentityPage) { p.PageSize++ },
+		"count drift":    func(p *NodeIdentityPage) { p.Total = 0 },
+		"nil nodes":      func(p *NodeIdentityPage) { p.Nodes = nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var changed NodeIdentityPage
+			encoded, _ := json.Marshal(original)
+			_ = json.Unmarshal(encoded, &changed)
+			mutate(&changed)
+			if changed.Validate(7, query) == nil {
+				t.Fatal("invalid page accepted")
+			}
+		})
+	}
+	schema := plugin.TabularNamespacePath(9, "schema", "s")
+	schemaPage := NodeIdentityPage{Parent: NodeIdentity{TenantID: 7, Target: schema, Exists: true}, Nodes: []NodeIdentity{}, Page: 1, PageSize: 1}
+	if schemaPage.Validate(7, NodeIdentityPageQuery{Target: schema, Page: 1, PageSize: 1}) != nil {
+		t.Fatal("empty schema node page rejected")
+	}
+	schemaPage.Total = 1
+	schemaPage.Nodes = original.Nodes
+	if schemaPage.Validate(7, NodeIdentityPageQuery{Target: schema, Page: 1, PageSize: 1}) == nil {
+		t.Fatal("schema cannot enumerate items or peer nodes")
+	}
+	query.Page = 3
+	original.Page = 3
+	original.Nodes = []NodeIdentity{}
+	if original.Validate(7, query) != nil {
+		t.Fatal("past-end empty page rejected")
 	}
 }

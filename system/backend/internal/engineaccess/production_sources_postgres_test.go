@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -41,7 +42,7 @@ func exerciseInitialProductionSources(t *testing.T, db *gorm.DB, acceptor *Servi
 			user.AuthorizationVersion = p.AuthorizationVersion
 			return user
 		}
-		commandRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.production_rule_commands", Name: "Production rule commands", PermissionKeys: []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})
+		commandRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.production_rule_commands", Name: "Production rule commands", PermissionKeys: []string{"system.engine_access_grant.create", "system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -68,23 +69,6 @@ func exerciseInitialProductionSources(t *testing.T, db *gorm.DB, acceptor *Servi
 				t.Fatal(err)
 			}
 			return requestID
-		}
-		deny := func(t *testing.T, kind string, id int64, expiry *time.Time) uuid.UUID {
-			t.Helper()
-			input := CreateDenyInput{Actor: actor, EngineID: int64(base.Path.EngineID), DenyID: uuid.New(), CatalogPath: base.Path, ItemFingerprint: factstest.Binding(base.Path).ItemFingerprint, RecipientType: kind, RecipientID: id, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Production source test"}
-			if expiry != nil {
-				input.ExpiryMode, input.ExpiresAt = shared.SharingExpiryAtTime, expiry
-			}
-			if _, err := service.CreateDeny(ctx, input); err != nil {
-				t.Fatal(err)
-			}
-			return input.DenyID
-		}
-		release := func(t *testing.T, id uuid.UUID) {
-			t.Helper()
-			if _, err := service.ReleaseDeny(ctx, ReleaseDenyInput{Actor: actor, EngineID: int64(base.Path.EngineID), DenyID: id, Reason: "Fixture release"}); err != nil {
-				t.Fatal(err)
-			}
 		}
 		revoke := func(t *testing.T, id uuid.UUID) {
 			t.Helper()
@@ -115,7 +99,7 @@ func exerciseInitialProductionSources(t *testing.T, db *gorm.DB, acceptor *Servi
 		}
 		observe := func(prepared *preparedInitialProduction, covered, executionIAM, history bool) *initialProductionObservation {
 			t.Helper()
-			tables := []string{"engine_access_grants", "engine_access_fulfillment_outcomes", "engine_access_denies", "engine_access_grant_revocations", "audit_logs"}
+			tables := []string{"engine_access_grants", "engine_access_fulfillment_outcomes", "engine_access_grant_revocations", "audit_logs"}
 			counts := make([]int64, len(tables))
 			for i, table := range tables {
 				if err := db.Table("system." + table).Count(&counts[i]).Error; err != nil {
@@ -154,26 +138,32 @@ func exerciseInitialProductionSources(t *testing.T, db *gorm.DB, acceptor *Servi
 		setOrigin() // A new fixture execution captures the now-current source.
 		prepared := prepare()
 		observe(prepared, true, true, false)
-		blocked := deny(t, "user", user.PrincipalID, nil)
-		observe(prepared, false, true, false)
-		release(t, blocked)
-		observe(prepared, true, true, false)
 		boundary := prepared.sources.Bindings[0]
 		prepared.sources.Bindings[0].BoundaryHash = strings.Repeat("f", 64)
 		if got, err := repo.observeInitialProduction(ctx, prepared); got != nil || !errors.Is(err, errInitialProductionEvidence) {
 			t.Fatal("tampered boundary reached source rule observation", got, err)
 		}
 		prepared.sources.Bindings[0] = boundary
-		// Source membership/version still comes from the actual execution,
-		// while a target restriction belongs to the stable target identity.
-		denied, err := productionService.CreateDeny(ctx, CreateDenyInput{Actor: actor, EngineID: int64(target.EngineID), DenyID: uuid.New(), CatalogPath: target,
-			ItemFingerprint: factstest.Binding(target).ItemFingerprint, RecipientType: "user", RecipientID: user.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Restrict produced logical target"})
+		// An explicit target Grant is permanent issuance history, even after
+		// withdrawal. A new execution cannot claim a pristine logical target.
+		productionService.catalogEligible = func(*models.Engine) bool { return true }
+		productionService.WithIndependentTargetVerifier(independentVerifierFunc(func(c context.Context, tenant int64, p engineplugin.EngineCatalogPath) (int64, error) {
+			e, err := repo.engine(c, tenant, int64(p.EngineID), false)
+			if err != nil {
+				return 0, err
+			}
+			return e.Version, nil
+		}))
+		targetBinding := factstest.Binding(target)
+		targetGrant, err := productionService.CreateIndependentGrant(ctx, CreateIndependentGrantInput{Actor: actor, EngineID: int64(target.EngineID), RequestID: uuid.New(), CatalogPath: target, ItemFingerprint: targetBinding.ItemFingerprint, ExpectedBoundaryHash: targetBinding.BoundaryHash, RecipientType: "user", RecipientID: user.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit logical target history"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		observe(prepared, true, true, true)
-		release(t, denied.DenyID)
-		observe(prepared, true, true, true) // Released history cannot make a target pristine.
+		if _, err := productionService.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(target.EngineID), RequestID: targetGrant.RequestID, Reason: "Withdraw target source"}); err != nil {
+			t.Fatal(err)
+		}
+		observe(prepared, true, true, true)
 		revoke(t, sourceGrant)
 		observe(prepared, false, true, true)
 		if _, err := repo.observeInitialProduction(ctx, &preparedInitialProduction{production: prepared.production, sources: prepared.sources, engineVersions: map[int64]int64{}}); !errors.Is(err, errInitialProductionEvidence) {

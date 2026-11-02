@@ -37,8 +37,9 @@ type RevokeEngineAccessGrantRequest struct {
 type CreateIndependentEngineAccessGrantRequest struct {
 	RequestID            string                         `json:"request_id"`
 	CatalogPath          engineplugin.EngineCatalogPath `json:"catalog_path"`
-	ItemFingerprint      string                         `json:"item_fingerprint" binding:"required"`
-	ExpectedBoundaryHash string                         `json:"expected_boundary_hash" binding:"required"`
+	NodeRecursive        *bool                          `json:"node_recursive,omitempty"`
+	ItemFingerprint      string                         `json:"item_fingerprint,omitempty"`
+	ExpectedBoundaryHash string                         `json:"expected_boundary_hash,omitempty"`
 	RecipientType        string                         `json:"recipient_type" enums:"user,department,project_group"`
 	RecipientID          string                         `json:"recipient_id"`
 	Action               string                         `json:"action" enums:"read,metadata_read"`
@@ -49,8 +50,8 @@ type CreateIndependentEngineAccessGrantRequest struct {
 
 // Create godoc
 // @Summary 显式签发独立数据授权 | Issue explicit independent data access
-// @Description 当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples
-// @Description 同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy
+// @Description 当前 Tenant User 需授予功能和目标引擎管理范围。精确 DataItem 提交指纹及预期边界摘要，System 独立读取 Meta 完整边界并按已接入 profile 核验；PG 持续节点范围显式提交 node_recursive，不带指纹或摘要，System 独立核对 Meta 真实 server/schema。节点在期限内覆盖当前及以后新识别项；非递归只覆盖直属项。两种目标互斥，无需企业 Catalog 编目 | Current Tenant User needs Grant creation permission and target engine management scope. Exact DataItems carry fingerprint and expected boundary hash, independently verified from complete Meta facts for admitted profiles. Persistent PG server/schema scopes carry explicit node_recursive and no item fingerprint/hash; Meta independently proves the node. Covers current and future identified items during validity; nonrecursive scopes cover direct DataItems only. The variants are mutually exclusive and require no enterprise Catalog curation
+// @Description 同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, current identity or security policy
 // @Description 同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change
 // @Description PG 支持 read（读取内容并包含必要元数据）及 metadata_read（仅查看元数据）；其他引擎仅支持现有 read。动作必须明确填写，不自动提升 | PG supports read (content including necessary metadata) and metadata_read (metadata only); other engines retain read only. Explicit action is required and never upgraded
 // @Tags 源数据授权 | Source Data Grants
@@ -58,7 +59,7 @@ type CreateIndependentEngineAccessGrantRequest struct {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "引擎 ID | Engine ID"
-// @Param request body CreateIndependentEngineAccessGrantRequest true "显式命令、精确 DataItem 主目标、边界摘要、许可来源及版本、接收方、只读动作、期限与原因 | Explicit command, exact primary DataItem target, boundary hash, permission source and version, recipient, read action, expiry and reason"
+// @Param request body CreateIndependentEngineAccessGrantRequest true "命令、精确数据项或显式节点范围、接收方、动作、期限与原因 | Command, exact DataItem or explicit node scope, recipient, action, expiry and reason"
 // @Success 201 {object} engineaccess.SourceGrantView "已提交的签发历史，不是访问凭据 | Committed issuance history, not an access credential"
 // @Failure 400,401,403,404,409,500,503 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
@@ -81,7 +82,7 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 		return
 	}
 	row, err := h.service.CreateIndependentGrant(c.Request.Context(), engineaccess.CreateIndependentGrantInput{
-		Actor: actor, EngineID: engineID, RequestID: id, CatalogPath: request.CatalogPath,
+		Actor: actor, EngineID: engineID, RequestID: id, CatalogPath: request.CatalogPath, NodeRecursive: request.NodeRecursive,
 		ItemFingerprint: request.ItemFingerprint, ExpectedBoundaryHash: request.ExpectedBoundaryHash,
 		RecipientType: request.RecipientType, RecipientID: recipientID, Action: request.Action,
 		ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt, Reason: request.Reason,
@@ -96,8 +97,8 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 // List godoc
 // @Summary 查看当前源数据授权关系 | List current source-data authorization relations
 // @Description 选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination
-// @Description 具体用户查询保留只有有效拒绝的数据项；inspection.denies 仅返回当前适用的拒绝编号、接收主体、实际禁止动作及期限，不含原因或建立人。建立和解除仍由各自独立权限校验 | Selected-user queries retain Deny-only DataItems; inspection.denies exposes only applicable Deny anchors, recipients, actual prohibited actions and validity, never reasons or operators. Establishment and release retain independent permissions
-// @Description 按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification
+// @Description 节点和数据项保持原签发目标；具体账号的 sources 显示当前个人与组织的真实来源及各自撤销编号，不逐项伪造节点签发历史。来源取并集，撤销一个来源不收回其他有效来源 | Nodes and DataItems retain their original targets. A selected account shows current personal/organization source scopes and withdrawal anchors, without fabricated leaf issuance history. Valid sources form a union; withdrawing one preserves the others
+// @Description 按原目标、递归选项、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by original target, recursion, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification
 // @Tags 源数据授权 | Source Data Grants
 // @Produce json
 // @Security BearerAuth
@@ -105,7 +106,7 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 // @Param page query int false "页码，默认 1 | Page, default 1"
 // @Param page_size query int false "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100"
 // @Param table_search query string false "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters"
-// @Param catalog_path query string false "精确叶子 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | Exact leaf EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine"
+// @Param catalog_path query string false "DataItem 或节点 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | DataItem or node EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine"
 // @Param recipient_type query string false "接收方类型；仅指定类型时查看该类全部接收方 | Recipient type; type alone selects all recipients of that type" Enums(user,department,project_group)
 // @Param recipient_id query string false "接收方编号，规范正整数十进制字符串，必须同时指定 recipient_type | Recipient ID, canonical positive decimal string; requires recipient_type"
 // @Success 200 {object} object{data=[]engineaccess.SourceGrantRelation,total=int64,page=int,page_size=int,total_pages=int} "当前关系 | Current relations"
@@ -128,7 +129,7 @@ func (h *EngineAccessGrantHandler) List(c *gin.Context) {
 // @Param page query int false "页码，默认 1 | Page, default 1"
 // @Param page_size query int false "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100"
 // @Param table_search query string false "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters"
-// @Param catalog_path query string false "精确叶子 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | Exact leaf EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine"
+// @Param catalog_path query string false "DataItem 或节点 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | DataItem or node EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine"
 // @Param recipient_type query string false "接收方类型；仅指定类型时查看该类全部接收方 | Recipient type; type alone selects all recipients of that type" Enums(user,department,project_group)
 // @Param recipient_id query string false "接收方编号，规范正整数十进制字符串，必须同时指定 recipient_type | Recipient ID, canonical positive decimal string; requires recipient_type"
 // @Success 200 {object} object{data=[]engineaccess.SourceGrantView,total=int64,page=int,page_size=int,total_pages=int} "签发及撤销历史 | Issuance and revocation history"

@@ -5,8 +5,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"encoding/json"
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 )
 
@@ -27,7 +29,7 @@ func (f SourceGrantFilter) Validate() error {
 		return commonapi.ErrBadRequest
 	}
 	if f.CatalogPath != nil {
-		encoded, err := authorization.EncodeSharingTarget(*f.CatalogPath)
+		encoded, err := encodeGrantFilterTarget(*f.CatalogPath)
 		if err != nil || len(encoded) > 4096 || f.TableSearch != "" {
 			return commonapi.ErrBadRequest
 		}
@@ -79,9 +81,9 @@ func (f SourceGrantFilter) targetPredicate() (string, []any) {
 	clauses := []string{"TRUE"}
 	args := make([]any, 0, 1)
 	if f.CatalogPath != nil {
-		encoded, _ := authorization.EncodeSharingTarget(*f.CatalogPath) // validated at service boundary
-		clauses = append(clauses, "catalog_path = ?::jsonb")
-		args = append(args, string(encoded))
+		encoded, _ := encodeGrantFilterTarget(*f.CatalogPath) // validated at service boundary
+		clauses = append(clauses, "(catalog_path = ?::jsonb OR (node_recursive IS NOT NULL AND system.source_node_covers(catalog_path,node_recursive,?::jsonb)))")
+		args = append(args, string(encoded), string(encoded))
 	}
 	if f.TableSearch != "" {
 		clauses = append(clauses, `strpos(lower(array_to_string(ARRAY(
@@ -90,4 +92,11 @@ func (f SourceGrantFilter) targetPredicate() (string, []any) {
 		args = append(args, f.TableSearch)
 	}
 	return strings.Join(clauses, " AND "), args
+}
+
+func encodeGrantFilterTarget(path engineplugin.EngineCatalogPath) (json.RawMessage, error) {
+	if (authorizationfacts.NodeIdentityQuery{Target: path}).Validate() == nil {
+		return json.Marshal(path)
+	}
+	return authorization.EncodeSharingTarget(path)
 }

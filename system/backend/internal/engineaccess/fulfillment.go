@@ -109,6 +109,14 @@ func (r *Repository) lockFulfillmentTarget(ctx context.Context, tenantID int64, 
 	if err := json.Unmarshal(path, &target); err != nil {
 		return errFulfillmentBinding
 	}
+	if (authorizationfacts.NodeIdentityQuery{Target: target}).Validate() == nil {
+		encoded, err := json.Marshal(target)
+		if err != nil {
+			return err
+		}
+		key := fmt.Sprintf("engine_access_node|%d|%s", tenantID, encoded)
+		return r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error
+	}
 	fingerprint, err := authorizationfacts.PrimaryCandidateFingerprint(target)
 	if err != nil {
 		return err

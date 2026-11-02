@@ -61,3 +61,45 @@ func TestMetaNodeIdentityIsBoundedBoundAndOneAttempt(t *testing.T) {
 		})
 	}
 }
+
+func TestMetaChildNodeIdentityQueryRejectsUnboundOrMalformedPages(t *testing.T) {
+	query := authorizationfacts.NodeIdentityPageQuery{Target: plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), 9), Page: 1, PageSize: 100}
+	page := authorizationfacts.NodeIdentityPage{Parent: authorizationfacts.NodeIdentity{TenantID: 7, Target: query.Target, Exists: true}, Nodes: []authorizationfacts.NodeIdentity{{TenantID: 7, Target: plugin.TabularNamespacePath(9, "schema", "quoted.name/ "), Exists: true}}, Total: 1, Page: 1, PageSize: 100}
+	raw, _ := json.Marshal(page)
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		ok         bool
+	}{
+		{"valid", string(raw), 200, true},
+		{"foreign engine", strings.ReplaceAll(string(raw), `"engine_id":9`, `"engine_id":10`), 200, false},
+		{"foreign tenant", strings.ReplaceAll(string(raw), `"tenant_id":7`, `"tenant_id":8`), 200, false},
+		{"absent child", strings.ReplaceAll(string(raw), `"exists":true`, `"exists":false`), 200, false},
+		{"missing existence", strings.ReplaceAll(string(raw), `,"exists":true`, ``), 200, false},
+		{"null existence", strings.ReplaceAll(string(raw), `"exists":true`, `"exists":null`), 200, false},
+		{"unknown fact", strings.Replace(string(raw), `"exists":true`, `"exists":true,"attributes":{}`, 1), 200, false},
+		{"wrong total", strings.Replace(string(raw), `"total":1`, `"total":2`, 1), 200, false},
+		{"wrong page", strings.Replace(string(raw), `"page":1`, `"page":2`, 1), 200, false},
+		{"oversize", strings.Repeat(" ", authorizationfacts.MaxNodeIdentityPageBytes+1), 200, false},
+		{"redirect", `{}`, 302, false}, {"expired token", `{}`, 401, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Path != "/api/v1/meta/runtime/node-identities/query" || r.Method != "POST" || r.URL.RawQuery != "" {
+					t.Error("wrong child query route")
+				}
+				w.Header().Set("Location", "/other")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			source := &identityQueryTokenSource{}
+			result, err := NewMetaClient(server.URL, source).QueryNodeIdentities(context.Background(), 7, query)
+			if (err == nil) != tc.ok || calls != 1 || source.invalidations != 0 {
+				t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
+			}
+		})
+	}
+}

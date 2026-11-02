@@ -117,10 +117,10 @@ func TestPGAuthorizationFixtureSeparatesOperatorAndReader(t *testing.T) {
 			t.Fatalf("consumer gained control-plane permission: %s", key)
 		}
 	}
-	if len(permissions) != 10 || len(pgAuthorizationOperatorPermissions) != 9 || len(sourceInitializerPermissions) != 11 {
+	if len(permissions) != 10 || len(pgAuthorizationOperatorPermissions) != 7 || len(sourceInitializerPermissions) != 11 {
 		t.Fatal("PG fixture widened shared initializer or reader permissions")
 	}
-	for _, key := range []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read",
+	for _, key := range []string{"catalog.inventory.read",
 		"meta.scan_task.create", "meta.scan_task.update", "meta.scan_task.delete"} {
 		if !slices.Contains(pgAuthorizationOperatorPermissions, key) {
 			t.Fatalf("operator lacks explicit command permission: %s", key)
@@ -337,7 +337,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 			}
 		}
 	}
-	if len(found) != 2 || len(combined) != 22 || slices.Contains(combined, "manager.data_item.read") {
+	if len(found) != 2 || len(combined) != 20 || slices.Contains(combined, "manager.data_item.read") {
 		t.Fatalf("PG workspace role union changed: %v", combined)
 	}
 	if _, exists := permissions["system.engine_access_direct_permission.update"]; exists {
@@ -761,7 +761,7 @@ func TestManagerKMLExportFixtureReducesConsumerAndInitializerPermissions(t *test
 	}
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "full")
 	actual, err = suitePermissions("manager-internal-artifact-lineage")
-	if err != nil || len(actual) != 10 || len(suiteSourceInitializerPermissions("manager-internal-artifact-lineage")) != 13 {
+	if err != nil || len(actual) != 10 || len(suiteSourceInitializerPermissions("manager-internal-artifact-lineage")) != 11 {
 		t.Fatal("KML changed the full case identity")
 	}
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "unknown")
@@ -1474,9 +1474,9 @@ func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 		t.Fatal("consumer environment must not manufacture an issuer credential")
 	}
 	issuer := suiteSourceInitializerPermissions("ftp-consumer-flow")
-	wantIssuer := append(slices.Clone(sourceInitializerPermissions), "system.engine_access_deny.create", "system.engine_access_deny.release")
+	wantIssuer := slices.Clone(sourceInitializerPermissions)
 	if !slices.Equal(issuer, wantIssuer) {
-		t.Fatal("FTP source initializer must have the formal administrator role and its two explicit Deny qualifications")
+		t.Fatal("FTP source initializer must have the formal administrator role and no retired prohibition qualifications")
 	}
 	for _, key := range append(append([]string{}, issuer...), "system.execution_authorization.create", "manager.derived_artifact.update", "monitor.execution.read") {
 		if key != "system.engine_catalog.read" && slices.Contains(permissions, key) {
@@ -1627,9 +1627,9 @@ func TestFileGDBCaseUsesReadOnlyConsumerAndExistingSourceInitializer(t *testing.
 	if err != nil || !slices.Equal(permissions, want) {
 		t.Fatalf("FileGDB consumer permissions = %v, %v", permissions, err)
 	}
-	wantIssuer := append(append([]string{}, sourceInitializerPermissions...), "system.engine_access_deny.create", "system.engine_access_deny.release")
+	wantIssuer := append([]string{}, sourceInitializerPermissions...)
 	if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), wantIssuer) {
-		t.Fatal("FileGDB issuer must only supplement the two Deny lifecycle permissions")
+		t.Fatal("FileGDB issuer must use the existing initializer without retired permissions")
 	}
 }
 

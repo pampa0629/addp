@@ -2578,6 +2578,84 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/node-identities/query": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅当前租户 addp-system Service 通过独立机器权限查询指定 PG server/schema 的直接子节点；不返回数据项、内容、属性、统计或权限裁决。分页最多100项，正文最多16KiB，不接受query或额外字段 | Fixed tenant addp-system Service with the node identity permission. Returns immediate PG owner nodes only; no DataItems, content, attributes, statistics or access decisions. At most 100 nodes per page and 16KiB request body; query and extra fields are rejected",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Runtime"
+                ],
+                "summary": "查询直接子节点身份 | Query immediate child node identities",
+                "parameters": [
+                    {
+                        "description": "节点查询及分页 | Node query and pagination",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.NodeIdentityPageQuery"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.NodeIdentityPage"
+                        }
+                    },
+                    "400": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "413": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.node_identity.read"
+                ]
+            }
+        },
         "/runtime/node-identities/resolve": {
             "post": {
                 "security": [
@@ -4323,6 +4401,43 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "authorizationfacts.NodeIdentityPage": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.NodeIdentity"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "parent": {
+                    "$ref": "#/definitions/authorizationfacts.NodeIdentity"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "authorizationfacts.NodeIdentityPageQuery": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 }
             }
         },

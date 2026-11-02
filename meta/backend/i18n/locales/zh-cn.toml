@@ -89,4 +89,4 @@ other = "扫描执行状态已变化，请刷新后重试"
 other = "读取节点身份事实"
 
 [permissions.meta.node_identity.read.description]
-other = "仅供 System 读取精确节点存在与类型化路径，不读取源内容"
+other = "读取最小节点存在事实及直接子节点身份"

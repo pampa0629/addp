@@ -28,21 +28,53 @@ import (
 // @x-addp-required-permissions ["meta.node_identity.read"]
 // @Router /runtime/node-identities/resolve [post]
 func (h *Handler) ResolveNodeIdentity(c *gin.Context) {
+	var input authorizationfacts.NodeIdentityQuery
+	if !bindNodeIdentityJSON(c, &input) {
+		return
+	}
+	result, err := h.metadataQueryService.ResolveNodeIdentity(c.Request.Context(), commonauth.GetTenantID(c), input)
+	respondNodeIdentity(c, result, err)
+}
+
+// QueryNodeIdentities godoc
+// @Summary 查询直接子节点身份 | Query immediate child node identities
+// @Description 仅当前租户 addp-system Service 通过独立机器权限查询指定 PG server/schema 的直接子节点；不返回数据项、内容、属性、统计或权限裁决。分页最多100项，正文最多16KiB，不接受query或额外字段 | Fixed tenant addp-system Service with the node identity permission. Returns immediate PG owner nodes only; no DataItems, content, attributes, statistics or access decisions. At most 100 nodes per page and 16KiB request body; query and extra fields are rejected
+// @Tags Meta Runtime
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body authorizationfacts.NodeIdentityPageQuery true "节点查询及分页 | Node query and pagination"
+// @Success 200 {object} authorizationfacts.NodeIdentityPage
+// @Failure 400,401,403,413,500 {object} map[string]interface{} "查询失败 | Query failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.node_identity.read"]
+// @Router /runtime/node-identities/query [post]
+func (h *Handler) QueryNodeIdentities(c *gin.Context) {
+	var input authorizationfacts.NodeIdentityPageQuery
+	if !bindNodeIdentityJSON(c, &input) {
+		return
+	}
+	result, err := h.metadataQueryService.QueryNodeIdentities(c.Request.Context(), commonauth.GetTenantID(c), input)
+	respondNodeIdentity(c, result, err)
+}
+
+func bindNodeIdentityJSON(c *gin.Context, input interface{ Validate() error }) bool {
 	c.Header("Cache-Control", "no-store")
 	body, readErr := io.ReadAll(io.LimitReader(c.Request.Body, authorizationfacts.MaxNodeIdentityBytes+1))
 	if len(body) > authorizationfacts.MaxNodeIdentityBytes {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error_code": "meta_authorization_facts_invalid", "error": commoni18n.T(c, metai18n.MsgAuthorizationFactsInvalid)})
-		return
+		return false
 	}
 	_, shapeErr := jsonmap.DecodeObjectStrict(body, authorizationfacts.MaxNodeIdentityBytes, 8)
 	c.Request.Body = io.NopCloser(bytes.NewReader(body))
-	var input authorizationfacts.NodeIdentityQuery
-	bindErr := commonapi.BindOptionalJSONStrict(c, &input)
+	bindErr := commonapi.BindOptionalJSONStrict(c, input)
 	if c.Request.URL.RawQuery != "" || readErr != nil || shapeErr != nil || bindErr != nil || input.Validate() != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error_code": "meta_authorization_facts_invalid", "error": commoni18n.T(c, metai18n.MsgAuthorizationFactsInvalid)})
-		return
+		return false
 	}
-	result, err := h.metadataQueryService.ResolveNodeIdentity(c.Request.Context(), commonauth.GetTenantID(c), input)
+	return true
+}
+func respondNodeIdentity(c *gin.Context, result any, err error) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "meta_authorization_facts_unavailable", "error": commoni18n.T(c, metai18n.MsgAuthorizationFactsUnavailable)})
 		return

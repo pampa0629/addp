@@ -194,5 +194,4 @@ const productionTargetHistorySQL = `WITH target AS (
  ON o.tenant_id=t.tenant_id AND o.engine_id=t.engine_id AND (o.binding->>'item_fingerprint'=t.fingerprint OR o.catalog_path=t.path)
  UNION ALL SELECT 1 FROM target t JOIN system.engine_access_grants g
  ON g.tenant_id=t.tenant_id AND g.engine_id=t.engine_id AND (g.item_fingerprint=t.fingerprint OR g.catalog_path=t.path)
- UNION ALL SELECT 1 FROM target t JOIN system.engine_access_denies d
- ON d.tenant_id=t.tenant_id AND d.engine_id=t.engine_id AND (d.item_fingerprint=t.fingerprint OR d.catalog_path=t.path))`
+)`

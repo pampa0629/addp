@@ -127,7 +127,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					return actual.Version, nil
 				}))
 				role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_issuer_" + kind + "_" + format, Name: "File grant issuer",
-					PermissionKeys: []string{"system.engine_access_delegation.create", "system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release"}, ActorPrincipalID: adminID})
+					PermissionKeys: []string{"system.engine_access_delegation.create", "system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -234,16 +234,6 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					}
 					current = original
 					read(request, true)
-					denyID := uuid.New()
-					if _, err := service.CreateDeny(ctx, CreateDenyInput{Actor: actor, EngineID: int64(engine.ID), DenyID: denyID, CatalogPath: primary, ItemFingerprint: original.ItemFingerprint,
-						RecipientType: "user", RecipientID: reader.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Deny exact STL"}); err != nil {
-						t.Fatal(err)
-					}
-					read(request, false)
-					if _, err := service.ReleaseDeny(ctx, ReleaseDenyInput{Actor: actor, EngineID: int64(engine.ID), DenyID: denyID, Reason: "Release STL denial"}); err != nil {
-						t.Fatal(err)
-					}
-					read(request, true)
 					if err := db.Table("system.engines").Where("id=?", engine.ID).Update("version", 2).Error; err != nil {
 						t.Fatal(err)
 					}
@@ -280,14 +270,8 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				current = factsFor("B.PNG")
 				currentRequest := SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerFileExpectedSource{EngineVersion: "1", FileComposition: *current.Boundary.FileComposition.Clone()}}
-				read(currentRequest, false) // old A Grant alone does not cover B, even without a Deny.
+				read(currentRequest, false) // old A Grant alone does not cover B.
 				read(request, false)
-				current = original
-				denyID := uuid.New()
-				if _, err := service.CreateDeny(ctx, CreateDenyInput{Actor: actor, EngineID: int64(engine.ID), DenyID: denyID, CatalogPath: primary, ItemFingerprint: original.ItemFingerprint,
-					RecipientType: "user", RecipientID: reader.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Persistent same-item denial"}); err != nil {
-					t.Fatal(err)
-				}
 				current = factsFor("B.PNG")
 				read(request, false)
 				if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(engine.ID), RequestID: grantA.RequestID, Reason: "Withdraw obsolete A"}); err != nil {
@@ -297,10 +281,6 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				input.RequestID, input.ExpectedBoundaryHash, input.Reason = uuid.New(), *current.BoundaryHash, "Explicitly approve B composition"
 				grantB, err := service.CreateIndependentGrant(ctx, input)
 				if err != nil {
-					t.Fatal(err)
-				}
-				read(currentRequest, false) // old A's Deny still constrains B's new Grant.
-				if _, err := service.ReleaseDeny(ctx, ReleaseDenyInput{Actor: actor, EngineID: int64(engine.ID), DenyID: denyID, Reason: "Explicitly release same-item denial"}); err != nil {
 					t.Fatal(err)
 				}
 				read(currentRequest, true)

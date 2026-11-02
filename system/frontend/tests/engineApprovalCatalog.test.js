@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { approvalTargetFromSelection, approvalTargetsEqual, createApprovalCatalogAdapter, isApprovalSelection } from '../src/utils/engineApprovalCatalog'
+import { approvalTargetFromSelection, approvalTargetsEqual, createApprovalCatalogAdapter, isApprovalSelection, createApprovalNodeCatalogAdapter, isApprovalNode } from '../src/utils/engineApprovalCatalog'
 const engine = { id: '2', name: 'NFS', engine_type: 'nfs' }
 const fingerprint = name => createHash('sha256').update(`2:${name}`).digest('hex')
 const ancestors = [{ id: '1', name: 'NFS', node_type: 'root' }, { id: '2', name: 'exports', node_type: 'dir' }]
@@ -81,4 +81,35 @@ describe('Meta DataItem authorization picker', () => {
     expect(approvalTargetsEqual({ ...tablePath, engine_id: '2' }, tablePath)).toBe(true)
     expect(approvalTargetsEqual({ ...tablePath, engine_id: '3' }, tablePath)).toBe(false)
   })
+})
+
+
+describe('persistent PG node candidates', () => {
+ it('browses node identities by pages without loading any DataItem', async () => {
+  const pg = { id: '2', name: 'PG', engine_type: 'postgresql' }, root = { version: 'catalog.path/v1', engine_id: 2, segments: [{term:'server',kind:'server',name:''}] }
+  const fact = target => ({ tenant_id: 7, target, exists: true })
+  const schemas = Array.from({length:205}, (_,i) => fact({...root,segments:[...root.segments,{term:'schema',kind:'namespace',name:`schema.${i}/ `}]}))
+  const read = vi.fn(async (id,q) => {
+   expect(id).toBe('2'); expect(q.target).toEqual(root)
+   return {parent:fact(root),nodes:schemas.slice((q.page-1)*100,q.page*100),total:schemas.length,page:q.page,page_size:100}
+  })
+  const adapter = createApprovalNodeCatalogAdapter(pg,read), tree = await adapter.getTreeRoot()
+  expect(isApprovalNode(tree)).toBe(true);expect(read).toHaveBeenCalledTimes(1)
+  const children = await adapter.getNodeChildren(tree)
+  expect(children).toHaveLength(205);expect(read).toHaveBeenCalledTimes(3)
+  expect(children.every(isApprovalNode)).toBe(true)
+  expect(await adapter.resolveTarget(children[0])).toEqual(schemas[0].target)
+  expect(await adapter.getNodeChildren(children[0])).toEqual([])
+  expect(read).toHaveBeenCalledTimes(3)
+  expect((await adapter.search('2','schema.204'))).toHaveLength(1)
+  expect(() => createApprovalNodeCatalogAdapter(engine,read)).toThrow()
+ })
+ it('rejects changed page totals and duplicate or foreign node identities', async () => {
+  const pg={id:'2',name:'PG',engine_type:'postgresql'},root={version:'catalog.path/v1',engine_id:2,segments:[{term:'server',kind:'server',name:''}]}
+  const child={tenant_id:7,target:{...root,segments:[...root.segments,{term:'schema',kind:'namespace',name:'public'}]},exists:true}
+  for(const nodes of [[{...child,target:{...child.target,engine_id:3}}],[child,child]]){
+   const adapter=createApprovalNodeCatalogAdapter(pg,async()=>({parent:{tenant_id:7,target:root,exists:true},nodes,total:nodes.length,page:1,page_size:100}))
+   await expect(adapter.getNodeChildren(await adapter.getTreeRoot())).rejects.toThrow()
+  }
+ })
 })

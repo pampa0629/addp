@@ -17,8 +17,7 @@ import (
 func exerciseMetadataRules(t *testing.T, ctx context.Context, repo *Repository, service *Service, actor Actor,
 	path engineplugin.EngineCatalogPath, newUser func(*testing.T, time.Duration) (userProvenance, time.Time),
 	grantRead func(*testing.T, string, int64, *time.Time) uuid.UUID,
-	denyRead func(*testing.T, string, int64, *time.Time) uuid.UUID,
-	revoke func(*testing.T, uuid.UUID), release func(*testing.T, uuid.UUID)) {
+	revoke func(*testing.T, uuid.UUID)) {
 	t.Run("metadata and content rule inclusion", func(t *testing.T) {
 		user, _ := newUser(t, time.Hour)
 		check := func(action, reason string) *sourceReadRules {
@@ -48,11 +47,7 @@ func exerciseMetadataRules(t *testing.T, ctx context.Context, repo *Repository, 
 						t.Fatalf("source lost actual action: %+v", source)
 					}
 				}
-				for _, deny := range row.Inspection.Denies {
-					if !shared.ValidSourceAccessAction(deny.Action) {
-						t.Fatalf("Deny lost actual action: %+v", deny)
-					}
-				}
+
 			}
 			for page := 1; page <= len(expected)+1; page++ {
 				part, count, err := repo.listAccountGrantRelations(ctx, actor.TenantID, int64(path.EngineID), user.PrincipalID, page, 1, SourceGrantFilter{CatalogPath: &path})
@@ -76,9 +71,6 @@ func exerciseMetadataRules(t *testing.T, ctx context.Context, repo *Repository, 
 		check(shared.SourceAccessRead, "grant")
 		check(shared.SourceAccessMetadataRead, "grant")
 		list(map[string]string{shared.SourceAccessRead: "grant"})
-		readDeny := denyRead(t, "user", user.PrincipalID, nil)
-		check(shared.SourceAccessRead, "explicit_deny")
-		check(shared.SourceAccessMetadataRead, "no_grant")
 
 		// Deliberately exercise sub-microsecond input on every platform. The
 		// public sharing contract truncates it before persistence; both the
@@ -107,36 +99,19 @@ func exerciseMetadataRules(t *testing.T, ctx context.Context, repo *Repository, 
 		if _, err := service.CreateIndependentGrant(ctx, changed); !errors.Is(err, ErrIndependentGrantConflict) {
 			t.Fatalf("action substitution did not conflict: %v", err)
 		}
-		rows := list(map[string]string{shared.SourceAccessRead: "explicit_deny", shared.SourceAccessMetadataRead: "grant"})
-		if len(rows[0].Inspection.Sources) != 1 || rows[0].Inspection.Sources[0].Action != shared.SourceAccessMetadataRead {
-			t.Fatalf("denied read source included in metadata: %+v", rows[0].Inspection)
+		rows := list(map[string]string{shared.SourceAccessRead: "grant", shared.SourceAccessMetadataRead: "grant"})
+		if len(rows[0].Inspection.Sources) != 2 {
+			t.Fatalf("metadata observation must retain both independent sources: %+v", rows[0].Inspection)
 		}
-		observed := check(shared.SourceAccessMetadataRead, "grant")
-		if observed.ExpiresAt == nil || !observed.ExpiresAt.Equal(expires) {
-			t.Fatalf("denied read Grant extended independent metadata deadline: input=%s returned=%s observed=%+v", requestedExpiry.Format(time.RFC3339Nano), metadata.ExpiresAt.Format(time.RFC3339Nano), observed)
+		if observed := check(shared.SourceAccessMetadataRead, "grant"); observed.ExpiresAt == nil || !observed.ExpiresAt.After(expires) {
+			t.Fatal("read source must dominate finite metadata deadline within current membership")
 		}
-		check(shared.SourceAccessRead, "explicit_deny")
-		release(t, readDeny)
 		check(shared.SourceAccessRead, "grant")
-		check(shared.SourceAccessMetadataRead, "grant")
 		revoke(t, readID)
 		check(shared.SourceAccessRead, "no_grant")
 		check(shared.SourceAccessMetadataRead, "grant")
 
-		metadataDeny, err := service.CreateDeny(ctx, CreateDenyInput{Actor: actor, EngineID: int64(path.EngineID), DenyID: uuid.New(),
-			CatalogPath: path, ItemFingerprint: binding.ItemFingerprint, RecipientType: "user", RecipientID: user.PrincipalID,
-			Action: shared.SourceAccessMetadataRead, ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Metadata restriction fixture"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if metadataDeny.Action != shared.SourceAccessMetadataRead {
-			t.Fatal("metadata Deny action was replaced")
-		}
 		readID = grantRead(t, "user", user.PrincipalID, nil)
-		check(shared.SourceAccessRead, "explicit_deny")
-		check(shared.SourceAccessMetadataRead, "explicit_deny")
-		list(map[string]string{shared.SourceAccessRead: "explicit_deny", shared.SourceAccessMetadataRead: "explicit_deny"})
-		release(t, metadataDeny.DenyID)
 		check(shared.SourceAccessRead, "grant")
 		check(shared.SourceAccessMetadataRead, "grant")
 		revoke(t, metadata.RequestID)

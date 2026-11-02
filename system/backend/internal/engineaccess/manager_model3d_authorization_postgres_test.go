@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	shared "github.com/addp/common/authorization"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/models"
@@ -213,15 +212,6 @@ func exerciseManagerFileAuthorization(t *testing.T, db *gorm.DB, source *Service
 			t.Fatal(err)
 		}
 		allow()
-		primary, _ := facts.Boundary.FileComposition.PrimaryTarget()
-		denyID := uuid.New()
-		if _, err := source.CreateDeny(ctx, CreateDenyInput{Actor: operator, EngineID: int64(engineID), DenyID: denyID, CatalogPath: primary, ItemFingerprint: facts.ItemFingerprint, RecipientType: "user", RecipientID: user.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Deny current model consumption"}); err != nil {
-			t.Fatal(err)
-		}
-		deny(claim)
-		if _, err := source.ReleaseDeny(ctx, ReleaseDenyInput{Actor: operator, EngineID: int64(engineID), DenyID: denyID, Reason: "Release model fixture denial"}); err != nil {
-			t.Fatal(err)
-		}
 		allow()
 		t.Run("audit failure returns no connection", func(t *testing.T) {
 			const callback = "fixture:model3d_consume_audit_failure"

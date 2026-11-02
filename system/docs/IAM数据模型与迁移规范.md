@@ -8,12 +8,14 @@
 
 ## 持续节点 Grant 与源 Deny 退役（2026-11-02）
 
-状态：用户已确认的目标，规范先行；代码、前向迁移和新验收尚未完成。下节旧版本的已验证范围不能代替本节新模型。
+状态：持续节点主路径、最小节点事实及前向迁移已实现并通过本地 PG T2；前端和完整跨服务验收正在收尾，尚不记真实运行闭环。旧版本的已验证范围不能代替本节新模型。
 
 - 使用同一 `engine_access_grants` 承载精确 DataItem 与持续节点范围，节点不是 DataItem，不新增独立目录 ACL 表。节点范围绑定 Tenant、Engine、类型化路径及显式递归选项；非递归只覆盖直属项，递归覆盖后代，期限内当前及以后新识别项均可命中，不逐项复制 Grant。
 - 接收方仍为账号、部门、项目组，动作仍为 `metadata_read`／`read`。来源取并集，`read` 包含必要元数据；节点与数据项、个人与组织的独立来源可重叠，撤销只终止指定来源。范围／递归／动作／接收方修改须先撤销再新命令，不原地扩大。
 - 源数据显式 Deny 及建立／解除 Permission、角色关联、路由、数据表和裁决分支统一退役；迁移清理旧源 Deny，不伪装成 Grant 撤销、不修改功能权限或 Security 保护。IAM 权限发布历史与通用审计保留，现有用户不自动补权。
 - System Runtime 通过统一 Meta Client 核验真实节点；独立最小只读节点身份事实 Permission 只授予运行身份，返回租户、引擎、完整类型化路径及存在状态，不返回内容、统计或完整属性。普通账号不能调用机器端点，网页不能自报节点即视为可信。
+- 用户已确认最小子节点身份分页，复用同一机器 Permission。Meta 只返回直接 server／schema 节点存在事实；System `/engines/{id}/authorization-nodes/query` 经当前人员授权读取功能与引擎管理范围保护，不返回叶子、内容或技术属性。页面按层浏览无需加载节点全部数据项；签发不复用导航缓存。
+- 同一直接 Grant API 的节点变体使用真实 `catalog_path` 与显式布尔 `node_recursive`，不提交数据项指纹或摘要；精确数据项变体不携带 `node_recursive`，继续提交指纹及预期摘要。存储以 nullable `node_recursive` 区分目标，非空时只准 PG 节点，节点目标不接受文件组成或 whole。两个变体严格互斥，没有旧协议回退。
 - 节点范围匹配只使用经过 Meta 当前事实核验的 DataItem 完整边界和类型化路径，同引擎、段语义及距离同时匹配，不能用文本前缀。首次实现 PG 根／schema；其他引擎不因共享类型存在即自动准入。
 - 当前列表解释覆盖来源，历史记录保持原签发目标；不把一条节点 Grant 展成伪造叶子历史。撤销、到期、组织退出后按下一次正式校验的当前有效来源裁决，既有模块经同一 System 入口消费。
 - 迁移、本地 T1／PostgreSQL T2、共享 client／协议守卫、System 前端与 Console、原 PG T4 必须同步；旧 Deny 断言改为默认拒绝、来源并集、独立撤销、自然到期、未来新项与兄弟／跨范围拒绝。新真实结果取得前不得宣称闭环。
@@ -214,23 +216,17 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 普通只读共享显式选择 `expiry_mode=at_time|until_revoked`，受理结果和完整 binding 都保存该模式，`grant_expires_at` 在长期有效时为 NULL。指定到期仍须为未来时间；长期有效的自动办理窗口仍严格为原受理时间后 5 分钟。迁移 `000172_engine_access_fulfillment_expiry_mode` 在排他表锁及同一事务内暂时撤下该表 UPDATE/DELETE 不可变保护，将存量限时记录无损标记为 `at_time`、为 binding 补齐模式，再恢复保护及完整日期／截止时间约束；原到期、受理时间、截止时间、身份和审计不变。不改写已执行 167，不增加实际 Grant、默认权限或授权版本变化。长期有效不改变临时接入规则和管理委派的强制到期契约。
 
-正式受理后的 Grant HTTP（2026-10-03）：`POST /runtime/engine-access-fulfillments/:request_id/grant` 及其 `/grant/resolve` 查询复用 000182 表和唯一生产签发／只读历史路径；无新迁移、实体或默认赋权。当前 `addp-catalog` Tenant Service 及既有 `.execute` 是机器入口资格，新签发仍独立检查原人类 `.create`、引擎管理委派和接收主体。原编号及 `granted_at` 是最小不可变签发历史；查询 `found=false` 不代表关闭，查询与重试不延长原窗口或恢复撤销。不涉及 Catalog 自动消费、Explicit Deny 或执行侧当前数据访问裁决，完整接口契约见《addp授权上下文规范》§5.5.3。
+正式受理后的 Grant HTTP（2026-10-03）：`POST /runtime/engine-access-fulfillments/:request_id/grant` 及其 `/grant/resolve` 查询复用 000182 表和唯一生产签发／只读历史路径；无新迁移、实体或默认赋权。当前 `addp-catalog` Tenant Service 及既有 `.execute` 是机器入口资格，新签发仍独立检查原人类 `.create`、引擎管理委派和接收主体。原编号及 `granted_at` 是最小不可变签发历史；查询 `found=false` 不代表关闭，查询与重试不延长原窗口或恢复撤销。此历史入口阶段不涉及 Catalog 自动消费或执行侧当前数据访问裁决，完整接口契约见《addp授权上下文规范》§5.5.3。
 
 签发阻碍观察（2026-10-17）：上述只读查询在未签发时可附带 `unissued_reason=relation_exists|window_expired|closed`。原请求和原签发、原窗口及重复关系来自同一已提交只读快照，当前机器身份仍按既有 Runtime 守卫复核。已有原签发历史优先，原窗口结束优先于重复关系；无阻碍省略原因。重复关系只按同租户、引擎、DataItem、接收方及动作检查未撤销且未过期的规则，不查询 Meta、不返回其他 Grant 身份，不证明实际内容可读。观察不持仲裁锁、不保存失败副本、不写审计或 Grant。Catalog 原续办观察到重复关系时暂不重发签发，窗口结束后完成本地核清；没有新的状态存储或授权路径。
 
-### 源读取显式拒绝
+### 源读取规则与退役迁移
 
-DataItem 边界绑定区别 Allow 与 Deny：Grant 按稳定数据项身份及批准边界摘要匹配，Deny 按同 Tenant／Engine 的数据项身份、接收主体和动作匹配，不以当前摘要等于建立时摘要为条件。对同一数据项重扫、扩大边界或签发新 Grant 均不能绕过有效拒绝；解除和到期仍按原有不可变事实处理。当前端到端实施与验收聚焦 PG 的 server → schema → 普通 table。共享协议与数据库约束另外能表达 server → database → 普通 table（MySQL）和 server → database → collection（MongoDB），其持久化回归只证明身份约束与规则存储，不代表这些引擎的实际读取已接入；不扩大本轮 PG 实施范围。三个目标形态共用数据库身份约束；namespace 与 leaf 类型必须成对合法，不能把 schema 下的 collection 或 view 当作已支持目标。
+源数据不再建立显式 Deny。有效账号、直接部门和项目组的精确／节点来源取并集；撤销仅作用于原签发范围及关系，最后一个有效来源消失后默认拒绝。元数据与内容读取动作保持独立，读取包含必要元数据；功能权限、引擎状态和 Security 保护继续独立核验。
 
-切换回归须覆盖：同一数据项边界改变后旧 Grant 不覆盖、新 Grant 仍被原有效 Deny 阻断；正常内容更新及 whole 合法成员增长不改变摘要；解除 Deny 不复活无效 Grant；其他 Tenant／Engine／数据项不误命中；Meta 不可用不回退原生 ACL，且不阻止对已存规则的合法撤销／解除。Grant、Deny、当前来源查询与正式读取消费必须同次切换，不保留按路径独立放行的第二路线。
+迁移 `000266_node_source_grants_retire_denies` 增加 nullable `node_recursive` 和 PG 类型化范围匹配，精确数据项仍绑定原指纹和边界摘要，节点只接收真实节点路径及显式递归布尔。数据库约束拒绝混合字段、非 PG 节点和 Catalog 节点变体；并发关系去重包括原节点路径及递归语义，不混合节点与数据项、父子节点或不同动作。存量精确 Grant 及撤销、通用审计不改写，不复制新授权。源 Deny 及解除表、触发函数、HTTP 和裁决分支删除；旧 Permission 仅保留禁用发布历史，清理 Role Permission 关联并使相关会话失效。历史迁移是升级输入，不形成兼容 API。
 
-`system.engine_access_denies` 是 System 引擎访问控制领域的不可变拒绝建立事实，不是 IAM 全平台中央 ACL。它保存独立 UUID、Tenant／Engine、DataItem 指纹、建立时原生坐标、User／Department／Project Group 主体、`read` 动作、期限模式、原操作者引用、数据库建立时刻和原因，不复制 Catalog 责任或专业定义。指定到期必须有限且晚于真实建立时刻；长期有效必须显式为 `until_revoked` 且到期字段为空。插入触发器覆盖调用方时间，拒绝回填时间绕过到期；UPDATE、DELETE 和 TRUNCATE 都禁止。
-
-唯一建立命令 `POST /engines/:id/access_denies` 通过独立 `.create` Permission 与当前有效引擎管理委派取交集。Permission 仅 Tenant Scope、high risk、不可委托、允许租户定制，不默认给任何 Role 赋权、不增加 Assignment 或推进已有主体版本。完整账号集合先去重升序锁定，再读取成员／Tenant、当前权限、接收组织、引擎及委派，最后按命令编号与精确目标排序；规则和高风险审计同事务，锁等待后及审计后提交前复核当前资格、接收主体和数据库期限。停用引擎仍可建立限制，不访问源端或 Catalog。
-
-同编号、同租户／引擎、同原操作者及成员关系、同规范化参数重试返回原历史，即使规则后来到期或接收主体失效也不续期、不重复审计；当前操作者权限和委派仍须有效。同范围异参返回冲突，跨 Tenant／Engine 返回未找到。已存本地身份允许离线建立限制，新身份须先取得 Meta 证明；撤销与解除不依赖 Meta。创建记录本身不是访问裁决，Manager 上述只读入口逐次消费同一规则。
-
-迁移 000186 随真实解除命令发布独立 `.release` Permission，不默认分配角色或推进已有主体授权版本。`engine_access_deny_releases` 以原 Deny UUID 为主键及外键，仅追加解除者 Principal／Tenant Membership、数据库墙钟和必填原因；原规则继续保存目标、主体及期限。行与整表历史不可 UPDATE／DELETE／TRUNCATE。插入触发器核验解除者是原 Tenant 的 User 成员，覆盖调用方时间，并拒绝 `at_time` 原规则到期后的首次解除。服务复用当前引擎管理资格及精确目标锁，解除和高风险审计同事务，等待后和提交前核验资格与数据库期限；首次到期不写事实，已解除的原参重试优先恢复历史。历史接收主体失效或引擎停用不妨碍解除，不依赖 Catalog、不修改任何 Grant、不表示当前访问已允许。
+本地前向迁移门禁核对旧精确 Grant 原样保留、退役对象确实消失、typed path 距离／相邻 schema 不越界，以及重复运行不改变历史。新的 PG T4 须分别证明节点未来项、来源并集、撤销、自然到期和失败清理；旧 Deny 验收不能替代。
 
 ### AuthContext 解析诊断
 

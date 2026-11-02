@@ -20,7 +20,7 @@ func TestAccountSourceGrantListHTTPContract(t *testing.T) {
 			t.Fatal("lost management actor or selected object")
 		}
 		return []engineaccess.SourceGrantRelation{{CatalogPath: encoded, RecipientType: "user", RecipientID: filter.RecipientID,
-			Inspection: &engineaccess.SourceGrantInspection{AccountID: filter.RecipientID, CatalogPath: path, ObservedAt: time.Now().UTC(), Reason: "explicit_deny",
+			Inspection: &engineaccess.SourceGrantInspection{AccountID: filter.RecipientID, CatalogPath: path, ObservedAt: time.Now().UTC(), Reason: "grant", RuleCovered: true,
 				Sources: []engineaccess.SourceGrantInspectionSource{{RecipientType: "department", RecipientID: 42, GrantCount: 1, ExpiryMode: "until_revoked"}}}}}, 1, nil
 	}}
 	engineDelegationTestRequest(t, grantTestRouter(t, &projection, service), "GET", route, nil, 403)
@@ -30,7 +30,7 @@ func TestAccountSourceGrantListHTTPContract(t *testing.T) {
 		Data  []engineaccess.SourceGrantRelation
 		Total int64
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil || fields.Total != 1 || len(fields.Data) != 1 || fields.Data[0].Inspection.AccountID != 9007199254740993 || fields.Data[0].Inspection.Reason != "explicit_deny" || fields.Data[0].Inspection.RuleCovered || response.Header().Get("Cache-Control") != "no-store" {
+	if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil || fields.Total != 1 || len(fields.Data) != 1 || fields.Data[0].Inspection.AccountID != 9007199254740993 || fields.Data[0].Inspection.Reason != "grant" || !fields.Data[0].Inspection.RuleCovered || response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("invalid observation: %s", response.Body.String())
 	}
 	engineDelegationTestRequest(t, grantTestRouter(t, &projection, service), "POST", "/api/v1/system/engines/1/access_grants/inspection", nil, 404)

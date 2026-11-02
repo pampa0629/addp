@@ -127,7 +127,7 @@ func sourceReadObservation(paths []engineplugin.EngineCatalogPath, rows []source
 			return nil, errSourceReadRules
 		}
 		switch row.Reason {
-		case "grant", "explicit_deny", "no_grant", "source_unavailable", "target_unavailable":
+		case "grant", "no_grant", "source_unavailable", "target_unavailable":
 		default:
 			return nil, errSourceReadRules
 		}
@@ -186,10 +186,8 @@ func (r *Repository) queryCurrentSourceRules(ctx context.Context, request source
 
 // One statement gives the complete set one committed snapshot and one wall
 // clock. Existing target indexes begin with tenant_id, engine_id; immutable
-// revocation/release PKs support the anti-joins. Never take target or IAM locks.
+// revocation PKs support the anti-joins. Never take target or IAM locks.
 // The fulfillment Deadline is an issuance window, NOT the Grant access expiry.
-// Committed Deny establishment is immediate; its audit timestamp must not act
-// as a scheduled start time if the database wall clock later moves backwards.
 const currentSourceReadRulesSQL = `
 WITH input AS MATERIALIZED (
 	SELECT ?::bigint AS tenant_id, ?::bigint AS principal_id,
@@ -207,7 +205,45 @@ const sourceReadRuleCTEs = `, targets AS (
  CROSS JOIN LATERAL (SELECT CASE WHEN jsonb_exists(target.value->'binding', 'file_composition') THEN
    (SELECT ref->'target' FROM jsonb_array_elements(target.value->'binding'->'file_composition'->'refs') AS ref
     WHERE ref->>'primary' = 'true') WHEN jsonb_exists(target.value->'binding', 'scope') THEN target.value->'binding'->'scope'->'root' ELSE target.value->'binding'->'native_target' END AS path) primary_path
-), current_source AS (
+)` + sourceReadSubjectCTEs + `, matched_grants AS MATERIALIZED (
+ SELECT g.*, target.position,
+  LEAST(g.expires_at, (SELECT membership_expires_at FROM current_source)) AS effective_expires_at
+ FROM targets target CROSS JOIN input
+ JOIN system.engine_access_grants g ON g.tenant_id = input.tenant_id
+  AND g.engine_id = target.engine_id AND (
+   (g.node_recursive IS NULL AND g.item_fingerprint = target.item_fingerprint AND g.boundary_hash = target.boundary_hash)
+   OR (g.node_recursive IS NOT NULL AND system.source_node_covers(g.catalog_path, g.node_recursive, target.path)
+       AND EXISTS (SELECT 1 FROM system.engines e WHERE e.id=target.engine_id AND e.tenant_id=input.tenant_id AND e.engine_type='postgresql'))
+  )
+ JOIN recipients r ON r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id
+ WHERE (g.action = target.requested_action OR (target.requested_action = 'metadata_read' AND g.action = 'read'))
+  AND g.granted_at <= input.observed_at
+  AND ((g.expiry_mode = 'until_revoked' AND g.expires_at IS NULL)
+       OR (g.expiry_mode = 'at_time' AND g.expires_at > input.observed_at))
+  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations revocation WHERE revocation.request_id = g.request_id)
+), grant_deadlines AS (
+ SELECT position,
+ CASE WHEN bool_or(effective_expires_at IS NULL) THEN NULL ELSE max(effective_expires_at) END AS expires_at
+ FROM matched_grants GROUP BY position
+), rule_reasons AS (
+SELECT target.position, input.observed_at,
+CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
+     WHEN NOT EXISTS (SELECT 1 FROM system.engines e WHERE e.tenant_id = input.tenant_id
+                      AND e.id = target.engine_id AND e.lifecycle_state = 'active'
+                      AND (target.requested_action <> 'metadata_read' OR e.engine_type = 'postgresql')
+                      AND (target.path->'segments'->-1->>'term' <> 'file' OR e.engine_type IN ('ftp','nfs'))
+                      AND (target.path->'segments'->-1->>'term' <> 'object' OR e.engine_type = 'minio')) THEN 'target_unavailable'
+     WHEN EXISTS (SELECT 1 FROM matched_grants g WHERE g.position = target.position) THEN 'grant'
+     ELSE 'no_grant' END AS reason
+FROM targets target CROSS JOIN input
+), rules AS (
+ SELECT r.*, CASE WHEN r.reason = 'grant' THEN d.expires_at END AS expires_at
+ FROM rule_reasons r LEFT JOIN grant_deadlines d USING (position))`
+
+// Current identity and direct organization membership are shared by actual reads
+// and management observations. Neither a historical operator nor a parent
+// department is a source of access.
+const sourceReadSubjectCTEs = `, current_source AS (
  SELECT input.*, m.expires_at AS membership_expires_at FROM input
 	JOIN system.principals p ON p.id = input.principal_id AND p.principal_type = 'user'
 	  AND p.status = 'active' AND p.authorization_version = input.authorization_version
@@ -228,46 +264,4 @@ const sourceReadRuleCTEs = `, targets AS (
 	JOIN system.project_group_memberships m ON m.tenant_id = s.tenant_id
 	  AND m.tenant_membership_id = s.membership_id AND m.status = 'active'
 	JOIN system.project_groups g ON g.tenant_id = m.tenant_id AND g.id = m.project_group_id AND g.status = 'active'
-), matched_denies AS MATERIALIZED (
- SELECT d.*, target.position FROM targets target CROSS JOIN input
- JOIN system.engine_access_denies d ON d.tenant_id = input.tenant_id
-  AND d.engine_id = target.engine_id AND d.item_fingerprint = target.item_fingerprint
- JOIN recipients r ON r.recipient_type = d.recipient_type AND r.recipient_id = d.recipient_id
- WHERE d.action IN ('read', 'metadata_read')
-  AND ((d.expiry_mode = 'until_revoked' AND d.expires_at IS NULL)
-       OR (d.expiry_mode = 'at_time' AND d.expires_at > input.observed_at))
-  AND NOT EXISTS (SELECT 1 FROM system.engine_access_deny_releases release WHERE release.deny_id = d.deny_id)
-), matched_grants AS MATERIALIZED (
- SELECT g.*, target.position,
-  LEAST(g.expires_at, (SELECT membership_expires_at FROM current_source)) AS effective_expires_at
- FROM targets target CROSS JOIN input
- JOIN system.engine_access_grants g ON g.tenant_id = input.tenant_id
-  AND g.engine_id = target.engine_id AND g.item_fingerprint = target.item_fingerprint AND g.boundary_hash = target.boundary_hash
- JOIN recipients r ON r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id
- WHERE (g.action = target.requested_action OR (target.requested_action = 'metadata_read' AND g.action = 'read'))
-  AND g.granted_at <= input.observed_at
-  AND ((g.expiry_mode = 'until_revoked' AND g.expires_at IS NULL)
-       OR (g.expiry_mode = 'at_time' AND g.expires_at > input.observed_at))
-  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations revocation WHERE revocation.request_id = g.request_id)
-  AND NOT (target.requested_action = 'metadata_read' AND g.action = 'read' AND EXISTS (
-    SELECT 1 FROM matched_denies d WHERE d.position = target.position AND d.action = 'read'))
-), grant_deadlines AS (
- SELECT position,
- CASE WHEN bool_or(effective_expires_at IS NULL) THEN NULL ELSE max(effective_expires_at) END AS expires_at
- FROM matched_grants GROUP BY position
-), rule_reasons AS (
-SELECT target.position, input.observed_at,
-CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
-     WHEN NOT EXISTS (SELECT 1 FROM system.engines e WHERE e.tenant_id = input.tenant_id
-                      AND e.id = target.engine_id AND e.lifecycle_state = 'active'
-                      AND (target.requested_action <> 'metadata_read' OR e.engine_type = 'postgresql')
-                      AND (target.path->'segments'->-1->>'term' <> 'file' OR e.engine_type IN ('ftp','nfs'))
-                      AND (target.path->'segments'->-1->>'term' <> 'object' OR e.engine_type = 'minio')) THEN 'target_unavailable'
-     WHEN EXISTS (SELECT 1 FROM matched_denies d WHERE d.position = target.position
-       AND (d.action = 'metadata_read' OR target.requested_action = 'read')) THEN 'explicit_deny'
-     WHEN EXISTS (SELECT 1 FROM matched_grants g WHERE g.position = target.position) THEN 'grant'
-     ELSE 'no_grant' END AS reason
-FROM targets target CROSS JOIN input
-), rules AS (
- SELECT r.*, CASE WHEN r.reason = 'grant' THEN d.expires_at END AS expires_at
- FROM rule_reasons r LEFT JOIN grant_deadlines d USING (position))`
+)`

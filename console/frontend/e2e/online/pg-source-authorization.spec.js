@@ -83,6 +83,7 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
     checks.push('exclusive_workspace_tabs')
 
     phase = 'create_picker'
+    await system.getByTestId('authorization-target-mode').getByRole('radio', { name: '精确数据项（本次选择）', exact: true }).check()
     const selectionTree = system.getByTestId('approval-resource-tree')
     await selectionTree.getByRole('textbox').fill('metric_people')
     await selectionTree.getByRole('checkbox', { name: 'metric_people', exact: true }).locator('..').click()
@@ -195,7 +196,7 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
 
 function isEngineAuthorizationWrite(method, path, base) {
   return path.startsWith(base + '/') && method !== 'GET' &&
-    !(method === 'POST' && path === base + '/catalog/children')
+    !(method === 'POST' && (path === base + '/catalog/children' || path === base + '/authorization-nodes/query'))
 }
 
 async function sessionSnapshot(storeID) {

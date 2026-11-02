@@ -856,7 +856,8 @@
           "platform_administrator_change": "Platform administrator change",
           "http_observation": "HTTP quality observations",
           "platform_http_rule": "HTTP quality alert rules",
-          "trace": "HTTP traces"
+          "trace": "HTTP traces",
+          "node_identity": "Node identity facts"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",
@@ -1051,21 +1052,9 @@
       "sourceGrants": {
         "selectAction": "Select permission type",
         "action": "Access type",
-        "actions": {"metadata_read": "Metadata only", "read": "Read data (including metadata)"},
-        "deny": {
-          "createMetadata": "Prohibit metadata viewing",
-          "createMetadataBoundary": "Prohibit this account from viewing metadata, reading data or refreshing this item based on viewing access. Existing grants remain. Confirm the target, validity and reason.",
-          "create": "Prohibit reading",
-          "release": "Release prohibition",
-          "sources": "Current Deny sources",
-          "validity": "Prohibition validity",
-          "untilReleased": "Valid until released",
-          "createBoundary": "Prohibit this account from reading this DataItem, overriding personal and organization Grants without revoking them. Verify the target, select validity and enter a reason before submitting.",
-          "releaseBoundary": "Release only this Deny. No Grant is created, restored or renewed. Other Denies still apply; without an effective Grant, reading remains unavailable.",
-          "organizationBoundary": "This organization Deny affects all applicable department or project-group members, not only the filtered account.",
-          "invalid": "Enter a reason (up to 2000 characters) and explicit validity. A specific expiration must be in the future.",
-          "created": "Prohibition submitted. Review current Deny sources and status; existing Grants were not revoked.",
-          "released": "This prohibition was released. Review remaining sources; no read Grant was created or restored."
+        "actions": {
+          "metadata_read": "Metadata only",
+          "read": "Read data (including metadata)"
         },
         "historyBoundary": "All issuance records include currently active, revoked and expired grants. Switch to Current authorizations to review merged active relations or revoke access.",
         "accountSourcesHint": "Personal and current organization Grants and Denies are grouped per table. Expand to inspect or handle one source. Revoking a Grant is not a prohibition, and releasing a Deny grants no reading. Function, session and security checks still apply.",
@@ -1081,7 +1070,6 @@
           "reasons": {
             "grant": "Source rules cover this table",
             "no_grant": "Source rules not covered: no effective personal or organization grant",
-            "explicit_deny": "Source Deny matched: grants do not override this restriction",
             "source_unavailable": "Account or tenant membership is currently invalid",
             "target_unavailable": "Engine is currently unavailable"
           }
@@ -1147,7 +1135,13 @@
         "invalid": "Select an eligible recipient and permission type, explicit validity and a reason. A specific expiration must be in the future.",
         "invalidReason": "Enter a revocation reason (up to 2000 characters).",
         "revokeBoundary": "Withdraw all effective grants for this data item, recipient and access type, retaining history. Other access types and recipients are unchanged. Withdrawing personal access does not withdraw department or project group access, or create a prohibition.",
-        "revoked": "This read authorization relation is withdrawn; history is retained. Other personal or organization sources are unchanged."
+        "revoked": "This read authorization relation is withdrawn; history is retained. Other personal or organization sources are unchanged.",
+        "scopeKinds": {
+          "item": "Exact DataItem",
+          "direct": "Direct DataItems, including future items",
+          "recursive": "Descendant DataItems, including future items"
+        },
+        "confirmNode": "Persistent node scope: {target}; {recursion}. No per-item Grants are created; newly identified items enter this scope."
       },
       "dataAuthorization": {
         "newAuthorization": "New authorization",
@@ -1166,7 +1160,8 @@
           "missing": "DataItem not found; run a basic scan or verify the resource",
           "forbidden": "No permission to inspect DataItem facts",
           "failed": "Check failed; please retry",
-          "pending": "Not checked"
+          "pending": "Not checked",
+          "node": "Node exists; rechecked at issuance"
         },
         "addSelection": "Add to this authorization",
         "snapshotOnly": "Node selection includes only the current DataItems (up to 200 per batch), not future items.",
@@ -1186,7 +1181,14 @@
           "catalog": "Business approval",
           "task_production": "Initial task output grant",
           "mixed": "Multiple authorization sources"
-        }
+        },
+        "targetModes": {
+          "items": "Exact DataItems (current selection)",
+          "nodes": "Persistent node scopes"
+        },
+        "nodeRecursive": "Include DataItems in descendant nodes",
+        "persistentNode": "Covers current and newly identified DataItems for the Grant lifetime. Without recursion, only direct DataItems are covered. Issuance independently verifies the node; no per-item Grants are created.",
+        "chooseTargetMode": "Choose exact DataItems or persistent node scopes. Node scopes include newly identified items."
       },
       "delegations": {
         "new": "New delegation",

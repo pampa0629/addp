@@ -393,7 +393,7 @@ elif args[:2] != ["volume", "ls"]:
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = (self.root / "trace-1").read_text()
         self.assertIn("./internal/testsupport -run ^TestResetDisposablePostgresForGate$", trace)
-        self.assertIn("./internal/migration -run ^Test(SourceDeny|SourceDenyRelease|FulfillmentOutcome|FulfillmentGrant|FulfillmentGrantRevocation|FulfillmentGrantRevocationExpiry|FulfillmentRecoveryPermission|FulfillmentHandlingPermission|FulfillmentBasis|ApprovalRequirement|SharingExpiry|SourceGrantRelations)ForwardMigrationAgainstPostgres$", trace)
+        self.assertIn("./internal/migration -run ^Test(NodeSourceGrants|SourceDeny|SourceDenyRelease|FulfillmentOutcome|FulfillmentGrant|FulfillmentGrantRevocation|FulfillmentGrantRevocationExpiry|FulfillmentRecoveryPermission|FulfillmentHandlingPermission|FulfillmentBasis|ApprovalRequirement|SharingExpiry|SourceGrantRelations)ForwardMigrationAgainstPostgres$", trace)
         (self.root / "trace-1").unlink()
         result = self.run_gate(arguments=("--package", ""))
         self.assertEqual(result.returncode, 0, result.stderr)

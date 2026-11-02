@@ -28,6 +28,10 @@ func exerciseNodeIdentity(t *testing.T, db *gorm.DB) {
 	if err := db.Create(&node).Error; err != nil {
 		t.Fatal(err)
 	}
+	ignored := models.MetaNode{TenantID: tenant, EngineID: engine, ParentNodeID: &root.ID, NodeType: "directory", Name: "not-a-PG-schema", FullName: "not-a-PG-schema"}
+	if err := db.Create(&ignored).Error; err != nil {
+		t.Fatal(err)
+	}
 	svc := NewMetadataQueryService(db)
 	query := authorizationfacts.NodeIdentityQuery{Target: plugin.TabularNamespacePath(engine, "schema", name)}
 	read := func(q authorizationfacts.NodeIdentityQuery, want bool) {
@@ -41,6 +45,23 @@ func exerciseNodeIdentity(t *testing.T, db *gorm.DB) {
 		if json.Unmarshal(encoded, &shape) != nil || len(shape) != 3 {
 			t.Fatal("node observation leaked nonidentity columns")
 		}
+	}
+	pageQuery := authorizationfacts.NodeIdentityPageQuery{Target: plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), engine), Page: 1, PageSize: 1}
+	page, err := svc.QueryNodeIdentities(context.Background(), tenant, pageQuery)
+	if err != nil || page.Total != 1 || len(page.Nodes) != 1 || page.Nodes[0].Target.Segments[1].Name != name || page.Validate(tenant, pageQuery) != nil {
+		t.Fatalf("minimal immediate node list: %+v %v", page, err)
+	}
+	pageQuery.Page = 2
+	if empty, err := svc.QueryNodeIdentities(context.Background(), tenant, pageQuery); err != nil || empty.Total != 1 || len(empty.Nodes) != 0 {
+		t.Fatalf("node pagination: %+v %v", empty, err)
+	}
+	pageQuery.Page = 1
+	pageQuery.Target = query.Target
+	if children, err := svc.QueryNodeIdentities(context.Background(), tenant, pageQuery); err != nil || children.Total != 0 || len(children.Nodes) != 0 || !children.Parent.Exists {
+		t.Fatalf("schema must not enumerate DataItems: %+v %v", children, err)
+	}
+	if foreign, err := svc.QueryNodeIdentities(context.Background(), tenant+1, pageQuery); err != nil || foreign.Total != 0 || foreign.Parent.Exists {
+		t.Fatal("foreign node enumeration", foreign, err)
 	}
 	read(query, true)
 	read(authorizationfacts.NodeIdentityQuery{Target: plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), engine)}, true)

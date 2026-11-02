@@ -17,7 +17,7 @@ func TestSourceGrantFilterExactTarget(t *testing.T) {
 	}
 	predicate, args := filter.predicate()
 	var decoded engineplugin.EngineCatalogPath
-	if len(args) != 3 || !strings.Contains(predicate, "catalog_path = ?::jsonb") || strings.Contains(predicate, "strpos") {
+	if len(args) != 4 || (!strings.Contains(predicate, "catalog_path = ?::jsonb") || !strings.Contains(predicate, "source_node_covers") || args[0] != args[1]) || strings.Contains(predicate, "strpos") {
 		t.Fatalf("exact filter lost: %s %+v", predicate, args)
 	}
 	if err := json.Unmarshal([]byte(args[0].(string)), &decoded); err != nil || !reflect.DeepEqual(decoded, path) {
@@ -32,8 +32,8 @@ func TestSourceGrantFilterExactTarget(t *testing.T) {
 	}
 	filter.TableSearch = ""
 	path.Segments = path.Segments[:2]
-	if filter.ValidateForEngine(2) == nil {
-		t.Fatal("branch target accepted")
+	if filter.ValidateForEngine(2) != nil {
+		t.Fatal("canonical PG node filter rejected")
 	}
 	path = engineplugin.TabularItemPath(2, "schema", "outdoor", strings.Repeat("a", 4096))
 	if filter.ValidateForEngine(2) == nil {

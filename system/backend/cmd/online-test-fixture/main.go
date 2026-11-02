@@ -119,13 +119,7 @@ var sourceInitializerPermissions = []string{
 
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
-	case "ftp-consumer-flow", "manager-internal-artifact-lineage":
-		if suite == "manager-internal-artifact-lineage" && (os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "kml-export" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-table-orc" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-netcdf") {
-			return append([]string{}, sourceInitializerPermissions...)
-		}
-		return append(append([]string{}, sourceInitializerPermissions...),
-			"system.engine_access_deny.create", "system.engine_access_deny.release")
-	case "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects":
+	case "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects":
 		return append([]string{}, sourceInitializerPermissions...)
 	default:
 		return nil
@@ -158,7 +152,7 @@ var pgAuthorizationConsumerPermissions = []string{
 // The formal authorizer role supplies both handling workflows and their reads.
 // This fixture supplements only the commands needed by the isolated PG suite.
 var pgAuthorizationOperatorPermissions = []string{
-	"system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read",
+	"catalog.inventory.read",
 	"meta.scan_task.create", "meta.scan_task.update", "meta.scan_task.delete",
 	"meta.scan_task.read", "meta.scan_task.execute", "meta.scan_task.cancel",
 }

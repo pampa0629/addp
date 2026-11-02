@@ -874,5 +874,4 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		}
 	})
 	exerciseTransferProductionBindingAgainstPostgres(t, db, tenant.ID)
-	exerciseDevelopmentAuthorizationRetirement(t, db)
 }

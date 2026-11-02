@@ -94,7 +94,7 @@ func (r *Repository) readFulfillmentGrantObservation(ctx context.Context, reques
 			return nil
 		}
 		grants, err := tx.activeRelationGrants(ctx, sourceGrant{TenantID: request.TenantID,
-			EngineID: int64(request.Path.EngineID), ItemFingerprint: request.ItemFingerprint,
+			EngineID: int64(request.Path.EngineID), CatalogPath: path, ItemFingerprint: request.ItemFingerprint,
 			RecipientType: request.RecipientType, RecipientID: request.RecipientID, Action: request.Action})
 		if err != nil {
 			return err

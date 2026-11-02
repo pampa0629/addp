@@ -14,17 +14,23 @@
       <el-alert v-if="!canBrowse" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.browseRequired')" />
       <el-alert v-else-if="!adapter" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.unsupported')" />
       <template v-else>
-        <ResourceTreePicker ref="picker" :key="authorizationKey" :model-value="selections" multiple branch-selection
-          :engine-id="engine.id" :adapter="adapter" mode="any" :selectable-filter="isApprovalTarget"
+        <el-radio-group v-if="engine.engine_type === 'postgresql'" v-model="targetMode" :disabled="busy" data-testid="authorization-target-mode" @change="changeTargetMode">
+          <el-radio-button value="items">{{ t('system.engine.dataAuthorization.targetModes.items') }}</el-radio-button>
+          <el-radio-button value="nodes">{{ t('system.engine.dataAuthorization.targetModes.nodes') }}</el-radio-button>
+        </el-radio-group>
+        <el-checkbox v-if="targetMode === 'nodes'" v-model="nodeRecursive" :disabled="busy" data-testid="authorization-node-recursive">{{ t('system.engine.dataAuthorization.nodeRecursive') }}</el-checkbox>
+        <el-alert v-if="!targetMode" type="info" :closable="false" :title="t('system.engine.dataAuthorization.chooseTargetMode')" />
+        <ResourceTreePicker v-if="targetMode" ref="picker" :key="`${authorizationKey}:${targetMode}`" :model-value="selections" multiple :branch-selection="targetMode === 'items'"
+          :engine-id="engine.id" :adapter="adapter" mode="any" :selectable-filter="targetMode === 'nodes' ? isApprovalNode : isApprovalTarget"
           :max-selections="200" :validate-selection="validateSelection" :disabled="!authorizationReady || grantBusy"
           :show-engine-selector="false" :show-selection-summary="false" :show-count="false" :title="engine.name"
           :search-placeholder="t('system.engine.sourceGrants.tableSearch')" tree-height="min(44vh, 480px)"
           data-testid="approval-resource-tree" @update:model-value="applySelection" @busy="selecting = $event"
           @loading="loading = $event" @ready="selectionReady" @error="selectionError" />
         <template v-if="workspaceView === 'create'">
-          <p class="hint">{{ t('system.engine.dataAuthorization.snapshotOnly') }}</p>
+          <p class="hint">{{ t(targetMode === 'nodes' ? 'system.engine.dataAuthorization.persistentNode' : 'system.engine.dataAuthorization.snapshotOnly') }}</p>
           <el-table v-if="targets.length" :data="targets" data-testid="approval-targets">
-            <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row) }}</template></el-table-column>
+            <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row) || engine.name }}</template></el-table-column>
             <el-table-column :label="t('system.engine.dataAuthorization.basis.title')" min-width="260"><template #default="{ row }">
               <div class="basis-status" data-testid="approval-basis-status">
                 <el-tag :type="basisTag(row)">{{ t(`system.engine.dataAuthorization.basis.${basisState(row)}`) }}</el-tag>
@@ -37,7 +43,7 @@
         </template>
       </template>
     </template>
-    <EngineSourceGrants :engine="engine" :authorization-key="authorizationKey" :authorization-ready="authorizationReady" :data-item-ready="directRequirements.length > 0 && directRequirements.every(row => basisState(row.catalog_path) === 'complete')" :view="workspaceView" :list-mode="workspaceTab === 'history' ? 'history' : 'current'" :requirements="directRequirements" :catalog-adapter="adapter" @busy="grantBusy = $event" @close="closeGrant" @issued="reloadAfterGrant" />
+    <EngineSourceGrants :engine="engine" :authorization-key="authorizationKey" :authorization-ready="authorizationReady" :target-ready="directRequirements.length > 0 && directRequirements.every(row => ['complete', 'node'].includes(basisState(row.catalog_path)))" :view="workspaceView" :list-mode="workspaceTab === 'history' ? 'history' : 'current'" :requirements="directRequirements" :catalog-adapter="itemAdapter" @busy="grantBusy = $event" @close="closeGrant" @issued="reloadAfterGrant" />
   </section>
 </template>
 
@@ -47,14 +53,14 @@ import { useI18n } from 'vue-i18n'
 import { ResourceTreePicker, serializeEngineCatalogTarget, readNativeApprovalFacts } from '@common-ui'
 import { enginesAPI } from '../../api/engines'
 import { useAuthStore } from '../../store/auth'
-import { approvalPathLabel, approvalTargetsEqual, approvalTargetFromSelection, isApprovalTarget, createApprovalCatalogAdapter } from '../../utils/engineApprovalCatalog'
+import { approvalPathLabel, approvalTargetsEqual, approvalTargetFromSelection, isApprovalTarget, isApprovalNode, createApprovalCatalogAdapter, createApprovalNodeCatalogAdapter } from '../../utils/engineApprovalCatalog'
 import EngineSourceGrants from './EngineSourceGrants.vue'
 
 const props = defineProps({ engine: { type: Object, required: true }, authorizationKey: { type: String, required: true }, authorizationReady: Boolean })
 const auth = useAuthStore(), { t } = useI18n()
 const canGrant = computed(() => auth.hasPermission('system.engine_access_grant.create'))
 const canReadGrants = computed(() => auth.hasPermission('system.engine_access_grant.read'))
-const workspaceTab = ref('current')
+const workspaceTab = ref('current'), targetMode = ref(''), nodeRecursive = ref(false)
 const workspaceView = computed(() => workspaceTab.value === 'create' ? 'create' : 'list')
 const currentTab = ref(null)
 const canBrowse = computed(() => canReadGrants.value)
@@ -72,11 +78,19 @@ const basisState = path => path?.segments ? basisStates.value[basisKey(path)] ||
 const basisTag = path => ({ complete: 'success', failed: 'danger', incomplete: 'warning', needs_refresh: 'warning', missing: 'warning' }[basisState(path)] || 'info')
 const operating = computed(() => selecting.value || grantBusy.value)
 const busy = computed(() => !props.authorizationReady || operating.value)
-const adapter = computed(() => {
+const itemAdapter = computed(() => {
   if (!canBrowse.value || props.engine.lifecycle_state !== 'active' || props.engine.connection_status !== 'online') return null
   try { return createApprovalCatalogAdapter(props.engine, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts) } catch { return null }
 })
-const directRequirementCandidates = computed(() => targets.value.map(path => ({ engine_id: String(props.engine.id), catalog_path: path })))
+const nodeAdapter = computed(() => {
+ if (!canBrowse.value || props.engine.engine_type !== 'postgresql' || props.engine.lifecycle_state !== 'active' || props.engine.connection_status !== 'online') return null
+ return createApprovalNodeCatalogAdapter(props.engine, enginesAPI.listAuthorizationNodes)
+})
+const adapter = computed(() => targetMode.value === 'nodes' ? nodeAdapter.value : itemAdapter.value)
+function changeTargetMode() {
+ generation.value++; targets.value = []; selections.value = []; targetPaths.clear(); basisStates.value = {}; basisRequests.clear(); ready.value = false; error.value = ''
+}
+const directRequirementCandidates = computed(() => targets.value.map(path => ({ engine_id: String(props.engine.id), engine_name: props.engine.name, catalog_path: path, ...(targetMode.value === 'nodes' ? { node_recursive: nodeRecursive.value } : {}) })))
 const directRequirements = ref([])
 watch([() => props.authorizationReady, directRequirementCandidates], ([isReady, requirements]) => {
   if (isReady) directRequirements.value = requirements
@@ -114,7 +128,7 @@ async function validateSelection(next) {
   for (const selection of next) {
     const key = selection.identity.locator
     // Retained selections keep their exact boundary; a refresh is checked separately.
-    const path = targetPaths.get(key) || await approvalTargetFromSelection(selection, props.engine.id, adapter.value)
+    const path = targetPaths.get(key) || (targetMode.value === 'nodes' ? await adapter.value.resolveTarget(selection.raw.node) : await approvalTargetFromSelection(selection, props.engine.id, adapter.value))
     if (epoch !== generation.value || !props.authorizationReady) throw new Error('selectionContextChanged')
     resolved.set(key, path)
   }
@@ -146,8 +160,13 @@ async function inspectTargets(paths) {
       basisStates.value[key] = 'checking'
       let state
       try {
-        const observed = await readNativeApprovalFacts(path, enginesAPI.getAuthorizationFacts)
-        state = observed.state
+        if (targetMode.value === 'nodes') {
+          const observed = await enginesAPI.listAuthorizationNodes(props.engine.id, { target: path, page: 1, page_size: 100 })
+          state = approvalTargetsEqual(observed?.parent?.target, path) && observed.parent.exists === true ? 'node' : 'missing'
+        } else {
+          const observed = await readNativeApprovalFacts(path, enginesAPI.getAuthorizationFacts)
+          state = observed.state
+        }
       }
       catch (e) {
         state = e?.response?.status === 404 && e.response.data?.error_code === 'authorization_target_not_found' ? 'missing'
@@ -160,7 +179,7 @@ async function inspectTargets(paths) {
 watch(() => props.authorizationKey, () => {
   basisStates.value = {}; basisRequests.clear()
   generation.value++; targets.value = []; selections.value = []; targetPaths.clear()
-  workspaceTab.value = 'current'
+  workspaceTab.value = 'current'; targetMode.value = props.engine.engine_type === 'postgresql' ? '' : 'items'; nodeRecursive.value = false
   ready.value = loading.value = selecting.value = grantBusy.value = false
   load()
 }, { immediate: true })

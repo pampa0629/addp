@@ -856,7 +856,8 @@
           "platform_administrator_change": "平台管理员变更",
           "http_observation": "HTTP 接口质量读取",
           "platform_http_rule": "HTTP 接口质量规则",
-          "trace": "HTTP 调用链"
+          "trace": "HTTP 调用链",
+          "node_identity": "节点身份事实"
         },
         "types": {
           "tenant_builtin": "租户内置角色",
@@ -1051,21 +1052,9 @@
       "sourceGrants": {
         "selectAction": "请选择权限类型",
         "action": "权限类型",
-        "actions": {"metadata_read": "仅查看元数据", "read": "读取数据（含元数据）"},
-        "deny": {
-          "createMetadata": "禁止查看元数据",
-          "createMetadataBoundary": "禁止此账号查看该数据项的元数据，同时禁止读取数据及基于查看权的单项刷新。已有授权记录保留，请核对对象、期限并填写原因。",
-          "create": "禁止读取",
-          "release": "解除禁止",
-          "sources": "当前有效的拒绝来源",
-          "validity": "禁止有效期",
-          "untilReleased": "长期有效，直到解除",
-          "createBoundary": "禁止这个账号读取此数据项。即使其个人、部门或项目组仍有授权，也会优先拒绝；不会撤销已有授权。请确认下方对象、期限并填写原因后提交。",
-          "releaseBoundary": "仅解除这一条拒绝规则，不创建、恢复或续期读取授权。其他拒绝仍然有效；没有有效授权时，解除后仍不能读取。",
-          "organizationBoundary": "这是组织拒绝规则：解除会影响该部门或项目组所有受此规则约束的成员，不只是当前筛选账号。",
-          "invalid": "请填写原因（最多 2000 字）并明确禁止有效期；指定时间须晚于当前时间。",
-          "created": "已提交禁止读取规则，请核对当前拒绝来源和状态。已有授权未被撤销。",
-          "released": "这一条禁止已解除，请核对剩余来源；没有新增或恢复任何读取授权。"
+        "actions": {
+          "metadata_read": "仅查看元数据",
+          "read": "读取数据（含元数据）"
         },
         "historyBoundary": "这里包含全部签发记录：当前有效（已签发）、已撤销和已到期。查看合并后的当前授权或撤销权限，请切换到“当前授权”。",
         "accountSourcesHint": "已合并该账号的个人、当前有效部门及项目组授权与拒绝来源。展开一行查看并处理具体来源；撤销授权不等于禁止读取，解除禁止也不授予读取权。仍须满足功能权限、会话与安全条件。",
@@ -1081,7 +1070,6 @@
           "reasons": {
             "grant": "源规则覆盖",
             "no_grant": "源规则未覆盖：没有有效个人、部门或项目组授权",
-            "explicit_deny": "命中源拒绝规则：即使有授权来源，源规则仍不允许读取",
             "source_unavailable": "账号或租户成员关系当前无效",
             "target_unavailable": "引擎当前不可用"
           }
@@ -1147,7 +1135,13 @@
         "invalid": "请选择有效接收方和权限类型、明确有效期并填写原因；指定时间须晚于当前时间。",
         "invalidReason": "请填写撤销原因（最多 2000 字）。",
         "revokeBoundary": "收回此数据对这个接收方、当前权限类型的全部有效授权，保留历史。其他权限类型和其他接收方的授权不受影响；撤销个人授权不收回其部门或项目组授权，也不产生禁止规则。",
-        "revoked": "这条读取授权关系已收回，原签发历史保留；其他个人或组织来源不受影响。"
+        "revoked": "这条读取授权关系已收回，原签发历史保留；其他个人或组织来源不受影响。",
+        "scopeKinds": {
+          "item": "精确数据项",
+          "direct": "节点直属数据项（含未来新增）",
+          "recursive": "节点及后代数据项（含未来新增）"
+        },
+        "confirmNode": "持续节点范围：{target}；{recursion}。不逐项生成授权；以后新识别的数据项自动进入范围。"
       },
       "dataAuthorization": {
         "newAuthorization": "新增授权",
@@ -1166,7 +1160,8 @@
           "missing": "未找到数据项，请先基础扫描或核对资源",
           "forbidden": "无数据项核对权限",
           "failed": "核对失败，请重试",
-          "pending": "尚未核对"
+          "pending": "尚未核对",
+          "node": "节点存在，签发时再次核验"
         },
         "addSelection": "加入本次授权清单",
         "snapshotOnly": "节点选择仅包含当前已识别的数据项，单批最多 200 项，不包含以后新增的数据项。",
@@ -1186,7 +1181,14 @@
           "catalog": "业务批准",
           "task_production": "任务产出初始授权",
           "mixed": "多种授权来源"
-        }
+        },
+        "targetModes": {
+          "items": "精确数据项（本次选择）",
+          "nodes": "持续节点范围"
+        },
+        "nodeRecursive": "递归包含下级节点的数据项",
+        "persistentNode": "在授权有效期内覆盖节点内当前及以后新识别的数据项；未勾选递归时仅覆盖直属数据项。签发时独立核验真实节点，不逐项生成 Grant。",
+        "chooseTargetMode": "先选择精确数据项或持续节点范围。节点范围会覆盖以后新识别的数据项。"
       },
       "delegations": {
         "new": "新增委托",

@@ -25,8 +25,8 @@ READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 
 class Server:
     def __init__(self, fault=None):
-        self.grants, self.denies, self.calls = {}, {}, []
-        self.deny_bodies, self.expired_grants = {}, set()
+        self.grants, self.calls = {}, []
+        self.expired_grants = set()
         self.expired, self.fault = False, fault
         self.memberships = {'department': '41', 'project_group': '51'}
         self.version, self.current_reader_token = 1, 'reader-private-token'
@@ -130,15 +130,6 @@ class Server:
                     if server.fault == 'withdrawal_overreach' and any(row['recipient_type'] != 'user' for row in server.grants.values()):
                         for row in server.grants.values():
                             row['revocation'] = {'reason': body['reason']}
-                elif path.endswith('/access_denies'):
-                    server.denies[body['deny_id']] = True
-                    server.deny_bodies[body['deny_id']] = dict(body)
-                    status, result = 200, dict(body)
-                elif path.endswith('/release'):
-                    server.denies[path.split('/')[-2]] = False
-                    if server.fault == 'release_all_denies':
-                        server.denies = dict.fromkeys(server.denies, False)
-                    result = {'deny_id': path.split('/')[-2]}
                 elif path.endswith('/history') or path.endswith('/access_grants'):
                     state = query.get('state', [''])[0]
                     if state == 'expired' and server.fault != 'never_expire':
@@ -160,25 +151,17 @@ class Server:
                     if account:
                         sources = [{key: row[key] for key in ('recipient_type', 'recipient_id', 'request_id', 'expiry_mode', 'expires_at')}
                                    | {'grant_count': 1} for row in rows]
-                        denies = [{key: body[key] for key in ('action', 'recipient_type', 'recipient_id', 'deny_id', 'expiry_mode', 'expires_at')}
-                                  for command, body in server.deny_bodies.items() if server.denies[command]]
-                        if denies and server.fault == 'deny_summary_missing_action':
-                            denies[0].pop('action')
-                        if denies and server.fault == 'deny_summary_wrong_action':
-                            denies[0]['action'] = 'metadata_read'
-                        if denies and server.fault == 'deny_summary_leaks_details':
-                            denies[0]['reason'] = 'private establishment details'
                         if server.fault == 'wrong_source_anchor' and any(row['recipient_type'] == 'project_group' for row in sources):
                             sources[-1]['request_id'] = 'wrong'
                         rows = []
-                        if (sources or denies) and not (server.fault == 'hide_deny_only' and not sources):
-                            reason = 'explicit_deny' if denies else 'grant'
+                        if sources:
+                            reason = 'grant'
                             target = json.loads(query['catalog_path'][0])
                             rows = [{'catalog_path': target, 'item_fingerprint': 'a' * 64, 'recipient_type': 'user',
                                      'recipient_id': '33', 'grant_count': len(sources), 'inspection': {
                                          'account_id': '33', 'catalog_path': target, 'item_fingerprint': 'a' * 64,
                                          'observed_at': '2026-10-16T03:00:00Z', 'rule_covered': reason == 'grant',
-                                         'reason': reason, 'sources': sources, 'denies': denies}}]
+                                         'reason': reason, 'sources': sources}}]
                     result = {'data': rows, 'total': len(rows)}
                     if kind == 'operator' and recipient == ('user', '36') and server.fault == 'function_grant_missing':
                         result = {'data': [], 'total': 0}
@@ -193,10 +176,8 @@ class Server:
                                 if row['revocation'] is None and key not in server.expired_grants and row['action'] == 'read'
                                 and row['catalog_path']['segments'][-1]['name'] + '?' in target]
                     active = any(server.inherited(row, '33' if kind.startswith('reader') else '36' if kind == 'business' else '34') for row in matching)
-                    allowed = (kind.startswith('reader') or kind == 'outsider') and active and not any(server.denies.values())
+                    allowed = (kind.startswith('reader') or kind == 'outsider') and active
                     if server.fault == 'nonmember_granted' and kind == 'outsider' and matching:
-                        allowed = True
-                    if server.fault == 'deny_ignored' and any(server.denies.values()):
                         allowed = True
                     if server.fault == 'expired_ignored' and server.expired:
                         allowed = True
@@ -427,7 +408,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.facts = {'item_fingerprint': 'a' * 64, 'boundary_hash': 'b' * 64,
                       'boundary': {'native_target': ONLINE.table_path(2, 'metric_people')}}
         self.scans = patch.object(ONLINE, 'basic_scan', side_effect=[
-            'initial-basic', 'exact-basic', 'content-grant-basic', 'content-deny-basic',
+            'initial-basic', 'exact-basic', 'content-grant-basic', 'content-reset-basic',
             'content-revoked-basic', 'content-restored-basic']).start()
         self.addCleanup(patch.stopall)
         observation = patch.object(ONLINE, 'AuditLatencyObservation').start()
@@ -442,8 +423,6 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         patch.object(ONLINE.time, 'sleep').start()
         def mutate(action):
             self.server.people = ('A', 'B2', 'C') if action == 'content-change' else ('A', 'B')
-            if self.server.fault == 'content_loses_deny' and action == 'content-reset':
-                self.server.denies = dict.fromkeys(self.server.denies, False)
             if self.server.fault == 'content_restores_withdrawn' and action == 'content-change':
                 for row in self.server.grants.values():
                     row['revocation'] = None
@@ -457,8 +436,9 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             return self.outage
         def restored(*_):
             self.server.meta_down = False
-            if self.server.fault == 'recovery_loses_deny':
-                self.server.denies = dict.fromkeys(self.server.denies, False)
+            if self.server.fault == 'recovery_loses_grant':
+                for row in self.server.grants.values():
+                    row['revocation'] = {'reason': 'incorrect recovery side effect'}
         self.outage.__enter__.side_effect = down
         self.outage.__exit__.side_effect = restored
         patch.object(ONLINE.API, 'GatewayClient', side_effect=lambda base, token, timeout:
@@ -477,12 +457,12 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         report = {}
         lifecycle.run(report)
         lifecycle.cleanup()
-        self.assertEqual(len(report['checks']), 33)
+        self.assertEqual(len(report['checks']), 26)
         self.assertEqual(len(server.grants), 9)
         self.assertTrue(report['same_credential_through_grant_expiry'])
         self.assertIn(lifecycle.expiry_grant, server.expired_grants)
         self.assertIsNone(server.grants[lifecycle.expiry_grant]['revocation'])
-        self.assertFalse(any(server.denies.values()))
+        self.assertFalse(any('/access_denies' in call[2] for call in server.calls))
         self.assertEqual(self.scans.call_args_list[0].args[2], ['metric_people', 'metric_events'])
         self.assertEqual(self.scans.call_args_list[1].args[2], ['metric_people'])
         decisions = [call for call in server.calls if call[2] == READ_CHECK]
@@ -495,7 +475,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                             for call in writes if 'catalog_path' in call[3]))
         self.assertNotIn('private-token', json.dumps(report))
         self.assertNotIn('person_id', json.dumps(report))
-        self.assertEqual([len(row['sources']) for row in report['source_observations']], [1, 2, 3, 2, 2, 2, 2, 2, 1, 0, 0, 2, 1, 0])
+        self.assertEqual([len(row['sources']) for row in report['source_observations']], [1, 2, 3, 2, 1, 0, 2, 1, 0])
         self.assertEqual(report['membership_observations'], [
             {'closed_type': 'department', 'old_token_status': 401, 'remaining_sources': 1, 'preview_status': 200},
             {'closed_type': 'project_group', 'old_token_status': 401, 'remaining_sources': 0, 'preview_status': 403}])
@@ -608,7 +588,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertEqual(ready.call_args.args[:2], (lifecycle.reader, 2))
         self.scans.assert_not_called()
         self.assertFalse(server.grants)
-        self.assertFalse(server.denies)
+        self.assertFalse(any('/access_denies' in call[2] for call in server.calls))
 
     def test_workspace_distinguishes_exact_catalog_read_from_authorization_writes(self):
         spec = Path(__file__).resolve().parents[2] / 'console/frontend/e2e/online/pg-source-authorization.spec.js'
@@ -775,7 +755,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             def withdraw():
                 self.assertTrue(all(server.grants[key]['revocation'] for key in retained))
                 self.assertTrue(previous.issubset(server.grants))
-                self.assertFalse(any(server.denies.values()))
+                self.assertFalse(any('/access_denies' in call[2] for call in server.calls))
                 active = {key for key, row in server.grants.items()
                           if row['revocation'] is None and key not in server.expired_grants}
                 self.assertEqual(active, {lifecycle.grants[-1]})
@@ -813,8 +793,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 lifecycle.cleanup()
                 self.assertTrue(all(row['revocation'] for row in server.grants.values()))
 
-    def test_content_changes_require_current_data_stable_binding_deny_and_withdrawal(self):
-        for fault in ('stale_content', 'content_loses_deny', 'content_restores_withdrawn',
+    def test_content_changes_require_current_data_stable_binding_and_withdrawal(self):
+        for fault in ('stale_content', 'content_restores_withdrawn',
                       'direct_replay_restores_revoked', 'content_changes_identity', 'content_changes_boundary',
                       'withdrawn_metadata_leaks'):
             with self.subTest(fault=fault):
@@ -831,7 +811,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                             ONLINE.locator(2, 'metric_people', 10), ONLINE.locator(2, 'metric_events', 11))
                 self.assertEqual(server.people, ('A', 'B'))
                 lifecycle.cleanup()
-                self.assertFalse(any(server.denies.values()))
+                self.assertFalse(any('/access_denies' in call[2] for call in server.calls))
                 self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
 
     def test_lost_source_mutation_response_restores_baseline_and_leaves_grant_owned_for_cleanup(self):
@@ -855,11 +835,11 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 self.assertEqual(server.people, ('A', 'B'))
                 self.assertEqual(len(lifecycle.grants), 1)
                 lifecycle.cleanup()
-                self.assertFalse(any(server.denies.values()))
+                self.assertFalse(any('/access_denies' in call[2] for call in server.calls))
                 self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
 
-    def test_meta_recovery_rejects_fallback_wrong_status_lost_deny_and_leaks(self):
-        for fault in ('outage_fallback', 'outage_masquerades_as_missing', 'outage_leaks', 'recovery_loses_deny'):
+    def test_meta_recovery_rejects_fallback_wrong_status_lost_grant_and_leaks(self):
+        for fault in ('outage_fallback', 'outage_masquerades_as_missing', 'outage_leaks', 'recovery_loses_grant'):
             with self.subTest(fault=fault):
                 server, lifecycle = self.lifecycle(fault)
                 with self.assertRaises(ONLINE.SuiteError):
@@ -867,7 +847,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                                                   ONLINE.locator(2, 'metric_events', 11))
                 lifecycle.cleanup()
                 self.assertFalse(server.meta_down)
-                self.assertFalse(any(server.denies.values()))
+                self.assertFalse(any('/access_denies' in call[2] for call in server.calls))
                 self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
 
     def test_browser_failure_still_withdraws_both_organization_grants(self):
@@ -911,16 +891,14 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                             for key, row in server.grants.items()))
 
     def test_organization_projection_history_and_nonmember_oracles(self):
-        for fault in ('wrong_source_anchor', 'nonmember_granted', 'release_all_denies', 'hide_deny_only',
-                      'history_expands_organizations', 'withdrawal_overreach', 'deny_summary_missing_action',
-                      'deny_summary_wrong_action', 'deny_summary_leaks_details'):
+        for fault in ('wrong_source_anchor', 'nonmember_granted', 'history_expands_organizations', 'withdrawal_overreach'):
             with self.subTest(fault=fault):
                 self.scans.side_effect = ['initial-basic', 'exact-basic']
                 server, lifecycle = self.lifecycle(fault)
                 with self.assertRaises(ONLINE.SuiteError):
                     lifecycle.run({})
                 lifecycle.cleanup()
-                self.assertFalse(any(server.denies.values()))
+                self.assertFalse(any('/access_denies' in call[2] for call in server.calls))
                 self.assertTrue(all(row['revocation'] is not None or key in server.expired_grants
                                     for key, row in server.grants.items()))
 
@@ -995,27 +973,16 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 with self.assertRaises(ONLINE.SuiteError):
                     ONLINE.organization_administrator(client, 3)
 
-    def test_deny_success_status_matches_published_contract(self):
-        swagger = json.loads((Path(__file__).resolve().parents[2] /
-                              'system/backend/docs/swagger.json').read_text())
-        responses = swagger['paths']['/engines/{id}/access_denies']['post']['responses']
-        self.assertEqual({key for key in responses if key.startswith('2')}, {'200'})
-        server, lifecycle = self.lifecycle()
-        with patch.object(lifecycle.operator, 'request', wraps=lifecycle.operator.request) as request:
-            command = lifecycle.deny(self.facts)
-        self.assertEqual(request.call_args.args[2], (200,))
-        self.assertTrue(server.denies[command])
-        lifecycle.cleanup()
 
-    def test_oracle_rejects_ignored_deny_expiry_scope_data_and_denial_leaks(self):
-        for fault in ('deny_ignored', 'expired_ignored', 'adjacent_granted', 'wrong_rows', 'leaked_denial'):
+    def test_oracle_rejects_ignored_expiry_scope_data_and_denial_leaks(self):
+        for fault in ('expired_ignored', 'adjacent_granted', 'wrong_rows', 'leaked_denial'):
             with self.subTest(fault=fault):
                 self.scans.side_effect = ['initial-basic', 'exact-basic']
                 server, lifecycle = self.lifecycle(fault)
                 with self.assertRaises(ONLINE.SuiteError):
                     lifecycle.run({})
                 lifecycle.cleanup()
-                self.assertFalse(any(server.denies.values()))
+                self.assertFalse(any('/access_denies' in call[2] for call in server.calls))
 
     def test_changed_boundary_after_basic_scan_fails_and_cleans_the_grant(self):
         ONLINE.REGISTRATION.read_exact_record_authorization_facts.side_effect = [
@@ -1089,14 +1056,6 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertIsNone(server.grants['unowned']['revocation'])
         self.assertTrue(all(row['revocation'] is not None for key, row in server.grants.items() if key != 'unowned'))
 
-    def test_cleanup_attempts_grants_even_if_deny_release_fails(self):
-        server, lifecycle = self.lifecycle()
-        lifecycle.grant(self.facts)
-        lifecycle.denies = ['deny']
-        with patch.object(lifecycle, 'release', side_effect=ONLINE.SuiteError('failed')):
-            with self.assertRaises(ONLINE.SuiteError):
-                lifecycle.cleanup()
-        self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
 
     def test_main_rejects_personal_environment_before_any_client(self):
         with patch.dict(ONLINE.os.environ, {}, clear=True), patch.object(ONLINE.API, 'GatewayClient') as client:
@@ -1104,8 +1063,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             client.assert_not_called()
 
     def test_main_failure_after_writes_still_cleans_and_reports_no_secrets(self):
-        for after_deny in (False, True):
-            with self.subTest(after_deny=after_deny), tempfile.TemporaryDirectory() as directory:
+        for second_grant in (False, True):
+            with self.subTest(second_grant=second_grant), tempfile.TemporaryDirectory() as directory:
                 server, _ = self.lifecycle()
                 env = {'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1',
                        'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'POSTGRES_DB': 'addp_online',
@@ -1121,8 +1080,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                        'ADDP_ONLINE_FIXTURE_DEPARTMENT_ID': '41', 'ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID': '51'}
                 def failed_run(lifecycle, report):
                     lifecycle.grant(self.facts)
-                    if after_deny:
-                        lifecycle.deny(self.facts)
+                    if second_grant:
+                        lifecycle.grant(self.facts, recipient_type='department', recipient_id='41')
                     raise ONLINE.SuiteError('injected interruption')
                 with patch.dict(ONLINE.os.environ, env, clear=True), \
                      patch.object(ONLINE.API, 'GatewayClient', side_effect=lambda base, token, timeout: server.client(token)), \
@@ -1134,10 +1093,10 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 report = json.loads((Path(directory) / (ONLINE.SUITE + '.json')).read_text())
                 self.assertEqual(report['result'], 'failed')
                 self.assertEqual(report['cleanup'], 'zero_current_source_rules')
-                self.assertFalse(any(server.denies.values()))
+                self.assertFalse(any('/access_denies' in call[2] for call in server.calls))
                 self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
                 self.assertNotIn('private-token', json.dumps(report))
-                if not after_deny:
+                if not second_grant:
                     del env['ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN']
                     with patch.dict(ONLINE.os.environ, env, clear=True), patch.object(ONLINE.Lifecycle, 'run') as run:
                         self.assertEqual(ONLINE.main(), 1)
@@ -1295,7 +1254,7 @@ class PGCatalogApprovalTest(unittest.TestCase):
         self.assertFalse(self.server.catalog_down)
         self.assertEqual(self.lifecycle.paths, [ONLINE.table_path(2, 'metric_people'), self.path])
         self.lifecycle.cleanup()
-        self.assertFalse(any(self.server.denies.values()))
+        self.assertFalse(any('/access_denies' in call[2] for call in self.server.calls))
         self.assertTrue(all(row['revocation'] is not None for row in self.server.grants.values()))
 
     def test_wrong_confirmation_binding_issuance_scope_replay_or_missing_convergence_cannot_pass(self):
@@ -1319,7 +1278,7 @@ class PGCatalogApprovalTest(unittest.TestCase):
                     self.run_flow()
                 self.assertFalse(self.server.catalog_down)
                 self.lifecycle.cleanup()
-                self.assertFalse(any(self.server.denies.values()))
+                self.assertFalse(any('/access_denies' in call[2] for call in self.server.calls))
                 self.assertTrue(all(row['revocation'] is not None for row in self.server.grants.values()))
 
     def test_unknown_issuance_outcome_is_owned_before_send_and_cleanup_checks_both_targets(self):
@@ -1375,7 +1334,7 @@ class PGDependencyOutageTest(unittest.TestCase):
             run.assert_not_called()
 
     def test_content_fixture_is_bounded_token_free_and_checks_source_receipt(self):
-        for action, receipt in (('content-change', 'pg-content:changed'), ('content-reset', 'pg-content:baseline')):
+        for action, receipt in (('content-change', 'pg-content:changed'), ('content-reset', 'pg-content:baseline'), ('node-future-create', 'pg-node:created')):
             with self.subTest(action=action), \
                  patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=receipt)) as run:
                 REAL_MUTATE_SOURCE_CONTENT(action)
@@ -2853,3 +2812,81 @@ class PGMetadataAccessTest(unittest.TestCase):
                                      for key, row in self.last_server.grants.items()))
                 if fault == 'business_lost_response':
                     self.assertIn(ONLINE.table_path(2, 'metric_events'), self.last_life.paths)
+
+
+class PGPersistentNodeScopeTest(unittest.TestCase):
+    def run_scope(self, fault=None):
+        base=Server();life=ONLINE.Lifecycle(base.client('operator'),base.client('reader'),3,2,'33',
+            {'department':'41','project_group':'51'},base.client('outsider'),base.client('coordinator'),base.client('login'),
+            'external-online-consumer','private-password')
+        grants={};expired=set();report={'checks':[]}
+        def covers(row,path):
+            scope=row['catalog_path']['segments'];leaf=path['segments']
+            return row['catalog_path']['engine_id']==path['engine_id'] and leaf[:len(scope)]==scope and (row['node_recursive'] or len(leaf)==len(scope)+1)
+        def active(action,path):
+            return any(not row.get('revocation') and key not in expired and covers(row,path)
+                and (row['action']==action or action=='metadata_read' and row['action']=='read') for key,row in grants.items())
+        def listing(*,history=False,state=None,catalog_path=None,**kwargs):
+            path=catalog_path or life.path
+            if state=='expired' and fault!='never_expire':
+                expired.update(key for key,row in grants.items() if not row.get('revocation') and row['action']=='read')
+            rows=[]
+            for key,row in grants.items():
+                current='revoked' if row.get('revocation') else 'expired' if key in expired else 'active'
+                match=row['catalog_path']==path or covers(row,path)
+                if match and (history and (not state or current==state) or not history and current=='active'): rows.append(dict(row))
+            if fault=='leaf_grant' and history and path['segments'][-1]['name']=='metric_node_future':rows.append({'request_id':'unowned','catalog_path':path})
+            return {'total':len(rows),'data':rows}
+        def request(method,path,expected,body):
+            if path.endswith('/authorization-nodes/query'):
+                result={'parent':{'tenant_id':3,'target':body['target'],'exists':True},'nodes':[],'total':0,'page':1,'page_size':100}
+                if fault=='items_in_node_page':result['nodes']=[{'item_id':99}]
+            else:
+                key=body['request_id']
+                if key not in grants:grants[key]=dict(body,approval_mode='independent',granted_at='2026-11-03T00:00:00Z',revocation=None)
+                result=dict(grants[key])
+                if fault=='wrong_scope':result['node_recursive']=not result['node_recursive']
+                if fault=='wrong_boundary':result['item_fingerprint']='unexpected'
+            return SimpleNamespace(payload=result)
+        def revoke(command):
+            if fault!='withdrawal_ignored':grants[command]['revocation']={'reason':'Explicit fixture withdrawal'}
+        def preview(client,target,allowed,expected=None,**kwargs):
+            name=target.split('/path/public/',1)[1].split('?',1)[0]
+            actual=client is life.reader and active('read',ONLINE.table_path(2,name))
+            if actual!=allowed:raise ONLINE.SuiteError('node actual content verdict mismatch')
+        def item(client,engine,name):
+            if not active('metadata_read',ONLINE.table_path(engine,name)):raise ONLINE.SuiteError('node metadata hidden')
+            return {'id':12 if name=='metric_node_future' else 10,'tenant_id':3,'engine_id':2,'fingerprint':'a'*64}
+        def hidden(client,item_id):
+            if active('metadata_read',ONLINE.table_path(2,'metric_node_future')):raise ONLINE.SuiteError('metadata remained visible')
+        life.listing=listing;life.revoke=revoke;life.operator=SimpleNamespace(request=request)
+        patches=[patch.object(ONLINE,'preview',side_effect=preview),patch.object(ONLINE,'item',side_effect=item),
+            patch.object(ONLINE,'hidden_metadata',side_effect=hidden),patch.object(ONLINE,'hidden_metadata_list'),
+            patch.object(ONLINE,'basic_scan',return_value='future-basic'),patch.object(ONLINE,'mutate_source_content'),
+            patch.object(ONLINE.REGISTRATION,'read_exact_record_authorization_facts',return_value={'item_fingerprint':'a'*64}),
+            patch.object(ONLINE.time,'sleep'),patch.object(ONLINE.time,'monotonic',side_effect=[0,1,100])]
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            mocks=[stack.enter_context(p) for p in patches]
+            try:
+                life.node_scope_flow(report)
+            except ONLINE.SuiteError:
+                life.cleanup()
+                self.assertTrue(all(row['revocation'] is not None or key in expired for key,row in grants.items()))
+                raise
+            life.cleanup()
+        return life,report,grants,mocks
+
+    def test_node_scope_future_identity_revoke_replay_and_natural_expiry(self):
+        life,report,grants,mocks=self.run_scope()
+        self.assertEqual(len(report['checks']),8)
+        self.assertEqual(len(grants),4)
+        self.assertTrue(report['node_scope']['no_leaf_grants'])
+        self.assertTrue(report['node_scope']['natural_expiry_without_revocation'])
+        self.assertTrue(all('node_recursive' in row and 'item_fingerprint' not in row for row in grants.values()))
+        mocks[4].assert_called_once_with(life.operator,2,['metric_node_future'])
+        mocks[5].assert_called_once_with('node-future-create')
+
+    def test_bad_node_facts_binding_duplicate_or_timeout_cannot_pass(self):
+        for fault in ['items_in_node_page','wrong_scope','wrong_boundary','leaf_grant','never_expire']:
+            with self.subTest(fault=fault),self.assertRaises(ONLINE.SuiteError):self.run_scope(fault)

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	shared "github.com/addp/common/authorization"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/google/uuid"
@@ -33,6 +34,7 @@ type sourceGrant struct {
 	TenantID                     int64
 	EngineID                     int64
 	CatalogPath                  json.RawMessage `gorm:"type:jsonb"`
+	NodeRecursive                *bool
 	ItemFingerprint              string
 	BoundaryHash                 string
 	FileComposition              json.RawMessage `gorm:"type:jsonb"`
@@ -64,6 +66,11 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 	var primary plugin.EngineCatalogPath
 	if json.Unmarshal(grant.CatalogPath, &primary) != nil {
 		return commonapi.ErrBadRequest
+	}
+	if grant.NodeRecursive != nil {
+		if grant.ApprovalMode != approvalModeIndependent || grant.CatalogRequestID != nil || grant.ItemFingerprint != "" || grant.BoundaryHash != "" || len(grant.FileComposition) != 0 || len(grant.ScopeBoundary) != 0 || (shared.SourceNodeScope{Target: primary, Recursive: *grant.NodeRecursive}).Validate() != nil {
+			return commonapi.ErrBadRequest
+		}
 	}
 	file := len(primary.Segments) > 0 && (primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermFile || primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermObject)
 	if len(grant.ScopeBoundary) != 0 || authorizationfacts.ValidWholeScopeRoot(primary) {

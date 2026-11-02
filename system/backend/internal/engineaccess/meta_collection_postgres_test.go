@@ -66,13 +66,11 @@ func exerciseMetaCollectionRuntime(t *testing.T, db *gorm.DB, tenantID, adminID 
 		now := testDatabaseClock(t, db)()
 		reader := &collectionFactsFixture{db: db, engineID: engine.ID, digest: strings.Repeat("a", 64)}
 		svc := NewService(NewRepository(db), nil).WithMetaScanFactsReader(reader)
-		var grantCount, denyCount int64
+		var grantCount int64
 		if err := db.Table("system.engine_access_grants").Count(&grantCount).Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := db.Table("system.engine_access_denies").Count(&denyCount).Error; err != nil {
-			t.Fatal(err)
-		}
+
 		var machine iam.Principal
 		var member iam.TenantMembership
 		if err := db.Raw("SELECT p.* FROM system.principals p JOIN system.service_principals s ON s.id=p.id WHERE s.name='addp-meta'").Scan(&machine).Error; err != nil || machine.ID == 0 {
@@ -171,8 +169,6 @@ func exerciseMetaCollectionRuntime(t *testing.T, db *gorm.DB, tenantID, adminID 
 		if err := db.Table("system.engine_access_grants").Count(&current).Error; err != nil || current != grantCount {
 			t.Fatal("collection changed data Grants", err)
 		}
-		if err := db.Table("system.engine_access_denies").Count(&current).Error; err != nil || current != denyCount {
-			t.Fatal("collection changed data Deny", err)
-		}
+
 	})
 }
