@@ -10,6 +10,7 @@
 | --- | --- |
 | 配置维度与通用同步约束 | [Transfer 同步执行契约](#transfer-同步执行契约) |
 | continuous 配置、目标提交、位点与观测规则 | [continuous 主契约](#transfer-continuous-sync-v1-契约) |
+| 租户告警通知、Webhook／邮件投递与送达验收 | [通知与渠道投递](#租户告警通知与渠道投递) |
 | continuous Owner 信号、告警恢复与过程事件分工 | [观测信号、告警与过程事件](#continuous-观测信号告警与过程事件分工) |
 | 进度展示、Monitor 读取与 Orchestrator 编排限制 | [进度观测与编排边界](#进度观测与编排边界) |
 | 用户期望、实际状态、execution/session 与租约 | [任务状态、执行身份与运行租约](#任务状态执行身份与运行租约) |
@@ -106,21 +107,21 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 19. retention health 与 checkpoint health 是两个正交指标。retention health 回答“当前 committed position 是否仍在源保留窗口内，以及按当前写入速率还剩多少恢复时间”；checkpoint health 回答“存在 source lag 时，目标 committed position 是否长期未推进”。checkpoint health 只允许 `healthy|degraded|unknown`：lag 为 0 时为 `healthy`；lag 大于 0 且最近真实 position commit 距采样时间超过部署阈值时为 `degraded`；缺少真实 position commit 时间或无法计算时为 `unknown`。不得用 execution `updated_at`、worker heartbeat、consumer fetch position 或 diagnostics 采样时间冒充 position commit 时间。
 20. continuous 与数据库 CDC 的无状态观测信号、严重级别与 Owner 边界见[实时观测信号](#continuous-owner-实时观测信号)。
 21. 最新根 execution、incident 去重、确认／抑制与恢复规则见[continuous 告警生命周期](#continuous-告警生命周期与最新根执行)。
-22. 告警通知第一版支持 Monitor 通用 Webhook 和平台统一 SMTP Relay 邮件。告警打开、严重级别升级和恢复必须分别产生且只产生一条不可变 `opened|escalated|resolved` lifecycle event；incident 变化、event 及所有启用通知渠道的 per-destination delivery outbox 必须在同一 Infra PostgreSQL 事务提交。各渠道 dispatcher 在事务外发送，并用 `FOR UPDATE SKIP LOCKED`、领取租约、指数退避和最大尝试次数实现至少一次投递；不得在持有数据库行锁时调用外部网络。
-23. Webhook destination 按租户隔离，配置只允许 `name`、`url`、`enabled`、`event_types` 和签名 `secret`。`event_types` 只允许 `opened|escalated|resolved` 且必须非空；secret 必须使用平台 `ENCRYPTION_KEY` 加密，任何 GET/List/Swagger 响应不得返回 secret 明文或密文。默认只允许 HTTPS 公网地址；开发或受管内网接收端必须由部署配置显式允许，不能由任务或普通 API 请求绕过 SSRF 约束。
-24. Webhook payload schema 固定为 `monitor.alert.webhook/v1`，只包含 `delivery_id`、event/incident 稳定身份、告警级别/状态、任务定义身份、execution UUID、生命周期时间和 Console 链接；不得发送业务数据、连接凭据、完整 execution metadata 或 owner 私有状态。请求签名固定为 HMAC-SHA256(`timestamp + "." + raw_body`)，接收方必须按 `delivery_id` 幂等并校验 timestamp 防重放。
-25. 告警确认只记录处理状态，不产生 Webhook lifecycle event。抑制期间生命周期 event 继续保留，但 delivery 记为 `suppressed` 且到期后不补发；恢复后同类信号再次打开会形成新的 incident 和新的 `opened` event。禁用 destination 只影响尚未领取和后续生成的 delivery，已完成投递审计必须保留。
-26. Webhook 测试投递是目标配置运维动作，不得伪造 `opened|escalated|resolved` 告警事件或写入正式 delivery outbox。测试请求使用独立 `monitor.webhook.test/v1` payload，沿用目标 HMAC secret、SSRF 校验和签名 Header，同步返回成功 HTTP 状态；接收端失败统一视为下游调用失败。
-27. 手动重投只允许作用于当前租户的 `dead` delivery。重投必须复用原 `delivery_id` 和 payload，以保持接收端幂等；目标必须仍存在且启用，重新入队时使用目标当前 URL 和 secret。`attempt_count` 保存累计尝试次数，`retry_base_attempt_count` 保存本次重投周期开始时的累计基线，dispatcher 的最大尝试次数和退避只按当前周期计算；每次人工重投递增 `manual_retry_count`。
-28. 删除 Webhook destination 必须在同一事务中取消该目标尚未领取的 `pending` delivery、清除其中的 secret 和重试时间，再删除目标配置。历史 `delivered|dead|suppressed|cancelled` delivery 必须保留；删除时已经领取的 delivery 可以完成当前请求，但删除后不得再生成新 delivery，也不能再人工重投。
-29. Webhook destination 创建、更新、测试、删除及 delivery 人工重投必须复用平台统一 Audit Middleware 写入 System 审计日志。审计请求体必须经过现有敏感字段脱敏，不能记录 secret 明文或密文；Monitor 不新增私有操作审计表。
-30. 邮件 destination 按租户隔离，配置只允许 `name`、`recipients`、`enabled` 和 `event_types`。`recipients` 必须是非空邮箱地址数组，去重后最多 50 个；`event_types` 只允许 `opened|escalated|resolved` 且必须非空。租户 API 不得接收或返回 SMTP host、port、username、password、TLS 模式或发件身份。
-31. 邮件使用独立 `monitor.email_destinations` 和 `monitor.email_deliveries`，不得复用 Webhook destination 或 delivery 表。邮件 delivery 必须冻结目标名称、收件人、主题、纯文本正文和 HTML 正文；内容只包含稳定告警摘要、任务/执行身份和 Console 链接，不得包含业务数据、连接凭据、完整 execution metadata 或 owner 私有状态。
-32. SMTP Relay 属于 Monitor 部署配置。第一版只允许显式 `starttls` 或 `tls`：`starttls` 必须要求服务端成功升级 TLS，`tls` 使用隐式 TLS；不支持明文 SMTP、机会式降级或按端口自动猜测。username/password 必须同时配置或同时为空。SMTP host 为空时邮件 dispatcher 不启动，既有未投递 outbox 保持 `pending`，不得改写为 `suppressed`、`dead` 或已送达。
-33. 邮件 delivery 状态只允许 `pending|delivering|delivered|dead|suppressed|cancelled`。SMTP 调用成功后进入 `delivered`；失败按当前尝试周期指数退避，达到最大尝试次数后进入 `dead`。领取租约过期的 `delivering` delivery 可以由新 worker 重新领取，投递身份不变。
-34. 邮件测试投递是目标配置运维动作，使用独立测试主题和正文，同步验证目标当前收件人及平台 SMTP Relay，不得伪造告警 lifecycle event 或写入正式 delivery outbox。SMTP 未配置或发送失败统一视为下游调用失败。
-35. 邮件人工重投只允许当前租户的 `dead` delivery，必须复用原 `delivery_id`、主题和正文，使用目标当前收件人，并按 `retry_base_attempt_count` 开启新的最大尝试周期；累计 `attempt_count` 和 `manual_retry_count` 必须保留。删除邮件 destination 必须取消该目标尚未领取的 `pending` delivery 并保留历史；删除时已领取的发送可以完成，删除后不得生成新 delivery 或人工重投。
-36. 邮件 destination 创建、更新、测试、删除及 delivery 人工重投必须复用平台统一 Audit Middleware 写入 System 审计日志。Monitor 不建立第二套操作审计，不在普通 API、Swagger、投递记录、日志或审计中暴露 SMTP password。
+22. 告警生命周期、事务 outbox 与 dispatcher 领取见[通知生命周期与事务 outbox](#通知生命周期与事务-outbox)。
+23. Webhook 租户目标、secret 与 SSRF见[Webhook 租户目标与协议安全](#webhook-租户目标与协议安全)。
+24. Webhook payload 与接收端签名幂等见[Webhook 租户目标与协议安全](#webhook-租户目标与协议安全)。
+25. Webhook 确认、抑制与目标禁用见[Webhook 确认抑制与测试](#webhook-确认抑制与测试)。
+26. Webhook 独立测试投递见[Webhook 确认抑制与测试](#webhook-确认抑制与测试)。
+27. Webhook 人工重投与尝试周期见[Webhook 重投删除与审计](#webhook-重投删除与审计)。
+28. Webhook 目标删除与历史保留见[Webhook 重投删除与审计](#webhook-重投删除与审计)。
+29. Webhook 操作审计与 secret 脱敏见[Webhook 重投删除与审计](#webhook-重投删除与审计)。
+30. 邮件租户目标与收件人范围见[邮件租户目标与冻结投递内容](#邮件租户目标与冻结投递内容)。
+31. 邮件独立存储与投递内容冻结见[邮件租户目标与冻结投递内容](#邮件租户目标与冻结投递内容)。
+32. SMTP Relay 部署、TLS 与未配置行为见[SMTP 部署与邮件投递状态](#smtp-部署与邮件投递状态)。
+33. 邮件投递状态、重试与领取租约见[SMTP 部署与邮件投递状态](#smtp-部署与邮件投递状态)。
+34. 邮件独立测试投递见[邮件测试重投删除与审计](#邮件测试重投删除与审计)。
+35. 邮件人工重投、删除与历史保留见[邮件测试重投删除与审计](#邮件测试重投删除与审计)。
+36. 邮件操作审计与 SMTP 凭据保护见[邮件测试重投删除与审计](#邮件测试重投删除与审计)。
 37. 通用执行告警只允许消费 `common.task_executions` 公共事实。各 owner 模块负责写入真实 execution 状态、开始/结束时间和安全错误摘要；Monitor 不得读取 owner 任务表、结果表、worker 私有租约或运行时内部状态补判失败。System 只负责保存模块注册时发布的 TaskProvider 角色声明、解析当前 Backend 租约、认证和操作审计，不成为告警事实或规则 owner。
 38. 第一版租户告警规则精确绑定 `tenant + module + task_type + source_task_id`，只允许有稳定任务定义身份且 `parent_execution_id IS NULL` 的根 execution。可配置目标以该任务最新根 execution 的模式为准；最新根 execution 属于 continuous session 时，不得因历史 bounded execution 将该任务继续暴露为通用规则目标。无 `source_task_id` 的 ad-hoc execution、Orchestrator 子 execution 和 System cleanup 子 execution不进入通用规则；父编排失败由 Orchestrator 根 execution 表达。
 39. 通用规则类型固定为 `last_terminal_failed|last_terminal_timeout|consecutive_failures`。最近终态查询只考虑 `success|failed|timeout`，忽略 `cancelled`；`failed` 或 `timeout` 告警只能由后续 `success` 恢复，新的 `pending|running` 不证明任务已经恢复。`consecutive_failures` 的阈值只允许 2 到 20，最近 N 个有效终态全部为 `failed|timeout` 时激活，任一 `success` 中断连续失败序列。
@@ -134,6 +135,78 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 47. 数据库 CDC schema-change 的公共投影及与私有状态同事务更新见[公共事实投影](#schema-change-公共事实投影)。
 48. 最新根执行的 schema blocked 信号、恢复与 Stop／Finish／lease expiry 竞态见[告警恢复与停止竞态](#schema-blocked-告警恢复与停止竞态)。
 49. 自动扫描提交失败与实际扫描结果、Monitor incident 的边界见[扫描提交失败限制](#扫描提交失败的告警限制)。
+
+### 租户告警通知与渠道投递
+
+- 共同规则：[生命周期与事务 outbox](#通知生命周期与事务-outbox)。
+- Webhook：[目标与协议安全](#webhook-租户目标与协议安全)、[确认抑制与测试](#webhook-确认抑制与测试)、[重投删除与审计](#webhook-重投删除与审计)。
+- 邮件：[目标与冻结内容](#邮件租户目标与冻结投递内容)、[SMTP 与投递状态](#smtp-部署与邮件投递状态)、[测试重投删除与审计](#邮件测试重投删除与审计)。
+- 实际范围：[配置与送达验收](#通知配置与实际送达验收)。
+
+#### 通知生命周期与事务 outbox
+
+- 告警通知第一版支持 Monitor 通用 Webhook 和平台统一 SMTP Relay 邮件。
+- 告警打开、严重级别升级和恢复必须分别产生且只产生一条不可变 `opened|escalated|resolved` lifecycle event；incident 变化、event 及所有启用通知渠道的 per-destination delivery outbox 必须在同一 Infra PostgreSQL 事务提交。
+- 各渠道 dispatcher 在事务外发送，并用 `FOR UPDATE SKIP LOCKED`、领取租约、指数退避和最大尝试次数实现至少一次投递；不得在持有数据库行锁时调用外部网络。
+
+#### Webhook 租户目标与协议安全
+
+- Webhook destination 按租户隔离，配置只允许 `name`、`url`、`enabled`、`event_types` 和签名 `secret`。
+- `event_types` 只允许 `opened|escalated|resolved` 且必须非空；secret 必须使用平台 `ENCRYPTION_KEY` 加密，任何 GET/List/Swagger 响应不得返回 secret 明文或密文。
+- 默认只允许 HTTPS 公网地址；开发或受管内网接收端必须由部署配置显式允许，不能由任务或普通 API 请求绕过 SSRF 约束。
+- Webhook payload schema 固定为 `monitor.alert.webhook/v1`，只包含 `delivery_id`、event/incident 稳定身份、告警级别/状态、任务定义身份、execution UUID、生命周期时间和 Console 链接；不得发送业务数据、连接凭据、完整 execution metadata 或 owner 私有状态。
+- 请求签名固定为 HMAC-SHA256(`timestamp + "." + raw_body`)，接收方必须按 `delivery_id` 幂等并校验 timestamp 防重放。
+
+#### Webhook 确认抑制与测试
+
+- 告警确认只记录处理状态，不产生 Webhook lifecycle event。
+- 抑制期间生命周期 event 继续保留，但 delivery 记为 `suppressed` 且到期后不补发；恢复后同类信号再次打开会形成新的 incident 和新的 `opened` event。
+- 禁用 destination 只影响尚未领取和后续生成的 delivery，已完成投递审计必须保留。
+- Webhook 测试投递是目标配置运维动作，不得伪造 `opened|escalated|resolved` 告警事件或写入正式 delivery outbox。
+- 测试请求使用独立 `monitor.webhook.test/v1` payload，沿用目标 HMAC secret、SSRF 校验和签名 Header，同步返回成功 HTTP 状态；接收端失败统一视为下游调用失败。
+
+#### Webhook 重投删除与审计
+
+- 手动重投只允许作用于当前租户的 `dead` delivery。
+- 重投必须复用原 `delivery_id` 和 payload，以保持接收端幂等；目标必须仍存在且启用，重新入队时使用目标当前 URL 和 secret。
+- `attempt_count` 保存累计尝试次数，`retry_base_attempt_count` 保存本次重投周期开始时的累计基线，dispatcher 的最大尝试次数和退避只按当前周期计算；每次人工重投递增 `manual_retry_count`。
+- 删除 Webhook destination 必须在同一事务中取消该目标尚未领取的 `pending` delivery、清除其中的 secret 和重试时间，再删除目标配置。
+- 历史 `delivered|dead|suppressed|cancelled` delivery 必须保留；删除时已经领取的 delivery 可以完成当前请求，但删除后不得再生成新 delivery，也不能再人工重投。
+- Webhook destination 创建、更新、测试、删除及 delivery 人工重投必须复用平台统一 Audit Middleware 写入 System 审计日志。
+- 审计请求体必须经过现有敏感字段脱敏，不能记录 secret 明文或密文；Monitor 不新增私有操作审计表。
+
+#### 邮件租户目标与冻结投递内容
+
+- 邮件 destination 按租户隔离，配置只允许 `name`、`recipients`、`enabled` 和 `event_types`。
+- `recipients` 必须是非空邮箱地址数组，去重后最多 50 个；`event_types` 只允许 `opened|escalated|resolved` 且必须非空。
+- 租户 API 不得接收或返回 SMTP host、port、username、password、TLS 模式或发件身份。
+- 邮件使用独立 `monitor.email_destinations` 和 `monitor.email_deliveries`，不得复用 Webhook destination 或 delivery 表。
+- 邮件 delivery 必须冻结目标名称、收件人、主题、纯文本正文和 HTML 正文；内容只包含稳定告警摘要、任务/执行身份和 Console 链接，不得包含业务数据、连接凭据、完整 execution metadata 或 owner 私有状态。
+
+#### SMTP 部署与邮件投递状态
+
+- SMTP Relay 属于 Monitor 部署配置。
+- 第一版只允许显式 `starttls` 或 `tls`：`starttls` 必须要求服务端成功升级 TLS，`tls` 使用隐式 TLS；不支持明文 SMTP、机会式降级或按端口自动猜测。
+- username/password 必须同时配置或同时为空。
+- SMTP host 为空时邮件 dispatcher 不启动，既有未投递 outbox 保持 `pending`，不得改写为 `suppressed`、`dead` 或已送达。
+- 邮件 delivery 状态只允许 `pending|delivering|delivered|dead|suppressed|cancelled`。
+- SMTP 调用成功后进入 `delivered`；失败按当前尝试周期指数退避，达到最大尝试次数后进入 `dead`。
+- 领取租约过期的 `delivering` delivery 可以由新 worker 重新领取，投递身份不变。
+
+#### 邮件测试重投删除与审计
+
+- 邮件测试投递是目标配置运维动作，使用独立测试主题和正文，同步验证目标当前收件人及平台 SMTP Relay，不得伪造告警 lifecycle event 或写入正式 delivery outbox。
+- SMTP 未配置或发送失败统一视为下游调用失败。
+- 邮件人工重投只允许当前租户的 `dead` delivery，必须复用原 `delivery_id`、主题和正文，使用目标当前收件人，并按 `retry_base_attempt_count` 开启新的最大尝试周期；累计 `attempt_count` 和 `manual_retry_count` 必须保留。
+- 删除邮件 destination 必须取消该目标尚未领取的 `pending` delivery 并保留历史；删除时已领取的发送可以完成，删除后不得生成新 delivery 或人工重投。
+- 邮件 destination 创建、更新、测试、删除及 delivery 人工重投必须复用平台统一 Audit Middleware 写入 System 审计日志。
+- Monitor 不建立第二套操作审计，不在普通 API、Swagger、投递记录、日志或审计中暴露 SMTP password。
+
+#### 通知配置与实际送达验收
+
+共同事件、两渠道独立目标／delivery、前端唯一入口和接收端 Header 等接入说明见[租户外部通知专题](../../concepts/monitoring/执行诊断与租户告警.md#租户外部通知契约)；SSRF 放行、TLS 和 SMTP Relay 的部署归属见[通知配置规范](../configuration/Monitor与运行观测.md#告警评估与通知策略)。Platform 渠道和订阅仍沿[平台通知契约](../addp平台运行观测规范.md#73-历史订阅与通知)，不因租户通知可用而自动扩展范围。
+
+配置保存、事务 outbox 入队、测试发送成功和真实告警生命周期投递分别验收。实际送达须核对固定源码、真实接收端、不可变 event 与 delivery 证据，既有执行诊断或进程清理结果不替代通知链路验收；固定版本、失败、清理和未覆盖项沿[Monitor 历史证据导航](../../../monitor/CLAUDE.md#历史证据导航)。
 
 ### continuous 观测信号、告警与过程事件分工
 
@@ -179,7 +252,7 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 | 事实 | 职责与权威正文 |
 | --- | --- |
 | `common.execution_events` 执行过程事件 | 记录一次实际 execution／attempt 的 started、progress、终态与截断；continuous 的事务、Runtime fencing、安全字段及预算沿[过程事件写入契约](执行监控.md#transfer-continuous-过程事件)，读取授权与通用存储沿[执行监控规范](执行监控.md#通用执行读取与过程事件)。 |
-| Monitor incident、告警 lifecycle event 与 delivery | 按本节 Owner 信号和最新根执行维护告警，通知事务 outbox、Webhook／邮件和投递审计沿[continuous 主契约](#transfer-continuous-sync-v1-契约)第 22—36 条；不能把投递记录或测试发送当作执行过程与恢复事实。 |
+| Monitor incident、告警 lifecycle event 与 delivery | 按本节 Owner 信号和最新根执行维护告警，通知事务 outbox、Webhook／邮件和投递审计沿[渠道投递契约](#租户告警通知与渠道投递)；不能把投递记录或测试发送当作执行过程与恢复事实。 |
 
 过程事件的 30 天滚动清理与概览 180 天目标保留、只读评估和物理删除分别沿[留存契约](执行监控.md#概览保留与清理契约)认定；不将一种事件的状态、预算或留存要求直接套到另一种事件。固定版本、失败、清理与未覆盖项沿[Transfer 验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)和[Monitor 历史证据导航](../../../monitor/CLAUDE.md#历史证据导航)，静态契约或局部结果不证明完整运行、告警或外部通知链路通过。
 
