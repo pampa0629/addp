@@ -311,3 +311,18 @@ def test_clip_input_rules_are_exact_and_never_reference_identity_or_private_fiel
             bad=copy.deepcopy(value);bad['operator'].update(patch);assert validated_operator_diagnostic(bad) is None
     assert OperatorInputError('operator_reference_invalid','PRIVATE').diagnostic('clip',1) is None
     assert OperatorInputError('operator_mask_invalid','PRIVATE').diagnostic('intersection',1) is None
+
+
+def test_union_input_rules_are_six_closed_combinations_with_distinct_overlap_sides():
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES,OperatorInputError,validated_operator_diagnostic
+    import copy
+    expected={'operator_input_invalid': 'input_gdf', 'operator_reference_invalid': 'gdf_b', 'operator_crs_invalid': '', 'operator_overlay_fields_conflict': '', 'operator_input_overlap': 'input_gdf', 'operator_reference_overlap': 'gdf_b'}
+    assert {k:v for k,v in OPERATOR_INPUT_RULES.items()if k[0]=='union'}=={('union',k,''):v for k,v in expected.items()}
+    for reason,param in expected.items():
+        value=OperatorInputError(reason,'PRIVATE source').diagnostic('union',2)
+        assert value['operator']=={'node_index':2,'operator_id':'union',**({'parameter':param}if param else{})}
+        assert validated_operator_diagnostic(value)==value
+        for patch in ({'field':'source_id_a'},{'field':'PRIVATE'},{'parameter':'reference_gdf'},{'node_index':True}):
+            bad=copy.deepcopy(value);bad['operator'].update(patch);assert validated_operator_diagnostic(bad)is None
+    assert OperatorInputError('operator_mask_invalid','PRIVATE').diagnostic('union',1)is None
+    assert OperatorInputError('operator_input_overlap','PRIVATE').diagnostic('intersection',1)is None

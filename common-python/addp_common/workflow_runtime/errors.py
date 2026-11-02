@@ -18,6 +18,13 @@ class WorkflowExecutionError(RuntimeError):
 
 # Closed protocol tuples; never classify arbitrary exception text as input errors.
 OPERATOR_INPUT_RULES = {
+    ('union', 'operator_input_invalid', ''): 'input_gdf',
+    ('union', 'operator_reference_invalid', ''): 'gdf_b',
+    ('union', 'operator_crs_invalid', ''): '',
+    ('union', 'operator_overlay_fields_conflict', ''): '',
+    ('union', 'operator_input_overlap', ''): 'input_gdf',
+    ('union', 'operator_reference_overlap', ''): 'gdf_b',
+
     ('clip', 'operator_input_invalid', ''): 'input_gdf',
     ('clip', 'operator_mask_invalid', ''): 'mask_gdf',
     ('clip', 'operator_crs_invalid', ''): '',

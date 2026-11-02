@@ -194,6 +194,8 @@
         "result": "保存执行结果"
       },
       "reasons": {
+        "operator_input_overlap": "源图层内部存在正面积重叠，包含和重复面也属于重叠。",
+        "operator_reference_overlap": "图层 B 内部存在正面积重叠，包含和重复面也属于重叠。",
         "operator_mask_invalid": "范围图层必须具有唯一活动几何列及有效非空有限二维面或多面几何。",
         "operator_endpoint_network_invalid": "线部件存在内部自交、正长度重合或未打断的交会，未构成仅在双方端点连接的线网。",
         "operator_distance_limit_invalid": "最大修剪路径距离必须为以源坐标系水平单位表示的有限正数。",
@@ -250,9 +252,11 @@
         "operator_crs_mismatch": "两个输入的投影坐标系不同。",
         "operator_crs_invalid": "两个图层须使用相同的已知投影坐标系和匹配的水平单位。",
         "operator_geometry_invalid": "输入图层包含未通过有效性检查的几何。",
-        "operator_overlay_fields_conflict": "相交叠加的业务字段、固定来源字段或结果几何列发生重名。"
+        "operator_overlay_fields_conflict": "叠加分析的业务字段、固定来源字段或结果几何列发生重名。"
       },
       "actions": {
+        "operator_input_overlap": "先对对应图层执行面叠检查，再显式处理重叠、包含或重复面；不会自动融合、去重或修复。",
+        "operator_reference_overlap": "先对对应图层执行面叠检查，再显式处理重叠、包含或重复面；不会自动融合、去重或修复。",
         "operator_mask_invalid": "检查范围图层的活动几何、面类型、有效性和二维坐标；修正后重新执行，无需指定范围图层的业务来源标识。",
         "operator_endpoint_network_invalid": "先显式打断交会并处理自交或重合，再提取节点；不会自动打断、去重或修复。",
         "operator_distance_limit_invalid": "按投影坐标系水平单位设置有限且大于零的max_distance，再提交新的执行。",
@@ -321,6 +325,7 @@
       "field": "冲突字段",
       "operatorNodeIndex": "定义中的第 {index} 个节点",
       "operatorNames": {
+        "union": "联合叠加",
         "clip": "裁剪几何",
         "difference": "几何差集",
         "extract_line_nodes": "节点提取",

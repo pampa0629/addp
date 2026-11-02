@@ -194,6 +194,8 @@
         "result": "Save execution result"
       },
       "reasons": {
+        "operator_input_overlap": "The source layer contains positive-area overlaps, including contained or duplicate polygons.",
+        "operator_reference_overlap": "Layer B contains positive-area overlaps, including contained or duplicate polygons.",
         "operator_mask_invalid": "The range layer requires one active geometry column and valid non-empty finite XY Polygon or MultiPolygon geometries.",
         "operator_endpoint_network_invalid": "Line parts have internal self-intersections, positive-length overlaps or unsplit intersections; the network is not connected only at both endpoints.",
         "operator_distance_limit_invalid": "The maximum trim path distance must be a finite positive number in horizontal CRS units.",
@@ -253,6 +255,8 @@
         "operator_overlay_fields_conflict": "Overlay business fields conflict with each other, fixed source fields or the result geometry column."
       },
       "actions": {
+        "operator_input_overlap": "Check polygon overlaps in the indicated layer and resolve overlaps, containment or duplicates explicitly; no automatic dissolve, deduplication or repair is performed.",
+        "operator_reference_overlap": "Check polygon overlaps in the indicated layer and resolve overlaps, containment or duplicates explicitly; no automatic dissolve, deduplication or repair is performed.",
         "operator_mask_invalid": "Check the range layer active geometry, polygon type, validity and XY coordinates before submitting a new execution; no business identifier is required for the range layer.",
         "operator_endpoint_network_invalid": "Explicitly split intersections and resolve self-intersections or overlaps before extracting nodes; no automatic splitting, deduplication or repair is performed.",
         "operator_distance_limit_invalid": "Set a finite positive max_distance in horizontal CRS units before submitting a new execution.",
@@ -321,6 +325,7 @@
       "field": "Conflicting field",
       "operatorNodeIndex": "Node {index} in the workflow definition",
       "operatorNames": {
+        "union": "Union overlay",
         "clip": "Clip geometry",
         "difference": "Geometry difference",
         "extract_line_nodes": "Extract line nodes",

@@ -7,6 +7,7 @@ export const failureReasons = Object.freeze([
   'type_mismatch', 'permission_denied', 'connection_failed',
   'json_invalid', 'array_invalid', 'bytes_invalid', 'table_write_failed', 'execution_failed',
   'target_exists',
+  'operator_input_overlap', 'operator_reference_overlap',
   'operator_overlay_fields_conflict', 'operator_endpoint_network_invalid', 'operator_distance_limit_invalid', 'operator_source_topology_invalid', 'operator_trim_conflict',
   'operator_input_invalid', 'operator_mask_invalid', 'operator_reference_invalid', 'operator_field_conflict', 'operator_geometry_field_conflict',
   'operator_number_array_invalid', 'operator_positive_integer_required', 'operator_positive_number_required',
@@ -53,6 +54,13 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["union", "operator_input_invalid", "input_gdf", ""],
+  ["union", "operator_reference_invalid", "gdf_b", ""],
+  ["union", "operator_crs_invalid", "", ""],
+  ["union", "operator_overlay_fields_conflict", "", ""],
+  ["union", "operator_input_overlap", "input_gdf", ""],
+  ["union", "operator_reference_overlap", "gdf_b", ""],
+
   ["clip", "operator_input_invalid", "input_gdf", ""],
   ["clip", "operator_mask_invalid", "mask_gdf", ""],
   ["clip", "operator_crs_invalid", "", ""],

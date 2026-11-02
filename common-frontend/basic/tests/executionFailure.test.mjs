@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 41)
+  assert.equal(canonical.length, 47)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -228,7 +228,7 @@ test('intersection overlay presents closed admissions in both languages without 
       assert.ok(got.reason&&got.action&&got.node)
       assert.doesNotMatch(JSON.stringify(got),/PRIVATE|field_id|GEOS/)
       if(parameter==='gdf_b')assert.ok(got.parameter.includes('gdf_b'))
-      for (const patch of [{field:'source_id_a'},{field:'PRIVATE_FIELD'},{parameter:'reference_gdf'},{operator_id:'union'}]) {
+      for (const patch of [{field:'source_id_a'},{field:'PRIVATE_FIELD'},{parameter:'reference_gdf'},{operator_id:'centroid'}]) {
         const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}
         assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
       }
@@ -273,7 +273,7 @@ test('difference presents three closed admissions bilingually without B identifi
         assert.match(got.reason,locale==='zh-cn'?/面/:/Polygon/)
         assert.match(got.action,locale==='zh-cn'?/无需指定范围图层/:/no business identifier/)
       }
-      for (const patch of [{field:'source_id'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'union'}]) {
+      for (const patch of [{field:'source_id'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'centroid'}]) {
         const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}
         assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
       }
@@ -299,9 +299,33 @@ test('clip presents three closed admissions bilingually without B identifier req
         assert.match(got.reason,locale==='zh-cn'?/面/:/Polygon/)
         assert.match(got.action,locale==='zh-cn'?/无需指定范围图层/:/no business identifier/)
       }
-      for (const patch of [{field:'source_id'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'union'}]) {
+      for (const patch of [{field:'source_id'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'centroid'}]) {
         const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}
         assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
+      }
+    }
+  }
+})
+
+
+test('union presents six closed admissions and side-specific overlap remedies bilingually', () => {
+  for (const locale of ['zh-cn','en']) {
+    const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate=(key,params={})=>key.replace('common.executionFailure.','').split('.').reduce((node,part)=>node[part],messages).replace(/\{(\w+)\}/g,(_,key)=>params[key])
+    const rules=operatorInputRules.filter(([op])=>op==='union'); assert.equal(rules.length,6)
+    for (const [operator_id,reason,parameter] of rules) {
+      const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,...(parameter?{parameter}:{})}}
+      const got=executionFailurePresentation({diagnostic,message:'PRIVATE GEOS source values'},translate)
+      assert.equal(got.operator,locale==='zh-cn'?'联合叠加':'Union overlay')
+      assert.ok(got.reason&&got.action&&got.node)
+      if(reason.endsWith('_overlap')) {
+        assert.match(got.reason,locale==='zh-cn'?/正面积重叠/:/positive-area overlaps/)
+        assert.match(got.action,locale==='zh-cn'?/面叠检查/:/Check polygon overlaps/)
+        assert.ok(got.parameter)
+      }
+      assert.doesNotMatch(JSON.stringify(got),/PRIVATE|GEOS/)
+      for (const patch of [{field:'source_id_a'},{field:'PRIVATE'},{parameter:'mask_gdf'},{operator_id:'centroid'}]) {
+        assert.equal(executionFailurePresentation({diagnostic:{...diagnostic,operator:{...diagnostic.operator,...patch}}},translate).stage,'')
       }
     }
   }

@@ -7025,3 +7025,251 @@ def test_vector_clip_async_api_discovery_and_frozen_input_diagnosis(tmp_path,mon
             assert state['status']=='failed' and state['error_code']=='INVALID_PARAMS',state
             assert state['diagnostic']=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'clip',**({'parameter':param} if param else {})}}
             assert 'PRIVATE' not in json.dumps(state['diagnostic'])
+
+
+def exact_union(a,b):
+    return get_operator('union')(a,b,id_field='a_key',reference_id_field='b_key')
+
+
+def test_vector_union_three_regions_keep_both_and_nullable_one_sided_sources():
+    a,b=overlay_inputs([box(0,0,4,2)],[box(2,0,6,2)])
+    result=exact_union(a,b)
+    assert len(result)==3 and result.geometry.name=='source_shape' and result.crs==a.crs
+    assert all(g.equals(e)for g,e in zip(result.geometry,[box(2,0,4,2),box(0,0,2,2),box(4,0,6,2)]))
+    assert result.source_id_a.tolist()[:2]==[1,1] and pd.isna(result.source_id_a.iloc[2])
+    assert result.source_id_b.iloc[[0,2]].tolist()==['11','11'] and pd.isna(result.source_id_b.iloc[1])
+    assert result.source_id_a.dtype==a.a_key.dtype and result.source_id_b.dtype==b.b_key.dtype
+
+
+@pytest.mark.parametrize('kind',['equal','inside','disjoint','edge','point'])
+def test_vector_union_partition_containment_duplicates_across_layers_and_contacts(kind):
+    b={'equal':box(0,0,4,4),'inside':box(1,1,2,2),'disjoint':box(5,0,6,1),'edge':box(4,0,5,1),'point':box(4,4,5,5)}[kind]
+    a,b=overlay_inputs([box(0,0,4,4)],[b]);result=exact_union(a,b)
+    assert len(result)=={'equal':1,'inside':2,'disjoint':2,'edge':2,'point':2}[kind]
+    assert result.geometry.geom_type.isin(['Polygon','MultiPolygon']).all()
+    if kind=='equal':assert result.geometry.iloc[0].equals(a.geometry.iloc[0])
+    elif kind=='inside':assert result.geometry.iloc[0].equals(box(1,1,2,2)) and result.geometry.iloc[1].equals(Polygon(box(0,0,4,4).exterior.coords,[box(1,1,2,2).exterior.coords]))
+    else:assert result.geometry.iloc[0].equals(a.geometry.iloc[0]) and result.geometry.iloc[1].equals(b.geometry.iloc[0])
+
+
+def test_vector_union_whole_opposite_layer_masks_row_order_and_multipart_per_source():
+    a,b=overlay_inputs([box(0,0,8,2),box(20,0,21,1)],[box(5,-1,6,3),box(2,-1,3,3)])
+    result=exact_union(a,b)
+    assert len(result)==6 and list(result.index)==list(range(6))
+    assert result.source_id_a.iloc[:4].tolist()==[1,1,1,2]
+    assert result.source_id_b.iloc[:2].tolist()==['11','12']
+    assert result.geometry.iloc[0].equals(box(5,0,6,2)) and result.geometry.iloc[1].equals(box(2,0,3,2))
+    assert result.geometry.iloc[2].equals(shapely.MultiPolygon([box(0,0,2,2),box(3,0,5,2),box(6,0,8,2)]))
+    assert result.geometry.iloc[4].equals(shapely.MultiPolygon([box(5,-1,6,0),box(5,2,6,3)]))
+    assert result.geometry.iloc[5].equals(shapely.MultiPolygon([box(2,-1,3,0),box(2,2,3,3)]))
+
+
+def test_vector_union_extracts_only_polygon_members_from_mixed_intersection():
+    a,b=overlay_inputs([shapely.MultiPolygon([box(0,0,2,2),box(4,0,5,1),box(7,0,8,1)])],
+                      [shapely.MultiPolygon([box(1,1,3,3),box(5,0,6,1),box(8,1,9,2)])])
+    result=exact_union(a,b)
+    expected=[box(1,1,2,2),shapely.MultiPolygon([Polygon([(0,0),(2,0),(2,1),(1,1),(1,2),(0,2),(0,0)]),box(4,0,5,1),box(7,0,8,1)]),shapely.MultiPolygon([Polygon([(1,2),(2,2),(2,1),(3,1),(3,3),(1,3),(1,2)]),box(5,0,6,1),box(8,1,9,2)])]
+    assert len(result)==3 and all(g.equals(e)for g,e in zip(result.geometry,expected))
+
+
+def test_vector_union_holes_and_tiny_positive_areas_have_no_threshold():
+    donut=Polygon(box(0,0,8,8).exterior.coords,[box(2,2,6,6).exterior.coords])
+    a,b=overlay_inputs([donut],[box(3,3,5,5)]);result=exact_union(a,b)
+    assert len(result)==2 and result.geometry.iloc[0].equals(donut) and result.geometry.iloc[1].equals(box(3,3,5,5))
+    tiny=2**-40;a,b=overlay_inputs([box(0,0,1,1)],[box(1-tiny,0,2,1)]);result=exact_union(a,b)
+    expected=[box(1-tiny,0,1,1),box(0,0,1-tiny,1),box(1,0,2,1)]
+    assert all(g.equals(e)for g,e in zip(result.geometry,expected)) and result.geometry.iloc[0].area==tiny
+
+
+@pytest.mark.parametrize('empty',['a','b','both'])
+def test_vector_union_empty_batches_keep_complete_nullable_schema(empty):
+    a,b=overlay_inputs();a['small']=pd.Series([1],dtype='int16');b['enabled']=pd.Series([True],dtype='bool')
+    if empty in ('a','both'):a=a.iloc[:0].copy()
+    if empty in ('b','both'):b=b.iloc[:0].copy()
+    result=exact_union(a,b)
+    assert len(result)==(0 if empty=='both'else 1)
+    assert list(result.columns)==list(a.columns)+['b_key','enabled','source_id_a','source_id_b']
+    assert str(result.small.dtype)=='Int16' and str(result.enabled.dtype)=='boolean'
+    assert result.geometry.name==a.geometry.name and result.crs==a.crs and str(result.a_key.dtype)=='Int64'
+    if empty=='a':assert result.a_key.isna().all()and result.source_id_a.isna().all()
+    if empty=='b':assert result.b_key.isna().all()and result.source_id_b.isna().all()
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:2263'])
+def test_vector_union_preserves_wide_integer_boolean_category_date_and_business_geometry(crs):
+    a,b=overlay_inputs([box(0,0,4,2)],[box(2,0,6,2)])
+    a.set_crs(crs,allow_override=True,inplace=True);b.set_crs(a.crs.to_wkt(),allow_override=True,inplace=True)
+    a['a_key']=pd.Series([2**64-1],dtype='uint64');b['b_key']=pd.Series([2**60+1],dtype='int64')
+    a['grade']=pd.Series([None],dtype='Int32');a['geometry']=pd.Series(['业务几何同名列'],dtype='string')
+    a['category']=pd.Series(pd.Categorical(['x'],categories=['x','y']));b['flag']=pd.Series([True],dtype='bool');b['date']=pd.to_datetime(['2025-01-01'],utc=True)
+    a.index=[7];b.index=[-1];original=[a.copy(deep=True),b.copy(deep=True)];result=exact_union(a,b)
+    assert result.source_id_a.iloc[:2].tolist()==[2**64-1]*2 and str(result.source_id_a.dtype)=='UInt64'
+    assert result.source_id_b.iloc[[0,2]].tolist()==[2**60+1]*2 and str(result.source_id_b.dtype)=='Int64'
+    assert str(result.flag.dtype)=='boolean' and result.flag.iloc[[0,2]].tolist()==[True,True] and pd.isna(result.flag.iloc[1])
+    assert result.category.dtype==a.category.dtype and result.date.dtype==b.date.dtype and result.grade.dtype==a.grade.dtype
+    assert result['geometry'].iloc[:2].tolist()==['业务几何同名列']*2 and pd.isna(result['geometry'].iloc[2])
+    for frame,before in zip((a,b),original):assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize('side',['a','b'])
+@pytest.mark.parametrize('kind',['overlap','contains','duplicate','tiny'])
+@pytest.mark.parametrize('other_empty',[False,True])
+def test_vector_union_rejects_intralayer_overlap_before_output_even_with_empty_other(side,kind,other_empty):
+    from operators.geometric_operators import UnionInputError
+    shape={'overlap':box(1,0,3,2),'contains':box(.5,.5,1.5,1.5),'duplicate':box(0,0,2,2),'tiny':box(2-2**-40,0,3,2)}[kind]
+    a,b=overlay_inputs([box(10,0,12,2)]if side=='b'else[box(0,0,2,2),shape], [box(10,0,12,2)]if side=='a'else[box(0,0,2,2),shape])
+    if other_empty:
+        if side=='a':b=b.iloc[:0]
+        else:a=a.iloc[:0]
+    with pytest.raises(UnionInputError)as caught:exact_union(a,b)
+    assert caught.value.code==('source_overlap'if side=='a'else'reference_overlap')
+
+
+@pytest.mark.parametrize('side',['a','b'])
+@pytest.mark.parametrize('problem',['id_missing','id_duplicate','id_null','id_object','point','gc','empty','missing','invalid','z','m','nonfinite','extra_geometry','duplicate_field'])
+def test_vector_union_rejects_invalid_source_and_reference(side,problem):
+    from operators.geometric_operators import UnionInputError
+    a,b=overlay_inputs([box(0,0,1,1),box(2,0,3,1)],[box(5,0,6,1),box(7,0,8,1)]);frame=a if side=='a'else b;key='a_key'if side=='a'else'b_key'
+    if problem=='id_missing':frame.drop(columns=[key],inplace=True)
+    elif problem=='id_duplicate':frame[key]=[1,1]
+    elif problem=='id_null':frame[key]=[1,None]
+    elif problem=='id_object':frame[key]=[{},{}]
+    elif problem=='extra_geometry':frame['other']=gpd.GeoSeries([Point(0,0),Point(1,1)],crs=frame.crs)
+    elif problem=='duplicate_field':frame.columns=[frame.geometry.name,frame.geometry.name]
+    else:
+        shapes={'point':Point(0,0),'gc':shapely.GeometryCollection([box(0,0,1,1)]),'empty':Polygon(),'missing':None,'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),'z':shapely.from_wkt('POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))'),'m':shapely.from_wkt('POLYGON M ((0 0 1,1 0 1,1 1 1,0 0 1))'),'nonfinite':shapely.from_wkt('POLYGON ((0 0, Infinity 0,1 1,0 0))')}
+        frame[frame.geometry.name]=gpd.GeoSeries([shapes[problem],box(20,0,21,1)],crs=frame.crs)
+    with pytest.raises(UnionInputError)as caught:exact_union(a,b)
+    assert caught.value.code==('source'if side=='a'else'reference')
+
+
+@pytest.mark.parametrize('problem',['shared','geometry','fixed_a','fixed_b','crs_missing','crs_geographic','crs_mismatch'])
+def test_vector_union_rejects_field_conflicts_and_crs_even_when_both_empty(problem):
+    from operators.geometric_operators import UnionInputError
+    a,b=overlay_inputs([],[])
+    if problem=='shared':a['shared']=pd.Series(dtype='int64');b['shared']=pd.Series(dtype='string')
+    elif problem=='geometry':b[a.geometry.name]=pd.Series(dtype='int64')
+    elif problem.startswith('fixed'):a['source_id_a'if problem=='fixed_a'else'source_id_b']=pd.Series(dtype='string')
+    else:b.set_crs({'crs_missing':None,'crs_geographic':'EPSG:4326','crs_mismatch':'EPSG:2263'}[problem],allow_override=True,inplace=True)
+    with pytest.raises(UnionInputError)as caught:exact_union(a,b)
+    assert caught.value.code==('crs'if problem.startswith('crs')else'fields')
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('problem,reason,param',[('source','operator_input_invalid','input_gdf'),('reference','operator_reference_invalid','gdf_b'),('crs','operator_crs_invalid',''),('fields','operator_overlay_fields_conflict',''),('source_overlap','operator_input_overlap','input_gdf'),('reference_overlap','operator_reference_overlap','gdf_b')])
+def test_vector_union_typed_diagnostics_distinguish_both_overlap_sides_without_source_values(language,problem,reason,param):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    a,b=overlay_inputs()
+    if problem=='source':a['a_key']=['']
+    if problem=='reference':b['b_key']=[None]
+    if problem=='crs':b.set_crs(None,allow_override=True,inplace=True)
+    if problem=='fields':a['PRIVATE']=1;b['PRIVATE']=2
+    if problem=='source_overlap':a=pd.concat([a,a.assign(a_key=2)],ignore_index=True)
+    if problem=='reference_overlap':b=pd.concat([b,b.assign(b_key='b2')],ignore_index=True)
+    tasks=[{'id':'PRIVATE_UNION_NODE','operator':'union','depends_on':[],'params':{'input_gdf':a,'gdf_b':b,'id_field':'a_key','reference_id_field':'b_key'}}]
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert caught.value.error_code=='INVALID_PARAMS' and caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'union',**({'parameter':param}if param else{})}}
+    assert 'PRIVATE'not in json.dumps(caught.value.diagnostic)
+    assert ('Union'in str(caught.value))if language=='en'else('联合'in str(caught.value))
+
+
+@pytest.mark.parametrize('stage',['relate_pattern','union_all','intersection','difference'])
+def test_vector_union_native_faults_remain_execution_failed(monkeypatch,stage):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    def bad(*args,**kwargs):raise shapely.errors.GEOSException('PRIVATE source values')
+    a,b=overlay_inputs([box(0,0,1,1),box(1,0,2,1)],[box(.5,-1,1.5,2)])
+    monkeypatch.setattr(shapely,stage,bad)
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner().execute({'tasks':[{'id':'union','operator':'union','depends_on':[],'params':{'input_gdf':a,'gdf_b':b,'id_field':'a_key','reference_id_field':'b_key'}}]})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('shape',[shapely.from_wkt('POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))'),Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),shapely.from_wkt('POLYGON ((0 0, Infinity 0,1 1,0 0))')])
+def test_vector_union_invalid_native_results_are_not_parameter_errors(monkeypatch,shape):
+    monkeypatch.setattr(shapely,'intersection',lambda *a,**k:shape)
+    from operators.geometric_operators import UnionInputError
+    a,b=overlay_inputs()
+    with pytest.raises(RuntimeError)as caught:exact_union(a,b)
+    assert not isinstance(caught.value,UnionInputError)
+
+
+def test_vector_union_never_uses_legacy_overlay_or_automatic_repair(monkeypatch):
+    def forbidden(*args,**kwargs):raise AssertionError('legacy overlay or implicit repair')
+    monkeypatch.setattr(gpd,'overlay',forbidden);monkeypatch.setattr(shapely,'make_valid',forbidden)
+    a,b=overlay_inputs();assert len(exact_union(a,b))==3
+
+
+def test_vector_union_gpkg_save_reload_keeps_nullable_fields_sources_and_failure_guard(tmp_path):
+    from osgeo import ogr
+    a,b=overlay_inputs([box(0,0,4,2)],[box(2,0,6,2)])
+    a['a_key']=pd.Series([2**60+1],dtype='Int64');a['grade']=pd.Series([2**53+1],dtype='Int64');a['geometry']=pd.Series(['业务字段'],dtype='string');b['enabled']=pd.Series([True],dtype='boolean')
+    for name,frame in [('a',a),('b',b)]:frame.to_file(tmp_path/(name+'.gpkg'),driver='GPKG',index=False)
+    original={n:(tmp_path/(n+'.gpkg')).read_bytes()for n in ('a','b')};conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'PRIVATE_UNION','operator':'union','depends_on':['a','b'],'params':{'input_gdf':{'$ref':'a'},'gdf_b':{'$ref':'b'},'id_field':'a_key','reference_id_field':'b_key'}}]
+    tasks.extend({'id':n,'operator':'load','depends_on':[],'params':{'connection_info':conn,'path':n+'.gpkg'}}for n in ('a','b'))
+    tasks.append({'id':'save','operator':'save','depends_on':['PRIVATE_UNION'],'params':{'input_df':{'$ref':'PRIVATE_UNION'},'connection_info':conn,'path':'result.gpkg','mode':'fail'}})
+    state=execute_workflow({'tasks':tasks});assert state['status']=='success',state
+    ds=ogr.Open(str(tmp_path/'result.gpkg'));layer=ds.GetLayer(0);rows=list(layer)
+    assert len(rows)==3 and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    for field in ['a_key','grade','source_id_a']:assert layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex(field)).GetType()==ogr.OFTInteger64
+    for i,(row,expected)in enumerate(zip(rows,[box(2,0,4,2),box(0,0,2,2),box(4,0,6,2)])):
+        assert row.GetGeometryRef().Normalize().ExportToIsoWkb()==ogr.CreateGeometryFromWkt(expected.wkt).Normalize().ExportToIsoWkb()
+        assert row.GetField('source_id_a')==([2**60+1]*2+[None])[i]and row.GetField('source_id_b')==['11',None,'11'][i]
+        assert row.GetField('grade')==[2**53+1,2**53+1,None][i]and row.GetField('geometry')==['业务字段','业务字段',None][i]
+        assert row.GetField('enabled')==[True,None,True][i]
+    column=layer.GetGeometryColumn();row=rows=layer=ds=None
+    saved=get_operator('load')(connection_info=conn,path='result.gpkg');assert saved.geometry.name==column and str(saved.grade.dtype)=='Int64'and str(saved.enabled.dtype)=='boolean'
+    tasks[0]['params']['reference_id_field']='PRIVATE_MISSING';tasks[-1]['params']['path']='forbidden.gpkg';state=execute_workflow({'tasks':tasks})
+    assert state['status']=='failed'and state['error_code']=='INVALID_PARAMS'and not(tmp_path/'forbidden.gpkg').exists()
+    for n,data in original.items():assert(tmp_path/(n+'.gpkg')).read_bytes()==data
+
+
+@pytest.mark.parametrize('problem',[None,'source','reference','crs','fields','source_overlap','reference_overlap'])
+def test_vector_union_async_api_discovery_six_admissions_and_frozen_node(tmp_path,monkeypatch,problem):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    a,b=overlay_inputs([box(0,0,4,2)],[box(2,0,6,2)])
+    if problem=='source':a['a_key']=['']
+    if problem=='reference':b['b_key']=[None]
+    if problem=='crs':b.set_crs('EPSG:3395',allow_override=True,inplace=True)
+    if problem=='fields':a['PRIVATE']=1;b['PRIVATE']=2
+    if problem=='source_overlap':a=pd.concat([a,a.assign(a_key=2)],ignore_index=True)
+    if problem=='reference_overlap':b=pd.concat([b,b.assign(b_key='b2')],ignore_index=True)
+    for name,frame in [('a',a),('b',b)]:frame.to_file(tmp_path/(name+'.gpkg'),driver='GPKG',index=False)
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'PRIVATE_UNION_NODE','operator':'union','depends_on':['a','b'],'params':{'input_gdf':{'$ref':'a'},'gdf_b':{'$ref':'b'},'id_field':'a_key','reference_id_field':'b_key'}}]
+    tasks.extend({'id':n,'operator':'load','depends_on':[],'params':{'connection_info':conn,'path':n+'.gpkg'}}for n in ('a','b'))
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client()as client:
+        spec=next(s for s in client.get('/api/operators').get_json()['operators']if s['id']=='union')
+        assert spec['display_name']=='联合叠加'and all(p['required']for p in spec['parameters'])and len(spec['parameters'])==4
+        assert client.post('/api/operators/union/invoke',json={'params':{}}).status_code==403
+        response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}});assert response.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            observed=client.get('/api/executions/'+response.get_json()['execution_id']);assert observed.status_code==200;state=observed.get_json()
+            if state['status']in('success','failed'):break
+            time.sleep(.01)
+        if problem is None:assert state['status']=='success'and len(json.loads(state['result'])['features'])==3,state
+        else:
+            reason,param={'source':('operator_input_invalid','input_gdf'),'reference':('operator_reference_invalid','gdf_b'),'crs':('operator_crs_invalid',''),'fields':('operator_overlay_fields_conflict',''),'source_overlap':('operator_input_overlap','input_gdf'),'reference_overlap':('operator_reference_overlap','gdf_b')}[problem]
+            assert state['status']=='failed'and state['error_code']=='INVALID_PARAMS',state
+            assert state['diagnostic']=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'union',**({'parameter':param}if param else{})}}
+            assert 'PRIVATE'not in json.dumps(state['diagnostic'])
+
+
+@pytest.mark.parametrize('side',['a','b'])
+def test_intersection_overlay_duplicate_geometry_labels_are_typed_before_column_resolution(side):
+    from operators.geometric_operators import IntersectionInputError
+    a,b=overlay_inputs();frame=a if side=='a'else b;frame.columns=[frame.geometry.name,frame.geometry.name]
+    with pytest.raises(IntersectionInputError)as caught:exact_overlay(a,b)
+    assert caught.value.code==('source'if side=='a'else'reference')
+
+
+@pytest.mark.parametrize('touch',['edge','point'])
+def test_vector_union_allows_intralayer_boundary_contacts(touch):
+    other=box(1,0,2,1)if touch=='edge'else box(1,1,2,2)
+    a,b=overlay_inputs([box(0,0,1,1),other],[box(10,0,11,1)])
+    result=exact_union(a,b)
+    assert len(result)==3 and all(g.equals(e)for g,e in zip(result.geometry,[box(0,0,1,1),other,box(10,0,11,1)]))

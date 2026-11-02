@@ -1650,3 +1650,12 @@ def test_vector_clip_metadata_requires_explicit_source_and_full_geometry():
     assert params['id_field']['type']=='string' and 'default' not in params['id_field']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['is_default'] and spec['output_ports'][0]['type']=='geodataframe'
     assert 'GeometryCollection' in spec['detailed_description']['overview']
+
+
+def test_vector_union_metadata_is_explicit_binary_polygon_partition_without_list_alias():
+    spec=next(s for s in list_operators()if s['id']=='union');params={p['name']:p for p in spec['parameters']}
+    assert spec['display_name']=='联合叠加'and spec['category_path']==['矢量处理','叠加分析']
+    assert set(params)=={'input_gdf','gdf_b','id_field','reference_id_field'}and all(p['required']for p in params.values())
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['is_default']
+    assert 'gdf_list'not in spec['detailed_description']['workflow_example']['params']

@@ -66,21 +66,22 @@ class IntersectionInputError(ValueError):
         return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
 
 
-def intersection(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
-                 id_field: str, reference_id_field: str) -> gpd.GeoDataFrame:
-    """One complete exact intersection per original A/B feature pair."""
+def _binary_overlay_inputs(input_gdf, gdf_b, id_field, reference_id_field, error_type, polygons_only=False):
+    """One admission route for explicit binary overlay identities and attributes."""
     geometries, identifiers = [], []
     for frame, field, code in ((input_gdf, id_field, 'source'), (gdf_b, reference_id_field, 'reference')):
         try:
+            if not isinstance(frame, gpd.GeoDataFrame) or not frame.columns.is_unique:
+                raise ValueError('overlay requires unique columns')
             geometry = _finite_xy_geometry(frame)
-            if (not frame.columns.is_unique
-                    or sum(isinstance(dtype, gpd.array.GeometryDtype) for dtype in frame.dtypes) != 1
+            if (sum(isinstance(dtype, gpd.array.GeometryDtype) for dtype in frame.dtypes) != 1
                     or geometry.isna().any() or geometry.is_empty.any()
-                    or not shapely.is_valid(geometry.array).all()):
+                    or not shapely.is_valid(geometry.array).all()
+                    or (polygons_only and not geometry.geom_type.isin(['Polygon', 'MultiPolygon']).all())):
                 raise ValueError('invalid overlay input')
             ids = _source_identifiers(frame, field)
         except ValueError as exc:
-            raise IntersectionInputError(code) from exc
+            raise error_type(code) from exc
         geometries.append(geometry)
         identifiers.append(ids)
     left, right = geometries
@@ -90,13 +91,22 @@ def intersection(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
         if left.crs != right.crs:
             raise ValueError('overlay CRS mismatch')
     except ValueError as exc:
-        raise IntersectionInputError('crs') from exc
+        raise error_type('crs') from exc
     left_fields = [name for name in input_gdf.columns if name != left.name]
     right_fields = [name for name in gdf_b.columns if name != right.name]
     if (any(name in frame.columns for frame in (input_gdf, gdf_b) for name in ('source_id_a', 'source_id_b'))
             or set(left_fields).intersection(right_fields) or left.name in right_fields):
-        raise IntersectionInputError('fields')
+        raise error_type('fields')
 
+    return left, right, identifiers, left_fields, right_fields
+
+
+def intersection(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
+                 id_field: str, reference_id_field: str) -> gpd.GeoDataFrame:
+    """One complete exact intersection per original A/B feature pair."""
+    left, right, identifiers, left_fields, right_fields = _binary_overlay_inputs(
+        input_gdf, gdf_b, id_field, reference_id_field, IntersectionInputError,
+    )
     tree = shapely.STRtree(right.array)
     left_rows, right_rows, values = [], [], []
     for a, geometry in enumerate(left.array):
@@ -118,24 +128,111 @@ def intersection(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
     return result
 
 
-def union(gdf_list: List[gpd.GeoDataFrame]) -> gpd.GeoDataFrame:
-    """
-    几何合并（联合多个 GeoDataFrame）
+class UnionInputError(ValueError):
+    """Proven polygon union admissions without source values in diagnostics."""
+    _messages = {
+        'zh-cn': {
+            'source': '联合叠加的 A 须具有唯一几何列、有效非空有限二维面及显式唯一非空来源标识。',
+            'reference': '联合叠加的 B 须具有唯一几何列、有效非空有限二维面及显式唯一非空来源标识。',
+            'crs': '联合叠加要求双方使用相同已知投影坐标系及匹配的有限正水平单位；请先显式重投影。',
+            'fields': '联合叠加的双方业务字段、固定来源字段或结果几何列发生重名；请先在上游手动改名。',
+            'source_overlap': '联合叠加的 A 图层内部存在正面积重叠、包含或重复面；请先面叠检查并显式处理。',
+            'reference_overlap': '联合叠加的 B 图层内部存在正面积重叠、包含或重复面；请先面叠检查并显式处理。',
+        },
+        'en': {
+            'source': 'Union A requires one geometry column, valid non-empty finite XY polygons and an explicit unique non-null source identifier.',
+            'reference': 'Union B requires one geometry column, valid non-empty finite XY polygons and an explicit unique non-null source identifier.',
+            'crs': 'Union requires the same known projected CRS and matching finite positive horizontal units; reproject explicitly first.',
+            'fields': 'Union business fields conflict with each other, fixed source fields or the result geometry column; rename them upstream explicitly.',
+            'source_overlap': 'Union A contains positive-area overlaps, contained or duplicate polygons; check polygon overlaps and resolve them explicitly first.',
+            'reference_overlap': 'Union B contains positive-area overlaps, contained or duplicate polygons; check polygon overlaps and resolve them explicitly first.',
+        },
+    }
 
-    Args:
-        gdf_list: GeoDataFrame 列表
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
 
-    Returns:
-        GeoDataFrame 合并结果
-    """
-    if len(gdf_list) == 0:
-        raise ValueError("gdf_list cannot be empty")
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
 
-    result = gdf_list[0].copy()
-    for gdf in gdf_list[1:]:
-        result = gpd.overlay(result, gdf, how='union')
 
+def _union_layer_tree(geometry, code):
+    tree = shapely.STRtree(geometry.array)
+    for i, shape in enumerate(geometry.array):
+        for j in sorted(tree.query(shape).tolist()):
+            # Interiors intersect in dimension 2: no area threshold or rounding.
+            if j > i and shapely.relate_pattern(shape, geometry.iloc[j], '2********'):
+                raise UnionInputError(code)
+    return tree
+
+
+def _union_polygon_result(value):
+    _require_valid_mask_result(value)
+    if value.is_empty:
+        return None
+    if value.geom_type in ('Polygon', 'MultiPolygon'):
+        return value
+    polygons, pending = [], [value]
+    while pending:
+        part = pending.pop()
+        if part.geom_type == 'Polygon' and not part.is_empty:
+            polygons.append(part)
+        elif part.geom_type in ('MultiPolygon', 'GeometryCollection'):
+            pending.extend(reversed(part.geoms))
+    if not polygons:
+        return None
+    result = polygons[0] if len(polygons) == 1 else shapely.multipolygons(polygons)
+    _require_valid_mask_result(result)
     return result
+
+
+def _union_attribute_rows(series, rows):
+    # Establish a nullable schema before introducing absent-side rows. Never
+    # round wide integers through float64, or infer types from business values.
+    dtype = series.dtype
+    if isinstance(dtype, np.dtype):
+        if dtype.kind in ('i', 'u'):
+            dtype = ('UInt' if dtype.kind == 'u' else 'Int') + str(dtype.itemsize * 8)
+        elif dtype.kind == 'b':
+            dtype = 'boolean'
+    original = series.astype(dtype, copy=False).reset_index(drop=True)
+    return original.reindex([-1 if i is None else i for i in rows]).reset_index(drop=True)
+
+
+def union(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
+          id_field: str, reference_id_field: str) -> gpd.GeoDataFrame:
+    """Partition two non-overlapping polygon layers with complete provenance."""
+    left, right, identifiers, left_fields, right_fields = _binary_overlay_inputs(
+        input_gdf, gdf_b, id_field, reference_id_field, UnionInputError, polygons_only=True,
+    )
+    _union_layer_tree(left, 'source_overlap')
+    tree = _union_layer_tree(right, 'reference_overlap')
+    left_rows, right_rows, values = [], [], []
+
+    def append(value, a, b):
+        shape = _union_polygon_result(value)
+        if shape is not None:
+            left_rows.append(a)
+            right_rows.append(b)
+            values.append(shape)
+
+    for a, geometry in enumerate(left.array):
+        for b in sorted(tree.query(geometry).tolist()):
+            append(shapely.intersection(geometry, right.iloc[b]), a, b)
+    mask_a = _combined_polygon_mask(left) if not left.empty else None
+    mask_b = _combined_polygon_mask(right) if not right.empty else None
+    for a, geometry in enumerate(left.array):
+        append(geometry if mask_b is None else shapely.difference(geometry, mask_b), a, None)
+    for b, geometry in enumerate(right.array):
+        append(geometry if mask_a is None else shapely.difference(geometry, mask_a), None, b)
+
+    columns = {name: (gpd.GeoSeries(values, crs=left.crs) if name == left.name else
+                      _union_attribute_rows(input_gdf[name], left_rows)) for name in input_gdf.columns}
+    columns.update({name: _union_attribute_rows(gdf_b[name], right_rows) for name in right_fields})
+    columns['source_id_a'] = _union_attribute_rows(identifiers[0], left_rows)
+    columns['source_id_b'] = _union_attribute_rows(identifiers[1], right_rows)
+    return gpd.GeoDataFrame(columns, geometry=left.name, crs=left.crs)
 
 
 def centroid(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -2416,53 +2513,25 @@ INTERSECTION_METADATA = OperatorMetadata(
 
 
 UNION_METADATA = OperatorMetadata(
-    name="union",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_OVERLAY,
-    description="几何合并",
-    brief_description="将多个图层的几何对象合并为一个图层,常用于数据整合和范围叠加",
-    execution_modes=["workflow"],
-    effects=["read"],
-
-    overview="将多个GeoDataFrame的所有几何对象合并到一个GeoDataFrame中。所有输入图层的要素会保留在输出中,属性也会保留。适用于多数据源整合、多时相数据合并等场景。",
-
+    name="union", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_OVERLAY,
+    description="联合叠加", brief_description="两个面图层联合分区，保留双方来源与属性，缺侧为空",
+    execution_modes=["workflow"], effects=["read"],
+    overview="生成双方交叠、仅 A、仅 B 三类面结果；每对或每源的多部件保留一行。输入图层内部的正面积重叠、包含和重复面明确拒绝。不是列表拼接或全局融合。",
     params=[
-        OperatorParam(
-            name="gdf_list",
-            type="input",
-            data_type="List[GeoDataFrame]",
-            required=True,
-            description="GeoDataFrame列表,包含需要合并的多个图层",
-            notes="所有输入图层应具有相同的坐标系,否则建议先用to_crs统一坐标系"
-        )
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="面图层 A", notes="有效非空有限二维面或多面，允许空批，同层不可正面积重叠"),
+        OperatorParam(name="gdf_b", type="input", data_type="GeoDataFrame", required=True, description="面图层 B", notes="与 A 相同已知投影 CRS，合法面或多面，同层不可正面积重叠，允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="A 的唯一来源标识列", notes="显式非几何唯一非空标量列，不推断索引或 FID"),
+        OperatorParam(name="reference_id_field", type="param", data_type="str", required=True, description="B 的唯一来源标识列", notes="显式非几何唯一非空标量列，不推断索引或 FID"),
     ],
-
-    use_cases=[
-        "多城市数据整合: 将各市的建筑物数据合并为全省数据",
-        "历史数据汇总: 将多年的土地利用变化数据合并为时序数据集",
-        "分区数据拼接: 将分区采集的GPS轨迹点合并为完整轨迹",
-        "多源数据融合: 将不同部门提供的POI数据整合为统一数据库"
-    ],
-
+    use_cases=["两套地块边界联合分区", "土地利用与行政区面叠加，保留独有范围及双方属性"],
     notes=[
-        "合并后的属性列为所有输入图层属性列的并集,缺失值填充为NaN",
-        "如果输入图层坐标系不一致,会导致几何错误,需先统一坐标系",
-        "不同于dissolve,union不会融合几何,只是简单拼接",
-        "大数据集合并可能消耗大量内存,建议分批处理"
+        "交叠按 A/B 原位置排序，之后仅 A、仅 B 各按来源位置排序；共边和共点不单独输出，不拆多部件",
+        "保留双方业务字段及原来源列，追加 source_id_a/source_id_b；缺侧为真实空值，整数与布尔按原位宽使用可空表示，不经浮点转换",
+        "结果沿 A 的活动几何名及 CRS，重建 RangeIndex；字段冲突须上游手动改名，不自动加后缀或覆盖",
+        "一侧为空保留另一侧及完整 Schema；双方为空输出空结果；不吸附、修复、重投影、舍入或增加面积阈值",
+        "纯计算不保存或扫描，资源级血缘保留 A/B 两来源；不是单图层融合或多图层列表拼接",
     ],
-
-    workflow_example={
-        'id': 'union_cities',
-        'operator': 'union',
-        'params': {
-            'gdf_list': [
-                {'$ref': 'load_city_a'},
-                {'$ref': 'load_city_b'},
-                {'$ref': 'load_city_c'}
-            ]
-        },
-        'depends_on': ['load_city_a', 'load_city_b', 'load_city_c']
-    }
+    workflow_example={'id':'union_regions','operator':'union','params':{'input_gdf':{'$ref':'load_a'},'gdf_b':{'$ref':'load_b'},'id_field':'parcel_key','reference_id_field':'zone_key'},'depends_on':['load_a','load_b']},
 )
 
 

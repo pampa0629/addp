@@ -85,6 +85,10 @@ D8流长只保留`raster_flow_length_d8`一个入口，必填`method=downstream`
 
 “多距缓冲”（`batch_buffer`）把同一图层的多距离完整缓冲展开为一个图层，保留源属性和 CRS 并追加 `distance` 列，源列重名时报错；可直接接现有保存节点。删除“多图质心”（`batch_centroid`）的函数与入口，多个图层分别连接普通 `centroid`，旧 ID 不保留别名。普通缓冲和质心均已对单图层逐要素执行。“外包矩形”（`envelope`）为轴对齐包络。输入输出与验证边界见[多距缓冲与质心入口契约](../../../docs/spec/workflow/矢量算子契约.md#多距缓冲与质心入口契约)。
 
+## 联合叠加
+
+`union(input_gdf, gdf_b, id_field, reference_id_field)` 只接受两个有效二维面图层及显式来源 ID，同层正面积重叠拒绝。输出交叠、仅 A、仅 B 三类完整面结果，保留双方属性与来源，缺侧为真实空值；不额外报共边／共点、不拆多部件、不自动改名或修复。旧 gdf_list 多层路线删除；边界见[联合叠加契约](../../../docs/spec/workflow/矢量算子契约.md#联合叠加契约)。
+
 ## 裁剪几何
 
 `clip(input_gdf, mask_gdf, id_field)` 按整体面掩膜逐 A 求完整交集，保留 A 的来源与全部业务属性；共边、共点和 GeometryCollection 不按维度丢弃，多部件不拆行。空掩膜返回保完整 Schema 的空结果。与逐对保留 A/B 属性的 intersection 及整体范围扣除的 difference 边界见[裁剪几何契约](../../../docs/spec/workflow/矢量算子契约.md#裁剪几何契约)。

@@ -15,7 +15,7 @@ func TestWorkflowInputDiagnosticMatchesCanonicalLanguageContract(t *testing.T) {
 	}
 	pattern := regexp.MustCompile(`\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'`)
 	tuples := pattern.FindAllStringSubmatch(string(source), -1)
-	if len(tuples) != 41 {
+	if len(tuples) != 47 {
 		t.Fatalf("rules=%d", len(tuples))
 	}
 	valid := map[string]bool{}
@@ -24,7 +24,7 @@ func TestWorkflowInputDiagnosticMatchesCanonicalLanguageContract(t *testing.T) {
 		valid[strings.Join([]string{r[1], r[2], r[4], r[3]}, "|")] = true
 		reasons[r[2]] = true
 	}
-	for _, op := range []string{"clip", "difference", "intersection", "batch_buffer", "distance_to", "check_line_proximity", "extract_polygon_rings", "trim_line_endpoints", "extract_line_nodes", "foreign"} {
+	for _, op := range []string{"union", "clip", "difference", "intersection", "batch_buffer", "distance_to", "check_line_proximity", "extract_polygon_rings", "trim_line_endpoints", "extract_line_nodes", "foreign"} {
 		for reason := range reasons {
 			for _, parameter := range []string{"", "input_gdf", "gdf_b", "mask_gdf", "reference_gdf", "distances", "resolution", "tolerance", "max_distance", "private"} {
 				for _, field := range []string{"", "distance", "source_id", "part_no", "ring_no", "ring_id", "is_hole", "node_id", "degree", "source_part_no", "end", "private"} {
@@ -99,6 +99,23 @@ func TestClipHTTPDiagnosticKeepsOnlyThreeClosedAdmissions(t *testing.T) {
 		context["field"] = "PRIVATE"
 		if got := workflowExecutionStatusFromRaw(raw); got.Diagnostic != nil {
 			t.Fatal("trusted arbitrary clip field")
+		}
+	}
+}
+
+func TestUnionHTTPDiagnosticKeepsOnlySixClosedAdmissions(t *testing.T) {
+	for reason, parameter := range map[string]string{"operator_input_invalid": "input_gdf", "operator_reference_invalid": "gdf_b", "operator_crs_invalid": "", "operator_overlay_fields_conflict": "", "operator_input_overlap": "input_gdf", "operator_reference_overlap": "gdf_b"} {
+		context := map[string]interface{}{"node_index": 2, "operator_id": "union"}
+		if parameter != "" {
+			context["parameter"] = parameter
+		}
+		raw := map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": context}}
+		if got := workflowExecutionStatusFromRaw(raw); got.Diagnostic == nil {
+			t.Fatal("lost union diagnostic")
+		}
+		context["field"] = "PRIVATE"
+		if got := workflowExecutionStatusFromRaw(raw); got.Diagnostic != nil {
+			t.Fatal("trusted arbitrary union field")
 		}
 	}
 }

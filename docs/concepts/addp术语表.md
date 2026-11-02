@@ -829,6 +829,12 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 10. `resource` 只作为 UI 或资源树展示语境中的宽泛称呼使用。Meta 模块、Engine 插件接口和跨模块 API 不应新增 `resource_*` 字段来替代已有 Engine Catalog、`node_*` 或 `item_*` 术语。
 11. Notebook Native Engine Facade 的公开方法、参数和返回对象使用具体引擎原生术语；`EngineCatalogPath`、`EngineCatalogEntry` 和 `EngineCatalogFacts` 只作为其内部实现契约，不要求 Notebook 使用者理解。
 
+## 面图层联合分区
+
+| 术语 | 中文 | 定义 | 边界 |
+| --- | --- | --- | --- |
+| polygon union overlay | 联合叠加 | 对两个面图层形成双方交叠、仅 A、仅 B 三类面区域，并保留双方来源及业务属性。 | 每层内部不得正面积重叠；共边或共点不单独输出。不等于要素列表拼接或全局融合。缺侧为真实空值，不猜来源或属性。 |
+
 ## 租户任务执行诊断
 
 任务执行诊断围绕唯一 `common.task_executions.execution_id` 展示安全的执行概览、步骤、过程事件、失败原因和必要上下文。它由任务 Owner 产生事实并裁决读取权限，Monitor 聚合展示；不属于 System 的平台进程日志，也不替代操作审计。

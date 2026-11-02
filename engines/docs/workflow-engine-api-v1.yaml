@@ -863,7 +863,7 @@ components:
           enum: [execution]
         reason:
           type: string
-          enum: [operator_input_invalid, operator_mask_invalid, operator_reference_invalid, operator_field_conflict, operator_geometry_field_conflict, operator_number_array_invalid, operator_positive_integer_required, operator_positive_number_required, operator_projected_crs_required, operator_crs_mismatch, operator_crs_invalid, operator_geometry_invalid, operator_distance_limit_invalid, operator_source_topology_invalid, operator_trim_conflict, operator_endpoint_network_invalid, operator_overlay_fields_conflict]
+          enum: [operator_input_invalid, operator_mask_invalid, operator_reference_invalid, operator_field_conflict, operator_geometry_field_conflict, operator_number_array_invalid, operator_positive_integer_required, operator_positive_number_required, operator_projected_crs_required, operator_crs_mismatch, operator_crs_invalid, operator_geometry_invalid, operator_distance_limit_invalid, operator_source_topology_invalid, operator_trim_conflict, operator_endpoint_network_invalid, operator_overlay_fields_conflict, operator_input_overlap, operator_reference_overlap]
         operator:
           type: object
           additionalProperties: false
@@ -876,7 +876,7 @@ components:
               description: 原workflow_def.tasks的1起始位置，不是拓扑调度顺序。
             operator_id:
               type: string
-              enum: [batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip]
+              enum: [batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union]
             parameter:
               type: string
               enum: [input_gdf, reference_gdf, distances, resolution, tolerance, max_distance, gdf_b, mask_gdf]
@@ -884,6 +884,12 @@ components:
               type: string
               enum: [distance, source_id, part_no, ring_no, ring_id, is_hole, node_id, degree, source_part_no, end]
       x-addp-operator-input-rules:
+        - ["union", "operator_input_invalid", "input_gdf", ""]
+        - ["union", "operator_reference_invalid", "gdf_b", ""]
+        - ["union", "operator_crs_invalid", "", ""]
+        - ["union", "operator_overlay_fields_conflict", "", ""]
+        - ["union", "operator_input_overlap", "input_gdf", ""]
+        - ["union", "operator_reference_overlap", "gdf_b", ""]
         - ["clip", "operator_input_invalid", "input_gdf", ""]
         - ["clip", "operator_mask_invalid", "mask_gdf", ""]
         - ["clip", "operator_crs_invalid", "", ""]
