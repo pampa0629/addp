@@ -387,6 +387,8 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 ## 相关文档
 
 - [快速开始](docs/快速开始.md)
+- [前端开发与集成](frontend/README.md)
+- [前端操作起点](frontend/QUICK_START.md)
 - [模块启动与标准验证入口](README.md#启动与验证)
 - [数据库架构](docs/数据库架构.md)
 - [DLQ 公开查询与来源隔离](docs/数据库架构.md#dlq-公开查询与来源隔离)
