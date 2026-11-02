@@ -297,7 +297,7 @@ elif args[:2] != ["volume", "ls"]:
 
     def test_authorization_facts_filter_selects_only_registered_owner_tests(self):
         for package, pattern in (
-            ("migration", "^Test(Meta|Catalog)AuthorizationFactsForwardMigrationAgainstPostgres$"),
+            ("migration", "^Test((Meta|Catalog)AuthorizationFacts|MetaNodeIdentity)ForwardMigrationAgainstPostgres$"),
             ("api", "^TestEngineAccessDelegationAgainstPostgres$"),
         ):
             result = self.run_gate(arguments=("--package", package, "--test", "authorization-facts"))

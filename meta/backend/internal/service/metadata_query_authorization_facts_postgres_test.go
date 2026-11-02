@@ -44,6 +44,7 @@ scanned_depth TEXT, attributes JSONB, created_at TIMESTAMPTZ, deleted_at TIMESTA
 	}
 	exerciseAuthorizationFacts(t, tx)
 	exerciseDataItemIdentityQuery(t, tx)
+	exerciseNodeIdentity(t, tx)
 	exerciseFileAuthorizationFacts(t, tx)
 	exerciseWholeContainerAuthorizationFacts(t, tx)
 	exerciseScannedFileAuthorizationFacts(t, tx)

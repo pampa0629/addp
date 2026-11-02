@@ -137,6 +137,20 @@ definitions:
       search:
         type: string
     type: object
+  authorizationfacts.NodeIdentity:
+    properties:
+      exists:
+        type: boolean
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      tenant_id:
+        type: integer
+    type: object
+  authorizationfacts.NodeIdentityQuery:
+    properties:
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
   authorizationfacts.ScopeBoundary:
     properties:
       format:
@@ -3301,6 +3315,62 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.scan_task.execute
+  /runtime/node-identities/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 仅 addp-system Tenant Service，以完整类型化路径读取当前租户精确引擎的 PG 根或 schema 节点存在事实；不返回属性、内容或统计，不扫描、不签发
+        Grant。正文最多16KiB，不接受query或额外字段 | Fixed addp-system Tenant Service; resolves
+        the existence of one PG root or schema node in the current tenant and exact
+        engine by typed path. No attributes, content, statistics, scans or grants.
+        Body is at most 16KiB; query and extra fields are rejected
+      parameters:
+      - description: 节点身份查询 | Node identity query
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorizationfacts.NodeIdentityQuery'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/authorizationfacts.NodeIdentity'
+        "400":
+          description: 核对失败 | Resolution failed
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 核对失败 | Resolution failed
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 核对失败 | Resolution failed
+          schema:
+            additionalProperties: true
+            type: object
+        "413":
+          description: 核对失败 | Resolution failed
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 核对失败 | Resolution failed
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 核对节点身份事实 | Resolve node identity facts
+      tags:
+      - Meta Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.node_identity.read
   /runtime/scan-executions/{execution_id}/authorization-facts:
     get:
       description: |-

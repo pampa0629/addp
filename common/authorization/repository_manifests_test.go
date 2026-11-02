@@ -45,14 +45,14 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 540 {
-		t.Fatalf("descriptor count = %d, want 540", len(descriptors))
+	if len(descriptors) != 541 {
+		t.Fatalf("descriptor count = %d, want 541", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.Key == "system.meta_collection.execute" && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
 			t.Fatalf("collection permission escaped its fixed scope: %+v", descriptor)
 		}
-		if descriptor.Key == "meta.inspect.execute" && (descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
+		if (descriptor.Key == "meta.inspect.execute" || descriptor.Key == "meta.node_identity.read") && (descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
 			t.Fatal("Infra inspection must remain a non-customizable, non-delegable Tenant runtime permission")
 		}
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -83,7 +83,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == "meta.inspect.execute" && role.Key != "tenant.transfer_runtime" {
 				t.Fatalf("unexpected Infra inspection role %q", role.Key)
 			}
-			if key == "meta.data_item_identity.read" && role.Key != "tenant.system_runtime" {
+			if (key == "meta.data_item_identity.read" || key == "meta.node_identity.read") && role.Key != "tenant.system_runtime" {
 				t.Fatalf("identity enumeration assigned to %s", role.Key)
 			}
 			if key == "meta.authorization_facts.read" && role.Key != "tenant.system_runtime" && role.Key != "tenant.catalog_runtime" {
@@ -173,7 +173,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "meta.authorization_facts.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
-	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read", "meta.data_item_identity.read", "meta.task_provider.read", "transfer.production_receipt.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read", "meta.data_item_identity.read", "meta.node_identity.read", "meta.task_provider.read", "transfer.production_receipt.read"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.system_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.duckdb_runtime", []string{"system.execution_authorization.execute"})

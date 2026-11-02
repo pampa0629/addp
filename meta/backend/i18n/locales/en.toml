@@ -84,3 +84,9 @@ other = "Scan management operation failed"
 
 ["meta.scan.execution_changed"]
 other = "Scan execution state changed; refresh and try again"
+
+[permissions.meta.node_identity.read.name]
+other = "Read node identity facts"
+
+[permissions.meta.node_identity.read.description]
+other = "System-only exact node existence and typed path facts; no source content"

@@ -2571,6 +2571,84 @@
                 ]
             }
         },
+        "/runtime/node-identities/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-system Tenant Service，以完整类型化路径读取当前租户精确引擎的 PG 根或 schema 节点存在事实；不返回属性、内容或统计，不扫描、不签发 Grant。正文最多16KiB，不接受query或额外字段 | Fixed addp-system Tenant Service; resolves the existence of one PG root or schema node in the current tenant and exact engine by typed path. No attributes, content, statistics, scans or grants. Body is at most 16KiB; query and extra fields are rejected",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Runtime"
+                ],
+                "summary": "核对节点身份事实 | Resolve node identity facts",
+                "parameters": [
+                    {
+                        "description": "节点身份查询 | Node identity query",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.NodeIdentityQuery"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.NodeIdentity"
+                        }
+                    },
+                    "400": {
+                        "description": "核对失败 | Resolution failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "核对失败 | Resolution failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "核对失败 | Resolution failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "413": {
+                        "description": "核对失败 | Resolution failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "核对失败 | Resolution failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.node_identity.read"
+                ]
+            }
+        },
         "/runtime/scan-executions/{execution_id}/authorization-facts": {
             "get": {
                 "security": [
@@ -4224,6 +4302,28 @@
                 },
                 "search": {
                     "type": "string"
+                }
+            }
+        },
+        "authorizationfacts.NodeIdentity": {
+            "type": "object",
+            "properties": {
+                "exists": {
+                    "type": "boolean"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "authorizationfacts.NodeIdentityQuery": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 }
             }
         },

@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 143
+manifest_version: 144
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -1241,6 +1241,7 @@ roles:
       - catalog.sharing_fulfillment.read
       - meta.authorization_facts.read
       - meta.data_item_identity.read
+      - meta.node_identity.read
       - meta.task_provider.read
       - transfer.production_receipt.read
   - key: tenant.transfer_runtime

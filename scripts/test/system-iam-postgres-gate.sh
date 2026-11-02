@@ -286,7 +286,7 @@ case "$TEST_FILTER" in
         ;;
     authorization-facts)
         case "$PACKAGE_FILTER" in
-            migration) test_pattern='^Test(Meta|Catalog)AuthorizationFactsForwardMigrationAgainstPostgres$' ;;
+            migration) test_pattern='^Test((Meta|Catalog)AuthorizationFacts|MetaNodeIdentity)ForwardMigrationAgainstPostgres$' ;;
             api) test_pattern='^TestEngineAccessDelegationAgainstPostgres$' ;;
             *) echo "authorization-facts test requires --package migration or api" >&2; exit 2 ;;
         esac

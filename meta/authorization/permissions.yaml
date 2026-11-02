@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: meta
-manifest_version: 10
+manifest_version: 11
 permissions:
   - key: meta.authorization_facts.read
     allowed_scope_types: [tenant]
@@ -58,6 +58,14 @@ permissions:
     status: active
     name_i18n_key: permissions.meta.lineage.read.name
     description_i18n_key: permissions.meta.lineage.read.description
+  - key: meta.node_identity.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.meta.node_identity.read.name
+    description_i18n_key: permissions.meta.node_identity.read.description
   - key: meta.scan_task.cancel
     allowed_scope_types: [tenant]
     risk_level: medium
