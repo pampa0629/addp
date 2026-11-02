@@ -498,7 +498,7 @@ def production_lineage_schemas(current, engine, source, output, source_path, out
                 and ('item_id' not in ref or ref['item_id'] == identity),
                 'execution schema evidence belongs to a different DataItem')
         schema = ref.get('schema_snapshot')
-        require(isinstance(schema, dict) and re.fullmatch('[0-9a-f]{64}', schema.get('hash', ''))
+        require(isinstance(schema, dict) and re.fullmatch('sha256:[0-9a-f]{64}', schema.get('hash', ''))
                 and isinstance(schema.get('fields'), list)
                 and len(schema['fields']) == 1 and isinstance(schema['fields'][0], dict)
                 and schema['fields'][0].get('name') == 'person_id',
@@ -1640,8 +1640,10 @@ class Lifecycle:
         target = locator(self.engine, name, output['id'])
         preview(self.reader, target, True, 2)
         preview(self.outsider, target, False)
+        report['phase'] = 'production_lineage_schema_evidence'
         schemas = production_lineage_schemas(current, self.engine, source['id'], output['id'], self.path, path)
         lineage = ProductionLineageObservation(self.reader, self.outsider, source['id'], output['id'], execution, schemas)
+        report['phase'] = 'production_lineage_visibility'
         lineage.issued()
         report['phase'] = 'concurrent_and_batch_read_load'
         self.measure_read_load(report, [(self.path, facts, source_grant),

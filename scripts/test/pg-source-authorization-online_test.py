@@ -1803,7 +1803,7 @@ def production_lineage_graph(level, execution, *, visible=True):
         value = {'kind': 'data_item' if level == 'item' else 'field_ref', 'item_id': item_id,
                  'hidden_upstream_count': 0, 'hidden_downstream_count': 0}
         if level == 'field':
-            value.update(field_name='person_id', schema_snapshot_hash='a' * 64)
+            value.update(field_name='person_id', schema_snapshot_hash='sha256:' + 'a' * 64)
         return value
     source, output = node(10), node(12)
     return {'granularity': level, 'subject': output, 'nodes': [output, source] if visible else [output],
@@ -1815,7 +1815,7 @@ def production_lineage_graph(level, execution, *, visible=True):
 class ProductionLineageObservationTest(unittest.TestCase):
     def setUp(self):
         self.reader, self.outsider = Mock(token='unchanged'), Mock(token='outsider')
-        self.probe = ONLINE.ProductionLineageObservation(self.reader, self.outsider, 10, 12, 'execution', {10: 'a' * 64, 12: 'a' * 64})
+        self.probe = ONLINE.ProductionLineageObservation(self.reader, self.outsider, 10, 12, 'execution', {10: 'sha256:' + 'a' * 64, 12: 'sha256:' + 'a' * 64})
 
     def test_rejects_each_hidden_fact_and_wrong_execution(self):
         for level in ('item', 'field'):
@@ -1874,16 +1874,19 @@ class ProductionLineageObservationTest(unittest.TestCase):
     def test_execution_schema_evidence_is_exact_and_required(self):
         source_path, output_path = ONLINE.table_path(2, 'metric_people'), ONLINE.table_path(2, 'output')
         ref = lambda name, identity: {'locator': ONLINE.locator(2, name, identity),
-            'schema_snapshot': {'hash': 'a' * 64, 'fields': [{'name': 'person_id'}]}}
+            'schema_snapshot': {'hash': 'sha256:' + 'a' * 64, 'fields': [{'name': 'person_id'}]}}
         current = {'metadata': {'lineage_facts': {'schema_version': 'addp.lineage-facts/v1',
             'inputs': [ref('metric_people', 10)], 'outputs': [ref('output', 12)]}}}
         self.assertEqual(ONLINE.production_lineage_schemas(current, 2, 10, 12, source_path, output_path),
-                         {10: 'a' * 64, 12: 'a' * 64})
+                         {10: 'sha256:' + 'a' * 64, 12: 'sha256:' + 'a' * 64})
         for change in (
             lambda value: value['metadata'].clear(),
             lambda value: value['metadata']['lineage_facts']['outputs'].append(ref('output', 12)),
             lambda value: value['metadata']['lineage_facts']['outputs'][0].update(locator=ONLINE.locator(2, 'other', 12)),
             lambda value: value['metadata']['lineage_facts']['inputs'][0]['schema_snapshot'].update(hash='invalid'),
+            lambda value: value['metadata']['lineage_facts']['inputs'][0]['schema_snapshot'].update(hash='a' * 64),
+            lambda value: value['metadata']['lineage_facts']['inputs'][0]['schema_snapshot'].update(hash='sha256:' + 'A' * 64),
+            lambda value: value['metadata']['lineage_facts']['inputs'][0]['schema_snapshot'].update(hash='sha256:' + 'a' * 63),
             lambda value: value['metadata']['lineage_facts']['inputs'][0]['schema_snapshot'].update(fields=[]),
         ):
             value = deepcopy(current)
@@ -1891,7 +1894,7 @@ class ProductionLineageObservationTest(unittest.TestCase):
             with self.assertRaises(ONLINE.SuiteError):
                 ONLINE.production_lineage_schemas(value, 2, 10, 12, source_path, output_path)
         graph = production_lineage_graph('field', 'execution')
-        graph['subject']['schema_snapshot_hash'] = 'b' * 64
+        graph['subject']['schema_snapshot_hash'] = 'sha256:' + 'b' * 64
         with self.assertRaises(ONLINE.SuiteError):
             self.probe.validate(graph, 'field', source_visible=True)
 
@@ -1943,7 +1946,7 @@ class InitialProductionOnlineTest(unittest.TestCase):
             result = {'data': [], 'total': 0, 'page': 1, 'page_size': 100}
         elif '/lineage/graph?' in url:
             query = parse_qs(urlsplit(url).query)
-            if query.get('granularity') == ['field'] and query.get('schema_snapshot_hash') != ['a' * 64]:
+            if query.get('granularity') == ['field'] and query.get('schema_snapshot_hash') != ['sha256:' + 'a' * 64]:
                 raise ONLINE.SuiteError('field query without proven schema returned HTTP 400')
             if query['subject_kind'] == ['published_service']:
                 status, result = 403, {'error': 'forbidden'}
@@ -1969,9 +1972,9 @@ class InitialProductionOnlineTest(unittest.TestCase):
                       'metadata': {'initial_authorization': {'status': 'issued'}, 'lineage_facts': {
                           'schema_version': 'addp.lineage-facts/v1',
                           'inputs': [{'locator': ONLINE.locator(2, 'metric_people', 10),
-                                      'schema_snapshot': {'hash': 'a' * 64, 'fields': [{'name': 'person_id'}]}}],
+                                      'schema_snapshot': {'hash': 'sha256:' + 'a' * 64, 'fields': [{'name': 'person_id'}]}}],
                           'outputs': [{'locator': ONLINE.locator(2, self.path['segments'][-1]['name'], 12),
-                                       'schema_snapshot': {'hash': 'a' * 64, 'fields': [{'name': 'person_id'}]}}]}}}
+                                       'schema_snapshot': {'hash': 'sha256:' + 'a' * 64, 'fields': [{'name': 'person_id'}]}}]}}}
         elif url.endswith('/scan/runs?page_size=100'):
             result = {'total': 1, 'items': [{'parent_execution_id': self.execution, 'status': 'success',
                 'execution_id': 'e9041a08-785c-48bc-bb12-c0650b720dac', 'source': 'transfer', 'triggered_by': 33,
