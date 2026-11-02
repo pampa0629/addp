@@ -1028,3 +1028,19 @@ System真实Handler回归另发现精确缺失被误报400：Repository已将GOR
 **预评估与 validation 影响一致性修正。** 生命周期事实读取修复后，又用受控索引／真实脱敏描述契约复现确定缺陷：active Engine 的删除预评估未计入其现有索引，转入 deleting 后相同库存被计入，导致本应相同的影响摘要漂移。已先补正式 Cleanup 规范，再仅对 `scan + engine.deleting + 精确 EngineID` 计入将失效投影；普通 scan 不扩围，execute 对仍 active 的存储 Engine 继续拒绝，不放宽摘要匹配，不新增权限／效果。新回归对旧实现明确失败，修正后 `make test-manager-backend` exit0，覆盖两阶段相同 digest 和 active execute 拒绝。
 
 最新3f281d49c依赖基线的隔离源码 Manager PG 首次29主项PASS／1FAIL／0SKIP，唯一 ExecutionEvents expired 断言 recovered0。只读时钟探针实测数据库比宿主机慢2.91秒，夹具却用宿主机减1秒制造过期，而生产按数据库时钟判定；已把该夹具改用共享 `DatabaseNow`，保留原数量与迟到写入拒绝断言。没有调整时钟、环境、生产租约或等待预算；标准入口复验实际exit0、31主项PASS／0FAIL／0SKIP，ExecutionEvents与Cleanup原子性均通过。历史e779及3f的Linux门禁与本次新增代码分开记录，不把旧源码通过冒充当前新增修正通过。
+
+
+**3f修正的Linux实际结果。** 主责fresh API及独立原日志核对源码 `3f281d49c7c3533a347db4a270d090cabfd63301`：Execution Job125102562650（Run41391135443）success、114＋169及登记一致；独立System Go Job125102562748同Run success、准确标准Owner入口执行；System Cleanup PG Job125113533305（Run41391135292）success、6主项；Manager PG Job125113534185同Release Run success、31主项／无FAIL／SKIP及一次性PG容器／网络／卷／镜像零残留。四份原日志SHA-256依次为 `3e1dc70ae81703750d9112049c95e660195c960ce13230044be3a3b6ed9fa90a`、`5b10fc5c8bc0e4cb04864a6d41f4af0ebf7757b5fac6b662b705edcfbdff44a3`、`c2dd0a7f65e4c82521e127ee647c3aa96702423660218865897df3bb1b5859d6`、`a1c0eb6357097976ffad8e60dd7675bb50fefc257ba1ee2e57d70b5bc7261b32`。
+
+Go workspace Job125102562391的Manager片段15个有测试包实际通过；聚合随后因其它Owner失败，System没有经此聚合执行，不能称聚合通过。该无关失败未调查、重跑或修复；System仅以上述独立成功为证。完整逐项审计保存在本轮私有目录 `3f-ci-audited-proof.json`。
+
+新增Manager摘要一致性和数据库时钟夹具修正已作为 `2f83f41b85167aa001b676ed4e9f53e56161141e` push main，仅5个自有文件。最终本地Manager后端exit0、标准Manager PG exit0／31PASS／0FAIL／0SKIP，三个代码／测试文件与隔离源逐字节一致；证明及原件为 `manager-phase-final-local-proof.json`／`manager-phase-postgres-green.log`。标准PG最初失败仍保留于 `manager-phase-postgres.log`，不以重跑成功覆盖原失败。该阶段不改System／Common／专项runner依赖；3f已验的相应结果继续有效，新增Manager代码以其最新CI另行核验。其它会话未提交的workflow依赖行及产品WIP均未纳入本会话提交。
+
+
+**新增Manager修正的最终Linux证据。** 准确源码2f83f41b8的 [Manager Go所在Job125119346448](https://github.com/pampa0629/addp/actions/runs/41396663333/job/125119346448) 中，Manager完整片段15个有测试包实际PASS；聚合随后仍因其它Owner的来源冻结失败而failure，不扩称全仓通过。最新 [Manager PG Job125119851418](https://github.com/pampa0629/addp/actions/runs/41396663330/job/125119851418) 实际success／31PASS／0FAIL／0SKIP，准确标准入口执行；原件日志SHA-256 `adfa369824f12f658195e7d700a9187953b4104c2fd08ee9f739031fcb994850`。归档artifact13118919935的ZIP SHA-256 `0f45493cb20bbf14971c8716206e51140a811005eafb4c9f4376db9cc8ceda2f`，包含准确2f源码、PostgreSQL15.19／PostGIS3.7.0／pgvector0.8.0、test_exit_code=0和cleanup=zero_residuals，主责独立下载核验。
+
+最新 [Execution Job125119346932](https://github.com/pampa0629/addp/actions/runs/41396663333/job/125119346932) 实际success，日志明确selected:true、标准入口114＋169全部通过、登记一致，SHA-256 `cf7d93f1a9d324287915ecb0688a2c8509049132da747822bd7c4eb91a9d0e4b`。Manager Go原日志SHA-256 `72ed3ece6ab06d996b5ac58666d4437bacd122dadf9bfdf789c0e8ebfb4d8c07`；逐项证明为本轮私有目录 `phase-final-ci-audit.json`。
+
+System Go最新Job125119346754虽然外层success，但selected:false、未执行测试；System Cleanup最新Job125119851728为skipped。这两项均不算本次新通过，按已逐项确认未变的输入复用3f的实际成功Job125102562748／125113533305；3f至2f的共享依赖没有代码增量，期间其它提交仅Monitor证据文档。因此本会话受影响的五类门禁已有匹配输入的实际证据，非聚合全仓通过。
+
+**交付边界与下一步。** 第十轮Hosted仍为failure0/7：本轮已把现场失败定位到validation的Manager库存核验，并修复两项可确定复现的用途／摘要缺陷，不能据此声称底层库存HTTP现场原因已全部证明或修正后完整链路已通过。最新修正后的七项业务断言尚未运行；Graph原生写图回包、正向reopen等既有未验收项无新增证据，不随本批关闭。优先建议另行确认一次同六权限、同范围、同七断言、同预算的transfer-engine Hosted，验证修正后的完整清理链路；本次授权已消费，不自动派发，其它Hosted／环境／权限边界变化继续单独确认。已确认方案内没有其它需等待用户决策的实现细节。
