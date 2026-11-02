@@ -1610,7 +1610,8 @@ def test_sample_points_single_workflow_entry_two_inputs_typed_example_and_no_ali
     from operators import OPERATORS
     specs=[s for s in list_operators()if s['id']=='raster_sample_points'];assert len(specs)==1
     spec=specs[0];params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_raster','input_gdf','band'}and all(p['required']for p in params.values())
+    assert set(params)=={'input_raster','input_gdf','band','method'}and all(params[k]['required']for k in ('input_raster','input_gdf','band'))
+    assert params['method']['type']=='string'and params['method']['default']=='cell'and params['method']['enum']==['cell','bilinear']and not params['method']['required']
     assert params['input_raster']['type']=='raster'and params['input_gdf']['type']=='object'and params['band']['type']=='integer'
     assert params['input_gdf']['param_type']=='input'and OPERATORS['raster_sample_points']['param_schema'][1]['type']=='GeoDataFrame'
     assert params['input_raster']['type']!=params['input_gdf']['type']and 'default'not in params['band']

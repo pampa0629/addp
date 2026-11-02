@@ -18714,7 +18714,8 @@ def test_sample_points_sparse_block_groups_bounded_native_reads_and_duplicate_in
 
 @pytest.mark.parametrize('language',['zh-cn','en'])
 @pytest.mark.parametrize('fault',['not-gdf','no-active','none','empty-geometry','multipoint','line','polygon','z','m','nonfinite','duplicate','value-column','status-column','geometry-column','point-crs','other-crs','raster-crs','grid-missing','grid-singular','grid-nonfinite','band-zero','band-high','band-bool','band-string','band-null','band-float','alpha','complex','complex-alpha'])
-def test_sample_points_exact_bilingual_admission_no_mutation_or_private_result(tmp_path,monkeypatch,language,fault):
+@pytest.mark.parametrize('method',['cell','bilinear'])
+def test_sample_points_exact_bilingual_admission_no_mutation_or_private_result(tmp_path,monkeypatch,language,fault,method):
     import pandas as pd,geopandas as gpd,operators.raster_compute as c
     from shapely import from_wkt
     from shapely.geometry import Point,MultiPoint,LineString,Polygon
@@ -18741,21 +18742,23 @@ def test_sample_points_exact_bilingual_admission_no_mutation_or_private_result(t
     else:
         code='complex';ds=gdal.GetDriverByName('MEM').Create('',2,2,0);ds.SetGeoTransform((0,1,0,1,0,-1));ds.SetProjection(points.crs.to_wkt());ds.AddBand(gdal.GDT_CFloat64 if fault=='complex'else gdal.GDT_Float64);ds.AddBand(gdal.GDT_CFloat64);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
     original=points.copy(deep=True);monkeypatch.setattr(c,'_open',lambda token:ds);monkeypatch.setattr(c,'_blocks',lambda *a,**kw:pytest.fail('read before admission'))
-    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:c.raster_sample_points(object(),points,band)
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:c.raster_sample_points(object(),points,band,method)
     assert str(error.value)==c._SAMPLE_POINTS_MESSAGES[code][language=='en'];pd.testing.assert_frame_equal(points,original,check_exact=True)
 
 
 @pytest.mark.parametrize('grid',[(0.,1e-200,0.,0.,0.,1e-200),(0.,1e200,0.,0.,0.,1e200)])
-def test_sample_points_exact_affine_does_not_depend_on_float_determinant_range(monkeypatch,grid):
+@pytest.mark.parametrize('method',['cell','bilinear'])
+def test_sample_points_exact_affine_does_not_depend_on_float_determinant_range(monkeypatch,grid,method):
     import operators.raster_compute as c
     points=_sampling_points([(grid[1]/2,grid[5]/2)]);ds=gdal.GetDriverByName('MEM').Create('',1,1,1,gdal.GDT_Float64);ds.SetGeoTransform(grid);ds.SetProjection(points.crs.to_wkt());ds.GetRasterBand(1).Fill(7)
     monkeypatch.setattr(c,'_open',lambda token:ds)
-    assert c.raster_sample_points(object(),points,1).sample_value.tolist()==[7.]
+    assert c.raster_sample_points(object(),points,1,method).sample_value.tolist()==[7.]
 
 
 @pytest.mark.parametrize('case',['direct','nodata','outside','empty','band','collision','numeric','read-failure','save-existing'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_sample_points_async_geopackage_complete_properties_status_language_and_cleanup(tmp_path,monkeypatch,case,language):
+@pytest.mark.parametrize('method',['cell','bilinear'])
+def test_sample_points_async_geopackage_complete_properties_status_language_and_cleanup(tmp_path,monkeypatch,case,language,method):
     import pandas as pd,geopandas as gpd,api_server,workflow_engine,operators.raster_compute as c
     values=np.array([[0.,-2.,-9999.],[3.,4.,5.]]);source=create_raster(tmp_path/'source.tif',values,(0,1,0,2,0,-1),'EPSG:3857');before=source.read_bytes();target=tmp_path/'samples.gpkg';prior=tmp_path/'prior.gpkg';prior.write_bytes(b'previous unchanged')
     if case=='numeric':
@@ -18764,11 +18767,12 @@ def test_sample_points_async_geopackage_complete_properties_status_language_and_
     if case=='nodata':coordinates=[(2.5,1.5)]
     if case=='outside':coordinates=[(3.,1.5)]
     if case=='empty':coordinates=[]
+    if method=='bilinear'and case=='direct':coordinates=[(1.,1.),(.5,1.5),(2.5,1.5),(3.,1.5),(.25,1.5)]
     points=_sampling_points(coordinates,3857);properties=[{'row_id':i,'label':'保留'+str(i),**({'sample_status':'old'}if case=='collision'else{})}for i in range(len(points))]
     if case=='save-existing':target.write_bytes(b'existing target')
     tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
         {'id':'points','operator':'load_from_wkt','depends_on':[],'params':{'wkt_list':[g.wkt for g in points.geometry],'properties':properties,'crs':'EPSG:3857'}},
-        {'id':'sample','operator':'raster_sample_points','depends_on':['source','points'],'params':{'input_raster':{'$ref':'source'},'input_gdf':{'$ref':'points'},'band':99 if case=='band'else 1}},
+        {'id':'sample','operator':'raster_sample_points','depends_on':['source','points'],'params':{'input_raster':{'$ref':'source'},'input_gdf':{'$ref':'points'},'band':99 if case=='band'else 1,'method':method}},
         {'id':'save','operator':'save','depends_on':['sample'],'params':{'input_df':{'$ref':'sample'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}]
     workspaces=[];original=workflow_engine._execute_operator
     def track(name,params):
@@ -18788,10 +18792,10 @@ def test_sample_points_async_geopackage_complete_properties_status_language_and_
     assert workspaces and all(not p.exists()for p in workspaces)and source.read_bytes()==before and prior.read_bytes()==b'previous unchanged'
     if success:
         saved=gpd.read_file(target);assert len(saved)==len(points)and saved.crs.to_epsg()==3857 and target.stat().st_size>0
-        assert saved.sample_status.tolist()==({'direct':['ok','ok','nodata','outside'],'nodata':['nodata'],'outside':['outside'],'empty':[]}[case])
+        assert saved.sample_status.tolist()==({'direct':(['ok','ok','nodata','outside','nodata']if method=='bilinear'else['ok','ok','nodata','outside']),'nodata':['nodata'],'outside':['outside'],'empty':[]}[case])
         for i,row in saved.iterrows():
             assert row.geometry.equals_exact(points.geometry.iloc[i],0)and row.row_id==i and row.label=='保留'+str(i)
-            assert pd.isna(row.sample_value)if row.sample_status!='ok'else row.sample_value==values[0,i]
+            assert pd.isna(row.sample_value)if row.sample_status!='ok'else row.sample_value==([1.25,0.][i]if method=='bilinear'and case=='direct'else values[0,i])
         ds=ogr.Open(str(target));fields=ds.GetLayer(0).GetLayerDefn();assert fields.GetFieldDefn(fields.GetFieldIndex('sample_value')).GetType()==ogr.OFTReal and fields.GetFieldDefn(fields.GetFieldIndex('sample_status')).GetType()==ogr.OFTString;ds=None
         preview=json.loads(status['all_results']['sample']);assert len(preview['features'])==len(points)
         for feature,row in zip(preview['features'],saved.itertuples()):
@@ -18806,7 +18810,8 @@ def test_sample_points_async_geopackage_complete_properties_status_language_and_
 
 
 @pytest.mark.parametrize('stage',['groups','read','output'])
-def test_sample_points_kernel_failures_preserve_inputs_previous_results_and_workspace(tmp_path,monkeypatch,stage):
+@pytest.mark.parametrize('method',['cell','bilinear'])
+def test_sample_points_kernel_failures_preserve_inputs_previous_results_and_workspace(tmp_path,monkeypatch,stage,method):
     import pandas as pd,operators.raster_compute as c
     points=_sampling_points([(.5,.5)]);original=points.copy(deep=True);source=create_raster(tmp_path/'input.tif',np.ones((2,2)),(0,1,0,1,0,-1));before=source.read_bytes();previous=tmp_path/'previous.gpkg';previous.write_bytes(b'old original result')
     def fail(*a,**kw):raise RuntimeError('injected sampling '+stage)
@@ -18815,7 +18820,156 @@ def test_sample_points_kernel_failures_preserve_inputs_previous_results_and_work
         with monkeypatch.context()as patch:
             if stage=='output':patch.setattr(c.pd,'array',fail)
             else:patch.setattr(c,'_sample_point_groups'if stage=='groups'else'_blocks',fail)
-            with pytest.raises(RuntimeError,match='injected sampling '+stage):c.raster_sample_points(loaded,points,1)
+            with pytest.raises(RuntimeError,match='injected sampling '+stage):c.raster_sample_points(loaded,points,1,method)
         assert set(loaded.workspace.iterdir())==prior
     assert source.read_bytes()==before and previous.read_bytes()==b'old original result'
     pd.testing.assert_frame_equal(points,original,check_exact=True)
+
+
+# Independent centre-cell parallelogram area oracle, not the product inverse/support.
+def _bilinear_point_oracle(point,values,valid,grid):
+    from decimal import Decimal,localcontext
+    from fractions import Fraction as Q
+    height,width=values.shape
+    if _sample_cell_oracle(point,grid,width,height)is None:return None,'outside'
+    with localcontext()as context:
+        context.prec=5000;D=Decimal.from_float;g=list(map(D,grid));p=(D(point.x),D(point.y))
+        def center(col,row):
+            col,row=Decimal(col)+Decimal('.5'),Decimal(row)+Decimal('.5')
+            return(g[0]+g[1]*col+g[2]*row,g[3]+g[4]*col+g[5]*row)
+        def subtract(a,b):return(a[0]-b[0],a[1]-b[1])
+        def cross(a,b):return a[0]*b[1]-a[1]*b[0]
+        for row in range(-1,height):
+            for col in range(-1,width):
+                origin=center(col,row);east=subtract(center(col+1,row),origin);south=subtract(center(col,row+1),origin);offset=subtract(p,origin)
+                area=Q(cross(east,south));u,v=Q(cross(offset,south))/area,Q(cross(east,offset))/area
+                if not(0<=u<1 and 0<=v<1):continue
+                support=[(row+j,col+i,a*b)for j,b in enumerate((1-v,v))for i,a in enumerate((1-u,u))if a*b>0]
+                if any(not(0<=r<height and 0<=c<width)or not valid[r,c]for r,c,w in support):return None,'nodata'
+                return float(sum(Q(float(values[r,c]))*w for r,c,w in support)),'ok'
+    raise AssertionError('independent centre support is missing')
+
+@pytest.mark.parametrize('grid',[(0.,2.,0.,12.,0.,-3.),(100.,-2.,0.,200.,0.,3.),(100.,2.,.5,200.,.25,-3.),(0.,0.,2.,0.,3.,0.),(110.,.125,0.,40.,0.,-.25),(1e9,.1,.03,1e9,.02,-.1)])
+@pytest.mark.parametrize('crs',[4326,3857])
+def test_sample_points_bilinear_complete_independent_areas_and_original_properties(tmp_path,grid,crs):
+    import pandas as pd,operators.raster_compute as c
+    from fractions import Fraction as Q
+    values=np.arange(20,dtype=float).reshape(4,5)-7;values[1,2]=-9999;valid=values!=-9999
+    source=create_raster(tmp_path/'interpolated.tif',values,grid,'EPSG:'+str(crs));before=source.read_bytes()
+    coordinates=[(float(Q(grid[0])+Q(u)*Q(grid[1])+Q(v)*Q(grid[2])),float(Q(grid[3])+Q(u)*Q(grid[4])+Q(v)*Q(grid[5])))for u,v in ((-.25,1.),(0.,0.),(.25,1.),(.5,.5),(1.,1.),(1.25,1.75),(2.,2.),(3.5,2.5),(4.5,3.5),(4.75,3.5),(5.,2.),(2.,4.))]
+    points=_sampling_points(coordinates,crs);original=points.copy(deep=True)
+    with raster_workspace():result=c.raster_sample_points(raster_load(source_plan(source)),points,1,'bilinear')
+    pd.testing.assert_frame_equal(points,original,check_exact=True);pd.testing.assert_frame_equal(result[points.columns],original,check_exact=True)
+    assert result.geometry.name=='shape'and result.crs==points.crs and result.index.equals(points.index)and result.dtypes.iloc[-2:].astype(str).tolist()==['Float64','string']
+    for i,point in enumerate(points.geometry):
+        value,status=_bilinear_point_oracle(point,values,valid,grid)
+        assert result.sample_status.iloc[i]==status
+        assert pd.isna(result.sample_value.iloc[i])if value is None else result.sample_value.iloc[i]==value
+    assert source.read_bytes()==before
+
+@pytest.mark.parametrize('method',[None,True,0,1.,'','nearest','BILINEAR','linear',[],{}])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_sample_points_bilinear_exact_method_errors_before_open(monkeypatch,method,language):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda *a:pytest.fail('method must reject before open'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_sample_points(object(),_sampling_points([]),1,method)
+    assert str(error.value)==c._SAMPLE_POINTS_MESSAGES['method'][language=='en']
+
+@pytest.mark.parametrize('fault',['nodata','mask','alpha-zero','alpha-nodata','alpha-nan','alpha-negative','alpha-infinity','data-nan'])
+def test_sample_points_bilinear_positive_support_required_zero_support_ignored(monkeypatch,fault):
+    import pandas as pd,operators.raster_compute as c
+    points=_sampling_points([(1.,1.),(1.5,1.5),(.5,.5)]);ds=gdal.GetDriverByName('MEM').Create('',2,2,3,gdal.GDT_Float64);ds.SetGeoTransform((0,1,0,0,0,1));ds.SetProjection(points.crs.to_wkt())
+    ds.GetRasterBand(1).Fill(np.nan);ds.GetRasterBand(1).CreateMaskBand(0);ds.GetRasterBand(1).GetMaskBand().Fill(0)
+    values=np.array([[-2.,0.],[2.,8.]]);alpha=np.full((2,2),128.);mask=np.full((2,2),255,np.uint8)
+    if fault=='nodata':values[0,0]=99.
+    elif fault=='mask':mask[0,0]=0
+    elif fault=='data-nan':values[0,0]=np.nan
+    else:alpha[0,0]={'alpha-zero':0.,'alpha-nodata':99.,'alpha-nan':np.nan,'alpha-negative':-1.,'alpha-infinity':np.inf}[fault]
+    ds.GetRasterBand(2).SetNoDataValue(99.);ds.GetRasterBand(2).WriteArray(values);ds.GetRasterBand(2).CreateMaskBand(0);ds.GetRasterBand(2).GetMaskBand().WriteArray(mask)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(3).SetNoDataValue(99.);ds.GetRasterBand(3).WriteArray(alpha)
+    monkeypatch.setattr(c,'_open',lambda _:ds)
+    result=c.raster_sample_points(object(),points,2,'bilinear')
+    assert result.sample_status.tolist()==['nodata','ok','nodata']and result.sample_value.isna().tolist()==[True,False,True]and result.sample_value.iloc[1]==8.
+
+@pytest.mark.parametrize('shape',[(1,1),(1,3),(3,1)])
+def test_sample_points_bilinear_thin_grids_no_extrapolation_or_unneeded_reads(tmp_path,monkeypatch,shape):
+    import operators.raster_compute as c
+    source=create_raster(tmp_path/'thin.tif',np.arange(shape[0]*shape[1],dtype=float).reshape(shape),(0,1,0,0,0,1));coords=[(.5,.5),(.25,.5),(.5,.25),(0.,0.),(float(shape[1]),.5)]
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));result=c.raster_sample_points(loaded,_sampling_points(coords),1,'bilinear')
+        assert result.sample_status.tolist()==['ok','nodata','nodata','nodata','outside']and result.sample_value.iloc[0]==0.
+        monkeypatch.setattr(c,'_blocks',lambda *a,**k:pytest.fail('no valid support may read'))
+        for points in (_sampling_points([]),_sampling_points(coords[1:])):
+            result=c.raster_sample_points(loaded,points,1,'bilinear');assert result.sample_value.isna().all()
+
+
+def test_sample_points_bilinear_cross_blocks_one_native_read_per_required_block(tmp_path,monkeypatch):
+    import operators.raster_compute as c
+    y,x=np.indices((515,1030));values=x+2.*y;source=create_raster(tmp_path/'blocks.tif',np.stack([np.full(values.shape,np.nan),values]),(0,1,0,0,0,1));before=source.read_bytes()
+    coords=[(512.,512.),(512.5,512.5),(1024.,512.75),(.5,.5),(512.,512.),(1029.5,514.5),(-1.,0.)];calls=[];blocks=c._blocks
+    def observe(ds,indices,**kw):
+        assert indices==[2]and kw['native']is True;calls.append(kw['window'])
+        for block in blocks(ds,indices,**kw):assert max(block[2][0].shape)<=512;yield block
+    monkeypatch.setattr(c,'_blocks',observe)
+    with raster_workspace():result=c.raster_sample_points(raster_load(source_plan(source)),_sampling_points(coords),2,'bilinear')
+    assert calls==[(0,0,512,512),(0,512,512,3),(512,0,512,512),(512,512,512,3),(1024,512,6,3)]
+    assert result.sample_value.iloc[:-1].tolist()==[u-.5+2*(v-.5)for u,v in coords[:-1]]and result.sample_status.iloc[-1]=='outside'and source.read_bytes()==before
+
+@pytest.mark.parametrize('dtype,nodata',[(gdal.GDT_Int64,2**63-1),(gdal.GDT_UInt64,2**64-1)])
+@pytest.mark.parametrize('fault',['valid','inexact','missing','zero-support'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_sample_points_bilinear_native_integer_nodata_precision_and_validity_precedence(monkeypatch,dtype,nodata,fault,language):
+    import operators.raster_compute as c
+    ds=gdal.GetDriverByName('MEM').Create('',2,2,1,dtype);ds.SetGeoTransform((0,1,0,0,0,1));points=_sampling_points([(1.,1.)]);ds.SetProjection(points.crs.to_wkt())
+    values=np.array([[2**53,2**53+2],[0,8]],dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64)
+    if fault in ('inexact','missing','zero-support'):values[0,0]=2**53+1
+    if fault=='missing':values[0,1]=nodata
+    if fault=='zero-support':points=_sampling_points([(1.5,1.5)])
+    band=ds.GetRasterBand(1);band.WriteArray(values);(band.SetNoDataValueAsInt64 if dtype==gdal.GDT_Int64 else band.SetNoDataValueAsUInt64)(nodata);band=None
+    monkeypatch.setattr(c,'_open',lambda _:ds)
+    with raster_error_language(language):
+        if fault=='inexact':
+            with pytest.raises(ValueError)as error:c.raster_sample_points(object(),points,1,'bilinear')
+            assert str(error.value)==c._SAMPLE_POINTS_MESSAGES['numeric'][language=='en']
+        else:
+            result=c.raster_sample_points(object(),points,1,'bilinear')
+            if fault=='missing':assert result.sample_status.tolist()==['nodata']and result.sample_value.isna().all()
+            else:assert result.sample_status.tolist()==['ok']and result.sample_value.iloc[0]==(float(2**52+2.5)if fault=='valid'else 8.)
+
+@pytest.mark.parametrize('case',['maximum','cancellation','residual','underflow','missing-support'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_sample_points_bilinear_exact_accumulation_no_intermediate_overflow_or_false_zero(tmp_path,case,language):
+    import operators.raster_compute as c
+    maximum=np.finfo(float).max;tiny=math.ldexp(1.,-1000);smallest=np.nextafter(0.,1.)
+    values={'maximum':[[maximum,maximum],[maximum,maximum]],'cancellation':[[maximum,-maximum],[-maximum,maximum]],'residual':[[maximum,tiny],[-maximum,tiny]],'underflow':[[smallest,0.],[0.,0.]],'missing-support':[[smallest,0.],[0.,-9999.]]}[case]
+    source=create_raster(tmp_path/'range.tif',np.array(values),(0,1,0,0,0,1));before=source.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        loaded=raster_load(source_plan(source));prior=set(loaded.workspace.iterdir())
+        if case=='underflow':
+            with pytest.raises(ValueError)as error:c.raster_sample_points(loaded,_sampling_points([(1.,1.)]),1,'bilinear')
+            assert str(error.value)==c._SAMPLE_POINTS_MESSAGES['result'][language=='en']
+        else:
+            result=c.raster_sample_points(loaded,_sampling_points([(1.,1.)]),1,'bilinear')
+            if case=='missing-support':assert result.sample_status.tolist()==['nodata']and result.sample_value.isna().all()
+            else:assert result.sample_status.tolist()==['ok']and result.sample_value.iloc[0]=={'maximum':maximum,'cancellation':0.,'residual':tiny/2}[case]
+        assert set(loaded.workspace.iterdir())==prior
+    assert source.read_bytes()==before
+
+
+def test_sample_points_bilinear_empty_and_cell_default_signed_zero_and_original_schema(tmp_path):
+    import pandas as pd,operators.raster_compute as c
+    values=np.array([[-0.,1.],[2.,3.]]);source=create_raster(tmp_path/'original.tif',values,(0,1,0,0,0,1));points=_sampling_points([(.5,.5)])
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));old=c.raster_sample_points(loaded,points,1);explicit=c.raster_sample_points(loaded,points,1,'cell')
+        pd.testing.assert_frame_equal(old,explicit,check_exact=True);assert np.signbit(old.sample_value.iloc[0])
+        empty=c.raster_sample_points(loaded,_sampling_points([]),1,'bilinear');assert empty.empty and empty.dtypes.iloc[-2:].astype(str).tolist()==['Float64','string']
+
+
+def test_sample_points_bilinear_adjacent_center_float_support_has_no_epsilon(tmp_path):
+    import operators.raster_compute as c
+    values=np.full((3,3),-9999.);values[1,1]=7.
+    source=create_raster(tmp_path/'adjacent.tif',values,(0,1,0,0,0,1))
+    coordinates=[(1.5,1.5),(math.nextafter(1.5,0.),1.5),(math.nextafter(1.5,math.inf),1.5),(1.5,math.nextafter(1.5,0.)),(1.5,math.nextafter(1.5,math.inf)),(0.,1.5),(math.nextafter(0.,-math.inf),1.5),(3.,1.5)]
+    with raster_workspace():result=c.raster_sample_points(raster_load(source_plan(source)),_sampling_points(coordinates),1,'bilinear')
+    assert result.sample_status.tolist()==['ok','nodata','nodata','nodata','nodata','nodata','outside','outside']
+    assert result.sample_value.iloc[0]==7. and result.sample_value.iloc[1:].isna().all()
