@@ -53,9 +53,24 @@ def test_netcdf4_composition_and_raw_windows(nc4_tools,tmp_path,monkeypatch,kind
     assert path.read_bytes()==original
 
 
+@pytest.mark.parametrize('mode',['backref_i32le','backref_i32be','backref_u32le','backref_u32be'])
+def test_netcdf4_reverse_reference_integer_encoding(nc4_tools,tmp_path,monkeypatch,mode):
+    from operators import _native_process
+    path=nc4_source(nc4_tools,tmp_path)
+    _native_process.run([str(nc4_tools/'fixture'),mode,str(path)],capture_output=True,text=True,check=True,timeout=30)
+    checked=_native_process.run([str(nc4_tools/'preflight'),str(path)],capture_output=True,text=True,timeout=30)
+    assert checked.returncode==0,checked.stderr
+    monkeypatch.setenv('GEOPYTHON_NETCDF_PREFLIGHT_BIN',str(nc4_tools/'preflight'))
+    plan=source_plan(path,'netcdf');info=netcdf.inspect(plan)
+    result=netcdf.read_slice(plan,info['format_info']['source_version'],dict(variable='/temperature',indices=[0],x=0,y=0,width=4,height=3))
+    assert result['values']==[['0','1','2','3'],['4','5','-9999','7'],['8','9','10','11']]
+    assert result['valid']==[[True]*4,[True,True,False,True],[True]*4]
+
+
 @pytest.mark.parametrize('mode',['external_link','soft_link','alias','group','reference_attr','external_raw','virtual',
     'unknown_filter','oversized_chunk','missing_dimensions','missing_backrefs','wrong_dimid','dangling_dimension',
-    'vlen_text_attribute','oversized_attribute','compound','enum','vlen','multiple_scales','wrong_backref','duplicate_backrefs'])
+    'vlen_text_attribute','oversized_attribute','compound','enum','vlen','multiple_scales','wrong_backref','duplicate_backrefs',
+    'backref_negative','backref_overflow','backref_i64','backref_float'])
 def test_netcdf4_rejects_incomplete_composition_before_gdal(nc4_tools,tmp_path,monkeypatch,mode):
     from operators import _native_process
     path=nc4_source(nc4_tools,tmp_path)

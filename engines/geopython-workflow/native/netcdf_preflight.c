@@ -27,7 +27,7 @@ typedef struct {
     unsigned char backrefs[MAX_OBJECTS][MAX_RANK];
 } Object;
 
-typedef struct { hobj_ref_t dataset; unsigned dimension; } Backref;
+typedef struct { hobj_ref_t dataset; int64_t dimension; } Backref;
 static Object objects[MAX_OBJECTS];
 static int count;
 static unsigned long file_number;
@@ -84,7 +84,8 @@ static herr_t attribute_cb(hid_t owner, const char *name, const H5A_info_t *unus
         REQUIRE(H5Tget_member_index(t,"dataset")==0 && H5Tget_member_index(t,"dimension")==1,
             "invalid reverse reference members");
         hid_t ref=H5Tget_member_type(t,0), axis=H5Tget_member_type(t,1);
-        int valid=ref>=0 && axis>=0 && H5Tequal(ref,H5T_STD_REF_OBJ)>0 && numeric_type(axis)==NC_UINT;
+        int axis_type=axis>=0 ? numeric_type(axis) : 0;
+        int valid=ref>=0 && H5Tequal(ref,H5T_STD_REF_OBJ)>0 && (axis_type==NC_INT || axis_type==NC_UINT);
         if(ref>=0)H5Tclose(ref);
         if(axis>=0)H5Tclose(axis);
         REQUIRE(valid,"unsupported reverse reference types");
@@ -189,12 +190,12 @@ static int references(hid_t file,int index) {
         REQUIRE(attribute_shape(a,&rank,&n)==0,"reverse reference shape unavailable");
         hid_t memory=H5Tcreate(H5T_COMPOUND,sizeof(Backref));
         REQUIRE(memory>=0 && H5Tinsert(memory,"dataset",HOFFSET(Backref,dataset),H5T_STD_REF_OBJ)>=0 &&
-            H5Tinsert(memory,"dimension",HOFFSET(Backref,dimension),H5T_NATIVE_UINT)>=0,"reference memory layout failed");
+            H5Tinsert(memory,"dimension",HOFFSET(Backref,dimension),H5T_NATIVE_INT64)>=0,"reference memory layout failed");
         Backref *refs=calloc((size_t)n,sizeof(*refs));REQUIRE(refs,"reference allocation failed");
         REQUIRE(H5Aread(a,memory,refs)>=0,"reverse references cannot be read");
         for(hssize_t i=0;i<n;i++) {
-            int dest=target(d,&refs[i].dataset);unsigned axis=refs[i].dimension;
-            REQUIRE(dest>=0 && axis<(unsigned)objects[dest].rank && !o->backrefs[dest][axis],"invalid or duplicate reverse reference");
+            int dest=target(d,&refs[i].dataset);int64_t axis=refs[i].dimension;
+            REQUIRE(dest>=0 && axis>=0 && axis<objects[dest].rank && !o->backrefs[dest][axis],"invalid or duplicate reverse reference");
             o->backrefs[dest][axis]=1;
         }
         free(refs);H5Tclose(memory);H5Aclose(a);

@@ -103,6 +103,29 @@ int main(int argc,char **argv) {
         if(!strcmp(mode,"wrong_backref")) {refs[0].dimension=1;a=H5Aopen(d,"REFERENCE_LIST",H5P_DEFAULT);}
         else {refs[1]=refs[0];OK(H5Adelete(d,"REFERENCE_LIST"));hsize_t n=2;hid_t s=H5Screate_simple(1,&n,NULL);a=H5Acreate2(d,"REFERENCE_LIST",t,s,H5P_DEFAULT,H5P_DEFAULT);H5Sclose(s);}
         OK(a);OK(H5Awrite(a,t,refs));H5Aclose(a);H5Tclose(t);H5Dclose(d);
+    } else if(!strncmp(mode,"backref_",8)) {
+        /* Explicit on-disk types exercise the same semantic reader on every host. */
+        typedef struct {hobj_ref_t dataset;long long dimension;} Ref;
+        hid_t stored_axis;
+        if(!strcmp(mode,"backref_i32le") || !strcmp(mode,"backref_negative"))stored_axis=H5T_STD_I32LE;
+        else if(!strcmp(mode,"backref_i32be"))stored_axis=H5T_STD_I32BE;
+        else if(!strcmp(mode,"backref_u32le") || !strcmp(mode,"backref_overflow"))stored_axis=H5T_STD_U32LE;
+        else if(!strcmp(mode,"backref_u32be"))stored_axis=H5T_STD_U32BE;
+        else if(!strcmp(mode,"backref_i64"))stored_axis=H5T_STD_I64LE;
+        else if(!strcmp(mode,"backref_float"))stored_axis=H5T_IEEE_F32LE;
+        else return 2;
+        hid_t d=H5Dopen2(f,"x",H5P_DEFAULT),a=H5Aopen(d,"REFERENCE_LIST",H5P_DEFAULT);
+        hid_t memory=H5Tcreate(H5T_COMPOUND,sizeof(Ref)),stored=H5Tcreate(H5T_COMPOUND,sizeof(Ref));OK(a);
+        OK(H5Tinsert(memory,"dataset",HOFFSET(Ref,dataset),H5T_STD_REF_OBJ));
+        OK(H5Tinsert(memory,"dimension",HOFFSET(Ref,dimension),H5T_NATIVE_LLONG));
+        OK(H5Tinsert(stored,"dataset",HOFFSET(Ref,dataset),H5T_STD_REF_OBJ));
+        OK(H5Tinsert(stored,"dimension",HOFFSET(Ref,dimension),stored_axis));
+        Ref value;OK(H5Aread(a,memory,&value));H5Aclose(a);
+        if(!strcmp(mode,"backref_negative"))value.dimension=-1;
+        if(!strcmp(mode,"backref_overflow"))value.dimension=4294967295LL;
+        OK(H5Adelete(d,"REFERENCE_LIST"));hsize_t n=1;hid_t space=H5Screate_simple(1,&n,NULL);
+        a=H5Acreate2(d,"REFERENCE_LIST",stored,space,H5P_DEFAULT,H5P_DEFAULT);OK(a);
+        OK(H5Awrite(a,memory,&value));H5Aclose(a);H5Sclose(space);H5Tclose(stored);H5Tclose(memory);H5Dclose(d);
     } else if(!strcmp(mode,"missing_dimensions")) {
         hid_t d=H5Dopen2(f,"temperature",H5P_DEFAULT);OK(d);OK(H5Adelete(d,"DIMENSION_LIST"));H5Dclose(d);
     } else if(!strcmp(mode,"missing_backrefs")) {

@@ -804,6 +804,10 @@ jobs:
           addp_gdal_native_environment
           addp_prepare_gdal_arrow_dependencies "$ROOT_DIR/engines/geopython-workflow" "GeoPython CI" "$ROOT_DIR/common-python"
 
+      - name: Run NetCDF native composition regression
+        if: steps.selection.outputs.run == 'true'
+        run: make test-geopython-workflow GEOPYTHON_WORKFLOW_TEST_ARGS='-k netcdf --tb=short'
+
       - name: Run GeoPython GDAL tests
         if: steps.selection.outputs.run == 'true'
         run: make test-geopython-workflow
