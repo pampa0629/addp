@@ -260,7 +260,9 @@ Develop 路径沿[产物自动扫描的执行归属](../docs/spec/tasks/生产�
 
 #### Transfer 首次产出与结构审批
 
-PG 成功产出限定基础识别使用 `POST /runtime/transfer-productions/:execution_id/basic-scan`，仅固定 `addp-transfer` Tenant Service 与现有扫描执行权限；不接收正文、目标或主体。Meta 用自身 `addp-meta` 和统一 `TransferClient` 反查 v3 成功产出，仅允许已证明创建提交、非重试首次执行和完整人类来源的精确 PG 表，复用同一范围解析与扫描 Worker。原 `/scan/run/manual` 仍要求 running 父任务；新适配器独立绑定可信历史人类和直接父 UUID，不复制执行授权。并发请求通过同租户原执行锁恢复唯一子扫描；已排队或已结束扫描只恢复原状态，不复活失败执行。`TRANSFER_URL` 是既有部署地址，仅作运行时软依赖，不增加 Ready 前置；无正文、私有回执或凭据投影到响应。Go T1 和 `make test-meta-postgres` 覆盖精确范围、归属、并发去重与恢复；PG 普通表的新建成果基础补扫、初始授权及实际读取／撤权已通过 Hosted T4，限定范围见[验收证据索引](../docs/spec/testing/验收证据索引.md)，不外推其他产出入口或引擎。
+PG 成功产出限定基础识别的固定服务身份、回执权限、首次新建准入与精确目标统一见[初始使用权契约](../docs/spec/addp授权上下文规范.md#558-任务产出数据与初始使用权)，与普通运行中产物扫描的区别见[生产来源专题](../docs/spec/tasks/生产来源与产物扫描.md#首次-pg-成功产出补扫)。原目标及主体的私有冻结沿[冻结与投影契约](../docs/spec/addp元数据扫描机制规范.md#首次-pg-产出补扫的冻结与投影)，不把来源或投影当作授权。Meta 并发请求通过同租户原执行锁恢复唯一子扫描；已排队或已结束扫描只恢复原状态，不复活失败执行。`TRANSFER_URL` 是既有部署地址，仅作运行时软依赖，不增加 Ready 前置；无正文、私有回执或凭据投影到响应。
+
+Go T1 和 `make test-meta-postgres` 覆盖精确范围、归属、并发去重与恢复；PG 普通表的新建成果基础补扫、初始授权及实际读取／撤权的 Hosted T4 结果按[固定版本证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#pg-dataitem-源授权与-transfer-新成果初始授权--hosted-t4)认定。事实投影专项与完整链路分别验收，不外推其他产出入口、引擎或全部事实接口，标准分工见[专项验证入口](#专项验证入口)。
 
 Transfer 已应用结构审批补扫的入口、审批人、claim、精确目标及与父 execution 互斥的规则统一见[生产来源契约](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)。Meta 只核验 Common 中已保存的审批来源，不跨读 Transfer 私表；审批关联在进度与收尾写入时保留，私有来源不进入专业诊断。
 

@@ -150,13 +150,15 @@ System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/r
 
 #### 首次 PG 产出补扫的冻结与投影
 
+成功回执的访问身份、首次新建资格与限定补扫准入统一见[初始使用权契约](addp授权上下文规范.md#558-任务产出数据与初始使用权)，与普通运行中产物扫描的来源分工见[生产来源专题](tasks/生产来源与产物扫描.md#首次-pg-成功产出补扫)；本节只维护 Meta 私有冻结和事实投影。
+
 - 首次 PG 产出 basic 补扫由唯一私有 `EnsureTransferProductionBasicScan` 适配器冻结 `execution_config.initial_production_target`，值为严格 v3 成功首次创建并提交回执的原始 typed Target。
 - 冻结发生于同一 provenance 创建事务，不增加公开 ScanRequest 字段，不保存完整回执、连接或 Grant，也不从 locator 反推。
 - 原直接父 UUID 与 metadata.initial_production_execution_id 一致，创建时 Child Actor 三元组逐项复制并核对真实 UserOrigin。
 - 事实投影在同一原执行快照中核验 ad-hoc、manual/basic/force、Transfer 来源、同一 PG 普通表叶、唯一 locator 与原 typed Target 经共享转换严格相等及其余 selector 互斥；缺失或矛盾返回 incomplete/null，不降为 whole。
 - 原始 typed 目标自然纳入 execution_plan_digest，名字不规范化。
 - 已有冻结版本、任务摘要或读取选项不可用的 409 规则保持。
-- 该投影仍不是 Allow，System 必须独立核对统一执行与 Transfer 的当前可信生产事实，包括同 Tenant、成功、首次 attempt、非 retry、实际创建提交、原目标和完整人类来源；Meta GET 不回源或补查生产服务。
+- 该投影仍不是 Allow，System 按上述初始使用权契约独立核对统一执行与 Transfer 的当前可信生产事实，不由投影替代首次新建与成功提交资格裁决；Meta GET 不回源或补查生产服务。
 
 #### 计划事实与授权裁决
 
@@ -166,7 +168,7 @@ System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/r
 
 #### 计划事实验证与验收边界
 
-事实投影及 PostgreSQL 专项的标准入口、隔离要求与覆盖范围统一见[Meta 专项验证入口](../../meta/CLAUDE.md#专项验证入口)；真实身份、源枚举、取消及失败清理沿[PG basic 集中扫描场景](testing/scenarios/授权与共享.md#pg-basic-集中扫描本轮真实验收待运行)。首次产出事实的来源与补扫职责见[生产来源规范](tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)。接口、字段投影或确定性门禁通过不代表授权签发、Worker 实际读取、目标部署迁移或跨服务 T4 已通过；当前完成范围见[实施范围与验证](addp授权上下文规范.md#九实施范围与验证)，旧批准的固定版本、失败、清理与未覆盖项保留在[历史采集资格导读](testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)，不用于追认新规则通过。
+事实投影及 PostgreSQL 专项的标准入口、隔离要求与覆盖范围统一见[Meta 专项验证入口](../../meta/CLAUDE.md#专项验证入口)；真实身份、源枚举、取消及失败清理沿[PG basic 集中扫描场景](testing/scenarios/授权与共享.md#pg-basic-集中扫描本轮真实验收待运行)。首次产出事实的来源与补扫职责见[生产来源规范](tasks/生产来源与产物扫描.md#首次-pg-成功产出补扫)。接口、字段投影或确定性门禁通过不代表授权签发、Worker 实际读取、目标部署迁移或跨服务 T4 已通过；当前完成范围见[实施范围与验证](addp授权上下文规范.md#九实施范围与验证)，旧批准的固定版本、失败、清理与未覆盖项保留在[历史采集资格导读](testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)，不用于追认新规则通过。
 
 ### 对象目录归属不变量
 
