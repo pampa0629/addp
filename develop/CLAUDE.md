@@ -26,6 +26,8 @@ Spark Workflow 的加载资源选择器还支持 Elasticsearch `index` locator�
 
 ## 关键架构
 
+专题导航：[查询与预检](#查询工作台与预检)、[查询保护](#查询保护与结果交付)、[关系写入](#固定目标写入契约)、[全量导出](#查询全量导出)、[执行监督](#执行输出与运行监督)、[Copilot](#copilot-范围与资源事实)、[执行授权](#执行授权与效果)。
+
 ### 统一执行架构
 
 ```
@@ -122,6 +124,8 @@ Develop 在模块定义中声明 TaskProvider 角色，发布 `query`、`workflo
 
 具体任务详情必须返回任务级 `execution_contract`。工作流契约根据当前保存的 workflow definition 和目标运行时算子动态生成：未被内部连线占用的公开参数默认可覆盖，内部 `$ref` 连线、DAG 和 Runtime/Adapter 派生参数不得暴露；保存算子只声明可持久化的 ResourceLocator 稳定输出。查询契约根据 `content.query_parameters[]` 动态生成，每个参数只保存 `name + type + default? + description?`；参数定义必须与 SQL `:name`、Cypher `$name`、MQL `{\"$param\":\"name\"}` 或 PostgreSQL 裸关系名引用完全一致。所有类型的 `default` 都是可选字段；缺少默认值的参数统一由 `input_schema.required` 声明为执行必填，有默认值的参数进入 `input_defaults`，本次执行或 Orchestrator 均可覆盖。参数分组按稳定 DAG 拓扑顺序声明 `input_ui_schema.order`，查询参数按定义数组顺序声明字段 `order`。资源参数展示统一消费共享资源树 selection：摘要展示引擎实例名称、引擎原生路径和本地化资源类型，geometry 字段由资源空间事实自动回填，单字段直接确定、多字段使用选择控件，不提供自由文本输入。手动执行和 Orchestrator 调用都只提交本次 `parameters` 部分覆盖，未提交字段使用任务保存值，且不得改写任务定义。`script` 当前返回空的闭合输入/输出契约。
 
+TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一只接受 Bearer Service Access Token 和 canonical AuthContext。TaskProvider 固定由 `addp-orchestrator` 调用，Asset 发现固定由 `addp-asset` 调用；两者还要校验各自精确 Permission。代表用户创建或继续执行任务时必须引用由原 User AuthContext 派生、绑定唯一 execution 的 Execution Authorization；内部调用不能凭 Service Principal 自身权限伪造 User、Tenant、`triggered_by` 或数据访问能力。旧 `/api/v1/develop/internal`、`X-Internal-API-Key` 和 `X-Tenant-ID` 已删除，不保留双轨。
+
 ### 前端任务路由
 
 工作流编辑器的引擎展示顺序为 GeoPython、Model3D、PointCloud、SuperMap、Spark、Document；其他扩展类型排在其后，同类型实例保留发现顺序。新建工作流默认选择此顺序中第一个可用实例，优先 GeoPython；编辑已有任务保留其保存的引擎绑定，刷新候选列表不改绑。
@@ -130,7 +134,11 @@ Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规�
 
 Develop 独立访问根路径或登录后未指定回跳地址时，在 AuthContext 加载后按侧栏顺序选择第一个有权进入的页面：`/sql`、`/notebook`、`/workflow`、`/tasks`。页面准入复用 Console 权限映射；均不可访问时进入 `/forbidden`。显式业务地址仍按原目标独立校验权限。
 
+Develop 前端不提供模块级执行列表。`/develop/tasks` 和 Notebook 工作区使用 `MonitorExecutionsButton(module=develop)` 进入统一 Monitor，并按 `task_type`、`source_task_id` 收窄范围。`/develop/executions/:execution_id` 仅保留查询、工作流和脚本的领域结果、日志与重试详情，不复制 Monitor 的通用执行列表、统计或筛选器。
+
 查询和工作流编辑器统一使用共享 `useUnsavedChangesGuard`，删除原模块内路由确认与 beforeunload 实现；修改状态仍由编辑器定义。Console 导航与 standalone 导航消费同一共享保护契约。
+
+### 查询工作台与预检
 
 查询工作台固定使用左侧 Meta 技术资源树、右侧编辑器与结果上下分栏。资源树直接消费 Meta resource-tree，不新增 Develop 私有 Engine Catalog API；native query engine 同时是 Runtime Engine 与 Source Engine，因此只展示当前 Engine 的原生路径；声明 `compute.query.federation.supported=true` 的共享 Runtime 不拥有可导航的 Engine Catalog，工作台必须按 `federation.source_engine_types` 过滤并展示当前 Tenant 的 Source Engine 资源树。查询语言、默认语言和结果类型从 `capabilities.compute.query` 读取。即时查询只调用 `POST /api/v1/develop/executions` 创建 `task_type=query`、`source_task_id=null` 的 execution，再按 execution ID 回查结果；不保留 `/develop/execute`。查询任务统一在 `/develop/tasks` 管理，不保留 `/develop/sql-tasks`。
 
@@ -139,6 +147,8 @@ Develop 独立访问根路径或登录后未指定回跳地址时，在 AuthCont
 查询工作台语句诊断统一消费 `POST /api/v1/develop/query-preflight` 返回的 Provider `QueryAnalysis`。前端不得按关键字、正则、通用分词或 Meta 样本字段自行诊断 SQL、MQL、Cypher；`schema_coverage` 为 `sampled` 或 `unknown` 时不得显示“字段不存在”。关系参数编辑态只由 Develop PostgreSQL AST 编译器校验已声明的裸关系参数名、CTE 和作用域结构，覆盖度固定为 `unknown`；执行期 locator 绑定后的真实语义仍由同一 Provider 计划验证。查询编辑器以唯一“查询参数”面板按定义顺序展示全部参数；面板只把裸 `name` 作为唯一参数名，不显示第二套“参数名称”“引用标识”或语言语法字段。`type=relation` 在界面中显示为“数据表”，其余类型显示对应值类型，不再建立“任务输入”“关系输入”“数据输入”“值参数”等平行入口；插入动作按当前查询语言和参数类型生成正确语法。
 
 ES DSL 查询沿用普通 query 执行及 TaskProvider 契约主路径；`POST /query-preflight` 的请求校验与 Swagger 枚举必须包含 `sql`、`mql`、`cypher`、`es_dsl`，预检仍由当前 Engine Provider 判定只读子集。首版不声明参数能力，公共引用分析返回空引用集，空定义形成闭合空输入契约；任何非空参数定义或本次参数覆盖都拒绝，JSON 与受控只读子集仍由 ES Provider 校验。对应回归纳入 `make test-common-elasticsearch-unit` 和既有 Go workspace CI。
+
+### 查询保护与结果交付
 
 Develop 普通查询保护只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `OutputLineage()`，不自行解析 SQL/MQL。当前 Tenant 没有任何本地纳管目标时不读取二者；存在纳管目标但本次 ReadSet 未命中时执行原路径；精确命中后必须用 Provider 实时 source fields 校验 Projection，并在 QueryResult 写 execution metadata、返回 Workbench 或 Notebook Kernel 前执行独立 `query` 规则。identity/direct 输出可遮盖或抑制；受保护字段参与 derived/opaque 输出、结构漂移、规则缺失或 lineage unresolved 时拒绝当前查询。首期字段级执行覆盖 PostgreSQL 直接列/别名/单来源 wildcard 与 MongoDB find/count/distinct；其他查询保持单次请求级 fail-closed，不恢复资源级永久拒绝或 Owner 私有解析旁路。
 
@@ -160,15 +170,25 @@ Backend 与查询执行进程共用的数据库连接必须使用 `common/logger
 
 所选资源的查询模板必须经过一次有界的真实执行才能返回。该验证读取与普通查询共用同一个 `PreparedQuery -> BeginPreparedQuery -> Execute -> protectResult` 路径；受保护资源不得因模板生成而走 `BeginCatalogPath` 的“仅允许未纳管资源”门禁，验证执行也不得绕过字段级保护。
 
+### 固定目标写入契约
+
+Develop 关系查询写入通过执行契约显式配置固定正式表 `target_locator` 与 `write_mode=overwrite|append`。所有输入和输出必须位于同一 PostgreSQL Engine，输出不得同时作为输入。overwrite 在一个事务内锁定目标、删除旧记录并插入完整计算结果；失败或取消回滚该表写入。append 只追加。多个任务分别提交，不保证跨任务、多表同时可见。
+
 保存的 `query` 任务可以声明通用“关系参数 -> 已存在表结果”模式，且参数绑定、查询 Runtime 与目标必须位于同一个显式声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言 Engine；当前包括 PostgreSQL 与 openGauss。任务只在 `content.query_parameters[]` 保存唯一参数定义；关系参数使用 `type=relation`，可在 `default.locator` 保存同一查询 Engine 中已有表的标准 ResourceLocator，不保存其他模块专有 ID；`content.query` 只保存单条只读 `SELECT`，并以未加引号、未限定 schema 的裸参数名引用已声明关系，例如参数 `activities` 写作 `FROM activities`。关系参数名不得与同一作用域的 CTE 重名。TaskProvider 契约把每个关系参数声明为 ResourceLocator 资源输入，没有默认绑定时才要求调用方提供；编排写入另行声明必填 `target_locator`。`input_ui_schema.<参数名>` 使用 `control=resource_tree_picker`，按参数保存顺序暴露独立输入端口，供 Orchestrator 使用任务默认表或分别绑定不同直接上游的稳定 ResourceLocator 输出，不得要求用户手写输出模板。
 
 Query Execution Service 使用 PostgreSQL AST 验证关系作用域，只把与已声明 `type=relation` 参数同名的裸关系节点改写为执行期参数绑定的 locator，生成仅完成关系绑定的 SELECT，并交给声明 table_result 能力的 Provider 冻结计划；Provider 在结构锁保护的事务中执行 `INSERT INTO <target> SELECT ...` 并返回实际字段证据。CTE、子查询和 JOIN 可以使用，但 CTE 与参数重名、未声明参数、未使用声明、真实物理关系、schema 限定关系、表函数数据源、未声明 `relation` 的引擎、非 PostgreSQL 方言查询或跨 Engine 输入必须拒绝。Develop 只使用当前父 execution 派生的精确 Engine `read + write` 授权，不获得 DDL effect；稳定输出为 `execution_id + target_locator + row_count`。Develop 不调用 Model API，不持有 Model Permission。
 
 现有表结果写入不再由 dbbridge 直接拼接或执行写 SQL。执行 Owner 对冻结 ReadSet 的每个来源使用 unmanaged 保护门禁，事务成功后把 Provider 的实时结构和按目标列位置映射写入 lineage_facts；未知映射标记 unavailable。
 
+Query Execution Service 在业务写入提交后，以本次冻结并经编译校验的全部 relation 绑定和实际目标构造统一 `lineage_facts`，覆盖写入映射为 `replace`，追加映射为 `append`。事实与成功终态一起通过 lease 校验落库，随后复用 Develop 的 Meta 采集通知；通知失败由 Meta 周期采集器重试。建表依赖不产生数据派生边，失败和失去 lease 的执行不发布成功事实。回归测试由现有 `make test-module MODULE=develop` 和 CI Go 模块自动发现门禁覆盖。
+
 查询工作台即时执行和 Develop 手动任务执行使用同一参数解析与 PostgreSQL AST 编译器，但不接收 `target_locator`：关系参数应用默认绑定及本次覆盖后编译为只读物理表查询，返回受限结果预览。Orchestrator 执行在相同有效输入上增加独立结果目标并由 Query Execution Service 编译为写入；输出目标不是查询参数。
 
+### 查询全量导出
+
 查询结果区必须区分有限预览与全部结果导出：预览只用于有界展示，不提供“下载预览”旁路；单 Engine 表格查询 execution 成功后，只有当前实例声明 compute.query.read_session 且支持该查询语言时才启用“导出全部结果”，不以预览是否截断为前提；缺少能力时禁用入口并提示暂不支持完整查询结果导出。后端创建前通过 System Runtime Descriptor 复核同一实例能力，缺少能力返回 422/query_export_unsupported，描述读取失败仍为 503，不先签发执行授权或创建导出会话。DuckDB 联邦查询在具备统一流式查询 Provider 前不得显示该入口。完整导出由 `POST /api/v1/develop/executions/{execution_id}/exports` 从该 execution 冻结的查询内容、有效值参数、全部有效关系输入、Engine 与结果字段构造只读查询快照，再通过 Common 强类型 Transfer Client 创建无任务定义的 bounded `sync` execution；关系输入必须按参数名稳定排序写入 `source.query.inputs[]`，供 Transfer 校验和记录完整执行血缘，不得只挑一个输入或重新解析 SQL 推断资源。Develop 使用 Common 导出会话能力把产物暂存到 infra，在 Workbench 内轮询并下载到本地；不选择业务存储、不触发 Meta scan、不保存 Transfer task ID。格式、文件名、状态与下载交互必须复用 `common-frontend` 的唯一导出组件。
+
+### 执行输出与运行监督
 
 查询、工作流和脚本的 TaskProvider 稳定输出统一只写入 `common.task_executions.metadata.outputs`；不得保存或读取旧的 `metadata.result.outputs`。`GET /task-provider/executions/:execution_id` 使用 `common/taskprovider` 标准状态响应把同一对象投影为顶层闭合 `outputs`，用户执行详情可以附带任务信息，但不得形成第二套输出提取规则。
 
@@ -176,23 +196,15 @@ Query Execution Service 使用 PostgreSQL AST 验证关系作用域，只把与�
 
 监督器只消费 execution 冻结的内容、运行时配置和参数，不重读可变任务定义。claim 原子写入完整 lease、started 事件和任务摘要；进度、运行时回执、终态、事件和摘要受当前 lease fencing。Query 的查询策略及结果行为保持；Workflow 用户授权提交时签发并保存引用，Orchestrator 子执行授权在 claim 后按父执行及当前 attempt/token 派生。Notebook 保存提交时 SHA-256，Jupyter 核验下载字节后执行，文件变化失败并要求重新提交；交互 Session 不受本次执行队列管理。全部类型在失联后收敛失败、不自动重放，不承诺远端已停止；专业回执和结果不进入通用诊断事件。
 
+### Copilot 范围与资源事实
+
 查询工作台 Copilot 只在当前选中的 Query Runtime 范围内生成候选查询语言。前端必须提交当前 Runtime `engine_id` 和 capability 声明的 `query_language`；已有具体 data item 选择时直接提交其 locator（联邦 Runtime 下 locator 保留 Source Engine ID），已有明确容器范围但尚未确定具体 data item 时通过 `resource_scope_locator` 提交 discovery scope，未选择范围时 Copilot 通过带该 Runtime `engine_id` 的共享 `data.search` 粗筛。范围枚举统一走 `resource.children.list → resource.facts.get`，全局发现统一走 `data.search → resource.ancestors.get → resource.facts.get`。同一输入角色存在多个候选时由用户确认一个。Copilot 不得扫描其他工作台 Runtime、拼接 locator、假定字段名或直接执行生成结果；生成的 `query` 和 `query_parameters[]` 必须作为同一查询草稿原子回填编辑器与参数面板，之后仍走同一 preflight 和 execution 主路径。
 
 Copilot `resources[]` 只允许提交具有 `item_id`、可由 Owner `resource.facts.get` 返回平台 `data_type` 和字段事实的具体数据项。已选具体 MongoDB collection 且编辑器为空时，前端必须直接提交该 collection，不能用空 MQL 解析结果覆盖选择。MongoDB `database` 等容器节点可以作为查询执行范围和 discovery scope，但不是 AI 输入资源，不能提交到 `resources[]`。MongoDB 查询已有 MQL 时，前端从当前合法 command object 提取 `find/aggregate/count/distinct` 主 collection 和 `$lookup.from`、`$graphLookup.from`、`$unionWith` 引用，在该 database 资源树节点下逐一匹配具体 collection locator，并以这些 collection 的 `ResourceFact` 调用 Copilot；数据库执行范围仍只保存在 Develop 的 `target_locator` 中。只选 database 且编辑器为空时以 `resources=[] + resource_scope_locator=<database locator>` 调用共享范围发现，由 Copilot 通过 Owner Tool 枚举并返回当前 database 的具体 collection 候选，用户确认后再提交。已有 MQL 的 collection 引用不存在、跨出当前 database 或不唯一时直接要求用户澄清，不退回范围枚举或模糊发现，也不保留 `resources=[] + current_query` 的无字段事实旁路。
 
 查询工作台必须用统一澄清弹窗消费 Copilot 的结构化 `clarifications[]`。资源确认与计算规则、统计对象、时间范围、聚合维度、实体匹配、字段映射、去重/空值/分母规则等语义澄清使用同一交互框架；前端只按 `control` 渲染并提交 `clarification_answers`，不得识别“重叠度”等业务措辞或自行决定计算口径。用户取消澄清不能改写编辑器；回答后保留原问题、资源、语言和当前查询继续生成。Toast 只用于网络、权限、模块不可用和非法响应等系统错误，不能承载可恢复的用户澄清。
 
-Develop 前端不提供模块级执行列表。`/develop/tasks` 和 Notebook 工作区使用 `MonitorExecutionsButton(module=develop)` 进入统一 Monitor，并按 `task_type`、`source_task_id` 收窄范围。`/develop/executions/:execution_id` 仅保留查询、工作流和脚本的领域结果、日志与重试详情，不复制 Monitor 的通用执行列表、统计或筛选器。
-
-TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一只接受 Bearer Service Access Token 和 canonical AuthContext。TaskProvider 固定由 `addp-orchestrator` 调用，Asset 发现固定由 `addp-asset` 调用；两者还要校验各自精确 Permission。代表用户创建或继续执行任务时必须引用由原 User AuthContext 派生、绑定唯一 execution 的 Execution Authorization；内部调用不能凭 Service Principal 自身权限伪造 User、Tenant、`triggered_by` 或数据访问能力。旧 `/api/v1/develop/internal`、`X-Internal-API-Key` 和 `X-Tenant-ID` 已删除，不保留双轨。
-
 Copilot ResourceFact 必须保留 Owner 提供的 `source_engine_type`、`full_name`、`query_references` 和 `schema_coverage`；查询引用逐段保留Owner确认的原名，前端或Copilot不得从locator/full_name猜测或改写；渲染复用common-frontend唯一实现。Query Runtime 与 Source Engine 分开传递，联邦 Runtime 按 `federation.source_engine_types` 校验来源。未注册 validator 的查询语言直接澄清，不生成候选。
-
-### 固定目标写入契约
-
-Develop 关系查询写入通过执行契约显式配置固定正式表 `target_locator` 与 `write_mode=overwrite|append`。所有输入和输出必须位于同一 PostgreSQL Engine，输出不得同时作为输入。overwrite 在一个事务内锁定目标、删除旧记录并插入完整计算结果；失败或取消回滚该表写入。append 只追加。多个任务分别提交，不保证跨任务、多表同时可见。
-
-Query Execution Service 在业务写入提交后，以本次冻结并经编译校验的全部 relation 绑定和实际目标构造统一 `lineage_facts`，覆盖写入映射为 `replace`，追加映射为 `append`。事实与成功终态一起通过 lease 校验落库，随后复用 Develop 的 Meta 采集通知；通知失败由 Meta 周期采集器重试。建表依赖不产生数据派生边，失败和失去 lease 的执行不发布成功事实。回归测试由现有 `make test-module MODULE=develop` 和 CI Go 模块自动发现门禁覆盖。
 
 ### 执行授权与效果
 
