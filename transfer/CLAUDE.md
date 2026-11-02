@@ -242,6 +242,7 @@ Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消�
 - 模块内公开导航统一通过 [moduleNavigation.js](frontend/src/utils/moduleNavigation.js) 复用共享能力；Console URL 与模块渲染的分工沿[公开路由事实源](../docs/spec/addp前端路由与可恢复状态规范.md#二公开路由事实源)，历史栈规则沿[浏览器历史语义](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义)，不在模块重复维护导航实现。
 - 权限落点：独立模式有 `transfer.task.read` 时以任务列表为唯一侧栏入口，创建由列表按钮进入；无读取但同时具备 `transfer.task.create` 与 `meta.catalog.read` 时显示创建向导入口，不跳转无权读取的列表。Console iframe 模式由 Console 统一显示侧栏；准入与动作权限见[任务授权](docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)。
 - 对象身份使用 `/tasks/:id/edit`、`/tasks/:id/detail` 与 `/executions/:execution_id`，不得退化为列表 URL 或 iframe 私有状态；通用要求沿[URL 状态规范](../docs/spec/addp前端路由与可恢复状态规范.md#三必须进入-url-的状态)。深链、刷新、前进后退及 Console／standalone 的验证沿[路由验收规范](../docs/spec/addp前端路由与可恢复状态规范.md#八实现与验收要求)，静态登记不代表实际运行通过。
+- 未配置调度时，调度选项、确认摘要与提示按本次操作显示：具备 `transfer.task.execute` 的新建操作显示“立即执行一次”；无执行权限或编辑保存显示“仅保存任务”，不自动执行。沿用[创建与启动的独立权限](docs/transfer-基本概念及配置说明.md#资源选择与页面入口)，不通过补授权限满足提示。
 - 成功落点沿[Canonical URL 规范](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)：正式向导创建成功且有 `transfer.task.read` 时，用响应的新 ID `replace` 到详情，不要求 update；无读取权时反馈成功、重置并留在创建页，不读取列表／详情。编辑保存和可读账号确认取消仍 `replace` 回列表；创建助手弹层关闭后刷新当前列表。
 - 列表进入创建、编辑、详情和执行页使用 `push`，Console／standalone 的唯一公开历史沿[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义)。保存失败或撤销确认保留 URL 与草稿；创建后的启动失败不撤销已创建对象，仍按创建成功的权限分支落点并单独提示启动失败。本轮受控浏览器覆盖及未验收范围见[创建落点与历史栈证据](#创建落点与历史栈验证)。
 
@@ -284,7 +285,7 @@ Transfer schema 仅由 Backend 迁移；模块级数据库锁、成功提交的�
 | [角色资格到期与导出拒绝](#角色资格到期与导出拒绝证据) | [角色专用导出选择](#角色专用导出选择) | v30／v31 错误映射、确定性回归与未运行的新版 Hosted。 |
 | [continuous 精确扫描与审批归属](#continuous-精确扫描与审批归属) | [生产来源](#生产来源与写后扫描)、[写后扫描](#写后扫描触发与范围) | 首次扫描、单用户审批、双用户归属及各自清理证据。 |
 | [bounded 定时授权](#bounded-定时授权验收) | [定时任务授权规范](../docs/spec/tasks/任务定义与授权.md#transfer-定时任务授权) | 真实 Cron、子扫描隔离与模块聚合失败。 |
-| [创建落点与历史栈](#创建落点与历史栈验证) | [Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)、[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义) | 本地 T1／T2／受控 T3、模块聚合失败、两类账号日常 Console 路由复验、提示文案缺口及隔离 T4／T5 未验。 |
+| [创建落点与历史栈](#创建落点与历史栈验证) | [Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)、[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义) | 本地 T1／T2／受控 T3、模块聚合失败、两类账号日常 Console 路由复验、提示文案受控回归及隔离 T4／T5 未验。 |
 
 #### continuous 过程事件与浏览器验收
 
@@ -398,7 +399,7 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 
 临时原角色到期已由 IAM 页面核实；用户确认仅原两项权限、最多 30 分钟的复验重授后，验收结束已撤销临时角色并结束该账号租户访问，页面显示零个生效角色、已结束。未修改共享角色定义、其他账号或资源授权，未增授 `transfer.task.read`／`transfer.task.execute`，也未删除用户或共享角色。任务 `17`、`18`、`51` 的定义保留审阅，没有任务／数据删除；未探测物理目标表是否存在，不能宣称零残留。用户自行恢复服务，专项会话和本会话均未执行 restart／keepalive。证据仍位于临时目录，不作为长期归档保证。
 
-**独立待修项**：仅创建且无 execute 的账号在最终确认页仍看到“立即执行一次”（`create-only-recheck-review.png`），实际任务 `51` 为手动且执行记录为空。创建落点与历史规则符合现行规范，但该提示文案尚未修正，不能表述为所有页面文本均已一致。
+**提示文案后续修正（2026-11-02）**：上述日常观察曾记录仅创建且无 execute 的账号看到“立即执行一次”（`create-only-recheck-review.png`），实际任务 `51` 为手动且执行记录为空。后续前端修正让调度选项、确认摘要及警告沿用实际启动分支的同一 `transfer.task.execute` 权限事实：无执行权限或编辑保存显示“仅保存任务”，有执行权限的新建操作保持立即执行；未改 API、权限清单或账号授权。`make test-transfer-frontend` 通过 131 项单元、60 项浏览器及构建，其中导航回归 24 项，新增 10 项覆盖中英文、standalone／iframe、有无执行权和定时保存，并补充有执行权的编辑保存断言。`make test-module MODULE=transfer GO_ONLY=1`、`make test-transfer-postgres`（19 个主测试，零失败／跳过）及 `make test-frontend-ci-registration`（27 项、21 个前端）通过。完整 `make test-module MODULE=transfer` 在平台 T0 的 `TestTransferReviewSourceDrift/config` 因已有配置文档冻结哈希不匹配而失败；该文档逐字节等同本轮 HEAD，未纳入本次改动，不计完整模块聚合通过。原始日志在 `/tmp/addp-transfer-execution-hint-20261102/`；新增文案仅取得受控 T3 证据，未重新授予真实账号权限或补记真实 Console／Hosted 通过，前述日常手工记录仍对应修正前页面。
 
 ## 相关文档
 

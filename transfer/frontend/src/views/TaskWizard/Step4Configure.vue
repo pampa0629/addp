@@ -182,7 +182,7 @@
       <!-- 调度计划 -->
       <el-form-item v-if="!isContinuousTask" :label="t('transfer.taskWizard.scheduleLabel2')">
         <el-radio-group v-model="scheduleMode">
-          <el-radio value="once">{{ t('transfer.taskWizard.runOnce') }}</el-radio>
+          <el-radio value="once">{{ t(!isEditMode && wizardState.canExecuteTask.value ? 'transfer.taskWizard.runOnce' : 'transfer.taskWizard.saveOnly') }}</el-radio>
           <el-radio value="cron">{{ t('transfer.taskWizard.cronSchedule') }}</el-radio>
         </el-radio-group>
       </el-form-item>
@@ -245,6 +245,10 @@ const props = defineProps({
   wizardState: {
     type: Object,
     required: true
+  },
+  isEditMode: {
+    type: Boolean,
+    default: false
   }
 })
 

@@ -50,7 +50,7 @@
           {{ wizardState.taskName.value }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.reviewSchedule')">
-          {{ wizardState.schedule.value || t('transfer.taskWizard.reviewScheduleOnce') }}
+          <span data-testid="task-review-schedule">{{ wizardState.schedule.value || t(!isEditMode && wizardState.canExecuteTask.value ? 'transfer.taskWizard.reviewScheduleOnce' : 'transfer.taskWizard.saveOnly') }}</span>
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.reviewTaskDesc')">
           {{ wizardState.taskDescription.value || t('transfer.taskWizard.reviewNone') }}
@@ -247,6 +247,7 @@
       type="warning"
       :closable="false"
       class="review-warning"
+      data-testid="task-review-warnings"
     >
       <ul class="warning-list">
         <li v-for="warning in warnings" :key="warning">{{ warning }}</li>
@@ -304,7 +305,9 @@ const warnings = computed(() => {
 
   if (!props.wizardState.schedule.value &&
       !props.wizardState.isContinuousTask.value) {
-    warns.push(t('transfer.taskWizard.warningNoSchedule'))
+    warns.push(t(!props.isEditMode && props.wizardState.canExecuteTask.value
+      ? 'transfer.taskWizard.warningNoSchedule'
+      : 'transfer.taskWizard.warningSaveOnly'))
   }
 
   return warns

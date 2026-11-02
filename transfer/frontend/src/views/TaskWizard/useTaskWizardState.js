@@ -47,6 +47,7 @@ import { TARGET_OVERRIDE_POLICY, withTargetOverride } from './targetOverride.mjs
 export function useTaskWizardState() {
   const { t } = useI18n()
   const authStore = useAuthStore()
+  const canExecuteTask = computed(() => authStore.hasPermission('transfer.task.execute'))
   // ===== 状态定义 =====
   const currentStep = ref(0)
   const taskName = ref('')
@@ -966,7 +967,7 @@ export function useTaskWizardState() {
     try {
       const created = await taskAPI.create(taskConfig.value)
       const task = created?.data || created
-      if (!schedule.value && task?.id && authStore.hasPermission('transfer.task.execute')) {
+      if (!schedule.value && task?.id && canExecuteTask.value) {
         try {
           await taskAPI.start(task.id)
           ElMessage.success(t('transfer.taskWizard.taskCreateAndStartSuccess'))
@@ -1436,6 +1437,7 @@ export function useTaskWizardState() {
 
   return {
     // 状态
+    canExecuteTask,
     currentStep,
     taskName,
     taskDescription,
