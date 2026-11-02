@@ -105,4 +105,18 @@ bash scripts/dev/start.sh -jupyter
 
 依赖见 [requirements.txt](requirements.txt)。
 
-确定性回归统一运行 `make test-jupyter`；根 `make test`、Engines 自动发现和 Platform CI 的 Jupyter Runtime job 均调用此入口。该门禁以 mock 验证 Runtime 身份、内容摘要及隔离会话等行为，不接管开发服务。Develop Owner 验证使用 `make test-module MODULE=develop`；两者均不能作为真实队列派发、撤权闭环或跨模块 Notebook T4 通过的证据，未运行、失败与未覆盖项分别记录。
+## 验证
+
+### Runtime 确定性门禁
+
+准备上述依赖后，从仓库根目录运行：
+
+```bash
+make test-jupyter
+```
+
+根 `make test`、Engines 自动发现和 Platform CI 的 Jupyter Runtime job 均调用此入口，不接管开发服务。[接口用例](test_api_server.py)验证服务身份、租户、内容摘要和变更拒绝；[隔离会话用例](test_interactive_sessions.py)验证 owner 能力注入、同一文件保存、第二写入者拒绝和清理。用例使用受控认证、存储、执行器或进程替身，不能据此声称真实 JupyterLab、MinIO 或跨模块授权已经验收。
+
+### Owner、SDK 与真实链路
+
+Develop Owner 使用 `make test-module MODULE=develop`，前后端、Common Python SDK 与 Runtime 的覆盖分工统一见[Notebook 验证分工](../../develop/CLAUDE.md#notebook-验证分工)；[历史证据](../../develop/CLAUDE.md#历史证据)保留原版本、失败及未覆盖范围。镜像检查、上述确定性门禁和交互成功均不能证明真实队列派发、撤权闭环或跨模块 Notebook T4 通过；未运行、失败与未覆盖项分别记录。

@@ -997,7 +997,7 @@ Runtime 只接受调用模块的 Tenant Service Access Token 创建或关闭会�
 
 Runtime 必须在正常关闭和 TTL 清理时保存 Notebook 并终止 kernel/process；owner 模块重启后，已有浏览器会话必须失效，不能恢复成无主共享会话。
 
-交互 Session 不进入上述执行队列；Session 授权与逐次只读数据访问的 Execution Authorization 分工、撤销和到期规则统一见[会话授权规范](addp授权上下文规范.md#53-notebook-会话授权)。Runtime 的独有行为、确定性覆盖与未完成项见 [Jupyter 说明](../../engines/jupyter/README.md#4-交互会话控制面)及[验证边界](../../engines/jupyter/README.md#依赖库)；本节接口契约和局部门禁不代表真实队列派发、撤权闭环或跨模块 Notebook T4 已通过。
+交互 Session 不进入上述执行队列；Session 授权与逐次只读数据访问的 Execution Authorization 分工、撤销和到期规则统一见[会话授权规范](addp授权上下文规范.md#53-notebook-会话授权)。Runtime 的独有行为、确定性覆盖与未完成项见 [Jupyter 说明](../../engines/jupyter/README.md#4-交互会话控制面)及[验证边界](../../engines/jupyter/README.md#验证)；本节接口契约和局部门禁不代表真实队列派发、撤权闭环或跨模块 Notebook T4 已通过。
 
 ---
 

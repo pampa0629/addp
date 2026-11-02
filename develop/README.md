@@ -9,7 +9,7 @@
 - [开发与验证](CLAUDE.md#开发与验证) - 监督器与事件、查询保护和导出的分版本历史证据及未覆盖项
 - [查询与执行专题](CLAUDE.md#关键架构) - 查询预检、运行监督与 Copilot
 - [执行过程事件](CLAUDE.md#执行过程事件与当前边界) - 同事务接入、进度来源、Notebook 排队限制与验证导航
-- [Notebook 会话与排队执行](CLAUDE.md#notebook-会话与排队执行) - 会话凭据、数据访问、文件与重绑、Copilot 及当前派发缺口
+- [Notebook 会话与排队执行](CLAUDE.md#notebook-会话与排队执行) - 会话凭据、数据访问、文件与重绑、Copilot 及当前派发缺口；[验证分工](CLAUDE.md#notebook-验证分工)区分 Owner、Runtime、SDK 与真实链路。
 - [执行输出与监督](CLAUDE.md#执行输出与运行监督) - 稳定 outputs、冻结输入与容量观测
 - [查询保护](CLAUDE.md#查询保护与结果交付) - 读取计划、角色选择、结果交付与受控失败
 - [固定目标写入](CLAUDE.md#固定目标写入契约) - 关系参数、编排端口、事务写入与血缘

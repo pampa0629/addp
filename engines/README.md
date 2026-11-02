@@ -74,7 +74,7 @@ engines/
 | 排队派发 | 一次性 Notebook（`script`）当前拒绝派发，可核验撤权的运行授权尚待确认和接入；执行错误、授权来源与恢复边界统一见[任务契约](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。 |
 | 交互会话 | Develop 创建并代理短期隔离 JupyterLab 会话，不进入上述队列，浏览器不直连 Runtime，也不暴露共享 Lab；Session 与逐次数据读取授权的分工见[授权规范](../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)，Runtime 清理与 Bridge 约束见[会话说明](jupyter/README.md#4-交互会话控制面)。 |
 
-确定性门禁、镜像检查与真实队列派发／撤权闭环分别认定，覆盖与未完成项见 [Jupyter 验证边界](jupyter/README.md#依赖库)；接口存在、进程就绪或局部测试不能代替跨模块 Notebook T4，未执行或未覆盖项不计为通过。
+确定性门禁、镜像检查与真实队列派发／撤权闭环分别认定，覆盖与未完成项见 [Jupyter 验证边界](jupyter/README.md#验证)；接口存在、进程就绪或局部测试不能代替跨模块 Notebook T4，未执行或未覆盖项不计为通过。
 
 ### 联邦查询运行时
 

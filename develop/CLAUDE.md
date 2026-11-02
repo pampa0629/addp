@@ -284,7 +284,7 @@ Notebook Copilot 生成结果只允许通过同源 JupyterLab bridge 插入当�
 
 类型声明仍为 `script`，Notebook 不是独立 task_type。当前领取后以 `develop.script.authorization_unavailable` 收敛失败，不调用 Jupyter Runtime；该码描述 Develop execution，并非 Runtime HTTP 拒绝。排队运行授权及撤权闭环尚待接入和独立验收，不能借用 Session、数据授权、历史提交人或 Service Token 放行，具体要求沿[执行监督与授权](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。
 
-提交时冻结的 SHA-256 只证明文件字节一致，不授予运行资格。Jupyter 已有实际下载字节校验，内容变化以 `notebook_content_changed` 拒绝并要求重新提交，不创建快照或自动重试；摘要缺失／非法、路径和 Kernel 限制见[Runtime 执行契约](../engines/jupyter/README.md#2-执行-notebook)。已有无头接口、健康探针或交互 Session 成功不等于排队派发可用；门禁职责与分版本结果见[开发与验证](#开发与验证)。
+提交时冻结的 SHA-256 只证明文件字节一致，不授予运行资格。Jupyter 已有实际下载字节校验，内容变化以 `notebook_content_changed` 拒绝并要求重新提交，不创建快照或自动重试；摘要缺失／非法、路径和 Kernel 限制见[Runtime 执行契约](../engines/jupyter/README.md#2-执行-notebook)。已有无头接口、健康探针或交互 Session 成功不等于排队派发可用；门禁职责见[Notebook 验证分工](#notebook-验证分工)，分版本结果见[历史证据](#历史证据)。
 
 ### IAM Permission
 
@@ -528,6 +528,21 @@ curl -H "Authorization: Bearer <token>" \
 标准门禁、环境前提与能力边界统一见[Develop 验证入口](../docs/spec/configuration/执行与模块策略.md#develop-验证入口与证据边界)。事件、监督器和 Owner 回归使用 `make test-module MODULE=develop` 与 `make test-develop-postgres`；新增 PostgreSQL 事件回归必须确认[标准入口的名称筛选](../scripts/test/develop-postgres-gate.sh)命中，既有 Go／Develop PostgreSQL CI 承接同一入口。共享诊断另按影响范围运行 `make test-go`、`make test-common-frontend` 和 `make test-monitor-frontend`，Provider 专项分别验证；分项通过不替代真实认证／Gateway／Worker 的 T4。
 
 真实 Query 事件读取复用 `transfer-relational-sql-etl` Hosted suite：三轮父编排中的六个 Develop Query 子执行，分别经已授权 Monitor 入口核对 started／progress／completed、同一 execution／attempt、时间和游标顺序及闭合进度计数；报告只记录核验数量，不复制事件或查询结果。既有 `make test-transfer-online-runner` 与 CI 聚合承接读取契约和负向回归；该扩展实际运行通过前不计为 T4。
+
+### Notebook 验证分工
+
+会话与排队能力沿[Notebook 专题](#notebook-会话与排队执行)分别判断；标准入口仍按上文的模块门禁和各 owner 说明执行，不另拼 Notebook 私有测试命令。
+
+| 范围 | 入口与确定性覆盖 |
+| --- | --- |
+| Develop Owner 后端 | 上述 Develop 模块门禁；[Session 回归](backend/internal/service/notebook_session_service_test.go)验证主体／能力绑定、关闭取消和有界读取，[原生读取回归](backend/internal/service/notebook_session_native_data_test.go)验证 Provider 选择与只读限制，[重绑回归](backend/internal/service/notebook_runtime_binding_test.go)验证只改当前定义，[Copilot 回归](backend/internal/service/notebook_copilot_service_test.go)验证候选与角色路径。 |
+| Develop 前端 | 模块门禁包含 `make test-develop-frontend`；[Notebook 绑定浏览器用例](frontend/e2e/notebook-engine-binding.spec.mjs)使用受控 API 夹具验证引擎／Kernel 展示、重绑及对话框，不运行真实 JupyterLab；[Copilot 静态用例](frontend/tests/notebookCopilotBehavior.test.mjs)核对接线，不能证明 bridge 已在浏览器实际插入单元。 |
+| Jupyter Runtime | [Runtime 验证](../engines/jupyter/README.md#验证)维护标准命令、身份／摘要／隔离会话用例与替身边界。 |
+| Common Python Facade | [共享库标准验证](../common-python/README.md#开发与验证)运行全量 SDK 回归；[Notebook 用例](../common-python/tests/test_notebook_engines.py)覆盖注入能力、精确引擎注册、原生目录与有界读取，不以 mock HTTP 结果证明真实 Owner 授权。 |
+
+上述分项与镜像检查不能替代真实 System → Develop → Runtime 会话、同源代理、文件保存、撤权／到期和公开 HTTPS 的实际验收，也不证明排队运行授权闭环。历史门禁数量、失败、修复和清理只认下节记录的版本与场景；未执行或未覆盖项不计为通过。
+
+### 历史证据
 
 历史记录按主题查阅：
 

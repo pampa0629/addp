@@ -281,7 +281,7 @@ Notebook 是 Develop `script` 任务的当前交互形态。任务必须在 `exe
 
 当前 Jupyter 的 `OpenSession()` 只返回受控 Runtime endpoint，不创建交互 Session，也不签发排队运行授权；Provider 与交互控制面的分工见[接口规范](../spec/addp引擎插件接口规范.md#runtime-provider)。
 
-交互 Session 不进入上述执行队列；Session 来源与每次数据读取的独立 Execution Authorization 统一见[会话授权规范](../spec/addp授权上下文规范.md#53-notebook-会话授权)。隔离进程、代理凭据与保存清理的 Runtime 约束见[Jupyter 会话说明](../../engines/jupyter/README.md#4-交互会话控制面)，本节及下文 Facade 的能力说明不等同于真实运行验收；未完成项、确定性覆盖与真实派发／撤权闭环按[验证边界](../../engines/jupyter/README.md#依赖库)分别记录。
+交互 Session 不进入上述执行队列；Session 来源与每次数据读取的独立 Execution Authorization 统一见[会话授权规范](../spec/addp授权上下文规范.md#53-notebook-会话授权)。隔离进程、代理凭据与保存清理的 Runtime 约束见[Jupyter 会话说明](../../engines/jupyter/README.md#4-交互会话控制面)，本节及下文 Facade 的能力说明不等同于真实运行验收；未完成项、确定性覆盖与真实派发／撤权闭环按[验证边界](../../engines/jupyter/README.md#验证)分别记录。
 
 ### Notebook 原生引擎门面
 
