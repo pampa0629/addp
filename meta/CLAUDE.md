@@ -230,9 +230,19 @@ FalkorDB 图属性结构来自每个节点形态或关系类型的最多 100 条
 
 人工扫描、任务手动触发、item 刷新和资源树刷新按[生产来源规范](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)从当前可信 AuthContext 固化完整人类来源，不能仅凭 userID、任务创建者或历史记录补齐身份。资源树刷新继续返回安全 `ScanExecutionResponse`，字段与读取范围沿[Meta 专业读取契约](../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应)。来源不授予扫描或源内容访问资格，交互入口与集中治理的范围、当前实现及目标替换、Worker 重核按[集中扫描规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)独立裁决。
 
-冻结计划事实通过 `GET /runtime/scan-executions/:execution_id/authorization-facts` 供固定 `addp-system` Tenant Service 以 `meta.task_provider.read` 读取，唯一 DTO／客户端仍是 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`。严格 wire、冻结版本与摘要、任务变化后的 needs_refresh/null scope、旧快照的 409 及 complete 支持范围统一见[冻结扫描计划事实契约](../docs/spec/addp元数据扫描机制规范.md#冻结扫描计划事实契约)。Meta 仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；未证明的范围保持非完整，200／complete 都不等于 Allow。
+冻结计划事实只供固定 `addp-system` Tenant Service 以 `meta.task_provider.read` 读取，唯一 DTO／客户端为 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`，入口和严格读取契约见下表。Meta 仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；未证明的范围保持非完整，200／complete 都不等于 Allow。
 
-首次 PG 产出补扫的私有冻结与原执行投影沿上述事实契约：`execution_config.initial_production_target` 保留成功回执的原 typed Target，不增加公开请求字段，也不从 locator 反推。缺失或冲突保持非完整，不扩大根范围；System 仍独立核验原生产事实与当前资格。该投影与执行授权、Worker 消费的验证分工见[专项验证入口](#专项验证入口)。
+| 阅读目的 | 权威正文 |
+| --- | --- |
+| 访问身份、Permission、端点与只读调用约束 | [计划事实的访问身份与读取](../docs/spec/addp元数据扫描机制规范.md#计划事实的访问身份与读取) |
+| wire、范围投影与严格响应校验 | [计划事实响应与范围](../docs/spec/addp元数据扫描机制规范.md#计划事实响应与范围) |
+| 冻结版本、任务／执行摘要及失败语义 | [计划冻结版本与摘要](../docs/spec/addp元数据扫描机制规范.md#计划冻结版本与摘要) |
+| 实际执行与任务定义逐项核验 | [计划执行与任务一致性](../docs/spec/addp元数据扫描机制规范.md#计划执行与任务一致性) |
+| 首次 PG 产出回执、原目标与私有冻结 | [首次 PG 产出补扫的冻结与投影](../docs/spec/addp元数据扫描机制规范.md#首次-pg-产出补扫的冻结与投影) |
+| 事实投影、System 裁决与 Worker 消费的区别 | [计划事实与授权裁决](../docs/spec/addp元数据扫描机制规范.md#计划事实与授权裁决) |
+| 专项门禁、历史证据和实际覆盖范围 | [计划事实验证与验收边界](../docs/spec/addp元数据扫描机制规范.md#计划事实验证与验收边界) |
+
+任务变化后的 `needs_refresh/null scope` 与旧快照的 `409` 按上述版本与摘要正文区分，不以当前版本补齐旧计划；首次产出目标缺失或冲突保持非完整，不从 locator 反推或扩大根范围。事实投影不签发许可，也不替代执行授权或 Worker 实际读取；本模块标准命令与覆盖范围仍由[专项验证入口](#专项验证入口)维护，不将已有 PG 产出链路结果外推为本接口全部范围已验收。
 
 ### 私有识别入口
 
