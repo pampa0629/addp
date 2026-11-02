@@ -267,13 +267,15 @@ Develop 只对已持久化且可重复使用的 `dev_tasks.dev_type=query|workfl
 
 ### 架构说明
 
-[数据库架构](frontend/docs/数据库架构.md)维护表归属、软引用和 TaskProvider 路由；当前定义与各次 execution 的冻结输入分别保存，不能从可变定义反推历史。
+[数据库架构](frontend/docs/数据库架构.md)维护主表、支撑存储、初始化边界与 TaskProvider 路由；当前定义与各次 execution 的冻结输入分别保存，不能从可变定义反推历史。
 
 ### 单表文档
 
 | 阅读目的 | 正文 |
 | --- | --- |
 | 任务字段、模型索引与非持久投影 | [dev_tasks 表结构](frontend/docs/tables/dev_tasks表.md#二表结构定义) |
+| 执行策略、导出会话、目录变化流及本地保护存储 | [支撑持久化](frontend/docs/数据库架构.md#支撑持久化) |
+| 初始化阶段、已提交变更与失败边界 | [初始化与验证](frontend/docs/数据库架构.md#初始化与验证边界) |
 | 定义覆盖、执行快照与当前版本缺口 | [并发与快照边界](frontend/docs/tables/dev_tasks表.md#25-定义覆盖执行快照与并发缺口) |
 | 用户任务定义、参数执行与存储 Engine 重绑 | [任务表 API](frontend/docs/tables/dev_tasks表.md#四api-端点说明) |
 | 委托 Tool 审批与一次性消费事实 | [tool_approvals 表](frontend/docs/tables/tool_approvals表.md) |
