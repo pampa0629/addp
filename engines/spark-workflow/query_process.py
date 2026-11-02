@@ -1,7 +1,7 @@
-"""Owned per-query Driver lifecycle inside the existing Spark HTTP runtime.
+"""Owned Driver lifecycles inside the existing Spark HTTP runtime.
 
 The command is chosen by the runtime, never supplied by a query request. The
-future HTTP adapter must authorize the cluster and sources before invoking it.
+HTTP adapters authorize the cluster and sources before invoking it.
 Credentials travel only over stdin; child output is not a public diagnostic.
 """
 from decimal import Decimal
@@ -17,7 +17,7 @@ import time
 
 DRIVER_ENV_KEYS = frozenset({
     'PATH', 'JAVA_HOME', 'SPARK_HOME', 'PYTHONPATH', 'PYSPARK_SUBMIT_ARGS',
-    'PYSPARK_PYTHON', 'PYSPARK_DRIVER_PYTHON', 'JAVA_TOOL_OPTIONS',
+    'PYSPARK_PYTHON', 'PYSPARK_DRIVER_PYTHON', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'SPARK_SUBMIT_OPTS',
     'SPARK_WORKFLOW_SHARED_HOST', 'HADOOP_USER_NAME', 'LANG', 'LC_ALL',
     'NO_PROXY', 'no_proxy',
 })
@@ -53,7 +53,7 @@ def _stop_group(process):
         process.wait()
 
 
-def run_driver(command, request, *, timeout, cancel=None, max_result_bytes=4 * 1024 * 1024):
+def run_driver(command, request, *, timeout, cancel=None, max_result_bytes=4 * 1024 * 1024, parse_float=Decimal):
     """Run an owner-selected Driver, appending a private result-file argument.
 
     A query Driver reads one JSON request from stdin and writes one JSON object
@@ -109,7 +109,7 @@ def run_driver(command, request, *, timeout, cancel=None, max_result_bytes=4 * 1
             if len(result_bytes) > max_result_bytes:
                 raise QueryDriverError('query_result_too_large')
             try:
-                result = json.loads(result_bytes, parse_float=Decimal,
+                result = json.loads(result_bytes, parse_float=parse_float,
                                     parse_constant=_reject_json_constant)
             except (ValueError, UnicodeError):
                 raise QueryDriverError('query_result_invalid') from None

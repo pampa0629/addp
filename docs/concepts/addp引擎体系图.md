@@ -233,6 +233,7 @@ Workflow Runtime 的发现以 System Engine Instance 和 Runtime Descriptor 为�
 - 平台复用现有 `engines/spark-workflow` 内置服务，增加 `addp.query-runtime/v1` 查询入口，同时保留 `addp.workflow/v1` 工作流入口。不新增 `spark-query` 服务、端口、Service Principal 或第二套 Spark 集群；用户不配置内部 Runtime 地址。查询和工作流分别创建自己的执行状态，不共用任务会话。
 - Develop 查询工作台直接选择 Business Spark 集群；`execution_config.engine_id` 表达该执行目标。Develop 从受信控制面解析内置 Spark Runtime，冻结实际 Runtime 与集群的对应关系，再通过 Provider 派发。源树展示实际 Source Engine 的表，不展示 Spark 的合成目录。
 - Develop 工作流先选择内置 Spark Workflow，再通过 `engine_specific.spark_cluster_id` 选择一个 Business Spark 集群。不同任务可以使用不同集群，不要求每个集群部署一个 Runtime。同一任务与一次 execution 的集群绑定不得由 Runtime 自行替换。
+- 内置 Runtime 按每次查询／工作流执行创建独立 Driver；同一工作流内共享本次 SparkSession，执行之间不缓存或复用 SparkContext。集群连接由父 Runtime 从受信控制面取得，子进程不继承服务凭据；执行结束、失败或超时后回收。多集群支持须由真实双 Master／Worker 路由与清理证据确认。
 - 集群与内置 Runtime 都不声明 `storage`。Meta、Manager、扫描和存储读取入口按能力校验，不增加 Spark 类型排除名单；原有 Spark 表目录、表读取 Provider 和日常启动的固定样例视图随正式迁移删除，不保留 Thrift 查询双路径。已有目录项和任务绑定先盘点，不静默删除或改绑。
 - Runtime 用自身 Service Principal 消费本次 execution 的授权，取得所选集群及允许的 Source Engine 连接；实际 Runtime audience 不得固定成 DuckDB。集群 ID、Runtime ID、数据源 ID 分别核验，不能用其中一个扩大另外两个的权限。连接凭据不进入 SQL、任务、公开请求体或日志。
 - 首版限定 PostgreSQL、MySQL 只读联邦查询。真实 Worker 跨源 JOIN、参数绑定、数值精度、命名冲突、未授权源拒绝、执行隔离、超时及清理分别完成准入后，才开放正式能力和页面验收；不同时声明对象数据源、写入或连续结果导出。

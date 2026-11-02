@@ -5,7 +5,6 @@ from typing import Any
 from addp_common.workflow_runtime import WorkflowRunner, WorkflowValidationError
 from operator_metadata import get_operator_metadata
 from operators import get_operator
-from spark_connector import get_spark_connector
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +35,7 @@ class SparkWorkflowRunner(WorkflowRunner):
         return {'__ports__': result}
 
 
-def execute_workflow(engine_id: int, tenant_id: int, workflow_def: dict[str, Any], input_data=None):
+def run_workflow(engine_id: int, tenant_id: int, workflow_def: dict[str, Any], input_data=None):
     try:
         result = SparkWorkflowRunner(engine_id, tenant_id).execute(workflow_def, input_data)
         return {'status': 'success', 'final_result': result.final_result,
@@ -49,9 +48,8 @@ def execute_workflow(engine_id: int, tenant_id: int, workflow_def: dict[str, Any
         return {'status': 'failed', 'error_code': 'EXECUTION_FAILED', 'error': str(exc)}
 
 
-def execute_single_operator(engine_id: int, tenant_id: int, operator_name: str, params: dict[str, Any]):
+def run_operator(engine_id: int, tenant_id: int, operator_name: str, params: dict[str, Any]):
     try:
-        get_spark_connector().get_or_create_session(engine_id, tenant_id)
         result = _execute_operator(engine_id, tenant_id, operator_name, params)
         return {'status': 'success', 'result': result}
     except Exception as exc:

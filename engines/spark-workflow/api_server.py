@@ -21,7 +21,8 @@ from dotenv import load_dotenv, find_dotenv
 # 自动向上搜索 .env 文件（类似 common/config/loader.go 的 LoadEnv）
 load_dotenv(find_dotenv())
 
-from workflow_engine import execute_workflow, execute_single_operator
+from workflow_process import execute_workflow, execute_single_operator
+from workflow_result import serialize_json_value, serialize_workflow_value
 from addp_common.workflow_runtime import (
     ExecutionRegistry, ExecutionSnapshot, WorkflowValidationError, validate_execution_authorization,
 )
@@ -35,10 +36,6 @@ try:
 except Exception:
     SEDONA_VERSION = ""
 
-try:
-    from pyspark.sql import DataFrame
-except Exception:
-    DataFrame = None
 
 # 配置日志
 logging.basicConfig(
@@ -59,6 +56,19 @@ start_time = datetime.now()
 
 # Runtime 快照只属于当前 HTTP worker，业务历史由平台持有。
 executions = ExecutionRegistry()
+
+_DRIVER_MESSAGES = {
+    'failed': {'zh-cn': 'Spark 工作流执行失败。', 'en': 'Spark workflow execution failed.'},
+    'timeout': {'zh-cn': 'Spark 工作流执行超时。', 'en': 'Spark workflow execution timed out.'},
+}
+
+
+def localize_driver_failure(result):
+    reason = result.pop('driver_failure', None)
+    if reason in _DRIVER_MESSAGES:
+        language = request.accept_languages.best_match(['zh-cn', 'en']) or 'zh-cn'
+        result['error'] = _DRIVER_MESSAGES[reason][language]
+    return result
 
 
 # ========================================
@@ -87,49 +97,6 @@ def error_response(error_code: str, message: str, details: str = None):
         response["details"] = details
     return response
 
-
-def serialize_json_value(value):
-    """Recursively reduce runtime values to JSON-safe primitives."""
-    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 9007199254740991:
-        return str(value)
-    if isinstance(value, Decimal):
-        return format(value, 'f')
-    if isinstance(value, dict):
-        return {key: serialize_json_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [serialize_json_value(item) for item in value]
-    if isinstance(value, bytes):
-        return value.hex()
-    try:
-        json.dumps(value)
-        return value
-    except (TypeError, ValueError):
-        return str(value)
-
-
-def serialize_workflow_value(value, preview_limit: int = 5):
-    """把 Spark 运行时对象转换为可 JSON 化的轻量结果摘要。"""
-    if DataFrame is not None and isinstance(value, DataFrame):
-        schema = [
-            {"name": field.name, "type": field.dataType.simpleString()}
-            for field in value.schema.fields
-        ]
-        rows = serialize_json_value([
-            row.asDict(recursive=True)
-            for row in value.limit(preview_limit).collect()
-        ])
-        return {
-            "type": "spark_dataframe",
-            "schema": schema,
-            "preview_rows": rows,
-            "preview_limit": preview_limit
-        }
-
-    if isinstance(value, dict):
-        return {key: serialize_workflow_value(item, preview_limit) for key, item in value.items()}
-    if isinstance(value, list):
-        return [serialize_workflow_value(item, preview_limit) for item in value]
-    return serialize_json_value(value)
 
 
 def runtime_tenant_id(data):
@@ -279,7 +246,7 @@ def execute_workflow_endpoint():
 
         started_at = datetime.now().isoformat()
         executions.record(ExecutionSnapshot(execution_id=execution_id, status="running", started_at=started_at))
-        result = execute_workflow(engine_id, tenant_id, workflow_def, input_data)
+        result = localize_driver_failure(execute_workflow(engine_id, tenant_id, workflow_def, input_data))
         execution_time = (time.time() - start) * 1000
         final_result = serialize_workflow_value(result.get('final_result'))
         all_results = serialize_workflow_value(result.get('all_results', {}))
@@ -402,7 +369,7 @@ def invoke_operator_endpoint(operator_name):
 
         logger.info(f"Invoking operator {operator_name} directly on Spark engine {engine_id}")
 
-        result = execute_single_operator(engine_id, tenant_id, operator_name, params)
+        result = localize_driver_failure(execute_single_operator(engine_id, tenant_id, operator_name, params))
         execution_time = (time.time() - start) * 1000
 
         if result['status'] == 'success':

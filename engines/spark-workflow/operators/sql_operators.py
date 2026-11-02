@@ -33,10 +33,9 @@ def sql(engine_id: int, tenant_id: int, query: str) -> DataFrame:
             query="SELECT country, COUNT(*) as city_count FROM cities GROUP BY country"
         )
     """
-    from spark_connector import get_spark_connector
+    from spark_connector import current_session
 
-    connector = get_spark_connector()
-    spark = connector.get_or_create_session(engine_id, tenant_id)
+    spark = current_session(engine_id, tenant_id)
 
     df_result = spark.sql(query)
 

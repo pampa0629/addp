@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 
 from addp_common.workflow_runtime import ExecutionRegistry, WorkflowRunner
 import api_server
-from workflow_engine import SparkWorkflowRunner, execute_workflow
+from workflow_engine import SparkWorkflowRunner, run_workflow
 from runtime_server import RuntimeApplication, register_runtime, post_worker_init
 
 
@@ -58,7 +58,7 @@ class WorkflowRuntimeTest(unittest.TestCase):
         definition = {'tasks': [task('a', params={'limit': {'$input': 'limit'}}),
             task('b', params={'nested': [{'input': {'$ref': 'a', 'port': 'default'}}]}, dependencies=['a'])]}
         with patch('workflow_engine.get_operator', return_value=operator):
-            result = execute_workflow(3, 2, definition, {'limit': 5})
+            result = run_workflow(3, 2, definition, {'limit': 5})
         self.assertEqual(result['status'], 'success')
         self.assertEqual(captured, [{'limit': 5}, {'nested': [{'input': {'rows': 20}}]}])
         self.assertEqual(result['all_results'], {'a': {'rows': 20}, 'b': {'rows': 20}})
@@ -69,8 +69,8 @@ class WorkflowRuntimeTest(unittest.TestCase):
             {'tasks': [task('a', dependencies=['b']), task('b', dependencies=['a'])]},
             {'tasks': [task('a', 'missing')]},
         ):
-            with patch('workflow_engine.get_spark_connector') as connector, patch('workflow_engine.get_operator') as operator:
-                result = execute_workflow(3, 2, definition)
+            with patch('spark_connector.invocation_session') as connector, patch('workflow_engine.get_operator') as operator:
+                result = run_workflow(3, 2, definition)
             self.assertEqual(result['error_code'], 'WORKFLOW_INVALID')
             connector.assert_not_called()
             operator.assert_not_called()
@@ -81,12 +81,12 @@ class WorkflowRuntimeTest(unittest.TestCase):
                     'output_ports': [{'name': 'east'}, {'name': 'west'}]}]
         with patch('workflow_engine.get_operator_metadata', return_value=metadata), patch('workflow_engine.get_operator') as get:
             get.side_effect = [lambda **p: {'east': 10, 'west': 12}, lambda **p: p['limit']]
-            result = execute_workflow(3, 2, {'tasks': [task('a', 'split'),
+            result = run_workflow(3, 2, {'tasks': [task('a', 'split'),
                 task('b', params={'limit': {'$ref': 'a', 'port': 'west'}}, dependencies=['a'])]})
         self.assertEqual(result['final_result'], 12)
         self.assertEqual(result['all_results']['a'], {'east': 10, 'west': 12})
         with patch('workflow_engine.get_operator_metadata', return_value=metadata), patch('workflow_engine.get_operator', return_value=lambda **p: {'east': 1}):
-            result = execute_workflow(3, 2, {'tasks': [task('a', 'split')]})
+            result = run_workflow(3, 2, {'tasks': [task('a', 'split')]})
         self.assertEqual(result['error_code'], 'EXECUTION_FAILED')
 
     def test_synchronous_post_and_other_request_threads_share_registry_snapshots(self):

@@ -67,16 +67,13 @@ COPY --from=query-build /usr/local/share/addp-spark/addp-spark-query-dialect.jso
 RUN python -m pip check \
     && python -c "from api_server import app; assert app.test_client().get('/health').status_code == 200" \
     && python - <<'PY'
-import os
-import spark_connector
+from pyspark.sql import SparkSession
+from spark_dependencies import configure_spark_dependencies
 
-# Only System resource discovery is replaced by a build fixture. Session
-# construction, Maven dependencies and function registration use production code.
-os.environ["SPARK_MODE"] = "local"
-spark_connector.get_engine = lambda engine_id, tenant_id: {
-    "connection_info": {"host": "127.0.0.1", "port": 7077, "web_ui_url": "http://127.0.0.1:8080"}
-}
-spark = spark_connector.SparkConnector().get_or_create_session(engine_id=1, tenant_id=1)
+# Build-only local computation checks the exact production dependencies.
+# Execution Drivers accept only a registered Standalone Master.
+spark = configure_spark_dependencies(SparkSession.builder.master('local[1]')).getOrCreate()
+
 try:
     assert spark.sparkContext._jvm.java.lang.System.getProperty("java.specification.version") == "11"
     distributed_jars = spark.sparkContext._jsc.sc().listJars().toString()

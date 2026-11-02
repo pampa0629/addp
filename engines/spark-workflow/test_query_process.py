@@ -26,11 +26,16 @@ assert request['password']=='private-fixture-secret'
 assert 'private-fixture-secret' not in repr(sys.argv)
 assert 'SPARK_WORKFLOW_SERVICE_CLIENT_SECRET' not in os.environ
 assert 'UNRELATED_SECRET' not in os.environ
+assert 'HTTP_PROXY' not in os.environ and 'HTTPS_PROXY' not in os.environ
+assert 'PYSPARK_GATEWAY_PORT' not in os.environ
+assert os.environ['_JAVA_OPTIONS'] == '-Dhttp.nonProxyHosts=localhost|127.*|host.docker.internal'
 assert pathlib.Path.cwd().stat().st_mode & 0o777 == 0o700
 pathlib.Path(sys.argv[1]).write_text('{"id":9007199254740993,"amount":100.123456789012345678,"directory":' + json.dumps(os.getcwd()) + '}')
 '''
         with patch.dict(os.environ, SPARK_WORKFLOW_SERVICE_CLIENT_SECRET='runtime-secret',
-                        UNRELATED_SECRET='unrelated'):
+                        UNRELATED_SECRET='unrelated', HTTP_PROXY='http://private-bootstrap-proxy:8888',
+                        HTTPS_PROXY='http://private-bootstrap-proxy:8888', PYSPARK_GATEWAY_PORT='9999',
+                        _JAVA_OPTIONS='-Dhttp.nonProxyHosts=localhost|127.*|host.docker.internal'):
             result = run_driver(self.command(source), {'password': 'private-fixture-secret'}, timeout=5)
         self.assertEqual(result['id'], 9007199254740993)
         self.assertEqual(result['amount'], Decimal('100.123456789012345678'))

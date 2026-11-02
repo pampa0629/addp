@@ -37,6 +37,14 @@ System 保存资源身份与连接事实；Spark 作业由实际集群执行，S
 
 Spark 集群 ID 是执行期绑定，不写入 `spark_workflow` 的 capabilities，也不进入算子公开 `params`。绑定校验见 [Runtime 注册规范](../../../docs/spec/workflow/Runtime注册与扩展.md#引擎注册)。
 
+### 按执行隔离的 Driver
+
+查询与工作流共用现有 HTTP Runtime，但每次查询、工作流或 direct 调用各自启动独立 Python／JVM Driver；同一工作流的全部算子共享本次 Driver，任务之间不缓存 SparkSession。父 Runtime 校验执行上下文、DAG及所选集群，从受信 System 取得本次集群连接；仅将执行必需配置经私有 stdin 交给子进程，不继承服务凭据或已有 PySpark Gateway。子进程固定绑定一个租户与集群，不自行查询 System、切换 Master 或回退 local 模式。
+
+DataFrame 和临时视图仅在本次 Driver 内流转；结束前生成既有 JSON 摘要，HTTP／执行状态不持有活的 DataFrame。父进程复用独立 Driver 的进程组、私有目录及输出大小控制；成功、异常或超时均释放 Driver 与后代进程。工作流内部预算与 Common Workflow HTTP 的默认10分钟预算一致，请求／结果采用现有 Driver 的1MiB／4MiB上限；这不增加新服务、端口、跨执行会话或公开取消接口。
+
+多集群验收必须使用两套独立 Master／Worker，核对 A→B→A、并发 A／B、失败隔离以及实际 Master Application／Worker 任务证据；仅验证两个资源 ID 或两份 builder 配置不能算路由通过。原生 T2 复用 `make test-common-spark-federation`，Runtime T1 复用 `make test-spark-workflow`；正式 Develop／Console 的跨模块验收另行认定，不能由底层 T2替代。
+
 用户和 AI 侧使用公开 locator 参数选择数据；Develop 在执行前按授权派生 `connection_info`、`schema/table` 或 `path`，对象存储路径转换为 Spark 使用的 `s3a://bucket/key`。Runtime 不解析公开 locator；支持哪些存储类型，以当前 Runtime 的 `compute.workflow.storage_access` 为准，详见 [Develop 资源适配](../../../docs/spec/workflow/Develop资源与执行.md#算子契约分层)。
 
 Runtime 请求还必须包含后端注入的 `runtime.tenant_id` 与 `runtime.execution_authorization`，授权 effects 覆盖整个 DAG；公开工作流定义不能直接作为完整 Runtime 请求发送。字段来源、封装和错误响应统一见 [HTTP 执行协议](../../../docs/spec/workflow/HTTP协议.md#执行工作流)，本文不另维护请求模板。

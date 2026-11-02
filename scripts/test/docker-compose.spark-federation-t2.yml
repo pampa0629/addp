@@ -27,8 +27,9 @@ services:
   spark-master:
     image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
     user: root
-    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master", "--port", "7077"]
+    entrypoint: ["bash", "-c", "cp -a /opt/java/openjdk/. /driver-java/ && exec /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077"]
     volumes:
+      - driver-java:/driver-java
       - ./spark-federation-contract.py:/addp/contract.py:ro
       - ../../engines/spark-workflow/query_process.py:/addp/query_process.py:ro
       - ../../engines/spark-workflow/query_guard.py:/addp/query_guard.py:ro
@@ -42,4 +43,45 @@ services:
     image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
     user: root
     entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "--host", "spark-worker", "--cores", "2", "--memory", "1g", "spark://spark-master:7077"]
+    hostname: spark-worker
+    environment: {SPARK_WORKER_DIR: /work}
+    volumes: [worker-a:/work]
     mem_limit: 2g
+  spark-master-b:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
+    user: root
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master-b", "--port", "7077"]
+    mem_limit: 1g
+  spark-worker-b:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
+    user: root
+    hostname: spark-worker-b
+    environment: {SPARK_WORKER_DIR: /work}
+    volumes: [worker-b:/work]
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "--host", "spark-worker-b", "--cores", "2", "--memory", "1g", "spark://spark-master-b:7077"]
+    mem_limit: 2g
+  driver:
+    image: python:3.11-slim-bookworm@sha256:2333bd330d12de02514770b3585cad313644316047cdee24a7acfdece6de6efb
+    entrypoint: ["python", "-c", "import time; time.sleep(86400)"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      JAVA_HOME: /opt/java
+      PYTHONPATH: /addp/spark-workflow
+      SPARK_WORKFLOW_SHARED_HOST: driver
+    volumes:
+      - driver-java:/opt/java:ro
+      - worker-a:/evidence/worker-a:ro
+      - worker-b:/evidence/worker-b:ro
+      - ../../engines/spark-workflow:/addp/spark-workflow:ro
+      - ../../common-python:/addp/common-python:ro
+      - ./spark-federation-contract.py:/addp/contract.py:ro
+    mem_limit: 4g
+    healthcheck:
+      test: ["CMD", "/opt/java/bin/java", "-version"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+volumes:
+  driver-java:
+  worker-a:
+  worker-b:

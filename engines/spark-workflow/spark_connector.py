@@ -1,17 +1,14 @@
-"""
-Spark Connector - 动态连接到用户注册的Spark集群
-核心功能: 管理多个SparkSession,每个对应一个用户注册的Spark资源
-"""
-
-import os
-import logging
+"""One immutable execution binding inside a fresh workflow Driver."""
+from contextlib import contextmanager
+from contextvars import ContextVar
 import ipaddress
-from typing import Dict, Tuple
+import os
+from pyspark import SparkContext
 from pyspark.sql import SparkSession
-from system_client import get_engine
 from spark_dependencies import configure_spark_dependencies
 
-logger = logging.getLogger(__name__)
+_binding = ContextVar('spark_execution_binding', default=None)
+
 
 def cluster_master_url(connection):
     """Consume the canonical registered Master endpoint; never infer a port."""
@@ -30,110 +27,40 @@ def cluster_master_url(connection):
     return f'spark://{host}:{port}'
 
 
-class SparkConnector:
-    """
-    Spark连接管理器
-    负责动态创建和管理到多个Spark集群的连接
-    """
-
-    def __init__(self):
-        self.sessions: Dict[Tuple[int, int], SparkSession] = {}
-
-    def get_engine_from_system(self, engine_id: int, tenant_id: int) -> dict:
-        """从System Backend获取资源信息"""
-        try:
-            return get_engine(engine_id, tenant_id)
-        except Exception as e:
-            logger.error(f"Failed to fetch engine {engine_id} from System: {e}")
-            raise
-
-    def get_or_create_session(self, engine_id: int, tenant_id: int) -> SparkSession:
-        """
-        获取或创建SparkSession
-
-        Args:
-            engine_id: system.engines 中的资源ID
-
-            tenant_id: System 验证后的租户上下文
-
-        Returns:
-            SparkSession 实例
-        """
-        if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
-            raise ValueError("tenant_id must be a positive integer")
-        session_key = (tenant_id, engine_id)
-        if session_key in self.sessions:
-            logger.info(f"Reusing SparkSession for tenant {tenant_id}, engine {engine_id}")
-            return self.sessions[session_key]
-
-        # 获取资源配置
-        engine = self.get_engine_from_system(engine_id, tenant_id)
-        conn_info = engine['connection_info']
-
-        logger.info(f"Creating new SparkSession for engine {engine_id}: {conn_info['host']}:{conn_info['port']}")
-
-        # 集群登记只有 Master 计算端点，不能回退到旧 Thrift/master_port。
-        builder = configure_spark_dependencies(SparkSession.builder) \
-            .appName(f"ADDP-Workflow-Engine-{engine_id}")
-
-        # HDFS Simple 身份属于应用部署事实，不能按单个资源切换共享会话身份。
-        hadoop_user = os.getenv('HADOOP_USER_NAME', '').strip()
-        if hadoop_user:
-            builder = builder.config("spark.executorEnv.HADOOP_USER_NAME", hadoop_user)
-        builder = builder.config("spark.hadoop.dfs.client.use.datanode.hostname", "true")
-
-        # 本地模式仅用于容器内自包含运行；常规模式连接 System 中登记的 Master。
-        if os.getenv('SPARK_MODE') == 'local':
-            builder = builder.master('local[*]')
-        else:
-            # 连接到用户的Spark集群
-            builder = builder.master(cluster_master_url(conn_info))
-            if conn_info['host'] in {'localhost', '127.0.0.1', '::1'}:
-                shared_host = os.getenv("SPARK_WORKFLOW_SHARED_HOST", "").strip()
-                if not shared_host:
-                    raise ValueError(
-                        "SPARK_WORKFLOW_SHARED_HOST is required for a loopback Spark master"
-                    )
-                builder = builder \
-                    .config("spark.driver.host", shared_host) \
-                    .config("spark.driver.bindAddress", "0.0.0.0")
-
-        # 创建会话
-        spark = builder.getOrCreate()
-
-        # 注册Sedona函数 (如果需要)
-        try:
-            from sedona.register import SedonaRegistrator
-            SedonaRegistrator.registerAll(spark)
-            logger.info("Sedona functions registered successfully")
-        except Exception as e:
-            logger.warning(f"Failed to register Sedona functions: {e}")
-
-        # 缓存会话
-        self.sessions[session_key] = spark
-        return spark
-
-    def close_session(self, tenant_id: int, engine_id: int):
-        """关闭指定资源的SparkSession"""
-        session_key = (tenant_id, engine_id)
-        if session_key in self.sessions:
-            self.sessions[session_key].stop()
-            del self.sessions[session_key]
-            logger.info(f"Closed SparkSession for engine {engine_id}")
-
-    def close_all_sessions(self):
-        """关闭所有SparkSession"""
-        for tenant_id, engine_id in list(self.sessions.keys()):
-            self.close_session(tenant_id, engine_id)
+@contextmanager
+def invocation_session(engine_id, tenant_id, connection):
+    if any(type(value) is not int or value <= 0 for value in (engine_id, tenant_id)):
+        raise ValueError('invalid Spark invocation identity')
+    master = cluster_master_url(connection)
+    if (_binding.get() is not None or SparkSession._instantiatedSession is not None
+            or SparkContext._active_spark_context is not None):
+        raise ValueError('Spark invocation requires a fresh Driver')
+    builder = (configure_spark_dependencies(SparkSession.builder)
+               .appName(f'ADDP-Workflow-Engine-{engine_id}').master(master)
+               .config('spark.hadoop.dfs.client.use.datanode.hostname', 'true'))
+    user = os.getenv('HADOOP_USER_NAME', '').strip()
+    if user:
+        builder = builder.config('spark.executorEnv.HADOOP_USER_NAME', user)
+    shared_host = os.getenv('SPARK_WORKFLOW_SHARED_HOST', '').strip()
+    if shared_host:
+        builder = builder.config('spark.driver.host', shared_host).config('spark.driver.bindAddress', '0.0.0.0')
+    elif connection['host'] in {'localhost', '127.0.0.1', '::1'}:
+        raise ValueError('SPARK_WORKFLOW_SHARED_HOST is required for a loopback Spark master')
+    spark = builder.getOrCreate()
+    token = None
+    try:
+        if spark.sparkContext.master != master:
+            raise ValueError('Spark invocation master mismatch')
+        token = _binding.set((engine_id, tenant_id, spark))
+        yield spark
+    finally:
+        if token is not None:
+            _binding.reset(token)
+        spark.stop()
 
 
-# 全局单例
-_spark_connector = None
-
-
-def get_spark_connector() -> SparkConnector:
-    """获取全局SparkConnector实例"""
-    global _spark_connector
-    if _spark_connector is None:
-        _spark_connector = SparkConnector()
-    return _spark_connector
+def current_session(engine_id, tenant_id):
+    binding = _binding.get()
+    if binding is None or binding[:2] != (engine_id, tenant_id):
+        raise ValueError('Spark session does not belong to this invocation')
+    return binding[2]

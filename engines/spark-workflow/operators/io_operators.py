@@ -53,12 +53,11 @@ def load(engine_id: int, tenant_id: int, **params) -> DataFrame:
         # 从SQL加载
         df = load(engine_id=34, source_type="sql", sql="SELECT * FROM poi WHERE category='restaurant'")
     """
-    from spark_connector import get_spark_connector
+    from spark_connector import current_session
     from storage_adapters import StorageAdapter
 
     # 获取SparkSession
-    connector = get_spark_connector()
-    spark = connector.get_or_create_session(engine_id, tenant_id)
+    spark = current_session(engine_id, tenant_id)
 
     # 使用StorageAdapter加载
     df = StorageAdapter.load(spark, params)

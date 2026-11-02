@@ -252,12 +252,13 @@ class OperatorMetadataTest(unittest.TestCase):
             def collect(self):
                 return [_Row({"id": 1, "name": "road"})]
 
-        original_dataframe = api_server.DataFrame
-        api_server.DataFrame = _DataFrame
+        import workflow_result
+        original_dataframe = workflow_result.DataFrame
+        workflow_result.DataFrame = _DataFrame
         try:
             got = api_server.serialize_workflow_value(_FakeDataFrame(), preview_limit=3)
         finally:
-            api_server.DataFrame = original_dataframe
+            workflow_result.DataFrame = original_dataframe
 
         self.assertEqual("spark_dataframe", got["type"])
         self.assertEqual(3, got["preview_limit"])

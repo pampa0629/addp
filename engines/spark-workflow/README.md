@@ -45,7 +45,7 @@ Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 ex
 1. 在 System 注册 Spark 通用引擎资源，在 Develop 的 `execution_config.engine_specific.spark_cluster_id` 中记录所选资源。
 2. Develop 校验资源为已启用的 `engine_type=spark`，执行时映射为请求顶层 `engine_id`。它与 Workflow Runtime 实例 ID、数据源 locator 中的存储引擎 ID 分属不同职责。
 3. 后端按当前用户授权，从输入 `locator` 或输出 `target_parent_locator + target_name` 派生连接、表名或路径；用户与 AI 侧任务不保存明文连接。Runtime 不解析 `addp://` locator。
-4. 后端注入 `runtime.tenant_id` 与 `runtime.execution_authorization`，授权 effects 必须覆盖整个 DAG。`SparkConnector.get_or_create_session(engine_id, tenant_id)` 使用可信租户上下文查询 System，并按 `(tenant_id, engine_id)` 缓存会话。
+4. 后端注入 `runtime.tenant_id` 与 `runtime.execution_authorization`，授权 effects 必须覆盖整个 DAG。父 Runtime 按可信租户上下文取得所选集群配置，为每次工作流启动独立 Driver；同一 DAG 共用本次会话，跨执行不缓存 Session。生命周期与多集群验收边界见 [执行隔离](docs/spark-design.md#按执行隔离的-driver)。
 
 公开与内部参数边界见 [Develop 资源与执行规范](../../docs/spec/workflow/Develop资源与执行.md#算子契约分层)，授权摘要及请求封装见 [HTTP 执行协议](../../docs/spec/workflow/HTTP协议.md#执行工作流)。`engine_id`、租户和授权上下文不得混入算子的公开参数或工作流示例 `params`。
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ADDP_T2_OWNED_SERVICES=postgres,mysql,spark-master,spark-worker
+# ADDP_T2_OWNED_SERVICES=postgres,mysql,spark-master,spark-worker,spark-master-b,spark-worker-b,driver
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.spark-federation-t2.yml
-# ADDP_T2_INPUT_FILES=engines/spark-workflow/ common/engine/plugins/spark/ common/engine/plugin/http_prepared_query.go common/engine/plugin/federated_prepared_query.go scripts/test/spark-federation-contract.py
+# ADDP_T2_INPUT_FILES=engines/spark-workflow/ common-python/ common/engine/plugins/spark/ common/engine/plugin/http_prepared_query.go common/engine/plugin/federated_prepared_query.go scripts/test/spark-federation-contract.py
 # Native admission only: disposable services, no personal Business or Infra access.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -12,7 +12,10 @@ cleanup() {
     local status=$? containers volumes networks
     trap - EXIT INT TERM
     set +e
-    compose down --volumes --remove-orphans >/dev/null 2>&1 || status=1
+    if ! compose down --volumes --remove-orphans >"$PROBE_DIR/cleanup.log" 2>&1; then
+        cat "$PROBE_DIR/cleanup.log" >&2
+        status=1
+    fi
     containers=$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT") || status=1
     volumes=$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT") || status=1
     networks=$(docker network ls -q --filter "label=com.docker.compose.project=$PROJECT") || status=1
@@ -28,6 +31,38 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 compose up -d --wait --wait-timeout 180
+# Real workflow Drivers use the same Python version and dependency inputs as
+# the product. The Spark image's Python 3.8 remains only for the older probes.
+dependency_proxy() {
+    dependency_proxy_value=$1
+    case "$1" in
+        http://127.0.0.1:*|https://127.0.0.1:*) dependency_proxy_value=${1/127.0.0.1/host.docker.internal} ;;
+        http://localhost:*|https://localhost:*) dependency_proxy_value=${1/localhost/host.docker.internal} ;;
+    esac
+}
+driver_dependencies() {
+    # Only dependency installation receives the inherited download proxy.
+    # Query/workflow Driver execution never inherits HTTP_PROXY/HTTPS_PROXY.
+    local plain_proxy tls_proxy dependency_proxy_value
+    dependency_proxy "${HTTP_PROXY:-${http_proxy:-}}"; plain_proxy=$dependency_proxy_value
+    dependency_proxy "${HTTPS_PROXY:-${https_proxy:-}}"; tls_proxy=$dependency_proxy_value
+    HTTP_PROXY="$plain_proxy" http_proxy="$plain_proxy" HTTPS_PROXY="$tls_proxy" https_proxy="$tls_proxy" \
+        compose exec -T -e HTTP_PROXY -e HTTPS_PROXY -e http_proxy -e https_proxy driver "$@"
+}
+driver_dependencies python -m pip install --disable-pip-version-check -r /addp/spark-workflow/requirements.txt
+driver_dependencies sh -c 'mkdir -p /tmp/common-python && cp /addp/common-python/pyproject.toml /addp/common-python/README.md /tmp/common-python/ && cp -a /addp/common-python/addp_common /tmp/common-python/ && python -m pip install --disable-pip-version-check /tmp/common-python'
+compose exec -T driver python -m pip check
+# Match the product image's dependency preparation before timed invocations.
+# This build-only local computation is not routing or real-Worker evidence.
+driver_dependencies python - <<'PY'
+from pyspark.sql import SparkSession
+from spark_dependencies import configure_spark_dependencies
+spark = configure_spark_dependencies(SparkSession.builder.master('local[1]')).getOrCreate()
+try:
+    assert spark.range(1).count() == 1
+finally:
+    spark.stop()
+PY
 # The fixed Spark runtime image contains a JRE. Compile Java 11 bytecode with
 # the host build JDK against that exact image's JARs, then copy only the artifact.
 mkdir -p "$PROBE_DIR/spark"
@@ -37,6 +72,10 @@ artifact_dir=$(compose exec -T spark-master python3 -c 'import sys; print(sys.pr
 compose exec -T spark-master mkdir -p "$artifact_dir"
 compose cp "$PROBE_DIR/query-dialect.jar" "spark-master:$artifact_dir/addp-spark-query-dialect.jar"
 compose cp "$PROBE_DIR/query-dialect.json" "spark-master:$artifact_dir/addp-spark-query-dialect.json"
+driver_artifacts=$(compose exec -T driver python -c 'import sys; print(sys.prefix + "/share/addp-spark")' | tr -d '\r')
+compose exec -T driver mkdir -p "$driver_artifacts"
+compose cp "$PROBE_DIR/query-dialect.jar" "driver:$driver_artifacts/addp-spark-query-dialect.jar"
+compose cp "$PROBE_DIR/query-dialect.json" "driver:$driver_artifacts/addp-spark-query-dialect.json"
 
 # Compile only the production probe tests for the container's actual Linux CPU.
 # Arrow still needs Apache Thrift transitively; the removed Hive SQL client does not.
@@ -96,4 +135,5 @@ for phase in query guard fresh supervised driver; do
         --packages org.postgresql:postgresql:42.7.4,com.mysql:mysql-connector-j:8.4.0 \
         /addp/contract.py "$phase"
 done
+compose exec -T driver python /addp/contract.py multicluster
 echo 'SPARK_FEDERATION_ADMISSION_PASS native_query_and_fresh_driver_only'

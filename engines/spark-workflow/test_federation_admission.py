@@ -18,6 +18,7 @@ from pathlib import Path
 path = Path(os.environ['STATE'])
 state = json.loads(path.read_text()) if path.exists() else {'active': False, 'down': False, 'phases': []}
 args = sys.argv[1:]
+print('fixture docker command:', args, file=sys.stderr, flush=True)
 status = 0
 if args[0] == 'compose':
     args = args[5:]
@@ -32,6 +33,9 @@ if args[0] == 'compose':
         if '/opt/spark/bin/spark-submit' in args:
             state['phases'].append(args[-1])
             status = 19 if os.environ.get('FAIL_AT') == 'driver' else 0
+        elif '/addp/contract.py' in args:
+            state['phases'].append(args[-1])
+            status = 24 if os.environ.get('FAIL_AT') == 'multicluster' else 0
         elif 'sys.prefix' in ' '.join(args):
             print('/tmp/owned-test-artifacts')
         elif 'uname' in args:
@@ -55,7 +59,7 @@ sys.exit(status)
 '''
         gate = ROOT / 'scripts/test/common-spark-federation-gate.sh'
         subprocess.run(['bash', '-n', str(gate)], check=True)
-        for failure in ('', 'up', 'compile', 'dialect-build', 'probe', 'driver', 'leak', 'seed'):
+        for failure in ('', 'up', 'compile', 'dialect-build', 'probe', 'driver', 'leak', 'seed', 'multicluster'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory)
                 docker = path / 'docker'
@@ -72,14 +76,17 @@ sys.exit(status)
                 sleeper.chmod(0o700)
                 env = dict(os.environ, PATH=directory + os.pathsep + os.environ['PATH'],
                            STATE=str(path / 'state.json'), FAIL_AT=failure)
-                result = subprocess.run(['bash', str(gate)], env=env, capture_output=True,
-                                        text=True, timeout=20)
+                try:
+                    result = subprocess.run(['bash', str(gate)], env=env, stdin=subprocess.DEVNULL, capture_output=True,
+                                            text=True, timeout=20)
+                except subprocess.TimeoutExpired as error:
+                    self.fail('disposable lifecycle fixture stalled: ' + str(error.stderr)[-3000:])
                 state = json.loads((path / 'state.json').read_text())
                 self.assertTrue(state['down'], result.stderr)
                 self.assertFalse(state['active'])
                 self.assertEqual(result.returncode == 0, not failure, result.stderr)
                 if not failure:
-                    self.assertEqual(state['phases'], ['query', 'guard', 'fresh', 'supervised', 'driver'])
+                    self.assertEqual(state['phases'], ['query', 'guard', 'fresh', 'supervised', 'driver', 'multicluster'])
                     self.assertIn('zero_residuals', result.stdout)
 
 

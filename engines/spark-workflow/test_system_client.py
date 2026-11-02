@@ -169,11 +169,14 @@ class ClusterMasterConnectionTest(unittest.TestCase):
         builder.appName.return_value = builder
         builder.config.return_value = builder
         builder.master.return_value = builder
-        connector = spark_connector.SparkConnector()
-        with patch.object(connector, 'get_engine_from_system', return_value={'connection_info': {'host': 'cluster.example', 'port': 17077, 'web_ui_url': 'http://cluster.example:18088'}}), \
-             patch.object(spark_connector, 'configure_spark_dependencies', return_value=builder), \
-             patch.dict(os.environ, {'SPARK_MODE': 'standalone'}):
-            connector.get_or_create_session(19, 7)
+        builder.getOrCreate.return_value.sparkContext.master = 'spark://cluster.example:17077'
+        with patch.object(spark_connector, 'configure_spark_dependencies', return_value=builder), \
+             patch.object(spark_connector.SparkSession, '_instantiatedSession', None):
+            with spark_connector.invocation_session(19, 7, {'host': 'cluster.example', 'port': 17077, 'web_ui_url': 'http://cluster.example:18088'}) as session:
+                self.assertIs(spark_connector.current_session(19, 7), session)
+                with self.assertRaises(ValueError):
+                    spark_connector.current_session(20, 7)
+        builder.getOrCreate.return_value.stop.assert_called_once()
         builder.master.assert_called_once_with('spark://cluster.example:17077')
 
 

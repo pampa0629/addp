@@ -119,7 +119,183 @@ def _jdbc_properties(spark, user, password):
     return properties
 
 
+def verify_multicluster():
+    """Real production Drivers/HTTP handlers; identity transport is a T2 fixture."""
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime, timedelta, timezone
+    import os
+    import tempfile
+    import time
+    from unittest.mock import AsyncMock, patch
+    from urllib.request import urlopen
+    from addp_common.auth import AuthorizationContext
+    import api_server
+    import query_http
+    import workflow_process
+
+    hosts = {21: 'spark-master', 22: 'spark-master-b'}
+    workers = {21: 'spark-worker', 22: 'spark-worker-b'}
+    engines = {key: {'id': key, 'tenant_id': 7, 'engine_type': 'spark', 'name': 'Cluster ' + str(key),
+                    'connection_info': {'host': host, 'port': 7077, 'web_ui_url': 'http://' + host + ':8080'}}
+               for key, host in hosts.items()}
+    engines[11] = {'id': 11, 'tenant_id': 7, 'engine_type': 'postgresql', 'name': 'Business PostgreSQL',
+                   'connection_info': {'host': 'postgres', 'port': 5432, 'database': 'addp_test',
+                                       'user': 'reader', 'password': 'admission-reader-only'}}
+    context = AuthorizationContext(principal_id=19, principal_type='service_principal',
+        token_type='service_access_token', client_id='addp-develop', tenant_id=7)
+    observations = []
+
+    def master(key):
+        with urlopen('http://' + hosts[key] + ':8080/json/', timeout=5) as response:
+            state = json.load(response)
+        assert state['status'] == 'ALIVE' and any(w['state'] == 'ALIVE' for w in state['workers']), state
+        return state
+
+    def apps(key, active_only=False):
+        state = master(key)
+        return {a['id'] for a in state.get('activeapps', []) + ([] if active_only else state.get('completedapps', []))}
+
+    def snapshot():
+        return {key: apps(key) for key in hosts}
+
+    def wait(predicate, description):
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            value = predicate()
+            if value:
+                return value
+            time.sleep(.1)
+        raise AssertionError(description)
+
+    def new_app(before, key):
+        added = wait(lambda: apps(key) - before[key], 'selected Master never observed the invocation')
+        assert len(added) == 1, added
+        return next(iter(added))
+
+    def finished(key, app):
+        folder = Path('/evidence/' + ('worker-a' if key == 21 else 'worker-b')) / app
+        def read():
+            for path in folder.glob('*/stderr'):
+                if 'Finished task' in path.read_text(errors='replace'):
+                    return True
+            return False
+        wait(read, 'selected Worker has no completed task for ' + app)
+        wait(lambda: app not in apps(key, True), 'Driver application remains active')
+        observations.append({'cluster_id': key, 'master': hosts[key], 'worker': workers[key], 'application_id': app})
+
+    def workflow(key, failing=False):
+        query = ('SELECT * FROM nonexistent_invocation_view' if failing else
+                 "SELECT id, reflect('java.net.InetAddress', 'getLocalHost') AS worker_host FROM range(0,4,1,2)")
+        definition = {'tasks': [{'id': 'clean', 'operator': 'sql', 'params': {'query': "SHOW TABLES LIKE 'private_invocation_view'"}, 'depends_on': []},
+            {'id': 'q', 'operator': 'sql', 'params': {'query': query}, 'depends_on': ['clean']},
+            {'id': 'v', 'operator': 'create_temp_view', 'params': {'input_df': {'$ref': 'q', 'port': 'default'},
+                'view_name': 'private_invocation_view'}, 'depends_on': ['q']},
+            {'id': 'again', 'operator': 'sql', 'params': {'query': 'SELECT * FROM private_invocation_view ORDER BY id'}, 'depends_on': ['v']}]}
+        with api_server.app.test_client() as client:
+            response = client.post('/api/workflow', json={'engine_id': key, 'workflow_def': definition,
+                'runtime': {'tenant_id': 7, 'execution_authorization': {'id': 8, 'effects': ['read']}}})
+        assert response.status_code == (500 if failing else 200), response.json
+        result = response.json
+        if failing:
+            assert result['status'] == 'failed' and result['error_code'] == 'EXECUTION_FAILED', result
+        else:
+            assert result['status'] == 'success', result
+            assert result['all_results']['clean']['preview_rows'] == [], 'previous invocation view leaked'
+            rows = result['final_result']['preview_rows']
+            assert [r['id'] for r in rows] == [0, 1, 2, 3], rows
+            assert all(r['worker_host'].split('/')[0] == workers[key] for r in rows), rows
+        return result
+
+    def grant(auth, execution, identifier, tenant, **kwargs):
+        assert auth == '8' and tenant == 7 and identifier in engines
+        return {'engine': engines[identifier], 'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()}
+
+    headers = {'Authorization': 'Bearer owned-t2-fixture'}
+    def prepare(key, invalid=False):
+        from uuid import uuid4
+        body = {'target_engine_id': key, 'source_engine_ids': [11],
+                'execution_id': str(uuid4()), 'execution_authorization_id': '8',
+                'query': ('SELECT id FROM Business_PostgreSQL.public.missing_table' if invalid else
+                          'SELECT id FROM Business_PostgreSQL.public.orders ORDER BY id'),
+                'language': 'sql', 'options': {'read_only': True, 'limit': 10}}
+        with api_server.app.test_client() as client:
+            response = client.post('/api/v1/queries', json=body, headers=headers)
+        if invalid:
+            assert response.status_code == 400 and response.json['error_code'] == 'query_source_not_supported', response.json
+            return None
+        assert response.status_code == 201, response.json
+        return response.json['query_id']
+
+    def execute(query_id):
+        with api_server.app.test_client() as client:
+            response = client.post('/api/v1/queries/' + query_id + '/execute', data='{}', content_type='application/json', headers=headers)
+            assert response.status_code == 200, response.json
+            assert response.json['rows'] == [{'id': '-9007199254740993'}, {'id': '9007199254740993'}], response.json
+            assert client.delete('/api/v1/queries/' + query_id, headers=headers).status_code == 204
+
+    before_dirs = set(Path(tempfile.gettempdir()).glob('addp-spark-query-*'))
+    with patch('workflow_process.get_engine', side_effect=lambda key, tenant: engines[key]), \
+         patch('query_http.resolve_authorization_context', new=AsyncMock(return_value=context)), \
+         patch('query_http.get_execution_engine_access', side_effect=grant):
+        for key in (21, 22, 21):
+            before = snapshot()
+            workflow(key)
+            app = new_app(before, key)
+            assert apps(43 - key) == before[43 - key], 'workflow was submitted to the other cluster'
+            finished(key, app)
+        print('SPARK_WORKFLOW_MULTI_CLUSTER_SEQUENCE_PASS a_b_a actual_master worker private_view', flush=True)
+        before = snapshot()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(workflow, [21, 22]))
+        for key in hosts:
+            finished(key, new_app(before, key))
+        before = snapshot()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            failed = pool.submit(workflow, 21, True)
+            passed = pool.submit(workflow, 22)
+            failed.result(); passed.result()
+        finished(22, new_app(before, 22))
+        wait(lambda: not apps(21, True), 'failed workflow left active application')
+        print('SPARK_WORKFLOW_MULTI_CLUSTER_CONCURRENT_PASS failure_isolation', flush=True)
+
+        for key in (21, 22, 21):
+            before = snapshot()
+            handle = prepare(key)
+            app = new_app(before, key)
+            assert app in apps(key, True)
+            assert apps(43 - key) == before[43 - key], 'query was submitted to the other cluster'
+            execute(handle)
+            finished(key, app)
+        before = snapshot()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            handles = list(pool.map(prepare, [21, 22]))
+        bound = {key: new_app(before, key) for key in hosts}
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(execute, handles))
+        for key in hosts:
+            finished(key, bound[key])
+        # Cancelling A and a failing new A preparation must leave the retained B plan usable.
+        before = snapshot()
+        a, b = prepare(21), prepare(22)
+        app_a, app_b = new_app(before, 21), new_app(before, 22)
+        with api_server.app.test_client() as client:
+            assert client.delete('/api/v1/queries/' + a, headers=headers).status_code == 204
+        wait(lambda: app_a not in apps(21, True), 'cancelled A Driver remains active')
+        prepare(21, invalid=True)
+        assert app_b in apps(22, True), 'A failure stopped the B Driver'
+        execute(b)
+        finished(22, app_b)
+        assert not query_http._queries
+        wait(lambda: not apps(21, True) and not apps(22, True), 'active cluster applications remain')
+    assert set(Path(tempfile.gettempdir()).glob('addp-spark-query-*')) == before_dirs, 'private Driver directories remain'
+    print('SPARK_QUERY_MULTI_CLUSTER_PASS a_b_a concurrent cancel_failure_isolation same_runtime', flush=True)
+    print('SPARK_MULTI_CLUSTER_EVIDENCE ' + json.dumps(observations, sort_keys=True), flush=True)
+
+
 def main(phase):
+    if phase == 'multicluster':
+        verify_multicluster()
+        return
     if phase == 'driver':
         from query_process import PreparedDriver, QueryDriverError
         request = {
