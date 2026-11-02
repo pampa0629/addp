@@ -10,6 +10,7 @@
 | --- | --- |
 | 配置维度与通用同步约束 | [Transfer 同步执行契约](#transfer-同步执行契约) |
 | continuous 配置、目标提交、位点与观测规则 | [continuous 主契约](#transfer-continuous-sync-v1-契约) |
+| continuous Owner 信号、告警恢复与过程事件分工 | [观测信号、告警与过程事件](#continuous-观测信号告警与过程事件分工) |
 | 进度展示、Monitor 读取与 Orchestrator 编排限制 | [进度观测与编排边界](#进度观测与编排边界) |
 | 用户期望、实际状态、execution/session 与租约 | [任务状态、执行身份与运行租约](#任务状态执行身份与运行租约) |
 | 任务级 Pause/Stop、标准取消与停止验收 | [停止与标准取消](#任务级-pausestop-与标准取消) |
@@ -103,8 +104,8 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 18. 观测样本写入 `common.task_executions.metadata.continuous`，至少包含样本时间、总体 retention health、总体 checkpoint health，以及每分区 earliest/latest/committed/lag/headroom/source rate/retention horizon/checkpoint age/checkpoint health。Transfer 是采集和判定 owner；Monitor 只读取统一 execution metadata 并展示，不直连业务 Kafka，不读取或改写 `transfer.sync_states` 与 `transfer.runtime_leases`。
     数据库 CDC 在同一次样本中额外写入唯一公共投影 `metadata.continuous.capture`，固定包含 capture `generation`，以及类型化、安全裁剪后的 `source_recovery` 和 `source_transactions`；尚无有效事实的字段省略。该投影不得包含 connector/source 私有错误、连接信息、凭据、Provider 私有资源名或未声明字段。非数据库 continuous execution 不得保留 `capture`。Monitor 只消费该公共投影，不得读取 `transfer.capture_resources` 或 Provider 私表补判。
 19. retention health 与 checkpoint health 是两个正交指标。retention health 回答“当前 committed position 是否仍在源保留窗口内，以及按当前写入速率还剩多少恢复时间”；checkpoint health 回答“存在 source lag 时，目标 committed position 是否长期未推进”。checkpoint health 只允许 `healthy|degraded|unknown`：lag 为 0 时为 `healthy`；lag 大于 0 且最近真实 position commit 距采样时间超过部署阈值时为 `degraded`；缺少真实 position commit 时间或无法计算时为 `unknown`。不得用 execution `updated_at`、worker heartbeat、consumer fetch position 或 diagnostics 采样时间冒充 position commit 时间。
-20. `recovery_circuit_state=open`、retention `critical`、retention `degraded`、checkpoint `degraded`、恢复等待和 `half_open` 可以由统一前端归一化为实时观测信号。数据库 CDC 还可从 `metadata.continuous.capture` 唯一派生 `source_recovery_critical`、`source_recovery_unavailable` 和 `source_transactions_unavailable`：源恢复窗口 `critical` 为严重级别，显式 `unknown` 恢复窗口或显式 `unavailable` 事务观测为警告级别；事实对象缺失时不产生信号。Monitor 不得根据活跃事务数、持续时间或 Undo 用量自行设阈值和告警。该信号是 execution metadata 的无状态展示投影，不是新的 task/execution 状态，不写回数据库，也不等同于持久化告警事件或已发送通知。后续若实现通知、确认、抑制和升级策略，必须复用这些 owner 事实并单独定义告警生命周期，不能反向让 Monitor 成为 Transfer runtime owner。
-21. Monitor 按 `tenant + module + task_type + source_task_id` 只消费最新根 execution 的观测信号；普通运行信号来自该最新 execution 的 `pending|running` 状态，schema blocked 终态信号按第 48 条处理。告警状态只允许 `open|acknowledged|resolved`：新信号打开事件，确认后进入 acknowledged，最新根 execution 不再提供对应 owner 信号后自动 resolved，不回扫历史 execution 维持旧告警。抑制使用独立 `suppressed_until`，不新增 suppressed 状态；确认和抑制均不改变信号、execution 或任务状态。告警按 `tenant + module + task_type + source_task_id + signal_code` 去重，同一身份同时最多一个未恢复事件；恢复后的同类信号再次出现必须创建新事件，保留历史，不复用旧行。
+20. continuous 与数据库 CDC 的无状态观测信号、严重级别与 Owner 边界见[实时观测信号](#continuous-owner-实时观测信号)。
+21. 最新根 execution、incident 去重、确认／抑制与恢复规则见[continuous 告警生命周期](#continuous-告警生命周期与最新根执行)。
 22. 告警通知第一版支持 Monitor 通用 Webhook 和平台统一 SMTP Relay 邮件。告警打开、严重级别升级和恢复必须分别产生且只产生一条不可变 `opened|escalated|resolved` lifecycle event；incident 变化、event 及所有启用通知渠道的 per-destination delivery outbox 必须在同一 Infra PostgreSQL 事务提交。各渠道 dispatcher 在事务外发送，并用 `FOR UPDATE SKIP LOCKED`、领取租约、指数退避和最大尝试次数实现至少一次投递；不得在持有数据库行锁时调用外部网络。
 23. Webhook destination 按租户隔离，配置只允许 `name`、`url`、`enabled`、`event_types` 和签名 `secret`。`event_types` 只允许 `opened|escalated|resolved` 且必须非空；secret 必须使用平台 `ENCRYPTION_KEY` 加密，任何 GET/List/Swagger 响应不得返回 secret 明文或密文。默认只允许 HTTPS 公网地址；开发或受管内网接收端必须由部署配置显式允许，不能由任务或普通 API 请求绕过 SSRF 约束。
 24. Webhook payload schema 固定为 `monitor.alert.webhook/v1`，只包含 `delivery_id`、event/incident 稳定身份、告警级别/状态、任务定义身份、execution UUID、生命周期时间和 Console 链接；不得发送业务数据、连接凭据、完整 execution metadata 或 owner 私有状态。请求签名固定为 HMAC-SHA256(`timestamp + "." + raw_body`)，接收方必须按 `delivery_id` 幂等并校验 timestamp 防重放。
@@ -130,9 +131,57 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 44. 通用规则 evaluator 使用最终一致的周期扫描即可，第一版不要求 Kafka。若后续使用 PostgreSQL `LISTEN/NOTIFY`，通知只能作为唤醒信号，`common.task_executions` 仍是唯一事实源，周期扫描仍负责丢失唤醒后的收敛。
 45. `created_at`、`updated_at` 或全局固定时长不能单独证明 execution 卡死。运行超时由 owner 按任务自身 deadline 写入 `status=timeout`；在统一 heartbeat/deadline 契约完成前，不实现 `pending_stalled` 或 `running_stalled` 通用规则，也不得启用按创建时间批量改写长任务状态的清理逻辑。
 46. Monitor 的通用告警目标发现和规则创建校验必须与 System 当前已启用 TaskProvider 的非废弃 `task_capabilities[]` 取交集。历史 execution 必须保留审计，但已经不再由 provider 声明的旧 `module + task_type` 不得出现在新规则目标中，也不得继续创建或重新启用规则；不得在 Monitor 硬编码业务任务类型白名单。
-47. 数据库 CDC schema change 的跨模块公共事实固定写入触发阻塞的 execution `metadata.continuous.schema_change`。该对象至少包含 `request_id`、`status=pending|applied|stopped`、generation/revision、源 partition/offset、scope、diff 和检测时间；审批后还包含 `metadata_scan.status=pending|running|success|failed`、attempt，以及成功提交 Meta scan 时返回的 Meta execution UUID。Transfer 必须在私有 request 状态变化的同一 Infra PostgreSQL 事务中更新该投影，Monitor 不得读取 `transfer.schema_change_requests` 补判。
-48. `schema_change.status=pending` 是 `schema_change_blocked` 严重告警的唯一 owner 信号。仅当同一任务最新根 execution 已经 `failed + stop_reason=schema_change_blocked` 且其投影仍为 pending 时，该信号有效；取样范围不扩展到历史 pending schema-change execution。更新的根 execution 取代旧执行的告警信号；新执行不再携带该信号时恢复旧 incident，不能因历史投影仍为 pending 而保持旧告警。人工 additive migration 审批把同一投影原子更新为 `applied` 后，Monitor 自动恢复 incident；不可逆 Stop 在删除任务私有控制状态前将其更新为 `stopped`。Stop 与 worker Finish 无论谁先提交，Finish 都必须以已经持久化的 `desired_state=stopped` fencing，不能把任务重新置为 blocked 或留下 pending 公共信号；有效 lease 已释放或过期后，Stop 还必须在 capture cleanup 前把遗留 active execution 取消并将 task 收敛到 idle。若 worker 在 request 提交后、Finish 前失联，lease expiry reconciler 必须将原 execution/task 收敛为 schema blocked 并清空 lease owner，禁止创建或领取 recovery execution。
-49. `metadata_scan.status=failed` 当前表示 Transfer 向 Meta 提交自动扫描失败，不证明扫描结果失败。手工 Meta 扫描尚无回写 Transfer 的关联完成事实，因此该状态只在 Transfer 任务详情和 execution metadata 中展示，第一版不得据此创建无法可靠自动恢复的 Monitor incident；未来若要告警，必须先定义关联 Meta execution 或显式完成回执，不能用 Resume、新 execution 或时间流逝猜测恢复。
+47. 数据库 CDC schema-change 的公共投影及与私有状态同事务更新见[公共事实投影](#schema-change-公共事实投影)。
+48. 最新根执行的 schema blocked 信号、恢复与 Stop／Finish／lease expiry 竞态见[告警恢复与停止竞态](#schema-blocked-告警恢复与停止竞态)。
+49. 自动扫描提交失败与实际扫描结果、Monitor incident 的边界见[扫描提交失败限制](#扫描提交失败的告警限制)。
+
+### continuous 观测信号、告警与过程事件分工
+
+阅读导航：[Owner 实时信号](#continuous-owner-实时观测信号)、[告警生命周期](#continuous-告警生命周期与最新根执行)、[Schema 公共事实](#schema-change-公共事实投影)、[Schema 告警恢复与竞态](#schema-blocked-告警恢复与停止竞态)、[扫描失败限制](#扫描提交失败的告警限制)、[过程事件与告警的区别](#过程事件与告警事实边界)。
+
+#### continuous Owner 实时观测信号
+
+- `recovery_circuit_state=open`、retention `critical`、retention `degraded`、checkpoint `degraded`、恢复等待和 `half_open` 可以由统一前端归一化为实时观测信号。
+- 数据库 CDC 还可从 `metadata.continuous.capture` 唯一派生 `source_recovery_critical`、`source_recovery_unavailable` 和 `source_transactions_unavailable`：源恢复窗口 `critical` 为严重级别，显式 `unknown` 恢复窗口或显式 `unavailable` 事务观测为警告级别；事实对象缺失时不产生信号。
+- Monitor 不得根据活跃事务数、持续时间或 Undo 用量自行设阈值和告警。
+- 该信号是 execution metadata 的无状态展示投影，不是新的 task/execution 状态，不写回数据库，也不等同于持久化告警事件或已发送通知。
+- 后续若实现通知、确认、抑制和升级策略，必须复用这些 owner 事实并单独定义告警生命周期，不能反向让 Monitor 成为 Transfer runtime owner。
+
+#### continuous 告警生命周期与最新根执行
+
+- Monitor 按 `tenant + module + task_type + source_task_id` 只消费最新根 execution 的观测信号；普通运行信号来自该最新 execution 的 `pending|running` 状态，schema blocked 终态信号按第 48 条处理。
+- 告警状态只允许 `open|acknowledged|resolved`：新信号打开事件，确认后进入 acknowledged，最新根 execution 不再提供对应 owner 信号后自动 resolved，不回扫历史 execution 维持旧告警。
+- 抑制使用独立 `suppressed_until`，不新增 suppressed 状态；确认和抑制均不改变信号、execution 或任务状态。
+- 告警按 `tenant + module + task_type + source_task_id + signal_code` 去重，同一身份同时最多一个未恢复事件；恢复后的同类信号再次出现必须创建新事件，保留历史，不复用旧行。
+
+#### Schema change 公共事实投影
+
+- 数据库 CDC schema change 的跨模块公共事实固定写入触发阻塞的 execution `metadata.continuous.schema_change`。
+- 该对象至少包含 `request_id`、`status=pending|applied|stopped`、generation/revision、源 partition/offset、scope、diff 和检测时间；审批后还包含 `metadata_scan.status=pending|running|success|failed`、attempt，以及成功提交 Meta scan 时返回的 Meta execution UUID。
+- Transfer 必须在私有 request 状态变化的同一 Infra PostgreSQL 事务中更新该投影，Monitor 不得读取 `transfer.schema_change_requests` 补判。
+
+#### Schema blocked 告警恢复与停止竞态
+
+- `schema_change.status=pending` 是 `schema_change_blocked` 严重告警的唯一 owner 信号。
+- 仅当同一任务最新根 execution 已经 `failed + stop_reason=schema_change_blocked` 且其投影仍为 pending 时，该信号有效；取样范围不扩展到历史 pending schema-change execution。
+- 更新的根 execution 取代旧执行的告警信号；新执行不再携带该信号时恢复旧 incident，不能因历史投影仍为 pending 而保持旧告警。
+- 人工 additive migration 审批把同一投影原子更新为 `applied` 后，Monitor 自动恢复 incident；不可逆 Stop 在删除任务私有控制状态前将其更新为 `stopped`。
+- Stop 与 worker Finish 无论谁先提交，Finish 都必须以已经持久化的 `desired_state=stopped` fencing，不能把任务重新置为 blocked 或留下 pending 公共信号；有效 lease 已释放或过期后，Stop 还必须在 capture cleanup 前把遗留 active execution 取消并将 task 收敛到 idle。
+- 若 worker 在 request 提交后、Finish 前失联，lease expiry reconciler 必须将原 execution/task 收敛为 schema blocked 并清空 lease owner，禁止创建或领取 recovery execution。
+
+#### 扫描提交失败的告警限制
+
+- `metadata_scan.status=failed` 当前表示 Transfer 向 Meta 提交自动扫描失败，不证明扫描结果失败。
+- 手工 Meta 扫描尚无回写 Transfer 的关联完成事实，因此该状态只在 Transfer 任务详情和 execution metadata 中展示，第一版不得据此创建无法可靠自动恢复的 Monitor incident；未来若要告警，必须先定义关联 Meta execution 或显式完成回执，不能用 Resume、新 execution 或时间流逝猜测恢复。
+
+#### 过程事件与告警事实边界
+
+| 事实 | 职责与权威正文 |
+| --- | --- |
+| `common.execution_events` 执行过程事件 | 记录一次实际 execution／attempt 的 started、progress、终态与截断；continuous 的事务、Runtime fencing、安全字段及预算沿[过程事件写入契约](执行监控.md#transfer-continuous-过程事件)，读取授权与通用存储沿[执行监控规范](执行监控.md#通用执行读取与过程事件)。 |
+| Monitor incident、告警 lifecycle event 与 delivery | 按本节 Owner 信号和最新根执行维护告警，通知事务 outbox、Webhook／邮件和投递审计沿[continuous 主契约](#transfer-continuous-sync-v1-契约)第 22—36 条；不能把投递记录或测试发送当作执行过程与恢复事实。 |
+
+过程事件的 30 天滚动清理与概览 180 天目标保留、只读评估和物理删除分别沿[留存契约](执行监控.md#概览保留与清理契约)认定；不将一种事件的状态、预算或留存要求直接套到另一种事件。固定版本、失败、清理与未覆盖项沿[Transfer 验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)和[Monitor 历史证据导航](../../../monitor/CLAUDE.md#历史证据导航)，静态契约或局部结果不证明完整运行、告警或外部通知链路通过。
 
 ### 进度观测与编排边界
 
