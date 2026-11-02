@@ -110,17 +110,63 @@ PG basic 指定执行的取消入口为 `POST /api/v1/meta/executions/{execution
 
 旧逐任务审批专用的 `ReadScanTaskFacts`、任务授权事实接口及其 DTO／客户端，以及 Runtime 响应中的 `qualification_id` 与旧资格记录查询均已退役，不保留兼容读取或另一条审批路线。Worker 继续消费 `ReadScanPlanFacts`；以下执行事实契约用于实际计划和运行条件核验，不能因审批退出删除，也不作为持久批准。
 
-System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/runtime/scan-executions/{execution_id}/authorization-facts`，使用当前 Tenant 的独立 `addp-system` Service 凭据及既有 `meta.task_provider.read`。接口不接受 query、请求体、Actor 或附加 selector；响应 `Cache-Control: no-store`。200 只表示事实投影，不能代替 System 的权限与引擎管理范围裁决、授权签发或 Worker 消费。客户端只发一次请求，不跟随重定向或隐式重试，不传播错误体、凭据及连接。
+- 访问与响应：[身份与读取](#计划事实的访问身份与读取)、[响应与范围](#计划事实响应与范围)。
+- 冻结与执行：[版本与摘要](#计划冻结版本与摘要)、[任务一致性](#计划执行与任务一致性)、[首次 PG 产出补扫](#首次-pg-产出补扫的冻结与投影)。
+- 裁决与验证：[事实与授权](#计划事实与授权裁决)、[标准入口与验收范围](#计划事实验证与验收边界)。
 
-共享 wire 为 `execution.MetaScanPlanFacts`，`schema_version=meta.scan_plan_facts/v1`，包含 execution UUID、可空 task ID／功能定义摘要、完整原始执行配置摘要、字符串 Engine ID／冻结版本、basic／deep、source scope、read options 和 basis state。任务功能定义显式包含 Engine、扫描 selector 和读取参数，排除名称、创建人及最近执行摘要；它是内容标识，不冒充任务资源 Version。执行摘要覆盖完整原始 JSON，保留数字精度，拒绝重复键，不能经宽松 JSONMap 重新序列化后求值。事实不返回原始配置、Actor、Grant 或连接；System 独立读取统一执行事实并核对当前引擎与执行条件。
+#### 计划事实的访问身份与读取
 
-`source_scope` 为 `exact`／`full` 和 1–200 个同 Engine 的完整 typed anchors，按 `json.Marshal(path)` 字节顺序排列，拒绝重复；名字保持原字节。complete 必须有可证明的 scope，incomplete／unsupported／needs_refresh 必须为 null。纯值校验只证明结构，实际类型、父链和归属由 Meta 持久事实或可信生产回执证明。原始路径、ref group 或不完整组成不能猜成完整范围，也不能为获得 typed path 而先访问源。当前投影支持已完整识别的单项 native 边界和已冻结引擎类型的 whole 根；其他 selector 保持非完整，后续随对应可信计划接线补齐，不以此宣称全部采集范围已获授权。
+System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/runtime/scan-executions/{execution_id}/authorization-facts`，使用当前 Tenant 的独立 `addp-system` Service 凭据及既有 `meta.task_provider.read`。
 
-首次 PG 产出 basic 补扫由唯一私有 `EnsureTransferProductionBasicScan` 适配器冻结 `execution_config.initial_production_target`，值为严格 v3 成功首次创建并提交回执的原始 typed Target。冻结发生于同一 provenance 创建事务，不增加公开 ScanRequest 字段，不保存完整回执、连接或 Grant，也不从 locator 反推。原直接父 UUID 与 metadata.initial_production_execution_id 一致，创建时 Child Actor 三元组逐项复制并核对真实 UserOrigin。事实投影在同一原执行快照中核验 ad-hoc、manual/basic/force、Transfer 来源、同一 PG 普通表叶、唯一 locator 与原 typed Target 经共享转换严格相等及其余 selector 互斥；缺失或矛盾返回 incomplete/null，不降为 whole。原始 typed 目标自然纳入 execution_plan_digest，名字不规范化。已有冻结版本、任务摘要或读取选项不可用的 409 规则保持。该投影仍不是 Allow，System 必须独立核对统一执行与 Transfer 的当前可信生产事实，包括同 Tenant、成功、首次 attempt、非 retry、实际创建提交、原目标和完整人类来源；Meta GET 不回源或补查生产服务。
+- 接口不接受 query、请求体、Actor 或附加 selector；响应 `Cache-Control: no-store`。
+- 客户端只发一次请求，不跟随重定向或隐式重试，不传播错误体、凭据及连接。
 
-新执行从所用 Engine 快照冻结真实版本和类型；有任务的执行还在创建事务中冻结真实功能定义摘要，读取时与当前定义比较，变化后返回 needs_refresh／null scope，不能把旧执行和新任务定义组合成 complete。缓存快照不是许可，System 签发与 Worker 消费仍须核对当前版本。旧执行缺少真实冻结版本或任务功能摘要时返回 409 `meta_scan_plan_facts_unavailable`，要求重建计划，不取当前版本补齐。`read_options` 对象必需，encoding／has_header 可省，显式 null 拒绝，false 保留；整个响应预算为 512 KiB，未知字段、重复字段、缺失必需字段及无效 UTF-8 均拒绝。
+#### 计划事实响应与范围
 
-有任务的执行不能仅凭摘要相同就视为符合任务定义。事实投影还须逐项核对实际执行的 Engine、扫描深度、force、读取选项和 selector；保留摘要却改变执行配置、注入一次性 item／targets 或私有产出目标时返回同一 409，不返回可授权范围。任务的读取参数只允许正确类型，不能使用宽松转换补救畸形值。现有定时调度可以从任务显式路径集合中减去独立调度的成员，但结果必须非空且全部为原集合的精确成员；不得以路径前缀推断包含关系，或将空集合降为整个引擎。此项只证明冻结执行与当前任务一致，原始路径／ref group 仍须经过可信类型化范围投影，不能因一致性校验通过而获得采集许可。
+共享 wire 为 `execution.MetaScanPlanFacts`，`schema_version=meta.scan_plan_facts/v1`，包含 execution UUID、可空 task ID／功能定义摘要、完整原始执行配置摘要、字符串 Engine ID／冻结版本、basic／deep、source scope、read options 和 basis state。
+
+- `source_scope` 为 `exact`／`full` 和 1–200 个同 Engine 的完整 typed anchors，按 `json.Marshal(path)` 字节顺序排列，拒绝重复；名字保持原字节。
+- complete 必须有可证明的 scope，incomplete／unsupported／needs_refresh 必须为 null。
+- 纯值校验只证明结构，实际类型、父链和归属由 Meta 持久事实或可信生产回执证明。
+- 原始路径、ref group 或不完整组成不能猜成完整范围，也不能为获得 typed path 而先访问源。
+- 当前投影支持已完整识别的单项 native 边界和已冻结引擎类型的 whole 根；其他 selector 保持非完整，后续随对应可信计划接线补齐，不以此宣称全部采集范围已获授权。
+- `read_options` 对象必需，encoding／has_header 可省，显式 null 拒绝，false 保留；整个响应预算为 512 KiB，未知字段、重复字段、缺失必需字段及无效 UTF-8 均拒绝。
+
+#### 计划冻结版本与摘要
+
+- 任务功能定义显式包含 Engine、扫描 selector 和读取参数，排除名称、创建人及最近执行摘要；它是内容标识，不冒充任务资源 Version。
+- 执行摘要覆盖完整原始 JSON，保留数字精度，拒绝重复键，不能经宽松 JSONMap 重新序列化后求值。
+- 新执行从所用 Engine 快照冻结真实版本和类型；有任务的执行还在创建事务中冻结真实功能定义摘要，读取时与当前定义比较，变化后返回 needs_refresh／null scope，不能把旧执行和新任务定义组合成 complete。
+- 旧执行缺少真实冻结版本或任务功能摘要时返回 409 `meta_scan_plan_facts_unavailable`，要求重建计划，不取当前版本补齐。
+
+#### 计划执行与任务一致性
+
+有任务的执行不能仅凭摘要相同就视为符合任务定义。
+
+- 事实投影还须逐项核对实际执行的 Engine、扫描深度、force、读取选项和 selector；保留摘要却改变执行配置、注入一次性 item／targets 或私有产出目标时返回同一 409，不返回可授权范围。
+- 任务的读取参数只允许正确类型，不能使用宽松转换补救畸形值。
+- 现有定时调度可以从任务显式路径集合中减去独立调度的成员，但结果必须非空且全部为原集合的精确成员；不得以路径前缀推断包含关系，或将空集合降为整个引擎。
+- 此项只证明冻结执行与当前任务一致，原始路径／ref group 仍须经过可信类型化范围投影，不能因一致性校验通过而获得采集许可。
+
+#### 首次 PG 产出补扫的冻结与投影
+
+- 首次 PG 产出 basic 补扫由唯一私有 `EnsureTransferProductionBasicScan` 适配器冻结 `execution_config.initial_production_target`，值为严格 v3 成功首次创建并提交回执的原始 typed Target。
+- 冻结发生于同一 provenance 创建事务，不增加公开 ScanRequest 字段，不保存完整回执、连接或 Grant，也不从 locator 反推。
+- 原直接父 UUID 与 metadata.initial_production_execution_id 一致，创建时 Child Actor 三元组逐项复制并核对真实 UserOrigin。
+- 事实投影在同一原执行快照中核验 ad-hoc、manual/basic/force、Transfer 来源、同一 PG 普通表叶、唯一 locator 与原 typed Target 经共享转换严格相等及其余 selector 互斥；缺失或矛盾返回 incomplete/null，不降为 whole。
+- 原始 typed 目标自然纳入 execution_plan_digest，名字不规范化。
+- 已有冻结版本、任务摘要或读取选项不可用的 409 规则保持。
+- 该投影仍不是 Allow，System 必须独立核对统一执行与 Transfer 的当前可信生产事实，包括同 Tenant、成功、首次 attempt、非 retry、实际创建提交、原目标和完整人类来源；Meta GET 不回源或补查生产服务。
+
+#### 计划事实与授权裁决
+
+- 200 只表示事实投影，不能代替 System 的权限与引擎管理范围裁决、授权签发或 Worker 消费。
+- 事实不返回原始配置、Actor、Grant 或连接；System 独立读取统一执行事实并核对当前引擎与执行条件。
+- 缓存快照不是许可，System 签发与 Worker 消费仍须核对当前版本。
+
+#### 计划事实验证与验收边界
+
+事实投影及 PostgreSQL 专项的标准入口、隔离要求与覆盖范围统一见[Meta 专项验证入口](../../meta/CLAUDE.md#专项验证入口)；真实身份、源枚举、取消及失败清理沿[PG basic 集中扫描场景](testing/scenarios/授权与共享.md#pg-basic-集中扫描本轮真实验收待运行)。首次产出事实的来源与补扫职责见[生产来源规范](tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)。接口、字段投影或确定性门禁通过不代表授权签发、Worker 实际读取、目标部署迁移或跨服务 T4 已通过；当前完成范围见[实施范围与验证](addp授权上下文规范.md#九实施范围与验证)，旧批准的固定版本、失败、清理与未覆盖项保留在[历史采集资格导读](testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)，不用于追认新规则通过。
 
 ### 对象目录归属不变量
 
