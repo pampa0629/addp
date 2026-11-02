@@ -2,7 +2,7 @@
 
 状态：待评估能力
 
-更新时间：2026-11-01
+更新时间：2026-11-02
 
 本文只记录尚未进入 Transfer 当前支持范围的能力，不是排期或兼容路线。当前正式语义见 [Transfer 任务语义与同步模式](../../transfer/docs/transfer-任务语义与同步模式.md)，当前配置与限制见 [Transfer 模块基本概念及配置说明](../../transfer/docs/transfer-基本概念及配置说明.md)。
 
@@ -12,11 +12,13 @@
 
 ## 一、Bounded 同步
 
+现行 watermark 的源／目标、稳定键、单字段与复合游标范围统一见[watermark 配置](../../transfer/docs/transfer-基本概念及配置说明.md#七watermark-bounded-incremental)及[正式同步执行契约](../spec/tasks/Transfer同步执行.md#transfer-同步执行契约)。本节只列尚未开放的扩展。
+
 | 能力 | 当前缺口 | 进入实现前必须确认 |
 |---|---|---|
 | Manifest incremental | 文件、对象和快照集合尚无基于 fingerprint、etag、mtime 或版本清单的增量主状态 | manifest identity、删除表达、冻结上界、重命名语义和目标幂等策略 |
 | Watermark 只读副本 | 当前只读源主库一致性快照，不开放副本读取 | 最大复制延迟、lookback、重复吸收和上界一致性 |
-| Watermark lookback | 当前严格从 committed 复合位置继续，不重读迟到窗口 | 时间回拨边界、窗口大小、目标幂等和状态推进规则 |
+| Watermark lookback | 当前单字段或复合游标均从 committed position 继续，不重读迟到窗口 | 时间回拨边界、窗口大小、目标幂等和状态推进规则 |
 | MySQL watermark 空间字段 | 当前 MySQL watermark 源不接受空间字段 | MySQL 空间 schema/row 表达、SRID 事实和目标 Provider 矩阵 |
 | Snapshot checkpoint resumable | snapshot checkpoint 当前只可观测，retry 从头执行 | Provider resume marker、目标重复写入边界、replace staging 与原子切换 |
 | [Bounded execution cancel](../spec/tasks/Transfer同步执行.md#transfer-同步执行契约) | 尚未开放针对当前 bounded execution 的真实取消；bounded Pause/Resume 只控制未来调度、不中断现有执行，见[状态与控制](../../transfer/docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay) | worker context 取消、目标事务回滚、任务状态收敛和 API 契约 |
@@ -82,6 +84,7 @@ Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不�
 
 | 主题 | 独有验收边界 | 专题入口 |
 |---|---|---|
+| watermark 与副本／lookback | 单字段仅新增、复合游标新增／更新的资格及实际结果分别核验；源上界、稳定排序、键映射、目标幂等与提交后 CAS/fencing 仍按契约验证。现有 resume 或目标 upsert 结果不证明副本读取、lookback、watermark replay 或物理删除检测已开放。 | [watermark 配置](../../transfer/docs/transfer-基本概念及配置说明.md#七watermark-bounded-incremental)、[正式同步执行契约](../spec/tasks/Transfer同步执行.md#transfer-同步执行契约) |
 | 业务 Kafka DLQ / replay | DLQ 查询成功或 `payload_available=true` 不证明 replay 通过，也不代表 CDC replay/DLQ 已开放。 | [DLQ availability 与验收](../../transfer/docs/数据库架构.md#availability-失败与验收边界) |
 | CDC 单表与待扩展能力 | 已有单表 snapshot/upsert/delete 结果不能补作多表、无主键或 Truncate 通过。 | [数据库 CDC 语义](../../transfer/docs/transfer-任务语义与同步模式.md#63-数据库-cdc) |
 | CDC 类型矩阵与 Oracle | 源／目标组合、snapshot／insert／update／delete、精度／时区及空间维度分别核对；空间源捕获不代表目标写入同样受支持，其他专项通过不能补作 CDC 类型矩阵通过。 | [Oracle 既有数据面范围](../../transfer/docs/transfer-基本概念及配置说明.md#oracle-既有验证与验收边界)、[专项调用与隔离清理门禁缺口](../../transfer/README.md#oracle-cdc-专项入口缺口) |
