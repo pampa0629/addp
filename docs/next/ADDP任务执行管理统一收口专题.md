@@ -982,4 +982,9 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 **受影响门禁。** 改动仅专项 Python runner、报告 validator、对应测试和现有文档；标准 `make test-execution-online-ci-runner` 覆盖本地与独立 Linux Execution online CI runner，既有 scripts 路径选择及递归输入发现已命中，无需变更 Makefile／workflow／环境。未修改产品后端，不用无关 Go／PG／聚合 Platform 结果替代本门禁。新的 Hosted 尚未授权，本轮不再运行。
 
 
-**本地实际验证。** 当前实现的 `make test-execution-online-ci-runner` exit0：原生 runner／proxy／Infra／Hosted 编排反例共114项，报告／前置／安全／CI登记共169项，Node语法、Shell语法及 `Online CI registration is consistent` 均通过；新测试对旧源码的反例验证明确失败。覆盖 validation 所有终态仍不能替代 execute、同 User 同发布引用、诊断 HTTP 受余额限制、窗口耗尽无额外读、读503保留最近状态、非法引用不发请求、健康 execute 路径不额外读 validation、scan／execute 精确绑定、私密字段不归档和成功报告拒绝失败字段。此层不证明真实 Engine validation／完整清理通过；独立 Linux CI 待该提交实际终态，新的 Hosted 不运行。
+**本地实际验证。** 当前实现的 `make test-execution-online-ci-runner` exit0：原生 runner／proxy／Infra／Hosted 编排反例共114项，报告／前置／安全／CI登记共169项，Node语法、Shell语法及 `Online CI registration is consistent` 均通过；新测试对旧源码的反例验证明确失败。覆盖 validation 所有终态仍不能替代 execute、同 User 同发布引用、诊断 HTTP 受余额限制、窗口耗尽无额外读、读503保留最近状态、非法引用不发请求、健康 execute 路径不额外读 validation、scan／execute 精确绑定、私密字段不归档和成功报告拒绝失败字段。此层不证明真实 Engine validation／完整清理通过；独立 Linux CI 结果见下，新的 Hosted 不运行。
+
+
+**独立 Linux 实际终态。** 修正提交 `6487837e7fb5ddf8df6c3b8dac9aed411969502b` 已推送 main；[Run 41378965722／Execution online CI runner Job 125065338426](https://github.com/pampa0629/addp/actions/runs/41378965722/job/125065338426) 于北京时间2026-11-02 10:40:19—10:42:35实际 completed/success。主责 fresh API、原始日志分别核对准确SHA、`selected: true`、标准 `make test-execution-online-ci-runner` 确实执行、114＋169全部OK及登记一致；日志27390字节，SHA-256 `a9290d51253de90392e43a54143e1fc7a55cc0b00e9e2d7ac466892995ed7d8c`。私有原件和逐项断言在本轮 `/tmp` 目录的 `diagnostic-ci-job.json`／`.log` 与 `diagnostic-ci-proof.json`，同时已同步CI会话。此处仅本专项受影响独立门禁通过，不扩称聚合工作流通过。
+
+**仍未闭合。** 第九轮0/7终态保持，完整 Engine 清理链路未验收；第八轮CDC失败的具体原因本轮未复现，删除受理后是否停于 validation、具体Owner及其安全原因亦因旧报告缺失而不能确认。本次补的是有界安全取证，不宣称修复未知产品根因。下一优先项是用户另行确认后，再用此诊断运行一次同身份、同范围、同七断言、同预算的 transfer-engine Hosted；在确认之前不得追加。Graph真实原生写图回包、正向reopen等未验收范围没有新增证据。
