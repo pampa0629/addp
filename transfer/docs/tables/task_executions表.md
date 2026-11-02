@@ -87,7 +87,7 @@ snapshot 失败重跑与 watermark 跨 execution 续读统一见[Bounded 执行�
 
 ### 自动恢复字段与安全 DTO
 
-continuous 恢复 metadata 中，本次恢复的审计事实与可变计数、circuit 状态分别维护；字段清单与重置边界统一见[恢复审计与运行状态](../transfer-任务语义与同步模式.md#恢复审计与运行状态)，新旧 execution、领取条件及退避规则见[自动恢复与退避](../transfer-任务语义与同步模式.md#自动恢复与退避)。恢复字段的存在不额外授予读取权限。
+continuous 恢复 metadata 中，本次恢复的审计事实与可变计数、circuit 状态分别维护；字段清单与重置边界统一见[恢复审计与部署配置](../../../docs/spec/tasks/Transfer同步执行.md#恢复审计与部署配置)，新旧 execution、领取条件及退避规则见[自动恢复契约](../../../docs/spec/tasks/Transfer同步执行.md#continuous-自动恢复退避与-circuit)。恢复字段的存在不额外授予读取权限。
 
 用户专业详情及启动、恢复、回放、重试响应使用同一显式安全投影，不直接公开任意 metadata、原始 checkpoint、执行授权引用或 fencing／租约；允许的恢复诊断与其他敏感信息排除统一见[专业响应契约](../../../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)。模块结果与 TaskProvider 使用各自入口和投影，身份、权限及来源隔离见[API 归属](#六api)，不能用专业响应可见字段反推原始持久实体可读。
 

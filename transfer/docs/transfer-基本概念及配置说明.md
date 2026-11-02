@@ -512,7 +512,7 @@ diagnostics 采样间隔、degraded/critical retention 阈值和 checkpoint 停�
 
 ### 自动恢复与运行策略
 
-continuous worker 的重启恢复、领取条件与 circuit 状态统一见[自动恢复与退避](transfer-任务语义与同步模式.md#自动恢复与退避)，不可变审计与可变状态见[恢复审计与运行状态](transfer-任务语义与同步模式.md#恢复审计与运行状态)；唯一 pending execution、租约及恢复约束以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。
+continuous worker 的重启恢复、领取条件与 circuit 状态统一见[自动恢复与退避](transfer-任务语义与同步模式.md#自动恢复与退避)，不可变审计与可变状态见[恢复审计与运行状态](transfer-任务语义与同步模式.md#恢复审计与运行状态)；唯一 pending execution、租约及恢复约束以[自动恢复契约](../../docs/spec/tasks/Transfer同步执行.md#continuous-自动恢复退避与-circuit)为准。
 
 指数退避、最大连续失败次数、circuit 冷却时间和稳定运行窗口由“连续任务策略”配置页统一维护，属于 Transfer-owned 平台运行配置，不进入任务 JSON。
 

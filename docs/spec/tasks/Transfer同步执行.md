@@ -4,7 +4,7 @@
 
 定义 Transfer sync 的正交配置维度、bounded / continuous 边界、状态推进与观测要求。数据库捕获见[CDC](Transfer数据库CDC.md)，业务 Kafka 的拒绝记录与重放见[Kafka 与 DLQ](Transfer-Kafka与DLQ.md)。
 
-阅读导航：[Transfer 同步执行契约](#transfer-同步执行契约)、[Transfer continuous sync v1 契约](#transfer-continuous-sync-v1-契约)、[continuous 首次扫描与 claim](#continuous-首次扫描与-claim)。
+阅读导航：[Transfer 同步执行契约](#transfer-同步执行契约)、[Transfer continuous sync v1 契约](#transfer-continuous-sync-v1-契约)、[continuous 自动恢复](#continuous-自动恢复退避与-circuit)、[continuous 首次扫描与 claim](#continuous-首次扫描与-claim)。
 
 ## Transfer 同步执行契约
 
@@ -131,15 +131,47 @@ continuous task 与 execution 生命周期：
 2. `start` 原子设置 `desired_state=running` 并创建 pending execution；`pause` 设置 `paused`，`resume` 设置 `running` 并创建新 execution，`stop` 设置 `stopped`。同一 task 已有合法 active session 时不得重复创建 execution。
 3. 每次启动或自动恢复都创建新的 pending execution；一个 execution 对应一个 runtime session，结束后不得重新变回 running。
 4. runtime session 由 `transfer.runtime_leases` 保存 owner instance、execution、lease deadline、heartbeat 和 fencing token；lease 与 `transfer.sync_states` 的业务 position 分离。
-5. 正常总运行时长不触发 timeout。source poll、target apply、position commit 分别使用操作超时；heartbeat 丢失或 lease 过期以 `failed` 结束当前 execution，并在任务 desired state 仍为 running 时创建新 execution 恢复。worker 正常退出时当前 execution 以 `cancelled + stop_reason=worker_shutdown` 结束；新 worker 必须自动创建 recovery execution，继承上一 execution 的 `trigger_type`，并在 metadata 记录 `recovery_reason` 与 `recovered_from_execution_id`。lease 过期恢复同样创建新 execution，并记录 `recovery_reason=lease_expired`；两种情况都不得把旧 execution 重新置为 running。
-   可恢复失败必须立即创建唯一的 pending recovery execution，并通过 deployment-level `recovery_not_before` 控制领取时间；不得依赖 worker 内存 timer，也不得为同一次失败重复创建 execution。worker shutdown 不增加连续失败次数；普通 execution failure 和 lease expiry 增加连续失败次数。`schema_change_blocked`、用户 Pause 和 Stop 不进入自动恢复。
-   自动恢复使用指数退避，达到最大连续失败次数后 circuit 进入 `open`，冷却到期后的 pending execution 被领取时转为 `half_open`。circuit open 是临时恢复治理状态，不复用任务 `status=blocked`；此时任务保持 `desired_state=running`、无合法 runtime lease，实际 `status=idle`。任一目标 position 成功提交，或 session 连续稳定运行达到部署阈值后再发生失败，连续失败计数重置。
-   recovery execution metadata 至少记录不可变的本次恢复审计 `recovery_reason`、`recovered_from_execution_id`、`recovery_attempt`、`recovery_not_before`、`recovery_backoff_seconds`，以及可变运行状态 `recovery_consecutive_failures`、`recovery_circuit_state=closed|open|half_open`。成功提交 position 只重置连续失败计数和 circuit 状态，不得覆盖本次 recovery execution 的 attempt/backoff 审计。退避初值、上限、最大连续失败次数、circuit 冷却时间和稳定运行阈值是 Transfer runtime 部署配置，不进入任务 JSON。
+5. continuous 自动恢复的触发、新执行身份、唯一领取、退避、circuit 与审计约束见[自动恢复契约](#continuous-自动恢复退避与-circuit)。
 6. 用户 pause/stop 必须真实停止 poll、完成或放弃当前未提交批次、关闭 source/target session、释放 partition ownership 和 lease，再以 `cancelled` 结束当前 execution，并在 metadata 记录 `stop_reason=paused|stopped`。resume 创建新 execution。
 7. 工作包 2B 真实中断闭环完成时可以恢复 Transfer 私有 task-definition stop 控制入口；但 `supports_cancel` 是整个 `sync` task type 的 TaskProvider 能力，在 bounded execution 也具备真实取消前必须继续为 `false`，不得注册标准 execution cancel endpoint。
 8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age/health、retry/rebalance、恢复 circuit 和 heartbeat。Monitor 只消费 owner 写入的统一 execution metadata；不得自行连接 Kafka 或 Transfer 私有表补算这些事实。
 9. Orchestrator v1 不编排 continuous Transfer task。Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
 10. continuous 首次扫描的触发、精确范围、claim 接管及失败边界统一见[首次扫描契约](#continuous-首次扫描与-claim)。
+
+### continuous 自动恢复、退避与 circuit
+
+阅读导航：[触发与执行身份](#恢复触发与执行身份)、[领取与排除条件](#恢复领取与排除条件)、[指数退避与 circuit](#指数退避与-circuit-状态)、[审计与部署配置](#恢复审计与部署配置)、[读取与实际验收](#恢复读取与实际验收边界)。
+
+#### 恢复触发与执行身份
+
+- 正常总运行时长不触发 timeout。
+- source poll、target apply、position commit 分别使用操作超时；heartbeat 丢失或 lease 过期以 `failed` 结束当前 execution，并在任务 desired state 仍为 running 时创建新 execution 恢复。
+- worker 正常退出时当前 execution 以 `cancelled + stop_reason=worker_shutdown` 结束；新 worker 必须自动创建 recovery execution，继承上一 execution 的 `trigger_type`，并在 metadata 记录 `recovery_reason` 与 `recovered_from_execution_id`。
+- lease 过期恢复同样创建新 execution，并记录 `recovery_reason=lease_expired`；两种情况都不得把旧 execution 重新置为 running。
+
+#### 恢复领取与排除条件
+
+- 可恢复失败必须立即创建唯一的 pending recovery execution，并通过 deployment-level `recovery_not_before` 控制领取时间；不得依赖 worker 内存 timer，也不得为同一次失败重复创建 execution。
+- worker shutdown 不增加连续失败次数；普通 execution failure 和 lease expiry 增加连续失败次数。
+- `schema_change_blocked`、用户 Pause 和 Stop 不进入自动恢复。
+
+#### 指数退避与 circuit 状态
+
+- 自动恢复使用指数退避，达到最大连续失败次数后 circuit 进入 `open`，冷却到期后的 pending execution 被领取时转为 `half_open`。
+- circuit open 是临时恢复治理状态，不复用任务 `status=blocked`；此时任务保持 `desired_state=running`、无合法 runtime lease，实际 `status=idle`。
+- 任一目标 position 成功提交，或 session 连续稳定运行达到部署阈值后再发生失败，连续失败计数重置。
+
+#### 恢复审计与部署配置
+
+- recovery execution metadata 至少记录不可变的本次恢复审计 `recovery_reason`、`recovered_from_execution_id`、`recovery_attempt`、`recovery_not_before`、`recovery_backoff_seconds`，以及可变运行状态 `recovery_consecutive_failures`、`recovery_circuit_state=closed|open|half_open`。
+- 成功提交 position 只重置连续失败计数和 circuit 状态，不得覆盖本次 recovery execution 的 attempt/backoff 审计。
+- 退避初值、上限、最大连续失败次数、circuit 冷却时间和稳定运行阈值是 Transfer runtime 部署配置，不进入任务 JSON。
+
+#### 恢复读取与实际验收边界
+
+恢复读取已提交位置、lease 过期的 `stop_reason` 和领取时 fencing 递增等运行细节见[Transfer 生命周期](../../../transfer/docs/transfer-任务语义与同步模式.md#自动恢复与退避)；策略管理入口见[配置说明](../../../transfer/docs/transfer-基本概念及配置说明.md#自动恢复与运行策略)。部署参数保存、pending execution 创建、冷却到期或状态展示均不证明实际恢复成功。
+
+持久字段与安全 DTO 的区别、User／模块结果／TaskProvider 的身份及读取范围见[执行记录表](../../../transfer/docs/tables/task_executions表.md#自动恢复字段与安全-dto)和[专业读取契约](执行监控.md#transfer-专业执行读取与响应)，不得因恢复 metadata 存在而扩大响应或授权。标准入口、固定版本、失败、清理及未覆盖项见[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)；真实故障后的新执行、目标提交、恢复与清理结果分别核对。
 
 ### continuous 首次扫描与 claim
 

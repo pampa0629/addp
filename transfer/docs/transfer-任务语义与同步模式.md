@@ -262,20 +262,15 @@ Pause 停止目标应用并结束当前 session；启动或 Resume 创建新 exe
 
 以下自动恢复由 supervisor 管理，均要求任务仍为 `desired_state=running`。
 
-continuous worker 重启时不会复用已结束的 execution。正常 worker shutdown 将旧 execution 收敛为 `cancelled + stop_reason=worker_shutdown`；新 worker 在任务 `desired_state=running` 时原子创建 recovery execution，继承上一 execution 的 `trigger_type`，并从 `transfer.sync_states` 已提交位置继续。runtime lease 过期时旧 execution 先以 `failed + stop_reason=lease_expired` 结束，再创建 recovery execution。每次领取继续递增 fencing token。
+触发条件、新旧 execution 与 `trigger_type` 继承见[恢复触发与执行身份](../../docs/spec/tasks/Transfer同步执行.md#恢复触发与执行身份)；唯一 pending execution、`recovery_not_before` 前禁止领取及不自动恢复的情形见[领取与排除条件](../../docs/spec/tasks/Transfer同步执行.md#恢复领取与排除条件)，计数重置、冷却与 `open/half_open` 见[circuit 状态](../../docs/spec/tasks/Transfer同步执行.md#指数退避与-circuit-状态)。
 
-普通 execution failure 和 lease expiry 会立即创建唯一 pending recovery execution，但在 metadata 的 `recovery_not_before` 之前不可领取。连续失败采用指数退避；达到最大连续失败次数后 `recovery_circuit_state=open`，冷却到期被领取时转为 `half_open`。circuit open 不复用 schema drift 的任务 `blocked`；任务仍保持 `desired_state=running`，没有活 lease 时实际 `status=idle`。worker shutdown 不累计失败，schema drift、Pause 和 Stop 不自动恢复。
+新 worker 在任务 `desired_state=running` 时原子创建 recovery execution，并从 `transfer.sync_states` 已提交位置继续。runtime lease 过期时旧 execution 先以 `failed + stop_reason=lease_expired` 结束，再创建 recovery execution。每次领取继续递增 fencing token。
 
-唯一执行、领取与恢复条件以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准；参数管理归属见[配置说明](transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)，恢复位置核验见[生命周期控制](#用户运行控制)。
+参数管理归属见[配置说明](transfer-基本概念及配置说明.md#自动恢复与运行策略)，恢复前的位置核验见[生命周期控制](#用户运行控制)。
 
 #### 恢复审计与运行状态
 
-恢复 execution 的 metadata 区分以下持久事实：
-
-| 事实 | 字段与边界 |
-|---|---|
-| 本次恢复的不可变审计 | `recovery_reason`、`recovered_from_execution_id`、`recovery_attempt`、`recovery_not_before`、`recovery_backoff_seconds`；不随成功提交重置。 |
-| 可变运行状态 | `recovery_consecutive_failures` 与 `recovery_circuit_state=closed|open|half_open`。 |
+恢复 execution 的不可变审计、可变计数／circuit 字段和部署参数归属统一见[恢复审计与部署配置](../../docs/spec/tasks/Transfer同步执行.md#恢复审计与部署配置)。
 
 任一目标 position 成功提交，或 session 稳定运行达到配置的稳定运行窗口后再失败，只重置 `recovery_consecutive_failures` 和 circuit 状态；本次 execution 的 `recovery_attempt`、`recovery_not_before` 与 `recovery_backoff_seconds` 作为审计事实保持不变。
 
