@@ -70,7 +70,7 @@ Notebook 交互 Session 授权、引擎数据访问授权和排队 execution 的
 
 真实 Query 事件读取复用 `transfer-relational-sql-etl` Hosted suite：三轮父编排中的六个 Develop Query 子执行，分别经已授权 Monitor 入口核对 started／progress／completed、同一 execution／attempt、时间和游标顺序及闭合进度计数；报告只记录核验数量，不复制事件或查询结果。既有 `make test-transfer-online-runner` 与 CI 聚合承接读取契约和负向回归；该扩展实际运行通过前不计为 T4。
 
-2026-10-13 本地 Query 事件接入验证：平台 T0 在固定版本审计工具使用经官方 SHA-256 校验的临时 wheel 后通过；`make test-go` 全仓 Go T1、`make test-develop-frontend`（42 项浏览器及构建）、`make test-develop-postgres`（含 11 组新增事件事务回归）、`make test-transfer-online-runner`（65 项及 System 夹具）与执行夹具门禁通过。PostgreSQL 同时验证旧队列与受保护表结果；全部新场景以事务回滚清理，不新建本地 database。首次模块聚合因工具下载失败，第二次在 T1 的本地时区过期夹具失败；修正为 UTC 后上述各层标准入口通过，模块聚合整体未重跑，不把失败记录改记为通过。旧 PostgreSQL 队列夹具的纳秒租户 ID 已调整到现有事件表整数范围。Query 新事件的真实 Hosted T4 尚未运行，Workflow／Notebook、180 天概览清理未包含在本轮。
+Query 事件接入的本地门禁、首次工具／时区失败、UTC 修复、聚合未重跑及未覆盖范围见[2026-10-13 本地验证原记录](../docs/spec/testing/evidence/引擎与空间计算历史证据.md#2026-10-13-query-事件接入本地验证)；该批与同日监督器验证分别认定，不将后来的 T4 或分项结果并入原结论。
 
 ### 算子发现服务
 
@@ -483,6 +483,7 @@ curl -H "Authorization: Bearer <token>" \
 
 | 历史主题 | 原记录与范围 |
 | --- | --- |
+| Query 事件接入、本地工具／时区失败与未重跑聚合 | [2026-10-13 本地验证原记录](../docs/spec/testing/evidence/引擎与空间计算历史证据.md#2026-10-13-query-事件接入本地验证) |
 | Query／Workflow 监督器、过程事件和 Notebook 排队缺口 | [2026-10-13 阶段记录及 10-15 状态核对](../docs/spec/testing/evidence/引擎与空间计算历史证据.md#2026-10-13-执行监督器第一期工作区验证尚未发布) |
 | 图查询工作台旧 v3 验收契约 | [原五 Permission 与浏览器覆盖要求](../docs/spec/testing/evidence/引擎与空间计算历史证据.md#develop-图查询工作台旧-v3-验收契约记录) |
 | 保护拒绝诊断、原值历史与角色资格／导出 | [Develop 查询保护历史记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#develop-查询保护与导出历史记录) |
