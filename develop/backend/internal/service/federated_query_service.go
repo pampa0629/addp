@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/federatedquery"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/protection"
 	"github.com/google/uuid"
@@ -293,4 +295,16 @@ func (s *FederatedQueryService) GetSources(ctx context.Context, tenantID, runtim
 		return nil, err
 	}
 	return s.catalog.Sources(ctx, tenantID, runtimeEngineID, provider)
+}
+
+func (s *FederatedQueryService) GetSourceForItem(ctx context.Context, tenantID, targetID uint, locator *resourcetree.ResourceLocator) ([]DataSource, error) {
+	_, provider, err := s.runtime(ctx, tenantID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	sources, err := s.catalog.SourceForItem(ctx, tenantID, targetID, provider, locator)
+	if errors.Is(err, federatedquery.ErrSourceItemInvalid) {
+		return nil, ErrSampleQueryResourceInvalid
+	}
+	return sources, err
 }

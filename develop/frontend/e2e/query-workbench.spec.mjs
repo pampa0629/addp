@@ -702,6 +702,37 @@ test('uses tenant source-engine catalogs for the DuckDB federated runtime', asyn
 })
 
 for (const [engineType, quote] of [['spark', '`'], ['duckdb', '"']]) {
+  test(`generates the selected PG source template for ${engineType} and keeps the compute target`, async ({ page }) => {
+    const runtime = structuredClone(DUCKDB_RUNTIME)
+    Object.assign(runtime, { id: 19, engine_type: engineType, name: `${engineType} query cluster` })
+    runtime.capabilities.compute.query.identifier_quotes.sql = quote
+    const executionRequests = []
+    await installMockBackend(page, { resultKind: 'table', engines: [runtime], metaEngines: [ENGINE], executionRequests })
+    const samples = []
+    page.on('request', request => { if (request.url().includes('/sample-query')) samples.push(new URL(request.url())) })
+    await page.goto('/sql')
+    const tree = page.locator('.catalog-panel')
+    await tree.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+    await tree.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+    await tree.getByRole('treeitem', { name: 'customers', exact: true }).click()
+    await tree.getByRole('button', { name: '生成查询模板', exact: true }).click()
+    await expect.poll(() => samples.length).toBe(1)
+    expect(samples[0].pathname).toBe('/api/v1/develop/engines/19/sample-query')
+    expect(samples[0].searchParams.get('locator')).toBe(resourceTree().children[0].children[0].locator)
+    const reference = ['PostgreSQL_Demo', 'public', 'customers'].map(part => quote + part + quote).join('.')
+    const expected = `SELECT id, name FROM ${reference} LIMIT 10`
+    await expect.poll(() => page.locator('.monaco-editor-container').evaluate(el => el.__vueParentComponent.setupState.editor.getValue())).toBe(expected)
+    await expect(page.locator('.engine-select')).toContainText(runtime.name)
+    await page.getByRole('button', { name: '执行', exact: true }).click()
+    await expect.poll(() => executionRequests.length).toBe(1)
+    expect(executionRequests[0].execution_config.engine_id).toBe(runtime.id)
+    expect(executionRequests[0].content.query).toBe(expected)
+    expect(executionRequests[0].content.target_locator).toBeUndefined()
+    await expect(page.getByText('Ada', { exact: true })).toBeVisible()
+  })
+}
+
+for (const [engineType, quote] of [['spark', '`'], ['duckdb', '"']]) {
   test(`inserts exact owner segments for ${engineType} without a display-path fallback`, async ({ page }) => {
     const runtime = structuredClone(DUCKDB_RUNTIME)
     Object.assign(runtime, { id: 19, engine_type: engineType, name: `${engineType} query cluster` })
@@ -1007,11 +1038,21 @@ async function installMockBackend(page, {
     }
     if (path.endsWith('/sample-query')) {
       const requestURL = new URL(request.url())
-      if (requestURL.searchParams.has('locator')) {
-        return fulfillJSON(route, { query: 'SELECT id, name FROM public.customers LIMIT 10', language: 'sql' })
-      }
       const engineID = Number(path.split('/')[5])
       const engine = engines.find(item => item.id === engineID) || ENGINE
+      if (requestURL.searchParams.has('locator')) {
+        const locator = requestURL.searchParams.get('locator')
+        const federation = engine.capabilities?.compute?.query?.federation?.supported === true
+        if (!federation && !locator.startsWith(`addp://engine/${engineID}/`)) {
+          return fulfillJSON(route, { error_code: 'query_template_resource_invalid' }, 400)
+        }
+        if (federation) {
+          const quote = engine.capabilities.compute.query.identifier_quotes.sql
+          const reference = ['PostgreSQL_Demo', 'public', 'customers'].map(part => quote + part + quote).join('.')
+          return fulfillJSON(route, { query: `SELECT id, name FROM ${reference} LIMIT 10`, language: 'sql' })
+        }
+        return fulfillJSON(route, { query: 'SELECT id, name FROM public.customers LIMIT 10', language: 'sql' })
+      }
       return fulfillJSON(route, engine.id === MONGO_ENGINE.id
         ? { query: '{"find":"orders","filter":{},"limit":10}', language: 'mql' }
         : { query: 'SELECT id, name FROM public.customers', language: 'sql' })

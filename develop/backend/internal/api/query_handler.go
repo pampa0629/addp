@@ -14,6 +14,7 @@ import (
 	developi18n "github.com/addp/develop/backend/i18n"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/models"
+	"github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -144,11 +145,11 @@ type TestConnectionRequest struct {
 // @Tags Query
 // @Produce json
 // @Param id path int true "引擎ID | Engine ID"
-// @Param locator query string false "标准资源定位符，指定后生成该数据项的查询模板 | Standard resource locator; when provided, generate a query template for that data item"
+// @Param locator query string false "所选数据项定位符；原生查询须属于当前引擎，联邦查询须属于受支持的来源引擎 | Selected data item locator; native queries require the selected engine, federated queries require a supported source engine"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{} "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]interface{} "无执行或数据读取权限 | Execution or data-read permission denied"
+// @Failure 403 {object} map[string]interface{} "无执行或数据读取权限，或数据保护校验未通过 | Execution/data-read permission denied or data protection required"
 // @Failure 409 {object} map[string]interface{} "授权状态冲突 | Authorization conflict"
 // @Failure 422 {object} map[string]interface{} "所选数据项为空或当前业务库没有可用真实样例 | The selected data item is empty or no real sample data is available"
 // @Failure 500 {object} map[string]interface{}
@@ -167,7 +168,7 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 	var locator *resourcetree.ResourceLocator
 	if locatorValue := strings.TrimSpace(c.Query("locator")); locatorValue != "" {
 		locator, err = resourcetree.ParseURI(locatorValue)
-		if err != nil || locator.EngineID != uint(engineID) {
+		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":      commoni18n.T(c, developi18n.MsgQueryTemplateResourceInvalid),
 				"error_code": "query_template_resource_invalid",
@@ -185,14 +186,13 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 	}
 	tenantID := tenantIDValue(c)
 	if h.federated != nil && h.federated.IsRuntime(c.Request.Context(), tenantID, uint(engineID)) {
-		if locator != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":      commoni18n.T(c, developi18n.MsgQueryTemplateResourceInvalid),
-				"error_code": "query_template_resource_invalid",
-			})
-			return
-		}
-		h.getFederatedSampleQuery(c, tenantID, uint(engineID), userAccessToken)
+		h.getFederatedSampleQuery(c, tenantID, uint(engineID), userAccessToken, locator)
+		return
+	}
+	if locator != nil && locator.EngineID != uint(engineID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgQueryTemplateResourceInvalid), "error_code": "query_template_resource_invalid",
+		})
 		return
 	}
 	query, language, err := h.sqlEngine.GenerateAuthorizedSampleQuery(
@@ -232,9 +232,19 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 	})
 }
 
-func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtimeEngineID uint, userAccessToken string) {
-	sources, err := h.federated.GetSources(c.Request.Context(), tenantID, runtimeEngineID)
+func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtimeEngineID uint, userAccessToken string, locator *resourcetree.ResourceLocator) {
+	var sources []service.DataSource
+	var err error
+	if locator != nil {
+		sources, err = h.federated.GetSourceForItem(c.Request.Context(), tenantID, runtimeEngineID, locator)
+	} else {
+		sources, err = h.federated.GetSources(c.Request.Context(), tenantID, runtimeEngineID)
+	}
 	if err != nil {
+		if errors.Is(err, service.ErrSampleQueryResourceInvalid) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryTemplateResourceInvalid), "error_code": "query_template_resource_invalid"})
+			return
+		}
 		h.writeSQLExecutionError(c, err)
 		return
 	}
@@ -247,6 +257,10 @@ func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtime
 	for _, candidate := range candidates {
 		binding, freezeErr := h.federated.FreezeBinding(c.Request.Context(), tenantID, runtimeEngineID, candidate.Query)
 		if freezeErr != nil {
+			if locator != nil {
+				h.writeSQLExecutionError(c, freezeErr)
+				return
+			}
 			if firstFailure == nil {
 				firstFailure = freezeErr
 			}
@@ -258,6 +272,10 @@ func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtime
 		)
 		if issueErr != nil {
 			if h.writeExecutionAuthorizationError(c, issueErr) {
+				return
+			}
+			if locator != nil {
+				h.writeSQLExecutionError(c, issueErr)
 				return
 			}
 			if firstFailure == nil {
@@ -273,6 +291,14 @@ func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtime
 			c.JSON(http.StatusOK, gin.H{"query": candidate.Query, "language": "sql"})
 			return
 		}
+		if locator != nil {
+			if executeErr != nil {
+				h.writeSQLExecutionError(c, executeErr)
+			} else {
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"error": commoni18n.T(c, developi18n.MsgSampleQueryResourceEmpty), "error_code": "sample_query_resource_empty"})
+			}
+			return
+		}
 		if firstFailure == nil {
 			if executeErr != nil {
 				firstFailure = executeErr
@@ -281,7 +307,7 @@ func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtime
 			}
 		}
 	}
-	slog.WarnContext(c.Request.Context(), "DuckDB 样例查询没有可执行候选",
+	slog.WarnContext(c.Request.Context(), "联邦样例查询没有可执行候选",
 		"runtime_engine_id", runtimeEngineID, "source_count", len(sources),
 		"candidate_count", len(candidates), "first_failure", firstFailure)
 	c.JSON(http.StatusUnprocessableEntity, gin.H{
@@ -348,6 +374,13 @@ func (h *QueryHandler) writeConnectionTestError(c *gin.Context, err error) {
 }
 
 func (h *QueryHandler) writeSQLExecutionError(c *gin.Context, err error) {
+	if writeQueryProtectionError(c, err) {
+		return
+	}
+	if errors.Is(err, protection.ErrRequired) {
+		c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryResultProtectionRequired), "error_code": "data_protection_required"})
+		return
+	}
 	if errors.Is(err, service.ErrControlledSQLExecutionUnsupported) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":      commoni18n.T(c, developi18n.MsgControlledSQLEngineUnsupported),

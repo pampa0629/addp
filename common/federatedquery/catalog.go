@@ -2,6 +2,7 @@ package federatedquery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -14,7 +15,10 @@ import (
 	engineselection "github.com/addp/common/engine/selection"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 )
+
+var ErrSourceItemInvalid = errors.New("invalid federated source item")
 
 type Catalog struct {
 	system *client.SystemServiceClient
@@ -51,6 +55,55 @@ func NewCatalog(system *client.SystemServiceClient, meta *client.MetaClient) *Ca
 		meta:   meta,
 		logger: slog.Default().With("component", "federated_query_catalog"),
 	}
+}
+
+// SourceForItem resolves exactly the selected item, never a replacement table
+// or a whole-source enumeration. Meta owns the physical name and ancestor facts.
+func (c *Catalog) SourceForItem(ctx context.Context, tenantID, targetID uint, provider plugin.FederatedQueryRuntimeProvider, locator *resourcetree.ResourceLocator) ([]Source, error) {
+	if c == nil || c.system == nil || c.meta == nil || tenantID == 0 || targetID == 0 || provider == nil || locator == nil || locator.EngineID == 0 || locator.EngineID == targetID || locator.ItemID == nil || *locator.ItemID == 0 || locator.NodeID != nil {
+		return nil, ErrSourceItemInvalid
+	}
+	descriptor, err := c.system.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, locator.EngineID)
+	if err != nil {
+		return nil, err
+	}
+	caps := provider.Capabilities()
+	if descriptor.ID != locator.EngineID || !engineselection.IsAvailableStorageEngine(descriptor.AsEngine()) || caps.Compute == nil || caps.Compute.Query == nil || caps.Compute.Query.Federation == nil {
+		return nil, ErrSourceItemInvalid
+	}
+	supported := false
+	for _, kind := range caps.Compute.Query.Federation.SourceEngineTypes {
+		supported = supported || kind == descriptor.EngineType
+	}
+	if !supported {
+		return nil, ErrSourceItemInvalid
+	}
+	facts, err := c.meta.WithTenantID(tenantID).GetItemAncestors(ctx, *locator.ItemID)
+	if err != nil {
+		return nil, err
+	}
+	registered, err := plugin.Get(descriptor.EngineType)
+	if err != nil {
+		return nil, ErrSourceItemInvalid
+	}
+	model, ok := registered.(plugin.EngineCatalogModelProvider)
+	if !ok || facts == nil || string(locator.Type) != facts.Item.ItemType {
+		return nil, ErrSourceItemInvalid
+	}
+	if _, err := resourcetree.CatalogPathFromMetaItem(model.EngineCatalogModel(), locator.EngineID, tenantID, *locator.ItemID, facts); err != nil {
+		return nil, ErrSourceItemInvalid
+	}
+	tree := &models.MetadataTree{ChildNodes: facts.Ancestors, Items: []models.MetaItem{facts.Item}}
+	source := Source{EngineID: descriptor.ID, EngineName: descriptor.Name, EngineType: descriptor.EngineType}
+	if descriptor.EngineType == "minio" || descriptor.EngineType == "s3" {
+		source.Tables = objectTables(descriptor.Name, tree)
+	} else {
+		source.Tables = relationalTables(descriptor.Name, descriptor.EngineType, tree)
+	}
+	if len(source.Tables) != 1 {
+		return nil, ErrSourceItemInvalid
+	}
+	return []Source{source}, nil
 }
 
 func (c *Catalog) Sources(

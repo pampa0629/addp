@@ -346,7 +346,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "标准资源定位符，指定后生成该数据项的查询模板 | Standard resource locator; when provided, generate a query template for that data item",
+                        "description": "所选数据项定位符；原生查询须属于当前引擎，联邦查询须属于受支持的来源引擎 | Selected data item locator; native queries require the selected engine, federated queries require a supported source engine",
                         "name": "locator",
                         "in": "query"
                     }
@@ -374,7 +374,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "无执行或数据读取权限 | Execution or data-read permission denied",
+                        "description": "无执行或数据读取权限，或数据保护校验未通过 | Execution/data-read permission denied or data protection required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
