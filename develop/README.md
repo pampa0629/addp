@@ -11,14 +11,18 @@
 ## 🎯 核心功能
 
 - **查询工作台**: 数据资源树 + Monaco Editor + 表格/图结果预览；右下角 AI 助手按当前 Query Engine 生成候选查询语言
-- **GIS 工作流**: 可视化编辑和执行空间计算工作流（21个 GeoPython Workflow 算子）；右下角 AI 助手生成候选工作流
-- **Notebook 任务**: 上传、执行、下载和显式重绑定 Notebook 引擎，并查看统一执行历史；右下角 AI 助手确认 Session 数据源后生成 Python/GeoPandas 单元
+- **GIS 工作流**: 可视化编辑和执行空间计算工作流，按所选运行时动态发现算子；右下角 AI 助手生成候选工作流。能力与算子契约见[算子发现服务](CLAUDE.md#算子发现服务)。
+- **Notebook 任务**: 创建／上传、交互编辑、下载和显式重绑定 Notebook 引擎，并查看统一执行历史；右下角 AI 助手确认 Session 数据源后生成 Python/GeoPandas 单元。
 - **算子管理**: 聚合工作流运行时动态算子，供工作流编辑器使用
 - **统一执行历史**: 所有执行记录写入公共执行表，并在 Monitor 中统一筛选和回溯；Develop 只保留领域结果详情
+
+Notebook 交互 Session 与排队执行的授权分开。当前一次性 `script` execution 领取后以 `develop.script.authorization_unavailable` 失败，不派发 Jupyter Runtime；交互 Session 不进入该执行队列。当前能力、未完成的排队运行授权和真实验收边界见[执行监督与授权](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)与[会话访问规则](CLAUDE.md#执行授权与效果)。
 
 ## 🚀 快速开始
 
 ### 方式 1: 开发模式（推荐）
+
+以下命令从仓库根目录执行，环境前提见[部署指南](../docs/guide/addp部署和开发步骤.md#快速开始)。
 
 ```bash
 # 启动基础设施
@@ -28,14 +32,19 @@ bash scripts/infra/up.sh
 bash scripts/dev/start.sh -develop
 ```
 
-- 后端: http://localhost:8185
-- 前端: http://localhost:5178
+开发首选地址为后端 `http://localhost:8185`、前端 `http://localhost:5178`；实际地址以启动输出和 `.dev-state/ports.env` 为准，规则见[端口规范](../docs/spec/addp端口分配.md)。
+
+`-develop` 不隐式启动 Workflow、Jupyter 等 Runtime；联调时按[模块与 Runtime 选择指南](../scripts/docs/模块选择启动指南.md#显式选择-runtime-联调)显式选择。Develop 后端与前端在开发模式使用原生进程，产品部署保留正式容器镜像；支持平台与各 Runtime 的准备要求见[引擎运行方式](../engines/README.md#本地开发运行方式)。
 
 ### 方式 2: Docker 部署
 
+本地产品容器通过标准入口启动整套平台与内置 Runtime：
+
 ```bash
-docker compose up -d develop-backend develop-frontend jupyter-engine
+bash scripts/local/start.sh
 ```
+
+镜像准备、Compose 归属、停止与数据卷边界见[Local README](../scripts/local/README.md#脚本说明)；生产服务器按[Prod README](../scripts/prod/README.md#首次部署)准备与启动。平台与 Runtime 分属 `addp-platform`、`addp-runtimes`，根 Compose 只发布 Nginx 统一入口，访问地址按 `ADDP_PUBLIC_ORIGIN` 与[端口及公开入口规范](../docs/spec/addp端口分配.md#前端-docker-端口规则)确认。容器状态或启动成功不代替 Notebook 授权、公开 HTTPS 与业务结果验收。
 
 ## 📡 主要 API 端点
 
@@ -63,7 +72,7 @@ Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Not
 ## 🔐 认证方式
 
 - 用户 API 使用 System 签发的短期 User Access Token，并通过 canonical AuthContext 解析
-- 所有 API 请求须携带 `Authorization: Bearer <token>` 头
+- 普通用户 JSON API 请求须携带 `Authorization: Bearer <token>` 头；Notebook Session 的 HTTP／WebSocket 代理和 Kernel 能力按[会话访问规则](CLAUDE.md#执行授权与效果)分别校验，不使用 Runtime 直连入口。
 - 数据按租户自动隔离
 
 ## 🐛 常见问题
