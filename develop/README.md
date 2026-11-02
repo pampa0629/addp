@@ -6,6 +6,7 @@
 
 - **README.md** (本文件) - 快速入门和功能概览
 - **[CLAUDE.md](./CLAUDE.md)** - 详细技术文档，包含架构设计、执行流程、API 详解和常见场景
+- [执行策略](../docs/spec/configuration/执行与模块策略.md#develop-执行策略) - 平台上限、租户默认超时、热更新与执行快照；[验证与证据](../docs/spec/configuration/执行与模块策略.md#develop-验证入口与证据边界)分别说明门禁职责和历史验收范围。
 
 ## 🎯 核心功能
 
@@ -69,7 +70,7 @@ Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Not
 
 ### 查询执行超时怎么办？
 
-提高 `timeout` 参数（默认 30 秒，最长 5 分钟）或优化查询。结果预览行数由 Develop 配置中的 `query_result_limit` 控制。详见 [CLAUDE.md#场景1：执行SQL查询](./CLAUDE.md#场景-1执行-sql-查询)
+按当前策略调整 `timeout` 或优化查询。初始策略为默认 30 秒、最大 5 分钟；实际默认值可由租户覆盖，最大值和 `query_result_limit` 由平台维护，以[执行策略](../docs/spec/configuration/执行与模块策略.md#develop-执行策略)为准。新 execution 冻结有效超时与预览上限，后续配置变化不改写已有快照；执行步骤见 [SQL 查询场景](./CLAUDE.md#场景-1执行-sql-查询)。
 
 ### 工作流执行失败？
 
@@ -82,9 +83,9 @@ Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Not
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（核心架构、执行流程、常见场景）
-- **[engines/geopython-workflow/README.md](../engines/geopython-workflow/README.md)** - GeoPython Workflow 运行时
+- [GeoPython Workflow 运行说明](../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md) - 原生开发与产品容器部署
 - **[system/CLAUDE.md](../system/CLAUDE.md)** - 数据库连接与认证
-- **[common/dbbridge/README.md](../common/dbbridge/README.md)** - 数据库桥接库
+- [共享数据库桥接目录](../common/dbbridge/) - 数据库桥接实现
 
 ---
 

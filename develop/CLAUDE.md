@@ -54,7 +54,7 @@ TaskExecutionRepository（统一执行记录持久化）
   └─ common.task_executions 表（module=develop）
 ```
 
-Query 保留现有总并发及单引擎额度；Workflow、Notebook 各有独立的平台可配置额度，默认分别为 2、1。缩减额度不抢占已领取任务，只约束后续领取。持久队列和 lease 不等于远端强制停止：本地失联收敛失败后不自动重放，不能承诺远端程序已经停止。
+Query、Workflow、Notebook 的每 Backend 额度、默认值、租户覆盖范围与热更新统一见[Develop 执行策略](../docs/spec/configuration/执行与模块策略.md#develop-执行策略)，唯一队列、额度隔离与失联处理见[执行监督与授权](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。持久队列和 lease 不等于远端强制停止：本地失联收敛失败后不自动重放，不能承诺远端程序已经停止。
 
 ### 执行过程事件与当前边界
 
@@ -164,7 +164,7 @@ Query Execution Service 使用 PostgreSQL AST 验证关系作用域，只把与�
 
 查询、工作流和脚本的 TaskProvider 稳定输出统一只写入 `common.task_executions.metadata.outputs`；不得保存或读取旧的 `metadata.result.outputs`。`GET /task-provider/executions/:execution_id` 使用 `common/taskprovider` 标准状态响应把同一对象投影为顶层闭合 `outputs`，用户执行详情可以附带任务信息，但不得形成第二套输出提取规则。
 
-全部 `module=develop + task_type=query|workflow|script` 的 bounded execution 由 Develop Backend 内嵌的唯一 Execution Supervisor 领取，不按 source 或创建入口分裂路线，不保留请求外 goroutine。三个类型分别配置每 Backend 并发预算：Query 默认总 20、每 Engine 5，Workflow 默认 2，Notebook 默认 1。额度统一保存于 Develop 执行策略，租户只读平台容量，只能覆盖查询默认超时；不从环境变量回退配置值。缩容等待已有执行结束，容量观测不参与 claim。每类型以 `execution_supervisor/<task_type>` 上报容量和活动数。
+全部 `module=develop + task_type=query|workflow|script` 的 bounded execution 由 Develop Backend 内嵌的唯一 Execution Supervisor 领取，不按 source 或创建入口分裂路线，不保留请求外 goroutine。每 Backend 的并发预算、租户只读与默认超时覆盖、无环境变量回退和缩容规则沿[Develop 执行策略](../docs/spec/configuration/执行与模块策略.md#develop-执行策略)。容量观测不参与 claim；每类型以 `execution_supervisor/<task_type>` 上报容量和活动数。
 
 监督器只消费 execution 冻结的内容、运行时配置和参数，不重读可变任务定义。claim 原子写入完整 lease、started 事件和任务摘要；进度、运行时回执、终态、事件和摘要受当前 lease fencing。Query 的查询策略及结果行为保持；Workflow 用户授权提交时签发并保存引用，Orchestrator 子执行授权在 claim 后按父执行及当前 attempt/token 派生。Notebook 保存提交时 SHA-256，Jupyter 核验下载字节后执行，文件变化失败并要求重新提交；交互 Session 不受本次执行队列管理。全部类型在失联后收敛失败、不自动重放，不承诺远端已停止；专业回执和结果不进入通用诊断事件。
 

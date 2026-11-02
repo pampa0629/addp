@@ -11,7 +11,7 @@
 | 根 .env 示例、配置生成命令与端口 | [环境变量参考](configuration/环境变量参考.md) |
 | IAM 策略、首次初始化、认证端点与栅格引擎资源策略 | [System安全与引擎策略](configuration/System安全与引擎策略.md) |
 | 导入中转、mosaic、有界执行监督器、向量化、底图与快显 | [Manager配置](configuration/Manager配置.md) |
-| Develop、Transfer、Service 和模块配置入口及禁止暴露的旧变量 | [执行与模块策略](configuration/执行与模块策略.md) |
+| Develop、Transfer、Service 和模块配置入口及禁止暴露的旧变量 | [Develop 执行策略](configuration/执行与模块策略.md#develop-执行策略)、[Transfer 运行观测](configuration/执行与模块策略.md#transfer-continuous-运行观测配置)、[模块策略](configuration/执行与模块策略.md) |
 | 观测边界、告警与通知、运行日志及指标中心部署 | [Monitor与运行观测](configuration/Monitor与运行观测.md) |
 | Infra Kafka、Kafka Connect、Capture Supervisor 与补扫 claim | [Kafka 与 Capture 配置](configuration/Kafka与Capture部署.md)、[开发与生产边界](configuration/Kafka与Capture部署.md#开发与生产部署)、[Meta 补扫租期](configuration/Kafka与Capture部署.md#meta-补扫-claim-租期) |
 | Business 引擎的部署参数、端口与启动约束 | [Business数据引擎部署](configuration/Business数据引擎部署.md) |
