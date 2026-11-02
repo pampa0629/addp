@@ -580,11 +580,11 @@ schema drift 的阻塞流程统一见[Schema 变化](transfer-任务语义与同
 
 ### CDC 生命周期与清理
 
-CDC pause/resume 的捕获与位置边界统一见[用户运行控制](transfer-任务语义与同步模式.md#用户运行控制)。pause 不暂停 connector，仍须观测 Kafka backlog、磁盘、retention 及源事务日志窗口；只有 connector 健康且 committed position 未被 retention 清除时才允许无损恢复，不保证无限期暂停。
+CDC pause/resume 的捕获与位置边界统一见[用户运行控制](transfer-任务语义与同步模式.md#用户运行控制)和[暂停与保留窗口](../../docs/spec/tasks/Transfer数据库CDC.md#暂停与保留窗口)，不保证无限期暂停或无条件恢复。
 
-CDC stop 不可逆，ADDP-owned 捕获资源的清理范围与顺序以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准。已停止任务不能再次 start/resume，重新同步须新建任务、目标表并重新 initial snapshot。请求必须由服务端校验 `confirmed=true` 和与任务名称完全一致的 `confirmation_text`；Console 同时使用 danger 二次确认并要求输入任务名称。Stop 保留目标业务表、目标 ledger、任务定义、execution 和审计记录。
+CDC stop 不可逆；服务端校验 `confirmed=true` 和与当前任务名称完全一致的 `confirmation_text`，Console 使用 danger 二次确认并要求输入任务名称。接口与普通业务 Kafka Stop 的区别、资源所有权、身份核验及清理顺序统一见[停止确认与清理顺序](../../docs/spec/tasks/Transfer数据库CDC.md#停止确认与清理顺序)。
 
-`desired_state=stopped` 也用于新任务，不能证明 CDC 已永久停止；终态以当前 generation 的 `transfer.capture_resources.status=stopped` 为准，尚无 generation 的新任务允许首次启动。`cleanup_failed` 只允许重试 Stop 清理，禁止 start/resume。状态保存或清理请求返回不代替[实际停止、资源清理与恢复验收](transfer-任务语义与同步模式.md#十一验证范围)。
+`desired_state=stopped` 也用于新任务；永久终态、首次启动与 `cleanup_failed` 的重试限制见[恢复资格与终态判定](../../docs/spec/tasks/Transfer数据库CDC.md#恢复资格与终态判定)，保留对象与实际停止、资源清理的认定见[清理验收边界](../../docs/spec/tasks/Transfer数据库CDC.md#保留对象与清理验收)。状态保存或清理请求返回不代替实际验收。
 
 ### CDC 未支持项与运行事实
 

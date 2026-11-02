@@ -134,15 +134,31 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 
 ### 捕获资源与生命周期
 
+- 资源归属：[所有权与登记](#捕获资源所有权与登记)、[准备顺序](#捕获资源准备顺序)、[暂停与保留窗口](#暂停与保留窗口)。
 - 观测职责：[线程与源连接健康](#捕获线程与源连接健康)、[源日志恢复窗口](#源日志恢复窗口)、[未提交事务压力](#源未提交事务压力)。
-- 使用边界：[安全读取与验收](#捕获观测读取与验收边界)、[恢复与不可逆停止](#恢复与不可逆停止)。
+- 使用边界：[安全读取与验收](#捕获观测读取与验收边界)、[恢复与不可逆停止](#恢复与不可逆停止)、[停止确认与清理顺序](#停止确认与清理顺序)、[保留对象与清理验收](#保留对象与清理验收)。
 
-1. Kafka Connect 使用独立 distributed 集群。Transfer capture supervisor 是 connector 生命周期 owner；continuous worker 只消费 Infra Kafka，不在 Go 进程内嵌入 Debezium。
-2. connector、provider 专属资源、CDC data/schema-history topic 和 consumer group 由服务端按 task/generation 生成稳定内部名称，不接受用户自定义，也不进入 System Engine、Meta 资源树或公开任务 config。
+#### 捕获资源所有权与登记
+
+- Kafka Connect 使用独立 distributed 集群。Transfer capture supervisor 是 connector 生命周期 owner；continuous worker 只消费 Infra Kafka，不在 Go 进程内嵌入 Debezium。
+- connector、provider 专属资源、CDC data/schema-history topic 和 consumer group 由服务端按 task/generation 生成稳定内部名称，不接受用户自定义，也不进入 System Engine、Meta 资源树或公开任务 config。
    `transfer.capture_resources` 只保存 engine-neutral generation、connector/data topic/group、source identity 与 lifecycle 状态，并以 `source_type` 明确 provider。PostgreSQL slot/publication 只存在于一对一 `transfer.postgresql_capture_resources`；MySQL connector server id、schema-history topic name 和 ownership 只存在于一对一 `transfer.mysql_capture_resources`；Oracle schema-history topic name、Spatial 镜像表、行级触发器、DDL guard 名称及 ownership 只存在于一对一 `transfer.oracle_capture_resources`。provider 子事实必须与 generation 同事务创建并通过外键级联清理，不得在 generic 主表保留 provider 字段、兼容读取或伪资源占位。
-3. PostgreSQL publication 只包含任务源表；slot 和 publication 均由 ADDP 创建并拥有，不得复用或删除用户已有 replication slot/publication。MySQL 不创建或登记伪 slot/publication；每个 generation 使用唯一非零 connector server id。MySQL 和 Oracle generation 均拥有独立单分区 schema-history topic。Debezium 3.6 history record key 为空，因此该 topic 固定 `cleanup.policy=delete`、`retention.ms=-1`，由 Stop 显式删除，不能改成 compact 或依赖自动建 topic。Oracle 表级 `ALL COLUMN LOGGING` 是可被多个任务共享的 source readiness，不是 generation-owned 资源，Stop 不删除该配置。Oracle Spatial 镜像表、行级触发器和 DDL guard 则属于 generation-owned Provider 资源：创建时必须拒绝同名非 ADDP 对象，Stop 必须先删除 connector，再核对源连接、schema、源表和对象身份，随后删除 DDL guard、行级触发器和镜像表；任一步失败进入 `cleanup_failed`，不得遗留第二条清理路径。
-4. `pause` 只停止目标应用 runtime，Debezium connector 继续捕获并把变化写入 Infra Kafka；正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口。connector、Kafka 或网络故障时，还必须按 provider 独立观测 PostgreSQL slot/WAL、MySQL binlog 保留或 Oracle redo/archive log 容量风险。
-5. pause 的无损恢复只在 connector 健康且 committed position 未被 Kafka retention 清除时成立，不是无限期保证。暂停期间必须继续观测 connector 状态、slot/WAL lag、topic 容量和 committed position 的 retention horizon。
+- PostgreSQL publication 只包含任务源表；slot 和 publication 均由 ADDP 创建并拥有，不得复用或删除用户已有 replication slot/publication。
+- MySQL 不创建或登记伪 slot/publication；每个 generation 使用唯一非零 connector server id。
+- MySQL 和 Oracle generation 均拥有独立单分区 schema-history topic。
+- Debezium 3.6 history record key 为空，因此该 topic 固定 `cleanup.policy=delete`、`retention.ms=-1`，由 Stop 显式删除，不能改成 compact 或依赖自动建 topic。
+- Oracle 表级 `ALL COLUMN LOGGING` 是可被多个任务共享的 source readiness，不是 generation-owned 资源，Stop 不删除该配置。
+
+Provider 子表字段、主键与级联关系见[Capture 资源登记](../../../transfer/docs/数据库架构.md#六cdc-capture-generation-与资源登记)；Oracle generation-owned 对象的同名拒绝、身份核验和删除顺序见[停止确认与清理顺序](#停止确认与清理顺序)。
+
+#### 捕获资源准备顺序
+
+capture supervisor 先在同一事务登记 generation 与对应 provider 子事实，再显式创建数据 topic；MySQL/Oracle 还要创建并授权 schema-history topic，随后创建或更新 connector 并等待 connector/task 进入 `RUNNING`。
+
+#### 暂停与保留窗口
+
+- `pause` 只停止目标应用 runtime，Debezium connector 继续捕获并把变化写入 Infra Kafka；正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口。connector、Kafka 或网络故障时，还必须按 provider 独立观测 PostgreSQL slot/WAL、MySQL binlog 保留或 Oracle redo/archive log 容量风险。
+- pause 的无损恢复只在 connector 健康且 committed position 未被 Kafka retention 清除时成立，不是无限期保证。暂停期间必须继续观测 connector 状态、slot/WAL lag、topic 容量和 committed position 的 retention horizon。
 
 #### 捕获线程与源连接健康
 
@@ -171,8 +187,24 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 
 #### 恢复与不可逆停止
 
-6. `resume` 只允许从 paused 或可恢复失败状态创建新 execution；继续使用同一 capture generation、connector offset、topic 和 Transfer committed position。`status=blocked` 时 start/resume API 必须返回 `409 Conflict`；只有 pending additive schema change request 经专用审批 API applied 后，任务才进入 paused 并重新允许 Resume。
-7. `stop` 是数据库 CDC task 的不可逆终态：停止目标 runtime，停止并删除 connector，删除 ADDP-owned provider 专属资源、data/schema-history topic、consumer group 和 ACL，使原 capture generation 失效。已停止任务不得再次 start/resume；重新同步必须创建新任务和新目标表并重新 initial snapshot。
+##### 恢复资格与终态判定
+
+- `resume` 只允许从 paused 或可恢复失败状态创建新 execution；继续使用同一 capture generation、connector offset、topic 和 Transfer committed position。`status=blocked` 时 start/resume API 必须返回 `409 Conflict`；只有 pending additive schema change request 经专用审批 API applied 后，任务才进入 paused 并重新允许 Resume。
+- `stop` 是数据库 CDC task 的不可逆终态：停止目标 runtime，停止并删除 connector，删除 ADDP-owned provider 专属资源、data/schema-history topic、consumer group 和 ACL，使原 capture generation 失效。已停止任务不得再次 start/resume；重新同步必须创建新任务和新目标表并重新 initial snapshot。
    `desired_state=stopped` 同时也是 continuous task definition 的初始值，因此不能单独作为数据库 CDC 已进入不可逆终态的判据。永久停止必须以 `transfer.capture_resources` 中当前 generation 的 `status=stopped` 为事实；尚无 capture generation 的新任务允许首次 start。`status=cleanup_failed` 表示不可逆 Stop 已开始但资源清理未完成，此时只允许重试 Stop 清理，不允许 start/resume。
-8. Stop API 必须由服务端要求显式不可逆确认，不能只依赖前端弹窗；沿用唯一 `POST /task-definitions/:id/stop` 路由，CDC task 请求体必须提交 `confirmed=true` 且 `confirmation_text` 与当前任务名称完全一致。Console 同时使用 danger 样式二次确认并要求输入任务名称，明确说明不能恢复、内部捕获资源会被删除且重新同步必须新建任务。普通业务 Kafka continuous stop 不要求该请求体，仍按其既有可恢复 committed-position 语义处理，不能混用 CDC 的终态提示。
-9. stop 不删除目标业务表、目标行、目标 apply ledger、任务定义、execution 或清理审计。任务删除和 System cleanup 必须再次幂等清理残留 capture 资源，并保留统一 execution/审计事实。
+
+##### 停止确认与清理顺序
+
+- Stop API 必须由服务端要求显式不可逆确认，不能只依赖前端弹窗；沿用唯一 `POST /task-definitions/:id/stop` 路由，CDC task 请求体必须提交 `confirmed=true` 且 `confirmation_text` 与当前任务名称完全一致。Console 同时使用 danger 样式二次确认并要求输入任务名称，明确说明不能恢复、内部捕获资源会被删除且重新同步必须新建任务。普通业务 Kafka continuous stop 不要求该请求体，仍按其既有可恢复 committed-position 语义处理，不能混用 CDC 的终态提示。
+- Stop 先等待 continuous runtime owner 释放或 lease 过期，再删除 connector，按 provider 清理 generation-owned 源端资源，最后删除 consumer group、数据 topic、MySQL/Oracle schema-history topic 及其 ACL。
+- Oracle Spatial 镜像表、行级触发器和 DDL guard 则属于 generation-owned Provider 资源：创建时必须拒绝同名非 ADDP 对象，Stop 必须先删除 connector，再核对源连接、schema、源表和对象身份，随后删除 DDL guard、行级触发器和镜像表；任一步失败进入 `cleanup_failed`，不得遗留第二条清理路径。
+
+Provider 资源只按登记的 ownership 与稳定源身份清理，source identity 必须完全匹配；连接事实变化后拒绝按旧登记清理，不按名称前缀或同名规则推断所有权。持久身份字段见[Capture 资源登记](../../../transfer/docs/数据库架构.md#六cdc-capture-generation-与资源登记)。
+
+##### 保留对象与清理验收
+
+- stop 不删除目标业务表、目标行、目标 apply ledger、任务定义、execution 或清理审计。任务删除和 System cleanup 必须再次幂等清理残留 capture 资源，并保留统一 execution/审计事实。
+
+pause/stop 的真实 poll、批次、session、partition ownership 与 lease 释放沿[continuous 生命周期](Transfer同步执行.md#transfer-continuous-sync-v1-契约)。任务删除／System Cleanup 的原用户授权、精确操作登记、未知外部结果不重发及实际停止证明沿[Transfer 清理职责](../addp-cleanup体系规范.md#transfer)和[正式 Owner 约束](../addp-cleanup体系规范.md#十五已确认决策)；lease 释放或过期不能替代原 invocation 的实际停止证明。
+
+状态保存、Stop 请求成功或资源登记存在不作为清理通过证据。标准入口、固定版本、失败与修复、清理结果和未覆盖项见[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)；Oracle 故障专项仍受[标准入口缺口与授权窗口](../../../transfer/README.md#oracle-cdc-专项入口缺口)约束，未运行、失败、跳过或未覆盖项不计为通过。

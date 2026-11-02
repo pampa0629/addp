@@ -256,7 +256,7 @@ Pause 停止目标应用并结束当前 session；启动或 Resume 创建新 exe
 
 数据库 CDC 的 Pause 不暂停 connector。捕获仍会写入 Infra Kafka，主要风险是 backlog、磁盘和 retention；connector 或 Kafka 故障时还要分别观测 PostgreSQL WAL、MySQL binlog 或 Oracle redo/archive log 容量风险。捕获健康与源日志窗口的判读见[诊断章节](#捕获健康与源日志窗口)。
 
-数据库 CDC 的 Stop 是不可逆终态。它清理 ADDP-owned connector、Provider 专属捕获资源、data/schema-history topic、consumer group 和 ACL；已停止任务不能再次 Start/Resume。重新同步必须创建新任务和新目标表。Stop 保留目标业务数据、目标 ledger、任务定义、execution 和审计记录。
+数据库 CDC 的 Stop 是不可逆终态，已停止任务不能再次 Start/Resume；重新同步必须创建新任务和新目标表。资源所有权、源身份核验及 Provider 清理顺序统一见[停止确认与清理顺序](../../docs/spec/tasks/Transfer数据库CDC.md#停止确认与清理顺序)，目标业务数据、ledger、任务定义及执行／审计保留沿[保留对象与清理验收](../../docs/spec/tasks/Transfer数据库CDC.md#保留对象与清理验收)。Stop 状态或请求成功不代替实际停止、外部资源清理与恢复验收。
 
 #### 自动恢复与退避
 
