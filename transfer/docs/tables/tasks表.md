@@ -98,7 +98,7 @@ bounded 与 continuous 扫描的固定版本、失败和清理结果分别见[SQ
 | --- | --- |
 | 资源定位 | `source.locator` 指向已存在资源；`target.parent_locator` 指向已存在父 node，`target.name` 是其下待创建或待覆盖的资源名，见[Endpoint 字段](../transfer-基本概念及配置说明.md#22-endpoint-字段)。 |
 | 数据类型与表示 | `source` / `target` 的 `data_type`、`representation` 按[table 组合](../transfer-基本概念及配置说明.md#31-endpoint-组合)、[动态记录原始导出](../transfer-基本概念及配置说明.md#32-动态记录原始导出)和[raw copy](../transfer-基本概念及配置说明.md#四raw-copy-支持范围)分别校验；动态 collection 没有可复制的单一内容流，不复用 raw copy。 |
-| 格式与读写选项 | endpoint 的 `format`、`options` 见[Endpoint 字段](../transfer-基本概念及配置说明.md#22-endpoint-字段)与[格式支持](../transfer-基本概念及配置说明.md#33-格式)；raw copy target 的类型／格式省略继承、显式一致性与完整路径要求沿 [raw copy 契约](../transfer-基本概念及配置说明.md#四raw-copy-支持范围)。 |
+| 格式与读写选项 | 格式声明与源事实见[format 声明与来源](../transfer-基本概念及配置说明.md#format-声明与来源)，raw copy target 的省略与一致性见[目标继承](../transfer-基本概念及配置说明.md#raw-copy-目标继承与一致性)；读写选项与完整路径范围分别沿[Endpoint 字段](../transfer-基本概念及配置说明.md#22-endpoint-字段)、[raw copy 支持范围](../transfer-基本概念及配置说明.md#四raw-copy-支持范围)。 |
 | 执行边界与装载方式 | `runtime.boundary`、`load.mode` 是顶层运行维度，不是 endpoint 字段；定义见[同步执行契约](../../../docs/spec/tasks/Transfer同步执行.md#transfer-同步执行契约)，可执行组合见[当前支持矩阵](../transfer-任务语义与同步模式.md#三当前支持矩阵)。 |
 | 变化识别 | 顶层 `load.change_detection` 分别沿[watermark 单／复合游标](../transfer-基本概念及配置说明.md#七watermark-bounded-incremental)、[业务 Kafka](../transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)及[数据库 CDC](../transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)；各自的源、目标、稳定键与非空间限制不互相推广。 |
 | 目标应用策略 | `target.policy.apply_mode`、`target.policy.keys` 的适用模式、稳定键与目标幂等／原子应用要求统一见[写入策略](../transfer-基本概念及配置说明.md#六写入策略)及上述各同步契约，必须按任务组合和目标 Provider/capability 校验。 |

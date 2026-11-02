@@ -45,7 +45,7 @@ Transfer API / Frontend
 
 `transfer.transfer_tasks.config` 是任务配置事实，source / target endpoint 经唯一 planner 转为 table、raw copy 或对应的运行计划。字段和可执行示例统一见[Config JSON](transfer-基本概念及配置说明.md#二任务-config-json)，组合范围见[当前支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)。
 
-`source.locator` 指向已存在资源；`target.parent_locator` 指向已存在父 node，`target.name` 表达待写入资源名，不接受待创建资源的虚拟 locator。`data_type`、`representation` 和 layout 决定 Provider 组合；`format` 只属于 encoded endpoint，具体约束见[Endpoint 字段](transfer-基本概念及配置说明.md#22-endpoint-字段)。
+`source.locator` 指向已存在资源；`target.parent_locator` 指向已存在父 node，`target.name` 表达待写入资源名，不接受待创建资源的虚拟 locator。`data_type`、`representation` 和 layout 决定 Provider 组合；`format` 只属于 encoded endpoint，其源事实与目标声明统一见[format 声明与来源](transfer-基本概念及配置说明.md#format-声明与来源)。
 
 旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 
@@ -89,7 +89,7 @@ source encoded file/object
   -> target encoded file/object
 ```
 
-支持类型、endpoint、类型继承、完整目标路径和 `replace` 限制统一见[raw copy 配置](transfer-基本概念及配置说明.md#四raw-copy-支持范围)。本节保留字节流链路与覆盖策略的职责分工。
+支持类型、endpoint、完整目标路径和 `replace` 限制统一见[raw copy 配置](transfer-基本概念及配置说明.md#四raw-copy-支持范围)，目标类型／格式的省略与显式一致性见[目标继承](transfer-基本概念及配置说明.md#raw-copy-目标继承与一致性)。
 
 raw copy 的覆盖语义由 Transfer 执行：目标引擎必须提供 `ResourceDeleteProvider`，先删除目标资源再创建写入，不依赖 create 的隐式覆盖行为。
 
