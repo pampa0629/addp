@@ -240,7 +240,7 @@ ArcGIS SDE 后续数据面不进入上述 Oracle Debezium/LogMiner 分支。唯�
 
 #### Oracle 源限制
 
-Oracle 普通字段沿 LogMiner 捕获，`MDSYS.SDO_GEOMETRY` 由同一 Oracle capture Provider 通过 generation-owned 镜像进入现有 connector/consumer，不建立第二套消费链路。空间事实冻结、校验与镜像编码遵循上述正式契约；内部传输列不代表开放普通业务 LOB，也不得作为旁路。
+Oracle 普通字段沿 LogMiner 捕获，`MDSYS.SDO_GEOMETRY` 由同一 Oracle capture Provider 通过 generation-owned 镜像进入现有 connector/consumer，不建立第二套消费链路。空间事实冻结与校验见[Oracle Spatial 冻结事实与解码](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-spatial-冻结事实与解码)，镜像编码与 DDL 保护见[镜像专题](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-spatial-镜像与-ddl-保护)；内部传输列不代表开放普通业务 LOB，也不得作为旁路。
 
 普通业务 LOB、JSON/XML 等不支持的源字段，必须在 capture plan 冻结、generation 与外部资源创建前拒绝；RAC 或 readiness 无法确认单实例的源，同样在 generation 和外部资源创建前拒绝。能力声明不替代[实际验收](#十一验证范围)，Oracle 专项缺口见[标准入口说明](../README.md#oracle-cdc-专项入口缺口)。
 

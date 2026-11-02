@@ -550,9 +550,9 @@ PostgreSQL/MySQL/Oracle 单表
 
 #### PostgreSQL CDC
 
-PostgreSQL CDC 在创建 capture 前核对完整源表字段和真实类型。支持类型、Decimal／时间编码、精度及拒绝条件统一见[数据面与捕获约束](../../docs/spec/tasks/Transfer数据库CDC.md#数据面与捕获约束)；`time` 和无时区 `timestamp` 仅允许精度 `0..3`，不能静默截断。
+PostgreSQL CDC 在创建 capture 前核对完整源表字段和真实类型。支持类型、Decimal／时间编码、精度及拒绝条件统一见[PostgreSQL 源字段与编码](../../docs/spec/tasks/Transfer数据库CDC.md#postgresql-源字段与编码)；`time` 和无时区 `timestamp` 仅允许精度 `0..3`，不能静默截断。
 
-PostGIS 必须固定 OGC type、正 SRID 和 XY/XYZ 维度，geometry 不能作为主键，也不做坐标转换。源空间事实冻结、目标列派生以及 WKB/EWKB 解析与一致性校验沿上述正式契约；`wkb` 属性可能承载带 SRID 的 EWKB，不能仅凭属性名选择解码器。
+PostGIS 必须固定 OGC type、正 SRID 和 XY/XYZ 维度，geometry 不能作为主键，也不做坐标转换。源空间事实冻结、目标列派生以及 WKB/EWKB 解析与一致性校验见[空间事实与解码](../../docs/spec/tasks/Transfer数据库CDC.md#postgresql-空间事实与解码)，跨引擎表示与 native 直通限制见[空间编码边界](../../docs/spec/tasks/Transfer数据库CDC.md#跨引擎空间编码边界)；`wkb` 属性可能承载带 SRID 的 EWKB，不能仅凭属性名选择解码器。
 
 #### MySQL CDC
 
@@ -560,9 +560,9 @@ MySQL CDC 固定支持 MySQL 8.0、有稳定非空主键的单表、`log_bin=ON`
 
 #### Oracle CDC
 
-Oracle CDC 固定支持有稳定非空主键的普通单表，并要求独立 `cdc_database_name`、`cdc_user`、`cdc_password`、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 以及源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`。源类型与编码以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准，源端拒绝条件见[Oracle 源限制](transfer-任务语义与同步模式.md#oracle-源限制)。Oracle 原生 `BOOLEAN` 虽可被 Debezium 初始快照读取，但 Debezium 3.6 LogMiner 不能稳定交付包含该列的流式 DML，因此和普通 LOB/binary、JSON/XML、超过毫秒精度的 timestamp 一样在创建 capture 前拒绝，不能以快照成功推断增量可用。
+Oracle CDC 固定支持有稳定非空主键的普通单表，并要求独立 `cdc_database_name`、`cdc_user`、`cdc_password`、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 以及源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`。源类型与编码以[Oracle 源字段与捕获前提](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-源字段与捕获前提)为准，源端拒绝条件见[Oracle 源限制](transfer-任务语义与同步模式.md#oracle-源限制)。Oracle 原生 `BOOLEAN` 虽可被 Debezium 初始快照读取，但 Debezium 3.6 LogMiner 不能稳定交付包含该列的流式 DML，因此和普通 LOB/binary、JSON/XML、超过毫秒精度的 timestamp 一样在创建 capture 前拒绝，不能以快照成功推断增量可用。
 
-Oracle Spatial 复用同一 connector/consumer 主路径；源 schema-owner、镜像与触发器准备、XY/XYZ 内部编码和 DDL guard 统一见[数据面与捕获约束](../../docs/spec/tasks/Transfer数据库CDC.md#数据面与捕获约束)。空间事实从 Oracle Catalog Facts 冻结，adapter 严格校验 base64 WKB 或 GeoJSON 的 SRID、拓扑和 XY/XYZ 维度，统一输出标准 EWKB；内部镜像列不等于开放用户 LOB CDC。
+Oracle Spatial 复用同一 connector/consumer 主路径；源 schema-owner、镜像与触发器准备、XY/XYZ 内部编码和 DDL guard 统一见[Oracle Spatial 镜像与 DDL 保护](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-spatial-镜像与-ddl-保护)。空间事实从 Oracle Catalog Facts 冻结，adapter 严格校验 base64 WKB 或 GeoJSON 的 SRID、拓扑和 XY/XYZ 维度，统一输出标准 EWKB；内部镜像列不等于开放用户 LOB CDC。
 
 运行期间源表 `ALTER|DROP|RENAME` 须先 Stop 并完成资源清理。共享表级日志与 generation-owned 对象的区别、身份核验和清理失败处理分别见[资源所有权与登记](../../docs/spec/tasks/Transfer数据库CDC.md#捕获资源所有权与登记)和[停止清理顺序](../../docs/spec/tasks/Transfer数据库CDC.md#停止确认与清理顺序)。
 

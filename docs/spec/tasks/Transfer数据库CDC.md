@@ -4,7 +4,7 @@
 
 定义 PostgreSQL / MySQL / Oracle CDC 的配置、身份、捕获、位点、结构审批与恢复边界。通用连续同步规则见[Transfer 同步执行](Transfer同步执行.md)。
 
-阅读导航：[契约与配置](#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)、[数据面与捕获约束](#数据面与捕获约束)、[Schema 漂移与审批](#schema-漂移审批与补扫)、[补扫 claim](#审批补扫-claim-接管与失败)、[显式恢复](#审批落库与显式恢复)、[捕获生命周期](#捕获资源与生命周期)、[审批验收边界](#审批补扫验证与验收边界)。
+阅读导航：[契约与配置](#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)、[数据面与捕获约束](#数据面与捕获约束)、[源类型与空间捕获](#源类型与空间捕获)、[Schema 漂移与审批](#schema-漂移审批与补扫)、[补扫 claim](#审批补扫-claim-接管与失败)、[显式恢复](#审批落库与显式恢复)、[捕获生命周期](#捕获资源与生命周期)、[审批验收边界](#审批补扫验证与验收边界)。
 
 ## Transfer 数据库 CDC v1 契约（PostgreSQL/MySQL/Oracle）
 
@@ -69,12 +69,63 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 	Oracle target schema 必须等于连接用户；ledger 必须带固定 ownership comment 并从 Engine Catalog 隐藏。Oracle CDC 目标继续使用 `PartitionedTableChangeApplyProvider`；普通 bounded table write 使用同一 Oracle Engine 的 `TableWriteSessionProvider`，只创建或写入普通表和 `MDSYS.SDO_GEOMETRY`，不得注册 SDE feature class 或修改 geodatabase system tables。两条能力复用同一 Oracle 字段/空间类型校验与 EWKB → SDO 转换规则，不建立 Transfer 私有 Oracle writer。当前支持 `string|int|bigint|float|double|decimal|bool|date|timestamp|json|uuid|bytes|geometry`，明确拒绝独立 `time`、decimal precision > 38 和非 XY geometry。geometry 边界仍是 EWKB + 冻结 `SpatialInfo`，Provider 必须校验 SRID/type/dimension 后转换为标准 WKB，并使用 `SDO_UTIL.FROM_WKBGEOMETRY` 写入 `MDSYS.SDO_GEOMETRY`。CDC ledger 行锁必须使用 `FOR UPDATE NOWAIT` 有界重试并检查 runtime context；锁等待取消与任何业务写失败都必须回滚业务行和 ledger。
 9. Kafka Connect offset 是捕获位点，回答源数据库日志已捕获到哪里；Transfer committed position 是消费位点，回答目标已应用到哪个 Infra Kafka offset。两者由各自 owner 管理，任何一方都不能代替另一方。
 10. PostgreSQL LSN、MySQL binlog file/position/GTID、Oracle SCN、事务 ID 和事件时间可以进入 ChangeEvent 诊断信息，但不得替代 Kafka partition offset，也不承诺把一个源数据库事务跨多行原子提交到目标；交付保证仍是 at-least-once + target monotonic apply。
-11. PostgreSQL CDC v1 接受可无歧义映射到 ADDP `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry` 的源字段；完整源表字段必须逐一映射且声明类型必须与真实 PostgreSQL 类型一致。PostGIS 只开放带 typmod 的 `geometry(<OGC type>[Z], <positive SRID>)`，不开放 `geography`、未约束的 generic geometry、M/ZM、geometry 主键或运行时重投影。capture generation 创建前必须从源库冻结每个 geometry 字段的 OGC type、SRID、维度和 nullable，并持久化为 generation source spatial facts；Debezium schemaless JSON geometry 固定按 `{wkb: <base64>, srid: <number>}` 解码。进入 ADDP 数据面的标准中间表示仍是行内 `[]byte` EWKB 加表级 `datatype.SpatialInfo`，`geom.T` 只允许作为 native encoding 与 EWKB 转换、校验时的短生命周期对象，不进入 ChangeEvent、Provider、任务配置或持久状态。消息 SRID、几何类型或维度与冻结事实不一致时按 schema drift 阻塞且不得推进 offset。目标 Engine Provider 使用映射后的字段名和同一组空间事实转换为目标 native geometry；PostgreSQL 目标按此创建 geometry typmod 列。跨引擎或跨执行边界的空间链路默认复用 native geometry ↔ EWKB + `SpatialInfo` 边界，不能引入数据库私有的跨层几何对象；只有 source 与 target 通过能力声明协商出完全相同的 native geometry encoding，且链路不经过编码转换、CRS 转换或中间几何算子时，planner 才可选择 native encoding 直通。PostGIS `geometry` 是数据库内部类型而不是跨 Provider encoding；当前 PostgreSQL CDC 经过 Debezium 和 Infra Kafka，不满足 native 直通条件。`bytea`、数组、interval、枚举和其他用户定义类型在创建 capture 前明确拒绝，不得先启动 connector 再让运行时失败。Decimal 以原始十进制字符串传递；date 使用 epoch days；time 和无时区 timestamp 只允许声明精度 `0..3` 并使用毫秒编码，默认微秒精度或显式精度大于 3 的列必须拒绝，不能静默截断；带时区 timestamp 接受 RFC 3339 并按 UTC instant 写入目标 `timestamp`；JSON/JSONB 使用合法 JSON 字符串。
-    Debezium 的 geometry 属性名固定为 `wkb`，但真实 PostgreSQL/PostGIS connector 已验证该 base64 字节可以是带内嵌 SRID 的 EWKB。adapter 必须使用 ADDP 通用 WKB/EWKB 解析器，并要求内嵌 SRID、旁路 `srid` 和 generation 冻结事实一致；不得仅按 JSON 属性名强制使用标准 WKB 解码器。
-    MySQL CDC v1 只接受有符号 `TINYINT/SMALLINT/MEDIUMINT/INT/BIGINT`、`CHAR/VARCHAR/TEXT`、`DECIMAL/NUMERIC`、`FLOAT/DOUBLE`、`DATE/TIME/DATETIME/TIMESTAMP`（精度 `0..3`）、`JSON` 和 `BINARY/VARBINARY/BLOB`。拒绝 unsigned、`TINYINT(1)`/`BOOL`、`BIT`、`ENUM/SET`、`YEAR`、空间类型、超过毫秒精度和 zero-date 默认值；完整字段、nullable 与复合主键顺序必须和 field mapping 一致。MySQL source adapter 必须按自己的 Debezium source schema 严格校验，不能复用 PostgreSQL exact source schema。
-    Oracle CDC v1 接受可无歧义映射到 ADDP `string|bool|int|bigint|float|double|decimal|timestamp|geometry` 的字段；完整源表字段、nullable 与复合主键顺序必须和 field mapping 一致。`NUMBER` 在 Debezium JSON 中按十进制字符串严格转换，`DATE` 与精度 `0..3` 的 `TIMESTAMP` 使用 Connect 毫秒时间编码。普通业务 LOB/binary、JSON/XML、超过毫秒精度的 timestamp 及其他无法稳定映射的类型必须在创建 capture 前拒绝。Oracle Engine 必须另行配置 `cdc_database_name`、`cdc_user`、`cdc_password`；CDC 账号、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 和源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS` 必须在 connector 创建前验证通过。Oracle source adapter 使用自己的 Debezium source schema 和 SCN 语义，不复用 PostgreSQL/MySQL adapter。
-    Debezium 3.6 LogMiner 不能直接稳定捕获 `MDSYS.SDO_GEOMETRY`：snapshot 只产生 JVM `STRUCT` 标识，stream 产生空值，且纯空间 update 会消失。因此 Oracle Spatial CDC 不允许把原表直接交给 connector，也不允许 consumer 猜测 `STRUCT`/redo SQL。Transfer capture Provider 必须使用源 Engine 的 schema-owner 账号，在源表所属 schema 内按 generation 创建 ADDP-owned 镜像表、行级同步触发器和 schema DDL guard；镜像表保留原字段名和主键，按冻结空间维度转换 `SDO_GEOMETRY`：XY 通过 `SDO_UTIL.TO_WKBGEOMETRY` 转为内部 BLOB；XYZ 通过 `SDO_UTIL.TO_GEOJSON` 转为保留 Z 值的内部 CLOB，避免 Oracle Free 的 WKB 转换丢失 Z。其余字段保持 Oracle native 类型。行级触发器先建立，Provider 随后锁定源表并幂等回填镜像，最后 connector 只捕获镜像表，以保证 initial snapshot 与后续变化无空洞。DDL guard 在 generation 运行期间明确拒绝源表 `ALTER|DROP|RENAME`，避免镜像静默漏掉 schema drift；必须先 Stop 并完成资源清理后才能修改源表结构。
-    Oracle Spatial generation 创建前必须通过 Oracle Engine Catalog Facts 冻结每个 geometry 字段的 OGC type、正 SRID、XY/XYZ 维度和 nullable，并持久化为 generation source spatial facts。connector 对镜像表固定 `lob.enabled=true`、`binary.handling.mode=base64`；adapter 只把 insert/update `after` 中的 XY base64 WKB 或 XYZ GeoJSON 转为标准 EWKB，并按冻结事实校验 SRID、几何类型和维度。Debezium 对 BLOB 的 update/delete `before` 可能给出 unavailable placeholder；Oracle Spatial adapter 只校验完整字段集合和稳定主键，不读取该旧空间值，delete 仍只按 record key 应用。这里的 BLOB/CLOB 是 Provider-owned 内部载体，不代表开放用户 LOB CDC。
+
+### 源类型与空间捕获
+
+- PostgreSQL：[源字段与编码](#postgresql-源字段与编码)、[空间事实与解码](#postgresql-空间事实与解码)、[跨引擎编码边界](#跨引擎空间编码边界)。
+- MySQL：[源字段与编码](#mysql-源字段与编码)。
+- Oracle：[源字段与捕获前提](#oracle-源字段与捕获前提)、[Spatial 镜像与 DDL 保护](#oracle-spatial-镜像与-ddl-保护)、[Spatial 冻结事实与解码](#oracle-spatial-冻结事实与解码)。
+
+#### PostgreSQL 源字段与编码
+
+- PostgreSQL CDC v1 接受可无歧义映射到 ADDP `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry` 的源字段；完整源表字段必须逐一映射且声明类型必须与真实 PostgreSQL 类型一致。
+- `bytea`、数组、interval、枚举和其他用户定义类型在创建 capture 前明确拒绝，不得先启动 connector 再让运行时失败。
+- Decimal 以原始十进制字符串传递；date 使用 epoch days；time 和无时区 timestamp 只允许声明精度 `0..3` 并使用毫秒编码，默认微秒精度或显式精度大于 3 的列必须拒绝，不能静默截断；带时区 timestamp 接受 RFC 3339 并按 UTC instant 写入目标 `timestamp`；JSON/JSONB 使用合法 JSON 字符串。
+
+#### PostgreSQL 空间事实与解码
+
+- PostGIS 只开放带 typmod 的 `geometry(<OGC type>[Z], <positive SRID>)`，不开放 `geography`、未约束的 generic geometry、M/ZM、geometry 主键或运行时重投影。
+- capture generation 创建前必须从源库冻结每个 geometry 字段的 OGC type、SRID、维度和 nullable，并持久化为 generation source spatial facts；Debezium schemaless JSON geometry 固定按 `{wkb: <base64>, srid: <number>}` 解码。
+- 进入 ADDP 数据面的标准中间表示仍是行内 `[]byte` EWKB 加表级 `datatype.SpatialInfo`，`geom.T` 只允许作为 native encoding 与 EWKB 转换、校验时的短生命周期对象，不进入 ChangeEvent、Provider、任务配置或持久状态。
+- 消息 SRID、几何类型或维度与冻结事实不一致时按 schema drift 阻塞且不得推进 offset。
+- 目标 Engine Provider 使用映射后的字段名和同一组空间事实转换为目标 native geometry；PostgreSQL 目标按此创建 geometry typmod 列。
+- Debezium 的 geometry 属性名固定为 `wkb`，但真实 PostgreSQL/PostGIS connector 已验证该 base64 字节可以是带内嵌 SRID 的 EWKB。
+- adapter 必须使用 ADDP 通用 WKB/EWKB 解析器，并要求内嵌 SRID、旁路 `srid` 和 generation 冻结事实一致；不得仅按 JSON 属性名强制使用标准 WKB 解码器。
+
+#### 跨引擎空间编码边界
+
+- 跨引擎或跨执行边界的空间链路默认复用 native geometry ↔ EWKB + `SpatialInfo` 边界，不能引入数据库私有的跨层几何对象；只有 source 与 target 通过能力声明协商出完全相同的 native geometry encoding，且链路不经过编码转换、CRS 转换或中间几何算子时，planner 才可选择 native encoding 直通。
+- PostGIS `geometry` 是数据库内部类型而不是跨 Provider encoding；当前 PostgreSQL CDC 经过 Debezium 和 Infra Kafka，不满足 native 直通条件。
+
+#### MySQL 源字段与编码
+
+- MySQL CDC v1 只接受有符号 `TINYINT/SMALLINT/MEDIUMINT/INT/BIGINT`、`CHAR/VARCHAR/TEXT`、`DECIMAL/NUMERIC`、`FLOAT/DOUBLE`、`DATE/TIME/DATETIME/TIMESTAMP`（精度 `0..3`）、`JSON` 和 `BINARY/VARBINARY/BLOB`。
+- 拒绝 unsigned、`TINYINT(1)`/`BOOL`、`BIT`、`ENUM/SET`、`YEAR`、空间类型、超过毫秒精度和 zero-date 默认值；完整字段、nullable 与复合主键顺序必须和 field mapping 一致。
+- MySQL source adapter 必须按自己的 Debezium source schema 严格校验，不能复用 PostgreSQL exact source schema。
+
+#### Oracle 源字段与捕获前提
+
+- Oracle CDC v1 接受可无歧义映射到 ADDP `string|bool|int|bigint|float|double|decimal|timestamp|geometry` 的字段；完整源表字段、nullable 与复合主键顺序必须和 field mapping 一致。
+- `NUMBER` 在 Debezium JSON 中按十进制字符串严格转换，`DATE` 与精度 `0..3` 的 `TIMESTAMP` 使用 Connect 毫秒时间编码。
+- 普通业务 LOB/binary、JSON/XML、超过毫秒精度的 timestamp 及其他无法稳定映射的类型必须在创建 capture 前拒绝。
+- Oracle Engine 必须另行配置 `cdc_database_name`、`cdc_user`、`cdc_password`；CDC 账号、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 和源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS` 必须在 connector 创建前验证通过。
+- Oracle source adapter 使用自己的 Debezium source schema 和 SCN 语义，不复用 PostgreSQL/MySQL adapter。
+
+#### Oracle Spatial 镜像与 DDL 保护
+
+- Debezium 3.6 LogMiner 不能直接稳定捕获 `MDSYS.SDO_GEOMETRY`：snapshot 只产生 JVM `STRUCT` 标识，stream 产生空值，且纯空间 update 会消失。
+- 因此 Oracle Spatial CDC 不允许把原表直接交给 connector，也不允许 consumer 猜测 `STRUCT`/redo SQL。
+- Transfer capture Provider 必须使用源 Engine 的 schema-owner 账号，在源表所属 schema 内按 generation 创建 ADDP-owned 镜像表、行级同步触发器和 schema DDL guard；镜像表保留原字段名和主键，按冻结空间维度转换 `SDO_GEOMETRY`：XY 通过 `SDO_UTIL.TO_WKBGEOMETRY` 转为内部 BLOB；XYZ 通过 `SDO_UTIL.TO_GEOJSON` 转为保留 Z 值的内部 CLOB，避免 Oracle Free 的 WKB 转换丢失 Z。
+- 其余字段保持 Oracle native 类型。
+- 行级触发器先建立，Provider 随后锁定源表并幂等回填镜像，最后 connector 只捕获镜像表，以保证 initial snapshot 与后续变化无空洞。
+- DDL guard 在 generation 运行期间明确拒绝源表 `ALTER|DROP|RENAME`，避免镜像静默漏掉 schema drift；必须先 Stop 并完成资源清理后才能修改源表结构。
+
+#### Oracle Spatial 冻结事实与解码
+
+- Oracle Spatial generation 创建前必须通过 Oracle Engine Catalog Facts 冻结每个 geometry 字段的 OGC type、正 SRID、XY/XYZ 维度和 nullable，并持久化为 generation source spatial facts。
+- connector 对镜像表固定 `lob.enabled=true`、`binary.handling.mode=base64`；adapter 只把 insert/update `after` 中的 XY base64 WKB 或 XYZ GeoJSON 转为标准 EWKB，并按冻结事实校验 SRID、几何类型和维度。
+- Debezium 对 BLOB 的 update/delete `before` 可能给出 unavailable placeholder；Oracle Spatial adapter 只校验完整字段集合和稳定主键，不读取该旧空间值，delete 仍只按 record key 应用。
+- 这里的 BLOB/CLOB 是 Provider-owned 内部载体，不代表开放用户 LOB CDC。
 
 ### Schema 漂移、审批与补扫
 
