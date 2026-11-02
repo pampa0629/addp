@@ -20,6 +20,7 @@
 | 任务级 Pause/Stop、标准取消与停止验收 | [停止与标准取消](#任务级-pausestop-与标准取消) |
 | 自动恢复触发、唯一领取、退避、circuit 与审计 | [自动恢复契约](#continuous-自动恢复退避与-circuit) |
 | 首次扫描触发、精确目标、claim 与结果核对 | [首次扫描契约](#continuous-首次扫描与-claim) |
+| 标准入口、分版本证据、失败与修复、清理和未覆盖项 | [验证与历史证据](#验证与历史证据入口) |
 
 ## Transfer 同步执行契约
 
@@ -147,7 +148,7 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 
 Topic 选择、尾部有界样本与用户确认映射的操作规则见[配置专题](../../../transfer/docs/transfer-基本概念及配置说明.md#业务-kafka-来源与映射)；样本建议不形成新的 Topic schema，也不扩大源读或目标写授权。各目标 ledger、CDC 原子应用与 Oracle 目标独有约束仍沿[CDC 数据面契约](Transfer数据库CDC.md#数据面与捕获约束)和[Oracle 目标契约](Transfer数据库CDC.md#oracle-目标应用约束)。
 
-配置保存、读取样本或创建 pending execution 不证明目标提交、Infra CAS、重放吸收或失效 worker 拒绝已实际通过。源读、目标业务行与账本、committed position、故障恢复和清理须分别核对；标准入口、固定版本、失败及未覆盖项沿[Transfer 验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。
+配置保存、读取样本或创建 pending execution 不证明目标提交、Infra CAS、重放吸收或失效 worker 拒绝已实际通过。源读、目标业务行与账本、committed position、故障恢复和清理须分别核对；证据入口见[Transfer 验收](#transfer-验证与证据)。
 
 ### continuous 采样与健康诊断
 
@@ -191,7 +192,7 @@ Topic 选择、尾部有界样本与用户确认映射的操作规则见[配置�
 
 `position_committed_at` 的持久事实与采样展示见[分区诊断说明](../../../transfer/docs/transfer-任务语义与同步模式.md#分区位置与-kafka-恢复窗口)，采样间隔、阈值和策略配置页面沿[运行配置](../../../transfer/docs/transfer-基本概念及配置说明.md#诊断与安全投影)。数据库捕获健康、源日志窗口和事务压力分别沿[CDC 观测契约](Transfer数据库CDC.md#捕获线程与源连接健康)及其相邻专题，不与 Kafka retention 或 checkpoint health 混用。
 
-公共与专业响应的允许字段、身份与读取授权沿[专业读取规范](执行监控.md#transfer-专业执行读取与响应)，不能由原始 metadata、私有位置或诊断字段的持久化推定访问权。健康状态或时间余量估算不证明暂停后仍可恢复、实际位点已提交或目标数据正确；恢复前仍按[位置恢复边界](../../../transfer/docs/transfer-任务语义与同步模式.md#用户运行控制)核对，固定版本、失败、清理及未覆盖项沿[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。
+公共与专业响应的允许字段、身份与读取授权沿[专业读取规范](执行监控.md#transfer-专业执行读取与响应)，不能由原始 metadata、私有位置或诊断字段的持久化推定访问权。健康状态或时间余量估算不证明暂停后仍可恢复、实际位点已提交或目标数据正确；恢复前仍按[位置恢复边界](../../../transfer/docs/transfer-任务语义与同步模式.md#用户运行控制)核对，证据入口见[Transfer 验收](#transfer-验证与证据)。
 
 ### 通用执行告警规则与统一评估
 
@@ -251,7 +252,7 @@ Topic 选择、尾部有界样本与用户确认映射的操作规则见[配置�
 
 continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#continuous-观测信号告警与过程事件分工)，Webhook／邮件 lifecycle event、outbox 和真实投递沿[渠道契约](#租户告警通知与渠道投递)，不得用一次执行状态、规则保存或测试通知代替相应链路结果。用户执行读取与安全 DTO 继续沿[执行监控规范](执行监控.md#通用执行读取与过程事件)，规则身份或通知路由不额外授予执行和专业结果读取权。
 
-目标发现、最新模式切换、有效终态序列、规则变更、查询失败、通知路由及实际恢复分别核对。固定版本、失败、清理和未覆盖项沿[Monitor 历史证据导航](../../../monitor/CLAUDE.md#历史证据导航)认定；既有执行诊断、平台资源告警或局部门禁不外推为本节所有规则与外部通知已验收。
+目标发现、最新模式切换、有效终态序列、规则变更、查询失败、通知路由及实际恢复分别核对。证据入口见[Monitor 验收](#monitor-验证与证据)；既有执行诊断、平台资源告警或局部门禁不外推为本节所有规则与外部通知已验收。
 
 ### 租户告警通知与渠道投递
 
@@ -323,7 +324,7 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 共同事件、两渠道独立目标／delivery、前端唯一入口和接收端 Header 等接入说明见[租户外部通知专题](../../concepts/monitoring/执行诊断与租户告警.md#租户外部通知契约)；SSRF 放行、TLS 和 SMTP Relay 的部署归属见[通知配置规范](../configuration/Monitor与运行观测.md#告警评估与通知策略)。Platform 渠道和订阅仍沿[平台通知契约](../addp平台运行观测规范.md#73-历史订阅与通知)，不因租户通知可用而自动扩展范围。
 
-配置保存、事务 outbox 入队、测试发送成功和真实告警生命周期投递分别验收。实际送达须核对固定源码、真实接收端、不可变 event 与 delivery 证据，既有执行诊断或进程清理结果不替代通知链路验收；固定版本、失败、清理和未覆盖项沿[Monitor 历史证据导航](../../../monitor/CLAUDE.md#历史证据导航)。
+配置保存、事务 outbox 入队、测试发送成功和真实告警生命周期投递分别验收。实际送达须核对固定源码、真实接收端、不可变 event 与 delivery 证据，既有执行诊断或进程清理结果不替代通知链路验收；证据入口见[Monitor 验收](#monitor-验证与证据)。
 
 ### continuous 观测信号、告警与过程事件分工
 
@@ -371,7 +372,7 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 | `common.execution_events` 执行过程事件 | 记录一次实际 execution／attempt 的 started、progress、终态与截断；continuous 的事务、Runtime fencing、安全字段及预算沿[过程事件写入契约](执行监控.md#transfer-continuous-过程事件)，读取授权与通用存储沿[执行监控规范](执行监控.md#通用执行读取与过程事件)。 |
 | Monitor incident、告警 lifecycle event 与 delivery | 按本节 Owner 信号和最新根执行维护告警，通知事务 outbox、Webhook／邮件和投递审计沿[渠道投递契约](#租户告警通知与渠道投递)；不能把投递记录或测试发送当作执行过程与恢复事实。 |
 
-过程事件的 30 天滚动清理与概览 180 天目标保留、只读评估和物理删除分别沿[留存契约](执行监控.md#概览保留与清理契约)认定；不将一种事件的状态、预算或留存要求直接套到另一种事件。固定版本、失败、清理与未覆盖项沿[Transfer 验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)和[Monitor 历史证据导航](../../../monitor/CLAUDE.md#历史证据导航)，静态契约或局部结果不证明完整运行、告警或外部通知链路通过。
+过程事件的 30 天滚动清理与概览 180 天目标保留、只读评估和物理删除分别沿[留存契约](执行监控.md#概览保留与清理契约)认定；不将一种事件的状态、预算或留存要求直接套到另一种事件。证据分别见[Transfer 验收](#transfer-验证与证据)和[Monitor 验收](#monitor-验证与证据)，静态契约或局部结果不证明完整运行、告警或外部通知链路通过。
 
 ### 进度观测与编排边界
 
@@ -414,7 +415,7 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 字段归属与 CDC 阻塞后的状态收敛见[任务状态与阻塞持久事实](../../../transfer/docs/数据库架构.md#任务状态与-cdc-阻塞收敛)，当前 User、逐动作 Permission 和读取范围见[任务表入口](../../../transfer/docs/tables/tasks表.md#用户任务定义与控制)及[专业读取契约](执行监控.md#transfer-专业执行读取与响应)。持久状态与私有租约字段不自动成为公共响应或读取授权。
 
-状态保存、owner／heartbeat 存在或 lease 过期，不证明 Worker 真正停止、目标位点已提交或故障恢复成功。停止与 Cleanup 的实际停止证明沿[停止验收](#停止与清理验收边界)，运行态、数据事实、固定版本、失败、清理及未覆盖项分别沿[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)认定。
+状态保存、owner／heartbeat 存在或 lease 过期，不证明 Worker 真正停止、目标位点已提交或故障恢复成功。停止与 Cleanup 的实际停止证明沿[停止验收](#停止与清理验收边界)，运行态与数据事实分别认定，证据入口见[Transfer 验收](#transfer-验证与证据)。
 
 ### 任务级 Pause/Stop 与标准取消
 
@@ -437,7 +438,7 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 数据库 CDC Stop 的服务端确认、不可逆终态和资源清理沿[CDC 停止契约](Transfer数据库CDC.md#恢复与不可逆停止)，不能混用普通业务 Kafka 的可恢复 committed-position 语义。任务删除／System Cleanup 的原 invocation 实际停止证明与未知外部效果处理沿[Transfer 清理职责](../addp-cleanup体系规范.md#transfer)和[正式 Owner 约束](../addp-cleanup体系规范.md#十五已确认决策)。
 
-路由、capability、Permission 或 execution 状态的静态核对不证明真实 Worker 中断、目标事务回滚、session／lease 释放或资源清理通过；实际身份链路与停止、恢复须分别验收，标准入口、固定版本、失败、清理及未覆盖项见[任务表验收边界](../../../transfer/docs/tables/tasks表.md#执行恢复与验收边界)和[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。
+路由、capability、Permission 或 execution 状态的静态核对不证明真实 Worker 中断、目标事务回滚、session／lease 释放或资源清理通过；实际身份链路与停止、恢复须分别验收，操作与身份核对见[任务表验收边界](../../../transfer/docs/tables/tasks表.md#执行恢复与验收边界)，其他证据见[Transfer 验收](#transfer-验证与证据)。
 
 ### continuous 自动恢复、退避与 circuit
 
@@ -472,7 +473,7 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 恢复读取已提交位置、lease 过期的 `stop_reason` 和领取时 fencing 递增等运行细节见[Transfer 生命周期](../../../transfer/docs/transfer-任务语义与同步模式.md#自动恢复与退避)；策略管理入口见[配置说明](../../../transfer/docs/transfer-基本概念及配置说明.md#自动恢复与运行策略)。部署参数保存、pending execution 创建、冷却到期或状态展示均不证明实际恢复成功。
 
-持久字段与安全 DTO 的区别、User／模块结果／TaskProvider 的身份及读取范围见[执行记录表](../../../transfer/docs/tables/task_executions表.md#自动恢复字段与安全-dto)和[专业读取契约](执行监控.md#transfer-专业执行读取与响应)，不得因恢复 metadata 存在而扩大响应或授权。标准入口、固定版本、失败、清理及未覆盖项见[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)；真实故障后的新执行、目标提交、恢复与清理结果分别核对。
+持久字段与安全 DTO 的区别、User／模块结果／TaskProvider 的身份及读取范围见[执行记录表](../../../transfer/docs/tables/task_executions表.md#自动恢复字段与安全-dto)和[专业读取契约](执行监控.md#transfer-专业执行读取与响应)，不得因恢复 metadata 存在而扩大响应或授权。证据入口见[Transfer 验收](#transfer-验证与证据)；真实故障后的新执行、目标提交、恢复与清理结果分别核对。
 
 ### continuous 首次扫描与 claim
 
@@ -506,4 +507,21 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 后台扫描的精确目标、持久来源和父 execution 绑定以[生产来源契约](生产来源与产物扫描.md#生产执行与后台扫描的来源)为准。claim、提交状态或保存的 Meta execution UUID 不额外授予调用或读取权限；私有字段、安全投影、提交成功与实际扫描完成的区别见[任务表结果核对](../../../transfer/docs/tables/tasks表.md#首次扫描的提交与结果核对)。
 
-Meta API 提交失败的反馈与仓储／fencing 错误的不同处理见[持久化与失败边界](../../../transfer/docs/数据库架构.md#九写后-meta-扫描)。提交成功或数据面继续运行不证明 Meta 执行完成或目标 attributes 正确，必须通过已授权的 Meta 入口核对对应执行与目标事实；标准入口、固定版本、失败、清理及未覆盖项见[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。
+Meta API 提交失败的反馈与仓储／fencing 错误的不同处理见[持久化与失败边界](../../../transfer/docs/数据库架构.md#九写后-meta-扫描)。提交成功或数据面继续运行不证明 Meta 执行完成或目标 attributes 正确，必须通过已授权的 Meta 入口核对对应执行与目标事实；证据入口见[Transfer 验收](#transfer-验证与证据)。
+
+### 验证与历史证据入口
+
+测试分层与标准入口遵循[测试与验收规范](../addp测试与验收规范.md#三标准入口)。本节集中维护证据导航，各专题的权限、事务、停止、回滚、告警与送达条件仍在对应正文中分别认定。
+
+#### Transfer 验证与证据
+
+- 标准门禁、环境前提与 Oracle CDC 专项入口缺口：[README 启动与验证](../../../transfer/README.md#启动与验证)。
+- 实际覆盖范围、完整身份／Worker／数据面链路与未覆盖项：[任务语义验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。
+- 固定源码、运行尝试、有效证据、失败与修复、清理结果：[分版本证据索引](../../../transfer/CLAUDE.md#专项约束与分版本证据)。
+
+#### Monitor 验证与证据
+
+- 标准入口与模块验证边界：[Monitor 开发与验证](../../../monitor/CLAUDE.md#开发与验证)。
+- 告警、通知、执行诊断、事件与留存的分版本通过／失败、清理及未覆盖项：[Monitor 历史证据](../../../monitor/CLAUDE.md#历史证据导航)。
+
+证据仅适用于所列源码版本、运行尝试和实际场景；未运行、失败、跳过或未覆盖项不计为通过。契约、静态检查、配置保存、入队或局部成功不外推为完整认证、运行、数据提交、清理或外部通知验收通过。

@@ -16,6 +16,8 @@
 | 任务发现、标准接口、参数契约与能力声明 | [TaskProvider 接口](tasks/TaskProvider接口.md) |
 | 任务编排、可靠派发、调度和执行边界 | [编排与调度](tasks/编排与调度.md) |
 | 编排参数来源、画布连线与绑定操作示例 | [Orchestrator 执行参数专题](../../orchestrator/docs/参数化模板说明.md)（模块操作说明） |
+| 通用执行告警规则、目标范围与统一评估 | [通用告警契约](tasks/Transfer同步执行.md#通用执行告警规则与统一评估)、[continuous Owner 信号](tasks/Transfer同步执行.md#continuous-观测信号告警与过程事件分工) |
+| 租户 Webhook／邮件通知、事务 outbox 与投递边界 | [租户通知契约](tasks/Transfer同步执行.md#租户告警通知与渠道投递) |
 | 安全诊断、过程事件、健康和执行监控页面 | [执行监控](tasks/执行监控.md) |
 
 ## 范围

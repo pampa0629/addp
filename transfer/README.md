@@ -186,6 +186,14 @@ make test-arcgis-open-formats
 
 ## 相关文档
 
+### 正式契约
+
+- [同步执行、状态、恢复与提交](../docs/spec/tasks/Transfer同步执行.md)
+- [数据库 CDC、结构审批与捕获清理](../docs/spec/tasks/Transfer数据库CDC.md)
+- [业务 Kafka DLQ、bounded replay 与部署基线](../docs/spec/tasks/Transfer-Kafka与DLQ.md)
+
+### 模块说明与操作
+
 - [Transfer 模块说明](./CLAUDE.md)
 - [前端开发与集成](./frontend/README.md)
 - [前端操作起点](./frontend/QUICK_START.md)
