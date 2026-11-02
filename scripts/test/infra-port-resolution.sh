@@ -215,7 +215,7 @@ cp "${SCRIPT_DIR}/../infra/minio-observation.py" "$TEST_DIR/repo/scripts/infra/m
 cp -R "${SCRIPT_DIR}/../infra/minio-observation" "$TEST_DIR/repo/scripts/infra/"
 printf 'ADDP_POSTGRES_METRICS_ENABLED=false\nADDP_REDIS_METRICS_ENABLED=false\n' > "$TEST_DIR/online.env"
 mkdir -p "$TEST_DIR/repo/scripts/utils"
-for dependency in deployment-inventory.py private-state.py deployment-docker.py; do
+for dependency in deployment-inventory.py private-state.py deployment-docker.py metrics-source.py; do
   cp "${SCRIPT_DIR}/../utils/$dependency" "$TEST_DIR/repo/scripts/utils/$dependency"
 done
 export ADDP_DEPLOYMENT_DISCOVERY_DIR="$TEST_DIR/repo/.dev-state/deployment-discovery"

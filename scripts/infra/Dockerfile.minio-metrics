@@ -1,0 +1,15 @@
+FROM golang:1.24-alpine@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 AS build
+ENV GOWORK=off CGO_ENABLED=0
+WORKDIR /src
+COPY common/go.mod common/go.sum /src/common/
+COPY common/jsonmap /src/common/jsonmap
+COPY monitor/backend/go.mod monitor/backend/go.sum /src/monitor/backend/
+COPY monitor/backend/internal/miniosource /src/monitor/backend/internal/miniosource
+COPY monitor/backend/internal/sourceserver /src/monitor/backend/internal/sourceserver
+COPY monitor/backend/cmd/minio-metrics-source /src/monitor/backend/cmd/minio-metrics-source
+WORKDIR /src/monitor/backend
+RUN go build -trimpath -o /out/minio-metrics-source ./cmd/minio-metrics-source
+FROM scratch
+COPY --from=build /out/minio-metrics-source /minio-metrics-source
+USER 65532:65532
+ENTRYPOINT ["/minio-metrics-source"]

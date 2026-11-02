@@ -1297,7 +1297,7 @@ jobs:
           status: ${{ job.status }}
 
   monitor-minio-observation:
-    name: Monitor MinIO observation identity contracts
+    name: Monitor MinIO observation source and identity contracts
     needs: selection
     if: needs.selection.outputs.monitor == 'true' || needs.selection.outputs.business == 'true'
     runs-on: ubuntu-24.04
@@ -1309,13 +1309,13 @@ jobs:
           persist-credentials: false
       - name: Prepare fixed MinIO build
         uses: ./.github/actions/prepare-minio-build-cache
-      - name: Run MinIO observation identity gate
+      - name: Run MinIO observation source and identity gate
         run: make test-monitor-minio-observation
-      - name: Summarize MinIO observation identity gate
+      - name: Summarize MinIO observation source and identity gate
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Monitor MinIO observation identity contracts
+          gate: Monitor MinIO observation source and identity contracts
           status: ${{ job.status }}
 
   monitor-redis-source:

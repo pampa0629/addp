@@ -5,23 +5,17 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
-	"net/http"
 	"net/netip"
 	"os"
-	"os/signal"
 	"regexp"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/addp/monitor/internal/redissource"
+	"github.com/addp/monitor/internal/sourceserver"
 )
 
 type configuration struct {
@@ -95,38 +89,8 @@ func serve(config configuration) error {
 	if err != nil || config.Owner != "" {
 		return errors.New("invalid private source address")
 	}
-	key, err := tls.LoadX509KeyPair("/source/server.crt", "/source/server.key")
-	if err != nil {
-		return errors.New("source certificate unavailable")
-	}
-	ca, err := os.ReadFile("/source/ca.crt")
-	if err != nil {
-		return errors.New("source client trust unavailable")
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(ca) {
-		return errors.New("source client trust rejected")
-	}
 	target := redissource.Target{Address: address, Scope: config.Scope, Password: config.Password}
-	server := &http.Server{
-		Addr: ":9443", Handler: redissource.Handler(func(ctx context.Context) (redissource.Snapshot, error) { return redissource.Read(ctx, target) }),
-		ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 4 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 5 * time.Second,
-		MaxHeaderBytes: 8192, ErrorLog: log.New(io.Discard, "", 0),
-		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool, Certificates: []tls.Certificate{key}},
-	}
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	go func() {
-		<-ctx.Done()
-		deadline, done := context.WithTimeout(context.Background(), 5*time.Second)
-		defer done()
-		_ = server.Shutdown(deadline)
-	}()
-	err = server.ListenAndServeTLS("", "")
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
-	return errors.New("source listener unavailable")
+	return sourceserver.Serve(redissource.Handler(func(ctx context.Context) (redissource.Snapshot, error) { return redissource.Read(ctx, target) }), "/source")
 }
 
 func run(args []string) error {

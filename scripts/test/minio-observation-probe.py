@@ -7,6 +7,12 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
+import ssl
+import sys
+import time
+import traceback
+import urllib.error
 import subprocess
 import xml.etree.ElementTree as ET
 
@@ -19,6 +25,32 @@ docker = M.deployment.Docker(os.environ)
 project = os.environ['T2_MINIO_PROJECT']
 working = ROOT/'scripts/test'
 state_root = Path(os.environ['T2_MINIO_STATE'])
+
+
+tls_spec = importlib.util.spec_from_file_location('minio_source_tls', ROOT/'scripts/test/metrics-source-fixture.py')
+tls = importlib.util.module_from_spec(tls_spec); tls_spec.loader.exec_module(tls)
+
+
+def source(scope):
+    return M.sources.Source(docker, scope, state_root/scope/'source', ROOT, 'minio', project+'-metrics-'+scope, M.Error)
+
+
+def cleanup_sources():
+    failed = False
+    for scope in ('infra', 'business'):
+        try:
+            owned = source(scope); owned.stop()
+            for args in (['ps', '-aq'], ['network', 'ls', '-q']):
+                assert not docker.run([*args, '--filter', 'label=com.docker.compose.project='+owned.project]).strip(), 'owned source residue'
+            assert not docker.run(['volume', 'ls', '-q', '--filter', 'name=^'+owned.config_volume+'$']).strip(), 'owned private volume residue'
+        except Exception: failed = True
+    if failed: raise AssertionError('MinIO source cleanup could not be verified')
+
+
+if sys.argv[1:] == ['--cleanup']:
+    cleanup_sources()
+    raise SystemExit(0)
+if sys.argv[1:]: raise SystemExit('unexpected MinIO probe argument')
 
 
 def database(scope):
@@ -64,59 +96,159 @@ def s3(db, access, secret, method, path):
     return int(status), code
 
 
-states = {}
-for scope in ('infra', 'business'):
-    manager = M.Lifecycle(scope, state_root/scope, lambda: database(scope))
-    db = database(scope)
-    db.mc(['mb', 'owned/permission-fixture'])
-    db.mc(['cp', '/etc/hostname', 'owned/permission-fixture/fixture'])
-    assert s3(db, db.parent, db.config['aliases']['owned']['secretKey'], 'GET', '/permission-fixture/fixture') == (200, None)
-    assert s3(db, db.parent, db.config['aliases']['owned']['secretKey'], 'PUT', '/permission-fixture/writer-proof') == (200, None)
-    manager.run(True)
-    state = manager.read(); states[scope] = state
-    invalid = {'root_access': db.parent, 'root_secret': db.config['aliases']['owned']['secretKey'],
-               'access_key': state['access_key'], 'enabled': False, 'policy': {'Action': ['admin:*']}}
-    result = docker.run(['exec', '-i', db.identity, 'minio-observation-status'], input=json.dumps(invalid), check=False)
-    assert result.returncode == 1 and not result.stdout and result.stderr.strip() == 'MinIO observation status update rejected'
-    M.Lifecycle.check(db.info(state['access_key']), state)
-    assert db.info(state['access_key'])['accountStatus'] == 'on'
-    token = M.jwt(state['access_key'], state['secret_key'])
-    assert db.probe(token) == 200
-    assert db.probe(M.jwt(state['access_key'], state['secret_key'], expired=True)) == 403
-    assert db.probe(M.jwt(state['access_key'], 'wrong-secret')) == 403
-    for command in [
-        ['ls', 'owned/permission-fixture'],
-        ['stat', 'owned/permission-fixture/fixture'],
-        ['admin', 'user', 'add', 'owned', 'forbidden-user', 'forbidden-password'],
-        ['admin', 'user', 'ls', 'owned'],
-    ]:
-        assert_denied(db, state, command)
-    for method, path in [('GET', '/permission-fixture/fixture'), ('PUT', '/permission-fixture/forbidden-object-write')]:
-        assert s3(db, state['access_key'], state['secret_key'], method, path) == (403, 'AccessDenied'), 'native S3 authorization was not denied'
-    before = (state_root/scope/'owner.json').stat().st_mtime_ns
-    manager.run(True)
-    assert manager.read() == state
-    assert (state_root/scope/'owner.json').stat().st_mtime_ns == before
-    manager.run(False)
-    assert db.probe(token) == 403
-    manager.run(True)
-    assert manager.read()['secret_key'] == state['secret_key']
-    print('MinIO '+scope+': native metrics allowed; S3/admin denied; expiry/disable/idempotency PASS')
+def ready(port, ctx):
+    deadline = time.monotonic()+15
+    while True:
+        try:
+            status, body = tls.request(port, ctx)
+            assert status == 200 and 'addp_minio_uptime_seconds ' in body, 'MinIO source rejected fixed native metrics'
+            return body
+        except (OSError, urllib.error.URLError):
+            if time.monotonic() >= deadline: raise AssertionError('MinIO source listener unavailable') from None
+            time.sleep(.1)
 
-infra, business = states['infra'], states['business']
-assert database('business').probe(M.jwt(infra['access_key'], infra['secret_key'])) == 403
-assert database('infra').probe(M.jwt(business['access_key'], business['secret_key'])) == 403
-M.Lifecycle('infra', state_root/'infra', lambda: database('infra')).run(False)
-assert database('business').probe(M.jwt(business['access_key'], business['secret_key'])) == 200
-M.Lifecycle('infra', state_root/'infra', lambda: database('infra')).run(True)
-compose = ['docker', 'compose', '--project-name', project, '--project-directory', str(working), '-f', str(working/'docker-compose.minio-observation-t2.yml')]
-# Replace only these two disposable containers; preserve their owned data volumes.
-subprocess.run([*compose, 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90'], check=True, stdout=subprocess.DEVNULL)
-for scope, previous in states.items():
-    manager = M.Lifecycle(scope, state_root/scope, lambda: database(scope))
-    manager.run(True)
-    assert manager.read() == previous
-    manager.run(False)
-    assert database(scope).probe(M.jwt(previous['access_key'], previous['secret_key'])) == 403
-    assert not docker.run(['exec', database(scope).identity, 'sh', '-c', 'find /tmp -maxdepth 1 -name "addp-minio-observation.*" -print']).strip()
-print('MinIO: independent scopes and native account persistence across container replacement PASS')
+
+def source_read(scope, manager, environment, context):
+    manager.run(True, environment)
+    port = int(environment['ADDP_MINIO_METRICS_LISTEN'].rsplit(':', 1)[1])
+    body = ready(port, context)
+    state = manager.account.read(); db = database(scope)
+    M.bind_source(db, scope, network_key='default')
+    assert all(value not in body for value in (state['access_key'], state['secret_key'], db.parent, db.identity, 'permission-fixture', db.address)), 'private source identity escaped'
+    assert all(not line or line.startswith('addp_minio_') for line in body.splitlines()), 'unfiltered metric escaped'
+    assert re.search(r'addp_minio_drives_online [1-9]', body), 'real health metric missing'
+    epoch = re.search(r'counter_epoch="([0-9a-f]{64})"', body)
+    assert epoch, 'counter generation missing'
+    ids = docker.run(['ps', '-q', '--filter', 'label=com.docker.compose.project='+manager.source.project]).split()
+    assert len(ids) == 1, 'unexpected source process count'
+    detail = json.loads(docker.run(['inspect', '--format', '{{json .}}', ids[0]]))
+    assert detail['Config']['User'] == '65532:65532' and detail['HostConfig']['ReadonlyRootfs'] and not detail['HostConfig']['Privileged'], 'source privilege changed'
+    assert detail['HostConfig']['Memory'] == 128*1024*1024 and detail['HostConfig']['NanoCpus'] == 250000000, 'source resource budget changed'
+    assert len(detail['NetworkSettings']['Networks']) == 1, 'source received unrelated network'
+    assert len(detail['Mounts']) == 1 and detail['Mounts'][0]['Destination'] == '/source' and not detail['Mounts'][0]['RW'] and detail['Mounts'][0]['Type'] == 'volume', 'source received data or host mounts'
+    assert db.config['aliases']['owned']['secretKey'] not in json.dumps(detail['Config']), 'root credential entered source config'
+    for line in body.splitlines():
+        if '{' in line: assert re.fullmatch(r'addp_minio_[a-z0-9_]+\{counter_epoch="[0-9a-f]{64}"\} [0-9.e+\-]+', line), 'native labels escaped'
+    return epoch.group(1), port
+
+
+def source_contracts(managers, environments, contexts, roots):
+    epochs = {}
+    for scope in ('infra', 'business'):
+        manager, environment, ctx = managers[scope], environments[scope], contexts[scope]
+        epoch, port = source_read(scope, manager, environment, ctx); epochs[scope] = epoch
+        for bad in (tls.context(roots[scope], client=False), tls.context(roots[scope], wrong=True)):
+            try: tls.request(port, bad)
+            except (OSError, urllib.error.URLError): pass
+            else: raise AssertionError('client certificate boundary failed')
+        other = 'business' if scope == 'infra' else 'infra'
+        try: tls.request(port, contexts[other])
+        except (OSError, urllib.error.URLError): pass
+        else: raise AssertionError('foreign source CA accepted')
+        for path, method in [('/health', 'GET'), ('/metrics?target=other', 'GET'), ('/metrics?', 'GET'), ('/metrics', 'POST')]:
+            status, body = tls.request(port, ctx, path, method)
+            assert status == 404 and 'addp_minio_' not in body, 'extra metrics route opened'
+        # Disable only the observer, while the source stays up: no stale data.
+        manager.account.run(False)
+        status, body = tls.request(port, ctx)
+        assert status == 503 and 'addp_minio_' not in body, 'disabled native identity retained successful data'
+        manager.account.run(True)
+        assert ready(port, ctx), 're-enabled observer failed to recover'
+        manager.run(False, environment)
+        assert not docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+manager.source.project]).strip(), 'disabled source remains'
+        assert database(scope).probe(M.jwt(manager.account.read()['access_key'], manager.account.read()['secret_key'])) == 403, 'stop left native identity enabled'
+        manager.run(True, environment); ready(port, ctx)
+        try: manager.run(True, dict(environment, ADDP_MINIO_METRICS_TLS_DIR=str(state_root/'missing-tls')))
+        except (ValueError, OSError) as error:
+            assert not getattr(error, 'minio_cleanup_failed', False), 'failure compensation was incomplete'
+        else: raise AssertionError('missing TLS material accepted')
+        assert manager.account.read()['phase'] == 'disabled', 'TLS failure left observer enabled'
+        assert not docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+manager.source.project]).strip(), 'TLS failure left source running'
+        assert s3(database(scope), database(scope).parent, database(scope).config['aliases']['owned']['secretKey'], 'GET', '/permission-fixture/fixture') == (200, None), 'optional failure changed object service'
+        print('MinIO '+scope+': fixed projection, isolated mTLS, non-root/read-only/budgets, native disable -> 503, recovery/stop/failure cleanup PASS', flush=True)
+    return epochs
+
+
+def main():
+    roots, contexts, environments, managers = {}, {}, {}, {}
+    for scope in ('infra', 'business'):
+        root = state_root/(scope+'-tls'); root.mkdir(mode=0o700)
+        directory = tls.certificates(root); roots[scope] = root; contexts[scope] = tls.context(root)
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+        environments[scope] = {'ADDP_MINIO_METRICS_LISTEN': '127.0.0.1:'+str(port), 'ADDP_MINIO_METRICS_TLS_DIR': str(directory)}
+        managers[scope] = M.Lifecycle(docker, scope, state_root/scope, lambda scope=scope: database(scope), project+'-metrics-'+scope, network_key='default')
+
+
+    states = {}
+    for scope in ('infra', 'business'):
+        manager = M.AccountLifecycle(scope, state_root/scope, lambda: database(scope))
+        db = database(scope)
+        db.mc(['mb', 'owned/permission-fixture'])
+        db.mc(['cp', '/etc/hostname', 'owned/permission-fixture/fixture'])
+        assert s3(db, db.parent, db.config['aliases']['owned']['secretKey'], 'GET', '/permission-fixture/fixture') == (200, None)
+        assert s3(db, db.parent, db.config['aliases']['owned']['secretKey'], 'PUT', '/permission-fixture/writer-proof') == (200, None)
+        manager.run(True)
+        state = manager.read(); states[scope] = state
+        invalid = {'root_access': db.parent, 'root_secret': db.config['aliases']['owned']['secretKey'],
+                   'access_key': state['access_key'], 'enabled': False, 'policy': {'Action': ['admin:*']}}
+        result = docker.run(['exec', '-i', db.identity, 'minio-observation-status'], input=json.dumps(invalid), check=False)
+        assert result.returncode == 1 and not result.stdout and result.stderr.strip() == 'MinIO observation status update rejected'
+        M.AccountLifecycle.check(db.info(state['access_key']), state)
+        assert db.info(state['access_key'])['accountStatus'] == 'on'
+        token = M.jwt(state['access_key'], state['secret_key'])
+        assert db.probe(token) == 200
+        assert db.probe(M.jwt(state['access_key'], state['secret_key'], expired=True)) == 403
+        assert db.probe(M.jwt(state['access_key'], 'wrong-secret')) == 403
+        for command in [
+            ['ls', 'owned/permission-fixture'],
+            ['stat', 'owned/permission-fixture/fixture'],
+            ['admin', 'user', 'add', 'owned', 'forbidden-user', 'forbidden-password'],
+            ['admin', 'user', 'ls', 'owned'],
+        ]:
+            assert_denied(db, state, command)
+        for method, path in [('GET', '/permission-fixture/fixture'), ('PUT', '/permission-fixture/forbidden-object-write')]:
+            assert s3(db, state['access_key'], state['secret_key'], method, path) == (403, 'AccessDenied'), 'native S3 authorization was not denied'
+        before = (state_root/scope/'owner.json').stat().st_mtime_ns
+        manager.run(True)
+        assert manager.read() == state
+        assert (state_root/scope/'owner.json').stat().st_mtime_ns == before
+        manager.run(False)
+        assert db.probe(token) == 403
+        manager.run(True)
+        assert manager.read()['secret_key'] == state['secret_key']
+        print('MinIO '+scope+': native metrics allowed; S3/admin denied; expiry/disable/idempotency PASS')
+
+    infra, business = states['infra'], states['business']
+    assert database('business').probe(M.jwt(infra['access_key'], infra['secret_key'])) == 403
+    assert database('infra').probe(M.jwt(business['access_key'], business['secret_key'])) == 403
+    M.AccountLifecycle('infra', state_root/'infra', lambda: database('infra')).run(False)
+    assert database('business').probe(M.jwt(business['access_key'], business['secret_key'])) == 200
+    M.AccountLifecycle('infra', state_root/'infra', lambda: database('infra')).run(True)
+    epochs = source_contracts(managers, environments, contexts, roots)
+    compose = ['docker', 'compose', '--project-name', project, '--project-directory', str(working), '-f', str(working/'docker-compose.minio-observation-t2.yml')]
+    # Replace only these two disposable containers; preserve their owned data volumes.
+    subprocess.run([*compose, 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90'], check=True, stdout=subprocess.DEVNULL)
+    for scope, previous in states.items():
+        manager = M.AccountLifecycle(scope, state_root/scope, lambda: database(scope))
+        manager.run(True)
+        assert manager.read() == previous
+        current = database(scope)
+        assert s3(current, current.parent, current.config['aliases']['owned']['secretKey'], 'GET', '/permission-fixture/fixture') == (200, None), 'replacement lost owned object'
+        epoch, port = source_read(scope, managers[scope], environments[scope], contexts[scope])
+        assert epoch != epochs[scope], 'container replacement reused counter generation'
+        managers[scope].run(False, environments[scope])
+        assert database(scope).probe(M.jwt(previous['access_key'], previous['secret_key'])) == 403
+        assert not docker.run(['exec', database(scope).identity, 'sh', '-c', 'find /tmp -maxdepth 1 -name "addp-minio-observation.*" -print']).strip()
+    print('MinIO: independent scopes and native account persistence across container replacement PASS')
+
+
+if __name__ == '__main__':
+    try:
+        try: main()
+        finally: cleanup_sources()
+    except (AssertionError, ValueError, OSError, KeyError, subprocess.SubprocessError) as error:
+        frames = traceback.extract_tb(error.__traceback__)
+        stage = ' > '.join(Path(frame.filename).name+':'+str(frame.lineno)+':'+frame.name for frame in frames[-4:])
+        reason = str(error) if isinstance(error, (M.Error, M.private.PrivateStateError, AssertionError)) else type(error).__name__
+        raise SystemExit('MinIO source T2 failed ['+stage+']: '+reason)

@@ -4,6 +4,7 @@ WORKDIR /src
 COPY common/go.mod common/go.sum /src/common/
 COPY monitor/backend/go.mod monitor/backend/go.sum /src/monitor/backend/
 COPY monitor/backend/internal/redissource /src/monitor/backend/internal/redissource
+COPY monitor/backend/internal/sourceserver /src/monitor/backend/internal/sourceserver
 COPY monitor/backend/cmd/redis-metrics-source /src/monitor/backend/cmd/redis-metrics-source
 WORKDIR /src/monitor/backend
 RUN go build -trimpath -o /out/redis-metrics-source ./cmd/redis-metrics-source

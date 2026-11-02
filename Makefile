@@ -1565,10 +1565,11 @@ test-monitor-metrics-config: ## 验证指标配置与服务部署意图 T1，不
 	@python3 -m unittest scripts/test/metrics-deployment-config_test.py
 
 .PHONY: test-monitor-minio-observation-unit test-monitor-minio-observation
-test-monitor-minio-observation-unit: ## MinIO 指标专用账号、私有归属及失败关闭 T1
+test-monitor-minio-observation-unit: ## MinIO 固定指标、来源边界、专用账号和失败关闭 T1
 	@python3 -m unittest scripts/test/minio-observation-lifecycle_test.py
+	@cd monitor/backend && GOWORK=off go test ./internal/miniosource ./internal/sourceserver ./cmd/minio-metrics-source ./internal/redissource ./cmd/redis-metrics-source -run '^Test(MinIO|Source|Snapshot|Observer)' -count=1
 
-test-monitor-minio-observation: ## 独占双 MinIO 验证指标账号生命周期及越权拒绝
+test-monitor-minio-observation: ## 独占双 MinIO 验证账号、真实 mTLS 来源、启停和越权拒绝
 	@bash scripts/test/monitor-minio-observation-gate.sh
 
 .PHONY: test-monitor-redis-source test-monitor-redis-source-unit

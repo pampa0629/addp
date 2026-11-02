@@ -28,7 +28,7 @@ class MinIOObservationTest(unittest.TestCase):
         self.db.create.side_effect = self.create
         self.db.enable.side_effect = lambda state, on: self.account.update(accountStatus='on' if on else 'off')
         self.db.probe.side_effect = lambda token: 200 if self.account['accountStatus'] == 'on' else 403
-        self.manager = M.Lifecycle('infra', self.directory, lambda: self.db)
+        self.manager = M.AccountLifecycle('infra', self.directory, lambda: self.db)
 
     def create(self, state):
         self.account = {'accessKey': state['access_key'], 'parentUser': self.db.parent, 'description': state['owner'],
@@ -139,7 +139,7 @@ class MinIOObservationTest(unittest.TestCase):
     def test_other_scope_record_and_concurrent_owner_lock_are_rejected(self):
         self.manager.run(True)
         with self.assertRaises(M.Error):
-            M.Lifecycle('business', self.directory, lambda: self.db).run(True)
+            M.AccountLifecycle('business', self.directory, lambda: self.db).run(True)
         with M.private.locked(self.directory):
             with self.assertRaises(ValueError): self.manager.run(False)
 
@@ -153,6 +153,83 @@ class MinIOObservationTest(unittest.TestCase):
         self.assertEqual(call.args[0], ['exec', '-i', 'owned-container', 'minio-observation-status'])
         self.assertNotIn('root-secret', repr(call.args))
         self.assertEqual(json.loads(call.kwargs['input']), {'root_access': 'root-user', 'root_secret': 'root-secret', 'access_key': 'ADDP'+'A'*16, 'enabled': True})
+
+    def source_manager(self):
+        self.db.identity = 'a'*64
+        self.db.address = '10.0.0.2:9000'
+        self.db.facts = {'started_at': '2026-01-01T00:00:00Z'}
+        manager = M.Lifecycle(Mock(), 'infra', self.directory, lambda: self.db, 'owned-source')
+        manager.source = Mock()
+        return manager
+
+    def test_source_creation_failure_removes_source_and_disables_verified_account(self):
+        manager = self.source_manager()
+        manager.source.start.side_effect = M.Error('fixed startup failure')
+        with patch.object(M.sources, 'transport', return_value=('127.0.0.1', 9443, {})), patch.object(M, 'bind_source'):
+            with self.assertRaisesRegex(M.Error, 'fixed startup failure') as failure: manager.run(True, {})
+        self.assertFalse(getattr(failure.exception, 'minio_cleanup_failed', False))
+        self.assertEqual(self.account['accountStatus'], 'off')
+        self.assertEqual(manager.account.read()['phase'], 'disabled')
+        self.assertEqual(manager.source.stop.call_count, 2)
+        config = manager.source.start.call_args.args[2]
+        self.assertEqual(set(config), {'address', 'scope', 'access_key', 'secret_key', 'container_id', 'container_started_at'})
+        self.assertNotIn(self.db.parent, json.dumps(config))
+
+    def test_source_preflight_failure_disables_old_account_without_rebuilding(self):
+        self.manager.run(True)
+        manager = self.source_manager()
+        with patch.object(M.sources, 'transport', side_effect=M.Error('TLS rejected')):
+            with self.assertRaisesRegex(M.Error, 'TLS rejected'): manager.run(True, {})
+        manager.source.build.assert_not_called(); manager.source.start.assert_not_called()
+        self.assertEqual(self.account['accountStatus'], 'off')
+
+    def test_source_cleanup_failure_is_explicit_and_still_attempts_native_disable(self):
+        self.manager.run(True)
+        manager = self.source_manager()
+        manager.source.stop.side_effect = [None, M.Error('source cleanup failed')]
+        with patch.object(M.sources, 'transport', side_effect=M.Error('TLS rejected')):
+            with self.assertRaisesRegex(M.Error, 'TLS rejected') as failure: manager.run(True, {})
+        self.assertTrue(failure.exception.minio_cleanup_failed)
+        self.assertEqual(self.account['accountStatus'], 'off')
+
+    def test_foreign_source_is_not_removed_or_followed_by_account_mutation(self):
+        self.manager.run(True)
+        manager = self.source_manager(); self.db.enable.reset_mock()
+        manager.source.stop.side_effect = M.Error('foreign source')
+        with self.assertRaisesRegex(M.Error, 'foreign source'): manager.run(False, {})
+        self.db.enable.assert_not_called()
+
+    def test_uninstalled_account_disable_does_not_open_management_connection(self):
+        manager = M.AccountLifecycle('infra', self.directory, Mock(side_effect=AssertionError('no management')))
+        manager.run(False)
+
+    def network_database(self, *, project='owned', driver='bridge', address='10.1.2.3', duplicate=False):
+        db = Mock()
+        db.identity = 'a'*64
+        db.facts = {'labels': {'com.docker.compose.project': 'owned'}, 'networks': {
+            'owned_main': {'NetworkID': 'main', 'IPAddress': address, 'GlobalIPv6Address': ''},
+            'owned_trace': {'NetworkID': 'trace', 'IPAddress': '10.2.3.4', 'GlobalIPv6Address': ''}}}
+        def command(args):
+            if args[0] == 'network':
+                main = args[-1] == 'main'
+                return json.dumps([{'Name': 'owned_main' if main else 'owned_trace', 'Driver': driver,
+                                    'Labels': {'com.docker.compose.project': project,
+                                               'com.docker.compose.network': 'addp-network' if main or duplicate else 'trace-backend'}}])
+            return 'sha256:'+'b'*64
+        db.docker.run.side_effect = command
+        return db
+
+    def test_source_uses_only_the_exact_standard_network_on_a_multi_network_database(self):
+        db = self.network_database()
+        M.bind_source(db, 'infra')
+        self.assertEqual((db.network, db.address, db.image), ('owned_main', '10.1.2.3:9000', 'sha256:'+'b'*64))
+        db.same.assert_called_once()
+        self.assertTrue(all(call.args[0][0] in {'network', 'inspect'} for call in db.docker.run.call_args_list))
+
+    def test_source_network_drift_ambiguity_or_public_address_is_rejected(self):
+        for values in ({'project': 'foreign'}, {'driver': 'host'}, {'address': '8.8.8.8'}, {'duplicate': True}):
+            with self.subTest(values=values):
+                with self.assertRaises(M.Error): M.bind_source(self.network_database(**values), 'infra')
 
 
 if __name__ == '__main__':

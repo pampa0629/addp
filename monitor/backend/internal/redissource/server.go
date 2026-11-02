@@ -1,36 +1,25 @@
 package redissource
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net/http"
 	"sort"
+
+	"github.com/addp/monitor/internal/sourceserver"
 )
 
 // Handler exposes only the fixed projection; no target or query API is present.
 func Handler(read func(context.Context) (Snapshot, error)) http.Handler {
-	busy := make(chan struct{}, 1)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/metrics" || r.URL.RawQuery != "" || r.URL.ForceQuery || r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
-			http.Error(w, "Redis metrics request rejected", http.StatusNotFound)
-			return
-		}
-		select {
-		case busy <- struct{}{}:
-			defer func() { <-busy }()
-		default:
-			http.Error(w, "Redis metrics busy", http.StatusServiceUnavailable)
-			return
-		}
-		snapshot, err := read(r.Context())
+	return sourceserver.Handler(func(ctx context.Context) ([]byte, error) {
+		snapshot, err := read(ctx)
 		if err != nil {
-			http.Error(w, "Redis metrics unavailable", http.StatusServiceUnavailable)
-			return
+			return nil, err
 		}
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		var w bytes.Buffer
 		names := make([]string, 0, len(snapshot.Values))
 		for name := range snapshot.Values {
 			names = append(names, name)
@@ -38,18 +27,19 @@ func Handler(read func(context.Context) (Snapshot, error)) http.Handler {
 		sort.Strings(names)
 		epoch := sha256.Sum256([]byte(snapshot.RunID))
 		generation := hex.EncodeToString(epoch[:])
-		fmt.Fprintf(w, "addp_redis_observed_at_seconds %d\n", snapshot.SampledAt.Unix())
+		fmt.Fprintf(&w, "addp_redis_observed_at_seconds %d\n", snapshot.SampledAt.Unix())
 		for _, name := range names {
 			definition, ok := exportedMetrics[name]
 			if !ok {
 				continue
 			}
 			if definition.counter {
-				fmt.Fprintf(w, "addp_redis_%s{counter_epoch=\"%s\"} %d\n", definition.name, generation, snapshot.Values[name])
+				fmt.Fprintf(&w, "addp_redis_%s{counter_epoch=\"%s\"} %d\n", definition.name, generation, snapshot.Values[name])
 			} else {
-				fmt.Fprintf(w, "addp_redis_%s %d\n", definition.name, snapshot.Values[name])
+				fmt.Fprintf(&w, "addp_redis_%s %d\n", definition.name, snapshot.Values[name])
 			}
 		}
+		return w.Bytes(), nil
 	})
 }
 

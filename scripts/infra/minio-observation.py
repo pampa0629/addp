@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import importlib.util
 import io
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -27,6 +28,7 @@ def load(name, path):
 
 private = load('minio_observation_private', ROOT/'scripts/utils/private-state.py')
 deployment = load('minio_observation_docker', ROOT/'scripts/utils/deployment-docker.py')
+sources = load('minio_source_deployment', ROOT/'scripts/utils/metrics-source.py')
 Error = deployment.DeploymentError
 RELEASE = 'RELEASE.2025-10-15T17-29-55Z'
 POLICY = json.loads((ROOT/'scripts/infra/minio-observation/policy.json').read_text())
@@ -185,7 +187,7 @@ esac'''
         return int(result)
 
 
-class Lifecycle:
+class AccountLifecycle:
     def __init__(self, scope, directory, factory):
         self.scope, self.directory, self.factory = scope, Path(directory), factory
 
@@ -237,10 +239,11 @@ class Lifecycle:
 
     def run(self, enabled):
         with private.locked(self.directory):
-            state, db = self.read(), self.factory()
+            state = self.read()
+            if state is None and not enabled:
+                return
+            db = self.factory()
             if state is None:
-                if not enabled:
-                    return
                 state = {'schema': 'addp.minio-observation/v1', 'scope': self.scope, 'owner': secrets.token_hex(16),
                          'access_key': 'ADDP'+secrets.token_hex(8).upper(), 'secret_key': '', 'source_key': db.key,
                          'parent_user': db.parent, 'phase': 'prepared'}
@@ -283,20 +286,85 @@ class Lifecycle:
                 raise
 
 
+def bind_source(database, scope, *, network_key=None):
+    expected = network_key or {'infra': 'addp-network', 'business': 'business-network'}[scope]
+    candidates = []
+    for name, attachment in database.facts['networks'].items():
+        network = decode(database.docker.run(['network', 'inspect', attachment['NetworkID']]))[0]
+        labels = network.get('Labels') or {}
+        if labels.get('com.docker.compose.network') != expected:
+            continue
+        if (network.get('Name') != name or network.get('Driver') != 'bridge'
+                or labels.get('com.docker.compose.project') != database.facts['labels']['com.docker.compose.project']):
+            raise Error('MinIO source network ownership rejected')
+        address = ipaddress.ip_address(attachment['IPAddress'] or attachment['GlobalIPv6Address'])
+        if not address.is_private or address.is_unspecified or address.is_link_local or address.is_multicast or address.version == 6 and address.ipv4_mapped:
+            raise Error('MinIO source address rejected')
+        candidates.append((name, f'[{address}]:9000' if address.version == 6 else f'{address}:9000'))
+    if len(candidates) != 1:
+        raise Error('MinIO source network is not uniquely available')
+    database.network, database.address = candidates[0]
+    database.image = database.docker.run(['inspect', '--format', '{{.Image}}', database.identity]).strip()
+    if re.fullmatch('sha256:[0-9a-f]{64}', database.image) is None:
+        raise Error('MinIO source bootstrap image rejected')
+    database.same()
+
+
+def source_inputs():
+    files = ['common/go.mod', 'common/go.sum', 'monitor/backend/go.mod', 'monitor/backend/go.sum', 'scripts/infra/Dockerfile.minio-metrics']
+    for folder in ('common/jsonmap', 'monitor/backend/internal/miniosource', 'monitor/backend/internal/sourceserver', 'monitor/backend/cmd/minio-metrics-source'):
+        files.extend(str(path.relative_to(ROOT)) for path in sorted((ROOT/folder).glob('*.go')) if not path.name.endswith('_test.go'))
+    return files
+
+
+def source_config(database, state):
+    return {'address': database.address, 'scope': state['scope'], 'access_key': state['access_key'], 'secret_key': state['secret_key'],
+            'container_id': database.identity, 'container_started_at': database.facts['started_at']}
+
+
+class Lifecycle:
+    """One source/account transition for standard deployment and isolated gates."""
+    def __init__(self, docker, scope, directory, factory, project, *, network_key=None):
+        self.scope, self.directory, self.factory, self.network_key = scope, Path(directory), factory, network_key
+        self.source = sources.Source(docker, scope, self.directory/'source', ROOT, 'minio', project, Error)
+        self.account = AccountLifecycle(scope, directory, factory)
+
+    def run(self, enabled, env):
+        with private.locked(self.directory/'source'):
+            self.source.stop()
+            try:
+                if not enabled:
+                    self.account.run(False)
+                    return
+                ip, port, material = sources.transport(env, ROOT, 'ADDP_MINIO_METRICS', Error)
+                database = self.factory(); bind_source(database, self.scope, network_key=self.network_key)
+                image = self.source.build(source_inputs())
+                self.account.run(True)
+                self.source.start(database, image, source_config(database, self.account.read()), ip, port, material, database.same)
+            except Exception as error:
+                # Preserve the original safe failure while separately recording
+                # whether both source removal and native disable were verified.
+                for cleanup in (self.source.stop, lambda: self.account.run(False)):
+                    try: cleanup()
+                    except Exception: error.minio_cleanup_failed = True
+                raise
+
+
 def run(action, scope, env):
     selected = env.get('ADDP_MINIO_METRICS_ENABLED', 'false')
     if selected not in {'true', 'false'}:
         raise Error('MinIO observation selection must be true or false')
     directory = state_directory(env, scope)
     enabled = action == 'up' and selected == 'true'
-    if not enabled and not os.path.lexists(directory/'owner.json'):
+    if not enabled and not os.path.lexists(directory/'owner.json') and not os.path.lexists(directory/'source/compose.json'):
         print('MinIO observation '+scope+': not installed; disabled')
         return
     docker = deployment.Docker(env)
     project, working = deployment.inventory.SCOPES[scope]
     factory = lambda: Database(docker, project, working, env.get('MINIO_ROOT_USER', ''), env.get('MINIO_ROOT_PASSWORD', ''))
-    Lifecycle(scope, directory, factory).run(enabled)
-    print('MinIO observation '+scope+(': account ready; metrics source not yet deployed' if enabled else ': account disabled'))
+    source_project = 'addp-minio-metrics-'+hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]+'-'+scope
+    Lifecycle(docker, scope, directory, factory, source_project).run(enabled, env)
+    print('MinIO observation '+scope+(': source deployed; successful scraping requires Monitor verification' if enabled else ': source and account disabled'))
 
 
 def main():
@@ -306,8 +374,9 @@ def main():
     args = parser.parse_args()
     try:
         run(args.action, args.scope, os.environ)
-    except (ValueError, OSError, KeyError, TypeError):
-        print('MinIO observation account unavailable; core services remain independent', file=sys.stderr)
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        cleanup = ' [cleanup=failed]' if getattr(error, 'minio_cleanup_failed', False) else ''
+        print('MinIO observation source unavailable'+cleanup+'; core services remain independent', file=sys.stderr)
         return 1
     return 0
 

@@ -539,3 +539,25 @@ Redis正式入口提交后继续开发，发现同上下文保留未覆盖已重
 相关标准回归：最初`make test-infra-runtime-log-lifecycle`的37、146、142项分组及原Go夹具通过（`/tmp/addp-minio-observation-lifecycle-regression.log`）；最终取消Infra重复启动前多余的账号停用后，组合复验的前两组通过，末组142项有1项未改动的HTTP超时夹具失败：`test_native_timeout_reaps_owned_group_without_completing_the_stage`读取PID文件时不存在（`/tmp/addp-minio-observation-lifecycle-final.log`），不计整组通过，不调整超时或断言。受影响的实际Infra启停用例另由`python3 scripts/test/infra-runtime-log-lifecycle_test.py`独立复验，40项通过（`/tmp/addp-minio-observation-lifecycle-scoped.log`）；`make test-deployment-discovery`（44＋6项及Shell语法，`/tmp/addp-minio-observation-discovery-regression.log`）；`bash scripts/test/infra-port-resolution.sh`（`/tmp/addp-minio-observation-port-final.log`）；`make test-t2-ci-registration`（75＋9项及登记检查，`/tmp/addp-minio-observation-registration-post-image.log`）；`make test-infra-minio-cache`（15项，`/tmp/addp-minio-observation-cache.log`）；构建登记检查通过。停止脚本拷贝夹具已携带策略目录，避免可选账号模块缺少依赖；复用该MinIO镜像的门禁输入登记同步补齐，两份原根构建上下文统一为实际Infra上下文。其他领域原生T2未在本批重跑，不以这些登记检查替代它们。
 
 根Makefile与Release/T2 workflow已注册`test-monitor-minio-observation`，使用既有固定MinIO构建缓存；相关源码及标准生命周期变化可命中该门禁。CI／Hosted未查询、触发、重跑或设置定时任务，继续等专门会话回传。未实现固定17项来源适配、mTLS输出、自动发现／System精确来源投影、Monitor查询及Console页面；本次账号T2不等于完整MinIO专业监控、正式用户T4或生产T5验收。
+
+
+## MinIO 固定 v3 指标与 mTLS 来源（2026-11-02）
+
+沿已确认17项范围接通部署侧来源，未新增产品API或权限。`internal/miniosource`固定读取四个v3端点和前后进程边界，每轮三秒、最多五请求、每响应256KiB／4096样本，不使用代理、重定向、DNS、重试或旧缓存。严格验证固定原生标签／类型、数值和同一进程，输出前移除全部原生标签；计数仅携带当前部署／进程的摘要代际。只输出原始数值，速率／占比仍留给后续唯一查询层。对象扫描时间按该端点的实际读取时刻计算，与整轮采集时间分别记录。
+
+固定上游的`MetricValues.Set`省略零值；真实原生端点确认健康时的离线盘数、在途／5xx及尚未扫描的对象统计可能缺席。来源保持缺样，不据HTTP200补0，不切换v2或其他接口，也不承诺17项健康时全有值。原生接口权限仍为独立`admin:Prometheus`，过滤只限制输出，不冒充权限隔离。
+
+Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部署内核，删除原Redis重复实现；各自保留协议、账号和字段适配。mTLS TLS1.3只允许无query／请求体的GET /metrics，单并发、完整缓冲、失败503且无失效数据。标准Infra／Business启停将受限账号与来源一起调和，私有配置复制到独立卷，非root／只读／0.25CPU／128MiB、只连核验后的标准数据库私网。失败或关闭先移除本方来源／配置卷，再停用已核验的账号，清理未证实时单独报错；运行来源不持root凭据、不挂载数据目录／Docker Socket，不收养陌生来源或账号。
+
+实际验证分层：
+
+- `make test-monitor-minio-observation-unit`：最终21项Python账号／来源T1及MinIO解析、配置、HTTP边界和受影响Redis Go T1通过。覆盖多网络下只选择明确标准网络、网络归属／歧义／公网拒绝、缺省关闭不访问Docker、权限漂移、未知创建、失效清理、清理失败标记、外来来源拒绝，以及固定字段、缺样／显式零、代际、扫描时刻、恶意标签／类型／数值／重复／预算与HTTP并发／请求体失败不泄露。另组合两份生命周期测试共30项通过（`/tmp/addp-minio-source-unit-complete.log`、`/tmp/addp-minio-source-lifecycle-final.log`）；最终T2入口再次执行19项及全部上述Go包（`/tmp/addp-minio-source-t2-final.log`）。
+- `make test-module MODULE=monitor GO_ONLY=1`：Monitor Go T1通过（`/tmp/addp-minio-source-monitor-go.log`）。未运行的集成测试不计通过；本批公开API契约未变，无Swagger变更。
+- `make test-monitor-minio-observation`：macOS Docker Desktop／Linux ARM64独占双MinIO T2通过（`/tmp/addp-minio-source-t2-final.log`）。实际验证原生指标权限、S3对象读写／元数据／用户管理拒绝、过期及错误JWT、跨scope凭据；两独立CA的真实mTLS、无证书／错误用途／另一CA拒绝、封闭路由、固定输出不含原生标签／凭据及运行安全配置；账号停用且来源存活时503无旧值，恢复后重新成功，标准停用／缺失TLS的清理不影响夹具对象。两MinIO保卷重建后同一AK/SK、对象保留、新来源绑定新容器及计数代际。退出报告containers/networks/volumes/private state均为0。
+- `make test-monitor-redis-source`：受共享HTTP/TLS与部署实现影响的原生Redis T2通过（`/tmp/addp-minio-source-redis-t2.log`）。包括双scope真实来源、现有精确发现、账号清权／持久化、数据库重启及计数代际、坏记录隔离／恢复／失败清理，另含15项真实PromQL案例；本方来源、配置卷、夹具资源和私有材料清理通过。
+- `make test-t2-ci-registration test-build-registration`通过：75＋9、60＋9项及登记检查，新增来源镜像和两来源门禁输入闭包已命中既有Monitor／Business选择（`/tmp/addp-minio-source-registration.log`）。`bash scripts/test/infra-port-resolution.sh`和相关Shell语法通过（`/tmp/addp-minio-source-port-safety.log`）。
+- `python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py`40项中39项通过，`test_disabled_metrics_stop_only_owned_control_and_preserve_core`原30秒外层预算超时，未获得该次完整输出，未认定根因、未扩大预算或调整断言（`/tmp/addp-minio-source-infra-unit.log`）。双来源门禁结束后，沿该文件标准入口单独定位同一原用例：`python3 scripts/test/infra-runtime-log-lifecycle_test.py InfraRuntimeLogLifecycleTest.test_disabled_metrics_stop_only_owned_control_and_preserve_core`在2.874秒通过（`/tmp/addp-minio-source-infra-control-diagnostic.log`）；保留原组合失败，不将单项通过改记整组通过。
+
+最初一轮编译因扫描时刻参数替换误触JWT调用失败，在启动夹具前修复；随后来源T2的保卷重建检查要求请求计数，但新进程还无S3调用，固定原生端点按正值发布规则没有计数代际。夹具补入重建后对自有对象的真实GET，同时验证对象持久化及新计数；不改产品输出、补零、降低边界或等待伪造样本。最终上述来源T2完整通过，前次失败及物理清理结果独立保留。
+
+本批没有自动发现／System精确来源投影、Monitor固定查询和Console专业页的MinIO实现；不计作完整17项专业监控或正式用户T4／生产T5。没有应用个人配置、安装个人账号、改数据库／Docker设置、重启个人服务、查询或触发CI／Hosted，继续等专门会话回传；没有设置定时任务。

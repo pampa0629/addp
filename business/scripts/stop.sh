@@ -105,7 +105,7 @@ echo -e "${YELLOW}🛑 停止服务...${NC}"
 postgres_metrics_result=0
 if [ "$HAS_ARGS" = false ] || [ ${#SERVICES[@]} -eq 0 ] || [[ " ${SERVICES[*]} " == *" minio "* ]]; then
     (
-        unset ADDP_MINIO_METRICS_ENABLED ADDP_MINIO_METRICS_STATE_DIR
+        unset ADDP_MINIO_METRICS_ENABLED ADDP_MINIO_METRICS_STATE_DIR ADDP_MINIO_METRICS_LISTEN ADDP_MINIO_METRICS_TLS_DIR
         if [ -f .env ]; then set -a; source .env; set +a; fi
         python3 "$PROJECT_ROOT/../scripts/infra/minio-observation.py" down --scope business
     ) || postgres_metrics_result=1
