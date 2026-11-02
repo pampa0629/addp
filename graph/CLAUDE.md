@@ -208,6 +208,8 @@ Graph控制API只接受当前version，reconcile要求`graph.graph.reconcile`，
 
 2026-11-01 已确认[原生身份与恢复证据的只读分期契约](../docs/spec/tasks/模块任务契约.md#graph-原生身份与恢复证据)：Common 提供原生事实，Graph 独占原绑定与准入裁决；身份、操作结果和停止证明不能互代。Neo4j 候选身份先做固定版本验证，FalkorDB 无证据继续阻断；业务图原子回执另案讨论。本次为契约确认，尚未实现 Provider 证据能力或正向 reopen，不改公共终态、不新增权限、不自动重跑。
 
+2026-11-03固定Neo4j Community 5.26.24原生身份反例已在独占T2实测：数据库归档／整卷克隆会保留所测ID，整卷复制还保留实例ID与databaseID，但数据已回退。该T2证明候选不足，未实现恢复证据Provider、可信身份绑定或正向reopen；现有严格阻断保持。原物理目标不能无声改称逻辑目标，新的受管世代／原子回执或可信生命周期来源须按[专题§8.42](../docs/next/ADDP任务执行管理统一收口专题.md#842-正向恢复的新边界待讨论)先讨论。
+
 本轮最小验证：`make test-module MODULE=graph GO_ONLY=1`、`make test-graph-frontend`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"`、`make test-common-falkordb`、`make test-common-neo4j`和`make test-authorization`。PG覆盖双实例精确领取、取消竞争、真实G锁等待跨租约、旧运行体拒绝／迟到证据与未决阻断；原生门禁覆盖部分写入及成功后回执丢失。HTTP 202只表示入队／取消受理，运行验收和新的Hosted须另行取得证据。
 
 ## 七、开发与调试

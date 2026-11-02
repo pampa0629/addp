@@ -1328,27 +1328,63 @@ args = sys.argv[1:]
 with open(os.environ['FIXTURE_TRACE'], 'a') as trace:
     trace.write(json.dumps(args) + '\\n')
 mode = os.environ['FIXTURE_MODE']
+state_path = Path(os.environ['FIXTURE_SECRET'] + '.state')
+state = json.loads(state_path.read_text()) if state_path.exists() else {'generation': 0, 'exists': False}
 if args[0] == 'compose':
     command = args[args.index('-f') + 2]
     if command == 'up':
         Path(os.environ['FIXTURE_SECRET']).write_text(os.environ['NEO4J_T2_PASSWORD'])
-        sys.exit(0 if mode == 'success' else 64)
+        if mode in {'startup', 'diagnostic-failure'}: sys.exit(64)
+        if not state['exists']: state['generation'] += 1
+        state['starts'] = state.get('starts', 0) + 1
+        state['port'] = int(os.environ['NEO4J_T2_BOLT_PORT']) or 17686 + state['starts']
+        state.update(exists=True, project=args[args.index('-p') + 1])
+        state_path.write_text(json.dumps(state))
+    if command == 'down':
+        state['exists'] = False
+        state_path.write_text(json.dumps(state))
+    if command == 'cp':
+        if args[-2].endswith(':/data/.'):
+            (Path(args[-1]) / 'databases/system').mkdir(parents=True)
+        elif ':' not in args[-1]:
+            Path(args[-1]).write_text('owned original dump')
     if command == 'logs':
         print('startup diagnostic password=' + os.environ['NEO4J_T2_PASSWORD'])
         sys.exit(73 if mode == 'diagnostic-failure' else 0)
     if command == 'ps':
-        print('owned-neo4j-container')
+        print('owned-neo4j-container' if mode in {'startup', 'diagnostic-failure'} else 'owned-container-' + str(state['generation']))
     if command == 'port':
-        print('127.0.0.1:17687')
+        print('127.0.0.1:' + str(state['port']))
 elif args[0] == 'inspect':
-    print('{"status":"exited","exit_code":64,"oom_killed":false,"error":"fixture startup"}')
+    if '.Config.Labels' in ' '.join(args):
+        print(state['project'] + '|' + state['project'] + '_neo4j_data')
+    else:
+        print('{"status":"exited","exit_code":64,"oom_killed":false,"error":"fixture startup"}')
+elif args[:2] == ['volume', 'inspect']:
+    if not state['exists']: sys.exit(1)
+    print('volume-generation-' + str(state['generation']))
+elif mode == 'cleanup-unavailable' and args[0] == 'ps':
+    sys.exit(77)
 ''', encoding="utf-8")
             docker.chmod(0o700)
             go = root / "bin/go"
             go.write_text(
-                '#!/usr/bin/env bash\n'
-                'echo "--- PASS: TestIntegrationNeo4jPreparedReadScope (0.01s)"\n'
-                'echo "--- PASS: TestIntegrationNeo4jGraphDomain (0.01s)"\n',
+                f'#!{sys.executable}\n' + '''
+import json, os, sys
+phase = os.environ.get('NEO4J_T2_IDENTITY_PHASE', '')
+with open(os.environ['FIXTURE_TRACE'], 'a') as trace:
+    trace.write(json.dumps(['go', phase, 'port=' + os.environ.get('NEO4J_T2_BOLT_PORT', '')]) + '\\n')
+if not phase:
+    print('--- PASS: TestIntegrationNeo4jPreparedReadScope (0.01s)')
+    print('--- PASS: TestIntegrationNeo4jGraphDomain (0.01s)')
+else:
+    if phase == 'restored' and os.environ['FIXTURE_MODE'] == 'identity-failure': sys.exit(65)
+    print('--- PASS: TestNativeNeo4jTargetIdentityLifecycle (0.01s)')
+    if not (phase == 'recreated' and os.environ['FIXTURE_MODE'] == 'identity-missing'):
+        print('NEO4J_IDENTITY_PHASE_PASS phase=' + phase + ' version=5.26.24 edition=community')
+    if phase == 'full-clone':
+        print('NEO4J_IDENTITY_COUNTEREXAMPLE candidate_preserved=true original_storage_destroyed=true post_dump_data_absent=true')
+''',
                 encoding="utf-8",
             )
             go.chmod(0o700)
@@ -1359,7 +1395,7 @@ elif args[0] == 'inspect':
                                TMPDIR=str(root), FIXTURE_MODE=mode,
                                FIXTURE_TRACE=str(trace), FIXTURE_SECRET=str(secret))
             result = subprocess.run(["bash", str(runner)], env=environment, capture_output=True,
-                                    text=True, timeout=15)
+                                    text=True, timeout=30)
             return result, [json.loads(line) for line in trace.read_text().splitlines()], secret.read_text()
 
     def test_startup_failure_preserves_bounded_redacted_evidence_before_cleanup(self) -> None:
@@ -1387,7 +1423,31 @@ elif args[0] == 'inspect':
         result, calls, _ = self.run_fixture("success")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("NEO4J_T2_PASS", result.stdout)
-        self.assertFalse(any(c[0] == "inspect" or (c[0] == "compose" and "logs" in c) for c in calls))
+        self.assertFalse(any(c[0] == "compose" and "logs" in c for c in calls))
+        self.assertFalse(any(c[0] == "inspect" and ".State" in " ".join(c) for c in calls))
+        phases = [c for c in calls if c[0] == "go" and c[1]]
+        self.assertEqual([c[1] for c in phases], ["baseline", "restart", "post-dump", "recreated", "restored", "restored-restart", "clone-recreated", "full-clone", "full-clone-restart"])
+        self.assertEqual([c[2] for c in phases], ["port=17687"] * 9)
+        self.assertIn("NEO4J_T2_CLEANUP zero_residuals", result.stdout)
+
+    def test_missing_identity_phase_cannot_pass(self) -> None:
+        result, calls, _ = self.run_fixture("identity-missing")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Neo4j identity phase missing: recreated", result.stderr)
+        self.assertNotIn("NEO4J_T2_PASS ", result.stdout)
+        self.assertTrue(any(c[0] == "compose" and "down" in c for c in calls))
+
+    def test_native_identity_failure_preserves_exit_and_cleanup(self) -> None:
+        result, calls, _ = self.run_fixture("identity-failure")
+        self.assertEqual(result.returncode, 65, result.stdout + result.stderr)
+        self.assertNotIn("NEO4J_T2_PASS ", result.stdout)
+        self.assertIn("NEO4J_T2_CLEANUP zero_residuals", result.stdout)
+
+    def test_cleanup_unavailable_is_not_zero_residuals(self) -> None:
+        result, _, _ = self.run_fixture("cleanup-unavailable")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cleanup could not verify resources", result.stderr)
+        self.assertNotIn("NEO4J_T2_CLEANUP zero_residuals", result.stdout)
 
 
 if __name__ == "__main__":
