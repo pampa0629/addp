@@ -589,3 +589,8 @@ Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部�
 - System前端：`make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS='e2e/engine-deployments.e2e.js'`通过158项单元、15项登记页浏览器及构建，MinIO管理行沿原监控入口跳转。Swagger标准生成及96个Monitor公开路由覆盖通过。`make test-t2-ci-registration test-build-registration`通过；原MinIO独占T2入口已同步resourcequery输入与受限promtool服务，退出显式包含该profile并再次以真实门禁验证零残留；既有自动发现可命中新增Go／浏览器用例，无新Workflow或并行路线。
 - 日志：`/tmp/addp-minio-query-{go-verified,t2,t2-final,t2-cleanup-final,redis-t2,frontend,ui-targeted,ui-verified,system-ui,registration-final,swagger}.log`。临时路径不代替正文的可重放标准入口。
 - 尚未验证：个人MinIO采集配置应用／真实Console数值与曲线、Safari及正式身份全链路。未修改个人数据库／配置或启停服务。CI与Hosted等专门会话回传，本会话未触发、重跑或轮询，未设置定时任务。
+
+
+### MinIO 专项 CI 回传（2026-11-02，dff267ed0）
+
+专门CI会话确认提交`dff267ed00aef78f009dcc54ac33fe62305c7aa0`的[Release MinIO专项](https://github.com/pampa0629/addp/actions/runs/41424138332/job/125206871137)结论success，实际`Run MinIO observation source and identity gate`已执行（回执selected=true），不是跳过。原日志`/tmp/addp-ci-20261102-180000/Monitor-dff-MinIO-source.log`本地复核110015字节，SHA256=`e71e3c001fe447c870af4e77497d54a49ac4b8ee40e446bdcd2c1dfab2b6a8b6`；1113—1115行21项脚本检查OK，1275行真实固定PromQL40场景通过并移除promtool，1279行容器／网络／卷／私有材料=0。仅补记该独立专项通过，不推及Monitor完整前端、Release整批、Safari或Hosted。完整前端Job125206526177在回执时仍运行，由专门会话继续跟进；本会话只核对回传日志，未访问CI状态、重跑或设置定时任务。
