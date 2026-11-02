@@ -1195,6 +1195,22 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertFalse(any(method == "DELETE" for method, _ in client.calls))
         self.assertEqual(model.cleanup["residual_resources"], -1)
 
+    def test_cleanup_returns_only_actual_owned_terminal_results(self):
+        for has_result in (False, True):
+            with self.subTest(has_result=has_result):
+                client = FakeGatewayClient()
+                model = SUITE.prepare_model_fixture(client, 27, "addp-online", "dae")
+                model.task_id, model.execution_id = 203, "model-dae"
+                client.models["dae"]["task_exists"] = True
+                client.models["dae"]["result_exists"] = has_result
+                rows = SUITE.cleanup_managed_artifact(client, model, 1)
+                self.assertEqual(len(rows), int(has_result))
+                if rows:
+                    self.assertEqual(rows[0]["task_id"], model.task_id)
+                    self.assertEqual(rows[0]["item_fingerprint"], model.item["fingerprint"])
+                self.assertFalse(client.models["dae"]["task_exists"] or client.models["dae"]["result_exists"])
+                self.assertEqual(model.cleanup["residual_resources"], 0)
+
     def test_preview_restoration_failure_still_deletes_owned_artifact_and_task(self):
         client = FakeGatewayClient()
         model = SUITE.prepare_model_fixture(client, 27, "addp-online", "dae")

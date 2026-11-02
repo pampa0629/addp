@@ -25,6 +25,16 @@ def verify_source_revocation(client,authorization,receipt,model,preview_url):
     require(restored==before,'reapproval must preserve the existing cached COG bytes')
     return renewed,dict(revoked_request_id=receipt['request_id'],renewed_request_id=renewed['request_id'],boundary_hash=renewed['boundary_hash'],range_bytes=64,range_sha256=hashlib.sha256(before).hexdigest())
 
+def cleanup_fixture(client,fixture,timeout,tenant,owner,physical):
+    # The owner inspects the terminal execution's actual results before deleting.
+    # A failure before result creation has no output reference to fabricate.
+    rows=owner.cleanup_managed_artifact(client,fixture,timeout,'raster_cog',owner.RASTER_TASK_TYPE)
+    proof={}
+    for row in rows:
+        proof=physical('deleted-cog',dict(result=row,tenant_id=tenant))
+        require(proof==dict(object_deleted=True,temporary_inputs_removed=True,source_unchanged=True),'incomplete exact physical cleanup')
+    return dict(fixture.cleanup,results_observed=len(rows),**proof)
+
 def run(repository,environment,owner,*,physical_runner=None,browser_runner=None):
     require(environment.get('ADDP_ONLINE_MANAGER_CASE')=='native-envi','independent ENVI case required')
     physical=physical_runner or (lambda action,request=None:FIXTURE.physical(action,repository,environment,request))
@@ -33,7 +43,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     identity=owner.validate_user_identity(client,tenant)
     issuer=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30)
     report=dict(schema_version='addp.manager-envi/v2',case='native-envi',run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],result='incomplete',identity=identity,cases=[],cleanup={})
-    grants=[];fixtures=[];seeded=False;stage='seed'
+    grants=[];fixtures=[];seeded=False;stage='seed';failure=None
     timeout=float(environment.get('ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS','180'))
     try:
         seeded=True;seed=physical('seed');require(seed=={'sources':FIXTURE.sources()},'independent pair bytes changed')
@@ -122,18 +132,19 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         report['sources_unchanged']=True;report['result']='passed'
         return report
     except BaseException as error:
+        failure=error
         report.update(result='failed',stage=stage,error=type(error).__name__);raise
     finally:
         errors=[]
         for fixture in reversed(fixtures):
             if not fixture.task_id:continue
             try:
-                row=next((c.get('result') for c in report['cases'] if c.get('task_id')==fixture.task_id),None)
-                owner.cleanup_managed_artifact(client,fixture,timeout,'raster_cog',owner.RASTER_TASK_TYPE)
-                require(row is not None,'missing owned output reference')
-                proof=physical('deleted-cog',dict(result=row,tenant_id=tenant))
-                require(proof==dict(object_deleted=True,temporary_inputs_removed=True,source_unchanged=True),'incomplete exact physical cleanup')
-                report['cleanup'][fixture.format]=dict(fixture.cleanup,**proof)
+                report['cleanup'][fixture.format]=cleanup_fixture(client,fixture,timeout,tenant,owner,physical)
+            except Exception as error:errors.append(type(error).__name__)
+        if any(f.task_id for f in fixtures):
+            try:
+                report['artifact_residuals']=physical('residuals',dict(tenant_id=tenant))
+                require(report['artifact_residuals']==dict(objects_absent=True,temporary_inputs_removed=True,source_unchanged=True),'ENVI artifact residuals')
             except Exception as error:errors.append(type(error).__name__)
         for grant in reversed(grants):
             try:grant.cleanup()
@@ -143,4 +154,4 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
             except Exception as error:errors.append(type(error).__name__)
         if errors:report.update(result='failed',cleanup_errors=errors)
         (artifact/'manager-envi.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
-        if errors:raise ValueError('ENVI cleanup failed: '+','.join(errors))
+        if errors and failure is None:raise ValueError('ENVI cleanup failed: '+','.join(errors))

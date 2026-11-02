@@ -112,6 +112,13 @@ def worker(request):
         # No recursive deletion: this is only a residual observation of this Tenant.
         require(not list(storage_client.list_objects(infra['bucket'],prefix=f"temp/raster-input/tenant_{request['tenant_id']}/",recursive=True)),'temporary ENVI inputs remain')
         verify_sources();return {'object_deleted':True,'temporary_inputs_removed':True,'source_unchanged':True}
+    if action=='residuals':
+        require(type(request.get('tenant_id')) is int and request['tenant_id']>0,'invalid residual Tenant')
+        infra=request['infra'];require(infra['bucket']=='manager','foreign residual bucket')
+        storage_client=Minio(infra['endpoint'],access_key=infra['access_key'],secret_key=infra['secret_key'],secure=False)
+        require(not list(storage_client.list_objects(infra['bucket'],prefix=f"tenant_{request['tenant_id']}/cog/",recursive=True)),'ENVI COG objects remain')
+        require(not list(storage_client.list_objects(infra['bucket'],prefix=f"temp/raster-input/tenant_{request['tenant_id']}/",recursive=True)),'temporary ENVI inputs remain')
+        verify_sources();return dict(objects_absent=True,temporary_inputs_removed=True,source_unchanged=True)
     if action=='delete':
         for spec in specs:
             for name in pair(spec):
@@ -152,12 +159,12 @@ def capture_infra_diagnostic(environment,*,runner=subprocess.run):
     return evidence
 
 def physical(action,repository,environment,request=None):
-    require(action in ('seed','verify','delete','cog','deleted-cog','header-layout','header-version'),'unknown physical action')
+    require(action in ('seed','verify','delete','cog','deleted-cog','residuals','header-layout','header-version'),'unknown physical action')
     require(all(environment.get(k)==v for k,v in {'ADDP_ONLINE_HOSTED':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux','ADDP_ONLINE_MANAGER_CASE':'native-envi'}.items()),'exclusive Hosted ENVI case required')
     state=Path(environment['ADDP_ONLINE_SECRET_DIR'])/'nfs-root';require(not state.is_symlink(),'invalid state');root=Path(state.read_text().strip())
     require(re.fullmatch(r'/tmp/addp-online-manager-nfs\.[A-Za-z0-9]{6}',str(root)) and not root.is_symlink() and (root/'.addp-online-owner').read_text().strip()==environment['ADDP_ONLINE_TEST_RUN_ID'],'unowned NFS root')
     config=dict(request or {},action=action,nfs_root=str(root),storage={'endpoint':'127.0.0.1:'+environment['ADDP_ONLINE_MANAGER_MINIO_PORT'],'access_key':environment['ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY'],'secret_key':environment['ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY'],'bucket':environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']})
-    if action in ('cog','deleted-cog'):
+    if action in ('cog','deleted-cog','residuals'):
         # Secret values are supplied only on private worker stdin, never reports.
         config['infra']={'endpoint':'127.0.0.1:'+environment['MINIO_API_PORT'],'access_key':environment['MINIO_ROOT_USER'],'secret_key':environment['MINIO_ROOT_PASSWORD'],'bucket':'manager'}
     script=Path(repository)/'business/scripts/online-envi-fixture.py'

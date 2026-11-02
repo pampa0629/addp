@@ -125,6 +125,9 @@ func model3DHTTPRouter(t *testing.T, current auth.AuthContext, fixture *model3DH
 	if err := RegisterIAMManagerModel3DAuthorizationRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authentication, UserAccessCredential: user, ServiceCredential: service}, &IAMManagerFileAuthorizationHandler{service: fixture}); err != nil {
 		t.Fatal(err)
 	}
+	if err := RegisterIAMManagerRasterCOGAuthorizationRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authentication, UserAccessCredential: user, ServiceCredential: service}, &IAMManagerFileAuthorizationHandler{service: fixture}); err != nil {
+		t.Fatal(err)
+	}
 	return router
 }
 func model3DHTTPBody(t *testing.T, service bool) string {
@@ -192,6 +195,42 @@ func TestManagerModel3DHTTPUsesSDKContractsAndCurrentActors(t *testing.T) {
 				if fixture.issued.SourceAccessToken != "addp_at_current" || fixture.issued.ExecutionID != uuid.MustParse(model3DHTTPExecution) || fixture.issued.ExpiresIn != 120*time.Second {
 					t.Fatal("issuance lost exact current bearer or TTL")
 				}
+			}
+		})
+	}
+}
+
+func TestManagerRasterCOGHTTPValidatesENVIPairObservation(t *testing.T) {
+	for _, kind := range []string{"nfs", "minio", "ftp"} {
+		t.Run(kind, func(t *testing.T) {
+			path := func(name string) plugin.EngineCatalogPath { return plugin.FileItemPath(12, name) }
+			if kind == "minio" {
+				path = func(name string) plugin.EngineCatalogPath { return plugin.ObjectItemPath(12, "sources", name) }
+			}
+			composition, err := authorizationfacts.NewFileCompositionBoundary("envi", []authorizationfacts.FileCompositionRef{
+				{Target: path("envi/scene.img"), Role: "raster", Primary: true, Required: true},
+				{Target: path("envi/scene.hdr"), Role: "header", Required: true},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			scope := model3DHTTPScope(t)
+			scope.FileComposition = *composition
+			body, err := json.Marshal(commonclient.ManagerFileAccessRequest{ExecutionID: model3DHTTPExecution, Attempt: 2, LeaseToken: model3DHTTPLease, SourceReadScope: scope})
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture := &model3DHTTPFixture{t: t, mutateObservation: func(observed *iam.ManagerFileAccessObservation) { observed.Engine.EngineType = kind }}
+			response := model3DHTTPRequest(t, model3DHTTPAuth(true), fixture, "/api/v1/system/execution-authorizations/9/manager-raster-cog-accesses", string(body), "addp_at_current")
+			if kind == "ftp" {
+				if response.Code != 500 || strings.Contains(response.Body.String(), "connection-only-secret") {
+					t.Fatalf("unsupported ENVI observation accepted: %d", response.Code)
+				}
+				return
+			}
+			var observed commonclient.ManagerFileAccessObservation
+			if response.Code != 200 || fixture.consumes != 1 || response.Header().Get("Cache-Control") != "no-store" || json.Unmarshal(response.Body.Bytes(), &observed) != nil || observed.Engine == nil || observed.Engine.EngineType != kind || !reflect.DeepEqual(fixture.consumed.SourceReadScope, scope) {
+				t.Fatalf("valid exact ENVI observation rejected: status=%d body=%s", response.Code, response.Body.String())
 			}
 		})
 	}

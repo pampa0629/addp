@@ -1547,7 +1547,7 @@ def generate_model_glb(client: GatewayClient, model: ArtifactFixture, tenant_id:
     client.request("PATCH", "/api/v1/manager/preview-state/preferred-mode", (200,), {"locator": model.locator, "preferred_mode": "map_quick_view"})
 
 
-def cleanup_managed_artifact(client: GatewayClient, model: ArtifactFixture, timeout: float, resource="model_3d_glb", task_type=MODEL_TASK_TYPE) -> None:
+def cleanup_managed_artifact(client: GatewayClient, model: ArtifactFixture, timeout: float, resource="model_3d_glb", task_type=MODEL_TASK_TYPE) -> list[dict[str, Any]]:
     restore_error: SuiteError | None = None
     if model.mode_changed:
         try:
@@ -1562,7 +1562,7 @@ def cleanup_managed_artifact(client: GatewayClient, model: ArtifactFixture, time
     if model.task_id is None:
         if restore_error:
             raise restore_error
-        return
+        return []
     if not model.execution_id:
         raise SuiteError(f"{model.format} execution identity is unknown; task retained")
     deadline = time.monotonic() + timeout
@@ -1598,6 +1598,7 @@ def cleanup_managed_artifact(client: GatewayClient, model: ArtifactFixture, time
         raise SuiteError(f"{model.format} artifact cleanup has {residual} residual results")
     if restore_error:
         raise restore_error
+    return rows
 
 
 def raster_physical(repository, environment, action, request):

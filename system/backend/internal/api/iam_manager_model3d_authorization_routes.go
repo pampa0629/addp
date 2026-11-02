@@ -214,7 +214,7 @@ func (h *IAMManagerFileAuthorizationHandler) Authorize(c *gin.Context) {
 	engine := observed.Engine
 	primary, _ := expected.FileComposition.PrimaryTarget()
 	version, _ := strconv.ParseInt(expected.EngineVersion, 10, 64)
-	if engine.ID != primary.EngineID || engine.TenantID == nil || *engine.TenantID != tenant || engine.Version != version || !commonexecution.ManagerModel3DSourceComposition(engine.EngineType, &expected.FileComposition) || engine.LifecycleState != "active" || engine.DeletedAt != nil || len(engine.ConnectionInfo) == 0 {
+	if engine.ID != primary.EngineID || engine.TenantID == nil || *engine.TenantID != tenant || engine.Version != version || !commonexecution.ManagerFileSourceComposition(engine.EngineType, &expected.FileComposition) || engine.LifecycleState != "active" || engine.DeletedAt != nil || len(engine.ConnectionInfo) == 0 {
 		respondExecutionAuthorizationError(c, errors.New("inconsistent Manager model3d observation"))
 		return
 	}

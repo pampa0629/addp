@@ -4,12 +4,64 @@ from pathlib import Path
 import unittest
 import tempfile
 import json
+import sys
 from types import SimpleNamespace
+from unittest import mock
 
 FIXTURE=importlib.import_module('business.scripts.online-envi-fixture')
 OWNER=importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
 CASE=importlib.import_module('scripts.test.manager-envi-online')
 class ENVIHostedCaseTest(unittest.TestCase):
+    def test_failed_generation_cleanup_uses_actual_results_and_never_invents_output(self):
+        for rows in ([],[dict(id=31,storage_ref='owned-partial-result')]):
+            with self.subTest(rows=rows):
+                fixture=SimpleNamespace(cleanup=dict(task_deleted=True,residual_resources=0))
+                client=object();calls=[]
+                def clean(actual_client,actual_fixture,timeout,resource,task_type):
+                    self.assertIs(actual_client,client);self.assertIs(actual_fixture,fixture)
+                    self.assertEqual((timeout,resource,task_type),(12,'raster_cog','cog-task'))
+                    return rows
+                def physical(action,request):
+                    calls.append((action,request))
+                    return dict(object_deleted=True,temporary_inputs_removed=True,source_unchanged=True)
+                proof=CASE.cleanup_fixture(client,fixture,12,2,SimpleNamespace(cleanup_managed_artifact=clean,RASTER_TASK_TYPE='cog-task'),physical)
+                self.assertEqual(proof['results_observed'],len(rows))
+                self.assertEqual(calls,[('deleted-cog',dict(result=row,tenant_id=2)) for row in rows])
+                self.assertEqual('object_deleted' in proof,bool(rows))
+        with self.assertRaisesRegex(ValueError,'incomplete exact physical cleanup'):
+            CASE.cleanup_fixture(client,fixture,12,2,SimpleNamespace(cleanup_managed_artifact=clean,RASTER_TASK_TYPE='cog-task'),lambda *_:{})
+
+    def test_cleanup_failure_preserves_original_business_error_and_reports_both(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env=dict(ADDP_ONLINE_MANAGER_CASE='native-envi',ADDP_ONLINE_ARTIFACT_DIR=directory,ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='owned-envi',GATEWAY_URL='http://fixture',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='user',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer')
+            failure=RuntimeError('original generation failure')
+            calls=[]
+            def physical(action,request=None):
+                calls.append(action)
+                if action=='seed':raise failure
+                raise ValueError('separate cleanup error')
+            owner=SimpleNamespace(positive_int=lambda *_:2,GatewayClient=lambda *_:object(),validate_user_identity=lambda *_:{})
+            with self.assertRaises(RuntimeError) as caught:CASE.run(Path('.'),env,owner,physical_runner=physical)
+            self.assertIs(caught.exception,failure)
+            report=json.loads(Path(directory,'manager-envi.json').read_text())
+            self.assertEqual((report['result'],report['error'],report['cleanup_errors']),('failed','RuntimeError',['ValueError']))
+            self.assertEqual(calls,['seed','delete'])
+
+    def test_final_physical_residual_check_is_read_only_and_rejects_orphans(self):
+        for leftover in (None,'cog','input'):
+            with self.subTest(leftover=leftover),tempfile.TemporaryDirectory() as directory:
+                calls=[]
+                def listing(bucket,*,prefix,recursive):
+                    self.assertEqual(bucket,'manager');self.assertTrue(recursive);calls.append(prefix)
+                    return [object()] if (leftover=='cog' and prefix=='tenant_2/cog/') or (leftover=='input' and prefix=='temp/raster-input/tenant_2/') else []
+                storage=SimpleNamespace(list_objects=listing)
+                request=dict(action='residuals',tenant_id=2,nfs_root=directory,storage=dict(endpoint='fixture',access_key='a',secret_key='b',bucket='sources'),infra=dict(endpoint='infra',access_key='c',secret_key='d',bucket='manager'))
+                with mock.patch.dict(sys.modules,{'minio':SimpleNamespace(Minio=lambda *a,**k:storage)}),mock.patch.object(FIXTURE,'sources',return_value=[]):
+                    if leftover:
+                        with self.assertRaisesRegex(ValueError,'remain'):FIXTURE.worker(request)
+                    else:self.assertEqual(FIXTURE.worker(request),dict(objects_absent=True,temporary_inputs_removed=True,source_unchanged=True))
+                self.assertEqual(calls[0],'tenant_2/cog/')
+
     def test_exact_pair_inventory_and_independent_interleave(self):
         specs=FIXTURE.sources()
         self.assertEqual([s['interleave'] for s in specs],['bsq','bil','bip'])
