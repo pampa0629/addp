@@ -126,9 +126,9 @@ bounded execution 由 `transfer-bounded-worker` 通过 PostgreSQL claim 领取�
 | `locator` | source 必填 | source 使用的 ResourceLocator URI，指向已存在资源。 |
 | `parent_locator` | target 必填 | target 父 node 的 ResourceLocator URI，指向已存在 schema / directory / bucket / prefix 等父节点。 |
 | `name` | target 必填 | 父 node 下待创建或待覆盖的目标资源名。 |
-| `data_type` | 是 | table Transfer 使用 `table`；动态 schema collection 原始记录导出使用 `unknown`；raw copy 第一版支持 `document`、`media`、`cad`、`unknown`。 |
+| `data_type` | 按任务形态 | table Transfer 使用 `table`；动态 schema collection 原始记录导出使用 `unknown`；raw copy 第一版支持 `document`、`media`、`cad`、`unknown`，其 target 省略规则见[目标继承与一致性](#raw-copy-目标继承与一致性)。 |
 | `representation` | 是 | `native` 或 `encoded`。 |
-| `format` | encoded 必填 | encoded endpoint 的格式，如 `csv`、`json`、`geojson`、`parquet`、`shapefile`。 |
+| `format` | 按任务形态 | encoded endpoint 的格式；table 源格式与目标声明见[format 声明与来源](#format-声明与来源)，raw copy 的源端必填与目标继承见[目标继承与一致性](#raw-copy-目标继承与一致性)。 |
 | `options` | 否 | 格式或读取写入选项。 |
 | `policy` | target 必填 | 目标应用策略；必须声明 `apply_mode`，upsert 还必须声明 `keys`。 |
 | `override_policy` | target 可选 | `existing_table_append` 表示允许 Orchestrator 用可选 `target_locator` 覆盖单次执行目标；只允许 bounded snapshot、已存在原生表和 append。 |
@@ -219,7 +219,7 @@ MongoDB 第一版固定输出 Canonical Extended JSON v2、UTF-8、每行一个�
 
 ### 3.3 格式
 
-[读取布局与入口](#读取布局与入口) · [CSV／TSV 表头](#csv-与-tsv-表头) · [单资源结构核对](#单资源结构核对) · [Parquet 压缩](#parquet-列式压缩) · [空间字段与 CRS](#35-空间字段与-crs-边界) · [写后扫描](#十一写后-meta-扫描)
+[format 声明与来源](#format-声明与来源) · [读取布局与入口](#读取布局与入口) · [CSV／TSV 表头](#csv-与-tsv-表头) · [单资源结构核对](#单资源结构核对) · [Parquet 压缩](#parquet-列式压缩) · [空间字段与 CRS](#35-空间字段与-crs-边界) · [写后扫描](#十一写后-meta-扫描)
 
 | 格式 | 支持形态 |
 |---|---|
@@ -228,6 +228,12 @@ MongoDB 第一版固定输出 Canonical Extended JSON v2、UTF-8、每行一个�
 | GeoJSON | single table read / write；独立 `format=geojson`，空间事实由解析结果表达为 `capabilities.spatial`。 |
 | Parquet | single table read / write；whole scope dataset read；支持 field_selection 下推；普通 Parquet 与 GeoParquet 共用列式压缩配置。 |
 | Shapefile | multi table read / write；完整 refs 由 format specs 或 Meta attributes 提供。 |
+
+#### format 声明与来源
+
+encoded table source 使用已解析 Meta item 的格式事实；显式 `source.format` 与该事实冲突时拒绝。没有 Meta 格式事实时，必须声明 `source.format`，不能只凭路径扩展名补齐。已入库 item 的事实与消费边界见[再次消费规范](../../docs/spec/addp数据项探测器规范.md#已入库-item-的再次消费)。
+
+encoded table target 必须显式声明 `target.format`，并具备对应格式的写入能力，不从源格式继承。动态记录原始导出的固定目标格式见[对应契约](#32-动态记录原始导出)；raw copy 的省略继承与一致性单独见[目标继承与一致性](#raw-copy-目标继承与一致性)，不能推广到 table 目标。
 
 #### 读取布局与入口
 
@@ -353,11 +359,17 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 | source locator `type` | `file`、`object` |
 | target `parent_locator` type | `directory`、`root`、`bucket`、`prefix`、`service` |
 | source format layout | `single` |
-| target `data_type` / `format` | 可省略并继承 source；显式声明时必须一致 |
+| target `data_type` / `format` | 省略继承与显式声明统一见[目标继承与一致性](#raw-copy-目标继承与一致性)。 |
 | target path | 必须是完整 file / object 路径 |
 | target `policy.apply_mode` | 只支持 `replace` |
 
-配置示例：
+### raw copy 目标继承与一致性
+
+源端必须声明 `source.data_type` 和 `source.format`。目标的 `data_type`、`format` 可分别省略，由 planner 从源端补齐后校验；显式声明的值必须与源一致，冲突即拒绝。继承只适用于这两个身份字段；目标 `representation`、`parent_locator`、`name` 和写入策略不从源端自动补齐，仍须按 Endpoint 与本节要求校验。
+
+继承规则不扩大上表的路径、布局、类型和写入策略支持范围。继承成功或规划通过不等于真实读写、目标内容与权限已经验收，标准入口及未覆盖项沿[测试与验收导航](#测试与验收导航)。
+
+配置示例（目标显式声明与源一致的类型和格式）：
 
 ```json
 {
