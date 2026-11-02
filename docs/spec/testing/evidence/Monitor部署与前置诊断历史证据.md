@@ -170,3 +170,12 @@
 独立重核受验3f与协调会话提供的远端已提交快照`2f83f41b85167aa001b676ed4e9f53e56161141e`：Monitor前端、Common Frontend、Console前端、scripts/test、scripts/ci、根Makefile及Platform workflow无已提交输入差异；同目录`Monitor3f-current-input-comparison.json`保留该范围。本会话另比当前三个原失败／共享驱动／领域夹具／两页及共享图表九个直接输入，与3f逐字节一致。结论只复用本前端门禁，不涵盖共享工作区其他未提交变更或其他模块。
 
 据此补齐这组三项的固定Linux实际复验缺口，不修改原Mac589／592失败、系统休眠诊断及稳定唤醒后原样本机复验尚未完成的状态。协调会话保留的a14 Job125095800507在585／592、4243 Job125099325773在586／592处30分钟取消、无终态总结，不改记通过；旧74ed产品通过／后置缓存取消也仍独立。本轮只读回传材料、比较源码并同步文档，未查询、触发、重跑或取消CI／Hosted，没有设置定时、修改5秒预算／产品／电源／用户服务，也不把受控前端结果计为真实Redis／MinIO来源或正式身份验收。
+
+
+### 用户确认稳定唤醒后的原三项本机复验（2026-11-02）
+
+用户确认“Mac已恢复稳定唤醒”后，在源码`39059d2ed2d711b992947c1debee6872a0d60578`沿原标准入口只选三项：`npm --prefix monitor/frontend run test:e2e -- e2e/process-trend-zoom.spec.js e2e/redis-resources.spec.js --grep 'process unavailable clears|Redis list.*\(en\)|Redis manual refresh' --trace=on`，临时reporter只保留成功trace，不改测试执行。3／3通过（13.6秒），标准runner退出0并清理本轮服务、缓存及端口租约；原进程unavailable恢复、Redis英语列表初始值和Redis手动刷新／数据／缩放／DOM保持均实际执行。没有复用前一轮Node诊断注入、修改产品或测试、加重试、延长5秒预算、禁用动画或降低ready谓词。
+
+本轮时段为15:20:29.354—15:20:43.426 Asia/Shanghai；只读`pmset -g log`核对该窗口无Sleep／DarkWake／Wake条目。两个失败spec、共享驱动／领域夹具、两页／共享图表及依赖／配置／标准启动器共13项输入在前后SHA256完全一致，Node v24.22.2。结果及三个trace摘要保存在`/tmp/addp-monitor-stable-awake-20261102/receipt.json`，日志`gate.log` SHA256为`bfd478e2b46859e38161f419c60666df01e31111c36b8b65abe215a0015baf8a`。每个成功trace已复制到该独立OS临时目录，正常runner未保留旧测试输出目录。
+
+据此补齐稳定唤醒后这三项的本机受控T3复验；原589／592失败、无trace的取证限制以及两轮诊断中的失败原样保留，不把本次三项通过改记原完整命令成功。固定3f的Linux592项／build／整Job通过仍独立认定；未重复完整门禁、查询或触发CI／Hosted，不等于真实Safari、真实Redis／MinIO采集或正式身份验收。没有修改电源／Docker配置、重启个人服务或设置定时任务。
