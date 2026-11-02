@@ -146,6 +146,7 @@ let sourceReadySeq = 0
 let displayRangeSeq = 0
 let rasterMosaicTileBaseURL = ''
 let mapMoveEndKey = null
+let viewInitialized = false
 
 const quickViewInfo = computed(() => props.status?.quick_view || {})
 const rasterInfo = computed(() => props.status?.raster || {})
@@ -219,6 +220,7 @@ function renderExtentInWebMercator() {
 function fitToExtent({ duration = 0 } = {}) {
   const extent = renderExtentInWebMercator()
   if (!map || !extent) return false
+  viewInitialized = true
   map.getView().fit(extent, {
     padding: [48, 48, 48, 48],
     duration
@@ -244,6 +246,7 @@ function finiteMapViewState() {
 
 function applyMapViewState(state) {
   if (!map || !state) return false
+  viewInitialized = true
   const view = map.getView()
   view.setCenter(fromLonLat(state.center))
   view.setZoom(state.zoom)
@@ -252,7 +255,7 @@ function applyMapViewState(state) {
 }
 
 function emitMapViewState() {
-  if (!map) return
+  if (!map || !viewInitialized) return
   const view = map.getView()
   const center = toLonLat(view.getCenter() || [0, 0])
   emit('view-state-change', {
@@ -267,6 +270,9 @@ async function applyRasterSourceView(source, seq) {
   try {
     await source.getView()
     if (seq !== sourceReadySeq || !map) return false
+    // A pending source must never restore over an explicit Fit to Extent, and
+    // concurrent ready callbacks only initialize the same view once.
+    if (viewInitialized) return true
     const savedMapViewState = finiteMapViewState()
     if (savedMapViewState) {
       applyMapViewState(savedMapViewState)
@@ -413,7 +419,7 @@ async function createRasterLayer() {
       loading.value = false
       nextTick(async () => {
         scheduleMapSizeUpdate()
-        if (!(await applyRasterSourceView(source, seq))) {
+        if (!(await applyRasterSourceView(source, seq)) && seq === sourceReadySeq && !viewInitialized) {
           fitToExtent()
         }
       })
@@ -524,6 +530,7 @@ function createRasterMosaicTileLoadFunction() {
 async function initMap() {
   error.value = ''
   loading.value = true
+  viewInitialized = false
   sourceReadySeq += 1
   const seq = sourceReadySeq
   await loadMapConfig()
@@ -574,12 +581,13 @@ async function initMap() {
   nextTick(async () => {
     const savedMapViewState = finiteMapViewState()
     if (isMosaicQuickView.value) {
+      if (seq !== sourceReadySeq || viewInitialized) return
       if (!applyMapViewState(savedMapViewState)) {
         fitToExtent()
       }
       return
     }
-    if (!(await applyRasterSourceView(rasterSource, seq))) {
+    if (!(await applyRasterSourceView(rasterSource, seq)) && seq === sourceReadySeq && !viewInitialized) {
       fitToExtent()
     }
   })
@@ -597,6 +605,7 @@ function centerFromExtent() {
 }
 
 function disposeMap() {
+  viewInitialized = false
   if (mapMoveEndKey) {
     unByKey(mapMoveEndKey)
     mapMoveEndKey = null
