@@ -4,7 +4,7 @@
 
 定义 PostgreSQL / MySQL / Oracle CDC 的配置、身份、捕获、位点、结构审批与恢复边界。通用连续同步规则见[Transfer 同步执行](Transfer同步执行.md)。
 
-阅读导航：[Transfer 数据库 CDC v1 契约（PostgreSQL/MySQL/Oracle）](#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。
+阅读导航：[契约与配置](#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)、[数据面与捕获约束](#数据面与捕获约束)、[Schema 漂移与审批](#schema-漂移审批与补扫)、[补扫 claim](#审批补扫-claim-接管与失败)、[显式恢复](#审批落库与显式恢复)、[捕获生命周期](#捕获资源与生命周期)、[审批验收边界](#审批补扫验证与验收边界)。
 
 ## Transfer 数据库 CDC v1 契约（PostgreSQL/MySQL/Oracle）
 
@@ -56,7 +56,7 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 }
 ```
 
-契约约束：
+### 数据面与捕获约束
 
 1. 当前 CDC source 和 target 均允许 PostgreSQL、MySQL 8.0 或 Oracle native table；target 必须声明完整原子应用能力，一个任务只捕获一张源表。公开 capability 固定声明 `sources=[postgresql,mysql,oracle]`、`targets=[postgresql,mysql,oracle]`、`bootstrap=[initial_snapshot]`、`apply_mode=upsert_delete`。Oracle 支持普通字段和 `MDSYS.SDO_GEOMETRY`，但仍不开放普通业务 LOB；Oracle readiness 必须从 `V$PARAMETER.cluster_database` 得到明确 `FALSE`，`TRUE` 或未知值都在 capture generation 创建前拒绝。多表 connector、无主键表、RAC、ArcGIS SDE 和 Kafka target 均未进入当前实现。
 2. 源表必须有稳定、非空且捕获期间不可修改的主键；Debezium record key 必须完整包含该复合主键。源主键经 `field_mapping` 映射后必须与 `target.policy.keys` 一一对应。
@@ -75,16 +75,64 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
     Oracle CDC v1 接受可无歧义映射到 ADDP `string|bool|int|bigint|float|double|decimal|timestamp|geometry` 的字段；完整源表字段、nullable 与复合主键顺序必须和 field mapping 一致。`NUMBER` 在 Debezium JSON 中按十进制字符串严格转换，`DATE` 与精度 `0..3` 的 `TIMESTAMP` 使用 Connect 毫秒时间编码。普通业务 LOB/binary、JSON/XML、超过毫秒精度的 timestamp 及其他无法稳定映射的类型必须在创建 capture 前拒绝。Oracle Engine 必须另行配置 `cdc_database_name`、`cdc_user`、`cdc_password`；CDC 账号、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 和源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS` 必须在 connector 创建前验证通过。Oracle source adapter 使用自己的 Debezium source schema 和 SCN 语义，不复用 PostgreSQL/MySQL adapter。
     Debezium 3.6 LogMiner 不能直接稳定捕获 `MDSYS.SDO_GEOMETRY`：snapshot 只产生 JVM `STRUCT` 标识，stream 产生空值，且纯空间 update 会消失。因此 Oracle Spatial CDC 不允许把原表直接交给 connector，也不允许 consumer 猜测 `STRUCT`/redo SQL。Transfer capture Provider 必须使用源 Engine 的 schema-owner 账号，在源表所属 schema 内按 generation 创建 ADDP-owned 镜像表、行级同步触发器和 schema DDL guard；镜像表保留原字段名和主键，按冻结空间维度转换 `SDO_GEOMETRY`：XY 通过 `SDO_UTIL.TO_WKBGEOMETRY` 转为内部 BLOB；XYZ 通过 `SDO_UTIL.TO_GEOJSON` 转为保留 Z 值的内部 CLOB，避免 Oracle Free 的 WKB 转换丢失 Z。其余字段保持 Oracle native 类型。行级触发器先建立，Provider 随后锁定源表并幂等回填镜像，最后 connector 只捕获镜像表，以保证 initial snapshot 与后续变化无空洞。DDL guard 在 generation 运行期间明确拒绝源表 `ALTER|DROP|RENAME`，避免镜像静默漏掉 schema drift；必须先 Stop 并完成资源清理后才能修改源表结构。
     Oracle Spatial generation 创建前必须通过 Oracle Engine Catalog Facts 冻结每个 geometry 字段的 OGC type、正 SRID、XY/XYZ 维度和 nullable，并持久化为 generation source spatial facts。connector 对镜像表固定 `lob.enabled=true`、`binary.handling.mode=base64`；adapter 只把 insert/update `after` 中的 XY base64 WKB 或 XYZ GeoJSON 转为标准 EWKB，并按冻结事实校验 SRID、几何类型和维度。Debezium 对 BLOB 的 update/delete `before` 可能给出 unavailable placeholder；Oracle Spatial adapter 只校验完整字段集合和稳定主键，不读取该旧空间值，delete 仍只按 record key 应用。这里的 BLOB/CLOB 是 Provider-owned 内部载体，不代表开放用户 LOB CDC。
-12. schema drift 默认严格阻塞。字段缺失、主键变化、类型不兼容、geometry 空间事实变化或 envelope/source 结构变化必须在 execution metadata 保存 missing/unexpected/incompatible schema diff，并以 `schema_change_blocked` 结束 execution；任务原子进入 `status=blocked`，当前消息和 committed offset 均不得推进。
-13. PostgreSQL/MySQL 中唯一可在原 capture generation 内恢复的 schema change 是人工确认的 additive migration：当前阻塞消息只能包含新增字段，`missing_fields` 与 `incompatible_fields` 必须为空；新增字段必须仍存在于源表、允许 NULL、不是主键且不是 geometry。服务端为该 task/generation/阻塞 execution 创建唯一 pending schema change request，并记录当前 Kafka partition/offset、schema diff 和 mapping revision。`GET /task-definitions/:id/schema-change` 是查询当前 request 与服务端复查建议的唯一入口；任务 JSON 不增加 `manual|additive` 策略开关。Oracle 第一期不开放 additive inspection/approval，任何 schema drift 均只能 Stop 后创建新任务和新目标表。
-14. PostgreSQL/MySQL additive 审批必须通过唯一 `POST /task-definitions/:id/schema-change/approve`，显式覆盖 pending request 的全部新增源字段，并逐一提交新的 target 名、`target_type` 和 `nullable=true`。服务端必须重新验证现有字段、主键和待新增字段的实时源事实，拒绝重名、覆盖既有 source/target、类型不匹配、非 nullable、geometry、缺失字段或不完整审批；普通 `PUT /task-definitions/:id` 继续禁止修改已有 capture generation 的 CDC config。
-15. 目标 PostgreSQL/MySQL DDL 必须复用各自 `PartitionedTableChangeApplyProvider` 的 prepare/evolution 主路径，只允许幂等新增 nullable 列并验证既有列兼容，不能建立 Transfer 私有 DDL 通道。Oracle target 虽实现同一 Provider 的 prepare/evolution 能力，但 Oracle source schema drift 第一期仍不开放 additive inspection/approval，不得因此新增审批分支。外部 DDL 与 Infra 状态无法组成分布式事务，因此审批使用 Infra request/task 行锁串行执行；若目标 DDL 已提交但 Infra 事务回滚，重试必须先验证已存在目标列完全兼容，再完成同一 request，不能创建补偿列或第二条恢复路径。
-16. 审批完成时在同一 Infra PostgreSQL 事务追加唯一 field mapping、递增 capture `schema_revision`、把 request 标记为 `applied`，并把 task 收敛为 `status=idle, desired_state=paused`。服务端随后触发目标表 Meta deep scan；Meta scan 失败不得回滚已完成 DDL/mapping revision，但必须记录并返回可观测错误。用户继续使用既有 Resume API 创建新 execution，从未推进的 committed offset 恢复；审批 API 不隐式启动 runtime。
-    Meta scan 触发固定使用 request 内的持久化 claim 状态机：`pending -> running(claim_token, lease_until, attempt+1) -> success|failed`。只有 `pending` 或 claim 已过期的 `running` 可通过 CAS 取得新 UUID token；完成更新必须同时匹配 request、`running` 和 token，过期 claimant 的迟到结果不得覆盖新 claimant。并发审批只能有一个 claimant 调用 Meta；进程在 claim 后崩溃时，由相同重复审批 POST 在 `TRANSFER_META_SCAN_CLAIM_TTL` 到期后接管，schema change GET 始终只读。真实 Meta API 返回失败后状态固定为 `failed`，不得由重复审批自动循环重试；用户可在 Meta 使用既有手动扫描能力。claim TTL 是部署配置，不进入任务 JSON，并且必须大于 Meta client 的 HTTP 超时。
-17. request 只允许 `pending -> applied`，历史 request 是 generation 内 mapping revision 审计事实。重复审批已 applied request 必须幂等返回同一结果；同一 generation 同时只能有一个 pending request。下一次新增字段再次阻塞时创建下一 revision request。task physical cleanup 随 capture generation 级联删除这些私有 request；统一 execution 和 System audit 继续保存长期审计。
-18. PostgreSQL/MySQL 的删除字段、类型变化、主键变化、非 nullable 新增、geometry 新增以及其他协议漂移，以及 Oracle 的任何 schema drift，均是当前 generation 的不可恢复终态，只能不可逆 Stop 后创建新任务和新目标表。数据库 CDC 仍不支持 replay、DLQ、Schema Registry、Avro、Protobuf、truncate、历史补洞或全自动 DDL。
 
-捕获资源与生命周期：
+### Schema 漂移、审批与补扫
+
+- 审批准入：[阻塞与可恢复条件](#schema-漂移阻塞与可恢复条件)、[审批提交与实时源复核](#审批提交与实时源复核)。
+- 事务与运行：[DDL 与 Infra 事务边界](#ddl-与-infra-事务边界)、[审批落库与显式恢复](#审批落库与显式恢复)、[补扫 claim 接管与失败](#审批补扫-claim-接管与失败)。
+- 历史与验证：[request 幂等与历史](#审批-request-幂等与历史)、[不可恢复变化与未支持项](#不可恢复变化与未支持项)、[实际验收边界](#审批补扫验证与验收边界)。
+
+#### Schema 漂移阻塞与可恢复条件
+
+- schema drift 默认严格阻塞。
+- 字段缺失、主键变化、类型不兼容、geometry 空间事实变化或 envelope/source 结构变化必须在 execution metadata 保存 missing/unexpected/incompatible schema diff，并以 `schema_change_blocked` 结束 execution；任务原子进入 `status=blocked`，当前消息和 committed offset 均不得推进。
+- PostgreSQL/MySQL 中唯一可在原 capture generation 内恢复的 schema change 是人工确认的 additive migration：当前阻塞消息只能包含新增字段，`missing_fields` 与 `incompatible_fields` 必须为空；新增字段必须仍存在于源表、允许 NULL、不是主键且不是 geometry。
+- 服务端为该 task/generation/阻塞 execution 创建唯一 pending schema change request，并记录当前 Kafka partition/offset、schema diff 和 mapping revision。
+- `GET /task-definitions/:id/schema-change` 是查询当前 request 与服务端复查建议的唯一入口；任务 JSON 不增加 `manual|additive` 策略开关。
+- Oracle 第一期不开放 additive inspection/approval，任何 schema drift 均只能 Stop 后创建新任务和新目标表。
+
+#### 审批提交与实时源复核
+
+- PostgreSQL/MySQL additive 审批必须通过唯一 `POST /task-definitions/:id/schema-change/approve`，显式覆盖 pending request 的全部新增源字段，并逐一提交新的 target 名、`target_type` 和 `nullable=true`。
+- 服务端必须重新验证现有字段、主键和待新增字段的实时源事实，拒绝重名、覆盖既有 source/target、类型不匹配、非 nullable、geometry、缺失字段或不完整审批；普通 `PUT /task-definitions/:id` 继续禁止修改已有 capture generation 的 CDC config。
+
+#### DDL 与 Infra 事务边界
+
+- 目标 PostgreSQL/MySQL DDL 必须复用各自 `PartitionedTableChangeApplyProvider` 的 prepare/evolution 主路径，只允许幂等新增 nullable 列并验证既有列兼容，不能建立 Transfer 私有 DDL 通道。
+- Oracle target 虽实现同一 Provider 的 prepare/evolution 能力，但 Oracle source schema drift 第一期仍不开放 additive inspection/approval，不得因此新增审批分支。
+- 外部 DDL 与 Infra 状态无法组成分布式事务，因此审批使用 Infra request/task 行锁串行执行；若目标 DDL 已提交但 Infra 事务回滚，重试必须先验证已存在目标列完全兼容，再完成同一 request，不能创建补偿列或第二条恢复路径。
+
+#### 审批落库与显式恢复
+
+- 审批完成时在同一 Infra PostgreSQL 事务追加唯一 field mapping、递增 capture `schema_revision`、把 request 标记为 `applied`，并把 task 收敛为 `status=idle, desired_state=paused`。
+- 服务端随后触发目标表 Meta deep scan；Meta scan 失败不得回滚已完成 DDL/mapping revision，但必须记录并返回可观测错误。
+- 用户继续使用既有 Resume API 创建新 execution，从未推进的 committed offset 恢复；审批 API 不隐式启动 runtime。
+
+#### 审批补扫 claim 接管与失败
+
+- Meta scan 触发固定使用 request 内的持久化 claim 状态机：`pending -> running(claim_token, lease_until, attempt+1) -> success|failed`。
+- 只有 `pending` 或 claim 已过期的 `running` 可通过 CAS 取得新 UUID token；完成更新必须同时匹配 request、`running` 和 token，过期 claimant 的迟到结果不得覆盖新 claimant。
+- 并发审批只能有一个 claimant 调用 Meta；进程在 claim 后崩溃时，由相同重复审批 POST 在 `TRANSFER_META_SCAN_CLAIM_TTL` 到期后接管，schema change GET 始终只读。
+- 真实 Meta API 返回失败后状态固定为 `failed`，不得由重复审批自动循环重试；用户可在 Meta 使用既有手动扫描能力。
+- claim TTL 是部署配置，不进入任务 JSON，并且必须大于 Meta client 的 HTTP 超时。
+
+#### 审批 request 幂等与历史
+
+- request 只允许 `pending -> applied`，历史 request 是 generation 内 mapping revision 审计事实。
+- 重复审批已 applied request 必须幂等返回同一结果；同一 generation 同时只能有一个 pending request。
+- 下一次新增字段再次阻塞时创建下一 revision request。
+- task physical cleanup 随 capture generation 级联删除这些私有 request；统一 execution 和 System audit 继续保存长期审计。
+
+#### 不可恢复变化与未支持项
+
+- PostgreSQL/MySQL 的删除字段、类型变化、主键变化、非 nullable 新增、geometry 新增以及其他协议漂移，以及 Oracle 的任何 schema drift，均是当前 generation 的不可恢复终态，只能不可逆 Stop 后创建新任务和新目标表。
+- 数据库 CDC 仍不支持 replay、DLQ、Schema Registry、Avro、Protobuf、truncate、历史补洞或全自动 DDL。
+
+#### 审批补扫验证与验收边界
+
+审批主体、精确目标、Common 来源快照与父执行互斥统一见[结构审批补扫来源](生产来源与产物扫描.md#transfer-结构审批补扫来源)；请求权限、显式 Resume 及公共投影分别见[审批与恢复](../../../transfer/docs/数据库架构.md#审批与显式恢复)和[公共观测与验收](../../../transfer/docs/数据库架构.md#schema-change-公共观测与验收)。Meta 的读取隔离、过期 claim 与越界拒绝等标准回归见[专项验证入口](../../../meta/CLAUDE.md#专项验证入口)，单用户／双用户审批的固定版本、失败、清理与未覆盖项见[精确扫描与审批证据](../../../transfer/CLAUDE.md#continuous-精确扫描与审批归属)。审批 applied、Meta 提交 success 与实际扫描完成分别认定；确定性门禁通过不替代真实身份、源目标、接管故障、显式恢复和清理的实际结果，不将既有局部证据外推为全部能力通过。
+
+### 捕获资源与生命周期
 
 1. Kafka Connect 使用独立 distributed 集群。Transfer capture supervisor 是 connector 生命周期 owner；continuous worker 只消费 Infra Kafka，不在 Go 进程内嵌入 Debezium。
 2. connector、provider 专属资源、CDC data/schema-history topic 和 consumer group 由服务端按 task/generation 生成稳定内部名称，不接受用户自定义，也不进入 System Engine、Meta 资源树或公开任务 config。
