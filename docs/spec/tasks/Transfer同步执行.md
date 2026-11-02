@@ -4,7 +4,7 @@
 
 定义 Transfer sync 的正交配置维度、bounded / continuous 边界、状态推进与观测要求。数据库捕获见[CDC](Transfer数据库CDC.md)，业务 Kafka 的拒绝记录与重放见[Kafka 与 DLQ](Transfer-Kafka与DLQ.md)。
 
-阅读导航：[Transfer 同步执行契约](#transfer-同步执行契约)、[Transfer continuous sync v1 契约](#transfer-continuous-sync-v1-契约)、[停止与标准取消](#任务级-pausestop-与标准取消)、[continuous 自动恢复](#continuous-自动恢复退避与-circuit)、[continuous 首次扫描与 claim](#continuous-首次扫描与-claim)。
+阅读导航：[Transfer 同步执行契约](#transfer-同步执行契约)、[Transfer continuous sync v1 契约](#transfer-continuous-sync-v1-契约)、[状态、执行与租约](#任务状态执行身份与运行租约)、[停止与标准取消](#任务级-pausestop-与标准取消)、[continuous 自动恢复](#continuous-自动恢复退避与-circuit)、[continuous 首次扫描与 claim](#continuous-首次扫描与-claim)。
 
 ## Transfer 同步执行契约
 
@@ -126,17 +126,45 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 
 continuous task 与 execution 生命周期：
 
-1. continuous task definition 必须保存独立活状态 `desired_state=running|paused|stopped`，初始值为 `stopped`。该字段不进入 config JSON，也不复用最近 execution `status`；bounded task 不消费该字段。
-   任务实际状态继续使用 `status=idle|running|blocked`；`blocked` 表示系统发现不可安全恢复的条件，但不覆盖用户 `desired_state`。当前只有数据库 CDC schema drift 使用 `blocked`。
-2. `start` 原子设置 `desired_state=running` 并创建 pending execution；`pause` 设置 `paused`，`resume` 设置 `running` 并创建新 execution，`stop` 设置 `stopped`。同一 task 已有合法 active session 时不得重复创建 execution。
-3. 每次启动或自动恢复都创建新的 pending execution；一个 execution 对应一个 runtime session，结束后不得重新变回 running。
-4. runtime session 由 `transfer.runtime_leases` 保存 owner instance、execution、lease deadline、heartbeat 和 fencing token；lease 与 `transfer.sync_states` 的业务 position 分离。
+1. continuous 用户期望、实际任务状态与 bounded 区别见[状态契约](#用户期望与实际运行状态)。
+2. start/pause/resume/stop 的状态推进和单 active session 约束见[运行控制与执行身份](#运行控制与执行身份)。
+3. execution 与 runtime session 的一一关系、新执行及终态要求沿[执行身份契约](#运行控制与执行身份)。
+4. runtime lease 与业务 committed position 的分工见[租约与位点](#runtime-lease-与业务位点)。
 5. continuous 自动恢复的触发、新执行身份、唯一领取、退避、circuit 与审计约束见[自动恢复契约](#continuous-自动恢复退避与-circuit)。
 6. 用户 pause/stop 的真实停止、资源释放和 execution 终态要求见[continuous 真实停止](#continuous-的真实停止)。
 7. 任务级 Stop 与整个 `sync` TaskProvider 的标准取消能力分开认定，当前边界见[任务控制与标准取消](#任务级控制与标准取消范围)。
 8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age/health、retry/rebalance、恢复 circuit 和 heartbeat。Monitor 只消费 owner 写入的统一 execution metadata；不得自行连接 Kafka 或 Transfer 私有表补算这些事实。
 9. Orchestrator v1 不编排 continuous Transfer task。Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
 10. continuous 首次扫描的触发、精确范围、claim 接管及失败边界统一见[首次扫描契约](#continuous-首次扫描与-claim)。
+
+### 任务状态、执行身份与运行租约
+
+阅读导航：[用户期望与实际状态](#用户期望与实际运行状态)、[运行控制与执行身份](#运行控制与执行身份)、[租约与业务位点](#runtime-lease-与业务位点)、[读取与验收边界](#状态租约的读取与验收边界)。
+
+#### 用户期望与实际运行状态
+
+- continuous task definition 必须保存独立活状态 `desired_state=running|paused|stopped`，初始值为 `stopped`。
+- 该字段不进入 config JSON，也不复用最近 execution `status`；bounded task 不消费该字段。
+- 任务实际状态继续使用 `status=idle|running|blocked`；`blocked` 表示系统发现不可安全恢复的条件，但不覆盖用户 `desired_state`。
+- 当前只有数据库 CDC schema drift 使用 `blocked`。
+
+#### 运行控制与执行身份
+
+- `start` 原子设置 `desired_state=running` 并创建 pending execution；`pause` 设置 `paused`，`resume` 设置 `running` 并创建新 execution，`stop` 设置 `stopped`。
+- 同一 task 已有合法 active session 时不得重复创建 execution。
+- 每次启动或自动恢复都创建新的 pending execution；一个 execution 对应一个 runtime session，结束后不得重新变回 running。
+
+#### runtime lease 与业务位点
+
+- runtime session 由 `transfer.runtime_leases` 保存 owner instance、execution、lease deadline、heartbeat 和 fencing token；lease 与 `transfer.sync_states` 的业务 position 分离。
+
+租约字段、task 唯一约束、同事务 claim／owner／lease／token 更新和 partition state CAS 见[运行租约与 fencing 持久约束](../../../transfer/docs/数据库架构.md#运行租约字段与-fencing)，不以 execution heartbeat 或 Kafka group committed offset 代替 Transfer 已提交位置。
+
+#### 状态／租约的读取与验收边界
+
+字段归属与 CDC 阻塞后的状态收敛见[任务状态与阻塞持久事实](../../../transfer/docs/数据库架构.md#任务状态与-cdc-阻塞收敛)，当前 User、逐动作 Permission 和读取范围见[任务表入口](../../../transfer/docs/tables/tasks表.md#用户任务定义与控制)及[专业读取契约](执行监控.md#transfer-专业执行读取与响应)。持久状态与私有租约字段不自动成为公共响应或读取授权。
+
+状态保存、owner／heartbeat 存在或 lease 过期，不证明 Worker 真正停止、目标位点已提交或故障恢复成功。停止与 Cleanup 的实际停止证明沿[停止验收](#停止与清理验收边界)，运行态、数据事实、固定版本、失败、清理及未覆盖项分别沿[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)认定。
 
 ### 任务级 Pause/Stop 与标准取消
 

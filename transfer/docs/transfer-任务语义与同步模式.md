@@ -177,7 +177,7 @@ continuous task 删除前必须先通过唯一 Stop/cleanup 路径停止 runtime
 
 continuous session 不进入 bounded execution claim。Transfer 使用独立 continuous worker 进程角色，一个进程承载多个 task session，每个 session 再按 partition 运行受限 worker。
 
-同一 task 同一时刻只有一个合法 runtime owner。`transfer.runtime_leases` 提供 lease、heartbeat 和 fencing；`transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。Kafka auto commit 禁用，consumer group 只承担 partition assignment。
+同一 task 同一时刻只有一个合法 runtime owner。状态、execution/session 与租约／位点分工见[正式状态与租约契约](../../docs/spec/tasks/Transfer同步执行.md#任务状态执行身份与运行租约)；task 唯一约束及原子领取、CAS/fencing 细节见[租约持久约束](数据库架构.md#运行租约字段与-fencing)。`transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`；Kafka auto commit 禁用，consumer group 只承担 partition assignment。
 
 continuous 的用户控制、自动恢复与审计分工见[生命周期](#64-生命周期)；进程、租约和 committed position 的所有权仍按本章约束。
 

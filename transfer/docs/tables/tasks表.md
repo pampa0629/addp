@@ -113,7 +113,7 @@ bounded 与 continuous 扫描的固定版本、失败和清理结果分别见[SQ
 | `running` | 当前有执行正在运行。 |
 | `blocked` | 数据库 CDC schema drift 已阻塞当前消息和 offset；禁止直接 start/resume/retry。 |
 
-任务是否成功、失败或重试，应查询 `common.task_executions` 对应记录。
+任务是否成功、失败或重试，应查询 `common.task_executions` 对应记录；用户期望 `desired_state`、实际任务 `status` 和最近 execution status 的分工统一见[期望与实际运行状态](../../../docs/spec/tasks/Transfer同步执行.md#用户期望与实际运行状态)。
 
 ## 五、API
 
