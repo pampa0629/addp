@@ -12,6 +12,8 @@
 4. [编排 DAG 示例](#编排-dag-示例)
 5. [依赖管理与输出绑定](#依赖管理与输出绑定)
 6. [调度方式](#调度方式)
+7. [典型使用场景](#典型使用场景)
+8. [相关文档与验收入口](#相关文档)
 
 ---
 
@@ -113,7 +115,7 @@ graph TB
 | 模块 | 任务名称 | 任务 API | 参数示例 |
 |------|---------|---------|---------|
 | **Meta** | 扫描元数据 | `POST /api/v1/meta/task-provider/tasks/{task_type}/{id}/execute` | `task_type=scan` |
-| **Transfer** | Transfer 任务 | `POST /api/v1/transfer/task-provider/tasks/{task_type}/{id}/execute` | `task_type=sync` |
+| **Transfer** | 已保存的 bounded 同步任务 | `POST /api/v1/transfer/task-provider/tasks/{task_type}/{id}/execute` | `task_type=sync`；不接受 continuous 任务 |
 | **Develop** | 执行查询 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=query` |
 | **Develop** | 执行工作流 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
 | **Develop** | 执行脚本 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=script`，接入父 Execution Authorization 前拒绝编排 |
@@ -123,6 +125,8 @@ graph TB
 | **Quality** | 质量检查 | `POST /api/v1/quality/task-provider/tasks/{task_type}/{id}/execute` | `task_type=check` |
 | **Graph** | 图谱构建 | `POST /api/v1/graph/task-provider/tasks/{task_type}/{id}/execute` | `task_type=kg_build` |
 | **Orchestrator** | 已保存编排 | `POST /api/v1/orchestrator/task-provider/tasks/{task_type}/{id}/execute` | `task_type=orchestration` |
+
+Transfer 的发现与执行范围、机器身份、Tenant、精确 Permission 及父 execution 绑定统一见[TaskProvider 机器入口](../../transfer/docs/tables/tasks表.md#taskprovider-机器发现与执行)。continuous 运行控制见[任务生命周期](../../transfer/docs/transfer-任务语义与同步模式.md#64-生命周期)，模块直接创建的一次性 execution 见[模块执行入口](../../transfer/docs/tables/task_executions表.md#模块一次性执行与来源隔离)；不能从这些入口各自可用推断它们均可作为编排步骤。
 
 ---
 
@@ -409,8 +413,10 @@ sequenceDiagram
 **任务编排流场景**:
 - 每日凌晨扫描数据库元数据 → 生成瓦片缓存 → 刷新热点区域瓦片缓存产物
 - 从 CSV 导入数据 → 执行空间分析 → 导出结果到 S3
-- 多数据源同步: PostgreSQL → MySQL → MongoDB
+- 受支持源与目标之间的分步传输：实际同步模式和源／目标组合沿[Transfer 支持矩阵](../../transfer/docs/transfer-任务语义与同步模式.md#三当前支持矩阵)，不以场景箭头扩大当前能力范围。
 - 跨模块工作流: Meta 扫描 → Transfer 传输 → Manager 预览
+
+以上任务 ID、DAG 和输出路径用于说明组合方式，实际使用须引用当前 Tenant 已保存且由 Provider 暴露的任务及其执行契约。发现、鉴权、入队、执行、输出绑定与清理须分别核验；静态图、API 声明或示例 JSON 不代表真实 System → Gateway → Owner／Worker 链路已通过，未运行、失败、跳过或未覆盖项不计为通过。
 
 ---
 
@@ -421,10 +427,13 @@ sequenceDiagram
 - [ADDP 监控与执行体系图](addp监控与执行体系图.md)
 - [ADDP 任务体系规范](../spec/addp任务体系规范.md)
 - [Orchestrator 模块详情](../../orchestrator/CLAUDE.md)
+- [Transfer 模块入口](../../transfer/README.md)：配置、操作、前端与数据库说明由模块导航维护。
+- [Transfer 标准门禁与环境前提](../../transfer/README.md#常规模块与专项门禁)
+- [Transfer 固定版本证据、失败与未覆盖项](../../transfer/CLAUDE.md#专项约束与分版本证据)
 
 ---
 
 **文档版本**: v1.1
 **创建日期**: 2026-02-16
-**更新日期**: 2026-06-09
+**更新日期**: 2026-11-02
 **作者**: ADDP 开发团队
