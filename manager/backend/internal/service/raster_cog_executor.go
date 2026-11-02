@@ -67,6 +67,19 @@ func NewManagerRasterCOGExecutor(
 }
 
 func (e *ManagerRasterCOGExecutor) BuildRasterCOG(ctx context.Context, req RasterCOGExecutionRequest) (*RasterCOGExecutionResult, error) {
+	if req.Config.Raster.SourceFormat == "envi" {
+		var result *RasterCOGExecutionResult
+		err := e.withENVISource(ctx, req, func(ctx context.Context, source workflowaccess.Source) error {
+			var err error
+			result, err = e.buildRasterCOG(ctx, req, &source)
+			return err
+		})
+		return result, err
+	}
+	return e.buildRasterCOG(ctx, req, nil)
+}
+
+func (e *ManagerRasterCOGExecutor) buildRasterCOG(ctx context.Context, req RasterCOGExecutionRequest, prepared *workflowaccess.Source) (*RasterCOGExecutionResult, error) {
 	if e == nil || e.systemClient == nil || e.workflowEngines == nil {
 		return nil, errors.New("raster COG generation executor is not fully configured")
 	}
@@ -77,7 +90,7 @@ func (e *ManagerRasterCOGExecutor) BuildRasterCOG(ctx context.Context, req Raste
 		return nil, errors.New("raster COG source target is incomplete")
 	}
 
-	plan, sourceFacts, err := e.prepareAccessPlan(ctx, req)
+	plan, sourceFacts, err := e.prepareAccessPlanForSource(ctx, req, prepared)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +213,10 @@ func rasterCOGSourceCRS(raster RasterCOGRasterConfig) string {
 }
 
 func (e *ManagerRasterCOGExecutor) prepareAccessPlan(ctx context.Context, req RasterCOGExecutionRequest) (workflowaccess.Plan, commonModels.JSONMap, error) {
+	return e.prepareAccessPlanForSource(ctx, req, nil)
+}
+
+func (e *ManagerRasterCOGExecutor) prepareAccessPlanForSource(ctx context.Context, req RasterCOGExecutionRequest, prepared *workflowaccess.Source) (workflowaccess.Plan, commonModels.JSONMap, error) {
 	engine, err := e.systemClient.GetEngineForTenant(ctx, req.Task.TenantID, req.Config.Target.SourceEngineID)
 	if err != nil {
 		return workflowaccess.Plan{}, nil, fmt.Errorf("get source engine: %w", err)
@@ -217,12 +234,23 @@ func (e *ManagerRasterCOGExecutor) prepareAccessPlan(ctx context.Context, req Ra
 	if locator.EngineID != engine.ID || locator.FullName() != req.Config.Target.FullName {
 		return workflowaccess.Plan{}, nil, errors.New("source locator does not match COG source")
 	}
-	if req.Config.Raster.SourceFormat != "tiff" && req.Config.Raster.SourceFormat != "img" && req.Config.Raster.SourceFormat != "jpeg2000" {
-		return workflowaccess.Plan{}, nil, errors.New("raster COG source_format must be tiff, img or jpeg2000")
+	if req.Config.Raster.SourceFormat != "tiff" && req.Config.Raster.SourceFormat != "img" && req.Config.Raster.SourceFormat != "jpeg2000" && req.Config.Raster.SourceFormat != "envi" {
+		return workflowaccess.Plan{}, nil, errors.New("raster COG source_format must be tiff, img, jpeg2000 or envi")
 	}
-	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: engine, Locator: locator, Kind: workflowaccess.KindFile, Format: req.Config.Raster.SourceFormat})
-	if err != nil {
-		return workflowaccess.Plan{}, nil, err
+	var source workflowaccess.Source
+	if req.Config.Raster.SourceFormat == "envi" {
+		if prepared == nil || req.SourceAuthorization == nil || req.SourceAuthorization.validateConfig(req.Config) != nil {
+			return workflowaccess.Plan{}, nil, ErrFileSourceAuthorizationRequired
+		}
+		source = *prepared
+	} else {
+		if prepared != nil {
+			return workflowaccess.Plan{}, nil, ErrFileSourceAuthorizationRequired
+		}
+		source, err = workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: engine, Locator: locator, Kind: workflowaccess.KindFile, Format: req.Config.Raster.SourceFormat})
+		if err != nil {
+			return workflowaccess.Plan{}, nil, err
+		}
 	}
 	bucket, objectName, err := rastercogref.ObjectLocation(req.Config.Result.StorageRef, e.defaultBucket)
 	if err != nil {

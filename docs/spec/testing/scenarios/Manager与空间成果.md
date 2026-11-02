@@ -68,6 +68,12 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`；当前入口只接受新报告，不用历史三格式或旧版本报告替代本轮四格式完整结果。仅验证MinIO该有界TIFF样例及原三格式回归，不认证BigTIFF、任意布局/容量、NFS或Float64基础图片/地图渲染；SKP精确组成授权保持关闭。
 
+### ENVI 双文件 COG（实施中，尚未正式验收）
+
+同一 Manager Hosted suite 的独立 `native-envi` case 复用现有十项普通 User 权限、独立授权办理用户、Business MinIO／NFS、GeoPython 产品 Runtime、Console 和现有退出清理；不启动 Model3D／文档／点云，不新增服务或权限。三份独立字节构造的 256×256 三波段 Byte ENVI 分别采用 BSQ/WGS84、BIL/UTM50N、BIP/无定位，NFS 与 MinIO 各一套。Meta 必须输出 media/envi/multi、唯一双 ref、完整扫描、原始尺寸和两个 SHA；未批准时下载拒绝，完整清单批准后下载 ZIP 的两份原件逐字节／哈希核对。四份定位 COG 沿正式 action、当前 User 来源及独立目的 EA，完整核 196608 值与掩膜、源 CRS、网格、COG 全布局、HTTP／物理哈希和 Range；当前源 Deny 同时停止派生 COG 读取，释放后恢复。两种存储各以 BSQ 样例变更头文件命名，重新扫描后旧清单不能读取；撤销旧 Grant、按新精确清单批准后才能下载，最后恢复原组成并重新批准。已发布 COG 还须在同名头文件内容变化后拒绝缓存读取，恢复原始字节并重扫后才恢复旧缓存。真实 Console 复用现有媒体栅格页面验收：三色像元、属性、无定位边界、ZIP 原件按钮、截图、重开同一缓存且零额外生成请求。按 API 删除任务与成果，再核物理成果缺失、精确临时输入零残留，撤销本轮 Grant/Deny，删除本轮 NFS／MinIO 源；最终部署及 Infra 仍由同一 Hosted 生命周期清理。报告 `manager-envi.json` 和 `manager-envi-browser.json`，任一步失败不登记通过。
+
+三交错／双端序／七种实数类型、NoData／NaN／完整 COG 掩膜、源内容漂移、头文件改变／歧义／外部文件／非法字段及预算拒绝分别由 `make test-geopython-workflow` 与 Common／Meta／System／Manager 标准 T1/T2 验证；不把 Hosted Byte 样例扩大为任意光谱产品、64bit 整数、复数、压缩、外部资源或导出认证。根 `make test-manager-online-runner`、`make test-online-runner` 与 CI 注册检查同次覆盖新 case、物理与页面断言。
+
 ### IMG 原生扫描与 COG 快显
 
 同一 Manager Hosted suite 增加 IMG 子场景，使用既有普通 User、十项权限、Business MinIO、GeoPython 产品 Runtime 与同一部署生命周期，不新增 suite、服务或权限。Runtime 中生成三份自有 256×256 三波段 Byte HFA：WGS84、UTM50N 和无定位影像；全部自包含、同数据类型且无 NoData。真实 Meta 深度扫描须证明 `img/media/single`、HFA 编码、尺寸、波段及明确的源 CRS/范围；无定位样例不得出现推断的空间能力或 COG 生成动作。

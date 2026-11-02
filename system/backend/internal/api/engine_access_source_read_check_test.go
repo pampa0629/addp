@@ -86,7 +86,7 @@ func TestManagedFileExpectedSourceRouteRejectsDelegatesAndMachines(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := json.Marshal(engineaccess.SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerModel3DExpectedSource{EngineVersion: "1", FileComposition: *composition}})
+	body, err := json.Marshal(engineaccess.SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerFileExpectedSource{EngineVersion: "1", FileComposition: *composition}})
 	if err != nil {
 		t.Fatal(err)
 	}

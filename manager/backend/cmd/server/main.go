@@ -184,7 +184,7 @@ func main() {
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
 	metadataService := service.NewMetadataService(metadataRepo, systemClient, metaClient, previewRegistry, contentRegistry)
-	metadataService.SetModelSourceReadChecker(systemServiceClient)
+	metadataService.SetFileSourceReadChecker(systemServiceClient)
 	metadataService.SetWholeSourceReadChecker(systemServiceClient)
 	metadataService.SetMetaScanUserClient(commonClient.NewMetaScanUserClient(cfg.MetaServiceURL))
 	indexDeliveries := repository.NewContentIndexDeliveryRepository(db, cfg.MeilisearchManagerContentIndex)
@@ -270,6 +270,7 @@ func main() {
 	tileCacheTaskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
 	vectorMaterializedViewTaskSvc := service.NewVectorMaterializedViewTaskService(vectorMaterializedViewRepo, taskExecRepo)
 	rasterCOGTaskSvc := service.NewRasterCOGTaskService(rasterCOGRepo)
+	rasterCOGTaskSvc.SetSourceAuthorizationClients(metaClient, systemClient, commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil), systemServiceClient)
 	rasterMosaicTaskSvc := service.NewRasterMosaicTaskService(rasterMosaicRepo, taskExecRepo)
 	vectorTileSetTaskSvc := service.NewVectorTileSetTaskService(vectorTileSetRepo, taskExecRepo)
 	vectorTileSetTaskSvc.SetMetaClient(metaClient)

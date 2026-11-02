@@ -26,7 +26,7 @@ type model3DGLBSourceCandidate struct {
 }
 
 func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, item *commonModels.MetaItem) (*model3DGLBSourceCandidate, error) {
-	reject := ErrModel3DGLBSourceAuthorizationRequired
+	reject := ErrFileSourceAuthorizationRequired
 	identity := authorizationfacts.FileCompositionBoundary{Format: source.Format}
 	if tenantID == 0 || source.ItemID == 0 || item == nil || item.ID != source.ItemID || item.TenantID != tenantID ||
 		item.EngineID != source.SourceEngineID || (item.ItemType != "file" && item.ItemType != "object") || item.Fingerprint == "" || item.Fingerprint != source.ItemFingerprint ||

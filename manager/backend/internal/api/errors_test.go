@@ -16,7 +16,7 @@ import (
 func TestQuickViewSourceErrorContractAndTranslations(t *testing.T) {
 	for _, lang := range []string{commoni18n.LangZhCN, commoni18n.LangEn} {
 		for _, composition := range []bool{false, true} {
-			err := service.ErrModel3DGLBSourceAuthorizationRequired
+			err := service.ErrFileSourceAuthorizationRequired
 			status, code := http.StatusForbidden, "source_authorization_required"
 			message := "无法取得原始模型及关联文件的读取授权，请核对源数据读取权限。"
 			if lang == commoni18n.LangEn {

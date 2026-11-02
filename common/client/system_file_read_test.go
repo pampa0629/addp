@@ -15,7 +15,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-func model3DExpectedSourceFixture(t *testing.T, texture string) ManagerModel3DExpectedSource {
+func model3DExpectedSourceFixture(t *testing.T, texture string) ManagerFileExpectedSource {
 	t.Helper()
 	composition, err := authorizationfacts.NewFileCompositionBoundary("3ds", []authorizationfacts.FileCompositionRef{
 		{Target: plugin.FileItemPath(33, "models/model.3ds"), Role: "model", Required: true, Primary: true},
@@ -24,7 +24,7 @@ func model3DExpectedSourceFixture(t *testing.T, texture string) ManagerModel3DEx
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ManagerModel3DExpectedSource{EngineVersion: "5", FileComposition: *composition}
+	return ManagerFileExpectedSource{EngineVersion: "5", FileComposition: *composition}
 }
 
 // A protocol fixture proves what Manager sends and how the shared SDK handles
@@ -52,8 +52,8 @@ func TestManagerModel3DResultReadUsesExpectedSourceInSameHumanDecision(t *testin
 					return
 				}
 				var request struct {
-					Targets        []plugin.EngineCatalogPath   `json:"targets"`
-					ExpectedSource ManagerModel3DExpectedSource `json:"expected_source"`
+					Targets        []plugin.EngineCatalogPath `json:"targets"`
+					ExpectedSource ManagerFileExpectedSource  `json:"expected_source"`
 				}
 				primary, _ := generated.FileComposition.PrimaryTarget()
 				if decoder.Decode(&request) != nil || len(request.Targets) != 1 || !reflect.DeepEqual(request.Targets[0], primary) || !reflect.DeepEqual(request.ExpectedSource, generated) {
@@ -78,7 +78,7 @@ func TestManagerModel3DResultReadUsesExpectedSourceInSameHumanDecision(t *testin
 			}))
 			t.Cleanup(server.Close)
 			client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("must-not-be-used"), server.Client())
-			err := client.CheckManagerModel3DRead(t.Context(), "addp_at_current_human", generated)
+			err := client.CheckManagerFileRead(t.Context(), "addp_at_current_human", generated)
 			switch outcome {
 			case "same source":
 				if err != nil {
@@ -104,20 +104,20 @@ func TestManagerModel3DResultReadRejectsTicketsDelegatesAndMalformedExpectedSour
 	generated := model3DExpectedSourceFixture(t, "Original.PNG")
 	client := NewSystemServiceClient("http://must-not-be-contacted.invalid", staticSystemServiceTokenSource("must-not-be-used"), nil)
 	for _, token := range []string{"", "addp_rat_ticket", "addp_dat_tool", "addp_at_", "addp_at_user\n"} {
-		if err := client.CheckManagerModel3DRead(context.Background(), token, generated); !errors.Is(err, ErrManagerPreviewCredentialRejected) {
+		if err := client.CheckManagerFileRead(context.Background(), token, generated); !errors.Is(err, ErrManagerPreviewCredentialRejected) {
 			t.Fatalf("credential accepted: %v", err)
 		}
 	}
 	for _, version := range []string{"", "0", "-1", "05", "+5", "5.0", strings.Repeat("9", 40)} {
 		invalid := generated
 		invalid.EngineVersion = version
-		if err := client.CheckManagerModel3DRead(t.Context(), "addp_at_current_human", invalid); !errors.Is(err, ErrManagerPreviewReadDenied) {
+		if err := client.CheckManagerFileRead(t.Context(), "addp_at_current_human", invalid); !errors.Is(err, ErrManagerPreviewReadDenied) {
 			t.Fatalf("invalid expected version accepted: %v", err)
 		}
 	}
 	invalid := generated
 	invalid.FileComposition = authorizationfacts.FileCompositionBoundary{}
-	if err := client.CheckManagerModel3DRead(t.Context(), "addp_at_current_human", invalid); !errors.Is(err, ErrManagerPreviewReadDenied) {
+	if err := client.CheckManagerFileRead(t.Context(), "addp_at_current_human", invalid); !errors.Is(err, ErrManagerPreviewReadDenied) {
 		t.Fatalf("missing composition accepted: %v", err)
 	}
 }
@@ -133,7 +133,7 @@ func TestManagerModel3DExpectedObjectSource(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			source := ManagerModel3DExpectedSource{EngineVersion: "5", FileComposition: *composition}
+			source := ManagerFileExpectedSource{EngineVersion: "5", FileComposition: *composition}
 			if source.Validate() != nil {
 				t.Fatalf("unexpected object format admission: %s", format)
 			}

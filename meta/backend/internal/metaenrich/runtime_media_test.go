@@ -20,7 +20,7 @@ type mediaInspectorStub struct {
 	err    error
 }
 
-func (s mediaInspectorStub) InspectMedia(context.Context, *commonModels.Engine, uint, string, string) (*format.MediaDescribeResult, error) {
+func (s mediaInspectorStub) InspectMedia(context.Context, *commonModels.Engine, uint, *metaitem.DetectedItem, string) (*format.MediaDescribeResult, error) {
 	return s.result, s.err
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/format/plugins/envi"
 	"github.com/addp/common/format/plugins/fbx"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metatest"
@@ -26,6 +27,9 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 		t.Fatal(err)
 	}
 	name := "panel." + format
+	if format == "envi" {
+		name = "panel.img"
+	}
 	refs := []map[string]any{{"path": "models/" + name, "role": "model", "required": true, "primary": true}}
 	if format == "3ds" || format == "dae" || format == "obj" || format == "gltf" {
 		refs = append(refs, map[string]any{"path": "models/TEST.PNG", "role": "texture", "required": true})
@@ -52,6 +56,12 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 		item.Attributes["item"].(map[string]any)["layout"] = "multi"
 		item.Attributes["format_info"] = map[string]any{"gltf": map[string]any{"composition_complete": true}}
 	}
+	if format == "envi" {
+		refs[0]["role"] = "raster"
+		refs = append(refs, map[string]any{"path": "models/panel.HDR", "role": "header", "required": true, "primary": false})
+		item.Attributes["item"] = map[string]any{"layout": "multi", "data_type": "media", "format": "envi", "refs": refs}
+		item.Attributes["format_info"] = map[string]any{"envi": map[string]any{"profile": envi.Profile, "composition_complete": true, "header_path": "models/panel.HDR", "header_sha256": strings.Repeat("a", 64)}}
+	}
 	item.Fingerprint = commonModels.GenerateItemFingerprint(engineID, item.FullName)
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
@@ -65,7 +75,7 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 
 func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}, {"file", "obj"}, {"object", "obj"}, {"file", "stl"}, {"object", "stl"}, {"file", "glb"}, {"object", "glb"}, {"file", "gltf"}, {"object", "gltf"}, {"file", "fbx"}, {"object", "fbx"}} {
+	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}, {"file", "obj"}, {"object", "obj"}, {"file", "stl"}, {"object", "stl"}, {"file", "glb"}, {"object", "glb"}, {"file", "gltf"}, {"object", "gltf"}, {"file", "fbx"}, {"object", "fbx"}, {"file", "envi"}, {"object", "envi"}} {
 		format := fixture.format
 		t.Run(fixture.kind+"/"+format, func(t *testing.T) {
 			item := seedFileAuthorizationFacts(t, db, uint(350+i), format)
@@ -109,7 +119,7 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 			if strings.Contains(string(raw), "physical_path") || strings.Contains(string(raw), "texture_refs") {
 				t.Fatal("private attributes escaped fact projection")
 			}
-			if format == "stl" || format == "glb" || format == "gltf" || format == "fbx" {
+			if format == "stl" || format == "glb" || format == "gltf" || format == "fbx" || format == "envi" {
 				native := item.Attributes["format_info"].(map[string]any)[format].(map[string]any)
 				native["composition_complete"] = false
 				native["scan_complete"] = true

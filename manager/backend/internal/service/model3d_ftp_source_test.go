@@ -49,7 +49,7 @@ func TestModel3DFTPConfigCannotFallThroughAfterEngineTypeChange(t *testing.T) {
 				SourceAuthorization: auth,
 				Config:              Model3DGLBExecutionConfig{ConfigVersion: scenario.version, Source: Model3DGLBSourceConfig{SourceEngineID: 26, ItemID: 77, ItemLocator: "addp://engine/26/path/models/model.ifc?type=file&item_id=77", Format: "ifc"}, Result: Model3DGLBResultConfig{FileName: "model.glb"}},
 			})
-			if result != nil || !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
+			if result != nil || !errors.Is(err, ErrFileSourceAuthorizationRequired) {
 				t.Fatalf("unauthorized source accepted or routed elsewhere: result=%v err=%v", result, err)
 			}
 			if lookups != scenario.lookups || store.puts != 0 || len(store.objects) != 0 {

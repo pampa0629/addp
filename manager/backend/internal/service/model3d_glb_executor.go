@@ -78,7 +78,7 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 		return nil, errors.New("model 3d GLB generation task is required")
 	}
 	if req.Config.ConfigVersion != "" && req.Config.ConfigVersion != managerModels.Model3DGLBFileConfigVersion {
-		return nil, ErrModel3DGLBSourceAuthorizationRequired
+		return nil, ErrFileSourceAuthorizationRequired
 	}
 	fileConfig := req.Config.ConfigVersion == managerModels.Model3DGLBFileConfigVersion
 	operatorName, sourceFormat, err := model3DGLBOperatorForFormat(req.Config.Source.Format)
@@ -90,11 +90,11 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 		return nil, err
 	}
 	if (fileConfig || req.SourceAuthorization != nil) && !managedModel3DFileSource(engine.EngineType, sourceFormat) {
-		return nil, ErrModel3DGLBSourceAuthorizationRequired
+		return nil, ErrFileSourceAuthorizationRequired
 	}
 	if managedModel3DFileSource(engine.EngineType, sourceFormat) {
 		if !fileConfig || req.SourceAuthorization == nil {
-			return nil, ErrModel3DGLBSourceAuthorizationRequired
+			return nil, ErrFileSourceAuthorizationRequired
 		}
 		var result *Model3DGLBExecutionResult
 		err = e.withFileModel3DSource(ctx, req, engine, func(ctx context.Context, sourcePlan workflowaccess.Source, sourceFacts commonModels.JSONMap) error {
@@ -118,7 +118,7 @@ func (e *ManagerModel3DGLBExecutor) buildModel3DGLBWithSource(ctx context.Contex
 	fileSource := req.Config.ConfigVersion == managerModels.Model3DGLBFileConfigVersion
 	if fileSource {
 		if req.SourceAuthorization == nil {
-			return nil, ErrModel3DGLBSourceAuthorizationRequired
+			return nil, ErrFileSourceAuthorizationRequired
 		}
 		if err := req.SourceAuthorization.ValidateConversion(req.Config); err != nil {
 			return nil, err
@@ -293,7 +293,7 @@ func (e *ManagerModel3DGLBExecutor) lookupModel3DSourceEngine(ctx context.Contex
 		return nil, fmt.Errorf("get source engine: %w", err)
 	}
 	if engine == nil || engine.EngineType == "" || engine.EngineType != strings.TrimSpace(engine.EngineType) || engine.EngineType != strings.ToLower(engine.EngineType) {
-		return nil, ErrModel3DGLBSourceAuthorizationRequired
+		return nil, ErrFileSourceAuthorizationRequired
 	}
 	if err := engineaccess.EnsureAvailable(engine); err != nil {
 		return nil, err
@@ -306,7 +306,7 @@ func (e *ManagerModel3DGLBExecutor) lookupModel3DSourceEngine(ctx context.Contex
 
 func (e *ManagerModel3DGLBExecutor) prepareSourceForEngine(ctx context.Context, engine *commonModels.Engine, source Model3DGLBSourceConfig, sourceFormat string) (workflowaccess.Source, commonModels.JSONMap, error) {
 	if engine == nil || managedModel3DFileSource(engine.EngineType, sourceFormat) {
-		return workflowaccess.Source{}, nil, ErrModel3DGLBSourceAuthorizationRequired
+		return workflowaccess.Source{}, nil, ErrFileSourceAuthorizationRequired
 	}
 	loc, err := resourcetree.ParseURI(source.ItemLocator)
 	if err != nil {
@@ -390,29 +390,7 @@ func (e *ManagerModel3DGLBExecutor) ensureTargetBucket(ctx context.Context, buck
 // read-modify-writing the bucket's rules. Immediate cleanup cannot cover a late
 // remote upload after HTTP cancellation or a Manager process exit.
 func (e *ManagerModel3DGLBExecutor) verifyTemporaryModelExpiration(ctx context.Context, bucket string) error {
-	versioning, err := e.objectStore.GetBucketVersioning(ctx, bucket)
-	if err != nil {
-		return fmt.Errorf("check model temporary bucket versioning: %w", err)
-	}
-	if versioning.Status != "" {
-		return errors.New("model temporary bucket must be unversioned for permanent object expiration")
-	}
-	config, err := e.objectStore.GetBucketLifecycle(ctx, bucket)
-	if err != nil {
-		return fmt.Errorf("check model temporary object expiration: %w", err)
-	}
-	if config != nil {
-		for _, rule := range config.Rules {
-			filter := rule.RuleFilter
-			if rule.Status == "Enabled" && rule.Prefix == "" && filter.Prefix == "temp/" &&
-				filter.And.IsEmpty() && filter.Tag.IsEmpty() &&
-				filter.ObjectSizeLessThan == 0 && filter.ObjectSizeGreaterThan == 0 &&
-				rule.Expiration.Days == 7 && rule.Expiration.Date.IsZero() {
-				return nil
-			}
-		}
-	}
-	return errors.New("model temporary objects require the Infra temp/ 7-day expiration rule on the target bucket")
+	return verifyTemporaryInputExpiration(ctx, e.objectStore, bucket)
 }
 
 func (e *ManagerModel3DGLBExecutor) selectDirectWorkflowRuntime(ctx context.Context, tenantID uint, operatorName string) (commonModels.Engine, commonModels.OperatorDescriptor, error) {

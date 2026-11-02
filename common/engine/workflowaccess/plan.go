@@ -2,7 +2,11 @@ package workflowaccess
 
 import (
 	"fmt"
+	"path"
+	"reflect"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	commonModels "github.com/addp/common/models"
 )
@@ -33,11 +37,18 @@ type Access struct {
 }
 
 type Source struct {
-	Kind       string               `json:"kind"`
-	Format     string               `json:"format"`
-	Entrypoint string               `json:"entrypoint,omitempty"`
-	Access     Access               `json:"access"`
-	Metadata   commonModels.JSONMap `json:"metadata,omitempty"`
+	Kind         string               `json:"kind"`
+	Format       string               `json:"format"`
+	Entrypoint   string               `json:"entrypoint,omitempty"`
+	Access       Access               `json:"access"`
+	Metadata     commonModels.JSONMap `json:"metadata,omitempty"`
+	RelatedFiles []RelatedFile        `json:"related_files,omitempty"`
+}
+
+// RelatedFile is an exact execution-time companion, never a directory grant.
+type RelatedFile struct {
+	Role   string `json:"role"`
+	Access Access `json:"access"`
 }
 
 type Target struct {
@@ -82,7 +93,7 @@ func (p SourcePlan) Validate() error {
 	if p.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unsupported workflow access plan schema_version %q", p.SchemaVersion)
 	}
-	return validateResource("source", p.Source.Kind, p.Source.Format, p.Source.Access)
+	return validateSource(p.Source)
 }
 
 func (p SourcePlan) JSONMap() commonModels.JSONMap {
@@ -144,7 +155,7 @@ func (p Plan) Validate() error {
 	if p.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unsupported workflow access plan schema_version %q", p.SchemaVersion)
 	}
-	if err := validateResource("source", p.Source.Kind, p.Source.Format, p.Source.Access); err != nil {
+	if err := validateSource(p.Source); err != nil {
 		return err
 	}
 	if err := validateResource("target", p.Target.Kind, p.Target.Format, p.Target.Access); err != nil {
@@ -205,6 +216,49 @@ func validateResource(label, kind, format string, access Access) error {
 	return nil
 }
 
+func validateSource(source Source) error {
+	if err := validateResource("source", source.Kind, source.Format, source.Access); err != nil {
+		return err
+	}
+	if source.Format != "envi" {
+		if source.RelatedFiles != nil {
+			return fmt.Errorf("related files are not admitted for this source format")
+		}
+		return nil
+	}
+	if source.Kind != KindFile || len(source.RelatedFiles) != 1 || source.RelatedFiles[0].Role != "header" || source.Entrypoint != "" {
+		return fmt.Errorf("ENVI requires a file source and one exact header")
+	}
+	companion := source.RelatedFiles[0].Access
+	if err := validateResource("related header", KindFile, "envi", companion); err != nil {
+		return err
+	}
+	main := source.Access
+	var mainName, headerName string
+	switch main.Method {
+	case MethodMountedPath:
+		mainName, headerName = main.Path, companion.Path
+		if !path.IsAbs(mainName) || !path.IsAbs(headerName) {
+			return fmt.Errorf("ENVI mounted paths must be absolute")
+		}
+		main.Path, companion.Path = "", ""
+	case MethodObjectStore:
+		mainName, headerName = main.Object, companion.Object
+		if strings.HasPrefix(mainName, "/") || strings.HasPrefix(headerName, "/") {
+			return fmt.Errorf("ENVI object names must be exact relative names")
+		}
+		main.Object, companion.Object = "", ""
+	}
+	validName := func(name string) bool {
+		return name != "" && utf8.ValidString(name) && len(name) <= 4096 && name != ".." && !strings.HasPrefix(name, "../") && path.Clean(name) == name && !strings.ContainsAny(name, "\\:") && !strings.ContainsFunc(name, unicode.IsControl)
+	}
+	if !reflect.DeepEqual(main, companion) || main.Prefix != "" || !validName(mainName) || !validName(headerName) || path.Dir(mainName) != path.Dir(headerName) ||
+		strings.EqualFold(path.Base(mainName), path.Base(headerName)) || strings.EqualFold(path.Ext(mainName), ".hdr") || !strings.EqualFold(path.Ext(headerName), ".hdr") {
+		return fmt.Errorf("ENVI companion must be an exact header beside the primary on the same connection")
+	}
+	return nil
+}
+
 func sourceJSONMap(source Source, audit bool) commonModels.JSONMap {
 	result := commonModels.JSONMap{
 		"kind":   source.Kind,
@@ -216,6 +270,13 @@ func sourceJSONMap(source Source, audit bool) commonModels.JSONMap {
 	}
 	if source.Metadata != nil {
 		result["metadata"] = source.Metadata.Clone()
+	}
+	if source.RelatedFiles != nil {
+		members := make([]interface{}, len(source.RelatedFiles))
+		for index, file := range source.RelatedFiles {
+			members[index] = commonModels.JSONMap{"role": file.Role, "access": accessJSONMap(file.Access, audit)}
+		}
+		result["related_files"] = members
 	}
 	return result
 }

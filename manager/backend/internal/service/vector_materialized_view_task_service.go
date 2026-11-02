@@ -948,6 +948,11 @@ func quotePostGISLiteral(value string) string {
 
 func int64FromConfig(value interface{}, defaultValue int64) int64 {
 	switch v := value.(type) {
+	case json.Number:
+		n, err := v.Int64()
+		if err == nil {
+			return n
+		}
 	case int64:
 		return v
 	case int:

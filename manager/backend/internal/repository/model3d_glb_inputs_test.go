@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func glbInputOwnershipFixture(t *testing.T, db *gorm.DB) (*Model3DGLBRepository, *models.Model3DGLB, context.Context, Model3DGLBInputPreparation) {
+func glbInputOwnershipFixture(t *testing.T, db *gorm.DB) (*Model3DGLBRepository, *models.Model3DGLB, context.Context, FileInputPreparation) {
 	t.Helper()
 	repo, execution := pendingGLBAuthorizationFixture(t, db, time.Now())
 	taskID, _ := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
@@ -26,13 +26,13 @@ func glbInputOwnershipFixture(t *testing.T, db *gorm.DB) (*Model3DGLBRepository,
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := Model3DGLBInputPreparation{ExecutionID: execution.ExecutionID, Attempt: lease.Attempt, PreparationID: uuid.NewString()}
+	p := FileInputPreparation{ExecutionID: execution.ExecutionID, Attempt: lease.Attempt, PreparationID: uuid.NewString()}
 	prefix := fmt.Sprintf("temp/model3d-input/tenant_7/%s/attempt_%d/%s/", p.ExecutionID, p.Attempt, p.PreparationID)
-	p.Objects = []Model3DGLBInputObject{{Bucket: "manager", Object: prefix + "Model.3DS"}, {Bucket: "manager", Object: prefix + "textures/Color.PNG "}}
+	p.Objects = []FileInputObject{{Bucket: "manager", Object: prefix + "Model.3DS"}, {Bucket: "manager", Object: prefix + "textures/Color.PNG "}}
 	return repo, item, ctx, p
 }
 
-func readInputPreparation(t *testing.T, db *gorm.DB, id uint) Model3DGLBInputPreparation {
+func readInputPreparation(t *testing.T, db *gorm.DB, id uint) FileInputPreparation {
 	t.Helper()
 	var item models.Model3DGLB
 	if err := db.Unscoped().First(&item, id).Error; err != nil {
@@ -59,7 +59,7 @@ func TestGLBInputOwnershipKeepsExactManifestAfterCleanup(t *testing.T) {
 				outputDeletes = append(outputDeletes, ref)
 				return nil
 			}
-			deleteInput := func(_ context.Context, tenant uint, object Model3DGLBInputObject) error {
+			deleteInput := func(_ context.Context, tenant uint, object FileInputObject) error {
 				if tenant != 7 || (object != p.Objects[0] && object != p.Objects[1]) {
 					t.Fatal("cleanup changed exact input identity")
 				}
@@ -94,7 +94,7 @@ func TestGLBInputOwnershipKeepsExactManifestAfterCleanup(t *testing.T) {
 				}
 			}
 			if scenario == "delete failure" {
-				if _, err := repo.CleanupExecutionOutputs(t.Context(), 100, func(context.Context, uint, Model3DGLBInputObject) error { return errors.New("store offline") }, deleteOutput); err == nil {
+				if _, err := repo.CleanupExecutionOutputs(t.Context(), 100, func(context.Context, uint, FileInputObject) error { return errors.New("store offline") }, deleteOutput); err == nil {
 					t.Fatal("storage failure hidden")
 				}
 			}
@@ -196,7 +196,7 @@ func TestGLBInputClosedHistoryDoesNotConsumeCleanupLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	removed := 0
-	if n, err := repo.CleanupExecutionOutputs(t.Context(), 1, func(context.Context, uint, Model3DGLBInputObject) error {
+	if n, err := repo.CleanupExecutionOutputs(t.Context(), 1, func(context.Context, uint, FileInputObject) error {
 		t.Fatal("cleaned history retried")
 		return nil
 	}, func(_ context.Context, _ uint, ref string) error {

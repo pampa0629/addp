@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -402,6 +403,11 @@ func asJSONMap(value interface{}) (commonModels.JSONMap, bool) {
 
 func uintFromConfig(value interface{}) uint {
 	switch v := value.(type) {
+	case json.Number:
+		n, err := v.Int64()
+		if err == nil && n > 0 {
+			return uint(n)
+		}
 	case uint:
 		return v
 	case int:
@@ -422,6 +428,11 @@ func uintFromConfig(value interface{}) uint {
 
 func intFromConfig(value interface{}) int {
 	switch v := value.(type) {
+	case json.Number:
+		n, err := v.Int64()
+		if err == nil {
+			return int(n)
+		}
 	case int:
 		return v
 	case uint:

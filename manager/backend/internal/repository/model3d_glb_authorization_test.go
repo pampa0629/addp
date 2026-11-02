@@ -88,7 +88,9 @@ func TestGLBTaskSnapshotRetainsWholeConfigAndRejectsPreparationDrift(t *testing.
 					t.Fatal(err)
 				}
 			}
-			err = db.Transaction(func(tx *gorm.DB) error { return verifyModel3DGLBTaskSnapshot(t.Context(), tx, snapshot) })
+			err = db.Transaction(func(tx *gorm.DB) error {
+				return verifyFileTaskSnapshot(t.Context(), tx, snapshot, commonExecution.TaskTypeModel3DGLBGeneration)
+			})
 			if change == "unchanged" {
 				if err != nil {
 					t.Fatal(err)

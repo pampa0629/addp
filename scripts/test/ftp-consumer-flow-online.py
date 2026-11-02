@@ -583,7 +583,7 @@ class ModelSourceAuthorization:
         # The fixed fixture's typed targets use the shared boundary's canonical
         # JSON byte order. Primary is a semantic flag, never an ordering rule.
         expected_refs.sort(key=lambda ref: json.dumps(ref['target'], ensure_ascii=False, separators=(',', ':')))
-        boundary = {'layout': 'multi' if model['format']=='gltf' else 'single', 'file_composition': {'format': model['format'], 'refs': expected_refs}}
+        boundary = {'layout': 'multi' if model['format'] in ('gltf','envi') else 'single', 'file_composition': {'format': model['format'], 'refs': expected_refs}}
         require(isinstance(facts, dict) and all(facts.get(key) == value for key, value in {
             'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': str(self.engine_id),
             'item_fingerprint': model['fingerprint'], 'full_name': model['full_name'],

@@ -49,14 +49,14 @@ func (f *glbOwnerConversionFixture) BuildModel3DGLB(ctx context.Context, req Mod
 		f.t.Fatal("dispatcher omitted durable input owner")
 	}
 	store := &stagingModelStore{}
-	err = stagingModelExecutor(store).withStagedModel3DSource(ctx, lease, "3ds", workflowaccess.KindDirectory, "Scene.3DS", []model3DStagingFile{stagingModelFile("Scene.3DS", "model"), stagingModelFile("Texture.PNG ", "image")}, req.inputOwner, func(context.Context, workflowaccess.Source) error {
+	err = stagingModelExecutor(store).withStagedModel3DSource(ctx, lease, "3ds", workflowaccess.KindDirectory, "Scene.3DS", []fileStagingFile{stagingModelFile("Scene.3DS", "model"), stagingModelFile("Texture.PNG ", "image")}, req.inputOwner, func(context.Context, workflowaccess.Source) error {
 		owner, readErr := f.repo.GetByID(ctx, f.previous.ID, 7)
 		if readErr != nil {
 			return readErr
 		}
 		raw, _ := json.Marshal(owner.Metadata["model3d_output_lifecycle"])
 		var state struct {
-			Inputs []repository.Model3DGLBInputPreparation `json:"input_preparations"`
+			Inputs []repository.FileInputPreparation `json:"input_preparations"`
 		}
 		if json.Unmarshal(raw, &state) != nil || len(state.Inputs) != 1 || len(state.Inputs[0].Objects) != 2 || state.Inputs[0].Released {
 			f.t.Fatal("uploads reached converter without durable live ownership")
@@ -113,10 +113,10 @@ func TestGLBOwnerWiringPublishesOnlyAfterBoundLeaseAndFinalConsumption(t *testin
 					t.Error("noncanonical authorization request")
 				}
 				var request struct {
-					ExecutionID string                                   `json:"execution_id"`
-					Attempt     int                                      `json:"attempt"`
-					LeaseToken  string                                   `json:"lease_token"`
-					Scope       *commonExecution.ManagerModel3DReadScope `json:"source_read_scope"`
+					ExecutionID string                                `json:"execution_id"`
+					Attempt     int                                   `json:"attempt"`
+					LeaseToken  string                                `json:"lease_token"`
+					Scope       *commonExecution.ManagerFileReadScope `json:"source_read_scope"`
 				}
 				if json.NewDecoder(r.Body).Decode(&request) != nil {
 					t.Error("invalid authorization request")
@@ -130,7 +130,7 @@ func TestGLBOwnerWiringPublishesOnlyAfterBoundLeaseAndFinalConsumption(t *testin
 					w.WriteHeader(400)
 					return
 				}
-				scope, err := commonExecution.NewManagerModel3DReadScope(raw, header.OwnerTask.ID, header.OwnerTask.Version, header.EngineVersion, header.Composition)
+				scope, err := commonExecution.NewManagerFileReadScope(raw, header.OwnerTask.ID, header.OwnerTask.Version, header.EngineVersion, header.Composition)
 				if err != nil {
 					t.Error(err)
 					w.WriteHeader(400)
@@ -142,7 +142,7 @@ func TestGLBOwnerWiringPublishesOnlyAfterBoundLeaseAndFinalConsumption(t *testin
 						t.Error("issue used machine instead of current User")
 					}
 					w.WriteHeader(201)
-					_ = json.NewEncoder(w).Encode(commonClient.IssuedManagerModel3DAuthorization{ID: "51", ExecutionID: request.ExecutionID, TenantID: "7", Audience: "manager", SourceReadScope: *scope, ExpiresAt: time.Now().Add(30 * time.Minute)})
+					_ = json.NewEncoder(w).Encode(commonClient.IssuedManagerFileAuthorization{ID: "51", ExecutionID: request.ExecutionID, TenantID: "7", Audience: "manager", SourceReadScope: *scope, ExpiresAt: time.Now().Add(30 * time.Minute)})
 					return
 				}
 				consumeCalls.Add(1)
@@ -156,7 +156,7 @@ func TestGLBOwnerWiringPublishesOnlyAfterBoundLeaseAndFinalConsumption(t *testin
 					w.WriteHeader(403)
 					return
 				}
-				_ = json.NewEncoder(w).Encode(commonClient.ManagerModel3DAccessObservation{ObservedAt: time.Now().UTC(), Engine: engine})
+				_ = json.NewEncoder(w).Encode(commonClient.ManagerFileAccessObservation{ObservedAt: time.Now().UTC(), Engine: engine})
 			}))
 			t.Cleanup(server.Close)
 			svc.SetSourceAuthorizationClients(glbMetaDetailFixture{item}, commonClient.NewSystemExecutionAuthorizationClient(server.URL, server.Client()), commonClient.NewSystemServiceClient(server.URL, &profileServiceTokenForTest{}, server.Client()))
@@ -194,7 +194,7 @@ func TestGLBOwnerWiringPublishesOnlyAfterBoundLeaseAndFinalConsumption(t *testin
 			}
 			rawInput, _ := json.Marshal(result.Metadata["model3d_output_lifecycle"])
 			var inputState struct {
-				Inputs []repository.Model3DGLBInputPreparation `json:"input_preparations"`
+				Inputs []repository.FileInputPreparation `json:"input_preparations"`
 			}
 			if json.Unmarshal(rawInput, &inputState) != nil || len(inputState.Inputs) != 1 || !inputState.Inputs[0].Cleaned || inputState.Inputs[0].ExecutionID != id {
 				t.Fatal("publication/denial lost exact cleaned input manifest")

@@ -41,7 +41,7 @@ func model3DTestRaw(t *testing.T, options string) json.RawMessage {
 func TestManagerModel3DScopeBindsWholeRawConfigAndExactVersions(t *testing.T) {
 	composition := model3DTestComposition(t)
 	raw := model3DTestRaw(t, `{"precision":9007199254740993}`)
-	scope, err := NewManagerModel3DReadScope(raw, "10", "7", "5", composition)
+	scope, err := NewManagerFileReadScope(raw, "10", "7", "5", composition)
 	if err != nil || scope.Validate() != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestManagerModel3DScopeBindsWholeRawConfigAndExactVersions(t *testing.T) {
 	indented.WriteString(" \n")
 	indented.Write(raw)
 	indented.WriteString(" \n")
-	formatted, err := NewManagerModel3DReadScope(json.RawMessage(indented.String()), "10", "7", "5", composition)
+	formatted, err := NewManagerFileReadScope(json.RawMessage(indented.String()), "10", "7", "5", composition)
 	if err != nil || !reflect.DeepEqual(scope, formatted) {
 		t.Fatal("whitespace changed scope", err)
 	}
@@ -58,7 +58,7 @@ func TestManagerModel3DScopeBindsWholeRawConfigAndExactVersions(t *testing.T) {
 		json.RawMessage(strings.Replace(string(raw), "model.glb", "other.glb", 1)),
 		json.RawMessage(strings.Replace(string(raw), `"item_locator":"models/scene.3DS"`, `"item_locator":"models/changed.3DS"`, 1)),
 	} {
-		other, err := NewManagerModel3DReadScope(changed, "10", "7", "5", composition)
+		other, err := NewManagerFileReadScope(changed, "10", "7", "5", composition)
 		if err != nil || other.ConfigDigest == scope.ConfigDigest {
 			t.Fatal("conversion change was not bound", err)
 		}
@@ -84,29 +84,29 @@ func TestManagerModel3DScopeRejectsMismatchedAndAmbiguousFrozenWrapper(t *testin
 		strings.Replace(string(raw), `"owner_task":`, `"owner_task":{},"owner_task":`, 1),
 		strings.Repeat(" ", 512<<10) + string(raw),
 	} {
-		if scope, err := NewManagerModel3DReadScope(json.RawMessage(bad), "10", "7", "5", model3DTestComposition(t)); err == nil || scope != nil {
+		if scope, err := NewManagerFileReadScope(json.RawMessage(bad), "10", "7", "5", model3DTestComposition(t)); err == nil || scope != nil {
 			t.Fatal("invalid frozen wrapper accepted")
 		}
 	}
 	for _, ids := range [][3]string{{"010", "7", "5"}, {"10", "0", "5"}, {"10", "7", "-1"}} {
-		if _, err := NewManagerModel3DReadScope(raw, ids[0], ids[1], ids[2], model3DTestComposition(t)); err == nil {
+		if _, err := NewManagerFileReadScope(raw, ids[0], ids[1], ids[2], model3DTestComposition(t)); err == nil {
 			t.Fatal("invalid identity accepted")
 		}
 	}
 	changed := model3DTestComposition(t)
 	changed.Refs[0].Role = "different"
-	if _, err := NewManagerModel3DReadScope(raw, "10", "7", "5", changed); err == nil {
+	if _, err := NewManagerFileReadScope(raw, "10", "7", "5", changed); err == nil {
 		t.Fatal("different composition accepted")
 	}
 }
 
 func TestManagerModel3DScopeStrictWireAndUnsupportedVariants(t *testing.T) {
-	scope, err := NewManagerModel3DReadScope(model3DTestRaw(t, `{}`), "10", "7", "5", model3DTestComposition(t))
+	scope, err := NewManagerFileReadScope(model3DTestRaw(t, `{}`), "10", "7", "5", model3DTestComposition(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(scope)
-	var decoded ManagerModel3DReadScope
+	var decoded ManagerFileReadScope
 	if err := json.Unmarshal(raw, &decoded); err != nil || !reflect.DeepEqual(scope, &decoded) {
 		t.Fatal(err)
 	}
@@ -121,10 +121,10 @@ func TestManagerModel3DScopeStrictWireAndUnsupportedVariants(t *testing.T) {
 			t.Fatal("invalid scope wire accepted")
 		}
 	}
-	for _, mutate := range []func(*ManagerModel3DReadScope){
-		func(s *ManagerModel3DReadScope) { s.ConfigDigest = strings.Repeat("A", 64) },
-		func(s *ManagerModel3DReadScope) { s.FileComposition.Refs = nil },
-		func(s *ManagerModel3DReadScope) { s.OwnerTaskVersion = "0" },
+	for _, mutate := range []func(*ManagerFileReadScope){
+		func(s *ManagerFileReadScope) { s.ConfigDigest = strings.Repeat("A", 64) },
+		func(s *ManagerFileReadScope) { s.FileComposition.Refs = nil },
+		func(s *ManagerFileReadScope) { s.OwnerTaskVersion = "0" },
 	} {
 		bad := scope.Clone()
 		mutate(bad)
@@ -137,7 +137,7 @@ func TestManagerModel3DScopeStrictWireAndUnsupportedVariants(t *testing.T) {
 func TestManagerModel3DScopeRejectsReplacedFTPConfigVersion(t *testing.T) {
 	raw := model3DTestRaw(t, `{}`)
 	raw = json.RawMessage(strings.Replace(string(raw), ManagerModel3DConfigVersion, "model3d-glb-ftp-config/v1", 1))
-	if scope, err := NewManagerModel3DReadScope(raw, "10", "7", "5", model3DTestComposition(t)); err == nil || scope != nil {
+	if scope, err := NewManagerFileReadScope(raw, "10", "7", "5", model3DTestComposition(t)); err == nil || scope != nil {
 		t.Fatal("legacy frozen configuration accepted")
 	}
 }
@@ -158,7 +158,7 @@ func TestManagerModel3DObjectAdmissionPreservesCatalogAndFormat(t *testing.T) {
 				if ManagerModel3DSourceComposition(kind, composition) != want {
 					t.Fatalf("wrong admission %s/%s/%s", kind, term, format)
 				}
-				scope := &ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
+				scope := &ManagerFileReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
 				if (scope.Validate() == nil) != (format != "glb") {
 					t.Fatalf("wrong scope shape %s/%s", term, format)
 				}
@@ -180,7 +180,7 @@ func TestSTLModelScopeRequiresOneNativePrimaryForEveryAdmittedEngine(t *testing.
 		if err != nil || !ManagerModel3DSourceComposition(kind, composition) {
 			t.Fatal(err)
 		}
-		scope := &ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
+		scope := &ManagerFileReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
 		if scope.Validate() != nil {
 			t.Fatal("single STL scope rejected")
 		}
@@ -207,7 +207,7 @@ func TestFBXModelScopeRequiresOneNativePrimaryForEveryAdmittedEngine(t *testing.
 		if err != nil || !ManagerModel3DSourceComposition(kind, composition) {
 			t.Fatal(err)
 		}
-		scope := &ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
+		scope := &ManagerFileReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
 		if scope.Validate() != nil {
 			t.Fatal("single FBX scope rejected")
 		}
@@ -239,7 +239,7 @@ func TestGLBReadCompositionCannotAcquireConversionScope(t *testing.T) {
 		if err != nil || !ManagerModel3DSourceComposition(kind, composition) || ManagerModel3DConversionFormat("glb") {
 			t.Fatal("GLB read admission", err)
 		}
-		scope := &ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
+		scope := &ManagerFileReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
 		if scope.Validate() == nil {
 			t.Fatal("direct GLB acquired conversion scope")
 		}
@@ -249,7 +249,7 @@ func TestGLBReadCompositionCannotAcquireConversionScope(t *testing.T) {
 		}
 		config["source_composition"] = composition
 		raw, _ := json.Marshal(config)
-		if got, err := NewManagerModel3DReadScope(raw, "10", "7", "5", composition); err == nil || got != nil {
+		if got, err := NewManagerFileReadScope(raw, "10", "7", "5", composition); err == nil || got != nil {
 			t.Fatal("GLB frozen conversion wrapper accepted")
 		}
 		composition.Refs[0].Role = "texture"

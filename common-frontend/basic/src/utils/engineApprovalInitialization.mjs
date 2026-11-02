@@ -53,12 +53,12 @@ function wholeScopeRoot(scope) {
 // independently rereads Meta and computes the approved boundary on submission.
 function fileCompositionPrimary(composition) {
   if (!composition || Object.keys(composition).sort().join(',') !== 'format,refs' ||
-      !['ifc', '3ds', 'dae', 'obj', 'stl', 'glb', 'gltf', 'fbx'].includes(composition.format) || !Array.isArray(composition.refs) ||
+      !['ifc', '3ds', 'dae', 'obj', 'stl', 'glb', 'gltf', 'fbx', 'envi'].includes(composition.format) || !Array.isArray(composition.refs) ||
       !composition.refs.length || composition.refs.length > 200 || new TextEncoder().encode(JSON.stringify(composition)).length > 65536) return boundaryError()
   const seen = new Set(), gltfRoles = new Set(), primary = composition.refs.filter(ref => ref.primary === true)
-  if (primary.length !== 1 || primary[0].required !== true || primary[0].role !== (composition.format === 'gltf' ? 'manifest' : 'model')) return boundaryError()
+  if (primary.length !== 1 || primary[0].required !== true || primary[0].role !== (composition.format === 'envi' ? 'raster' : composition.format === 'gltf' ? 'manifest' : 'model')) return boundaryError()
   const target = primary[0].target
-  if (!modelPath(target) || !target.segments.at(-1).name.toLowerCase().endsWith(`.${composition.format}`)) return boundaryError()
+  if (!modelPath(target) || (composition.format === 'envi' ? target.segments.at(-1).name.toLowerCase().endsWith('.hdr') : !target.segments.at(-1).name.toLowerCase().endsWith(`.${composition.format}`))) return boundaryError()
   if (['ifc', 'stl', 'glb', 'fbx'].includes(composition.format) && composition.refs.length !== 1) return boundaryError()
   const parent = target.segments.slice(0, -1)
   for (const ref of composition.refs) {
@@ -66,6 +66,8 @@ function fileCompositionPrimary(composition) {
         typeof ref.primary !== 'boolean' || !/^[a-z0-9_]{1,64}$/.test(ref.role) || !modelPath(ref.target) ||
         ref.target.segments.at(-1).term !== target.segments.at(-1).term || String(ref.target.engine_id) !== String(target.engine_id) || ref.target.segments.length <= parent.length ||
         !parent.every((part, index) => ['term', 'kind', 'name'].every(key => part[key] === ref.target.segments[index]?.[key]))) return boundaryError()
+    if (composition.format === 'envi' && (composition.refs.length !== 2 || !ref.required || ref.target.segments.length !== target.segments.length ||
+      (ref.primary ? ref.role !== 'raster' : ref.role !== 'header' || !ref.target.segments.at(-1).name.toLowerCase().endsWith('.hdr')))) return boundaryError()
     if (composition.format === 'gltf' && (!ref.required || gltfRoles.has(ref.role) || (!ref.primary && !/^(buffer|image)(_[1-9][0-9]*)?$/.test(ref.role)))) return boundaryError()
     gltfRoles.add(ref.role)
     const key = JSON.stringify(ref.target.segments.map(({ term, kind, name }) => [term, kind, name]))
@@ -102,7 +104,7 @@ export async function readNativeApprovalFacts(target, readFacts) {
     if (facts.boundary !== null || facts.boundary_hash !== null) throw new Error('invalidDataItemBoundary')
     return Object.freeze({ state: facts.basis_state, binding: null })
   }
-  if (file && (String(facts.engine_id) !== target.engine_id || facts.item_type !== target.segments.at(-1).term || facts.boundary?.layout !== (facts.boundary?.file_composition?.format === 'gltf' ? 'multi' : 'single') ||
+  if (file && (String(facts.engine_id) !== target.engine_id || facts.item_type !== target.segments.at(-1).term || facts.boundary?.layout !== (['gltf', 'envi'].includes(facts.boundary?.file_composition?.format) ? 'multi' : 'single') ||
       facts.boundary?.native_target !== undefined)) throw new Error('invalidDataItemBoundary')
   if (whole && (String(facts.engine_id) !== target.engine_id || facts.item_type !== 'file' || facts.full_name !== name || facts.boundary?.layout !== 'whole' || facts.boundary?.native_target !== undefined || facts.boundary?.file_composition !== undefined)) throw new Error('invalidDataItemBoundary')
   const binding = { item_fingerprint: facts.item_fingerprint, boundary_hash: facts.boundary_hash,

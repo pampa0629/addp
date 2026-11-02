@@ -86,7 +86,7 @@ func TestGLBProducerBindsOnlySystemScopeForExactPendingConfig(t *testing.T) {
 					w.WriteHeader(500)
 					return
 				}
-				scope, err := commonExecution.NewManagerModel3DReadScope(raw, header.OwnerTask.ID, header.OwnerTask.Version, header.EngineVersion, header.Composition)
+				scope, err := commonExecution.NewManagerFileReadScope(raw, header.OwnerTask.ID, header.OwnerTask.Version, header.EngineVersion, header.Composition)
 				if err != nil {
 					t.Error(err)
 					w.WriteHeader(500)
@@ -120,7 +120,7 @@ func TestGLBProducerBindsOnlySystemScopeForExactPendingConfig(t *testing.T) {
 					}
 				}
 				w.WriteHeader(http.StatusCreated)
-				_ = json.NewEncoder(w).Encode(commonClient.IssuedManagerModel3DAuthorization{ID: "51", ExecutionID: executionID, TenantID: "7", Audience: "manager", SourceReadScope: *scope, ExpiresAt: originalExpiry})
+				_ = json.NewEncoder(w).Encode(commonClient.IssuedManagerFileAuthorization{ID: "51", ExecutionID: executionID, TenantID: "7", Audience: "manager", SourceReadScope: *scope, ExpiresAt: originalExpiry})
 			}))
 			t.Cleanup(server.Close)
 			svc.SetSourceAuthorizationClients(glbMetaDetailFixture{item}, commonClient.NewSystemExecutionAuthorizationClient(server.URL, server.Client()), commonClient.NewSystemServiceClient(server.URL, &profileServiceTokenForTest{}, server.Client()))

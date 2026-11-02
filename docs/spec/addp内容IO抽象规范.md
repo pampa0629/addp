@@ -226,6 +226,12 @@ Transfer 读取 whole scope table 时，必须从已确认 scope ref 构造 `con
 
 当格式依赖不能嵌入业务 Backend、必须由受控 Workflow Runtime 承载时，`RuntimeContainerInfoProviderFactory` 与 `RuntimeScopeTableProviderFactory` 是唯一例外入口。调用方仍从已确认 locator 和 Engine Instance 出发，但通过 `common/engine/workflowaccess` 派生执行期 `addp.workflow.access-plan/v1`，再绑定为具体 `BoundContainerInfoProvider`、`ScopeTableReaderProvider` 或 `ScopeTableWriterProvider`。Runtime container info 只返回父容器的轻量 child 索引和格式私有摘要，不能展开所有 child 的完整字段或样本。Runtime 不解析 ADDP locator，FormatPlugin 不读取 System，也不保存 engine id、Runtime URL 或存储凭据。普通进程内格式继续使用 contentio；不得为同一格式同时保留 contentio 解码和本地 CLI 解码两条主路径。
 
+### Runtime 精确相关文件
+
+ENVI 首期仍通过执行期 `RuntimeMediaInfoProviderFactory` / `BoundMediaInfoProvider` 与 GeoPython 读取，不把 GDAL 加入业务 Backend。`addp.workflow.access-plan/v1` 的 `source.kind=file` 表示主入口，其 `source.related_files` 逐项表达该主入口必需的已确认文件；每项仅含 `role` 与精确 `access`，不含目录枚举范围。首期只准 `source.format=envi` 的一个 `header`，与主数据位于同一真实父目录或同桶同 prefix，沿同一连接访问。其他格式和 target 不接受这一字段，ENVI 缺少头文件也不回退成单文件或目录读取。
+
+Runtime 在私有目录中按真实名称暂存精确主数据和头文件，不接触源目录中的 `.sta`、PAM、overview 或其他 sibling。暂存必须有界；首期头文件最多 1 MiB，主数据最多 512 MiB（调用方预算更小时取更小值）。失败撤回本次暂存文件，不能删除调用方其他文件。访问计划只是执行期 I/O 参数，不是 Grant、EA 或当前裁决，不能替代 Meta 组成事实和 System 授权。
+
 ### engine-native
 
 ```text

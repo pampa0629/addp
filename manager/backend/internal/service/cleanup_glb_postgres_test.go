@@ -120,8 +120,8 @@ func TestIntegrationPostgresManagerGLBCleanupLifecycle(t *testing.T) {
 			if _, err := repo.PrepareExecutionOutput(ctx, &row, ref); err != nil {
 				t.Fatal(err)
 			}
-			prep := repository.Model3DGLBInputPreparation{ExecutionID: item.ExecutionID, Attempt: lease.Attempt, PreparationID: uuid.NewString()}
-			prep.Objects = []repository.Model3DGLBInputObject{{Bucket: "manager", Object: fmt.Sprintf("temp/model3d-input/tenant_7/%s/attempt_%d/%s/input.ifc", item.ExecutionID, lease.Attempt, prep.PreparationID)}}
+			prep := repository.FileInputPreparation{ExecutionID: item.ExecutionID, Attempt: lease.Attempt, PreparationID: uuid.NewString()}
+			prep.Objects = []repository.FileInputObject{{Bucket: "manager", Object: fmt.Sprintf("temp/model3d-input/tenant_7/%s/attempt_%d/%s/input.ifc", item.ExecutionID, lease.Attempt, prep.PreparationID)}}
 			if err := repo.PrepareExecutionInputs(ctx, row.ID, prep); err != nil {
 				t.Fatal(err)
 			}
@@ -299,7 +299,7 @@ func TestIntegrationPostgresManagerGLBCleanupLifecycle(t *testing.T) {
 				t.Fatal("cleaned audit manifest was lost or corrupted", err)
 			}
 			var audit struct {
-				Inputs []repository.Model3DGLBInputPreparation `json:"input_preparations"`
+				Inputs []repository.FileInputPreparation `json:"input_preparations"`
 			}
 			raw, err := json.Marshal(final.Metadata["model3d_output_lifecycle"])
 			if err != nil || json.Unmarshal(raw, &audit) != nil || len(audit.Inputs) != 1 || audit.Inputs[0].PreparationID != prep.PreparationID || !audit.Inputs[0].Cleaned || len(audit.Inputs[0].Objects) != 1 || audit.Inputs[0].Objects[0] != prep.Objects[0] {

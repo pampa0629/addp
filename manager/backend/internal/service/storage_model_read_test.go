@@ -17,9 +17,9 @@ import (
 	"github.com/addp/manager/internal/models"
 )
 
-type storageModelCheck func(context.Context, string, commonClient.ManagerModel3DExpectedSource) error
+type storageModelCheck func(context.Context, string, commonClient.ManagerFileExpectedSource) error
 
-func (f storageModelCheck) CheckManagerModel3DRead(ctx context.Context, token string, expected commonClient.ManagerModel3DExpectedSource) error {
+func (f storageModelCheck) CheckManagerFileRead(ctx context.Context, token string, expected commonClient.ManagerFileExpectedSource) error {
 	return f(ctx, token, expected)
 }
 
@@ -83,7 +83,7 @@ func TestModelRawReadCurrentCredentialAndRulesBeforeSourceIO(t *testing.T) {
 			t.Run(map[bool]string{false: "file", true: "object"}[object]+"/"+scenario, func(t *testing.T) {
 				svc, target, provider, tenant, plan := storageModelFixture(t, object)
 				calls := 0
-				svc.SetModelSourceReadChecker(storageModelCheck(func(_ context.Context, token string, expected commonClient.ManagerModel3DExpectedSource) error {
+				svc.SetFileSourceReadChecker(storageModelCheck(func(_ context.Context, token string, expected commonClient.ManagerFileExpectedSource) error {
 					calls++
 					if token != "addp_at_current_user" || expected.EngineVersion != "7" || expected.FileComposition.Format != "ifc" || len(expected.FileComposition.Refs) != 1 || expected.FileComposition.Refs[0].Target.StringPath() != target.StorageRef {
 						t.Fatal("lost exact request identity or expected source")
@@ -140,7 +140,7 @@ func TestModelRawReadCurrentCredentialAndRulesBeforeSourceIO(t *testing.T) {
 
 func TestModelRawReadCannotSubstituteAnotherConstituent(t *testing.T) {
 	svc, target, provider, tenant, _ := storageModelFixture(t, false)
-	svc.SetModelSourceReadChecker(storageModelCheck(func(context.Context, string, commonClient.ManagerModel3DExpectedSource) error {
+	svc.SetFileSourceReadChecker(storageModelCheck(func(context.Context, string, commonClient.ManagerFileExpectedSource) error {
 		t.Fatal("out-of-composition ref reached System")
 		return nil
 	}))
@@ -154,8 +154,8 @@ func TestModelRawReadCannotSubstituteAnotherConstituent(t *testing.T) {
 func TestModelRawReadRechecksEveryRangeRequest(t *testing.T) {
 	svc, target, _, tenant, _ := storageModelFixture(t, false)
 	denied := false
-	var scopes []commonClient.ManagerModel3DExpectedSource
-	svc.SetModelSourceReadChecker(storageModelCheck(func(_ context.Context, _ string, expected commonClient.ManagerModel3DExpectedSource) error {
+	var scopes []commonClient.ManagerFileExpectedSource
+	svc.SetFileSourceReadChecker(storageModelCheck(func(_ context.Context, _ string, expected commonClient.ManagerFileExpectedSource) error {
 		scopes = append(scopes, expected)
 		if denied {
 			return commonClient.ErrManagerPreviewReadDenied

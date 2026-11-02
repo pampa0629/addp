@@ -2425,8 +2425,8 @@ def required_environment() -> dict[str, str]:
 
 def manager_case(environment):
     case = environment.get("ADDP_ONLINE_MANAGER_CASE", "full")
-    if case not in ("full", "native-raster-media", "native-table-orc", "native-netcdf", "kml-export", "filegdb-authorization"):
-        raise SuiteError("ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-netcdf, kml-export or filegdb-authorization")
+    if case not in ("full", "native-raster-media", "native-table-orc", "native-netcdf", "native-envi", "kml-export", "filegdb-authorization"):
+        raise SuiteError("ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-netcdf, native-envi, kml-export or filegdb-authorization")
     return case
 
 
@@ -2498,6 +2498,11 @@ def main() -> int:
             report = importlib.import_module('scripts.test.manager-filegdb-online').run(
                 Path(__file__).resolve().parents[2], dict(os.environ), sys.modules[__name__])
             print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+            return 0
+        if case == 'native-envi':
+            import importlib
+            report = importlib.import_module('scripts.test.manager-envi-online').run(Path(__file__).resolve().parents[2], dict(os.environ), sys.modules[__name__])
+            print(json.dumps(report, ensure_ascii=False))
             return 0
         if case == 'native-netcdf':
             import importlib

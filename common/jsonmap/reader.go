@@ -1,7 +1,9 @@
 package jsonmap
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -97,6 +99,12 @@ func InterfaceFloat64Slice(value interface{}) []float64 {
 		result := make([]float64, 0, len(values))
 		for _, raw := range values {
 			switch value := raw.(type) {
+			case json.Number:
+				parsed, err := value.Float64()
+				if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+					return nil
+				}
+				result = append(result, parsed)
 			case float64:
 				result = append(result, value)
 			case float32:
@@ -138,6 +146,12 @@ func InterfaceString(value interface{}) string {
 
 func InterfaceInt64(value interface{}) int64 {
 	switch typed := value.(type) {
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return 0
+		}
+		return parsed
 	case int:
 		return int64(typed)
 	case int8:

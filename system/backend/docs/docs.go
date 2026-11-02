@@ -656,7 +656,7 @@ const docTemplate = `{
                 "tags": [
                     "执行授权 | Execution Authorization"
                 ],
-                "summary": "签发 Manager 精确组成模型 GLB 执行授权 | Issue Manager exact-composition model GLB execution authorization",
+                "summary": "签发 Manager 精确文件组成执行授权 | Issue Manager exact-file composition execution authorization",
                 "parameters": [
                     {
                         "description": "执行 UUID 与有效期秒数，默认900、最大3600；正文上限512 KiB，无query，拒绝未知或重复字段 | Execution UUID and TTL seconds, default 900, maximum 3600; 512 KiB body limit, no query, unknown or duplicate fields",
@@ -664,7 +664,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/client.IssueManagerModel3DAuthorizationRequest"
+                            "$ref": "#/definitions/client.IssueManagerFileAuthorizationRequest"
                         }
                     }
                 ],
@@ -672,7 +672,7 @@ const docTemplate = `{
                     "201": {
                         "description": "固定完整配置和文件组成范围 | Frozen complete configuration and file composition scope",
                         "schema": {
-                            "$ref": "#/definitions/client.IssuedManagerModel3DAuthorization"
+                            "$ref": "#/definitions/client.IssuedManagerFileAuthorization"
                         }
                     },
                     "400": {
@@ -795,6 +795,86 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "manager.data_profile.execute",
+                    "manager.data_item.read"
+                ]
+            }
+        },
+        "/auth/execution-authorizations/manager-raster-cog": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅当前普通第一方或 OAuth API User，按精确 pending execution 反查任务版本、完整配置和 Meta 文件组成，并核现行源规则。不接受自报身份或来源，不返回连接或凭据 | Current ordinary first-party or OAuth API User only. Resolve task version, complete configuration and Meta file composition from the exact pending execution and check current source rules. No caller-supplied identity or source, connections or credentials",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "签发 Manager 精确文件组成执行授权 | Issue Manager exact-file composition execution authorization",
+                "parameters": [
+                    {
+                        "description": "执行 UUID 与有效期秒数，默认900、最大3600；正文上限512 KiB，无query，拒绝未知或重复字段 | Execution UUID and TTL seconds, default 900, maximum 3600; 512 KiB body limit, no query, unknown or duplicate fields",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.IssueManagerFileAuthorizationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "固定完整配置和文件组成范围 | Frozen complete configuration and file composition scope",
+                        "schema": {
+                            "$ref": "#/definitions/client.IssuedManagerFileAuthorization"
+                        }
+                    },
+                    "400": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create",
                     "manager.data_item.read"
                 ]
             }
@@ -4442,7 +4522,7 @@ const docTemplate = `{
                 "tags": [
                     "执行授权 | Execution Authorization"
                 ],
-                "summary": "复核 Manager 精确组成模型执行的当前完整来源权限 | Recheck current complete source permissions for Manager exact-composition model execution",
+                "summary": "复核 Manager 精确文件执行的当前完整来源权限 | Recheck current complete source permissions for Manager exact-file execution",
                 "parameters": [
                     {
                         "type": "string",
@@ -4457,7 +4537,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/client.ManagerModel3DAccessRequest"
+                            "$ref": "#/definitions/client.ManagerFileAccessRequest"
                         }
                     }
                 ],
@@ -4465,7 +4545,7 @@ const docTemplate = `{
                     "200": {
                         "description": "不可缓存的同次来源观察与连接 | Non-cacheable same-decision source observation and connection",
                         "schema": {
-                            "$ref": "#/definitions/client.ManagerModel3DAccessObservation"
+                            "$ref": "#/definitions/client.ManagerFileAccessObservation"
                         }
                     },
                     "400": {
@@ -4552,6 +4632,92 @@ const docTemplate = `{
                         "description": "不可缓存的当次观察 | Non-cacheable current observation",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMManagerProfileAccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
+        "/execution-authorizations/{id}/manager-raster-cog-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 addp-manager Tenant Service 与机器执行 Permission；核验真实 running attempt、租约、配置、任务和引擎版本、完整模型组成及现行源规则。返回当次同快照 FTP/NFS/MinIO 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service with machine execution permission. Verify the actual running attempt, lease, configuration, task and engine versions, complete model composition and current source rules. Return the same-snapshot FTP/NFS/MinIO connection for this guarded source I/O only; never cache or persist",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "复核 Manager 精确文件执行的当前完整来源权限 | Recheck current complete source permissions for Manager exact-file execution",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规范正整数授权ID | Canonical positive authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "精确执行租约与相同来源范围；正文上限512 KiB，无query，拒绝未知或重复字段 | Exact execution lease and identical source scope; 512 KiB body limit, no query, unknown or duplicate fields",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.ManagerFileAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "不可缓存的同次来源观察与连接 | Non-cacheable same-decision source observation and connection",
+                        "schema": {
+                            "$ref": "#/definitions/client.ManagerFileAccessObservation"
                         }
                     },
                     "400": {
@@ -16525,7 +16691,7 @@ const docTemplate = `{
                 }
             }
         },
-        "client.IssueManagerModel3DAuthorizationRequest": {
+        "client.IssueManagerFileAuthorizationRequest": {
             "type": "object",
             "properties": {
                 "execution_id": {
@@ -16536,7 +16702,7 @@ const docTemplate = `{
                 }
             }
         },
-        "client.IssuedManagerModel3DAuthorization": {
+        "client.IssuedManagerFileAuthorization": {
             "type": "object",
             "properties": {
                 "audience": {
@@ -16552,14 +16718,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "source_read_scope": {
-                    "$ref": "#/definitions/execution.ManagerModel3DReadScope"
+                    "$ref": "#/definitions/execution.ManagerFileReadScope"
                 },
                 "tenant_id": {
                     "type": "string"
                 }
             }
         },
-        "client.ManagerModel3DAccessObservation": {
+        "client.ManagerFileAccessObservation": {
             "type": "object",
             "properties": {
                 "engine": {
@@ -16570,7 +16736,7 @@ const docTemplate = `{
                 }
             }
         },
-        "client.ManagerModel3DAccessRequest": {
+        "client.ManagerFileAccessRequest": {
             "type": "object",
             "properties": {
                 "attempt": {
@@ -16583,11 +16749,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "source_read_scope": {
-                    "$ref": "#/definitions/execution.ManagerModel3DReadScope"
+                    "$ref": "#/definitions/execution.ManagerFileReadScope"
                 }
             }
         },
-        "client.ManagerModel3DExpectedSource": {
+        "client.ManagerFileExpectedSource": {
             "type": "object",
             "properties": {
                 "engine_version": {
@@ -17192,7 +17358,7 @@ const docTemplate = `{
                 }
             }
         },
-        "execution.ManagerModel3DReadScope": {
+        "execution.ManagerFileReadScope": {
             "type": "object",
             "properties": {
                 "config_digest": {
@@ -17925,7 +18091,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "expected_source": {
-                    "$ref": "#/definitions/client.ManagerModel3DExpectedSource"
+                    "$ref": "#/definitions/client.ManagerFileExpectedSource"
                 },
                 "targets": {
                     "type": "array",

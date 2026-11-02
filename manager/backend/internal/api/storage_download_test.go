@@ -76,7 +76,7 @@ func TestDownloadFileModelCompositionPreservesExactBytes(t *testing.T) {
 					t.Fatal(err)
 				}
 				metadata := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, engineType), apiDownloadTestMetaItemClient(t, string(item)), nil, nil)
-				metadata.SetModelSourceReadChecker(apiModelReadChecker(func(context.Context, string, client.ManagerModel3DExpectedSource) error { return nil }))
+				metadata.SetFileSourceReadChecker(apiModelReadChecker(func(context.Context, string, client.ManagerFileExpectedSource) error { return nil }))
 				handler := NewDownloadHandler(metadata, apiDownloadProtectionGate{})
 				router := gin.New()
 				router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
@@ -525,9 +525,9 @@ func TestDownloadFileRejectsMalformedRawCompositionWithLocalizedError(t *testing
 	}
 }
 
-type apiModelReadChecker func(context.Context, string, client.ManagerModel3DExpectedSource) error
+type apiModelReadChecker func(context.Context, string, client.ManagerFileExpectedSource) error
 
-func (f apiModelReadChecker) CheckManagerModel3DRead(ctx context.Context, credential string, scope client.ManagerModel3DExpectedSource) error {
+func (f apiModelReadChecker) CheckManagerFileRead(ctx context.Context, credential string, scope client.ManagerFileExpectedSource) error {
 	return f(ctx, credential, scope)
 }
 func apiDownloadModelNative(format string) map[string]interface{} {

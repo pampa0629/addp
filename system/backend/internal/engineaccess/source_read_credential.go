@@ -75,11 +75,11 @@ func (r *Repository) observeSourceRules(ctx context.Context, credential, action 
 				return err
 			}
 			for _, binding := range bindings {
-				if !commonexecution.ManagerModel3DSourceComposition(engine.EngineType, binding.FileComposition) {
+				if !commonexecution.ManagerFileSourceComposition(engine.EngineType, binding.FileComposition) {
 					return commonapi.ErrForbidden
 				}
 			}
-			if !commonexecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.LifecycleState != "active" || engine.Version != expectedEngine.Version || engine.DeletedAt != nil {
+			if !commonexecution.ManagerFileSourceEngineType(engine.EngineType) || engine.LifecycleState != "active" || engine.Version != expectedEngine.Version || engine.DeletedAt != nil {
 				return commonapi.ErrForbidden
 			}
 		}

@@ -43,7 +43,7 @@ func TestGLBFTPFreezesOwnerEngineCompositionAndIsolatedOutputWithoutRounding(t *
 		"additional_conversion_property": json.Number("9007199254740995"),
 	}
 	raw, _ := json.Marshal(core)
-	snapshot := &repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: raw}
+	snapshot := &repository.FileTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: raw}
 	tenant := uint(7)
 	engine := &commonModels.Engine{ID: 33, TenantID: &tenant, EngineType: "ftp", Version: 5}
 	executionID := uuid.NewString()

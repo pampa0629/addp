@@ -54,7 +54,7 @@ func readOBJMaterialLibraries(ctx context.Context, input DirectoryResolveInput, 
 			return nil, fmt.Errorf("OBJ material library missing or over budget")
 		}
 		materialBytes += material.Size
-		reader, err := modelStructureReaderAt(ctx, input, material)
+		reader, err := fileStructureReaderAt(ctx, input, material)
 		if err != nil {
 			return nil, err
 		}

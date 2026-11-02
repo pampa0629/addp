@@ -336,7 +336,11 @@ func TestRasterCOGExecutionLifecycleIsAtomic(t *testing.T) {
 		"manager-raster-cog-atomic-1", 12, commonExecution.TaskTypeRasterCOGGeneration, createdAt,
 	)
 
-	claimed, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec, false)
+	snapshot, snapshotErr := repo.TaskConfigSnapshot(context.Background(), task.ID, task.TenantID)
+	if snapshotErr != nil {
+		t.Fatal(snapshotErr)
+	}
+	claimed, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec, false, snapshot)
 	if err != nil {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
@@ -355,7 +359,7 @@ func TestRasterCOGExecutionLifecycleIsAtomic(t *testing.T) {
 	duplicate := newManagerRepositoryTestExecution(
 		"manager-raster-cog-atomic-duplicate", 12, commonExecution.TaskTypeRasterCOGGeneration, createdAt,
 	)
-	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, duplicate, false); !errors.Is(err, commonAPI.ErrConflict) {
+	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, duplicate, false, snapshot); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("duplicate ClaimExecution error = %v, want conflict", err)
 	}
 

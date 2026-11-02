@@ -22,8 +22,8 @@ func TestManagerSourceScopeClosedPurposes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	model := &execution.ManagerModel3DReadScope{ConfigDigest: strings.Repeat("b", 64), OwnerTaskID: "1", OwnerTaskVersion: "2", EngineVersion: "3", FileComposition: *composition}
-	for _, candidate := range []*ManagerSourceReadScope{NewManagerProfileSourceScope(profile), NewManagerModel3DSourceScope(model)} {
+	model := &execution.ManagerFileReadScope{ConfigDigest: strings.Repeat("b", 64), OwnerTaskID: "1", OwnerTaskVersion: "2", EngineVersion: "3", FileComposition: *composition}
+	for _, candidate := range []*ManagerSourceReadScope{NewManagerProfileSourceScope(profile), NewManagerFileSourceScope(model)} {
 		raw, err := json.Marshal(candidate)
 		if err != nil {
 			t.Fatal(err)
@@ -48,7 +48,7 @@ func TestManagerSourceScopeClosedPurposes(t *testing.T) {
 			}
 		}
 	}
-	if (&ManagerSourceReadScope{profile: profile, model3d: model}).Validate() == nil || NewManagerProfileSourceScope(profile).Model3D() != nil || NewManagerModel3DSourceScope(model).Profile() != nil {
+	if (&ManagerSourceReadScope{profile: profile, file: model}).Validate() == nil || NewManagerProfileSourceScope(profile).File() != nil || NewManagerFileSourceScope(model).Profile() != nil {
 		t.Fatal("cross-purpose source scope accepted")
 	}
 	expected, _ := json.Marshal(profile)
@@ -76,5 +76,22 @@ func TestManagerSourcePurposesDoNotExchangeFunctionPermissions(t *testing.T) {
 		if managerSourceUserCredential(&auth, purpose) {
 			t.Fatal("creation/execution alone became data read permission")
 		}
+	}
+}
+
+func TestRasterCOGAndModelPurposesCannotExchangeFileScope(t *testing.T) {
+	pair, err := authorizationfacts.NewFileCompositionBoundary("envi", []authorizationfacts.FileCompositionRef{
+		{Target: plugin.FileItemPath(7, "grid.img"), Role: "raster", Primary: true, Required: true},
+		{Target: plugin.FileItemPath(7, "grid.hdr"), Role: "header", Required: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(map[string]any{"config_version": execution.ManagerRasterCOGConfigVersion, "owner_task": map[string]string{"id": "1", "version": "2"}, "source_engine_version": "3", "source_composition": pair, "target": map[string]any{}, "raster": map[string]any{}, "cog": map[string]any{}, "result": map[string]any{}})
+	scope, err := managerSourceRasterCOG.scope(raw)
+	if err != nil || !managerSourceRasterCOG.matches(scope) || managerSourceModel3D.matches(scope) || managerSourceProfile.matches(scope) {
+		t.Fatal("purpose exchange", err)
+	}
+	if _, err := managerSourceModel3D.scope(raw); err == nil {
+		t.Fatal("raster config issued through model purpose")
 	}
 }

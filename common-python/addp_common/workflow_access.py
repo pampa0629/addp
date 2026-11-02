@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import mimetypes
 import os
+import posixpath
 import shutil
 import tempfile
 import uuid
@@ -79,11 +80,19 @@ def stage_source_file(plan: dict[str, Any], work_dir: Path, *, max_bytes: int | 
     if max_bytes is not None and (isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0):
         raise WorkflowAccessError("max_bytes must be a positive integer")
     source = _required_object(plan, "source")
+    _validate_resource(source, "source")
+    if source.get("format") == "envi":
+        return _stage_related_source(plan, work_dir, max_bytes=max_bytes)
+    return _stage_single_source_file(plan, work_dir, max_bytes=max_bytes)
+
+
+def _stage_single_source_file(plan: dict[str, Any], work_dir: Path, *, max_bytes: int | None) -> Path:
+    source = _required_object(plan, "source")
     if source.get("kind") != "file":
         raise WorkflowAccessError("access_plan.source.kind must be file")
     access = _required_object(source, "access")
     if access.get("method") == "mounted_path":
-        path = Path(_required_text(access, "path"))
+        path = Path(_source_storage_name(access, "path"))
         if not path.is_file():
             raise WorkflowAccessError(f"source file not found: {path}")
         if max_bytes is None:
@@ -120,6 +129,26 @@ def stage_source_file(plan: dict[str, Any], work_dir: Path, *, max_bytes: int | 
     except Exception as exc:
         raise WorkflowAccessError(f"download source object failed: {bucket}/{object_name}: {exc}") from exc
     return path
+
+
+def _stage_related_source(plan: dict[str, Any], work_dir: Path, *, max_bytes: int | None) -> Path:
+    source = plan["source"]
+    destination = work_dir / "source"
+    # Ownership is acquired atomically. Never reclaim an existing directory.
+    destination.mkdir(mode=0o700, parents=True, exist_ok=False)
+    try:
+        accesses = [source["related_files"][0]["access"], source["access"]]
+        result = None
+        for index, item in enumerate(accesses):
+            if item["method"] == "mounted_path" and Path(item["path"]).is_symlink():
+                raise WorkflowAccessError("ENVI source symbolic links are not supported")
+            budget = (1 << 20) if index == 0 else min(max_bytes or (512 << 20), 512 << 20)
+            single = {"source": {"kind": "file", "format": "envi", "access": item}}
+            result = _stage_single_source_file(single, work_dir, max_bytes=budget)
+        return result
+    except BaseException:
+        shutil.rmtree(destination)
+        raise
 
 
 def _copy_source_with_budget(stream, destination: Path, max_bytes: int) -> None:
@@ -314,6 +343,14 @@ def publish_target_directory(root: Path, plan: dict[str, Any], *, completion_mar
 
 
 def _validate_resource(resource: dict[str, Any], label: str) -> None:
+    _validate_single_resource(resource, label)
+    if label == "source":
+        _validate_related_source(resource)
+    elif "related_files" in resource:
+        raise WorkflowAccessError("related files are not supported for a target")
+
+
+def _validate_single_resource(resource: dict[str, Any], label: str) -> None:
     if resource.get("kind") not in {"file", "directory"}:
         raise WorkflowAccessError(f"access_plan.{label}.kind must be file or directory")
     if not _text(resource.get("format")):
@@ -328,6 +365,40 @@ def _validate_resource(resource: dict[str, Any], label: str) -> None:
     for key in ("endpoint", "access_key", "secret_key", "bucket"):
         _required_text(access, key)
     _required_text(access, "object" if resource.get("kind") == "file" else "prefix")
+
+
+def _validate_related_source(source: dict[str, Any]) -> None:
+    if source.get("format") != "envi":
+        if "related_files" in source:
+            raise WorkflowAccessError("related files are not admitted for this source format")
+        return
+    files = source.get("related_files")
+    if source.get("kind") != "file" or source.get("entrypoint", "") != "" or not isinstance(files, list) or len(files) != 1:
+        raise WorkflowAccessError("ENVI requires a file source and one exact header")
+    member = files[0]
+    if not isinstance(member, dict) or set(member) != {"role", "access"} or member.get("role") != "header":
+        raise WorkflowAccessError("ENVI requires one exact header")
+    header = _required_object(member, "access")
+    _validate_single_resource({"kind": "file", "format": "envi", "access": header}, "header")
+    main = source["access"]
+    method = main.get("method")
+    key = "path" if method == "mounted_path" else "object"
+    names = [_source_storage_name(item, key) for item in (main, header)]
+    for name in names:
+        if (len(name) > 4096 or "\\" in name or ":" in name or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in name)
+                or name == ".." or name.startswith("../") or posixpath.normpath(name) != name
+                or (method == "mounted_path") != posixpath.isabs(name)):
+            raise WorkflowAccessError("ENVI paths must be exact storage names")
+        try:
+            name.encode("utf-8", errors="strict")
+        except UnicodeError as exc:
+            raise WorkflowAccessError("ENVI paths must be valid UTF-8") from exc
+    main_connection = {k: v for k, v in main.items() if k != key}
+    header_connection = {k: v for k, v in header.items() if k != key}
+    if (main_connection != header_connection or main.get("prefix") or posixpath.dirname(names[0]) != posixpath.dirname(names[1])
+            or posixpath.basename(names[0]).casefold() == posixpath.basename(names[1]).casefold()
+            or posixpath.splitext(names[0])[1].casefold() == ".hdr" or posixpath.splitext(names[1])[1].casefold() != ".hdr"):
+        raise WorkflowAccessError("ENVI companion must be an exact header beside the primary on the same connection")
 
 
 def _publish_local_file(source: Path, destination: Path, write_mode: str) -> None:

@@ -246,6 +246,10 @@ func TestIntegrationPostgresManagerRasterCOGConcurrentClaimAndStart(t *testing.T
 	}
 
 	repo := NewRasterCOGRepository(db)
+	snapshot, snapshotErr := repo.TaskConfigSnapshot(context.Background(), task.ID, tenantID)
+	if snapshotErr != nil {
+		t.Fatal(snapshotErr)
+	}
 	createdAt := time.Now().UTC()
 	start := make(chan struct{})
 	results := make(chan error, 2)
@@ -261,7 +265,7 @@ func TestIntegrationPostgresManagerRasterCOGConcurrentClaimAndStart(t *testing.T
 				newManagerRepositoryTestExecution(
 					executionID, int(tenantID), commonExecution.TaskTypeRasterCOGGeneration, createdAt,
 				),
-				false,
+				false, snapshot,
 			)
 			results <- claimErr
 		}()

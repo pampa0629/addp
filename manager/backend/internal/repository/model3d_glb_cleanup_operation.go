@@ -22,7 +22,7 @@ type glbHousekeepingPlan struct {
 	ID, TenantID uint
 	Digest       string
 	Outputs      []model3DGLBOutputRef
-	Inputs       []Model3DGLBInputPreparation
+	Inputs       []FileInputPreparation
 	Tokens       []CleanupTargetToken
 }
 
@@ -100,7 +100,7 @@ func (r *Model3DGLBRepository) prepareGLBHousekeeping(ctx context.Context, id ui
 			}
 		}
 		for _, input := range state.InputPreparations {
-			if input.Validate(item.TenantID) != nil {
+			if input.ValidateForTask(item.TenantID, execution.TaskTypeModel3DGLBGeneration) != nil {
 				return commonapi.ErrConflict
 			}
 			if !input.Cleaned && input.Released && !input.Watch {
@@ -157,7 +157,7 @@ func (r *Model3DGLBRepository) prepareGLBHousekeeping(ctx context.Context, id ui
 	return operation, err
 }
 
-func (r *Model3DGLBRepository) runGLBHousekeeping(ctx context.Context, op *models.CleanupArtifactOperation, deleteInput func(context.Context, uint, Model3DGLBInputObject) error, deleteOutput func(context.Context, uint, string) error) (int, error) {
+func (r *Model3DGLBRepository) runGLBHousekeeping(ctx context.Context, op *models.CleanupArtifactOperation, deleteInput func(context.Context, uint, FileInputObject) error, deleteOutput func(context.Context, uint, string) error) (int, error) {
 	var plan glbHousekeepingPlan
 	if op == nil {
 		return 0, nil

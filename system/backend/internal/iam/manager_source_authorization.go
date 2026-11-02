@@ -165,7 +165,7 @@ func (s *managerSourceAuthorizationService) issue(ctx context.Context, input iss
 		if err != nil {
 			return err
 		}
-		if s.purpose == managerSourceModel3D {
+		if row.SourceReadScope.File() != nil {
 			var prior ExecutionAuthorization
 			lookup := tx.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("audience='manager' AND execution_id=?", input.ExecutionID).Take(&prior)
 			if lookup.Error == nil {

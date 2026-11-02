@@ -83,7 +83,7 @@ func (h *Model3DGLBHandler) GetModel3DGLBContent(c *gin.Context) {
 	err = h.sourceService.CheckResultRead(c.Request.Context(), result, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), exists && principal.Type == "user")
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrModel3DGLBSourceAuthorizationRequired):
+		case errors.Is(err, service.ErrFileSourceAuthorizationRequired):
 			accessDeniedToEngine(c)
 		case errors.Is(err, engineaccess.ErrUnavailable):
 			engineUnavailable(c)

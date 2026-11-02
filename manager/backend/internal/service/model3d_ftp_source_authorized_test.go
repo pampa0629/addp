@@ -162,7 +162,7 @@ func fileModelAuthorizedFixture(t *testing.T, engineType, format string, denied 
 	tenant := uint(7)
 	engine := &commonModels.Engine{ID: 33, TenantID: &tenant, Version: 5, EngineType: engineType, LifecycleState: "active", ConnectionStatus: "online", ConnectionInfo: commonModels.ConnectionInfo{"host": "127.0.0.1", "port": 2121, "user": "readonly", "security": "plain", "password": "classification-must-not-be-used"}}
 	calls := &atomic.Int32{}
-	var expectedScope *commonExecution.ManagerModel3DReadScope
+	var expectedScope *commonExecution.ManagerFileReadScope
 	var expectedExecution, expectedToken string
 	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -171,7 +171,7 @@ func fileModelAuthorizedFixture(t *testing.T, engineType, format string, denied 
 			w.WriteHeader(403)
 			return
 		}
-		var body commonClient.ManagerModel3DAccessRequest
+		var body commonClient.ManagerFileAccessRequest
 		if json.NewDecoder(r.Body).Decode(&body) != nil || body.ExecutionID != expectedExecution || body.Attempt != 1 || body.LeaseToken != expectedToken || !reflect.DeepEqual(&body.SourceReadScope, expectedScope) {
 			t.Error("source consumer changed the frozen execution scope")
 			w.WriteHeader(403)
@@ -196,7 +196,7 @@ func fileModelAuthorizedFixture(t *testing.T, engineType, format string, denied 
 	execution := &commonExecution.TaskExecution{ExecutionID: executionID, TenantID: 7, Module: commonExecution.ModuleManager, TaskType: commonExecution.TaskTypeModel3DGLBGeneration, Source: commonExecution.ModuleManager, TriggerType: commonExecution.TriggerTypeManual, SourceTaskID: commonExecution.NewSourceTaskIDFromUint(17), ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, Status: commonExecution.ExecutionStatusRunning, Attempt: 1, TriggeredBy: &actor, ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version, ExecutionAuthorizationID: &authorization, AuthorizationExpiresAt: &expires, LeaseExpiresAt: &expires, LeaseToken: &token, LeaseOwner: &owner}
 	ctx := commonExecution.ContextWithLease(t.Context(), commonExecution.Lease{ExecutionID: executionID, TenantID: 7, Attempt: 1, Token: token, Owner: owner})
 	raw, _ := json.Marshal(map[string]any{"source": map[string]any{"item_locator": source.ItemLocator, "source_engine_id": source.SourceEngineID, "item_id": source.ItemID, "item_fingerprint": source.ItemFingerprint, "format": source.Format}, "result": map[string]any{"storage_ref": "previous-owned", "file_name": "model.glb"}, "options": map[string]any{"integer": json.Number("9007199254740993")}})
-	frozen, err := freezeFileModel3DGLBConfig(&repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: raw}, engine, candidate, executionID, "manager")
+	frozen, err := freezeFileModel3DGLBConfig(&repository.FileTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: raw}, engine, candidate, executionID, "manager")
 	if err != nil {
 		t.Fatal(err)
 	}

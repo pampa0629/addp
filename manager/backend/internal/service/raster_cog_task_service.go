@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -29,8 +30,11 @@ type RasterCOGCleaner interface {
 }
 
 type RasterCOGExecutionRequest struct {
-	Task   *models.RasterCOGTask
-	Config RasterCOGExecutionConfig
+	Task                *models.RasterCOGTask
+	Config              RasterCOGExecutionConfig
+	ExecutionID         string
+	SourceAuthorization *rasterCOGSourceAuthorization
+	inputOwner          fileStagingOwnership
 }
 
 type RasterCOGExecutionResult struct {
@@ -66,6 +70,8 @@ type RasterCOGRasterConfig struct {
 	SourceFormat    string
 	SourceProfile   string
 	SourceSizeBytes int64
+	HeaderSHA256    string
+	RasterSHA256    string
 	Width           int64
 	Height          int64
 	BandCount       int64
@@ -88,10 +94,14 @@ type RasterCOGTargetResultConfig struct {
 }
 
 type RasterCOGTaskService struct {
-	repo     *repository.RasterCOGRepository
-	executor RasterCOGExecutor
-	cleaner  RasterCOGCleaner
-	bucket   string
+	repo           *repository.RasterCOGRepository
+	executor       RasterCOGExecutor
+	cleaner        RasterCOGCleaner
+	bucket         string
+	sourceMeta     rasterCOGMetaClient
+	sourceEngines  model3DGLBSourceEngineClient
+	sourceIssuer   *commonClient.SystemExecutionAuthorizationClient
+	sourceConsumer *commonClient.SystemServiceClient
 }
 
 func NewRasterCOGTaskService(repo *repository.RasterCOGRepository) *RasterCOGTaskService {
@@ -194,7 +204,7 @@ func (s *RasterCOGTaskService) DeleteResult(ctx context.Context, id, tenantID ui
 	return err
 }
 
-func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool) (string, error) {
+func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool, credential string) (string, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
 		return "", err
@@ -221,7 +231,15 @@ func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
+	snapshot, err := s.repo.TaskConfigSnapshot(ctx, taskID, tenantID)
+	if err != nil {
+		return "", err
+	}
+	managed, err := s.freezeENVISourceExecution(ctx, snapshot, exec, credential)
+	if err != nil {
+		return "", err
+	}
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult, snapshot)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {
 			return "", ErrExistingResultActionRequired
@@ -235,6 +253,11 @@ func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		return "", err
 	}
 
+	if managed {
+		if err := issueFileExecutionAuthorization(ctx, s.repo, s.sourceIssuer, exec, credential, commonExecution.TaskTypeRasterCOGGeneration); err != nil {
+			return "", err
+		}
+	}
 	return executionID, nil
 }
 
@@ -249,14 +272,34 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 	var errDetails commonModels.JSONMap
 	var resultFields map[string]interface{}
 
-	rasterCOG, execCfg, err := s.prepareResult(ctx, task, executionID)
+	execution, err := s.repo.GetExecution(ctx, int(task.TenantID), executionID)
+	var execCfg RasterCOGExecutionConfig
+	var sourceAuthorization *rasterCOGSourceAuthorization
+	if err == nil {
+		execCfg, sourceAuthorization, err = s.prepareENVISourceClaim(ctx, execution)
+	}
+	var rasterCOG *models.RasterCOG
+	if err == nil {
+		rasterCOG, err = s.prepareResult(ctx, task, executionID, execCfg)
+	}
+
 	var buildResult *RasterCOGExecutionResult
 	if err == nil {
 		if s.executor == nil {
 			err = errors.New("raster COG generation executor is not configured")
 		} else {
 			if err = repository.BeginArtifactWrite(ctx, s.repo.GetDB()); err == nil {
-				buildResult, err = s.executor.BuildRasterCOG(ctx, RasterCOGExecutionRequest{Task: task, Config: execCfg})
+				request := RasterCOGExecutionRequest{Task: task, Config: execCfg, ExecutionID: executionID, SourceAuthorization: sourceAuthorization}
+				if sourceAuthorization != nil {
+					request.inputOwner = &rasterCOGInputOwner{repo: s.repo, resultID: rasterCOG.ID, tenantID: task.TenantID, executionID: executionID, bucket: s.bucket}
+				}
+				buildResult, err = s.executor.BuildRasterCOG(ctx, request)
+				if err == nil && buildResult == nil {
+					err = errors.New("raster COG executor returned no result")
+				}
+				if err == nil && sourceAuthorization != nil {
+					err = sourceAuthorization.BeforePublish(ctx)
+				}
 			}
 		}
 	}
@@ -267,6 +310,17 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 		}
 	}
 
+	if err == nil && sourceAuthorization != nil {
+		metadata["file_source_scope"] = sourceAuthorization.scope.Clone()
+		metadata["source_version"] = commonModels.JSONMap{"header_sha256": execCfg.Raster.HeaderSHA256, "raster_sha256": execCfg.Raster.RasterSHA256}
+	}
+	if rasterCOG != nil {
+		var mergeErr error
+		metadata, mergeErr = s.repo.MergeExecutionInputMetadata(ctx, rasterCOG.ID, task.TenantID, metadata)
+		if mergeErr != nil {
+			err = errors.Join(err, mergeErr)
+		}
+	}
 	completedAt := time.Now()
 	if err != nil {
 		status = commonExecution.ExecutionStatusFailed
@@ -316,11 +370,7 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 	}
 }
 
-func (s *RasterCOGTaskService) prepareResult(ctx context.Context, task *models.RasterCOGTask, executionID string) (*models.RasterCOG, RasterCOGExecutionConfig, error) {
-	execCfg, err := readRasterCOGExecutionConfig(task.Config, s.bucket, task.TenantID)
-	if err != nil {
-		return nil, execCfg, err
-	}
+func (s *RasterCOGTaskService) prepareResult(ctx context.Context, task *models.RasterCOGTask, executionID string, execCfg RasterCOGExecutionConfig) (*models.RasterCOG, error) {
 	itemID := execCfg.Target.ItemID
 	var itemIDPtr *uint
 	if itemID > 0 {
@@ -341,9 +391,22 @@ func (s *RasterCOGTaskService) prepareResult(ctx context.Context, task *models.R
 
 	existing, err := s.repo.GetCurrentByFingerprint(ctx, task.TenantID, execCfg.Target.ItemFingerprint)
 	if err != nil {
-		return nil, execCfg, err
+		return nil, err
 	}
 	if existing != nil {
+		metadata, err = s.repo.MergeExecutionInputMetadata(ctx, existing.ID, task.TenantID, metadata)
+		if err != nil {
+			return nil, err
+		}
+		preparations, err := repository.RasterCOGInputPreparations(metadata, task.TenantID)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range preparations {
+			if !p.Cleaned {
+				return nil, commonAPI.ErrConflict
+			}
+		}
 		fields := map[string]interface{}{
 			"item_id":           itemIDPtr,
 			"locator":           execCfg.Target.Locator,
@@ -367,16 +430,16 @@ func (s *RasterCOGTaskService) prepareResult(ctx context.Context, task *models.R
 			"error_message":     "",
 		}
 		if err := s.repo.UpdateFields(ctx, existing.ID, task.TenantID, fields); err != nil {
-			return nil, execCfg, err
+			return nil, err
 		}
 		refreshed, err := s.repo.GetByID(ctx, existing.ID, task.TenantID)
 		if err != nil {
-			return nil, execCfg, err
+			return nil, err
 		}
 		if refreshed == nil {
-			return nil, execCfg, errors.New("raster COG result disappeared after update")
+			return nil, errors.New("raster COG result disappeared after update")
 		}
-		return refreshed, execCfg, nil
+		return refreshed, nil
 	}
 
 	result := &models.RasterCOG{
@@ -404,9 +467,9 @@ func (s *RasterCOGTaskService) prepareResult(ctx context.Context, task *models.R
 		CreatedBy:       task.CreatedBy,
 	}
 	if err := s.repo.Create(ctx, result); err != nil {
-		return nil, execCfg, err
+		return nil, err
 	}
-	return result, execCfg, nil
+	return result, nil
 }
 
 func normalizeRasterCOGTask(task *models.RasterCOGTask, bucket string) error {
@@ -445,8 +508,8 @@ func normalizeRasterCOGTaskConfig(config commonModels.JSONMap, bucket string, te
 		return RasterCOGExecutionConfig{}, err
 	}
 	raster := normalizeRasterCOGRaster(config)
-	if raster.SourceFormat != "tiff" && raster.SourceFormat != "img" && raster.SourceFormat != "jpeg2000" {
-		return RasterCOGExecutionConfig{}, errors.New("raster COG source_format must be tiff, img or jpeg2000")
+	if raster.SourceFormat != "tiff" && raster.SourceFormat != "img" && raster.SourceFormat != "jpeg2000" && raster.SourceFormat != "envi" {
+		return RasterCOGExecutionConfig{}, errors.New("raster COG source_format must be tiff, img, jpeg2000 or envi")
 	}
 	cog := normalizeRasterCOGOptions(config)
 	result := normalizeRasterCOGTargetResult(config, target, bucket, tenantID)
@@ -504,6 +567,8 @@ func normalizeRasterCOGRaster(config commonModels.JSONMap) RasterCOGRasterConfig
 		SourceFormat:    stringFromConfig(rasterMap["source_format"]),
 		SourceProfile:   firstNonEmptyConfig(stringFromConfig(rasterMap["source_profile"]), "unknown"),
 		SourceSizeBytes: int64FromConfig(rasterMap["source_size_bytes"], 0),
+		HeaderSHA256:    stringFromConfig(rasterMap["header_sha256"]),
+		RasterSHA256:    stringFromConfig(rasterMap["raster_sha256"]),
 		Width:           int64FromConfig(rasterMap["width"], 0),
 		Height:          int64FromConfig(rasterMap["height"], 0),
 		BandCount:       int64FromConfig(rasterMap["band_count"], 0),
@@ -524,6 +589,10 @@ func normalizeRasterCOGRaster(config commonModels.JSONMap) RasterCOGRasterConfig
 	}
 	if raster.SourceSRID > 0 {
 		normalized["source_srid"] = raster.SourceSRID
+	}
+	if raster.SourceFormat == "envi" {
+		normalized["header_sha256"] = raster.HeaderSHA256
+		normalized["raster_sha256"] = raster.RasterSHA256
 	}
 	if raster.SourceCRS != "" {
 		normalized["source_crs"] = raster.SourceCRS

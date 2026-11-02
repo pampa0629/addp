@@ -140,3 +140,8 @@ describe('rasterQuickViewTarget', () => {
     expect(rasterExtentSRIDFromMetadata({ extent: [500000, 3000000, 510000, 3010000] })).toBe(0)
   })
 })
+
+it('routes ENVI metadata through the existing raster COG controls', () => {
+ expect(isRasterCOGSourceMeta({}, {attributes:{item:{data_type:'media',format:'envi',layout:'multi'}}})).toBe(true)
+ expect(isRasterCOGSourceMeta({}, {attributes:{item:{data_type:'document',format:'envi'}}})).toBe(false)
+})

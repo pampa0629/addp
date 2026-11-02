@@ -35,6 +35,7 @@ from addp_common.workflow_access import require_empty_target_directory, target_c
 from .base import OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, OutputPort, register_operator
 from .raster_image_export import encode_image, image_export_error
 from .surfer import inspect_surfer, validate_surfer6_mask, validate_surfer_ascii_pixels
+from .envi import inspect_envi, validate_dataset as validate_envi_dataset, ENVIProfileError
 
 gdal.UseExceptions()
 _WORKSPACE = ContextVar('raster_workspace', default=None)
@@ -166,6 +167,7 @@ class RasterDataset:
     path: Path
     workspace: Path
     native_driver: str = ''
+    related_files: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -192,8 +194,8 @@ def raster_tiles_info(input_tiles):
             'columns': columns, 'rows': rows, 'total_tiles': columns * rows}
 
 
-def _raster(path, native_driver=''):
-    return RasterDataset(Path(path), _WORKSPACE.get(), native_driver)
+def _raster(path, native_driver='', related_files=()):
+    return RasterDataset(Path(path), _WORKSPACE.get(), native_driver, tuple(Path(p) for p in related_files))
 
 
 def _open(raster):
@@ -204,6 +206,10 @@ def _open(raster):
     dataset = gdal.OpenEx(str(raster.path), gdal.OF_RASTER, allowed_drivers=drivers, open_options=options)
     if dataset is None or dataset.RasterCount < 1:
         raise ValueError('Raster dataset has no bands')
+    if raster.native_driver == 'ENVI':
+        expected = {raster.path.resolve(), *(p.resolve() for p in raster.related_files)}
+        if len(raster.related_files) != 1 or {Path(p).resolve() for p in dataset.GetFileList() or []} != expected:
+            raise ENVIProfileError('native_composition', _DISK_LANGUAGE.get())
     return dataset
 
 
@@ -459,7 +465,16 @@ def raster_load(access_plan, source_crs=''):
     plan = require_source_plan({'access_plan': access_plan})
     path = stage_source_file(plan, _path().parent / uuid.uuid4().hex)
     source_format = plan['source']['format']
-    native_driver = {'img': 'HFA', 'jpeg2000': 'JP2OpenJPEG'}.get(source_format, '')
+    native_driver = {'img': 'HFA', 'jpeg2000': 'JP2OpenJPEG', 'envi': 'ENVI'}.get(source_format, '')
+    related_files = ()
+    if source_format == 'envi':
+        member = plan['source']['related_files'][0]['access']
+        header = path.parent / Path(member['path'] if member['method'] == 'mounted_path' else member['object']).name
+        related_files = (header,)
+        envi_facts = inspect_envi(path, header, _DISK_LANGUAGE.get())
+        expected_header = (plan['source'].get('metadata') or {}).get('expected_header_sha256')
+        if expected_header is not None and expected_header != envi_facts['header_sha256']:
+            raise ENVIProfileError('header_version', _DISK_LANGUAGE.get())
     if source_format in ('img', 'jpeg2000', 'grd'):
         # Native rasters expose only the selected primary, never sibling sidecars.
         isolated = _path().parent / uuid.uuid4().hex / path.name
@@ -473,7 +488,7 @@ def raster_load(access_plan, source_crs=''):
         else:
             surfer_facts = inspect_surfer(path, _DISK_LANGUAGE.get())
             native_driver = surfer_facts['driver']
-    raster = _raster(path, native_driver)
+    raster = _raster(path, native_driver, related_files)
     try:
         dataset = _open(raster)
     except RuntimeError as exc:
@@ -481,11 +496,13 @@ def raster_load(access_plan, source_crs=''):
     expected_driver = native_driver or {'tiff':'GTiff', 'png':'PNG', 'jpeg':'JPEG'}.get(source_format)
     if expected_driver != dataset.GetDriver().ShortName:
         raise ValueError('Source format must match a supported raster driver')
+    if source_format == 'envi':
+        validate_envi_dataset(dataset, envi_facts, _DISK_LANGUAGE.get())
     if native_driver == 'GSAG':
         validate_surfer_ascii_pixels(dataset, path, _DISK_LANGUAGE.get())
     if native_driver in ('GSBG', 'GSAG'):
         validate_surfer6_mask(dataset, surfer_facts['blank_value'], _DISK_LANGUAGE.get())
-    if source_format in ('img', 'jpeg2000', 'grd'):
+    if source_format in ('img', 'jpeg2000', 'grd', 'envi'):
         bands = [dataset.GetRasterBand(index) for index in range(1, dataset.RasterCount + 1)]
         if any(gdal.DataTypeIsComplex(band.DataType) for band in bands):
             raise ValueError(f'Complex {native_driver} bands require an explicit real-valued conversion before loading')
@@ -493,14 +510,14 @@ def raster_load(access_plan, source_crs=''):
         nodata = ['nan' if value is not None and math.isnan(value) else value for value in nodata]
         if len({band.DataType for band in bands}) != 1 or any(value != nodata[0] for value in nodata):
             raise ValueError(f'{native_driver} bands must share one data type and NoData value for lossless TIFF conversion')
-    if any(Path(file).resolve() != path.resolve() for file in dataset.GetFileList() or []):
+    if source_format != 'envi' and any(Path(file).resolve() != path.resolve() for file in dataset.GetFileList() or []):
         raise ValueError('Raster input must be self-contained; external sidecars are not supported')
     # Snapshot the selected resource so later writes cannot change an upstream input.
     snapshot = path if native_driver else _path(path.suffix)
     if snapshot != path:
         shutil.copyfile(path, snapshot)
     dataset = None
-    raster = _raster(snapshot, native_driver)
+    raster = _raster(snapshot, native_driver, related_files)
     dataset = _open(raster)
     if source_crs:
         supplied = _crs(source_crs)
@@ -521,13 +538,14 @@ def raster_inspect(access_plan):
     """Read-only native media facts; no publication and no pixel statistics."""
     plan = require_source_plan({'access_plan': access_plan})
     source_format = plan['source']['format']
-    if source_format not in ('img', 'jpeg2000', 'grd'):
-        raise ValueError('raster_inspect requires IMG, JPEG2000 or Surfer GRD format')
+    if source_format not in ('img', 'jpeg2000', 'grd', 'envi'):
+        raise ValueError('raster_inspect requires IMG, JPEG2000, ENVI or Surfer GRD format')
     with raster_workspace():
         raster = raster_load(plan)
         facts = raster_info(raster)
         driver = raster.native_driver
-        profile_facts = (inspect_surfer(raster.path, _DISK_LANGUAGE.get()) if source_format == 'grd' else
+        profile_facts = (inspect_envi(raster.path, raster.related_files[0], _DISK_LANGUAGE.get()) if source_format == 'envi' else
+                        inspect_surfer(raster.path, _DISK_LANGUAGE.get()) if source_format == 'grd' else
                          {'profile':'hfa' if source_format == 'img' else _require_single_jpeg2000(raster.path)})
         profile = profile_facts['profile']
         spatial = {}
@@ -545,7 +563,7 @@ def raster_inspect(access_plan):
         return {'schema_version': 'gdal.raster.inspect/v1', 'format': source_format, 'description': {
             'media': {'kind': 'image', 'encoding': driver, 'width': facts['width'],
                       'mime_type': 'image/jp2' if profile == 'jp2' else 'application/octet-stream',
-                      'height': facts['height'], 'size_bytes': raster.path.stat().st_size},
+                      'height': facts['height'], 'size_bytes': raster.path.stat().st_size + sum(p.stat().st_size for p in raster.related_files)},
             'spatial': spatial or None,
             'format_info': {**profile_facts, 'driver': driver, 'scan_complete': True,
                             'band_count': facts['band_count'], 'bands': facts['bands']}}}

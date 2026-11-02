@@ -34,11 +34,11 @@ type model3DGLBOutputRef struct {
 }
 
 type model3DGLBOutputState struct {
-	Pending             *model3DGLBOutputRef         `json:"pending,omitempty"`
-	Garbage             []model3DGLBOutputRef        `json:"garbage,omitempty"`
-	InputPreparations   []Model3DGLBInputPreparation `json:"input_preparations,omitempty"`
-	InputCleanupPending bool                         `json:"input_cleanup_pending,omitempty"`
-	CheckedAt           string                       `json:"checked_at,omitempty"`
+	Pending             *model3DGLBOutputRef   `json:"pending,omitempty"`
+	Garbage             []model3DGLBOutputRef  `json:"garbage,omitempty"`
+	InputPreparations   []FileInputPreparation `json:"input_preparations,omitempty"`
+	InputCleanupPending bool                   `json:"input_cleanup_pending,omitempty"`
+	CheckedAt           string                 `json:"checked_at,omitempty"`
 }
 
 func readModel3DGLBOutputState(metadata commonModels.JSONMap) (model3DGLBOutputState, error) {
@@ -77,7 +77,7 @@ func ValidateModel3DGLBCleanupLifecycle(item *models.Model3DGLB) error {
 	}
 	seen := make(map[string]bool, len(state.InputPreparations))
 	for _, input := range state.InputPreparations {
-		if input.Validate(item.TenantID) != nil || !input.Cleaned || seen[input.PreparationID] {
+		if input.ValidateForTask(item.TenantID, commonExecution.TaskTypeModel3DGLBGeneration) != nil || !input.Cleaned || seen[input.PreparationID] {
 			return commonAPI.ErrConflict
 		}
 		seen[input.PreparationID] = true
@@ -285,7 +285,7 @@ func (r *Model3DGLBRepository) CompleteExecutionOutput(ctx context.Context, task
 // CleanupExecutionOutputs also sees soft-deleted result records. It never lists
 // storage directories, and never deletes the current pointer or a live pending
 // execution's output. deleteExact must validate Manager bucket/tenant ownership.
-func (r *Model3DGLBRepository) CleanupExecutionOutputs(ctx context.Context, limit int, deleteInput func(context.Context, uint, Model3DGLBInputObject) error, deleteExact func(context.Context, uint, string) error) (int, error) {
+func (r *Model3DGLBRepository) CleanupExecutionOutputs(ctx context.Context, limit int, deleteInput func(context.Context, uint, FileInputObject) error, deleteExact func(context.Context, uint, string) error) (int, error) {
 	if deleteExact == nil || limit <= 0 {
 		return 0, commonAPI.ErrConflict
 	}

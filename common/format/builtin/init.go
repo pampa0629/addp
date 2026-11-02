@@ -14,6 +14,7 @@ import (
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/dae"
 	_ "github.com/addp/common/format/plugins/e57"
+	_ "github.com/addp/common/format/plugins/envi"
 	_ "github.com/addp/common/format/plugins/ept"
 	_ "github.com/addp/common/format/plugins/excel"
 	_ "github.com/addp/common/format/plugins/fbx"

@@ -101,7 +101,7 @@ func (r *Model3DGLBRepository) DeleteTask(ctx context.Context, id uint, tenantID
 }
 
 func (r *Model3DGLBRepository) ClaimExecution(
-	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool, snapshot *Model3DGLBTaskSnapshot,
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool, snapshot *FileTaskSnapshot,
 ) (*models.Model3DGLBTask, error) {
 	if snapshot == nil || snapshot.TaskID != taskID || snapshot.TenantID != tenantID || execution == nil {
 		return nil, commonAPI.ErrConflict
@@ -119,7 +119,7 @@ func (r *Model3DGLBRepository) ClaimExecution(
 		CurrentResultModel:      &models.Model3DGLB{},
 		OverwriteExistingResult: overwriteExistingResult,
 		BeforeCreate: func(tx *gorm.DB) error {
-			if err := verifyModel3DGLBTaskSnapshot(ctx, tx, snapshot); err != nil {
+			if err := verifyFileTaskSnapshot(ctx, tx, snapshot, commonExecution.TaskTypeModel3DGLBGeneration); err != nil {
 				return err
 			}
 			if execution.ExecutionConfig["config_version"] == models.Model3DGLBFileConfigVersion {

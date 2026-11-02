@@ -19,7 +19,7 @@ func (s *Model3DGLBTaskService) prepareClaim(ctx context.Context, task *models.M
 	if err != nil {
 		return nil, err
 	}
-	engine, err := s.sourceEngineForSnapshot(ctx, &repository.Model3DGLBTaskSnapshot{TaskID: task.ID, TenantID: task.TenantID, Config: raw})
+	engine, err := s.sourceEngineForSnapshot(ctx, &repository.FileTaskSnapshot{TaskID: task.ID, TenantID: task.TenantID, Config: raw})
 	if err != nil {
 		return nil, err
 	}
@@ -30,11 +30,11 @@ func (s *Model3DGLBTaskService) prepareClaim(ctx context.Context, task *models.M
 		} `json:"source"`
 	}
 	if json.Unmarshal(raw, &marker) != nil {
-		return nil, ErrModel3DGLBSourceAuthorizationRequired
+		return nil, ErrFileSourceAuthorizationRequired
 	}
 	if !managedModel3DFileSource(engine.EngineType, marker.Source.Format) {
 		if marker.Version != "" || execution.ExecutionAuthorizationID != nil {
-			return nil, ErrModel3DGLBSourceAuthorizationRequired
+			return nil, ErrFileSourceAuthorizationRequired
 		}
 		task.Config = execution.ExecutionConfig.Clone()
 		return nil, nil

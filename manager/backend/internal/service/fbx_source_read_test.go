@@ -54,7 +54,7 @@ func TestFBXRawReadValidatesSameWholeBytesBeforeRangeOrDownload(t *testing.T) {
 					p.reportedSize = &size
 				}
 				checks := 0
-				svc.SetModelSourceReadChecker(storageModelCheck(func(context.Context, string, commonClient.ManagerModel3DExpectedSource) error {
+				svc.SetFileSourceReadChecker(storageModelCheck(func(context.Context, string, commonClient.ManagerFileExpectedSource) error {
 					checks++
 					if mode == "revoked after read" && checks == 3 {
 						return commonClient.ErrManagerPreviewReadDenied

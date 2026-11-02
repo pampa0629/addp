@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	commonAPI "github.com/addp/common/api"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -827,11 +828,15 @@ func TestTaskExecuteRasterCOGReturnsPendingAndRejectsActiveExecution(t *testing.
 	cogRepo := repository.NewRasterCOGRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	taskSvc := service.NewRasterCOGTaskService(cogRepo)
+	taskSvc.SetSourceAuthorizationClients(rasterCOGAbsentMeta{}, nil, nil, nil)
 	task := &models.RasterCOGTask{
 		TenantID: 1,
 		Name:     "raster COG execution contract",
 		Enabled:  true,
-		Config:   commonModels.JSONMap{"invalid": true},
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{"source_engine_id": 26, "locator": "addp://engine/26/path/rasters/contract.tif?type=file&item_id=100"},
+			"raster": commonModels.JSONMap{"source_format": "tiff"},
+		},
 	}
 	if err := cogRepo.CreateTask(context.Background(), task); err != nil {
 		t.Fatalf("create raster COG task: %v", err)
@@ -1368,4 +1373,10 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	return db
+}
+
+type rasterCOGAbsentMeta struct{}
+
+func (rasterCOGAbsentMeta) GetItemSnapshot(context.Context, uint, uint, uint, string) (*commonModels.MetaItem, error) {
+	return nil, commonAPI.ErrNotFound
 }

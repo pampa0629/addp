@@ -47,6 +47,7 @@ type CleanupArtifactTarget struct {
 	SizeBytes             int64
 	RowDigest             string
 	SemanticKey           string
+	InputPreparations     []repository.FileInputPreparation
 	UnsettledOperationIDs []string
 	Tokens                []repository.CleanupTargetToken
 }
@@ -163,6 +164,12 @@ func artifactRow(ctx context.Context, db *gorm.DB, taskType string, id, tenant u
 	target.Status = stringField("Status")
 	target.SemanticKey = target.ItemFingerprint
 	switch row := model.(type) {
+	case *models.RasterCOG:
+		target.InputPreparations, err = repository.RasterCOGInputPreparations(row.Metadata, row.TenantID)
+		if err != nil {
+			return target, err
+		}
+
 	case *models.TileCache:
 		target.SemanticKey = target.ItemFingerprint + ":" + row.ProfileHash
 	case *models.VectorMaterializedView:
@@ -211,6 +218,25 @@ func (s *CleanupArtifactService) targetKeys(t CleanupArtifactTarget) ([]reposito
 		}
 		b, _ := json.Marshal([]string{bucket, object})
 		keys = append(keys, repository.CleanupTargetKey{TenantID: t.TenantID, Kind: repository.CleanupTargetObject, Identity: string(b)})
+	}
+	for _, preparation := range t.InputPreparations {
+		if t.TaskType != execution.TaskTypeRasterCOGGeneration || preparation.ValidateForTask(t.TenantID, t.TaskType) != nil {
+			return nil, commonapi.ErrConflict
+		}
+		if preparation.Cleaned {
+			continue
+		}
+		// Failed status alone cannot prove that an uncertain uploader has stopped.
+		if !preparation.Released || preparation.Watch {
+			return nil, commonapi.ErrConflict
+		}
+		for _, object := range preparation.Objects {
+			if object.Bucket != s.effects.Bucket {
+				return nil, commonapi.ErrConflict
+			}
+			b, _ := json.Marshal([]string{object.Bucket, object.Object})
+			keys = append(keys, repository.CleanupTargetKey{TenantID: t.TenantID, Kind: repository.CleanupTargetObject, Identity: string(b)})
+		}
 	}
 	return keys, nil
 }
@@ -508,6 +534,25 @@ func (s *CleanupArtifactService) deletePhysical(ctx context.Context, t CleanupAr
 			return fmt.Errorf("drop vector materialized view target: %w", err)
 		}
 		return nil
+	}
+	for _, preparation := range t.InputPreparations {
+		if preparation.ValidateForTask(t.TenantID, t.TaskType) != nil || (!preparation.Cleaned && (!preparation.Released || preparation.Watch)) {
+			return commonapi.ErrConflict
+		}
+		if preparation.Cleaned {
+			continue
+		}
+		if s.effects.Objects == nil {
+			return errors.New("managed input cleaner unavailable")
+		}
+		for _, object := range preparation.Objects {
+			if object.Bucket != s.effects.Bucket {
+				return commonapi.ErrConflict
+			}
+			if err := s.effects.Objects.DeleteByStorageRef(ctx, cog.ObjectStorageRef(object.Bucket, object.Object)); err != nil {
+				return err
+			}
+		}
 	}
 	if t.StorageRef == "" {
 		return nil

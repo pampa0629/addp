@@ -44,12 +44,12 @@ func glbPublishedReadFixtureForFormat(t *testing.T, engineType, format string) (
 	}
 	core, _ := json.Marshal(map[string]any{"source": map[string]any{"item_locator": source.ItemLocator, "source_engine_id": 33, "item_id": 41, "item_fingerprint": source.ItemFingerprint, "format": format}, "result": map[string]any{"storage_ref": "old", "file_name": "model.glb"}, "options": map[string]any{}})
 	id := uuid.NewString()
-	frozen, err := freezeFileModel3DGLBConfig(&repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: core}, engine, candidate, id, "manager")
+	frozen, err := freezeFileModel3DGLBConfig(&repository.FileTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: core}, engine, candidate, id, "manager")
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(frozen)
-	scope, err := commonExecution.NewManagerModel3DReadScope(raw, "17", "3", "5", candidate.composition)
+	scope, err := commonExecution.NewManagerFileReadScope(raw, "17", "3", "5", candidate.composition)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +91,8 @@ func testGLBResultReadForEngine(t *testing.T, engineType, format string) {
 					return
 				}
 				var request struct {
-					Targets        []plugin.EngineCatalogPath                 `json:"targets"`
-					ExpectedSource *commonClient.ManagerModel3DExpectedSource `json:"expected_source"`
+					Targets        []plugin.EngineCatalogPath              `json:"targets"`
+					ExpectedSource *commonClient.ManagerFileExpectedSource `json:"expected_source"`
 				}
 				if decoder.Decode(&request) != nil || request.ExpectedSource == nil || request.ExpectedSource.Validate() != nil || len(request.Targets) != 1 || !reflect.DeepEqual(request.Targets[0], primary) || request.ExpectedSource.EngineVersion != generated.EngineVersion || !reflect.DeepEqual(request.ExpectedSource.FileComposition, generated.FileComposition) {
 					t.Error("complete generated source missing from current decision")
@@ -151,7 +151,7 @@ func TestGLBReadRejectsTicketsChangedCompositionAndEngineBeforePermissionCall(t 
 			svc.SetSourceEngineClient(&glbSourceEngineFixture{engine: engine})
 			svc.sourceMeta = glbMetaDetailFixture{item}
 			credential, human := "addp_at_current_human", true
-			want := ErrModel3DGLBSourceAuthorizationRequired
+			want := ErrFileSourceAuthorizationRequired
 			switch name {
 			case "resource ticket":
 				credential = ""
@@ -194,7 +194,7 @@ func TestOldMinIOGLBRequiresRegeneration(t *testing.T) {
 			svc := NewModel3DGLBTaskService(nil)
 			svc.SetSourceEngineClient(&glbSourceEngineFixture{engine: engine})
 			svc.sourceMeta = glbMetaDetailFixture{item}
-			if err := svc.CheckResultRead(t.Context(), result, "addp_at_current_human", true); !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
+			if err := svc.CheckResultRead(t.Context(), result, "addp_at_current_human", true); !errors.Is(err, ErrFileSourceAuthorizationRequired) {
 				t.Fatal("old MinIO artifact acquired fabricated scope", err)
 			}
 		})

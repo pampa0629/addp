@@ -33,7 +33,7 @@ type MetadataService struct {
 	metaUserClient     *commonClient.MetaScanUserClient
 	previews           *preview.PreviewRegistry
 	content            *objectcontent.ObjectContentRegistry
-	modelSourceChecker modelStorageReadChecker
+	fileSourceChecker  fileStorageReadChecker
 	wholeSourceChecker wholeStorageReadChecker
 }
 

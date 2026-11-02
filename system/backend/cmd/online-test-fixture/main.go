@@ -372,7 +372,7 @@ func suitePermissions(suite string) ([]string, error) {
 			return managerFileGDBPermissions, nil
 		case "native-table-orc":
 			return managerORCPermissions, nil
-		case "", "full", "native-raster-media":
+		case "", "full", "native-raster-media", "native-envi":
 		default:
 			return nil, errors.New("unsupported Manager Online acceptance case")
 		}

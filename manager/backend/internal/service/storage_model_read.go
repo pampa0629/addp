@@ -9,22 +9,25 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/common/format/plugins/envi"
 	"github.com/addp/common/format/plugins/fbx"
 	"github.com/addp/common/format/plugins/glb"
+	commonjson "github.com/addp/common/jsonmap"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 )
 
-type modelStorageReadChecker interface {
-	CheckManagerModel3DRead(context.Context, string, commonClient.ManagerModel3DExpectedSource) error
+type fileStorageReadChecker interface {
+	CheckManagerFileRead(context.Context, string, commonClient.ManagerFileExpectedSource) error
 }
 
-func (s *MetadataService) SetModelSourceReadChecker(checker modelStorageReadChecker) {
-	s.modelSourceChecker = checker
+func (s *MetadataService) SetFileSourceReadChecker(checker fileStorageReadChecker) {
+	s.fileSourceChecker = checker
 }
 
 // storageRead is confined to one synchronous request. It never persists the
@@ -34,8 +37,9 @@ type storageRead struct {
 	target     *StorageDataItem
 	tenantID   *uint
 	credential string
-	expected   *commonClient.ManagerModel3DExpectedSource
+	expected   *commonClient.ManagerFileExpectedSource
 	wholeRoot  *plugin.EngineCatalogPath
+	headerSHA  string
 }
 
 func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *uint, credential string, human bool, plan *models.DownloadPlan) (*storageRead, error) {
@@ -46,32 +50,40 @@ func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *
 	if target.Descriptor.Format == "filegdb" {
 		return s.prepareWholeStorageRead(read, credential, human)
 	}
-	if target.Descriptor.DataType != datatype.Model3D {
+	if target.Descriptor.DataType != datatype.Model3D && target.Descriptor.Format != "envi" {
 		return read, nil
 	}
 	if !human || !strings.HasPrefix(credential, "addp_at_") || strings.ContainsAny(credential, " \t\r\n") {
 		return nil, commonClient.ErrManagerPreviewCredentialRejected
 	}
-	if s.modelSourceChecker == nil {
+	if s.fileSourceChecker == nil {
 		return nil, commonClient.ErrManagerPreviewReadUnavailable
 	}
 	engine, item := target.engine, target.item
 	if engine == nil || item == nil || engine.ID != target.EngineID || engine.EngineType != target.EngineType ||
 		engine.TenantID == nil || *engine.TenantID != *tenantID || engine.Version <= 0 ||
-		!commonExecution.ManagerModel3DSourceFormat(engine.EngineType, target.Descriptor.Format) {
+		(!commonExecution.ManagerModel3DSourceFormat(engine.EngineType, target.Descriptor.Format) && target.Descriptor.Format != "envi") {
 		return nil, commonClient.ErrManagerPreviewReadDenied
 	}
 	if err := engineaccess.EnsureAvailable(engine); err != nil {
 		return nil, err
 	}
-	candidate, err := model3DGLBCandidateFromMeta(*tenantID, Model3DGLBSourceConfig{
-		ItemID: item.ID, SourceEngineID: engine.ID, ItemFingerprint: target.ItemFingerprint,
-		ItemLocator: target.locator, Format: target.Descriptor.Format,
-	}, item)
-	if err != nil || !commonExecution.ManagerModel3DSourceComposition(engine.EngineType, candidate.composition) {
+	var composition *authorizationfacts.FileCompositionBoundary
+	var err error
+	if target.Descriptor.Format == "envi" {
+		composition, err = enviCompositionFromMeta(*tenantID, engine.ID, item.ID, target.ItemFingerprint, target.locator, item)
+		read.headerSHA = commonjson.String(item.Attributes, "format_info.envi", "header_sha256")
+	} else {
+		var candidate *model3DGLBSourceCandidate
+		candidate, err = model3DGLBCandidateFromMeta(*tenantID, Model3DGLBSourceConfig{ItemID: item.ID, SourceEngineID: engine.ID, ItemFingerprint: target.ItemFingerprint, ItemLocator: target.locator, Format: target.Descriptor.Format}, item)
+		if err == nil {
+			composition = candidate.composition
+		}
+	}
+	if err != nil || !commonExecution.ManagerFileSourceComposition(engine.EngineType, composition) {
 		return nil, commonClient.ErrManagerPreviewReadDenied
 	}
-	expected := commonClient.ManagerModel3DExpectedSource{EngineVersion: strconv.FormatInt(engine.Version, 10), FileComposition: *candidate.composition.Clone()}
+	expected := commonClient.ManagerFileExpectedSource{EngineVersion: strconv.FormatInt(engine.Version, 10), FileComposition: *composition.Clone()}
 	if expected.Validate() != nil {
 		return nil, commonClient.ErrManagerPreviewReadDenied
 	}
@@ -129,7 +141,7 @@ func (r *storageRead) check(ctx context.Context, storageRef string) error {
 	if !found {
 		return commonClient.ErrManagerPreviewReadDenied
 	}
-	return r.service.modelSourceChecker.CheckManagerModel3DRead(ctx, r.credential, *r.expected)
+	return r.service.fileSourceChecker.CheckManagerFileRead(ctx, r.credential, *r.expected)
 }
 
 func (r *storageRead) stream(ctx context.Context, storageRef, rangeHeader string) (io.ReadCloser, int64, string, string, error) {
@@ -138,6 +150,51 @@ func (r *storageRead) stream(ctx context.Context, storageRef, rangeHeader string
 		return nil, 0, "", "", err
 	}
 	check := func() error { return r.check(ctx, storageRef) }
+	if r.expected != nil && r.expected.FileComposition.Format == "envi" {
+		headerName := ""
+		for _, ref := range r.expected.FileComposition.Refs {
+			if ref.Role == "header" {
+				headerName = ref.Target.StringPath()
+			}
+		}
+		reader, size, _, mime, err := r.service.streamStorageContent(ctx, resource, headerName, "", envi.MaxHeaderBytes, func() error { return r.check(ctx, headerName) })
+		if err != nil {
+			return nil, 0, "", "", err
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(reader, envi.MaxHeaderBytes+1))
+		closeErr := reader.Close()
+		header, parseErr := envi.ParseHeader(ctx, raw)
+		if readErr != nil || closeErr != nil || int64(len(raw)) != size || parseErr != nil || header.SHA256 != r.headerSHA {
+			return nil, 0, "", "", commonClient.ErrManagerPreviewReadDenied
+		}
+		if err := check(); err != nil {
+			return nil, 0, "", "", err
+		}
+		if storageRef == headerName {
+			options, length, contentRange, err := parseStorageRange(rangeHeader, int64(len(raw)))
+			if err != nil {
+				return nil, 0, "", "", err
+			}
+			return io.NopCloser(bytes.NewReader(raw[options.Offset : options.Offset+length])), length, contentRange, mime, nil
+		}
+		stream, length, contentRange, contentType, err := r.service.streamStorageContent(ctx, resource, storageRef, rangeHeader, envi.MaxRasterBytes, check)
+		if err != nil {
+			return nil, 0, "", "", err
+		}
+		validSize := length == header.FileBytes
+		if contentRange != "" {
+			_, total, found := strings.Cut(contentRange, "/")
+			validSize = found && total == strconv.FormatInt(header.FileBytes, 10)
+		}
+		if !validSize {
+			closeErr := stream.Close()
+			if closeErr != nil {
+				return nil, 0, "", "", closeErr
+			}
+			return nil, 0, "", "", commonClient.ErrManagerPreviewReadDenied
+		}
+		return stream, length, contentRange, contentType, nil
+	}
 	if r.expected != nil && r.expected.FileComposition.Format == "gltf" {
 		primary, err := r.expected.FileComposition.PrimaryTarget()
 		if err != nil {

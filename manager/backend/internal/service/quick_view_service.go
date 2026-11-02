@@ -213,6 +213,8 @@ type QuickViewSource struct {
 }
 
 type RasterQuickViewSource struct {
+	HeaderSHA256        string
+	RasterSHA256        string
 	Format              string
 	Profile             string
 	SizeBytes           int64
@@ -1904,6 +1906,11 @@ func rasterCOGFactsMatch(result *models.RasterCOG, identity QuickViewIdentity, r
 	if raster == nil {
 		return true
 	}
+	if raster.Format == "envi" {
+		if !enviRasterCOGVersionMatches(result, raster) {
+			return false
+		}
+	}
 	if raster.Width > 0 && result.Width > 0 && raster.Width != result.Width {
 		return false
 	}
@@ -2358,7 +2365,7 @@ func rasterInfoFromSource(raster *RasterQuickViewSource) *QuickViewRasterInfo {
 }
 
 func applyRasterCRSInference(raster *RasterQuickViewSource) {
-	if raster == nil || (raster.Format == "img" || raster.Format == "jpeg2000") {
+	if raster == nil || (raster.Format == "img" || raster.Format == "jpeg2000" || raster.Format == "envi") {
 		return
 	}
 	if raster.SourceSRID > 0 || strings.TrimSpace(raster.SourceCRS) != "" {
@@ -2684,7 +2691,7 @@ func rasterUnavailableReason(raster *RasterQuickViewSource, maxBytes, maxPixels 
 	if raster.SourceSRID <= 0 && strings.TrimSpace(raster.SourceCRS) == "" {
 		return RasterUnavailableReasonMissingCRS
 	}
-	if raster.Format == "img" || raster.Format == "jpeg2000" {
+	if raster.Format == "img" || raster.Format == "jpeg2000" || raster.Format == "envi" {
 		return RasterUnavailableReasonRequiresCOGGeneration
 	}
 	if strings.TrimSpace(raster.PreviewURL) == "" {
@@ -2717,7 +2724,7 @@ func rasterDirectTIFFOptionalAction(raster *RasterQuickViewSource) string {
 }
 
 func rasterUnavailableOptionalAction(reason string, raster *RasterQuickViewSource) string {
-	if raster != nil && (raster.Format == "img" || raster.Format == "jpeg2000") {
+	if raster != nil && (raster.Format == "img" || raster.Format == "jpeg2000" || raster.Format == "envi") {
 		return ""
 	}
 	switch strings.TrimSpace(reason) {
@@ -3066,7 +3073,7 @@ func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator s
 		return nil
 	}
 	sourceFormat := commonJSON.String(attrs, "item", "format")
-	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), "media") || (sourceFormat != "tiff" && sourceFormat != "img" && sourceFormat != "jpeg2000") {
+	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), "media") || (sourceFormat != "tiff" && sourceFormat != "img" && sourceFormat != "jpeg2000" && sourceFormat != "envi") {
 		return nil
 	}
 	if sourceFormat != "tiff" && commonJSON.Section(attrs, "format_info."+sourceFormat)["scan_complete"] != true {
@@ -3080,6 +3087,8 @@ func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator s
 	}
 	raster := &RasterQuickViewSource{
 		Format:              sourceFormat,
+		HeaderSHA256:        commonJSON.String(attrs, "format_info.envi", "header_sha256"),
+		RasterSHA256:        commonJSON.String(attrs, "format_info.envi", "raster_sha256"),
 		Profile:             strings.TrimSpace(commonJSON.InterfaceString(tiffInfo["profile"])),
 		SizeBytes:           rasterSizeBytesFromAttributes(attrs, mediaInfo),
 		Width:               commonJSON.InterfaceInt64(mediaInfo["width"]),

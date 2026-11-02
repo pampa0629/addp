@@ -18,8 +18,8 @@ import (
 const ManagerPreviewReadPermission = "manager.data_item.read"
 
 type SourceReadCheckRequest struct {
-	Targets        []engineplugin.EngineCatalogPath     `json:"targets"`
-	ExpectedSource *client.ManagerModel3DExpectedSource `json:"expected_source,omitempty"`
+	Targets        []engineplugin.EngineCatalogPath  `json:"targets"`
+	ExpectedSource *client.ManagerFileExpectedSource `json:"expected_source,omitempty"`
 }
 
 // A point-in-time source check. NOT a reusable Allow, lease or execution token.

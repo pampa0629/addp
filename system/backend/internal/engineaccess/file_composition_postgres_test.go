@@ -27,7 +27,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 	t.Run("file composition source grants", func(t *testing.T) {
 		t.Run("STL single-primary SQL contract", func(t *testing.T) { exerciseSTLCompositionSQL(t, db) })
 		t.Run("glTF multi SQL contract", func(t *testing.T) { exerciseGLTFCompositionSQL(t, db) })
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}} {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}, {"nfs", "envi"}, {"minio", "envi"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -49,6 +49,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					itemType = "object"
 				}
 				primary := targetFor("scene." + format)
+				if format == "envi" {
+					primary = targetFor("scene.img")
+				}
 				if format == "filegdb" {
 					primary = plugin.FileDirectoryPath(engine.ID, "models/scene.gdb")
 				}
@@ -76,6 +79,15 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 						}
 						facts.BoundaryHash = &hash
 						return facts
+					}
+					if format == "envi" {
+						refs[0].Role = "raster"
+						refs[1].Role = "header"
+						name := "scene.hdr"
+						if texture == "B.PNG" {
+							name = "scene.img.hdr"
+						}
+						refs[1].Target = targetFor(name)
 					}
 					composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)
 					if err != nil {
@@ -163,7 +175,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				request := SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}}
 				if current.Boundary.FileComposition != nil {
-					request.ExpectedSource = &client.ManagerModel3DExpectedSource{EngineVersion: "1", FileComposition: *current.Boundary.FileComposition.Clone()}
+					request.ExpectedSource = &client.ManagerFileExpectedSource{EngineVersion: "1", FileComposition: *current.Boundary.FileComposition.Clone()}
 				}
 				read := func(request SourceReadCheckRequest, want bool) {
 					t.Helper()
@@ -204,7 +216,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				read(request, true)
 				if format != "glb" && format != "filegdb" {
-					exerciseManagerModel3DAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)
+					exerciseManagerFileAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)
 				}
 				// A primary-only row cannot become a full composition Grant.
 				bare, err := prepareIndependentGrant(input)
@@ -267,7 +279,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					return
 				}
 				current = factsFor("B.PNG")
-				currentRequest := SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerModel3DExpectedSource{EngineVersion: "1", FileComposition: *current.Boundary.FileComposition.Clone()}}
+				currentRequest := SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerFileExpectedSource{EngineVersion: "1", FileComposition: *current.Boundary.FileComposition.Clone()}}
 				read(currentRequest, false) // old A Grant alone does not cover B, even without a Deny.
 				read(request, false)
 				current = original

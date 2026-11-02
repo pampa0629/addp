@@ -18,8 +18,8 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
   const env = process.env
   const evidence = JSON.parse(env.ADDP_ONLINE_MANAGER_RASTER_MEDIA_JSON || '{}')
   expect(evidence.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
-  expect(['img', 'jpeg2000', 'grd', 'tiff']).toContain(evidence.source_format)
-  expect(evidence.cases.map(source => source.case)).toEqual({ img: ['wgs84', 'utm50n', 'unlocated'], jpeg2000: ['wgs84', 'utm50n', 'unlocated', 'codestream'], grd: ['v1', 'v2', 'surfer6', 'surfer6-ascii'], tiff: ['unlocated-small-cog'] }[evidence.source_format])
+  expect(['img', 'jpeg2000', 'grd', 'tiff', 'envi']).toContain(evidence.source_format)
+  expect(evidence.cases.map(source => source.case)).toEqual({ img: ['wgs84', 'utm50n', 'unlocated'], jpeg2000: ['wgs84', 'utm50n', 'unlocated', 'codestream'], grd: ['v1', 'v2', 'surfer6', 'surfer6-ascii'], tiff: ['unlocated-small-cog'], envi: ['minio-bsq','minio-bil','minio-bip','nfs-bsq','nfs-bil','nfs-bip'] }[evidence.source_format])
   const expectedIdentity = { principalID: evidence.identity.principal_id, tenantID: evidence.identity.tenant_id,
     permissions: new Set(evidence.identity.permissions_verified) }
   const diagnostics = createBrowserGpuDiagnostics('img-login')
@@ -59,7 +59,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
     try {
       const meta = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'IMG source metadata')
       const isTiff = evidence.source_format === 'tiff'
-      expect(meta.attributes.item).toMatchObject({ data_type: 'media', format: evidence.source_format, layout: isTiff ? 'multi' : 'single' })
+      expect(meta.attributes.item).toMatchObject({ data_type: 'media', format: evidence.source_format, layout: isTiff || evidence.source_format === 'envi' ? 'multi' : 'single' })
       expect(meta.attributes.type_info.media).toMatchObject({ encoding: isTiff ? 'tiff' : source.driver, width: source.width ?? 256, height: source.height ?? 256 })
       if (isTiff) {
         expect(meta.attributes.format_info.tiff).toMatchObject({ profile: 'cog', is_cloud_optimized: true,
@@ -167,7 +167,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
       const download = await downloadEvent
       expect(await download.failure()).toBeNull()
       const raw = readFileSync(await download.path())
-      if (isTiff) {
+      if (isTiff || evidence.source_format === 'envi') {
         expect(new URL(download.url()).pathname).toBe('/api/v1/manager/downloads/file')
         expect(new URL(download.url()).searchParams.get('locator')).toBe(source.locator)
         const code = `import sys,json,importlib
@@ -177,8 +177,8 @@ with open(sys.argv[2],'rb')as content:raw=content.read(65537)
 print(json.dumps(owner.validate_model_bundle(raw,json.loads(sys.argv[3]))))`
         actual.download_bundle = JSON.parse(execFileSync('python3', ['-c', code, resolve(process.cwd(), '../..'),
           await download.path(), JSON.stringify(source.download_members)], { encoding: 'utf8', timeout: 10000, maxBuffer: 65536 }))
-        actual.download_sha256 = actual.download_bundle.members['tiff-unlocated-small-cog.tif'].sha256
-        writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'tiff-unlocated-small-cog-button.zip'), raw)
+        actual.download_sha256 = actual.download_bundle.members[evidence.source_format === 'envi' ? source.name : 'tiff-unlocated-small-cog.tif'].sha256
+        writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, evidence.source_format === 'envi' ? `envi-${source.case}-button.zip` : 'tiff-unlocated-small-cog-button.zip'), raw)
       } else {
         expect(raw.length).toBe(source.size_bytes)
         actual.download_sha256 = createHash('sha256').update(raw).digest('hex')

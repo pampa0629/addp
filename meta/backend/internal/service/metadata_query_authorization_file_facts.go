@@ -11,8 +11,8 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
-	commonExecution "github.com/addp/common/execution"
 	commonformat "github.com/addp/common/format"
+	"github.com/addp/common/format/plugins/envi"
 	"github.com/addp/common/format/plugins/fbx"
 	commonjson "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaitem"
@@ -45,7 +45,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 		return projectWholeContainerAuthorizationFacts(tx, item, facts)
 	}
 	identity := authorizationfacts.FileCompositionBoundary{Format: format}
-	if layout != identity.Layout() || dataType != "model_3d" || !commonExecution.ManagerModel3DFileFormat(format) {
+	if layout != identity.Layout() || dataType != identity.DataType() || identity.DataType() == "" {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
 	targetFor := func(name string) plugin.EngineCatalogPath {
@@ -57,7 +57,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	}
 	primary := targetFor(item.FullName)
 	if primary.StringPath() != item.FullName || path.Base(item.FullName) != item.Name ||
-		strings.ToLower(path.Ext(item.FullName)) != "."+format || commonjson.String(item.Attributes, "storage", "physical_path") != item.FullName {
+		(format != "envi" && strings.ToLower(path.Ext(item.FullName)) != "."+format) || commonjson.String(item.Attributes, "storage", "physical_path") != item.FullName {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 	}
 	state, err := validateFileAuthorizationParents(tx, item)
@@ -107,7 +107,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 			if ref.Path != item.FullName || ref.Role != identity.PrimaryRole() {
 				return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 			}
-		} else if ref.Role != "texture" && format != "obj" && format != "gltf" {
+		} else if ref.Role != "texture" && format != "obj" && format != "gltf" && format != "envi" {
 			suffix := strings.TrimPrefix(ref.Role, "texture_")
 			n, err := strconv.Atoi(suffix)
 			if !strings.HasPrefix(ref.Role, "texture_") || err != nil || n < 2 || strconv.Itoa(n) != suffix {
@@ -119,6 +119,18 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	}
 	if primaryCount != 1 {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+	}
+	if format == "envi" {
+		native := commonjson.Section(item.Attributes, "format_info.envi")
+		sha, _ := native["header_sha256"].(string)
+		headerPath, _ := native["header_path"].(string)
+		header, found := byPath[headerPath]
+		if native["composition_complete"] != true || native["profile"] != envi.Profile || !authorizationfacts.ValidItemFingerprint(sha) {
+			return finish(authorizationfacts.AuthorizationBasisIncomplete)
+		}
+		if len(refs) != 2 || !found || header.Primary || header.Role != "header" {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
 	}
 	if (format == "ifc" || format == "stl" || format == "glb" || format == "fbx") && len(refs) != 1 {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)

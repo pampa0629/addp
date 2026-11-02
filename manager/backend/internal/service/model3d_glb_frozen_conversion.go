@@ -25,8 +25,8 @@ type model3DGLBFrozenHeader struct {
 	Composition   *authorizationfacts.FileCompositionBoundary `json:"source_composition"`
 }
 
-func freezeFileModel3DGLBConfig(snapshot *repository.Model3DGLBTaskSnapshot, engine *commonModels.Engine, candidate *model3DGLBSourceCandidate, executionID, bucket string) (commonModels.JSONMap, error) {
-	reject := ErrModel3DGLBSourceAuthorizationRequired
+func freezeFileModel3DGLBConfig(snapshot *repository.FileTaskSnapshot, engine *commonModels.Engine, candidate *model3DGLBSourceCandidate, executionID, bucket string) (commonModels.JSONMap, error) {
+	reject := ErrFileSourceAuthorizationRequired
 	if snapshot == nil || snapshot.TaskID == 0 || snapshot.Version == 0 || snapshot.TenantID == 0 || engine == nil || !commonExecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.Version <= 0 || engine.TenantID == nil || *engine.TenantID != snapshot.TenantID || candidate == nil || candidate.composition == nil || !commonExecution.ManagerModel3DSourceComposition(engine.EngineType, candidate.composition) {
 		return nil, reject
 	}
@@ -68,17 +68,17 @@ func freezeFileModel3DGLBConfig(snapshot *repository.Model3DGLBTaskSnapshot, eng
 func decodeModel3DGLBFrozenHeader(raw json.RawMessage) (*model3DGLBFrozenHeader, error) {
 	var header model3DGLBFrozenHeader
 	if json.Unmarshal(raw, &header) != nil || header.Version != models.Model3DGLBFileConfigVersion || header.Composition == nil {
-		return nil, ErrModel3DGLBSourceAuthorizationRequired
+		return nil, ErrFileSourceAuthorizationRequired
 	}
 	for _, value := range []string{header.OwnerTask.ID, header.OwnerTask.Version, header.EngineVersion} {
 		n, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || n <= 0 || strconv.FormatInt(n, 10) != value {
-			return nil, ErrModel3DGLBSourceAuthorizationRequired
+			return nil, ErrFileSourceAuthorizationRequired
 		}
 	}
 	primary, err := header.Composition.PrimaryTarget()
 	if err != nil || header.Composition.Validate(primary.EngineID) != nil {
-		return nil, ErrModel3DGLBSourceAuthorizationRequired
+		return nil, ErrFileSourceAuthorizationRequired
 	}
 	return &header, nil
 }
@@ -104,18 +104,18 @@ func decodeFileModel3DGLBConversion(raw json.RawMessage) (Model3DGLBExecutionCon
 		Options json.RawMessage `json:"options"`
 	}
 	if len(raw) == 0 || len(raw) > commonExecution.MaxExecutionConfigBytes || json.Unmarshal(raw, &wire) != nil {
-		return Model3DGLBExecutionConfig{}, ErrModel3DGLBSourceAuthorizationRequired
+		return Model3DGLBExecutionConfig{}, ErrFileSourceAuthorizationRequired
 	}
 	if wire.Source.ItemLocator == "" || wire.Source.SourceEngineID == 0 || wire.Source.ItemID == 0 || wire.Source.ItemFingerprint == "" ||
 		!commonExecution.ManagerModel3DConversionFormat(wire.Source.Format) || wire.Result.StorageRef == "" || wire.Result.FileName == "" {
-		return Model3DGLBExecutionConfig{}, ErrModel3DGLBSourceAuthorizationRequired
+		return Model3DGLBExecutionConfig{}, ErrFileSourceAuthorizationRequired
 	}
 	var result Model3DGLBExecutionConfig
 	result.ConfigVersion = wire.ConfigVersion
 	decoder := json.NewDecoder(bytes.NewReader(wire.Options))
 	decoder.UseNumber()
 	if decoder.Decode(&result.Options) != nil || result.Options == nil || decoder.Decode(new(any)) != io.EOF {
-		return result, ErrModel3DGLBSourceAuthorizationRequired
+		return result, ErrFileSourceAuthorizationRequired
 	}
 	result.Source = Model3DGLBSourceConfig{ItemLocator: wire.Source.ItemLocator, SourceEngineID: wire.Source.SourceEngineID, ItemFingerprint: wire.Source.ItemFingerprint, ItemID: wire.Source.ItemID, Format: wire.Source.Format, SourceSizeBytes: wire.Source.SourceSizeBytes}
 	result.Result = Model3DGLBResultConfig{StorageRef: wire.Result.StorageRef, FileName: wire.Result.FileName}

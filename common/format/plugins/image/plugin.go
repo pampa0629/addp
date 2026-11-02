@@ -90,6 +90,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		descriptor.Identification = format.FormatIdentification{Extensions: []string{".bmp"}, MimeTypes: []string{"image/bmp", "image/x-ms-bmp"}}
 	case format.FormatTIFF:
 		descriptor.Identification = format.FormatIdentification{Extensions: []string{".tif", ".tiff"}, MimeTypes: []string{"image/tiff"}}
+		descriptor.Identification.ContentSignatures = []string{"hex:49492a00", "hex:4d4d002a", "hex:49492b0008000000", "hex:4d4d002b00080000"}
 		descriptor.Layouts = []string{format.LayoutSingle, format.LayoutMulti}
 	}
 	return descriptor

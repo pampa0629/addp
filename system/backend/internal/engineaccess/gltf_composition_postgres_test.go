@@ -34,7 +34,7 @@ func exerciseGLTFCompositionSQL(t *testing.T, db *gorm.DB) {
 		check(true)
 		scope, _ := json.Marshal(map[string]any{"config_digest": strings.Repeat("a", 64), "owner_task_id": "1", "owner_task_version": "1", "engine_version": "1", "file_composition": composition})
 		var valid bool
-		if err := db.Raw("SELECT system.valid_manager_model3d_scope(?::jsonb)", string(scope)).Scan(&valid).Error; err != nil || !valid {
+		if err := db.Raw("SELECT system.valid_manager_file_scope(?::jsonb)", string(scope)).Scan(&valid).Error; err != nil || !valid {
 			t.Fatal("glTF conversion scope rejected", err)
 		}
 		for i := range composition.Refs {

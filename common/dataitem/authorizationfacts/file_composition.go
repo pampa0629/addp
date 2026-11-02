@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"path"
 	"reflect"
 	"sort"
 	"strconv"
@@ -25,7 +26,7 @@ type FileCompositionRef struct {
 	Primary  bool                     `json:"primary"`
 }
 
-// FileCompositionBoundary carries complete, Meta-confirmed model composition.
+// FileCompositionBoundary carries complete, Meta-confirmed file composition.
 // It has no content versions, byte counts, credentials or permission decisions.
 type FileCompositionBoundary struct {
 	Format string               `json:"format"`
@@ -33,9 +34,9 @@ type FileCompositionBoundary struct {
 }
 
 // Layout is fixed by the admitted format identity, never by reference count.
-// glTF keeps its manifest-led multi identity; existing file models stay single.
+// glTF and ENVI keep their multi identities; existing file models stay single.
 func (b *FileCompositionBoundary) Layout() string {
-	if b != nil && b.Format == "gltf" {
+	if b != nil && (b.Format == "gltf" || b.Format == "envi") {
 		return "multi"
 	}
 	return "single"
@@ -43,10 +44,28 @@ func (b *FileCompositionBoundary) Layout() string {
 
 // PrimaryRole accompanies the same fixed model identity in owner projections.
 func (b *FileCompositionBoundary) PrimaryRole() string {
+	if b != nil && b.Format == "envi" {
+		return "raster"
+	}
 	if b != nil && b.Format == "gltf" {
 		return "manifest"
 	}
 	return "model"
+}
+
+// DataType is the admitted format identity, not a permission decision. Keeping
+// it here prevents model and media consumers from maintaining rival lists.
+func (b *FileCompositionBoundary) DataType() string {
+	if b == nil {
+		return ""
+	}
+	switch b.Format {
+	case "envi":
+		return "media"
+	case "ifc", "3ds", "dae", "obj", "stl", "glb", "gltf", "fbx":
+		return "model_3d"
+	}
+	return ""
 }
 
 const MaxFileCompositionRefs = 200
@@ -125,6 +144,13 @@ func (b *FileCompositionBoundary) Validate(engineID uint) error {
 		if len(target.Segments) <= len(parent) || target.Segments[len(target.Segments)-1].Term != leaf.Term ||
 			!reflect.DeepEqual(target.Segments[:len(parent)], parent) {
 			return errFileComposition
+		}
+		if b.Format == "envi" {
+			if len(b.Refs) != 2 || !ref.Required || len(target.Segments) != len(primary.Segments) ||
+				(ref.Primary && (ref.Role != "raster" || strings.EqualFold(path.Ext(target.StringPath()), ".hdr"))) ||
+				(!ref.Primary && (ref.Role != "header" || !strings.EqualFold(path.Ext(target.StringPath()), ".hdr"))) {
+				return errFileComposition
+			}
 		}
 	}
 	return nil

@@ -505,13 +505,13 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
     manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
     if (not manager_input or any(fragment not in manager_input.group('body') for fragment in
-            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-netcdf', '- kml-export', '- filegdb-authorization'))
+            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-netcdf', '- native-envi', '- kml-export', '- filegdb-authorization'))
             or any(fragment not in job.group('body') for fragment in (
                 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}',
                 'name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)',
                 'name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}'))
             or any(fragment not in hosted for fragment in (
-                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-netcdf|kml-export|filegdb-authorization)',
+                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-netcdf|native-envi|kml-export|filegdb-authorization)',
                 'manager-case.json', 'addp.manager-acceptance-case/v1'))):
         raise RegistrationError('Manager acceptance case requires explicit full/media selection and case-specific evidence')
     netcdf_paths = ('scripts/test/manager-netcdf-online.py', 'scripts/test/manager-netcdf-online_test.py',
@@ -525,7 +525,16 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             or "if case == 'native-netcdf':" not in netcdf_case_owner
             or any(fragment not in netcdf_make for fragment in (netcdf_paths[1], netcdf_paths[3]))):
         raise RegistrationError('NetCDF case must retain explicit dispatch, standard gates, raw values, source version, download and cleanup evidence')
-    if hosted.index('full|native-raster-media|native-table-orc|native-netcdf|kml-export|filegdb-authorization)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+    envi_paths=('scripts/test/manager-envi-online.py','scripts/test/manager-envi-online_test.py','business/scripts/online-envi-fixture.py','engines/geopython-workflow/test_online_envi_fixture.py')
+    if any(not (repository/path).is_file() for path in envi_paths):
+        raise RegistrationError('ENVI requires its exact pair owner, physical oracle and regressions')
+    envi_owner=(repository/envi_paths[0]).read_text()
+    if ("if case == 'native-envi':" not in netcdf_case_owner
+        or 'scripts/test/manager-envi-online_test.py' not in netcdf_make
+        or 'test_online_envi_fixture.py' not in netcdf_make
+        or any(value not in envi_owner for value in ('validate_model_bundle','current_source_deny_verified','deleted-cog','grant.cleanup()','manager-envi.json'))):
+        raise RegistrationError('ENVI requires page/download/current authorization/cache/cleanup through standard gates')
+    if hosted.index('full|native-raster-media|native-table-orc|native-netcdf|native-envi|kml-export|filegdb-authorization)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Manager acceptance case must reject invalid input before Hosted lifecycle')
     if "nfs-kernel-server" not in job.group("body"):
         raise RegistrationError("Manager content boundary acceptance requires its Hosted NFS package")

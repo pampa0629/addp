@@ -14,7 +14,7 @@ import (
 )
 
 type RuntimeMediaInspector interface {
-	InspectMedia(context.Context, *commonModels.Engine, uint, string, string) (*format.MediaDescribeResult, error)
+	InspectMedia(context.Context, *commonModels.Engine, uint, *metaitem.DetectedItem, string) (*format.MediaDescribeResult, error)
 }
 
 func EnrichRuntimeMediaItem(ctx context.Context, attrs models.JSONMap, inspector RuntimeMediaInspector, source *commonModels.Engine, tenantID uint, item *metaitem.DetectedItem, path string) (bool, error) {
@@ -26,6 +26,8 @@ func EnrichRuntimeMediaItem(ctx context.Context, attrs models.JSONMap, inspector
 		return false, nil
 	}
 	// Clear the in-flight description before inspecting this source version.
+	sourceItem := *item
+	sourceItem.Attributes = commonModels.JSONMap(item.Attributes).Clone()
 	metaattr.ReplaceAttributeNamespace(attrs, "type_info", "media", nil)
 	metaattr.ReplaceCapabilityNamespace(attrs, "spatial", nil)
 	metaattr.ReplaceAttributeNamespace(attrs, "format_info", string(formatType), nil)
@@ -33,7 +35,7 @@ func EnrichRuntimeMediaItem(ctx context.Context, attrs models.JSONMap, inspector
 	if inspector == nil {
 		return true, fmt.Errorf("runtime media deep scan requires a configured inspector")
 	}
-	info, err := inspector.InspectMedia(ctx, source, tenantID, path, string(formatType))
+	info, err := inspector.InspectMedia(ctx, source, tenantID, &sourceItem, path)
 	if err != nil {
 		return true, err
 	}

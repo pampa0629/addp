@@ -22,7 +22,7 @@ import (
 
 // Reuses the formal file Grant fixture and current User session. Meta and the
 // connection decoder are controlled projections, not physical FTP content I/O.
-func exerciseManagerModel3DAuthorization(t *testing.T, db *gorm.DB, source *Service, tenantID int64, user userProvenance, credential string, operator Actor, engineID uint, expectedHost string, facts authorizationfacts.AuthorizationFacts) {
+func exerciseManagerFileAuthorization(t *testing.T, db *gorm.DB, source *Service, tenantID int64, user userProvenance, credential string, operator Actor, engineID uint, expectedHost string, facts authorizationfacts.AuthorizationFacts) {
 	t.Run("Manager file model source execution authorization", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
 		defer cancel()
@@ -50,6 +50,12 @@ func exerciseManagerModel3DAuthorization(t *testing.T, db *gorm.DB, source *Serv
 			return &copy, nil
 		})
 		service := iam.NewManagerModel3DAuthorizationService(repo, source.PrepareExecutionSourceRead)
+		taskType, configVersion := execution.TaskTypeModel3DGLBGeneration, execution.ManagerModel3DConfigVersion
+		if facts.Boundary.FileComposition.Format == "envi" {
+			service = iam.NewManagerRasterCOGAuthorizationService(repo, source.PrepareExecutionSourceRead)
+			taskType, configVersion = execution.TaskTypeRasterCOGGeneration, execution.ManagerRasterCOGConfigVersion
+		}
+
 		var runtimeID int64
 		if err := db.Raw("SELECT id FROM system.service_principals WHERE name='addp-manager'").Scan(&runtimeID).Error; err != nil || runtimeID == 0 {
 			t.Fatalf("runtime unavailable: %v", err)
@@ -71,10 +77,17 @@ func exerciseManagerModel3DAuthorization(t *testing.T, db *gorm.DB, source *Serv
 			}
 			task := "123"
 			actor := int(user.PrincipalID)
-			job := &execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenantID), Module: "manager", Source: "manager", TaskType: execution.TaskTypeModel3DGLBGeneration,
+			job := &execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenantID), Module: "manager", Source: "manager", TaskType: taskType,
 				SourceTaskID: &task, TriggeredBy: &actor, Status: "pending", TriggerType: "manual", ExecutionBoundary: "bounded", MaxAttempts: 3,
 				ActorPrincipalID: &user.PrincipalID, ActorTenantMembershipID: &user.MembershipID, IssuedAuthorizationVersion: &user.AuthorizationVersion, CreatedAt: createdAt, UpdatedAt: createdAt,
-				ExecutionConfig: models.JSONMap{"config_version": execution.ManagerModel3DConfigVersion, "owner_task": map[string]any{"id": task, "version": "7"}, "source_engine_version": "1", "source_composition": facts.Boundary.FileComposition.Clone(), "source": map[string]any{"engine_id": engineID}, "result": map[string]any{"key": uuid.NewString() + "/model.glb"}, "options": map[string]any{"max_bytes": 100}}, Metadata: models.JSONMap{}, ErrorDetails: models.JSONMap{}}
+				ExecutionConfig: models.JSONMap{"config_version": configVersion, "owner_task": map[string]any{"id": task, "version": "7"}, "source_engine_version": "1", "source_composition": facts.Boundary.FileComposition.Clone(), "source": map[string]any{"engine_id": engineID}, "result": map[string]any{"key": uuid.NewString() + "/model.glb"}, "options": map[string]any{"max_bytes": 100}}, Metadata: models.JSONMap{}, ErrorDetails: models.JSONMap{}}
+			if taskType == execution.TaskTypeRasterCOGGeneration {
+				delete(job.ExecutionConfig, "source")
+				delete(job.ExecutionConfig, "options")
+				job.ExecutionConfig["target"] = map[string]any{"source_engine_id": engineID}
+				job.ExecutionConfig["raster"] = map[string]any{"source_format": "envi"}
+				job.ExecutionConfig["cog"] = map[string]any{}
+			}
 			if err := execution.NewTaskExecutionRepository(db).Create(ctx, job); err != nil {
 				t.Fatal(err)
 			}
@@ -85,8 +98,8 @@ func exerciseManagerModel3DAuthorization(t *testing.T, db *gorm.DB, source *Serv
 			})
 			return job
 		}
-		issue := func(job *execution.TaskExecution, ttl time.Duration) (*iam.IssuedManagerModel3DAuthorization, error) {
-			return service.Issue(ctx, iam.IssueManagerModel3DAuthorizationInput{SourceAccessToken: credential, ExecutionID: uuid.MustParse(job.ExecutionID), ExpiresIn: ttl})
+		issue := func(job *execution.TaskExecution, ttl time.Duration) (*iam.IssuedManagerFileAuthorization, error) {
+			return service.Issue(ctx, iam.IssueManagerFileAuthorizationInput{SourceAccessToken: credential, ExecutionID: uuid.MustParse(job.ExecutionID), ExpiresIn: ttl})
 		}
 		t.Run("audit failure rolls back issuance", func(t *testing.T) {
 			job := create()
@@ -131,12 +144,19 @@ func exerciseManagerModel3DAuthorization(t *testing.T, db *gorm.DB, source *Serv
 		if result, err := issue(job, 2*time.Minute); result != nil || !errors.Is(err, iam.ErrExecutionAuthorizationConflict) {
 			t.Fatal("recovery silently renewed TTL", err)
 		}
+		otherPurpose := iam.NewManagerRasterCOGAuthorizationService(repo, source.PrepareExecutionSourceRead)
+		if taskType == execution.TaskTypeRasterCOGGeneration {
+			otherPurpose = iam.NewManagerModel3DAuthorizationService(repo, source.PrepareExecutionSourceRead)
+		}
+		if value, err := otherPurpose.Issue(ctx, iam.IssueManagerFileAuthorizationInput{SourceAccessToken: credential, ExecutionID: issued.ExecutionID}); value != nil || err == nil {
+			t.Fatal("model and raster purposes exchanged authorization")
+		}
 		profile := iam.NewManagerProfileAuthorizationService(repo, source.PrepareExecutionSourceRead)
 		if result, err := profile.Issue(ctx, iam.IssueManagerProfileAuthorizationInput{SourceAccessToken: credential, ExecutionID: issued.ExecutionID}); result != nil || err == nil {
 			t.Fatal("model execution issued via profile purpose")
 		}
-		claim := iam.AuthorizeManagerModel3DInput{AuthorizationID: issued.ID, ExecutionID: issued.ExecutionID, Attempt: 1, LeaseToken: uuid.New(), SourceReadScope: issued.SourceReadScope, ServicePrincipalID: runtimeID, ServiceClientID: "addp-manager", TenantID: tenantID, Audit: audit}
-		deny := func(input iam.AuthorizeManagerModel3DInput) {
+		claim := iam.AuthorizeManagerFileInput{AuthorizationID: issued.ID, ExecutionID: issued.ExecutionID, Attempt: 1, LeaseToken: uuid.New(), SourceReadScope: issued.SourceReadScope, ServicePrincipalID: runtimeID, ServiceClientID: "addp-manager", TenantID: tenantID, Audit: audit}
+		deny := func(input iam.AuthorizeManagerFileInput) {
 			t.Helper()
 			if got, err := service.Authorize(ctx, input); got != nil || err == nil {
 				t.Fatal("invalid source/claim accepted")
@@ -231,7 +251,7 @@ func exerciseManagerModel3DAuthorization(t *testing.T, db *gorm.DB, source *Serv
 		}
 		raw, _ := json.Marshal(issued.SourceReadScope)
 		var frozen iam.ManagerSourceReadScope
-		if json.Unmarshal(raw, &frozen) != nil || frozen.Model3D() == nil {
+		if json.Unmarshal(raw, &frozen) != nil || frozen.File() == nil {
 			t.Fatal("persisted model scope unreadable")
 		}
 		if err := db.Exec("UPDATE system.execution_authorizations SET revoked_at=clock_timestamp(),revoked_reason='test' WHERE id=?", issued.ID).Error; err != nil {

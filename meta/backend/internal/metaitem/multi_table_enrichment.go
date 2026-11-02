@@ -63,6 +63,9 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 	for _, item := range resolveGLTFManifestItems(ctx, input, files) {
 		appendDetectedItem(result, item)
 	}
+	for _, item := range resolveENVIPairs(ctx, input, unclaimedFileEntries(files, result.Claims)) {
+		appendDetectedItem(result, item)
+	}
 
 	resolved, err := resolveCommonItems(input.DirPath, filterManifestAndClaimedStorageFiles(input.Files, result.Claims), !input.Options.ExcludeWholeScope && !initialResolved.Exclusive)
 	if err != nil {

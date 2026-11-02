@@ -141,9 +141,12 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterEngineAccessMetadataCheckRoutes(api, runtime, &EngineAccessMetadataCheckHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}
-	if err := RegisterIAMManagerModel3DAuthorizationRoutes(api, runtime, &IAMManagerModel3DAuthorizationHandler{
+	if err := RegisterIAMManagerModel3DAuthorizationRoutes(api, runtime, &IAMManagerFileAuthorizationHandler{
 		service: iam.NewManagerModel3DAuthorizationService(runtime.Repository, fulfillmentService.PrepareExecutionSourceRead),
 	}); err != nil {
+		panic(err)
+	}
+	if err := RegisterIAMManagerRasterCOGAuthorizationRoutes(api, runtime, &IAMManagerFileAuthorizationHandler{service: iam.NewManagerRasterCOGAuthorizationService(runtime.Repository, fulfillmentService.PrepareExecutionSourceRead)}); err != nil {
 		panic(err)
 	}
 	if secret := cfg.ServiceClientSecrets["addp-system"]; secret != "" {

@@ -285,3 +285,16 @@ test('whole FileGDB keeps its root binding without freezing child membership', a
  }
  await assert.rejects(readNativeApprovalFacts(root,async(...args)=>({...await read(...args),boundary:{layout:'whole',scope,native_target:root}})))
 })
+
+test('ENVI approval requires a complete same-directory raster/header pair', async () => {
+ for (const target of [filePath(' 原名 %.img'),objectPath(' 原名 %.dat')]) {
+  const fullName=target.segments.slice(1).map(v=>v.name).join('/')
+  const fingerprint=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`${target.engine_id}:${fullName}`))).toString('hex')
+  const facts=()=>{const header=structuredClone(target);header.segments.at(-1).name=' 原名 %.HDR';return {schema_version:'meta.data_item_authorization_facts/v1',engine_id:target.engine_id,item_type:target.segments.at(-1).term,item_fingerprint:fingerprint,basis_state:'complete',boundary_hash:'a'.repeat(64),boundary:{layout:'multi',file_composition:{format:'envi',refs:[{target:structuredClone(target),role:'raster',primary:true,required:true},{target:header,role:'header',primary:false,required:true}]}}}}
+  const binding=await observeNativeApprovalBinding(target,async()=>facts())
+  assert.equal(binding.file_composition.refs.length,2)
+  for(const change of [f=>{f.boundary.layout='single'},f=>{f.boundary.file_composition.refs.pop()},f=>{f.boundary.file_composition.refs[1].required=false},f=>{f.boundary.file_composition.refs[0].role='model'},f=>{f.boundary.file_composition.refs[1].target.segments.at(-1).name='secret.png'}]) {
+   await assert.rejects(observeNativeApprovalBinding(target,async()=>{const f=facts();change(f);return f}),/invalidDataItemBoundary/)
+  }
+ }
+})

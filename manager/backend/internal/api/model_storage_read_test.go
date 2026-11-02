@@ -53,7 +53,7 @@ func TestAllModelRawHTTPExitsRequireCurrentSourcePermission(t *testing.T) {
 					raw, _ := json.Marshal(map[string]interface{}{"id": 1, "tenant_id": 1, "engine_id": 9, "item_type": "file", "name": "test.ifc", "full_name": primary, "fingerprint": commonModels.GenerateItemFingerprint(9, primary), "attributes": map[string]interface{}{"item": map[string]interface{}{"data_type": "model_3d", "layout": "single", "format": "ifc"}, "storage": map[string]interface{}{"physical_path": primary}}})
 					metadata := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, "ftp"), apiDownloadTestMetaItemClient(t, string(raw)), nil, nil)
 					checks := 0
-					metadata.SetModelSourceReadChecker(apiModelReadChecker(func(_ context.Context, credential string, expected client.ManagerModel3DExpectedSource) error {
+					metadata.SetFileSourceReadChecker(apiModelReadChecker(func(_ context.Context, credential string, expected client.ManagerFileExpectedSource) error {
 						checks++
 						if credential != "addp_at_current_model_user" || expected.EngineVersion != "1" || expected.FileComposition.Format != "ifc" || len(expected.FileComposition.Refs) != 1 {
 							t.Fatal("lost current identity or complete source")

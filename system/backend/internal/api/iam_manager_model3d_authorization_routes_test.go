@@ -29,7 +29,7 @@ const model3DHTTPLease = "718a9dcf-75e4-4921-827f-ddb23309689b"
 const model3DHTTPIssuePath = "/api/v1/system/auth/execution-authorizations/manager-model3d-glb"
 const model3DHTTPConsumePath = "/api/v1/system/execution-authorizations/9/manager-model3d-glb-accesses"
 
-func model3DHTTPScope(t *testing.T) execution.ManagerModel3DReadScope {
+func model3DHTTPScope(t *testing.T) execution.ManagerFileReadScope {
 	t.Helper()
 	composition, err := authorizationfacts.NewFileCompositionBoundary("3ds", []authorizationfacts.FileCompositionRef{
 		{Target: plugin.FileItemPath(12, "models/scene.3ds"), Role: "model", Primary: true, Required: true},
@@ -38,7 +38,7 @@ func model3DHTTPScope(t *testing.T) execution.ManagerModel3DReadScope {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return execution.ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "10", OwnerTaskVersion: "7", EngineVersion: "5", FileComposition: *composition}
+	return execution.ManagerFileReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "10", OwnerTaskVersion: "7", EngineVersion: "5", FileComposition: *composition}
 }
 
 type model3DHTTPFixture struct {
@@ -46,13 +46,13 @@ type model3DHTTPFixture struct {
 	issues, consumes         int
 	err                      error
 	nilIssue, nilObservation bool
-	issued                   iam.IssueManagerModel3DAuthorizationInput
-	consumed                 iam.AuthorizeManagerModel3DInput
-	mutateIssue              func(*iam.IssuedManagerModel3DAuthorization)
-	mutateObservation        func(*iam.ManagerModel3DAccessObservation)
+	issued                   iam.IssueManagerFileAuthorizationInput
+	consumed                 iam.AuthorizeManagerFileInput
+	mutateIssue              func(*iam.IssuedManagerFileAuthorization)
+	mutateObservation        func(*iam.ManagerFileAccessObservation)
 }
 
-func (f *model3DHTTPFixture) Issue(_ context.Context, input iam.IssueManagerModel3DAuthorizationInput) (*iam.IssuedManagerModel3DAuthorization, error) {
+func (f *model3DHTTPFixture) Issue(_ context.Context, input iam.IssueManagerFileAuthorizationInput) (*iam.IssuedManagerFileAuthorization, error) {
 	f.issues++
 	f.issued = input
 	if f.err != nil {
@@ -61,13 +61,13 @@ func (f *model3DHTTPFixture) Issue(_ context.Context, input iam.IssueManagerMode
 	if f.nilIssue {
 		return nil, nil
 	}
-	result := &iam.IssuedManagerModel3DAuthorization{ID: 9, ExecutionID: input.ExecutionID, TenantID: 3, SourceReadScope: model3DHTTPScope(f.t), ExpiresAt: time.Now().Add(15 * time.Minute)}
+	result := &iam.IssuedManagerFileAuthorization{ID: 9, ExecutionID: input.ExecutionID, TenantID: 3, SourceReadScope: model3DHTTPScope(f.t), ExpiresAt: time.Now().Add(15 * time.Minute)}
 	if f.mutateIssue != nil {
 		f.mutateIssue(result)
 	}
 	return result, nil
 }
-func (f *model3DHTTPFixture) Authorize(_ context.Context, input iam.AuthorizeManagerModel3DInput) (*iam.ManagerModel3DAccessObservation, error) {
+func (f *model3DHTTPFixture) Authorize(_ context.Context, input iam.AuthorizeManagerFileInput) (*iam.ManagerFileAccessObservation, error) {
 	f.consumes++
 	f.consumed = input
 	if f.err != nil {
@@ -77,7 +77,7 @@ func (f *model3DHTTPFixture) Authorize(_ context.Context, input iam.AuthorizeMan
 		return nil, nil
 	}
 	tenant := uint(3)
-	result := &iam.ManagerModel3DAccessObservation{ObservedAt: time.Now().UTC(), Engine: &commonmodels.Engine{ID: 12, TenantID: &tenant, Version: 5, EngineType: "ftp", LifecycleState: "active", ConnectionInfo: commonmodels.ConnectionInfo{"host": "ftp.current.fixture", "password": "connection-only-secret"}}}
+	result := &iam.ManagerFileAccessObservation{ObservedAt: time.Now().UTC(), Engine: &commonmodels.Engine{ID: 12, TenantID: &tenant, Version: 5, EngineType: "ftp", LifecycleState: "active", ConnectionInfo: commonmodels.ConnectionInfo{"host": "ftp.current.fixture", "password": "connection-only-secret"}}}
 	if f.mutateObservation != nil {
 		f.mutateObservation(result)
 	}
@@ -122,7 +122,7 @@ func model3DHTTPRouter(t *testing.T, current auth.AuthContext, fixture *model3DH
 		t.Fatal(err)
 	}
 	router := gin.New()
-	if err := RegisterIAMManagerModel3DAuthorizationRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authentication, UserAccessCredential: user, ServiceCredential: service}, &IAMManagerModel3DAuthorizationHandler{service: fixture}); err != nil {
+	if err := RegisterIAMManagerModel3DAuthorizationRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authentication, UserAccessCredential: user, ServiceCredential: service}, &IAMManagerFileAuthorizationHandler{service: fixture}); err != nil {
 		t.Fatal(err)
 	}
 	return router
@@ -132,7 +132,7 @@ func model3DHTTPBody(t *testing.T, service bool) string {
 	if !service {
 		return `{"execution_id":"` + model3DHTTPExecution + `","expires_in":120}`
 	}
-	raw, err := json.Marshal(commonclient.ManagerModel3DAccessRequest{ExecutionID: model3DHTTPExecution, Attempt: 2, LeaseToken: model3DHTTPLease, SourceReadScope: model3DHTTPScope(t)})
+	raw, err := json.Marshal(commonclient.ManagerFileAccessRequest{ExecutionID: model3DHTTPExecution, Attempt: 2, LeaseToken: model3DHTTPLease, SourceReadScope: model3DHTTPScope(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestManagerModel3DHTTPUsesSDKContractsAndCurrentActors(t *testing.T) {
 				t.Fatal("invalid response")
 			}
 			if service {
-				var result commonclient.ManagerModel3DAccessObservation
+				var result commonclient.ManagerFileAccessObservation
 				if json.Unmarshal(response.Body.Bytes(), &result) != nil || len(fields) != 2 || result.ObservedAt.IsZero() || result.Engine == nil || result.Engine.Version != 5 || result.Engine.ConnectionInfo["host"] != "ftp.current.fixture" {
 					t.Fatal("SDK observation lost current engine")
 				}
@@ -182,7 +182,7 @@ func TestManagerModel3DHTTPUsesSDKContractsAndCurrentActors(t *testing.T) {
 					t.Fatal("untrusted consume inputs")
 				}
 			} else {
-				var result commonclient.IssuedManagerModel3DAuthorization
+				var result commonclient.IssuedManagerFileAuthorization
 				if json.Unmarshal(response.Body.Bytes(), &result) != nil || len(fields) != 6 || !result.Matches(3, model3DHTTPScope(t)) || result.ExecutionID != model3DHTTPExecution {
 					t.Fatal("SDK issuance receipt mismatch")
 				}
@@ -372,7 +372,7 @@ func TestManagerModel3DHTTPDoesNotLeakDomainErrorsOrInvalidReceipts(t *testing.T
 		t.Run("issue "+kind, func(t *testing.T) {
 			f := &model3DHTTPFixture{t: t}
 			f.nilIssue = kind == "nil"
-			f.mutateIssue = func(result *iam.IssuedManagerModel3DAuthorization) {
+			f.mutateIssue = func(result *iam.IssuedManagerFileAuthorization) {
 				switch kind {
 				case "wrong tenant":
 					result.TenantID = 4
@@ -394,7 +394,7 @@ func TestManagerModel3DHTTPDoesNotLeakDomainErrorsOrInvalidReceipts(t *testing.T
 		t.Run("consume "+kind, func(t *testing.T) {
 			f := &model3DHTTPFixture{t: t}
 			f.nilObservation = kind == "nil"
-			f.mutateObservation = func(result *iam.ManagerModel3DAccessObservation) {
+			f.mutateObservation = func(result *iam.ManagerFileAccessObservation) {
 				switch kind {
 				case "zero time":
 					result.ObservedAt = time.Time{}

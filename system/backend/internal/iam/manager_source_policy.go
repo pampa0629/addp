@@ -18,15 +18,16 @@ import (
 type managerSourcePurpose string
 
 const (
-	managerSourceProfile managerSourcePurpose = "data_profiling"
-	managerSourceModel3D managerSourcePurpose = "model_3d_glb_generation"
+	managerSourceProfile   managerSourcePurpose = "data_profiling"
+	managerSourceModel3D   managerSourcePurpose = "model_3d_glb_generation"
+	managerSourceRasterCOG managerSourcePurpose = "raster_cog_generation"
 )
 
 func (p managerSourcePurpose) permission() string {
 	switch p {
 	case managerSourceProfile:
 		return "manager.data_profile.execute"
-	case managerSourceModel3D:
+	case managerSourceModel3D, managerSourceRasterCOG:
 		return "manager.derived_artifact.create"
 	}
 	return ""
@@ -39,7 +40,7 @@ func (p managerSourcePurpose) scope(raw json.RawMessage) (*ManagerSourceReadScop
 		}
 		return NewManagerProfileSourceScope(scope), nil
 	}
-	if p != managerSourceModel3D {
+	if p != managerSourceModel3D && p != managerSourceRasterCOG {
 		return nil, commonapi.ErrBadRequest
 	}
 	var fields struct {
@@ -53,14 +54,17 @@ func (p managerSourcePurpose) scope(raw json.RawMessage) (*ManagerSourceReadScop
 	if json.Unmarshal(raw, &fields) != nil {
 		return nil, ErrExecutionAuthorizationUnavailable
 	}
-	scope, err := execution.NewManagerModel3DReadScope(raw, fields.OwnerTask.ID, fields.OwnerTask.Version, fields.EngineVersion, &fields.Composition)
+	scope, err := execution.NewManagerFileReadScope(raw, fields.OwnerTask.ID, fields.OwnerTask.Version, fields.EngineVersion, &fields.Composition)
 	if err != nil {
 		return nil, ErrExecutionAuthorizationUnavailable
 	}
-	return NewManagerModel3DSourceScope(scope), nil
+	if scope.Purpose() != string(p) {
+		return nil, ErrExecutionAuthorizationUnavailable
+	}
+	return NewManagerFileSourceScope(scope), nil
 }
 func (p managerSourcePurpose) matches(scope *ManagerSourceReadScope) bool {
-	return scope.Validate() == nil && ((p == managerSourceProfile && scope.Profile() != nil) || (p == managerSourceModel3D && scope.Model3D() != nil))
+	return scope != nil && scope.Validate() == nil && ((p == managerSourceProfile && scope.Profile() != nil) || ((p == managerSourceModel3D || p == managerSourceRasterCOG) && scope.File() != nil && scope.File().Purpose() == string(p)))
 }
 
 // System reads only the owner-frozen common execution. Owner task definitions

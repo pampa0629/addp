@@ -1514,6 +1514,12 @@ func floatSliceFromConfig(value interface{}) ([]float64, bool) {
 		out := make([]float64, 0, len(v))
 		for _, item := range v {
 			switch n := item.(type) {
+			case json.Number:
+				number, err := n.Float64()
+				if err != nil || math.IsNaN(number) || math.IsInf(number, 0) {
+					return nil, false
+				}
+				out = append(out, number)
 			case float64:
 				out = append(out, n)
 			case int:

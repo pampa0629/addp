@@ -58,8 +58,8 @@ func stagingModelExecutor(store *stagingModelStore) *ManagerModel3DGLBExecutor {
 	return &ManagerModel3DGLBExecutor{objectStore: store, defaultBucket: "manager", minioEndpoint: "127.0.0.1:19000", minioAccessKey: "infra-test-key", minioSecretKey: "infra-test-secret"}
 }
 
-func stagingModelFile(name, text string) model3DStagingFile {
-	return model3DStagingFile{RelativePath: name, SizeBytes: int64(len(text)), Open: func(context.Context) (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(text)), nil }}
+func stagingModelFile(name, text string) fileStagingFile {
+	return fileStagingFile{RelativePath: name, SizeBytes: int64(len(text)), Open: func(context.Context) (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(text)), nil }}
 }
 
 func TestModel3DStagingCompositionAndAttemptIsolation(t *testing.T) {
@@ -69,7 +69,7 @@ func TestModel3DStagingCompositionAndAttemptIsolation(t *testing.T) {
 	var prefixes []string
 	for _, attempt := range []int{1, 1, 2} {
 		lease.Attempt = attempt
-		files := []model3DStagingFile{stagingModelFile("模型.3DS", "model"), stagingModelFile("textures/TEST.PNG", "texture"), stagingModelFile("textures/ TEST.PNG ", "padded texture")}
+		files := []fileStagingFile{stagingModelFile("模型.3DS", "model"), stagingModelFile("textures/TEST.PNG", "texture"), stagingModelFile("textures/ TEST.PNG ", "padded texture")}
 		err := executor.withStagedModel3DSource(context.Background(), lease, "3ds", workflowaccess.KindDirectory, "模型.3DS", files, &recordingModel3DStagingOwner{},
 			func(_ context.Context, source workflowaccess.Source) error {
 				if source.Access.Method != workflowaccess.MethodObjectStore || source.Entrypoint != "模型.3DS" || source.Access.Path != "" {
@@ -100,7 +100,7 @@ func TestModel3DStagingFailureAndCancellationCleanup(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			store := &stagingModelStore{}
-			files := []model3DStagingFile{stagingModelFile("wall.ifc", "model")}
+			files := []fileStagingFile{stagingModelFile("wall.ifc", "model")}
 			failure := errors.New("controlled failure")
 			switch scenario {
 			case "upload":
@@ -110,7 +110,7 @@ func TestModel3DStagingFailureAndCancellationCleanup(t *testing.T) {
 			case "long":
 				files[0].SizeBytes--
 			case "open-second":
-				files = append(files, model3DStagingFile{RelativePath: "texture.png", SizeBytes: 3, Open: func(context.Context) (io.ReadCloser, error) { return nil, failure }})
+				files = append(files, fileStagingFile{RelativePath: "texture.png", SizeBytes: 3, Open: func(context.Context) (io.ReadCloser, error) { return nil, failure }})
 			case "close":
 				files[0].Open = func(context.Context) (io.ReadCloser, error) {
 					return stagingModelCloseError{Reader: strings.NewReader("model"), err: failure}, nil
@@ -168,7 +168,7 @@ func TestModel3DStagingFailureAndCancellationCleanup(t *testing.T) {
 
 func TestModel3DStagingFreezesCompositionBeforeOpening(t *testing.T) {
 	store := &stagingModelStore{}
-	files := []model3DStagingFile{stagingModelFile("model.obj", "model"), stagingModelFile("model.mtl", "material")}
+	files := []fileStagingFile{stagingModelFile("model.obj", "model"), stagingModelFile("model.mtl", "material")}
 	files[0].Open = func(context.Context) (io.ReadCloser, error) {
 		files[1].RelativePath = "../unrelated"
 		return io.NopCloser(strings.NewReader("model")), nil
@@ -214,11 +214,11 @@ func TestModel3DStagingWithMinioClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	executor := &ManagerModel3DGLBExecutor{objectStore: client, defaultBucket: "manager", minioEndpoint: strings.TrimPrefix(server.URL, "http://"), minioAccessKey: "test-key", minioSecretKey: "test-secret"}
-	file := model3DStagingFile{RelativePath: "wall.ifc", SizeBytes: 5, Open: func(context.Context) (io.ReadCloser, error) {
+	file := fileStagingFile{RelativePath: "wall.ifc", SizeBytes: 5, Open: func(context.Context) (io.ReadCloser, error) {
 		reads++
 		return io.NopCloser(strings.NewReader("model")), nil
 	}}
-	err = executor.withStagedModel3DSource(context.Background(), commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "ifc", workflowaccess.KindFile, "wall.ifc", []model3DStagingFile{file}, &recordingModel3DStagingOwner{},
+	err = executor.withStagedModel3DSource(context.Background(), commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "ifc", workflowaccess.KindFile, "wall.ifc", []fileStagingFile{file}, &recordingModel3DStagingOwner{},
 		func(context.Context, workflowaccess.Source) error { return nil })
 	if err != nil || reads != 1 || writes != 1 || removes != 1 {
 		t.Fatalf("err=%v reads=%d writes=%d removes=%d", err, reads, writes, removes)
@@ -236,7 +236,7 @@ func TestModel3DStagingRejectsInvalidCompositionBeforeSourceRead(t *testing.T) {
 	for _, scenario := range []string{"traversal", "absolute", "backslash", "duplicate", "ancestor", "missing", "single-sidecar", "size", "execution", "attempt"} {
 		t.Run(scenario, func(t *testing.T) {
 			store := &stagingModelStore{}
-			files := []model3DStagingFile{stagingModelFile("model.obj", "model")}
+			files := []fileStagingFile{stagingModelFile("model.obj", "model")}
 			lease := commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}
 			kind := workflowaccess.KindDirectory
 			switch scenario {
@@ -361,16 +361,16 @@ func (failed3DSStagingReader) Read([]byte) (int, error) { return 0, io.ErrUnexpe
 
 // This records persistence calls, not source authorization decisions.
 type recordingModel3DStagingOwner struct {
-	prepared              []repository.Model3DGLBInputPreparation
+	prepared              []repository.FileInputPreparation
 	prepareErr, finishErr error
 	settled, cleaned      bool
 }
 
-func (o *recordingModel3DStagingOwner) prepare(_ context.Context, p repository.Model3DGLBInputPreparation) error {
+func (o *recordingModel3DStagingOwner) prepare(_ context.Context, p repository.FileInputPreparation) error {
 	o.prepared = append(o.prepared, p)
 	return o.prepareErr
 }
-func (o *recordingModel3DStagingOwner) finish(_ context.Context, _ repository.Model3DGLBInputPreparation, settled, cleaned bool) error {
+func (o *recordingModel3DStagingOwner) finish(_ context.Context, _ repository.FileInputPreparation, settled, cleaned bool) error {
 	o.settled, o.cleaned = settled, cleaned
 	return o.finishErr
 }
@@ -382,12 +382,12 @@ func TestModel3DStagingPersistsAllObjectsBeforeAnyUpload(t *testing.T) {
 			owner := &recordingModel3DStagingOwner{}
 			store := &stagingModelStore{}
 			lease := commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 2}
-			files := []model3DStagingFile{stagingModelFile("Scene.3DS", "main"), stagingModelFile("textures/Color.PNG ", "image")}
+			files := []fileStagingFile{stagingModelFile("Scene.3DS", "main"), stagingModelFile("textures/Color.PNG ", "image")}
 			files[0].Open = func(context.Context) (io.ReadCloser, error) {
 				if len(owner.prepared) != 1 || len(owner.prepared[0].Objects) != 2 || store.puts != 0 {
 					t.Fatal("I/O preceded complete durable ownership")
 				}
-				if err := owner.prepared[0].Validate(7); err != nil {
+				if err := owner.prepared[0].ValidateForTask(7, commonExecution.TaskTypeModel3DGLBGeneration); err != nil {
 					t.Fatal(err)
 				}
 				if !strings.HasSuffix(owner.prepared[0].Objects[1].Object, "/textures/Color.PNG ") {
@@ -405,7 +405,7 @@ func TestModel3DStagingPersistsAllObjectsBeforeAnyUpload(t *testing.T) {
 			case "ack failure":
 				owner.finishErr = failure
 			}
-			var ownership model3DStagingOwnership = owner
+			var ownership fileStagingOwnership = owner
 			if scenario == "no owner" {
 				ownership = nil
 			}

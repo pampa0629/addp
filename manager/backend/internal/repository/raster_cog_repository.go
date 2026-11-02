@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	commonAPI "github.com/addp/common/api"
 	"strings"
 	"time"
 
@@ -81,8 +82,11 @@ func (r *RasterCOGRepository) DeleteTask(ctx context.Context, id uint, tenantID 
 }
 
 func (r *RasterCOGRepository) ClaimExecution(
-	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool,
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool, snapshot *FileTaskSnapshot,
 ) (*models.RasterCOGTask, error) {
+	if snapshot == nil || snapshot.TaskID != taskID || snapshot.TenantID != tenantID || execution == nil {
+		return nil, commonAPI.ErrConflict
+	}
 	var task models.RasterCOGTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel:      &task,
@@ -95,6 +99,9 @@ func (r *RasterCOGRepository) ClaimExecution(
 		},
 		CurrentResultModel:      &models.RasterCOG{},
 		OverwriteExistingResult: overwriteExistingResult,
+		BeforeCreate: func(tx *gorm.DB) error {
+			return verifyFileTaskSnapshot(ctx, tx, snapshot, commonExecution.TaskTypeRasterCOGGeneration)
+		},
 	})
 	if err != nil {
 		return nil, err

@@ -54,7 +54,7 @@ func TestGLTFRawDownloadReprovesManifestBeforeAnyDependency(t *testing.T) {
 				target.item.Attributes["format_info"] = map[string]any{"gltf": map[string]any{"composition_complete": true}}
 				target.Descriptor = dataitem.ItemDescriptor{Layout: format.LayoutMulti, DataType: datatype.Model3D, Format: "gltf"}
 				target.locator = resourcetree.LocatorFromFullName(9, kind, target.item.ItemType, name, &target.item.ID).ToURI()
-				svc.SetModelSourceReadChecker(storageModelCheck(func(context.Context, string, commonClient.ManagerModel3DExpectedSource) error {
+				svc.SetFileSourceReadChecker(storageModelCheck(func(context.Context, string, commonClient.ManagerFileExpectedSource) error {
 					if fault == "denied" {
 						return commonClient.ErrManagerPreviewReadDenied
 					}

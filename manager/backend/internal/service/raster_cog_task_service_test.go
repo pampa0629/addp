@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	commonAPI "github.com/addp/common/api"
 	"net"
 	"net/http"
 	"strings"
@@ -97,6 +98,7 @@ func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *te
 	cogRepo := repository.NewRasterCOGRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	taskSvc := NewRasterCOGTaskService(cogRepo)
+	taskSvc.sourceMeta = absentRasterCOGMeta{}
 
 	task := &models.RasterCOGTask{
 		TenantID: 7,
@@ -133,7 +135,7 @@ func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *te
 		t.Fatalf("normalized result = %#v, want storage_ref", task.Config["result"])
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false, "")
 	if err != nil {
 		t.Fatalf("execute raster COG generation task: %v", err)
 	}
@@ -169,6 +171,7 @@ func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *te
 func TestRasterCOGTaskRejectsLegacyArtifactConfig(t *testing.T) {
 	db := newRasterCOGTaskServiceTestDB(t)
 	taskSvc := NewRasterCOGTaskService(repository.NewRasterCOGRepository(db))
+	taskSvc.sourceMeta = absentRasterCOGMeta{}
 
 	err := taskSvc.Create(context.Background(), &models.RasterCOGTask{
 		TenantID: 7,
@@ -193,6 +196,7 @@ func TestRasterCOGPrepareResultReturnsUpdatedExistingResult(t *testing.T) {
 	db := newRasterCOGTaskServiceTestDB(t)
 	cogRepo := repository.NewRasterCOGRepository(db)
 	taskSvc := NewRasterCOGTaskService(cogRepo)
+	taskSvc.sourceMeta = absentRasterCOGMeta{}
 
 	task := &models.RasterCOGTask{
 		TenantID: 7,
@@ -235,7 +239,11 @@ func TestRasterCOGPrepareResultReturnsUpdatedExistingResult(t *testing.T) {
 		t.Fatalf("create existing raster COG result: %v", err)
 	}
 
-	result, execCfg, err := taskSvc.prepareResult(context.Background(), task, "exec-2")
+	execCfg, err := readRasterCOGExecutionConfig(task.Config, "manager", task.TenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := taskSvc.prepareResult(context.Background(), task, "exec-2", execCfg)
 	if err != nil {
 		t.Fatalf("prepareResult() error = %v", err)
 	}
@@ -607,6 +615,7 @@ func TestRasterCOGTaskKeepsRunningStateWhenAtomicCompletionFails(t *testing.T) {
 	cogRepo := repository.NewRasterCOGRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	taskSvc := NewRasterCOGTaskService(cogRepo)
+	taskSvc.sourceMeta = absentRasterCOGMeta{}
 	taskSvc.SetExecutor(staticRasterCOGExecutor{result: &RasterCOGExecutionResult{
 		StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/cog/fp/large.cog.tif"}`,
 		FileName:   "large.cog.tif",
@@ -647,7 +656,11 @@ func TestRasterCOGTaskKeepsRunningStateWhenAtomicCompletionFails(t *testing.T) {
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 		CreatedAt: createdAt, UpdatedAt: createdAt,
 	}
-	claimedTask, err := cogRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, execution, false)
+	snapshot, err := cogRepo.TaskConfigSnapshot(context.Background(), task.ID, task.TenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimedTask, err := cogRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, execution, false, snapshot)
 	if err != nil {
 		t.Fatalf("claim raster COG generation task: %v", err)
 	}
@@ -861,4 +874,10 @@ func (e *recordingCOGObjectStore) MakeBucket(context.Context, string, minio.Make
 
 func (e *recordingCOGObjectStore) StatObject(context.Context, string, string, minio.StatObjectOptions) (minio.ObjectInfo, error) {
 	return minio.ObjectInfo{Size: e.size}, nil
+}
+
+type absentRasterCOGMeta struct{}
+
+func (absentRasterCOGMeta) GetItemSnapshot(context.Context, uint, uint, uint, string) (*commonModels.MetaItem, error) {
+	return nil, commonAPI.ErrNotFound
 }

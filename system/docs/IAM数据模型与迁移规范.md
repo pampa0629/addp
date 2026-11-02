@@ -28,6 +28,10 @@
 
 精确数据项批量模式的多选、节点本级／递归选择复用当前身份树，仅冻结当前具体 DataItem；准备失败零写，逐项签发、逐项结果和原编号恢复语义不变。验收须覆盖无 Catalog 依赖的直接签发、无资格拒绝、业务批准路径保留、旧接口退出、多选／递归／去重／whole 叶子及取消零写。
 
+## ENVI 精确文件扩展（实施中）
+
+前向迁移扩展同一 `valid_source_file_composition`：ENVI 仅同目录、两个必需文件，主角色 `raster`、另一角色 `header` 且扩展名 `.hdr`。SQL 的唯一 `valid_manager_file_scope` 替换模型专用函数，保留原模型闭合范围，SKP 不开放。pending 触发器按真实 task type 区分 Model3D 和 COG 配置版本与组成；不重建 Grant、EA 或新增权限。验证沿 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test file-composition"`，覆盖 NFS／MinIO 完整批准、旧清单失效、Deny、当前用户与目的隔离；没有实际 Hosted 前不记完成。
+
 ## 一、事实边界
 
 System 是 ADDP 唯一 IAM 逻辑权威，负责 Principal、账号、认证方式、Tenant Membership、组织关系、Role/Permission、会话、OAuth 协议事实和 IAM 安全审计。

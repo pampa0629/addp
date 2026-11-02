@@ -208,6 +208,7 @@ func SetupRouter(
 			tileCacheGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteTileCache)
 		}
 		rasterCOGHandler := NewRasterCOGHandler(rasterCOGRepo, spatialPreviewService)
+		rasterCOGHandler.SetSourceService(taskProviderHandler.rasterCOGTaskSvc)
 		model3DTilesAssets := api.Group("/model3d_tiles")
 		{
 			model3DTilesAssets.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListModel3DTilesResults)

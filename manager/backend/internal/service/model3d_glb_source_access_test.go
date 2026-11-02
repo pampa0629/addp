@@ -32,13 +32,13 @@ func TestGLBSourceAccessUsesOfficialSDKForEachExactReadAndCheckpoint(t *testing.
 	engine := &commonModels.Engine{ID: 33, TenantID: &tenant, EngineType: "ftp", Version: 5, LifecycleState: "active", ConnectionStatus: "online", ConnectionInfo: commonModels.ConnectionInfo{"host": "fixture.invalid", "password": "fixture-only"}}
 	core, _ := json.Marshal(map[string]any{"source": map[string]any{"item_locator": source.ItemLocator, "source_engine_id": 33, "item_id": 41, "item_fingerprint": source.ItemFingerprint, "format": "3ds"}, "result": map[string]any{"storage_ref": "previous", "file_name": "model.glb"}, "options": map[string]any{"number": json.Number("9007199254740993")}})
 	executionID := uuid.NewString()
-	frozen, err := freezeFileModel3DGLBConfig(&repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: core}, engine, candidate, executionID, "manager")
+	frozen, err := freezeFileModel3DGLBConfig(&repository.FileTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: core}, engine, candidate, executionID, "manager")
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(frozen)
 	header, _ := decodeModel3DGLBFrozenHeader(raw)
-	expected, err := commonExecution.NewManagerModel3DReadScope(raw, "17", "3", "5", header.Composition)
+	expected, err := commonExecution.NewManagerFileReadScope(raw, "17", "3", "5", header.Composition)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestGLBSourceAccessUsesOfficialSDKForEachExactReadAndCheckpoint(t *testing.
 		if r.Method != "POST" || r.URL.Path != "/api/v1/system/execution-authorizations/51/manager-model3d-glb-accesses" || r.Header.Get("Authorization") != "Bearer addp_at_current_manager_service" || r.Header.Get("Cookie") != "" || r.Header.Get("X-Tenant-ID") != "" {
 			t.Error("incorrect fixed consumption protocol")
 		}
-		var request commonClient.ManagerModel3DAccessRequest
+		var request commonClient.ManagerFileAccessRequest
 		if json.NewDecoder(r.Body).Decode(&request) != nil || request.ExecutionID != executionID || request.Attempt != 1 || request.LeaseToken != lease.Token || !reflect.DeepEqual(&request.SourceReadScope, expected) {
 			t.Error("changed scope or lease on wire")
 		}
@@ -68,7 +68,7 @@ func TestGLBSourceAccessUsesOfficialSDKForEachExactReadAndCheckpoint(t *testing.
 		}
 		responseEngine := *engine
 		responseEngine.ConnectionInfo = commonModels.ConnectionInfo{"host": "fixture.invalid", "observation": call}
-		_ = json.NewEncoder(w).Encode(commonClient.ManagerModel3DAccessObservation{ObservedAt: time.Now().UTC(), Engine: &responseEngine})
+		_ = json.NewEncoder(w).Encode(commonClient.ManagerFileAccessObservation{ObservedAt: time.Now().UTC(), Engine: &responseEngine})
 	}))
 	t.Cleanup(server.Close)
 	tokens := &profileServiceTokenForTest{}
@@ -93,7 +93,7 @@ func TestGLBSourceAccessUsesOfficialSDKForEachExactReadAndCheckpoint(t *testing.
 		case "options":
 			changed.Options["number"] = json.Number("9007199254740992")
 		}
-		if err := guard.ValidateConversion(changed); !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) || calls.Load() != 0 {
+		if err := guard.ValidateConversion(changed); !errors.Is(err, ErrFileSourceAuthorizationRequired) || calls.Load() != 0 {
 			t.Fatal("changed conversion reached consumption")
 		}
 	}
@@ -119,20 +119,20 @@ func TestGLBSourceAccessUsesOfficialSDKForEachExactReadAndCheckpoint(t *testing.
 	if err := guard.BeforePublish(ctx); err != nil || calls.Load() != 4 {
 		t.Fatalf("checkpoints did not consume: %v", err)
 	}
-	if _, err := guard.BeforeSourceRead(ctx, plugin.FileItemPath(33, "models/not-in-composition.png")); !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) || calls.Load() != 4 {
+	if _, err := guard.BeforeSourceRead(ctx, plugin.FileItemPath(33, "models/not-in-composition.png")); !errors.Is(err, ErrFileSourceAuthorizationRequired) || calls.Load() != 4 {
 		t.Fatal("unapproved target reached System or source")
 	}
 	changed := lease
 	changed.Token = uuid.NewString()
-	if err := guard.Checkpoint(commonExecution.ContextWithLease(context.Background(), changed)); !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) || calls.Load() != 4 {
+	if err := guard.Checkpoint(commonExecution.ContextWithLease(context.Background(), changed)); !errors.Is(err, ErrFileSourceAuthorizationRequired) || calls.Load() != 4 {
 		t.Fatal("changed lease reached consumption")
 	}
 	status.Store(http.StatusForbidden)
-	if err := guard.Checkpoint(ctx); !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) || calls.Load() != 5 || strings.Contains(err.Error(), "must-not-escape") {
+	if err := guard.Checkpoint(ctx); !errors.Is(err, ErrFileSourceAuthorizationRequired) || calls.Load() != 5 || strings.Contains(err.Error(), "must-not-escape") {
 		t.Fatal("revoked scope was reused or leaked upstream diagnostics")
 	}
 	status.Store(http.StatusServiceUnavailable)
-	if err := guard.BeforePublish(ctx); !errors.Is(err, ErrModel3DGLBSourceAuthorizationUnavailable) || calls.Load() != 6 {
+	if err := guard.BeforePublish(ctx); !errors.Is(err, ErrFileSourceAuthorizationUnavailable) || calls.Load() != 6 {
 		t.Fatal("temporary failure became an Allow or retry")
 	}
 	if !reflect.DeepEqual(tokens.tenants, []uint{7, 7, 7, 7, 7, 7}) {

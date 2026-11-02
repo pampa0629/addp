@@ -43,7 +43,7 @@ func TestModel3DGLBExecutionOutputIsExactAndIsolated(t *testing.T) {
 			case "filename":
 				result.FileName = "other.glb"
 			}
-			if err := validateModel3DGLBExecutionOutput(tenant, execution, bucket, result); !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
+			if err := validateModel3DGLBExecutionOutput(tenant, execution, bucket, result); !errors.Is(err, ErrFileSourceAuthorizationRequired) {
 				t.Fatalf("changed output accepted: %v", err)
 			}
 		})
@@ -67,7 +67,7 @@ func TestGLBInputCleanupUsesExactOwnedObjectNames(t *testing.T) {
 	svc := NewModel3DGLBTaskService(nil)
 	svc.SetBucket("manager")
 	svc.SetCleaner(NewMinIOManagedObjectCleaner(client, "manager"))
-	object := repository.Model3DGLBInputObject{Bucket: "manager", Object: fmt.Sprintf("temp/model3d-input/tenant_7/%s/attempt_2/%s/颜色.PNG ", uuid.NewString(), uuid.NewString())}
+	object := repository.FileInputObject{Bucket: "manager", Object: fmt.Sprintf("temp/model3d-input/tenant_7/%s/attempt_2/%s/颜色.PNG ", uuid.NewString(), uuid.NewString())}
 	if err := svc.deleteOwnedExecutionInput(context.Background(), 7, object); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestGLBInputCleanupUsesExactOwnedObjectNames(t *testing.T) {
 		case "traversal":
 			altered.Object += "/../other"
 		}
-		if err := svc.deleteOwnedExecutionInput(t.Context(), tenant, altered); !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
+		if err := svc.deleteOwnedExecutionInput(t.Context(), tenant, altered); !errors.Is(err, ErrFileSourceAuthorizationRequired) {
 			t.Fatalf("%s cleanup accepted: %v", change, err)
 		}
 	}

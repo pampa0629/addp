@@ -82,7 +82,7 @@ func TestModel3DGLBCandidateDistinguishesIncompleteCompositionFromIdentityMismat
 				item.TenantID++
 			}
 			candidate, err := model3DGLBCandidateFromMeta(7, source, item)
-			if candidate != nil || !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
+			if candidate != nil || !errors.Is(err, ErrFileSourceAuthorizationRequired) {
 				t.Fatalf("invalid source accepted: candidate=%v err=%v", candidate, err)
 			}
 			if errors.Is(err, ErrModel3DGLBSourceCompositionIncomplete) != (fault != "identity") {
@@ -160,7 +160,7 @@ func TestModel3DGLBCandidateRejectsUnknownAndMalformedFacts(t *testing.T) {
 			case "nil declaration":
 				native["texture_refs"] = nil
 			}
-			if candidate, err := model3DGLBCandidateFromMeta(7, source, item); candidate != nil || !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
+			if candidate, err := model3DGLBCandidateFromMeta(7, source, item); candidate != nil || !errors.Is(err, ErrFileSourceAuthorizationRequired) {
 				t.Fatalf("candidate=%+v err=%v", candidate, err)
 			}
 		})

@@ -30,7 +30,7 @@ type Model3DGLBExecutionRequest struct {
 	ExecutionID         string
 	Config              Model3DGLBExecutionConfig
 	SourceAuthorization *Model3DGLBSourceAuthorization
-	inputOwner          model3DStagingOwnership
+	inputOwner          fileStagingOwnership
 }
 
 type Model3DGLBExecutionResult struct {
@@ -273,7 +273,7 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 	}
 	if err == nil && plan != nil {
 		if buildResult.StorageRef != execCfg.Result.StorageRef || buildResult.FileName != execCfg.Result.FileName {
-			err = ErrModel3DGLBSourceAuthorizationRequired
+			err = ErrFileSourceAuthorizationRequired
 		} else {
 			err = plan.authorization.BeforePublish(ctx)
 		}

@@ -1730,7 +1730,11 @@ func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
 		executionID, err = h.vectorMaterializedViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 	case commonExecution.TaskTypeRasterCOGGeneration:
-		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
+		if !taskProvider {
+			facts, _ := commonauth.AuthContextFromGin(c)
+			ctx = commonExecution.WithUserOrigin(ctx, facts)
+		}
+		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")))
 	case commonExecution.TaskTypeRasterMosaicGeneration:
 		var actor *service.RasterMosaicExecutionActor
 		if !taskProvider {

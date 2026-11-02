@@ -274,7 +274,7 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if action == service.QuickViewActionGenerateModel3DGLB {
+	if action == service.QuickViewActionGenerateModel3DGLB || action == service.QuickViewActionGenerateRasterCOG {
 		facts, _ := commonauth.AuthContextFromGin(c)
 		ctx = commonExecution.WithUserOrigin(ctx, facts)
 		// Validate before creating or reusing a task definition. Execute freezes
@@ -1091,7 +1091,7 @@ func (h *QuickViewHandler) executeQuickViewTask(
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
 		return h.vectorMaterializedTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
 	case commonExecution.TaskTypeRasterCOGGeneration:
-		return h.rasterCOGTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+		return h.rasterCOGTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult, credential)
 	case commonExecution.TaskTypeModel3DGLBGeneration:
 		return h.model3DGLBTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult, credential)
 	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
@@ -1285,6 +1285,10 @@ func rasterCOGTaskConfigFromQuickView(capability *service.QuickViewCapability, s
 		"width":             raster.Width,
 		"height":            raster.Height,
 		"band_count":        raster.BandCount,
+	}
+	if raster.Format == "envi" {
+		rasterMap["header_sha256"] = raster.HeaderSHA256
+		rasterMap["raster_sha256"] = raster.RasterSHA256
 	}
 	if raster.SourceSRID > 0 {
 		rasterMap["source_srid"] = raster.SourceSRID

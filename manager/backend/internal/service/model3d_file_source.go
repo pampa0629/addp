@@ -29,18 +29,18 @@ import (
 func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, req Model3DGLBExecutionRequest, engine *commonModels.Engine, consume func(context.Context, workflowaccess.Source, commonModels.JSONMap) error) error {
 	auth := req.SourceAuthorization
 	if e == nil || req.Task == nil || req.Config.ConfigVersion != managerModels.Model3DGLBFileConfigVersion || auth == nil || req.inputOwner == nil || consume == nil || engine == nil || !commonExecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.ID != req.Config.Source.SourceEngineID || engine.TenantID == nil || *engine.TenantID != req.Task.TenantID {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	if err := auth.ValidateConversion(req.Config); err != nil {
 		return err
 	}
 	lease, ok := commonExecution.LeaseFromContext(ctx)
 	if !ok || lease.ExecutionID != req.ExecutionID || lease.TenantID <= 0 || uint(lease.TenantID) != req.Task.TenantID || lease.Attempt <= 0 {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	composition := auth.Composition()
 	if composition == nil || !commonExecution.ManagerModel3DSourceComposition(engine.EngineType, composition) || composition.Format != req.Config.Source.Format {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	primary, err := composition.PrimaryTarget()
 	if err != nil {
@@ -52,10 +52,10 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 	}
 	loc, err := resourcetree.ParseURI(req.Config.Source.ItemLocator)
 	if err != nil || loc.EngineID != engine.ID || (loc.ItemID != nil && *loc.ItemID != req.Config.Source.ItemID) || loc.Type != sourceType || strings.Join(loc.Path, "/") != primary.StringPath() || commonModels.GenerateItemFingerprint(engine.ID, primary.StringPath()) != req.Config.Source.ItemFingerprint {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	if (composition.Format == "ifc" || composition.Format == "stl" || composition.Format == "fbx") && len(composition.Refs) != 1 {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	if err := auth.Checkpoint(ctx); err != nil {
 		return err
@@ -78,7 +78,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 			return nil, err
 		}
 		if current == nil || current.ID != engine.ID || current.EngineType != engine.EngineType || current.Version <= 0 || engineaccess.EnsureAvailable(current) != nil || current.TenantID == nil || *current.TenantID != req.Task.TenantID {
-			return nil, ErrModel3DGLBSourceAuthorizationRequired
+			return nil, ErrFileSourceAuthorizationRequired
 		}
 		return plugin.ConnectionInfo(current.ConnectionInfo), nil
 	}
@@ -126,7 +126,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 	buffered := map[string][]byte{}
 	if composition.Format == "gltf" {
 		if primarySize > format.MaxGLTFManifestBytes {
-			return ErrModel3DGLBSourceAuthorizationRequired
+			return ErrFileSourceAuthorizationRequired
 		}
 		stream, err := open(ctx, primary)
 		if err != nil {
@@ -138,7 +138,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 			return errors.Join(readErr, closeErr)
 		}
 		if int64(len(raw)) != primarySize {
-			return ErrModel3DGLBSourceAuthorizationRequired
+			return ErrFileSourceAuthorizationRequired
 		}
 		if err := validateGLTFCompositionBytes(ctx, raw, composition); err != nil {
 			return err
@@ -148,7 +148,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 	if composition.Format == "obj" {
 		libraries, err := auth.OBJMaterialLibraries()
 		if err != nil || primarySize > obj.MaxCompositionBytes {
-			return ErrModel3DGLBSourceAuthorizationRequired
+			return ErrFileSourceAuthorizationRequired
 		}
 		readManifest := func(target plugin.EngineCatalogPath, size int64, material bool) ([]byte, []string, error) {
 			stream, err := open(ctx, target)
@@ -181,7 +181,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 				}
 			}
 			if target.EngineID == 0 {
-				return ErrModel3DGLBSourceAuthorizationRequired
+				return ErrFileSourceAuthorizationRequired
 			}
 			size, err := stat(target, true)
 			if err != nil {
@@ -257,7 +257,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 			names = append(names, segment.Name)
 		}
 		name := strings.Join(names, "/")
-		if !validModel3DStagingPath(name) {
+		if !validFileStagingPath(name) {
 			return "", errors.New("file model input has an invalid relative path")
 		}
 		return name, nil
@@ -266,7 +266,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 	if err != nil {
 		return err
 	}
-	var files []model3DStagingFile
+	var files []fileStagingFile
 	// Primary always precedes dependencies; its real declarations have already
 	// been checked before any dependency Facts or OpenContent call.
 	primaryOpen := func(ctx context.Context) (io.ReadCloser, error) { return open(ctx, primary) }
@@ -278,7 +278,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 			return io.NopCloser(bytes.NewReader(primaryBytes)), nil
 		}
 	}
-	files = append(files, model3DStagingFile{RelativePath: entrypoint, SizeBytes: primarySize, Open: primaryOpen})
+	files = append(files, fileStagingFile{RelativePath: entrypoint, SizeBytes: primarySize, Open: primaryOpen})
 	for _, ref := range composition.Refs {
 		if ref.Primary {
 			continue
@@ -289,7 +289,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 			return err
 		}
 		if raw, exists := buffered[target.StringPath()]; exists {
-			files = append(files, model3DStagingFile{RelativePath: name, SizeBytes: int64(len(raw)), Open: func(ctx context.Context) (io.ReadCloser, error) {
+			files = append(files, fileStagingFile{RelativePath: name, SizeBytes: int64(len(raw)), Open: func(ctx context.Context) (io.ReadCloser, error) {
 				if err := auth.Checkpoint(ctx); err != nil {
 					return nil, err
 				}
@@ -301,7 +301,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		if err != nil {
 			return err
 		}
-		files = append(files, model3DStagingFile{RelativePath: name, SizeBytes: size, Open: func(ctx context.Context) (io.ReadCloser, error) { return open(ctx, target) }})
+		files = append(files, fileStagingFile{RelativePath: name, SizeBytes: size, Open: func(ctx context.Context) (io.ReadCloser, error) { return open(ctx, target) }})
 	}
 	kind := workflowaccess.KindFile
 	if composition.Format == "3ds" || composition.Format == "dae" || composition.Format == "obj" || composition.Format == "gltf" {
@@ -322,7 +322,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 // same bytes are then staged, so no second primary read can change the input.
 func validateGLTFCompositionBytes(ctx context.Context, raw []byte, composition *authorizationfacts.FileCompositionBoundary) error {
 	if composition == nil || composition.Format != "gltf" {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	primary, err := composition.PrimaryTarget()
 	if err != nil {
@@ -330,11 +330,11 @@ func validateGLTFCompositionBytes(ctx context.Context, raw []byte, composition *
 	}
 	parsed, err := format.ParseGLTFComposition(ctx, raw)
 	if err != nil {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	expected, err := dataitem.GLTFCompositionRefs(primary.StringPath(), parsed.Resources)
 	if err != nil || len(expected) != len(composition.Refs) {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	for _, ref := range expected {
 		found := false
@@ -345,7 +345,7 @@ func validateGLTFCompositionBytes(ctx context.Context, raw []byte, composition *
 			}
 		}
 		if !found {
-			return ErrModel3DGLBSourceAuthorizationRequired
+			return ErrFileSourceAuthorizationRequired
 		}
 	}
 	return nil

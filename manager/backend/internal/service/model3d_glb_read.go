@@ -14,18 +14,18 @@ import (
 	"github.com/addp/manager/internal/repository"
 )
 
-func model3DGLBPublishedScope(result *models.Model3DGLB) (*commonExecution.ManagerModel3DReadScope, error) {
+func model3DGLBPublishedScope(result *models.Model3DGLB) (*commonExecution.ManagerFileReadScope, error) {
 	if !repository.Model3DGLBUsesExecutionOutput(result) {
-		return nil, ErrModel3DGLBSourceAuthorizationRequired
+		return nil, ErrFileSourceAuthorizationRequired
 	}
 	raw, err := json.Marshal(result.Metadata["model3d_source_scope"])
-	var scope commonExecution.ManagerModel3DReadScope
+	var scope commonExecution.ManagerFileReadScope
 	if err != nil || json.Unmarshal(raw, &scope) != nil || scope.Validate() != nil {
-		return nil, ErrModel3DGLBSourceAuthorizationRequired
+		return nil, ErrFileSourceAuthorizationRequired
 	}
 	primary, err := scope.FileComposition.PrimaryTarget()
 	if err != nil || primary.EngineID != result.SourceEngineID || scope.FileComposition.Format != result.SourceFormat {
-		return nil, ErrModel3DGLBSourceAuthorizationRequired
+		return nil, ErrFileSourceAuthorizationRequired
 	}
 	return &scope, nil
 }
@@ -37,13 +37,13 @@ func (s *Model3DGLBTaskService) CheckResultRead(ctx context.Context, result *mod
 		return engineaccess.ErrUnavailable
 	}
 	raw, _ := json.Marshal(map[string]any{"source": map[string]any{"source_engine_id": result.SourceEngineID, "item_locator": result.Locator}})
-	engine, err := s.sourceEngineForSnapshot(ctx, &repository.Model3DGLBTaskSnapshot{TenantID: result.TenantID, Config: raw})
+	engine, err := s.sourceEngineForSnapshot(ctx, &repository.FileTaskSnapshot{TenantID: result.TenantID, Config: raw})
 	if err != nil {
 		return err
 	}
 	if !managedModel3DFileSource(engine.EngineType, result.SourceFormat) {
 		if repository.Model3DGLBUsesExecutionOutput(result) {
-			return ErrModel3DGLBSourceAuthorizationRequired
+			return ErrFileSourceAuthorizationRequired
 		}
 		return nil
 	}
@@ -52,22 +52,22 @@ func (s *Model3DGLBTaskService) CheckResultRead(ctx context.Context, result *mod
 	}
 	scope, err := model3DGLBPublishedScope(result)
 	if err != nil || !commonExecution.ManagerModel3DSourceComposition(engine.EngineType, &scope.FileComposition) || strconv.FormatInt(engine.Version, 10) != scope.EngineVersion {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	if result.ItemID == nil {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	candidate, err := s.sourceCandidate(ctx, result.TenantID, Model3DGLBExecutionConfig{Source: Model3DGLBSourceConfig{ItemID: *result.ItemID, SourceEngineID: result.SourceEngineID, ItemFingerprint: result.ItemFingerprint, ItemLocator: result.Locator, Format: result.SourceFormat}})
 	if err != nil {
 		return err
 	}
 	if !reflect.DeepEqual(candidate.composition, &scope.FileComposition) {
-		return ErrModel3DGLBSourceAuthorizationRequired
+		return ErrFileSourceAuthorizationRequired
 	}
 	if s.sourceConsumer == nil {
 		return engineaccess.ErrUnavailable
 	}
-	return s.sourceConsumer.CheckManagerModel3DRead(ctx, credential, commonClient.ManagerModel3DExpectedSource{
+	return s.sourceConsumer.CheckManagerFileRead(ctx, credential, commonClient.ManagerFileExpectedSource{
 		EngineVersion:   scope.EngineVersion,
 		FileComposition: *scope.FileComposition.Clone(),
 	})

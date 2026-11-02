@@ -30,7 +30,7 @@ func TestGLBSourceClassificationUsesCurrentSystemFacts(t *testing.T) {
 			tenant := uint(7)
 			engine := &commonModels.Engine{ID: 33, TenantID: &tenant, EngineType: "ftp", LifecycleState: "active", ConnectionStatus: "online"}
 			reader := &glbSourceEngineFixture{engine: engine}
-			snapshot := &repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 1, Config: json.RawMessage(`{"source":{"source_engine_id":33,"item_locator":"addp://engine/33/path/model.3DS?type=file&item_id=71","engine_type":"nfs"}}`)}
+			snapshot := &repository.FileTaskSnapshot{TaskID: 17, TenantID: 7, Version: 1, Config: json.RawMessage(`{"source":{"source_engine_id":33,"item_locator":"addp://engine/33/path/model.3DS?type=file&item_id=71","engine_type":"nfs"}}`)}
 			switch name {
 			case "nfs":
 				engine.EngineType = "nfs"
@@ -135,7 +135,7 @@ func TestGLBClaimRejectsIncompleteChangedOrExpiredOwnership(t *testing.T) {
 				}
 				return
 			}
-			if !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
+			if !errors.Is(err, ErrFileSourceAuthorizationRequired) {
 				t.Fatalf("untrusted claim accepted: %v", err)
 			}
 		})

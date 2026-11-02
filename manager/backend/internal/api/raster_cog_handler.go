@@ -8,6 +8,8 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/logger"
+	commonauth "github.com/addp/common/middleware/auth"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
@@ -17,11 +19,14 @@ import (
 type RasterCOGHandler struct {
 	repo              *repository.RasterCOGRepository
 	spatialPreviewSvc *service.SpatialPreviewService
+	sourceService     *service.RasterCOGTaskService
 }
 
 func NewRasterCOGHandler(repo *repository.RasterCOGRepository, spatialPreviewSvc *service.SpatialPreviewService) *RasterCOGHandler {
 	return &RasterCOGHandler{repo: repo, spatialPreviewSvc: spatialPreviewSvc}
 }
+
+func (h *RasterCOGHandler) SetSourceService(s *service.RasterCOGTaskService) { h.sourceService = s }
 
 // GetRasterCOGContent 返回 Manager 栅格快显 COG 内容。
 // @Summary 读取栅格快显 COG | Read raster COG quick view result
@@ -60,6 +65,25 @@ func (h *RasterCOGHandler) GetRasterCOGContent(c *gin.Context) {
 	}
 	if result == nil || result.Status != models.RasterCOGStatusReady {
 		commonAPI.ErrorResponse(c, http.StatusNotFound, "raster COG is not ready")
+		return
+	}
+
+	if h.sourceService == nil {
+		commonAPI.InternalServerError(c, "raster COG source authority unavailable")
+		return
+	}
+	principal, exists := commonauth.PrincipalFromGin(c)
+	if err := h.sourceService.CheckResultRead(c.Request.Context(), result, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), exists && principal.Type == "user"); err != nil {
+		switch {
+		case errors.Is(err, service.ErrFileSourceAuthorizationRequired):
+			accessDeniedToEngine(c)
+		case errors.Is(err, engineaccess.ErrUnavailable):
+			engineUnavailable(c)
+		default:
+			if !writePreviewAuthorizationError(c, err) {
+				engineUnavailable(c)
+			}
+		}
 		return
 	}
 	reader, contentLength, contentRange, contentType, err := h.spatialPreviewSvc.OpenRasterCOG(

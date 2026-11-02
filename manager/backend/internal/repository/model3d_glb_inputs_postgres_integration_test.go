@@ -62,8 +62,8 @@ func TestIntegrationPostgresManagerGLBInputOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := Model3DGLBInputPreparation{ExecutionID: execution.ExecutionID, Attempt: lease.Attempt, PreparationID: uuid.NewString()}
-	p.Objects = []Model3DGLBInputObject{{Bucket: "manager", Object: fmt.Sprintf("temp/model3d-input/tenant_%d/%s/attempt_%d/%s/model.ifc", tenantID, p.ExecutionID, p.Attempt, p.PreparationID)}}
+	p := FileInputPreparation{ExecutionID: execution.ExecutionID, Attempt: lease.Attempt, PreparationID: uuid.NewString()}
+	p.Objects = []FileInputObject{{Bucket: "manager", Object: fmt.Sprintf("temp/model3d-input/tenant_%d/%s/attempt_%d/%s/model.ifc", tenantID, p.ExecutionID, p.Attempt, p.PreparationID)}}
 	if err := repo.PrepareExecutionInputs(ctx, result.ID, p); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestIntegrationPostgresManagerGLBInputOwnership(t *testing.T) {
 		t.Fatalf("owner read lost exact durable manifest: %+v %v", state, err)
 	}
 	removed := 0
-	deleteInput := func(_ context.Context, tenant uint, object Model3DGLBInputObject) error {
+	deleteInput := func(_ context.Context, tenant uint, object FileInputObject) error {
 		if tenant != tenantID || object != p.Objects[0] {
 			t.Fatal("input cleanup escaped exact ownership")
 		}
@@ -100,9 +100,9 @@ func TestIntegrationPostgresManagerGLBInputOwnership(t *testing.T) {
 	}
 	closed := p
 	closed.PreparationID = uuid.NewString()
-	closed.Objects = []Model3DGLBInputObject{{Bucket: "manager", Object: fmt.Sprintf("temp/model3d-input/tenant_%d/%s/attempt_%d/%s/closed.ifc", tenantID, closed.ExecutionID, closed.Attempt, closed.PreparationID)}}
+	closed.Objects = []FileInputObject{{Bucket: "manager", Object: fmt.Sprintf("temp/model3d-input/tenant_%d/%s/attempt_%d/%s/closed.ifc", tenantID, closed.ExecutionID, closed.Attempt, closed.PreparationID)}}
 	closed.Released, closed.Cleaned = true, true
-	history := &models.Model3DGLB{TenantID: tenantID, ItemFingerprint: "closed-input-history", SourceEngineID: 33, SourceFormat: "ifc", StorageRef: "closed-published.glb", Status: models.Model3DGLBStatusReady, Metadata: model3DGLBOutputMetadata(nil, model3DGLBOutputState{InputPreparations: []Model3DGLBInputPreparation{closed}})}
+	history := &models.Model3DGLB{TenantID: tenantID, ItemFingerprint: "closed-input-history", SourceEngineID: 33, SourceFormat: "ifc", StorageRef: "closed-published.glb", Status: models.Model3DGLBStatusReady, Metadata: model3DGLBOutputMetadata(nil, model3DGLBOutputState{InputPreparations: []FileInputPreparation{closed}})}
 	if err := db.Create(history).Error; err != nil {
 		t.Fatal(err)
 	}

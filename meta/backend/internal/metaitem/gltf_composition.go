@@ -28,7 +28,7 @@ func resolveGLTFManifestItems(ctx context.Context, input DirectoryResolveInput, 
 		refs := []dataitem.ItemRef{{Path: file.Path, Role: "manifest", Required: true, Primary: true, Extension: strings.ToLower(path.Ext(file.Path))}}
 		complete := false
 		if file.Size > 0 && file.Size <= format.MaxGLTFManifestBytes {
-			reader, err := modelStructureReaderAt(ctx, input, file)
+			reader, err := fileStructureReaderAt(ctx, input, file)
 			if err == nil {
 				raw, readErr := io.ReadAll(io.NewSectionReader(reader, 0, file.Size))
 				parsed, parseErr := format.ParseGLTFComposition(ctx, raw)

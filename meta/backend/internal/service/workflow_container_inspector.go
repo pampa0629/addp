@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/meta/internal/metaitem"
 )
 
 type WorkflowContainerInspector struct {
@@ -136,10 +137,11 @@ func (i *WorkflowContainerInspector) InspectContainer(
 
 // InspectMedia shares runtime discovery with native format/container inspection;
 // metadata and conversion use the same source-only access-plan protocol.
-func (i *WorkflowContainerInspector) InspectMedia(ctx context.Context, source *commonModels.Engine, tenantID uint, physicalPath, sourceFormat string) (*format.MediaDescribeResult, error) {
-	if i == nil || i.engineService == nil || source == nil {
+func (i *WorkflowContainerInspector) InspectMedia(ctx context.Context, source *commonModels.Engine, tenantID uint, item *metaitem.DetectedItem, physicalPath string) (*format.MediaDescribeResult, error) {
+	if i == nil || i.engineService == nil || source == nil || item == nil {
 		return nil, fmt.Errorf("workflow media inspector is not configured")
 	}
+	sourceFormat := item.Format
 	factory, err := format.GetRuntimeMediaInfoProviderFactory(format.NormalizeFormat(sourceFormat))
 	if err != nil {
 		return nil, err
@@ -148,19 +150,7 @@ func (i *WorkflowContainerInspector) InspectMedia(ctx context.Context, source *c
 	if err != nil {
 		return nil, err
 	}
-	resourceType := resourcetree.TypeFile
-	if strings.EqualFold(source.EngineType, "minio") || strings.EqualFold(source.EngineType, "s3") {
-		resourceType = resourcetree.TypeObject
-	}
-	locator := resourcetree.LocatorFromFullName(source.ID, source.EngineType, string(resourceType), physicalPath, nil)
-	if locator == nil {
-		return nil, fmt.Errorf("cannot build media source locator")
-	}
-	workflowSource, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: source, Locator: locator, Kind: workflowaccess.KindFile, Format: sourceFormat})
-	if err != nil {
-		return nil, err
-	}
-	plan, err := workflowaccess.NewSourcePlan(workflowSource)
+	plan, headerPath, err := runtimeMediaSourcePlan(source, item, physicalPath)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +160,14 @@ func (i *WorkflowContainerInspector) InspectMedia(ctx context.Context, source *c
 	}
 	inspectCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	return provider.DescribeMedia(inspectCtx)
+	result, err := provider.DescribeMedia(inspectCtx)
+	if err != nil {
+		return nil, err
+	}
+	if headerPath != "" {
+		result.FormatInfo["header_path"] = headerPath
+	}
+	return result, nil
 }
 
 func (i *WorkflowContainerInspector) resolveRuntime(

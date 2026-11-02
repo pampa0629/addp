@@ -15,39 +15,39 @@ import (
 // no row can carry two scopes or fall back to generic engine access.
 type ManagerSourceReadScope struct {
 	profile *execution.ManagerProfileReadScope
-	model3d *execution.ManagerModel3DReadScope
+	file    *execution.ManagerFileReadScope
 }
 
 func NewManagerProfileSourceScope(scope *execution.ManagerProfileReadScope) *ManagerSourceReadScope {
 	return &ManagerSourceReadScope{profile: scope.Clone()}
 }
 
-func NewManagerModel3DSourceScope(scope *execution.ManagerModel3DReadScope) *ManagerSourceReadScope {
-	return &ManagerSourceReadScope{model3d: scope.Clone()}
+func NewManagerFileSourceScope(scope *execution.ManagerFileReadScope) *ManagerSourceReadScope {
+	return &ManagerSourceReadScope{file: scope.Clone()}
 }
 
 func (s *ManagerSourceReadScope) Profile() *execution.ManagerProfileReadScope {
-	if s == nil || s.model3d != nil {
+	if s == nil || s.file != nil {
 		return nil
 	}
 	return s.profile.Clone()
 }
 
-func (s *ManagerSourceReadScope) Model3D() *execution.ManagerModel3DReadScope {
+func (s *ManagerSourceReadScope) File() *execution.ManagerFileReadScope {
 	if s == nil || s.profile != nil {
 		return nil
 	}
-	return s.model3d.Clone()
+	return s.file.Clone()
 }
 
 func (s *ManagerSourceReadScope) Validate() error {
-	if s == nil || (s.profile == nil) == (s.model3d == nil) {
+	if s == nil || (s.profile == nil) == (s.file == nil) {
 		return errors.New("exactly one Manager source scope is required")
 	}
 	if s.profile != nil {
 		return s.profile.Validate()
 	}
-	return s.model3d.Validate()
+	return s.file.Validate()
 }
 
 func (s *ManagerSourceReadScope) Targets() ([]plugin.EngineCatalogPath, error) {
@@ -57,7 +57,7 @@ func (s *ManagerSourceReadScope) Targets() ([]plugin.EngineCatalogPath, error) {
 	if s.profile != nil {
 		return s.profile.ReadSet.Clone().Paths, nil
 	}
-	primary, err := s.model3d.FileComposition.PrimaryTarget()
+	primary, err := s.file.FileComposition.PrimaryTarget()
 	return []plugin.EngineCatalogPath{primary}, err
 }
 
@@ -65,7 +65,7 @@ func (s *ManagerSourceReadScope) Clone() *ManagerSourceReadScope {
 	if s == nil {
 		return nil
 	}
-	return &ManagerSourceReadScope{profile: s.profile.Clone(), model3d: s.model3d.Clone()}
+	return &ManagerSourceReadScope{profile: s.profile.Clone(), file: s.file.Clone()}
 }
 
 func (s ManagerSourceReadScope) MarshalJSON() ([]byte, error) {
@@ -75,7 +75,7 @@ func (s ManagerSourceReadScope) MarshalJSON() ([]byte, error) {
 	if s.profile != nil {
 		return json.Marshal(s.profile)
 	}
-	return json.Marshal(s.model3d)
+	return json.Marshal(s.file)
 }
 
 func (s *ManagerSourceReadScope) UnmarshalJSON(raw []byte) error {
@@ -96,11 +96,11 @@ func (s *ManagerSourceReadScope) UnmarshalJSON(raw []byte) error {
 		}
 		candidate = NewManagerProfileSourceScope(&scope)
 	} else {
-		var scope execution.ManagerModel3DReadScope
+		var scope execution.ManagerFileReadScope
 		if err := json.Unmarshal(raw, &scope); err != nil {
 			return err
 		}
-		candidate = NewManagerModel3DSourceScope(&scope)
+		candidate = NewManagerFileSourceScope(&scope)
 	}
 	if err := candidate.Validate(); err != nil {
 		return err

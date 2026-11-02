@@ -2,18 +2,12 @@ package metaitem
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"path"
-	"reflect"
 	"sort"
 	"strings"
 
-	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/engine/contentadapter"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/plugins/fbx"
 )
@@ -76,7 +70,7 @@ func exchangeModelResourceItem(file StorageFileRef, formatType format.FormatType
 }
 
 func readExchangeModelDeclarations(ctx context.Context, input DirectoryResolveInput, file StorageFileRef, formatType format.FormatType) ([]string, error) {
-	reader, err := modelStructureReaderAt(ctx, input, file)
+	reader, err := fileStructureReaderAt(ctx, input, file)
 	if err != nil {
 		return nil, err
 	}
@@ -85,34 +79,4 @@ func readExchangeModelDeclarations(ctx context.Context, input DirectoryResolveIn
 		return nil, err
 	}
 	return provider.ReadModel3DComposition(ctx, reader, file.Size)
-}
-
-func modelStructureReaderAt(ctx context.Context, input DirectoryResolveInput, file StorageFileRef) (io.ReaderAt, error) {
-	if _, ok := input.StructureReader.(plugin.RangeReadableProvider); !ok {
-		return nil, fmt.Errorf("model structure requires native range access")
-	}
-	target, err := modelPrimaryCatalogPath(input, file)
-	if err != nil {
-		return nil, err
-	}
-	reader := contentadapter.NewMappedReader(input.StructureReader, input.ConnInfo,
-		func(ref contentio.Ref) (plugin.EngineCatalogPath, error) {
-			if ref.Path != file.Path {
-				return plugin.EngineCatalogPath{}, fmt.Errorf("model structure reference is outside the primary file")
-			}
-			return target, nil
-		}, plugin.ReadOptions{})
-	return contentio.NewReaderAt(ctx, reader.(contentio.RangeReader), contentio.NewRef(file.Path, "model")), nil
-}
-
-func modelPrimaryCatalogPath(input DirectoryResolveInput, file StorageFileRef) (plugin.EngineCatalogPath, error) {
-	target := resolveCatalogPath(input.EngineID, file.Path, input.EngineCatalogPathFor)
-	exact := reflect.DeepEqual(target, plugin.FileItemPath(input.EngineID, file.Path))
-	if len(target.Segments) >= 3 && target.Segments[1].Term == plugin.EngineCatalogTermBucket {
-		exact = reflect.DeepEqual(target, plugin.ObjectItemPath(input.EngineID, target.Segments[1].Name, file.Path))
-	}
-	if !exact {
-		return plugin.EngineCatalogPath{}, fmt.Errorf("model structure requires the exact typed primary file")
-	}
-	return target, nil
 }

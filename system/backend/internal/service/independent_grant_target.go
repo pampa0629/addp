@@ -42,7 +42,10 @@ func (v *IndependentGrantTargetVerifier) VerifyIndependentReadTarget(ctx context
 		return 0, commonapi.ErrForbidden
 	}
 	file := len(path.Segments) > 0 && (path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermFile || path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermObject)
-	if file && (!commonexecution.ManagerModel3DSourceFormat(engine.EngineType, strings.TrimPrefix(strings.ToLower(pathpkg.Ext(path.StringPath())), ".")) ||
+	// Complete Meta binding was resolved before this independent structure
+	// check. ENVI has no unique raw extension; never infer its identity here.
+	fileCandidate := engine.EngineType == "nfs" || engine.EngineType == "minio" || commonexecution.ManagerModel3DSourceFormat(engine.EngineType, strings.TrimPrefix(strings.ToLower(pathpkg.Ext(path.StringPath())), "."))
+	if file && (!fileCandidate ||
 		(engine.EngineType == "minio") != (path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermObject)) {
 		return 0, commonapi.ErrForbidden
 	}
