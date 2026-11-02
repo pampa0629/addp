@@ -7,6 +7,7 @@ import geopandas as gpd
 import pandas as pd
 from addp_common.workflow_runtime import OperatorInputError, WorkflowRunner, WorkflowExecutionError, WorkflowValidationError
 from operators import OPERATORS, get_operator
+from operators.io_operators import GeoPackageSaveError
 from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.spatial_relations import DistanceInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError
@@ -79,7 +80,7 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
     def _execute_operator(self, operator, params):
         try:
             return _execute_workflow_operator(operator, params)
-        except (EndpointSnapError, LineExtensionError) as exc:
+        except (EndpointSnapError, LineExtensionError, GeoPackageSaveError) as exc:
             raise ValueError(exc.message(self.language)) from exc
         except (DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
             reasons = {

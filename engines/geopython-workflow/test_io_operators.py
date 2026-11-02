@@ -3,6 +3,7 @@ import hashlib
 import json
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
@@ -608,3 +609,234 @@ def test_load_spatial_geometry_identity_read_failure_has_no_alternate_reader(mon
     monkeypatch.setattr(gpd,"read_file",forbidden)
     with pytest.raises(RuntimeError,match="original Arrow read failure"):io_operators._read_file("file.gpkg","gpkg")
     assert calls==[1]
+
+
+# GeoPackage business identifiers are attributes, never storage row identities.
+def _gpkg_business_frame(field='fid', empty=False):
+    from shapely.geometry import Point
+    values = [] if empty else [2**53+1, 2**53+1, None]
+    count = len(values)
+    result = gpd.GeoDataFrame({
+        field: pd.array(values, dtype='Int64'),
+        '_addp_fid': pd.array([10]*count, dtype='Int64'),
+        '_ADDP_FID_1': ['preserve']*count,
+        'flag': pd.array([True, None, False][:count], dtype='boolean'),
+        'text': ['001', '', None][:count],
+        'shape': gpd.GeoSeries([Point(i, i+1) for i in range(count)], crs=3857),
+    }, geometry='shape', crs=3857)
+    result.index = pd.Index([7]*count, name='fid_index')
+    return result
+
+
+def _save_gpkg(frame, path, mode='fail'):
+    return io_operators.save(frame, connection_info={'mount_path': str(path.parent)}, path=path.name, mode=mode)
+
+
+def _assert_gpkg_business(path, frame):
+    # Read with native OGR: independent of the product reader and writer.
+    source = ogr.Open(str(path)); assert source is not None
+    layer = source.GetLayer(0); definition = layer.GetLayerDefn()
+    attributes = [name for name in frame.columns if name != frame.geometry.name]
+    assert [definition.GetFieldDefn(i).GetName() for i in range(definition.GetFieldCount())] == attributes
+    assert layer.GetName() == path.stem
+    assert layer.GetFIDColumn().casefold() not in {str(name).casefold() for name in frame.columns}
+    assert layer.GetFeatureCount() == len(frame)
+    crs = osr.SpatialReference(); crs.ImportFromWkt(frame.crs.to_wkt())
+    assert layer.GetSpatialRef().IsSame(crs)
+    ids = []
+    for position, feature in enumerate(layer):
+        ids.append(feature.GetFID())
+        for name in attributes:
+            expected = frame.iloc[position][name]
+            if pd.isna(expected): assert feature.IsFieldNull(name)
+            else: assert feature.GetField(name) == expected
+        assert feature.GetGeometryRef().ExportToWkb() == frame.geometry.iloc[position].wkb
+    assert len(set(ids)) == len(ids)
+    field = attributes[0]
+    assert definition.GetFieldDefn(definition.GetFieldIndex(field)).GetType() == ogr.OFTInteger64
+    assert definition.GetFieldDefn(definition.GetFieldIndex('flag')).GetSubType() == ogr.OFSTBoolean
+    assert path.stat().st_size > 0
+    # Round-trip must expose business attributes, not turn internal FID into one.
+    loaded = _load_local(path)
+    assert list(loaded.columns) == attributes + [loaded.geometry.name]
+    for name in attributes:
+        assert loaded[name].tolist() == frame[name].tolist()
+    assert str(loaded[field].dtype) == 'Int64'
+    assert loaded.geometry.to_wkb().tolist() == frame.geometry.to_wkb().tolist()
+    assert loaded.crs == frame.crs
+
+
+@pytest.mark.parametrize('field', ['fid', 'FID', 'FiD'])
+@pytest.mark.parametrize('empty', [False, True])
+@pytest.mark.parametrize('mode', ['fail', 'replace'])
+def test_gpkg_save_business_fid_and_collision_columns_are_independent_storage_keys(tmp_path, field, empty, mode):
+    frame = _gpkg_business_frame(field, empty); before = frame.copy(deep=True)
+    target = tmp_path/'结果.gpkg'
+    if mode == 'replace': target.write_bytes(b'existing file preserved until commit')
+    assert _save_gpkg(frame, target, mode) is frame
+    _assert_gpkg_business(target, frame)
+    pd.testing.assert_frame_equal(frame, before)
+    assert {p.name for p in tmp_path.iterdir()} == {target.name}
+
+
+@pytest.mark.parametrize('field,values,dtype', [
+    ('fid', ['source', 'source', None], 'string'),
+    ('FID', [True, None, True], 'boolean'),
+    ('FiD', [1.25, 1.25, None], 'Float64'),
+])
+def test_gpkg_save_business_fid_uses_its_attribute_type_not_integer_primary_key(tmp_path, field, values, dtype):
+    frame = _gpkg_business_frame(field); frame[field] = pd.array(values, dtype=dtype)
+    target=tmp_path/'typed.gpkg'; _save_gpkg(frame,target)
+    source=ogr.Open(str(target));layer=source.GetLayer(0);features=list(layer)
+    assert layer.GetFIDColumn().casefold() != field.casefold()
+    assert len(features)==3 and len({f.GetFID() for f in features})==3
+    for feature,expected in zip(features,values):
+        if expected is None: assert feature.IsFieldNull(field)
+        else: assert feature.GetField(field)==expected
+    assert list(tmp_path.iterdir()) == [target]
+
+
+@pytest.mark.parametrize('mode', ['fail', 'replace'])
+@pytest.mark.parametrize('exists', [False, True])
+def test_gpkg_save_failed_real_writer_leaves_no_partial_file_or_sidecar_and_protects_old(tmp_path,monkeypatch,mode,exists):
+    frame=_gpkg_business_frame();before=frame.copy(deep=True);target=tmp_path/'result.gpkg';old=tmp_path/'previous.gpkg'
+    _save_gpkg(frame,old);old_bytes=old.read_bytes()
+    if exists: _save_gpkg(frame,target);target_bytes=target.read_bytes()
+    original=gpd.GeoDataFrame.to_file;calls=[]
+    def broken(self,path,*args,**kwargs):
+        calls.append(path); original(self,path,*args,**kwargs)
+        assert Path(path).is_file() and (not target.exists() or target.read_bytes()==target_bytes)
+        Path(str(path)+'-journal').write_bytes(b'only this save owns the partial journal')
+        raise RuntimeError('injected failure after real GeoPackage write')
+    monkeypatch.setattr(gpd.GeoDataFrame,'to_file',broken)
+    error = FileExistsError if exists and mode=='fail' else RuntimeError
+    with pytest.raises(error): _save_gpkg(frame,target,mode)
+    if exists: assert target.read_bytes()==target_bytes
+    else: assert not target.exists()
+    assert old.read_bytes()==old_bytes
+    assert len(calls)==(0 if exists and mode=='fail' else 1)
+    assert {p.name for p in tmp_path.iterdir()} == ({old.name,target.name}if exists else{old.name})
+    pd.testing.assert_frame_equal(frame,before)
+
+
+@pytest.mark.parametrize('mode',['fail','replace'])
+def test_gpkg_save_failed_publication_protects_target_and_cleans_completed_stage(tmp_path,monkeypatch,mode):
+    frame=_gpkg_business_frame();target=tmp_path/'target.gpkg';previous=tmp_path/'old.gpkg'
+    _save_gpkg(frame,previous);before=previous.read_bytes()
+    if mode=='replace': _save_gpkg(frame,target);target_bytes=target.read_bytes()
+    def fail(*args,**kwargs): raise PermissionError('injected publication denial')
+    monkeypatch.setattr(io_operators.os,'link'if mode=='fail'else'replace',fail)
+    with pytest.raises(PermissionError,match='publication denial'): _save_gpkg(frame,target,mode)
+    assert previous.read_bytes()==before
+    if mode=='replace': assert target.read_bytes()==target_bytes
+    else: assert not target.exists()
+    assert {p.name for p in tmp_path.iterdir()}==({previous.name,target.name}if mode=='replace'else{previous.name})
+
+
+def test_gpkg_save_create_race_never_replaces_concurrently_created_target(tmp_path,monkeypatch):
+    frame=_gpkg_business_frame();target=tmp_path/'race.gpkg';real_link=io_operators.os.link;competitor=b'another creator owns this target'
+    def race(source,destination,*args,**kwargs):
+        assert Path(source).is_file();target.write_bytes(competitor)
+        return real_link(source,destination,*args,**kwargs)
+    monkeypatch.setattr(io_operators.os,'link',race)
+    with pytest.raises(FileExistsError): _save_gpkg(frame,target)
+    assert target.read_bytes()==competitor and list(tmp_path.iterdir())==[target]
+
+
+@pytest.mark.parametrize('state',['symlink','dangling','directory','-wal','-shm','-journal'])
+@pytest.mark.parametrize('mode',['fail','replace'])
+def test_gpkg_save_protects_nonregular_targets_and_sqlite_companions_before_writing(tmp_path,monkeypatch,state,mode):
+    frame=_gpkg_business_frame();target=tmp_path/'target.gpkg';old=tmp_path/'old.gpkg';_save_gpkg(frame,old);old_bytes=old.read_bytes()
+    if state in('symlink','dangling'): target.symlink_to(old if state=='symlink'else tmp_path/'missing')
+    elif state=='directory': target.mkdir();(target/'owned').write_bytes(b'keep')
+    else: target.write_bytes(old_bytes);Path(str(target)+state).write_bytes(b'external SQLite state')
+    before={str(p.relative_to(tmp_path)):('link',str(p.readlink()))if p.is_symlink()else('dir',)if p.is_dir()else('file',p.read_bytes())for p in tmp_path.rglob('*')}
+    monkeypatch.setattr(gpd.GeoDataFrame,'to_file',lambda *a,**kw:pytest.fail('must reject before writing'))
+    with pytest.raises((FileExistsError,ValueError,OSError)): _save_gpkg(frame,target,mode)
+    after={str(p.relative_to(tmp_path)):('link',str(p.readlink()))if p.is_symlink()else('dir',)if p.is_dir()else('file',p.read_bytes())for p in tmp_path.rglob('*')}
+    assert before==after and old.read_bytes()==old_bytes
+
+
+def test_gpkg_save_file_append_is_rejected_without_touching_existing_target(tmp_path):
+    frame=_gpkg_business_frame();target=tmp_path/'target.gpkg';_save_gpkg(frame,target);before=target.read_bytes()
+    with pytest.raises(ValueError): _save_gpkg(frame,target,'append')
+    assert target.read_bytes()==before and list(tmp_path.iterdir())==[target]
+
+
+@pytest.mark.parametrize('kind',['wrong-count','invalid-file','journal'])
+@pytest.mark.parametrize('mode',['fail','replace'])
+def test_gpkg_save_verifies_closed_complete_single_file_before_publication(tmp_path,monkeypatch,kind,mode):
+    frame=_gpkg_business_frame();target=tmp_path/'result.gpkg'
+    if mode=='replace':_save_gpkg(frame,target);old=target.read_bytes()
+    writer=gpd.GeoDataFrame.to_file
+    def incomplete(self,path,*args,**kwargs):
+        if kind=='invalid-file': Path(path).write_bytes(b'not a GeoPackage');return
+        writer(self.iloc[:1] if kind=='wrong-count'else self,path,*args,**kwargs)
+        if kind=='journal':Path(str(path)+'-journal').write_bytes(b'unfinished state')
+    monkeypatch.setattr(gpd.GeoDataFrame,'to_file',incomplete)
+    with pytest.raises((io_operators.GeoPackageSaveError,DataSourceError)): _save_gpkg(frame,target,mode)
+    if mode=='replace':assert target.read_bytes()==old and list(tmp_path.iterdir())==[target]
+    else:assert list(tmp_path.iterdir())==[]
+
+
+@pytest.mark.parametrize('business_failure',[False,True])
+def test_gpkg_save_reports_cleanup_failure_with_original_failure_or_committed_fact(tmp_path,monkeypatch,business_failure):
+    frame=_gpkg_business_frame();target=tmp_path/'result.gpkg';real=io_operators.tempfile.TemporaryDirectory;owned=[]
+    class DeniedCleanup:
+        def __init__(self,*args,**kwargs):
+            self.real=real(*args,**kwargs);self.name=self.real.name;owned.append(self)
+        def cleanup(self):raise PermissionError('injected cleanup denial')
+    writer=gpd.GeoDataFrame.to_file
+    first=RuntimeError('first business failure remains visible')
+    def failed(self,*args,**kwargs):writer(self,*args,**kwargs);raise first
+    if business_failure:monkeypatch.setattr(gpd.GeoDataFrame,'to_file',failed)
+    monkeypatch.setattr(io_operators.tempfile,'TemporaryDirectory',DeniedCleanup)
+    try:
+        with pytest.raises(io_operators.GeoPackageSaveError)as error:_save_gpkg(frame,target)
+        assert 'cleanup denial'in str(error.value)
+        if business_failure:
+            assert error.value.code=='cleanup'and error.value.causes[0]is first
+            assert str(first)in str(error.value)and not target.exists()
+        else:
+            assert error.value.code=='published_cleanup'and target.is_file()
+            _assert_gpkg_business(target,frame)
+    finally:
+        for item in owned:item.real.cleanup()
+    assert {p.name for p in tmp_path.iterdir()}== (set()if business_failure else{target.name})
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('fault',['mode','busy','target','incomplete'])
+def test_gpkg_save_new_diagnostics_follow_execution_language(tmp_path,monkeypatch,language,fault):
+    from workflow_engine import GeoPythonWorkflowRunner
+    frame=_gpkg_business_frame();target=tmp_path/'result.gpkg';mode='replace'
+    if fault=='mode':mode='append'
+    elif fault=='busy':Path(str(target)+'-wal').write_bytes(b'external state')
+    elif fault=='target':target.mkdir()
+    else:
+        writer=gpd.GeoDataFrame.to_file
+        monkeypatch.setattr(gpd.GeoDataFrame,'to_file',lambda self,*a,**kw:writer(self.iloc[:1],*a,**kw))
+    with pytest.raises(ValueError)as error:GeoPythonWorkflowRunner(language=language)._execute_operator('save',{'input_df':frame,'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':mode})
+    assert str(error.value)==io_operators.GeoPackageSaveError._messages[fault][language=='en']
+
+
+def test_gpkg_save_existing_fail_target_stops_before_allocating_temp_directory(tmp_path,monkeypatch):
+    target=tmp_path/'existing.gpkg';target.write_bytes(b'old')
+    monkeypatch.setattr(io_operators.tempfile,'TemporaryDirectory',lambda *a,**kw:pytest.fail('preexisting target must fail first'))
+    with pytest.raises(FileExistsError):_save_gpkg(_gpkg_business_frame(),target)
+    assert target.read_bytes()==b'old'and list(tmp_path.iterdir())==[target]
+
+
+@pytest.mark.parametrize('state',['symlink','-wal','-shm','-journal'])
+def test_gpkg_save_rechecks_target_state_after_writing_without_touching_external_state(tmp_path,monkeypatch,state):
+    frame=_gpkg_business_frame();target=tmp_path/'target.gpkg';other=tmp_path/'other.gpkg';_save_gpkg(frame,other);original=other.read_bytes();writer=gpd.GeoDataFrame.to_file
+    def concurrent(self,*a,**kw):
+        writer(self,*a,**kw)
+        if state=='symlink':target.symlink_to(other)
+        else:Path(str(target)+state).write_bytes(b'concurrent external state')
+    monkeypatch.setattr(gpd.GeoDataFrame,'to_file',concurrent)
+    with pytest.raises(io_operators.GeoPackageSaveError):_save_gpkg(frame,target,'replace')
+    assert other.read_bytes()==original
+    assert {p.name for p in tmp_path.iterdir()}=={other.name,target.name if state=='symlink'else target.name+state}
+    if state=='symlink':assert target.is_symlink()and target.readlink()==other
+    else:assert Path(str(target)+state).read_bytes()==b'concurrent external state'and not target.exists()

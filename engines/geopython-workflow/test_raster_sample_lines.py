@@ -388,3 +388,45 @@ def test_sample_lines_multiple_native_alpha_nodata_keeps_adjacent_large_coverage
     result=c.raster_sample_lines(object(),frame,2,'line_id',1.)
     assert result.sample_status.tolist()==(['nodata']if missing else['ok'])*2
     assert result.sample_value.isna().all()if missing else result.sample_value.tolist()==[8.,8.]
+
+
+@pytest.mark.parametrize('field',['fid','FID','FiD'])
+@pytest.mark.parametrize('method',['cell','bilinear'])
+def test_sample_lines_repeated_business_fid_real_save_and_source_old_immutability(tmp_path,field,method):
+    from operators.io_operators import save,load
+    from osgeo import ogr
+    source,crs,*_=_source(tmp_path/'source.tif');frame=_frame([LineString([(.5,7.5),(3.5,4.5)])],crs)
+    frame[field]=pd.array([2**53+1],dtype='Int64');original=frame.copy(deep=True);source_bytes=source.read_bytes()
+    with c.raster_workspace():got=c.raster_sample_lines(c.raster_load(_plan(source)),frame,2,'line_id',1.,method)
+    assert len(got)>2 and got[field].tolist()==[2**53+1]*len(got)
+    old=tmp_path/'previous.gpkg';target=tmp_path/'samples.gpkg'
+    save(got,connection_info={'mount_path':str(tmp_path)},path=old.name,mode='fail');old_bytes=old.read_bytes()
+    save(got,connection_info={'mount_path':str(tmp_path)},path=target.name,mode='fail')
+    ds=ogr.Open(str(target));layer=ds.GetLayer(0);features=list(layer)
+    assert len(features)==len(got)and len({f.GetFID()for f in features})==len(got)
+    assert layer.GetFIDColumn().casefold()not in {str(n).casefold()for n in got.columns}
+    assert [f.GetField(field)for f in features]==[2**53+1]*len(got)
+    loaded=load(connection_info={'mount_path':str(tmp_path)},path=target.name)
+    for name in got.columns:
+        if name!=got.geometry.name:
+            expected=got[name].reset_index(drop=True)
+            # The existing Arrow reader exposes strings as object, integers and
+            # booleans as their declared nullable types. Check physical schema.
+            field_schema=layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex(name))
+            if pd.api.types.is_bool_dtype(expected.dtype):
+                assert field_schema.GetType()==ogr.OFTInteger and field_schema.GetSubType()==ogr.OFSTBoolean
+                expected=expected.astype('boolean')
+            elif pd.api.types.is_integer_dtype(expected.dtype):
+                assert field_schema.GetType()==ogr.OFTInteger64
+                expected=expected.astype('Int64')
+            elif pd.api.types.is_float_dtype(expected.dtype):
+                assert field_schema.GetType()==ogr.OFTReal
+                expected=expected.astype('float64')
+            else:
+                assert field_schema.GetType()==ogr.OFTString
+                expected=expected.astype(object)
+            pd.testing.assert_series_equal(loaded[name],expected,check_exact=True)
+    assert loaded.geometry.to_wkb().tolist()==got.geometry.to_wkb().tolist()and loaded.crs==got.crs
+    assert source.read_bytes()==source_bytes and old.read_bytes()==old_bytes
+    pd.testing.assert_frame_equal(frame,original,check_exact=True)
+    assert {p.name for p in tmp_path.iterdir()}=={source.name,target.name,old.name}

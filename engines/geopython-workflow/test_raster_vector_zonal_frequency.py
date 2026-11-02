@@ -278,3 +278,42 @@ def test_vector_zonal_frequency_preserves_driver_reserved_business_field_and_ide
     original=gdf.copy(deep=True);got=result(p,gdf)
     assert len(got)==3 and got[field].tolist()==[123]*3 and str(got[field].dtype)=='Int64'and got['zone'].tolist()==[2**63-1]*3 and str(got['zone'].dtype)=='Int64'
     pd.testing.assert_frame_equal(gdf,original,check_exact=True)
+
+
+@pytest.mark.parametrize('field',['fid','FID','FiD'])
+def test_vector_zonal_frequency_repeated_business_fid_real_save_and_source_old_immutability(tmp_path,field):
+    from operators.io_operators import save,load
+    from osgeo import ogr
+    source=create(tmp_path/'source.tif',np.array([[0,1,2],[2,0,1],[1,2,0]],float));gdf=zones([polygon(GRID,.1,.1,2.9,2.9)])
+    gdf[field]=pd.array([2**53+1],dtype='Int64');original=gdf.copy(deep=True);source_bytes=source.read_bytes();got=result(source,gdf)
+    target=tmp_path/'frequency.gpkg';old=tmp_path/'previous.gpkg'
+    save(got,connection_info={'mount_path':str(tmp_path)},path=old.name,mode='fail');old_bytes=old.read_bytes()
+    save(got,connection_info={'mount_path':str(tmp_path)},path=target.name,mode='fail')
+    ds=ogr.Open(str(target));layer=ds.GetLayer(0);features=list(layer)
+    assert layer.GetFeatureCount()==3 and len({f.GetFID()for f in features})==3
+    assert layer.GetFIDColumn().casefold()not in {str(n).casefold()for n in got.columns}
+    assert [f.GetField(field)for f in features]==[2**53+1]*3
+    loaded=load(connection_info={'mount_path':str(tmp_path)},path=target.name)
+    for name in got.columns:
+        if name!=got.geometry.name:
+            expected=got[name].reset_index(drop=True)
+            # The existing Arrow reader exposes strings as object, integers and
+            # booleans as their declared nullable types. Check physical schema.
+            field_schema=layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex(name))
+            if pd.api.types.is_bool_dtype(expected.dtype):
+                assert field_schema.GetType()==ogr.OFTInteger and field_schema.GetSubType()==ogr.OFSTBoolean
+                expected=expected.astype('boolean')
+            elif pd.api.types.is_integer_dtype(expected.dtype):
+                assert field_schema.GetType()==ogr.OFTInteger64
+                expected=expected.astype('Int64')
+            elif pd.api.types.is_float_dtype(expected.dtype):
+                assert field_schema.GetType()==ogr.OFTReal
+                expected=expected.astype('float64')
+            else:
+                assert field_schema.GetType()==ogr.OFTString
+                expected=expected.astype(object)
+            pd.testing.assert_series_equal(loaded[name],expected,check_exact=True)
+    assert loaded.geometry.to_wkb().tolist()==got.geometry.to_wkb().tolist()and loaded.crs==got.crs
+    assert source.read_bytes()==source_bytes and old.read_bytes()==old_bytes
+    pd.testing.assert_frame_equal(gdf,original,check_exact=True)
+    assert {p.name for p in tmp_path.iterdir()}=={source.name,target.name,old.name}

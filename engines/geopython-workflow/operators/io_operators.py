@@ -7,6 +7,8 @@ I/O 算子模块
 
 import logging
 import os
+import tempfile
+from pathlib import Path
 import pandas as pd
 import geopandas as gpd
 import pyogrio
@@ -101,6 +103,79 @@ def _read_file(full_path: str, fmt: str, geom_column: str = None):
         raise ValueError(f"不支持的文件格式: {fmt}，支持: csv, parquet, xlsx, json, feather, shp, geojson, gpkg, kml, gml, fgb")
 
 
+class GeoPackageSaveError(ValueError):
+    """Format-local save diagnostics; language remains the execution snapshot."""
+    _messages = {
+        'mode': ('GeoPackage文件保存仅支持fail或replace，不支持追加', 'GeoPackage file save supports only fail or replace, not append'),
+        'target': ('GeoPackage替换目标必须为普通文件，不能是目录或符号链接', 'A GeoPackage replacement target must be a regular file, not a directory or symbolic link'),
+        'busy': ('GeoPackage目标存在SQLite伴随状态，不能安全发布；请先关闭目标写入器', 'The GeoPackage target has SQLite companion state; close its writer before publishing'),
+        'incomplete': ('GeoPackage写入未生成完整单文件，未发布目标', 'GeoPackage writing did not produce a complete single file; the target was not published'),
+        'cleanup': ('GeoPackage保存和本次临时目录清理均失败', 'GeoPackage saving and cleanup of its temporary directory both failed'),
+        'published_cleanup': ('GeoPackage已发布，但本次临时目录清理失败', 'The GeoPackage was published, but cleanup of its temporary directory failed'),
+    }
+
+    def __init__(self, code, causes=()):
+        self.code, self.causes = code, causes
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        message = self._messages[self.code][language == 'en']
+        if self.causes:
+            message += ': ' + '; '.join(f'{type(cause).__name__}: {cause}' for cause in self.causes)
+        return message
+
+
+def _write_gpkg(df, full_path, mode):
+    if mode not in ('fail', 'replace'):
+        raise GeoPackageSaveError('mode')
+    destination = Path(full_path)
+
+    def check_target():
+        if os.path.lexists(destination):
+            if mode == 'fail':
+                raise FileExistsError(f"文件已存在: {destination}")
+            if destination.is_symlink() or not destination.is_file():
+                raise GeoPackageSaveError('target')
+        if any(os.path.lexists(str(destination) + suffix) for suffix in ('-wal', '-shm', '-journal')):
+            raise GeoPackageSaveError('busy')
+
+    check_target()
+    names = {str(name).casefold() for name in df.columns}
+    fid, suffix = 'fid', 0
+    while fid.casefold() in names:
+        fid = '_addp_fid' if suffix == 0 else f'_addp_fid_{suffix}'
+        suffix += 1
+    workspace = tempfile.TemporaryDirectory(prefix='.addp-gpkg-', dir=destination.parent)
+    try:
+        staged = Path(workspace.name) / destination.name
+        # Explicit driver and index policy; business fid stays an ordinary field.
+        df.to_file(staged, driver='GPKG', engine='pyogrio', index=False,
+                   layer=destination.stem, layer_options={'FID': fid})
+        info = pyogrio.read_info(staged)
+        if (not staged.is_file() or staged.stat().st_size <= 0
+                or info['driver'] != 'GPKG' or info['features'] != len(df)
+                or list(staged.parent.iterdir()) != [staged]):
+            raise GeoPackageSaveError('incomplete')
+        check_target()
+        if mode == 'fail':
+            # Link is atomic and refuses even a target created after the check.
+            os.link(staged, destination)
+        else:
+            os.replace(staged, destination)
+    except BaseException as failure:
+        try:
+            workspace.cleanup()
+        except Exception as cleanup:
+            raise GeoPackageSaveError('cleanup', (failure, cleanup)) from cleanup
+        raise
+    else:
+        try:
+            workspace.cleanup()
+        except Exception as cleanup:
+            # Publication has committed; never delete or claim rollback of it.
+            raise GeoPackageSaveError('published_cleanup', (cleanup,)) from cleanup
+
+
 def _write_file(df, full_path: str, fmt: str, mode: str = 'replace'):
     """根据格式写入文件"""
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
@@ -109,7 +184,10 @@ def _write_file(df, full_path: str, fmt: str, mode: str = 'replace'):
     if fmt in _SPATIAL_FORMATS:
         if not isinstance(df, gpd.GeoDataFrame):
             raise ValueError("保存空间格式文件需要 GeoDataFrame 输入")
-        df.to_file(full_path, driver=_spatial_driver(fmt))
+        if fmt == 'gpkg':
+            _write_gpkg(df, full_path, mode)
+        else:
+            df.to_file(full_path, driver=_spatial_driver(fmt))
     elif fmt == 'csv':
         df.to_csv(full_path, index=False)
     elif fmt == 'parquet':
