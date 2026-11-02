@@ -85,6 +85,10 @@ D8流长只保留`raster_flow_length_d8`一个入口，必填`method=downstream`
 
 “多距缓冲”（`batch_buffer`）把同一图层的多距离完整缓冲展开为一个图层，保留源属性和 CRS 并追加 `distance` 列，源列重名时报错；可直接接现有保存节点。删除“多图质心”（`batch_centroid`）的函数与入口，多个图层分别连接普通 `centroid`，旧 ID 不保留别名。普通缓冲和质心均已对单图层逐要素执行。“外包矩形”（`envelope`）为轴对齐包络。输入输出与验证边界见[多距缓冲与质心入口契约](../../../docs/spec/workflow/矢量算子契约.md#多距缓冲与质心入口契约)。
 
+## 裁剪几何
+
+`clip(input_gdf, mask_gdf, id_field)` 按整体面掩膜逐 A 求完整交集，保留 A 的来源与全部业务属性；共边、共点和 GeometryCollection 不按维度丢弃，多部件不拆行。空掩膜返回保完整 Schema 的空结果。与逐对保留 A/B 属性的 intersection 及整体范围扣除的 difference 边界见[裁剪几何契约](../../../docs/spec/workflow/矢量算子契约.md#裁剪几何契约)。
+
 ## 拓扑构面
 
 `polygonize` 从线网提取闭合面，面结果 `result` 与余线诊断 `diagnostics` 可分别连接 `save`。输入限制、交点打断与去重、孔洞、诊断含义和内存边界统一见[拓扑构面契约](../../../docs/spec/workflow/矢量算子契约.md#拓扑构面契约)。

@@ -1641,3 +1641,12 @@ def test_zonal_frequency_single_method_selector_and_ordinary_table_without_alias
     assert all(params[k]['required']for k in('input_raster','zones_raster','band','zones_band'))
     assert 'method'not in spec['detailed_description']['workflow_example']['params']
     assert not any(spec['id']in('raster_zonal_histogram','raster_zonal_class_counts','raster_class_frequency')for spec in list_operators())
+
+
+def test_vector_clip_metadata_requires_explicit_source_and_full_geometry():
+    spec=next(s for s in list_operators() if s['name']=='clip');params={p['name']:p for p in spec['parameters']}
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert set(params)=={'input_gdf','mask_gdf','id_field'} and all(p['required'] for p in params.values())
+    assert params['id_field']['type']=='string' and 'default' not in params['id_field']
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['is_default'] and spec['output_ports'][0]['type']=='geodataframe'
+    assert 'GeometryCollection' in spec['detailed_description']['overview']

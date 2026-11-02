@@ -6,29 +6,59 @@
 
 import geopandas as gpd
 import pandas as pd
+import shapely
 from math import isfinite
 from numbers import Integral, Real
 from typing import Dict, List, Any
 from .base import (
     OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator, OutputPort
 )
-from .geometric_operators import buffer, _geometry_for_output
+from .geometric_operators import (buffer, _geometry_for_output, _polygon_mask_inputs,
+                                  _combined_polygon_mask, _require_valid_mask_result)
 
 
 # ==================== 算子实现 ====================
 
-def clip(input_gdf: gpd.GeoDataFrame, mask_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    裁剪几何（使用 mask 裁剪 input）
+class ClipInputError(ValueError):
+    """Known clipping admissions with no source values in public messages."""
+    _messages = {
+        'zh-cn': {
+            'source': '裁剪几何的源图层须具有唯一几何列、有效非空有限二维几何及显式唯一非空来源标识。',
+            'mask': '裁剪掩膜须具有唯一几何列和有效非空有限二维面或多面几何；不要求业务来源标识。',
+            'crs': '裁剪几何要求两输入使用相同的已知投影坐标系及匹配的有限正水平线性单位；请先显式重投影。',
+        },
+        'en': {
+            'source': 'Clip source requires one geometry column, valid non-empty finite XY geometries and an explicit unique non-null source identifier.',
+            'mask': 'Clip mask requires one geometry column and valid non-empty finite XY Polygon or MultiPolygon geometries; no business identifier is required.',
+            'crs': 'Clip requires the same known projected CRS and matching finite positive horizontal linear units; reproject explicitly first.',
+        },
+    }
 
-    Args:
-        input_gdf: 输入 GeoDataFrame
-        mask_gdf: 裁剪 mask GeoDataFrame
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
 
-    Returns:
-        GeoDataFrame 裁剪结果
-    """
-    return gpd.clip(input_gdf, mask_gdf)
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
+def clip(input_gdf: gpd.GeoDataFrame, mask_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Keep each source's complete intersection with the whole polygon range."""
+    left, right = _polygon_mask_inputs(input_gdf, mask_gdf, id_field, ClipInputError)
+    if left.empty or right.empty:
+        return input_gdf.iloc[:0].copy().reset_index(drop=True)
+    mask = _combined_polygon_mask(right)
+    rows, values = [], []
+    for index, geometry in enumerate(left.array):
+        value = shapely.intersection(geometry, mask)
+        if value.is_empty:
+            continue
+        _require_valid_mask_result(value)
+        rows.append(index)
+        values.append(value)
+    result = input_gdf.iloc[rows].copy().reset_index(drop=True)
+    result[left.name] = gpd.GeoSeries(values, crs=left.crs)
+    return result
 
 
 def voronoi(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -155,59 +185,24 @@ def batch_buffer(input_gdf: gpd.GeoDataFrame, distances: List[float], resolution
 # ==================== 元数据定义 ====================
 
 CLIP_METADATA = OperatorMetadata(
-    name="clip",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_OVERLAY,
-    description="裁剪几何",
-    brief_description="用掩膜图层裁剪输入图层,保留掩膜范围内的部分,常用于研究区提取",
-    execution_modes=["workflow"],
-    effects=["read"],
-
-    overview="使用掩膜图层(mask)裁剪输入图层,只保留落在掩膜范围内的几何部分。类似GIS中的Clip工具,常用于提取研究区数据、行政区数据裁剪等场景。",
-
+    name="clip", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_OVERLAY,
+    description="裁剪几何", brief_description="按整体面掩膜逐源裁剪，保留完整交集、来源和业务属性",
+    execution_modes=["workflow"], effects=["read"],
+    overview="源图层与全部掩膜面的整体范围求交，每源最多一条非空完整结果；共边和共点保留线与点，多部件及 GeometryCollection 不拆行。只保留源属性和显式来源 ID，掩膜不要求业务标识，输入不变。",
     params=[
-        OperatorParam(
-            name="input_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="被裁剪的输入图层"
-        ),
-        OperatorParam(
-            name="mask_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="掩膜图层,定义裁剪范围",
-            notes="需与input_gdf具有相同的坐标系,通常是面图层"
-        )
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="源图层", notes="有效非空有限二维点、线、面、多部件或集合；唯一活动几何，允许空批"),
+        OperatorParam(name="mask_gdf", type="input", data_type="GeoDataFrame", required=True, description="裁剪掩膜", notes="仅有效有限二维 Polygon/MultiPolygon；相同已知投影 CRS；允许空批，不要求业务来源 ID"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="源图层唯一来源标识列", notes="显式非几何唯一非空标量列，保留原名和值，不推断索引或 FID"),
     ],
-
-    use_cases=[
-        "研究区提取: 用行政区边界裁剪全国数据得到省级数据",
-        "项目范围裁剪: 用项目红线裁剪地形数据",
-        "海陆分离: 用陆地边界裁剪数据去除海洋部分",
-        "缓冲区内裁剪: 用缓冲区裁剪要素得到影响范围内的数据"
-    ],
-
+    use_cases=["按研究区裁剪完整道路交集", "保留面范围及边界上的点位", "逐源提取掩膜内的多部件几何"],
     notes=[
-        "裁剪后保留input_gdf的属性,mask_gdf只提供范围",
-        "与intersection的区别:clip会裁切几何,intersection保留完整几何",
-        "掩膜图层如有多个面,会按union后的总范围裁剪",
-        "大数据集裁剪建议先用空间索引过滤候选对象"
+        "全部掩膜构成整体范围，重复重叠掩膜不重复输出；孔洞内部留白、孔环边界仍参与求交",
+        "保留源属性、可空类型、来源 ID、活动几何名及 CRS，重建 RangeIndex；不复制掩膜属性或增加同义 ID 列",
+        "不按输入维度丢弃线或点，不自动修复、吸附、重投影、舍入或拆行；不承诺保留原顶点顺序及环方向",
+        "空源或空掩膜返回保完整 Schema 的空结果；纯计算不保存扫描，保存格式须能表达实际混合几何",
     ],
-
-    workflow_example={
-        'id': 'clip_by_province',
-        'operator': 'clip',
-        'params': {
-            'input_gdf': {'$ref': 'load_national_roads'},
-            'mask_gdf': {'$ref': 'load_province_boundary'}
-        },
-        'depends_on': ['load_national_roads', 'load_province_boundary']
-    }
+    workflow_example={'id':'clip_source','operator':'clip','params':{'input_gdf':{'$ref':'load_source'},'mask_gdf':{'$ref':'load_mask'},'id_field':'source_key'},'depends_on':['load_source','load_mask']},
 )
-
 
 VORONOI_METADATA = OperatorMetadata(
     name="voronoi",

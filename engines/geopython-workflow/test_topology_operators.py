@@ -6806,3 +6806,222 @@ def test_difference_async_api_discovery_and_frozen_input_diagnosis(tmp_path,monk
             assert state['status']=='failed' and state['error_code']=='INVALID_PARAMS',state
             assert state['diagnostic']=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'difference',**({'parameter':param} if param else {})}}
             assert 'PRIVATE' not in json.dumps(state['diagnostic'])
+
+
+def exact_clip(a,b):
+    return get_operator('clip')(a,b,id_field='a_key')
+
+
+def test_vector_clip_whole_mask_one_source_row_retains_lower_dimension_contacts():
+    left,right=overlay_inputs([box(0,0,4,1),box(10,0,11,1),box(20,0,21,1)],
+                             [box(1,-1,2.5,2),box(2,-1,3,2),box(11,0,12,1),box(21,1,22,2)])
+    result=exact_clip(left,right)
+    expected=[box(1,0,3,1),LineString([(11,0),(11,1)]),Point(21,1)]
+    assert len(result)==3 and all(g.equals(e) for g,e in zip(result.geometry,expected))
+    assert list(result.columns)==list(left.columns) and result.a_key.tolist()==[1,2,3]
+
+@pytest.mark.parametrize('shape,expected',[
+    (Point(0,0),Point(0,0)),(Point(2,0),None),(Point(1,0),Point(1,0)),
+    (LineString([(-2,0),(2,0)]),LineString([(-1,0),(1,0)])),
+    (box(-2,-2,2,2),box(-1,-1,1,1)),
+    (shapely.MultiPoint([(0,0),(1,0),(3,0)]),shapely.MultiPoint([(0,0),(1,0)])),
+    (shapely.MultiLineString([[(-2,0),(2,0)],[(-2,.5),(2,.5)]]),shapely.MultiLineString([[(-1,0),(1,0)],[(-1,.5),(1,.5)]])),
+    (shapely.MultiPolygon([box(-2,-.8,-.5,.8),box(.5,-.8,2,.8)]),shapely.MultiPolygon([box(-1,-.8,-.5,.8),box(.5,-.8,1,.8)])),
+])
+def test_vector_clip_full_source_dimensions_and_closed_boundary(shape,expected):
+    left,right=overlay_inputs([shape],[box(-1,-1,1,1)]);result=exact_clip(left,right)
+    assert len(result)==(0 if expected is None else 1)
+    if expected is not None:assert result.geometry.iloc[0].equals(expected)
+    assert list(result.columns)==list(left.columns) and result.geometry.name==left.geometry.name and result.crs==left.crs
+
+
+def test_vector_clip_collection_input_and_mixed_dimension_collection_result_are_one_row():
+    a=shapely.GeometryCollection([Point(0,0),LineString([(5,-2),(5,2)]),box(10,0,12,2)])
+    b=shapely.MultiPolygon([box(-1,-1,1,1),box(4,-1,6,1),box(11,1,13,3)])
+    left,right=overlay_inputs([a],[b]);result=exact_clip(left,right)
+    expected=shapely.GeometryCollection([Point(0,0),LineString([(5,-1),(5,1)]),box(11,1,12,2)])
+    assert len(result)==1 and result.geometry.iloc[0].equals(expected)
+    a=shapely.MultiPolygon([box(0,0,2,2),box(4,0,5,1),box(7,0,8,1)])
+    b=shapely.MultiPolygon([box(1,1,3,3),box(5,0,6,1),box(8,1,9,2)])
+    left,right=overlay_inputs([a],[b]);result=exact_clip(left,right)
+    assert len(result)==1 and result.geometry.iloc[0].equals(shapely.GeometryCollection([box(1,1,2,2),LineString([(5,0),(5,1)]),Point(8,1)]))
+
+
+def test_vector_clip_mask_holes_hole_boundary_and_tiny_exact_intersection():
+    mask=shapely.Polygon(box(0,0,8,8).exterior.coords,[box(2,2,6,6).exterior.coords]);tiny=2**-40
+    left,right=overlay_inputs([Point(0,0),Point(2,3),Point(4,4),box(3,3,5,5),mask,box(20,0,21,1)],
+                             [mask,box(20,-1,20+tiny,2)])
+    result=exact_clip(left,right)
+    assert result.a_key.tolist()==[1,2,5,6]
+    assert result.geometry.iloc[0].equals(Point(0,0)) and result.geometry.iloc[1].equals(Point(2,3))
+    assert result.geometry.iloc[2].equals(mask) and result.geometry.iloc[3].equals(box(20,0,20+tiny,1))
+    assert result.geometry.iloc[3].area==tiny
+    assert_geodataframe_equal(result,exact_clip(left,pd.concat([right.iloc[::-1],right],ignore_index=True)))
+
+
+def test_vector_clip_preserves_source_fields_types_order_and_b_does_not_supply_attributes():
+    left,right=overlay_inputs([Point(0,0),Point(3,0),Point(.5,0)],[box(-1,-1,1,1)])
+    left['a_key']=pd.Series([2**60+1,2**60+3,2**60+5],dtype='Int64')
+    left['grade']=pd.Series([None,3,2**53+1],dtype='Int64');left['enabled']=pd.Series([None,True,False],dtype='boolean')
+    left['geometry']=pd.Series(['普通业务',None,'末行'],dtype='string');left['category']=pd.Categorical(['b','a','c']);left.index=[9,9,-1]
+    right=right.drop(columns=['b_key']);right['a_key']=['不复制'];right['geometry']=['掩膜业务']
+    original=[f.copy(deep=True) for f in (left,right)];result=exact_clip(left,right)
+    assert list(result.columns)==list(left.columns) and list(result.index)==[0,1]
+    for name in left.columns:
+        if name!=left.geometry.name:pd.testing.assert_series_equal(result[name],left[name].iloc[[0,2]].reset_index(drop=True))
+    for frame,before in zip((left,right),original):assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize('empty',['a','b','both','disjoint'])
+def test_vector_clip_empty_source_or_mask_keeps_empty_schema_and_admission(empty):
+    left,right=overlay_inputs([Point(30,0)],[box(-1,-1,1,1)]);left['grade']=pd.Series([None],dtype='Int64')
+    if empty in ('a','both'):left=left.iloc[:0].copy()
+    if empty in ('b','both'):right=right.iloc[:0].copy()
+    result=exact_clip(left,right)
+    assert len(result)==0 and result.dtypes.equals(left.dtypes) and list(result.columns)==list(left.columns)
+    assert result.geometry.name==left.geometry.name and result.crs==left.crs
+    from operators.data_operations import ClipInputError
+    right=right.set_crs(None,allow_override=True)
+    with pytest.raises(ClipInputError) as caught:exact_clip(left,right)
+    assert caught.value.code=='crs'
+
+
+def test_vector_clip_empty_mask_and_difference_empty_mask_have_distinct_semantics():
+    left,right=overlay_inputs();right=right.iloc[:0]
+    assert exact_clip(left,right).empty
+    assert_geodataframe_equal(exact_difference(left,right),left.reset_index(drop=True))
+
+
+@pytest.mark.parametrize('problem',['missing_id','null_id','duplicate_id','object_id','source_z','source_empty','source_invalid','source_nonfinite','second_geometry','mask_point','mask_gc','mask_invalid','mask_missing','mask_z','mask_m','crs_missing','crs_mismatch','crs_geographic'])
+def test_vector_clip_typed_admission_rejects_bad_geometry_identity_masks_and_crs(problem):
+    from operators.data_operations import ClipInputError
+    left,right=overlay_inputs([box(0,0,2,2),box(3,0,5,2)],[box(-1,-1,6,3)])
+    expected='source'
+    if problem=='missing_id':left=left.drop(columns=['a_key'])
+    elif problem=='null_id':left['a_key']=[None,2]
+    elif problem=='duplicate_id':left['a_key']=[1,1]
+    elif problem=='object_id':left['a_key']=[{},{}]
+    elif problem.startswith('source_'):
+        shapes={'z':shapely.from_wkt('POINT Z (0 0 1)'),'empty':Point(),'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),'nonfinite':shapely.from_wkt('LINESTRING (0 0,Infinity 1)')}
+        left[left.geometry.name]=gpd.GeoSeries([shapes[problem[7:]],Point(0,0)],crs=left.crs)
+    elif problem=='second_geometry':left['other']=gpd.GeoSeries([Point(0,0),Point(1,1)],crs=left.crs)
+    elif problem.startswith('mask_'):
+        expected='mask';shapes={'point':Point(0,0),'gc':shapely.GeometryCollection([box(0,0,1,1)]),'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),'missing':None,'z':shapely.from_wkt('POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))'),'m':shapely.from_wkt('POLYGON M ((0 0 1,1 0 1,1 1 1,0 0 1))')}
+        right[right.geometry.name]=gpd.GeoSeries([shapes[problem[5:]]],crs=right.crs)
+    else:
+        expected='crs';right.set_crs({'crs_missing':None,'crs_mismatch':'EPSG:2263','crs_geographic':'EPSG:4326'}[problem],allow_override=True,inplace=True)
+    with pytest.raises(ClipInputError) as caught:exact_clip(left,right)
+    assert caught.value.code==expected
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('problem,reason,parameter',[('source','operator_input_invalid','input_gdf'),('mask','operator_mask_invalid','mask_gdf'),('crs','operator_crs_invalid','')])
+def test_vector_clip_closed_diagnostic_has_actual_operator_and_no_source_values(language,problem,reason,parameter):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    left,right=overlay_inputs()
+    if problem=='source':left['a_key']=['']
+    if problem=='mask':right[right.geometry.name]=gpd.GeoSeries([Point(0,0)],crs=right.crs)
+    if problem=='crs':right.set_crs(None,allow_override=True,inplace=True)
+    tasks=[{'id':'PRIVATE_CLIP_NODE','operator':'clip','depends_on':[],'params':{'input_gdf':left,'mask_gdf':right,'id_field':'a_key'}}]
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert caught.value.error_code=='INVALID_PARAMS'
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'clip',**({'parameter':parameter} if parameter else {})}}
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+    assert ('Clip' in str(caught.value)) if language=='en' else ('裁剪' in str(caught.value))
+
+
+@pytest.mark.parametrize('stage',['union_all','intersection'])
+@pytest.mark.parametrize('problem',['native','invalid','nonfinite','z','m'])
+def test_vector_clip_calculation_faults_never_masquerade_as_input_errors(monkeypatch,stage,problem):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    def bad(*args,**kwargs):
+        if problem=='native':raise shapely.errors.GEOSException('PRIVATE source values')
+        if problem=='invalid':return Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)])
+        if problem=='nonfinite':return shapely.from_wkt('LINESTRING (0 0,Infinity 1)')
+        return shapely.from_wkt('POLYGON '+problem.upper()+' ((0 0 1,1 0 1,1 1 1,0 0 1))')
+    monkeypatch.setattr(shapely,stage,bad);left,right=overlay_inputs()
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner().execute({'tasks':[{'id':'clip','operator':'clip','depends_on':[],'params':{'input_gdf':left,'mask_gdf':right,'id_field':'a_key'}}]})
+    assert caught.value.error_code=='EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+def test_vector_clip_never_calls_old_clip_or_automatic_repair(monkeypatch):
+    def forbidden(*a,**k):raise AssertionError('old fast clip or repair path')
+    monkeypatch.setattr(gpd,'clip',forbidden);monkeypatch.setattr(shapely,'make_valid',forbidden)
+    left,right=overlay_inputs();assert len(exact_clip(left,right))==1
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:2263'])
+def test_vector_clip_equivalent_projected_crs_preserves_units_and_uint64_identity(crs):
+    left,right=overlay_inputs();left.set_crs(crs,allow_override=True,inplace=True);right.set_crs(left.crs.to_wkt(),allow_override=True,inplace=True);left['a_key']=pd.Series([2**64-1],dtype='UInt64')
+    result=exact_clip(left,right);assert result.crs==left.crs and result.a_key.dtype==left.a_key.dtype and result.a_key.iloc[0]==2**64-1
+    assert result.geometry.iloc[0].area==1
+
+
+def test_vector_clip_gpkg_mixed_save_reload_preserves_typed_fields_and_failure_guard(tmp_path):
+    from osgeo import ogr
+    a=shapely.MultiPolygon([box(0,0,2,2),box(4,0,5,1),box(7,0,8,1)])
+    b=shapely.MultiPolygon([box(1,1,3,3),box(5,0,6,1),box(8,1,9,2)])
+    left,right=overlay_inputs([a,box(10,0,11,1),Point(20,0),LineString([(30,0),(32,0)]),Point(40,0)],
+                             [b,box(11,0,12,1),box(19,-1,21,1),box(31,-1,33,1)])
+    left['a_key']=pd.Series([2**60+1+2*i for i in range(5)],dtype='Int64')
+    left['grade']=pd.Series([None,2**53+1,0,-1,8],dtype='Int64');left['enabled']=pd.Series([None,False,True,False,True],dtype='boolean')
+    left['geometry']=pd.Series(['普通业务',None,'点','线','未命中'],dtype='string')
+    right=right.drop(columns=['b_key']);right['a_key']=['仅范围']*4
+    for name,frame in [('a',left),('b',right)]:frame.to_file(tmp_path/(name+'.gpkg'),driver='GPKG',index=False)
+    originals={name:(tmp_path/(name+'.gpkg')).read_bytes() for name in ('a','b')};conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'PRIVATE_CLIP','operator':'clip','depends_on':['a','b'],'params':{'input_gdf':{'$ref':'a'},'mask_gdf':{'$ref':'b'},'id_field':'a_key'}}]
+    tasks.extend({'id':name,'operator':'load','depends_on':[],'params':{'connection_info':conn,'path':name+'.gpkg'}} for name in ('a','b'))
+    tasks.append({'id':'save','operator':'save','depends_on':['PRIVATE_CLIP'],'params':{'input_df':{'$ref':'PRIVATE_CLIP'},'connection_info':conn,'path':'result.gpkg','mode':'fail'}})
+    state=execute_workflow({'tasks':tasks});assert state['status']=='success',state
+    expected=[shapely.GeometryCollection([box(1,1,2,2),LineString([(5,0),(5,1)]),Point(8,1)]),LineString([(11,0),(11,1)]),Point(20,0),LineString([(31,0),(32,0)])]
+    ds=ogr.Open(str(tmp_path/'result.gpkg'));layer=ds.GetLayer(0);rows=list(layer)
+    assert len(rows)==4 and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    assert [f.name for f in layer.schema]==['a_key','grade','enabled','geometry']
+    assert layer.GetLayerDefn().GetFieldDefn(0).GetType()==ogr.OFTInteger64 and layer.GetLayerDefn().GetFieldDefn(2).GetSubType()==ogr.OFSTBoolean
+    for i,(row,shape) in enumerate(zip(rows,expected)):
+        assert row.GetGeometryRef().Normalize().ExportToIsoWkb()==ogr.CreateGeometryFromWkt(shape.wkt).Normalize().ExportToIsoWkb()
+        assert row.GetField('a_key')==2**60+1+2*i and row.GetField('grade')==[None,2**53+1,0,-1][i]
+        assert row.GetField('enabled')==[None,False,True,False][i] and row.GetField('geometry')==['普通业务',None,'点','线'][i]
+    column=layer.GetGeometryColumn();row=rows=layer=ds=None
+    loaded=get_operator('load')(connection_info=conn,path='result.gpkg');assert loaded.geometry.name==column and loaded.grade.dtype=='Int64' and loaded.enabled.dtype=='boolean'
+    assert all(g.equals(e) for g,e in zip(loaded.geometry,expected))
+    tasks[0]['params']['id_field']='PRIVATE_MISSING';tasks[-1]['params']['path']='forbidden.gpkg';state=execute_workflow({'tasks':tasks})
+    assert state['status']=='failed' and state['error_code']=='INVALID_PARAMS' and not (tmp_path/'forbidden.gpkg').exists(),state
+    for name,data in originals.items():assert (tmp_path/(name+'.gpkg')).read_bytes()==data
+
+@pytest.mark.parametrize('problem',[None,'source','mask','crs'])
+def test_vector_clip_async_api_discovery_and_frozen_input_diagnosis(tmp_path,monkeypatch,problem):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    left,right=difference_inputs([box(0,0,4,2)])
+    if problem=='source':left['a_key']=['']
+    if problem=='mask':right[right.geometry.name]=gpd.GeoSeries([Point(0,0)],crs=right.crs)
+    if problem=='crs':right.set_crs('EPSG:3395',allow_override=True,inplace=True)
+    for name,frame in [('a',left),('b',right)]:frame.to_file(tmp_path/(name+'.gpkg'),driver='GPKG',index=False)
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'PRIVATE_DIFF_NODE','operator':'clip','depends_on':['a','b'],'params':{'input_gdf':{'$ref':'a'},'mask_gdf':{'$ref':'b'},'id_field':'a_key'}}]
+    tasks.extend({'id':name,'operator':'load','depends_on':[],'params':{'connection_info':conn,'path':name+'.gpkg'}} for name in ('a','b'))
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        spec=next(v for v in client.get('/api/operators').get_json()['operators'] if v['id']=='clip')
+        assert spec['display_name']=='裁剪几何' and spec['category_path']==['矢量处理','叠加分析']
+        assert [(p['name'],p['required']) for p in spec['parameters']]==[('input_gdf',True),('mask_gdf',True),('id_field',True)]
+        assert client.post('/api/operators/clip/invoke',json={'params':{}}).status_code==403
+        response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert response.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            observed=client.get('/api/executions/'+response.get_json()['execution_id']);assert observed.status_code==200
+            state=observed.get_json()
+            if state['status'] in ('success','failed'):break
+            time.sleep(.01)
+        if problem is None:
+            assert state['status']=='success',state
+            assert len(json.loads(state['result'])['features'])==1
+        else:
+            reason,param={'source':('operator_input_invalid','input_gdf'),'mask':('operator_mask_invalid','mask_gdf'),'crs':('operator_crs_invalid','')}[problem]
+            assert state['status']=='failed' and state['error_code']=='INVALID_PARAMS',state
+            assert state['diagnostic']=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'clip',**({'parameter':param} if param else {})}}
+            assert 'PRIVATE' not in json.dumps(state['diagnostic'])

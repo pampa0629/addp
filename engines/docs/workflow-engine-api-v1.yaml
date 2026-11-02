@@ -876,14 +876,17 @@ components:
               description: 原workflow_def.tasks的1起始位置，不是拓扑调度顺序。
             operator_id:
               type: string
-              enum: [batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference]
+              enum: [batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip]
             parameter:
               type: string
-              enum: [input_gdf, reference_gdf, distances, resolution, tolerance, max_distance, gdf_b]
+              enum: [input_gdf, reference_gdf, distances, resolution, tolerance, max_distance, gdf_b, mask_gdf]
             field:
               type: string
               enum: [distance, source_id, part_no, ring_no, ring_id, is_hole, node_id, degree, source_part_no, end]
       x-addp-operator-input-rules:
+        - ["clip", "operator_input_invalid", "input_gdf", ""]
+        - ["clip", "operator_mask_invalid", "mask_gdf", ""]
+        - ["clip", "operator_crs_invalid", "", ""]
         - ["difference", "operator_input_invalid", "input_gdf", ""]
         - ["difference", "operator_mask_invalid", "gdf_b", ""]
         - ["difference", "operator_crs_invalid", "", ""]

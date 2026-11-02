@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 38)
+  assert.equal(canonical.length, 41)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -271,7 +271,33 @@ test('difference presents three closed admissions bilingually without B identifi
       assert.doesNotMatch(JSON.stringify(got),/PRIVATE|field_id|GEOS|source\/path/)
       if(reason==='operator_mask_invalid'){
         assert.match(got.reason,locale==='zh-cn'?/面/:/Polygon/)
-        assert.match(got.action,locale==='zh-cn'?/无需指定 B/:/no business identifier/)
+        assert.match(got.action,locale==='zh-cn'?/无需指定范围图层/:/no business identifier/)
+      }
+      for (const patch of [{field:'source_id'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'union'}]) {
+        const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}
+        assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
+      }
+    }
+  }
+})
+
+
+test('clip presents three closed admissions bilingually without B identifier requirements', () => {
+  for (const locale of ['zh-cn','en']) {
+    const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate=(key,params={})=>key.replace('common.executionFailure.','').split('.').reduce((node,part)=>node[part],messages).replace(/\{(\w+)\}/g,(_,key)=>params[key])
+    const rules=operatorInputRules.filter(([name])=>name==='clip')
+    assert.equal(rules.length,3)
+    for (const [operator_id,reason,parameter] of rules) {
+      const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,...(parameter?{parameter}:{})}}
+      const got=executionFailurePresentation({diagnostic,message:'PRIVATE field_id GEOS /source/path'},translate)
+      assert.equal(got.operator,locale==='zh-cn'?'裁剪几何':'Clip geometry')
+      assert.ok(got.reason&&got.action&&got.node)
+      assert.doesNotMatch(JSON.stringify(got),/PRIVATE|field_id|GEOS|source\/path/)
+      if(parameter==='mask_gdf')assert.match(got.parameter,/mask_gdf/)
+      if(reason==='operator_mask_invalid'){
+        assert.match(got.reason,locale==='zh-cn'?/面/:/Polygon/)
+        assert.match(got.action,locale==='zh-cn'?/无需指定范围图层/:/no business identifier/)
       }
       for (const patch of [{field:'source_id'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'union'}]) {
         const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}

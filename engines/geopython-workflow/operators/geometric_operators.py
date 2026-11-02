@@ -177,11 +177,10 @@ class DifferenceInputError(ValueError):
         return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
 
 
-def difference(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
-               id_field: str) -> gpd.GeoDataFrame:
-    """One complete non-empty result per original A, subtracting all B coverage."""
+def _polygon_mask_inputs(input_gdf, mask_gdf, id_field, error_type):
+    """Single admission route for whole-polygon clipping and difference."""
     geometries = []
-    for frame, code in ((input_gdf, 'source'), (gdf_b, 'mask')):
+    for frame, code in ((input_gdf, 'source'), (mask_gdf, 'mask')):
         try:
             geometry = _finite_xy_geometry(frame)
             allowed = (['Polygon', 'MultiPolygon'] if code == 'mask' else
@@ -191,35 +190,51 @@ def difference(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
                     or geometry.isna().any() or geometry.is_empty.any()
                     or not geometry.geom_type.isin(allowed).all()
                     or not shapely.is_valid(geometry.array).all()):
-                raise ValueError('invalid difference input')
+                raise ValueError('invalid polygon-mask input')
             if code == 'source':
                 _source_identifiers(frame, id_field)
         except ValueError as exc:
-            raise DifferenceInputError(code) from exc
+            raise error_type(code) from exc
         geometries.append(geometry)
     left, right = geometries
     try:
         _require_projected_xy_crs(left.crs)
         _require_projected_xy_crs(right.crs)
         if left.crs != right.crs:
-            raise ValueError('difference CRS mismatch')
+            raise ValueError('polygon-mask CRS mismatch')
     except ValueError as exc:
-        raise DifferenceInputError('crs') from exc
+        raise error_type('crs') from exc
+    return left, right
+
+
+def _require_valid_mask_result(value):
+    if (not value.is_valid or shapely.has_z(value) or shapely.has_m(value)
+            or not np.isfinite(shapely.get_coordinates(value)).all()):
+        raise RuntimeError('polygon-mask calculation produced invalid or non-finite XY geometry')
+
+
+def _combined_polygon_mask(geometry):
+    value = shapely.union_all(geometry.array)
+    if value.is_empty or value.geom_type not in ('Polygon', 'MultiPolygon'):
+        raise RuntimeError('polygon mask union did not produce a non-empty polygon range')
+    _require_valid_mask_result(value)
+    return value
+
+
+def difference(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
+               id_field: str) -> gpd.GeoDataFrame:
+    """One complete non-empty result per original A, subtracting all B coverage."""
+    left, right = _polygon_mask_inputs(input_gdf, gdf_b, id_field, DifferenceInputError)
     if left.empty or right.empty:
         return input_gdf.copy().reset_index(drop=True)
 
-    mask = shapely.union_all(right.array)
-    if (mask.is_empty or mask.geom_type not in ('Polygon', 'MultiPolygon') or not mask.is_valid
-            or shapely.has_z(mask) or shapely.has_m(mask) or not np.isfinite(shapely.get_coordinates(mask)).all()):
-        raise RuntimeError('difference mask union produced invalid or non-finite geometry')
+    mask = _combined_polygon_mask(right)
     rows, values = [], []
     for index, geometry in enumerate(left.array):
         value = shapely.difference(geometry, mask)
         if value.is_empty:
             continue
-        if (not value.is_valid or shapely.has_z(value) or shapely.has_m(value)
-                or not np.isfinite(shapely.get_coordinates(value)).all()):
-            raise RuntimeError('difference produced invalid or non-finite XY geometry')
+        _require_valid_mask_result(value)
         rows.append(index)
         values.append(value)
     result = input_gdf.iloc[rows].copy().reset_index(drop=True)

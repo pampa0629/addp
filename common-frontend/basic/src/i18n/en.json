@@ -187,7 +187,7 @@
         "result": "Save execution result"
       },
       "reasons": {
-        "operator_mask_invalid": "Mask B requires one active geometry column and valid non-empty finite XY Polygon or MultiPolygon geometries.",
+        "operator_mask_invalid": "The range layer requires one active geometry column and valid non-empty finite XY Polygon or MultiPolygon geometries.",
         "operator_endpoint_network_invalid": "Line parts have internal self-intersections, positive-length overlaps or unsplit intersections; the network is not connected only at both endpoints.",
         "operator_distance_limit_invalid": "The maximum trim path distance must be a finite positive number in horizontal CRS units.",
         "operator_source_topology_invalid": "Source parts have internal self-intersections or positive-length overlaps and cannot be trimmed directly.",
@@ -246,7 +246,7 @@
         "operator_overlay_fields_conflict": "Overlay business fields conflict with each other, fixed source fields or the result geometry column."
       },
       "actions": {
-        "operator_mask_invalid": "Check the mask active geometry, polygon type, validity and XY coordinates before submitting a new execution; no business identifier is required for B.",
+        "operator_mask_invalid": "Check the range layer active geometry, polygon type, validity and XY coordinates before submitting a new execution; no business identifier is required for the range layer.",
         "operator_endpoint_network_invalid": "Explicitly split intersections and resolve self-intersections or overlaps before extracting nodes; no automatic splitting, deduplication or repair is performed.",
         "operator_distance_limit_invalid": "Set a finite positive max_distance in horizontal CRS units before submitting a new execution.",
         "operator_source_topology_invalid": "Check source self-intersections and overlaps, then normalize explicitly to meet the operator requirements; no automatic repair is performed.",
@@ -314,6 +314,7 @@
       "field": "Conflicting field",
       "operatorNodeIndex": "Node {index} in the workflow definition",
       "operatorNames": {
+        "clip": "Clip geometry",
         "difference": "Geometry difference",
         "extract_line_nodes": "Extract line nodes",
         "trim_line_endpoints": "Line endpoint trimming",
@@ -324,6 +325,7 @@
         "intersection": "Intersection overlay"
       },
       "operatorParameters": {
+        "mask_gdf": "Clip mask (mask_gdf)",
         "max_distance": "Maximum trim path distance (max_distance)",
         "input_gdf": "Source layer (input_gdf)",
         "reference_gdf": "Reference layer (reference_gdf)",
