@@ -4352,6 +4352,38 @@ def validate_raster_focal_circle(repository: Path, registered: set[str]) -> None
         raise RegistrationError('focal circle oracle must remain independent')
 
 
+REGION_REQUIRED = {'business/scripts/online-raster-region-group-fixture.py': ('NFSExport', 'source_arrays', 'from collections import deque', 'answer[row,col]=number', 'values[yy,xx]==values[row,col]', 'np.array_equal(actual,expected,equal_nan=True)', 'verify_csv', 'validate_records', 'pixel_conservation_verified', 'full_check=True', 'nearest_overviews(ds,actual)', 'def prepare_oracle', 'def cleanup_oracle', 'allow_pickle=False', 'private_control', 'archive_files', 'archive_expectations', 'validate_expected_export', 'full_source_pixels_verified', 'GetNoDataValueAsUInt64'), 'scripts/test/raster-region-group-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'remaining()', 'budget != 600', 'full_checks != 819', 'len(cases) != 18', 'len(failures) != 36', 'physical_calls != 55', 'current(execution', 'lineage.collect', 'lineage.verify_archive', 'base.validate_scan', 'raster.strict_sizes', 'validate_table_preview', 'validate_item(item', 'target_metadata_after != target_metadata_before', 'source_metadata_after != before', "for language in ('zh-cn', 'en')", 'query language rewrote stored failure', 'failed execution added scan', 'failed execution added derived lineage', "physical_runner(repository, env, 'cleanup-oracle'", 'archived_outputs'), 'scripts/test/online-hosted-raster-region-group-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', 'online_raster_lineage.py prepare', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online-raster-region-group-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'engines/geopython-workflow/test_online_region_group_fixture.py': ('test_region_hosted_eighteen_mixed_results_complete_oracle_and_original_bytes', 'test_region_hosted_thirty_six_exact_submitted_failures_no_output_and_clean_workspace', 'test_region_hosted_independent_semantic_mutations_cannot_pass', 'test_region_hosted_oracle_never_calls_product_kernel_or_reducer', 'test_region_hosted_csv_corruption_cannot_pass'), 'scripts/test/raster-region-group-persistence-online_test.py': ('test_full_matrix_18_success_36_failures_819_checks_and_cleanup', 'test_exact_18_18_matrix_region_parameters_and_csv_routes', 'test_all_source_and_target_meta_snapshots_archived_and_mutation_rejected'), 'Makefile': ('test_online_region_group_fixture.py', 'test-raster-region-group-online-runner', 'scripts/test/raster-region-group-persistence-online_test.py', 'test_region_requires_exact_cog_matrix_budget_and_regressions')}
+
+def validate_raster_region_group(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-region-group-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-region-group-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-region-group-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-region-group-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('focal region requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_region_group_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('focal region Native omitted from standard recipe')
+    for relative, fragments in REGION_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('focal region strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-region-group-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES')}
+    expected_cases = {'four.cog.tif': ('values.tif', 4, 'direct'), 'eight.cog.tif': ('values.tif', 8, 'direct'), 'reclass-four.cog.tif': ('values.tif', 4, 'reclassify'), 'reclass-eight.cog.tif': ('values.tif', 8, 'reclassify'), 'cross-four.cog.tif': ('cross-block.tif', 4, 'direct'), 'cross-eight.cog.tif': ('cross-block.tif', 8, 'direct'), 'repeat-four.cog.tif': ('values.tif', 4, 'direct'), 'late-merge.cog.tif': ('late.tif', 4, 'direct'), 'coverage.cog.tif': ('coverage.tif', 8, 'direct'), 'rotated.cog.tif': ('rotated.tif', 4, 'direct'), 'geographic.cog.tif': ('geographic.tif', 8, 'direct'), 'unlocated.cog.tif': ('unlocated.tif', 4, 'direct'), 'int64.cog.tif': ('int64-safe.tif', 4, 'direct'), 'uint64.cog.tif': ('uint64-safe.tif', 8, 'direct'), 'invalid-four.cog.tif': ('invalid.tif', 4, 'direct'), 'invalid-eight.cog.tif': ('invalid.tif', 8, 'direct'), 'stats-four.csv': ('values.tif', 4, 'statistics'), 'stats-eight.csv': ('values.tif', 8, 'statistics')}
+    expected_failures = ('band_zero', 'band_high', 'band_bool', 'band_string', 'band_null', 'band_list', 'connectivity_zero', 'connectivity_three', 'connectivity_bool', 'connectivity_string', 'connectivity_null', 'connectivity_list', 'alpha', 'fractional', 'unsafe_positive', 'unsafe_negative', 'int64', 'uint64')
+    if (any(len(nodes) != 1 for nodes in actual.values()) or repr(ast.literal_eval(actual['CASES'][0])) != repr(expected_cases)
+        or repr(ast.literal_eval(actual['FAILURES'][0])) != repr(expected_failures)): raise RegistrationError('focal region fixed 18/36 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize')):
+        raise RegistrationError('focal region oracle must remain independent')
+
+
+
 
 WEIGHTED_MEAN_REQUIRED = {
     'scripts/test/online-hosted-raster-focal-weighted-mean-gate.sh': (
@@ -6309,6 +6341,7 @@ def check_registration(repository: Path) -> None:
     validate_vector_zonal_area_weighted_stddev(repository, registered)
     validate_raster_focal_variety(repository, registered)
     validate_raster_focal_circle(repository, registered)
+    validate_raster_region_group(repository, registered)
     validate_raster_focal_weighted_mean(repository, registered)
     validate_raster_focal_weighted_stddev(repository, registered)
     validate_raster_focal_weighted_sum(repository, registered)
