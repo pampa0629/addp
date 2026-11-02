@@ -225,7 +225,7 @@ const comparisonChange = computed(() => {
 })
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
-let epoch = 0, disposed = false, dataContext = ''
+let epoch = 0, disposed = false, dataContext = '', confirmedNodeFacts = null
 const requestScope = createLatestRequestScope()
 useConsolePageDescriptor(router, 'monitor', { title: computed(() => t('monitor.resources.detailTitle')), subject: computed(() => node.value?.display_name || ''), ready: computed(() => Boolean(node.value)) })
 function date(value) { return formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value) }
@@ -358,10 +358,12 @@ async function reload({ automatic = false } = {}) {
       const value = await request(config => api.node(id, config))
       if (!requestScope.current(ticket)) return
       if (value.node_id !== id) throw new Error('invalid_resource_response')
-      if (['node_id', 'display_name', 'version', 'enabled'].some(key => value[key] !== node.value?.[key])) {
+      // Query changes clear rendered data; compare against the last System facts.
+      if (['node_id', 'display_name', 'version', 'enabled'].some(key => value[key] !== confirmedNodeFacts?.[key])) {
         instant.value = null; trend.value = null; comparison.value = null; trendZoom.value = null
         filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
       }
+      confirmedNodeFacts = value
       node.value = value
       const keys = resourceMetrics.map(metric => metric.key)
       const current = await request(config => api.instant({ node_id: id, metrics: keys.join(',') }, config))
@@ -441,7 +443,7 @@ async function reload({ automatic = false } = {}) {
 watch([() => JSON.stringify([nodeID.value, state.value.range, state.value.end, state.value.dimensions, state.value.compare, chartMetrics.value.map(metric => metric.key)]), identity], () => { trendZoom.value = null }, { flush: 'sync' })
 watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = null }, { flush: 'sync' })
 watch(refreshBlocked, blocked => { if (blocked) capacityRuleEditor.value?.close() }, { flush: 'sync' })
-watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })
+watch([nodeID, identity], () => { confirmedNodeFacts = null; showAllDisks.value = false }, { flush: 'sync' })
 watch([() => route.fullPath, identity], () => { capacityRuleEditor.value?.close(); reload() }, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); invalidate(); requestScope.dispose() })
 </script>

@@ -221,3 +221,31 @@ test('filesystem zoom stays with the full mount identity and resets across metri
   expect(trendReads(state).at(-1).query).toMatchObject(mount)
   expect((await resourceChartState(page)).start).toBe(0)
 })
+
+for (const changed of ['version', 'display_name']) test(`same-group metric changes still reset zoom after System ${changed} changes`, async ({ page }) => {
+  const owner = { node_id: node, display_name: '节点甲', addresses: [], enabled: true, version: 1 }
+  const state = await resourceBackend(page, {
+    nodes: [owner],
+    observationResponse(body) { body.node_version = owner.version },
+    trendResponse(body, params) { completeTrend(body, params); body.node_version = owner.version },
+  })
+  await page.goto(`/node-resources/${node}?metric=node.memory.used_percent&range=5m&refresh=off`)
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  await dragResourceChartZoom(page, 0.6)
+  await expect.poll(async () => (await resourceChartState(page)).start).toBeGreaterThan(50)
+  const reads = () => state.reads.filter(read => read.path.endsWith('/resource_observations')).length
+  const before = reads()
+  if (changed === 'version') owner.version++
+  else owner.display_name = '本轮新名称'
+  state.hold()
+  await page.getByTestId('resource-metric').click()
+  await page.getByRole('option', { name: '可用内存', exact: true }).click()
+  await expect(page).toHaveURL(url => url.searchParams.get('metric') === 'node.memory.available_bytes')
+  await expect.poll(reads).toBe(before + 1)
+  await expect(page.getByTestId('resource-chart')).toHaveCount(0)
+  state.release()
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  expect((await resourceChartState(page)).start).toBe(0)
+  expect((await resourceChartProps(page)).rows).toHaveLength(21)
+  await expect(page.locator('.node-header')).toContainText(owner.display_name)
+})

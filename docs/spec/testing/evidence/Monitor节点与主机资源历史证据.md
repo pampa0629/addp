@@ -554,3 +554,15 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 新增停用／版本变更×手动／自动刷新4项，使用暂缓资源响应验证当前事实已重读但旧卡片／canvas尚不可保留，随后释放并核对缺样或新读数。修复前4项均失败（`/tmp/addp-host-owner-refresh-red.log`）；修复后标准 `npm run test:e2e -- e2e/node-resources.spec.js` 整份73项T3通过（2.4分钟，`/tmp/addp-host-owner-refresh-green.log`）。包括原位刷新、隐藏暂停／恢复、当前页摘要、热力、设备／挂载、双轴、缩放、比较、故障撤权及CPU空闲率旧场景，未删改原断言。前端132项T1通过，最终两页构建通过，日志分别`/tmp/addp-engine-owner-refresh-unit.log`、`/tmp/addp-owner-refresh-build-final.log`。
 
 同批[PG／Redis引擎页](Monitor采集来源与引擎指标历史证据.md#引擎当前对象变化的原位刷新保护2026-11-02)46项独立通过。标准脚本独占测试端口，没有启停个人服务；这些为受控T3，不外推个人Safari、真实来源或Hosted，不宣称完整Monitor浏览器门禁通过。既有Platform CI Monitor前端自动发现，CI与Hosted仍由专门会话安排／回传，本会话未调度或设置定时任务。
+
+## 同组主机趋势切换的事实比较修复（2026-11-02）
+
+专门CI会话回传精确源码`aee6bcc427f714aefb97b58090789a8e6acb3fab`的[Monitor前端Job125032898526](https://github.com/pampa0629/addp/actions/runs/41368234803/job/125032898526)实际失败：590项浏览器中584通过、6失败；内存／磁盘双语在同组切换后缩放起点由79.58015267175573变为0，网络双语由94.65648854961832变为0。本会话只读取回传原日志，没有查询或重跑CI；`/tmp/addp-ci-20261102-090015/job-125032898526.log`的SHA256核对为`1831005d361722e660df47d1b61ba57fe8814e3f37652924088ff01eb9e154ef`。
+
+本机标准`npm run test:e2e -- e2e/host-resource-zoom.spec.js e2e/network-bars.spec.js --grep '(memory time zoom|disk time zoom|network grouped bars)'`先原样复现同6项失败（`/tmp/addp-monitor-zoom-repro.log`）。根因在NodeResources：查询参数改变会先清空展示用node，随后新增的System事实比较拿响应与空展示值比较，误判对象变化并清除宿主保存的缩放；不是仅断言太早或滑块输入未完成。现在只在页面内部保留最近一次System确认的主机事实作为比较依据，换主机或当前身份时同步清空，迟到响应仍受原epoch守卫。查询结果仍在原时机清除；UUID／名称／版本／enabled真实变化、不同指标组／范围／设备／比较、错误及撤权仍按原规范重置。没有改共享ChartRenderer、原始点、查询、权限或现有图表契约。
+
+原6项修复后独立通过（`/tmp/addp-monitor-zoom-fixed-six.log`）；另新增主机版本／名称真实变化两项反例，暂缓资源响应核对旧canvas清空，再释放核对缩放为0及完整21点。最终同一标准入口以原筛选加`same-group metric changes`、`--trace=retain-on-failure`运行8项通过（57.2秒，`/tmp/addp-monitor-zoom-eight-traced.log`）。原host-resource-zoom与network-bars的全部旧字节分别完整保留为文件前缀及原文件；原精度2、URL／样本／空值与反例均未删改，未添加sleep、容差、自动重试或预算放宽。前端132项T1及构建通过（`/tmp/addp-monitor-zoom-unit.log`、`/tmp/addp-monitor-zoom-build.log`）。
+
+另对引用同一主机夹具的18份浏览器spec作266项扩散检查，实际261通过、5失败，退出1（15.4分钟，`/tmp/addp-monitor-zoom-affected-browser.log`）。失败包括告警挂载过滤第二次请求未发出、主机设备列表空白、英语主机筛选初始请求未发出、热力面板初始未出现，以及英语内存场景已通过原缩放值断言后、在第102行动画finished等待失败；该第五项不同于旧CI第100行缩放变0。保留失败截图／上下文，目录`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-n4OP7X`。独立8项含最后一项的完整场景；其余4项再沿原标准入口加`--trace=on`作一次取证，4项通过（10秒，`/tmp/addp-monitor-zoom-extra-failures-traced.log`），无产品／测试修改。此复核没有确认组合失败根因，不归因于环境，也不将原266项退出1改写为通过；不把原6项独立通过外推完整Monitor浏览器门禁。
+
+本次只改Monitor主机页与本领域浏览器反例；既有Platform CI Monitor前端路径选择和标准E2E自动发现覆盖，无需新增Makefile或workflow。共享前端及其他消费者没有产品变更，不重跑无关门禁。个人服务未启停，Safari未操作；精确替代提交的Linux结果及Hosted继续等专门会话回传，没有设置定时任务。下一步回到已确认的MinIO17项固定指标来源及mTLS输出，账号阶段证据不变。
