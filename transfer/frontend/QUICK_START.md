@@ -1,211 +1,23 @@
 # Transfer 前端快速开始
 
-## 🎯 新版 UI 核心功能
+本页说明从哪里开始使用前端，服务准备、完整 API 操作和结果核对统一见[模块快速开始](../docs/快速开始.md)，页面开发与源码入口见[前端 README](README.md)。
 
-### ✅ 已实现的改进
+## 准备与入口
 
-| 功能 | 描述 | 文件 |
-|------|------|------|
-| **任务创建向导** | 7步可视化流程，无需手写JSON | [TaskWizard.vue](src/views/TaskWizard.vue) |
-| **资源树选择器** | 从 Meta 资源树中选择已配置资源 | TaskWizard.vue (内置) |
-| **字段映射编辑器** | 自动同名匹配 + 手动调整 | [FieldMappingEditor.vue](src/components/FieldMappingEditor.vue) |
-| **Cron表达式生成器** | 13个预设 + 自定义配置 | [CronBuilderDialog.vue](src/components/CronBuilderDialog.vue) |
-| **类型化配置表单** | PostgreSQL/MySQL/CSV/S3 专属表单 | TaskWizard.vue (动态表单) |
+1. 在自己的终端沿[标准启动步骤](../docs/快速开始.md#一启动)准备服务，核对实际端口和就绪状态；首选端口、模块直连、Console 与公开 HTTPS 入口分别认定，不按固定 localhost 地址推断已可访问。
+2. 使用正式登录流程取得当前 Tenant 的用户会话。页面与动作按各自 Permission 校验，目录可见、创建成功与获准执行互不替代，沿[任务授权](../docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)核对。
+3. 从 Console 的 Transfer 入口或当前开发地址进入。独立模式与 iframe 的导航、读取权限决定的落点以及无读取权时的创建入口，统一见[前端公开路由](../CLAUDE.md#前端公开路由)；不另行修改 Console 配置。
 
----
+## 创建与观察
 
-## 🚀 3 分钟创建第一个任务
+当前向导依次确认源、目标、字段映射、任务配置和最终请求：
 
-### 步骤 1: 启动服务
+1. 从有权访问的 Meta 目录选择真实源资源；查询 source 和结构整形按[查询源契约](../docs/transfer-基本概念及配置说明.md#23-bounded-query-source-与轻量-etl-构造)，不从演示 SQL 或默认表名推断源结构。
+2. 选择目标引擎、已存在父位置与目标名，核对写入策略及覆盖效果。格式声明见[format 规则](../docs/transfer-基本概念及配置说明.md#format-声明与来源)，raw copy 的目标继承单独见[对应正文](../docs/transfer-基本概念及配置说明.md#raw-copy-目标继承与一致性)。
+3. 核对字段映射、类型、默认值和真实结构，按[field_mapping](../docs/transfer-基本概念及配置说明.md#五field_mapping-transform)支持范围配置。
+4. 配置名称、调度与其他任务选项；手动任务和定时授权分工见[调度授权](../docs/transfer-基本概念及配置说明.md#调度授权与控制)。需要时手动执行[只读配置检查](README.md#向导配置检查)，supported、unsupported、unknown 及未检查项分别认定，不能以预检代替真实执行。
+5. 确认并保存。创建、可选启动和保存后的页面落点分别受权限约束，沿[现行路由规则](../CLAUDE.md#前端公开路由)处理；创建后的启动失败不撤销已创建对象。随后按[启动与观察执行](../docs/快速开始.md#启动与观察执行)使用实际 execution UUID 核对结果，调度暂停／恢复与失败重试沿该操作指南，不以任务保存或页面跳转认定执行通过。
 
-```bash
-cd /Users/pampa/code/addp
-./scripts/dev/start.sh
-```
+## 验证与排查
 
-访问：http://localhost:5176/tasks
-
-### 步骤 2: 点击"新建任务"
-
-### 步骤 3: 按向导操作
-
-```
-① 基本信息
-  └─ 填写名称、选择类型、设置调度
-
-② 选择源
-  └─ 选择PostgreSQL → 从资源树中选择可传输的数据项
-
-③ 配置源
-  └─ 输入SQL查询：SELECT * FROM users
-
-④ 选择目标
-  └─ 选择CSV → 从资源树中选择目标父节点
-
-⑤ 配置目标
-  └─ 输入路径：exports/users.csv
-
-⑥ 字段映射
-  └─ 点击"自动匹配" → 检查结果 → 调整（如需要）
-
-⑦ 确认
-  └─ 勾选"创建后立即执行" → 点击"创建任务"
-```
-
----
-
-## 📦 核心组件
-
-### TaskWizard.vue - 向导式创建
-
-**用法**：
-- 创建：访问 `/tasks/create`
-- 编辑：访问 `/tasks/:id/edit`
-
-**特点**：
-- ✅ 7步分步引导
-- ✅ 每步验证，减少错误
-- ✅ 从 Meta 资源树加载资源
-- ✅ 动态表单（根据任务类型）
-
----
-
-### FieldMappingEditor.vue - 字段映射
-
-**用法**：
-```vue
-<FieldMappingEditor
-  :source-fields="['id', 'name', 'email']"
-  :target-fields="['user_id', 'username', 'email_address']"
-  v-model:mappings="fieldMappings"
-/>
-```
-
-**功能**：
-- ✅ 自动同名匹配（含模糊匹配）
-- ✅ 9种转换函数（upper/lower/trim/format_date/...）
-- ✅ 字段类型、默认值、可空配置
-
-**自动匹配示例**：
-```
-源字段        目标字段
-id        →  id           (完全匹配)
-user_id   →  userId       (模糊匹配，去除_和大小写)
-email     →  email_addr   (需手动调整)
-```
-
----
-
-### CronBuilderDialog.vue - 定时调度
-
-**用法**：
-```vue
-<CronBuilderDialog
-  v-model="showDialog"
-  @select="schedule = $event"
-/>
-```
-
-**预设列表**：
-```
-• 每天零点        0 0 * * *
-• 每天凌晨2点     0 2 * * *       ← 推荐
-• 每小时          0 * * * *
-• 每15分钟        */15 * * * *
-• 工作日上午9点   0 9 * * 1-5
-```
-
----
-
-## 🔧 开发
-
-### 安装依赖
-
-```bash
-npm install
-```
-
-### 运行开发服务器
-
-```bash
-npm run dev
-```
-
-### 构建生产版本
-
-```bash
-npm run build
-```
-
----
-
-## 📁 文件结构
-
-```
-src/
-├── views/
-│   ├── TaskWizard.vue         # 新：向导式创建
-│   ├── TaskForm.vue           # 旧：简单表单（保留）
-│   ├── TaskList.vue
-│   ├── TaskDetail.vue
-│   └── ExecutionDetail.vue
-├── components/
-│   ├── FieldMappingEditor.vue # 新：字段映射
-│   └── CronBuilderDialog.vue  # 新：Cron生成器
-├── api/
-│   └── tasks.js
-├── router/
-│   └── index.js               # 更新：/tasks/create → TaskWizard
-└── store/
-    └── auth.js
-```
-
----
-
-## 🎨 UI对比
-
-### 旧版（TaskForm.vue）
-```
-[配置JSON] ← 15行文本框，需手写JSON
-```
-
-### 新版（TaskWizard.vue）
-```
-[选择数据源] ← 资源树，从 Meta 资源树选择可用资源
-[查询方式]   ← 单选按钮（表/SQL）
-[SQL查询]    ← 语法高亮文本框
-[增量字段]   ← 输入框 + 提示
-```
-
----
-
-## 📖 文档
-
-- **UI升级指南**: [UI_UPGRADE_GUIDE.md](../UI_UPGRADE_GUIDE.md)
-- **使用指南**: [USAGE_GUIDE.md](../USAGE_GUIDE.md)
-- **模块文档**: [README.md](../README.md)
-
----
-
-## ✅ 下一步
-
-1. ✅ 启动服务：`./scripts/dev/start.sh`
-2. ✅ 访问界面：http://localhost:5176
-3. ✅ 创建任务：点击"新建任务"
-4. ✅ 查看文档：阅读 [UI_UPGRADE_GUIDE.md](../UI_UPGRADE_GUIDE.md)
-
-**快速测试**：
-```bash
-# 1. 确保 Meta 中有可用资源树数据
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8180/api/v1/system/engines
-
-# 2. 访问Transfer前端
-open http://localhost:5176/tasks
-
-# 3. 点击"新建任务"，体验向导流程
-```
-
----
-
-**版本**: v2.0.0 | **更新**: 2025-01-15
+确定性测试、构建、受控浏览器及固定版本证据统一见[前端验证](README.md#验证与证据)；真实源读、目标写、权限保护和清理按[模块验收边界](../docs/快速开始.md#五开发验证)逐项核对。当前页面和组件以[源码导航](README.md#主要页面)为准。
