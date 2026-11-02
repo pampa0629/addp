@@ -792,8 +792,11 @@
 经确认在唯一失败APT解析中补连接／正文环节及端点的封闭分类，两维缺失／冲突均明确保留未知；18项定向、Trace154项和HTTP37项及既有登记／身份子门禁通过。历史原因仍未唯一确定，正式产品页面仍未验收；为避免push自动基线构建，本批6个自有路径未提交／推送，无真实构建重试或新窗口。
 
 
-### 2026-11-02 Common Python Trace证书夹具修正（本地通过，Linux待核验）
+### 2026-11-02 Common Python Trace证书夹具修正（本地及自然Linux通过）
 
 [完整记录、TLS 79受控复现与门禁](MonitorTrace与日志历史证据.md#python-trace-certificate-fixture-20261102)
 
 Common Python测试改用私有OpenSSL配置及明确CA／叶子约束，同四项接收失败已在当前源码捕获TLS INVALID_CA并修正；原接收／身份／隐私／超时断言保留，产品导出器未改。最终标准门禁461通过、1个可选GeoPandas测试跳过、54子测试通过；自然Linux、正式产品及Hosted等另行认定。
+
+
+固定a5945380c自然Linux Common Python命名作业实际执行完整标准门禁，461通过、1跳过、54子测试通过；源码匹配本地修正，原四项回归已恢复。不将该作业结论扩大到整个workflow、HTTP产品页面或容量。

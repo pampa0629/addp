@@ -333,7 +333,7 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 <a id="python-trace-certificate-fixture-20261102"></a>
 
-## 2026-11-02 Common Python Trace证书夹具修正（本地通过，Linux待核验）
+## 2026-11-02 Common Python Trace证书夹具修正（本地及自然Linux通过）
 
 用户明确将新发现的Common Python HTTP Trace失败纳入本会话修复，限原标准本地测试与回环接收器；不安装／切换依赖、不改全局环境或产品TLS，不重试镜像构建、开产品窗口或运行Hosted／容量／定时。先修T0–T3测试条款，再分开处理证书准备和导出接收失败。
 
@@ -354,3 +354,6 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 本地门禁在共享工作区执行，未提交的workflow_runtime/errors.py为其他会话内容，不混入本批提交；该本地结果不替代最终提交净快照的Linux验证。客户端解释器Python3.12.7／OpenSSL3.0.16、HTTPX0.28.1、Otel SDK／proto1.45.1及protobuf7.36.2均沿现有安装，证书命令为现有OpenSSL4.1.0，无版本或环境切换。受控复现证明当前夹具的无效CA问题，并由显式约束修正；原件二没有保留底层异常，不追填其历史TLS数值。
 
 私有证据目录`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-common-python-trace-evidence-20261102-5vrcf3cb/`（0700／0600），含两份原件、isolated_config_diagnostic.log、final.log及audit.json。诊断复现8210字节，SHA256=`f69688b4be216d723110b6aafe38417f4722e8ef739cb94492d92800c57f7b69`；最终日志638字节，SHA256=`a0e0dc9ae41701afc7f469c1f8858b72fdfe1f2b070dac18ac2b45b41eaa7637`；最终测试文件SHA256=`9ad58b363494566227ff98411a38686efe46973944c9da12a7eb727850b2e841`。本批仅测试夹具、T0–T3条款及两份既有证据，不改变生产导出器，也不增加正式产品／Hosted／容量通过结论；自然Linux结果另记。
+
+
+自然Linux复核：四个自有路径已提交推送为`a5945380cbf5e415a93a73a2d91200d3e8173ee2`。[Platform自然push／Common Python tests作业125094948224](https://github.com/pampa0629/addp/actions/runs/41388636491/job/125094948224)实际checkout该完整SHA，经共享矩阵选中并执行原`make test-common-python`，北京时间2026-11-02 12:28:17—12:30:01作业success；原始测试输出为461 passed、1 skipped、54 subtests passed／18.08秒。测试文件逐字节匹配上述本地通过的9ad58b36摘要；这次干净提交快照也通过，不依赖共享工作区未提交的workflow_runtime/errors.py。日志已独立保存为上述私有证据目录linux.log，59326字节，SHA256=`df702cefad3b7637e33c769427bad0144b985e8dd31d0e4e098ffd604c664fe3`。本条只认定Common Python命名作业及原四项回归通过，不推导整个Platform workflow、另一组HTTP／Trace本地runner、交叉语言实链、产品页面、Hosted或容量通过；APT历史网络问题与SDK HTTP T2目录消失仍独立保留。
