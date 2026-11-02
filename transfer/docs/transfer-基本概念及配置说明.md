@@ -556,13 +556,15 @@ Debezium 的 geometry 属性名是 `wkb`，真实 PostGIS connector 可能在该
 
 #### MySQL CDC
 
-MySQL CDC 固定支持 MySQL 8.0、有稳定非空主键的单表、`log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL` 和非零 server id。v1 接受有符号整数、字符/文本、Decimal、浮点、毫秒精度日期时间、JSON 和 binary/BLOB；拒绝 unsigned、`TINYINT(1)`/BOOL、BIT、ENUM/SET、YEAR、空间类型、超过毫秒的时间精度和 zero date。每个 generation 拥有唯一 connector server id、data topic 和 `cleanup.policy=delete + retention.ms=-1` 的 schema-history topic，Stop 时统一清理。
+MySQL CDC 固定支持 MySQL 8.0、有稳定非空主键的单表、`log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL` 和非零 server id。v1 接受有符号整数、字符/文本、Decimal、浮点、毫秒精度日期时间、JSON 和 binary/BLOB；拒绝 unsigned、`TINYINT(1)`/BOOL、BIT、ENUM/SET、YEAR、空间类型、超过毫秒的时间精度和 zero date。任务级 connector server id 与内部 topic 的生成、保留策略及清理统一见[资源所有权与登记](../../docs/spec/tasks/Transfer数据库CDC.md#捕获资源所有权与登记)和[停止清理顺序](../../docs/spec/tasks/Transfer数据库CDC.md#停止确认与清理顺序)。
 
 #### Oracle CDC
 
 Oracle CDC 固定支持有稳定非空主键的普通单表，并要求独立 `cdc_database_name`、`cdc_user`、`cdc_password`、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 以及源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`。源类型与编码以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准，源端拒绝条件见[Oracle 源限制](transfer-任务语义与同步模式.md#oracle-源限制)。Oracle 原生 `BOOLEAN` 虽可被 Debezium 初始快照读取，但 Debezium 3.6 LogMiner 不能稳定交付包含该列的流式 DML，因此和普通 LOB/binary、JSON/XML、超过毫秒精度的 timestamp 一样在创建 capture 前拒绝，不能以快照成功推断增量可用。
 
-Transfer 使用源 schema owner 账号创建 generation-owned 镜像表、行级同步触发器和 DDL guard：XY 转为 WKB BLOB，XYZ 转为保留 Z 值的 GeoJSON CLOB，再由同一 connector/consumer 主路径捕获；运行期间对逻辑源表的 ALTER/DROP/RENAME 会被明确拒绝，Stop 后才允许 DDL。空间事实从 Oracle Catalog Facts 冻结，adapter 严格校验 base64 WKB 或 GeoJSON 的 SRID、拓扑和 XY/XYZ 维度，统一输出标准 EWKB；内部镜像列不等于开放用户 LOB CDC。表级 ALL COLUMN LOGGING 是共享 source readiness，Stop 不删除，Spatial 镜像表、行级触发器和 DDL guard 则在 Stop 核对身份后删除。
+Oracle Spatial 复用同一 connector/consumer 主路径；源 schema-owner、镜像与触发器准备、XY/XYZ 内部编码和 DDL guard 统一见[数据面与捕获约束](../../docs/spec/tasks/Transfer数据库CDC.md#数据面与捕获约束)。空间事实从 Oracle Catalog Facts 冻结，adapter 严格校验 base64 WKB 或 GeoJSON 的 SRID、拓扑和 XY/XYZ 维度，统一输出标准 EWKB；内部镜像列不等于开放用户 LOB CDC。
+
+运行期间源表 `ALTER|DROP|RENAME` 须先 Stop 并完成资源清理。共享表级日志与 generation-owned 对象的区别、身份核验和清理失败处理分别见[资源所有权与登记](../../docs/spec/tasks/Transfer数据库CDC.md#捕获资源所有权与登记)和[停止清理顺序](../../docs/spec/tasks/Transfer数据库CDC.md#停止确认与清理顺序)。
 
 ### Oracle 既有验证与验收边界
 
