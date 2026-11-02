@@ -57,7 +57,7 @@ Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨
 
 集中扫描的目标为功能权限加引擎管理范围，basic／deep 不划分人员权限；逐任务批准退役和 PG basic 前置实现正在验证，PG deep 统一准入、元数据结果过滤和 Manager 精确刷新尚未完成。统一规则与完成边界见[集中扫描规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)。Meta 通过 `SystemServiceClient.CheckMetaCollection` 核对冻结摘要与当前 lease；不支持的 selector 拒绝，不降级。定义在排队／运行中删除时仍须结束原 execution，不重建任务摘要，也不让缺失定义阻塞队列。
 
-PG basic 的资格重核以一次 `EngineCatalogProvider.ListChildren` 枚举为读取单元，已放行调用可结束其内部 SQL，下一次调用须重核。中途明确拒绝立即结束后续 namespace 遍历，保留拒绝类型、失败目标诊断及已完成枚举计数，不把全范围标为完成。逐语句诊断不改变这一运行边界，也不表示已支持逐 SQL 取消；分版本验证从[采集资格验证范围](#采集资格验证范围)进入。
+PG basic 的执行条件重核以一次 `EngineCatalogProvider.ListChildren` 枚举为读取单元，已放行调用可结束其内部 SQL，下一次调用须重核。中途明确拒绝立即结束后续 namespace 遍历，保留拒绝类型、失败目标诊断及已完成枚举计数，不把全范围标为完成。逐语句诊断不改变这一运行边界，也不表示已支持逐 SQL 取消；现行门禁与历史记录从[集中扫描验证范围](#集中扫描验证范围)分别进入。
 
 Meta 扫描链路按“通用规则、Meta 编排、Engine Catalog 规划、内容增强、Attributes 落库”分层。后续改造应优先保持以下边界，避免把同一类逻辑散落到多个扫描入口。
 
@@ -308,7 +308,9 @@ Backend／Worker 服务正文使用[模块实例运行日志](../scripts/infra/d
 
 ### 集中扫描验证范围
 
-集中扫描按功能权限加引擎管理范围执行；逐任务审批入口已退役。PG basic 编排触发拒绝，自身定时不依赖创建人当前角色。独立取消权限显式分配，已放行枚举允许结束，下一次枚举停止。schema revision 4 关闭存量 PG 调度并经 Owner 取消旧执行，不自动运行任务。新规则 Hosted T4 尚未验证，下面链接仅是旧规则历史。确定性入口与 authorization-facts PostgreSQL 专项见[专项验证入口](#专项验证入口)；API／Worker、审批页、自然到期、定时及在途门禁的固定源码、失败、清理和未覆盖项统一见[采集资格验收导读](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)。不在模块入口重复维护各轮通过状态，后续成功不能改记早轮失败或外推当前 HEAD 已复验。
+现行权限、租户定时、枚举取消与存量迁移统一见[集中采集规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)，不在模块入口重复维护规则清单。Meta schema revision 4 关闭存量 PG 调度并经 Owner 取消旧执行，不自动运行任务；这不替代实际部署迁移与跨服务验收。
+
+确定性入口与 authorization-facts PostgreSQL 专项见[专项验证入口](#专项验证入口)，新规则真实运行要求见[PG basic 集中扫描场景](../docs/spec/testing/scenarios/授权与共享.md#pg-basic-集中扫描本轮真实验收待运行)，Hosted T4 尚未验证。旧 API／Worker、审批页、自然到期、定时及在途门禁的固定源码、失败、清理和未覆盖项统一见[历史采集资格验收导读](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)；旧版通过不计为新规则通过，后续成功也不改记早轮失败。
 
 ### 专项验证入口
 
