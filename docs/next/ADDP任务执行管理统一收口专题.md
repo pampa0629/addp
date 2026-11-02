@@ -1053,3 +1053,27 @@ System Go最新Job125119346754虽然外层success，但selected:false、未执�
 **派发前证据。** 主责fresh API并独立下载当前390源码的五类相关CI日志：Manager Go Job125124309523的15有测试包实际通过（聚合随后其它Owner失败，非全仓通过）；Manager PG125124534265实际success／31主项及零残留；System独立Go125124309531 selected:true、标准Owner命令实际通过；System CleanupPG125124532825实际6主项通过；Execution125124309548 selected:true、114＋169及登记一致。核心runner、三User／六权限夹具、机器契约、部署、预算与2f已验修正逐项字节相同，契约SHA-256仍为b6aa6485；并行NetCDF增量已包含在上述当前源码CI，不部署共享工作区未提交的Spark／fixture／表格等WIP。Infra MinIO入口相对第十轮有默认关闭的来源生命周期增量；当前.env.example仍明确false、listen/TLS为空，全新无owner状态时在Docker／账号操作前退出；标准 `make test-monitor-minio-observation-unit` exit0，21项Python及相关Go包通过，本轮不启用观测来源或身份。
 
 本轮私有目录 `/tmp/addp-transfer-engine-hosted-eleventh-20261102/` 保存单次intent、invariants、相关CI原日志与逐项前提证明、唯一派发前后Run快照，以及冻结390源码的canonical validator／机器契约。私有Engine诊断审计同步接纳已确认的manager_cleanup_engine_facts闭集步骤，不改变产品报告或成功谓词；合法样例及六个越界反例通过。终态前第十轮failure0/7和修正后完整清理待验的缺口保持，不以准备／控制清理或CI通过替代七项业务验收。
+
+
+**第十一轮实际终态。** 北京时间2026-11-02 15:23:12—15:46:20，唯一Job实际failure，正式checks为空、0/7。十四服务同准确39059d2ed、repository_clean=true；control_cleanup／control_recovery／cleanup均passed，infra_cleanup=zero_residuals。原始日志430359字节，SHA-256 `122bfee1929e0f6d494fa1874d3fa793d9f1127ed8aafb57c03f9ab7b9bd3c97`；artifact13123724398的ZIP3265字节，SHA-256 `4391546371d44ea94561cc1e1aa38be4e2e8de86d08010a7e4e63a60b28a3f5b`。五项冻结审计均exit0，失败报告被canonical validator拒绝。
+
+**已取得的进展与新失败。** 失败阶段已从validation转为 `engine_cleanup_task_read`：Engine仍deleting，但validation与execute引用均存在，deletion_error为空。父execute请求 `e903670c-02d5-573d-87f4-b5de8e07b677` timeout，请求／Engine／用户／execute／七Owner绑定全true。Manager已开始、attempt1、success且成功回执；Transfer已开始、attempt1、failed且无回执，两者均无授权拒绝或不可用标记。因此Manager生命周期事实读取与两阶段影响一致性已获得本轮真实链路的推进证据，尚不能把它换算为七项正式业务断言通过；新阻断在Transfer execute，原日志没有底层异常／HTTP正文或Transfer安全失败步骤，不能声称现场唯一根因已证明。
+
+### 8.35 Transfer deleting Engine 原生清理连接用途（待确认）
+
+**已查实的确定冲突。** CDC `DatabasePlanResolver.ResolveForCleanup` 仍复用普通 `SystemEngineResolver`，后者调用Tenant Service Principal的普通Engine详情并要求Engine available。真实System `GetForConnection`拒绝deleting／deleted；即便mock直接返回deleting Engine，Resolver的available检查仍会拒绝。Capture Supervisor已取得planErr后仍可先删除connector，再返回源清理计划失败，源端slot／publication及后续topic清理无法完成。现有Supervisor测试用直接返回成功计划的fake，未验证真实生命周期读取边界。本轮Transfer现场未归档该具体调用，故这里是必修的可复现冲突，不等同于对现场唯一错误的直接取证。
+
+现行Common `CleanupAuthorizationScope` 明确该用途不能授予Engine access，`GetCleanupAccess`也明确不返回Engine凭据；Manager可用脱敏描述替代，其用途只是读生命周期，但Transfer清理已登记的源端产物需要真实连接，二者不能混同。不能以放宽普通Engine可用性、预存凭据、借用用户token或跨读私表补齐该缺口。
+
+**建议的窄方案（本节未批准前不实现授权扩展）。**
+
+1. 保持当前Cleanup裁决端点、无凭据DTO及六项User权限不变；在现有System执行授权框架下新增独立、仅用于 `transfer.capture_cleanup` 的连接裁决出口，拟为 `POST /api/v1/system/execution-authorizations/{id}/cleanup-engine-connection`。首期仅对应Transfer Backend Owner Runtime使用，复用现有 `system.cleanup_authorization.execute` 身份入口并增加独立用途及精确对象裁决，不默认扩大任何User／其它Runtime角色；这仍属于凭据访问用途扩展，须单独确认。
+2. System从自己拥有的EA及Common父子执行的冻结中性请求核验：active Tenant原用户当前 `system.engine.delete`、Owner/runtime匹配、同request／parent／child／digest、`action=execute`／`cause=engine.deleting`、当前attempt／live lease及对应授权未失效、父请求仍允许效果。连接EngineID必须等于该冻结请求的精确 `context.engine_id`，生命周期必须仍为deleting；不接受调用方任意Engine集合，不读取Transfer私表，不为scan／closed Tenant／无可信来源／已终态执行发放。
+3. 连接grant与既有effect裁决分开，回包绑定准确EA／执行／Owner／Engine及有效窗，只交给Owner本次调用内存使用，不写公共metadata、回执、日志、归档、角色或持久连接副本。有效期不得越过现有授权／租约窗口；失效、撤权、错attempt或缺证据继续阻断，不增加native重试或等待预算。
+4. Transfer以该专用授权连接构造清理计划，先核对已登记Capture generation的source Engine／locator／database／连接指纹，再沿原Run.PrepareExternal／持久operation围栏执行；不削弱普通SystemEngineResolver的active／online要求。原生删除只覆盖当前目标上的自有CDC产物，业务行、任务与Engine删除保留DLQ语义保持。其他active源的普通任务删除路径保持原用途；跨目标授权、历史Tenant及其它Owner连接需求不在首期范围。
+5. 同次补闭集Transfer失败阶段，包括计划/连接、停止等待、Capture原生步骤与提交，沿原C租约保护写入既有安全step，诊断不能延长租约、产生回执、重放效果或扩大读取；专项runner仅投影原User已经授权的子执行闭集步骤，成功报告及七项断言不扩展。正式规范／API／Swagger和最小门禁同次落实：System授权与真实Handler、Common窄客户端、Transfer T1／PostgreSQL与Capture源指纹围栏、专项runner和登记检查；Transfer Go须有实际执行证据，不能沿用会被无关聚合失败提前阻断的结果。新的Hosted仍另行确认。
+
+**当前边界。** 本轮只做取证、只读代码核查及临时隔离源码最小复现，不新增连接端点、不改权限用途、不改变生产执行路径。该授权方案确认前，依赖连接用途的产品修正暂停；已获准的原生Host单次运行已完成，不自动追加。Graph原生写图／正向reopen等既有未验收项不随本轮关闭。
+
+
+**最小复现实证。** 在本轮私有目录的临时390源码副本中，仅增加受控HTTP／fake Provider探针，沿标准 `make test-transfer-backend` 和 `GOFLAGS=-v`实际exit0；active源计划成功、真实System语义409及Resolver自身deleting拒绝均复现，Supervisor在fake connector删除后因源计划拒绝失败，源端与topic删除未调用。没有调用真实数据库或外部Capture，不把T1探针当作本轮原生现场HTTP证据或PostgreSQL T2。原始初次源码子集缺脚本夹具的失败保留，补齐同一390版本的既有脚本后完整标准T1实际通过。`transfer-boundary-probe-proof.json`保留测试／日志哈希，verbose日志SHA-256 `ea8434b066272d71ff22f179d7b69c5c5ab9b1ce3dc66258d908eefd30181ef7`。生产代码和权限未修改；当前仅提交取证与待确认方案文档。
