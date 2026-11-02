@@ -64,13 +64,15 @@ FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authoriz
 
 ### 执行过程事件与当前边界
 
-Query、Workflow、Notebook（script）共用 bounded lease 队列和 `common.execution_events`：实际 claim 写 started，完成和过期收敛写唯一终态；Notebook 当前只收敛授权不可用的失败，不调用 Runtime。Query 与 Workflow 仅在已有受控执行阶段记录 progress 百分比，不把自由文本 current_step 复制为 step_id。事件与对应 execution 及任务最近执行摘要在同一事务提交；事件存储失败回滚这些事实，过期或错配 lease 不得写入。授权附加、Workflow 远端执行回执与心跳不追加事件；事件不包含查询、参数、业务结果、Runtime 完整响应或授权引用。无有效 lease 的遗留 running 记录只收敛失败概览，不补造过程。读取继续使用 Monitor 的 Owner 授权入口与共享 30 天维护。验证使用 `make test-module MODULE=develop` 与 `make test-develop-postgres`，新增 PostgreSQL 事件回归必须由后者的名称筛选命中；既有 Go／Develop PostgreSQL CI 自动覆盖，确定性验证不代替真实 T4。
+事件闭合字段、身份派生、Owner 读取裁决和 30 天维护统一见[过程事件规范](../docs/spec/tasks/执行监控.md#通用执行读取与过程事件)；队列、attempt／lease 与失联收敛沿[Develop 执行监督契约](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。Develop 的接入约束是：
 
-Notebook 交互 Session 授权、引擎数据访问授权和排队 execution 的运行授权承担不同职责。历史提交人身份和 Service Token 不能替代派发时的当前执行资格裁决；现阶段不得借用 Session 或数据授权放行排队任务。内容摘要只证明执行字节与提交时一致，不证明仍有执行权限。Jupyter 核验实际下载字节不一致时返回 `notebook_content_changed`，不创建快照或自动重试；真实队列派发及撤权闭环仍待运行授权方案确认和独立验收。
+- 实际 claim 写 started，完成或过期收敛写唯一终态；事件、execution 和任务最近执行摘要在同一事务提交，事件失败回滚这些事实，过期或错配 lease 拒绝写入。无有效 lease 的遗留 running 只收敛失败概览，不补造过程。
+- Query／Workflow 只在已有受控执行阶段记录 progress 百分比，不将自由文本 `current_step` 复制为 `step_id`。
+- 授权附加、Workflow 远端执行回执与心跳不追加事件；查询、参数、业务结果、Runtime 完整响应和授权引用不进入通用事件。
 
-真实 Query 事件读取复用 `transfer-relational-sql-etl` Hosted suite：三轮父编排中的六个 Develop Query 子执行，分别经已授权 Monitor 入口核对 started／progress／completed、同一 execution／attempt、时间和游标顺序及闭合进度计数；报告只记录核验数量，不复制事件或查询结果。既有 `make test-transfer-online-runner` 与 CI 聚合承接读取契约和负向回归；该扩展实际运行通过前不计为 T4。
+Notebook 的交互 Session、引擎数据访问与排队运行授权分工由上述监督契约维护。当前排队 `script` 以 `develop.script.authorization_unavailable` 失败，不调用 Runtime；不能借用 Session、数据授权、历史提交人或 Service Token 放行。内容 SHA-256 只证明字节一致，已有 Jupyter 校验返回 `notebook_content_changed` 时要求重新提交，不创建快照或自动重试；运行授权及真实撤权闭环仍待独立验收。
 
-Query 事件接入的本地门禁、首次工具／时区失败、UTC 修复、聚合未重跑及未覆盖范围见[2026-10-13 本地验证原记录](../docs/spec/testing/evidence/引擎与空间计算历史证据.md#2026-10-13-query-事件接入本地验证)；该批与同日监督器验证分别认定，不将后来的 T4 或分项结果并入原结论。
+标准门禁、Query Hosted 核对要求与分版本证据统一见[开发与验证](#开发与验证)，本地分项、历史通过和未执行项分别认定。
 
 ### 算子发现服务
 
@@ -212,11 +214,11 @@ Develop 使用 Common 导出会话在 Workbench 轮询并下载 infra 暂存产�
 
 ### 执行输出与运行监督
 
-查询、工作流和脚本的 TaskProvider 稳定输出统一只写入 `common.task_executions.metadata.outputs`；不得保存或读取旧的 `metadata.result.outputs`。`GET /task-provider/executions/:execution_id` 使用 `common/taskprovider` 标准状态响应把同一对象投影为顶层闭合 `outputs`，用户执行详情可以附带任务信息，但不得形成第二套输出提取规则。
+稳定输出只持久化到 `common.task_executions.metadata.outputs`，状态响应的顶层闭合 `outputs` 是同一对象的投影，不读取 `metadata.result.outputs`。响应与提取规则由[TaskProvider 正文](../docs/spec/tasks/TaskProvider接口.md#标准响应体)统一维护；Develop 的 `GET /task-provider/executions/{execution_id}` 复用 `common/taskprovider`，用户详情附带任务信息也不增加第二套输出提取路线。
 
-全部 `module=develop + task_type=query|workflow|script` 的 bounded execution 由 Develop Backend 内嵌的唯一 Execution Supervisor 领取，不按 source 或创建入口分裂路线，不保留请求外 goroutine。每 Backend 的并发预算、租户只读与默认超时覆盖、无环境变量回退和缩容规则沿[Develop 执行策略](../docs/spec/configuration/执行与模块策略.md#develop-执行策略)。容量观测不参与 claim；每类型以 `execution_supervisor/<task_type>` 上报容量和活动数。
+Backend 内嵌唯一监督器统一领取。execution 的创建入口、冻结输入、授权签发／消费与失联不重放见[执行监督契约](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)，事件提交见[Develop 接入约束](#执行过程事件与当前边界)。监督器不重读可变任务定义；失联失败不表示远端已停止。
 
-监督器只消费 execution 冻结的内容、运行时配置和参数，不重读可变任务定义。claim 原子写入完整 lease、started 事件和任务摘要；进度、运行时回执、终态、事件和摘要受当前 lease fencing。Query 的查询策略及结果行为保持；Workflow 用户授权提交时签发并保存引用，Orchestrator 子执行授权在 claim 后按父执行及当前 attempt/token 派生。Notebook 保存提交时 SHA-256，Jupyter 核验下载字节后执行，文件变化失败并要求重新提交；交互 Session 不受本次执行队列管理。全部类型在失联后收敛失败、不自动重放，不承诺远端已停止；专业回执和结果不进入通用诊断事件。
+容量观测不参与 claim。每类型以 `execution_supervisor/<task_type>` 上报当前 Backend 的容量和活动数；预算、租户可配置范围及热更新沿[执行策略](../docs/spec/configuration/执行与模块策略.md#develop-执行策略)，不以心跳容量代替执行授权或领取结果。
 
 ### Copilot 范围与资源事实
 
@@ -479,7 +481,11 @@ curl -H "Authorization: Bearer <token>" \
 
 ## 开发与验证
 
-标准门禁、环境前提与能力边界统一见[Develop 验证入口](../docs/spec/configuration/执行与模块策略.md#develop-验证入口与证据边界)。查询保护的 Owner 与共享诊断回归使用 `make test-module MODULE=develop`、`make test-go`、`make test-common-frontend` 和 `make test-monitor-frontend`，PostgreSQL 及 Provider 专项按实际影响范围分别验证；分项通过不替代真实认证／Gateway／Worker 的 T4。历史记录按主题查阅：
+标准门禁、环境前提与能力边界统一见[Develop 验证入口](../docs/spec/configuration/执行与模块策略.md#develop-验证入口与证据边界)。事件、监督器和 Owner 回归使用 `make test-module MODULE=develop` 与 `make test-develop-postgres`；新增 PostgreSQL 事件回归必须确认[标准入口的名称筛选](../scripts/test/develop-postgres-gate.sh)命中，既有 Go／Develop PostgreSQL CI 承接同一入口。共享诊断另按影响范围运行 `make test-go`、`make test-common-frontend` 和 `make test-monitor-frontend`，Provider 专项分别验证；分项通过不替代真实认证／Gateway／Worker 的 T4。
+
+真实 Query 事件读取复用 `transfer-relational-sql-etl` Hosted suite：三轮父编排中的六个 Develop Query 子执行，分别经已授权 Monitor 入口核对 started／progress／completed、同一 execution／attempt、时间和游标顺序及闭合进度计数；报告只记录核验数量，不复制事件或查询结果。既有 `make test-transfer-online-runner` 与 CI 聚合承接读取契约和负向回归；该扩展实际运行通过前不计为 T4。
+
+历史记录按主题查阅：
 
 | 历史主题 | 原记录与范围 |
 | --- | --- |
