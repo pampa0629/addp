@@ -1044,3 +1044,12 @@ Go workspace Job125102562391的Manager片段15个有测试包实际通过；聚�
 System Go最新Job125119346754虽然外层success，但selected:false、未执行测试；System Cleanup最新Job125119851728为skipped。这两项均不算本次新通过，按已逐项确认未变的输入复用3f的实际成功Job125102562748／125113533305；3f至2f的共享依赖没有代码增量，期间其它提交仅Monitor证据文档。因此本会话受影响的五类门禁已有匹配输入的实际证据，非聚合全仓通过。
 
 **交付边界与下一步。** 第十轮Hosted仍为failure0/7：本轮已把现场失败定位到validation的Manager库存核验，并修复两项可确定复现的用途／摘要缺陷，不能据此声称底层库存HTTP现场原因已全部证明或修正后完整链路已通过。最新修正后的七项业务断言尚未运行；Graph原生写图回包、正向reopen等既有未验收项无新增证据，不随本批关闭。优先建议另行确认一次同六权限、同范围、同七断言、同预算的transfer-engine Hosted，验证修正后的完整清理链路；本次授权已消费，不自动派发，其它Hosted／环境／权限边界变化继续单独确认。已确认方案内没有其它需等待用户决策的实现细节。
+
+
+### 8.34 第十一轮 transfer-engine Manager 两阶段修正验收
+
+用户于2026-11-02单独确认一次修正版transfer-engine Hosted，验证Manager生命周期读取、预评估／validation影响摘要和完整清理链路；保持原六身份权限、操作范围、七项断言和等待预算，其它Hosted／环境／权限变化另行确认。已唯一POST创建 [Run41405951936／Job125147894457](https://github.com/pampa0629/addp/actions/runs/41405951936/job/125147894457)，准确源码 `39059d2ed2d711b992947c1debee6872a0d60578`，workflow_dispatch／attempt1。本次授权已消费，跟进该Job至终态，不自动追加第十二轮。
+
+**派发前证据。** 主责fresh API并独立下载当前390源码的五类相关CI日志：Manager Go Job125124309523的15有测试包实际通过（聚合随后其它Owner失败，非全仓通过）；Manager PG125124534265实际success／31主项及零残留；System独立Go125124309531 selected:true、标准Owner命令实际通过；System CleanupPG125124532825实际6主项通过；Execution125124309548 selected:true、114＋169及登记一致。核心runner、三User／六权限夹具、机器契约、部署、预算与2f已验修正逐项字节相同，契约SHA-256仍为b6aa6485；并行NetCDF增量已包含在上述当前源码CI，不部署共享工作区未提交的Spark／fixture／表格等WIP。Infra MinIO入口相对第十轮有默认关闭的来源生命周期增量；当前.env.example仍明确false、listen/TLS为空，全新无owner状态时在Docker／账号操作前退出；标准 `make test-monitor-minio-observation-unit` exit0，21项Python及相关Go包通过，本轮不启用观测来源或身份。
+
+本轮私有目录 `/tmp/addp-transfer-engine-hosted-eleventh-20261102/` 保存单次intent、invariants、相关CI原日志与逐项前提证明、唯一派发前后Run快照，以及冻结390源码的canonical validator／机器契约。私有Engine诊断审计同步接纳已确认的manager_cleanup_engine_facts闭集步骤，不改变产品报告或成功谓词；合法样例及六个越界反例通过。终态前第十轮failure0/7和修正后完整清理待验的缺口保持，不以准备／控制清理或CI通过替代七项业务验收。
