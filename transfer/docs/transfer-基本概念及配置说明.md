@@ -550,9 +550,9 @@ PostgreSQL/MySQL/Oracle 单表
 
 #### PostgreSQL CDC
 
-PostgreSQL CDC 在创建 capture 前核对完整源表字段和真实类型，开放 `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry`。PostGIS geometry 必须固定 OGC type、正 SRID和 XY/XYZ 维度；Transfer 将 Debezium `{wkb,srid}` 解码为 EWKB，按源空间事实创建目标 geometry 列，不做坐标转换，geometry 也不能作为主键。connector 固定 Decimal 字符串和 Connect 毫秒时间编码；`time` 和无时区 `timestamp` 仅允许精度 `0..3`。`bytea`、数组、geography、未约束 geometry、M/ZM geometry、interval、枚举及其他用户定义类型明确拒绝。
+PostgreSQL CDC 在创建 capture 前核对完整源表字段和真实类型。支持类型、Decimal／时间编码、精度及拒绝条件统一见[数据面与捕获约束](../../docs/spec/tasks/Transfer数据库CDC.md#数据面与捕获约束)；`time` 和无时区 `timestamp` 仅允许精度 `0..3`，不能静默截断。
 
-Debezium 的 geometry 属性名是 `wkb`，真实 PostGIS connector 可能在该 base64 属性中发送带 SRID 的 EWKB。Transfer 使用统一 WKB/EWKB 解析器，并校验内嵌 SRID、旁路 `srid` 与 generation 冻结事实一致，再输出 ADDP 标准 EWKB 行值。
+PostGIS 必须固定 OGC type、正 SRID 和 XY/XYZ 维度，geometry 不能作为主键，也不做坐标转换。源空间事实冻结、目标列派生以及 WKB/EWKB 解析与一致性校验沿上述正式契约；`wkb` 属性可能承载带 SRID 的 EWKB，不能仅凭属性名选择解码器。
 
 #### MySQL CDC
 
