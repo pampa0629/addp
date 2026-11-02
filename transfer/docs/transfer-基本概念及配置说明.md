@@ -476,11 +476,11 @@ Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和
 
 ### 目标应用与提交顺序
 
-目标必须声明原子、单调且覆盖任务所需 operation 的 `PartitionedTableChangeApplyProvider`；各路线的目标范围见[支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)。每个 task 的 `apply_identity` 由服务端生成且不可修改。目标变更与 partition `next_offset` 的原子提交、分区拆批及同键保留最高 offset 的规则统一见[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)与[交付保证](transfer-任务语义与同步模式.md#61-交付保证)，普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 不能替代目标侧原子应用。
+目标必须声明原子、单调且覆盖任务所需 operation 的 `PartitionedTableChangeApplyProvider`；各路线的目标范围见[支持矩阵](transfer-任务语义与同步模式.md#三当前支持矩阵)。每个 task 的 `apply_identity` 由服务端生成且不可修改。目标变更与 partition `next_offset` 的原子提交见[共享提交契约](../../docs/spec/tasks/Transfer同步执行.md#共享目标提交与-infra-cas)，分区拆批及同键保留最高 offset 见[分区账本与应用](../../docs/spec/tasks/Transfer同步执行.md#目标应用身份与分区账本)，交付保证见[运行语义](transfer-任务语义与同步模式.md#61-交付保证)，普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 不能替代目标侧原子应用。
 
 各目标 ledger 的表名与归属以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准：PostgreSQL ledger 位于业务目标库；MySQL 使用同一目标数据库的 InnoDB 私有表，不跨库；Oracle CDC 的 schema 与 ledger 身份限制见[目标身份契约](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-目标-schema-与-ledger-身份)。同名 ledger 结构不符合唯一规范时直接失败，不保留兼容路径。
 
-每个 partition 的主状态保存在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`；consumer auto commit 禁用。先提交目标业务行与 ledger，再以 runtime fencing token + state version 做 Infra CAS；两步之间崩溃会重放，由目标 ledger 吸收重复并阻止旧 worker 回写，不宣称分布式 exactly-once。首次无状态 partition 必须显式选择 `earliest|latest`。
+分区主状态、目标提交后的 Infra CAS、崩溃重放和 fencing 边界统一沿上述共享提交契约；显式初始位置、consumer auto commit 禁用及恢复前的窗口复核见[起点与恢复契约](../../docs/spec/tasks/Transfer同步执行.md#显式起点与恢复窗口)。
 
 ### 当前能力与界面
 

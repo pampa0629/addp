@@ -10,6 +10,7 @@
 | --- | --- |
 | 配置维度与通用同步约束 | [Transfer 同步执行契约](#transfer-同步执行契约) |
 | continuous 配置、目标提交、位点与观测规则 | [continuous 主契约](#transfer-continuous-sync-v1-契约) |
+| 业务 Kafka 来源、显式映射、目标账本、CAS 与位置恢复 | [来源配置与目标提交](#continuous-来源配置与目标提交) |
 | 分区位置、窗口估算、retention／checkpoint 与安全样本 | [采样与健康诊断](#continuous-采样与健康诊断) |
 | 通用规则目标、失败判定、模式切换与统一评估 | [通用告警规则](#通用执行告警规则与统一评估) |
 | 租户告警通知、Webhook／邮件投递与送达验收 | [通知与渠道投递](#租户告警通知与渠道投递) |
@@ -44,6 +45,16 @@ Transfer `sync` 的稳定语义由以下正交维度表达：
 ## Transfer continuous sync v1 契约
 
 continuous execution 表示一次长期运行的 runtime session，不是把 bounded executor 放进无限循环。正式实现必须使用 Transfer 独立 continuous worker/supervisor；`transfer-bounded-worker` 只通过 PostgreSQL claim 承担 bounded execution。
+
+### continuous 来源配置与目标提交
+
+本节的业务 Kafka 来源、JSON 消息与 upsert 目标范围不替代[数据库 CDC 契约](Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。共享原子提交与 Infra CAS 规则不扩展已声明的目标支持矩阵。
+
+- 输入与配置：[业务 Kafka 样例](#业务-kafka-配置样例)、[来源与协议](#业务-kafka-来源与消息协议)、[稳定键与分区](#稳定键与分区顺序)、[目标与映射](#业务-kafka-目标能力与显式映射)。
+- 执行与恢复：[起点与窗口](#显式起点与恢复窗口)、[应用身份与分区账本](#目标应用身份与分区账本)、[共享提交与 CAS](#共享目标提交与-infra-cas)。
+- 使用范围：[DLQ/replay 与 CDC](#dlq-replay-与-cdc-能力边界)、[配置与提交验收](#来源配置与目标提交验收边界)。
+
+#### 业务 Kafka 配置样例
 
 业务 Kafka 第一版任务配置固定为以下单一路线：
 
@@ -85,57 +96,58 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 }
 ```
 
-第一版约束：
+#### 业务 Kafka 来源与消息协议
 
-1. source 只支持用户在 System 注册的业务 Kafka Engine，locator 必须定位 `type=topic`；Infra Kafka 不进入公开任务配置。
-2. `envelope` 只允许 `record`，`encoding` 只允许 `json`，value 必须是 JSON object；tombstone、数组、标量、Avro、Protobuf、Schema Registry 和 Debezium envelope 均不支持。
-3. 稳定 key 只允许从 JSON value 的显式非空字段提取；`key.source` 固定为 `value`，`key.fields` 非空。Kafka 原生 record key 第一版只保留为诊断事实，不参与目标身份推导。
-4. 同一业务 key 的事件必须由生产者稳定写入同一 partition。Transfer 保证 partition 内顺序，不承诺跨 partition 的同 key 全局顺序。
-5. 目标支持声明完整原子应用能力的 PostgreSQL/MySQL native table，并且必须使用 `apply_mode=upsert`、显式目标 keys 和 `PartitionedTableChangeApplyProvider`；普通 `TableUpsertProvider` 不能单独满足 continuous fencing。keyless append 和可能产生重复的普通 append 不进入第一版。
-6. Kafka JSON 没有可依赖的表 schema，任务必须通过显式 `field_mapping` 固定目标字段和类型；source key fields 映射后的目标字段必须与 `target.policy.keys` 一一对应且非空。未知字段、缺失必填字段或不兼容 schema 变化必须阻塞 partition 并使当前 execution 失败，不得静默丢弃。
-7. `start.mode` 固定为 `committed`。没有 committed state 的 partition 必须由任务显式选择 `initial=earliest|latest`；不得由 consumer 默认值或 auto commit 猜测。
-8. Transfer 为每个 partition 在 `transfer.sync_states` 保存 `position.type=kafka_offset`、`position.version=v1` 和 `next_offset`。目标批次成功提交后才允许用 runtime fencing token 和 state version 做 CAS 推进；worker 恢复时必须 seek 到 `next_offset`。
-9. 每个 continuous task 必须有服务端生成且不可修改的 `apply_identity` UUID，不写入 config。PostgreSQL Provider 在业务目标库维护 `addp_transfer.apply_positions`，MySQL Provider 在目标业务数据库维护 `_addp_transfer_apply_positions` InnoDB 私有表；两者都以 `apply_identity + source_identity + target_identity + partition` 校验应用主线，并把业务行 upsert 与目标 `next_offset` 在同一事务提交。
-10. Transfer 必须把 poll 结果按 partition 拆成顺序批次，每条已映射记录携带消费后 `next_offset`。Provider 锁定 ledger 行，拒绝位置缺口，跳过不大于已应用位置的重复记录；同一批剩余记录出现相同目标 key 时保留最高 `next_offset` 的最后状态，再执行一次原子 upsert。
-11. 投递保证固定为 `at-least-once delivery + target monotonic apply`。目标提交与 Infra position CAS 之间崩溃会重放，但目标 ledger 必须吸收重复批次，并阻止租约过期 worker 在新 worker 之后写回旧状态；不得宣称跨 Kafka、业务目标数据库和 Infra PostgreSQL 的分布式 exactly-once。
-12. consumer auto commit 禁用。Kafka consumer group 只用于分区分配，不是 Transfer committed position 的事实源。
-13. 业务 Kafka 已开放 `dead_letter` 和写入新隔离目标的 bounded replay，唯一契约见[Kafka 与 DLQ](Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。数据库 CDC、Kafka target、物理删除和 continuous append 仍不得借用业务 Kafka 的 DLQ/replay 路线绕过各自边界。
-14. resume 前必须验证 committed `next_offset` 仍位于 Kafka partition 的 `[earliest_offset, latest_offset]` 范围；低于 earliest 表示 retention 已破坏连续恢复条件，execution 必须明确失败，不得静默重置到 earliest 或 latest。高于 latest 视为状态损坏，同样失败。
-15. source 分区位置、目标已提交位置与 lag 计算见[分区位置与 lag 事实](#分区位置与-lag-事实)。
-16. 恢复余量、时间估算与 unknown 条件见[恢复余量与未知时间估算](#恢复余量与未知时间估算)。
-17. retention 健康状态与部署阈值见[retention 健康判定与阈值](#retention-健康判定与阈值)。
-18. 观测样本、Owner 归属与 Capture 安全裁剪见[诊断样本与 Capture 安全投影](#诊断样本与-capture-安全投影)。
-19. retention／checkpoint 正交口径与真实提交时间见[checkpoint 健康与真实提交时间](#checkpoint-健康与真实提交时间)。
-20. continuous 与数据库 CDC 的无状态观测信号、严重级别与 Owner 边界见[实时观测信号](#continuous-owner-实时观测信号)。
-21. 最新根 execution、incident 去重、确认／抑制与恢复规则见[continuous 告警生命周期](#continuous-告警生命周期与最新根执行)。
-22. 告警生命周期、事务 outbox 与 dispatcher 领取见[通知生命周期与事务 outbox](#通知生命周期与事务-outbox)。
-23. Webhook 租户目标、secret 与 SSRF见[Webhook 租户目标与协议安全](#webhook-租户目标与协议安全)。
-24. Webhook payload 与接收端签名幂等见[Webhook 租户目标与协议安全](#webhook-租户目标与协议安全)。
-25. Webhook 确认、抑制与目标禁用见[Webhook 确认抑制与测试](#webhook-确认抑制与测试)。
-26. Webhook 独立测试投递见[Webhook 确认抑制与测试](#webhook-确认抑制与测试)。
-27. Webhook 人工重投与尝试周期见[Webhook 重投删除与审计](#webhook-重投删除与审计)。
-28. Webhook 目标删除与历史保留见[Webhook 重投删除与审计](#webhook-重投删除与审计)。
-29. Webhook 操作审计与 secret 脱敏见[Webhook 重投删除与审计](#webhook-重投删除与审计)。
-30. 邮件租户目标与收件人范围见[邮件租户目标与冻结投递内容](#邮件租户目标与冻结投递内容)。
-31. 邮件独立存储与投递内容冻结见[邮件租户目标与冻结投递内容](#邮件租户目标与冻结投递内容)。
-32. SMTP Relay 部署、TLS 与未配置行为见[SMTP 部署与邮件投递状态](#smtp-部署与邮件投递状态)。
-33. 邮件投递状态、重试与领取租约见[SMTP 部署与邮件投递状态](#smtp-部署与邮件投递状态)。
-34. 邮件独立测试投递见[邮件测试重投删除与审计](#邮件测试重投删除与审计)。
-35. 邮件人工重投、删除与历史保留见[邮件测试重投删除与审计](#邮件测试重投删除与审计)。
-36. 邮件操作审计与 SMTP 凭据保护见[邮件测试重投删除与审计](#邮件测试重投删除与审计)。
-37. 通用告警的公共事实与 Monitor／Owner／System 职责见[通用告警公共事实与职责](#通用告警公共事实与职责)。
-38. 精确任务身份、根 execution 与最新模式筛选见[规则目标与最新根执行模式](#规则目标与最新根执行模式)。
-39. 失败／超时／连续失败规则与 success 恢复条件见[通用失败规则与恢复判定](#通用失败规则与恢复判定)。
-40. continuous 专用 evaluator 与 bounded 模式切换见[continuous 专用评估与模式切换](#continuous-专用评估与模式切换)。
-41. 规则身份、incident 去重及更新停用删除见[规则生命周期与通知路由](#规则生命周期与通知路由)。
-42. 租户通知路由、无路由行为与目标删除见[规则生命周期与通知路由](#规则生命周期与通知路由)。
-43. 多 evaluator 汇总、统一 reconciler 与查询失败见[evaluator 汇总与查询失败边界](#evaluator-汇总与查询失败边界)。
-44. 周期扫描与 LISTEN/NOTIFY 唤醒边界见[evaluator 汇总与查询失败边界](#evaluator-汇总与查询失败边界)。
-45. Owner 超时裁决与未开放停滞规则见[超时与未开放停滞规则](#超时与未开放停滞规则)。
-46. 当前 TaskProvider 交集与废弃类型限制见[规则目标与最新根执行模式](#规则目标与最新根执行模式)。
-47. 数据库 CDC schema-change 的公共投影及与私有状态同事务更新见[公共事实投影](#schema-change-公共事实投影)。
-48. 最新根执行的 schema blocked 信号、恢复与 Stop／Finish／lease expiry 竞态见[告警恢复与停止竞态](#schema-blocked-告警恢复与停止竞态)。
-49. 自动扫描提交失败与实际扫描结果、Monitor incident 的边界见[扫描提交失败限制](#扫描提交失败的告警限制)。
+- source 只支持用户在 System 注册的业务 Kafka Engine，locator 必须定位 `type=topic`；Infra Kafka 不进入公开任务配置。
+- `envelope` 只允许 `record`，`encoding` 只允许 `json`，value 必须是 JSON object；tombstone、数组、标量、Avro、Protobuf、Schema Registry 和 Debezium envelope 均不支持。
+
+#### 稳定键与分区顺序
+
+- 稳定 key 只允许从 JSON value 的显式非空字段提取；`key.source` 固定为 `value`，`key.fields` 非空。
+- Kafka 原生 record key 第一版只保留为诊断事实，不参与目标身份推导。
+- 同一业务 key 的事件必须由生产者稳定写入同一 partition。
+- Transfer 保证 partition 内顺序，不承诺跨 partition 的同 key 全局顺序。
+
+#### 业务 Kafka 目标能力与显式映射
+
+- 目标支持声明完整原子应用能力的 PostgreSQL/MySQL native table，并且必须使用 `apply_mode=upsert`、显式目标 keys 和 `PartitionedTableChangeApplyProvider`；普通 `TableUpsertProvider` 不能单独满足 continuous fencing。
+- keyless append 和可能产生重复的普通 append 不进入第一版。
+- Kafka JSON 没有可依赖的表 schema，任务必须通过显式 `field_mapping` 固定目标字段和类型；source key fields 映射后的目标字段必须与 `target.policy.keys` 一一对应且非空。
+- 未知字段、缺失必填字段或不兼容 schema 变化必须阻塞 partition 并使当前 execution 失败，不得静默丢弃。
+
+#### 显式起点与恢复窗口
+
+- `start.mode` 固定为 `committed`。
+- 没有 committed state 的 partition 必须由任务显式选择 `initial=earliest|latest`；不得由 consumer 默认值或 auto commit 猜测。
+- consumer auto commit 禁用。
+- Kafka consumer group 只用于分区分配，不是 Transfer committed position 的事实源。
+- resume 前必须验证 committed `next_offset` 仍位于 Kafka partition 的 `[earliest_offset, latest_offset]` 范围；低于 earliest 表示 retention 已破坏连续恢复条件，execution 必须明确失败，不得静默重置到 earliest 或 latest。
+- 高于 latest 视为状态损坏，同样失败。
+
+#### 目标应用身份与分区账本
+
+- 每个 continuous task 必须有服务端生成且不可修改的 `apply_identity` UUID，不写入 config。
+- PostgreSQL Provider 在业务目标库维护 `addp_transfer.apply_positions`，MySQL Provider 在目标业务数据库维护 `_addp_transfer_apply_positions` InnoDB 私有表；两者都以 `apply_identity + source_identity + target_identity + partition` 校验应用主线，并把业务行 upsert 与目标 `next_offset` 在同一事务提交。
+- Transfer 必须把 poll 结果按 partition 拆成顺序批次，每条已映射记录携带消费后 `next_offset`。
+- Provider 锁定 ledger 行，拒绝位置缺口，跳过不大于已应用位置的重复记录；同一批剩余记录出现相同目标 key 时保留最高 `next_offset` 的最后状态，再执行一次原子 upsert。
+
+#### 共享目标提交与 Infra CAS
+
+- Transfer 为每个 partition 在 `transfer.sync_states` 保存 `position.type=kafka_offset`、`position.version=v1` 和 `next_offset`。
+- 目标批次成功提交后才允许用 runtime fencing token 和 state version 做 CAS 推进；worker 恢复时必须 seek 到 `next_offset`。
+- 投递保证固定为 `at-least-once delivery + target monotonic apply`。
+- 目标提交与 Infra position CAS 之间崩溃会重放，但目标 ledger 必须吸收重复批次，并阻止租约过期 worker 在新 worker 之后写回旧状态；不得宣称跨 Kafka、业务目标数据库和 Infra PostgreSQL 的分布式 exactly-once。
+
+#### DLQ replay 与 CDC 能力边界
+
+- 业务 Kafka 已开放 `dead_letter` 和写入新隔离目标的 bounded replay，唯一契约见[Kafka 与 DLQ](Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。
+- 数据库 CDC、Kafka target、物理删除和 continuous append 仍不得借用业务 Kafka 的 DLQ/replay 路线绕过各自边界。
+
+#### 来源配置与目标提交验收边界
+
+Topic 选择、尾部有界样本与用户确认映射的操作规则见[配置专题](../../../transfer/docs/transfer-基本概念及配置说明.md#业务-kafka-来源与映射)；样本建议不形成新的 Topic schema，也不扩大源读或目标写授权。各目标 ledger、CDC 原子应用与 Oracle 目标独有约束仍沿[CDC 数据面契约](Transfer数据库CDC.md#数据面与捕获约束)和[Oracle 目标契约](Transfer数据库CDC.md#oracle-目标应用约束)。
+
+配置保存、读取样本或创建 pending execution 不证明目标提交、Infra CAS、重放吸收或失效 worker 拒绝已实际通过。源读、目标业务行与账本、committed position、故障恢复和清理须分别核对；标准入口、固定版本、失败及未覆盖项沿[Transfer 验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。
 
 ### continuous 采样与健康诊断
 

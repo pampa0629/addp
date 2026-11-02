@@ -193,7 +193,7 @@ at-least-once delivery
   + Infra state CAS/fencing
 ```
 
-PostgreSQL、MySQL 和 Oracle 的 `PartitionedTableChangeApplyProvider` 在目标业务数据库内把业务行变化与 partition apply ledger 放入同一事务；CDC 各目标的 ledger 归属见[数据面与捕获约束](../../docs/spec/tasks/Transfer数据库CDC.md#数据面与捕获约束)，Oracle 写入能力与目标事务边界见[目标应用契约](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-目标应用约束)。Provider 跳过 ledger 已覆盖的记录并单调推进 `next_offset`，阻止重复批次或失效 worker 写回旧状态。ADDP 不宣称跨系统的通用端到端 exactly-once。
+PostgreSQL、MySQL 和 Oracle 的 `PartitionedTableChangeApplyProvider` 在目标业务数据库内把业务行变化与 partition apply ledger 放入同一事务；CDC 各目标的 ledger 归属见[数据面与捕获约束](../../docs/spec/tasks/Transfer数据库CDC.md#数据面与捕获约束)，Oracle 写入能力与目标事务边界见[目标应用契约](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-目标应用约束)。Provider 的重复批次跳过、position 单调推进和失效 worker 拒绝沿[共享提交契约](../../docs/spec/tasks/Transfer同步执行.md#共享目标提交与-infra-cas)及[分区账本应用](../../docs/spec/tasks/Transfer同步执行.md#目标应用身份与分区账本)。ADDP 不宣称跨系统的通用端到端 exactly-once。
 
 ### 6.2 业务 Kafka
 
