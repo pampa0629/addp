@@ -37,27 +37,39 @@ COMMON_POSTGRES_SUCCESS_OUTPUT = (
 
 
 class ModuleGateTest(unittest.TestCase):
-    def test_system_ci_uses_independent_canonical_go_only_owner_gate(self) -> None:
+    def test_go_ci_jobs_use_independent_canonical_go_only_owner_gates(self) -> None:
         repository = SCRIPT.resolve().parents[2]
         workflow = (repository / '.github/workflows/platform-ci.yml').read_text()
-        match = re.search(r'(?ms)^  system-go-ci-runner:\n(.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)', workflow)
-        self.assertIsNotNone(match)
-        block = match.group(1)
-        self.assertNotRegex(block, r'(?m)^    needs:')
-        command = re.search(r'run: make test-module MODULE=(\w+) GO_ONLY=1', block)
-        self.assertIsNotNone(command)
-        self.assertEqual(command.group(1), 'system')
-        steps = MODULE.plan_module(repository, command.group(1), go_only=True)
-        self.assertEqual(len(steps), 1)
-        self.assertEqual(steps[0].command, ('go', 'test', './...'))
-        self.assertEqual(steps[0].cwd, repository / 'system/backend')
-        self.assertEqual(steps[0].excluded_environment, MODULE.GO_T1_EXCLUDED_ENVIRONMENT)
-        for path in ("'system/*'", "'common/*'", "'Makefile'", "'.node-version'", "'.github/*'", "'scripts/ci/*'", "'scripts/test/module-gate*'"):
-            self.assertIn(path, block)
-        self.assertEqual(block.count("if: steps.selection.outputs.run == 'true'"), 3)
-        self.assertIn('node-version-file: .node-version', block)
-        self.assertIn('selected: ${{ steps.selection.outputs.run }}', block)
-        self.assertIn('status: ${{ job.status }}', block)
+        for owner in ('system', 'transfer'):
+            with self.subTest(owner=owner):
+                match = re.search(
+                    rf'(?ms)^  {owner}-go-ci-runner:\n(.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)',
+                    workflow,
+                )
+                self.assertIsNotNone(match)
+                block = match.group(1)
+                self.assertNotRegex(block, r'(?m)^    (needs|services|concurrency):')
+                self.assertIn('runs-on: ubuntu-24.04', block)
+                self.assertIn('timeout-minutes: 20', block)
+                command = re.search(r'run: make test-module MODULE=(\w+) GO_ONLY=1', block)
+                self.assertIsNotNone(command)
+                self.assertEqual(command.group(1), owner)
+                steps = MODULE.plan_module(repository, owner, go_only=True)
+                self.assertEqual(len(steps), 1)
+                self.assertEqual(steps[0].command, ('go', 'test', './...'))
+                self.assertEqual(steps[0].cwd, repository / owner / 'backend')
+                self.assertEqual(steps[0].excluded_environment, MODULE.GO_T1_EXCLUDED_ENVIRONMENT)
+                self.assertIn('bash scripts/ci/select-gate-by-paths.sh', block)
+                for path in (f"'{owner}/*'", "'common/*'", "'Makefile'", "'.node-version'",
+                             "'go.work*'", "'.github/*'", "'scripts/ci/*'", "'scripts/test/module-gate*'"):
+                    self.assertIn(path, block)
+                self.assertEqual(block.count("if: steps.selection.outputs.run == 'true'"), 3)
+                self.assertIn('node-version-file: .node-version', block)
+                self.assertIn(f'go-version-file: {owner}/backend/go.mod', block)
+                self.assertIn(f'{owner}/backend/go.sum', block)
+                self.assertIn('common/go.sum', block)
+                self.assertIn('selected: ${{ steps.selection.outputs.run }}', block)
+                self.assertIn('status: ${{ job.status }}', block)
 
     def test_system_cleanup_declares_its_real_hosted_consumer_inputs(self) -> None:
         repository = SCRIPT.resolve().parents[2]

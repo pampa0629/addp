@@ -74,6 +74,62 @@ jobs:
           selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
+  transfer-go-ci-runner:
+    name: Transfer Go CI runner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select Transfer Go CI runner
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "Transfer Go CI runner" \
+            'transfer/*' \
+            'common/*' \
+            'Makefile' \
+            '.node-version' \
+            'go.work*' \
+            '.github/*' \
+            'scripts/ci/*' \
+            'scripts/test/module-gate*'
+
+      - name: Set up Node.js
+        if: steps.selection.outputs.run == 'true'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+
+      - name: Set up Go
+        if: steps.selection.outputs.run == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: transfer/backend/go.mod
+          cache-dependency-path: |
+            transfer/backend/go.sum
+            common/go.sum
+
+      - name: Run Transfer Go T1
+        if: steps.selection.outputs.run == 'true'
+        run: make test-module MODULE=transfer GO_ONLY=1
+
+      - name: Summarize Transfer Go CI runner
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Transfer Go CI runner
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
+
   execution-online-ci-runner:
     name: Execution online CI runner
     runs-on: ubuntu-24.04
