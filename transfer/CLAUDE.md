@@ -403,7 +403,7 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 
 上述日常观察曾记录仅创建且无 execute 的账号看到“立即执行一次”（`create-only-recheck-review.png`），实际任务 `51` 为手动且执行记录为空。修复提交 `90fbcfc16bac188ebfc72f6b1629c9940d7ae8d8` 仅含本文件、向导两个步骤与状态、中英词条和导航回归，共七个文件；未改 Backend／API、权限清单或账号授权。调度选项、确认摘要及警告与创建后实际启动分支共用响应式 `transfer.task.execute` 事实：无执行权或编辑保存显示“仅保存任务／本次仅保存任务，不会自动执行”；有执行权且无 Cron 的新建保持立即执行，Cron 保留表达式且不在创建后立即启动。创建落点及历史栈规则保持原分支。
 
-归档位于 `/tmp/addp-transfer-execution-hint-20261102/`：`evidence.json` 的 SHA-256 为 `dfe356254c292e44468e30a8a88f2ac13b93e4a8157e570c16701ed1a77263cd`，`sha256.json` 覆盖 18 份日志及元数据。本会话校验全部哈希、七个提交文件及代码分支，并核对下列归档结果，没有重跑门禁或查询其他 CI。`red.log` 保留修正前 8 项失败复现，与修正后的通过结果分开认定。
+修复与 CI 原件持久归档于 `/Users/pampa/.codex/artifacts/addp/transfer-execution-hint-20261102/fix-ci/`：`evidence.json` 的 SHA-256 为 `dfe356254c292e44468e30a8a88f2ac13b93e4a8157e570c16701ed1a77263cd`，`sha256.json` 覆盖 18 份日志及元数据。本会话校验全部哈希、七个提交文件及代码分支，并核对下列归档结果，没有重跑门禁或查询其他 CI。`red.log` 保留修正前 8 项失败复现，与修正后的通过结果分开认定。
 
 本地 `make test-transfer-frontend` 通过 131 项单元、60 项浏览器及构建；导航回归 24 项，新增 10 项覆盖中英文、standalone／iframe、有无执行权和 Cron，并强化有执行权的编辑保存断言。回归核对实际 POST 与 `/start` 是否出现，继续拒绝仅创建账号的任务读取。`make test-module MODULE=transfer GO_ONLY=1`、`make test-transfer-postgres`（19 个主测试，零失败／跳过）及 `make test-frontend-ci-registration`（27 项、21 个前端）通过。
 
@@ -426,9 +426,11 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 
 结束时已正常撤销临时角色并结束租户访问，零个生效角色、状态已结束，Safari 刷新回登录页。原已结束账号没有重新启用；未修改其他账号、共享角色或资源授权，未重启服务。任务 `52`／`53`、任务 `52` 的一次执行及新 PG 目标的 3 条写入均保留审阅，未删除业务任务或数据；仅创建分支的 MySQL 目标只是定义，未独立查询物理表是否存在，不宣称零残留。前述任务 `17`／`18`／`51` 对应修正前页面，不能套作本轮新文案证据。
 
-最终原件位于 `/tmp/addp-transfer-execution-hint-20261102/console-real/`：18:28 检查点 `report.json` 的 SHA-256 为 `676d0aaa4ea3235203f99797ac2754c68ec3aebebf7f9587beaded6fd3b69417`，`sha256sums.txt` 覆盖 36 份原件，本会话逐项校验并核对页面、权限、网络／日志、执行和访问结束事实。此前 17:54 部分检查点（SHA-256 `c4a05c691935d6d97b90d1041cdcd5bb515671515e2e5bb67085c971c83d0405`）的 12 份冻结原件仍按当时范围保留；修复阶段 `evidence.json` 的 `real_console_hint_retested:false` 也只表示当时状态，由最终报告补充，不改写旧时间点事实。
+最终原件持久归档于 `/Users/pampa/.codex/artifacts/addp/transfer-execution-hint-20261102/console-real/`：18:28 检查点 `report.json` 的 SHA-256 为 `676d0aaa4ea3235203f99797ac2754c68ec3aebebf7f9587beaded6fd3b69417`，`sha256sums.txt` 覆盖 36 份原件，本会话逐项校验并核对页面、权限、网络／日志、执行和访问结束事实。此前 17:54 部分检查点（SHA-256 `c4a05c691935d6d97b90d1041cdcd5bb515671515e2e5bb67085c971c83d0405`）的 12 份冻结原件在同一归档根目录的 `console-owner-checkpoint/` 按当时范围保留；修复阶段 `evidence.json` 的 `real_console_hint_retested:false` 也只表示当时状态，由最终报告补充，不改写旧时间点事实。
 
-五个产品前端文件最终逐字节匹配修复提交 `90fbcfc16bac188ebfc72f6b1629c9940d7ae8d8`；System／Gateway／Meta／Transfer 的 Ready 报告均为 `39059d2ed2d711b992947c1debee6872a0d60578`，前后端不是同一构建版本。最终 `acceptance_complete=true` 仅指本轮中文日常 Console 中“有执行权的新建”与“仅创建且无 Cron”两分支；英文、编辑和 Cron 仍依赖上述自动化证据，不计这些分支的实机通过，也不计同 SHA 隔离 T4／Hosted 或完整产品通过。未重跑 CI；上述 Platform consistency 和模块聚合失败保持原判定，临时证据不保证长期留存。
+本轮沿用仓库外本机持久归档方式，66 份证据原件和两份原始清单复制后逐字节及 SHA-256 校验一致；根清单 `sha256.json` 登记 68 份文件，SHA-256 为 `1206443ba51c315438a1b09214aa3d2678507c0c1b193da7506e09f5daaa2267`，目录权限 0700、文件权限 0600。未新增长期文档或脚本，未归档凭据目录或浏览器会话状态；后续复核不依赖 `/tmp` 原件。
+
+五个产品前端文件最终逐字节匹配修复提交 `90fbcfc16bac188ebfc72f6b1629c9940d7ae8d8`；System／Gateway／Meta／Transfer 的 Ready 报告均为 `39059d2ed2d711b992947c1debee6872a0d60578`，前后端不是同一构建版本。最终 `acceptance_complete=true` 仅指本轮中文日常 Console 中“有执行权的新建”与“仅创建且无 Cron”两分支；英文、编辑和 Cron 仍依赖上述自动化证据，不计这些分支的实机通过，也不计同 SHA 隔离 T4／Hosted 或完整产品通过。未重跑 CI；上述 Platform consistency 和模块聚合失败保持原判定。本机持久归档不是 GitHub Artifact 或跨主机备份，不扩展原验收范围。
 
 ## 相关文档
 
