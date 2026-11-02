@@ -4918,6 +4918,38 @@ def validate_vector_zonal_percentile(repository: Path, registered: set[str]) -> 
         raise RegistrationError('zonal percentile oracle must remain independent')
 
 
+SAMPLE_POINTS_REQUIRED = {'business/scripts/online-raster-sample-points-fixture.py': ('NFSExport', 'source_arrays', 'Decimal.from_float', 'context.prec=5000', 'def in_cell', 'cross==0 and i in (1,2)', 'def oracle_scope', 'source_files', 'fixture_sha256', 'GetNoDataValueAsInt64', 'GetNoDataValueAsUInt64', 'verify_vector', 'shape.equals_exact(wanted_shape,0)', 'validate_properties', 'np.array_equal(band.ReadAsArray(),values,equal_nan=True)', 'archive_files', 'archived_oracle', 'oracle cache became writable', 'runtime_workspaces_removed', "with state.open('xb')"), 'scripts/test/raster-sample-points-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'remaining()', 'budget != 600', 'full_checks != 712', 'len(cases) != 16', 'len(failures) != 36', 'physical_calls != 53', 'current(execution', 'lineage.collect', 'lineage.verify_archive', 'base.validate_scan', 'vector_persistence.validate_item', 'validate_preview', 'target_metadata_after != target_metadata_before','source_metadata_after != before', "for language in ('zh-cn', 'en')", 'query language rewrote stored failure', 'failed execution added scan', 'failed execution added derived lineage', "physical_runner(repository, env, 'cleanup-oracle'", 'archived_gpkgs'), 'scripts/test/online-hosted-raster-sample-points-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', 'online_raster_lineage.py prepare', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online-raster-sample-points-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'engines/geopython-workflow/test_online_sample_points_fixture.py': ('test_sample_hosted_sixteen_complete_gpkgs_and_raw_archive', 'test_sample_hosted_thirty_six_exact_failures_no_output_or_workspace', 'test_sample_hosted_real_corruption_rejected', 'test_sample_hosted_archive_never_repairs', 'test_sample_hosted_oracle_does_not_call_product_inverse_or_reader', 'test_sample_hosted_worker_stdin_scope_poison_and_cleanup'), 'scripts/test/raster-sample-points-persistence-online_test.py': ('test_full_matrix_16_success_36_failures_712_checks_and_cleanup', 'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection', 'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken', 'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced'), 'Makefile': ('test_online_sample_points_fixture.py', 'test-raster-sample-points-online-runner', 'scripts/test/raster-sample-points-persistence-online_test.py', 'test_sample_points_requires_exact_gpkg_matrix_budget_and_regressions')}
+
+def validate_sample_points(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-sample-points-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-sample-points-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-sample-points-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-sample-points-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('point sampling requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_sample_points_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('point sampling Native omitted from standard recipe')
+    for relative, fragments in SAMPLE_POINTS_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('point sampling strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-sample-points-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES')}
+    expected_cases = {'base.gpkg': ('values.tif', 'points.gpkg', 'direct'), 'boundaries.gpkg': ('values.tif', 'edges.gpkg', 'direct'), 'rotated.gpkg': ('rotated.tif', 'rotated-points.gpkg', 'direct'), 'geographic.gpkg': ('geographic.tif', 'geographic-points.gpkg', 'direct'), 'west-south.gpkg': ('west-south.tif', 'west-south-points.gpkg', 'direct'), 'band-two.gpkg': ('values.tif', 'band-points.gpkg', 'direct'), 'coverage.gpkg': ('coverage.tif', 'coverage-points.gpkg', 'direct'), 'int64.gpkg': ('int64.tif', 'integer-points.gpkg', 'direct'), 'uint64.gpkg': ('uint64.tif', 'integer-points.gpkg', 'direct'), 'duplicates.gpkg': ('values.tif', 'duplicate-points.gpkg', 'direct'), 'cross-block.gpkg': ('large.tif', 'large-points.gpkg', 'direct'), 'classified.gpkg': ('values.tif', 'points.gpkg', 'classify'), 'calculated.gpkg': ('values.tif', 'points.gpkg', 'calculate'), 'all-nodata.gpkg': ('invalid.tif', 'inside-points.gpkg', 'direct'), 'all-outside.gpkg': ('values.tif', 'outside-points.gpkg', 'direct'), 'empty.gpkg': ('values.tif', 'empty-points.gpkg', 'direct')}
+    expected_failures = ('band_zero', 'band_negative', 'band_high', 'band_boolean', 'band_string', 'band_null', 'band_list', 'band_object', 'different_crs', 'multipoint', 'line', 'polygon', 'collision_value', 'collision_status', 'alpha', 'inexact_int64', 'inexact_uint64', 'missing_grid')
+    if (any(len(nodes) != 1 for nodes in actual.values()) or repr(ast.literal_eval(actual['CASES'][0])) != repr(expected_cases)
+        or repr(ast.literal_eval(actual['FAILURES'][0])) != repr(expected_failures)): raise RegistrationError('point sampling fixed 16/36 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', '_sample_point_groups', 'gdal.InvGeoTransform', 'raster_sample_points(')):
+        raise RegistrationError('point sampling oracle must remain independent')
+
+
+
 VECTOR_ZONAL_WEIGHTED_REQUIRED = {'scripts/test/online-hosted-vector-zonal-weighted-gate.sh': ('start_online_geopython_runtime',
                                                               '--mount',
                                                               '--suite raster-workflow',
@@ -6350,6 +6382,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_zonal_weighted(repository, registered)
     validate_raster_zonal_weighted_stddev(repository, registered)
     validate_vector_zonal_percentile(repository, registered)
+    validate_sample_points(repository, registered)
     validate_vector_zonal_weighted(repository, registered)
     validate_vector_zonal_weighted_stddev(repository, registered)
     validate_vector_zonal_area_weighted(repository, registered)
