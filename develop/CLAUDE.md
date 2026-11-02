@@ -277,6 +277,8 @@ Develop 只对已持久化且可重复使用的 `dev_tasks.dev_type=query|workfl
 
 ## 常见开发场景
 
+以下请求中的 `8185` 是 Develop Backend 的开发首选端口，须按启动输出和 `.dev-state/ports.env` 替换为实际地址；公开入口另按[端口规范](../docs/spec/addp端口分配.md#前端-docker-端口规则)确认。使用当前有权调用相应入口的 User Bearer，任务定义 ID 与 execution UUID 分别取自对应响应，不沿用示例数字。专业读取范围见[本人执行读取](#专业执行结果读取)；保存任务、创建 execution 或 HTTP 请求成功均不代表业务执行完成。
+
 ### 场景 1：执行 SQL 查询
 
 ```bash
@@ -379,21 +381,21 @@ curl -X POST http://localhost:8185/api/v1/develop/task-definitions/123/execute \
 
 ### 场景 3：调试工作流执行失败
 
+先按[本人专业读取权限](#专业执行结果读取)定位失败 execution，再读取该轮的受控诊断；`<execution_id>` 使用真实 UUID，不使用任务定义 ID：
+
 ```bash
-# 1. 查看失败的执行记录
+# 1. 查看本人可读的失败执行
 curl -H "Authorization: Bearer <token>" \
   "http://localhost:8185/api/v1/develop/executions?status=failed&page=1&page_size=10"
 
-# 2. 查看详细错误信息
+# 2. 查看同一 execution 的详情与受控诊断
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8185/api/v1/develop/executions/123
-
-# 3. 查看 Develop 后端日志
-tail -f logs/develop-backend.log | grep "execution_id=123"
-
-# 4. 检查 GeoPython Workflow 运行时日志（如果是工作流错误）
-tail -f logs/geopython-workflow-engine.log
+  "http://localhost:8185/api/v1/develop/executions/<execution_id>"
 ```
+
+Develop 模块正文按[日志与 PID 排查](../scripts/docs/启动脚本使用指南.md#日志与-pid)定位对应实例，本地受控源为 `logs/runtime/develop/<instance_id>/*.jsonl`。System 正文查询另需 Platform 上下文和 `platform.module_log.read`，执行详情读取权不授予模块正文访问权；身份核验、可信来源和敏感信息保护沿[日志正文规范](../docs/spec/addp模块服务运行日志规范.md#51-api-与授权)，不从目录存在推定可信身份或日志已经送达。
+
+GeoPython Workflow 的开发启动输出仍使用 `logs/geopython-workflow-engine.log`，按[Runtime 运行说明](../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md#本地开发)核对；它与 Develop 实例正文分别定位。日志、readiness 和执行状态各按其实际范围判断，真实 Runtime 调用、业务产物及故障恢复须独立验收，不能用有日志或进程存活代替。
 
 ## 注意事项
 
@@ -444,25 +446,25 @@ GeoPython Workflow 运行时在内存中处理空间数据（GeoDataFrame）：
 
 ### 修改 Develop 后端代码后
 
+先按[Develop 验证入口](../docs/spec/configuration/执行与模块策略.md#develop-验证入口与证据边界)执行匹配改动范围的标准门禁；仅测试或构建不要求重启开发服务。需要应用新版进行运行验证时，由用户在自己的终端、从仓库根目录执行：
+
 ```bash
-# 1. 重启 Develop 后端服务
 bash scripts/dev/restart.sh -develop
-
-# 2. 查看启动日志
-tail -f logs/develop-backend.log
-
-# 3. 测试 API
-curl -H "Authorization: Bearer <token>" \
-  http://localhost:8185/health/ready
 ```
 
+Swagger 预检、生命周期锁、停止失败不得继续准备或启动、进程归属与局部范围统一见[启动与重启边界](../scripts/docs/启动脚本使用指南.md#启动与重启边界)及[停止与进程归属](../scripts/docs/启动脚本使用指南.md#停止与进程归属)。`common/` 变更需要通过重启进行运行验收时，由用户在终端执行 `./scripts/dev/restart.sh -all`；不能用单模块重启代表共享变更已在所有进程生效，完整时序沿[生命周期规范](../docs/spec/addp开发服务生命周期与构建身份规范.md)。
+
+重启后按[失败排查](#场景-3调试工作流执行失败)核对对应实例及 Runtime 输出，实际地址取自本次启动结果。`/health/ready` 只证明 Backend 的就绪检查结果，不能代替当前用户权限、执行终态、Runtime 调用或业务结果验收。
+
 ### 添加新算子到工作流编辑器
+
+Runtime 和 Adapter 的职责及派生规则见[算子发现服务](#算子发现服务)。先完成相关 owner 的标准验证；需要应用修改时，由用户按[显式 Runtime 启停说明](../scripts/docs/启动脚本使用指南.md#显式启动-runtime)操作，Runtime 与 Develop 分别按变更范围选择，不由算子发现请求自动重启。
 
 ```bash
 # 1. 在对应 Workflow Runtime 中添加算子实现和 Runtime Operator Spec
 # 2. 确认 /api/operators 的 parameters[] 只包含真实运行时参数
 # 3. 如果算子需要 locator 或目标资源选择，在 Develop Adapter Spec registry 中注册 Public Operator Spec 和派生规则
-# 4. 重启对应 Workflow Runtime；修改了 Develop adapter registry 时同时重启 Develop
+# 4. 需要运行验证时，由用户重启对应 Workflow Runtime；修改 Develop adapter registry 时再重启 Develop
 
 # 5. 前端按工作流引擎实例调用算子发现 API 获取新算子
 curl -H "Authorization: Bearer <token>" \
@@ -477,6 +479,8 @@ curl -H "Authorization: Bearer <token>" \
 - **工作流计算引擎接口规范** - [docs/spec/addp工作流计算引擎接口规范.md](../docs/spec/addp工作流计算引擎接口规范.md)
 - **System 模块说明** - [system/CLAUDE.md](../system/CLAUDE.md)
 - **共享数据库桥接** - `common/dbbridge`
+- [启动脚本指南](../scripts/docs/启动脚本使用指南.md) - 启停边界、进程归属与实例日志排查
+- [模块服务运行日志规范](../docs/spec/addp模块服务运行日志规范.md) - 正文来源、独立读取授权与验证范围
 
 ### 固定目标写入契约
 

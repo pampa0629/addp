@@ -83,7 +83,7 @@ Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Not
 
 ### 工作流执行失败？
 
-检查错误日志：`tail -f logs/develop-backend.log`，或查看 [CLAUDE.md#场景3：调试工作流执行失败](./CLAUDE.md#场景-3调试工作流执行失败)
+先定位本人有权读取的失败 execution，查看[失败排查](./CLAUDE.md#场景-3调试工作流执行失败)，分别核对受控诊断、Develop 实例正文与 Runtime 输出；执行读取权和模块正文授权独立判断。启停或注册失败另见[启动脚本排查](../scripts/docs/启动脚本使用指南.md#排查失败)。
 
 ### 内存不足错误？
 
