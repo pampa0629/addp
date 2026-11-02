@@ -83,7 +83,9 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
     checks.push('exclusive_workspace_tabs')
 
     phase = 'create_picker'
-    await system.getByTestId('authorization-target-mode').getByRole('radio', { name: '精确数据项（本次选择）', exact: true }).check()
+    const targetModes = system.getByTestId('authorization-target-mode')
+    await targetModes.getByText('精确数据项（本次选择）', { exact: true }).click()
+    await expect(targetModes.getByRole('radio', { name: '精确数据项（本次选择）', exact: true })).toBeChecked()
     const selectionTree = system.getByTestId('approval-resource-tree')
     await selectionTree.getByRole('textbox').fill('metric_people')
     await selectionTree.getByRole('checkbox', { name: 'metric_people', exact: true }).locator('..').click()
@@ -131,7 +133,9 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
     }, { recipient_type: 'user', recipient_id: binding.principal_id })
     expect(rows.total).toBe(1)
     expect(rows.data[0].inspection).toMatchObject({ account_id: binding.principal_id, reason: 'grant', rule_covered: true,
-      sources: [{ request_id: binding.grant_id, recipient_type: 'user', recipient_id: binding.principal_id }], denies: [] })
+      sources: [{ request_id: binding.grant_id, recipient_type: 'user', recipient_id: binding.principal_id,
+        action: 'read', catalog_path: rows.data[0].catalog_path, grant_count: 1 }] })
+    expect(rows.data[0].inspection).not.toHaveProperty('denies')
     await list.getByTestId('account-grant-expand').click()
     await expect(system.getByTestId('account-grant-sources')).toContainText(process.env.ADDP_ONLINE_TEST_USER_USERNAME)
     checks.push('recipient_type_and_account_filters')
