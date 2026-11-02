@@ -590,7 +590,7 @@ class EngineSourceCommandTest(unittest.TestCase):
         for folder in ("scripts/test", "scripts/utils", "scripts/infra/postgres-observation", "business/postgres"):
             (self.repo / folder).mkdir(parents=True)
         for relative in ("scripts/test/platform-node-metrics-fixture.py", "scripts/utils/deployment-inventory.py",
-                         "scripts/utils/private-state.py", "scripts/utils/deployment-docker.py", "scripts/infra/redis-metrics.py",
+                         "scripts/utils/private-state.py", "scripts/utils/deployment-docker.py", "scripts/utils/metrics-source.py", "scripts/infra/redis-metrics.py",
                          "scripts/infra/postgres-observation/authentication.py", "scripts/infra/postgres-observation/source.py",
                          "scripts/infra/postgres-observation/lifecycle.py", "scripts/infra/postgres-observation/000002_lifecycle.sql",
                          "business/postgres/pg_hba.conf"):
