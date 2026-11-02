@@ -204,7 +204,11 @@ Query Execution Service 使用 PostgreSQL AST 验证关系作用域，只把与�
 
 ### 查询全量导出
 
-查询结果区必须区分有限预览与全部结果导出：预览只用于有界展示，不提供“下载预览”旁路；单 Engine 表格查询 execution 成功后，只有当前实例声明 compute.query.read_session 且支持该查询语言时才启用“导出全部结果”，不以预览是否截断为前提；缺少能力时禁用入口并提示暂不支持完整查询结果导出。后端创建前通过 System Runtime Descriptor 复核同一实例能力，缺少能力返回 422/query_export_unsupported，描述读取失败仍为 503，不先签发执行授权或创建导出会话。DuckDB 联邦查询在具备统一流式查询 Provider 前不得显示该入口。完整导出由 `POST /api/v1/develop/executions/{execution_id}/exports` 从该 execution 冻结的查询内容、有效值参数、全部有效关系输入、Engine 与结果字段构造只读查询快照，再通过 Common 强类型 Transfer Client 创建无任务定义的 bounded `sync` execution；关系输入必须按参数名稳定排序写入 `source.query.inputs[]`，供 Transfer 校验和记录完整执行血缘，不得只挑一个输入或重新解析 SQL 推断资源。Develop 使用 Common 导出会话能力把产物暂存到 infra，在 Workbench 内轮询并下载到本地；不选择业务存储、不触发 Meta scan、不保存 Transfer task ID。格式、文件名、状态与下载交互必须复用 `common-frontend` 的唯一导出组件。
+查询结果区必须区分有限预览与全部结果导出：预览只用于有界展示，不提供“下载预览”旁路；单 Engine 表格查询 execution 成功后，只有当前实例声明 compute.query.read_session 且支持该查询语言时才启用“导出全部结果”，不以预览是否截断为前提；缺少能力时禁用入口并提示暂不支持完整查询结果导出。后端创建前通过 System Runtime Descriptor 复核同一实例能力，缺少能力返回 422/query_export_unsupported，描述读取失败仍为 503，不先签发执行授权或创建导出会话。DuckDB 联邦查询在具备统一流式查询 Provider 前不得显示该入口。
+
+`POST /api/v1/develop/executions/{execution_id}/exports` 使用成功 execution 的只读快照，通过 Common Transfer Client 创建无任务定义的 bounded `sync`。快照字段、全部关系输入的稳定排序、同计划 ReadSet 校验和流式读取统一见[查询导出契约](../docs/spec/tasks/模块任务契约.md#develop-开发任务)，不得重新解析 SQL 或只记录单个输入。
+
+Develop 使用 Common 导出会话在 Workbench 轮询并下载 infra 暂存产物，不选择业务存储、不触发 Meta scan、不保存 Transfer task ID。格式、文件名、状态与下载复用 `common-frontend` 的唯一导出组件；当前 User Bearer 与交付前保护复核见[角色选择与独立导出](#角色选择与独立导出)。
 
 ### 执行输出与运行监督
 
