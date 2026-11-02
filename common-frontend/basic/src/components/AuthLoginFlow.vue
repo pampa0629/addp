@@ -60,8 +60,11 @@
       <div v-else class="auth-login-contexts">
         <div class="auth-login-step-title">
           <el-icon><OfficeBuilding /></el-icon>
-          <span>{{ t('auth.login.contextTitle') }}</span>
+          <span>{{ t(hasPlatformContext ? 'auth.login.platformSelectionTitle' : 'auth.login.contextTitle') }}</span>
         </div>
+        <p class="auth-login-context-description">
+          {{ t(hasPlatformContext ? 'auth.login.platformSelectionDescription' : 'auth.login.contextDescription') }}
+        </p>
         <el-radio-group v-model="selectedContextIndex" class="auth-login-context-list">
           <el-radio
             v-for="(context, index) in selection.contexts"
@@ -89,7 +92,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Key, Lock, OfficeBuilding, Platform, User } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -109,6 +112,7 @@ const credentials = reactive({ username: '', password: '' })
 const mfa = reactive({ challengeToken: '', code: '' })
 const selection = reactive({ ticket: '', contexts: [] })
 const selectedContextIndex = ref(null)
+const hasPlatformContext = computed(() => selection.contexts.some(context => context.type === 'platform'))
 
 async function submitCredentials() {
   if (!credentials.username.trim() || !credentials.password) {
@@ -250,6 +254,13 @@ function contextLabel(context) {
 
 .auth-login-primary {
   width: 100%;
+}
+
+.auth-login-context-description {
+  margin: 0 0 20px;
+  color: var(--addp-text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .auth-login-context-list {
