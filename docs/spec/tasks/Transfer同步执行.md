@@ -495,7 +495,7 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 - 首次扫描使用 task 私有持久化 claim：`running(claim_token, lease_until, attempt+1) -> success|failed`，worker 恢复或并发实例不得重复提交；已失败或过期 running claim 由后续 runtime session 接管。
 - Meta 提交失败不得中断 CDC/Kafka 数据面，失败状态由后续 runtime session 重试或由用户手动刷新。
-- claim TTL 统一使用部署配置 `TRANSFER_META_SCAN_CLAIM_TTL`，并且必须大于 Meta client 的 HTTP 超时。
+- claim TTL 统一使用[部署配置](../configuration/Kafka与Capture部署.md#meta-补扫-claim-租期) `TRANSFER_META_SCAN_CLAIM_TTL`，并且必须大于 Meta client 的 HTTP 超时。
 
 这里是 task 级首次扫描 claim；request 级结构审批补扫的接管入口与失败终态另见[审批补扫 claim](Transfer数据库CDC.md#审批补扫-claim-接管与失败)，不得互换恢复规则。
 
