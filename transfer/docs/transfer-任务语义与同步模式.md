@@ -347,7 +347,7 @@ Schema change 公共观测只通过触发阻塞的 execution metadata 投影。M
 
 - bounded execution 成功写入后扫描一次。
 - 普通业务 Kafka continuous 目标首次成功建立结构后提交一次目标表的精确 deep scan，不等待任务结束。
-- 数据库 CDC 通过同一 generation-owned 单分区 data topic 中的 Debezium `Initial Snapshot` 通知推进目标 `skip`；只有严格匹配当前 connector 的 `COMPLETED` 通知在目标 ledger 和 Transfer position 提交后才触发首次扫描，空源表同样触发，不依赖数据事件或 `source.snapshot=last`。
+- 数据库 CDC 在当前 generation 的 `COMPLETED` 所在 offset 成功提交后触发首次扫描；同分区通知、connector 身份校验和目标 `skip` 语义见[事件与通知契约](../../docs/spec/tasks/Transfer数据库CDC.md#事件编码与初始快照通知)，空源表与提交条件、claim／失败恢复见[continuous 契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)。
 - continuous 首次扫描使用持久化 claim，避免 recovery、resume 或并发实例重复提交；失败或过期 claim 由后续 runtime session 重新领取。
 - 人工 additive schema migration 成功后再次扫描。
 - 普通 DML、单条事件和单个 batch 不触发扫描。

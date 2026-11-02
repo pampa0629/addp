@@ -4,7 +4,7 @@
 
 定义 PostgreSQL / MySQL / Oracle CDC 的配置、身份、捕获、位点、结构审批与恢复边界。通用连续同步规则见[Transfer 同步执行](Transfer同步执行.md)。
 
-阅读导航：[契约与配置](#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)、[数据面与捕获约束](#数据面与捕获约束)、[源类型与空间捕获](#源类型与空间捕获)、[Oracle 目标应用](#oracle-目标应用约束)、[Schema 漂移与审批](#schema-漂移审批与补扫)、[补扫 claim](#审批补扫-claim-接管与失败)、[显式恢复](#审批落库与显式恢复)、[捕获生命周期](#捕获资源与生命周期)、[审批验收边界](#审批补扫验证与验收边界)。
+阅读导航：[契约与配置](#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)、[数据面与捕获约束](#数据面与捕获约束)、[事件编码与快照通知](#事件编码与初始快照通知)、[源类型与空间捕获](#源类型与空间捕获)、[Oracle 目标应用](#oracle-目标应用约束)、[Schema 漂移与审批](#schema-漂移审批与补扫)、[补扫 claim](#审批补扫-claim-接管与失败)、[显式恢复](#审批落库与显式恢复)、[捕获生命周期](#捕获资源与生命周期)、[审批验收边界](#审批补扫验证与验收边界)。
 
 ## Transfer 数据库 CDC v1 契约（PostgreSQL/MySQL/Oracle）
 
@@ -62,12 +62,42 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 2. 源表必须有稳定、非空且捕获期间不可修改的主键；Debezium record key 必须完整包含该复合主键。源主键经 `field_mapping` 映射后必须与 `target.policy.keys` 一一对应。
 3. `bootstrap` 第一版只允许 `initial_snapshot`，对应 Debezium `snapshot.mode=initial`。Debezium 负责一致性 snapshot、日志起点和 snapshot/stream 无空洞交接；Transfer 只按 Infra Kafka 顺序消费，不另起 bounded snapshot 路线。
 4. 初次 bootstrap 的目标表必须不存在，由本任务按固定字段映射创建。第一版不接管、清空或合并已有目标表，避免 snapshot upsert 无法识别目标残留行。
-5. Debezium payload 固定使用无 schema wrapper 的 JSON envelope；key/value converter 的 `schemas.enable=false`，`tombstones.on.delete=false`。为消除 schemaless JSON 的类型歧义，connector 同时固定 `decimal.handling.mode=string` 和 `time.precision.mode=connect`，MySQL 额外固定 `binary.handling.mode=base64`。Oracle 普通源表字段中的 `CLOB`、`NCLOB`、`BLOB`、`BFILE`、`LONG`、`LONG RAW`、`XMLTYPE` 和原生 `JSON` 必须在 capture plan 冻结、创建 generation 之前明确拒绝；Oracle Spatial generation-owned 镜像表按冻结维度使用 XY 的 WKB `BLOB` 或 XYZ 的 GeoJSON `CLOB` 作为内部载体，不代表开放普通业务 LOB。内部 CDC data topic 第一版固定为单 partition。connector 同时固定 `notification.enabled.channels=sink`、`notification.sink.topic.name=<当前 generation data topic>`；数据事件和 `Initial Snapshot` 通知必须进入同一分区，以 Kafka offset 顺序作为快照数据先于 `COMPLETED` 的唯一时序事实。
-6. Debezium `op=r` 归一化为 `snapshot` 并按 upsert 应用，`op=c|u` 归一化为 `upsert`，`op=d` 使用 Kafka record key 归一化为 `delete`。`Initial Snapshot` 的 `STARTED|IN_PROGRESS|TABLE_SCAN_COMPLETED|COMPLETED|SKIPPED` 通知归一化为 `skip`，必须严格校验通知字段、类型和当前 generation connector name；只有 `COMPLETED` 同时产生初始快照完成语义，`SKIPPED` 只表示 connector 重启时无需再次执行初始快照。未知或畸形通知、`op=t|m`、空 value tombstone、来源表身份不匹配和未知 op 均视为协议错误，不得静默推进 offset。
+5. envelope、字段编码与内部载体限制见[Envelope 与字段编码](#envelope-与字段编码)；单分区通知配置与顺序见[通知通道与时序](#初始快照通知通道与时序)。
+6. 数据事件与快照通知的归一化、完成判定见[事件语义](#事件归一化与快照完成判定)；未知或畸形输入按[协议错误与位点拒绝](#协议错误与位点拒绝)处理，不静默推进 offset。
 7. delete 只按映射后的稳定目标 key 执行物理行删除，不依赖 `before` 包含完整旧行。目标必须使用 `apply_mode=upsert_delete`，目标 `PartitionedTableChangeApplyProvider` 必须真实声明并实现 `operations=[upsert,delete,skip]` 后才可开放 CDC capability；`skip` 只推进目标 ledger，不写业务行。
 8. snapshot/upsert/delete 必须与目标 Provider 的业务库 apply ledger 在同一事务按 partition monotonic apply；PostgreSQL 使用 `addp_transfer.apply_positions`，MySQL 使用目标业务数据库内的 `_addp_transfer_apply_positions` InnoDB 私有表，Oracle 使用目标 schema 内的 `_ADDP_TRANSFER_APPLY_POSITIONS` 私有表。`transfer.sync_states` 继续保存 `kafka_offset/v1.next_offset`，目标提交后才允许以 runtime fencing + state version 做 CAS 推进。
 9. Kafka Connect offset 是捕获位点，回答源数据库日志已捕获到哪里；Transfer committed position 是消费位点，回答目标已应用到哪个 Infra Kafka offset。两者由各自 owner 管理，任何一方都不能代替另一方。
 10. PostgreSQL LSN、MySQL binlog file/position/GTID、Oracle SCN、事务 ID 和事件时间可以进入 ChangeEvent 诊断信息，但不得替代 Kafka partition offset，也不承诺把一个源数据库事务跨多行原子提交到目标；交付保证仍是 at-least-once + target monotonic apply。
+
+### 事件编码与初始快照通知
+
+阅读导航：[Envelope 与字段编码](#envelope-与字段编码)、[通知通道与时序](#初始快照通知通道与时序)、[事件归一化与完成判定](#事件归一化与快照完成判定)、[协议错误与位点拒绝](#协议错误与位点拒绝)、[首次扫描与验收边界](#初始快照通知与扫描验收边界)。
+
+#### Envelope 与字段编码
+
+- Debezium payload 固定使用无 schema wrapper 的 JSON envelope；key/value converter 的 `schemas.enable=false`，`tombstones.on.delete=false`。
+- 为消除 schemaless JSON 的类型歧义，connector 同时固定 `decimal.handling.mode=string` 和 `time.precision.mode=connect`，MySQL 额外固定 `binary.handling.mode=base64`。
+- Oracle 普通源表字段中的 `CLOB`、`NCLOB`、`BLOB`、`BFILE`、`LONG`、`LONG RAW`、`XMLTYPE` 和原生 `JSON` 必须在 capture plan 冻结、创建 generation 之前明确拒绝；Oracle Spatial generation-owned 镜像表按冻结维度使用 XY 的 WKB `BLOB` 或 XYZ 的 GeoJSON `CLOB` 作为内部载体，不代表开放普通业务 LOB。
+
+#### 初始快照通知通道与时序
+
+- 内部 CDC data topic 第一版固定为单 partition。
+- connector 同时固定 `notification.enabled.channels=sink`、`notification.sink.topic.name=<当前 generation data topic>`；数据事件和 `Initial Snapshot` 通知必须进入同一分区，以 Kafka offset 顺序作为快照数据先于 `COMPLETED` 的唯一时序事实。
+
+#### 事件归一化与快照完成判定
+
+- Debezium `op=r` 归一化为 `snapshot` 并按 upsert 应用，`op=c|u` 归一化为 `upsert`，`op=d` 使用 Kafka record key 归一化为 `delete`。
+- `Initial Snapshot` 的 `STARTED|IN_PROGRESS|TABLE_SCAN_COMPLETED|COMPLETED|SKIPPED` 通知归一化为 `skip`，必须严格校验通知字段、类型和当前 generation connector name；只有 `COMPLETED` 同时产生初始快照完成语义，`SKIPPED` 只表示 connector 重启时无需再次执行初始快照。
+
+#### 协议错误与位点拒绝
+
+- 未知或畸形通知、`op=t|m`、空 value tombstone、来源表身份不匹配和未知 op 均视为协议错误，不得静默推进 offset。
+
+#### 初始快照通知与扫描验收边界
+
+协议层的 `COMPLETED` 不代表 Meta 扫描已经完成。首次扫描仍须满足[continuous 契约](Transfer同步执行.md#transfer-continuous-sync-v1-契约)规定的目标 ledger 与 Transfer position 提交条件；空源表、首次扫描 claim、失败接管及不按普通 DML 重扫也由该契约维护。
+
+扫描的精确目标与父执行来源沿[生产来源契约](生产来源与产物扫描.md#生产执行与后台扫描的来源)，提交结果、权限与实际 Meta execution／目标事实的核对见[首次扫描结果说明](../../../transfer/docs/tables/tasks表.md#首次扫描的提交与结果核对)。通知接收、位点提交、扫描提交与扫描完成分别认定，实际固定版本、失败、清理及未覆盖范围见[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。
 
 ### 源类型与空间捕获
 
