@@ -1250,5 +1250,22 @@
     "noLocation": "No confirmed map location for this slice.",
     "unsupportedVariable": "Structure is available; this variable has no supported numeric 2D slice.",
     "failed": "Slice read failed"
+  },
+  "agent": {
+    "chat": {
+      "approval": {
+        "runTitle": "Confirm this task run",
+        "replaceWarning": "This run uses replace: target rows may be cleared before writing. Confirm the target and affected scope.",
+        "taskName": "Task name",
+        "source": "Source",
+        "target": "Target location and table",
+        "writePolicy": "Write policy",
+        "expiresAt": "Expires at",
+        "exactConfiguration": "View exact run configuration",
+        "approveRun": "Confirm run",
+        "rejectRun": "Reject run",
+        "decisionFailed": "Run confirmation did not complete. Check approval status instead of submitting another start."
+      }
+    }
   }
 }

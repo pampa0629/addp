@@ -38,6 +38,12 @@ func (r *TaskRepository) Create(task *models.TransferTask) error {
 // ClaimExecution atomically claims one idle task and creates its pending execution.
 // For incremental tasks it also advances the source-state fencing token.
 func (r *TaskRepository) ClaimExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, sourceIdentity string) (*models.TransferTask, *models.SyncState, error) {
+	return r.ClaimExecutionWithReview(ctx, taskID, tenantID, execution, sourceIdentity, nil)
+}
+
+// ClaimExecutionWithReview runs an owner review under the same task lock and
+// transaction as the ordinary claim. The review must not perform remote I/O.
+func (r *TaskRepository) ClaimExecutionWithReview(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, sourceIdentity string, review func(*gorm.DB, *models.TransferTask) error) (*models.TransferTask, *models.SyncState, error) {
 	var claimedTask models.TransferTask
 	var claimedState *models.SyncState
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -48,6 +54,11 @@ func (r *TaskRepository) ClaimExecution(ctx context.Context, taskID, tenantID ui
 		}
 		if claimedTask.Status == models.TaskStatusRunning {
 			return ErrTaskAlreadyRunning
+		}
+		if review != nil {
+			if err := review(tx, &claimedTask); err != nil {
+				return err
+			}
 		}
 		if strings.TrimSpace(sourceIdentity) != "" {
 			initial := models.SyncState{

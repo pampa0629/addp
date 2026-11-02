@@ -910,6 +910,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
             "tenant_id": 1,
             "token": "token",
             "agent_run_id": "run-1",
+            **({"platform_capability": "transfer.task.create"} if "transfer.task.create" in allowed_tool_names else {}),
         }
         with (
             patch("graph.factory.create_agent_tools", return_value=harness_tools(tools)),

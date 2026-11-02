@@ -41,6 +41,34 @@ const presentationI18n = createI18n({
 })
 
 describe('ADDP A2UI renderer', () => {
+  it('requests an inline owner decision only after a user click, without navigating', async () => {
+    const properties = { interactionId: '1b842c47-cdf4-4228-af6e-25bfbaa8609b', owner: 'transfer',
+      ownerInteractionId: '46ea0d75-b9bc-4b25-8d4a-441947081813', inlineDecision: true, openUrl: '',
+      requestFingerprint: 'a'.repeat(64), requestSummary: { name: 'reviewed-sync', config: {
+        source: { locator: 'addp://engine/1/path/Outdoor/Persons?type=collection&item_id=7' },
+        target: { parent_locator: 'addp://engine/2/path/outdoor?type=schema', name: 'persons_check', policy: { apply_mode: 'replace' } }
+      } } }
+    const wrapper = mount(A2UISurface, { props: { interactionDisabled: true, operations: [
+      { version: 'v0.9', createSurface: { surfaceId: 'inline-approval', catalogId: 'addp.catalog/v1' } },
+      { version: 'v0.9', updateComponents: { surfaceId: 'inline-approval', components: [{ id: 'root', component: 'ApprovalRequest', ...properties }] } }
+    ] }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-cn', messages: { 'zh-cn': zhCnMessages } })],
+      stubs: { 'el-button': ElButtonStub, 'el-alert': { props: ['title'], template: '<p>{{ title }}</p>' }, 'el-tag': SlotStub, 'el-icon': SlotStub } } })
+    expect(wrapper.text()).toContain('清空目标表')
+    expect(wrapper.text()).toContain('persons_check')
+    const approve = wrapper.findAll('button').find(button => button.text() === '确认运行')
+    expect(approve.attributes('disabled')).toBeDefined()
+    await approve.trigger('click')
+    expect(wrapper.emitted('action')).toBeUndefined()
+    await wrapper.setProps({ interactionDisabled: false })
+    await approve.trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('action')).toHaveLength(1))
+    expect(wrapper.emitted('action')[0][0]).toMatchObject({ name: 'owner.decide', context: {
+      owner: 'transfer', ownerInteractionId: properties.ownerInteractionId, requestFingerprint: properties.requestFingerprint, decision: 'approved'
+    } })
+    expect(wrapper.emitted('action').some(([action]) => action.name === 'owner.open' || action.name === 'interaction.submit')).toBe(false)
+    wrapper.unmount()
+  })
+
   it.each(['ClarificationChoice', 'ResourcePicker', 'ApprovalRequest'])('disables %s interaction submission without losing its content or readonly navigation', async component => {
     const interactionId = '1b842c47-cdf4-4228-af6e-25bfbaa8609b'
     const properties = component === 'ApprovalRequest'

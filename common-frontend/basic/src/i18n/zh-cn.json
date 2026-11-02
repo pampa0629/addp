@@ -1250,5 +1250,22 @@
     "noLocation": "本切片没有已确认的地图定位。",
     "unsupportedVariable": "此变量支持结构查看，暂不支持二维数值切片。",
     "failed": "切片读取失败"
+  },
+  "agent": {
+    "chat": {
+      "approval": {
+        "runTitle": "确认本次任务运行",
+        "replaceWarning": "运行将按 replace 策略清空目标表后写入，请确认目标和影响范围。",
+        "taskName": "任务名称",
+        "source": "源数据",
+        "target": "目标位置与表名",
+        "writePolicy": "写入策略",
+        "expiresAt": "过期时间",
+        "exactConfiguration": "查看完整运行配置",
+        "approveRun": "确认运行",
+        "rejectRun": "拒绝运行",
+        "decisionFailed": "运行确认未完成，请检查审批状态；不要重复提交启动。"
+      }
+    }
   }
 }

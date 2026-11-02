@@ -27,6 +27,7 @@ class AgentState(TypedDict):
     routed_skill: Optional[str]   # 技能名称；None 表示无需技能
     answer_context: Optional[str]   # 语义选择的受限回答依据，不是公开正文
     needs_platform_semantics: NotRequired[bool]
+    platform_capability: NotRequired[Optional[str]]
     reply_detail: NotRequired[str]  # 表达偏好，不改变业务目标或权限
     draft_catalog: NotRequired[List[Dict[str, str]]]
     draft_action: NotRequired[Optional[Literal["inspect", "create"]]]
@@ -48,6 +49,7 @@ class TaskContext(TypedDict):
     draft_arguments: NotRequired[Dict[str, Any]]  # 本次按身份恢复的原参数，仅临时输入；checkpoint 只存引用
     plan: NotRequired[List[Dict[str, str]]]  # 用户可见计划进度，不是业务事实
     resuming: NotRequired[bool]  # 服务端已恢复同一 Run 的正式 Interaction，非模型输入
+    platform_capability: NotRequired[str]  # 由正式目录核验的本次操作身份
 
 
 class RouteDecision(BaseModel):

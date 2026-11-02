@@ -33,3 +33,13 @@ export const resultRefAPI = {
 }
 
 export default agentClient
+
+// Browser User identity decides the owner review; no Agent backend or LLM
+// obtains a decision capability and this call never submits task execution.
+export const ownerApprovalAPI = {
+  decideTransfer(id, requestFingerprint, decision) {
+    return agentClient.post(`/transfer/run-approvals/${encodeURIComponent(id)}/decision`, {
+      request_fingerprint: requestFingerprint, decision,
+    })
+  },
+}

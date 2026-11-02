@@ -2,13 +2,24 @@
   <section class="approval-request">
     <div class="approval-header">
       <div>
-        <p class="approval-title">{{ t('agent.chat.approval.title') }}</p>
+        <p class="approval-title">{{ t(properties.inlineDecision ? 'agent.chat.approval.runTitle' : 'agent.chat.approval.title') }}</p>
         <p class="approval-owner">{{ properties.owner }} · {{ properties.ownerInteractionId }}</p>
       </div>
       <el-tag type="warning">{{ t('agent.chat.approval.pending') }}</el-tag>
     </div>
 
-    <dl class="approval-summary">
+    <template v-if="properties.inlineDecision">
+      <el-alert v-if="properties.requestSummary?.config?.target?.policy?.apply_mode === 'replace'" :closable="false" type="warning" :title="t('agent.chat.approval.replaceWarning')" />
+      <dl class="approval-summary">
+        <div><dt>{{ t('agent.chat.approval.taskName') }}</dt><dd>{{ properties.requestSummary?.name }}</dd></div>
+        <div><dt>{{ t('agent.chat.approval.source') }}</dt><dd>{{ properties.requestSummary?.config?.source?.locator }}</dd></div>
+        <div><dt>{{ t('agent.chat.approval.target') }}</dt><dd>{{ properties.requestSummary?.config?.target?.parent_locator }} / {{ properties.requestSummary?.config?.target?.name }}</dd></div>
+        <div><dt>{{ t('agent.chat.approval.writePolicy') }}</dt><dd>{{ properties.requestSummary?.config?.target?.policy?.apply_mode }}</dd></div>
+        <div><dt>{{ t('agent.chat.approval.expiresAt') }}</dt><dd>{{ formatTime(properties.expiresAt) }}</dd></div>
+      </dl>
+      <details><summary>{{ t('agent.chat.approval.exactConfiguration') }}</summary><pre class="approval-config">{{ JSON.stringify(properties.requestSummary, null, 2) }}</pre></details>
+    </template>
+    <dl v-else class="approval-summary">
       <div>
         <dt>{{ t('agent.chat.approval.workflowEngine') }}</dt>
         <dd>{{ properties.requestSummary?.workflow_engine_id || '-' }}</dd>
@@ -24,7 +35,11 @@
     </dl>
 
     <div class="approval-actions">
-      <el-button :disabled="submitting" @click="openOwner">
+      <template v-if="properties.inlineDecision">
+        <el-button type="primary" :disabled="interactionDisabled || submitting" :loading="submitting" @click="decide('approved')">{{ t('agent.chat.approval.approveRun') }}</el-button>
+        <el-button :disabled="interactionDisabled || submitting" @click="decide('rejected')">{{ t('agent.chat.approval.rejectRun') }}</el-button>
+      </template>
+      <el-button v-else :disabled="submitting" @click="openOwner">
         <el-icon><TopRight /></el-icon>
         {{ t('agent.chat.approval.openOwner') }}
       </el-button>
@@ -84,10 +99,23 @@ async function checkStatus() {
   }
 }
 
+async function decide(decision) {
+  if (submitting.value || interactionDisabled.value) return
+  submitting.value = true
+  try {
+    await props.context.dispatchAction({ event: {
+      name: 'owner.decide',
+      context: { owner: properties.value.owner, interactionId: properties.value.interactionId,
+        ownerInteractionId: properties.value.ownerInteractionId, requestFingerprint: properties.value.requestFingerprint, decision }
+    } })
+  } finally { submitting.value = false }
+}
+
 onUnmounted(() => subscription.unsubscribe())
 </script>
 
 <style scoped>
+.approval-config { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .approval-request {
   box-sizing: border-box;
   width: 100%;

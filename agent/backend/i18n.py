@@ -150,7 +150,11 @@ def transfer_creation_stopped(accept_language: str) -> str:
 
 
 _WORKSPACE_MESSAGES = {
-    'owner_approval_unavailable': {'zh-cn': 'Develop 审批状态暂时不可用', 'en': 'Develop approval status is temporarily unavailable'},
+    'owner_approval_forbidden': {'zh-cn': '当前身份或权限不能使用原运行确认，请重新核对后发起。', 'en': 'The current identity or permissions cannot use the original run review. Verify access before requesting another review.'},
+    'transfer_run_stopped': {'zh-cn': '运行提交流程已终止，请核对原审批和执行记录；未自动重试。', 'en': 'Run submission stopped. Check the original approval and execution; no automatic retry was performed.'},
+    'transfer_run_rejected': {'zh-cn': '你已拒绝本次运行，未提交启动。', 'en': 'You rejected this run. No start was submitted.'},
+    'transfer_run_result': {'zh-cn': '以下是 Transfer 返回的执行记录；pending 或 running 表示尚未完成，不代表同步成功。', 'en': 'Transfer returned this execution record. Pending or running is not successful completion.'},
+    'owner_approval_unavailable': {'zh-cn': '任务模块的审批状态暂时不可用', 'en': 'Task owner approval status is temporarily unavailable'},
     'invalid_request': {'zh-cn': '请求参数不合法', 'en': 'Invalid request parameters'},
     'session_deleted': {'zh-cn': '会话已删除', 'en': 'Session deleted'},
     'invalid_plan': {'zh-cn': '任务计划格式不合法', 'en': 'Invalid task plan'},
@@ -162,6 +166,27 @@ _WORKSPACE_MESSAGES = {
 
 def workspace_message(accept_language, key):
     return _WORKSPACE_MESSAGES[key][_language(accept_language or 'zh-cn')]
+
+
+def transfer_run_result(accept_language, result):
+    english = _language(accept_language or 'zh-cn') == 'en'
+    labels = {
+        'pending': ('已受理，等待执行，尚未同步完成', 'Accepted, awaiting execution; synchronization is not complete'),
+        'running': ('正在运行，尚未同步完成', 'Running; synchronization is not complete'),
+        'success': ('Transfer 记录的执行状态为成功', 'Transfer reports execution success'),
+        'failed': ('执行失败，请核对诊断及目标是否已变化', 'Execution failed; check diagnostics and possible target changes'),
+        'timeout': ('执行超时，请核对执行记录及目标影响', 'Execution timed out; check the execution and target effects'),
+        'cancelled': ('执行已取消，请核对目标影响', 'Execution cancelled; check target effects'),
+    }
+    status = labels[result['status']][1 if english else 0]
+    text = (f"{status}\n\nExecution: {result['execution_id']}\nTask: {result['task_id']}\nRead: {result['records_read']}; written: {result['records_written']}"
+            if english else f"{status}。\n\n执行 ID：{result['execution_id']}\n任务 ID：{result['task_id']}\n已读取：{result['records_read']}；已写入：{result['records_written']}")
+    diagnostic = result.get('diagnostic') or {}
+    if diagnostic.get('reason'):
+        text += ('\nReason code: ' if english else '\n原因代码：') + diagnostic['reason']
+    if diagnostic.get('target_change_possible'):
+        text += ('\nTarget data or structure may already have changed.' if english else '\n目标数据或表结构可能已经变化。')
+    return text
 
 
 def reply_preference_resume_error(language: str) -> str:

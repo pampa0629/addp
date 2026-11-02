@@ -477,6 +477,14 @@ elif args[:2] != ["volume", "ls"]:
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package migration", result.stderr)
 
+    def test_transfer_run_filter_requires_migration_owner(self):
+        result = self.run_gate(arguments=("--package", "migration", "--test", "transfer-run"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/migration -run ^TestTransferRunDelegationMigrationAgainstPostgres$", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "iam", "--test", "transfer-run"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --package migration", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

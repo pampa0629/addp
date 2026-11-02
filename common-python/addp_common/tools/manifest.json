@@ -1056,8 +1056,8 @@
     },
     {
       "name": "platform.capability.context",
-      "version": "1.0.0",
-      "description": "读取平台能力的概念、关系、操作前置条件及效果。首个能力是 Transfer 创建任务；定义不证明模块已部署、用户有权限或任务已执行。",
+      "version": "1.1.0",
+      "description": "读取平台能力的概念、关系、操作前置条件及效果。包括独立的 Transfer 创建、运行和执行观察；只读取已发布身份，定义不证明模块已部署、用户有权限或任务已执行。",
       "owner": "ontology",
       "risk": "read",
       "approval": {"mode": "none"},
@@ -1067,14 +1067,14 @@
       "result_ref": {"mode": "none"},
       "limits": {"max_bytes": 32768},
       "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
-      "input_schema": {"type": "object", "required": ["capability"], "properties": {"capability": {"const": "transfer.task.create", "type": "string"}}, "additionalProperties": false},
+      "input_schema": {"type": "object", "required": ["capability"], "properties": {"capability": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$", "maxLength": 128}}, "additionalProperties": false},
       "output_schema": {
         "type": "object",
         "required": ["schema_version", "knowledge_kind", "capability", "revision", "digest", "availability", "concepts", "relations", "operation", "requirements"],
         "properties": {
           "schema_version": {"const": "addp.platform-capability-context/v1"},
           "knowledge_kind": {"const": "platform_definition"},
-          "capability": {"const": "transfer.task.create"},
+          "capability": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$", "maxLength": 128},
           "revision": {"type": "integer", "minimum": 1},
           "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
           "availability": {"const": "not_observed"},
@@ -1395,6 +1395,377 @@
               },
               "additionalProperties": false
             }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "transfer.task.start",
+      "version": "1.0.0",
+      "description": "为已保存的 bounded/snapshot/native table 任务申请一次性运行审批；只有用户在 Agent 界面以本人身份明确批准后才能消费审批启动。首次只传 task_id，恢复只传同一 task_id、approval_id 和 request_fingerprint。不会批准、改任务、启用调度或自动重试；pending 不代表同步成功。",
+      "owner": "transfer",
+      "risk": "write",
+      "approval": {
+        "mode": "owner_policy"
+      },
+      "auth": {
+        "type": "delegated_access_token",
+        "audience": "transfer",
+        "required_scopes": [
+          "transfer.task.start"
+        ],
+        "required_permissions": [
+          "transfer.task.execute",
+          "transfer.task.read"
+        ]
+      },
+      "permission_enforced_by": "owner",
+      "audit": {
+        "mode": "required"
+      },
+      "result_ref": {
+        "mode": "none"
+      },
+      "limits": {
+        "max_bytes": 65536
+      },
+      "errors": [
+        "invalid_arguments",
+        "delegation_rejected",
+        "delegation_unavailable",
+        "invalid_delegation_response",
+        "owner_api_error",
+        "owner_api_unavailable",
+        "invalid_owner_response",
+        "result_too_large",
+        "approval_forbidden",
+        "approval_not_found",
+        "approval_invalid_request",
+        "approval_request_mismatch",
+        "approval_not_approved",
+        "approval_expired",
+        "approval_rejected",
+        "approval_already_consumed"
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "task_id"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "approval_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+          },
+          "request_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "approval_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "request_fingerprint"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "approval_id",
+              "request_fingerprint"
+            ]
+          }
+        ]
+      },
+      "output_schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "status",
+              "interaction_id",
+              "request_fingerprint",
+              "request_summary",
+              "expires_at"
+            ],
+            "properties": {
+              "status": {
+                "const": "approval_required"
+              },
+              "interaction_id": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+              },
+              "request_fingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "request_summary": {
+                "type": "object"
+              },
+              "expires_at": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "execution_id",
+              "task_id",
+              "status",
+              "records_read",
+              "records_written"
+            ],
+            "properties": {
+              "execution_id": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+              },
+              "task_id": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "running",
+                  "success",
+                  "failed",
+                  "cancelled",
+                  "timeout"
+                ]
+              },
+              "start_time": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "end_time": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "diagnostic": {
+                "type": "object",
+                "required": [
+                  "schema_version",
+                  "stage",
+                  "reason"
+                ],
+                "properties": {
+                  "schema_version": {
+                    "const": "addp.execution-failure/v3"
+                  },
+                  "stage": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "target_change_possible": {
+                    "type": "boolean"
+                  },
+                  "write": {
+                    "type": "object",
+                    "properties": {
+                      "column_index": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "declared_type": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "records_read": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "records_written": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "bytes_read": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "bytes_written": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "transfer.execution.get",
+      "version": "1.0.0",
+      "description": "按真实 execution_id 查询 Transfer 执行的受限状态、记录数及类型化诊断；不返回配置、原始错误、业务值、checkpoint 或任意 metadata。启动受理或对话完成不是同步成功，失败或结果不明时不得自动重试写操作。",
+      "owner": "transfer",
+      "risk": "read",
+      "approval": {
+        "mode": "none"
+      },
+      "auth": {
+        "type": "delegated_access_token",
+        "audience": "transfer",
+        "required_scopes": [
+          "transfer.execution.get"
+        ],
+        "required_permissions": [
+          "transfer.task.read"
+        ]
+      },
+      "permission_enforced_by": "owner",
+      "audit": {
+        "mode": "owner"
+      },
+      "result_ref": {
+        "mode": "none"
+      },
+      "limits": {
+        "max_bytes": 65536
+      },
+      "errors": [
+        "invalid_arguments",
+        "delegation_rejected",
+        "delegation_unavailable",
+        "invalid_delegation_response",
+        "owner_api_error",
+        "owner_api_unavailable",
+        "invalid_owner_response",
+        "result_too_large"
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "execution_id"
+        ],
+        "properties": {
+          "execution_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "execution_id",
+          "task_id",
+          "status",
+          "records_read",
+          "records_written"
+        ],
+        "properties": {
+          "execution_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+          },
+          "task_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "success",
+              "failed",
+              "cancelled",
+              "timeout"
+            ]
+          },
+          "start_time": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end_time": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "diagnostic": {
+            "type": "object",
+            "required": [
+              "schema_version",
+              "stage",
+              "reason"
+            ],
+            "properties": {
+              "schema_version": {
+                "const": "addp.execution-failure/v3"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "target_change_possible": {
+                "type": "boolean"
+              },
+              "write": {
+                "type": "object",
+                "properties": {
+                  "column_index": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "declared_type": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "records_read": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "records_written": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "bytes_read": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "bytes_written": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "additionalProperties": false

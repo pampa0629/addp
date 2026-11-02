@@ -96,7 +96,7 @@ results = await manager.search("城市", page_size=10)
 | [`OntologyClient`](addp_common/client/ontology.py) | 已激活原生定义的类目录与上下文、平台能力定义读取；不读取业务实例。身份与版本规则见[原生定义消费](../docs/spec/addp本体定义与发布规范.md#五原生定义消费与假设性试算)和[平台能力消费](../docs/spec/addp本体定义与发布规范.md#八平台能力与图依赖消费)。 |
 | [`InferenceClient`](addp_common/client/inference.py) | 经 System 发现 Runtime，调用 Profile 解析、Chat、Embedding 和 Rerank 数据面；使用受信模块的 Service Token 与显式 Tenant Context，见[数据面身份](<../docs/spec/addp AI推理接口规范.md#管理权限与数据面身份>)。 |
 | [`CopilotClient`](addp_common/client/copilot.py) | Copilot 模块（结构化生成）。 |
-| [`TransferClient`](addp_common/client/transfer.py) | Transfer 未启动任务定义及只读配置预检，边界见下文。 |
+| [`TransferClient`](addp_common/client/transfer.py) | Transfer 停止态定义、只读配置预检、Owner 审批启动与受限执行观察，边界见下文。 |
 | [`ModuleRegistryClient`](addp_common/client/module_registry.py) | 模块实例注册、心跳、注销与本地登记状态；使用 Platform Service 注册自身模块，见[登记身份](../docs/spec/api/健康与平台控制面.md#平台节点台账与模块实例关联)。 |
 
 `OntologyClient` 定义消费要求 Tenant User 或精确对应 Tool 的 Delegated Token 及 `ontology.semantic.read`；类上下文必须沿目录返回的 `revision/generation/activation_version` 读取。它与 Graph 知识服务的职责、权限分别核对。Inference 的 Provider 凭据由 [Inference owner](<../docs/spec/addp AI推理接口规范.md#四凭据>)管理，不由调用 SDK 的模块保存或直接使用。
@@ -108,6 +108,8 @@ Transfer 预检的正文归属与边界：
 - **请求与报告**：`check_task_config()` 与 `create_task()` 共用完整请求，固定无计划、未启用、无自动扫描；预检不创建、重试或执行任务。完整三态报告、诊断与事实摘要见[报告与三态结果](../transfer/docs/transfer-基本概念及配置说明.md#报告与三态结果)，未检查项见[快照覆盖](../transfer/docs/transfer-基本概念及配置说明.md#快照覆盖与未检查项)，`config_hash/binding_hash` 内容绑定见[摘要与输出保护](../transfer/docs/transfer-基本概念及配置说明.md#摘要绑定与输出保护)；摘要不是授权票据，实时事实与逐值检查仍归运行期。
 - **权限与委托**：三项权限交集为 `transfer.task.create`、`meta.catalog.read`、`system.engine.read`；委托 audience 唯一为 `transfer`，Scope 唯一为 `transfer.task.config.check`。CLI 经同一 ToolExecutor 调用；共用输入 Schema、签发与 Owner 校验统一见 [Tool 契约](../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)；HTTP 入口身份与读取范围见[预检权限契约](../transfer/docs/transfer-基本概念及配置说明.md#预检请求权限与读取范围)。
 - **结果与复核**：HTTP 200 不等于 `supported`，`supported` 不是执行保证；`unsupported` 阻止 Agent 创建，`unknown` 须说明未检查项并取得知情确认，才可仅保存未运行定义。权限、依赖失败或损坏报告不能降级为 `unknown`。复核与创建前重检、原参数和稳定报告的绑定及变化后的重新确认见[HTTP 预检接入](../transfer/docs/transfer-基本概念及配置说明.md#agent-tool-与创建复核)和[创建条件与复核](../docs/spec/addp本体定义与发布规范.md#九transfer-创建条件与复核)；SDK／离线结果与真实链路的验收分工见[开发与验证](#开发与验证)。
+
+`TransferClient.start_task()` 首次仅申请 Owner 运行审批，恢复仅消费已批准引用；SDK 没有批准方法，也不重试启动。`get_execution()` 只投影执行状态、计数、时间及类型化诊断，删除任意 metadata、原始错误及业务值；`get_run_approval()` 仅用于原 User 的同步审批状态读取，不是委托决定入口。手动确认、身份／配置绑定及不确定结果处理以[运行 Tool 契约](../docs/spec/addp智能体Tool开放规范.md#48-transfer-运行审批与执行读取)为准。
 
 ## Service Consumer SDK
 

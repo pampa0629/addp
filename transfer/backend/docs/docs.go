@@ -403,7 +403,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "写入失败沿 error_details.diagnostic v3 返回受控原因；可确定时含 write.column_index（本次写入列的 1 起始序号）和 declared_type。target_change_possible=true 提示目标数据或表结构可能已改变；缺失该字段不证明无副作用。不返回原始错误或业务值。| Write failures use controlled diagnostic v3 reasons, with write.column_index (1-based actual write column) and declared_type when proven. target_change_possible=true warns that target data or structure may have changed; omission is not proof of no effects. Raw errors and business values are excluded.\n第一方或普通 OAuth User；当前租户 transfer/sync 的任务历史（含已删除定义），无定义执行仅发起人可读。返回声明的专业诊断事实，不包含原始配置、checkpoint 或任意 metadata。| First-party or ordinary OAuth Users may read tenant transfer/sync task history, including deleted definitions, and their own ad-hoc executions. Only declared professional diagnostic facts are returned; raw configuration, checkpoints and arbitrary metadata are excluded.",
+                "description": "写入失败沿 error_details.diagnostic v3 返回受控原因；可确定时含 write.column_index（本次写入列的 1 起始序号）和 declared_type。target_change_possible=true 提示目标数据或表结构可能已改变；缺失该字段不证明无副作用。不返回原始错误或业务值。| Write failures use controlled diagnostic v3 reasons, with write.column_index (1-based actual write column) and declared_type when proven. target_change_possible=true warns that target data or structure may have changed; omission is not proof of no effects. Raw errors and business values are excluded.\n第一方、普通 OAuth User 或精确 transfer.execution.get 委托；当前租户 transfer/sync 的任务历史（含已删除定义），无定义执行仅发起人可读。返回声明的专业诊断事实，不包含原始配置、checkpoint 或任意 metadata。| First-party or ordinary OAuth Users and exact transfer.execution.get delegation may read tenant transfer/sync task history, including deleted definitions, and their own ad-hoc executions. Only declared professional diagnostic facts are returned; raw configuration, checkpoints and arbitrary metadata are excluded.",
                 "produces": [
                     "application/json"
                 ],
@@ -827,6 +827,175 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "public"
+            }
+        },
+        "/run-approvals/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅原租户用户本人可读；委托令牌、Service 和不同成员关系不可读取。| Only the original tenant user may read; delegated tokens, services and other memberships are denied.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Task Approval"
+                ],
+                "summary": "查询运行审批 | Get run approval",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "审批 ID | Approval ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.RunApproval"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.task.read"
+                ]
+            }
+        },
+        "/run-approvals/{id}/decision": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "用户本人显式提交当前指纹的批准或拒绝；仅保存决定，不启动任务。委托令牌不能批准。| The user explicitly approves or rejects the displayed fingerprint. Records the decision only, without starting execution; delegated tokens cannot approve.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Task Approval"
+                ],
+                "summary": "确认或拒绝任务运行 | Approve or reject task run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "审批 ID | Approval ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "运行决定 | Run decision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.RunApprovalDecision"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.RunApproval"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.task.execute"
+                ]
             }
         },
         "/runtime/executions/{execution_id}/production-receipt": {
@@ -2357,7 +2526,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "启动任务执行并创建执行记录；数据库 CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务必须先完成可用的 additive 审批，否则只能 Stop。| Start task execution and create an execution record. Database CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery. A schema-drift-blocked task must first complete an eligible additive approval or be stopped.",
+                "description": "委托 transfer.task.start 首次仅申请运行审批；用户在 Agent 界面手动批准后，以原审批引用和指纹一次性消费，配置变化拒绝；只允许无调度的 bounded/snapshot/native table，replace/append，不接受特殊角色保护选择。| Delegated transfer.task.start first requests owner approval. After the user manually approves in Agent, consume the original reference and fingerprint once; changed configuration is rejected. Only unscheduled bounded/snapshot/native tables with replace/append and no special role protection choices are allowed.\n启动任务执行并创建执行记录；数据库 CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务必须先完成可用的 additive 审批，否则只能 Stop。| Start task execution and create an execution record. Database CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery. A schema-drift-blocked task must first complete an eligible additive approval or be stopped.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2375,6 +2544,14 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "委托首次为空；恢复仅提交原审批引用和指纹 | Empty for initial delegation; resume contains only original approval reference and fingerprint",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.StartTaskRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -2382,6 +2559,12 @@ const docTemplate = `{
                         "description": "启动成功，返回执行记录 | Started successfully, returns execution record",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ExecutionResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "需要用户手动批准运行 | Explicit user run approval required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.RunApprovalRequired"
                         }
                     },
                     "400": {
@@ -2423,6 +2606,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-conditional-permissions": [
+                    "transfer.task.read",
                     "system.execution_authorization.create",
                     "develop.data_read.execute",
                     "develop.data_write.execute"
@@ -3728,6 +3912,77 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.RunApproval": {
+            "type": "object",
+            "properties": {
+                "consumed_at": {
+                    "type": "string"
+                },
+                "decided_at": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "request_fingerprint": {
+                    "type": "string"
+                },
+                "request_summary": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
+                },
+                "requested_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.RunApprovalDecision": {
+            "type": "object",
+            "required": [
+                "decision",
+                "request_fingerprint"
+            ],
+            "properties": {
+                "decision": {
+                    "type": "string",
+                    "enum": [
+                        "approved",
+                        "rejected"
+                    ]
+                },
+                "request_fingerprint": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.RunApprovalRequired": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "interaction_id": {
+                    "type": "string"
+                },
+                "request_fingerprint": {
+                    "type": "string"
+                },
+                "request_summary": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.SchemaChangeField": {
             "type": "object",
             "required": [
@@ -3847,6 +4102,17 @@ const docTemplate = `{
                 },
                 "to_revision": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.StartTaskRequest": {
+            "type": "object",
+            "properties": {
+                "approval_id": {
+                    "type": "string"
+                },
+                "request_fingerprint": {
+                    "type": "string"
                 }
             }
         },

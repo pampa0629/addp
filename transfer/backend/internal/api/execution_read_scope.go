@@ -35,8 +35,11 @@ func installTransferUserReadScope(c *gin.Context) bool {
 	identity, ok := commonauth.AuthContextFromGin(c)
 	tenantID, tenantOK := commonauth.TenantIDFromGin(c)
 	principalID, principalOK := commonauth.PrincipalIDFromGin(c)
+	delegatedRead := identity.Token.Type == "delegated_access_token" &&
+		len(identity.Client.Audiences) == 1 && identity.Client.Audiences[0] == "transfer" &&
+		len(identity.Client.Scopes) == 1 && identity.Client.Scopes[0] == "transfer.execution.get" && identity.Delegation != nil
 	if !ok || !tenantOK || !principalOK || identity.Principal.Type != "user" ||
-		(identity.Token.Type != "first_party_access_token" && identity.Token.Type != "oauth_access_token") ||
+		(identity.Token.Type != "first_party_access_token" && identity.Token.Type != "oauth_access_token" && !delegatedRead) ||
 		!commonauth.HasRolePermission(c, ownerauthorization.PermissionTransferTaskRead) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error_code": "permission_denied", "error": commoni18n.T(c, commoni18n.MsgForbidden)})
 		return false

@@ -152,6 +152,7 @@ def approval_request_surface(
             "requestFingerprint": request_fingerprint,
             "requestSummary": request_summary,
             "expiresAt": expires_at,
+            "inlineDecision": owner == "transfer",
         },
     )
 

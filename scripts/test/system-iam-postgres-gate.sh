@@ -31,6 +31,7 @@ while [ "$#" -gt 0 ]; do
             echo "Focused authorization-relation migration: --package migration --test source-grant-relations" >&2
             echo "Authorization facts: --package migration|api --test authorization-facts" >&2
             echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
+            echo "Transfer delegated run approval: --package migration --test transfer-run" >&2
             echo "Transfer production receipt: --package migration --test production-receipt-runtime" >&2
             echo "PG production source observation: --package engineaccess --test production-sources" >&2
             echo "Meta PG basic centralized scanning: --package engineaccess|migration --test meta-collection" >&2
@@ -39,7 +40,7 @@ while [ "$#" -gt 0 ]; do
             echo "Owned-container crash recovery: --test database-crash-recovery (no external DSN)" >&2
             echo "Execution subject roles: --package iam --test execution-subject-roles" >&2
             echo "Cleanup execution authorization: --package iam --test cleanup-authorization" >&2
-            echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test database-crash-recovery|oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
+            echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test database-crash-recovery|oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|transfer-run|export-execution-provenance]" >&2
             exit 2
             ;;
     esac
@@ -566,6 +567,13 @@ case "$TEST_FILTER" in
             echo "graph-protection-runtime requires --package migration" >&2; exit 2
         fi
         test_pattern='^TestGraphProtectionRuntimeForwardMigrationAgainstPostgres$'
+        ;;
+    transfer-run)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "transfer-run test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestTransferRunDelegationMigrationAgainstPostgres$'
         ;;
     transfer-task-create)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

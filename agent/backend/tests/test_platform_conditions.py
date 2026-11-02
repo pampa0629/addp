@@ -42,6 +42,7 @@ def platform_fixture():
         },
     }
     checkpoint = new_checkpoint()
+    checkpoint["platform_capability"] = "transfer.task.create"
     for name, result in [("platform.capability.context", definition), ("resource.facts.get", source), ("resource.children.list", target)]:
         capture_owner_facts(name, result, checkpoint)
     precheck_fixture(arguments, checkpoint)

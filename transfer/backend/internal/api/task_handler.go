@@ -300,24 +300,31 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 
 // StartTask 启动任务
 // @Summary 启动任务 | Start task
+// @Description 委托 transfer.task.start 首次仅申请运行审批；用户在 Agent 界面手动批准后，以原审批引用和指纹一次性消费，配置变化拒绝；只允许无调度的 bounded/snapshot/native table，replace/append，不接受特殊角色保护选择。| Delegated transfer.task.start first requests owner approval. After the user manually approves in Agent, consume the original reference and fingerprint once; changed configuration is rejected. Only unscheduled bounded/snapshot/native tables with replace/append and no special role protection choices are allowed.
 // @Description 启动任务执行并创建执行记录；数据库 CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务必须先完成可用的 additive 审批，否则只能 Stop。| Start task execution and create an execution record. Database CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery. A schema-drift-blocked task must first complete an eligible additive approval or be stopped.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
+// @Param request body models.StartTaskRequest false "委托首次为空；恢复仅提交原审批引用和指纹 | Empty for initial delegation; resume contains only original approval reference and fingerprint"
 // @Success 200 {object} ExecutionResponse "启动成功，返回执行记录 | Started successfully, returns execution record"
+// @Success 202 {object} models.RunApprovalRequired "需要用户手动批准运行 | Explicit user run approval required"
 // @Failure 403 {object} map[string]string "需要当前租户用户身份 | Current tenant User identity required"
 // @Failure 400 {object} map[string]string "参数错误或任务已在运行 | Bad request or task already running"
 // @Failure 409 {object} map[string]string "CDC 已永久停止、被结构变化阻塞或存在未核清的外部清理操作（error_code=transfer_cleanup_unresolved） | CDC permanently stopped, blocked by schema change, or fenced by an unresolved external cleanup operation (error_code=transfer_cleanup_unresolved)"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.execute"]
-// @x-addp-conditional-permissions ["system.execution_authorization.create","develop.data_read.execute","develop.data_write.execute"]
+// @x-addp-conditional-permissions ["transfer.task.read","system.execution_authorization.create","develop.data_read.execute","develop.data_write.execute"]
 // @Router /task-definitions/{id}/start [post]
 // @Security BearerAuth
 func (h *TaskHandler) StartTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
+		return
+	}
+	if a, exists := commonAuth.AuthContextFromGin(c); exists && a.Token.Type == "delegated_access_token" {
+		h.handleDelegatedTaskStart(c, id)
 		return
 	}
 

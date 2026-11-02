@@ -141,3 +141,30 @@ other = "Export protection cannot be verified right now. Try again later."
 
 [transfer.task.cleanup_unresolved]
 other = "The task has an unresolved external cleanup operation and cannot start or resume"
+
+[transfer.approval_forbidden]
+other = "The current identity cannot access or use this run approval"
+
+[transfer.approval_not_found]
+other = "Run approval not found"
+
+[transfer.approval_invalid_request]
+other = "Only disabled, unscheduled native-table snapshot tasks are supported; check the run configuration"
+
+[transfer.approval_invalid_decision]
+other = "Choose approve or reject with the displayed configuration fingerprint"
+
+[transfer.approval_request_mismatch]
+other = "The task configuration changed or the review does not match; request a new run review"
+
+[transfer.approval_not_approved]
+other = "Manually approve this task run first"
+
+[transfer.approval_expired]
+other = "This run approval expired; request a new review"
+
+[transfer.approval_rejected]
+other = "This task run was rejected"
+
+[transfer.approval_already_consumed]
+other = "This run approval was consumed; check the original execution instead of starting again"

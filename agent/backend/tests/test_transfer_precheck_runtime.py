@@ -79,6 +79,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     "skill_name": "transfer-generation", "user_request": user_request, "context_summary": "",
                     "user_id": 1, "tenant_id": 1, "token": "private-user-token", "agent_run_id": "precheck-run",
                     "checkpoint": self.checkpoint, "accept_language": accept_language,
+                    "platform_capability": CREATE_TOOL,
                     "resuming": resuming,
                     **({"draft_arguments": draft_arguments} if draft_arguments is not None else {}),
                 }, skill_body=skill_body, allowed_tool_names=allowed or ["platform.capability.context", CHECK_TOOL, CREATE_TOOL],

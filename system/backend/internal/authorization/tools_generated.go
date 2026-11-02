@@ -90,6 +90,12 @@ var toolAuthorizations = map[string]commonauth.ToolAuthorization{
 		RequiredScopes:      []string{"transfer.draft.generate"},
 		RequiredPermissions: []string{"copilot.transfer.execute"},
 	},
+	"transfer.execution.get": {
+		Name:                "transfer.execution.get",
+		Owner:               "transfer",
+		RequiredScopes:      []string{"transfer.execution.get"},
+		RequiredPermissions: []string{"transfer.task.read"},
+	},
 	"transfer.task.config.check": {
 		Name:                "transfer.task.config.check",
 		Owner:               "transfer",
@@ -101,6 +107,12 @@ var toolAuthorizations = map[string]commonauth.ToolAuthorization{
 		Owner:               "transfer",
 		RequiredScopes:      []string{"transfer.task.create"},
 		RequiredPermissions: []string{"transfer.task.create"},
+	},
+	"transfer.task.start": {
+		Name:                "transfer.task.start",
+		Owner:               "transfer",
+		RequiredScopes:      []string{"transfer.task.start"},
+		RequiredPermissions: []string{"transfer.task.execute", "transfer.task.read"},
 	},
 	"workflow.draft.generate": {
 		Name:                "workflow.draft.generate",

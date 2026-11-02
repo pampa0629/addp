@@ -305,7 +305,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
             options=[],
         )
 
-        async def pending_loader(_approval_id, _token):
+        async def pending_loader(_owner, _approval_id, _token):
             return {"status": "pending", "request_fingerprint": "a" * 64}
 
         with self.assertRaises(InteractionAnswerError):
@@ -333,7 +333,8 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(interaction.status, "pending")
 
-        async def approved_loader(approval_id, token):
+        async def approved_loader(owner, approval_id, token):
+            self.assertEqual(owner, "develop")
             self.assertEqual(approval_id, interaction.owner_interaction_id)
             self.assertEqual(token, "user-token")
             return {"status": "approved", "request_fingerprint": "a" * 64}

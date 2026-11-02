@@ -148,10 +148,15 @@ async def resume_agent_run(
 
     checkpoint = normalize_checkpoint(run.checkpoint)
     for interaction in interactions:
+        if interaction.kind == "owner_approval" and interaction.owner == "transfer":
+            from agents.transfer_run import confirm_run_review
+            confirm_run_review(checkpoint, interaction)
+            continue
         if isinstance(interaction.answer, dict) and "text" in interaction.answer:
             # A changed requirement can never reuse an earlier write approval.
             checkpoint["observed"]["operation_reviews"].clear()
             checkpoint["confirmed"]["operation_reviews"].clear()
+            checkpoint["confirmed"]["run_approval"] = None
         else:
             confirm_selection(checkpoint, interaction.answer)
             if checkpoint["confirmed"]["operation_reviews"].get(CREATE_TOOL) and checkpoint["draft_ref"] is None:

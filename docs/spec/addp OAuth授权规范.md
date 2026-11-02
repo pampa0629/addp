@@ -331,6 +331,8 @@ Authorization: Bearer <current_user_access_token>
 
 ### 9.1 委托写操作审批
 
+Transfer 的运行审批沿同一 Owner 持有原则，用户确认入口嵌入 Agent 页面：浏览器以当前 User 身份直接调用 Transfer 决定接口，Agent 后端只在同步请求中读取 Owner 状态，LLM、Delegated Token 和 Service 身份均不能代批。首次请求只申请批准，批准后原 AgentRun 以原任务和指纹消费一次，不直接授予通用执行权；具体边界见 [Transfer Tool 运行契约](addp智能体Tool开放规范.md#48-transfer-运行审批与执行读取)。原 `transfer.task.create` 只保存停止态元数据，不要求运行审批，也不继承该批准。
+
 委托写操作必须由业务 owner 持有审批事实。当前 `workflow.run` 的 owner 为 Develop，使用同一个 `POST /api/v1/develop/executions` 完成两阶段调用：
 
 1. 首次请求携带 workflow 执行内容，不携带 `approval_id`。Develop 校验委托令牌后创建 pending approval，返回 HTTP 202、`status=approval_required`、`interaction_id`、`open_url` 和 `request_fingerprint`，不得创建 execution。

@@ -915,6 +915,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             "token": "runtime-token",
             "agent_run_id": agent_run_id,
             "checkpoint": checkpoint,
+            **({"platform_capability": "transfer.task.create"} if "transfer.task.create" in allowed_tools else {}),
             "accept_language": accept_language,
         }
         with (

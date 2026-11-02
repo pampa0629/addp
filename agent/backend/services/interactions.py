@@ -6,7 +6,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from addp_common.client import DevelopClient
+from addp_common.client import DevelopClient, TransferClient
 from config import settings
 from models.interaction import Interaction
 
@@ -137,7 +137,7 @@ async def create_owner_approval(
         kind="owner_approval",
         owner=owner,
         status="pending",
-        prompt="工作流执行需要在 Develop 完成审批",
+        prompt="请手动确认本次任务运行" if owner == "transfer" else "工作流执行需要在 Develop 完成审批",
         response_schema={
             "type": "object",
             "properties": {"action": {"const": "check"}},
@@ -152,12 +152,16 @@ async def create_owner_approval(
     return interaction
 
 
-async def _load_owner_approval(owner_interaction_id: str, source_token: str) -> dict[str, Any]:
-    async with DevelopClient(
+async def _load_owner_approval(owner: str, owner_interaction_id: str, source_token: str) -> dict[str, Any]:
+    clients = {"develop": (DevelopClient, "get_tool_approval"), "transfer": (TransferClient, "get_run_approval")}
+    if owner not in clients:
+        raise InteractionOwnerUnavailableError
+    client_type, method = clients[owner]
+    async with client_type(
         base_url=settings.get_gateway_url(),
         user_token=source_token,
     ) as client:
-        return await client.get_tool_approval(owner_interaction_id)
+        return await getattr(client, method)(owner_interaction_id)
 
 
 async def resolve_interaction(
@@ -200,13 +204,13 @@ async def resolve_interaction(
             raise InteractionAnswerError("缺少用于检查审批状态的用户访问令牌")
         loader = owner_approval_loader or _load_owner_approval
         try:
-            approval = await loader(interaction.owner_interaction_id, source_token)
+            approval = await loader(interaction.owner, interaction.owner_interaction_id, source_token)
         except httpx.HTTPError as exc:
             raise InteractionOwnerUnavailableError from exc
         if approval.get("request_fingerprint") != interaction.owner_request_fingerprint:
             raise InteractionAnswerError("Owner 审批请求指纹不匹配")
         owner_status = str(approval.get("status") or "")
-        if owner_status not in {"approved", "consumed"}:
+        if owner_status not in ({"approved", "consumed", "rejected"} if interaction.owner == "transfer" else {"approved", "consumed"}):
             raise InteractionOwnerStateError(owner_status or "unknown")
         answer = {
             "status": owner_status,
@@ -295,6 +299,8 @@ def format_resume_message(interaction: Interaction) -> str:
             f"原澄清问题：{interaction.prompt}"
         )
     if interaction.kind == "owner_approval" and isinstance(answer, dict):
+        if interaction.owner == "transfer":
+            return "用户已处理本次 Transfer 运行确认；由 Runtime 核对 Owner 状态并恢复，不由模型批准或重复启动。"
         if answer.get("status") == "consumed" and answer.get("execution_id"):
             return (
                 "Develop 审批已消费，工作流 execution 已创建；"

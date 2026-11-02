@@ -61,6 +61,10 @@ transfer/
 
 Agent `transfer.task.create` 使用精确 `audience=transfer`／同名 Scope 与当前 Tenant 创建权限，只保存禁用、无调度和无自动扫描的 bounded snapshot native table 任务，初始状态为 idle/stopped。Owner 再次校验，不继承运行授权、不创建 execution 或读写业务数据；该创建委托不得用于其他路由，也不增加角色权限。创建限制、不确定结果处理、Ontology 平台定义及资源 Owner 分工统一见[Transfer Tool 契约](../docs/spec/addp智能体Tool开放规范.md#47-平台-transfer-语义与创建)，不在 Transfer 保存第二份平台定义。
 
+`transfer.task.start` 的独立委托只进入原 start 路由，要求当前 Tenant 的 execute/read 权限交集；首次只保存 `transfer.run_approvals` 中的一次性审批，不创建 execution。用户在 Agent 卡片手动确认，浏览器直接以本人身份调用 Transfer 决定接口；Delegated／Service 不能代批。审批绑定用户、Membership、授权版本、AgentRun 和全部任务执行输入，配置变化拒绝；同一 task lock／事务消费批准并关联唯一执行，拒绝／过期／失败均不自动重试。首期只运行无调度、未启用、无自动扫描的 bounded/snapshot/native table，replace/append，不借用特殊角色保护方式；既有 System／Worker 的实际授权与 Security 校验保持。读取使用精确 `transfer.execution.get` 及原专业执行接口的受限投影，不能从受理推导完成，详见[运行契约](../docs/spec/addp智能体Tool开放规范.md#48-transfer-运行审批与执行读取)。
+
+运行审批的验证复用 `make test-module MODULE=transfer GO_ONLY=1` 与 `make test-transfer-postgres`；后者同次登记真实 PG 并发消费、唯一 pending 执行和发起人关联，不启动 Worker 或访问个人 Business 数据。若本门禁中断留下本轮夹具，可在同一标准入口显式传入 `ADDP_TRANSFER_TEST_RECOVER_EXECUTION=<确切 UUID>`；只恢复 `run_approval_<UUID>` 命名空间、无存活任务、无 attempt／租约／EA／过程事件且零读写的 orphan pending 执行，其他资源一律拒绝，不按时间或模糊前缀批量删除。
+
 Transfer Permission 的精确目录与状态只由本模块 [Manifest](authorization/permissions.yaml) 声明；owner 归属、构建／发布期聚合及向前迁移统一见[权限与角色发布规范](../docs/spec/addp权限与角色发布规范.md#二唯一事实源)和[发布期聚合](../docs/spec/addp权限与角色发布规范.md#九发布期聚合)，不在服务启动时动态注册。
 
 用户任务管理、模块 Runtime 一次性执行与 Orchestrator TaskProvider 使用独立权限，不能互相替代；后两类专用权限均不可委派，TaskProvider 仍由固定 `addp-orchestrator` Service Client Guard 收窄，具体入口与权限见下方分类导航。`transfer.task.cancel` 当前在 Manifest 中为 `disabled`，不代表真实取消能力；execution 取消与任务 pause/stop 的区别见用户专业执行说明。

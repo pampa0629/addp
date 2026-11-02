@@ -662,7 +662,7 @@ func (s *TaskService) ReplayTask(ctx context.Context, id, tenantID, userID uint,
 
 // StartTaskWithContext 启动任务并记录统一任务体系上下文。
 func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, userID uint, triggerType string, source string, parentExecutionID *string) (*models.TaskExecution, error) {
-	return s.startTaskWithContext(ctx, id, tenantID, userID, triggerType, source, parentExecutionID, nil)
+	return s.startTaskWithContext(ctx, id, tenantID, userID, triggerType, source, parentExecutionID, nil, nil)
 }
 
 // StartTaskWithExecutionParameters starts a TaskProvider execution after its
@@ -674,7 +674,7 @@ func (s *TaskService) StartTaskWithExecutionParameters(
 	parentExecutionID *string,
 	parameters map[string]interface{},
 ) (*models.TaskExecution, error) {
-	return s.startTaskWithContext(ctx, id, tenantID, userID, triggerType, source, parentExecutionID, parameters)
+	return s.startTaskWithContext(ctx, id, tenantID, userID, triggerType, source, parentExecutionID, parameters, nil)
 }
 
 func (s *TaskService) startTaskWithContext(
@@ -683,6 +683,7 @@ func (s *TaskService) startTaskWithContext(
 	triggerType, source string,
 	parentExecutionID *string,
 	parameters map[string]interface{},
+	review *models.RunApproval,
 ) (*models.TaskExecution, error) {
 	s.logger.Info("starting task", "task_id", id)
 
@@ -690,6 +691,11 @@ func (s *TaskService) startTaskWithContext(
 	task, err := s.GetTask(ctx, id, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	if review != nil {
+		if err := validateRunApprovalTask(task, review); err != nil {
+			return nil, err
+		}
 	}
 
 	// 2. 启动前再次校验，阻止历史旧 JSON 任务进入 worker。
@@ -786,7 +792,11 @@ func (s *TaskService) startTaskWithContext(
 		}
 		return s.executionService.convertToTransferExecution(executionRecord), nil
 	}
-	_, _, err = s.taskRepo.ClaimExecution(ctx, id, tenantID, executionRecord, incrementalSourceIdentity(task))
+	var reviewGuard func(*gorm.DB, *models.TransferTask) error
+	if review != nil {
+		reviewGuard = consumeRunApproval(review, executionRecord.ExecutionID)
+	}
+	_, _, err = s.taskRepo.ClaimExecutionWithReview(ctx, id, tenantID, executionRecord, incrementalSourceIdentity(task), reviewGuard)
 	if err != nil {
 		if errors.Is(err, repository.ErrTaskAlreadyRunning) {
 			return nil, fmt.Errorf("task is already running")

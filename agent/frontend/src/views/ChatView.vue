@@ -122,7 +122,7 @@
             <MessagePartsRenderer
               :message="message"
               :expand-details="preferences.expandDetails"
-              :interaction-disabled="isLoading || !canRun"
+              :interaction-disabled="isLoading || ownerDecisionPending || !canRun"
               @action="handleA2UIAction"
               @error="handlePresentationError"
             />
@@ -148,7 +148,7 @@
             <MessagePartsRenderer
               :message="liveMessage"
               :expand-details="preferences.expandDetails"
-              :interaction-disabled="isLoading || !canRun"
+              :interaction-disabled="isLoading || ownerDecisionPending || !canRun"
               @action="handleA2UIAction"
               @error="handlePresentationError"
             />
@@ -205,7 +205,7 @@ import { openConsoleRoute, resolveTaskOwnerUrl, takeConsoleNavigationDraft } fro
 import { saveBlobDownload } from '@common-ui/utils/exportSession'
 
 import { createAgentClient, replayAgentRunEvents } from '../agent/createAgentClient'
-import { runAPI, sessionAPI } from '../api/index'
+import { ownerApprovalAPI, runAPI, sessionAPI } from '../api/index'
 import MessagePartsRenderer from '../components/MessagePartsRenderer.vue'
 import WorkspacePanel from '../components/WorkspacePanel.vue'
 import WorkspacePreferences from '../components/WorkspacePreferences.vue'
@@ -260,6 +260,7 @@ const pendingClarifications = computed(() => {
 })
 const inputText = ref('')
 const isLoading = ref(false)
+const ownerDecisionPending = ref(false)
 const isCancelling = ref(false)
 const liveMessage = ref(null)
 const liveTools = ref([])
@@ -684,6 +685,25 @@ async function handleSend() {
 }
 
 async function handleA2UIAction(action) {
+  if (action.name === 'owner.decide') {
+    if (isLoading.value || ownerDecisionPending.value || !canRun.value || !authStore.hasPermission('transfer.task.execute')) return
+    const { owner, interactionId, ownerInteractionId, requestFingerprint, decision } = action.context || {}
+    if (owner !== 'transfer' || !interactionId || !/^[a-f0-9-]{36}$/.test(ownerInteractionId || '') ||
+        !/^[a-f0-9]{64}$/.test(requestFingerprint || '') || !['approved', 'rejected'].includes(decision)) return
+    ownerDecisionPending.value = true
+    try {
+      const result = await ownerApprovalAPI.decideTransfer(ownerInteractionId, requestFingerprint, decision)
+      if (result?.id !== ownerInteractionId || result?.request_fingerprint !== requestFingerprint || result?.status !== decision) {
+        throw new Error('invalid_owner_approval_response')
+      }
+      await resumeInteraction(interactionId, { action: 'check' })
+    } catch (error) {
+      ElMessage.error(t('agent.chat.approval.decisionFailed'))
+    } finally {
+      ownerDecisionPending.value = false
+    }
+    return
+  }
   if (action.name === 'owner.open') {
     const openUrl = action.context?.openUrl
     const resolved = resolveTaskOwnerUrl(openUrl)

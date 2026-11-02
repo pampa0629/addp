@@ -180,23 +180,27 @@ async def _prefetch_owner_approvals(db, body, session_id, user_id, tenant_id, so
             identity = UUID(entry.interrupt_id)
         except ValueError:
             continue  # The existing Interaction validation returns its precise error.
-        owner_id = (await db.execute(select(Interaction.owner_interaction_id).where(
+        interaction = (await db.execute(select(Interaction).where(
             Interaction.id == identity, Interaction.session_id == session_id, Interaction.user_id == user_id,
             Interaction.tenant_id == tenant_id, Interaction.kind == 'owner_approval', Interaction.status == 'pending',
         ))).scalar_one_or_none()
-        if owner_id:
-            owner_ids.add(owner_id)
+        if interaction:
+            owner_ids.add((interaction.owner, interaction.owner_interaction_id))
     approvals = {}
-    for owner_id in sorted(owner_ids):
+    for owner, owner_id in sorted(owner_ids):
         try:
-            approvals[owner_id] = await _load_owner_approval(owner_id, source_token)
+            approvals[(owner, owner_id)] = await _load_owner_approval(owner, owner_id, source_token)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in {401, 403}:
+                raise HTTPException(403, workspace_message(accept_language, 'owner_approval_forbidden')) from exc
+            raise HTTPException(503, workspace_message(accept_language, 'owner_approval_unavailable')) from exc
         except httpx.HTTPError as exc:
             raise HTTPException(503, workspace_message(accept_language, 'owner_approval_unavailable')) from exc
 
-    async def loader(owner_id, token):
-        if token != source_token or owner_id not in approvals:
+    async def loader(owner, owner_id, token):
+        if token != source_token or (owner, owner_id) not in approvals:
             raise InteractionOwnerUnavailableError
-        return approvals[owner_id]
+        return approvals[(owner, owner_id)]
     return loader
 
 
@@ -249,7 +253,7 @@ async def _save_user_input(
             except InteractionOwnerUnavailableError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Develop 审批状态暂时不可用",
+                    detail=workspace_message(accept_language, "owner_approval_unavailable"),
                 ) from exc
 
             resume_text = format_resume_message(interaction)
@@ -747,7 +751,7 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
                                     tool_call_id=event.payload.get("tool_call_id"),
                                     owner=str(event.payload.get("owner") or "develop"),
                                     owner_interaction_id=str(event.payload["owner_interaction_id"]),
-                                    open_url=str(event.payload["open_url"]),
+                                    open_url=str(event.payload.get("open_url") or ""),
                                     request_fingerprint=str(event.payload["request_fingerprint"]),
                                     request_summary=event.payload.get("request_summary") or {},
                                     expires_at=_parse_optional_datetime(event.payload.get("expires_at")),

@@ -346,6 +346,7 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 func transferSchemaModels() []interface{} {
 	return []interface{}{
 		&models.TransferTask{},
+		&models.RunApproval{},
 		&models.SyncState{},
 		&models.RuntimeLease{},
 		&models.RuntimeSession{},

@@ -1,9 +1,17 @@
 ---
 name: transfer-generation
-description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、生成草稿，并在用户复核后创建未启动的传输任务。用户要求导入、导出、同步或复制已有数据，例如 MongoDB 到 PostgreSQL 时使用。创建不等于运行。
+description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、生成并复核配置、创建停止态任务；用户要求运行时，在 Agent 中展示 Transfer 一次性运行审批，用户手动批准后由 Runtime 启动并查询真实执行。创建不等于运行，受理不等于成功。
 ---
 
 # Transfer 任务生成与创建
+
+## 独立的任务运行与结果查询
+
+运行与创建是独立操作，条件分别来自 `transfer.task.start` 与 `transfer.task.create` 本体。用户只要求创建、检查或看草稿时，不申请运行审批、不启动。用户明确要求运行已有任务时，使用用户指定或 Owner 已返回的真实 task_id；不按名称猜 ID，不为启动重建任务。创建后需要运行时仍须单独展示运行审批，不能把创建复核当作运行批准。
+
+`transfer.task.start` 首次只提交 task_id。Owner 返回 approval_required 后立即等待用户在当前 Agent 页面手动确认；不调用决定 API、不伪造 approved、不通过普通澄清冒充运行确认，也不要求跳转 Transfer。用户的批准、拒绝及已消费状态都由 Runtime 从正式 Owner 状态恢复，模型不能接管恢复提交或重复启动。
+
+审批过期、配置／身份／语义变化或结果不明时明确解释，不重发启动、不改配置后沿用旧批准。启动成功只记录真实 execution_id；查询状态使用 `transfer.execution.get`，不用 Develop 的 `execution.get`。pending/running 是未完成，success 才是 Owner 记录的执行成功；保留真实计数与失败诊断，尤其是目标可能已变化。执行成功和计数仍不证明业务语义或逐行全量一致，不自动扫描、读样本或直接查询业务库补证，不自动重试任务。
 
 先读取平台能力语义，再复用数据发现方法确认源资源和真实目标父节点。条件、效果和支持边界以 `platform.capability.context` 为唯一语义来源；本 Skill 只说明获取事实、补齐缺口和组织交互的方法。不要求用户已有领域本体、Standard、Model、Quality 或 Catalog 内容。
 
@@ -11,7 +19,7 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 
 Runtime 已明确绑定原草稿时，只沿用恢复的候选参数，不重建任务名、描述、目标表名、查询、映射或可选参数，不新增 batch_size 等默认值。重新读取当前平台能力及必要资源事实，不把历史参数当作已确认资源或权限。最终 `transfer_create_review` 的 `operation_review` 只提交 `{tool:"transfer.task.create"}`，不提交 arguments；Runtime 使用原参数预检和复核。确认后的正式创建输入同样由 Runtime 绑定，不能借模型输入改写参数。不额外调用 draft.generate 或显式预检来重建原稿。若当前定义不支持原参数，明确解释；需要改配置时结束原参数创建，再按用户要求进入修改和新的复核流程。
 
-1. 理解 Runtime 在本次 Harness 进入时经 `platform.capability.context(capability="transfer.task.create")` 读取、并放入当前受信任状态的能力定义；无需重复读取。需要主动刷新时仍调用同一 Tool，失败不能沿用旧结果。理解其概念、前置条件和效果。`availability=not_observed` 不是可用性证明；实际 Tool 错误需明确呈现，不假装其他模块存在。
+1. 理解 Runtime 在本次 Harness 进入时经 `platform.capability.context` 读取并保存的所选能力：创建为 `transfer.task.create`，运行为 `transfer.task.start`，结果查询为 `transfer.execution.get`；无需重复读取。Runtime 按该操作与本体依赖收窄 Skill 的 Tool 白名单，不强制其他操作已发布。需要主动刷新，或进入已声明的可选后续操作时，仍用同一正式 Tool 读取对应定义，失败不能沿用旧结果。理解其概念、条件和效果；`availability=not_observed` 不是可用性或权限证明，不假装其他模块存在。
 2. 用 `engine.list` 确认用户可访问的源/目标引擎。按 `data-discovery` 只搜索源侧数据项，必要时限定源 engine_id；多个集合或引擎候选等待用户选择。搜索失败时明确报告并终止当前运行，不能把失败当作零召回，也不能静默改用源目录枚举来继续生成或创建。
 3. 通过 `resource.ancestors.get → resource.facts.get` 确认源身份和最新结构，不用样本猜 Schema。缺扫描事实则要求补扫描，不能读取原始行兜底。
 4. 用 `resource.children.list(engine_id=<目标>)` 从 owner 返回的真实根节点开始逐层浏览；后续父 locator 只取自返回结果。让用户确认目标 `parent_locator + name`，目标尚不存在时不能把它当成已有输入搜索。不可假定 PostgreSQL schema 是 public。

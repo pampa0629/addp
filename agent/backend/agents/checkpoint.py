@@ -24,9 +24,10 @@ def new_checkpoint() -> dict[str, Any]:
     return {
         "schema": CHECKPOINT_SCHEMA,
         "draft_ref": None,
+        "platform_capability": None,
         "reply_detail": "standard",
-        "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}, "config_checks": {}},
-        "confirmed": {"workflow_engine": None, "resources": {}, "operation_reviews": {}},
+        "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}, "config_checks": {}, "run_approval": None},
+        "confirmed": {"workflow_engine": None, "resources": {}, "operation_reviews": {}, "run_approval": None},
     }
 
 
@@ -44,6 +45,15 @@ def normalize_checkpoint(value: Any) -> dict[str, Any]:
     if reference is not None and not isinstance(reference, str):
         raise ValueError("invalid_draft_reference")
     checkpoint["draft_ref"] = reference
+    capability = value.get("platform_capability")
+    if capability is not None:
+        if not isinstance(capability, str):
+            raise ValueError("invalid_platform_capability")
+        try:
+            get_tool(capability)
+        except KeyError as exc:
+            raise ValueError("invalid_platform_capability") from exc
+        checkpoint["platform_capability"] = capability
 
     observed = value.get("observed") if isinstance(value.get("observed"), dict) else {}
     confirmed = value.get("confirmed") if isinstance(value.get("confirmed"), dict) else {}
@@ -63,6 +73,9 @@ def normalize_checkpoint(value: Any) -> dict[str, Any]:
             checkpoint["observed"][key] = copy.deepcopy(observed[key])
     if isinstance(confirmed.get("operation_reviews"), dict):
         checkpoint["confirmed"]["operation_reviews"] = copy.deepcopy(confirmed["operation_reviews"])
+    for group, source in (("observed", observed), ("confirmed", confirmed)):
+        if isinstance(source.get("run_approval"), dict):
+            checkpoint[group]["run_approval"] = copy.deepcopy(source["run_approval"])
     return checkpoint
 
 

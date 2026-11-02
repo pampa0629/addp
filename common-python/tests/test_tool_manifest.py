@@ -36,6 +36,8 @@ def test_manifest_has_unique_stage_two_tools():
         "platform.capabilities.list",
         "transfer.task.create",
         "transfer.task.config.check",
+        "transfer.task.start",
+        "transfer.execution.get",
     ]
     assert get_tool("workflow.run").risk == "write"
     for tool in manifest.tools:
@@ -63,6 +65,8 @@ def test_manifest_has_unique_stage_two_tools():
         "platform.capabilities.list": ["ontology.semantic.read"],
         "transfer.task.create": ["transfer.task.create"],
         "transfer.task.config.check": ["transfer.task.create", "meta.catalog.read", "system.engine.read"],
+        "transfer.task.start": ["transfer.task.execute", "transfer.task.read"],
+        "transfer.execution.get": ["transfer.task.read"],
     }
     for tool in manifest.tools:
         assert tool.auth.required_permissions == expected_permissions[tool.name]

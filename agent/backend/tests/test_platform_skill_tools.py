@@ -36,10 +36,10 @@ class PlatformSkillToolTests(unittest.TestCase):
         issue.assert_not_awaited()
         owner.assert_not_awaited()
 
-    def test_transfer_skill_uses_platform_semantics_and_only_metadata_write(self):
+    def test_transfer_skill_separates_creation_and_owner_approved_running(self):
         registry = _load_skill_registry()
         skill = registry["transfer-generation"]
-        self.assertEqual(skill.tools, ["platform.capability.context", "engine.list", "data.search", "resource.children.list", "resource.ancestors.get", "resource.facts.get", "transfer.draft.generate", "transfer.task.config.check", "transfer.task.create"])
+        self.assertEqual(skill.tools, ["platform.capability.context", "engine.list", "data.search", "resource.children.list", "resource.ancestors.get", "resource.facts.get", "transfer.draft.generate", "transfer.task.config.check", "transfer.task.create", "transfer.task.start", "transfer.execution.get"])
         self.assertNotIn("data.preview", skill.tools)
         self.assertNotIn("workflow.run", skill.tools)
         self.assertIn("尚未运行", skill.load_body(registry))

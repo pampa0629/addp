@@ -65,12 +65,26 @@ function completed(message) {
   message.parts.find(part => part.type === 'interaction_ref').status = 'completed'
 }
 
-async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null, checkedDraft = false, withPlan = false } = {}) {
+async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null, checkedDraft = false, withPlan = false, runApproval = false } = {}) {
   const question = clarification(questionId, '请选择行粒度', [{ label: '展开数组', value: 'unwind' }])
   const review = clarification(reviewId, `仅创建，不运行。请复核配置。\n\n${unknownWarning}\n\n\`\`\`json\n{"name":"outdoor_copy","config":{"runtime":{"boundary":"bounded"},"load":{"mode":"snapshot"}}}\n\`\`\``, reviewOptions)
   review.parts.splice(1, 0, checkReport('unknown').parts[0])
-  const messages = multiple ? [question, clarification(reviewId, '请选择目标', reviewOptions)] : []
+  const approvalId = '46ea0d75-b9bc-4b25-8d4a-441947081813'
+  const runReview = { id: reviewId, role: 'assistant', parts: [
+    { type: 'interaction_ref', kind: 'owner_approval', interaction_id: reviewId, agent_run_id: runId, status: 'pending' },
+    { type: 'presentation_ref', interaction_id: reviewId, protocol: 'a2ui', surface_id: `surface:${reviewId}`, content: { operations: [
+      { version: 'v0.9', createSurface: { surfaceId: `surface:${reviewId}`, catalogId: 'addp.catalog/v1' } },
+      { version: 'v0.9', updateComponents: { surfaceId: `surface:${reviewId}`, components: [{ id: 'root', component: 'ApprovalRequest',
+        interactionId: reviewId, owner: 'transfer', ownerInteractionId: approvalId, inlineDecision: true, openUrl: '',
+        requestFingerprint: 'a'.repeat(64), requestSummary: { task_id: 7, name: 'reviewed-persons-sync', config: {
+          source: { locator: 'addp://engine/11/path/Outdoor/Persons?type=collection&item_id=7' },
+          target: { parent_locator: 'addp://engine/2/path/outdoor?type=schema', name: 'persons_check', policy: { apply_mode: 'replace' } }
+        } }, expiresAt: '2099-01-01T00:00:00Z' }] } }
+    ] } }
+  ] }
+  const messages = runApproval ? [runReview] : multiple ? [question, clarification(reviewId, '请选择目标', reviewOptions)] : []
   const requests = []
+  const decisions = []
   const unexpected = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route(/^https?:\/\/[^/]+\/api\//, async route => {
@@ -82,19 +96,35 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
     else if (path === '/api/v1/system/auth/context') body = {
       context: { type: 'tenant', tenant_id: '7' },
       authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '7' },
-        permissions: ['agent.session.read', 'agent.run.create', 'agent.run.execute'] }] }
+        permissions: ['agent.session.read', 'agent.run.create', 'agent.run.execute', ...(runApproval ? ['transfer.task.execute', 'transfer.task.read'] : [])] }] }
     }
     else if (path === '/api/v1/agent/sessions' && request.method() === 'GET') body = { data: [{ id: sessionId, title: goal, version: 1, pinned: false, archived: false }], total: 1, page: 1, page_size: 20, total_pages: 1 }
     else if (path === '/api/v1/agent/skills') body = []
     else if (path === `/api/v1/agent/sessions/${sessionId}`) body = { id: sessionId, title: goal, version: 1, pinned: false, archived: false }
     else if (path === `/api/v1/agent/sessions/${sessionId}/messages`) body = messages
+    else if (runApproval && path === `/api/v1/transfer/run-approvals/${approvalId}/decision` && request.method() === 'POST') {
+      expect(request.headers().authorization).toBe('Bearer fixture-token')
+      const decision = request.postDataJSON()
+      expect(decision.request_fingerprint).toBe('a'.repeat(64))
+      expect(['approved', 'rejected']).toContain(decision.decision)
+      decisions.push(decision)
+      body = { id: approvalId, status: decision.decision, request_fingerprint: 'a'.repeat(64) }
+    }
     else if (path === '/api/v1/agent/chat' && request.method() === 'POST') {
       const input = request.postDataJSON()
       requests.push(input)
       expect(input.threadId).toBe(String(sessionId))
       expect(request.headers().authorization).toBe('Bearer fixture-token')
       let current
-      if (requests.length === 1) {
+      if (runApproval) {
+        expect(decisions).toHaveLength(1)
+        expect(input.messages).toEqual([])
+        expect(input.resume).toEqual([{ interruptId: reviewId, status: 'resolved', payload: { action: 'check' } }])
+        completed(runReview)
+        current = { id: 'owner-result', role: 'assistant', parts: [{ type: 'text', text:
+          decisions[0].decision === 'approved' ? '已受理，等待执行，尚未同步完成。' : '你已拒绝本次运行，未提交启动。' }] }
+        messages.push(current)
+      } else if (requests.length === 1) {
         expect(input.resume || []).toEqual([])
         expect(input.messages).toHaveLength(1)
         const expectedGoal = draftReportStatus ? draftGoal : goal
@@ -144,7 +174,31 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
     }
     await route.fulfill({ json: body })
   })
-  return { requests, unexpected }
+  return { requests, unexpected, decisions }
+}
+
+for (const [button, result, decision] of [
+  ['确认运行', '已受理，等待执行，尚未同步完成。', 'approved'],
+  ['拒绝运行', '你已拒绝本次运行，未提交启动。', 'rejected']
+]) {
+  test(`Transfer inline ${decision} requires an explicit click and stays in Agent`, async ({ page, context }) => {
+    const backend = await installBackend(page, { runApproval: true })
+    await page.goto(`/module-ui/agent/sessions/${sessionId}`)
+    await expect(page.getByRole('button', { name: button, exact: true })).toBeVisible()
+    await expect(page.getByText(/运行将按 replace 策略清空目标表/)).toBeVisible()
+    expect(backend.decisions).toEqual([])
+    expect(backend.requests).toEqual([])
+    await page.getByRole('button', { name: button, exact: true }).click()
+    await expect(page.getByText(result, { exact: true })).toBeVisible()
+    expect(backend.decisions).toEqual([{ decision, request_fingerprint: 'a'.repeat(64) }])
+    expect(backend.requests).toHaveLength(1)
+    expect(backend.unexpected).toEqual([])
+    expect(context.pages()).toHaveLength(1)
+    await expect(page).toHaveURL(new RegExp(`/agent/sessions/${sessionId}$`))
+    await page.reload()
+    await expect(page.getByText(result, { exact: true })).toBeVisible()
+    expect(backend.decisions).toHaveLength(1)
+  })
 }
 
 test('short goal → reloaded text resume → reloaded review → cancel, with the real protocol client', async ({ page }) => {

@@ -110,6 +110,8 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 | `platform.capabilities.list` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
 | `transfer.task.create` | Transfer | `transfer.task.create` | write | none | none | 256 KiB |
 | `transfer.task.config.check` | Transfer | `transfer.task.create` ∩ `meta.catalog.read` ∩ `system.engine.read` | read | none | none | 128 KiB |
+| `transfer.task.start` | Transfer | `transfer.task.execute` ∩ `transfer.task.read` | write | owner_policy | none | 64 KiB |
+| `transfer.execution.get` | Transfer | `transfer.task.read` | read | none | none | 64 KiB |
 
 这是当前完整集合。未出现在 Manifest 中的 API 不能被 Adapter 自行包装为 ADDP Tool。
 
@@ -204,6 +206,20 @@ Copilot 校验上下文的结构与源定位符、引擎、数据类型一致性
 该创建 Tool 的契约为 `3.0.0`。当前有界快照切片的 `target.policy` 只接受显式 `apply_mode=replace|append`，不接受 `upsert` 或 `keys`；这与 Transfer 任务语义支持矩阵及 Planner 一致，不把增量装载能力混入快照创建。Manifest 是唯一输入 Schema，Runtime 在配置复核和创建前、SDK 在委托及 owner 调用前消费同一契约，不保留旧 upsert 分支或在 Agent 复制另一套策略枚举。
 
 `field_mapping.fields[].target_type` 只接受 ADDP 标准字段类型标识，枚举由 Manifest 唯一声明，并与 Common 字段类型契约核对；不接受 `text`、`boolean`、`jsonb` 等数据库 DDL 类型名或大小写、空白变体。该枚举只限定标准词汇，不声明每种类型都可作为目标列，也不证明实际值可转换、Provider 编码正确或任务执行成功；这些仍由 Transfer 与具体 Provider 校验。Ontology 不复制枚举或维护另一套数据库类型映射。
+
+### 4.8 Transfer 运行审批与执行读取
+
+`transfer.task.start` 使用唯一 `POST /task-definitions/:id/start`。首次只有 task_id，Owner 只保存 pending 运行审批并返回 `approval_required`、interaction_id、完整受限配置摘要、指纹和期限，不创建 execution。首期只接受已保存、未启用、无调度、无自动扫描的 bounded/snapshot/native table 任务，目标策略为 replace/append，不消费特殊角色保护方式。创建确认、只读预检及本体定义都不产生运行批准。
+
+Runtime 只主动读取正式目录选中的操作定义，按其 operation 与 requirements 在 Skill 白名单内收窄 Tool 集合，不要求同一 Skill 的其他能力均已发布。结果查询不装入创建或启动 Tool；模型进入已声明的可选后续操作前仍须正式读取其定义。审批引用的正式观察把 Interaction 后续恢复推进到启动操作，不能以客户端输入或猜测旧 Run 补造所选身份。
+
+审批由 Transfer 持有。Agent 复用共享审批卡片展示配置及 replace 影响，用户必须手动点击确认或拒绝；浏览器以当前 User 身份直接调用 Transfer 的 `POST /run-approvals/:id/decision`，携带决定与所显示的指纹，不由 Agent 后端或委托 Tool 代批。决定只保存批准／拒绝，不启动执行，无需跳转 Transfer 页面。状态读取 `GET /run-approvals/:id` 仅允许原用户、原 Tenant Membership 和授权版本，Agent 在同步恢复请求中核实 Owner 状态，不信任客户端自报批准。
+
+恢复 Tool 只携带同一 task_id、approval_id 和 request_fingerprint。Owner 绑定 Tenant、Principal、Membership、授权版本、AgentRun 及全部任务执行输入；配置变化、过期、拒绝或跨 AgentRun 重放必须拒绝。审批消费、执行记录关联与任务 claim 在同一 Owner 事务提交，模型不得改写配置或决定重发。需要的执行授权、数据资格及 Security 仍由现有 Owner／System／Worker 执行链校验；批准不是业务读写成功的保证。
+
+Agent Runtime 对正式 Owner 决定作确定性恢复：重读当前启动本体，语义身份变化终止并要求重新复核；批准时先消费并持久化本地确认，再沿原 Adapter 调用一次；已消费且有确定 execution_id 时只读取原执行，拒绝时不启动。请求／响应／校验失败或结果不明不自动重试启动。任务已创建而启动失败保留原 task ID，不重新创建任务。
+
+`transfer.execution.get` 使用唯一 `GET /executions/:execution_id` 和精确同名 Scope；沿 Owner 当前 Tenant 任务历史／本人一次性执行的读取范围，只投影执行身份、状态、读写计数、时间和类型化诊断，不返回原始配置、任意 metadata、checkpoint、业务值或原始错误。该 Tool 独立于 Develop 的 `execution.get`；没有新建 ResultRef 格式。pending／running 或 HTTP 200 不等于同步成功，AgentRun completed 也不等于任务完成；终态、写入计数与目标实际内容核实分别认定。内容核实另经有权的正式读取能力，不自动扫描或读样本补证。
 
 ## 五、Adapter 边界
 

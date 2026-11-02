@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: transfer
-manifest_version: 10
+manifest_version: 11
 permissions:
   - key: transfer.cleanup_result.read
     allowed_scope_types: [tenant]
@@ -78,7 +78,7 @@ permissions:
     allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
-    delegable: false
+    delegable: true
     status: active
     name_i18n_key: permissions.transfer.task.execute.name
     description_i18n_key: permissions.transfer.task.execute.description
@@ -86,7 +86,7 @@ permissions:
     allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
-    delegable: false
+    delegable: true
     status: active
     name_i18n_key: permissions.transfer.task.read.name
     description_i18n_key: permissions.transfer.task.read.description

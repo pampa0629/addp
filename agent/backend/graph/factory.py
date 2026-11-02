@@ -8,6 +8,7 @@ import uuid
 from contextlib import aclosing
 from typing import Any, AsyncIterator
 from urllib.parse import urlsplit
+from addp_common.tools import get_tool
 
 from deerflow.agents import create_deerflow_agent
 from deerflow.agents.middlewares.dangling_tool_call_middleware import DanglingToolCallMiddleware
@@ -27,6 +28,8 @@ from agents.checkpoint import canonicalize_clarification_options, capture_owner_
 from agents.events import AgentEvent, text_event
 from agents.result_refs import build_result_ref
 from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, ConfigCheckUnsupported, capture_config_check, config_check_report, prepare_review, review_json, validate_create
+from agents.transfer_run import START_TOOL, GET_TOOL, capture_run_review, validate_start, platform_identity
+from i18n import transfer_run_result
 from graph.state import TaskContext
 from i18n import bound_draft_review_error, invocation_stopped, transfer_config_check_completed, transfer_config_check_details, transfer_config_check_error, transfer_config_check_unsupported, transfer_create_review_messages, transfer_creation_completed, transfer_creation_stopped
 from services.drafts import validate_draft_arguments
@@ -149,6 +152,9 @@ class _PlatformBoundary(AgentMiddleware):
     async def abefore_model(self, state, runtime):
         if self.halted:
             return {"jump_to": "end"}
+        if self.resuming and self.checkpoint["confirmed"].get("run_approval"):
+            await self._resume_confirmed_start()
+            return {"jump_to": "end"}
         if self.resuming and CREATE_TOOL in self.checkpoint["confirmed"]["operation_reviews"]:
             await self._resume_confirmed_create()
             return {"jump_to": "end"}
@@ -249,7 +255,11 @@ class _PlatformBoundary(AgentMiddleware):
         if call["name"] not in self.names:
             return self._error(call, name, "tool_not_allowed", "错误：工具不在该 Skill 的白名单内")
         if name == "platform.capability.context":
-            self.checkpoint["observed"]["platform_capabilities"] = {}
+            capability = call["args"].get("capability")
+            if isinstance(capability, str) and capability:
+                self.checkpoint["observed"]["platform_capabilities"].pop(capability, None)
+            else:
+                self.checkpoint["observed"]["platform_capabilities"].clear()
             _emit("checkpoint", tool_call_id=call["id"], checkpoint=copy.deepcopy(self.checkpoint), facts={})
         if name == CHECK_TOOL:
             self._clear_config_check(call["id"])
@@ -276,6 +286,18 @@ class _PlatformBoundary(AgentMiddleware):
                 checkpoint_committed=committed,
             ))
             await committed
+        if name == START_TOOL:
+            try:
+                validate_start(call["args"], self.checkpoint)
+            except ValueError as exc:
+                return self._error(call, name, "platform_condition_unsatisfied", str(exc))
+            if "approval_id" in call["args"]:
+                self.checkpoint["confirmed"]["run_approval"] = None
+                committed = asyncio.get_running_loop().create_future()
+                get_stream_writer()(AgentEvent(kind="checkpoint", payload={
+                    "tool_call_id": call["id"], "checkpoint": copy.deepcopy(self.checkpoint), "facts": {},
+                }, checkpoint_committed=committed))
+                await committed
         try:
             message = await handler(call)
         except Exception as exc:
@@ -298,9 +320,49 @@ class _PlatformBoundary(AgentMiddleware):
     def _stop_resume(self, code):
         self.halted = True
         self.checkpoint["confirmed"]["operation_reviews"].pop(CREATE_TOOL, None)
+        self.checkpoint["confirmed"]["run_approval"] = None
         _emit("checkpoint", checkpoint=copy.deepcopy(self.checkpoint), facts={})
         _emit("run_failed", error_source="runtime", error_code=code,
-              message=transfer_creation_stopped(self.accept_language))
+              message=(workspace_message(self.accept_language, "transfer_run_stopped") if code.startswith("run_")
+                       else transfer_creation_stopped(self.accept_language)))
+
+    async def _resume_confirmed_start(self):
+        """Only the server-resolved owner decision can reach this branch."""
+        review = copy.deepcopy(self.checkpoint["confirmed"]["run_approval"])
+        if review["capability"] != platform_identity(self.checkpoint):
+            self._stop_resume("run_review_changed")
+            return
+        if review["status"] == "rejected":
+            self.checkpoint["confirmed"]["run_approval"] = None
+            _emit("checkpoint", checkpoint=copy.deepcopy(self.checkpoint), facts={})
+            get_stream_writer()(text_event(workspace_message(self.accept_language, "transfer_run_rejected")))
+            self.halted = True
+            return
+
+        async def invoke(call):
+            return await self.platform_tools[self.names[call["name"]]].ainvoke({**call, "type": "tool_call"})
+
+        if review["status"] == "consumed":
+            self.checkpoint["confirmed"]["run_approval"] = None
+            _emit("checkpoint", checkpoint=copy.deepcopy(self.checkpoint), facts={})
+            if not review.get("execution_id"):
+                self._stop_resume("run_result_unknown")
+                return
+            name, arguments = GET_TOOL, {"execution_id": review["execution_id"]}
+        else:
+            name = START_TOOL
+            arguments = {key: review[key] for key in ("task_id", "approval_id", "request_fingerprint")}
+        call = {"id": str(uuid.uuid4()), "name": self.platform_tools[name].name, "args": arguments}
+        message = await self._invoke(call, invoke)
+        if not isinstance(message, ToolMessage):
+            self._stop_resume("run_result_unknown")
+            return
+        result = json.loads(message.content)
+        if result.get("error") or not result.get("execution_id"):
+            self._stop_resume("run_result_unknown")
+            return
+        get_stream_writer()(text_event(transfer_run_result(self.accept_language, result)))
+        self.halted = True
 
     async def _resume_confirmed_create(self):
         """Resume the reviewed candidate through the same guarded Tool invocation."""
@@ -481,6 +543,9 @@ class _PlatformBoundary(AgentMiddleware):
             } else "tool"
         if result is not None:
             facts = capture_owner_facts(name, result, self.checkpoint)
+            if name == START_TOOL and not code and result.get("status") == "approval_required":
+                capture_run_review(result, self.checkpoint)
+                facts["run_approval"] = [copy.deepcopy(self.checkpoint["observed"]["run_approval"])]
             if name == CHECK_TOOL and not code:
                 facts.update(capture_config_check(call["args"], result, self.checkpoint))
             if facts:
@@ -514,9 +579,9 @@ class _PlatformBoundary(AgentMiddleware):
             return Command(update={"messages": [ToolMessage(
                 content=content, tool_call_id=call["id"], name=call["name"],
             )]}, goto=END)
-        if name == "workflow.run" and isinstance(result, dict) and result.get("status") == "approval_required":
+        if name in {"workflow.run", START_TOOL} and isinstance(result, dict) and result.get("status") == "approval_required":
             return {
-                "interaction_kind": "owner_approval", "owner": "develop",
+                "interaction_kind": "owner_approval", "owner": "transfer" if name == START_TOOL else "develop",
                 "owner_interaction_id": result.get("interaction_id"), "open_url": result.get("open_url"),
                 "request_fingerprint": result.get("request_fingerprint"),
                 "request_summary": result.get("request_summary") or {}, "expires_at": result.get("expires_at"),
@@ -546,17 +611,25 @@ class AgentFactory:
         )}
         if set(allowed_tool_names) - tool_map.keys():
             raise ValueError("agent_skill_tool_not_found")
-        if CREATE_TOOL in allowed_tool_names:
+        capability = task_context.get("platform_capability") or checkpoint["platform_capability"]
+        if capability is None and {CREATE_TOOL, START_TOOL, GET_TOOL} & set(allowed_tool_names):
+            raise ValueError("platform_capability_selection_required")
+        if capability is not None:
+            if capability not in allowed_tool_names:
+                raise ValueError("platform_capability_tool_not_allowed")
+            checkpoint["platform_capability"] = capability
             name = "platform.capability.context"
-            if name not in allowed_tool_names or CHECK_TOOL not in allowed_tool_names:
+            if (name not in allowed_tool_names
+                    or (capability == CREATE_TOOL and CHECK_TOOL not in allowed_tool_names)
+                    or (capability == START_TOOL and GET_TOOL not in allowed_tool_names)):
                 raise ValueError("agent_skill_tool_not_found")
             # Fresh semantics are a Runtime precondition, not an LLM reminder.
             # Use the same scoped adapter and audited events as model calls.
             call_id = str(uuid.uuid4())
             yield AgentEvent(kind="checkpoint", payload={"checkpoint": copy.deepcopy(checkpoint), "facts": {}})
-            yield AgentEvent(kind="tool_start", payload={"tool_call_id": call_id, "tool_name": name, "args": {"capability": CREATE_TOOL}})
+            yield AgentEvent(kind="tool_start", payload={"tool_call_id": call_id, "tool_name": name, "args": {"capability": capability}})
             message = await tool_map[name].ainvoke({
-                "name": tool_map[name].name, "args": {"capability": CREATE_TOOL},
+                "name": tool_map[name].name, "args": {"capability": capability},
                 "id": call_id, "type": "tool_call",
             })
             result = json.loads(message.content)
@@ -573,8 +646,15 @@ class AgentFactory:
                 yield AgentEvent(kind="run_failed", payload={"error_source": source, "error_code": error["code"], "message": error.get("message", error["code"])})
                 return
             facts = capture_owner_facts(name, result, checkpoint)
-            if CREATE_TOOL not in checkpoint["observed"]["platform_capabilities"]:
+            if capability not in checkpoint["observed"]["platform_capabilities"]:
                 raise RuntimeError("invalid_owner_response")
+            definition = checkpoint["observed"]["platform_capabilities"][capability]
+            operation = definition["operation"]
+            if operation["tool"] != capability or operation["owner"] != get_tool(capability).owner:
+                raise RuntimeError("platform_operation_mismatch")
+            dependencies = {capability, name}
+            dependencies.update(tool for requirement in definition["requirements"] for tool in requirement["tools"])
+            allowed_tool_names = [name for name in allowed_tool_names if name in dependencies]
             yield AgentEvent(kind="checkpoint", payload={"tool_call_id": call_id, "checkpoint": copy.deepcopy(checkpoint), "facts": facts})
         human_input = task_context["user_request"]
         if task_context["context_summary"]:

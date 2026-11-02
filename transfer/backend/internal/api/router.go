@@ -86,6 +86,8 @@ func SetupRouter(
 
 	// 创建 Handlers
 	taskHandler := NewTaskHandler(taskService)
+	protected.GET("/run-approvals/:id", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetRunApproval)
+	protected.POST("/run-approvals/:id/decision", permission(transferauthorization.PermissionTransferTaskExecute), taskHandler.DecideRunApproval)
 	executionHandler := NewExecutionHandler(executionService, taskService)
 	protected.GET("/runtime/executions/:execution_id/production-receipt", commonAuth.MustNewServiceClientGuard("addp-system", "addp-meta"), permission(transferauthorization.PermissionTransferProductionReceiptRead), executionHandler.ReadProductionReceipt)
 	capabilityHandler := NewTransferCapabilityHandler()
@@ -151,6 +153,14 @@ func transferDelegatedToolPolicies() map[string]commonAuth.DelegatedRoutePolicyE
 		"POST /api/v1/transfer/task-definitions": {
 			RequiredScopes:      []string{"transfer.task.create"},
 			RequiredPermissions: []string{transferauthorization.PermissionTransferTaskCreate},
+		},
+		"POST /api/v1/transfer/task-definitions/:id/start": {
+			RequiredScopes:      []string{"transfer.task.start"},
+			RequiredPermissions: []string{transferauthorization.PermissionTransferTaskExecute, transferauthorization.PermissionTransferTaskRead},
+		},
+		"GET /api/v1/transfer/executions/:execution_id": {
+			RequiredScopes:      []string{"transfer.execution.get"},
+			RequiredPermissions: []string{transferauthorization.PermissionTransferTaskRead},
 		},
 	}
 }

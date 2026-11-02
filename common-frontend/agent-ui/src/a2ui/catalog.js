@@ -67,10 +67,13 @@ const ApprovalRequestApi = {
     interactionId: z.string().uuid(),
     owner: z.string().min(1),
     ownerInteractionId: z.string().min(1),
-    openUrl: z.string().min(1),
+    openUrl: z.string().optional(),
+    inlineDecision: z.boolean().optional(),
     requestFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
     requestSummary: z.record(z.string(), z.unknown()),
     expiresAt: z.string().nullable().optional()
+  }).superRefine((value, context) => {
+    if (!value.inlineDecision && !value.openUrl) context.addIssue({ code: z.ZodIssueCode.custom, message: 'owner navigation requires an explicit URL' })
   }),
   render: ApprovalRequest
 }

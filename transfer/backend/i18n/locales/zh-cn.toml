@@ -144,3 +144,30 @@ other = "暂时无法核验导出文件的保护状态，请稍后重试。"
 
 [transfer.task.cleanup_unresolved]
 other = "任务存在尚未核清的外部清理操作，无法启动或恢复"
+
+[transfer.approval_forbidden]
+other = "当前身份不能访问或使用此运行审批"
+
+[transfer.approval_not_found]
+other = "运行审批不存在"
+
+[transfer.approval_invalid_request]
+other = "仅支持未启用、无调度的一次性原生表快照任务，请检查运行配置"
+
+[transfer.approval_invalid_decision]
+other = "请选择批准或拒绝，并提交当前显示的配置指纹"
+
+[transfer.approval_request_mismatch]
+other = "任务配置已变化或确认内容不匹配，请重新申请运行确认"
+
+[transfer.approval_not_approved]
+other = "请先手动确认本次任务运行"
+
+[transfer.approval_expired]
+other = "本次运行审批已过期，请重新确认"
+
+[transfer.approval_rejected]
+other = "本次任务运行已被拒绝"
+
+[transfer.approval_already_consumed]
+other = "本次运行审批已使用，请核对原执行记录，不要重复启动"
