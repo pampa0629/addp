@@ -1101,7 +1101,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "汇水分析"), "raster_drainage_basins_d8 raster_snap_pour_points raster_watershed_d8 raster_subcatchments_d8"),
         (("栅格处理", "河网分析"), "raster_stream_order_d8 raster_stream_link_d8 raster_stream_to_vector_d8 raster_distance_to_stream_d8 raster_hand_d8"),
         (("栅格处理", "格式转换"), "raster_polygonize vector_rasterize"),
-        (("栅格处理", "栅格统计"), "raster_statistics raster_cut_fill raster_surface_area raster_zonal_statistics raster_focal_statistics raster_vector_zonal_statistics raster_sample_points raster_recommend_band_combination raster_histogram"),
+        (("栅格处理", "栅格统计"), "raster_statistics raster_cut_fill raster_surface_area raster_zonal_statistics raster_focal_statistics raster_vector_zonal_statistics raster_sample_points raster_sample_lines raster_recommend_band_combination raster_histogram"),
         (("栅格处理", "栅格检查"), "raster_info validate_cog"),
         (("栅格处理", "成果生成"), "raster_to_cog raster_build_overviews build_raster_mosaic"),
     ]
@@ -1408,7 +1408,7 @@ def test_vector_percentile_single_existing_entry_keeps_coverage_prefix_and_optio
     specs = [spec for spec in list_operators() if spec['id']=='raster_vector_zonal_statistics']
     assert len(specs)==1
     spec = specs[0]; params = {item['name']:item for item in spec['parameters']}
-    assert set(params)=={'input_raster','input_gdf','band','all_touched','field_prefix','percentile','weights_raster','weights_band','include_weighted_stddev','include_area_weighted','include_area_weighted_stddev'}
+    assert set(params)=={'input_raster','input_gdf','band','all_touched','field_prefix','percentile','weights_raster','weights_band','include_weighted_stddev','include_area_weighted','include_area_weighted_stddev','method','id_field'}
     assert params['band']['required'] and params['input_gdf']['required']
     assert params['all_touched']['default'] is False and params['field_prefix']['default']=='zonal_'
     assert params['percentile']['type']=='float' and not params['percentile']['required'] and 'default' not in params['percentile']
@@ -1516,7 +1516,7 @@ def test_zonal_weighted_single_table_entry_optional_pair_and_original_example():
 def test_vector_zonal_weighted_single_existing_entry_optional_pair_and_original_example():
     specs=[s for s in list_operators()if s['id']=='raster_vector_zonal_statistics'];assert len(specs)==1
     spec=specs[0];params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_raster','input_gdf','band','all_touched','field_prefix','percentile','weights_raster','weights_band','include_weighted_stddev','include_area_weighted','include_area_weighted_stddev'}
+    assert set(params)=={'input_raster','input_gdf','band','all_touched','field_prefix','percentile','weights_raster','weights_band','include_weighted_stddev','include_area_weighted','include_area_weighted_stddev','method','id_field'}
     assert params['weights_raster']['type']=='raster'and params['weights_raster']['param_type']=='input'and not params['weights_raster']['required']
     assert params['weights_band']['type']=='integer'and not params['weights_band']['required']
     assert 'default'not in params['weights_raster']and 'default'not in params['weights_band']
@@ -1650,6 +1650,38 @@ def test_vector_clip_metadata_requires_explicit_source_and_full_geometry():
     assert params['id_field']['type']=='string' and 'default' not in params['id_field']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['is_default'] and spec['output_ports'][0]['type']=='geodataframe'
     assert 'GeometryCollection' in spec['detailed_description']['overview']
+
+
+def test_vector_zonal_frequency_keeps_one_geo_entry_original_defaults_and_conditional_identifier():
+    specs=[v for v in list_operators()if v['id']=='raster_vector_zonal_statistics'];assert len(specs)==1
+    spec=specs[0];params={v['name']:v for v in spec['parameters']}
+    assert params['method']['enum']==['summary','class_frequency'] and params['method']['default']=='summary'
+    assert params['method']['type']=='string' and not params['method']['required']
+    assert params['id_field']['type']=='string' and not params['id_field']['required']
+    assert params['id_field']['show_when']=={'method':['class_frequency']}
+    assert params['all_touched']['default']is False and params['field_prefix']['default']=='zonal_'
+    assert spec['effects']==['read']and spec['execution_modes']==['workflow']and spec['attributes']['resource_groups']==['raster']
+    assert spec['output_ports'][0]['type']=='GeoDataFrame'
+    assert not any(v['id']in('raster_vector_class_frequency','vector_zonal_class_frequency')for v in list_operators())
+    assert 'method'not in spec['detailed_description']['workflow_example']['params']
+
+
+def test_raster_sample_lines_one_explicit_metre_sampling_entry_and_standard_native_recipe():
+    from operators.raster_compute import OPERATORS
+    from pathlib import Path
+    specs=[v for v in list_operators()if v['id']=='raster_sample_lines'];assert len(specs)==1
+    spec=specs[0];params={v['name']:v for v in spec['parameters']}
+    assert set(params)=={'input_raster','input_gdf','band','id_field','spacing_metres','method'}
+    assert all(params[n]['required']for n in('input_raster','input_gdf','band','id_field','spacing_metres'))
+    assert params['input_gdf']['param_type']=='input'and params['input_gdf']['type']=='object'
+    assert OPERATORS['raster_sample_lines']['param_schema'][1]['type']=='GeoDataFrame'
+    assert params['method']['default']=='cell'and params['method']['enum']==['cell','bilinear']
+    assert params['spacing_metres']['type']=='float'and spec['output_ports'][0]['type']=='GeoDataFrame'
+    assert spec['effects']==['read']and spec['execution_modes']==['workflow']and spec['attributes']['resource_groups']==['raster']
+    assert spec['category_path']==['栅格处理','栅格统计']
+    recipe=(Path(__file__).resolve().parents[2]/'Makefile').read_text().split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]
+    assert all(name in recipe for name in('test_raster_vector_zonal_frequency.py','test_raster_sample_lines.py','test_raster_compute.py','test_operator_metadata.py'))
+    assert not any(v['id']in('raster_profile_lines','raster_line_profile')for v in list_operators())
 
 
 def test_vector_union_metadata_is_explicit_binary_polygon_partition_without_list_alias():

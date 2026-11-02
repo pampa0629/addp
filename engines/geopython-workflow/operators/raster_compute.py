@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 from shapely import from_wkb, get_coordinates, has_m, has_z, make_valid
-from shapely.geometry import LineString, MultiPolygon
+from shapely.geometry import LineString, MultiPolygon, Point
 from osgeo import gdal, ogr, osr
 from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate as validate_layout
 from addp_common.workflow_access import (
@@ -1195,6 +1195,136 @@ def raster_sample_points(input_raster, input_gdf, band, method='cell'):
         candidate = dataset = None
 
 
+_SAMPLE_LINES_MESSAGES = {
+    'method': ('沿线栅格采样方法必须为cell或bilinear', 'Raster line sampling method must be cell or bilinear'),
+    'spacing': ('沿线采样间距须为可精确表示的有限正实数米值，不能为布尔值', 'Line sampling spacing must be a representable finite positive real number of metres, not a boolean'),
+    'gdf': ('沿线栅格采样需要具有唯一活动几何列的GeoDataFrame', 'Raster line sampling requires a GeoDataFrame with one active geometry column'),
+    'geometry': ('沿线栅格采样仅接受非空、有效、有限XY的二维非零长度LineString', 'Raster line sampling requires non-empty valid finite XY nonzero-length two-dimensional LineStrings'),
+    'columns': ('沿线采样结果字段不能覆盖原字段或活动几何列', 'Line sampling result columns must not overwrite source fields or active geometry'),
+    'id': ('沿线采样须显式指定现有非几何、非空且唯一的标量编号字段', 'Line sampling requires an explicit existing non-geometry, non-null unique scalar identifier field'),
+    'crs': ('线与栅格须具有相同明确的二维投影CRS及相同已知有限正水平线性单位', 'Lines and raster require the same explicit two-dimensional projected CRS with matching known finite positive horizontal linear units'),
+    'numeric': ('沿线采样长度、里程或坐标超出有限Float64范围，非零距离及不同里程须可区分', 'Line sampling length, chainage or coordinates exceed finite Float64 range; nonzero distances and distinct chainages must remain representable'),
+}
+
+
+def _sample_lines_error(code):
+    return ValueError(_SAMPLE_LINES_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _line_sample_positions(line, spacing, units):
+    # Round each exact squared XY difference times the CRS unit factor to a
+    # Float64 metre length once; accumulate those segment facts as exact ratios.
+    # Sample positions use exact binary spacing multiples, without an epsilon.
+    coordinates = list(line.coords)
+    segments, total = [], Fraction(0)
+    for start, end in zip(coordinates, coordinates[1:]):
+        dx, dy = Fraction(end[0])-Fraction(start[0]), Fraction(end[1])-Fraction(start[1])
+        squared = (dx*dx+dy*dy)*units*units
+        if not squared:
+            continue
+        length = Fraction(_sqrt_fraction(squared, error=lambda: _sample_lines_error('numeric')))
+        segments.append((start, end, total, length)); total += length
+    if not segments:
+        raise _sample_lines_error('geometry')
+    try:
+        endpoint = float(total)
+    except OverflowError as cause:
+        raise _sample_lines_error('numeric') from cause
+    if not math.isfinite(endpoint) or endpoint <= 0:
+        raise _sample_lines_error('numeric')
+    quotient = total/spacing
+    interior = (quotient.numerator-1)//quotient.denominator
+    # This is an index/Float64 distinguishability bound, not a workload quota.
+    if interior+2 > np.iinfo(np.intp).max or interior > (1 << (np.finfo(np.float64).nmant+1)):
+        raise _sample_lines_error('numeric')
+    if interior and float(interior*spacing) >= endpoint:
+        raise _sample_lines_error('numeric')
+    if interior > 1 and float((interior-1)*spacing) >= float(interior*spacing):
+        raise _sample_lines_error('numeric')
+    samples, cursor, previous = [], 0, -1.
+    for index in range(interior+2):
+        distance = total if index == interior+1 else index*spacing
+        chainage = float(distance)
+        if not math.isfinite(chainage) or chainage <= previous:
+            raise _sample_lines_error('numeric')
+        previous = chainage
+        if index == 0:
+            xy = coordinates[0]
+        elif index == interior+1:
+            xy = coordinates[-1]
+        else:
+            while distance > segments[cursor][2]+segments[cursor][3]:
+                cursor += 1
+            start, end, origin, length = segments[cursor]
+            fraction = (distance-origin)/length
+            xy = tuple(float((1-fraction)*Fraction(start[axis])+fraction*Fraction(end[axis])) for axis in (0, 1))
+        if not all(math.isfinite(value) for value in xy):
+            raise _sample_lines_error('numeric')
+        samples.append((chainage, Point(xy)))
+    return samples
+
+
+def raster_sample_lines(input_raster, input_gdf, band, id_field, spacing_metres, method='cell'):
+    """Generate metre chainages, then use the sole existing point sampler."""
+    if not isinstance(method, str) or method not in ('cell', 'bilinear'):
+        raise _sample_lines_error('method')
+    try:
+        spacing = float(spacing_metres)
+        if (isinstance(spacing_metres, (bool, np.bool_)) or not isinstance(spacing_metres, Real)
+                or not math.isfinite(spacing) or spacing <= 0 or spacing != spacing_metres):
+            raise _sample_lines_error('spacing')
+    except (TypeError, ValueError, OverflowError) as cause:
+        raise _sample_lines_error('spacing') from cause
+    if not isinstance(input_gdf, gpd.GeoDataFrame):
+        raise _sample_lines_error('gdf')
+    try:
+        geometries = input_gdf.geometry
+    except AttributeError as cause:
+        raise _sample_lines_error('gdf') from cause
+    if not input_gdf.columns.is_unique or sum(isinstance(dtype, gpd.array.GeometryDtype) for dtype in input_gdf.dtypes) != 1:
+        raise _sample_lines_error('gdf')
+    if any(name in input_gdf.columns for name in ('distance_m', 'sample_value', 'sample_status')):
+        raise _sample_lines_error('columns')
+    _raster_feature_ids(input_gdf, id_field, _sample_lines_error)
+    for line in geometries:
+        if (line is None or line.is_empty or line.geom_type != 'LineString' or has_z(line) or has_m(line)
+                or not line.is_valid or not np.isfinite(get_coordinates(line)).all()):
+            raise _sample_lines_error('geometry')
+    dataset = _open(input_raster)
+    try:
+        reference = _crs(dataset.GetProjection())
+        crs = input_gdf.crs
+        axes = [] if crs is None else crs.axis_info
+        if (crs is None or not crs.is_projected or crs.is_compound or len(axes) != 2
+                or not reference.IsProjected() or reference.IsCompound() or reference.GetAxesCount() != 2
+                or not _crs(crs.to_wkt()).IsSame(reference)
+                or any(not math.isfinite(axis.unit_conversion_factor) or axis.unit_conversion_factor <= 0
+                       or axis.unit_name.strip().lower() in ('', 'unknown') for axis in axes)
+                or axes[0].unit_conversion_factor != axes[1].unit_conversion_factor):
+            raise _sample_lines_error('crs')
+        units = Fraction(axes[0].unit_conversion_factor)
+    except (ValueError, RuntimeError, TypeError, AttributeError) as cause:
+        raise _sample_lines_error('crs') from cause
+    finally:
+        dataset = None
+    parents, distances, points = [], [], []
+    for position, line in enumerate(geometries):
+        for distance, point in _line_sample_positions(line, Fraction(spacing), units):
+            parents.append(position); distances.append(distance); points.append(point)
+    generated = input_gdf.iloc[parents].copy().reset_index(drop=True)
+    generated[geometries.name] = gpd.GeoSeries(points, index=generated.index, crs=input_gdf.crs)
+    generated['distance_m'] = pd.array(distances, dtype='Float64')
+    return raster_sample_points(input_raster, generated, band, method=method)
+
+
+def _raster_feature_ids(input_gdf, id_field, error):
+    from .geometric_operators import _source_identifiers
+    try:
+        return _source_identifiers(input_gdf, id_field)
+    except (ValueError, TypeError) as cause:
+        raise error('id') from cause
+
+
 def _polygon_geometries(input_gdf):
     if not isinstance(input_gdf, gpd.GeoDataFrame):
         raise ValueError('input_gdf must be a GeoDataFrame')
@@ -1556,9 +1686,9 @@ def _zonal_frequency_error(code):
     return ValueError(_ZONAL_FREQUENCY_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _zonal_frequency_indices(dataset, band, role):
+def _zonal_frequency_indices(dataset, band, role, error=_zonal_frequency_error):
     if type(band) is not int or not 1 <= band <= dataset.RasterCount:
-        raise _zonal_frequency_error(role)
+        raise error(role)
     try:
         selected = _band(dataset, band)
         alphas = [index for index in range(1, dataset.RasterCount+1)
@@ -1566,26 +1696,27 @@ def _zonal_frequency_indices(dataset, band, role):
         for index in alphas:
             _band(dataset, index)
     except ValueError as cause:
-        raise _zonal_frequency_error('complex') from cause
+        raise error('complex') from cause
     if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
-        raise _zonal_frequency_error('alpha')
+        raise error('alpha')
     return [band, *alphas]
+
+
+def _class_frequency_rows(total, classes, *, allow_empty=False, error=_zonal_frequency_error):
+    valid = sum(classes.values())
+    if (not (0 if allow_empty else 1) <= total <= np.iinfo(np.int64).max or valid > total
+            or any(not 0 < count <= np.iinfo(np.int64).max for count in classes.values())):
+        raise error('numeric')
+    if classes:
+        return [[code, count, float(Fraction(count, valid)), total, valid, total-valid]
+                for code, count in sorted(classes.items())]
+    return [[None, 0, None, total, 0, total]]
 
 
 def _zonal_frequency_frame(totals, frequencies):
     columns = ['zone_value', 'class_value', 'count', 'proportion', 'total_count', 'valid_count', 'invalid_count']
-    rows = []
-    for zone in sorted(totals):
-        total, classes = totals[zone], frequencies.get(zone, {})
-        valid = sum(classes.values())
-        if (not 0 < total <= np.iinfo(np.int64).max or valid > total
-                or any(not 0 < count <= np.iinfo(np.int64).max for count in classes.values())):
-            raise _zonal_frequency_error('numeric')
-        if classes:
-            rows.extend([zone, code, count, float(Fraction(count, valid)), total, valid, total-valid]
-                        for code, count in sorted(classes.items()))
-        else:
-            rows.append([zone, None, 0, None, total, 0, total])
+    rows = [[zone, *row] for zone in sorted(totals)
+            for row in _class_frequency_rows(totals[zone], frequencies.get(zone, {}))]
     result = pd.DataFrame(rows, columns=columns)
     return result.astype({name: 'Int64' if name == 'class_value' else 'Float64' if name == 'proportion' else 'int64'
                           for name in columns})
@@ -1830,15 +1961,149 @@ class _VectorAreaStatistics:
         return values
 
 
+_VECTOR_ZONAL_ID_UNSET = object()
+_VECTOR_FREQUENCY_MESSAGES = {
+    'method': ('矢量分区统计方法必须为summary或class_frequency', 'Vector zonal statistics method must be summary or class_frequency'),
+    'conflict': ('矢量分类频数不能提供百分位、外部权重或启用加权／面积模式', 'Vector class frequency cannot accept percentile, external weights or enabled weighted/area modes'),
+    'summary_id': ('summary方法不能提供id_field', 'The summary method cannot accept id_field'),
+    'id': ('分类频数须显式选择现有非几何、非空唯一标量面编号列', 'Class frequency requires an explicit existing non-geometry unique non-null scalar zone identifier column'),
+    'geometry': ('分类频数要求唯一几何列及有效非空有限二维面，允许空批', 'Class frequency requires one geometry column and valid non-empty finite XY polygons; empty batches are allowed'),
+    'coverage': ('all_touched必须是布尔值', 'all_touched must be a boolean'),
+    'prefix': ('field_prefix必须是字符串', 'field_prefix must be a string'),
+    'columns': ('分类频数结果列不能覆盖原属性或活动几何', 'Class frequency result columns must not overwrite source attributes or active geometry'),
+    'crs': ('分类频数的面与栅格必须具有相同明确CRS', 'Class frequency polygons and raster require the same explicit CRS'),
+    'grid': ('分类频数栅格必须具有完整有限可逆网格', 'Class frequency raster requires a complete finite invertible grid'),
+    'band': ('分类频数必须显式选择有效的一基分类波段', 'Class frequency requires an explicit valid one-based class band'),
+    'alpha': ('分类频数不能选择alpha作为数据波段', 'Class frequency cannot select alpha as data'),
+    'complex': ('分类频数不支持所选复数数据或复数alpha', 'Class frequency does not support selected complex data or complex alpha'),
+    'classes': ('分类频数的有效类别必须为±(2^53−1)内的精确整数', 'Valid frequency classes must be exact integers within plus or minus (2^53-1)'),
+    'numeric': ('分类频数计数超出有符号Int64范围', 'Class frequency counts exceed the signed Int64 range'),
+}
+
+
+def _vector_frequency_error(code):
+    return ValueError(_VECTOR_FREQUENCY_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+@contextmanager
+def _vector_zone_blocks(dataset, geometry, indices, all_touched, window):
+    """One coverage path shared by numeric and categorical polygon statistics."""
+    vector = layer = feature = coverage = iterator = None
+    try:
+        if window is None:
+            yield iter(())
+            return
+        vector = ogr.GetDriverByName('Memory').CreateDataSource('')
+        layer = vector.CreateLayer('zone', _crs(dataset.GetProjection()), ogr.wkbUnknown)
+        feature = ogr.Feature(layer.GetLayerDefn())
+        feature.SetGeometry(ogr.CreateGeometryFromWkb(geometry.wkb))
+        if layer.CreateFeature(feature) != 0:
+            raise ValueError('Cannot create zone feature')
+        feature = None
+        transform = dataset.GetGeoTransform()
+        def blocks():
+            nonlocal coverage
+            for x, y, arrays, masks in _blocks(dataset, indices, window=window, native=True):
+                height, width = arrays[0].shape
+                coverage = gdal.GetDriverByName('MEM').Create('', width, height, 1, gdal.GDT_Byte)
+                origin = gdal.ApplyGeoTransform(transform, x, y)
+                coverage.SetGeoTransform((origin[0], transform[1], transform[2], origin[1], transform[4], transform[5]))
+                coverage.SetProjection(dataset.GetProjection())
+                coverage.GetRasterBand(1).Fill(0)
+                layer.ResetReading()
+                options = ['ALL_TOUCHED='+('TRUE' if all_touched else 'FALSE')]
+                if gdal.RasterizeLayer(coverage, [1], layer, burn_values=[1], options=options) != 0:
+                    raise ValueError('Zone coverage rasterization failed')
+                covered = coverage.GetRasterBand(1).ReadAsArray() != 0
+                yield x, y, arrays, masks, covered
+                coverage = None
+        iterator = blocks()
+        yield iterator
+    finally:
+        if iterator is not None:
+            iterator.close()
+        feature = layer = vector = coverage = None
+
+
+def _vector_zonal_class_frequency(input_raster, input_gdf, band, all_touched, field_prefix, id_field):
+    try:
+        geometries = _polygon_geometries(input_gdf)
+        if (not input_gdf.columns.is_unique
+                or sum(isinstance(dtype, gpd.array.GeometryDtype) for dtype in input_gdf.dtypes) != 1):
+            raise ValueError('ambiguous geometry schema')
+    except (ValueError, AttributeError) as cause:
+        raise _vector_frequency_error('geometry') from cause
+    _raster_feature_ids(input_gdf, id_field, _vector_frequency_error)
+    if type(all_touched) is not bool:
+        raise _vector_frequency_error('coverage')
+    if not isinstance(field_prefix, str):
+        raise _vector_frequency_error('prefix')
+    suffixes = ('class_value', 'count', 'proportion', 'total_count', 'valid_count', 'invalid_count')
+    names = [field_prefix+name for name in suffixes]
+    if any(name in input_gdf.columns for name in names):
+        raise _vector_frequency_error('columns')
+    dataset = None
+    try:
+        dataset = _open(input_raster)
+        try:
+            if input_gdf.crs is None or not _crs(input_gdf.crs.to_wkt()).IsSame(_crs(dataset.GetProjection())):
+                raise ValueError('CRS mismatch')
+        except (ValueError, RuntimeError) as cause:
+            raise _vector_frequency_error('crs') from cause
+        try:
+            _grid(dataset)
+        except (ValueError, RuntimeError) as cause:
+            raise _vector_frequency_error('grid') from cause
+        indices = _zonal_frequency_indices(dataset, band, 'band', error=_vector_frequency_error)
+        positions, rows = [], []
+        for position, geometry in enumerate(geometries):
+            total, classes = 0, {}
+            window = _zone_window(dataset, geometry.bounds)
+            with _vector_zone_blocks(dataset, geometry, indices, all_touched, window) as blocks:
+                for _, _, arrays, masks, covered in blocks:
+                    required = covered & masks[0]
+                    for alpha, valid in zip(arrays[1:], masks[1:]):
+                        required &= valid & (alpha > 0)
+                    try:
+                        values = _safe_classification_values(arrays[0], required)
+                    except ValueError as cause:
+                        raise _vector_frequency_error('classes') from cause
+                    codes, counts = np.unique(values, return_counts=True)
+                    for code, count in zip(codes, counts):
+                        code = int(code)
+                        classes[code] = classes.get(code, 0)+int(count)
+                    total += int(covered.sum())
+            members = _class_frequency_rows(total, classes, allow_empty=True, error=_vector_frequency_error)
+            rows.extend(members)
+            positions.extend([position]*len(members))
+        result = input_gdf.iloc[positions].copy()
+        for index, (name, suffix) in enumerate(zip(names, suffixes)):
+            result[name] = pd.array([row[index] for row in rows], dtype='Int64' if suffix == 'class_value' else 'Float64' if suffix == 'proportion' else 'int64')
+        return result
+    finally:
+        dataset = None
+
+
 def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=False, field_prefix='zonal_', percentile=_PERCENTILE_UNSET,
                                    *, weights_raster=_ZONAL_WEIGHTS_UNSET, weights_band=_ZONAL_WEIGHTS_UNSET,
-                                   include_weighted_stddev=False, include_area_weighted=False, include_area_weighted_stddev=False):
+                                   include_weighted_stddev=False, include_area_weighted=False, include_area_weighted_stddev=False,
+                                   method='summary', id_field=_VECTOR_ZONAL_ID_UNSET):
     if type(include_weighted_stddev) is not bool:
         raise _vector_zonal_weight_error('stddev_flag')
     if type(include_area_weighted) is not bool:
         raise _vector_area_error('flag')
     if type(include_area_weighted_stddev) is not bool:
         raise _vector_area_error('stddev_flag')
+    if not isinstance(method, str) or method not in ('summary', 'class_frequency'):
+        raise _vector_frequency_error('method')
+    if method == 'class_frequency':
+        if (percentile is not _PERCENTILE_UNSET or weights_raster is not _ZONAL_WEIGHTS_UNSET
+                or weights_band is not _ZONAL_WEIGHTS_UNSET or include_weighted_stddev
+                or include_area_weighted or include_area_weighted_stddev):
+            raise _vector_frequency_error('conflict')
+        return _vector_zonal_class_frequency(input_raster, input_gdf, band, all_touched, field_prefix, id_field)
+    if id_field is not _VECTOR_ZONAL_ID_UNSET:
+        raise _vector_frequency_error('summary_id')
     if include_area_weighted_stddev and not include_area_weighted:
         raise _vector_area_error('stddev_area')
     if include_area_weighted and (percentile is not _PERCENTILE_UNSET
@@ -1891,27 +2156,9 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
             weighted_statistics = _ZoneWeights(include_stddev=include_weighted_stddev) if weighted else None
             window = _zone_window(dataset, geometry.bounds)
             with _percentile_runs(dataset, window=window) if requested and window is not None else nullcontext() as runs:
-                if window is not None:
-                    vector = ogr.GetDriverByName('Memory').CreateDataSource('')
-                    layer = vector.CreateLayer('zone', _crs(dataset.GetProjection()), ogr.wkbUnknown)
-                    feature = ogr.Feature(layer.GetLayerDefn())
-                    feature.SetGeometry(ogr.CreateGeometryFromWkb(geometry.wkb))
-                    if layer.CreateFeature(feature) != 0:
-                        raise ValueError('Cannot create zone feature')
-                    feature = None
-                    for x, y, arrays, masks in _blocks(dataset, [band], window=window, native=True):
+                with _vector_zone_blocks(dataset, geometry, [band], all_touched, window) as blocks:
+                    for x, y, arrays, masks, covered in blocks:
                         height, width = arrays[0].shape
-                        coverage = gdal.GetDriverByName('MEM').Create('', width, height, 1, gdal.GDT_Byte)
-                        origin = gdal.ApplyGeoTransform(transform, x, y)
-                        coverage.SetGeoTransform((origin[0], transform[1], transform[2],
-                                                  origin[1], transform[4], transform[5]))
-                        coverage.SetProjection(dataset.GetProjection())
-                        coverage.GetRasterBand(1).Fill(0)
-                        layer.ResetReading()
-                        options = ['ALL_TOUCHED='+('TRUE' if all_touched else 'FALSE')]
-                        if gdal.RasterizeLayer(coverage, [1], layer, burn_values=[1], options=options) != 0:
-                            raise ValueError('Zone coverage rasterization failed')
-                        covered = coverage.GetRasterBand(1).ReadAsArray() != 0
                         required = covered & masks[0]
                         values = arrays[0][required].astype(np.float64)
                         statistics.add(values, int(covered.sum()))
@@ -1924,8 +2171,6 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
                             weighted_statistics.add(values, masses[required].astype(np.float64))
                         if runs is not None:
                             runs.add(values)
-                        coverage = None
-                    layer = vector = None
                 row = statistics.summary()
                 if weighted:
                     row.extend(weighted_statistics.summary(row, error=_vector_zonal_weight_error))
@@ -5856,8 +6101,9 @@ _SPECS = [
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('method', 'str', 'summary保留原数值统计；class_frequency按分区／类别计数，以有效分类数为比例分母，全无效分区保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对显式提供；有限非负，缺失权重不补零，与percentile互斥', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；追加权重总和、加权求和与加权均值，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用加权总体标准差，须提供权重；总体分母，全1沿用原stddev，全零为null，原统计保持', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_type', 'str', 'square_pixels为像元方窗，circle_metres为米制圆窗；保留原十二方法，圆窗仅九种非加权方法', 'square_pixels', False, enum=['square_pixels', 'circle_metres']), _param('window_size', 'int', 'square_pixels时必须显式提供以像元为单位的正方形窗口边长3或5；圆窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['square_pixels']}}), _param('radius_metres', 'float', 'circle_metres时必须显式提供有限正米制半径；中心距离等于半径纳入、不设epsilon，候选外接窗口最多5×5；方窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['circle_metres']}}), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）/weighted_stddev（非负矩阵加权总体标准差）/weighted_sum（非负矩阵加权求和；不归一化）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev', 'weighted_sum']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean/weighted_stddev/weighted_sum必填：同窗口3×3或5×5有限非负二维权重，至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean', 'weighted_stddev', 'weighted_sum']}})], 'raster', ['read']),
-    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对提供且与percentile互斥；沿原面覆盖，重叠面独立统计，缺失权重不补零', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；有限非负，追加三项加权统计，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用逐面加权总体标准差，须提供权重；全1沿用原stddev，全零null，原统计和重叠面独立规则保持', False, False), _param('include_area_weighted', 'bool', '显式追加覆盖平方米、有效覆盖平方米及面积加权均值；原八列保持，新面积独立于all_touched；与外部权重、百分位及加权标准差互斥', False, False), _param('include_area_weighted_stddev', 'bool', '仅面积模式显式启用总体标准差；正有效面积常量0、无有效面积null，单位沿数值，保留原十一列及重叠独立规则', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
+    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('method', 'str', 'summary保持原统计；class_frequency按面／类别展开并保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('id_field', 'str', 'class_frequency须显式选择现有非空唯一面编号；保留原类型，不从索引推断', None, False).model_copy(update={'show_when': {'method': ['class_frequency']}}), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对提供且与percentile互斥；沿原面覆盖，重叠面独立统计，缺失权重不补零', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；有限非负，追加三项加权统计，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用逐面加权总体标准差，须提供权重；全1沿用原stddev，全零null，原统计和重叠面独立规则保持', False, False), _param('include_area_weighted', 'bool', '显式追加覆盖平方米、有效覆盖平方米及面积加权均值；原八列保持，新面积独立于all_touched；与外部权重、百分位及加权标准差互斥', False, False), _param('include_area_weighted_stddev', 'bool', '仅面积模式显式启用总体标准差；正有效面积常量0、无有效面积null，单位沿数值，保留原十一列及重叠独立规则', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
     (raster_sample_points, OperatorCategory.RASTER_STATISTICS, '点位栅格采样', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同CRS的有效二维Point，保留全部点、几何及属性；新增列冲突拒绝', role='input'), _param('band', 'int', '显式一基数据波段；sample_status区分ok／outside／nodata'), _param('method', 'str', 'cell取所在像元原值；bilinear按像元中心插值，正权重支持须全部有效，不补值或重新归一化', 'cell', False, enum=['cell', 'bilinear'])], 'GeoDataFrame', ['read']),
+    (raster_sample_lines, OperatorCategory.RASTER_STATISTICS, '沿线栅格采样', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同投影CRS的有效二维LineString；保留显式编号和全部属性', role='input'), _param('band', 'int', '显式一基数据波段；沿既有原值域和有效性规则'), _param('id_field', 'str', '显式现有非几何非空唯一标量编号字段，不用索引或FID推断'), _param('spacing_metres', 'float', '显式有限正米制间距，保留起终点；结果追加distance_m及采样值／状态'), _param('method', 'str', '复用cell原像元值或bilinear中心插值；无效和范围外采样点保留', 'cell', False, enum=['cell', 'bilinear'])], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_FLOW, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_direction_d8, OperatorCategory.RASTER_FLOW, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
@@ -5911,6 +6157,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'foreground_value': 1})
     if name == 'raster_sample_points':
         examples.update({'input_gdf': {'$ref': 'points'}, 'band': 1})
+    if name == 'raster_sample_lines':
+        examples.update({'input_gdf': {'$ref': 'lines'}, 'band': 1, 'id_field': 'line_id', 'spacing_metres': 10., 'method': 'cell'})
     if name == 'raster_region_group':
         examples.update({'band': 1, 'connectivity': 4})
     if name == 'raster_sieve':

@@ -75,7 +75,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 栅格处理 | 汇水分析 | 4 | `raster_drainage_basins_d8`、`raster_snap_pour_points`、`raster_watershed_d8`、`raster_subcatchments_d8` |
 | 栅格处理 | 河网分析 | 5 | `raster_stream_order_d8`、`raster_stream_link_d8`、`raster_stream_to_vector_d8`、`raster_distance_to_stream_d8`、`raster_hand_d8` |
 | 栅格处理 | 格式转换 | 2 | `raster_polygonize`、`vector_rasterize` |
-| 栅格处理 | 栅格统计 | 9 | `raster_statistics`、`raster_cut_fill`、`raster_surface_area`、`raster_zonal_statistics`、`raster_focal_statistics`、`raster_vector_zonal_statistics`、`raster_sample_points`、`raster_recommend_band_combination`、`raster_histogram` |
+| 栅格处理 | 栅格统计 | 10 | `raster_statistics`、`raster_cut_fill`、`raster_surface_area`、`raster_zonal_statistics`、`raster_focal_statistics`、`raster_vector_zonal_statistics`、`raster_sample_points`、`raster_sample_lines`、`raster_recommend_band_combination`、`raster_histogram` |
 | 栅格处理 | 栅格检查 | 2 | `raster_info`、`validate_cog` |
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |
 
@@ -272,3 +272,8 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 `raster_sample_points`沿同一入口显式支持`method=cell/bilinear`，默认cell取所在像元原值；bilinear在原仿射行列坐标按像元中心插值，只有正权重支持参与，全部有效才计算，不补边／外推或重新归一化。精确中心只需一格有效；范围外仍outside，范围内支持缺失为nodata，保留全部点、原属性与几何及nullable值／状态字段。原生NoData先判断，整数沿原Float64精确准入，插值精确累计最后舍入，数值极限严格失败；源／旧成果及清理保持。复用原读块／GeoPackage，不增加面板入口、权限或依赖；独立Hosted另议，原cell固定证据不替代新方法。
 
 `raster_zonal_statistics`以同一入口的`method=summary/class_frequency`区分原数值统计与分类频数，默认summary原九列、百分位及加权结果保持。分类模式输出按分区／类别升序的长表，比例以分区内有效分类数为分母；全无效分区保留null类别、0计数、null比例诊断行，空分区返回完整Schema。原生分区保持Int64，类别限精确安全整数；同编码非连通区域合并，原生NoData／mask／全部alpha先判定，不应用scale/offset，不自动对齐。复用分块读取及CSV／50行轻量预览，内存随实际分区—类别组合增长；首期与百分位／外部权重／加权标准差互斥，不新增入口、权限或容量承诺，独立Hosted另议。
+
+
+栅格矢量分区统计同一入口新增`method=class_frequency`，默认summary原八项、百分位、外权重与面积模式保持。频数模式显式指定唯一非空`id_field`，按原面行序／类别升序展开原属性和完整面几何，以有效分类数为比例分母，无有效分类保留null诊断行；孔洞、覆盖、重叠独立及原生有效性保持，不与权重／百分位／面积模式混用。
+
+`raster_sample_lines`按显式米制间距沿二维LineString生成里程Point，保留起终点、源编号与全部业务属性，再调用唯一点位取样核心提供cell／bilinear值及outside／nodata状态。要求同一已知线性单位二维投影CRS、有效正长度及显式唯一非空来源ID；不自动投影、修复、插补或截断样本数，源值不转高程单位。两项沿既有GeoPackage保存和严格清理，Native／Linux／Hosted／UI／容量分别记账，独立Hosted另议。
