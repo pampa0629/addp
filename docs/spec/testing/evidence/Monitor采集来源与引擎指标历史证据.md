@@ -594,3 +594,10 @@ Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部�
 ### MinIO 专项 CI 回传（2026-11-02，dff267ed0）
 
 专门CI会话确认提交`dff267ed00aef78f009dcc54ac33fe62305c7aa0`的[Release MinIO专项](https://github.com/pampa0629/addp/actions/runs/41424138332/job/125206871137)结论success，实际`Run MinIO observation source and identity gate`已执行（回执selected=true），不是跳过。原日志`/tmp/addp-ci-20261102-180000/Monitor-dff-MinIO-source.log`本地复核110015字节，SHA256=`e71e3c001fe447c870af4e77497d54a49ac4b8ee40e446bdcd2c1dfab2b6a8b6`；1113—1115行21项脚本检查OK，1275行真实固定PromQL40场景通过并移除promtool，1279行容器／网络／卷／私有材料=0。仅补记该独立专项通过，不推及Monitor完整前端、Release整批、Safari或Hosted。完整前端Job125206526177在回执时仍运行，由专门会话继续跟进；本会话只核对回传日志，未访问CI状态、重跑或设置定时任务。
+
+
+### Linux 完整前端产品步骤回传（2026-11-02，2cd45ec2）
+
+专门CI会话提供的[后继提交Monitor前端Job](https://github.com/pampa0629/addp/actions/runs/41429831469/job/125225339390)对应`2cd45ec2af6de07feed8e61d2df1d01962d8c0eb`。本会话离线复核其job.json、annotation及原日志：`Run Monitor frontend gate`实际completed/success（北京时间18:52:46—19:22:32），标准`make test-monitor-frontend`完成133单元／0失败／0跳过、602浏览器通过（29.5分钟）和Vite构建（10.91秒），selected=true；MinIO中英新增场景确在本轮602项内执行。这次仅登记精确提交的完整产品步骤通过，不是仅有build输出或被取消的产品步骤。
+
+整Job结论仍为cancelled，官方annotation为`The job has exceeded the maximum execution time of 30m0s`，不能将完整步骤成功写成Job或Release全批成功，不加时限或重跑。原件目录`/tmp/addp-ci-monitor-2cd-step-success-20261102`；job.log为195494字节、SHA256=`69c4d256f3f23ad1431e684b921266757e1c0ed149d2978e1e7db95668cd03e1`，单元673—678行、MinIO场景1205—1206行、浏览器1563行、构建1592行、selected1597行。Git复核dff267ed0至2cd45ec2的monitor/frontend树均为`e901d153bb1a06b02658412f23d87339791f8d30`，但common-frontend的executionFailure／翻译及Makefile有变化，不能声称整个输入闭包等同于dff。此前本地失败与独立MinIO40场景记录仍各自保留。本条不增加修复任务、环境应用、Safari或Hosted验收，也不重复功能清单报表；个人真实来源联调仍待用户手工应用已准备配置。
