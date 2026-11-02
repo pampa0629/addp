@@ -18,6 +18,7 @@ export function normalizeLineageGraph(payload) {
     nodes: Array.isArray(payload?.nodes) ? payload.nodes : [],
     edges: Array.isArray(payload?.edges) ? payload.edges : [],
     truncated: Boolean(payload?.truncated),
+    permission_filtered: payload?.permission_filtered === true,
     field_lineage_status: payload?.field_lineage_status || '',
     as_of: payload?.as_of || null
   }

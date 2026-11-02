@@ -61,9 +61,10 @@
           <el-button size="small" :disabled="layoutPending || fieldDisplayPending || !collapsedTables.size" @click="setAllFieldsCollapsed(false)">{{ t('lineage.expandFields') }}</el-button>
         </div>
       </div>
+      <div v-if="graph.permission_filtered" class="lineage-truncated" role="status" data-testid="lineage-permission-filtered">{{ t(edges.length ? 'lineage.permissionFiltered' : 'lineage.permissionFilteredEmpty') }}</div>
       <div v-if="graph.truncated" class="lineage-truncated" role="status">{{ t('lineage.truncated') }}</div>
       <div v-if="!isFieldGraph && graph.field_lineage_status === 'unavailable'" class="lineage-truncated" role="status">{{ t('lineage.fieldUnavailable') }}</div>
-      <div v-else-if="!isFieldGraph && graph.field_lineage_status === 'complete' && !edges.length" class="lineage-truncated" role="status">{{ t('lineage.fieldNoDependencies') }}</div>
+      <div v-else-if="!isFieldGraph && !graph.permission_filtered && !graph.truncated && graph.field_lineage_status === 'complete' && !edges.length" class="lineage-truncated" role="status">{{ t('lineage.fieldNoDependencies') }}</div>
       <div class="lineage-stage">
         <el-empty v-if="!nodes.length" :description="t('lineage.noData')" :image-size="56" />
         <div
@@ -85,7 +86,7 @@
           <el-button v-for="direction in ['upstream', 'downstream']" v-show="selectedNode[`hidden_${direction}_count`] > 0" :key="direction" size="small" :disabled="graph.truncated" @click="expandNode(selectedNode, direction)">{{ t(`lineage.expand.${direction}`, { count: selectedNode[`hidden_${direction}_count`] }) }}</el-button>
         </div>
         <div v-if="selectedNode.field_lineage_status === 'unavailable'" class="lineage-field-status" role="status">{{ t('lineage.fieldUnavailable') }}</div>
-        <div v-else-if="!graph.truncated && selectedNode.field_lineage_status === 'complete' && !edges.some(edge => nodeId(edge.source) === nodeId(selectedNode) || nodeId(edge.target) === nodeId(selectedNode))" class="lineage-field-status" role="status">{{ t('lineage.fieldNoDependencies') }}</div>
+        <div v-else-if="!graph.truncated && !graph.permission_filtered && selectedNode.field_lineage_status === 'complete' && !edges.some(edge => nodeId(edge.source) === nodeId(selectedNode) || nodeId(edge.target) === nodeId(selectedNode))" class="lineage-field-status" role="status">{{ t('lineage.fieldNoDependencies') }}</div>
         <dl class="lineage-inspector-fields">
           <div v-if="selectedNode.field_name"><dt>{{ t('lineage.field') }}</dt><dd>{{ selectedNode.field_name }}</dd></div>
           <div v-if="selectedNode.schema_snapshot_hash" class="lineage-inspector-field-wide"><dt>{{ t('lineage.schemaSnapshot') }}</dt><dd class="lineage-mono">{{ selectedNode.schema_snapshot_hash }}</dd></div>

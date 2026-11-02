@@ -538,8 +538,9 @@ class ProductionLineageObservation:
 
     def validate(self, graph, granularity, *, source_visible, pending=False):
         require(isinstance(graph, dict) and set(graph) <= {
-                    'granularity', 'field_lineage_status', 'subject', 'nodes', 'edges', 'truncated', 'as_of'}
+                    'granularity', 'field_lineage_status', 'subject', 'nodes', 'edges', 'truncated', 'permission_filtered', 'as_of'}
                 and graph.get('granularity') == granularity and graph.get('truncated') is False
+                and graph.get('permission_filtered') is (not source_visible)
                 and isinstance(graph.get('nodes'), list) and isinstance(graph.get('edges'), list),
                 'invalid or truncated lineage response')
         kind = 'data_item' if granularity == 'item' else 'field_ref'

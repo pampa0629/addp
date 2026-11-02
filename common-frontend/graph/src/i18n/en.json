@@ -67,6 +67,8 @@
     "depth": "Depth",
     "layers": "{count} levels",
     "truncated": "Display limit reached. Reduce the depth to see a smaller graph.",
+    "permissionFiltered": "Some upstream or downstream relations are hidden by data permissions.",
+    "permissionFilteredEmpty": "No relations can be displayed with your current permissions. Some relations are hidden by data permissions.",
     "expand": {
       "upstream": "Up +{count}",
       "downstream": "Down +{count}"

@@ -96,6 +96,25 @@ func visibleLineageRelations(ctx context.Context, query *gorm.DB) *gorm.DB {
 	return query
 }
 
+// Observe only existence at an already reached, direction/field-bound frontier.
+// The caller supplies the same Tenant, live endpoint and temporal predicates as
+// the visible traversal. No hidden endpoint is hydrated, counted or traversed.
+func observePermissionFiltered(ctx context.Context, query *gorm.DB, response *models.LineageGraphResponse) error {
+	if !userLineageQuery(ctx) || response.PermissionFiltered {
+		return nil
+	}
+	ids, _ := ctx.Value(lineageVisibleItemsKey{}).([]uint)
+	var matches []struct{ ID uint }
+	err := query.Session(&gorm.Session{}).Select("r.id").
+		Where("NOT (r.source_item_id IN ? AND r.target_item_id IN ?)", ids, ids).
+		Limit(1).Find(&matches).Error
+	if err != nil {
+		return err
+	}
+	response.PermissionFiltered = len(matches) != 0
+	return nil
+}
+
 func projectUserLineage(ctx context.Context, graph models.LineageGraphResponse) models.LineageGraphResponse {
 	if !userLineageQuery(ctx) {
 		return graph

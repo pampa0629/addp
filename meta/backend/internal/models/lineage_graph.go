@@ -43,7 +43,9 @@ type LineageGraphResponse struct {
 	Nodes              []LineageNode `json:"nodes"`
 	Edges              []LineageEdge `json:"edges"`
 	Truncated          bool          `json:"truncated"`
-	AsOf               *time.Time    `json:"as_of,omitempty"`
+	// 仅告知查询边界上存在因权限隐藏的关系，不返回身份或数量 | Indicates permission-hidden relations at the queried boundary without identities or counts.
+	PermissionFiltered bool       `json:"permission_filtered"`
+	AsOf               *time.Time `json:"as_of,omitempty"`
 }
 
 type LineageErrorResponse struct {

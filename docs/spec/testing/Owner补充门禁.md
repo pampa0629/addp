@@ -130,6 +130,10 @@ Meta PostgreSQL 门禁登记 `TestPreciseNativePostgresScanAgainstPostgres`：�
 Common / Meta 的历史工作区门禁结果仅适用于其记录范围；其他厂商真实服务、消费者 T2 与真实 HTTP / Worker T4 仍须由对应标准入口分别验证，不以局部工作区结果宣称完整资源权限闭环。历史结果与范围限制见[其他验收证据索引](验收证据索引.md#addp-验收证据索引)。
 
 
+### 用户血缘可见性
+
+用户血缘可见性由 Meta Go T1 及 `make test-meta-postgres` 中既有 `TestUserLineageVisibilityAgainstPostgres` 统一覆盖。`permission_filtered` 只表示在本次实际方向、深度、精确字段与结构快照边界上发现权限隐藏关系；验证可见路径不转向旁系、不穿隐藏桥接、当前及历史撤权、其他 Tenant／已删除／时态范围外关系不触发、机器事实不改变。隐藏节点、边和证据不输出，无权关系不计入邻居数或 truncated。共享前端入口 `make test-common-frontend` 校验标记契约，Manager 原 `make test-manager-frontend` 验证区分权限隐藏和显示截断、请求拒绝后清空及局部展开状态保留。PG Online 原 runner 同步校验标记，不启动真实 Hosted；新 T4 需另行确认。
+
 ### 血缘采集器回归
 
 `make test-meta-postgres` 覆盖超过单批 500 条执行、同创建时间的键集分页、目标延迟扫描、重复采集幂等性、单条错误隔离、轮内新增与游标后迟到成功执行的下一轮处理、取消，以及重复即时通知不恢复已关闭字段关系。Transfer PostgreSQL T2 另覆盖三个查询输入（含仅参与行筛选的来源）、查询改名、类型转换和完整物理行集合。沿用既有 owner 门禁，不增加部署依赖或公开 API。

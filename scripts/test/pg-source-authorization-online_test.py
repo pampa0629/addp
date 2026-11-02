@@ -1809,7 +1809,8 @@ def production_lineage_graph(level, execution, *, visible=True):
     return {'granularity': level, 'subject': output, 'nodes': [output, source] if visible else [output],
             'edges': [{'source': source, 'target': output, 'relation_kind': 'derive', 'granularity': level,
                        'status': 'active', 'last_observed_at': '2026-11-01T00:00:00Z',
-                       'evidence': {'execution_id': execution}}] if visible else [], 'truncated': False}
+                       'evidence': {'execution_id': execution}}] if visible else [], 'truncated': False,
+            'permission_filtered': not visible}
 
 
 class ProductionLineageObservationTest(unittest.TestCase):
@@ -1821,6 +1822,8 @@ class ProductionLineageObservationTest(unittest.TestCase):
         for level in ('item', 'field'):
             mutations = [
                 lambda g: g.update(truncated=True),
+                lambda g: g.update(permission_filtered=True),
+                lambda g: g.update(permission_filtered='false'),
                 lambda g: g['subject'].update(hidden_upstream_count=1),
                 lambda g: g['nodes'].append(dict(g['subject'], item_id=99)),
                 lambda g: g['nodes'][0].update(kind='published_service', service_id=1),
@@ -1846,7 +1849,8 @@ class ProductionLineageObservationTest(unittest.TestCase):
                 self.probe.validate(production_lineage_graph(level, 'execution'), level, source_visible=False)
             hidden = production_lineage_graph(level, 'execution', visible=False)
             self.assertTrue(self.probe.validate(hidden, level, source_visible=False))
-            self.assertFalse(self.probe.validate(hidden, level, source_visible=True, pending=True))
+            pending = dict(hidden, permission_filtered=False)
+            self.assertFalse(self.probe.validate(pending, level, source_visible=True, pending=True))
             with self.assertRaises(ONLINE.SuiteError):
                 self.probe.validate(hidden, level, source_visible=True)
 
@@ -1856,8 +1860,8 @@ class ProductionLineageObservationTest(unittest.TestCase):
             self.probe.issued()
         self.assertEqual(self.reader.request.call_count, 1)
         self.reader.request.side_effect = lambda method, url, expected: SimpleNamespace(
-            payload=production_lineage_graph(parse_qs(urlsplit(url).query)['granularity'][0],
-                                             'execution', visible=False))
+            payload=dict(production_lineage_graph(parse_qs(urlsplit(url).query)['granularity'][0],
+                                                 'execution', visible=False), permission_filtered=False))
         with patch.object(ONLINE.time, 'monotonic', side_effect=[0, 121]), self.assertRaisesRegex(
                 ONLINE.SuiteError, 'before deadline'):
             self.probe.issued()

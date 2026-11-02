@@ -457,7 +457,10 @@ const loadLineage = async () => {
     })
     if (requestSeq === lineageRequestSeq) lineageGraph.value = normalizeLineageGraph(response)
   } catch (error) {
-    if (requestSeq === lineageRequestSeq) lineageError.value = t('manager.explorer.lineageLoadFailed')
+    if (requestSeq === lineageRequestSeq) {
+      lineageGraph.value = normalizeLineageGraph()
+      lineageError.value = t('manager.explorer.lineageLoadFailed')
+    }
   } finally {
     if (requestSeq === lineageRequestSeq) lineageLoading.value = false
   }
@@ -471,7 +474,24 @@ const expandLineage = async ({ item_id, direction }) => {
   await loadLineage()
 }
 watch(lineageDepth, () => { resetLineageExpansion(); loadLineage() })
-watch(() => props.metadataRevision, () => { resetLineageExpansion(); loadLineage() })
+watch(() => props.metadataRevision, () => { lineageGraph.value = normalizeLineageGraph(); resetLineageExpansion(); loadLineage() })
+
+const invalidateLineage = () => {
+  lineageRequestSeq += 1
+  lineageLoading.value = false
+  lineageError.value = ''
+  lineageGraph.value = normalizeLineageGraph()
+  resetLineageExpansion()
+}
+watch(() => authStore.token, invalidateLineage, { flush: 'sync' })
+watch([
+  () => authStore.authContext,
+  () => authStore.authContextLoadPromise,
+  () => authStore.permissions.join(',')
+], () => {
+  invalidateLineage()
+  if (authStore.authContext && !authStore.authContextLoadPromise && authStore.hasPermission('meta.lineage.read')) loadLineage()
+}, { flush: 'sync' })
 
 const openLineageTab = () => {
   lineageVisited.value = true

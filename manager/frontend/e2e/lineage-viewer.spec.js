@@ -643,6 +643,8 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
 test('lineage fills the viewport, controls query depth and survives resizing and empty results', async ({ page }) => {
   const requests = []
   const errors = []
+  let rejectPending
+  const pendingRejection = new Promise(resolve => { rejectPending = resolve })
   page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
@@ -657,8 +659,12 @@ test('lineage fills the viewport, controls query depth and survives resizing and
     if (path.endsWith('/meta/lineage/graph')) {
       const depth = Number(url.searchParams.get('depth'))
       requests.push({ depth, item: url.searchParams.get('item_id'), direction: url.searchParams.get('direction') })
-      if (depth === 20) return json(route, { subject: node(3), nodes: [node(3)], edges: [], truncated: true })
-      return json(route, { subject: node(3), nodes: [node(1), node(2), node(3), node(4)], edges: [edge(1, 3), edge(2, 3), edge(3, 4)] })
+      if (depth === 5) {
+        await pendingRejection
+        return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'Permission revoked' }) })
+      }
+      if (depth === 20) return json(route, { subject: node(3), nodes: [node(3)], edges: [], truncated: true, permission_filtered: true, field_lineage_status: 'complete' })
+      return json(route, { subject: node(3), nodes: [node(1), node(2), node(3), node(4)], edges: [edge(1, 3), edge(2, 3), edge(3, 4)], permission_filtered: depth === 3 })
     }
     return json(route, {})
   })
@@ -679,15 +685,27 @@ test('lineage fills the viewport, controls query depth and survives resizing and
   await page.locator('.lineage-depth .el-select__wrapper').click()
   await page.getByRole('option', { name: '3 层', exact: true }).click()
   await expect.poll(() => requests.at(-1).depth).toBe(3)
+  await expect(page.getByTestId('lineage-permission-filtered')).toHaveText('部分上下游因数据权限限制未显示。')
   await page.getByRole('button', { name: '适应窗口' }).click()
   await page.getByRole('button', { name: '放大', exact: true }).click()
   await page.locator('.lineage-depth .el-select__wrapper').click()
   await page.getByRole('option', { name: '20 层', exact: true }).click()
-  await expect(page.getByRole('status')).toContainText('已达到显示上限')
+  await expect(page.getByTestId('lineage-permission-filtered')).toHaveText('当前无可显示的上下游关系，部分关系因数据权限限制已隐藏。')
+  await expect(page.getByRole('status').filter({ hasText: '已达到显示上限' })).toBeVisible()
+  await expect(page.getByText('已记录的字段血缘中没有关联字段。', { exact: true })).toHaveCount(0)
   await expect(page.locator('.lineage-summary')).toContainText('1 个节点 · 0 条关系')
   await page.locator('.lineage-depth .el-select__wrapper').click()
   await page.getByRole('option', { name: '1 层', exact: true }).click()
   await expect(page.locator('.lineage-summary')).toContainText('4 个节点 · 3 条关系')
+  await expect(page.getByTestId('lineage-permission-filtered')).toHaveCount(0)
+  await page.locator('.lineage-depth .el-select__wrapper').click()
+  await page.getByRole('option', { name: '5 层', exact: true }).click()
+  await expect.poll(() => requests.at(-1).depth).toBe(5)
+  rejectPending()
+  await expect(page.locator('.lineage-tab-pane .el-alert')).toBeVisible()
+  await expect(page.locator('.lineage-summary')).toContainText('0 个节点 · 0 条关系')
+  await expect(page.locator('.lineage-canvas canvas')).toHaveCount(0)
+  await expect(page.getByTestId('lineage-permission-filtered')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 

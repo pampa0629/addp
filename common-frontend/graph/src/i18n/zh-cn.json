@@ -67,6 +67,8 @@
     "depth": "展示层数",
     "layers": "{count} 层",
     "truncated": "已达到显示上限，请减少层数查看。",
+    "permissionFiltered": "部分上下游因数据权限限制未显示。",
+    "permissionFilteredEmpty": "当前无可显示的上下游关系，部分关系因数据权限限制已隐藏。",
     "expand": {
       "upstream": "上游 +{count}",
       "downstream": "下游 +{count}"

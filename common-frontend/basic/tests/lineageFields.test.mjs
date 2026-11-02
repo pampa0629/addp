@@ -17,6 +17,14 @@ test('unavailable field evidence remains distinct from an observed field without
   assert.equal(normalizeLineageGraph().field_lineage_status, '')
 })
 
+test('permission filtering is an explicit boolean independent of display truncation', () => {
+  assert.equal(normalizeLineageGraph({ permission_filtered: true }).permission_filtered, true)
+  assert.equal(normalizeLineageGraph({ permission_filtered: true }).truncated, false)
+  for (const value of [undefined, null, false, 1, 'true']) {
+    assert.equal(normalizeLineageGraph({ permission_filtered: value, truncated: true }).permission_filtered, false)
+  }
+})
+
 import { projectLineageFields, lineageFieldConnections } from '../../graph/src/lineageFields.js'
 import { readFileSync } from 'node:fs'
 

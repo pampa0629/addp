@@ -264,7 +264,7 @@
 | dependency snapshot | 依赖快照 | 业务定义在创建或显式刷新时，从上游当前事实中选择其执行和对外契约真正依赖的部分并冻结保存。 | 不是完整 Meta item 副本。Meta 提供源事实和源时间；业务模块记录采集时间并对依赖投影计算 hash。差异用于提示重新发布，不自动改变既有业务契约。 |
 | lineage | 数据血缘 | 数据项之间的来源、派生和服务依赖关系的关系视图。 | 归 Meta 管理关系事实和查询投影；不是新的数据资产实体或独立图数据库。完整边界见 [数据血缘能力规范](../spec/addp数据血缘能力规范.md)。 |
 | lineage observation | 血缘关系证据 | Meta 根据执行事实或服务发布事实解析出的不可变关系证据。 | 保存来源快照、采集方式、执行 / 发布引用和时间；证据清理后仍可审计。 |
-| lineage projection | 血缘当前投影 | 从关系证据维护的当前有效上游、下游和服务依赖关系。 | 支持 replace、append、upsert 等写入语义和时态查询；不是事实源。 |
+| lineage projection | 血缘当前投影 | 从关系证据维护的当前有效上游、下游和服务依赖关系。 | 支持 replace、append、upsert 等写入语义和时态查询；不是事实源。用户图按当前元数据查看权逐端点裁决；可仅告知存在因权限隐藏的关系，不返回隐藏主体身份、数量或证据，也不穿过隐藏节点继续遍历。 |
 | lineage facts | 血缘执行事实 | 真实读写 owner 在统一 execution 结果中写入的版本化输入、输出和操作事实。 | 使用 ResourceLocator 和 item fingerprint；Runtime 不构造 ADDP 资源身份。 |
 | lineage collector | 血缘采集器 | Meta 消费 owner execution / publication fact，解析资源身份并写入关系证据和当前投影的单一路径。 | 立即通知与周期漏采 / 重试都调用同一个 `LineageService.CollectExecution`；不反向解析模块私有 metadata。 |
 | published service | 已发布服务版本 | Service 一次通过验证并对外生效的不可变服务发布主体。 | 身份为 `service_id + published_revision`；不是 data item，但可作为血缘图主体。 |
