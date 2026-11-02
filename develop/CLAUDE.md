@@ -182,15 +182,23 @@ Backend 与查询执行进程共用的数据库连接必须使用 `common/logger
 
 ### 固定目标写入契约
 
-Develop 关系查询写入通过执行契约显式配置固定正式表 `target_locator` 与 `write_mode=overwrite|append`。所有输入和输出必须位于同一 PostgreSQL Engine，输出不得同时作为输入。overwrite 在一个事务内锁定目标、删除旧记录并插入完整计算结果；失败或取消回滚该表写入。append 只追加。多个任务分别提交，不保证跨任务、多表同时可见。
+固定目标 `target_locator`、`write_mode=overwrite|append`、同 Engine 与单表事务边界统一见[跨模块任务契约](../docs/spec/tasks/模块任务契约.md#跨模块任务边界)。关系结果写入只允许 Orchestrator 父执行调用保存的 `query` 任务，入口限制见[Develop 开发任务](../docs/spec/tasks/模块任务契约.md#develop-开发任务)。
 
-保存的 `query` 任务可以声明通用“关系参数 -> 已存在表结果”模式，且参数绑定、查询 Runtime 与目标必须位于同一个显式声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言 Engine；当前包括 PostgreSQL 与 openGauss。任务只在 `content.query_parameters[]` 保存唯一参数定义；关系参数使用 `type=relation`，可在 `default.locator` 保存同一查询 Engine 中已有表的标准 ResourceLocator，不保存其他模块专有 ID；`content.query` 只保存单条只读 `SELECT`，并以未加引号、未限定 schema 的裸参数名引用已声明关系，例如参数 `activities` 写作 `FROM activities`。关系参数名不得与同一作用域的 CTE 重名。TaskProvider 契约把每个关系参数声明为 ResourceLocator 资源输入，没有默认绑定时才要求调用方提供；编排写入另行声明必填 `target_locator`。`input_ui_schema.<参数名>` 使用 `control=resource_tree_picker`，按参数保存顺序暴露独立输入端口，供 Orchestrator 使用任务默认表或分别绑定不同直接上游的稳定 ResourceLocator 输出，不得要求用户手写输出模板。
+#### 任务输入与编排端口
 
-Query Execution Service 使用 PostgreSQL AST 验证关系作用域，只把与已声明 `type=relation` 参数同名的裸关系节点改写为执行期参数绑定的 locator，生成仅完成关系绑定的 SELECT，并交给声明 table_result 能力的 Provider 冻结计划；Provider 在结构锁保护的事务中执行 `INSERT INTO <target> SELECT ...` 并返回实际字段证据。CTE、子查询和 JOIN 可以使用，但 CTE 与参数重名、未声明参数、未使用声明、真实物理关系、schema 限定关系、表函数数据源、未声明 `relation` 的引擎、非 PostgreSQL 方言查询或跨 Engine 输入必须拒绝。Develop 只使用当前父 execution 派生的精确 Engine `read + write` 授权，不获得 DDL effect；稳定输出为 `execution_id + target_locator + row_count`。Develop 不调用 Model API，不持有 Model Permission。
+参数唯一定义 `content.query_parameters[]`、`type=relation`、可选 `default.locator`、裸参数名和执行覆盖规则统一见[TaskProvider 参数契约](../docs/spec/tasks/TaskProvider接口.md#标准响应体)，例如关系参数 `activities` 写作 `FROM activities`。Develop 要求参数绑定、查询 Runtime 与目标位于同一个显式声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言 Engine，当前包括 PostgreSQL 与 openGauss；`content.query` 只保存单条只读 `SELECT`，不保存其他模块专有 ID。
 
-现有表结果写入不再由 dbbridge 直接拼接或执行写 SQL。执行 Owner 对冻结 ReadSet 的每个来源使用 unmanaged 保护门禁，事务成功后把 Provider 的实时结构和按目标列位置映射写入 lineage_facts；未知映射标记 unavailable。
+TaskProvider 将每个关系参数声明为 ResourceLocator 资源输入，没有默认绑定时才要求调用方提供；编排写入另行声明必填 `target_locator`。`input_ui_schema.<参数名>` 使用 `control=resource_tree_picker`，按参数保存顺序暴露独立输入端口，供 Orchestrator 使用任务默认表或分别绑定不同直接上游的稳定 ResourceLocator 输出，不得要求用户手写输出模板。
 
-Query Execution Service 在业务写入提交后，以本次冻结并经编译校验的全部 relation 绑定和实际目标构造统一 `lineage_facts`，覆盖写入映射为 `replace`，追加映射为 `append`。事实与成功终态一起通过 lease 校验落库，随后复用 Develop 的 Meta 采集通知；通知失败由 Meta 周期采集器重试。建表依赖不产生数据派生边，失败和失去 lease 的执行不发布成功事实。回归测试由现有 `make test-module MODULE=develop` 和 CI Go 模块自动发现门禁覆盖。
+#### 绑定编译与事务写入
+
+Query Execution Service 使用 PostgreSQL AST 验证关系作用域，只把与已声明 `type=relation` 参数同名的裸关系节点绑定为执行期 locator，生成仅完成关系绑定的 SELECT，并交给声明 `compute.query.table_result=true` 的 Provider 冻结计划。CTE、子查询和 JOIN 可以使用，但 CTE 与参数重名、未声明参数、未使用声明、真实物理关系、schema 限定关系、表函数数据源、未声明 `relation` 的引擎、非 PostgreSQL 方言查询或跨 Engine 输入必须拒绝。Develop 只使用当前父 execution 派生的精确 Engine `read + write` 授权，不获得 DDL effect；稳定输出为 `execution_id + target_locator + row_count`。Develop 不调用 Model API，不持有 Model Permission。
+
+事务锁、读取集合复核、`INSERT SELECT`、目标限制和实时字段位置映射由[TableResultProvider 契约](../docs/spec/addp引擎插件接口规范.md#queryruntimeprovider)唯一定义；Develop 不经 dbbridge 拼接或执行写 SQL，对冻结 ReadSet 的每个来源使用 unmanaged 保护门禁并保持至事务结束。
+
+#### 成功事实与预览边界
+
+业务写入提交后，Develop 将 Provider 的实时结构和字段位置映射构造为 `lineage_facts`，未知映射标记 unavailable；事实与成功终态经当前 lease 校验一起落库，随后通知 Meta。完整输入来源、`overwrite → replace`／`append` 映射、跨库提交与通知重试统一见[固定正式表查询血缘](../docs/spec/addp数据血缘能力规范.md#51-固定正式表查询写入)。建表依赖不产生数据派生边，失败和失去 lease 的执行不发布成功事实。回归沿现有 `make test-module MODULE=develop`，分项通过不替代真实编排、授权、写入和血缘验收。
 
 查询工作台即时执行和 Develop 手动任务执行使用同一参数解析与 PostgreSQL AST 编译器，但不接收 `target_locator`：关系参数应用默认绑定及本次覆盖后编译为只读物理表查询，返回受限结果预览。Orchestrator 执行在相同有效输入上增加独立结果目标并由 Query Execution Service 编译为写入；输出目标不是查询参数。
 
