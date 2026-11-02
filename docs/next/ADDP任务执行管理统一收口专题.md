@@ -1059,13 +1059,13 @@ System Go最新Job125119346754虽然外层success，但selected:false、未执�
 
 **已取得的进展与新失败。** 失败阶段已从validation转为 `engine_cleanup_task_read`：Engine仍deleting，但validation与execute引用均存在，deletion_error为空。父execute请求 `e903670c-02d5-573d-87f4-b5de8e07b677` timeout，请求／Engine／用户／execute／七Owner绑定全true。Manager已开始、attempt1、success且成功回执；Transfer已开始、attempt1、failed且无回执，两者均无授权拒绝或不可用标记。因此Manager生命周期事实读取与两阶段影响一致性已获得本轮真实链路的推进证据，尚不能把它换算为七项正式业务断言通过；新阻断在Transfer execute，原日志没有底层异常／HTTP正文或Transfer安全失败步骤，不能声称现场唯一根因已证明。
 
-### 8.35 Transfer deleting Engine 原生清理连接用途（待确认）
+### 8.35 Transfer deleting Engine 原生清理连接用途（已确认）
 
 **已查实的确定冲突。** CDC `DatabasePlanResolver.ResolveForCleanup` 仍复用普通 `SystemEngineResolver`，后者调用Tenant Service Principal的普通Engine详情并要求Engine available。真实System `GetForConnection`拒绝deleting／deleted；即便mock直接返回deleting Engine，Resolver的available检查仍会拒绝。Capture Supervisor已取得planErr后仍可先删除connector，再返回源清理计划失败，源端slot／publication及后续topic清理无法完成。现有Supervisor测试用直接返回成功计划的fake，未验证真实生命周期读取边界。本轮Transfer现场未归档该具体调用，故这里是必修的可复现冲突，不等同于对现场唯一错误的直接取证。
 
 现行Common `CleanupAuthorizationScope` 明确该用途不能授予Engine access，`GetCleanupAccess`也明确不返回Engine凭据；Manager可用脱敏描述替代，其用途只是读生命周期，但Transfer清理已登记的源端产物需要真实连接，二者不能混同。不能以放宽普通Engine可用性、预存凭据、借用用户token或跨读私表补齐该缺口。
 
-**建议的窄方案（本节未批准前不实现授权扩展）。**
+**已确认的窄方案。** 用户于2026-11-02明确同意本节方案，原六项User权限不变；正式契约先统一并提交，再实施，新的Hosted仍单独确认。
 
 1. 保持当前Cleanup裁决端点、无凭据DTO及六项User权限不变；在现有System执行授权框架下新增独立、仅用于 `transfer.capture_cleanup` 的连接裁决出口，拟为 `POST /api/v1/system/execution-authorizations/{id}/cleanup-engine-connection`。首期仅对应Transfer Backend Owner Runtime使用，复用现有 `system.cleanup_authorization.execute` 身份入口并增加独立用途及精确对象裁决，不默认扩大任何User／其它Runtime角色；这仍属于凭据访问用途扩展，须单独确认。
 2. System从自己拥有的EA及Common父子执行的冻结中性请求核验：active Tenant原用户当前 `system.engine.delete`、Owner/runtime匹配、同request／parent／child／digest、`action=execute`／`cause=engine.deleting`、当前attempt／live lease及对应授权未失效、父请求仍允许效果。连接EngineID必须等于该冻结请求的精确 `context.engine_id`，生命周期必须仍为deleting；不接受调用方任意Engine集合，不读取Transfer私表，不为scan／closed Tenant／无可信来源／已终态执行发放。
@@ -1077,3 +1077,6 @@ System Go最新Job125119346754虽然外层success，但selected:false、未执�
 
 
 **最小复现实证。** 在本轮私有目录的临时390源码副本中，仅增加受控HTTP／fake Provider探针，沿标准 `make test-transfer-backend` 和 `GOFLAGS=-v`实际exit0；active源计划成功、真实System语义409及Resolver自身deleting拒绝均复现，Supervisor在fake connector删除后因源计划拒绝失败，源端与topic删除未调用。没有调用真实数据库或外部Capture，不把T1探针当作本轮原生现场HTTP证据或PostgreSQL T2。原始初次源码子集缺脚本夹具的失败保留，补齐同一390版本的既有脚本后完整标准T1实际通过。`transfer-boundary-probe-proof.json`保留测试／日志哈希，verbose日志SHA-256 `ea8434b066272d71ff22f179d7b69c5c5ab9b1ce3dc66258d908eefd30181ef7`。生产代码和权限未修改；当前仅提交取证与待确认方案文档。
+
+
+**实施准入。** 本节用途已获用户明确确认，原“待确认”阻断解除。正式契约统一到术语表及Cleanup规范；实现覆盖System授权／连接读取、Common窄客户端与C诊断、Transfer原生计划及围栏、专项runner和Swagger。CI会话负责现有Platform下独立Transfer Go标准Owner入口、选择及对应登记回归；主责负责其余产品与runner路径。普通Cleanup效果在P关闭后合法收尾的既有规则不变，新连接裁决严格要求P仍开放。首期按逻辑Owner addp-transfer及准确Cleanup C租约识别用途，不新增Backend／Worker进程身份或角色。

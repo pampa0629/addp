@@ -422,9 +422,17 @@ Graph首次领取需要领域准入锁时，完整顺序为P→C→G→T/B；领
 
 首期仅支持active Tenant的用户来源请求及其已确认Engine删除派生流程。closed Tenant／`tenant.deleted`、没有可信用户来源或没有目的限定许可的事件保持阻断；不复活Membership、不使用PlatformToken替代Tenant权力。历史Tenant治理需另行确认。该权限不扩大Owner资源范围，不恢复旧执行、不重放删除。
 
-目的绑定存入既有`system.execution_authorizations`的`cleanup_scope`，使用独立`audience=cleanup`；scope包含request UUID、父execution UUID、完整请求digest和Owner。它与引擎access、Ontology internal task及Manager source scope互斥，签封后不可改写，不能经其他消费接口取得引擎访问。System在请求／父子／审计的受理事务中签发并附着子授权；授权最长一小时，不能因协调恢复刷新。
+目的绑定存入既有`system.execution_authorizations`的`cleanup_scope`，使用独立`audience=cleanup`；scope包含request UUID、父execution UUID、完整请求digest和Owner。它与引擎access、Ontology internal task及Manager source scope互斥，签封后不可改写，不能由普通engine-accesses等其他用途消费。System在请求／父子／审计的受理事务中签发并附着子授权；授权最长一小时，不能因协调恢复刷新。普通Cleanup效果裁决不授予连接访问；下述独立连接用途必须重新裁决，不能仅凭持有Cleanup授权取得凭据。
 
 对应Owner调用`POST /api/v1/system/execution-authorizations/{id}/cleanup-accesses`。`stage=claim`只允许未领取的pending子项（attempt=0、无token），且受请求deadline限制；这次HTTP核验在P→C领取事务之外完成，随后仍须按公共准入协议取得P→C。`stage=effect`必须提供准确running子项的attempt和lease token，在每次产生效果前重新调用；最终有效期取授权、用户／服务成员资格和当前lease的最早截止。已经合法领取的子项不因父协调关闭而失去记录事实的资格。两种响应都只返回绑定、阶段、attempt和有效期，不返回token或凭据；Owner在提交领域变更时仍须执行C围栏。HTTP响应限制16 KiB、统一五秒预算且禁止重定向；未知字段、多个JSON值或绑定不一致均拒绝。
+
+2026-11-02确认独立 `transfer.capture_cleanup` 连接用途，保持原六项User权限、角色与操作范围不变。唯一入口为 `POST /api/v1/system/execution-authorizations/{id}/cleanup-engine-connection`，仅固定 `addp-transfer` Tenant Service Principal 使用既有 `system.cleanup_authorization.execute`；不新增用户权限、不把同服务身份的普通sync执行当作Cleanup子执行。请求严格包含 `execution_id`、`attempt`、`lease_token`、`scope`和字符串 `engine_id`，仅支持effect，不接受actor／Tenant／cause／purpose自报。System沿既有IAM来源与权限核验，在同一短事务内按P→C→Engine核验冻结请求、父子原用户、EA、当前lease及精确对象；调用方不持C跨HTTP。必须为active Tenant用户来源、`action=execute`、physical、`cause=engine.deleting`、policy=delete，且请求Engine等于服务端冻结context的原Engine。父P仍running、有有效lease且未过请求deadline；C仍是对应Owner已领取的当前attempt，Engine仍deleting。任何绑定、当前engine.delete、服务资格或有效性不足均失败关闭。
+
+连接裁决响应为独立闭合DTO：`authorization_id`、`execution_id`、`tenant_id`、`attempt`、`scope`、固定`purpose=transfer.capture_cleanup`、`engine_id`、`expires_at`和最小Engine连接对象（ID、Tenant、类型、生命周期、能力、连接）。不回显lease token；有效期取原EA／用户与服务成员／P和C租约／请求deadline的最早截止，不延长任何既有预算。读取并解密连接在上述事务内完成，锁后及返回前再次核验数据库墙钟与当前权限；审计只含用途和中性绑定。连接只在Owner本次调用内存使用，不缓存、不持久化、不写公共metadata／回执／日志或验收归档；五秒HTTP上限、16 KiB有界响应、禁止重定向及未知字段拒绝沿用原客户端规则。普通Engine连接接口继续拒绝deleting／deleted。
+
+Transfer在锁外取得该裁决后重新核验本地C和有效窗，仅为原目标Engine构造清理计划；其他active源及普通任务删除保持原用途，精确目标裁决失败不回退普通读取。真实源端调用受连接有效窗和原效果上下文共同约束。Capture原生操作前必须验证已登记generation的source Engine／locator／database／连接指纹；先完成计划及身份核验，再删除connector，源端和后续步骤仍逐次经原PrepareExternal／持久operation围栏。未知效果保持隔离，不重发。scan、closed Tenant、无可信来源、其它Owner、其它Engine或已终态执行均不能取得该用途连接。
+
+Owner失败阶段只记录既有安全step和闭集`failed/terminal`，由Common在当前C租约下提交，不重新授权、延租、终结C或生成回执。Manager沿原闭集；Transfer包括`transfer_cleanup_plan`、`transfer_cleanup_stop`、`transfer_cleanup_capture_plan`、`transfer_cleanup_capture_connector`、`transfer_cleanup_capture_source`、`transfer_cleanup_capture_group`、`transfer_cleanup_capture_topic`、`transfer_cleanup_capture_acl`、`transfer_cleanup_capture_history_topic`、`transfer_cleanup_capture_history_acl`、`transfer_cleanup_commit`。原始错误和产物身份不进入公共步骤；runner仅在原用户读取授权、完整父子绑定及单一失败step一致时投影。七项正式断言、成功报告和新Hosted单独确认规则保持。
 
 ### executor 参与范围
 
