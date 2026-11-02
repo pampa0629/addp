@@ -46,4 +46,3 @@ def serialize_workflow_value(value, preview_limit: int = 5):
     if isinstance(value, list):
         return [serialize_workflow_value(item, preview_limit) for item in value]
     return serialize_json_value(value)
-
