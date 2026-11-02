@@ -31,7 +31,7 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 | 部署 profile | 生命周期入口与专用准备 |
 | --- | --- |
 | macOS self-hosted | [Host Gate](../test/online-host-gate.sh)从 `ADDP_ONLINE_ENV_FILE` 加载仓库外专用环境；专用字段见下文 |
-| GitHub Hosted Linux x86_64 | 各 suite 的 Host Gate 复用[Hosted 生命周期](../utils/hosted-online.sh)，从零建立当次环境 |
+| GitHub Hosted Linux x86_64 | 各 suite 的 Host Gate 复用[Hosted 生命周期](../utils/hosted-online.sh)，从零建立当次环境；限时原值访问的双用户准备见[原值访问身份与清理](Online数据保护.md#原值访问身份与清理) |
 | 当前 KingbaseES owner-managed | [KingbaseES Host Gate](../test/online-owner-managed-kingbase-gate.sh)限定 `self-hosted`、`Linux`、`X64`、`addp-kingbase` 标签及 `addp-kingbase` Environment 审批，只从 owner-only `ADDP_KINGBASE_GATE_ENV_FILE` 加载 License 路径、License SHA-256 等受控事实 |
 
 生命周期操作前的仓库外 artifact／secret 分区、无根 `.env`、无容器冲突和干净 checkout 准入沿[专用环境](../../docs/spec/testing/T4-Online验收规范.md#专用环境)。各 Host Gate 产出不含密钥内容的 `readiness.txt`，共用唯一 `make test-online` 分发入口；常驻 macOS Infra 与 Hosted／KingbaseES 当次部署的销毁范围分别沿该规范，不混用准备或清理假设。
@@ -61,8 +61,7 @@ GitHub Environment `addp-online` 的 Repository Variable `ADDP_ONLINE_ENV_FILE` 
 | [Workbench 服务消费](Online引擎与消费.md#workbench-服务消费) | `workbench-service-consumption` 另需同 Tenant 专用 `ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN`、永久 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID`，以及端口、数据库、只读用户、只读密码和 root fixture 密码，其浏览器阶段仍使用非管理员专用 User 的用户名和密码。 |
 | [Transfer 仅新增写入](Online引擎与消费.md#transfer-仅新增写入) | `transfer-insert-only-mysql` 复用永久 PostgreSQL Engine Instance，另需永久 `ADDP_ONLINE_TRANSFER_MYSQL_ENGINE_ID`、名称、端口、数据库、可写用户、可写密码和仅供 Fixture 使用的 root 密码，浏览器使用同一专用 User 的用户名和密码。 |
 | [OceanBase 消费](Online引擎与消费.md#oceanbase-消费) | `oceanbase-consumer-flow` 另需永久 `ADDP_ONLINE_OCEANBASE_ENGINE_ID`，以及该实例对应的端口、database、租户限定用户和密码，专用 User 只需具备 Meta、Manager、Transfer、Develop 和 Service 所需最小权限，其中包括 `manager.data_item.read`；Engine 控制面状态由部署 profile 负责验证，业务 consumer 不需要 `system.engine.read`。 |
-| [Transfer 保护](Online数据保护.md#transfer-保护与原值访问) | `security-transfer-protection` 另需永久 `ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID`、MongoDB 端口、数据库、只读账号，以及仅供 Fixture 使用的 root 账号。 |
-| [原值访问](Online数据保护.md#transfer-保护与原值访问) | `security-plaintext-access` 复用永久 PostgreSQL Engine Fixture，并要求 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN` 对应的申请用户具备 Manager 预览及原值访问申请权限、`ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN` 对应的另一名用户具备审批和撤销权限。 |
+| [Transfer 保护](Online数据保护.md#transfer-固定夹具) | `security-transfer-protection` 另需永久 `ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID`、MongoDB 端口、数据库、只读账号，以及仅供 Fixture 使用的 root 账号。 |
 
 ## 模块实例运行日志验收
 
