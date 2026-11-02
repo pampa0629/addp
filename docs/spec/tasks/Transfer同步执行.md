@@ -4,7 +4,7 @@
 
 定义 Transfer sync 的正交配置维度、bounded / continuous 边界、状态推进与观测要求。数据库捕获见[CDC](Transfer数据库CDC.md)，业务 Kafka 的拒绝记录与重放见[Kafka 与 DLQ](Transfer-Kafka与DLQ.md)。
 
-阅读导航：[Transfer 同步执行契约](#transfer-同步执行契约)、[Transfer continuous sync v1 契约](#transfer-continuous-sync-v1-契约)。
+阅读导航：[Transfer 同步执行契约](#transfer-同步执行契约)、[Transfer continuous sync v1 契约](#transfer-continuous-sync-v1-契约)、[continuous 首次扫描与 claim](#continuous-首次扫描与-claim)。
 
 ## Transfer 同步执行契约
 
@@ -139,4 +139,38 @@ continuous task 与 execution 生命周期：
 7. 工作包 2B 真实中断闭环完成时可以恢复 Transfer 私有 task-definition stop 控制入口；但 `supports_cancel` 是整个 `sync` task type 的 TaskProvider 能力，在 bounded execution 也具备真实取消前必须继续为 `false`，不得注册标准 execution cancel endpoint。
 8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age/health、retry/rebalance、恢复 circuit 和 heartbeat。Monitor 只消费 owner 写入的统一 execution metadata；不得自行连接 Kafka 或 Transfer 私有表补算这些事实。
 9. Orchestrator v1 不编排 continuous Transfer task。Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
-10. `auto_scan_metadata=true` 的 continuous task 不等待 execution 成功结束。普通业务 Kafka task 在目标 Provider 首次成功建立目标结构后，按 task `apply_identity` 提交完整目标表 locator 的 `targets`，触发一次精确 Meta deep scan，不扫描所属 schema／database。数据库 CDC task 的 connector 必须启用 Debezium `sink` notification，并把通知写入当前 generation-owned 单分区 CDC data topic；Transfer 只接受 connector name 与当前 generation 完全一致的 `aggregate_type=Initial Snapshot` 通知，所有合法初始快照通知都作为目标 `skip` 与 apply ledger、Transfer committed position 一起推进，只有 `type=COMPLETED` 所在 offset 成功提交后才触发首次扫描。该顺序同时覆盖非空表与空表，不依赖首条数据事件、`source.snapshot=last` 或等待时间猜测。首次扫描使用 task 私有持久化 claim：`running(claim_token, lease_until, attempt+1) -> success|failed`，worker 恢复或并发实例不得重复提交；已失败或过期 running claim 由后续 runtime session 接管。Meta 提交失败不得中断 CDC/Kafka 数据面，失败状态由后续 runtime session 重试或由用户手动刷新。目标 schema 经正式流程变化后另行触发 deep scan；普通 DML、单条事件和单个 batch 不触发 Meta scan。claim TTL 统一使用部署配置 `TRANSFER_META_SCAN_CLAIM_TTL`，并且必须大于 Meta client 的 HTTP 超时。
+10. continuous 首次扫描的触发、精确范围、claim 接管及失败边界统一见[首次扫描契约](#continuous-首次扫描与-claim)。
+
+### continuous 首次扫描与 claim
+
+阅读导航：[触发与精确目标](#首次扫描触发与精确目标)、[CDC 快照提交条件](#cdc-快照完成与提交条件)、[claim 与失败接管](#首次扫描-claim-与失败接管)、[结构变更与非触发事件](#结构变更与非触发事件)、[来源与验收边界](#首次扫描来源与验收边界)。
+
+#### 首次扫描触发与精确目标
+
+- `auto_scan_metadata=true` 的 continuous task 不等待 execution 成功结束。
+- 普通业务 Kafka task 在目标 Provider 首次成功建立目标结构后，按 task `apply_identity` 提交完整目标表 locator 的 `targets`，触发一次精确 Meta deep scan，不扫描所属 schema／database。
+
+#### CDC 快照完成与提交条件
+
+- 数据库 CDC task 的 connector 必须启用 Debezium `sink` notification，并把通知写入当前 generation-owned 单分区 CDC data topic；Transfer 只接受 connector name 与当前 generation 完全一致的 `aggregate_type=Initial Snapshot` 通知，所有合法初始快照通知都作为目标 `skip` 与 apply ledger、Transfer committed position 一起推进，只有 `type=COMPLETED` 所在 offset 成功提交后才触发首次扫描。
+- 该顺序同时覆盖非空表与空表，不依赖首条数据事件、`source.snapshot=last` 或等待时间猜测。
+
+通知编码、身份校验、`skip` 与 `COMPLETED/SKIPPED` 的协议区别见[CDC 事件契约](Transfer数据库CDC.md#事件编码与初始快照通知)。
+
+#### 首次扫描 claim 与失败接管
+
+- 首次扫描使用 task 私有持久化 claim：`running(claim_token, lease_until, attempt+1) -> success|failed`，worker 恢复或并发实例不得重复提交；已失败或过期 running claim 由后续 runtime session 接管。
+- Meta 提交失败不得中断 CDC/Kafka 数据面，失败状态由后续 runtime session 重试或由用户手动刷新。
+- claim TTL 统一使用部署配置 `TRANSFER_META_SCAN_CLAIM_TTL`，并且必须大于 Meta client 的 HTTP 超时。
+
+这里是 task 级首次扫描 claim；request 级结构审批补扫的接管入口与失败终态另见[审批补扫 claim](Transfer数据库CDC.md#审批补扫-claim-接管与失败)，不得互换恢复规则。
+
+#### 结构变更与非触发事件
+
+- 目标 schema 经正式流程变化后另行触发 deep scan；普通 DML、单条事件和单个 batch 不触发 Meta scan。
+
+#### 首次扫描来源与验收边界
+
+后台扫描的精确目标、持久来源和父 execution 绑定以[生产来源契约](生产来源与产物扫描.md#生产执行与后台扫描的来源)为准。claim、提交状态或保存的 Meta execution UUID 不额外授予调用或读取权限；私有字段、安全投影、提交成功与实际扫描完成的区别见[任务表结果核对](../../../transfer/docs/tables/tasks表.md#首次扫描的提交与结果核对)。
+
+Meta API 提交失败的反馈与仓储／fencing 错误的不同处理见[持久化与失败边界](../../../transfer/docs/数据库架构.md#九写后-meta-扫描)。提交成功或数据面继续运行不证明 Meta 执行完成或目标 attributes 正确，必须通过已授权的 Meta 入口核对对应执行与目标事实；标准入口、固定版本、失败、清理及未覆盖项见[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。

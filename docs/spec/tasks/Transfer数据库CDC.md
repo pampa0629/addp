@@ -95,7 +95,7 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 
 #### 初始快照通知与扫描验收边界
 
-协议层的 `COMPLETED` 不代表 Meta 扫描已经完成。首次扫描仍须满足[continuous 契约](Transfer同步执行.md#transfer-continuous-sync-v1-契约)规定的目标 ledger 与 Transfer position 提交条件；空源表、首次扫描 claim、失败接管及不按普通 DML 重扫也由该契约维护。
+协议层的 `COMPLETED` 不代表 Meta 扫描已经完成。目标 ledger／Transfer position 提交与空源表规则见[首次扫描提交条件](Transfer同步执行.md#cdc-快照完成与提交条件)，task 级 claim 与失败接管见[首次扫描 claim](Transfer同步执行.md#首次扫描-claim-与失败接管)，普通 DML 不重扫等规则见[非触发事件](Transfer同步执行.md#结构变更与非触发事件)。
 
 扫描的精确目标与父执行来源沿[生产来源契约](生产来源与产物扫描.md#生产执行与后台扫描的来源)，提交结果、权限与实际 Meta execution／目标事实的核对见[首次扫描结果说明](../../../transfer/docs/tables/tasks表.md#首次扫描的提交与结果核对)。通知接收、位点提交、扫描提交与扫描完成分别认定，实际固定版本、失败、清理及未覆盖范围见[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。
 

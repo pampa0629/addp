@@ -347,8 +347,8 @@ Schema change 公共观测只通过触发阻塞的 execution metadata 投影。M
 
 - bounded execution 成功写入后扫描一次。
 - 普通业务 Kafka continuous 目标首次成功建立结构后提交一次目标表的精确 deep scan，不等待任务结束。
-- 数据库 CDC 在当前 generation 的 `COMPLETED` 所在 offset 成功提交后触发首次扫描；同分区通知、connector 身份校验和目标 `skip` 语义见[事件与通知契约](../../docs/spec/tasks/Transfer数据库CDC.md#事件编码与初始快照通知)，空源表与提交条件、claim／失败恢复见[continuous 契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)。
-- continuous 首次扫描使用持久化 claim，避免 recovery、resume 或并发实例重复提交；失败或过期 claim 由后续 runtime session 重新领取。
+- 数据库 CDC 在当前 generation 的 `COMPLETED` 所在 offset 成功提交后触发首次扫描；同分区通知、connector 身份校验和目标 `skip` 语义见[事件与通知契约](../../docs/spec/tasks/Transfer数据库CDC.md#事件编码与初始快照通知)，空源表与提交条件见[首次扫描提交契约](../../docs/spec/tasks/Transfer同步执行.md#cdc-快照完成与提交条件)。
+- continuous 首次扫描以 task 级 claim 防止重复提交；接管、提交失败恢复与 TTL 沿[首次扫描 claim 契约](../../docs/spec/tasks/Transfer同步执行.md#首次扫描-claim-与失败接管)。
 - 人工 additive schema migration 成功后再次扫描。
 - 普通 DML、单条事件和单个 batch 不触发扫描。
 
