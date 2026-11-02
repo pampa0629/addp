@@ -1,32 +1,41 @@
 # ADDP 脚本：Online成果与栅格
 
-[返回脚本导航](../README.md)
+[返回脚本导航](../README.md) · [返回测试与发布入口](测试与发布入口.md#test---测试与发布门禁)
 
-专项入口：[Manager 内部产物与内容边界](#manager-内部产物与内容边界) · [PMTiles 工作流](#矢量-pmtiles-工作流) · [栅格工作流](#栅格工作流) · [完整场景容量校准](#完整场景容量校准) · [独立持久化专项](#独立持久化专项) · [分类蚕食容量](#分类蚕食容量) · [D8 河网转矢量线](#d8-河网转矢量线)
+专项入口：[阅读分工与结果认定](#阅读分工与结果认定) · [Manager 内部产物与内容边界](#manager-内部产物与内容边界) · [PMTiles 工作流](#矢量-pmtiles-工作流) · [栅格工作流](#栅格工作流) · [完整场景容量校准](#完整场景容量校准) · [独立持久化专项](#独立持久化专项) · [分类蚕食容量](#分类蚕食容量) · [D8 河网转矢量线](#d8-河网转矢量线)
 
 测试分层、身份和清理规则以[测试与验收规范](../../docs/spec/addp测试与验收规范.md)为准；历史结果仅适用于所列源码和运行尝试，不代表当前 HEAD 已重跑。
+
+## 阅读分工与结果认定
+
+现行 suite／case、身份、断言与清理由[Manager 与空间成果正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md)和各 Host Gate 维护；本页保留选定子场景摘要、操作入口及历史证据。独立 case、领域报告、完整 suite 和容量专项分别认定，子场景通过不代表完整 suite 或其他 case 通过。
+
+[Manager 固定版本](#manager-固定版本证据)与[栅格固定版本](#固定版本证据)只覆盖所列源码、运行尝试和当次清理；后续已审计结果见[栅格验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)。容量矩阵是通过条件，早期未注明源码的准备记录不能作为当前版本结果。Runner、Native、Linux、Hosted 和真实页面证据分别记账，未运行、失败、跳过或未覆盖项不计为通过；本次文档整理未运行或刷新任何验收。
 
 ## Manager 内部产物与内容边界
 
 ### 场景与入口
 
+当前 case 选择、部署和专用断言见[Manager 正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#manager-internal-artifact-lineage)；本节摘要与下列历史运行各按其实际范围记账。下列 COPC／PDF／GLB 与内容边界是选定子场景，不作为当前完整 suite 或所有 case 的覆盖清单。
+
 `manager-internal-artifact-lineage` 使用 `scripts/test/online-hosted-manager-gate.sh` 管理 GitHub Hosted Ubuntu x86_64 临时部署：从零建立 Infra、最小权限登录身份与 Business MinIO Engine Instance，启动 System、Gateway、Meta、Manager、Monitor、Console 和 PointCloud、Document、Model3D Runtime；无需永久账号或自备 Runner。Business owner 确定性生成 LAS、带 PNG 贴图的 DAE/3DS，并发布已跟踪的 3 页 PPTX；不依赖本机被忽略的数据目录。
 
 suite 经同一次真实 Meta scan，通过 Manager owner 入口生成 COPC、PDF 和 GLB，核对 Manager/Monitor 的 `addp.lineage-facts/v1`、Range 读取、GLB 内嵌纹理与非空网格、Console 模型加载，以及 PPTX 翻页后引擎刷新不重复生成。结果和任务仅按本轮捕获 ID 经 Manager API 删除，预览偏好恢复原值；生命周期在所有退出路径销毁当次业务容器、网络、数据卷和 Infra，校验零残留。确定性测试和真实验收分别使用 `make test-online-runner` 与 `make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；首次 Hosted T4 成功前只允许手工触发，不计为 T4 通过。
-
-当前 case 选择、部署和专用断言见[Manager 正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#manager-internal-artifact-lineage)；本节摘要与下列历史运行各按其实际范围记账。
 
 ### 内容边界与组件收敛
 
 该 Hosted suite 同时覆盖 Meta 内容边界：使用 `business/scripts/online-content-boundary-fixture.py` 为 MinIO 与临时 NFS export 生成相同的两组 Shapefile、同名异类文件及范围外记录，分别从目录和显式 refs 入口执行 basic→deep→basic。`content-boundaries.json` 保存执行 ID、item ID/fingerprint、父节点与 refs，并验证再次 basic 保留深度事实、组件不重复登记及范围外记录不变。NFS fixture 由 `business/scripts/online-manager-nfs-fixture.sh` 独占管理，仅允许 GitHub Hosted Ubuntu，使用系统 `nfs-kernel-server` 并将只读 export 限于回环客户端；拒绝既有 export，失败也必须清理本轮 export、临时数据与服务。个人 macOS NFS 不在该脚本操作范围。确定性验证使用 `make test-manager-online-runner`。
 
-组件收敛沿用同一套件、权限和生命周期，覆盖上述四个空范围场景及 NFS／MinIO 各自的目录与 refs 既有记录场景。每个新范围先用精确 `targets` 登记十条独立 single；后续 basic→deep→basic 均使用 `force=false`，目录仅收敛被两组 Shapefile 认领的六条组件，refs 仅收敛指定组合的三条组件。校验退役详情 404、主项身份与父节点保留、范围外及未认领记录不变，`addp.content-boundaries/v2` 报告记录准备执行、被移除的 ID／fingerprint 和保留记录。共享生成器输出 41 个文件，既有 NFS、MinIO 清理路线不变；标准门禁和 Hosted Job 继续覆盖八个场景。
+组件收敛沿用同一套件、权限和生命周期，覆盖上述四个空范围场景及 NFS／MinIO 各自的目录与 refs 既有记录场景。每个新范围先用精确 `targets` 登记十条独立 single；后续 basic→deep→basic 均使用 `force=false`，目录仅收敛被两组 Shapefile 认领的六条组件，refs 仅收敛指定组合的三条组件。校验退役详情 404、主项身份与父节点保留、范围外及未认领记录不变，`addp.content-boundaries/v2` 报告记录准备执行、被移除的 ID／fingerprint 和保留记录。共享生成器输出 41 个文件，既有 NFS、MinIO 清理路线不变；内容边界的标准门禁和 Hosted Job 覆盖上述八个场景，整体 suite 的结果仍单独认定。
 
 ### Manager 固定版本证据
 
-2026-10-15，提交 `935dabe02` 的 [Hosted T4 38660099411](https://github.com/pampa0629/addp/actions/runs/38660099411) 已真实通过四个边界场景及原有完整 suite；归档的 `content-boundaries.json` 与主报告一致，12 次边界扫描均成功，普通 User 身份和五个服务构建版本一致，生命周期清理通过、Infra 零残留。
+两次运行分别保留，不合并为当前版本的完整通过结论：
 
-2026-10-15，提交 `468df57af` 的 [Hosted 38676830266](https://github.com/pampa0629/addp/actions/runs/38676830266) 独立边界报告八项 passed，24 次边界扫描和四次准备执行均有 Worker success 终态，18 条被认领组件清理及详情 404、主项身份与无关记录保留断言通过。五个服务构建提交一致，退出清理 passed、Infra zero_residuals；后续 3DS 转换失败使完整 suite 为 failed，主报告没有完整 suite_report，因此本次只计数据项边界领域通过，完整套件仍须对应领域修复后复验。
+| 固定源码与运行 | 领域结果及清理 | 完整 suite 的实际范围 |
+| --- | --- | --- |
+| 2026-10-15，`935dabe02`，[Hosted T4 38660099411](https://github.com/pampa0629/addp/actions/runs/38660099411) | 四个边界场景通过；归档的 `content-boundaries.json` 与主报告一致，12 次边界扫描均成功；普通 User 身份和五个服务构建版本一致，生命周期清理通过、Infra 零残留。 | 当时的原有完整 suite 同次通过，不能外推后续 case 或当前 HEAD。 |
+| 2026-10-15，`468df57af`，[Hosted 38676830266](https://github.com/pampa0629/addp/actions/runs/38676830266) | 独立边界报告八项 passed；24 次边界扫描和四次准备执行均有 Worker success 终态，18 条被认领组件清理及详情 404、主项身份与无关记录保留断言通过；五个服务构建提交一致，退出清理 passed、Infra zero_residuals。 | 后续 3DS 转换失败，完整 suite 为 failed，主报告没有完整 suite_report。该次只计数据项边界领域通过；当时须对应领域修复后复验，不据此判断后续修复或当前完整 suite 的状态。 |
 
 ## 矢量与栅格成果
 
@@ -58,11 +67,11 @@ Business owner `online-raster-minio-fixture.py` 管理两套 tmpfs MinIO，凭�
 
 #### 固定版本证据
 
-原 suite 的四种单波段聚合、多波段 mean、旋转网格多波段 sum、波段选择、孔洞／分离面片、旋转网格与四邻接／自接触轮廓、批量 create/replace、拒写及两类发布后清理故障已通过[Hosted T4 38589484655](https://github.com/pampa0629/addp/actions/runs/38589484655)，运行版本 `44e246a5a`；最新证据与边界见[栅格算子体系后续专题](../../docs/next/栅格算子体系后续专题.md)。
+原 suite 的四种单波段聚合、多波段 mean、旋转网格多波段 sum、波段选择、孔洞／分离面片、旋转网格与四邻接／自接触轮廓、批量 create/replace、拒写及两类发布后清理故障已通过[Hosted T4 38589484655](https://github.com/pampa0629/addp/actions/runs/38589484655)，运行版本 `44e246a5a`；后续固定版本证据与各自边界见[栅格验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)。
 
-原成功与失败场景均保留，总计 55 轮浏览器、40 份最终 COG，预算为 1740 秒。报告保存 45 次已确认写入的三方正整数大小、14 次独立切片自动扫描、当前 derive、只读轮廓及清理证据。
+该次固定版本保留原成功与失败场景，总计 55 轮浏览器、40 份最终 COG，预算为 1740 秒；报告保存 45 次已确认写入的三方正整数大小、14 次独立切片自动扫描、当前 derive、只读轮廓及清理证据。这些统计不作为当前登记总数或后续扩展的通过证明。
 
-以下细项均属于上述固定版本基线：
+以下细项均属于同一 `44e246a5a` 固定版本基线：
 
 - 轮廓复用原三波段源，以 `bands=[2]` 验证 65,528 个有效像元及完整覆盖位置，区分默认并集与全部波段交集。
 - 内部孔洞场景复用区域外裁剪 COG，核对 53,247 个有效像元、两个面片和一个孔洞，并确认输入成果字节不变。
@@ -72,6 +81,8 @@ Business owner `online-raster-minio-fixture.py` 管理两套 tmpfs MinIO，凭�
 ### 完整场景容量校准
 
 #### 环境与计算矩阵
+
+本节列独立容量专项的负载、测量与通过条件；具体运行结论须另有固定源码、结果和清理证据，不将下列数量视为本次已完成结果。
 
 完整场景容量校准单独手工选择 `raster-workflow-capacity`，标准业务入口为 `make test-online ONLINE_SUITE=raster-workflow-capacity`，仅允许上述一次性 Hosted 部署运行。`online-hosted-raster-capacity-gate.sh` 复用同一产品镜像启动与身份校验，Runtime 为 4 CPU quota／2 GiB／无额外 swap；Business `online-raster-capacity-fixture.py` 使用当次磁盘 MinIO，下载固定长度与 SHA-256 的完整 Sentinel-2 B02/B03/B04/B08，并完整核对组合源。
 
@@ -96,7 +107,7 @@ Native oracle 自动发现于 `make test-geopython-workflow`，身份夹具与�
 
 ### 独立持久化专项
 
-下列五项的身份、隔离部署、独立预算与清理要求统一见[独立持久化专项公共前提](../../docs/spec/testing/scenarios/Manager与空间成果.md#独立持久化专项公共前提)，各项独有断言见对应正式场景；Runner／Native 分层与专项命令统一见[验证入口](../../docs/spec/testing/scenarios/Manager与空间成果.md#独立持久化专项验证入口)。固定版本结果与未覆盖范围统一见[验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)；入口登记、早期准备和真实 Hosted 分别记账，不外推为当前 HEAD 通过。
+本节列出的五个专项，其身份、隔离部署、独立预算与清理要求统一见[独立持久化专项公共前提](../../docs/spec/testing/scenarios/Manager与空间成果.md#独立持久化专项公共前提)，各项独有断言见对应正式场景；Runner／Native 分层与专项命令统一见[验证入口](../../docs/spec/testing/scenarios/Manager与空间成果.md#独立持久化专项验证入口)。固定版本结果与未覆盖范围统一见[验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)；入口登记、早期准备和真实 Hosted 分别记账，不外推为当前 HEAD 通过。
 
 `make test-online ONLINE_SUITE=raster-focal-statistics-persistence` 验证邻域统计的六条 COG 保存链、跨块完整像元／mask、严格三方大小、精确自动扫描、当前执行血缘，非法波段／窗口失败不得发布或新增扫描。固定版本 `fe0d7cc8e` 的[独立 Hosted](https://github.com/pampa0629/addp/actions/runs/39228689716/job/117981136802) 已通过并经归档审计，预检／业务 359770 毫秒，完整结果见[邻域统计正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-focal-statistics-persistence)；同源 Linux 全量 1251 项及 Platform 均通过。
 
@@ -106,7 +117,11 @@ Native oracle 自动发现于 `make test-geopython-workflow`，身份夹具与�
 
 `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` 验证矢量分区统计的中心覆盖、全部触及＋自定义前缀、重分类→转面→统计三条 GeoPackage 保存链和非法波段／列冲突失败清理。严格核对完整几何／属性／字段类型／计数／统计／null、物理与 Meta 大小、扫描归属、当前执行全部实际输入血缘。仅登记入口不代表 T4 通过，实际结果按上述固定版本验收基线核对。场景要求见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-zonal-statistics-persistence)。
 
-邻近距离的独立手工入口为 `make test-online ONLINE_SUITE=raster-proximity-persistence`，验证米制多波段与英尺制 UInt32 两条 COG DAG，完整距离／mask／单位／网格、严格三方大小、精确扫描、当前执行单源血缘。早期准备记录为 16 项真实 GDAL 夹具、51 项脚本门禁及 CI 登记验证通过，该记录未标注源码版本，不作为当前 HEAD 的通过证据。场景要求见[邻近距离正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-proximity-persistence)，后续固定版本 Hosted 结果按上述验收基线核对。
+邻近距离的独立手工入口为 `make test-online ONLINE_SUITE=raster-proximity-persistence`，验证米制多波段与英尺制 UInt32 两条 COG DAG，完整距离／mask／单位／网格、严格三方大小、精确扫描、当前执行单源血缘。场景要求见[邻近距离正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-proximity-persistence)，后续固定版本 Hosted 结果按上述验收基线核对。
+
+#### 邻近距离的早期准备记录
+
+早期准备记录为 16 项真实 GDAL 夹具、51 项脚本门禁及 CI 登记验证通过；该记录未标注源码版本，只保留原有准备范围，不作为当前 HEAD、后续固定版本或 Hosted 的通过证据。
 
 ### 分类蚕食容量
 
@@ -118,4 +133,4 @@ Runner／Native 命令、聚合归属及隔离身份夹具 Go T1 见[容量验�
 
 独立手工入口为 `make test-online ONLINE_SUITE=raster-stream-to-vector-d8-persistence`，复用隔离 Hosted、NFS、同源默认入口产品 Runtime 和普通 User 原 12 项权限。Hosted 触发与证据核对由专门 CI 会话协调；入口登记与本地准备结果不等于 Hosted 已执行或通过。
 
-Runner／Native 入口与实际准备结果统一见[D8 正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#d8-河网转矢量线独立-hosted-验收)和[D8 分版本证据](../../docs/next/栅格算子体系后续专题.md#d8-河网转矢量线独立-hosted-验收)。完整保存链、准确失败及工作目录／NFS／部署／Infra 清理按正式场景验收。失败须零发布、零新增扫描血缘，清理仍为验收前提；数值极限继续单列 Native，不计 UI 或容量，未执行、失败或未覆盖项不能计为通过。
+Runner／Native 入口与实际准备范围见[D8 正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#d8-河网转矢量线独立-hosted-验收)；尚待已审计 Hosted 结果的范围见[D8 后续事项](../../docs/next/栅格算子体系后续专题.md#三后续工作)。完整保存链、准确失败及工作目录／NFS／部署／Infra 清理按正式场景验收。失败须零发布、零新增扫描血缘，清理仍为验收前提；数值极限继续单列 Native，不计 UI 或容量，未执行、失败或未覆盖项不能计为通过。
