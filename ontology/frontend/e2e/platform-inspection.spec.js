@@ -16,7 +16,12 @@ test('platform graph fits all concepts inside its canvas', async ({ page, contex
   const metrics = await page.locator('.ontology-view').evaluate(element => {
     const state = element.__vueParentComponent.setupState
     const graph = state.graphInstance
-    return { bounds: graph?.get('group').getCanvasBBox(), width:graph?.get('width'), height:graph?.get('height'), fontSize:graph?.getNodes()[0].getModel().labelCfg.style.fontSize * graph?.getZoom() }
+    return {
+      bounds: graph?.get('group').getCanvasBBox(), width:graph?.get('width'), height:graph?.get('height'),
+      fontSize:graph?.getNodes()[0].getModel().labelCfg.style.fontSize * graph?.getZoom(),
+      minFontSize:Math.min(...graph.getNodes().map(node => node.getModel().labelCfg.style.fontSize * graph.getZoom())),
+      nodeIds:graph.getNodes().map(node => node.getID()), edgeCount:graph.getEdges().length
+    }
   })
   expect(metrics.bounds).toBeTruthy()
   expect(metrics.bounds.minX).toBeGreaterThanOrEqual(16)
@@ -24,6 +29,13 @@ test('platform graph fits all concepts inside its canvas', async ({ page, contex
   expect(metrics.bounds.maxX).toBeLessThanOrEqual(metrics.width - 16)
   expect(metrics.bounds.maxY).toBeLessThanOrEqual(metrics.height - 16)
   expect(metrics.fontSize, JSON.stringify(metrics)).toBeGreaterThanOrEqual(12)
+  expect(metrics.minFontSize, JSON.stringify(metrics)).toBeGreaterThanOrEqual(12)
+  expect(metrics.nodeIds.sort()).toEqual(definition.concepts.map(item => item.id).sort())
+  expect(metrics.edgeCount).toBe(definition.relations.length)
+  console.info('platform graph fit:', JSON.stringify({
+    bounds:metrics.bounds, width:metrics.width, height:metrics.height,
+    minFontSize:metrics.minFontSize, nodeCount:metrics.nodeIds.length, edgeCount:metrics.edgeCount
+  }))
   const graph = page.getByTestId('platform-graph')
   await graph.getByRole('button', { name:'放大', exact:true }).click()
   await graph.getByRole('button', { name:'原始大小', exact:true }).click()

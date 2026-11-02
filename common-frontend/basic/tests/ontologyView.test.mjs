@@ -104,6 +104,18 @@ test('compact layout sizes columns from rectangular nodes and recomputes both ax
   assert.equal(graph.options.layout.rows, 1)
 })
 
+test('a fifth compact row uses the rendered rectangle height instead of inflated layout boxes', async () => {
+  const state = fixture('grid')
+  state.props.entityTypes = Array.from({ length:21 }, (_, id) => ({ id, name:`concept-${id}` }))
+  Object.assign(state.canvas, { offsetWidth:1056, offsetHeight:480 })
+  await state.callbacks.mount()
+  const graph = state.instances[0]
+  assert.equal(graph.options.layout.cols, 5)
+  assert.equal(graph.options.layout.rows, 5)
+  assert.deepEqual(Array.from(graph.options.layout.nodeSize), Array.from(graph.options.defaultNode.size))
+  assert.equal(graph.dataValue.nodes.length, 21)
+})
+
 test('hidden ontology canvas waits for its first measurable size', async () => {
   const state = fixture()
   state.canvas.offsetWidth = 0

@@ -41,6 +41,7 @@ import { readGraphTheme, getContrastingTextColor } from './graphTheme.js'
 import { fitGraphToViewport } from './graphViewport.js'
 
 const { t } = useI18n()
+const NODE_SIZE = [168, 72]
 
 const props = defineProps({
   entityTypes: { type: Array, default: () => [] },
@@ -132,7 +133,7 @@ function wrapLabel(value) {
 
 function layoutOptions(width, height) {
   if (props.layout !== 'grid') return { type: 'dagre', rankdir: 'LR', nodesep: 32, ranksep: 100 }
-  const nodeSize = [168, 88], nodeSpacing = 24, padding = 32
+  const nodeSize = [...NODE_SIZE], nodeSpacing = 24, padding = 32
   const availableWidth = width - padding * 2
   // G6's automatic grid assumes square cells; wide labels otherwise create
   // too many columns and force fitView to shrink otherwise readable text.
@@ -177,7 +178,7 @@ function initGraph() {
         : ['drag-canvas', 'zoom-canvas', 'drag-node']
     },
     layout: layoutOptions(width, height),
-    defaultNode: { type: 'rect', size: [168, 72] },
+    defaultNode: { type: 'rect', size: [...NODE_SIZE] },
     defaultEdge: { type: 'quadratic' }
   })
 
