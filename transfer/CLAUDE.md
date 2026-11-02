@@ -220,7 +220,7 @@ Transfer bounded 保护失败在实际边界保留类型化准备／结果标记
 
 自有 bounded Cron 的主体、定义摘要与触发重核沿[Transfer 定时任务授权](../docs/spec/tasks/任务定义与授权.md#transfer-定时任务授权)。暂停清除调度授权，恢复由当前 User 重授权；资格缺失或失效时不创建 execution、不推进计划。
 
-审批补扫按[来源绑定契约](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)提交 `schema_change_source`，关联触发阻塞的 execution、审批 request 和当前 claim；`schema_change_scan_origin` 是私有审批来源快照，不进入专业诊断。原阻塞 execution 的主体不变，新扫描无父 execution，并按本次审批 User 隔离读取；Meta 只核验 Common 中已应用的审批事实，不读 Transfer 私表或借旧执行身份。审批权限、claim 接管及失败边界统一见[数据库审批与恢复](docs/数据库架构.md#审批与显式恢复)、[补扫 claim](docs/数据库架构.md#审批补扫-claim-与失败边界)和[公共观测与验收](docs/数据库架构.md#schema-change-公共观测与验收)。
+审批补扫的来源字段、审批主体及父 execution 互斥统一见[结构审批补扫来源](../docs/spec/tasks/生产来源与产物扫描.md#transfer-结构审批补扫来源)。Transfer 在审批应用与 claim 状态变化事务中同步私有 `schema_change_scan_origin`，不进入专业诊断；原阻塞 execution 的主体不变，新扫描按本次审批 User 隔离读取。request 级 claim 接管与失败语义沿[CDC 捕获与审批](#cdc-捕获与审批)，提交／完成及安全 DTO 沿[公共观测与验收](docs/数据库架构.md#schema-change-公共观测与验收)，不在来源导读重复维护恢复规则。
 
 Manager 导入的创建/启动只在同步请求内转发 User 凭据。Manager 导入的 Infra source 由当前 bounded execution 的完整 User 来源和绑定任务经 Manager Owner 核验后读取，使用 `manager.import_provenance.read`；未知、未绑定、跨租户、非上传者或 Owner 不可用时拒绝。通用 content／format reader 保持唯一实现，业务来源仍走既有 Security Gate，不以 Infra 路径作为许可。
 

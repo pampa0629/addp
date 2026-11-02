@@ -264,7 +264,7 @@ PG 成功产出限定基础识别的固定服务身份、回执权限、首次�
 
 Go T1 和 `make test-meta-postgres` 覆盖精确范围、归属、并发去重与恢复；PG 普通表的新建成果基础补扫、初始授权及实际读取／撤权的 Hosted T4 结果按[固定版本证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#pg-dataitem-源授权与-transfer-新成果初始授权--hosted-t4)认定。事实投影专项与完整链路分别验收，不外推其他产出入口、引擎或全部事实接口，标准分工见[专项验证入口](#专项验证入口)。
 
-Transfer 已应用结构审批补扫的入口、审批人、claim、精确目标及与父 execution 互斥的规则统一见[生产来源契约](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)。Meta 只核验 Common 中已保存的审批来源，不跨读 Transfer 私表；审批关联在进度与收尾写入时保留，私有来源不进入专业诊断。
+Transfer 已应用结构审批补扫的入口、审批人、claim、精确目标及与父 execution 互斥的规则统一见[结构审批补扫来源](../docs/spec/tasks/生产来源与产物扫描.md#transfer-结构审批补扫来源)。Meta 只核验 Common 中已保存的审批来源，不跨读 Transfer 私表；审批关联在进度与收尾写入时保留，私有来源不进入专业诊断。
 
 #### Manager mosaic 来源与完成回执
 
