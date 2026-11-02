@@ -15,6 +15,8 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
+from cryptography import x509
+from cryptography.x509.oid import ExtendedKeyUsageOID
 from opentelemetry import trace
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 from opentelemetry.sdk.resources import Resource
@@ -24,26 +26,73 @@ import pytest
 from addp_common.httptrace import runtime
 
 
-def _openssl(*args):
-    subprocess.run(["openssl", *map(str, args)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def _openssl(root, *args):
+    config = root / "openssl.cnf"
+    command = ["openssl", *map(str, args)]
+    if args[0] == "req":
+        command[2:2] = ["-config", str(config)]
+    subprocess.run(command, env={**os.environ, "OPENSSL_CONF": str(config)}, timeout=10,
+                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 @pytest.fixture(scope="module")
 def certificates(tmp_path_factory):
     root = tmp_path_factory.mktemp("trace-certs")
-    _openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=trace-test-ca",
-             "-keyout", root / "ca.key", "-out", root / "ca.crt")
-    for name, extensions in (("server", "subjectAltName=IP:127.0.0.1,DNS:localhost\nextendedKeyUsage=serverAuth"),
-                             ("client", "extendedKeyUsage=clientAuth")):
-        _openssl("req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", f"/CN={name}",
-                 "-keyout", root / f"{name}.key", "-out", root / f"{name}.csr")
-        ext = root / f"{name}.ext"
-        ext.write_text(extensions)
-        _openssl("x509", "-req", "-in", root / f"{name}.csr", "-CA", root / "ca.crt", "-CAkey", root / "ca.key",
-                 "-CAcreateserial", "-days", "1", "-extfile", ext, "-out", root / f"{name}.crt")
-    _openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=foreign",
-             "-keyout", root / "foreign.key", "-out", root / "foreign.crt")
-    return root
+    root.chmod(0o700)
+    try:
+        config = root / "openssl.cnf"
+        config.write_text("[req]\nprompt = no\ndistinguished_name = dn\n[dn]\n")
+        config.chmod(0o600)
+        for name, subject in (("ca", "trace-test-ca"), ("foreign", "foreign")):
+            _openssl(root, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", f"/CN={subject}",
+                     "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+                     "-addext", "subjectKeyIdentifier=hash", "-keyout", root / f"{name}.key", "-out", root / f"{name}.crt")
+        for name, extensions in (("server", "subjectAltName=IP:127.0.0.1,DNS:localhost\nextendedKeyUsage=serverAuth"),
+                                 ("client", "extendedKeyUsage=clientAuth")):
+            _openssl(root, "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", f"/CN={name}",
+                     "-keyout", root / f"{name}.key", "-out", root / f"{name}.csr")
+            ext = root / f"{name}.ext"
+            ext.write_text("basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n"
+                           "subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\n" + extensions)
+            _openssl(root, "x509", "-req", "-in", root / f"{name}.csr", "-CA", root / "ca.crt", "-CAkey", root / "ca.key",
+                     "-CAcreateserial", "-days", "1", "-extfile", ext, "-out", root / f"{name}.crt")
+        for path in root.iterdir():
+            path.chmod(0o600)
+        yield root
+    finally:
+        shutil.rmtree(root)
+
+
+@pytest.fixture
+def export_failures(monkeypatch):
+    """Observe the real transport without changing product error handling."""
+    failures = []
+    original = httpx.Client.stream
+
+    @contextmanager
+    def observed(client, *args, **kwargs):
+        try:
+            with original(client, *args, **kwargs) as response:
+                yield response
+        except Exception as error:
+            fact = {"kind": "timeout" if isinstance(error, httpx.TimeoutException) else "transport",
+                    "verify_code": None}
+            current, seen = error, set()
+            for _ in range(8):
+                if current is None or id(current) in seen:
+                    break
+                seen.add(id(current))
+                if isinstance(current, ssl.SSLError):
+                    fact["kind"] = "tls"
+                    code = getattr(current, "verify_code", None)
+                    if type(code) is int and 0 <= code <= 1000:
+                        fact["verify_code"] = code
+                current = current.__cause__ or current.__context__
+            failures.append(fact)
+            raise
+
+    monkeypatch.setattr(httpx.Client, "stream", observed)
+    return failures
 
 
 @pytest.fixture
@@ -53,7 +102,58 @@ def tls_dir(tmp_path, certificates):
     for name in ("ca.crt", "client.crt", "client.key"):
         shutil.copyfile(certificates / name, directory / name)
         (directory / name).chmod(0o600)
-    return directory
+    try:
+        yield directory
+    finally:
+        # Some rejection cases deliberately move or hard-link a private key
+        # outside tls/. The entire pytest-owned per-test directory is ours.
+        shutil.rmtree(tmp_path)
+
+
+def test_certificate_constraints_are_explicit(certificates):
+    for name in ("ca", "foreign"):
+        cert = x509.load_pem_x509_certificate((certificates / f"{name}.crt").read_bytes())
+        constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints)
+        usage = cert.extensions.get_extension_for_class(x509.KeyUsage)
+        assert constraints.critical and constraints.value.ca
+        assert usage.critical and usage.value.key_cert_sign and usage.value.crl_sign
+    for name, purpose in (("server", ExtendedKeyUsageOID.SERVER_AUTH), ("client", ExtendedKeyUsageOID.CLIENT_AUTH)):
+        cert = x509.load_pem_x509_certificate((certificates / f"{name}.crt").read_bytes())
+        assert not cert.extensions.get_extension_for_class(x509.BasicConstraints).value.ca
+        assert list(cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value) == [purpose]
+        assert cert.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier).value.key_identifier
+    assert (certificates.stat().st_mode & 0o777) == 0o700
+    assert all((p.stat().st_mode & 0o777) == 0o600 for p in certificates.iterdir())
+
+
+def test_openssl_uses_private_config_without_changing_parent(tmp_path, monkeypatch):
+    parent_config = str(tmp_path / "unavailable-parent.cnf")
+    monkeypatch.setenv("OPENSSL_CONF", parent_config)
+    calls = []
+    def record(command, **kwargs):
+        calls.append((command, kwargs["env"]["OPENSSL_CONF"], kwargs["timeout"]))
+    monkeypatch.setattr(subprocess, "run", record)
+    _openssl(tmp_path, "req", "-new")
+    _openssl(tmp_path, "x509", "-req")
+    assert calls[0][0][1:4] == ["req", "-config", str(tmp_path / "openssl.cnf")]
+    assert all(config == str(tmp_path / "openssl.cnf") for _, config, _ in calls)
+    assert all(timeout == 10 for _, _, timeout in calls)
+    assert os.environ["OPENSSL_CONF"] == parent_config
+
+
+def test_certificate_generation_failure_removes_private_material(tmp_path, monkeypatch):
+    root = tmp_path / "failed-certificates"
+    def create(prefix):
+        root.mkdir()
+        return root
+    def fail(directory, *args):
+        (directory / "partial.key").write_text("PRIVATE-TEST-KEY")
+        raise RuntimeError("certificate_generation_failed")
+    monkeypatch.setattr(sys.modules[__name__], "_openssl", fail)
+    generator = certificates.__wrapped__(SimpleNamespace(mktemp=create))
+    with pytest.raises(RuntimeError, match="^certificate_generation_failed$"):
+        next(generator)
+    assert not root.exists()
 
 
 @contextmanager
@@ -114,7 +214,7 @@ def _span(provider=None, **attributes):
     return span
 
 
-def test_real_mtls_official_protobuf_identity_and_safe_projection(monkeypatch, tls_dir, certificates):
+def test_real_mtls_official_protobuf_identity_and_safe_projection(monkeypatch, tls_dir, certificates, export_failures):
     global_provider = trace.get_tracer_provider()
     monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "secret=DO-NOT-EXPORT")
     monkeypatch.setenv("OTEL_TRACES_SAMPLER", "always_off")
@@ -137,7 +237,7 @@ def test_real_mtls_official_protobuf_identity_and_safe_projection(monkeypatch, t
         assert instance.processor.force_flush(2000)
         close()
         close()
-        assert len(received) == 1
+        assert len(received) == 1, {"export": instance.processor.snapshot(), "failures": export_failures}
         path, headers, body = received[0]
         assert path == "/v1/traces"
         assert headers["Content-Type"] == "application/x-protobuf"
@@ -267,7 +367,7 @@ def test_foreign_ca_and_absent_client_rejected(monkeypatch, tls_dir, certificate
 
 
 @pytest.mark.parametrize("status,delay", [(302, 0), (503, 0), (200, 2.3)])
-def test_no_redirect_retry_and_real_timeout(monkeypatch, tls_dir, certificates, status, delay):
+def test_no_redirect_retry_and_real_timeout(monkeypatch, tls_dir, certificates, status, delay, export_failures):
     with _receiver(certificates, delay=delay, status=status) as (endpoint, received):
         _, close = _start(monkeypatch, tls_dir, endpoint)
         instance = runtime._current
@@ -277,7 +377,7 @@ def test_no_redirect_retry_and_real_timeout(monkeypatch, tls_dir, certificates, 
         assert time.monotonic() - started < 2.4
         assert instance.processor.snapshot()["export_failed"] == 1
         close()
-        assert len(received) == 1
+        assert len(received) == 1, {"export": instance.processor.snapshot(), "failures": export_failures}
 
 
 class _BlockedClient:

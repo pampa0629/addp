@@ -329,3 +329,28 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 证据目录`/tmp/addp-p19-formal-local-20261025-window10/`：`window.json`、`attempt-{1,2}-source.json`／报告／日志、`attempt-2-browser-receipt.json`、`receipt.json`、`cleanup-audit.json`、`evidence-review.json`、`function-row-mapping.json`及初次审计读取未完成记录。第二次run_id为`addp-trace-local-4eb709c8ced44689a5dd7fdb2884ea58`，第一次为`addp-trace-local-54dc65c1ba754a9fb05ce5a1ec0ca2e4`。交叉复核原始脱敏报告、12＋6断言、六模块SHA、原截止时间与全部资源边界，`git diff --check`通过；本次仅更新已有证据，不重复未变代码的T0/T1门禁，不调查／触发其他专项CI或Hosted。
 
 清单已只读核对Excel实际第19行（B18，接口管理总述）与第45行（B44，实时耗时接口追踪）；两项仍为部分实现，但“正式身份本地有界执行→Trace→日志→页面闭环”可以记为已验，不能继续笼统写成本地闭环未验，也不能升级为全域追踪、正式Runner T4或生产完成。工作簿由维护会话统一回填，本会话未编辑。后续优先调查资源守卫Docker状态读取的偶发超时，在原4秒标准内补充分步骤证据后再讨论优化，不自动扩展本次运行范围。
+
+
+<a id="python-trace-certificate-fixture-20261102"></a>
+
+## 2026-11-02 Common Python Trace证书夹具修正（本地通过，Linux待核验）
+
+用户明确将新发现的Common Python HTTP Trace失败纳入本会话修复，限原标准本地测试与回环接收器；不安装／切换依赖、不改全局环境或产品TLS，不重试镜像构建、开产品窗口或运行Hosted／容量／定时。先修T0–T3测试条款，再分开处理证书准备和导出接收失败。
+
+原件一为既有intersection隔离源码门禁的441 passed／1 skipped／17 setup errors／54 subtests，89884字节，SHA256=`7b774735289a3328b1d98a2e368e065ef5537f3a219f73804270883b5e80b33c`；错误在OpenSSL req准备证书，夹具依赖本机缺失的默认openssl.cnf。原件二是在另一会话仅对那次测试子进程设置OPENSSL_CONF=/dev/null后的4 failed／454 passed／1 skipped／54 subtests，7020字节，SHA256=`ceeb0eb4b6fa486d3b0114f580f1352899e07b5ac0a3ffe2de12d65e6804560e`。两份首失败独立保留，不把/dev/null作为正式方案，也不把这些本地结果当作Linux CI。
+
+本轮先让req显式绑定当次私有配置、全部OpenSSL子进程使用局部OPENSSL_CONF，并仅在测试侧观察真实HTTPX流调用的封闭异常类别／TLS验证码；先保留原CA生成语义，运行一次原`make test-common-python`。同样四项稳定复现：官方protobuf／身份／隐私投影接收以及302、503、延迟2.3秒三例，均接收0次；4 failed、454 passed、1 skipped、54 subtests，15.31秒。新增事实为四项均捕获TLS verify_code=79，客户端SSL所对应的本机OpenSSL头文件将79定义为INVALID_CA。force_flush为真只代表outstanding归零，不能替代exported成功；失败在TLS验证阶段，尚未进入HTTP接收断言，不据原日志猜测代理、并发或重试问题。
+
+最小修正只在测试证书夹具：自签根明确critical CA:TRUE及keyCertSign／cRLSign，叶子明确CA:FALSE、数字签名／密钥用途、各自serverAuth／clientAuth及密钥标识，原localhost／127.0.0.1名称不变。私有目录0700／材料0600，准备失败或退出均清理；每测试私有目录包括故意移出／硬链接的测试私钥一并销毁，不触及仓库或其他目录。新增约束检查、子进程配置／父环境不污染、准备失败清理三个回归。原mTLS／官方protobuf、身份与安全投影、外域／代理隔离、单次接收、无重试／重定向、2秒导出及flush／退出上限的全部原断言未改；只在原接收断言附封闭诊断。
+
+| 本轮标准门禁 | 结果及边界 |
+| --- | --- |
+| 私有配置与诊断阶段 `make test-common-python` | 同四项失败，均TLS 79；无默认配置setup errors，未放宽接收次数 |
+| 最终 `make test-common-python` | 461 passed、1 skipped、54 subtests passed，15.28秒；原四项均通过 |
+| 跳过项 | 原有可选GeoPandas测试因缺少该依赖跳过，不安装依赖，不计通过 |
+| AST／来源核验 | 原所有既有test函数的断言条件逐项相同；产品httptrace/runtime.py逐字节未改，pyproject及依赖／产品TLS／预算不变 |
+| CI登记 | 现有Platform的Common Python tests作业通过共享变更矩阵命中本测试路径，沿make test-common-python；无需新增入口或编排 |
+
+本地门禁在共享工作区执行，未提交的workflow_runtime/errors.py为其他会话内容，不混入本批提交；该本地结果不替代最终提交净快照的Linux验证。客户端解释器Python3.12.7／OpenSSL3.0.16、HTTPX0.28.1、Otel SDK／proto1.45.1及protobuf7.36.2均沿现有安装，证书命令为现有OpenSSL4.1.0，无版本或环境切换。受控复现证明当前夹具的无效CA问题，并由显式约束修正；原件二没有保留底层异常，不追填其历史TLS数值。
+
+私有证据目录`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-common-python-trace-evidence-20261102-5vrcf3cb/`（0700／0600），含两份原件、isolated_config_diagnostic.log、final.log及audit.json。诊断复现8210字节，SHA256=`f69688b4be216d723110b6aafe38417f4722e8ef739cb94492d92800c57f7b69`；最终日志638字节，SHA256=`a0e0dc9ae41701afc7f469c1f8858b72fdfe1f2b070dac18ac2b45b41eaa7637`；最终测试文件SHA256=`9ad58b363494566227ff98411a38686efe46973944c9da12a7eb727850b2e841`。本批仅测试夹具、T0–T3条款及两份既有证据，不改变生产导出器，也不增加正式产品／Hosted／容量通过结论；自然Linux结果另记。

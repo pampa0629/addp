@@ -12,7 +12,7 @@
 | [节点与主机资源](Monitor节点与主机资源历史证据.md) | 主机列表、资源趋势、设备与文件系统视图、探针预算 | 17 |
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
-| [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 16 |
+| [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 17 |
 | [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 48 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
@@ -790,3 +790,10 @@
 [完整记录、离线关联与门禁边界](MonitorHTTP质量与采样历史证据.md#http-apt-transport-diagnostic-local-20261102)
 
 经确认在唯一失败APT解析中补连接／正文环节及端点的封闭分类，两维缺失／冲突均明确保留未知；18项定向、Trace154项和HTTP37项及既有登记／身份子门禁通过。历史原因仍未唯一确定，正式产品页面仍未验收；为避免push自动基线构建，本批6个自有路径未提交／推送，无真实构建重试或新窗口。
+
+
+### 2026-11-02 Common Python Trace证书夹具修正（本地通过，Linux待核验）
+
+[完整记录、TLS 79受控复现与门禁](MonitorTrace与日志历史证据.md#python-trace-certificate-fixture-20261102)
+
+Common Python测试改用私有OpenSSL配置及明确CA／叶子约束，同四项接收失败已在当前源码捕获TLS INVALID_CA并修正；原接收／身份／隐私／超时断言保留，产品导出器未改。最终标准门禁461通过、1个可选GeoPandas测试跳过、54子测试通过；自然Linux、正式产品及Hosted等另行认定。
