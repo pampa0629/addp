@@ -4066,6 +4066,38 @@ def validate_raster_zonal_percentile(repository: Path, registered: set[str]) -> 
         raise RegistrationError('zonal percentile oracle must remain independent')
 
 
+ZONAL_CLASS_FREQUENCY_REQUIRED = {'business/scripts/online-raster-zonal-class-frequency-fixture.py': ('NFSExport', 'source_arrays', 'Fraction(counts[value], valid)', 'populations', 'FREQUENCY_COLUMNS', 'class_rules', 'def oracle_scope', 'source_files', 'fixture_sha256', 'GetNoDataValueAsInt64', 'GetNoDataValueAsUInt64', 'np.array_equal(band.ReadAsArray(), values, equal_nan=True)', 'archive_files', 'archived_oracle', 'oracle cache became writable', 'runtime_workspaces_removed', "with state.open('xb')"), 'scripts/test/raster-zonal-class-frequency-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'remaining()', 'budget != 600', 'full_checks != 1160', 'len(cases) != 16', 'len(failures) != 64', 'physical_calls != 81', 'current(execution', 'lineage.collect', 'lineage.verify_archive', 'base.validate_scan', 'legacy.validate_success', 'validate_preview', 'target_metadata_after != target_metadata_before', 'source_metadata_after != before', "for language in ('zh-cn', 'en')", 'query language rewrote stored failure', 'failed execution added scan', 'failed execution added derived lineage', "physical_runner(repository, env, 'cleanup-oracle'", 'archived_csvs', 'frozen oracle archive differs'), 'scripts/test/online-hosted-raster-zonal-class-frequency-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', 'online_raster_lineage.py prepare', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online-raster-zonal-class-frequency-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'engines/geopython-workflow/test_online_zonal_class_frequency_fixture.py': ('test_zonal_class_frequency_sixteen_real_csvs_complete_independent_oracle_and_raw_archive', 'test_zonal_class_frequency_sixty_four_exact_submitted_failures_and_no_output', 'test_zonal_class_frequency_real_physical_corruption_is_rejected', 'test_zonal_class_frequency_csv_archive_never_repairs_or_overwrites', 'test_zonal_class_frequency_worker_stdin_frozen_oracle_poison_and_cleanup', 'diagnostic-zero', 'denominator', 'one-ulp'), 'scripts/test/raster-zonal-class-frequency-persistence-online_test.py': ('test_full_matrix_16_success_64_failures_1160_checks_and_cleanup', 'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection', 'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken', 'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced', 'test_exact_thirty_two_failures_and_reclassified_original_inputs', 'test_meta_and_frozen_archive_are_not_allowed_to_change'), 'scripts/utils/online_raster_lineage.py': ("'raster-zonal-class-frequency-persistence': 'zonal-class-frequency-lineage'",), 'scripts/test/online-raster-lineage_test.py': ('test_zonal_class_frequency_approved_two_role_csv_facts_preserve_internal_and_public_boundaries',), 'Makefile': ('test_online_zonal_class_frequency_fixture.py', '@$(MAKE) test-raster-zonal-class-frequency-online-runner', 'scripts/test/raster-zonal-class-frequency-persistence-online_test.py', 'scripts/test/online-raster-zonal-class-frequency-fixture_test.py', 'scripts/test/online-hosted-raster-zonal-class-frequency-gate_test.py', 'test_zonal_class_frequency_requires_exact_csv_matrix_budget_and_regressions')}
+
+def validate_raster_zonal_class_frequency(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-zonal-class-frequency-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-zonal-class-frequency-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-zonal-class-frequency-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-zonal-class-frequency-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('zonal class frequency requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_zonal_class_frequency_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('zonal class frequency Native omitted from standard recipe')
+    for relative, fragments in ZONAL_CLASS_FREQUENCY_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('zonal class frequency strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-zonal-class-frequency-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES')}
+    expected_cases = {'original.csv': ('values.tif', 'zones.tif', 'summary-default', 2), 'summary.csv': ('values.tif', 'zones.tif', 'summary', 2), 'direct.csv': ('values.tif', 'zones.tif', 'frequency', 2), 'single-class.csv': ('single.tif', 'zones.tif', 'frequency', 2), 'second-band.csv': ('second.tif', 'zones.tif', 'frequency', 2), 'cross-blocks.csv': ('cross-values.tif', 'cross-zones.tif', 'frequency', 2), 'reclassified-values.csv': ('values.tif', 'zones.tif', 'reclass-values', 2), 'reclassified-zones.csv': ('values.tif', 'zones.tif', 'reclass-zones', 2), 'rotated.csv': ('rotated-values.tif', 'rotated-zones.tif', 'frequency', 2), 'geographic.csv': ('geographic-values.tif', 'geographic-zones.tif', 'frequency', 2), 'reversed.csv': ('reversed-values.tif', 'reversed-zones.tif', 'frequency', 2), 'coverage.csv': ('coverage.tif', 'coverage-zones.tif', 'frequency', 2), 'native.csv': ('native-values.tif', 'native-zones.tif', 'frequency', 2), 'mixed-diagnostic.csv': ('mixed.tif', 'zones.tif', 'frequency', 2), 'invalid-values.csv': ('invalid.tif', 'zones.tif', 'frequency', 2), 'empty-zones.csv': ('values.tif', 'empty-zones.tif', 'frequency', 2)}
+    expected_failures = ('method_unknown', 'method_empty', 'percentile_value', 'percentile_null', 'weights_raster', 'weights_band', 'weighted_stddev', 'stddev_string', 'values_band_zero', 'values_band_high', 'values_band_boolean', 'values_band_string', 'zones_band_zero', 'zones_band_high', 'zones_band_boolean', 'zones_band_string', 'values_alpha', 'zones_alpha', 'values_complex', 'zones_complex', 'fractional_class', 'unsafe_class', 'native_unsafe_class', 'fractional_zone', 'unsafe_zone', 'overflow_zone', 'different_size', 'shifted_grid', 'different_crs', 'missing_crs', 'missing_grid', 'singular_grid')
+    if (any(len(nodes) != 1 for nodes in actual.values()) or ast.literal_eval(actual['CASES'][0]) != expected_cases
+        or ast.literal_eval(actual['FAILURES'][0]) != expected_failures): raise RegistrationError('zonal class frequency fixed 16/64 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', 'np.unique', 'np.histogram')):
+        raise RegistrationError('zonal class frequency oracle must remain independent')
+
+
+
 ZONAL_WEIGHTED_REQUIRED = {
     'scripts/test/online-hosted-raster-zonal-weighted-gate.sh': ('start_online_geopython_runtime', '--mount', '--suite raster-workflow',
         '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare',
@@ -6411,6 +6443,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_band_recommendation_profile(repository, registered)
     validate_raster_statistics_percentile(repository, registered)
     validate_raster_zonal_percentile(repository, registered)
+    validate_raster_zonal_class_frequency(repository, registered)
     validate_raster_zonal_weighted(repository, registered)
     validate_raster_zonal_weighted_stddev(repository, registered)
     validate_vector_zonal_percentile(repository, registered)
