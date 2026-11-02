@@ -239,9 +239,10 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 2. [任务编排体系图](concepts/addp任务编排体系图.md)：理解任务级 DAG 和跨模块编排概念。
 3. [监控与执行体系图](concepts/addp监控与执行体系图.md)：理解 Monitor 与 `common.task_executions` 的关系。
 4. [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)：处理 Meta ScanTask 与 execution 时阅读。
-5. [Transfer 任务语义与同步模式](../transfer/docs/transfer-任务语义与同步模式.md)：处理 Transfer 全量、增量、持续同步、状态、重试、进度或日志语义时阅读。
-6. [Transfer 后续能力清单](next/transfer后续能力清单.md)：评估尚未实现的同步模式或运行时能力时阅读。
-7. [ArcGIS SDE 支持设计](next/ArcGIS%20SDE支持设计.md)：处理 Oracle Enterprise Geodatabase workspace、非版本化要素类读写、traditional versioning 逻辑变化源或后续 branch versioning 时阅读。
+5. [Transfer 模块入口](../transfer/README.md)：配置、格式规则、操作指南、前端与数据库说明由模块导航维护；标准门禁、固定版本证据、失败与未覆盖项沿[启动与验证](../transfer/README.md#启动与验证)分别认定。
+6. [Transfer 任务语义与同步模式](../transfer/docs/transfer-任务语义与同步模式.md)：处理 Transfer 全量、增量、持续同步、状态、重试、进度或日志语义时阅读。
+7. [Transfer 后续能力清单](next/transfer后续能力清单.md)：查看未完成能力、实施前置条件与验收缺口，不作为当前版本已通过的证明。
+8. [ArcGIS SDE 支持设计](next/ArcGIS%20SDE支持设计.md)：处理 Oracle Enterprise Geodatabase workspace、非版本化要素类读写、traditional versioning 逻辑变化源或后续 branch versioning 时阅读。
 
 ## 数据质量主题
 
