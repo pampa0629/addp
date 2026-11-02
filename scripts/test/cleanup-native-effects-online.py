@@ -443,6 +443,15 @@ def task_create_rejection(payload, kind, pg, kafka):
     return dict(task_kind=kind, source_engine_id=source, target_engine_id=target, http_status=400, reason=reason)
 
 
+def require_continuous_task_definition(value, task_id, tenant):
+    # enabled controls task-owned scheduling; manual continuous start uses
+    # desired_state and never turns this fixture's scheduling switch on.
+    require(type(value) is dict and type(value.get('id')) is int and value['id'] == task_id
+            and type(value.get('tenant_id')) is int and value['tenant_id'] == tenant
+            and value.get('enabled') is False,
+            'native continuous task definition differs from the accepted no-schedule fixture')
+
+
 def prepare_task(user, controls, pg, kafka, kind, run_id, report, checkpoint):
     report['stage'] = 'transfer_task_create'; checkpoint()
     config = TRANSFER.task_config(kind, pg, kafka)
@@ -457,6 +466,7 @@ def prepare_task(user, controls, pg, kafka, kind, run_id, report, checkpoint):
     require(response.status == 201, 'native Transfer task creation did not succeed')
     created = response.payload
     task_id = S.positive(created['id'])
+    require_continuous_task_definition(created, task_id, controls.tenant)
     report['tasks'].append(task_id); checkpoint()
     report['stage'] = 'transfer_task_start'; checkpoint()
     started = user.request('POST', f'{TASKS}/{task_id}/start', (200,)).payload
@@ -922,13 +932,10 @@ def run_transfer(user, workflow, controls, case, report, checkpoint):
         controls.require_invocations_stopped(task_id)
         report['stage'] = 'transfer_retained_task_read'; checkpoint()
         retained = user.request('GET', f'{TASKS}/{task_id}', (200,)).payload
-        # Unknown external effects do not commit the final domain/result transaction.
-        # The earlier stop intent and durable operation, rather than this switch,
-        # keep that retained definition from producing again.
-        expected_enabled = case == 'transfer-capture-unknown'
-        require(retained['id'] == task_id and retained['tenant_id'] == controls.tenant
-                and retained['enabled'] is expected_enabled,
-                'Engine cleanup changed the retained Transfer definition outside its outcome')
+        # Both outcomes retain this originally unscheduled definition. Unknown
+        # isolation is proved below by stopped invocations, the durable hold and
+        # producer refusal, rather than by interpreting enabled as runtime state.
+        require_continuous_task_definition(retained, task_id, controls.tenant)
     if case == 'transfer-engine':
         report['stage'] = 'transfer_retained_dlq_verify'; checkpoint()
         controls.topic(kafka_task, present=True)

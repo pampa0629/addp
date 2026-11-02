@@ -784,7 +784,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 if name == failed: raise S.SuiteError('private failure')
             class User:
                 def request(self, method, path, expected, body=None):
-                    if method == 'POST' and path == M.TASKS: effect('create'); value = {'id': 7}
+                    if method == 'POST' and path == M.TASKS: effect('create'); value = {'id': 7, 'tenant_id': 2, 'enabled': False}
                     elif method == 'POST' and path.endswith('/start'): effect('start'); value = {'execution_id': ID}
                     elif method == 'GET' and '/executions/' in path:
                         effect('runtime'); value = {'execution_id': ID, 'task_id': 7, 'status': 'running'}
@@ -794,6 +794,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     else: raise AssertionError('unexpected preparation request')
                     return SimpleNamespace(status=201 if path == M.TASKS else 200, payload=value)
             class Controls:
+                tenant = 2
                 def produce_initial(self): effect('initial')
                 def produce_invalid(self): effect('invalid')
                 def topic(self, task, *, present): effect('topic')
@@ -1133,23 +1134,39 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                             M.run_manager(User(), workflow, Controls(), User(), case, report, lambda: None)
 
     def test_transfer_engine_preserves_definition_and_dlq_until_explicit_delete(self):
+        real_prepare = M.prepare_task
         for case in ('transfer-engine', 'transfer-capture-unknown'):
             for mutation in ('none', 'wrong_enabled_state', 'dlq_erased', 'native_capture_remains', 'business_rows_changed',
-                             'delete_http400', 'professional_http400'):
+                             'delete_http400', 'professional_http400', 'foreign_task', 'foreign_tenant',
+                             'missing_enabled', 'created_enabled_true'):
                 if case == 'transfer-capture-unknown' and mutation == 'dlq_erased': continue
                 if case != 'transfer-engine' and mutation in ('delete_http400', 'professional_http400'): continue
+                if case != 'transfer-capture-unknown' and mutation == 'created_enabled_true': continue
                 calls, deleted, snapshots = [], [], []
+                definitions = {}
                 class User:
-                    def request(self, method, path, expected):
+                    def request(self, method, path, expected, body=None):
                         calls.append((method, path))
+                        if method == 'POST' and path == M.TASKS:
+                            self_enabled = body['enabled']
+                            if self_enabled is not False or body.get('schedule'):
+                                raise AssertionError('continuous fixture must not enable task-owned scheduling')
+                            definitions[7] = dict(id=7, tenant_id=2,
+                                                  enabled=mutation == 'created_enabled_true')
+                            return SimpleNamespace(status=201, payload=dict(definitions[7]))
+                        if method == 'POST' and path.endswith('/start'):
+                            return SimpleNamespace(status=200 if expected == (200,) else 409,
+                                                   payload={'execution_id': ID})
                         if method == 'DELETE':
                             if mutation == 'delete_http400': raise S.SuiteError('DELETE /private returned HTTP 400 (secret)')
                             deleted.append(8)
                         if method == 'GET' and path.endswith('/8') and expected == (404,): return SimpleNamespace(payload={})
-                        enabled = case == 'transfer-capture-unknown'
-                        if mutation == 'wrong_enabled_state': enabled = not enabled
-                        value = dict(id=int(path.rsplit('/', 1)[-1]) if method == 'GET' else 7,
-                                     tenant_id=2, enabled=enabled)
+                        task = int(path.rsplit('/', 1)[-1]) if method == 'GET' else 7
+                        value = dict(definitions.get(task, dict(id=task, tenant_id=2, enabled=False)))
+                        if mutation == 'wrong_enabled_state': value['enabled'] = True
+                        if mutation == 'foreign_task': value['id'] = task + 100
+                        if mutation == 'foreign_tenant': value['tenant_id'] = 3
+                        if mutation == 'missing_enabled': value.pop('enabled')
                         return SimpleNamespace(payload=value)
                 class Controls:
                     tenant, run_id = 2, 'native-1'
@@ -1176,28 +1193,37 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                                                  lifecycle_state='active', connection_status='online'),
                     begin=lambda engine: calls.append(('ENGINE_BEGIN', engine)), settled=lambda *args, **kwargs: {})
                 def prepare(user, controls, pg, kafka, kind, run_id, report, checkpoint):
+                    if case == 'transfer-capture-unknown':
+                        return real_prepare(user, controls, pg, kafka, kind, run_id, report, checkpoint)
                     task = 7 if kind == 'cdc' else 8
+                    definitions[task] = dict(id=task, tenant_id=2, enabled=False)
                     report['tasks'].append(task)
                     return task, ID
                 def professional(*_):
                     if mutation == 'professional_http400': raise S.SuiteError('GET /private returned HTTP 400 (secret)')
                     return {}
                 with patch.object(M.MANAGER, 'wait_for_meta_scan'), patch.object(M.REGISTRATION, 'initialize_exact_record_read_grants'), \
-                     patch.object(M, 'prepare_task', side_effect=prepare), patch.object(M, 'professional', side_effect=professional):
-                    report = dict(checks=[], tasks=[])
+                     patch.object(M, 'prepare_task', side_effect=prepare), patch.object(M, 'professional', side_effect=professional), \
+                     patch.object(M, 'wait_transfer_runtime'), patch.object(M, 'wait_initial_records'), patch.object(M, 'wait_paused'):
+                    report = dict(checks=[], tasks=[], executions=[])
                     if mutation == 'none':
                         M.run_transfer(User(), workflow, Controls(), case, report, lambda: None)
                         self.assertEqual(set(report['checks']), set(S.CONTRACT['native_case_checks'][case]))
                         if case == 'transfer-engine':
                             self.assertLess(calls.index(('ENGINE_BEGIN', 9)), calls.index(('DELETE', M.TASKS + '/8')))
                             self.assertLess(calls.index(('NATIVE_TOPIC', True)), calls.index(('DELETE', M.TASKS + '/8')))
-                        else: self.assertFalse(deleted)
+                        else:
+                            self.assertFalse(deleted)
+                            self.assertIs(definitions[7]['enabled'], False)
+                            self.assertLess(calls.index(('POST', M.TASKS)), calls.index(('ENGINE_BEGIN', 9)))
                     else:
                         with self.subTest(case=case, mutation=mutation), self.assertRaises(S.SuiteError):
                             M.run_transfer(User(), workflow, Controls(), case, report, lambda: None)
                         expected = dict(wrong_enabled_state='transfer_retained_task_read', dlq_erased='transfer_retained_dlq_verify',
                             native_capture_remains='transfer_capture_cleanup_verify', business_rows_changed='transfer_business_rows_verify',
-                            delete_http400='transfer_task_delete', professional_http400='transfer_professional_result_read')
+                            delete_http400='transfer_task_delete', professional_http400='transfer_professional_result_read',
+                            foreign_task='transfer_retained_task_read', foreign_tenant='transfer_retained_task_read',
+                            missing_enabled='transfer_retained_task_read', created_enabled_true='transfer_task_create')
                         self.assertEqual(report['stage'], expected[mutation])
 
     def test_native_object_never_treats_auth_failure_or_missing_bucket_as_absence(self):

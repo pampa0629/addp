@@ -162,7 +162,7 @@ Transfer、Develop、Service、Asset、Portal 等模块按同一原则处理：
 Transfer 已实现的资源回收执行方当前治理 Transfer-owned 任务定义和受管运行资源：
 
 - 已确认的 Engine 删除流程按固定 Engine 范围扫描 source / target endpoint locator 引用该 Engine 的 `transfer.transfer_tasks`；缺少可信原用户的独立 `engine.deleted` 事件不启动清理。
-- engine 生命周期 cleanup 成功提交时，无论使用何种 cleanup mode，都只禁用命中的用户任务定义、清空下一次调度并恢复 idle 状态；任务定义必须保留供用户后续重绑定或显式删除。外部效果unknown导致未完成时，不提交任务开关、专业结果或成功回执；保留原任务开关，已提交的停止意图及持久外部操作围栏继续阻止producer，不能把开关仍true解释为可重新运行。
+- engine 生命周期 cleanup 成功提交时，无论使用何种 cleanup mode，都只禁用命中的用户任务定义、清空下一次调度并恢复 idle 状态；任务定义必须保留供用户后续重绑定或显式删除。外部效果unknown导致未完成时，不提交任务开关、专业结果或成功回执；保留原任务开关，已提交的停止意图及持久外部操作围栏继续阻止producer。`enabled`是定时调度开关，不是continuous运行状态；本轮无调度continuous夹具创建时即为false，手动start只改变运行期望，不把它置true。不能由开关false推断unknown清理已经成功，也不能要求unknown把原false改成true。
 - 历史／closed Tenant 生命周期清理首期阻断。用户直接删除任务的既有入口沿独立当前用户授权，不借用 Cleanup 子执行权限。
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Transfer 任务定义视作待回收对象。
 - Transfer 不拥有目标引擎中的表、文件或对象生命周期；这些资源只有在被其他 owner 模块登记为 artifact state 时，才由对应 owner executor 清理。

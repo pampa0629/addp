@@ -1172,6 +1172,8 @@ Manager和Transfer统一复用Common的C围栏安全失败步骤写入；诊断�
 
 ### 8.39 Capture unknown首轮前的任务状态谓词收敛
 
+**历史判断更正：本节将PG直接seed的enabled=true误当作真实continuous夹具初态，已由首轮Hosted证据及公开创建契约证伪；当前结论与修正在§8.40。本节CI通过不代表该判断正确。**
+
 在已确认顺序推进transfer-capture-unknown、尚未派发其Hosted前，只读预检发现runner把成功Engine cleanup的`enabled=false`读取谓词同时套用于unknown分支。现有Transfer真实PG门禁明确domain／专业结果／回执原子提交，native_unknown保持任务原enabled=true；生产executeCleanup也只在最后成功事务禁用，独立停止意图与持久operation先行保护，不因unknown伪造完成。原T1把两分支都mock为false，未覆盖此差异。
 
 不改变产品删除语义：先将正式Cleanup／T4规范中的成功提交与未完成状态写明，再仅纠正runner和对应正反样例；unknown保留原开关并验证停止及持久隔离，成功基线仍要求false。原机器契约八项checks、三身份权限、读取请求、等待预算、原生故障点与操作范围不变。受影响门禁为现有独立Execution runner及登记，脚本路径自动命中；Go／PG产品未改，已验c63证据按匹配输入保留。先跑原T1反例再修正，不为已知错误谓词浪费Hosted。
@@ -1183,3 +1185,15 @@ Manager和Transfer统一复用Common的C围栏安全失败步骤写入；诊断�
 依据§8.37—8.38持续授权与既定顺序，在上述门禁实际通过后仅POST一次创建 [首轮transfer-capture-unknown Run41482506517／Job125404236001](https://github.com/pampa0629/addp/actions/runs/41482506517/job/125404236001)，准确源码 `5adc87cba736406901d2d680eb1625c81d59f1cb`、workflow_dispatch／attempt1。沿原机器契约八项断言、三User权限、操作范围和预算；仅准备CDC任务，经Engine删除入口制造connector删除回包丢失，不增加DLQ任务或新故障类型。排队／运行中均不计通过，终态须核十四服务准确source、八项checks、控制恢复与退出零残留。CI会话只读跟进同一Job，不重复派发。
 
 派发前33项自有代码与1c修正逐字节相同；24项关键输入中仅Online其它profile增加native-envi选项、fixture对应的独立Manager分支变化，完整Cleanup Native Job及本case角色不变。新增文件源／ENVI分支只作用于文件组合、Raster派生任务与其输入准备，本轮只准备PG／Kafka CDC，Manager无相关派生成果；Agent／Ontology／登录及GeoPython路线不被本case调用。Common数值读取增量仅新增json.Number处理分支，Cleanup未消费这些变更方法。不将工作区未提交的授权重构、迁移、夹具或表格部署到Hosted。私有 `/tmp/addp-transfer-capture-unknown-hosted-first-20261103/` 封存输入前提、单次intent、原派发快照、canonical契约和五份审计。
+
+### 8.40 Capture unknown首轮实际失败与真实创建契约修正
+
+[首轮Job125404236001](https://github.com/pampa0629/addp/actions/runs/41482506517/job/125404236001)北京时间2026-11-03 00:38:27—01:00:59实际failure，正式checks为空、0/8。失败为transfer_retained_task_read／assertion_failed，不是已取证的后端HTTP失败。十四服务同准确5adc源码且repository_clean=true；五份冻结审计全部exit0，失败报告被canonical成功谓词拒绝，控制恢复／control_cleanup／cleanup均passed，infra_cleanup=zero_residuals。上述控制事实不换算为八项业务通过。
+
+原日志429674字节／SHA-256 `aa2e3e2dd649887f1200fd4703b72d549998e72f30400e54bc4a7b60a51bf20b`；artifact13162378031／ZIP2972字节／SHA-256 `6d1f1039e8fd89cc0124f938b769eaa9461e053a9aba0185ab5d8af6b8e4cea4`。原生报告785字节／SHA-256 `cc9397e7e66aba4495c0eea4cb154ed1a5c5aef07695efee9bc33bd9954f8cd8`；原件及逐项证据在首轮私有目录的raw-manifest／audit-exit-proof／terminal-proof。报告只保留复合断言失败阶段，未直接归档GET字段值，不补造现场字段观察。
+
+**根因。** §8.39把PG原子性测试直接seed的Enabled=true误当作本轮合法continuous初态，runner反而要求unknown变true。真实prepare_task明确POST enabled=false；TaskService.CreateTask对空schedule固定false，并拒绝continuous自带schedule／enabled，手动start经SetContinuousDesiredState改变运行期望，不改变enabled。[任务字段契约](../../transfer/docs/tables/tasks表.md)也明确enabled仅为定时开关。该直接seed测试能证明失败事务不提交任务开关，不能证明公开创建的CDC任务初态true。新要求与真实准备合同冲突，合法响应也必然被拒；原成功基线false不证明它从true转为false。
+
+**本轮修正与门禁。** 先更正正式Cleanup／T4说明；runner以同一无调度continuous定义校验创建响应和保留GET的准确Task／Tenant／boolean false，禁止启用调度、换身份或把unknown当成功。T1必须贯穿真实prepare_task代码生成的请求及响应，再走Capture unknown的保留读取，不能继续mock两个互不关联的初态；同时保留错误开关、跨任务／Tenant等反例。原三User权限、八项checks、HTTP请求与等待预算、原生故障点及范围不变。仅现有独立Execution runner及登记受影响，既有路径自动命中；生产Go／PG无改动，不重跑无改动Owner。先取得旧runner反例、通过完整标准门禁，再提交并跟进准确CI；其后按持续授权推进同范围Hosted，不盲重跑首轮。
+
+**本地实际验证。** 旧runner沿真实prepare_task／enabled=false初态的聚焦回归实际exit1，修正后聚焦通过；不是语法或编译失败冒充功能反例。干净已提交源码705c9b8ddfacd9f6b2a943dfda853991f0eb730c仅叠加本批五文件，标准 `make test-execution-online-ci-runner` 实际exit0，115＋173及注册一致，日志SHA-256 `92f1d7cdedfc90a759693ad5fea4945ed3da4044ab81a27451a6dd8a66eedab6`。AST核对全部HTTP／wait／sleep／local_client调用未变，机器契约仍b6aa6485。证据 `/tmp/addp-transfer-capture-definition-20261103/`；本地通过不改写首轮Hosted0/8，后续只跟准确修正提交的独立Execution CI。
