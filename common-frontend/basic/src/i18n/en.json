@@ -194,6 +194,8 @@
         "result": "Save execution result"
       },
       "reasons": {
+        "operator_group_fields_invalid": "The group field list is invalid, duplicated or contains non-scalar values.",
+        "operator_dissolve_fields_conflict": "Fixed dissolve output fields conflict with source columns.",
         "operator_input_overlap": "The source layer contains positive-area overlaps, including contained or duplicate polygons.",
         "operator_reference_overlap": "Layer B contains positive-area overlaps, including contained or duplicate polygons.",
         "operator_mask_invalid": "The range layer requires one active geometry column and valid non-empty finite XY Polygon or MultiPolygon geometries.",
@@ -255,6 +257,8 @@
         "operator_overlay_fields_conflict": "Overlay business fields conflict with each other, fixed source fields or the result geometry column."
       },
       "actions": {
+        "operator_group_fields_invalid": "Explicitly select distinct existing non-geometry scalar fields; [] means global dissolve and null groups are retained.",
+        "operator_dissolve_fields_conflict": "Rename conflicting fusion_id/member_count/source_id columns upstream; they are not replaced automatically.",
         "operator_input_overlap": "Check polygon overlaps in the indicated layer and resolve overlaps, containment or duplicates explicitly; no automatic dissolve, deduplication or repair is performed.",
         "operator_reference_overlap": "Check polygon overlaps in the indicated layer and resolve overlaps, containment or duplicates explicitly; no automatic dissolve, deduplication or repair is performed.",
         "operator_mask_invalid": "Check the range layer active geometry, polygon type, validity and XY coordinates before submitting a new execution; no business identifier is required for the range layer.",
@@ -325,6 +329,7 @@
       "field": "Conflicting field",
       "operatorNodeIndex": "Node {index} in the workflow definition",
       "operatorNames": {
+        "dissolve": "Dissolve geometry",
         "union": "Union overlay",
         "clip": "Clip geometry",
         "difference": "Geometry difference",
@@ -337,6 +342,7 @@
         "intersection": "Intersection overlay"
       },
       "operatorParameters": {
+        "group_fields": "Group fields (group_fields)",
         "mask_gdf": "Clip mask (mask_gdf)",
         "max_distance": "Maximum trim path distance (max_distance)",
         "input_gdf": "Source layer (input_gdf)",

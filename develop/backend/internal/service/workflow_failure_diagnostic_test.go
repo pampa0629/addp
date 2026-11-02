@@ -238,3 +238,28 @@ func TestUnionDiagnosticBindsOnlyExactFrozenOperatorAndInput(t *testing.T) {
 		}
 	}
 }
+
+func TestDissolveDiagnosticBindsOnlyExactFrozenOperatorAndInput(t *testing.T) {
+	for reason, parameter := range map[string]string{"operator_input_invalid": "input_gdf", "operator_crs_invalid": "", "operator_group_fields_invalid": "group_fields", "operator_dissolve_fields_conflict": ""} {
+		context := map[string]interface{}{"node_index": 1, "operator_id": "dissolve"}
+		if parameter != "" {
+			context["parameter"] = parameter
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": context}
+		raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+		frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "PRIVATE_NODE", "operator": "dissolve", "depends_on": []string{"load"}}, map[string]interface{}{"operator": "load"}}}
+		got := executionFailureDetails("workflow", "execution_failed", "PRIVATE source geometry", raw, frozen)
+		if got["diagnostic"] == nil || got["code"] != "develop.workflow.invalid_params" {
+			t.Fatalf("lost difference context %s: %+v", reason, got)
+		}
+		context["node_index"] = 2
+		if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+			t.Fatal("trusted scheduling order")
+		}
+		context["node_index"] = 1
+		context["parameter"] = "reference_gdf"
+		if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+			t.Fatal("trusted foreign source parameter")
+		}
+	}
+}

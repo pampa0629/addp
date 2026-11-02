@@ -7273,3 +7273,142 @@ def test_vector_union_allows_intralayer_boundary_contacts(touch):
     a,b=overlay_inputs([box(0,0,1,1),other],[box(10,0,11,1)])
     result=exact_union(a,b)
     assert len(result)==3 and all(g.equals(e)for g,e in zip(result.geometry,[box(0,0,1,1),other,box(10,0,11,1)]))
+
+
+def test_vector_dissolve_groups_keep_null_members_and_both_ports():
+    frame=gpd.GeoDataFrame({'key':pd.Series([2**60+1,2**60+3,2**60+5],dtype='Int64'),'zone':pd.Series(['a',None,None],dtype='string'),'grade':pd.Series([1,2,3],dtype='Int64')},geometry=[box(0,0,1,1),box(2,0,3,1),box(2.5,0,4,1)],crs='EPSG:3857').rename_geometry('shape')
+    out=get_operator('dissolve')(frame,id_field='key',group_fields=['zone'])
+    assert set(out)=={'result','members'}
+    assert len(out['result'])==2 and out['result'].member_count.tolist()==[1,2]
+    assert out['result'].geometry.iloc[1].equals(box(2,0,4,1))
+    assert out['members'].source_id.tolist()==frame.key.tolist() and out['members'].fusion_id.tolist()==[1,2,2]
+    assert 'grade'not in out['result'] and out['members'].grade.tolist()==[1,2,3]
+
+
+def dissolve_frame(shapes=None):
+    a,_=overlay_inputs([box(0,0,2,1),box(1,0,3,1),box(5,0,6,1)]if shapes is None else shapes)
+    a['zone']=pd.Series(['x']*len(a),dtype='string');a['grade']=pd.Series(range(len(a)),dtype='Int64')
+    return a
+
+
+@pytest.mark.parametrize('groups',[[],['zone']])
+def test_vector_dissolve_global_duplicate_members_types_and_order(groups):
+    a=dissolve_frame();a['a_key']=pd.Series([2**64-1,2**64-2,2**64-3],dtype='UInt64');a['geometry']=pd.Series(['a',None,'c'],dtype='string');a.index=[8,8,-1];before=a.copy(deep=True)
+    out=get_operator('dissolve')(a,'a_key',groups);result,members=out['result'],out['members']
+    assert len(result)==1 and result.geometry.iloc[0].equals(shapely.MultiPolygon([box(0,0,3,1),box(5,0,6,1)]))
+    assert result.member_count.tolist()==[3]and result.fusion_id.tolist()==[1]
+    assert list(result.columns)==groups+['fusion_id','member_count',a.geometry.name]
+    assert members.source_id.dtype==a.a_key.dtype and members.source_id.tolist()==a.a_key.tolist()
+    assert members['geometry'].tolist()==['a',pd.NA,'c'] and members.grade.dtype==a.grade.dtype
+    assert_geodataframe_equal(members.drop(columns=['source_id','fusion_id']),a.reset_index(drop=True));assert_geodataframe_equal(a,before)
+
+
+def test_vector_dissolve_multifield_null_group_first_appearance_and_cross_group_overlap():
+    a=dissolve_frame([box(0,0,1,1)]*4);a['zone']=pd.Series([None,'x',None,'x'],dtype='string');a['flag']=pd.Series([True,False,True,True],dtype='boolean')
+    out=get_operator('dissolve')(a,'a_key',['zone','flag']);assert out['result'].member_count.tolist()==[2,1,1]and out['members'].fusion_id.tolist()==[1,2,1,3]
+    assert out['result'].zone.isna().tolist()==[True,False,False]
+    assert all(g.equals(box(0,0,1,1))for g in out['result'].geometry)
+
+
+@pytest.mark.parametrize('groups',[[],['zone']])
+def test_vector_dissolve_empty_schema_and_original_active_geometry(groups):
+    a=dissolve_frame([]);out=get_operator('dissolve')(a,'a_key',groups)
+    assert all(f.empty and f.geometry.name==a.geometry.name and f.crs==a.crs for f in out.values())
+    assert out['members'].source_id.dtype==a.a_key.dtype and str(out['result'].fusion_id.dtype)=='int64'
+    assert list(out['result'].columns)==groups+['fusion_id','member_count',a.geometry.name]
+
+
+@pytest.mark.parametrize('problem',['id_missing','id_null','id_duplicate','point','empty','missing','invalid','z','m','extra_geometry','duplicate_columns','crs_missing','crs_geographic','groups_none','groups_string','groups_duplicate','groups_missing','groups_geometry','groups_nested','field_fusion_id','field_member_count','field_source_id','geometry_fusion_id'])
+def test_vector_dissolve_typed_rejections(problem):
+    from operators.geometric_operators import DissolveInputError
+    a=dissolve_frame();groups=[];code='source'
+    if problem=='id_missing':a.drop(columns='a_key',inplace=True)
+    elif problem=='id_null':a.loc[0,'a_key']=None
+    elif problem=='id_duplicate':a.loc[0,'a_key']=2
+    elif problem=='extra_geometry':a['extra']=gpd.GeoSeries([Point(0,0)]*3,crs=a.crs)
+    elif problem=='duplicate_columns':a.columns=[a.geometry.name]*len(a.columns)
+    elif problem.startswith('crs'):
+        code='crs';a.set_crs(None if problem=='crs_missing'else'EPSG:4326',allow_override=True,inplace=True)
+    elif problem.startswith('groups'):
+        code='groups';groups={'groups_none':None,'groups_string':'zone','groups_duplicate':['zone','zone'],'groups_missing':['PRIVATE'],'groups_geometry':[a.geometry.name],'groups_nested':['zone']}[problem]
+        if problem=='groups_nested':a['zone']=[{},[],{}]
+    elif problem.startswith('field'):
+        code='fields';a[problem[6:]]=1
+    elif problem=='geometry_fusion_id':code='fields';a=a.rename_geometry('fusion_id')
+    else:
+        shapes={'point':Point(0,0),'empty':Polygon(),'missing':None,'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),'z':shapely.from_wkt('POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))'),'m':shapely.from_wkt('POLYGON M ((0 0 1,1 0 1,1 1 1,0 0 1))')};a[a.geometry.name]=gpd.GeoSeries([shapes[problem],box(2,0,3,1),box(4,0,5,1)],crs=a.crs)
+    with pytest.raises(DissolveInputError)as caught:get_operator('dissolve')(a,'a_key',groups)
+    assert caught.value.code==code
+
+
+@pytest.mark.parametrize('lang',['zh-cn','en'])
+@pytest.mark.parametrize('problem,reason,param',[('source','operator_input_invalid','input_gdf'),('crs','operator_crs_invalid',''),('groups','operator_group_fields_invalid','group_fields'),('fields','operator_dissolve_fields_conflict','')])
+def test_vector_dissolve_four_frozen_diagnostics(lang,problem,reason,param):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    a=dissolve_frame();groups=[]
+    if problem=='source':a.loc[0,'a_key']=None
+    if problem=='crs':a.set_crs(None,allow_override=True,inplace=True)
+    if problem=='groups':groups=['PRIVATE']
+    if problem=='fields':a['fusion_id']=1
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner(language=lang).execute({'tasks':[{'id':'PRIVATE','operator':'dissolve','depends_on':[],'params':{'input_gdf':a,'id_field':'a_key','group_fields':groups}}]})
+    assert caught.value.error_code=='INVALID_PARAMS'and caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'dissolve',**({'parameter':param}if param else{})}}
+    assert 'PRIVATE'not in json.dumps(caught.value.diagnostic)
+
+
+def test_vector_dissolve_native_fault_not_parameter_error(monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    def bad(*a,**k):raise shapely.errors.GEOSException('PRIVATE native')
+    monkeypatch.setattr(shapely,'union_all',bad)
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner().execute({'tasks':[{'id':'f','operator':'dissolve','depends_on':[],'params':{'input_gdf':dissolve_frame(),'id_field':'a_key','group_fields':[]}}]})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None
+
+
+def test_vector_dissolve_gpkg_double_save_independent_ogr_and_failure_guard(tmp_path):
+    from osgeo import ogr
+    a=dissolve_frame();a['a_key']=pd.Series([2**60+1,2**60+3,2**60+5],dtype='Int64');a.to_file(tmp_path/'a.gpkg',driver='GPKG',index=False);original=(tmp_path/'a.gpkg').read_bytes();conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'load','operator':'load','depends_on':[],'params':{'connection_info':conn,'path':'a.gpkg'}},{'id':'f','operator':'dissolve','depends_on':['load'],'params':{'input_gdf':{'$ref':'load'},'id_field':'a_key','group_fields':[]}}]
+    for name in ['result','members']:tasks.append({'id':name,'operator':'save','depends_on':['f'],'params':{'input_df':{'$ref':'f','port':name},'connection_info':conn,'path':name+'.gpkg','mode':'fail'}})
+    state=execute_workflow({'tasks':tasks});assert state['status']=='success',state
+    for name,expected in [('result',[shapely.MultiPolygon([box(0,0,3,1),box(5,0,6,1)])]),('members',a.geometry.tolist())]:
+        ds=ogr.Open(str(tmp_path/(name+'.gpkg')));layer=ds.GetLayer(0);rows=list(layer);assert len(rows)==len(expected)and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+        for i,(row,shape)in enumerate(zip(rows,expected)):
+            actual=row.GetGeometryRef();oracle_shape=ogr.CreateGeometryFromWkt(shape.wkt)
+            assert actual.IsValid() and actual.SymDifference(oracle_shape).IsEmpty() and actual.GetArea()==oracle_shape.GetArea()
+            if name=='members':assert actual.Normalize().ExportToIsoWkb()==oracle_shape.Normalize().ExportToIsoWkb()
+            if name=='members':assert row.GetField('source_id')==2**60+1+2*i and row.GetField('grade')==i
+            else:assert row.GetField('member_count')==3
+        actual=oracle_shape=row=rows=layer=ds=None
+        saved=get_operator('load')(connection_info=conn,path=name+'.gpkg');assert len(saved)==len(expected)
+    tasks[1]['params']['group_fields']=['PRIVATE'];tasks[-2]['params']['path']='forbidden-result.gpkg';tasks[-1]['params']['path']='forbidden-members.gpkg';state=execute_workflow({'tasks':tasks})
+    assert state['status']=='failed'and state['error_code']=='INVALID_PARAMS'and not(tmp_path/'forbidden-result.gpkg').exists()and not(tmp_path/'forbidden-members.gpkg').exists()
+    assert(tmp_path/'a.gpkg').read_bytes()==original
+
+
+@pytest.mark.parametrize('problem',[None,'source','crs','groups','fields'])
+def test_vector_dissolve_async_api_four_admissions(tmp_path,monkeypatch,problem):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    a=dissolve_frame();groups=[]
+    if problem=='source':a['a_key']=['', 'b', 'c']
+    if problem=='crs':a.set_crs('EPSG:4326',allow_override=True,inplace=True)
+    if problem=='groups':groups=['PRIVATE']
+    if problem=='fields':a['source_id']=1
+    a.to_file(tmp_path/'a.gpkg',driver='GPKG',index=False);conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'PRIVATE','operator':'dissolve','depends_on':['load'],'params':{'input_gdf':{'$ref':'load'},'id_field':'a_key','group_fields':groups}},{'id':'load','operator':'load','depends_on':[],'params':{'connection_info':conn,'path':'a.gpkg'}}]
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client()as client:
+        spec=next(v for v in client.get('/api/operators').get_json()['operators']if v['id']=='dissolve');assert len(spec['output_ports'])==2
+        assert client.post('/api/operators/dissolve/invoke',json={'params':{}}).status_code==403
+        response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}});assert response.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            got=client.get('/api/executions/'+response.get_json()['execution_id']);assert got.status_code==200;state=got.get_json()
+            if state['status']in('success','failed'):break
+            time.sleep(.01)
+        if problem is None:assert state['status']=='success',state
+        else:
+            reason,param={'source':('operator_input_invalid','input_gdf'),'crs':('operator_crs_invalid',''),'groups':('operator_group_fields_invalid','group_fields'),'fields':('operator_dissolve_fields_conflict','')}[problem]
+            assert state['status']=='failed'and state['error_code']=='INVALID_PARAMS',state
+            assert state['diagnostic']=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'dissolve',**({'parameter':param}if param else{})}}

@@ -831,6 +831,12 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 10. `resource` 只作为 UI 或资源树展示语境中的宽泛称呼使用。Meta 模块、Engine 插件接口和跨模块 API 不应新增 `resource_*` 字段来替代已有 Engine Catalog、`node_*` 或 `item_*` 术语。
 11. Notebook Native Engine Facade 的公开方法、参数和返回对象使用具体引擎原生术语；`EngineCatalogPath`、`EngineCatalogEntry` 和 `EngineCatalogFacts` 只作为其内部实现契约，不要求 Notebook 使用者理解。
 
+## 面分组融合
+
+| 术语 | 中文 | 定义 | 边界 |
+| --- | --- | --- | --- |
+| polygon group dissolve | 融合几何 | 按显式分组字段的值组合对面几何求并，每组保留一个完整多部件成果，同时输出每个原始来源的完整明细。 | 空列表表示全局融合，空值保留成组；同组重复覆盖消除，不跨组融合。非分组属性仅保存在来源明细，不默认取第一条或隐式数值聚合。 |
+
 ## 面图层联合分区
 
 | 术语 | 中文 | 定义 | 边界 |

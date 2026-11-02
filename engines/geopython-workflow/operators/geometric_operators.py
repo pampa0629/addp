@@ -389,25 +389,76 @@ def envelope(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return result
 
 
-def dissolve(input_gdf: gpd.GeoDataFrame, by: str = None) -> gpd.GeoDataFrame:
-    """
-    融合几何（按字段分组融合或全局融合）
+class DissolveInputError(ValueError):
+    _messages = {
+        'zh-cn': {'source':'融合几何要求唯一活动几何、有效非空有限二维面及显式唯一非空来源标识。', 'crs':'融合几何要求已知投影坐标系及匹配的有限正水平单位；请先显式重投影。', 'groups':'请显式指定无重复的现有非几何标量分组字段列表，[]表示全局融合；空值保留成组。', 'fields':'融合固定字段fusion_id/member_count/source_id与输入列重名；请在上游手动改名。'},
+        'en': {'source':'Dissolve requires one active geometry, valid non-empty finite XY polygons and an explicit unique non-null source identifier.', 'crs':'Dissolve requires a known projected CRS and matching finite positive horizontal units; reproject explicitly first.', 'groups':'Explicitly list distinct existing non-geometry scalar group fields; [] means global dissolve and null groups are retained.', 'fields':'Dissolve fields fusion_id/member_count/source_id conflict with input columns; rename them upstream explicitly.'},
+    }
+    def __init__(self, code):
+        self.code=code
+        super().__init__(self.message('zh-cn'))
+    def message(self, language):
+        return self._messages['en' if language=='en' else 'zh-cn'][self.code]
 
-    Args:
-        input_gdf: 输入 GeoDataFrame
-        by: 分组字段名，None 表示全局融合为单个几何
 
-    Returns:
-        GeoDataFrame 融合结果
-    """
-    if by is None:
-        # 全局融合：所有要素合并为一个几何
-        from shapely.ops import unary_union
-        merged_geom = unary_union(input_gdf.geometry)
-        result = gpd.GeoDataFrame(geometry=[merged_geom], crs=input_gdf.crs)
-    else:
-        result = input_gdf.dissolve(by=by).reset_index()
-    return result
+def _dissolve_geometry(values):
+    value=shapely.union_all(values)
+    _require_valid_mask_result(value)
+    return value
+
+
+def dissolve(input_gdf: gpd.GeoDataFrame, id_field: str, group_fields: list) -> dict:
+    """Exact per-group polygon union plus every original source occurrence."""
+    try:
+        if not isinstance(input_gdf,gpd.GeoDataFrame) or not input_gdf.columns.is_unique:
+            raise ValueError('unique columns required')
+        geometry=_finite_xy_geometry(input_gdf)
+        ids=_source_identifiers(input_gdf,id_field)
+        if (sum(isinstance(d,gpd.array.GeometryDtype)for d in input_gdf.dtypes)!=1
+                or geometry.isna().any() or geometry.is_empty.any()
+                or not geometry.geom_type.isin(['Polygon','MultiPolygon']).all()
+                or not shapely.is_valid(geometry.array).all()):
+            raise ValueError('valid polygons required')
+    except ValueError as exc:
+        raise DissolveInputError('source')from exc
+    try:
+        _require_projected_xy_crs(geometry.crs)
+    except ValueError as exc:
+        raise DissolveInputError('crs')from exc
+    if any(name in input_gdf.columns for name in ('fusion_id','member_count','source_id')):
+        raise DissolveInputError('fields')
+    if (not isinstance(group_fields,list) or any(not isinstance(f,str) or f not in input_gdf.columns or f==geometry.name for f in group_fields)
+            or len(set(group_fields))!=len(group_fields)):
+        raise DissolveInputError('groups')
+    missing=object();groups={};rows=[];representatives=[];membership=[]
+    for i in range(len(input_gdf)):
+        values=tuple(input_gdf[f].iloc[i]for f in group_fields)
+        key=[]
+        for value in values:
+            if not pd.api.types.is_scalar(value):raise DissolveInputError('groups')
+            token=missing if pd.isna(value) else (type(value),value)
+            try:hash(token)
+            except (TypeError,ValueError)as exc:raise DissolveInputError('groups')from exc
+            key.append(token)
+        key=tuple(key)
+        if key not in groups:
+            groups[key]=len(rows);rows.append([]);representatives.append(i)
+        group=groups[key];rows[group].append(i);membership.append(group+1)
+    shapes=[]
+    for positions in rows:
+        value=_dissolve_geometry(geometry.iloc[positions].array)
+        if value.is_empty or value.geom_type not in ('Polygon','MultiPolygon'):
+            raise RuntimeError('dissolve did not produce a non-empty polygon group')
+        shapes.append(value)
+    result=input_gdf.iloc[representatives][group_fields].copy().reset_index(drop=True)
+    result['fusion_id']=pd.Series(range(1,len(rows)+1),dtype='int64')
+    result['member_count']=pd.Series([len(x)for x in rows],dtype='int64')
+    result[geometry.name]=gpd.GeoSeries(shapes,crs=geometry.crs)
+    result=gpd.GeoDataFrame(result,geometry=geometry.name,crs=geometry.crs)
+    members=input_gdf.copy().reset_index(drop=True)
+    members['fusion_id']=pd.Series(membership,dtype='int64')
+    members['source_id']=ids.reset_index(drop=True)
+    return {'result':result,'members':members}
 
 
 def _active_geometry(input_gdf: gpd.GeoDataFrame, name: str = "input_gdf") -> gpd.GeoSeries:
@@ -1915,10 +1966,10 @@ def check_polygon_gap(input_gdf: gpd.GeoDataFrame, coverage_gdf: gpd.GeoDataFram
     if coverage.empty or coverage.is_empty.all():
         raise ValueError("coverage_gdf requires at least one non-empty polygon")
 
-    # Reuse the existing global dissolve, without per-feature overlay attributes
+    # Reuse the geometry-only kernel, without per-feature overlay attributes
     # or implicit make_valid. A coverage hole is an explicit excluded region.
     uncovered = shapely.difference(
-        dissolve(coverage_gdf).geometry.iloc[0], dissolve(input_gdf).geometry.iloc[0],
+        _dissolve_geometry(coverage.array), _dissolve_geometry(geometry.array),
     )
     parts = [shapely.normalize(part) for part in shapely.get_parts(uncovered) if not part.is_empty]
     if any(part.geom_type != "Polygon" or not part.is_valid for part in parts):
@@ -2716,56 +2767,15 @@ CONVEX_HULL_METADATA = OperatorMetadata(
 
 
 DISSOLVE_METADATA = OperatorMetadata(
-    name="dissolve",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_PREPARATION,
-    description="融合几何",
-    brief_description="将多个几何对象融合为一个（或按字段分组融合），消除重叠，常用于缓冲区合并后的去重",
-    execution_modes=["workflow"],
-    effects=["read"],
-
-    overview="将图层内的所有几何对象融合为单一几何（全局融合），或按指定字段分组融合。是缓冲区分析中消除重叠的关键步骤，确保后续面积统计不重复计算。",
-
-    params=[
-        OperatorParam(
-            name="input_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="输入的地理数据"
-        ),
-        OperatorParam(
-            name="by",
-            type="param",
-            data_type="string",
-            required=False,
-            description="分组字段名，不填则全局融合为单个几何",
-            notes="全局融合时所有要素合并为一个几何，消除重叠区域"
-        )
-    ],
-
-    use_cases=[
-        "缓冲区合并: 铁路/道路多段缓冲后融合，避免重叠重复计算",
-        "行政区合并: 将多个区县融合为市级边界",
-        "土地利用汇总: 将同类型地块融合为整体",
-        "影响范围合并: 多个设施缓冲区融合为统一服务范围"
-    ],
-
-    notes=[
-        "全局融合后只剩一条记录，属性字段全部丢失（仅保留几何）",
-        "按字段融合时，其他属性列默认取第一条记录的值",
-        "融合会消除重叠区域，是面积统计去重的标准做法",
-        "缓冲区分析必须在 buffer 后、intersection 前执行 dissolve，否则面积会重复计算"
-    ],
-
-    workflow_example={
-        'id': 'dissolve_buffer',
-        'operator': 'dissolve',
-        'params': {
-            'input_gdf': {'$ref': 'buffer_railway'}
-        },
-        'depends_on': ['buffer_railway']
-    }
+    name="dissolve", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
+    description="融合几何", brief_description="按显式字段分组求面并集，输出融合成果和完整来源明细",
+    execution_modes=["workflow"], effects=["read"],
+    overview="每组完整面并集一条，空值保留成组；result仅保分组字段及fusion_id/member_count，members保留全部来源属性和原始几何。不默认取首值或数值聚合。",
+    params=[OperatorParam(name="input_gdf",type="input",data_type="GeoDataFrame",required=True,description="有效有限二维投影面图层",notes="面或多面，允许空批，真实活动几何"),OperatorParam(name="id_field",type="param",data_type="str",required=True,description="唯一非空来源标识字段"),OperatorParam(name="group_fields",type="param",data_type="list[str]",required=True,description="显式分组字段列表",notes="[]表示全局；只接受无重复的非几何标量列，保留空值组")],
+    output_ports=[OutputPort(name="result",type="geodataframe",description="每组完整融合面及分组字段、fusion_id/member_count",is_default=True),OutputPort(name="members",type="geodataframe",description="原始属性与几何及fusion_id/source_id，一源一条",is_default=False)],
+    use_cases=["按行政区融合地块并保留来源", "全局融合缓冲面并保留成员明细"],
+    notes=["组内允许重叠、包含和重复面，不跨组融合；每组多部件不拆行", "固定输出列重名须上游手动改名；不自动修复、吸附、重投影或舍入", "纯计算不保存扫描，双端口分别显式接save；不承诺容量"],
+    workflow_example={'id':'fuse','operator':'dissolve','params':{'input_gdf':{'$ref':'load'},'id_field':'parcel_id','group_fields':[]},'depends_on':['load']},
 )
 
 

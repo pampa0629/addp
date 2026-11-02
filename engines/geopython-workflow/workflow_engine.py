@@ -10,7 +10,7 @@ from operators import OPERATORS, get_operator
 from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.spatial_relations import DistanceInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError
-from operators.geometric_operators import NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, UnionInputError, DifferenceInputError
+from operators.geometric_operators import NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -81,8 +81,9 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
             return _execute_workflow_operator(operator, params)
         except (EndpointSnapError, LineExtensionError) as exc:
             raise ValueError(exc.message(self.language)) from exc
-        except (DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, UnionInputError, DifferenceInputError) as exc:
+        except (DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
             reasons = {
+                DissolveInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid','groups':'operator_group_fields_invalid','fields':'operator_dissolve_fields_conflict'},
                 UnionInputError: {'source': 'operator_input_invalid', 'reference': 'operator_reference_invalid',
                                   'crs': 'operator_crs_invalid', 'fields': 'operator_overlay_fields_conflict',
                                   'source_overlap': 'operator_input_overlap', 'reference_overlap': 'operator_reference_overlap'},

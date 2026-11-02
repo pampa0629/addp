@@ -1691,3 +1691,11 @@ def test_vector_union_metadata_is_explicit_binary_polygon_partition_without_list
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['is_default']
     assert 'gdf_list'not in spec['detailed_description']['workflow_example']['params']
+
+
+def test_vector_dissolve_metadata_has_explicit_groups_and_default_plus_members():
+    spec=next(s for s in list_operators()if s['id']=='dissolve');params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_gdf','id_field','group_fields'}and all(p['required']for p in params.values())
+    assert [(p['name'],p['is_default'])for p in spec['output_ports']]==[('result',True),('members',False)]
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert params['group_fields']['type']=='array' and params['group_fields']['item_type']=='string'

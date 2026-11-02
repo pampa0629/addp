@@ -326,3 +326,14 @@ def test_union_input_rules_are_six_closed_combinations_with_distinct_overlap_sid
             bad=copy.deepcopy(value);bad['operator'].update(patch);assert validated_operator_diagnostic(bad)is None
     assert OperatorInputError('operator_mask_invalid','PRIVATE').diagnostic('union',1)is None
     assert OperatorInputError('operator_input_overlap','PRIVATE').diagnostic('intersection',1)is None
+
+
+def test_dissolve_four_closed_diagnostic_rules():
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES,OperatorInputError,validated_operator_diagnostic
+    import copy
+    expected={'operator_input_invalid': 'input_gdf', 'operator_crs_invalid': '', 'operator_group_fields_invalid': 'group_fields', 'operator_dissolve_fields_conflict': ''}
+    assert {k:v for k,v in OPERATOR_INPUT_RULES.items()if k[0]=='dissolve'}=={('dissolve',k,''):v for k,v in expected.items()}
+    for reason,param in expected.items():
+        good=OperatorInputError(reason,'PRIVATE').diagnostic('dissolve',1);assert validated_operator_diagnostic(good)==good
+        for patch in [{'field':'source_id'},{'parameter':'by'},{'node_index':True}]:
+            bad=copy.deepcopy(good);bad['operator'].update(patch);assert validated_operator_diagnostic(bad)is None

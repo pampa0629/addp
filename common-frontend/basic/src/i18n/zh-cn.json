@@ -194,6 +194,8 @@
         "result": "保存执行结果"
       },
       "reasons": {
+        "operator_group_fields_invalid": "分组字段列表无效、重复或包含非标量值。",
+        "operator_dissolve_fields_conflict": "融合固定输出字段与源列重名。",
         "operator_input_overlap": "源图层内部存在正面积重叠，包含和重复面也属于重叠。",
         "operator_reference_overlap": "图层 B 内部存在正面积重叠，包含和重复面也属于重叠。",
         "operator_mask_invalid": "范围图层必须具有唯一活动几何列及有效非空有限二维面或多面几何。",
@@ -255,6 +257,8 @@
         "operator_overlay_fields_conflict": "叠加分析的业务字段、固定来源字段或结果几何列发生重名。"
       },
       "actions": {
+        "operator_group_fields_invalid": "显式选择无重复的现有非几何标量字段；[]表示全局融合，空值组会保留。",
+        "operator_dissolve_fields_conflict": "先在上游手动重命名fusion_id/member_count/source_id重名列，不会自动覆盖。",
         "operator_input_overlap": "先对对应图层执行面叠检查，再显式处理重叠、包含或重复面；不会自动融合、去重或修复。",
         "operator_reference_overlap": "先对对应图层执行面叠检查，再显式处理重叠、包含或重复面；不会自动融合、去重或修复。",
         "operator_mask_invalid": "检查范围图层的活动几何、面类型、有效性和二维坐标；修正后重新执行，无需指定范围图层的业务来源标识。",
@@ -325,6 +329,7 @@
       "field": "冲突字段",
       "operatorNodeIndex": "定义中的第 {index} 个节点",
       "operatorNames": {
+        "dissolve": "融合几何",
         "union": "联合叠加",
         "clip": "裁剪几何",
         "difference": "几何差集",
@@ -337,6 +342,7 @@
         "intersection": "相交叠加"
       },
       "operatorParameters": {
+        "group_fields": "分组字段（group_fields）",
         "mask_gdf": "裁剪掩膜（mask_gdf）",
         "max_distance": "最大修剪路径距离（max_distance）",
         "input_gdf": "源图层（input_gdf）",

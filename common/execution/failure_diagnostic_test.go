@@ -390,3 +390,26 @@ func TestUnionObservationRetainsOnlyClosedAdmissionFacts(t *testing.T) {
 		}
 	}
 }
+
+func TestDissolveObservationRetainsOnlyClosedAdmissionFacts(t *testing.T) {
+	for reason, parameter := range map[string]string{"operator_input_invalid": "input_gdf", "operator_crs_invalid": "", "operator_group_fields_invalid": "group_fields", "operator_dissolve_fields_conflict": ""} {
+		operator := map[string]interface{}{"node_index": 2, "operator_id": "dissolve"}
+		if parameter != "" {
+			operator["parameter"] = parameter
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": operator}
+		item := &execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"message": "PRIVATE GEOS source geometry", "diagnostic": diagnostic}}
+		got := execution.Observe(item).ErrorDetails
+		if got["diagnostic"] == nil {
+			t.Fatalf("lost dissolve diagnostic %s", reason)
+		}
+		encoded, _ := json.Marshal(got)
+		if strings.Contains(string(encoded), "PRIVATE") || strings.Contains(string(encoded), "GEOS") {
+			t.Fatal("private source leaked")
+		}
+		operator["field"] = "PRIVATE_FIELD"
+		if execution.Observe(item).ErrorDetails["diagnostic"] != nil {
+			t.Fatal("accepted arbitrary overlay field")
+		}
+	}
+}
