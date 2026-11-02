@@ -179,3 +179,14 @@
 本轮时段为15:20:29.354—15:20:43.426 Asia/Shanghai；只读`pmset -g log`核对该窗口无Sleep／DarkWake／Wake条目。两个失败spec、共享驱动／领域夹具、两页／共享图表及依赖／配置／标准启动器共13项输入在前后SHA256完全一致，Node v24.22.2。结果及三个trace摘要保存在`/tmp/addp-monitor-stable-awake-20261102/receipt.json`，日志`gate.log` SHA256为`bfd478e2b46859e38161f419c60666df01e31111c36b8b65abe215a0015baf8a`。每个成功trace已复制到该独立OS临时目录，正常runner未保留旧测试输出目录。
 
 据此补齐稳定唤醒后这三项的本机受控T3复验；原589／592失败、无trace的取证限制以及两轮诊断中的失败原样保留，不把本次三项通过改记原完整命令成功。固定3f的Linux592项／build／整Job通过仍独立认定；未重复完整门禁、查询或触发CI／Hosted，不等于真实Safari、真实Redis／MinIO采集或正式身份验收。没有修改电源／Docker配置、重启个人服务或设置定时任务。
+
+
+## 本地 MinIO 联调前置核对与 Infra 配置准备（2026-11-02）
+
+- 只读核对确认：Infra与Business当前MinIO均运行、实时部署发现可用；两侧原环境均未选择MinIO采集，未发现本方账号／来源安装记录，实时私有来源均为not_deployed。没有用配置就绪代替实际采集成功。
+- Infra为固定RELEASE.2025-10-15T17-29-55Z，部署归属、命名数据卷、标准私网及minio-observation-status/v1检查通过。Business实际仍为minio/minio:latest、RELEASE.2025-09-07T16-13-09Z，缺少管理工具；不能沿本批固定版本采集，不添加兼容路径。Business升级／重建及原数据卷处理需另行评估，当前未修改。
+- Prometheus实际mTLS ready=200，Monitor和collector的现有来源CA一致、客户端链验证通过；Console正式module-ui入口已经提供MinIO前端目录。当前Monitor运行Swagger尚无MinIO说明；受管部署观测器的运行记录指纹与当前入口不同，落盘新快照仍缺minio_metrics，运行版本仍需由用户应用。未访问受保护业务API、租户对象或数据库。
+- 用户明确同意先准备Infra后，只修改忽略版本控制的根.env五项：启用MinIO来源、127.0.0.1:19111、仓库外minio-infra TLS目录、在既有Monitor准入端口及Desktop转发列表各追加19111。其余配置按原值保留，Business.env摘要前后相符。19111只做当前空闲探测，不自动避让或启动监听。
+- 使用既有受管source CA为Infra生成独立serverAuth叶子证书／私钥，SAN为IP127.0.0.1与DNShost.docker.internal；不创建CA、不修改既有信任、CA序列文件或其他证书。目录0700、私钥0600；有效期63天，限制在既有CA到期前。离线调用产品唯一sources.transport校验，且以Monitor与collector各自CA分别验证服务器IP／DNS、证书私钥匹配及两类客户端链，全部通过。没有执行账户或来源up/down。
+- 末次只读复验两侧数据库容器ID／启动时刻与准备前一致、来源仍为not_deployed；账户安装、指标抓取、真实页面与趋势联调尚未开始。外部准备收据为/tmp/addp-infra-minio-preparation-receipt.json，最终脱敏前置报告为/tmp/addp-minio-local-preflight-final.json；不记录凭据或CA私钥内容。
+- 下一步由用户执行标准指标应用并更新ADDP开发运行版本，再核对System候选及明确主机绑定、来源实际抓取和真实页面。指标应用会调和中心及已配置来源，可能产生短暂监控间断；AI未启停个人服务、升级Business或改数据库。CI／Hosted继续等专门会话回传，未查询、重跑或设定时任务。本次仅准备和离线验证，不计为T4或实时指标验收通过。
