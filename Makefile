@@ -397,6 +397,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-business-redis
 	@$(MAKE) test-common-redis
 	@$(MAKE) test-monitor-redis-source
+	@$(MAKE) test-monitor-minio-observation
 	@$(MAKE) test-common-postgres
 	@$(MAKE) test-monitor-postgres
 	@$(MAKE) test-orchestrator-postgres
@@ -1562,6 +1563,13 @@ test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、
 .PHONY: test-monitor-metrics-config
 test-monitor-metrics-config: ## 验证指标配置与服务部署意图 T1，不启动服务或实源
 	@python3 -m unittest scripts/test/metrics-deployment-config_test.py
+
+.PHONY: test-monitor-minio-observation-unit test-monitor-minio-observation
+test-monitor-minio-observation-unit: ## MinIO 指标专用账号、私有归属及失败关闭 T1
+	@python3 -m unittest scripts/test/minio-observation-lifecycle_test.py
+
+test-monitor-minio-observation: ## 独占双 MinIO 验证指标账号生命周期及越权拒绝
+	@bash scripts/test/monitor-minio-observation-gate.sh
 
 .PHONY: test-monitor-redis-source test-monitor-redis-source-unit
 test-monitor-redis-source-unit: ## Redis 专业采集固定协议与账号白名单 T1

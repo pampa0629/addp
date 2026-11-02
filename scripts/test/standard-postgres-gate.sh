@@ -2,7 +2,7 @@
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_OWNED_SERVICES=minio
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.standard-minio-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio
+# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/minio-observation/
 # ADDP_T2_REQUIRED_ENV=STANDARD_POSTGRES_TEST_DSN
 # standard-postgres-gate.sh - PostgreSQL and gate-owned disposable MinIO integration tests.
 

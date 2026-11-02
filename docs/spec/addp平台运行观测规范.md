@@ -197,6 +197,20 @@ Redis专业查询复用engine_resource_observations／engine_resource_summaries�
 
 已接通账号配方、固定采集内核、原生ACL持久化及标准Infra／Business来源启停；具体本地分层证据见[采集来源历史证据](testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01)。发现／System类型扩展、Monitor目录／页面已在工作区接通，迁移261须待前置259／260提交后发布；本地来源T2、原生PromQL边界与受控页面T3分层记录，真实身份T4未运行。T1沿Monitor Go和配置入口自动发现；T2沿 `make test-monitor-redis-source` 复用现有Redis独占夹具、固定镜像、随机密码及物理零残留核验，不读取或修改个人Redis。Monitor门禁、根串行集成及Release作业自动发现同一专项，禁止使用局部协议通过代替已部署来源、页面、CI或Hosted通过。
 
+### MinIO 专业观测首期边界（2026-11-02 已确认）
+
+固定版本的原生 `mc admin user svcacct enable/disable` 只提交状态，会移除内联策略；本产品禁止调用该路径。启停唯一走同一镜像内的部署专用工具，沿该镜像已锁定的 MinIO 管理库，在一次请求中同时提交状态和唯一 `admin:Prometheus` 策略，随后重读原生策略及状态。工具只访问容器内回环9000，凭据仅从私有stdin输入，不提供任意端点、策略或管理操作；没有该工具的镜像在创建账号前拒绝。固定版本会将提交的资源通配符 `*` 持久化为 `**`，原生读回只按此唯一固定形状核验，不能把继承父账号策略视为合法结果。
+
+首期仅覆盖仓库固定`RELEASE.2025-10-15T17-29-55Z`的Infra／平台自管Business单容器MinIO，两个独立Platform运维对象，不含集群／外部租户引擎、桶级明细、租户用量归算、自动告警或压测。复用原部署发现、System管理员确认及有效主机、私有来源、HTTP SD／Prometheus、当前User与Console链路；不新增手填连接、导入或Monitor直连S3路线。原生接口只使用v3，不与v2并行。
+
+固定目录17项，容量与状态10项：MinIO进程运行时长、在线盘数、离线盘数、MinIO报告的可用总容量／剩余容量、空间占用率，以及最近扫描的对象容量／对象数／桶数量／统计距今秒数。请求与流量7项：S3请求速率、在途请求数、4xx／5xx错误速率、5xx占比、S3发送／接收字节速率。沿现有最多12项预算分两组显式查询；固定原生端点为`/minio/metrics/v3/system/process`、`/cluster/health`、`/cluster/usage/objects`、`/api/requests`（后者均相对于v3前缀），不抓根目录、桶端点或任意query。容量来自MinIO可见存储，不代表对象占用或独占物理盘，Desktop下两部署共享底层容量不能相加。对象统计明确标记最近扫描与距今时间，无扫描不补零、不参与实时健康或告警；不把fresh scrape等同fresh scan。速率沿完整窗口、启动身份及重置保护；分母为零不计算错误占比，4xx不直接视作存储故障。跨端点采样不声称原子快照；来源／权限失败不保留失效即时值，不抹去仍合法的历史点。
+
+两个部署使用各自独立、非root的MinIO原生受限Access Key（service account），仅附加自定义内联策略`admin:Prometheus`，不得授予S3权限、内置readonly／diagnostics或admin:*。它是MinIO内部采集凭据，不是ADDP角色或Service Principal，不改生产IAM内核。该原生权限允许全套运维指标，可能包含桶级元数据，不能宣称仅能读取17项；实际采集仅允许上述端点及固定数值字段，进入Prometheus前排除桶名、对象名／内容、节点地址、磁盘路径及原始输出，过滤不冒充权限隔离。采集侧只持该受限Access Key／Secret Key，按MinIO原生HS512、issuer=prometheus、subject=Access Key生成最多300秒JWT，不持root密钥、不照搬mc默认百年Token，不增加续期运维进程。
+
+唯一部署owner复用固定镜像内mc与既有Docker归属／私有文件内核，核验工作区、scope、Docker引擎、Compose项目／服务、固定版本镜像和命名数据卷；凭据、安装日志状态仅保存在仓库外0700目录／0600文件，密钥不进入argv、外部环境、日志或System普通DTO。管理身份只在当次安装／核验内使用。创建前写入私有归属意图，原生账号的名称／描述／parent／明确内联策略必须与本方事实一致；同卷容器重建可复用账号，异卷、外来账号、策略漂移或凭据丢失拒绝接管／自动重置。失败或停用先关闭本方原生Key并核验旧JWT拒绝，不撤销其他账号、修改root或重启MinIO；账号／策略沿MinIO原生数据卷持久化，不复制第二份用户库或在启动时批量重写IAM。未知创建结果不自动再造账号，后续先核对本方事实并失败关闭。
+
+本批先实现账号生命周期及隔离权限验证，固定指标来源／发现／查询／页面仍逐批接通。来源选择默认关闭，失败不阻断MinIO与业务Ready；标准启动／停止负责本方账号启停，账号准备不能报告为专业指标已接入。隔离T2使用当次两MinIO与独立账号，验证指标读取、S3列桶／读写／用户管理拒绝、错误／过期JWT拒绝、策略漂移、停用／恢复、数据库重启持久化与scope隔离；不读取或修改个人环境。T0/T1、独占T2、受控页面与正式身份T4分别记录；CI及Hosted由专门会话安排回传，本会话不触发、重跑或设置定时任务。
+
 ### 4.8 服务部署预期与分组租约观测
 
 服务失联的预期来源唯一属于标准部署入口。受管目录中的 `service-expectations.json` 使用 `addp.service-expectations/v1`，包含工作区摘要 `deployment_id`、单调递增的 `revision` 和按模块／角色／用途排序且唯一的 `groups`。每组仅含 `module_name`、`role=backend|worker`、`runtime_name`、`expected_replicas`（1—1000）、`desired_state=running|planned_stopped` 与 UTC `changed_at`；Backend 用途为空，Worker 必须与正式登记的用途相同。最多1000组、256 KiB，重复键、未知字段、非法或未来时间拒绝。发布器沿既有私有目录、所有权检查、互斥锁与原子替换；相同声明重发不推进版本或时间，局部启停保留其他组，失败保留旧文件。组实质变更的changed_at使用真实UTC微秒且严格晚于该组原值，拒绝停滞／回退时钟，不合成未来时间；同秒停用、重启或副本变更不得复用旧标记。没有存活进程扫描、手工管理第二路线或个人服务自动启停。

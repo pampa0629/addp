@@ -15,11 +15,15 @@ RUN git clone --depth 1 --branch RELEASE.2025-08-13T08-35-41Z https://github.com
     cd mc && \
     CGO_ENABLED=0 go build -tags kqueue -trimpath -ldflags "$(MC_RELEASE=RELEASE go run buildscripts/gen-ldflags.go)" -o /out/mc .
 
+COPY minio-observation/ /src/mc/addp-observation-status/
+RUN cd /src/mc && CGO_ENABLED=0 go build -trimpath -o /out/minio-observation-status ./addp-observation-status
+
 FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 
 RUN apk add --no-cache ca-certificates curl
 COPY --from=build /out/minio /usr/local/bin/minio
 COPY --from=build /out/mc /usr/local/bin/mc
+COPY --from=build /out/minio-observation-status /usr/local/bin/minio-observation-status
 COPY --from=build /src/minio/LICENSE /licenses/minio-LICENSE
 COPY --from=build /src/mc/LICENSE /licenses/mc-LICENSE
 

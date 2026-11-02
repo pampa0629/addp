@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=hdfs-namenode,hdfs-datanode,spark-master,spark-worker,postgres,postgres-amd64,minio,minio-other
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.hdfs-t2.yml
-# ADDP_T2_INPUT_FILES=business/hdfs/ business/docker-compose.yml scripts/infra/Dockerfile.minio engines/spark-workflow/ develop/backend/internal/service/workflow_engine_service.go develop/backend/internal/service/workflow_operator_adapter.go develop/backend/internal/service/workflow_execution_authorization.go develop/backend/internal/service/dev_executor.go meta/backend/internal/metaenrich/table_file.go scripts/test/hdfs-spark-contract.py
+# ADDP_T2_INPUT_FILES=business/hdfs/ business/docker-compose.yml scripts/infra/Dockerfile.minio engines/spark-workflow/ develop/backend/internal/service/workflow_engine_service.go develop/backend/internal/service/workflow_operator_adapter.go develop/backend/internal/service/workflow_execution_authorization.go develop/backend/internal/service/dev_executor.go meta/backend/internal/metaenrich/table_file.go scripts/test/hdfs-spark-contract.py scripts/infra/minio-observation/
 # Own disposable containers, volumes and network; never reuse Business services.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)

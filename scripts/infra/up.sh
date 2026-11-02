@@ -137,6 +137,7 @@ if [[ "$METRICS_ONLY" == true ]]; then
   reconcile_metrics || metrics_result=1
   python3 "$SCRIPT_DIR/postgres-observation/lifecycle.py" up --scope infra || metrics_result=1
   python3 "$SCRIPT_DIR/redis-metrics.py" up --scope infra || metrics_result=1
+  python3 "$SCRIPT_DIR/minio-observation.py" up --scope infra || metrics_result=1
   exit "$metrics_result"
 fi
 
@@ -539,5 +540,6 @@ fi
 reconcile_metrics || optional_result=1
 python3 "$SCRIPT_DIR/postgres-observation/lifecycle.py" up --scope infra || optional_result=1
 python3 "$SCRIPT_DIR/redis-metrics.py" up --scope infra || optional_result=1
+python3 "$SCRIPT_DIR/minio-observation.py" up --scope infra || optional_result=1
 python3 "$PROJECT_ROOT/scripts/utils/deployment-inventory.py" start || echo 'Infra deployment discovery unavailable; core services remain running' >&2
 exit "$optional_result"

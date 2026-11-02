@@ -1,8 +1,8 @@
 services:
   minio:
     build:
-      context: ../..
-      dockerfile: scripts/infra/Dockerfile.minio
+      context: ../infra
+      dockerfile: Dockerfile.minio
     entrypoint: ["minio"]
     command: ["server", "/data"]
     environment:
@@ -17,8 +17,8 @@ services:
       retries: 60
   runtime-log-store-init:
     build:
-      context: ../..
-      dockerfile: scripts/infra/Dockerfile.minio
+      context: ../infra
+      dockerfile: Dockerfile.minio
     entrypoint: ["/bin/sh", "/init-runtime-log-store.sh"]
     environment:
       LOKI_S3_ENDPOINT: http://minio:9000

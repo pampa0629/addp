@@ -28,8 +28,8 @@ services:
     cpus: 0.25
     mem_limit: 128m
     build:
-      context: ../..
-      dockerfile: scripts/infra/Dockerfile.minio
+      context: ../infra
+      dockerfile: Dockerfile.minio
     entrypoint: [/bin/sh, /init-trace-store.sh]
     environment:
       TEMPO_BUCKET: addp-runtime-traces-test
@@ -80,8 +80,8 @@ services:
   trace-load:
     profiles: [capacity]
     build:
-      context: ../..
-      dockerfile: scripts/infra/Dockerfile.minio
+      context: ../infra
+      dockerfile: Dockerfile.minio
     entrypoint: [/capacity/trace-capacity.test]
     command: [-test.run=^TestOwnedTraceCapacity$, -test.v, -test.timeout=38m]
     user: "${ADDP_RUNTIME_LOG_OWNER}"

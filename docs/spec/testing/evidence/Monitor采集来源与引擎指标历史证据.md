@@ -2,7 +2,7 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录PostgreSQL 账号、来源准入、引擎身份与专业观测。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；本次仅整理文档，没有重跑验收或刷新 CI 状态，不推导当前 HEAD 或生产 T5 已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+本专题收录PostgreSQL、Redis及MinIO账号、来源准入、引擎身份与专业观测。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；历史整理本身不代表重跑验收或刷新CI状态，不推导当前HEAD或生产T5已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
 
 ## Infra与Business PostgreSQL 自动接入
 
@@ -527,3 +527,15 @@ Redis正式入口提交后继续开发，发现同上下文保留未覆盖已重
 最终标准 `npm run test:e2e -- e2e/engine-resources.spec.js e2e/redis-resources.spec.js` 52项T3通过（1.8分钟，`/tmp/addp-redis-source-states-final.log`）；含新增6项组合场景和原PG／Redis全部已有断言。共享夹具其他直接消费者也沿标准浏览器门禁复验：Console的`engine-resource-navigation.spec.js`4项及`engine-monitor-navigation.spec.js`3项通过（`/tmp/addp-redis-source-states-console.log`、`/tmp/addp-redis-source-states-owner-navigation.log`）；Monitor的`automatic-filter-enter.spec.js --grep 'engine Enter submits'`1项通过（`/tmp/addp-redis-source-states-enter-final.log`）。最初额外Enter命令的`^engine Enter`正则未匹配Playwright完整标题，报“No tests found”，不计通过；修正调用筛选后实际运行1项，无产品或断言放宽。
 
 对本批三项测试路径调用现有`changed-gate.py`影响函数，精确命中console／monitor；既有两前端CI门禁会自动发现，不新增Makefile／workflow。产品源码、依赖、构建输入和T1输入未变，复用上一批有效构建／单测，不重复无变化的来源T2或Go门禁。此次共60项受控T3，不证明个人Safari、真实HTTP SD／Prometheus或正式身份T4，也不计为完整Monitor／Console浏览器门禁。CI／Hosted仍等专门会话安排回传，未查询、触发、重跑或设置定时任务。
+
+## MinIO 指标身份生命周期与隔离权限（2026-11-02）
+
+本批按已确认的17项边界先实施账号阶段：Infra／Business分别创建仅`admin:Prometheus`内联策略的原生Access Key；部署工具核验本地Engine、Compose归属、唯一当前容器及具创建时刻的数据卷身份。0700／0600私有状态保留同一AK／SK，正常重复启动不切换账号、不改写凭据；未安装且关闭不访问Docker，已安装则沿标准停止入口停用并核验旧Token被拒绝。账号归属、父用户或策略漂移、丢失凭据及创建结果未知均不收养或重建。个人环境未安装、启用或重启，没有改ADDP权限。
+
+真实隔离测试暴露固定MinIO版本的原生enable／disable会在只更新状态时移除内联策略。已删除产品中的此调用，镜像内专用工具复用已锁定mc模块的管理SDK，在一次请求中同时提交固定策略与状态；只接收私有stdin，固定回环端点、16KiB输入及五秒请求预算，未知策略输入拒绝。固定版本读回资源通配符为`**`，只接受这一原生形状和明确非继承策略。最初未完成的协议／策略及夹具尝试均不计通过，没有降低鉴权或权限断言。
+
+最终`make test-monitor-minio-observation`于macOS Docker Desktop／Linux ARM64一次性环境通过（`/tmp/addp-minio-observation-t2-verified.log`），内含14项确定性T1。两个MinIO使用不同随机部署根凭据，无宿主端口；验证真实v3指标200、过期／错误签名403、另一scope凭据403；先用根身份证明相同S3签名请求有效，再验证采集身份的原生GET／PUT返回403及XML `AccessDenied`，列表／对象元信息与账号新增／列举也被原生鉴权拒绝。启停重读最小策略，旧Token停用失效，两scope互不影响；两容器保卷重建后同一身份及权限保持。工具拒绝额外任意策略输入且不改变账号。退出核验当次容器、网络、卷、独占镜像标签及私有状态清理；最终报告containers/networks/volumes/private state均为0。
+
+相关标准回归：最初`make test-infra-runtime-log-lifecycle`的37、146、142项分组及原Go夹具通过（`/tmp/addp-minio-observation-lifecycle-regression.log`）；最终取消Infra重复启动前多余的账号停用后，组合复验的前两组通过，末组142项有1项未改动的HTTP超时夹具失败：`test_native_timeout_reaps_owned_group_without_completing_the_stage`读取PID文件时不存在（`/tmp/addp-minio-observation-lifecycle-final.log`），不计整组通过，不调整超时或断言。受影响的实际Infra启停用例另由`python3 scripts/test/infra-runtime-log-lifecycle_test.py`独立复验，40项通过（`/tmp/addp-minio-observation-lifecycle-scoped.log`）；`make test-deployment-discovery`（44＋6项及Shell语法，`/tmp/addp-minio-observation-discovery-regression.log`）；`bash scripts/test/infra-port-resolution.sh`（`/tmp/addp-minio-observation-port-final.log`）；`make test-t2-ci-registration`（75＋9项及登记检查，`/tmp/addp-minio-observation-registration-post-image.log`）；`make test-infra-minio-cache`（15项，`/tmp/addp-minio-observation-cache.log`）；构建登记检查通过。停止脚本拷贝夹具已携带策略目录，避免可选账号模块缺少依赖；复用该MinIO镜像的门禁输入登记同步补齐，两份原根构建上下文统一为实际Infra上下文。其他领域原生T2未在本批重跑，不以这些登记检查替代它们。
+
+根Makefile与Release/T2 workflow已注册`test-monitor-minio-observation`，使用既有固定MinIO构建缓存；相关源码及标准生命周期变化可命中该门禁。CI／Hosted未查询、触发、重跑或设置定时任务，继续等专门会话回传。未实现固定17项来源适配、mTLS输出、自动发现／System精确来源投影、Monitor查询及Console页面；本次账号T2不等于完整MinIO专业监控、正式用户T4或生产T5验收。

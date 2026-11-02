@@ -97,6 +97,12 @@ Linux VM 单新 Monitor 绑定的固定版本、失败和覆盖限制见[清单�
 
 自动接入的正式身份、批量失败／回滚、页面重读与退出清理范围统一见[自管引擎接入场景](../spec/testing/scenarios/平台观测与语义生命周期.md#自管引擎部署的自动接入)。固定 `b3dcae5a3` 的 T4、先前失败与修复见[自动接入证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#infra与business-postgresql-自动接入)；旧手工登记验收不代替自动链路，该接入结果也不证明专业指标采集。
 
+### MinIO 专业监控首期（2026-11-02 已确认，分阶段实施）
+
+用户确认17项部署汇总及两个scope各自仅admin:Prometheus的独立采集身份。正式边界见[MinIO首期规范](../spec/addp平台运行观测规范.md#minio-专业观测首期边界2026-11-02-已确认)：只用固定版本v3，最近扫描统计与实时资源分别表达，容量不跨共享底层求和，原生指标权限宽于输出白名单。先实现部署账号生命周期与隔离权限测试，再接来源／发现／查询／页面；账号准备不等于指标接入，实际CI／Hosted仍由专门会话安排，个人部署不自动应用。
+
+账号阶段已实现：私有状态、两scope独立身份、标准启停、保卷重建持久化及失败停用；同一固定SDK更新同时保留状态与最小策略，移除不安全的普通enable／disable路径。14项确定性T1及双MinIO原生权限／持久化T2通过，见[本批证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#minio-指标身份生命周期与隔离权限2026-11-02)。下一批接通固定17项来源及mTLS，随后复用发现／System关联／Monitor查询与页面；这些部分尚未实现，不计作专业监控完成。
+
 ### Redis 专业指标实施状态
 
 Redis 后续范围已确认：首批 Infra／Business 单机 Redis 7，独立账号只授 HELLO／PING／INFO，无业务键和频道访问。已补固定采集内核、原生ACL持久化、独立mTLS来源与Infra／Business标准启停；正式契约见[Redis 首期边界](../spec/addp平台运行观测规范.md#redis-专业观测首期边界2026-11-01-确认分阶段实施)。本批[账号与来源证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01)与正式页面分层；工作区已补同一部署发现、System确认及私有来源精确投影和HTTP SD，见[本批证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-自动发现与-system-精确来源关联2026-11-01)；前置迁移259／260已由其他会话提交于`7da941ee6`，本批261按连续Catalog发布。工作区已补同一三项API的22项Redis目录、分组详情、四项列表摘要和趋势，复用现有授权重核、预算、提示、缩放及无闪烁刷新；见[查询与页面证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-专业指标查询与页面2026-11-01)。本地Go、原生PromQL边界、两作用域真实来源T2及受控页面T3通过，正式User／Prometheus／Console全链路与Hosted未运行；不将来源通过计为正式专业监控完成。

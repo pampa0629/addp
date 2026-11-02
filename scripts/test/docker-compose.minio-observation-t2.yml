@@ -1,0 +1,42 @@
+services:
+  minio-infra:
+    image: ${T2_MINIO_TEST_IMAGE:?owned test image required}
+    build:
+      context: ../infra
+      dockerfile: Dockerfile.minio
+    environment:
+      MINIO_ROOT_USER: ${T2_MINIO_INFRA_USER:?}
+      MINIO_ROOT_PASSWORD: ${T2_MINIO_INFRA_PASSWORD:?}
+    command: ["server", "/data", "--console-address", ":9001"]
+    volumes: [minio_infra_data:/data]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+    restart: "no"
+  minio-business:
+    image: ${T2_MINIO_TEST_IMAGE:?owned test image required}
+    build:
+      context: ../infra
+      dockerfile: Dockerfile.minio
+    environment:
+      MINIO_ROOT_USER: ${T2_MINIO_BUSINESS_USER:?}
+      MINIO_ROOT_PASSWORD: ${T2_MINIO_BUSINESS_PASSWORD:?}
+    command: ["server", "/data", "--console-address", ":9001"]
+    volumes: [minio_business_data:/data]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+    restart: "no"
+volumes:
+  minio_infra_data:
+  minio_business_data:

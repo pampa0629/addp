@@ -211,6 +211,8 @@ mkdir -p "$TEST_DIR/bin" "$TEST_DIR/repo/scripts/infra"
 cp "${SCRIPT_DIR}/../infra/down.sh" "$TEST_DIR/repo/scripts/infra/down.sh"
 cp -R "${SCRIPT_DIR}/../infra/postgres-observation" "$TEST_DIR/repo/scripts/infra/"
 cp "${SCRIPT_DIR}/../infra/redis-metrics.py" "$TEST_DIR/repo/scripts/infra/redis-metrics.py"
+cp "${SCRIPT_DIR}/../infra/minio-observation.py" "$TEST_DIR/repo/scripts/infra/minio-observation.py"
+cp -R "${SCRIPT_DIR}/../infra/minio-observation" "$TEST_DIR/repo/scripts/infra/"
 printf 'ADDP_POSTGRES_METRICS_ENABLED=false\nADDP_REDIS_METRICS_ENABLED=false\n' > "$TEST_DIR/online.env"
 mkdir -p "$TEST_DIR/repo/scripts/utils"
 for dependency in deployment-inventory.py private-state.py deployment-docker.py; do
@@ -219,6 +221,8 @@ done
 export ADDP_DEPLOYMENT_DISCOVERY_DIR="$TEST_DIR/repo/.dev-state/deployment-discovery"
 export ADDP_POSTGRES_METRICS_STATE_DIR="$TEST_DIR/postgres-state"
 export ADDP_REDIS_METRICS_STATE_DIR="$TEST_DIR/redis-state"
+export ADDP_MINIO_METRICS_STATE_DIR="$TEST_DIR/minio-state"
+export ADDP_MINIO_METRICS_ENABLED=false
 cat > "$TEST_DIR/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail

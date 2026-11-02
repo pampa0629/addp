@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_HOSTED_ONLY=postgres-worm
-# ADDP_T2_INPUT_FILES=system/backend/internal/auditarchive/ system/backend/cmd/audit-archive/ scripts/infra/Dockerfile.minio
+# ADDP_T2_INPUT_FILES=system/backend/internal/auditarchive/ system/backend/cmd/audit-archive/ scripts/infra/Dockerfile.minio scripts/infra/minio-observation/
 # Own disposable docker run / docker rm fixtures; never inspect or change local Infra.
 set -euo pipefail
 if [ "${GITHUB_ACTIONS:-}" != true ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then

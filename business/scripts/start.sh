@@ -333,6 +333,7 @@ fi
 # Root Infra selection must never activate Business observation implicitly.
 unset ADDP_POSTGRES_METRICS_ENABLED ADDP_POSTGRES_METRICS_TLS_DIR ADDP_POSTGRES_METRICS_LISTEN ADDP_POSTGRES_METRICS_STATE_DIR
 unset ADDP_REDIS_METRICS_ENABLED ADDP_REDIS_METRICS_TLS_DIR ADDP_REDIS_METRICS_LISTEN ADDP_REDIS_METRICS_STATE_DIR
+unset ADDP_MINIO_METRICS_ENABLED ADDP_MINIO_METRICS_STATE_DIR
 if [ -f .env ]; then
     set -a
     source .env
@@ -1303,6 +1304,12 @@ fi
 if [ "$ENABLE_REDIS" = true ]; then
     python3 "$PROJECT_ROOT/../scripts/infra/redis-metrics.py" up --scope business || {
         echo 'Redis metrics unavailable; business services remain running' >&2
+        observation_result=1
+    }
+fi
+if [ "$ENABLE_MINIO" = true ]; then
+    python3 "$PROJECT_ROOT/../scripts/infra/minio-observation.py" up --scope business || {
+        echo 'MinIO observation account unavailable; business services remain running' >&2
         observation_result=1
     }
 fi
