@@ -1618,3 +1618,14 @@ def test_sample_points_single_workflow_entry_two_inputs_typed_example_and_no_ali
     assert spec['attributes']['resource_groups']==['raster']and len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='GeoDataFrame'
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'input_gdf':{'$ref':'points'},'band':1}
     assert not any(s['id']in('sample_raster','raster_extract_values','raster_sample')for s in list_operators())
+
+
+def test_difference_metadata_whole_polygon_mask_and_original_identity_only():
+    spec=next(item for item in list_operators() if item['name']=='difference')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_gdf','gdf_b','id_field'} and all(p['required'] for p in params.values())
+    assert params['id_field']['type']=='string' and 'default' not in params['id_field']
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['is_default']
+    assert spec['output_ports'][0]['type']=='geodataframe'
+    assert 'GeometryCollection' in spec['detailed_description']['overview']

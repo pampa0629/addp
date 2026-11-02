@@ -154,18 +154,77 @@ def centroid(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return result
 
 
-def difference(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    几何差集（A - B）
+class DifferenceInputError(ValueError):
+    """Proven difference admissions, excluding arbitrary native exceptions."""
+    _messages = {
+        'zh-cn': {
+            'source': '几何差集的图层 A 须具有唯一几何列、有效非空有限二维几何，以及显式唯一非空来源标识。',
+            'mask': '几何差集的扣除范围 B 须具有唯一几何列和有效非空有限二维面或多面几何；不要求业务来源标识。',
+            'crs': '几何差集要求双方使用相同的已知投影坐标系及有限正且匹配的水平线性单位；请先显式重投影。',
+        },
+        'en': {
+            'source': 'Difference input A requires one geometry column, valid non-empty finite XY geometries and an explicit unique non-null source identifier.',
+            'mask': 'Difference mask B requires one geometry column and valid non-empty finite XY Polygon or MultiPolygon geometries; no business identifier is required.',
+            'crs': 'Difference requires the same known projected CRS and finite positive matching horizontal linear units; reproject explicitly first.',
+        },
+    }
 
-    Args:
-        input_gdf: 被减图层（图层 A）
-        gdf_b: 减去的图层（图层 B）
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
 
-    Returns:
-        GeoDataFrame 差集结果
-    """
-    return gpd.overlay(input_gdf, gdf_b, how='difference')
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
+def difference(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
+               id_field: str) -> gpd.GeoDataFrame:
+    """One complete non-empty result per original A, subtracting all B coverage."""
+    geometries = []
+    for frame, code in ((input_gdf, 'source'), (gdf_b, 'mask')):
+        try:
+            geometry = _finite_xy_geometry(frame)
+            allowed = (['Polygon', 'MultiPolygon'] if code == 'mask' else
+                       ['Point', 'LineString', 'Polygon', 'MultiPoint', 'MultiLineString', 'MultiPolygon', 'GeometryCollection'])
+            if (not frame.columns.is_unique
+                    or sum(isinstance(dtype, gpd.array.GeometryDtype) for dtype in frame.dtypes) != 1
+                    or geometry.isna().any() or geometry.is_empty.any()
+                    or not geometry.geom_type.isin(allowed).all()
+                    or not shapely.is_valid(geometry.array).all()):
+                raise ValueError('invalid difference input')
+            if code == 'source':
+                _source_identifiers(frame, id_field)
+        except ValueError as exc:
+            raise DifferenceInputError(code) from exc
+        geometries.append(geometry)
+    left, right = geometries
+    try:
+        _require_projected_xy_crs(left.crs)
+        _require_projected_xy_crs(right.crs)
+        if left.crs != right.crs:
+            raise ValueError('difference CRS mismatch')
+    except ValueError as exc:
+        raise DifferenceInputError('crs') from exc
+    if left.empty or right.empty:
+        return input_gdf.copy().reset_index(drop=True)
+
+    mask = shapely.union_all(right.array)
+    if (mask.is_empty or mask.geom_type not in ('Polygon', 'MultiPolygon') or not mask.is_valid
+            or shapely.has_z(mask) or shapely.has_m(mask) or not np.isfinite(shapely.get_coordinates(mask)).all()):
+        raise RuntimeError('difference mask union produced invalid or non-finite geometry')
+    rows, values = [], []
+    for index, geometry in enumerate(left.array):
+        value = shapely.difference(geometry, mask)
+        if value.is_empty:
+            continue
+        if (not value.is_valid or shapely.has_z(value) or shapely.has_m(value)
+                or not np.isfinite(shapely.get_coordinates(value)).all()):
+            raise RuntimeError('difference produced invalid or non-finite XY geometry')
+        rows.append(index)
+        values.append(value)
+    result = input_gdf.iloc[rows].copy().reset_index(drop=True)
+    result[left.name] = gpd.GeoSeries(values, crs=left.crs)
+    return result
 
 
 def simplify(input_gdf: gpd.GeoDataFrame, tolerance: float, preserve_topology: bool = True) -> gpd.GeoDataFrame:
@@ -2439,59 +2498,28 @@ CENTROID_METADATA = OperatorMetadata(
 
 
 DIFFERENCE_METADATA = OperatorMetadata(
-    name="difference",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_OVERLAY,
-    description="几何差集",
-    brief_description="计算两个图层的几何差集(A-B),保留A中不与B重叠的部分",
-    execution_modes=["workflow"],
-    effects=["read"],
-
-    overview="从图层A中减去图层B的重叠部分,返回A中独有的几何区域。常用于排除分析、净用地计算等场景。",
-
+    name="difference", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_OVERLAY,
+    description="几何差集", brief_description="逐源扣除全部面范围，保留 A 的完整剩余几何、来源和业务属性",
+    execution_modes=["workflow"], effects=["read"],
+    overview="将所有 B 面视为整体扣除范围，逐 A 输出至多一条非空完整差集；点、线、面、多部件及 GeometryCollection 不拆行。保留 A 的来源字段原名、类型、属性、活动几何名及 CRS，输入不变。",
     params=[
-        OperatorParam(
-            name="input_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="被减图层(图层A)"
-        ),
-        OperatorParam(
-            name="gdf_b",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="减去的图层(图层B)",
-            notes="需与input_gdf具有相同的坐标系"
-        )
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="图层 A", notes="唯一活动几何；有效非空有限二维 XY，允许空批"),
+        OperatorParam(name="gdf_b", type="input", data_type="GeoDataFrame", required=True, description="扣除范围 B", notes="仅 Polygon/MultiPolygon；允许空批，不要求来源 ID；与 A 相同已知投影 CRS"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="A 的唯一来源标识列", notes="显式非几何唯一非空标量列，保持原名和值，不推断索引或 FID"),
     ],
-
-    use_cases=[
-        "净用地计算: 建设用地减去道路用地得到净建设用地",
-        "排除保护区: 可开发区域减去自然保护区得到可用区域",
-        "去除已建区: 规划范围减去已建成区得到待开发区",
-        "水体擦除: 行政区边界减去水体得到陆地范围"
-    ],
-
+    use_cases=["地块扣除多个重叠保护区", "道路排除禁行面范围", "点位排除不适用区域"],
     notes=[
-        "结果保留input_gdf的属性,gdf_b的属性不保留",
-        "如果A与B完全不相交,返回A的原始几何",
-        "如果A完全被B包含,返回空几何",
-        "大数据集差集运算较慢,建议先用空间索引过滤"
+        "B 整体范围只扣除一次；完全扣除行省略，每源剩余多部件或集合仍为一行，保持 A 相对行序并重建 RangeIndex",
+        "A 全部业务字段及可空类型保持；B 属性不复制，双方同名业务字段不会冲突，不增加同义来源列或量测列",
+        "不自动修复、吸附、重投影、舍入或过滤低维结果；几何运算可改变类型、顶点顺序和环方向",
+        "纯计算不保存或扫描；资源级血缘保留实际 A/B 输入，不提供 B 的逐行贡献明细；目标格式须支持实际混合几何",
     ],
-
     workflow_example={
-        'id': 'exclude_protected',
-        'operator': 'difference',
-        'params': {
-            'input_gdf': {'$ref': 'load_land'},
-            'gdf_b': {'$ref': 'load_protected'}
-        },
-        'depends_on': ['load_land', 'load_protected']
-    }
+        'id': 'exclude_protected', 'operator': 'difference',
+        'params': {'input_gdf': {'$ref': 'load_source'}, 'gdf_b': {'$ref': 'load_mask'}, 'id_field': 'source_key'},
+        'depends_on': ['load_source', 'load_mask'],
+    },
 )
-
 
 SIMPLIFY_METADATA = OperatorMetadata(
     name="simplify",

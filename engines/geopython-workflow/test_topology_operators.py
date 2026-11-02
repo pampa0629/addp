@@ -6560,3 +6560,249 @@ def test_intersection_overlay_t4_fixture_full_mixed_and_four_refusals(tmp_path,p
             other=layer.GetFeature(2);other.SetFID(1);row.SetFID(2);layer.SetFeature(other);other=None
         layer.SetFeature(row);row=layer=ds=None
     with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.OVERLAY_CASE)
+
+
+def difference_inputs(a=None,b=None):
+    return overlay_inputs(a,[box(1,-1,3,3)] if b is None else b)
+
+
+def exact_difference(left,right):
+    return get_operator('difference')(left,right,id_field='a_key')
+
+
+def test_difference_exact_whole_mask_not_pairwise_and_one_multipart_per_source():
+    left,right=difference_inputs([box(0,0,4,2)],[box(1,-1,2.5,3),box(2,-1,3,3),box(1,-1,2.5,3)])
+    result=exact_difference(left,right)
+    expected=shapely.MultiPolygon([box(0,0,1,2),box(3,0,4,2)])
+    assert len(result)==1 and result.geometry.iloc[0].equals(expected)
+    assert list(result.columns)==list(left.columns) and result.a_key.tolist()==[1]
+
+@pytest.mark.parametrize('shape,expected',[
+    (Point(0,0),Point(0,0)),(Point(2,0),None),(Point(1,0),None),
+    (LineString([(-1,0),(4,0)]),shapely.MultiLineString([[(-1,0),(1,0)],[(3,0),(4,0)]])),
+    (box(0,0,4,2),shapely.MultiPolygon([box(0,0,1,2),box(3,0,4,2)])),
+    (shapely.MultiPoint([(0,0),(2,0),(4,0)]),shapely.MultiPoint([(0,0),(4,0)])),
+    (shapely.MultiLineString([[(-1,0),(4,0)],[(0,4),(4,4)]]),shapely.MultiLineString([[(-1,0),(1,0)],[(3,0),(4,0)],[(0,4),(4,4)]])),
+    (shapely.MultiPolygon([box(0,0,4,2),box(10,0,11,1)]),shapely.MultiPolygon([box(0,0,1,2),box(3,0,4,2),box(10,0,11,1)])),
+    (shapely.GeometryCollection([Point(-2,0),LineString([(-1,0),(4,0)]),box(10,0,11,1)]),shapely.GeometryCollection([Point(-2,0),LineString([(-1,0),(1,0)]),LineString([(3,0),(4,0)]),box(10,0,11,1)])),
+])
+def test_difference_full_dimensions_native_boundary_and_empty_rows(shape,expected):
+    left,right=difference_inputs([shape],[box(1,-1,3,3)])
+    result=exact_difference(left,right)
+    assert len(result)==(0 if expected is None else 1)
+    if expected is not None:assert result.geometry.iloc[0].equals(expected)
+    assert list(result.columns)==list(left.columns)
+    assert result.geometry.name==left.geometry.name and result.crs==left.crs
+
+
+def test_difference_source_order_nullable_types_and_business_geometry_are_not_lost():
+    left,right=difference_inputs([Point(0,0),Point(2,0),Point(4,0)])
+    left['a_key']=pd.Series([2**60+1,2**60+3,2**60+5],dtype='Int64')
+    left['grade']=pd.Series([None,3,2**53+1],dtype='Int64')
+    left['enabled']=pd.Series([None,True,False],dtype='boolean')
+    left['geometry']=pd.Series(['业务几何',None,'末行'],dtype='string')
+    left['category']=pd.Categorical(['b','a','c']);left.index=[8,8,-1]
+    right['a_key']=['B字段不用复制'];right['geometry']=['B业务几何']
+    originals=[g.copy(deep=True) for g in (left,right)]
+    result=exact_difference(left,right)
+    assert list(result.columns)==list(left.columns) and list(result.index)==[0,1]
+    for name in left.columns:
+        if name!=left.geometry.name:pd.testing.assert_series_equal(result[name],left[name].iloc[[0,2]].reset_index(drop=True))
+    assert result.a_key.tolist()==[2**60+1,2**60+5]
+    for frame,before in zip((left,right),originals):assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize('empty',['a','b','both','covered'])
+def test_difference_empty_batches_preserve_schema_and_require_admission(empty):
+    left,right=difference_inputs([Point(2,0)])
+    left['optional']=pd.Series([None],dtype='Int64')
+    if empty in ('a','both'):left=left.iloc[:0].copy()
+    if empty in ('b','both'):right=right.iloc[:0].copy()
+    result=exact_difference(left,right)
+    assert len(result)==(1 if empty=='b' else 0)
+    assert list(result.columns)==list(left.columns) and result.dtypes.equals(left.dtypes)
+    assert result.geometry.name==left.geometry.name and result.crs==left.crs
+    from operators.geometric_operators import DifferenceInputError
+    broken=right.copy();broken.set_crs(None,allow_override=True,inplace=True)
+    with pytest.raises(DifferenceInputError) as caught:exact_difference(left,broken)
+    assert caught.value.code=='crs'
+
+
+def test_difference_holes_contacts_duplicate_masks_and_tiny_remainders():
+    tiny=2**-40
+    a=shapely.Polygon(box(0,0,8,8).exterior.coords,[box(2,2,6,6).exterior.coords])
+    left,right=difference_inputs([a,box(10,0,11,1),box(20,0,21,1)],[box(3,3,4,4),box(11,0,12,1),box(20+tiny,-1,22,2)])
+    result=exact_difference(left,right)
+    assert len(result)==3 and result.geometry.iloc[0].equals(a) and result.geometry.iloc[1].equals(box(10,0,11,1))
+    assert result.geometry.iloc[2].equals(box(20,0,20+tiny,1)) and result.geometry.iloc[2].area==tiny
+    assert_geodataframe_equal(result,exact_difference(left,pd.concat([right.iloc[::-1],right],ignore_index=True)))
+
+
+@pytest.mark.parametrize('side',['a','b'])
+@pytest.mark.parametrize('problem',['missing','empty','invalid','z','m','nonfinite','duplicate_columns','second_geometry','not_frame'])
+def test_difference_rejects_bad_geometry_without_repair(side,problem):
+    from operators.geometric_operators import DifferenceInputError
+    left,right=difference_inputs();frame=left if side=='a' else right
+    bad={'missing':None,'empty':Polygon(),'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),
+         'z':shapely.from_wkt('POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))'),
+         'm':shapely.from_wkt('POLYGON M ((0 0 1,1 0 1,1 1 1,0 0 1))'),
+         'nonfinite':shapely.from_wkt('POLYGON ((0 0,1 0,Infinity 1,0 0))')}
+    if problem in bad:frame[frame.geometry.name]=gpd.GeoSeries([bad[problem]],crs=frame.crs)
+    elif problem=='duplicate_columns':frame.columns=[frame.columns[0]]*len(frame.columns)
+    elif problem=='second_geometry':frame['another']=gpd.GeoSeries([Point(0,0)],crs=frame.crs)
+    elif problem=='not_frame':
+        if side=='a':left=pd.DataFrame({'key':[1]})
+        else:right=pd.DataFrame({'key':[1]})
+    with pytest.raises(DifferenceInputError) as caught:exact_difference(left,right)
+    assert caught.value.code==('source' if side=='a' else 'mask')
+
+
+@pytest.mark.parametrize('mask',[Point(0,0),LineString([(0,0),(1,1)]),shapely.GeometryCollection([box(0,0,1,1)]),shapely.MultiPoint([(0,0),(1,1)])])
+def test_difference_mask_is_polygon_only_even_when_a_empty(mask):
+    from operators.geometric_operators import DifferenceInputError
+    left,right=difference_inputs(b=[mask]);left=left.iloc[:0]
+    with pytest.raises(DifferenceInputError) as caught:exact_difference(left,right)
+    assert caught.value.code=='mask'
+
+
+@pytest.mark.parametrize('problem',['missing','null','blank','object','duplicate','geometry'])
+def test_difference_explicit_a_identity_not_index_or_fid(problem):
+    from operators.geometric_operators import DifferenceInputError
+    left,right=difference_inputs([Point(0,0),Point(4,0)])
+    if problem=='missing':left=left.drop(columns=['a_key'])
+    if problem=='null':left['a_key']=[1,None]
+    if problem=='blank':left['a_key']=['a',' ']
+    if problem=='object':left['a_key']=[{},{}]
+    if problem=='duplicate':left['a_key']=[1,1]
+    if problem=='geometry':left['a_key']=gpd.GeoSeries([Point(0,0),Point(1,1)],crs=left.crs)
+    with pytest.raises(DifferenceInputError) as caught:exact_difference(left,right)
+    assert caught.value.code=='source'
+
+
+@pytest.mark.parametrize('side',['a','b'])
+@pytest.mark.parametrize('crs',[None,'EPSG:4326','EPSG:4978','EPSG:2263'])
+def test_difference_same_known_projected_crs_required(side,crs):
+    from operators.geometric_operators import DifferenceInputError
+    left,right=difference_inputs();(left if side=='a' else right).set_crs(crs,allow_override=True,inplace=True)
+    with pytest.raises(DifferenceInputError) as caught:exact_difference(left,right)
+    assert caught.value.code=='crs'
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:2263'])
+def test_difference_equivalent_crs_and_native_units_and_unsigned_ids(crs):
+    left,right=difference_inputs([box(0,0,4,2)]);left.set_crs(crs,allow_override=True,inplace=True)
+    right.set_crs(left.crs.to_wkt(),allow_override=True,inplace=True);left['a_key']=pd.Series([2**64-1],dtype='UInt64')
+    result=exact_difference(left,right)
+    assert result.crs==left.crs and result.a_key.dtype==left.a_key.dtype and result.a_key.iloc[0]==2**64-1
+    assert result.geometry.iloc[0].area==4
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('problem,reason,param',[('source','operator_input_invalid','input_gdf'),('mask','operator_mask_invalid','gdf_b'),('crs','operator_crs_invalid','')])
+def test_difference_typed_diagnostic_bound_to_definition_and_private_free(language,problem,reason,param):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    left,right=difference_inputs()
+    if problem=='source':left['a_key']=['']
+    if problem=='mask':right[right.geometry.name]=gpd.GeoSeries([Point(0,0)],crs=right.crs)
+    if problem=='crs':right.set_crs(None,allow_override=True,inplace=True)
+    task={'id':'PRIVATE_SOURCE_NODE','operator':'difference','depends_on':[],'params':{'input_gdf':left,'gdf_b':right,'id_field':'a_key'}}
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner(language=language).execute({'tasks':[task]})
+    assert caught.value.error_code=='INVALID_PARAMS'
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'difference',**({'parameter':param} if param else {})}}
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+    assert ('Difference' in str(caught.value)) if language=='en' else ('几何差集' in str(caught.value))
+
+
+@pytest.mark.parametrize('stage',['union','difference'])
+@pytest.mark.parametrize('bad',['exception','invalid','nonfinite','z','m'])
+def test_difference_native_calculation_failures_are_not_input_diagnostics(monkeypatch,stage,bad):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    def compute(*args,**kwargs):
+        if bad=='exception':raise shapely.errors.GEOSException('PRIVATE original source')
+        if bad in ('z','m'):return shapely.from_wkt('POLYGON '+bad.upper()+' ((0 0 1,1 0 1,1 1 1,0 0 1))')
+        return Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]) if bad=='invalid' else shapely.from_wkt('LINESTRING (0 0,Infinity 1)')
+    monkeypatch.setattr(shapely,'union_all' if stage=='union' else 'difference',compute)
+    left,right=difference_inputs()
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner().execute({'tasks':[{'id':'difference','operator':'difference','params':{'input_gdf':left,'gdf_b':right,'id_field':'a_key'},'depends_on':[]}]})
+    assert caught.value.error_code=='EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+def test_difference_never_calls_old_overlay_or_automatic_repair(monkeypatch):
+    def forbidden(*args,**kwargs):raise AssertionError('old or repairing path')
+    monkeypatch.setattr(gpd,'overlay',forbidden);monkeypatch.setattr(shapely,'make_valid',forbidden)
+    left,right=difference_inputs();assert len(exact_difference(left,right))==1
+
+
+def test_difference_real_gpkg_save_reload_with_typed_fields_and_fail_before_save(tmp_path):
+    from osgeo import ogr
+    left,right=difference_inputs([box(0,0,4,2),Point(2,0),Point(10,0),LineString([(20,0),(24,0)])],
+                               [box(1,-1,3,3),box(21,-1,23,1)])
+    left['a_key']=pd.Series([2**60+1,2**60+3,2**60+5,2**60+7],dtype='Int64')
+    left['grade']=pd.Series([None,1,2**53+1,-2],dtype='Int64');left['enabled']=pd.Series([None,True,False,True],dtype='boolean')
+    left['geometry']=pd.Series(['业务几何','被扣除',None,'末行'],dtype='string')
+    right['a_key']=['无需来源一','无需来源二'];right=right.drop(columns=['b_key'])
+    for name,gdf in [('a',left),('b',right)]:gdf.to_file(tmp_path/(name+'.gpkg'),driver='GPKG',index=False)
+    originals={name:(tmp_path/(name+'.gpkg')).read_bytes() for name in ('a','b')};conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'PRIVATE_DIFF','operator':'difference','depends_on':['a','b'],'params':{'input_gdf':{'$ref':'a'},'gdf_b':{'$ref':'b'},'id_field':'a_key'}}]
+    tasks.extend({'id':name,'operator':'load','depends_on':[],'params':{'connection_info':conn,'path':name+'.gpkg'}} for name in ('a','b'))
+    tasks.append({'id':'save','operator':'save','depends_on':['PRIVATE_DIFF'],'params':{'input_df':{'$ref':'PRIVATE_DIFF'},'connection_info':conn,'path':'result.gpkg','mode':'fail'}})
+    state=execute_workflow({'tasks':tasks});assert state['status']=='success',state
+    expected=[shapely.MultiPolygon([box(0,0,1,2),box(3,0,4,2)]),Point(10,0),shapely.MultiLineString([[(20,0),(21,0)],[(23,0),(24,0)]])]
+    ds=ogr.Open(str(tmp_path/'result.gpkg'));layer=ds.GetLayer(0);rows=list(layer)
+    assert len(rows)==3 and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    assert [f.name for f in layer.schema]==['a_key','grade','enabled','geometry']
+    assert layer.GetLayerDefn().GetFieldDefn(0).GetType()==ogr.OFTInteger64
+    assert layer.GetLayerDefn().GetFieldDefn(2).GetSubType()==ogr.OFSTBoolean
+    for i,(row,geometry) in enumerate(zip(rows,expected)):
+        assert row.GetGeometryRef().Normalize().ExportToIsoWkb()==ogr.CreateGeometryFromWkt(geometry.wkt).Normalize().ExportToIsoWkb()
+        assert row.GetField('a_key')==[2**60+1,2**60+5,2**60+7][i]
+        assert row.GetField('grade')==[None,2**53+1,-2][i]
+        assert row.GetField('enabled')==[None,False,True][i]
+        assert row.GetField('geometry')==['业务几何',None,'末行'][i]
+    name=layer.GetGeometryColumn();row=rows=layer=ds=None
+    loaded=get_operator('load')(connection_info=conn,path='result.gpkg')
+    assert loaded.geometry.name==name and loaded.grade.dtype=='Int64' and loaded.enabled.dtype=='boolean'
+    assert all(g.equals(e) for g,e in zip(loaded.geometry,expected))
+    tasks[0]['params']['id_field']='PRIVATE_MISSING';tasks[-1]['params']['path']='forbidden.gpkg'
+    failed=execute_workflow({'tasks':tasks});assert failed['status']=='failed' and failed['error_code']=='INVALID_PARAMS',failed
+    assert failed['diagnostic']['operator']=={'node_index':1,'operator_id':'difference','parameter':'input_gdf'}
+    assert not (tmp_path/'forbidden.gpkg').exists()
+    for name,data in originals.items():assert (tmp_path/(name+'.gpkg')).read_bytes()==data
+
+
+@pytest.mark.parametrize('problem',[None,'source','mask','crs'])
+def test_difference_async_api_discovery_and_frozen_input_diagnosis(tmp_path,monkeypatch,problem):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    left,right=difference_inputs([box(0,0,4,2)])
+    if problem=='source':left['a_key']=['']
+    if problem=='mask':right[right.geometry.name]=gpd.GeoSeries([Point(0,0)],crs=right.crs)
+    if problem=='crs':right.set_crs('EPSG:3395',allow_override=True,inplace=True)
+    for name,frame in [('a',left),('b',right)]:frame.to_file(tmp_path/(name+'.gpkg'),driver='GPKG',index=False)
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'PRIVATE_DIFF_NODE','operator':'difference','depends_on':['a','b'],'params':{'input_gdf':{'$ref':'a'},'gdf_b':{'$ref':'b'},'id_field':'a_key'}}]
+    tasks.extend({'id':name,'operator':'load','depends_on':[],'params':{'connection_info':conn,'path':name+'.gpkg'}} for name in ('a','b'))
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        spec=next(v for v in client.get('/api/operators').get_json()['operators'] if v['id']=='difference')
+        assert spec['display_name']=='几何差集' and spec['category_path']==['矢量处理','叠加分析']
+        assert [(p['name'],p['required']) for p in spec['parameters']]==[('input_gdf',True),('gdf_b',True),('id_field',True)]
+        assert client.post('/api/operators/difference/invoke',json={'params':{}}).status_code==403
+        response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert response.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            observed=client.get('/api/executions/'+response.get_json()['execution_id']);assert observed.status_code==200
+            state=observed.get_json()
+            if state['status'] in ('success','failed'):break
+            time.sleep(.01)
+        if problem is None:
+            assert state['status']=='success',state
+            assert len(json.loads(state['result'])['features'])==1
+        else:
+            reason,param={'source':('operator_input_invalid','input_gdf'),'mask':('operator_mask_invalid','gdf_b'),'crs':('operator_crs_invalid','')}[problem]
+            assert state['status']=='failed' and state['error_code']=='INVALID_PARAMS',state
+            assert state['diagnostic']=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'difference',**({'parameter':param} if param else {})}}
+            assert 'PRIVATE' not in json.dumps(state['diagnostic'])

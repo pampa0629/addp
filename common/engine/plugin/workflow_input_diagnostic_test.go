@@ -15,7 +15,7 @@ func TestWorkflowInputDiagnosticMatchesCanonicalLanguageContract(t *testing.T) {
 	}
 	pattern := regexp.MustCompile(`\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'`)
 	tuples := pattern.FindAllStringSubmatch(string(source), -1)
-	if len(tuples) != 35 {
+	if len(tuples) != 38 {
 		t.Fatalf("rules=%d", len(tuples))
 	}
 	valid := map[string]bool{}
@@ -24,7 +24,7 @@ func TestWorkflowInputDiagnosticMatchesCanonicalLanguageContract(t *testing.T) {
 		valid[strings.Join([]string{r[1], r[2], r[4], r[3]}, "|")] = true
 		reasons[r[2]] = true
 	}
-	for _, op := range []string{"intersection", "batch_buffer", "distance_to", "check_line_proximity", "extract_polygon_rings", "trim_line_endpoints", "extract_line_nodes", "foreign"} {
+	for _, op := range []string{"difference", "intersection", "batch_buffer", "distance_to", "check_line_proximity", "extract_polygon_rings", "trim_line_endpoints", "extract_line_nodes", "foreign"} {
 		for reason := range reasons {
 			for _, parameter := range []string{"", "input_gdf", "gdf_b", "reference_gdf", "distances", "resolution", "tolerance", "max_distance", "private"} {
 				for _, field := range []string{"", "distance", "source_id", "part_no", "ring_no", "ring_id", "is_hole", "node_id", "degree", "source_part_no", "end", "private"} {
@@ -65,6 +65,23 @@ func TestHTTPWorkflowInputDiagnosticRejectsUnknownAndUnprovenFacts(t *testing.T)
 		change(raw)
 		if workflowExecutionStatusFromRaw(raw).Diagnostic != nil {
 			t.Fatal("accepted unproven diagnostic")
+		}
+	}
+}
+
+func TestDifferenceHTTPDiagnosticKeepsOnlyThreeClosedAdmissions(t *testing.T) {
+	for reason, parameter := range map[string]string{"operator_input_invalid": "input_gdf", "operator_mask_invalid": "gdf_b", "operator_crs_invalid": ""} {
+		context := map[string]interface{}{"node_index": 2, "operator_id": "difference"}
+		if parameter != "" {
+			context["parameter"] = parameter
+		}
+		raw := map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": context}}
+		if got := workflowExecutionStatusFromRaw(raw); got.Diagnostic == nil {
+			t.Fatal("lost difference diagnostic")
+		}
+		context["field"] = "PRIVATE"
+		if got := workflowExecutionStatusFromRaw(raw); got.Diagnostic != nil {
+			t.Fatal("trusted arbitrary difference field")
 		}
 	}
 }

@@ -283,3 +283,17 @@ def test_trim_diagnostics_closed_tuple_drops_private_context_and_keeps_original_
         changed={**value,'operator':{**value['operator'],'field':field}}
         assert validated_operator_diagnostic(changed) is None
     assert OperatorInputError(reason,'PRIVATE').diagnostic('foreign',1) is None
+
+
+def test_difference_input_rules_are_exact_and_never_reference_identity_or_private_fields():
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES,OperatorInputError,validated_operator_diagnostic
+    import copy
+    expected={('difference','operator_input_invalid',''):'input_gdf',('difference','operator_mask_invalid',''):'gdf_b',('difference','operator_crs_invalid',''):''}
+    assert {k:v for k,v in OPERATOR_INPUT_RULES.items() if k[0]=='difference'}==expected
+    for (op,reason,field),param in expected.items():
+        value=OperatorInputError(reason,'PRIVATE runtime geometry').diagnostic(op,2)
+        assert validated_operator_diagnostic(value)==value
+        for patch in ({'field':'source_id'},{'field':'PRIVATE'},{'parameter':'reference_gdf'},{'node_index':True}):
+            bad=copy.deepcopy(value);bad['operator'].update(patch);assert validated_operator_diagnostic(bad) is None
+    assert OperatorInputError('operator_reference_invalid','PRIVATE').diagnostic('difference',1) is None
+    assert OperatorInputError('operator_mask_invalid','PRIVATE').diagnostic('intersection',1) is None
