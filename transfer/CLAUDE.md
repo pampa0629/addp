@@ -284,7 +284,7 @@ Transfer schema 仅由 Backend 迁移；模块级数据库锁、成功提交的�
 | [角色资格到期与导出拒绝](#角色资格到期与导出拒绝证据) | [角色专用导出选择](#角色专用导出选择) | v30／v31 错误映射、确定性回归与未运行的新版 Hosted。 |
 | [continuous 精确扫描与审批归属](#continuous-精确扫描与审批归属) | [生产来源](#生产来源与写后扫描)、[写后扫描](#写后扫描触发与范围) | 首次扫描、单用户审批、双用户归属及各自清理证据。 |
 | [bounded 定时授权](#bounded-定时授权验收) | [定时任务授权规范](../docs/spec/tasks/任务定义与授权.md#transfer-定时任务授权) | 真实 Cron、子扫描隔离与模块聚合失败。 |
-| [创建落点与历史栈](#创建落点与历史栈验证) | [Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)、[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义) | 本地 T1／T2／受控 T3、模块聚合失败及真实产品未验收。 |
+| [创建落点与历史栈](#创建落点与历史栈验证) | [Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)、[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义) | 本地 T1／T2／受控 T3、模块聚合失败、日常 Console 部分观察与尚未完成的产品验收。 |
 
 #### continuous 过程事件与浏览器验收
 
@@ -382,7 +382,20 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 | [Execution online CI runner](https://github.com/pampa0629/addp/actions/runs/41319279732/job/124885844391) | `make test-execution-online-ci-runner` 两组确定性测试分别为 100、167 项，通过；这是验收入口与编排回归，不是 Hosted T4 实跑。 |
 | [Platform consistency](https://github.com/pampa0629/addp/actions/runs/41319279732/job/124885844463) | `ModuleGateTest.test_manager_postgres_source_checkout_rejects_before_database_access` 失败：`--source-root` 指向 Runner checkout 时，预期 `MANAGER_POSTGRES_TEST_DSN must reference`，实际为 `Manager CI requires its repository-built owned PostgreSQL`。该失败与上述本地生命周期夹具超时分别保留，不能计整轮 CI 或完整模块聚合通过。 |
 
-上述 CI 元数据与三份 Job 日志也保存在同一临时证据目录，API `head_sha` 与修复提交一致；真实账号、完整 Console、Hosted T4／T5 仍未验收。
+上述 CI 元数据与三份 Job 日志也保存在同一临时证据目录，API `head_sha` 与修复提交一致；这些 CI 结果不覆盖真实账号和完整 Console，后续日常服务观察见下文，Hosted T4／T5 仍未验收。
+
+##### 日常 Console 阶段性观察（2026-11-02）
+
+专项会话回传截至当日 `12:31 +08:00` 的手工报告 `/tmp/addp-transfer-route-20261101/console-real-20261102/report.json`（SHA-256：`9c87dbf7f82158da8eb9b86c0a0643fbbfc651e9051e2dff31f803756505c513`）及四份可读分支截图。本会话核对该报告与文件存在性，未重跑页面。报告记录的跟进 checkout 为 `d5f2ab734ba8973719f811abf870949636b13b0c`，System／Gateway／Meta／Transfer 的运行构建为 `c43dceaf87453ca8acf678388b1ae22f79376e40`；这是日常现有服务上的真实手工观察，不是同 SHA 隔离部署或 Hosted T4。
+
+| 分支 | 已观察结果与未完成项 |
+| --- | --- |
+| 可读 User | 创建返回 201，响应 ID 与 Console／iframe 详情一致；任务 `17` 落在 `/transfer/tasks/17/detail`，刷新保持同一详情，后退回列表、前进恢复同一详情；单 iframe、创建时无整页重载。最终 Owner 响应显示任务 disabled／idle、执行总数为 0。仅覆盖该真实账号的可读分支，不替代受控 T3 的其他权限组合。 |
+| 仅创建 User | 用户确认的临时访问仅复用既有角色中的 `transfer.task.create` 与 `meta.catalog.read`，未修改角色定义或其他账号。Safari 无痕会话已点击创建／确认，但自动锁定后未观察结果；截至检查点服务连接拒绝，原会话不可用，状态为 `blocked_environment`。提交结果未知，须先只读核对精确任务名 `Console仅创建路由验收_20261102_c83f7e`，不能重复提交；成功落点、重置、刷新、历史导航及实际零执行均未验收。 |
+
+创建窗口的网络记录完整，仅见一次创建、零次启动；刷新与历史窗口的网络记录已截断，不据此声称全程无写入或无重复请求，最终任务与执行状态单独认定。任务 `17` 留作核对，未删除任务或数据；临时角色配置截止当日 `13:15:31 +08:00`，结束临时访问尚未核对，不能将配置到期时间当作回收证明或声称零残留。专项会话还报告仅创建账号确认页有“任务将立即执行一次”的文案疑点，尚待核对实际结果与修正结论，不作为通过或已修复项。
+
+本阶段 `acceptance_complete=false`；专项会话未自行重启服务，本会话仅整理证据。仅创建分支、临时访问回收、完整产品范围及隔离 T4／T5 继续单列未验，不改变上述固定版本失败记录。报告位于临时目录，不能作为长期归档保证。
 
 ## 相关文档
 
