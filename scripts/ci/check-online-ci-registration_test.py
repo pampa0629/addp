@@ -1131,6 +1131,28 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_sample_points(self.repository, {'raster-sample-points-persistence'})
             target.write_text(original)
 
+    def test_sample_points_bilinear_requires_exact_gpkg_matrix_budget_and_regressions(self):
+        source = Path(__file__).resolve().parents[2]
+        required = CHECK.SAMPLE_POINTS_BILINEAR_REQUIRED
+        for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml', *required):
+            target = self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source/relative,target)
+        CHECK.validate_sample_points_bilinear(self.repository, {'raster-sample-points-bilinear-persistence'})
+        for relative, fragments in required.items():
+            target=self.repository/relative; original=target.read_text()
+            for fragment in fragments:
+                target.write_text(original.replace(fragment, 'omitted'))
+                with self.subTest(relative=relative,fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_sample_points_bilinear(self.repository, {'raster-sample-points-bilinear-persistence'})
+                target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-sample-points-bilinear-fixture.py';original=target.read_text()
+        for before,after in [("'direct','bilinear'", "'direct','cell'"),("'method_null'", "'omitted_method'"),("'empty.gpkg'", "'extra.gpkg'")]:
+            self.assertIn(before,original);target.write_text(original.replace(before,after,1))
+            with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_sample_points_bilinear(self.repository, {'raster-sample-points-bilinear-persistence'})
+            target.write_text(original)
+
     def test_vector_zonal_weighted_requires_exact_gpkg_matrix_budget_and_regressions(self):
         source = Path(__file__).resolve().parents[2]
         required = CHECK.VECTOR_ZONAL_WEIGHTED_REQUIRED

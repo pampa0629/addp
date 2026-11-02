@@ -307,6 +307,21 @@ class RasterLineageTest(unittest.TestCase):
             else: changed['operations'][0]['operator'] = 'raster_save'
             with self.subTest(fault=fault), self.assertRaises(m.SuiteError): m.validate(changed, expected, public=False)
 
+    def test_sample_points_bilinear_approved_two_role_gpkg_facts_preserve_internal_and_public_boundaries(self):
+        self.assertEqual(m.SUITES['raster-sample-points-bilinear-persistence'], 'raster-sample-points-bilinear-lineage')
+        expected = copy.deepcopy(EXPECTED)
+        expected['inputs'] = [{'port': 'input.points', 'locator': 'points'}, {'port': 'input.values', 'locator': 'values'}]
+        expected['operations'][0].update(operator='save', input_ports=['input.points', 'input.values'])
+        m.validate(expected, expected, public=False)
+        m.validate({**expected, 'operations': None}, expected, public=True)
+        for fault in ('swap', 'missing', 'duplicate', 'operation'):
+            changed = copy.deepcopy(expected)
+            if fault == 'swap': changed['inputs'][0]['locator'], changed['inputs'][1]['locator'] = 'values', 'points'
+            elif fault == 'missing': changed['inputs'].pop()
+            elif fault == 'duplicate': changed['inputs'].append(changed['inputs'][0])
+            else: changed['operations'][0]['operator'] = 'raster_save'
+            with self.subTest(fault=fault), self.assertRaises(m.SuiteError): m.validate(changed, expected, public=False)
+
     def test_vector_zonal_weighted_approved_three_role_gpkg_facts_preserve_internal_and_public_boundaries(self):
         self.assertEqual(m.SUITES['vector-zonal-weighted-persistence'], 'vector-zonal-weighted-lineage')
         expected = copy.deepcopy(EXPECTED)
