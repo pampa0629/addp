@@ -1,5 +1,5 @@
 <template>
-  <ContainerPreview :children="children" :selected-child-key="selectedName" :selector-label="t('gridPreview.variable')" @child-change="selectVariable">
+  <ContainerPreview class="grid-container-preview" :children="children" :selected-child-key="selectedName" :selector-label="t('gridPreview.variable')" @child-change="selectVariable">
     <template #child-details="{ child }">
       <div class="grid-details" data-testid="grid-variable-details">
         <el-descriptions border size="small" :column="2">
@@ -93,6 +93,8 @@ onBeforeUnmount(clear)
 </script>
 
 <style scoped>
+.grid-container-preview :deep(.child-preview) { overflow: auto; }
+.grid-container-preview :deep(.child-preview > *) { flex-shrink: 0; }
 .grid-details { margin-bottom: 12px; overflow-wrap: anywhere; }
 .grid-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .grid-window { max-height: 480px; overflow: auto; margin: 12px 0; }

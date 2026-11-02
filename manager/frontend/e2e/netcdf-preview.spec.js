@@ -10,6 +10,7 @@ for (const lang of ['zh-cn', 'en']) test(`NetCDF slices preserve exact values, i
   // Meta owns the canonical child name and removes duplicated protocol keys
   // from native. The Runtime's slice response still has a variable name.
   const { name: _name, ...nativeVariable } = variable
+  const spatial = lang === 'en' ? { footprint: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[117, 27], [117.001, 27], [117.001, 27.001], [117, 27.001], [117, 27]]] } } } : null
   const slices = []
   const parentReads = []
   const errors = []
@@ -32,7 +33,7 @@ for (const lang of ['zh-cn', 'en']) test(`NetCDF slices preserve exact values, i
         if (slices.length === 3) return json(route, { error: lang === 'en' ? 'Source changed; refresh metadata' : '源文件已变化，请刷新元数据', error_code: 'preview_source_refresh_required' }, 409)
         const values = Array.from({ length: 3 }, (_, y) => Array.from({ length: 4 }, (_, x) => String(9007199254740993n + BigInt(selection.indices[0] * 12 + y * 4 + x))))
         const valid = [[true, true, true, true], [true, true, false, true], [true, true, true, true]]
-        return json(route, { preview_type: 'object', data: { mode: 'object', object: { content: { kind: 'grid_slice', json: { selection, values, valid, variable, spatial: null } } } } })
+        return json(route, { preview_type: 'object', data: { mode: 'object', object: { content: { kind: 'grid_slice', json: { selection, values, valid, variable, spatial } } } } })
       }
       parentReads.push(url.searchParams.get('child_name') || '')
       if (url.searchParams.has('child_name')) return json(route, { error: 'Array reads require an explicit grid_slice', error_code: 'grid_slice_selection_invalid' }, 400)
@@ -46,7 +47,12 @@ for (const lang of ['zh-cn', 'en']) test(`NetCDF slices preserve exact values, i
   await page.getByTestId('read-grid-slice').click()
   await expect(page.locator('td[data-raw="9007199254740993"]')).toHaveText('9007199254740993')
   await expect(page.locator('td[data-raw="9007199254740999"]')).toHaveAttribute('data-valid', 'false')
-  await expect(page.getByTestId('grid-no-location')).toBeVisible()
+  if (spatial) await expect(page.locator('.geojson-preview')).toBeVisible()
+  else await expect(page.getByTestId('grid-no-location')).toBeVisible()
+  const grid = page.getByTestId('grid-slice-result')
+  expect(await grid.evaluate(element => element.clientHeight >= element.querySelector('table').getBoundingClientRect().height)).toBe(true)
+  await grid.scrollIntoViewIfNeeded()
+  await expect(grid.locator('td').last()).toBeInViewport()
   const indexInput = page.locator('.grid-controls .el-input-number').first().locator('input')
   await indexInput.fill('1'); await indexInput.press('Tab')
   await expect(page.getByTestId('grid-slice-result')).toHaveCount(0)

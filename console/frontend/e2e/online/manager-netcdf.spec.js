@@ -58,6 +58,10 @@ test('ordinary user selects classic NetCDF time slices and downloads exact origi
             await expect(cell).toHaveAttribute('data-valid', String(result.valid[y][x]))
             if (result.valid[y][x]) await expect(cell).toHaveText(values[y][x])
           }
+          const grid = frame.getByTestId('grid-slice-result')
+          expect(await grid.evaluate(element => element.clientHeight >= element.querySelector('table').getBoundingClientRect().height)).toBe(true)
+          await grid.scrollIntoViewIfNeeded()
+          await expect(grid.locator('td').last()).toBeInViewport()
           if (source.spec.projected) {
             expect(result.spatial.transform).toEqual([499995, 10, 0, 2999995, 0, 10])
             await expect(frame.getByTestId('grid-no-location')).toHaveCount(0)
@@ -66,6 +70,10 @@ test('ordinary user selects classic NetCDF time slices and downloads exact origi
             expect(result.spatial).toBeNull()
             await expect(frame.getByTestId('grid-no-location')).toBeVisible()
           }
+        }
+        if (source.spec.projected) {
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `netcdf-${source.source_case}-${source.spec.version}-grid.png`) })
+          await frame.locator('.geojson-preview').scrollIntoViewIfNeeded()
         }
         const ready = page.waitForEvent('download')
         await frame.getByRole('button', { name: /^(下载|Download)$/ }).click()
