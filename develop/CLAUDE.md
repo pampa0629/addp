@@ -150,25 +150,35 @@ ES DSL 查询沿用普通 query 执行及 TaskProvider 契约主路径；`POST /
 
 ### 查询保护与结果交付
 
-Develop 普通查询保护只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `OutputLineage()`，不自行解析 SQL/MQL。当前 Tenant 没有任何本地纳管目标时不读取二者；存在纳管目标但本次 ReadSet 未命中时执行原路径；精确命中后必须用 Provider 实时 source fields 校验 Projection，并在 QueryResult 写 execution metadata、返回 Workbench 或 Notebook Kernel 前执行独立 `query` 规则。identity/direct 输出可遮盖或抑制；受保护字段参与 derived/opaque 输出、结构漂移、规则缺失或 lineage unresolved 时拒绝当前查询。首期字段级执行覆盖 PostgreSQL 直接列/别名/单来源 wildcard 与 MongoDB find/count/distinct；其他查询保持单次请求级 fail-closed，不恢复资源级永久拒绝或 Owner 私有解析旁路。
+#### 读取计划与保护范围
 
-查询保护引擎范围排除采用 Projection v4：Security 在发布前核对 Enrollment 的引擎 ID／完整名称前像与 DataItem 指纹，Owner 由投影派生范围索引。Owner 首次同步及旧协议重放须消费到 `has_more=false` 后持久确认 initialized，期间拒绝读取；重放只在最后一页 ack，保持 Security 确认游标单调。Neo4j 用标准 openCypher 9 AST、物理数据库与内置函数事实证明本地只读范围，模板和正式图查询执行同一不可变计划；同引擎纳管而精确 ReadSet 未覆盖时仍拒绝。验证使用对应 Go 模块门禁、Common／Security／Develop PostgreSQL 门禁和 `make test-common-neo4j`，新增 Compose 门禁已接入标准自动发现与 T2 CI。
+需要读取／输出来源判断时，Develop 只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `OutputLineage()`，使用独立 `query` 动作，在结果写 execution metadata 或返回 Workbench／Notebook Kernel 前完成保护。不自行解析查询或按同名结果列猜来源；纳管匹配、实时结构校验、direct／derived／opaque 边界及 Provider 支持范围统一见[Owner 本地执行契约](../docs/spec/addp数据安全与隐私保护实现规范.md#十owner-本地执行契约)。
+
+引擎范围排除、首次同步与重放以[范围排除契约](../docs/spec/addp数据安全与隐私保护实现规范.md#查询保护的引擎范围排除)为准：同步未确认时拒绝，范围相交或未知时进入同一计划的精确 ReadSet 判断，所需完整来源或保护证明不可得时拒绝。Neo4j 仍由 openCypher 9 AST、物理数据库与内置函数事实证明原生只读范围，模板与正式图查询消费同一不可变计划；同引擎已有纳管目标而本次完整来源无法证明时拒绝。确定性验证沿 `make test-common-neo4j` 和关联 Owner 门禁，不替代真实用户链路。
 
 支持已准备读取计划的联邦 Provider 在同一在途读取屏障内准备 Runtime 会话，按 Source Engine 的真实 Catalog Model 消费来源范围和表级读取集合，并复用 Common 的范围排除与 DataItem 判断。未命中纳管数据才执行同一 Driver 的同一计划；命中表、投影不可用或闭包未知均拒绝，结束／拒绝释放会话。首期 Spark 的 PG 读取使用受控 `ONLY`，MySQL 仅 InnoDB 基础表；不按结果列名猜字段保护，不降低未知 Runtime 的原有保守拒绝。
 
-Develop 查询的角色可选脱敏方式沿用同一普通查询路径。候选 `GET /query-protection-options` 仅观察用户显式选中数据项，使用本人当前角色自查；`content.protection_choices` 只保存精确源字段与方式身份／修订。保存、仅改名称的更新与执行均重新核验，后台执行只能使用绑定当前 Execution Authorization、attempt、lease 的角色事实，不借用任务作者、Worker 或发布人角色。未选择继续默认保护；旧引用、资格失效、未消费来源、派生／opaque 来源或不支持路径明确拒绝，不自动换默认算法。特殊方式首期覆盖 SQL／MQL 的已证明直接字段及别名，联邦、关系结果写入、Notebook 与经 Transfer 执行的全量导出不消费此选择。
+所选资源的查询模板必须经过一次有界的真实执行才能返回。该验证读取与普通查询共用同一个 `PreparedQuery -> BeginPreparedQuery -> Execute -> protectResult` 路径；受保护资源不得因模板生成而走 `BeginCatalogPath` 的“仅允许未纳管资源”门禁，验证执行也不得绕过字段级保护。
 
-Develop 全量导出与查询方式独立：`content.export_protection_choices` 保存精确源字段和 Transfer export 选项，保存及名称更新通过同步 BFF 原样转发当前已认证 User Bearer 复核，不借用 Service Token。前端在同一共享选择抽屉分别展示查询与导出方式，保存后由后续查询执行快照冻结；全量导出使用该快照，未选导出方式则采用导出默认保护。角色专用导出按本次共享会话的确切 UUID 签发用户 Transfer EA，需要现有执行授权创建、Transfer 执行和源引擎读资格；源、主体、Membership／Version 或资格不一致拒绝。导出创建、状态与文件交付分别保留409/query_protection_roles_unavailable（当前角色资格失效或无法确认）和409/query_protection_choice_invalid（所选方式/修订已变更或失效）；使用导出专用双语文案和处理建议。上游未知码或异常协议为核验暂不可用，不解析正文猜测具体原因。Get/Open 在实际交付前再次核验；特殊文件使用同一文件路由的当前 User Bearer，经共享认证客户端获取 Blob 后下载，Resource Ticket 不能替代完整角色资格。普通默认导出继续既有路径。历史预览始终默认脱敏，查询专用选项不跨出口复用。
+#### 角色选择与独立导出
+
+候选 `GET /query-protection-options` 只观察用户显式选中来源，并使用本人当前角色自查；`content.protection_choices` 保存精确源字段与方式身份／修订。保存（含仅改名称）及执行均复核当前资格；后台角色事实绑定当前 Execution Authorization、attempt、lease，不借用任务作者、Worker 或发布人角色。默认、修订失效和来源消费规则沿[角色方式契约](../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)，未选择继续默认，失效不静默更换算法。特殊方式首期仅覆盖 SQL／MQL 已证明的直接字段及别名，联邦、关系结果写入、Notebook 与 Transfer 全量导出不消费查询选项。
+
+导出独立保存 `content.export_protection_choices`，由后续查询执行快照冻结，未选时采用导出默认保护。候选、保存与文件交付复核是同步 BFF：只转发当前已认证 User Bearer，不保留凭据或替换为 Service Token，Get/Open 在实际交付前再次核验。角色专用 Transfer EA 绑定共享会话的确切 UUID，并要求现有执行授权创建、Transfer 执行及源引擎读资格；源、主体、Membership／Version 和资格均须匹配，具体规则由上述契约统一维护。
+
+导出创建、状态与文件交付保留 HTTP 409 的 `query_protection_roles_unavailable`（当前角色资格失效或无法确认）与 `query_protection_choice_invalid`（所选方式／修订变化或失效），采用导出专用双语说明和建议；未知码或异常协议按核验不可用处理，不解析正文猜原因。专用文件仍经既有同一路由的当前 User Bearer 获取 Blob，Resource Ticket 不替代完整角色资格；普通默认导出沿既有路径，查询选项不跨出口复用。
+
+#### 实时结果、历史与日志
+
+暂存、当次原值接口和默认历史的规则统一见[Develop 结果与历史契约](../docs/spec/addp数据安全与隐私保护实现规范.md#102-develop-当次原值结果与脱敏历史)；角色所选结果继续按上述角色方式契约单独复核。
 
 实时所选脱敏结果与历史默认预览由同一次 PreparedQuery 分别形成；共享计划仅延后所选字段的原生变换，其余仍走原 SQL／Go 协同保护，不伪造 allow、不重跑查询、不对掩码再次哈希。交付沿现有 5 分钟／大小有界进程内缓存，每次读取核对当前 User 角色及本地投影；失效或淘汰明确要求重新查询。其他字段既有临时原值授权仍独立复核，撤销／到期的原值逐字段从后续快照移除；CAS 与每版独立计时标识防止并发旧读取恢复原值或延长暂存。持久执行历史始终只含默认脱敏预览；详情与 Monitor 共用 `protection_role_choice_unavailable` 中英文说明。
 
 Backend 与查询执行进程共用的数据库连接必须使用 `common/logger.WithoutSQLValues`：ORM 查询日志保留 SQL 结构、级别、耗时和行数，不展开绑定参数；错误只记录固定类别、类型或合法 SQLSTATE，避免驱动回显查询结果参数。过滤不改变绑定值、事务、持久历史和调用方错误链；`Debug/LogMode` 不能移除过滤。执行事务的日志非泄露与数据完整性由 SQLite 和既有 Develop PostgreSQL 门禁共同验证。
 
-数据保护拒绝沿既有 `error_details.diagnostic` 和共享 `ExecutionFailure` 展示：稳定码 `develop.query.protection_required`，通用原因 `data_protection_required`，已证明的具体原因按下文细分。Gate 准备失败标记 `preparation`，已执行结果的保护失败标记 `result`，保留原始错误链用于内部判定；不解析原始错误正文、不混同数据项权限不足，也不放宽保护规则。标准验证为 `make test-module MODULE=develop`、`make test-common-frontend` 和 `make test-go`；共享组件的 Monitor 消费由 `make test-monitor-frontend` 验证。现有单测、浏览器和 Develop PostgreSQL 入口自动覆盖，不增加新门禁。
+#### 受控失败与验证
 
-数据保护诊断从原始类型化错误链细分敏感计算不支持、读取／输出来源未能验证、保护尚未就绪、已到期、尚未生效、结构不匹配及当前操作不支持保护处理，详见[执行监控规范](../docs/spec/tasks/执行监控.md)。无法证明具体原因时仍明确说明“数据脱敏保护校验未通过”，不要求用户核查数据访问资格。已证明的读取／写入权限不足仍使用 `permission_denied`，执行授权缺失、过期或不匹配仍使用 `authorization_invalid`；共享组件以受控诊断为准，不被通用错误类别覆盖。旧历史通用原因不反推、不补写；保护错误码、实际失败阶段、拦截和授权规则保持不变，三处界面共用一套中英文原因与处理建议。
-
-所选资源的查询模板必须经过一次有界的真实执行才能返回。该验证读取与普通查询共用同一个 `PreparedQuery -> BeginPreparedQuery -> Execute -> protectResult` 路径；受保护资源不得因模板生成而走 `BeginCatalogPath` 的“仅允许未纳管资源”门禁，验证执行也不得绕过字段级保护。
+保护拒绝使用 `error_details.diagnostic` 与共享 `ExecutionFailure`，稳定码保持 `develop.query.protection_required`。Owner 保留原始类型化错误链，准备和结果阶段分别记录 `preparation`、`result`；细分事实与双语建议统一见[诊断规范](../docs/spec/tasks/执行监控.md#租户执行诊断)，无法可靠细分时才用 `data_protection_required`。不从自由文本或引擎类型猜原因，不向通用响应投影敏感正文。`permission_denied` 与 `authorization_invalid` 分别描述已证明的读写权限不足和执行授权失效，不混同保护拒绝；历史通用原因不反推、不补写，工作台、历史与 Monitor 共用同一组建议。
 
 ### 固定目标写入契约
 
@@ -497,7 +507,7 @@ curl -H "Authorization: Bearer <token>" \
 
 ## 开发与验证
 
-标准门禁、环境前提与能力边界统一见[Develop 验证入口](../docs/spec/configuration/执行与模块策略.md#develop-验证入口与证据边界)。历史记录按主题查阅：
+标准门禁、环境前提与能力边界统一见[Develop 验证入口](../docs/spec/configuration/执行与模块策略.md#develop-验证入口与证据边界)。查询保护的 Owner 与共享诊断回归使用 `make test-module MODULE=develop`、`make test-go`、`make test-common-frontend` 和 `make test-monitor-frontend`，PostgreSQL 及 Provider 专项按实际影响范围分别验证；分项通过不替代真实认证／Gateway／Worker 的 T4。历史记录按主题查阅：
 
 | 历史主题 | 原记录与范围 |
 | --- | --- |
