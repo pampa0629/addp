@@ -566,3 +566,12 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 另对引用同一主机夹具的18份浏览器spec作266项扩散检查，实际261通过、5失败，退出1（15.4分钟，`/tmp/addp-monitor-zoom-affected-browser.log`）。失败包括告警挂载过滤第二次请求未发出、主机设备列表空白、英语主机筛选初始请求未发出、热力面板初始未出现，以及英语内存场景已通过原缩放值断言后、在第102行动画finished等待失败；该第五项不同于旧CI第100行缩放变0。保留失败截图／上下文，目录`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-n4OP7X`。独立8项含最后一项的完整场景；其余4项再沿原标准入口加`--trace=on`作一次取证，4项通过（10秒，`/tmp/addp-monitor-zoom-extra-failures-traced.log`），无产品／测试修改。此复核没有确认组合失败根因，不归因于环境，也不将原266项退出1改写为通过；不把原6项独立通过外推完整Monitor浏览器门禁。
 
 本次只改Monitor主机页与本领域浏览器反例；既有Platform CI Monitor前端路径选择和标准E2E自动发现覆盖，无需新增Makefile或workflow。共享前端及其他消费者没有产品变更，不重跑无关门禁。个人服务未启停，Safari未操作；精确替代提交的Linux结果及Hosted继续等专门会话回传，没有设置定时任务。下一步回到已确认的MinIO17项固定指标来源及mTLS输出，账号阶段证据不变。
+
+
+### 缩放修复的固定 Linux 产品门禁回传（2026-11-02）
+
+专门CI会话回传固定源码`74edeb978bd6a8c2874401b0df336bf050a2e0e5`的[Platform Run41375543514／Monitor前端Job125054853600](https://github.com/pampa0629/addp/actions/runs/41375543514/job/125054853600)，attempt1。本会话独立读取原始日志并核对SHA256：`/tmp/addp-ci-20261102-104553/job-125054853600.log`为`56ebc6bf57caa2241a942bc87a4c11c07fdd882431c1d912f3d7b62992fddb10`。标准`make test-monitor-frontend`实际执行，592项浏览器全部通过（28.7分钟），包含原内存／磁盘／网络双语6项反例和新增System版本／名称变化2项；随后Vite构建通过（10.88秒），产品步骤及gate summary均为success。
+
+整Job在其后的`Post Prepare Monitor frontend environment`归档Node缓存tar时取消；因此只认定“固定源码的Linux产品门禁通过、整Job取消”，不改为Job或父workflow通过，不重复运行有效验收。独立结论文件为`/tmp/addp-ci-20261102-104553/Monitor74-independent-product-pass-job-post-cancel-proof.json`。旧584通过／6失败、7e2原Job未运行完以及本机266项组合的5项失败全部保留，不把新固定版本成功倒写为旧记录成功。
+
+另逐字节比较本工作区的`NodeResources.vue`、`host-resource-zoom.spec.js`、`network-bars.spec.js`与受验74ed，三文件完全一致；协调会话也已核对远端固定`4243aefa676f93c71916872dda30c6127aa91546`的同三文件（`/tmp/addp-ci-20261102-123449/Monitor-current-owned-input-recheck.json`）。该一致性只支持复用缩放修复的Linux证据，不外推当前main全部前端输入、个人Safari、Hosted或新增`59d4adaee`MinIO来源的CI／正式验收。此次只核验回传材料及同步进展，没有查询、触发或重跑CI／Hosted，没有设置定时任务。
