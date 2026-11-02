@@ -166,9 +166,9 @@ DuckDB 是 System 中 `tenant_id=NULL`、`is_builtin=true` 的真实联邦查询
 | --- | --- |
 | `query` | `content.query_type`、`content.query`，见[Query 结构](#query-类型dev_typequery) |
 | `workflow` | `content.workflow_definition` 和可选 `content.inputs`，见[Workflow 结构](#workflow-类型dev_typeworkflow) |
-| `script` | 当前 Notebook 形态使用 `content.notebook_path`，运行时绑定见[执行授权与效果](../../../CLAUDE.md#执行授权与效果) |
+| `script` | 当前 Notebook 形态使用 `content.notebook_path`，运行时绑定见[文件与运行时重绑](../../../CLAUDE.md#文件与运行时重绑) |
 
-类型声明不表示一次性 Notebook 已可派发；当前 `script` 领取后拒绝、交互 Session 与排队授权的区别沿[执行监督与授权](../../../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。
+类型声明不表示一次性 Notebook 已可派发；当前领取拒绝、内容摘要及交互／排队授权的区别见[排队执行与内容摘要](../../../CLAUDE.md#排队执行与内容摘要)，正式要求沿[执行监督契约](../../../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。
 
 ---
 

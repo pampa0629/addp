@@ -26,7 +26,7 @@ Spark Workflow 的加载资源选择器还支持 Elasticsearch `index` locator�
 
 ## 关键架构
 
-专题导航：[查询与预检](#查询工作台与预检)、[查询保护](#查询保护与结果交付)、[关系写入](#固定目标写入契约)、[全量导出](#查询全量导出)、[执行监督](#执行输出与运行监督)、[Copilot](#copilot-范围与资源事实)、[执行授权](#执行授权与效果)。
+专题导航：[查询与预检](#查询工作台与预检)、[查询保护](#查询保护与结果交付)、[关系写入](#固定目标写入契约)、[全量导出](#查询全量导出)、[执行监督](#执行输出与运行监督)、[Copilot](#copilot-范围与资源事实)、[执行授权](#执行授权与效果)、[Notebook](#notebook-会话与排队执行)。
 
 ### 统一执行架构
 
@@ -70,7 +70,7 @@ FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authoriz
 - Query／Workflow 只在已有受控执行阶段记录 progress 百分比，不将自由文本 `current_step` 复制为 `step_id`。
 - 授权附加、Workflow 远端执行回执与心跳不追加事件；查询、参数、业务结果、Runtime 完整响应和授权引用不进入通用事件。
 
-Notebook 的交互 Session、引擎数据访问与排队运行授权分工由上述监督契约维护。当前排队 `script` 以 `develop.script.authorization_unavailable` 失败，不调用 Runtime；不能借用 Session、数据授权、历史提交人或 Service Token 放行。内容 SHA-256 只证明字节一致，已有 Jupyter 校验返回 `notebook_content_changed` 时要求重新提交，不创建快照或自动重试；运行授权及真实撤权闭环仍待独立验收。
+Notebook 的交互、数据读取与排队授权，以及拒绝派发和内容摘要错误的区别，统一见[会话与排队执行](#notebook-会话与排队执行)；事件或摘要存在不表示已经调用 Runtime。
 
 标准门禁、Query Hosted 核对要求与分版本证据统一见[开发与验证](#开发与验证)，本地分项、历史通过和未执行项分别认定。
 
@@ -236,16 +236,6 @@ Copilot ResourceFact 必须保留 Owner 提供的 `source_engine_type`、`full_n
 - `develop.task.execute` / `develop.notebook.execute` 只允许使用执行功能，不自动授予任意数据效果。
 - 当前 User AuthContext、owner Resource Rule/Policy、Engine 归属和执行效果共同决定 Execution Authorization；Engine 创建人和 Runtime Service Principal 都不是授权来源。
 - 异步执行只保存 Execution Authorization ID、发起 Principal、Tenant Membership、签发授权版本和脱敏效果/资源摘要，不保存 User Token、Service Token、明文连接或 Workflow Access Plan。
-- Jupyter 只通过 Develop 受控会话使用数据访问能力，不直接返回共享 Lab 数据访问入口，不注入长期明文 Engine 连接。
-- Notebook 交互编辑只允许 `POST /notebooks/{id}/sessions` 创建的短期隔离会话。Develop 返回同源 `/notebook-sessions/{session_id}/...` 路径并设置仅限该路径的 HttpOnly 能力 Cookie；浏览器不得获得 Runtime 地址、Jupyter Token、Service Token 或 URL Token。Develop 在代理 HTTP/WebSocket 前校验会话、Tenant、User、Task 和到期时间；会话关闭、过期或 Develop 重启后 fail-closed。
-- Notebook Kernel 获取当前可用查询 Engine 及其实时 Engine Catalog 时，只允许使用 Develop 为同一交互会话签发的短期 Notebook Kernel Capability Token 调用该 Session 的只读 Engine Runtime Descriptor 与 Engine Catalog 代理。Token 绑定 Session、Tenant、User、Task 与 TTL，Develop 只保存 Hash；Runtime 只注入隔离 Kernel process，不写入 Notebook、日志或公开会话响应。接口不得返回 `connection_info`，也不得把 Notebook Script Engine 或长期数据连接伪装成当前可用查询 Engine。
-- Notebook Session 创建时，Develop 必须在同步请求栈内使用当前 User Bearer 向 System 签发 Notebook Session Authorization，随后丢弃 User Bearer；只在内存 Session 保存授权 ID。后续 Engine Catalog 以及每次查询/扫描的独立只读 Execution Authorization 派生，都由 `addp-develop` Service Principal 消费该授权，不能依赖自身通用 `system.engine.read`。连接仅在 Develop 受控 Runtime 内使用，不返回 Kernel；关闭、过期、撤权、登出或 Develop 重启后取消活动查询并 fail-closed。
-- Notebook Native Engine Facade 只存在于 `common-python`，按具体 Engine 原生术语把 `schemas()`、`tables()`、`collections()` 等调用编译为统一 Engine Catalog 请求。Develop 不新增 PostgreSQL/MySQL/MongoDB/MinIO 专用目录 API，不自行拼接 `EngineCatalogPath`，不为未知引擎提供暴露内部 Engine Catalog 术语的 fallback。
-- Notebook 数据读取统一进入当前 Kernel Session 下的 `table-scans`、`record-scans`、`queries`、`graph-samples`、`graph-queries`、`content-reads`、`change-streams` 代理。Develop 每次派生独立只读 Execution Authorization，并按 `common` Provider 契约选择表游标、动态记录游标、图、内容、range 或 change stream；不得为具体引擎增加旁路端点。
-- Runtime 在交互会话创建时从任务绑定的 Notebook owner 路径装载文件，在关闭和 TTL 清理时原子保存回同一路径并终止 kernel/process。新建空白 Notebook 与上传 Notebook 都创建同一种 `script` 任务和 MinIO 对象，随后进入同一交互会话；不得恢复共享 Lab、直连 Runtime 或第二套 Notebook 实体。
-- Notebook 任务允许用户显式重绑定原任务的 Script Engine 和 Kernel。重绑定只更新任务定义并影响后续执行；历史执行保留创建时的 `execution_config` 快照，不复制任务或 Notebook 文件，也不自动选择替代引擎。
-- Notebook Copilot 只允许通过 `/notebook-copilot-sessions/{session_id}/generate` 使用当前 Session Authorization。首次请求由 Copilot 理解输入角色和跨语言检索词，Develop 只在 Session 实时 Engine Catalog 内粗筛；所有推断数据源都必须展示给用户逐角色确认。确认后 Develop 重新验证路径并通过只读 Execution Authorization 获取 Engine Catalog facts，再调用 `notebook.draft.generate` 生成 Python。生成代码以受控表扫描后的 Pandas/GeoPandas 分析为唯一主路径，不生成 `engine.sql(...)` 查询；SQL 等查询语言生成属于查询工作台。最终 DataFrame 列名、图例和坐标轴等用户可见标签必须跟随用户请求语言，并在面积、距离等指标中标明单位。不得调用租户级 `data.search`、信任前端路径或把 Query Workbench 的单引擎范围套到 Notebook。
-- Notebook Copilot 生成结果只允许通过同源 JupyterLab bridge 插入当前 Session 的新代码单元。Bridge 必须校验父窗口来源和 Session ID，不得执行单元、覆盖 `.ipynb` 文件或操作其他 Session。
 - 算子工作流的存储 Engine 绑定来自 `content` 中的标准 ResourceLocator（主要位于 `workflow_definition`），不是 `execution_config.engine_id` 的工作流运行时绑定。Engine 删除后任务定义和旧 Locator 保留；用户在 Develop 显式选择新存储 Engine 后，Develop 原子改写该旧 Engine 的全部 Locator，保留 path/type 并清除旧 Meta `node_id/item_id`。System 不跨模块回写任务，也不按名称自动匹配新旧 Engine。
 - DuckDB 联邦查询先从 SQL 中解析已注册的 Source Engine 引用，为本次 execution 一次性签发只读 Execution Authorization，再由独立 DuckDB Runtime 按 Engine 逐个消费执行期连接；当前联邦查询必须至少引用一个 Source Engine。普通引擎的可执行样例查询也必须先签发并消费单 Engine 的只读 Execution Authorization，再实时发现真实表。两条路径都不得用 `tenant.develop_runtime` 的通用 Engine 明文读取权限替代。
 - 联邦查询入队前冻结 `federated_query_binding` 私有执行快照（目标ID、Runtime ID、受众及源ID集合），同时覆盖 ad-hoc、保存任务和 Orchestrator 子执行。领取执行后按固定身份复核，不重新选择 Runtime 或解析同名源；计算集群的授权范围与真正的数据源分离。任务定义不保存此字段，缺失的旧联邦执行快照拒绝执行，不保留兼容派发。纯身份/序列化与 HTTP 边界由 Develop Go T1 自动发现，真实 JSONB 领取恢复沿既有 `make test-develop-postgres` 的 Trace 查询用例验证。
@@ -253,7 +243,48 @@ Copilot ResourceFact 必须保留 Owner 提供的 `source_engine_type`、`full_n
 - 查询样例只允许来自当前 Engine Instance 的实时 Engine Catalog 且必须指向确认有数据的 leaf；DuckDB 对象表还必须通过只读 Execution Authorization 取得执行期连接并真实读取成功，不能仅凭 Meta 条目存在就返回。Engine Catalog 发现失败、对象已失效、无数据或无法构造查询时返回明确错误，前后端都不得回退到 `SELECT 1`、版本查询或占位集合名。
 - 查询任务必须在 `content.target_locator` 保存所选资源的标准 ResourceLocator；模板生成、即时执行、异步任务重载都必须将其解析为同一 `EngineCatalogPath`。MongoDB Engine Instance 只绑定服务端点与认证主体，`connection_info.database` 仅作为工作台初始选择，数据库和集合授权以 MongoDB 用户 roles 为准。
 - 查询编辑器必须把样例返回的真实语言（如 `sql`、`mql`、`cypher`）原样带入执行和任务定义。非 SQL 查询不得进入 SQL 效果分类器；各 Query Runtime 必须在 `QueryOptions.ReadOnly=true` 时建立等价只读边界。
-- Notebook 数据源注入在接入同一 Execution Authorization 消费路径前必须 fail-closed。
+
+Notebook 的交互凭据、数据访问、文件与 Kernel 绑定、Copilot 及排队限制见[Notebook 专题](#notebook-会话与排队执行)。
+
+### Notebook 会话与排队执行
+
+交互 Session 与排队 `script` 分别授权；前者的只读数据授权不能用于后者派发。Runtime 内部接口与独立会话的职责见[Jupyter README](../engines/jupyter/README.md#api-接口)，签发、主体绑定、期限及撤销统一见[Notebook Session Authorization](../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)。
+
+#### 会话入口与凭据
+
+Jupyter 只通过 Develop 受控会话使用数据访问能力，不直接返回共享 Lab 数据访问入口，不注入长期明文 Engine 连接。
+
+Notebook 交互编辑只允许 `POST /notebooks/{id}/sessions` 创建的短期隔离会话。Develop 返回同源 `/notebook-sessions/{session_id}/...` 路径并设置仅限该路径的 HttpOnly 能力 Cookie；浏览器不得获得 Runtime 地址、Jupyter Token、Service Token 或 URL Token。Develop 在代理 HTTP/WebSocket 前校验会话、Tenant、User、Task 和到期时间；会话关闭、过期或 Develop 重启后 fail-closed。
+
+Notebook Kernel 获取当前可用查询 Engine 及其实时 Engine Catalog 时，只允许使用 Develop 为同一交互会话签发的短期 Notebook Kernel Capability Token 调用该 Session 的只读 Engine Runtime Descriptor 与 Engine Catalog 代理。Token 绑定 Session、Tenant、User、Task 与 TTL，Develop 只保存 Hash；Runtime 只注入隔离 Kernel process，不写入 Notebook、日志或公开会话响应。接口不得返回 `connection_info`，也不得把 Notebook Script Engine 或长期数据连接伪装成当前可用查询 Engine。
+
+Develop 在创建 Session 的同步请求栈用当前 User Bearer 请求 System 签发授权，随后丢弃 Bearer，只在内存 Session 保存授权 ID。后续目录与查询／扫描的独立只读 Execution Authorization 派生，由 `addp-develop` 消费该 Session Authorization，不借用通用 `system.engine.read`；连接留在 Develop 受控 Runtime，不返回 Kernel。关闭、过期、撤权、登出或 Develop 重启后取消活动查询并 fail-closed；派生授权期限及令牌轮换规则沿上述正式会话契约。
+
+#### 数据访问与 Native Facade
+
+Notebook Native Engine Facade 只存在于 `common-python`，按具体 Engine 原生术语把 `schemas()`、`tables()`、`collections()` 等调用编译为统一 Engine Catalog 请求。Develop 不新增 PostgreSQL/MySQL/MongoDB/MinIO 专用目录 API，不自行拼接 `EngineCatalogPath`，不为未知引擎提供暴露内部 Engine Catalog 术语的 fallback。
+
+Notebook 数据读取统一进入当前 Kernel Session 下的 `table-scans`、`record-scans`、`queries`、`graph-samples`、`graph-queries`、`content-reads`、`change-streams` 代理。Develop 每次派生独立只读 Execution Authorization，并按 `common` Provider 契约选择表游标、动态记录游标、图、内容、range 或 change stream；不得为具体引擎增加旁路端点。
+
+Notebook 数据源注入在接入同一 Execution Authorization 消费路径前必须 fail-closed。
+
+#### 文件与运行时重绑
+
+新建空白 Notebook 与上传 Notebook 都创建同一种 `script` 任务和 MinIO 对象，进入同一交互 Session。Runtime 在会话创建时按任务绑定的 Notebook owner 路径装载文件；关闭／TTL 清理时原子保存回同一路径并终止 kernel/process，Runtime 顺序与隔离细节见[交互会话控制面](../engines/jupyter/README.md#4-交互会话控制面)。不恢复共享 Lab、直连 Runtime 或第二套 Notebook 实体。
+
+Notebook 任务允许用户显式重绑定原任务的 Script Engine 和 Kernel。重绑定只更新任务定义并影响后续执行；历史执行保留创建时的 `execution_config` 快照，不复制任务或 Notebook 文件，也不自动选择替代引擎。
+
+#### Copilot 生成与插入
+
+Notebook Copilot 只允许通过 `/notebook-copilot-sessions/{session_id}/generate` 使用当前 Session Authorization。首次请求由 Copilot 理解输入角色和跨语言检索词，Develop 只在 Session 实时 Engine Catalog 内粗筛；所有推断数据源都必须展示给用户逐角色确认。确认后 Develop 重新验证路径并通过只读 Execution Authorization 获取 Engine Catalog facts，再调用 `notebook.draft.generate` 生成 Python。生成代码以受控表扫描后的 Pandas/GeoPandas 分析为唯一主路径，不生成 `engine.sql(...)` 查询；SQL 等查询语言生成属于查询工作台。最终 DataFrame 列名、图例和坐标轴等用户可见标签必须跟随用户请求语言，并在面积、距离等指标中标明单位。不得调用租户级 `data.search`、信任前端路径或把 Query Workbench 的单引擎范围套到 Notebook。
+
+Notebook Copilot 生成结果只允许通过同源 JupyterLab bridge 插入当前 Session 的新代码单元。Bridge 必须校验父窗口来源和 Session ID，不得执行单元、覆盖 `.ipynb` 文件或操作其他 Session。
+
+#### 排队执行与内容摘要
+
+类型声明仍为 `script`，Notebook 不是独立 task_type。当前领取后以 `develop.script.authorization_unavailable` 收敛失败，不调用 Jupyter Runtime；该码描述 Develop execution，并非 Runtime HTTP 拒绝。排队运行授权及撤权闭环尚待接入和独立验收，不能借用 Session、数据授权、历史提交人或 Service Token 放行，具体要求沿[执行监督与授权](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。
+
+提交时冻结的 SHA-256 只证明文件字节一致，不授予运行资格。Jupyter 已有实际下载字节校验，内容变化以 `notebook_content_changed` 拒绝并要求重新提交，不创建快照或自动重试；摘要缺失／非法、路径和 Kernel 限制见[Runtime 执行契约](../engines/jupyter/README.md#2-执行-notebook)。已有无头接口、健康探针或交互 Session 成功不等于排队派发可用；门禁职责与分版本结果见[开发与验证](#开发与验证)。
 
 ### IAM Permission
 

@@ -9,6 +9,7 @@
 - [开发与验证](CLAUDE.md#开发与验证) - 监督器与事件、查询保护和导出的分版本历史证据及未覆盖项
 - [查询与执行专题](CLAUDE.md#关键架构) - 查询预检、运行监督与 Copilot
 - [执行过程事件](CLAUDE.md#执行过程事件与当前边界) - 同事务接入、进度来源、Notebook 排队限制与验证导航
+- [Notebook 会话与排队执行](CLAUDE.md#notebook-会话与排队执行) - 会话凭据、数据访问、文件与重绑、Copilot 及当前派发缺口
 - [执行输出与监督](CLAUDE.md#执行输出与运行监督) - 稳定 outputs、冻结输入与容量观测
 - [查询保护](CLAUDE.md#查询保护与结果交付) - 读取计划、角色选择、结果交付与受控失败
 - [固定目标写入](CLAUDE.md#固定目标写入契约) - 关系参数、编排端口、事务写入与血缘
@@ -24,7 +25,7 @@
 - **算子管理**: 聚合工作流运行时动态算子，供工作流编辑器使用
 - **统一执行历史**: 所有执行记录写入公共执行表，并在 Monitor 中统一筛选和回溯；Develop 只保留领域结果详情
 
-Notebook 交互 Session 与排队执行的授权分开。当前一次性 `script` execution 领取后以 `develop.script.authorization_unavailable` 失败，不派发 Jupyter Runtime；交互 Session 不进入该执行队列。当前能力、未完成的排队运行授权和真实验收边界见[执行监督与授权](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)与[会话访问规则](CLAUDE.md#执行授权与效果)。
+Notebook 当前使用短期交互 Session；一次性 `script` 尚未开放实际派发。入口凭据、数据访问、内容摘要与排队授权的分工统一见[Notebook 会话与排队执行](CLAUDE.md#notebook-会话与排队执行)，不以交互成功代替排队运行验收。
 
 ## 🚀 快速开始
 

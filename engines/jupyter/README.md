@@ -2,7 +2,7 @@
 
 ADDP 的 Notebook 运行时，提供读取 MinIO、校验内容摘要、通过 Papermill 执行并写回结果的无头接口，以及由 Develop 创建和代理的短期隔离 JupyterLab 会话。
 
-当前一次性 Notebook（`script`）仍按[Develop 执行监督与授权规范](../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)拒绝实际派发，已有 Runtime 接口不表示平台已开放该能力。交互 Session 不进入此队列；当前接线与未完成项见 [Develop 执行架构](../../develop/CLAUDE.md#统一执行架构)。
+当前一次性 Notebook（`script`）仍按[Develop 执行监督与授权规范](../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)拒绝实际派发，已有 Runtime 接口不表示平台已开放该能力。交互 Session 不进入此队列；当前接线与未完成项见 [Develop Notebook 专题](../../develop/CLAUDE.md#notebook-会话与排队执行)。
 
 ## 架构设计
 
@@ -48,16 +48,23 @@ Content-Type: application/json
 
 内容冻结与变更拒绝的规则见[任务契约](../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。Runtime 对实际下载字节校验：缺失或非法摘要返回 400，内容变化返回 409 和 `error_code=notebook_content_changed`，不调用 Papermill，也不写输出对象。路径仅允许当前租户 Notebook 根下的规范相对路径；当前 Kernel 仅支持 `python3`，拒绝 `ds_` 前缀参数注入。
 
-响应：
+内部响应示例（代码单元没有输出）：
+
 ```json
 {
   "status": "success",
+  "message": "Notebook executed successfully",
   "execution_time_seconds": 1.234,
   "output_path": "tenant_1/executions/analysis_exec_20260729_120000.ipynb",
-  "output_count": 5,
-  "outputs": [...]
+  "cell_count": 1,
+  "execution_count": 1,
+  "output_count": 0,
+  "outputs": [],
+  "variables_exported": {}
 }
 ```
+
+`output_count` 统计全部代码单元的输出条目，`outputs` 最多返回前 5 条，两者不要求相等；它不是 TaskProvider 的稳定 `outputs` 或 Monitor 通用安全投影，不能由内部响应推定浏览器可读取原始 Notebook 输出。
 
 ### 3. 列出可用 Kernel
 ```bash
@@ -68,7 +75,7 @@ GET http://jupyter-engine:8097/api/kernels
 
 `POST /api/interactive-sessions` 创建、`DELETE /api/interactive-sessions/{id}` 关闭隔离会话。创建请求须携带 Tenant、User、Task、Notebook 路径、Kernel、外部 base path、TTL，以及当前 Session 的 owner API endpoint 和 Notebook Kernel Capability Token；响应中的内部端口与 Jupyter Token 只供 Develop 代理使用，不得返回浏览器。
 
-Session 授权与每次只读数据访问的 Execution Authorization 分工统一见[会话授权规范](../../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)。
+Session 授权与每次只读数据访问的 Execution Authorization 分工统一见[会话授权规范](../../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)。 Develop 的同源 Cookie／Kernel Capability 入口与凭据边界见[Owner 会话说明](../../develop/CLAUDE.md#会话入口与凭据)，数据代理及 Facade 所有权见[Owner 数据访问](../../develop/CLAUDE.md#数据访问与-native-facade)。
 
 每个会话使用独立临时目录和 JupyterLab process。Runtime 仅向该 process 注入 owner endpoint 和短期 Capability，供 `addp_common.notebook.engines.list()` 等受控调用使用；凭据的公开响应、存储与失效边界统一见[认证规范](../../docs/spec/addp登录认证的统一要求.md#七前端共享能力要求)，不提供共享 Lab、固定 8088 或 URL Token 入口。正常关闭与 TTL 清理先保存回原 MinIO 对象，再终止 process；Runtime 退出时统一清理全部会话。
 
