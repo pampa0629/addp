@@ -1,6 +1,6 @@
 # data_mappings / field_mappings 删除说明
 
-更新时间：2026-06-02
+更新时间：2026-11-02
 
 旧任务外层字段映射表已退出 Transfer 主路径。当前稳定主路径使用 `transfer.transfer_tasks.config.transforms[]` 中的 `field_mapping` transform。
 
@@ -11,30 +11,10 @@
 - 旧 `data_mappings` 概念不得恢复。
 - `field_mappings` 表和 `/tasks/:id/mappings`、`/mappings/:id` API 已删除，不再作为过渡管理入口保留。
 
-## 新配置示例
+## 配置与验证导航
 
-```json
-{
-  "type": "field_mapping",
-  "version": "v1",
-  "mode": "project",
-  "fields": [
-    {"source": "name", "target": "road_name", "target_type": "string"},
-    {"source": "geom", "target": "geometry", "target_type": "geometry"},
-    {"target": "created_by", "target_type": "string", "default": "transfer"}
-  ]
-}
-```
+- 完整配置、字段必填性、默认值、decimal 精度与 `project`／`passthrough` 分工统一见[field_mapping 正文](../transfer-基本概念及配置说明.md#五field_mapping-transform)，本页不再维护独立 JSON 模板或字段语义副本。
+- 映射随任务定义保存；现行用户／TaskProvider 入口与权限见[任务表 API](tasks表.md#五api)，独立 mappings API 已退出的边界见[模块核心 API](../../CLAUDE.md#核心-api)。
+- 标准命令与环境前提见[README 门禁说明](../../README.md#常规模块与专项门禁)，固定版本、失败与修复、清理及未覆盖项见[分版本证据索引](../../CLAUDE.md#专项约束与分版本证据)。
 
-## 字段语义
-
-| 字段 | 说明 |
-|---|---|
-| `source` | 源字段名；为空表示常量 / 默认字段。 |
-| `target` | 目标字段名。 |
-| `target_type` | 目标字段类型。 |
-| `nullable` | 是否可空；默认 true。 |
-| `default` | 源字段缺失或值为 nil 时使用的默认值。 |
-| `format` | 日期、时间、数字等简单解析 / 格式化提示。 |
-
-相关主文档见 [Transfer 模块基本概念及配置说明](../transfer-基本概念及配置说明.md)。
+本页保留旧表与旧 API 的退出约束；静态删除说明不证明实际数据库结构、当前入口权限或真实映射执行已验收。未运行、失败、跳过或未覆盖项不计为通过。
