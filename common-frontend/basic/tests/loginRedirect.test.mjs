@@ -16,6 +16,10 @@ test('fails closed for external, ambiguous, repeated-login, and non-scalar redir
     '//example.com/data-apps/application-a',
     '/\\example.com/data-apps/application-a',
     '/login?redirect=/data-apps/application-a',
+    '/LOGIN',
+    '/login/',
+    '/Login/?redirect=/agent#reply',
+    '/agent/../LOGIN/',
     ['/data-apps/application-a'],
   ]) {
     assert.equal(resolveLoginRedirect(redirect, '/applications'), '/applications')

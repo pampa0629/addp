@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { resolveLoginRedirect } from '../../../common-frontend/basic/src/utils/loginRedirect.mjs'
 
 const readRepoFile = path => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8')
 
@@ -139,8 +141,35 @@ describe('P2 module public route contracts', () => {
     expect(existsSync(new URL('../../../agent/frontend/src/utils/routeState.js', import.meta.url))).toBe(false)
 
     const login = readRepoFile('agent/frontend/src/views/Login.vue')
-    expect(login).toContain('route.query.redirect')
-    expect(login).toContain("!route.query.redirect.startsWith('//')")
+    expect(login).toContain("import { AuthLoginFlow, resolveLoginRedirect } from '@common-ui'")
+    expect(login).toContain('@authenticated="handleAuthenticated"')
+    expect(login).toContain('navigateAgentRoute(router, resolveLoginRedirect(route.query.redirect))')
+    expect(login).not.toContain('route.query.redirect.startsWith')
+    expect(login).not.toContain('function resolveLoginRedirect')
+  })
+
+  it.each([
+    ['/', '/', 'Chat'],
+    ['/sessions/61?view=summary#reply-4', '/sessions/61?view=summary#reply-4', 'ChatSession'],
+    ['https://outside.example/sessions/61', '/', 'Chat'],
+    ['//outside.example/sessions/61', '/', 'Chat'],
+    ['/\\outside.example/sessions/61', '/', 'Chat'],
+    [['/sessions/61', '/'], '/', 'Chat'],
+    [undefined, '/', 'Chat'],
+    ['/login?redirect=/sessions/61', '/', 'Chat'],
+    ['/LOGIN/', '/', 'Chat'],
+    ['/sessions/../login/', '/', 'Chat']
+  ])('keeps shared login redirect %j inside the canonical Agent route contract', (input, fullPath, name) => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/', name: 'Chat', component: {} },
+      { path: '/sessions/:session_id', name: 'ChatSession', component: {} },
+      { path: '/login', name: 'Login', component: {} }
+    ] })
+    const target = router.resolve(resolveLoginRedirect(input))
+    expect(target.fullPath).toBe(fullPath)
+    expect(target.name).toBe(name)
+    if (name === 'ChatSession') expect(target.params.session_id).toBe('61')
+    expect(target.name).not.toBe('Login')
   })
 
   it('loads Agent session identity independently of the list and isolates route changes', () => {

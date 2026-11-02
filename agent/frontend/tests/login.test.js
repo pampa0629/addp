@@ -20,7 +20,7 @@ async function credentials(wrapper) {
 describe('Agent shared login flow', () => {
   beforeEach(() => { vi.resetAllMocks(); delete query.redirect })
   it('waits for MFA and tenant context before navigating to the original conversation', async () => {
-    query.redirect = '/sessions/61'
+    query.redirect = '/sessions/61?view=summary#reply-4'
     auth.login.mockResolvedValue({ next_action: 'verify_mfa', mfa: { challenge_token: 'challenge' } })
     auth.verifyMFA.mockResolvedValue({ next_action: 'select_context', selection: { selection_ticket: 'selection', contexts: [{ type: 'tenant', tenant_membership_id: '4', tenant_id: '7', tenant_name: '验收租户' }] } })
     auth.selectContext.mockResolvedValue({ next_action: 'session_issued' })
@@ -36,10 +36,18 @@ describe('Agent shared login flow', () => {
     await wrapper.findAll('button').find(button => button.text() === common.auth.login.continue).trigger('click')
     await flushPromises()
     expect(auth.selectContext).toHaveBeenCalledWith('selection', expect.objectContaining({ tenant_membership_id: '4' }))
-    expect(navigate).toHaveBeenCalledWith({}, '/sessions/61')
+    expect(navigate).toHaveBeenCalledWith({}, '/sessions/61?view=summary#reply-4')
     wrapper.unmount()
   })
-  it.each(['//outside.example', '/\\outside.example', '/login'])('rejects unsafe or looping redirect %s', async redirect => {
+  it.each(['https://outside.example/sessions/61', '//outside.example', '/\\outside.example', ['/sessions/61', '/'], { path: '/sessions/61' }, '/login', '/LOGIN', '/login/', '/Login/?redirect=/sessions/61#reply', '/sessions/../LOGIN/'])('rejects unsafe, ambiguous or looping redirect %j', async redirect => {
+    query.redirect = redirect
+    auth.login.mockResolvedValue({ next_action: 'session_issued' })
+    const wrapper = render()
+    await credentials(wrapper)
+    expect(navigate).toHaveBeenCalledWith({}, '/')
+    wrapper.unmount()
+  })
+  it.each([undefined, '/'])('keeps the capability home when redirect is %j', async redirect => {
     query.redirect = redirect
     auth.login.mockResolvedValue({ next_action: 'session_issued' })
     const wrapper = render()

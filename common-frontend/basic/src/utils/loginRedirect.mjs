@@ -13,7 +13,8 @@ export function resolveLoginRedirect(value, fallbackRoute = '/') {
   if (target.origin !== 'http://addp.local') return fallbackRoute
 
   const redirect = `${target.pathname}${target.search}${target.hash}`
-  if (redirect === '/login' || redirect.startsWith('/login?') || redirect.startsWith('/login#')) {
+  // Match Vue Router's default case-insensitive, optional trailing slash rule.
+  if (/^\/login\/?$/i.test(target.pathname)) {
     return fallbackRoute
   }
   return redirect
