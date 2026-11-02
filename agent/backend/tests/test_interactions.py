@@ -355,6 +355,43 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(interaction.answer["approval_id"], interaction.owner_interaction_id)
         self.assertIn("只提交 approval_id=", format_resume_message(interaction))
 
+    async def test_transfer_owner_check_uses_formal_status_and_never_accepts_client_approval(self):
+        from models.interaction import Interaction
+        for status in ("pending", "expired", "approved", "rejected", "consumed"):
+            with self.subTest(status=status):
+                interaction = Interaction(
+                    id=uuid.uuid4(), session_id=12, user_id=3, tenant_id=5,
+                    agent_run_id=uuid.uuid4(), kind="owner_approval", owner="transfer",
+                    owner_interaction_id=str(uuid.uuid4()), owner_request_fingerprint="a" * 64,
+                    open_url="", request_summary={"task_id": 7}, status="pending",
+                    prompt="确认运行", options=[],
+                )
+                calls = []
+                async def loader(owner, approval_id, token):
+                    calls.append((owner, approval_id, token))
+                    return {"status": status, "request_fingerprint": "a" * 64}
+                async def check(payload):
+                    return await resolve_interaction(
+                        _DB(interaction), interaction_id=str(interaction.id),
+                        session_id=12, user_id=3, tenant_id=5, payload=payload,
+                        source_token="user-token", owner_approval_loader=loader,
+                    )
+                with self.assertRaises(InteractionAnswerError):
+                    await check({"action": "check", "approved": True})
+                self.assertEqual(calls, [])
+                if status in {"pending", "expired"}:
+                    with self.assertRaises(InteractionOwnerStateError):
+                        await check({"action": "check"})
+                    self.assertEqual(interaction.status, "pending")
+                else:
+                    resolved = await check({"action": "check"})
+                    self.assertEqual(resolved.answer, {
+                        "status": status, "approval_id": interaction.owner_interaction_id,
+                        "request_fingerprint": "a" * 64,
+                    })
+                    self.assertEqual(resolved.status, "completed")
+                self.assertEqual(calls, [("transfer", interaction.owner_interaction_id, "user-token")])
+
     async def test_owner_approval_projection_does_not_store_workflow_payload(self):
         db = _DB()
         interaction = await create_owner_approval(

@@ -74,6 +74,9 @@ def test_execution_projection_excludes_runtime_text_and_configuration():
     assert "sql" not in result["diagnostic"]
     assert result["diagnostic"]["target_change_possible"] is True
     assert not list(Draft202012Validator(get_tool("transfer.execution.get").output_schema).iter_errors(result))
+    # The existing professional owner scope also includes the current user's
+    # ad-hoc execution, represented by task_id=0 rather than an invented task.
+    assert not list(Draft202012Validator(get_tool("transfer.execution.get").output_schema).iter_errors({**result, "task_id": 0}))
 
 
 def test_invalid_start_arguments_fail_before_delegation():
