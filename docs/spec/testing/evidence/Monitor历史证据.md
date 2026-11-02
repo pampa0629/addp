@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 16 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 46 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 47 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -778,3 +778,9 @@
 [完整记录、源码一致性及原始日志](MonitorHTTP质量与采样历史证据.md#http-trace-apt-natural-linux-1d15-20261102)
 
 取证改动已按后续授权发布为5dbd12a3c；自然CI提交1d15c0b44实际执行HTTP 37项、Trace 146项及身份／登记子门禁并通过，9个专项来源与发布版本一致。另固定5dbd的Linux/amd64基线Agent镜像构建通过；历史本机APT根因及正式产品页面闭环仍未验收，不推导Hosted或容量通过。
+
+### 2026-11-02 正式产品本地窗口：Agent构建返回成功，Copilot包下载失败并清理
+
+[完整记录、真实有界APT诊断及清理](MonitorHTTP质量与采样历史证据.md#http-formal-product-window-copilot-apt-failed-20261102)
+
+固定b147ae753单次窗口的Agent构建命令成功返回，随后Copilot的deb包下载出现超时／连接／下载错误并退出100；新增诊断保留当次公共FROM摘要及代理来源，具体链路根因仍未定。230完整资源检查均在四秒内、私有可写峰值约3.96 GiB，清理零残留；正式身份／API／页面未执行，未重试或续窗，仍为部分实现／验收。

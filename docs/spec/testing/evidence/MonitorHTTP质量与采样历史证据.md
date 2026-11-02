@@ -884,3 +884,29 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 另沿用已核验的固定`5dbd12a3c`[Product binary build作业124740304489](https://github.com/pampa0629/addp/actions/runs/41269887330/job/124740304489)证据：基线选中Agent，Linux/amd64镜像实际构建exit 0、117.69秒；APT步骤完成10.8秒，Python依赖安装、`pip check`及应用导入／技能注册／OpenAPI检查通过，image ID为`sha256:130d7b75fa1835e4e23c235eebd655c4465e00eadafb776850b563b17d072d2d`，镜像仅在CI加载、未推送。原始日志`/tmp/addp-p19-5dbd-product-20261101.log`为428418字节，SHA256=`b7f29fdd1050bbba626ba3f07c08d50ecef76f53dc2fc42cc359863b7cb7ff3c`。这是不同提交／作业的构建证据，不与本轮runner合并为同一端到端验收。
 
 当前仍为部分实现／部分验收：APT取证的错误分类由确定性反例验证，本次成功构建未触发真实失败解析，不能宣称历史ARM64 APT退出100的原因已定位或修复。正式Agent/Copilot构建后的真实密码／MFA、采集API、Console／Monitor页面、停源、注销与清理闭环仍未验收；停源历史读取仍为另批产品缺口。本轮只读取已有自然CI并更新两份证据文档，未改产品、构建、采样或资源守卫，未手动重跑、开本地窗口、运行Hosted／容量／定时。
+
+<a id="http-formal-product-window-copilot-apt-failed-20261102"></a>
+
+## 2026-11-02 正式产品本地窗口：Agent构建返回成功，Copilot包下载失败并清理
+
+用户明确批准按原边界运行一次60分钟本地窗口，冻结启动时已提交main；失败即停、不得重试或续窗。准备于北京时间2026-11-02 07:54:04开始，原截止08:54:04；先记录标准Infra状态、工具与12项入口来源及3项集成标记，再于07:54:52.672880实际运行一次`make test-monitor-http-local`。固定源码为`b147ae753422a62761e9ed4c8cbdb147f4e9fb5d`，当次run_id为`addp-http-local-24215048b58345f2bb270a0b2200b4bf`；报告15项摘要独立逐文件匹配该提交，且与启动前保存值一致，未提交的共享工作不进入隔离源码快照。
+
+本轮在08:10:17.606232结束，含准备与清理973.584091秒，标准生命周期924.807740秒，make退出2／报告failed。固定Nginx缓存身份、内部网络、私有OpenSSL配置／临时证书、指标配置及Compose投影通过；Go产品编译在入口约197.39秒完成。缓存回收完整预检0.287148秒、删除0.632495秒均在各自原四秒内，删除子进程已退出，清理时再次确认。System／Gateway／Monitor／Agent镜像构建命令均成功返回；约823.49秒进入Copilot镜像，921.26秒进入清理。Agent成功返回不等于其正式容器已启动，也未形成全部产品的最终镜像身份及完整运行依赖证明。
+
+首失败为`stage=product_image_copilot_backend`／`error_code=command_failed_2`，构建命令退出2，Copilot Dockerfile第5行APT RUN的进程退出100；输出SHA256为`88c4d5fba2d193db78c65b766e5384f391211dce67657510af0dd863d8ad8f69`。固定源码为`copilot/Dockerfile`中的`apt-get update && apt-get install -y gcc postgresql-client && rm ...`，尚未到Copilot的Python依赖安装。新增唯一public_build诊断在本次真实失败中返回complete、无超限：
+
+| 有界字段 | 本次实际事实 |
+| --- | --- |
+| APT归属／阶段 | parsed，唯一失败步骤的`deb_download` |
+| 固定错误类别 | timeout、connection、download；没有可确认HTTP状态码 |
+| 官方源 | HTTP Debian主仓库及security仓库；套件均unknown，不据缺失内容猜测 |
+| 公共FROM | resolved／python_3_11_slim，`sha256:47380bf198934891ba58e54d4d9142ab993928c70f5c32e63a61101c90face56` |
+| 代理来源 | BuildKit和RUN build-args均由既有docker_info读取，HTTP／HTTPS为desktop_internal；host CLI由既有host_environment读取，均为loopback；未保存代理值 |
+
+这份诊断将本轮定位到Copilot的deb包下载阶段，不能唯一认定具体失败包、源套件、链路节点或代理根因，也不能追认历史Agent ARM64 APT失败为同一原因。本轮未改Dockerfile、源／包／重试／签名、镜像或代理，未追加构建重试或诊断探针。
+
+230个已保存完整资源样本全部在四秒内且无读取重试，最长1.316378秒，采样开始最大间隔4.010065秒；当次硬配额峰值2.25 CPU／3288334336字节内存，私有可写完整统计峰值4249546752字节（约3.96 GiB），仍低于4294967296字节停止线。该总数已包含容器可写层，不重复相加。无resource_guard_failure、OOM或资源触线首因；剩余约43 MiB空间不能证明后续构建与浏览器阶段足够，更不是容量验收。
+
+后续Console／System／Monitor／Nginx产品构建、浏览器准备、正式后端启动、密码／MFA、真实采集与API、存活／停源页面、注销断言均未执行，`assertions={}`。`cleanup.zero_owned_resources=true`且failures为空，缓存删除子进程停止，4条cleanup阶段的已归属容器／卷列表记录完整通过，私有工作目录剩余0；保留的脱敏报告不作为工作目录残留。未复用窗口剩余时间，不自动重试或续窗。
+
+本轮私有归档为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-product-window-20261102-k6gni89x/`（0700，文件0600），含launch／expected-inputs／entry-started／completion／Infra状态／运行阶段／独立audit及report；报告2554799字节，SHA256=`54cb014eb0ac5db2b1d11f83a491dfcbf51bab26c7cb3c226f04982fe02a4d92`。本轮判失败并停止，更新证据及回报维护会话；另一个自然Linux SDK HTTP T2的other目录消失仍是独立失败，不合并根因。没有运行Hosted、容量、定时或接管用户开发服务。
