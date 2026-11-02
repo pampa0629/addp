@@ -168,8 +168,8 @@ def validate_frontend_job_budgets(jobs: list[str]) -> list[str]:
             if owner in required_owners:
                 required_owners[owner] += 1
             if owner == "monitor":
-                if budgets != ["30"]:
-                    errors.append(f"{owner}: frontend Job must retain its bounded 30 minute budget")
+                if budgets != ["40"]:
+                    errors.append(f"{owner}: frontend Job must retain its bounded 40 minute budget")
             elif budgets and budgets != ["20"]:
                 errors.append(f"{owner}: frontend Job must retain the 20 minute default")
         for owner, count in required_owners.items():

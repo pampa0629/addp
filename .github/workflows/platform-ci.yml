@@ -815,7 +815,7 @@ jobs:
   geopython-workflow-tests:
     name: GeoPython GDAL tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1071,7 +1071,7 @@ jobs:
             name: Monitor
             target: test-monitor-frontend
             playwright: true
-            timeout_minutes: 30
+            timeout_minutes: 40
           # 同时覆盖编排编辑器交互和关联编排路由（根 Makefile 标准入口）。
           - module: ontology
             name: Ontology

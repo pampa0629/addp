@@ -352,7 +352,7 @@ class FrontendJobBudgetTest(unittest.TestCase):
         include:
           - module: monitor
             target: test-monitor-frontend
-            timeout_minutes: 30
+            timeout_minutes: 40
           - module: console
             target: test-console-frontend
           - module: sample
@@ -372,14 +372,16 @@ class FrontendJobBudgetTest(unittest.TestCase):
         for before, after in [
             ("${{ matrix.timeout_minutes || 20 }}", "30"),
             ("${{ matrix.timeout_minutes || 20 }}", "${{ matrix.timeout_minutes || 30 }}"),
-            ("            timeout_minutes: 30\n", ""),
-            ("timeout_minutes: 30", "timeout_minutes: 20"),
-            ("timeout_minutes: 30", "timeout_minutes: 60"),
-            ("timeout_minutes: 30", "timeout_minutes: invalid"),
-            ("timeout_minutes: 30", "timeout_minutes: 30\n            timeout_minutes: 60"),
+            ("            timeout_minutes: 40\n", ""),
+            ("timeout_minutes: 40", "timeout_minutes: 20"),
+            ("timeout_minutes: 40", "timeout_minutes: 30"),
+            ("timeout_minutes: 40", "timeout_minutes: 60"),
+            ("timeout_minutes: 40", "timeout_minutes: invalid"),
+            ("timeout_minutes: 40", "timeout_minutes: 40\n            timeout_minutes: 60"),
             ("target: test-sample-frontend", "target: test-sample-frontend\n            timeout_minutes: 30"),
+            ("target: test-sample-frontend", "target: test-sample-frontend\n            timeout_minutes: 40"),
             *[("target: test-console-frontend", f"target: test-console-frontend\n            timeout_minutes: {value}")
-              for value in ['30', '60', 'invalid', '20\n            timeout_minutes: 20']],
+              for value in ['30', '40', '60', 'invalid', '20\n            timeout_minutes: 20']],
         ]:
             with self.subTest(after=after):
                 self.assertTrue(MODULE.validate_frontend_job_budgets([self.job().replace(before, after)]))
@@ -388,7 +390,7 @@ class FrontendJobBudgetTest(unittest.TestCase):
         for owner in ['monitor', 'console']:
             entry = f"          - module: {owner}\n            target: test-{owner}-frontend\n"
             if owner == 'monitor':
-                entry += '            timeout_minutes: 30\n'
+                entry += '            timeout_minutes: 40\n'
             for replacement in ['', entry + entry]:
                 with self.subTest(owner=owner, replacement=replacement):
                     self.assertTrue(MODULE.validate_frontend_job_budgets([self.job().replace(entry, replacement)]))
