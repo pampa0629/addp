@@ -10,6 +10,17 @@
           {{ row.state.label }}
         </el-tag>
       </div>
+      <section class="finding-current-protection" :aria-label="t('security.finding.currentOutlets')">
+        <h5>{{ t('security.finding.currentOutlets') }}</h5>
+        <div class="finding-outlets">
+          <div v-for="outlet in row.outlets" :key="outlet.key" class="finding-outlet">
+            <span>{{ outlet.owner }}</span>
+            <strong>{{ outlet.rule }}</strong>
+            <el-tag size="small" :type="outlet.acknowledgement.type">{{ outlet.acknowledgement.label }}</el-tag>
+          </div>
+          <p v-if="!row.outlets.length">{{ t('security.finding.outletUnavailable') }}</p>
+        </div>
+      </section>
       <div class="finding-explanation">
         <section class="explanation-stage">
           <div class="explanation-stage__title">
@@ -77,28 +88,11 @@
             {{ row.governance.decision.label }}
           </el-tag>
           <p class="explanation-primary">{{ row.governance.definition }}</p>
-          <p>{{ row.governance.baseline }}</p>
-          <p v-if="row.governance.protectionSummary" class="resource-policy-summary">
-            {{ row.governance.protectionSummary }}
-          </p>
         </section>
 
-        <section class="explanation-stage">
-          <div class="explanation-stage__title">
-            <span>3</span>
-            <strong>{{ t('security.finding.explanationStages.execution') }}</strong>
-          </div>
-          <div class="finding-outlets">
-            <div v-for="outlet in row.outlets" :key="outlet.key" class="finding-outlet">
-              <span>{{ outlet.owner }}</span>
-              <strong>{{ outlet.rule }}</strong>
-              <el-tag size="small" :type="outlet.acknowledgement.type">
-                {{ outlet.acknowledgement.label }}
-              </el-tag>
-            </div>
-          </div>
-        </section>
+
       </div>
+      <EnrollmentProtectionConfiguration :presentation="row.governance.configuration" />
       <p class="finding-observed-at">{{ t('security.finding.observedAt') }}：{{ row.observedAt }}</p>
       <div v-if="row.review" class="review-result">
         <span>{{ t('security.finding.reviewRationale') }}</span>
@@ -155,6 +149,7 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled } from '@element-plus/icons-vue'
+import EnrollmentProtectionConfiguration from './EnrollmentProtectionConfiguration.vue'
 
 defineProps({
   presentation: { type: Object, required: true }
@@ -176,14 +171,14 @@ function handlePageChange(page) {
 .finding-card__header > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .finding-card__header strong { overflow-wrap: anywhere; font-size: 15px; }
 .finding-card__header span { color: var(--addp-text-secondary); font-size: 12px; }
-.finding-explanation { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr) minmax(0, 1.25fr); overflow: hidden; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); }
+.finding-explanation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); }
 .explanation-stage { min-width: 0; padding: 12px; }
 .explanation-stage + .explanation-stage { border-left: 1px solid var(--addp-border-color); }
 .explanation-stage__title { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; color: var(--addp-text-primary); }
 .explanation-stage__title > span { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; flex: 0 0 auto; color: var(--el-color-primary); font-size: 12px; font-weight: 700; border: 1px solid var(--el-color-primary); border-radius: 50%; }
 .explanation-stage__title strong { font-size: 13px; }
 .explanation-stage p { margin: 6px 0 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.explanation-stage .explanation-primary, .resource-policy-summary { color: var(--addp-text-primary); font-weight: 600; }
+.explanation-stage .explanation-primary { color: var(--addp-text-primary); font-weight: 600; }
 .explanation-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .detection-rule-audit { display: flex; flex-direction: column; gap: 7px; margin: 12px 0 0; padding-top: 10px; border-top: 1px dashed var(--addp-border-color); }
 .detection-rule-audit > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; font-size: 12px; line-height: 1.5; }
@@ -198,6 +193,9 @@ function handlePageChange(page) {
 .recognition-rule-details dd { margin: 0; color: var(--addp-text-secondary); overflow-wrap: anywhere; }
 .technical-value { overflow-wrap: anywhere; font-family: monospace; color: var(--addp-text-secondary); }
 :global(.security-rule-popover) { max-width: calc(100vw - 32px); }
+.finding-current-protection { margin-bottom: 12px; padding: 12px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); }
+.finding-current-protection h5 { margin: 0 0 10px; color: var(--addp-text-primary); font-size: 13px; }
+.finding-current-protection p { margin: 0; font-size: 12px; color: var(--addp-text-secondary); }
 .finding-outlets { display: flex; flex-direction: column; gap: 7px; }
 .finding-outlet { display: grid; grid-template-columns: minmax(78px, auto) minmax(0, 1fr) auto; align-items: center; gap: 7px; font-size: 12px; }
 .finding-outlet > span { color: var(--addp-text-secondary); }
@@ -208,13 +206,8 @@ function handlePageChange(page) {
 .review-result p { margin: 4px 0 0; color: var(--addp-text-secondary); overflow-wrap: anywhere; }
 .finding-card__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .finding-pagination { justify-content: flex-end; margin-top: 14px; }
-@container finding-card (max-width: 920px) {
-  .finding-explanation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .explanation-stage:nth-child(3) { grid-column: 1 / -1; border-top: 1px solid var(--addp-border-color); border-left: 0; }
-}
 @container finding-card (max-width: 560px) {
   .finding-explanation { grid-template-columns: 1fr; }
-  .explanation-stage:nth-child(3) { grid-column: auto; }
   .explanation-stage + .explanation-stage { border-top: 1px solid var(--addp-border-color); border-left: 0; }
 }
 </style>

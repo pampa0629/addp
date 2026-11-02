@@ -197,20 +197,34 @@ export function createProtectionAssessmentPresentation({
     }
   }
 
+  function protectionConfigurationView(assessment, baseline = baselineForAssessment(assessment)) {
+    const describe = decision => ({
+      method: decision.effect === 'mask' ? t(algorithmNameKey(decision.algorithm)) : effectLabel(decision.effect),
+      details: policyRevisionSummary(decision)
+    })
+    const fields = canReadPolicies.value && assessment?.current?.conclusion === 'sensitive'
+      ? policyScopes.value.flatMap(scope => {
+          const policy = policyForAssessment(assessment, scope)
+          return policy?.state === 'active' && policy.current
+            ? [{ key: protectionPolicyScopeKey(scope), scope: t(`security.enrollment.owners.${scope.consumer_owner}`), ...describe(policy.current) }]
+            : []
+        })
+      : []
+    return { baseline: baseline ? describe(baseline) : null, fields, canReadPolicies: Boolean(canReadPolicies.value) }
+  }
+
   function assessmentProtectionView(assessment) {
     const activeAssessment = assessment?.current?.conclusion === 'sensitive' ? assessment : null
     if (!activeAssessment) {
-      return { current: assessment, active: null, policy: null, canConfigurePolicy: false, protectionSummary: '' }
+      return { current: assessment, active: null, policy: null, canConfigurePolicy: false }
     }
-    const baseline = baselineForAssessment(activeAssessment)
     const fieldPolicies = policyScopes.value.map(scope => policyForAssessment(activeAssessment, scope)).filter(Boolean)
     const policy = fieldPolicies.find(item => item.state === 'active') || fieldPolicies[0] || null
     return {
       current: assessment,
       active: activeAssessment,
       policy,
-      canConfigurePolicy: canConfigurePolicy(activeAssessment),
-      protectionSummary: assessmentProtectionSummary(activeAssessment)
+      canConfigurePolicy: canConfigurePolicy(activeAssessment)
     }
   }
 
@@ -226,7 +240,7 @@ export function createProtectionAssessmentPresentation({
         type: protection.active ? 'success' : 'info',
         label: assessmentConclusionLabel(assessment?.current?.conclusion)
       },
-      protectionSummary: protection.protectionSummary,
+      configuration: protection.active ? protectionConfigurationView(protection.active) : null,
       actions: {
         canConfigurePolicy: Boolean(protection.active && protection.canConfigurePolicy),
         configurePolicyLabel: protection.policy?.state === 'active'
@@ -276,6 +290,7 @@ export function createProtectionAssessmentPresentation({
     assessmentChangeDialogView,
     assessmentHistoryView,
     policyRevisionSummary,
+    protectionConfigurationView,
     baselineForAssessment,
     policyForAssessment,
     stricterPolicyEffects,

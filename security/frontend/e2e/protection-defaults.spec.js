@@ -203,7 +203,7 @@ for (const [owner, action, label] of [['develop', 'query', '查询工作台'], [
     await expect.poll(() => backend.policyCreateRequests.length).toBe(1)
     expect(backend.policyCreateRequests[0]).toMatchObject({ consumer_owner: owner, action, algorithm: 'addp.mask.sm3/v1' })
     await expect(dialog).toHaveCount(0)
-    await expect(drawer.getByText(new RegExp(`${label}：默认 前后保留掩码.*字段规则配置为 SM3 哈希.*执行时遵守当前基线约束`))).toBeVisible()
+    await expect(drawer.locator('.protection-configuration__field').filter({ hasText: label }).locator('.protection-method')).toHaveText('SM3 哈希')
     await drawer.getByRole('button', { name: '恢复默认保护' }).click()
     const restore = page.getByRole('dialog', { name: '恢复默认保护' })
     await expect(formCombobox(restore, '生效出口')).toContainText(label)
@@ -967,7 +967,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await page.getByRole('button', { name: '查看详情' }).click()
   const detailDrawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
   await expect(detailDrawer.getByText('customer.phone', { exact: true }).first()).toBeVisible()
-  await expect(detailDrawer.getByText(/^默认保护：前后保留掩码.*无法处理时：移除$/)).toBeVisible()
+  await expect(detailDrawer.locator('.protection-configuration__baseline .protection-method').first()).toHaveText('前后保留掩码')
 
   await detailDrawer.getByRole('button', { name: '调整结论' }).click()
   const revisionDialog = page.getByRole('dialog', { name: '调整正式安全结论' })
@@ -1042,7 +1042,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
     effect: 'suppress', algorithm: '', parameters: {}, invalid_value_effect: 'suppress', role_options: [],
     rationale: '该客户表仅允许展示非联系方式字段'
   })
-  await expect(detailDrawer.getByText(/^数据预览：默认 前后保留掩码.*字段规则配置为 移除；执行时遵守当前基线约束$/)).toBeVisible()
+  await expect(detailDrawer.locator('.protection-configuration__field').filter({ hasText: '数据预览' }).locator('.protection-method')).toHaveText('移除')
 
   await detailDrawer.getByRole('button', { name: '调整收紧策略' }).click()
   await policyDialog.getByText('拒绝', { exact: true }).click()
@@ -1076,7 +1076,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
     effect: 'deny', algorithm: '', parameters: {}, invalid_value_effect: 'deny', role_options: [],
     rationale: '重新加载后确认收紧为拒绝访问'
   })
-  await expect(detailDrawer.getByText(/^数据预览：默认 前后保留掩码.*字段规则配置为 拒绝；执行时遵守当前基线约束$/)).toBeVisible()
+  await expect(detailDrawer.locator('.protection-configuration__field').filter({ hasText: '数据预览' }).locator('.protection-method')).toHaveText('拒绝')
 
   await detailDrawer.getByRole('button', { name: '恢复默认' }).click()
   const restoreDialog = page.getByRole('dialog', { name: '恢复默认保护' })
@@ -1110,7 +1110,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
     version: 4,
     rationale: '重新加载后确认恢复平台默认规则'
   })
-  await expect(detailDrawer.getByText(/^默认保护：前后保留掩码.*无法处理时：移除$/)).toBeVisible()
+  await expect(detailDrawer.locator('.protection-configuration__baseline .protection-method').first()).toHaveText('前后保留掩码')
 
   await detailDrawer.getByRole('button', { name: '提前撤销' }).click()
   const exemptionRevokeDialog = page.getByRole('dialog', { name: '提前撤销临时授权' })
@@ -1615,16 +1615,24 @@ async function installMockBackend(page, options = {}) {
     state.baselines[0].allowed_algorithms.push('addp.mask.sm3/v1')
     state.policies.push({ id: policyID, assessment_id: assessmentID, consumer_owner: 'manager', action: 'preview', state: 'active', version: '3', current_revision: '3', current: { revision: '3', effect: 'mask', algorithm: 'addp.mask.sm3/v1', parameters: {}, invalid_value_effect: 'suppress' } })
     governanceFinding.component_key = 'customer.phone'
-    governanceFinding.review = { decision: 'confirm' }
+    governanceFinding.review = { decision: 'confirm', rationale: '已复核该字段用于联系方式' }
+    governanceFinding.confidence = 1
+    governanceFinding.evidence = { ...governanceFinding.evidence, component_key: 'customer.phone', semantic_terminal: 'phone', normalized_terminal: 'phone', matched_alias: 'phone' }
     enrollment.discovery_summary = { status: 'completed', finding_count: 1, pending_review_count: 0, reviewed_count: 1 }
     governanceFinding.explanation = { ...governanceFinding.explanation, decision_state: 'formal', assessment_id: assessmentID, baseline: state.baselines[0],
-      outlets: [{ consumer_owner: 'manager', projection_state: 'active', acknowledged: true, rules: [{ action: 'preview', effect: 'mask', algorithm: 'addp.mask.sm3/v1' }] }] }
+      effective_sensitive_data_type_id: '20', effective_security_classification_id: '1', effective_security_grade_id: '3',
+      automatic_adoption_threshold: 0.9, meets_automatic_threshold: true,
+      capability: { ...governanceFinding.explanation.capability, name_i18n_key: 'security.detectorCapabilities.phoneMetadata.name' },
+      outlets: [
+        { consumer_owner: 'manager', projection_state: 'active', acknowledged: true, rules: [{ action: 'preview', effect: 'mask', algorithm: 'addp.mask.sm3/v1' }, { action: 'profile', effect: 'suppress' }] },
+        ...[['develop', 'query'], ['service', 'service_execute'], ['transfer', 'export']].map(([consumer_owner, action]) => ({ consumer_owner, projection_state: 'active', acknowledged: true, rules: [{ action, effect: 'mask', algorithm: 'addp.mask.keep_prefix_suffix/v2' }] }))
+      ] }
   }
 
-  await page.addInitScript(language => {
+  await page.addInitScript(({ language, theme }) => {
     localStorage.setItem('addp-lang', language)
-    localStorage.setItem('theme-mode', 'light')
-  }, options.language || 'zh-cn')
+    localStorage.setItem('theme-mode', theme)
+  }, { language: options.language || 'zh-cn', theme: options.theme || 'light' })
 
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
@@ -2210,7 +2218,7 @@ async function fulfillJSON(route, body, status = 200) {
 
 for (const language of ['zh-cn', 'en']) {
   test(`opens existing resource protection and distinguishes configured SM3 from its baseline (${language})`, async ({ page }, testInfo) => {
-    const backend = await installMockBackend(page, { governanceValidation: true, sm3Description: true, language,
+    const backend = await installMockBackend(page, { governanceValidation: true, sm3Description: true, language, theme: language === 'zh-cn' ? 'dark' : 'light',
       permissions: ['security.enrollment.read', 'meta.catalog.read', 'security.finding.read', 'security.assessment.read', 'security.policy.read', 'security.sensitive_data_type.read', 'security.classification.read', 'security.grade.read', 'security.protection_baseline.read'] })
     const writes = []
     page.on('request', request => {
@@ -2222,12 +2230,28 @@ for (const language of ['zh-cn', 'en']) {
     await expect(drawer).toBeVisible()
     await expect(drawer.getByText('customer.phone', { exact: true }).first()).toBeVisible()
     const finding = drawer.locator('.finding-card')
-    await expect(finding.getByText(language === 'en' ? /^Default protection: Prefix and suffix masking/ : /^默认保护：前后保留掩码/)).toContainText(language === 'en' ? 'Keep 2 prefix and 3 suffix' : '保留前 2 个和后 3 个')
-    await expect(finding.locator('.resource-policy-summary')).toContainText(language === 'en' ? 'SM3 hashing' : 'SM3 哈希')
-    await expect(finding.locator('.finding-outlets strong')).toHaveText(language === 'en' ? 'Preview: SM3 hashing' : '预览：SM3 哈希')
+    const configuration = finding.locator('.protection-configuration')
+    await expect(configuration.locator('.protection-configuration__baseline .protection-method')).toHaveText(language === 'en' ? 'Prefix and suffix masking' : '前后保留掩码')
+    await expect(configuration.locator('.protection-configuration__field .protection-method')).toHaveText(language === 'en' ? 'SM3 hashing' : 'SM3 哈希')
+    await expect(finding.locator('.finding-outlet').first().locator('strong')).toContainText(language === 'en' ? 'Preview: SM3 hashing' : '预览：SM3 哈希')
+    await expect(finding.locator('.finding-outlet')).toHaveCount(4)
+    for (const outlet of await finding.locator('.finding-outlet').all()) await expect(outlet).toContainText(language === 'en' ? 'Synchronized' : '已同步')
+    expect(await finding.locator('.finding-current-protection').evaluate(el => el.getBoundingClientRect().top)).toBeLessThan(await finding.locator('.finding-explanation').evaluate(el => el.getBoundingClientRect().top))
+    await expect(configuration.locator('.protection-configuration__details')).not.toHaveAttribute('open', '')
+    const parameterText = configuration.getByText(language === 'en' ? /Keep 2 prefix and 3 suffix/ : /保留前 2 个和后 3 个/)
+    await expect(parameterText).toBeHidden()
+    await configuration.locator('summary').click()
+    await expect(parameterText).toBeVisible()
+    await expect(parameterText).toContainText(language === 'en' ? 'If invalid' : '无法处理时')
+    await configuration.locator('summary').click()
     await expect(page.getByRole('dialog', { name: language === 'en' ? 'Protect data resource' : '纳入数据保护', exact: true })).toHaveCount(0)
     await expect(page.locator('.el-drawer:visible')).toHaveCount(1)
+    await finding.scrollIntoViewIfNeeded()
     await drawer.screenshot({ path: testInfo.outputPath('protection-details.png') })
+    await page.setViewportSize({ width: 480, height: 900 })
+    await expect(finding.locator('.finding-current-protection')).toBeVisible()
+    expect(await drawer.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+    await drawer.screenshot({ path: testInfo.outputPath('protection-details-narrow.png') })
     expect(backend.enrollmentDetailRequests).toBeGreaterThan(0)
     expect(backend.enrollmentListRequests.some(params => params.engine_id === '2' && params.page_size === '100')).toBe(true)
     expect(backend.enrollmentCreateRequests).toEqual([])

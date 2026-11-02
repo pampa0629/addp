@@ -270,7 +270,15 @@
       },
       "historyConstant": "Replacement value: {value}",
       "historyConfiguration": "{algorithm} · {parameters} · If invalid: {invalid}",
-      "historyAlgorithm": "{algorithm} · If invalid: {invalid}"
+      "historyAlgorithm": "{algorithm} · If invalid: {invalid}",
+      "configuration": {
+        "title": "Protection configuration",
+        "baseline": "Default protection method",
+        "fieldScope": "{scope} field configuration",
+        "baselineHint": "Default protection applies without a valid field rule. Field rules must also meet the current default protection constraints.",
+        "parameters": "View parameters and invalid-value handling",
+        "unreadable": "Your account cannot read field configurations. Refer to the outlet rules."
+      }
     },
     "options": {
       "effects": {
@@ -549,8 +557,7 @@
       },
       "explanationStages": {
         "detection": "Detection",
-        "governance": "Governance decision",
-        "execution": "Outlet rules"
+        "governance": "Governance decision"
       },
       "confidenceValue": "Confidence {value}",
       "thresholdValue": "Automatic threshold {value}",
@@ -599,7 +606,8 @@
       "outletUnavailable": "Outlet projection unavailable",
       "outletAcknowledged": "Synchronized",
       "outletWaiting": "Pending sync",
-      "outletMaskRule": "{action}: {algorithm}"
+      "outletMaskRule": "{action}: {algorithm}",
+      "currentOutlets": "Current outlet protection"
     },
     "accessRequest": {
       "reviewTitle": "Plaintext access approvals",

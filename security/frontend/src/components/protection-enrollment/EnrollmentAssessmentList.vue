@@ -6,9 +6,7 @@
         <strong>{{ row.componentKey }}</strong>
         <span>{{ row.summary }}</span>
         <p>{{ row.rationale }}</p>
-        <p v-if="row.protectionSummary" class="resource-policy-summary">
-          {{ row.protectionSummary }}
-        </p>
+        <EnrollmentProtectionConfiguration v-if="row.configuration" :presentation="row.configuration" />
       </div>
       <div class="manual-assessment-card__actions">
         <el-tag :type="row.conclusion.type">
@@ -48,6 +46,7 @@
 
 <script setup>
 import { useI18n } from 'vue-i18n'
+import EnrollmentProtectionConfiguration from './EnrollmentProtectionConfiguration.vue'
 
 defineProps({
   presentation: { type: Object, required: true }
@@ -65,7 +64,6 @@ const { t } = useI18n()
 .manual-assessment-card > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .manual-assessment-card strong { overflow-wrap: anywhere; }
 .manual-assessment-card span, .manual-assessment-card p { margin: 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
-.manual-assessment-card .resource-policy-summary { color: var(--addp-text-primary); font-weight: 600; }
 .manual-assessment-card__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 @media (max-width: 720px) {
   .manual-assessment-card { flex-direction: column; }

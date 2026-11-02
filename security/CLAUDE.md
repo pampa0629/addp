@@ -639,3 +639,10 @@ Transfer 任务选择／保存／执行与 Develop 全量导出尚未接通，�
 T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37项受控浏览器和构建通过，含默认参数／显式SM3／实际出口算法独立展示、中英文只读详情导航及无 Security 写请求；单元覆盖跨页目标、完整不存在、403／协议与身份异常、重复／释放记录、路由切换及销毁。`make test-manager-frontend` 退出0，391项单元、291项受控浏览器和构建通过；另通过既有标准脚本 `cd manager/frontend && node ../../scripts/test/frontend-browser-gate.mjs e2e/security-protection-navigation.spec.js` 验证新增3项 Manager 入口，覆盖只读可查看、仅创建／无读取权限不显示入口、精确 locator 且无 action、无 Security 写入。新用例由既有 testDir 自动发现，无需新增 Make／CI 登记。日志 `/tmp/p145-protection-clarity-security.log`、`/tmp/p145-protection-clarity-manager.log`、`/tmp/p145-protection-clarity-manager-navigation.log`；文档相对链接及限定路径 `git diff --check` 通过。
 
 本轮为前端修复，无需后端重启；未把受控浏览器计作个人环境的真实输出或 Hosted T4。未触发／跟踪 CI，仍由专门会话负责。后续待办记录于 `docs/sessions/数据脱敏与保护后续工作专题.md`，优先建议讨论 Service SQL 单表直接字段与别名的角色方式切片；不扩大源授权、栅格或静态加密范围。
+
+
+### 字段保护方式分层展示（2026-11-02）
+
+针对默认掩码与 Manager 专用 SM3 被拼接成长句的问题，按正式规范10.5整理唯一展示路径：Finding 卡片首先显示后端返回的当前各出口算法及独立同步状态，再展示识别／治理依据；默认方式和每个出口的已配置字段专用方式分别成行，参数及异常值处理通过原生 details 展开。配置存在不等同于投影采用，前端不重算基线与Policy裁决；配置读取权限不足时明确提示，仍如实展示可读的出口事实。自动发现与人工指定字段共用 `EnrollmentProtectionConfiguration.vue`，删除两处旧长句渲染及只为该渲染保留的模型字段，保留策略编辑／恢复对话框所需的既有摘要。没有新增API、权限、算法或授权，Swagger不变，不需后端重启。
+
+验证：`make test-security-frontend`退出0，262项T1单元、37项T3受控浏览器及生产构建通过。新增／加强配置与实际出口算法不同、不可读取专用配置、基线缺失、人工评估不捏造出口事实、两个消费组件唯一复用及当前规则优先的断言。中英文、深／浅主题、四个出口（Manager SM3，其余前后掩码）、参数初始折叠／展开及480px窄窗口无横向溢出经浏览器验证，四张合成夹具截图已目视核对；无Security写请求。初始新增结构模型测试实际失败，旧三栏／长句架构断言按获批新布局修订后通过；截图检查发现旧合成Finding未带正式评估说明，补齐夹具事实后完整复验，不改变产品保护行为。标准Make入口与现有testDir自动发现覆盖，无新增CI编排。日志 `/tmp/p145-protection-layout-{red,green}.log`，截图 `/tmp/p145-protection-layout-visual/`。限定路径diff及文档链接检查通过。仅T1/T3及构建，不计个人环境实源或Hosted T4；CI仍由专门会话跟进。

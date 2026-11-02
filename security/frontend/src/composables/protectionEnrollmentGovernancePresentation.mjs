@@ -37,6 +37,7 @@ export function createProtectionEnrollmentGovernancePresentation({
     assessmentChangeDialogView,
     assessmentHistoryView,
     policyRevisionSummary,
+    protectionConfigurationView,
     baselineForAssessment,
     policyForAssessment,
     stricterPolicyEffects,
@@ -370,8 +371,7 @@ export function createProtectionEnrollmentGovernancePresentation({
       governance: {
         decision: decisionPresentation(finding),
         definition: effectiveDefinitionSummary(finding),
-        baseline: baselineDescription(finding),
-        protectionSummary: assessment.active ? assessment.protectionSummary : ''
+        configuration: protectionConfigurationView(assessment.active, explanation.baseline || baselineForAssessment(assessment.active))
       },
       outlets: outlets.map(outlet => ({
         key: outlet.consumer_owner,
@@ -443,6 +443,7 @@ export function createProtectionEnrollmentGovernancePresentation({
     findingRowView,
     assessmentHistoryView,
     policyRevisionSummary,
+    protectionConfigurationView,
     baselineForAssessment,
     policyForAssessment,
     stricterPolicyEffects,

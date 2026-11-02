@@ -270,7 +270,15 @@
       },
       "historyConstant": "替换值：{value}",
       "historyConfiguration": "{algorithm} · {parameters} · 无法处理时：{invalid}",
-      "historyAlgorithm": "{algorithm} · 无法处理时：{invalid}"
+      "historyAlgorithm": "{algorithm} · 无法处理时：{invalid}",
+      "configuration": {
+        "title": "保护方式配置",
+        "baseline": "默认保护方式",
+        "fieldScope": "{scope}字段专用配置",
+        "baselineHint": "未配置有效专用规则时采用默认保护；专用规则也须满足当前默认保护的约束。",
+        "parameters": "查看参数与异常值处理",
+        "unreadable": "当前账号无法读取字段专用配置，请以各出口规则为准。"
+      }
     },
     "options": {
       "effects": {
@@ -549,8 +557,7 @@
       },
       "explanationStages": {
         "detection": "识别命中",
-        "governance": "治理判定",
-        "execution": "出口规则"
+        "governance": "治理判定"
       },
       "confidenceValue": "置信度 {value}",
       "thresholdValue": "自动采用阈值 {value}",
@@ -599,7 +606,8 @@
       "outletUnavailable": "暂无出口投影",
       "outletAcknowledged": "已同步",
       "outletWaiting": "待同步",
-      "outletMaskRule": "{action}：{algorithm}"
+      "outletMaskRule": "{action}：{algorithm}",
+      "currentOutlets": "当前各出口保护方式"
     },
     "accessRequest": {
       "reviewTitle": "原值访问审批",

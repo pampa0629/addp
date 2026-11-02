@@ -71,14 +71,36 @@ describe('protected-resource presentation model', () => {
       outlets: [{ consumer_owner: 'manager', projection_state: 'active', acknowledged: true,
         rules: [{ action: 'preview', effect: 'mask', algorithm: 'addp.mask.sm3/v1' }] }] } }
     const row = presentation.findingRowView(finding)
-    expect(row.governance.baseline).toContain('security.algorithms.prefix.name')
-    expect(row.governance.baseline).toContain('prefix')
-    expect(row.governance.protectionSummary).toContain('security.algorithms.sm3.name')
+    expect(row.governance.configuration.baseline.method).toBe('security.algorithms.prefix.name')
+    expect(row.governance.configuration.baseline.details).toContain('prefix')
+    expect(row.governance.configuration.fields[0]).toMatchObject({ scope: 'security.enrollment.owners.manager', method: 'security.algorithms.sm3.name' })
+    expect(row.governance).not.toHaveProperty('protectionSummary')
     expect(row.outlets[0].rule).toContain('security.algorithms.sm3.name')
     finding.explanation.outlets[0].rules[0].algorithm = 'addp.mask.constant/v1'
     expect(presentation.findingRowView(finding).outlets[0].rule).toContain('security.algorithms.constant.name')
     expect(presentation.findingRowView(finding).outlets[0].rule).not.toContain('security.algorithms.sm3.name')
+    expect(presentation.findingRowView(finding).governance.configuration.fields[0].method).toBe('security.algorithms.sm3.name')
   })
+  it('keeps unreadable field configurations separate from known outlet facts', () => {
+    const { presentation } = createPresentation({ canReadPolicies: ref(false) })
+    const row = presentation.findingRowView({ explanation: { assessment_id: 'assessment-1',
+      outlets: [{ consumer_owner: 'manager', acknowledged: false, rules: [{ action: 'preview', effect: 'mask', algorithm: 'addp.mask.sm3/v1' }] }] } })
+    expect(row.governance.configuration.canReadPolicies).toBe(false)
+    expect(row.governance.configuration.fields).toEqual([])
+    expect(row.outlets[0].rule).toContain('security.algorithms.sm3.name')
+    expect(row.outlets[0].acknowledgement.type).not.toBe('success')
+  })
+
+  it('does not fabricate a default or an outlet for a manual configuration with missing baseline', () => {
+    const { dependencies, presentation } = createPresentation({ protectionBaselines: ref([]) })
+    const row = presentation.assessmentRowView(dependencies.assessments.value[0])
+    expect(row.configuration.baseline).toBeNull()
+    expect(row.configuration.fields[0].method).toBe('security.enrollment.effects.deny')
+    expect(row).not.toHaveProperty('outlets')
+    const revoked = presentation.assessmentRowView({ ...dependencies.assessments.value[0], current: { conclusion: 'not_sensitive' } })
+    expect(revoked.configuration).toBeNull()
+  })
+
   it('derives reactive refresh, review, and manual-assessment summaries', () => {
     const { dependencies, presentation } = createPresentation()
 
@@ -460,7 +482,7 @@ describe('protected-resource presentation model', () => {
     expect(row.governance.definition).toContain('"type":"Phone"')
     expect(row.governance.definition).toContain('"classification":"Personal"')
     expect(row.governance.definition).toContain('"grade":"High"')
-    expect(row.governance.protectionSummary).toContain('security.policy.activeSummary')
+    expect(row.governance.configuration.fields[0].method).toBe('security.enrollment.effects.deny')
     expect(row.outlets[0].acknowledgement.type).toBe('success')
     expect(row.assessment.active?.id).toBe('assessment-1')
 
@@ -621,14 +643,14 @@ describe('protected-resource presentation model', () => {
     expect(sensitive.active?.id).toBe('assessment-1')
     expect(sensitive.policy?.id).toBe('policy-1')
     expect(sensitive.canConfigurePolicy).toBe(true)
-    expect(sensitive.protectionSummary).toContain('security.policy.activeSummary')
+    expect(sensitive).not.toHaveProperty('protectionSummary')
 
     const notSensitive = presentation.findingRowView({ explanation: { assessment_id: 'assessment-2', outlets: [] } }).assessment
     expect(notSensitive.current?.id).toBe('assessment-2')
     expect(notSensitive.active).toBeNull()
     expect(notSensitive.policy).toBeNull()
     expect(notSensitive.canConfigurePolicy).toBe(false)
-    expect(notSensitive.protectionSummary).toBe('')
+    expect(notSensitive).not.toHaveProperty('protectionSummary')
   })
 
   it('derives assessment change dialog content and grade choices through one presentation model', () => {
@@ -657,7 +679,8 @@ describe('protected-resource presentation model', () => {
     expect(sensitive.rationale).toBe('confirmed')
     expect(sensitive.summary).toContain('"type":"Phone"')
     expect(sensitive.conclusion).toEqual({ type: 'success', label: 'security.assessment.conclusions.sensitive' })
-    expect(sensitive.protectionSummary).toContain('security.policy.activeSummary')
+    expect(sensitive.configuration.fields[0].method).toBe('security.enrollment.effects.deny')
+    expect(sensitive).not.toHaveProperty('protectionSummary')
     expect(sensitive.actions).toEqual({
       canConfigurePolicy: true,
       configurePolicyLabel: 'security.policy.adjust',
@@ -677,7 +700,7 @@ describe('protected-resource presentation model', () => {
 
     const notSensitive = presentation.assessmentRowView(dependencies.assessments.value[1])
     expect(notSensitive.conclusion).toEqual({ type: 'info', label: 'security.assessment.conclusions.not_sensitive' })
-    expect(notSensitive.protectionSummary).toBe('')
+    expect(notSensitive.configuration).toBeNull()
     expect(notSensitive.actions).toEqual({
       canConfigurePolicy: false,
       configurePolicyLabel: 'security.policy.tighten',
