@@ -95,6 +95,7 @@ Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Not
 - [GeoPython Workflow 运行说明](../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md) - 原生开发与产品容器部署
 - **[system/CLAUDE.md](../system/CLAUDE.md)** - 数据库连接与认证
 - [共享数据库桥接目录](../common/dbbridge/) - 数据库桥接实现
+- [执行记录保留与清理](CLAUDE.md#5-执行记录清理) - 30 天事件维护、180 天概览目标、只读评估与历史验收边界
 
 ---
 
