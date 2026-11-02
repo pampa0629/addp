@@ -10,6 +10,7 @@
 | --- | --- |
 | 配置维度与通用同步约束 | [Transfer 同步执行契约](#transfer-同步执行契约) |
 | continuous 配置、目标提交、位点与观测规则 | [continuous 主契约](#transfer-continuous-sync-v1-契约) |
+| 通用规则目标、失败判定、模式切换与统一评估 | [通用告警规则](#通用执行告警规则与统一评估) |
 | 租户告警通知、Webhook／邮件投递与送达验收 | [通知与渠道投递](#租户告警通知与渠道投递) |
 | continuous Owner 信号、告警恢复与过程事件分工 | [观测信号、告警与过程事件](#continuous-观测信号告警与过程事件分工) |
 | 进度展示、Monitor 读取与 Orchestrator 编排限制 | [进度观测与编排边界](#进度观测与编排边界) |
@@ -122,19 +123,79 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 34. 邮件独立测试投递见[邮件测试重投删除与审计](#邮件测试重投删除与审计)。
 35. 邮件人工重投、删除与历史保留见[邮件测试重投删除与审计](#邮件测试重投删除与审计)。
 36. 邮件操作审计与 SMTP 凭据保护见[邮件测试重投删除与审计](#邮件测试重投删除与审计)。
-37. 通用执行告警只允许消费 `common.task_executions` 公共事实。各 owner 模块负责写入真实 execution 状态、开始/结束时间和安全错误摘要；Monitor 不得读取 owner 任务表、结果表、worker 私有租约或运行时内部状态补判失败。System 只负责保存模块注册时发布的 TaskProvider 角色声明、解析当前 Backend 租约、认证和操作审计，不成为告警事实或规则 owner。
-38. 第一版租户告警规则精确绑定 `tenant + module + task_type + source_task_id`，只允许有稳定任务定义身份且 `parent_execution_id IS NULL` 的根 execution。可配置目标以该任务最新根 execution 的模式为准；最新根 execution 属于 continuous session 时，不得因历史 bounded execution 将该任务继续暴露为通用规则目标。无 `source_task_id` 的 ad-hoc execution、Orchestrator 子 execution 和 System cleanup 子 execution不进入通用规则；父编排失败由 Orchestrator 根 execution 表达。
-39. 通用规则类型固定为 `last_terminal_failed|last_terminal_timeout|consecutive_failures`。最近终态查询只考虑 `success|failed|timeout`，忽略 `cancelled`；`failed` 或 `timeout` 告警只能由后续 `success` 恢复，新的 `pending|running` 不证明任务已经恢复。`consecutive_failures` 的阈值只允许 2 到 20，最近 N 个有效终态全部为 `failed|timeout` 时激活，任一 `success` 中断连续失败序列。
-40. Transfer continuous session 不消费通用 execution 失败规则。Monitor 继续以 `metadata.continuous`、retention、checkpoint 和 recovery circuit owner 事实运行专用 evaluator；不得把自动恢复产生的失败 session 再解释成通用任务失败。Transfer bounded execution 可以使用通用规则；同一任务从 bounded 切换为 continuous 后，通用 evaluator 必须依据最新根 execution 暂停该任务规则，不能继续沿用旧 bounded 终态打开告警。
-41. Monitor 使用 `monitor.alert_rules` 保存租户规则，至少包含稳定 `rule_id` UUID、名称、精确任务身份、规则类型、连续失败阈值、严重级别和启用状态。规则身份进入 incident fingerprint；同一规则和同一任务同时最多一个未恢复 incident。更新规则判定语义、停用或删除规则时，必须先恢复该规则当前未恢复 incident，不能留下永不再评估的活动告警。
-42. Monitor 使用 `monitor.notification_routes` 保存通用规则到 Webhook/邮件 destination 的显式绑定。路由必须按租户校验 destination 存在；同一规则、渠道和目标只能一条。规则没有路由时仍创建不可变 alert event，但不生成 Webhook 或邮件 delivery。删除目标时必须同时删除指向它的未使用路由；历史 incident、event 和 delivery 保留。
-43. 通用规则 evaluator、Transfer continuous evaluator 和后续其他 evaluator 必须先完成各自公共事实查询，再把全部 active signal 交给同一个 incident reconciler。任何 evaluator 查询失败时，不得把该 evaluator 拥有的现有 incident 误恢复；不同 evaluator 不能独立执行全局“缺失即恢复”。
-44. 通用规则 evaluator 使用最终一致的周期扫描即可，第一版不要求 Kafka。若后续使用 PostgreSQL `LISTEN/NOTIFY`，通知只能作为唤醒信号，`common.task_executions` 仍是唯一事实源，周期扫描仍负责丢失唤醒后的收敛。
-45. `created_at`、`updated_at` 或全局固定时长不能单独证明 execution 卡死。运行超时由 owner 按任务自身 deadline 写入 `status=timeout`；在统一 heartbeat/deadline 契约完成前，不实现 `pending_stalled` 或 `running_stalled` 通用规则，也不得启用按创建时间批量改写长任务状态的清理逻辑。
-46. Monitor 的通用告警目标发现和规则创建校验必须与 System 当前已启用 TaskProvider 的非废弃 `task_capabilities[]` 取交集。历史 execution 必须保留审计，但已经不再由 provider 声明的旧 `module + task_type` 不得出现在新规则目标中，也不得继续创建或重新启用规则；不得在 Monitor 硬编码业务任务类型白名单。
+37. 通用告警的公共事实与 Monitor／Owner／System 职责见[通用告警公共事实与职责](#通用告警公共事实与职责)。
+38. 精确任务身份、根 execution 与最新模式筛选见[规则目标与最新根执行模式](#规则目标与最新根执行模式)。
+39. 失败／超时／连续失败规则与 success 恢复条件见[通用失败规则与恢复判定](#通用失败规则与恢复判定)。
+40. continuous 专用 evaluator 与 bounded 模式切换见[continuous 专用评估与模式切换](#continuous-专用评估与模式切换)。
+41. 规则身份、incident 去重及更新停用删除见[规则生命周期与通知路由](#规则生命周期与通知路由)。
+42. 租户通知路由、无路由行为与目标删除见[规则生命周期与通知路由](#规则生命周期与通知路由)。
+43. 多 evaluator 汇总、统一 reconciler 与查询失败见[evaluator 汇总与查询失败边界](#evaluator-汇总与查询失败边界)。
+44. 周期扫描与 LISTEN/NOTIFY 唤醒边界见[evaluator 汇总与查询失败边界](#evaluator-汇总与查询失败边界)。
+45. Owner 超时裁决与未开放停滞规则见[超时与未开放停滞规则](#超时与未开放停滞规则)。
+46. 当前 TaskProvider 交集与废弃类型限制见[规则目标与最新根执行模式](#规则目标与最新根执行模式)。
 47. 数据库 CDC schema-change 的公共投影及与私有状态同事务更新见[公共事实投影](#schema-change-公共事实投影)。
 48. 最新根执行的 schema blocked 信号、恢复与 Stop／Finish／lease expiry 竞态见[告警恢复与停止竞态](#schema-blocked-告警恢复与停止竞态)。
 49. 自动扫描提交失败与实际扫描结果、Monitor incident 的边界见[扫描提交失败限制](#扫描提交失败的告警限制)。
+
+### 通用执行告警规则与统一评估
+
+- 事实与目标：[公共事实与职责](#通用告警公共事实与职责)、[目标与最新根执行模式](#规则目标与最新根执行模式)。
+- 判定与管理：[失败规则与恢复](#通用失败规则与恢复判定)、[continuous 模式切换](#continuous-专用评估与模式切换)、[规则与通知路由](#规则生命周期与通知路由)。
+- 评估与验收：[汇总与查询失败](#evaluator-汇总与查询失败边界)、[超时与停滞限制](#超时与未开放停滞规则)、[实际验收](#通用告警实际验收边界)。
+
+#### 通用告警公共事实与职责
+
+- 通用执行告警只允许消费 `common.task_executions` 公共事实。
+- 各 owner 模块负责写入真实 execution 状态、开始/结束时间和安全错误摘要；Monitor 不得读取 owner 任务表、结果表、worker 私有租约或运行时内部状态补判失败。
+- System 只负责保存模块注册时发布的 TaskProvider 角色声明、解析当前 Backend 租约、认证和操作审计，不成为告警事实或规则 owner。
+
+#### 规则目标与最新根执行模式
+
+- 第一版租户告警规则精确绑定 `tenant + module + task_type + source_task_id`，只允许有稳定任务定义身份且 `parent_execution_id IS NULL` 的根 execution。
+- 可配置目标以该任务最新根 execution 的模式为准；最新根 execution 属于 continuous session 时，不得因历史 bounded execution 将该任务继续暴露为通用规则目标。
+- 无 `source_task_id` 的 ad-hoc execution、Orchestrator 子 execution 和 System cleanup 子 execution不进入通用规则；父编排失败由 Orchestrator 根 execution 表达。
+- Monitor 的通用告警目标发现和规则创建校验必须与 System 当前已启用 TaskProvider 的非废弃 `task_capabilities[]` 取交集。
+- 历史 execution 必须保留审计，但已经不再由 provider 声明的旧 `module + task_type` 不得出现在新规则目标中，也不得继续创建或重新启用规则；不得在 Monitor 硬编码业务任务类型白名单。
+
+#### 通用失败规则与恢复判定
+
+- 通用规则类型固定为 `last_terminal_failed|last_terminal_timeout|consecutive_failures`。
+- 最近终态查询只考虑 `success|failed|timeout`，忽略 `cancelled`；`failed` 或 `timeout` 告警只能由后续 `success` 恢复，新的 `pending|running` 不证明任务已经恢复。
+- `consecutive_failures` 的阈值只允许 2 到 20，最近 N 个有效终态全部为 `failed|timeout` 时激活，任一 `success` 中断连续失败序列。
+
+#### continuous 专用评估与模式切换
+
+- Transfer continuous session 不消费通用 execution 失败规则。
+- Monitor 继续以 `metadata.continuous`、retention、checkpoint 和 recovery circuit owner 事实运行专用 evaluator；不得把自动恢复产生的失败 session 再解释成通用任务失败。
+- Transfer bounded execution 可以使用通用规则；同一任务从 bounded 切换为 continuous 后，通用 evaluator 必须依据最新根 execution 暂停该任务规则，不能继续沿用旧 bounded 终态打开告警。
+
+#### 规则生命周期与通知路由
+
+- Monitor 使用 `monitor.alert_rules` 保存租户规则，至少包含稳定 `rule_id` UUID、名称、精确任务身份、规则类型、连续失败阈值、严重级别和启用状态。
+- 规则身份进入 incident fingerprint；同一规则和同一任务同时最多一个未恢复 incident。
+- 更新规则判定语义、停用或删除规则时，必须先恢复该规则当前未恢复 incident，不能留下永不再评估的活动告警。
+- Monitor 使用 `monitor.notification_routes` 保存通用规则到 Webhook/邮件 destination 的显式绑定。
+- 路由必须按租户校验 destination 存在；同一规则、渠道和目标只能一条。
+- 规则没有路由时仍创建不可变 alert event，但不生成 Webhook 或邮件 delivery。
+- 删除目标时必须同时删除指向它的未使用路由；历史 incident、event 和 delivery 保留。
+
+#### evaluator 汇总与查询失败边界
+
+- 通用规则 evaluator、Transfer continuous evaluator 和后续其他 evaluator 必须先完成各自公共事实查询，再把全部 active signal 交给同一个 incident reconciler。
+- 任何 evaluator 查询失败时，不得把该 evaluator 拥有的现有 incident 误恢复；不同 evaluator 不能独立执行全局“缺失即恢复”。
+- 通用规则 evaluator 使用最终一致的周期扫描即可，第一版不要求 Kafka。
+- 若后续使用 PostgreSQL `LISTEN/NOTIFY`，通知只能作为唤醒信号，`common.task_executions` 仍是唯一事实源，周期扫描仍负责丢失唤醒后的收敛。
+
+#### 超时与未开放停滞规则
+
+- `created_at`、`updated_at` 或全局固定时长不能单独证明 execution 卡死。
+- 运行超时由 owner 按任务自身 deadline 写入 `status=timeout`；在统一 heartbeat/deadline 契约完成前，不实现 `pending_stalled` 或 `running_stalled` 通用规则，也不得启用按创建时间批量改写长任务状态的清理逻辑。
+
+#### 通用告警实际验收边界
+
+continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#continuous-观测信号告警与过程事件分工)，Webhook／邮件 lifecycle event、outbox 和真实投递沿[渠道契约](#租户告警通知与渠道投递)，不得用一次执行状态、规则保存或测试通知代替相应链路结果。用户执行读取与安全 DTO 继续沿[执行监控规范](执行监控.md#通用执行读取与过程事件)，规则身份或通知路由不额外授予执行和专业结果读取权。
+
+目标发现、最新模式切换、有效终态序列、规则变更、查询失败、通知路由及实际恢复分别核对。固定版本、失败、清理和未覆盖项沿[Monitor 历史证据导航](../../../monitor/CLAUDE.md#历史证据导航)认定；既有执行诊断、平台资源告警或局部门禁不外推为本节所有规则与外部通知已验收。
 
 ### 租户告警通知与渠道投递
 
