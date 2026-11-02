@@ -4,7 +4,17 @@
 
 定义 Transfer sync 的正交配置维度、bounded / continuous 边界、状态推进与观测要求。数据库捕获见[CDC](Transfer数据库CDC.md)，业务 Kafka 的拒绝记录与重放见[Kafka 与 DLQ](Transfer-Kafka与DLQ.md)。
 
-阅读导航：[Transfer 同步执行契约](#transfer-同步执行契约)、[Transfer continuous sync v1 契约](#transfer-continuous-sync-v1-契约)、[状态、执行与租约](#任务状态执行身份与运行租约)、[停止与标准取消](#任务级-pausestop-与标准取消)、[continuous 自动恢复](#continuous-自动恢复退避与-circuit)、[continuous 首次扫描与 claim](#continuous-首次扫描与-claim)。
+阅读导航：
+
+| 阅读目的 | 正文入口 |
+| --- | --- |
+| 配置维度与通用同步约束 | [Transfer 同步执行契约](#transfer-同步执行契约) |
+| continuous 配置、目标提交、位点与观测规则 | [continuous 主契约](#transfer-continuous-sync-v1-契约) |
+| 进度展示、Monitor 读取与 Orchestrator 编排限制 | [进度观测与编排边界](#进度观测与编排边界) |
+| 用户期望、实际状态、execution/session 与租约 | [任务状态、执行身份与运行租约](#任务状态执行身份与运行租约) |
+| 任务级 Pause/Stop、标准取消与停止验收 | [停止与标准取消](#任务级-pausestop-与标准取消) |
+| 自动恢复触发、唯一领取、退避、circuit 与审计 | [自动恢复契约](#continuous-自动恢复退避与-circuit) |
+| 首次扫描触发、精确目标、claim 与结果核对 | [首次扫描契约](#continuous-首次扫描与-claim) |
 
 ## Transfer 同步执行契约
 
@@ -124,18 +134,19 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 48. `schema_change.status=pending` 是 `schema_change_blocked` 严重告警的唯一 owner 信号。仅当同一任务最新根 execution 已经 `failed + stop_reason=schema_change_blocked` 且其投影仍为 pending 时，该信号有效；取样范围不扩展到历史 pending schema-change execution。更新的根 execution 取代旧执行的告警信号；新执行不再携带该信号时恢复旧 incident，不能因历史投影仍为 pending 而保持旧告警。人工 additive migration 审批把同一投影原子更新为 `applied` 后，Monitor 自动恢复 incident；不可逆 Stop 在删除任务私有控制状态前将其更新为 `stopped`。Stop 与 worker Finish 无论谁先提交，Finish 都必须以已经持久化的 `desired_state=stopped` fencing，不能把任务重新置为 blocked 或留下 pending 公共信号；有效 lease 已释放或过期后，Stop 还必须在 capture cleanup 前把遗留 active execution 取消并将 task 收敛到 idle。若 worker 在 request 提交后、Finish 前失联，lease expiry reconciler 必须将原 execution/task 收敛为 schema blocked 并清空 lease owner，禁止创建或领取 recovery execution。
 49. `metadata_scan.status=failed` 当前表示 Transfer 向 Meta 提交自动扫描失败，不证明扫描结果失败。手工 Meta 扫描尚无回写 Transfer 的关联完成事实，因此该状态只在 Transfer 任务详情和 execution metadata 中展示，第一版不得据此创建无法可靠自动恢复的 Monitor incident；未来若要告警，必须先定义关联 Meta execution 或显式完成回执，不能用 Resume、新 execution 或时间流逝猜测恢复。
 
-continuous task 与 execution 生命周期：
+### 进度观测与编排边界
 
-1. continuous 用户期望、实际任务状态与 bounded 区别见[状态契约](#用户期望与实际运行状态)。
-2. start/pause/resume/stop 的状态推进和单 active session 约束见[运行控制与执行身份](#运行控制与执行身份)。
-3. execution 与 runtime session 的一一关系、新执行及终态要求沿[执行身份契约](#运行控制与执行身份)。
-4. runtime lease 与业务 committed position 的分工见[租约与位点](#runtime-lease-与业务位点)。
-5. continuous 自动恢复的触发、新执行身份、唯一领取、退避、circuit 与审计约束见[自动恢复契约](#continuous-自动恢复退避与-circuit)。
-6. 用户 pause/stop 的真实停止、资源释放和 execution 终态要求见[continuous 真实停止](#continuous-的真实停止)。
-7. 任务级 Stop 与整个 `sync` TaskProvider 的标准取消能力分开认定，当前边界见[任务控制与标准取消](#任务级控制与标准取消范围)。
-8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age/health、retry/rebalance、恢复 circuit 和 heartbeat。Monitor 只消费 owner 写入的统一 execution metadata；不得自行连接 Kafka 或 Transfer 私有表补算这些事实。
-9. Orchestrator v1 不编排 continuous Transfer task。Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
-10. continuous 首次扫描的触发、精确范围、claim 接管及失败边界统一见[首次扫描契约](#continuous-首次扫描与-claim)。
+阅读导航：[进度与 Monitor 读取](#continuous-进度与-monitor-读取)、[Orchestrator 编排限制](#orchestrator-编排限制)。
+
+#### continuous 进度与 Monitor 读取
+
+- continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age/health、retry/rebalance、恢复 circuit 和 heartbeat。
+- Monitor 只消费 owner 写入的统一 execution metadata；不得自行连接 Kafka 或 Transfer 私有表补算这些事实。
+
+#### Orchestrator 编排限制
+
+- Orchestrator v1 不编排 continuous Transfer task。
+- Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
 
 ### 任务状态、执行身份与运行租约
 
