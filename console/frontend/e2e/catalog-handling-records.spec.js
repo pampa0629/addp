@@ -12,7 +12,7 @@ const rows = [
   request_id: id(index + 100), decision_id: decisionID,
   recipient_type: index === 3 ? 'project_group' : 'user', recipient_id: '9007199254740993',
   recipient_name: index === 3 ? '户外分析项目组' : '户外开发者', recipient_code: index === 3 ? 'outdoor-analysis' : 'outdoor-develop',
-  recipient_label_status: 'resolved', action: 'read', expiry_mode: 'until_revoked', expires_at: null,
+  recipient_label_status: 'resolved', action: index % 2 === 0 ? 'read' : 'metadata_read', expiry_mode: 'until_revoked', expires_at: null,
   target: { engine_id: '12', version: 'v1', segments: [{ name: 'outdoor' }, { name: 'activities' }] },
   created_at: '2026-10-21T11:44:18Z', recorded_at: '2026-10-21T11:44:20Z', deadline: '2026-10-21T11:49:20Z',
   ...outcome
@@ -65,12 +65,16 @@ async function openRecords(page, { fail = false } = {}) {
 
 test('my handling records show recipients and each authoritative outcome without technical IDs or per-row browser reads', async ({ page }) => {
   const fixture = await openRecords(page), { records } = fixture
-  await expect(records.getByRole('columnheader')).toHaveText(['接收方', '办理时间', '批准使用期限', '办理结果', ''])
+  await expect(records.getByRole('columnheader')).toHaveText(['接收方', '权限类型', '办理时间', '批准使用期限', '办理结果', ''])
   const tableRows = records.locator('.el-table__body tbody tr')
   await expect(tableRows).toHaveCount(6)
   const outcomes = ['已签发授权', '已受理，尚未签发', '结果待确认', '已有授权，本次未重复签发', '签发窗口已结束，未签发', '已关闭']
   for (let index = 0; index < outcomes.length; index++) {
-    await expect(tableRows.nth(index).locator('td').nth(3)).toHaveText(outcomes[index])
+    const cells = tableRows.nth(index).locator('td')
+    await expect(cells).toHaveCount(6)
+    await expect(cells.nth(1)).toHaveText(index % 2 === 0 ? '读取数据（包括元数据）' : '仅查看元数据')
+    await expect(cells.nth(3)).toHaveText('长期有效，直至撤销')
+    await expect(cells.nth(4)).toHaveText(outcomes[index])
     await expect(tableRows.nth(index)).not.toContainText(rows[index].request_id)
   }
   await expect(tableRows.nth(0)).toContainText('户外开发者 · outdoor-develop (当前账号)')
@@ -79,9 +83,14 @@ test('my handling records show recipients and each authoritative outcome without
   expect(fixture.details).toEqual([])
   await page.getByRole('button', { name: 'CN', exact: true }).click()
   await page.getByRole('menuitem', { name: 'English', exact: true }).click()
-  await expect(tableRows.first().locator('td').nth(3)).toHaveText('Authorization issued')
-  await expect(tableRows.nth(2).locator('td').nth(3)).toHaveText('Outcome awaiting confirmation')
-  await expect(records.getByRole('columnheader').nth(2)).toHaveText('Approved use period')
+  await expect(records.getByRole('columnheader')).toHaveText(['Recipient', 'Permission type', 'Requested at', 'Approved use period', 'Request outcome', ''])
+  const englishOutcomes = ['Authorization issued', 'Accepted, not yet issued', 'Outcome awaiting confirmation', 'Existing authorization; no duplicate issued', 'Issuance window ended without issuance', 'Closed']
+  for (let index = 0; index < englishOutcomes.length; index++) {
+    const cells = tableRows.nth(index).locator('td')
+    await expect(cells.nth(1)).toHaveText(index % 2 === 0 ? 'Read data (including metadata)' : 'View metadata only')
+    await expect(cells.nth(3)).toHaveText('Valid until revoked')
+    await expect(cells.nth(4)).toHaveText(englishOutcomes[index])
+  }
   await page.getByRole('button', { name: 'EN', exact: true }).click()
   await page.getByRole('menuitem', { name: '中文', exact: true }).click()
   await records.locator('.el-pagination').getByRole('button', { name: '下一页', exact: true }).click()
@@ -89,6 +98,7 @@ test('my handling records show recipients and each authoritative outcome without
   await expect(tableRows.first()).toContainText('接收方已不存在')
   await expect(tableRows.first()).not.toContainText('9007199254740993')
   expect(fixture.requests).toContain('2')
+  expect(fixture.details).toEqual([])
   fixture.verify()
 })
 
@@ -126,6 +136,7 @@ test('handling detail keeps readable information first, copies exact IDs on dema
   await records.getByTestId('sharing-open-request').first().click()
   const detail = catalog.getByTestId('sharing-request-detail')
   await expect(detail).toContainText('户外开发者 · outdoor-develop (当前账号)')
+  await expect(detail.locator('td.el-descriptions__label').filter({ hasText: /^权限类型$/ }).locator('xpath=following-sibling::td[1]')).toHaveText('读取数据（包括元数据）')
   await expect(detail).toContainText('批准使用期限')
   await expect(detail).toContainText('已签发授权')
   await expect(detail.getByTestId('sharing-copy-request-id')).toBeHidden()
@@ -147,6 +158,9 @@ test('handling detail keeps readable information first, copies exact IDs on dema
   await expect(detail.getByTestId('sharing-copy-request-id')).toBeHidden()
   await catalog.getByTestId('sharing-back-records').click()
   await expect(records).toBeVisible()
+  await records.getByTestId('sharing-open-request').nth(1).click()
+  await expect(detail.locator('td.el-descriptions__label').filter({ hasText: /^权限类型$/ }).locator('xpath=following-sibling::td[1]')).toHaveText('仅查看元数据')
+  await expect(detail).toContainText('已受理，尚未签发')
   fixture.verify()
 })
 
