@@ -265,28 +265,21 @@ Develop 只对已持久化且可重复使用的 `dev_tasks.dev_type=query|workfl
 
 ## 数据库文档
 
-**遇到以下场景时,主动阅读对应文档**:
-
-| 场景 | 必读文档 | 触发关键词 |
-|------|---------|----------|
-| 数据库表结构查询 | 对应单表文档 | 字段定义、索引、约束 |
-| 表之间关系 | 数据库架构.md | 外键、关联、数据流 |
-| API端点详情 | 对应单表文档 | API、接口、请求响应 |
-| 执行记录管理 | `common.task_executions` | 执行状态、历史记录、性能监控 |
-| 开发任务管理 | dev_tasks表 | SQL查询、工作流、Notebook |
-
 ### 架构说明
-- [数据库架构](frontend/docs/数据库架构.md) - 表关系、数据流向、设计决策
+
+[数据库架构](frontend/docs/数据库架构.md)维护表归属、软引用和 TaskProvider 路由；当前定义与各次 execution 的冻结输入分别保存，不能从可变定义反推历史。
 
 ### 单表文档
 
-详细的表结构和API说明文档：
+| 阅读目的 | 正文 |
+| --- | --- |
+| 任务字段、模型索引与非持久投影 | [dev_tasks 表结构](frontend/docs/tables/dev_tasks表.md#二表结构定义) |
+| 定义覆盖、执行快照与当前版本缺口 | [并发与快照边界](frontend/docs/tables/dev_tasks表.md#25-定义覆盖执行快照与并发缺口) |
+| 用户任务定义、参数执行与存储 Engine 重绑 | [任务表 API](frontend/docs/tables/dev_tasks表.md#四api-端点说明) |
+| 委托 Tool 审批与一次性消费事实 | [tool_approvals 表](frontend/docs/tables/tool_approvals表.md) |
+| 统一执行记录的安全摘要与本人专业结果 | [通用安全投影](../docs/spec/tasks/执行监控.md#执行详情与安全投影)、[专业读取](#专业执行结果读取) |
 
-- [dev_tasks表](frontend/docs/tables/dev_tasks表.md) - 开发任务定义表,支持 query/workflow/script
-- Develop 执行记录统一写入 `common.task_executions`，不再维护 Develop 私有执行记录表。
-- [tool_approvals表](frontend/docs/tables/tool_approvals表.md) - Develop 持有的委托 Tool 审批与一次性消费事实。
-
-**重要**：修改表结构或API时，必须同步更新对应的单表文档。
+Develop 执行记录归 `common.task_executions`，不维护私有执行表。修改持久结构或 API 时同步对应单表说明；标准门禁与分版本结果见[开发与验证](#开发与验证)。
 
 ## 重要文件位置
 
