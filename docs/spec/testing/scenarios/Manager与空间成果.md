@@ -68,7 +68,9 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`；当前入口只接受新报告，不用历史三格式或旧版本报告替代本轮四格式完整结果。仅验证MinIO该有界TIFF样例及原三格式回归，不认证BigTIFF、任意布局/容量、NFS或Float64基础图片/地图渲染；SKP精确组成授权保持关闭。
 
-### ENVI 双文件 COG（实施中，尚未正式验收）
+### ENVI 双文件 COG（限定 Hosted 已验收）
+
+正式受验 `81be9c022` 的范围、失败历史和全部清理见[证据档案](../evidence/资源读取与预览历史证据.md#envi-双文件读取与-cog-hosted-t4)，不将下述场景设计等同任意输入都已通过。
 
 ENVI 原件出口要求当前普通 User，资源动作声明与实际受控读取复用同一认证准入判断。真实页面按钮须走既有 authenticated-fetch／Blob 保存路径；核同一账号、无 Cookie、无 URL 凭据、精确 locator 请求及完整 ZIP 保存字节，不把 Blob URL 当作服务端下载入口，也不以 API 单独下载代替按钮验收。六份页面证据逐一记录 `current_user_download_verified=true`。
 
