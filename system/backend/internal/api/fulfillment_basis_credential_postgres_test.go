@@ -64,9 +64,9 @@ func exerciseSystemBasisCredential(t *testing.T, ctx context.Context, db *gorm.D
 		}
 		permissions := slices.Clone(ac.Authorization.RoleAssignments[0].Permissions)
 		slices.Sort(permissions)
-		// Includes the task/plan facts read added by migration 000234 for
-		// task-bound Meta collection qualification; no execution permission.
-		if !slices.Equal(permissions, []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read", "meta.data_item_identity.read", "meta.task_provider.read", "transfer.production_receipt.read"}) {
+		// Exact read-only System runtime closure, including the node identity
+		// facts added by migration 000265; no execution or content permission.
+		if !slices.Equal(permissions, []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read", "meta.data_item_identity.read", "meta.node_identity.read", "meta.task_provider.read", "transfer.production_receipt.read"}) {
 			t.Fatalf("unexpected System runtime permissions: %v", permissions)
 		}
 		if response := performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-system", secret); response.Code != http.StatusBadRequest {
