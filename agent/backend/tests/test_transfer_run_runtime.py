@@ -104,6 +104,16 @@ class TransferRunRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('transfer__task__create', tools)
         self.assertNotIn('transfer__task__start', tools)
 
+    async def test_unknown_read_condition_stops_before_owner_observation(self):
+        self.contexts[GET_TOOL]["operation"]["inputs_required"].append("future_read_condition")
+        self.contexts[GET_TOOL]["concepts"].append({"id": "future_read_condition", "name": {"zh-cn": "未实现条件", "en": "Unimplemented condition"}})
+        events, _ = await self.invoke([
+            Message(role='assistant', tool_calls=[_call(GET_TOOL, {'execution_id': self.execution_id})]),
+            Message(role='assistant', content='当前读取条件尚未实现，不能查询。'),
+        ], capability=GET_TOOL)
+        self.assertFalse(any('/api/v1/transfer/executions/' in r[1] for r in self.requests))
+        self.assertTrue(any(e.kind == 'tool_result' and e.payload.get('error_code') == 'platform_condition_unsatisfied' for e in events))
+
     async def test_approved_resume_is_deterministic_and_consumes_local_confirmation(self):
         await self.request_review(); self.owner_decision(); self.requests.clear()
         events, inference = await self.invoke(resuming=True)

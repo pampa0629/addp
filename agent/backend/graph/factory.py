@@ -286,6 +286,11 @@ class _PlatformBoundary(AgentMiddleware):
                 checkpoint_committed=committed,
             ))
             await committed
+        if name == GET_TOOL:
+            try:
+                platform_identity(self.checkpoint, GET_TOOL)
+            except ValueError as exc:
+                return self._error(call, name, "platform_condition_unsatisfied", str(exc))
         if name == START_TOOL:
             try:
                 validate_start(call["args"], self.checkpoint)
@@ -346,6 +351,13 @@ class _PlatformBoundary(AgentMiddleware):
             self.checkpoint["confirmed"]["run_approval"] = None
             _emit("checkpoint", checkpoint=copy.deepcopy(self.checkpoint), facts={})
             if not review.get("execution_id"):
+                self._stop_resume("run_result_unknown")
+                return
+            context_tool = self.platform_tools["platform.capability.context"]
+            context_call = {"id": str(uuid.uuid4()), "name": context_tool.name,
+                            "args": {"capability": GET_TOOL}}
+            message = await self._invoke(context_call, invoke)
+            if not isinstance(message, ToolMessage) or json.loads(message.content).get("error"):
                 self._stop_resume("run_result_unknown")
                 return
             name, arguments = GET_TOOL, {"execution_id": review["execution_id"]}

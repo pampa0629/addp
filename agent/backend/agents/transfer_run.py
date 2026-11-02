@@ -5,16 +5,20 @@ START_TOOL = "transfer.task.start"
 GET_TOOL = "transfer.execution.get"
 
 
-def platform_identity(checkpoint):
-    context = checkpoint["observed"]["platform_capabilities"].get(START_TOOL)
-    if not isinstance(context, dict) or context.get("capability") != START_TOOL:
+def platform_identity(checkpoint, tool=START_TOOL):
+    context = checkpoint["observed"]["platform_capabilities"].get(tool)
+    if not isinstance(context, dict) or context.get("capability") != tool:
         raise ValueError("platform_condition_unsatisfied:platform_context")
     operation = context.get("operation", {})
-    if operation.get("owner") != "transfer" or operation.get("tool") != START_TOOL:
+    if operation.get("owner") != "transfer" or operation.get("tool") != tool:
         raise ValueError("platform_operation_mismatch")
-    supported = {"saved_supported_task", "owner_run_approval", "current_execution_authorization"}
+    supported = {
+        START_TOOL: {"saved_supported_task", "owner_run_approval", "current_execution_authorization"},
+        GET_TOOL: {"execution_identity", "current_read_access"},
+    }[tool]
     if set(operation.get("inputs_required", [])) != supported:
-        raise ValueError("platform_condition_unsatisfied:unknown_run_condition")
+        reason = "unknown_run_condition" if tool == START_TOOL else "unknown_execution_read_condition"
+        raise ValueError("platform_condition_unsatisfied:" + reason)
     return {"revision": context["revision"], "digest": context["digest"]}
 
 
