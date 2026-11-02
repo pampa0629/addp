@@ -84,32 +84,31 @@ Meta 扫描只保留四个核心维度：
 
 ### 集中采集权限与两种范围语义
 
-已确认 PG basic／deep 集中采集统一使用采集功能权限加引擎管理范围，取消逐任务采集批准，不要求操作者具有目标 DataItem 的查看或读取 Grant。配置和人员操作时由 System 核验当前功能与管理范围，Meta 约束真实任务和 Provider 计划；连接、租约或浏览器声明本身不提供许可。完整职责见[Meta 集中采集权限与范围](addp授权上下文规范.md#meta-集中采集权限与范围已确认)；已实现底座、未完成目标及各层验证统一见[实施范围与验证](addp授权上下文规范.md#九实施范围与验证)，不从目标规则推定全部能力已经接通。
+人员身份、功能 Permission 与引擎管理范围、租户定时主体及取消资格统一见[Meta 集中采集权限与范围](addp授权上下文规范.md#meta-集中采集权限与范围已确认)；人员核验端点、Runtime 服务身份与机器 Permission 见[System 核验入口](../../system/docs/IAM数据模型与迁移规范.md#meta-pg-basic-集中扫描)。本节维护 Meta 的实际扫描范围、冻结计划与读取控制，不将连接、租约或浏览器声明当作许可。已实现底座、未完成目标及各层验证统一见[实施范围与验证](addp授权上下文规范.md#九实施范围与验证)，不从目标规则推定全部能力已经接通。
 
-租户集中计划不按创建人、部门或项目组重复配置。任务归租户，创建人离职或失权不自动停止原定时计划，但不能继续修改或手动执行；当前有权管理员负责关闭定时和显式取消在途执行。关闭定时不取消已入队／运行中的执行，取消后下一次 Catalog 枚举不得发起，已放行枚举可结束。不把历史操作人或其个人 Grant／Deny 当作后台运行身份，也不伪造人类 Actor。
+关闭定时不取消已入队／运行中的执行。停止在途扫描使用显式取消，并由下述 Worker 枚举边界约束后续源读取；租户任务不借用历史操作人或其个人 Grant／Deny 作为运行身份。
 
 - **精确目标采集**仅覆盖指定 DataItem 及其经核验的合法组成；item、leaf 或显式 refs 不因位于同一目录而获得兄弟项权限。
 - **完整范围采集**在允许管理的 Engine、schema 或目录边界内发现当前及未来新增项，不把普通 node 变为 whole，不自动向人员授予元数据或内容权限。首期集中计划限定 PG 整引擎，basic／deep 权限一致；结果出口隔离与 deep 准入的实际完成范围见上述实施状态，不从目标规范外推已可执行。
-- Worker 在实际读取及重试／接管前核对固定 Runtime、Tenant、真实任务、当前引擎、冻结计划和有效 lease，以及取消／删除状态；计划变化不得让旧执行扩大读取，不缓存 Allow。当前 PG 一次 `EngineCatalogProvider.ListChildren` 是读取单元，不承诺逐 SQL 中断。
+- Worker 在实际读取及重试／接管前，沿上述 System Runtime 核验入口核对固定 Runtime、Tenant、真实任务、当前引擎、冻结计划、Common execution／attempt 与有效 lease，以及取消／删除状态；计划变化不得让旧执行扩大读取，不缓存 Allow。当前 PG 一次 `EngineCatalogProvider.ListChildren` 是读取单元，已放行枚举可结束，下一次枚举须重核；不承诺逐 SQL 中断。
 - 新产物仍先凭可信实际产出事实做精确 basic，再由 System 裁决读取授权；内容 deep 必须获权。覆盖、追加、同名重建或扫描新增行不推导首次产出资格。
 - basic／deep 不增设不同扫描权限；须先完成结果出口控制再开放 PG deep 新准入，受保护内容的既有拒绝与 Security 约束不变。缺权不能静默降级为 basic 成功；样本、正文及业务值不进入普通目录、执行详情或通用日志。
 - 结果查看按[元数据查看与数据读取](addp授权上下文规范.md#5511-元数据查看与数据读取2026-11-01-已确认部分实现)独立控制。资源身份和允许展示的结构使用查看授权；样本、正文与统计使用数据读取授权；采集深度不充当展示权限。
 
 旧逐任务批准的替换与存量任务处置统一见[授权规范的迁移与验收边界](addp授权上下文规范.md#meta-集中采集权限与范围已确认)，持久模型和启动处理见[System 迁移说明](../../system/docs/IAM数据模型与迁移规范.md#meta-逐任务采集批准退役)。旧批准不转换为新许可；保留任务配置、执行历史和通用审计，不以数据库终态冒充真实运行体停止，不自动恢复旧调度。任务 1 保留且关闭定时，不自动执行。原批准／撤销／到期的固定版本、失败、清理及未覆盖项见[历史采集资格导读](testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)，不计为新规则通过。
 
-PG basic 指定执行的取消入口为 `POST /api/v1/meta/executions/{execution_id}/cancel`。当前 User、独立取消 Permission、引擎管理范围及未领取／运行中执行的停止规则统一见[取消实现边界](addp授权上下文规范.md#meta-集中采集权限与范围已确认)；权限不自动授予现有角色。取消 API 已实现不代表目标部署已迁移或真实跨服务验收通过，实际结果按[实施范围与验证](addp授权上下文规范.md#九实施范围与验证)分层认定。
+PG basic 指定执行的取消入口为 `POST /api/v1/meta/executions/{execution_id}/cancel`；未领取／运行中执行的取消处理、独立权限与管理范围沿上述[授权规范](addp授权上下文规范.md#meta-集中采集权限与范围已确认)，权限不自动授予现有角色。取消 API 已实现不代表目标部署已迁移或真实跨服务验收通过，实际结果按上述实施状态分层认定。
 
 #### 集中采集实现与验证边界
 
-- 人员入口包括任务创建、更新、删除、手动触发，以及 Console 调用的 engine 绑定策略维护／删除。这些入口必须使用当次 User 凭据核验对应功能 Permission 和目标引擎管理范围；修改目标时同时核对原任务和新目标，不能只保护 Meta 页面而遗漏注册后的策略入口。取消复用既有指定执行接口。
-- Worker 保留 `ReadScanPlanFacts`、当前 Common execution／attempt／lease 与每次枚举前的核验，删除响应中的 `qualification_id` 及资格记录查询。`ReadScanTaskFacts` 的唯一产品消费方是旧批准流程，随其 DTO、客户端、Meta runtime 路由和 System 批准入口一并退役；不能误删执行计划事实接口。
+- Meta 须将任务创建、更新、删除、手动触发，以及 Console 的 engine 绑定策略维护／删除全部接入上述 System 人员核验入口，不能只保护 Meta 页面；修改目标同时核对原任务和新目标。指定执行取消使用上述独立接口，不由机器凭据或浏览器自报主体代替当前 User。
 - `ScanTask` 只保存 `engine_id`，没有权威引擎类型。迁移不能依据任务名称或旧批准是否存在识别 PG，也不能读取 System 私有引擎表；必须经统一 client 核对租户和引擎事实后，由 Meta Owner 关闭目标旧调度并停止其旧执行。引擎事实查询失败不视为非 PG 或迁移完成。迁移完成之前，不允许这些旧任务进入新的免批准读取路径。
 - 存在额外的编排入口 `POST /task-provider/tasks/scan/{id}/execute`：它使用 Orchestrator 服务身份和父执行来源，旧版依赖逐任务批准。**本期 PG 集中扫描明确拒绝编排触发**；只支持 Meta 人员手动触发和 Meta 自身定时触发，编排身份不能继承租户定时资格。后续另行设计编排主体的引擎管理范围。
 - 标准验证复用 Common／Meta／System 模块门禁、授权及 Swagger 门禁、Meta 与 System IAM PostgreSQL 门禁、PG Online runner，以及 System／Meta 前端门禁。新规则的功能与范围拒绝、配置变化、租户定时、取消及失败清理按[PG basic 集中扫描场景](testing/scenarios/授权与共享.md#pg-basic-集中扫描本轮真实验收待运行)验收；迁移专项沿上述 System 迁移说明。不另建审批测试路线，旧版本通过不计为新规则通过。
 
 ### 冻结扫描计划事实契约
 
-旧逐任务审批专用的 `ReadScanTaskFacts`、任务授权事实接口及其 DTO／客户端已随批准模型退役，不保留兼容读取或另一条审批路线。以下执行事实契约继续用于实际计划和运行条件核验，不能因审批退出删除，也不作为持久批准。
+旧逐任务审批专用的 `ReadScanTaskFacts`、任务授权事实接口及其 DTO／客户端，以及 Runtime 响应中的 `qualification_id` 与旧资格记录查询均已退役，不保留兼容读取或另一条审批路线。Worker 继续消费 `ReadScanPlanFacts`；以下执行事实契约用于实际计划和运行条件核验，不能因审批退出删除，也不作为持久批准。
 
 System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/runtime/scan-executions/{execution_id}/authorization-facts`，使用当前 Tenant 的独立 `addp-system` Service 凭据及既有 `meta.task_provider.read`。接口不接受 query、请求体、Actor 或附加 selector；响应 `Cache-Control: no-store`。200 只表示事实投影，不能代替 System 的权限与引擎管理范围裁决、授权签发或 Worker 消费。客户端只发一次请求，不跟随重定向或隐式重试，不传播错误体、凭据及连接。
 
