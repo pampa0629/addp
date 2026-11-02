@@ -2,7 +2,7 @@
 
 [返回脚本导航](../README.md)
 
-本页导航：[Online 统一入口](#online-统一入口) · [预检、报告与部署隔离](#预检报告与部署隔离) · [模块实例运行日志验收](#模块实例运行日志验收) · [平台节点指标 Hosted 验收](#平台节点指标-hosted-验收)
+本页导航：[Online 统一入口](#online-统一入口) · [预检与回归](#预检与确定性回归) · [报告与证据](#报告与证据) · [部署 profile](#部署-profile-与触发) · [Compose 公开地址专项](#compose-公开地址专项) · [macOS 专用环境](#macos-专用环境字段) · [模块实例运行日志验收](#模块实例运行日志验收) · [平台节点指标 Hosted 验收](#平台节点指标-hosted-验收)
 
 测试分层、身份和清理规则以[测试与验收规范](../../docs/spec/addp测试与验收规范.md)为准；历史结果仅适用于所列源码和运行尝试，不代表当前 HEAD 已重跑。
 
@@ -12,9 +12,17 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 
 ## 预检、报告与部署隔离
 
-通用预检由分发器向 `scripts/test/online-preflight.py` 传入参与服务的 `module=http://loopback:port`。预检要求显式非默认 Tenant、安全 Run ID、干净工作区和唯一专用数据库 `POSTGRES_DB=addp_online`，并校验所有 `/health/live` 构建身份与当前 Git commit 一致，再要求 `/health/ready` 已就绪；任何非回环服务地址都会被拒绝。宿主机 `--check-only` 在生命周期操作前调用同一预检器的 `--environment-only`，因此不存在第二套数据库或 Tenant 判定。分发器与预检器的无外部服务回归测试统一使用 `make test-online-runner`，并已纳入 `make test-platform`。两者不执行未登记的业务断言，不读取或保存 Token，也不接管服务生命周期。
+### 预检与确定性回归
 
-分发器对同一 `suite + Run ID` 使用操作系统临时目录进程锁，锁覆盖预检、场景和报告写入。成功或失败均生成 `addp.online-gate/v1` 的 `online-report.json`：专用 Runner 写入仓库外 `ADDP_ONLINE_ARTIFACT_DIR` 并由 workflow 归档，本地直接执行则写入操作系统临时目录。报告包含构建身份、脱敏服务地址、Tenant、`addp_online` 数据库类别、阶段耗时、稳定错误码及 owner suite 的身份/创建/清理/残留证据，不保存 Token、Secret 或完整错误响应正文。
+通用预检由分发器向[预检器](../test/online-preflight.py)传入参与服务的 `module=http://loopback:port`。Tenant、Run ID、构建身份与 Ready 的检查沿[开关、身份与拓扑预检](../../docs/spec/testing/T4-Online验收规范.md#开关身份与拓扑预检)，干净 checkout、专用 `POSTGRES_DB=addp_online` 和回环地址要求沿[专用环境](../../docs/spec/testing/T4-Online验收规范.md#专用环境)。
+
+宿主机 `--check-only` 在生命周期操作前调用同一预检器的 `--environment-only`，不另设数据库或 Tenant 判定；该阶段不代表服务健康或业务断言已通过。分发器与预检器的无外部服务回归统一使用 `make test-online-runner`，并已纳入 `make test-platform`。两者不执行未登记的业务断言，不读取或保存 Token，也不接管服务生命周期。
+
+### 报告与证据
+
+分发器对同一 `suite + Run ID` 使用操作系统临时目录进程锁，锁覆盖预检、场景和报告写入。成功或失败均生成 `addp.online-gate/v1` 的 `online-report.json`：专用 Runner 写入仓库外 `ADDP_ONLINE_ARTIFACT_DIR` 并由 workflow 归档，在已准入的专用环境直接执行而未指定该目录时写入操作系统临时目录；这一落盘行为不授权复用个人开发部署。
+
+报告字段与脱敏要求统一见[报告规范](../../docs/spec/testing/T4-Online验收规范.md#报告)。owner 的业务报告与外层部署清理结果分别认定，清理失败不得因业务断言成功而计为通过，见[数据、超时与清理](../../docs/spec/testing/T4-Online验收规范.md#数据超时与清理)。
 
 ### 部署 profile 与触发
 
@@ -26,7 +34,7 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 | GitHub Hosted Linux x86_64 | 各 suite 的 Host Gate 复用[Hosted 生命周期](../utils/hosted-online.sh)，从零建立当次环境 |
 | 当前 KingbaseES owner-managed | [KingbaseES Host Gate](../test/online-owner-managed-kingbase-gate.sh)限定 `self-hosted`、`Linux`、`X64`、`addp-kingbase` 标签及 `addp-kingbase` Environment 审批，只从 owner-only `ADDP_KINGBASE_GATE_ENV_FILE` 加载 License 路径、License SHA-256 等受控事实 |
 
-三种 profile 都在生命周期操作前验证仓库外 artifact／secret 分区、无根 `.env`、无容器冲突和干净 checkout，产出不含密钥内容的 `readiness.txt`，共用唯一 `make test-online` 分发入口；Hosted 与 KingbaseES 还必须销毁当次业务引擎、Infra 和凭据目录。
+生命周期操作前的仓库外 artifact／secret 分区、无根 `.env`、无容器冲突和干净 checkout 准入沿[专用环境](../../docs/spec/testing/T4-Online验收规范.md#专用环境)。各 Host Gate 产出不含密钥内容的 `readiness.txt`，共用唯一 `make test-online` 分发入口；常驻 macOS Infra 与 Hosted／KingbaseES 当次部署的销毁范围分别沿该规范，不混用准备或清理假设。
 
 [Online CI 登记检查](../ci/check-online-ci-registration.py)要求 suite、部署 profile、Runner 预检、workflow choices 与夜间登记完全一致，拒绝未毕业的定时 suite、非每日 cron、未固定 suite 输入或可能被定时事件误触发的其他 Job。
 
@@ -36,7 +44,25 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 
 ### macOS 专用环境字段
 
-常规 macOS self-hosted Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独立环境文件并替换全部 Secret；不能把该文件复制为仓库根 `.env`。除专用 Infra 连接和所有内置 `*_SERVICE_CLIENT_SECRET` 外，至少显式配置 `ADDP_ONLINE_TEST=1`、`ADDP_ONLINE_TEST_TENANT_ID`、`POSTGRES_DB=addp_online`、`SYSTEM_URL`、`GATEWAY_URL`、`MANAGER_URL`、`META_URL`、`SECURITY_URL`、`TRANSFER_URL`、`CATALOG_URL`、`ASSET_URL`、`PORTAL_URL`、`DEVELOP_URL`、`SERVICE_URL`、`WORKBENCH_URL`、`CONSOLE_URL`、`STANDARD_URL`、`MODEL_URL`。`module-registry-recovery` 使用其中的 `MANAGER_SERVICE_CLIENT_SECRET`；`standard-model-reference-deletion` 使用 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`；`consumer-engine-recovery` 另外要求同一专用 User 的 `ADDP_ONLINE_TEST_USER_USERNAME`、`ADDP_ONLINE_TEST_USER_PASSWORD`，以及稳定 `ADDP_ONLINE_TEST_ENGINE_ID`、名称、端口、用户、密码和数据库；`enterprise-catalog-publishing` 同样使用该专用 User 的用户名和密码，并需预置永久 Domain 和 Department ID；`workbench-service-consumption` 另需同 Tenant 专用 `ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN`、永久 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID`，以及端口、数据库、只读用户、只读密码和 root fixture 密码，其浏览器阶段仍使用非管理员专用 User 的用户名和密码；`transfer-insert-only-mysql` 复用永久 PostgreSQL Engine Instance，另需永久 `ADDP_ONLINE_TRANSFER_MYSQL_ENGINE_ID`、名称、端口、数据库、可写用户、可写密码和仅供 Fixture 使用的 root 密码，浏览器使用同一专用 User 的用户名和密码；`oceanbase-consumer-flow` 另需永久 `ADDP_ONLINE_OCEANBASE_ENGINE_ID`，以及该实例对应的端口、database、租户限定用户和密码，专用 User 只需具备 Meta、Manager、Transfer、Develop 和 Service 所需最小权限，其中包括 `manager.data_item.read`；Engine 控制面状态由部署 profile 负责验证，业务 consumer 不需要 `system.engine.read`；`security-transfer-protection` 另需永久 `ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID`、MongoDB 端口、数据库、只读账号，以及仅供 Fixture 使用的 root 账号；`security-plaintext-access` 复用永久 PostgreSQL Engine Fixture，并要求 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN` 对应的申请用户具备 Manager 预览及原值访问申请权限、`ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN` 对应的另一名用户具备审批和撤销权限。GitHub Environment `addp-online` 的 Repository Variable `ADDP_ONLINE_ENV_FILE` 只保存该仓库外文件的绝对路径，不保存文件内容。
+#### 公共配置与凭据文件
+
+常规 macOS self-hosted Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独立环境文件并替换全部 Secret；不能把该文件复制为仓库根 `.env`。除专用 Infra 连接和所有内置 `*_SERVICE_CLIENT_SECRET` 外，至少显式配置 `ADDP_ONLINE_TEST=1`、`ADDP_ONLINE_TEST_TENANT_ID`、`POSTGRES_DB=addp_online`、`SYSTEM_URL`、`GATEWAY_URL`、`MANAGER_URL`、`META_URL`、`SECURITY_URL`、`TRANSFER_URL`、`CATALOG_URL`、`ASSET_URL`、`PORTAL_URL`、`DEVELOP_URL`、`SERVICE_URL`、`WORKBENCH_URL`、`CONSOLE_URL`、`STANDARD_URL`、`MODEL_URL`。
+
+GitHub Environment `addp-online` 的 Repository Variable `ADDP_ONLINE_ENV_FILE` 只保存该仓库外文件的绝对路径，不保存文件内容。完整必需字段以[Host Gate 的 `REQUIRED_SUITE_ENV`](../test/online-host-gate.sh)为准；下表保留场景补充准备与身份区别，业务断言和清理职责由对应专题维护，不作为全部 suite 的配置清单。
+
+#### 按场景补充
+
+| 场景正文 | 专用准备与身份 |
+| --- | --- |
+| [模块注册恢复](Online引擎与消费.md#模块注册恢复) | `module-registry-recovery` 使用其中的 `MANAGER_SERVICE_CLIENT_SECRET`。 |
+| [标准与模型引用删除](Online目录与治理.md#标准与模型引用删除) | `standard-model-reference-deletion` 使用 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`。 |
+| [消费方引擎恢复](Online引擎与消费.md#消费方引擎恢复) | `consumer-engine-recovery` 另外要求同一专用 User 的 `ADDP_ONLINE_TEST_USER_USERNAME`、`ADDP_ONLINE_TEST_USER_PASSWORD`，以及稳定 `ADDP_ONLINE_TEST_ENGINE_ID`、名称、端口、用户、密码和数据库。 |
+| [企业目录发布](Online目录与治理.md#企业目录发布) | `enterprise-catalog-publishing` 同样使用该专用 User 的用户名和密码，并需预置永久 Domain 和 Department ID。 |
+| [Workbench 服务消费](Online引擎与消费.md#workbench-服务消费) | `workbench-service-consumption` 另需同 Tenant 专用 `ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN`、永久 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID`，以及端口、数据库、只读用户、只读密码和 root fixture 密码，其浏览器阶段仍使用非管理员专用 User 的用户名和密码。 |
+| [Transfer 仅新增写入](Online引擎与消费.md#transfer-仅新增写入) | `transfer-insert-only-mysql` 复用永久 PostgreSQL Engine Instance，另需永久 `ADDP_ONLINE_TRANSFER_MYSQL_ENGINE_ID`、名称、端口、数据库、可写用户、可写密码和仅供 Fixture 使用的 root 密码，浏览器使用同一专用 User 的用户名和密码。 |
+| [OceanBase 消费](Online引擎与消费.md#oceanbase-消费) | `oceanbase-consumer-flow` 另需永久 `ADDP_ONLINE_OCEANBASE_ENGINE_ID`，以及该实例对应的端口、database、租户限定用户和密码，专用 User 只需具备 Meta、Manager、Transfer、Develop 和 Service 所需最小权限，其中包括 `manager.data_item.read`；Engine 控制面状态由部署 profile 负责验证，业务 consumer 不需要 `system.engine.read`。 |
+| [Transfer 保护](Online数据保护.md#transfer-保护与原值访问) | `security-transfer-protection` 另需永久 `ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID`、MongoDB 端口、数据库、只读账号，以及仅供 Fixture 使用的 root 账号。 |
+| [原值访问](Online数据保护.md#transfer-保护与原值访问) | `security-plaintext-access` 复用永久 PostgreSQL Engine Fixture，并要求 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN` 对应的申请用户具备 Manager 预览及原值访问申请权限、`ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN` 对应的另一名用户具备审批和撤销权限。 |
 
 ## 模块实例运行日志验收
 
@@ -64,6 +90,4 @@ Monitor 使用独立查询客户端证书，私钥不挂载到中心；在标准
 
 节点指标 suite 的首次真实 Hosted T4 已在 `456d3bb84` 通过：[Run 37463003308](https://github.com/pampa0629/addp/actions/runs/37463003308)。业务报告的阶段为 `complete`，保存与活动目标版本均为 2；独立清理摘要确认部署/凭据销毁及 Infra 零残留。原生 OAuth `token_type` 按既有 Common Client 的大小写不敏感标准校验，保持唯一认证协议。该固定版本结果仅覆盖当次 Linux VM 链路，不证明生产 T5 或用户资源查询页面交付；suite 继续手工触发。
 
-`794450a30` 的历史查询扩展覆盖八项基础节点资源的正式即时/趋势 API、查询预算 CAS 与热生效、查询权限隔离、停用后不复用历史，以及中心故障时 Ready/租户执行列表继续可用的断言。
-
-扩展已在 `794450a30` 通过 [Run 37485747576](https://github.com/pampa0629/addp/actions/runs/37485747576)：查询、预算 CAS/热生效、身份隔离、中心故障与新样本恢复、节点重启用、停用后不复用历史均有业务断言，独立摘要确认清理成功与 Infra 零残留；18 个归档文件的私钥及完整 IAM 不透明凭据检查通过。首次通过的旧证据仅覆盖原节点／目标采集链路。
+历史查询扩展已在 `794450a30` 通过 [Run 37485747576](https://github.com/pampa0629/addp/actions/runs/37485747576)：覆盖八项基础节点资源的正式即时/趋势 API、查询预算 CAS/热生效、查询权限与身份隔离、中心故障时 Ready/租户执行列表继续可用、新样本恢复、节点重启用和停用后不复用历史。独立摘要确认清理成功与 Infra 零残留；18 个归档文件的私钥及完整 IAM 不透明凭据检查通过。该扩展与首次通过的原节点／目标采集链路证据分别认定，均不代表当前 HEAD 已重跑。
