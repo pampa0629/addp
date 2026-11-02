@@ -1092,4 +1092,26 @@ Manager和Transfer统一复用Common的C围栏安全失败步骤写入；诊断�
 
 **实际本地证据。** 标准Common／System Go-only Owner、Transfer后端、Manager后端全部通过；独立Execution runner完整115＋170项及登记一致通过。标准Common PG为67主项、Transfer PG为19、Manager PG为31、System Cleanup PG为6，均exit0且无FAIL／SKIP；System IAM标准cleanup-authorization场景及新engine_connection子项也实际通过。Transfer PG新增实际C→Common客户端→Capture解析→持久operation／结果／回执的组合验证，原生Provider为fake，不冒充真实源T4。System覆盖原六权限、撤权／关闭Tenant／P与C失效／到期跨越读取／错目标等拒绝及审计不含连接。原生runner和旧普通Resolver均已取得先失败后通过的确定性反例，不把旧实现编译失败当作功能反例。
 
-测试沿既有标准入口与注册主测试执行，未创建本地数据库或接管个人服务。初次测试夹具／顺序错误及历史失败日志保留，最终结果与之分开。CI会话以 `26b7d33d5342178d6405d2573ea117d887432e5a` 完成独立Transfer Go入口，避免无关聚合失败阻断本Owner实际执行；其它既有Go／PG／授权／runner路径自动命中。本节产品提交后的相关Linux CI尚待实际终态，不以本地或历史源码替代。第十一轮Hosted仍failure0/7；修正后未运行新的Hosted，新的单次运行须另行确认。
+测试沿既有标准入口与注册主测试执行，未创建本地数据库或接管个人服务。初次测试夹具／顺序错误及历史失败日志保留，最终结果与之分开。CI会话以 `26b7d33d5342178d6405d2573ea117d887432e5a` 完成独立Transfer Go入口，避免无关聚合失败阻断本Owner实际执行；其它既有Go／PG／授权／runner路径自动命中。本节产品提交时相关Linux CI尚待实际终态，不以本地或历史源码替代；最终结果见下文。第十一轮Hosted仍failure0/7；修正后未运行新的Hosted，新的单次运行须另行确认。
+
+
+**准确产品提交的Linux终态（2026-11-02）。** 产品修正 `8ceefc5b0300dfb2fbdff0244bb90e07bbec0cef` 已push main。主责重新从GitHub下载九份原始Job日志并fresh核对Job API，逐份确认准确checkout、标准入口、selected及终态，全部日志字节与CI会话归档哈希一致，没有借用26基线或后继提交。
+
+| 门禁 | 实际Job | 实际结果 | 原日志SHA-256 |
+| --- | --- | --- | --- |
+| System Go | [125218816892](https://github.com/pampa0629/addp/actions/runs/41427877937/job/125218816892) | success；20有测试包 | `497952b32d9f8ce2110d26ce7a493db828448d876abbe18ffed1e139e6b6221f` |
+| Transfer Go | [125218817190](https://github.com/pampa0629/addp/actions/runs/41427877937/job/125218817190) | success；14有测试包 | `fa5494e7d66f12be522a53bc0f29f9f9d1bb1cf01521484ce192f41a0f03a3a2` |
+| Execution runner | [125218816851](https://github.com/pampa0629/addp/actions/runs/41427877937/job/125218816851) | success；115＋171项及登记一致 | `77e14eeec0d304e48196a73d8351843d14c53b26da785293f50ca59428dc1e94` |
+| Common PG | [125224108033](https://github.com/pampa0629/addp/actions/runs/41427877912/job/125224108033) | success；67主项 | `addc76601a81d7d34e7e8da0c5d620fae4c39f9dce766241904744f73c7a640a` |
+| Transfer PG | [125224108693](https://github.com/pampa0629/addp/actions/runs/41427877912/job/125224108693) | success；19主项 | `96063f1f0c287c30276f344c9826eebf16cbc96eef0342b4d31aa41e1963117f` |
+| Manager PG | [125224108604](https://github.com/pampa0629/addp/actions/runs/41427877912/job/125224108604) | success；31主项 | `b065637b48a477f0dabedfbf2218e3bca072ec981623db8b1aca3e29110af30f` |
+| System Cleanup PG | [125224107007](https://github.com/pampa0629/addp/actions/runs/41427877912/job/125224107007) | success；6主项 | `4d0538a22f377ca21243ec90cbe269478b120593e66779f386763b6d0dd588fc` |
+| System IAM verification PG | [125224107170](https://github.com/pampa0629/addp/actions/runs/41427877912/job/125224107170) | success；177主项 | `394603bf66b08d4c35b1be2e8ad7a330002bc7c912a9e32e9e2e3ec90a0525e4` |
+
+上述三个独立runner均selected:true并实际执行；PG五类合计300主项，均0FAIL／0SKIP。Transfer的 `connection_pipeline/complete`、`connection_denied`、`native_unknown` 明确RUN／PASS；System IAM的 `engine_connection` 与 `six_permission_engine_identity_is_purpose_isolated` 明确RUN／PASS。Manager的CleanupRuntimeAtomicity及ProductionRepositories也实际通过。Linux runner实测第二组为171；本地归档结果为170，分别记录，不把本地数字改成未实际运行的结果。
+
+[Go workspace Job125218816524](https://github.com/pampa0629/addp/actions/runs/41427877937/job/125218816524) 整体failure；只核验本修复相关Common／Manager完整片段：Common157个不同有测试包及额外无CGO processmetrics通过，Manager15包通过，均完成tidy并已进入下一模块。原日志SHA-256 `3e8322558c551f641b5bb6919d124d6156316a7fc1aa61229a89612a010a56c4`。不把片段通过扩称聚合通过，不展开其它Owner失败。
+
+**静态检查与汇总边界。** 本次Platform consistency Job125218817052在其它Owner的既有来源检查失败，未到达授权／Swagger入口；本地 `make test-authorization` 与System249路由Swagger已通过，但本次远端该项未执行，不计CI通过。System IAM verification已实际通过，另一个不运行产品测试的System IAM gate汇总Job125233011585在本次归档时仍queued，不以汇总代替测试证明。主责逐项证明与原日志保存在 `/tmp/addp-cleanup-connection-20261102/root-final-ci-proof.json` 及同目录 `final-job-*.log`。
+
+**剩余缺口与下一步。** 本批窄用途修正和相关产品T1／T2已获得当前准确源码的实际Linux证据；新原生Hosted仍未运行，第十一轮仍为failure0/7，不声称现场唯一原因已穷尽或完整清理链路已验收。优先下一步是在另行确认后运行一次同六权限、同范围、同七断言、同预算的修正版transfer-engine Hosted；本轮没有派发、重跑或环境切换。Graph原生写图、正向reopen及其它既有未验收项保持，不随本批关闭。
