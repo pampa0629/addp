@@ -55,7 +55,7 @@ Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨
 
 ## Meta 扫描分层约定
 
-集中扫描的目标为功能权限加引擎管理范围，basic／deep 不划分人员权限；逐任务批准退役和 PG basic 前置实现正在验证，PG deep 统一准入、元数据结果过滤和 Manager 精确刷新尚未完成。统一规则与完成边界见[集中扫描规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)。Meta 通过 `SystemServiceClient.CheckMetaCollection` 核对冻结摘要与当前 lease；不支持的 selector 拒绝，不降级。定义在排队／运行中删除时仍须结束原 execution，不重建任务摘要，也不让缺失定义阻塞队列。
+集中采集权限、basic／deep 目标及当前完成边界统一见[集中扫描规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)，本入口不重复维护阶段进度。Meta 通过 `SystemServiceClient.CheckMetaCollection` 核对冻结摘要与当前 lease；不支持的 selector 拒绝，不降级。定义在排队／运行中删除时仍须结束原 execution，不重建任务摘要，也不让缺失定义阻塞队列。
 
 PG basic 的执行条件重核以一次 `EngineCatalogProvider.ListChildren` 枚举为读取单元，已放行调用可结束其内部 SQL，下一次调用须重核。中途明确拒绝立即结束后续 namespace 遍历，保留拒绝类型、失败目标诊断及已完成枚举计数，不把全范围标为完成。逐语句诊断不改变这一运行边界，也不表示已支持逐 SQL 取消；现行门禁与历史记录从[集中扫描验证范围](#集中扫描验证范围)分别进入。
 
