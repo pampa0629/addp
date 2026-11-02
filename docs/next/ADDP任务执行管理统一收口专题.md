@@ -1151,3 +1151,12 @@ Manager和Transfer统一复用Common的C围栏安全失败步骤写入；诊断�
 派发前33项自有代码及24项关键运行输入与c63逐字节相同。后续主干增量中的Agent／Markdown前端展示、Meta lineage只读投影及其Swagger、独立pg-source profile、前端静态检查以及其它Owner的CI超时调整均不由本原生API分支消费；已只读按用途核对排除，Transfer／Execution两Job定义及权限一致，Native Hosted完整Job、原角色夹具、机器契约与120分钟Job预算均未变。不部署本机未提交的文件源授权、运行委托、迁移或其它WIP，不以它们作为本轮验收源码。
 
 私有目录 `/tmp/addp-transfer-engine-hosted-thirteenth-20261102/` 封存新单次intent、source／CI前提、唯一派发前后Run／Job快照、canonical validator与五份终态审计；复用已通过反例验证的同一诊断闭集。终态前第十二轮0/7仍为最新已完成Hosted结果，所有新checks均待实际报告，控制退出不能代替业务通过。
+
+
+**第十三轮实际终态：首次完整7/7。** 北京时间2026-11-02 23:10:38—23:29:46，唯一Job实际success；十四服务同准确01b8d23f5、repository_clean=true。主责重新下载原日志与artifact，五份冻结审计全部exit0，canonical成功谓词通过，正式checks精确为原七项：real_capture_created、actual_invocations_returned、native_capture_absent、engine_retains_task_and_dlq、professional_receipt_equal、explicit_task_delete_removes_dlq、target_business_rows_preserved。控制恢复、control_cleanup、cleanup均passed，infra_cleanup=zero_residuals；成功报告无失败诊断。
+
+原日志428910字节／SHA-256 `877461d5ca352ff1543293d1e0c3e5d034fa2069cbb702a302217fffc12444de`；artifact13155157541／ZIP3475字节，SHA-256 `feaddc09e73fb64487b0554d8c115f84bb76239d6930371518da1f58fcabf609`。原生报告972字节，SHA-256 `7ed71d174ddacb072b0015a1c5afb390f62c0a80d2d23f00deb2375eba7d39f9`；私有原件及逐项证明见本轮目录的raw-manifest／audit-exit-proof／terminal-proof。
+
+本结果确认在原六权限／范围／七断言／预算下，已批准的窄连接用途、Manager两阶段修正及本次精确Kafka缺失解释能够共同完成当前transfer-engine原生基线；不追溯把前十二轮失败改为通过，不宣称每轮历史唯一底层错误均已直接取证。该case报告的native_late_writer、graph_native_write、positive_reopen仍为not_run。
+
+**后续已确认顺序与授权解释。** 继续§8.18既定顺序，在基线成功后验证原已登记的transfer-capture-unknown；依据用户“后续无需单独确认”的持续授权，不再为这次既定专项单独询问。该case沿原机器契约八项断言（并非将本轮七项放宽或改名）、原三User／权限／操作范围和预算，使用新的独占部署；不增加新原生故障种类或测试端点。DLQ unknown已有固定源码7/7证据，不为填充轮次盲重跑；Graph及其它原生未验项继续按各自实际范围保留。
