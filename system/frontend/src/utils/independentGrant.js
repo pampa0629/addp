@@ -14,7 +14,7 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
     !((leaf?.term === 'table' && leaf.kind === 'table') || (leaf?.term === 'directory' && leaf.kind === 'directory' && requirement.binding?.scope) || (['file', 'object'].includes(leaf?.term) && leaf.kind === leaf.term))) throw new Error('invalidGrant')
   const candidate = candidates.find(row => row.id === form.recipientID)
   const reason = form.reason?.trim()
-  if (!['user', 'department', 'project_group'].includes(form.recipientType) || !candidate || !reason || Array.from(reason).length > 2000 ||
+  if (!['read', 'metadata_read'].includes(form.action) || !['user', 'department', 'project_group'].includes(form.recipientType) || !candidate || !reason || Array.from(reason).length > 2000 ||
     !['at_time', 'until_revoked'].includes(form.expiryMode)) throw new Error('invalidGrant')
   let expiresAt = null
   if (form.expiryMode === 'at_time') {
@@ -22,9 +22,9 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
     expiresAt = form.expiresAt.toISOString()
   }
   const fields = { ...approvedBoundaryFields(path, requirement.binding), request_id: crypto.randomUUID(), recipient_type: form.recipientType,
-    recipient_id: decimal(candidate.id), action: 'read', expiry_mode: form.expiryMode, expires_at: expiresAt, reason }
+    recipient_id: decimal(candidate.id), action: form.action, expiry_mode: form.expiryMode, expires_at: expiresAt, reason }
   const encoded = JSON.stringify(fields)
-  return Object.freeze({ requestID: fields.request_id, payload: `${encoded.slice(0, -1)},"catalog_path":${serializeEngineCatalogTarget({ ...path, engine_id: id })}}`,
+  return Object.freeze({ action: fields.action, requestID: fields.request_id, payload: `${encoded.slice(0, -1)},"catalog_path":${serializeEngineCatalogTarget({ ...path, engine_id: id })}}`,
     targetLabel: path.segments.filter(segment => segment.name).map(segment => segment.name).join(' / '), recipientLabel: candidate.name,
     recipientType: fields.recipient_type, recipientID: fields.recipient_id, expiresAt, expiryMode: form.expiryMode,
     wholeScope: !!requirement.binding.scope,

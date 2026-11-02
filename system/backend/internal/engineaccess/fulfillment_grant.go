@@ -259,6 +259,9 @@ func (s *Service) writeAcceptedGrant(ctx context.Context, actor FulfillmentRunti
 			return err
 		}
 		check := func() error {
+			if err := tx.checkSourceAccessAction(ctx, request.TenantID, int64(request.Path.EngineID), request.Action); err != nil {
+				return err
+			}
 			if err := runtimeCheck(); err != nil {
 				return err
 			}

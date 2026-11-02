@@ -26,7 +26,7 @@ type SharingDecision struct {
 	AuthorizationVersion    int64           `gorm:"not null" json:"authorization_version,string" swaggertype:"string"`
 	RecipientType           string          `gorm:"size:32;not null" json:"recipient_type"`
 	RecipientID             int64           `gorm:"not null" json:"recipient_id,string" swaggertype:"string"`
-	Action                  string          `gorm:"size:16;not null" json:"action"`
+	Action                  string          `gorm:"size:16;not null" json:"action" enums:"read,metadata_read"`
 	SelfBeneficiary         bool            `gorm:"not null" json:"self_beneficiary"`
 	ConfirmerInProjectGroup bool            `gorm:"not null" json:"confirmer_in_project_group"`
 	Reason                  string          `gorm:"type:text;not null" json:"reason"`

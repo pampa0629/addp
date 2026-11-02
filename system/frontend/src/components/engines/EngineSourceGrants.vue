@@ -10,6 +10,11 @@
       <el-alert v-if="!canReadCandidates" type="warning" :closable="false" :title="t('system.engine.sourceGrants.candidatesRequired')" />
       <el-form label-position="top" @submit.prevent="create">
         <div :inert="saving || !!attempt || undefined">
+          <el-form-item :label="t('system.engine.sourceGrants.action')" required>
+            <el-select v-model="form.action" data-testid="source-grant-action" :placeholder="t('system.engine.sourceGrants.selectAction')">
+              <el-option v-for="action in (engine.engine_type === 'postgresql' ? ['metadata_read', 'read'] : ['read'])" :key="action" :value="action" :label="actionLabel(action)" />
+            </el-select>
+          </el-form-item>
           <el-form-item :label="t('system.engine.sourceGrants.recipientType')" required>
             <el-select ref="recipientTypeSelect" v-model="form.recipientType" data-testid="source-grant-recipient-type" @change="loadCandidates"><el-option v-for="kind in ['user','department','project_group']" :key="kind" :value="kind" :label="t(`system.engine.sourceGrants.types.${kind}`)" /></el-select>
           </el-form-item>
@@ -24,6 +29,7 @@
       </el-form>
       <el-table v-if="outcomes.length" :data="outcomes" data-testid="source-grant-outcomes">
         <el-table-column :label="t('system.engine.dataAuthorization.target')"><template #default="{ row }">{{ row.targetLabel }}</template></el-table-column>
+        <el-table-column :label="t('system.engine.sourceGrants.action')"><template #default="{ row }">{{ actionLabel(row.action) }}</template></el-table-column>
         <el-table-column :label="t('system.engine.sourceGrants.state')"><template #default="{ row }">{{ row.done ? t(row.recovered ? 'system.engine.sourceGrants.historyRecovered' : 'system.engine.sourceGrants.created') : row.error }}</template></el-table-column>
         <el-table-column :label="t('system.engine.sourceGrants.command')" prop="requestID" show-overflow-tooltip />
       </el-table>
@@ -166,7 +172,7 @@ const recipientSources = {
   department: { permission: 'iam.department.read', api: iamAPI.departments, id: 'id' },
   project_group: { permission: 'iam.project_group.read', api: iamAPI.projectGroups, id: 'id' }
 }
-const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
+const form = reactive({ action: '', recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
 const canReadCandidates = computed(() => auth.hasPermission(recipientSources[form.recipientType]?.permission))
 const rows = ref([]), total = ref(0), page = ref(1), loading = ref(false), error = ref(''), success = ref('')
 const listMode = computed(() => props.listMode)
@@ -321,7 +327,7 @@ async function create() {
     const composition = captured.filter(command => command.compositionPaths.length).map(command =>
       t('system.engine.sourceGrants.confirmComposition', { target: command.targetLabel, files: command.compositionPaths.join('；') })).join('\n')
     const whole = captured.filter(command => command.wholeScope).map(command => t('system.engine.sourceGrants.confirmWhole', { target: command.targetLabel })).join('\n')
-    await ElMessageBox.confirm(t('system.engine.sourceGrants.confirmBody', { target: captured.map(command => command.targetLabel).join('；'), recipient: first.recipientLabel, expiry: first.expiryMode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(first.expiresAt) }) + (composition ? `\n${composition}` : '') + (whole ? `\n${whole}` : ''), t('system.engine.sourceGrants.create'), { customClass: 'addp-message-box', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') })
+    await ElMessageBox.confirm(t('system.engine.sourceGrants.confirmBody', { target: captured.map(command => command.targetLabel).join('；'), recipient: first.recipientLabel, action: actionLabel(first.action), expiry: first.expiryMode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(first.expiresAt) }) + (composition ? `\n${composition}` : '') + (whole ? `\n${whole}` : ''), t('system.engine.sourceGrants.create'), { customClass: 'addp-message-box', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') })
     if (epoch !== generation || !props.authorizationReady || !canCreate.value) return
     if (!recovering) outcomes.value = []
     attempt.value = captured
@@ -331,7 +337,7 @@ async function create() {
       try {
         const result = await enginesAPI.createSourceGrant(props.engine.id, command.payload)
         if (epoch !== generation) return
-        if (result?.request_id !== command.requestID || result.approval_mode !== 'independent' || !result.granted_at) throw new Error('invalidIssuance')
+        if (result?.request_id !== command.requestID || result.approval_mode !== 'independent' || result.action !== command.action || !result.granted_at) throw new Error('invalidIssuance')
         outcome = { ...command, done: true, error: '', recovered: recovering || !!result.revocation }
       } catch (e) {
         if (epoch !== generation) return
@@ -415,7 +421,7 @@ watch(() => JSON.stringify(props.requirements), (value, previous) => {
     approvalTargetsEqual(row.catalog_path, current[index].catalog_path) && (!row.source || JSON.stringify(row) === JSON.stringify(current[index])))
   generation++; attempt.value = null; outcomes.value = []; saving.value = false; formError.value = ''
   ElMessageBox.close()
-  if (!completedObservation) { form.recipientType = 'user'; form.recipientID = ''; form.expiryMode = ''; form.expiresAt = null; form.reason = '' }
+  if (!completedObservation) { form.action = ''; form.recipientType = 'user'; form.recipientID = ''; form.expiryMode = ''; form.expiresAt = null; form.reason = '' }
   loadCandidates({ preserveSelection: completedObservation }); load()
 })
 watch(() => props.authorizationKey, () => {

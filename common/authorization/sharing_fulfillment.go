@@ -34,7 +34,7 @@ type SharingFulfillmentBinding struct {
 func (b SharingFulfillmentBinding) Validate() error {
 	if b.CallerPrincipalID <= 0 || b.Operator.PrincipalID <= 0 || b.Operator.MembershipID <= 0 ||
 		b.Operator.AuthorizationVersion <= 0 || b.DecisionID == uuid.Nil || b.RecipientID <= 0 ||
-		(b.RecipientType != "user" && b.RecipientType != "project_group") || b.Action != "read" {
+		(b.RecipientType != "user" && b.RecipientType != "project_group") || !ValidSourceAccessAction(b.Action) {
 		return errors.New("invalid sharing fulfillment binding")
 	}
 	if _, err := EncodeSharingTarget(b.Path); err != nil {

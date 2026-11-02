@@ -33,7 +33,7 @@ const controls = ['alert', 'card', 'form', 'form-item', 'select', 'option', 'dat
 const rowContext = Symbol('table-row')
 const mounted = []
 const id = 'cc0a8000-6000-4000-8000-800000000001'
-const decision = { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), id: 'cc0a8000-6000-4000-8000-800000000002', recipient_type: 'user', recipient_id: '60', recipient_name: 'B',
+const decision = { action: 'read', item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), id: 'cc0a8000-6000-4000-8000-800000000002', recipient_type: 'user', recipient_id: '60', recipient_name: 'B',
   expiry_mode: 'until_revoked', target: { engine_id: '9007199254740993', version: 'v1', segments: [{ name: 'root' }, { name: 'table' }] } }
 const entry = { id: 'entry', version: 4, entry_type: 'data_item', entry_status: 'active', governance_status: 'curated',
   source: { source_module: 'meta', source_status: 'active' },
@@ -85,7 +85,7 @@ describe('business authorization workspace', () => {
   it.each(['relation_exists', 'window_expired'])('does not carry an old %s outcome into a reused approval handling form', async reason => {
     fixtures.auth.permissions.push('system.engine_access_grant.read')
     fixtures.api.listSharingRecipients.mockResolvedValue({ data: [{ id: '60', recipient_type: 'user', name: 'B', status: 'active', approvals: [
-      { id: decision.id, boundary_hash: decision.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
+      { action: 'read', id: decision.id, boundary_hash: decision.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
     ] }] })
     fixtures.api.getSharingDecision.mockResolvedValue(decision)
     fixtures.api.listSharingConfirmationResults.mockResolvedValue({ data: [{ request_id: id, decision_id: decision.id,
@@ -94,7 +94,7 @@ describe('business authorization workspace', () => {
     const view = mount(); await settle(); await switchWorkspace(view, 'create')
     await view.control('select', 1).props.onVisibleChange(true); await settle()
     view.control('select', 1).props['onUpdate:modelValue']('60')
-    view.control('select', 2).props['onUpdate:modelValue']('until_revoked'); await settle()
+    view.button('sharing-action').props['onUpdate:modelValue']('read'); view.control('select', 3).props['onUpdate:modelValue']('until_revoked'); await settle()
     await view.button('sharing-use-approval-handle').props.onClick(); await settle()
     expect(view.state.decisionID).toBe(decision.id)
     expect(view.state.requestID).toBe('')
@@ -115,19 +115,19 @@ describe('business authorization workspace', () => {
 
   it('reuses the approved ID without another confirmation or implicit fulfillment', async () => {
     fixtures.api.listSharingRecipients.mockResolvedValue({ data: [{ id: '60', recipient_type: 'user', name: 'B', status: 'active', approvals: [
-      { id: decision.id, boundary_hash: decision.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
+      { action: 'read', id: decision.id, boundary_hash: decision.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
     ] }] })
     fixtures.api.getSharingDecision.mockResolvedValue(decision)
     const view = mount(); await settle(); await switchWorkspace(view, 'create')
     await view.control('select', 1).props.onVisibleChange(true); await settle()
     view.control('select', 1).props['onUpdate:modelValue']('60')
-    view.control('select', 2).props['onUpdate:modelValue']('until_revoked'); await settle()
+    view.button('sharing-action').props['onUpdate:modelValue']('read'); view.control('select', 3).props['onUpdate:modelValue']('until_revoked'); await settle()
     expect(view.button('sharing-confirm')).toBeUndefined()
     expect(view.button('sharing-already-approved')).toBeDefined()
-    view.control('select', 2).props['onUpdate:modelValue']('at_time'); await settle()
+    view.button('sharing-action').props['onUpdate:modelValue']('read'); view.control('select', 3).props['onUpdate:modelValue']('at_time'); await settle()
     expect(view.button('sharing-confirm')).toBeDefined()
     expect(view.button('sharing-already-approved')).toBeUndefined()
-    view.control('select', 2).props['onUpdate:modelValue']('until_revoked'); await settle()
+    view.button('sharing-action').props['onUpdate:modelValue']('read'); view.control('select', 3).props['onUpdate:modelValue']('until_revoked'); await settle()
     await view.button('sharing-use-approval-handle').props.onClick(); await settle()
     expect(view.state.decisionID).toBe(decision.id)
     expect(view.button('sharing-workspace').props['model-value']).toBe('handling')
@@ -201,7 +201,7 @@ describe('business authorization workspace', () => {
     const view = mount(); await settle(); await switchWorkspace(view, 'create')
     await view.control('select', 1).props.onVisibleChange(true); await settle()
     view.control('select', 1).props['onUpdate:modelValue']('60')
-    view.control('select', 2).props['onUpdate:modelValue']('until_revoked')
+    view.button('sharing-action').props['onUpdate:modelValue']('read'); view.control('select', 3).props['onUpdate:modelValue']('until_revoked')
     view.control('input').props['onUpdate:modelValue']('Research')
     await view.button('sharing-confirm').props.onClick(); await settle()
     expect(view.state.decisionID).toBe('')
@@ -386,7 +386,7 @@ describe('task-oriented sharing guidance', () => {
     await switchWorkspace(view, 'create')
     await view.control('select', 1).props.onVisibleChange(true); await settle()
     view.control('select', 1).props['onUpdate:modelValue']('60')
-    view.control('select', 2).props['onUpdate:modelValue']('until_revoked')
+    view.button('sharing-action').props['onUpdate:modelValue']('read'); view.control('select', 3).props['onUpdate:modelValue']('until_revoked')
     view.control('input').props['onUpdate:modelValue']('Research')
     await view.button('sharing-confirm').props.onClick(); await settle()
     expect(view.button('sharing-workspace').props['model-value']).toBe('records')
@@ -697,7 +697,7 @@ describe('actual sharing panel commands and recovery', () => {
     await view.control('select', 1).props.onVisibleChange(true); await settle()
     expect(fixtures.api.listSharingRecipients).toHaveBeenCalledWith('entry', { recipient_type: 'user', search: '', page: 1, page_size: 50 })
     view.control('select', 1).props['onUpdate:modelValue']('60')
-    view.control('select', 2).props['onUpdate:modelValue']('until_revoked')
+    view.button('sharing-action').props['onUpdate:modelValue']('read'); view.control('select', 3).props['onUpdate:modelValue']('until_revoked')
     view.control('input').props['onUpdate:modelValue']('Research')
     const submit = view.button('sharing-confirm').props.onClick
     await Promise.all([submit(), submit()]); await settle()
@@ -746,4 +746,21 @@ describe('actual sharing panel commands and recovery', () => {
     expect(view.nodes().some(node => node.props?.title === 'catalog.sharing.queryFailed')).toBe(true)
     expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
   })
+})
+
+it('requires explicit metadata selection and sends its immutable business action', async () => {
+ fixtures.api.createSharingDecision.mockResolvedValue({ ...decision, id, action: 'metadata_read' })
+ const view = mount(); await settle(); await switchWorkspace(view, 'create')
+ expect(view.button('sharing-action').props.modelValue).toBe('')
+ await view.control('select', 1).props.onVisibleChange(true); await settle()
+ view.control('select', 1).props['onUpdate:modelValue']('60')
+ view.control('select', 3).props['onUpdate:modelValue']('until_revoked')
+ view.control('input').props['onUpdate:modelValue']('Metadata inventory')
+ await view.button('sharing-confirm').props.onClick(); await settle()
+ expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
+ expect(view.nodes().some(node => node.props?.title === 'catalog.sharing.invalidConfirmation')).toBe(true)
+ view.button('sharing-action').props['onUpdate:modelValue']('metadata_read')
+ await view.button('sharing-confirm').props.onClick(); await settle()
+ expect(fixtures.api.createSharingDecision.mock.calls[0][1]).toMatchObject({ action: 'metadata_read', recipient_id: '60' })
+ expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
 })

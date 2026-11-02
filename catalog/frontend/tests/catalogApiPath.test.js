@@ -28,7 +28,7 @@ describe('catalog frontend API paths', () => {
     expect(client.post).not.toHaveBeenCalled()
   })
   it('batches visible candidate checks and keeps incomplete absence unknown', async () => {
-    const first = { id: 'one', recipient_type: 'user', recipient_id: '60', item_fingerprint: 'a'.repeat(64), target: { engine_id: '2', version: 'v1', segments: [{ name: 'table' }] } }
+    const first = { action: 'read', id: 'one', recipient_type: 'user', recipient_id: '60', item_fingerprint: 'a'.repeat(64), target: { engine_id: '2', version: 'v1', segments: [{ name: 'table' }] } }
     const second = { ...first, id: 'two', recipient_id: '61' }
     const grant = { ...first, action: 'read', revocation: null, expiry_mode: 'until_revoked', expires_at: null }
     client.get.mockResolvedValueOnce({ data: [grant], total: 1 })
@@ -40,7 +40,7 @@ describe('catalog frontend API paths', () => {
   })
 
   it('checks only active direct-recipient history, preserving the exact DataItem and int64 path', async () => {
-    const candidate = { item_fingerprint: 'a'.repeat(64), recipient_type: 'user', recipient_id: '9007199254740994',
+    const candidate = { action: 'read', item_fingerprint: 'a'.repeat(64), recipient_type: 'user', recipient_id: '9007199254740994',
       target: { engine_id: '9007199254740993', version: 'v1', segments: [{ name: 'a"b' }] } }
     const grant = { ...candidate, action: 'read', revocation: null, expiry_mode: 'until_revoked', expires_at: null, request_id: 'grant' }
     client.get.mockResolvedValueOnce({ data: [grant], total: 1 })
@@ -56,7 +56,7 @@ describe('catalog frontend API paths', () => {
   })
 
   it('never interprets incomplete, malformed or failed checks as no duplicate', async () => {
-    const candidate = { item_fingerprint: 'a'.repeat(64), recipient_type: 'project_group', recipient_id: '60',
+    const candidate = { action: 'read', item_fingerprint: 'a'.repeat(64), recipient_type: 'project_group', recipient_id: '60',
       target: { engine_id: '2', version: 'v1', segments: [{ name: 'table' }] } }
     for (const result of [undefined, { data: [], total: 1 }, { data: [], total: '0' },
       { data: [{ ...candidate, revocation: { revoked_at: '2026-01-01' }, action: 'read' }], total: 1 },
@@ -69,7 +69,7 @@ describe('catalog frontend API paths', () => {
   })
 
   it('never broadens a malformed candidate into a recipient-less authorization query', async () => {
-    const candidate = { item_fingerprint: 'a'.repeat(64), recipient_type: 'user', recipient_id: '60',
+    const candidate = { action: 'read', item_fingerprint: 'a'.repeat(64), recipient_type: 'user', recipient_id: '60',
       target: { engine_id: '2', version: 'v1', segments: [{ name: 'table' }] } }
     for (const invalid of [null, { ...candidate, item_fingerprint: '' }, { ...candidate, recipient_type: '' },
       { ...candidate, recipient_id: undefined }, { ...candidate, recipient_id: 60 },
@@ -180,4 +180,12 @@ describe('catalog frontend API paths', () => {
     expect(client.post).toHaveBeenCalledWith('/catalog/standard-mappings/mapping%2Fid/approve', { version: 3, opinion: '' })
     await expect(reviewStandardMapping('mapping/id', 'certify', { version: 3 })).rejects.toThrow('invalid standard mapping action')
   })
+})
+
+it('does not treat a read Grant as the separate metadata Grant', async () => {
+ const metadata = { id: 'meta', action: 'metadata_read', recipient_type: 'user', recipient_id: '60', item_fingerprint: 'a'.repeat(64), target: { engine_id: '2', version: 'catalog.path/v1', segments: [{ term: 'server', kind: 'server', name: '' }, { term: 'schema', kind: 'namespace', name: 'public' }, { term: 'table', kind: 'table', name: 'orders' }] } }
+ const read = { ...metadata, action: 'read', revocation: null, expiry_mode: 'until_revoked', expires_at: null }
+ client.get.mockResolvedValue({ data: [read], total: 1 })
+ expect(await findExistingSharingGrant(metadata)).toBeNull()
+ expect(await observeSharingCandidateGrants([metadata, { ...metadata, id: 'read', action: 'read' }])).toEqual({ meta: 'absent', read: 'existing' })
 })

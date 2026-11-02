@@ -66,7 +66,7 @@ func (request fulfillmentRequest) encode() (json.RawMessage, json.RawMessage, er
 	expiresAt, expiryErr := authorization.NormalizeSharingExpiry(request.ExpiryMode, request.ExpiresAt)
 	if request.RequestID == uuid.Nil || request.TenantID <= 0 || request.CallerPrincipalID <= 0 || !request.Operator.valid() ||
 		request.DecisionID == uuid.Nil || request.RecipientID <= 0 ||
-		!oneOfRecipient(request.RecipientType) || request.Action != "read" || expiryErr != nil {
+		!oneOfRecipient(request.RecipientType) || !authorization.ValidSourceAccessAction(request.Action) || expiryErr != nil {
 		return nil, nil, errFulfillmentBinding
 	}
 	path, err := encodeFulfillmentPath(request.Path)

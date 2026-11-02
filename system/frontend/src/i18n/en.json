@@ -1049,6 +1049,7 @@
     },
     "engine": {
       "sourceGrants": {
+        "selectAction": "Select permission type",
         "action": "Access type",
         "actions": {"metadata_read": "Metadata only", "read": "Read data (including metadata)"},
         "deny": {
@@ -1106,7 +1107,7 @@
         "sourceCount": "Active records",
         "revokeCount": "Withdraw all active Grants in this relation (currently {count} records), not just one record.",
         "boundary": "Current authorizations group data and recipients; history is retained separately. Personal, department and project-group Grants are distinct sources. Actual reading still requires function permission, current membership, validity and Deny checks.",
-        "create": "Grant read access",
+        "create": "Grant access",
         "recipient": "Recipient",
         "recipientType": "Recipient type",
         "recipientIdentifier": "{type} ID: {id}",
@@ -1121,7 +1122,7 @@
           "department": "Department",
           "project_group": "Project group"
         },
-        "expiry": "Read validity",
+        "expiry": "Authorization validity",
         "at_time": "Specific expiration time",
         "until_revoked": "Valid until revoked",
         "reason": "Reason",
@@ -1138,12 +1139,12 @@
         "failed": "The outcome is unconfirmed. Refresh to check; an issuance may be retried with its original command. Do not assume access was granted.",
         "retry": "Retry original command",
         "partialFailure": "Some Grants were not issued; review each outcome. Existing Grants are not duplicated. Only unconfirmed original commands can be retried. To change validity, explicitly withdraw the current relation and obtain approval again.",
-        "confirmBody": "Grant {recipient} read-only access to {target}. Validity: {expiry}. This is not a management delegation and does not grant export or write access.",
+        "confirmBody": "Grant {recipient} {action} access to {target}. Validity: {expiry}. This is not a management delegation and does not grant export or write access.",
         "confirmWhole": "{target}: covers all current and future tables and feature classes inside this FileGDB, excluding other directories and external references.",
         "confirmComposition": "Complete file composition of {target}: {files}. Authorization covers the whole DataItem, not separate texture or directory permissions.",
-        "created": "Read grant issued. Actual reading still requires the relevant function permission and current access conditions.",
+        "created": "Authorization issued. Access still requires the relevant function permission and current access conditions.",
         "historyRecovered": "Original issuance history recovered, without renewal or reissuance. Check its record status.",
-        "invalid": "Select an eligible recipient, explicit validity and a reason. A specific expiration must be in the future.",
+        "invalid": "Select an eligible recipient and permission type, explicit validity and a reason. A specific expiration must be in the future.",
         "invalidReason": "Enter a revocation reason (up to 2000 characters).",
         "revokeBoundary": "Withdraw all effective grants for this data item, recipient and access type, retaining history. Other access types and recipients are unchanged. Withdrawing personal access does not withdraw department or project group access, or create a prohibition.",
         "revoked": "This read authorization relation is withdrawn; history is retained. Other personal or organization sources are unchanged."

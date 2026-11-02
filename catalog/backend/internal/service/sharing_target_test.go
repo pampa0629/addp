@@ -32,7 +32,7 @@ func (s sharingTargetTestTokens) PlatformToken(context.Context) (string, error) 
 func TestSharingTargetResolverUsesCanonicalAuthorizationFactsClient(t *testing.T) {
 	for _, scenario := range []string{"valid", "missing", "meta_offline", "credential_rejected", "malformed",
 		"wrong_fingerprint", "wrong_boundary", "incomplete", "needs_refresh", "unsupported",
-		"system_offline", "disabled_engine", "wrong_engine", "missing_model", "wrong_model", "invalid_capabilities"} {
+		"metadata", "metadata_wrong_engine", "invalid_action", "system_offline", "disabled_engine", "wrong_engine", "missing_model", "wrong_model", "invalid_capabilities"} {
 		t.Run(scenario, func(t *testing.T) {
 			path := plugin.TabularItemPath(12, "schema", " team.space/一 ", " orders.v2/a ")
 			facts := authorizationfacts.AuthorizationFacts{
@@ -57,9 +57,19 @@ func TestSharingTargetResolverUsesCanonicalAuthorizationFactsClient(t *testing.T
 				t.Fatal(err)
 			}
 			caps := commonModels.JSONString(encodedCaps)
-			descriptor := commonModels.EngineRuntimeDescriptor{ID: 12, LifecycleState: "active", Capabilities: &caps}
+			action := "read"
+			descriptor := commonModels.EngineRuntimeDescriptor{EngineType: "postgresql", ID: 12, LifecycleState: "active", Capabilities: &caps}
 			want, wantSystemCalls := ErrReferenceValidationUnavailable, 0
 			switch scenario {
+			case "metadata":
+				action = "metadata_read"
+				want, wantSystemCalls = nil, 1
+			case "metadata_wrong_engine":
+				action, descriptor.EngineType = "metadata_read", "mysql"
+				want, wantSystemCalls = ErrSharingTargetUnsupported, 1
+			case "invalid_action":
+				action = "write"
+				want, wantSystemCalls = ErrSharingTargetUnsupported, 1
 			case "valid":
 				want, wantSystemCalls = nil, 1
 			case "missing":
@@ -141,7 +151,7 @@ func TestSharingTargetResolverUsesCanonicalAuthorizationFactsClient(t *testing.T
 			tokens := sharingTargetTestTokens{t}
 			resolver := NewSharingTargetResolver(commonClient.NewMetaClient(metaServer.URL, tokens),
 				commonClient.NewSystemServiceClient(systemServer.URL, tokens, systemServer.Client()))
-			result, err := resolver.ResolveSharingTarget(context.Background(), 7, fingerprint)
+			result, err := resolver.ResolveSharingTarget(context.Background(), 7, fingerprint, action)
 			if metaCalls != 1 || systemCalls != wantSystemCalls {
 				t.Fatalf("remote reads: meta=%d system=%d", metaCalls, systemCalls)
 			}

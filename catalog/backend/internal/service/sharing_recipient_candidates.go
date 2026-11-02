@@ -28,6 +28,7 @@ type SharingRecipientCandidate struct {
 
 // Current local approval evidence, never a System Grant or access verdict.
 type SharingApprovalSummary struct {
+	Action       string     `json:"action" enums:"read,metadata_read"`
 	ID           uuid.UUID  `json:"id"`
 	BoundaryHash string     `json:"boundary_hash"`
 	ExpiryMode   string     `json:"expiry_mode" enums:"at_time,until_revoked"`
@@ -152,7 +153,7 @@ func (s *EntryService) ListSharingRecipientCandidates(ctx context.Context, tenan
 			for i := range result {
 				for _, approval := range approvals {
 					if result[i].ID == strconv.FormatInt(approval.RecipientID, 10) {
-						result[i].Approvals = append(result[i].Approvals, SharingApprovalSummary{ID: approval.ID, BoundaryHash: approval.BoundaryHash, ExpiryMode: approval.ExpiryMode, ExpiresAt: approval.ExpiresAt})
+						result[i].Approvals = append(result[i].Approvals, SharingApprovalSummary{Action: approval.Action, ID: approval.ID, BoundaryHash: approval.BoundaryHash, ExpiryMode: approval.ExpiryMode, ExpiresAt: approval.ExpiresAt})
 					}
 				}
 			}

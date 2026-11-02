@@ -98,6 +98,31 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 				MembershipID: operator.MembershipID, AuthorizationVersion: current.AuthorizationVersion}
 			return binding, delegation
 		}
+		t.Run("metadata approval issues only metadata and rejects action substitution", func(t *testing.T) {
+			binding := base
+			binding.Action = shared.SourceAccessMetadataRead
+			id := prepare(t, binding)
+			upgraded := binding
+			upgraded.Action = shared.SourceAccessRead
+			if _, err := acceptor.AcceptFulfillment(ctx, actor, id, upgraded); err == nil {
+				t.Fatal("accepted request action substitution")
+			}
+			if _, err := issuer.IssueFulfillmentGrant(ctx, actor, id, upgraded); err == nil {
+				t.Fatal("issued upgraded action")
+			}
+			grant, err := issuer.IssueFulfillmentGrant(ctx, actor, id, binding)
+			if err != nil || grant == nil {
+				t.Fatalf("metadata grant=%+v err=%v", grant, err)
+			}
+			persisted, err := issuer.repository.findSourceGrant(ctx, id)
+			if err != nil || persisted.Action != shared.SourceAccessMetadataRead {
+				t.Fatalf("persisted metadata action=%+v %v", persisted, err)
+			}
+			if _, err := issuer.IssueFulfillmentGrant(ctx, actor, id, binding); err != nil {
+				t.Fatal(err)
+			}
+			assertCount(t, id, 1)
+		})
 		t.Run("public service projects only committed issuance history", func(t *testing.T) {
 			id := prepare(t, base)
 			missing, err := issuer.ResolveFulfillmentGrant(ctx, actor, id, base)

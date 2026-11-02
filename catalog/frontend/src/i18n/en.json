@@ -1,6 +1,9 @@
 {
   "catalog": {
     "sharing": {
+      "action": "Permission type",
+      "selectAction": "Select permission type",
+      "actions": {"metadata_read": "View metadata only", "read": "Read data (including metadata)"},
       "title": "Business authorization",
       "workspace": {
         "create": "Approve data use",
@@ -25,7 +28,7 @@
         "accepted": "Accepted",
         "closed": "Closed"
       },
-      "boundary": "The business owner confirms sharing, a qualified handler submits it, and the system verifies and issues read-only access. Catalog visibility and handling qualification do not grant data read access.",
+      "boundary": "The business owner approves the permission type, recipient and validity. A qualified handler submits it for System issuance. Catalog visibility and handling qualification do not grant access.",
       "progressTitle": "Progress of the selected record",
       "nextStep": "Next: ",
       "phases": {
@@ -64,7 +67,7 @@
         "issued": "The recipient may try Data Explorer. Current read access still depends on functional permission, validity, revocation and security conditions.",
         "closed": "Review the handling history below. Closing this request does not revoke other issued grants."
       },
-      "confirmTitle": "Approve read-only use of this data item",
+      "confirmTitle": "Approve use of this DataItem",
       "confirmationsTitle": "Business approval records",
       "reviewScope": "View your own confirmations; the current business owner may review all sharing history for this entry. Reading history grants neither fulfillment nor data access.",
       "confirmedAt": "Confirmation time",
@@ -125,12 +128,12 @@
       "deadline": "Original automatic fulfillment deadline",
       "noPermission": "Confirmation and original request queries require independent permissions. Curation permission does not replace them.",
       "queryFailed": "A reliable outcome was not obtained. Query the original record later.",
-      "prepareTitle": "Process read access under a business approval",
+      "prepareTitle": "Process access under a business approval",
       "prepareBoundary": "The recipient and validity come from the selected approval. Check existing grants first. If handling is still needed, verify and submit, then view this request's handling and issuance results.",
-      "handlerBoundary": "One person may be both business owner and handler, with separate qualification checks. Read access is issued to the recipient named in the approval.",
+      "handlerBoundary": "The business owner and handler may be the same person, with separate qualification checks. The recipient, permission type and validity are fixed by the approval.",
       "currentSelected": "The business approval you just viewed is selected.",
       "alreadyApproved": "✓ Business approved",
-      "matchingApproval": "A business approval already exists for this recipient, boundary and validity. No duplicate approval is needed.",
+      "matchingApproval": "An approval already exists for this recipient, permission type, boundary and validity. No duplicate approval is needed.",
       "candidateState": {
         "existing": "✓ Grant exists",
         "absent": "Awaiting fulfillment",
@@ -146,7 +149,7 @@
       "handlingUncertain": "The original ID and parameters are fixed; the outcome is uncertain. Query the original request first. An explicit retry sends the same ID and parameters without substituting a new version.",
       "retryRequest": "Retry this same fulfillment request",
       "invalidRouteIdentity": "The original confirmation or request ID in this link is invalid. Reopen the resource entry; an invalid link is not treated as a new fulfillment request.",
-      "invalidConfirmation": "Select an active recipient, choose a validity mode and enter a purpose. A specified expiry must be in the future.",
+      "invalidConfirmation": "Select an active recipient and permission type, choose a validity mode and enter a purpose. A specified expiry must be in the future.",
       "state": {
         "pending": "No authoritative acceptance or closure record was found. Access has not been granted by this query.",
         "accepted": "The original request was accepted. This does not establish effective data access or extend the original window.",

@@ -29,7 +29,7 @@ type fakeSharingTargetResolver struct {
 // source-identity constraint must remain enabled in shared PostgreSQL fixtures.
 var catalogTestBoundaries sync.Map
 
-func (r *fakeSharingTargetResolver) ResolveSharingTarget(_ context.Context, tenantID int64, fingerprint string) (authorizationfacts.Binding, error) {
+func (r *fakeSharingTargetResolver) ResolveSharingTarget(_ context.Context, tenantID int64, fingerprint, _ string) (authorizationfacts.Binding, error) {
 	r.calls++
 	if r.before != nil {
 		r.before()
@@ -62,7 +62,7 @@ func seedSharingEntry(t *testing.T, db *gorm.DB) (models.Entry, SharingDecisionI
 		t.Fatal(err)
 	}
 	expiresAt := time.Now().UTC().AddDate(8, 0, 0)
-	return entry, SharingDecisionInput{ExpectedBoundaryHash: binding.BoundaryHash, DecisionID: uuid.New(), Version: 1, RecipientType: "user", RecipientID: 40,
+	return entry, SharingDecisionInput{Action: "read", ExpectedBoundaryHash: binding.BoundaryHash, DecisionID: uuid.New(), Version: 1, RecipientType: "user", RecipientID: 40,
 		ExpiryMode: authorization.SharingExpiryAtTime, ExpiresAt: &expiresAt, Reason: "Explicit self read"}
 }
 
@@ -276,4 +276,49 @@ func TestSharingDecisionFailsClosedWithoutMutatingAggregate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSharingDecisionActionsRemainIndependentAndImmutable(t *testing.T) {
+	exerciseSharingDecisionActions(t, openCatalogServiceTestDB(t))
+}
+
+func exerciseSharingDecisionActions(t *testing.T, db *gorm.DB) *SharingDecisionResult {
+	entry, input := seedSharingEntry(t, db)
+	service := NewEntryService(db, nil, &fakeSystemReferenceResolver{}).WithSharingTargetResolver(&fakeSharingTargetResolver{})
+	ctx, access, auth := context.Background(), EntryAccess{Inventory: true}, sharingAuth()
+	for _, action := range []string{"", "write"} {
+		invalid := input
+		invalid.Action = action
+		if _, _, err := service.CreateSharingDecision(ctx, 7, access, entry.ID, invalid, auth); !errors.Is(err, ErrInvalidEntryUpdate) {
+			t.Fatalf("invalid action %q: %v", action, err)
+		}
+	}
+	input.Action = authorization.SourceAccessMetadataRead
+	metadata, created, err := service.CreateSharingDecision(ctx, 7, access, entry.ID, input, auth)
+	if err != nil || !created || metadata.Action != input.Action {
+		t.Fatalf("metadata approval=%+v created=%v err=%v", metadata, created, err)
+	}
+	if _, created, err := service.CreateSharingDecision(ctx, 7, access, entry.ID, input, auth); err != nil || created {
+		t.Fatalf("same-action retry: %v %v", created, err)
+	}
+	upgrade := input
+	upgrade.Action = authorization.SourceAccessRead
+	if _, _, err := service.CreateSharingDecision(ctx, 7, access, entry.ID, upgrade, auth); !errors.Is(err, ErrSharingDecisionConflict) {
+		t.Fatalf("retry action upgrade: %v", err)
+	}
+	upgrade.DecisionID, upgrade.Version = uuid.New(), metadata.EntryVersion
+	read, created, err := service.CreateSharingDecision(ctx, 7, access, entry.ID, upgrade, auth)
+	if err != nil || !created || read.Action != authorization.SourceAccessRead {
+		t.Fatalf("independent read approval=%+v created=%v err=%v", read, created, err)
+	}
+	duplicate := input
+	duplicate.DecisionID, duplicate.Version = uuid.New(), read.EntryVersion
+	if _, _, err := service.CreateSharingDecision(ctx, 7, access, entry.ID, duplicate, auth); !errors.Is(err, ErrSharingDecisionExists) {
+		t.Fatalf("metadata duplicate: %v", err)
+	}
+	var candidates []models.SharingDecision
+	if err := service.sharingCandidateQuery(ctx, 7, access, entry.ID, time.Now()).Find(&candidates).Error; err != nil || len(candidates) != 2 {
+		t.Fatalf("distinct action candidates=%+v err=%v", candidates, err)
+	}
+	return metadata
 }

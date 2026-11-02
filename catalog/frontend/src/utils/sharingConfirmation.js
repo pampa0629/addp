@@ -34,7 +34,7 @@ export function sharingEligibility(entry, auth) {
 export function matchingSharingApproval(recipient, form, now = Date.now()) {
   if (!recipient || recipient.id !== form.recipientID || recipient.recipient_type !== form.recipientType) return null
   return (recipient.approvals || []).find(approval => {
-    if (!canonicalSharingUUID(approval.id) || !/^[0-9a-f]{64}$/.test(approval.boundary_hash || '') || approval.expiry_mode !== form.expiryMode) return false
+    if (!canonicalSharingUUID(approval.id) || !/^[0-9a-f]{64}$/.test(approval.boundary_hash || '') || approval.action !== form.action || !['metadata_read', 'read'].includes(form.action) || approval.expiry_mode !== form.expiryMode) return false
     if (form.expiryMode === 'until_revoked') return approval.expires_at === null && form.expiresAt == null
     if (!(form.expiresAt instanceof Date) || !approval.expires_at || form.expiresAt.getTime() <= now) return false
     // The picker has millisecond precision; never collapse distinct server
@@ -86,14 +86,14 @@ export function captureSharingConfirmation(entry, form, recipientOptions, decisi
   if (!canonicalSharingUUID(decisionID) || !isSharingInt64(version) || !isSharingInt64(form.recipientID) || !recipient ||
       !/^[0-9a-f]{64}$/.test(binding?.boundary_hash || '') || !/^[0-9a-f]{64}$/.test(binding?.item_fingerprint || '')) throw new Error('invalidConfirmation')
   const reason = typeof form.reason === 'string' ? form.reason.trim() : ''
-  if (!reason || Array.from(reason).length > 2000 || !['user', 'project_group'].includes(form.recipientType)) throw new Error('invalidConfirmation')
+  if (!['metadata_read', 'read'].includes(form.action) || !reason || Array.from(reason).length > 2000 || !['user', 'project_group'].includes(form.recipientType)) throw new Error('invalidConfirmation')
   let expiresAt = null
   if (form.expiryMode === 'at_time') {
     const date = form.expiresAt instanceof Date ? form.expiresAt : null
     if (!date || !Number.isFinite(date.getTime()) || date.getTime() <= now) throw new Error('invalidConfirmation')
     expiresAt = date.toISOString()
   } else if (form.expiryMode !== 'until_revoked' || form.expiresAt != null) throw new Error('invalidConfirmation')
-  return Object.freeze({ decision_id: decisionID, version, expected_boundary_hash: binding.boundary_hash, recipient_type: form.recipientType,
+  return Object.freeze({ action: form.action, decision_id: decisionID, version, expected_boundary_hash: binding.boundary_hash, recipient_type: form.recipientType,
     recipient_id: form.recipientID, expiry_mode: form.expiryMode, expires_at: expiresAt, reason })
 }
 

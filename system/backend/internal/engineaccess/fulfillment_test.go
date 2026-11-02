@@ -71,6 +71,7 @@ func TestFulfillmentBindingRejectsIncompleteInputs(t *testing.T) {
 		func(r *fulfillmentRequest) { r.RecipientID = 0 },
 		func(r *fulfillmentRequest) { r.RecipientType = "role" },
 		func(r *fulfillmentRequest) { r.Action = "write" },
+		func(r *fulfillmentRequest) { r.Action = "" },
 		func(r *fulfillmentRequest) { r.ExpiresAt = nil },
 		func(r *fulfillmentRequest) { r.ExpiryMode = "" },
 		func(r *fulfillmentRequest) { r.ExpiryMode = "forever" },
@@ -100,5 +101,25 @@ func TestFulfillmentTargetUsesSharedValueContract(t *testing.T) {
 	path.Segments[2].Name = "invalid\xff"
 	if _, err := encodeFulfillmentPath(path); err != errFulfillmentBinding {
 		t.Fatalf("lossy target accepted by authority: %v", err)
+	}
+}
+
+func TestFulfillmentMetadataBindingCannotBecomeReadBinding(t *testing.T) {
+	request := testFulfillmentRequest()
+	request.Action = authorization.SourceAccessMetadataRead
+	_, encoded, err := request.encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var binding struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal(encoded, &binding); err != nil || binding.Action != authorization.SourceAccessMetadataRead {
+		t.Fatalf("metadata binding=%+v err=%v", binding, err)
+	}
+	request.Action = authorization.SourceAccessRead
+	_, upgraded, err := request.encode()
+	if err != nil || equalJSON(encoded, upgraded) {
+		t.Fatalf("different actions collapsed: %v", err)
 	}
 }

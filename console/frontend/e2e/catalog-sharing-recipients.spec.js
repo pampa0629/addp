@@ -17,6 +17,7 @@ const cases = [
     label: '项目组 · 接收方名称暂时无法解析' }
 ]
 const decisions = cases.map((item, index) => ({
+  action: 'read',
   id: `00000000-0000-4000-8000-00000000006${index}`,
   recipient_type: item.type, recipient_id: item.id, recipient_name: item.name,
   recipient_code: item.code, recipient_label_status: item.status,
@@ -222,4 +223,18 @@ test('approval reviewers see readable handling outcomes and copy technical IDs w
   await expect(detail.getByTestId('sharing-copy-confirmation-id')).toBeHidden()
   expect(fixture.reads.some(read => read.suffix.startsWith('/sharing_fulfillments'))).toBe(false)
   fixture.verifyNoCommands()
+})
+
+test('Catalog iframe shows approval types and requires an explicit selection without issuing commands', async ({ page }) => {
+ const fixture = await openSharing(page), { catalog } = fixture
+ await expect(catalog.getByTestId('sharing-confirmations').getByRole('columnheader', { name: '权限类型', exact: true })).toBeVisible()
+ await expect(catalog.getByTestId('sharing-confirmations').locator('.el-table__body tbody tr').first()).toContainText('读取数据（包括元数据）')
+ await catalog.getByTestId('sharing-workspace').getByText('批准数据使用', { exact: true }).click()
+ const action = catalog.getByTestId('sharing-action')
+ await expect(action).toContainText('请选择权限类型')
+ await action.click()
+ await expect(catalog.getByRole('option', { name: '读取数据（包括元数据）', exact: true })).toBeVisible()
+ await catalog.getByRole('option', { name: '仅查看元数据', exact: true }).click()
+ await expect(action).toContainText('仅查看元数据')
+ fixture.verifyNoCommands()
 })

@@ -59,8 +59,8 @@ func (s *EntryService) currentSharingDecisionQuery(ctx context.Context, tenantID
 		Joins(`JOIN catalog.responsibilities owner ON owner.id = sharing_decisions.responsibility_id AND owner.tenant_id = sharing_decisions.tenant_id AND owner.catalog_entry_id = sharing_decisions.catalog_entry_id AND owner.role = ? AND owner.subject_type = 'user' AND owner.subject_id = sharing_decisions.confirmed_by AND owner.status = ?`,
 			models.ResponsibilityRoleBusinessOwner, models.ResponsibilityStatusActive).
 		Where("sharing_decisions.tenant_id = ? AND sharing_decisions.catalog_entry_id IN (?)", tenantID, visible).
-		Where("sharing_decisions.action = ? AND (sharing_decisions.expiry_mode = ? OR (sharing_decisions.expiry_mode = ? AND sharing_decisions.expires_at > ?))",
-			"read", authorization.SharingExpiryUntilRevoked, authorization.SharingExpiryAtTime, now)
+		Where("sharing_decisions.action IN ? AND (sharing_decisions.expiry_mode = ? OR (sharing_decisions.expiry_mode = ? AND sharing_decisions.expires_at > ?))",
+			[]string{authorization.SourceAccessRead, authorization.SourceAccessMetadataRead}, authorization.SharingExpiryUntilRevoked, authorization.SharingExpiryAtTime, now)
 }
 
 func (s *EntryService) sharingCandidateQuery(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID, now time.Time) *gorm.DB {

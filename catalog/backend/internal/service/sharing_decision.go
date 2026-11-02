@@ -30,6 +30,7 @@ type SharingDecisionInput struct {
 	Version              int64
 	RecipientType        string
 	RecipientID          int64
+	Action               string
 	ExpiryMode           string
 	ExpiresAt            *time.Time
 	Reason               string
@@ -68,6 +69,12 @@ func (s *EntryService) WithSharingTargetResolver(resolver SharingTargetResolver)
 // Visibility, current ownership and source identity are rechecked after RPC;
 // no Catalog lock is held while calling Meta/System through the shared client.
 func (s *EntryService) GetSharingBoundary(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID, auth authorization.AuthContext) (*authorizationfacts.Binding, error) {
+	return s.getSharingBoundary(ctx, tenantID, access, entryID, auth, "")
+}
+
+// Empty action observes identity only; a creation command always supplies its
+// validated action so the resolver also checks current Engine support.
+func (s *EntryService) getSharingBoundary(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID, auth authorization.AuthContext, action string) (*authorizationfacts.Binding, error) {
 	if _, _, _, err := sharingConfirmer(auth, tenantID); err != nil {
 		return nil, err
 	}
@@ -102,7 +109,7 @@ func (s *EntryService) GetSharingBoundary(ctx context.Context, tenantID int64, a
 	if err := s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, readSource); err != nil {
 		return nil, err
 	}
-	binding, readErr := s.sharingTargets.ResolveSharingTarget(ctx, tenantID, source.SourceIdentity)
+	binding, readErr := s.sharingTargets.ResolveSharingTarget(ctx, tenantID, source.SourceIdentity, action)
 	if err := s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, readSource); err != nil {
 		return nil, err
 	}
@@ -292,7 +299,7 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 	// insertion and retry comparison, truncating rather than extending expiry.
 	input.ExpiresAt, err = authorization.NormalizeSharingExpiry(input.ExpiryMode, input.ExpiresAt)
 	if s == nil || s.db == nil || tenantID <= 0 || entryID == uuid.Nil || input.DecisionID == uuid.Nil || input.Version <= 0 || input.Version == math.MaxInt64 ||
-		!oneOf(input.RecipientType, "user", "project_group") || input.RecipientID <= 0 || err != nil ||
+		!authorization.ValidSourceAccessAction(input.Action) || !oneOf(input.RecipientType, "user", "project_group") || input.RecipientID <= 0 || err != nil ||
 		!authorizationfacts.ValidItemFingerprint(input.ExpectedBoundaryHash) || input.Reason == "" || !utf8.ValidString(input.Reason) || strings.ContainsRune(input.Reason, '\x00') || utf8.RuneCountInString(input.Reason) > 2000 {
 		return nil, false, ErrInvalidEntryUpdate
 	}
@@ -333,7 +340,7 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 	if s.sharingTargets == nil || s.system == nil {
 		return nil, false, ErrReferenceValidationUnavailable
 	}
-	target, err := s.GetSharingBoundary(ctx, tenantID, access, entryID, auth)
+	target, err := s.getSharingBoundary(ctx, tenantID, access, entryID, auth, input.Action)
 	if err != nil {
 		return nil, false, err
 	}
@@ -422,9 +429,9 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 		// manufacture another approval of the same current relation and expiry.
 		duplicate := tx.Model(&models.SharingDecision{}).Where(`tenant_id = ? AND catalog_entry_id = ?
  AND source_binding_id = ? AND source_version = ? AND responsibility_id = ? AND item_fingerprint = ?
- AND boundary_hash = ? AND confirmed_by = ? AND confirmer_membership_id = ? AND recipient_type = ? AND recipient_id = ? AND action = 'read' AND expiry_mode = ?`,
+ AND boundary_hash = ? AND confirmed_by = ? AND confirmer_membership_id = ? AND recipient_type = ? AND recipient_id = ? AND action = ? AND expiry_mode = ?`,
 			tenantID, entryID, current.ID, current.SourceVersion, owner.ID, target.ItemFingerprint, target.BoundaryHash,
-			principal, membership, input.RecipientType, input.RecipientID, input.ExpiryMode)
+			principal, membership, input.RecipientType, input.RecipientID, input.Action, input.ExpiryMode)
 		if input.ExpiresAt == nil {
 			duplicate = duplicate.Where("expires_at IS NULL")
 		} else {
@@ -444,7 +451,7 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 			SourceBindingID: current.ID, SourceVersion: current.SourceVersion, ResponsibilityID: owner.ID, EngineID: int64(path.EngineID), CatalogPath: pathJSON,
 			ItemFingerprint: target.ItemFingerprint, BoundaryHash: target.BoundaryHash,
 			ConfirmedBy: principal, ConfirmerMembershipID: membership, AuthorizationVersion: authVersion,
-			RecipientType: input.RecipientType, RecipientID: input.RecipientID, Action: "read", SelfBeneficiary: input.RecipientType == "user" && input.RecipientID == principal,
+			RecipientType: input.RecipientType, RecipientID: input.RecipientID, Action: input.Action, SelfBeneficiary: input.RecipientType == "user" && input.RecipientID == principal,
 			ConfirmerInProjectGroup: inGroup, Reason: input.Reason, ExpiryMode: input.ExpiryMode, ExpiresAt: input.ExpiresAt, CreatedAt: now}
 		if err := tx.Create(&decision).Error; err != nil {
 			return err
@@ -459,7 +466,7 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 			return err
 		}
 		audit := models.AuditEvent{ID: uuid.New(), TenantID: tenantID, CatalogEntryID: entryID, EventType: "catalog.sharing_decision.created", ActorType: "user", ActorID: auth.Principal.ID,
-			Details: commonModels.JSONMap{"decision_id": decision.ID.String(), "entry_version": strconv.FormatInt(decision.EntryVersion, 10)}, CreatedAt: now}
+			Details: commonModels.JSONMap{"decision_id": decision.ID.String(), "action": decision.Action, "entry_version": strconv.FormatInt(decision.EntryVersion, 10)}, CreatedAt: now}
 		if err := tx.Create(&audit).Error; err != nil {
 			return err
 		}
@@ -486,6 +493,6 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 func sameSharingInput(row models.SharingDecision, tenantID int64, entryID uuid.UUID, principal, membership int64, input SharingDecisionInput) bool {
 	return row.TenantID == tenantID && row.CatalogEntryID == entryID && row.ConfirmedBy == principal && row.ConfirmerMembershipID == membership &&
 		row.BoundaryHash == input.ExpectedBoundaryHash &&
-		row.EntryVersion == input.Version+1 && row.RecipientType == input.RecipientType && row.RecipientID == input.RecipientID && row.Action == "read" &&
+		row.EntryVersion == input.Version+1 && row.RecipientType == input.RecipientType && row.RecipientID == input.RecipientID && row.Action == input.Action &&
 		authorization.EqualSharingExpiry(row.ExpiryMode, row.ExpiresAt, input.ExpiryMode, input.ExpiresAt) && row.Reason == input.Reason
 }

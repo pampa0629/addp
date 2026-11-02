@@ -96,6 +96,9 @@ func (s *Service) AcceptFulfillment(ctx context.Context, actor FulfillmentRuntim
 		newAcceptance := false
 		row, err := tx.settleFulfillment(ctx, request, true, confirmation, func(_ *Repository) error {
 			newAcceptance = true
+			if err := tx.checkSourceAccessAction(ctx, request.TenantID, int64(request.Path.EngineID), request.Action); err != nil {
+				return err
+			}
 			now, err := tx.wallClock(ctx)
 			if err != nil {
 				return err

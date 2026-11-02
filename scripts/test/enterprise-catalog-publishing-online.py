@@ -757,7 +757,7 @@ def validate_fixture_sharing(
         raise SuiteError("sharing boundary does not match current entry source")
     decision_id = str(uuid.uuid4())
     decision_body = {
-        "decision_id": decision_id, "version": str(positive_int(entry.get("version"), "sharing entry version")),
+        "action": "read", "decision_id": decision_id, "version": str(positive_int(entry.get("version"), "sharing entry version")),
         "expected_boundary_hash": boundary["boundary_hash"],
         "recipient_type": "user", "recipient_id": str(principal_id), "expiry_mode": "at_time",
         "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),

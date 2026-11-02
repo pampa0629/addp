@@ -66,6 +66,7 @@ class FakeClient:
             return SUITE.Response(200, {"item_fingerprint": "a" * 64, "boundary_hash": "b" * 64,
                                        "native_target": copy.deepcopy(self.target)})
         if path == entry_path + "/sharing_decisions":
+            if body.get("action") != "read": raise AssertionError("explicit business action required")
             created = body["decision_id"] not in self.decisions
             if not created and any(self.decisions[body["decision_id"]].get(key) != value
                                    for key, value in body.items()):

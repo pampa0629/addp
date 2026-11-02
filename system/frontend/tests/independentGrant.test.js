@@ -10,7 +10,7 @@ const path = { engine_id: '2', version: 'catalog.path/v1', segments: [
 const binding = { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), native_target: path }
 const requirement = { binding, engine_id: '2', catalog_path: path }
 const candidates = [{ id: '9007199254740993', name: 'Outdoor reader' }]
-const form = { recipientType: 'user', recipientID: candidates[0].id, expiryMode: 'until_revoked', expiresAt: null, reason: ' Explicit read ' }
+const form = { action: 'read', recipientType: 'user', recipientID: candidates[0].id, expiryMode: 'until_revoked', expiresAt: null, reason: ' Explicit read ' }
 describe('independent read-grant command capture', () => {
   it('captures one whole file DataItem, lists its constituents and never submits caller composition', () => {
     const file = name => ({ engine_id: '33', version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }, { term: 'directory', kind: 'directory', name: 'Models' }, { term: 'file', kind: 'file', name }] })
@@ -76,4 +76,13 @@ describe('independent read-grant command capture', () => {
     const future = captureIndependentGrant('2', requirement, { ...form, expiryMode: 'at_time', expiresAt: new Date(2000) }, candidates, 1000)
     expect(JSON.parse(future.payload).expires_at).toBe('1970-01-01T00:00:02.000Z')
   })
+})
+
+it('requires an explicit action and freezes metadata separately from read', () => {
+ for (const action of ['', undefined, 'write']) expect(() => captureIndependentGrant('2', requirement, { ...form, action }, candidates)).toThrow()
+ const draft = { ...form, action: 'metadata_read' }
+ const command = captureIndependentGrant('2', requirement, draft, candidates)
+ draft.action = 'read'
+ expect(command.action).toBe('metadata_read')
+ expect(JSON.parse(command.payload).action).toBe('metadata_read')
 })

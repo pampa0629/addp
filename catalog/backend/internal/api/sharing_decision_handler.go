@@ -12,6 +12,7 @@ import (
 )
 
 type createSharingDecisionRequest struct {
+	Action               string     `json:"action" binding:"required" enums:"read,metadata_read"`
 	DecisionID           string     `json:"decision_id" format:"uuid"`
 	Version              string     `json:"version"`
 	RecipientType        string     `json:"recipient_type" enums:"user,project_group"`
@@ -58,7 +59,7 @@ func (h *Handler) GetSharingBoundary(c *gin.Context) {
 
 // CreateSharingDecision records a business decision, not data authorization.
 // @Summary 确认一次普通只读共享 | Confirm one ordinary read-only sharing decision
-// @Description 当前业务负责人显式确认；本人或本人项目组受益不自动拒绝。完整源目标经共享 MetaClient 读取 Meta 当前 complete 的授权资源事实并核验 System 引擎状态；不接受自报确认人、路径或动作。必须显式选择 expiry_mode：at_time 提供未来 expires_at；until_revoked 无到期时间（省略或 null），仍受当前资格、撤销与安全约束，漏填模式不默认永久。decision_id 同参重试返回原记录；决定不是受理回执或 Grant，不授予数据访问 | The current business owner explicitly confirms sharing, including self or own project-group benefit. The shared MetaClient reads Meta's current complete authorization facts; System still checks Engine lifecycle. Explicit expiry_mode is required: at_time requires future expires_at; until_revoked requires an omitted or null date and remains subject to current eligibility, revocation and safety. Missing mode never defaults to indefinite. Identical parameters recover the original decision, not an acceptance receipt, Grant or data access
+// @Description 当前业务负责人显式确认；本人或本人项目组受益不自动拒绝。完整源目标经共享 MetaClient 读取 Meta 当前 complete 的授权资源事实并核验 System 引擎状态；不接受自报确认人或路径。必须显式选择 action：metadata_read 仅查看元数据（首期 PostgreSQL）；read 读取数据并包含必要元数据。必须显式选择 expiry_mode：at_time 提供未来 expires_at；until_revoked 无到期时间（省略或 null），仍受当前资格、撤销与安全约束，漏填模式不默认永久。decision_id 同参重试返回原记录；决定不是受理回执或 Grant，不授予数据访问 | The current business owner explicitly confirms sharing, including self or own project-group benefit. The shared MetaClient reads Meta's current complete authorization facts; System still checks Engine lifecycle. Explicit action is required: metadata_read for metadata only (PostgreSQL initially), or read for data including necessary metadata. Explicit expiry_mode is required: at_time requires future expires_at; until_revoked requires an omitted or null date and remains subject to current eligibility, revocation and safety. Missing mode never defaults to indefinite. Identical parameters recover the original decision, not an acceptance receipt, Grant or data access
 // @Tags Catalog Sharing
 // @Accept json
 // @Produce json
@@ -66,7 +67,7 @@ func (h *Handler) GetSharingBoundary(c *gin.Context) {
 // @Param request body createSharingDecisionRequest true "共享确认参数 | Sharing confirmation parameters"
 // @Success 201 {object} service.SharingDecisionResult "新建的不可变业务决定 | New immutable business decision"
 // @Success 200 {object} service.SharingDecisionResult "同参恢复的原决定 | Original decision recovered with identical parameters"
-// @Description 当前来源及责任下，相同 DataItem、边界、接收方和精确期限已有有效批准时，不同新编号返回 409 catalog_sharing_decision_exists；不覆盖原用途或创建重复批准，原编号同参恢复不受影响 | A different new ID returns 409 catalog_sharing_decision_exists when an equivalent effective approval already exists for the current source, original ownership, DataItem, boundary, recipient and exact validity; existing purpose/history and same-ID recovery are unchanged
+// @Description 当前来源及责任下，相同 DataItem、边界、接收方、动作和精确期限已有有效批准时，不同新编号返回 409 catalog_sharing_decision_exists；不覆盖原用途或创建重复批准，原编号同参恢复不受影响 | A different new ID returns 409 catalog_sharing_decision_exists when an equivalent effective approval already exists for the current source, original ownership, DataItem, boundary, recipient, action and exact validity; existing purpose/history and same-ID recovery are unchanged
 // @Failure 400 {object} map[string]interface{} "请求或期限无效 | Invalid request or expiry"
 // @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
 // @Failure 403 {object} map[string]interface{} "缺少独立权限或当前业务责任 | Missing independent permission or current business ownership"
@@ -110,7 +111,7 @@ func (h *Handler) CreateSharingDecision(c *gin.Context) {
 		return
 	}
 	result, created, err := h.entries.CreateSharingDecision(c.Request.Context(), tenantID, entryAccess(c), id, service.SharingDecisionInput{
-		DecisionID: decisionID, Version: version, RecipientType: request.RecipientType, RecipientID: recipientID, ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt, Reason: request.Reason, ExpectedBoundaryHash: request.ExpectedBoundaryHash,
+		Action: request.Action, DecisionID: decisionID, Version: version, RecipientType: request.RecipientType, RecipientID: recipientID, ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt, Reason: request.Reason, ExpectedBoundaryHash: request.ExpectedBoundaryHash,
 	}, auth)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)

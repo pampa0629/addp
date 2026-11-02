@@ -6,13 +6,13 @@ const id = 'cc0a8000-6000-4000-8000-800000000001'
 const entry = { version: 4, entry_type: 'data_item', entry_status: 'active', governance_status: 'curated',
   source: { source_module: 'meta', source_status: 'active' },
   responsibilities: [{ role: 'business_owner', subject_type: 'user', subject_id: '50', status: 'active' }] }
-const form = { recipientType: 'user', recipientID: '9007199254740993', expiryMode: 'until_revoked', expiresAt: null, reason: ' research ' }
+const form = { action: 'read', recipientType: 'user', recipientID: '9007199254740993', expiryMode: 'until_revoked', expiresAt: null, reason: ' research ' }
 const options = [{ id: form.recipientID, recipient_type: 'user', status: 'active' }]
 const auth = permissions => ({ authContext: { principal: { type: 'user', id: '50' } }, hasPermission: permission => permissions.includes(permission) })
 
 describe('explicit human sharing confirmation', () => {
   it('reuses only an exact recipient and expiry without collapsing microseconds', () => {
-    const approval = { id, boundary_hash: binding.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
+    const approval = { action: 'read', id, boundary_hash: binding.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
     const recipient = { ...options[0], approvals: [approval] }
     expect(matchingSharingApproval(recipient, form)).toEqual(approval)
     expect(matchingSharingApproval({ ...recipient, recipient_type: 'project_group' }, form)).toBeNull()
@@ -91,7 +91,7 @@ describe('explicit human sharing confirmation', () => {
   })
   it('captures immutable original parameters and preserves decimal ID precision', () => {
     const captured = captureSharingConfirmation(entry, form, options, id, binding)
-    expect(captured).toEqual({ expected_boundary_hash: binding.boundary_hash, decision_id: id, version: '4', recipient_type: 'user', recipient_id: '9007199254740993', expiry_mode: 'until_revoked', expires_at: null, reason: 'research' })
+    expect(captured).toEqual({ action: 'read', expected_boundary_hash: binding.boundary_hash, decision_id: id, version: '4', recipient_type: 'user', recipient_id: '9007199254740993', expiry_mode: 'until_revoked', expires_at: null, reason: 'research' })
     expect(Object.isFrozen(captured)).toBe(true)
     expect(captureSharingConfirmation({ ...entry, version: '9007199254740993' }, form, options, id, binding).version).toBe('9007199254740993')
     expect(() => captureSharingConfirmation({ ...entry, version: 9007199254740993 }, form, options, id, binding)).toThrow()
@@ -113,4 +113,15 @@ describe('explicit human sharing confirmation', () => {
     expect(canonicalSharingUUID(id)).toBe(id)
     for (const invalid of [id.toUpperCase(), [id], '00000000-0000-0000-0000-000000000000', 'untrusted/path']) expect(canonicalSharingUUID(invalid)).toBe('')
   })
+})
+
+it('never defaults or upgrades an approval action and deduplicates by action', () => {
+ for (const action of ['', undefined, 'write']) expect(() => captureSharingConfirmation(entry, { ...form, action }, options, id, binding)).toThrow()
+ const draft = { ...form, action: 'metadata_read' }
+ const captured = captureSharingConfirmation(entry, draft, options, id, binding)
+ draft.action = 'read'
+ expect(captured.action).toBe('metadata_read')
+ const approval = { id, action: 'read', boundary_hash: binding.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
+ expect(matchingSharingApproval({ ...options[0], approvals: [approval] }, { ...form, action: 'metadata_read' })).toBeNull()
+ expect(matchingSharingApproval({ ...options[0], approvals: [{ ...approval, action: 'metadata_read' }] }, { ...form, action: 'metadata_read' })).toMatchObject({ action: 'metadata_read' })
 })

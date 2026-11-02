@@ -50,7 +50,7 @@ func applySharingDecisionConstraints(db *gorm.DB) error {
 		`ALTER TABLE catalog.sharing_decisions ADD CONSTRAINT ck_sharing_decision_shape CHECK ((
 			id <> '00000000-0000-0000-0000-000000000000'::uuid AND entry_version > 0 AND engine_id > 0
 			AND confirmed_by > 0 AND confirmer_membership_id > 0 AND authorization_version > 0
-			AND recipient_type IN ('user','project_group') AND recipient_id > 0 AND action = 'read'
+			AND recipient_type IN ('user','project_group') AND recipient_id > 0 AND action IN ('read','metadata_read')
 			AND item_fingerprint ~ '^[0-9a-f]{64}$' AND boundary_hash ~ '^[0-9a-f]{64}$'
 			AND self_beneficiary = (recipient_type = 'user' AND recipient_id = confirmed_by)
 			AND (NOT confirmer_in_project_group OR recipient_type = 'project_group')

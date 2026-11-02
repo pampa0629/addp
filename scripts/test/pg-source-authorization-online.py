@@ -2098,7 +2098,7 @@ class Lifecycle:
         decision_id, request_id = str(uuid.uuid4()), str(uuid.uuid4())
         evidence = report['catalog_approval'] = {'entry_id': entry_id, 'decision_id': decision_id,
             'request_id': request_id, 'item_fingerprint': facts['item_fingerprint'], 'boundary_hash': facts['boundary_hash']}
-        decision_body = {'decision_id': decision_id, 'version': str(entry['version']), 'recipient_type': 'user',
+        decision_body = {'action': 'read', 'decision_id': decision_id, 'version': str(entry['version']), 'recipient_type': 'user',
             'recipient_id': self.recipient, 'expiry_mode': 'at_time',
             'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
             'expected_boundary_hash': facts['boundary_hash'], 'reason': 'Disposable PG business read approval'}

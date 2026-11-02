@@ -67,10 +67,10 @@ export async function listSharingDecisions(id, params) {
 // Read the direct relation, not a user's combined department/project sources.
 // This optional User observation never replaces System's write-time guard.
 export async function findExistingSharingGrant(candidate) {
-  if (!['user', 'project_group'].includes(candidate?.recipient_type) || !isSharingInt64(candidate?.recipient_id) ||
+  if (!['metadata_read', 'read'].includes(candidate?.action) || !['user', 'project_group'].includes(candidate?.recipient_type) || !isSharingInt64(candidate?.recipient_id) ||
       !/^[0-9a-f]{64}$/.test(candidate?.item_fingerprint || '')) throw new Error('invalidSharingGrantObservation')
   const result = await readSharingGrantPage(candidate.target, candidate.recipient_type, candidate.recipient_id)
-  const existing = result.data.find(row => row.item_fingerprint === candidate.item_fingerprint)
+  const existing = result.data.find(row => row.item_fingerprint === candidate.item_fingerprint && row.action === candidate.action)
   if (existing) return existing
   if (result.total !== result.data.length) throw new Error('incompleteSharingGrantObservation')
   return null
@@ -83,7 +83,7 @@ async function readSharingGrantPage(target, recipientType, recipientID) {
   } })
   if (!Array.isArray(result?.data) || !Number.isSafeInteger(result.total) || result.total < result.data.length ||
       result.data.some(row => row.recipient_type !== recipientType || !isSharingInt64(row.recipient_id) || (recipientID && row.recipient_id !== recipientID) ||
-        row.action !== 'read' || row.revocation !== null || !/^[0-9a-f]{64}$/.test(row.item_fingerprint) ||
+        !['metadata_read', 'read'].includes(row.action) || row.revocation !== null || !/^[0-9a-f]{64}$/.test(row.item_fingerprint) ||
         (row.expiry_mode !== 'until_revoked' && row.expiry_mode !== 'at_time') ||
         (row.expiry_mode === 'until_revoked' ? row.expires_at !== null : !row.expires_at || !Number.isFinite(new Date(row.expires_at).getTime())))) {
     throw new Error('invalidSharingGrantObservation')
@@ -95,7 +95,7 @@ async function readSharingGrantPage(target, recipientType, recipientID) {
 export async function observeSharingCandidateGrants(candidates) {
   const groups = new Map()
   for (const candidate of candidates) {
-    if (!['user', 'project_group'].includes(candidate.recipient_type) || !isSharingInt64(candidate.recipient_id) ||
+    if (!['metadata_read', 'read'].includes(candidate.action) || !['user', 'project_group'].includes(candidate.recipient_type) || !isSharingInt64(candidate.recipient_id) ||
         !/^[0-9a-f]{64}$/.test(candidate.item_fingerprint || '')) throw new Error('invalidSharingGrantObservation')
     const key = serializeEngineCatalogTarget(candidate.target) + ':' + candidate.recipient_type
     if (!groups.has(key)) groups.set(key, [])
@@ -105,7 +105,7 @@ export async function observeSharingCandidateGrants(candidates) {
   await Promise.all([...groups.values()].map(async group => {
     const result = await readSharingGrantPage(group[0].target, group[0].recipient_type)
     for (const candidate of group) {
-      const exists = result.data.some(row => row.item_fingerprint === candidate.item_fingerprint && row.recipient_id === candidate.recipient_id)
+      const exists = result.data.some(row => row.item_fingerprint === candidate.item_fingerprint && row.recipient_id === candidate.recipient_id && row.action === candidate.action)
       statuses[candidate.id] = exists ? 'existing' : result.total === result.data.length ? 'absent' : 'unknown'
     }
   }))

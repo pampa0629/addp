@@ -59,6 +59,31 @@ func TestPostgresSharingDecisionIsAtomicImmutableAndRetryable(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("metadata and read approvals remain distinct and immutable", func(t *testing.T) {
+		rollback := errors.New("rollback distinct actions fixture")
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			metadata := exerciseSharingDecisionActions(t, tx)
+			input := preparationFixture(t, metadata)
+			prepared, created, err := prepareSharingFulfillment(context.Background(), tx, 7, metadata.CatalogEntryID, metadata.ID, input)
+			if err != nil || !created {
+				t.Fatalf("metadata preparation=%+v created=%v err=%v", prepared, created, err)
+			}
+			binding, err := decodeSharingFulfillmentBinding(prepared.RequestBinding)
+			if err != nil || binding.Action != authorization.SourceAccessMetadataRead {
+				t.Fatalf("prepared metadata action=%+v err=%v", binding, err)
+			}
+			var read models.SharingDecision
+			if err := tx.Where("catalog_entry_id = ? AND action = ?", metadata.CatalogEntryID, authorization.SourceAccessRead).Take(&read).Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := prepareSharingFulfillment(context.Background(), tx, 7, metadata.CatalogEntryID, read.ID, input); !errors.Is(err, ErrSharingDecisionConflict) {
+				t.Fatalf("handling upgrade=%v", err)
+			}
+			return rollback
+		}); !errors.Is(err, rollback) {
+			t.Fatal(err)
+		}
+	})
 	entry, input := seedSharingEntry(t, db)
 	s := NewEntryService(db, nil, &fakeSystemReferenceResolver{}).WithSharingTargetResolver(&fakeSharingTargetResolver{})
 	auth := sharingAuth()

@@ -5,13 +5,14 @@ import (
 	"net/http"
 	"slices"
 
+	"github.com/addp/common/authorization"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 )
 
 type SharingTargetResolver interface {
-	ResolveSharingTarget(context.Context, int64, string) (authorizationfacts.Binding, error)
+	ResolveSharingTarget(context.Context, int64, string, string) (authorizationfacts.Binding, error)
 }
 
 type sharingTargetResolver struct {
@@ -23,7 +24,7 @@ func NewSharingTargetResolver(meta *commonClient.MetaClient, system *commonClien
 	return &sharingTargetResolver{meta: meta, system: system}
 }
 
-func (r *sharingTargetResolver) ResolveSharingTarget(ctx context.Context, tenantID int64, fingerprint string) (authorizationfacts.Binding, error) {
+func (r *sharingTargetResolver) ResolveSharingTarget(ctx context.Context, tenantID int64, fingerprint, action string) (authorizationfacts.Binding, error) {
 	if r == nil || r.meta == nil || r.system == nil || tenantID <= 0 {
 		return authorizationfacts.Binding{}, ErrReferenceValidationUnavailable
 	}
@@ -53,6 +54,9 @@ func (r *sharingTargetResolver) ResolveSharingTarget(ctx context.Context, tenant
 		return authorizationfacts.Binding{}, ErrReferenceValidationUnavailable
 	}
 	if descriptor == nil || descriptor.ID != facts.EngineID || descriptor.LifecycleState != "active" || descriptor.Capabilities == nil {
+		return authorizationfacts.Binding{}, ErrSharingTargetUnsupported
+	}
+	if action != "" && (!authorization.ValidSourceAccessAction(action) || action == authorization.SourceAccessMetadataRead && descriptor.EngineType != "postgresql") {
 		return authorizationfacts.Binding{}, ErrSharingTargetUnsupported
 	}
 	path := facts.Boundary.NativeTarget

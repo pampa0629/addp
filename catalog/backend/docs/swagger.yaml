@@ -1110,6 +1110,11 @@ definitions:
     type: object
   github_com_addp_catalog_internal_service.SharingApprovalSummary:
     properties:
+      action:
+        enum:
+        - read
+        - metadata_read
+        type: string
       boundary_hash:
         type: string
       expires_at:
@@ -1167,6 +1172,9 @@ definitions:
   github_com_addp_catalog_internal_service.SharingDecisionResult:
     properties:
       action:
+        enum:
+        - read
+        - metadata_read
         type: string
       authorization_version:
         example: ""
@@ -1545,6 +1553,11 @@ definitions:
     type: object
   internal_api.createSharingDecisionRequest:
     properties:
+      action:
+        enum:
+        - read
+        - metadata_read
+        type: string
       decision_id:
         format: uuid
         type: string
@@ -1572,6 +1585,7 @@ definitions:
       version:
         type: string
     required:
+    - action
     - expected_boundary_hash
     - expiry_mode
     type: object
@@ -3110,8 +3124,8 @@ paths:
       consumes:
       - application/json
       description: |-
-        当前业务负责人显式确认；本人或本人项目组受益不自动拒绝。完整源目标经共享 MetaClient 读取 Meta 当前 complete 的授权资源事实并核验 System 引擎状态；不接受自报确认人、路径或动作。必须显式选择 expiry_mode：at_time 提供未来 expires_at；until_revoked 无到期时间（省略或 null），仍受当前资格、撤销与安全约束，漏填模式不默认永久。decision_id 同参重试返回原记录；决定不是受理回执或 Grant，不授予数据访问 | The current business owner explicitly confirms sharing, including self or own project-group benefit. The shared MetaClient reads Meta's current complete authorization facts; System still checks Engine lifecycle. Explicit expiry_mode is required: at_time requires future expires_at; until_revoked requires an omitted or null date and remains subject to current eligibility, revocation and safety. Missing mode never defaults to indefinite. Identical parameters recover the original decision, not an acceptance receipt, Grant or data access
-        当前来源及责任下，相同 DataItem、边界、接收方和精确期限已有有效批准时，不同新编号返回 409 catalog_sharing_decision_exists；不覆盖原用途或创建重复批准，原编号同参恢复不受影响 | A different new ID returns 409 catalog_sharing_decision_exists when an equivalent effective approval already exists for the current source, original ownership, DataItem, boundary, recipient and exact validity; existing purpose/history and same-ID recovery are unchanged
+        当前业务负责人显式确认；本人或本人项目组受益不自动拒绝。完整源目标经共享 MetaClient 读取 Meta 当前 complete 的授权资源事实并核验 System 引擎状态；不接受自报确认人或路径。必须显式选择 action：metadata_read 仅查看元数据（首期 PostgreSQL）；read 读取数据并包含必要元数据。必须显式选择 expiry_mode：at_time 提供未来 expires_at；until_revoked 无到期时间（省略或 null），仍受当前资格、撤销与安全约束，漏填模式不默认永久。decision_id 同参重试返回原记录；决定不是受理回执或 Grant，不授予数据访问 | The current business owner explicitly confirms sharing, including self or own project-group benefit. The shared MetaClient reads Meta's current complete authorization facts; System still checks Engine lifecycle. Explicit action is required: metadata_read for metadata only (PostgreSQL initially), or read for data including necessary metadata. Explicit expiry_mode is required: at_time requires future expires_at; until_revoked requires an omitted or null date and remains subject to current eligibility, revocation and safety. Missing mode never defaults to indefinite. Identical parameters recover the original decision, not an acceptance receipt, Grant or data access
+        当前来源及责任下，相同 DataItem、边界、接收方、动作和精确期限已有有效批准时，不同新编号返回 409 catalog_sharing_decision_exists；不覆盖原用途或创建重复批准，原编号同参恢复不受影响 | A different new ID returns 409 catalog_sharing_decision_exists when an equivalent effective approval already exists for the current source, original ownership, DataItem, boundary, recipient, action and exact validity; existing purpose/history and same-ID recovery are unchanged
       parameters:
       - description: 条目 UUID | Entry UUID
         in: path

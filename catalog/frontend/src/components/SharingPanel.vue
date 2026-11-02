@@ -38,6 +38,7 @@
       <el-alert v-if="confirmationsError" type="error" :closable="false" :title="confirmationsError" />
       <el-table data-testid="sharing-confirmations" :data="confirmations" v-loading="confirmationsLoading">
         <el-table-column :label="t('catalog.sharing.recipient')" min-width="230" show-overflow-tooltip :formatter="recipientLabel" />
+        <el-table-column :label="t('catalog.sharing.action')" :formatter="row => actionLabel(row.action)" />
         <el-table-column :label="t('catalog.sharing.confirmedAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.created_at) }}</template></el-table-column>
         <el-table-column :label="t('catalog.sharing.expiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
         <el-table-column prop="reason" :label="t('catalog.sharing.reason')" min-width="160" show-overflow-tooltip />
@@ -61,10 +62,15 @@
             :remote-method="searchRecipients" :placeholder="t('catalog.sharing.selectRecipient')"
             @visible-change="visible => visible && searchRecipients('')">
             <el-option v-for="option in recipients" :key="option.id" :value="option.id" :label="recipientOptionLabel(option)">
-              <div class="approval-option"><span>{{ recipientOptionLabel(option) }}</span><span v-if="option.approvals?.length" class="approval-status">{{ t('catalog.sharing.alreadyApproved') }}</span></div>
+              <div class="approval-option"><span>{{ recipientOptionLabel(option) }}</span><span v-if="option.approvals?.some(approval => approval.action === form.action)" class="approval-status">{{ t('catalog.sharing.alreadyApproved') }}</span></div>
             </el-option>
           </el-select>
           <el-alert v-if="recipientError" type="error" :closable="false" :title="recipientError" />
+        </el-form-item>
+        <el-form-item :label="t('catalog.sharing.action')" required>
+          <el-select v-model="form.action" data-testid="sharing-action" :disabled="!!attempt" :placeholder="t('catalog.sharing.selectAction')">
+            <el-option v-for="action in ['metadata_read', 'read']" :key="action" :value="action" :label="actionLabel(action)" />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('catalog.sharing.expiry')" required>
           <el-select v-model="form.expiryMode" :disabled="!!attempt" :placeholder="t('catalog.sharing.selectExpiry')" @change="form.expiresAt = null">
@@ -99,6 +105,7 @@
       <el-descriptions v-if="confirmation" :column="1" border>
         <el-descriptions-item :label="t('catalog.sharing.confirmedAt')">{{ formatTime(confirmation.created_at) }}</el-descriptions-item>
         <el-descriptions-item :label="t('catalog.sharing.target')">{{ targetLabel(confirmation.target) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('catalog.sharing.action')">{{ actionLabel(confirmation.action) }}</el-descriptions-item>
         <el-descriptions-item :label="t('catalog.sharing.recipient')">{{ recipientLabel(confirmation) }}</el-descriptions-item>
         <el-descriptions-item :label="t('catalog.sharing.expiry')">{{ expiryLabel(confirmation) }}</el-descriptions-item>
         <el-descriptions-item :label="t('catalog.sharing.reason')">{{ confirmation.reason }}</el-descriptions-item>
@@ -156,6 +163,7 @@
         <p v-if="selectedDecision && selectedDecision === decisionID" class="sharing-help" data-testid="sharing-current-selected">{{ t('catalog.sharing.currentSelected') }}</p>
         <el-descriptions v-if="selectedCandidate" :column="1" border>
           <el-descriptions-item :label="t('catalog.sharing.target')">{{ targetLabel(selectedCandidate.target) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.sharing.action')">{{ actionLabel(selectedCandidate.action) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.recipient')">{{ candidateLabel(selectedCandidate) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.expiry')">{{ expiryLabel(selectedCandidate) }}</el-descriptions-item>
         </el-descriptions>
@@ -187,6 +195,7 @@
       <el-alert type="info" :closable="false" :title="t('catalog.sharing.issuanceBoundary')" />
       <el-table data-testid="sharing-request-list" :data="history" v-loading="historyLoading">
         <el-table-column :label="t('catalog.sharing.recipient')" min-width="230" show-overflow-tooltip :formatter="recipientLabel" />
+        <el-table-column :label="t('catalog.sharing.action')" :formatter="row => actionLabel(row.action)" />
         <el-table-column :label="t('catalog.sharing.handledAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.created_at) }}</template></el-table-column>
         <el-table-column :label="t('catalog.sharing.approvedExpiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
         <el-table-column :label="t('catalog.sharing.handlingResult')" min-width="230"><template #default="{ row }"><el-tag :type="recordResultType(row)">{{ recordResultLabel(row) }}</el-tag></template></el-table-column>
@@ -202,6 +211,7 @@
       <el-alert v-if="requestError" type="error" :closable="false" :title="requestError" />
       <div v-if="request" v-loading="requestLoading">
         <el-descriptions :column="1" border>
+          <el-descriptions-item :label="t('catalog.sharing.action')">{{ actionLabel(request.action) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.recipient')">{{ recipientLabel(request) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.handledAt')">{{ formatTime(request.created_at) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.approvedExpiry')">{{ expiryLabel(request) }}</el-descriptions-item>
@@ -257,7 +267,7 @@ const selectedCandidate = computed(() => candidates.value.find(item => item.id =
 const handlingAttempt = ref(null), handlingSaving = ref(false), handlingError = ref(''), handlingSucceeded = ref(false)
 const canReadGrants = computed(() => auth.hasPermission('system.engine_access_grant.read'))
 const existingGrant = ref(null), grantObservationLoading = ref(false), grantObservationFailed = ref(false)
-const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
+const form = reactive({ action: '', recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
 const recipients = ref([]), recipientLoading = ref(false), recipientError = ref('')
 const matchingApproval = computed(() => matchingSharingApproval(recipients.value.find(row => row.id === form.recipientID), form))
 const attempt = ref(null), saving = ref(false), confirmation = ref(null), confirmationError = ref(''), confirmationLoading = ref(false)
@@ -275,7 +285,7 @@ const progress = computed(() => sharingProgress({ decisionID: props.decisionID, 
   canHandle: selectedCandidate.value?.id === props.decisionID }))
 let confirmationsSequence = 0, resultsSequence = 0, grantObservationSequence = 0, candidateGrantSequence = 0
 let generation = 0, recipientSequence = 0, historySequence = 0, requestSequence = 0, confirmationSequence = 0, candidateSequence = 0
-const message = error => error?.response?.data?.error || t('catalog.sharing.queryFailed')
+const message = error => error?.message === 'invalidConfirmation' ? t('catalog.sharing.invalidConfirmation') : error?.response?.data?.error || t('catalog.sharing.queryFailed')
 const formatTime = value => value ? new Date(value).toLocaleString(locale.value) : '—'
 const expiryLabel = row => row.expiry_mode === 'until_revoked' ? t('catalog.sharing.until_revoked') : formatTime(row.expires_at)
 const issuanceLabel = row => row.granted_at ? t('catalog.sharing.issued') + ' · ' + formatTime(row.granted_at)
@@ -283,7 +293,8 @@ const issuanceLabel = row => row.granted_at ? t('catalog.sharing.issued') + ' ·
 const targetLabel = target => (target?.segments || []).map(segment => segment.name).join(' / ')
 const recipientLabel = row => sharingRecipientLabel(row, auth.authContext, t)
 const recipientOptionLabel = option => sharingRecipientOptionLabel(option, form.recipientType, auth.authContext, t)
-const candidateLabel = row => `${recipientLabel(row)} · ${expiryLabel(row)}`
+const actionLabel = action => t(`catalog.sharing.actions.${action}`)
+const candidateLabel = row => `${actionLabel(row.action)} · ${recipientLabel(row)} · ${expiryLabel(row)}`
 const candidateStatusLabel = row => t(`catalog.sharing.candidateState.${candidateGrantStatuses.value[row.id] || 'unknown'}`)
 const recordResultStatus = row => sharingProgress({ requestID: row.request_id, request: row }).status
 const recordResultLabel = row => t(`catalog.sharing.recordResult.${recordResultStatus(row)}`)
@@ -308,7 +319,7 @@ async function changeWorkspace(value) {
     const resetDraft = !!props.decisionID
     await props.recordDecision('')
     if (epoch !== generation) return
-    if (resetDraft) Object.assign(form, { recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
+    if (resetDraft) Object.assign(form, { action: '', recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
     attempt.value = null
   } else if (value === 'handling' && props.requestID) {
     await props.recordDecision(props.decisionID)

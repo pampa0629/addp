@@ -1280,6 +1280,7 @@ class PGCatalogApprovalTest(unittest.TestCase):
         decisions = [call for call in self.server.calls if call[2].endswith('/sharing_decisions')]
         requests = [call for call in self.server.calls if call[2].endswith('/sharing_fulfillments')]
         self.assertEqual([call[0] for call in decisions], ['business'])
+        self.assertEqual(decisions[0][3]['action'], 'read')
         self.assertEqual([call[0] for call in requests], ['operator'] * 4)
         self.assertEqual(requests[0][3], requests[-1][3])
         self.assertNotEqual(requests[0][3]['request_id'], requests[2][3]['request_id'])

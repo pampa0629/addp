@@ -31,7 +31,7 @@ import (
 
 type sharingRouteTarget struct{}
 
-func (sharingRouteTarget) ResolveSharingTarget(context.Context, int64, string) (authorizationfacts.Binding, error) {
+func (sharingRouteTarget) ResolveSharingTarget(context.Context, int64, string, string) (authorizationfacts.Binding, error) {
 	return factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders")), nil
 }
 
@@ -71,15 +71,20 @@ func TestSharingDecisionSwaggerRequiresModeAndAllowsExplicitNullDate(t *testing.
 		if !ok || !date.Nullable || date.Format != "date-time" || len(mode.Enum) != 2 || mode.Enum[0] != "at_time" || mode.Enum[1] != "until_revoked" {
 			t.Fatalf("expiry contract missing in %s: %+v", name, definition)
 		}
+		actions := definition.Properties["action"].Enum
+		if len(actions) != 2 || actions[0] != "read" || actions[1] != "metadata_read" {
+			t.Fatalf("action enum missing: %s %+v", name, actions)
+		}
 		if name == "internal_api.createSharingDecisionRequest" {
-			required := false
+			required, actionRequired := false, false
 			for _, field := range definition.Required {
 				if field == "expires_at" {
 					t.Fatal("date must be conditional on the explicit mode")
 				}
 				required = required || field == "expiry_mode"
+				actionRequired = actionRequired || field == "action"
 			}
-			if !required {
+			if !required || !actionRequired {
 				t.Fatal("expiry mode must not be optional")
 			}
 		}
@@ -160,7 +165,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 		WithSharingHandlingScopeReader(commonClient.NewSystemServiceClient(system.URL, nil, system.Client()))
 	router := SetupRouter(system.URL, modulelifecycle.NewStandalone("catalog"), entries, nil, nil, nil, nil, nil)
 	path := "/api/v1/catalog/entries/" + id.String() + "/sharing_decisions"
-	body := fmt.Sprintf(`{"expected_boundary_hash":"`+factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders")).BoundaryHash+`","decision_id":%q,"version":"1","recipient_type":"user","recipient_id":"40","expiry_mode":"at_time","expires_at":%q,"reason":"Explicit self read"}`, decisionID.String(), time.Now().UTC().AddDate(8, 0, 0).Format(time.RFC3339Nano))
+	body := fmt.Sprintf(`{"action":"read","expected_boundary_hash":"`+factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders")).BoundaryHash+`","decision_id":%q,"version":"1","recipient_type":"user","recipient_id":"40","expiry_mode":"at_time","expires_at":%q,"reason":"Explicit self read"}`, decisionID.String(), time.Now().UTC().AddDate(8, 0, 0).Format(time.RFC3339Nano))
 	request := func(method, url, data string, want int) string {
 		t.Helper()
 		req := httptest.NewRequest(method, url, strings.NewReader(data))
@@ -206,7 +211,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	} {
 		request(http.MethodPost, path, invalid, http.StatusBadRequest)
 	}
-	for _, invalid := range []string{strings.Replace(body, `"version":"1"`, `"version":1`, 1), strings.Replace(body, `"recipient_id":"40"`, `"recipient_id":"040"`, 1), strings.TrimSuffix(body, "}") + `,"confirmed_by":"40"}`, strings.TrimSuffix(body, "}") + `,"action":"read"}`} {
+	for _, invalid := range []string{strings.Replace(body, `"version":"1"`, `"version":1`, 1), strings.Replace(body, `"recipient_id":"40"`, `"recipient_id":"040"`, 1), strings.TrimSuffix(body, "}") + `,"confirmed_by":"40"}`, strings.Replace(body, `"action":"read",`, "", 1), strings.Replace(body, `"action":"read"`, `"action":"write"`, 1)} {
 		request(http.MethodPost, path, invalid, http.StatusBadRequest)
 	}
 	user = "41"
@@ -217,7 +222,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	request(http.MethodPost, path, strings.Replace(body, "Explicit self read", "Changed", 1), http.StatusConflict)
 	request(http.MethodGet, path+"/"+decisionID.String(), "", http.StatusOK)
 	longID := uuid.New()
-	longBody := fmt.Sprintf(`{"expected_boundary_hash":"`+factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders")).BoundaryHash+`","decision_id":%q,"version":"2","recipient_type":"user","recipient_id":"40","expiry_mode":"until_revoked","reason":"Explicit long-term read"}`, longID.String())
+	longBody := fmt.Sprintf(`{"action":"read","expected_boundary_hash":"`+factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders")).BoundaryHash+`","decision_id":%q,"version":"2","recipient_type":"user","recipient_id":"40","expiry_mode":"until_revoked","reason":"Explicit long-term read"}`, longID.String())
 	longResult := request(http.MethodPost, path, longBody, http.StatusCreated)
 	var longView map[string]any
 	if err := json.Unmarshal([]byte(longResult), &longView); err != nil || longView["expiry_mode"] != "until_revoked" || longView["expires_at"] != nil {
