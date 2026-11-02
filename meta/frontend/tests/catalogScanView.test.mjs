@@ -28,7 +28,7 @@ test('live top entries select leaf or branch from the same catalog model rule', 
 test('scanned direct leaves are read from root items while branch engines use child nodes', () => {
   const tree = {
     top_nodes: [{ id: 7, full_name: '' }],
-    child_nodes: [{ id: 8, parent_node_id: 7, name: 'public', scan_status: 'completed' }],
+    child_nodes: [{ id: 8, parent_node_id: 7, name: 'public', scan_status: 'completed', item_count: 37 }],
     items: [{ id: 9, node_id: 7, name: 'orders', full_name: 'orders', item_type: 'topic', scanned_at: '2026-08-03T16:00:00Z' }]
   }
 
@@ -36,14 +36,18 @@ test('scanned direct leaves are read from root items while branch engines use ch
     id: 9,
     name: 'orders',
     item_type: 'topic',
-    node_type: 'topic',
     path: 'orders',
     role: 'leaf',
     scan_status: 'completed',
     scanned_depth: '',
     scanned_at: '2026-08-03T16:00:00Z',
-    item_count: 1,
-    total_size_bytes: 0
+    size_bytes: 0
   }])
-  assert.equal(selectScannedCatalogTopEntries(tree, branchResource)[0].name, 'public')
+  const branch = selectScannedCatalogTopEntries(tree, branchResource)[0]
+  assert.equal(branch.name, 'public')
+  assert.equal(branch.item_count, 37)
+  const leaf = selectScannedCatalogTopEntries(tree, directResource)[0]
+  for (const key of ['item_count', 'node_type', 'total_size_bytes']) {
+    assert.equal(Object.hasOwn(leaf, key), false)
+  }
 })

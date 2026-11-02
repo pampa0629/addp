@@ -946,9 +946,7 @@ const loadCatalogEntries = async () => {
         id: scanned.id,
         name: catalogEntryNameOf(scanned),
         scan_status: scanned.scan_status,
-        item_count: scanned.item_count || 0,
-        scanned_at: scanned.scanned_at || '',
-        total_size_bytes: scanned.total_size_bytes || 0
+        scanned_at: scanned.scanned_at || ''
       }))
     } else {
       catalogAvailability.value = { status: 'ready', message: '' }
@@ -963,9 +961,7 @@ const loadCatalogEntries = async () => {
             id: scanned?.id,
             scan_status: scanned?.scan_status || 'pending',
             leaf_count: available.leaf_count,
-            item_count: scanned?.item_count || 0,
-            scanned_at: scanned?.scanned_at || '',
-            total_size_bytes: scanned?.total_size_bytes || 0
+            scanned_at: scanned?.scanned_at || ''
           }
         })
     }

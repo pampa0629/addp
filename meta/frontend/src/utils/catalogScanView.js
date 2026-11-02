@@ -21,14 +21,12 @@ export function selectScannedCatalogTopEntries(tree, resource) {
         id: item.id,
         name: item.name,
         item_type: item.item_type,
-        node_type: item.item_type,
         path: item.full_name || item.name,
         role: 'leaf',
         scan_status: item.scanned_at ? 'completed' : 'pending',
         scanned_depth: item.scanned_depth || '',
         scanned_at: item.scanned_at || '',
-        item_count: 1,
-        total_size_bytes: item.size_bytes || 0
+        size_bytes: item.size_bytes || 0
       }))
   }
 

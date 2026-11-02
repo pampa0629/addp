@@ -147,7 +147,7 @@ func (s *ResourceTreeService) FilterMetadataTree(ctx context.Context, tenantID, 
 	if engine.EngineType != "postgresql" {
 		return tree, nil
 	}
-	built, err := s.treeBuilder.BuildFromMeta(engine, s.metadataTreeNodes(engine.EngineType, tree, -1), -1)
+	built, err := s.treeBuilder.BuildFromMetadataTree(engine, commonMetadataTree(tree))
 	if err != nil {
 		return nil, err
 	}

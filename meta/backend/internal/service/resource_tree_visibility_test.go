@@ -54,10 +54,12 @@ func TestPGUserResourceTreeFiltersBeforeDepthSearchAndAncestors(t *testing.T) {
 	if err != nil || results.Total != 1 || len(results.Results) != 1 || results.Results[0].Label != "visible_table" {
 		t.Fatalf("search leaked or paginated first: %+v %v", results, err)
 	}
+	assertResourceTreeItemBoundary(t, results.Results[0])
 	node, err := svc.GetNode(ctx, tenant, engine, (&resourcetree.ResourceLocator{EngineID: engine, Path: []string{"public"}, Type: resourcetree.TypeSchema, NodeID: &visibleSchema.ID}).ToURI())
 	if err != nil || len(node.Children) != 1 {
 		t.Fatalf("node children: %+v %v", node, err)
 	}
+	assertResourceTreeItemBoundary(t, node)
 	for _, item := range []models.MetaItem{allowed, hidden} {
 		schema := "public"
 		if item.ID == hidden.ID {
@@ -68,6 +70,9 @@ func TestPGUserResourceTreeFiltersBeforeDepthSearchAndAncestors(t *testing.T) {
 		if item.ID == allowed.ID {
 			if err != nil || len(ancestors.Ancestors) != 3 {
 				t.Fatalf("visible ancestors: %+v %v", ancestors, err)
+			}
+			for _, ancestor := range ancestors.Ancestors {
+				assertResourceTreeItemBoundary(t, ancestor)
 			}
 		} else if ancestors != nil || !errors.Is(err, metaErrors.ErrNodeNotFound) {
 			t.Fatalf("hidden ancestors escaped: %+v %v", ancestors, err)
@@ -108,6 +113,9 @@ func TestPGTreeWhitelistAndIncompleteDecisionFailClosed(t *testing.T) {
 			encoded, _ := json.Marshal(result)
 			if err != nil || strings.Contains(string(encoded), "private") || strings.Contains(string(encoded), "row_count") || result.Metadata["item_count"] != 1 {
 				t.Fatalf("unsafe projection: %s %v", encoded, err)
+			}
+			if _, exists := result.Children[0].Metadata["item_count"]; exists {
+				t.Fatalf("visible leaf has a node count: %s", encoded)
 			}
 			if root.Metadata["item_count"] != 88 || leaf.Metadata["row_count"] != 999 {
 				t.Fatal("shared facts mutated")

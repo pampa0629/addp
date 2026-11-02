@@ -174,7 +174,7 @@ func TestBuildFromMeta(t *testing.T) {
 		},
 	}
 
-	tree, err := builder.BuildFromMeta(engine, metaNodes, 2)
+	tree, err := builder.BuildFromMeta(engine, metaNodes, nil)
 	if err != nil {
 		t.Fatalf("BuildFromMeta() error = %v", err)
 	}
@@ -236,7 +236,7 @@ func TestBuildFromMetaFallbackRootUsesCatalogRootTermLabel(t *testing.T) {
 		EngineType:   "minio",
 		Capabilities: &capabilities,
 	}
-	tree, err := builder.BuildFromMeta(engine, nil, -1)
+	tree, err := builder.BuildFromMeta(engine, nil, nil)
 	if err != nil {
 		t.Fatalf("BuildFromMeta() error = %v", err)
 	}
@@ -375,7 +375,7 @@ func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 		t.Fatalf("item = %s/%s, want roads/table", item.Label, item.Type)
 	}
 	if !strings.Contains(item.Locator, "public/roads") || !strings.Contains(item.Locator, "item_id=21") {
-		t.Fatalf("item locator = %q, want virtual item locator", item.Locator)
+		t.Fatalf("item locator = %q, want real item locator", item.Locator)
 	}
 	if got := item.Metadata["size_bytes"]; got != sizeBytes {
 		t.Fatalf("item size_bytes = %#v, want %d", got, sizeBytes)
@@ -428,32 +428,16 @@ func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
 			ScanStatus:   "completed",
 			ItemCount:    1,
 		},
-		{
-			ID:           100975,
-			EngineID:     26,
-			ParentNodeID: &parentID,
-			NodeType:     "file",
-			Name:         "lake",
-			FullName:     "lake",
-			Depth:        1,
-			Path:         "lake",
-			ScanStatus:   "completed",
-			Attributes: map[string]interface{}{
-				"item_id":      uint(975),
-				"is_meta_item": true,
-				"item": map[string]interface{}{
-					"layout":    "whole",
-					"data_type": "table",
-					"format":    "parquet",
-				},
-				"storage": map[string]interface{}{
-					"physical_path": "lake",
-				},
-			},
-		},
 	}
+	items := []models.MetaItem{{
+		ID: 975, EngineID: 26, NodeID: parentID, ItemType: "file", Name: "lake", FullName: "lake",
+		Attributes: map[string]interface{}{
+			"item":    map[string]interface{}{"layout": "whole", "data_type": "table", "format": "parquet"},
+			"storage": map[string]interface{}{"physical_path": "lake"},
+		},
+	}}
 
-	tree, err := builder.BuildFromMeta(engine, metaNodes, 2)
+	tree, err := builder.BuildFromMeta(engine, metaNodes, items)
 	if err != nil {
 		t.Fatalf("BuildFromMeta() error = %v", err)
 	}
@@ -481,7 +465,7 @@ func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
 	}
 }
 
-func TestConvertMetaItemsForEngineUsesPathSemanticTableDepth(t *testing.T) {
+func TestConvertMetaItemsPreservesStorageTableFullName(t *testing.T) {
 	builder := NewTreeBuilder()
 	items := []models.MetaItem{
 		{
@@ -501,17 +485,18 @@ func TestConvertMetaItemsForEngineUsesPathSemanticTableDepth(t *testing.T) {
 		},
 	}
 
-	nodes := builder.ConvertMetaItemsForEngine("nfs", items)
+	nodes := builder.ConvertMetaItems(&models.Engine{ID: 26, EngineType: "nfs"}, items)
 	if len(nodes) != 1 {
 		t.Fatalf("len(nodes) = %d, want 1", len(nodes))
 	}
 	node := nodes[0]
-	if node.Depth != 3 {
-		t.Fatalf("node.Depth = %d, want 3", node.Depth)
+	if node.Locator != "addp://engine/26/path/lake%2Fwarehouse%2Forders?type=table&item_id=42" {
+		t.Fatalf("item locator = %q", node.Locator)
 	}
-	if node.Attributes["item_id"] != uint(42) || node.Attributes["is_meta_item"] != true {
-		t.Fatalf("node attributes missing meta item identity: %#v", node.Attributes)
+	if node.Metadata["item_id"] != uint(42) || node.HasChildren {
+		t.Fatalf("item identity or leaf semantics lost: %#v", node)
 	}
+
 }
 
 func TestBuildFromMetaKeepsObjectPrefixLocatorType(t *testing.T) {
@@ -527,7 +512,7 @@ func TestBuildFromMetaKeepsObjectPrefixLocatorType(t *testing.T) {
 		{ID: rootID, EngineID: 9, NodeType: "service", Name: "Object Store", FullName: "", ItemCount: 1},
 		{ID: bucketID, EngineID: 9, ParentNodeID: &rootID, NodeType: "bucket", Name: "addp", FullName: "addp", ItemCount: 1},
 		{ID: 3, EngineID: 9, ParentNodeID: &bucketID, NodeType: "prefix", Name: "reports", FullName: "addp/reports", ItemCount: 1},
-	}, -1)
+	}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromMeta() error = %v", err)
 	}
@@ -550,12 +535,10 @@ func TestBuildFromMetaKeepsTopicLocatorTypeAndName(t *testing.T) {
 	rootID := uint(342)
 	tree, err := builder.BuildFromMeta(engine, []*models.MetaNode{
 		{ID: rootID, EngineID: 19, NodeType: "service", Name: "Business Kafka", FullName: "", ItemCount: 1},
-		{
-			ID: 152381, EngineID: 19, ParentNodeID: &rootID, NodeType: "topic",
-			Name: "addp.transfer.orders.v1", FullName: "addp.transfer.orders.v1",
-			Attributes: map[string]interface{}{"item_id": uint(52381)},
-		},
-	}, -1)
+	}, []models.MetaItem{{
+		ID: 52381, EngineID: 19, NodeID: rootID, ItemType: "topic",
+		Name: "addp.transfer.orders.v1", FullName: "addp.transfer.orders.v1",
+	}})
 	if err != nil {
 		t.Fatalf("BuildFromMeta() error = %v", err)
 	}
@@ -568,44 +551,6 @@ func TestBuildFromMetaKeepsTopicLocatorTypeAndName(t *testing.T) {
 	}
 	if topic.Locator != "addp://engine/19/path/addp.transfer.orders.v1?type=topic&item_id=52381" {
 		t.Fatalf("topic.Locator = %q", topic.Locator)
-	}
-}
-
-func TestConvertNodeToTree(t *testing.T) {
-	builder := NewTreeBuilder()
-
-	loc := &ResourceLocator{
-		EngineID: 1,
-		Path:     []string{"public", "users"},
-		Type:     TypeTable,
-		ItemID:   uintPtr(100),
-	}
-
-	metadata := map[string]interface{}{
-		"item_id":    uint(100),
-		"item_count": 1000,
-		"size_bytes": int64(1048576),
-	}
-
-	node := builder.ConvertNodeToTree(loc, metadata)
-
-	// 验证节点
-	if node.Label != "users" {
-		t.Errorf("node.Label = %s, want %s", node.Label, "users")
-	}
-	if node.Type != "table" {
-		t.Errorf("node.Type = %s, want %s", node.Type, "table")
-	}
-
-	// 验证 Locator
-	expectedLocator := "addp://engine/1/path/public/users?type=table&item_id=100"
-	if node.Locator != expectedLocator {
-		t.Errorf("node.Locator = %s, want %s", node.Locator, expectedLocator)
-	}
-
-	// 验证元数据
-	if itemID, ok := node.Metadata["item_id"].(uint); !ok || itemID != 100 {
-		t.Errorf("node.Metadata[item_id] = %v, want 100", node.Metadata["item_id"])
 	}
 }
 

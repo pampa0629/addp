@@ -38,11 +38,10 @@ func (s *ScanExecutionService) captureMosaicOutput(ctx context.Context, run *exe
 	}
 	// Use the same authoritative conversion as the resource-tree API.
 	builder := resourcetree.NewTreeBuilder()
-	nodes := builder.ConvertMetaItemsForEngine(engine.EngineType, []commonmodels.MetaItem{{
+	tree := builder.ConvertMetaItems(engine, []commonmodels.MetaItem{{
 		ID: item.ID, TenantID: item.TenantID, EngineID: item.EngineID, NodeID: item.NodeID,
 		ItemType: item.ItemType, Name: item.Name, FullName: item.FullName, Attributes: item.Attributes,
 	}})
-	tree := builder.ConvertMetaNodes(engine, nodes)
 	if len(tree) != 1 || tree[0].Locator == "" {
 		return nil, fmt.Errorf("mosaic scan whole locator unavailable")
 	}

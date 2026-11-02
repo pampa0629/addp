@@ -407,6 +407,14 @@ Meta 扫描按已解析的 `ScanScope` 获取 `EngineCatalogEntry`：显式 root
 - 上传、覆盖、删除、归属修正只改变节点和 item 事实；查询自然反映最新已提交记录。不得逐入口加减计数、写回祖先统计或维护另一份统计缓存。API 保持现有字段和路由，不增加兼容字段。
 - 目录统计与扫描状态独立。局部内容同步不能更新父目录完整扫描时间、深度或状态。Manager 等待 Meta 同步完成后重新读取目录；同步失败不能以文件上传成功代替目录已同步。
 
+### 资源树投影的身份与展开边界
+
+- `TreeNode` 仅为统一展示结构。Common 分别将真实 MetaNode、MetaItem 直接投影为树分支和数据项，按真实父节点关系关联；禁止为 MetaItem 创建虚拟 MetaNode、偏移 ID 或通过 attributes 注入身份后再转换。
+- Node 使用真实 `node_id`，DataItem 使用真实 `item_id`；locator 与响应身份必须一致，DataItem 不携带冒充自身身份的 `node_id`。whole DataItem 与同路径目录折叠展示时，保留 DataItem 身份，不暴露内部原生碎片。
+- `item_count` 仅属于 Node 聚合。DataItem 的树、祖先链、搜索及扫描目录前端适配均不得返回或补造该字段，包括 0 或 1。用户可见性投影中，DataItem 对祖先计数贡献 1 仅是聚合算法内部值，不能写回叶子响应。
+- 展开能力只来自已加载的直接 `children` 或查询层显式 `has_children` / 树字段 `hasChildren`；DataItem 是资源树叶子。不得从 `item_count`、记录数、存储对象数或容器内部结构数量推断展开能力，也不得保留数量兜底。
+- 表记录数使用 `row_count`；容器内部结构数量使用 `type_info.container.child_count` / `resource_count`。容器内容不转换为独立 MetaItem 或资源树分支。
+
 对 `meta_item`，`EngineCatalogEntry` 只提供路径坐标、身份和列表级摘要，不能当作完整详情事实使用。`basic` 可以使用 `EngineCatalogEntry.Table`、`EngineCatalogEntry.Storage`、`EngineCatalogEntry.UpdatedAt` 等低成本摘要建立 item 身份、存储属性和跳过判断；需要字段、主键、索引、graph schema、动态 schema 采样、文件内容格式信息、容器 children 或访问索引时，必须显式通过 `EngineCatalogFactsProvider`、`DynamicSchemaSamplingProvider`、content reader 或 format info provider 获取。
 
 `EngineCatalogFacts` 不是每个 entry 自动携带的隐含字段。Meta 需要详情时必须使用 `EngineCatalogEntry.Path` 显式调用对应 provider；不得把 `EngineCatalogEntry` 原样写入 `meta_item.attributes`，也不得从 `EngineCatalogEntry.Table` 推断字段、主键或索引。

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -14,6 +15,89 @@ import (
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
+
+func assertResourceTreeItemBoundary(t *testing.T, node *resourcetree.TreeNode) {
+	t.Helper()
+	loc, err := resourcetree.ParseURI(node.Locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loc.ItemID != nil {
+		encoded, err := json.Marshal(node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire struct {
+			Metadata map[string]interface{} `json:"metadata"`
+		}
+		if err := json.Unmarshal(encoded, &wire); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"item_count", "node_id", "is_meta_item"} {
+			if _, exists := wire.Metadata[key]; exists {
+				t.Fatalf("item leaked %s: %s", key, encoded)
+			}
+		}
+		if node.Metadata["item_id"] != *loc.ItemID || node.HasChildren || len(node.Children) != 0 || node.Metadata["has_children"] != false {
+			t.Fatalf("item identity or expansion differs: %s", encoded)
+		}
+	} else if _, exists := node.Metadata["item_count"]; !exists {
+		t.Fatalf("node aggregate missing: %+v", node)
+	}
+	for _, child := range node.Children {
+		assertResourceTreeItemBoundary(t, child)
+	}
+}
+
+func TestResourceTreeItemContractAcrossQueryEntrypoints(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	svc := newResourceTreeTestServiceWithDB(t, db, 7, 9)
+	root := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, NodeType: "service", Name: "S3", FullName: "", Depth: 0})
+	bucket := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &root.ID, NodeType: "bucket", Name: "data", FullName: "data", Depth: 1})
+	item := createResourceTreeItem(t, db, models.MetaItem{TenantID: 7, EngineID: 9, NodeID: bucket.ID, ItemType: "object", Name: "report.pdf", FullName: "data/report.pdf", Fingerprint: "report"})
+	tree, err := svc.GetTree(t.Context(), 7, 9, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertResourceTreeItemBoundary(t, tree)
+	if len(tree.Children) != 1 || len(tree.Children[0].Children) != 1 || tree.Metadata["item_count"] != 1 {
+		t.Fatalf("tree lost item or aggregate: %+v", tree)
+	}
+	node, err := svc.GetNode(t.Context(), 7, 9, tree.Children[0].Locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertResourceTreeItemBoundary(t, node)
+	ancestors, err := svc.GetAncestors(t.Context(), 7, 9, "addp://engine/9/path/data/report.pdf?type=object&item_id="+uintStringForTest(item.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ancestor := range ancestors.Ancestors {
+		assertResourceTreeItemBoundary(t, ancestor)
+	}
+	results, err := svc.Search(t.Context(), 7, 9, "report", nil, 10)
+	if err != nil || len(results.Results) != 1 {
+		t.Fatalf("search = %+v, %v", results, err)
+	}
+	assertResourceTreeItemBoundary(t, results.Results[0])
+}
+
+func TestResourceTreeDirectLeafCatalogUsesParentRelationshipForDepth(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	svc := newResourceTreeTestServiceWithDB(t, db, 7, 9)
+	tenant := uint(7)
+	svc.engineService.cacheEngine(tenant, &commonModels.Engine{ID: 9, TenantID: &tenant, EngineType: "kafka", LifecycleState: "active"})
+	root := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, NodeType: "service", FullName: "", Depth: 1})
+	item := createResourceTreeItem(t, db, models.MetaItem{TenantID: 7, EngineID: 9, NodeID: root.ID, ItemType: "topic", Name: "orders.v1", FullName: "orders.v1", Fingerprint: "orders"})
+	tree, err := svc.GetTree(t.Context(), 7, 9, 1)
+	if err != nil || len(tree.Children) != 1 || tree.Children[0].Label != "orders.v1" {
+		t.Fatalf("direct leaf hidden by invented item depth: %+v, %v", tree, err)
+	}
+	assertResourceTreeItemBoundary(t, tree)
+	if tree.Children[0].Locator != "addp://engine/9/path/orders.v1?type=topic&item_id="+uintStringForTest(item.ID) {
+		t.Fatalf("native topic name changed: %s", tree.Children[0].Locator)
+	}
+}
 
 func TestResourceTreeGetNodeRejectsInvalidLocatorAsBadRequest(t *testing.T) {
 	svc := newResourceTreeTestService(t, 7, 9)

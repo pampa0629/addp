@@ -34,10 +34,6 @@ func physicalPathForTreeMetadata(attrs map[string]interface{}) string {
 	return commonJSON.String(attrs, "storage", "physical_path")
 }
 
-func objectCountForTreeMetadata(attrs map[string]interface{}) int64 {
-	return commonJSON.Int64(attrs, "storage", "object_count")
-}
-
 func tableFieldCountForTreeMetadata(attrs map[string]interface{}) int {
 	tableInfo := tableInfoForTreeMetadata(attrs, "")
 	if tableInfo == nil {

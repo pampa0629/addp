@@ -2,6 +2,7 @@ package resourcetree
 
 import (
 	"encoding/json"
+	"maps"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ type TreeNode struct {
 	Type        string                 `json:"type"`        // catalog 术语（如 server/schema/table/service/bucket/prefix/root/directory/file/object）
 	TypeLabel   string                 `json:"typeLabel"`   // 类型的 i18n key，如 "engine.term.schema"（前端查 i18n 字典展示）
 	Icon        string                 `json:"icon"`        // 图标名称
-	Metadata    map[string]interface{} `json:"metadata"`    // 元数据（node_id、item_id、item_count、scanned_at 等）
+	Metadata    map[string]interface{} `json:"metadata"`    // 展示元数据：Node 使用 node_id/item_count，DataItem 仅使用 item_id；展开仅由显式子级事实决定
 	Children    []*TreeNode            `json:"children"`    // 子节点
 	HasChildren bool                   `json:"hasChildren"` // 是否有子节点（用于显示展开图标）
 }
@@ -55,15 +56,7 @@ func (b *TreeBuilder) BuildFromMetadataTree(engine *models.Engine, metadataTree 
 	for i := range metadataTree.ChildNodes {
 		allNodes = append(allNodes, &metadataTree.ChildNodes[i])
 	}
-	engineType := ""
-	if engine != nil {
-		engineType = engine.EngineType
-	}
-	itemNodes := b.ConvertMetaItemsForEngine(engineType, metadataTree.Items)
-	allNodes = append(allNodes, itemNodes...)
-
-	// 使用现有的 BuildFromMeta 方法
-	return b.BuildFromMeta(engine, allNodes, -1)
+	return b.BuildFromMeta(engine, allNodes, metadataTree.Items)
 }
 
 // BuildFromMeta 从 Meta 模块的节点构建树
@@ -72,13 +65,13 @@ func (b *TreeBuilder) BuildFromMetadataTree(engine *models.Engine, metadataTree 
 // 参数:
 //   - engine: 引擎信息
 //   - metaNodes: Meta 模块的节点列表（已按层级组织）
-//   - expandDepth: 展开深度（-1 表示全部展开）
+//   - items: 真实数据项列表，直接投影为叶子，不转换为 MetaNode
 //
 // 返回: 树的根节点
-func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.MetaNode, expandDepth int) (*TreeNode, error) {
+func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.MetaNode, items []models.MetaItem) (*TreeNode, error) {
 	// 构建节点 ID 到 TreeNode 的映射
 	nodeMap := make(map[uint]*TreeNode)
-	skipNodeIDs, parentOverrides := wholeScopePresentationOverrides(metaNodes)
+	skipNodeIDs, itemParentOverrides := wholeScopePresentationOverrides(metaNodes, items)
 	var catalogRoot *TreeNode
 
 	// 第一遍：创建所有节点
@@ -94,7 +87,7 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 	}
 
 	if catalogRoot == nil {
-		catalogRoot = buildFallbackCatalogRootTreeNode(engine, len(metaNodes) > 0)
+		catalogRoot = buildFallbackCatalogRootTreeNode(engine, false)
 	}
 
 	// 第二遍：建立父子关系
@@ -104,23 +97,37 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 		}
 		treeNode := nodeMap[node.ID]
 
-		parentNodeID := node.ParentNodeID
-		if override, ok := parentOverrides[node.ID]; ok {
-			parentNodeID = override
-		}
-
-		if parentNodeID == nil {
+		if node.ParentNodeID == nil {
 			if treeNode != catalogRoot {
 				catalogRoot.Children = append(catalogRoot.Children, treeNode)
 			}
-		} else if parentTreeNode, exists := nodeMap[*parentNodeID]; exists {
+		} else if parentTreeNode, exists := nodeMap[*node.ParentNodeID]; exists {
 			parentTreeNode.Children = append(parentTreeNode.Children, treeNode)
 		} else {
 			catalogRoot.Children = append(catalogRoot.Children, treeNode)
 		}
 	}
 
+	for i := range items {
+		item := &items[i]
+		parentID := &item.NodeID
+		if override, ok := itemParentOverrides[item.ID]; ok {
+			parentID = override
+		} else if skipNodeIDs[item.NodeID] {
+			continue
+		}
+		parent := catalogRoot
+		if parentID != nil && nodeMap[*parentID] != nil {
+			parent = nodeMap[*parentID]
+		}
+		parent.Children = append(parent.Children, b.convertMetaItem(engine, item))
+	}
+	for _, node := range nodeMap {
+		node.HasChildren = node.HasChildren || len(node.Children) > 0
+		node.Metadata["has_children"] = node.HasChildren
+	}
 	catalogRoot.HasChildren = catalogRoot.HasChildren || len(catalogRoot.Children) > 0
+	catalogRoot.Metadata["has_children"] = catalogRoot.HasChildren
 	return catalogRoot, nil
 }
 
@@ -141,13 +148,13 @@ func buildFallbackCatalogRootTreeNode(engine *models.Engine, hasChildren bool) *
 		Type:        string(rootType),
 		TypeLabel:   enginePlugin.EngineCatalogTermI18nKey(string(rootType)),
 		Icon:        getIconByType(string(rootType)),
-		Metadata:    engineTreeMetadata(engine, 0, "", 0, "", nil),
+		Metadata:    catalogRootMetadata(engine, hasChildren),
 		Children:    []*TreeNode{},
 		HasChildren: hasChildren,
 	}
 }
 
-func wholeScopePresentationOverrides(metaNodes []*models.MetaNode) (map[uint]bool, map[uint]*uint) {
+func wholeScopePresentationOverrides(metaNodes []*models.MetaNode, items []models.MetaItem) (map[uint]bool, map[uint]*uint) {
 	byID := make(map[uint]*models.MetaNode, len(metaNodes))
 	for _, node := range metaNodes {
 		if node != nil {
@@ -156,25 +163,27 @@ func wholeScopePresentationOverrides(metaNodes []*models.MetaNode) (map[uint]boo
 	}
 	skip := map[uint]bool{}
 	parentOverrides := map[uint]*uint{}
-	for _, node := range metaNodes {
-		if node == nil || !isWholeScopeItemNode(node) || node.ParentNodeID == nil {
+	for _, item := range items {
+		if itemLayoutForTreeMetadata(item.Attributes) != "whole" {
 			continue
 		}
-		parent := byID[*node.ParentNodeID]
-		if parent == nil || !sameResourceFullName(parent.FullName, node.FullName) || !isPathContainerNodeType(parent.NodeType) {
+		parent := byID[item.NodeID]
+		if parent == nil || !sameResourceFullName(parent.FullName, item.FullName) || !isPathContainerNodeType(parent.NodeType) {
 			continue
 		}
 		skip[parent.ID] = true
-		parentOverrides[node.ID] = parent.ParentNodeID
+		parentOverrides[item.ID] = parent.ParentNodeID
+	}
+	// whole 的同路径目录只用于持久归属，其内部目录不再投影为资源树分支。
+	for _, node := range metaNodes {
+		for parentID := node.ParentNodeID; parentID != nil && byID[*parentID] != nil; parentID = byID[*parentID].ParentNodeID {
+			if skip[*parentID] {
+				skip[node.ID] = true
+				break
+			}
+		}
 	}
 	return skip, parentOverrides
-}
-
-func isWholeScopeItemNode(node *models.MetaNode) bool {
-	if node == nil {
-		return false
-	}
-	return itemLayoutForTreeMetadata(node.Attributes) == "whole"
 }
 
 func sameResourceFullName(left, right string) bool {
@@ -207,121 +216,54 @@ func (b *TreeBuilder) ConvertMetaNodes(engine *models.Engine, metaNodes []*model
 	return treeNodes
 }
 
-// ConvertMetaItemsForEngine 将 MetaItem 列表转换为 MetaNode 列表
-// 适用场景：从 Meta API 获取叶子项目（表、对象等）后，转换为节点格式
-//
-// 参数:
-//   - engineType: 引擎类型，用于识别 slash 路径语义的数据项
-//   - items: Meta 模块的 Item 列表
-//
-// 返回: MetaNode 列表。ID 仍保留树内虚拟 ID，locator 使用真实 item_id。
-func (b *TreeBuilder) ConvertMetaItemsForEngine(engineType string, items []models.MetaItem) []*models.MetaNode {
-	nodes := make([]*models.MetaNode, 0, len(items))
-
+// ConvertMetaItems 将真实 MetaItem 直接转换为资源树叶子。
+func (b *TreeBuilder) ConvertMetaItems(engine *models.Engine, items []models.MetaItem) []*TreeNode {
+	treeNodes := make([]*TreeNode, 0, len(items))
 	for i := range items {
-		item := &items[i]
-
-		// 动态计算 Depth：根据 ItemType 和 FullName
-		depth := calculateItemDepthForEngine(engineType, item.ItemType, item.FullName, item.Attributes)
-
-		// 使用虚拟 ID (item.ID + 100000) 避免与 meta_node 的 ID 冲突
-		virtualID := item.ID + 100000
-
-		node := &models.MetaNode{
-			ID:             virtualID,
-			TenantID:       item.TenantID,
-			EngineID:       item.EngineID,
-			ParentNodeID:   &item.NodeID,
-			NodeType:       item.ItemType,
-			Name:           item.Name,
-			FullName:       item.FullName,
-			Depth:          depth,
-			Path:           item.FullName,
-			ScanStatus:     "completed",
-			ScannedDepth:   item.ScannedDepth,
-			ItemCount:      calculateItemCount(item.ItemType, item.Attributes),
-			TotalSizeBytes: metaItemSizeBytes(item),
-			Attributes:     item.Attributes,
-		}
-		node.Attributes = withMetaItemFacts(node.Attributes, item)
-		if item.ScannedAt != nil {
-			node.LastScanAt = item.ScannedAt
-		}
-
-		// 注意：
-		// - 对于 table, collection, object 等叶子节点，ItemCount=0，不会显示展开箭头
-		// - 对于 directory, prefix 等容器节点，ItemCount 从 attributes 中提取（可能为 0 或实际子对象数）
-		// - hasChildren 字段由 shouldHaveChildren() 判断，容器类型即使 ItemCount=0 也会返回 true
-
-		nodes = append(nodes, node)
+		treeNodes = append(treeNodes, b.convertMetaItem(engine, &items[i]))
 	}
-
-	return nodes
+	return treeNodes
 }
 
-func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[string]interface{} {
-	next := make(map[string]interface{}, len(attrs)+4)
-	for key, value := range attrs {
-		next[key] = value
+func (b *TreeBuilder) convertMetaItem(engine *models.Engine, item *models.MetaItem) *TreeNode {
+	loc := &ResourceLocator{
+		EngineID: engine.ID,
+		Path:     parsePathForEngine(engine.EngineType, item.FullName, item.ItemType),
+		Type:     convertNodeType(item.ItemType),
+		ItemID:   &item.ID,
 	}
-	next["item_id"] = item.ID
-	next["is_meta_item"] = true
+	metadata := engineTreeMetadata(engine, item.FullName, "completed", item.ScannedAt)
+	metadata["item_id"] = item.ID
+	metadata["scanned_depth"] = item.ScannedDepth
+	metadata["size_bytes"] = metaItemSizeBytes(item)
+	mergeTreeAttributes(metadata, item.Attributes)
 	if item.RowCount != nil {
-		next["row_count"] = *item.RowCount
-		tableInfo := tableInfoForTreeMetadata(next, "")
-		if tableInfo == nil || tableInfo.RowCount == nil {
-			upsertTreeMetadataSection(next, "type_info", "table", map[string]interface{}{"row_count": *item.RowCount})
+		metadata["row_count"] = *item.RowCount
+		// 保留表摘要的记录数投影；只复制将要修改的 map，不修改持久 attributes。
+		typeInfo, _ := metadata["type_info"].(map[string]interface{})
+		typeInfo = maps.Clone(typeInfo)
+		if typeInfo == nil {
+			typeInfo = map[string]interface{}{}
 		}
-	}
-	if item.SizeBytes != nil {
-		next["size_bytes"] = *item.SizeBytes
-	} else if item.ObjectSizeBytes != nil {
-		next["object_size_bytes"] = *item.ObjectSizeBytes
+		table, _ := typeInfo["table"].(map[string]interface{})
+		table = maps.Clone(table)
+		if table == nil {
+			table = map[string]interface{}{}
+		}
+		if _, exists := table["row_count"]; !exists {
+			table["row_count"] = *item.RowCount
+		}
+		typeInfo["table"] = table
+		metadata["type_info"] = typeInfo
 	}
 	if item.DataUpdatedAt != nil {
-		next["last_modified_at"] = item.DataUpdatedAt.Format(time.RFC3339)
+		metadata["last_modified_at"] = item.DataUpdatedAt.Format(time.RFC3339)
 	}
-	return next
-}
-
-func metaItemIDFromNode(node *models.MetaNode) uint {
-	if node == nil || node.Attributes == nil {
-		return 0
-	}
-	switch value := node.Attributes["item_id"].(type) {
-	case uint:
-		return value
-	case int:
-		if value > 0 {
-			return uint(value)
-		}
-	case int64:
-		if value > 0 {
-			return uint(value)
-		}
-	case float64:
-		if value > 0 {
-			return uint(value)
-		}
-	}
-	return 0
-}
-
-func upsertTreeMetadataSection(attrs map[string]interface{}, section, namespace string, values map[string]interface{}) {
-	sectionMap, _ := attrs[section].(map[string]interface{})
-	if sectionMap == nil {
-		sectionMap = map[string]interface{}{}
-		attrs[section] = sectionMap
-	}
-	namespaceMap, _ := sectionMap[namespace].(map[string]interface{})
-	if namespaceMap == nil {
-		namespaceMap = map[string]interface{}{}
-		sectionMap[namespace] = namespaceMap
-	}
-	for key, value := range values {
-		if _, exists := namespaceMap[key]; !exists {
-			namespaceMap[key] = value
-		}
+	return &TreeNode{
+		ID: loc.ToURI(), Locator: loc.ToURI(), Label: item.Name,
+		Type: item.ItemType, TypeLabel: catalogTypeLabel(engine, item.ItemType),
+		Icon: getIconByType(item.ItemType), Metadata: metadata,
+		Children: []*TreeNode{}, HasChildren: false,
 	}
 }
 
@@ -350,66 +292,7 @@ func (b *TreeBuilder) BuildFromEngine(engine *models.Engine, builder CustomTreeB
 	return builder.Build(engine)
 }
 
-// ConvertNodeToTree 将单个节点转换为树节点
-// 用于动态加载子节点时创建节点
-//
-// 参数:
-//   - loc: ResourceLocator
-//   - metadata: 节点元数据
-//
-// 返回: 树节点
-func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[string]interface{}) *TreeNode {
-	locatorURI := loc.ToURI()
-
-	// 从metadata中提取item_count判断是否有子节点
-	hasChildren := false
-	if value, ok := metadata["has_children"].(bool); ok && value {
-		hasChildren = true
-	}
-	if itemCount, ok := metadata["item_count"].(int); ok && itemCount > 0 {
-		hasChildren = true
-	}
-
-	return &TreeNode{
-		ID:          locatorURI,
-		Locator:     locatorURI,
-		Label:       loc.LastSegment(),
-		Type:        string(loc.Type),
-		TypeLabel:   enginePlugin.EngineCatalogTermI18nKey(string(loc.Type)),
-		Icon:        getIconByType(string(loc.Type)),
-		Metadata:    metadata,
-		Children:    []*TreeNode{},
-		HasChildren: hasChildren,
-	}
-}
-
-// 内部辅助方法
-
-// shouldHaveChildren 判断节点是否应该有子节点。
-// hasChildren 是查询层给出的直接子资源事实；itemCount 仅作为旧数据兜底。
-func shouldHaveChildren(nodeType string, itemCount int, hasChildren bool) bool {
-	return hasChildren || itemCount > 0
-}
-
-// calculateItemCount 计算 Item 的子项数量
-// 对于对象存储的 directory/prefix，可能包含子对象，需要从 attributes 中提取
-// 对于表、集合、对象等叶子节点，返回 0
-func calculateItemCount(itemType string, attributes map[string]interface{}) int {
-	// 对象存储的 directory/prefix 可能包含子对象
-	if itemType == "directory" || itemType == "prefix" {
-		// 从标准 storage 分区中提取 object_count。
-		if objCount := objectCountForTreeMetadata(attributes); objCount > 0 {
-			return int(objCount)
-		}
-		// 如果没有 object_count，返回 0（后续懒加载时会尝试获取子节点）
-		return 0
-	}
-
-	// table, collection, object 等叶子节点，ItemCount 固定为 0
-	return 0
-}
-
-// convertMetaNode 递归转换 MetaNode 为 TreeNode
+// convertMetaNode 将真实 MetaNode 转换为树分支。
 func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNode) *TreeNode {
 	// 统一处理：按引擎语义从 FullName 解析 ResourceLocator.Path
 	// - PostgreSQL: "public.users" → ["public", "users"]
@@ -423,43 +306,16 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 		Path:     path,
 		Type:     convertNodeType(node.NodeType),
 	}
-	if itemID := metaItemIDFromNode(node); itemID > 0 {
-		loc.ItemID = &itemID
-	} else {
-		loc.NodeID = &node.ID
-	}
-
-	// 构建元数据
-	metadata := engineTreeMetadata(engine, node.ID, node.FullName, node.ItemCount, node.ScanStatus, node.LastScanAt)
+	loc.NodeID = &node.ID
+	metadata := engineTreeMetadata(engine, node.FullName, node.ScanStatus, node.LastScanAt)
+	metadata["node_id"] = node.ID
+	metadata["item_count"] = node.ItemCount
 	metadata["scanned_depth"] = node.ScannedDepth
 	metadata["has_children"] = node.HasChildren
 	metadata["size_bytes"] = node.TotalSizeBytes
-
-	// 合并自定义属性（保留规范字段，避免被 attributes 覆盖）
-	protectedKeys := map[string]bool{
-		"node_id":       true,
-		"item_id":       true,
-		"is_meta_item":  true,
-		"full_name":     true,
-		"item_count":    true,
-		"size_bytes":    true,
-		"scan_status":   true,
-		"scanned_depth": true,
-		"scanned_at":    true,
-	}
-	for k, v := range node.Attributes {
-		if protectedKeys[k] {
-			continue
-		}
-		metadata[k] = v
-	}
-	addMetaItemFacts(metadata, node.Attributes)
+	mergeTreeAttributes(metadata, node.Attributes)
 
 	locatorURI := loc.ToURI()
-
-	// 根据节点类型和ItemCount判断是否有子节点
-	// 容器类型（schema, bucket, directory等）即使ItemCount=0也可能有子节点
-	hasChildren := shouldHaveChildren(node.NodeType, node.ItemCount, node.HasChildren)
 
 	// Children 字段始终初始化为空数组
 	// Element Plus el-tree 在非 lazy 模式下需要 children 是数组才会显示展开箭头
@@ -473,33 +329,49 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 		Icon:        getIconByType(node.NodeType),
 		Metadata:    metadata,
 		Children:    []*TreeNode{},
-		HasChildren: hasChildren,
+		HasChildren: node.HasChildren,
 	}
-
-	// 递归处理子节点（注意：这里假设 MetaNode 有 Children 字段）
-	// 如果 MetaNode 没有 Children，则跳过
 
 	return treeNode
 }
 
-func engineTreeMetadata(engine *models.Engine, nodeID uint, fullName string, itemCount int, scanStatus string, scannedAt *time.Time) map[string]interface{} {
+func engineTreeMetadata(engine *models.Engine, fullName string, scanStatus string, scannedAt *time.Time) map[string]interface{} {
 	metadata := map[string]interface{}{
 		"engine_id":     engine.ID,
 		"engine_type":   engine.EngineType,
 		"engine_family": engineFamily(engine),
 		"capabilities":  engine.Capabilities,
 		"full_name":     fullName,
-		"item_count":    itemCount,
 		"has_children":  false,
 		"scan_status":   scanStatus,
-	}
-	if nodeID > 0 {
-		metadata["node_id"] = nodeID
 	}
 	if scannedAt != nil {
 		metadata["scanned_at"] = scannedAt.Format(time.RFC3339)
 	}
 	return metadata
+}
+
+func catalogRootMetadata(engine *models.Engine, hasChildren bool) map[string]interface{} {
+	metadata := engineTreeMetadata(engine, "", "", nil)
+	metadata["item_count"] = 0
+	metadata["has_children"] = hasChildren
+	return metadata
+}
+
+func mergeTreeAttributes(metadata, attrs map[string]interface{}) {
+	// 身份、扫描事实和 Node 聚合不能由 attributes 覆盖或引入。
+	protected := map[string]bool{
+		"engine_id": true, "engine_type": true, "engine_family": true, "capabilities": true,
+		"node_id": true, "item_id": true, "is_meta_item": true, "full_name": true,
+		"item_count": true, "total_size_bytes": true, "size_bytes": true,
+		"has_children": true, "scan_status": true, "scanned_depth": true, "scanned_at": true,
+	}
+	for key, value := range attrs {
+		if !protected[key] {
+			metadata[key] = value
+		}
+	}
+	addMetaItemFacts(metadata, attrs)
 }
 
 func addMetaItemFacts(metadata map[string]interface{}, attrs map[string]interface{}) {
@@ -538,52 +410,6 @@ func catalogTypeLabel(engine *models.Engine, nodeType string) string {
 		return enginePlugin.EngineCatalogTermI18nKey(nodeType)
 	}
 	return enginePlugin.EngineCatalogLevelI18nKey(*capabilities.Storage.CatalogModel, nodeType)
-}
-
-// calculateItemDepth 动态计算 Item 的深度
-// 根据 ItemType 和 FullName 计算节点在树中的深度
-func calculateItemDepth(itemType, fullName string) int {
-	return calculateItemDepthForEngine("", itemType, fullName, nil)
-}
-
-func calculateItemDepthForEngine(engineType, itemType, fullName string, attributes map[string]interface{}) int {
-	// 对象存储类型（object）：根据路径中的斜杠数量计算
-	if itemType == "object" || isPathSemanticMetaItem(engineType, itemType, fullName, attributes) {
-		segments := strings.Split(strings.Trim(fullName, "/"), "/")
-		return len(segments)
-	}
-
-	// 数据库表类型（table）：根据点号数量计算
-	// 例如: "public.users" → depth=2 (schema=1, table=2)
-	if itemType == "index" {
-		return 1
-	}
-	if itemType == "table" {
-		segments := strings.Split(fullName, ".")
-		return len(segments)
-	}
-
-	// MongoDB 集合/图整体：通常是 database.collection 或 database.graph
-	if itemType == "collection" || itemType == "graph" {
-		segments := strings.Split(fullName, ".")
-		return len(segments)
-	}
-
-	// 默认深度为 2（大多数情况下 Items 在第二层）
-	return 2
-}
-
-func isPathSemanticMetaItem(engineType, itemType, fullName string, attributes map[string]interface{}) bool {
-	if itemType != "table" {
-		return false
-	}
-	if strings.Contains(fullName, "/") {
-		return true
-	}
-	if UsesSlashFullName(engineType, itemType) {
-		return true
-	}
-	return formatNameForTreeMetadata(attributes) != "" && itemLayoutForTreeMetadata(attributes) != ""
 }
 
 // parsePath 从 FullName 解析路径

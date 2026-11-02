@@ -95,12 +95,14 @@ func filterPGResourceTree(ctx context.Context, root *resourcetree.TreeNode, engi
 		// Explicit navigation/identity projection. Never copy arbitrary attributes,
 		// source statistics, samples, comments or a pre-filter item count.
 		safe := &resourcetree.TreeNode{ID: node.ID, Locator: node.Locator, Label: node.Label, Type: node.Type, TypeLabel: node.TypeLabel, Icon: node.Icon, Children: children, HasChildren: len(children) > 0, Metadata: map[string]interface{}{}}
-		for _, key := range []string{"engine_id", "engine_type", "engine_family", "node_id", "item_id", "is_meta_item", "full_name", "data_type", "format", "layout"} {
+		for _, key := range []string{"engine_id", "engine_type", "engine_family", "node_id", "item_id", "full_name", "data_type", "format", "layout"} {
 			if value, ok := node.Metadata[key]; ok {
 				safe.Metadata[key] = value
 			}
 		}
-		safe.Metadata["item_count"] = count
+		if !isItem {
+			safe.Metadata["item_count"] = count
+		}
 		safe.Metadata["has_children"] = safe.HasChildren
 		return safe, count
 	}

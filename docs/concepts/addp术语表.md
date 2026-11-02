@@ -50,7 +50,7 @@
 | task binding status | 任务绑定状态 | 任务 owner 对任务全部强资源绑定是否仍可用的聚合状态。 | 统一使用 `active`、`missing`；`missing` 由 `missing_engine` 或 `missing_source` 说明原因。它不是最近执行状态，也不是引擎连通性观测；任务经 owner 校验并显式重绑有效资源后恢复为 `active`。 |
 | external artifact abandonment | 外部产物放弃 | 当外部引擎不可达时，管理员明确接受平台不再删除某个 owner 已登记外部产物，并把后续处置交给外部系统管理员。 | 必须保留对象身份、最后错误、放弃时间和审计；不得伪装成物理删除成功。 |
 | node | 资源节点 | 引擎内用于组织资源树的节点。 | 例如目录、bucket、prefix、schema。node 不等同于 data item。节点数量和大小表示 Meta 当前有效子树内的逻辑数据项数量和已知大小合计，由查询派生，不是上次扫描快照。 |
-| resource tree | 资源树 | 以树形方式展示 engine 内 node 和 data item 的视图。 | 用于浏览、展开、刷新和定位；不是新的身份层。 |
+| resource tree | 资源树 | 以树形方式展示 engine 内 node 和 data item 的视图。 | 用于浏览、展开、刷新和定位；不是新的身份层。展示结构 TreeNode 不改变领域身份：Node 的 item_count 是有效子树聚合，DataItem 不携带 item_count，也不包装成虚拟 MetaNode；记录数和容器内部结构数量不表示资源树可展开。 |
 | resource tree search | 资源树搜索 | 在资源树视图内按名称、路径或轻量展示信息定位 node / data item 的浏览辅助能力。 | 不等同于全文检索或语义检索。 |
 | resource | 资源 | Engine Catalog 或资源树语境下的外部对象统称。 | 当讨论内容读写边界时优先使用 content / ref，避免把 engine 资源模型带入 format。 |
 | resource concurrency version | 资源并发版本 | 可变持久化主资源用于乐观并发控制的单调递增正整数。 | API 字段统一为 `version`，数据库统一使用非空 `BIGINT` 并从 `1` 开始；只判断客户端编辑基线是否仍然有效，不表达业务版次、发布版本或内容来源版本。聚合子资源共用聚合根版本。 |

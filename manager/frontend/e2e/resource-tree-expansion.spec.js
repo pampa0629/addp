@@ -13,7 +13,7 @@ const branch = (id, loaded = false) => ({
     id: `addp://engine/${id}/path/business/customers?type=table&item_id=${id * 10 + 2}`,
     locator: `addp://engine/${id}/path/business/customers?type=table&item_id=${id * 10 + 2}`,
     label: `customers ${id}`, type: 'table', hasChildren: false, children: [],
-    metadata: { item_id: id * 10 + 2, item_count: 1, has_children: false }
+    metadata: { item_id: id * 10 + 2, has_children: false }
   }] : []
 })
 const root = id => ({ id: rootKey(id), locator: rootKey(id), label: `Expansion engine ${id}`,
@@ -71,7 +71,7 @@ test('catalog roots start collapsed without fetching any resource tree', async (
   expect(backend.rootRequests).toEqual([])
 })
 
-test('a PostgreSQL table stays a leaf when its visible item count is one', async ({ page }) => {
+test('a PostgreSQL DataItem stays a leaf without Node aggregate fields', async ({ page }) => {
   await installBackend(page)
   await page.goto('/data-explorer')
   await arrow(page, engines[0].name).click()

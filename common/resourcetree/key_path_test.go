@@ -9,8 +9,8 @@ import (
 func TestKeyspaceIdentitySeparatesMembers(t *testing.T) {
 	model := plugin.EngineCatalogModelSpec{PathVersion: plugin.EngineCatalogPathVersion, RootTerm: "server", Levels: []plugin.EngineCatalogLevelSpec{{Term: "keyspace", Kinds: []string{"keyspace"}, Role: plugin.EngineCatalogRoleLeaf}}}
 	builder := NewTreeBuilder()
-	nodes := builder.ConvertMetaItemsForEngine("redis", []models.MetaItem{{ID: 9, EngineID: 42, NodeID: 7, Name: "keyspace", FullName: "keyspace", ItemType: "keyspace", Attributes: map[string]interface{}{"item": map[string]interface{}{"layout": "single", "data_type": "key_value"}}}})
-	tree := builder.convertMetaNode(&models.Engine{ID: 42, EngineType: "redis"}, nodes[0])
+	nodes := builder.ConvertMetaItems(&models.Engine{ID: 42, EngineType: "redis"}, []models.MetaItem{{ID: 9, EngineID: 42, NodeID: 7, Name: "keyspace", FullName: "keyspace", ItemType: "keyspace", Attributes: map[string]interface{}{"item": map[string]interface{}{"layout": "single", "data_type": "key_value"}}}})
+	tree := nodes[0]
 	loc, err := ParseURI(tree.Locator)
 	if err != nil || loc.Type != TypeKeyspace || loc.ItemID == nil || *loc.ItemID != 9 {
 		t.Fatal(tree, err)

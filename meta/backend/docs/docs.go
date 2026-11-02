@@ -6082,7 +6082,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "元数据（node_id、item_id、item_count、scanned_at 等）",
+                    "description": "展示元数据：Node 使用 node_id/item_count，DataItem 仅使用 item_id；展开仅由显式子级事实决定",
                     "type": "object",
                     "additionalProperties": true
                 },

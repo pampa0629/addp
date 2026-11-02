@@ -37,21 +37,18 @@ func (s *ResourceTreeService) GetTree(ctx context.Context, tenantID, engineID ui
 	if err != nil {
 		return nil, err
 	}
-	if check, userQuery := metadataVisibility(ctx); userQuery && engine.EngineType == "postgresql" {
-		nodes := s.metadataTreeNodes(engine.EngineType, metaTree, -1)
-		tree, err := s.treeBuilder.BuildFromMeta(engine, nodes, -1)
-		if err != nil {
-			return nil, err
-		}
-		safe, err := filterPGResourceTree(ctx, tree, engineID, check)
-		if err != nil {
-			return nil, err
-		}
-		limitVisibleTreeDepth(safe, expandDepth)
-		return safe, nil
+	tree, err := s.treeBuilder.BuildFromMetadataTree(engine, commonMetadataTree(metaTree))
+	if err != nil {
+		return nil, err
 	}
-	nodes := s.metadataTreeNodes(engine.EngineType, metaTree, expandDepth)
-	return s.treeBuilder.BuildFromMeta(engine, nodes, expandDepth)
+	if check, userQuery := metadataVisibility(ctx); userQuery && engine.EngineType == "postgresql" {
+		tree, err = filterPGResourceTree(ctx, tree, engineID, check)
+		if err != nil {
+			return nil, err
+		}
+	}
+	limitVisibleTreeDepth(tree, expandDepth)
+	return tree, nil
 }
 
 func (s *ResourceTreeService) GetNode(ctx context.Context, tenantID, engineID uint, locatorURI string) (*resourcetree.TreeNode, error) {
@@ -101,20 +98,16 @@ func (s *ResourceTreeService) GetNode(ctx context.Context, tenantID, engineID ui
 		return nil, fmt.Errorf("%w: failed to get meta node items: %v", metaErrors.ErrNodeNotFound, err)
 	}
 
-	children := make([]*resourcetree.TreeNode, 0, len(childNodes)+len(items))
-	presentationNodes := commonNodesFromLite(childNodes)
-	itemNodes := s.treeBuilder.ConvertMetaItemsForEngine(engine.EngineType, commonItemsFromLite(items))
-	presentationNodes = append(presentationNodes, itemNodes...)
-	wholeItemNodes, err := s.wholeScopeItemsForChildContainers(tenantID, engine, childNodes)
+	wholeItems, err := s.wholeScopeItemsForChildContainers(tenantID, childNodes)
 	if err != nil {
 		return nil, err
 	}
-	presentationNodes = append(presentationNodes, wholeItemNodes...)
-	if presentationTree, err := s.treeBuilder.BuildFromMeta(engine, presentationNodes, -1); err == nil && presentationTree != nil {
-		children = presentationTree.Children
-	} else {
-		children = s.treeBuilder.ConvertMetaNodes(engine, presentationNodes)
+	presentationItems := append(commonItemsFromLite(items), wholeItems...)
+	presentationTree, err := s.treeBuilder.BuildFromMeta(engine, commonNodesFromLite(childNodes), presentationItems)
+	if err != nil {
+		return nil, err
 	}
+	children := presentationTree.Children
 
 	parentNodes := s.treeBuilder.ConvertMetaNodes(engine, commonNodesFromLite([]metaModels.MetaNodeLite{*targetNode}))
 	if len(parentNodes) != 1 {
@@ -123,6 +116,7 @@ func (s *ResourceTreeService) GetNode(ctx context.Context, tenantID, engineID ui
 	parent := parentNodes[0]
 	parent.Children = children
 	parent.HasChildren = len(children) > 0
+	parent.Metadata["has_children"] = parent.HasChildren
 	return parent, nil
 }
 
@@ -246,53 +240,15 @@ func normalizeNodeTypeFilters(nodeTypes []string) map[string]struct{} {
 	return out
 }
 
-func (s *ResourceTreeService) metadataTreeNodes(engineType string, tree *metaModels.MetadataTreeResponse, expandDepth int) []*commonModels.MetaNode {
-	if tree == nil {
-		return nil
+func commonMetadataTree(tree *metaModels.MetadataTreeResponse) *commonModels.MetadataTree {
+	result := &commonModels.MetadataTree{Items: commonItemsFromLite(tree.Items)}
+	for _, node := range commonNodesFromLite(tree.TopNodes) {
+		result.TopNodes = append(result.TopNodes, *node)
 	}
-	nodes := make([]*commonModels.MetaNode, 0, len(tree.TopNodes)+len(tree.ChildNodes)+len(tree.Items))
-	topNodes := commonNodesFromLite(tree.TopNodes)
-	nodes = append(nodes, topNodes...)
-	includedNodeIDs := make(map[uint]struct{}, len(tree.TopNodes)+len(tree.ChildNodes))
-	for _, node := range topNodes {
-		if node != nil {
-			includedNodeIDs[node.ID] = struct{}{}
-		}
-	}
-	rootDepth := resourceTreeRootDepth(topNodes)
 	for _, node := range commonNodesFromLite(tree.ChildNodes) {
-		if expandDepth == -1 || node.Depth <= rootDepth+expandDepth {
-			nodes = append(nodes, node)
-			includedNodeIDs[node.ID] = struct{}{}
-		}
+		result.ChildNodes = append(result.ChildNodes, *node)
 	}
-	if expandDepth == -1 || expandDepth >= 2 {
-		for _, node := range s.treeBuilder.ConvertMetaItemsForEngine(engineType, commonItemsFromLite(tree.Items)) {
-			if expandDepth != -1 && node.Depth > rootDepth+expandDepth {
-				continue
-			}
-			if node.ParentNodeID != nil {
-				if _, ok := includedNodeIDs[*node.ParentNodeID]; !ok {
-					continue
-				}
-			}
-			nodes = append(nodes, node)
-		}
-	}
-	return nodes
-}
-
-func resourceTreeRootDepth(nodes []*commonModels.MetaNode) int {
-	if len(nodes) == 0 {
-		return 0
-	}
-	rootDepth := nodes[0].Depth
-	for _, node := range nodes[1:] {
-		if node != nil && node.Depth < rootDepth {
-			rootDepth = node.Depth
-		}
-	}
-	return rootDepth
+	return result
 }
 
 func (s *ResourceTreeService) getNodeAncestors(tenantID uint, engine *commonModels.Engine, loc *resourcetree.ResourceLocator) (*metaModels.ResourceTreeAncestorsResponse, error) {
@@ -335,8 +291,7 @@ func (s *ResourceTreeService) getItemAncestors(tenantID uint, engine *commonMode
 		return nil, fmt.Errorf("%w: meta item ancestors is empty", metaErrors.ErrItemNotFound)
 	}
 	chain := s.treeBuilder.ConvertMetaNodes(engine, commonNodesFromLite(result.Ancestors))
-	itemNodes := s.treeBuilder.ConvertMetaItemsForEngine(engine.EngineType, commonItemsFromLite([]metaModels.MetaItemLite{result.Item}))
-	itemTreeNodes := s.treeBuilder.ConvertMetaNodes(engine, itemNodes)
+	itemTreeNodes := s.treeBuilder.ConvertMetaItems(engine, commonItemsFromLite([]metaModels.MetaItemLite{result.Item}))
 	if len(itemTreeNodes) != 1 {
 		return nil, fmt.Errorf("%w: failed to convert meta item ancestor target", metaErrors.ErrItemNotFound)
 	}
@@ -399,7 +354,7 @@ func commonItemsFromLite(items []metaModels.MetaItemLite) []commonModels.MetaIte
 	return out
 }
 
-func (s *ResourceTreeService) wholeScopeItemsForChildContainers(tenantID uint, engine *commonModels.Engine, childNodes []metaModels.MetaNodeLite) ([]*commonModels.MetaNode, error) {
+func (s *ResourceTreeService) wholeScopeItemsForChildContainers(tenantID uint, childNodes []metaModels.MetaNodeLite) ([]commonModels.MetaItem, error) {
 	childByID := make(map[uint]metaModels.MetaNodeLite, len(childNodes))
 	childNodeIDs := make([]uint, 0, len(childNodes))
 	for _, node := range childNodes {
@@ -425,7 +380,7 @@ func (s *ResourceTreeService) wholeScopeItemsForChildContainers(tenantID uint, e
 		}
 		wholeItems = append(wholeItems, item)
 	}
-	return s.treeBuilder.ConvertMetaItemsForEngine(engine.EngineType, commonItemsFromLite(wholeItems)), nil
+	return commonItemsFromLite(wholeItems), nil
 }
 
 func shouldFoldWholeScopeItemAncestor(item metaModels.MetaItemLite, ancestors []metaModels.MetaNodeLite) bool {
