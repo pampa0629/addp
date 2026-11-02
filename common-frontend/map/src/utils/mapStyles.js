@@ -14,16 +14,17 @@ import { normalizeThematicRGB, thematicColorVariable, thematicIndexForValue } fr
  * @returns {Function} OpenLayers 样式函数
  */
 export function createDefaultStyleFunction() {
+  const pointStyle = new Style({
+    image: new CircleStyle({
+      radius: 4,
+      fill: new Fill({ color: 'rgba(0, 153, 255, 0.8)' })
+    })
+  })
   return (feature, resolution) => {
     const geomType = feature.getGeometry()?.getType?.() || ''
 
     if (geomType.includes('Point')) {
-      return new Style({
-        image: new CircleStyle({
-          radius: 4,
-          fill: new Fill({ color: 'rgba(0, 153, 255, 0.8)' })
-        })
-      })
+      return pointStyle
     } else if (geomType.includes('Line')) {
       return new Style({
         stroke: new Stroke({ color: '#ff5722', width: 2 })
@@ -34,11 +35,22 @@ export function createDefaultStyleFunction() {
     const polygonStrokeColor = resolution > 40 ? 'rgba(230, 81, 0, 0.72)' : '#E65100'
 
     // 面要素: 显示边框 + 透明填充（透明填充使点击检测可以覆盖整个面）
-    return new Style({
+    const areaStyle = new Style({
       fill: new Fill({ color: 'rgba(0, 0, 0, 0.01)' }),  // 几乎透明的填充，用于点击检测
       stroke: new Stroke({ color: polygonStrokeColor, width: polygonStrokeWidth })
     })
+    return geomType === 'GeometryCollection' ? createGeometryCollectionStyle(pointStyle, areaStyle) : areaStyle
   }
+}
+
+// OL applies this one style recursively to collection members. Keep the
+// original feature/properties and reuse each member family's visual settings.
+export function createGeometryCollectionStyle(pointStyle, areaStyle) {
+  return new Style({
+    image: pointStyle.getImage(),
+    stroke: areaStyle.getStroke(),
+    fill: areaStyle.getFill(),
+  })
 }
 
 /**
@@ -68,20 +80,20 @@ export function createThematicFeatureStyle(feature, context) {
 
   const geometryType = feature.getGeometry?.()?.getType?.() || ''
   const strokeColor = withAlpha(color, 0.95)
-  if (geometryType.includes('Point')) {
-    return new Style({
+  const pointStyle = () => new Style({
       image: new CircleStyle({
         radius: 6,
         fill: new Fill({ color: withAlpha(color, 0.85) }),
         stroke: new Stroke({ color: strokeColor, width: 2 }),
       }),
     })
-  }
+  if (geometryType.includes('Point')) return pointStyle()
   if (geometryType.includes('Line')) return new Style({ stroke: new Stroke({ color: strokeColor, width: 3 }) })
-  return new Style({
+  const areaStyle = new Style({
     fill: new Fill({ color: withAlpha(color, 0.42) }),
     stroke: new Stroke({ color: strokeColor, width: 1.5 }),
   })
+  return geometryType === 'GeometryCollection' ? createGeometryCollectionStyle(pointStyle(), areaStyle) : areaStyle
 }
 
 function withAlpha(color, alpha) {

@@ -16,3 +16,14 @@ test('GeoJSON renderer forwards an explicit preserve-view decision', () => {
   assert.match(source, /preserveView:\s*\{\s*type:\s*Boolean,\s*default:\s*false\s*\}/)
   assert.match(source, /:preserve-view="preserveView"/)
 })
+
+test('collection preview composes existing point and area visuals without splitting source features', () => {
+  const source = readSource('../src/composables/useOpenLayersMap.js')
+  const styles = readSource('../src/utils/mapStyles.js')
+  assert.match(source, /const collectionStyle = createGeometryCollectionStyle\(pointStyle, polygonStyle\)/)
+  assert.match(source, /if \(type === 'GeometryCollection'\) return collectionStyle/)
+  assert.equal((styles.match(/export function createGeometryCollectionStyle\(/g) || []).length, 1)
+  assert.match(styles, /image: pointStyle\.getImage\(\)/)
+  assert.match(styles, /stroke: areaStyle\.getStroke\(\)/)
+  assert.match(styles, /fill: areaStyle\.getFill\(\)/)
+})

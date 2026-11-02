@@ -8,6 +8,11 @@ const shapes = {
   Point: { type: 'Point', coordinates: [10, 20] },
   LineString: { type: 'LineString', coordinates: [[10, 20], [11, 21]] },
   Polygon: { type: 'Polygon', coordinates: [[[10, 20], [11, 20], [11, 21], [10, 20]]] },
+  GeometryCollection: { type: 'GeometryCollection', geometries: [
+    { type: 'GeometryCollection', geometries: [{ type: 'Point', coordinates: [10, 20] }] },
+    { type: 'LineString', coordinates: [[10.2, 20.2], [10.4, 20.2]] },
+    { type: 'Polygon', coordinates: [[[10.5, 20.5], [10.8, 20.5], [10.8, 20.8], [10.5, 20.5]]] },
+  ] },
 }
 
 for (const [type, shape] of Object.entries(shapes)) {
@@ -59,6 +64,18 @@ for (const [type, shape] of Object.entries(shapes)) {
     expect(observed.type).toBe(type)
     expect(observed.geometryName).not.toBe('geometry')
     expect(observed.extent.every(Number.isFinite)).toBe(true)
+    if (type === 'GeometryCollection') {
+      await expect.poll(() => collectionPointPixels(renderer)).toBeGreaterThan(10)
+      // Also exercise the tile default factory on the real OpenLayers feature.
+      await renderer.evaluate(async (element, styleModuleURL) => {
+        const { createDefaultStyleFunction } = await import(styleModuleURL)
+        const value = element.__vueParentComponent.setupState.mapInstance
+        const map = value?.value || value
+        map.getLayers().getArray().find(layer => layer.getSource?.()?.getFeatures?.().length).setStyle(createDefaultStyleFunction())
+        map.renderSync()
+      }, styleModuleURL)
+      await expect.poll(() => collectionPointPixels(renderer)).toBeGreaterThan(10)
+    }
     // Use the production thematic factory on the real rendered feature and browser theme.
     const width = await renderer.evaluate(async (element, styleModuleURL) => {
       const { createThematicFeatureStyle } = await import(styleModuleURL)
@@ -73,7 +90,8 @@ for (const [type, shape] of Object.entries(shapes)) {
       map.renderSync()
       return style.getImage?.()?.getRadius() || style.getStroke?.()?.getWidth()
     }, styleModuleURL)
-    expect(width).toBe(type === 'Point' ? 6 : (type === 'LineString' ? 3 : 1.5))
+    expect(width).toBe(['Point', 'GeometryCollection'].includes(type) ? 6 : (type === 'LineString' ? 3 : 1.5))
+    if (type === 'GeometryCollection') await expect.poll(() => collectionPointPixels(renderer)).toBeGreaterThan(10)
     // Real table selection highlights; a real pointer map click opens the popup.
     await page.getByRole('cell', { name: business.geometry, exact: true }).click()
     await expect.poll(() => renderer.evaluate(element => {
@@ -102,4 +120,36 @@ for (const [type, shape] of Object.entries(shapes)) {
 }
 function json(route, body) {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+}
+
+async function collectionPointPixels(renderer) {
+  return renderer.evaluate(element => {
+    const value = element.__vueParentComponent.setupState.mapInstance
+    const map = value?.value || value
+    if (!map || map.getView().getAnimating()) return 0
+    const layer = map.getLayers().getArray().find(layer => layer.getSource?.()?.getFeatures?.().length)
+    const feature = layer?.getSource().getFeatures()[0]
+    const pending = [feature?.getGeometry()]
+    let point
+    while (pending.length) {
+      const geometry = pending.pop()
+      if (geometry?.getType() === 'Point') { point = geometry; break }
+      if (geometry?.getType() === 'GeometryCollection') pending.push(...geometry.getGeometries())
+    }
+    const context = layer?.getRenderer()?.context
+    if (!point || !context) return 0
+    const pixel = map.getPixelFromCoordinate(point.getCoordinates())
+    // A canvas can share a painted background. Require the collection's point
+    // member itself to participate in the vector renderer's hit detection.
+    const hit = map.forEachFeatureAtPixel(pixel, candidate => candidate === feature ? true : undefined,
+      { layerFilter: candidate => candidate === layer, hitTolerance: 0 })
+    if (hit !== true) return 0
+    const rect = context.canvas.getBoundingClientRect(), viewport = element.getBoundingClientRect()
+    const x = Math.round((viewport.left + pixel[0] - rect.left) * context.canvas.width / rect.width)
+    const y = Math.round((viewport.top + pixel[1] - rect.top) * context.canvas.height / rect.height)
+    const data = context.getImageData(x - 6, y - 6, 13, 13).data
+    let count = 0
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) count++
+    return count
+  })
 }

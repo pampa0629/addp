@@ -12,6 +12,12 @@ OpenLayers 适配器为每个要素选择不与任何业务字段重名的内部
 
 共享契约由 `make test-common-frontend` 验证，真实 OpenLayers 几何、属性取值、主题样式、弹窗与表格联动由 `make test-manager-frontend` 自动发现；Service、Workbench 等消费者沿已有共享依赖 CI 验证，无新增依赖、API 或测试入口。
 
+## GeometryCollection 完整显示
+
+GeometryCollection（含嵌套集合）保持一个原始要素、一份业务属性和同一来源身份，不拆成多行或生成派生来源。OpenLayers 默认预览、瓦片默认样式与受控专题样式均须为集合同时提供点符号、线描边和面填充；不按集合顶层类型仅套面样式而遗漏点成员。集合样式复用现有点、线／面样式的视觉参数，普通单一几何显示行为保持。
+
+真实几何与业务属性继续经同一隔离适配器进入地图；样式、弹窗、表格选择和高亮均指向原始集合要素，不能用拆分渲染结果覆盖业务属性。确定性浏览器回归通过现有 `make test-manager-frontend` 自动发现，核对默认／专题样式的真实点像素、点线面成员与属性、单要素数量、弹窗及高亮；共享契约沿 `make test-common-frontend`，不新增组件、依赖或旁路。
+
 ## CRS registry 边界
 
 普通 Manager 空间预览接收后端返回的源坐标 geometry 和 CRS 元数据，不要求后端把 geometry 转成 WGS84。

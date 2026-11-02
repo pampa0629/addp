@@ -13,7 +13,7 @@ import Style from 'ol/style/Style'
 import Fill from 'ol/style/Fill'
 import Stroke from 'ol/style/Stroke'
 import CircleStyle from 'ol/style/Circle'
-import { createHighlightStyle, createThematicFeatureStyle } from '../utils/mapStyles'
+import { createGeometryCollectionStyle, createHighlightStyle, createThematicFeatureStyle } from '../utils/mapStyles'
 import { readMapFeatures, mapFeatureOriginal, cloneMapFeature } from '../utils/openLayersFeatures.js'
 import { formatFeatureProperties } from '../utils/mapFormatters'
 import { createOSMBaseLayer } from '../config/mapLayers'
@@ -32,6 +32,7 @@ const polygonStyle = new Style({
   stroke: new Stroke({ color: '#67C23A', width: 2 }),
   fill: new Fill({ color: 'rgba(103, 194, 58, 0.25)' })
 })
+const collectionStyle = createGeometryCollectionStyle(pointStyle, polygonStyle)
 
 /**
  * OpenLayers 地图管理 Composable
@@ -164,6 +165,7 @@ export function useOpenLayersMap(config, options = {}) {
           if (type === 'Point' || type === 'MultiPoint') {
             return pointStyle
           }
+          if (type === 'GeometryCollection') return collectionStyle
           return polygonStyle
         }
       })
