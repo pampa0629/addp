@@ -141,7 +141,7 @@ test('preserves the real MongoDB enrollment selection through authorization refr
   fixture.verifyNoWrites()
 })
 
-for (const [owner, action, outlet] of [['manager', 'preview', '数据预览'], ['develop', 'query', '查询工作台'], ['service', 'service_execute', '数据服务'], ['transfer', 'export', '数据导出']]) for (const algorithm of ['prefix', 'sm3']) {
+for (const [owner, action, outlet] of [['manager', 'preview', '数据预览与剖析'], ['develop', 'query', '查询工作台'], ['service', 'service_execute', '数据服务'], ['transfer', 'export', '数据导出']]) for (const algorithm of ['prefix', 'sm3']) {
   test(`preserves the real userInfo.phone ${owner}/${action} ${algorithm} policy draft through authorization refresh`, async ({ page }) => {
     const fixture = await setup(page, { protectedResource: true })
     await fixture.frame.getByRole('button', { name: '查看详情', exact: true }).click()
