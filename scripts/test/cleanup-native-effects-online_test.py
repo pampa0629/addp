@@ -1134,7 +1134,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
 
     def test_transfer_engine_preserves_definition_and_dlq_until_explicit_delete(self):
         for case in ('transfer-engine', 'transfer-capture-unknown'):
-            for mutation in ('none', 'definition_missing', 'dlq_erased', 'native_capture_remains', 'business_rows_changed',
+            for mutation in ('none', 'wrong_enabled_state', 'dlq_erased', 'native_capture_remains', 'business_rows_changed',
                              'delete_http400', 'professional_http400'):
                 if case == 'transfer-capture-unknown' and mutation == 'dlq_erased': continue
                 if case != 'transfer-engine' and mutation in ('delete_http400', 'professional_http400'): continue
@@ -1146,8 +1146,10 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                             if mutation == 'delete_http400': raise S.SuiteError('DELETE /private returned HTTP 400 (secret)')
                             deleted.append(8)
                         if method == 'GET' and path.endswith('/8') and expected == (404,): return SimpleNamespace(payload={})
+                        enabled = case == 'transfer-capture-unknown'
+                        if mutation == 'wrong_enabled_state': enabled = not enabled
                         value = dict(id=int(path.rsplit('/', 1)[-1]) if method == 'GET' else 7,
-                                     tenant_id=2, enabled=mutation == 'definition_missing')
+                                     tenant_id=2, enabled=enabled)
                         return SimpleNamespace(payload=value)
                 class Controls:
                     tenant, run_id = 2, 'native-1'
@@ -1193,7 +1195,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     else:
                         with self.subTest(case=case, mutation=mutation), self.assertRaises(S.SuiteError):
                             M.run_transfer(User(), workflow, Controls(), case, report, lambda: None)
-                        expected = dict(definition_missing='transfer_retained_task_read', dlq_erased='transfer_retained_dlq_verify',
+                        expected = dict(wrong_enabled_state='transfer_retained_task_read', dlq_erased='transfer_retained_dlq_verify',
                             native_capture_remains='transfer_capture_cleanup_verify', business_rows_changed='transfer_business_rows_verify',
                             delete_http400='transfer_task_delete', professional_http400='transfer_professional_result_read')
                         self.assertEqual(report['stage'], expected[mutation])

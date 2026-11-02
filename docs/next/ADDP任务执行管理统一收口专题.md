@@ -1160,3 +1160,12 @@ Manager和Transfer统一复用Common的C围栏安全失败步骤写入；诊断�
 本结果确认在原六权限／范围／七断言／预算下，已批准的窄连接用途、Manager两阶段修正及本次精确Kafka缺失解释能够共同完成当前transfer-engine原生基线；不追溯把前十二轮失败改为通过，不宣称每轮历史唯一底层错误均已直接取证。该case报告的native_late_writer、graph_native_write、positive_reopen仍为not_run。
 
 **后续已确认顺序与授权解释。** 继续§8.18既定顺序，在基线成功后验证原已登记的transfer-capture-unknown；依据用户“后续无需单独确认”的持续授权，不再为这次既定专项单独询问。该case沿原机器契约八项断言（并非将本轮七项放宽或改名）、原三User／权限／操作范围和预算，使用新的独占部署；不增加新原生故障种类或测试端点。DLQ unknown已有固定源码7/7证据，不为填充轮次盲重跑；Graph及其它原生未验项继续按各自实际范围保留。
+
+
+### 8.39 Capture unknown首轮前的任务状态谓词收敛
+
+在已确认顺序推进transfer-capture-unknown、尚未派发其Hosted前，只读预检发现runner把成功Engine cleanup的`enabled=false`读取谓词同时套用于unknown分支。现有Transfer真实PG门禁明确domain／专业结果／回执原子提交，native_unknown保持任务原enabled=true；生产executeCleanup也只在最后成功事务禁用，独立停止意图与持久operation先行保护，不因unknown伪造完成。原T1把两分支都mock为false，未覆盖此差异。
+
+不改变产品删除语义：先将正式Cleanup／T4规范中的成功提交与未完成状态写明，再仅纠正runner和对应正反样例；unknown保留原开关并验证停止及持久隔离，成功基线仍要求false。原机器契约八项checks、三身份权限、读取请求、等待预算、原生故障点与操作范围不变。受影响门禁为现有独立Execution runner及登记，脚本路径自动命中；Go／PG产品未改，已验c63证据按匹配输入保留。先跑原T1反例再修正，不为已知错误谓词浪费Hosted。
+
+旧runner在现有产品unknown样例下沿原聚焦T1实际失败（不是语法／编译失败），修正后聚焦通过；干净已提交源码叠加本轮改动，标准 `make test-execution-online-ci-runner` 完整exit0，115＋173及登记一致。AST逐项证明HTTP／wait／sleep调用不变，机器契约仍b6aa6485。仅提交本节五个自有文件，后续核独立Execution CI实际执行结果；不因纯runner谓词变化重跑无改动Go／PG或其它Owner门禁。

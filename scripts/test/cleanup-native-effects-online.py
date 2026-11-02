@@ -922,8 +922,13 @@ def run_transfer(user, workflow, controls, case, report, checkpoint):
         controls.require_invocations_stopped(task_id)
         report['stage'] = 'transfer_retained_task_read'; checkpoint()
         retained = user.request('GET', f'{TASKS}/{task_id}', (200,)).payload
-        require(retained['id'] == task_id and retained['tenant_id'] == controls.tenant and retained['enabled'] is False,
-                'Engine deletion removed or re-enabled a retained Transfer definition')
+        # Unknown external effects do not commit the final domain/result transaction.
+        # The earlier stop intent and durable operation, rather than this switch,
+        # keep that retained definition from producing again.
+        expected_enabled = case == 'transfer-capture-unknown'
+        require(retained['id'] == task_id and retained['tenant_id'] == controls.tenant
+                and retained['enabled'] is expected_enabled,
+                'Engine cleanup changed the retained Transfer definition outside its outcome')
     if case == 'transfer-engine':
         report['stage'] = 'transfer_retained_dlq_verify'; checkpoint()
         controls.topic(kafka_task, present=True)
