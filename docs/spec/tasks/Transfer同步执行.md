@@ -283,7 +283,7 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 #### continuous 告警生命周期与最新根执行
 
-- Monitor 按 `tenant + module + task_type + source_task_id` 只消费最新根 execution 的观测信号；普通运行信号来自该最新 execution 的 `pending|running` 状态，schema blocked 终态信号按第 48 条处理。
+- Monitor 按 `tenant + module + task_type + source_task_id` 只消费最新根 execution 的观测信号；普通运行信号来自该最新 execution 的 `pending|running` 状态，schema blocked 终态信号按[Schema 告警恢复与停止竞态](#schema-blocked-告警恢复与停止竞态)处理。
 - 告警状态只允许 `open|acknowledged|resolved`：新信号打开事件，确认后进入 acknowledged，最新根 execution 不再提供对应 owner 信号后自动 resolved，不回扫历史 execution 维持旧告警。
 - 抑制使用独立 `suppressed_until`，不新增 suppressed 状态；确认和抑制均不改变信号、execution 或任务状态。
 - 告警按 `tenant + module + task_type + source_task_id + signal_code` 去重，同一身份同时最多一个未恢复事件；恢复后的同类信号再次出现必须创建新事件，保留历史，不复用旧行。
