@@ -424,9 +424,9 @@ GeoPython 的矢量数据与部分中间结果在进程内存中处理；资源�
 
 ### 4. 与其他模块的交互
 
-- **System / 控制面** - 获取数据库连接信息（解密后的 ConnectionInfo）
-- **工作流运行时** - 执行算子工作流并提供动态算子，例如 GeoPython Workflow、Spark Workflow、SuperMap Workflow 或用户自研 `addp.workflow/v1` 运行时
-- **Jupyter 脚本运行时** - 执行 Python 代码和数据分析
+- **System / 控制面** - 提供引擎与能力事实；执行连接的取得与使用沿[执行授权与效果](#执行授权与效果)，Service 身份不代替原 User 的数据授权。
+- **工作流运行时** - 提供 Runtime 算子发现与执行；公开参数、Adapter 派生和 Runtime 参数的分工见[算子发现服务](#算子发现服务)及[正式适配契约](../docs/spec/workflow/Develop资源与执行.md#算子契约分层)。
+- **Jupyter 脚本运行时** - 承载 Notebook 交互 Session；会话与 Kernel 访问沿[授权规则](#执行授权与效果)。排队 `script` 的运行授权仍有缺口，当前不派发 Runtime，见[执行监督与授权](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。
 
 ### 5. 执行记录清理
 
