@@ -64,6 +64,21 @@ func TestProfileResultErrorDoesNotExposeSourceOrCredential(t *testing.T) {
 	}
 }
 
+func TestProfileUnsupportedReasonIsDistinctFromAuthorizationAndProtection(t *testing.T) {
+	for _, lang := range []string{commoni18n.LangZhCN, commoni18n.LangEn} {
+		response := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(response)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		ctx, _ := commoni18n.WithLanguage(c.Request.Context(), lang)
+		c.Request = c.Request.WithContext(ctx)
+		handleDataProfileError(c, fmt.Errorf("private source credential: %w", service.ErrDataProfileUnsupported), "unused")
+		body := response.Body.String()
+		if response.Code != http.StatusUnprocessableEntity || !strings.Contains(body, `"error_code":"data_profile_source_unsupported"`) || !strings.Contains(body, "PostgreSQL") || strings.Contains(body, "private source") || strings.Contains(body, "source_authorization_required") || strings.Contains(body, "security_protection_required") {
+			t.Fatalf("unsupported source misclassified: %d %s", response.Code, body)
+		}
+	}
+}
+
 func TestDataProfileHandlerMapsActorErrors(t *testing.T) {
 	for _, tc := range []struct {
 		err    error

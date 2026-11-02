@@ -5,9 +5,41 @@ import (
 	"errors"
 	"testing"
 
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/preview"
 )
+
+func TestProfilePreparationRejectsUnsupportedSourceBeforePreparingPages(t *testing.T) {
+	for _, tc := range []struct {
+		engine    string
+		selection DataProfileSelection
+	}{
+		{"mongodb", DataProfileSelection{}},
+		{"mysql", DataProfileSelection{}},
+		{"minio", DataProfileSelection{}},
+		{"postgresql", DataProfileSelection{ChildName: "Sheet1"}},
+		{"postgresql", DataProfileSelection{RefPath: "data.csv"}},
+		{"postgresql", DataProfileSelection{NestedChildPath: "nested/table"}},
+	} {
+		t.Run(tc.engine+tc.selection.ChildName+tc.selection.RefPath+tc.selection.NestedChildPath, func(t *testing.T) {
+			locator, err := resourcetree.ParseURI("addp://engine/2/path/public/fixture?type=table")
+			if err != nil {
+				t.Fatal(err)
+			}
+			// No initialized Provider or connection: rejection must precede page preparation.
+			sampler := NewPreviewDataProfileSampleProvider(&preview.PreviewResolver{}, nil)
+			target := &DataProfileTarget{EngineID: 2, Locator: locator.ToURI(), Selection: tc.selection,
+				resolved: &preview.PreviewResolverRequest{Engine: &commonModels.Engine{ID: 2, EngineType: tc.engine}, Locator: locator},
+			}
+			plan, err := sampler.Prepare(t.Context(), target, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, DefaultDataProfileBudget)
+			if plan != nil || !errors.Is(err, ErrDataProfileUnsupported) {
+				t.Fatalf("unsupported source entered preparation: %v", err)
+			}
+		})
+	}
+}
 
 func TestProfileSamplerCannotReuseUncheckedPreview(t *testing.T) {
 	// Empty resolver would panic if the sampler attempted the old preview read.
