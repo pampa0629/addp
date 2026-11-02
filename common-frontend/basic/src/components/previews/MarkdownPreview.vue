@@ -1,15 +1,16 @@
 <template>
   <div ref="containerRef" class="markdown-preview-container">
-    <pre v-if="rawMode" class="markdown-raw">{{ rawText || '暂无可用内容' }}</pre>
-    <div v-else class="markdown-body" v-html="sanitizedHtml"></div>
-    <div v-if="truncated" class="truncate-tip">内容较大，仅展示部分</div>
+    <pre v-if="rawMode" class="markdown-raw">{{ rawText || t('common.markdown.empty') }}</pre>
+    <MarkdownContent v-else-if="rawText" class="markdown-body" :text="parsedContent.html" breaks />
+    <p v-else class="markdown-body markdown-empty">{{ t('common.markdown.empty') }}</p>
+    <div v-if="truncated" class="truncate-tip">{{ t('common.markdown.truncated') }}</div>
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { useI18n } from 'vue-i18n'
+import MarkdownContent from '../MarkdownContent.vue'
 import mermaid from 'mermaid'
 
 const props = defineProps({
@@ -23,12 +24,7 @@ const props = defineProps({
   }
 })
 
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-  mangle: false,
-  headerIds: false
-})
+const { t } = useI18n()
 
 const rawText = computed(() => {
   const content = props.data?.object?.content || {}
@@ -68,18 +64,6 @@ watch(
   },
   { immediate: true }
 )
-
-const sanitizedHtml = computed(() => {
-  const source = parsedContent.value.html
-  if (!source) {
-    return '<p class="markdown-empty">暂无可用内容</p>'
-  }
-  const html = marked.parse(source)
-  return DOMPurify.sanitize(html, {
-    USE_PROFILES: { html: true },
-    ADD_ATTR: ['data-mermaid-id']
-  })
-})
 
 const initMermaid = () => {
   if (mermaidInitialized.value) return
@@ -311,7 +295,7 @@ onBeforeUnmount(() => {
   text-align: left;
 }
 
-.markdown-body :deep(.markdown-empty) {
+.markdown-empty {
   color: var(--el-text-color-secondary);
   text-align: center;
   margin: 0;

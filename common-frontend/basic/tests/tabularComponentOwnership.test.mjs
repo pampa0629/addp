@@ -26,7 +26,9 @@ test('preview pagination consumers compose the single controlled pagination impl
   const consumers = [
     'common-frontend/map/src/components/TablePreview.vue',
     'common-frontend/basic/src/components/previews/ContainerPreview.vue',
-    'develop/frontend/src/components/QueryResult.vue'
+    'develop/frontend/src/components/QueryResult.vue',
+    'agent/frontend/src/views/ChatView.vue',
+    'agent/frontend/src/components/WorkspacePanel.vue'
   ]
 
   for (const relativePath of consumers) {

@@ -15,6 +15,14 @@ const FILE_NAME = 'er-diagram-outdoor.md'
 const FILE_LOCATOR = `addp://engine/12/path/addp/doc/${FILE_NAME}?type=object&item_id=52977`
 const MARKDOWN = `# ADDP Entity Relationship Diagram
 
+普通 **Markdown** 正文。
+
+\`\`\`sql
+SELECT '<tag>';
+\`\`\`
+
+<img src="data:," onerror="window.markdownUnsafe = true">
+
 \`\`\`mermaid
 erDiagram
   %% addp:document {"format":"addp.model.er/v2","scope":"domain","domain_code":"outdoor"}
@@ -33,6 +41,9 @@ test('renders Mermaid blocks in Manager Markdown preview and keeps raw source op
   await page.goto(`/data-explorer?locator=${encodeURIComponent(FILE_LOCATOR)}`)
 
   await expect(page.getByRole('heading', { name: 'ADDP Entity Relationship Diagram', exact: true })).toBeVisible()
+  await expect(page.locator('.markdown-body strong')).toHaveText('Markdown')
+  await expect(page.locator('.markdown-body code.language-sql')).toContainText("SELECT '<tag>';")
+  await expect(page.locator('.markdown-body img')).not.toHaveAttribute('onerror')
   await expect(page.locator('.markdown-body .mermaid-diagram svg')).toBeVisible()
   await expect(page.locator('.markdown-body .mermaid-error')).toHaveCount(0)
   await expect(page.locator('.markdown-body')).not.toContainText('```mermaid')

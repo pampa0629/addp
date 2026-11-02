@@ -115,6 +115,13 @@
     }
   },
   "common": {
+    "markdown": {
+      "copyCode": "Copy code",
+      "copied": "Copied",
+      "copyFailed": "Could not copy; check clipboard access",
+      "empty": "No content available",
+      "truncated": "Content is large; showing a partial preview"
+    },
     "hostNodeFilters": {
       "kind": "Host type",
       "state": "Management state",

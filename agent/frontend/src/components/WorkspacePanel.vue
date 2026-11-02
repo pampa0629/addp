@@ -11,7 +11,7 @@
             <el-button :icon="RefreshRight" :aria-label="t('agent.workspace.refresh')" :loading="loading" @click="reload" />
           </div>
           <el-alert v-if="failed" :title="t('agent.workspace.runsFailed')" type="error" :closable="false" />
-          <el-pagination small layout="prev, pager, next" v-model:current-page="page" :page-size="20" :total="total" @current-change="reload" />
+          <DataPagination size="small" :background="false" :pager-count="5" layout="prev, pager, next" v-model:current-page="page" :page-size="20" :total="total" @change="reload" />
           <template v-if="detail">
             <AgentPlan v-if="detail.plan?.length" :plan="detail.plan" />
             <div class="run-summary"><el-tag>{{ t(`agent.workspace.status.${detail.status}`) }}</el-tag><code>{{ detail.id }}</code></div>
@@ -58,7 +58,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RefreshRight } from '@element-plus/icons-vue'
-import { createLatestRequestScope } from '@common-ui'
+import { createLatestRequestScope, DataPagination } from '@common-ui'
 import { runAPI, sessionAPI } from '../api'
 import AgentPlan from './AgentPlan.vue'
 import { conversationResources, messageText, pendingSessionInteractions } from '../utils/conversation'

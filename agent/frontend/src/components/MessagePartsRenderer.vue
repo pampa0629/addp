@@ -1,10 +1,11 @@
 <template>
-  <div class="message-parts" @click="copyCode">
+  <div class="message-parts">
     <template v-for="(part, index) in displayParts" :key="partKey(part, index)">
-      <div
+      <MarkdownContent
         v-if="part.type === 'text' && part.text"
         class="message-content markdown"
-        v-html="renderMarkdown(part.text)"
+        :text="part.text"
+        copy-code
       />
       <AgentPlan v-else-if="part.type === 'presentation_ref' && part.protocol === 'ag-ui' && part.activity_type === 'addp-plan'" :plan="part.content?.todos || []" :compact="!expandDetails" />
       <A2UISurface
@@ -24,10 +25,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
-import DOMPurify from 'dompurify'
-import { marked } from 'marked'
+import MarkdownContent from '@common-ui/components/MarkdownContent.vue'
 import { A2UISurface } from '@addp/common-frontend/agent-ui'
 
 import ExecutionResultRef from './ExecutionResultRef.vue'
@@ -39,7 +37,6 @@ const props = defineProps({
   interactionDisabled: Boolean
 })
 
-const { t } = useI18n()
 const emit = defineEmits(['action', 'error'])
 
 const displayParts = computed(() => {
@@ -65,23 +62,6 @@ function isVisiblePresentation(part) {
   if (part.type !== 'presentation_ref' || part.protocol !== 'a2ui') return false
   if (!part.interaction_id) return true
   return interactionStatus.value.get(part.interaction_id) === 'pending'
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character])
-}
-function renderMarkdown(content) {
-  const renderer = new marked.Renderer()
-  renderer.code = ({ text }) => `<div class="agent-code-block"><button type="button" data-agent-copy-code>${escapeHtml(t('agent.workspace.copyCode'))}</button><pre><code>${escapeHtml(text)}</code></pre></div>`
-  return DOMPurify.sanitize(marked.parse(content || '', { renderer }))
-}
-async function copyCode(event) {
-  const button = event.target.closest?.('button[data-agent-copy-code]')
-  if (!button || !event.currentTarget.contains(button)) return
-  const code = button.closest('.agent-code-block')?.querySelector('pre code')
-  if (!code) return
-  try { await navigator.clipboard.writeText(code.textContent); ElMessage.success(t('agent.workspace.copied')) }
-  catch { ElMessage.error(t('agent.workspace.copyFailed')) }
 }
 
 function partKey(part, index) {
@@ -110,10 +90,4 @@ function partKey(part, index) {
   margin-bottom: 0;
 }
 
-.markdown :deep(pre) {
-  max-width: 100%;
-  overflow-x: auto;
-}
-.markdown :deep(.agent-code-block) { border: 1px solid var(--addp-border-color); border-radius: 6px; padding: 8px; }
-.markdown :deep(.agent-code-block button) { color: var(--el-color-primary); background: transparent; border: 0; padding: 4px 0; cursor: pointer; font: inherit; font-size: 12px; }
 </style>

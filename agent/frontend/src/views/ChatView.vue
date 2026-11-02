@@ -43,7 +43,7 @@
         </section>
         <el-empty v-if="!sessionsError && !sessionsLoading && sessions.length === 0" :description="t('agent.chat.noSessions')" :image-size="60" />
       </div>
-      <el-pagination v-if="sessionTotal > 20" small layout="prev, pager, next" :page-size="20" :total="sessionTotal" v-model:current-page="sessionPage" @current-change="loadSessions" />
+      <DataPagination v-if="sessionTotal > 20" size="small" :background="false" :pager-count="5" layout="prev, pager, next" :page-size="20" :total="sessionTotal" v-model:current-page="sessionPage" @change="loadSessions" />
       <div class="sidebar-footer">
         <el-dropdown trigger="click" @command="settingsCommand">
           <el-button text :icon="Setting">{{ t('agent.workspace.settings') }}</el-button>
@@ -213,7 +213,7 @@ import { useWorkspacePreferences } from '../composables/useWorkspacePreferences'
 import { createMessageDraft, readMessageDraft, conversationMarkdown, messageIdentity, messageText, pendingSessionInteractions } from '../utils/conversation'
 import { useAuthStore } from '../store/auth'
 import { navigateAgentRoute } from '../utils/moduleNavigation'
-import { createLatestRequestScope } from '@common-ui'
+import { createLatestRequestScope, DataPagination } from '@common-ui'
 import { groupSessions } from '../utils/workspace'
 
 const { t } = useI18n()

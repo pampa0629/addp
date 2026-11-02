@@ -1,14 +1,7 @@
 {
   "agent": {
     "login": {
-      "title": "ADDP 智能体",
-      "username": "用户名",
-      "password": "密码",
-      "usernamePlaceholder": "请输入用户名",
-      "passwordPlaceholder": "请输入密码",
-      "submit": "登录",
-      "emptyWarning": "请输入用户名和密码",
-      "failed": "登录失败，请检查用户名和密码"
+      "title": "ADDP 智能体"
     },
     "chat": {
       "recentVisitTitle": "智能体对话",
@@ -179,7 +172,6 @@
         "assistant": "助手"
       },
       "copy": "复制文字",
-      "copyCode": "复制代码",
       "copied": "已复制",
       "copyFailed": "复制失败，请检查剪贴板权限",
       "branch": "另开会话",

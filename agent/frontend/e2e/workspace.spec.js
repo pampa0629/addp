@@ -13,9 +13,9 @@ const resultMessage = { id: 71, protocol_message_id: 'result-71', role: 'assista
   ] } }
 ] }
 
-async function installWorkspace(page, { conflict = false, configuration = false, history = [resultMessage], identity = { user: 9, tenant: '7' } } = {}) {
+async function installWorkspace(page, { conflict = false, configuration = false, paginated = false, history = [resultMessage], identity = { user: 9, tenant: '7' } } = {}) {
   const session = { id: 61, title: '数据分析会话', version: 1, pinned: false, archived: false, created_at: '2026-10-29T00:00:00Z', updated_at: '2026-10-30T00:00:00Z' }
-  const writes = [], queries = [], unexpected = []
+  const writes = [], queries = [], runQueries = [], unexpected = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   page.on('pageerror', error => { throw error })
   await page.route(/^https?:\/\/[^/]+\/api\//, async route => {
@@ -28,7 +28,7 @@ async function installWorkspace(page, { conflict = false, configuration = false,
     else if (path === '/api/v1/agent/sessions') {
       queries.push(Object.fromEntries(url.searchParams))
       const matches = String(session.archived) === url.searchParams.get('archived') && session.title.includes(url.searchParams.get('search') || '')
-      body = { data: matches ? [session] : [], total: matches ? 1 : 0, page: 1, page_size: 20, total_pages: matches ? 1 : 0 }
+      body = { data: matches ? [session] : [], total: matches ? (paginated ? 41 : 1) : 0, page: Number(url.searchParams.get('page')), page_size: 20, total_pages: matches ? (paginated ? 3 : 1) : 0 }
     } else if (path === '/api/v1/agent/sessions/61' && request.method() === 'GET') body = session
     else if (path === '/api/v1/agent/sessions/61' && request.method() === 'PATCH') {
       const value = request.postDataJSON(); writes.push(value)
@@ -39,13 +39,53 @@ async function installWorkspace(page, { conflict = false, configuration = false,
       expect(value.version).toBe(session.version)
       Object.assign(session, value, { version: session.version + 1 }); body = session
     } else if (path === '/api/v1/agent/sessions/61/messages') body = history
-    else if (path === '/api/v1/agent/sessions/61/runs') body = { data: [{ id: runId, skill_name: 'query-generation', status: 'waiting', created_at: '2026-10-30T00:00:00Z' }], total: 1, page: 1, page_size: 20, total_pages: 1 }
+    else if (path === '/api/v1/agent/sessions/61/runs') {
+      runQueries.push(Object.fromEntries(url.searchParams))
+      body = { data: [{ id: runId, skill_name: 'query-generation', status: 'waiting', created_at: '2026-10-30T00:00:00Z' }], total: paginated ? 41 : 1, page: Number(url.searchParams.get('page')), page_size: 20, total_pages: paginated ? 3 : 1 }
+    }
     else if (path === `/api/v1/agent/runs/${runId}`) body = { id: runId, status: 'waiting', plan, steps: [{ id: 'step-1', tool_name: 'resource.facts.get', step_type: 'tool_call', status: 'completed', started_at: '2026-10-30T00:00:00Z', completed_at: '2026-10-30T00:00:02Z', output_summary: '{"field_count":2}' }] }
     else { unexpected.push(`${request.method()} ${path}`); return route.fulfill({ status: 500, json: { error: 'Unexpected fixture request' } }) }
     return route.fulfill({ json: body })
   })
-  return { writes, queries, unexpected }
+  return { writes, queries, runQueries, unexpected }
 }
+
+test('shared pagination stays inside narrow columns and requests the selected session and run page', async ({ page }) => {
+  const backend = await installWorkspace(page, { paginated: true })
+  await page.setViewportSize({ width: 1024, height: 800 })
+  await page.goto('/module-ui/agent/sessions/61')
+  const sessions = page.locator('.sidebar .data-pagination')
+  await sessions.locator('.btn-next').click()
+  await expect.poll(() => backend.queries.at(-1)?.page).toBe('2')
+  await page.getByRole('button', { name: '过程与成果', exact: true }).click()
+  const runs = page.getByRole('complementary', { name: '过程与成果', exact: true }).locator('.data-pagination')
+  await runs.locator('.btn-next').click()
+  await expect.poll(() => backend.runQueries.at(-1)?.page).toBe('2')
+  for (const pagination of [sessions, runs]) {
+    const container = await pagination.boundingBox()
+    for (const button of await pagination.locator('button').all()) {
+      const rect = await button.boundingBox()
+      expect(rect.x).toBeGreaterThanOrEqual(container.x - 1)
+      expect(rect.x + rect.width).toBeLessThanOrEqual(container.x + container.width + 1)
+    }
+  }
+  expect(backend.unexpected).toEqual([])
+  expect(backend.writes).toEqual([])
+})
+
+test('execution result keeps its Develop detail target through the shared Console URL resolver', async ({ page }) => {
+  const backend = await installWorkspace(page, { history: [{ id: 1, role: 'assistant', parts: [{ type: 'result_ref', kind: 'execution', owner_module: 'develop', ref: `execution:${runId}` }] }] })
+  await page.route(`**/api/v1/develop/executions/${runId}`, route => route.fulfill({ json: { status: 'success' } }))
+  await page.addInitScript(() => { window.open = (...args) => { window.openedExecution = args; return null } })
+  await page.goto('/module-ui/agent/sessions/61')
+  await page.getByRole('button', { name: '打开执行详情', exact: true }).click()
+  const opened = await page.evaluate(() => window.openedExecution)
+  expect(new URL(opened[0]).pathname).toBe(`/develop/executions/${runId}`)
+  expect(new URL(opened[0]).origin).toBe(new URL(page.url()).origin)
+  expect(opened.slice(1)).toEqual(['_blank', 'noopener,noreferrer'])
+  expect(backend.unexpected).toEqual([])
+  expect(backend.writes).toEqual([])
+})
 
 async function menu(page, name) {
   await page.getByRole('button', { name: '会话操作', exact: true }).click()

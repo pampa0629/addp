@@ -3,11 +3,11 @@
     <el-icon><Operation /></el-icon>
     <span class="execution-id">{{ executionId }}</span>
     <el-tag v-if="execution" size="small" :type="statusType">
-      {{ execution.status || t('agent.resultRef.unknownStatus') }}
+      {{ execution.status || t('agent.chat.resultRef.unknownStatus') }}
     </el-tag>
-    <span v-else-if="loadError" class="load-error">{{ t('agent.resultRef.loadFailed') }}</span>
-    <el-tooltip :content="t('agent.resultRef.openExecution')">
-      <el-button :icon="TopRight" :aria-label="t('agent.resultRef.openExecution')" @click="openExecution" />
+    <span v-else-if="loadError" class="load-error">{{ t('agent.chat.resultRef.loadFailed') }}</span>
+    <el-tooltip :content="t('agent.chat.resultRef.openExecution')">
+      <el-button :icon="TopRight" :aria-label="t('agent.chat.resultRef.openExecution')" @click="openExecution" />
     </el-tooltip>
   </div>
 </template>
@@ -16,6 +16,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Operation, TopRight } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { resolveTaskOwnerUrl } from '@common-ui'
 
 import { resultRefAPI } from '../api/index'
 
@@ -48,7 +49,7 @@ async function loadExecution() {
 }
 
 function openExecution() {
-  window.open(`/develop/executions/${encodeURIComponent(executionId.value)}`, '_blank', 'noopener')
+  window.open(resolveTaskOwnerUrl(`/develop/executions/${encodeURIComponent(executionId.value)}`), '_blank', 'noopener,noreferrer')
 }
 
 onMounted(loadExecution)

@@ -1,14 +1,7 @@
 {
   "agent": {
     "login": {
-      "title": "ADDP AI Agent",
-      "username": "Username",
-      "password": "Password",
-      "usernamePlaceholder": "Enter username",
-      "passwordPlaceholder": "Enter password",
-      "submit": "Login",
-      "emptyWarning": "Please enter username and password",
-      "failed": "Login failed, please check your credentials"
+      "title": "ADDP AI Agent"
     },
     "chat": {
       "recentVisitTitle": "Agent Chat",
@@ -179,7 +172,6 @@
         "assistant": "Assistant"
       },
       "copy": "Copy text",
-      "copyCode": "Copy code",
       "copied": "Copied",
       "copyFailed": "Could not copy; check clipboard access",
       "branch": "Start another conversation",

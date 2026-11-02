@@ -25,6 +25,7 @@ vi.mock('../src/agent/createAgentClient', () => ({
   replayAgentRunEvents: vi.fn()
 }))
 vi.mock('@common-ui', () => ({
+  DataPagination: { template: '<div />' },
   createLatestRequestScope: () => ({ invalidate: () => 1, current: () => true, request: work => work({}), dispose: vi.fn() }),
   useConsolePageDescriptor: vi.fn(),
   resolveTaskOwnerUrl: vi.fn()

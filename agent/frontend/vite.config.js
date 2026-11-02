@@ -25,7 +25,7 @@ export default defineConfig(withModuleFrontend('agent', withFrontendTestIsolatio
       'proj4': resolve(__dirname, 'node_modules/proj4'),
       'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
     },
-    dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6', 'ol', 'zod']
+    dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', 'marked', 'dompurify', '@antv/g6', 'ol', 'zod']
   },
   optimizeDeps: {
     include: ['@antv/g6', 'ol', 'proj4']

@@ -4,6 +4,7 @@ const { runs } = vi.hoisted(() => ({ runs: vi.fn() }))
 vi.mock('../src/api', () => ({ sessionAPI: { runs }, runAPI: {} }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }))
 import WorkspacePanel from '../src/components/WorkspacePanel.vue'
+import { DataPagination } from '@common-ui'
 const stubs = { 'el-tabs': { template: '<div><slot /></div>' }, 'el-tab-pane': { template: '<div><slot /></div>' },
   'el-empty': { props: ['description'], template: '<p>{{ description }}</p>' }, 'el-button': true, 'el-select': true, 'el-pagination': true }
 describe('workspace run visibility', () => {
@@ -20,6 +21,19 @@ describe('workspace run visibility', () => {
     await flushPromises()
     expect(runs).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('agent.workspace.runReadRequired')
+    wrapper.unmount()
+  })
+  it('queries the selected page once through the shared controlled pagination', async () => {
+    runs.mockResolvedValue({ data: [], total: 41 })
+    const wrapper = mount(WorkspacePanel, { props: { sessionId: '1', canReadRuns: true }, global: { stubs } })
+    await flushPromises()
+    const pagination = wrapper.findComponent(DataPagination)
+    pagination.vm.$emit('update:currentPage', 2)
+    pagination.vm.$emit('change', { page: 2, pageSize: 20 })
+    await flushPromises()
+    expect(runs).toHaveBeenCalledTimes(2)
+    expect(runs.mock.calls[1][1]).toEqual({ page: 2, page_size: 20 })
+    expect(pagination.props('currentPage')).toBe(2)
     wrapper.unmount()
   })
 })

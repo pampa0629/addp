@@ -142,6 +142,10 @@ AgentRun 可观测事实分为：
 
 ## 四、前端边界
 
+共享前端收口：登录页组合 `AuthLoginFlow`，仅在 `session_issued` 后导航，MFA 与租户上下文选择沿共享登录流程；会话列表及过程面板使用受控 `DataPagination`，分页请求仍归 Agent。执行 ResultRef 保留 Develop 领域详情目标，使用共享 Console 地址解析生成新窗口入口，不拼接当前 iframe 的相对地址。Markdown 文本统一组合共享 `MarkdownContent`，Agent 不再维护解析、HTML 净化与代码复制。会话管理、使用偏好、计划和 AgentRun 协议适配仍属 Agent，不映射成业务 execution。
+
+本次只变更前端组合，保留原 API、权限、草稿继承和执行边界；不需要后端重启。标准验证为 `make test-common-frontend`、`make test-agent-frontend` 与 `make test-manager-frontend`，已有 CI 自动发现这些源码与测试；共享组件、Agent 协议消费及 Manager 文件预览分别验证。
+
 Agent 前端使用 Vue 3 和 Element Plus：
 
 - `@ag-ui/client` 负责 AG-UI 请求、SSE 和事件状态；

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import ElementPlus from 'element-plus'
@@ -20,6 +20,14 @@ const i18n = () => createI18n({ legacy: false, locale: 'zh-cn', messages: { 'zh-
 // ElTag's mounted hook requires the real Transition/BaseTransition subtree.
 // VTU's default Transition stub has no child component; keep real widgets here.
 const globals = locale => ({ plugins: [ElementPlus, locale], stubs: { transition: false } })
+
+// Element Plus defers table layout through debounce + animation frames. Drain
+// those owned callbacks before jsdom removes requestAnimationFrame at teardown.
+beforeEach(() => vi.useFakeTimers())
+afterEach(async () => {
+  try { await vi.runAllTimersAsync() }
+  finally { vi.useRealTimers() }
+})
 
 describe('fixed formal configuration check report', () => {
   it.each(['supported', 'unsupported', 'unknown'])('renders owner %s without any interaction or write action', async status => {

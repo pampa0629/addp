@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import ElementPlus from 'element-plus'
@@ -25,6 +25,13 @@ const operations = value => [
 const locale = () => createI18n({ legacy: false, locale: 'zh-cn', messages: { 'zh-cn': zh, en } })
 const render = (value, language = locale()) => mount(A2UISurface, {
   props: { operations: operations(value) }, global: { plugins: [ElementPlus, language], stubs: { transition: false } }
+})
+
+// Flush the real table's deferred layout before the test DOM is destroyed.
+beforeEach(() => vi.useFakeTimers())
+afterEach(async () => {
+  try { await vi.runAllTimersAsync() }
+  finally { vi.useRealTimers() }
 })
 
 describe('exact readonly checked draft snapshot', () => {
