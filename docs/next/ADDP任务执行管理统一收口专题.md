@@ -1140,3 +1140,14 @@ Manager和Transfer统一复用Common的C围栏安全失败步骤写入；诊断�
 **确定性反例与本地门禁进展。** 标准Transfer后端在干净已提交源码快照仅叠加新增测试后实际失败：完整Dead缺失描述耗尽测试窗口，错／空响应身份及空目标被错误接受；没有编译失败冒充反例。按上述唯一原生解释修正后，完整 `make test-transfer-backend` 实际exit0。`make test-transfer-postgres` 现工作区标准入口实际19主项PASS／0FAIL／0SKIP；首次隔离源码目录调用因Infra归属检查拒绝而未执行测试，原件保留、不计通过，未绕过归属检查。独立runner已在同一干净源码快照完整复验exit0，115＋173及登记一致；新增共享数量来自后续已登记套件，未改变本case七项断言。变化只涉及Transfer缺失观察及其反例和正式文档；既有Transfer Go／PG及Execution runner的路径选择已覆盖，无需修改编排。
 
 本地完整门禁全部通过后提交本批四个自有文件，后续只跟进准确修正提交的Transfer Go／Transfer PG／独立Execution runner实际CI，不以本地、旧源码或其它owner聚合状态替代；新的同范围Hosted依用户持续授权由主责在相关门禁实际通过后推进。
+
+
+### 8.38 消费组原生缺失修正CI与第十三轮transfer-engine验收
+
+修正 `c63ce20610ba5c5aec8983a4610036131814c485` 已push main，仅Transfer观察器／反例、正式Cleanup规范和本专题四个自有文件。主责fresh Job API及原日志独立核对准确c63：独立 [Transfer Go125344420897](https://github.com/pampa0629/addp/actions/runs/41465288530/job/125344420897) success／selected:true／标准Owner命令；独立 [Execution125344421494](https://github.com/pampa0629/addp/actions/runs/41465288530/job/125344421494) success／selected:true／115＋173及登记一致；[Transfer PG125344986466](https://github.com/pampa0629/addp/actions/runs/41465288396/job/125344986466) success／19主项／0FAIL／0SKIP。Release选择Job125344420397明确由shared module matrix从本次4个变化文件选中transfer。三份测试日志SHA-256依次为 `ff0b4e74786e79efa6d22f5042868b7e1032b6a6c1a0e19f0c07a89c70b7b935`、`a3a2d7d6d335dad4110bb410a0d4172c3ca7d3c8298a6c115003b468a83cca9d`、`e0a68c7d7b19691f3485c767dd4fb5341f72b88e7a583d0a5eee99208f98a6a0`；选择日志SHA-256 `b98d4010da6af4b0df2ec3c2d80d44d63f496d654666921faea5d25cc1f1b102`。不核其它Owner失败、不称聚合全仓通过。
+
+依据用户§8.37的持续授权，在三项相关门禁实际通过后仅POST一次创建 [第十三轮Run41468942958／Job125357128912](https://github.com/pampa0629/addp/actions/runs/41468942958/job/125357128912)，准确源码 `01b8d23f5e3d565385247c2713709fb237acb3d2`，workflow_dispatch／attempt1。本轮保持六权限、七断言、范围及全部预算，验证精确group缺失解释及完整清理链路；失败须继续按证据定位，不凭轮次放行。
+
+派发前33项自有代码及24项关键运行输入与c63逐字节相同。后续主干增量中的Agent／Markdown前端展示、Meta lineage只读投影及其Swagger、独立pg-source profile、前端静态检查以及其它Owner的CI超时调整均不由本原生API分支消费；已只读按用途核对排除，Transfer／Execution两Job定义及权限一致，Native Hosted完整Job、原角色夹具、机器契约与120分钟Job预算均未变。不部署本机未提交的文件源授权、运行委托、迁移或其它WIP，不以它们作为本轮验收源码。
+
+私有目录 `/tmp/addp-transfer-engine-hosted-thirteenth-20261102/` 封存新单次intent、source／CI前提、唯一派发前后Run／Job快照、canonical validator与五份终态审计；复用已通过反例验证的同一诊断闭集。终态前第十二轮0/7仍为最新已完成Hosted结果，所有新checks均待实际报告，控制退出不能代替业务通过。
