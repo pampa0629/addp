@@ -1064,6 +1064,18 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 
 沿通用矢量save核物理／Meta相等正整数大小，不虚构RasterArtifact；精确自动扫描核父执行／用户／租户／引擎。直接统计／重分类链核两份原注册输入，转面链只核实际栅格源，共31条源到当前成果关系；受控有界内部血缘、公开operations:null投影及Monitor分别核验，不扩大普通User权限。源与先前成果原件／Meta不变，整套结束时源及全部16项成果Meta分别与初始化／首次扫描后完整快照相等，前后原始快照随报告归档；失败零发布／新增扫描／派生；工作区、oracle、NFS、Runtime、registry、部署与Infra退出全部严格清理，保留首个业务失败及清理错误。标准Native／独立Runner／Online及手工CI／observer与固定矩阵登记同次完成。本地标准Native以`-k "vector_zonal_area_weighted or vector_area_weighted"`通过211项／13100筛除／52.88秒，无失败／跳过／警告；独立`make test-vector-zonal-area-weighted-online-runner`通过103项／25.246秒及完整登记，两门禁输入无漂移。使用正式EPSG:2222／2277保留英尺单位和准确预览CRS，原有统计与产品保持；准备通过不计真实Hosted通过。
 
+### 相交叠加独立普通用户验收
+
+`vector-topology-persistence` 的 `intersection-overlay` 独立 case 仅运行一次成功与四次失败，不执行 full、旧业务 T4 或容量。复用同一非默认 Tenant 普通 User、既有精确 11 项功能权限、隔离 Hosted 生命周期及 600 秒总业务预算；功能权限不替代资源授权。真实运行须以共享元数据／血缘专项确认并落地的正式源与成果资源授权为前提，不能为本场景添加 NFS 例外、管理员业务请求或绕过不可见血缘。受影响门禁须有有效证据，公共 CI 超时取消历史不得记为通过。
+
+成功输入 A 17 条、B 18 条混合要素，双方具有显式唯一且与存储 FID 不同的来源标识。采用分离的坐标区域手写 16 对非空结果：九种点／线／面维度组合、共边、共顶点、线线十字、含面线点的 GeometryCollection、多点、不同 ID 的重复几何及面积 2^-40 的微小交集；孔洞内部包围盒候选和不相交对无结果。多部件和集合各对仍为一行，按 A／B 原行顺序保留双方业务字段、可空 Int64／Boolean／String 和 source_id_a／source_id_b，普通 geometry 业务字段与真实几何隔离。超出 JSON 安全整数范围的物理保存能力沿既有 Native 证据，不从本次安全整数实页外推。
+
+单份混合几何 GPKG 成果核对全部坐标／成员、来源、字段名序型／值／null、行序、有效 XY 与 EPSG:3857；独立 OGR 读取原生点并对照手写几何，不调用产品相交算法或 ExportToJson 的默认精度生成期望。结果的环方向／成员排列只按相交契约允许的规范化比较，不增加坐标容差或舍入。核正整数物理大小等于 Meta、唯一子层、一次自动扫描的公开严格整数 tenant_id／triggered_by 同主体、稳定输出及 facts 的 create、A／B 文件到成果的两条同当前 execution active derive 和原始 Monitor；容器子层不伪装成独立血缘主体。
+
+四次失败分别为 A／B 显式来源字段不合法、投影 CRS 不一致、双方业务字段重名，准确绑定 intersection 节点的 v3 operator_input_invalid/input_gdf、operator_reference_invalid/gdf_b、operator_crs_invalid/无 parameter、operator_overlay_fields_conflict/无 parameter；均无 field。每次核对真实失败页中英文与复制、同 User Monitor、outputs／输出 facts／新增自动扫描为空、失败目标文件不存在、已成功成果和四份源前后哈希／物理与原始 Meta 不变。不得以 load 节点提前失败代替算子拒绝。
+
+浏览器通过现有身份绑定 helper 核实际请求，读取原始混合 EWKB；核一条 GeometryCollection 及其全部成员、真实 OL 要素／业务值／按既有投影公式转换的坐标、实际点线面像素和截图。集合不拆行，微小成员只核物理／API／OL 数据，不宣称亚像素区域可单独辨认。归档源和成果原文件、五次执行、自动扫描、双源原图、源／成果原始 Meta、原预览和浏览器报告；incomplete checkpoint 不能替代完整报告。最后核领域及 NFS/export/owned root、Runtime/registry、部署和 Infra 零残留，此清理不认证业务 DELETE。标准 runner、Native 夹具、浏览器、手工 case 选择和 CI profile／mutation 同次登记；场景未真实通过前不计 T4 通过。
+
 ### 节点提取独立普通用户验收
 
 `vector-topology-persistence` 的 `line-nodes` 独立case仅运行一次成功和九次失败，复用同一非默认Tenant普通User精确11权限、Hosted隔离生命周期及600秒总业务预算，不执行full、旧业务T4或容量。9条源要素／11个原始线部件覆盖闭环接支线、拆分三角形、相同端点不同路径、同源不连通部件和2^-40间隙；手写15个节点与22条端部明细，逐坐标／顺序／ID／部件／start-end／度数核验，严格满足degree总和=members行数=2×部件数。result仅几何、node_id、degree；members保留来源的全部业务字段、可空Int64／Boolean／String以及名为geometry的普通业务列，不用其替换真实几何。

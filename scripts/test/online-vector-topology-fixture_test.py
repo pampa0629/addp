@@ -527,3 +527,28 @@ class NodesFixtureTest(unittest.TestCase):
         self.assertEqual([r['properties']['node_id'] for r in members[:3]],[1,1,1])
         self.assertEqual(nodes[12]['geometry']['coordinates'],[41,0]);self.assertEqual(nodes[13]['geometry']['coordinates'],[41+2**-40,0])
         self.assertEqual(len(m.NODES_FAILURES),9)
+
+
+class OverlayFixtureTest(unittest.TestCase):
+    def test_overlay_frozen_pairs_cover_all_dimensions_collections_duplicates_and_tiny_area(self):
+        a,b,result=m.overlay_features('a'),m.overlay_features('b'),m.overlay_features('result')
+        self.assertEqual([len(m.overlay_features(k)) for k in (*m.OVERLAY_KINDS,'result')],[17,18,18,18,16])
+        self.assertEqual({r['geometry']['type'] for r in result},{'Point','LineString','Polygon','MultiPoint','MultiLineString','MultiPolygon','GeometryCollection'})
+        self.assertEqual(result[0]['geometry'],result[1]['geometry'])
+        self.assertEqual(result[0]['properties']['source_id_a'],result[1]['properties']['source_id_a'])
+        self.assertNotEqual(result[0]['properties']['source_id_b'],result[1]['properties']['source_id_b'])
+        self.assertEqual([g['type'] for g in result[13]['geometry']['geometries']],['Polygon','LineString','Point'])
+        ring=result[-1]['geometry']['coordinates'][0]
+        self.assertEqual((ring[1][0]-ring[0][0])*(ring[2][1]-ring[1][1]),2**-40)
+        self.assertFalse({a[15]['properties']['a_key'],a[16]['properties']['a_key']}&{r['properties']['source_id_a'] for r in result})
+        self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':'intersection-overlay'}),m.OVERLAY_CASE)
+        self.assertEqual(m.network_profile(m.OVERLAY_CASE)['targets'],('intersection.gpkg',))
+    def test_overlay_preserves_original_ids_nullable_property_types_and_separate_geometry_identity(self):
+        result=m.overlay_features('result')
+        self.assertTrue(all(type(r['properties']['source_id_a']) is int and 2**40<r['properties']['source_id_a']<2**53 for r in result))
+        self.assertTrue(all(type(r['properties']['source_id_b']) is str for r in result))
+        self.assertTrue(any(r['properties']['a_grade'] is None for r in result))
+        self.assertTrue(any(r['properties']['a_enabled'] is None for r in result))
+        self.assertTrue(any(r['properties']['geometry'] is None for r in result))
+        self.assertTrue(all(r['properties']['a_enabled'] is None or type(r['properties']['a_enabled']) is bool for r in result))
+        self.assertEqual(m.overlay_features('fields')[0]['properties']['a_note'],m.overlay_features('b')[0]['properties']['b_note'])

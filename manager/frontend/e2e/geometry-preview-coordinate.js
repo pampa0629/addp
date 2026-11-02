@@ -8,3 +8,13 @@ export function webMercatorPreviewCoordinate([x, y]) {
   return [Math.PI * radius * longitude / 180,
     radius * Math.log(Math.tan(Math.PI * (latitude + 90) / 360))]
 }
+
+// A GeometryCollection stays one feature; transform each member's coordinates.
+export function webMercatorPreviewGeometry(geometry) {
+  if (geometry.type === 'GeometryCollection') {
+    return { type: geometry.type, geometries: geometry.geometries.map(webMercatorPreviewGeometry) }
+  }
+  const coordinates = value => typeof value[0] === 'number'
+    ? webMercatorPreviewCoordinate(value) : value.map(coordinates)
+  return { type: geometry.type, coordinates: coordinates(geometry.coordinates) }
+}

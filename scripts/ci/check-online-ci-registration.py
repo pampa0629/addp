@@ -2245,6 +2245,21 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in nodes_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology nodes case contract incomplete: '+relative)
+    overlay_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - intersection-overlay',),
+        'scripts/test/online-hosted-topology-gate.sh': ('intersection-overlay|line-nodes',),
+        'business/scripts/online-vector-topology-fixture.py': ('OVERLAY_FAILURES', 'def overlay_features(', 'def verify_overlay(', 'def overlay_worker(', 'def overlay_geometry('),
+        'scripts/test/vector-topology-persistence-online.py': ('def overlay_definition(', 'def run_overlay_scenario(', 'def validate_overlay_failure(', 'def validate_overlay_browser_raw(', 'intersection requires complete authorized source lineage before execution', 'topology-overlay-checkpoint.json'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('相交叠加独立普通User完整混合交集及四失败保护', 'async function verifyOverlayCase(', 'async function assertOverlayMap(', 'async function assertOverlayCollectionPixels(', 'topology-overlay-browser-raw.json'),
+        'manager/frontend/e2e/geometry-preview-coordinate.js': ('export function webMercatorPreviewGeometry(',),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_intersection_overlay_t4_fixture_full_mixed_and_four_refusals',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class OverlayOnlineTest', 'class OverlayBrowserRawTest', 'class OverlayBrowserContractTest', 'test_overlay_requires_formal_resource_visibility_before_any_business_execution', 'test_overlay_raw_refuses_wire_that_disagrees_with_claimed_decoded_rows'),
+        'scripts/test/online-vector-topology-fixture_test.py': ('class OverlayFixtureTest',),
+        'scripts/test/online-hosted-topology-gate_test.py': ('test_overlay_case_is_bound_without_old_business_or_capacity',),
+    }
+    for relative,fragments in overlay_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology complete intersection case contract incomplete: '+relative)
     trim_required = {
         '.github/workflows/online-t4-gates.yml': ('          - line-trimming',),
         'scripts/test/online-hosted-topology-gate.sh': ('line-trimming|full|line-network-normalize',),

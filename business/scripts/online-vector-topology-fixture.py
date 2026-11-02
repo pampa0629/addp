@@ -533,7 +533,152 @@ def nodes_worker(action,root):
             'targets':{name:verify_nodes(root/'outputs'/name,kind) for name,kind in zip(NODES_TARGETS,NODES_PORTS)},'exact_inventory_verified':True}
 
 
-INDEPENDENT_CASES = (NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+OVERLAY_CASE = 'intersection-overlay'
+OVERLAY_SCHEMA = 'addp.intersection-overlay'
+OVERLAY_TITLE = '相交叠加独立普通User完整混合交集及四失败保护'
+OVERLAY_KINDS = ('a','b','crs','fields')
+OVERLAY_SOURCES = tuple('overlay-'+kind+'.gpkg' for kind in OVERLAY_KINDS)
+OVERLAY_TARGET = 'intersection.gpkg'
+OVERLAY_FAILURES = (
+    ('a-id',0,1,'operator_input_invalid','input_gdf'),
+    ('b-id',0,1,'operator_reference_invalid','gdf_b'),
+    ('crs',0,2,'operator_crs_invalid',''),
+    ('fields',0,3,'operator_overlay_fields_conflict',''),
+)
+
+
+def overlay_features(kind):
+    """Frozen analytic pairs, with no production/GEOS intersection oracle."""
+    def point(x,y):return {'type':'Point','coordinates':[x,y]}
+    def line(*points):return {'type':'LineString','coordinates':[list(p) for p in points]}
+    def box(x,y,u,v):return {'type':'Polygon','coordinates':[[[x,y],[u,y],[u,v],[x,v],[x,y]]]}
+    def multi(polygons):return {'type':'MultiPolygon','coordinates':[p['coordinates'] for p in polygons]}
+    tiny=2**-20
+    cases=[
+        (point(0,0),point(0,0),point(0,0)),
+        (point(0,0),line((-1,0),(1,0)),point(0,0)),
+        (point(0,0),box(-1,-1,1,1),point(0,0)),
+        (line((-2,0),(2,0)),point(0,0),point(0,0)),
+        (line((-2,0),(2,0)),line((1,0),(3,0)),line((1,0),(2,0))),
+        (line((-2,0),(3,0)),multi([box(-1,-1,0,1),box(1,-1,2,1)]),
+         {'type':'MultiLineString','coordinates':[[[-1,0],[0,0]],[[1,0],[2,0]]]}),
+        (box(-1,-1,1,1),point(0,0),point(0,0)),
+        (box(-1,-1,1,1),line((-2,0),(2,0)),line((-1,0),(1,0))),
+        (multi([box(0,0,2,2),box(4,0,6,2)]),box(1,-1,5,3),multi([box(1,0,2,2),box(4,0,5,2)])),
+        (box(0,0,2,2),box(2,0,4,2),line((2,0),(2,2))),
+        (box(0,0,1,1),box(1,1,2,2),point(1,1)),
+        (line((-1,0),(1,0)),line((0,-1),(0,1)),point(0,0)),
+        (multi([box(0,0,2,2),box(4,0,5,1),box(7,0,8,1)]),multi([box(1,1,3,3),box(5,0,6,1),box(8,1,9,2)]),
+         {'type':'GeometryCollection','geometries':[box(1,1,2,2),line((5,0),(5,1)),point(8,1)]}),
+        ({'type':'MultiPoint','coordinates':[[0,0],[1,1],[5,5]]},box(-1,-1,2,2),{'type':'MultiPoint','coordinates':[[0,0],[1,1]]}),
+        (box(0,0,1,1),box(1-tiny,1-tiny,2,2),box(1-tiny,1-tiny,1,1)),
+        ({'type':'Polygon','coordinates':[box(-2,-2,2,2)['coordinates'][0],box(-1,-1,1,1)['coordinates'][0]]},point(0,0),None),
+        (point(0,0),point(3,3),None),
+    ]
+    def shifted(geometry,offset):
+        if geometry is None:return None
+        if geometry['type']=='GeometryCollection':return {'type':'GeometryCollection','geometries':[shifted(g,offset) for g in geometry['geometries']]}
+        def coordinates(v):
+            if isinstance(v[0],(int,float)):return [v[0]+offset,v[1]]
+            return [coordinates(p) for p in v]
+        return {'type':geometry['type'],'coordinates':coordinates(geometry['coordinates'])}
+    left=[{'properties':{'a_key':2**40+2*(17-i)+1,'a_note':None if i%2 else 'PRIVATE_OVERLAY_A_'+str(i),
+        'a_grade':None if i%3 else 2**40+i,'a_enabled':None if i%3==1 else i%2==0,
+        'geometry':None if i%2 else 'PRIVATE_OVERLAY_GEOMETRY_'+str(i)},'geometry':shifted(a,100*i)} for i,(a,_,_) in enumerate(cases)]
+    right=[{'properties':{'b_key':'ref-'+str(31-i),'b_note':None if i%2 else 'PRIVATE_OVERLAY_B_'+str(i),
+        'b_enabled':None if i%3==1 else i%2==0},'geometry':shifted(b,100*i)} for i,(_,b,_) in enumerate(cases)]
+    right.append({'properties':{'b_key':'ref-duplicate','b_note':'PRIVATE_OVERLAY_DUPLICATE','b_enabled':False},'geometry':point(0,0)})
+    if kind=='a':return left
+    if kind in ('b','crs'):return right
+    if kind=='fields':return [{'geometry':r['geometry'],'properties':{'b_key':r['properties']['b_key'],'a_note':r['properties']['b_note'],'b_enabled':r['properties']['b_enabled']}} for r in right]
+    if kind!='result':raise FixtureError('unknown intersection fixture kind')
+    return [{'properties':{**left[i]['properties'],**right[j]['properties'],'source_id_a':left[i]['properties']['a_key'],'source_id_b':right[j]['properties']['b_key']},
+             'geometry':shifted(expected,100*i)}
+            for i,(_,_,expected) in enumerate(cases) if expected is not None for j in ([0,17] if i==0 else [i])]
+
+
+def overlay_field_types(kind):
+    from osgeo import ogr
+    return {name:(ogr.OFTInteger64 if name in ('a_key','a_grade','source_id_a') else ogr.OFTInteger if name.endswith('_enabled') else ogr.OFTString,
+                  ogr.OFSTBoolean if name.endswith('_enabled') else ogr.OFSTNone) for name in overlay_features(kind)[0]['properties']}
+
+
+def seed_overlay(path,kind):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3395 if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME='+('a_shape' if kind=='a' else 'b_shape')])
+    for name,(native,subtype) in overlay_field_types(kind).items():
+        field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
+        if layer.CreateField(field)!=0:raise FixtureError('intersection fixture field creation failed')
+    for row in overlay_features(kind):
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in row['properties'].items():
+            if value is not None:feature.SetField(name,int(value) if type(value) is bool else value)
+        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(feature)!=0:raise FixtureError('intersection fixture feature creation failed')
+    feature=layer=ds=None
+
+
+def overlay_geometry(geometry):
+    """Read native coordinates without OGR's default JSON decimal rounding."""
+    kind=geometry.GetGeometryName()
+    if kind=='POINT':return {'type':'Point','coordinates':list(geometry.GetPoint_2D())}
+    if kind in ('LINESTRING','LINEARRING'):return {'type':'LineString','coordinates':[list(p[:2]) for p in geometry.GetPoints()]}
+    children=[overlay_geometry(geometry.GetGeometryRef(i)) for i in range(geometry.GetGeometryCount())]
+    if kind=='GEOMETRYCOLLECTION':return {'type':'GeometryCollection','geometries':children}
+    names={'POLYGON':'Polygon','MULTIPOINT':'MultiPoint','MULTILINESTRING':'MultiLineString','MULTIPOLYGON':'MultiPolygon'}
+    if kind not in names:raise FixtureError('unexpected intersection geometry type')
+    return {'type':names[kind],'coordinates':[child['coordinates'] for child in children]}
+
+
+def verify_overlay(path,kind):
+    from osgeo import ogr,osr
+    if path.is_symlink():raise FixtureError('intersection physical file must not be symlink')
+    ds=ogr.Open(str(path),0)
+    if not ds or ds.GetLayerCount()!=1:raise FixtureError('intersection requires one mixed physical layer')
+    layer=ds.GetLayer(0);schema=layer.GetLayerDefn();types=overlay_field_types(kind);expected=overlay_features(kind)
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3395 if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('intersection physical CRS differs')
+    if [f.name for f in layer.schema]!=list(types):raise FixtureError('intersection field names or order differ')
+    for name,(native,subtype) in types.items():
+        field=schema.GetFieldDefn(schema.GetFieldIndex(name))
+        if field.GetType()!=native or field.GetSubType()!=subtype:raise FixtureError('intersection physical field type differs')
+    geom=schema.GetGeomFieldDefn(0)
+    if geom.GetType()!=ogr.wkbUnknown or not geom.GetName() or geom.GetName() in types:raise FixtureError('intersection mixed geometry declaration differs')
+    if kind!='result' and geom.GetName()!=('a_shape' if kind=='a' else 'b_shape'):raise FixtureError('intersection source geometry name differs')
+    rows=[]
+    for index,feature in enumerate(layer):
+        shape=feature.GetGeometryRef()
+        if index>=len(expected) or feature.GetFID()!=index+1 or not shape or shape.IsEmpty() or shape.GetCoordinateDimension()!=2 or shape.IsMeasured() or not shape.IsValid():raise FixtureError('intersection rows/FID/geometry/XY differ')
+        reference=ogr.CreateGeometryFromJson(json.dumps(expected[index]['geometry']))
+        if kind=='result':actual,reference=shape.Normalize(),reference.Normalize()
+        else:actual=shape
+        if actual.ExportToIsoWkb()!=reference.ExportToIsoWkb():raise FixtureError('intersection exact geometry differs from handwritten oracle')
+        props={name:feature.GetField(name) for name in types}
+        for name in ('a_enabled','b_enabled'):
+            if name in props and props[name] is not None:
+                if type(props[name]) not in (int,bool) or props[name] not in (0,1):raise FixtureError('intersection boolean value differs')
+                props[name]=bool(props[name])
+        if props!=expected[index]['properties'] or any(type(props[n]) is not type(expected[index]['properties'][n]) for n in props):raise FixtureError('intersection attributes/identities/types/null/order differ')
+        rows.append({'properties':props,'geometry':overlay_geometry(shape)})
+    if len(rows)!=len(expected):raise FixtureError('intersection feature count differs')
+    return {**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geom.GetName(),'fid_column':layer.GetFIDColumn(),'features':rows,
+            'source_crs':'EPSG:3395' if kind=='crs' else 'EPSG:3857'}
+
+
+def overlay_worker(action,root):
+    if action=='seed':
+        if any((root/n).exists() for n in OVERLAY_SOURCES) or list((root/'outputs').iterdir()):raise FixtureError('refusing existing intersection fixture')
+        for name,kind in zip(OVERLAY_SOURCES,OVERLAY_KINDS):seed_overlay(root/name,kind)
+        return {'sources':{name:digest(root/name) for name in OVERLAY_SOURCES}}
+    if action!='verify':raise FixtureError('unknown intersection fixture action')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*OVERLAY_SOURCES]) or sorted(p.name for p in (root/'outputs').iterdir())!=[OVERLAY_TARGET]:raise FixtureError('intersection exact inventory differs')
+    return {'sources':{name:digest(root/name) for name in OVERLAY_SOURCES},'source_tables':{name:verify_overlay(root/name,kind) for name,kind in zip(OVERLAY_SOURCES,OVERLAY_KINDS)},
+            'targets':{OVERLAY_TARGET:verify_overlay(root/'outputs'/OVERLAY_TARGET,'result')},'exact_inventory_verified':True}
+
+
+INDEPENDENT_CASES = (OVERLAY_CASE, NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -547,6 +692,7 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==OVERLAY_CASE:return {"ports":("result",),"targets":(OVERLAY_TARGET,),"sources":OVERLAY_SOURCES,"schema":OVERLAY_SCHEMA,"title":OVERLAY_TITLE}
     if case==NODES_CASE:return {"ports":NODES_PORTS,"targets":NODES_TARGETS,"schema":NODES_SCHEMA,"title":NODES_TITLE}
     if case==TRIM_CASE:return {"ports":EXTENSION_PORTS,"targets":TRIM_TARGETS,"schema":TRIM_SCHEMA,"title":TRIM_TITLE}
     if case==RINGS_DIAGNOSTIC_CASE:
@@ -1894,6 +2040,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==OVERLAY_CASE:return overlay_worker(action,root)
     if case==NODES_CASE:return nodes_worker(action,root)
     if case==RINGS_DIAGNOSTIC_CASE:return rings_diagnostic_worker(action,root)
     if case==TRIM_CASE:return trim_worker(action,root)
@@ -2008,7 +2155,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')

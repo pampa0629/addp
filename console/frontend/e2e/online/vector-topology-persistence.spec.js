@@ -3,7 +3,7 @@ import { observeLineageCanvas, lineageCanvasSnapshot } from '../../../../common-
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { decodePreviewEWKB } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
-import { webMercatorPreviewCoordinate } from '../../../../manager/frontend/e2e/geometry-preview-coordinate.js'
+import { webMercatorPreviewCoordinate, webMercatorPreviewGeometry } from '../../../../manager/frontend/e2e/geometry-preview-coordinate.js'
 import { browserAPIFromResponse, json, login } from './transfer-browser-support.js'
 
 test.use({ locale: 'zh-CN' })
@@ -494,6 +494,70 @@ test('多距缓冲独立普通User单成果与重名拒绝', async ({page}) => {
 
 // Literal acceptance expectations: do not derive these from the production formatter.
 const inputDiagnosticText = {
+"a-id": {
+    "zh-cn": [
+      "输入图层不符合算子的类型、字段、几何或标识要求。",
+      "相交叠加",
+      "源图层（input_gdf）",
+      "",
+      "按算子说明检查源图层的类型、活动几何列、字段及标识；修正后重新执行。"
+    ],
+    "en": [
+      "The input layer does not meet the operator type, field, geometry or identifier requirements.",
+      "Intersection overlay",
+      "Source layer (input_gdf)",
+      "",
+      "Check the source layer type, active geometry, fields and identifiers against the operator requirements, then submit a new execution."
+    ]
+  },
+  "b-id": {
+    "zh-cn": [
+      "参考图层不符合算子的类型、几何或标识要求。",
+      "相交叠加",
+      "图层 B（gdf_b）",
+      "",
+      "按算子说明检查参考图层的几何、坐标系和非空唯一标识后重新执行。"
+    ],
+    "en": [
+      "The reference layer does not meet the operator type, geometry or identifier requirements.",
+      "Intersection overlay",
+      "Input layer B (gdf_b)",
+      "",
+      "Check the reference geometry, CRS and unique non-null identifiers before submitting a new execution."
+    ]
+  },
+  "crs": {
+    "zh-cn": [
+      "两个图层须使用相同的已知投影坐标系和匹配的水平单位。",
+      "相交叠加",
+      "",
+      "",
+      "先显式统一两个图层的投影坐标系与水平单位，再重新执行。"
+    ],
+    "en": [
+      "Both layers require the same known projected CRS and matching horizontal units.",
+      "Intersection overlay",
+      "",
+      "",
+      "Explicitly align both projected CRSs and horizontal units before submitting a new execution."
+    ]
+  },
+  "fields": {
+    "zh-cn": [
+      "相交叠加的业务字段、固定来源字段或结果几何列发生重名。",
+      "相交叠加",
+      "",
+      "",
+      "先在上游手动重命名冲突字段；不会自动加后缀、覆盖或丢弃字段。"
+    ],
+    "en": [
+      "Overlay business fields conflict with each other, fixed source fields or the result geometry column.",
+      "Intersection overlay",
+      "",
+      "",
+      "Manually rename conflicting source fields upstream; fields are not suffixed, replaced or discarded automatically."
+    ]
+  },
   'ring-field-conflict': {
     'zh-cn':['源图层字段 ring_id 与算子的固定输出字段重名。','面界提取','源图层（input_gdf）','ring_id','先在上游手动重命名源字段 ring_id，再重新执行；不会自动改名或覆盖。'],
     en:['Source field ring_id conflicts with a fixed operator output field.','Extract polygon rings','Source layer (input_gdf)','ring_id','Manually rename source field ring_id upstream before submitting a new execution; it is not renamed or overwritten automatically.']
@@ -534,19 +598,21 @@ async function assertInputDiagnosticPanel(panel,key,locale,executionID) {
   await expect(panel.locator('h4')).toHaveText(expected.reason)
   await expect(panel.locator('dd')).toHaveText(expected.values)
   await expect(panel).not.toContainText(/PRIVATE_DIAGNOSTIC|Traceback|site-packages|\/tmp\/|99\.0|parcel_shape|parcel_key|rings-(conflict|invalid)\.gpkg|相邻乙|重复丙|地块属性|普通业务几何/)
+  if(['a-id','b-id','crs','fields'].includes(key))await expect(panel).not.toContainText(/PRIVATE_OVERLAY|a_key|b_key|a_shape|b_shape|a_note|overlay-(a|b|crs|fields)\.gpkg/)
   return expected
 }
 
-async function verifyInputDiagnosticCase(page,caseName) {
-  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
+async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
+  const evidence=supplied||JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
   expect(evidence.case).toBe(caseName)
-  const rings=caseName==='polygon-rings-input-diagnostics'
-  const keys=rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
+  const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay'
+  const keys=overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
   expect(evidence.executions.map(run=>run.key)).toEqual(keys)
   expect(new Set(evidence.executions.map(run=>run.execution_id)).size).toBe(keys.length)
   const expectedIdentity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
   await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:process.env.CONSOLE_URL})
-  let loggedIn=false
+  // The combined overlay scene is already logged in; standalone diagnostics still log in here.
+  let loggedIn=overlay&&supplied!==null
   const observations=[],publicationRequests=[]
   page.on('request',request=>{
     const path=new URL(request.url()).pathname
@@ -597,6 +663,7 @@ async function verifyInputDiagnosticCase(page,caseName) {
   if(rings) expect(observations).toHaveLength(8)
   else expect(observations).toHaveLength(16)
   expect(publicationRequests).toEqual([])
+  if(overlay)return observations
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({
     ...evidence,schema_version:(rings?'addp.polygon-rings-input-diagnostics':'addp.operator-input-diagnostics')+'-browser/v1',result:'passed',observations},null,2)+'\n')
 }
@@ -1194,3 +1261,143 @@ test('节点提取独立普通User节点与来源明细双Point及九失败保�
   const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}');await observeLineageCanvas(page)
   await verifyNodesCase(page,evidence,process.env.ADDP_ONLINE_ARTIFACT_DIR)
 })
+
+async function assertOverlayMap(renderer, expected) {
+  const fields = Object.keys(expected[0].properties)
+  const keys = rows => rows.map(row => JSON.stringify(row)).sort()
+  let observed
+  await expect.poll(async () => {
+    observed = await renderer.evaluate((element, fields) => {
+      const value = element.__vueParentComponent?.setupState?.mapInstance, map = value?.value || value
+      if (!map || map.getView().getAnimating()) return null
+      const geometry = shape => shape.getType() === 'GeometryCollection'
+        ? { type: shape.getType(), geometries: shape.getGeometries().map(geometry) }
+        : { type: shape.getType(), coordinates: shape.getCoordinates() }
+      return { projection: map.getView().getProjection().getCode(), features: map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
+        .map(feature => ({ properties: Object.fromEntries(fields.map(field => [field, feature.get(field)])), geometry: geometry(feature.getGeometry()) })) }
+    }, fields)
+    if (!observed || observed.projection !== 'EPSG:3857') return []
+    return keys(observed.features)
+  }).toEqual(keys(expected.map(row => ({ properties: row.properties, geometry: webMercatorPreviewGeometry(row.geometry) }))))
+  expect(observed.features).toHaveLength(16)
+  expect(observed.features.filter(row => row.geometry.type === 'GeometryCollection')).toHaveLength(1)
+  return observed
+}
+
+async function assertOverlayCollectionPixels(renderer) {
+  await renderer.evaluate(element => {
+    const value = element.__vueParentComponent.setupState.mapInstance, map = value?.value || value
+    const collection = map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || []).find(feature => feature.getGeometry().getType() === 'GeometryCollection')
+    map.getView().fit(collection.getGeometry().getExtent(), { size: map.getSize(), padding: [32, 32, 32, 32], duration: 0 })
+    map.renderSync()
+  })
+  let pixels
+  await expect.poll(async () => {
+    pixels = await renderer.evaluate(element => {
+      const value = element.__vueParentComponent.setupState.mapInstance, map = value?.value || value
+      if (map.getView().getAnimating()) return {}
+      const layer = map.getLayers().getArray().find(layer => layer.getSource?.()?.getFeatures?.().some(feature => feature.getGeometry().getType() === 'GeometryCollection'))
+      const feature = layer.getSource().getFeatures().find(feature => feature.getGeometry().getType() === 'GeometryCollection')
+      const geometries = feature.getGeometry().getGeometries(), context = layer.getRenderer()?.context
+      if (!context || !layer.getVisible() || layer.getOpacity() <= 0) return {}
+      const rectangle = context.canvas.getBoundingClientRect(), viewport = map.getViewport().getBoundingClientRect()
+      const evidence = {}
+      for (const [kind, coordinate] of [
+        ['point', geometries.find(g => g.getType() === 'Point').getCoordinates()],
+        ['line', geometries.find(g => g.getType() === 'LineString').getCoordinateAt(.5)],
+        ['polygon', geometries.find(g => g.getType() === 'Polygon').getInteriorPoint().getCoordinates().slice(0, 2)],
+      ]) {
+        const position = map.getPixelFromCoordinate(coordinate)
+        const hit = map.forEachFeatureAtPixel(position, candidate => candidate === feature ? true : undefined, { layerFilter: candidate => candidate === layer, hitTolerance: 0 })
+        if (hit !== true) { evidence[kind] = 0; continue }
+        const x = Math.round((viewport.left + position[0] - rectangle.left) * context.canvas.width / rectangle.width)
+        const y = Math.round((viewport.top + position[1] - rectangle.top) * context.canvas.height / rectangle.height)
+        const data = context.getImageData(x - 6, y - 6, 13, 13).data
+        let count = 0
+        for (let i = 3; i < data.length; i += 4) if (data[i] > 0) count++
+        evidence[kind] = count
+      }
+      return evidence
+    })
+    return ['point', 'line', 'polygon'].every(kind => Number.isInteger(pixels[kind]) && pixels[kind] > 10)
+  }).toBe(true)
+  return pixels
+}
+
+async function verifyOverlayCase(page) {
+  const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}'), directory = process.env.ADDP_ONLINE_ARTIFACT_DIR
+  await observeLineageCanvas(page)
+  expect(evidence.case).toBe('intersection-overlay'); expect(evidence.sources).toHaveLength(4); expect(evidence.outputs).toHaveLength(1)
+  expect(evidence.expected.result).toHaveLength(16)
+  const identity = { principalID: evidence.principal_id, tenantID: evidence.tenant_id, permissions: evidence.permissions_verified }
+  const raw = { schema_version: 'addp.intersection-overlay-browser-raw/v1', case: evidence.case, run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
+  const persist = (stage, result = 'incomplete') => writeFileSync(resolve(directory, 'topology-overlay-browser-raw.json'), JSON.stringify({ ...raw, stage, result }, null, 2) + '\n')
+  const writes = []
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method()) && /^\/api\/v1\/(develop|meta|manager)\//.test(path)) writes.push({ method: request.method(), path })
+  })
+  const read = page.waitForResponse(r => r.request().method() === 'GET' && new URL(r.url()).pathname === `/api/v1/develop/executions/${evidence.execution_id}`)
+  await login(page, process.env.ADDP_ONLINE_TEST_USER_USERNAME, process.env.ADDP_ONLINE_TEST_USER_PASSWORD, `/develop/executions/${evidence.execution_id}`)
+  const response = await read, bound = await browserAPIFromResponse(response, process.env.GATEWAY_URL, identity)
+  try { raw.execution = await json(response, 'intersection success'); expect(raw.execution.execution_id).toBe(evidence.execution_id); expect(raw.execution.triggered_by).toBe(Number(evidence.principal_id)); expect(raw.execution.status).toBe('success'); expect(Object.keys(raw.execution.outputs)).toEqual(['save_result']) } finally { await bound.dispose() }
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByText('成功', { exact: true })).toBeVisible()
+  await expect(frame.locator('.workflow-result')).toContainText(evidence.outputs[0].name)
+  await page.screenshot({ path: resolve(directory, 'intersection-execution.png') }); persist('execution_verified')
+  const output = evidence.outputs[0], expected = evidence.expected.result, fields = Object.keys(expected[0].properties), locator = `${output.locator}&item_id=${output.item_id}`
+  const previewRead = page.waitForResponse(r => { const u = new URL(r.url()); return r.request().method() === 'GET' && u.pathname === '/api/v1/manager/preview' && u.searchParams.get('locator') === locator && u.searchParams.get('child_name') === output.layer_name })
+  await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
+  const previewResponse = await previewRead, api = await browserAPIFromResponse(previewResponse, process.env.GATEWAY_URL, identity)
+  const observation = { port: 'result', output_item_id: output.item_id, sources: [] }; raw.observations.push(observation)
+  try {
+    observation.preview = await json(previewResponse, 'intersection mixed preview')
+    for (const source of evidence.sources) { const item = await json(await api.get(`/api/v1/meta/items/${source.id}`), 'unchanged intersection source'); expect(item).toEqual(source.before); observation.sources.push({ item_id: source.id, item }) }
+    observation.output = await json(await api.get(`/api/v1/meta/items/${output.item_id}`), 'intersection output Meta'); expect(observation.output).toEqual(output.before)
+    observation.graph = await json(await api.get(`/api/v1/meta/lineage/graph?subject_kind=data_item&item_id=${output.item_id}&direction=upstream`), 'intersection original graph')
+    assertProximityLineage(observation.graph, { ...evidence, sources: evidence.sources.slice(0, 2), output })
+  } finally { await api.dispose() }
+  persist('preview_observed')
+  const preview = observation.preview, data = preview.data
+  expect(preview.preview_type).toBe('table'); expect([data.page, data.rows.length, data.total, data.source_srid, data.source_crs, data.transform_status, data.preview_hint]).toEqual([1, 16, 16, 3857, 'EPSG:3857', 'not_transformed', 'frontend_transform_required'])
+  expect(data.geometry_columns).toEqual([output.geometry_column]); expect(output.fid_column).toBeTruthy()
+  expect([...data.columns].sort()).toEqual([output.fid_column, output.geometry_column, ...fields].sort())
+  expect(data.rows.map(r => r[output.fid_column])).toEqual(Array.from({ length: 16 }, (_, i) => i + 1))
+  for (const row of data.rows) expect(Object.keys(row).sort()).toEqual([...data.columns].sort())
+  observation.decoded_rows = data.rows.map(r => ({ properties: Object.fromEntries(fields.map(key => [key, r[key]])), geometry: decodePreviewEWKB(r[output.geometry_column]) }))
+  expect(observation.decoded_rows).toEqual(expected)
+  const table = frame.locator('.table-preview'), renderer = table.locator('.openlayers-map-renderer')
+  await expect(table).toBeVisible(); await expect(table.locator('.map-placeholder')).toHaveCount(0)
+  observation.rendered = await assertOverlayMap(renderer, expected)
+  await page.screenshot({ path: resolve(directory, 'intersection-map.png') }); persist('map_verified')
+  observation.rendered.collection_pixels = await assertOverlayCollectionPixels(renderer)
+  await page.screenshot({ path: resolve(directory, 'intersection-collection-map.png') }); persist('collection_map_verified')
+  await frame.getByRole('tab', { name: '属性', exact: true }).click(); await expect(frame.locator('.attributes-tab-pane')).toContainText(output.layer_name)
+  const graphRead = page.waitForResponse(r => { const u = new URL(r.url()); return r.request().method() === 'GET' && u.pathname === '/api/v1/meta/lineage/graph' && u.searchParams.get('item_id') === String(output.item_id) && u.searchParams.get('direction') === 'both' })
+  await frame.getByRole('tab', { name: '血缘', exact: true }).click()
+  const graphResponse = await graphRead, graphAPI = await browserAPIFromResponse(graphResponse, process.env.GATEWAY_URL, identity)
+  try { observation.lineage_page = await json(graphResponse, 'intersection lineage page'); assertProximityLineage(observation.lineage_page, { ...evidence, sources: evidence.sources.slice(0, 2), output }) } finally { await graphAPI.dispose() }
+  const viewer = frame.locator('.lineage-viewer'), canvas = viewer.locator('.lineage-canvas canvas').first()
+  await expect(canvas).toBeVisible()
+  await expect.poll(async () => {
+    observation.lineage_rendered = await viewer.evaluate(element => {
+      const ref = element.__vueParentComponent?.setupState?.graphInstance, graph = ref?.value || ref
+      return graph ? { nodes: graph.getNodes().map(item => item.getModel()._node), edges: graph.getEdges().map(item => item.getModel()._edge) } : null
+    })
+    return observation.lineage_rendered?.edges?.length || 0
+  }).toBe(2)
+  await expect.poll(async () => {
+    observation.lineage_canvas = await lineageCanvasSnapshot(canvas)
+    return [...evidence.sources.slice(0, 2).map(source => source.name), output.name].every(name => observation.lineage_canvas.rows.some(row => row.text.includes(name)))
+  }).toBe(true)
+  expect(observation.lineage_canvas.paths.length).toBeGreaterThanOrEqual(2)
+  assertProximityLineage({ ...observation.lineage_page, edges: observation.lineage_rendered.edges }, { ...evidence, sources: evidence.sources.slice(0, 2), output })
+  await page.screenshot({ path: resolve(directory, 'intersection-lineage.png') }); persist('lineage_verified')
+  const observations = await verifyInputDiagnosticCase(page, 'intersection-overlay', { ...evidence, executions: evidence.failures.map(f => ({ ...f, execution: { error_details: f.error_details } })) })
+  raw.failures = evidence.failures.map(f => ({ key: f.key, execution_id: f.execution_id, observations: observations.filter(v => v.key === f.key) }))
+  expect(writes).toEqual([]); raw.publication_requests = writes
+  persist('complete', 'passed')
+  writeFileSync(resolve(directory, 'topology-browser.json'), JSON.stringify({ ...evidence, schema_version: 'addp.intersection-overlay-browser/v1', result: 'passed' }, null, 2) + '\n')
+}
+
+test('相交叠加独立普通User完整混合交集及四失败保护', async ({ page }) => verifyOverlayCase(page))

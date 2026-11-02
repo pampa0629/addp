@@ -1273,6 +1273,10 @@ const sandbox={};vm.createContext(sandbox);vm.runInContext(source.slice(start,en
 for(const locale of ['zh-cn','en']){
  const text=JSON.parse(fs.readFileSync(process.argv[2]+'/'+locale+'.json','utf8')).common.executionFailure;
  for(const [key,reason,op,param,field] of [
+ ['a-id','operator_input_invalid','intersection','input_gdf',''],
+ ['b-id','operator_reference_invalid','intersection','gdf_b',''],
+ ['crs','operator_crs_invalid','intersection','',''],
+ ['fields','operator_overlay_fields_conflict','intersection','',''],
  ['ring-field-conflict','operator_field_conflict','extract_polygon_rings','input_gdf','ring_id'],
  ['ring-geometry-invalid','operator_geometry_invalid','extract_polygon_rings','input_gdf',''],
  ['field-conflict','operator_field_conflict','batch_buffer','input_gdf','distance'],
@@ -2251,3 +2255,206 @@ assert.ok(source.includes('topology-nodes-browser-raw.json'))
 """
         result=subprocess.run(['node','--input-type=module','-e',script,str(repository)],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
+
+
+def overlay_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{n:{'size_bytes':98304,'sha256':n} for n in m.fixture.OVERLAY_SOURCES},
+        'source_tables':{n:{'features':m.fixture.overlay_features(k)} for n,k in zip(m.fixture.OVERLAY_SOURCES,m.fixture.OVERLAY_KINDS)},
+        'targets':{m.fixture.OVERLAY_TARGET:{'size_bytes':98304,'sha256':'overlay-result','feature_count':16,'layer_name':'intersection',
+                    'geometry_column':'geom','fid_column':'fid','features':m.fixture.overlay_features('result')}}}
+
+
+class OverlayClient(InputDiagnosticClient):
+    def __init__(self):
+        super().__init__();self.sources=[];self.outputs=[];self.mutate_failed=None;self.mutate_graph=None;self.failed_graph=None
+        self.preflight_denied=False;self.scan_actor=33;self.scan_tenant=2
+        for i,(name,kind) in enumerate(zip(m.fixture.OVERLAY_SOURCES,m.fixture.OVERLAY_KINDS)):
+            rows=m.fixture.overlay_features(kind);item=base.item(name,10+i);item.update(full_name=name,size_bytes=98304)
+            item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.sources.append(item)
+        rows=m.fixture.overlay_features('result');item=base.item(m.fixture.OVERLAY_TARGET,30);item['size_bytes']=98304
+        item['attributes']['type_info']['container']['children'][0].update(row_count=16,column_count=len(rows[0]['properties'])+2);self.outputs=[item]
+        self.scans=['scan-'+n for n in m.fixture.OVERLAY_SOURCES]
+        self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}' for i,n in enumerate(m.fixture.OVERLAY_SOURCES)]
+        self.parent='addp://engine/3/path/outputs?type=directory';target=f'addp://engine/3/path/outputs/{m.fixture.OVERLAY_TARGET}?type=file'
+        self.success={'execution_id':'overlay-run','status':'success','triggered_by':33,
+            'outputs':{'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}},
+            'execution_config':{'content':{'workflow_definition':m.overlay_definition(self.locators,self.parent)}},
+            'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.load_b','locator':self.locators[1]},{'port':'input.load_a','locator':self.locators[0]}],
+              'outputs':[{'locator':target,'write_mode':'create'}]},'result':{'meta_scan_runs':[{'execution_id':'overlay-output-scan','target_locator':target,'status':'submitted'}]}}}
+    def request(self,method,path,expected,body=None):
+        if method=='POST' and path.endswith('/develop/executions'):
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
+            if name.startswith('failed-'):
+                spec=next(v for v in m.fixture.OVERLAY_FAILURES if name.startswith('failed-'+v[0]+'-'))
+                value={'execution_id':'overlay-failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},
+                    'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':m.overlay_diagnostic(spec)}}
+                if self.mutate_failed:self.mutate_failed(value)
+            else:value=self.success;self.scans.append('overlay-output-scan')
+            self.executions[value['execution_id']]=value;data={'execution_id':value['execution_id']}
+        elif path.endswith('/engines/3/items'):data=[*self.sources,*self.outputs]
+        elif path.startswith('/api/v1/meta/items/'):
+            data=next(v for v in [*self.sources,*self.outputs] if v['id']==int(path.rsplit('/',1)[1]))
+        elif '/meta/executions/' in path:data={'status':'success','tenant_id':self.scan_tenant,'triggered_by':self.scan_actor}
+        elif path.startswith('/api/v1/meta/lineage/graph?'):
+            if 'direction=downstream' in path:
+                if self.preflight_denied:raise m.SuiteError('resource authorization unavailable')
+                data={'truncated':False,'nodes':[],'edges':[]}
+                if self.failed_graph:self.failed_graph(data)
+            else:
+                data={'truncated':False,'nodes':[],'edges':[{'source':{'item_id':i},'target':{'item_id':30},'relation_kind':'derive','status':'active','evidence':{'execution_id':'overlay-run'}} for i in (10,11)]}
+                if self.mutate_graph:self.mutate_graph(data)
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+class OverlayOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.OVERLAY_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=overlay_physical,browser=lambda *a:a[2]):
+        return m.run_scenario(Path('.'),self.env,client or OverlayClient(),physical,browser)
+    def test_overlay_one_success_four_failures_dual_source_single_scan_and_original_facts(self):
+        client=OverlayClient();report=self.run_case(client)
+        self.assertEqual((report['result'],report['schema_version']),('passed','addp.intersection-overlay/v1'))
+        self.assertEqual(len(report['browser']['expected']['result']),16)
+        self.assertEqual([len(report[k]) for k in ('initial_scan_inventory','final_scan_inventory','meta_after')],[4,5,5])
+        self.assertEqual(len(report['raw_lineage']['edges']),2)
+        self.assertEqual([v['key'] for v in report['failures']],[v[0] for v in m.fixture.OVERLAY_FAILURES])
+        self.assertEqual(len({v['execution_id'] for v in report['failures']}),4)
+        self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in client.calls),5)
+    def test_overlay_requires_formal_resource_visibility_before_any_business_execution(self):
+        client=OverlayClient();client.preflight_denied=True
+        with self.assertRaisesRegex(m.SuiteError,'resource authorization'):self.run_case(client)
+        self.assertFalse(client.executions)
+        self.assertFalse(any(method=='POST' and path.endswith('/develop/executions') for method,path,_ in client.calls))
+    def test_overlay_rejects_wrong_actor_size_port_locator_write_mode_and_current_graph(self):
+        changes=[lambda c:c.success['metadata']['lineage_facts']['inputs'].append(copy.deepcopy(c.success['metadata']['lineage_facts']['inputs'][0])),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(port='input.OTHER'),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(locator=c.locators[0]),
+            lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
+            lambda c:c.success['outputs']['save_result']['resource'].update(write_mode='fail'),
+            lambda c:setattr(c,'scan_actor',True),lambda c:setattr(c,'scan_tenant','2'),lambda c:c.outputs[0].update(size_bytes=True),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'].append(copy.deepcopy(g['edges'][0])))]
+        for change in changes:
+            client=OverlayClient();change(client)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_overlay_failures_reject_publication_scan_wrong_node_private_and_derive(self):
+        changes=[lambda v:v.update(outputs={'save':{}}),lambda v:v['metadata'].update(lineage_facts={'outputs':[{}]}),
+            lambda v:v['metadata'].update(result={'meta_scan_runs':[{}]}),lambda v:v['error_details']['diagnostic']['operator'].update(node_index=True),
+            lambda v:v['error_details']['diagnostic']['operator'].update(field='PRIVATE'),lambda v:v['error_details']['diagnostic']['operator'].update(parameter='id_field'),
+            lambda v:v['error_details'].update(message='PRIVATE_OVERLAY_SOURCE')]
+        for change in changes:
+            client=OverlayClient();client.mutate_failed=change
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(client)
+        client=OverlayClient();client.failed_graph=lambda g:g['edges'].append({'relation_kind':'derive','evidence':{'execution_id':'overlay-failed-a-id'}})
+        with self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_overlay_dual_graph_never_accepts_boolean_dataitem_identity(self):
+        graph={'truncated':False,'edges':[{'source':{'item_id':True},'target':{'item_id':3},'relation_kind':'derive','status':'active','evidence':{'execution_id':'current'}},
+            {'source':{'item_id':2},'target':{'item_id':3},'relation_kind':'derive','status':'active','evidence':{'execution_id':'current'}}]}
+        with self.assertRaises(m.SuiteError):m.validate_proximity_graph(graph,[{'id':1},{'id':2}],3,'current')
+
+    def test_overlay_browser_failure_retains_incomplete_and_cannot_change_bytes_scans_meta(self):
+        with self.assertRaisesRegex(m.SuiteError,'browser broke'):self.run_case(browser=lambda *a:(_ for _ in ()).throw(m.SuiteError('browser broke')))
+        checkpoint=json.loads((Path(self.directory.name)/'topology-overlay-checkpoint.json').read_text())
+        self.assertEqual((checkpoint['result'],checkpoint['stage']),('incomplete','before_browser'));self.assertEqual(len(checkpoint['failures']),4)
+        calls=[]
+        def physical(*args):
+            native=overlay_physical();calls.append(1)
+            if len(calls)>5:native['targets'][m.fixture.OVERLAY_TARGET]['sha256']='changed'
+            return native
+        with self.assertRaisesRegex(m.SuiteError,'physical files'):self.run_case(physical=physical)
+        client=OverlayClient()
+        def browser(*args):client.sources[0]['size_bytes']=1;return args[2]
+        with self.assertRaisesRegex(m.SuiteError,'Meta changed'):self.run_case(client,browser=browser)
+
+
+def overlay_wire_and_projected(expected):
+    import subprocess
+    repository=Path(__file__).resolve().parents[2]
+    script="""import WKB from 'ol/format/WKB.js';import GeoJSON from 'ol/format/GeoJSON.js';import{webMercatorPreviewGeometry}from'./e2e/geometry-preview-coordinate.js';
+let text='';for await(const part of process.stdin)text+=part;const rows=JSON.parse(text),format=new WKB({hex:false,srid:3857}),geojson=new GeoJSON();
+console.log(JSON.stringify({wire:rows.map(row=>Buffer.from(format.writeGeometry(geojson.readGeometry(row.geometry))).toString('base64')),
+projected:rows.map(row=>({properties:row.properties,geometry:webMercatorPreviewGeometry(row.geometry)}))}));"""
+    result=subprocess.run(['node','--input-type=module','-e',script],cwd=repository/'manager/frontend',input=json.dumps(expected),capture_output=True,text=True,timeout=30)
+    if result.returncode:raise AssertionError(result.stdout+result.stderr)
+    return json.loads(result.stdout)
+
+
+class OverlayBrowserRawTest(unittest.TestCase):
+    def setUp(self):
+        self.owner=OverlayOnlineTest();self.owner.setUp();self.addCleanup(self.owner.doCleanups)
+        self.report=self.owner.run_case();self.evidence=self.report['browser'];e=self.evidence;c=OverlayClient();output=e['outputs'][0]
+        expected=e['expected']['result'];encoded=overlay_wire_and_projected(expected)
+        rows=[{**r['properties'],'fid':i+1,'geom':wire} for i,(r,wire) in enumerate(zip(expected,encoded['wire']))]
+        graph=self.report['raw_lineage']
+        observation={'port':'result','output_item_id':30,'sources':[{'item_id':s['id'],'item':s['before']} for s in e['sources']],
+            'output':output['before'],'graph':graph,'lineage_page':graph,'lineage_rendered':graph,
+            'lineage_canvas':{'rows':[{'text':s['name']} for s in [*e['sources'][:2],output]],'paths':[[[0,0],[1,1]],[[1,0],[2,1]]]},
+            'preview':{'preview_type':'table','data':{'page':1,'total':16,'source_srid':3857,'source_crs':'EPSG:3857','transform_status':'not_transformed','preview_hint':'frontend_transform_required',
+                'geometry_columns':['geom'],'columns':['fid','geom',*expected[0]['properties']],'rows':rows}},'decoded_rows':expected,
+            'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'collection_pixels':{'point':31,'line':32,'polygon':33}}}
+        self.raw={'schema_version':'addp.intersection-overlay-browser-raw/v1','case':e['case'],'run_id':e['run_id'],'execution_id':e['execution_id'],
+            'result':'passed','stage':'complete','execution':c.success,'observations':[observation],'publication_requests':[],'failures':[]}
+        for failed in self.report['failures']:
+            self.raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],
+                'observations':[{'owner':owner,'locale':locale,'raw':failed['execution'] if owner=='develop' else {'execution':failed['monitor']},'clipboard':'safe controlled copy'} for owner in ('develop','monitor') for locale in ('zh-cn','en')]})
+    def test_overlay_raw_accepts_exact_mixed_ewkb_projected_members_and_complete_owner_pages(self):
+        m.validate_overlay_browser_raw(self.raw,self.evidence)
+    def test_overlay_raw_refuses_missing_member_coordinate_type_pixels_graph_page_or_identity(self):
+        changes=[lambda r:r.update(result='incomplete'),lambda r:r.update(execution_id='other'),
+            lambda r:r['observations'][0]['preview']['data']['rows'][0].update(a_enabled=1),
+            lambda r:r['observations'][0]['preview']['data']['rows'][0].update(geom='YWJj'),
+            lambda r:r['observations'][0]['decoded_rows'][0]['geometry'].update(coordinates=[99,99]),
+            lambda r:r['observations'][0]['rendered']['features'].pop(),
+            lambda r:r['observations'][0]['rendered']['features'][13]['geometry']['geometries'].pop(),
+            lambda r:r['observations'][0]['rendered']['features'][0]['geometry'].update(coordinates=[99,99]),
+            lambda r:r['observations'][0]['rendered']['collection_pixels'].update(point=0),
+            lambda r:r['observations'][0]['graph']['edges'].pop(),
+            lambda r:r['failures'][0]['observations'].pop(),
+            lambda r:r['failures'][0]['observations'][0].update(clipboard='PRIVATE_OVERLAY_SOURCE')]
+        for change in changes:
+            raw=copy.deepcopy(self.raw);change(raw)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):m.validate_overlay_browser_raw(raw,self.evidence)
+    def test_overlay_raw_refuses_wire_that_disagrees_with_claimed_decoded_rows(self):
+        raw=copy.deepcopy(self.raw);raw['observations'][0]['preview']['data']['rows'][0]['geom']=raw['observations'][0]['preview']['data']['rows'][2]['geom']
+        with self.assertRaises(m.SuiteError):m.validate_overlay_browser_raw(raw,self.evidence)
+
+
+class OverlayBrowserContractTest(unittest.TestCase):
+    def test_overlay_actual_map_helper_rejects_lost_collection_members_wrong_coordinates_and_attributes(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        expected=m.fixture.overlay_features('result')
+        script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';import{pathToFileURL}from'node:url';
+const root=process.argv[1],source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8');
+const start=source.indexOf('async function assertOverlayMap('),end=source.indexOf('async function assertOverlayCollectionPixels(',start);
+const expect=value=>({toHaveLength:n=>assert.equal(value.length,n)});expect.poll=fn=>({toEqual:async expected=>assert.deepEqual(await fn(),expected)});
+const{webMercatorPreviewGeometry}=await import(pathToFileURL(root+'/manager/frontend/e2e/geometry-preview-coordinate.js'));
+const check=new Function('expect','webMercatorPreviewGeometry',source.slice(start,end)+';return assertOverlayMap')(expect,webMercatorPreviewGeometry);
+let text='';for await(const part of process.stdin)text+=part;const expected=JSON.parse(text);
+const native={projection:'EPSG:3857',features:expected.map(row=>({properties:row.properties,geometry:webMercatorPreviewGeometry(row.geometry)}))};
+await check({evaluate:async()=>native},expected);
+for(const change of [v=>v.features.pop(),v=>v.features[13].geometry.geometries.pop(),v=>v.features[0].geometry.coordinates[0]+=1,
+v=>v.features[0].properties.a_enabled=1,v=>v.features[0].properties.geometry='wrong',v=>v.projection='EPSG:4326']){
+ const changed=structuredClone(native);change(changed);await assert.rejects(check({evaluate:async()=>changed},expected));}
+assert.ok(source.includes('collection_pixels = await assertOverlayCollectionPixels(renderer)'));
+assert.ok(source.includes("candidate === feature ? true : undefined"));
+console.log('mixed geometry, exact projection and original property rejection verified');"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repository)],input=json.dumps(expected),capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    def test_overlay_reuses_authenticated_browser_navigation_for_failure_pages(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
+const source=readFileSync(process.argv[1]+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8');
+const start=source.indexOf('async function verifyInputDiagnosticCase('),end=source.indexOf("test('算子参数诊断独立普通User双语失败页'",start);
+const expect=value=>({toBe:other=>assert.equal(value,other),toEqual:other=>assert.deepEqual(value,other)}),stop=new Error('first navigation');
+let calls;const login=async()=>{calls.login++;throw stop};
+const check=new Function('expect','login',source.slice(start,end)+';return verifyInputDiagnosticCase')(expect,login);
+const evidence={case:'intersection-overlay',executions:['a-id','b-id','crs','fields'].map((key,i)=>({key,execution_id:String(i)})),permissions_verified:[]};
+const page={context:()=>({grantPermissions:async()=>{}}),on(){},waitForResponse:()=>Promise.resolve({}),goto:async()=>{calls.goto++;throw stop}};
+calls={login:0,goto:0};await assert.rejects(check(page,evidence.case,evidence),error=>error===stop);assert.deepEqual(calls,{login:0,goto:1});
+process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE=JSON.stringify(evidence);calls={login:0,goto:0};await assert.rejects(check(page,evidence.case),error=>error===stop);assert.deepEqual(calls,{login:1,goto:0});"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repository)],capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)

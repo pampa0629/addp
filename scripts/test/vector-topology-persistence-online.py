@@ -477,6 +477,36 @@ def run_line_edit_scenario(repository,env,client,physical_runner,browser_runner,
         'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
 
 
+def overlay_definition(sources,parent,failure=None):
+    spec=next((s for s in fixture.OVERLAY_FAILURES if s[0]==failure),None)
+    if failure is not None and spec is None:raise SuiteError('unknown intersection failure')
+    a,b=spec[1:3] if spec else (0,1)
+    return {'tasks':[
+        {'id':'PRIVATE_OVERLAY_NODE','operator':'intersection','depends_on':['load_a','load_b'],
+         'params':{'input_gdf':{'$ref':'load_a'},'gdf_b':{'$ref':'load_b'},
+                   'id_field':'PRIVATE_OVERLAY_MISSING_A' if failure=='a-id' else 'a_key',
+                   'reference_id_field':'PRIVATE_OVERLAY_MISSING_B' if failure=='b-id' else 'b_key'}},
+        {'id':'load_a','operator':'load','depends_on':[],'params':{'locator':sources[a]}},
+        {'id':'load_b','operator':'load','depends_on':[],'params':{'locator':sources[b]}},
+        {'id':'save_result','operator':'save','depends_on':['PRIVATE_OVERLAY_NODE'],
+         'params':{'input_df':{'$ref':'PRIVATE_OVERLAY_NODE'},'target_parent_locator':parent,
+                   'target_name':('failed-'+failure+'-' if failure else '')+fixture.OVERLAY_TARGET,'mode':'fail'}}]}
+
+
+def overlay_diagnostic(spec):
+    return {'schema_version':'addp.execution-failure/v3','stage':'execution','reason':spec[3],
+            'operator':{'node_index':1,'operator_id':'intersection',**({'parameter':spec[4]} if spec[4] else {})}}
+
+
+def validate_overlay_failure(execution,identifier,principal,spec):
+    if type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:
+        raise SuiteError('intersection failure User differs')
+    details=validate_input_failure(execution,(spec[0],'intersection',spec[3],spec[4],''),identifier)
+    if any(token in json.dumps(details,ensure_ascii=False) for token in (*DIAGNOSTIC_PRIVATE,'PRIVATE_OVERLAY','a_key','b_key','a_shape','b_shape','a_note',*fixture.OVERLAY_SOURCES)):
+        raise SuiteError('intersection public diagnosis leaked private input')
+    return details
+
+
 def nodes_definition(sources,parent,failure=None):
     index=0 if failure is None else 1+[s[0] for s in fixture.NODES_FAILURES].index(failure)
     return {'tasks':[
@@ -510,6 +540,103 @@ def validate_nodes_graph(graph,sources,target,identifier):
     if len(edges)!=1 or {(e.get('source',{}).get('item_id'),e.get('target',{}).get('item_id')) for e in edges}!={(sources[0]['id'],target)}:
         raise SuiteError('nodes requires one precise current-execution source edge per output')
     return edges
+
+
+def run_overlay_scenario(repository,env,client,physical_runner,browser_runner):
+    case=fixture.OVERLAY_CASE;schema=fixture.OVERLAY_SCHEMA;names=fixture.OVERLAY_SOURCES
+    tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'intersection tenant')
+    if tenant<=1:raise SuiteError('intersection forbids default Tenant')
+    identity=raster.validate_identity(client,tenant,required_permissions=PERMISSIONS);principal=int(identity['principal_id'])
+    deadline=time.monotonic()+float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
+    def remaining():
+        value=deadline-time.monotonic()
+        if value<=0:raise SuiteError('intersection total business budget exhausted')
+        return value
+    engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine');sources=[];preflight=[]
+    for name in names:
+        scope=f'addp://engine/{engine}/path/{name}?type=file'
+        scan=support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]})
+        item=support.find_fixture_item(client,engine,name,'intersection source')
+        before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item["id"]}&direction=downstream',(200,)).payload,'intersection resource preflight')
+        if graph.get('truncated') is not False:raise SuiteError('intersection requires complete authorized source lineage before execution')
+        preflight.append({'source_item_id':item['id'],'graph':graph})
+        sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
+    initial=scan_ids(client)
+    if initial!=sorted(s['scan_execution_id'] for s in sources):raise SuiteError('intersection initial scan inventory differs')
+    runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes') if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
+    if len(runtimes)!=1:raise SuiteError('intersection requires one product Runtime')
+    runtime=positive(runtimes[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory'
+    target=f'addp://engine/{engine}/path/outputs/{fixture.OVERLAY_TARGET}?type=file';locators=[s['locator'] for s in sources]
+    workflow=overlay_definition(locators,parent);identifier=raster.submit(client,runtime,workflow)
+    execution=raster.wait_execution(client,'develop',identifier,remaining())
+    if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('intersection execution actor differs')
+    if obj(obj(execution.get('execution_config'),'intersection frozen config').get('content'),'intersection content').get('workflow_definition')!=workflow:raise SuiteError('intersection frozen DAG differs')
+    facts,scans=validate_saved_success(execution,[('input.load_a',locators[0]),('input.load_b',locators[1])],{'result':target},1)
+    observed=[]
+    for scan in scans:
+        value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
+        if type(value.get('tenant_id')) is not int or value['tenant_id']!=tenant or type(value.get('triggered_by')) is not int or value['triggered_by']!=principal:raise SuiteError('intersection automatic scan public User/Tenant differs')
+        observed.append(value)
+    monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'intersection Monitor')
+    if monitor.get('execution_id')!=identifier or monitor.get('module')!='develop' or monitor.get('status')!='success' or type(monitor.get('triggered_by')) is not int or monitor['triggered_by']!=principal or obj(monitor.get('metadata'),'intersection Monitor metadata').get('lineage_facts')!=facts:raise SuiteError('intersection Monitor/facts differ')
+    native=physical_runner(repository,env)
+    if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(names) or set(native.get('targets',{}))!={fixture.OVERLAY_TARGET}:raise SuiteError('intersection physical inventory differs')
+    for source,kind in zip(sources,fixture.OVERLAY_KINDS):
+        rows=fixture.overlay_features(kind);before=source['before'];size=before.get('size_bytes');children=before.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
+        if type(size) is not int or size<=0 or size!=native['sources'][source['name']]['size_bytes'] or len(children)!=1 or type(children[0].get('row_count')) is not int or children[0]['row_count']!=len(rows) or type(children[0].get('column_count')) is not int or children[0]['column_count']!=len(rows[0]['properties'])+2:raise SuiteError('intersection source Meta size/rows/columns differ')
+    item=support.find_fixture_item(client,engine,'outputs/'+fixture.OVERLAY_TARGET,'intersection output')
+    detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'intersection output Meta')
+    physical=native['targets'][fixture.OVERLAY_TARGET];sizes=validate_item(detail,physical,fixture.OVERLAY_TARGET)
+    child=detail['attributes']['type_info']['container']['children'][0]
+    if type(child.get('row_count')) is not int or child['row_count']!=16 or type(child.get('column_count')) is not int or child['column_count']!=len(fixture.overlay_features('result')[0]['properties'])+2:raise SuiteError('intersection output rows/columns differ')
+    output={'name':fixture.OVERLAY_TARGET,'port':'result','locator':target,'item_id':item['id'],**physical,'before':detail,'size_evidence':sizes}
+    def unchanged_meta():
+        result={}
+        for entry in [*sources,output]:
+            item_id=entry.get('item_id',entry.get('id'));after=client.request('GET',f'/api/v1/meta/items/{item_id}',(200,)).payload
+            if after!=entry['before']:raise SuiteError('intersection source or result Meta changed')
+            result[entry['name']]=after
+        return result
+    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR']);path=directory/'topology-overlay-checkpoint.json'
+    checkpoint={'schema_version':schema+'-checkpoint/v1','case':case,'result':'incomplete','stage':'before_lineage','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
+        'identity':identity,'execution_id':identifier,'definition':workflow,'execution':execution,'sources':sources,'outputs':[output],'physical':native,'automatic_scans':observed,'monitor':monitor,'stable_outputs':execution['outputs'],'lineage_facts':facts,'resource_preflight':preflight,'failures':[]}
+    def persist(stage):
+        checkpoint['stage']=stage;path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+    persist('before_lineage')
+    for source in sources[:2]:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
+    graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'intersection original dual-source graph')
+    validate_proximity_graph(graph,sources[:2],output['item_id'],identifier);checkpoint['raw_lineage']=graph
+    expected_scans=sorted([*initial,*[s['execution_id'] for s in scans]])
+    if scan_ids(client)!=expected_scans:raise SuiteError('intersection scan inventory differs before failures')
+    for spec in fixture.OVERLAY_FAILURES:
+        key=spec[0];failed_workflow=overlay_definition(locators,parent,key)
+        failed_id=raster.submit(client,runtime,failed_workflow);failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed')
+        validate_overlay_failure(failed,failed_id,principal,spec)
+        if obj(obj(failed.get('execution_config'),'intersection failed config').get('content'),'intersection failed content').get('workflow_definition')!=failed_workflow:raise SuiteError('intersection failed frozen DAG differs')
+        failed_monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{failed_id}',(200,)).payload,'intersection failed Monitor')
+        validate_overlay_failure(failed_monitor,failed_id,principal,spec)
+        if failed_monitor.get('module')!='develop' or failed_monitor.get('error_details')!=failed.get('error_details'):raise SuiteError('intersection failure Monitor differs')
+        failure={'key':key,'execution_id':failed_id,'definition':failed_workflow,'execution':failed,'monitor':failed_monitor,'expected_diagnostic':overlay_diagnostic(spec),'source_lineage':[]}
+        for index in spec[1:3]:
+            source=sources[index]
+            failed_graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={source["id"]}&direction=downstream',(200,)).payload,'intersection failed source lineage')
+            if failed_graph.get('truncated') is not False or any(e.get('relation_kind')=='derive' and e.get('evidence',{}).get('execution_id')==failed_id for e in array(failed_graph.get('edges'),'intersection failed edges')):raise SuiteError('intersection failure published derive or incomplete graph')
+            failure['source_lineage'].append({'source_item_id':source['id'],'graph':failed_graph})
+        checkpoint['failures'].append(failure);persist('failure_'+key+'_verified')
+        if scan_ids(client)!=expected_scans or physical_runner(repository,env)!=native:raise SuiteError('intersection failure changed physical files or scans')
+        failure['meta_after']=unchanged_meta()
+    if len({f['execution_id'] for f in checkpoint['failures']})!=4:raise SuiteError('intersection failures require distinct executions')
+    persist('before_browser')
+    evidence={'case':case,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'execution_id':identifier,'sources':sources,'outputs':[output],
+        'expected':{'result':physical['features']},'failures':[{'key':f['key'],'execution_id':f['execution_id'],'expected_diagnostic':f['expected_diagnostic'],'error_details':f['execution']['error_details']} for f in checkpoint['failures']]}
+    remaining();browser_report=browser_runner(repository,env,evidence);remaining()
+    final=physical_runner(repository,env)
+    if final!=native or scan_ids(client)!=expected_scans:raise SuiteError('intersection browser changed physical files or scans')
+    meta_after=unchanged_meta()
+    remaining()
+    return {**checkpoint,'schema_version':schema+'/v1','result':'passed','stage':'complete','browser':browser_report,'meta_after':meta_after,'post_browser_physical':final,
+        'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
 
 
 def run_nodes_scenario(repository,env,client,physical_runner,browser_runner):
@@ -644,7 +771,7 @@ def validate_proximity_success(execution,sources,target):
 def validate_proximity_graph(graph,sources,target,identifier):
     if graph.get('truncated') is not False:raise SuiteError('proximity lineage graph is truncated or incomplete')
     edges=[edge for edge in array(graph.get('edges'),'proximity graph edges') if edge.get('relation_kind')=='derive' and edge.get('status')=='active' and edge.get('evidence',{}).get('execution_id')==identifier]
-    if len(edges)!=2 or {(e.get('source',{}).get('item_id'),e.get('target',{}).get('item_id')) for e in edges}!={(s['id'],target) for s in sources}:
+    if len(edges)!=2 or any(type(e.get(side,{}).get('item_id')) is not int for e in edges for side in ('source','target')) or {(e.get('source',{}).get('item_id'),e.get('target',{}).get('item_id')) for e in edges}!={(s['id'],target) for s in sources}:
         raise SuiteError('proximity requires exactly two current-execution active source edges')
     return edges
 
@@ -747,7 +874,7 @@ def validate_saved_success(execution,bindings,targets,count):
     metadata=obj(execution.get('metadata'),'normalize metadata');facts=obj(metadata.get('lineage_facts'),'normalize facts')
     inputs=array(facts.get('inputs'),'normalize inputs');produced=array(facts.get('outputs'),'normalize outputs')
     if (facts.get('schema_version')!='addp.lineage-facts/v1' or
-        [(x.get('port'),x.get('locator')) for x in inputs]!=bindings or
+        len(inputs)!=len(bindings) or {(x.get('port'),x.get('locator')) for x in inputs}!=set(bindings) or
         len(produced)!=count or {x.get('locator') for x in produced}!=set(targets.values()) or
         any(x.get('write_mode')!='create' for x in produced)):
         raise SuiteError('normalization source port or selected create facts differ')
@@ -1068,6 +1195,56 @@ def validate_nodes_browser_raw(raw,evidence):
             if execution.get('error_details')!=failed['error_details'] or not isinstance(read.get('clipboard'),str) or not read['clipboard'] or any(t in read['clipboard'] for t in (*DIAGNOSTIC_PRIVATE,'route_key','source_shape','节点业务几何')):raise SuiteError('nodes browser error/copy differs or leaks')
 
 
+def validate_overlay_browser_raw(raw,evidence):
+    import base64,struct
+    if (raw.get('schema_version')!=fixture.OVERLAY_SCHEMA+'-browser-raw/v1' or raw.get('result')!='passed' or raw.get('stage')!='complete'
+        or any(raw.get(k)!=evidence.get(k) for k in ('case','run_id','execution_id')) or raw.get('publication_requests')!=[]):raise SuiteError('intersection browser raw incomplete or foreign')
+    principal=positive(evidence['principal_id'],'intersection browser principal');execution=obj(raw.get('execution'),'intersection browser execution')
+    if execution.get('execution_id')!=evidence['execution_id'] or execution.get('status')!='success' or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal or set(obj(execution.get('outputs'),'intersection browser output'))!={'save_result'}:raise SuiteError('intersection browser execution identity/status differs')
+    observations=array(raw.get('observations'),'intersection raw observations')
+    if len(observations)!=1:raise SuiteError('intersection requires one actual mixed map')
+    observation=obj(observations[0],'intersection map observation');output=evidence['outputs'][0];expected=evidence['expected']['result']
+    if observation.get('port')!='result' or observation.get('output_item_id')!=output['item_id'] or observation.get('output')!=output['before'] or observation.get('sources')!=[{'item_id':s['id'],'item':s['before']} for s in evidence['sources']]:raise SuiteError('intersection browser source/output Meta differs')
+    preview=obj(observation.get('preview'),'intersection original preview');data=obj(preview.get('data'),'intersection preview data')
+    if preview.get('preview_type')!='table' or any(type(data.get(k)) is not int for k in ('page','total','source_srid')) or (data['page'],data['total'],data['source_srid'],data.get('source_crs'),data.get('transform_status'),data.get('preview_hint'))!=(1,16,3857,'EPSG:3857','not_transformed','frontend_transform_required') or data.get('geometry_columns')!=[output['geometry_column']]:raise SuiteError('intersection browser mixed preview identity/CRS differs')
+    fields=list(expected[0]['properties']);rows=array(data.get('rows'),'intersection preview rows')
+    if len(rows)!=16 or len(array(data.get('columns'),'intersection preview columns'))!=len(fields)+2 or set(data['columns'])!={output['fid_column'],output['geometry_column'],*fields} or [r.get(output['fid_column']) for r in rows]!=list(range(1,17)) or any(type(r.get(output['fid_column'])) is not int for r in rows):raise SuiteError('intersection preview FID/columns/rows differ')
+    for row,wanted in zip(rows,expected):
+        if set(row)!=set(data['columns']) or {k:row.get(k) for k in fields}!=wanted['properties'] or any(type(row.get(k)) is not type(wanted['properties'][k]) for k in fields):raise SuiteError('intersection preview property types/null/values differ')
+        encoded=row.get(output['geometry_column'])
+        try:
+            wire=base64.b64decode(encoded,validate=True);order='<' if wire[0]==1 else '>' if wire[0]==0 else None
+            code,srid=struct.unpack(order+'II',wire[1:9]) if order and len(wire)>9 else (0,0)
+            if srid!=3857 or code!=(0x20000000|{'Point':1,'LineString':2,'Polygon':3,'MultiPoint':4,'MultiLineString':5,'MultiPolygon':6,'GeometryCollection':7}[wanted['geometry']['type']]) or base64.b64encode(wire).decode()!=encoded:raise ValueError('invalid EWKB')
+        except (ValueError,TypeError,IndexError,struct.error) as e:raise SuiteError('intersection canonical XY EPSG3857 EWKB missing') from e
+    decoded=array(observation.get('decoded_rows'),'intersection decoded original geometry')
+    if decoded!=expected or any(type(a['properties'][k]) is not type(b['properties'][k]) for a,b in zip(decoded,expected) for k in fields):raise SuiteError('intersection decoded native coordinates/attributes differ')
+    validate_proximity_graph(observation['graph'],evidence['sources'][:2],output['item_id'],evidence['execution_id'])
+    validate_proximity_graph(observation['lineage_page'],evidence['sources'][:2],output['item_id'],evidence['execution_id'])
+    validate_proximity_graph({**observation['lineage_page'],'edges':observation['lineage_rendered']['edges']},evidence['sources'][:2],output['item_id'],evidence['execution_id'])
+    labels=array(obj(observation.get('lineage_canvas'),'intersection painted graph').get('rows'),'intersection painted labels')
+    if not all(any(s['name'] in row.get('text','') for row in labels) for s in [*evidence['sources'][:2],output]) or len(array(observation['lineage_canvas'].get('paths'),'intersection painted paths'))<2:raise SuiteError('intersection source graph not painted')
+    rendered=obj(observation.get('rendered'),'intersection OL data');features=array(rendered.get('features'),'intersection OL features')
+    if rendered.get('projection')!='EPSG:3857' or len(features)!=16 or sum(v.get('geometry',{}).get('type')=='GeometryCollection' for v in features)!=1 or any(type(rendered.get('collection_pixels',{}).get(k)) is not int or rendered['collection_pixels'][k]<=10 for k in ('point','line','polygon')):raise SuiteError('intersection mixed/collection rendering incomplete')
+    script="""import assert from 'node:assert/strict';import{pathToFileURL}from'node:url';
+const{webMercatorPreviewGeometry}=await import(pathToFileURL(process.argv[1]));const{decodePreviewEWKB}=await import(pathToFileURL(process.argv[2]));let text='';for await(const part of process.stdin)text+=part;
+const{actual,expected,preview,geometry_column}=JSON.parse(text),keys=rows=>rows.map(row=>JSON.stringify(row)).sort();
+assert.deepEqual(preview.map(row=>decodePreviewEWKB(row[geometry_column])),expected.map(row=>row.geometry));
+assert.deepEqual(keys(actual),keys(expected.map(row=>({properties:row.properties,geometry:webMercatorPreviewGeometry(row.geometry)}))));"""
+    result=subprocess.run(['node','--input-type=module','-e',script,str(Path(__file__).resolve().parents[2]/'manager/frontend/e2e/geometry-preview-coordinate.js'),str(Path(__file__).resolve().parents[2]/'manager/frontend/e2e/geometry-preview-support.js')],input=json.dumps({'actual':features,'expected':expected,'preview':rows,'geometry_column':output['geometry_column']}),capture_output=True,text=True,timeout=30)
+    if result.returncode:raise SuiteError('intersection raw OL coordinates/properties differ from exact independent projection')
+    failures=array(raw.get('failures'),'intersection browser failures')
+    if [f.get('key') for f in failures]!=[s[0] for s in fixture.OVERLAY_FAILURES]:raise SuiteError('intersection browser needs four distinct failure causes')
+    for record,failed,spec in zip(failures,evidence['failures'],fixture.OVERLAY_FAILURES):
+        if record.get('execution_id')!=failed['execution_id']:raise SuiteError('intersection browser failure UUID differs')
+        reads=array(record.get('observations'),'intersection owner/language pages')
+        if len(reads)!=4 or {(v.get('owner'),v.get('locale')) for v in reads}!={(owner,locale) for owner in ('develop','monitor') for locale in ('zh-cn','en')}:raise SuiteError('intersection needs both owners and locales')
+        for read in reads:
+            value=obj(read.get('raw'),'intersection real failure response');execution=value if read['owner']=='develop' else obj(value.get('execution'),'intersection Monitor page')
+            validate_overlay_failure(execution,failed['execution_id'],principal,spec)
+            if execution.get('error_details')!=failed['error_details'] or not isinstance(read.get('clipboard'),str) or not read['clipboard'] or any(t in read['clipboard'] for t in (*DIAGNOSTIC_PRIVATE,'PRIVATE_OVERLAY','a_key','b_key','a_shape','b_shape','a_note',*fixture.OVERLAY_SOURCES)):raise SuiteError('intersection browser diagnostic/copy differs or leaks')
+
+
 def browser(repository, env, evidence):
     path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-browser.json'
     path.unlink(missing_ok=True)
@@ -1097,6 +1274,8 @@ def browser(repository, env, evidence):
     else:binding=report
     if binding != {**evidence, 'schema_version': schema, 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
+    if case==fixture.OVERLAY_CASE:
+        validate_overlay_browser_raw(obj(json.loads((path.parent/'topology-overlay-browser-raw.json').read_text()),'intersection browser raw'),evidence)
     if case==fixture.NODES_CASE:
         validate_nodes_browser_raw(obj(json.loads((path.parent/'topology-nodes-browser-raw.json').read_text()),'nodes browser raw'),evidence)
     if case==fixture.TRIM_CASE:
@@ -1110,6 +1289,8 @@ def browser(repository, env, evidence):
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
+    if fixture.topology_case(env)==fixture.OVERLAY_CASE:
+        return run_overlay_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.NODES_CASE:
         return run_nodes_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.TRIM_CASE:

@@ -6507,3 +6507,56 @@ def test_hosted_line_nodes_dual_point_nine_failures_and_independent_oracle(tmp_p
             layer.SetFeature(feature);feature=None
         layer=ds=None
     with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.NODES_CASE)
+
+
+@pytest.mark.parametrize('problem',[None,'coordinate','source_id','order','null','boolean_type','extra_output','source_changed'])
+def test_intersection_overlay_t4_fixture_full_mixed_and_four_refusals(tmp_path,problem):
+    import importlib
+    from osgeo import ogr
+    f=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    a=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch()
+    seeded=f.worker('seed',tmp_path,f.OVERLAY_CASE)
+    def definition(failure=None):
+        result=a.overlay_definition(list(f.OVERLAY_SOURCES),'unused',failure)
+        for task in result['tasks']:
+            if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
+            elif task['operator']=='save':
+                name=task['params'].pop('target_name');task['params'].pop('target_parent_locator')
+                task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+name)
+        return result
+    result=execute_workflow(definition());assert result['status']=='success',result
+    native=f.worker('verify',tmp_path,f.OVERLAY_CASE)
+    assert native['sources']==seeded['sources'] and native['targets'][f.OVERLAY_TARGET]['feature_count']==16
+    assert [t['feature_count'] for t in native['source_tables'].values()]==[17,18,18,18]
+    assert {row['geometry']['type'] for row in native['targets'][f.OVERLAY_TARGET]['features']}=={'Point','LineString','Polygon','MultiPoint','MultiLineString','MultiPolygon','GeometryCollection'}
+    if problem is None:
+        original=(tmp_path/'outputs'/f.OVERLAY_TARGET).read_bytes()
+        for spec in f.OVERLAY_FAILURES:
+            failed=execute_workflow(definition(spec[0]));assert failed['status']=='failed' and failed['error_code']=='INVALID_PARAMS',failed
+            assert failed['diagnostic']==a.overlay_diagnostic(spec),failed
+            assert f.worker('verify',tmp_path,f.OVERLAY_CASE)==native
+            assert (tmp_path/'outputs'/f.OVERLAY_TARGET).read_bytes()==original
+        archive=tmp_path.parent/(tmp_path.name+'-archive')
+        f.archive_physical_evidence(tmp_path,archive,native,f.OVERLAY_CASE)
+        assert len(list((archive/'topology-physical').rglob('*.gpkg')))==5
+        return
+    path=tmp_path/'outputs'/f.OVERLAY_TARGET
+    if problem=='extra_output':(tmp_path/'outputs/extra.gpkg').touch()
+    elif problem=='boolean_type':
+        import sqlite3
+        # Type corruption is performed at the declared schema, not by coercing an equivalent value.
+        with sqlite3.connect(path) as conn:
+            conn.execute('PRAGMA writable_schema=ON')
+            name=native['targets'][f.OVERLAY_TARGET]['layer_name']
+            conn.execute("UPDATE sqlite_master SET sql=replace(sql,'BOOLEAN','INTEGER') WHERE name=?",(name,))
+    else:
+        if problem=='source_changed':path=tmp_path/f.OVERLAY_SOURCES[0]
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0);row=layer.GetNextFeature()
+        if problem in ('coordinate','source_changed'):row.SetGeometry(ogr.CreateGeometryFromWkt('POINT (99 99)'))
+        elif problem=='source_id':row.SetField('source_id_a',17)
+        elif problem=='null':row.SetFieldNull('a_grade')
+        elif problem=='order':
+            other=layer.GetFeature(2);other.SetFID(1);row.SetFID(2);layer.SetFeature(other);other=None
+        layer.SetFeature(row);row=layer=ds=None
+    with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.OVERLAY_CASE)
