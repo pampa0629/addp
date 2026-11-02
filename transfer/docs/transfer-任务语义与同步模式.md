@@ -305,11 +305,15 @@ continuous worker 定期读取每个 partition 的 earliest/latest position，�
 
 #### 捕获健康与源日志窗口
 
-capture generation 的健康由两个独立事实聚合：`connector_status` 表示 Kafka Connect connector/task 线程状态，`source_status` 表示使用 connector 实际数据库凭据执行最小只读查询的结果。只有两者都健康时 capture 才是 `running`；任一失败或无法观测时 capture 为 `failed`。Oracle 使用独立 `cdc_user` 探测，不能因为 Kafka Connect REST 仍返回 `RUNNING` 就推断 LogMiner 数据源可达，也不能用业务 schema-owner 连接或 System 的普通 Engine 连通性缓存代替。
+判定与失败语义由 CDC 正式契约维护，本专题保留消费方需要的字段与使用边界：
 
-`source_recovery` 单独表达源事务日志恢复窗口，不替代上述健康事实，也不替代 Kafka retention。Oracle 使用 Kafka Connect connector offset 的 `scn` 与当前可用 redo/archive 最早 SCN 比较，公开 capture position、最早可用 position、SCN headroom、最早日志时间形成的事实窗口秒数和可选 FRA 使用率。capture SCN 已早于日志窗口时为 `critical`；事实完整且仍在窗口内时为 `healthy`；offset、视图或时间不足时为 `unknown`。FRA 未启用时容量为空，SCN 差值不换算成时间。
+| 观测职责 | 字段或使用约束 | 权威正文 |
+| --- | --- | --- |
+| 捕获线程与源连通性 | `connector_status` 与 `source_status` 分开；使用 connector 实际源数据库凭据，Oracle 为独立 `cdc_user`，不以业务 schema-owner 或 System 普通 Engine 连通性缓存替代 | [健康聚合与冻结连接身份核验](../../docs/spec/tasks/Transfer数据库CDC.md#捕获线程与源连接健康) |
+| 源事务日志恢复窗口 | `source_recovery` 公开 capture position、最早可用 position、SCN headroom、最早日志时间形成的事实窗口秒数和可选 FRA 使用率；不替代 Infra Kafka retention | [恢复窗口状态与 FRA 边界](../../docs/spec/tasks/Transfer数据库CDC.md#源日志恢复窗口) |
+| 源端未提交事务压力 | `source_transactions` 公开活跃事务数、最老事务起始 SCN、由数据库计算的持续秒数和合计 Undo blocks/records；不替代 source health、恢复窗口或已提交事件 lag | [事务观测来源与失败边界](../../docs/spec/tasks/Transfer数据库CDC.md#源未提交事务压力) |
 
-`source_transactions` 单独表达源端当前未提交事务压力，不替代 `source_recovery`、source health 或已提交事件 lag。Oracle 从 `V$TRANSACTION` 公开活跃事务数、最老事务起始 SCN、由数据库计算的持续秒数以及合计 Undo blocks/records。无活跃事务时计数和 Undo 用量为 0，最老事务字段为空。Transfer 不内置长事务时长或 Undo 阈值，也不据此改变 capture 状态；事务观测失败不能覆盖已成功的恢复窗口观测。
+capture 是否 `running`、恢复窗口的 `healthy/critical/unknown`、FRA 空值以及事务零值／不可用分别按上述正文判断，不将 `unknown` 当作离线，也不以事务观测失败覆盖已成功的恢复窗口。Transfer 不内置长事务时长或 Undo 阈值，不据事务压力改变 capture 状态；公共投影及 Monitor 消费继续沿下节读取边界。
 
 #### 安全投影与读取边界
 
