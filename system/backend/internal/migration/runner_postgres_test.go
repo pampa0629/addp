@@ -4931,8 +4931,9 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 126 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 126", activePermissionCount, disabledPermissionCount)
+	// Migration 000266 retires both source Deny commands; keep the exact disabled total.
+	if activePermissionCount < 345 || disabledPermissionCount != 128 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 128", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
