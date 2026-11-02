@@ -163,7 +163,7 @@ Agent 委托只沿上述创建入口，必须满足精确 scope/audience 与当�
 
 bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL/MySQL/OceanBase/openGauss/TiDB watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成，OceanBase/openGauss/TiDB 限非空间表。普通 continuous resume 总是创建新 execution，不复用已取消 execution；数据库 CDC blocked generation 必须先完成专用 additive 审批，其他 schema drift 不支持 resume 或 retry。
 
-恢复分级与 snapshot 重跑条件统一见[恢复契约](../transfer-基本概念及配置说明.md#恢复分级)，continuous 的真实停止与恢复闭环见[生命周期](../transfer-任务语义与同步模式.md#64-生命周期)。bounded pause/resume 不中断 active execution；continuous stop 不等于整个 `sync` task type 已支持标准取消。当前 TaskProvider `supports_cancel=false`，不提供标准 execution cancel 入口，`transfer.task.cancel` 仍为 disabled。
+恢复分级与 snapshot 重跑条件统一见[恢复契约](../transfer-基本概念及配置说明.md#恢复分级)，continuous 的真实停止与恢复闭环见[停止契约](../../../docs/spec/tasks/Transfer同步执行.md#continuous-的真实停止)。bounded pause/resume 不中断 active execution；continuous stop 不等于整个 `sync` task type 已支持标准取消。当前 TaskProvider `supports_cancel=false`，不提供标准 execution cancel 入口，`transfer.task.cancel` 仍为 disabled。
 
 此清单仅对应当前路由与权限声明；静态核对不等于用户页面或 Orchestrator 经实际入口、认证与 Tenant 授权到 Worker 的完整执行通过。任务创建、执行入队、运行成功、断点恢复和真实停止应分别核对。
 

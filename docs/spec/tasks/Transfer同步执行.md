@@ -4,7 +4,7 @@
 
 定义 Transfer sync 的正交配置维度、bounded / continuous 边界、状态推进与观测要求。数据库捕获见[CDC](Transfer数据库CDC.md)，业务 Kafka 的拒绝记录与重放见[Kafka 与 DLQ](Transfer-Kafka与DLQ.md)。
 
-阅读导航：[Transfer 同步执行契约](#transfer-同步执行契约)、[Transfer continuous sync v1 契约](#transfer-continuous-sync-v1-契约)、[continuous 自动恢复](#continuous-自动恢复退避与-circuit)、[continuous 首次扫描与 claim](#continuous-首次扫描与-claim)。
+阅读导航：[Transfer 同步执行契约](#transfer-同步执行契约)、[Transfer continuous sync v1 契约](#transfer-continuous-sync-v1-契约)、[停止与标准取消](#任务级-pausestop-与标准取消)、[continuous 自动恢复](#continuous-自动恢复退避与-circuit)、[continuous 首次扫描与 claim](#continuous-首次扫描与-claim)。
 
 ## Transfer 同步执行契约
 
@@ -85,7 +85,7 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 10. Transfer 必须把 poll 结果按 partition 拆成顺序批次，每条已映射记录携带消费后 `next_offset`。Provider 锁定 ledger 行，拒绝位置缺口，跳过不大于已应用位置的重复记录；同一批剩余记录出现相同目标 key 时保留最高 `next_offset` 的最后状态，再执行一次原子 upsert。
 11. 投递保证固定为 `at-least-once delivery + target monotonic apply`。目标提交与 Infra position CAS 之间崩溃会重放，但目标 ledger 必须吸收重复批次，并阻止租约过期 worker 在新 worker 之后写回旧状态；不得宣称跨 Kafka、业务目标数据库和 Infra PostgreSQL 的分布式 exactly-once。
 12. consumer auto commit 禁用。Kafka consumer group 只用于分区分配，不是 Transfer committed position 的事实源。
-13. 阶段 2B 的初始范围不提供 replay、DLQ、物理删除、Debezium、CDC、Kafka target 或 continuous append；当前业务 Kafka 已按后文 4A/4B 唯一契约开放 `dead_letter` 和写入新隔离目标的 bounded replay。数据库 CDC、Kafka target、物理删除和 continuous append 仍不得借用业务 Kafka 的 DLQ/replay 路线绕过各自边界。
+13. 业务 Kafka 已开放 `dead_letter` 和写入新隔离目标的 bounded replay，唯一契约见[Kafka 与 DLQ](Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。数据库 CDC、Kafka target、物理删除和 continuous append 仍不得借用业务 Kafka 的 DLQ/replay 路线绕过各自边界。
 14. resume 前必须验证 committed `next_offset` 仍位于 Kafka partition 的 `[earliest_offset, latest_offset]` 范围；低于 earliest 表示 retention 已破坏连续恢复条件，execution 必须明确失败，不得静默重置到 earliest 或 latest。高于 latest 视为状态损坏，同样失败。
 15. continuous worker 必须由 source Provider 读取每分区 `earliest_offset` 和 `latest_offset`，并以目标已成功应用且已提交的 `next_offset` 计算 `lag_records = latest_offset - next_offset`。consumer fetch position、预取位置或 Kafka consumer group committed offset 不得冒充 Transfer committed position。
 16. retention 恢复余量以 `recovery_headroom_records = next_offset - earliest_offset` 表示。时间余量只能在同一 worker session 内至少存在两次有效 source latest 样本时，按 `recovery_headroom_records / source_rate_records_per_second` 估算；冷启动、无已提交位置、样本时间非正或写入速率为零时必须返回未知，不得伪造为无限安全。
@@ -132,11 +132,34 @@ continuous task 与 execution 生命周期：
 3. 每次启动或自动恢复都创建新的 pending execution；一个 execution 对应一个 runtime session，结束后不得重新变回 running。
 4. runtime session 由 `transfer.runtime_leases` 保存 owner instance、execution、lease deadline、heartbeat 和 fencing token；lease 与 `transfer.sync_states` 的业务 position 分离。
 5. continuous 自动恢复的触发、新执行身份、唯一领取、退避、circuit 与审计约束见[自动恢复契约](#continuous-自动恢复退避与-circuit)。
-6. 用户 pause/stop 必须真实停止 poll、完成或放弃当前未提交批次、关闭 source/target session、释放 partition ownership 和 lease，再以 `cancelled` 结束当前 execution，并在 metadata 记录 `stop_reason=paused|stopped`。resume 创建新 execution。
-7. 工作包 2B 真实中断闭环完成时可以恢复 Transfer 私有 task-definition stop 控制入口；但 `supports_cancel` 是整个 `sync` task type 的 TaskProvider 能力，在 bounded execution 也具备真实取消前必须继续为 `false`，不得注册标准 execution cancel endpoint。
+6. 用户 pause/stop 的真实停止、资源释放和 execution 终态要求见[continuous 真实停止](#continuous-的真实停止)。
+7. 任务级 Stop 与整个 `sync` TaskProvider 的标准取消能力分开认定，当前边界见[任务控制与标准取消](#任务级控制与标准取消范围)。
 8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age/health、retry/rebalance、恢复 circuit 和 heartbeat。Monitor 只消费 owner 写入的统一 execution metadata；不得自行连接 Kafka 或 Transfer 私有表补算这些事实。
 9. Orchestrator v1 不编排 continuous Transfer task。Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
 10. continuous 首次扫描的触发、精确范围、claim 接管及失败边界统一见[首次扫描契约](#continuous-首次扫描与-claim)。
+
+### 任务级 Pause/Stop 与标准取消
+
+阅读导航：[continuous 真实停止](#continuous-的真实停止)、[任务控制与标准取消范围](#任务级控制与标准取消范围)、[停止与清理验收](#停止与清理验收边界)。
+
+#### continuous 的真实停止
+
+- 用户 pause/stop 必须真实停止 poll、完成或放弃当前未提交批次、关闭 source/target session、释放 partition ownership 和 lease，再以 `cancelled` 结束当前 execution，并在 metadata 记录 `stop_reason=paused|stopped`。
+- resume 创建新 execution。
+
+#### 任务级控制与标准取消范围
+
+任务定义的 Stop 当前只用于 continuous runtime。bounded Pause/Resume 只控制未来调度，不中断 active execution，不能把任务控制当作 bounded execution 的真实取消；具体路由、当前 User 与逐动作 Permission 见[任务定义控制入口](../../../transfer/docs/tables/tasks表.md#用户任务定义与控制)。
+
+- `supports_cancel` 是整个 `sync` task type 的 TaskProvider 能力，在 bounded execution 也具备真实取消前必须继续为 `false`，不得注册标准 execution cancel endpoint。
+
+当前不提供 execution 级 cancel/stop API，`transfer.task.cancel` 在 Manifest 中仍为 disabled；已有任务级 Stop 不代表该 Permission 已启用或 TaskProvider 取消能力已开放。两类后续事项分别见[bounded 取消规划](../../next/transfer后续能力清单.md#一bounded-同步)和[标准取消规划](../../next/transfer后续能力清单.md#四continuous-运行时与观测)。
+
+#### 停止与清理验收边界
+
+数据库 CDC Stop 的服务端确认、不可逆终态和资源清理沿[CDC 停止契约](Transfer数据库CDC.md#恢复与不可逆停止)，不能混用普通业务 Kafka 的可恢复 committed-position 语义。任务删除／System Cleanup 的原 invocation 实际停止证明与未知外部效果处理沿[Transfer 清理职责](../addp-cleanup体系规范.md#transfer)和[正式 Owner 约束](../addp-cleanup体系规范.md#十五已确认决策)。
+
+路由、capability、Permission 或 execution 状态的静态核对不证明真实 Worker 中断、目标事务回滚、session／lease 释放或资源清理通过；实际身份链路与停止、恢复须分别验收，标准入口、固定版本、失败、清理及未覆盖项见[任务表验收边界](../../../transfer/docs/tables/tasks表.md#执行恢复与验收边界)和[验证范围](../../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。
 
 ### continuous 自动恢复、退避与 circuit
 

@@ -252,7 +252,7 @@ Oracle 普通字段沿 LogMiner 捕获，`MDSYS.SDO_GEOMETRY` 由同一 Oracle c
 
 #### 用户运行控制
 
-Pause 停止目标应用并结束当前 session；启动或 Resume 创建新 execution，恢复须确认 committed position 仍处于 Kafka retention 范围。位置已被 retention 清除时必须明确失败，不能静默跳到 earliest。真实停止、释放 session／lease 与恢复约束见[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)。
+Pause 停止目标应用并结束当前 session；启动或 Resume 创建新 execution，恢复须确认 committed position 仍处于 Kafka retention 范围。位置已被 retention 清除时必须明确失败，不能静默跳到 earliest。真实停止、释放 session／lease 与恢复约束见[停止契约](../../docs/spec/tasks/Transfer同步执行.md#continuous-的真实停止)；任务控制与标准 execution cancel 的区别见[取消能力边界](../../docs/spec/tasks/Transfer同步执行.md#任务级控制与标准取消范围)。
 
 数据库 CDC 的 Pause 不暂停 connector。捕获仍会写入 Infra Kafka，主要风险是 backlog、磁盘和 retention；connector 或 Kafka 故障时还要分别观测 PostgreSQL WAL、MySQL binlog 或 Oracle redo/archive log 容量风险。捕获健康与源日志窗口的判读见[诊断章节](#捕获健康与源日志窗口)。
 

@@ -21,7 +21,7 @@
 | Watermark lookback | 当前单字段或复合游标均从 committed position 继续，不重读迟到窗口 | 时间回拨边界、窗口大小、目标幂等和状态推进规则 |
 | MySQL watermark 空间字段 | 当前 MySQL watermark 源不接受空间字段 | MySQL 空间 schema/row 表达、SRID 事实和目标 Provider 矩阵 |
 | Snapshot checkpoint resumable | snapshot checkpoint 当前只可观测，retry 从头执行 | Provider resume marker、目标重复写入边界、replace staging 与原子切换 |
-| [Bounded execution cancel](../spec/tasks/Transfer同步执行.md#transfer-同步执行契约) | 尚未开放针对当前 bounded execution 的真实取消；bounded Pause/Resume 只控制未来调度、不中断现有执行，见[状态与控制](../../transfer/docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay) | worker context 取消、目标事务回滚、任务状态收敛和 API 契约 |
+| [Bounded execution cancel](../spec/tasks/Transfer同步执行.md#任务级控制与标准取消范围) | 尚未开放针对当前 bounded execution 的真实取消；bounded Pause/Resume 只控制未来调度、不中断现有执行，见[状态与控制](../../transfer/docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay) | worker context 取消、目标事务回滚、任务状态收敛和 API 契约 |
 | [Bounded 分区并行](../spec/tasks/Transfer同步执行.md#transfer-同步执行契约) | 尚未开放同一 bounded execution 的源分区跨 worker 协调；现有 claim/lease 领取完整 execution，不代表源端分片。冻结上界与 watermark 一致性快照要求见[Bounded 执行语义](../../transfer/docs/transfer-任务语义与同步模式.md#四bounded-执行语义) | 分区稳定性、上界冻结、失败重试、最终提交和资源限流 |
 
 ## 二、业务 Kafka
@@ -59,7 +59,7 @@ Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不�
 
 | 能力 | 当前缺口 | 进入实现前必须确认 |
 |---|---|---|
-| [标准 execution cancel](../spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约) | 尚未开放；`supports_cancel=false` 约束整个 `sync` 类型，bounded 具备并验证真实取消前不得注册标准 cancel endpoint；continuous Pause/Stop 的任务运行控制见[用户运行控制](../../transfer/docs/transfer-任务语义与同步模式.md#用户运行控制) | cancel 与 Pause/Stop 的唯一语义、API owner 和 execution 终态 |
+| [标准 execution cancel](../spec/tasks/Transfer同步执行.md#任务级控制与标准取消范围) | 尚未开放；`supports_cancel=false` 约束整个 `sync` 类型，bounded 具备并验证真实取消前不得注册标准 cancel endpoint；continuous Pause/Stop 的任务运行控制见[用户运行控制](../../transfer/docs/transfer-任务语义与同步模式.md#用户运行控制) | cancel 与 Pause/Stop 的唯一语义、API owner 和 execution 终态 |
 | [单任务跨实例 partition](../spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约) | 尚未开放同一 continuous task 的 partition 跨 runtime owner 分布；当前全部 partition 归同一 task 级 owner，由 runtime lease/heartbeat/fencing 保护，见[Continuous 运行时](../../transfer/docs/transfer-任务语义与同步模式.md#六continuous-运行时)。Kafka group assignment 不代替 Transfer committed position 或租约所有权 | partition lease、全局 fencing、rebalance、状态聚合和吞吐证据 |
 | [低频 Meta 统计刷新](../../transfer/docs/transfer-任务语义与同步模式.md#八meta-scan-时机) | 待评估 continuous 目标统计的刷新策略与调度归属；[Meta 已有计划／手动扫描](../../meta/CLAUDE.md#当前主线状态)，不代表 Transfer 已具备该联动。首次扫描、审批补扫、普通 DML 不触发及精确范围见[写后扫描](../../transfer/docs/transfer-基本概念及配置说明.md#十一写后-meta-扫描) | 统计新鲜度目标、扫描成本、去重和 owner scheduler |
 | [手工 Meta scan 关联回执](../spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约) | 现有审批补扫已保存提交返回的 Meta execution UUID；尚缺手工扫描完成结果与原 schema change request 的关联回写，见[公共观测与验收](../../transfer/docs/数据库架构.md#schema-change-公共观测与验收) | 跨模块 correlation id、结果事件、幂等和 Monitor incident 恢复 |

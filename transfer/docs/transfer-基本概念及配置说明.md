@@ -504,6 +504,8 @@ resume 的新 execution 与位置核验见[用户运行控制](transfer-任务�
 
 PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消，并回滚未完成的业务行与目标 ledger 事务；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，约束见[目标锁等待与事务回滚](../../docs/spec/tasks/Transfer数据库CDC.md#oracle-目标锁等待与事务回滚)。
 
+任务级 Pause/Stop 与标准 execution cancel 的能力、权限和未支持范围统一见[停止与取消契约](../../docs/spec/tasks/Transfer同步执行.md#任务级-pausestop-与标准取消)。已有控制请求返回不代替真实中断、回滚或清理验收。
+
 ### 诊断与安全投影
 
 diagnostics 采样间隔、degraded/critical retention 阈值和 checkpoint 停滞阈值由 Transfer 配置管理页面“连续任务策略”统一维护，不进入任务 JSON。指标计算、unknown 条件与真实 position commit 口径见[分区位置与 Kafka 恢复窗口](transfer-任务语义与同步模式.md#分区位置与-kafka-恢复窗口)，捕获健康与源日志窗口见[诊断专题](transfer-任务语义与同步模式.md#捕获健康与源日志窗口)。
