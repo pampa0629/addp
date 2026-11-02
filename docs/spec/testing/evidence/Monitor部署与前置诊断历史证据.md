@@ -161,3 +161,12 @@
 本批未修改产品、测试、完成谓词、版本依赖或等待预算，未启用重试、禁用动画或以一次通过覆盖失败；未更改Mac／Docker配置、强制保活、重启个人服务或接管其他夹具。临时诊断随该测试子命令退出，没有设置定时任务。原两个文件的标准runner只清理当次服务／缓存／端口租约，失败trace及有界诊断材料保留。闭合字段的系统事件、257输入摘要、同步延迟及独立结论位于`/tmp/addp-monitor-three-delay-diagnostic-20261102/{closed-power-events,synchronized-pauses,diagnostic-proof}.json`；其余三轮成功／失败trace在对应`addp-monitor-three-*-diagnostic-20261102/`目录，未把原始全日系统日志纳入仓库。
 
 进一步本机验收先等待Mac恢复稳定唤醒，再原样复验原三项；未自行改变电源策略或重复运行完整592项。已有自然Linux运行继续由专门会话回传，本会话未查询、触发、取消或重跑CI／Hosted。固定74ed的592项＋构建通过但后置缓存归档取消的旧证据不变，也不覆盖新本机反例；本次休眠诊断不计当前完整Monitor前端、MinIO专业监控或正式身份验收通过。
+
+
+### 后续 Linux 完整前端门禁回传（2026-11-02）
+
+专门CI会话回传固定`3f281d49c7c3533a347db4a270d090cabfd63301`、push attempt1的[Platform Run41391135443／Monitor前端Job125102562739](https://github.com/pampa0629/addp/actions/runs/41391135443/job/125102562739)。本会话独立核对原日志`/tmp/addp-ci-20261102-140026/job-125102562739.log`（191020字节，SHA256=`0b58f71377d96bb66c0f94088c1ea02ac92c637f50f1dddaf5dfa149d01715b2`）和同目录`Monitor3f-job-current.json`：Ubuntu24.04实际执行`make test-monitor-frontend`，selected=true，592项浏览器全部通过（24.2分钟），Vite构建通过（7.30秒），产品步骤、summary、后置步骤及整Job均success，运行时间05:30:16—05:55:31 UTC。原进程unavailable恢复、Redis英语列表与Redis手动刷新三项分别实际出现在原日志第1428／1434／1441行，不能把条件跳过作业计作另一轮产品通过。
+
+独立重核受验3f与协调会话提供的远端已提交快照`2f83f41b85167aa001b676ed4e9f53e56161141e`：Monitor前端、Common Frontend、Console前端、scripts/test、scripts/ci、根Makefile及Platform workflow无已提交输入差异；同目录`Monitor3f-current-input-comparison.json`保留该范围。本会话另比当前三个原失败／共享驱动／领域夹具／两页及共享图表九个直接输入，与3f逐字节一致。结论只复用本前端门禁，不涵盖共享工作区其他未提交变更或其他模块。
+
+据此补齐这组三项的固定Linux实际复验缺口，不修改原Mac589／592失败、系统休眠诊断及稳定唤醒后原样本机复验尚未完成的状态。协调会话保留的a14 Job125095800507在585／592、4243 Job125099325773在586／592处30分钟取消、无终态总结，不改记通过；旧74ed产品通过／后置缓存取消也仍独立。本轮只读回传材料、比较源码并同步文档，未查询、触发、重跑或取消CI／Hosted，没有设置定时、修改5秒预算／产品／电源／用户服务，也不把受控前端结果计为真实Redis／MinIO来源或正式身份验收。
