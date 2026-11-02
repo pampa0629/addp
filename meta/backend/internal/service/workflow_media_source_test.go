@@ -1,7 +1,17 @@
 package service
 
 import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
 	"strings"
+
+	"github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/meta/internal/metaenrich"
+	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanresource"
 	"testing"
 
 	"github.com/addp/common/dataitem"
@@ -61,5 +71,72 @@ func TestRuntimeMediaSourceRefusesIncompleteOrChangedComposition(t *testing.T) {
 				t.Fatal("unproven source reached runtime binding")
 			}
 		})
+	}
+}
+
+// Exercise the actual bucket-relative detector -> persisted full-name projection
+// before consuming the exact pair. Hand-assembled fully qualified refs hide this seam.
+type enviObjectProofReader struct {
+	plugin.StoreProvider
+	files map[string][]byte
+}
+
+func (*enviObjectProofReader) Type() string { return "minio" }
+func (p *enviObjectProofReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, target plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+	raw, ok := p.files[target.StringPath()]
+	if !ok {
+		return nil, fmt.Errorf("undeclared fixture object")
+	}
+	return io.NopCloser(bytes.NewReader(raw)), nil
+}
+func (p *enviObjectProofReader) OpenRange(_ context.Context, _ plugin.ConnectionInfo, target plugin.EngineCatalogPath, options plugin.ReadOptions) (io.ReadCloser, error) {
+	raw, ok := p.files[target.StringPath()]
+	if !ok || options.Offset < 0 || options.Length < 0 || options.Offset > int64(len(raw)) {
+		return nil, io.EOF
+	}
+	return io.NopCloser(bytes.NewReader(raw[options.Offset:min(int64(len(raw)), options.Offset+options.Length)])), nil
+}
+func TestRuntimeENVISourceAfterObjectDetectionAndQualification(t *testing.T) {
+	metaenrich.RegisterItemResolvers()
+	const header = "ENVI\nsamples = 4\nlines = 1\nbands = 1\nheader offset = 0\nfile type = ENVI Standard\ndata type = 1\ninterleave = bsq\nbyte order = 0\n"
+	for _, bucket := range []string{"fixture", "envi"} {
+		for _, prefix := range []string{"envi/", "fixture/envi/"} {
+			for _, deep := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/deep=%t", bucket, prefix, deep), func(t *testing.T) {
+					engine, _ := observedENVIMediaSource(true)
+					main, hdr := prefix+" 原名 %.img", prefix+" 原名 %.HDR"
+					reader := &enviObjectProofReader{files: map[string][]byte{bucket + "/" + main: {1, 2, 3, 4}, bucket + "/" + hdr: []byte(header)}}
+					resources := []scanresource.StorageResource{}
+					for _, name := range []string{main, hdr} {
+						resources = append(resources, scanresource.StorageResource{RootName: bucket, Path: name, FullPath: bucket + "/" + name, NodeType: "object", EngineCatalogPath: plugin.ObjectItemPath(engine.ID, bucket, name), SizeBytes: int64(len(reader.files[bucket+"/"+name]))})
+					}
+					_, items, warnings := scanflow.DetectObjectCatalogCompositeItems(t.Context(), reader, reader, plugin.ConnectionInfo{}, engine.ID, resources, deep)
+					if len(warnings) != 0 || len(items) != 1 {
+						t.Fatalf("detection: %v %v", items, warnings)
+					}
+					detected := items[0].Item
+					for attempt := 0; attempt < 2; attempt++ {
+						projected, ok := scanresource.PlanObjectCompositeItem(engine.ID, items[0], "object")
+						if !ok {
+							t.Fatal("missing object projection")
+						}
+						if got := commonJSON.String(projected.Attributes, "format_info.envi", "header_path"); got != bucket+"/"+hdr {
+							t.Fatalf("projected header=%q, want exact %q", got, bucket+"/"+hdr)
+						}
+						plan, observed, err := runtimeMediaSourcePlan(engine, projected.DataItem, projected.FullName)
+						if err != nil || plan.Validate() != nil || observed != bucket+"/"+hdr || plan.Source.Access.Bucket != bucket || plan.Source.Access.Object != main || len(plan.Source.RelatedFiles) != 1 || plan.Source.RelatedFiles[0].Access.Bucket != bucket || plan.Source.RelatedFiles[0].Access.Object != hdr {
+							t.Fatalf("observed pair changed between detection and Runtime: %+v %q %v", plan, observed, err)
+						}
+						if commonJSON.String(detected.Attributes, "format_info.envi", "header_path") != hdr || detected.PrimaryContentPath != main {
+							t.Fatal("projection mutated the detector's bucket-relative proof")
+						}
+						projected.DataItem.Attributes["format_info"].(map[string]interface{})["envi"].(map[string]interface{})["header_path"] = bucket + "/" + prefix + "other.HDR"
+						if _, _, err := runtimeMediaSourcePlan(engine, projected.DataItem, projected.FullName); err == nil {
+							t.Fatal("mismatched header proof was repaired from refs instead of rejected")
+						}
+					}
+				})
+			}
+		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
@@ -149,6 +150,7 @@ func PlanObjectCompositeItem(engineID uint, composite ObjectCompositeItem, itemT
 	fullName := commonModels.JoinObjectPath(composite.Bucket, parentPath, itemName)
 	// detector 保持 bucket 内坐标；持久化计划持有独立的完整 content path 副本。
 	dataItem := *composite.Item
+	dataItem.Attributes = commonModels.JSONMap(composite.Item.Attributes).Clone()
 	dataItem.RefList = slices.Clone(composite.Item.RefList)
 	dataItem.RefPaths = maps.Clone(composite.Item.RefPaths)
 	qualifyObjectDetectedItemPaths(composite.Bucket, &dataItem)
@@ -179,6 +181,14 @@ func PlanObjectCompositeItem(engineID uint, composite ObjectCompositeItem, itemT
 func qualifyObjectDetectedItemPaths(bucket string, item *metaitem.DetectedItem) {
 	if item == nil || strings.Trim(bucket, "/") == "" {
 		return
+	}
+	// ENVI's observed header proof uses the same coordinate system as its refs.
+	// Project the original value, never replace a mismatching proof from refs.
+	if item.Format == string(format.FormatENVI) {
+		native := commonJSON.Section(item.Attributes, "format_info.envi")
+		if header, ok := native["header_path"].(string); ok {
+			native["header_path"] = qualifyObjectContentPath(bucket, header)
+		}
 	}
 	item.PrimaryContentPath = qualifyObjectContentPath(bucket, item.PrimaryContentPath)
 	item.ScopePath = qualifyObjectContentPath(bucket, item.ScopePath)
