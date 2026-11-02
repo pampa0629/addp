@@ -396,14 +396,18 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
                all(item[k] in ('none','loopback','desktop_internal') for k in ('http','https')) and
                (role!='host_cli' or 'desktop_internal' not in (item['http'],item['https'])))
         proxies[role]={'status':'observed',**item} if valid else {'status':'unavailable'}
+    unknown_transport={'operation':'unknown','operation_status':'unavailable',
+                       'endpoint':'unknown','endpoint_status':'unavailable'}
     value={'status':'complete','limits_exceeded':[], 'reasons':['unclassified'],'steps':[], 'inputs':[],
            'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
-           'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'http_statuses':[], 'sources':[]},
+           'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'http_statuses':[], 'sources':[],
+                  'transport':dict(unknown_transport)},
            'base':{'status':'unavailable','kind':None,'resolved_digest':None}, 'proxy_provenance':proxies}
     def over_budget(reason):
         return {**value,'status':'over_budget','limits_exceeded':[reason], 'reasons':['unclassified'],
                 'steps':[], 'inputs':[], 'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
-                'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'http_statuses':[], 'sources':[]},
+                'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'http_statuses':[], 'sources':[],
+                       'transport':dict(unknown_transport)},
                 'base':{'status':'unavailable','kind':None,'resolved_digest':None}}
     if len(raw)>131072:return over_budget('input_bytes')
     text=raw.decode(errors='replace').lower()
@@ -467,8 +471,42 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
             if not match:continue
             suite=match[2] if match[2] in suites else 'unknown'
             sources.add((parsed.scheme,'debian_security'if match[1]=='debian-security'else'debian',suite))
+        # Classify only explicit error wording. A fetch URL or [IP: ...] is
+        # never evidence of the endpoint on which a connection/read failed.
+        operations=set();endpoints=set()
+        def endpoint_kind(target):
+            if any(ord(c)<=32 or ord(c)==127 for c in target):return 'unknown'
+            try:
+                endpoint=urllib.parse.urlsplit(target if '://' in target else 'http://'+target)
+                port=endpoint.port
+            except ValueError:return 'unknown'
+            if (endpoint.scheme not in ('http','https') or endpoint.username is not None or endpoint.password is not None or
+                endpoint.query or endpoint.fragment or endpoint.netloc.endswith(':') or endpoint.path not in ('','/') or
+                (port is not None and not 0<port<=65535)):
+                return 'unknown'
+            if endpoint.hostname=='http.docker.internal':return 'desktop_proxy'
+            if endpoint.hostname in ('deb.debian.org','security.debian.org'):return 'official_debian'
+            return 'unknown'
+        connect=r"\b(?:could not|couldn't|failed to|unable to) connect\b(?: to ([^\s(),;]+))?"
+        body_read=(r'\b(?:error (?:while )?(?:reading|receiving)|failed to (?:read|receive)|'
+                   r'timed out (?:while )?(?:reading|receiving)) (?:the )?(?:response )?body\b(?: from ([^\s(),;]+))?')
+        for line in scoped.splitlines():
+            line=line.strip()
+            if not re.match(r"^(?:e:|w:|err:[0-9]+\b|(?:could not|couldn't|failed to|unable to) connect\b|"
+                            r'error (?:while )?(?:reading|receiving)\b|failed to (?:read|receive)\b|'
+                            r'timed out (?:while )?(?:reading|receiving)\b)',line):continue
+            for operation,pattern in (('connect',connect),('body_read',body_read)):
+                for match in re.finditer(pattern,line):
+                    operations.add(operation)
+                    if match[1]:endpoints.add(endpoint_kind(match[1]))
+        transport=dict(unknown_transport)
+        for field,candidates in (('operation',operations),('endpoint',endpoints)):
+            if len(candidates)>1:transport[field+'_status']='ambiguous'
+            elif candidates and candidates!={'unknown'}:
+                transport[field]=next(iter(candidates));transport[field+'_status']='explicit'
         value['apt']={'status':'parsed','phase':next(iter(phases))if len(phases)==1 else'unknown','error_kinds':kinds or ['other'],
-                      'http_statuses':statuses,'sources':[{'scheme':scheme,'repository':repository,'suite':suite}for scheme,repository,suite in sorted(sources)]}
+                      'http_statuses':statuses,'sources':[{'scheme':scheme,'repository':repository,'suite':suite}for scheme,repository,suite in sorted(sources)],
+                      'transport':transport}
         if len(sources)>8 or len(statuses)>8:return over_budget('apt_collections')
     elif failed & apt_steps:value['apt']['status']='ambiguous'
     if any(len(value[k])>8 for k in ('dockerfile_lines','http_statuses','process_exit_codes')):return over_budget('build_collections')

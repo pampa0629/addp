@@ -31,6 +31,89 @@ class PublicAPTBuildEvidence(unittest.TestCase):
         self.assertEqual(v['apt']['sources'],[]);self.assertNotIn('PRIVATE',repr(v))
         self.assertEqual(v['process_exit_codes'],[100])
 
+    def transport(self,body,**kwargs):
+        apt=m.public_build_failure_diagnostic(self.output(body,**kwargs))['apt']
+        self.assertIn('transport',apt)
+        return apt['transport']
+
+    def test_transport_connect_uses_error_endpoint_not_fetch_url(self):
+        for phrase in ('Could not connect to',"Couldn't connect to",'Failed to connect to','Unable to connect to'):
+            with self.subTest(phrase=phrase):
+                v=self.transport('E: Failed to fetch http://deb.debian.org/debian/pool/main/p/pkg.deb '+
+                    phrase+' http.docker.internal:3128 (192.0.2.17), connection timed out')
+                self.assertEqual(v,{'operation':'connect','operation_status':'explicit',
+                    'endpoint':'desktop_proxy','endpoint_status':'explicit'})
+
+    def test_transport_body_read_requires_explicit_body_error(self):
+        for phrase in ('Error reading response body from','Failed to read response body from',
+                       'Timed out while receiving body from'):
+            with self.subTest(phrase=phrase):
+                v=self.transport('E: '+phrase+' deb.debian.org:80')
+                self.assertEqual(v,{'operation':'body_read','operation_status':'explicit',
+                    'endpoint':'official_debian','endpoint_status':'explicit'})
+
+    def test_transport_generic_timeout_ip_and_source_do_not_guess(self):
+        for body in ('E: Failed to fetch http://deb.debian.org/debian/pool/main/p/pkg.deb Connection timed out [IP: 192.0.2.17 80]',
+                     'E: Error reading from server [IP: 192.0.2.17 80]',
+                     'E: Connection timed out',
+                     'Get:1 http://deb.debian.org/debian/pool/main/p/pkg.deb\nE: Unable to fetch some archives'):
+            with self.subTest(body=body):
+                self.assertEqual(self.transport(body),{'operation':'unknown','operation_status':'unavailable',
+                    'endpoint':'unknown','endpoint_status':'unavailable'})
+
+    def test_transport_endpoint_is_closed_and_exact(self):
+        for target,endpoint in [('security.debian.org:443','official_debian'),
+                ('https://deb.debian.org:443/','official_debian'),('http.docker.internal','desktop_proxy'),
+                ('192.0.2.17:3128','unknown'),('[2001:db8::1]:3128','unknown'),
+                ('deb.debian.org.PRIVATE:80','unknown'),('private.invalid:80','unknown'),
+                ('http://user:SECRET@http.docker.internal:3128','unknown'),
+                ('http.docker.internal:PRIVATE','unknown'),('http.docker.internal:','unknown'),
+                ('http.docker.internal:0','unknown'),('http.docker.internal:99999','unknown'),
+                ('http://http.docker.internal:3128/path?SECRET','unknown')]:
+            with self.subTest(target=target):
+                v=self.transport('E: Could not connect to '+target+', connection refused')
+                self.assertEqual(v['operation'],'connect');self.assertEqual(v['endpoint'],endpoint)
+                self.assertEqual(v['endpoint_status'],'unavailable' if endpoint=='unknown' else 'explicit')
+                for secret in ('PRIVATE','SECRET','192.0.2','2001:db8','3128','http.docker.internal','deb.debian.org'):
+                    self.assertNotIn(secret,repr(v))
+
+    def test_transport_conflicts_are_independent_and_never_last_wins(self):
+        v=self.transport('E: Could not connect to deb.debian.org:80\nE: Error reading response body from deb.debian.org:80')
+        self.assertEqual(v,{'operation':'unknown','operation_status':'ambiguous',
+            'endpoint':'official_debian','endpoint_status':'explicit'})
+        for body in ('E: Could not connect to deb.debian.org:80\nE: Could not connect to http.docker.internal:3128',
+                     'E: Could not connect to http.docker.internal:3128\nE: Could not connect to 192.0.2.17:3128'):
+            v=self.transport(body)
+            self.assertEqual(v,{'operation':'connect','operation_status':'explicit',
+                'endpoint':'unknown','endpoint_status':'ambiguous'})
+
+    def test_transport_ignores_other_steps_successes_and_command_text(self):
+        prefix='#2 [1/3] RUN apt-get update\n#2 4.0 E: Could not connect to http.docker.internal:3128'
+        v=self.transport('Get:1 http://deb.debian.org/debian/pool/main/p/Could-not-connect-to.deb\nE: Connection timed out',prefix=prefix)
+        self.assertEqual(v['operation_status'],'unavailable');self.assertEqual(v['endpoint_status'],'unavailable')
+        v=self.transport('ERROR: process "echo Could not connect to http.docker.internal:3128" failed')
+        self.assertEqual(v['operation_status'],'unavailable');self.assertEqual(v['endpoint_status'],'unavailable')
+        v=self.transport('Fetched package description: Error reading response body from deb.debian.org:80')
+        self.assertEqual(v['operation_status'],'unavailable');self.assertEqual(v['endpoint_status'],'unavailable')
+
+    def test_transport_operation_and_endpoint_can_be_missing_independently(self):
+        v=self.transport('  Could not connect')
+        self.assertEqual(v,{'operation':'connect','operation_status':'explicit',
+            'endpoint':'unknown','endpoint_status':'unavailable'})
+        v=self.transport('  Error reading response body')
+        self.assertEqual(v,{'operation':'body_read','operation_status':'explicit',
+            'endpoint':'unknown','endpoint_status':'unavailable'})
+
+    def test_transport_unavailable_or_over_budget_cannot_keep_classification(self):
+        raw=self.output('E: Could not connect to http.docker.internal:3128')
+        for output in (b'',raw+self.output('E: Could not connect to deb.debian.org:80',step='8'),raw+b'x'*131073):
+            v=m.public_build_failure_diagnostic(output)['apt']['transport']
+            self.assertEqual(v,{'operation':'unknown','operation_status':'unavailable',
+                'endpoint':'unknown','endpoint_status':'unavailable'})
+        with mock.patch.object(m.json,'dumps',return_value='x'*4097):
+            v=m.public_build_failure_diagnostic(raw)
+        self.assertEqual(v['status'],'over_budget');self.assertEqual(v['apt']['transport']['operation'],'unknown')
+
     def test_missing_or_ambiguous_failure_number_does_not_guess(self):
         v=m.public_build_failure_diagnostic(b'ERROR: failed to solve: apt-get timed out exit code: 100')
         self.assertEqual(v['apt']['status'],'unavailable')
@@ -103,7 +186,7 @@ class PublicAPTBuildEvidence(unittest.TestCase):
         self.assertEqual(v['status'],'over_budget');self.assertEqual(v['limits_exceeded'],['structured_bytes'])
 
     def test_failed_command_preserves_first_error_hash_and_proxy_provenance(self):
-        raw=self.output('E: Failed to fetch http://deb.debian.org/debian/dists/trixie/InRelease Connection timed out')
+        raw=self.output('E: Failed to fetch http://deb.debian.org/debian/dists/trixie/InRelease Could not connect to http.docker.internal:3128, connection timed out')
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory);life.phase='product_image_agent_backend'
             life.build_proxy_provenance={'run_build_args':m.build_proxy_facts({'HTTP_PROXY':'http://http.docker.internal:3128'},'docker_info')}
@@ -115,6 +198,7 @@ class PublicAPTBuildEvidence(unittest.TestCase):
             self.assertEqual(life.last_failure['exit_code'],2)
             self.assertEqual(life.last_failure['output_sha256'],__import__('hashlib').sha256(raw).hexdigest())
             self.assertEqual(life.last_failure['public_build']['apt']['phase'],'index_download')
+            self.assertEqual(life.last_failure['public_build']['apt']['transport']['endpoint'],'desktop_proxy')
             self.assertEqual(life.last_failure['public_build']['proxy_provenance']['run_build_args']['http'],'desktop_internal')
 
 

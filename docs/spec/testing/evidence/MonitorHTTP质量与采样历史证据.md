@@ -910,3 +910,23 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 后续Console／System／Monitor／Nginx产品构建、浏览器准备、正式后端启动、密码／MFA、真实采集与API、存活／停源页面、注销断言均未执行，`assertions={}`。`cleanup.zero_owned_resources=true`且failures为空，缓存删除子进程停止，4条cleanup阶段的已归属容器／卷列表记录完整通过，私有工作目录剩余0；保留的脱敏报告不作为工作目录残留。未复用窗口剩余时间，不自动重试或续窗。
 
 本轮私有归档为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-product-window-20261102-k6gni89x/`（0700，文件0600），含launch／expected-inputs／entry-started／completion／Infra状态／运行阶段／独立audit及report；报告2554799字节，SHA256=`54cb014eb0ac5db2b1d11f83a491dfcbf51bab26c7cb3c226f04982fe02a4d92`。本轮判失败并停止，更新证据及回报维护会话；另一个自然Linux SDK HTTP T2的other目录消失仍是独立失败，不合并根因。没有运行Hosted、容量、定时或接管用户开发服务。
+
+<a id="http-apt-transport-diagnostic-local-20261102"></a>
+
+## 2026-11-02 APT连接／正文环节有界分类（本地门禁通过，未提交／推送）
+
+本轮先只读关联上一窗口报告、固定b147ae753的Copilot Dockerfile／构建代理传递链及已有Desktop构建／代理日志，不重试构建或产生新负载。在UTC 00:08:30—00:10:20粗时间段，httpproxy.log.0有90行；其中27组官方Debian deb请求均有严格的returning 200及successful记录，未见显式代理error／timeout，时间范围00:08:40—00:09:15。没有当次构建到请求的归属证明、完整正文交付或主机／VM校时证明；该记录不能证明APT已下载完整、排除代理问题，亦不能唯一定位超时节点。已有Desktop构建日志未提供APT原始错误正文；不把HTTP200、旧Document的HTTPS经验或当前tag当作本次因果证据。
+
+脱敏离线关联回执为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-copilot-apt-offline-20261102-_8u79jds/correlation.json`（0600）；只保留时间、分类／计数及日志片段哈希，不保存原始URL或代理值。匹配片段17294字节，SHA256=`08d4c18165980f277d31130f654fd0dd66d5aee674d2ab4a6be38f9d5a36223f`。历史失败报告及其54cb014e哈希不改写，不追造连接端点或补填新字段。
+
+用户随后确认仅补最小取证及确定性门禁。先修运行观测与T0–T3规范，再在原唯一public_build失败步骤解析中增加apt.transport：operation为connect／body_read／unknown，endpoint为desktop_proxy／official_debian／unknown，各自用explicit／unavailable／ambiguous表达文字是否明确／缺失／冲突。仅明确建连或正文读取错误语句参与分类，端点只取该语句直接指向的精确白名单主机；不从Failed to fetch源URL、IP标注、其他步骤、Get成功行、命令回显或泛化timeout猜测。凭据、私有／相似域名、畸形端口等不输出端点结论；原文、包名、主机、IP、端口和URL不导出。冲突独立保留unknown，不取最后一条。缺失APT归属及输入／输出超限同样返回封闭未知字段。
+
+| 本轮实际门禁 | 结果及范围 |
+| --- | --- |
+| 旧实现受控反证 | 新建连端点反例运行1项，3个子断言按预期失败、无额外错误，证明旧实现缺少摘要；不执行真实网络 |
+| APT定向回归 | 最终18项通过，含新增8项transport测试；覆盖环节、端点与维度独立缺失／冲突、步骤归属、源URL误归属、恶意输入／脱敏、128 KiB及4 KiB超限、原首因／哈希 |
+| `make test-monitor-traces-local-runner` | 154项／4.611秒、JS语法、Online CI登记及System身份Go子门禁通过 |
+| `make test-monitor-http-local-runner` | 37项／0.963秒、JS语法／登记及System身份Go子门禁通过；原离线证书T1为OpenSSL4.1.0、35命令／0.863569秒、峰值125489字节、4次预期拒绝、清理完成，无真实产品环境 |
+| AST／差异核验 | 唯一共享解析函数改变；其他顶层定义及生命周期、资源、恢复、清理、Docker调用不变，产品Dockerfile、Make入口与workflow未调整 |
+
+现有Platform调用链及自动登记已覆盖该共享解析器和测试，无需新增入口或CI编排。本轮代码、两份规范及两份证据共6个自有路径保留为未提交／未推送差异；现有Platform product-build每次push还会按baseline构建Agent；本轮只授权确定性门禁，因此不以推送触发实际镜像构建。日志位于`/tmp/addp-p19-apt-transport-{red,directed,trace-runner,http-runner}-20261102.log`。本地门禁通过只证明新增封闭分类，不代表自然Linux新版本已验证、历史APT根因修复或正式身份／API／页面闭环通过；真实构建另行讨论确认。原四秒、资源／请求／清理预算均保持，未执行APT、Docker探针、产品构建、新窗口、Hosted、容量或定时。

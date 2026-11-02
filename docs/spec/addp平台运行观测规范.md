@@ -658,6 +658,8 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 
 解析输入整份合计最多128 KiB，超限整份记over_budget、不截尾冒充完整；集合上限或结构化诊断以紧凑JSON的UTF-8字节计，超过4 KiB同样明确超限，不截断为完整。缺失／无法唯一归属时明确不可用，不导出原始日志、URL、路径、任意符号或凭据；这些上限仅约束解析及结构化回执，不改变原命令输出捕获方式或声称捕获硬上限。原输出哈希、首失败、四秒与全部资源／清理要求不变，不将其他身份／业务命令正文送入分类。只修规范、取证和确定性回归，不改Agent／Copilot Dockerfile、apt源／包／重试／签名校验、基础镜像或代理，不触发产品镜像重试、联网验收或新窗口。真实构建验收另行确认；同时段日志、当前tag或HTTP200不能唯一证明历史正文下载／构建归属，单次通过也不能证明间歇失败根因已修复。
 
+2026-11-02用户确认APT连接环节的最小取证：仍仅解析唯一失败APT步骤的错误文本，在原apt下增加唯一transport摘要。operation仅为connect／body_read／unknown，endpoint仅为desktop_proxy／official_debian／unknown；两维各有explicit／unavailable／ambiguous状态。仅Could not／Failed to／Unable to connect等明确建连失败语句可计connect，仅明确正文读取失败语句可计body_read；通用timeout、下载URL、成功请求或IP标注不能推导连接环节及端点。端点只取同一明确建连／正文读取错误语句直接指向的主机，精确匹配既有Desktop内部代理名或官方Debian主机；不能把Failed to fetch里的源URL误当作出错连接端点，不反查IP、解析DNS或读取当前代理补全。缺失或无法识别为unavailable／unknown，多个互斥结论为ambiguous／unknown，两维独立处理，不选择最后一条或用另一维猜测。凭据URL、私有／相似域名、任意IP／端口及原文均不导出。默认、不可归属及超预算回执同样给出封闭未知字段，不保留旧摘要或新增并行路径。沿原128 KiB整份输入、4 KiB整组诊断及首失败／哈希约束；不增加读取、探针、负载或命令，不改变四秒、资源、恢复与清理要求。先修规范及确定性门禁，不重试构建、开新窗口或改APT／镜像／代理策略；分类只证明错误文字明确表达的环节，不证明物理故障点或历史根因。
+
 新Tenant创建后，身份夹具必须在导出凭据前复用既有`waitForOwnerProtection`，只读等待当次Tenant的Develop持久保护初始化checkpoint，最长60秒并计入原窗口／身份准备预算。固定Owner为Develop，不开放额外Owner参数，不直接写投影或checkpoint，也不把业务拒绝重试为成功。实际Owner从Security完整消费后才可开始执行；实例`/health/ready`不能替代该Tenant状态。此要求沿数据安全规范既有初始化边界，不改变普通User权限、源读取授权或数据保护裁决。
 
 采样 v2 和所有查询预算保持；失败终态须实际可查，普通阶段或 Link 目标独立未保留可以按规范查无数据，不强制全采样或凭空补链。真实 Console/Monitor 页面必须经密码／MFA 登录，不 mock API／注入 Token。验证 Tenant 无新增私有观测字段，负例无权访问平台 Trace／日志，正式退出后旧令牌拒绝；不将会话撤销冒充单实例撤权。
