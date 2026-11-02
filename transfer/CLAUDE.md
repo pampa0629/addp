@@ -285,7 +285,7 @@ Transfer schema 仅由 Backend 迁移；模块级数据库锁、成功提交的�
 | [角色资格到期与导出拒绝](#角色资格到期与导出拒绝证据) | [角色专用导出选择](#角色专用导出选择) | v30／v31 错误映射、确定性回归与未运行的新版 Hosted。 |
 | [continuous 精确扫描与审批归属](#continuous-精确扫描与审批归属) | [生产来源](#生产来源与写后扫描)、[写后扫描](#写后扫描触发与范围) | 首次扫描、单用户审批、双用户归属及各自清理证据。 |
 | [bounded 定时授权](#bounded-定时授权验收) | [定时任务授权规范](../docs/spec/tasks/任务定义与授权.md#transfer-定时任务授权) | 真实 Cron、子扫描隔离与模块聚合失败。 |
-| [创建落点与历史栈](#创建落点与历史栈验证) | [Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)、[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义) | 本地 T1／T2／受控 T3、模块聚合失败、两类账号日常 Console 路由复验、提示文案受控回归及隔离 T4／T5 未验。 |
+| [创建落点与历史栈](#创建落点与历史栈验证) | [Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)、[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义) | 本地 T1／T2／受控 T3、模块聚合失败、两类账号日常 Console 路由复验、[提示文案修正与证据](#创建提示文案修正与证据2026-11-02)及隔离 T4／T5 未验。 |
 
 #### continuous 过程事件与浏览器验收
 
@@ -387,7 +387,7 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 
 ##### 日常 Console 路由复验（2026-11-02）
 
-专项会话回传的最终报告为 `/tmp/addp-transfer-route-20261101/console-real-20261102/report.json`（SHA-256：`130172bbf38d02ceae037045ac03f7f61adc38f71d0c5e33fc463ee72dd213c6`），`final-sha256.json` 列出 31 份文件。本会话校验全部哈希，并核对关键截图、AX 快照和创建日志；规范、向导及对应回归共五个文件仍逐字节匹配 `9fe8d9cac00f782db53c70e7c352abe75197c2c0`。这是日常现有服务的手工证据，本会话未重跑页面；可读分支记录的跟进 checkout 为 `d5f2ab734ba8973719f811abf870949636b13b0c`，当时 System／Gateway／Meta／Transfer 构建为 `c43dceaf87453ca8acf678388b1ae22f79376e40`，仅创建复验发生在用户重启服务之后，不据此声称同 SHA 隔离部署。
+专项会话回传的最终报告为 `/tmp/addp-transfer-route-20261101/console-real-20261102/report.json`（SHA-256：`130172bbf38d02ceae037045ac03f7f61adc38f71d0c5e33fc463ee72dd213c6`），`final-sha256.json` 列出 31 份文件。本会话校验全部哈希，并核对关键截图、AX 快照和创建日志；当次核对时，规范、向导及对应回归共五个文件逐字节匹配 `9fe8d9cac00f782db53c70e7c352abe75197c2c0`，不作为后续提示文案修正后的源码身份。这是日常现有服务的手工证据，本会话未重跑页面；可读分支记录的跟进 checkout 为 `d5f2ab734ba8973719f811abf870949636b13b0c`，当时 System／Gateway／Meta／Transfer 构建为 `c43dceaf87453ca8acf678388b1ae22f79376e40`，仅创建复验发生在用户重启服务之后，不据此声称同 SHA 隔离部署。
 
 | 分支 | 实际结果与适用范围 |
 | --- | --- |
@@ -399,7 +399,26 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 
 临时原角色到期已由 IAM 页面核实；用户确认仅原两项权限、最多 30 分钟的复验重授后，验收结束已撤销临时角色并结束该账号租户访问，页面显示零个生效角色、已结束。未修改共享角色定义、其他账号或资源授权，未增授 `transfer.task.read`／`transfer.task.execute`，也未删除用户或共享角色。任务 `17`、`18`、`51` 的定义保留审阅，没有任务／数据删除；未探测物理目标表是否存在，不能宣称零残留。用户自行恢复服务，专项会话和本会话均未执行 restart／keepalive。证据仍位于临时目录，不作为长期归档保证。
 
-**提示文案后续修正（2026-11-02）**：上述日常观察曾记录仅创建且无 execute 的账号看到“立即执行一次”（`create-only-recheck-review.png`），实际任务 `51` 为手动且执行记录为空。后续前端修正让调度选项、确认摘要及警告沿用实际启动分支的同一 `transfer.task.execute` 权限事实：无执行权限或编辑保存显示“仅保存任务”，有执行权限的新建操作保持立即执行；未改 API、权限清单或账号授权。`make test-transfer-frontend` 通过 131 项单元、60 项浏览器及构建，其中导航回归 24 项，新增 10 项覆盖中英文、standalone／iframe、有无执行权和定时保存，并补充有执行权的编辑保存断言。`make test-module MODULE=transfer GO_ONLY=1`、`make test-transfer-postgres`（19 个主测试，零失败／跳过）及 `make test-frontend-ci-registration`（27 项、21 个前端）通过。完整 `make test-module MODULE=transfer` 在平台 T0 的 `TestTransferReviewSourceDrift/config` 因已有配置文档冻结哈希不匹配而失败；该文档逐字节等同本轮 HEAD，未纳入本次改动，不计完整模块聚合通过。原始日志在 `/tmp/addp-transfer-execution-hint-20261102/`；新增文案仅取得受控 T3 证据，未重新授予真实账号权限或补记真实 Console／Hosted 通过，前述日常手工记录仍对应修正前页面。
+##### 创建提示文案修正与证据（2026-11-02）
+
+上述日常观察曾记录仅创建且无 execute 的账号看到“立即执行一次”（`create-only-recheck-review.png`），实际任务 `51` 为手动且执行记录为空。修复提交 `90fbcfc16bac188ebfc72f6b1629c9940d7ae8d8` 仅含本文件、向导两个步骤与状态、中英词条和导航回归，共七个文件；未改 Backend／API、权限清单或账号授权。调度选项、确认摘要及警告与创建后实际启动分支共用响应式 `transfer.task.execute` 事实：无执行权或编辑保存显示“仅保存任务／本次仅保存任务，不会自动执行”；有执行权且无 Cron 的新建保持立即执行，Cron 保留表达式且不在创建后立即启动。创建落点及历史栈规则保持原分支。
+
+归档位于 `/tmp/addp-transfer-execution-hint-20261102/`：`evidence.json` 的 SHA-256 为 `dfe356254c292e44468e30a8a88f2ac13b93e4a8157e570c16701ed1a77263cd`，`sha256.json` 覆盖 18 份日志及元数据。本会话校验全部哈希、七个提交文件及代码分支，并核对下列归档结果，没有重跑门禁或查询其他 CI。`red.log` 保留修正前 8 项失败复现，与修正后的通过结果分开认定。
+
+本地 `make test-transfer-frontend` 通过 131 项单元、60 项浏览器及构建；导航回归 24 项，新增 10 项覆盖中英文、standalone／iframe、有无执行权和 Cron，并强化有执行权的编辑保存断言。回归核对实际 POST 与 `/start` 是否出现，继续拒绝仅创建账号的任务读取。`make test-module MODULE=transfer GO_ONLY=1`、`make test-transfer-postgres`（19 个主测试，零失败／跳过）及 `make test-frontend-ci-registration`（27 项、21 个前端）通过。
+
+以下四个相关 Job 均为修复提交、attempt 1 的已完成记录；归档检查时整轮 Platform 仍为 in_progress，未跟踪其余 Job，不据此认定整轮成功：
+
+| 固定源码 CI 证据 | 实际执行及边界 |
+| --- | --- |
+| [Transfer frontend](https://github.com/pampa0629/addp/actions/runs/41419073194/job/125189982120) | selected／success；实际执行 `make test-transfer-frontend`，131 项单元、60 项浏览器及构建通过，仍为合成权限／API 的受控 T3。 |
+| [Execution online CI runner](https://github.com/pampa0629/addp/actions/runs/41419073194/job/125189981998) | selected／success；实际执行 `make test-execution-online-ci-runner`，两组 114、170 项确定性测试通过，不是 Hosted 实跑。 |
+| [Transfer PostgreSQL](https://github.com/pampa0629/addp/actions/runs/41419073237/job/125190786181) | success；实际执行标准 PostgreSQL 门禁，19 个主测试，零失败／跳过，仅计 T2。 |
+| [Platform consistency](https://github.com/pampa0629/addp/actions/runs/41419073194/job/125189981750) | failure；`TestTransferReviewSourceDrift/config` 因配置文档冻结哈希不符失败，不能以其他 Job 成功抵销。 |
+
+本地完整 `make test-module MODULE=transfer` 同样在上述平台 T0 失败，未进入 Owner 步骤，不计完整模块聚合通过。`transfer/docs/transfer-基本概念及配置说明.md` 在修复提交及其父提交中逐字节一致，SHA-256 为 `a6cf6796d32eaff2cde1499e892057e90189ca862f16e5d2f4becb87af77c060`，与审查冻结值 `762d8458eb59b2c10a4d5bb623840fde9c96e19ff09ee8bc80261895f75c0f85` 不符；该文档不在本次七个改动中，未修改 Ontology 审查基线或扩范围修复。
+
+新增文案只取得静态核对、本地及 CI 的受控回归证据；本会话与专项会话均未重授已结束的真实账号权限、重启服务或运行新的日常 Console／隔离 Hosted 验收。前述任务 `17`／`18`／`51` 的真实手工记录仍对应修正前页面，不能套作新文案实机通过；临时证据不保证长期留存。
 
 ## 相关文档
 
