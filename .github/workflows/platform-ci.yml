@@ -18,6 +18,55 @@ permissions:
 # Hosted jobs own isolated resources; later skipped runs cannot replace them.
 
 jobs:
+  system-go-ci-runner:
+    name: System Go CI runner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select System Go CI runner
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "System Go CI runner" \
+            'system/*' \
+            'common/*' \
+            'Makefile' \
+            'go.work*' \
+            '.github/*' \
+            'scripts/ci/*' \
+            'scripts/test/module-gate*'
+
+      - name: Set up Go
+        if: steps.selection.outputs.run == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache-dependency-path: |
+            system/backend/go.sum
+            common/go.sum
+
+      - name: Run System Go T1
+        if: steps.selection.outputs.run == 'true'
+        run: make test-module MODULE=system GO_ONLY=1
+
+      - name: Summarize System Go CI runner
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: System Go CI runner
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
+
   execution-online-ci-runner:
     name: Execution online CI runner
     runs-on: ubuntu-24.04

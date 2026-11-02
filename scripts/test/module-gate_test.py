@@ -6,6 +6,7 @@ import importlib.util
 import fcntl
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,27 @@ COMMON_POSTGRES_SUCCESS_OUTPUT = (
 
 
 class ModuleGateTest(unittest.TestCase):
+    def test_system_ci_uses_independent_canonical_go_only_owner_gate(self) -> None:
+        repository = SCRIPT.resolve().parents[2]
+        workflow = (repository / '.github/workflows/platform-ci.yml').read_text()
+        match = re.search(r'(?ms)^  system-go-ci-runner:\n(.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)', workflow)
+        self.assertIsNotNone(match)
+        block = match.group(1)
+        self.assertNotRegex(block, r'(?m)^    needs:')
+        command = re.search(r'run: make test-module MODULE=(\w+) GO_ONLY=1', block)
+        self.assertIsNotNone(command)
+        self.assertEqual(command.group(1), 'system')
+        steps = MODULE.plan_module(repository, command.group(1), go_only=True)
+        self.assertEqual(len(steps), 1)
+        self.assertEqual(steps[0].command, ('go', 'test', './...'))
+        self.assertEqual(steps[0].cwd, repository / 'system/backend')
+        self.assertEqual(steps[0].excluded_environment, MODULE.GO_T1_EXCLUDED_ENVIRONMENT)
+        for path in ("'system/*'", "'common/*'", "'Makefile'", "'.github/*'", "'scripts/ci/*'", "'scripts/test/module-gate*'"):
+            self.assertIn(path, block)
+        self.assertEqual(block.count("if: steps.selection.outputs.run == 'true'"), 2)
+        self.assertIn('selected: ${{ steps.selection.outputs.run }}', block)
+        self.assertIn('status: ${{ job.status }}', block)
+
     def test_go_only_selects_existing_go_steps_without_t2_preflight(self) -> None:
         steps = MODULE.plan_module(self.repository, "sample", go_only=True)
         self.assertEqual([step.command for step in steps], [("go", "test", "./...")])

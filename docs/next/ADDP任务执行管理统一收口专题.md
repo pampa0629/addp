@@ -1011,3 +1011,8 @@ System真实Handler回归另发现精确缺失被误报400：Repository已将GOR
 
 
 **本地最终门禁。** `make test-manager-backend`实际exit0；干净源码快照的 `make test-module MODULE=system GO_ONLY=1`实际exit0，包含真实User／Service Principal Handler下active／disabled／deleting／deleted脱敏描述、原连接详情409、跨Tenant403和精确缺失404。`make test-execution-online-ci-runner`完整串行复验exit0：114＋169、登记一致。Manager PG首次共享源码执行为28 PASS／2 FAIL／0 SKIP，原件保留、不计通过；随后通过标准 `bash scripts/test/manager-postgres-gate.sh --source-root <干净源码快照>`，仅排除其他会话未提交代码、保留原addp_test／端口／夹具／断言／预算，完整取得31 PASS／0 FAIL／0 SKIP及exit0，两个先前失败主项也实际通过；不据此给前次失败作未经证明的原因归属。该临时测试源使用当前仓库可核验祖先和本会话改动，八个已改代码／测试文件与工作区逐字节一致，后续main增量仅文档。修正后未运行新的Hosted。四类受影响CI待提交实际终态后登记，聚合工作流不作为本专项通过依据。
+
+
+**修正提交与CI接入补齐。** 产品／runner修正 `e7793b65f581b22dab062f45a5682c9301028fb1` 已push main。独立Execution Job125092058597（Run41387687254）实际success，114＋169、selected:true及登记一致；Manager PG Job125092316111（Run41387687238）实际success。Go workspace Job125092058648已实际执行并通过Manager模块，随后在其它owner的来源冻结检查失败而提前退出，System未运行，不计System通过，也不调查／修复该无关缺陷。
+
+为补齐本修复受影响的System Go CI，在既有Platform工作流中加入独立 `System Go CI runner`，复用 `make test-module MODULE=system GO_ONLY=1`，按System／Common及标准入口依赖选择；现有Ubuntu24、Go版本、角色和个人／Hosted运行环境保持，不依赖workspace聚合结果，不跳过或掩盖其失败。单一标准Owner入口和既有自动模块发现继续生效，无新脚本、外部服务或权限。现有模块门禁测试同步验证独立Job、准确Owner、Go-only配置、必需路径与选择／终态汇报；42项实际通过，`make test-workflow-security` exit0，Online CI登记检查exit0。独立System的实际Linux终态待该编排提交后核对。
