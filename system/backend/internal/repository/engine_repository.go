@@ -9,6 +9,7 @@ import (
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrEngineVersionConflict = errors.New("engine version conflict")
@@ -231,4 +232,14 @@ func (r *EngineRepository) FindByNameAndTenant(name string, tenantID uint) (*mod
 		return nil, err
 	}
 	return &engine, nil
+}
+
+// GetForCleanupConnection shares the caller's IAM/P/C transaction and locks the
+// exact Engine until its deleting connection decision commits.
+func (r *EngineRepository) GetForCleanupConnection(ctx context.Context, id uint) (*models.Engine, error) {
+	var item models.Engine
+	if err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).First(&item, id).Error; err != nil {
+		return nil, commonrepo.WrapDBError(err)
+	}
+	return &item, nil
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	"github.com/addp/transfer/internal/capture"
 	"github.com/addp/transfer/internal/deadletter"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
@@ -175,12 +177,26 @@ func (s *TransferCleanupService) hasDeadLetterResources(ctx context.Context, tas
 func (s *TransferCleanupService) Start(ctx context.Context) error { return s.runtime.Start(ctx) }
 func (s *TransferCleanupService) Stop()                           { s.runtime.Stop() }
 
-func (s *TransferCleanupService) runCleanup(ctx context.Context, run *cleanup.Run) error {
+func (s *TransferCleanupService) runCleanup(ctx context.Context, run *cleanup.Run) (failure error) {
+	stage := "transfer_cleanup_plan"
+	note := func(value string) { stage = value }
+	ctx = capture.WithCleanupObserver(ctx, note)
+	if run.Input.Context.EngineID > 0 && run.Input.Action == events.CleanupActionExecute {
+		ctx = capture.WithCleanupEngineConnection(ctx, run.Input.Context.EngineID, run.EngineConnection)
+	}
+	defer func() {
+		if failure != nil {
+			recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			failure = errors.Join(failure, cleanup.RecordFailureStep(recordCtx, s.db, run.Lease, stage))
+		}
+	}()
 	if run.Input.Context.TenantID != 0 {
 		return fmt.Errorf("historical Tenant cleanup unsupported")
 	}
 	ctx = repository.WithCleanupMutation(repository.WithCleanupAdmission(ctx, run.PrepareExternal), run.Effect)
 	finish := func(tx *gorm.DB, stats *TransferCleanupStats) error {
+		note("transfer_cleanup_commit")
 		summary := transferScanSummary(stats)
 		if run.Input.Action == events.CleanupActionExecute {
 			summary = transferExecuteSummary(stats)
@@ -217,7 +233,7 @@ func (s *TransferCleanupService) runCleanup(ctx context.Context, run *cleanup.Ru
 			return finish(tx, stats)
 		})
 	}
-	_, err := s.executeCleanup(ctx, run.Input.TenantID, run.Input.CleanupMode, run.Input.Context.Map(), finish)
+	_, err := s.executeCleanup(ctx, run.Input.TenantID, run.Input.CleanupMode, run.Input.Context.Map(), finish, note)
 	return err
 }
 
@@ -250,10 +266,16 @@ func (s *TransferCleanupService) ScanReclaimCandidates(ctx context.Context, tena
 }
 
 func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, mode string, scope map[string]interface{}) (*TransferCleanupStats, error) {
-	return s.executeCleanup(ctx, tenantID, mode, scope, nil)
+	return s.executeCleanup(ctx, tenantID, mode, scope, nil, nil)
 }
 
-func (s *TransferCleanupService) executeCleanup(ctx context.Context, tenantID uint, mode string, scope map[string]interface{}, finish func(*gorm.DB, *TransferCleanupStats) error) (*TransferCleanupStats, error) {
+func (s *TransferCleanupService) executeCleanup(ctx context.Context, tenantID uint, mode string, scope map[string]interface{}, finish func(*gorm.DB, *TransferCleanupStats) error, note func(string)) (*TransferCleanupStats, error) {
+	setStage := func(value string) {
+		if note != nil {
+			note(value)
+		}
+	}
+	setStage("transfer_cleanup_plan")
 	if tenantID == 0 || events.ValidateCleanupMode(mode) != nil {
 		return nil, fmt.Errorf("invalid Transfer cleanup scope")
 	}
@@ -271,6 +293,7 @@ func (s *TransferCleanupService) executeCleanup(ctx context.Context, tenantID ui
 			return stats, err
 		}
 		if boundary == planner.RuntimeBoundaryContinuous {
+			setStage("transfer_cleanup_stop")
 			if err := repository.MutateCleanup(ctx, s.db, func(tx *gorm.DB) error {
 				return repository.NewTaskRepository(tx).SetContinuousDesiredState(ctx, task.ID, tenantID, models.TaskDesiredStateStopped, "cleanup")
 			}); err != nil {
@@ -283,6 +306,7 @@ func (s *TransferCleanupService) executeCleanup(ctx context.Context, tenantID ui
 			return stats, repository.ErrTaskDeletionRuntimeActive
 		}
 		if planner.IsDatabaseCDCTaskConfig(task.Config) {
+			setStage("transfer_cleanup_capture_plan")
 			stats.CaptureResources++
 			if s.captureControl == nil {
 				return stats, ErrCDCCaptureControlUnavailable
@@ -292,6 +316,7 @@ func (s *TransferCleanupService) executeCleanup(ctx context.Context, tenantID ui
 			}
 			stats.CleanedCaptureResources++
 		}
+		setStage("transfer_cleanup_plan")
 		hasDLQ, err := s.hasDeadLetterResources(ctx, task)
 		if err != nil {
 			return stats, err
@@ -300,12 +325,14 @@ func (s *TransferCleanupService) executeCleanup(ctx context.Context, tenantID ui
 			stats.DeadLetterTopics++
 		}
 		if physical && hasDLQ {
+			setStage("transfer_cleanup_dlq")
 			if err := s.deleteDeadLetterTopic(ctx, task); err != nil {
 				return stats, err
 			}
 			stats.CleanedDeadLetterTopics++
 		}
 	}
+	setStage("transfer_cleanup_commit")
 	err = repository.MutateCleanup(ctx, s.db, func(tx *gorm.DB) error {
 		for _, expected := range tasks {
 			var current models.TransferTask

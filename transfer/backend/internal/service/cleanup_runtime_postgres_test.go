@@ -161,4 +161,5 @@ func TestIntegrationPostgresTransferCleanupRuntimeAtomicity(t *testing.T) {
 			}
 		})
 	}
+	t.Run("connection_pipeline", func(t *testing.T) { testCleanupConnectionPipelineAgainstPostgres(t, db) })
 }

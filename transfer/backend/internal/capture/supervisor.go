@@ -214,7 +214,8 @@ func (s *Supervisor) Resume(ctx context.Context, task *models.TransferTask) erro
 	return err
 }
 
-func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) error {
+func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) (failure error) {
+	defer func() { failure = safeCleanupFailure(ctx, failure) }()
 	resource, err := s.store.GetLatest(ctx, task.ID, task.TenantID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
@@ -228,7 +229,23 @@ func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) error 
 	if err := s.advance(ctx, resource, map[string]interface{}{"status": models.CaptureStatusCleaning}); err != nil {
 		return err
 	}
+	noteCleanupStage(ctx, "transfer_cleanup_capture_plan")
 	plan, planErr := s.plans.ResolveForCleanup(ctx, task)
+	if planErr == nil {
+		planErr = validateCleanupSource(plan, resource, task)
+	}
+	if planErr != nil {
+		s.cleanupFail(ctx, resource, planErr)
+		return planErr
+	}
+	if !plan.cleanupExpiresAt.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, plan.cleanupExpiresAt)
+		defer cancel()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
 	identity := struct {
 		ResourceID                                 uint
 		Generation                                 uint64
@@ -238,6 +255,7 @@ func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) error 
 		Oracle                                     *models.OracleCaptureResource
 	}{resource.ID, resource.Generation, resource.SourceConnectionFingerprint, resource.ConnectorName, resource.TopicName, resource.ConsumerGroup, resource.PostgreSQL, resource.MySQL, resource.Oracle}
 	step := func(kind string, invoke func(context.Context) error) error {
+		noteCleanupStage(ctx, "transfer_cleanup_"+kind)
 		return s.store.RunCleanupOperation(ctx, resource, kind, identity, invoke)
 	}
 	connectorErr := step("capture_connector", func(callCtx context.Context) error {
@@ -251,12 +269,7 @@ func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) error 
 		s.cleanupFail(ctx, resource, connectorErr)
 		return connectorErr
 	}
-	var sourceErr error
-	if planErr == nil {
-		sourceErr = step("capture_source", func(callCtx context.Context) error { return s.dropSourceResources(callCtx, plan, resource) })
-	} else {
-		sourceErr = planErr
-	}
+	sourceErr := step("capture_source", func(callCtx context.Context) error { return s.dropSourceResources(callCtx, plan, resource) })
 	if sourceErr != nil {
 		s.cleanupFail(ctx, resource, sourceErr)
 		return sourceErr
@@ -610,7 +623,7 @@ func (s *Supervisor) cleanupFail(ctx context.Context, resource *models.CaptureRe
 		return
 	}
 	if err := s.store.Update(ctx, resource.ID, resource.ResourceVersion, map[string]interface{}{
-		"status": models.CaptureStatusCleanupFailed, "connector_error": cause.Error(), "last_observed_at": time.Now(),
+		"status": models.CaptureStatusCleanupFailed, "connector_error": safeCleanupFailure(ctx, cause).Error(), "last_observed_at": time.Now(),
 	}); err == nil {
 		resource.ResourceVersion++
 		resource.Status = models.CaptureStatusCleanupFailed

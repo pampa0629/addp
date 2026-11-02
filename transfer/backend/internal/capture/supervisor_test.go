@@ -286,6 +286,9 @@ func (f *fakeCaptureStore) ForceUpdate(_ context.Context, _ uint, fields map[str
 }
 
 func (f *fakeCaptureStore) apply(fields map[string]interface{}) {
+	if value, ok := fields["connector_error"].(string); ok {
+		f.resource.ConnectorError = value
+	}
 	if status, ok := fields["status"].(models.CaptureStatus); ok {
 		f.resource.Status = status
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/addp/system/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type fakeExecutionAuthorizationService struct {
@@ -174,4 +175,15 @@ func (s *fakeExecutionAuthorizationService) ResolveSubjectRoles(_ context.Contex
 func (s *fakeExecutionAuthorizationService) AuthorizeCleanup(_ context.Context, input iam.AuthorizeCleanupInput) (*iam.AuthorizedCleanup, error) {
 	s.cleanupInput = input
 	return &iam.AuthorizedCleanup{AuthorizationID: input.AuthorizationID, ExecutionID: input.ExecutionID, TenantID: input.TenantID, Stage: input.Stage, Attempt: input.Attempt, Scope: input.Scope, ExpiresAt: time.Now().Add(time.Minute)}, nil
+}
+
+func (s *fakeExecutionAuthorizationService) AuthorizeCleanupEngineConnection(ctx context.Context, input iam.AuthorizeCleanupInput, engineID int64, read func(context.Context, *gorm.DB, uint, uint) error) (*iam.AuthorizedCleanupEngineConnection, error) {
+	s.cleanupInput = input
+	if err := read(ctx, nil, uint(engineID), uint(input.TenantID)); err != nil {
+		return nil, err
+	}
+	return &iam.AuthorizedCleanupEngineConnection{Access: &iam.AuthorizedCleanup{AuthorizationID: input.AuthorizationID, ExecutionID: input.ExecutionID, TenantID: input.TenantID, Stage: "effect", Attempt: input.Attempt, Scope: input.Scope, ExpiresAt: time.Now().Add(time.Minute)}, EngineID: engineID}, nil
+}
+func (fakeExecutionEngineResolver) GetForCleanupConnection(_ context.Context, _ *gorm.DB, id, tenantID uint) (*models.Engine, error) {
+	return &models.Engine{ID: id, TenantID: &tenantID, EngineType: "postgresql", LifecycleState: "deleting", ConnectionInfo: models.ConnectionInfo{"password": "plain", "database": "fixture"}}, nil
 }

@@ -2000,3 +2000,29 @@ func (s *EngineService) usesPluginCapabilities(engineType string) bool {
 	_, err := s.pluginCapabilities(strings.ToLower(strings.TrimSpace(engineType)))
 	return err == nil
 }
+
+// GetForCleanupConnection is called only inside the independent System cleanup
+// connection decision after IAM/P/C authorization. It is not a general Engine
+// getter and is never registered as an Engine detail route.
+func (s *EngineService) GetForCleanupConnection(ctx context.Context, tx *gorm.DB, id, tenantID uint) (*models.Engine, error) {
+	if tx == nil || id == 0 || tenantID == 0 {
+		return nil, commonapi.ErrBadRequest
+	}
+	item, err := repository.NewEngineRepository(tx).GetForCleanupConnection(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if item.TenantID == nil || *item.TenantID != tenantID || item.IsBuiltin {
+		return nil, commonapi.ErrForbidden
+	}
+	if item.LifecycleState != models.EngineLifecycleDeleting || item.ExternalArtifactPolicy != models.ExternalArtifactPolicyDelete {
+		return nil, commonapi.ErrConflict
+	}
+	connection, err := s.decryptStoredConnectionInfo(item.EngineType, item.ConnectionInfo)
+	if err != nil {
+		return nil, commonapi.ErrInternalServerError
+	}
+	copy := *item
+	copy.ConnectionInfo = connection
+	return &copy, nil
+}

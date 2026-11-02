@@ -484,6 +484,42 @@ definitions:
       rule_version:
         type: integer
     type: object
+  client.CleanupConnectionEngine:
+    properties:
+      capabilities:
+        type: string
+      connection_info:
+        $ref: '#/definitions/github_com_addp_common_models.ConnectionInfo'
+      engine_type:
+        type: string
+      id:
+        type: integer
+      lifecycle_state:
+        type: string
+      tenant_id:
+        type: integer
+    type: object
+  client.CleanupEngineConnection:
+    properties:
+      attempt:
+        type: integer
+      authorization_id:
+        type: string
+      engine:
+        $ref: '#/definitions/client.CleanupConnectionEngine'
+      engine_id:
+        type: string
+      execution_id:
+        type: string
+      expires_at:
+        type: string
+      purpose:
+        type: string
+      scope:
+        $ref: '#/definitions/execution.CleanupAuthorizationScope'
+      tenant_id:
+        type: string
+    type: object
   client.IssueManagerModel3DAuthorizationRequest:
     properties:
       execution_id:
@@ -3630,6 +3666,19 @@ definitions:
         type: string
       tenant_id:
         type: string
+    type: object
+  internal_api.IAMCleanupEngineConnectionRequest:
+    properties:
+      attempt:
+        type: integer
+      engine_id:
+        type: string
+      execution_id:
+        type: string
+      lease_token:
+        type: string
+      scope:
+        $ref: '#/definitions/execution.CleanupAuthorizationScope'
     type: object
   internal_api.IAMCompleteAdministratorRecoveryRequest:
     properties:
@@ -8987,6 +9036,65 @@ paths:
       security:
       - BearerAuth: []
       summary: 复核清理子执行授权 | Recheck cleanup child authorization
+      tags:
+      - Runtime 执行授权 | Runtime Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.cleanup_authorization.execute
+  /execution-authorizations/{id}/cleanup-engine-connection:
+    post:
+      consumes:
+      - application/json
+      description: 仅固定 Transfer Owner 可为当前 Engine 删除子执行取得内存内短期连接；核验当前用户删除权、父子请求与有效租约，不授予普通数据访问
+        | Only the fixed Transfer Owner may obtain an ephemeral connection for its
+        current Engine deletion child; rechecks current user deletion permission,
+        parent/child request and live leases, without granting ordinary data access
+      parameters:
+      - description: 执行授权 ID | Execution authorization ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 准确清理与连接边界 | Exact cleanup and connection boundary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCleanupEngineConnectionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.CleanupEngineConnection'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取原 Engine 清理连接 | Resolve the original Engine cleanup connection
       tags:
       - Runtime 执行授权 | Runtime Execution Authorization
       x-addp-auth-mode: permission

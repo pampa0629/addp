@@ -144,6 +144,8 @@ func TestCleanupAuthorizationAgainstPostgres(t *testing.T) {
 		}
 	})
 
+	t.Run("engine_connection", func(t *testing.T) { testCleanupEngineConnectionAgainstPostgres(t, ctx, db, fixtureRole) })
+
 	t.Run("six_permission_engine_identity_is_purpose_isolated", func(t *testing.T) {
 		actor := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "cleanup-engine-only", audit)
 		membership := establishContextSelectionMembership(t, ctx, members, tenant.ID, actor.PrincipalID, audit)

@@ -226,7 +226,7 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 					t.Fatal(err)
 				}
 				before, _ := json.Marshal(observed)
-				if err := svc.recordCleanupFailureStage(t.Context(), lastLease, "manager_cleanup_plan"); err == nil {
+				if err := cleanup.RecordFailureStep(t.Context(), tx, lastLease, "manager_cleanup_plan"); err == nil {
 					t.Fatal("terminal lease appended diagnostic")
 				}
 				var after execution.TaskExecution

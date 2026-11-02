@@ -15,8 +15,10 @@ import (
 
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 	mysqltypes "github.com/addp/common/format/mappers/mysql"
 	postgresqltypes "github.com/addp/common/format/mappers/postgresql"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	_ "github.com/go-sql-driver/mysql"
@@ -24,6 +26,7 @@ import (
 )
 
 type CapturePlan struct {
+	cleanupExpiresAt            time.Time
 	SourceType                  models.CaptureSourceType
 	SourceConnInfo              engineplugin.ConnectionInfo
 	CDCConnInfo                 engineplugin.ConnectionInfo
@@ -103,7 +106,7 @@ func (r *DatabasePlanResolver) Resolve(ctx context.Context, task *models.Transfe
 	return plan, nil
 }
 
-func (r *DatabasePlanResolver) ResolveForCleanup(_ context.Context, task *models.TransferTask) (*CapturePlan, error) {
+func (r *DatabasePlanResolver) ResolveForCleanup(ctx context.Context, task *models.TransferTask) (*CapturePlan, error) {
 	if task == nil || r == nil || r.engines == nil {
 		return nil, fmt.Errorf("database CDC capture cleanup requires task and engine resolver")
 	}
@@ -115,8 +118,28 @@ func (r *DatabasePlanResolver) ResolveForCleanup(_ context.Context, task *models
 	if err != nil {
 		return nil, err
 	}
-	resolver := planner.BindEngineResolver(r.engines, task.TenantID)
-	source, err := resolver.ResolveEngine(sourceRef)
+	var source planner.EngineBinding
+	var expires time.Time
+	purpose, bound := ctx.Value(cleanupConnectionContextKey{}).(*cleanupConnectionContext)
+	if bound && (purpose.engineID == 0 || purpose.resolve == nil) {
+		return nil, fmt.Errorf("invalid cleanup connection context")
+	}
+	if bound && sourceRef.ID == purpose.engineID {
+		grant, grantErr := purpose.resolve(ctx, sourceRef.ID)
+		if grantErr != nil {
+			return nil, grantErr
+		}
+		if grant == nil || grant.Engine == nil || grant.EngineID != strconv.FormatUint(uint64(sourceRef.ID), 10) || grant.Purpose != execution.CleanupEngineConnectionPurpose || grant.Engine.ID != sourceRef.ID || grant.Engine.TenantID != task.TenantID || grant.Engine.LifecycleState != "deleting" || !grant.ExpiresAt.After(time.Now()) {
+			return nil, fmt.Errorf("cleanup connection does not match the frozen capture source")
+		}
+		source, err = planner.EngineBindingFromEngine(&commonmodels.Engine{ID: grant.Engine.ID, TenantID: &grant.Engine.TenantID, EngineType: grant.Engine.EngineType, LifecycleState: grant.Engine.LifecycleState, Capabilities: grant.Engine.Capabilities, ConnectionInfo: grant.Engine.ConnectionInfo})
+		if err == nil && sourceRef.Type != "" && source.Type != sourceRef.Type {
+			return nil, fmt.Errorf("cleanup source engine type changed")
+		}
+		expires = grant.ExpiresAt
+	} else {
+		source, err = planner.BindEngineResolver(r.engines, task.TenantID).ResolveEngine(sourceRef)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("resolve database CDC source engine for cleanup: %w", err)
 	}
@@ -126,7 +149,8 @@ func (r *DatabasePlanResolver) ResolveForCleanup(_ context.Context, task *models
 	}
 	sourceLocator, _ := spec.Source.ResourceLocator()
 	plan := &CapturePlan{
-		SourceConnInfo: source.ConnInfo, SourceEngineID: source.EngineID,
+		cleanupExpiresAt: expires,
+		SourceConnInfo:   source.ConnInfo, SourceEngineID: source.EngineID,
 		SourceTable: sourceLocator.Path[1], SourceIdentity: strings.TrimSpace(spec.Source.Locator),
 	}
 	switch sourceType {

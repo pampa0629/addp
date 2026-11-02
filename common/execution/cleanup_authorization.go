@@ -9,9 +9,13 @@ import (
 
 const AudienceCleanup = "cleanup"
 
+// CleanupEngineConnectionPurpose requires its own current, exact-object decision.
+const CleanupEngineConnectionPurpose = "transfer.capture_cleanup"
+
 // CleanupAuthorizationScope binds one Owner to the exact immutable request.
 // The digest includes action, mode, scope, confirmation and the original User.
-// This purpose cannot grant engine access or authorize another Owner.
+// This scope cannot be consumed as ordinary engine access or by another Owner.
+// A separate cleanup connection decision rechecks its exact Engine purpose.
 type CleanupAuthorizationScope struct {
 	RequestID         string `json:"request_id"`
 	ParentExecutionID string `json:"parent_execution_id"`

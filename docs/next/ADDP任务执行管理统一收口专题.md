@@ -1063,7 +1063,7 @@ System Go最新Job125119346754虽然外层success，但selected:false、未执�
 
 **已查实的确定冲突。** CDC `DatabasePlanResolver.ResolveForCleanup` 仍复用普通 `SystemEngineResolver`，后者调用Tenant Service Principal的普通Engine详情并要求Engine available。真实System `GetForConnection`拒绝deleting／deleted；即便mock直接返回deleting Engine，Resolver的available检查仍会拒绝。Capture Supervisor已取得planErr后仍可先删除connector，再返回源清理计划失败，源端slot／publication及后续topic清理无法完成。现有Supervisor测试用直接返回成功计划的fake，未验证真实生命周期读取边界。本轮Transfer现场未归档该具体调用，故这里是必修的可复现冲突，不等同于对现场唯一错误的直接取证。
 
-现行Common `CleanupAuthorizationScope` 明确该用途不能授予Engine access，`GetCleanupAccess`也明确不返回Engine凭据；Manager可用脱敏描述替代，其用途只是读生命周期，但Transfer清理已登记的源端产物需要真实连接，二者不能混同。不能以放宽普通Engine可用性、预存凭据、借用用户token或跨读私表补齐该缺口。
+第十一轮源码中的Common `CleanupAuthorizationScope` 明确普通Cleanup用途不能授予Engine access，`GetCleanupAccess`也明确不返回Engine凭据；Manager可用脱敏描述替代，其用途只是读生命周期，但Transfer清理已登记的源端产物需要真实连接，二者不能混同。不能以放宽普通Engine可用性、预存凭据、借用用户token或跨读私表补齐该缺口。
 
 **已确认的窄方案。** 用户于2026-11-02明确同意本节方案，原六项User权限不变；正式契约先统一并提交，再实施，新的Hosted仍单独确认。
 
@@ -1073,10 +1073,23 @@ System Go最新Job125119346754虽然外层success，但selected:false、未执�
 4. Transfer以该专用授权连接构造清理计划，先核对已登记Capture generation的source Engine／locator／database／连接指纹，再沿原Run.PrepareExternal／持久operation围栏执行；不削弱普通SystemEngineResolver的active／online要求。原生删除只覆盖当前目标上的自有CDC产物，业务行、任务与Engine删除保留DLQ语义保持。其他active源的普通任务删除路径保持原用途；跨目标授权、历史Tenant及其它Owner连接需求不在首期范围。
 5. 同次补闭集Transfer失败阶段，包括计划/连接、停止等待、Capture原生步骤与提交，沿原C租约保护写入既有安全step，诊断不能延长租约、产生回执、重放效果或扩大读取；专项runner仅投影原User已经授权的子执行闭集步骤，成功报告及七项断言不扩展。正式规范／API／Swagger和最小门禁同次落实：System授权与真实Handler、Common窄客户端、Transfer T1／PostgreSQL与Capture源指纹围栏、专项runner和登记检查；Transfer Go须有实际执行证据，不能沿用会被无关聚合失败提前阻断的结果。新的Hosted仍另行确认。
 
-**当前边界。** 本轮只做取证、只读代码核查及临时隔离源码最小复现，不新增连接端点、不改权限用途、不改变生产执行路径。该授权方案确认前，依赖连接用途的产品修正暂停；已获准的原生Host单次运行已完成，不自动追加。Graph原生写图／正向reopen等既有未验收项不随本轮关闭。
+**确认前的取证边界。** 用途确认前仅做取证、只读代码核查及临时隔离源码最小复现，依赖连接用途的产品修正暂停。此历史阶段已结束，后续实施按下节记录；已获准的原生Hosted单次运行已完成，不自动追加。Graph原生写图／正向reopen等既有未验收项不随本轮关闭。
 
 
 **最小复现实证。** 在本轮私有目录的临时390源码副本中，仅增加受控HTTP／fake Provider探针，沿标准 `make test-transfer-backend` 和 `GOFLAGS=-v`实际exit0；active源计划成功、真实System语义409及Resolver自身deleting拒绝均复现，Supervisor在fake connector删除后因源计划拒绝失败，源端与topic删除未调用。没有调用真实数据库或外部Capture，不把T1探针当作本轮原生现场HTTP证据或PostgreSQL T2。原始初次源码子集缺脚本夹具的失败保留，补齐同一390版本的既有脚本后完整标准T1实际通过。`transfer-boundary-probe-proof.json`保留测试／日志哈希，verbose日志SHA-256 `ea8434b066272d71ff22f179d7b69c5c5ab9b1ce3dc66258d908eefd30181ef7`。生产代码和权限未修改；当前仅提交取证与待确认方案文档。
 
 
 **实施准入。** 本节用途已获用户明确确认，原“待确认”阻断解除。正式契约统一到术语表及Cleanup规范；实现覆盖System授权／连接读取、Common窄客户端与C诊断、Transfer原生计划及围栏、专项runner和Swagger。CI会话负责现有Platform下独立Transfer Go标准Owner入口、选择及对应登记回归；主责负责其余产品与runner路径。普通Cleanup效果在P关闭后合法收尾的既有规则不变，新连接裁决严格要求P仍开放。首期按逻辑Owner addp-transfer及准确Cleanup C租约识别用途，不新增Backend／Worker进程身份或角色。
+
+
+### 8.36 Transfer 窄连接用途实施及确定性门禁
+
+正式契约先以 `7972830bebb4fc3ee83a59c7c318d8b1cc9fcab9` 提交，用户确认的六项User权限保持不变。System新增唯一 `cleanup-engine-connection` 出口，复用既有Runtime权限，固定Transfer用途；按数据库时钟在同一短事务内核验当前身份／EA、准确冻结请求、开放P及当前C的attempt／租约、精确deleting Engine，读取并解密后再次核验有效窗，返回禁止缓存的最小连接DTO。没有新增User权限、角色、迁移或持久凭据副本。普通Cleanup在P关闭后的合法效果收尾规则保持，新连接严格要求P仍开放。
+
+Common窄客户端绑定全部身份和对象字段、限制响应体／耗时、拒绝重定向及未知字段，连接拒绝不自动刷新重试；System请求在C锁外完成，返回后再以本地当前C／数据库时钟核验。Transfer对准确目标只走专用用途，失败不回退；其它active源沿原用途。Capture先核对generation／source定位／连接指纹，再删除自有原生产物；原生调用受授权到期约束，未知效果仍保留持久operation隔离。原始业务行、Engine删除保留任务和DLQ的产品语义不变。
+
+Manager和Transfer统一复用Common的C围栏安全失败步骤写入；诊断不延租、不写回执、不刷新授权。Transfer增加闭集计划、停止、Capture原生、DLQ与提交阶段，runner按Owner核验当前失败attempt及唯一终态步骤，不增读取权限、七项断言、重试或等待预算。System双语Swagger同步，覆盖249个公开路由方法。
+
+**实际本地证据。** 标准Common／System Go-only Owner、Transfer后端、Manager后端全部通过；独立Execution runner完整115＋170项及登记一致通过。标准Common PG为67主项、Transfer PG为19、Manager PG为31、System Cleanup PG为6，均exit0且无FAIL／SKIP；System IAM标准cleanup-authorization场景及新engine_connection子项也实际通过。Transfer PG新增实际C→Common客户端→Capture解析→持久operation／结果／回执的组合验证，原生Provider为fake，不冒充真实源T4。System覆盖原六权限、撤权／关闭Tenant／P与C失效／到期跨越读取／错目标等拒绝及审计不含连接。原生runner和旧普通Resolver均已取得先失败后通过的确定性反例，不把旧实现编译失败当作功能反例。
+
+测试沿既有标准入口与注册主测试执行，未创建本地数据库或接管个人服务。初次测试夹具／顺序错误及历史失败日志保留，最终结果与之分开。CI会话以 `26b7d33d5342178d6405d2573ea117d887432e5a` 完成独立Transfer Go入口，避免无关聚合失败阻断本Owner实际执行；其它既有Go／PG／授权／runner路径自动命中。本节产品提交后的相关Linux CI尚待实际终态，不以本地或历史源码替代。第十一轮Hosted仍failure0/7；修正后未运行新的Hosted，新的单次运行须另行确认。

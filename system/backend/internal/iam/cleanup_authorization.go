@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/events"
 	"github.com/addp/common/execution"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -101,7 +102,36 @@ type AuthorizedCleanup struct {
 	ExpiresAt       time.Time
 }
 
+type AuthorizedCleanupEngineConnection struct {
+	Access   *AuthorizedCleanup
+	EngineID int64
+}
+
+type cleanupEngineConnection struct {
+	engineID       int64
+	read           func(context.Context, *gorm.DB, uint, uint) error
+	parentDeadline time.Time
+}
+
+func (s *ExecutionAuthorizationService) AuthorizeCleanupEngineConnection(ctx context.Context, input AuthorizeCleanupInput, engineID int64, read func(context.Context, *gorm.DB, uint, uint) error) (*AuthorizedCleanupEngineConnection, error) {
+	if engineID <= 0 || read == nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	if input.Stage != "effect" || input.Scope.Module != events.ModuleTransfer || input.ServiceClientID != "addp-transfer" {
+		return nil, ErrExecutionAuthorizationPermissionDenied
+	}
+	access, err := s.authorizeCleanup(ctx, input, &cleanupEngineConnection{engineID: engineID, read: read})
+	if err != nil {
+		return nil, err
+	}
+	return &AuthorizedCleanupEngineConnection{Access: access, EngineID: engineID}, nil
+}
+
 func (s *ExecutionAuthorizationService) AuthorizeCleanup(ctx context.Context, input AuthorizeCleanupInput) (*AuthorizedCleanup, error) {
+	return s.authorizeCleanup(ctx, input, nil)
+}
+
+func (s *ExecutionAuthorizationService) authorizeCleanup(ctx context.Context, input AuthorizeCleanupInput, connection *cleanupEngineConnection) (*AuthorizedCleanup, error) {
 	if s == nil || s.repository == nil || input.AuthorizationID <= 0 || input.ExecutionID == uuid.Nil || input.TenantID <= 0 || input.ServicePrincipalID <= 0 || input.Scope.Validate() != nil ||
 		!(input.Stage == "claim" && input.Attempt == 0 && input.LeaseToken == uuid.Nil || input.Stage == "effect" && input.Attempt > 0 && input.LeaseToken != uuid.Nil) {
 		return nil, fmt.Errorf("%w: invalid cleanup authorization boundary", commonapi.ErrBadRequest)
@@ -165,8 +195,27 @@ func (s *ExecutionAuthorizationService) AuthorizeCleanup(ctx context.Context, in
 		if !permitted {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
-		// No parent lock or parent deadline for effect: an already admitted child may
-		// finish after the coordinator closes. The Owner claims under P -> C separately.
+		// New connection authority requires an open P, before taking C. Ordinary
+		// effect authority retains its existing post-parent-closure convergence.
+		if connection != nil {
+			var parent execution.TaskExecution
+			if err := tx.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("execution_id = ? AND tenant_id = ?", input.Scope.ParentExecutionID, input.TenantID).First(&parent).Error; err != nil {
+				return ErrExecutionAuthorizationUnavailable
+			}
+			request, err := execution.CleanupRequestFromExecution(parent)
+			if err != nil || parent.Module != execution.ModuleSystem || parent.TaskType != execution.TaskTypeCleanup || parent.ActorPrincipalID == nil || *parent.ActorPrincipalID != authorization.ActorPrincipalID || parent.ActorTenantMembershipID == nil || *parent.ActorTenantMembershipID != authorization.TenantMembershipID || parent.IssuedAuthorizationVersion == nil || *parent.IssuedAuthorizationVersion != authorization.IssuedAuthorizationVersion || request.Digest != input.Scope.RequestDigest || request.RequestID != input.Scope.RequestID || request.RequestedBy != uint(authorization.ActorPrincipalID) ||
+				request.Action != events.CleanupActionExecute || request.CleanupMode != events.CleanupModePhysical || request.CauseEvent != events.CleanupCauseEngineDeleting || request.Context.EngineID != uint(connection.engineID) || request.Context.TenantID != 0 || request.Context.ExternalArtifactPolicy != "delete" {
+				return ErrExecutionAuthorizationPermissionDenied
+			}
+			if parent.Status != execution.ExecutionStatusRunning || parent.Attempt <= 0 || parent.StartedAt == nil || parent.CompletedAt != nil || parent.LeaseExpiresAt == nil || parent.LeaseOwner == nil || *parent.LeaseOwner == "" || parent.LeaseToken == nil || *parent.LeaseToken == "" {
+				return ErrExecutionAuthorizationUnavailable
+			}
+			connection.parentDeadline = request.Deadline
+			if parent.LeaseExpiresAt.Before(connection.parentDeadline) {
+				connection.parentDeadline = *parent.LeaseExpiresAt
+			}
+		}
+
 		var child execution.TaskExecution
 		if err := tx.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("execution_id = ? AND tenant_id = ?", input.ExecutionID.String(), input.TenantID).First(&child).Error; err != nil {
 			return ErrExecutionAuthorizationUnavailable
@@ -199,38 +248,76 @@ func (s *ExecutionAuthorizationService) AuthorizeCleanup(ctx context.Context, in
 				expires = *child.LeaseExpiresAt
 			}
 		}
-		// Locks can cross either authorization or lease expiry.
-		now, err = tx.internalTaskDatabaseTime(ctx)
-		if err != nil {
+		if connection != nil {
+			if child.LeaseOwner == nil || *child.LeaseOwner == "" {
+				return ErrExecutionAuthorizationUnavailable
+			}
+			if child.ParentExecutionID == nil || *child.ParentExecutionID != input.Scope.ParentExecutionID {
+				return ErrExecutionAuthorizationPermissionDenied
+			}
+			if connection.parentDeadline.Before(expires) {
+				expires = connection.parentDeadline
+			}
+
+		}
+		recheck := func() error {
+			// Locks can cross either authorization or lease expiry.
+			now, err := tx.internalTaskDatabaseTime(ctx)
+			if err != nil {
+				return err
+			}
+			if !expires.After(now) {
+				return ErrExecutionAuthorizationUnavailable
+			}
+			// A role assignment may expire while the child row is locked elsewhere.
+			// Recheck using the post-lock wall clock, not the earlier transaction time.
+			permissions, err := tx.ListEffectiveRoleAssignmentPermissions(ctx, principal.ID, principal.PrincipalType, ContextTypeTenant, &membership.TenantID, &membership.ID, now)
+			if err != nil {
+				return err
+			}
+			if !hasCleanupActorPermissions(permissions, child) {
+				return ErrExecutionAuthorizationPermissionDenied
+			}
+			runtimePermissions, err := tx.ListEffectiveRoleAssignmentPermissions(ctx, input.ServicePrincipalID, PrincipalTypeServicePrincipal, ContextTypeTenant, &input.TenantID, &runtime.MembershipID, now)
+			if err != nil {
+				return err
+			}
+			permitted := false
+			for _, row := range runtimePermissions {
+				if row.PermissionKey == "system.cleanup_authorization.execute" {
+					permitted = true
+				}
+			}
+			if !permitted {
+				return ErrExecutionAuthorizationPermissionDenied
+			}
+			return nil
+		}
+		if err := recheck(); err != nil {
 			return err
 		}
-		if !expires.After(now) {
-			return ErrExecutionAuthorizationUnavailable
-		}
-		// A role assignment may expire while the child row is locked elsewhere.
-		// Recheck using the post-lock wall clock, not the earlier transaction time.
-		permissions, err := tx.ListEffectiveRoleAssignmentPermissions(ctx, principal.ID, principal.PrincipalType, ContextTypeTenant, &membership.TenantID, &membership.ID, now)
-		if err != nil {
-			return err
-		}
-		if !hasCleanupActorPermissions(permissions, child) {
-			return ErrExecutionAuthorizationPermissionDenied
-		}
-		runtimePermissions, err = tx.ListEffectiveRoleAssignmentPermissions(ctx, input.ServicePrincipalID, PrincipalTypeServicePrincipal, ContextTypeTenant, &input.TenantID, &runtime.MembershipID, now)
-		if err != nil {
-			return err
-		}
-		permitted = false
-		for _, row := range runtimePermissions {
-			if row.PermissionKey == "system.cleanup_authorization.execute" {
-				permitted = true
+		if connection != nil {
+			// System Engine read/decrypt shares this transaction; never HTTP or effects.
+			if err := connection.read(ctx, tx.db, uint(connection.engineID), uint(input.TenantID)); err != nil {
+				return err
+			}
+			if err := recheck(); err != nil {
+				return err
 			}
 		}
-		if !permitted {
-			return ErrExecutionAuthorizationPermissionDenied
+		details := map[string]any{"audience": execution.AudienceCleanup, "execution_id": child.ExecutionID, "cleanup_scope": scope, "stage": input.Stage, "attempt": input.Attempt}
+		if connection != nil {
+			details["purpose"], details["engine_id"] = execution.CleanupEngineConnectionPurpose, strconv.FormatInt(connection.engineID, 10)
 		}
-		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{Metadata: input.Audit, EventName: "iam.execution_authorization.consumed", Result: AuditResultSucceeded, RiskLevel: "high", ModuleName: "system", EntityType: "execution_authorization", EntityID: strconv.FormatInt(authorization.ID, 10), Details: map[string]any{"audience": execution.AudienceCleanup, "execution_id": child.ExecutionID, "cleanup_scope": scope, "stage": input.Stage, "attempt": input.Attempt}}); err != nil {
+		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{Metadata: input.Audit, EventName: "iam.execution_authorization.consumed", Result: AuditResultSucceeded, RiskLevel: "high", ModuleName: "system", EntityType: "execution_authorization", EntityID: strconv.FormatInt(authorization.ID, 10), Details: details}); err != nil {
 			return err
+		}
+		if connection != nil {
+			// Audit FK/row waits can cross the authority or parent/child lease window.
+			// Roll back its audit too when no connection may be returned.
+			if err := recheck(); err != nil {
+				return err
+			}
 		}
 		result = &AuthorizedCleanup{AuthorizationID: authorization.ID, ExecutionID: input.ExecutionID, TenantID: input.TenantID, Stage: input.Stage, Attempt: input.Attempt, Scope: scope, ExpiresAt: expires.UTC()}
 		return nil

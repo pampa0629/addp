@@ -270,10 +270,17 @@ def engine_task_observation(value, request_id, engine_id, principal, *, action):
             authorization_denied=details.get('code') == 'cleanup_authorization_denied',
             authorization_unavailable=details.get('code') == 'cleanup_authorization_unavailable'))
         step = row.get('current_step')
-        stages = {'manager_cleanup_plan', 'manager_cleanup_inventory', 'manager_cleanup_engine_facts', 'manager_cleanup_confirmation',
-                  'manager_cleanup_commit', 'manager_cleanup_artifact', 'manager_cleanup_index_effect', 'manager_cleanup_finalize'}
+        stages = {
+            'manager': {'manager_cleanup_plan', 'manager_cleanup_inventory', 'manager_cleanup_engine_facts',
+                'manager_cleanup_confirmation', 'manager_cleanup_commit', 'manager_cleanup_artifact',
+                'manager_cleanup_index_effect', 'manager_cleanup_finalize'},
+            'transfer': {'transfer_cleanup_plan', 'transfer_cleanup_stop', 'transfer_cleanup_capture_plan',
+                'transfer_cleanup_capture_connector', 'transfer_cleanup_capture_source', 'transfer_cleanup_capture_group',
+                'transfer_cleanup_capture_topic', 'transfer_cleanup_capture_acl', 'transfer_cleanup_capture_history_topic',
+                'transfer_cleanup_capture_history_acl', 'transfer_cleanup_dlq', 'transfer_cleanup_commit'},
+        }.get(row['module'], set())
         steps = row.get('steps')
-        if (row['module'] == 'manager' and row.get('status') == 'failed' and row.get('started_at') is not None
+        if (row['module'] in {'manager', 'transfer'} and row.get('status') == 'failed' and row.get('started_at') is not None
                 and type(row.get('attempt')) is int and row['attempt'] == 1
                 and type(step) is str and step in stages and type(steps) is list
                 and len(steps) == 1 and type(steps[0]) is dict and steps[0].get('id') == step

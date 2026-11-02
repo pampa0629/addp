@@ -204,6 +204,41 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 result = M.engine_task_observation(candidate, ID, 9, '17', action='scan')
                 self.assertNotIn('failure_step', result['children'][0]); self.assertNotIn('secret', json.dumps(result))
 
+    def test_transfer_failure_stage_uses_only_exact_failed_owner_step(self):
+        parent, child = str(uuid.uuid4()), str(uuid.uuid4())
+        value = dict(task_id=ID, status='timeout', task=dict(task_id=ID, execution_id=parent,
+            context={'engine_id': 9}, requested_by=17, action='execute',
+            expected_modules=S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']),
+            module_executions=[dict(module='transfer', execution_id=child, parent_execution_id=parent,
+                task_type='cleanup_executor', status='failed', attempt=1, started_at='present')])
+        for stage in ('plan', 'stop', 'capture_plan', 'capture_connector', 'capture_source',
+                      'capture_group', 'capture_topic', 'capture_acl', 'capture_history_topic',
+                      'capture_history_acl', 'dlq', 'commit'):
+            candidate = copy.deepcopy(value); row = candidate['module_executions'][0]
+            step = 'transfer_cleanup_'+stage
+            row.update(current_step=step, steps=[dict(id=step, status='failed', phase='terminal', error_code='private-metadata-sentinel')])
+            result = M.engine_task_observation(candidate, ID, 9, '17', action='execute')
+            self.assertEqual(result['children'][0]['failure_step'], step)
+            self.assertNotIn('private-metadata-sentinel', json.dumps(result))
+        for bad in ('manager_step', 'unknown', 'missing', 'duplicate', 'wrong_status', 'wrong_phase',
+                    'not_failed', 'not_started', 'old_attempt', 'bool_attempt'):
+            candidate = copy.deepcopy(value); row = candidate['module_executions'][0]
+            step = 'transfer_cleanup_capture_plan'
+            row.update(current_step=step, steps=[dict(id=step, status='failed', phase='terminal')])
+            if bad == 'manager_step': row['current_step'] = row['steps'][0]['id'] = 'manager_cleanup_inventory'
+            elif bad == 'unknown': row['current_step'] = row['steps'][0]['id'] = 'private-metadata-sentinel'
+            elif bad == 'missing': row['steps'] = []
+            elif bad == 'duplicate': row['steps'] *= 2
+            elif bad == 'wrong_status': row['steps'][0]['status'] = 'success'
+            elif bad == 'wrong_phase': row['steps'][0]['phase'] = 'waiting'
+            elif bad == 'not_failed': row['status'] = 'running'
+            elif bad == 'not_started': row.pop('started_at')
+            elif bad == 'old_attempt': row['attempt'] = 2
+            else: row['attempt'] = True
+            result = M.engine_task_observation(candidate, ID, 9, '17', action='execute')
+            self.assertNotIn('failure_step', result['children'][0])
+            self.assertNotIn('private-metadata-sentinel', json.dumps(result))
+
     def test_professional_read_selects_only_its_existing_two_owner_permissions(self):
         parent, calls = str(uuid.uuid4()), []
         completed = dict(task_id=ID, task={'execution_id': parent}, module_executions=[])

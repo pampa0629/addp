@@ -20,6 +20,7 @@ import (
 	systemservice "github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type IAMIssueExecutionAuthorizationRequest struct {
@@ -87,6 +88,7 @@ type IAMExecutionEngineAccessResponse struct {
 
 type iamExecutionAuthorizationService interface {
 	AuthorizeCleanup(context.Context, iam.AuthorizeCleanupInput) (*iam.AuthorizedCleanup, error)
+	AuthorizeCleanupEngineConnection(context.Context, iam.AuthorizeCleanupInput, int64, func(context.Context, *gorm.DB, uint, uint) error) (*iam.AuthorizedCleanupEngineConnection, error)
 	ResolveSubjectRoles(context.Context, iam.ResolveExecutionSubjectRolesInput) (*execution.SubjectRoles, error)
 	AuthorizeInternalTask(context.Context, iam.AuthorizeInternalTaskInput) (*iam.AuthorizedInternalTask, error)
 	Issue(context.Context, iam.IssueExecutionAuthorizationInput) (*iam.IssuedExecutionAuthorization, error)
@@ -161,6 +163,7 @@ func (h *IAMExecutionAuthorizationHandler) IssueFromServiceDefinition(c *gin.Con
 
 type executionEngineResolver interface {
 	GetForExecution(id, tenantID uint) (*models.Engine, error)
+	GetForCleanupConnection(context.Context, *gorm.DB, uint, uint) (*models.Engine, error)
 }
 
 type IAMExecutionAuthorizationHandler struct {
@@ -485,7 +488,7 @@ func respondExecutionAuthorizationError(c *gin.Context, err error) {
 		status = http.StatusConflict
 		messageID = sysi18n.MsgExecutionAuthorizationConflict
 		errorCode = "execution_authorization_conflict"
-	case errors.Is(err, iam.ErrExecutionAuthorizationConflict):
+	case errors.Is(err, iam.ErrExecutionAuthorizationConflict), errors.Is(err, commonapi.ErrConflict):
 		status = http.StatusConflict
 		messageID = sysi18n.MsgExecutionAuthorizationConflict
 		errorCode = "execution_authorization_conflict"

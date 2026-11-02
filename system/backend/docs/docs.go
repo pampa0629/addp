@@ -4197,6 +4197,92 @@ const docTemplate = `{
                 ]
             }
         },
+        "/execution-authorizations/{id}/cleanup-engine-connection": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 Transfer Owner 可为当前 Engine 删除子执行取得内存内短期连接；核验当前用户删除权、父子请求与有效租约，不授予普通数据访问 | Only the fixed Transfer Owner may obtain an ephemeral connection for its current Engine deletion child; rechecks current user deletion permission, parent/child request and live leases, without granting ordinary data access",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime 执行授权 | Runtime Execution Authorization"
+                ],
+                "summary": "获取原 Engine 清理连接 | Resolve the original Engine cleanup connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行授权 ID | Execution authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "准确清理与连接边界 | Exact cleanup and connection boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCleanupEngineConnectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.CleanupEngineConnection"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.cleanup_authorization.execute"
+                ]
+            }
+        },
         "/execution-authorizations/{id}/engine-accesses": {
             "post": {
                 "security": [
@@ -16384,6 +16470,61 @@ const docTemplate = `{
                 }
             }
         },
+        "client.CleanupConnectionEngine": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "string"
+                },
+                "connection_info": {
+                    "$ref": "#/definitions/github_com_addp_common_models.ConnectionInfo"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "client.CleanupEngineConnection": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "engine": {
+                    "$ref": "#/definitions/client.CleanupConnectionEngine"
+                },
+                "engine_id": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "purpose": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/execution.CleanupAuthorizationScope"
+                },
+                "tenant_id": {
+                    "type": "string"
+                }
+            }
+        },
         "client.IssueManagerModel3DAuthorizationRequest": {
             "type": "object",
             "properties": {
@@ -21033,6 +21174,26 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCleanupEngineConnectionRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "engine_id": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/execution.CleanupAuthorizationScope"
                 }
             }
         },
