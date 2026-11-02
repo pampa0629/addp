@@ -418,11 +418,17 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 
 本地完整 `make test-module MODULE=transfer` 同样在上述平台 T0 失败，未进入 Owner 步骤，不计完整模块聚合通过。`transfer/docs/transfer-基本概念及配置说明.md` 在修复提交及其父提交中逐字节一致，SHA-256 为 `a6cf6796d32eaff2cde1499e892057e90189ca862f16e5d2f4becb87af77c060`，与审查冻结值 `762d8458eb59b2c10a4d5bb623840fde9c96e19ff09ee8bc80261895f75c0f85` 不符；该文档不在本次七个改动中，未修改 Ontology 审查基线或扩范围修复。
 
-**新文案日常 Console 部分验收（2026-11-02 17:54 +08:00 检查点）**：现有管理员账号的真实 AuthContext 具备创建、读取、执行与 `meta.catalog.read`，未调整权限。Step 4 选项、Step 5 摘要与警告均显示立即执行一次；北京时间 17:52:31 一次提交创建任务 `52`，创建返回 201，随后唯一一次 `/task-definitions/52/start` 返回 200。未截断的创建窗口记录为一次创建、一次启动；唯一 execution `2e78bcc4-fdd7-4f24-9309-ecbbdcff4cd1` 于 17:52:32 成功，Owner 记录读取／写入各 3 行、`trigger_type=manual`、`trigger_by=31`，执行列表总数为 1。源为既有 `public.test_pk_source`，仅映射 `id/name`，独立新目标为 `public.hint_execute_20261102_c83f7e`；本检查点没有独立源目标逐行物理对账，不由执行计数扩展为完整数据一致性验收。
+**新文案日常 Console 验收（2026-11-02）**：现有管理员账号的真实 AuthContext 具备创建、读取、执行与 `meta.catalog.read`，未调整权限。Step 4 选项、Step 5 摘要与警告均显示立即执行一次；北京时间 17:52:31 一次提交创建任务 `52`，创建返回 201，随后唯一一次 `/task-definitions/52/start` 返回 200。未截断的创建窗口记录为一次创建、一次启动；唯一 execution `2e78bcc4-fdd7-4f24-9309-ecbbdcff4cd1` 于 17:52:32 成功，Owner 记录读取／写入各 3 行、`trigger_type=manual`、`trigger_by=31`，执行列表总数为 1。源为既有 `public.test_pk_source`，仅映射 `id/name`，独立新目标为 `public.hint_execute_20261102_c83f7e`；本轮没有独立源目标逐行物理对账，不由执行计数扩展为完整数据一致性验收。
 
-仅创建权限分支仍未运行：原临时账号的租户访问已结束、无生效角色，新账号邀请草稿尚未提交，仍待用户本轮访问确认及登录，不计该分支通过。前述任务 `17`／`18`／`51` 对应修正前页面，不能套作新文案实机证据。任务 `52`、一次执行、新目标及其写入均保留审阅，未删除任务或数据，不宣称零残留；后续清理与最终结果单独认定。
+仅创建分支使用用户自行注册的新临时账号（Principal `45`）；用户明确确认仅 `transfer.task.create`、`meta.catalog.read` 两项权限和最多 30 分钟访问，18:23 左右分配的既有临时角色截止 18:52。真实 IAM 详情核对角色仍且仅含这两项权限，未修改共享角色定义、未增加读取或执行权。Safari 无痕真实 Console 的 Step 4、Step 5 摘要均为“仅保存任务”，警告为“未配置调度计划，本次仅保存任务，不会自动执行。”；18:26:12 一次提交创建任务 `53` 返回 201，成功提示后重置同一创建页，刷新仍为空白向导。管理员随后核对 `created_by=45`、idle／stopped、空 schedule，执行列表 total=0；访问结束后再次读取仍为 0。
 
-原件位于 `/tmp/addp-transfer-execution-hint-20261102/console-real/`，检查点 `report.json` 的 SHA-256 为 `c4a05c691935d6d97b90d1041cdcd5bb515671515e2e5bb67085c971c83d0405`；本会话冻结该报告及 Owner 身份、创建网络、执行、DOM／截图共 12 份原件，校验创建／启动计数、终态与页面文案。五个产品前端文件逐字节匹配修复提交 `90fbcfc16bac188ebfc72f6b1629c9940d7ae8d8`；System／Gateway／Meta／Transfer 的 Ready 报告均为 `39059d2ed2d711b992947c1debee6872a0d60578`，前后端不是同一构建版本。本会话与专项会话未重启服务、重授已结束账号权限或运行新的隔离 Hosted；`acceptance_complete=false`，不计全部分支、同 SHA T4／Hosted 或完整产品通过。临时证据不保证长期留存。
+仅创建分支没有 Safari 网络拦截。服务端投影日志的本次窗口仅一条创建 POST、零条任务启动 POST，日志采集器 dropped／parse_failures／truncated 均为 0；不将其表述为 Safari 浏览器全量网络捕获。收尾管理员 reload 的 CDP 缓冲已截断，不能据该缓冲证明零请求；保留的实际 executions 响应仍为 total=0。
+
+结束时已正常撤销临时角色并结束租户访问，零个生效角色、状态已结束，Safari 刷新回登录页。原已结束账号没有重新启用；未修改其他账号、共享角色或资源授权，未重启服务。任务 `52`／`53`、任务 `52` 的一次执行及新 PG 目标的 3 条写入均保留审阅，未删除业务任务或数据；仅创建分支的 MySQL 目标只是定义，未独立查询物理表是否存在，不宣称零残留。前述任务 `17`／`18`／`51` 对应修正前页面，不能套作本轮新文案证据。
+
+最终原件位于 `/tmp/addp-transfer-execution-hint-20261102/console-real/`：18:28 检查点 `report.json` 的 SHA-256 为 `676d0aaa4ea3235203f99797ac2754c68ec3aebebf7f9587beaded6fd3b69417`，`sha256sums.txt` 覆盖 36 份原件，本会话逐项校验并核对页面、权限、网络／日志、执行和访问结束事实。此前 17:54 部分检查点（SHA-256 `c4a05c691935d6d97b90d1041cdcd5bb515671515e2e5bb67085c971c83d0405`）的 12 份冻结原件仍按当时范围保留；修复阶段 `evidence.json` 的 `real_console_hint_retested:false` 也只表示当时状态，由最终报告补充，不改写旧时间点事实。
+
+五个产品前端文件最终逐字节匹配修复提交 `90fbcfc16bac188ebfc72f6b1629c9940d7ae8d8`；System／Gateway／Meta／Transfer 的 Ready 报告均为 `39059d2ed2d711b992947c1debee6872a0d60578`，前后端不是同一构建版本。最终 `acceptance_complete=true` 仅指本轮中文日常 Console 中“有执行权的新建”与“仅创建且无 Cron”两分支；英文、编辑和 Cron 仍依赖上述自动化证据，不计这些分支的实机通过，也不计同 SHA 隔离 T4／Hosted 或完整产品通过。未重跑 CI；上述 Platform consistency 和模块聚合失败保持原判定，临时证据不保证长期留存。
 
 ## 相关文档
 
