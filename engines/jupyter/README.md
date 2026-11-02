@@ -2,7 +2,7 @@
 
 ADDP 的 Notebook 运行时，提供读取 MinIO、校验内容摘要、通过 Papermill 执行并写回结果的无头接口，以及由 Develop 创建和代理的短期隔离 JupyterLab 会话。
 
-当前一次性 Notebook（`script`）仍按[Develop 执行监督与授权规范](../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)拒绝实际派发，已有 Runtime 接口不表示平台已开放该能力。交互 Session 不进入此队列；当前接线与未完成项见 [Develop Notebook 专题](../../develop/CLAUDE.md#notebook-会话与排队执行)。
+当前一次性 Notebook（`script`）仍按[Develop 执行监督与授权规范](../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)拒绝实际派发，已有 Runtime 接口不表示平台已开放该能力。交互 Session 不进入此队列；当前接线与未完成项见 [Develop Notebook 专题](../../develop/CLAUDE.md#notebook-会话与排队执行)。Runtime、Develop 代理、Python Facade 与编辑器的代码入口集中见[Notebook 实现导航](../../develop/CLAUDE.md#notebook-实现导航)。
 
 ## 架构设计
 

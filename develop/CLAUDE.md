@@ -248,7 +248,7 @@ Notebook 的交互凭据、数据访问、文件与 Kernel 绑定、Copilot 及�
 
 ### Notebook 会话与排队执行
 
-交互 Session 与排队 `script` 分别授权；前者的只读数据授权不能用于后者派发。Runtime 内部接口与独立会话的职责见[Jupyter README](../engines/jupyter/README.md#api-接口)，签发、主体绑定、期限及撤销统一见[Notebook Session Authorization](../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)。
+交互 Session 与排队 `script` 分别授权；前者的只读数据授权不能用于后者派发。Runtime 内部接口与独立会话的职责见[Jupyter README](../engines/jupyter/README.md#api-接口)，签发、主体绑定、期限及撤销统一见[Notebook Session Authorization](../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)；按职责查代码见[Notebook 实现导航](#notebook-实现导航)。
 
 #### 会话入口与凭据
 
@@ -326,7 +326,6 @@ Develop 执行记录归 `common.task_executions`，不维护私有执行表。�
 - [execution_supervisor.go](backend/internal/worker/execution_supervisor.go) - Develop Backend 内嵌唯一执行监督器
 - [sql_engine_service.go](backend/internal/service/sql_engine_service.go) - SQL 执行服务
 - [workflow_engine_service.go](backend/internal/service/workflow_engine_service.go) - GIS 工作流执行服务
-- [jupyter_service.go](backend/internal/service/jupyter_service.go) - Jupyter Notebook 服务
 - [operator_discovery_service.go](backend/internal/service/operator_discovery_service.go) - **算子发现服务**（聚合工作流运行时动态算子）
 - [dev_task_service.go](backend/internal/service/dev_task_service.go) - 工作项（SQL/工作流）管理服务
 
@@ -336,15 +335,29 @@ Develop 执行记录归 `common.task_executions`，不维护私有执行表。�
 - [backend/internal/api/query_handler.go](backend/internal/api/query_handler.go) - 查询预检、真实模板与连接测试
 - [backend/internal/api/execution_handler.go](backend/internal/api/execution_handler.go) - execution 创建、当次／历史读取与导出
 - [backend/internal/api/operator_handler.go](backend/internal/api/operator_handler.go) - 算子发现 API
-- [backend/internal/api/notebook_handler.go](backend/internal/api/notebook_handler.go) - Jupyter Notebook API
 
 ### 前端视图文件
 
 - [frontend/src/views/QueryEditor.vue](frontend/src/views/QueryEditor.vue) - SQL/查询编辑器
 - [frontend/src/views/WorkflowEditor.vue](frontend/src/views/WorkflowEditor.vue) - GIS 工作流编辑器
-- [frontend/src/views/NotebookEditor.vue](frontend/src/views/NotebookEditor.vue) - Jupyter Notebook 编辑器
 - [frontend/src/views/TaskManagement.vue](frontend/src/views/TaskManagement.vue) - 开发任务定义与统一监控入口
 - [frontend/src/views/ExecutionDetail.vue](frontend/src/views/ExecutionDetail.vue) - 查询、工作流和脚本领域执行详情
+
+### Notebook 实现导航
+
+以下只定位代码职责，会话、权限和派发边界统一见[Notebook 专题](#notebook-会话与排队执行)；文件存在不表示相关链路已经验收。
+
+| 职责 | 实现入口 |
+| --- | --- |
+| 文件创建、上传、下载与运行时重绑；Runtime 连接 | [Notebook handler](backend/internal/api/notebook_handler.go)、[Jupyter client](backend/internal/service/jupyter_service.go) |
+| 会话创建、关闭、HTTP／WebSocket 代理及 Kernel 目录／表／查询入口 | [Session handler](backend/internal/api/notebook_session_handler.go)、[Session service](backend/internal/service/notebook_session_service.go) |
+| System 会话授权签发、消费、派生与撤销 | [Session control plane](backend/internal/service/notebook_session_control_plane.go) |
+| 动态记录、图、内容与变更流读取 | [Native data handler](backend/internal/api/notebook_native_data_handler.go)、[Native data service](backend/internal/service/notebook_session_native_data.go) |
+| Python 原生引擎 Facade 与受控读取客户端 | [common-python Notebook engines](../common-python/addp_common/notebook/engines.py) |
+| Copilot 候选发现、确认后事实复核与代码生成 | [Copilot handler](backend/internal/api/notebook_copilot_handler.go)、[Copilot service](backend/internal/service/notebook_copilot_service.go) |
+| 编辑器、会话请求与生成单元插入 | [NotebookEditor](frontend/src/views/NotebookEditor.vue)、[Notebook API client](frontend/src/api/notebook.js)、[JupyterLab bridge](../engines/jupyter/labextension/src/index.ts) |
+| 无头执行客户端与当前排队拒绝分支 | [Notebook execution service](backend/internal/service/notebook_execution_service.go)、[Execution service](backend/internal/service/execution_service.go) |
+| Runtime HTTP 接口与隔离会话生命周期 | [Runtime API](../engines/jupyter/api_server.py)、[Interactive sessions](../engines/jupyter/interactive_sessions.py) |
 
 ### 配置文件
 
@@ -467,7 +480,7 @@ GeoPython 的矢量数据与部分中间结果在进程内存中处理；资源�
 
 - **System / 控制面** - 提供引擎与能力事实；执行连接的取得与使用沿[执行授权与效果](#执行授权与效果)，Service 身份不代替原 User 的数据授权。
 - **工作流运行时** - 提供 Runtime 算子发现与执行；公开参数、Adapter 派生和 Runtime 参数的分工见[算子发现服务](#算子发现服务)及[正式适配契约](../docs/spec/workflow/Develop资源与执行.md#算子契约分层)。
-- **Jupyter 脚本运行时** - 承载 Notebook 交互 Session；会话与 Kernel 访问沿[授权规则](#执行授权与效果)。排队 `script` 的运行授权仍有缺口，当前不派发 Runtime，见[执行监督与授权](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。
+- **Jupyter 脚本运行时** - 承载 Notebook 交互 Session；会话与 Kernel 访问沿[Notebook 专题](#notebook-会话与排队执行)。排队 `script` 的运行授权仍有缺口，当前不派发 Runtime，见[执行监督与授权](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。
 
 ### 5. 执行记录清理
 

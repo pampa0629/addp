@@ -74,14 +74,14 @@ Notebook运行绑定: PUT /api/v1/develop/notebooks/{id}/runtime-binding
 Notebook Copilot: POST /api/v1/develop/notebook-copilot-sessions/{session_id}/generate
 ```
 
-Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Notebook Copilot 的数据源范围严格限定为当前交互 Session 可访问的实时 Engine Catalog：首次请求先按业务角色列出候选，存在歧义时逐角色确认；确认后才读取字段、几何列和 CRS 等事实并生成代码。生成的 Notebook 单元只允许通过同源 JupyterLab bridge 插入，不自动执行。
+Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Notebook 的 Session 数据源确认、事实复核与同源 bridge 插入约束见[生成与插入](CLAUDE.md#copilot-生成与插入)，不自动执行生成的单元。
 
-完整 API 文档请查看 [CLAUDE.md#常见开发场景](./CLAUDE.md#常见开发场景)
+操作示例见[常见开发场景](CLAUDE.md#常见开发场景)；当前端点登记见[Owner 路由](backend/internal/api/router.go)，Notebook 各层代码职责见[实现导航](CLAUDE.md#notebook-实现导航)。
 
 ## 🔐 认证方式
 
 - 用户 API 使用 System 签发的短期 User Access Token，并通过 canonical AuthContext 解析
-- 普通用户 JSON API 请求须携带 `Authorization: Bearer <token>` 头；Notebook Session 的 HTTP／WebSocket 代理和 Kernel 能力按[会话访问规则](CLAUDE.md#执行授权与效果)分别校验，不使用 Runtime 直连入口。
+- 普通用户 JSON API 请求须携带 `Authorization: Bearer <token>` 头；Notebook Session 的 HTTP／WebSocket 代理和 Kernel 能力按[会话访问规则](CLAUDE.md#会话入口与凭据)分别校验，不使用 Runtime 直连入口。
 - 数据按租户自动隔离
 
 ## 🐛 常见问题
