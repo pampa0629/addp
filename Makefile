@@ -827,7 +827,7 @@ test-raster-focal-circle-online-runner: ## 验证分类种类数18成功100失�
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 .PHONY: test-raster-region-group-online-runner
-test-raster-region-group-online-runner: ## 验证分类种类数18成功36失败819全检及600秒隔离生命周期
+test-raster-region-group-online-runner: ## 验证连通斑块编号18成功36失败819全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-region-group-gate.sh
 	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-region-group-persistence-online_test.py scripts/test/online-raster-region-group-fixture_test.py scripts/test/online-hosted-raster-region-group-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_region_requires_exact_cog_matrix_budget_and_regressions
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"

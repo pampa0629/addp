@@ -181,10 +181,10 @@ def current(execution, identity, identifier, dag, runtime, language, status):
 
 def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current):
     env = dict(env); started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
-    if not math.isfinite(budget) or budget != 600: raise SuiteError('focal region business budget must be exactly 600 seconds')
+    if not math.isfinite(budget) or budget != 600: raise SuiteError('region grouping business budget must be exactly 600 seconds')
     def remaining():
         left = budget-(time.monotonic()-started)
-        if left <= 0: raise SuiteError('focal region business budget exhausted')
+        if left <= 0: raise SuiteError('region grouping business budget exhausted')
         return left
     client = BudgetClient(client, remaining); directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR']); directory.mkdir(parents=True, exist_ok=True)
     stages = []; primary = cleanup_error = report = None
@@ -310,4 +310,4 @@ def main():
 if __name__ == '__main__':
     try: main()
     except Exception as error:
-        print(f'Focal region persistence acceptance failed: {error if isinstance(error, SuiteError) else type(error).__name__}', file=sys.stderr); raise SystemExit(1)
+        print(f'Region grouping persistence acceptance failed: {error if isinstance(error, SuiteError) else type(error).__name__}', file=sys.stderr); raise SystemExit(1)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owned focal region, independent scalar oracle and immutable COG evidence."""
+"""Owned region labeling, independent pixel BFS and immutable COG/CSV evidence."""
 from __future__ import annotations
 import hashlib,io,json,os,re,subprocess,sys,tempfile,time,math,statistics
 from collections import Counter
@@ -364,7 +364,7 @@ def verify(root,names,control):
         if band.DataType!=gdal.GDT_Float64 or band.GetNoDataValue() is None or not np.isnan(band.GetNoDataValue()):raise FixtureError('Float64 or NaN NoData changed')
         assert_pixels(actual,expected,name)
         if not np.array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected)):raise FixtureError('complete pixel mask differs')
-        if band.GetUnitType()!='' or band.GetScale() is not None or band.GetOffset() is not None or band.GetColorTable() is not None:raise FixtureError('focal output unit or source encoding differs')
+        if band.GetUnitType()!='' or band.GetScale() is not None or band.GetOffset() is not None or band.GetColorTable() is not None:raise FixtureError('region output unit or source encoding differs')
         timings['pixels_mask_metadata_ms']+=round((time.monotonic()-pixel_start)*1000)
         with elapsed(timings,'cog_layout_ms'):
             if validate(ds,full_check=True)[1]:raise FixtureError('COG full layout validation failed')
