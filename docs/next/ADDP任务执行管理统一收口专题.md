@@ -1169,3 +1169,9 @@ Manager和Transfer统一复用Common的C围栏安全失败步骤写入；诊断�
 不改变产品删除语义：先将正式Cleanup／T4规范中的成功提交与未完成状态写明，再仅纠正runner和对应正反样例；unknown保留原开关并验证停止及持久隔离，成功基线仍要求false。原机器契约八项checks、三身份权限、读取请求、等待预算、原生故障点与操作范围不变。受影响门禁为现有独立Execution runner及登记，脚本路径自动命中；Go／PG产品未改，已验c63证据按匹配输入保留。先跑原T1反例再修正，不为已知错误谓词浪费Hosted。
 
 旧runner在现有产品unknown样例下沿原聚焦T1实际失败（不是语法／编译失败），修正后聚焦通过；干净已提交源码叠加本轮改动，标准 `make test-execution-online-ci-runner` 完整exit0，115＋173及登记一致。AST逐项证明HTTP／wait／sleep调用不变，机器契约仍b6aa6485。仅提交本节五个自有文件，后续核独立Execution CI实际执行结果；不因纯runner谓词变化重跑无改动Go／PG或其它Owner门禁。
+
+**准确修正CI与首轮派发。** 修正已提交推送 `1c865e310607e957f9e4ebfe566227591bebb976`。主责fresh Job API及原日志独立核实 [Execution Job125380596732](https://github.com/pampa0629/addp/actions/runs/41475710215/job/125380596732) completed／success、selected:true，实际执行标准 `make test-execution-online-ci-runner`，115＋173及注册一致；原日志SHA-256 `6dfb0519fa4a719fa364b946a34b494143f1bc72c894f480ca5ccf5ec7bfb2be`。只代表本次独立门禁，不宣称聚合全仓通过。
+
+依据§8.37—8.38持续授权与既定顺序，在上述门禁实际通过后仅POST一次创建 [首轮transfer-capture-unknown Run41482506517／Job125404236001](https://github.com/pampa0629/addp/actions/runs/41482506517/job/125404236001)，准确源码 `5adc87cba736406901d2d680eb1625c81d59f1cb`、workflow_dispatch／attempt1。沿原机器契约八项断言、三User权限、操作范围和预算；仅准备CDC任务，经Engine删除入口制造connector删除回包丢失，不增加DLQ任务或新故障类型。排队／运行中均不计通过，终态须核十四服务准确source、八项checks、控制恢复与退出零残留。CI会话只读跟进同一Job，不重复派发。
+
+派发前33项自有代码与1c修正逐字节相同；24项关键输入中仅Online其它profile增加native-envi选项、fixture对应的独立Manager分支变化，完整Cleanup Native Job及本case角色不变。新增文件源／ENVI分支只作用于文件组合、Raster派生任务与其输入准备，本轮只准备PG／Kafka CDC，Manager无相关派生成果；Agent／Ontology／登录及GeoPython路线不被本case调用。Common数值读取增量仅新增json.Number处理分支，Cleanup未消费这些变更方法。不将工作区未提交的授权重构、迁移、夹具或表格部署到Hosted。私有 `/tmp/addp-transfer-capture-unknown-hosted-first-20261103/` 封存输入前提、单次intent、原派发快照、canonical契约和五份审计。
