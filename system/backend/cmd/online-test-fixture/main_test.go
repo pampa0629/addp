@@ -1691,3 +1691,34 @@ func TestGridFileCaseUsesExistingSixReadPermissions(t *testing.T) {
 		})
 	}
 }
+
+func TestENVIInitializerHasOnlyApprovedThirteenPermissions(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "native-envi")
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	got := suiteSourceInitializerPermissions("manager-internal-artifact-lineage")
+	if len(got) != 13 || !slices.Equal(got, want) {
+		t.Fatalf("ENVI initializer differs from approved thirteen: %v", got)
+	}
+	if !slices.Equal(sourceInitializerSupplement(got), []string{"meta.scan_task.execute", "meta.scan_task.read"}) {
+		t.Fatal("ENVI supplement must contain only the approved scan functions")
+	}
+	consumer, err := suitePermissions("manager-internal-artifact-lineage")
+	if err != nil || len(consumer) != 10 || slices.Contains(consumer, "system.engine_access_grant.create") || slices.Contains(consumer, "system.engine_access_delegation.create") {
+		t.Fatalf("ENVI consumer must remain ten functions without management: %v, %v", consumer, err)
+	}
+	got[0] = "mutated"
+	if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), want) || len(sourceInitializerPermissions) != 11 {
+		t.Fatal("case initializer must not mutate the shared role")
+	}
+	for _, suite := range []string{"ftp-consumer-flow", "opengauss-consumer-flow", "cleanup-native-effects"} {
+		if !slices.Equal(suiteSourceInitializerPermissions(suite), sourceInitializerPermissions) {
+			t.Fatal("ENVI scan functions leaked to another suite")
+		}
+	}
+	for _, name := range []string{"full", "filegdb-authorization", "native-netcdf", "native-grib", "native-raster-media", ""} {
+		t.Setenv("ADDP_ONLINE_MANAGER_CASE", name)
+		if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), sourceInitializerPermissions) {
+			t.Fatal("ENVI scan functions leaked to another Manager case")
+		}
+	}
+}

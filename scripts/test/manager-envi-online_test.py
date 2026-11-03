@@ -35,7 +35,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
         client=mock.Mock();client.request.return_value=SimpleNamespace(payload=[],raw=b'')
         owner=SimpleNamespace(GatewayClient=lambda *a:client,positive_int=lambda v,*a:int(v),
             REQUIRED_PERMISSIONS=OWNER.REQUIRED_PERMISSIONS,validate_user_identity=lambda *a:{'principal_id':'33'},
-            wait_for_meta_scan=lambda *a,**k:None,find_fixture_item=find)
+            wait_for_meta_scan=lambda *a,**k:'initial-scan',find_fixture_item=find)
         with tempfile.TemporaryDirectory() as directory:
             env=dict(ADDP_ONLINE_MANAGER_CASE='native-envi',ADDP_ONLINE_ARTIFACT_DIR=directory,
                 ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='test-envi',GATEWAY_URL='http://fixture',
@@ -101,7 +101,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
             def __init__(self,issuer,consumer,report,**options):
                 self.engine=report['engine_id'];self.owned=[]
                 self_test.assertEqual(options['consumer_permissions'],OWNER.REQUIRED_PERMISSIONS)
-                self_test.assertEqual(options['issuer_permissions'],CASE.GRANTS.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
+                self_test.assertEqual(options['issuer_permissions'],CASE.ENVI_INITIALIZER_PERMISSIONS)
             def facts(self,model):
                 return {'boundary_hash':hashlib.sha256(json.dumps(model['composition']).encode()).hexdigest()}
             def grant(self,model):
@@ -141,7 +141,12 @@ class ENVIHostedCaseTest(unittest.TestCase):
             elif path.startswith('/api/v1/manager/raster_cog/'):payload={'id':int(path.split('/')[-1]),'storage_ref':'owned-cog'}
             else:raise AssertionError((method,url,statuses))
             self_test.assertIn(status,statuses,(path,status,statuses));return SimpleNamespace(payload=payload,raw=raw)
-        client=SimpleNamespace(request=request)
+        client=SimpleNamespace(request=request);issuer=SimpleNamespace(request=mock.Mock(side_effect=AssertionError('initializer must not consume content')))
+        scans=[]
+        def scan(actor,engine,deadline,scope):
+            self_test.assertIs(actor,issuer if engine==14 else client,'NFS scans must use the approved initializer, never the consumer')
+            self_test.assertEqual(scope,{'catalog_paths':['envi'if engine==14 else 'bucket/envi']})
+            execution='scan-'+str(len(scans)+1);scans.append((engine,execution));return execution
         def find(client,engine,name,label):
             key=key_name(engine,name);self_test.assertTrue(authorized(key),'consumer catalog before read Grant')
             spec=specs_by_name[name.split('/')[-1]];detail,_,_=self_test.metadata_pair(spec)
@@ -175,8 +180,8 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 cases.append(actual)
             return dict(schema_version='addp.manager-raster-media-browser/v4',result='passed',run_id=evidence['run_id'],identity=identity,source_format='envi',generation_requests=0,failed_business_responses=0,warnings_errors=0,cases=cases)
         def cleanup(client,fixture,*args):fixture.cleanup=dict(task_deleted=True);events.append(('task-delete',));return [{'id':fixture.result_id}]
-        owner=SimpleNamespace(GatewayClient=lambda *a:client,positive_int=lambda v,*a:int(v),validate_user_identity=lambda *a:identity,REQUIRED_PERMISSIONS=OWNER.REQUIRED_PERMISSIONS,SuiteError=OWNER.SuiteError,
-            wait_for_meta_scan=lambda *a,**k:None,find_fixture_item=find,ArtifactFixture=OWNER.ArtifactFixture,build_item_locator=OWNER.build_item_locator,
+        owner=SimpleNamespace(GatewayClient=lambda url,token,*a:issuer if token=='issuer' else client,positive_int=lambda v,*a:int(v),validate_user_identity=lambda *a:identity,REQUIRED_PERMISSIONS=OWNER.REQUIRED_PERMISSIONS,SuiteError=OWNER.SuiteError,
+            wait_for_meta_scan=scan,find_fixture_item=find,ArtifactFixture=OWNER.ArtifactFixture,build_item_locator=OWNER.build_item_locator,
             validate_model_bundle=OWNER.validate_model_bundle,generate_raster_cog=generate,cleanup_managed_artifact=cleanup,RASTER_TASK_TYPE=OWNER.RASTER_TASK_TYPE)
         env=dict(ADDP_ONLINE_MANAGER_CASE='native-envi',ADDP_ONLINE_ARTIFACT_DIR=directory,ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='envi-test',GATEWAY_URL='http://fixture',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='engine',ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
         with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE.MEDIA,'run_browser',browser):
@@ -185,6 +190,13 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 report=json.loads(Path(directory,'manager-envi.json').read_text())
             else:report=CASE.run(Path('/repo'),env,owner,physical_runner=physical)
         self.assertEqual(active,{});self.assertEqual(len(receipts),20)
+        self.assertEqual(len(CASE.ENVI_INITIALIZER_PERMISSIONS),13)
+        self.assertEqual(report['source_authorization']['initializer_permissions_verified'],sorted(CASE.ENVI_INITIALIZER_PERMISSIONS))
+        self.assertEqual(len(scans),10);self.assertEqual(len(report['source_scans']),10)
+        for storage,engine,principal,path in [('minio',12,'33','bucket/envi'),('nfs',14,'34','envi')]:
+            rows=[row for row in report['source_scans']if row['storage']==storage]
+            self.assertEqual([r['phase']for r in rows],['initial','composition-change','composition-restore','header-version-change','header-version-restore'])
+            self.assertTrue(all(r['principal_id']==principal and r['engine_id']==engine and r['catalog_paths']==[path]and (engine,r['execution_id'])in scans for r in rows))
         self.assertEqual((report['source_authorization']['operator_principal_id'],report['source_authorization']['recipient_principal_id']),('34','33'))
         self.assertEqual(report['source_authorization']['cleanup'],dict(read_grants_revoked=True,metadata_details_hidden=6))
         self.assertEqual(sum(e[0]=='generate'for e in events),4);self.assertEqual(sum(e[0]=='task-delete'for e in events),4)
@@ -315,7 +327,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
             with self.assertRaises(ValueError):CASE.verify_source_revocation(ledger,ledger,old,model,'/cached/result',item_id=1)
         root=Path(__file__).resolve().parents[2]
         runner=(root/'scripts/test/manager-envi-online.py').read_text()
-        self.assertIn('issuer_permissions=GRANTS.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS',runner)
+        self.assertIn('issuer_permissions=ENVI_INITIALIZER_PERMISSIONS',runner)
         self.assertNotIn('grant.deny(',runner)
         self.assertNotIn('grant.release(',runner)
         self.assertIn('addp.manager-envi/v3',runner)

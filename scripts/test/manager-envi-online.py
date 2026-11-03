@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 FIXTURE=importlib.import_module('business.scripts.online-envi-fixture')
 GRANTS=importlib.import_module('scripts.test.ftp-consumer-flow-online')
 MEDIA=importlib.import_module('scripts.test.manager-img-online')
+ENVI_INITIALIZER_PERMISSIONS=frozenset(GRANTS.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)|{'meta.scan_task.execute','meta.scan_task.read'}
 
 def require(value,message):
     if not value:raise ValueError(message)
@@ -90,10 +91,16 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         seeded=True;seed=physical('seed');require(seed=={'sources':FIXTURE.sources()},'independent pair bytes changed')
         for storage,key,prefix in [('minio','ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID',environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']+'/'),('nfs','ADDP_ONLINE_MANAGER_NFS_ENGINE_ID','')]:
             engine=owner.positive_int(environment[key],storage+' Engine')
-            stage='scan';owner.wait_for_meta_scan(client,engine,time.monotonic()+timeout,scope={'catalog_paths':[prefix+'envi']})
-            grant=GRANTS.ModelSourceAuthorization(issuer,client,{'tenant_id':tenant,'engine_id':engine,'principal_id':str(identity['principal_id'])},source_type=storage,consumer_permissions=owner.REQUIRED_PERMISSIONS,issuer_permissions=GRANTS.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
+            grant=GRANTS.ModelSourceAuthorization(issuer,client,{'tenant_id':tenant,'engine_id':engine,'principal_id':str(identity['principal_id'])},source_type=storage,consumer_permissions=owner.REQUIRED_PERMISSIONS,issuer_permissions=ENVI_INITIALIZER_PERMISSIONS)
             grants.append(grant)
             report['source_authorization'].update(operator_principal_id=grant.operator,recipient_principal_id=grant.recipient)
+            report['source_authorization']['initializer_permissions_verified']=sorted(ENVI_INITIALIZER_PERMISSIONS)
+            scan_client=issuer if storage=='nfs' else client
+            def scan_source(phase):
+                execution=owner.wait_for_meta_scan(scan_client,engine,time.monotonic()+timeout,scope={'catalog_paths':[prefix+'envi']})
+                require(isinstance(execution,str) and bool(execution),'ENVI source scan execution required')
+                report.setdefault('source_scans',[]).append(dict(storage=storage,engine_id=engine,phase=phase,catalog_paths=[prefix+'envi'],principal_id=grant.operator if storage=='nfs' else grant.recipient,execution_id=execution))
+            stage='scan';scan_source('initial')
             for spec in seed['sources']:
                 name=prefix+'envi/'+spec['name'];header=prefix+'envi/'+spec['header']
                 stage='source_approval'
@@ -133,7 +140,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                     renamed=dict(model,composition=[expected[0],dict(expected[1],path=prefix+'envi/'+spec['name']+'.hdr')])
                     try:
                         physical('header-layout',mutation)
-                        owner.wait_for_meta_scan(client,engine,time.monotonic()+timeout,scope={'catalog_paths':[prefix+'envi']})
+                        scan_source('composition-change')
                         newfacts=grant.facts(renamed)
                         require(newfacts['boundary_hash']!=receipt['boundary_hash'],'changed pair retained the old approval boundary')
                         client.request('GET',path,(403,))
@@ -146,7 +153,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                         case['composition_change_reapproval_verified']=True
                     finally:
                         physical('header-layout',dict(mutation,changed=False))
-                        owner.wait_for_meta_scan(client,engine,time.monotonic()+timeout,scope={'catalog_paths':[prefix+'envi']})
+                        scan_source('composition-restore')
                     receipt=grant.grant(model)
                     report['source_authorization']['grants'].append(dict(model=model,receipt=receipt))
                 if spec['source_srid'] is None:
@@ -172,12 +179,12 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                     mutation=dict(source_type=storage,case='bsq',changed=True)
                     try:
                         physical('header-version',mutation)
-                        owner.wait_for_meta_scan(client,engine,time.monotonic()+timeout,scope={'catalog_paths':[prefix+'envi']})
+                        scan_source('header-version-change')
                         client.request('GET',case['preview_url'],(403,))
                         case['changed_header_cache_rejected']=True
                     finally:
                         physical('header-version',dict(mutation,changed=False))
-                        owner.wait_for_meta_scan(client,engine,time.monotonic()+timeout,scope={'catalog_paths':[prefix+'envi']})
+                        scan_source('header-version-restore')
                     client.request('GET',case['preview_url'],(206,),headers={'Range':'bytes=0-63'})
         stage='browser';evidence=dict(source_format='envi',run_id=report['run_id'],identity=identity,cases=report['cases'])
         browser_environment={k:v for k,v in environment.items() if k not in {'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}}
