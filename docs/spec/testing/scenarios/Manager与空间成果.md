@@ -21,11 +21,11 @@
 
 ## GRIB2 单文件只读
 
-已批准的首期范围见[GRIB2 格式规范](../../builtin-formats/媒体与地图数据集.md#grib2-单文件只读已批准实施中)。独立 `native-grib` case 复用既有 Manager Linux x86-64 Hosted 部署、GeoPython、NFS、MinIO 和 NetCDF 的六项普通读取权限，不新增服务、执行权限或精确组成内容 Grant，不运行 Model3D 或 Transfer 业务。按现行跨引擎元数据规则，复用套件已有、与消费者分离的源初始化 User，为扫描后四个精确文件／对象办理 `metadata_read` Grant；核准前不可见、核准后仅返回结构投影，退出撤销并确认重新不可见。仅元数据边界不得作为内容完整性或内容读取授权。完整格式参数、版本和数值通过消费者既有 `manager.content.read` 与 Security 约束下的 Manager 预览／切片核对，不从 Meta 结构接口索取内容属性；GRIB 内容源授权迁移仍不在本轮范围。
+已批准的首期范围见[GRIB2 格式规范](../../builtin-formats/媒体与地图数据集.md#grib2-单文件只读限定范围已验收)。独立 `native-grib` case 复用既有 Manager Linux x86-64 Hosted 部署、GeoPython、NFS、MinIO 和 NetCDF 的六项普通读取权限，不新增服务、执行权限或精确组成内容 Grant，不运行 Model3D 或 Transfer 业务。按现行跨引擎元数据规则，复用套件已有、与消费者分离的源初始化 User，为扫描后四个精确文件／对象办理 `metadata_read` Grant；核准前不可见、核准后仅返回结构投影，退出撤销并确认重新不可见。仅元数据边界不得作为内容完整性或内容读取授权。完整格式参数、版本和数值通过消费者既有 `manager.content.read` 与 Security 约束下的 Manager 预览／切片核对，不从 Meta 结构接口索取内容属性；GRIB 内容源授权迁移仍不在本轮范围。
 
 NFS／MinIO 各两份独立字节编码源文件，每份三条单场消息，覆盖简单打包、IEEE32／64、不同尺寸、相同要素不同预报时刻、两种行扫描方向、合法值 9999 与显式 bitmap 缺失、大于 180° 的原生经度。逐消息核对全部数值、掩膜、单位、时间、独立网格、有界子窗口、错误选择和源变化拒绝；真实页面在标准1280px及Hosted视口使用完整属性切换消息并清除旧结果，核对读取按钮可点击、切片DOM及首尾单元格滚动后实际可见；每条消息保存一张数值表截图，四份原件另核API／按钮完整字节及页面截图。页面切片不写回元数据，不生成地图、任务、缓存成果；确认 Native 临时快照清空、精确源文件／对象删除、部署及 Infra 零残留。失败后仍须完成清理并报告，清理通过不等于业务通过。
 
-标准门禁复用 `make test-geopython-workflow`（含独立字节夹具经真实 Native Worker）、`make test-common-frontend`、`make test-module MODULE=common GO_ONLY=1`、受影响 Meta／Manager／Transfer Go 门禁、`make test-manager-frontend`、`make test-manager-online-runner` 和 `make test-online-runner`。正式验收沿现有 workflow 选择 `suite=manager-internal-artifact-lineage`、`manager_case=native-grib`，业务入口为 `ADDP_ONLINE_MANAGER_CASE=native-grib make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。首轮已证实数值、DOM、原件及清理；真实长属性的视口布局另有反例，最终页面收口以加强可见性后的同case复验为准，见[分层证据](../evidence/资源读取与预览历史证据.md#grib2-单文件读取与切片--数值通过及页面收口)。
+标准门禁复用 `make test-geopython-workflow`（含独立字节夹具经真实 Native Worker）、`make test-common-frontend`、`make test-module MODULE=common GO_ONLY=1`、受影响 Meta／Manager／Transfer Go 门禁、`make test-manager-frontend`、`make test-manager-online-runner` 和 `make test-online-runner`。正式验收沿现有 workflow 选择 `suite=manager-internal-artifact-lineage`、`manager_case=native-grib`，业务入口为 `ADDP_ONLINE_MANAGER_CASE=native-grib make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。首轮数值通过后发现长属性遮挡，第一次视口复验又因缺少元数据授权失败，均保留历史边界；最终 `6e7ae8755` 的同case正式运行 `41572302717` 已核12张可见切片、四份原件、精确元数据Grant撤销及全部清理通过，见[分层证据](../evidence/资源读取与预览历史证据.md#grib2-单文件读取与切片--数值通过及页面收口)。
 
 ## NetCDF 单文件只读
 
