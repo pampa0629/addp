@@ -772,7 +772,7 @@ renderer 只能消费输出契约，不根据业务名称猜测角色。第一�
 | 空间结果 | `common-frontend/map` | `GeoJSONResultRenderer` | 复用 `MapContainer`、OpenLayers、CRS registry 和底图 profile |
 | 渲染编排 | `workbench/frontend` | `WorkbenchRendererHost` | 选择 renderer、适配 Service 结果、判断完整性并处理 cursor |
 
-`common-frontend/chart` 使用技术栈规约的 `echarts@5.5.1` peer dependency，由消费模块自行声明依赖。地图继续使用 `ol@10.7.0`。不使用与平台技术栈不一致的版本作为 Workbench 基线。
+ECharts 与 OpenLayers 的目标版本统一见[技术栈规约](addp技术栈规约.md#地图与可视化)，Workbench 不另立版本基线。`common-frontend/chart` 的 ECharts peer dependency 及地图入口依赖分别以 [Chart 包声明](../../common-frontend/chart/package.json)和 [Map 包声明](../../common-frontend/map/package.json)为准，由消费模块自行声明并维护锁文件；按需引入与运行时去重见[共享前端架构](../../common-frontend/docs/ARCHITECTURE.md#使用方法)。
 
 共享 renderer primitive：
 

@@ -60,7 +60,7 @@ System 与各业务模块显示 IAM 角色时，统一从 `@common-ui` 导入 `r
 
 ## 依赖
 
-依赖与 peer dependency 以[包声明](package.json)为准，消费模块版本统一遵循[技术栈规约](../docs/spec/addp技术栈规约.md)并维护自己的锁文件；各共享入口的职责与按需依赖见[架构说明](docs/ARCHITECTURE.md)。
+依赖与 peer dependency 以实际使用入口的包声明为准，例如[根包](package.json)、[Chart](chart/package.json)和 [Map](map/package.json)。消费模块版本统一遵循[技术栈规约](../docs/spec/addp技术栈规约.md#前端依赖版本规范)并维护自己的锁文件；各共享入口的职责与按需依赖见[架构说明](docs/ARCHITECTURE.md#使用方法)。
 
 ## 许可
 
