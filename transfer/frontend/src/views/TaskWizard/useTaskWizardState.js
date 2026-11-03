@@ -54,7 +54,17 @@ export function useTaskWizardState() {
   const taskDescription = ref('')
   const schedule = ref('')
   const enabled = ref(false) // 定时任务启用状态
-  const batchSize = ref(1000) // 批大小，默认 1000
+  const autoScanMetadata = ref(true)
+  const taskBatchSize = ref(1000)
+  const configBatchSize = ref()
+  // 显示实际生效的批大小，编辑时写回原来生效的字段，不新增 override。
+  const batchSize = computed({
+    get: () => configBatchSize.value ?? taskBatchSize.value,
+    set: value => {
+      if (configBatchSize.value !== undefined) configBatchSize.value = value
+      else taskBatchSize.value = value
+    }
+  })
   const runtimeBoundary = ref('bounded')
   const loadMode = ref('snapshot')
   const watermarkField = ref('')
@@ -276,12 +286,12 @@ export function useTaskWizardState() {
       },
       schedule: isContinuousTask.value ? '' : schedule.value,
       enabled: isContinuousTask.value ? false : (schedule.value ? enabled.value : false),
-      batch_size: isContinuousTask.value ? continuousPollBatchSize.value : batchSize.value,
-      auto_scan_metadata: true
+      batch_size: isContinuousTask.value ? continuousPollBatchSize.value : taskBatchSize.value,
+      auto_scan_metadata: autoScanMetadata.value
     }
 
-    if (!isContinuousTask.value) {
-      config.config.batch_size = batchSize.value
+    if (!isContinuousTask.value && configBatchSize.value !== undefined) {
+      config.config.batch_size = configBatchSize.value
     }
 
     return config
@@ -995,7 +1005,9 @@ export function useTaskWizardState() {
     taskDescription.value = task.description || ''
     schedule.value = task.schedule || ''
     enabled.value = task.enabled || false
-    batchSize.value = task.batch_size || 1000
+    autoScanMetadata.value = task.auto_scan_metadata ?? true
+    taskBatchSize.value = task.batch_size || 1000
+    configBatchSize.value = task.config?.batch_size
 
     runtimeBoundary.value = task.config?.runtime?.boundary === 'continuous' ? 'continuous' : 'bounded'
     const load = task.config?.load || {}
@@ -1393,7 +1405,9 @@ export function useTaskWizardState() {
     taskDescription.value = ''
     schedule.value = ''
     enabled.value = false
-    batchSize.value = 1000
+    autoScanMetadata.value = true
+    taskBatchSize.value = 1000
+    configBatchSize.value = undefined
     runtimeBoundary.value = 'bounded'
     resetIncrementalConfig()
     continuousKeyFields.value = []

@@ -11,7 +11,7 @@ const task = id => ({
   }
 })
 
-async function setup(page, permissions, { saveFails = false, startFails = false, locale = 'zh-cn' } = {}) {
+async function setup(page, permissions, { saveFails = false, startFails = false, locale = 'zh-cn', editTask, metadata = {}, writes = [] } = {}) {
   await page.addInitScript(({ permissions, locale }) => {
     localStorage.setItem('fixture-transfer-permissions', JSON.stringify(permissions))
     localStorage.setItem('addp-lang', locale)
@@ -27,17 +27,19 @@ async function setup(page, permissions, { saveFails = false, startFails = false,
     const path = new URL(request.url()).pathname
     const method = request.method()
     calls.push(`${method} ${path}`)
+    if (method === 'GET' && Object.hasOwn(metadata, path)) return route.fulfill({ json: typeof metadata[path] === 'function' ? metadata[path](new URL(request.url())) : metadata[path] })
     if (path === '/api/v1/meta/engines') return route.fulfill({ json: [] })
     if (path === '/api/v1/transfer/capabilities') return route.fulfill({ json: {} })
     if (path === '/api/v1/transfer/task-definitions/statistics') return route.fulfill({ json: {} })
     if (method === 'POST' || method === 'PUT') {
+      writes.push({ method, path, body: request.postDataJSON() })
       if (saveFails || (startFails && path.endsWith('/start'))) {
         return route.fulfill({ status: 409, json: { error: 'synthetic-save-or-start-failure' } })
       }
       if (path.endsWith('/start')) return route.fulfill({ json: {} })
       return route.fulfill({ json: task(method === 'POST' ? 42 : 17) })
     }
-    if (/\/task-definitions\/\d+$/.test(path)) return route.fulfill({ json: task(Number(path.split('/').at(-1))) })
+    if (/\/task-definitions\/\d+$/.test(path)) return route.fulfill({ json: editTask || task(Number(path.split('/').at(-1))) })
     if (/\/task-definitions(?:\/\d+\/executions)?$/.test(path)) return route.fulfill({ json: { items: [], data: [], total: 0 } })
     return route.abort('blockedbyclient')
   })
@@ -234,3 +236,105 @@ for (const mode of ['standalone', 'iframe']) {
     ])
   })
 }
+
+// The API fixtures are synthetic; loading, form state, PUT and navigation use the production editor.
+function editDraft(autoScan, configBatchSize) {
+  const fields = Array.from({ length: 16 }, (_, i) => `field_${i}`)
+  const draft = {
+    ...task(17), description: 'synthetic edit fidelity', batch_size: 1000,
+    auto_scan_metadata: autoScan,
+    config: {
+      runtime: { boundary: 'bounded' }, load: { mode: 'snapshot' },
+      source: {
+        locator: 'addp://engine/9000001/path/synthetic/records?type=collection&item_id=90000199',
+        data_type: 'table', representation: 'native',
+        query: { language: 'mql', statement: JSON.stringify({ aggregate: 'records', pipeline: [{ $project: Object.fromEntries(fields.map(name => [name, `$${name}`])) }] }) }
+      },
+      target: { parent_locator: 'addp://engine/9000002/path/synthetic?type=schema', name: 'edit_target', data_type: 'table', representation: 'native', policy: { apply_mode: 'replace' } },
+      transforms: [{ type: 'field_mapping', version: 'v1', mode: 'project', fields: fields.map(name => ({ source: name, target: name, target_type: 'json', nullable: true })) }],
+      ...(configBatchSize === undefined ? {} : { batch_size: configBatchSize })
+    }
+  }
+  return draft
+}
+
+function editMetadata() {
+  const fields = Array.from({ length: 16 }, (_, i) => ({ name: `field_${i}`, type: 'json', nullable: true }))
+  return {
+    '/api/v1/meta/engines': [
+      { id: 9000001, engine_type: 'mongodb', name: 'Synthetic source' },
+      { id: 9000002, engine_type: 'postgresql', name: 'Synthetic target' }
+    ],
+    '/api/v1/meta/items/90000199': { id: 90000199, name: 'records', full_name: 'synthetic.records', item_type: 'collection', attributes: { item: { data_type: 'table', representation: 'native' } } },
+    '/api/v1/meta/items/90000199/fields': { data: fields }
+  }
+}
+
+async function currentPayload(surface) {
+  return surface.locator('.task-wizard').evaluate(element => JSON.parse(JSON.stringify(element.__vueParentComponent.setupState.wizardState.taskConfig.value)))
+}
+
+function requestFromDraft(draft) {
+  const { name, description, task_type, config, schedule, enabled, batch_size, auto_scan_metadata } = draft
+  return structuredClone({ name, description, task_type, config, schedule, enabled, batch_size, auto_scan_metadata })
+}
+
+for (const mode of ['standalone', 'iframe']) {
+  const surfaceFor = page => mode === 'iframe' ? page.frameLocator('iframe') : page
+  const publicPath = path => `${mode === 'iframe' ? '/transfer' : ''}${path}`
+  for (const autoScan of [false, true]) {
+    for (const override of [undefined, 2000]) {
+      test(`${mode}: edit preserves scan=${autoScan} and batch override=${override ?? 'absent'} through real load and one batch-only save`, async ({ page }) => {
+        const draft = editDraft(autoScan, override)
+        const before = structuredClone(draft)
+        const writes = []
+        const calls = await setup(page, [...createPermissions, 'transfer.task.read', 'transfer.task.update', 'transfer.task.execute'], { editTask: draft, metadata: editMetadata(), writes })
+        await page.goto(publicPath('/tasks/17/edit'))
+        const surface = surfaceFor(page)
+        await expect(surface.locator('.el-message--success').filter({ hasText: '任务详情加载成功' }).first()).toBeVisible()
+        const expected = requestFromDraft(draft)
+        // No injected draft: GET -> loadFromTask -> metadata restoration -> taskConfig.
+        expect(await currentPayload(surface)).toEqual(expected)
+        expect(draft).toEqual(before)
+        // Move to the configure step without changing any business form values.
+        await surface.locator('.task-wizard').evaluate(element => { element.__vueParentComponent.setupState.wizardState.currentStep.value = 3 })
+        const batch = surface.getByRole('spinbutton', { name: '批处理大小', exact: true })
+        await expect(batch).toHaveValue(String(override ?? 1000))
+        await batch.fill('500')
+        await batch.press('Tab')
+        await surface.getByTestId('task-wizard-next').click()
+        if (override === undefined) expected.batch_size = 500
+        else expected.config.batch_size = 500
+        expect(await currentPayload(surface)).toEqual(expected)
+        await confirm(surface)
+        await expect(page).toHaveURL(new RegExp(`${publicPath('/tasks')}$`))
+        expect(writes).toEqual([{ method: 'PUT', path: '/api/v1/transfer/task-definitions/17', body: expected }])
+        expect(calls.filter(call => call.startsWith('POST '))).toEqual([])
+        expect(calls.some(call => /start|scan|run-approvals/.test(call))).toBe(false)
+      })
+    }
+  }
+}
+
+test('new wizard and reset retain the default scan flag for bounded and continuous tasks', async ({ page }) => {
+  await setup(page, createPermissions)
+  await page.goto('/tasks/create')
+  const wizard = page.locator('.task-wizard')
+  await expect(wizard).toBeVisible()
+  const result = await wizard.evaluate(element => {
+    const state = element.__vueParentComponent.setupState.wizardState
+    const result = { newBounded: state.taskConfig.value.auto_scan_metadata, newConfigHasBatch: Object.hasOwn(state.taskConfig.value.config, 'batch_size') }
+    state.runtimeBoundary.value = 'continuous'
+    result.newContinuous = state.taskConfig.value.auto_scan_metadata
+    state.loadFromTask({ name: 'temporary edit', auto_scan_metadata: false, batch_size: 321, config: { batch_size: 123 } })
+    result.loadedFalse = state.taskConfig.value.auto_scan_metadata
+    state.reset()
+    result.resetBounded = state.taskConfig.value.auto_scan_metadata
+    result.resetBatch = state.taskConfig.value.batch_size
+    result.resetConfigHasBatch = Object.hasOwn(state.taskConfig.value.config, 'batch_size')
+    state.runtimeBoundary.value = 'continuous'
+    result.resetContinuous = state.taskConfig.value.auto_scan_metadata
+    return result
+  })
+  expect(result).toEqual({ newBounded: true, newConfigHasBatch: false, newContinuous: true, loadedFalse: false, resetBounded: true, resetBatch: 1000, resetConfigHasBatch: false, resetContinuous: true })
+})

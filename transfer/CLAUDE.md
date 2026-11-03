@@ -247,6 +247,7 @@ Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消�
 - 权限落点：独立模式有 `transfer.task.read` 时以任务列表为唯一侧栏入口，创建由列表按钮进入；无读取但同时具备 `transfer.task.create` 与 `meta.catalog.read` 时显示创建向导入口，不跳转无权读取的列表。Console iframe 模式由 Console 统一显示侧栏；准入与动作权限见[任务授权](docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)。
 - 对象身份使用 `/tasks/:id/edit`、`/tasks/:id/detail` 与 `/executions/:execution_id`，不得退化为列表 URL 或 iframe 私有状态；通用要求沿[URL 状态规范](../docs/spec/addp前端路由与可恢复状态规范.md#三必须进入-url-的状态)。深链、刷新、前进后退及 Console／standalone 的验证沿[路由验收规范](../docs/spec/addp前端路由与可恢复状态规范.md#八实现与验收要求)，静态登记不代表实际运行通过。
 - 未配置调度时，调度选项、确认摘要与提示按本次操作显示：具备 `transfer.task.execute` 的新建操作显示“立即执行一次”；无执行权限或编辑保存显示“仅保存任务”，不自动执行。沿用[创建与启动的独立权限](docs/transfer-基本概念及配置说明.md#资源选择与页面入口)，不通过补授权限满足提示。
+- 编辑回填与提交保留已有 `auto_scan_metadata`，新建及重置才采用默认 true。批处理输入显示实际生效值：已有显式 `config.batch_size` 时只修改该 override 并保留任务顶层默认值；未声明 override 时只修改顶层 `batch_size`，不额外补写 config 字段。两层批大小的优先级沿[任务字段](docs/transfer-基本概念及配置说明.md#11-传输任务)与[Config 配置字段](docs/transfer-基本概念及配置说明.md#21-顶层字段)。仅修改批大小不得顺带改变源查询、映射、调度或扫描开关；编辑保存只更新定义，不触发启动或扫描。
 - 成功落点沿[Canonical URL 规范](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)：正式向导创建成功且有 `transfer.task.read` 时，用响应的新 ID `replace` 到详情，不要求 update；无读取权时反馈成功、重置并留在创建页，不读取列表／详情。编辑保存和可读账号确认取消仍 `replace` 回列表；创建助手弹层关闭后刷新当前列表。
 - 列表进入创建、编辑、详情和执行页使用 `push`，Console／standalone 的唯一公开历史沿[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义)。保存失败或撤销确认保留 URL 与草稿；创建后的启动失败不撤销已创建对象，仍按创建成功的权限分支落点并单独提示启动失败。本轮受控浏览器覆盖及未验收范围见[创建落点与历史栈证据](#创建落点与历史栈验证)。
 
