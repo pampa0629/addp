@@ -89,6 +89,7 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(sample['assertions'].values()))
         self.assertEqual([t['name'] for t in sample['tools']], ['engine.list'])
         self.assertIsInstance(sample['first_text_ms'], int)
+        self.assertGreater(sample['body']['model_characters'],0)
         self.assertEqual(sample['model_identities'][0]['profile_version'], 1)
         self.assertEqual(len(sample['model_identities'][0]['deployment_sha256']), 64)
         network.assert_not_awaited()
@@ -113,7 +114,7 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_historical_route_only_reads_exact_snapshot_and_streams_explanation(self):
         snapshot = historical_snapshot()
         client = _InferenceFixture([
-            route(draft_action='inspect', draft_ref=snapshot['reference']),
+            route(draft_action='inspect', draft_ref=snapshot['reference'], draft_explanation=case_fixture('model-historical-draft')['expected_scope']),
             Message(role='assistant', content='members按json保留数组；unknown仍是历史预检状态。'),
         ])
         sample = await model_runner.run_case('model-historical-draft', 1, _model(client))
@@ -121,6 +122,33 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sample['skill'], 'none')
         self.assertEqual([t['name'] for t in sample['tools']], ['draft.inspect'])
         self.assertNotIn(snapshot['reference'], json.dumps(sample))
+
+    async def test_key_topics_record_runtime_text_without_counting_private_route_or_model_body(self):
+        fixture = case_fixture('model-historical-boundaries')
+        snapshot = fixture['snapshot']
+        decision = route(draft_action='inspect', draft_ref=snapshot['reference'], draft_explanation=fixture['expected_scope'])
+        decision.content = 'private-routing-reason'
+        sample = await model_runner.run_case('model-historical-boundaries', 1, _model(_InferenceFixture([decision])))
+        self.assertEqual(sample['status'],'passed',sample)
+        self.assertGreater(sample['body']['runtime_characters'],0)
+        self.assertEqual(sample['body']['model_characters'],0)
+        self.assertEqual(sample['body']['model_chunks'],0)
+        self.assertIsNone(sample['body']['first_model_text_ms'])
+        self.assertNotIn('private-routing-reason',json.dumps(sample))
+        self.assertNotIn('model_body_nonempty',sample['assertions'])
+
+    async def test_same_name_ambiguity_can_ask_without_model_stream_or_draft_read(self):
+        decision = route(draft_action='inspect', draft_explanation={'topics':['status','policy','boundary','authorization'],'fields':[]})
+        sample = await model_runner.run_case('model-historical-ambiguous',1,_model(_InferenceFixture([decision])))
+        self.assertEqual(sample['status'],'passed',sample)
+        self.assertEqual(sample['tools'],[])
+        self.assertEqual(sample['body']['model_characters'],0)
+
+    def test_v1_model_report_is_rejected_without_compatibility_parser(self):
+        report = self.empty_failure_report()
+        report['schema'] = 'addp.agent-model-regression/v1'
+        with self.assertRaises(ValueError):
+            model_runner.validate_report(report)
 
     async def test_real_transfer_route_checks_exact_parameters_without_creating(self):
         arguments = transfer_facts()[3]

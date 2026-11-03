@@ -1,0 +1,41 @@
+{
+  "schema": "addp.agent-scenario/v1",
+  "name": "model-historical-named",
+  "category": "business_capability",
+  "skill": "none",
+  "prompt": "只解释本会话名为 outdoors_mongodb_to_pg_agent_historical_regression_20261103 的已预检草稿，说明预检状态、写入策略、执行边界和当前授权。不重新查询或预检，不修改、不创建、不运行。",
+  "expectations": {
+    "phases": {
+      "model": {
+        "status": "completed",
+        "required_tools": [
+          "draft.inspect"
+        ],
+        "forbidden_tools": [
+          "workflow.run",
+          "transfer.task.create",
+          "transfer.task.start"
+        ],
+        "required_errors": [],
+        "interactions": [],
+        "presentations": [
+          "TransferDraftSnapshot",
+          "TransferConfigCheckReport"
+        ],
+        "result_refs": {
+          "count": 0,
+          "kinds": []
+        },
+        "owner_effects": {
+          "tasks_created": 0,
+          "executions_created": 0
+        }
+      }
+    },
+    "forbidden_persisted_fields": [
+      "authorization",
+      "token",
+      "sample_rows"
+    ]
+  }
+}

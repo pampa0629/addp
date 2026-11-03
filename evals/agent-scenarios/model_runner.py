@@ -27,7 +27,7 @@ sys.path.insert(0, str(REPO_ROOT / 'agent/backend'))
 from evaluator import EvaluationFailure, evaluate_trace, load_scenario, phase_from_events
 from gate import _external_path, _source_identity, _utc_now
 
-SCHEMA = 'addp.agent-model-regression/v1'
+SCHEMA = 'addp.agent-model-regression/v2'
 
 
 class ModelIdentityRecorder(BaseCallbackHandler):
@@ -35,6 +35,18 @@ class ModelIdentityRecorder(BaseCallbackHandler):
     def __init__(self):
         self.identities = set()
         self.routing = []
+        self.started = time.monotonic()
+        self.model_characters = 0
+        self.model_chunks = 0
+        self.first_model_text_ms = None
+
+    def on_llm_new_token(self, token, **kwargs):
+        # The Inference adapter streams only the unbound public answer stage.
+        if token:
+            self.model_characters += len(token)
+            self.model_chunks += 1
+            if self.first_model_text_ms is None:
+                self.first_model_text_ms = round((time.monotonic() - self.started) * 1000)
 
     def on_llm_end(self, response, **kwargs):
         for batch in response.generations:
@@ -46,11 +58,18 @@ class ModelIdentityRecorder(BaseCallbackHandler):
                         arguments = call['args']
                         skill = arguments.get('skill')
                         action = arguments.get('draft_action')
+                        scope = arguments.get('draft_explanation')
+                        scope = scope if isinstance(scope, dict) else {}
+                        topics = scope.get('topics') if isinstance(scope.get('topics'), list) else []
+                        fields = scope.get('fields') if isinstance(scope.get('fields'), list) else []
                         self.routing.append({
                             'skill': skill if skill in _get_skill_registry() else ('none' if skill is None else 'unknown'),
                             'draft_action': action if action in {'inspect', 'create', None} else 'unknown',
                             'needs_platform_semantics': arguments.get('needs_platform_semantics') is True,
                             'has_draft_ref': bool(arguments.get('draft_ref')),
+                            'explanation_topics': [t if t in {'status','policy','boundary','authorization','diagnostics','fields','query'} else 'unknown'
+                                for t in topics if isinstance(t, str)],
+                            'explanation_field_count': len(fields),
                         })
                 deployment = metadata.get('deployment_id')
                 version = metadata.get('profile_version')
@@ -133,7 +152,7 @@ def fixture_executor(fixture, violations):
 async def run_case(name, tenant_id, model, *, timeout=180):
     from agents.main_agent import stream_agent_response
     from model_cases import case_fixture, transfer_facts
-    from services.drafts import DRAFT_INSPECT
+    from services.drafts import DRAFT_INSPECT, build_draft_explanation
     from protocol.a2ui import transfer_config_check_presentation
 
     scenario = load_scenario(Path(__file__).with_name(name))
@@ -147,6 +166,7 @@ async def run_case(name, tenant_id, model, *, timeout=180):
     error_code = None
     draft_reads = []
     snapshot = fixture['snapshot']
+    snapshots = {s['reference']:s for s in [snapshot, fixture.get('other_snapshot')] if s}
     prompt = scenario['prompt']
     if name == 'model-transfer-precheck':
         prompt += '\n已确认一文档一行，members整体保留为json，目标覆盖策略已选择。完整原参数：\n'
@@ -154,10 +174,10 @@ async def run_case(name, tenant_id, model, *, timeout=180):
 
     async def draft_reader(reference):
         draft_reads.append(reference)
-        if snapshot is None or reference != snapshot['reference']:
+        if reference not in snapshots:
             violations.append('model_draft_reference_changed')
             raise ValueError('model_draft_reference_changed')
-        return copy.deepcopy(snapshot)
+        return copy.deepcopy(snapshots[reference])
 
     async def deny_owner_http(*args, **kwargs):
         violations.append('model_owner_network_blocked')
@@ -166,24 +186,20 @@ async def run_case(name, tenant_id, model, *, timeout=180):
     async def collect():
         nonlocal first_text_ms
         async with aclosing(stream_agent_response(
-            messages=[{'role': 'user', 'content': prompt}], user_id=1, tenant_id=tenant_id,
+            messages=[*fixture['history'], {'role': 'user', 'content': prompt}], user_id=1, tenant_id=tenant_id,
             token='synthetic-no-user-access', agent_run_id=str(uuid.uuid4()),
-            draft_catalog=([{'name': snapshot['name'], 'reference': snapshot['reference']}]
-                           if snapshot else []), draft_reader=draft_reader,
+            draft_catalog=[{'name':s['name'], 'reference':s['reference'], 'observed_at':s['report']['observed_at']}
+                           for s in snapshots.values()], draft_reader=draft_reader,
         )) as stream:
-            text_index = 0
             async for event in stream:
                 events.append(event)
                 if event.checkpoint_committed is not None and not event.checkpoint_committed.done():
                     # In-process evaluation acknowledges control only; there is no DB commit.
                     event.checkpoint_committed.set_result(None)
                 if event.kind == 'text':
-                    text_index += 1
-                    # Historical inspect emits a fixed notice and separator before model text.
-                    if not snapshot or text_index > 2:
-                        body.append(event.payload.get('delta', ''))
-                        if first_text_ms is None:
-                            first_text_ms = round((time.monotonic() - started) * 1000)
+                    body.append(event.payload.get('delta', ''))
+                    if first_text_ms is None:
+                        first_text_ms = round((time.monotonic() - started) * 1000)
 
     with (patch('agents.main_agent.get_llm', return_value=model),
           patch('tools.langchain_tools.ToolExecutor', fixture_executor(fixture, violations)),
@@ -209,19 +225,28 @@ async def run_case(name, tenant_id, model, *, timeout=180):
         trace_passed = False
     text = ''.join(body)
     report_preserved = True
-    if name in {'model-transfer-precheck', 'model-historical-draft'}:
-        expected_report = transfer_config_check_presentation(transfer_facts()[4])['report']
+    ambiguous = bool(fixture.get('other_snapshot'))
+    if name == 'model-transfer-precheck' or snapshot:
+        expected_reports = ([] if ambiguous else [snapshot['report']] if snapshot else
+                            [transfer_config_check_presentation(transfer_facts()[4])['report']])
         reports = [e.payload.get('report') for e in events
                    if e.kind == 'presentation' and e.payload.get('kind') == 'transfer_config_check']
-        report_preserved = reports == [expected_report]
+        report_preserved = reports == expected_reports
+    fixed_consistent = True
+    if snapshot and fixture.get('expected_scope'):
+        expected_text, _ = build_draft_explanation(snapshot, fixture['expected_scope'], 'zh-cn')
+        fixed_consistent = expected_text in text
     assertions = {
         'trace_contract': trace_passed,
         'no_blocked_calls': not violations,
-        'model_body_nonempty': bool(text.strip()),
+        'response_body_nonempty': bool(text.strip()),
+        'model_stream_expected': bool(identity_recorder.model_characters) == fixture['expects_model_body'],
+        'runtime_facts_consistent': fixed_consistent,
+        'body_accounting_valid': identity_recorder.model_characters <= len(text),
         'body_fact_anchors': all(fact in text for fact in fixture['body_facts']),
         'report_preserved': report_preserved,
-        'historical_read_only': (draft_reads == [snapshot['reference']]
-                                 and [t['name'] for t in phase['tools']] == [DRAFT_INSPECT]) if snapshot else True,
+        'historical_read_only': (draft_reads == ([] if ambiguous else [snapshot['reference']])
+                                 and [t['name'] for t in phase['tools']] == ([] if ambiguous else [DRAFT_INSPECT])) if snapshot else True,
         'model_identity_observed': bool(identity_recorder.identities),
     }
     return {
@@ -233,6 +258,9 @@ async def run_case(name, tenant_id, model, *, timeout=180):
         'model_identities': [{'deployment_sha256': deployment, 'profile_version': version}
                              for deployment, version in sorted(identity_recorder.identities)],
         'duration_ms': round((time.monotonic() - started) * 1000), 'first_text_ms': first_text_ms,
+        'body': {'runtime_characters':max(0, len(text)-identity_recorder.model_characters),
+                 'model_characters':identity_recorder.model_characters, 'model_chunks':identity_recorder.model_chunks,
+                 'first_model_text_ms':identity_recorder.first_model_text_ms},
     }
 
 
@@ -271,7 +299,8 @@ def validate_report(report):
         'status': {'enum': ['passed', 'failed']}, 'error_code': error,
         'violation_codes': {'type': 'array', 'items': {'enum': [*error_codes, 'model_owner_network_blocked', 'model_draft_reference_changed']}},
         'assertions': obj({key: {'type': 'boolean'} for key in (
-            'trace_contract', 'no_blocked_calls', 'model_body_nonempty', 'body_fact_anchors',
+            'trace_contract', 'no_blocked_calls', 'response_body_nonempty', 'model_stream_expected',
+            'runtime_facts_consistent', 'body_accounting_valid', 'body_fact_anchors',
             'report_preserved', 'historical_read_only', 'model_identity_observed')}),
         'tools': {'type': 'array', 'items': obj({'name': {'enum': tool_names},
                   'status': {'enum': ['started', 'succeeded', 'failed']}, 'error_code': {'enum': [None, *error_codes]}})},
@@ -281,7 +310,11 @@ def validate_report(report):
             'skill': {'enum': [*_get_skill_registry(), 'none', 'unknown']},
             'draft_action': {'enum': [None, 'inspect', 'create', 'unknown']},
             'needs_platform_semantics': {'type': 'boolean'}, 'has_draft_ref': {'type': 'boolean'},
+            'explanation_topics': {'type':'array', 'items':{'enum':['status','policy','boundary','authorization','diagnostics','fields','query','unknown']}},
+            'explanation_field_count': duration,
         })},
+        'body': obj({'runtime_characters':duration,'model_characters':duration,'model_chunks':duration,
+                     'first_model_text_ms':{'anyOf':[duration,{'type':'null'}]}}),
         'duration_ms': duration, 'first_text_ms': {'anyOf': [duration, {'type': 'null'}]},
     })
     schema = obj({

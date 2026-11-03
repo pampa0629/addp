@@ -9,6 +9,17 @@ from typing import TypedDict, Optional, List, Dict, Any, NotRequired, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class DraftExplanationScope(BaseModel):
+    """Private inspect scope: facts stay with Runtime; only selected fragments reach the model."""
+
+    model_config = ConfigDict(extra="forbid")
+    topics: List[Literal["status", "policy", "boundary", "authorization", "diagnostics", "fields", "query"]] = Field(
+        min_length=1, max_length=7,
+        description="只选择本轮用户问及的主题；泛问解释草稿时选status、policy、boundary、authorization。正式诊断原因选diagnostics，字段/映射解释选fields，已有查询表达式选query。",
+    )
+    fields: List[str] = Field(max_length=200, description="fields主题必须列出用户明确问及的映射source或target精确名称；其他主题为[]。不得编造字段或填入整个用户请求。")
+
+
 class AgentState(TypedDict):
     """Agent 请求级状态，在节点间传递（不持久化）"""
 
@@ -32,6 +43,7 @@ class AgentState(TypedDict):
     draft_catalog: NotRequired[List[Dict[str, str]]]
     draft_action: NotRequired[Optional[Literal["inspect", "create"]]]
     draft_ref: NotRequired[Optional[str]]
+    draft_explanation: NotRequired[Optional[Dict[str, Any]]]
 
 
 class TaskContext(TypedDict):
@@ -58,6 +70,7 @@ class RouteDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     draft_action: Optional[Literal["inspect", "create"]] = Field(default=None, description="草稿动作优先于通用平台领域分类。inspect 只解释已有历史草稿：skill=null 且 needs_platform_semantics=false；create 仅本轮明确肯定地请求沿用全部历史原参数创建、不修改、不运行：skill=null 且 needs_platform_semantics=true。明确不创建、只预检或只生成草稿时禁止create；当前请求附带完整传输配置并要求按原参数预检时，本字段和draft_ref为null、skill=null、needs_platform_semantics=true，不索要历史草稿引用。请求修改也走普通平台路线。历史草稿指代不明时保留其动作但draft_ref=null，不能猜选。")
     draft_ref: Optional[str] = Field(default=None, description="只选近期受信任草稿目录的确切 reference；缺失或有歧义时为 null，不能从正文推测。")
+    draft_explanation: Optional[DraftExplanationScope] = Field(default=None, description="draft_action=inspect时必须声明解释范围，其他动作必须为null。状态、策略、执行边界和授权由Runtime固定解释，只有明确字段/映射或已有查询表达式需要正文模型。")
     skill: Optional[str] = Field(
         default=None,
         description=(

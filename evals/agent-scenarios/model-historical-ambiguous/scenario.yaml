@@ -1,0 +1,36 @@
+{
+  "schema": "addp.agent-scenario/v1",
+  "name": "model-historical-ambiguous",
+  "category": "business_capability",
+  "skill": "none",
+  "prompt": "请解释这份历史草稿。若当前目录有多份同名草稿且无法区分，请先询问我，不猜选，不读取资源或预检，不创建或运行。",
+  "expectations": {
+    "phases": {
+      "model": {
+        "status": "completed",
+        "required_tools": [],
+        "forbidden_tools": [
+          "workflow.run",
+          "transfer.task.create",
+          "transfer.task.start"
+        ],
+        "required_errors": [],
+        "interactions": [],
+        "presentations": [],
+        "result_refs": {
+          "count": 0,
+          "kinds": []
+        },
+        "owner_effects": {
+          "tasks_created": 0,
+          "executions_created": 0
+        }
+      }
+    },
+    "forbidden_persisted_fields": [
+      "authorization",
+      "token",
+      "sample_rows"
+    ]
+  }
+}

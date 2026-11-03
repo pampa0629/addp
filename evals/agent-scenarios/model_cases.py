@@ -15,7 +15,9 @@ ROOT = Path(__file__).resolve().parents[2]
 CASE_NAMES = (
     'model-engine-inventory', 'model-query-draft',
     'model-transfer-precheck', 'model-historical-draft',
+    'model-historical-boundaries', 'model-historical-named', 'model-historical-ambiguous',
 )
+HISTORY_NAME = 'outdoors_mongodb_to_pg_agent_historical_regression_20261103'
 QUERY_LOCATOR = 'addp://engine/321/path/public/orders?type=table&item_id=3210'
 QUERY_TEXT = 'SELECT status, COUNT(*) AS total FROM public.orders GROUP BY status'
 
@@ -56,15 +58,21 @@ def transfer_facts():
     return definition, source, parent, arguments, report
 
 
-def historical_snapshot():
+def historical_snapshot(*, status='unknown', policy='replace', boundary='bounded', name=HISTORY_NAME, step_id='00000000-0000-4000-8000-000000000001'):
     definition, source, parent, arguments, report = transfer_facts()
+    arguments['name'] = name
+    arguments['config']['target']['policy']['apply_mode'] = policy
+    arguments['config']['runtime']['boundary'] = boundary
+    report['status'] = status
+    for diagnostic in report['diagnostics']:
+        diagnostic['status'] = status
     checkpoint = new_checkpoint()
     for name, result in [('platform.capability.context', definition), ('resource.facts.get', source),
                          ('resource.children.list', parent)]:
         capture_owner_facts(name, result, checkpoint)
     capture_config_check(arguments, report, checkpoint)
     return draft_snapshot(AgentRunStep(
-        id=uuid.UUID('00000000-0000-4000-8000-000000000001'), status='completed',
+        id=uuid.UUID(step_id), status='completed',
         tool_name='transfer.task.config.check', input_data=arguments,
         facts={'config_checks': [checkpoint['observed']['config_checks']['transfer.task.create']]},
     ))
@@ -75,7 +83,8 @@ def case_fixture(name):
     if name not in CASE_NAMES:
         raise ValueError('unknown_model_case')
     definition, source, parent, arguments, report = transfer_facts()
-    result = {'responses': {}, 'expected': {}, 'snapshot': None, 'body_facts': []}
+    result = {'responses': {}, 'expected': {}, 'snapshot': None, 'body_facts': [], 'history': [],
+              'expects_model_body': name in {'model-engine-inventory', 'model-query-draft', 'model-historical-draft'}}
     if name == 'model-engine-inventory':
         result['responses'] = {'engine.list': [
             {'id': 301, 'name': 'VECTOR_FIXTURE_ONLINE', 'engine_type': 'geopython_workflow',
@@ -129,5 +138,20 @@ def case_fixture(name):
         result['body_facts'] = ['unknown']
     else:
         result['snapshot'] = historical_snapshot()
+        result['expected_scope'] = {'topics':['status','policy','boundary','authorization','fields'], 'fields':['members']}
         result['body_facts'] = ['members']
+        if name in {'model-historical-boundaries', 'model-historical-named'}:
+            result['snapshot'] = historical_snapshot(status='unsupported', policy='append')
+            result['expected_scope'] = {'topics':['status','policy','boundary','authorization'], 'fields':[]}
+            result['body_facts'] = ['unsupported', 'append', 'bounded']
+        snapshot = result['snapshot']
+        result['history'] = [
+            {'role':'user', 'content':'只做这份完整传输配置的正式预检，不创建、不运行。\n'+json.dumps(snapshot['arguments'],ensure_ascii=False)},
+            {'role':'assistant', 'content':f"正式预检已完成，草稿名称为 {snapshot['name']}，报告状态 {snapshot['report']['status']}。原参数和报告已展示；没有创建或运行任务。"},
+        ]
+        if name == 'model-historical-ambiguous':
+            result['other_snapshot'] = historical_snapshot(step_id='00000000-0000-4000-8000-000000000002')
+            result['history'] = []
+            result['body_facts'] = [snapshot['name']]
+            result['expected_scope'] = None
     return copy.deepcopy(result)

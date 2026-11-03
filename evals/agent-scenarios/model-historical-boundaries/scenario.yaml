@@ -1,0 +1,41 @@
+{
+  "schema": "addp.agent-scenario/v1",
+  "name": "model-historical-boundaries",
+  "category": "business_capability",
+  "skill": "none",
+  "prompt": "只依据本会话刚才的已预检草稿，用三句话说明预检状态、写入策略、bounded与当前运行授权的区别。不重新查询或预检，不修改、不创建、不运行。",
+  "expectations": {
+    "phases": {
+      "model": {
+        "status": "completed",
+        "required_tools": [
+          "draft.inspect"
+        ],
+        "forbidden_tools": [
+          "workflow.run",
+          "transfer.task.create",
+          "transfer.task.start"
+        ],
+        "required_errors": [],
+        "interactions": [],
+        "presentations": [
+          "TransferDraftSnapshot",
+          "TransferConfigCheckReport"
+        ],
+        "result_refs": {
+          "count": 0,
+          "kinds": []
+        },
+        "owner_effects": {
+          "tasks_created": 0,
+          "executions_created": 0
+        }
+      }
+    },
+    "forbidden_persisted_fields": [
+      "authorization",
+      "token",
+      "sample_rows"
+    ]
+  }
+}

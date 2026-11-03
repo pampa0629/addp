@@ -27,6 +27,49 @@ class DraftReferenceError(ValueError):
     pass
 
 
+def build_draft_explanation(snapshot: dict, scope: dict, accept_language: str) -> tuple[str, dict]:
+    """Project only explicitly selected historical fragments; do not infer current facts."""
+    from pydantic import ValidationError
+    from graph.state import DraftExplanationScope
+    from i18n import draft_explanation_facts
+
+    try:
+        selected = DraftExplanationScope.model_validate(scope)
+    except ValidationError as exc:
+        raise DraftReferenceError("draft_explanation_scope_invalid") from exc
+    topics, fields = selected.topics, selected.fields
+    if (len(set(topics)) != len(topics) or len(set(fields)) != len(fields)
+            or any(not name or len(name) > 4096 for name in fields)
+            or ("fields" in topics) != bool(fields)):
+        raise DraftReferenceError("draft_explanation_scope_invalid")
+    config, report = snapshot["arguments"]["config"], snapshot["report"]
+    fragments = {}
+    if fields:
+        mappings = [field for transform in config.get("transforms", [])
+                    if transform.get("type") == "field_mapping" for field in transform.get("fields", [])]
+        available = {field[key] for field in mappings for key in ("source", "target") if key in field}
+        if not set(fields) <= available:
+            raise DraftReferenceError("draft_explanation_scope_invalid")
+        fragments["mappings"] = [
+            {key: copy.deepcopy(field[key]) for key in ("source", "target", "target_type", "nullable", "precision", "scale") if key in field}
+            for field in mappings if field.get("source") in fields or field.get("target") in fields
+        ]
+    query_missing = False
+    if "query" in topics:
+        query = config.get("source", {}).get("query")
+        if isinstance(query, dict) and isinstance(query.get("statement"), str) and query["statement"]:
+            fragments["query"] = {key: copy.deepcopy(query[key]) for key in ("language", "statement") if key in query}
+        else:
+            query_missing = True
+    fixed = draft_explanation_facts(
+        accept_language, status=report.get("status"),
+        policy=config.get("target", {}).get("policy", {}).get("apply_mode"),
+        boundary=config.get("runtime", {}).get("boundary"), topics=topics,
+        diagnostic_count=len(report.get("diagnostics", [])), query_missing=query_missing,
+    )
+    return fixed, fragments
+
+
 def validate_draft_arguments(reference: str, arguments: dict) -> None:
     """Validate the restored candidate, not its current authorization or facts."""
     match = _REF.fullmatch(reference) if isinstance(reference, str) else None

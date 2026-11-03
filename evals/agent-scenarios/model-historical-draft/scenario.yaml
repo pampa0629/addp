@@ -3,7 +3,7 @@
   "name": "model-historical-draft",
   "category": "business_capability",
   "skill": "none",
-  "prompt": "解释刚才传输草稿中members数组按json保存的含义，以及历史unknown预检结论的边界。只解释已有草稿，不重新查询资源、不重新预检、不创建或运行。",
+  "prompt": "只依据本会话刚才的已预检草稿和原报告，解释 members 的字段映射、预检状态、写入策略、执行边界与当前授权区别。不重新查询资源或预检，不改参数，不创建或运行。",
   "expectations": {
     "phases": {
       "model": {

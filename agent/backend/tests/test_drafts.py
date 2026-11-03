@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session as DatabaseSession
 from agents.main_agent import _route_node, stream_agent_response
 from agents.checkpoint import new_checkpoint, normalize_checkpoint
 from agents.events import text_event
-from graph.state import PlatformRouteDecision, RouteDecision
+from graph.state import PlatformRouteDecision, RouteDecision, DraftExplanationScope
 from models.run import AgentRun
 from models.run_step import AgentRunStep
 from models.session import Session
@@ -211,7 +211,7 @@ class DraftRoutingTests(unittest.IsolatedAsyncioTestCase):
                 yield AIMessageChunk(content='第一段历史说明')
                 await release.wait()
                 yield AIMessageChunk(content='第二段历史说明')
-        model = Model([RouteDecision(draft_action='inspect', draft_ref=snapshot['reference'])])
+        model = Model([RouteDecision(draft_action='inspect', draft_ref=snapshot['reference'], draft_explanation=DraftExplanationScope(topics=['fields'], fields=['members']))])
         reader = AsyncMock(return_value=snapshot)
         with (patch('agents.main_agent.get_llm', return_value=model),
               patch('agents.main_agent.create_agent_tools') as tools,
@@ -375,7 +375,7 @@ class DraftRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_inspection_receives_exact_snapshot_and_never_assembles_business_tools(self):
         snapshot = draft_snapshot(checked_step())
         catalog = [{"reference": snapshot["reference"], "name": snapshot["name"], "observed_at": snapshot["report"]["observed_at"]}]
-        model = ScriptedRouter([RouteDecision(draft_action="inspect", draft_ref=snapshot["reference"]), AIMessage(content="按原配置解释，未执行。")])
+        model = ScriptedRouter([RouteDecision(draft_action="inspect", draft_ref=snapshot["reference"], draft_explanation=DraftExplanationScope(topics=["fields"], fields=["members"])), AIMessage(content="按原配置解释，未执行。")])
         reader = AsyncMock(return_value=snapshot)
         with (patch("agents.main_agent.get_llm", return_value=model),
               patch("agents.main_agent.create_agent_tools") as tools,
@@ -386,14 +386,17 @@ class DraftRoutingTests(unittest.IsolatedAsyncioTestCase):
         harness.assert_not_called()
         reader.assert_awaited_once_with(snapshot["reference"])
         context = json.loads(model.messages[1][-1].content)
-        self.assertEqual(context["snapshot"]["arguments"], snapshot["arguments"])
+        self.assertEqual(set(context), {"mappings"})
+        self.assertEqual([field["source"] for field in context["mappings"]], ["members"])
+        self.assertNotIn("snapshot", context)
+        self.assertNotIn("request", context)
         views = [e.payload for e in events if e.kind == "presentation"]
         self.assertEqual(views[0]["mappings"][-1]["target_type"], "json")
         self.assertEqual(views[1]["report"], snapshot["report"])
         self.assertEqual([e.payload["tool_name"] for e in events if e.kind == "tool_start"], ["draft.inspect"])
 
     async def test_ambiguous_draft_does_not_pick_first_or_call_reader(self):
-        model = ScriptedRouter([RouteDecision(draft_action="inspect")])
+        model = ScriptedRouter([RouteDecision(draft_action="inspect", draft_explanation=DraftExplanationScope(topics=["status"], fields=[]))])
         reader = AsyncMock()
         with patch("agents.main_agent.get_llm", return_value=model):
             events = [e async for e in stream_agent_response([{"role": "user", "content": "解释草稿"}], 1, 1, "token", "ambiguous",
@@ -402,7 +405,7 @@ class DraftRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(e.kind == "presentation" for e in events))
 
     async def test_unavailable_selected_snapshot_fails_closed_without_model_explanation(self):
-        model = ScriptedRouter([RouteDecision(draft_action="inspect", draft_ref="known-ref")])
+        model = ScriptedRouter([RouteDecision(draft_action="inspect", draft_ref="known-ref", draft_explanation=DraftExplanationScope(topics=["status"], fields=[]))])
         with patch("agents.main_agent.get_llm", return_value=model):
             events = [e async for e in stream_agent_response([{"role": "user", "content": "解释"}], 1, 1, "token", "missing",
                 draft_catalog=[{"reference": "known-ref", "name": "one"}],
@@ -410,3 +413,121 @@ class DraftRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(model.messages), 1)
         self.assertTrue(any(e.kind == "run_failed" for e in events))
         self.assertFalse(any(e.kind == "presentation" for e in events))
+
+
+class HistoricalExplanationBoundaryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_closing_mixed_explanation_preserves_fixed_text_and_closes_model_stream(self):
+        from langchain_core.messages import AIMessageChunk
+        snapshot = draft_snapshot(checked_step())
+        closed = asyncio.Event()
+
+        class Model(ScriptedRouter):
+            async def astream(inner, messages):
+                try:
+                    yield AIMessageChunk(content='未完成的字段说明')
+                    await asyncio.Event().wait()
+                finally:
+                    closed.set()
+
+        model = Model([RouteDecision(draft_action='inspect', draft_ref=snapshot['reference'],
+            draft_explanation=DraftExplanationScope(topics=['status', 'boundary', 'fields'], fields=['members']))])
+        with patch('agents.main_agent.get_llm', return_value=model):
+            async with aclosing(stream_agent_response([{'role':'user','content':'解释状态、边界及 members 映射'}],
+                    1, 1, 'token', 'mixed-close', draft_catalog=[{'reference':snapshot['reference'],'name':snapshot['name']}],
+                    draft_reader=AsyncMock(return_value=snapshot))) as stream:
+                received = []
+                while True:
+                    event = await asyncio.wait_for(anext(stream), 2)
+                    received.append(event)
+                    if event.kind == 'text' and event.payload['delta'] == '未完成的字段说明':
+                        break
+            self.assertTrue(closed.is_set())
+        text = ''.join(e.payload['delta'] for e in received if e.kind == 'text')
+        self.assertIn('不是权限或批准边界', text)
+        self.assertIn('未完成的字段说明', text)
+        self.assertEqual([e.payload['kind'] for e in received if e.kind == 'presentation'],
+                         ['transfer_draft_snapshot', 'transfer_config_check'])
+
+    async def test_key_topics_use_runtime_only_in_both_languages_for_all_report_states(self):
+        from i18n import draft_explanation_facts
+        scope = DraftExplanationScope(topics=['status', 'policy', 'boundary', 'authorization', 'diagnostics'], fields=[])
+        for status in ('supported', 'unknown', 'unsupported'):
+            for language in ('zh-cn', 'en'):
+                snapshot = draft_snapshot(checked_step(status))
+                model = ScriptedRouter([RouteDecision(draft_action='inspect', draft_ref=snapshot['reference'], draft_explanation=scope)])
+                with (patch('agents.main_agent.get_llm', return_value=model),
+                      patch('agents.main_agent.create_agent_tools') as tools,
+                      patch('agents.main_agent.AgentFactory.run') as harness):
+                    events = [e async for e in stream_agent_response([{'role':'user','content':'explain status, policy, bounded and authorization'}],
+                        1, 1, 'token', 'fixed-history', accept_language=language,
+                        draft_catalog=[{'reference':snapshot['reference'],'name':snapshot['name']}],
+                        draft_reader=AsyncMock(return_value=snapshot))]
+                self.assertEqual(len(model.messages), 1)  # Route only: astream would consume another decision.
+                text = ''.join(e.payload['delta'] for e in events if e.kind=='text')
+                self.assertIn(status, text)
+                self.assertIn('bounded', text)
+                self.assertIn('replace', text)
+                self.assertIn('不是权限或批准' if language=='zh-cn' else 'not a permission or approval', text)
+                self.assertIn('未核验当前权限' if language=='zh-cn' else 'permission or approval was not checked', text)
+                self.assertEqual(next(e.payload['report'] for e in events if e.kind=='presentation' and e.payload['kind']=='transfer_config_check'), snapshot['report'])
+                tools.assert_not_called()
+                harness.assert_not_called()
+
+    def test_scope_projects_only_selected_mapping_and_query_without_request_report_or_unrelated_config(self):
+        from services.drafts import build_draft_explanation
+        snapshot = draft_snapshot(checked_step())
+        before = copy.deepcopy(snapshot)
+        fixed, fragments = build_draft_explanation(snapshot, {'topics':['status','fields'], 'fields':['members']}, 'zh-cn')
+        self.assertEqual(set(fragments), {'mappings'})
+        self.assertEqual(fragments['mappings'], [{'source':'members','target':'members','target_type':'json'}])
+        for private in ('arguments', 'report', 'reference', 'name', 'request', 'runtime', 'policy'):
+            self.assertNotIn(private, fragments)
+        _, query = build_draft_explanation(snapshot, {'topics':['query'], 'fields':[]}, 'en')
+        self.assertEqual(query, {'query':snapshot['arguments']['config']['source']['query']})
+        self.assertEqual(snapshot, before)
+
+    def test_invalid_scope_unknown_field_and_duplicate_topics_fail_closed(self):
+        from services.drafts import build_draft_explanation
+        snapshot = draft_snapshot(checked_step())
+        for scope in (None, {'topics':['invented'],'fields':[]}, {'topics':['fields'],'fields':['absent']},
+                      {'topics':['fields'],'fields':[]}, {'topics':['status'],'fields':['members']},
+                      {'topics':['status','status'],'fields':[]}, {'topics':['fields'],'fields':['members','members']},
+                      {'topics':['status'],'fields':[], 'request':'untrusted'}):
+            with self.subTest(scope=scope), self.assertRaisesRegex(DraftReferenceError, 'draft_explanation_scope_invalid'):
+                build_draft_explanation(snapshot, scope, 'zh-cn')
+
+    def test_missing_unknown_policy_boundary_and_query_do_not_invent_defaults(self):
+        from services.drafts import build_draft_explanation
+        snapshot = draft_snapshot(checked_step())
+        config = snapshot['arguments']['config']
+        for policy, boundary in ((None,None), ('unrecognised',{})):
+            config['target']['policy'] = {'apply_mode':policy}
+            config['runtime'] = {'boundary':boundary}
+            config['source'].pop('query', None)
+            text, fragments = build_draft_explanation(snapshot, {'topics':['policy','boundary','query'], 'fields':[]}, 'zh-cn')
+            self.assertEqual(fragments, {})
+            self.assertIn('没有可解释的写入策略', text)
+            self.assertIn('没有可解释的执行边界', text)
+            self.assertIn('没有可解释的已有查询', text)
+            self.assertNotIn('append', text)
+            self.assertNotIn('bounded', text)
+
+    def test_append_and_continuous_describe_configuration_not_current_authority(self):
+        from services.drafts import build_draft_explanation
+        snapshot = draft_snapshot(checked_step())
+        snapshot['arguments']['config']['target']['policy']['apply_mode'] = 'append'
+        snapshot['arguments']['config']['runtime']['boundary'] = 'continuous'
+        text, _ = build_draft_explanation(snapshot, {'topics':['policy','boundary'], 'fields':[]}, 'zh-cn')
+        self.assertIn('持续等待变化', text)
+        self.assertIn('不表示已经写入', text)
+        self.assertIn('未核验当前权限', text)
+        self.assertNotIn('当前没有授权', text)
+
+    async def test_scope_required_only_for_inspect_without_legacy_default(self):
+        for decision in (RouteDecision(draft_action='inspect'),
+                         RouteDecision(skill=None, draft_explanation=DraftExplanationScope(topics=['status'],fields=[])),
+                         RouteDecision(draft_action='create', needs_platform_semantics=True,
+                                       draft_explanation=DraftExplanationScope(topics=['status'],fields=[]))):
+            with self.subTest(decision=decision), self.assertRaisesRegex(ValueError,'draft_explanation_scope_invalid'):
+                await _route_node({'messages':[{'role':'user','content':'inspect'}], 'draft_catalog':[], 'reply_detail':'standard'},
+                                  ScriptedRouter([decision]))
