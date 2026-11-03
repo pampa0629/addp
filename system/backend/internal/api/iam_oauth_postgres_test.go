@@ -178,6 +178,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 			"security.protection_projection.update",
 			"system.cleanup_authorization.execute",
 			"system.engine.read",
+			"system.engine_access_initial_grant.execute",
 			"system.engine_catalog.read",
 			"system.engine_descriptor.read",
 			"system.execution_authorization.execute",
@@ -188,6 +189,21 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 			"transfer.task.read",
 		}) {
 		t.Fatalf("service authorization = %#v", authContext.Authorization)
+	}
+	if !commonauth.HasContextPermissions(*authContext, "system.engine_access_initial_grant.execute") {
+		t.Fatal("Manager runtime lacks its approved upload initial Grant permission")
+	}
+	for _, permission := range []string{
+		"system.engine_access_grant.create",
+		"system.engine_access_delegation.create",
+		"system.engine_access_fulfillment.create",
+		"catalog.sharing_decision.create",
+		"manager.data_item.read",
+		"manager.content.read",
+	} {
+		if commonauth.HasContextPermissions(*authContext, permission) {
+			t.Fatalf("upload initial Grant permission acquired unrelated authority %q", permission)
+		}
 	}
 	var refreshTokenCount int64
 	if err := db.Raw(`SELECT count(*) FROM system.refresh_tokens refresh_token JOIN system.refresh_token_families family ON family.id = refresh_token.family_id WHERE family.principal_id = ? AND family.client_id = 'addp-manager'`, managerPrincipalID).Scan(&refreshTokenCount).Error; err != nil {

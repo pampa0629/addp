@@ -76,7 +76,19 @@ test('System grant selection uses the shared picker while retaining exact domain
   const editor = source('system/frontend/src/components/engines/EngineDataAuthorization.vue')
   assert.equal(existsSync(resolve(repositoryRoot, 'system/frontend/src/components/engines/EngineDirectPermissions.vue')), false)
   assert.match(editor, /<ResourceTreePicker\s/)
-  assert.match(editor, /multiple :branch-selection="engine.engine_type !== 'postgresql'"/)
+  const grantPicker = editor.match(/<ResourceTreePicker\b[^>]*>/)?.[0]
+  assert.ok(grantPicker)
+  assert.match(grantPicker, /\bmultiple(?=\s|>)/)
+  const branchSelection = grantPicker.match(/:branch-selection="([^"]+)"/)?.[1]
+  assert.equal(branchSelection, "!['postgresql', 'nfs', 'minio'].includes(engine.engine_type)")
+  // Evaluate only the exact contract above, never an arbitrary source expression.
+  const selectsCurrentItems = new Function('engine', `return (${branchSelection})`)
+  for (const engineType of ['postgresql', 'nfs', 'minio']) {
+    assert.equal(selectsCurrentItems({ engine_type: engineType }), false, engineType)
+  }
+  for (const engineType of ['mysql', 'mongodb', 'ftp', 'spark', '']) {
+    assert.equal(selectsCurrentItems({ engine_type: engineType }), true, engineType)
+  }
   assert.match(editor, /createMixedApprovalCatalogAdapter/)
   assert.doesNotMatch(editor, /authorization-target-mode|changeTargetMode/)
   assert.match(editor, /nodeRecursions\[basisKey\(row\)\]/)
