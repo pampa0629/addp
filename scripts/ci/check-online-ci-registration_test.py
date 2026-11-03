@@ -1850,6 +1850,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
         CHECK.validate_native_cleanup_profile(self.repository, {'cleanup-native-effects'})
+        lifecycle = self.repository / 'scripts/test/online-hosted-cleanup-native-gate.sh'
+        original_lifecycle = lifecycle.read_text()
+        lifecycle.write_text(original_lifecycle.replace('--jobs 1', '--jobs 2'))
+        with self.assertRaises(CHECK.RegistrationError):
+            CHECK.validate_native_cleanup_profile(self.repository, {'cleanup-native-effects'})
+        lifecycle.write_text(original_lifecycle)
         mutations = ((paths[0], 'cleanup-native-infra.py prepare'),
                      (paths[10], 'manager-late-writer'),
                      (paths[0], 'export MANAGER_EXECUTION_LEASE_DURATION=30s MANAGER_EXECUTION_HEARTBEAT_INTERVAL=5s'), (paths[0], 'model3d-workflow-engine'),

@@ -17,6 +17,14 @@ compose_native() {
   docker compose -f "$ROOT_DIR/docker-compose.yml" -f "$ROOT_DIR/docker-compose.runtimes.yml" \
     -f "$ROOT_DIR/scripts/test/docker-compose.cleanup-native-t4.yml" "$@"
 }
+run_native_phase() {
+  local phase="$1" status=0
+  shift
+  printf 'native_cleanup_phase=%s state=started\n' "$phase"
+  run_logged "$@" || status=$?
+  printf 'native_cleanup_phase=%s state=returned exit=%s\n' "$phase" "$status"
+  return "$status"
+}
 stop_online_fixture() {
   local status=0
   python3 scripts/test/cleanup-native-infra.py stop || status=1
@@ -108,20 +116,20 @@ done
 [ "$registry_ready" -eq 1 ] || fail 'Native image registry readiness timed out'
 backend_images=system-backend,gateway,meta-backend,meta-worker,security-backend,manager-backend,transfer-backend,develop-backend,service-backend,quality-backend,graph-backend,asset-backend,model-backend,standard-backend,monitor-backend
 if [[ "$ADDP_ONLINE_NATIVE_CASE" = transfer-* ]]; then backend_images+=,transfer-continuous-worker; fi
-run_logged make build BUILD_ARGS="--arch amd64 --services $backend_images"
+run_native_phase compile make build BUILD_ARGS="--arch amd64 --services $backend_images"
 image_services=$backend_images
 if [[ "$ADDP_ONLINE_NATIVE_CASE" = manager-* ]]; then image_services+=,model3d-workflow-engine; fi
-run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $image_services"
+run_native_phase images make build-images IMAGE_BUILD_ARGS="--verify --services $image_services --jobs 1"
 application_owned=1
 for service in system-backend security-backend gateway meta-backend manager-backend transfer-backend develop-backend service-backend quality-backend graph-backend asset-backend model-backend standard-backend monitor-backend meta-worker; do
-  run_logged compose_native up -d --no-deps --wait "$service"
+  run_native_phase "application_$service" compose_native up -d --no-deps --wait "$service"
 done
 if [[ "$ADDP_ONLINE_NATIVE_CASE" = manager-* ]]; then
-  run_logged compose_native up -d --no-deps --wait model3d-workflow-engine
+  run_native_phase application_model3d-workflow-engine compose_native up -d --no-deps --wait model3d-workflow-engine
 else
-  run_logged compose_native up -d --no-deps --wait transfer-continuous-worker
+  run_native_phase application_transfer-continuous-worker compose_native up -d --no-deps --wait transfer-continuous-worker
 fi
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2"' _ "$ONLINE_SUITE" "$IDENTITY_ENV"
+run_native_phase identity bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2"' _ "$ONLINE_SUITE" "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 # Keep the existing exact source initializer for domain Grants; no IAM/revocation actor is used.
-run_logged make test-online ONLINE_SUITE="$ONLINE_SUITE"
+run_native_phase scenario make test-online ONLINE_SUITE="$ONLINE_SUITE"
