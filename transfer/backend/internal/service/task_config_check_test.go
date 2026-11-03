@@ -510,6 +510,64 @@ func slicesContains(values []string, value string) bool {
 	return false
 }
 
+func TestConfigCheckMongoObservedArrayMismatchIsNotHiddenBySampleCoverage(t *testing.T) {
+	for _, tc := range []struct {
+		name, targetType, query string
+		element                 datatype.FieldType
+		want                    plugin.DefinitionCheckStatus
+	}{
+		{"object_array", "array", `{"aggregate":"source","pipeline":[{"$project":{"alias":"$payload","_id":0}}]}`, datatype.FieldTypeJSON, plugin.DefinitionUnsupported},
+		{"number_array", "array", `{"aggregate":"source","pipeline":[{"$project":{"alias":"$payload","_id":0}}]}`, datatype.FieldTypeBigInt, plugin.DefinitionUnsupported},
+		{"string_array_is_still_sampled", "array", `{"aggregate":"source","pipeline":[{"$project":{"alias":"$payload","_id":0}}]}`, datatype.FieldTypeString, plugin.DefinitionUnknown},
+		{"unknown_elements", "array", `{"aggregate":"source","pipeline":[{"$project":{"alias":"$payload","_id":0}}]}`, "", plugin.DefinitionUnknown},
+		{"unobserved_snapshot", "array", `{"aggregate":"source","pipeline":[{"$project":{"alias":"$payload","_id":0}}]}`, datatype.FieldTypeJSON, plugin.DefinitionUnknown},
+		{"json_preserves_objects", "json", `{"aggregate":"source","pipeline":[{"$project":{"alias":"$payload","_id":0}}]}`, datatype.FieldTypeJSON, plugin.DefinitionUnknown},
+		{"complex_query_cannot_reuse_source_shape", "array", `{"aggregate":"source","pipeline":[{"$group":{"_id":null}}]}`, datatype.FieldTypeJSON, plugin.DefinitionUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, f, subject, body := configCheckFixture(t)
+			mongo, _ := plugin.Get("mongodb")
+			caps, _ := plugin.MarshalEngineCapabilities(mongo.Capabilities())
+			declared := commonmodels.JSONString(caps)
+			f.engines[1].EngineType, f.engines[1].Capabilities = "mongodb", &declared
+			f.items[1].ItemType = "collection"
+			f.items[1].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeArray, ElementType: tc.element, Nullable: true}}})
+			coverage := "sampled"
+			if tc.name == "unobserved_snapshot" {
+				f.items[1].ScannedAt, coverage = nil, "unknown"
+			}
+			before := configCheckHash(f.items[1].Attributes)
+			var request map[string]interface{}
+			_ = json.Unmarshal(body, &request)
+			config := request["config"].(map[string]interface{})
+			source := config["source"].(map[string]interface{})
+			source["locator"] = "addp://engine/1/path/synthetic/source?type=collection"
+			source["query"] = map[string]interface{}{"language": "mql", "statement": tc.query}
+			config["transforms"] = []interface{}{map[string]interface{}{"type": "field_mapping", "version": "v1", "mode": "project", "fields": []interface{}{map[string]interface{}{"source": "alias", "target": "kept", "target_type": tc.targetType}}}}
+			body, _ = json.Marshal(request)
+			report := checkFixtureReport(t, svc, subject, body)
+			if report.Status != tc.want || report.Facts[0].Coverage != coverage || f.calls != 4 {
+				t.Fatalf("report=%+v calls=%d", report, f.calls)
+			}
+			found := false
+			for _, d := range report.Diagnostics {
+				if d.Check == "source_assignment" && d.Status == plugin.DefinitionSupported {
+					t.Fatalf("sample became assignment proof: %+v", d)
+				}
+				if d.Code == "array_element_type_unsupported" {
+					found = true
+					if d.Status != plugin.DefinitionUnsupported || d.SourceField != "alias" || d.TargetField != "kept" || d.ConfigPath != "/config/transforms/0/fields/0" {
+						t.Fatalf("counterexample location lost: %+v", d)
+					}
+				}
+			}
+			if found != (tc.want == plugin.DefinitionUnsupported) || before != configCheckHash(f.items[1].Attributes) {
+				t.Fatal("observed contradiction lost or persisted source facts mutated")
+			}
+		})
+	}
+}
+
 func TestConfigCheckMongoProjectionUsesBoundSnapshotAndKeepsUnknown(t *testing.T) {
 	svc, f, a, body := configCheckFixture(t)
 	mongo, _ := plugin.Get("mongodb")

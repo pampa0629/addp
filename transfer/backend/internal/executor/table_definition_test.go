@@ -99,6 +99,9 @@ func TestTransformDefinitionIncompleteSourceDoesNotInventNullOrInheritedConstrai
 			if binding.Target.Type != datatype.FieldTypeUnknown || binding.Target.ElementType != "" || binding.Target.NativeType != "" || binding.Target.Precision != 0 {
 				t.Fatalf("sample became constraint: %+v", binding)
 			}
+			if binding.Source == nil || binding.Source.Type != datatype.FieldTypeArray || binding.Source.ElementType != datatype.FieldTypeJSON {
+				t.Fatalf("observed object-array counterexample lost: %+v", binding)
+			}
 		case "fallback":
 			if binding.Source == nil || binding.Constant == nil || binding.Constant.Value != "invalid-json" {
 				t.Fatalf("independent fallback lost: %+v", binding)

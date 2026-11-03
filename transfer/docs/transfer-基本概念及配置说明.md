@@ -304,6 +304,8 @@ HTTP 200 只表示成功取得报告，不代表 `supported`；三态对创建�
 
 查询不执行；可选 Common `QueryDefinitionChecker` 只用已保存快照分析部分输出。MongoDB 首期单集合、单个简单 `$project` 支持包含、排除和字段别名，覆盖度仍为 sampled／unknown；复杂查询、采样、缺失快照、无 Provider Checker 均保留 unknown。查询前原表结构不能充当输出结构，未观察字段不能证明缺失或确定 NULL／默认值。
 
+采样输出中已观察到的字段及 `element_type` 保留为源表示事实，供同一目标 Provider 检查确定性不匹配；例如已观察到对象元素的数组不能赋给只支持字符串元素的 PostgreSQL `TEXT[]`，报告 unsupported，并定位源输出字段、目标字段和映射配置路径。采样字段不自动成为目标类型、精度或非空约束，兼容的采样赋值仍为 unknown；未观察字段和未分析的复杂查询不补造反证。
+
 即使源未知，仍由目标 Provider 检查显式目标约束及常量；unsupported 优先于 unknown。缺少 Meta 快照或 Meta 404 均不能证明物理目标不存在。已知数字默认值经过运行期 float64 配置解析的精度未证明，明确返回 unknown。
 
 依赖服务的权限、网络或无效响应返回 502，不作为 unknown 吞掉。
@@ -424,6 +426,8 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 | `format` | 否 | 日期、时间、数字等简单解析 / 格式化提示。 |
 
 `precision` / `scale` 只属于 decimal 目标字段，两者必须同时出现或同时省略。源字段已声明有限精度时，向导默认继承该事实；无界 decimal 写入声明 `limits.table_write.decimal.requires_explicit_precision_scale=true` 的目标时，必须在映射中显式填写。MySQL、MySQL 模式 OceanBase 与 TiDB 声明 `max_precision=65`、`max_scale=30`，Oracle、Doris 与 ClickHouse 当前 Provider 声明 `max_precision=38`、`max_scale=38`，并统一要求 `scale <= precision`；向导校验与字段定义推荐统一消费目标 Engine Instance 的 capability，不按数据库名称建立分支，推荐 API 只接收所选 `target_engine_id`，不接受调用方另报引擎类型。系统不会把无界 decimal 静默收缩为固定默认精度；只有用户触发字段定义推荐时，Transfer 才会全量扫描所选源字段的实际值并展示结果供确认。
+
+`array` 不代表任意嵌套 JSON 容器：其物理表示和元素限制由目标 Provider 决定，当前 PostgreSQL 原生数组映射为一维字符串数组 `TEXT[]`。一文档一行、整体保留对象数组／嵌套数组／混合数组或未知元素数组时，使用标准类型 `json` 作为候选并正式预检；不是删除数组字段、展开行或将对象逐项字符串化。配置不得使用数据库 DDL 类型名 `jsonb` 代替标准类型，实际 JSON 物理映射由 Provider 负责。修改目标表示后须重新预检和复核，既有运行审批不能沿用。
 
 `mode`：
 

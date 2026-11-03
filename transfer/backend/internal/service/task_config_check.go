@@ -179,6 +179,11 @@ func (s *TaskConfigCheckService) Check(ctx context.Context, subject authorizatio
 		}
 	}
 	sourceComplete := sourceInfo != nil && sourceFact.Coverage == plugin.QuerySchemaCoverageComplete
+	if sourceFact.Coverage != plugin.QuerySchemaCoverageComplete && sourceFact.Coverage != plugin.QuerySchemaCoverageSampled {
+		// Payloads without an observed snapshot cannot provide counterexamples.
+		// Keep their full payload in the binding hash, not as field evidence.
+		sourceInfo, sourceSpatial = nil, nil
+	}
 	if spec.Source.Query != nil {
 		// A saved source table is not query output. Only the pure Provider contract
 		// may supply partial output, never PreparedQuery runtime catalog methods.
@@ -244,6 +249,11 @@ func (s *TaskConfigCheckService) Check(ctx context.Context, subject authorizatio
 		return finishConfigCheck(report), nil
 	}
 	for _, check := range checker.CheckTableWriteDefinition(definition).Checks {
+		if !sourceComplete && check.Check == "source_assignment" && check.Status == plugin.DefinitionSupported {
+			// An observed shape can refute a mapping, never prove that every row
+			// has that shape. Keep definite Provider rejections unchanged.
+			check.Status, check.Code = plugin.DefinitionUnknown, "source_schema_not_complete"
+		}
 		diagnostic := TaskConfigCheckDiagnostic{Status: check.Status, Code: check.Code, Check: check.Check, TargetField: check.Field, PhysicalType: check.PhysicalType, ConfigPath: "/config/target"}
 		for _, binding := range definition.Fields {
 			if binding.Target.Name == check.Field && binding.Source != nil {

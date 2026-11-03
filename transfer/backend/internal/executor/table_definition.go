@@ -17,17 +17,18 @@ func TransformTableDefinition(info *datatype.TableInfo, spatial *datatype.Spatia
 		info = &datatype.TableInfo{}
 	}
 	info = info.Clone()
-	if !sourceComplete {
-		// Samples describe observed shapes, not a proven runtime assignment or
-		// inherited target constraint. Only explicit mapping annotations survive.
-		for i, field := range info.Fields {
-			info.Fields[i] = datatype.FieldInfo{Name: field.Name, Type: datatype.FieldTypeUnknown, Nullable: true}
-		}
-		spatial = nil
-	}
-	for _, field := range info.Fields {
+	for i, field := range info.Fields {
 		original := field
+		if !sourceComplete {
+			// Keep observed source shapes for Provider counterexamples, but never
+			// inherit a sampled type or constraint into the target definition.
+			field = datatype.FieldInfo{Name: field.Name, Type: datatype.FieldTypeUnknown, Nullable: true}
+			info.Fields[i] = field
+		}
 		bindings[field.Name] = plugin.TableWriteFieldDefinition{Target: field, Source: &original}
+	}
+	if !sourceComplete {
+		spatial = nil
 	}
 	next := info.Clone()
 	nextSpatial := spatial.Clone()

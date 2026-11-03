@@ -454,6 +454,38 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.checkpoint["confirmed"]["operation_reviews"], {})
 
+    async def test_object_array_rejection_requires_json_recheck_before_creation_review(self):
+        registry = _load_skill_registry()
+        body = registry["transfer-generation"].load_body(registry)
+        self.assertIn('target_type="json"', body)
+        self.assertIn("对象数组、嵌套数组、混合数组或元素类型未知", body)
+        original = copy.deepcopy(self.arguments)
+        original["config"]["source"]["query"]["statement"] = json.dumps({
+            "aggregate": "events", "pipeline": [{"$project": {"id": "$_id", "status": 1, "members": 1, "_id": 0}}],
+        })
+        original["config"]["transforms"][0]["fields"].append({
+            "source": "members", "target": "members", "target_type": "array",
+        })
+        diagnostic = {
+            "status": "unsupported", "code": "array_element_type_unsupported", "check": "source_assignment",
+            "source_field": "members", "target_field": "members", "physical_type": "TEXT[]",
+            "config_path": "/config/transforms/0/fields/2",
+        }
+        corrected = copy.deepcopy(original)
+        corrected["config"]["transforms"][0]["fields"][-1]["target_type"] = "json"
+        self.check_results = [{**self.report, "status": "unsupported", "diagnostics": [diagnostic]}, self.report]
+        events, client = await self.run_factory([self.review_call(original), self.review_call(corrected)], skill_body=body)
+        checks = [r[2]["json"] for r in self.requests if r[1] == "/api/v1/transfer/task-config-checks"]
+        self.assertEqual([r["config"] for r in checks], [original["config"], corrected["config"]])
+        feedback = json.loads(next(m.content for m in client.calls[1]["messages"] if m.role == "tool"))
+        self.assertEqual(feedback["config_check"]["diagnostics"], [diagnostic])
+        reviews = [e.payload for e in events if e.kind == "interaction_required"]
+        self.assertEqual(len(reviews), 1)
+        self.assertIn('"target_type":"json"', reviews[0]["prompt"])
+        self.assertIn("members", reviews[0]["prompt"])
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.checkpoint["confirmed"]["operation_reviews"], {})
+
     async def test_explicit_draft_check_preserves_array_field_without_review_or_write(self):
         registry = _load_skill_registry()
         skill_body = registry["transfer-generation"].load_body(registry)
