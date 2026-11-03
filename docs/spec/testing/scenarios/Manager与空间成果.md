@@ -1206,3 +1206,15 @@ A显式唯一非空来源ID与FID不同且在JSON安全整数内；输出每源�
 独立手工 `raster-sample-lines-persistence`，入口 `scripts/test/online-hosted-raster-sample-lines-gate.sh`；同样沿原普通User12权限、NFS和同源默认Runtime，独立600秒预算。16条成功链覆盖cell／bilinear、米／正式国际英尺／美制测量英尺CRS、折线与重复内顶点、短线／闭合线／准确终点、矩形／旋转网格、outside／nodata／alpha及三种业务fid展开保存。28类参数、间距、来源编号、几何／CRS、波段和字段冲突各按中英文提交，共56次准确失败。独立Decimal段长与逐点路径定位、精确支持权重oracle核完整里程／坐标／数值／状态及原属性；使用CRS声明的水平单位事实，不把独立浮点近似当成容差。归档16份GeoPackage原件及大小／hash，累计1032次成果全检，73次物理调用（不含收尾）。
 
 沿上一场景相同严格声明／大小、扫描、两源内部血缘与公共投影、Monitor、源及先前成果与Meta快照、语言冻结和全部清理。失败精确落sample并且零发布／新增扫描／血缘；正权重无效支持不得补值／归一化，闭合起终点按不同里程保留。混合类型与数值极限、底层故障注入继续单列Native，不计UI或容量，不修改原点位套件、算法或权限；Linux和实际Hosted由CI会话协调，不重试、不扩预算。
+
+
+## 点数据IDW插值独立 Hosted 验收
+
+独立手工suite为`raster-interpolate-idw-persistence`，入口`make test-online ONLINE_SUITE=raster-interpolate-idw-persistence`；准备门禁为`make test-raster-interpolate-idw-online-runner`。复用Hosted隔离生命周期、NFS、同源产品默认入口Runtime（4CPU／2GiB、无额外swap）及普通User原12权限，业务预算固定600秒；实际运行交CI会话协调，不自行触发、重试或扩预算。本地准备通过不计真实T4、UI或容量。
+
+- 16条成功保存链：基础／点序反转、精确重合、半径等于／相邻下浮点／相邻上浮点、模板外支持、局部无支持、空点批、全无效模板、mask／alpha忽略、矩形跨512块、旋转、剪切、国际英尺、美制测量英尺；包含合法零与负值。模板只定义网格与CRS，不继承像元、NoData、mask、alpha或scale／offset。
+- 18类各中英文提交，共36次准确拒绝：零／负／布尔／字符串半径，字段缺失／选择活动几何字段，空值／字符串／不精确Int64样本，同值／异值／范围外重复XY，空几何、LineString、MultiPoint、三维Point、CRS不一致、地理CRS。必须命中`interpolate`节点的准确原因；源读取或提交前置错误不能代替IDW准入证明，反向语言查询不得改写已存失败。
+- 独立有理数oracle逐像元穷举全部点，以原坐标、网格及已知CRS单位判定精确米制圆边界、重合和加权；不调用产品插值、空间索引或GDAL插值。首次计算与清理均计业务预算。只读缓存绑定本轮root／run、全部源hash及夹具源码hash，任何变更或可写缓存均失败。
+- 先16成功再36失败，每次终态重读全部已有成果，合计712次现场全像元／mask／合法零检查；按实际尺寸核COG布局、Float64／NaN、网格／CRS和nearest概览，不能虚构小图概览。归档16份COG原字节、全部29份源、冻结预期及大小／hash清单；同时保留52执行的104份Develop／Monitor原始终态响应，供独立复核。
+- 严格核artifact＝物理＝Meta正整数大小、自动扫描的精确父执行／用户／租户／引擎、当前执行点源＋模板两源实际输入血缘，公开安全投影和受控内部事实分别校验；源及全部先前成果字节与Meta不变。失败无发布、无新增扫描／派生血缘，执行workspace、oracle、NFS、部署、镜像及Infra均清理，部分启动与失败出口同样覆盖。
+- 极端浮点、混合类型、重复列、无法可靠持久化的非法网格与故障注入继续单列Native，不为Hosted增加格式支持或修改产品规则。既有套件、权限与预算不变。
