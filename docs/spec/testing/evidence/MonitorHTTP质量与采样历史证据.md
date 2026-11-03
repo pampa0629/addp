@@ -974,3 +974,26 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 本轮未完成Go编译、缓存回收、正式镜像构建、后端启动、密码／MFA、真实采集／API、存活及停源页面、注销等后续步骤；`assertions={}`，未进入受控业务请求。原APT下载原因仍未定，本次没有复现APT失败或证明其修复。入口清理回执`zero_owned_resources=true`、failures为空；4条cleanup阶段的已归属列表命令均完整通过，编排已退出，独立检查当次私有工作目录剩余0。只保留原脱敏报告及私有归档，不复用剩余时间或启动新窗口。
 
 归档为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-product-window-20261103-liev9el8/`（目录0700、文件0600），含launch／expected-inputs／entry-started／completion／audit、入口阶段日志和report。报告424292字节，SHA256=`a5fa541e710018e958326232f5136b14ee9715a542da576d1d720e183d50e968`；入口日志4508字节，SHA256=`0973f93f346d4954ae2dedada958b4bdc862cfaa11191e91f02b779efb61c514`。独立核验固定15项来源、零重试、分步计时及清理；本次只更新失败证据与索引，不修守卫或扩大取证，不运行Hosted、容量或定时、不接管个人服务。正式产品闭环继续部分实现／未验收，已有确定性及其他限定实链证据保持各自范围。
+
+
+<a id="http-volume-checkpoints-local-20261103"></a>
+
+## 2026-11-03 卷测量检查点与有界残片（仅本地确定性门禁）
+
+用户确认先修规范、补检查点与确定性门禁；不重试构建、新开本地窗口或运行Hosted／容量／定时。先只读核对上一专题固定92309920b的424292字节报告及a5fa541e哈希、37次成功检查与末次失败：锁等待0.000022秒，失败轮子进程等待合计3.935839秒、创建合计0.046891秒，输出处理0.001527秒、取消0.004976秒。相邻完整检查从0.458457秒升至1.162273、2.966612、3.170970秒，再耗尽四秒；当时3个容器／7个卷，没有重建测量器。只能定位多条串行命令累计等待，不能唯一归因Docker CLI、daemon、VM调度或实际卷扫描；未据此调整资源、轮询、互斥或读取路径。
+
+先修运行观测和T0–T3规范，再在原有同一次卷测量exec的原du／awk管道前后，用shell内建printf增加固定进入／返回标记。原纯数字返回路线删除，完整标记、原数字与错误输出仍走唯一统计校验。返回标记仅表示该检查点已观测，管道中的du错误仍拒绝；不当成统计完成、成功或底层原因。原串行顺序、CLI／Unix socket与API协商、完整统计范围、辅助容器及资源预算保持。
+
+命令内核仅对采样线程、当次确切测量器及该命令完整参数匹配时，从原私有捕获文件读取最多4 KiB。检查点沿原command_id／run_id／phase保存于同一命令记录；结构化摘要最多512字节，只包含fragment_status、measurement_entered、pipeline_returned及examined_bytes。缺失记not_observed，冲突／畸形、超限、读取失败分别明确invalid／over_limit／unavailable，不保存原文、路径、参数或凭据。诊断耗时另记checkpoint_processing_seconds，计入实际命令和总耗时；成功仍须在原截止前通过最终检查，失败后的残片不能重置截止或反转原异常。超时前已经捕获返回标记也仍保持超时，诊断读取异常不覆盖首因。
+
+| 实际验证 | 结果及证据范围 |
+| --- | --- |
+| 原管道受控反证 | 以旧无标记管道运行同一受控shell用例，1项按预期失败、0额外错误；不读取真实卷、不调用Docker |
+| 新增检查点定向回归 | 9项，纳入下述Trace runner；覆盖实际shell帧格式及原求和、du错误仍可出现返回标记、完整／部分／冲突／截断／超限／不可用、确切命令归属、最多4 KiB读取及512字节摘要、脱敏、原超时／非零退出／诊断异常与成功后到期拒绝 |
+| `make test-monitor-traces-local-runner` | 最终163项／5.523秒、JS语法、Online CI登记及System身份Go子门禁通过；无真实部署或构建 |
+| `make test-monitor-http-local-runner` | 最终37项／2.063秒及既有JS／HTTP登记／System身份子门禁通过；离线TLS T1为OpenSSL4.1.0、35命令／1.909249秒、峰值125465字节、4次预期拒绝及清理完成，非正式产品身份或采集链 |
+| AST／差异核验 | 既有定义仅Lifecycle.command与_sample改变，新增两个私有诊断函数；sample／monitor／互斥、配额／OOM、恢复／清理、builder／产品构建／缓存回收定义保持；未改Dockerfile、Make或workflow |
+
+初轮HTTP runner因离线TLS夹具直接调用命令内核、无新增实例方法而失败；已将捕获实现收敛为内核独立函数，保留原TLS夹具及产品TLS，最终37项恢复通过。HTTP资源错误替身只同步新帧格式，保留原“不读取重试／不忽略du失败”断言。两组runner沿原Platform生命周期自动发现，登记检查实际通过，无需新增workflow或旁路入口。
+
+日志为`/tmp/addp-p19-volume-checkpoints-{controlled-red,directed,trace-runner,http-runner}-20261103.log`（0600），旧源码与规范快照在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-volume-checkpoints-before-20261103-s3m9sy6q/`（0700／0600）。最终补丁／输入摘要及日志哈希在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-volume-checkpoints-delivery-20261103-9p0480cu/`。本批7个自有路径本地落地，未推送，避免本轮额外触发基线Agent镜像构建；自然Linux新版本和真实超时残片尚未运行验证，不把本地诊断通过当作四秒性能问题已解决。上一窗口失败及零残留清理结论保持，原4秒、8 CPU／12 GiB、4 GiB停止线、最长五秒开始间隔与清理期限均不变；没有新增Docker请求、容器、线程、探针、/proc读取或跨VM校时。

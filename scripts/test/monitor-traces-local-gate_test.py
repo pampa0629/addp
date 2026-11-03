@@ -881,7 +881,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             if args[0] == 'run':
                 return 'owned-sampler-id'
             if args[0] == 'exec':
-                return str(allocation)
+                return m.VOLUME_SCAN_ENTERED+'\n'+str(allocation)+'\n'+m.VOLUME_SCAN_RETURNED+'\n'
             if args[0] == 'rm':
                 return ''
             raise AssertionError(args)
@@ -1048,7 +1048,8 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
     def test_disappeared_volume_file_requires_a_complete_rescan(self):
         with tempfile.TemporaryDirectory() as directory:
             life,calls=self.sample_lifecycle(directory,1024)
-            docker=life.docker;values=iter(['du: owned: No such file or directory\n512','1024'])
+            docker=life.docker;values=iter([m.VOLUME_SCAN_ENTERED+'\n'+value+'\n'+m.VOLUME_SCAN_RETURNED+'\n'
+                for value in ('du: owned: No such file or directory\n512','1024')])
             life.docker=lambda *args,**kw: next(values) if args[0]=='exec' else docker(*args,**kw)
             with mock.patch.object(m.time,'monotonic',return_value=1):
                 life.sample()
@@ -1528,6 +1529,173 @@ class CommandBoundaryEvidenceTests(unittest.TestCase):
             m.require_apiproxy_clock_semantics(None,'4.49.0')
         with self.assertRaisesRegex(m.GateError,'apiproxy_clock_semantics_unconfirmed'):
             m.require_apiproxy_clock_semantics({'version':'4.49.0','source':'log_path_only'},'4.49.0')
+
+
+class VolumeCheckpointTests(unittest.TestCase):
+    def test_shell_frames_the_same_pipeline_and_return_is_not_du_success(self):
+        for failed in (False,True):
+            du="du() { printf '1 /space/0\\n2 /space/1\\n'; }; "
+            if failed:du="du() { printf 'du: PRIVATE: denied\\n' >&2; return 1; }; "
+            result=m.subprocess.run(['/bin/sh','-ec',du+m.VOLUME_SCAN_COMMAND],
+                stdout=m.subprocess.PIPE,stderr=m.subprocess.STDOUT,timeout=2,check=False)
+            self.assertEqual(result.returncode,0)
+            lines=result.stdout.splitlines()
+            self.assertEqual(lines[0],b'ADDP_VOLUME_SCAN_V1_ENTERED')
+            self.assertEqual(lines[-1],b'ADDP_VOLUME_SCAN_V1_RETURNED')
+            if not failed:self.assertEqual(lines[1:-1],[b'3072'])
+            else:self.assertIn(b'du: PRIVATE: denied',lines)
+            summary=m.volume_measurement_checkpoints(result.stdout)
+            self.assertEqual(summary['pipeline_returned'],'observed')
+            self.assertNotIn('PRIVATE',json.dumps(summary))
+
+    def test_complete_and_partial_checkpoints_are_observations_only(self):
+        parse = m.volume_measurement_checkpoints
+        complete = parse(b'ADDP_VOLUME_SCAN_V1_ENTERED\n1024\nADDP_VOLUME_SCAN_V1_RETURNED\n')
+        self.assertEqual(complete['fragment_status'], 'complete')
+        self.assertEqual(complete['measurement_entered'], 'observed')
+        self.assertEqual(complete['pipeline_returned'], 'observed')
+        for raw, entered in ((b'', 'not_observed'), (b'ADDP_VOLUME_SCAN_V1_ENTERED\n', 'observed')):
+            with self.subTest(raw=raw):
+                summary = parse(raw)
+                self.assertEqual(summary['fragment_status'], 'partial')
+                self.assertEqual(summary['measurement_entered'], entered)
+                self.assertEqual(summary['pipeline_returned'], 'not_observed')
+                self.assertNotIn('executed', summary)
+
+    def test_invalid_truncated_unavailable_and_over_limit_never_infer_execution(self):
+        entered=b'ADDP_VOLUME_SCAN_V1_ENTERED\n';returned=b'ADDP_VOLUME_SCAN_V1_RETURNED\n'
+        for raw in (returned, returned+entered, entered+entered, entered+returned+returned,
+                    b'ADDP_VOLUME_SCAN_V1_BOGUS\n'):
+            with self.subTest(raw=raw):
+                summary=m.volume_measurement_checkpoints(raw)
+                self.assertEqual(summary['fragment_status'],'invalid')
+                self.assertEqual(summary['measurement_entered'],'unavailable')
+        summary=m.volume_measurement_checkpoints(entered+returned[:-1])
+        self.assertEqual(summary['pipeline_returned'],'not_observed')
+        self.assertEqual(m.volume_measurement_checkpoints(None)['fragment_status'],'unavailable')
+        for raw in (b'PRIVATE'*700, entered+b'PRIVATE'*700):
+            summary=m.volume_measurement_checkpoints(raw)
+            self.assertEqual(summary['fragment_status'],'over_limit')
+            self.assertEqual(summary['measurement_entered'],'unavailable')
+            self.assertLessEqual(summary['examined_bytes'],4096)
+            self.assertLessEqual(len(json.dumps(summary).encode()),512)
+            self.assertNotIn('PRIVATE',json.dumps(summary))
+
+    def test_capture_reads_at_most_four_kib_and_only_exact_sampling_command(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryFile() as output:
+            life=bare_lifecycle(directory);output.write(b'PRIVATE'*700);output.flush()
+            wrapped=mock.Mock(wraps=output);wrapped.fileno.return_value=output.fileno()
+            args=['docker','exec',life.run_id+'-space','/bin/sh','-ec',m.VOLUME_SCAN_COMMAND]
+            timing={}
+            with m.capture_volume_checkpoints(args,life.run_id,wrapped,timing,True):pass
+            wrapped.read.assert_called_once_with(4096)
+            self.assertEqual(timing['volume_measurement_checkpoints']['fragment_status'],'over_limit')
+            for command,sampling in ((args,False),(args[:-1]+['unrelated'],True),
+                    (['docker','exec','foreign-space',*args[3:]],True)):
+                wrapped.reset_mock();timing={}
+                with m.capture_volume_checkpoints(command,life.run_id,wrapped,timing,sampling):pass
+                wrapped.read.assert_not_called()
+                self.assertEqual(timing,{})
+
+    def test_capture_read_failure_does_not_replace_original_exception(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);output=mock.Mock();output.fileno.side_effect=OSError('PRIVATE')
+            timing={};args=['docker','exec',life.run_id+'-space','/bin/sh','-ec',m.VOLUME_SCAN_COMMAND]
+            with self.assertRaisesRegex(m.GateError,'original_failure'):
+                with m.capture_volume_checkpoints(args,life.run_id,output,timing,True):raise m.GateError('original_failure')
+            self.assertEqual(timing['volume_measurement_checkpoints']['fragment_status'],'unavailable')
+            self.assertNotIn('PRIVATE',json.dumps(timing))
+
+    def test_timeout_retains_only_this_commands_fragment_and_original_deadline(self):
+        entered=b'ADDP_VOLUME_SCAN_V1_ENTERED\n';returned=b'ADDP_VOLUME_SCAN_V1_RETURNED\n'
+        for raw,observed in ((b'','not_observed'),(entered,'not_observed'),
+                             (entered+b'PRIVATE\n1024\n'+returned,'observed')):
+            with self.subTest(raw=raw),tempfile.TemporaryDirectory() as directory:
+                life=bare_lifecycle(directory);clock=[0.0]
+                life.sample_thread_id=threading.get_ident();life.sample_phase='product_compile'
+                life.sample_deadline=4;life.sample_step={'commands':[]}
+                process=mock.Mock(pid=654321,returncode=0);process.poll.return_value=None
+                def start(*args,**kwargs):kwargs['stdout'].write(raw);kwargs['stdout'].flush();clock[0]=.01;return process
+                def wait(**kwargs):
+                    if kwargs['timeout']<=.05:
+                        clock[0]=4;raise m.subprocess.TimeoutExpired('PRIVATE',kwargs['timeout'])
+                    clock[0]+=.2;process.poll.return_value=0
+                process.wait.side_effect=wait
+                with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+                     mock.patch.object(m.time,'monotonic_ns',side_effect=lambda:round(clock[0]*1e9)), \
+                     mock.patch.object(m.subprocess,'Popen',side_effect=start) as spawn, \
+                     mock.patch.object(m.os,'killpg') as kill:
+                    with self.assertRaisesRegex(m.GateError,'command_deadline_exceeded'):
+                        life.command(['docker','exec',life.run_id+'-space','/bin/sh','-ec',m.VOLUME_SCAN_COMMAND],timeout=4)
+                record=life.sample_step['commands'][0]
+                self.assertEqual(record['volume_measurement_checkpoints']['pipeline_returned'],observed)
+                self.assertEqual(record['result'],'failed')
+                self.assertEqual(record['cancel_started_monotonic_ns'],4_000_000_000)
+                self.assertEqual(record['cancel_cleanup_seconds'],.2)
+                self.assertEqual(record['finished_monotonic_ns'],4_200_000_000)
+                self.assertEqual(life.samples,[])
+                self.assertNotIn('PRIVATE',json.dumps(record))
+                spawn.assert_called_once();kill.assert_called_once_with(process.pid,signal.SIGTERM)
+
+    def test_successful_output_diagnostics_cannot_pass_after_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);clock=[0.0]
+            life.sample_thread_id=threading.get_ident();life.sample_phase='product_compile'
+            life.sample_deadline=4;life.sample_step={'commands':[]}
+            process=mock.Mock(pid=654321,returncode=0);process.poll.return_value=0
+            def start(*args,**kwargs):
+                kwargs['stdout'].write(b'ADDP_VOLUME_SCAN_V1_ENTERED\n1024\nADDP_VOLUME_SCAN_V1_RETURNED\n')
+                kwargs['stdout'].flush();return process
+            parse=m.volume_measurement_checkpoints
+            def slow(raw,**kwargs):
+                value=parse(raw,**kwargs)
+                if raw is not None:clock[0]=4.01
+                return value
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+                 mock.patch.object(m.time,'monotonic_ns',side_effect=lambda:round(clock[0]*1e9)), \
+                 mock.patch.object(m.subprocess,'Popen',side_effect=start), \
+                 mock.patch.object(m,'volume_measurement_checkpoints',side_effect=slow):
+                with self.assertRaisesRegex(m.GateError,'command_deadline_exceeded'):
+                    life.command(['docker','exec',life.run_id+'-space','/bin/sh','-ec',m.VOLUME_SCAN_COMMAND],timeout=4)
+            record=life.sample_step['commands'][0]
+            self.assertEqual(record['result'],'failed')
+            self.assertEqual(record['checkpoint_processing_seconds'],4.01)
+            self.assertEqual(record['volume_measurement_checkpoints']['pipeline_returned'],'observed')
+
+    def test_returned_marker_cannot_replace_nonzero_command_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory)
+            life.sample_thread_id=threading.get_ident();life.sample_phase='product_compile'
+            life.sample_deadline=10**20;life.sample_step={'commands':[]}
+            process=mock.Mock(pid=654321,returncode=7);process.poll.return_value=7
+            def start(*args,**kwargs):
+                kwargs['stdout'].write(b'ADDP_VOLUME_SCAN_V1_ENTERED\nPRIVATE\nADDP_VOLUME_SCAN_V1_RETURNED\n')
+                kwargs['stdout'].flush();return process
+            with mock.patch.object(m.subprocess,'Popen',side_effect=start):
+                with self.assertRaisesRegex(m.GateError,'command_failed_7'):
+                    life.command(['docker','exec',life.run_id+'-space','/bin/sh','-ec',m.VOLUME_SCAN_COMMAND],guarded=False)
+            record=life.sample_step['commands'][0]
+            self.assertEqual(record['volume_measurement_checkpoints']['pipeline_returned'],'observed')
+            self.assertEqual(record['result'],'failed')
+            self.assertEqual(life.last_failure['exit_code'],7)
+            self.assertNotIn('PRIVATE',json.dumps(record))
+            self.assertEqual(life.samples,[])
+
+    def test_old_numeric_route_and_bad_framed_measurement_are_rejected(self):
+        entered=m.VOLUME_SCAN_ENTERED;returned=m.VOLUME_SCAN_RETURNED
+        for raw in ('1024',entered+'\n1024',entered+'\n1024\n'+returned,
+                    entered+'\n1024\n'+returned+'\n'+returned+'\n',
+                    entered+'\ndu: PRIVATE: denied\n1024\n'+returned+'\n'):
+            with self.subTest(raw=raw),tempfile.TemporaryDirectory() as directory:
+                life,_=LocalTraceResourceGuardTests().sample_lifecycle(directory,1024)
+                original=life.docker
+                life.docker=lambda *args,**kw:raw if args[0]=='exec' else original(*args,**kw)
+                life.owned_bind_bytes=mock.Mock(side_effect=AssertionError('do not continue'))
+                with mock.patch.object(m.time,'monotonic',return_value=1):life.monitor()
+                self.assertEqual(life.failure,'owned_volume_measurement_invalid')
+                self.assertEqual(life.samples,[])
+                life.owned_bind_bytes.assert_not_called()
+                self.assertNotIn('PRIVATE',json.dumps(life.resource_failure))
 
 
 class LocalTraceCommandBudgetTests(unittest.TestCase):

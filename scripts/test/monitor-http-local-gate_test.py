@@ -83,7 +83,7 @@ class HTTPProductLocalTests(unittest.TestCase):
                     life.owned_bind_bytes=mock.Mock(side_effect=fixtures.m.GateError('command_failed_1'))
                 else:
                     underlying=life.docker
-                    life.docker=lambda *args,**kw:'du: owned: No such file or directory\n512' if args[0]=='exec' else underlying(*args,**kw)
+                    life.docker=lambda *args,**kw:fixtures.m.VOLUME_SCAN_ENTERED+'\ndu: owned: No such file or directory\n512\n'+fixtures.m.VOLUME_SCAN_RETURNED+'\n' if args[0]=='exec' else underlying(*args,**kw)
                 with mock.patch.object(m.core.time,'monotonic',return_value=1),self.assertRaises(fixtures.m.GateError):life.sample()
                 self.assertEqual(life.samples,[])
                 if kind=='private':life.owned_bind_bytes.assert_called_once()

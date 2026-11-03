@@ -58,6 +58,38 @@ OWN_INPUTS = (
 MAX_SECONDS = 3600
 VOLUME_STOP = 4 * 1024**3
 SAMPLER_CPU = .25
+VOLUME_SCAN_ENTERED = 'ADDP_VOLUME_SCAN_V1_ENTERED'
+VOLUME_SCAN_RETURNED = 'ADDP_VOLUME_SCAN_V1_RETURNED'
+VOLUME_SCAN_COMMAND = (
+    "printf '%s\\n' " + VOLUME_SCAN_ENTERED + "; "
+    "du -sk /space/* | awk '{s+=$1} END {print s*1024}'; "
+    "printf '%s\\n' " + VOLUME_SCAN_RETURNED)
+
+
+def volume_measurement_checkpoints(raw, *, over_limit=False):
+    """Closed observations from one command; absent output never proves non-execution."""
+    summary = {'fragment_status': 'unavailable', 'measurement_entered': 'unavailable',
+               'pipeline_returned': 'unavailable', 'examined_bytes': 0}
+    if raw is None:
+        return summary
+    summary['examined_bytes'] = min(len(raw), 4096)
+    if over_limit or len(raw) > 4096:
+        summary['fragment_status'] = 'over_limit'
+        return summary
+    # Count complete fixed lines only. A cut-off marker is not an observation.
+    lines = raw.splitlines(keepends=True)
+    entered = [i for i, line in enumerate(lines) if line == (VOLUME_SCAN_ENTERED+'\n').encode()]
+    returned = [i for i, line in enumerate(lines) if line == (VOLUME_SCAN_RETURNED+'\n').encode()]
+    malformed = any(line.startswith(b'ADDP_VOLUME_SCAN_') and line.endswith(b'\n') and
+                    line not in ((VOLUME_SCAN_ENTERED+'\n').encode(), (VOLUME_SCAN_RETURNED+'\n').encode())
+                    for line in lines)
+    if malformed or len(entered) > 1 or len(returned) > 1 or (returned and (not entered or returned[0] < entered[0])):
+        summary['fragment_status'] = 'invalid'
+        return summary
+    summary.update(fragment_status='complete' if entered and returned else 'partial',
+                   measurement_entered='observed' if entered else 'not_observed',
+                   pipeline_returned='observed' if returned else 'not_observed')
+    return summary
 
 
 class GateError(RuntimeError):
@@ -67,6 +99,28 @@ class GateError(RuntimeError):
 def require(condition, code):
     if not condition:
         raise GateError(code)
+
+
+@contextmanager
+def capture_volume_checkpoints(args, run_id, output, timing, sampling):
+    enabled = sampling and list(args) == ['docker', 'exec', run_id+'-space', '/bin/sh', '-ec', VOLUME_SCAN_COMMAND]
+    try:
+        yield
+    finally:
+        if enabled:
+            began = time.monotonic_ns()
+            summary = volume_measurement_checkpoints(None)
+            try:
+                size = os.fstat(output.fileno()).st_size
+                output.seek(0)
+                summary = volume_measurement_checkpoints(output.read(min(size, 4096)), over_limit=size > 4096)
+                require(len(json.dumps(summary, separators=(',', ':')).encode()) <= 512,
+                        'volume_checkpoint_summary_limit')
+            except Exception:
+                # Diagnostics must not replace the command's first failure.
+                summary = volume_measurement_checkpoints(None)
+            timing['volume_measurement_checkpoints'] = summary
+            timing['checkpoint_processing_seconds'] = round((time.monotonic_ns()-began)/1e9, 6)
 
 
 def owned_list_identity(args, run_id, label=LABEL):
@@ -767,7 +821,7 @@ class Lifecycle:
 
         try:
             check_deadline()
-            with tempfile.TemporaryFile() as output:
+            with tempfile.TemporaryFile() as output, capture_volume_checkpoints(args, self.run_id, output, timing, sampling):
                 timing['spawn_started_monotonic_ns'] = time.monotonic_ns()
                 try:
                     p = subprocess.Popen(args, cwd=cwd or self.checkout if self.checkout.exists() else ROOT,
@@ -1009,7 +1063,12 @@ class Lifecycle:
             while True:
                 with self.measure_step('measure_owned_volumes'):
                     measured = self.docker('exec',self.run_id+'-space','/bin/sh','-ec',
-                        'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'',guarded=False,timeout=remaining()).strip()
+                        VOLUME_SCAN_COMMAND,guarded=False,timeout=remaining())
+                    framed = measured.splitlines()
+                    require(measured.endswith('\n') and len(framed) >= 2 and framed[0] == VOLUME_SCAN_ENTERED and framed[-1] == VOLUME_SCAN_RETURNED
+                            and framed.count(VOLUME_SCAN_ENTERED) == framed.count(VOLUME_SCAN_RETURNED) == 1,
+                            'owned_volume_measurement_invalid')
+                    measured = '\n'.join(framed[1:-1])
                     lines=measured.splitlines()
                     if len(lines)==1 and re.fullmatch(r'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?',measured):
                         total=writable+int(float(measured));remaining();break
