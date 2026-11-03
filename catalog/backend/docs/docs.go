@@ -4294,6 +4294,9 @@ const docTemplate = `{
                 "item_fingerprint": {
                     "type": "string"
                 },
+                "metadata_target": {
+                    "$ref": "#/definitions/authorizationfacts.MetadataBoundary"
+                },
                 "native_target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
                 },
@@ -4326,6 +4329,26 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "role": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorizationfacts.MetadataBoundary": {
+            "type": "object",
+            "properties": {
+                "composition_digest": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "layout": {
                     "type": "string"
                 },
                 "target": {
