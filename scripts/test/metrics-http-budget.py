@@ -143,7 +143,9 @@ def directory_objects(stderr, ownership):
         if path!=root and any(part in (b'.',b'..',b'') for part in relative.split(b'/')):
             unparsed=True;continue
         first=relative.split(b'/',1)[0]
-        category={b'':'root',b'go-cache':'go_cache',b'go-tmp':'go_tmp',b'tmp':'tmp',b'source':'source'}.get(first,'other')
+        category={b'':'root',b'go-cache':'go_cache',b'go-tmp':'go_tmp',b'tmp':'tmp',b'source':'source',
+                  b'postgres-auth':'postgres_auth',b'tls':'tls',b'deployment':'deployment',
+                  b'node-tls':'node_tls',b'control':'control',b'query-tls':'query_tls'}.get(first,'other')
         identity=hashlib.sha256(ownership['project'].encode()+b'\0'+relative).hexdigest()
         item={'category':category,'identity_sha256':identity}
         if item not in objects:objects.append(item)

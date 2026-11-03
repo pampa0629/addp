@@ -477,7 +477,13 @@ class HTTPBudget(unittest.TestCase):
     def test_directory_identity_is_relative_run_scoped_and_classifies_all_owned_locations(self):
         owner={'work':'/tmp/addp-metrics-t2.private','project':'addp-metrics-t2-'+'a'*32}
         for relative,category in [('', 'root'),('go-cache/hash','go_cache'),('go-tmp/go-build123/b1','go_tmp'),
-                                  ('tmp/native','tmp'),('source/test','source'),('tls/key','other')]:
+                                  ('tmp/native','tmp'),('source/test','source'),('unknown/key','other'),
+                                  ('postgres-auth','postgres_auth'),('postgres-auth/runtime/.addp-private-SECRET','postgres_auth'),
+                                  ('tls','tls'),('tls/SECRET.pending','tls'),
+                                  ('deployment','deployment'),('deployment/deep/SECRET.pending','deployment'),
+                                  ('node-tls','node_tls'),('node-tls/SECRET.next','node_tls'),
+                                  ('control','control'),('control/deep/SECRET.pending','control'),
+                                  ('query-tls','query_tls'),('query-tls/SECRET.pending','query_tls')]:
             with self.subTest(category=category):
                 path=(owner['work']+('/'+relative if relative else '')).encode()
                 for stderr in [b'du: '+path+b': No such file or directory\n',
@@ -489,7 +495,52 @@ class HTTPBudget(unittest.TestCase):
                     self.assertEqual(proof,m.directory_objects(stderr.replace(owner['work'].encode(),other['work'].encode()),other))
                     self.assertNotEqual(proof,m.directory_objects(stderr,{**owner,'project':'addp-metrics-t2-'+'b'*32}))
                     self.assertNotIn(owner['work'],json.dumps(proof))
-                    if relative:self.assertNotIn(relative+'"',json.dumps(proof))
+                    if relative and relative!=category:self.assertNotIn(relative+'"',json.dumps(proof))
+                    self.assertNotIn('SECRET',json.dumps(proof))
+
+    def test_preparation_categories_are_exact_first_components_without_new_reads(self):
+        owner={'work':'/tmp/addp-metrics-t2.private','project':'owned'}
+        for directory in ('postgres-auth','tls','deployment','node-tls','control','query-tls'):
+            for relative in (directory+'-SECRET/item','unknown/'+directory+'/SECRET',directory.upper()+'/SECRET'):
+                with self.subTest(relative=relative),patch.object(Path,'lstat',side_effect=AssertionError('no new filesystem read')),patch.object(m.subprocess,'check_output',side_effect=AssertionError('no new command')):
+                    raw=b'du: '+os.fsencode(owner['work']+'/'+relative)+b': No such file or directory\n'
+                    proof=m.directory_objects(raw,owner)
+                    self.assertEqual(set(proof),{'status','objects'})
+                    self.assertEqual(proof['objects'],[{'category':'other','identity_sha256':hashlib.sha256(b'owned\0'+relative.encode()).hexdigest()}])
+                    self.assertNotIn('SECRET',json.dumps(proof));self.assertNotIn(owner['work'],json.dumps(proof))
+
+    def test_preparation_category_bounds_mixed_and_malicious_paths_keep_original_states(self):
+        owner={'work':'/tmp/addp-metrics-t2.private','project':'owned'};root=owner['work'].encode()
+        good=b"du: cannot access '"+root+b"/postgres-auth/runtime/.addp-private-SECRET': No such file or directory\n"
+        proof=m.directory_objects(good*8,owner)
+        self.assertEqual(proof['status'],'parsed');self.assertEqual(len(proof['objects']),1)
+        self.assertEqual(proof['objects'][0]['category'],'postgres_auth')
+        self.assertEqual(m.directory_objects(good*9,owner),{'status':'over_budget','objects':[]})
+        self.assertEqual(m.directory_objects(good+b'x'*4097,owner),{'status':'over_budget','objects':[]})
+        for relative in (b'postgres-auth/../tls/SECRET',b'tls//SECRET',b'control/./SECRET',b'query-tls/SECRET\x00',b'deployment/SE"CRET'):
+            raw=b'du: '+root+b'/'+relative+b': No such file or directory\n'
+            self.assertEqual(m.directory_objects(raw,owner),{'status':'unparsed','objects':[]})
+            mixed=m.directory_objects(good+raw,owner)
+            self.assertEqual(mixed['status'],'partial');self.assertEqual(mixed['objects'],proof['objects'])
+            self.assertNotIn('SECRET',json.dumps(mixed))
+
+    def test_each_preparation_category_preserves_du_failure_without_retry_or_later_scan(self):
+        with tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
+            owner={'work':directory,'project':'addp-metrics-t2-'+'a'*32}
+            for name,category in [('postgres-auth','postgres_auth'),('tls','tls'),('deployment','deployment'),
+                                  ('node-tls','node_tls'),('control','control'),('query-tls','query_tls')]:
+                raw=b'du: '+os.fsencode(directory+'/'+name+'/SECRET.pending')+b': No such file or directory\n'
+                failure=subprocess.CalledProcessError(1,['du'],stderr=raw)
+                with self.subTest(category=category),patch.object(m.time,'monotonic',return_value=0),patch.object(m.subprocess,'check_output',side_effect=[b'',failure]) as execute:
+                    with self.assertRaises(m.BudgetFailure) as caught:m.sample(owner,4)
+                self.assertEqual(str(caught.exception),'http_budget_sample_command_failed')
+                self.assertEqual(caught.exception.detail['stage'],'private_directory_size')
+                self.assertEqual(caught.exception.detail['exit_code'],1)
+                self.assertEqual(caught.exception.detail['directory_error'],'path_disappeared')
+                self.assertEqual(caught.exception.detail['directory_objects']['objects'][0]['category'],category)
+                self.assertEqual(execute.call_count,2)
+                self.assertEqual(execute.call_args.args[0],['du','-sk',directory])
+                self.assertNotIn('SECRET',json.dumps(caught.exception.detail))
 
     def test_ambiguous_foreign_traversing_or_control_path_is_never_guessed(self):
         owner={'work':'/tmp/addp-metrics-t2.private','project':'owned'};root=owner['work'].encode()
