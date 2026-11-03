@@ -9,24 +9,32 @@
     <template v-else>
       <el-alert v-if="errorKey" :title="t(errorKey)" type="warning" :closable="false" data-testid="engine-error" />
       <template v-if="!state.deploymentID">
+        <el-tabs :model-value="state.scope" @update:model-value="scope => navigate({...state.query,scope,page:'1'})" data-testid="engine-scopes">
+          <el-tab-pane v-for="scope in ['infra','business']" :key="scope" :name="scope" :label="t(`monitor.engines.scopes.${scope}`)" />
+        </el-tabs>
         <form class="toolbar" @submit.prevent="filterInput.submit">
-          <el-select :model-value="state.engineType" :aria-label="t('monitor.engines.engineType')" @update:model-value="engine_type=>navigate({engine_type,refresh:state.refresh})"><el-option value="postgresql" label="PostgreSQL"/><el-option value="redis" label="Redis"/><el-option value="minio" label="MinIO"/></el-select>
           <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" />
+          <FieldHelp :content="t('monitor.engines.scopeHint')" />
         </form>
-        <el-table :data="owners" v-loading="loading && !observed" :empty-text="t('monitor.engines.empty')" data-testid="engine-list">
-          <el-table-column prop="display_name" :label="t('monitor.engines.name')" min-width="190" show-overflow-tooltip />
-          <el-table-column :label="t('monitor.resources.associatedHost')" min-width="180" show-overflow-tooltip><template #default="{ row }"><MonitoredHostLink data-testid="engine-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></template></el-table-column>
-          <el-table-column :label="t('monitor.engines.collection')" min-width="180"><template #default="{ row }">{{ collection(row.deployment_id) }}</template></el-table-column>
-          <el-table-column v-for="metric in summaryMetrics" :key="metric.key" min-width="170">
-            <template #header><div class="metric-heading"><span>{{ t(`monitor.engines.metrics.${metric.name}`) }}</span><FieldHelp :content="t(`monitor.engines.hints.${metric.name}`)" /></div></template>
-            <template #default="{ row }">{{ value(observation(row.deployment_id)?.series.find(item => item.metric_key === metric.key)?.points[0], metric) }}</template>
-          </el-table-column>
-          <el-table-column :label="t('monitor.engines.details')" width="130"><template #default="{ row }"><el-button text type="primary" :disabled="loading" @click="navigate({ ...state.query, deployment_id: row.deployment_id }, 'push')">{{ t('monitor.engines.details') }}</el-button></template></el-table-column>
-        </el-table>
+        <div class="engine-grid" v-loading="loading && !observed" data-testid="engine-list">
+          <article v-for="row in owners" :key="row.deployment_id" class="engine-card" :aria-label="row.display_name" :data-testid="`engine-card-${row.deployment_id}`">
+            <header class="engine-card-heading"><h3>{{ row.display_name }}</h3><el-tag effect="plain">{{ engineNames[row.engine_type] }}</el-tag></header>
+            <div class="engine-card-host"><span>{{ t('monitor.resources.associatedHost') }}:</span><MonitoredHostLink data-testid="engine-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></div>
+            <p class="engine-card-state"><span>{{ t('monitor.engines.collection') }}:</span><span>{{ collection(row.deployment_id) }}</span></p>
+            <dl class="engine-summary">
+              <div v-for="metric in engineSummaryFor(row.engine_type)" :key="metric.key">
+                <dt class="metric-heading"><span>{{ t(`monitor.engines.metrics.${metric.name}`) }}</span><FieldHelp :content="t(`monitor.engines.hints.${metric.name}`)" /></dt>
+                <dd>{{ value(observation(row.deployment_id)?.series.find(item => item.metric_key === metric.key)?.points[0], metric) }}</dd>
+              </div>
+            </dl>
+            <el-button type="primary" plain :disabled="loading" @click="navigate({ ...state.query, engine_type: row.engine_type, deployment_id: row.deployment_id }, 'push')">{{ t('monitor.engines.details') }}</el-button>
+          </article>
+        </div>
+        <el-empty v-if="!loading && !errorKey && !owners.length" :description="t('monitor.engines.empty')" />
         <el-pagination v-if="!errorKey && (observed || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="page => navigate({ ...state.query, page: String(page) })" />
       </template>
       <template v-else>
-        <div class="toolbar"><el-button @click="back">{{ t('monitor.engines.back') }}</el-button><h3>{{ owners[0]?.display_name }}</h3><span>{{ collection(state.deploymentID) }}</span></div>
+        <div class="toolbar"><el-button @click="back">{{ t('monitor.engines.back') }}</el-button><h3>{{ owners[0]?.display_name }}</h3><el-tag effect="plain">{{ t(`monitor.engines.scopes.${state.scope}`) }}</el-tag><span>{{ collection(state.deploymentID) }}</span></div>
         <div v-if="owners.length" class="toolbar"><span>{{ t('monitor.resources.associatedHost') }}:</span><MonitoredHostLink data-testid="engine-host" :node-id="owners[0].node_id" :host="hostReferences[owners[0].node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></div>
         <el-tabs v-if="groups.length" :model-value="selectedMetric.group" @update:model-value="group=>navigate({...state.query,metric:engineMetricsFor(state.engineType).find(m=>m.group===group).key})"><el-tab-pane v-for="group in groups" :key="group" :name="group" :label="t(`monitor.engines.groups.${group}`)"/></el-tabs>
         <div v-loading="loading && !observed" class="metric-grid" data-testid="engine-metrics">
@@ -91,7 +99,7 @@ let disposed = false, dataContext = ''
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : blocked.value ? 'stopped' : !visible.value ? 'paused' : 'automatic')
 const groups = computed(() => engineGroups(state.value.engineType))
 const detailMetrics = computed(() => engineDetailMetrics(state.value.engineType, state.value.metric))
-const summaryMetrics = computed(() => engineSummaryFor(state.value.engineType))
+const engineNames = { postgresql: 'PostgreSQL', redis: 'Redis', minio: 'MinIO' }
 const selectedMetric = computed(() => engineMetricsFor(state.value.engineType).find(item => item.key === state.value.metric))
 const observation = id => observed.value?.data.find(row => row.subject.deployment_id === id)
 const collection = id => t(`monitor.engines.states.${observation(id)?.collection.state || 'no_sample'}`)
@@ -117,8 +125,8 @@ const navigate = (query, history = 'replace') => {
   if (router.resolve(target).fullPath === route.fullPath) { refreshCycle.schedule(); return }
   return navigateMonitorRoute(router, target, { history })
 }
-const filterInput = createAutoFilter({ apply: () => navigate({ engine_type:state.value.engineType, search: search.value.trim(), refresh: state.value.refresh }), enabled: () => !disposed && route.name === 'EngineResources' && !state.value.deploymentID && canRead.value, visible: () => visible.value, pause: () => refreshCycle.stop() })
-function back() { const { deployment_id, metric, range, ...query } = state.value.query; return navigate(query) }
+const filterInput = createAutoFilter({ apply: () => navigate({ scope:state.value.scope, search: search.value.trim(), refresh: state.value.refresh }), enabled: () => !disposed && route.name === 'EngineResources' && !state.value.deploymentID && canRead.value, visible: () => visible.value, pause: () => refreshCycle.stop() })
+function back() { const { deployment_id, engine_type, metric, range, ...query } = state.value.query; return navigate(query) }
 function invalidChart() { history.value = null; trendError.value = 'monitor.resources.errors.invalidResponse' }
 const refreshCycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && route.name === 'EngineResources' && !blocked.value && !loading.value && !state.value.changed && !filterInput.pending, refresh: () => reload({ automatic: true }), pause: () => { requests.invalidate(); loading.value = false; observed.value = null; history.value = null; hostReferences.value = {} }, visibilityChanged: value => { visible.value = value; filterInput.visibilityChanged(value) } })
 async function reload({ automatic = false } = {}) {
@@ -126,7 +134,7 @@ async function reload({ automatic = false } = {}) {
   if (disposed || route.name !== 'EngineResources') return
   refreshCycle.stop()
   const ticket = requests.invalidate()
-  const context = JSON.stringify([identity.value, state.value.engineType, state.value.deploymentID, state.value.metric, state.value.range, state.value.search, state.value.page])
+  const context = JSON.stringify([identity.value, state.value.scope, state.value.engineType, state.value.deploymentID, state.value.metric, state.value.range, state.value.search, state.value.page])
   if (context !== dataContext) {
     observed.value = null; history.value = null; owners.value = []; hostReferences.value = {}; total.value = 0
     dataContext = context
@@ -143,19 +151,19 @@ async function reload({ automatic = false } = {}) {
       const owner = validateEngineDeployment(await requests.request(config => api.deployment(state.value.deploymentID, config)))
       if (owner.deployment_id !== state.value.deploymentID) throw new Error('invalid_resource_response')
       if (!requests.current(ticket)) return
-      if (owner.engine_type !== state.value.engineType) {
-        await navigate({ ...state.value.query, engine_type: owner.engine_type, metric: defaultEngineMetric(owner.engine_type) })
+      if (owner.engine_type !== state.value.engineType || owner.scope !== state.value.scope) {
+        await navigate({ ...state.value.query, scope: owner.scope, engine_type: owner.engine_type, metric: owner.engine_type === state.value.engineType ? state.value.metric : defaultEngineMetric(owner.engine_type) })
         return
       }
       rows = [owner]; count = 1
     } else {
-      const page = validateEnginePage(await requests.request(config => api.deployments({ engine_type: state.value.engineType, page: state.value.page, page_size: 20, ...(state.value.search ? { search: state.value.search } : {}) }, config)), state.value.page)
-      if(page.data.some(row=>row.engine_type!==state.value.engineType))throw new Error('invalid_resource_response')
+      const page = validateEnginePage(await requests.request(config => api.deployments({ scope: state.value.scope, page: state.value.page, page_size: 20, ...(state.value.search ? { search: state.value.search } : {}) }, config)), state.value.page)
+      if(page.data.some(row=>row.scope!==state.value.scope))throw new Error('invalid_resource_response')
       rows = page.data; count = page.total
     }
     if (!requests.current(ticket)) return
     if (rows.length !== owners.value.length || rows.some((row, index) =>
-      ['deployment_id', 'engine_type', 'display_name', 'version', 'enabled', 'node_id', 'host_binding_state'].some(key => row[key] !== owners.value[index]?.[key]))) {
+      ['deployment_id', 'scope', 'engine_type', 'display_name', 'version', 'enabled', 'node_id', 'host_binding_state'].some(key => row[key] !== owners.value[index]?.[key]))) {
       observed.value = null; history.value = null; trendZoom.value = null
     }
     owners.value = rows; total.value = count
@@ -165,13 +173,13 @@ async function reload({ automatic = false } = {}) {
     if (rows.length) {
       const result = state.value.deploymentID ? await requests.request(config => api.instant({ deployment_id: state.value.deploymentID, metrics: detailMetrics.value.map(item => item.key).join(',') }, config)) : await requests.request(config => api.summaries(rows.map(item => item.deployment_id), config))
       if (!requests.current(ticket)) return
-      observed.value = validateEngineResources(result, rows, state.value.deploymentID ? detailMetrics.value : summaryMetrics.value)
+      observed.value = validateEngineResources(result, rows, owner => state.value.deploymentID ? detailMetrics.value : engineSummaryFor(owner.engine_type))
       if (state.value.deploymentID) {
         try {
           const params = engineTrendParameters(state.value.deploymentID, state.value.metric, state.value.range, result.queried_at)
           const trend = await requests.request(config => api.trend(params, config))
           if (!requests.current(ticket)) return
-          history.value = validateEngineResources(trend, rows, [selectedMetric.value], params)
+          history.value = validateEngineResources(trend, rows, () => [selectedMetric.value], params)
         } catch (error) {
           if (!requests.current(ticket)) return
           history.value = null
@@ -193,7 +201,7 @@ async function loadHosts(rows, ticket) {
   const hosts = await loadHostReferences(rows.map(row => row.node_id), id => requests.request(config => hostsAPI.node(id, config)), current)
   if (current()) hostReferences.value = hosts
 }
-watch([() => JSON.stringify([state.value.engineType, state.value.deploymentID, state.value.metric, state.value.range]), identity], () => { trendZoom.value = null }, { flush: 'sync' })
+watch([() => JSON.stringify([state.value.scope, state.value.engineType, state.value.deploymentID, state.value.metric, state.value.range]), identity], () => { trendZoom.value = null }, { flush: 'sync' })
 watch([errorKey, trendError], ([error, trend]) => { if (error || trend) trendZoom.value = null }, { flush: 'sync' })
 watch([() => route.fullPath, identity], () => reload(), { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); requests.dispose() })
@@ -204,6 +212,15 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
 .toolbar h2 { flex: 1; }
 .toolbar .el-input, .toolbar .el-select { width: 240px; max-width: 100%; }
+.engine-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 16px; }
+.engine-card { padding: 20px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); min-width: 0; }
+.engine-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.engine-card-heading h3 { margin: 0; overflow-wrap: anywhere; font-size: 18px; }
+.engine-card-host { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; overflow-wrap: anywhere; color: var(--addp-text-secondary); }
+.engine-card-state { display: flex; gap: 6px; flex-wrap: wrap; color: var(--addp-text-secondary); }
+.engine-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; margin: 20px 0; }
+.engine-summary dt { color: var(--addp-text-secondary); font-size: 13px; }
+.engine-summary dd { margin: 6px 0 0; font-size: 20px; overflow-wrap: anywhere; }
 .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px; }
 .metric-card { padding: 20px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); min-width: 0; }
 .metric-card h3 { font-size: 16px; margin: 0 0 12px; }

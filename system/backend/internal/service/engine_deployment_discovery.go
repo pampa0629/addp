@@ -203,10 +203,7 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 		return value
 	}
 	source := value.Source
-	project := "business"
-	if scope == "infra" {
-		project = "addp-infra"
-	}
+	project := models.EngineDeploymentProject(scope)
 	if value.State != "available" || value.Reason != "" || source == nil || source.Type != "docker_compose" || source.Project != project || !deploymentDockerID.MatchString(source.DockerEngineID) || (source.Runtime != "linux_docker" && source.Runtime != "desktop_linux_vm") || len(value.Services) > 64 {
 		return bad
 	}

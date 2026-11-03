@@ -22,6 +22,6 @@ for(const locale of ['zh-cn','en'])test(`MinIO uses exact groups, local tips and
  expect(requests.every(keys=>keys.length<=12&&keys.every(key=>key.startsWith('minio.')))).toBe(true)
  expect(requests.map(keys=>keys.length)).toEqual([10,10,7,7])
  await page.getByRole('button',{name:en?'Back to engines':'返回引擎列表',exact:true}).click()
- await expect(page).toHaveURL(/engine_type=minio/);await expect(page.getByTestId('engine-list')).toBeVisible()
- expect(state.queries.every(query=>query.engine_type==='minio')).toBe(true)
+ await expect(page).not.toHaveURL(/engine_type=/);await expect(page.getByTestId('engine-list')).toBeVisible()
+ expect(state.queries.every(query=>query.scope==='infra' && !query.engine_type)).toBe(true)
 })

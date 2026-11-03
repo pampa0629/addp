@@ -821,3 +821,15 @@ Common Python测试改用私有OpenSSL配置及明确CA／叶子约束，同四�
 [完整记录、受控反证与原失败边界](MonitorHTTP质量与采样历史证据.md#http-volume-checkpoints-local-20261103)
 
 原同一次exec补进入／管道返回检查点，超时只解析既捕获的有界残片；缺失不推断未执行，返回不代替du成功，不改变原失败和四秒预算。Trace163项、HTTP37项及原身份／登记门禁通过；仅本地落地未推送，无构建重试或新窗口。真实超时残片、性能根因及正式Agent/Copilot页面闭环仍未验收。
+
+### 2026-11-03 引擎监控按 Infra／Business 分区及混合类型卡片（本地通过，真实页面待应用）
+
+System 从已确认部署来源项目派生只读 `scope`，在计数与分页前按 infra／business 过滤，不按名称猜测、不增加数据库字段或权限。Monitor 删除按引擎类型下拉进入的列表，改为两个来源页签与混合类型卡片；每卡沿既有类型目录展示四项摘要、承载主机及采集状态，使用一批摘要请求。搜索、分页、详情返回和迟到响应隔离沿原规则；620px 窄屏无横向溢出，中英文与三类引擎均覆盖。受控截图已检查卡片布局，不代表个人 Safari 运行验收。
+
+本地证据：`make test-module MODULE=system GO_ONLY=1` 通过；标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test engine-deployments"` 及同范围 `--package api` 在核验后的共享 PostgreSQL `addp_iam_test` 通过，覆盖三类型两来源、分页／计数、误导名称、停用投影与 HTTP 读取。初次新增 PG 夹具误用了前序已改为物理类型的主机，已改用独立虚拟主机后通过。
+
+`npm --prefix monitor/frontend test` 135 项通过；`npm --prefix monitor/frontend run test:e2e -- e2e/engine-scopes.spec.js e2e/engine-resources.spec.js e2e/redis-resources.spec.js e2e/minio-resources.spec.js` 68 项通过，另 `e2e/automatic-filter-enter.spec.js --grep engine` 一项通过，构建通过。初轮浏览器失败来自旧表格选择器和新增混合夹具误用固定 UUID，已修正后完整专项通过。Swagger 生成及 System 250 个公开路由方法覆盖校验通过；`make test-frontend-ci-registration` 27 项通过。
+
+现有 Hosted Console 适配改为分别核对两来源、禁止跨来源摘要，并保留每个引擎的全部专业指标、趋势、重新载入及负向身份检查；共享验证函数改为按对象提供指标目录，消费处同步更新。`make test-node-metrics-online-runner` 最终 173 项及身份 Go 夹具通过。本机默认 OpenSSL 4.1 缺少默认配置，指定已有配置后旧证书生成又缺 AKI；最终仅为本次标准命令显式使用已安装 OpenSSL 3.6.4 与其配置，不修改系统设置、不放宽 TLS、不修改该无关夹具。原失败分别保留，不计通过。日志为 `/tmp/addp-engine-scope-{system-go-final,postgres-repository,postgres-api,unit-final,browser-final,auto-filter,online-runner-openssl3,registration,build-final,swagger-check-final}.log`。
+
+本批未触发或轮询 CI／Hosted，无定时任务。个人服务未重启，需用户执行 `./scripts/dev/restart.sh -system -monitor` 后复验真实来源页签、卡片、即时搜索及详情返回；本地测试不能替代该运行验收。

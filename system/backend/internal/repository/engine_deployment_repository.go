@@ -63,6 +63,7 @@ func deploymentDBError(err error) error {
 }
 
 func projectDeployment(row *models.EngineDeployment, node models.HostNode) {
+	row.Scope = row.Inventory.Source.Scope()
 	row.NodeID, row.HostBindingState, row.HostBindingReason = "", "rejected", "node_disabled"
 	if !row.Enabled {
 		row.HostBindingReason = "deployment_disabled"
@@ -119,6 +120,9 @@ func (r *EngineDeploymentRepository) List(ctx context.Context, page, size int, f
 	var total int64
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Model(&models.EngineDeployment{})
+		if filter.Scope != "" {
+			query = query.Where("inventory->'source'->>'project' = ?", models.EngineDeploymentProject(filter.Scope))
+		}
 		if filter.EngineType != "" {
 			query = query.Where("engine_type = ?", filter.EngineType)
 		}
@@ -152,6 +156,7 @@ func (r *EngineDeploymentRepository) Save(ctx context.Context, value *models.Eng
 			if old.Version != expected {
 				return commonapi.ErrConflict
 			}
+			old.Scope = old.Inventory.Source.Scope()
 			before = &old
 		}
 		var node models.HostNode

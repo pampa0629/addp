@@ -12,7 +12,7 @@ const sourceStates = [
 ]
 for (const kind of ['redis','minio']) for (const locale of ['zh-cn', 'en']) for (const detail of [false, true]) test(`${kind} ${detail ? 'detail' : 'list'} separates source states and restores current values (${locale})`, async ({ page }) => {
   const en = locale === 'en', state = await engineBackend(page, { locale, owner: { ...engineOwner, engine_type: kind, display_name: 'Business Redis' } })
-  await page.goto(`/engine-resources?engine_type=${kind}&refresh=off${detail ? '&deployment_id=' + engineID : ''}`)
+  await page.goto(`/engine-resources?refresh=off${detail ? '&deployment_id=' + engineID + '&engine_type=' + kind : ''}`)
   const content = detail ? page.getByTestId('engine-value-'+(kind==='redis'?'redisAllocated':'minioTotal')) : page.getByTestId('engine-list')
   const refresh = async () => {
     const before = state.calls.length
@@ -41,7 +41,7 @@ for (const kind of ['redis','minio']) for (const locale of ['zh-cn', 'en']) for 
   await expect(content).not.toContainText('GiB')
   state.owner.enabled = true; state.owner.version++; state.setCapacity(8 * 1024 ** 3); await refresh()
   await expect(content).toContainText('8.00 GiB')
-  expect(state.queries.every(query => query.engine_type === kind)).toBe(true)
+  expect(state.queries.every(query => query.scope === 'infra' && !query.engine_type)).toBe(true)
   if (!detail) expect(state.calls.some(path => path.endsWith('_trends') || path.endsWith('_observations'))).toBe(false)
 })
 
@@ -110,11 +110,11 @@ for(const locale of ['zh-cn','en'])test(`Redis groups, status tips and direct ow
  await expect(page.getByTestId('engine-error')).toBeVisible();await expect(page.getByTestId('engine-value-redisCommands')).toHaveText('—')
 })
 
-test('Redis missing ratios stay blank and type filter applies before paging',async({page})=>{
+test('Redis missing ratios stay blank in provenance cards and on detail return',async({page})=>{
  const state=await engineBackend(page,{owner:{...engineOwner,engine_type:'redis',display_name:'Infra Redis'},mode:'no-limit'})
- await page.goto('/engine-resources?engine_type=redis&refresh=off')
+ await page.goto('/engine-resources?refresh=off')
  await expect(page.getByTestId('engine-list')).toContainText('Infra Redis')
- expect(state.queries.at(-1).engine_type).toBe('redis')
+ expect(state.queries.at(-1)).toMatchObject({scope:'infra'});expect(state.queries.at(-1)).not.toHaveProperty('engine_type')
  await page.getByRole('button',{name:'查看监控',exact:true}).click()
  await expect(page.getByTestId('engine-value-redisPercent')).toHaveText('—')
  await expect(page.getByTestId('engine-value-redisLimit')).toHaveText('未设置内存上限')
@@ -122,7 +122,7 @@ test('Redis missing ratios stay blank and type filter applies before paging',asy
  state.setMode('no-lookups');await page.getByRole('button',{name:'刷新',exact:true}).click()
  await expect(page.getByTestId('engine-value-redisHitPercent')).toHaveText('—')
  await page.getByRole('button',{name:'返回引擎列表',exact:true}).click()
- await expect(page).toHaveURL(/engine_type=redis/)
+ await expect(page).not.toHaveURL(/engine_type=/)
  await expect(page.getByTestId('engine-list')).toBeVisible()
 })
 
@@ -151,7 +151,7 @@ for(const kind of ['redis','minio'])for(const automatic of [false,true])test(`${
 for (const locale of ['zh-cn', 'en']) test(`Redis over-limit memory remains visible in list, detail and trend (${locale})`, async ({ page }) => {
  trackResourceChart(page)
  const state = await engineBackend(page, { locale, owner: { ...engineOwner, engine_type: 'redis', display_name: 'Infra Redis' }, mode: 'over-limit' })
- await page.goto('/engine-resources?engine_type=redis&refresh=off')
+ await page.goto('/engine-resources?refresh=off')
  await expect(page.getByTestId('engine-list')).toContainText('180.00 %')
  await page.getByRole('button', { name: locale === 'en' ? 'View monitoring' : '查看监控', exact: true }).click()
  await expect(page.getByTestId('engine-value-redisPercent')).toHaveText('180.00 %')

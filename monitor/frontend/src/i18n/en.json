@@ -1345,7 +1345,7 @@
       "title": "Engine monitoring",
       "denied": "This account cannot read platform engine monitoring",
       "search": "Search deployment name",
-      "empty": "No admitted deployments of this type",
+      "empty": "No managed engines in this scope",
       "name": "Engine deployment",
       "collection": "Collection status",
       "details": "View monitoring",
@@ -1516,7 +1516,12 @@
           "0": "Failed",
           "1": "OK"
         }
-      }
+      },
+      "scopes": {
+        "infra": "Infra infrastructure",
+        "business": "Business engines"
+      },
+      "scopeHint": "Grouped by confirmed deployment provenance. Both are platform operations objects, not tenant data permissions."
     },
     "processRules": {
       "title": "Service instance resource rules",

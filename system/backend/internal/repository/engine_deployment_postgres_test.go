@@ -13,6 +13,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/models"
@@ -331,7 +332,7 @@ func TestEngineDeploymentDeclarationsAgainstPostgres(t *testing.T) {
 				t.Fatal("Redis stale CAS accepted")
 			}
 			current, err = svc.Get(ctx, row.DeploymentID)
-			if err != nil || current.HostBindingState != "rejected" || current.NodeID != "" {
+			if err != nil || current.HostBindingState != "rejected" || current.NodeID != "" || current.Scope != "business" {
 				t.Fatal("disabled Redis kept host eligibility", err)
 			}
 			projection, err = repository.NewModuleRegistryRepository(db).ObservabilityIdentities(ctx, nil)
@@ -346,5 +347,51 @@ func TestEngineDeploymentDeclarationsAgainstPostgres(t *testing.T) {
 
 		})
 	}
+
+	t.Run("provenance_filter_counts_and_paginates_mixed_types_before_projection", func(t *testing.T) {
+		host, err := nodes.Create(ctx, models.HostNodeInput{DisplayName: "scope-filter VM", NodeKind: "virtual", Enabled: &enabled, Addresses: []string{}, AllowedModuleBindings: []models.HostNodeModuleBinding{}}, iam.AuditMetadata{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, scope := range []string{"infra", "business"} {
+			for _, kind := range []string{"postgresql", "redis", "minio"} {
+				var inv models.EngineDeploymentInventory
+				if err := json.Unmarshal([]byte(fixture), &inv); err != nil {
+					t.Fatal(err)
+				}
+				inv.Source.Project = models.EngineDeploymentProject(scope)
+				inv.Source.DockerEngineID = "scope-filter-" + scope + "-" + kind
+				serviceName, port := commonmodels.PlatformEngineService(kind)
+				inv.Services[0].Service, inv.Services[0].EngineType = serviceName, kind
+				inv.Services[0].Containers[0].PublishedPorts[0].ContainerPort = port
+				// Deliberately misleading names must not decide provenance.
+				row, err := svc.Create(ctx, models.EngineDeploymentInput{DisplayName: "scope-filter misleading opposite name", Enabled: &enabled, DeclaredNodeID: host.NodeID, Inventory: inv}, iam.AuditMetadata{})
+				if err != nil || row.Scope != scope {
+					t.Fatalf("create scope %s: %+v %v", scope, row, err)
+				}
+			}
+		}
+		for _, scope := range []string{"infra", "business"} {
+			seen := map[string]bool{}
+			for page := 1; page <= 2; page++ {
+				result, err := svc.List(ctx, page, 2, models.EngineDeploymentFilter{Scope: scope, Search: "scope-filter"})
+				if err != nil || result.Total != 3 || len(result.Data) != 3-page {
+					t.Fatalf("scope pagination: %+v %v", result, err)
+				}
+				for _, row := range result.Data {
+					if row.Scope != scope || row.Inventory.Source.Project != models.EngineDeploymentProject(scope) || seen[row.DeploymentID] {
+						t.Fatalf("scope leaked or duplicate: %+v", row)
+					}
+					seen[row.DeploymentID] = true
+				}
+			}
+			for _, kind := range []string{"postgresql", "redis", "minio"} {
+				result, err := svc.List(ctx, 1, 20, models.EngineDeploymentFilter{Scope: scope, EngineType: kind, Search: "scope-filter"})
+				if err != nil || result.Total != 1 || len(result.Data) != 1 || result.Data[0].EngineType != kind {
+					t.Fatalf("combined scope and type: %+v %v", result, err)
+				}
+			}
+		}
+	})
 
 }

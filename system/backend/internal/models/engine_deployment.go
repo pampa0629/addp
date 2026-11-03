@@ -38,6 +38,7 @@ type EngineDeploymentPort struct {
 
 // EngineDeployment belongs to Platform operations, without Tenant Engine or data permissions.
 type EngineDeployment struct {
+	Scope             string                    `gorm:"-" json:"scope"`
 	DeploymentID      string                    `gorm:"primaryKey;type:uuid" json:"deployment_id"`
 	DisplayName       string                    `gorm:"not null;size:255" json:"display_name"`
 	EngineType        string                    `gorm:"not null;size:50" json:"engine_type"`
@@ -50,6 +51,27 @@ type EngineDeployment struct {
 	NodeID            string                    `gorm:"-" json:"node_id"`
 	HostBindingState  string                    `gorm:"-" json:"host_binding_state"`
 	HostBindingReason string                    `gorm:"-" json:"host_binding_reason"`
+}
+
+// EngineDeploymentProject is the canonical mapping for deployment provenance.
+func EngineDeploymentProject(scope string) string {
+	switch scope {
+	case "infra":
+		return "addp-infra"
+	case "business":
+		return "business"
+	default:
+		return ""
+	}
+}
+
+func (source EngineDeploymentSource) Scope() string {
+	for _, scope := range []string{"infra", "business"} {
+		if source.Project == EngineDeploymentProject(scope) {
+			return scope
+		}
+	}
+	return ""
 }
 
 func (EngineDeployment) TableName() string { return "engine_deployments" }
@@ -88,6 +110,7 @@ type EngineDeploymentPage struct {
 	TotalPages int64              `json:"total_pages"`
 }
 type EngineDeploymentFilter struct {
+	Scope      string
 	Search     string
 	NodeID     string
 	EngineType string

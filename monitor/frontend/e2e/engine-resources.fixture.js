@@ -2,9 +2,10 @@ import { identity } from './monitoring-targets.fixture'
 import { engineMetricsFor, engineSummaryFor } from '../src/utils/engineResources'
 
 export const engineID = '10000000-0000-4000-8000-000000000001'
-export const engineOwner = { deployment_id: engineID, display_name: 'Infra PostgreSQL', enabled: true, engine_type: 'postgresql', node_id: '10000000-0000-4000-8000-000000000002', version: 1, host_binding_state: 'bound' }
+export const engineOwner = { scope: 'infra', deployment_id: engineID, display_name: 'Infra PostgreSQL', enabled: true, engine_type: 'postgresql', node_id: '10000000-0000-4000-8000-000000000002', version: 1, host_binding_state: 'bound' }
 export const enginePermissions = ['monitor.resource_observation.read', 'platform.engine_deployment.read']
-export async function engineBackend(page, { locale = 'zh-cn', auth = identity(enginePermissions), mode: initial = 'valid', owner = { ...engineOwner }, hosts = [], holdHosts = false } = {}) {
+export async function engineBackend(page, { locale = 'zh-cn', auth = identity(enginePermissions), mode: initial = 'valid', owner = { ...engineOwner }, owners = null, hosts = [], holdHosts = false } = {}) {
+  const deploymentRows = owners || [owner]
   let mode = initial, capacity = 1024 ** 3
   const calls = [], queries=[], stamp = '2026-10-20T14:00:00Z'
   let held, release, releaseHosts, hostStatus = 200
@@ -18,8 +19,15 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
     if (path === '/api/v1/system/refresh') body = { access_token: 'fixture-token', expires_in: 3600 }
     else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
     else if (path === '/api/v1/system/auth/context') body = auth
-    else if (path === '/api/v1/system/platform/engine_deployments') { calls.push(path);queries.push(Object.fromEntries(url.searchParams)); body = { data: [owner], page: Number(url.searchParams.get('page')), page_size: 20, total: 1 } }
-    else if (path === `/api/v1/system/platform/engine_deployments/${engineID}`) { calls.push(path); body = owner }
+    else if (path === '/api/v1/system/platform/engine_deployments') {
+      calls.push(path); queries.push(Object.fromEntries(url.searchParams))
+      const matching = deploymentRows.filter(row => row.scope === url.searchParams.get('scope') && (!url.searchParams.get('search') || row.display_name.toLowerCase().includes(url.searchParams.get('search').toLowerCase())))
+      const currentPage = Number(url.searchParams.get('page'))
+      body = {data: matching.slice((currentPage-1)*20,currentPage*20),page:currentPage,page_size:20,total:matching.length}
+    }
+    else if (path.startsWith('/api/v1/system/platform/engine_deployments/')) {
+      calls.push(path); body = deploymentRows.find(row => row.deployment_id === path.split('/').pop()); if(!body){status=404;body={error_code:'resource_not_found'}}
+    }
     else if (path.startsWith('/api/v1/system/platform/host_nodes/')) {
       const id = path.split('/').pop()
       hostReads.push(id)
@@ -33,7 +41,10 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
     else if (path.startsWith('/api/v1/monitor/platform/engine_resource_')) {
       calls.push(path)
       const trend = path.endsWith('_trends'), summary = path.endsWith('_summaries')
-      const metrics = summary ? engineSummaryFor(owner.engine_type) : engineMetricsFor(owner.engine_type).filter(item => url.searchParams.get('metrics').split(',').includes(item.key))
+      const ids=summary ? url.searchParams.get('deployment_ids').split(',') : [url.searchParams.get('deployment_id')]
+      const selected=deploymentRows.filter(row=>ids.includes(row.deployment_id))
+      const responses=selected.map(owner=>{
+        const metrics = summary ? engineSummaryFor(owner.engine_type) : engineMetricsFor(owner.engine_type).filter(item => url.searchParams.get('metrics').split(',').includes(item.key))
       const start = trend ? new Date(Math.max(Date.parse(url.searchParams.get('start')), Date.parse(stamp) - 120000)).toISOString() : stamp
       const count = trend ? Math.floor((Date.parse(stamp) - Date.parse(start)) / 15000) + 1 : 1
       const inactive = owner.host_binding_state === 'rejected' || !owner.enabled
@@ -41,10 +52,10 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
       const failure = { 'snapshot-unavailable': 'snapshot_unavailable', 'scrape-failed': 'failed', stale: 'stale' }[mode]
       const state = absentState || (trend || mode === 'no-sample' ? 'no_sample' : failure || 'collecting')
       const sampledAt = absentState || trend || mode === 'no-sample' ? null : mode === 'stale' ? new Date(Date.parse(stamp) - 61000).toISOString() : stamp
-      body = {
+      return {
         queried_at: stamp, start, end: stamp, step_seconds: 15, policy_version: 1, lookback_seconds: 300,
         data: [{
-          subject: { kind: 'engine_deployment', deployment_id: engineID, display_name: owner.display_name, engine_type: owner.engine_type },
+          subject: { kind: 'engine_deployment', deployment_id: owner.deployment_id, display_name: owner.display_name, engine_type: owner.engine_type },
           node_id: owner.node_id, collection: { state, sampled_at: sampledAt },
           series: metrics.map(metric => ({
             metric_key: metric.key, unit: metric.unit, window_seconds: metric.windowSeconds, dimensions: {},
@@ -62,6 +73,8 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
           }))
         }]
       }
+      })
+      body=responses.length ? {...responses[0],data:responses.flatMap(value=>value.data)} : {data:[]}
       if (mode === 'foreign') body.data[0].subject.deployment_id = engineOwner.node_id
       if (['unavailable', 'denied', 'notFound'].includes(mode)) { status = { unavailable: 503, denied: 403, notFound: 404 }[mode]; body = { error_code: mode === 'unavailable' ? 'observability_backend_unavailable' : 'permission_denied', error: 'fixture refusal' } }
       if (held) await held

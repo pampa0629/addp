@@ -143,15 +143,21 @@ test('platform node resources through real Console password MFA and Monitor ifra
       const owners = expected.engine_resources.owners
       const kind = owners[0].engine_type, catalog = engineMetricsFor(kind)
       const trendKey = kind === 'redis' ? 'redis.commands.per_second' : 'postgresql.transactions.committed_per_second'
-      const typeQuery = kind === 'redis' ? '&engine_type=redis' : ''
       save('engine-professional-list')
-      await page.goto('/monitor/engine-resources?refresh=off' + typeQuery)
-      await expect(monitor.getByTestId('engine-list').getByRole('button', { name: '查看监控', exact: true })).toHaveCount(2)
-      for (const owner of owners) await expect(monitor.getByTestId('engine-list')).toContainText(owner.display_name)
+      for (const scope of ['infra', 'business']) {
+        const scopedOwners = owners.filter(owner => owner.inventory.source.project === (scope === 'infra' ? 'addp-infra' : 'business'))
+        expect(scopedOwners).toHaveLength(1)
+        await page.goto('/monitor/engine-resources?refresh=off&scope=' + scope)
+        await expect(monitor.getByRole('tab', { name: scope === 'infra' ? 'Infra 基础设施' : 'Business 业务引擎', exact: true })).toHaveAttribute('aria-selected', 'true')
+        await expect(monitor.getByTestId('engine-list').getByRole('button', { name: '查看监控', exact: true })).toHaveCount(scopedOwners.length)
+        for (const owner of scopedOwners) await expect(monitor.getByTestId('engine-list')).toContainText(owner.display_name)
+        for (const owner of owners.filter(owner => !scopedOwners.includes(owner))) await expect(monitor.getByTestId('engine-list')).not.toContainText(owner.display_name)
+      }
       await page.screenshot({ path: resolve(artifact, 'engine-resources-list.png'), fullPage: true, animations: 'disabled' })
       for (const owner of owners) {
         save('engine-professional-detail')
-        const path = '/monitor/engine-resources?refresh=off' + typeQuery + '&deployment_id=' + owner.deployment_id
+        const scope = owner.inventory.source.project === 'addp-infra' ? 'infra' : 'business'
+        const path = '/monitor/engine-resources?refresh=off&scope=' + scope + '&engine_type=' + kind + '&deployment_id=' + owner.deployment_id
         await page.goto(path)
         const verifyCards = async (metrics) => {
           await expect(monitor.getByTestId('engine-metrics').locator('strong')).toHaveCount(metrics.length)
@@ -196,10 +202,10 @@ test('platform node resources through real Console password MFA and Monitor ifra
       for (const receipt of engineReads) {
         expect(receipt.status).toBe(200)
         const summary = receipt.path.endsWith('_summaries'), trend = receipt.path.endsWith('_trends')
-        const subjects = summary ? owners : owners.filter(owner => owner.deployment_id === receipt.query.deployment_id)
+        const subjects = owners.filter(owner => (summary ? receipt.query.deployment_ids.split(',') : [receipt.query.deployment_id]).includes(owner.deployment_id))
         const metrics = summary ? engineSummaryFor(kind) : catalog.filter(metric => receipt.query.metrics.split(',').includes(metric.key))
         expect(metrics).toHaveLength(summary ? 4 : trend ? 1 : engineDetailMetrics(kind, receipt.query.metrics.split(',')[0]).length)
-        validateEngineResources(receipt.value, subjects, metrics, trend ? receipt.query : null)
+        validateEngineResources(receipt.value, subjects, () => metrics, trend ? receipt.query : null)
       }
       save('engine-professional-permission-denied')
       const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })

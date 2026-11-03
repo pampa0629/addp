@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	commonmodels "github.com/addp/common/models"
@@ -178,5 +179,23 @@ func TestSingleEngineDeploymentUsesCanonicalServicePortAndAdmission(t *testing.T
 				t.Fatal("Redis SQL port accepted")
 			}
 		})
+	}
+}
+
+func TestEngineDeploymentScopeIsDerivedFromCanonicalProject(t *testing.T) {
+	for _, scope := range []string{"infra", "business"} {
+		source := models.EngineDeploymentSource{Project: models.EngineDeploymentProject(scope)}
+		if source.Scope() != scope {
+			t.Fatalf("scope round trip: %q", scope)
+		}
+	}
+	if (models.EngineDeploymentSource{Project: "infra"}).Scope() != "" {
+		t.Fatal("guessed scope from a noncanonical project")
+	}
+	svc := NewEngineDeploymentService(nil)
+	for _, scope := range []string{"tenant", "Infra", " business"} {
+		if _, err := svc.List(context.Background(), 1, 20, models.EngineDeploymentFilter{Scope: scope}); !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatalf("accepted scope %q: %v", scope, err)
+		}
 	}
 }

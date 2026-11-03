@@ -113,7 +113,7 @@ func TestEngineDeploymentAPIRejectsUnauthorizedAndMalformedInput(t *testing.T) {
 		request("POST", path, body, 400)
 	}
 
-	for _, query := range []string{"engine_type=", "engine_type=redis&engine_type=postgresql", "engine_type=mysql", "page=", "page=0", "page_size=101", "page=1&page=2", "tenant_id=1", "node_id=wrong", "search=%00", "search=%ZZ"} {
+	for _, query := range []string{"scope=", "scope=tenant", "scope=Infra", "scope=infra&scope=business", "engine_type=", "engine_type=redis&engine_type=postgresql", "engine_type=mysql", "page=", "page=0", "page_size=101", "page=1&page=2", "tenant_id=1", "node_id=wrong", "search=%00", "search=%ZZ"} {
 		request("GET", path+"?"+query, "", 400)
 	}
 	request("GET", path, "{}", 400)
@@ -219,7 +219,7 @@ func TestEngineDeploymentHTTPAuditAgainstPostgres(t *testing.T) {
 	}
 	actor := testIAMActorContext("platform")
 	actor.Principal.ID = strconv.FormatInt(principal.ID, 10)
-	actor.Authorization.RoleAssignments = []commonauth.RoleAssignment{{AssignmentID: "91", RoleKey: "custom.deployment", Scope: commonauth.AssignmentScope{Type: "platform"}, Permissions: []string{"platform.engine_deployment.update", "platform.host_node.read"}, SourceType: "bootstrap", ValidFrom: actor.Token.IssuedAt}}
+	actor.Authorization.RoleAssignments = []commonauth.RoleAssignment{{AssignmentID: "91", RoleKey: "custom.deployment", Scope: commonauth.AssignmentScope{Type: "platform"}, Permissions: []string{"platform.engine_deployment.read", "platform.engine_deployment.update", "platform.host_node.read"}, SourceType: "bootstrap", ValidFrom: actor.Token.IssuedAt}}
 	runtime := &IAMRuntime{Authentication: func(c *gin.Context) {
 		if err := sharedauth.SetAuthContextForGin(c, actor); err != nil {
 			t.Fatal(err)
@@ -231,6 +231,26 @@ func TestEngineDeploymentHTTPAuditAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "/api/v1/system/platform/engine_deployments/" + created.DeploymentID
+	for _, scope := range []string{"infra", "business"} {
+		response := performModuleRegistryRequest(router, http.MethodGet, "/api/v1/system/platform/engine_deployments?scope="+scope, "")
+		if response.Code != http.StatusOK {
+			t.Fatalf("scope list: %d %s", response.Code, response.Body.String())
+		}
+		var page models.EngineDeploymentPage
+		if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		want := int64(0)
+		if scope == "business" {
+			want = 1
+		}
+		if page.Total != want || int64(len(page.Data)) != want {
+			t.Fatalf("scope %s count: %+v", scope, page)
+		}
+		if want == 1 && page.Data[0].Scope != scope {
+			t.Fatal("scope missing from public projection")
+		}
+	}
 	update := func(version int64, enabled bool, status int) models.EngineDeployment {
 		t.Helper()
 		raw, err := json.Marshal(models.EngineDeploymentUpdateRequest{DisplayName: "Updated PostgreSQL", Enabled: &enabled, DeclaredNodeID: node.NodeID, Version: version})
@@ -250,7 +270,7 @@ func TestEngineDeploymentHTTPAuditAgainstPostgres(t *testing.T) {
 		return result
 	}
 	updated := update(1, true, http.StatusOK)
-	if updated.Version != 2 || updated.DisplayName != "Updated PostgreSQL" {
+	if updated.Scope != "business" || updated.Version != 2 || updated.DisplayName != "Updated PostgreSQL" {
 		t.Fatalf("update=%+v", updated)
 	}
 	update(1, true, http.StatusConflict)

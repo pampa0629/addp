@@ -6936,6 +6936,16 @@ const docTemplate = `{
                     },
                     {
                         "enum": [
+                            "infra",
+                            "business"
+                        ],
+                        "type": "string",
+                        "description": "部署来源范围 | Deployment provenance scope",
+                        "name": "scope",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
                             "postgresql",
                             "redis",
                             "minio"
@@ -19302,6 +19312,9 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentInventory"
                 },
                 "node_id": {
+                    "type": "string"
+                },
+                "scope": {
                     "type": "string"
                 },
                 "updated_at": {

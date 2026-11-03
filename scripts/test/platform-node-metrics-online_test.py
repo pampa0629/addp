@@ -2051,7 +2051,7 @@ class EngineProfessionalEvidenceTest(unittest.TestCase):
     def setUp(self):
         self.at = "2026-10-21T00:05:00Z"
         self.owner = {"deployment_id":"20000000-0000-4000-8000-000000000001", "display_name":"Owned Infra PG", "engine_type":"postgresql", "node_id":"10000000-0000-4000-8000-000000000001",
-                      "inventory":{"services":[{"containers":[{"started_at":"2026-10-21T00:01:00.123Z"}]}]}}
+                      "inventory":{"source":{"project":"addp-infra"}, "services":[{"containers":[{"started_at":"2026-10-21T00:01:00.123Z"}]}]}}
 
     def response(self, keys=None, *, trend=False, absent=False):
         keys = keys or ONLINE.ENGINE_METRICS
@@ -2513,9 +2513,7 @@ class RedisEngineProfessionalEvidenceTest(unittest.TestCase):
         actor,denied=identity(),identity('platform.security_administrator')
         actor['principal']['id']='admin';denied['principal']['id']='security'
         wanted={'run_id':'run','admin_id':'admin','security_id':'security','engine_resources':{'owners':owners}}
-        summary=self.response(owners[0],ONLINE.REDIS_SUMMARY_KEYS)
-        summary['data']+=self.response(owners[1],ONLINE.REDIS_SUMMARY_KEYS)['data']
-        reads=[{'path':ONLINE.ENGINE_SUMMARIES,'query':{'deployment_ids':','.join(o['deployment_id'] for o in owners)},'value':summary,'status':200}]
+        reads=[{'path':ONLINE.ENGINE_SUMMARIES,'query':{'deployment_ids':owner['deployment_id']},'value':self.response(owner,ONLINE.REDIS_SUMMARY_KEYS),'status':200} for owner in owners]
         for owner in owners:
             for keys in ONLINE.engine_metric_groups('redis'):
                 reads.append({'path':ONLINE.ENGINE_OBSERVATIONS,'query':{'deployment_id':owner['deployment_id'],'metrics':','.join(keys)},'value':self.response(owner,keys),'status':200})
@@ -2528,7 +2526,8 @@ class RedisEngineProfessionalEvidenceTest(unittest.TestCase):
             for name in ('engine-resources-list.png','engine-resources-detail.png'):(directory/name).write_bytes(b'\x89PNG\r\n\x1a\n')
             ONLINE.validate_engine_professional_browser(value,wanted,directory)
             for change in [lambda v:v['engine_resources']['reads'].pop(1),
-                           lambda v:v['engine_resources']['reads'][1]['query'].update(deployment_id=owners[1]['deployment_id']),
+                           lambda v:v['engine_resources']['reads'][0]['query'].update(deployment_ids=','.join(owner['deployment_id'] for owner in owners)),
+                           lambda v:v['engine_resources']['reads'][2]['query'].update(deployment_id=owners[1]['deployment_id']),
                            lambda v:v['engine_resources'].update(denied=False)]:
                 invalid=copy.deepcopy(value);change(invalid)
                 with self.assertRaises(ONLINE.SuiteError):ONLINE.validate_engine_professional_browser(invalid,wanted,directory)

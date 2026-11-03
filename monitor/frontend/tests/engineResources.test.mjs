@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { engineMetrics, engineSummaryMetrics, redisMetrics, minioMetrics, engineDetailMetrics, engineSummaryFor, resolveEngineRoute, validateEnginePage, validateEngineResources, engineTrendParameters } from '../src/utils/engineResources.js'
 
 const id = '10000000-0000-4000-8000-000000000001', node = '10000000-0000-4000-8000-000000000002'
-const owner = { deployment_id: id, display_name: 'Infra PostgreSQL', version: 1, enabled: true, node_id: node, host_binding_state: 'bound', engine_type: 'postgresql' }
+const owner = { scope: 'infra', deployment_id: id, display_name: 'Infra PostgreSQL', version: 1, enabled: true, node_id: node, host_binding_state: 'bound', engine_type: 'postgresql' }
 const at = '2026-10-20T14:00:00Z'
 test('service and engine host navigation share one domain component and bounded reference resolver', () => {
   for (const name of ['ProcessResources', 'EngineResources']) {
@@ -42,7 +42,7 @@ test('current page rejects duplicate, malformed and wrong-page owner references'
 })
 test('valid zero is preserved; foreign, stale, fractional connection or incomplete evidence is rejected', () => {
   const good = response()
-  assert.equal(validateEngineResources(good, [owner], engineSummaryMetrics), good)
+  assert.equal(validateEngineResources(good, [owner], () => engineSummaryMetrics), good)
   for (const mutate of [
     value => { value.data[0].subject.deployment_id = node },
     value => { value.data[0].collection.state = 'snapshot_unavailable' },
@@ -51,16 +51,16 @@ test('valid zero is preserved; foreign, stale, fractional connection or incomple
     value => { value.data[0].series[0].unit = 'percent' },
     value => { value.data[0].series.pop() },
     value => { value.data[0].series[0].metric_key = 'node.cpu.busy_percent' }
-  ]) { const value = response(); mutate(value); assert.throws(() => validateEngineResources(value, [owner], engineSummaryMetrics), /invalid_resource_response/) }
+  ]) { const value = response(); mutate(value); assert.throws(() => validateEngineResources(value, [owner], () => engineSummaryMetrics), /invalid_resource_response/) }
 })
 test('current-container trend accepts clipping and null gaps without inventing zero', () => {
   const metric = engineMetrics[8], params = engineTrendParameters(id, metric.key, '7d', at), value = response([metric])
   value.start = '2026-10-20T13:59:30Z'
   value.data[0].collection = { state: 'no_sample', sampled_at: null }
   value.data[0].series[0].points = ['2026-10-20T13:59:30Z', '2026-10-20T13:59:45Z', at].map((at, index) => ({ evaluated_at: at, sampled_at: index === 1 ? null : at, value: index === 1 ? null : 0, data_state: index === 1 ? 'no_data' : 'valid' }))
-  assert.equal(validateEngineResources(value, [owner], [metric], params), value)
+  assert.equal(validateEngineResources(value, [owner], () => [metric], params), value)
   value.data[0].series[0].points[1].value = 0
-  assert.throws(() => validateEngineResources(value, [owner], [metric], params), /invalid_resource_response/)
+  assert.throws(() => validateEngineResources(value, [owner], () => [metric], params), /invalid_resource_response/)
 })
 
 test('Redis has a fixed 22-metric catalog and explicit groups within the existing 12-metric budget',()=>{
@@ -86,5 +86,26 @@ test('MinIO uses a bounded two-group catalog, exact type and current-unit metada
  assert.equal(validateEnginePage({data:[{...owner,engine_type:'minio'}],total:1,page:1,page_size:20},1).data.length,1)
  assert.equal(engineTrendParameters(id,query.metric,'1h',at).metrics,query.metric)
  const metrics=engineSummaryFor('minio'), value=response(metrics);value.data[0].subject.engine_type='minio'
- assert.equal(validateEngineResources(value,[{...owner,engine_type:'minio'}],metrics),value)
+ assert.equal(validateEngineResources(value,[{...owner,engine_type:'minio'}],()=>metrics),value)
+})
+
+
+test('deployment provenance scopes survive URL round trips and reject invented owner scopes', () => {
+ const input={scope:'business',search:'Warehouse',page:'2',refresh:'off'}
+ assert.deepEqual(resolveEngineRoute(input).query,input)
+ assert.equal(resolveEngineRoute(input).scope,'business')
+ assert.equal(resolveEngineRoute({scope:'tenant',engine_type:'minio'}).scope,'infra')
+ assert.deepEqual(resolveEngineRoute({engine_type:'minio'}).query,{})
+ for(const scope of [undefined,'tenant','Infra'])assert.throws(()=>validateEnginePage({data:[{...owner,scope}],page:1,page_size:20,total:1},1))
+})
+
+test('mixed engine summaries validate each current owner catalog without accepting foreign metrics', () => {
+ const owners=[owner,{...owner,deployment_id:node,engine_type:'minio'}]
+ const value=response()
+ const minio=response(engineSummaryFor('minio')).data[0]
+ Object.assign(minio.subject,{deployment_id:node,engine_type:'minio'})
+ value.data.push(minio)
+ assert.equal(validateEngineResources(value,owners,row=>engineSummaryFor(row.engine_type)),value)
+ minio.series[0]=structuredClone(value.data[0].series[0])
+ assert.throws(()=>validateEngineResources(value,owners,row=>engineSummaryFor(row.engine_type)),/invalid_resource_response/)
 })

@@ -41,7 +41,7 @@ func validateEngineDeployment(input models.EngineDeploymentInput) (models.Engine
 	}
 	i := input.Inventory
 	encoded, err := json.Marshal(i)
-	if err != nil || len(encoded) > 16*1024 || i.Schema != "addp.engine-deployment-inventory/v1" || len(i.Services) != 1 || i.Source.Type != "docker_compose" || (i.Source.Project != "business" && i.Source.Project != "addp-infra") || !deploymentDockerID.MatchString(i.Source.DockerEngineID) || (i.Source.Runtime != "linux_docker" && i.Source.Runtime != "desktop_linux_vm") {
+	if err != nil || len(encoded) > 16*1024 || i.Schema != "addp.engine-deployment-inventory/v1" || len(i.Services) != 1 || i.Source.Type != "docker_compose" || i.Source.Scope() == "" || !deploymentDockerID.MatchString(i.Source.DockerEngineID) || (i.Source.Runtime != "linux_docker" && i.Source.Runtime != "desktop_linux_vm") {
 		return bad()
 	}
 	if at, err := time.Parse(time.RFC3339, i.ObservedAt); err != nil || at.Format("2006-01-02T15:04:05Z") != i.ObservedAt {
@@ -81,7 +81,7 @@ func (s *EngineDeploymentService) Get(ctx context.Context, id string) (*models.E
 }
 func (s *EngineDeploymentService) List(ctx context.Context, page, size int, filter models.EngineDeploymentFilter) (*models.EngineDeploymentPage, error) {
 	_, filterPort := commonmodels.PlatformEngineService(filter.EngineType)
-	if filter.EngineType != "" && filterPort == 0 {
+	if (filter.EngineType != "" && filterPort == 0) || (filter.Scope != "" && models.EngineDeploymentProject(filter.Scope) == "") {
 		return nil, commonapi.ErrBadRequest
 	}
 	if page < 1 || page > 1000000 || size < 1 || size > 100 || utf8.RuneCountInString(filter.Search) > 255 || strings.IndexFunc(filter.Search, unicode.IsControl) >= 0 || (filter.NodeID != "" && validateNodeID(filter.NodeID) != nil) {

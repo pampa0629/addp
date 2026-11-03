@@ -1608,9 +1608,14 @@ def validate_engine_professional_browser(value, expected, artifacts):
         require(item.get("status") == 200, "browser professional query failed")
         path, query = item.get("path"), item.get("query", {})
         if path == ENGINE_SUMMARIES:
-            require(set(query.get("deployment_ids", "").split(",")) == {row["deployment_id"] for row in owners}, "browser summary scope differs")
-            assert_engine_resources(item.get("value"), owners, keys=engine_summary_keys(kind), fresh=True)
-            covered.add((path, "all"))
+            ids = set(query.get("deployment_ids", "").split(","))
+            scoped = [row for row in owners if row["deployment_id"] in ids]
+            require(scoped and ids == {row["deployment_id"] for row in scoped}, "browser summary scope differs")
+            projects = {row["inventory"]["source"]["project"] for row in scoped}
+            require(len(projects) == 1 and projects <= {"addp-infra", "business"}, "browser summary mixed deployment sources")
+            require(ids == {row["deployment_id"] for row in owners if row["inventory"]["source"]["project"] in projects}, "browser summary omitted scope members")
+            assert_engine_resources(item.get("value"), scoped, keys=engine_summary_keys(kind), fresh=True)
+            covered.update((path, row["deployment_id"]) for row in scoped)
         else:
             owner = next((row for row in owners if row["deployment_id"] == query.get("deployment_id")), None)
             require(owner is not None and path in {ENGINE_OBSERVATIONS, ENGINE_TRENDS}, "browser read another engine")
@@ -1619,7 +1624,7 @@ def validate_engine_professional_browser(value, expected, artifacts):
             require((len(keys) == 1 and keys <= set(engine_catalog(kind))) if trend else keys in engine_metric_groups(kind), "browser engine group differs")
             assert_engine_resources(item.get("value"), [owner], keys=keys, trend=trend, fresh=not trend)
             covered.add((path, owner["deployment_id"], frozenset(keys)))
-    require((ENGINE_SUMMARIES, "all") in covered and all((ENGINE_TRENDS, row["deployment_id"], frozenset({engine_trend_key(kind)})) in covered
+    require(all((ENGINE_SUMMARIES, row["deployment_id"]) in covered and (ENGINE_TRENDS, row["deployment_id"], frozenset({engine_trend_key(kind)})) in covered
                 and all((ENGINE_OBSERVATIONS, row["deployment_id"], frozenset(group)) in covered for group in engine_metric_groups(kind)) for row in owners), "browser missed a professional endpoint or deployment")
     for name in ("engine-resources-list.png", "engine-resources-detail.png"):
         path = artifacts/name

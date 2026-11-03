@@ -10,7 +10,7 @@ const hostPermissions = [...enginePermissions, 'platform.host_node.read']
 for (const kind of ['postgresql', 'redis']) for (const detail of [false, true]) for (const change of ['disabled', 'unbound', 'version']) {
   test(`${kind} ${detail ? 'detail' : 'list'} clears the previous snapshot when the current owner is ${change}`, async ({ page }) => {
     const state = await engineBackend(page, { owner: { ...engineOwner, engine_type: kind } })
-    await page.goto(`/engine-resources?refresh=off${kind === 'redis' ? '&engine_type=redis' : ''}${detail ? '&deployment_id=' + engineID : ''}`)
+    await page.goto(`/engine-resources?refresh=off${detail && kind === 'redis' ? '&engine_type=redis' : ''}${detail ? '&deployment_id=' + engineID : ''}`)
     const content = detail ? page.getByTestId('engine-value-' + (kind === 'redis' ? 'redisAllocated' : 'capacity')) : page.getByTestId('engine-list')
     await expect(content).toContainText('1.00 GiB')
     if (detail) await expect(page.getByTestId('engine-trend').locator('canvas')).toBeVisible()
@@ -40,7 +40,7 @@ for (const locale of ['zh-cn', 'en']) test(`engine explanations stay beside thei
   await page.goto('/engine-resources?refresh=off')
   await expect(page.getByTestId('engine-list')).toContainText('1.00 GiB')
   const capacityHint = en ? 'without tenant attribution' : '不按租户归算'
-  const listHelp = page.getByTestId('engine-list').getByRole('columnheader').filter({ hasText: en ? 'Total database size' : '数据库总容量' }).getByRole('button')
+  const listHelp = page.getByTestId('engine-list').locator('dt').filter({ hasText: en ? 'Total database size' : '数据库总容量' }).getByRole('button')
   const listCalls = state.calls.length
   await listHelp.focus()
   await expect(page.getByRole('tooltip')).toContainText(capacityHint)
@@ -189,7 +189,7 @@ for (const detail of [false, true]) for (const automatic of [false, true]) test(
   await expect(content).toContainText('1.00 GiB')
   const chart = detail ? await engineChart(page) : null
   const canvas = chart ? await chart.locator('canvas').elementHandle() : null
-  const row = !detail ? await content.locator('.el-table__body tr').elementHandle() : null
+  const row = !detail ? await content.locator('article.engine-card').elementHandle() : null
   const reads = () => state.calls.filter(path => path.endsWith(detail ? '_observations' : '_summaries')).length
   const before = reads()
   state.hold()
@@ -243,7 +243,7 @@ for (const locale of ['zh-cn', 'en']) test(`engine text filters debounce and cle
   expect(queries).toHaveLength(1)
   await page.clock.fastForward(301)
   await expect.poll(() => queries.length).toBe(2)
-  expect(queries.at(-1)).toEqual({ engine_type: 'postgresql', page: '1', page_size: '20', search: 'PostgreSQL' })
+  expect(queries.at(-1)).toEqual({ scope: 'infra', page: '1', page_size: '20', search: 'PostgreSQL' })
   await expect(page).toHaveURL(url => !url.searchParams.has('page') && url.searchParams.get('search') === 'PostgreSQL' && url.searchParams.get('refresh') === 'off')
   await input.hover(); await page.locator('form .el-input__clear').click()
   await expect.poll(() => queries.length).toBe(3)

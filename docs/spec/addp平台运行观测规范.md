@@ -95,13 +95,15 @@ POST 仅接受 `items`，每次 1—16 个显式成员；成员为 `scope/servic
 
 部署详情通过同一只读发现接口展示最近一次来源，按已确认的 Docker Engine、Compose 项目和服务匹配；不按名称、端口或地址猜测。来源过期、不可用、运行环境不符或服务未发现时不展示旧容器为当前结果；容器运行身份变化只更新来源展示，不改部署 ID、声明版本、主机关联或历史。容器运行状态不等于数据库可用或专业采集成功。来源单独刷新不清除管理草稿，也不解除写入冲突阻断；切换账号、对象或关闭详情后，迟到响应不得恢复旧来源。
 
-来源按 Docker Engine ID、Compose 项目和服务唯一，停用也不可重复登记。PUT 仅接受名称、纳管意图、主机与当前 `version`，不接受客户端重写来源；实时运行变化由发现结果表达。列表只接受 `page/page_size/search/node_id/engine_type`，类型精确限定postgresql、redis或minio并在计数／分页前过滤，名称按字面片段搜索，主机筛选按声明身份；详情不接受 query。请求正文最多 32 KiB，拒绝未知字段、重复键、大小写别名及附加 query。结果未知或来源变化时保留草稿并停止提交，必须显式重读核对，不自动重试创建。
+来源按 Docker Engine ID、Compose 项目和服务唯一，停用也不可重复登记。PUT 仅接受名称、纳管意图、主机与当前 `version`，不接受客户端重写来源；实时运行变化由发现结果表达。列表只接受 `page/page_size/search/node_id/engine_type/scope`，scope精确限定infra或business，按已确认来源项目addp-infra或business在计数／分页前过滤；响应的只读scope由同一来源事实派生，不持久化第二份范围、不按显示名识别。类型精确限定postgresql、redis或minio并在计数／分页前过滤，名称按字面片段搜索，主机筛选按声明身份；详情不接受 query。请求正文最多 32 KiB，拒绝未知字段、重复键、大小写别名及附加 query。结果未知或来源变化时保留草稿并停止提交，必须显式重读核对，不自动重试创建。
 
 创建与更新在同一 PostgreSQL 事务保存根版本、声明有效区间及统一审计；并发旧版本返回 409，不自动刷新版本重试。声明时间统一取数据库时间，表示管理员声明的生效/结束时刻，不能回填为实际部署历史。闭合历史不可更改或删除；首批不物理删除部署。读取在同一快照核对当前主机和部署纳管状态：有效关联为 `bound`，停用或 Desktop 主机类型变化为 `rejected`，保留原声明；这些状态均不表示服务在线、专业指标采集成功或租户业务可用性，不参与业务 Ready。
 
 接口仅接受非委托 Platform User，独立 `platform.engine_deployment.read/create/update`，创建/更新还须 `platform.host_node.read`；迁移 000220 只向既有平台系统管理员发布三项权限，并沿既有触发器推进授权版本、撤销相关旧刷新族。其他角色、Tenant、Service、委托调用不因部署登记获得权限。界面保留冲突或失败输入；CAS 冲突和结果不明确时停止再次提交，只允许用户显式重新读取核对，首次登记则关闭后刷新列表，不构造已成功身份。
 
 T0 权限目录/Swagger、T1 输入与身份拒绝、T2 PostgreSQL 唯一性/CAS/声明历史/审计回滚及权限前向迁移、System/Console 前端门禁沿现有注册自动发现。精确 T2 入口为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test engine-deployments"`、同参数的 `--package api`（HTTP Handler 与 PostgreSQL 审计事务）和 `--package migration`；本地须使用标准脚本核验的 `addp_iam_test`。产品接入 T4 与上述确定性验证分开登记，尚未通过不能写作真实运行已验收。
+
+引擎监控入口先按部署来源分为“Infra 基础设施”和“Business 业务引擎”，默认Infra。两者仍是Platform运维对象，不表示Tenant范围或新增授权。每个范围以卡片展示当页已纳管的全部已支持引擎类型，卡片显示名称、类型、明确承载主机、实际采集状态和该类型四项摘要；不再以数据库类型下拉作为入口。沿System同一scope列表一次查询、每页20项，再沿Monitor既有混合类型摘要一次查询；不跨页预取、不逐卡片查询指标、不扩大100序列预算。搜索沿既有防抖／Enter与可见性规则，切换scope重置页码并清除原观测。URL保留scope、搜索与页码；详情按当前System事实校正scope与引擎类型，返回列表保持来源、搜索和页码。原按类型列表路径删除，详情固定指标目录、权限及采集来源不变。
 
 ### 4.5 部署侧自动发现来源
 
