@@ -2257,37 +2257,42 @@ assert.ok(source.includes('topology-nodes-browser-raw.json'))
         self.assertEqual(result.returncode,0,result.stderr)
 
 
-def overlay_physical(*args):
-    return {'exact_inventory_verified':True,'sources':{n:{'size_bytes':98304,'sha256':n} for n in m.fixture.OVERLAY_SOURCES},
-        'source_tables':{n:{'features':m.fixture.overlay_features(k)} for n,k in zip(m.fixture.OVERLAY_SOURCES,m.fixture.OVERLAY_KINDS)},
-        'targets':{m.fixture.OVERLAY_TARGET:{'size_bytes':98304,'sha256':'overlay-result','feature_count':16,'layer_name':'intersection',
-                    'geometry_column':'geom','fid_column':'fid','features':m.fixture.overlay_features('result')}}}
+def mixed_physical(case):
+    profile=m.mixed_overlay_profile(case);name=profile['target']
+    return {'exact_inventory_verified':True,'sources':{n:{'size_bytes':98304,'sha256':n}for n in profile['sources']},
+        'source_tables':{n:{'features':profile['features'](k)}for n,k in zip(profile['sources'],profile['kinds'])},
+        'targets':{name:{'size_bytes':98304,'sha256':name,'feature_count':profile['result_count'],'layer_name':name[:-5],
+            'geometry_column':'geom','fid_column':'fid','features':profile['features']('result')}}}
+
+
+def overlay_physical(*args):return mixed_physical(m.fixture.OVERLAY_CASE)
+def difference_physical(*args):return mixed_physical(m.fixture.DIFFERENCE_CASE)
 
 
 class OverlayClient(InputDiagnosticClient):
-    def __init__(self):
-        super().__init__();self.sources=[];self.outputs=[];self.mutate_failed=None;self.mutate_graph=None;self.failed_graph=None
+    def __init__(self,case=None):
+        super().__init__();self.case=case or m.fixture.OVERLAY_CASE;self.profile=m.mixed_overlay_profile(self.case);self.run_id='overlay-run'if self.case==m.fixture.OVERLAY_CASE else'difference-run';self.sources=[];self.outputs=[];self.mutate_failed=None;self.mutate_graph=None;self.failed_graph=None
         self.preflight_denied=False;self.scan_actor=33;self.scan_tenant=2
-        for i,(name,kind) in enumerate(zip(m.fixture.OVERLAY_SOURCES,m.fixture.OVERLAY_KINDS)):
-            rows=m.fixture.overlay_features(kind);item=base.item(name,10+i);item.update(full_name=name,size_bytes=98304)
+        for i,(name,kind) in enumerate(zip(self.profile['sources'],self.profile['kinds'])):
+            rows=self.profile['features'](kind);item=base.item(name,10+i);item.update(full_name=name,size_bytes=98304)
             item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.sources.append(item)
-        rows=m.fixture.overlay_features('result');item=base.item(m.fixture.OVERLAY_TARGET,30);item['size_bytes']=98304
-        item['attributes']['type_info']['container']['children'][0].update(row_count=16,column_count=len(rows[0]['properties'])+2);self.outputs=[item]
-        self.scans=['scan-'+n for n in m.fixture.OVERLAY_SOURCES]
-        self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}' for i,n in enumerate(m.fixture.OVERLAY_SOURCES)]
-        self.parent='addp://engine/3/path/outputs?type=directory';target=f'addp://engine/3/path/outputs/{m.fixture.OVERLAY_TARGET}?type=file'
-        self.success={'execution_id':'overlay-run','status':'success','triggered_by':33,
+        rows=self.profile['features']('result');item=base.item(self.profile['target'],30);item['size_bytes']=98304
+        item['attributes']['type_info']['container']['children'][0].update(row_count=self.profile['result_count'],column_count=len(rows[0]['properties'])+2);self.outputs=[item]
+        self.scans=['scan-'+n for n in self.profile['sources']]
+        self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}' for i,n in enumerate(self.profile['sources'])]
+        self.parent='addp://engine/3/path/outputs?type=directory';target=f'addp://engine/3/path/outputs/{self.profile['target']}?type=file'
+        self.success={'execution_id':self.run_id,'status':'success','triggered_by':33,
             'outputs':{'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}},
-            'execution_config':{'content':{'workflow_definition':m.overlay_definition(self.locators,self.parent)}},
+            'execution_config':{'content':{'workflow_definition':self.profile['definition'](self.locators,self.parent)}},
             'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.load_b','locator':self.locators[1]},{'port':'input.load_a','locator':self.locators[0]}],
               'outputs':[{'locator':target,'write_mode':'create'}]},'result':{'meta_scan_runs':[{'execution_id':'overlay-output-scan','target_locator':target,'status':'submitted'}]}}}
     def request(self,method,path,expected,body=None):
         if method=='POST' and path.endswith('/develop/executions'):
             self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
             if name.startswith('failed-'):
-                spec=next(v for v in m.fixture.OVERLAY_FAILURES if name.startswith('failed-'+v[0]+'-'))
-                value={'execution_id':'overlay-failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},
-                    'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':m.overlay_diagnostic(spec)}}
+                spec=next(v for v in self.profile['failures'] if name.startswith('failed-'+v[0]+'-'))
+                value={'execution_id':('overlay-failed-'if self.case==m.fixture.OVERLAY_CASE else'difference-failed-')+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},
+                    'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':self.profile['diagnostic'](spec)}}
                 if self.mutate_failed:self.mutate_failed(value)
             else:value=self.success;self.scans.append('overlay-output-scan')
             self.executions[value['execution_id']]=value;data={'execution_id':value['execution_id']}
@@ -2301,7 +2306,7 @@ class OverlayClient(InputDiagnosticClient):
                 data={'truncated':False,'nodes':[],'edges':[]}
                 if self.failed_graph:self.failed_graph(data)
             else:
-                data={'truncated':False,'nodes':[],'edges':[{'source':{'item_id':i},'target':{'item_id':30},'relation_kind':'derive','status':'active','evidence':{'execution_id':'overlay-run'}} for i in (10,11)]}
+                data={'truncated':False,'nodes':[],'edges':[{'source':{'item_id':i},'target':{'item_id':30},'relation_kind':'derive','status':'active','evidence':{'execution_id':self.run_id}} for i in (10,11)]}
                 if self.mutate_graph:self.mutate_graph(data)
         else:return super().request(method,path,expected,body)
         return SimpleNamespace(payload=copy.deepcopy(data))
@@ -2392,12 +2397,13 @@ class OverlayBrowserRawTest(unittest.TestCase):
             'lineage_canvas':{'rows':[{'text':s['name']} for s in [*e['sources'][:2],output]],'paths':[[[0,0],[1,1]],[[1,0],[2,1]]]},
             'preview':{'preview_type':'table','data':{'page':1,'total':16,'source_srid':3857,'source_crs':'EPSG:3857','transform_status':'not_transformed','preview_hint':'frontend_transform_required',
                 'geometry_columns':['geom'],'columns':['fid','geom',*expected[0]['properties']],'rows':rows}},'decoded_rows':expected,
-            'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'collection_pixels':{'point':31,'line':32,'polygon':33}}}
+            'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'collection_pixels':{'point':31,'line':32,'polygon':33,'members':[{'kind':{'Point':'point','LineString':'line','Polygon':'polygon'}[v['type']],'pixels':31}for v in next(row['geometry']['geometries']for row in expected if row['geometry']['type']=='GeometryCollection')]}}}
         self.raw={'schema_version':'addp.intersection-overlay-browser-raw/v1','case':e['case'],'run_id':e['run_id'],'execution_id':e['execution_id'],
             'result':'passed','stage':'complete','execution':c.success,'observations':[observation],'publication_requests':[],'failures':[]}
         for failed in self.report['failures']:
             self.raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],
                 'observations':[{'owner':owner,'locale':locale,'raw':failed['execution'] if owner=='develop' else {'execution':failed['monitor']},'clipboard':'safe controlled copy'} for owner in ('develop','monitor') for locale in ('zh-cn','en')]})
+        self.raw['failures']=frozen_literal_clipboards(self.raw['failures'])
     def test_overlay_raw_accepts_exact_mixed_ewkb_projected_members_and_complete_owner_pages(self):
         m.validate_overlay_browser_raw(self.raw,self.evidence)
     def test_overlay_raw_refuses_missing_member_coordinate_type_pixels_graph_page_or_identity(self):
@@ -2408,7 +2414,7 @@ class OverlayBrowserRawTest(unittest.TestCase):
             lambda r:r['observations'][0]['rendered']['features'].pop(),
             lambda r:r['observations'][0]['rendered']['features'][13]['geometry']['geometries'].pop(),
             lambda r:r['observations'][0]['rendered']['features'][0]['geometry'].update(coordinates=[99,99]),
-            lambda r:r['observations'][0]['rendered']['collection_pixels'].update(point=0),
+            lambda r:r['observations'][0]['rendered']['collection_pixels'].update(point=0),lambda r:r['observations'][0]['rendered']['collection_pixels']['members'].pop(),
             lambda r:r['observations'][0]['graph']['edges'].pop(),
             lambda r:r['failures'][0]['observations'].pop(),
             lambda r:r['failures'][0]['observations'][0].update(clipboard='PRIVATE_OVERLAY_SOURCE')]
@@ -2556,7 +2562,7 @@ class DissolveOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError,'Meta changed'):self.run_case(client,browser=browser)
 
 
-def dissolve_literal_clipboards(failures):
+def frozen_literal_clipboards(failures):
     import subprocess
     repo=Path(__file__).resolve().parents[2]
     script="""import{readFileSync}from'node:fs';let text='';for await(const p of process.stdin)text+=p;const source=readFileSync(process.argv[1],'utf8'),start=source.indexOf('const inputDiagnosticText'),end=source.indexOf('async function assertInputDiagnosticPanel(',start);
@@ -2581,7 +2587,7 @@ class DissolveBrowserRawTest(unittest.TestCase):
                 'popup':{'properties':expected[0]['properties'],'rows':[{'key':k+':','value':'空值'if v is None else str(v).lower()if type(v)is bool else str(v)}for k,v in{'fid':1,**expected[0]['properties']}.items()]},'decoded_rows':expected,'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'painted_pixels':31}})
         for failed in e['failures']:
             self.raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],'observations':[{'key':failed['key'],'execution_id':failed['execution_id'],'owner':o,'locale':l,'raw':failed['execution']if o=='develop'else{'execution':failed['monitor']}}for o in('develop','monitor')for l in('zh-cn','en')]})
-        self.raw['failures']=dissolve_literal_clipboards(self.raw['failures'])
+        self.raw['failures']=frozen_literal_clipboards(self.raw['failures'])
     def test_dissolve_browser_accepts_four_maps_two_execution_pages_and_32_exact_diagnostic_reads(self):
         m.validate_dissolve_browser_raw(self.raw,self.evidence)
     def test_dissolve_browser_refuses_wrong_ewkb_member_properties_pixels_graph_uuid_and_clipboard(self):
@@ -2606,7 +2612,7 @@ class DissolveBrowserContractTest(unittest.TestCase):
 const start=source.indexOf('const inputDiagnosticText'),end=source.indexOf('async function assertInputDiagnosticPanel(',start);const values=new Function(source.slice(start,end)+';return inputDiagnosticText')();
 for(const locale of ['zh-cn','en']){const d=JSON.parse(readFileSync(root+'/common-frontend/basic/src/i18n/'+locale+'.json','utf8')).common.executionFailure;
 for(const[key,reason,param]of [['dissolve-id-missing','operator_input_invalid','input_gdf'],['dissolve-id-duplicate','operator_input_invalid','input_gdf'],['dissolve-invalid','operator_input_invalid','input_gdf'],['dissolve-crs','operator_crs_invalid',''],['dissolve-groups-type','operator_group_fields_invalid','group_fields'],['dissolve-groups-duplicate','operator_group_fields_invalid','group_fields'],['dissolve-groups-missing','operator_group_fields_invalid','group_fields'],['dissolve-fields','operator_dissolve_fields_conflict','']])assert.deepEqual(values[key][locale],[d.reasons[reason],d.operatorNames.dissolve,param?d.operatorParameters[param]:'','',d.actions[reason]]);}
-assert.ok(source.includes('await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)'));assert.ok(source.includes('if(overlay||dissolve)return observations'));assert.ok(source.includes('topology-dissolve-browser-raw.json'));
+assert.ok(source.includes('await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)'));assert.ok(source.includes('if(overlay||dissolve||difference)return observations'));assert.ok(source.includes('topology-dissolve-browser-raw.json'));
 """
         result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],capture_output=True,text=True,timeout=30);self.assertEqual(result.returncode,0,result.stderr)
 
@@ -2646,3 +2652,108 @@ const html=formatFeatureProperties({fid:1,parcel_key:1099511627805,zone:'B',rank
 assert.ok(html.includes('class="null-value">空值</span>'));assert.ok(html.includes('PRIVATE_DISSOLVE_BUSINESS_0'));assert.ok(html.includes('false'));
 const source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8');assert.ok(source.includes("popupProperties[field]===null?'空值':String(popupProperties[field])"));"""
         result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],capture_output=True,text=True,timeout=30);self.assertEqual(result.returncode,0,result.stderr)
+
+
+class DifferenceClient(OverlayClient):
+    def __init__(self):super().__init__(m.fixture.DIFFERENCE_CASE)
+
+
+class DifferenceOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup);self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.DIFFERENCE_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=difference_physical,browser=lambda *a:a[2]):
+        with patch.object(m.raster,'wait_lineage',return_value={}):
+            return m.run_scenario(Path('.'),self.env,client or DifferenceClient(),physical,browser)
+    def test_difference_one_success_four_failures_single_scan_and_two_source_edges(self):
+        client=DifferenceClient();report=self.run_case(client);self.assertEqual((report['result'],report['schema_version']),('passed','addp.geometry-difference/v1'))
+        self.assertEqual([len(report[k])for k in('sources','outputs','failures','initial_scan_inventory','final_scan_inventory','meta_after')],[5,1,4,5,6,6])
+        self.assertEqual(len(report['browser']['expected']['result']),9);self.assertEqual(len(report['raw_lineage']['edges']),2)
+        self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),5)
+    def test_difference_requires_resource_visibility_before_any_execution(self):
+        client=DifferenceClient();client.preflight_denied=True
+        with self.assertRaisesRegex(m.SuiteError,'resource authorization'):self.run_case(client)
+        self.assertFalse(client.executions)
+    def test_difference_rejects_wrong_actor_scan_size_port_mode_and_graph(self):
+        changes=[lambda c:setattr(c,'scan_actor',True),lambda c:setattr(c,'scan_tenant','2'),lambda c:c.outputs[0].update(size_bytes=True),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(port='input.WRONG'),lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(locator=c.locators[0]),
+            lambda c:c.success['outputs']['save_result']['resource'].update(write_mode='fail'),lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'].pop()),lambda c:setattr(c,'mutate_graph',lambda g:g['edges'][0]['source'].update(item_id=True))]
+        for change in changes:
+            client=DifferenceClient();change(client)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_difference_failure_refuses_publication_scan_wrong_operator_or_private_message(self):
+        changes=[lambda v:v.update(outputs={'save':{}}),lambda v:v['metadata'].update(lineage_facts={'outputs':[{}]}),lambda v:v['metadata'].update(result={'meta_scan_runs':[{}]}),
+            lambda v:v['error_details']['diagnostic']['operator'].update(operator_id='load'),lambda v:v['error_details']['diagnostic']['operator'].update(node_index=True),
+            lambda v:v['error_details']['diagnostic']['operator'].update(field='a_key'),lambda v:v['error_details'].update(message='PRIVATE_DIFFERENCE_SOURCE')]
+        for change in changes:
+            client=DifferenceClient();client.mutate_failed=change
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(client)
+        client=DifferenceClient();client.failed_graph=lambda g:g['edges'].append({'relation_kind':'derive','evidence':{'execution_id':'difference-failed-difference-id'}})
+        with self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_difference_browser_failure_keeps_checkpoint_and_changed_bytes_or_meta_refuse(self):
+        with self.assertRaisesRegex(m.SuiteError,'browser broke'):self.run_case(browser=lambda *a:(_ for _ in()).throw(m.SuiteError('browser broke')))
+        checkpoint=json.loads((Path(self.directory.name)/'topology-difference-checkpoint.json').read_text());self.assertEqual((checkpoint['result'],checkpoint['stage']),('incomplete','before_browser'));self.assertEqual(len(checkpoint['failures']),4)
+        calls=[]
+        def physical(*a):
+            value=difference_physical();calls.append(1)
+            if len(calls)>5:value['targets'][m.fixture.DIFFERENCE_TARGET]['sha256']='changed'
+            return value
+        with self.assertRaises(m.SuiteError):self.run_case(physical=physical)
+        client=DifferenceClient()
+        def browser(*a):client.sources[0]['size_bytes']=1;return a[2]
+        with self.assertRaisesRegex(m.SuiteError,'Meta changed'):self.run_case(client,browser=browser)
+
+
+class DifferenceBrowserRawTest(unittest.TestCase):
+    def setUp(self):
+        self.owner=DifferenceOnlineTest();self.owner.setUp();self.addCleanup(self.owner.doCleanups);report=self.owner.run_case();self.evidence=report['browser'];e=self.evidence;output=e['outputs'][0];expected=e['expected']['result'];encoded=overlay_wire_and_projected(expected);fields=list(expected[0]['properties'])
+        observation={'port':'result','output_item_id':30,'sources':[{'item_id':v['id'],'item':v['before']}for v in e['sources']],'output':output['before'],'graph':report['raw_lineage'],'lineage_page':report['raw_lineage'],'lineage_rendered':report['raw_lineage'],
+            'lineage_canvas':{'rows':[{'text':n}for n in[e['sources'][0]['name'],e['sources'][1]['name'],output['name']]],'paths':[[[0,0],[1,1]],[[1,0],[2,1]]]},
+            'preview':{'preview_type':'table','data':{'page':1,'total':9,'source_srid':3857,'source_crs':'EPSG:3857','transform_status':'not_transformed','preview_hint':'frontend_transform_required','geometry_columns':['geom'],'columns':['fid','geom',*fields],
+                'rows':[{**row['properties'],'fid':i+1,'geom':wire}for i,(row,wire)in enumerate(zip(expected,encoded['wire']))]}},
+            'decoded_rows':expected,'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'collection_pixels':{'point':31,'line':32,'polygon':33,'members':[{'kind':{'Point':'point','LineString':'line','Polygon':'polygon'}[v['type']],'pixels':31}for v in next(row['geometry']['geometries']for row in expected if row['geometry']['type']=='GeometryCollection')]}}}
+        self.raw={'schema_version':'addp.geometry-difference-browser-raw/v1','case':e['case'],'run_id':e['run_id'],'execution_id':e['execution_id'],'result':'passed','stage':'complete','execution':DifferenceClient().success,'observations':[observation],'publication_requests':[],'failures':[]}
+        for failed in report['failures']:
+            self.raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],'observations':[{'owner':o,'locale':l,'raw':failed['execution']if o=='develop'else{'execution':failed['monitor']}}for o in('develop','monitor')for l in('zh-cn','en')]})
+        self.raw['failures']=frozen_literal_clipboards(self.raw['failures'])
+    def test_difference_raw_accepts_complete_mixed_ewkb_original_attributes_and_exact_copies(self):m.validate_difference_browser_raw(self.raw,self.evidence)
+    def test_difference_raw_refuses_missing_parts_type_changes_wires_copies_or_edges(self):
+        changes=[lambda r:r.update(result='incomplete'),lambda r:r.update(execution_id='other'),lambda r:r['observations'][0]['preview']['data']['rows'][0].update(grade=0),
+            lambda r:r['observations'][0]['preview']['data']['rows'][0].update(enabled=1),lambda r:r['observations'][0]['preview']['data']['rows'][0].update(geom=r['observations'][0]['preview']['data']['rows'][1]['geom']),
+            lambda r:r['observations'][0]['rendered']['features'][7]['geometry']['geometries'].pop(),lambda r:r['observations'][0]['rendered']['collection_pixels'].update(point=0),lambda r:r['observations'][0]['rendered']['collection_pixels']['members'].pop(),
+            lambda r:r['observations'][0]['graph']['edges'].pop(),lambda r:r['failures'][0]['observations'].pop(),lambda r:r['failures'][0]['observations'][0].update(clipboard='wrong')]
+        for change in changes:
+            raw=copy.deepcopy(self.raw);change(raw)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):m.validate_difference_browser_raw(raw,self.evidence)
+
+
+class DifferenceBrowserContractTest(unittest.TestCase):
+    def test_difference_real_discovery_selects_one_case_and_literals_match_shared_diagnostic_contract(self):
+        import subprocess,os
+        repo=Path(__file__).resolve().parents[2]
+        script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';const root=process.argv[1],source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8');
+const start=source.indexOf('const inputDiagnosticText'),end=source.indexOf('async function assertInputDiagnosticPanel(',start),values=new Function(source.slice(start,end)+';return inputDiagnosticText')();
+for(const locale of ['zh-cn','en']){const d=JSON.parse(readFileSync(root+'/common-frontend/basic/src/i18n/'+locale+'.json','utf8')).common.executionFailure;
+for(const[key,reason,param]of[['difference-id','operator_input_invalid','input_gdf'],['difference-geometry','operator_input_invalid','input_gdf'],['difference-mask','operator_mask_invalid','gdf_b'],['difference-crs','operator_crs_invalid','']])assert.deepEqual(values[key][locale],[d.reasons[reason],d.operatorNames.difference,param?d.operatorParameters[param]:'','',d.actions[reason]]);}
+assert.ok(source.includes('async function verifyMixedOverlayCase('));assert.ok(source.includes('topology-difference-browser-raw.json'));"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],capture_output=True,text=True);self.assertEqual(result.returncode,0,result.stderr)
+        result=subprocess.run(['npm','exec','--','playwright','test','e2e/online/vector-topology-persistence.spec.js','--config=playwright.online.config.js','--grep',m.fixture.DIFFERENCE_TITLE+'$','--list','--reporter=json'],cwd=repo/'console/frontend',env={**os.environ,**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.DIFFERENCE_CASE},capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        def specs(suites):return[v for suite in suites for v in[*suite.get('specs',[]),*specs(suite.get('suites',[]))]]
+        self.assertEqual([v['title']for v in specs(json.loads(result.stdout)['suites'])],[m.fixture.DIFFERENCE_TITLE])
+
+
+    def test_difference_real_pixel_helper_checks_every_collection_member(self):
+        import subprocess
+        repo=Path(__file__).resolve().parents[2]
+        script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';import GeoJSON from 'ol/format/GeoJSON.js';
+const source=readFileSync(process.argv[1],'utf8'),start=source.indexOf('async function assertOverlayCollectionPixels('),end=source.indexOf('const mixedOverlayCases=',start);
+const expect={poll:fn=>({toBe:async wanted=>assert.equal(await fn(),wanted)})},check=new Function('expect',source.slice(start,end)+';return assertOverlayCollectionPixels')(expect);
+let text='';for await(const p of process.stdin)text+=p;const geometry=new GeoJSON().readGeometry(JSON.parse(text));
+async function run(bad=-1){let next=0;const feature={getGeometry:()=>geometry};const context={canvas:{width:100,height:100,getBoundingClientRect:()=>({left:0,top:0,width:100,height:100})},getImageData:()=>{const a=new Uint8ClampedArray(13*13*4);if(next++!==bad)for(let i=3;i<a.length;i+=4)a[i]=255;return{data:a}}};
+const layer={getSource:()=>({getFeatures:()=>[feature]}),getRenderer:()=>({context}),getVisible:()=>true,getOpacity:()=>1};const map={getLayers:()=>({getArray:()=>[layer]}),getView:()=>({fit(){},getAnimating:()=>false}),getSize:()=>[100,100],renderSync(){},getViewport:()=>({getBoundingClientRect:()=>({left:0,top:0})}),getPixelFromCoordinate:()=>[50,50],forEachFeatureAtPixel:(_,fn)=>fn(feature)};
+const result=await check({evaluate:async(fn,arg)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},arg)});assert.equal(result.members.length,geometry.getGeometries().length);return result;}
+const good=await run();assert.deepEqual(good.members.map(v=>v.kind),['polygon','polygon','line','line','point','point']);for(let i=0;i<6;i++)await assert.rejects(run(i));"""
+        shape=next(r['geometry']for r in m.fixture.difference_features('result')if r['geometry']['type']=='GeometryCollection')
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repo/'console/frontend/e2e/online/vector-topology-persistence.spec.js')],cwd=repo/'manager/frontend',input=json.dumps(shape),capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)

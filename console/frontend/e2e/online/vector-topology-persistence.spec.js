@@ -716,6 +716,73 @@ Object.assign(inputDiagnosticText, {
   }
 })
 
+Object.assign(inputDiagnosticText,{
+  "difference-id": {
+    "zh-cn": [
+      "输入图层不符合算子的类型、字段、几何或标识要求。",
+      "几何差集",
+      "源图层（input_gdf）",
+      "",
+      "按算子说明检查源图层的类型、活动几何列、字段及标识；修正后重新执行。"
+    ],
+    "en": [
+      "The input layer does not meet the operator type, field, geometry or identifier requirements.",
+      "Geometry difference",
+      "Source layer (input_gdf)",
+      "",
+      "Check the source layer type, active geometry, fields and identifiers against the operator requirements, then submit a new execution."
+    ]
+  },
+  "difference-geometry": {
+    "zh-cn": [
+      "输入图层不符合算子的类型、字段、几何或标识要求。",
+      "几何差集",
+      "源图层（input_gdf）",
+      "",
+      "按算子说明检查源图层的类型、活动几何列、字段及标识；修正后重新执行。"
+    ],
+    "en": [
+      "The input layer does not meet the operator type, field, geometry or identifier requirements.",
+      "Geometry difference",
+      "Source layer (input_gdf)",
+      "",
+      "Check the source layer type, active geometry, fields and identifiers against the operator requirements, then submit a new execution."
+    ]
+  },
+  "difference-mask": {
+    "zh-cn": [
+      "范围图层必须具有唯一活动几何列及有效非空有限二维面或多面几何。",
+      "几何差集",
+      "图层 B（gdf_b）",
+      "",
+      "检查范围图层的活动几何、面类型、有效性和二维坐标；修正后重新执行，无需指定范围图层的业务来源标识。"
+    ],
+    "en": [
+      "The range layer requires one active geometry column and valid non-empty finite XY Polygon or MultiPolygon geometries.",
+      "Geometry difference",
+      "Input layer B (gdf_b)",
+      "",
+      "Check the range layer active geometry, polygon type, validity and XY coordinates before submitting a new execution; no business identifier is required for the range layer."
+    ]
+  },
+  "difference-crs": {
+    "zh-cn": [
+      "两个图层须使用相同的已知投影坐标系和匹配的水平单位。",
+      "几何差集",
+      "",
+      "",
+      "先显式统一两个图层的投影坐标系与水平单位，再重新执行。"
+    ],
+    "en": [
+      "Both layers require the same known projected CRS and matching horizontal units.",
+      "Geometry difference",
+      "",
+      "",
+      "Explicitly align both projected CRSs and horizontal units before submitting a new execution."
+    ]
+  }
+})
+
 function inputDiagnosticPageExpectation(key,locale,executionID) {
   const [reason,operator,parameter,field,action]=inputDiagnosticText[key][locale]
   const stage=locale==='zh-cn'?'执行操作':'Execute operation'
@@ -732,20 +799,21 @@ async function assertInputDiagnosticPanel(panel,key,locale,executionID) {
   await expect(panel).not.toContainText(/PRIVATE_DIAGNOSTIC|Traceback|site-packages|\/tmp\/|99\.0|parcel_shape|parcel_key|rings-(conflict|invalid)\.gpkg|相邻乙|重复丙|地块属性|普通业务几何/)
   if(['a-id','b-id','crs','fields'].includes(key))await expect(panel).not.toContainText(/PRIVATE_OVERLAY|a_key|b_key|a_shape|b_shape|a_note|overlay-(a|b|crs|fields)\.gpkg/)
   if(key.startsWith('dissolve-'))await expect(panel).not.toContainText(/PRIVATE_DISSOLVE|parcel_key|parcel_shape|dissolve-(source|duplicate-id|invalid|crs|fields)\.gpkg/)
+  if(key.startsWith('difference-'))await expect(panel).not.toContainText(/PRIVATE_DIFFERENCE|a_key|a_shape|b_shape|difference-(a|b|invalid|mask|crs)\.gpkg/)
   return expected
 }
 
 async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
   const evidence=supplied||JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
   expect(evidence.case).toBe(caseName)
-  const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay',dissolve=caseName==='polygon-dissolve'
-  const keys=dissolve?["dissolve-id-missing", "dissolve-id-duplicate", "dissolve-invalid", "dissolve-crs", "dissolve-groups-type", "dissolve-groups-duplicate", "dissolve-groups-missing", "dissolve-fields"]:overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
+  const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay',dissolve=caseName==='polygon-dissolve',difference=caseName==='geometry-difference'
+  const keys=difference?['difference-id','difference-geometry','difference-mask','difference-crs']:dissolve?["dissolve-id-missing", "dissolve-id-duplicate", "dissolve-invalid", "dissolve-crs", "dissolve-groups-type", "dissolve-groups-duplicate", "dissolve-groups-missing", "dissolve-fields"]:overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
   expect(evidence.executions.map(run=>run.key)).toEqual(keys)
   expect(new Set(evidence.executions.map(run=>run.execution_id)).size).toBe(keys.length)
   const expectedIdentity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
   await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:process.env.CONSOLE_URL})
   // The combined overlay scene is already logged in; standalone diagnostics still log in here.
-  let loggedIn=(overlay||dissolve)&&supplied!==null
+  let loggedIn=(overlay||dissolve||difference)&&supplied!==null
   const observations=[],publicationRequests=[]
   page.on('request',request=>{
     const path=new URL(request.url()).pathname
@@ -797,7 +865,7 @@ async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
   else if(rings) expect(observations).toHaveLength(8)
   else expect(observations).toHaveLength(16)
   expect(publicationRequests).toEqual([])
-  if(overlay||dissolve)return observations
+  if(overlay||dissolve||difference)return observations
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({
     ...evidence,schema_version:(rings?'addp.polygon-rings-input-diagnostics':'addp.operator-input-diagnostics')+'-browser/v1',result:'passed',observations},null,2)+'\n')
 }
@@ -1413,8 +1481,8 @@ async function assertOverlayMap(renderer, expected) {
     if (!observed || observed.projection !== 'EPSG:3857') return []
     return keys(observed.features)
   }).toEqual(keys(expected.map(row => ({ properties: row.properties, geometry: webMercatorPreviewGeometry(row.geometry) }))))
-  expect(observed.features).toHaveLength(16)
-  expect(observed.features.filter(row => row.geometry.type === 'GeometryCollection')).toHaveLength(1)
+  expect(observed.features).toHaveLength(expected.length)
+  expect(observed.features.filter(row => row.geometry.type === 'GeometryCollection')).toHaveLength(expected.filter(row=>row.geometry.type==='GeometryCollection').length)
   return observed
 }
 
@@ -1435,37 +1503,46 @@ async function assertOverlayCollectionPixels(renderer) {
       const geometries = feature.getGeometry().getGeometries(), context = layer.getRenderer()?.context
       if (!context || !layer.getVisible() || layer.getOpacity() <= 0) return {}
       const rectangle = context.canvas.getBoundingClientRect(), viewport = map.getViewport().getBoundingClientRect()
-      const evidence = {}
-      for (const [kind, coordinate] of [
-        ['point', geometries.find(g => g.getType() === 'Point').getCoordinates()],
-        ['line', geometries.find(g => g.getType() === 'LineString').getCoordinateAt(.5)],
-        ['polygon', geometries.find(g => g.getType() === 'Polygon').getInteriorPoint().getCoordinates().slice(0, 2)],
-      ]) {
+      const evidence = { members: [] }
+      for (const geometry of geometries) {
+        const type=geometry.getType(),kind={Point:'point',LineString:'line',Polygon:'polygon'}[type]
+        if(!kind)throw new Error('mixed collection pixel probe requires the frozen point/line/polygon members')
+        const coordinate=type==='Point'?geometry.getCoordinates():type==='LineString'?geometry.getCoordinateAt(.5):geometry.getInteriorPoint().getCoordinates().slice(0,2)
         const position = map.getPixelFromCoordinate(coordinate)
         const hit = map.forEachFeatureAtPixel(position, candidate => candidate === feature ? true : undefined, { layerFilter: candidate => candidate === layer, hitTolerance: 0 })
-        if (hit !== true) { evidence[kind] = 0; continue }
+        if (hit !== true) { evidence[kind] = 0; evidence.members.push({kind,pixels:0}); continue }
         const x = Math.round((viewport.left + position[0] - rectangle.left) * context.canvas.width / rectangle.width)
         const y = Math.round((viewport.top + position[1] - rectangle.top) * context.canvas.height / rectangle.height)
         const data = context.getImageData(x - 6, y - 6, 13, 13).data
         let count = 0
         for (let i = 3; i < data.length; i += 4) if (data[i] > 0) count++
-        evidence[kind] = count
+        evidence[kind] = Math.min(evidence[kind] ?? count,count)
+        evidence.members.push({kind,pixels:count})
       }
       return evidence
     })
-    return ['point', 'line', 'polygon'].every(kind => Number.isInteger(pixels[kind]) && pixels[kind] > 10)
+    return ['point', 'line', 'polygon'].every(kind => Number.isInteger(pixels[kind]) && pixels[kind] > 10) && pixels.members.every(member=>Number.isInteger(member.pixels)&&member.pixels>10)
   }).toBe(true)
   return pixels
 }
 
-async function verifyOverlayCase(page) {
+const mixedOverlayCases={
+  'intersection-overlay':{schema:'addp.intersection-overlay',sourceCount:4,resultCount:16,prefix:'intersection',raw:'topology-overlay-browser-raw.json'},
+  'geometry-difference':{schema:'addp.geometry-difference',sourceCount:5,resultCount:9,prefix:'difference',raw:'topology-difference-browser-raw.json'},
+}
+
+async function verifyOverlayCase(page){return verifyMixedOverlayCase(page,'intersection-overlay')}
+async function verifyDifferenceCase(page){return verifyMixedOverlayCase(page,'geometry-difference')}
+
+async function verifyMixedOverlayCase(page,caseName) {
+  const config=mixedOverlayCases[caseName]
   const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}'), directory = process.env.ADDP_ONLINE_ARTIFACT_DIR
   await observeLineageCanvas(page)
-  expect(evidence.case).toBe('intersection-overlay'); expect(evidence.sources).toHaveLength(4); expect(evidence.outputs).toHaveLength(1)
-  expect(evidence.expected.result).toHaveLength(16)
+  expect(evidence.case).toBe(caseName); expect(evidence.sources).toHaveLength(config.sourceCount); expect(evidence.outputs).toHaveLength(1)
+  expect(evidence.expected.result).toHaveLength(config.resultCount)
   const identity = { principalID: evidence.principal_id, tenantID: evidence.tenant_id, permissions: evidence.permissions_verified }
-  const raw = { schema_version: 'addp.intersection-overlay-browser-raw/v1', case: evidence.case, run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
-  const persist = (stage, result = 'incomplete') => writeFileSync(resolve(directory, 'topology-overlay-browser-raw.json'), JSON.stringify({ ...raw, stage, result }, null, 2) + '\n')
+  const raw = { schema_version: config.schema+'-browser-raw/v1', case: evidence.case, run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
+  const persist = (stage, result = 'incomplete') => writeFileSync(resolve(directory, config.raw), JSON.stringify({ ...raw, stage, result }, null, 2) + '\n')
   const writes = []
   page.on('request', request => {
     const path = new URL(request.url()).pathname
@@ -1478,7 +1555,7 @@ async function verifyOverlayCase(page) {
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(frame.getByText('成功', { exact: true })).toBeVisible()
   await expect(frame.locator('.workflow-result')).toContainText(evidence.outputs[0].name)
-  await page.screenshot({ path: resolve(directory, 'intersection-execution.png') }); persist('execution_verified')
+  await page.screenshot({ path: resolve(directory, config.prefix+'-execution.png') }); persist('execution_verified')
   const output = evidence.outputs[0], expected = evidence.expected.result, fields = Object.keys(expected[0].properties), locator = `${output.locator}&item_id=${output.item_id}`
   const previewRead = page.waitForResponse(r => { const u = new URL(r.url()); return r.request().method() === 'GET' && u.pathname === '/api/v1/manager/preview' && u.searchParams.get('locator') === locator && u.searchParams.get('child_name') === output.layer_name })
   await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
@@ -1493,19 +1570,19 @@ async function verifyOverlayCase(page) {
   } finally { await api.dispose() }
   persist('preview_observed')
   const preview = observation.preview, data = preview.data
-  expect(preview.preview_type).toBe('table'); expect([data.page, data.rows.length, data.total, data.source_srid, data.source_crs, data.transform_status, data.preview_hint]).toEqual([1, 16, 16, 3857, 'EPSG:3857', 'not_transformed', 'frontend_transform_required'])
+  expect(preview.preview_type).toBe('table'); expect([data.page, data.rows.length, data.total, data.source_srid, data.source_crs, data.transform_status, data.preview_hint]).toEqual([1, config.resultCount, config.resultCount, 3857, 'EPSG:3857', 'not_transformed', 'frontend_transform_required'])
   expect(data.geometry_columns).toEqual([output.geometry_column]); expect(output.fid_column).toBeTruthy()
   expect([...data.columns].sort()).toEqual([output.fid_column, output.geometry_column, ...fields].sort())
-  expect(data.rows.map(r => r[output.fid_column])).toEqual(Array.from({ length: 16 }, (_, i) => i + 1))
+  expect(data.rows.map(r => r[output.fid_column])).toEqual(Array.from({ length: config.resultCount }, (_, i) => i + 1))
   for (const row of data.rows) expect(Object.keys(row).sort()).toEqual([...data.columns].sort())
   observation.decoded_rows = data.rows.map(r => ({ properties: Object.fromEntries(fields.map(key => [key, r[key]])), geometry: decodePreviewEWKB(r[output.geometry_column]) }))
   expect(observation.decoded_rows).toEqual(expected)
   const table = frame.locator('.table-preview'), renderer = table.locator('.openlayers-map-renderer')
   await expect(table).toBeVisible(); await expect(table.locator('.map-placeholder')).toHaveCount(0)
   observation.rendered = await assertOverlayMap(renderer, expected)
-  await page.screenshot({ path: resolve(directory, 'intersection-map.png') }); persist('map_verified')
+  await page.screenshot({ path: resolve(directory, config.prefix+'-map.png') }); persist('map_verified')
   observation.rendered.collection_pixels = await assertOverlayCollectionPixels(renderer)
-  await page.screenshot({ path: resolve(directory, 'intersection-collection-map.png') }); persist('collection_map_verified')
+  await page.screenshot({ path: resolve(directory, config.prefix+'-collection-map.png') }); persist('collection_map_verified')
   await frame.getByRole('tab', { name: '属性', exact: true }).click(); await expect(frame.locator('.attributes-tab-pane')).toContainText(output.layer_name)
   const graphRead = page.waitForResponse(r => { const u = new URL(r.url()); return r.request().method() === 'GET' && u.pathname === '/api/v1/meta/lineage/graph' && u.searchParams.get('item_id') === String(output.item_id) && u.searchParams.get('direction') === 'both' })
   await frame.getByRole('tab', { name: '血缘', exact: true }).click()
@@ -1526,12 +1603,12 @@ async function verifyOverlayCase(page) {
   }).toBe(true)
   expect(observation.lineage_canvas.paths.length).toBeGreaterThanOrEqual(2)
   assertProximityLineage({ ...observation.lineage_page, edges: observation.lineage_rendered.edges }, { ...evidence, sources: evidence.sources.slice(0, 2), output })
-  await page.screenshot({ path: resolve(directory, 'intersection-lineage.png') }); persist('lineage_verified')
-  const observations = await verifyInputDiagnosticCase(page, 'intersection-overlay', { ...evidence, executions: evidence.failures.map(f => ({ ...f, execution: { error_details: f.error_details } })) })
+  await page.screenshot({ path: resolve(directory, config.prefix+'-lineage.png') }); persist('lineage_verified')
+  const observations = await verifyInputDiagnosticCase(page, caseName, { ...evidence, executions: evidence.failures.map(f => ({ ...f, execution: { error_details: f.error_details } })) })
   raw.failures = evidence.failures.map(f => ({ key: f.key, execution_id: f.execution_id, observations: observations.filter(v => v.key === f.key) }))
   expect(writes).toEqual([]); raw.publication_requests = writes
   persist('complete', 'passed')
-  writeFileSync(resolve(directory, 'topology-browser.json'), JSON.stringify({ ...evidence, schema_version: 'addp.intersection-overlay-browser/v1', result: 'passed' }, null, 2) + '\n')
+  writeFileSync(resolve(directory, 'topology-browser.json'), JSON.stringify({ ...evidence, schema_version: config.schema+'-browser/v1', result: 'passed' }, null, 2) + '\n')
 }
 
 test('相交叠加独立普通User完整混合交集及四失败保护', async ({ page }) => verifyOverlayCase(page))
@@ -1651,3 +1728,5 @@ async function verifyDissolveCase(page) {
 }
 
 test('融合几何独立普通User分组全局双成果及八失败保护',async({page})=>verifyDissolveCase(page))
+
+test('几何差集独立普通User双源混合成果及四失败保护',async({page})=>verifyDifferenceCase(page))

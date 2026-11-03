@@ -567,3 +567,20 @@ class DissolveFixtureTest(unittest.TestCase):
     def test_dissolve_dispatch_never_calls_older_business(self):
         with patch.object(m,'dissolve_worker',return_value={'only':'dissolve'})as worker,patch.object(m,'overlay_worker',side_effect=AssertionError('old business')):
             self.assertEqual(m.worker('seed',Path('/unused'),m.DISSOLVE_CASE),{'only':'dissolve'});worker.assert_called_once()
+
+
+class DifferenceFixtureTest(unittest.TestCase):
+    def test_difference_handwritten_source_selection_whole_mask_and_native_shapes(self):
+        self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':'geometry-difference'}),m.DIFFERENCE_CASE)
+        self.assertEqual(m.network_profile(m.DIFFERENCE_CASE)['targets'],(m.DIFFERENCE_TARGET,))
+        self.assertEqual([len(m.difference_features(k))for k in(*m.DIFFERENCE_KINDS,'result')],[12,3,12,3,3,9])
+        rows=m.difference_features('result');self.assertEqual([r['properties']['order_tag']for r in rows],[1,4,5,7,8,9,10,11,12])
+        self.assertEqual({r['geometry']['type']for r in rows},{'Point','MultiPoint','LineString','MultiLineString','Polygon','MultiPolygon','GeometryCollection'})
+        self.assertEqual(rows[2]['geometry']['coordinates'],[[[400,0],[401,0]],[[404,0],[406,0]]])
+        self.assertEqual(len(rows[7]['geometry']['geometries']),6)
+        self.assertEqual(len(m.DIFFERENCE_FAILURES),4)
+        self.assertTrue(all('source_id'not in row['properties']for row in rows))
+        self.assertEqual(m.difference_features('b')[1]['properties']['a_key'],m.difference_features('b')[2]['properties']['a_key'])
+    def test_difference_dispatch_is_independent_and_never_runs_old_overlay(self):
+        with patch.object(m,'difference_worker',return_value={'only':'difference'})as worker,patch.object(m,'overlay_worker',side_effect=AssertionError('old business')):
+            self.assertEqual(m.worker('seed',Path('/unused'),m.DIFFERENCE_CASE),{'only':'difference'});worker.assert_called_once()

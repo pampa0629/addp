@@ -1084,6 +1084,20 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 
 沿通用矢量save核物理／Meta相等正整数大小，不虚构RasterArtifact；精确自动扫描核父执行／用户／租户／引擎。直接统计／重分类链核两份原注册输入，转面链只核实际栅格源，共31条源到当前成果关系；受控有界内部血缘、公开operations:null投影及Monitor分别核验，不扩大普通User权限。源与先前成果原件／Meta不变，整套结束时源及全部16项成果Meta分别与初始化／首次扫描后完整快照相等，前后原始快照随报告归档；失败零发布／新增扫描／派生；工作区、oracle、NFS、Runtime、registry、部署与Infra退出全部严格清理，保留首个业务失败及清理错误。标准Native／独立Runner／Online及手工CI／observer与固定矩阵登记同次完成。本地标准Native以`-k "vector_zonal_area_weighted or vector_area_weighted"`通过211项／13100筛除／52.88秒，无失败／跳过／警告；独立`make test-vector-zonal-area-weighted-online-runner`通过103项／25.246秒及完整登记，两门禁输入无漂移。使用正式EPSG:2222／2277保留英尺单位和准确预览CRS，原有统计与产品保持；准备通过不计真实Hosted通过。
 
+### 几何差集独立普通用户验收
+
+`vector-topology-persistence` 的 `geometry-difference` 独立 case 仅一次成功与四次失败，沿同一非默认Tenant普通User、精确11功能权限、既有Hosted隔离生命周期及600秒总业务预算。不执行full、旧业务T4或容量。正式源/成果资源授权仍由共享专项负责；metadata_read不替代内容read，正式部署及授权证据具备前不派发真实T4，不增加管理员、NFS例外或绕过不可见血缘。
+
+手写A十二条有限有效二维点/线/面、多部件及GeometryCollection，B三条面/多面包含重复和重叠扩展范围。整体扣除得九条完整非空结果，源内点、边界点和共边线三条完全扣除而省略；保留不相交、MultiPoint部分移除、线被切成多段、MultiLineString退成单线、面切成多部件/内孔、MultiPolygon部分扣除、含面线点的完整GeometryCollection及面仅共边。B最后一行扩展首行扣除区，必须参与整体扣除；不能只用第一行或逐对拼接。预期由原生点坐标和手写几何冻结，不调用产品求并/差集生成答案，无epsilon/舍入；按契约允许的环向/部件顺序规范化比较。
+
+A显式唯一非空来源ID与FID不同且在JSON安全整数内；输出每源最多一行、按A相对顺序，仅保A全部字段名/类型/值/NULL和真实几何/CRS，不新增source_id/面积/长度/B属性列。B故意带与A同名的业务属性及空/重复a_key，不要求B标识。可空Int64/Boolean/String及普通geometry业务字段与真实几何隔离。空批、超大整数和原生计算异常沿既有Native，不冒充本轮实页覆盖。
+
+显式save一份完整混合GPKG，mode=fail；独立OGR核九行全部几何/成员、属性类型NULL/来源/顺序及EPSG3857。核唯一子层、正整数physical==Meta大小、一次公开严格整数tenant_id/triggered_by同User/Tenant自动扫描、稳定outputs/facts create、A/B实际输入的两条当前execution active derive及Monitor。保存五源原Meta、原始图、原文件和最终物理快照；不添加B行级贡献或来源明细端口。
+
+四失败为A来源字段缺失、A无效自交面、B含非面、投影CRS不一致；必须真实到第1个difference节点，分别v3 operator_input_invalid/input_gdf（两例）、operator_mask_invalid/gdf_b、operator_crs_invalid/无parameter，均无field。Develop/Monitor各中英读取并精确复制，共16观测，原User/同UUID绑定，公开正文不泄露字段名、ID、坐标、路径或原生异常。失败不得load提前结束冒充差集拒绝；无输出/输出facts/目标文件/新增扫描/失败execution derive，五源与已成功成果原字节和Meta逐次不变，不业务重试。
+
+复用混合几何原始预览EWKB、实际FID/业务ID区分、完整OL属性与投影坐标、集合点线面成员实际像素和截图，以及成功页/两源血缘页/四失败双语页面。每次导航沿页面当前响应绑定同User/Tenant/权限，不复用旧token。归档五源一成果、执行/扫描/Monitor/原Meta/原图/API/浏览器报告；incomplete checkpoint不计通过。最后NFS/export/ownedroot、Runtime/registry、部署/Infra全清0，此清理不认证业务DELETE。标准runner、Native物理篡改、浏览器、手工case与CI profile/mutation同次登记；不改差集产品契约，不提前真实派发。
+
 ### 融合几何独立普通用户验收
 
 `vector-topology-persistence` 的 `polygon-dissolve` 独立 case 仅运行两次成功与八次失败，不执行 full、旧业务 T4 或容量。沿同一非默认 Tenant 普通 User、精确11项功能权限、隔离Hosted生命周期及600秒总业务预算；功能权限不代替资源授权。真实派发必须等待共享血缘授权专项确认正式源与成果资源授权及必要门禁，不增加管理员、NFS例外或旁路。

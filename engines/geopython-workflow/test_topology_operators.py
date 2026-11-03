@@ -7461,3 +7461,48 @@ def test_dissolve_t4_two_success_eight_refusals_four_saves_and_ogr(tmp_path,prob
         if problem!='boolean_type':assert layer.SetFeature(row)==0
         row=layer=ds=None
     with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.DISSOLVE_CASE)
+
+
+@pytest.mark.parametrize('problem',[None,'coordinate','identity','order','null','boolean_type','extra_output','source_changed','collection_member'])
+def test_difference_t4_mixed_mask_and_four_refusals_independent_ogr(tmp_path,problem):
+    import importlib
+    from osgeo import ogr
+    f=importlib.import_module('business.scripts.online-vector-topology-fixture');a=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch();seed=f.worker('seed',tmp_path,f.DIFFERENCE_CASE)
+    def definition(failure=None):
+        value=a.difference_definition(list(f.DIFFERENCE_SOURCES),'unused',failure)
+        for task in value['tasks']:
+            if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
+            elif task['operator']=='save':
+                name=task['params'].pop('target_name');task['params'].pop('target_parent_locator');task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+name)
+        return value
+    result=execute_workflow(definition());assert result['status']=='success',result
+    native=f.worker('verify',tmp_path,f.DIFFERENCE_CASE);assert native['sources']==seed['sources']
+    table=native['targets'][f.DIFFERENCE_TARGET];assert table['feature_count']==9
+    assert {row['geometry']['type']for row in table['features']}=={'Point','LineString','Polygon','MultiPoint','MultiLineString','MultiPolygon','GeometryCollection'}
+    assert table['features'][2]['geometry']['coordinates']==[[[400,0],[401,0]],[[404,0],[406,0]]]
+    loaded=get_operator('load')(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+f.DIFFERENCE_TARGET)
+    assert loaded.grade.dtype=='Int64'and loaded.enabled.dtype=='boolean'
+    assert loaded.a_key.tolist()==[r['properties']['a_key']for r in f.difference_features('result')]
+    assert loaded.geometry.name!='geometry'and 'geometry'in loaded.columns and 'source_id'not in loaded.columns
+    if problem is None:
+        for spec in f.DIFFERENCE_FAILURES:
+            failed=execute_workflow(definition(spec[0]));assert failed['status']=='failed'and failed['error_code']=='INVALID_PARAMS',failed
+            assert failed['diagnostic']==a.difference_diagnostic(spec),failed
+            assert f.worker('verify',tmp_path,f.DIFFERENCE_CASE)==native
+        return
+    if problem=='extra_output':(tmp_path/'outputs'/'unexpected.gpkg').write_bytes(b'x')
+    else:
+        path=tmp_path/'outputs'/f.DIFFERENCE_TARGET
+        if problem=='source_changed':path=tmp_path/f.DIFFERENCE_SOURCES[0]
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0);row=layer.GetFeature(8)if problem=='collection_member'else layer.GetNextFeature()
+        if problem in('coordinate','source_changed'):row.SetGeometry(ogr.CreateGeometryFromWkt('POINT (99 99)'))
+        elif problem=='identity':row.SetField('a_key',17)
+        elif problem=='order':row.SetField('order_tag',2)
+        elif problem=='null':row.SetField('grade',0)
+        elif problem=='collection_member':row.GetGeometryRef().RemoveGeometry(0)
+        elif problem=='boolean_type':
+            field=ogr.FieldDefn('enabled',ogr.OFTInteger);assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex('enabled'),field,ogr.ALTER_TYPE_FLAG)==0
+        if problem!='boolean_type':assert layer.SetFeature(row)==0
+        row=layer=ds=None
+    with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.DIFFERENCE_CASE)
