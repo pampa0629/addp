@@ -23,7 +23,11 @@ const arrow = (page, label) => row(page, label).locator(':scope > .el-tree-node_
 const expanded = (page, label, value) => expect(row(page, label).locator('..')).toHaveAttribute('aria-expanded', String(value))
 
 async function installBackend(page) {
-  const state = { holdChildren: false, releaseChildren: null, rootRequests: [], rootGates: new Map(), searchGates: new Map(), searchRequests: [], ancestorGates: new Map() }
+  const state = {
+    holdChildren: false, releaseChildren: null, rootRequests: [], rootGates: new Map(),
+    searchGates: new Map(), searchRequests: [], ancestorGates: new Map(),
+    engines, nodeRequests: [], childGates: new Map(), root, node: id => branch(id, true)
+  }
   await page.route('**/plugins/manifest.json', route => route.fulfill({ json: { scripts: [] } }))
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
@@ -31,7 +35,7 @@ async function installBackend(page) {
     if (url.pathname === '/api/v1/system/refresh') return send({ access_token: 'expansion-test', expires_in: 3600 })
     if (url.pathname === '/api/v1/system/users/me') return send({ id: '1', display_name: 'expansion-test' })
     if (url.pathname === '/api/v1/system/auth/context') return send(managerAuthContext)
-    if (url.pathname === '/api/v1/manager/engines') return send({ data: engines })
+    if (url.pathname === '/api/v1/manager/engines') return send({ data: state.engines })
     const match = url.pathname.match(/^\/api\/v1\/meta\/resource-tree\/(25|29)(\/\w+)?$/)
     if (match) {
       const id = Number(match[1])
@@ -49,18 +53,66 @@ async function installBackend(page) {
         return send({ ancestors: [root(id), branch(id)], target_locator: branchKey(id) })
       }
       if (match[2] === '/node') {
+        const locator = url.searchParams.get('locator')
+        state.nodeRequests.push(locator)
+        const gate = state.childGates.get(locator)
+        if (gate) await new Promise(resolve => { gate.release = resolve })
         if (state.holdChildren) await new Promise(resolve => { state.releaseChildren = resolve })
-        return send(branch(id, true))
+        return send(state.node(id, locator))
       }
       state.rootRequests.push(id)
       const gate = state.rootGates.get(id)
       if (gate) await new Promise(resolve => { gate.release = resolve })
       if (gate?.fail) return route.fulfill({ status: 500, json: { error: '引擎目录读取失败' } })
-      return send(root(id))
+      return send(state.root(id))
     }
     return send({})
   })
   return state
+}
+
+for (const target of ['name', 'folder', 'arrow']) {
+  test(`an unopened MinIO prefix uses the same expansion lifecycle via its ${target}`, async ({ page }) => {
+    const backend = await installBackend(page)
+    const locator = (path, type, identity) => `addp://engine/25/path/${path}?type=${type}&${identity}`
+    const prefixLocator = locator('addp/movie', 'prefix', 'node_id=253')
+    const bucketLocator = locator('addp', 'bucket', 'node_id=251')
+    const movie = { id: prefixLocator, locator: prefixLocator, label: 'movie', type: 'prefix', hasChildren: true, children: [] }
+    const bucket = { id: bucketLocator, locator: bucketLocator, label: 'addp', type: 'bucket', hasChildren: true, children: [movie] }
+    const itemLocator = locator('addp/movie/video.mov', 'object', 'item_id=254')
+    const item = { id: itemLocator, locator: itemLocator, label: 'video.mov', type: 'object', hasChildren: false, children: [] }
+    const catalogLocator = locator('', 'service', 'node_id=250')
+    backend.engines = [{ ...engines[0], engine_type: 'minio' }, engines[1]]
+    backend.root = id => id === 25 ? { ...root(id), id: catalogLocator, locator: catalogLocator, type: 'service', children: [bucket] } : root(id)
+    backend.node = (id, key) => key === prefixLocator ? { ...movie, children: [item] } : bucket
+    const gate = {}
+    backend.childGates.set(prefixLocator, gate)
+    await page.goto('/data-explorer')
+    await arrow(page, engines[0].name).click()
+    await arrow(page, 'addp').click()
+    const control = target === 'arrow' ? arrow(page, 'movie')
+      : target === 'folder' ? row(page, 'movie').locator('.node-main > .el-icon')
+        : row(page, 'movie').locator('.explorer-node-label__text')
+    await control.click()
+    await expect.poll(() => typeof gate.release).toBe('function')
+    await expanded(page, 'movie', true)
+    if (target !== 'arrow') {
+      await expect.poll(() => new URL(page.url()).searchParams.get('locator')).toBe(prefixLocator)
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    }
+    expect(backend.nodeRequests.filter(key => key === prefixLocator)).toHaveLength(1)
+    await control.click()
+    await expanded(page, 'movie', false)
+    const response = page.waitForResponse(response => response.url().includes('/25/node') && new URL(response.url()).searchParams.get('locator') === prefixLocator)
+    gate.release()
+    await response
+    await expect(row(page, 'video.mov')).toBeHidden()
+    await expanded(page, 'movie', false)
+    await control.click()
+    await expect(row(page, 'video.mov')).toBeVisible()
+    expect(backend.nodeRequests.filter(key => key === prefixLocator)).toHaveLength(1)
+    await expect(arrow(page, 'video.mov')).toHaveClass(/is-leaf/)
+  })
 }
 
 test('catalog roots start collapsed without fetching any resource tree', async ({ page }) => {

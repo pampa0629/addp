@@ -49,12 +49,13 @@ describe('Data Explorer engine availability', () => {
 	expect(store.activeChildPreviewData).toBeNull()
   })
 
-  it('coalesces concurrent engine discovery into one request', async () => {
+  it('coalesces concurrent engine discovery across Pinia action proxies', async () => {
 	const store = useExplorerStore()
 	clientGet.mockResolvedValue({ data: [{ id: 2, name: 'Business PostgreSQL' }] })
 
-	const first = store.loadEngines()
-	const second = store.loadEngines()
+	// Pinia devtools associates each action with a distinct wrapper Proxy.
+	const first = store.loadEngines.call(new Proxy(store, {}))
+	const second = store.loadEngines.call(new Proxy(store, {}))
 
 	await Promise.all([first, second])
 	expect(clientGet).toHaveBeenCalledTimes(1)

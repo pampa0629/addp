@@ -68,6 +68,8 @@ test('manager keeps direct ResourceTree ownership only in the Data Explorer brow
 
   assert.match(explorerTree, /<ResourceTree(?:\s|>)/)
   assert.doesNotMatch(explorerTree, /ResourceTreePicker/)
+  const selectionHandler = explorerTree.slice(explorerTree.indexOf('const handleNodeClick ='), explorerTree.indexOf('const handleNodeAction ='))
+  assert.doesNotMatch(selectionHandler, /store\.(?:toggleExpand|expandNode|loadNodeChildren)\(/)
 })
 
 test('System grant selection uses the shared picker while retaining exact domain boundary validation', () => {

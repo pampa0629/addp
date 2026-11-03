@@ -671,9 +671,22 @@ watch(
 )
 
 // 节点点击
-const handleNodeClick = (nodeData) => {
+const handleNodeClick = (nodeData, node) => {
   if (!nodeData) return
+  // 非 lazy 模式下 Element Plus 把尚未挂载 children 的节点视为叶子，
+  // 不会替名称点击发出展开事件。与三角共用受控展开意图，不能由宿主补做。
+  if (props.expandOnClickNode && !props.lazy && node?.isLeaf && isUnloadedExpandable(nodeData)) {
+    toggleUnloadedExpansion(nodeData)
+  }
   emit('node-click', nodeData)
+}
+
+const toggleUnloadedExpansion = (data) => {
+  if (computedExpandedKeys.value.includes(data.id)) {
+    handleNodeCollapse(data)
+  } else {
+    handleNodeExpand(data)
+  }
 }
 
 // Element Plus 在非 lazy 模式下只根据已挂载的 children 判断叶子节点，
@@ -692,13 +705,8 @@ const handleUnloadedExpandClick = (event) => {
 
   event.preventDefault()
   event.stopPropagation()
-  if (computedExpandedKeys.value.includes(node.data.id)) {
-    if (pending) pending.expanded = false
-    handleNodeCollapse(node.data)
-  } else {
-    if (pending) pending.expanded = true
-    handleNodeExpand(node.data)
-  }
+  if (pending) pending.expanded = !computedExpandedKeys.value.includes(node.data.id)
+  toggleUnloadedExpansion(node.data)
 }
 
 // 当前节点变化

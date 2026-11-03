@@ -59,15 +59,15 @@ describe('explorer revealLocator', () => {
     expect(store.nodeChildrenCache[schema].children.map(child => child.label)).toEqual(['new'])
   })
 
-  it('shares concurrent ordinary child loads and applies cached children to the current tree', async () => {
+  it('shares child loads across Pinia action proxies and applies cached children to the current tree', async () => {
     const store = useExplorerStore()
     const locator = 'addp://engine/25/path/?type=server&node_id=250'
     store.engineTrees[25] = { id: locator, locator, type: 'server', children: [] }
     let resolveChildren
     const pending = new Promise(resolve => { resolveChildren = resolve })
     mocks.getNodeChildren.mockReturnValue(pending)
-    const first = store.loadNodeChildren(locator)
-    const second = store.loadNodeChildren(locator)
+    const first = store.loadNodeChildren.call(new Proxy(store, {}), locator)
+    const second = store.loadNodeChildren.call(new Proxy(store, {}), locator)
     await vi.waitFor(() => expect(resolveChildren).toBeTypeOf('function'))
     const child = { id: 'child', locator: 'child', type: 'table', label: 'child', children: [] }
     resolveChildren({ locator, children: [child] })

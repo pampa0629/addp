@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { toRaw } from 'vue'
 import { hasExpandableChildren } from '@common-ui/utils/resourceTreeState.mjs'
 import {
   catalogRootTypeForEngine,
@@ -199,7 +200,8 @@ export const useExplorerStore = defineStore('explorer', {
      */
     loadEngines(options = {}) {
       const silent = options.silent === true
-      const activeRequest = engineLoadRequests.get(this)
+      const requestOwner = toRaw(this)
+      const activeRequest = engineLoadRequests.get(requestOwner)
       if (activeRequest) {
         if (!silent) {
           activeRequest.visible = true
@@ -227,12 +229,12 @@ export const useExplorerStore = defineStore('explorer', {
           if (request.visible) {
             this.loadingEngines = false
           }
-          if (engineLoadRequests.get(this) === request) {
-            engineLoadRequests.delete(this)
+          if (engineLoadRequests.get(requestOwner) === request) {
+            engineLoadRequests.delete(requestOwner)
           }
         })
       request.promise = task
-      engineLoadRequests.set(this, request)
+      engineLoadRequests.set(requestOwner, request)
       return task
     },
 
@@ -613,17 +615,6 @@ export const useExplorerStore = defineStore('explorer', {
     },
 
     /**
-     * 切换节点展开状态
-     */
-    toggleExpand(locator) {
-      if (this.expandedLocators.has(locator)) {
-        this.collapseNode(locator)
-      } else {
-        this.expandNode(locator)
-      }
-    },
-
-    /**
      * 重置状态
      */
     reset() {
@@ -657,10 +648,13 @@ export const useExplorerStore = defineStore('explorer', {
      * @param {boolean} forceRefresh - 是否回读目标及祖先事实（不触发扫描）
      */
     loadNodeChildren(locator, forceRefresh = false) {
-      let requests = nodeLoadRequests.get(this)
+      // Pinia 开发工具会为每次 action 创建不同的 this Proxy。
+      // 在稳定的原始 Store 上合并展开与详情选择发起的同一请求。
+      const requestOwner = toRaw(this)
+      let requests = nodeLoadRequests.get(requestOwner)
       if (!requests) {
         requests = new Map()
-        nodeLoadRequests.set(this, requests)
+        nodeLoadRequests.set(requestOwner, requests)
       }
       if (!forceRefresh && requests.has(locator)) return requests.get(locator)
       const request = this.fetchNodeChildren(locator, forceRefresh).finally(() => {

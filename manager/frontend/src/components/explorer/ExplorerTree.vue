@@ -219,7 +219,6 @@ const handleNodeClick = async (node) => {
   let locator = node.locator || node.id
 
   if (isCatalogRootNode(node) && node.engineId && !node.loaded) {
-    store.toggleExpand(locator)
     try {
       const resolved = await resolveCanonicalNodeSelection({
         node,
@@ -227,14 +226,9 @@ const handleNodeClick = async (node) => {
         loadTree: loadCatalogRoot
       })
       selectedNode = resolved.node
-      const syntheticLocator = locator
       locator = resolved.locator
-      replaceExpandedLocator(syntheticLocator, locator)
-    } catch (error) {
-      if (!selectionIsCurrent()) return
-      store.collapseNode(locator)
-      console.error('加载引擎内容失败:', error)
-      ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
+    } catch {
+      // 资源加载失败由 node-expand 统一报告；选择只等待规范根身份。
       return
     }
   }
@@ -243,38 +237,6 @@ const handleNodeClick = async (node) => {
   // 选择节点
   store.selectNode(locator)
   emit('node-select', { node: selectedNode, locator })
-
-  // 关键：@node-collapse / @node-expand 在 element-plus 中先于 @node-click 触发，
-  // 因此这里读到的是"点击后"的 store 状态，而不是点击前的状态。
-  // 只有当节点当前未展开 && 需要首次加载数据时，才主动介入（强制展开 + 加载）。
-  // 对于已加载的节点，expand-on-click-node 和 handleNodeExpand/Collapse 已经处理好了。
-  const isCurrentlyExpanded = store.expandedLocators.has(locator)
-
-  // Catalog root 节点：仅首次展开（未加载）时强制展开并加载数据
-  if (isCatalogRootNode(selectedNode) && selectedNode.engineId) {
-    return
-  }
-
-  // 仅在需要首次加载子节点时介入，避免与 el-tree 的 expand-on-click-node 冲突。
-  // 初始 expand_depth 树可能只带部分 children，必须以 loaded=false 作为懒加载边界。
-  const isDirLike = isBranchNode(node)
-  if (isDirLike) {
-    const needsLoading = node.hasChildren && !node.loaded
-    if (!isCurrentlyExpanded && needsLoading) {
-      // 首次展开：el-tree 因暂无子节点可能不会自动展开，需要强制 store 记录展开状态
-      store.expandNode(locator)
-      try {
-        const loc = parseLocator(locator)
-        if (loc && loc.engineId) {
-          await store.loadNodeChildren(locator)
-        }
-      } catch (error) {
-        if (requestSeq !== selectionRequestSeq || store.selectedLocator !== locator) return
-        console.error('加载子节点失败:', error)
-        ElMessage.error(t('manager.explorer.loadChildrenFailed', { error: error.message }))
-      }
-    }
-  }
 }
 
 // 事件处理：节点操作
@@ -328,16 +290,10 @@ const handleNodeExpand = async (node) => {
   }
 
   // 使用增量加载替代全量重载：容器节点首次展开时，只加载该节点的直接子节点。
-  const needsLoading = isBranchNode(node) && node.hasChildren && !node.loaded
-
-  if (needsLoading && locator) {
+  const loc = parseLocator(locator)
+  if (loc?.nodeId && node.hasChildren && !node.loaded) {
     try {
-      // 从 locator 解析出 engineId
-      const loc = parseLocator(locator)
-      if (loc && loc.engineId) {
-        // 只加载该节点的子节点，不重新加载整个树。
-        await store.loadNodeChildren(locator)
-      }
+      await store.loadNodeChildren(locator)
     } catch (error) {
       console.error('增量加载子节点失败:', error)
       ElMessage.error(t('manager.explorer.loadChildrenFailed', { error: error.message }))
@@ -353,7 +309,6 @@ const handleNodeCollapse = (node) => {
 }
 
 const rootTypes = new Set(['root', 'server', 'service'])
-const branchTypes = new Set(['directory', 'bucket', 'prefix', 'schema', 'database', 'dir', 'root', 'server', 'service'])
 
 const isCatalogRootNode = (node) => {
   const fullName = node?.metadata?.full_name
@@ -372,7 +327,13 @@ const loadCatalogRoot = (engineId) => {
   const existing = catalogRootLoadPromises.get(key)
   if (existing) return existing
 
-  const request = store.loadTree(key).finally(() => {
+  const request = store.loadTree(key).then((root) => {
+    const loc = parseLocator(root?.locator || root?.id || '')
+    if (loc?.engineId !== key || !loc.nodeId) {
+      throw new Error('resource tree root is missing node_id')
+    }
+    return root
+  }).finally(() => {
     if (catalogRootLoadPromises.get(key) === request) {
       catalogRootLoadPromises.delete(key)
     }
@@ -380,8 +341,6 @@ const loadCatalogRoot = (engineId) => {
   catalogRootLoadPromises.set(key, request)
   return request
 }
-
-const isBranchNode = (node) => !!node && branchTypes.has(node.type)
 
 const nodeEngineID = (node) => {
   if (node?.engineId) return node.engineId
