@@ -943,6 +943,8 @@ Plan schema、语义配置、CompilerIdentity、Model 修订和 Service 消费�
 
 新增引擎必须通过共享语义用例与真实数据库门禁后才声明能力。第三方言测试实现只用于证明公开接口、目录层级和物理语法可替换，不进入生产注册或 capabilities。替换必须删除封闭 AnalyticalDialect、ResolveAnalyticalSQLDialect、Model 指标 SQL 拼接和 Service 指标 SQL 包装；普通用户 SQL 查询来源继续使用既有查询能力，不属于被删除的指标旧路线。
 
+### GraphQueryProvider
+
 图查询不属于普通查询的一个返回格式变体。图查询使用独立 `GraphQueryProvider`，返回 `GraphQueryResult`，面向 Graph 模块、图可视化和图算法等需要节点 / 关系结构的调用方。Neo4j 可同时实现 `QueryRuntimeProvider` 和 `GraphQueryProvider`：前者用于普通 Cypher 表格结果和 Manager 预览兜底，后者用于图结构结果。图结构摘要由 `EngineCatalogFactsProvider` 的 `EngineCatalogFacts.Graph` 提供，图样本由 `GraphSampleProvider` 或 `GraphQueryProvider` 提供。
 
 ```go

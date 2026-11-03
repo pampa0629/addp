@@ -324,21 +324,31 @@ Facade 按精确 `engine_type` 选择显式注册的原生客户端，并用 Run
 - SDK 可以在当前 Python Engine Client 内缓存服务端已经返回的 root 和 branch `EngineCatalogPath`，减少 `tables(schema=...)` 等后续导航的重复列举；不得缓存 children 列表、EngineCatalogFacts 或失败响应。
 - 首次按名称直接访问尚未缓存的父级时，SDK 通过逐层 `ListChildren` 找到规范路径。第一阶段不为减少一次往返新增 Engine Catalog resolve API；先以真实 E2E 延迟度量决定是否需要扩展唯一 Engine Catalog 契约。
 
-数据读取沿用同一 Facade，但不使用 Session Authorization 直接访问数据；操作示例与内存、几何列／源 CRS 前提统一见[SDK 读取与空间转换](../../common-python/README.md#读取与空间转换)，独立查询的目标与参数准备见[有界 SQL](../../common-python/README.md#有界-sql-与访问边界)。各 Provider 的读取、授权、快照与失败约束如下：
+#### 读取契约与授权
 
-- 关系表的 `head()` 是有显式 `max_rows` 的单次只读查询；`scan()` 复用 `TableReadSessionProvider`，以服务端 Cursor 和 Arrow IPC 流返回扫描开始时的一致快照，不得使用 `LIMIT/OFFSET` 假装全量流。
-- MongoDB collection 的 `scan()` 使用 `RecordReadSessionProvider`，保留 MongoDB Cursor 的读取与关闭语义，通过 Arrow IPC 返回动态 schema 记录；不复用表语义的 `TableReadSessionProvider`。
-- Neo4j `sample()` 复用 `GraphSampleProvider` 返回有界图结果，`cypher()` 复用 `GraphQueryProvider` 并保留 node / relationship 语义；不将图伪装为表扫描。
-- MinIO/S3/NFS 复用 `ContentReadableProvider` 和 `RangeReadableProvider`，`open()` 返回可关闭的流，`read_range()` 必须显式给出非负 offset 和正 length。
-- Kafka `stream()` 复用 `ChangeStreamReaderProvider`，要求显式 `initial_position` 或 partition positions；迭代器关闭、Session 关闭、超时或授权失效都必须取消 poll 并关闭 reader。
+数据读取沿用同一 Facade，但不使用 Session Authorization 直接访问数据。公共接口与数据模型集中在正式 Provider 规范：
+
+| Facade 读取 | 权威正文 |
+| --- | --- |
+| 表／collection 的 `head()`、`scan()` | [StoreProvider](../spec/addp引擎插件接口规范.md#storeprovider)：表游标、动态记录游标的分工与 Notebook record transport |
+| 图的 `sample()`、`cypher()` | [图样本](../spec/addp引擎插件接口规范.md#enginecatalogfactsprovider)、[GraphQueryProvider](../spec/addp引擎插件接口规范.md#graphqueryprovider)：图结果与普通表格查询的区别 |
+| 对象／文件的 `open()`、`read_range()` | [StoreProvider 内容与 range 接口](../spec/addp引擎插件接口规范.md#storeprovider) |
+| Topic 的 `stream()` | [ChangeStreamReaderProvider](../spec/addp引擎插件接口规范.md#changestreamreaderprovider)：原生位置、poll、背压与关闭 |
+
+Notebook 消费这些契约时还须遵守：
+
 - 每次查询或扫描由 Develop 生成独立 execution，并通过 Notebook Session Authorization 原子派生只读 Execution Authorization 与执行期 Engine Access；连接信息只在 Develop 受控 Runtime 内使用，不返回 Kernel。
-- Develop 对外只保留同一 Notebook Kernel Session 下的通用受控代理：`table-scans`、`record-scans`、`queries`、`graph-samples`、`graph-queries`、`content-reads`、`change-streams`。这些路径按 Provider 契约分流，不按 PostgreSQL、MongoDB、Neo4j、MinIO 或 Kafka 新增专用 API。
-- `to_pandas()` 只能消费同一条 `scan()` 路径。它先用 Engine Catalog Facts 估算，并持续检查实际解码字节；超过调用者显式 `memory_limit` 时抛出类型化异常且不返回半截 DataFrame。
-- 长扫描采用短租约周期复核 Session、Family 与授权版本；Session 关闭、到期、登出、Family 撤销或授权失效时，Develop 必须取消活动请求并关闭 Cursor。当前不支持断点续读，连接中断后从新快照重新开始。
-- `sql()`、`mql()` 和 `cypher()` 都必须显式给出返回上限和超时，Develop 按 Provider 原生语言执行只读请求；任意查询的无界流式读取需要独立 Query Cursor 契约，不得借用表或 collection 扫描接口。
+- 通用受控代理的路径及禁止引擎专用旁路的要求统一见[Develop 数据访问](../../develop/CLAUDE.md#数据访问与-native-facade)；Facade 不越过当前 Kernel Session 直接调用 Provider。
+- 表的 `head()` 显式限制 `max_rows`；`scan()` 通过服务端 Cursor 和 Arrow IPC 流返回扫描开始时的一致快照，不得使用 `LIMIT/OFFSET` 假装全量流。
+- `open()` 返回可关闭的流，`read_range()` 必须显式给出非负 offset 和正 length。Kafka `stream()` 要求显式 `initial_position` 或 partition positions；迭代器关闭、Session 关闭、超时或授权失效都必须取消 poll 并关闭 reader。
+- 完整 DataFrame 只能消费同一条 `scan()` 路径；大小估算、解码预算、类型化超限与不返回部分结果的规则统一见[SDK 读取与空间转换](../../common-python/README.md#读取与空间转换)，几何列和源 CRS 的输入前提也在该处维护。
+- 长扫描的短租约复核、Session／Family 撤销与授权版本失效处理沿[会话授权规范 5.3](../spec/addp授权上下文规范.md#53-notebook-会话授权)。Notebook 当前不支持断点续读，连接中断后从新快照重新开始。
+- `sql()`、`mql()` 和 `cypher()` 都必须显式给出返回上限和超时，Develop 按 Provider 原生语言执行只读请求；任意查询的无界流式读取需要独立 Query Cursor 契约，不得借用表或 collection 扫描接口。SQL 的独立目标与参数准备见[SDK 有界 SQL](../../common-python/README.md#有界-sql-与访问边界)。
 - TB 级、需要容错或需要持久化中间结果的算法应转为 Managed Script、GeoPython Workflow 或 Spark Workflow，不在交互 Kernel 中强制全量入内存。
 
-错误必须保持可区分且 fail-closed：空列表只表示引擎真实返回零个子项，权限失效、对象不存在、不支持、超时和 Provider 故障都不能降级为空列表或占位对象。Notebook Engine Catalog API 使用稳定 `error_code`，SDK 映射为类型化异常：
+#### 失败语义
+
+错误必须保持可区分且 fail-closed：空列表只表示引擎真实返回零个子项，权限失效、对象不存在、不支持、超时和 Provider 故障都不能降级为空列表或占位对象。Provider 的错误类别、Go 因果链与敏感信息保护统一见[Engine Catalog 错误契约](../spec/addp引擎插件接口规范.md#engine-catalog-错误契约)；下表保留 Notebook Engine Catalog API 的稳定 `error_code`、会话专用拒绝与 SDK 异常映射：
 
 | HTTP | `error_code` | SDK 语义 | 是否自动重试 |
 | --- | --- | --- | --- |

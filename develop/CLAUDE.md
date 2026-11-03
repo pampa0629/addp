@@ -266,7 +266,7 @@ Notebook Native Engine Facade 只存在于 `common-python`，按具体 Engine �
 
 Notebook 数据读取统一进入当前 Kernel Session 下的 `table-scans`、`record-scans`、`queries`、`graph-samples`、`graph-queries`、`content-reads`、`change-streams` 代理。Develop 每次派生独立只读 Execution Authorization，并按 `common` Provider 契约选择表游标、动态记录游标、图、内容、range 或 change stream；不得为具体引擎增加旁路端点。
 
-Notebook 数据源注入在接入同一 Execution Authorization 消费路径前必须 fail-closed。
+Notebook 数据源注入在接入同一 Execution Authorization 消费路径前必须 fail-closed。各读取方式与正式 Provider 的对应关系、Notebook 独有读取限制见[Facade 读取契约](../docs/concepts/addp引擎体系图.md#读取契约与授权)。
 
 #### 文件与运行时重绑
 
