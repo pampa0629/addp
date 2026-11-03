@@ -1250,23 +1250,49 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with self.subTest(reason=reason), self.assertRaisesRegex(SUITE.SuiteError, reason):
                 SUITE.validate_model_glb(alter_glb(fixture_glb("obj"), mutate), "obj")
 
-    def test_mesh_item_size_includes_companions_without_changing_primary_download(self):
+    def test_mesh_preparation_accepts_structural_metadata_and_checks_real_source_bytes(self):
+        for fmt in ('obj', 'fbx'):
+            client = FakeGatewayClient()
+            original = client._request
+            def structural(method, path, body, headers):
+                result = original(method, path, body, headers)
+                if path == '/api/v1/meta/engines/27/items':
+                    for item in result.payload:
+                        item.pop('size_bytes', None)
+                return result
+            with self.subTest(format=fmt), mock.patch.object(client, '_request', side_effect=structural):
+                fixture = SUITE.prepare_model_fixture(client, 27, 'addp-online', fmt)
+                self.assertNotIn('size_bytes', fixture.item)
+                self.assertTrue(any(method == 'GET' and path.startswith('/api/v1/manager/downloads/file?')
+                                    for method, path in client.calls))
+
+    def test_obj_companion_sizes_are_verified_from_authorized_bundle(self):
+        import io
+        import zipfile
         client = FakeGatewayClient()
-        fixture = SUITE.prepare_model_fixture(client, 27, "addp-online", "obj")
-        self.assertEqual(fixture.item["size_bytes"], 218)
-        self.assertEqual(SUITE.MESH_SOURCE_FACTS["obj"]["size_bytes"], 97)
         original = client._request
-
-        def primary_only_size(method, path, body, headers):
+        def structural(method, path, body, headers):
             result = original(method, path, body, headers)
-            if path == "/api/v1/meta/engines/27/items":
+            if path == '/api/v1/meta/engines/27/items':
                 for item in result.payload:
-                    if item["full_name"] == "addp-online/model3d/obj/model.obj":
-                        item["size_bytes"] = 97
+                    item.pop('size_bytes', None)
             return result
-
-        with mock.patch.object(client, "_request", side_effect=primary_only_size), self.assertRaisesRegex(SUITE.SuiteError, "item size differs"):
-            SUITE.prepare_model_fixture(client, 27, "addp-online", "obj")
+        with mock.patch.object(client, '_request', side_effect=structural):
+            fixture = SUITE.prepare_model_fixture(client, 27, 'addp-online', 'obj')
+        self.assertNotIn('size_bytes', fixture.item)
+        self.assertEqual(SUITE.MESH_SOURCE_FACTS['obj']['size_bytes'], 97)
+        self.assertEqual(sum(member['size_bytes'] for member in SUITE.MESH_SOURCE_FACTS['obj']['download_members'].values()), 218)
+        def changed_companion(method, path, body, headers):
+            result = structural(method, path, body, headers)
+            if path.startswith('/api/v1/manager/downloads/file?'):
+                data = io.BytesIO()
+                with zipfile.ZipFile(io.BytesIO(result.raw)) as source, zipfile.ZipFile(data, 'w') as changed:
+                    for member in source.namelist():
+                        changed.writestr(member, b'changed' if member.endswith('.mtl') else source.read(member))
+                return SUITE.Response(200, {}, {'content-type': 'application/zip'}, data.getvalue())
+            return result
+        with mock.patch.object(client, '_request', side_effect=changed_companion), self.assertRaises(SUITE.SuiteError):
+            SUITE.prepare_model_fixture(client, 27, 'addp-online', 'obj')
 
     def test_mesh_source_download_must_preserve_pinned_bytes(self):
         client = FakeGatewayClient()

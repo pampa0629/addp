@@ -133,6 +133,8 @@ System-owned fixture 通过正式 Bootstrap 建立三个不同三员，通过正
 
 Manager 源准备先沿当前扫描权限生成本轮元数据，再由独立授权办理员按规范指纹读取 System 的准确 DataItem 授权事实并办理既定源 Grant；普通消费者只能在 Grant 成功后枚举 Meta，并核对同一 full_name／fingerprint 后准备 Model3D。规范指纹仅用于定位服务端事实，不作为身份、授权或存在证明；事实缺失／冲突、Grant 拒绝或授权后对象不匹配均停止，不加权限或回退机器身份。Manager 的扫描／授权／源身份／模型准备／生成／原生库存分别记录固定阶段，仅保留既有安全失败类别／HTTP 状态，不归档原始路径或响应，不增加请求重试和等待预算。
 
+Manager 的 Meta 列表只消费结构身份，不要求返回 size_bytes、网格统计或其他内容派生字段；OBJ／FBX 源完整性沿原 Manager User 下载接口核验固定长度与摘要，OBJ 逐项严格核验完整模型／MTL／纹理 ZIP，不以目录大小替代原始字节证据。Manager MinIO 的扫描和 active／online 就绪观察共用原180秒准备截止时间，由原 Engine User 仅 GET 本轮准确实例；不强制探测、不增加权限或窗口；Engine 观察单次 HTTP timeout 不超过原上限和窗口余额，窗口耗尽不补读、晚返回拒绝，不准备模型。就绪失败沿既有 engine_readiness_diagnostic 记录本 case 唯一 MinIO 的安全观察，不归档连接或原始文案。
+
 Manager 通过普通 User 的正式源 Grant 和 Model3D Runtime 生成真实 GLB；清理后直接核对输出对象和索引，并确认原始 OBJ、MTL、纹理字节未变。Transfer 区分 Engine 删除保留并禁用任务/DLQ，以及普通 User 显式删除任务清理 DLQ 两个产品入口；真实目标业务行保持不变。成功Engine清理核验保留定义已禁用；transfer-capture-unknown核验未完成清理仍保留创建时的无调度continuous定义（enabled=false），同时原生运行体已停止、unknown操作持久隔离且新producer被拒绝。创建响应与保留读取共同核验准确任务／Tenant及boolean false，不以调度开关推断unknown成功或运行期望。三种普通 User 和准确权限、六个 case 的必需 checks 唯一维护在 `scripts/test/execution-online-contract.json`，CI 按精确集合拒绝缺失、重复、跨 case 和伪造通过。DLQ unknown 的未决清理围栏拒绝新 producer 时，必须返回 HTTP 409 和稳定 `error_code=transfer_cleanup_unresolved`，`error` 为安全的本地化文案；专项报告必须同时提供 `producer_refusal_http_status=409` 和对应 `producer_refusal_error_code`。旧 HTTP 500、其它状态或错误码均不能作为围栏拒绝证明；DELETE 外部清理失败仍为 HTTP 503。
 
 `transfer-engine` 与 `transfer-capture-unknown` 沿 Transfer 当前 Tenant／任务功能权限执行，不准备没有对应消费链的源 Grant，也不调用 Manager 用途的同步源规则检查。实际 CDC 读取由原正式 runtime 与独立原生目标行探针证明；本专项不验证 Transfer 的当前 Grant／Deny、源撤权或连续运行中收权闭环。Manager 的源 Grant 准备及其同步检查保持原用途。

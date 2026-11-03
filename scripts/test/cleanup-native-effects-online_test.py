@@ -317,27 +317,27 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             workflow = SimpleNamespace(register=lambda _: next(engines))
             controls = SimpleNamespace(run_id='native-1', descriptor=lambda _: {})
             def scan(user, engine, deadline): calls.append(('scan', engine, deadline))
-            def ready(owner, pg, kafka, deadline, report, checkpoint):
+            def ready(owner, engines, deadline, report, checkpoint):
                 self.assertIs(owner, workflow)
-                calls.append(('ready', pg, kafka, deadline))
+                calls.append(('ready', engines, deadline))
             with self.subTest(case=case), patch.object(M.time, 'monotonic', return_value=20), \
                     patch.object(M.MANAGER, 'wait_for_meta_scan', side_effect=scan), \
-                    patch.object(M, 'wait_transfer_engines', side_effect=ready, create=True), \
+                    patch.object(M, 'wait_native_engines', side_effect=ready, create=True), \
                     patch.object(M, 'prepare_task', side_effect=S.SuiteError('stop before effects')):
                 with self.assertRaises(S.SuiteError):
                     M.run_transfer(object(), workflow, controls, case, {'checks': []}, lambda: None)
-                self.assertEqual(calls, [('scan', 9, 200), ('ready', 9, 10, 200)])
+                self.assertEqual(calls, [('scan', 9, 200), ('ready', [(9, 'postgresql'), (10, 'kafka')], 200)])
 
     def test_engine_readiness_waits_for_both_current_observations_without_mutation(self):
         reads, report = [], {}
         class Owner:
-            def engine(self, engine):
+            def engine(self, engine, **scope):
                 reads.append(engine)
                 return dict(engine_type='postgresql' if engine == 9 else 'kafka', lifecycle_state='active',
                             connection_status='unknown' if len(reads) <= 2 else 'online',
                             connection_info={'password': 'private'}, error='secret')
         with patch.object(M.time, 'monotonic', side_effect=[1, 2]), patch.object(M.time, 'sleep') as sleep:
-            M.wait_transfer_engines(Owner(), 9, 10, 180, report, lambda: self.fail('no failure diagnostics on success'))
+            M.wait_native_engines(Owner(), [(9, 'postgresql'), (10, 'kafka')], 180, report, lambda: self.fail('no failure diagnostics on success'))
         self.assertEqual(reads, [9, 10, 9, 10])
         sleep.assert_called_once_with(1)
         self.assertEqual(report, {})
@@ -345,14 +345,14 @@ class NativeCleanupRunnerTest(unittest.TestCase):
     def test_engine_readiness_deadline_and_invalid_state_fail_closed_with_safe_last_observation(self):
         for state in ('unknown', 'offline', 'checking', 'secret status'):
             report, reads = {}, []
-            def engine(identity):
+            def engine(identity, **scope):
                 reads.append(identity)
                 return dict(engine_type='postgresql' if identity == 9 else 'kafka', lifecycle_state='active',
                             connection_status=state, password='secret password')
             with self.subTest(state=state), patch.object(M.time, 'monotonic', side_effect=[1, 180]), \
                     patch.object(M.time, 'sleep') as sleep:
                 with self.assertRaises(S.SuiteError):
-                    M.wait_transfer_engines(SimpleNamespace(engine=engine), 9, 10, 180, report, lambda: None)
+                    M.wait_native_engines(SimpleNamespace(engine=engine), [(9, 'postgresql'), (10, 'kafka')], 180, report, lambda: None)
                 self.assertEqual(reads, [9, 10])
                 self.assertEqual([r['connection_status'] for r in report['engine_readiness_diagnostic']['engines']],
                                  [state if state != 'secret status' else 'unrecognized'] * 2)
@@ -361,15 +361,15 @@ class NativeCleanupRunnerTest(unittest.TestCase):
         report = {}
         with patch.object(M.time, 'monotonic', return_value=180):
             with self.assertRaises(S.SuiteError):
-                M.wait_transfer_engines(SimpleNamespace(engine=lambda _: self.fail('expired deadline must not read')),
-                                        9, 10, 180, report, lambda: None)
+                M.wait_native_engines(SimpleNamespace(engine=lambda _, **scope: self.fail('expired deadline must not read')),
+                                        [(9, 'postgresql'), (10, 'kafka')], 180, report, lambda: None)
         self.assertEqual([r['observation'] for r in report['engine_readiness_diagnostic']['engines']],
                          ['not_observed', 'not_observed'])
 
     def test_engine_readiness_rejects_changed_type_lifecycle_and_read_errors(self):
         for bad in ('type', 'lifecycle', 'read'):
             calls, report = [], {}
-            def engine(identity):
+            def engine(identity, **scope):
                 calls.append(identity)
                 if bad == 'read': raise S.SuiteError('GET /private returned HTTP 403 (secret)')
                 return dict(engine_type='minio' if bad == 'type' else 'postgresql',
@@ -377,7 +377,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             with self.subTest(bad=bad), patch.object(M.time, 'monotonic', return_value=1), \
                     patch.object(M.time, 'sleep') as sleep:
                 with self.assertRaises(S.SuiteError):
-                    M.wait_transfer_engines(SimpleNamespace(engine=engine), 9, 10, 180, report, lambda: None)
+                    M.wait_native_engines(SimpleNamespace(engine=engine), [(9, 'postgresql'), (10, 'kafka')], 180, report, lambda: None)
                 self.assertEqual(calls, [9])
                 sleep.assert_not_called()
                 self.assertNotIn('secret', json.dumps(report))
@@ -432,7 +432,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
         for case in ('transfer-engine', 'transfer-capture-unknown'):
             engines = iter((9, 10))
             workflow = SimpleNamespace(register=lambda descriptor: next(engines),
-                engine=lambda identity: dict(engine_type='postgresql' if identity == 9 else 'kafka',
+                engine=lambda identity, **scope: dict(engine_type='postgresql' if identity == 9 else 'kafka',
                                              lifecycle_state='active', connection_status='online'))
             controls = SimpleNamespace(tenant=2, run_id='native-1', descriptor=lambda kind: {})
             user, report = object(), {'checks': []}
@@ -1074,6 +1074,72 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 with self.subTest(mutation=mutation), self.assertRaises(S.SuiteError):
                     M.NativeControls(SimpleNamespace(secret=Path(directory), run_id='native-1'), 2, 'manager-success')
 
+    def test_bounded_engine_observation_keeps_user_identity_and_window(self):
+        user = SimpleNamespace(base_url='http://127.0.0.1:8000', token='private-user-token', timeout=60)
+        for times, accepted, timeout in (([149, 149.4], True, 1), ([150], False, None),
+                                         ([149, 150.1], False, 1)):
+            reader = SimpleNamespace(request=lambda *args: SimpleNamespace(payload={'id': 9, 'tenant_id': 2}))
+            with self.subTest(times=times), patch.object(S, 'user_identity', return_value='17'), \
+                    patch.object(S, 'local_client', return_value=reader) as local, \
+                    patch.object(M.time, 'monotonic', side_effect=times):
+                workflow = M.EngineWorkflow(user, 2, {}, lambda: None)
+                workflow.owned.add(9)
+                if accepted:
+                    self.assertEqual(workflow.engine(9, deadline=150), {'id': 9, 'tenant_id': 2})
+                else:
+                    with self.assertRaises(S.SuiteError): workflow.engine(9, deadline=150)
+                if timeout is None: local.assert_not_called()
+                else: local.assert_called_once_with(user.base_url, user.token, timeout)
+
+    def test_manager_waits_for_registered_minio_before_model_preparation(self):
+        observed, sleeps, deadlines = [], [], []
+        ready = False
+        model = SimpleNamespace(result_id=7)
+        def engine(identity, **scope):
+            nonlocal ready
+            self.assertEqual(identity, 9)
+            observed.append(identity)
+            ready = len(observed) == 2
+            return dict(engine_type='minio', lifecycle_state='active',
+                        connection_status='online' if ready else 'unknown', password='private')
+        def prepare(*args):
+            self.assertTrue(ready, 'source Engine has not reached available before preparation')
+            return model
+        workflow = SimpleNamespace(register=lambda _: 9, engine=engine)
+        controls = SimpleNamespace(tenant=2, manifest={'source_bucket': 'source'},
+            source_objects=lambda: None, descriptor=lambda _: {})
+        with patch.object(M.time, 'monotonic', side_effect=[5, 6, 7]), \
+                patch.object(M.time, 'sleep', side_effect=lambda seconds: sleeps.append(seconds)), \
+                patch.object(M.MANAGER, 'wait_for_meta_scan', side_effect=lambda user, identity, deadline: deadlines.append(deadline)), \
+                patch.object(M.GRANTS, 'ModelSourceAuthorization', return_value=SimpleNamespace(grant=lambda _: None)), \
+                patch.object(M.MANAGER, 'find_fixture_item', return_value={'fingerprint': M.hashlib.sha256(b'9:source/model3d/obj/model.obj').hexdigest()}), \
+                patch.object(M.MANAGER, 'prepare_model_fixture', side_effect=prepare):
+            report = {'principals': {'manager': '18'}}
+            self.assertEqual(M.prepare_manager(object(), workflow, controls, object(), report, lambda: None), (9, model))
+        self.assertEqual(deadlines, [185])
+        self.assertEqual(observed, [9, 9])
+        self.assertEqual(sleeps, [1])
+        self.assertNotIn('private', json.dumps(report))
+
+    def test_manager_expired_preparation_budget_cannot_grant_or_generate(self):
+        workflow = SimpleNamespace(register=lambda _: 9, engine=lambda _, **scope: self.fail('expired budget must not read Engine'))
+        controls = SimpleNamespace(tenant=2, manifest={'source_bucket': 'source'},
+            source_objects=lambda: None, descriptor=lambda _: {})
+        report = {'principals': {'manager': '18'}}
+        with patch.object(M.time, 'monotonic', side_effect=[0, 180]), \
+                patch.object(M.MANAGER, 'wait_for_meta_scan') as scan, \
+                patch.object(M.GRANTS, 'ModelSourceAuthorization') as authorization, \
+                patch.object(M.MANAGER, 'prepare_model_fixture') as prepare:
+            with self.assertRaises(S.SuiteError):
+                M.prepare_manager(object(), workflow, controls, object(), report, lambda: None)
+        scan.assert_called_once()
+        self.assertEqual(scan.call_args.args[2], 180)
+        authorization.assert_not_called()
+        prepare.assert_not_called()
+        self.assertEqual(report['stage'], 'manager_engine_readiness')
+        self.assertEqual(report['engine_readiness_diagnostic'], {'engines': [
+            {'engine_id': 9, 'engine_type': 'minio', 'observation': 'not_observed'}]})
+
     def test_manager_grants_before_consumer_catalog_and_validates_same_source(self):
         import hashlib
         name = 'source/model3d/obj/model.obj'
@@ -1131,7 +1197,8 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             report = {'principals': {'manager': '18'}}
             controls = SimpleNamespace(tenant=2, manifest={'source_bucket': 'source'},
                 source_objects=lambda: None, descriptor=lambda kind: {})
-            workflow = SimpleNamespace(register=lambda descriptor: 9)
+            workflow = SimpleNamespace(register=lambda descriptor: 9, engine=lambda _, **scope: dict(
+                engine_type='minio', lifecycle_state='active', connection_status='online'))
             model = SimpleNamespace(result_id=7)
             def prepare(*args):
                 self.assertTrue(issued)
@@ -1147,7 +1214,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     browse_pos = next(i for i, call in enumerate(calls) if call[2] == '/api/v1/meta/engines/9/items')
                     self.assertLess(grant_pos, browse_pos)
                     self.assertEqual(prepared, [1])
-                    self.assertEqual(checkpoints, ['manager_native_prepare', 'manager_source_scan',
+                    self.assertEqual(checkpoints, ['manager_native_prepare', 'manager_source_scan', 'manager_engine_readiness',
                         'manager_source_grant', 'manager_source_identity', 'manager_model_prepare'])
                 else:
                     with self.assertRaises((S.SuiteError, M.GRANTS.SuiteError, M.MANAGER.SuiteError)):
@@ -1198,7 +1265,8 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                         return dict(run_id='native-1', key=ID, forwarded=1, upstream_response=mutation != 'missing_effect', blocked_replays=0)
                 workflow = SimpleNamespace(user=User(), register=lambda descriptor: 9, begin=lambda engine: None,
                     settled=lambda engine, **kwargs: {'task': {'based_on_scan': ID}},
-                    engine=lambda engine: {'version': 3, 'name': 'owned'})
+                    engine=lambda engine, **scope: {'version': 3, 'name': 'owned', 'engine_type': 'minio',
+                        'lifecycle_state': 'active', 'connection_status': 'online'})
                 def prepare(*args):
                     if not granted: raise AssertionError('source download occurred before exact Grant')
                     return model
@@ -1274,7 +1342,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     def target_rows(self, kind):
                         if mutation == 'business_rows_changed': raise S.SuiteError('target rows changed')
                 workflow = SimpleNamespace(user=User(), register=lambda descriptor: 9 if descriptor['kind'] == 'pg' else 10,
-                    engine=lambda identity: dict(engine_type='postgresql' if identity == 9 else 'kafka',
+                    engine=lambda identity, **scope: dict(engine_type='postgresql' if identity == 9 else 'kafka',
                                                  lifecycle_state='active', connection_status='online'),
                     begin=lambda engine: calls.append(('ENGINE_BEGIN', engine)), settled=lambda *args, **kwargs: {})
                 def prepare(user, controls, pg, kafka, kind, run_id, report, checkpoint):

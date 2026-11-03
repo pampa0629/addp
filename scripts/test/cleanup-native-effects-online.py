@@ -80,10 +80,17 @@ class EngineWorkflow:
         self.report['engines'].append(engine_id); self.checkpoint()
         return engine_id
 
-    def engine(self, engine_id):
+    def engine(self, engine_id, *, deadline=None):
         require(engine_id in self.owned, 'Engine mutation outside this run')
-        value = self.user.request('GET', ENGINE + '/' + str(engine_id), (200,)).payload
+        reader = self.user
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            require(remaining > 0, 'native Engine observation deadline expired')
+            reader = S.local_client(self.user.base_url, self.user.token, min(self.user.timeout, remaining))
+        value = reader.request('GET', ENGINE + '/' + str(engine_id), (200,)).payload
         require(value['id'] == engine_id and value['tenant_id'] == self.tenant, 'Engine read identity changed')
+        if deadline is not None:
+            require(time.monotonic() < deadline, 'native Engine observation exceeded preparation deadline')
         return value
 
     def begin(self, engine_id):
@@ -397,14 +404,17 @@ def wait_initial_records(user, task_id, execution_id, kind, report, checkpoint):
         raise
 
 
-def wait_transfer_engines(workflow, pg, kafka, deadline, report, checkpoint):
+def wait_native_engines(workflow, engines, deadline, report, checkpoint):
     """Observe registration readiness inside the existing source-scan budget."""
-    engines = [(pg, 'postgresql'), (kafka, 'kafka')]
+    require(type(engines) is list and 1 <= len(engines) <= 2
+            and all(type(identity) is int and identity > 0 and kind in {'minio', 'postgresql', 'kafka'}
+                    for identity, kind in engines)
+            and len({identity for identity, _ in engines}) == len(engines), 'invalid native Engine readiness scope')
     last = [dict(engine_id=identity, engine_type=kind, observation='not_observed') for identity, kind in engines]
     try:
         while time.monotonic() < deadline:
             for i, (identity, kind) in enumerate(engines):
-                value = workflow.engine(identity)  # Original Engine User checks exact owned ID and Tenant.
+                value = workflow.engine(identity, deadline=deadline)  # Same User, exact owned ID and original window.
                 require(type(value) is dict and value.get('engine_type') == kind, 'fixture Engine type changed')
                 def state(field, allowed):
                     candidate = value.get(field)
@@ -416,7 +426,7 @@ def wait_transfer_engines(workflow, pg, kafka, deadline, report, checkpoint):
             if all(row['connection_status'] == 'online' for row in last):
                 return
             time.sleep(1)
-        raise S.SuiteError('native Transfer Engines were not ready before the source preparation deadline')
+        raise S.SuiteError('native Engines were not ready before the source preparation deadline')
     except Exception:
         report['engine_readiness_diagnostic'] = {'engines': last}
         checkpoint()
@@ -815,7 +825,10 @@ def prepare_manager(manager, workflow, controls, source, report, checkpoint):
     controls.source_objects()
     engine_id = workflow.register(controls.descriptor('minio'))
     report['stage'] = 'manager_source_scan'; checkpoint()
-    MANAGER.wait_for_meta_scan(manager, engine_id, time.monotonic() + 180)
+    preparation_deadline = time.monotonic() + 180
+    MANAGER.wait_for_meta_scan(manager, engine_id, preparation_deadline)
+    report['stage'] = 'manager_engine_readiness'; checkpoint()
+    wait_native_engines(workflow, [(engine_id, 'minio')], preparation_deadline, report, checkpoint)
     bucket = controls.manifest['source_bucket']
     require(isinstance(bucket, str) and re.fullmatch(r'[a-z0-9.-]+', bucket), 'invalid owned source bucket')
     full_name = bucket + '/model3d/obj/model.obj'
@@ -913,7 +926,7 @@ def run_transfer(user, workflow, controls, case, report, checkpoint):
     MANAGER.wait_for_meta_scan(user, pg, preparation_deadline)
     if case != 'transfer-dlq-unknown':
         report['stage'] = 'transfer_engine_readiness'; checkpoint()
-        wait_transfer_engines(workflow, pg, kafka, preparation_deadline, report, checkpoint)
+        wait_native_engines(workflow, [(pg, 'postgresql'), (kafka, 'kafka')], preparation_deadline, report, checkpoint)
     task_ids = []
     if case != 'transfer-dlq-unknown':
         # Current Transfer uses Tenant/task permissions. Manager-purpose source

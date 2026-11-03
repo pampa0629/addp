@@ -38,12 +38,6 @@ MESH_SOURCE_FACTS['obj']['download_members'] = {
     'model.mtl': {'size_bytes': 45, 'sha256': '558c50a6b44f36a364a64f2693e1325eb93a194da4732bd48fa37a9d3c12ed9b'},
     'texture.png': {'size_bytes': 76, 'sha256': 'c534a94d60fbfc172ceb524df0d232048651a8022b69307120b037b521859b06'},
 }
-# DataItem storage size includes OBJ's 45-byte MTL and 76-byte PNG;
-# source-download size and hash above describe only the primary model file.
-MESH_ITEM_SIZE_BYTES = {
-    "fbx": MESH_SOURCE_FACTS["fbx"]["size_bytes"],
-    "obj": MESH_SOURCE_FACTS["obj"]["size_bytes"] + 45 + 76,
-}
 MAX_SOURCE_SHA256 = "916714595bf7a2953264b8afaafe339fa60bdb4944b4664f6802ccb288190653"
 MAX_OPTIONS = {'source_unit': 'mm', 'texture_files': {'C:\\0ad\\binaries\\data\\mods\\official\\art\\textures\\skins\\skeletal\\horse_chestnut_a.dds': 'texture.png'}}
 FBX_BASIC_SOURCE = {
@@ -643,9 +637,6 @@ def find_fixture_item(client: GatewayClient, engine_id: int, full_name: str, lab
     if not isinstance(fingerprint, str) or not fingerprint:
         raise SuiteError(f"{label} fixture fingerprint is missing")
     positive_int(item.get("id"), f"{label} fixture id")
-    size = item.get("size_bytes")
-    if size is not None and positive_int(size, f"{label} fixture size_bytes") <= 0:
-        raise SuiteError(f"{label} fixture size_bytes must be positive")
     return item
 
 
@@ -930,8 +921,6 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
     assert_no_model_resources(client, item["fingerprint"], format_name)
     model = ArtifactFixture(format_name, item, build_item_locator(engine_id, item))
     if format_name in MESH_SOURCE_FACTS:
-        if item.get("size_bytes") != MESH_ITEM_SIZE_BYTES[format_name]:
-            raise SuiteError(f"{format_name} item size differs from the pinned fixture")
         verify_mesh_source(client, model)
     return model
 

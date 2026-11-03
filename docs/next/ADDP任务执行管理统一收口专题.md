@@ -255,8 +255,10 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ### 8.43 Manager 原生成功基线准备
 
-用户已同意继续现有验收收尾，优先 `manager-success`，再按独立 case 验证对象／索引未知效果和旧 Runtime 迟到写入；Graph 高级恢复保持暂缓。沿原三 User／准确权限、九项成功断言、独占 Hosted 部署与既有预算推进，不改变删除语义或个人环境。
+用户已同意继续验收收尾，优先 `manager-success`，再分别验证对象／索引未知效果和旧 Runtime 迟到写入；Graph 高级恢复仍暂缓。沿原三业务 User、既有独立源办理员、准确权限、九项断言、独占 Hosted 部署与原预算推进，不改变删除语义或个人环境。
 
-准备阶段已用确定性反例复现授权前枚举缺口：原 runner 先让未获源 Grant 的 Manager User 枚举 Meta，当前可见性规则会隐藏该对象。现改为规范指纹定位 System 服务端授权事实，由既有独立办理员核验准确目标与完整组成后办理 Grant，再由 Manager 枚举并严格核对相同指纹；未授权、事实冲突或读回不符均停止，不新增权限或回退机器身份。补扫描、授权、源身份、模型准备／生成及原生库存的固定阶段，诊断不归档原文。
+已用功能反例收口三项准备缺口：先由办理员读取 System 准确事实并办理 Grant，之后 Manager 才枚举并核对同一源；Meta 仅消费结构投影，源大小／完整性沿原授权下载逐项核验 OBJ／MTL／纹理长度和固定摘要；扫描与准确 MinIO 的 active／online 观察共用原180秒窗口，原 Engine User 单次读取限于原60秒与剩余预算，超时不补读、不准备模型。CDC 两 Engine 复用同一有界观察器。未知事实和授权失败继续阻断，不新增权限、原生变更或重试。
 
-本地标准 `make test-execution-online-ci-runner` 在准确 `64313b1b9` 源码副本叠加本批自有文件后实际 exit0，116 项 native 与175项共享测试及登记一致通过；旧 runner 的同一功能反例 exit1。三业务 User 和既有办理员权限集合、机器契约、直接 HTTP／wait／sleep 调用均核验未变。该结果仅为确定性门禁，修正提交的相关 Linux CI 与首次 Manager 原生九断言仍待实际结果，不把准备顺序修正记为 Hosted 通过。
+CI 负责人以 `5fc2980a1` 仅在既有原生 Cleanup Make 目标增加共享 Manager helper 测试模块，无新 Job／服务／预算。最终固定源码副本的 `make test-execution-online-ci-runner` 实际 exit0，195项原生／helper与176项共享测试、语法及登记一致通过；`make test-manager-online-runner` 完整230项及 System 身份夹具 Go通过，对应 helper 输入未变。当前 System／Meta Go-only与Manager后端标准入口均通过。原始下载、ZIP成员、GLB几何验证器和机器契约逐项核同；旧实现的三个准备反例均失败，未把模拟或编译失败计为原生故障证据。
+
+本批仅 runner／夹具／文档改动，未运行新的 Hosted；修正提交的相关 Linux CI及Manager真实九项断言仍待实际结果。首次Grant顺序修正为 `e71b8a4ac`；其后结构投影与就绪窗口补修的准确自然CI单独核验。私有分层证明 `/tmp/addp-manager-cleanup-baseline-20261103/`；已有 Transfer三case与Neo4j身份反例证据保持，不升级为全矩阵完成。
