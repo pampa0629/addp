@@ -33,6 +33,9 @@ func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode
 	keys := map[string]string{}
 	var collect func(*resourcetree.TreeNode) error
 	collect = func(node *resourcetree.TreeNode) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if node == nil {
 			return nil
 		}
@@ -168,6 +171,9 @@ func observeMetadataVisibility(ctx context.Context, targets []plugin.EngineCatal
 	}
 	visible := map[string]bool{}
 	for offset := 0; offset < len(targets); offset += 200 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		end := offset + 200
 		if end > len(targets) {
 			end = len(targets)

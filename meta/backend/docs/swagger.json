@@ -2307,35 +2307,40 @@
                 ]
             }
         },
-        "/runtime/data-items/{fingerprint}/authorization-facts": {
-            "get": {
+        "/runtime/data-items/authorization-facts/query": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅供 addp-system 与 addp-catalog Tenant Service 经共享 MetaClient 精确读取已提交的身份与边界，200 不表示访问许可；不扫描、不读取源内容、不返回凭据或完整 attributes | Restricted to addp-system and addp-catalog Tenant Services through the shared MetaClient. Reads committed identity and boundary; HTTP 200 is not an Allow. No scan, source content, credentials or full attributes",
+                "description": "固定 System/Catalog Tenant Service 精确读取1—32个不重复指纹，正文最多4KiB、每项最多128KiB；按请求顺序返回，当前租户缺失项facts为null，故障整批失败。200不是许可，不扫描、不读源内容、不缓存 | Restricted to System/Catalog Tenant Services. Reads 1-32 unique exact fingerprints, at most 4 KiB request and 128 KiB per fact. Results retain request order; absent items have null facts, failures reject the entire query. HTTP 200 is not an Allow. No scans, source reads or caching",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta Runtime"
                 ],
-                "summary": "查询数据项授权资源事实 | Read DataItem authorization resource facts",
+                "summary": "查询数据项授权资源事实 | Query DataItem authorization resource facts",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "数据项指纹 | DataItem fingerprint",
-                        "name": "fingerprint",
-                        "in": "path",
-                        "required": true
+                        "description": "精确事实查询 | Exact facts query",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.AuthorizationFactsQuery"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "当前授权资源事实 | Current authorization resource facts",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/authorizationfacts.AuthorizationFacts"
+                            "$ref": "#/definitions/authorizationfacts.AuthorizationFactsBatch"
                         }
                     },
                     "400": {
@@ -2359,7 +2364,7 @@
                             "additionalProperties": true
                         }
                     },
-                    "404": {
+                    "413": {
                         "description": "查询失败 | Query failed",
                         "schema": {
                             "type": "object",
@@ -4257,6 +4262,39 @@
                     "type": "string"
                 },
                 "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorizationfacts.AuthorizationFactsBatch": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.AuthorizationFactsResult"
+                    }
+                }
+            }
+        },
+        "authorizationfacts.AuthorizationFactsQuery": {
+            "type": "object",
+            "properties": {
+                "fingerprints": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "authorizationfacts.AuthorizationFactsResult": {
+            "type": "object",
+            "properties": {
+                "facts": {
+                    "$ref": "#/definitions/authorizationfacts.AuthorizationFacts"
+                },
+                "item_fingerprint": {
                     "type": "string"
                 }
             }

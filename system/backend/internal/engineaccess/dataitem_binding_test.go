@@ -39,8 +39,21 @@ func testBindingFacts(path plugin.EngineCatalogPath) authorizationfacts.Authoriz
 
 type bindingFactsReaderFunc func(context.Context, uint, string) (*authorizationfacts.AuthorizationFacts, error)
 
-func (f bindingFactsReaderFunc) ReadAuthorizationFacts(ctx context.Context, tenant uint, fp string) (*authorizationfacts.AuthorizationFacts, error) {
-	return f(ctx, tenant, fp)
+func (f bindingFactsReaderFunc) ReadAuthorizationFacts(ctx context.Context, tenant uint, fps []string) (*authorizationfacts.AuthorizationFactsBatch, error) {
+	result := &authorizationfacts.AuthorizationFactsBatch{}
+	for _, fp := range fps {
+		facts, err := f(ctx, tenant, fp)
+		if status, ok := client.TenantAPIStatusCode(err); ok && status == http.StatusNotFound {
+			facts, err = nil, nil
+		} else if facts == nil && err == nil {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		result.Data = append(result.Data, authorizationfacts.AuthorizationFactsResult{ItemFingerprint: fp, Facts: facts})
+	}
+	return result, nil
 }
 
 func TestDataItemReadBindingsRequireCompleteTrustedNativeProof(t *testing.T) {
@@ -150,14 +163,20 @@ func testReadBindings(paths ...plugin.EngineCatalogPath) []authorizationfacts.Bi
 
 type testMetaFacts struct{ paths []plugin.EngineCatalogPath }
 
-func (reader testMetaFacts) ReadAuthorizationFacts(_ context.Context, _ uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
-	for _, path := range reader.paths {
-		facts := testBindingFacts(path)
-		if facts.ItemFingerprint == fingerprint {
-			return &facts, nil
+func (reader testMetaFacts) ReadAuthorizationFacts(ctx context.Context, tenant uint, fps []string) (*authorizationfacts.AuthorizationFactsBatch, error) {
+	result := &authorizationfacts.AuthorizationFactsBatch{}
+	for _, fp := range fps {
+		entry := authorizationfacts.AuthorizationFactsResult{ItemFingerprint: fp}
+		for _, path := range reader.paths {
+			facts := testBindingFacts(path)
+			if facts.ItemFingerprint == fp {
+				entry.Facts = &facts
+				break
+			}
 		}
+		result.Data = append(result.Data, entry)
 	}
-	return nil, ErrAuthorizationBoundaryChanged
+	return result, nil
 }
 
 func (r *Repository) testReadCurrentUserSourceRules(ctx context.Context, credential string, paths []plugin.EngineCatalogPath) (*sourceReadRules, error) {

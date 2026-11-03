@@ -109,7 +109,7 @@ func TestSharingTargetResolverUsesCanonicalAuthorizationFactsClient(t *testing.T
 			metaCalls, systemCalls := 0, 0
 			metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				metaCalls++
-				if r.Method != http.MethodGet || r.URL.Path != "/api/v1/meta/runtime/data-items/"+fingerprint+"/authorization-facts" ||
+				if r.Method != http.MethodPost || r.URL.Path != "/api/v1/meta/runtime/data-items/authorization-facts/query" ||
 					r.URL.RawQuery != "" || r.Header.Get("Authorization") != "Bearer catalog-tenant-service-token" ||
 					r.Header.Get("X-Tenant-ID") != "" || r.Header.Get("X-Internal-API-Key") != "" {
 					t.Error("unexpected Meta facts request")
@@ -121,7 +121,7 @@ func TestSharingTargetResolverUsesCanonicalAuthorizationFactsClient(t *testing.T
 					w.WriteHeader(http.StatusServiceUnavailable)
 					return
 				case "missing":
-					w.WriteHeader(http.StatusNotFound)
+					_ = json.NewEncoder(w).Encode(authorizationfacts.AuthorizationFactsBatch{Data: []authorizationfacts.AuthorizationFactsResult{{ItemFingerprint: fingerprint, Facts: nil}}})
 					return
 				case "credential_rejected":
 					w.WriteHeader(http.StatusForbidden)
@@ -130,7 +130,7 @@ func TestSharingTargetResolverUsesCanonicalAuthorizationFactsClient(t *testing.T
 					_, _ = w.Write([]byte("{}"))
 					return
 				}
-				_ = json.NewEncoder(w).Encode(facts)
+				_ = json.NewEncoder(w).Encode(authorizationfacts.AuthorizationFactsBatch{Data: []authorizationfacts.AuthorizationFactsResult{{ItemFingerprint: fingerprint, Facts: &facts}}})
 			}))
 			defer metaServer.Close()
 			systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

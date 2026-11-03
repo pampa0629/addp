@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"net/http"
 	"slices"
 
 	"github.com/addp/common/authorization"
@@ -34,13 +33,14 @@ func (r *sharingTargetResolver) ResolveSharingTarget(ctx context.Context, tenant
 	// Meta alone establishes the DataItem boundary. Use Catalog's own tenant
 	// Service credential, outside its business transaction; never reconstruct
 	// an authorization target from ancestry, row IDs or presentation names.
-	facts, err := r.meta.ReadAuthorizationFacts(ctx, uint(tenantID), fingerprint)
+	batch, err := r.meta.ReadAuthorizationFacts(ctx, uint(tenantID), []string{fingerprint})
 	if err != nil {
-		if status, ok := commonClient.TenantAPIStatusCode(err); ok && status == http.StatusNotFound {
-			return authorizationfacts.Binding{}, ErrSharingTargetUnsupported
-		}
 		return authorizationfacts.Binding{}, ErrReferenceValidationUnavailable
 	}
+	if batch.Data[0].Facts == nil {
+		return authorizationfacts.Binding{}, ErrSharingTargetUnsupported
+	}
+	facts := batch.Data[0].Facts
 	if facts == nil || facts.Validate() != nil || facts.ItemFingerprint != fingerprint {
 		return authorizationfacts.Binding{}, ErrReferenceValidationUnavailable
 	}

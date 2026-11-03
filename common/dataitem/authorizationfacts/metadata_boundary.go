@@ -160,7 +160,7 @@ func strictMetadataObject(raw []byte) (map[string]bool, error) {
 	}
 	d := json.NewDecoder(strings.NewReader(string(raw)))
 	d.UseNumber()
-	fields, err := authorizationJSONValue(d, 0)
+	fields, err := authorizationJSONValue(d, 0, 8)
 	if err != nil {
 		return nil, err
 	}

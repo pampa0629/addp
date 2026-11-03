@@ -2,7 +2,6 @@ package engineaccess
 
 import (
 	"context"
-	"errors"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"strings"
@@ -81,20 +80,20 @@ func (s *Service) checkMetaVisibility(ctx context.Context, credential string, re
 	knownPaths := []plugin.EngineCatalogPath{}
 	bindings := []authorizationfacts.Binding{}
 	positions := []int{}
+	resolved, err := s.resolveMetadataBindings(ctx, tenant, paths)
+	if err != nil {
+		return nil, err
+	}
+	if len(resolved) != len(paths) {
+		return nil, errSourceReadRules
+	}
 	for index, path := range paths {
 		result.Targets[index].Target = path
-		bound, err := s.resolveMetadataBindings(ctx, tenant, []plugin.EngineCatalogPath{path})
-		if errors.Is(err, ErrAuthorizationBoundaryChanged) {
+		if resolved[index].ItemFingerprint == "" {
 			continue
 		}
-		if err != nil {
-			return nil, err
-		}
-		if len(bound) != 1 {
-			return nil, errSourceReadRules
-		}
 		knownPaths = append(knownPaths, path)
-		bindings = append(bindings, bound[0])
+		bindings = append(bindings, resolved[index])
 		positions = append(positions, index)
 	}
 	if len(knownPaths) == 0 {

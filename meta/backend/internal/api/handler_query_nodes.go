@@ -46,7 +46,7 @@ func (h *Handler) GetMetadataTree(c *gin.Context) {
 		return
 	}
 
-	tree, err := h.metadataQueryService.GetMetadataTree(tenantID, uint(engineID))
+	tree, err := h.metadataQueryService.GetMetadataTree(c.Request.Context(), tenantID, uint(engineID))
 	if err != nil {
 		h.respondMetadataQueryError(c, err)
 		return

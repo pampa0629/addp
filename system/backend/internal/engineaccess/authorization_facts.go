@@ -3,10 +3,8 @@ package engineaccess
 import (
 	"context"
 	"errors"
-	"net/http"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/authorization"
@@ -16,7 +14,20 @@ var ErrAuthorizationFactsUnavailable = errors.New("Meta authorization facts unav
 var ErrAuthorizationBoundaryChanged = errors.Join(commonapi.ErrConflict, errors.New("DataItem authorization boundary changed or incomplete"))
 
 type AuthorizationFactsReader interface {
-	ReadAuthorizationFacts(context.Context, uint, string) (*authorizationfacts.AuthorizationFacts, error)
+	ReadAuthorizationFacts(context.Context, uint, []string) (*authorizationfacts.AuthorizationFactsBatch, error)
+}
+
+// Single-item consumers use the same batch owner contract, with no alternate HTTP route.
+func (s *Service) readAuthorizationFact(ctx context.Context, tenant uint, fp string) (*authorizationfacts.AuthorizationFacts, error) {
+	query := authorizationfacts.AuthorizationFactsQuery{Fingerprints: []string{fp}}
+	batch, err := s.authorizationFacts.ReadAuthorizationFacts(ctx, tenant, query.Fingerprints)
+	if err != nil || batch.Validate(query) != nil {
+		return nil, ErrAuthorizationFactsUnavailable
+	}
+	if batch.Data[0].Facts == nil {
+		return nil, commonapi.ErrNotFound
+	}
+	return batch.Data[0].Facts, nil
 }
 
 func (s *Service) WithAuthorizationFactsReader(reader AuthorizationFactsReader) *Service {
@@ -34,9 +45,9 @@ func (s *Service) resolveReadBindings(ctx context.Context, tenantID int64, paths
 		if err != nil {
 			return nil, ErrAuthorizationBoundaryChanged
 		}
-		facts, err := s.authorizationFacts.ReadAuthorizationFacts(ctx, uint(tenantID), candidate)
+		facts, err := s.readAuthorizationFact(ctx, uint(tenantID), candidate)
 		if err != nil {
-			if status, ok := client.TenantAPIStatusCode(err); ok && status == http.StatusNotFound {
+			if errors.Is(err, commonapi.ErrNotFound) {
 				return nil, ErrAuthorizationBoundaryChanged
 			}
 			return nil, ErrAuthorizationFactsUnavailable
@@ -110,12 +121,12 @@ func (s *Service) GetAuthorizationFacts(ctx context.Context, actor Actor, engine
 	if s.authorizationFacts == nil {
 		return nil, ErrAuthorizationFactsUnavailable
 	}
-	facts, readErr := s.authorizationFacts.ReadAuthorizationFacts(ctx, uint(actor.TenantID), fingerprint)
+	facts, readErr := s.readAuthorizationFact(ctx, uint(actor.TenantID), fingerprint)
 	if err := qualify(); err != nil {
 		return nil, err
 	}
 	if readErr != nil {
-		if status, ok := client.TenantAPIStatusCode(readErr); ok && status == http.StatusNotFound {
+		if errors.Is(readErr, commonapi.ErrNotFound) {
 			return nil, commonapi.ErrNotFound
 		}
 		return nil, ErrAuthorizationFactsUnavailable

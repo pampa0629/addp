@@ -11,9 +11,9 @@ import (
 	"github.com/addp/common/jsonmap"
 )
 
-// postIdentityQuery is the sole bounded transport for read-only Meta identity POSTs.
+// postMetaOwnerQuery is the sole bounded transport for read-only Meta owner POSTs.
 // It neither follows redirects nor replays a command after credential expiry.
-func (c *MetaClient) postIdentityQuery(ctx context.Context, tenantID uint, path string, input any, maxBytes int) ([]byte, error) {
+func (c *MetaClient) postMetaOwnerQuery(ctx context.Context, tenantID uint, path string, input any, maxBytes, maxDepth int) ([]byte, error) {
 	copy := *c.WithTenantID(tenantID)
 	transport := *copy.httpClient
 	transport.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -44,7 +44,7 @@ func (c *MetaClient) postIdentityQuery(ctx context.Context, tenantID uint, path 
 	if err != nil {
 		return nil, errors.New("invalid Meta identity response")
 	}
-	if _, err := jsonmap.DecodeObjectStrict(encoded, maxBytes, 8); err != nil {
+	if _, err := jsonmap.DecodeObjectStrict(encoded, maxBytes, maxDepth); err != nil {
 		return nil, errors.New("invalid Meta identity response")
 	}
 	return encoded, nil

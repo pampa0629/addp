@@ -269,7 +269,9 @@ func exerciseTransferProductionClients(t *testing.T, db *gorm.DB, tenant int64, 
 	defer producer.Close()
 	meta := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		metaCalls.Add(1)
-		checkRequest(r, "/api/v1/meta/runtime/data-items/"+facts.ItemFingerprint+"/authorization-facts")
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/meta/runtime/data-items/authorization-facts/query" || r.Header.Get("Authorization") != "Bearer test-system-service" {
+			t.Error("wrong System fact query")
+		}
 		// Completes while the remote call is in flight. System cannot retain
 		// a transaction/connection or lock on this Engine across owner IO.
 		if changeEngine.Load() {
@@ -277,7 +279,7 @@ func exerciseTransferProductionClients(t *testing.T, db *gorm.DB, tenant int64, 
 				t.Error(err)
 			}
 		}
-		_ = json.NewEncoder(w).Encode(facts)
+		_ = json.NewEncoder(w).Encode(authorizationfacts.AuthorizationFactsBatch{Data: []authorizationfacts.AuthorizationFactsResult{{ItemFingerprint: facts.ItemFingerprint, Facts: &facts}}})
 	}))
 	defer meta.Close()
 	service := NewService(NewRepository(db), nil).

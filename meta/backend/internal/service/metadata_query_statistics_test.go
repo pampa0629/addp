@@ -47,7 +47,7 @@ func TestAllNodeQueriesShareCurrentSubtreeStatistics(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(ancestors.Ancestors, nil)
-	tree, err := svc.GetMetadataTree(7, 9)
+	tree, err := svc.GetMetadataTree(t.Context(), 7, 9)
 	if err != nil {
 		t.Fatal(err)
 	}

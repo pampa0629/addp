@@ -26,8 +26,21 @@ import (
 
 type authorizationFactsReaderFunc func(context.Context, uint, string) (*authorizationfacts.AuthorizationFacts, error)
 
-func (f authorizationFactsReaderFunc) ReadAuthorizationFacts(ctx context.Context, tenant uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
-	return f(ctx, tenant, fingerprint)
+func (f authorizationFactsReaderFunc) ReadAuthorizationFacts(ctx context.Context, tenant uint, fps []string) (*authorizationfacts.AuthorizationFactsBatch, error) {
+	result := &authorizationfacts.AuthorizationFactsBatch{}
+	for _, fp := range fps {
+		facts, err := f(ctx, tenant, fp)
+		if status, ok := client.TenantAPIStatusCode(err); ok && status == http.StatusNotFound {
+			facts, err = nil, nil
+		} else if facts == nil && err == nil {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		result.Data = append(result.Data, authorizationfacts.AuthorizationFactsResult{ItemFingerprint: fp, Facts: facts})
+	}
+	return result, nil
 }
 
 func exerciseAuthorizationFactsAPI(t *testing.T, db *gorm.DB, identity *iam.Repository, actor engineaccess.Actor, engine models.Engine) {

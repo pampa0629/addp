@@ -519,7 +519,7 @@ System 的数据授权消费 Meta 已可靠识别的 DataItem，不要求 deep �
 
 本节定义 Meta → System／Catalog 最小事实投影；当前实现范围见本节“实施与验收”。它只描述数据项及其组成；System 仍独立判断操作者、接收方、批准要求、Grant、撤销与期限。Meta 的完整详情、Catalog 变化摘要和 `common/dataitem.ItemDescriptor` 均不能直接当作这一可信契约：前两者的用途不同，后者尚未表达基础识别完整性与授权组成约束。
 
-接口为 `GET /api/v1/meta/runtime/data-items/{fingerprint}/authorization-facts`，仅供当前 Tenant Context 的 `addp-system`、`addp-catalog` Service 使用。两者均通过唯一的 `common/client.MetaClient.ReadAuthorizationFacts` 和各自独立服务凭据读取，不直查 Meta 数据库、不从祖先链或完整详情另造授权边界。Tenant 从 AuthContext 派生；`meta.authorization_facts.read` 只授予内置 `tenant.system_runtime` 与 `tenant.catalog_runtime`，不可委托或租户定制。Catalog 用于核验业务批准目标，System 仍独占 Grant、撤销与访问裁决；该机器读取资格不授予人员数据权限。该 GET 在同一已提交快照中读取 Meta 持久事实，不访问源内容、不扫描、不写回，也不持有调用方的业务／授权事务锁。响应使用 `Cache-Control: no-store`，不能跨请求缓存为许可。
+接口为 `POST /api/v1/meta/runtime/data-items/authorization-facts/query`，正文 `fingerprints` 为 1—32 个不重复的精确指纹（最多 4 KiB）；响应按请求顺序返回 `data[{item_fingerprint,facts}]`。当前租户内不存在或已删除的项使用显式 `facts:null`，依赖故障不能伪装为缺失；任何数据库、协议或请求取消错误中止整批，不返回部分事实。每项沿既有 128 KiB 预算，整批响应最多 `32 × (128 KiB + 256) + 256` 字节。只保留该批量 HTTP 路线，单项消费同样提交一个指纹，删除原单项 GET。仅供当前 Tenant Context 的 `addp-system`、`addp-catalog` Service 使用。两者均通过唯一的 `common/client.MetaClient.ReadAuthorizationFacts` 和各自独立服务凭据读取，不直查 Meta 数据库、不从祖先链或完整详情另造授权边界。Tenant 从 AuthContext 派生；`meta.authorization_facts.read` 只授予内置 `tenant.system_runtime` 与 `tenant.catalog_runtime`，不可委托或租户定制。Catalog 用于核验业务批准目标，System 仍独占 Grant、撤销与访问裁决；该机器读取资格不授予人员数据权限。该查询逐项沿原只读快照读取 Meta 已提交事实，不访问源内容、不扫描、不写回，也不持有调用方的业务／授权事务锁。响应使用 `Cache-Control: no-store`，不能跨请求缓存为许可。
 
 | 响应部分 | 最小内容与事实来源 |
 | --- | --- |
@@ -544,7 +544,7 @@ NFS、FTP 与 MinIO 的 IFC／3DS／DAE／OBJ 组成事实由 Meta 基础扫描�
 
 已确认的 DAE 扩展：FTP/NFS/MinIO 在同一精确文件组成路线接入 Collada 1.4.0/1.4.1 静态模型。Meta 基础扫描以原生 range 只读取已观察的主文件，完整 XML 不超过 64 MiB；不读取依赖字节、不解析几何统计、不按材质库枚举目录。只匹配明确声明的模型父范围内 PNG/JPEG，URI 百分号合法解码一次，保留原声明并核对大小写；DTD、实体、外部模型、缺失或越界引用、超限及不完整声明均不得构成可批准边界。DAE 复用既有 `file_composition`、System 执行授权、Manager 精确暂存和 Assimp→GLB；执行只核对冻结清单及同一主文件字节，不重新发现依赖。组成变化须重新扫描并重新批准，不扩展已有 IFC/3DS 批准，不沿用历史缺少冻结来源组成的产物。MinIO 保留原生 object typed path，桶根、前缀与完整 refs 采集共用上述有界结构观察；深度摘要不能补造基础组成。此段为实施范围，各来源的真实 DAE 验收状态分别以验收证据索引为准。
 
-STL 在 FTP／NFS／MinIO 的 basic 识别复用格式层 `Model3DCompositionProvider`，以 `format_info.stl.composition_complete` 独立保存严格结构观察的结果，完整时只保留唯一必需主 `model` ref，明确没有外部依赖。读取／语法／预算失败原子保存不完整；deep 几何 `scan_complete` 不得补造或覆盖该字段，授权事实 GET 不重读源端。字段为本轮实施契约，实际插件、消费接线与验收分层认定。
+STL 在 FTP／NFS／MinIO 的 basic 识别复用格式层 `Model3DCompositionProvider`，以 `format_info.stl.composition_complete` 独立保存严格结构观察的结果，完整时只保留唯一必需主 `model` ref，明确没有外部依赖。读取／语法／预算失败原子保存不完整；deep 几何 `scan_complete` 不得补造或覆盖该字段，授权事实查询不重读源端。字段为本轮实施契约，实际插件、消费接线与验收分层认定。
 
 FTP／NFS／MinIO 的自包含 GLB basic 与 STL 共用严格组成 Provider 接线：成功提交唯一主 `model` ref 和独立 `format_info.glb.composition_complete`；失败保存不完整，deep 不补造组成。无原生 Range 能力时不以摘要读取兜底。GLB 原始读取资格不产生转换任务准入。
 

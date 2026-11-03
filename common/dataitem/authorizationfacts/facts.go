@@ -106,7 +106,7 @@ func (f *AuthorizationFacts) UnmarshalJSON(encoded []byte) error {
 	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.UseNumber()
-	keys, err := authorizationJSONValue(decoder, 0)
+	keys, err := authorizationJSONValue(decoder, 0, 8)
 	if err != nil {
 		return err
 	}
@@ -136,9 +136,9 @@ func (f *AuthorizationFacts) UnmarshalJSON(encoded []byte) error {
 	return nil
 }
 
-func authorizationJSONValue(decoder *json.Decoder, depth int) (map[string]bool, error) {
+func authorizationJSONValue(decoder *json.Decoder, depth, maxDepth int) (map[string]bool, error) {
 	invalid := errors.New("invalid or duplicate authorization facts JSON field")
-	if depth > 8 {
+	if depth > maxDepth {
 		return nil, invalid
 	}
 	token, err := decoder.Token()
@@ -167,7 +167,7 @@ func authorizationJSONValue(decoder *json.Decoder, depth int) (map[string]bool, 
 			}
 			keys[name] = true
 		}
-		if _, err := authorizationJSONValue(decoder, depth+1); err != nil {
+		if _, err := authorizationJSONValue(decoder, depth+1, maxDepth); err != nil {
 			return nil, err
 		}
 	}

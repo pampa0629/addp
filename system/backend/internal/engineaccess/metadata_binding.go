@@ -2,8 +2,6 @@ package engineaccess
 
 import (
 	"context"
-	"github.com/addp/common/client"
-	"net/http"
 	"reflect"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
@@ -18,22 +16,50 @@ func (s *Service) resolveMetadataBindings(ctx context.Context, tenant int64, pat
 	if s == nil || s.authorizationFacts == nil || tenant <= 0 {
 		return nil, ErrAuthorizationFactsUnavailable
 	}
-	result := make([]authorizationfacts.Binding, 0, len(paths))
-	for _, target := range paths {
+	result := make([]authorizationfacts.Binding, len(paths))
+	fingerprints := []string{}
+	keys := make([]string, len(paths))
+	seen := map[string]bool{}
+	for i, target := range paths {
 		fingerprint, err := authorizationfacts.PrimaryCandidateFingerprint(target)
 		if err != nil {
-			return nil, ErrAuthorizationBoundaryChanged
+			continue
 		}
-		facts, err := s.authorizationFacts.ReadAuthorizationFacts(ctx, uint(tenant), fingerprint)
-		if status, ok := client.TenantAPIStatusCode(err); ok && status == http.StatusNotFound {
-			return nil, ErrAuthorizationBoundaryChanged
+		keys[i] = fingerprint
+		if !seen[fingerprint] {
+			fingerprints = append(fingerprints, fingerprint)
+			seen[fingerprint] = true
 		}
-		if err != nil || facts == nil || facts.Validate() != nil || facts.ItemFingerprint != fingerprint {
+	}
+	factsByKey := map[string]*authorizationfacts.AuthorizationFacts{}
+	for offset := 0; offset < len(fingerprints); offset += authorizationfacts.MaxAuthorizationFactsQueryItems {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		end := offset + authorizationfacts.MaxAuthorizationFactsQueryItems
+		if end > len(fingerprints) {
+			end = len(fingerprints)
+		}
+		query := authorizationfacts.AuthorizationFactsQuery{Fingerprints: fingerprints[offset:end]}
+		batch, err := s.authorizationFacts.ReadAuthorizationFacts(ctx, uint(tenant), query.Fingerprints)
+		if err != nil || batch.Validate(query) != nil {
 			return nil, ErrAuthorizationFactsUnavailable
+		}
+		for _, entry := range batch.Data {
+			factsByKey[entry.ItemFingerprint] = entry.Facts
+		}
+	}
+	for index, target := range paths {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		facts := factsByKey[keys[index]]
+		if facts == nil {
+			continue
 		}
 		binding, err := facts.ProveMetadataTarget(target)
 		if err != nil {
-			return nil, ErrAuthorizationBoundaryChanged
+			continue
 		}
 		engine, err := s.repository.engine(ctx, tenant, int64(target.EngineID), false)
 		if err != nil {
@@ -43,7 +69,7 @@ func (s *Service) resolveMetadataBindings(ctx context.Context, tenant int64, pat
 		// Metadata admission never depends on a content reader or source IO.
 		model, err := dbbridge.EngineCatalogModel(engine.EngineType)
 		if err != nil {
-			return nil, ErrAuthorizationBoundaryChanged
+			continue
 		}
 		names := make([]string, 0, len(target.Segments)-1)
 		for _, segment := range target.Segments[1:] {
@@ -51,9 +77,9 @@ func (s *Service) resolveMetadataBindings(ctx context.Context, tenant int64, pat
 		}
 		canonical, err := resourcetree.EngineCatalogPathFromLocator(model, &resourcetree.ResourceLocator{EngineID: target.EngineID, Type: resourcetree.ResourceType(target.Segments[len(target.Segments)-1].Kind), Path: names})
 		if err != nil || !reflect.DeepEqual(canonical, target) {
-			return nil, ErrAuthorizationBoundaryChanged
+			continue
 		}
-		result = append(result, binding)
+		result[index] = binding
 	}
 	return result, nil
 }

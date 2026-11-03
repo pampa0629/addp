@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"gorm.io/gorm"
@@ -10,21 +11,23 @@ import (
 	"github.com/addp/meta/internal/repository"
 )
 
-func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models.MetadataTreeResponse, error) {
+func (s *MetadataQueryService) GetMetadataTree(ctx context.Context, tenantID, engineID uint) (*models.MetadataTreeResponse, error) {
+	db := s.db.WithContext(ctx)
+	scoped := NewMetadataQueryService(db)
 	var topNodes []models.MetaNode
-	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL AND full_name = '' AND deleted_at IS NULL", tenantID, engineID).
+	if err := db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL AND full_name = '' AND deleted_at IS NULL", tenantID, engineID).
 		Find(&topNodes).Error; err != nil {
 		return nil, fmt.Errorf("failed to query top nodes: %w", err)
 	}
 
 	var childNodes []models.MetaNode
-	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NOT NULL AND deleted_at IS NULL", tenantID, engineID).
+	if err := db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NOT NULL AND deleted_at IS NULL", tenantID, engineID).
 		Find(&childNodes).Error; err != nil {
 		return nil, fmt.Errorf("failed to query child nodes: %w", err)
 	}
 
 	var items []models.MetaItem
-	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL AND node_id IN (SELECT id FROM meta.meta_node WHERE tenant_id = ? AND engine_id = ? AND deleted_at IS NULL)",
+	if err := db.Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL AND node_id IN (SELECT id FROM meta.meta_node WHERE tenant_id = ? AND engine_id = ? AND deleted_at IS NULL)",
 		tenantID, engineID, tenantID, engineID).
 		Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("failed to query items: %w", err)
@@ -34,7 +37,7 @@ func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models
 	for i, node := range topNodes {
 		topNodesLite[i] = metaquery.ToMetaNodeLite(node)
 	}
-	if err := s.populateMetaNodeStatistics(tenantID, topNodesLite); err != nil {
+	if err := scoped.populateMetaNodeStatistics(tenantID, topNodesLite); err != nil {
 		return nil, err
 	}
 
@@ -42,7 +45,7 @@ func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models
 	for i, node := range childNodes {
 		childNodesLite[i] = metaquery.ToMetaNodeLite(node)
 	}
-	if err := s.populateMetaNodeStatistics(tenantID, childNodesLite); err != nil {
+	if err := scoped.populateMetaNodeStatistics(tenantID, childNodesLite); err != nil {
 		return nil, err
 	}
 

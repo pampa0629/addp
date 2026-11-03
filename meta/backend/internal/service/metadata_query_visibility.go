@@ -212,7 +212,7 @@ func (s *ResourceTreeService) FilterMetadataEngineStats(ctx context.Context, ten
 		if engine == nil {
 			continue
 		}
-		tree, err := s.metadataQueryService.GetMetadataTree(tenantID, engine.EngineID)
+		tree, err := s.metadataQueryService.GetMetadataTree(ctx, tenantID, engine.EngineID)
 		if err != nil {
 			return nil, err
 		}

@@ -16,7 +16,7 @@ func (c *MetaClient) QueryDataItemIdentities(ctx context.Context, tenantID uint,
 		return nil, errors.New("invalid Meta identity query")
 	}
 	const path = "/api/v1/meta/runtime/data-item-identities/query"
-	encoded, err := c.postIdentityQuery(ctx, tenantID, path, query, authorizationfacts.MaxIdentityQueryBytes)
+	encoded, err := c.postMetaOwnerQuery(ctx, tenantID, path, query, authorizationfacts.MaxIdentityQueryBytes, 8)
 	if err != nil {
 		return nil, err
 	}

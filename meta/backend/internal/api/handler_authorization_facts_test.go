@@ -1,8 +1,12 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,13 +64,13 @@ func TestMetaAuthorizationFactsRuntimeGuardAndReadOnlyQuery(t *testing.T) {
 		{"addp-system", "7", "service_access_token", "meta.authorization_facts.read", "", 200},
 		{"addp-catalog", "7", "service_access_token", "meta.authorization_facts.read", "", 200},
 		{"addp-catalog", "7", "service_access_token", "", "", 403},
-		{"addp-catalog", "8", "service_access_token", "meta.authorization_facts.read", "", 404},
+		{"addp-catalog", "8", "service_access_token", "meta.authorization_facts.read", "", 200},
 		{"addp-catalog", "7", "service_access_token", "meta.authorization_facts.read", "?tenant_id=8", 400},
 		{"addp-security", "7", "service_access_token", "meta.authorization_facts.read", "", 403},
 		{"addp-manager", "7", "service_access_token", "meta.authorization_facts.read", "", 403},
 		{"addp-system", "7", "service_access_token", "", "", 403},
 		{"addp-web", "7", "first_party_access_token", "meta.authorization_facts.read", "", 403},
-		{"addp-system", "8", "service_access_token", "meta.authorization_facts.read", "", 404},
+		{"addp-system", "8", "service_access_token", "meta.authorization_facts.read", "", 200},
 		{"addp-system", "7", "service_access_token", "meta.authorization_facts.read", "?tenant_id=8", 400},
 	} {
 		t.Run(test.client+test.tenant+test.suffix+test.permission, func(t *testing.T) {
@@ -82,9 +86,18 @@ func TestMetaAuthorizationFactsRuntimeGuardAndReadOnlyQuery(t *testing.T) {
 			api.Use(commonAuth.MustNewContextGuard("tenant"))
 			registerDataItemAuthorizationFactsRoute(api, handler)
 			response := httptest.NewRecorder()
-			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/meta/runtime/data-items/"+item.Fingerprint+"/authorization-facts"+test.suffix, nil))
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/meta/runtime/data-items/authorization-facts/query"+test.suffix, bytes.NewBufferString(`{"fingerprints":["`+item.Fingerprint+`"]}`)))
 			if response.Code != test.want {
 				t.Fatalf("status=%d want=%d body=%s", response.Code, test.want, response.Body.String())
+			}
+			if test.want == 200 {
+				var batch authorizationfacts.AuthorizationFactsBatch
+				if json.Unmarshal(response.Body.Bytes(), &batch) != nil || batch.Validate(authorizationfacts.AuthorizationFactsQuery{Fingerprints: []string{item.Fingerprint}}) != nil {
+					t.Fatal("unbound response")
+				}
+				if (test.tenant == "8") != (batch.Data[0].Facts == nil) {
+					t.Fatal("cross-tenant or missing facts confused")
+				}
 			}
 			if test.want == 200 && response.Header().Get("Cache-Control") != "no-store" {
 				t.Fatal("cacheable facts")
@@ -94,5 +107,34 @@ func TestMetaAuthorizationFactsRuntimeGuardAndReadOnlyQuery(t *testing.T) {
 	var count int64
 	if err := db.Model(&models.MetaItem{}).Count(&count).Error; err != nil || count != 1 {
 		t.Fatal("query changed metadata", err)
+	}
+	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware(), func(c *gin.Context) {
+		if err := commonAuth.SetAuthContextForGin(c, authorizationFactsProjection("addp-system", "7", "service_access_token", "meta.authorization_facts.read")); err != nil {
+			t.Fatal(err)
+		}
+		c.Next()
+	})
+	registerDataItemAuthorizationFactsRoute(router.Group("/api/v1/meta"), handler)
+	for _, test := range []struct {
+		body string
+		want int
+	}{
+		{`{}`, 400}, {`{"fingerprints":[]}`, 400},
+		{`{"fingerprints":["` + item.Fingerprint + `","` + item.Fingerprint + `"]}`, 400},
+		{`{"fingerprints":["` + item.Fingerprint + `"],"tenant_id":8}`, 400},
+		{`{"fingerprints":[],"fingerprints":["` + item.Fingerprint + `"]}`, 400},
+		{strings.Repeat(" ", authorizationfacts.MaxAuthorizationFactsQueryBytes) + `{}`, 413},
+	} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/meta/runtime/data-items/authorization-facts/query", strings.NewReader(test.body)))
+		if response.Code != test.want {
+			t.Fatalf("invalid query status=%d want=%d", response.Code, test.want)
+		}
+	}
+	legacy := httptest.NewRecorder()
+	router.ServeHTTP(legacy, httptest.NewRequest(http.MethodGet, "/api/v1/meta/runtime/data-items/"+item.Fingerprint+"/authorization-facts", nil))
+	if legacy.Code != 404 {
+		t.Fatal("legacy single-item HTTP route retained")
 	}
 }

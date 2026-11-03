@@ -15,7 +15,7 @@ func (c *MetaClient) ResolveNodeIdentity(ctx context.Context, tenantID uint, que
 	if c == nil || c.httpClient == nil || c.baseURL == "" || tenantID == 0 || query.Validate() != nil {
 		return nil, errors.New("invalid Meta node identity query")
 	}
-	encoded, err := c.postIdentityQuery(ctx, tenantID, "/api/v1/meta/runtime/node-identities/resolve", query, authorizationfacts.MaxNodeIdentityBytes)
+	encoded, err := c.postMetaOwnerQuery(ctx, tenantID, "/api/v1/meta/runtime/node-identities/resolve", query, authorizationfacts.MaxNodeIdentityBytes, 8)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +40,7 @@ func (c *MetaClient) QueryNodeIdentities(ctx context.Context, tenantID uint, que
 	if c == nil || c.httpClient == nil || c.baseURL == "" || tenantID == 0 || query.Validate() != nil {
 		return nil, errors.New("invalid Meta child node query")
 	}
-	encoded, err := c.postIdentityQuery(ctx, tenantID, "/api/v1/meta/runtime/node-identities/query", query, authorizationfacts.MaxNodeIdentityPageBytes)
+	encoded, err := c.postMetaOwnerQuery(ctx, tenantID, "/api/v1/meta/runtime/node-identities/query", query, authorizationfacts.MaxNodeIdentityPageBytes, 8)
 	if err != nil {
 		return nil, err
 	}

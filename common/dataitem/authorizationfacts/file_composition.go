@@ -260,7 +260,7 @@ func validateFileCompositionTarget(target plugin.EngineCatalogPath) error {
 func (r *FileCompositionRef) UnmarshalJSON(encoded []byte) error {
 	strict := json.NewDecoder(bytes.NewReader(encoded))
 	strict.UseNumber()
-	if _, err := authorizationJSONValue(strict, 0); err != nil {
+	if _, err := authorizationJSONValue(strict, 0, 8); err != nil {
 		return errFileComposition
 	}
 	if _, err := strict.Token(); err != io.EOF {
@@ -293,7 +293,7 @@ func (b *FileCompositionBoundary) UnmarshalJSON(encoded []byte) error {
 	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.UseNumber()
-	keys, err := authorizationJSONValue(decoder, 0)
+	keys, err := authorizationJSONValue(decoder, 0, 8)
 	if err != nil || len(keys) != 2 || !keys["format"] || !keys["refs"] {
 		return errFileComposition
 	}
@@ -351,7 +351,7 @@ func (b AuthorizationBoundary) MarshalJSON() ([]byte, error) {
 func (b *AuthorizationBoundary) UnmarshalJSON(encoded []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.UseNumber()
-	keys, err := authorizationJSONValue(decoder, 0)
+	keys, err := authorizationJSONValue(decoder, 0, 8)
 	if err != nil || !keys["layout"] || len(keys) != 2 || (!keys["native_target"] && !keys["file_composition"] && !keys["scope"] && !keys["metadata_target"]) {
 		return errFileComposition
 	}

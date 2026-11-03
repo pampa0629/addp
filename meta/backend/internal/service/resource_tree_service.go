@@ -33,7 +33,7 @@ func (s *ResourceTreeService) GetTree(ctx context.Context, tenantID, engineID ui
 	if err != nil {
 		return nil, err
 	}
-	metaTree, err := s.metadataQueryService.GetMetadataTree(tenantID, engineID)
+	metaTree, err := s.metadataQueryService.GetMetadataTree(ctx, tenantID, engineID)
 	if err != nil {
 		return nil, err
 	}
