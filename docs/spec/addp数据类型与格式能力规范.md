@@ -373,6 +373,8 @@ spatial := datatype.SpatialInfo{
 
 多维数值容器的网格切片使用`GridSliceSelection`/`GridSliceResult`，只是一种内容预览契约，不新增data type或独立DataItem。父级轻量变量索引保存名字、原生类型、维序/大小和有界精选属性，完整变量属性及数值/掩膜只在显式选择后读取，不写回父attributes。`RuntimeContainerSliceProviderFactory`复用既有容器绑定，`ContainerSliceReader`在同一授权source plan下读取选定变量的有界二维网格；没有第二套绑定或table伪装。
 
+网格切片的 `value_mode` 由格式的真实数值语义决定：NetCDF 保持 `raw_storage`；GRIB 为 `decoded_native_units`，表示 GDAL 已解码打包数值但未更换单位或经度。公共组件按已声明模式说明结果，不默认所有网格都是原存储值；不为 GRIB 再创建一套切片接口或渲染组件。
+
 
 容器 child、multi ref 和嵌套容器路径必须区分：
 

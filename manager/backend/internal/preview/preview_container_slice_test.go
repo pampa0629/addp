@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/plugins/grib"
 	_ "github.com/addp/common/format/plugins/netcdf"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -37,5 +38,16 @@ func TestGridSliceDeniesProtectionBeforeRuntimeDiscovery(t *testing.T) {
 	source.RefPath = "external"
 	if got, err := r.previewContainerSlice(context.Background(), req, source); got != nil || !errors.Is(err, format.ErrGridSliceSelection) || calls != 1 {
 		t.Fatal("non-primary reference reached runtime", got, err, calls)
+	}
+}
+
+func TestGRIBSliceDeniesProtectionBeforeAnyRuntimeRead(t *testing.T) {
+	tenant, item := uint(7), uint(31)
+	denied := errors.New("GRIB source denied")
+	calls := 0
+	req := &PreviewResolverRequest{Locator: &resourcetree.ResourceLocator{EngineID: 14, Type: "file", Path: []string{"weather.grb2"}}, Engine: &commonModels.Engine{ID: 14, EngineType: "nfs"}, TenantID: &tenant, MetaItemID: &item, ItemFullName: "weather.grb2", ItemFingerprint: commonModels.GenerateItemFingerprint(14, "weather.grb2"), GridSlice: &format.GridSliceSelection{Variable: "message-1", Indices: []int64{}, Width: 4, Height: 3}, CheckContainerSliceRead: func(context.Context, plugin.EngineCatalogPath) error { calls++; return denied }}
+	source := &PreviewRequest{ItemType: "file", ProviderPath: plugin.FileItemPath(14, "weather.grb2"), Attributes: map[string]interface{}{"item": map[string]interface{}{"format": "grib", "layout": "single", "data_type": "container"}, "format_info": map[string]interface{}{"grib": map[string]interface{}{"source_version": "sha256:" + strings.Repeat("a", 64)}}}}
+	if result, err := (&PreviewResolver{}).previewContainerSlice(context.Background(), req, source); result != nil || !errors.Is(err, denied) || calls != 1 {
+		t.Fatal(result, err, calls)
 	}
 }

@@ -5,6 +5,7 @@
         <el-descriptions border size="small" :column="2">
           <el-descriptions-item :label="t('gridPreview.type')">{{ child.native?.type }}</el-descriptions-item>
           <el-descriptions-item :label="t('gridPreview.dimensions')">{{ child.native?.dimensions?.map(d => `${d.name} [${d.size}]`).join(' × ') }}</el-descriptions-item>
+          <el-descriptions-item v-if="child.native?.grid" :label="t('gridPreview.grid')"><span data-testid="grid-native-transform">{{ child.native.grid.transform?.join(', ') }}</span></el-descriptions-item>
           <el-descriptions-item v-for="(attribute, key) in child.native?.attributes" :key="key" :label="key">{{ attribute.values?.join(', ') }}</el-descriptions-item>
         </el-descriptions>
       </div>
@@ -20,7 +21,7 @@
           </el-form-item>
           <el-button type="primary" :disabled="!selectionValid" :loading="loading" data-testid="read-grid-slice" @click="read">{{ t('gridPreview.read') }}</el-button>
         </el-form>
-        <el-alert :title="t('gridPreview.rawValues')" type="info" :closable="false" show-icon />
+        <el-alert :title="t(`gridPreview.${valueModeKey}`)" type="info" :closable="false" show-icon />
         <el-alert v-if="error" :title="error" type="error" :closable="false" role="alert" />
         <template v-if="slice">
           <div class="grid-window" data-testid="grid-slice-result">
@@ -32,7 +33,7 @@
             </table>
           </div>
           <slot v-if="slice.spatial" name="spatial" :spatial="slice.spatial" />
-          <el-text v-else type="info" data-testid="grid-no-location">{{ t('gridPreview.noLocation') }}</el-text>
+          <el-text v-else type="info" data-testid="grid-no-location">{{ t(child.native?.grid ? 'gridPreview.noMapPreview' : 'gridPreview.noLocation') }}</el-text>
         </template>
       </template>
       <el-empty v-else :description="t('gridPreview.unsupportedVariable')" />
@@ -44,7 +45,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ContainerPreview from './ContainerPreview.vue'
-import { gridColorValues, gridWindowLimit, validateGridSelection } from '../../utils/gridSlice.js'
+import { gridColorValues, gridWindowLimit, gridValueModeKey, validateGridSelection } from '../../utils/gridSlice.js'
 const props = defineProps({ variables: { type: Array, required: true }, loadSlice: { type: Function, required: true } })
 const { t } = useI18n()
 const selectedName = ref('')
@@ -58,7 +59,8 @@ let sequence = 0
 const children = computed(() => props.variables.map(variable => ({ key: variable.name, name: variable.name, native: variable })))
 const variable = computed(() => props.variables.find(item => item.name === selectedName.value))
 const selection = computed(() => ({ variable: selectedName.value, indices: [...indices.value], ...window }))
-const selectionValid = computed(() => validateGridSelection(variable.value, selection.value))
+const valueModeKey = computed(() => gridValueModeKey(variable.value?.value_mode))
+const selectionValid = computed(() => Boolean(valueModeKey.value) && validateGridSelection(variable.value, selection.value))
 const indexLimit = size => Number(BigInt(size) - 1n > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : BigInt(size) - 1n)
 function clear() { sequence++; request?.abort(); slice.value = null; error.value = ''; loading.value = false }
 function reset() {
@@ -76,7 +78,10 @@ async function read() {
   clear(); const current = sequence; request = new AbortController(); loading.value = true
   try {
     const result = await props.loadSlice(selection.value, request.signal)
-    if (current === sequence) slice.value = result
+    if (current === sequence) {
+      if (result.value_mode !== variable.value?.value_mode) throw new Error(t('gridPreview.failed'))
+      slice.value = result
+    }
   } catch (failure) {
     if (current === sequence && !request.signal.aborted) error.value = failure?.response?.data?.error || failure?.message || t('gridPreview.failed')
   } finally { if (current === sequence) loading.value = false }

@@ -21,6 +21,6 @@
     "/plugins/pptx-preview.js",
     "/plugins/markdown-preview.js",
     "/plugins/text-preview.js",
-    "/plugins/netcdf-preview.js"
+    "/plugins/grid-file-preview.js"
   ]
 }

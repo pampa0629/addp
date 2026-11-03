@@ -351,3 +351,27 @@ func TestEnrichVectorExchangeContainerUsesSharedRuntime(t *testing.T) {
 		})
 	}
 }
+
+func TestGRIBRuntimeContainerKeepsExactMessageIdentityAndDecodedSemantics(t *testing.T) {
+	inspector := &fakeRuntimeContainerInspector{result: &format.ContainerDescribeResult{Container: &datatype.ContainerInfo{ChildCount: 2, ResourceCount: 1, Children: []datatype.ContainerChildInfo{
+		{Name: "message-1", ChildKind: "array", DataType: datatype.Media, Format: "grib", Native: map[string]interface{}{"name": "message-1", "value_mode": "decoded_native_units", "dimensions": []interface{}{map[string]interface{}{"name": "y", "size": "3"}, map[string]interface{}{"name": "x", "size": "4"}}, "attributes": map[string]interface{}{"GRIB_UNIT": map[string]interface{}{"values": []string{"[K]"}}}, "slice_supported": true}},
+		{Name: "message-2", ChildKind: "array", DataType: datatype.Media, Format: "grib", Native: map[string]interface{}{"name": "message-2", "value_mode": "decoded_native_units", "dimensions": []interface{}{map[string]interface{}{"name": "y", "size": "2"}, map[string]interface{}{"name": "x", "size": "3"}}, "slice_supported": true}},
+	}}, FormatInfo: map[string]interface{}{"driver": "GRIB", "scan_complete": true, "source_version": "sha256:exact-source"}}}
+	attrs := models.JSONMap{}
+	item := detectedItemForTest(dataitem.ResolvedItem{DataType: datatype.Container, Format: "grib", Layout: format.LayoutSingle})
+	handled, err := EnrichRuntimeContainerItem(t.Context(), attrs, inspector, &commonModels.Engine{ID: 14}, 1, item, "weather.grb2")
+	if err != nil || !handled || inspector.format != "grib" || inspector.layout != "single" {
+		t.Fatal(handled, err)
+	}
+	children := commonJSON.Section(attrs, "type_info.container")["children"].([]map[string]interface{})
+	if len(children) != 2 || children[0]["name"] != "message-1" || children[1]["name"] != "message-2" {
+		t.Fatal(children)
+	}
+	native := children[0]["native"].(map[string]interface{})
+	if native["name"] != nil || native["value_mode"] != "decoded_native_units" || native["slice_supported"] != true || native["attributes"] == nil || native["dimensions"] == nil {
+		t.Fatal(native)
+	}
+	if commonJSON.Section(attrs, "format_info.grib")["source_version"] != "sha256:exact-source" {
+		t.Fatal(attrs)
+	}
+}

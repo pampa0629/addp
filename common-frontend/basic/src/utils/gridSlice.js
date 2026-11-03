@@ -20,3 +20,7 @@ export function gridColorValues(values, valid) {
     return Number.isFinite(number) ? number : null
   })).filter(number => number !== null)
 }
+
+export function gridValueModeKey(mode) {
+  return mode === 'raw_storage' ? 'rawValues' : mode === 'decoded_native_units' ? 'decodedValues' : ''
+}

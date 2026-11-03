@@ -1243,6 +1243,8 @@
     }
   },
   "gridPreview": {
+    "grid": "Native grid (affine parameters)",
+    "noMapPreview": "This field retains its independent grid; map preview is not available.",
     "variable": "Variable",
     "type": "Native type",
     "dimensions": "Dimensions and sizes",
@@ -1252,6 +1254,7 @@
     "height": "Rows",
     "read": "Read slice",
     "rawValues": "Raw stored values; scale, offset and time units are listed as source attributes.",
+    "decodedValues": "Decoded values in the file’s declared units; no automatic unit conversion or longitude reordering.",
     "missing": "Missing",
     "noLocation": "No confirmed map location for this slice.",
     "unsupportedVariable": "Structure is available; this variable has no supported numeric 2D slice.",

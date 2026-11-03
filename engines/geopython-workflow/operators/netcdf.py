@@ -189,6 +189,7 @@ def _description(array, light=False):
     numeric = numeric and not (len(unsigned) == 1 and str(unsigned[0]).strip().lower() == "true")
     return {
         "name": array.GetFullName(),
+        "value_mode": "raw_storage",
         "type": _type_name(kind),
         "dimensions": [{"name": d.GetFullName(), "size": str(d.GetSize()), "axis_type": d.GetType(), "direction": d.GetDirection()} for d in dimensions],
         "attributes": attributes,

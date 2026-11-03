@@ -27,6 +27,7 @@ from .vector_tile_operators import vector_to_pmtiles
 from .gdal_vector_dataset import OPERATORS as GDAL_VECTOR_DATASET_OPERATORS
 from .orc_table import OPERATORS as ORC_TABLE_OPERATORS
 from .netcdf import OPERATORS as NETCDF_OPERATORS
+from .grib import OPERATORS as GRIB_OPERATORS
 from .data_operations import (
     clip, voronoi, split_by_area,
     batch_buffer
@@ -71,6 +72,7 @@ for ops_dict in [
     GDAL_VECTOR_DATASET_OPERATORS,
     ORC_TABLE_OPERATORS,
     NETCDF_OPERATORS,
+    GRIB_OPERATORS,
     DATA_OPERATORS,
     ATTRIBUTE_OPERATORS,
     FILTER_OPERATORS

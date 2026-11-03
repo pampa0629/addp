@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { gridWindowLimit, validateGridSelection, gridColorValues } from '../src/utils/gridSlice.js'
+import { gridWindowLimit, validateGridSelection, gridColorValues, gridValueModeKey } from '../src/utils/gridSlice.js'
 
 test('grid dimensions stay exact while bounded indices are safe UI numbers', () => {
   assert.equal(gridWindowLimit('18446744073709551615', 3), 128)
@@ -29,4 +29,11 @@ test('shared grid rendering extends the single container selector instead of cop
   assert.doesNotMatch(source, /<el-select/)
   assert.match(container, /<slot name="child-details"/)
   assert.match(container, /<slot name="child-preview"/)
+})
+
+test('grid mode distinguishes native decoded measurements from raw storage', () => {
+  assert.equal(gridValueModeKey('raw_storage'), 'rawValues')
+  assert.equal(gridValueModeKey('decoded_native_units'), 'decodedValues')
+  assert.equal(gridValueModeKey('unknown'), '')
+  assert.equal(gridValueModeKey(undefined), '')
 })

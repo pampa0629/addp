@@ -698,7 +698,7 @@ const previewComponentProps = computed(() => {
   if (isMarkdownContent.value) {
     return { rawMode: markdownRawMode.value }
   }
-  if (previewPluginName.value === 'netcdf-preview') return { locator: props.selectedNode?.locator || '' }
+  if (previewPluginName.value === 'grid-file-preview') return { locator: props.selectedNode?.locator || '' }
   if (previewPluginName.value === 'container-preview') {
     return {
       ...temporaryCrsProps,

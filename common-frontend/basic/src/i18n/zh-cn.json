@@ -1243,6 +1243,8 @@
     }
   },
   "gridPreview": {
+    "grid": "原生网格（仿射参数）",
+    "noMapPreview": "本变量保留独立网格，暂不提供地图预览。",
     "variable": "变量",
     "type": "原生类型",
     "dimensions": "维度与大小",
@@ -1252,6 +1254,7 @@
     "height": "行数",
     "read": "读取切片",
     "rawValues": "显示原始存储值；比例、偏移和时间单位按源属性列出。",
+    "decodedValues": "按文件声明单位解码的数值；不自动转换单位或重排经度。",
     "missing": "缺失",
     "noLocation": "本切片没有已确认的地图定位。",
     "unsupportedVariable": "此变量支持结构查看，暂不支持二维数值切片。",

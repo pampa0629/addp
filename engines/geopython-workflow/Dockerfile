@@ -79,7 +79,7 @@ COPY engines/geopython-workflow/workflow_engine.py .
 COPY engines/geopython-workflow/api_server.py .
 COPY engines/geopython-workflow/container_entrypoint.sh .
 
-RUN python -c "from osgeo import gdal; assert gdal.GetDriverByName('JP2OpenJPEG'), 'JPEG2000 requires JP2OpenJPEG'; assert gdal.GetDriverByName('GS7BG'), 'Surfer 7 requires GS7BG'; assert gdal.GetDriverByName('GSBG'), 'Surfer 6 Binary requires GSBG'; assert gdal.GetDriverByName('GSAG'), 'Surfer 6 ASCII requires GSAG'"
+RUN python -c "from osgeo import gdal; assert gdal.GetDriverByName('GRIB'), 'GRIB2 requires GRIB'; assert gdal.GetDriverByName('JP2OpenJPEG'), 'JPEG2000 requires JP2OpenJPEG'; assert gdal.GetDriverByName('GS7BG'), 'Surfer 7 requires GS7BG'; assert gdal.GetDriverByName('GSBG'), 'Surfer 6 Binary requires GSBG'; assert gdal.GetDriverByName('GSAG'), 'Surfer 6 ASCII requires GSAG'"
 
 # Read with the actual native ORC wheel before admitting the product image.
 RUN python - <<'PYORC'
@@ -114,6 +114,31 @@ with tempfile.TemporaryDirectory(prefix='addp-netcdf-build-') as temporary:
     grid=None;root=None;ds=None
 print('NetCDF-4 root numeric composition and GDAL image smoke passed')
 PYNETCDF
+
+# Fixed independent GRIB2 IEEE64/bitmap bytes exercise the packaged worker.
+RUN python - <<'PYGRIB'
+import hashlib, tempfile
+from pathlib import Path
+from operators.grib import OPERATORS
+raw=bytes.fromhex("""
+475249420000000200000000000000d300000015010007000002000107ea0102030000000100000048030000
+00000600000000060000000000000000000000000000000000000300000002000000000000000080a7d8c00e
+e6b28030809896800f053700000f4240000f4240400000002204000000000000020000000000010000000667
+0000000002ffffffffffff0000000c0500000005000402000000070600bc0000002d074071b4000000000040
+71d4000000000040c387800000000040719400000000004071a4000000000037373737
+""")
+with tempfile.TemporaryDirectory(prefix='addp-grib-build-') as work:
+    path=Path(work)/'input.grib2';path.write_bytes(raw)
+    plan={'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'grib','access':{'method':'mounted_path','path':str(path)}}}
+    info=OPERATORS['grib.inspect']['function'](access_plan=plan)
+    assert info['format_info']['source_version']=='sha256:'+hashlib.sha256(raw).hexdigest()
+    result=OPERATORS['grib.read_slice']['function'](access_plan=plan,source_version=info['format_info']['source_version'],selection=dict(variable='message-1',indices=[],x=0,y=0,width=3,height=2))
+    assert result['values']==[['9999.0','281.25','282.25'],['283.25','NaN','285.25']]
+    assert result['valid']==[[True,True,True],[True,False,True]]
+    assert result['variable']['attributes']['GRIB_UNIT']['values']==['[K]']
+    assert result['variable']['grid']['transform']==[249.5,1.,0.,-9.5,0.,-1.]
+print('GRIB2 native units and bitmap image smoke passed')
+PYGRIB
 
 # Verify the packaged API and health route without starting a service or contacting System.
 RUN python -c "import api_server; assert api_server.app.test_client().get('/health').status_code == 200"

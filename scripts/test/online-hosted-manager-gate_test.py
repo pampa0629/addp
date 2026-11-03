@@ -221,6 +221,16 @@ class HostedManagerGateTest(unittest.TestCase):
         report=json.loads((self.host.artifacts/'manager-case.json').read_text())
         self.assertEqual(report['case'],'native-netcdf')
 
+    def test_grib_case_uses_read_only_profile_and_full_cleanup(self):
+        result=self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-grib')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        trace=self.host.trace.read_text()
+        for fragment in ('manager-case:native-grib','application-stop','source-fixture:stop','nfs-fixture:stop','infra-down'):
+            self.assertIn(fragment,trace)
+        for fragment in ('start:-pointcloud-workflow','start:-document-workflow','start:-transfer','--services model3d-workflow-engine'):
+            self.assertNotIn(fragment,trace)
+        self.assertEqual(json.loads((self.host.artifacts/'manager-case.json').read_text())['case'],'native-grib')
+
     def test_envi_case_keeps_owned_native_runtime_and_full_cleanup(self):
         result=self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-envi')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)

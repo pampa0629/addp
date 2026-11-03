@@ -362,7 +362,7 @@ func suitePermissions(suite string) ([]string, error) {
 			return managerFileGDBPermissions, nil
 		case "kml-export":
 			return managerKMLExportPermissions, nil
-		case "native-netcdf":
+		case "native-netcdf", "native-grib":
 			return managerFileGDBPermissions, nil
 		case "native-table-orc":
 			return managerORCPermissions, nil

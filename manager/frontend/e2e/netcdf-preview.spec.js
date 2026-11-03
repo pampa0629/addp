@@ -6,7 +6,7 @@ for (const lang of ['zh-cn', 'en']) test(`NetCDF slices preserve exact values, i
   const rootLocator = 'addp://engine/14/path/?type=server&node_id=1'
   const item = { id: locator, locator, label: 'grid.nc', type: 'file', hasChildren: false }
   const root = { id: rootLocator, locator: rootLocator, label: 'NetCDF fixture', type: 'server', hasChildren: true, children: [item] }
-  const variable = { name: '/temperature', type: 'Int64', dimensions: [{ name: '/time', size: '2' }, { name: '/y', size: '3' }, { name: '/x', size: '4' }], attributes: { units: { values: ['K'] }, calendar: { values: ['360_day'] } }, slice_supported: true }
+  const variable = { value_mode: 'raw_storage', name: '/temperature', type: 'Int64', dimensions: [{ name: '/time', size: '2' }, { name: '/y', size: '3' }, { name: '/x', size: '4' }], attributes: { units: { values: ['K'] }, calendar: { values: ['360_day'] } }, slice_supported: true }
   // Meta owns the canonical child name and removes duplicated protocol keys
   // from native. The Runtime's slice response still has a variable name.
   const { name: _name, ...nativeVariable } = variable
@@ -17,7 +17,7 @@ for (const lang of ['zh-cn', 'en']) test(`NetCDF slices preserve exact values, i
   page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), lang)
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
-  if (lang !== 'en') await page.route('**/plugins/manifest.json', route => json(route, { scripts: ['/plugins/netcdf-preview.js'] }))
+  if (lang !== 'en') await page.route('**/plugins/manifest.json', route => json(route, { scripts: ['/plugins/grid-file-preview.js'] }))
   await page.route('**/api/v1/**', route => {
     const url = new URL(route.request().url()), path = url.pathname
     if (path.endsWith('/system/refresh')) return json(route, { access_token: 'netcdf-e2e', expires_in: 3600 })
@@ -33,7 +33,7 @@ for (const lang of ['zh-cn', 'en']) test(`NetCDF slices preserve exact values, i
         if (slices.length === 3) return json(route, { error: lang === 'en' ? 'Source changed; refresh metadata' : '源文件已变化，请刷新元数据', error_code: 'preview_source_refresh_required' }, 409)
         const values = Array.from({ length: 3 }, (_, y) => Array.from({ length: 4 }, (_, x) => String(9007199254740993n + BigInt(selection.indices[0] * 12 + y * 4 + x))))
         const valid = [[true, true, true, true], [true, true, false, true], [true, true, true, true]]
-        return json(route, { preview_type: 'object', data: { mode: 'object', object: { content: { kind: 'grid_slice', json: { selection, values, valid, variable, spatial } } } } })
+        return json(route, { preview_type: 'object', data: { mode: 'object', object: { content: { kind: 'grid_slice', json: { selection, values, valid, variable, spatial, value_mode: 'raw_storage' } } } } })
       }
       parentReads.push(url.searchParams.get('child_name') || '')
       if (url.searchParams.has('child_name')) return json(route, { error: 'Array reads require an explicit grid_slice', error_code: 'grid_slice_selection_invalid' }, 400)

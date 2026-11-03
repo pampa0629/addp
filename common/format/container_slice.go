@@ -10,7 +10,7 @@ var ErrGridSliceSelection = errors.New("invalid grid slice selection")
 
 var ErrContainerSourceChanged = errors.New("container source version changed")
 
-// GridSliceSelection selects one bounded raw XY grid. It is a temporary view
+// GridSliceSelection selects one bounded XY grid with an explicit value mode. It is a temporary view
 // of a container variable, not a new data type, DataItem, task or artifact.
 type GridSliceSelection struct {
 	Variable string  `json:"variable"`

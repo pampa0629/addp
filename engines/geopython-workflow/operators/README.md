@@ -38,6 +38,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | [format_operators.py](format_operators.py) / [spatial_transform_operators.py](spatial_transform_operators.py) | WKT 格式与坐标参考转换 |
 | [raster_compute.py](raster_compute.py) / [raster_band_recommendation.py](raster_band_recommendation.py) | 通用栅格计算与波段组合建议 |
 | [raster_operators.py](raster_operators.py) / [vector_tile_operators.py](vector_tile_operators.py) | Manager 栅格镶嵌与矢量瓦片成果生成 |
+| [netcdf.py](netcdf.py) / [grib.py](grib.py) | 单文件数值容器的只读目录及有界切片；复用共享预览协议，分别声明原存储值和原单位解码值 |
 | [gdal_vector_dataset.py](gdal_vector_dataset.py) | GDAL 矢量数据集批协议 |
 
 ## 算子分类

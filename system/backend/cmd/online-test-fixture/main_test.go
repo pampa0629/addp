@@ -1652,14 +1652,18 @@ func TestFileGDBOutsiderHasOnlyReadFunctionsAndIsScopedToItsCase(t *testing.T) {
 	}
 }
 
-func TestNetCDFCaseUsesExistingSixReadPermissions(t *testing.T) {
-	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "native-netcdf")
-	got, err := suitePermissions("manager-internal-artifact-lineage")
-	want := []string{"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read"}
-	if err != nil || !slices.Equal(got, want) {
-		t.Fatalf("NetCDF read-only identity: %v %v", got, err)
-	}
-	if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), sourceInitializerPermissions) {
-		t.Fatal("NetCDF expanded source initializer permissions")
+func TestGridFileCaseUsesExistingSixReadPermissions(t *testing.T) {
+	for _, name := range []string{"native-netcdf", "native-grib"} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("ADDP_ONLINE_MANAGER_CASE", name)
+			got, err := suitePermissions("manager-internal-artifact-lineage")
+			want := []string{"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read"}
+			if err != nil || !slices.Equal(got, want) {
+				t.Fatalf("Grid file read-only identity: %v %v", got, err)
+			}
+			if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), sourceInitializerPermissions) {
+				t.Fatal("Grid file expanded source initializer permissions")
+			}
+		})
 	}
 }

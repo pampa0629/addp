@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
 
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -25,68 +24,20 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 func (*Plugin) RequiredContainerInfoOperators() []string  { return []string{"netcdf.inspect"} }
 func (*Plugin) RequiredContainerSliceOperators() []string { return []string{"netcdf.read_slice"} }
 func (*Plugin) BindContainerInfoProvider(runtime engineplugin.WorkflowRuntimeProvider, conn engineplugin.ConnectionInfo, plan workflowaccess.SourcePlan) (format.BoundContainerInfoProvider, error) {
-	if runtime == nil || len(conn) == 0 {
-		return nil, fmt.Errorf("NetCDF requires a runtime connection")
-	}
-	if err := plan.Validate(); err != nil {
-		return nil, err
-	}
-	if plan.Source.Kind != workflowaccess.KindFile || plan.Source.Format != "netcdf" {
-		return nil, fmt.Errorf("NetCDF requires an exact file source")
-	}
-	raw, err := json.Marshal(struct {
-		Conn engineplugin.ConnectionInfo
-		Plan workflowaccess.SourcePlan
-	}{conn, plan})
+	source, err := format.BindContainerRuntimeSource(runtime, conn, plan, format.FormatNetCDF)
 	if err != nil {
 		return nil, err
 	}
-	var frozen struct {
-		Conn engineplugin.ConnectionInfo
-		Plan workflowaccess.SourcePlan
-	}
-	if err = json.Unmarshal(raw, &frozen); err != nil {
-		return nil, err
-	}
-	return &bound{runtime: runtime, conn: frozen.Conn, plan: frozen.Plan}, nil
+	return &bound{source: source}, nil
 }
 
 type bound struct {
-	runtime engineplugin.WorkflowRuntimeProvider
-	conn    engineplugin.ConnectionInfo
-	plan    workflowaccess.SourcePlan
+	source *format.ContainerRuntimeSource
 }
 
 func (*bound) Format() format.FormatType { return format.FormatNetCDF }
-func (b *bound) invoke(ctx context.Context, name string, params map[string]interface{}) (map[string]interface{}, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	params["access_plan"] = b.plan.JSONMap()
-	result, err := b.runtime.InvokeOperator(ctx, b.conn, name, engineplugin.OperatorInvokeRequest{Params: params})
-	if err != nil {
-		return nil, err
-	}
-	if result == nil || result.Status != "success" {
-		return nil, fmt.Errorf("NetCDF runtime did not succeed")
-	}
-	payload, ok := result.Result["result"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("NetCDF runtime omitted result")
-	}
-	if payload["error_code"] == "NETCDF_SLICE_INVALID" {
-		return nil, format.ErrGridSliceSelection
-	}
-	if payload["error_code"] == "NETCDF_SOURCE_CHANGED" {
-		return nil, format.ErrContainerSourceChanged
-	}
-	if payload["format"] != "netcdf" {
-		return nil, fmt.Errorf("NetCDF runtime format mismatch")
-	}
-	return payload, nil
-}
 func (b *bound) DescribeContainer(ctx context.Context, _ *format.ParseOptions) (*format.ContainerDescribeResult, error) {
-	payload, err := b.invoke(ctx, "netcdf.inspect", map[string]interface{}{})
+	payload, err := b.source.Invoke(ctx, "inspect", map[string]interface{}{})
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +55,7 @@ func (b *bound) DescribeContainer(ctx context.Context, _ *format.ParseOptions) (
 	if err = json.Unmarshal(raw, &description); err != nil {
 		return nil, err
 	}
-	if description.Container == nil || description.Container.ChildCount != len(description.Container.Children) || len(description.Container.Children) > 256 || description.FormatInfo["scan_complete"] != true || description.FormatInfo["driver"] != "netCDF" || !validVersion(description.FormatInfo["source_version"]) || !validEncoding(description.FormatInfo) {
+	if description.Container == nil || description.Container.ChildCount != len(description.Container.Children) || len(description.Container.Children) > 256 || description.FormatInfo["scan_complete"] != true || description.FormatInfo["driver"] != "netCDF" || !format.ValidContainerSourceVersion(description.FormatInfo["source_version"]) || !validEncoding(description.FormatInfo) {
 		return nil, fmt.Errorf("NetCDF inspection facts incomplete")
 	}
 	seen := map[string]bool{}
@@ -127,26 +78,14 @@ func validEncoding(info map[string]interface{}) bool {
 		return false
 	}
 }
-func validVersion(value interface{}) bool {
-	s, ok := value.(string)
-	if !ok || len(s) != 71 || !strings.HasPrefix(s, "sha256:") {
-		return false
-	}
-	for _, r := range s[7:] {
-		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
-			return false
-		}
-	}
-	return true
-}
 func (b *bound) ReadGridSlice(ctx context.Context, version string, selection format.GridSliceSelection) (*format.GridSliceResult, error) {
-	if !validVersion(version) {
+	if !format.ValidContainerSourceVersion(version) {
 		return nil, fmt.Errorf("NetCDF requires the scanned content version")
 	}
 	if err := selection.Validate(); err != nil {
 		return nil, err
 	}
-	payload, err := b.invoke(ctx, "netcdf.read_slice", map[string]interface{}{"source_version": version, "selection": selection})
+	payload, err := b.source.Invoke(ctx, "read_slice", map[string]interface{}{"source_version": version, "selection": selection})
 	if err != nil {
 		return nil, err
 	}

@@ -231,3 +231,10 @@ func TestTopologyIdentityDoesNotClaimOrdinaryJSON(t *testing.T) {
 		t.Fatalf("ordinary XML = %s", got)
 	}
 }
+
+func TestGRIBExposesOnlyBoundedContainerReads(t *testing.T) {
+	snapshot, ok := format.GetFormatCapabilitySnapshot(format.FormatGRIB)
+	if !ok || !snapshot.Implementations.RuntimeContainerInfo || !snapshot.Implementations.RuntimeContainerSlice || snapshot.Implementations.TableReaderProvider || snapshot.Implementations.TableWriterProvider {
+		t.Fatalf("incorrect GRIB capabilities: %#v", snapshot)
+	}
+}
