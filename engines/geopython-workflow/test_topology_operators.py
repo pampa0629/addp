@@ -7412,3 +7412,52 @@ def test_vector_dissolve_async_api_four_admissions(tmp_path,monkeypatch,problem)
             reason,param={'source':('operator_input_invalid','input_gdf'),'crs':('operator_crs_invalid',''),'groups':('operator_group_fields_invalid','group_fields'),'fields':('operator_dissolve_fields_conflict','')}[problem]
             assert state['status']=='failed'and state['error_code']=='INVALID_PARAMS',state
             assert state['diagnostic']=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'dissolve',**({'parameter':param}if param else{})}}
+
+
+@pytest.mark.parametrize('problem',[None,'count','source_id','member_order','member_geometry','null','boolean_type','extra_output','source_changed'])
+def test_dissolve_t4_two_success_eight_refusals_four_saves_and_ogr(tmp_path,problem):
+    import importlib
+    from osgeo import ogr
+    f=importlib.import_module('business.scripts.online-vector-topology-fixture');a=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch();seeded=f.worker('seed',tmp_path,f.DISSOLVE_CASE)
+    def definition(variant='grouped',failure=None):
+        value=a.dissolve_definition(list(f.DISSOLVE_SOURCES),'unused',variant,failure)
+        for task in value['tasks']:
+            if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
+            elif task['operator']=='save':
+                name=task['params'].pop('target_name');task['params'].pop('target_parent_locator');task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+name)
+        return value
+    for variant in('grouped','global'):
+        result=execute_workflow(definition(variant));assert result['status']=='success',result
+        native=f.worker('verify',tmp_path,f.DISSOLVE_CASE);assert native['sources']==seeded['sources']
+        assert len(native['targets'])==(2 if variant=='grouped'else 4)
+    assert [native['targets'][n]['feature_count']for n in f.DISSOLVE_TARGETS]==[4,10,1,10]
+    for variant in('grouped','global'):
+        conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+        result=get_operator('load')(connection_info=conn,path='outputs/'+variant+'-result.gpkg');members=get_operator('load')(connection_info=conn,path='outputs/'+variant+'-members.gpkg')
+        assert sum(result.member_count)==len(members)==10
+        assert members.source_id.tolist()==[r['properties']['parcel_key']for r in f.dissolve_features('source')]
+        assert members.geometry.name not in members.drop(columns=members.geometry.name).columns and 'geometry'in members.columns
+        assert str(members['rank'].dtype)=='Int64'and str(members['enabled'].dtype)=='boolean'
+    if problem is None:
+        for spec in f.DISSOLVE_FAILURES:
+            failed=execute_workflow(definition(failure=spec[0]));assert failed['status']=='failed'and failed['error_code']=='INVALID_PARAMS',failed
+            assert failed['diagnostic']==a.dissolve_diagnostic(spec),failed
+            assert f.worker('verify',tmp_path,f.DISSOLVE_CASE)==native
+        return
+    if problem=='extra_output':(tmp_path/'outputs'/'unexpected.gpkg').write_bytes(b'x')
+    else:
+        name='grouped-result.gpkg'if problem=='count'else'grouped-members.gpkg';path=tmp_path/'outputs'/name
+        if problem=='source_changed':path=tmp_path/f.DISSOLVE_SOURCES[0]
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0);row=layer.GetNextFeature()
+        if problem=='count':row.SetField('member_count',3)
+        elif problem=='source_id':row.SetField('source_id',17)
+        elif problem=='member_order':row.SetField('row_no',2)
+        elif problem in('member_geometry','source_changed'):row.SetGeometry(ogr.CreateGeometryFromWkt('POLYGON ((99 0,100 0,100 1,99 1,99 0))'))
+        elif problem=='null':row.SetField('note','changed')
+        elif problem=='boolean_type':
+            field=ogr.FieldDefn('enabled',ogr.OFTInteger);field.SetSubType(ogr.OFSTNone)
+            assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex('enabled'),field,ogr.ALTER_TYPE_FLAG)==0
+        if problem!='boolean_type':assert layer.SetFeature(row)==0
+        row=layer=ds=None
+    with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.DISSOLVE_CASE)

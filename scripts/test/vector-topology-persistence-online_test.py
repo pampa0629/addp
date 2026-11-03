@@ -2458,3 +2458,191 @@ calls={login:0,goto:0};await assert.rejects(check(page,evidence.case,evidence),e
 process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE=JSON.stringify(evidence);calls={login:0,goto:0};await assert.rejects(check(page,evidence.case),error=>error===stop);assert.deepEqual(calls,{login:1,goto:0});"""
         result=subprocess.run(['node','--input-type=module','-e',script,str(repository)],capture_output=True,text=True,timeout=30)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+
+def dissolve_physical(count=4):
+    return {'exact_inventory_verified':True,'sources':{n:{'size_bytes':98304,'sha256':n}for n in m.fixture.DISSOLVE_SOURCES},
+        'source_tables':{n:{'features':m.fixture.dissolve_features(k)}for n,k in zip(m.fixture.DISSOLVE_SOURCES,m.fixture.DISSOLVE_KINDS)},
+        'targets':{n:{'size_bytes':98304,'sha256':n,'feature_count':len(m.fixture.dissolve_features(n[:-5])),'layer_name':n[:-5],
+            'geometry_column':'parcel_shape','fid_column':'fid','features':m.fixture.dissolve_features(n[:-5])}for n in m.fixture.DISSOLVE_TARGETS[:count]}}
+
+
+class DissolveClient(InputDiagnosticClient):
+    def __init__(self):
+        super().__init__();self.sources=[];self.outputs=[];self.preflight_denied=False;self.success_count=0;self.mutate_success=None;self.mutate_failed=None;self.mutate_graph=None;self.failed_graph=None;self.scan_actor=33;self.scan_tenant=2
+        for i,(name,kind)in enumerate(zip(m.fixture.DISSOLVE_SOURCES,m.fixture.DISSOLVE_KINDS)):
+            rows=m.fixture.dissolve_features(kind);item=base.item(name,10+i);item.update(full_name=name,size_bytes=98304);item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.sources.append(item)
+        for i,name in enumerate(m.fixture.DISSOLVE_TARGETS):
+            rows=m.fixture.dissolve_features(name[:-5]);item=base.item(name,30+i);item['size_bytes']=98304;item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.outputs.append(item)
+        self.scans=['scan-'+n for n in m.fixture.DISSOLVE_SOURCES];self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}'for i,n in enumerate(m.fixture.DISSOLVE_SOURCES)];self.parent='addp://engine/3/path/outputs?type=directory'
+    def request(self,method,path,expected,body=None):
+        if method=='POST'and path.endswith('/develop/executions'):
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
+            if name.startswith('failed-'):
+                spec=next(v for v in m.fixture.DISSOLVE_FAILURES if name.startswith('failed-'+v[0]+'-'));value={'execution_id':'failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':m.dissolve_diagnostic(spec)}}
+                if self.mutate_failed:self.mutate_failed(value)
+            else:
+                variant='grouped'if name.startswith('grouped-')else'global';self.success_count+=1;targets={port:self.parent.removesuffix('?type=directory')+'/'+variant+'-'+port+'.gpkg?type=file'for port in('result','members')}
+                value={'execution_id':variant+'-run','status':'success','triggered_by':33,'execution_config':{'content':{'workflow_definition':definition}},
+                    'outputs':{'save_'+port:{'resource':{'locator':target,'type':'file','write_mode':'create'}}for port,target in targets.items()},
+                    'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.load_source','locator':self.locators[0]}],'outputs':[{'locator':target,'write_mode':'create'}for target in targets.values()]},
+                        'result':{'meta_scan_runs':[{'execution_id':variant+'-'+port+'-scan','target_locator':target,'status':'submitted'}for port,target in targets.items()]}}}
+                self.scans.extend(variant+'-'+port+'-scan'for port in targets)
+                if self.mutate_success:self.mutate_success(value)
+            self.executions[value['execution_id']]=value;data={'execution_id':value['execution_id']}
+        elif path.endswith('/engines/3/items'):data=[*self.sources,*self.outputs]
+        elif path.startswith('/api/v1/meta/items/'):data=next(v for v in[*self.sources,*self.outputs]if v['id']==int(path.rsplit('/',1)[1]))
+        elif '/meta/executions/'in path:data={'status':'success','tenant_id':self.scan_tenant,'triggered_by':self.scan_actor}
+        elif path.startswith('/api/v1/meta/lineage/graph?'):
+            if self.preflight_denied:raise m.SuiteError('resource authorization unavailable')
+            data={'truncated':False,'nodes':[],'edges':[]}
+            if 'direction=upstream'in path:
+                target=int(path.split('item_id=')[1].split('&')[0]);data['edges']=[{'source':{'item_id':10},'target':{'item_id':target},'relation_kind':'derive','status':'active','evidence':{'execution_id':'grouped-run'if target<32 else'global-run'}}]
+                if self.mutate_graph:self.mutate_graph(data)
+            elif self.failed_graph:self.failed_graph(data)
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+class DissolveOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup);self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.DISSOLVE_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=None,browser=lambda *a:a[2]):
+        client=client or DissolveClient();physical=physical or(lambda *a:dissolve_physical(2 if client.success_count==1 else 4))
+        with patch.object(m.raster,'wait_lineage',return_value={}):
+            return m.run_scenario(Path('.'),self.env,client,physical,browser)
+    def test_dissolve_two_success_eight_failures_four_scans_and_execution_bound_source_edges(self):
+        client=DissolveClient();report=self.run_case(client)
+        self.assertEqual((report['result'],report['schema_version']),('passed','addp.polygon-dissolve/v1'))
+        self.assertEqual([len(report[k])for k in('successes','outputs','failures','initial_scan_inventory','final_scan_inventory','meta_after')],[2,4,8,5,9,9])
+        self.assertEqual([o['feature_count']for o in report['outputs']],[4,10,1,10])
+        self.assertEqual(len({r['execution_id']for r in[*report['successes'],*report['failures']]}),10)
+        self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),10)
+    def test_dissolve_requires_resource_visibility_before_any_execution(self):
+        client=DissolveClient();client.preflight_denied=True
+        with self.assertRaisesRegex(m.SuiteError,'resource authorization'):self.run_case(client)
+        self.assertFalse(client.executions)
+    def test_dissolve_rejects_actor_size_scan_port_write_mode_and_foreign_or_duplicate_edges(self):
+        changes=[lambda c:setattr(c,'scan_actor',True),lambda c:setattr(c,'scan_tenant','2'),lambda c:c.outputs[0].update(size_bytes=True),
+            lambda c:setattr(c,'mutate_success',lambda v:v['metadata']['lineage_facts']['inputs'][0].update(port='input.other')),
+            lambda c:setattr(c,'mutate_success',lambda v:v['outputs']['save_members']['resource'].update(write_mode='fail')),
+            lambda c:setattr(c,'mutate_success',lambda v:v['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail')),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'].append(copy.deepcopy(g['edges'][0]))),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'][0]['evidence'].update(execution_id='other')),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'][0]['source'].update(item_id=True))]
+        for change in changes:
+            client=DissolveClient();change(client)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_dissolve_failures_never_accept_outputs_scans_wrong_diagnostics_or_derived_edges(self):
+        changes=[lambda v:v.update(outputs={'save':{}}),lambda v:v['metadata'].update(lineage_facts={'outputs':[{}]}),lambda v:v['metadata'].update(result={'meta_scan_runs':[{}]}),
+            lambda v:v['error_details']['diagnostic']['operator'].update(node_index=True),lambda v:v['error_details']['diagnostic']['operator'].update(field='source_id'),
+            lambda v:v['error_details']['diagnostic']['operator'].update(operator_id='load'),lambda v:v['error_details'].update(message='PRIVATE_DISSOLVE_SOURCE')]
+        for change in changes:
+            client=DissolveClient();client.mutate_failed=change
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(client)
+        client=DissolveClient();client.failed_graph=lambda g:g['edges'].append({'relation_kind':'derive','evidence':{'execution_id':'failed-dissolve-id-missing'}})
+        with self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_dissolve_browser_failure_preserves_checkpoint_and_source_or_result_changes_refuse(self):
+        with self.assertRaisesRegex(m.SuiteError,'browser broke'):self.run_case(browser=lambda *a:(_ for _ in()).throw(m.SuiteError('browser broke')))
+        checkpoint=json.loads((Path(self.directory.name)/'topology-dissolve-checkpoint.json').read_text());self.assertEqual((checkpoint['result'],checkpoint['stage']),('incomplete','before_browser'));self.assertEqual(len(checkpoint['failures']),8)
+        client=DissolveClient()
+        def physical(*a):
+            value=dissolve_physical(2 if client.success_count==1 else 4)
+            if client.success_count==2:value['targets']['grouped-members.gpkg']['sha256']='changed'
+            return value
+        with self.assertRaisesRegex(m.SuiteError,'existing physical'):self.run_case(client,physical=physical)
+        client=DissolveClient()
+        def browser(*a):client.sources[0]['size_bytes']=1;return a[2]
+        with self.assertRaisesRegex(m.SuiteError,'Meta changed'):self.run_case(client,browser=browser)
+
+
+def dissolve_literal_clipboards(failures):
+    import subprocess
+    repo=Path(__file__).resolve().parents[2]
+    script="""import{readFileSync}from'node:fs';let text='';for await(const p of process.stdin)text+=p;const source=readFileSync(process.argv[1],'utf8'),start=source.indexOf('const inputDiagnosticText'),end=source.indexOf('async function assertInputDiagnosticPanel(',start);
+const expected=new Function(source.slice(start,end)+';return inputDiagnosticPageExpectation')();console.log(JSON.stringify(JSON.parse(text).map(f=>({...f,observations:f.observations.map(r=>({...r,clipboard:expected(f.key,r.locale,f.execution_id).clipboard}))}))));"""
+    result=subprocess.run(['node','--input-type=module','-e',script,str(repo/'console/frontend/e2e/online/vector-topology-persistence.spec.js')],input=json.dumps(failures),capture_output=True,text=True,timeout=30)
+    if result.returncode:raise AssertionError(result.stderr)
+    return json.loads(result.stdout)
+
+
+class DissolveBrowserRawTest(unittest.TestCase):
+    def setUp(self):
+        self.owner=DissolveOnlineTest();self.owner.setUp();self.addCleanup(self.owner.doCleanups);self.report=self.owner.run_case();self.evidence=self.report['browser'];e=self.evidence
+        self.raw={'schema_version':'addp.polygon-dissolve-browser-raw/v1','case':e['case'],'run_id':e['run_id'],'stage':'complete','result':'passed','publication_requests':[],
+            'successes':[{'variant':r['variant'],'execution_id':r['execution_id'],'execution':r['execution']}for r in e['successes']],'observations':[],'failures':[]}
+        for output in e['outputs']:
+            expected=output['features'];encoded=overlay_wire_and_projected(expected);fields=list(expected[0]['properties']);count=len(expected)
+            self.raw['observations'].append({'name':output['name'],'port':output['port'],'execution_id':output['execution_id'],'output_item_id':output['item_id'],
+                'sources':[{'item_id':s['id'],'item':s['before']}for s in e['sources']],'output':output['before'],'graph':output['raw_lineage'],'lineage_page':output['raw_lineage'],'lineage_rendered':output['raw_lineage'],
+                'lineage_canvas':{'rows':[{'text':n}for n in(e['sources'][0]['name'],output['name'])],'paths':[[[0,0],[1,1]]]},
+                'preview':{'preview_type':'table','data':{'page':1,'total':count,'source_srid':3857,'source_crs':'EPSG:3857','transform_status':'not_transformed','preview_hint':'frontend_transform_required',
+                    'geometry_columns':['parcel_shape'],'columns':['fid','parcel_shape',*fields],'rows':[{**row['properties'],'fid':i+1,'parcel_shape':wire}for i,(row,wire)in enumerate(zip(expected,encoded['wire']))]}},
+                'popup':{'properties':expected[0]['properties'],'rows':[{'key':k+':','value':'空值'if v is None else str(v).lower()if type(v)is bool else str(v)}for k,v in{'fid':1,**expected[0]['properties']}.items()]},'decoded_rows':expected,'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'painted_pixels':31}})
+        for failed in e['failures']:
+            self.raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],'observations':[{'key':failed['key'],'execution_id':failed['execution_id'],'owner':o,'locale':l,'raw':failed['execution']if o=='develop'else{'execution':failed['monitor']}}for o in('develop','monitor')for l in('zh-cn','en')]})
+        self.raw['failures']=dissolve_literal_clipboards(self.raw['failures'])
+    def test_dissolve_browser_accepts_four_maps_two_execution_pages_and_32_exact_diagnostic_reads(self):
+        m.validate_dissolve_browser_raw(self.raw,self.evidence)
+    def test_dissolve_browser_refuses_wrong_ewkb_member_properties_pixels_graph_uuid_and_clipboard(self):
+        changes=[lambda r:r.update(result='incomplete'),lambda r:r['successes'][1]['execution'].update(status='failed'),lambda r:r['observations'].pop(),
+            lambda r:r['observations'][0]['preview']['data']['rows'][0].update(member_count=True),lambda r:r['observations'][1]['preview']['data']['rows'][0].update(enabled=1),
+            lambda r:r['observations'][1]['preview']['data']['rows'][0].update(parcel_shape=r['observations'][1]['preview']['data']['rows'][1]['parcel_shape']),
+            lambda r:r['observations'][0]['rendered']['features'].pop(),lambda r:r['observations'][0]['rendered'].update(painted_pixels=0),
+            lambda r:r['observations'][1]['popup']['rows'].pop(),
+            lambda r:r['observations'][2]['graph']['edges'][0]['evidence'].update(execution_id='grouped-run'),
+            lambda r:r['failures'][0]['observations'].pop(),lambda r:r['failures'][0]['observations'][0].update(clipboard='wrong'),
+            lambda r:r['observations'][1]['decoded_rows'][0]['properties'].update(source_id=1)]
+        for change in changes:
+            raw=copy.deepcopy(self.raw);change(raw)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):m.validate_dissolve_browser_raw(raw,self.evidence)
+
+
+class DissolveBrowserContractTest(unittest.TestCase):
+    def test_dissolve_frozen_literals_match_shared_contract_and_navigation_reuses_current_identity(self):
+        import subprocess
+        repo=Path(__file__).resolve().parents[2]
+        script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';const root=process.argv[1],source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8');
+const start=source.indexOf('const inputDiagnosticText'),end=source.indexOf('async function assertInputDiagnosticPanel(',start);const values=new Function(source.slice(start,end)+';return inputDiagnosticText')();
+for(const locale of ['zh-cn','en']){const d=JSON.parse(readFileSync(root+'/common-frontend/basic/src/i18n/'+locale+'.json','utf8')).common.executionFailure;
+for(const[key,reason,param]of [['dissolve-id-missing','operator_input_invalid','input_gdf'],['dissolve-id-duplicate','operator_input_invalid','input_gdf'],['dissolve-invalid','operator_input_invalid','input_gdf'],['dissolve-crs','operator_crs_invalid',''],['dissolve-groups-type','operator_group_fields_invalid','group_fields'],['dissolve-groups-duplicate','operator_group_fields_invalid','group_fields'],['dissolve-groups-missing','operator_group_fields_invalid','group_fields'],['dissolve-fields','operator_dissolve_fields_conflict','']])assert.deepEqual(values[key][locale],[d.reasons[reason],d.operatorNames.dissolve,param?d.operatorParameters[param]:'','',d.actions[reason]]);}
+assert.ok(source.includes('await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)'));assert.ok(source.includes('if(overlay||dissolve)return observations'));assert.ok(source.includes('topology-dissolve-browser-raw.json'));
+"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],capture_output=True,text=True,timeout=30);self.assertEqual(result.returncode,0,result.stderr)
+
+
+    def test_dissolve_real_playwright_discovery_selects_only_approved_case(self):
+        import subprocess,os
+        repo=Path(__file__).resolve().parents[2]
+        result=subprocess.run(['npm','exec','--','playwright','test','e2e/online/vector-topology-persistence.spec.js','--config=playwright.online.config.js','--grep',m.fixture.DISSOLVE_TITLE+'$','--list','--reporter=json'],cwd=repo/'console/frontend',env={**os.environ,**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.DISSOLVE_CASE},capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        def specs(suites):return[spec for suite in suites for spec in[*suite.get('specs',[]),*specs(suite.get('suites',[]))]]
+        self.assertEqual([v['title']for v in specs(json.loads(result.stdout)['suites'])],[m.fixture.DISSOLVE_TITLE])
+
+    def test_dissolve_actual_map_helper_refuses_lost_features_coordinates_properties_or_pixels(self):
+        import subprocess
+        repo=Path(__file__).resolve().parents[2]
+        script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';import{pathToFileURL}from'node:url';
+const root=process.argv[1],source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8');
+const start=source.indexOf('async function assertDissolveMap('),end=source.indexOf('function assertDissolveLineage(',start);
+const{webMercatorPreviewGeometry}=await import(pathToFileURL(root+'/manager/frontend/e2e/geometry-preview-coordinate.js'));
+const expect=value=>({toHaveLength:n=>assert.equal(value.length,n)});expect.poll=fn=>({toEqual:async value=>assert.deepEqual(await fn(),value),toBeGreaterThan:async n=>assert.ok(await fn()>n)});
+const check=new Function('expect','webMercatorPreviewGeometry',source.slice(start,end)+';return assertDissolveMap')(expect,webMercatorPreviewGeometry);
+let text='';for await(const p of process.stdin)text+=p;const expected=JSON.parse(text),native={projection:'EPSG:3857',features:expected.map(r=>({properties:r.properties,geometry:webMercatorPreviewGeometry(r.geometry)}))};
+const renderer=(v,pixels=31)=>({evaluate:async()=>v,locator:()=>({evaluateAll:async()=>pixels})});await check(renderer(native),expected);
+for(const change of[v=>v.features.pop(),v=>v.features.push(structuredClone(v.features[0])),v=>v.features[0].properties.source_id++,v=>v.features[0].properties.enabled=1,v=>v.features[0].properties.geometry='changed',v=>v.features[0].geometry.coordinates[0][0]+=1,v=>v.projection='EPSG:4326']){const v=structuredClone(native);change(v);await assert.rejects(check(renderer(v),expected));}
+await assert.rejects(check(renderer(native,0),expected));"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],input=json.dumps(m.fixture.dissolve_features('grouped-members')),capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+
+    def test_dissolve_popup_null_literal_matches_real_shared_chinese_formatter(self):
+        import subprocess
+        repo=Path(__file__).resolve().parents[2]
+        script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';import{pathToFileURL}from'node:url';
+const root=process.argv[1],locale=JSON.parse(readFileSync(root+'/common-frontend/map/src/i18n/zh-cn.json','utf8')).map;
+assert.equal(locale.nullValue,'空值');const{formatFeatureProperties}=await import(pathToFileURL(root+'/common-frontend/map/src/utils/mapFormatters.js'));
+const html=formatFeatureProperties({fid:1,parcel_key:1099511627805,zone:'B',rank:null,enabled:false,geometry:'PRIVATE_DISSOLVE_BUSINESS_0'},{geometryType:'Polygon',labels:{nullValue:locale.nullValue}});
+assert.ok(html.includes('class="null-value">空值</span>'));assert.ok(html.includes('PRIVATE_DISSOLVE_BUSINESS_0'));assert.ok(html.includes('false'));
+const source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8');assert.ok(source.includes("popupProperties[field]===null?'空值':String(popupProperties[field])"));"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],capture_output=True,text=True,timeout=30);self.assertEqual(result.returncode,0,result.stderr)

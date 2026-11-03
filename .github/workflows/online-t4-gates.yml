@@ -153,6 +153,7 @@ on:
           - polygon-rings-input-diagnostics
           - line-trimming
           - line-nodes
+          - polygon-dissolve
           - intersection-overlay
       manager_case:
         description: Manager acceptance case (full preserves all model assertions)

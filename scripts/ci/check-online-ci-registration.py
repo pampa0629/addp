@@ -2254,6 +2254,20 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in nodes_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology nodes case contract incomplete: '+relative)
+    dissolve_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - polygon-dissolve',),
+        'scripts/test/online-hosted-topology-gate.sh': ('polygon-dissolve|intersection-overlay',),
+        'business/scripts/online-vector-topology-fixture.py': ('DISSOLVE_FAILURES', 'def dissolve_features(', 'def verify_dissolve(', 'def dissolve_worker('),
+        'scripts/test/vector-topology-persistence-online.py': ('def dissolve_definition(', 'def run_dissolve_scenario(', 'def validate_dissolve_failure(', 'def validate_dissolve_browser_raw(', 'dissolve requires complete authorized source lineage before execution', 'topology-dissolve-checkpoint.json'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('融合几何独立普通User分组全局双成果及八失败保护', 'async function verifyDissolveCase(', 'async function assertDissolveMap(', 'topology-dissolve-browser-raw.json'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_dissolve_t4_two_success_eight_refusals_four_saves_and_ogr',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class DissolveOnlineTest', 'class DissolveBrowserRawTest', 'test_dissolve_requires_resource_visibility_before_any_execution'),
+        'scripts/test/online-vector-topology-fixture_test.py': ('class DissolveFixtureTest',),
+        'scripts/test/online-hosted-topology-gate_test.py': ('test_dissolve_case_is_bound_without_old_business_or_capacity',),
+    }
+    for relative,fragments in dissolve_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology dissolve independent case contract incomplete: '+relative)
     overlay_required = {
         '.github/workflows/online-t4-gates.yml': ('          - intersection-overlay',),
         'scripts/test/online-hosted-topology-gate.sh': ('intersection-overlay|line-nodes',),

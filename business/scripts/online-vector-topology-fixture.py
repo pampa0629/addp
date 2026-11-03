@@ -678,7 +678,120 @@ def overlay_worker(action,root):
             'targets':{OVERLAY_TARGET:verify_overlay(root/'outputs'/OVERLAY_TARGET,'result')},'exact_inventory_verified':True}
 
 
-INDEPENDENT_CASES = (OVERLAY_CASE, NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+DISSOLVE_CASE = 'polygon-dissolve'
+DISSOLVE_SCHEMA = 'addp.polygon-dissolve'
+DISSOLVE_TITLE = '融合几何独立普通User分组全局双成果及八失败保护'
+DISSOLVE_KINDS = ('source','duplicate-id','invalid','crs','fields')
+DISSOLVE_SOURCES = tuple('dissolve-'+k+'.gpkg' for k in DISSOLVE_KINDS)
+DISSOLVE_TARGETS = ('grouped-result.gpkg','grouped-members.gpkg','global-result.gpkg','global-members.gpkg')
+DISSOLVE_PORTS = ('result','members')
+DISSOLVE_FAILURES = (
+    ('dissolve-id-missing',0,'operator_input_invalid','input_gdf'),
+    ('dissolve-id-duplicate',1,'operator_input_invalid','input_gdf'),
+    ('dissolve-invalid',2,'operator_input_invalid','input_gdf'),
+    ('dissolve-crs',3,'operator_crs_invalid',''),
+    ('dissolve-groups-type',0,'operator_group_fields_invalid','group_fields'),
+    ('dissolve-groups-duplicate',0,'operator_group_fields_invalid','group_fields'),
+    ('dissolve-groups-missing',0,'operator_group_fields_invalid','group_fields'),
+    ('dissolve-fields',4,'operator_dissolve_fields_conflict',''),
+)
+
+
+def dissolve_features(kind):
+    """Handwritten rectangle unions and membership; never run the product union."""
+    def box(x,y,u,v):return {'type':'Polygon','coordinates':[[[x,y],[u,y],[u,v],[x,v],[x,y]]]}
+    def multi(*polygons):return {'type':'MultiPolygon','coordinates':[p['coordinates']for p in polygons]}
+    shapes=[box(0,0,2,2),box(0,0,1,1),box(0,3,1,4),box(1,0,3,2),box(0,0,2,2),
+            box(20,0,22,2),box(20.5,.5,21.5,1.5),box(30,0,31,1),box(31,0,32,1),box(6,0,7,1)]
+    zones=['B','A','A','B','B',None,None,'B','B','B'];ranks=[2,1,1,2,2,2,2,None,None,2]
+    keys=[29,7,31,3,19,11,23,5,17,13];groups=[1,2,2,1,1,3,3,4,4,1]
+    source=[{'geometry':shape,'properties':{'parcel_key':2**40+keys[i],'zone':zones[i],'rank':ranks[i],
+        'row_no':i+1,'enabled':None if i%3==1 else i%2==0,'note':None if i%2 else 'PRIVATE_DISSOLVE_NOTE_'+str(i),
+        'geometry':None if i%2 else 'PRIVATE_DISSOLVE_BUSINESS_'+str(i)}}for i,shape in enumerate(shapes)]
+    if kind in DISSOLVE_KINDS:
+        if kind=='duplicate-id':source[1]['properties']['parcel_key']=source[0]['properties']['parcel_key']
+        if kind=='invalid':source[0]['geometry']={'type':'Polygon','coordinates':[[[0,0],[2,2],[0,2],[2,0],[0,0]]]}
+        if kind=='fields':
+            for row in source:row['properties']['source_id']='PRIVATE_DISSOLVE_CONFLICT'
+        return source
+    if kind in ('grouped-members','global-members'):
+        return [{'geometry':r['geometry'],'properties':{**r['properties'],'fusion_id':groups[i] if kind=='grouped-members' else 1,'source_id':r['properties']['parcel_key']}}for i,r in enumerate(source)]
+    if kind=='grouped-result':
+        shapes=[multi(box(0,0,3,2),box(6,0,7,1)),multi(box(0,0,1,1),box(0,3,1,4)),box(20,0,22,2),box(30,0,32,1)]
+        return [{'geometry':shape,'properties':{'zone':zone,'rank':rank,'fusion_id':i+1,'member_count':count}}for i,(shape,zone,rank,count)in enumerate(zip(shapes,['B','A',None,'B'],[2,1,2,None],[4,2,2,2]))]
+    if kind=='global-result':return [{'geometry':multi(box(0,0,3,2),box(0,3,1,4),box(6,0,7,1),box(20,0,22,2),box(30,0,32,1)),
+        'properties':{'fusion_id':1,'member_count':10}}]
+    raise FixtureError('unknown dissolve fixture kind')
+
+
+def dissolve_field_types(kind):
+    from osgeo import ogr
+    return {name:(ogr.OFTInteger if name=='enabled' else ogr.OFTInteger64 if name in ('parcel_key','rank','row_no','fusion_id','member_count','source_id')and not(kind=='fields'and name=='source_id') else ogr.OFTString,
+        ogr.OFSTBoolean if name=='enabled' else ogr.OFSTNone)for name in dissolve_features(kind)[0]['properties']}
+
+
+def seed_dissolve(path,kind):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=parcel_shape'])
+    for name,(native,subtype)in dissolve_field_types(kind).items():
+        field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
+        if layer.CreateField(field)!=0:raise FixtureError('dissolve seed field failed')
+    for row in dissolve_features(kind):
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in row['properties'].items():
+            if value is not None:feature.SetField(name,int(value)if type(value)is bool else value)
+        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(feature)!=0:raise FixtureError('dissolve seed row failed')
+    feature=layer=ds=None
+
+
+def verify_dissolve(path,kind):
+    from osgeo import ogr,osr
+    if path.is_symlink():raise FixtureError('dissolve file must not be symlink')
+    ds=ogr.Open(str(path),0)
+    if not ds or ds.GetLayerCount()!=1:raise FixtureError('dissolve requires exactly one layer')
+    layer=ds.GetLayer(0);schema=layer.GetLayerDefn();expected=dissolve_features(kind);types=dissolve_field_types(kind)
+    crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    if not layer.GetSpatialRef()or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('dissolve CRS differs')
+    if [f.name for f in layer.schema]!=list(types):raise FixtureError('dissolve field names/order differ')
+    for name,(native,subtype)in types.items():
+        field=schema.GetFieldDefn(schema.GetFieldIndex(name))
+        if (field.GetType(),field.GetSubType())!=(native,subtype):raise FixtureError('dissolve field types differ')
+    geom=schema.GetGeomFieldDefn(0)
+    if schema.GetGeomFieldCount()!=1 or not geom.GetName() or geom.GetName()in types or(kind in DISSOLVE_KINDS and geom.GetName()!='parcel_shape'):raise FixtureError('dissolve real geometry differs')
+    rows=[]
+    for i,feature in enumerate(layer):
+        shape=feature.GetGeometryRef()
+        if i>=len(expected)or feature.GetFID()!=i+1 or not shape or shape.IsEmpty()or shape.GetCoordinateDimension()!=2 or shape.IsMeasured():raise FixtureError('dissolve geometry/FID/rows differ')
+        reference=ogr.CreateGeometryFromJson(json.dumps(expected[i]['geometry']))
+        if kind.endswith('-result'):
+            if not shape.IsValid()or shape.GetGeometryName()not in ('POLYGON','MULTIPOLYGON')or not shape.SymDifference(reference).IsEmpty()or shape.GetArea()!=reference.GetArea():raise FixtureError('dissolve exact group union differs')
+        elif shape.Normalize().ExportToIsoWkb()!=reference.Normalize().ExportToIsoWkb():raise FixtureError('dissolve original member geometry differs')
+        props={name:feature.GetField(name)for name in types}
+        if 'enabled'in props and props['enabled']is not None:
+            if type(props['enabled'])not in (int,bool)or props['enabled']not in (0,1):raise FixtureError('dissolve boolean differs')
+            props['enabled']=bool(props['enabled'])
+        if props!=expected[i]['properties']or any(type(props[k])is not type(expected[i]['properties'][k])for k in props):raise FixtureError('dissolve attributes/ID/null/order differ')
+        rows.append({'properties':props,'geometry':overlay_geometry(shape)})
+    if len(rows)!=len(expected):raise FixtureError('dissolve row count differs')
+    return {**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geom.GetName(),'fid_column':layer.GetFIDColumn(),'features':rows,'source_crs':'EPSG:4326'if kind=='crs'else'EPSG:3857'}
+
+
+def dissolve_worker(action,root):
+    if action=='seed':
+        if any((root/n).exists()for n in DISSOLVE_SOURCES)or list((root/'outputs').iterdir()):raise FixtureError('refusing existing dissolve fixture')
+        for name,kind in zip(DISSOLVE_SOURCES,DISSOLVE_KINDS):seed_dissolve(root/name,kind)
+        return {'sources':{n:digest(root/n)for n in DISSOLVE_SOURCES}}
+    if action!='verify':raise FixtureError('unknown dissolve worker action')
+    # The first successful DAG has only two files; the final state has all four.
+    names=sorted(p.name for p in(root/'outputs').iterdir());targets=DISSOLVE_TARGETS[:2]if names==sorted(DISSOLVE_TARGETS[:2])else DISSOLVE_TARGETS
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*DISSOLVE_SOURCES])or names!=sorted(targets):raise FixtureError('dissolve exact physical inventory differs')
+    return {'sources':{n:digest(root/n)for n in DISSOLVE_SOURCES},'source_tables':{n:verify_dissolve(root/n,k)for n,k in zip(DISSOLVE_SOURCES,DISSOLVE_KINDS)},
+        'targets':{n:verify_dissolve(root/'outputs'/n,n.removesuffix('.gpkg'))for n in targets},'exact_inventory_verified':True}
+
+
+INDEPENDENT_CASES = (DISSOLVE_CASE, OVERLAY_CASE, NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -692,6 +805,7 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==DISSOLVE_CASE:return {"ports":DISSOLVE_PORTS,"targets":DISSOLVE_TARGETS,"sources":DISSOLVE_SOURCES,"schema":DISSOLVE_SCHEMA,"title":DISSOLVE_TITLE}
     if case==OVERLAY_CASE:return {"ports":("result",),"targets":(OVERLAY_TARGET,),"sources":OVERLAY_SOURCES,"schema":OVERLAY_SCHEMA,"title":OVERLAY_TITLE}
     if case==NODES_CASE:return {"ports":NODES_PORTS,"targets":NODES_TARGETS,"schema":NODES_SCHEMA,"title":NODES_TITLE}
     if case==TRIM_CASE:return {"ports":EXTENSION_PORTS,"targets":TRIM_TARGETS,"schema":TRIM_SCHEMA,"title":TRIM_TITLE}
@@ -2040,6 +2154,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==DISSOLVE_CASE:return dissolve_worker(action,root)
     if case==OVERLAY_CASE:return overlay_worker(action,root)
     if case==NODES_CASE:return nodes_worker(action,root)
     if case==RINGS_DIAGNOSTIC_CASE:return rings_diagnostic_worker(action,root)
@@ -2155,7 +2270,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(DISSOLVE_SOURCES,tuple(result["targets"])) if case==DISSOLVE_CASE else (OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')

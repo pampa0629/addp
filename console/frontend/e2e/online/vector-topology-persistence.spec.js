@@ -584,6 +584,138 @@ const inputDiagnosticText = {
   }
 }
 
+// Frozen independent bilingual expectations; never resolve expected text from product i18n at runtime.
+Object.assign(inputDiagnosticText, {
+  "dissolve-id-missing": {
+    "zh-cn": [
+      "输入图层不符合算子的类型、字段、几何或标识要求。",
+      "融合几何",
+      "源图层（input_gdf）",
+      "",
+      "按算子说明检查源图层的类型、活动几何列、字段及标识；修正后重新执行。"
+    ],
+    "en": [
+      "The input layer does not meet the operator type, field, geometry or identifier requirements.",
+      "Dissolve geometry",
+      "Source layer (input_gdf)",
+      "",
+      "Check the source layer type, active geometry, fields and identifiers against the operator requirements, then submit a new execution."
+    ]
+  },
+  "dissolve-id-duplicate": {
+    "zh-cn": [
+      "输入图层不符合算子的类型、字段、几何或标识要求。",
+      "融合几何",
+      "源图层（input_gdf）",
+      "",
+      "按算子说明检查源图层的类型、活动几何列、字段及标识；修正后重新执行。"
+    ],
+    "en": [
+      "The input layer does not meet the operator type, field, geometry or identifier requirements.",
+      "Dissolve geometry",
+      "Source layer (input_gdf)",
+      "",
+      "Check the source layer type, active geometry, fields and identifiers against the operator requirements, then submit a new execution."
+    ]
+  },
+  "dissolve-invalid": {
+    "zh-cn": [
+      "输入图层不符合算子的类型、字段、几何或标识要求。",
+      "融合几何",
+      "源图层（input_gdf）",
+      "",
+      "按算子说明检查源图层的类型、活动几何列、字段及标识；修正后重新执行。"
+    ],
+    "en": [
+      "The input layer does not meet the operator type, field, geometry or identifier requirements.",
+      "Dissolve geometry",
+      "Source layer (input_gdf)",
+      "",
+      "Check the source layer type, active geometry, fields and identifiers against the operator requirements, then submit a new execution."
+    ]
+  },
+  "dissolve-crs": {
+    "zh-cn": [
+      "两个图层须使用相同的已知投影坐标系和匹配的水平单位。",
+      "融合几何",
+      "",
+      "",
+      "先显式统一两个图层的投影坐标系与水平单位，再重新执行。"
+    ],
+    "en": [
+      "Both layers require the same known projected CRS and matching horizontal units.",
+      "Dissolve geometry",
+      "",
+      "",
+      "Explicitly align both projected CRSs and horizontal units before submitting a new execution."
+    ]
+  },
+  "dissolve-groups-type": {
+    "zh-cn": [
+      "分组字段列表无效、重复或包含非标量值。",
+      "融合几何",
+      "分组字段（group_fields）",
+      "",
+      "显式选择无重复的现有非几何标量字段；[]表示全局融合，空值组会保留。"
+    ],
+    "en": [
+      "The group field list is invalid, duplicated or contains non-scalar values.",
+      "Dissolve geometry",
+      "Group fields (group_fields)",
+      "",
+      "Explicitly select distinct existing non-geometry scalar fields; [] means global dissolve and null groups are retained."
+    ]
+  },
+  "dissolve-groups-duplicate": {
+    "zh-cn": [
+      "分组字段列表无效、重复或包含非标量值。",
+      "融合几何",
+      "分组字段（group_fields）",
+      "",
+      "显式选择无重复的现有非几何标量字段；[]表示全局融合，空值组会保留。"
+    ],
+    "en": [
+      "The group field list is invalid, duplicated or contains non-scalar values.",
+      "Dissolve geometry",
+      "Group fields (group_fields)",
+      "",
+      "Explicitly select distinct existing non-geometry scalar fields; [] means global dissolve and null groups are retained."
+    ]
+  },
+  "dissolve-groups-missing": {
+    "zh-cn": [
+      "分组字段列表无效、重复或包含非标量值。",
+      "融合几何",
+      "分组字段（group_fields）",
+      "",
+      "显式选择无重复的现有非几何标量字段；[]表示全局融合，空值组会保留。"
+    ],
+    "en": [
+      "The group field list is invalid, duplicated or contains non-scalar values.",
+      "Dissolve geometry",
+      "Group fields (group_fields)",
+      "",
+      "Explicitly select distinct existing non-geometry scalar fields; [] means global dissolve and null groups are retained."
+    ]
+  },
+  "dissolve-fields": {
+    "zh-cn": [
+      "融合固定输出字段与源列重名。",
+      "融合几何",
+      "",
+      "",
+      "先在上游手动重命名fusion_id/member_count/source_id重名列，不会自动覆盖。"
+    ],
+    "en": [
+      "Fixed dissolve output fields conflict with source columns.",
+      "Dissolve geometry",
+      "",
+      "",
+      "Rename conflicting fusion_id/member_count/source_id columns upstream; they are not replaced automatically."
+    ]
+  }
+})
+
 function inputDiagnosticPageExpectation(key,locale,executionID) {
   const [reason,operator,parameter,field,action]=inputDiagnosticText[key][locale]
   const stage=locale==='zh-cn'?'执行操作':'Execute operation'
@@ -599,20 +731,21 @@ async function assertInputDiagnosticPanel(panel,key,locale,executionID) {
   await expect(panel.locator('dd')).toHaveText(expected.values)
   await expect(panel).not.toContainText(/PRIVATE_DIAGNOSTIC|Traceback|site-packages|\/tmp\/|99\.0|parcel_shape|parcel_key|rings-(conflict|invalid)\.gpkg|相邻乙|重复丙|地块属性|普通业务几何/)
   if(['a-id','b-id','crs','fields'].includes(key))await expect(panel).not.toContainText(/PRIVATE_OVERLAY|a_key|b_key|a_shape|b_shape|a_note|overlay-(a|b|crs|fields)\.gpkg/)
+  if(key.startsWith('dissolve-'))await expect(panel).not.toContainText(/PRIVATE_DISSOLVE|parcel_key|parcel_shape|dissolve-(source|duplicate-id|invalid|crs|fields)\.gpkg/)
   return expected
 }
 
 async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
   const evidence=supplied||JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
   expect(evidence.case).toBe(caseName)
-  const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay'
-  const keys=overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
+  const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay',dissolve=caseName==='polygon-dissolve'
+  const keys=dissolve?["dissolve-id-missing", "dissolve-id-duplicate", "dissolve-invalid", "dissolve-crs", "dissolve-groups-type", "dissolve-groups-duplicate", "dissolve-groups-missing", "dissolve-fields"]:overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
   expect(evidence.executions.map(run=>run.key)).toEqual(keys)
   expect(new Set(evidence.executions.map(run=>run.execution_id)).size).toBe(keys.length)
   const expectedIdentity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
   await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:process.env.CONSOLE_URL})
   // The combined overlay scene is already logged in; standalone diagnostics still log in here.
-  let loggedIn=overlay&&supplied!==null
+  let loggedIn=(overlay||dissolve)&&supplied!==null
   const observations=[],publicationRequests=[]
   page.on('request',request=>{
     const path=new URL(request.url()).pathname
@@ -660,10 +793,11 @@ async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
       observations.push({key:run.key,owner,locale,execution_id:run.execution_id,raw,clipboard,screenshot})
     }
   }
-  if(rings) expect(observations).toHaveLength(8)
+  if(dissolve) expect(observations).toHaveLength(32)
+  else if(rings) expect(observations).toHaveLength(8)
   else expect(observations).toHaveLength(16)
   expect(publicationRequests).toEqual([])
-  if(overlay)return observations
+  if(overlay||dissolve)return observations
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({
     ...evidence,schema_version:(rings?'addp.polygon-rings-input-diagnostics':'addp.operator-input-diagnostics')+'-browser/v1',result:'passed',observations},null,2)+'\n')
 }
@@ -1401,3 +1535,119 @@ async function verifyOverlayCase(page) {
 }
 
 test('相交叠加独立普通User完整混合交集及四失败保护', async ({ page }) => verifyOverlayCase(page))
+
+async function assertDissolveMap(renderer, expected) {
+  const fields = Object.keys(expected[0].properties)
+  const keys = rows => rows.map(row => JSON.stringify(row)).sort()
+  let observed
+  await expect.poll(async () => {
+    observed = await renderer.evaluate((element, fields) => {
+      const value = element.__vueParentComponent?.setupState?.mapInstance, map = value?.value || value
+      if (!map || map.getView().getAnimating()) return null
+      const geometry = shape => shape.getType() === 'GeometryCollection'
+        ? { type: shape.getType(), geometries: shape.getGeometries().map(geometry) }
+        : { type: shape.getType(), coordinates: shape.getCoordinates() }
+      return { projection: map.getView().getProjection().getCode(), features: map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
+        .map(feature => ({ properties: Object.fromEntries(fields.map(field => [field, feature.get(field)])), geometry: geometry(feature.getGeometry()) })) }
+    }, fields)
+    if (!observed || observed.projection !== 'EPSG:3857') return []
+    return keys(observed.features)
+  }).toEqual(keys(expected.map(row => ({ properties: row.properties, geometry: webMercatorPreviewGeometry(row.geometry) }))))
+  expect(observed.features).toHaveLength(expected.length)
+  let pixels
+  await expect.poll(async () => {
+    pixels=await renderer.locator('canvas').evaluateAll(canvases=>canvases.reduce((count,canvas)=>{
+      const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data
+      for(let i=0;i<data.length;i+=4)if(data[i+3]>0&&data[i+1]>data[i]*1.1&&data[i+1]>data[i+2]*1.1)count++
+      return count
+    },0))
+    return pixels
+  }).toBeGreaterThan(30)
+  observed.painted_pixels=pixels
+  return observed
+}
+
+function assertDissolveLineage(graph,evidence,output) {
+  expect(graph.truncated).toBe(false)
+  const edges=graph.edges.filter(edge=>edge.relation_kind==='derive'&&edge.status==='active'&&edge.evidence?.execution_id===output.execution_id)
+  expect(edges).toHaveLength(1)
+  expect(edges.map(edge=>[edge.source.item_id,edge.target.item_id])).toEqual([[evidence.sources[0].id,output.item_id]])
+  for(const edge of edges){expect(Number.isInteger(edge.source.item_id)).toBe(true);expect(Number.isInteger(edge.target.item_id)).toBe(true)}
+}
+
+async function verifyDissolveCase(page) {
+  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}'),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
+  expect(evidence.case).toBe('polygon-dissolve');expect(evidence.sources).toHaveLength(5);expect(evidence.successes.map(s=>s.variant)).toEqual(['grouped','global']);expect(evidence.outputs).toHaveLength(4)
+  await observeLineageCanvas(page)
+  const identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
+  const raw={schema_version:'addp.polygon-dissolve-browser-raw/v1',case:evidence.case,run_id:evidence.run_id,successes:[],observations:[]}
+  const persist=(stage,result='incomplete')=>writeFileSync(resolve(directory,'topology-dissolve-browser-raw.json'),JSON.stringify({...raw,stage,result},null,2)+'\n')
+  const writes=[];page.on('request',request=>{const path=new URL(request.url()).pathname;if(!['GET','HEAD','OPTIONS'].includes(request.method())&&/^\/api\/v1\/(develop|meta|manager)\//.test(path))writes.push({method:request.method(),path})})
+  const frame=page.frameLocator('iframe[data-testid="module-iframe"]');let loggedIn=false
+  for(const success of evidence.successes){
+    const read=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/develop/executions/${success.execution_id}`)
+    if(!loggedIn){await login(page,process.env.ADDP_ONLINE_TEST_USER_USERNAME,process.env.ADDP_ONLINE_TEST_USER_PASSWORD,`/develop/executions/${success.execution_id}`);loggedIn=true}
+    else await page.goto(`${process.env.CONSOLE_URL}/develop/executions/${success.execution_id}`)
+    const response=await read,api=await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)
+    let execution;try{execution=await json(response,'dissolve success');expect(execution).toEqual(success.execution)}finally{await api.dispose()}
+    raw.successes.push({variant:success.variant,execution_id:success.execution_id,execution})
+    await expect(frame.getByText('成功',{exact:true})).toBeVisible()
+    for(const output of success.outputs)await expect(frame.locator('.workflow-result')).toContainText(output.name)
+    await page.screenshot({path:resolve(directory,`dissolve-${success.variant}-execution.png`)});persist('execution_'+success.variant)
+  }
+  for(const output of evidence.outputs){
+    const expected=output.features,fields=Object.keys(expected[0].properties),locator=`${output.locator}&item_id=${output.item_id}`
+    const previewRead=page.waitForResponse(r=>{const u=new URL(r.url());return r.request().method()==='GET'&&u.pathname==='/api/v1/manager/preview'&&u.searchParams.get('locator')===locator&&u.searchParams.get('child_name')===output.layer_name})
+    await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
+    const response=await previewRead,api=await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)
+    const observation={name:output.name,port:output.port,execution_id:output.execution_id,output_item_id:output.item_id,sources:[]};raw.observations.push(observation)
+    try{
+      observation.preview=await json(response,'dissolve preview')
+      for(const source of evidence.sources){const item=await json(await api.get(`/api/v1/meta/items/${source.id}`),'dissolve unchanged source');expect(item).toEqual(source.before);observation.sources.push({item_id:source.id,item})}
+      observation.output=await json(await api.get(`/api/v1/meta/items/${output.item_id}`),'dissolve output');expect(observation.output).toEqual(output.before)
+      observation.graph=await json(await api.get(`/api/v1/meta/lineage/graph?subject_kind=data_item&item_id=${output.item_id}&direction=upstream`),'dissolve graph');assertDissolveLineage(observation.graph,evidence,output)
+    }finally{await api.dispose()}
+    const data=observation.preview.data
+    expect(observation.preview.preview_type).toBe('table');expect([data.page,data.total,data.rows.length,data.source_srid,data.source_crs,data.transform_status,data.preview_hint]).toEqual([1,expected.length,expected.length,3857,'EPSG:3857','not_transformed','frontend_transform_required'])
+    expect(data.geometry_columns).toEqual([output.geometry_column]);expect([...data.columns].sort()).toEqual([output.fid_column,output.geometry_column,...fields].sort())
+    expect(data.rows.map(row=>row[output.fid_column])).toEqual(expected.map((_,i)=>i+1))
+    for(const row of data.rows)expect(Object.keys(row).sort()).toEqual([...data.columns].sort())
+    observation.decoded_rows=data.rows.map(row=>({properties:Object.fromEntries(fields.map(key=>[key,row[key]])),geometry:decodePreviewEWKB(row[output.geometry_column])}))
+    expect(observation.decoded_rows).toEqual(expected)
+    const table=frame.locator('.table-preview'),renderer=table.locator('.openlayers-map-renderer');await expect(table).toBeVisible();await expect(table.locator('.map-placeholder')).toHaveCount(0)
+    observation.rendered=await assertDissolveMap(renderer,expected)
+    for(const field of fields)await expect(table.locator('thead')).toContainText(field)
+    // A click probes the actual popup; its property rows must preserve the original business geometry field.
+    const popupProperties=await renderer.evaluate((element,fields)=>{
+      const value=element.__vueParentComponent.setupState.mapInstance,map=value?.value||value,layer=map.getLayers().getArray().find(l=>l.getSource?.()?.getFeatures?.().length)
+      const geometry=layer.getSource().getFeatures()[0].getGeometry(),shape=geometry.getType()==='MultiPolygon'?geometry.getPolygon(0):geometry
+      const coordinate=shape.getInteriorPoint().getCoordinates().slice(0,2),pixel=map.getPixelFromCoordinate(coordinate),feature=map.forEachFeatureAtPixel(pixel,(f,l)=>l===layer?f:undefined)
+      if(!feature)throw new Error('dissolve popup has no actual feature hit')
+      const properties=Object.fromEntries(fields.map(f=>[f,feature.get(f)]));map.dispatchEvent({type:'singleclick',coordinate,pixel});return properties
+    },fields)
+    expect(expected.some(row=>JSON.stringify(row.properties)===JSON.stringify(popupProperties))).toBe(true)
+    const popup=renderer.locator('.map-popup');await expect(popup).toBeVisible()
+    for(const field of fields){const row=popup.locator('.attribute-item').filter({has:frame.locator('.attr-key').filter({hasText:new RegExp('^'+field+':$')})});await expect(row).toHaveCount(1);await expect(row.locator('.attr-value')).toHaveText(popupProperties[field]===null?'空值':String(popupProperties[field]))}
+    observation.popup={properties:popupProperties,rows:await popup.locator('.attribute-item').evaluateAll(rows=>rows.map(row=>({key:row.querySelector('.attr-key').textContent,value:row.querySelector('.attr-value').textContent}))) }
+    await page.screenshot({path:resolve(directory,`dissolve-${output.name}-map.png`)});persist('map_'+output.name)
+    await frame.getByRole('tab',{name:'属性',exact:true}).click();await expect(frame.locator('.attributes-tab-pane')).toContainText(output.layer_name)
+    const graphRead=page.waitForResponse(r=>{const u=new URL(r.url());return r.request().method()==='GET'&&u.pathname==='/api/v1/meta/lineage/graph'&&u.searchParams.get('item_id')===String(output.item_id)&&u.searchParams.get('direction')==='both'})
+    await frame.getByRole('tab',{name:'血缘',exact:true}).click()
+    const graphResponse=await graphRead,bound=await browserAPIFromResponse(graphResponse,process.env.GATEWAY_URL,identity)
+    try{observation.lineage_page=await json(graphResponse,'dissolve lineage page');assertDissolveLineage(observation.lineage_page,evidence,output)}finally{await bound.dispose()}
+    const viewer=frame.locator('.lineage-viewer'),canvas=viewer.locator('.lineage-canvas canvas').first();await expect(canvas).toBeVisible()
+    await expect.poll(async()=>{
+      observation.lineage_rendered=await viewer.evaluate(element=>{const ref=element.__vueParentComponent?.setupState?.graphInstance,graph=ref?.value||ref;return graph?{nodes:graph.getNodes().map(i=>i.getModel()._node),edges:graph.getEdges().map(i=>i.getModel()._edge)}:null})
+      return observation.lineage_rendered?.edges?.filter(e=>e.evidence?.execution_id===output.execution_id&&e.target?.item_id===output.item_id).length||0
+    }).toBe(1)
+    assertDissolveLineage({...observation.lineage_page,edges:observation.lineage_rendered.edges},evidence,output)
+    await expect.poll(async()=>{observation.lineage_canvas=await lineageCanvasSnapshot(canvas);return [evidence.sources[0].name,output.name].every(name=>observation.lineage_canvas.rows.some(row=>row.text.includes(name)))}).toBe(true)
+    expect(observation.lineage_canvas.paths.length).toBeGreaterThanOrEqual(1)
+    await page.screenshot({path:resolve(directory,`dissolve-${output.name}-lineage.png`)});persist('lineage_'+output.name)
+  }
+  const observations=await verifyInputDiagnosticCase(page,'polygon-dissolve',{...evidence,executions:evidence.failures.map(f=>({...f,execution:{error_details:f.execution.error_details}}))})
+  raw.failures=evidence.failures.map(f=>({key:f.key,execution_id:f.execution_id,observations:observations.filter(v=>v.key===f.key)}));expect(writes).toEqual([]);raw.publication_requests=writes
+  persist('complete','passed');writeFileSync(resolve(directory,'topology-browser.json'),JSON.stringify({...evidence,schema_version:'addp.polygon-dissolve-browser/v1',result:'passed'},null,2)+'\n')
+}
+
+test('融合几何独立普通User分组全局双成果及八失败保护',async({page})=>verifyDissolveCase(page))

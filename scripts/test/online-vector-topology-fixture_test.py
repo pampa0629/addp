@@ -552,3 +552,18 @@ class OverlayFixtureTest(unittest.TestCase):
         self.assertTrue(any(r['properties']['geometry'] is None for r in result))
         self.assertTrue(all(r['properties']['a_enabled'] is None or type(r['properties']['a_enabled']) is bool for r in result))
         self.assertEqual(m.overlay_features('fields')[0]['properties']['a_note'],m.overlay_features('b')[0]['properties']['b_note'])
+
+
+class DissolveFixtureTest(unittest.TestCase):
+    def test_dissolve_groups_global_and_complete_null_members_are_handwritten(self):
+        self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':'polygon-dissolve'}),m.DISSOLVE_CASE)
+        self.assertEqual(m.network_profile(m.DISSOLVE_CASE)['targets'],m.DISSOLVE_TARGETS)
+        self.assertEqual([len(m.dissolve_features(k))for k in('source','grouped-result','grouped-members','global-result','global-members')],[10,4,10,1,10])
+        self.assertEqual([r['properties']['member_count']for r in m.dissolve_features('grouped-result')],[4,2,2,2])
+        self.assertEqual([r['properties']['fusion_id']for r in m.dissolve_features('grouped-members')],[1,2,2,1,1,3,3,4,4,1])
+        self.assertEqual([r['properties']['source_id']for r in m.dissolve_features('global-members')],[r['properties']['parcel_key']for r in m.dissolve_features('source')])
+        self.assertEqual(len(m.DISSOLVE_FAILURES),8)
+        self.assertEqual({(s[2],s[3])for s in m.DISSOLVE_FAILURES},{('operator_input_invalid','input_gdf'),('operator_crs_invalid',''),('operator_group_fields_invalid','group_fields'),('operator_dissolve_fields_conflict','')})
+    def test_dissolve_dispatch_never_calls_older_business(self):
+        with patch.object(m,'dissolve_worker',return_value={'only':'dissolve'})as worker,patch.object(m,'overlay_worker',side_effect=AssertionError('old business')):
+            self.assertEqual(m.worker('seed',Path('/unused'),m.DISSOLVE_CASE),{'only':'dissolve'});worker.assert_called_once()

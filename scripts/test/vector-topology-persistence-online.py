@@ -477,6 +477,125 @@ def run_line_edit_scenario(repository,env,client,physical_runner,browser_runner,
         'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
 
 
+def dissolve_definition(sources,parent,variant='grouped',failure=None):
+    spec=next((s for s in fixture.DISSOLVE_FAILURES if s[0]==failure),None)
+    if failure is not None and spec is None:raise SuiteError('unknown dissolve failure')
+    groups=[]if variant=='global'else['zone','rank']
+    if failure=='dissolve-groups-type':groups='zone'
+    if failure=='dissolve-groups-duplicate':groups=['zone','zone']
+    if failure=='dissolve-groups-missing':groups=['PRIVATE_DISSOLVE_MISSING']
+    prefix='failed-'+failure if failure else variant
+    return {'tasks':[
+        {'id':'PRIVATE_DISSOLVE_NODE','operator':'dissolve','depends_on':['load_source'],'params':{'input_gdf':{'$ref':'load_source'},'id_field':'PRIVATE_DISSOLVE_ID'if failure=='dissolve-id-missing'else'parcel_key','group_fields':groups}},
+        {'id':'load_source','operator':'load','depends_on':[],'params':{'locator':sources[spec[1]if spec else 0]}},
+        *[{'id':'save_'+port,'operator':'save','depends_on':['PRIVATE_DISSOLVE_NODE'],'params':{'input_df':{'$ref':'PRIVATE_DISSOLVE_NODE','port':port},'target_parent_locator':parent,'target_name':prefix+'-'+port+'.gpkg','mode':'fail'}}for port in fixture.DISSOLVE_PORTS]]}
+
+
+def dissolve_diagnostic(spec):
+    return {'schema_version':'addp.execution-failure/v3','stage':'execution','reason':spec[2],
+        'operator':{'node_index':1,'operator_id':'dissolve',**({'parameter':spec[3]}if spec[3]else{})}}
+
+
+def validate_dissolve_failure(execution,identifier,principal,spec):
+    if type(execution.get('triggered_by'))is not int or execution['triggered_by']!=principal:raise SuiteError('dissolve failure User differs')
+    details=validate_input_failure(execution,(spec[0],'dissolve',spec[2],spec[3],''),identifier)
+    if any(t in json.dumps(details,ensure_ascii=False)for t in (*DIAGNOSTIC_PRIVATE,'PRIVATE_DISSOLVE','parcel_key','parcel_shape',*fixture.DISSOLVE_SOURCES)):raise SuiteError('dissolve diagnosis leaked source data')
+    return details
+
+
+def validate_dissolve_graph(graph,source,target,identifier):
+    if graph.get('truncated')is not False:raise SuiteError('dissolve graph incomplete')
+    edges=[e for e in array(graph.get('edges'),'dissolve edges')if e.get('relation_kind')=='derive'and e.get('status')=='active'and e.get('evidence',{}).get('execution_id')==identifier]
+    if len(edges)!=1:raise SuiteError('dissolve needs one current-execution source edge per output')
+    edge=edges[0];a=edge.get('source',{}).get('item_id');b=edge.get('target',{}).get('item_id')
+    if type(a)is not int or type(b)is not int or(a,b)!=(source,target):raise SuiteError('dissolve source/target/execution binding differs')
+    return edges
+
+
+def run_dissolve_scenario(repository,env,client,physical_runner,browser_runner):
+    case=fixture.DISSOLVE_CASE;schema=fixture.DISSOLVE_SCHEMA;names=fixture.DISSOLVE_SOURCES
+    tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'dissolve tenant')
+    if tenant<=1:raise SuiteError('dissolve forbids default Tenant')
+    identity=raster.validate_identity(client,tenant,required_permissions=PERMISSIONS);principal=positive(identity['principal_id'],'dissolve User')
+    deadline=time.monotonic()+float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
+    def remaining():
+        value=deadline-time.monotonic()
+        if value<=0:raise SuiteError('dissolve total business budget exhausted')
+        return value
+    engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine');sources=[];preflight=[]
+    for name in names:
+        scope=f'addp://engine/{engine}/path/{name}?type=file';scan=support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]})
+        item=support.find_fixture_item(client,engine,name,'dissolve source');before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item["id"]}&direction=downstream',(200,)).payload,'dissolve resource preflight')
+        if graph.get('truncated')is not False:raise SuiteError('dissolve requires complete authorized source lineage before execution')
+        preflight.append({'source_item_id':item['id'],'graph':graph});sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
+    initial=scan_ids(client)
+    if initial!=sorted(s['scan_execution_id']for s in sources):raise SuiteError('dissolve initial scans differ')
+    runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes')if r.get('engine_type')=='geopython_workflow'and r.get('connection_status')=='online']
+    if len(runtimes)!=1:raise SuiteError('dissolve requires one product Runtime')
+    runtime=positive(runtimes[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory';locators=[s['locator']for s in sources]
+    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR']);path=directory/'topology-dissolve-checkpoint.json'
+    checkpoint={'schema_version':schema+'-checkpoint/v1','case':case,'result':'incomplete','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],'identity':identity,'sources':sources,'resource_preflight':preflight,'successes':[],'outputs':[],'failures':[]}
+    outputs=checkpoint['outputs'];successes=checkpoint['successes'];all_scans=[];native=None
+    def persist(stage):
+        checkpoint['stage']=stage;path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+    def unchanged_meta():
+        after={}
+        for entry in [*sources,*outputs]:
+            item_id=entry.get('item_id',entry.get('id'));value=client.request('GET',f'/api/v1/meta/items/{item_id}',(200,)).payload
+            if value!=entry['before']:raise SuiteError('dissolve source or result Meta changed')
+            after[entry['name']]=value
+        return after
+    def check_physical(value,expected_targets):
+        if value.get('exact_inventory_verified')is not True or set(value.get('sources',{}))!=set(names)or set(value.get('targets',{}))!=set(expected_targets):raise SuiteError('dissolve physical inventory differs')
+        if native and(value['sources']!=native['sources']or any(value['targets'].get(n)!=v for n,v in native['targets'].items())):raise SuiteError('dissolve existing physical files changed')
+        for source,kind in zip(sources,fixture.DISSOLVE_KINDS):
+            rows=fixture.dissolve_features(kind);detail=source['before'];size=detail.get('size_bytes');children=detail.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
+            if type(size)is not int or size<=0 or size!=value['sources'][source['name']]['size_bytes']or len(children)!=1 or type(children[0].get('row_count'))is not int or children[0]['row_count']!=len(rows)or type(children[0].get('column_count'))is not int or children[0]['column_count']!=len(rows[0]['properties'])+2:raise SuiteError('dissolve source Meta rows/columns/size differ')
+    for variant in ('grouped','global'):
+        workflow=dissolve_definition(locators,parent,variant);identifier=raster.submit(client,runtime,workflow);execution=raster.wait_execution(client,'develop',identifier,remaining())
+        if execution.get('execution_id')!=identifier or type(execution.get('triggered_by'))is not int or execution['triggered_by']!=principal:raise SuiteError('dissolve execution User differs')
+        if obj(obj(execution.get('execution_config'),'dissolve config').get('content'),'dissolve content').get('workflow_definition')!=workflow:raise SuiteError('dissolve frozen workflow differs')
+        targets={port:parent.removesuffix('?type=directory')+'/'+variant+'-'+port+'.gpkg?type=file'for port in fixture.DISSOLVE_PORTS}
+        facts,scans=validate_saved_success(execution,[('input.load_source',locators[0])],targets,2);observed=[]
+        for scan in scans:
+            value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
+            if type(value.get('tenant_id'))is not int or value['tenant_id']!=tenant or type(value.get('triggered_by'))is not int or value['triggered_by']!=principal:raise SuiteError('dissolve automatic scan User/Tenant differs')
+            observed.append(value)
+        all_scans.extend(s['execution_id']for s in scans)
+        monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'dissolve Monitor')
+        if monitor.get('execution_id')!=identifier or monitor.get('module')!='develop'or monitor.get('status')!='success'or type(monitor.get('triggered_by'))is not int or monitor['triggered_by']!=principal or obj(monitor.get('metadata'),'dissolve Monitor metadata').get('lineage_facts')!=facts:raise SuiteError('dissolve Monitor/facts differ')
+        value=physical_runner(repository,env);check_physical(value,fixture.DISSOLVE_TARGETS[:2]if variant=='grouped'else fixture.DISSOLVE_TARGETS);native=value
+        record={'variant':variant,'execution_id':identifier,'definition':workflow,'execution':execution,'stable_outputs':execution['outputs'],'lineage_facts':facts,'automatic_scans':observed,'monitor':monitor,'outputs':[]};successes.append(record)
+        for port,target in targets.items():
+            name=variant+'-'+port+'.gpkg';item=support.find_fixture_item(client,engine,'outputs/'+name,'dissolve result');detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'dissolve output Meta');physical=native['targets'][name];sizes=validate_item(detail,physical,name)
+            child=detail['attributes']['type_info']['container']['children'][0];expected=fixture.dissolve_features(variant+'-'+port)
+            if type(child.get('row_count'))is not int or child['row_count']!=len(expected)or type(child.get('column_count'))is not int or child['column_count']!=len(expected[0]['properties'])+2:raise SuiteError('dissolve result Meta rows/columns differ')
+            output={'name':name,'port':port,'variant':variant,'execution_id':identifier,'locator':target,'item_id':item['id'],**physical,'before':detail,'size_evidence':sizes};outputs.append(output);record['outputs'].append(output);persist('before_lineage_'+name)
+            raster.wait_lineage(client,sources[0]['id'],output['item_id'],identifier,remaining());graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'dissolve original graph')
+            validate_dissolve_graph(graph,sources[0]['id'],output['item_id'],identifier);output['raw_lineage']=graph
+        unchanged_meta()
+        if scan_ids(client)!=sorted([*initial,*all_scans])or len(set(all_scans))!=len(all_scans):raise SuiteError('dissolve automatic scan inventory differs')
+        persist('success_'+variant+'_verified')
+    checkpoint['physical']=native;expected_scans=sorted([*initial,*all_scans])
+    for spec in fixture.DISSOLVE_FAILURES:
+        key=spec[0];definition=dissolve_definition(locators,parent,failure=key);identifier=raster.submit(client,runtime,definition);execution=raster.wait_execution(client,'develop',identifier,remaining(),expected='failed');validate_dissolve_failure(execution,identifier,principal,spec)
+        if obj(obj(execution.get('execution_config'),'dissolve failed config').get('content'),'dissolve failed content').get('workflow_definition')!=definition:raise SuiteError('dissolve failed frozen workflow differs')
+        monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'dissolve failed Monitor');validate_dissolve_failure(monitor,identifier,principal,spec)
+        if monitor.get('module')!='develop'or monitor.get('error_details')!=execution.get('error_details'):raise SuiteError('dissolve failed Monitor differs')
+        graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={sources[spec[1]]["id"]}&direction=downstream',(200,)).payload,'dissolve failed source graph')
+        if graph.get('truncated')is not False or any(e.get('relation_kind')=='derive'and e.get('evidence',{}).get('execution_id')==identifier for e in array(graph.get('edges'),'dissolve failed edges')):raise SuiteError('dissolve failure published derive or incomplete graph')
+        if scan_ids(client)!=expected_scans or physical_runner(repository,env)!=native:raise SuiteError('dissolve failure changed physical files or scans')
+        checkpoint['failures'].append({'key':key,'execution_id':identifier,'definition':definition,'execution':execution,'monitor':monitor,'expected_diagnostic':dissolve_diagnostic(spec),'source_lineage':graph,'meta_after':unchanged_meta()});persist('failure_'+key+'_verified')
+    if len({r['execution_id']for r in [*successes,*checkpoint['failures']]})!=10:raise SuiteError('dissolve requires ten distinct executions')
+    persist('before_browser')
+    evidence={'case':case,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'sources':sources,'successes':successes,'outputs':outputs,'failures':checkpoint['failures']}
+    remaining();browser_report=browser_runner(repository,env,evidence);remaining();final=physical_runner(repository,env)
+    if final!=native or scan_ids(client)!=expected_scans:raise SuiteError('dissolve browser changed physical files or scans')
+    meta_after=unchanged_meta();remaining()
+    return {**checkpoint,'schema_version':schema+'/v1','result':'passed','stage':'complete','browser':browser_report,'meta_after':meta_after,'post_browser_physical':final,'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable deployment; not business DELETE acceptance'}
+
+
 def overlay_definition(sources,parent,failure=None):
     spec=next((s for s in fixture.OVERLAY_FAILURES if s[0]==failure),None)
     if failure is not None and spec is None:raise SuiteError('unknown intersection failure')
@@ -1195,6 +1314,65 @@ def validate_nodes_browser_raw(raw,evidence):
             if execution.get('error_details')!=failed['error_details'] or not isinstance(read.get('clipboard'),str) or not read['clipboard'] or any(t in read['clipboard'] for t in (*DIAGNOSTIC_PRIVATE,'route_key','source_shape','节点业务几何')):raise SuiteError('nodes browser error/copy differs or leaks')
 
 
+def validate_dissolve_browser_raw(raw,evidence):
+    import base64,struct
+    if(raw.get('schema_version')!=fixture.DISSOLVE_SCHEMA+'-browser-raw/v1'or raw.get('result')!='passed'or raw.get('stage')!='complete'or any(raw.get(k)!=evidence.get(k)for k in('case','run_id'))or raw.get('publication_requests')!=[]):raise SuiteError('dissolve browser raw incomplete or foreign')
+    principal=positive(evidence['principal_id'],'dissolve browser User')
+    successes=array(raw.get('successes'),'dissolve browser successes')
+    if len(successes)!=2:raise SuiteError('dissolve needs both success execution pages')
+    for got,want in zip(successes,evidence['successes']):
+        if got!={'variant':want['variant'],'execution_id':want['execution_id'],'execution':want['execution']}:raise SuiteError('dissolve browser success execution differs')
+    observations=array(raw.get('observations'),'dissolve map observations')
+    if len(observations)!=4:raise SuiteError('dissolve needs exactly four actual maps')
+    for observation,output in zip(observations,evidence['outputs']):
+        expected=output['features'];fields=list(expected[0]['properties']);count=len(expected)
+        if any(observation.get(k)!=output[k]for k in('name','port','execution_id'))or type(observation.get('output_item_id'))is not int or observation['output_item_id']!=output['item_id']or observation.get('output')!=output['before']or observation.get('sources')!=[{'item_id':s['id'],'item':s['before']}for s in evidence['sources']]:raise SuiteError('dissolve browser source/output identity differs')
+        preview=obj(observation.get('preview'),'dissolve preview');data=obj(preview.get('data'),'dissolve preview data');rows=array(data.get('rows'),'dissolve preview rows')
+        if preview.get('preview_type')!='table'or any(type(data.get(k))is not int for k in('page','total','source_srid'))or(data['page'],data['total'],data['source_srid'],data.get('source_crs'),data.get('transform_status'),data.get('preview_hint'))!=(1,count,3857,'EPSG:3857','not_transformed','frontend_transform_required')or data.get('geometry_columns')!=[output['geometry_column']]:raise SuiteError('dissolve preview count/CRS/geometry differs')
+        if len(rows)!=count or len(array(data.get('columns'),'dissolve columns'))!=len(fields)+2 or set(data['columns'])!={output['fid_column'],output['geometry_column'],*fields}or[r.get(output['fid_column'])for r in rows]!=list(range(1,count+1))or any(type(r.get(output['fid_column']))is not int for r in rows):raise SuiteError('dissolve preview FID/columns/rows differ')
+        for row,want in zip(rows,expected):
+            if set(row)!=set(data['columns'])or{k:row.get(k)for k in fields}!=want['properties']or any(type(row.get(k))is not type(want['properties'][k])for k in fields):raise SuiteError('dissolve preview types/null/properties differ')
+            try:
+                encoded=row[output['geometry_column']];wire=base64.b64decode(encoded,validate=True);order='<'if wire[0]==1 else'>'if wire[0]==0 else None
+                code,srid=struct.unpack(order+'II',wire[1:9])if order and len(wire)>9 else(0,0)
+                if srid!=3857 or code!=(0x20000000|{'Polygon':3,'MultiPolygon':6}[want['geometry']['type']])or base64.b64encode(wire).decode()!=encoded:raise ValueError('wrong EWKB')
+            except(ValueError,TypeError,IndexError,KeyError,struct.error)as exc:raise SuiteError('dissolve standard XY EWKB missing')from exc
+        popup=obj(observation.get('popup'),'dissolve actual popup');properties=obj(popup.get('properties'),'dissolve popup properties')
+        matches=[i for i,row in enumerate(expected)if row['properties']==properties and all(type(properties.get(k))is type(v)for k,v in row['properties'].items())]
+        entries=array(popup.get('rows'),'dissolve popup DOM rows')
+        wanted={k+':':('空值'if v is None else str(v).lower()if type(v)is bool else str(v))for k,v in properties.items()}
+        wanted[output['fid_column']+':']=str(matches[0]+1)if matches else''
+        if len(matches)!=1 or len(entries)!=len(wanted)or{r.get('key'):r.get('value')for r in entries}!=wanted:raise SuiteError('dissolve popup original properties/null/type differs')
+        decoded=array(observation.get('decoded_rows'),'dissolve decoded rows')
+        if decoded!=expected or any(type(a['properties'][k])is not type(b['properties'][k])for a,b in zip(decoded,expected)for k in fields):raise SuiteError('dissolve original geometry/properties differ')
+        for graph in(observation.get('graph'),observation.get('lineage_page'),{**observation.get('lineage_page',{}),'edges':observation.get('lineage_rendered',{}).get('edges')}):validate_dissolve_graph(obj(graph,'dissolve graph'),evidence['sources'][0]['id'],output['item_id'],output['execution_id'])
+        canvas=obj(observation.get('lineage_canvas'),'dissolve painted graph');labels=array(canvas.get('rows'),'dissolve painted labels')
+        if not all(any(n in row.get('text','')for row in labels)for n in(evidence['sources'][0]['name'],output['name']))or len(array(canvas.get('paths'),'dissolve paths'))<1:raise SuiteError('dissolve lineage not painted')
+        rendered=obj(observation.get('rendered'),'dissolve rendered map')
+        if rendered.get('projection')!='EPSG:3857'or len(array(rendered.get('features'),'dissolve map features'))!=count or type(rendered.get('painted_pixels'))is not int or rendered['painted_pixels']<=30:raise SuiteError('dissolve map incomplete')
+        script="""import assert from 'node:assert/strict';import{pathToFileURL}from'node:url';
+const{webMercatorPreviewGeometry}=await import(pathToFileURL(process.argv[1]));const{decodePreviewEWKB}=await import(pathToFileURL(process.argv[2]));let text='';for await(const p of process.stdin)text+=p;
+const v=JSON.parse(text),keys=rows=>rows.map(r=>JSON.stringify(r)).sort();assert.deepEqual(v.rows.map(r=>decodePreviewEWKB(r[v.column])),v.expected.map(r=>r.geometry));
+assert.deepEqual(keys(v.rendered),keys(v.expected.map(r=>({properties:r.properties,geometry:webMercatorPreviewGeometry(r.geometry)}))));"""
+        repo=Path(__file__).resolve().parents[2];result=subprocess.run(['node','--input-type=module','-e',script,str(repo/'manager/frontend/e2e/geometry-preview-coordinate.js'),str(repo/'manager/frontend/e2e/geometry-preview-support.js')],input=json.dumps({'rows':rows,'column':output['geometry_column'],'expected':expected,'rendered':rendered['features']}),capture_output=True,text=True,timeout=30)
+        if result.returncode:raise SuiteError('dissolve raw EWKB/OL coordinates or properties differ')
+    failures=array(raw.get('failures'),'dissolve browser failures')
+    if[f.get('key')for f in failures]!=[s[0]for s in fixture.DISSOLVE_FAILURES]:raise SuiteError('dissolve browser needs eight exact failures')
+    for record,failed,spec in zip(failures,evidence['failures'],fixture.DISSOLVE_FAILURES):
+        reads=array(record.get('observations'),'dissolve owner/locale pages')
+        if record.get('execution_id')!=failed['execution_id']or len(reads)!=4 or{(v.get('owner'),v.get('locale'))for v in reads}!={(o,l)for o in('develop','monitor')for l in('zh-cn','en')}:raise SuiteError('dissolve failure UUID/owner/locale differs')
+        for read in reads:
+            value=obj(read.get('raw'),'dissolve failure page');execution=value if read['owner']=='develop'else obj(value.get('execution'),'dissolve Monitor page');validate_dissolve_failure(execution,failed['execution_id'],principal,spec)
+            if read.get('key')!=spec[0]or read.get('execution_id')!=failed['execution_id']or execution.get('error_details')!=failed['execution']['error_details']or not isinstance(read.get('clipboard'),str)or not read['clipboard']or any(t in read['clipboard']for t in(*DIAGNOSTIC_PRIVATE,'PRIVATE_DISSOLVE','parcel_key','parcel_shape',*fixture.DISSOLVE_SOURCES)):raise SuiteError('dissolve failure page/copy differs or leaks')
+    # Match the same independent frozen literal expectation that the real page asserted.
+    script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';let text='';for await(const p of process.stdin)text+=p;
+const source=readFileSync(process.argv[1],'utf8'),start=source.indexOf('const inputDiagnosticText'),end=source.indexOf('async function assertInputDiagnosticPanel(',start);
+const expected=new Function(source.slice(start,end)+';return inputDiagnosticPageExpectation')();
+for(const f of JSON.parse(text))for(const r of f.observations)assert.equal(r.clipboard,expected(f.key,r.locale,f.execution_id).clipboard);"""
+    result=subprocess.run(['node','--input-type=module','-e',script,str(repo/'console/frontend/e2e/online/vector-topology-persistence.spec.js')],input=json.dumps(failures),capture_output=True,text=True,timeout=30)
+    if result.returncode:raise SuiteError('dissolve independent literal clipboard differs')
+
+
 def validate_overlay_browser_raw(raw,evidence):
     import base64,struct
     if (raw.get('schema_version')!=fixture.OVERLAY_SCHEMA+'-browser-raw/v1' or raw.get('result')!='passed' or raw.get('stage')!='complete'
@@ -1274,6 +1452,8 @@ def browser(repository, env, evidence):
     else:binding=report
     if binding != {**evidence, 'schema_version': schema, 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
+    if case==fixture.DISSOLVE_CASE:
+        validate_dissolve_browser_raw(obj(json.loads((path.parent/'topology-dissolve-browser-raw.json').read_text()),'dissolve browser raw'),evidence)
     if case==fixture.OVERLAY_CASE:
         validate_overlay_browser_raw(obj(json.loads((path.parent/'topology-overlay-browser-raw.json').read_text()),'intersection browser raw'),evidence)
     if case==fixture.NODES_CASE:
@@ -1289,6 +1469,8 @@ def browser(repository, env, evidence):
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
+    if fixture.topology_case(env)==fixture.DISSOLVE_CASE:
+        return run_dissolve_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.OVERLAY_CASE:
         return run_overlay_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.NODES_CASE:
