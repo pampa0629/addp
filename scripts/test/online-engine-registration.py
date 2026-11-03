@@ -95,17 +95,11 @@ def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets
             'action': 'read', 'expiry_mode': 'until_revoked',
             'reason': 'Disposable Online exact record read acceptance',
         }
-        # Meta owns persisted identity; System re-reads the trusted boundary with
-        # its own Service credential. Neither the browser nor native names prove it.
-        full_name = namespace + '.' + table
-        items = consumer.request('GET', f'/api/v1/meta/engines/{engine_id}/items?branch=' + urllib.parse.quote(namespace, safe=''), (200,)).payload
-        if not isinstance(items, list):
-            raise RegistrationError('source Grant requires a scanned Meta item list')
-        matches = [item for item in items if isinstance(item, dict) and item.get('full_name') == full_name and item.get('item_type') == item_term]
-        fingerprint = hashlib.sha256(f'{engine_id}:{full_name}'.encode()).hexdigest()
-        if len(matches) != 1 or matches[0].get('fingerprint') != fingerprint:
-            raise RegistrationError('source Grant requires one matching persisted DataItem identity')
+        # System reads the persisted Meta identity/boundary under its own
+        # Service credential and rechecks this administrator's qualification.
+        # A recipient without a Grant must not browse Meta to bootstrap a Grant.
         facts = read_exact_record_authorization_facts(authorizer, body['catalog_path'])
+        fingerprint = facts['item_fingerprint']
         body.update(item_fingerprint=fingerprint, expected_boundary_hash=facts['boundary_hash'])
         check_path = '/api/v1/system/engine-access/read-checks/manager-preview'
         check_body = {'targets': [body['catalog_path']]}
@@ -120,6 +114,15 @@ def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets
         observed = consumer.request('POST', check_path, (200,), check_body).payload
         if not isinstance(observed, dict) or not observed.get('observed_at'):
             raise RegistrationError('source Grant did not produce a current read observation')
+        # Now the recipient must see the same persisted identity through its
+        # ordinary, permission-filtered catalog. Do not substitute preparer IO.
+        full_name = namespace + '.' + table
+        items = consumer.request('GET', f'/api/v1/meta/engines/{engine_id}/items?branch=' + urllib.parse.quote(namespace, safe=''), (200,)).payload
+        if not isinstance(items, list):
+            raise RegistrationError('source Grant requires a scanned Meta item list')
+        matches = [item for item in items if isinstance(item, dict) and item.get('full_name') == full_name and item.get('item_type') == item_term]
+        if len(matches) != 1 or matches[0].get('fingerprint') != fingerprint:
+            raise RegistrationError('source Grant requires one matching persisted DataItem identity')
         receipts.append(issued)
     return receipts
 
