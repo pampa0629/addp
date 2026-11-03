@@ -1,3 +1,8 @@
+import copy
+import io
+import zipfile
+import subprocess
+from urllib.parse import urlparse,parse_qs
 import hashlib
 import importlib
 from pathlib import Path
@@ -12,6 +17,190 @@ FIXTURE=importlib.import_module('business.scripts.online-envi-fixture')
 OWNER=importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
 CASE=importlib.import_module('scripts.test.manager-envi-online')
 class ENVIHostedCaseTest(unittest.TestCase):
+    def test_read_approval_precedes_consumer_catalog_and_is_withdrawn_on_failure(self):
+        events=[]
+        class Authorization:
+            operator='34';recipient='33'
+            def __init__(self,*args,**kwargs):pass
+            def grant(self,model):
+                events.append(('approve',model))
+                return dict(request_id='owned-read',boundary_hash='a'*64)
+            def cleanup(self):events.append(('withdraw',))
+        def find(*args):
+            self.assertEqual(events[-1][0],'approve','catalog read preceded exact source approval')
+            raise RuntimeError('owned catalog failure')
+        def physical(action,request=None):
+            events.append((action,))
+            return {'sources':FIXTURE.sources()} if action=='seed' else dict(objects_removed=True,files_removed=True)
+        client=mock.Mock();client.request.return_value=SimpleNamespace(payload=[],raw=b'')
+        owner=SimpleNamespace(GatewayClient=lambda *a:client,positive_int=lambda v,*a:int(v),
+            REQUIRED_PERMISSIONS=OWNER.REQUIRED_PERMISSIONS,validate_user_identity=lambda *a:{'principal_id':'33'},
+            wait_for_meta_scan=lambda *a,**k:None,find_fixture_item=find)
+        with tempfile.TemporaryDirectory() as directory:
+            env=dict(ADDP_ONLINE_MANAGER_CASE='native-envi',ADDP_ONLINE_ARTIFACT_DIR=directory,
+                ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='test-envi',GATEWAY_URL='http://fixture',
+                ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',
+                ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
+            with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization):
+                with self.assertRaisesRegex(RuntimeError,'owned catalog failure'):
+                    CASE.run(Path('/repo'),env,owner,physical_runner=physical)
+            report=json.loads(Path(directory,'manager-envi.json').read_text())
+            self.assertEqual((report['stage'],report['error']),('metadata','RuntimeError'))
+        self.assertEqual([e[0]for e in events],['seed','approve','withdraw','delete'])
+        model=events[1][1]
+        self.assertEqual(model['fingerprint'],hashlib.sha256(b'12:bucket/envi/bsq.img').hexdigest())
+        self.assertEqual([r['role']for r in model['composition']],['raster','header'])
+
+    def metadata_pair(self,spec,prefix='envi/'):
+        expected=[dict(path=prefix+spec['name'],role='raster',primary=True,required=True),dict(path=prefix+spec['header'],role='header',primary=False,required=True)]
+        safe=dict(schema_version=1,item=dict(data_type='media',format='envi',layout='multi'))
+        if spec['source_srid']:safe['capabilities']={'spatial':{'srid':spec['source_srid']}}
+        attrs=copy.deepcopy(safe)
+        attrs['item']['refs']=[dict(expected[0],extension='.img'),{k:v for k,v in dict(expected[1],extension='.hdr').items()if k!='primary'}]
+        attrs.update(storage={'total_size':spec['size_bytes']},format_info={'envi':dict(profile='envi-standard-pair/v1',scan_complete=True,composition_complete=True,interleave=spec['interleave'],band_count=3,header_sha256=spec['members'][spec['header']]['sha256'],raster_sha256=spec['sha256'])},type_info={'media':{'width':256,'height':256}})
+        return dict(attributes=safe),dict(data={'object':{'attributes':attrs}}),expected
+
+    def test_public_projection_and_guarded_content_are_separate_strict_proofs(self):
+        for spec in FIXTURE.sources():
+            detail,content,refs=self.metadata_pair(spec)
+            CASE.validate_content_metadata(detail,content,spec,refs)
+            for change in (lambda d:d['attributes'].update(format_info={'envi':{'header_sha256':'leak'}}),
+                           lambda d:d['attributes']['item'].update(refs=refs),
+                           lambda d:d['attributes'].update(storage={'total_size':12})):
+                bad=copy.deepcopy(detail);change(bad)
+                with self.assertRaises(ValueError):CASE.validate_content_metadata(bad,content,spec,refs)
+            for change in (lambda d:d['data']['object']['attributes']['format_info']['envi'].update(header_sha256='wrong'),
+                           lambda d:d['data']['object']['attributes']['item']['refs'].pop(),
+                           lambda d:d['data']['object']['attributes']['storage'].update(total_size=0)):
+                bad=copy.deepcopy(content);change(bad)
+                with self.assertRaises(ValueError):CASE.validate_content_metadata(detail,bad,spec,refs)
+            if spec['source_srid']:
+                bad=copy.deepcopy(detail);bad['attributes']['capabilities']['spatial']['extent']=[1,2,3,4]
+                with self.assertRaises(ValueError):CASE.validate_structural_metadata(bad,spec)
+
+    def test_real_browser_metadata_adapter_rejects_meta_leaks_and_content_bypass(self):
+        root=Path(__file__).resolve().parents[2]
+        text=(root/'console/frontend/e2e/online/manager-img.spec.js').read_text()
+        fn=text[text.index('export function enviContentMetadata'):text.index("test('IMG native")].replace('export function','function',1)
+        cases=[]
+        for spec in FIXTURE.sources():
+            detail,content,_=self.metadata_pair(spec);cases.append(dict(meta=detail,content=content,spec=spec))
+        script="const assert = require('node:assert/strict');\n"+fn+"\nconst cases = JSON.parse(process.argv[1]); for(const c of cases){ assert.deepEqual(enviContentMetadata(c.meta,c.content,c.spec).attributes,c.content.data.object.attributes); for(const key of ['format_info','storage','type_info']){ const bad=structuredClone(c.meta); bad.attributes[key]={leak:true}; assert.throws(()=>enviContentMetadata(bad,c.content,c.spec)); } assert.throws(()=>enviContentMetadata(c.meta,{},c.spec)); }"
+        subprocess.run(['node','-e',script,json.dumps(cases)],cwd=root,check=True,capture_output=True)
+        self.assertIn('enviContentMetadata(structuralMeta, await json(await api.get',text)
+
+    def full_scenario(self,directory,*,browser_failure=False):
+        specs=FIXTURE.sources();specs_by_name={s['name']:s for s in specs};pairs={s['name']:FIXTURE.pair(s)for s in specs}
+        active={};layout={};version={};ids={};records={};events=[];receipts=[];tasks={};self_test=self
+        def key_name(engine,name):return (engine,name)
+        def authorized(key):
+            model=active.get(key)
+            return bool(model) and model['composition'][1]['path'].endswith((key[1].split('/')[-1]+'.hdr')if layout.get(key)else specs_by_name[key[1].split('/')[-1]]['header'])
+        class Authorization:
+            operator='34';recipient='33'
+            def __init__(self,issuer,consumer,report,**options):
+                self.engine=report['engine_id'];self.owned=[]
+                self_test.assertEqual(options['consumer_permissions'],OWNER.REQUIRED_PERMISSIONS)
+                self_test.assertEqual(options['issuer_permissions'],CASE.GRANTS.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
+            def facts(self,model):
+                return {'boundary_hash':hashlib.sha256(json.dumps(model['composition']).encode()).hexdigest()}
+            def grant(self,model):
+                key=key_name(self.engine,model['full_name']);self_test.assertFalse(authorized(key))
+                self_test.assertEqual(model['fingerprint'],hashlib.sha256(f'{self.engine}:{model["full_name"]}'.encode()).hexdigest())
+                active[key]=copy.deepcopy(model);receipt=dict(request_id=str(len(receipts)+1),boundary_hash=self.facts(model)['boundary_hash'])
+                self.owned.append((receipt['request_id'],key));receipts.append(receipt);events.append(('approve',key));return receipt
+            def revoke(self,command):
+                pair=next(p for p in self.owned if p[0]==command);self.owned.remove(pair)
+                active.pop(pair[1],None);events.append(('withdraw',pair[1]))
+            def cleanup(self):
+                for command,key in list(self.owned):self.revoke(command)
+        def raw_zip(key):
+            spec=specs_by_name[key[1].split('/')[-1]];payload=pairs[spec['name']]
+            out=io.BytesIO()
+            with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_DEFLATED)as z:
+                for name,raw in payload.items():z.writestr(spec['name']+'.hdr'if layout.get(key)and name==spec['header']else name,raw)
+            return out.getvalue()
+        def request(method,url,statuses,body=None,headers=None):
+            q=parse_qs(urlparse(url).query);path=urlparse(url).path;status=200;payload={};raw=b''
+            if path.startswith('/api/v1/meta/engines/'):
+                engine=int(path.split('/')[5]);payload=[copy.deepcopy(item)for key,item in records.items()if key[0]==engine and authorized(key)]
+            elif path.startswith('/api/v1/meta/items/'):
+                key=ids[int(path.split('/')[-1])];status=200 if authorized(key)else 404;payload=records[key]
+            elif path in ('/api/v1/manager/downloads/file','/api/v1/manager/preview','/api/v1/manager/quick-view/capability'):
+                locator=urlparse(q['locator'][0]);engine=int(locator.path.split('/')[1])
+                name=locator.path.split('/path/',1)[1];key=key_name(engine,name);status=200 if authorized(key)else 403
+                if path.endswith('downloads/file') and status==200:raw=raw_zip(key)
+                elif path.endswith('preview') and status==200:payload=self_test.metadata_pair(specs_by_name[name.split('/')[-1]],name.rsplit('/',1)[0]+'/')[1]
+                else:payload=dict(can_use_quick_view=False,available_actions=[])
+            elif path.startswith('/cached/'):
+                key=tasks[int(path.split('/')[-1])];status=206 if authorized(key)and not version.get(key)else 403;raw=b'c'*64 if status==206 else b''
+            elif path=='/api/v1/manager/raster_cog':payload={'data':[{'id':int(q['task_id'][0]),'storage_ref':'owned-cog'}]}
+            elif path.startswith('/api/v1/manager/raster_cog/'):payload={'id':int(path.split('/')[-1]),'storage_ref':'owned-cog'}
+            else:raise AssertionError((method,url,statuses))
+            self_test.assertIn(status,statuses,(path,status,statuses));return SimpleNamespace(payload=payload,raw=raw)
+        client=SimpleNamespace(request=request)
+        def find(client,engine,name,label):
+            key=key_name(engine,name);self_test.assertTrue(authorized(key),'consumer catalog before read Grant')
+            spec=specs_by_name[name.split('/')[-1]];detail,_,_=self_test.metadata_pair(spec)
+            item=dict(id=len(ids)+1,engine_id=engine,full_name=name,fingerprint=hashlib.sha256(f'{engine}:{name}'.encode()).hexdigest(),attributes=detail['attributes'],item_type='object'if engine==12 else 'file')
+            ids[item['id']]=key;records[key]=item;return item
+        def generate(client,fixture,tenant,timeout,physical,source_facts):
+            key=ids[fixture.item['id']];self_test.assertTrue(authorized(key));fixture.task_id=fixture.item['id'];fixture.execution_id='owned-execution';fixture.result_id=fixture.task_id
+            fixture.artifact={'preview_url':'/cached/'+str(fixture.task_id)};tasks[fixture.task_id]=key;events.append(('generate',key))
+            self_test.assertTrue(physical('verify',{'sha256':'owned'})['source_unchanged'])
+        def physical(action,body=None):
+            events.append((action,))
+            if action=='seed':return {'sources':specs}
+            if action in ('header-layout','header-version'):
+                key=key_name(12 if body['source_type']=='minio'else 14,('bucket/'if body['source_type']=='minio'else '')+'envi/bsq.img')
+                (layout if action=='header-layout'else version)[key]=body['changed'];return {}
+            if action=='verify':return {'sources_unchanged':True}
+            if action=='delete':return dict(objects_removed=True,files_removed=True)
+            if action=='residuals':return dict(objects_absent=True,temporary_inputs_removed=True,source_unchanged=True)
+            return dict(object_deleted=True,temporary_inputs_removed=True,source_unchanged=True)
+        identity=dict(principal_id='33',tenant_id='2',permissions_verified=sorted(OWNER.REQUIRED_PERMISSIONS))
+        def browser(repo,env,evidence,owner):
+            self_test.assertNotIn('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN',env);self_test.assertNotIn('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',env)
+            if browser_failure:raise RuntimeError('owned browser failure')
+            cases=[]
+            for source in evidence['cases']:
+                actual={k:source[k]for k in ('case','item_id','locator','sha256','source_srid')}
+                actual.update(download_sha256=source['sha256'],download_bundle={'members':source['download_members']},metadata_verified=True,source_preview_verified=True,metadata_projection_verified=True,content_metadata_verified=True,current_user_download_verified=True)
+                if source['source_srid']is None:actual.update(map_absent=True,source_image_absent=True,unsupported_message_visible=True,generation_unavailable=True)
+                else:actual.update(preview_url=source['preview_url'],range_loaded=True,map_loaded=True,reopened=True,reused_result=True,pixels=dict(cyan=128,magenta=128,yellow=128))
+                Path(directory,'envi-'+source['case']+'.png').write_bytes(b'\x89PNG\r\n\x1a\nmock')
+                cases.append(actual)
+            return dict(schema_version='addp.manager-raster-media-browser/v4',result='passed',run_id=evidence['run_id'],identity=identity,source_format='envi',generation_requests=0,failed_business_responses=0,warnings_errors=0,cases=cases)
+        def cleanup(client,fixture,*args):fixture.cleanup=dict(task_deleted=True);events.append(('task-delete',));return [{'id':fixture.result_id}]
+        owner=SimpleNamespace(GatewayClient=lambda *a:client,positive_int=lambda v,*a:int(v),validate_user_identity=lambda *a:identity,REQUIRED_PERMISSIONS=OWNER.REQUIRED_PERMISSIONS,SuiteError=OWNER.SuiteError,
+            wait_for_meta_scan=lambda *a,**k:None,find_fixture_item=find,ArtifactFixture=OWNER.ArtifactFixture,build_item_locator=OWNER.build_item_locator,
+            validate_model_bundle=OWNER.validate_model_bundle,generate_raster_cog=generate,cleanup_managed_artifact=cleanup,RASTER_TASK_TYPE=OWNER.RASTER_TASK_TYPE)
+        env=dict(ADDP_ONLINE_MANAGER_CASE='native-envi',ADDP_ONLINE_ARTIFACT_DIR=directory,ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='envi-test',GATEWAY_URL='http://fixture',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='engine',ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
+        with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE.MEDIA,'run_browser',browser):
+            if browser_failure:
+                with self.assertRaisesRegex(RuntimeError,'owned browser failure'):CASE.run(Path('/repo'),env,owner,physical_runner=physical)
+                report=json.loads(Path(directory,'manager-envi.json').read_text())
+            else:report=CASE.run(Path('/repo'),env,owner,physical_runner=physical)
+        self.assertEqual(active,{});self.assertEqual(len(receipts),14)
+        self.assertEqual((report['source_authorization']['operator_principal_id'],report['source_authorization']['recipient_principal_id']),('34','33'))
+        self.assertEqual(report['source_authorization']['cleanup'],dict(read_grants_revoked=True,metadata_details_hidden=6))
+        self.assertEqual(sum(e[0]=='generate'for e in events),4);self.assertEqual(sum(e[0]=='task-delete'for e in events),4)
+        self.assertEqual(report['source_cleanup'],dict(objects_removed=True,files_removed=True));return report
+
+    def test_complete_six_source_owner_flow_and_failure_cleanup(self):
+        for failure in (False,True):
+            with self.subTest(failure=failure),tempfile.TemporaryDirectory()as directory:
+                report=self.full_scenario(directory,browser_failure=failure)
+                self.assertEqual(report['schema_version'],'addp.manager-envi/v3')
+                self.assertEqual(report['result'],'failed'if failure else 'passed')
+                self.assertEqual(len(report['cases']),6)
+                if failure:self.assertEqual((report['stage'],report['error']),('browser','RuntimeError'))
+                for key in ('metadata_projection_verified','content_metadata_verified','current_user_download_verified'):
+                    if not failure:
+                        observed=copy.deepcopy(report['browser']);observed['cases'][0][key]=False
+                        evidence=dict(identity=report['identity'],run_id=report['run_id'],source_format='envi',cases=report['cases'])
+                        with self.assertRaises(ValueError):CASE.validate_browser(OWNER,observed,evidence,directory)
+
     def test_failed_generation_cleanup_uses_actual_results_and_never_invents_output(self):
         for rows in ([],[dict(id=31,storage_ref='owned-partial-result')]):
             with self.subTest(rows=rows):
@@ -106,22 +295,25 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 if actual!=model or self.active:raise ValueError('new approval must follow the exact withdrawal')
                 self.active=True;self.renewed=True;return new
             def request(self,method,path,statuses,headers=None):
+                if path=='/api/v1/meta/items/1':
+                    if (200 if self.active else 404) not in statuses:raise ValueError('metadata withdrawal ineffective')
+                    return SimpleNamespace(payload={'id':1})
                 status=206 if self.active else 403
                 if method!='GET' or path!='/cached/result' or status not in statuses:raise ValueError('current source decision did not enforce withdrawal')
                 if status==206 and headers!={'Range':'bytes=0-63'}:raise ValueError('unbounded cached request')
                 return SimpleNamespace(raw=(b'x'*64 if self.renewed and self.changed else b'c'*64) if self.active else b'')
         ledger=SourceLedger()
-        receipt,proof=CASE.verify_source_revocation(ledger,ledger,old,model,'/cached/result')
+        receipt,proof=CASE.verify_source_revocation(ledger,ledger,old,model,'/cached/result',item_id=1)
         self.assertEqual(receipt,new)
         self.assertEqual(proof,dict(revoked_request_id=old['request_id'],renewed_request_id=new['request_id'],boundary_hash='a'*64,range_bytes=64,range_sha256=hashlib.sha256(b'c'*64).hexdigest()))
         for ledger in (SourceLedger(ineffective=True),SourceLedger(changed=True)):
-            with self.assertRaises(ValueError):CASE.verify_source_revocation(ledger,ledger,old,model,'/cached/result')
+            with self.assertRaises(ValueError):CASE.verify_source_revocation(ledger,ledger,old,model,'/cached/result',item_id=1)
         root=Path(__file__).resolve().parents[2]
         runner=(root/'scripts/test/manager-envi-online.py').read_text()
         self.assertIn('issuer_permissions=GRANTS.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS',runner)
         self.assertNotIn('grant.deny(',runner)
         self.assertNotIn('grant.release(',runner)
-        self.assertIn('addp.manager-envi/v2',runner)
+        self.assertIn('addp.manager-envi/v3',runner)
 
     def test_infra_failure_diagnostic_is_owned_bounded_and_redacted(self):
         with tempfile.TemporaryDirectory() as directory:
