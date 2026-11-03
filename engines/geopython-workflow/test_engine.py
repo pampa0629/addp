@@ -39,12 +39,14 @@ def test_workflow_engine():
     """测试工作流引擎"""
     print("\n=== 测试 3: 工作流引擎 ===")
     from workflow_engine import execute_workflow
+    import json
+    from pyproj import CRS
 
-    # 测试简单的缓冲区工作流
+    # GeoJSON 为经纬度，先真实重投影，再按投影单位执行缓冲。
     workflow_def = {
         "tasks": [{
-            "id": "t1",
-            "operator": "buffer",
+            "id": "project",
+            "operator": "vector_reproject",
             "params": {
                 "input_gdf": {
                     "type": "FeatureCollection",
@@ -57,9 +59,17 @@ def test_workflow_engine():
                         "properties": {"name": "Beijing"}
                     }]
                 },
-                "distance": 0.01
+                "target_crs": "EPSG:3857"
             },
             "depends_on": []
+        }, {
+            "id": "t1",
+            "operator": "buffer",
+            "params": {
+                "input_gdf": {"$ref": "project"},
+                "distance": 0.01
+            },
+            "depends_on": ["project"]
         }]
     }
 
@@ -67,18 +77,23 @@ def test_workflow_engine():
 
     assert result["status"] == "success", result.get("error")
     assert result["final_result"]
+    assert list(result["all_results"]) == ["project", "t1"]
+    projected = json.loads(result["all_results"]["project"])
+    assert CRS.from_user_input(projected["crs"]["properties"]["name"]).to_epsg() == 3857
 
 def test_dag_sorting():
     """测试 DAG 拓扑排序"""
     print("\n=== 测试 4: DAG 拓扑排序 ===")
     from workflow_engine import execute_workflow
+    import json
+    from pyproj import CRS
 
-    # 测试复杂依赖链: t1 -> t2 -> t3
+    # 测试复杂依赖链: project -> t1 -> t2 -> t3
     workflow_def = {
         "tasks": [
             {
-                "id": "t1",
-                "operator": "buffer",
+                "id": "project",
+                "operator": "vector_reproject",
                 "params": {
                     "input_gdf": {
                         "type": "FeatureCollection",
@@ -88,9 +103,18 @@ def test_dag_sorting():
                             "properties": {"name": "Beijing"}
                         }]
                     },
-                    "distance": 0.01
+                    "target_crs": "EPSG:3857"
                 },
                 "depends_on": []
+            },
+            {
+                "id": "t1",
+                "operator": "buffer",
+                "params": {
+                    "input_gdf": {"$ref": "project"},
+                    "distance": 0.01
+                },
+                "depends_on": ["project"]
             },
             {
                 "id": "t2",
@@ -115,6 +139,9 @@ def test_dag_sorting():
 
     assert result["status"] == "success", result.get("error")
     assert len(result["logs"]) >= 3
+    assert list(result["all_results"]) == ["project", "t1", "t2", "t3"]
+    projected = json.loads(result["all_results"]["project"])
+    assert CRS.from_user_input(projected["crs"]["properties"]["name"]).to_epsg() == 3857
 
 def test_workflow_engine_json_result():
     """测试非 GeoDataFrame 的结构化 JSON 输出"""
@@ -969,8 +996,8 @@ def test_multi_distance_buffer_requires_active_geometry_and_unique_columns():
         assert failure.value.code == 'source'
 
 
-@pytest.mark.parametrize('crs', [None, 'EPSG:2263'])
-def test_multi_distance_buffer_keeps_native_crs_policy_and_units(crs):
+@pytest.mark.parametrize('crs', ['EPSG:3857', 'EPSG:2263'])
+def test_multi_distance_buffer_keeps_projected_native_units(crs):
     from operators.data_operations import batch_buffer
     source = _multi_distance_source().set_crs(crs, allow_override=True)
     result = batch_buffer(source, [2], resolution=1)
@@ -1243,3 +1270,41 @@ def test_ring_unexpected_value_error_is_not_a_parameter_diagnostic(monkeypatch):
     with pytest.raises(WorkflowExecutionError) as caught:
         workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':[{'id':'private','operator':'extract_polygon_rings','params':{},'depends_on':[]}]})
     assert caught.value.error_code=='EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('operator,fields,expected', [
+    ('get_area', ['area'], [[12.], [2.]]),
+    ('get_length', ['length'], [[14.], [6.]]),
+    ('get_bounds', ['minx', 'miny', 'maxx', 'maxy'], [[0., 0., 3., 4.], [10., 10., 12., 11.]]),
+])
+def test_measurement_crs_units_and_geodataframe_output_facts(operator, fields, expected):
+    import geopandas as gpd
+    import pandas as pd
+    from geopandas.testing import assert_geodataframe_equal
+    from shapely.geometry import box
+    from operators import get_operator, list_operators
+
+    source = gpd.GeoDataFrame({
+        'geometry': pd.Series(['business-a', 'business-b'], dtype='string'),
+        'value': pd.Series([None, 2**53 + 1], dtype='Int64'),
+        **{name: [999, 888] for name in fields},
+        'parcel_shape': gpd.GeoSeries([box(0, 0, 3, 4), box(10, 10, 12, 11)], crs=2263),
+    }, geometry='parcel_shape')
+    source.index = pd.Index(['second', 'first'], name='source-row')
+    before = source.copy(deep=True)
+    assert all('foot' in axis.unit_name.lower() and axis.unit_conversion_factor != 1 for axis in source.crs.axis_info[:2])
+
+    result = get_operator(operator)(source)
+    assert isinstance(result, gpd.GeoDataFrame)
+    assert list(result.columns) == list(source.columns)
+    assert result[fields].values.tolist() == expected
+    assert_geodataframe_equal(result.drop(columns=fields), source.drop(columns=fields))
+    assert_geodataframe_equal(source, before)
+
+    spec = next(item for item in list_operators() if item['name'] == operator)
+    details = spec['detailed_description']
+    assert 'GeoDataFrame副本' in details['overview']
+    if operator != 'get_bounds':
+        assert any('不自动换算' in note and '英尺' in note for note in details['notes'])
+    else:
+        assert all(name in details['overview'] for name in fields)

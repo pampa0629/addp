@@ -12,7 +12,7 @@ from collections import Counter
 from fractions import Fraction
 from itertools import pairwise
 from math import fsum, hypot, nextafter
-from numbers import Real
+from numbers import Real, Integral
 from typing import List
 from .base import (
     OperatorType,
@@ -22,22 +22,93 @@ from .base import (
 
 # ==================== 算子实现 ====================
 
-def buffer(input_gdf: gpd.GeoDataFrame, distance: float, resolution: int = 16) -> gpd.GeoDataFrame:
-    """
-    缓冲区分析
+class BufferInputError(ValueError):
+    """Proven buffer admission facts shared by single and multiple distances."""
+    _messages = {
+        'zh-cn': {
+            'source': '缓冲输入须具有唯一列名及唯一活动几何列，几何须有效、非空、非缺失且为有限二维 XY；请先显式整理或修复源图层。',
+            'crs': '缓冲运算要求已知投影坐标系和匹配、有限且为正的水平线性单位；距离沿原坐标单位，请先显式重投影。',
+            'distance': '缓冲距离必须为有限实数，可为正数、零或负数；不接受布尔值、字符串、空值、数组或非有限值。',
+            'resolution': '缓冲区每四分之一圆的线段数必须为正整数，不接受布尔值。',
+        },
+        'en': {
+            'source': 'Buffer input requires unique column names, one active geometry column and valid non-empty non-missing finite XY geometries; prepare or explicitly repair the source layer first.',
+            'crs': 'Buffering requires a known projected CRS with matching finite positive horizontal units; distances use the original coordinate units. Reproject explicitly first.',
+            'distance': 'Buffer distance must be a finite real scalar and may be positive, zero or negative; booleans, strings, nulls, arrays and non-finite values are rejected.',
+            'resolution': 'The number of line segments per quarter circle must be a positive integer; booleans are rejected.',
+        },
+    }
 
-    Args:
-        input_gdf: 输入 GeoDataFrame
-        distance: 缓冲距离（米）
-        resolution: 圆弧段数
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
 
-    Returns:
-        GeoDataFrame 缓冲区结果
-    """
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
+def _buffer_frame_geometry(input_gdf, error_type=BufferInputError):
+    if (not isinstance(input_gdf, gpd.GeoDataFrame) or not input_gdf.columns.is_unique
+            or sum(isinstance(dtype, gpd.array.GeometryDtype) for dtype in input_gdf.dtypes) != 1):
+        raise error_type('source')
+    try:
+        return _active_geometry(input_gdf)
+    except ValueError as exc:
+        raise error_type('source') from exc
+
+
+def _prepare_buffer_geometry(input_gdf, error_type=BufferInputError):
+    # The public callers have already admitted the frame schema.
+    try:
+        geometry = _finite_xy_geometry(input_gdf)
+        if geometry.isna().any() or geometry.is_empty.any() or not shapely.is_valid(geometry.array).all():
+            raise ValueError('invalid buffer geometry')
+    except (ValueError, TypeError) as exc:
+        raise error_type('source') from exc
+    try:
+        _require_projected_xy_crs(geometry.crs)
+    except ValueError as exc:
+        raise error_type('crs') from exc
+    return geometry
+
+
+def _buffer_distance(value):
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise BufferInputError('distance')
+    try:
+        distance = float(value)
+    except (ValueError, OverflowError) as exc:
+        raise BufferInputError('distance') from exc
+    if not np.isfinite(distance):
+        raise BufferInputError('distance')
+    return distance
+
+
+def _buffer_resolution(value, error_type=BufferInputError):
+    if isinstance(value, bool) or not isinstance(value, Integral) or value <= 0:
+        raise error_type('resolution')
+    return int(value)
+
+
+def _compute_buffer(input_gdf, geometry, distance, resolution):
+    """One full-buffer primitive; valid empty polygons retain their source row."""
+    values = geometry.buffer(distance, resolution=resolution)
+    if (len(values) != len(geometry) or not values.index.equals(geometry.index)
+            or values.isna().any() or not values.geom_type.isin(['Polygon', 'MultiPolygon']).all()
+            or (distance > 0 and values.is_empty.any())
+            or not shapely.is_valid(values.array).all() or shapely.has_z(values.array).any()
+            or shapely.has_m(values.array).any() or not np.isfinite(shapely.get_coordinates(values.array)).all()):
+        raise RuntimeError('buffer calculation produced an invalid or non-finite XY polygon result')
     result = input_gdf.copy()
-    geom_col = result.geometry.name
-    result[geom_col] = result.geometry.buffer(distance, resolution=resolution)
+    result[geometry.name] = values
     return result
+
+
+def buffer(input_gdf: gpd.GeoDataFrame, distance: float, resolution: int = 16) -> gpd.GeoDataFrame:
+    """Full per-source planar buffers in projected CRS units, retaining empty rows."""
+    _buffer_frame_geometry(input_gdf)
+    geometry = _prepare_buffer_geometry(input_gdf)
+    return _compute_buffer(input_gdf, geometry, _buffer_distance(distance), _buffer_resolution(resolution))
 
 
 class IntersectionInputError(ValueError):
@@ -2474,69 +2545,25 @@ POLYGONIZE_METADATA = OperatorMetadata(
 )
 
 BUFFER_METADATA = OperatorMetadata(
-    name="buffer",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_CONSTRUCTION,
-    description="缓冲区分析",
-    brief_description="在几何对象周围创建指定距离的缓冲区,常用于影响范围分析和邻域查询",
-    execution_modes=["workflow"],
-    effects=["read"],
-
-    overview="在输入几何对象周围创建指定距离的缓冲区多边形。支持点、线、面等各类几何类型,缓冲距离可正可负(负值仅对面有效,表示内缩)。",
-
+    name="buffer", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_CONSTRUCTION,
+    description="缓冲区分析", brief_description="逐源生成投影原单位的完整缓冲，保留属性和空结果行",
+    execution_modes=["workflow"], effects=["read"],
+    overview="对已知投影CRS的每个有效有限二维源几何独立生成完整 Polygon/MultiPolygon 缓冲，距离可正可零可负；收缩或点线的零负缓冲成为空面时仍保留原行、属性、索引及CRS，不自动融合或修复。",
     params=[
-        OperatorParam(
-            name="input_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="输入的地理数据"
-        ),
-        OperatorParam(
-            name="distance",
-            type="param",
-            data_type="float",
-            required=True,
-            description="缓冲距离,单位与坐标系一致",
-            notes="投影坐标系单位为米,地理坐标系单位为度(不推荐,建议先转投影坐标系)"
-        ),
-        OperatorParam(
-            name="resolution",
-            type="param",
-            data_type="integer",
-            required=False,
-            description="缓冲区圆弧段数",
-            notes="值越大缓冲区越平滑但计算越慢,建议范围 8-32"
-        )
+        OperatorParam(name="input_gdf",type="input",data_type="GeoDataFrame",required=True,description="源图层",notes="唯一实际活动几何和唯一列名；有效非空有限XY，允许空批；已知投影CRS"),
+        OperatorParam(name="distance",type="param",data_type="float",required=True,description="缓冲距离，沿投影CRS原单位",notes="有限实数，可正、零、负；英尺不换算为米，不接受布尔、字符串、数组或非有限值"),
+        OperatorParam(name="resolution",type="param",data_type="int",required=False,default=16,description="每四分之一圆的线段数",notes="正整数，默认16；值越大通常越平滑，也会增加计算和内存消耗"),
     ],
-
-    use_cases=[
-        "河流污染影响范围: 河流中心线缓冲500米",
-        "学校服务范围: 学校点位缓冲1000米",
-        "道路噪音影响区: 道路线缓冲200米",
-        "保护区核心区: 边界内缩100米(负值缓冲)"
-    ],
-
+    use_cases=["投影坐标系下逐道路生成影响范围", "逐设施生成服务缓冲面", "面向内收缩且保留消失行的来源属性"],
     notes=[
-        "地理坐标系(EPSG:4326)需先用 to_crs 转投影坐标系再缓冲",
-        "大数据集建议先用空间过滤减少要素数量再缓冲",
-        "负值缓冲仅对面几何有效,点和线无效",
-        "缓冲结果可能产生自相交,建议后续用 simplify 简化",
-        "重要：多要素(如铁路、道路多条线段)缓冲后各自独立，相邻缓冲区可能重叠。如需后续用 intersection 统计面积，必须先用 dissolve 融合缓冲区，否则重叠区域将被重复计算，导致面积结果偏大"
+        "地理、地心或未知CRS拒绝；先显式重投影，不能将坐标单位默认解释为米",
+        "源缺失/空/无效或Z/M几何明确拒绝；应先几何检查并显式修复，不用简化或零缓冲替代修复",
+        "点线零或负缓冲可为空；面负缓冲会内缩，过大时也可为空，全部仍保行",
+        "不同源缓冲独立，可能重叠；若需整体覆盖面积，应显式融合后计量，不自动融合",
+        "不新增距离属性列，源distance业务字段或活动几何列均可保留；输入不变，不承诺跨GEOS重新计算的WKB相同",
     ],
-
-    workflow_example={
-        'id': 'buffer_rivers',
-        'operator': 'buffer',
-        'params': {
-            'input_gdf': {'$ref': 'load_rivers'},
-            'distance': 500,
-            'resolution': 16
-        },
-        'depends_on': ['load_rivers']
-    }
+    workflow_example={'id':'buffer_roads','operator':'buffer','params':{'input_gdf':{'$ref':'load_roads'},'distance':500,'resolution':16},'depends_on':['load_roads']},
 )
-
 
 INTERSECTION_METADATA = OperatorMetadata(
     name="intersection", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_OVERLAY,
@@ -2564,7 +2591,6 @@ INTERSECTION_METADATA = OperatorMetadata(
     },
 )
 
-
 UNION_METADATA = OperatorMetadata(
     name="union", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_OVERLAY,
     description="联合叠加", brief_description="两个面图层联合分区，保留双方来源与属性，缺侧为空",
@@ -2586,7 +2612,6 @@ UNION_METADATA = OperatorMetadata(
     ],
     workflow_example={'id':'union_regions','operator':'union','params':{'input_gdf':{'$ref':'load_a'},'gdf_b':{'$ref':'load_b'},'id_field':'parcel_key','reference_id_field':'zone_key'},'depends_on':['load_a','load_b']},
 )
-
 
 CENTROID_METADATA = OperatorMetadata(
     name="centroid",
@@ -2683,13 +2708,14 @@ SIMPLIFY_METADATA = OperatorMetadata(
             data_type="float",
             required=True,
             description="简化容差,单位与坐标系一致",
-            notes="值越大简化越激进。投影坐标系单位为米,建议10-100;地理坐标系单位为度,建议0.0001-0.001"
+            notes="值越大简化越激进；容差沿源CRS的坐标单位，投影坐标单位不固定为米，不自动换算单位或重投影"
         ),
         OperatorParam(
             name="preserve_topology",
             type="param",
-            data_type="boolean",
+            data_type="bool",
             required=False,
+            default=True,
             description="是否保持单个几何的拓扑",
             notes="True时保留单个几何拓扑，不修复原有无效几何；False时可能产生无效几何"
         )

@@ -11,7 +11,7 @@ export const failureReasons = Object.freeze([
   'operator_input_overlap', 'operator_reference_overlap',
   'operator_overlay_fields_conflict', 'operator_endpoint_network_invalid', 'operator_distance_limit_invalid', 'operator_source_topology_invalid', 'operator_trim_conflict',
   'operator_input_invalid', 'operator_mask_invalid', 'operator_reference_invalid', 'operator_field_conflict', 'operator_geometry_field_conflict',
-  'operator_number_array_invalid', 'operator_positive_integer_required', 'operator_positive_number_required',
+  'operator_number_invalid', 'operator_number_array_invalid', 'operator_positive_integer_required', 'operator_positive_number_required',
   'operator_projected_crs_required', 'operator_crs_mismatch', 'operator_crs_invalid', 'operator_geometry_invalid',
   'timeout', 'cancelled', 'resource_exhausted', 'query_failed', 'result_invalid', 'database_required', 'data_protection_required', 'local_read_unsupported',
   'protection_computed_output_unsupported', 'protection_lineage_unverified', 'protection_role_choice_unavailable', 'protection_not_ready',
@@ -22,7 +22,9 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'resource_exhausted', 'invalid_input', 'execution_failed', 'submission_uncertain',
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
-const operatorFailureTemplates = Object.freeze({ contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi' })
+const operatorFailureTemplates = Object.freeze({ contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
+  'buffer:operator_input_invalid': 'buffer', 'buffer:operator_crs_invalid': 'buffer',
+  'batch_buffer:operator_crs_invalid': 'buffer' })
 
 export function executionFailurePresentation(details, translate) {
   const diagnostic = details?.diagnostic
@@ -39,7 +41,7 @@ export function executionFailurePresentation(details, translate) {
   const code = typeof rawCode === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(rawCode) && !/secret/i.test(rawCode) ? rawCode : ''
   const operator = controlled ? diagnostic.operator : null
   const parameters = operator ? { field: operator.field || '' } : undefined
-  const profile = operator && operatorFailureTemplates[operator.operator_id]
+  const profile = operator && (operatorFailureTemplates[`${operator.operator_id}:${diagnostic.reason}`] || operatorFailureTemplates[operator.operator_id])
   const templates = `common.executionFailure${profile ? `.${profile}` : ''}`
   const sql = controlled ? diagnostic.sql : null
   const object = sql?.object ? translate(`common.executionFailure.objects.${sql.object.kind}`, { name: sql.object.name }) : ''
@@ -59,6 +61,11 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["buffer", "operator_input_invalid", "input_gdf", ""],
+  ["buffer", "operator_crs_invalid", "", ""],
+  ["buffer", "operator_number_invalid", "distance", ""],
+  ["buffer", "operator_positive_integer_required", "resolution", ""],
+  ["batch_buffer", "operator_crs_invalid", "", ""],
   ["voronoi", "operator_input_invalid", "input_gdf", ""],
   ["voronoi", "operator_mask_invalid", "mask_gdf", ""],
   ["voronoi", "operator_crs_invalid", "", ""],

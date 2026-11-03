@@ -863,7 +863,7 @@ components:
           enum: [execution]
         reason:
           type: string
-          enum: [operator_input_invalid, operator_mask_invalid, operator_reference_invalid, operator_field_conflict, operator_geometry_field_conflict, operator_number_array_invalid, operator_positive_integer_required, operator_positive_number_required, operator_projected_crs_required, operator_crs_mismatch, operator_crs_invalid, operator_geometry_invalid, operator_distance_limit_invalid, operator_source_topology_invalid, operator_trim_conflict, operator_endpoint_network_invalid, operator_overlay_fields_conflict, operator_input_overlap, operator_reference_overlap, operator_group_fields_invalid, operator_dissolve_fields_conflict]
+          enum: [operator_number_invalid, operator_input_invalid, operator_mask_invalid, operator_reference_invalid, operator_field_conflict, operator_geometry_field_conflict, operator_number_array_invalid, operator_positive_integer_required, operator_positive_number_required, operator_projected_crs_required, operator_crs_mismatch, operator_crs_invalid, operator_geometry_invalid, operator_distance_limit_invalid, operator_source_topology_invalid, operator_trim_conflict, operator_endpoint_network_invalid, operator_overlay_fields_conflict, operator_input_overlap, operator_reference_overlap, operator_group_fields_invalid, operator_dissolve_fields_conflict]
         operator:
           type: object
           additionalProperties: false
@@ -876,14 +876,19 @@ components:
               description: 原workflow_def.tasks的1起始位置，不是拓扑调度顺序。
             operator_id:
               type: string
-              enum: [voronoi, contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
+              enum: [buffer, voronoi, contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
             parameter:
               type: string
-              enum: [input_gdf, reference_gdf, distances, resolution, tolerance, max_distance, gdf_b, mask_gdf, group_fields]
+              enum: [input_gdf, reference_gdf, distance, distances, resolution, tolerance, max_distance, gdf_b, mask_gdf, group_fields]
             field:
               type: string
               enum: [distance, source_id, part_no, ring_no, ring_id, is_hole, node_id, degree, source_part_no, end]
       x-addp-operator-input-rules:
+        - ["buffer", "operator_input_invalid", "input_gdf", ""]
+        - ["buffer", "operator_crs_invalid", "", ""]
+        - ["buffer", "operator_number_invalid", "distance", ""]
+        - ["buffer", "operator_positive_integer_required", "resolution", ""]
+        - ["batch_buffer", "operator_crs_invalid", "", ""]
         - ["voronoi", "operator_input_invalid", "input_gdf", ""]
         - ["voronoi", "operator_mask_invalid", "mask_gdf", ""]
         - ["voronoi", "operator_crs_invalid", "", ""]

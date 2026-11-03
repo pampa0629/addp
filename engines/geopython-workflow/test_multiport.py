@@ -15,8 +15,8 @@ def build_multiport_workflow():
     return {
         "tasks": [
             {
-                "id": "load_data",
-                "operator": "buffer",
+                "id": "project_data",
+                "operator": "vector_reproject",
                 "params": {
                     "input_gdf": {
                         "type": "FeatureCollection",
@@ -39,9 +39,18 @@ def build_multiport_workflow():
                             },
                         ],
                     },
-                    "distance": 0.01,
+                    "target_crs": "EPSG:3857",
                 },
                 "depends_on": [],
+            },
+            {
+                "id": "load_data",
+                "operator": "buffer",
+                "params": {
+                    "input_gdf": {"$ref": "project_data"},
+                    "distance": 0.01,
+                },
+                "depends_on": ["project_data"],
             },
             {
                 "id": "split_task",
@@ -81,7 +90,12 @@ class MultiPortWorkflowTest(unittest.TestCase):
         self.assertIn("features", final_result)
 
     def test_engine_keeps_split_outputs_by_port_name(self):
+        from pyproj import CRS
+
         result = GeoPythonWorkflowRunner().execute(build_multiport_workflow())
+        assert result.task_order[:3] == ['project_data', 'load_data', 'split_task']
+        projected = json.loads(result.all_results['project_data'])
+        assert CRS.from_user_input(projected['crs']['properties']['name']).to_epsg() == 3857
         assert set(json.loads(result.all_results['split_task'])) == {'large','small'}
         assert 'process_large' in result.all_results and 'process_small' in result.all_results
 

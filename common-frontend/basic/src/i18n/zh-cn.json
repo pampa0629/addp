@@ -247,6 +247,7 @@
         "operator_reference_invalid": "参考图层不符合算子的类型、几何或标识要求。",
         "operator_field_conflict": "源图层字段 {field} 与算子的固定输出字段重名。",
         "operator_geometry_field_conflict": "源图层活动几何列 {field} 与距离输出字段重名。",
+        "operator_number_invalid": "该参数须为有限实数，可为正数、零或负数。",
         "operator_number_array_invalid": "距离列表必须为有限数值数组，不能包含布尔值、字符串或空值。",
         "operator_positive_integer_required": "参数必须是大于零的整数。",
         "operator_positive_number_required": "容差必须为以源坐标系水平单位表示的有限正数。",
@@ -310,6 +311,7 @@
         "operator_reference_invalid": "按算子说明检查参考图层的几何、坐标系和非空唯一标识后重新执行。",
         "operator_field_conflict": "先在上游手动重命名源字段 {field}，再重新执行；不会自动改名或覆盖。",
         "operator_geometry_field_conflict": "先在上游手动重命名源活动几何列 {field}，再重新执行。",
+        "operator_number_invalid": "填写有限数值，可为正数、零或负数；不接受布尔值、字符串、空值、数组或非有限值。",
         "operator_number_array_invalid": "检查 distances 数组中的全部元素；保留合法的零值、负值和重复距离。",
         "operator_positive_integer_required": "将该参数设为大于零的整数后重新执行。",
         "operator_positive_number_required": "按源坐标系单位设置有限且大于零的容差后重新执行，不自动换算为米。",
@@ -352,7 +354,18 @@
           "operator_crs_invalid": "先显式统一源点和覆盖范围的投影坐标系及有限正水平线性单位，再重新执行；不会隐式重投影。"
         }
       },
+      "buffer": {
+        "reasons": {
+          "operator_input_invalid": "缓冲源图层须具有唯一活动几何列和有效非空有限二维几何。",
+          "operator_crs_invalid": "缓冲源图层须使用已知投影坐标系和匹配的有限正水平线性单位。"
+        },
+        "actions": {
+          "operator_input_invalid": "检查源几何及唯一列名；缺失、空、无效或Z/M几何须先手动整理，不会自动修复。",
+          "operator_crs_invalid": "先将源图层显式重投影到合适的投影坐标系，再按该坐标系原单位填写距离；不自动换算为米。"
+        }
+      },
       "operatorNames": {
+        "buffer": "缓冲区分析",
         "voronoi": "泰森多边形",
         "contains": "包含判断",
         "intersects": "相交判断",
@@ -369,6 +382,7 @@
         "intersection": "相交叠加"
       },
       "operatorParameters": {
+        "distance": "缓冲距离（distance）",
         "group_fields": "分组字段（group_fields）",
         "mask_gdf": "裁剪掩膜（mask_gdf）",
         "max_distance": "最大修剪路径距离（max_distance）",

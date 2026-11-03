@@ -7,13 +7,12 @@
 import geopandas as gpd
 import pandas as pd
 import shapely
-from math import isfinite
-from numbers import Integral, Real
 from typing import Dict, List, Any
 from .base import (
     OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator, OutputPort
 )
-from .geometric_operators import (buffer, _geometry_for_output, _polygon_mask_inputs,
+from .geometric_operators import (BufferInputError, _buffer_frame_geometry, _prepare_buffer_geometry,
+                                  _buffer_distance, _buffer_resolution, _compute_buffer, _geometry_for_output, _polygon_mask_inputs,
                                   _combined_polygon_mask, _require_valid_mask_result, _union_polygon_result)
 
 
@@ -155,13 +154,15 @@ class MultiBufferInputError(ValueError):
 
     _messages = {
         'zh-cn': {
-            'source': '多距缓冲要求具有活动几何列且列名唯一的 GeoDataFrame 输入。',
+            'source': BufferInputError._messages['zh-cn']['source'],
+            'crs': BufferInputError._messages['zh-cn']['crs'],
             'distance_conflict': '源图层的列名 distance 与多距缓冲输出列冲突；请先手动重命名源列，再执行多距缓冲。',
             'distances': '多距缓冲的距离列表必须是有限数值数组，不接受布尔值、字符串或空值。',
             'resolution': '多距缓冲的圆弧段数必须是正整数。',
         },
         'en': {
-            'source': 'Multi-distance buffer requires a GeoDataFrame with an active geometry column and unique column names.',
+            'source': BufferInputError._messages['en']['source'],
+            'crs': BufferInputError._messages['en']['crs'],
             'distance_conflict': 'Source column distance conflicts with the multi-distance buffer output column; '
                                  'rename the source column before running multi-distance buffer.',
             'distances': 'Multi-distance buffer distances must be an array of finite numbers; '
@@ -180,29 +181,19 @@ class MultiBufferInputError(ValueError):
 
 def batch_buffer(input_gdf: gpd.GeoDataFrame, distances: List[float], resolution: int = 16) -> gpd.GeoDataFrame:
     """Expand full buffers into one layer, ordered by distance and original row."""
-    if not isinstance(input_gdf, gpd.GeoDataFrame) or not input_gdf.columns.is_unique:
-        raise MultiBufferInputError('source')
-    try:
-        input_gdf.geometry
-    except AttributeError as exc:
-        raise MultiBufferInputError('source') from exc
+    _buffer_frame_geometry(input_gdf, MultiBufferInputError)
     if 'distance' in input_gdf.columns:
         raise MultiBufferInputError('distance_conflict')
     if not isinstance(distances, list):
         raise MultiBufferInputError('distances')
     normalized = []
     for value in distances:
-        if isinstance(value, bool) or not isinstance(value, Real):
-            raise MultiBufferInputError('distances')
         try:
-            distance = float(value)
-        except (ValueError, OverflowError) as exc:
+            normalized.append(_buffer_distance(value))
+        except BufferInputError as exc:
             raise MultiBufferInputError('distances') from exc
-        if not isfinite(distance):
-            raise MultiBufferInputError('distances')
-        normalized.append(distance)
-    if isinstance(resolution, bool) or not isinstance(resolution, Integral) or resolution <= 0:
-        raise MultiBufferInputError('resolution')
+    resolution = _buffer_resolution(resolution, MultiBufferInputError)
+    geometry = _prepare_buffer_geometry(input_gdf, MultiBufferInputError)
 
     if not normalized or input_gdf.empty:
         result = input_gdf.iloc[:0].copy().reset_index(drop=True)
@@ -211,7 +202,7 @@ def batch_buffer(input_gdf: gpd.GeoDataFrame, distances: List[float], resolution
 
     buffers = []
     for distance in normalized:
-        result = buffer(input_gdf, distance, int(resolution))
+        result = _compute_buffer(input_gdf, geometry, distance, resolution)
         result['distance'] = distance
         buffers.append(result)
     return pd.concat(buffers, ignore_index=True)
@@ -341,7 +332,7 @@ BATCH_BUFFER_METADATA = OperatorMetadata(
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="对输入图层按距离数组顺序逐一生成完整缓冲区,保留源属性和CRS,以单个GeoDataFrame返回并追加distance字段,可直接连接数据保存。",
+    overview="对有效有限二维且具有已知投影CRS的源图层，按距离数组顺序生成独立完整缓冲区；正零负距离导致空面时保留原行与属性，以单个GeoDataFrame追加distance列返回，不自动修复、投影或融合。",
 
     params=[
         OperatorParam(
@@ -349,7 +340,7 @@ BATCH_BUFFER_METADATA = OperatorMetadata(
             type="input",
             data_type="GeoDataFrame",
             required=True,
-            description="输入的地理数据"
+            description="投影坐标系的源图层", notes="有效非空有限二维几何、唯一实际活动几何及列名，允许空批；地理或未知CRS拒绝"
         ),
         OperatorParam(
             name="distances",
@@ -365,8 +356,8 @@ BATCH_BUFFER_METADATA = OperatorMetadata(
             data_type="int",
             required=False,
             default=16,
-            description="缓冲区圆弧段数",
-            notes="值越大越平滑,建议8-32"
+            description="每四分之一圆的线段数",
+            notes="正整数，默认16；值越大越平滑，也增加计算和内存消耗"
         )
     ],
 
@@ -381,7 +372,7 @@ BATCH_BUFFER_METADATA = OperatorMetadata(
         "返回一个GeoDataFrame,依距离顺序再依源行顺序展开,保留原属性、类型、活动几何列和CRS",
         "追加float64 distance列；任意源列重名时明确报错,须先在上游手动改名",
         "生成完整缓冲区而非环带,不融合不同源要素；零和负距离沿用普通缓冲语义",
-        "距离单位与源CRS一致,不自动重投影；空数组或空源返回同Schema空图层"
+        "距离沿已知投影CRS原单位，不自动换算或重投影；源缺失/空/无效及Z/M几何拒绝，空批和空距离数组仍先验证准入"
     ],
 
     output_ports=[OutputPort(name='default', type='geodataframe', description='带distance字段的单图层完整缓冲区', is_default=True)],

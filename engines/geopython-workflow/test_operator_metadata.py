@@ -1738,3 +1738,16 @@ def test_voronoi_metadata_requires_station_identity_and_explicit_range_only():
     assert spec['category_path']==['矢量处理','几何构造']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='geodataframe'
     assert '范围外' in spec['detailed_description']['overview']
+
+
+def test_simplify_metadata_declares_runtime_topology_default_and_source_crs_units():
+    import inspect
+    from operators import get_operator
+    spec = next(item for item in list_operators() if item['name'] == 'simplify')
+    params = {param['name']: param for param in spec['parameters']}
+    assert set(params) == {'input_gdf', 'tolerance', 'preserve_topology'}
+    topology = params['preserve_topology']
+    assert topology['required'] is False and topology['type'] == 'boolean'
+    assert topology['default'] is inspect.signature(get_operator('simplify')).parameters['preserve_topology'].default is True
+    assert '投影坐标单位不固定为米' in params['tolerance']['notes']
+    assert '投影坐标系单位为米' not in params['tolerance']['notes']

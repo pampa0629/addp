@@ -7936,3 +7936,192 @@ def test_voronoi_async_api_discovery_three_admissions_and_definition_binding(tmp
             assert state['diagnostic']=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
                 'operator':{'node_index':1,'operator_id':'voronoi',**({'parameter':param}if param else{})}}
             assert 'PRIVATE'not in json.dumps(state['diagnostic'])
+
+
+def buffer_source(geometry=None,crs=3857):
+    geometry=[Point(0,0),LineString([(10,0),(12,0)]),box(20,0,24,4)] if geometry is None else geometry
+    source=gpd.GeoDataFrame({'label':pd.Series([f'row-{i}'for i in range(len(geometry))],dtype='string'),
+        'grade':pd.Series([None if i==0 else 2**53+1+i for i in range(len(geometry))],dtype='Int64')},geometry=geometry,crs=crs).rename_geometry('shape')
+    source['geometry']=pd.Series(['business']*len(source),dtype='string')
+    source.index=pd.Index([8]*len(source),name='source-index')
+    return source
+
+
+def test_buffer_strict_boolean_distance_rejected():
+    with pytest.raises(ValueError):get_operator('buffer')(buffer_source(),True)
+
+
+@pytest.mark.parametrize('distance',[2.,0.,-1.,-100.])
+@pytest.mark.parametrize('crs',[3857,2263])
+def test_buffer_projected_native_units_and_zero_negative_empty_rows(distance,crs):
+    source=buffer_source(crs=crs);before=source.copy();result=get_operator('buffer')(source,distance,resolution=1)
+    expected=source.geometry.buffer(distance,resolution=1)
+    assert result.geometry.to_wkb().tolist()==expected.to_wkb().tolist()
+    assert result.index.equals(source.index)and len(result)==len(source)and result.crs==source.crs
+    pd.testing.assert_frame_equal(result.drop(columns='shape'),source.drop(columns='shape'))
+    assert_geodataframe_equal(source,before)
+    if distance<=0:assert result.geometry.iloc[0].is_empty and result.geometry.iloc[1].is_empty
+    if distance==-100:assert result.geometry.is_empty.all()
+    if distance==2:assert result.geometry.iloc[0].bounds==(-2.,-2.,2.,2.)
+
+
+@pytest.mark.parametrize('name',['distance','shape'])
+def test_buffer_plain_distance_and_active_geometry_field_names_are_preserved(name):
+    source=buffer_source().rename_geometry(name)if name!='shape'else buffer_source()
+    if name!='distance':source['distance']=[17.,18.,19.]
+    before=source.copy();result=get_operator('buffer')(source,1)
+    assert result.geometry.name==name and result.columns.equals(source.columns)
+    if name!='distance':assert result['distance'].tolist()==[17.,18.,19.]
+    assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('operator',['buffer','batch_buffer'])
+@pytest.mark.parametrize('problem',['missing','empty','invalid','z','m','infinite','duplicate_columns','extra_geometry','no_crs','geographic','geocentric'])
+def test_buffer_unified_source_admission_and_no_automatic_repair(operator,problem):
+    source=buffer_source([Point(0,0)])
+    if problem=='duplicate_columns':source.columns=['shape','shape','shape','shape']
+    elif problem=='extra_geometry':source['second_shape']=source.geometry.copy()
+    elif problem in ('no_crs','geographic','geocentric'):source=source.set_crs({'no_crs':None,'geographic':4326,'geocentric':4978}[problem],allow_override=True)
+    else:source['shape']=[{'missing':None,'empty':Point(),'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),'z':Point(0,0,1),'m':shapely.from_wkt('POINT M (0 0 1)'),'infinite':Point(float('inf'),0)}[problem]]
+    before=source.copy()
+    with pytest.raises(ValueError)as caught:get_operator(operator)(source,1 if operator=='buffer'else[1])
+    assert caught.value.code==('crs'if problem in ('no_crs','geographic','geocentric')else'source')
+    if problem=='duplicate_columns':pd.testing.assert_frame_equal(pd.DataFrame(source),pd.DataFrame(before))
+    else:assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('value',[True,False,None,'1',[1],float('nan'),float('inf'),float('-inf'),10**500])
+def test_buffer_finite_scalar_distance_is_validated_even_for_empty_source(value):
+    source=buffer_source().iloc[:0]
+    with pytest.raises(ValueError)as caught:get_operator('buffer')(source,value)
+    assert caught.value.code=='distance'
+
+
+@pytest.mark.parametrize('operator',['buffer','batch_buffer'])
+@pytest.mark.parametrize('resolution',[True,False,None,0,-1,1.5,'2'])
+def test_buffer_positive_integral_quarter_circle_resolution(operator,resolution):
+    with pytest.raises(ValueError)as caught:get_operator(operator)(buffer_source().iloc[:0],1 if operator=='buffer'else[],resolution)
+    assert caught.value.code=='resolution'
+
+
+def test_buffer_single_and_multiple_distances_share_one_admission_and_kernel(monkeypatch):
+    import operators.data_operations as operations
+    import operators.geometric_operators as geometry
+    source=buffer_source();calls=[];original=geometry._prepare_buffer_geometry
+    def observed(*args,**kwargs):calls.append(1);return original(*args,**kwargs)
+    monkeypatch.setattr(operations,'_prepare_buffer_geometry',observed)
+    result=get_operator('batch_buffer')(source,[2,0,-1,2],resolution=1)
+    assert len(calls)==1 and len(result)==4*len(source)
+    for i,distance in enumerate([2,0,-1,2]):
+        expected=get_operator('buffer')(source,distance,resolution=1)
+        assert result.geometry.iloc[i*3:i*3+3].to_wkb().tolist()==expected.geometry.to_wkb().tolist()
+    assert result['distance'].tolist()==[2.]*3+[0.]*3+[-1.]*3+[2.]*3
+
+
+@pytest.mark.parametrize('operator',['buffer','batch_buffer'])
+@pytest.mark.parametrize('case',['empty_source','empty_distances','bad_crs'])
+def test_buffer_empty_schema_and_crs_policy_are_consistent(operator,case):
+    source=buffer_source().iloc[:0]if case=='empty_source'else buffer_source()
+    if case=='bad_crs':source=source.iloc[:0].set_crs(None,allow_override=True)
+    value=1 if operator=='buffer'else[]if case=='empty_distances'else[1]
+    if case=='bad_crs':
+        with pytest.raises(ValueError)as caught:get_operator(operator)(source,value)
+        assert caught.value.code=='crs'
+    else:
+        result=get_operator(operator)(source,value)
+        assert result.geometry.name=='shape'and result.crs==source.crs
+        if case=='empty_source'or(operator=='batch_buffer'and case=='empty_distances'):assert result.empty
+
+
+def test_buffer_point_resolution_is_number_of_segments_per_quarter_circle():
+    result=get_operator('buffer')(buffer_source([Point(0,0)]),2,resolution=1)
+    assert len(result.geometry.iloc[0].exterior.coords)==5
+    assert result.geometry.iloc[0].area==8 and result.geometry.iloc[0].bounds==(-2,-2,2,2)
+
+
+@pytest.mark.parametrize('operator',['buffer','batch_buffer'])
+def test_buffer_native_calculation_exception_is_not_input_diagnostic(monkeypatch,operator):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=buffer_source()
+    def fail(*args,**kwargs):raise shapely.errors.GEOSException('PRIVATE numerical failure')
+    monkeypatch.setattr(gpd.GeoSeries,'buffer',fail)
+    params={'input_gdf':source,**({'distance':1}if operator=='buffer'else{'distances':[1]})}
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner().execute({'tasks':[{'id':'buffers','operator':operator,'params':params,'depends_on':[]}]})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('fault',['null','point','invalid','non_finite','length','index','positive_empty'])
+def test_buffer_invalid_native_result_is_rejected_instead_of_published(monkeypatch,fault):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=buffer_source([Point(0,0)])
+    value={'null':None,'point':Point(0,0),'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),'non_finite':Polygon([(0,0),(float('inf'),0),(0,1)]),'length':box(-1,-1,1,1),'index':box(-1,-1,1,1),'positive_empty':Polygon()}[fault]
+    values=[]if fault=='length'else[value]
+    result=gpd.GeoSeries(values,crs=source.crs,index=[]if fault=='length'else['wrong']if fault=='index'else source.index)
+    monkeypatch.setattr(gpd.GeoSeries,'buffer',lambda *a,**kw:result)
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner().execute({'tasks':[{'id':'buffer','operator':'buffer','params':{'input_gdf':source,'distance':1},'depends_on':[]}]})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('operator',['buffer','batch_buffer'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('problem',['source','crs','distance','resolution'])
+def test_buffer_unified_runtime_diagnostics_are_closed_and_block_save(operator,language,problem,monkeypatch):
+    import workflow_engine
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=buffer_source();value=1 if operator=='buffer'else[1];resolution=16
+    if problem=='source':source['shape']=[None]*len(source)
+    elif problem=='crs':source=source.set_crs(4326,allow_override=True)
+    elif problem=='distance':value=True if operator=='buffer'else[True]
+    else:resolution=True
+    reason,param={'source':('operator_input_invalid','input_gdf'),'crs':('operator_crs_invalid',''),'distance':('operator_number_invalid','distance')if operator=='buffer'else('operator_number_array_invalid','distances'),'resolution':('operator_positive_integer_required','resolution')}[problem]
+    lookup=workflow_engine.get_operator
+    def guarded(name):
+        if name=='save':raise AssertionError('buffer input error reached save')
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    params={'input_gdf':source,'resolution':resolution,**({'distance':value}if operator=='buffer'else{'distances':value})}
+    tasks=[{'id':'PRIVATE','operator':operator,'params':params,'depends_on':[]},{'id':'save','operator':'save','params':{'input_df':{'$ref':'PRIVATE'}},'depends_on':['PRIVATE']}]
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert caught.value.error_code=='INVALID_PARAMS'
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':operator,**({'parameter':param}if param else{})}}
+    assert 'PRIVATE'not in json.dumps(caught.value.diagnostic)
+
+
+@pytest.mark.parametrize('operator',['buffer','batch_buffer'])
+def test_buffer_native_save_reload_keeps_empty_polygons_and_all_source_attributes(tmp_path,operator):
+    from osgeo import ogr
+    source=buffer_source();source['enabled']=pd.array([None,True,False],dtype='boolean')
+    before=source.copy();params={'distance':-1}if operator=='buffer'else{'distances':[0,-1,1]}
+    result=get_operator(operator)(source,resolution=1,**params);computed=result.geometry.to_wkb(byte_order=1,flavor='iso').tolist()
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    get_operator('save')(input_df=result,connection_info=conn,path='buffer.gpkg',mode='fail')
+    ds=ogr.Open(str(tmp_path/'buffer.gpkg'));layer=ds.GetLayer(0);rows=list(layer);schema=layer.GetLayerDefn()
+    assert len(rows)==len(result)and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    assert schema.GetFieldDefn(schema.GetFieldIndex('grade')).GetType()==ogr.OFTInteger64
+    assert schema.GetFieldDefn(schema.GetFieldIndex('enabled')).GetSubType()==ogr.OFSTBoolean
+    for i,row in enumerate(rows):
+        geom=row.GetGeometryRef();assert geom is not None
+        assert bytes(geom.ExportToIsoWkb())==computed[i]
+        assert bool(geom.IsEmpty())==result.geometry.iloc[i].is_empty
+        j=i%3;assert row.GetField('label')==f'row-{j}'and row.GetField('geometry')=='business'
+        assert row.GetField('grade')==[None,2**53+2,2**53+3][j]
+        assert row.GetField('enabled')==[None,True,False][j]
+        if operator=='batch_buffer':assert row.GetField('distance')==result['distance'].iloc[i]
+    physical_name=layer.GetGeometryColumn();ds=None
+    loaded=get_operator('load')(connection_info=conn,path='buffer.gpkg')
+    assert loaded.geometry.name==physical_name and loaded.geometry.to_wkb(byte_order=1,flavor='iso').tolist()==computed
+    assert str(loaded.grade.dtype)=='Int64'and str(loaded.enabled.dtype)=='boolean'
+    assert_geodataframe_equal(source,before)
+
+
+def test_buffer_and_multi_buffer_discovery_explicit_types_defaults_and_projected_policy():
+    for name in ['buffer','batch_buffer']:
+        spec=next(s for s in list_operators()if s['id']==name);params={p['name']:p for p in spec['parameters']}
+        assert spec['execution_modes']==['workflow']and spec['effects']==['read']
+        assert params['resolution']['type']=='integer'and params['resolution']['default']==16
+        assert '四分之一圆'in params['resolution']['description']
+        assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='geodataframe'
+        assert '投影'in spec['detailed_description']['overview']

@@ -52,7 +52,7 @@ var failureReasons = map[string]bool{
 	"operator_input_overlap": true, "operator_reference_overlap": true,
 	"operator_overlay_fields_conflict": true, "operator_endpoint_network_invalid": true, "operator_distance_limit_invalid": true, "operator_source_topology_invalid": true, "operator_trim_conflict": true,
 	"operator_input_invalid": true, "operator_mask_invalid": true, "operator_reference_invalid": true, "operator_field_conflict": true,
-	"operator_geometry_field_conflict": true, "operator_geometry_invalid": true, "operator_number_array_invalid": true,
+	"operator_geometry_field_conflict": true, "operator_geometry_invalid": true, "operator_number_invalid": true, "operator_number_array_invalid": true,
 	"operator_positive_integer_required": true, "operator_positive_number_required": true,
 	"operator_projected_crs_required": true, "operator_crs_mismatch": true, "operator_crs_invalid": true,
 }

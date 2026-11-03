@@ -1257,6 +1257,8 @@ for (const locale of ['zh-cn', 'en']) for (const cause of ['roles', 'choice', 'r
 
 for (const locale of ['zh-cn','en']) {
   for (const [operator_id,reason,parameter,field,name] of [
+    ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_number_invalid','distance'],['operator_positive_integer_required','resolution']].map(([reason,parameter])=>['buffer',reason,parameter,'',locale==='zh-cn'?'缓冲区分析':'Buffer analysis']),
+    ['batch_buffer','operator_crs_invalid','','',locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'],
     ...[['operator_input_invalid','input_gdf'],['operator_mask_invalid','mask_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>['voronoi',reason,parameter,'',locale==='zh-cn'?'泰森多边形':'Voronoi polygons']),
     ['extract_line_nodes','operator_field_conflict','input_gdf','node_id',locale==='zh-cn'?'节点提取':'Extract line nodes'],
     ['extract_line_nodes','operator_endpoint_network_invalid','input_gdf','',locale==='zh-cn'?'节点提取':'Extract line nodes'],
@@ -1285,6 +1287,7 @@ for (const locale of ['zh-cn','en']) {
     else if(reason==='operator_source_topology_invalid') await expect(panel).toContainText(locale==='zh-cn'?'内部自交':'internal self-intersections')
     else if(reason==='operator_trim_conflict') await expect(panel).toContainText(locale==='zh-cn'?'交错或相遇':'cross or meet')
     else if(operator_id==='voronoi') await expect(panel).toContainText(reason==='operator_input_invalid'?(locale==='zh-cn'?'重复 XY':'duplicate XY'):reason==='operator_mask_invalid'?'Polygon':locale==='zh-cn'?'投影坐标系':'projected CRS')
+    else if(operator_id==='buffer'||operator_id==='batch_buffer'&&reason==='operator_crs_invalid') await expect(panel).toContainText(reason==='operator_number_invalid'?(locale==='zh-cn'?'正数、零或负数':'positive, zero or negative'):reason==='operator_positive_integer_required'?(locale==='zh-cn'?'大于零的整数':'positive integer'):reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):locale==='zh-cn'?'几何':'geometry')
     else await expect(panel).toContainText(locale==='zh-cn'?'有限正数':'finite positive')
     await expect(panel).not.toContainText('private-password')
     await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
@@ -1293,6 +1296,17 @@ for (const locale of ['zh-cn','en']) {
     expect(copied).toContain(EXECUTION_ID)
     if(field) expect(copied).toContain(field)
     if(reason==='operator_geometry_invalid') expect(copied).toContain(locale==='zh-cn'?'未通过有效性检查':'failed the validity check')
+    if(operator_id==='buffer'||operator_id==='batch_buffer'&&reason==='operator_crs_invalid') {
+      if(parameter) { await expect(panel).toContainText(parameter); expect(copied).toContain(parameter) }
+      expect(copied).toContain(reason==='operator_number_invalid'?(locale==='zh-cn'?'正数、零或负数':'positive, zero or negative'):reason==='operator_positive_integer_required'?(locale==='zh-cn'?'大于零的整数':'positive integer'):reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):locale==='zh-cn'?'几何':'geometry')
+      if(reason==='operator_crs_invalid') {
+        await expect(panel).not.toContainText('两个图层')
+        await expect(panel).not.toContainText('Both layers')
+        expect(copied).not.toMatch(/两个图层|Both layers/)
+      }
+      await expect(panel).not.toContainText('/private/input.gpkg')
+      expect(copied).not.toContain('/private/input.gpkg')
+    }
     expect(copied).not.toContain('private-password')
     await page.setViewportSize({width:390,height:844})
     expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()

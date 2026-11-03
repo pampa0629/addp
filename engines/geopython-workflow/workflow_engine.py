@@ -11,7 +11,7 @@ from operators.io_operators import GeoPackageSaveError
 from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.spatial_relations import DistanceInputError, RelationInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError, VoronoiInputError
-from operators.geometric_operators import NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
+from operators.geometric_operators import BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -82,8 +82,10 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
             return _execute_workflow_operator(operator, params)
         except (EndpointSnapError, LineExtensionError, GeoPackageSaveError) as exc:
             raise ValueError(exc.message(self.language)) from exc
-        except (VoronoiInputError, RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
+        except (BufferInputError, VoronoiInputError, RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
             reasons = {
+                BufferInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid',
+                                   'distance':'operator_number_invalid','resolution':'operator_positive_integer_required'},
                 VoronoiInputError: {'source': 'operator_input_invalid', 'mask': 'operator_mask_invalid', 'crs': 'operator_crs_invalid'},
                 RelationInputError: {'source': 'operator_input_invalid', 'reference': 'operator_reference_invalid',
                                      'crs': 'operator_crs_invalid'},
@@ -101,7 +103,7 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
                                 'reference': 'operator_reference_invalid', 'crs': 'operator_crs_invalid',
                                 'topology': 'operator_source_topology_invalid', 'conflict': 'operator_trim_conflict'},
                 PolygonRingInputError: {"field_conflict": "operator_field_conflict", "geometry_invalid": "operator_geometry_invalid"},
-                MultiBufferInputError: {'source': 'operator_input_invalid', 'distance_conflict': 'operator_field_conflict',
+                MultiBufferInputError: {'source': 'operator_input_invalid', 'crs': 'operator_crs_invalid', 'distance_conflict': 'operator_field_conflict',
                                        'distances': 'operator_number_array_invalid', 'resolution': 'operator_positive_integer_required'},
                 DistanceInputError: {'geometry_column_conflict': 'operator_geometry_field_conflict',
                                      'projected_crs': 'operator_projected_crs_required', 'crs_mismatch': 'operator_crs_mismatch'},

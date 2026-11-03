@@ -368,3 +368,82 @@ def test_voronoi_three_closed_admissions_require_explicit_mask_not_reference_fie
             bad=copy.deepcopy(value);bad['operator'].update(patch)
             assert validated_operator_diagnostic(bad)is None
     assert OperatorInputError('operator_reference_invalid','PRIVATE').diagnostic('voronoi',2)is None
+
+
+@pytest.mark.parametrize('operator_id', ['buffer', 'batch_buffer'])
+def test_buffer_input_rules_keep_scalar_and_array_domains_closed(operator_id):
+    import copy
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES, OperatorInputError, validated_operator_diagnostic
+
+    expected = {
+        ('buffer', 'operator_input_invalid', ''): 'input_gdf',
+        ('buffer', 'operator_crs_invalid', ''): '',
+        ('buffer', 'operator_number_invalid', ''): 'distance',
+        ('buffer', 'operator_positive_integer_required', ''): 'resolution',
+    } if operator_id == 'buffer' else {
+        ('batch_buffer', 'operator_input_invalid', ''): 'input_gdf',
+        ('batch_buffer', 'operator_crs_invalid', ''): '',
+        ('batch_buffer', 'operator_field_conflict', 'distance'): 'input_gdf',
+        ('batch_buffer', 'operator_number_array_invalid', ''): 'distances',
+        ('batch_buffer', 'operator_positive_integer_required', ''): 'resolution',
+    }
+    assert {key: value for key, value in OPERATOR_INPUT_RULES.items() if key[0] == operator_id} == expected
+    for (_, reason, field), parameter in expected.items():
+        value = OperatorInputError(reason, 'PRIVATE distance=-3', field=field).diagnostic(operator_id, 2)
+        assert value['operator'] == {'node_index': 2, 'operator_id': operator_id,
+                                     **({'parameter': parameter} if parameter else {}),
+                                     **({'field': field} if field else {})}
+        assert validated_operator_diagnostic(value) == value
+        assert 'PRIVATE' not in json.dumps(value)
+        for patch in [
+            {'field': 'PRIVATE'}, {'field': ''},
+            {'parameter': 'distance' if parameter == 'distances' else 'distances'},
+            {'operator_id': 'unknown_buffer'}, {'node_index': True},
+            {'node_index': 0}, {'node_index': 65536}, {'node_index': 1.5},
+        ]:
+            bad = copy.deepcopy(value)
+            bad['operator'].update(patch)
+            assert validated_operator_diagnostic(bad) is None
+        if not field:
+            bad = copy.deepcopy(value)
+            bad['operator']['field'] = 'distance'
+            assert validated_operator_diagnostic(bad) is None
+
+    assert OperatorInputError('operator_positive_number_required', 'PRIVATE').diagnostic(operator_id, 1) is None
+    assert OperatorInputError('operator_number_array_invalid', 'PRIVATE').diagnostic('buffer', 1) is None
+    assert OperatorInputError('operator_number_invalid', 'PRIVATE').diagnostic('batch_buffer', 1) is None
+
+
+@pytest.mark.parametrize('operator_id,reason,parameter', [
+    ('buffer', 'operator_input_invalid', 'input_gdf'),
+    ('buffer', 'operator_crs_invalid', ''),
+    ('buffer', 'operator_number_invalid', 'distance'),
+    ('buffer', 'operator_positive_integer_required', 'resolution'),
+    ('batch_buffer', 'operator_crs_invalid', ''),
+])
+def test_buffer_diagnostics_bind_original_definition_position_before_save(operator_id, reason, parameter):
+    from addp_common.workflow_runtime import OperatorInputError
+
+    calls = []
+    def execute(operator, params):
+        calls.append(operator)
+        if operator == operator_id:
+            raise OperatorInputError(reason, 'PRIVATE distance=-3')
+        return {'kept': True}
+
+    definition = {'tasks': [
+        {'id': 'PRIVATE_BUFFER', 'operator': operator_id, 'params': {}, 'depends_on': ['load']},
+        {'id': 'load', 'operator': 'load', 'params': {}, 'depends_on': []},
+        {'id': 'save', 'operator': 'save', 'params': {}, 'depends_on': ['PRIVATE_BUFFER']},
+    ]}
+    with pytest.raises(WorkflowExecutionError) as caught:
+        WorkflowRunner({'load', operator_id, 'save'}, execute).execute(definition)
+    assert calls == ['load', operator_id]
+    assert caught.value.error_code == 'INVALID_PARAMS'
+    assert caught.value.all_results == {'load': {'kept': True}}
+    assert caught.value.diagnostic == {
+        'schema_version': 'addp.execution-failure/v3', 'stage': 'execution', 'reason': reason,
+        'operator': {'node_index': 1, 'operator_id': operator_id,
+                     **({'parameter': parameter} if parameter else {})},
+    }
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)

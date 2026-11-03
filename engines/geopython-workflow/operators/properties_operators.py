@@ -22,7 +22,7 @@ def get_area(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         input_gdf: 输入 GeoDataFrame
 
     Returns:
-        GeoDataFrame 添加 area 列
+        GeoDataFrame 副本，追加或更新 area 列，保留源几何和其他属性
     """
     geometry = _geometry_for_output(input_gdf, ('area',))
     result = input_gdf.copy()
@@ -38,7 +38,7 @@ def get_length(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         input_gdf: 输入 GeoDataFrame
 
     Returns:
-        GeoDataFrame 添加 length 列
+        GeoDataFrame 副本，追加或更新 length 列，保留源几何和其他属性
     """
     geometry = _geometry_for_output(input_gdf, ('length',))
     result = input_gdf.copy()
@@ -54,7 +54,7 @@ def get_bounds(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         input_gdf: 输入 GeoDataFrame
 
     Returns:
-        GeoDataFrame 添加 bounds 列
+        GeoDataFrame 副本，追加或更新 minx、miny、maxx、maxy 四列，保留源几何和其他属性
     """
     geometry = _geometry_for_output(input_gdf, ('minx', 'miny', 'maxx', 'maxy'))
     result = input_gdf.copy()
@@ -77,7 +77,7 @@ GET_AREA_METADATA = OperatorMetadata(
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="计算GeoDataFrame中每个面几何的面积,返回数值。适用于土地利用统计、资源清单、规划指标核算等场景。",
+    overview="逐要素计算平面面积，在原GeoDataFrame副本中追加或更新area列，保留源几何和其他属性。适用于土地利用统计、资源清单、规划指标核算等场景。",
 
     params=[
         OperatorParam(
@@ -98,7 +98,7 @@ GET_AREA_METADATA = OperatorMetadata(
 
     notes=[
         "读取实际活动几何列；若几何列名为area则报错，请先显式重命名几何列",
-        "面积单位与坐标系一致:投影坐标系为平方米,地理坐标系为平方度",
+        "面积为输入坐标单位的平方，不自动换算平方米；投影单位可为米、英尺等，地理坐标下不是测地面积",
         "地理坐标系(EPSG:4326)的平方度不直观,建议先转投影坐标系(如UTM)",
         "对于点和线几何,面积为0",
         "大范围区域面积计算建议使用等面积投影(如Albers)"
@@ -124,7 +124,7 @@ GET_LENGTH_METADATA = OperatorMetadata(
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="计算GeoDataFrame中每个线几何的长度,返回数值。适用于道路统计、河流长度计算、管网清单等场景。",
+    overview="逐要素计算平面长度或周长，在原GeoDataFrame副本中追加或更新length列，保留源几何和其他属性。适用于道路统计、河流长度计算、管网清单等场景。",
 
     params=[
         OperatorParam(
@@ -145,7 +145,7 @@ GET_LENGTH_METADATA = OperatorMetadata(
 
     notes=[
         "读取实际活动几何列；若几何列名为length则报错，请先显式重命名几何列",
-        "长度单位与坐标系一致:投影坐标系为米,地理坐标系为度",
+        "长度沿输入坐标单位，不自动换算米；投影单位可为米、英尺等，地理坐标下不是测地长度",
         "地理坐标系(EPSG:4326)的度单位不直观,建议先转投影坐标系",
         "对于点几何,长度为0;对于面几何,返回周长",
         "大范围线要素长度计算建议使用等距投影"
@@ -171,7 +171,7 @@ GET_BOUNDS_METADATA = OperatorMetadata(
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="返回每个几何对象的边界框(Bounding Box)坐标,包含minx、miny、maxx、maxy四个值。适用于地图范围定位、数据裁剪、空间索引构建等场景。",
+    overview="逐要素获取轴对齐边界框，在原GeoDataFrame副本中追加或更新minx、miny、maxx、maxy四列，保留源几何和其他属性。适用于地图范围定位、数据裁剪、空间索引构建等场景。",
 
     params=[
         OperatorParam(
@@ -192,7 +192,7 @@ GET_BOUNDS_METADATA = OperatorMetadata(
 
     notes=[
         "读取实际活动几何列；几何列名与四个输出名冲突时先显式重命名",
-        "返回DataFrame包含minx、miny、maxx、maxy四列",
+        "返回保留源几何和其他属性的GeoDataFrame副本，追加或更新minx、miny、maxx、maxy四列",
         "边界框是轴对齐矩形,不随几何旋转",
         "坐标单位与输入坐标系一致",
         "点的边界框minx=maxx, miny=maxy"

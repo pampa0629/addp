@@ -323,3 +323,82 @@ func TestVoronoiDiagnosticBindsOnlyExactFrozenOperatorAndInput(t *testing.T) {
 		}
 	}
 }
+
+func TestBufferDiagnosticsBindClosedScalarArrayDomainsAndFrozenDefinitionPosition(t *testing.T) {
+	for _, tc := range []struct{ operator, reason, parameter, field string }{
+		{"buffer", "operator_input_invalid", "input_gdf", ""},
+		{"buffer", "operator_crs_invalid", "", ""},
+		{"buffer", "operator_number_invalid", "distance", ""},
+		{"buffer", "operator_positive_integer_required", "resolution", ""},
+		{"batch_buffer", "operator_input_invalid", "input_gdf", ""},
+		{"batch_buffer", "operator_crs_invalid", "", ""},
+		{"batch_buffer", "operator_field_conflict", "input_gdf", "distance"},
+		{"batch_buffer", "operator_number_array_invalid", "distances", ""},
+		{"batch_buffer", "operator_positive_integer_required", "resolution", ""},
+	} {
+		t.Run(tc.operator+"/"+tc.reason, func(t *testing.T) {
+			context := map[string]interface{}{"node_index": 1, "operator_id": tc.operator}
+			if tc.parameter != "" {
+				context["parameter"] = tc.parameter
+			}
+			if tc.field != "" {
+				context["field"] = tc.field
+			}
+			diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": tc.reason, "operator": context}
+			raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+			frozen := map[string]interface{}{"tasks": []interface{}{
+				map[string]interface{}{"id": "PRIVATE_BUFFER", "operator": tc.operator, "depends_on": []string{"load"}},
+				map[string]interface{}{"id": "load", "operator": "load"},
+			}}
+			got := executionFailureDetails("workflow", "execution_failed", "PRIVATE distance=-3", raw, frozen)
+			if got["diagnostic"] == nil || got["code"] != "develop.workflow.invalid_params" {
+				t.Fatalf("lost buffer admission: %+v", got)
+			}
+			wrongParameter := "distances"
+			if tc.parameter == wrongParameter {
+				wrongParameter = "distance"
+			}
+			invalid := []map[string]interface{}{
+				{"node_index": 2}, {"node_index": 0}, {"node_index": true}, {"node_index": 1.5},
+				{"operator_id": "unknown_buffer"}, {"parameter": wrongParameter}, {"parameter": ""},
+				{"field": "PRIVATE"}, {"field": ""}, {"node_id": "PRIVATE_BUFFER"},
+			}
+			if tc.field == "" {
+				invalid = append(invalid, map[string]interface{}{"field": "distance"})
+			}
+			for _, patch := range invalid {
+				forged := map[string]interface{}{}
+				for key, value := range context {
+					forged[key] = value
+				}
+				for key, value := range patch {
+					forged[key] = value
+				}
+				diagnostic["operator"] = forged
+				got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)
+				if got["diagnostic"] != nil || got["code"] != "develop.workflow.execution_failed" {
+					t.Fatalf("trusted forged buffer context %+v: %+v", patch, got)
+				}
+			}
+		})
+	}
+}
+
+func TestBufferDiagnosticsRejectForeignDistanceReasonsEvenWithMatchingFrozenOperator(t *testing.T) {
+	for _, tc := range []struct{ operator, reason, parameter string }{
+		{"buffer", "operator_positive_number_required", "distance"},
+		{"buffer", "operator_number_array_invalid", "distance"},
+		{"batch_buffer", "operator_number_invalid", "distances"},
+		{"batch_buffer", "operator_positive_number_required", "distances"},
+		{"unknown_buffer", "operator_input_invalid", "input_gdf"},
+	} {
+		context := map[string]interface{}{"node_index": 1, "operator_id": tc.operator, "parameter": tc.parameter}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": tc.reason, "operator": context}
+		raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+		frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"operator": tc.operator}}}
+		got := executionFailureDetails("workflow", "execution_failed", "PRIVATE distance=-3", raw, frozen)
+		if got["diagnostic"] != nil || got["code"] != "develop.workflow.execution_failed" {
+			t.Fatalf("trusted foreign distance reason %+v: %+v", tc, got)
+		}
+	}
+}

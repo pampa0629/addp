@@ -27,6 +27,17 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	}
 	parameter, field, ok := "", "", false
 	switch o.OperatorID {
+	case "buffer":
+		switch reason {
+		case "operator_input_invalid":
+			parameter, ok = "input_gdf", true
+		case "operator_crs_invalid":
+			ok = true
+		case "operator_number_invalid":
+			parameter, ok = "distance", true
+		case "operator_positive_integer_required":
+			parameter, ok = "resolution", true
+		}
 	case "contains", "intersects":
 		switch reason {
 		case "operator_input_invalid":
@@ -123,6 +134,8 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 		}
 	case "batch_buffer":
 		switch reason {
+		case "operator_crs_invalid":
+			ok = true
 		case "operator_input_invalid":
 			parameter, ok = "input_gdf", true
 		case "operator_field_conflict":

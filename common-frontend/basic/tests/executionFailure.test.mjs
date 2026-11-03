@@ -135,14 +135,16 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 60)
+  assert.equal(canonical.length, 65)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
     const operator = { node_index: 2, operator_id, ...(parameter ? { parameter } : {}), ...(field ? { field } : {}) }
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
-    const profile = { contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi' }[operator_id]
+    const profiles = { contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
+      'buffer:operator_input_invalid':'buffer', 'buffer:operator_crs_invalid':'buffer', 'batch_buffer:operator_crs_invalid':'buffer' }
+    const profile = profiles[`${operator_id}:${reason}`] || profiles[operator_id]
     const templates = `common.executionFailure${profile ? `.${profile}` : ''}`
     assert.equal(result.reason, `${templates}.reasons.${reason}`)
     assert.ok(result.node)
@@ -395,6 +397,56 @@ test('voronoi explains explicit coverage, unique station positions and projected
       for(const patch of [{field:'station'},{field:'PRIVATE'},{parameter:'gdf_b'},{operator_id:'centroid'}]) {
         assert.equal(executionFailurePresentation({diagnostic:{...diagnostic,operator:{...diagnostic.operator,...patch}}},translate).stage,'')
       }
+    }
+  }
+})
+
+test('buffer diagnostics accept four closed facts and signed finite distances without private data', () => {
+  const expected = [
+    ['buffer','operator_input_invalid','input_gdf',''],
+    ['buffer','operator_crs_invalid','',''],
+    ['buffer','operator_number_invalid','distance',''],
+    ['buffer','operator_positive_integer_required','resolution','']
+  ]
+  assert.deepEqual(operatorInputRules.filter(([name]) => name === 'buffer'), expected)
+  assert.equal(operatorInputRules.filter(([name,reason]) => name === 'batch_buffer' && reason === 'operator_crs_invalid').length, 1)
+  for (const locale of ['zh-cn','en']) {
+    const messages = JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate = (key,params={}) => key.replace('common.executionFailure.','').split('.').reduce((node,part) => node[part],messages).replace(/\{(\w+)\}/g,(_,key) => params[key])
+    for (const [operator_id,reason,parameter] of [...expected,['batch_buffer','operator_crs_invalid','','']]) {
+      const diagnostic = { schema_version:'addp.execution-failure/v3', stage:'execution', reason,
+        operator:{ node_index:2, operator_id, ...(parameter ? { parameter } : {}) } }
+      const got = executionFailurePresentation({ diagnostic, message:'PRIVATE_FIELD private-password /private/input.gpkg' },translate)
+      assert.equal(got.operator, operator_id === 'buffer' ? (locale === 'zh-cn' ? '缓冲区分析' : 'Buffer analysis') : (locale === 'zh-cn' ? '多距缓冲' : 'Multi-distance buffer'))
+      assert.ok(got.reason && got.action && got.node)
+      assert.equal(got.field,'')
+      assert.equal(got.parameter, parameter ? messages.operatorParameters[parameter] : '')
+      assert.doesNotMatch(JSON.stringify(got),/PRIVATE_FIELD|private-password|\/private\/input\.gpkg/)
+      if (reason === 'operator_number_invalid') {
+        assert.match(got.reason, locale === 'zh-cn' ? /正数、零或负数/ : /positive, zero or negative/)
+        assert.doesNotMatch(got.reason, locale === 'zh-cn' ? /有限正数|正整数|数组/ : /finite positive|positive integer|array/)
+      }
+      if (reason === 'operator_crs_invalid') {
+        assert.equal(got.reason,messages.buffer.reasons[reason])
+        assert.equal(got.action,messages.buffer.actions[reason])
+        assert.match(got.reason, locale === 'zh-cn' ? /投影坐标系/ : /projected CRS/)
+        assert.doesNotMatch(`${got.reason} ${got.action}`,/两个图层|Both layers/)
+      }
+      if (operator_id === 'buffer' && reason === 'operator_input_invalid') {
+        assert.equal(got.reason,messages.buffer.reasons[reason])
+        assert.equal(got.action,messages.buffer.actions[reason])
+      }
+      for (const patch of [{ field:'distance' },{ field:'PRIVATE_FIELD' },{ parameter:'reference_gdf' },{ operator_id:'centroid' }]) {
+        const rejected = executionFailurePresentation({ diagnostic:{ ...diagnostic, operator:{ ...diagnostic.operator, ...patch } }, message:'private-password' },translate)
+        assert.equal(rejected.stage,'')
+        assert.equal(rejected.operator,'')
+        assert.doesNotMatch(JSON.stringify(rejected),/PRIVATE_FIELD|private-password/)
+      }
+    }
+    for (const reason of ['operator_positive_number_required','operator_number_array_invalid','operator_geometry_field_conflict']) {
+      const rejected = executionFailurePresentation({ diagnostic:{ schema_version:'addp.execution-failure/v3', stage:'execution', reason,
+        operator:{ node_index:2, operator_id:'buffer', parameter:'distance' } } },translate)
+      assert.equal(rejected.stage,'')
     }
   }
 })
