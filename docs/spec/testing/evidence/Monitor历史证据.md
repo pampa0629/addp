@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 17 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 56 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 57 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -876,3 +876,10 @@ b0420db65已随共享main发布，固定dfeff7c9b自然Linux原始日志确认HT
 [完整记录、候选502及确定性边界](MonitorHTTP质量与采样历史证据.md#http-monitor-apt-signature-diagnostics-20261103)
 
 既有代理日志有Monitor对应墙钟时段的Bookworm InRelease 502，但构建归属、正文及校时未证实，历史根因仍不唯一。ea8923111补精确Debian FROM、固定签名子类与唯一失败步骤续行，旧解析器反证失败，最终Trace169／HTTP44及登记、JS、身份子门禁通过。只补取证，不重试构建或新开窗口，正式产品页面闭环仍未验收；无Hosted、容量或定时。
+
+
+### 2026-11-03 Linux HTTP准备目录消失调查及固定分类扩展
+
+[完整记录、独立CI首因与本地门禁](MonitorHTTP质量与采样历史证据.md#http-preparation-directory-categories-20261103)
+
+旧eb8af3281自然HTTP在准备阶段du读到other对象消失，三段编译未开始／零请求、不是四秒超时，具体删除者未证实。f0aa912a8仅扩展六个准备位置分类，字段／哈希／采样及互斥不变；旧映射反证失败，最终配置136项、生命周期内44／169／145项等通过。只认本地确定性证据，未验修改后自然Linux采样或正式产品页面，未推送／构建重试／新窗口／Hosted／容量／定时。

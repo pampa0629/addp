@@ -1102,3 +1102,30 @@ report.assertions为空，无images最终身份清单、Python依赖、浏览器
 首轮绿色测试后日志包装使用zsh只读变量status而退出1，两组子门禁输出当时已通过；未把包装异常当完整入口通过。收紧普通进度边界后改由Python记录最终make退出码，以上最后两组均明确退出0，作为本批交付证据。只运行受控文本、替身、原离线证书及身份子门禁，没有真实APT、镜像或网络探针；不以分类通过声称历史APT或资源超时根因修复，正式Agent／Copilot到Console／Monitor页面仍未验收。
 
 原只读关联及实现审核位于`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-monitor-apt-offline-20261103-czdxdxpo/`的correlation.json／implementation-audit.json（0700／0600）；红、最终Trace及HTTP日志为`/tmp/addp-p19-monitor-apt-{red,trace-final,http-final}-20261103.log`（0600），审核收据保存实现输入与日志SHA256。仅更新本专题、56主题索引并回报维护会话，本会话不推送以避免额外触发镜像构建。原失败报告不改写、不追填新字段，不运行Hosted、容量、定时或接管个人开发服务；下一步只宜在另行批准的原产品运行中使用新增诊断，具体修复仍待充分证据与讨论。
+
+
+<a id="http-preparation-directory-categories-20261103"></a>
+
+## 2026-11-03 Linux HTTP准备目录消失调查及固定分类扩展
+
+用户明确将独立Linux HTTP采样失败纳入只读调查，随后确认仅扩展六个准备目录分类、先修规范和确定性门禁；不改采样／互斥、不新增字段或读取、不推送触发构建。该问题与上文Monitor APT索引失败分开，不合并根因。原失败为[Release run41566037638／Job125708236073](https://github.com/pampa0629/addp/actions/runs/41566037638/job/125708236073)，自然push／main／attempt1，固定eb8af32813dea19088d6190d7633e725b645c67a；原日志SHA256=`7ed6018e0f70c48d7459e9055da2dced46c00e6db97ff7390fb0f79ded8cb027`。日志确认配置136项通过后，实际HTTP预算入口失败，不能用后续143退出或汇总Job替换首因。
+
+官方artifact13205376286为18191字节，ZIP SHA256=`3cf25b73229e407f7528d59c89cfaff668ebe59ab23dbf478ea3363b6ad8de57`，CRC及唯一monitor-http-budget.json成员核验通过，JSON SHA256=`9d92e3c6018a43db9ef48679170bfe7ad18a40e73740bb6efd369e8420377327`。首次完整采样未形成成功样本：error_code=http_budget_sample_command_failed、stage=private_directory_size、kind=command_failed、exit1，du耗时0.002965秒／剩余预算3.982260秒、采样累计0.020797秒；112字节原stderr只记录封闭path_disappeared、一个other对象哈希，根仍directory。三个compile_stages_at_sample_read均not_started、HTTP总请求0，failure_during_cleanup=false；cleanup_verified和private_directory_removed均true，不反转本轮failed，不计业务或完整资源检查通过。
+
+只读核对失败固定源码与当前相关七项输入（预算实现及测试、shell编排、配置测试、private-state、身份准备及配置渲染）逐字节相同，未发现已有修复。源码显示回执发布后即允许扫描私有根目录，准备流程仍有原子发布／临时名称删除，且不在Go组或退出清理协调范围内，存在可解释此类故障的并发机制；但既有固定相对路径候选均未匹配对象哈希，原日志无du路径正文，不能确认本次具体对象、删除者或唯一根因。旧other不按新映射追填，不据目录位置断言原子发布已被直接观测。
+
+实现提交`f0aa912a8abdd04869b703c0a18ff815d5457f3a`：先修运行观测及T0–T3条款，唯一directory_objects映射仅增加postgres-auth→postgres_auth、tls→tls、deployment→deployment、node-tls→node_tls、control→control、query-tls→query_tls。只匹配当次根的精确首层，目录本身和后代同类，未知及嵌套／近似同名仍other；原字段结构、project域相对SHA256、4 KiB／八非空行、归属／穿越／歧义／超限及首失败语义保持。AST反向去掉六项后整个预算模块与准备基线163a24be8完全相同；编排、来源发布、Make和CI登记均未改。现有配置／生命周期聚合及T2输入登记已命中，无新入口或workflow。
+
+| 本地确定性门禁 | 实际结果 |
+| --- | --- |
+| 旧映射反证 | make test-infra-runtime-log-lifecycle中145项／44.175秒出现预期14个断言失败，新增类别仍other；不计通过 |
+| 首轮修正后的测试误报 | 同入口145项／48.542秒有3个断言失败：旧脱敏断言把允许的tls／deployment／control类别名误作泄露，修正为允许精确类别名，仍拒绝原根路径、后代文件名和SECRET哨兵；不修改产品解析器绕过断言，失败日志保留 |
+| 最终配置入口 | make test-monitor-metrics-config退出0，136项／11.952秒通过；标准替身，不是真实部署 |
+| 最终生命周期入口 | make test-infra-runtime-log-lifecycle退出0；HTTP44项／0.771秒，Trace169项／4.541秒，各自JS／登记／System身份Go子门禁通过；预算／生命周期／留存／PG等145项／103.378秒通过，较原142项新增3项并扩展原目录身份测试 |
+| 原离线TLS子项 | OpenSSL4.1.0、35命令／0.678283秒、材料与输出预留125477字节、4次预期拒绝、清理完成；不等于新产品环境或网络验收 |
+
+新增回归覆盖六目录／临时后代／深层后代、GNU/BSD格式、首层精确性、跨根／project散列与字段不变、未知／近似／嵌套／恶意路径、去重／混合／超限和无新读取；六种类别逐一经原sample失败分支，保持原du命令、两次原有命令调用、首失败和零重试，不继续后续统计。完整四秒、4 CPU／4 GiB、私有可写<2 GiB、1200秒及清理边界不变。确定性组的总测试耗时不是单次资源检查预算，不据此放宽四秒。
+
+归档：原CI文件在`/tmp/addp-ci-20261103-130018/`；只读调查回执在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-linux-http-directory-investigation-20261103-ekw91775/audit.json`。准备与最终实现／日志SHA256回执在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-directory-categories-prepared-20261103-i46ew_dl/`；日志为`/tmp/addp-p19-directory-categories-{red,config-final,lifecycle-final,lifecycle-verified}-20261103.log`（0700目录／0600文件）。最终生命周期日志SHA256=`094a624305d9925b4703057284578a4ca6bbb5d26a5ffb4416562b9bb816eda3`；原失败JSON摘要保持不变。
+
+本轮仅本地自有提交及57主题证据归档，并回报维护会话；没有推送、重试构建、新开本地窗口、Hosted、容量、定时或接管个人服务。分类实现及确定性门禁通过，不计修改后的自然Linux采样或正式Agent／Copilot到Console／Monitor页面闭环通过；目录消失是否消除、具体删除者及APT根因均未验。下一步只在后续另行获准的原运行中使用新增类别定位，再讨论必要的准备／采样协调，不现在猜测删除者加锁。
