@@ -6,6 +6,8 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 `raster_interpolate_idw`以二维Point、显式数值字段和同CRS模板网格生成连续面：固定幂次2、显式米制半径、等号纳入、全体支持、精确重合取原值；重复XY／非法数值拒绝，无样本为NaN。模板只提供网格与CRS，不读取／继承NoData、mask或alpha，支持有限可逆旋转／矩形／剪切网格；结果单波段Float64，同网格／CRS，沿原COG保存及清理。归“基础计算”，无新权限／依赖；[完整IDW契约](../../../docs/spec/workflow/栅格算子契约.md#点数据idw插值)。
 
+矢量面分区统计沿原入口使用非空严格递增`percentiles`列表：原八列保持，每面一行，按请求顺序追加带原前缀的percentile_i／percentile_value_i列对；覆盖、孔洞、重叠面独立、原属性／几何／索引及CRS保持，每面共享一次覆盖读取／排序／归并。旧单值参数及列删除，旧DAG须显式改写；原单项套件只迁移单元素列表／列名，既有矩阵／预算保持。完整边界见栅格算子契约，Linux全量与实际Hosted分别记账。
+
 通用算子由 [raster_compute.py](raster_compute.py) 聚合，分类与算子归属见[算子分类](#算子分类)。栅格通过当前 execution 的 `raster` / `raster_tiles` 私有对象在 DAG 中流转；公开资源使用 ResourceLocator，由 Develop 派生访问计划，不能用原始路径或普通 JSON 代替栅格端口。
 
 | 阅读目的 | 正式契约 |

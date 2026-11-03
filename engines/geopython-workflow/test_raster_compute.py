@@ -5323,10 +5323,10 @@ def test_vector_zonal_statistics_reuses_stable_streaming_statistics(tmp_path,cas
     with raster_workspace():
         loaded=raster_load(source_plan(path))
         if case=='overflow':
-            with pytest.raises(ValueError,match='finite Float64'):raster_vector_zonal_statistics(loaded,faces,1,**({'percentile':50} if requested else {}))
+            with pytest.raises(ValueError,match='finite Float64'):raster_vector_zonal_statistics(loaded,faces,1,**({'percentiles':[50]} if requested else {}))
         else:
-            row=raster_vector_zonal_statistics(loaded,faces,1,**({'percentile':50} if requested else {})).iloc[0]
-            if requested: assert row.zonal_percentile_value==_full_percentile_oracle(data.ravel(),50)
+            row=raster_vector_zonal_statistics(loaded,faces,1,**({'percentiles':[50]} if requested else {})).iloc[0]
+            if requested: assert row.zonal_percentile_value_1==_full_percentile_oracle(data.ravel(),50)
             assert row.zonal_valid_count==1030
             if case=='cancellation':assert row.zonal_sum==pytest.approx(1.) and row.zonal_mean==pytest.approx(1/1030,rel=1e-14)
             elif case=='large_offset':assert row.zonal_mean==1e16 and row.zonal_stddev==pytest.approx(2.,rel=1e-14)
@@ -5369,7 +5369,7 @@ def test_vector_zonal_statistics_rejects_invalid_contracts(tmp_path,fault,reques
     params={'band':2 if fault=='band_alpha' else True if fault=='band_bool' else 1. if fault=='band_float' else 99 if fault=='band_missing' else 1}
     if fault in ('prefix_none','prefix_bool'):params['field_prefix']=None if fault=='prefix_none' else True
     if fault in ('coverage_number','coverage_none'):params['all_touched']=1 if fault=='coverage_number' else None
-    if requested: params['percentile']=50
+    if requested: params['percentiles']=[50]
     with raster_workspace(),pytest.raises(ValueError):raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,**params)
 
 
@@ -5382,7 +5382,7 @@ def test_vector_zonal_statistics_rejects_invalid_geometry_without_repair(tmp_pat
     from shapely import from_wkt
     faces=gpd.GeoDataFrame(geometry=[from_wkt(wkt) if wkt else None],crs=3857)
     path=create_raster(tmp_path/'source.tif',np.ones((2,3)),crs='EPSG:3857')
-    with raster_workspace(),pytest.raises(ValueError,match='two-dimensional'):raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,**({'percentile':50} if requested else {}))
+    with raster_workspace(),pytest.raises(ValueError,match='two-dimensional'):raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,**({'percentiles':[50]} if requested else {}))
 
 
 @pytest.mark.parametrize('invalid',[False,True],ids=['gpkg-save','failure-cleanup'])
@@ -5401,7 +5401,7 @@ def test_vector_zonal_statistics_async_polygonize_chain_gpkg_save_and_cleanup(tm
         {'id':'stats','operator':'raster_vector_zonal_statistics','depends_on':['source','zones'],
          'params':{'input_raster':{'$ref':'source'},'input_gdf':{'$ref':'zones'},'band':99 if invalid else 1}},
         {'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'path':target.name,'connection_info':{'mount_path':str(tmp_path)}}}]
-    if requested: tasks[2]['params']['percentile']=50
+    if requested: tasks[2]['params']['percentiles']=[50]
     if zones_mode=='null-and-outside':
         tasks[1]={'id':'zones','operator':'load_from_wkt','depends_on':[],'params':{
             'wkt_list':['POLYGON ((0.1 2.1,2.9 2.1,2.9 3.9,0.1 3.9,0.1 2.1))','POLYGON ((0.1 3.1,0.9 3.1,0.9 3.9,0.1 3.9,0.1 3.1))','POLYGON ((20 20,21 20,21 21,20 21,20 20))'],
@@ -5430,14 +5430,14 @@ def test_vector_zonal_statistics_async_polygonize_chain_gpkg_save_and_cleanup(tm
             assert sorted(saved.index)==[0,2]
             assert saved.zonal_total_count.tolist()==[3,3] and saved.zonal_invalid_count.tolist()==[0,0]
             assert saved.zonal_sum.tolist()==[0,6] and saved.zonal_mean.tolist()==[0,2] and saved.zonal_stddev.tolist()==[0,0]
-            if requested: assert saved.zonal_percentile.tolist()==[50.,50.] and saved.zonal_percentile_value.tolist()==[0.,2.]
+            if requested: assert saved.zonal_percentile_1.tolist()==[50.,50.] and saved.zonal_percentile_value_1.tolist()==[0.,2.]
         else:
             assert sorted(saved.index)==[11,12,13]
             assert saved.zonal_total_count.tolist()==[6,1,0] and saved.zonal_valid_count.tolist()==[5,0,0]
             assert saved.loc[12:13,['zonal_sum','zonal_min','zonal_max','zonal_mean','zonal_stddev']].isna().all().all()
             if requested:
-                assert saved.loc[11,'zonal_percentile_value']==2. and saved.zonal_percentile.tolist()==[50.]*3
-                assert saved.loc[12:13,'zonal_percentile_value'].isna().all()
+                assert saved.loc[11,'zonal_percentile_value_1']==2. and saved.zonal_percentile_1.tolist()==[50.]*3
+                assert saved.loc[12:13,'zonal_percentile_value_1'].isna().all()
     assert client.post('/api/operators/raster_vector_zonal_statistics/invoke',json={'params':{}}).status_code==403
 
 
@@ -14372,22 +14372,22 @@ def test_vector_percentile_independent_coverage_holes_overlap_and_original_stati
     with raster_workspace():
         source = raster_load(source_plan(path)); files = set(source.workspace.iterdir())
         baseline = raster_vector_zonal_statistics(source,faces,2,all_touched,field_prefix='stats_')
-        result = raster_vector_zonal_statistics(source,faces,2,all_touched,field_prefix='stats_',percentile=percent)
+        result = raster_vector_zonal_statistics(source,faces,2,all_touched,field_prefix='stats_',percentiles=[percent])
         pd.testing.assert_frame_equal(result[baseline.columns],baseline,check_exact=True)
-        assert result.columns.tolist() == baseline.columns.tolist() + ['stats_percentile','stats_percentile_value']
+        assert result.columns.tolist() == baseline.columns.tolist() + ['stats_percentile_1','stats_percentile_value_1']
         assert result.geometry.name == 'shape' and result.index.tolist() == faces.index.tolist()
-        assert result.stats_percentile.tolist() == [float(percent)]*len(faces)
-        assert all(str(result[key].dtype)=='Float64' for key in ('stats_percentile','stats_percentile_value'))
+        assert result.stats_percentile_1.tolist() == [float(percent)]*len(faces)
+        assert all(str(result[key].dtype)=='Float64' for key in ('stats_percentile_1','stats_percentile_value_1'))
         for position in range(len(faces)):
             covered = np.isfinite(_rasterization_oracle(faces.iloc[[position]],[1],transform,7,6,all_touched))
             samples = values[covered & valid].tolist(); wanted = _full_percentile_oracle(samples,percent)
-            actual = result.iloc[position].stats_percentile_value
+            actual = result.iloc[position].stats_percentile_value_1
             if wanted is None: assert pd.isna(actual)
             else:
                 assert actual == pytest.approx(wanted,rel=4e-15,abs=0)
                 if percent in (0,50,100): assert actual == (min(samples) if percent==0 else max(samples) if percent==100 else statistics.median(samples))
-        assert result.iloc[0].stats_percentile_value == result.iloc[4].stats_percentile_value
-        assert pd.isna(result.iloc[5].stats_percentile_value) and pd.isna(result.iloc[6].stats_percentile_value)
+        assert result.iloc[0].stats_percentile_value_1 == result.iloc[4].stats_percentile_value_1
+        assert pd.isna(result.iloc[5].stats_percentile_value_1) and pd.isna(result.iloc[6].stats_percentile_value_1)
         assert set(source.workspace.iterdir()) == files
     assert path.read_bytes() == before
     geopandas.testing.assert_geodataframe_equal(faces,original)
@@ -14400,8 +14400,8 @@ def test_vector_percentile_invalid_parameter_bilingual_before_source_or_geometry
     monkeypatch.setattr(compute,'_open',lambda *args:pytest.fail('invalid parameter opened source'))
     monkeypatch.setattr(compute,'_polygon_geometries',lambda *args:pytest.fail('invalid parameter inspected geometry'))
     with raster_error_language(language),pytest.raises(ValueError) as error:
-        raster_vector_zonal_statistics(object(),object(),1,percentile=percent)
-    assert str(error.value) == ('percentile必须为0至100之间的有限数值，且不能为布尔值' if language=='zh-cn' else 'percentile must be a finite number from 0 to 100, excluding booleans')
+        raster_vector_zonal_statistics(object(),object(),1,percentiles=[percent])
+    with raster_error_language(language):assert str(error.value) == str(compute._statistics_error('percentiles'))
 
 
 @pytest.mark.parametrize('prefix', ['', 'stats_'])
@@ -14414,14 +14414,14 @@ def test_vector_percentile_empty_batch_uncovered_null_and_single_valid_zero(tmp_
     geometry = [] if kind=='empty' else [box(100,100,101,101)] if kind=='outside' else [box(-.1,-.1,3.1,2.1)]
     faces = gpd.GeoDataFrame({'value':range(len(geometry))},geometry=geometry,crs=3857)
     with raster_workspace():
-        result = raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,field_prefix=prefix,percentile=50)
-    assert len(result) == len(faces) and result.columns.tolist() == faces.columns.tolist() + [prefix+name for name in ('total_count','valid_count','invalid_count','sum','min','max','mean','stddev','percentile','percentile_value')]
-    assert str(result[prefix+'percentile_value'].dtype) == 'Float64'
-    if kind=='single': assert result[prefix+'percentile_value'].tolist() == [0.] and result[prefix+'valid_count'].tolist() == [1]
-    else: assert result[prefix+'percentile_value'].isna().all()
+        result = raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,field_prefix=prefix,percentiles=[50])
+    assert len(result) == len(faces) and result.columns.tolist() == faces.columns.tolist() + [prefix+name for name in ('total_count','valid_count','invalid_count','sum','min','max','mean','stddev','percentile_1','percentile_value_1')]
+    assert str(result[prefix+'percentile_value_1'].dtype) == 'Float64'
+    if kind=='single': assert result[prefix+'percentile_value_1'].tolist() == [0.] and result[prefix+'valid_count'].tolist() == [1]
+    else: assert result[prefix+'percentile_value_1'].isna().all()
 
 
-@pytest.mark.parametrize('field', ['percentile','percentile_value'])
+@pytest.mark.parametrize('field', ['percentile_1','percentile_value_1'])
 @pytest.mark.parametrize('prefix', ['', 'zonal_'])
 @pytest.mark.parametrize('active_geometry', [False, True])
 def test_vector_percentile_new_column_conflicts_never_overwrite_attributes_or_geometry(tmp_path, field, prefix, active_geometry):
@@ -14435,7 +14435,7 @@ def test_vector_percentile_new_column_conflicts_never_overwrite_attributes_or_ge
     original = faces.copy(); path = create_raster(tmp_path/'v.tif',np.zeros((1,3)),(0,1,0,1,0,-1),'EPSG:3857')
     with raster_workspace():
         source = raster_load(source_plan(path))
-        with pytest.raises(ValueError,match='must not overwrite'): raster_vector_zonal_statistics(source,faces,1,field_prefix=prefix,percentile=50)
+        with pytest.raises(ValueError,match='must not overwrite'): raster_vector_zonal_statistics(source,faces,1,field_prefix=prefix,percentiles=[50])
         # The same existing attribute is legal when no percentile was requested.
         result = raster_vector_zonal_statistics(source,faces,1,field_prefix=prefix)
         assert result[key].equals(faces[key])
@@ -14458,10 +14458,10 @@ def test_vector_percentile_raw_native_nodata_adjacent_value_and_original_counts(
     faces = gpd.GeoDataFrame(geometry=[box(-.1,-.1,4.1,1.1)],crs=3857)
     with raster_workspace():
         source = raster_load(source_plan(path)); baseline = raster_vector_zonal_statistics(source,faces,1)
-        result = raster_vector_zonal_statistics(source,faces,1,percentile=percent)
+        result = raster_vector_zonal_statistics(source,faces,1,percentiles=[percent])
         pd.testing.assert_frame_equal(result[baseline.columns],baseline,check_exact=True)
     assert result.zonal_valid_count.tolist() == [3] and result.zonal_invalid_count.tolist() == [1]
-    assert result.zonal_percentile_value.tolist() == [_full_percentile_oracle(data[data!=nodata],percent)]
+    assert result.zonal_percentile_value_1.tolist() == [_full_percentile_oracle(data[data!=nodata],percent)]
 
 
 @pytest.mark.parametrize('all_touched', [False,True])
@@ -14475,7 +14475,7 @@ def test_vector_percentile_cross_blocks_private_budget_and_per_face_release(tmp_
     faces = gpd.GeoDataFrame(geometry=[affine_transform(box(.1,.1,1024.9,512.9),[2,.5,.25,-3,100,200]),
                                       affine_transform(box(507.1,507.1,512.9,512.9),[2,.5,.25,-3,100,200])],crs=3857)
     path = create_raster(tmp_path/'large.tif',values,transform,'EPSG:3857'); before = path.read_bytes()
-    blocks, merge, value = compute._blocks, compute._merge_percentile_runs, compute._PercentileRuns.value
+    blocks, merge, value = compute._blocks, compute._merge_percentile_runs, compute._PercentileRuns.values
     sizes, budgets, directories = [], [], []
     def bounded(dataset, indices, **kwargs):
         assert kwargs.get('native') is True
@@ -14492,13 +14492,13 @@ def test_vector_percentile_cross_blocks_private_budget_and_per_face_release(tmp_
         _,budget,paths = next(iter(compute._DISK_RESERVATIONS.values())); budgets.append((budget,len(paths)))
         return value(self,count,percent)
     monkeypatch.setattr(compute,'_blocks',bounded); monkeypatch.setattr(compute,'_merge_percentile_runs',tracked_merge)
-    monkeypatch.setattr(compute._PercentileRuns,'value',tracked_value); monkeypatch.setattr(compute,'_PERCENTILE_MERGE_VALUES',1024)
+    monkeypatch.setattr(compute._PercentileRuns,'values',tracked_value); monkeypatch.setattr(compute,'_PERCENTILE_MERGE_VALUES',1024)
     with raster_workspace():
         source = raster_load(source_plan(path)); files = set(source.workspace.iterdir())
-        result = raster_vector_zonal_statistics(source,faces,1,all_touched,percentile=33.3)
+        result = raster_vector_zonal_statistics(source,faces,1,all_touched,percentiles=[33.3])
         assert set(source.workspace.iterdir())==files and not compute._DISK_RESERVATIONS
     for position,samples in enumerate((values.ravel(),values[507:513,507:513].ravel())):
-        assert result.iloc[position].zonal_percentile_value == pytest.approx(_full_percentile_oracle(samples,33.3),rel=4e-15,abs=0)
+        assert result.iloc[position].zonal_percentile_value_1 == pytest.approx(_full_percentile_oracle(samples,33.3),rel=4e-15,abs=0)
     assert budgets[0][0] == 513*1025*16+budgets[0][1]*65536
     assert budgets[1][0] < budgets[0][0] and all(not directory.exists() for directory in directories)
     assert sizes and path.read_bytes()==before
@@ -14520,16 +14520,16 @@ def test_vector_percentile_failures_preserve_cause_cleanup_and_source(tmp_path, 
             def fail(*args,**kwargs): raise OSError('injected vector percentile I/O')
             if phase=='sort': patch.setattr(np,'sort',fail)
             elif phase=='merge': patch.setattr(compute,'_merge_percentile_runs',fail)
-            elif phase=='rank': patch.setattr(compute._PercentileRuns,'value',fail)
+            elif phase=='rank': patch.setattr(compute._PercentileRuns,'values',fail)
             elif phase=='source': patch.setattr(compute,'_blocks',fail)
             elif phase=='rasterize': patch.setattr(gdal,'RasterizeLayer',fail)
-            with pytest.raises(ValueError) as error: raster_vector_zonal_statistics(source,faces,1,percentile=50)
+            with pytest.raises(ValueError) as error: raster_vector_zonal_statistics(source,faces,1,percentiles=[50])
             if phase=='overflow': assert 'finite Float64' in str(error.value)
             else:
                 assert str(error.value)==('矢量面分区百分位临时排序读写失败' if language=='zh-cn' else 'Vector zonal percentile temporary sorting I/O failed')
                 assert isinstance(error.value.__cause__,OSError)
         assert set(source.workspace.iterdir())==files and not compute._DISK_RESERVATIONS
-        if phase!='overflow': assert len(raster_vector_zonal_statistics(source,faces,1,percentile=50))==1
+        if phase!='overflow': assert len(raster_vector_zonal_statistics(source,faces,1,percentiles=[50]))==1
     assert path.read_bytes()==before
 
 
@@ -14550,9 +14550,9 @@ def test_vector_percentile_disk_admission_and_recovery_before_sort(tmp_path, mon
                 return SimpleNamespace(free=compute._DISK_SAFETY_BYTES)
             patch.setattr(compute.shutil,'disk_usage',capacity)
             patch.setattr(compute._PercentileRuns,'add',lambda *args:pytest.fail('sorted before disk admission'))
-            with pytest.raises(RuntimeError,match='vector_percentile'): raster_vector_zonal_statistics(source,faces,1,percentile=50)
+            with pytest.raises(RuntimeError,match='vector_percentile'): raster_vector_zonal_statistics(source,faces,1,percentiles=[50])
         assert set(source.workspace.iterdir())==files and not compute._DISK_RESERVATIONS
-        assert raster_vector_zonal_statistics(source,faces,1,percentile=50).zonal_percentile_value.tolist()==[2.]
+        assert raster_vector_zonal_statistics(source,faces,1,percentiles=[50]).zonal_percentile_value_1.tolist()==[2.]
 
 
 @pytest.mark.parametrize('percent', [np.nextafter(0.,1.), 33.3, 50., 99., 100.])
@@ -14563,8 +14563,8 @@ def test_vector_percentile_native_numeric_limits_exact_linear_interpolation(tmp_
     path = create_raster(tmp_path/'limits.tif',np.array([pair]),(0,1,0,1,0,-1),'EPSG:3857')
     faces = gpd.GeoDataFrame(geometry=[box(-.1,-.1,2.1,1.1)],crs=3857)
     with raster_workspace():
-        result = raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,percentile=percent)
-    assert result.zonal_percentile_value.tolist()==[_full_percentile_oracle(pair,percent)]
+        result = raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,percentiles=[percent])
+    assert result.zonal_percentile_value_1.tolist()==[_full_percentile_oracle(pair,percent)]
 
 
 @pytest.mark.parametrize('language', ['zh-cn','en'])
@@ -14582,7 +14582,7 @@ def test_vector_percentile_async_invalid_parameter_bilingual_no_publication_and_
     monkeypatch.setattr(workflow_engine,'_execute_operator',tracked)
     tasks = [{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
              {'id':'zones','operator':'load_from_wkt','depends_on':[],'params':{'wkt_list':['POLYGON ((-0.1 -0.1,3.1 -0.1,3.1 1.1,-0.1 1.1,-0.1 -0.1))'],'crs':'EPSG:3857'}},
-             {'id':'analysis','operator':'raster_vector_zonal_statistics','depends_on':['source','zones'],'params':{'input_raster':{'$ref':'source'},'input_gdf':{'$ref':'zones'},'band':1,'percentile':percent}},
+             {'id':'analysis','operator':'raster_vector_zonal_statistics','depends_on':['source','zones'],'params':{'input_raster':{'$ref':'source'},'input_gdf':{'$ref':'zones'},'band':1,'percentiles':[percent]}},
              {'id':'save','operator':'save','depends_on':['analysis'],'params':{'input_df':{'$ref':'analysis'},'path':target.name,'connection_info':{'mount_path':str(tmp_path)}}}]
     client = api_server.app.test_client()
     submitted = client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}},headers={'Accept-Language':language})
@@ -14592,7 +14592,7 @@ def test_vector_percentile_async_invalid_parameter_bilingual_no_publication_and_
         state = client.get('/api/executions/'+submitted.json['execution_id']).json
         if state['status'] in ('success','failed'): break
         time.sleep(.01)
-    assert state['status']=='failed' and ('有限数值' if language=='zh-cn' else 'finite number') in state['error']
+    assert state['status']=='failed' and ('有限实数' if language=='zh-cn' else 'finite real numbers') in state['error']
     assert not target.exists() and old.read_bytes()==b'prior artifact unchanged' and path.read_bytes()==before
     assert paths and all(not root.exists() for root in paths) and not compute._DISK_RESERVATIONS
 
@@ -16368,8 +16368,8 @@ def test_vector_zonal_weighted_pair_rejected_before_geometry_open_or_allocate(mo
 def test_vector_zonal_weighted_percentile_conflict_rejected_before_geometry(monkeypatch,percentile,language):
     import operators.raster_compute as compute
     monkeypatch.setattr(compute,'_polygon_geometries',lambda *_:pytest.fail('conflicting request inspected geometry'))
-    with raster_error_language(language),pytest.raises(ValueError)as error:raster_vector_zonal_statistics(None,None,1,percentile=percentile,weights_raster=object(),weights_band=1)
-    assert str(error.value)==('矢量面分区统计的权重与percentile参数不能同时提供'if language=='zh-cn'else'Vector zonal statistics weights and percentile cannot be provided together')
+    with raster_error_language(language),pytest.raises(ValueError)as error:raster_vector_zonal_statistics(None,None,1,percentiles=[percentile],weights_raster=object(),weights_band=1)
+    assert str(error.value)==('矢量面分区统计的权重与percentiles参数不能同时提供'if language=='zh-cn'else'Vector zonal statistics weights and percentiles cannot be provided together')
 
 
 @pytest.mark.parametrize('prefix',['','stats_'])
@@ -16559,7 +16559,7 @@ def test_vector_zonal_weighted_async_full_geopackage_all_properties_submitted_la
     if case=='reclassify-weights':
         tasks.append({'id':'mass','operator':'raster_reclassify','depends_on':['weights'],'params':{'input_raster':{'$ref':'weights'},'band':1,'rules':[{'min':None,'max':1,'class':0},{'min':1,'max':None,'class':2}]}});prior='mass';expected_weights=np.where(weights<1,0.,2.)
     params={'input_raster':{'$ref':'values'},'input_gdf':{'$ref':'zones'},'band':1,'weights_raster':{'$ref':prior},'weights_band':99 if case=='bad-band'else 1}
-    if case=='conflict':params['percentile']=None
+    if case=='conflict':params['percentiles']=[None]
     tasks.extend([{'id':'stats','operator':'raster_vector_zonal_statistics','depends_on':['values','zones',prior],'params':params},
         {'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}])
     workspaces=[];execute=workflow_engine._execute_operator
@@ -17075,7 +17075,7 @@ def test_vector_zonal_weighted_stddev_disabled_preserves_attribute_schema_and_al
     name=prefix+'weighted_stddev'
     faces=gpd.GeoDataFrame({name:[box(0,0,2,2)],'label':[7]}if geometry else{name:[99],'shape':[box(0,0,2,2)]},geometry=name if geometry else'shape',crs=3857);path=create_raster(tmp_path/'v.tif',np.array([[2.,5.],[0.,-2.]]),(0,1,0,2,0,-1),'EPSG:3857')
     with raster_workspace():
-        v=raster_load(source_plan(path));args={'percentile':50}if mode=='percentile'else({'weights_raster':v,'weights_band':1}if mode=='weights'else{})
+        v=raster_load(source_plan(path));args={'percentiles':[50]}if mode=='percentile'else({'weights_raster':v,'weights_band':1}if mode=='weights'else{})
         # Use a separate nonnegative weight input for the weighted path.
         if mode=='weights':args['weights_raster']=raster_load(source_plan(create_raster(tmp_path/'w.tif',np.ones((2,2)),(0,1,0,2,0,-1),'EPSG:3857')))
         control=raster_vector_zonal_statistics(v,faces,1,field_prefix=prefix,**args)
@@ -17125,8 +17125,8 @@ def test_vector_zonal_weighted_stddev_pair_rejected_before_geometry_open_or_allo
 def test_vector_zonal_weighted_stddev_percentile_conflict_rejected_before_geometry(monkeypatch,percentile,language):
     import operators.raster_compute as compute
     monkeypatch.setattr(compute,'_polygon_geometries',lambda *_:pytest.fail('conflicting request inspected geometry'))
-    with raster_error_language(language),pytest.raises(ValueError)as error:raster_vector_zonal_statistics(None,None,1,percentile=percentile,weights_raster=object(),weights_band=1,include_weighted_stddev=True)
-    assert str(error.value)==('矢量面分区统计的权重与percentile参数不能同时提供'if language=='zh-cn'else'Vector zonal statistics weights and percentile cannot be provided together')
+    with raster_error_language(language),pytest.raises(ValueError)as error:raster_vector_zonal_statistics(None,None,1,percentiles=[percentile],weights_raster=object(),weights_band=1,include_weighted_stddev=True)
+    assert str(error.value)==('矢量面分区统计的权重与percentiles参数不能同时提供'if language=='zh-cn'else'Vector zonal statistics weights and percentiles cannot be provided together')
 
 @pytest.mark.parametrize('fault',['missing','mask','alpha','nan','infinity','negative'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
@@ -17290,7 +17290,7 @@ def test_vector_zonal_weighted_stddev_async_full_geopackage_all_properties_submi
     if case=='reclassify-weights':
         tasks.append({'id':'mass','operator':'raster_reclassify','depends_on':['weights'],'params':{'input_raster':{'$ref':'weights'},'band':1,'rules':[{'min':None,'max':1,'class':0},{'min':1,'max':None,'class':2}]}});prior='mass';expected_weights=np.where(weights<1,0.,2.)
     params={'input_raster':{'$ref':'values'},'input_gdf':{'$ref':'zones'},'band':1,'weights_raster':{'$ref':prior},'weights_band':99 if case=='bad-band'else 1,'include_weighted_stddev':True}
-    if case=='conflict':params['percentile']=None
+    if case=='conflict':params['percentiles']=[None]
     tasks.extend([{'id':'stats','operator':'raster_vector_zonal_statistics','depends_on':['values','zones',prior],'params':params},
         {'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}])
     workspaces=[];execute=workflow_engine._execute_operator
@@ -17430,7 +17430,7 @@ def test_vector_area_weighted_strict_flag_before_io(monkeypatch,flag,language):
     assert str(error.value)==c._VECTOR_AREA_MESSAGES['flag'][language=='en']
 
 
-@pytest.mark.parametrize('params',[{'percentile':p}for p in(None,0,50)]+[{'weights_raster':p}for p in(None,object())]+[{'weights_band':p}for p in(None,1)]+[{'include_weighted_stddev':True}])
+@pytest.mark.parametrize('params',[{'percentiles':[p]}for p in(None,0,50)]+[{'weights_raster':p}for p in(None,object())]+[{'weights_band':p}for p in(None,1)]+[{'include_weighted_stddev':True}])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_vector_area_weighted_conflicting_modes_before_io(monkeypatch,params,language):
     import operators.raster_compute as c
@@ -17475,7 +17475,7 @@ def test_vector_area_weighted_false_keeps_all_existing_modes_and_never_intersect
     path=create_raster(tmp_path/'v.tif',np.arange(8.).reshape(2,4),crs="EPSG:4326")
     faces=_area_faces([[((0,2,4,4),[])]],(0,1,0,0,0,1),crs="EPSG:4326")
     with raster_workspace():
-        v=raster_load(source_plan(path));args={'percentile':50}if mode=='percentile'else({'weights_raster':v,'weights_band':1,'include_weighted_stddev':mode=='weighted-stddev'}if mode!='plain'else{})
+        v=raster_load(source_plan(path));args={'percentiles':[50]}if mode=='percentile'else({'weights_raster':v,'weights_band':1,'include_weighted_stddev':mode=='weighted-stddev'}if mode!='plain'else{})
         old=raster_vector_zonal_statistics(v,faces,1,**args)
         monkeypatch.setattr(c,'_vector_area_geometry',lambda *_:pytest.fail('disabled area invoked intersection'))
         actual=raster_vector_zonal_statistics(v,faces,1,include_area_weighted=False,**args)
@@ -17590,7 +17590,7 @@ def test_vector_area_weighted_async_full_geopackage_preview_failures_and_cleanup
     target=tmp_path/'area.gpkg';previous=tmp_path/'previous.gpkg';previous.write_bytes(b'prior original vector')
     if case=='save-existing':target.write_bytes(b'existing exact target')
     params={'input_raster':{'$ref':'values'},'input_gdf':{'$ref':'zones'},'band':1,'include_area_weighted':True}
-    if case=='conflict':params['percentile']=None
+    if case=='conflict':params['percentiles']=[None]
     tasks=[{'id':'values','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
            {'id':'zones','operator':'load_from_wkt','depends_on':[],'params':{'wkt_list':[g.wkt for g in geometries],'properties':properties,'crs':'EPSG:3857'}},
            {'id':'stats','operator':'raster_vector_zonal_statistics','depends_on':['values','zones'],'params':params},
@@ -17939,7 +17939,7 @@ def test_vector_area_stddev_strict_boolean_before_source_io(monkeypatch,flag,lan
     assert str(error.value)==c._VECTOR_AREA_MESSAGES['stddev_flag'][language=='en']
 
 
-@pytest.mark.parametrize('params',[{}, {'include_area_weighted':False},{'percentile':50},{'weights_raster':object(),'weights_band':1},{'include_weighted_stddev':True}])
+@pytest.mark.parametrize('params',[{}, {'include_area_weighted':False},{'percentiles':[50]},{'weights_raster':object(),'weights_band':1},{'include_weighted_stddev':True}])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_vector_area_stddev_requires_area_mode_before_source_io(monkeypatch,params,language):
     import operators.raster_compute as c
@@ -17948,7 +17948,7 @@ def test_vector_area_stddev_requires_area_mode_before_source_io(monkeypatch,para
     assert str(error.value)==c._VECTOR_AREA_MESSAGES['stddev_area'][language=='en']
 
 
-@pytest.mark.parametrize('params',[{'percentile':p}for p in(None,50)]+[{'weights_raster':p}for p in(None,object())]+[{'weights_band':p}for p in(None,1)]+[{'include_weighted_stddev':True}])
+@pytest.mark.parametrize('params',[{'percentiles':[p]}for p in(None,50)]+[{'weights_raster':p}for p in(None,object())]+[{'weights_band':p}for p in(None,1)]+[{'include_weighted_stddev':True}])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_vector_area_stddev_keeps_existing_area_conflicts(monkeypatch,params,language):
     import operators.raster_compute as c
@@ -17977,7 +17977,7 @@ def test_vector_area_stddev_false_preserves_all_existing_modes_without_second_mo
     from fractions import Fraction
     values=np.arange(8.).reshape(2,4);path=create_raster(tmp_path/'v.tif',values,(0,1,0,0,0,1),'EPSG:3857');faces=_area_faces([[((.125,.125,3.875,1.875),[])]],(0,1,0,0,0,1))
     with raster_workspace():
-        source=raster_load(source_plan(path));args={'percentile':50}if mode=='percentile'else{'include_area_weighted':True}if mode=='area'else{'weights_raster':source,'weights_band':1,'include_weighted_stddev':mode=='weighted-stddev'}if mode!='plain'else{}
+        source=raster_load(source_plan(path));args={'percentiles':[50]}if mode=='percentile'else{'include_area_weighted':True}if mode=='area'else{'weights_raster':source,'weights_band':1,'include_weighted_stddev':mode=='weighted-stddev'}if mode!='plain'else{}
         old=raster_vector_zonal_statistics(source,faces,1,**args);original=c._VectorAreaStatistics.summary
         def tracked(self,scale):assert self.weighted.squares==Fraction(0)and self.weighted.include_stddev is False;return original(self,scale)
         monkeypatch.setattr(c._VectorAreaStatistics,'summary',tracked)
@@ -18082,7 +18082,7 @@ def test_vector_area_stddev_async_full_geopackage_preview_failures_and_cleanup(t
     target=tmp_path/'area.gpkg';previous=tmp_path/'previous.gpkg';previous.write_bytes(b'prior original vector')
     if case=='save-existing':target.write_bytes(b'existing exact target')
     params={'input_raster':{'$ref':'values'},'input_gdf':{'$ref':'zones'},'band':1,'include_area_weighted':True,'include_area_weighted_stddev':True}
-    if case=='conflict':params['percentile']=None
+    if case=='conflict':params['percentiles']=[None]
     if case=='invalid-flag':params['include_area_weighted_stddev']=None
     if case=='requires-area':params['include_area_weighted']=False
     tasks=[{'id':'values','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
@@ -19947,3 +19947,213 @@ def test_zonal_multi_percentiles_async_csv_full_pairs_and_no_failed_publication(
         with raster_error_language(language):cause=str(c._statistics_error('percentiles'if case=='invalid'else'zonal_io'))
         assert result['error']=='任务 stats 执行失败: '+cause and not target.exists()
     assert work and all(not p.exists()for p in work)and not c._DISK_RESERVATIONS and [p.read_bytes()for p in(*paths,old)]==before
+
+
+@pytest.mark.parametrize('invalid',[None,[],0,50.,True,'50',{},(),(50,),[None],[True],[np.bool_(False)],['50'],[[50]],[{}],[-1],[101],[float('nan')],[float('inf')],[10**400],[50,50],[75,25],[50,np.nextafter(50.,0.)],[0.,-0.],[0,np.nextafter(0.,-1.)]])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_vector_multi_percentiles_strict_list_before_geometry_or_open(monkeypatch,invalid,language):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda *a:pytest.fail('invalid list opened source'))
+    monkeypatch.setattr(c,'_polygon_geometries',lambda *a:pytest.fail('invalid list inspected geometry'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:raster_vector_zonal_statistics(object(),object(),1,percentiles=invalid)
+    with raster_error_language(language):assert str(error.value)==str(c._statistics_error('percentiles'))
+
+@pytest.mark.parametrize('all_touched',[False,True])
+@pytest.mark.parametrize('transform',[(0,1,0,6,0,-1),(100,2,.5,200,.25,-3)])
+def test_vector_multi_percentiles_original_eight_complete_pairs_coverage_and_singletons(tmp_path,all_touched,transform):
+    import geopandas as gpd,pandas as pd
+    import geopandas.testing
+    from shapely.affinity import affine_transform
+    from shapely.geometry import box
+    data=np.arange(42,dtype=float).reshape(6,7)-13;data[0,0]=0;data[1,1]=-9999.;data[2,2]=np.nan;data[4,1]=np.inf
+    alpha=np.full(data.shape,128.);alpha[4,2]=0;alpha[3,3]=np.nan
+    mask=np.full(data.shape,255,np.uint8);mask[3,2]=0
+    affine=[transform[1],transform[2],transform[4],transform[5],transform[0],transform[3]]
+    faces=_rasterization_faces(transform)
+    geometry=[*faces.geometry,faces.geometry.iloc[0],affine_transform(box(100,100,101,101),affine),affine_transform(box(.1,.1,.9,.9),affine)]
+    faces=gpd.GeoDataFrame({'fid':[9]*len(geometry),'label':list(range(len(geometry))),'surface':geometry},geometry='surface',crs=3857,index=[7,2,7,1,9,0,3])
+    unchanged=faces.copy();path=create_raster(tmp_path/'many.tif',np.stack([np.full(data.shape,-9999.),data,alpha]),transform,'EPSG:3857')
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(2).SetScale(17);ds.GetRasterBand(2).SetOffset(500)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None;before=path.read_bytes()
+    requested=[0.,float(np.nextafter(0.,1.)),25.,float(np.nextafter(25.,100.)),33.3,50.,75.,100.];preserved=requested.copy()
+    valid=np.isfinite(data)&(data!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
+    with raster_workspace():
+        loaded=raster_load(source_plan(path));files=set(loaded.workspace.iterdir());original=raster_vector_zonal_statistics(loaded,faces,2,all_touched,field_prefix='stats_')
+        result=raster_vector_zonal_statistics(loaded,faces,2,all_touched,field_prefix='stats_',percentiles=requested)
+        pd.testing.assert_frame_equal(result[original.columns],original,check_exact=True)
+        assert result.columns.tolist()==original.columns.tolist()+[f'stats_{key}_{i}'for i in range(1,len(requested)+1)for key in('percentile','percentile_value')]
+        for i,p in enumerate(requested,1):
+            one=raster_vector_zonal_statistics(loaded,faces,2,all_touched,field_prefix='stats_',percentiles=[p])
+            pd.testing.assert_series_equal(result[f'stats_percentile_value_{i}'],one.stats_percentile_value_1,check_names=False,check_exact=True)
+            assert result[f'stats_percentile_{i}'].tolist()==[p]*len(faces)
+            assert str(result[f'stats_percentile_value_{i}'].dtype)=='Float64'
+            for row in range(len(faces)):
+                covered=np.isfinite(_rasterization_oracle(faces.iloc[[row]],[1],transform,7,6,all_touched));samples=data[covered&valid]
+                expected=_full_percentile_oracle(samples,p);actual=result.iloc[row][f'stats_percentile_value_{i}']
+                if expected is None:assert pd.isna(actual)
+                else:assert actual==pytest.approx(expected,rel=4e-15,abs=0)
+        assert set(loaded.workspace.iterdir())==files
+    assert requested==preserved and path.read_bytes()==before
+    geopandas.testing.assert_geodataframe_equal(faces,unchanged)
+
+@pytest.mark.parametrize('kind',['empty','outside','invalid','single'])
+@pytest.mark.parametrize('prefix',['','p_'])
+def test_vector_multi_percentiles_empty_null_zero_and_full_schema(tmp_path,kind,prefix):
+    import geopandas as gpd,pandas as pd
+    from shapely.geometry import box
+    values=np.full((2,3),-9999.);values[0,0]=0. if kind=='single'else -9999.
+    path=create_raster(tmp_path/'empty.tif',values,(0,1,0,2,0,-1),'EPSG:3857')
+    geometry=[]if kind=='empty'else[box(100,100,101,101)]if kind=='outside'else[box(-.1,-.1,3.1,2.1)]
+    faces=gpd.GeoDataFrame({'id':range(len(geometry))},geometry=geometry,crs=3857);ps=[0.,25.,50.,100.]
+    with raster_workspace():result=raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,field_prefix=prefix,percentiles=ps)
+    assert len(result)==len(faces)and result.columns.tolist()[-8:]==[prefix+k+f'_{i}'for i in range(1,5)for k in('percentile','percentile_value')]
+    for i,p in enumerate(ps,1):
+        assert result[prefix+f'percentile_{i}'].tolist()==[p]*len(faces)
+        column=result[prefix+f'percentile_value_{i}'];assert str(column.dtype)=='Float64'
+        assert column.tolist()==[0.]if kind=='single'else column.isna().all()
+
+@pytest.mark.parametrize('dtype',['Int64','UInt64'])
+def test_vector_multi_percentiles_native_nodata_adjacent_and_exact_extremes(tmp_path,dtype):
+    import geopandas as gpd
+    from shapely.geometry import box
+    nodata=2**63-1 if dtype=='Int64'else 2**64-1;values=np.array([[nodata,nodata-1,0,12]],dtype=dtype.lower());path=tmp_path/'native.tif'
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),4,1,1,getattr(gdal,'GDT_'+dtype));ref=osr.SpatialReference();ref.ImportFromEPSG(3857);ds.SetProjection(ref.ExportToWkt());ds.SetGeoTransform((0,1,0,1,0,-1));ds.GetRasterBand(1).WriteArray(values)
+    setter=ds.GetRasterBand(1).SetNoDataValueAsInt64 if dtype=='Int64'else ds.GetRasterBand(1).SetNoDataValueAsUInt64;setter(nodata);ds=None
+    faces=gpd.GeoDataFrame(geometry=[box(-.1,-.1,4.1,1.1)],crs=3857);ps=[0.,25.,33.3,50.,75.,100.]
+    with raster_workspace():result=raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1,percentiles=ps)
+    assert result.zonal_valid_count.tolist()==[3]and result.zonal_invalid_count.tolist()==[1]
+    for i,p in enumerate(ps,1):assert result[f'zonal_percentile_value_{i}'].tolist()==[_full_percentile_oracle(values[values!=nodata],p)]
+
+@pytest.mark.parametrize('active_geometry',[False,True])
+@pytest.mark.parametrize('key',['percentile_1','percentile_value_1','percentile_3','percentile_value_3'])
+def test_vector_multi_percentiles_all_requested_column_collisions_before_source_open(tmp_path,monkeypatch,active_geometry,key):
+    import geopandas as gpd
+    import operators.raster_compute as c
+    from shapely.geometry import box
+    faces=gpd.GeoDataFrame(geometry=[box(0,0,1,1)],crs=3857)
+    if active_geometry:faces=faces.rename_geometry('p_'+key)
+    else:faces['p_'+key]=123
+    monkeypatch.setattr(c,'_open',lambda *a:pytest.fail('column conflict opened input'))
+    with pytest.raises(ValueError,match='must not overwrite'):raster_vector_zonal_statistics(object(),faces,1,field_prefix='p_',percentiles=[0.,50.,100.])
+
+def test_vector_multi_percentiles_share_reads_sort_final_merge_handle_and_per_face_budget(tmp_path,monkeypatch):
+    import operators.raster_compute as c,geopandas as gpd
+    from shapely.geometry import box
+    from pathlib import Path
+    values=(np.arange(513*1025,dtype=float).reshape(513,1025)%997)-490;path=create_raster(tmp_path/'large.tif',values,(0,1,0,513,0,-1),'EPSG:3857')
+    faces=gpd.GeoDataFrame(geometry=[box(-.1,-.1,1025.1,513.1),box(10.1,1.1,15.9,6.9)],crs=3857)
+    blocks,sort,finish,method,budget,opened=c._blocks,np.sort,c._PercentileRuns.finish,c._PercentileRuns.values,c._disk_budget,Path.open
+    snapshots=[]
+    with raster_workspace():
+        loaded=raster_load(source_plan(path));files=set(loaded.workspace.iterdir())
+        for ps in([50.],[0.,25.,33.3,50.,75.,100.]):
+            events={'blocks':[],'sorts':[],'final':0,'handles':0,'budgets':[],'directories':[]};phase=[False]
+            def read(*a,**kw):
+                for item in blocks(*a,**kw):assert max(item[2][0].shape)<=512;events['blocks'].append((item[0],item[1],item[2][0].shape));yield item
+            def ordered(a,*args,**kw):events['sorts'].append(a.size);return sort(a,*args,**kw)
+            def finalized(self,count):
+                events['final']+=1;result=finish(self,count);phase[0]=True;return result
+            def ranked(self,count,requests):
+                assert all(not p.exists()for p in events['directories']);events['directories'].append(self.scratch[0].parent)
+                try:return method(self,count,requests)
+                finally:phase[0]=False
+            def access(self,*args,**kw):
+                if phase[0]and self.parent.name.startswith('percentile-')and args==('rb',):events['handles']+=1
+                return opened(self,*args,**kw)
+            def reserved(*a,**kw):events['budgets'].append((a[1],len(kw.get('paths',[]))));return budget(*a,**kw)
+            with monkeypatch.context()as patch:
+                patch.setattr(c,'_blocks',read);patch.setattr(np,'sort',ordered);patch.setattr(c._PercentileRuns,'finish',finalized);patch.setattr(c._PercentileRuns,'values',ranked);patch.setattr(Path,'open',access);patch.setattr(c,'_disk_budget',reserved)
+                result=raster_vector_zonal_statistics(loaded,faces,1,percentiles=ps)
+            assert events['final']==events['handles']==len(faces)
+            assert all(not p.exists()for p in events['directories'])and not c._DISK_RESERVATIONS and set(loaded.workspace.iterdir())==files
+            snapshots.append(events)
+        for key in('blocks','sorts','budgets'):assert snapshots[0][key]==snapshots[1][key]
+        assert len(snapshots[1]['blocks'])==7
+        for i,p in enumerate(ps,1):assert result.iloc[0][f'zonal_percentile_value_{i}']==pytest.approx(_full_percentile_oracle(values.ravel(),p),rel=4e-15,abs=0)
+
+def test_vector_multi_percentiles_omission_avoids_sort_and_removed_keyword_rejected(tmp_path,monkeypatch):
+    import operators.raster_compute as c,geopandas as gpd
+    from shapely.geometry import box
+    path=create_raster(tmp_path/'original.tif',np.array([[0.,2.,4.]]),(0,1,0,1,0,-1),'EPSG:3857');faces=gpd.GeoDataFrame(geometry=[box(-.1,-.1,3.1,1.1)],crs=3857)
+    monkeypatch.setattr(c,'_percentile_runs',lambda *a,**kw:pytest.fail('unrequested sort'))
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=raster_vector_zonal_statistics(source,faces,1)
+        assert len(result.columns)==9 and not any('percentile'in n for n in result.columns)
+        with pytest.raises(TypeError,match='percentile'):raster_vector_zonal_statistics(source,faces,1,percentile=50)
+
+@pytest.mark.parametrize('fault',['read','compute'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_vector_multi_percentiles_late_rank_failure_releases_private_files_and_budget(tmp_path,monkeypatch,fault,language):
+    import operators.raster_compute as c,geopandas as gpd
+    from shapely.geometry import box
+    path=create_raster(tmp_path/'late.tif',np.array([[0.,2.,4.]]),(0,1,0,1,0,-1),'EPSG:3857');before=path.read_bytes();faces=gpd.GeoDataFrame(geometry=[box(-.1,-.1,3.1,1.1)],crs=3857)
+    rank=c._percentile_ranks;calls=[]
+    def failed(count,p):
+        calls.append(p)
+        if len(calls)==3:raise OSError('third rank read')if fault=='read'else RuntimeError('third percentile failed')
+        return rank(count,p)
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));files=set(source.workspace.iterdir())
+        with monkeypatch.context()as patch:
+            patch.setattr(c,'_percentile_ranks',failed)
+            with pytest.raises(ValueError if fault=='read'else RuntimeError)as error:raster_vector_zonal_statistics(source,faces,1,percentiles=[0.,25.,50.,100.])
+        assert len(calls)==3 and set(source.workspace.iterdir())==files and not c._DISK_RESERVATIONS
+        if fault=='read':assert isinstance(error.value.__cause__,OSError)and str(error.value)==str(c._statistics_error('vector_io'))
+        else:assert str(error.value)=='third percentile failed'
+        assert raster_vector_zonal_statistics(source,faces,1,percentiles=[50.]).zonal_percentile_value_1.tolist()==[2.]
+    assert path.read_bytes()==before
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['success','invalid','late-rank'])
+def test_vector_multi_percentiles_async_complete_gpkg_and_no_failed_publication(tmp_path,monkeypatch,language,case):
+    import workflow_engine,api_server,geopandas as gpd
+    import operators.raster_compute as c
+    path=create_raster(tmp_path/'async.tif',np.array([[0.,4.,12.],[0.,4.,12.]]),(0,1,0,2,0,-1),'EPSG:3857');before=path.read_bytes();target=tmp_path/'many.gpkg';old=tmp_path/'old.gpkg';old.write_bytes(b'prior target');work=[];original=workflow_engine._execute_operator
+    def execute(name,params):
+        if name=='raster_vector_zonal_statistics':work.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
+    ps=[0.,25.,33.3,50.,75.,100.]if case!='invalid'else[50.,25.]
+    if case=='late-rank':
+        ranks=c._percentile_ranks;calls=[]
+        def fail(count,p):
+            calls.append(p)
+            if len(calls)==3:raise OSError('third rank read')
+            return ranks(count,p)
+        monkeypatch.setattr(c,'_percentile_ranks',fail)
+    tasks=[{'id':'values','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
+           {'id':'faces','operator':'load_from_wkt','depends_on':[],'params':{'wkt_list':['POLYGON ((-0.1 -0.1,3.1 -0.1,3.1 2.1,-0.1 2.1,-0.1 -0.1))'],'properties':[{'business':9}],'crs':'EPSG:3857'}},
+           {'id':'analysis','operator':'raster_vector_zonal_statistics','depends_on':['values','faces'],'params':{'input_raster':{'$ref':'values'},'input_gdf':{'$ref':'faces'},'band':1,'percentiles':ps}},
+           {'id':'save','operator':'save','depends_on':['analysis'],'params':{'input_df':{'$ref':'analysis'},'path':target.name,'connection_info':{'mount_path':str(tmp_path)},'mode':'fail'}}]
+    client=api_server.app.test_client()
+    submitted=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}},headers={'Accept-Language':language})
+    assert submitted.status_code==202,submitted.json
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        state=client.get('/api/executions/'+submitted.json['execution_id']).json
+        if state['status']in('success','failed'):break
+        time.sleep(.01)
+    assert state['status']==('success'if case=='success'else'failed'),state
+    if case=='success':
+        public=json.loads(state['all_results']['analysis']);assert len(public['features'])==1
+        assert all(public['features'][0]['properties'][f'zonal_percentile_{i}']==p for i,p in enumerate(ps,1))
+        frame=gpd.read_file(target);assert frame.business.tolist()==[9]and frame.crs.to_epsg()==3857
+        assert frame.columns.tolist()==['business',*['zonal_'+n for n in('total_count','valid_count','invalid_count','sum','min','max','mean','stddev')],*[f'zonal_{n}_{i}'for i in range(1,7)for n in('percentile','percentile_value')],'geometry']
+        for i,p in enumerate(ps,1):assert frame[f'zonal_percentile_value_{i}'].tolist()==[_full_percentile_oracle([0.,4.,12.]*2,p)]
+    else:
+        with raster_error_language(language):cause=str(c._statistics_error('percentiles'if case=='invalid'else'vector_io'))
+        assert state['error']=='任务 analysis 执行失败: '+cause and not target.exists()
+        assert not state.get('final_result')and set(state.get('all_results',{}))=={'values','faces'}
+    assert work and all(not p.exists()for p in work)and not c._DISK_RESERVATIONS and path.read_bytes()==before and old.read_bytes()==b'prior target'
+
+
+@pytest.mark.parametrize('pair',[(-np.finfo(float).max,np.finfo(float).max),(-np.nextafter(0.,1.),np.nextafter(0.,1.)),(0.,np.nextafter(0.,1.))])
+def test_vector_multi_percentiles_extreme_batch_is_exact_native_evidence(tmp_path,pair):
+    import geopandas as gpd
+    from shapely.geometry import box
+    ps=[0.,float(np.nextafter(0.,1.)),33.3,50.,99.,100.];path=create_raster(tmp_path/'extremes.tif',np.array([pair]),(0,1,0,1,0,-1),'EPSG:3857')
+    faces=gpd.GeoDataFrame(geometry=[box(-.1,-.1,2.1,1.1)],crs=3857)
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=raster_vector_zonal_statistics(source,faces,1,percentiles=ps)
+        for i,p in enumerate(ps,1):assert result[f'zonal_percentile_value_{i}'].tolist()==[_full_percentile_oracle(pair,p)]

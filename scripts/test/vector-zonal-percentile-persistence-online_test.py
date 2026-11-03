@@ -15,7 +15,7 @@ def expectations():
     for name,case in m.fixture.CASES.items():
         props={'class_value':7} if case[1] is None else m.fixture.properties()[0]
         stats=dict(zip(m.fixture.BASE_COLUMNS,[3,3,0,6.,0.,4.,2.,(8/3)**.5]))
-        if case[2] is not None:stats.update(percentile=float(case[2]),percentile_value=4*float(case[2])/100)
+        if case[2] is not None:stats.update(percentile_1=float(case[2]),percentile_value_1=4*float(case[2])/100)
         result[name]=[] if name=='empty-zones.gpkg' else [{'properties':{**props,**{case[4]+k:v for k,v in stats.items()}},'geometry_wkb':''}]
     return result
 

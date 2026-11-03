@@ -1699,8 +1699,8 @@ _ZONAL_WEIGHT_MESSAGES = {
                        'Weighted population standard deviation requires explicit weights_raster and weights_band'),
     'numeric': ('栅格分区加权统计结果超出有限Float64范围',
                 'Weighted zonal statistics exceed the finite Float64 output range'),
-    'vector_percentile': ('矢量面分区统计的权重与percentile参数不能同时提供',
-                          'Vector zonal statistics weights and percentile cannot be provided together'),
+    'vector_percentile': ('矢量面分区统计的权重与percentiles参数不能同时提供',
+                          'Vector zonal statistics weights and percentiles cannot be provided together'),
     'vector_grid': ('权重栅格必须与数值栅格具有相同尺寸、完整网格及语义等价CRS',
                     'The weight raster must match the value raster in dimensions, complete grid and equivalent CRS'),
     'vector_band': ('矢量面分区权重必须显式选择有效的一基数据波段',
@@ -2029,7 +2029,7 @@ _VECTOR_AREA_MESSAGES = {
     'stddev_area': ('面积加权总体标准差须显式启用include_area_weighted',
                     'Area-weighted population standard deviation requires include_area_weighted enabled'),
     'conflict': ('矢量面分区面积加权与百分位、外部权重及加权标准差互斥',
-                 'Vector zonal area weighting is mutually exclusive with percentile, external weights and weighted standard deviation'),
+                 'Vector zonal area weighting is mutually exclusive with percentiles, external weights and weighted standard deviation'),
     'units': ('矢量面分区面积加权要求已知线性单位的二维非复合投影CRS，请显式重投影',
               'Vector zonal area weighting requires a two-dimensional non-compound projected CRS with known linear units; reproject explicitly'),
     'geometry': ('矢量面分区面积交叠几何无法以有限有效坐标表示',
@@ -2123,7 +2123,7 @@ class _VectorAreaStatistics:
 _VECTOR_ZONAL_ID_UNSET = object()
 _VECTOR_FREQUENCY_MESSAGES = {
     'method': ('矢量分区统计方法必须为summary或class_frequency', 'Vector zonal statistics method must be summary or class_frequency'),
-    'conflict': ('矢量分类频数不能提供百分位、外部权重或启用加权／面积模式', 'Vector class frequency cannot accept percentile, external weights or enabled weighted/area modes'),
+    'conflict': ('矢量分类频数不能提供百分位、外部权重或启用加权／面积模式', 'Vector class frequency cannot accept percentiles, external weights or enabled weighted/area modes'),
     'summary_id': ('summary方法不能提供id_field', 'The summary method cannot accept id_field'),
     'id': ('分类频数须显式选择现有非几何、非空唯一标量面编号列', 'Class frequency requires an explicit existing non-geometry unique non-null scalar zone identifier column'),
     'geometry': ('分类频数要求唯一几何列及有效非空有限二维面，允许空批', 'Class frequency requires one geometry column and valid non-empty finite XY polygons; empty batches are allowed'),
@@ -2243,7 +2243,7 @@ def _vector_zonal_class_frequency(input_raster, input_gdf, band, all_touched, fi
         dataset = None
 
 
-def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=False, field_prefix='zonal_', percentile=_PERCENTILE_UNSET,
+def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=False, field_prefix='zonal_', percentiles=_PERCENTILE_UNSET,
                                    *, weights_raster=_ZONAL_WEIGHTS_UNSET, weights_band=_ZONAL_WEIGHTS_UNSET,
                                    include_weighted_stddev=False, include_area_weighted=False, include_area_weighted_stddev=False,
                                    method='summary', id_field=_VECTOR_ZONAL_ID_UNSET):
@@ -2256,7 +2256,7 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
     if not isinstance(method, str) or method not in ('summary', 'class_frequency'):
         raise _vector_frequency_error('method')
     if method == 'class_frequency':
-        if (percentile is not _PERCENTILE_UNSET or weights_raster is not _ZONAL_WEIGHTS_UNSET
+        if (percentiles is not _PERCENTILE_UNSET or weights_raster is not _ZONAL_WEIGHTS_UNSET
                 or weights_band is not _ZONAL_WEIGHTS_UNSET or include_weighted_stddev
                 or include_area_weighted or include_area_weighted_stddev):
             raise _vector_frequency_error('conflict')
@@ -2265,16 +2265,16 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
         raise _vector_frequency_error('summary_id')
     if include_area_weighted_stddev and not include_area_weighted:
         raise _vector_area_error('stddev_area')
-    if include_area_weighted and (percentile is not _PERCENTILE_UNSET
+    if include_area_weighted and (percentiles is not _PERCENTILE_UNSET
             or weights_raster is not _ZONAL_WEIGHTS_UNSET or weights_band is not _ZONAL_WEIGHTS_UNSET
             or include_weighted_stddev):
         raise _vector_area_error('conflict')
-    requested = percentile is not _PERCENTILE_UNSET
+    requested = percentiles is not _PERCENTILE_UNSET
     weighted = _zonal_weights_requested(weights_raster, weights_band, requested, _vector_zonal_weight_error)
     if include_weighted_stddev and not weighted:
         raise _vector_zonal_weight_error('stddev_weights')
     if requested:
-        percentile = _percentile_parameter(percentile)
+        percentiles = _statistics_percentiles(percentiles)
     geometries = _polygon_geometries(input_gdf)
     if type(all_touched) is not bool:
         raise ValueError('all_touched must be a boolean')
@@ -2283,7 +2283,7 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
     names = [field_prefix+name for name in ('total_count', 'valid_count', 'invalid_count',
                                           'sum', 'min', 'max', 'mean', 'stddev')]
     if requested:
-        names.extend(field_prefix+name for name in ('percentile', 'percentile_value'))
+        names.extend(field_prefix+name for index in range(1,len(percentiles)+1) for name in (f'percentile_{index}',f'percentile_value_{index}'))
     if weighted:
         names.extend(field_prefix+name for name in ('weight_sum', 'weighted_sum', 'weighted_mean'))
         if include_weighted_stddev:
@@ -2334,7 +2334,8 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
                 if weighted:
                     row.extend(weighted_statistics.summary(row, error=_vector_zonal_weight_error))
                 if requested:
-                    row.extend([percentile, runs.value(statistics.count, percentile) if runs is not None else None])
+                    values = runs.values(statistics.count, percentiles) if runs is not None else [None]*len(percentiles)
+                    row.extend(value for pair in zip(percentiles,values) for value in pair)
                 if area_statistics is not None:
                     row.extend(area_statistics.summary(area_scale))
                 rows.append(row)
@@ -2448,9 +2449,6 @@ class _PercentileRuns:
                     raise OSError('Incomplete private percentile rank read')
                 results.append(float(_focal_linear_values(values[:1], values[-1:], weight)[0]))
         return results
-
-    def value(self, count, percentile):
-        return self.values(count, [percentile])[0]
 
 
 def _zonal_percentiles(runs, statistics, percentiles):
@@ -2689,8 +2687,6 @@ def _numeric_output(grid, count, *, size=None):
 _FOCAL_MESSAGES = {
     'method': ('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean、weighted_stddev或weighted_sum',
                'method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean, weighted_stddev or weighted_sum'),
-    'percentile': ('percentile必须为0至100之间的有限数值，且不能为布尔值',
-                   'percentile must be a finite number from 0 to 100, excluding booleans'),
     'percentiles': ('percentiles必须为非空、严格递增且不重复的0至100有限非布尔数值列表',
                     'percentiles must be a nonempty strictly increasing list of distinct finite non-boolean numbers from 0 to 100'),
     'unused': ('只有method=percentile时才能提供percentiles参数',
@@ -2729,13 +2725,6 @@ _FOCAL_WINDOW_UNSET = object()
 
 def _focal_error(code):
     return ValueError(_FOCAL_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
-
-
-def _percentile_parameter(value):
-    if (isinstance(value, (bool, np.bool_)) or not isinstance(value, Real)
-            or not 0 <= value <= 100 or not math.isfinite(float(value))):
-        raise _focal_error('percentile')
-    return float(value)
 
 
 def _percentile_ranks(count, percentile):
@@ -6306,7 +6295,7 @@ _SPECS = [
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('method', 'str', 'summary保留原数值统计；class_frequency按分区／类别计数，以有效分类数为比例分母，全无效分区保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对显式提供；有限非负，缺失权重不补零，与percentiles互斥', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；追加权重总和、加权求和与加权均值，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用加权总体标准差，须提供权重；总体分母，全1沿用原stddev，全零为null，原统计保持', False, False), _param('percentiles', 'list[float]', '可选非空严格递增且不重复的0至100有限百分位列表；每区全量固定线性插值、共享一次排序归并，50为中位数；按顺序追加百分位与结果列对，未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_type', 'str', 'square_pixels为像元方窗，circle_metres为米制圆窗；保留原十二方法，圆窗仅九种非加权方法', 'square_pixels', False, enum=['square_pixels', 'circle_metres']), _param('window_size', 'int', 'square_pixels时必须显式提供以像元为单位的正方形窗口边长3或5；圆窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['square_pixels']}}), _param('radius_metres', 'float', 'circle_metres时必须显式提供有限正米制半径；中心距离等于半径纳入、不设epsilon，候选外接窗口最多5×5；方窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['circle_metres']}}), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）/weighted_stddev（非负矩阵加权总体标准差）/weighted_sum（非负矩阵加权求和；不归一化）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev', 'weighted_sum']), _param('percentiles', 'list[float]', 'method=percentile时必须显式指定非空严格递增且不重复的0至100有限百分位列表；固定线性插值，50与median一致；按顺序输出多波段，其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean/weighted_stddev/weighted_sum必填：同窗口3×3或5×5有限非负二维权重，至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean', 'weighted_stddev', 'weighted_sum']}})], 'raster', ['read']),
-    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('method', 'str', 'summary保持原统计；class_frequency按面／类别展开并保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('id_field', 'str', 'class_frequency须显式选择现有非空唯一面编号；保留原类型，不从索引推断', None, False).model_copy(update={'show_when': {'method': ['class_frequency']}}), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对提供且与percentile互斥；沿原面覆盖，重叠面独立统计，缺失权重不补零', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；有限非负，追加三项加权统计，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用逐面加权总体标准差，须提供权重；全1沿用原stddev，全零null，原统计和重叠面独立规则保持', False, False), _param('include_area_weighted', 'bool', '显式追加覆盖平方米、有效覆盖平方米及面积加权均值；原八列保持，新面积独立于all_touched；与外部权重、百分位及加权标准差互斥', False, False), _param('include_area_weighted_stddev', 'bool', '仅面积模式显式启用总体标准差；正有效面积常量0、无有效面积null，单位沿数值，保留原十一列及重叠独立规则', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
+    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('method', 'str', 'summary保持原统计；class_frequency按面／类别展开并保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('id_field', 'str', 'class_frequency须显式选择现有非空唯一面编号；保留原类型，不从索引推断', None, False).model_copy(update={'show_when': {'method': ['class_frequency']}}), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对提供且与percentiles互斥；沿原面覆盖，重叠面独立统计，缺失权重不补零', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；有限非负，追加三项加权统计，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用逐面加权总体标准差，须提供权重；全1沿用原stddev，全零null，原统计和重叠面独立规则保持', False, False), _param('include_area_weighted', 'bool', '显式追加覆盖平方米、有效覆盖平方米及面积加权均值；原八列保持，新面积独立于all_touched；与外部权重、百分位及加权标准差互斥', False, False), _param('include_area_weighted_stddev', 'bool', '仅面积模式显式启用总体标准差；正有效面积常量0、无有效面积null，单位沿数值，保留原十一列及重叠独立规则', False, False), _param('percentiles', 'list[float]', '可选非空严格递增且不重复的0至100有限百分位列表；逐面固定线性插值、共享一次读取排序归并，50为中位数；按顺序追加百分位与结果列对，未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
     (raster_sample_points, OperatorCategory.RASTER_STATISTICS, '点位栅格采样', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同CRS的有效二维Point，保留全部点、几何及属性；新增列冲突拒绝', role='input'), _param('band', 'int', '显式一基数据波段；sample_status区分ok／outside／nodata'), _param('method', 'str', 'cell取所在像元原值；bilinear按像元中心插值，正权重支持须全部有效，不补值或重新归一化', 'cell', False, enum=['cell', 'bilinear'])], 'GeoDataFrame', ['read']),
     (raster_sample_lines, OperatorCategory.RASTER_STATISTICS, '沿线栅格采样', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同投影CRS的有效二维LineString；保留显式编号和全部属性', role='input'), _param('band', 'int', '显式一基数据波段；沿既有原值域和有效性规则'), _param('id_field', 'str', '显式现有非几何非空唯一标量编号字段，不用索引或FID推断'), _param('spacing_metres', 'float', '显式有限正米制间距，保留起终点；结果追加distance_m及采样值／状态'), _param('method', 'str', '复用cell原像元值或bilinear中心插值；无效和范围外采样点保留', 'cell', False, enum=['cell', 'bilinear'])], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),

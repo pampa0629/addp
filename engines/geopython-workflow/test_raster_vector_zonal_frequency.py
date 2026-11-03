@@ -88,8 +88,8 @@ def test_vector_zonal_frequency_parameters_and_id_before_io(tmp_path,monkeypatch
     gdf=zones([box(100,191,108,200),box(100,191,106,200)]);kwargs={'method':'class_frequency','id_field':'zone'};code='conflict'
     if case=='method':kwargs['method']='bad';code='method'
     elif case=='summary_id':kwargs['method']='summary';code='summary_id'
-    elif case=='percentile':kwargs['percentile']=50
-    elif case=='percentile_null':kwargs['percentile']=None
+    elif case=='percentile':kwargs['percentiles']=[50]
+    elif case=='percentile_null':kwargs['percentiles']=None
     elif case=='weights':kwargs['weights_raster']=object()
     elif case=='weights_null':kwargs['weights_raster']=None
     elif case=='weights_band':kwargs['weights_band']=1
@@ -153,7 +153,7 @@ def test_vector_zonal_frequency_double_axis_blocks_raw_values_and_shared_coverag
     monkeypatch.setattr(c,'_blocks',bounded);got=result(path,gdf,band=2);valid=a!=-9999;counts={code:int(((a==code)&valid).sum())for code in(-2,-1,0,1)};assert got['zonal_count'].tolist()==list(counts.values())
     assert max(shape[0]for _,_,shape in calls)<=512 and max(shape[1]for _,_,shape in calls)<=512 and {x for x,_,_ in calls}=={0,512}and {y for _,y,_ in calls}=={0,512}
 
-@pytest.mark.parametrize('options',[{}, {'percentile':50}, {'weights':True}, {'weights':True,'include_weighted_stddev':True}, {'include_area_weighted':True}, {'include_area_weighted':True,'include_area_weighted_stddev':True}])
+@pytest.mark.parametrize('options',[{}, {'percentiles':[50]}, {'weights':True}, {'weights':True,'include_weighted_stddev':True}, {'include_area_weighted':True}, {'include_area_weighted':True,'include_area_weighted_stddev':True}])
 def test_vector_zonal_frequency_summary_default_remains_exact(tmp_path,options):
     a=np.array([[1,2,4],[3,-9999,0],[2,4,1]],float);p=create(tmp_path/'v.tif',a);w=create(tmp_path/'w.tif',np.ones_like(a));gdf=zones([polygon(GRID,.1,.1,2.9,2.9)]);kwargs=dict(options)
     with c.raster_workspace():

@@ -27,7 +27,7 @@ obj, array, positive, SuiteError = base.obj, base.array, base.positive, base.Sui
 SUITE, FAILURES = fixture.SUITE, fixture.FAILURES
 SubmittedLanguageClient, BudgetClient = base.SubmittedLanguageClient, base.BudgetClient
 encoded, immutable, archive_response = base.encoded, base.immutable, base.archive_response
-MESSAGES = {name: base.PERCENTILE_MESSAGES for name in FAILURES[:7]}
+MESSAGES = {name: ('percentiles必须为非空、严格递增且不重复的列表，各项为0至100之间的有限实数且不能为布尔值','percentiles must be a nonempty, strictly increasing list without duplicates of finite real numbers from 0 to 100, excluding booleans') for name in FAILURES[:7]}
 MESSAGES.update({name: ('band must be a valid one-based index',)*2 for name in FAILURES if name.startswith('band_')})
 MESSAGES.update({'complex': ('Complex-valued bands are not supported by numeric analysis',)*2,
     'alpha': ('Vector zonal statistics require a data band, not alpha',)*2,
@@ -60,8 +60,8 @@ def definition(sources,parent,name,*,invalid=None,language='zh-cn'):
             {'id':'faces','operator':'raster_polygonize','depends_on':['classes'],'params':{'input_raster':{'$ref':'classes'},'band':1,'connectivity':4}}])
     else:tasks.append({'id':'faces','operator':'load','depends_on':[],'params':{'locator':sources[z]}})
     params={'input_raster':{'$ref':'values'},'input_gdf':{'$ref':'faces'},'band':2,'all_touched':touched,'field_prefix':prefix}
-    if p is not None:params['percentile']=p
-    if invalid in FAILURES[:7]:params['percentile']={'percentile_null':None,'percentile_boolean':True,'percentile_string':'25','percentile_array':[25],'percentile_object':{'p':25},'percentile_low':-1,'percentile_high':101}[invalid]
+    if p is not None:params['percentiles']=[p]
+    if invalid in FAILURES[:7]:params['percentiles']={'percentile_null':None,'percentile_boolean':[True],'percentile_string':['25'],'percentile_array':[[25]],'percentile_object':[{'p':25}],'percentile_low':[-1],'percentile_high':[101]}[invalid]
     if invalid and invalid.startswith('band_'):params['band']={'zero':0,'high':99,'boolean':True,'string':'2'}[invalid.split('_')[1]]
     if invalid=='alpha':params['band']=3
     if invalid in ('touched_numeric','touched_null'):params['all_touched']=1 if invalid=='touched_numeric' else None

@@ -28,7 +28,7 @@ SUITE, FAILURES = fixture.SUITE, fixture.FAILURES
 SubmittedLanguageClient, BudgetClient = base.SubmittedLanguageClient, base.BudgetClient
 encoded, immutable, archive_response = base.encoded, base.immutable, base.archive_response
 MESSAGES={name:('include_area_weighted必须是布尔值','include_area_weighted must be a boolean')for name in FAILURES[:8]}
-MESSAGES.update({name:('矢量面分区面积加权与百分位、外部权重及加权标准差互斥','Vector zonal area weighting is mutually exclusive with percentile, external weights and weighted standard deviation')for name in FAILURES[8:16]})
+MESSAGES.update({name:('矢量面分区面积加权与百分位、外部权重及加权标准差互斥','Vector zonal area weighting is mutually exclusive with percentiles, external weights and weighted standard deviation')for name in FAILURES[8:16]})
 MESSAGES.update({name:('band must be a valid one-based index',)*2 for name in FAILURES[16:20]})
 MESSAGES['values_alpha']=('Vector zonal statistics require a data band, not alpha',)*2
 MESSAGES['values_complex']=('Complex-valued bands are not supported by numeric analysis',)*2
@@ -73,7 +73,7 @@ def definition(sources,parent,name,*,invalid=None,language='zh-cn'):
     params={'input_raster':{'$ref':value_ref},'input_gdf':{'$ref':'faces'},'band':band,'all_touched':touched,'field_prefix':prefix}
     if name!='control-default.gpkg'or invalid:params['include_area_weighted']=True if invalid else fixture.enabled(name)
     if invalid in FAILURES[:8]:params['include_area_weighted']=dict(flag_null=None,flag_zero=0,flag_one=1,flag_fraction=.5,flag_string_true='true',flag_string_false='false',flag_list=[],flag_object={})[invalid]
-    if invalid in('percentile_null','percentile_value'):params['percentile']=None if invalid=='percentile_null'else 50
+    if invalid in('percentile_null','percentile_value'):params['percentiles']=None if invalid=='percentile_null'else [50]
     if invalid in('raster_null','raster_reference'):params['weights_raster']=None if invalid=='raster_null'else{'$ref':'values'}
     if invalid in('band_null','band_value'):params['weights_band']=None if invalid=='band_null'else 2
     if invalid=='weight_pair':params.update(weights_raster={'$ref':'values'},weights_band=2)

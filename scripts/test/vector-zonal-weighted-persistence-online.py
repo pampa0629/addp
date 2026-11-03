@@ -29,7 +29,7 @@ SubmittedLanguageClient, BudgetClient = base.SubmittedLanguageClient, base.Budge
 encoded, immutable, archive_response = base.encoded, base.immutable, base.archive_response
 MESSAGES={}
 MESSAGES.update({name:('weights_raster和weights_band必须同时显式提供且不能为null','weights_raster and weights_band must be explicitly provided together and cannot be null')for name in FAILURES[:5]})
-MESSAGES['percentile_conflict']=('矢量面分区统计的权重与percentile参数不能同时提供','Vector zonal statistics weights and percentile cannot be provided together')
+MESSAGES['percentile_conflict']=('矢量面分区统计的权重与percentiles参数不能同时提供','Vector zonal statistics weights and percentiles cannot be provided together')
 MESSAGES['negative_weight']=('面覆盖且数值有效的位置的权重必须非负','Weights at valid values covered by a zone must be nonnegative')
 MESSAGES.update({name:('面覆盖且数值有效的位置必须具有有效且有限的权重，不能补零','Every valid value covered by a zone must have a valid finite weight; missing weights cannot be filled with zero')for name in FAILURES[7:12]})
 for role in('values','weights'):
@@ -78,7 +78,7 @@ def definition(sources,parent,name,*,invalid=None,language='zh-cn'):
     if invalid=='only_band':params.pop('weights_raster')
     if invalid in('raster_null','both_null'):params['weights_raster']=None
     if invalid in('band_null','both_null'):params['weights_band']=None
-    if invalid=='percentile_conflict':params['percentile']=50
+    if invalid=='percentile_conflict':params['percentiles']=[50]
     if invalid and '_band_'in invalid:
         role,suffix=invalid.split('_band_');params['band'if role=='values'else'weights_band']={'zero':0,'high':99,'boolean':True,'string':'2'}[suffix]
     if invalid=='values_alpha':params['band']=3

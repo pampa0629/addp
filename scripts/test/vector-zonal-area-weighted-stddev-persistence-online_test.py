@@ -195,7 +195,7 @@ class ZonalAreaWeightedStddevWorkflowTest(unittest.TestCase):
         for problem in m.FAILURES[8:16]:
             params=m.definition(sources,'parent','area-center.gpkg',invalid=problem)['tasks'][-2]['params']
             self.assertIs(params['include_area_weighted'],True)
-            self.assertTrue(any(k in params for k in('percentile','weights_raster','weights_band','include_weighted_stddev')))
+            self.assertTrue(any(k in params for k in('percentiles','weights_raster','weights_band','include_weighted_stddev')))
 
     def test_preview_crs_cannot_be_missing_or_foreign(self):
         name='area-center.gpkg';good=Client().preview(name);m.validate_preview(good,expectations()[name],name)

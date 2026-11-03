@@ -91,7 +91,7 @@ def pixel_faces():
 
 
 def properties():
-    return [{'source_row':i+1,'label':name,'occupied_mean':-i,'p_percentile':100+i,'v_percentile_value':200+i}
+    return [{'source_row':i+1,'label':name,'occupied_mean':-i,'p_percentile_1':100+i,'v_percentile_value_1':200+i}
         for i,name in enumerate(('whole-with-hole','overlap','multipart','all-invalid','outside','thin','zero','duplicate','partial-outside'))]
 
 def source_arrays(name):
@@ -167,7 +167,7 @@ def summary(name,covered,p):
         if count:
             position=(count-1)*Fraction(float(p))/100;low=position.numerator//position.denominator;weight=position-low
             value=float(Fraction(samples[low])*(1-weight)+Fraction(samples[low+bool(weight)])*weight)
-        row.update(percentile=float(p),percentile_value=value)
+        row.update(percentile_1=float(p),percentile_value_1=value)
     return row
 
 def class_rules():return [{'min':-100,'max':512,'class':-3},{'min':512,'max':1024,'class':0},{'min':1024,'max':2048,'class':7}]
@@ -195,7 +195,7 @@ def classified_rows():
 def schema(name):
     _,vector,p,_,prefix=CASES[name]
     attrs=[('class_value','Integer64')] if vector is None else [(key,'String' if key=='label' else 'Integer') for key in properties()[0]]
-    return attrs+[(prefix+key,'Integer64' if i<3 else 'Real') for i,key in enumerate((*BASE_COLUMNS,*(('percentile','percentile_value') if p is not None else ())))]
+    return attrs+[(prefix+key,'Integer64' if i<3 else 'Real') for i,key in enumerate((*BASE_COLUMNS,*(('percentile_1','percentile_value_1') if p is not None else ())))]
 
 def oracle():
     import numpy as np
@@ -222,7 +222,7 @@ def oracle():
 def validate_properties(actual,wanted,name):
     if set(actual)!=set(wanted):raise FixtureError('complete properties/schema differ')
     prefix=CASES[name][4];p=CASES[name][2]
-    numeric={prefix+k:k for k in (*BASE_COLUMNS,'percentile','percentile_value')}
+    numeric={prefix+k:k for k in (*BASE_COLUMNS,'percentile_1','percentile_value_1')}
     for key,target in wanted.items():
         value=actual[key];stat=numeric.get(key)
         if target is None:
@@ -230,9 +230,9 @@ def validate_properties(actual,wanted,name):
         elif stat is None or stat in BASE_COLUMNS[:3]:
             if type(value)!=type(target) or value!=target:raise FixtureError('original property or exact count differs')
         elif type(value) not in (int,float) or not math.isfinite(value):raise FixtureError('nonnumeric or nonfinite statistic')
-        elif stat in ('percentile','min','max') or (stat=='percentile_value' and (target==0 or p in (0,50,100))):
+        elif stat in ('percentile_1','min','max') or (stat=='percentile_value_1' and (target==0 or p in (0,50,100))):
             if value!=target:raise FixtureError('exact percentile or endpoint differs')
-        elif not math.isclose(value,target,rel_tol=4e-15 if stat=='percentile_value' else 1e-12,abs_tol=0. if stat=='percentile_value' else 1e-12):raise FixtureError('independent complete statistic differs')
+        elif not math.isclose(value,target,rel_tol=4e-15 if stat=='percentile_value_1' else 1e-12,abs_tol=0. if stat=='percentile_value_1' else 1e-12):raise FixtureError('independent complete statistic differs')
 
 def verify_vector(path,expected,expected_schema,crs_code,*,name=None,ordered=True):
     from osgeo import ogr,osr

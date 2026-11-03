@@ -41,11 +41,11 @@ def test_vector_zonal_percentile_sixteen_real_gpkgs_complete_independent_oracle_
     for name in f.CASES:
         m.validate_preview(previews[name],expected[name],name)
         assert (tmp_path/archive[name]['path']).read_bytes()==(root/'outputs'/name).read_bytes()
-    assert expected['empty-zones.gpkg']==[] and all(r['properties']['zonal_percentile_value'] is None for r in expected['invalid-values.gpkg'])
-    assert expected['p50-odd.gpkg'][0]['properties']['zonal_percentile_value']==0.
-    assert expected['p50-even.gpkg'][0]['properties']['zonal_percentile_value']==2.5
+    assert expected['empty-zones.gpkg']==[] and all(r['properties']['zonal_percentile_value_1'] is None for r in expected['invalid-values.gpkg'])
+    assert expected['p50-odd.gpkg'][0]['properties']['zonal_percentile_value_1']==0.
+    assert expected['p50-even.gpkg'][0]['properties']['zonal_percentile_value_1']==2.5
     assert expected['p33-touched.gpkg'][5]['properties']['zonal_total_count']>0 and expected['p33-center.gpkg'][5]['properties']['zonal_total_count']==0
-    assert expected['p25.gpkg'][6]['properties']['zonal_percentile_value']==0.
+    assert expected['p25.gpkg'][6]['properties']['zonal_percentile_value_1']==0.
 
 @pytest.mark.parametrize('problem',f.FAILURES)
 @pytest.mark.parametrize('language',['zh-cn','en'])
@@ -80,10 +80,10 @@ def test_vector_zonal_percentile_real_physical_corruption_is_rejected(vector_zon
             assert layer.CreateField(ogr.FieldDefn('unexpected',ogr.OFTString))==ogr.OGRERR_NONE
         else:
             feature=layer.GetNextFeature();assert feature is not None
-            if fault in ('percentile','one-ulp'):feature.SetField('zonal_percentile_value',3.5 if fault=='percentile' else math.nextafter(2.5,math.inf))
+            if fault in ('percentile','one-ulp'):feature.SetField('zonal_percentile_value_1',3.5 if fault=='percentile' else math.nextafter(2.5,math.inf))
             elif fault=='geometry':feature.SetGeometry(ogr.CreateGeometryFromWkt('POLYGON ((0 0,1 0,1 1,0 0))'))
             elif fault=='count':feature.SetField('zonal_valid_count',99)
-            elif fault=='null':feature.SetFieldNull('zonal_percentile_value')
+            elif fault=='null':feature.SetFieldNull('zonal_percentile_value_1')
             else:feature.SetField('label','changed')
             assert layer.SetFeature(feature)==ogr.OGRERR_NONE
             feature=None
