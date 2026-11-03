@@ -997,3 +997,25 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 初轮HTTP runner因离线TLS夹具直接调用命令内核、无新增实例方法而失败；已将捕获实现收敛为内核独立函数，保留原TLS夹具及产品TLS，最终37项恢复通过。HTTP资源错误替身只同步新帧格式，保留原“不读取重试／不忽略du失败”断言。两组runner沿原Platform生命周期自动发现，登记检查实际通过，无需新增workflow或旁路入口。
 
 日志为`/tmp/addp-p19-volume-checkpoints-{controlled-red,directed,trace-runner,http-runner}-20261103.log`（0600），旧源码与规范快照在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-volume-checkpoints-before-20261103-s3m9sy6q/`（0700／0600）。最终补丁／输入摘要及日志哈希在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-volume-checkpoints-delivery-20261103-9p0480cu/`。本批7个自有路径本地落地，未推送，避免本轮额外触发基线Agent镜像构建；自然Linux新版本和真实超时残片尚未运行验证，不把本地诊断通过当作四秒性能问题已解决。上一窗口失败及零残留清理结论保持，原4秒、8 CPU／12 GiB、4 GiB停止线、最长五秒开始间隔与清理期限均不变；没有新增Docker请求、容器、线程、探针、/proc读取或跨VM校时。
+
+
+<a id="http-volume-checkpoints-natural-linux-20261103"></a>
+
+## 2026-11-03 卷测量检查点自然Linux分项通过（整作业取消，真实超时未验）
+
+本轮仅手动核对后续自然CI。上一专题的“本地落地，未推送”保留为当时交付状态；随后只读核验远端main已包含`b0420db65a0c817697255d19c4ba3b1914e19703`，本轮没有执行推送、手工派发或重跑。较早排队／运行中状态不计通过，以下以实际原始日志补齐新版本确定性证据。
+
+自然push／main、attempt 1的[Platform consistency作业125684763917](https://github.com/pampa0629/addp/actions/runs/41565147207/job/125684763917)实际checkout为`dfeff7c9b49cea102d0770e9956f59402196fb99`。作业北京时间10:35:19启动，11:35:39最终cancelled；原始完整日志确认本专项子Make此前已成功退出，不能因后续取消抹去已完成分项，也不能将分项成功写为整作业通过。
+
+| 实际标准入口／检查 | 原始日志及通过范围 |
+| --- | --- |
+| `make test-monitor-http-local-runner` | 10:40:21，37项／2.669秒，`OK`；两项JS语法、HTTP Online登记及System身份Go子门禁完成，10:41:43退出该子Make |
+| HTTP离线证书T1 | OpenSSL3.0.13，35条命令／2.395283秒，材料和输出峰值127027字节，4次预期拒绝，`cleanup_removed=true`；仅临时证书验证，无正式产品环境 |
+| `make test-monitor-traces-local-runner` | 10:41:48，163项／4.915秒，`OK`；包含9项新增卷检查点回归；两项JS语法、Online CI登记及System身份Go子门禁完成，10:42:07退出该子Make |
+| 整个作业／workflow | 该命名作业后续取消，不计整体通过，不调查无关检查或取消原因。另一作业125683681659元数据success，但两次原始日志读取失败，本轮不使用其元数据扩大本专项通过结论 |
+
+固定提交的Make调用链`test-platform → test-dev-lifecycle → test-infra-runtime-log-lifecycle`、原入口内容及日志嵌套顺序／退出边界一致。逐字节比较两组runner实现／单元／Online／登记测试8个Python路径及HTTP页面脚本共9项：发布版本`b0420db65`、实际CI提交`dfeff7c9b`和本次工作区均一致；源码及输入摘要绑定本次证据，不仅凭相同测试数量认定版本。
+
+原始日志743768字节，SHA256=`5e5cb5b281353b93e61c17239078dcb8371921415c8aff575172de7e64b3f81b`，位于`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-checkpoints-ci-read-20261103-5aq66577/125684763917.log`；同目录source-audit.json及receipt记录固定源码与作业元数据，目录0700、文件0600。失败的另一作业日志请求没有冒充成功归档。
+
+至此新检查点有本地及自然Linux确定性通过证据，真实卷测量超时的残片尚未运行采集，不能宣称已定位CLI／daemon／卷扫描根因或解决四秒性能问题。固定92309920b本地窗口失败与零残留清理结论不变；正式Agent/Copilot构建、真实密码/MFA、采集/API、页面、停源及注销闭环仍未验收，停源历史读取另批。当前保持部分实现／部分验收。本轮只更新证据与索引，不修改产品、预算或取证实现，不手动重跑、新开本地窗口或运行Hosted／容量／定时。

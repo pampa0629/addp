@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 17 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 51 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 52 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -833,3 +833,10 @@ System 从已确认部署来源项目派生只读 `scope`，在计数与分页�
 现有 Hosted Console 适配改为分别核对两来源、禁止跨来源摘要，并保留每个引擎的全部专业指标、趋势、重新载入及负向身份检查；共享验证函数改为按对象提供指标目录，消费处同步更新。`make test-node-metrics-online-runner` 最终 173 项及身份 Go 夹具通过。本机默认 OpenSSL 4.1 缺少默认配置，指定已有配置后旧证书生成又缺 AKI；最终仅为本次标准命令显式使用已安装 OpenSSL 3.6.4 与其配置，不修改系统设置、不放宽 TLS、不修改该无关夹具。原失败分别保留，不计通过。日志为 `/tmp/addp-engine-scope-{system-go-final,postgres-repository,postgres-api,unit-final,browser-final,auto-filter,online-runner-openssl3,registration,build-final,swagger-check-final}.log`。
 
 本批未触发或轮询 CI／Hosted，无定时任务。个人服务未重启，需用户执行 `./scripts/dev/restart.sh -system -monitor` 后复验真实来源页签、卡片、即时搜索及详情返回；本地测试不能替代该运行验收。
+
+
+### 2026-11-03 卷测量检查点自然Linux分项通过（整作业取消，真实超时未验）
+
+[完整记录、实际子Make及固定来源](MonitorHTTP质量与采样历史证据.md#http-volume-checkpoints-natural-linux-20261103)
+
+b0420db65已随共享main发布，固定dfeff7c9b自然Linux原始日志确认HTTP37项、Trace163项及JS／身份／登记子门禁实际通过，9项专项来源一致。整作业后续取消，不计整体通过；真实超时检查点、性能根因与正式Agent/Copilot页面闭环仍未验收，本轮未触发构建或新窗口。
