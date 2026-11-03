@@ -10,11 +10,15 @@ Service SQL 命名参数（2026-11-04，历史 v35）：该阶段领域报告为
 
 同轮复用当前浏览器本人 #31（管理员，Tenant1），在既有 MySQL Persons 上新建私有参数服务 #8，限定必填 string 参数 `minimum_id`：三阶段各两页及另一参数值的 JSON／CSV，独立审计 46 次实际查询响应、9 份五行 CSV、24 次参数错误 400、4 次方式撤销 409，全部 `no-store`；参数实际过滤、旧游标绑定和默认恢复逐字节相等均通过。#8 最终 inactive/version14、私有、空选择；临时策略 revoked/version10，原服务 #6/#7、角色及授权版本不变。两次临时审计失败均保留，分别修正抑制字段可省略／观测时间不能视作资格变更，以及 JSON 对象键序不能视作配置改变；不修改产品契约。最终响应头仅对两次角色观察间完整的46次请求认定，较早网络事件已被浏览器缓冲淘汰，不追认失败轮完整头证据。报告和已目视核对的停用页面位于 `/tmp/p145-service-sql-parameters-local-20261104/`，独立命令 `python3 /tmp/p145-service-sql-parameters-local-audit.py` 通过。不导出令牌，不将管理员 string 参数结果替代普通 User／整数参数的 Hosted，未变更本地用户角色、原值／源授权、源数据或本地进程。
 
-Service SQL 资格生命周期（2026-11-04）：现行唯一领域报告v36。在既有资格撤销、自然到期场景各新增一个私有必填int参数SQL双别名服务；保留原生表服务，共享同一次IAM变更／90秒真实等待、同一普通User及有效Policy，不新增角色、权限、凭据或第二次资格分配。失效前分别完成4/1两页JSON／CSV；失效后SQL候选中无可用角色方式，各自旧游标及无游标JSON／CSV必须精确403/`query_protection_roles_unavailable`、无结果且单个no-store。主动撤销继续单独证明旧令牌401及正式同用户重登；自然到期继续要求同一会话、授权版本及功能权限不变、Assignment仍active/expired，不重登／续期／撤销或改时钟。显式移除选择后分别恢复默认五行。
+Service SQL 资格生命周期（2026-11-04，历史v36）：该阶段领域报告v36。在既有资格撤销、自然到期场景各新增一个私有必填int参数SQL双别名服务；保留原生表服务，共享同一次IAM变更／90秒真实等待、同一普通User及有效Policy，不新增角色、权限、凭据或第二次资格分配。失效前分别完成4/1两页JSON／CSV；失效后SQL候选中无可用角色方式，各自旧游标及无游标JSON／CSV必须精确403/`query_protection_roles_unavailable`、无结果且单个no-store。主动撤销继续单独证明旧令牌401及正式同用户重登；自然到期继续要求同一会话、授权版本及功能权限不变、Assignment仍active/expired，不重登／续期／撤销或改时钟。显式移除选择后分别恢复默认五行。
 
 SQL创建立即捕获ID，定义校验严格核对原SQL、参数声明和私有已选方式，不伪造Meta Source。报告仅存输出结构、CSV／游标摘要及拒绝事实，SQL独立结果嵌入两个既有资格报告，不保存凭据、源值或完整游标。失败、中断及SQL单独清理失败的反例证明仍继续清理原生表与Policy；根资源计数13+task_ids，浏览器v9保持原边界。现有 `make test-security-online-runner` 和CI登记自动覆盖，无新入口、工作流、产品API或后端变更，无需重启。本轮确定性证据见 `/tmp/p145-sql-eligibility-20261104/verification.json`；最终命令及数量以该记录为准。SQL新增403断言已先失败后修复，所属163项通过。完整 `make test-security-online-runner` 退出2：部署41项及Graph80项通过，后续Cleanup198项中 `test_delegated_image_log_visible_before_process_returns_and_next_phase_waits` 未观察到日志标记而失败，父门禁因此未继续执行Security组；这是本轮未修改的依赖测试，未调查、修复或重跑，不将完整入口记为通过。随后单独执行根Makefile中原定的Security测试组，366项退出0；登记CLI退出0。该组覆盖当前Runner和登记反例，未重跑失败的Cleanup依赖，不把分组通过改写成完整总入口通过。
 
-当前实际运行缺口仍为v36普通User／MySQL SQL资格撤销和自然到期的Hosted/T4；原#31/string参数或原生表资格证据不可替代。本轮未启动CI、操作个人浏览器／服务、修改个人角色／源或原值授权。下一步优先补必填之外的可选默认参数保护验收，沿现有命名参数合同；Hosted仍由专门CI会话跟进。
+当前实际运行缺口仍为v36普通User／MySQL SQL资格撤销和自然到期的Hosted/T4；原#31/string参数或原生表资格证据不可替代。本轮未启动CI、操作个人浏览器／服务、修改个人角色／源或原值授权。可选默认参数的后续断言见下一段；Hosted仍由专门CI会话跟进。
+
+Service SQL 可选默认参数（2026-11-04，v37）：新增一个发布默认值为1的可选int参数私有SQL服务，保留必填及资格生命周期场景，复用同一角色方式选择／撤销／显式默认恢复和清理路径。默认保护、角色全遮盖、恢复默认三个阶段各核对空映射、省略parameters成员及显式默认值；两个方向交替省略／显式传值续读同一解析参数游标，行、列、CSV字节和服务版本一致。改值真实筛选，改值续读旧游标精确400；显式null、布尔、对象、空字符串、多余参数按参数错误拒绝，不套用默认值。方式撤销后，省略和显式默认值的新请求／旧游标JSON／CSV均精确409，显式移除选择才恢复初始CSV；运行值不覆盖发布默认值。
+
+候选接口没有服务声明，按已有API显式绑定发布默认值，再在正式执行请求验证省略；没有修改API或保护规则。当前领域报告唯一v37，浏览器v9不扩展；新增一个Service的计数，根资源14+task_ids，完整游标、凭据、运行输入和源值不归档。标准 `make test-security-online-runner` 退出0，41／80／198／184／375项及登记CLI通过；所属171项通过，固定输入摘要及结果见 `/tmp/p145-optional-default-20261104/verification.json`。原测试先RED，新反例覆盖忽略默认、CSV丢默认、按原始输入错误绑定游标、运行值覆盖默认、显式默认绕过撤销、错误拒绝及失败／中断清理。CI登记同时约束新派发、报告及等价事实，无新工作流或产品后端变更，无需重启。本轮没有个人账号、浏览器、角色、源／原值授权或本地服务操作；新增v37 Hosted/T4未运行，仍由专门会话跟进。下一步优先验证发布默认值修订后旧游标的明确拒绝及新查询按新默认脱敏，沿已有服务版本合同。
 
 Graph 保护消费者（2026-10-17）：固定 `addp-graph` 仅消费 `graph` 投影及确认 cursor，纳入安装／解除屏障；启动事务补齐存量未 released 资源及 releasing 的解除变化。Graph 领域读取复用 Common 显式 graph leaf 门禁，命中纳管拒绝，不提供属性脱敏、Policy 或原值豁免；System 源数据授权本轮不调整。当前消费者集合以 `protection_owner_contract.go` 为准，下文四 Owner 的历史验收不作为 Graph 已通过的证据。验证沿 Graph/Security/System Go、Security PostgreSQL、System migration 和 Common Neo4j/FalkorDB 标准门禁，既有 CI 自动发现。
 

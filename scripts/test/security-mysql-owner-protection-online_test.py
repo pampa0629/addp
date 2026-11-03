@@ -2432,8 +2432,13 @@ class ServiceRoleCursorClient:
             minimum = 1
             if self.service.get("named_parameters"):
                 values = body.get("parameters", {})
-                invalid = set(values) != {"minimum_id"} or type(values.get("minimum_id")) is not int
-                changed_cursor = bool(body["page"].get("cursor")) and values != {"minimum_id": 1}
+                definition = self.service["named_parameters"][0]
+                required = definition["required"]
+                bound = values.get("minimum_id", definition.get("default"))
+                invalid = bool(set(values) - {"minimum_id"}) or (required and "minimum_id" not in values) or type(bound) is not int
+                changed_cursor = bool(body["page"].get("cursor")) and bound != 1
+                if self.fault == "cursor_binds_raw_parameters" and body["page"].get("cursor") and values != {"minimum_id":1}:
+                    changed_cursor = True
                 if (invalid and self.fault != "bad_parameter_accepted") or (changed_cursor and self.fault != "cursor_parameter_ignored"):
                     error = {"error": "Named parameters or cursor binding is invalid", "error_code": "invalid_structured_query"}
                     status = 403 if self.fault == "parameter_wrong_status" else 400
@@ -2446,13 +2451,20 @@ class ServiceRoleCursorClient:
                         result.cache_control = ()
                     return result
                 if not invalid:
-                    minimum = values["minimum_id"]
+                    minimum = bound
                 if self.fault == "parameter_ignored" or self.fault == "parameter_lost_on_csv" and raw_response:
                     minimum = 1
+                if not required and "minimum_id" not in values:
+                    if self.fault == "default_ignored" or self.fault == "default_lost_on_csv" and raw_response:
+                        minimum = 2
+                if self.fault == "runtime_value_overwrites_default" and minimum == 2:
+                    self.service["named_parameters"][0]["default"] = 2
             if self.fault == "interrupt":
                 raise KeyboardInterrupt("interrupted owned scenario")
             chosen = bool(self.service["data_config"].get("protection_choices"))
             if chosen and self.policy["state"] == "revoked":
+                if self.fault == "explicit_default_revocation_bypass" and self.service.get("named_parameters") and not self.service["named_parameters"][0]["required"] and body.get("parameters") == {"minimum_id":1}:
+                    return response(200, {"data":[]})
                 error = {"error": "Selected masking method is no longer available", "error_code": "query_protection_choice_invalid"}
                 status = 409
                 if self.fault == "wrong_error":
@@ -2588,6 +2600,16 @@ class ServiceRoleCursorRevocationTest(unittest.TestCase):
                 ONLINE.wait_role_projection(None, "enrollment", previous, 1)
         with patch.object(ONLINE, "role_projection", return_value=dict(valid, projection_id="other")), self.assertRaises(ONLINE.SuiteError):
             ONLINE.wait_role_projection(None, "enrollment", previous, time.monotonic() + 1)
+
+
+class ServiceRoleSQLOptionalDefaultContractTest(unittest.TestCase):
+    def test_optional_mode_requires_sql_and_omitted_input_before_any_request(self):
+        for config, parameters, default in [("table",{},1),("sql",None,1),("sql",{"minimum_id":1},1),("sql",{},True),("sql",{},2)]:
+            client=Mock()
+            with self.subTest(config=config,parameters=parameters,default=default), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.exercise_service_role_cursor_revocation(client,23,"fixture",{}, {}, "run",1,
+                    config_type=config, parameters=parameters, parameter_default=default)
+            client.request.assert_not_called()
 
 
 class ServiceRoleSQLEligibilityContractTest(unittest.TestCase):
@@ -2806,6 +2828,49 @@ class ServiceRoleSQLParameterCursorTest(ServiceRoleSQLCursorRevocationTest):
             self.assertTrue(client.deleted)
             if client.policy:
                 self.assertEqual(client.policy["state"], "revoked")
+
+
+class ServiceRoleSQLOptionalDefaultCursorTest(ServiceRoleSQLCursorRevocationTest):
+    def run_case(self, client):
+        source = {"id":1,"full_name":"fixture.bank_card_accounts","item_type":"table","fingerprint":"sha256:bank-fixture",
+            "attributes":{"type_info":{"table":{"fields":[{"name":name,"type":"int" if name in {"id","credit_card_number"} else "string"}
+                for name in ONLINE.BANK_FIELDS],"primary_key":["id"]}}}}
+        with patch.object(ONLINE,"find_item",return_value=source), patch.object(ONLINE,"list_pages",return_value=[]):
+            return ONLINE.exercise_service_role_cursor_revocation(client,23,"fixture",
+                {"enrollment_id":"enrollment","assessment_id":"assessment"},{"principal_id":"7","tenant_id":"2"},
+                "run-42",time.monotonic()+30,config_type="sql",parameters={},parameter_default=1)
+
+    def test_omission_explicit_default_and_both_cursor_directions_share_csv(self):
+        client=ServiceRoleCursorClient(); report=self.run_case(client)
+        self.assertEqual(report["named_parameters"],[{"name":"minimum_id","type":"int","required":False,"default":1}])
+        self.assertEqual(set(report["parameter_boundary_checks"]),{"default_before_selection","role_selected","default_restored"})
+        for checks in report["parameter_boundary_checks"].values():
+            resolved=checks["default_resolution"]
+            self.assertTrue(resolved["resolved_default_equivalence_verified"])
+            self.assertEqual(resolved["omitted_member_first"]["csv_sha256"],resolved["explicit_default_first"]["csv_sha256"])
+            self.assertEqual(resolved["omitted_cursor_explicit_continuation"]["csv_sha256"],resolved["explicit_cursor_omitted_continuation"]["csv_sha256"])
+            self.assertEqual(checks["alternate_value_output"]["ids"],["2","3","4","5"])
+            self.assertEqual(set(checks["refusals"]),{"cursor_parameter_changed","undeclared","invalid_scalar","explicit_null","boolean_scalar","empty_string"})
+        self.assertTrue(report["default_csv_restored_exactly"] and client.deleted)
+        self.assertEqual(client.service["named_parameters"][0]["default"],1)
+        options=[body for method,path,body in client.calls if path == "/api/v1/service/query-protection-options"]
+        self.assertEqual(options[0]["parameters"],{"minimum_id":1})
+        self.assertEqual(set(report["explicit_default_parameter_refusals"]),{"json","csv"})
+        self.assertTrue(all(set(v)=={"old_cursor","new_query"} for v in report["explicit_default_parameter_refusals"].values()))
+        queries=[body for method,path,body in client.calls if path.startswith("/api/query/")]
+        self.assertTrue(any("parameters" not in body for body in queries))
+        self.assertTrue(any(body.get("parameters")=={} for body in queries))
+
+    def test_ignoring_defaults_wrong_cursor_binding_and_runtime_default_mutation_fail(self):
+        for fault in ("default_ignored","default_lost_on_csv","cursor_binds_raw_parameters","runtime_value_overwrites_default",
+                      "parameter_ignored","parameter_lost_on_csv","cursor_parameter_ignored","bad_parameter_accepted",
+                      "parameter_wrong_status","parameter_wrong_code","parameter_error_rows","parameter_error_cache",
+                      "explicit_default_revocation_bypass"):
+            client=ServiceRoleCursorClient(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                self.run_case(client)
+            self.assertTrue(client.deleted)
+            if client.policy:self.assertEqual(client.policy["state"],"revoked")
 
 
 class MembershipBackend(ServiceRoleCursorClient):
