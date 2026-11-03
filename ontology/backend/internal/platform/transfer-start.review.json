@@ -242,11 +242,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "'transfer_run_expired'",
-      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
-      "sha256": "a769607a3fb6a3f0353a4efa8992b02f91254c1ada5c6805c2cf19f4528b1ea7",
+      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
+      "sha256": "e342dfe9883eb35e6f2133b700084cfc5a105e4d459218281d379071ccd9c549",
       "use": {
-        "zh-cn": "中英文固定说明审批过期未启动，不由模型收尾",
-        "en": "Fixed Chinese and English expiry/no-start output without model completion"
+        "zh-cn": "i18n 整文件新增历史说明；运行审批拒绝、过期、结果不明及真实 execution 身份／状态函数保持，固定过期收尾不调用模型。",
+        "en": "The i18n file adds historical explanations; run refusal, expiry, uncertainty and execution identity/state functions remain unchanged, including fixed expiry completion without a model."
       }
     }
   ],

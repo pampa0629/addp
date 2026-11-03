@@ -164,11 +164,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
-      "sha256": "a769607a3fb6a3f0353a4efa8992b02f91254c1ada5c6805c2cf19f4528b1ea7",
+      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
+      "sha256": "e342dfe9883eb35e6f2133b700084cfc5a105e4d459218281d379071ccd9c549",
       "use": {
-        "zh-cn": "本次补充独立运行的拒绝、结果不明和真实 execution 身份／状态文案，pending 不称为完成；创建文案边界不变。",
-        "en": "Adds separate run refusal, uncertainty and real execution identity/state messages without calling pending complete; creation wording retains its boundary."
+        "zh-cn": "按历史快照固定说明预检状态、写入策略、执行边界与当前授权的区别；纯关键主题不调正文模型，混合说明仅解释已有映射／查询片段；不改创建或运行文案边界。",
+        "en": "Explains historical check status, write policy, execution boundary and current-authority limits from verified facts; key topics need no body model and mixed explanations use selected mapping/query fragments without changing create/run messages."
       }
     },
     {
@@ -190,11 +190,11 @@
       "kind": "implementation",
       "path": "agent/backend/services/drafts.py",
       "anchor": "def draft_snapshot(",
-      "commit": "68c687a4926cf034aa0702d7fb0ccb583b05e737",
-      "sha256": "3eeb893012fe614b4797676de885770514d7e307c8ba52bf459701c4d136d722",
+      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
+      "sha256": "4abf8a28930b7e8dc9ed532379a71ed6bee1ed483cfa84aa27dfa84a9b6f3401",
       "use": {
-        "zh-cn": "精确历史参数只由受身份限定的已完成预检步骤恢复；普通确认从同一 Run/协议调用下本次复核的唯一自动预检建立引用，并核对参数、报告与确认指纹，不选最近草稿、不复制参数到检查点。",
-        "en": "Exact arguments come only from identity-scoped completed check steps. Ordinary confirmation binds its unique automatic check within the same run/invocation, validating parameters, report and review fingerprint without selecting a recent draft or duplicating checkpoint arguments."
+        "zh-cn": "保持身份限定的历史参数／报告恢复与确认指纹校验；新增有界解释投影，仅传所选映射／已有查询，缺失或混用范围拒绝，不修改原快照或推导当前事实。",
+        "en": "Preserves scoped snapshot restoration and confirmation checks; bounded explanation projection passes only selected mappings or existing queries, rejects invalid scope, and neither mutates snapshots nor infers current facts."
       }
     },
     {
@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "0cee1d0da2cc7e0f1ecc72e456c9517df1f90a9b",
-      "sha256": "4e075ddc228fc40810f6ee1b9a6c492b782948e7d9172b46479dbad6d7866dd9",
+      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
+      "sha256": "5f774bbacaa240711572d3d0d47e2f8fc65f6dcc78b667cf9e7fca6e6f4ae284",
       "use": {
-        "zh-cn": "当前轮明确只预检、不创建时不选择历史原参数创建；当前配置预检仍先读平台目录与正式预检，原所选能力身份传递、互斥拒绝和历史只读路径保持。",
-        "en": "Explicit precheck-only requests do not select historical exact-parameter creation. Current configuration checks still use the platform catalog and formal precheck; selected-capability identity, route rejection and read-only history remain."
+        "zh-cn": "历史解释须声明私有范围并核对引用；关键结论由 Runtime 固定说明，混合补充只收选中片段，无业务 Tool；删除整请求／整快照自由说明，创建及当前能力复核路径保持。",
+        "en": "Historical inspection validates its private scope and reference. Runtime states key facts; optional body generation receives selected fragments without business tools. Removes full-request/snapshot explanation while retaining creation and capability review."
       }
     },
     {
@@ -229,11 +229,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_drafts.py",
       "anchor": "class DraftScopeTests(",
-      "commit": "4f4959db80209f0e1b229e2012d789a612a5a82e",
-      "sha256": "224e465bce4a3a4f943731daaeeac7302abb069396d2c0d82a0787f6cca0bbae",
+      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
+      "sha256": "13b78c31878ae680ebcc3e12d6533b88c9e5b5509fcb37c9fc107213d85bba64",
       "use": {
-        "zh-cn": "保留全部原草稿范围与确认拒绝测试，新增历史解释真实流在结束前交付、原参数卡片一致且无业务Tool，以及矛盾路由在读取/装配前拒绝、日志不含用户正文/引用/凭据的反例。不作为真实模型或当前部署验收。",
-        "en": "Retain all prior draft-scope and confirmation-refusal tests. Add early historical explanation streaming with exact parameter cards and no business tools, plus invalid-route rejection before reads/tools and closed logs excluding text, references and credentials. Controlled tests do not prove a live model or deployment."
+        "zh-cn": "覆盖双语三态历史说明、字段／查询最小投影、无效范围拒绝、混合正文取消和零业务 Tool；原历史参数、路由互斥、原参数创建及流关闭断言保持。",
+        "en": "Covers bilingual historical states, minimal field/query fragments, invalid-scope refusal, mixed-stream cancellation and no business tools while preserving snapshot, route-exclusivity, exact-argument creation and stream-close assertions."
       }
     },
     {
@@ -320,11 +320,11 @@
       "kind": "contract",
       "path": "agent/backend/graph/state.py",
       "anchor": "class RouteDecision(",
-      "commit": "0cee1d0da2cc7e0f1ecc72e456c9517df1f90a9b",
-      "sha256": "084a4690248e3b389ee36aa194b4c1531da0fa385785168c53d54eea54d31fc4",
+      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
+      "sha256": "67fb67f601c040ff7764badf0da52db19a0544b869ef03fffed6d821c7b630da",
       "use": {
-        "zh-cn": "路由 Schema 明确只有本轮肯定创建历史草稿才选择 create；不创建／只预检走原平台路线，普通 Skill 来自当前注册清单；私有能力身份、互斥字段和批准边界不变。",
-        "en": "Routing descriptions reserve create for an affirmative request to create a historical draft. Precheck-only requests use the platform route and ordinary Skills use the current registry; private capability identity, field exclusivity and approval boundaries remain."
+        "zh-cn": "私有 inspect 解释范围限定主题与精确字段；其他路由不得携带，缺失不兼容兜底；不新增公开参数、持久化、权限或批准，原能力身份和创建互斥边界保持。",
+        "en": "Private inspect scope bounds topics and exact fields, is forbidden on other routes and has no legacy fallback. Adds no public parameters, persistence, permissions or approval; selected-capability identity and creation exclusivity remain."
       }
     },
     {

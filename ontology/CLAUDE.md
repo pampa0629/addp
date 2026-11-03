@@ -12,6 +12,10 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 ## 当前交付范围
 
+平台 Transfer 创建修订 56／运行修订 3 复核 Agent `426de5f38` 的历史说明职责调整。Runtime 从已校验历史快照固定解释状态、策略、执行结束条件及与授权的区别；只问这些主题不调用正文模型，混合问题只把明确选中的已有映射／查询片段交给无工具的正文流，删除完整请求加整份快照的自由说明路径。私有解释范围必须与 inspect 匹配，缺失、混用、重复或未知字段拒绝，不保留旧解析路径；历史引用仍由原路由选择并由服务端核验。创建复核、当前授权、运行审批及执行语义不扩张。创建仅更新五项依据，运行仅因 i18n 整文件变化更新一项依据；其余来源、绑定／覆盖和定义语义保持，读取修订 2 不变。Agent 的 14 个真实模型结构样本不代表人工语义或真实业务页面通过。本次只沿已有来源审查与 Ontology Go T1，不重复模型、PG／FalkorDB 或 Hosted，不自行重启或改动业务任务。
+
+修订 56／3 本地验证：`GOFLAGS=-count=1 make test-platform-review` 先准确复现上述六项来源漂移，冻结后通过；`GOFLAGS=-count=1 make test-module MODULE=ontology GO_ONLY=1` 通过。36／19／8 项来源的当前字节与真实提交、摘要、锚点全匹配；创建保留另外 31 项、运行保留另外 18 项、读取 8 项全部不变，全部绑定／覆盖保持。AST 复核证明 i18n 非历史说明函数及原快照恢复／参数校验未改，创建与批准路径无扩张。证据 `/tmp/addp-ontology-r56-{review-red.log,review-green.log,t1.log,source-audit.json,semantic-review.json}`。已有 Platform／Go CI 自动发现覆盖，无新入口、依赖或编排；完整 T0–T3、PG／FalkorDB T2、自然 CI、激活及真实页面本轮未运行，不计通过。
+
 平台 Transfer 创建修订 55 复核并冻结 Agent `0cee1d0da` 的 `draft_routing`／`draft_state` 两项来源。当前轮明确“不创建、只预检”不能被“按原参数”解释为创建历史草稿；当前附带配置的预检仍走平台目录及正式预检，历史解释保持只读，历史原参数创建仍要求明确创建意图、当前事实复核及新确认。提示和 Schema 描述变化不新增路由字段、权限、Tool、审批或执行效果；定义除 revision 外不变，其余 34 项来源及全部绑定／覆盖保留。Agent 交接的真实模型四场景两轮通过使用受控 Owner 事实，且报告标记运行时工作区为 dirty，不能视为新提交的真实业务页面验收。此次来源冻结沿已有 `make test-platform-review` 与 `GOFLAGS=-count=1 make test-module MODULE=ontology GO_ONLY=1`；无新入口或依赖，不重复模型、PG／FalkorDB 或 Hosted 验收，不自行重启或创建业务任务。
 
 修订 55 本地验证：非缓存来源审查先复现且仅有上述两项漂移，更新后同一入口及 Ontology Go T1 通过；逐项核对 36 项真实提交字节、SHA-256 与锚点，定义仅修订号变化，其余来源、绑定与覆盖保持。临时证据 `/tmp/addp-ontology-r55-{review-red.log,review-green.log,t1.log,source-audit.json,source-semantic-review.json}`。已有 Platform／Go CI 自动发现覆盖，无需更改编排；完整模块 T0–T3、PG／FalkorDB T2、自然 CI、发布激活与真实页面复验本轮未运行，不计通过。
