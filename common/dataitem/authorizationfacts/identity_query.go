@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/addp/common/engine/plugin"
 )
 
 const MaxIdentityQueryFingerprints = 20000
@@ -15,12 +17,13 @@ var ErrIdentityQueryCapacity = errors.New("DataItem identity query exceeds finge
 
 // IdentityQuery is a value-only owner query. It carries no permission or ACL.
 type IdentityQuery struct {
-	EngineID          uint     `json:"engine_id"`
-	Search            string   `json:"search,omitempty"`
-	FingerprintFilter string   `json:"fingerprint_filter,omitempty" enums:"include,exclude"`
-	Fingerprints      []string `json:"fingerprints,omitempty"`
-	Page              int      `json:"page"`
-	PageSize          int      `json:"page_size"`
+	EngineID          uint                      `json:"engine_id"`
+	Parent            *plugin.EngineCatalogPath `json:"parent,omitempty"`
+	Search            string                    `json:"search,omitempty"`
+	FingerprintFilter string                    `json:"fingerprint_filter,omitempty" enums:"include,exclude"`
+	Fingerprints      []string                  `json:"fingerprints,omitempty"`
+	Page              int                       `json:"page"`
+	PageSize          int                       `json:"page_size"`
 }
 
 func (q IdentityQuery) Validate() error {
@@ -29,6 +32,9 @@ func (q IdentityQuery) Validate() error {
 		(q.FingerprintFilter != "" && q.FingerprintFilter != "include" && q.FingerprintFilter != "exclude") ||
 		(q.FingerprintFilter == "" && len(q.Fingerprints) != 0) {
 		return errors.New("invalid DataItem identity query")
+	}
+	if q.Parent != nil && (!ValidNodeIdentityTarget(*q.Parent) || q.Parent.EngineID != q.EngineID) {
+		return errors.New("invalid DataItem identity parent")
 	}
 	if len(q.Fingerprints) > MaxIdentityQueryFingerprints {
 		return ErrIdentityQueryCapacity
@@ -105,6 +111,7 @@ func (p IdentityPage) Validate(q IdentityQuery) error {
 	for _, item := range p.Data {
 		if !ValidItemFingerprint(item.ItemFingerprint) || item.ItemFingerprint <= previous || item.EngineID != q.EngineID ||
 			item.Name == "" || item.FullName == "" || item.ItemType == "" || ValidateIdentityAncestors(item.Ancestors) != nil ||
+			(q.Parent != nil && !identityDirectChild(item, *q.Parent)) ||
 			(q.FingerprintFilter == "include" && !set[item.ItemFingerprint]) || (q.FingerprintFilter == "exclude" && set[item.ItemFingerprint]) {
 			return errors.New("invalid DataItem identity")
 		}
@@ -118,4 +125,27 @@ func boolInt(value bool) int64 {
 		return 1
 	}
 	return 0
+}
+
+// Whole containers carry their own scope node as the last ancestor. Ordinary
+// items carry only their parent; neither form permits arbitrary descendants.
+func identityDirectChild(item DataItemIdentity, parent plugin.EngineCatalogPath) bool {
+	nodes, parts := item.Ancestors, parent.Segments
+	if len(nodes) < len(parts) {
+		return false
+	}
+	for i, part := range parts {
+		want := string(part.Term)
+		if want == "directory" {
+			want = "dir"
+		}
+		if nodes[i].NodeType != want || (i > 0 && nodes[i].Name != part.Name) {
+			return false
+		}
+	}
+	if len(nodes) == len(parts) {
+		return true
+	}
+	return parts[0].Term == "root" && len(nodes) == len(parts)+1 && nodes[len(parts)].NodeType == "dir" &&
+		nodes[len(parts)].Name == item.Name && item.FullName == strings.TrimPrefix(parent.StringPath()+"/"+item.Name, "/")
 }

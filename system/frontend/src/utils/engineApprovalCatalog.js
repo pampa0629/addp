@@ -174,39 +174,82 @@ export function createApprovalNodeCatalogAdapter(engine, readPage) {
   }
 }
 
-// One selectable tree, two owner facts. Nodes stay available independently of
-// the bounded DataItem snapshot, which is fetched only on item browsing/search.
+// One tree, two owner facts. Each expansion reads only the direct owner's
+// item pages; searching is filtered and bounded by Meta before transmission.
 export function createMixedApprovalCatalogAdapter(engine, listItems, readFacts, readNodes) {
-  const items = createApprovalCatalogAdapter(engine, listItems, readFacts)
-  if (!['postgresql', 'nfs'].includes(engine.engine_type)) return items
+  if (!['postgresql', 'nfs'].includes(engine.engine_type)) return createApprovalCatalogAdapter(engine, listItems, readFacts)
+  const id = safePickerEngineID(engine.id)
   const scopes = createApprovalNodeCatalogAdapter(engine, readNodes)
-  let generation = 0
+  let generation = 0, leaves = new Map(), children = new Map()
   const display = node => ({ ...node, hasChildren: true, metadata: { ...node.metadata, has_children: true } })
   const current = (epoch, value) => {
     if (epoch !== generation) throw new Error('stalePermissionTree')
     return value
   }
+  function leaf(row) {
+    // Reuse the authoritative ancestry validator, never split display paths.
+    buildDataItemIdentityTree([row])
+    if (String(row.engine_id) !== String(id) || !/^[a-f0-9]{64}$/.test(row.item_fingerprint || '')) throw new Error('invalidPermissionTree')
+    const path = row.ancestors.slice(1).map(part => part.name)
+    if (path.join('/') !== row.full_name) path.push(row.name)
+    const node = { id: `item:${row.item_fingerprint}`, label: row.name, type: row.item_type, hasChildren: false,
+      locator: buildLocator({ engineId: id, path, type: row.item_type }), children: [],
+      metadata: { engine_id: id, engine_type: engine.engine_type, engine_name: engine.name, path: row.full_name, has_children: false, data_item: row } }
+    leaves.set(node.id, node)
+    return node
+  }
+  function direct(row, parent) {
+    const names = parent.segments.slice(1).map(part => part.name), ancestry = row.ancestors.slice(1).map(part => part.name)
+    if (!names.every((name, i) => ancestry[i] === name)) return false
+    return ancestry.length === names.length || (parent.segments[0].term === 'root' && ancestry.length === names.length + 1 &&
+      ancestry.at(-1) === row.name && ancestry.join('/') === row.full_name)
+  }
   return {
-    listEngines: items.listEngines,
+    listEngines: async () => [{ ...engine, id }],
     async getTreeRoot() { const epoch = generation; return current(epoch, display(await scopes.getTreeRoot())) },
-    invalidate() { generation++; items.invalidate(); scopes.invalidate() },
+    invalidate() { generation++; leaves = new Map(); children = new Map(); scopes.invalidate() },
     async getNodeChildren(node) {
       const epoch = generation
       if (!isApprovalNode(node)) return []
-      const path = await scopes.resolveTarget(node)
-      const branches = await scopes.getNodeChildren(node)
-      if (engine.engine_type === 'postgresql' && path.segments.length === 1) return current(epoch, branches.map(display))
-      let branch = await items.getTreeRoot()
-      for (const segment of path.segments.slice(1)) branch = branch?.children.find(child => !isApprovalTarget(child) && child.label === segment.name)
-      const leaves = branch ? (await items.getNodeChildren(branch)).filter(isApprovalTarget) : []
-      return current(epoch, [...branches.map(display), ...leaves])
+      const path = await scopes.resolveTarget(node), key = serializeEngineCatalogTarget({ ...path, engine_id: String(id) })
+      if (!children.has(key)) {
+        const promise = (async () => {
+          const branches = await scopes.getNodeChildren(node)
+          if (engine.engine_type === 'postgresql' && path.segments.length === 1) return current(epoch, branches.map(display))
+          const rows = await readDataItemIdentityTree(String(id), (engineID, paging) =>
+            listItems(engineID, { ...paging, parent: JSON.stringify(path) }), () => epoch === generation,
+            row => { if (!direct(row, path)) throw new Error('invalidPermissionTree') })
+          current(epoch)
+          return [...branches.map(display), ...rows.map(leaf)]
+        })().catch(error => { if (epoch === generation) children.delete(key); throw error })
+        children.set(key, promise)
+      }
+      return children.get(key)
     },
-    resolveTarget(node) { return isApprovalNode(node) ? scopes.resolveTarget(node) : items.resolveTarget(node) },
-    async search(engineID, keyword, options = {}) {
+    async resolveTarget(node) {
+      if (isApprovalNode(node)) return scopes.resolveTarget(node)
+      const owned = leaves.get(node?.id)
+      if (!owned || owned.locator !== node.locator || owned.metadata.data_item.item_fingerprint !== node.metadata?.data_item?.item_fingerprint) throw new Error('invalidCatalogTarget')
       const epoch = generation
-      const nodes = await scopes.search(engineID, keyword, options)
-      const leaves = (await items.search(engineID, keyword, options)).filter(isApprovalTarget)
-      return current(epoch, [...nodes.map(display), ...leaves].slice(0, Math.min(options.limit ?? 20, 20)))
+      const { path } = await readAuthorizationTarget(String(id), owned.metadata.data_item.item_fingerprint, readFacts)
+      return current(epoch, { ...path, engine_id: String(id), segments: path.segments.map(part => ({ ...part })) })
+    },
+    async search(engineID, keyword, { limit = 20 } = {}) {
+      if (String(engineID) !== String(id) || !Number.isSafeInteger(limit) || limit <= 0) throw new Error('invalidCatalogTarget')
+      const query = keyword.trim(); if (!query) return []
+      const epoch = generation, size = Math.min(limit, 20)
+      const [nodes, result] = await Promise.all([scopes.search(engineID, query, { limit: size }),
+        listItems(String(id), { search: query, page: 1, page_size: size })])
+      current(epoch)
+      if (!Array.isArray(result?.data) || !Number.isSafeInteger(result.total) || result.total < 0 || result.page !== 1 || result.page_size !== size ||
+        result.total_pages !== Math.ceil(result.total / size) || result.data.length !== Math.min(result.total, size)) throw new Error('incompletePermissionTree')
+      buildDataItemIdentityTree(result.data)
+      let previous = ''
+      for (const row of result.data) {
+        if (row.item_fingerprint <= previous) throw new Error('incompletePermissionTree')
+        previous = row.item_fingerprint
+      }
+      return [...nodes.map(display), ...result.data.map(leaf)].slice(0, size)
     }
   }
 }

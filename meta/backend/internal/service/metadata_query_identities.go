@@ -22,6 +22,20 @@ func (s *MetadataQueryService) QueryDataItemIdentities(ctx context.Context, tena
 	result := &authorizationfacts.IdentityPage{Data: []authorizationfacts.DataItemIdentity{}, Page: input.Page, PageSize: input.PageSize}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Model(&models.MetaItem{}).Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL", tenantID, input.EngineID)
+		if input.Parent != nil {
+			parent, id, err := resolveNodeIdentitySnapshot(tx, tenantID, authorizationfacts.NodeIdentityQuery{Target: *input.Parent})
+			if err != nil {
+				return err
+			}
+			if !parent.Exists {
+				query = query.Where("1 = 0")
+			} else {
+				// A whole container owns its internal scope node, but appears
+				// as one item directly below the scope node's parent.
+				query = query.Where(`(node_id = ? OR (attributes -> 'item' ->> 'layout' = 'whole' AND node_id IN
+                  (SELECT id FROM meta.meta_node WHERE tenant_id = ? AND engine_id = ? AND parent_node_id = ? AND deleted_at IS NULL)))`, id, tenantID, input.EngineID, id)
+			}
+		}
 		if input.Search != "" {
 			// Literal name/path search: wildcard characters are not user SQL.
 			pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(input.Search)) + "%"

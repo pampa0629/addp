@@ -3371,7 +3371,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅返回 Meta 已识别的数据项及祖先节点。需当前租户用户、源授权读取功能及引擎管理资格；读取前后复核。无原生文件枚举、内容读取或签发 | Returns only Meta identities and ancestor nodes. Rechecks current tenant user and engine management qualification before and after the owner query. No native file enumeration, content reads or issuance.",
+                "description": "仅返回 Meta 已识别的数据项及祖先节点。需当前租户用户、源授权读取功能及引擎管理资格；读取前后复核。可按类型化父节点和名称／路径先过滤，再计数分页。无原生文件枚举、内容读取或签发 | Returns only Meta identities and ancestor nodes. Rechecks current tenant user and engine management qualification before and after the owner query. Typed parent and literal name/path filters precede counting and pagination. No native file enumeration, content reads or issuance.",
                 "produces": [
                     "application/json"
                 ],
@@ -3386,6 +3386,18 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "直属父节点的类型化路径 JSON，仅 PG／NFS | Typed parent path JSON for direct children, PG/NFS only",
+                        "name": "parent",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按名称或路径搜索，最多512字节 | Literal name or path search, at most 512 bytes",
+                        "name": "search",
+                        "in": "query"
                     },
                     {
                         "minimum": 1,

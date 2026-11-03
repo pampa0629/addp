@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"strings"
 	"sync"
 	"testing"
@@ -86,7 +87,7 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 		}
 		// The prior owner fixture initialized this exact target, then revoked its
 		// governance role. Handling must not imply engine configuration reading.
-		if _, err := service.ListAuthorizationItems(ctx, actor, int64(engine.ID), 1, 20); !errors.Is(err, commonapi.ErrForbidden) {
+		if _, err := service.ListAuthorizationItems(ctx, actor, int64(engine.ID), authorizationfacts.IdentityQuery{Page: 1, PageSize: 20}); !errors.Is(err, commonapi.ErrForbidden) {
 			t.Fatalf("handling expanded to configuration enumeration: %v", err)
 		}
 		var beforeFacts, beforeAudits int64

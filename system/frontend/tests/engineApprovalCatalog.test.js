@@ -9,6 +9,19 @@ const path = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'roo
 const facts = { schema_version: 'meta.data_item_authorization_facts/v1', engine_id: 2, item_fingerprint: item.item_fingerprint, full_name: item.full_name, item_type: 'file', basis_state: 'complete', boundary_hash: 'a'.repeat(64), boundary: { layout: 'whole', scope: { format: 'filegdb', rule_version: 1, root: path } } }
 const selection = node => ({ raw: { node } })
 const page = data => ({ data, total: data.length, page: 1, page_size: 100, total_pages: data.length ? 1 : 0 })
+function filteredPage(rows, query) {
+  let filtered = rows
+  if (query.parent) {
+    const parent = JSON.parse(query.parent).segments.slice(1).map(part => part.name)
+    filtered = rows.filter(row => {
+      const chain = row.ancestors.slice(1).map(part => part.name)
+      return parent.every((name, i) => chain[i] === name) && (chain.length === parent.length ||
+        (chain.length === parent.length + 1 && chain.at(-1) === row.name && chain.join('/') === row.full_name))
+    })
+  }
+  if (query.search) filtered = filtered.filter(row => row.full_name.toLowerCase().includes(query.search.toLowerCase()))
+  return { data: filtered.slice((query.page - 1) * query.page_size, query.page * query.page_size), total: filtered.length, page: query.page, page_size: query.page_size, total_pages: Math.ceil(filtered.length / query.page_size) }
+}
 function fixture(rows = [item]) {
   const list = vi.fn(async () => page(rows)), read = vi.fn(async () => structuredClone(facts))
   return { list, read, adapter: createApprovalCatalogAdapter(engine, list, read) }
@@ -41,7 +54,7 @@ describe('Meta DataItem authorization picker', () => {
       await expect(fixture(rows).adapter.getTreeRoot()).rejects.toThrow()
     }
     const { adapter, list } = fixture()
-    list.mockResolvedValue({ ...page([item]), total: 101 })
+    list.mockResolvedValue({ ...page([{ ...item, ancestors: [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: 'a.b/x', node_type: 'schema' }] }]), total: 101 })
     await expect(adapter.getTreeRoot()).rejects.toThrow('incompletePermissionTree')
     list.mockResolvedValue({ ...page(Array(100).fill(item)), total: 20001 })
     await expect(adapter.getTreeRoot()).rejects.toThrow('permissionTreeCapacity')
@@ -125,7 +138,7 @@ describe('mixed PG authorization tree', () => {
     const schema = 'a.b/x', table = 't/x'
     const row = { ...item, item_type: 'table', name: table, full_name: `${schema}.${table}`, item_fingerprint: fingerprint(`${schema}.${table}`), ancestors: [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: schema, node_type: 'schema' }] }
     const target = { ...schemaPath(schema), segments: [...schemaPath(schema).segments, { term: 'table', kind: 'table', name: table }] }
-    const list = vi.fn(async () => page([row]))
+    const list = vi.fn(async (_, query) => filteredPage([row], query))
     const read = vi.fn(async () => ({ ...facts, item_type: 'table', item_fingerprint: row.item_fingerprint, full_name: row.full_name, boundary: { layout: 'single', native_target: target } }))
     const nodes = vi.fn(async (_, query) => ({ parent: fact(query.target), nodes: query.target.segments.length === 1 ? [fact(schemaPath(schema)), fact(schemaPath('empty'))] : [], total: query.target.segments.length === 1 ? 2 : 0, page: 1, page_size: 100 }))
     return { list, read, nodes, target, adapter: createMixedApprovalCatalogAdapter(pg, list, read, nodes) }
@@ -141,7 +154,7 @@ describe('mixed PG authorization tree', () => {
     expect(isApprovalNode(leaves[0])).toBe(false)
     expect(await adapter.resolveTarget(leaves[0])).toEqual({ ...target, engine_id: '2' })
     expect(await adapter.getNodeChildren(schemas[1])).toEqual([])
-    expect(list).toHaveBeenCalledTimes(1)
+    expect(list).toHaveBeenCalledTimes(2)
     expect(read).toHaveBeenCalledTimes(1)
   })
   it('searches both kinds while keeping whole non-PG containers as a single item', async () => {
@@ -157,7 +170,7 @@ describe('mixed PG authorization tree', () => {
   it('fails an incomplete item snapshot without losing independently proven scopes', async () => {
     const { adapter, list, read } = mixedFixture()
     const schemas = await adapter.getNodeChildren(await adapter.getTreeRoot())
-    list.mockResolvedValue({ ...page([item]), total: 101 })
+    list.mockResolvedValue({ ...page([{ ...item, ancestors: [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: 'a.b/x', node_type: 'schema' }] }]), total: 101 })
     await expect(adapter.getNodeChildren(schemas[0])).rejects.toThrow('incompletePermissionTree')
     expect(await adapter.resolveTarget(schemas[1])).toEqual(schemaPath('empty'))
     expect(read).not.toHaveBeenCalled()
@@ -192,7 +205,7 @@ describe('NFS ordinary nodes and exact whole items share one picker', () => {
     const exports = { ...path, segments: path.segments.slice(0, 2) }
     const empty = { ...exports, segments: [...exports.segments, { term: 'directory', kind: 'directory', name: ' empty ' }] }
     const fact = target => ({ tenant_id: 7, target, exists: true })
-    const list = vi.fn(async () => page([item]))
+    const list = vi.fn(async (_, query) => filteredPage([item], query))
     const read = vi.fn(async () => structuredClone(facts))
     const nodes = vi.fn(async (_, query) => {
       const children = query.target.segments.length === 1 ? [fact(exports)] : query.target.segments.length === 2 ? [fact(empty)] : []
@@ -212,11 +225,46 @@ describe('NFS ordinary nodes and exact whole items share one picker', () => {
     expect(await adapter.resolveTarget(children[1])).toEqual({ ...path, engine_id: '2' })
     expect(await adapter.resolveTarget(children[0])).toEqual(empty)
     expect(await adapter.getNodeChildren(children[0])).toEqual([])
-    expect(list).toHaveBeenCalledTimes(1)
+    expect(list).toHaveBeenCalledTimes(3)
     expect(read).toHaveBeenCalledTimes(1)
     expect(approvalScopeContains(exports, path, false, false)).toBe(true)
     expect(approvalScopeContains(exports, empty, false, true)).toBe(false)
     adapter.invalidate()
     await expect(adapter.resolveTarget(children[0])).rejects.toThrow()
+  })
+})
+
+
+describe('bounded authorization identity discovery', () => {
+  it('never downloads the 5234-item inventory to expand a single NFS directory', async () => {
+    const root = { ...path, segments: path.segments.slice(0, 1) }, directory = { ...path, segments: path.segments.slice(0, 2) }
+    const fact = target => ({ tenant_id: 7, target, exists: true })
+    const outside = Array.from({ length: 5233 }, (_, i) => ({ ...item, item_fingerprint: fingerprint(`elsewhere/${i}`), name: `${i}.csv`, full_name: `elsewhere/${i}.csv`, ancestors: [ancestors[0], { id: '99', name: 'elsewhere', node_type: 'dir' }] }))
+    const list = vi.fn(async (_, query) => {
+      if (!query.parent && !query.search) throw new Error('whole-engine inventory forbidden')
+      return filteredPage([item, ...outside].sort((a,b) => a.item_fingerprint.localeCompare(b.item_fingerprint)), query)
+    })
+    const nodes = vi.fn(async (_, query) => ({ parent: fact(query.target), nodes: query.target.segments.length === 1 ? [fact(directory)] : [], total: query.target.segments.length === 1 ? 1 : 0, page: query.page, page_size: query.page_size }))
+    const adapter = createMixedApprovalCatalogAdapter(engine, list, async () => facts, nodes)
+    const tree = await adapter.getTreeRoot(), [dir] = await adapter.getNodeChildren(tree)
+    expect(list.mock.calls.map(([,q]) => JSON.parse(q.parent))).toEqual([root])
+    const children = await adapter.getNodeChildren(dir)
+    expect(children.map(node => node.label)).toEqual(['test.gdb'])
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(list.mock.calls[1][1].parent)).toEqual(directory)
+    await adapter.getNodeChildren(dir)
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(await adapter.search('2', 'test.gdb')).toHaveLength(1)
+    expect(list).toHaveBeenLastCalledWith('2', { search: 'test.gdb', page: 1, page_size: 20 })
+  })
+  it('returns only one server-filtered search page even when more than 20000 items match', async () => {
+    const list = vi.fn(async (_, query) => ({ data: [], total: 0, page: query.page, page_size: query.page_size, total_pages: 0 }))
+    const pg = { ...engine, engine_type: 'postgresql' }, root = { version: 'catalog.path/v1', engine_id: 2, segments: [{ term: 'server', kind: 'server', name: '' }] }
+    const nodes = async (_, query) => ({ parent: { tenant_id: 7, target: query.target, exists: true }, nodes: [], total: 0, page: query.page, page_size: query.page_size })
+    const adapter = createMixedApprovalCatalogAdapter(pg, list, () => { throw new Error('facts not requested') }, nodes)
+    const rows = Array.from({length:20},(_,i)=>({ ...item, item_fingerprint: i.toString(16).padStart(64,'0'), name:`table${i}`,full_name:`s.table${i}`,item_type:'table',ancestors:[{id:'1',name:'',node_type:'server'},{id:'2',name:'s',node_type:'schema'}] }))
+    list.mockResolvedValue({data:rows,total:30000,page:1,page_size:20,total_pages:1500})
+    expect(await adapter.search('2','table')).toHaveLength(20)
+    expect(list).toHaveBeenCalledExactlyOnceWith('2',{search:'table',page:1,page_size:20})
   })
 })

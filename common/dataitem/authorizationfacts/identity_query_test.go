@@ -3,6 +3,7 @@ package authorizationfacts
 import (
 	"errors"
 	"fmt"
+	"github.com/addp/common/engine/plugin"
 	"strings"
 	"testing"
 )
@@ -93,5 +94,38 @@ func TestIdentityAncestorsRejectIncompleteOrCyclicChains(t *testing.T) {
 	}
 	if err := ValidateIdentityAncestors([]IdentityNode{{ID: 1, NodeType: "server"}, {ID: 2, NodeType: "schema", Name: "A.b/slash"}}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestIdentityPageRejectsNonDirectParentRows(t *testing.T) {
+	parent := plugin.FileDirectoryPath(2, "exports")
+	query := IdentityQuery{EngineID: 2, Parent: &parent, Page: 1, PageSize: 100}
+	row := DataItemIdentity{ItemFingerprint: strings.Repeat("a", 64), EngineID: 2, Name: "a.csv", FullName: "exports/a.csv", ItemType: "file", Ancestors: []IdentityNode{{ID: 1, NodeType: "root"}, {ID: 2, NodeType: "dir", Name: "exports"}}}
+	page := IdentityPage{Data: []DataItemIdentity{row}, Total: 1, Page: 1, PageSize: 100, TotalPages: 1}
+	if err := page.Validate(query); err != nil {
+		t.Fatal(err)
+	}
+	page.Data[0].Ancestors[1].Name = "exports2"
+	if page.Validate(query) == nil {
+		t.Fatal("sibling accepted")
+	}
+	page.Data[0].Ancestors[1].Name = "exports"
+	page.Data[0].Ancestors = append(page.Data[0].Ancestors, IdentityNode{ID: 3, NodeType: "dir", Name: "nested"})
+	if page.Validate(query) == nil {
+		t.Fatal("descendant accepted")
+	}
+	page.Data[0].Name = "nested"
+	page.Data[0].FullName = "exports/nested"
+	if err := page.Validate(query); err != nil {
+		t.Fatal("whole container rejected", err)
+	}
+	parent.EngineID = 3
+	if query.Validate() == nil {
+		t.Fatal("foreign parent accepted")
+	}
+	parent.EngineID = 2
+	parent.Segments[1].Kind = "file"
+	if query.Validate() == nil {
+		t.Fatal("malformed parent accepted")
 	}
 }

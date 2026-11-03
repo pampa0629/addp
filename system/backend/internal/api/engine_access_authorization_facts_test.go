@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,20 +35,22 @@ func authorizationFactsRequest(t *testing.T, router http.Handler, path string, e
 }
 
 type testAuthorizationFactsService struct {
-	calls int
-	err   error
+	calls   int
+	queries []authorizationfacts.IdentityQuery
+	err     error
 }
 
-func (s *testAuthorizationFactsService) ListAuthorizationItems(_ context.Context, _ engineaccess.Actor, id int64, page, size int) (*authorizationfacts.IdentityPage, error) {
+func (s *testAuthorizationFactsService) ListAuthorizationItems(_ context.Context, _ engineaccess.Actor, id int64, q authorizationfacts.IdentityQuery) (*authorizationfacts.IdentityPage, error) {
 	s.calls++
 	if s.err != nil {
 		return nil, s.err
 	}
-	q := authorizationfacts.IdentityQuery{EngineID: uint(id), Page: page, PageSize: size}
+	q.EngineID = uint(id)
+	s.queries = append(s.queries, q)
 	if q.Validate() != nil {
 		return nil, commonapi.ErrBadRequest
 	}
-	return &authorizationfacts.IdentityPage{Data: []authorizationfacts.DataItemIdentity{}, Page: page, PageSize: size}, nil
+	return &authorizationfacts.IdentityPage{Data: []authorizationfacts.DataItemIdentity{}, Page: q.Page, PageSize: q.PageSize}, nil
 }
 
 func (s *testAuthorizationFactsService) GetAuthorizationFacts(_ context.Context, _ engineaccess.Actor, id int64, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
@@ -117,6 +122,21 @@ func TestAuthorizationFactsRequiresQualifiedTenantUser(t *testing.T) {
 	for _, query := range []string{"?page=0", "?page=01", "?page_size=101", "?page=1&page=2", "?tenant_id=99", "?native=true"} {
 		authorizationFactsRequest(t, router, listPath+query, 400)
 	}
+	parent := plugin.TabularNamespacePath(2, "schema", "a.b/x")
+	encodedParent, _ := json.Marshal(parent)
+	authorizationFactsRequest(t, router, listPath+"?parent="+url.QueryEscape(string(encodedParent))+"&search="+url.QueryEscape("x_%")+"&page_size=20", 200)
+	got := s.queries[len(s.queries)-1]
+	if !reflect.DeepEqual(got.Parent, &parent) || got.Search != "x_%" || got.PageSize != 20 {
+		t.Fatalf("lost bounded query: %+v", got)
+	}
+	for _, raw := range []string{`null`, `{}`, `{"engine_id":2,"engine_id":3}`, `{"unexpected":true}`, strings.Repeat(" ", authorizationfacts.MaxNodeIdentityBytes) + string(encodedParent), strings.Replace(string(encodedParent), `"engine_id":2`, `"engine_id":3`, 1)} {
+		before := s.calls
+		authorizationFactsRequest(t, router, listPath+"?parent="+url.QueryEscape(raw), 400)
+		if s.calls != before {
+			t.Fatal("invalid parent reached owner")
+		}
+	}
+	authorizationFactsRequest(t, router, listPath+"?search="+url.QueryEscape(strings.Repeat("x", 513)), 400)
 	s.err = engineaccess.ErrAuthorizationFactsUnavailable
 	authorizationFactsRequest(t, router, path, 503)
 	authorizationFactsRequest(t, router, listPath, 503)

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/engine/plugin"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
@@ -120,4 +121,100 @@ func exerciseDataItemIdentityQuery(t *testing.T, db *gorm.DB) {
 		t.Fatal("deleted ancestry accepted")
 	}
 
+}
+
+func TestDataItemIdentityDirectChildren(t *testing.T) {
+	exerciseDataItemIdentityDirectChildren(t, metatest.OpenMetadataDB(t))
+}
+
+func exerciseDataItemIdentityDirectChildren(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	const engine = 819
+	root := models.MetaNode{TenantID: 7, EngineID: engine, NodeType: "root", Name: "", FullName: ""}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatal(err)
+	}
+	dir := models.MetaNode{TenantID: 7, EngineID: engine, NodeType: "dir", Name: "exports", FullName: "exports", ParentNodeID: &root.ID}
+	if err := db.Create(&dir).Error; err != nil {
+		t.Fatal(err)
+	}
+	sub := models.MetaNode{TenantID: 7, EngineID: engine, NodeType: "dir", Name: "nested", FullName: "exports/nested", ParentNodeID: &dir.ID}
+	whole := models.MetaNode{TenantID: 7, EngineID: engine, NodeType: "dir", Name: "test.gdb", FullName: "exports/test.gdb", ParentNodeID: &dir.ID}
+	sibling := models.MetaNode{TenantID: 7, EngineID: engine, NodeType: "dir", Name: "exports2", FullName: "exports2", ParentNodeID: &root.ID}
+	for _, n := range []*models.MetaNode{&sub, &whole, &sibling} {
+		if err := db.Create(n).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	makeItem := func(node uint, name, full string, layout string) models.MetaItem {
+		attrs := models.JSONMap{}
+		if layout != "" {
+			attrs["item"] = map[string]interface{}{"layout": layout}
+		}
+		return models.MetaItem{TenantID: 7, EngineID: engine, NodeID: node, Name: name, FullName: full, ItemType: "file", Fingerprint: commonmodels.GenerateItemFingerprint(engine, full), Attributes: attrs}
+	}
+	rows := []models.MetaItem{makeItem(root.ID, "top.csv", "top.csv", ""), makeItem(dir.ID, "one.csv", "exports/one.csv", ""), makeItem(dir.ID, "two.csv", "exports/two.csv", ""), makeItem(sub.ID, "deep.csv", "exports/nested/deep.csv", ""), makeItem(whole.ID, "test.gdb", "exports/test.gdb", "whole"), makeItem(sibling.ID, "other.csv", "exports2/other.csv", "")}
+	for i := range rows {
+		if err := db.Create(&rows[i]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := NewMetadataQueryService(db)
+	parent := plugin.FileDirectoryPath(engine, "exports")
+	query := authorizationfacts.IdentityQuery{EngineID: engine, Parent: &parent, Page: 1, PageSize: 2}
+	first, err := s.QueryDataItemIdentities(context.Background(), 7, query)
+	if err != nil || first.Total != 3 || len(first.Data) != 2 {
+		t.Fatalf("direct first=%+v err=%v", first, err)
+	}
+	query.Page = 2
+	second, err := s.QueryDataItemIdentities(context.Background(), 7, query)
+	if err != nil || second.Total != 3 || len(second.Data) != 1 {
+		t.Fatalf("direct second=%+v err=%v", second, err)
+	}
+	seen := map[string]bool{}
+	for _, row := range append(first.Data, second.Data...) {
+		seen[row.FullName] = true
+	}
+	for _, name := range []string{"exports/one.csv", "exports/two.csv", "exports/test.gdb"} {
+		if !seen[name] {
+			t.Fatal("lost direct item", name, seen)
+		}
+	}
+	query.Page, query.Search = 1, "test.gdb"
+	found, err := s.QueryDataItemIdentities(context.Background(), 7, query)
+	if err != nil || found.Total != 1 || found.Data[0].FullName != "exports/test.gdb" {
+		t.Fatalf("whole search=%+v %v", found, err)
+	}
+	query.Search = ""
+	for _, name := range []string{"exports/missing", "exports/test.gdb"} {
+		target := plugin.FileDirectoryPath(engine, name)
+		query.Parent = &target
+		empty, err := s.QueryDataItemIdentities(context.Background(), 7, query)
+		if err != nil || empty.Total != 0 {
+			t.Fatalf("invalid directory exposed items: %+v %v", empty, err)
+		}
+	}
+	query.Parent = &parent
+	empty, err := s.QueryDataItemIdentities(context.Background(), 8, query)
+	if err != nil || empty.Total != 0 {
+		t.Fatalf("foreign tenant=%+v %v", empty, err)
+	}
+	pgroot := models.MetaNode{TenantID: 7, EngineID: engine + 1, NodeType: "server", Name: "", FullName: ""}
+	if err := db.Create(&pgroot).Error; err != nil {
+		t.Fatal(err)
+	}
+	schema := models.MetaNode{TenantID: 7, EngineID: engine + 1, NodeType: "schema", Name: "a.b/x", FullName: "a.b/x", ParentNodeID: &pgroot.ID}
+	if err := db.Create(&schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	table := models.MetaItem{TenantID: 7, EngineID: engine + 1, NodeID: schema.ID, Name: "x/y", FullName: "a.b/x.x/y", ItemType: "table", Fingerprint: commonmodels.GenerateItemFingerprint(engine+1, "a.b/x.x/y")}
+	if err := db.Create(&table).Error; err != nil {
+		t.Fatal(err)
+	}
+	target := plugin.TabularNamespacePath(engine+1, "schema", "a.b/x")
+	query = authorizationfacts.IdentityQuery{EngineID: engine + 1, Parent: &target, Page: 1, PageSize: 100}
+	found, err = s.QueryDataItemIdentities(context.Background(), 7, query)
+	if err != nil || found.Total != 1 || found.Data[0].Name != "x/y" {
+		t.Fatalf("quoted schema=%+v %v", found, err)
+	}
 }

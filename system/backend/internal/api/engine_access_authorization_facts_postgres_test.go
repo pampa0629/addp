@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strconv"
 	"sync/atomic"
@@ -143,10 +144,11 @@ func exerciseAuthorizationItemsRouter(t *testing.T, db *gorm.DB, actor engineacc
 			Data: []authorizationfacts.DataItemIdentity{{
 				EngineID: engine.ID, ItemFingerprint: commonmodels.GenerateItemFingerprint(engine.ID, "outdoor.persons"),
 				Name: "persons", FullName: "outdoor.persons", ItemType: "table",
-				Ancestors: []authorizationfacts.IdentityNode{{ID: 1, Name: "outdoor", NodeType: "schema"}},
+				Ancestors: []authorizationfacts.IdentityNode{{ID: 1, Name: "", NodeType: "server"}, {ID: 2, Name: "outdoor", NodeType: "schema"}},
 			}},
 			Total: 1, Page: 1, PageSize: 100, TotalPages: 1,
 		}
+		expectedQuery := authorizationfacts.IdentityQuery{EngineID: engine.ID, Page: 1, PageSize: 100}
 		var calls atomic.Int32
 		var unavailable atomic.Bool
 		owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +169,7 @@ func exerciseAuthorizationItemsRouter(t *testing.T, db *gorm.DB, actor engineacc
 				var query authorizationfacts.IdentityQuery
 				if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer addp_at_identity_fixture" ||
 					r.Header.Get("X-Tenant-ID") != "" || json.NewDecoder(r.Body).Decode(&query) != nil ||
-					!reflect.DeepEqual(query, authorizationfacts.IdentityQuery{EngineID: engine.ID, Page: 1, PageSize: 100}) {
+					!reflect.DeepEqual(query, expectedQuery) {
 					t.Error("wrong Meta owner query or forwarded human credential")
 					w.WriteHeader(http.StatusBadRequest)
 					return
@@ -205,7 +207,12 @@ func exerciseAuthorizationItemsRouter(t *testing.T, db *gorm.DB, actor engineacc
 			t.Fatalf("issue fixture browser session: %v", err)
 		}
 		request := func() *httptest.ResponseRecorder {
-			req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/system/engines/%d/data-items?page=1&page_size=100", engine.ID), nil)
+			path := fmt.Sprintf("/api/v1/system/engines/%d/data-items?page=1&page_size=100", engine.ID)
+			if expectedQuery.Parent != nil {
+				raw, _ := json.Marshal(expectedQuery.Parent)
+				path += "&parent=" + url.QueryEscape(string(raw)) + "&search=" + url.QueryEscape(expectedQuery.Search)
+			}
+			req := httptest.NewRequest(http.MethodGet, path, nil)
 			req.Header.Set("Authorization", "Bearer "+session.Session.AccessToken)
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, req)
@@ -216,11 +223,17 @@ func exerciseAuthorizationItemsRouter(t *testing.T, db *gorm.DB, actor engineacc
 		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &got) != nil || !reflect.DeepEqual(got, page) || calls.Load() != 1 {
 			t.Fatalf("production identity listing: status=%d owner_calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
 		}
+		parent := plugin.TabularNamespacePath(engine.ID, "schema", "outdoor")
+		expectedQuery.Parent, expectedQuery.Search = &parent, "persons"
+		response = request()
+		if response.Code != http.StatusOK || calls.Load() != 2 {
+			t.Fatalf("scoped production identity query: status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
+		}
 		unavailable.Store(true)
 		response = request()
 		var failure map[string]any
 		if response.Code != http.StatusServiceUnavailable || json.Unmarshal(response.Body.Bytes(), &failure) != nil ||
-			failure["error_code"] != "authorization_facts_unavailable" || len(failure) != 2 || calls.Load() != 2 {
+			failure["error_code"] != "authorization_facts_unavailable" || len(failure) != 2 || calls.Load() != 3 {
 			t.Fatalf("owner failure must not become empty inventory or retry: status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
 		}
 	})

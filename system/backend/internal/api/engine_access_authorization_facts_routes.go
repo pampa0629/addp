@@ -1,13 +1,17 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/jsonmap"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/authorization"
@@ -17,7 +21,7 @@ import (
 )
 
 type authorizationFactsService interface {
-	ListAuthorizationItems(context.Context, engineaccess.Actor, int64, int, int) (*authorizationfacts.IdentityPage, error)
+	ListAuthorizationItems(context.Context, engineaccess.Actor, int64, authorizationfacts.IdentityQuery) (*authorizationfacts.IdentityPage, error)
 	GetAuthorizationFacts(context.Context, engineaccess.Actor, int64, string) (*authorizationfacts.AuthorizationFacts, error)
 }
 
@@ -85,11 +89,13 @@ func (h *EngineAccessAuthorizationFactsHandler) Get(c *gin.Context) {
 
 // List godoc
 // @Summary 查询授权候选数据项 | List authorization DataItem identities
-// @Description 仅返回 Meta 已识别的数据项及祖先节点。需当前租户用户、源授权读取功能及引擎管理资格；读取前后复核。无原生文件枚举、内容读取或签发 | Returns only Meta identities and ancestor nodes. Rechecks current tenant user and engine management qualification before and after the owner query. No native file enumeration, content reads or issuance.
+// @Description 仅返回 Meta 已识别的数据项及祖先节点。需当前租户用户、源授权读取功能及引擎管理资格；读取前后复核。可按类型化父节点和名称／路径先过滤，再计数分页。无原生文件枚举、内容读取或签发 | Returns only Meta identities and ancestor nodes. Rechecks current tenant user and engine management qualification before and after the owner query. Typed parent and literal name/path filters precede counting and pagination. No native file enumeration, content reads or issuance.
 // @Tags 源数据授权 | Source Data Grants
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "引擎 ID | Engine ID"
+// @Param parent query string false "直属父节点的类型化路径 JSON，仅 PG／NFS | Typed parent path JSON for direct children, PG/NFS only"
+// @Param search query string false "按名称或路径搜索，最多512字节 | Literal name or path search, at most 512 bytes"
 // @Param page query int false "页码 | Page number" default(1) minimum(1)
 // @Param page_size query int false "每页数量 | Page size" default(100) minimum(1) maximum(100)
 // @Success 200 {object} authorizationfacts.IdentityPage "数据项身份清单 | DataItem identities"
@@ -107,11 +113,28 @@ func (h *EngineAccessAuthorizationFactsHandler) List(c *gin.Context) {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return
 	}
-	page, size := 1, 100
+	query := authorizationfacts.IdentityQuery{EngineID: uint(engineID), Page: 1, PageSize: 100}
 	for key, values := range c.Request.URL.Query() {
-		if (key != "page" && key != "page_size") || len(values) != 1 {
+		if (key != "page" && key != "page_size" && key != "parent" && key != "search") || len(values) != 1 {
 			respondIAMError(c, commonapi.ErrBadRequest)
 			return
+		}
+		if key == "search" {
+			query.Search = values[0]
+			continue
+		}
+		if key == "parent" {
+			raw := []byte(values[0])
+			var parent plugin.EngineCatalogPath
+			_, shapeErr := jsonmap.DecodeObjectStrict(raw, authorizationfacts.MaxNodeIdentityBytes, 8)
+			decoder := json.NewDecoder(bytes.NewReader(raw))
+			decoder.DisallowUnknownFields()
+			if shapeErr != nil || decoder.Decode(&parent) != nil {
+				respondIAMError(c, commonapi.ErrBadRequest)
+				return
+			}
+			query.Parent = &parent
+			continue
 		}
 		value, err := strconv.Atoi(values[0])
 		if err != nil || value <= 0 || strconv.Itoa(value) != values[0] {
@@ -119,12 +142,16 @@ func (h *EngineAccessAuthorizationFactsHandler) List(c *gin.Context) {
 			return
 		}
 		if key == "page" {
-			page = value
+			query.Page = value
 		} else {
-			size = value
+			query.PageSize = value
 		}
 	}
-	result, err := h.service.ListAuthorizationItems(c.Request.Context(), actor, engineID, page, size)
+	if query.Validate() != nil {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return
+	}
+	result, err := h.service.ListAuthorizationItems(c.Request.Context(), actor, engineID, query)
 	if err != nil {
 		respondAuthorizationFactsError(c, err)
 		return

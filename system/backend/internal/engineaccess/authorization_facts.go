@@ -142,8 +142,8 @@ func (s *Service) GetAuthorizationFacts(ctx context.Context, actor Actor, engine
 
 // Identity-only discovery for authorization candidates. No source enumeration,
 // permission settings or contents are returned by this route.
-func (s *Service) ListAuthorizationItems(ctx context.Context, actor Actor, engineID int64, page, size int) (*authorizationfacts.IdentityPage, error) {
-	query := authorizationfacts.IdentityQuery{EngineID: uint(engineID), Page: page, PageSize: size}
+func (s *Service) ListAuthorizationItems(ctx context.Context, actor Actor, engineID int64, query authorizationfacts.IdentityQuery) (*authorizationfacts.IdentityPage, error) {
+	query.EngineID = uint(engineID)
 	if engineID <= 0 || query.Validate() != nil {
 		return nil, commonapi.ErrBadRequest
 	}

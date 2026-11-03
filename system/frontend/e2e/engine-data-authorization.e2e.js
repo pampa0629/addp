@@ -175,7 +175,13 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     if (path.endsWith('/data-items')) {
       reads.push(request.url())
       const query = new URL(request.url()).searchParams, page = Number(query.get('page')), size = Number(query.get('page_size'))
-      const data = rows.map(({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }) => ({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }))
+      const data = rows.filter(row => {
+        const rawParent = query.get('parent'), search = query.get('search')
+        if (search && !`${row.name} ${row.full_name}`.toLowerCase().includes(search.toLowerCase())) return false
+        if (!rawParent) return true
+        const parent = JSON.parse(rawParent).segments.slice(1).map(part => part.name), chain = row.ancestors.slice(1).map(part => part.name)
+        return parent.every((name,i) => chain[i] === name) && (chain.length === parent.length || (chain.length === parent.length+1 && chain.at(-1) === row.name && chain.join('/') === row.full_name))
+      }).map(({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }) => ({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }))
       return reply({ data: data.slice((page-1)*size,page*size), total:data.length,page,page_size:size,total_pages:Math.ceil(data.length/size) })
     }
     const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: ftp ? sourceType : 'postgresql', engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
@@ -1425,4 +1431,24 @@ test('one batch freezes item and two independent node recursion choices; cancell
  expect(writes[0].body.item_fingerprint).toBeUndefined()
  expect(writes[1].body.item_fingerprint).toBeUndefined()
  expect(writes[2].body.item_fingerprint).toMatch(/^[a-f0-9]{64}$/)
+})
+
+
+test('NFS authorization expands one directory without loading its 5234-item engine inventory', async ({ page }, testInfo) => {
+  const hash = name => createHash('sha256').update(`2:${name}`).digest('hex')
+  const rows = [{ engine_id: 2, item_fingerprint: hash('Models/model.gdb'), name: 'model.gdb', full_name: 'Models/model.gdb', item_type: 'file', ancestors: [{id:'1',name:'',node_type:'root'},{id:'2',name:'Models',node_type:'dir'},{id:'3',name:'model.gdb',node_type:'dir'}] },
+    ...Array.from({length:5233},(_,i)=>({ engine_id:2,item_fingerprint:hash(`Other/${i}.csv`),name:`${i}.csv`,full_name:`Other/${i}.csv`,item_type:'file',ancestors:[{id:'1',name:'',node_type:'root'},{id:'99',name:'Other',node_type:'dir'}] }))]
+  const { reads, writes } = await fixture(page,{allowed:grantPermissions,sourceType:'nfs',ftp:'gdb',identityRows:rows})
+  await page.goto('/engines/2?tab=data-authorization'); await openNewAuthorization(page)
+  const tree = page.getByTestId('approval-resource-tree')
+  await expect(resourceOption(tree,'Models')).toBeVisible()
+  await expandSchema(tree,'Models')
+  await expect(resourceOption(tree,'model.gdb')).toBeVisible()
+  await expect(tree.getByRole('checkbox',{name:'model.gdb',exact:true})).toHaveCount(1)
+  const queries = reads.filter(value=>new URL(value).pathname.endsWith('/data-items')).map(value=>new URL(value).searchParams)
+  expect(queries).toHaveLength(2)
+  expect(queries.map(q=>JSON.parse(q.get('parent')).segments.map(part=>part.name))).toEqual([[''],['','Models']])
+  expect(queries.every(q=>q.get('page')==='1')).toBe(true)
+  expect(writes).toEqual([])
+  await page.screenshot({path:testInfo.outputPath('nfs-lazy-authorization-tree.png'),fullPage:true})
 })
