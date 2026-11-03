@@ -30,7 +30,7 @@ _WEIGHTS=('weighted_stddev的weights必须为与3或5窗口同尺寸的二维列
 MESSAGES={
  **{name:_WEIGHTS for name in FAILURES if name.startswith('weights_')},
  **{name:('只有method=weighted_mean、weighted_stddev或weighted_sum时才能提供weights参数', 'weights is only accepted when method=weighted_mean, weighted_stddev or weighted_sum')for name in ('unused_stddev','unused_variety_null')},
- 'unused_percentile':('只有method=percentile时才能提供percentile参数', 'percentile is only accepted when method=percentile'),
+ 'unused_percentile':('只有method=percentile时才能提供percentiles参数', 'percentiles is only accepted when method=percentile'),
  'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean、weighted_stddev或weighted_sum', 'method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean, weighted_stddev or weighted_sum'),
  **{name:('window_size must be the integer 3 or 5',)*2 for name in FAILURES if name.startswith('window_')},
  **{name:('band must be a valid one-based index',)*2 for name in FAILURES if name.startswith('band_')},
@@ -68,7 +68,7 @@ def definition(sources,parent,name,*,invalid=None,language='zh-cn'):
          'weights_object_element':[[{},1,1],[1,1,1],[1,1,1]],'weights_list_element':[[[],1,1],[1,1,1],[1,1,1]]}
     if invalid in bad:params['weights']=copy.deepcopy(bad[invalid])
     if invalid=='unused_variety_null':params['weights']=None
-    if invalid=='unused_percentile':params['percentile']=50
+    if invalid=='unused_percentile':params['percentiles']=[50]
     tasks.extend([{'id':'focal','operator':'raster_focal_statistics','depends_on':[prior],'params':params},
         {'id':'save','operator':'raster_save','depends_on':['focal'],'params':{'input_raster':{'$ref':'focal'},'target_parent_locator':parent,'target_name':f'failed-{invalid}-{language}.cog.tif'if invalid else name,'write_mode':'create','profile':'cog','blocksize':128,'overview_resampling':'nearest'}}])
     return {'tasks':tasks}

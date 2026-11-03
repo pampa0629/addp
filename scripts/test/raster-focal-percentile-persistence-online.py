@@ -92,7 +92,7 @@ def definition(sources,parent,name,*,invalid=None,language='zh-cn'):
                       'params':{'input_raster':{'$ref':'source'},'band':2,'rules':fixture.class_rules()}})
         prior='classes';band=1
     params={'input_raster':{'$ref':prior},'band':band,'window_size':window,'method':method}
-    if p is not None or invalid=='percentile_null':params['percentile']=p
+    if p is not None or invalid=='percentile_null':params['percentiles']=[p]
     tasks.extend([{'id':'focal','operator':'raster_focal_statistics','depends_on':[prior],'params':params},
                   {'id':'save','operator':'raster_save','depends_on':['focal'],
                    'params':{'input_raster':{'$ref':'focal'},'target_parent_locator':parent,
@@ -102,11 +102,11 @@ def definition(sources,parent,name,*,invalid=None,language='zh-cn'):
 
 # Literal expectations stay independent of product error tables. Existing generic
 # band/window causes remain literal English in both submitted-language contexts.
-_PERCENTILE=('percentile必须为0至100之间的有限数值，且不能为布尔值',
-             'percentile must be a finite number from 0 to 100, excluding booleans')
+_PERCENTILE=('percentiles必须为非空、严格递增且不重复的0至100有限非布尔数值列表',
+             'percentiles must be a nonempty strictly increasing list of distinct finite non-boolean numbers from 0 to 100')
 MESSAGES={
  **{name:_PERCENTILE for name in FAILURES if name.startswith('percentile_')},
- 'unused':('只有method=percentile时才能提供percentile参数','percentile is only accepted when method=percentile'),
+ 'unused':('只有method=percentile时才能提供percentiles参数','percentiles is only accepted when method=percentile'),
  'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean、weighted_stddev或weighted_sum',
            'method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean, weighted_stddev or weighted_sum'),
  **{name:('window_size must be the integer 3 or 5',)*2 for name in FAILURES if name.startswith('window_')},

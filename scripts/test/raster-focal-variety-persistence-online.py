@@ -35,7 +35,7 @@ MESSAGES={
  'complex':('Complex-valued bands are not supported by numeric analysis',)*2,
  **{name:('window_size must be the integer 3 or 5',)*2 for name in FAILURES if name.startswith('window_')},
  'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean、weighted_stddev或weighted_sum','method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean, weighted_stddev or weighted_sum'),
- 'unused':('只有method=percentile时才能提供percentile参数','percentile is only accepted when method=percentile'),
+ 'unused':('只有method=percentile时才能提供percentiles参数','percentiles is only accepted when method=percentile'),
 }
 
 class DiagnosticClient(base.DiagnosticClient):
@@ -57,7 +57,7 @@ def definition(sources,parent,name,*,invalid=None,language='zh-cn'):
     if stage=='reclassify':
         tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':2,'rules':fixture.class_rules()}});prior='classes';band=1
     params={'input_raster':{'$ref':prior},'band':band,'window_size':window,'method':method}
-    if p is not None:params['percentile']=p
+    if p is not None:params['percentiles']=[p]
     tasks.extend([{'id':'focal','operator':'raster_focal_statistics','depends_on':[prior],'params':params},
         {'id':'save','operator':'raster_save','depends_on':['focal'],'params':{'input_raster':{'$ref':'focal'},'target_parent_locator':parent,'target_name':f'failed-{invalid}-{language}.cog.tif' if invalid else name,'write_mode':'create','profile':'cog','blocksize':128,'overview_resampling':'nearest'}}])
     return {'tasks':tasks}

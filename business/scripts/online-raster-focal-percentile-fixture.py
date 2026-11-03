@@ -281,6 +281,7 @@ def verify(root,names,control):
         if band.DataType!=gdal.GDT_Float64 or band.GetNoDataValue() is None or not np.isnan(band.GetNoDataValue()):raise FixtureError('Float64 or NaN NoData changed')
         assert_pixels(actual,expected,name)
         if not np.array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected)):raise FixtureError('complete pixel mask differs')
+        if band.GetDescription() != ('percentile='+repr(float(CASES[name][3])) if CASES[name][2]=='percentile' else ''):raise FixtureError('percentile band description differs')
         if band.GetUnitType()!='' or band.GetScale() is not None or band.GetOffset() is not None or band.GetColorTable() is not None:raise FixtureError('percentile unit or source encoding differs')
         timings['pixels_mask_metadata_ms']+=round((time.monotonic()-pixel_start)*1000)
         with elapsed(timings,'cog_layout_ms'):

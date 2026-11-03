@@ -87,7 +87,7 @@ def test_percentile_complex_alpha_is_separate_native_mixed_mem_evidence_only(mon
     monkeypatch.setattr(product,'_open',lambda _:ds)
     monkeypatch.setattr(product,'_numeric_output',lambda *a,**k:pytest.fail('must reject alpha before allocating output'))
     with product.raster_workspace(),product.raster_error_language(language),pytest.raises(ValueError,match='Complex-valued bands'):
-        product.raster_focal_statistics(object(),1,3,'percentile',25)
+        product.raster_focal_statistics(object(),1,3,'percentile',[25])
     ds=None
 
 

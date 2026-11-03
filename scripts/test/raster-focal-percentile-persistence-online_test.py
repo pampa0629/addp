@@ -219,7 +219,7 @@ class PercentilePersistenceTest(unittest.TestCase):
             self.assertEqual([t['params']['locator']for t in tasks if t['operator']=='raster_load'],[source])
             focal=tasks[-2];self.assertEqual(focal['operator'],'raster_focal_statistics')
             self.assertEqual(focal['params']['window_size'],window);self.assertEqual(focal['params']['method'],method)
-            if method=='percentile':self.assertEqual(focal['params']['percentile'],p)
+            if method=='percentile':self.assertEqual(focal['params']['percentiles'],[p])
             else:self.assertNotIn('percentile',focal['params'])
             self.assertEqual(focal['params']['band'],2 if stage=='direct'else 1)
             self.assertEqual(set(m.source_bindings(sources,name)),{'input.source'})

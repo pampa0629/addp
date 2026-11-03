@@ -1244,7 +1244,7 @@ def test_full_percentile_matches_focal_for_same_population(tmp_path, percent):
     with raster_workspace():
         source=raster_load(source_plan(path))
         result=raster_statistics(source,percentiles=[percent])
-        focal=raster_focal_statistics(source,1,3,'percentile',percent)
+        focal=raster_focal_statistics(source,1,3,'percentile',[percent])
         assert result['percentiles'][0]['value']==gdal.Open(str(focal.path)).ReadAsArray()[1,1]
 
 
@@ -5063,7 +5063,7 @@ def test_focal_statistics_selected_band_rotated_validity_edges_and_scalar_oracle
                 else _focal_oracle(values,valid,window_size,method))
     with raster_workspace():
         result = raster_focal_statistics(raster_load(source_plan(path)),2,window_size,method,
-                                         **({'percentile':25} if method=='percentile' else {}))
+                                         **({'percentiles':[25]} if method=='percentile' else {}))
         ds = gdal.Open(str(result.path))
         assert ds.RasterCount==1 and ds.GetGeoTransform()==transform
         assert ds.GetSpatialRef().GetAuthorityCode(None)=='4326'
@@ -5168,7 +5168,7 @@ def test_focal_statistics_data_band_and_complex_rules(tmp_path,kind,method):
     ds=None
     with raster_workspace(),pytest.raises(ValueError):
         raster_focal_statistics(raster_load(source_plan(path)),2 if kind=='selected-alpha' else 1,3,method,
-                                **({'percentile':25} if method=='percentile' else {}))
+                                **({'percentiles':[25]} if method=='percentile' else {}))
 
 
 @pytest.mark.parametrize('invalid',[False,True],ids=['cog-save','failure-cleanup'])
@@ -13836,7 +13836,7 @@ def test_focal_percentile_complete_random_pixels_mask_and_median_equivalence(tmp
     source=create_raster(tmp_path/'percentile.tif',values,transform=(1,2,.5,4,.25,-3))
     before=source.read_bytes();expected=_focal_percentile_oracle(values,valid,window_size,percentile)
     with raster_workspace():
-        loaded=raster_load(source_plan(source));result=raster_focal_statistics(loaded,1,window_size,'percentile',percentile)
+        loaded=raster_load(source_plan(source));result=raster_focal_statistics(loaded,1,window_size,'percentile',[percentile])
         ds=gdal.Open(str(result.path));actual=ds.ReadAsArray()
         np.testing.assert_allclose(actual,expected,rtol=4e-15,atol=0,equal_nan=True)
         np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,valid)
@@ -13862,7 +13862,7 @@ def test_focal_percentile_numerical_extremes_exact_oracle_no_intermediate_overfl
     values=np.asarray([samples]);source=create_raster(tmp_path/'extreme.tif',values)
     expected=_focal_percentile_oracle(values,np.ones(values.shape,bool),window_size,p)
     with raster_workspace(),np.errstate(over='raise',invalid='raise'):
-        result=raster_focal_statistics(raster_load(source_plan(source)),1,window_size,'percentile',p)
+        result=raster_focal_statistics(raster_load(source_plan(source)),1,window_size,'percentile',[p])
         ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),expected);ds=None
 
 
@@ -13875,7 +13875,7 @@ def test_focal_percentile_native64_nodata_before_float_and_selected_band(tmp_pat
     (band.SetNoDataValueAsInt64 if dtype=='Int64'else band.SetNoDataValueAsUInt64)(nodata);band=ds=None
     expected=_focal_percentile_oracle(values,values!=nodata,3,percentile)
     with raster_workspace():
-        loaded=raster_load(source_plan(source));result=raster_focal_statistics(loaded,2,3,'percentile',percentile)
+        loaded=raster_load(source_plan(source));result=raster_focal_statistics(loaded,2,3,'percentile',[percentile])
         ds=gdal.Open(str(result.path));np.testing.assert_allclose(ds.ReadAsArray(),expected,rtol=4e-15,atol=0,equal_nan=True)
         np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,values!=nodata);ds=None
         if percentile==50:
@@ -13905,7 +13905,7 @@ def test_focal_percentile_cross_block_cog_complete_oracle_grid_mask_overviews_an
     with raster_workspace():
         loaded=raster_load(source_plan(source));workspace=loaded.workspace
         with monkeypatch.context()as scoped:
-            scoped.setattr(compute,'_blocks',bounded);result=raster_focal_statistics(loaded,1,window_size,'percentile',percentile)
+            scoped.setattr(compute,'_blocks',bounded);result=raster_focal_statistics(loaded,1,window_size,'percentile',[percentile])
         target=tmp_path/'percentile.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
         assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0
         assert validate_cog(raster_load(source_plan(target)))['valid']
@@ -13928,7 +13928,7 @@ def test_focal_percentile_cross_block_cog_complete_oracle_grid_mask_overviews_an
 def test_focal_percentile_all_invalid_missing_location_kept(tmp_path,shape,percentile):
     source=create_raster(tmp_path/'empty.tif',np.full(shape,-9999.),transform=None,crs='')
     with raster_workspace():
-        result=raster_focal_statistics(raster_load(source_plan(source)),1,5,'percentile',percentile);ds=gdal.Open(str(result.path))
+        result=raster_focal_statistics(raster_load(source_plan(source)),1,5,'percentile',[percentile]);ds=gdal.Open(str(result.path))
         assert np.isnan(ds.ReadAsArray()).all()and not ds.GetRasterBand(1).GetMaskBand().ReadAsArray().any()
         assert ds.GetGeoTransform(can_return_null=True)is None and not ds.GetProjection();ds=None
 
@@ -13940,8 +13940,8 @@ def test_focal_percentile_invalid_parameter_bilingual_before_allocating_output(t
     source=create_raster(tmp_path/'invalid-parameter.tif',np.array([[0.,1.]]));before=source.read_bytes()
     with raster_workspace(),raster_error_language(language):
         loaded=raster_load(source_plan(source));files=set(loaded.workspace.iterdir())
-        with pytest.raises(ValueError)as error:raster_focal_statistics(loaded,1,3,'percentile',percentile)
-        assert str(error.value)==str(compute._focal_error('percentile'))and set(loaded.workspace.iterdir())==files
+        with pytest.raises(ValueError)as error:raster_focal_statistics(loaded,1,3,'percentile',[percentile])
+        assert str(error.value)==str(compute._focal_error('percentiles'))and set(loaded.workspace.iterdir())==files
     assert source.read_bytes()==before
 
 
@@ -13952,7 +13952,7 @@ def test_focal_percentile_other_methods_reject_unused_parameter(tmp_path,method,
     source=create_raster(tmp_path/'old.tif',np.array([[0.,1.]]))
     with raster_workspace(),raster_error_language(language):
         loaded=raster_load(source_plan(source));files=set(loaded.workspace.iterdir())
-        with pytest.raises(ValueError)as error:raster_focal_statistics(loaded,1,3,method,50)
+        with pytest.raises(ValueError)as error:raster_focal_statistics(loaded,1,3,method,[50])
         assert str(error.value)==str(compute._focal_error('unused'))and set(loaded.workspace.iterdir())==files
 
 
@@ -13968,7 +13968,7 @@ def test_focal_percentile_async_save_bilingual_failure_preserves_source_old_arti
     if case=='reclassify':
         tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'rules':[{'min':None,'max':5,'class':0},{'min':5,'max':None,'class':10}]}});prior='classes'
     params={'input_raster':{'$ref':prior},'band':1,'window_size':3,'method':'median'if case=='unused'else'percentile'}
-    if case!='missing':params['percentile']=101 if case=='range'else '25' if case=='string' else 25
+    if case!='missing':params['percentiles']=[101 if case=='range'else '25' if case=='string' else 25]
     tasks.extend([{'id':'focal','operator':'raster_focal_statistics','depends_on':[prior],'params':params},
                   {'id':'save','operator':'raster_save','depends_on':['focal'],'params':{'input_raster':{'$ref':'focal'},'access_plan':target_plan(target),'profile':'cog'}}])
     workspaces=[];execute=workflow_engine._execute_operator
@@ -13998,7 +13998,7 @@ def test_focal_percentile_async_save_bilingual_failure_preserves_source_old_arti
         assert not target.exists()
         cause='injected percentile interpolation failure'
         with raster_error_language(language):
-            if case!='rank-failure':cause=str(compute._focal_error('unused'if case=='unused'else'percentile'))
+            if case!='rank-failure':cause=str(compute._focal_error('unused'if case=='unused'else'percentiles'))
         assert cause in status['error']
         assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
 
@@ -14730,7 +14730,7 @@ def test_focal_variety_async_cog_exact_results_failure_source_old_artifact_and_c
         tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'rules':[{'value':0,'class':-3},{'value':4,'class':0},{'value':8,'class':7}]}});prior='classes'
         classified=np.select([values==0,values==4,values==8],[-3.,0.,7.],default=np.nan)
     params={'input_raster':{'$ref':prior},'band':1,'window_size':3,'method':'variety'}
-    if case=='unused':params['percentile']=50
+    if case=='unused':params['percentiles']=[50]
     tasks.extend([{'id':'focal','operator':'raster_focal_statistics','depends_on':[prior],'params':params},
         {'id':'save','operator':'raster_save','depends_on':['focal'],'params':{'input_raster':{'$ref':'focal'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}])
     workspaces=[];original=workflow_engine._execute_operator
@@ -15304,7 +15304,7 @@ def test_focal_weighted_mean_missing_weights_bilingual_and_other_methods_reject_
         assert str(error.value)==str(compute._focal_error('weights'))
         for method in ('sum','mean','min','max','stddev','mode','median','percentile','variety'):
             for weights in (None,[[1]*3]*3):
-                with pytest.raises(ValueError)as error:raster_focal_statistics(None,1,3,method,percentile=50 if method=='percentile'else None,weights=weights)
+                with pytest.raises(ValueError)as error:raster_focal_statistics(None,1,3,method,weights=weights,**({'percentiles':[50]}if method=='percentile'else{}))
                 assert str(error.value)==str(compute._focal_error('weights_unused'))
 
 
@@ -15316,7 +15316,7 @@ def test_focal_weighted_mean_native_nodata_adjacent_valid_values_survive_all_num
     ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,getattr(gdal,'GDT_'+dtype));band=ds.GetRasterBand(1);band.WriteArray(array)
     (band.SetNoDataValueAsInt64 if dtype=='Int64'else band.SetNoDataValueAsUInt64)(nodata);band=ds=None
     with raster_workspace():
-        source=raster_load(source_plan(path));params={'percentile':50}if method=='percentile'else{'weights':[[1]*size for _ in range(size)]}if method=='weighted_mean'else{}
+        source=raster_load(source_plan(path));params={'percentiles':[50]}if method=='percentile'else{'weights':[[1]*size for _ in range(size)]}if method=='weighted_mean'else{}
         actual=_twi_read(raster_focal_statistics(source,1,size,method,**params));np.testing.assert_array_equal(np.isfinite(actual),[[False,True,True]])
         wanted=float(array[0,1])*(2 if method=='sum'else 1)if method!='stddev'else 0.
         np.testing.assert_array_equal(actual[0,1:], [wanted,wanted])
@@ -15519,7 +15519,7 @@ def test_focal_weighted_stddev_missing_weights_bilingual_and_other_methods_rejec
         assert str(error.value)==str(compute._focal_error('stddev_weights'))
         for method in ('sum','mean','min','max','stddev','mode','median','percentile','variety'):
             for weights in (None,[[1]*3]*3):
-                with pytest.raises(ValueError)as error:raster_focal_statistics(None,1,3,method,percentile=50 if method=='percentile'else None,weights=weights)
+                with pytest.raises(ValueError)as error:raster_focal_statistics(None,1,3,method,weights=weights,**({'percentiles':[50]}if method=='percentile'else{}))
                 assert str(error.value)==str(compute._focal_error('weights_unused'))
 
 
@@ -15764,7 +15764,7 @@ def test_focal_weighted_sum_missing_weights_bilingual_and_other_methods_reject_e
         assert str(error.value)==str(compute._focal_error('sum_weights'))
         for method in ('sum','mean','min','max','stddev','mode','median','percentile','variety'):
             for weights in (None,[[1]*3]*3):
-                with pytest.raises(ValueError)as error:raster_focal_statistics(None,1,3,method,percentile=50 if method=='percentile'else None,weights=weights)
+                with pytest.raises(ValueError)as error:raster_focal_statistics(None,1,3,method,weights=weights,**({'percentiles':[50]}if method=='percentile'else{}))
                 assert str(error.value)==str(compute._focal_error('weights_unused'))
 
 
@@ -15899,7 +15899,7 @@ def test_focal_weighted_sum_percentile_rejected_before_open(monkeypatch,language
     import operators.raster_compute as compute
     monkeypatch.setattr(compute,'_open',lambda *_:pytest.fail('unused percentile must precede opening'))
     with raster_workspace(),raster_error_language(language):
-        with pytest.raises(ValueError)as error:raster_focal_statistics(None,1,3,'weighted_sum',percentile=50,weights=[[1]*3]*3)
+        with pytest.raises(ValueError)as error:raster_focal_statistics(None,1,3,'weighted_sum',percentiles=[50],weights=[[1]*3]*3)
         assert str(error.value)==str(compute._focal_error('unused'))
 
 
@@ -18153,7 +18153,7 @@ def test_focal_circle_full_oracle_units_rectangles_band_mask_and_old_source(tmp_
     expected=_focal_circle_oracle(values,valid,dx,dy,units,radius,method)
     with raster_workspace():
         result=raster_focal_statistics(raster_load(source_plan(source)),2,method=method,
-            window_type='circle_metres',radius_metres=radius,**({'percentile':25.}if method=='percentile'else{}))
+            window_type='circle_metres',radius_metres=radius,**({'percentiles':[25.]}if method=='percentile'else{}))
         ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);actual=read_band_values(band)
         np.testing.assert_allclose(actual,expected,rtol=2e-14,atol=1e-14,equal_nan=True)
         np.testing.assert_array_equal(read_band_values(band.GetMaskBand())!=0,valid)
@@ -18279,7 +18279,7 @@ def test_focal_circle_both_block_axes_full_oracle_bounded_reads(tmp_path,monkeyp
         return original(*args,**kwargs)
     monkeypatch.setattr(c,'_blocks',read)
     with raster_workspace():
-        result=raster_focal_statistics(raster_load(source_plan(source)),1,method=method,window_type='circle_metres',radius_metres=2.,**({'percentile':25.}if method=='percentile'else{}))
+        result=raster_focal_statistics(raster_load(source_plan(source)),1,method=method,window_type='circle_metres',radius_metres=2.,**({'percentiles':[25.]}if method=='percentile'else{}))
         ds=gdal.Open(str(result.path));np.testing.assert_allclose(ds.ReadAsArray(),expected,rtol=2e-14,atol=1e-14,equal_nan=True);ds=None
     assert reads
     for window in reads:
@@ -19580,3 +19580,167 @@ def test_idw_failed_block_write_never_returns_partial_raster_and_cleans(tmp_path
         with pytest.raises(ValueError)as error:c.raster_interpolate_idw(_idw_points([(0.,0.)],[0.]),source,'value',1.)
         assert str(error.value)==str(c._idw_error('write')) and set(source.workspace.iterdir())==files
     assert path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('window', ['square3','square5','circle-metre','circle-foot','circle-survey'])
+def test_focal_percentiles_complete_multiband_order_singletons_endpoints_and_median(tmp_path,window):
+    from fractions import Fraction as Q
+    from pyproj import CRS
+    epsg=2222 if window=='circle-foot'else 2277 if window=='circle-survey'else 3857
+    grid=(100.,2.,.5 if window.startswith('square')else 0.,200.,.25 if window.startswith('square')else 0.,-3.)
+    rng=np.random.default_rng(937);data=rng.integers(-16,17,(8,11)).astype(float)/4;valid=rng.random(data.shape)>.2
+    data[~valid]=-9999.;data[3,4]=0.;valid[3,4]=True
+    source=create_raster(tmp_path/'many.tif',data,grid,f'EPSG:{epsg}');before=source.read_bytes();percentiles=[0.,12.5,33.3,50.,75.,100.];requested=percentiles.copy()
+    if window.startswith('square'):
+        size=3 if window=='square3'else 5;kwargs={'window_size':size}
+        expected=[_focal_percentile_oracle(data,valid,size,p)for p in percentiles]
+    else:
+        factor=CRS.from_epsg(epsg).axis_info[0].unit_conversion_factor;radius=float(3.1*factor);kwargs={'window_type':'circle_metres','radius_metres':radius};expected=[np.full(data.shape,np.nan)for _ in percentiles]
+        for y,x in np.ndindex(data.shape):
+            if not valid[y,x]:continue
+            samples=sorted(float(data[i,j])for i,j in np.ndindex(data.shape)if valid[i,j]and ((Q(i-y)*Q(grid[5]))**2+(Q(j-x)*Q(grid[1]))**2)*Q(factor)**2<=Q(radius)**2)
+            for index,p in enumerate(percentiles):
+                h=(len(samples)-1)*Q(p)/100;lo=h.numerator//h.denominator;t=h-lo
+                expected[index][y,x]=float(Q(samples[lo])*(1-t)+Q(samples[lo+bool(t)])*t)
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));result=raster_focal_statistics(loaded,1,method='percentile',percentiles=percentiles,**kwargs);ds=gdal.Open(str(result.path))
+        assert ds.RasterCount==len(percentiles)and ds.GetGeoTransform()==grid
+        for index,p in enumerate(percentiles,1):
+            band=ds.GetRasterBand(index);np.testing.assert_allclose(band.ReadAsArray(),expected[index-1],rtol=4e-15,atol=0,equal_nan=True)
+            np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,valid)
+            assert band.DataType==gdal.GDT_Float64 and np.isnan(band.GetNoDataValue())and band.GetDescription()=='percentile='+repr(p)
+            one=raster_focal_statistics(loaded,1,method='percentile',percentiles=[p],**kwargs);control=gdal.Open(str(one.path))
+            np.testing.assert_array_equal(band.ReadAsArray(),control.ReadAsArray());control=None
+        for index,method in((1,'min'),(4,'median'),(6,'max')):
+            old=raster_focal_statistics(loaded,1,method=method,**kwargs);control=gdal.Open(str(old.path))
+            np.testing.assert_array_equal(ds.GetRasterBand(index).ReadAsArray(),control.ReadAsArray());control=None
+        band=ds=None
+    assert percentiles==requested and source.read_bytes()==before
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('invalid',[None,[],True,50,'50',(50,),{},[True],['50'],[None],[[50]],[{}],[np.nan],[np.inf],[-1],[101],[50,25],[25,25],[0,False], [1.,1.]])
+def test_focal_percentiles_strict_list_before_source_open(monkeypatch,invalid,language):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda *_:pytest.fail('invalid list opened source'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:raster_focal_statistics(object(),1,3,'percentile',invalid)
+    with raster_error_language(language):assert str(error.value)==str(c._focal_error('percentiles'))
+
+
+@pytest.mark.parametrize('method',['sum','mean','min','max','stddev','mode','median','variety','weighted_mean','weighted_stddev','weighted_sum'])
+@pytest.mark.parametrize('value',[None,[50.]])
+def test_focal_percentiles_other_eleven_methods_reject_even_explicit_null(method,value,monkeypatch):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda *_:pytest.fail('unused list opened source'))
+    with pytest.raises(ValueError)as error:raster_focal_statistics(object(),1,3,method,value)
+    assert str(error.value)==str(c._focal_error('unused'))
+    with pytest.raises(TypeError,match='percentile'):raster_focal_statistics(object(),1,3,method,percentile=50)
+
+
+def test_focal_percentiles_share_bounded_reads_and_sort_per_block_and_full_cog(tmp_path,monkeypatch):
+    import operators.raster_compute as c
+    height,width=515,519;row=(np.arange(width)%19-9).astype(float)/4;row[[1,509,512]]=-9999.;row[511]=0.;values=np.repeat(row[None],height,axis=0)
+    source=create_raster(tmp_path/'cross.tif',values,(100.,2.,.5,200.,.25,-3.));before=source.read_bytes();reads=[];sorts=[];read=c._blocks;sort=c._focal_ordered_values
+    def bounded(ds,bands,**kwargs):
+        assert kwargs['native']and max(kwargs['window'][2:])<=512;reads.append(kwargs['window']);yield from read(ds,bands,**kwargs)
+    def ordered(*args):sorts.append(1);return sort(*args)
+    with raster_workspace():
+        loaded=raster_load(source_plan(source))
+        with monkeypatch.context()as patch:
+            patch.setattr(c,'_blocks',bounded);patch.setattr(c,'_focal_ordered_values',ordered)
+            many=raster_focal_statistics(loaded,1,5,'percentile',[0.,25.,50.,100.])
+        assert len(reads)==len(sorts)==4 and any(w[0]>0 for w in reads)and any(w[1]>0 for w in reads)
+        path=tmp_path/'many.cog.tif';artifact=raster_save(many,target_plan(path),profile='cog',blocksize=128);ds=gdal.Open(str(path))
+        assert ds.RasterCount==4 and artifact['size_bytes']==path.stat().st_size>0 and validate_cog(raster_load(source_plan(path)))['valid']
+        for index,p in enumerate((0.,25.,50.,100.),1):
+            band=ds.GetRasterBand(index);cache={};expected=np.empty(values.shape)
+            for y in range(height):
+                repeats=min(height,y+3)-max(0,y-2)
+                if repeats not in cache:
+                    strip=np.repeat(row[None],repeats,axis=0);cache[repeats]=_focal_percentile_oracle(strip,strip!=-9999.,5,p)[repeats//2]
+                expected[y]=cache[repeats]
+            np.testing.assert_array_equal(band.ReadAsArray(),expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,values!=-9999.)
+            assert band.GetDescription()=='percentile='+repr(p)and band.GetOverviewCount()==3 and band.GetColorInterpretation()!=gdal.GCI_AlphaBand
+            previous=expected
+            for i in range(3):
+                overview=band.GetOverview(i);ys=np.floor(.5+np.arange(overview.YSize)*previous.shape[0]/overview.YSize).astype(int);xs=np.floor(.5+np.arange(overview.XSize)*previous.shape[1]/overview.XSize).astype(int);previous=previous[np.ix_(ys,xs)]
+                np.testing.assert_array_equal(overview.ReadAsArray(),previous);np.testing.assert_array_equal(overview.GetMaskBand().ReadAsArray()!=0,np.isfinite(previous))
+        overview=band=ds=None
+    assert source.read_bytes()==before
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('fault',['rank','write'])
+def test_focal_percentiles_later_band_failure_no_partial_file_and_preserves_source(tmp_path,monkeypatch,language,fault):
+    import operators.raster_compute as c
+    source=create_raster(tmp_path/'late.tif',np.array([[0.,1.,7.]]));before=source.read_bytes();calls=[]
+    with raster_workspace(),raster_error_language(language):
+        loaded=raster_load(source_plan(source));files=set(loaded.workspace.iterdir());original=c._focal_rank_values if fault=='rank'else gdal.Band.WriteRaster
+        def fail_second(*args,**kwargs):
+            calls.append(1)
+            if len(calls)==2:
+                if fault=='rank':raise RuntimeError('second percentile failed')
+                return gdal.CE_Failure
+            return original(*args,**kwargs)
+        monkeypatch.setattr(c if fault=='rank'else gdal.Band,'_focal_rank_values'if fault=='rank'else'WriteRaster',fail_second)
+        with pytest.raises(RuntimeError if fault=='rank'else ValueError)as error:raster_focal_statistics(loaded,1,3,'percentile',[25.,75.])
+        assert len(calls)==2 and set(loaded.workspace.iterdir())==files
+        assert str(error.value)==('second percentile failed'if fault=='rank'else str(c._focal_error('write')))
+    assert source.read_bytes()==before
+
+
+@pytest.mark.parametrize('pair',[[-np.finfo(float).max,np.finfo(float).max],[0.,float(np.nextafter(0.,1.))]])
+def test_focal_percentiles_adjacent_requests_and_extremes_keep_distinct_band_labels(tmp_path,pair):
+    p0=float(np.nextafter(0.,1.));p1=float(np.nextafter(25.,100.));percentiles=[0.,p0,25.,p1,50.,100.]
+    source=create_raster(tmp_path/'extreme-list.tif',np.array([pair]))
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));many=raster_focal_statistics(loaded,1,3,'percentile',percentiles);ds=gdal.Open(str(many.path))
+        labels=[]
+        for index,p in enumerate(percentiles,1):
+            one=raster_focal_statistics(loaded,1,3,'percentile',[p]);other=gdal.Open(str(one.path))
+            np.testing.assert_array_equal(ds.GetRasterBand(index).ReadAsArray(),other.ReadAsArray());other=None
+            labels.append(ds.GetRasterBand(index).GetDescription())
+        assert len(set(labels))==len(percentiles)and labels==['percentile='+repr(p)for p in percentiles]
+        ds=None
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['success','rank','write'])
+def test_focal_percentiles_async_multiband_cog_and_late_failure_no_publication(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine,operators.raster_compute as c
+    data=np.array([[0.,1.,4.],[2.,-9999.,8.],[3.,7.,-2.]]);source=create_raster(tmp_path/'async-many.tif',data);before=source.read_bytes();target=tmp_path/'many.tif';prior=tmp_path/'prior';prior.write_bytes(b'keep prior bytes');work=[]
+    execute=workflow_engine._execute_operator;calls=[]
+    def capture(name,params):
+        if name=='raster_focal_statistics':work.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    if case!='success':
+        original=c._focal_rank_values if case=='rank'else gdal.Band.WriteRaster
+        def fail_second(*args,**kwargs):
+            calls.append(1)
+            if len(calls)==2:
+                if case=='rank':raise RuntimeError('second percentile failed')
+                return gdal.CE_Failure
+            return original(*args,**kwargs)
+        monkeypatch.setattr(c if case=='rank'else gdal.Band,'_focal_rank_values'if case=='rank'else'WriteRaster',fail_second)
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
+        {'id':'focal','operator':'raster_focal_statistics','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'window_size':3,'method':'percentile','percentiles':[25.,75.]}},
+        {'id':'save','operator':'raster_save','depends_on':['focal'],'params':{'input_raster':{'$ref':'focal'},'access_plan':target_plan(target),'profile':'cog'}}]
+    client=api_server.app.test_client();submitted=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert submitted.status_code==202,submitted.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        state=client.get('/api/executions/'+submitted.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if state['status']in('success','failed'):break
+        time.sleep(.01)
+    assert state['status']==('success'if case=='success'else'failed'),state
+    assert work and all(not p.exists()for p in work)and source.read_bytes()==before and prior.read_bytes()==b'keep prior bytes'
+    if case=='success':
+        ds=gdal.Open(str(target));assert ds.RasterCount==2 and ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG'
+        for index,p in enumerate((25.,75.),1):
+            np.testing.assert_array_equal(ds.GetRasterBand(index).ReadAsArray(),_focal_percentile_oracle(data,data!=-9999.,3,p))
+            assert ds.GetRasterBand(index).GetDescription()=='percentile='+repr(p)
+        ds=None
+    else:
+        assert not target.exists()and len(calls)==2
+        with raster_error_language(language):cause='second percentile failed'if case=='rank'else str(c._focal_error('write'))
+        assert cause in state['error']
