@@ -54,7 +54,7 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 		case "operator_crs_invalid", "operator_overlay_fields_conflict":
 			ok = true
 		}
-	case "clip":
+	case "clip", "voronoi":
 		switch reason {
 		case "operator_input_invalid":
 			parameter, ok = "input_gdf", true

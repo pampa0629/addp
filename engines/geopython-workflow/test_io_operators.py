@@ -562,10 +562,12 @@ def test_load_spatial_geometry_identity_consumers_reject_geometry_output_collisi
 def test_load_spatial_geometry_identity_voronoi_reads_actual_point_geometry(tmp_path):
     from operators import get_operator
     from geopandas.testing import assert_geodataframe_equal
-    points=gpd.GeoDataFrame({"geometry":["甲","乙","丙"],"point_shape":gpd.GeoSeries.from_wkt(["POINT (0 0)","POINT (2 0)","POINT (1 2)"],crs=3857)},geometry="point_shape")
+    points=gpd.GeoDataFrame({"station":[1,2,3],"geometry":["甲","乙","丙"],"point_shape":gpd.GeoSeries.from_wkt(["POINT (0 0)","POINT (2 0)","POINT (1 2)"],crs=3857)},geometry="point_shape")
     points.to_file(tmp_path/"points.gpkg",driver="GPKG",index=False);frame=_load_local(tmp_path/"points.gpkg");before=frame.copy(deep=True)
-    expected=get_operator("voronoi")(frame.drop(columns="geometry").rename_geometry("geometry"))
-    actual=get_operator("voronoi")(frame)
+    coverage=gpd.GeoDataFrame(geometry=gpd.GeoSeries.from_wkt(["POLYGON ((-1 -1,3 -1,3 3,-1 3,-1 -1))"],crs=3857))
+    expected=get_operator("voronoi")(frame.drop(columns="geometry").rename_geometry("geometry"),coverage,"station")
+    actual=get_operator("voronoi")(frame,coverage,"station")
+    assert actual["geometry"].tolist()==["甲","乙","丙"] and actual.station.tolist()==[1,2,3]
     assert len(actual)==len(expected)==3 and actual.geometry.to_wkb().tolist()==expected.geometry.to_wkb().tolist()
     assert_geodataframe_equal(frame,before)
 

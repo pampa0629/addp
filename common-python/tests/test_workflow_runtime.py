@@ -353,3 +353,18 @@ def test_relation_filter_three_closed_input_rules_without_identifiers_or_private
             bad=copy.deepcopy(value);bad['operator'].update(patch)
             assert validated_operator_diagnostic(bad) is None
     assert OperatorInputError('operator_overlay_fields_conflict','PRIVATE').diagnostic(operator_id,2) is None
+
+
+def test_voronoi_three_closed_admissions_require_explicit_mask_not_reference_fields():
+    import copy
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES,OperatorInputError,validated_operator_diagnostic
+    expected={'operator_input_invalid':'input_gdf','operator_mask_invalid':'mask_gdf','operator_crs_invalid':''}
+    assert {key:value for key,value in OPERATOR_INPUT_RULES.items()if key[0]=='voronoi'}=={('voronoi',key,''):value for key,value in expected.items()}
+    for reason,parameter in expected.items():
+        value=OperatorInputError(reason,'PRIVATE source geometry').diagnostic('voronoi',2)
+        assert value['operator']=={'node_index':2,'operator_id':'voronoi',**({'parameter':parameter}if parameter else{})}
+        assert validated_operator_diagnostic(value)==value
+        for patch in ({'field':'station'},{'field':'PRIVATE'},{'parameter':'gdf_b'},{'node_index':True}):
+            bad=copy.deepcopy(value);bad['operator'].update(patch)
+            assert validated_operator_diagnostic(bad)is None
+    assert OperatorInputError('operator_reference_invalid','PRIVATE').diagnostic('voronoi',2)is None

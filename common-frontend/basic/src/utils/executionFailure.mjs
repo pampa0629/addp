@@ -22,6 +22,8 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'resource_exhausted', 'invalid_input', 'execution_failed', 'submission_uncertain',
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
+const operatorFailureTemplates = Object.freeze({ contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi' })
+
 export function executionFailurePresentation(details, translate) {
   const diagnostic = details?.diagnostic
   const controlled = diagnostic?.schema_version === 'addp.execution-failure/v3'
@@ -37,8 +39,8 @@ export function executionFailurePresentation(details, translate) {
   const code = typeof rawCode === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(rawCode) && !/secret/i.test(rawCode) ? rawCode : ''
   const operator = controlled ? diagnostic.operator : null
   const parameters = operator ? { field: operator.field || '' } : undefined
-  const templates = operator && ['contains', 'intersects'].includes(operator.operator_id)
-    ? 'common.executionFailure.spatialRelation' : 'common.executionFailure'
+  const profile = operator && operatorFailureTemplates[operator.operator_id]
+  const templates = `common.executionFailure${profile ? `.${profile}` : ''}`
   const sql = controlled ? diagnostic.sql : null
   const object = sql?.object ? translate(`common.executionFailure.objects.${sql.object.kind}`, { name: sql.object.name }) : ''
   const position = sql?.position ? translate('common.executionFailure.sourcePosition', sql.position) : ''
@@ -57,6 +59,9 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["voronoi", "operator_input_invalid", "input_gdf", ""],
+  ["voronoi", "operator_mask_invalid", "mask_gdf", ""],
+  ["voronoi", "operator_crs_invalid", "", ""],
   ["contains", "operator_input_invalid", "input_gdf", ""],
   ["contains", "operator_reference_invalid", "gdf_b", ""],
   ["contains", "operator_crs_invalid", "", ""],

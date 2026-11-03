@@ -1257,6 +1257,7 @@ for (const locale of ['zh-cn', 'en']) for (const cause of ['roles', 'choice', 'r
 
 for (const locale of ['zh-cn','en']) {
   for (const [operator_id,reason,parameter,field,name] of [
+    ...[['operator_input_invalid','input_gdf'],['operator_mask_invalid','mask_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>['voronoi',reason,parameter,'',locale==='zh-cn'?'泰森多边形':'Voronoi polygons']),
     ['extract_line_nodes','operator_field_conflict','input_gdf','node_id',locale==='zh-cn'?'节点提取':'Extract line nodes'],
     ['extract_line_nodes','operator_endpoint_network_invalid','input_gdf','',locale==='zh-cn'?'节点提取':'Extract line nodes'],
     ['batch_buffer','operator_field_conflict','input_gdf','distance', locale === 'zh-cn' ? '多距缓冲' : 'Multi-distance buffer'],
@@ -1283,6 +1284,7 @@ for (const locale of ['zh-cn','en']) {
     } else if(reason==='operator_endpoint_network_invalid') await expect(panel).toContainText(locale==='zh-cn'?'双方端点':'both endpoints')
     else if(reason==='operator_source_topology_invalid') await expect(panel).toContainText(locale==='zh-cn'?'内部自交':'internal self-intersections')
     else if(reason==='operator_trim_conflict') await expect(panel).toContainText(locale==='zh-cn'?'交错或相遇':'cross or meet')
+    else if(operator_id==='voronoi') await expect(panel).toContainText(reason==='operator_input_invalid'?(locale==='zh-cn'?'重复 XY':'duplicate XY'):reason==='operator_mask_invalid'?'Polygon':locale==='zh-cn'?'投影坐标系':'projected CRS')
     else await expect(panel).toContainText(locale==='zh-cn'?'有限正数':'finite positive')
     await expect(panel).not.toContainText('private-password')
     await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()

@@ -7679,3 +7679,260 @@ def test_relation_filter_native_save_reload_preserves_business_fields_and_origin
     assert list(reloaded['intersects'])==['kept-x','kept-z']
     assert list(reloaded['geometry'])==['ordinary','original']
     assert all(a.equals_exact(b,0)for a,b in zip(reloaded.geometry,result.geometry))
+
+
+def voronoi_inputs(points=None, masks=None):
+    points=[Point(0,0),Point(4,0)] if points is None else points
+    masks=[box(-2,-2,6,2)] if masks is None else masks
+    left=gpd.GeoDataFrame({'station':pd.Series(range(1,len(points)+1),dtype='Int64')},geometry=points,crs=3857).rename_geometry('point_shape')
+    right=gpd.GeoDataFrame({'range_name':['ignored']*len(masks)},geometry=masks,crs=3857).rename_geometry('coverage_shape')
+    return left,right
+
+
+def assert_voronoi_polygons(result,source,indices,expected):
+    assert list(result.columns)==list(source.columns)
+    assert list(result.index)==list(range(len(indices)))
+    assert list(result.station)==list(source.station.iloc[indices])
+    assert result.geometry.name==source.geometry.name and result.crs==source.crs
+    for got,want in zip(result.geometry,expected):
+        assert got.is_valid and got.geom_type in ('Polygon','MultiPolygon')
+        assert got.normalize().equals_exact(want.normalize(),0)
+    assert len(result)==len(expected)
+
+
+def test_voronoi_contract_explicit_range_and_original_station_attributes():
+    left,right=voronoi_inputs([Point(4,0),Point(0,0)])
+    left['grade']=pd.Series([None,2**53+1],dtype='Int64')
+    left['enabled']=pd.Series([None,False],dtype='boolean')
+    left['geometry']=pd.Series(['business',None],dtype='string')
+    left['fid']=pd.Series([2**60+1,2**60+3],dtype='Int64')
+    left.index=pd.Index(['same','same'],name='original')
+    before_a,before_b=left.copy(),right.copy()
+    result=get_operator('voronoi')(left,right,'station')
+    assert_voronoi_polygons(result,left,[0,1],[box(2,-2,6,2),box(-2,-2,2,2)])
+    pd.testing.assert_frame_equal(result.drop(columns=result.geometry.name),left.reset_index(drop=True).drop(columns=left.geometry.name))
+    assert_geodataframe_equal(left,before_a);assert_geodataframe_equal(right,before_b)
+
+
+@pytest.mark.parametrize('outside',[False,True])
+def test_voronoi_single_station_owns_complete_multipart_range_with_hole(outside):
+    outer=Polygon([(-2,-2),(2,-2),(2,2),(-2,2)],holes=[[(-1,-1),(1,-1),(1,1),(-1,1)]])
+    expected=shapely.MultiPolygon([outer,box(10,0,11,1)])
+    left,right=voronoi_inputs([Point(100,100)if outside else Point(0,0)],[outer,box(10,0,11,1),outer])
+    assert_voronoi_polygons(get_operator('voronoi')(left,right,'station'),left,[0],[expected])
+
+
+def test_voronoi_collinear_stations_and_far_coverage_are_supported():
+    left,right=voronoi_inputs([Point(4,0),Point(0,0),Point(2,0)],[box(-2,-1,6,1)])
+    assert_voronoi_polygons(get_operator('voronoi')(left,right,'station'),left,[0,1,2],
+        [box(3,-1,6,1),box(-2,-1,1,1),box(1,-1,3,1)])
+    left,right=voronoi_inputs([Point(-10,0),Point(10,0)],[box(-1,-1,1,1)])
+    result=get_operator('voronoi')(left,right,'station')
+    assert_voronoi_polygons(result,left,[0,1],[box(-1,-1,0,1),box(0,-1,1,1)])
+    assert all(not geom.covers(point)for geom,point in zip(result.geometry,left.geometry))
+
+
+def test_voronoi_hole_and_positive_area_components_only_without_minimum_threshold():
+    hole=[(-1,-.5),(.5,-.5),(.5,.5),(-1,.5)]
+    mask=Polygon([(-2,-2),(6,-2),(6,2),(-2,2)],holes=[hole])
+    left,right=voronoi_inputs(masks=[mask])
+    expected=[Polygon([(-2,-2),(2,-2),(2,2),(-2,2)],holes=[hole]),box(2,-2,6,2)]
+    assert_voronoi_polygons(get_operator('voronoi')(left,right,'station'),left,[0,1],expected)
+    triangle=Polygon([(2,5),(3,4),(3,6)])
+    left,right=voronoi_inputs(masks=[box(-1,-1,1,1),box(2,-1,3,1),triangle])
+    expected=[box(-1,-1,1,1),shapely.MultiPolygon([box(2,-1,3,1),triangle])]
+    assert_voronoi_polygons(get_operator('voronoi')(left,right,'station'),left,[0,1],expected)
+    tiny=box(0,0,2**-20,2**-20)
+    left,right=voronoi_inputs([Point(100,100)],[tiny])
+    result=get_operator('voronoi')(left,right,'station')
+    assert_voronoi_polygons(result,left,[0],[tiny]);assert result.geometry.iloc[0].area==2**-40
+
+
+def test_voronoi_omits_zero_area_clips_and_keeps_one_multipart_row_per_station():
+    left,right=voronoi_inputs(masks=[box(-2,-2,0,-1),box(-2,1,0,2)])
+    assert_voronoi_polygons(get_operator('voronoi')(left,right,'station'),left,[0],
+        [shapely.MultiPolygon([box(-2,-2,0,-1),box(-2,1,0,2)])])
+    left,right=voronoi_inputs(masks=[box(-2,-1,2,1)])
+    assert_voronoi_polygons(get_operator('voronoi')(left,right,'station'),left,[0],[box(-2,-1,2,1)])
+
+
+@pytest.mark.parametrize('empty',['source','mask','both'])
+def test_voronoi_empty_batch_preserves_full_source_schema(empty):
+    left,right=voronoi_inputs()
+    if empty in ('source','both'):left=left.iloc[:0]
+    if empty in ('mask','both'):right=right.iloc[:0]
+    assert_geodataframe_equal(get_operator('voronoi')(left,right,'station'),left.iloc[:0].reset_index(drop=True))
+
+
+@pytest.mark.parametrize('side',['source','mask'])
+@pytest.mark.parametrize('problem',['missing','empty','wrong_type','z','m','infinite','invalid','duplicate_columns','extra_geometry','unknown_crs','geographic','mismatch'])
+def test_voronoi_typed_admission_rejects_invalid_inputs_before_empty_shortcut(side,problem):
+    from operators.data_operations import VoronoiInputError
+    left,right=voronoi_inputs();frame=left if side=='source'else right
+    if problem=='duplicate_columns':frame.columns=[frame.geometry.name]*len(frame.columns)
+    elif problem=='extra_geometry':frame['second_geometry']=frame.geometry.copy()
+    elif problem in ('unknown_crs','geographic','mismatch'):
+        frame=frame.set_crs({'unknown_crs':None,'geographic':4326,'mismatch':3395}[problem],allow_override=True)
+    else:
+        value={'missing':None,'empty':Point()if side=='source'else Polygon(),
+            'wrong_type':shapely.MultiPoint([(0,0),(1,1)])if side=='source'else Point(0,0),
+            'z':Point(0,0,1)if side=='source'else Polygon([(0,0,1),(1,0,1),(0,1,1)]),
+            'm':shapely.from_wkt('POINT M (0 0 1)'if side=='source'else'POLYGON M ((0 0 1,1 0 1,0 1 1,0 0 1))'),
+            'infinite':Point(float('inf'),0)if side=='source'else Polygon([(0,0),(float('inf'),0),(0,1)]),
+            'invalid':LineString([(0,0),(0,0)])if side=='source'else Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)])}[problem]
+        frame[frame.geometry.name]=[value]*len(frame)
+    if side=='source':left,right=frame,right.iloc[:0]
+    else:left,right=left.iloc[:0],frame
+    with pytest.raises(VoronoiInputError)as caught:get_operator('voronoi')(left,right,'station')
+    assert caught.value.code==('crs'if problem in ('unknown_crs','geographic','mismatch')else side)
+
+
+@pytest.mark.parametrize('problem',['same_xy','signed_zero','id_missing','id_null','id_duplicate','id_geometry','id_non_scalar'])
+def test_voronoi_rejects_ambiguous_station_identity_without_deduplicating(problem):
+    from operators.data_operations import VoronoiInputError
+    left,right=voronoi_inputs();field='station'
+    if problem=='same_xy':left[left.geometry.name]=[Point(1,2),Point(1,2)]
+    elif problem=='signed_zero':left[left.geometry.name]=[Point(0.,0.),Point(-0.,-0.)]
+    elif problem=='id_missing':field='PRIVATE'
+    elif problem=='id_null':left['station']=pd.Series([None,2],dtype='Int64')
+    elif problem=='id_duplicate':left['station']=[1,1]
+    elif problem=='id_geometry':field=left.geometry.name
+    else:left['station']=[[1],[2]]
+    before=left.copy()
+    with pytest.raises(VoronoiInputError)as caught:get_operator('voronoi')(left,right,field)
+    assert caught.value.code=='source';assert_geodataframe_equal(left,before)
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('problem,reason,param',[('source','operator_input_invalid','input_gdf'),('mask','operator_mask_invalid','mask_gdf'),('crs','operator_crs_invalid','')])
+def test_voronoi_diagnostic_binds_frozen_node_and_blocks_save(monkeypatch,language,problem,reason,param):
+    import workflow_engine
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    left,right=voronoi_inputs()
+    if problem=='source':left[left.geometry.name]=[Point(0,0)]*2
+    elif problem=='mask':right[right.geometry.name]=[Point(0,0)]
+    else:right=right.set_crs(None,allow_override=True)
+    lookup=workflow_engine.get_operator
+    def guarded(name):
+        if name=='save':raise AssertionError('invalid voronoi input reached save')
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    tasks=[{'id':'PRIVATE','operator':'voronoi','params':{'input_gdf':left,'mask_gdf':right,'id_field':'station'},'depends_on':[]},
+        {'id':'save','operator':'save','params':{'input_df':{'$ref':'PRIVATE'}},'depends_on':['PRIVATE']}]
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert caught.value.error_code=='INVALID_PARAMS'
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+        'operator':{'node_index':1,'operator_id':'voronoi',**({'parameter':param}if param else{})}}
+    assert 'PRIVATE'not in json.dumps(caught.value.diagnostic)
+
+
+def test_voronoi_binding_is_independent_of_native_cell_order(monkeypatch):
+    original=shapely.voronoi_polygons;calls=[]
+    def shuffled(points,**kwargs):
+        calls.append(kwargs)
+        result=original(points,**kwargs)
+        return shapely.GeometryCollection(list(reversed(result.geoms)))
+    monkeypatch.setattr(shapely,'voronoi_polygons',shuffled)
+    left,right=voronoi_inputs()
+    assert_voronoi_polygons(get_operator('voronoi')(left,right,'station'),left,[0,1],[box(-2,-2,2,2),box(2,-2,6,2)])
+    assert len(calls)==1 and calls[0]['tolerance']==0 and 'ordered'not in calls[0]
+    left,right=voronoi_inputs(masks=[box(100,0,101,1)])
+    assert_voronoi_polygons(get_operator('voronoi')(left,right,'station'),left,[1],[box(100,0,101,1)])
+
+
+@pytest.mark.parametrize('stage',['union_all','voronoi_polygons','intersection'])
+def test_voronoi_native_exception_remains_execution_failed(monkeypatch,stage):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    left,right=voronoi_inputs()
+    def fail(*args,**kwargs):raise shapely.errors.GEOSException('PRIVATE numerical failure')
+    monkeypatch.setattr(shapely,stage,fail)
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner().execute({'tasks':[
+        {'id':'regions','operator':'voronoi','params':{'input_gdf':left,'mask_gdf':right,'id_field':'station'},'depends_on':[]}]})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('fault',['count','same_station','missing_station','invalid_polygon','non_polygon'])
+def test_voronoi_native_partition_or_binding_failure_is_not_input_error(monkeypatch,fault):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    left,right=voronoi_inputs()
+    first=box(-2,-2,2,2);last=box(2,-2,6,2)
+    cells={'count':[first], 'same_station':[first,first], 'missing_station':[box(-10,-10,-9,-9),last],
+        'invalid_polygon':[Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),last], 'non_polygon':[Point(0,0),last]}[fault]
+    monkeypatch.setattr(shapely,'voronoi_polygons',lambda *args,**kwargs:shapely.GeometryCollection(cells))
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner().execute({'tasks':[
+        {'id':'regions','operator':'voronoi','params':{'input_gdf':left,'mask_gdf':right,'id_field':'station'},'depends_on':[]}]})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('crs',[3857,2263])
+def test_voronoi_native_gpkg_dag_reload_independent_ogr_preserves_source_identity(tmp_path,crs):
+    from osgeo import ogr
+    left,right=voronoi_inputs([Point(4,0),Point(0,0)])
+    left=left.set_crs(crs,allow_override=True);right=right.set_crs(crs,allow_override=True)
+    left['station']=pd.Series([2**60+1,2**60+3],dtype='Int64')
+    left['grade']=pd.Series([None,2**53+1],dtype='Int64')
+    left['enabled']=pd.Series([None,False],dtype='boolean')
+    left['geometry']=pd.Series(['station-east','station-west'],dtype='string')
+    left['fid']=pd.Series([None,7],dtype='Int64')
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    for name,frame in [('points',left),('mask',right)]:get_operator('save')(input_df=frame,connection_info=conn,path=name+'.gpkg',mode='fail')
+    before={n:(tmp_path/(n+'.gpkg')).read_bytes()for n in ('points','mask')}
+    tasks=[{'id':'regions','operator':'voronoi','params':{'input_gdf':{'$ref':'points'},'mask_gdf':{'$ref':'mask'},'id_field':'station'},'depends_on':['points','mask']}]
+    tasks.extend({'id':n,'operator':'load','params':{'connection_info':conn,'path':n+'.gpkg'},'depends_on':[]}for n in ('points','mask'))
+    tasks.append({'id':'save','operator':'save','params':{'input_df':{'$ref':'regions'},'connection_info':conn,'path':'regions.gpkg','mode':'fail'},'depends_on':['regions']})
+    result=execute_workflow({'tasks':tasks});assert result['status']=='success',result
+    ds=ogr.Open(str(tmp_path/'regions.gpkg'));layer=ds.GetLayer(0);rows=list(layer);defn=layer.GetLayerDefn()
+    assert len(rows)==2 and layer.GetSpatialRef().GetAuthorityCode(None)==str(crs)
+    assert layer.GetFIDColumn().lower()!='fid'
+    assert defn.GetFieldDefn(defn.GetFieldIndex('station')).GetType()==ogr.OFTInteger64
+    assert defn.GetFieldDefn(defn.GetFieldIndex('enabled')).GetSubType()==ogr.OFSTBoolean
+    expected=[box(2,-2,6,2),box(-2,-2,2,2)]
+    for i,row in enumerate(rows):
+        assert row.GetField('station')==[2**60+1,2**60+3][i]
+        assert row.GetField('grade')==[None,2**53+1][i]
+        assert row.GetField('enabled')==[None,False][i]
+        assert row.GetField('fid')==[None,7][i]
+        assert row.GetField('geometry')==['station-east','station-west'][i]
+        assert row.GetFieldIndex('range_name')==-1
+        assert row.GetGeometryRef().Normalize().ExportToIsoWkb()==ogr.CreateGeometryFromWkt(expected[i].wkt).Normalize().ExportToIsoWkb()
+    physical_name=layer.GetGeometryColumn();ds=None
+    loaded=get_operator('load')(connection_info=conn,path='regions.gpkg')
+    assert loaded.geometry.name==physical_name and loaded.station.dtype=='Int64'and loaded.grade.dtype=='Int64'and loaded.enabled.dtype=='boolean'
+    assert list(loaded['geometry'])==['station-east','station-west']
+    for n in before:assert(tmp_path/(n+'.gpkg')).read_bytes()==before[n]
+
+
+@pytest.mark.parametrize('problem',[None,'source','mask','crs'])
+def test_voronoi_async_api_discovery_three_admissions_and_definition_binding(tmp_path,monkeypatch,problem):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    left,right=voronoi_inputs()
+    if problem=='source':left[left.geometry.name]=[Point(0,0)]*2
+    elif problem=='mask':right[right.geometry.name]=[Point(0,0)]
+    elif problem=='crs':right=right.set_crs(3395,allow_override=True)
+    for name,frame in [('points',left),('mask',right)]:frame.to_file(tmp_path/(name+'.gpkg'),driver='GPKG',index=False)
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'PRIVATE_REGION','operator':'voronoi','params':{'input_gdf':{'$ref':'points'},'mask_gdf':{'$ref':'mask'},'id_field':'station'},'depends_on':['points','mask']}]
+    tasks.extend({'id':n,'operator':'load','params':{'connection_info':conn,'path':n+'.gpkg'},'depends_on':[]}for n in ('points','mask'))
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client()as client:
+        spec=next(s for s in client.get('/api/operators').get_json()['operators']if s['id']=='voronoi')
+        assert{p['name']for p in spec['parameters']}=={'input_gdf','mask_gdf','id_field'}and all(p['required']for p in spec['parameters'])
+        assert client.post('/api/operators/voronoi/invoke',json={'params':{}}).status_code==403
+        response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert response.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            observed=client.get('/api/executions/'+response.get_json()['execution_id']);assert observed.status_code==200;state=observed.get_json()
+            if state['status']in('success','failed'):break
+            time.sleep(.01)
+        if problem is None:assert state['status']=='success'and len(json.loads(state['result'])['features'])==2,state
+        else:
+            reason,param={'source':('operator_input_invalid','input_gdf'),'mask':('operator_mask_invalid','mask_gdf'),'crs':('operator_crs_invalid','')}[problem]
+            assert state['status']=='failed'and state['error_code']=='INVALID_PARAMS',state
+            assert state['diagnostic']=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+                'operator':{'node_index':1,'operator_id':'voronoi',**({'parameter':param}if param else{})}}
+            assert 'PRIVATE'not in json.dumps(state['diagnostic'])

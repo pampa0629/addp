@@ -413,7 +413,8 @@ for (const locale of ['zh-cn', 'en']) test(`shows actionable create conflict in 
 })
 
 
-for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field] of [
+for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field,parameter='input_gdf'] of [
+  ...[['operator_input_invalid','input_gdf'],['operator_mask_invalid','mask_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>['voronoi',reason,'',parameter]),
   ['batch_buffer','operator_field_conflict','distance'],
   ...['source_id','part_no','ring_no','ring_id','is_hole'].map(field=>['extract_polygon_rings','operator_field_conflict',field]),
   ['extract_polygon_rings','operator_geometry_invalid','']
@@ -421,12 +422,13 @@ for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field] of [
   await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
   await installBackend(page,{locale,empty:true,targetExists:true,errorDetails:{category:'execution_failed',code:'develop.workflow.invalid_params',message:'private-password',
     diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,
-      operator:{node_index:2,operator_id,parameter:'input_gdf',...(field?{field}:{})}}}})
+      operator:{node_index:2,operator_id,...(parameter?{parameter}:{}),...(field?{field}:{})}}}})
   await page.goto('/executions?execution_id=diagnostic-run')
   const panel=page.locator('.execution-detail-content > .execution-failure')
-  const name=operator_id==='batch_buffer'?(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'):(locale==='zh-cn'?'面界提取':'Extract polygon rings')
+  const name=operator_id==='voronoi'?(locale==='zh-cn'?'泰森多边形':'Voronoi polygons'):operator_id==='batch_buffer'?(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'):(locale==='zh-cn'?'面界提取':'Extract polygon rings')
   await expect(panel).toContainText(name)
   if(field) await expect(panel).toContainText(field)
+  else if(operator_id==='voronoi') await expect(panel).toContainText(reason==='operator_input_invalid'?(locale==='zh-cn'?'重复 XY':'duplicate XY'):reason==='operator_mask_invalid'?'Polygon':locale==='zh-cn'?'投影坐标系':'projected CRS')
   else {
     await expect(panel).toContainText(locale==='zh-cn'?'未通过有效性检查':'failed the validity check')
     await expect(panel).toContainText(locale==='zh-cn'?'显式修复':'explicitly repair')

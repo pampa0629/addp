@@ -340,7 +340,20 @@
           "operator_crs_invalid": "先显式统一双方的二维地理或投影坐标系，再重新执行；不会隐式重投影。"
         }
       },
+      "voronoi": {
+        "reasons": {
+          "operator_input_invalid": "源点图层不符合二维 Point、唯一来源标识或不重复点位的要求。",
+          "operator_mask_invalid": "覆盖范围不符合有效二维面或多面的要求。",
+          "operator_crs_invalid": "源点和覆盖范围须使用相同的已知投影坐标系及匹配的水平单位。"
+        },
+        "actions": {
+          "operator_input_invalid": "检查唯一活动几何列、有效非空有限二维 Point、显式唯一非空来源标识及重复 XY；先在上游手动整理，再重新执行。",
+          "operator_mask_invalid": "显式提供有效非空有限二维 Polygon 或 MultiPolygon 覆盖范围，整理其唯一活动几何列和列名后重新执行。",
+          "operator_crs_invalid": "先显式统一源点和覆盖范围的投影坐标系及有限正水平线性单位，再重新执行；不会隐式重投影。"
+        }
+      },
       "operatorNames": {
+        "voronoi": "泰森多边形",
         "contains": "包含判断",
         "intersects": "相交判断",
         "dissolve": "融合几何",

@@ -876,7 +876,7 @@ components:
               description: 原workflow_def.tasks的1起始位置，不是拓扑调度顺序。
             operator_id:
               type: string
-              enum: [contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
+              enum: [voronoi, contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
             parameter:
               type: string
               enum: [input_gdf, reference_gdf, distances, resolution, tolerance, max_distance, gdf_b, mask_gdf, group_fields]
@@ -884,6 +884,9 @@ components:
               type: string
               enum: [distance, source_id, part_no, ring_no, ring_id, is_hole, node_id, degree, source_part_no, end]
       x-addp-operator-input-rules:
+        - ["voronoi", "operator_input_invalid", "input_gdf", ""]
+        - ["voronoi", "operator_mask_invalid", "mask_gdf", ""]
+        - ["voronoi", "operator_crs_invalid", "", ""]
         - ["contains", "operator_input_invalid", "input_gdf", ""]
         - ["contains", "operator_reference_invalid", "gdf_b", ""]
         - ["contains", "operator_crs_invalid", "", ""]

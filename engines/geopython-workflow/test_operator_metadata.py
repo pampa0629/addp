@@ -1725,3 +1725,16 @@ def test_idw_single_workflow_read_entry_two_sources_and_no_extra_parameters():
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']
     assert spec['category_path']==['栅格处理','基础计算']and spec['attributes']['resource_groups']==['raster']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
+
+
+def test_voronoi_metadata_requires_station_identity_and_explicit_range_only():
+    spec=next(s for s in list_operators()if s['id']=='voronoi')
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_gdf','mask_gdf','id_field'}
+    assert all(p['required']for p in params.values())
+    assert params['input_gdf']['param_type']==params['mask_gdf']['param_type']=='input'
+    assert params['id_field']['type']=='string'and 'default'not in params['id_field']
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert spec['category_path']==['矢量处理','几何构造']
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='geodataframe'
+    assert '范围外' in spec['detailed_description']['overview']

@@ -135,14 +135,15 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 57)
+  assert.equal(canonical.length, 60)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
     const operator = { node_index: 2, operator_id, ...(parameter ? { parameter } : {}), ...(field ? { field } : {}) }
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
-    const templates = ['contains','intersects'].includes(operator_id) ? 'common.executionFailure.spatialRelation' : 'common.executionFailure'
+    const profile = { contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi' }[operator_id]
+    const templates = `common.executionFailure${profile ? `.${profile}` : ''}`
     assert.equal(result.reason, `${templates}.reasons.${reason}`)
     assert.ok(result.node)
     assert.equal(result.field, field)
@@ -373,5 +374,27 @@ test('relation filters use precise geographic-or-projected guidance and keep oth
     const got=executionFailurePresentation({diagnostic},translate)
     assert.equal(got.reason,messages.reasons.operator_crs_invalid)
     assert.equal(got.action,messages.actions.operator_crs_invalid)
+  }
+})
+
+
+test('voronoi explains explicit coverage, unique station positions and projected units bilingually', () => {
+  for(const locale of ['zh-cn','en']) {
+    const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate=(key,params={})=>key.replace('common.executionFailure.','').split('.').reduce((node,part)=>node[part],messages).replace(/\{(\w+)\}/g,(_,key)=>params[key])
+    const rules=operatorInputRules.filter(([name])=>name==='voronoi');assert.equal(rules.length,3)
+    for(const [operator_id,reason,parameter]of rules) {
+      const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,...(parameter?{parameter}:{})}}
+      const got=executionFailurePresentation({diagnostic,message:'PRIVATE station_id XY coordinates'},translate)
+      assert.equal(got.operator,locale==='zh-cn'?'泰森多边形':'Voronoi polygons')
+      assert.equal(got.reason,messages.voronoi.reasons[reason]);assert.equal(got.action,messages.voronoi.actions[reason])
+      assert.doesNotMatch(JSON.stringify(got),/PRIVATE|station_id|coordinates/)
+      if(reason==='operator_input_invalid')assert.match(got.action,locale==='zh-cn'?/重复 XY/:/duplicate XY/)
+      if(reason==='operator_mask_invalid')assert.ok(got.parameter.includes('mask_gdf'))
+      if(reason==='operator_crs_invalid')assert.match(got.action,locale==='zh-cn'?/投影坐标系/:/projected CRSs/)
+      for(const patch of [{field:'station'},{field:'PRIVATE'},{parameter:'gdf_b'},{operator_id:'centroid'}]) {
+        assert.equal(executionFailurePresentation({diagnostic:{...diagnostic,operator:{...diagnostic.operator,...patch}}},translate).stage,'')
+      }
+    }
   }
 })

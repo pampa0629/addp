@@ -274,13 +274,15 @@ class DifferenceInputError(ValueError):
         return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
 
 
-def _polygon_mask_inputs(input_gdf, mask_gdf, id_field, error_type):
+def _polygon_mask_inputs(input_gdf, mask_gdf, id_field, error_type, *, source_types=None):
     """Single admission route for whole-polygon clipping and difference."""
     geometries = []
     for frame, code in ((input_gdf, 'source'), (mask_gdf, 'mask')):
         try:
+            if not isinstance(frame, gpd.GeoDataFrame) or not frame.columns.is_unique:
+                raise ValueError('polygon-mask inputs require unique columns')
             geometry = _finite_xy_geometry(frame)
-            allowed = (['Polygon', 'MultiPolygon'] if code == 'mask' else
+            allowed = (['Polygon', 'MultiPolygon'] if code == 'mask' else source_types if source_types is not None else
                        ['Point', 'LineString', 'Polygon', 'MultiPoint', 'MultiLineString', 'MultiPolygon', 'GeometryCollection'])
             if (not frame.columns.is_unique
                     or sum(isinstance(dtype, gpd.array.GeometryDtype) for dtype in frame.dtypes) != 1
@@ -290,7 +292,7 @@ def _polygon_mask_inputs(input_gdf, mask_gdf, id_field, error_type):
                 raise ValueError('invalid polygon-mask input')
             if code == 'source':
                 _source_identifiers(frame, id_field)
-        except ValueError as exc:
+        except (ValueError, TypeError) as exc:
             raise error_type(code) from exc
         geometries.append(geometry)
     left, right = geometries

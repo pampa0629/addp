@@ -10,7 +10,7 @@ from operators import OPERATORS, get_operator
 from operators.io_operators import GeoPackageSaveError
 from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.spatial_relations import DistanceInputError, RelationInputError
-from operators.data_operations import MultiBufferInputError, ClipInputError
+from operators.data_operations import MultiBufferInputError, ClipInputError, VoronoiInputError
 from operators.geometric_operators import NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
@@ -82,8 +82,9 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
             return _execute_workflow_operator(operator, params)
         except (EndpointSnapError, LineExtensionError, GeoPackageSaveError) as exc:
             raise ValueError(exc.message(self.language)) from exc
-        except (RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
+        except (VoronoiInputError, RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
             reasons = {
+                VoronoiInputError: {'source': 'operator_input_invalid', 'mask': 'operator_mask_invalid', 'crs': 'operator_crs_invalid'},
                 RelationInputError: {'source': 'operator_input_invalid', 'reference': 'operator_reference_invalid',
                                      'crs': 'operator_crs_invalid'},
                 DissolveInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid','groups':'operator_group_fields_invalid','fields':'operator_dissolve_fields_conflict'},

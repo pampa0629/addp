@@ -14,7 +14,7 @@ from .base import (
     OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator, OutputPort
 )
 from .geometric_operators import (buffer, _geometry_for_output, _polygon_mask_inputs,
-                                  _combined_polygon_mask, _require_valid_mask_result)
+                                  _combined_polygon_mask, _require_valid_mask_result, _union_polygon_result)
 
 
 # ==================== 算子实现 ====================
@@ -61,30 +61,65 @@ def clip(input_gdf: gpd.GeoDataFrame, mask_gdf: gpd.GeoDataFrame, id_field: str)
     return result
 
 
-def voronoi(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    泰森多边形（Voronoi 图）
+class VoronoiInputError(ValueError):
+    """Known point, range and CRS admissions, without source values."""
 
-    Args:
-        input_gdf: 输入点 GeoDataFrame
+    _messages = {
+        'zh-cn': {
+            'source': '泰森多边形的源图层须为有效非空有限二维 Point，具有唯一活动几何列、唯一列名及显式唯一非空来源标识；原始 XY 不得重复，请先手动整理点位和标识。',
+            'mask': '泰森多边形须显式提供有效非空有限二维面或多面覆盖范围，且活动几何列和列名唯一；请先整理覆盖范围。',
+            'crs': '泰森多边形要求源点和覆盖范围使用相同的已知投影坐标系及匹配、有限且为正的水平线性单位；请先显式重投影。',
+        },
+        'en': {
+            'source': 'Voronoi source requires valid non-empty finite XY Points, unique columns, one active geometry column and an explicit unique non-null source identifier; original XY positions must be distinct. Prepare the station positions and identifiers explicitly.',
+            'mask': 'Voronoi requires an explicit valid non-empty finite XY Polygon or MultiPolygon coverage layer with unique columns and one active geometry column; prepare the coverage first.',
+            'crs': 'Voronoi requires the same known projected CRS with matching finite positive horizontal units on source points and coverage; reproject explicitly first.',
+        },
+    }
 
-    Returns:
-        GeoDataFrame Voronoi 多边形结果
-    """
-    from shapely.ops import voronoi_diagram
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
 
-    # 合并所有点
-    points = input_gdf.geometry.unary_union
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
 
-    # 计算 Voronoi 图
-    voronoi_polys = voronoi_diagram(points)
 
-    # 转换为 GeoDataFrame
-    result = gpd.GeoDataFrame(
-        {'geometry': list(voronoi_polys.geoms)},
-        crs=input_gdf.crs
+def voronoi(input_gdf: gpd.GeoDataFrame, mask_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Clip exact nearest-station regions, binding original stations before clipping."""
+    points, coverage = _polygon_mask_inputs(
+        input_gdf, mask_gdf, id_field, VoronoiInputError, source_types=('Point',),
     )
-
+    if len({(point.x, point.y) for point in points.array}) != len(points):
+        raise VoronoiInputError('source')
+    if points.empty or coverage.empty:
+        return input_gdf.iloc[:0].copy().reset_index(drop=True)
+    mask = _combined_polygon_mask(coverage)
+    if len(points) == 1:
+        rows, values = [0], [mask]
+    else:
+        diagram = shapely.voronoi_polygons(shapely.MultiPoint(points.array), tolerance=0.0, extend_to=mask)
+        if diagram.geom_type != 'GeometryCollection' or len(diagram.geoms) != len(points):
+            raise RuntimeError('voronoi calculation did not produce one region per station')
+        cells = list(diagram.geoms)
+        for cell in cells:
+            _require_valid_mask_result(cell)
+            if cell.is_empty or cell.geom_type != 'Polygon':
+                raise RuntimeError('voronoi calculation produced an invalid region')
+        tree = shapely.STRtree(cells)
+        used, rows, values = set(), [], []
+        for position, point in enumerate(points.array):
+            matches = [index for index in tree.query(point) if shapely.covers(cells[index], point)]
+            if len(matches) != 1 or matches[0] in used:
+                raise RuntimeError('voronoi regions cannot be bound uniquely to original stations')
+            cell_index = matches[0]
+            used.add(cell_index)
+            value = _union_polygon_result(shapely.intersection(cells[cell_index], mask))
+            if value is not None:
+                rows.append(position)
+                values.append(value)
+    result = input_gdf.iloc[rows].copy().reset_index(drop=True)
+    result[points.name] = gpd.GeoSeries(values, crs=points.crs)
     return result
 
 
@@ -205,50 +240,25 @@ CLIP_METADATA = OperatorMetadata(
 )
 
 VORONOI_METADATA = OperatorMetadata(
-    name="voronoi",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_CONSTRUCTION,
-    description="泰森多边形",
-    brief_description="生成点集的泰森多边形(Voronoi图),常用于服务范围划分和最近邻分析",
-    execution_modes=["workflow"],
-    effects=["read"],
-
-    overview="为输入的点集生成泰森多边形(Voronoi Diagram)。每个多边形内的所有位置到对应点的距离都比到其他点更近。适用于服务范围划分、影响区域分析、最近设施查询等场景。",
-
+    name="voronoi", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_CONSTRUCTION,
+    description="泰森多边形", brief_description="按源点生成覆盖范围内的最近站点分区，保留来源和属性",
+    execution_modes=["workflow"], effects=["read"],
+    overview="全部二维源点参与平面最近站点分区，再裁到显式覆盖范围；范围外和孔洞内的点仍参与竞争。每源最多一条完整 Polygon/MultiPolygon，保留源点 ID、全部业务属性和源行序，不拆部件、不复制覆盖面属性。",
     params=[
-        OperatorParam(
-            name="input_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="输入的点图层"
-        )
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="源点图层", notes="仅有效非空有限二维 Point；原始 XY 不得重复，允许空批，不自动去重或吸附"),
+        OperatorParam(name="mask_gdf", type="input", data_type="GeoDataFrame", required=True, description="必填覆盖面范围", notes="有效非空有限二维 Polygon/MultiPolygon；全部面求并，保留孔洞和不连通范围，不要求范围业务 ID"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="源点唯一来源标识列", notes="显式唯一非空非几何标量列；保留原名、类型和值，不推断索引或存储 FID"),
     ],
-
-    use_cases=[
-        "服务范围划分: 为医院、学校等设施生成服务范围多边形",
-        "势力范围分析: 分析各门店的潜在影响区域",
-        "最近设施查询: 快速定位距离最近的服务点",
-        "气象插值: 为气象站点生成影响区域用于空间插值"
-    ],
-
+    use_cases=["研究区内最近设施分区", "气象站点影响区域划分", "保留设施属性的服务范围分析"],
     notes=[
-        "输入必须是点几何,线和面会报错",
-        "泰森多边形会覆盖整个凸包范围,边界多边形会很大",
-        "如需限定范围,建议后续用clip裁剪到研究区",
-        "点位重复会导致结果异常,建议先去重"
+        "两输入须为相同已知投影CRS及匹配有限正水平线性单位；不按经纬度或球面距离计算，不隐式重投影",
+        "单点独占完整范围，共线不同点合法；重复XY或来源ID拒绝，不聚合属性或选择第一条",
+        "先按原始未裁剪分区精确绑定源点，再裁剪；不依赖原生分区顺序或按最近面猜来源",
+        "只保留面部分，不输出仅接触的线点，不设最小面积阈值；空源或空范围保完整源Schema",
+        "保留源活动几何名、全部业务字段及CRS，重建RangeIndex；输入不变，纯计算不保存扫描",
     ],
-
-    workflow_example={
-        'id': 'gen_service_areas',
-        'operator': 'voronoi',
-        'params': {
-            'input_gdf': {'$ref': 'load_hospitals'}
-        },
-        'depends_on': ['load_hospitals']
-    }
+    workflow_example={'id':'station_regions','operator':'voronoi','params':{'input_gdf':{'$ref':'load_stations'},'mask_gdf':{'$ref':'load_coverage'},'id_field':'station_id'},'depends_on':['load_stations','load_coverage']},
 )
-
 
 SPLIT_BY_AREA_METADATA = OperatorMetadata(
     name="split_by_area",

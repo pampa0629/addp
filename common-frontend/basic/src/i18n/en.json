@@ -340,7 +340,20 @@
           "operator_crs_invalid": "Explicitly align both two-dimensional geographic or projected CRSs before submitting a new execution; no implicit reprojection is performed."
         }
       },
+      "voronoi": {
+        "reasons": {
+          "operator_input_invalid": "The station layer does not meet the XY Point, unique source identifier or distinct position requirements.",
+          "operator_mask_invalid": "The coverage does not meet the valid XY Polygon or MultiPolygon requirements.",
+          "operator_crs_invalid": "Source points and coverage require the same known projected CRS and matching horizontal units."
+        },
+        "actions": {
+          "operator_input_invalid": "Check for one active geometry column, valid non-empty finite XY Points, an explicit unique non-null source identifier and duplicate XY positions; prepare the source upstream before submitting a new execution.",
+          "operator_mask_invalid": "Provide an explicit valid non-empty finite XY Polygon or MultiPolygon coverage layer with unique column names and one active geometry column, then submit a new execution.",
+          "operator_crs_invalid": "Explicitly align the projected CRSs and finite positive horizontal units on source points and coverage before submitting a new execution; no implicit reprojection is performed."
+        }
+      },
       "operatorNames": {
+        "voronoi": "Voronoi polygons",
         "contains": "Contains filtering",
         "intersects": "Intersects filtering",
         "dissolve": "Dissolve geometry",
