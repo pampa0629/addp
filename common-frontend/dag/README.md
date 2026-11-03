@@ -51,7 +51,7 @@ const dagData = {
 
 - `useDAGCore(containerRef, options)` - G6 实例管理
 - `useLoopDetection(graph)` - 循环检测
-- `useDAGSelection(graph, { focusTarget })` - 选中管理；鼠标选择节点或连线后可把焦点移交给画布容器，并按画布坐标循环选择前后节点
+- `useDAGSelection(graph, { focusTarget })` - 选中、焦点移交与节点导航，见[画布焦点与快捷键](#画布焦点与快捷键)。
 - `useDAGViewport(graph, options)` - 缩放、适应窗口和自动布局
 - `useDAGHistory(options)` - 编辑历史入口；记录、合并与恢复职责见[撤销重做与历史恢复](#撤销重做与历史恢复)。
 - `useDAGClipboard(graph, options)` - 节点复制和粘贴；只复制节点模型，不复制连线
@@ -69,8 +69,8 @@ const dagData = {
 
 - `createDAGDirectEdgeBehavior(options)` - 直接拖拽连线行为
 - `createDAGDragNodeBehavior()` - 与端口拖拽互斥的节点拖动行为
-- `createDAGKeyboardHandler(actions)` - 统一处理撤销、重做、复制、粘贴、快速复制、删除、方向键节点导航、Enter 激活和 `Esc` 取消选择，并忽略输入控件中的键盘事件
-- `validateDAGConnection(options)` - 统一校验无效端点、自环、环路和重复边；端口级编辑器可通过 `isDuplicate` 定义连接唯一性
+- `createDAGKeyboardHandler(actions)` - 快捷键适配入口；事件范围与宿主回调见[画布焦点与快捷键](#画布焦点与快捷键)。
+- `validateDAGConnection(options)` - 基础连线校验；拒绝条件、判重与领域职责见[依赖写入与连线校验](#依赖写入与连线校验)。
 - `getDAGIncomingEdgeModels(graph, targetId)` - 查询目标节点的当前入边模型
 - `getDAGUpstreamCandidates(options)` - 查询可作为目标节点上游的候选节点，并标记当前连接和环路禁用状态
 
@@ -94,9 +94,25 @@ const dagData = {
 
 ### 键盘与依赖编辑
 
+本节导航：[焦点与快捷键](#画布焦点与快捷键) · [依赖与连线校验](#依赖写入与连线校验)。无障碍播报要求见[交互专题](../docs/frontend-style/组件交互.md#6-dag-编辑交互)。
+
+#### 画布焦点与快捷键
+
 可编辑画布容器必须可通过 `Tab` 聚焦，使用 `role="region"`、国际化的 `aria-label` 和共享 `addp-dag-focus-region` 类。快捷键仅在画布区域持有焦点时生效；左右/上下方向键按节点的横坐标、纵坐标和 ID 稳定顺序循环选择节点，Enter 激活节点配置，`Esc` 清除当前选择。输入框、文本域、下拉框和可编辑区域中的删除、复制、粘贴行为不得被画布接管。
 
+宿主将 `createDAGKeyboardHandler(actions)` 绑定到画布 `keydown`，由该绑定限定焦点范围；共享处理器不自行检查当前活动元素。撤销、重做、复制、粘贴、快速复制、删除及上述导航动作均由宿主注入回调，未提供的动作不接管事件，已处理或来自编辑控件的事件被忽略；具体键位统一见[键盘工具](src/utils/keyboard.js)。鼠标选择节点或连线后可通过 `useDAGSelection(graph, { focusTarget })` 将焦点移交给画布容器。
+
+#### 依赖写入与连线校验
+
+DAG 连线不得要求进入全局“连线模式”。画布边是依赖关系的唯一编辑事实源，表单操作必须复用同一套环路、重复连接校验和历史记录。
+
 键盘用户通过节点参数面板或配置抽屉维护依赖关系，鼠标用户仍可直接拖拽端口连线。共享 DAG 只提供连接查询与基础校验；端口级输入绑定、步骤级 `depends_on` 等领域语义由消费模块维护。
+
+`validateDAGConnection` 对缺少端点 ID、自环及宿主 `hasLoop` 检出的环路返回 `loop`，对已有重复连接返回 `duplicate`，通过时返回 `true`；默认按源、目标节点对判重，端口级编辑器通过 `isDuplicate` 定义连接唯一性。端口可绑定性等领域条件由宿主继续校验，不把基础校验通过当作完整依赖可用。
+
+`createDAGDirectEdgeBehavior` 通过宿主 `canConnect` 接入上述校验，只有结果严格为 `true` 才提交连线并发出 `aftercreateedge`；拒绝或拖拽结束取消时清除临时边，不发成功事件。成功修改由宿主记录历史并同步领域状态；基线、合并和恢复规则统一见[撤销重做与历史恢复](#撤销重做与历史恢复)。
+
+验收分别核对画布焦点、编辑控件事件不被接管、快捷键回调、环路与重复边拒绝、取消临时边，以及成功编辑的撤销重做；标准入口见[测试与验收导航](../docs/components/预览与结果展示.md#测试与验收导航)。工具断言与消费方页面分别验证，不能以连线成功推定业务可执行或授权，未运行或未覆盖项不计通过。
 
 ### 编辑器主题与状态保持
 
