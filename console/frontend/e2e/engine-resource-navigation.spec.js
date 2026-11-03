@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test'
 import { engineBackend, engineOwner } from '../../../monitor/frontend/e2e/engine-resources.fixture'
 
 test('Redis group navigation and refresh retain the Console iframe and typed route', async ({ page }) => {
-  const state = await engineBackend(page, { owner: { ...engineOwner, engine_type: 'redis', display_name: 'Business Redis' } })
-  await page.goto(`/monitor/engine-resources?engine_type=redis&deployment_id=${engineOwner.deployment_id}&refresh=off`)
+  const state = await engineBackend(page, { owner: { ...engineOwner, scope: 'business', engine_type: 'redis', display_name: 'Business Redis' } })
+  await page.goto(`/monitor/engine-resources?scope=business&engine_type=redis&deployment_id=${engineOwner.deployment_id}&refresh=off`)
   const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(monitor.getByTestId('engine-value-redisAllocated')).toHaveText('1.00 GiB')
   const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin)
@@ -19,7 +19,8 @@ test('Redis group navigation and refresh retain the Console iframe and typed rou
   expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
   await monitor.getByRole('button', { name: '返回引擎列表', exact: true }).click()
   await expect(monitor.getByTestId('engine-list')).toContainText('Business Redis')
-  expect(state.queries.at(-1).engine_type).toBe('redis')
+  expect(state.queries.at(-1)).toEqual({ scope: 'business', page: '1', page_size: '20' })
+  await expect(page).toHaveURL(url => url.searchParams.get('scope') === 'business' && !url.searchParams.has('engine_type') && !url.searchParams.has('deployment_id'))
   expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
   await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
 })
@@ -73,7 +74,7 @@ for (const locale of ['zh-cn', 'en']) test(`engine automatic filters retain one 
   await page.clock.fastForward(301)
   await expect.poll(() => queries.length).toBe(2)
   await expect(page).toHaveURL('/monitor/engine-resources?search=PostgreSQL&refresh=off')
-  expect(queries.at(-1)).toEqual({ engine_type: 'postgresql', page: '1', page_size: '20', search: 'PostgreSQL' })
+  expect(queries.at(-1)).toEqual({ scope: 'infra', page: '1', page_size: '20', search: 'PostgreSQL' })
   await input.hover(); await monitor.locator('form .el-input__clear').click()
   await expect.poll(() => queries.length).toBe(3)
   await expect(page).toHaveURL('/monitor/engine-resources?refresh=off')

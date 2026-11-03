@@ -21,9 +21,11 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
     else if (path === '/api/v1/system/auth/context') body = auth
     else if (path === '/api/v1/system/platform/engine_deployments') {
       calls.push(path); queries.push(Object.fromEntries(url.searchParams))
-      const matching = deploymentRows.filter(row => row.scope === url.searchParams.get('scope') && (!url.searchParams.get('search') || row.display_name.toLowerCase().includes(url.searchParams.get('search').toLowerCase())))
-      const currentPage = Number(url.searchParams.get('page'))
-      body = {data: matching.slice((currentPage-1)*20,currentPage*20),page:currentPage,page_size:20,total:matching.length}
+      const matching = deploymentRows.filter(row =>
+        (!url.searchParams.has('scope') || row.scope === url.searchParams.get('scope')) &&
+        (!url.searchParams.get('search') || row.display_name.toLowerCase().includes(url.searchParams.get('search').toLowerCase())))
+      const currentPage = Number(url.searchParams.get('page') || 1), pageSize = Number(url.searchParams.get('page_size') || 20)
+      body = {data: matching.slice((currentPage-1)*pageSize,currentPage*pageSize),page:currentPage,page_size:pageSize,total:matching.length}
     }
     else if (path.startsWith('/api/v1/system/platform/engine_deployments/')) {
       calls.push(path); body = deploymentRows.find(row => row.deployment_id === path.split('/').pop()); if(!body){status=404;body={error_code:'resource_not_found'}}

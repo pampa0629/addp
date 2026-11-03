@@ -834,6 +834,12 @@ System 从已确认部署来源项目派生只读 `scope`，在计数与分页�
 
 本批未触发或轮询 CI／Hosted，无定时任务。个人服务未重启，需用户执行 `./scripts/dev/restart.sh -system -monitor` 后复验真实来源页签、卡片、即时搜索及详情返回；本地测试不能替代该运行验收。
 
+### 2026-11-03 引擎来源分区的 Console 消费者回归修正（本地完整门禁通过）
+
+专门 CI 会话回传 Platform Job `125754275638`（源码 `b52014eea`）中六项 Console 失败。本地原样执行两份引擎导航场景，复现六失败／一通过：共享 HTTP 夹具将合法的未传 scope 请求过滤为空，三项旧断言仍要求 Monitor 列表使用 engine_type。现行规范允许 System 部署管理列表省略 scope，Monitor 分区列表则明确传 scope；修正夹具的可选过滤与默认分页，同步消费者断言，详情仍按真实类型选择指标，返回列表不保留旧类型筛选。不新增兼容路径或权限，不修改产品代码，不实施尚在讨论的租户监控。
+
+中英文 System→Monitor→浏览器返回新增 Business 场景，连同 Infra、无观测权限隐藏入口、Redis 详情分组／刷新／来源返回及即时搜索，共九项定向通过。`make test-console-frontend` 退出0：31文件／237项单元、297项真实 iframe 浏览器回归及生产构建全部通过；共享夹具受影响的 Monitor 四份引擎场景及 engine Enter／IME 场景共69项通过。日志：`/tmp/addp-engine-scope-console-{red,green,full}-20261103.log`、`/tmp/addp-engine-scope-consumer-monitor-20261103.log`。既有标准入口与浏览器 glob 已覆盖，无需修改 Makefile／CI 登记；未轮询、重试或取消远端运行，未触发 Hosted、容量或定时任务。个人 Safari 的可见性与实际数值恢复仍未验收；本批测试修正无需服务重启，自然 Linux Console 结果继续等专门 CI 会话回传。
+
 
 ### 2026-11-03 卷测量检查点自然Linux分项通过（整作业取消，真实超时未验）
 
