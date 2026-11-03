@@ -883,3 +883,6 @@ b0420db65已随共享main发布，固定dfeff7c9b自然Linux原始日志确认HT
 [完整记录、独立CI首因与本地门禁](MonitorHTTP质量与采样历史证据.md#http-preparation-directory-categories-20261103)
 
 旧eb8af3281自然HTTP在准备阶段du读到other对象消失，三段编译未开始／零请求、不是四秒超时，具体删除者未证实。f0aa912a8仅扩展六个准备位置分类，字段／哈希／采样及互斥不变；旧映射反证失败，最终配置136项、生命周期内44／169／145项等通过。只认本地确定性证据，未验修改后自然Linux采样或正式产品页面，未推送／构建重试／新窗口／Hosted／容量／定时。
+
+
+2026-11-03 20:42补核上述分类专题：远端已包含f0aa912a8／49e08b6ac，本会话未重复推送。自然Release41613913398（64a6a3b16）仍排队，选择Job125842451761尚无步骤、HTTP Job未创建且预算artifact为0；Linux专项待执行，不计通过。57主题不变，完整远端／CI状态见[分类专题续记](MonitorHTTP质量与采样历史证据.md#http-preparation-directory-categories-20261103)。

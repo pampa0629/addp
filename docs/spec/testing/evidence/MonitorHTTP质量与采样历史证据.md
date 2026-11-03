@@ -1129,3 +1129,12 @@ report.assertions为空，无images最终身份清单、Python依赖、浏览器
 归档：原CI文件在`/tmp/addp-ci-20261103-130018/`；只读调查回执在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-linux-http-directory-investigation-20261103-ekw91775/audit.json`。准备与最终实现／日志SHA256回执在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-directory-categories-prepared-20261103-i46ew_dl/`；日志为`/tmp/addp-p19-directory-categories-{red,config-final,lifecycle-final,lifecycle-verified}-20261103.log`（0700目录／0600文件）。最终生命周期日志SHA256=`094a624305d9925b4703057284578a4ca6bbb5d26a5ffb4416562b9bb816eda3`；原失败JSON摘要保持不变。
 
 本轮仅本地自有提交及57主题证据归档，并回报维护会话；没有推送、重试构建、新开本地窗口、Hosted、容量、定时或接管个人服务。分类实现及确定性门禁通过，不计修改后的自然Linux采样或正式Agent／Copilot到Console／Monitor页面闭环通过；目录消失是否消除、具体删除者及APT根因均未验。下一步只在后续另行获准的原运行中使用新增类别定位，再讨论必要的准备／采样协调，不现在猜测删除者加锁。
+
+
+### 2026-11-03 20:42 远端包含性与自然CI排队核对
+
+用户本轮允许推送分类与证据并接受自然CI；先fetch核验，origin/main快照`785839a5772c1539fe8909d8dc59337b3daacb24`已同时包含f0aa912a8及49e08b6ac，本地与远端相同且无待推送提交。本会话此前未主动推送的事实保持；此次没有重复push或制造空提交，也未因追加排队记录再触发运行。
+
+最早已查询到包含新分类的[自然Release run41613913398](https://github.com/pampa0629/addp/actions/runs/41613913398)为main／push／attempt1，固定源码`64a6a3b16fbf639a051d96061502cfe694840135`；预算实现、预算测试及shell编排与已验证f0aa912a8逐字节一致。该源码包含分类实现，尚不含其后49e08b6ac证据提交，不能将两者混作相同源码。北京时间2026-11-03 20:42:26 API仍queued／conclusion=null；Release and T2 gate selection Job125842451761排队、steps为空，本专项http-quality Job尚未创建，artifact列表为0。没有实际Linux HTTP步骤、原始预算或目录消失复发证据，不计Linux通过或失败，不借后续其他Job、旧绿或仅源码相同补齐。后续含分类的自然run也仍排队，本轮固定前述候选，不取消、重跑或调查无关CI。
+
+原始run列表／jobs／artifacts及独立audit位于`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-directory-natural-ci-20261103-t0ebcp9f/`（0700／0600）。只追加本专题与索引状态、核对主题数／锚点／引用及metadata归属，未重跑已有效本地门禁，未新开窗口、构建、Hosted、容量或定时；本次观察证据仅本地提交，回报维护会话时保持部分验收及自然Linux待执行。下一步仅手动核对该候选实际步骤及上传的同次原始预算，若目录消失复发先按新增类别定位，再讨论最小修正。
