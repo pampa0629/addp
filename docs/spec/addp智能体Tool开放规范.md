@@ -217,7 +217,7 @@ Runtime 只主动读取正式目录选中的操作定义，按其 operation 与 
 
 恢复 Tool 只携带同一 task_id、approval_id 和 request_fingerprint。Owner 绑定 Tenant、Principal、Membership、授权版本、AgentRun 及全部任务执行输入；配置变化、过期、拒绝或跨 AgentRun 重放必须拒绝。审批消费、执行记录关联与任务 claim 在同一 Owner 事务提交，模型不得改写配置或决定重发。需要的执行授权、数据资格及 Security 仍由现有 Owner／System／Worker 执行链校验；批准不是业务读写成功的保证。
 
-Agent Runtime 对正式 Owner 决定作确定性恢复：重读当前启动本体，语义身份变化终止并要求重新复核；批准时先消费并持久化本地确认，再沿原 Adapter 调用一次；已消费且有确定 execution_id 时只读取原执行，拒绝时不启动。请求／响应／校验失败或结果不明不自动重试启动。任务已创建而启动失败保留原 task ID，不重新创建任务。
+Agent Runtime 对正式 Owner 决定作确定性恢复：重读当前启动本体，需启动或读取执行时核对语义身份，变化终止并要求重新复核；批准时先消费并持久化本地确认，再沿原 Adapter 调用一次；已消费且有确定 execution_id 时只读取原执行，拒绝或过期时不启动。Owner 正式返回 `expired` 且身份与指纹核验通过时，完成原 Interaction，并由 Runtime 固定显示“审批已过期，未启动”，结束同一 AgentRun 的本次等待；`completed` 只表示该交互已处理，不表示审批获准或任务执行成功。正式拒绝／过期的无执行收尾不因本体修订变化而重新要求运行复核。页面移除该交互的决策按钮，刷新／回放保持相同结果。不按浏览器时钟或客户端自报状态判定过期，不自动续期、重新申请、重试或运行；以后只有用户新的运行请求才能申请新审批。Owner 状态未知、读取失败或指纹不匹配仍拒绝恢复，不当作过期完成。请求／响应／校验失败或结果不明不自动重试启动。任务已创建而启动失败保留原 task ID，不重新创建任务。
 
 `transfer.execution.get` 使用唯一 `GET /executions/:execution_id` 和精确同名 Scope；沿 Owner 当前 Tenant 任务历史／本人一次性执行的读取范围，只投影执行身份、状态、读写计数、时间和类型化诊断，不返回原始配置、任意 metadata、checkpoint、业务值或原始错误。该 Tool 独立于 Develop 的 `execution.get`；没有新建 ResultRef 格式。pending／running 或 HTTP 200 不等于同步成功，AgentRun completed 也不等于任务完成；终态、写入计数与目标实际内容核实分别认定。内容核实另经有权的正式读取能力，不自动扫描或读样本补证。
 

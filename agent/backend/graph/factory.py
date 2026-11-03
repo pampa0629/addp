@@ -334,14 +334,14 @@ class _PlatformBoundary(AgentMiddleware):
     async def _resume_confirmed_start(self):
         """Only the server-resolved owner decision can reach this branch."""
         review = copy.deepcopy(self.checkpoint["confirmed"]["run_approval"])
-        if review["capability"] != platform_identity(self.checkpoint):
-            self._stop_resume("run_review_changed")
-            return
-        if review["status"] == "rejected":
+        if review["status"] in {"rejected", "expired"}:
             self.checkpoint["confirmed"]["run_approval"] = None
             _emit("checkpoint", checkpoint=copy.deepcopy(self.checkpoint), facts={})
-            get_stream_writer()(text_event(workspace_message(self.accept_language, "transfer_run_rejected")))
+            get_stream_writer()(text_event(workspace_message(self.accept_language, "transfer_run_" + review["status"])))
             self.halted = True
+            return
+        if review["capability"] != platform_identity(self.checkpoint):
+            self._stop_resume("run_review_changed")
             return
 
         async def invoke(call):

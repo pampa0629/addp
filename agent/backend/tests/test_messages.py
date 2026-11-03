@@ -53,6 +53,27 @@ class ClarificationDisplayTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_expired_owner_interaction_is_completed_in_reloaded_message_parts(self):
+        self.interaction.kind = "owner_approval"
+        self.interaction.owner = "transfer"
+        self.interaction.answer = {"status": "expired", "approval_id": str(uuid.uuid4()),
+                                   "request_fingerprint": "a" * 64}
+        historical = Message(id=1, session_id=12, role="assistant", content="",
+            parts=[{"type": "interaction_ref", "interaction_id": str(self.interaction.id),
+                    "kind": "owner_approval", "status": "pending"}],
+            created_at=datetime.now(timezone.utc))
+        messages, interactions = Mock(), Mock()
+        messages.scalars.return_value.all.return_value = [historical]
+        interactions.scalars.return_value.all.return_value = [self.interaction]
+        db = AsyncMock()
+        db.execute.side_effect = [messages, interactions]
+        request = Request({"type": "http", "headers": []})
+        request.state.principal_id, request.state.tenant_id = 3, 5
+        with patch("api.chat._get_owned_session", return_value=Session(id=12)):
+            result = await get_messages(12, request, db)
+        self.assertEqual(result[0]["parts"][0]["status"], "completed")
+        self.assertEqual(historical.parts[0]["status"], "pending")
+
     async def test_resume_persists_label_without_losing_model_context_or_answer(self):
         db = AsyncMock()
         saved = []

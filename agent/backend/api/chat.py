@@ -388,7 +388,9 @@ async def _save_assistant_message(*, session_id, message_id, content, parts, age
         "显式携带 interruptId 与 payload={text:字符串}，上限 2000 字符，恢复同一 AgentRun。"
         "文字不批准创建或 owner 操作。 | Accept owned-session AG-UI input and return SSE. "
         "Answer a clarification via resume with its interruptId and payload={text:string}, "
-        "at most 2000 characters, to resume the same AgentRun. Text does not approve writes."
+        "at most 2000 characters, to resume the same AgentRun. Text does not approve writes. "
+        "Transfer 审批检查收到正式 expired 后完成本次等待并返回未启动提示，不续期或启动。 | "
+        "A formal expired Transfer approval ends the wait with a no-start result, without renewal or execution."
     ),
     dependencies=[Depends(require_permissions(AGENT_RUN_CREATE, AGENT_RUN_EXECUTE))],
     openapi_extra={

@@ -101,7 +101,7 @@ AgentRun 使用唯一语义恢复路线：
 1. 新用户目标创建 `agent.runs`，状态进入 `running`。
 2. owner Tool 返回的引擎和 locator 等紧凑事实写入 `checkpoint.observed`，Tool 调用写入 `run_steps`。
 3. 创建澄清或 owner approval 投影时，Interaction 通过 `agent_run_id` 关联 AgentRun，run 状态进入 `waiting`。
-4. 用户回答澄清后，选中的 owner 事实写入 `checkpoint.confirmed`；用户检查审批时，Agent 使用原始 User Access Token 查询 owner，只有 owner 返回 `approved|consumed` 才完成 Interaction；两种情况都恢复同一个 AgentRun。
+4. 用户回答澄清后，选中的 owner 事实写入 `checkpoint.confirmed`；用户检查审批时，Agent 使用原始 User Access Token 查询 owner，Develop 返回 `approved|consumed`、Transfer 返回 `approved|consumed|rejected|expired` 才完成 Interaction，并恢复同一个 AgentRun。Transfer 的拒绝／过期由 Runtime 固定说明未启动并结束本次等待，不请求模型、启动或自动申请新审批；完成 Interaction 不表示批准或执行成功。过期只信任 Owner 正式读取结果，不按客户端时钟或自报状态推断。
 5. Runtime 使用预算化会话历史、增量摘要、Skill 和 AgentCheckpoint 重建模型调用，不序列化 LangChain 内部对象、隐藏推理或完整 Tool 大结果；通过 Manifest 结构与字节校验的受限 Tool 结果完整进入当前 ToolMessage，不截取 JSON 前缀。审计摘要只记录类型与字节数，不保存原文前缀。Skill 推理轮数耗尽后明确失败，不额外调用未绑定工具的模型收尾。
    显式配置检查返回有效三态报告后由 Runtime 展示报告、精确草稿及固定完成提示并结束本轮，不再请求模型收尾；同批只执行首个已装配的检查，不执行其他调用。输入错误可修参，服务或响应失败明确终止。自动创建预检仍继续原复核流程，后续解释使用既有草稿引用，不从自然语言关键词判断终态。
 6. 所有模型调用经 Inference Runtime；Agent 只拥有 `reasoning`、`general-chat` Scenario Binding，同一 AgentRun 固定 reasoning Profile 快照，不拥有 Provider、Deployment 或 credential。

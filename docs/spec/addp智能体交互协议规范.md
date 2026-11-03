@@ -56,6 +56,8 @@ running|waiting -> cancelled
 
 `completed` 和 `cancelled` 是终态；`failed` 只能通过显式 retry 恢复；waiting 只能由对应 Interaction 的合法 resume 恢复。owner execution 生命周期不随 AgentRun 取消而自动取消。
 
+Transfer 运行审批的合法状态检查收到 Owner 正式 `expired` 时，沿原 resume 完成 Interaction（answer.status 为 `expired`），由 Runtime 固定提示“审批已过期，未启动”并完成本次 AgentRun，不调用模型、启动或重新申请审批。该完成态不是批准或业务执行成功；原审批卡片随 Interaction 完成移除，持久消息、刷新及回放保持一致。客户端不能自报 expired 或仅按显示期限完成交互；Owner 不可达、身份／指纹不符和未知状态继续拒绝恢复。新审批只来自用户新的运行请求。
+
 ### 3.3 检查点与步骤
 
 语义检查点 Schema 固定为 `addp.agent-checkpoint/v1`，只保存已经观察和用户确认的紧凑事实，不保存模型私有状态、Token、完整 Tool 结果或审批 payload。检查点最大 256 KiB。
@@ -217,7 +219,7 @@ Catalog props 只允许声明式 JSON、稳定引用和受限展示参数。禁�
 | --- | --- | --- |
 | `WorkflowDag` | 展示候选 workflow DAG。 | 只展示声明式节点和边，不执行 workflow。 |
 | `ClarificationChoice` | 回答 Agent-owned 澄清。 | 卡片只提交已声明选项；聊天文字按 5.1 节恢复同一 Interaction，不产生审批事实。 |
-| `ApprovalRequest` | 展示 owner 审批状态和跳转入口。 | 只能 `open_url` 或触发 `check`，不能作出批准决定。 |
+| `ApprovalRequest` | 展示 owner 审批配置和操作入口。 | Develop 只提供 `open_url`／`check`；Transfer 的批准／拒绝由用户点击后以本人身份直接提交 Owner，再触发 `check`。Runtime 不代批；Owner 正式 expired 完成本轮等待并移除卡片。 |
 | `TablePreview` | 展示受限表格投影。 | 最多 50 列、100 行，单元格只允许 JSON 标量。 |
 | `MapView` | 展示受限 WGS84 GeoJSON。 | 最多 200 Feature、5000 个坐标值，不接受 URL。 |
 | `ResourcePicker` | 从持久化候选中选择 locator。 | 最多 50 个候选，只能提交当前 Interaction 中已有值。 |

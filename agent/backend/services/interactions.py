@@ -210,7 +210,7 @@ async def resolve_interaction(
         if approval.get("request_fingerprint") != interaction.owner_request_fingerprint:
             raise InteractionAnswerError("Owner 审批请求指纹不匹配")
         owner_status = str(approval.get("status") or "")
-        if owner_status not in ({"approved", "consumed", "rejected"} if interaction.owner == "transfer" else {"approved", "consumed"}):
+        if owner_status not in ({"approved", "consumed", "rejected", "expired"} if interaction.owner == "transfer" else {"approved", "consumed"}):
             raise InteractionOwnerStateError(owner_status or "unknown")
         answer = {
             "status": owner_status,

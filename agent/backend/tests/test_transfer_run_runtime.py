@@ -31,7 +31,7 @@ class TransferRunRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.result = {"execution_id": self.execution_id, "task_id": 7, "status": "pending",
                        "records_read": 0, "records_written": 0}
 
-    async def invoke(self, responses=(), *, resuming=False, commit=True, capability=START_TOOL):
+    async def invoke(self, responses=(), *, resuming=False, commit=True, capability=START_TOOL, language="zh-cn"):
         events = []
         inference = _InferenceFixture(list(responses))
         async def transport(client, method, path, **kwargs):
@@ -60,6 +60,7 @@ class TransferRunRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 "token": "private-user-token", "agent_run_id": "fixture-run",
                 "checkpoint": self.checkpoint, "resuming": resuming,
                 "platform_capability": capability,
+                "accept_language": language,
             }, "fixture", _load_skill_registry()["transfer-generation"].tools,
                 max_iterations=len(responses)+1, llm=_model(inference)):
                 events.append(event)
@@ -140,6 +141,26 @@ class TransferRunRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inference.calls, [])
         self.assertFalse(any(r[1].startswith("/api/v1/transfer/task-definitions/") for r in self.requests))
         self.assertTrue(any(e.kind == "run_failed" and e.payload["error_code"] == "run_review_changed" for e in events))
+
+    async def test_expired_owner_review_ends_without_model_or_transfer_call(self):
+        for language, text in (("zh-cn", "审批已过期，未启动。"),
+                               ("en", "The approval has expired. No start was submitted.")):
+            with self.subTest(language=language):
+                await self.request_review()
+                self.owner_decision("expired")
+                # A newer capability cannot revive an expired owner approval,
+                # nor require a new review just to end the old waiting state.
+                self.contexts[START_TOOL]["digest"] = "c" * 64
+                self.requests.clear()
+                events, inference = await self.invoke(resuming=True, language=language)
+                self.assertEqual(inference.calls, [])
+                self.assertFalse(any("/api/v1/transfer/" in path for _, path, _ in self.requests))
+                self.assertIsNone(self.checkpoint["confirmed"]["run_approval"])
+                self.assertFalse(any(e.kind in {"run_failed", "interaction_required"} for e in events))
+                self.assertTrue(any(e.kind == "text" and e.payload["delta"] == text for e in events))
+                with self.assertRaisesRegex(ValueError, "owner_run_approval"):
+                    validate_start({"task_id": 7, "approval_id": self.approval_id,
+                                    "request_fingerprint": "b" * 64}, self.checkpoint)
 
     async def test_failed_commit_has_no_owner_start(self):
         await self.request_review(); self.owner_decision(); self.requests.clear()

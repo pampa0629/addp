@@ -1,5 +1,6 @@
 import unittest
 import uuid
+from datetime import datetime, timezone
 
 from services.interactions import (
     InteractionAnswerError,
@@ -357,7 +358,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_transfer_owner_check_uses_formal_status_and_never_accepts_client_approval(self):
         from models.interaction import Interaction
-        for status in ("pending", "expired", "approved", "rejected", "consumed"):
+        for status in ("pending", "expired", "approved", "rejected", "consumed", "unknown"):
             with self.subTest(status=status):
                 interaction = Interaction(
                     id=uuid.uuid4(), session_id=12, user_id=3, tenant_id=5,
@@ -365,6 +366,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                     owner_interaction_id=str(uuid.uuid4()), owner_request_fingerprint="a" * 64,
                     open_url="", request_summary={"task_id": 7}, status="pending",
                     prompt="确认运行", options=[],
+                    expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
                 )
                 calls = []
                 async def loader(owner, approval_id, token):
@@ -379,7 +381,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(InteractionAnswerError):
                     await check({"action": "check", "approved": True})
                 self.assertEqual(calls, [])
-                if status in {"pending", "expired"}:
+                if status in {"pending", "unknown"}:
                     with self.assertRaises(InteractionOwnerStateError):
                         await check({"action": "check"})
                     self.assertEqual(interaction.status, "pending")
@@ -390,7 +392,30 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                         "request_fingerprint": "a" * 64,
                     })
                     self.assertEqual(resolved.status, "completed")
+                    if status == "expired":
+                        self.assertIsNotNone(resolved.completed_at)
+                        with self.assertRaises(InteractionStateError):
+                            await check({"action": "check"})
                 self.assertEqual(calls, [("transfer", interaction.owner_interaction_id, "user-token")])
+
+    async def test_expired_owner_result_still_requires_the_original_fingerprint(self):
+        from models.interaction import Interaction
+        interaction = Interaction(
+            id=uuid.uuid4(), session_id=12, user_id=3, tenant_id=5,
+            agent_run_id=uuid.uuid4(), kind="owner_approval", owner="transfer",
+            owner_interaction_id=str(uuid.uuid4()), owner_request_fingerprint="a" * 64,
+            status="pending", prompt="确认运行", options=[],
+        )
+        async def loader(*_args):
+            return {"status": "expired", "request_fingerprint": "b" * 64}
+        with self.assertRaisesRegex(InteractionAnswerError, "指纹"):
+            await resolve_interaction(
+                _DB(interaction), interaction_id=str(interaction.id), session_id=12,
+                user_id=3, tenant_id=5, payload={"action": "check"},
+                source_token="user-token", owner_approval_loader=loader,
+            )
+        self.assertEqual(interaction.status, "pending")
+        self.assertIsNone(interaction.answer)
 
     async def test_owner_approval_projection_does_not_store_workflow_payload(self):
         db = _DB()

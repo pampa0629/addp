@@ -44,7 +44,7 @@ def confirm_run_review(checkpoint, interaction):
             or interaction.owner_interaction_id != observed["approval_id"]
             or answer.get("approval_id") != observed["approval_id"]
             or answer.get("request_fingerprint") != observed["request_fingerprint"]
-            or answer.get("status") not in {"approved", "consumed", "rejected"}):
+            or answer.get("status") not in {"approved", "consumed", "rejected", "expired"}):
         raise ValueError("owner_run_approval_not_observed")
     checkpoint["confirmed"]["run_approval"] = {
         **copy.deepcopy(observed), "status": answer["status"],

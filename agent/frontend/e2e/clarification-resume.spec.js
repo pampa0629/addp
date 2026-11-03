@@ -65,7 +65,7 @@ function completed(message) {
   message.parts.find(part => part.type === 'interaction_ref').status = 'completed'
 }
 
-async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null, checkedDraft = false, withPlan = false, runApproval = false } = {}) {
+async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null, checkedDraft = false, withPlan = false, runApproval = false, approvalExpired = false } = {}) {
   const question = clarification(questionId, '请选择行粒度', [{ label: '展开数组', value: 'unwind' }])
   const review = clarification(reviewId, `仅创建，不运行。请复核配置。\n\n${unknownWarning}\n\n\`\`\`json\n{"name":"outdoor_copy","config":{"runtime":{"boundary":"bounded"},"load":{"mode":"snapshot"}}}\n\`\`\``, reviewOptions)
   review.parts.splice(1, 0, checkReport('unknown').parts[0])
@@ -117,12 +117,12 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
       expect(request.headers().authorization).toBe('Bearer fixture-token')
       let current
       if (runApproval) {
-        expect(decisions).toHaveLength(1)
+        expect(decisions).toHaveLength(approvalExpired ? 0 : 1)
         expect(input.messages).toEqual([])
         expect(input.resume).toEqual([{ interruptId: reviewId, status: 'resolved', payload: { action: 'check' } }])
         completed(runReview)
         current = { id: 'owner-result', role: 'assistant', parts: [{ type: 'text', text:
-          decisions[0].decision === 'approved' ? '已受理，等待执行，尚未同步完成。' : '你已拒绝本次运行，未提交启动。' }] }
+          approvalExpired ? '审批已过期，未启动。' : decisions[0].decision === 'approved' ? '已受理，等待执行，尚未同步完成。' : '你已拒绝本次运行，未提交启动。' }] }
         messages.push(current)
       } else if (requests.length === 1) {
         expect(input.resume || []).toEqual([])
@@ -200,6 +200,26 @@ for (const [button, result, decision] of [
     expect(backend.decisions).toHaveLength(1)
   })
 }
+
+test('formal Transfer expiry ends the wait and removes decision buttons after refresh', async ({ page, context }) => {
+  const backend = await installBackend(page, { runApproval: true, approvalExpired: true })
+  await page.goto(`/module-ui/agent/sessions/${sessionId}`)
+  await expect(page.getByRole('button', { name: '确认运行', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '检查审批状态', exact: true }).click()
+  await expect(page.getByText('审批已过期，未启动。', { exact: true })).toBeVisible()
+  for (const label of ['确认运行', '拒绝运行', '检查审批状态']) {
+    await expect(page.getByRole('button', { name: label, exact: true })).toHaveCount(0)
+  }
+  expect(backend.decisions).toEqual([])
+  expect(backend.requests).toHaveLength(1)
+  await page.reload()
+  await expect(page.getByText('审批已过期，未启动。', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '确认运行', exact: true })).toHaveCount(0)
+  expect(backend.requests).toHaveLength(1)
+  expect(backend.decisions).toEqual([])
+  expect(backend.unexpected).toEqual([])
+  expect(context.pages()).toHaveLength(1)
+})
 
 test('short goal → reloaded text resume → reloaded review → cancel, with the real protocol client', async ({ page }) => {
   const backend = await installBackend(page)

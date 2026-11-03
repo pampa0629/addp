@@ -153,6 +153,7 @@ _WORKSPACE_MESSAGES = {
     'owner_approval_forbidden': {'zh-cn': '当前身份或权限不能使用原运行确认，请重新核对后发起。', 'en': 'The current identity or permissions cannot use the original run review. Verify access before requesting another review.'},
     'transfer_run_stopped': {'zh-cn': '运行提交流程已终止，请核对原审批和执行记录；未自动重试。', 'en': 'Run submission stopped. Check the original approval and execution; no automatic retry was performed.'},
     'transfer_run_rejected': {'zh-cn': '你已拒绝本次运行，未提交启动。', 'en': 'You rejected this run. No start was submitted.'},
+    'transfer_run_expired': {'zh-cn': '审批已过期，未启动。', 'en': 'The approval has expired. No start was submitted.'},
     'transfer_run_result': {'zh-cn': '以下是 Transfer 返回的执行记录；pending 或 running 表示尚未完成，不代表同步成功。', 'en': 'Transfer returned this execution record. Pending or running is not successful completion.'},
     'owner_approval_unavailable': {'zh-cn': '任务模块的审批状态暂时不可用', 'en': 'Task owner approval status is temporarily unavailable'},
     'invalid_request': {'zh-cn': '请求参数不合法', 'en': 'Invalid request parameters'},
