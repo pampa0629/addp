@@ -8835,3 +8835,183 @@ def test_representative_point_native_net_area_failure_is_not_source_diagnostic(a
         GeoPythonWorkflowRunner().execute({'tasks': [{'id': 'PRIVATE', 'operator': 'representative_point', 'params': {'input_gdf': source}, 'depends_on': []}]})
     assert caught.value.error_code == 'EXECUTION_FAILED' and caught.value.diagnostic is None
     assert calls == []
+
+
+MEASUREMENT_CASES = [('get_area','operator_input_invalid','input_gdf',''),('get_area','operator_crs_invalid','',''),
+    ('get_area','operator_geometry_field_conflict','input_gdf','area'),('get_length','operator_input_invalid','input_gdf',''),
+    ('get_length','operator_crs_invalid','',''),('get_length','operator_geometry_field_conflict','input_gdf','length'),
+    ('split_by_area','operator_input_invalid','input_gdf',''),('split_by_area','operator_crs_invalid','',''),
+    ('split_by_area','operator_geometry_field_conflict','input_gdf','area'),('split_by_area','operator_nonnegative_number_required','threshold','')]
+
+
+def measurement_source(crs=3857):
+    hole = Polygon([(0,0),(10,0),(10,8),(0,8),(0,0)], [[(1,1),(3,1),(3,4),(1,4),(1,1)]])
+    line = LineString([(0,0),(3,0),(3,4)])
+    geometries = [Point(2,3), line, hole, shapely.MultiPolygon([hole,box(20,0,22,2)]),
+        MultiLineString([[(0,0),(3,0),(3,4)],[(0,0),(3,0),(3,4)]]),
+        shapely.GeometryCollection([hole,line,Point(5,5)]),
+        shapely.GeometryCollection([box(0,0,1,1),box(.5,0,1.5,1)]),
+        Point(), LineString(), Polygon(), shapely.GeometryCollection()]
+    return buffer_source(geometries,crs)
+
+
+@pytest.mark.parametrize('crs',[3857,2263])
+def test_measurement_exact_holes_parts_collection_repeated_contributions_empty_and_units(crs):
+    source=measurement_source(crs);source['area']=-999;source['length']=-888
+    before=source.copy(deep=True)
+    expected_area=[0,0,74,78,0,74,2,0,0,0,0]
+    expected_length=[0,7,46,54,14,53,8,0,0,0,0]
+    for operator,field,expected in [('get_area','area',expected_area),('get_length','length',expected_length)]:
+        result=get_operator(operator)(source)
+        assert result[field].tolist()==expected and result[field].dtype==np.dtype('float64')
+        assert result.columns.equals(source.columns) and result.index.equals(source.index)
+        assert result.crs==source.crs and result.geometry.name=='shape'
+        assert result.geometry.to_wkb().tolist()==source.geometry.to_wkb().tolist()
+        pd.testing.assert_frame_equal(result.drop(columns=field),source.drop(columns=field))
+    assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('threshold',[0.,2.,74.,100.])
+def test_measurement_area_split_is_total_disjoint_preserves_duplicate_indices_and_reuses_area(threshold,monkeypatch):
+    import operators.data_operations as data_ops
+    source=measurement_source();source['area']=-1;before=source.copy(deep=True)
+    original=data_ops.get_area;calls=[]
+    def counted(frame):calls.append(frame);return original(frame)
+    monkeypatch.setattr(data_ops,'get_area',counted)
+    result=get_operator('split_by_area')(source,threshold)
+    assert len(calls)==1 and calls[0] is source
+    areas=[0,0,74,78,0,74,2,0,0,0,0]
+    for port,positions in [('large',[i for i,v in enumerate(areas) if v>threshold]),('small',[i for i,v in enumerate(areas) if v<=threshold])]:
+        expected=source.iloc[positions].copy();expected['area']=np.array(areas,dtype=float)[positions]
+        assert_geodataframe_equal(result[port],expected)
+    assert len(result['large'])+len(result['small'])==len(source)
+    assert set(result['large'].label).isdisjoint(result['small'].label)
+    assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('operator',['get_area','get_length','split_by_area'])
+@pytest.mark.parametrize('problem',['not_gdf','duplicate','no_active','extra_geometry','null','invalid','z','m','nonfinite','crs_missing','geographic','geocentric'])
+def test_measurement_rejects_unproven_source_and_crs_atomically(operator,problem):
+    from operators.properties_operators import MeasurementInputError
+    source=buffer_source([Point(1,2)])
+    if problem=='not_gdf':source=pd.DataFrame({'x':[1]})
+    elif problem=='duplicate':source.columns=['same']*len(source.columns)
+    elif problem=='no_active':source=gpd.GeoDataFrame({'x':[1]})
+    elif problem=='extra_geometry':source['other']=source.geometry.copy()
+    elif problem in ('crs_missing','geographic','geocentric'):
+        source=source.set_crs({'crs_missing':None,'geographic':4326,'geocentric':4978}[problem],allow_override=True)
+    else:source['shape']=[{'null':None,'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),
+        'z':Point(1,2,3),'m':shapely.from_wkt('POINT M (1 2 3)'),'nonfinite':Point(float('inf'),1)}[problem]]
+    before=source.copy(deep=True)
+    with pytest.raises(MeasurementInputError) as caught:get_operator(operator)(source,1.) if operator=='split_by_area' else get_operator(operator)(source)
+    assert caught.value.code==('crs' if problem in ('crs_missing','geographic','geocentric') else 'source')
+    pd.testing.assert_frame_equal(source,before)
+
+
+@pytest.mark.parametrize('value',[-1,True,False,'2',None,float('nan'),float('inf'),-float('inf'),[],[1]])
+def test_measurement_split_rejects_bad_threshold_even_for_empty_batch(value):
+    from operators.properties_operators import MeasurementInputError
+    for source in (measurement_source(),measurement_source().iloc[:0]):
+        with pytest.raises(MeasurementInputError) as caught:get_operator('split_by_area')(source,value)
+        assert caught.value.code=='threshold'
+
+
+@pytest.mark.parametrize('operator,field',[('get_area','area'),('get_length','length'),('split_by_area','area')])
+def test_measurement_geometry_output_collision_is_typed_and_other_field_names_are_safe(operator,field):
+    from operators.properties_operators import MeasurementInputError
+    for empty in (False,True):
+        source=buffer_source([box(0,0,3,2)]).rename_geometry(field)
+        if empty:source=source.iloc[:0]
+        with pytest.raises(MeasurementInputError) as caught:get_operator(operator)(source,1.) if operator=='split_by_area' else get_operator(operator)(source)
+        assert caught.value.code==field
+    safe=buffer_source([box(0,0,3,2)]).rename_geometry('length' if field=='area' else 'area')
+    result=get_operator(operator)(safe,1.)['large'] if operator=='split_by_area' else get_operator(operator)(safe)
+    assert result.geometry.name==safe.geometry.name and result.geometry.to_wkb().tolist()==safe.geometry.to_wkb().tolist()
+
+
+@pytest.mark.parametrize('operator',['get_area','get_length','split_by_area'])
+def test_measurement_empty_batch_keeps_schema_and_checks_crs(operator):
+    from operators.properties_operators import MeasurementInputError
+    source=measurement_source().iloc[:0];result=get_operator(operator)(source,0.) if operator=='split_by_area' else get_operator(operator)(source)
+    for frame in result.values() if isinstance(result,dict) else [result]:
+        assert frame.empty and frame.index.equals(source.index) and frame.crs==source.crs
+        assert frame.geometry.name=='shape' and set(frame.columns)==set(source.columns)|{('length'if operator=='get_length'else'area')}
+    with pytest.raises(MeasurementInputError):get_operator(operator)(source.set_crs(None,allow_override=True),0.) if operator=='split_by_area' else get_operator(operator)(source.set_crs(None,allow_override=True))
+
+
+@pytest.mark.parametrize('operator',['get_area','get_length','split_by_area'])
+@pytest.mark.parametrize('fault',['exception','negative','nan','inf','rank','length','empty_nonzero'])
+def test_measurement_native_faults_remain_execution_failures_and_block_saves(operator,fault,monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=buffer_source([Point() if fault=='empty_nonzero' else box(0,0,1,1)])
+    def broken(*args,**kwargs):
+        if fault=='exception':raise shapely.errors.GEOSException('PRIVATE native issue')
+        return {'negative':np.array([-1.]),'nan':np.array([float('nan')]),'inf':np.array([float('inf')]),
+            'rank':np.array([[1.]]),'length':np.array([]),'empty_nonzero':np.array([1.])}[fault]
+    monkeypatch.setattr(shapely,'length'if operator=='get_length'else'area',broken)
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner().execute({'tasks':[
+        {'id':'PRIVATE','operator':operator,'params':{'input_gdf':source,**({'threshold':0.}if operator=='split_by_area'else{})},'depends_on':[]},
+        {'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]})
+    assert caught.value.error_code=='EXECUTION_FAILED' and caught.value.diagnostic is None
+    assert caught.value.task_order==['PRIVATE']
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('operator,reason,parameter,field',MEASUREMENT_CASES)
+def test_measurement_runtime_closed_diagnostic_freezes_definition_and_blocks_save(language,operator,reason,parameter,field,monkeypatch):
+    import workflow_engine
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=buffer_source([Point(1,2)])
+    if reason=='operator_input_invalid':source['shape']=[None]
+    elif reason=='operator_crs_invalid':source=source.set_crs(4326,allow_override=True)
+    elif reason=='operator_geometry_field_conflict':source=source.rename_geometry(field)
+    lookup=workflow_engine.get_operator;calls=[]
+    def guarded(name):
+        calls.append(name)
+        if name=='load':return lambda **kwargs:source
+        if name=='save':raise AssertionError('measurement refusal reached save')
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    tasks=[{'id':'PRIVATE','operator':operator,'params':{'input_gdf':{'$ref':'load'},**({'threshold':-1. if parameter=='threshold'else 0.}if operator=='split_by_area'else{})},'depends_on':['load']},
+        {'id':'load','operator':'load','params':{},'depends_on':[]},
+        {'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert caught.value.error_code=='INVALID_PARAMS' and calls==['load',operator]
+    assert caught.value.task_order==['load','PRIVATE']
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+        'operator':{'node_index':1,'operator_id':operator,**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}}
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+
+
+def test_measurement_real_geopackage_preserves_geometry_attributes_and_numeric_values(tmp_path):
+    from osgeo import ogr
+    source=buffer_source([Polygon([(0,0),(10,0),(10,8),(0,8),(0,0)], [[(1,1),(3,1),(3,4),(1,4),(1,1)]]),box(20,0,22,2)])
+    source['enabled']=pd.array([None,True],dtype='boolean');source['area']=-7;source['length']=-8
+    before=source.copy(deep=True);result=get_operator('get_length')(get_operator('get_area')(source))
+    conn={'storage_type':'nfs','mount_path':str(tmp_path)}
+    get_operator('save')(input_df=result,connection_info=conn,path='measurements.gpkg',mode='fail')
+    ds=ogr.Open(str(tmp_path/'measurements.gpkg'));layer=ds.GetLayer(0);assert layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    rows=list(layer);assert len(rows)==2
+    for i,row in enumerate(rows):
+        assert row.GetField('area')==[74,4][i] and row.GetField('length')==[46,8][i]
+        assert row.GetField('geometry')=='business' and row.GetField('label')==f'row-{i}'
+        assert row.GetField('grade')==[None,2**53+2][i] and row.GetField('enabled')==[None,True][i]
+        assert bytes(row.GetGeometryRef().ExportToIsoWkb())==source.geometry.to_wkb(byte_order=1,flavor='iso').iloc[i]
+    name=layer.GetGeometryColumn();ds=None
+    loaded=get_operator('load')(connection_info=conn,path='measurements.gpkg')
+    assert loaded.geometry.name==name and loaded.crs==source.crs
+    assert loaded['area'].tolist()==[74,4] and loaded['length'].tolist()==[46,8]
+    assert str(loaded.grade.dtype)=='Int64' and str(loaded.enabled.dtype)=='boolean'
+    assert loaded.geometry.to_wkb().tolist()==source.geometry.to_wkb().tolist()
+    assert_geodataframe_equal(source,before)
+
+
+def test_measurement_null_source_cannot_silently_disappear_from_both_area_split_ports():
+    from operators.properties_operators import MeasurementInputError
+    source=buffer_source([box(0,0,1,1),None])
+    before=source.copy(deep=True)
+    with pytest.raises(MeasurementInputError) as caught:get_operator('split_by_area')(source,0.)
+    assert caught.value.code=='source'
+    assert_geodataframe_equal(source,before)

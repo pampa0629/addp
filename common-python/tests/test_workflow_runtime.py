@@ -537,3 +537,34 @@ def test_enclosing_construction_diagnostics_bind_original_frozen_task_position(o
     assert caught.value.diagnostic == {'schema_version': 'addp.execution-failure/v3', 'stage': 'execution', 'reason': reason,
         'operator': {'node_index': 1, 'operator_id': operator, **({'parameter': parameter} if parameter else {})}}
     assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+
+
+MEASUREMENT_RULES = [('get_area', 'operator_input_invalid', 'input_gdf', ''), ('get_area', 'operator_crs_invalid', '', ''), ('get_area', 'operator_geometry_field_conflict', 'input_gdf', 'area'), ('get_length', 'operator_input_invalid', 'input_gdf', ''), ('get_length', 'operator_crs_invalid', '', ''), ('get_length', 'operator_geometry_field_conflict', 'input_gdf', 'length'), ('split_by_area', 'operator_input_invalid', 'input_gdf', ''), ('split_by_area', 'operator_crs_invalid', '', ''), ('split_by_area', 'operator_geometry_field_conflict', 'input_gdf', 'area'), ('split_by_area', 'operator_nonnegative_number_required', 'threshold', '')]
+
+@pytest.mark.parametrize('operator,reason,parameter,field',MEASUREMENT_RULES)
+def test_measurement_diagnostic_contract_only_allows_proven_fields(operator,reason,parameter,field):
+    import copy
+    from addp_common.workflow_runtime.errors import OperatorInputError, validated_operator_diagnostic
+    value=OperatorInputError(reason,'PRIVATE',field=field).diagnostic(operator,2)
+    expected={'node_index':2,'operator_id':operator,**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}
+    assert value['operator']==expected and validated_operator_diagnostic(value)==value
+    for patch in [{'field':'PRIVATE_FIELD'},{'parameter':'reference_gdf'},{'node_index':True},{'node_index':0},{'operator_id':'unknown_measurement'},{'parameter_value':1}]:
+        forged=copy.deepcopy(value);forged['operator'].update(patch);assert validated_operator_diagnostic(forged)is None
+    if field:
+        forged=copy.deepcopy(value);forged['operator']['field']='length' if field=='area'else'area';assert validated_operator_diagnostic(forged)is None
+
+
+@pytest.mark.parametrize('operator,reason,parameter,field',MEASUREMENT_RULES)
+def test_measurement_runtime_diagnostic_blocks_following_task_with_frozen_context(operator,reason,parameter,field):
+    from addp_common.workflow_runtime import OperatorInputError
+    calls=[]
+    def execute(name,params):
+        calls.append(name)
+        if name==operator:raise OperatorInputError(reason,'PRIVATE',field=field)
+        return {'kept':True}
+    definition={'tasks':[{'id':'PRIVATE','operator':operator,'params':{},'depends_on':['load']},
+        {'id':'load','operator':'load','params':{},'depends_on':[]},{'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]}
+    with pytest.raises(WorkflowExecutionError) as caught:WorkflowRunner({'load',operator,'save'},execute).execute(definition)
+    assert calls==['load',operator] and caught.value.error_code=='INVALID_PARAMS'
+    assert caught.value.all_results=={'load':{'kept':True}}
+    assert caught.value.diagnostic['operator']=={'node_index':1,'operator_id':operator,**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}

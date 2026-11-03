@@ -554,8 +554,12 @@ def test_load_spatial_geometry_identity_consumers_reject_geometry_output_collisi
     frame=_loaded_geometry_consumer_source(tmp_path).rename_geometry(field)
     if empty:frame=frame.iloc[:0]
     before=frame.copy(deep=True)
-    with pytest.raises(ValueError,match="geometry.*conflict"):
+    from operators.properties_operators import MeasurementInputError
+    error_type = MeasurementInputError if operator in ('get_area','get_length','split_by_area') else ValueError
+    with pytest.raises(error_type) as caught:
         get_operator(operator)(frame,2.) if operator=="split_by_area" else get_operator(operator)(frame)
+    if error_type is MeasurementInputError: assert caught.value.code == field
+    else: assert 'geometry' in str(caught.value) and 'conflict' in str(caught.value)
     assert_geodataframe_equal(frame,before)
 
 

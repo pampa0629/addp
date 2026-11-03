@@ -8,11 +8,12 @@ import geopandas as gpd
 import pandas as pd
 import shapely
 from typing import Dict, List, Any
+from .properties_operators import get_area, _measurement_threshold
 from .base import (
     OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator, OutputPort
 )
 from .geometric_operators import (BufferInputError, _unary_frame_geometry, _prepare_projected_xy_source,
-                                  _buffer_distance, _buffer_resolution, _compute_buffer, _geometry_for_output, _polygon_mask_inputs,
+                                  _buffer_distance, _buffer_resolution, _compute_buffer, _polygon_mask_inputs,
                                   _combined_polygon_mask, _require_valid_mask_result, _union_polygon_result)
 
 
@@ -135,12 +136,11 @@ def split_by_area(input_gdf: gpd.GeoDataFrame, threshold: float) -> Dict[str, gp
             - "large": 面积大于阈值的要素
             - "small": 面积小于等于阈值的要素
     """
-    geometry = _geometry_for_output(input_gdf, ('area',))
-    result = input_gdf.copy()
-    result['area'] = geometry.area
-
-    large = result[result['area'] > threshold].copy()
-    small = result[result['area'] <= threshold].copy()
+    threshold = _measurement_threshold(threshold)
+    result = get_area(input_gdf)
+    large_mask = result['area'].to_numpy() > threshold
+    large = result.iloc[large_mask].copy()
+    small = result.iloc[~large_mask].copy()
 
     # 返回命名输出端口
     return {
@@ -260,7 +260,7 @@ SPLIT_BY_AREA_METADATA = OperatorMetadata(
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="根据面积阈值将输入要素分为两组:大于阈值的要素和小于等于阈值的要素。这是一个多输出算子示例,返回两个独立的输出端口。",
+    overview="根据面积阈值将输入要素分为两组:大于阈值的要素和小于等于阈值的要素。复用唯一get_area计算，threshold为有限非负阈值，合法EMPTY计0，两个端口每条源记录恰入一次。",
 
     params=[
         OperatorParam(
@@ -275,8 +275,8 @@ SPLIT_BY_AREA_METADATA = OperatorMetadata(
             type="param",
             data_type="float",
             required=True,
-            description="面积阈值,单位与坐标系一致",
-            notes="投影坐标系单位为平方米,地理坐标系单位为平方度"
+            description="有限非负面积阈值threshold，单位为源水平坐标单位平方",
+            notes="拒绝bool/字符串/NULL/NaN/Inf/数组；只接受已知投影CRS，英尺对应平方英尺，不自动换算"
         )
     ],
 
@@ -288,9 +288,10 @@ SPLIT_BY_AREA_METADATA = OperatorMetadata(
     ],
 
     notes=[
-        "读取实际活动几何列；几何列名为area时先显式重命名，不覆盖几何",
+        "读取实际活动几何列；几何列名为area时先显式重命名，不覆盖几何；普通area业务列更新",
+        "NULL拒绝、有效有限XY；孔洞净面积、多部件集合累加，重复贡献不去重",
         "返回两个输出端口: large(大于阈值) 和 small(小于等于阈值)",
-        "面积单位与坐标系一致,地理坐标系建议先转投影坐标系",
+        "仅已知投影CRS；面积及threshold为原水平单位平方，不自动投影或换算米制",
         "对于点和线几何,面积为0,全部归入small组",
         "多输出算子需要在工作流中正确连接不同的输出端口"
     ],

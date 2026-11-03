@@ -312,3 +312,5 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 `centroid`（计算质心）逐源保行，沿投影平面原单位计算原生权重：多点等权、线按原段长、面按扣孔后的面积；混合集合只计最高维度，重复贡献保留。面外/孔内/线外Point正常成功，不当作沿线中点、中心线或面内代表点。唯一实际几何/有效非空有限XY/已知投影、属性与index保护及闭合诊断见[统一契约](../../../docs/spec/workflow/矢量算子契约.md#计算质心统一契约)。不新增weight参数或batch_centroid入口，不自动修复/投影/融合。
 
 `representative_point`（面内点）只接投影CRS下有效非空有限XY Polygon/MultiPolygon，逐源取最大净面积部件，精确等面积原部件顺序；原生求点后必须严格位于选中部件和原源内部，否则整批计算失败，不挪点/换次优。保属性类型/null/index/CRS及实际几何列，唯一Point图层输出；无数值参数或point_on_surface别名。详见[面内点契约](../../../docs/spec/workflow/矢量算子契约.md#面内点统一契约)。
+
+`get_area`、`get_length`及`split_by_area`遵循[统一量测契约](../../../docs/spec/workflow/矢量算子契约.md#面积长度与面积分流统一契约)：已知投影原单位、有效有限XY，NULL拒绝、EMPTY0保行；面积扣孔洞、周长计全部环，集合/重复部件按原生贡献累加不融合。普通area/length列更新，活动几何重名报错；面积分流复用唯一面积计算，有限非负threshold，large严格大于、small小于等于，每源恰入一端口。

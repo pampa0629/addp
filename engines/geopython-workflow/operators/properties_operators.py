@@ -5,7 +5,9 @@
 """
 
 import geopandas as gpd
-from .geometric_operators import _geometry_for_output
+import numpy as np
+import shapely
+from .geometric_operators import _geometry_for_output, _unary_frame_geometry, _finite_xy_geometry, _require_projected_xy_crs, _finite_real_scalar
 from .base import (
     OperatorType,
     OperatorMetadata, OperatorParam, OperatorCategory, register_operator
@@ -13,6 +15,63 @@ from .base import (
 
 
 # ==================== 算子实现 ====================
+
+class MeasurementInputError(ValueError):
+    """Closed planar measurement admissions; numerical faults stay execution failures."""
+    _messages = {
+        'zh-cn': {
+            'source': '量测源须具有唯一列名和唯一活动几何列，几何须有效且为有限二维XY；NULL不允许，合法EMPTY可用并计0。请先显式整理源图层。',
+            'crs': '量测要求已知投影坐标系及匹配、有限且为正的水平线性单位；长度沿原单位、面积沿原单位平方，不自动投影或换算。',
+            'area': '活动几何列area与面积输出字段冲突；请先手动重命名几何列，不自动改名或覆盖几何。',
+            'length': '活动几何列length与长度输出字段冲突；请先手动重命名几何列，不自动改名或覆盖几何。',
+            'threshold': '面积阈值threshold必须为有限非负实数，单位为源坐标单位平方；不接受布尔值、字符串、空值、数组或非有限值。',
+        },
+        'en': {
+            'source': 'Measurement requires unique column names, one active geometry column and valid finite XY geometries; NULL is rejected, while valid EMPTY is retained with zero. Prepare the source explicitly first.',
+            'crs': 'Measurement requires a known projected CRS with matching finite positive horizontal linear units; length uses the original unit and area its square, without automatic projection or conversion.',
+            'area': 'Active geometry column area conflicts with the area output field; rename the geometry column manually first, without automatic renaming or geometry replacement.',
+            'length': 'Active geometry column length conflicts with the length output field; rename the geometry column manually first, without automatic renaming or geometry replacement.',
+            'threshold': 'Area threshold must be a finite non-negative real scalar in squared source coordinate units; booleans, strings, nulls, arrays and non-finite values are rejected.',
+        },
+    }
+
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
+def _measurement_threshold(value):
+    number = _finite_real_scalar(value, MeasurementInputError, 'threshold')
+    if number < 0:
+        raise MeasurementInputError('threshold')
+    return number
+
+
+def _measure(input_gdf, field):
+    _unary_frame_geometry(input_gdf, MeasurementInputError)
+    try:
+        geometry = _finite_xy_geometry(input_gdf)
+        if geometry.isna().any() or not shapely.is_valid(geometry.array).all():
+            raise ValueError('measurement requires valid non-missing XY geometry')
+    except (ValueError, TypeError) as exc:
+        raise MeasurementInputError('source') from exc
+    if geometry.name == field:
+        raise MeasurementInputError(field)
+    try:
+        _require_projected_xy_crs(geometry.crs)
+    except ValueError as exc:
+        raise MeasurementInputError('crs') from exc
+    values = np.asarray({'area': shapely.area, 'length': shapely.length}[field](geometry.array), dtype=float)
+    if (values.shape != (len(geometry),) or not np.isfinite(values).all() or (values < 0).any()
+            or (values[shapely.is_empty(geometry.array)] != 0).any()):
+        raise RuntimeError('measurement produced invalid or non-finite scalar results')
+    result = input_gdf.copy()
+    result[field] = values
+    return result
+
 
 def get_area(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
@@ -24,10 +83,7 @@ def get_area(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     Returns:
         GeoDataFrame 副本，追加或更新 area 列，保留源几何和其他属性
     """
-    geometry = _geometry_for_output(input_gdf, ('area',))
-    result = input_gdf.copy()
-    result['area'] = geometry.area
-    return result
+    return _measure(input_gdf, 'area')
 
 
 def get_length(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -40,10 +96,7 @@ def get_length(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     Returns:
         GeoDataFrame 副本，追加或更新 length 列，保留源几何和其他属性
     """
-    geometry = _geometry_for_output(input_gdf, ('length',))
-    result = input_gdf.copy()
-    result['length'] = geometry.length
-    return result
+    return _measure(input_gdf, 'length')
 
 
 def get_bounds(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -98,9 +151,10 @@ GET_AREA_METADATA = OperatorMetadata(
 
     notes=[
         "读取实际活动几何列；若几何列名为area则报错，请先显式重命名几何列",
-        "面积为输入坐标单位的平方，不自动换算平方米；投影单位可为米、英尺等，地理坐标下不是测地面积",
-        "地理坐标系(EPSG:4326)的平方度不直观,建议先转投影坐标系(如UTM)",
-        "对于点和线几何,面积为0",
+        "面积为输入坐标单位的平方，不自动换算平方米；投影单位可为米、英尺等；不计算测地面积",
+        "只接受已知投影CRS和匹配有限正水平单位；未知/地理/地心CRS拒绝，不自动投影",
+        "对于点和线几何,面积为0；面扣除孔洞，多部件/集合逐部件累加，重复贡献不去重",
+        "NULL拒绝、合法EMPTY计0保行；有效有限XY，拒绝Z/M；原属性、索引和CRS不变",
         "大范围区域面积计算建议使用等面积投影(如Albers)"
     ],
 
@@ -145,9 +199,10 @@ GET_LENGTH_METADATA = OperatorMetadata(
 
     notes=[
         "读取实际活动几何列；若几何列名为length则报错，请先显式重命名几何列",
-        "长度沿输入坐标单位，不自动换算米；投影单位可为米、英尺等，地理坐标下不是测地长度",
-        "地理坐标系(EPSG:4326)的度单位不直观,建议先转投影坐标系",
-        "对于点几何,长度为0;对于面几何,返回周长",
+        "长度沿输入坐标单位，不自动换算米；投影单位可为米、英尺等；不计算测地长度",
+        "只接受已知投影CRS和匹配有限正水平单位；未知/地理/地心CRS拒绝，不自动投影",
+        "对于点几何,长度为0;对于面几何,返回外环及所有孔洞环周长；多部件/集合累加全部贡献，不融合",
+        "NULL拒绝、合法EMPTY计0保行；有效有限XY，拒绝Z/M；原属性、索引和CRS不变",
         "大范围线要素长度计算建议使用等距投影"
     ],
 

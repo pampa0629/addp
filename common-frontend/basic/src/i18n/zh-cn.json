@@ -398,7 +398,24 @@
           "operator_crs_invalid": "先确认源坐标系并显式重投影到合适的投影坐标系，再重新执行；不会自动投影。"
         }
       },
+      "measurement": {
+        "reasons": {
+          "operator_input_invalid": "量测源须具有唯一列名及唯一活动几何列，几何须有效且为有限二维XY；NULL不允许，合法EMPTY保留并计0。",
+          "operator_crs_invalid": "量测要求已知投影坐标系及匹配、有限且为正的水平线性单位。",
+          "operator_geometry_field_conflict": "活动几何列 {field} 与量测输出字段重名。",
+          "operator_nonnegative_number_required": "面积阈值须为有限非负实数，不能是布尔值、字符串、NULL、数组或非有限值。"
+        },
+        "actions": {
+          "operator_input_invalid": "请在上游显式整理缺失、无效、Z/M或非有限几何后重新执行；合法EMPTY可用，不会自动修复或删除记录。",
+          "operator_crs_invalid": "请显式统一为合适的投影CRS；长度沿原单位、面积及阈值沿原单位平方，不会自动投影或换算米制。",
+          "operator_geometry_field_conflict": "请先手动重命名活动几何列 {field}，再执行；普通同名业务字段会更新，不会自动改名或覆盖几何。",
+          "operator_nonnegative_number_required": "请使用源坐标单位平方的有限非负threshold；大于阈值进large，小于等于进small，等号归small。"
+        }
+      },
       "operatorNames": {
+        "get_area": "计算面积",
+        "get_length": "计算长度",
+        "split_by_area": "按面积分割",
         "envelope": "外包矩形",
         "representative_point": "面内点",
         "centroid": "计算质心",
@@ -422,6 +439,7 @@
         "intersection": "相交叠加"
       },
       "operatorParameters": {
+        "threshold": "面积阈值（threshold）",
         "preserve_topology": "保留单几何拓扑（preserve_topology）",
         "distance": "缓冲距离（distance）",
         "group_fields": "分组字段（group_fields）",

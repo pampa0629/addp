@@ -1836,3 +1836,17 @@ def test_point_density_single_workflow_read_entry_exact_sources_radius_and_units
     assert spec['category_path']==['栅格处理','基础计算']and spec['attributes']['resource_groups']==['raster']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
     assert set(inspect.signature(get_operator('raster_point_density')).parameters)==set(params)
+
+
+@pytest.mark.parametrize('operator',['get_area','get_length','split_by_area'])
+def test_measurement_discovery_projected_empty_zero_and_original_unit_policy(operator):
+    spec=next(row for row in list_operators()if row['id']==operator)
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']
+    params={row['name']:row for row in spec['parameters']}
+    assert set(params)==({'input_gdf','threshold'}if operator=='split_by_area'else{'input_gdf'})
+    text=str(spec['detailed_description'])
+    for marker in ['投影','EMPTY','area'if operator!='get_length'else'length']:
+        assert marker in text
+    if operator=='split_by_area':
+        assert [port['name']for port in spec['output_ports']]==['large','small']
+        assert 'threshold' in text and '非负' in text

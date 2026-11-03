@@ -27,6 +27,23 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	}
 	parameter, field, ok := "", "", false
 	switch o.OperatorID {
+	case "get_area", "get_length", "split_by_area":
+		switch reason {
+		case "operator_input_invalid":
+			parameter, ok = "input_gdf", true
+		case "operator_crs_invalid":
+			ok = true
+		case "operator_geometry_field_conflict":
+			parameter, field, ok = "input_gdf", "area", true
+			if o.OperatorID == "get_length" {
+				field = "length"
+			}
+		case "operator_nonnegative_number_required":
+			if o.OperatorID == "split_by_area" {
+				parameter, ok = "threshold", true
+			}
+		}
+
 	case "envelope", "representative_point", "centroid", "convex_hull", "minimum_rotated_rectangle":
 		switch reason {
 		case "operator_input_invalid":

@@ -398,7 +398,24 @@
           "operator_crs_invalid": "Confirm the source CRS and explicitly reproject to a suitable projected CRS before a new execution; no automatic projection is performed."
         }
       },
+      "measurement": {
+        "reasons": {
+          "operator_input_invalid": "Measurement requires unique column names, one active geometry column and valid finite XY geometries; NULL is rejected while valid EMPTY is retained with zero.",
+          "operator_crs_invalid": "Measurement requires a known projected CRS with matching finite positive horizontal linear units.",
+          "operator_geometry_field_conflict": "Active geometry column {field} conflicts with the measurement output field.",
+          "operator_nonnegative_number_required": "The area threshold must be a finite non-negative real scalar, not a boolean, string, NULL, array or non-finite value."
+        },
+        "actions": {
+          "operator_input_invalid": "Explicitly prepare missing, invalid, Z/M or non-finite geometries upstream before a new execution; valid EMPTY is accepted, without automatic repair or row removal.",
+          "operator_crs_invalid": "Explicitly choose a suitable projected CRS; length uses its original units, area and threshold their square, with no automatic projection or conversion to metres.",
+          "operator_geometry_field_conflict": "Manually rename active geometry column {field} before execution; ordinary same-name business fields are updated, without automatic renaming or geometry replacement.",
+          "operator_nonnegative_number_required": "Use a finite non-negative threshold in squared source coordinate units; area greater than threshold enters large, otherwise small, including equality."
+        }
+      },
       "operatorNames": {
+        "get_area": "Calculate area",
+        "get_length": "Calculate length",
+        "split_by_area": "Split by area",
         "envelope": "Axis-aligned envelope",
         "representative_point": "Interior point",
         "centroid": "Calculate centroid",
@@ -422,6 +439,7 @@
         "intersection": "Intersection overlay"
       },
       "operatorParameters": {
+        "threshold": "Area threshold (threshold)",
         "preserve_topology": "Preserve single-geometry topology (preserve_topology)",
         "distance": "Buffer distance (distance)",
         "group_fields": "Group fields (group_fields)",

@@ -1366,3 +1366,29 @@ test('an unproven operator diagnostic remains generic without leaking input name
   await expect(panel).not.toContainText('private-password')
   await expect(panel).not.toContainText('多距缓冲')
 })
+
+
+for(const locale of ['zh-cn','en'])for(const [operator_id,reason,parameter,field]of [["get_area", "operator_input_invalid", "input_gdf", ""], ["get_area", "operator_crs_invalid", "", ""], ["get_area", "operator_geometry_field_conflict", "input_gdf", "area"], ["get_length", "operator_input_invalid", "input_gdf", ""], ["get_length", "operator_crs_invalid", "", ""], ["get_length", "operator_geometry_field_conflict", "input_gdf", "length"], ["split_by_area", "operator_input_invalid", "input_gdf", ""], ["split_by_area", "operator_crs_invalid", "", ""], ["split_by_area", "operator_geometry_field_conflict", "input_gdf", "area"], ["split_by_area", "operator_nonnegative_number_required", "threshold", ""]])
+ test(`measurement input diagnostics in develop (${operator_id}, ${reason}, ${field}, ${locale})`,async({page})=>{
+    await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
+    const details={category:'execution_failed',code:'develop.workflow.invalid_params',message:'PRIVATE_BIZ_FIELD private-password /private/input.gpkg',
+      diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,...(parameter?{parameter}:{}),...(field?{field}:{})}}}
+    await installMockBackend(page,{resultKind:'table',executionType:'workflow',locale,errorDetails:details})
+    await page.goto(`/executions/${EXECUTION_ID}`)
+    const panel=page.locator('.execution-failure')
+    const names=locale==='zh-cn'?{get_area:'计算面积',get_length:'计算长度',split_by_area:'按面积分割'}:{get_area:'Calculate area',get_length:'Calculate length',split_by_area:'Split by area'}
+    await expect(panel).toContainText(names[operator_id])
+    await expect(panel).toContainText(locale==='zh-cn'?'定义中的第 2 个节点':'Node 2 in the workflow definition')
+    if(parameter)await expect(panel).toContainText(parameter)
+    if(reason==='operator_input_invalid'){await expect(panel).toContainText('EMPTY');await expect(panel).toContainText('NULL');await expect(panel).toContainText('Z/M')}
+    if(reason==='operator_crs_invalid')await expect(panel).toContainText(locale==='zh-cn'?'原单位平方':'their square')
+    if(field){await expect(panel).toContainText(field);await expect(panel).toContainText(locale==='zh-cn'?'手动重命名':'Manually rename')}
+    if(parameter==='threshold'){await expect(panel).toContainText(locale==='zh-cn'?'非负':'non-negative');await expect(panel).toContainText('large');await expect(panel).toContainText('small')}
+    await expect(panel).not.toContainText('PRIVATE_BIZ_FIELD');await expect(panel).not.toContainText('private-password')
+    await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
+    const copied=await page.evaluate(()=>window.copiedDiagnostic)
+    expect(copied).toContain(names[operator_id]);if(parameter)expect(copied).toContain(parameter)
+    expect(copied).not.toMatch(/PRIVATE_BIZ_FIELD|private-password|\/private\/input.gpkg/)
+    await page.setViewportSize({width:390,height:844})
+    expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
+ })
