@@ -10,6 +10,7 @@ import json
 import importlib.util
 import re
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 
@@ -20,6 +21,14 @@ class RegistrationError(RuntimeError):
 
 def execution_runner_ci_inputs(repository: Path) -> set[str]:
     """Follow executed Python imports; static source reads are inputs, not programs."""
+    # Use the same source inventory as changed-gate: tracked files (including
+    # fixtures) plus new, non-ignored files. A running developer's PID/binary
+    # files are runtime state, even when a source guard mentions their paths.
+    result = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        cwd=repository, capture_output=True, check=True,
+    )
+    source_files = set(result.stdout.decode().split("\0"))
     commands = make_target_commands((repository / "Makefile").read_text(), "test-execution-online-ci-runner")
     if not commands:
         raise RegistrationError("Execution runner canonical Make target is missing")
@@ -84,7 +93,7 @@ def execution_runner_ci_inputs(repository: Path) -> set[str]:
             if "/" in candidate:
                 values.append(candidate)
             for value in values:
-                if (repository / value).is_file() and (value not in inputs or imported and value not in parsed):
+                if value in source_files and (repository / value).is_file() and (value not in inputs or imported and value not in parsed):
                     pending.append((value, imported))
     return inputs
 

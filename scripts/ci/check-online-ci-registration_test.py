@@ -1,6 +1,7 @@
 import importlib.util
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -3701,6 +3702,7 @@ class ExecutionRunnerCIRegistrationTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="addp-execution-ci-registration-")
         self.addCleanup(self.temporary.cleanup)
         self.repository = Path(self.temporary.name)
+        subprocess.run(["git", "init", "-q", str(self.repository)], check=True)
         self.workflow = self.repository / ".github/workflows/platform-ci.yml"
         self.workflow.parent.mkdir(parents=True)
         self.source = SCRIPT.parents[2]
@@ -3710,6 +3712,30 @@ class ExecutionRunnerCIRegistrationTest(unittest.TestCase):
 
     def test_execution_runner_has_independent_canonical_job(self):
         CHECK.validate_execution_runner_ci(self.repository)
+
+    def test_execution_inputs_ignore_runtime_files_but_keep_source_and_tracked_fixtures(self):
+        (self.repository / ".gitignore").write_text(".dev-*/\n*.bin\n")
+        consumer = self.repository / "scripts/test/runner_test.py"
+        consumer.parent.mkdir(parents=True)
+        consumer.write_text("from pathlib import Path\n"
+                            "Path('.dev-bins/addp-manager').exists()\n"
+                            "Path('.dev-pids/manager.pid').exists()\n"
+                            "Path('fixtures/source.bin').read_bytes()\n"
+                            "Path('new-owner/source.py').read_text()\n")
+        (self.repository / "Makefile").write_text(
+            "test-execution-online-ci-runner:\n\t@python3 scripts/test/runner_test.py\n")
+        for relative in (".dev-bins/addp-manager", ".dev-pids/manager.pid",
+                         "fixtures/source.bin", "new-owner/source.py"):
+            path = self.repository / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("# source or controlled runtime fixture\n")
+        subprocess.run(["git", "add", "-f", "fixtures/source.bin"],
+                       cwd=self.repository, check=True)
+        inputs = CHECK.execution_runner_ci_inputs(self.repository)
+        self.assertNotIn(".dev-bins/addp-manager", inputs)
+        self.assertNotIn(".dev-pids/manager.pid", inputs)
+        self.assertIn("fixtures/source.bin", inputs)
+        self.assertIn("new-owner/source.py", inputs)
 
     def test_execution_runner_rejects_missing_dependent_skipped_or_masked_job(self):
         import re
