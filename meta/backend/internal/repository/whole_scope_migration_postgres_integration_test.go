@@ -6,6 +6,7 @@ import (
 	"testing/fstest"
 
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/common/schema"
 	"github.com/addp/meta/internal/models"
 	metamigrations "github.com/addp/meta/migrations"
 	"gorm.io/driver/postgres"
@@ -118,8 +119,26 @@ func TestWholeScopeMigrationAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	fs := fstest.MapFS{name: &fstest.MapFile{Data: sql}}
-	if err := runSQLMigrations(tx, fs, "."); err != nil {
+	// Production startup skips the entire callback at an unchanged revision.
+	// Seed the previous deployed revision so this test also covers publication.
+	if err := tx.Exec(`CREATE TABLE meta.startup_schema_revision
+		(singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),version BIGINT NOT NULL);
+		INSERT INTO meta.startup_schema_revision VALUES (TRUE,4)`).Error; err != nil {
 		t.Fatal(err)
+	}
+	upgrade := func() error {
+		return schema.Migrate(tx, "meta", SchemaVersion, func(db *gorm.DB) error {
+			return runSQLMigrations(db, fs, ".")
+		})
+	}
+	if err := upgrade(); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Require(tx, "meta", SchemaVersion); err != nil {
+		t.Fatal("Worker cannot observe completed whole migration", err)
+	}
+	if err := schema.Require(tx, "meta", 4); err == nil {
+		t.Fatal("old Worker accepted the new schema revision")
 	}
 	for _, before := range []*models.MetaItem{missingScope, existingScope, canonical, &gdbItem, &legacyFile} {
 		var after models.MetaItem
@@ -169,7 +188,7 @@ func TestWholeScopeMigrationAgainstPostgres(t *testing.T) {
 	if err := tx.Model(&models.MetaItem{}).Where("id=?", missingScope.ID).Update("row_count", 9).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := runSQLMigrations(tx, fs, "."); err != nil {
+	if err := upgrade(); err != nil {
 		t.Fatal(err)
 	}
 	var after models.MetaItem
