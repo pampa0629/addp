@@ -70,7 +70,7 @@
 | POST | `/api/v1/service/query` | 创建查询服务。 |
 | GET | `/api/v1/service/query` | 管理列表。 |
 | GET | `/api/v1/service/query/:id` | 管理详情。 |
-| GET | `/api/v1/service/query-protection-options` | 当前登录用户针对显式 DataItem locator 的字段可选脱敏方式。 |
+| POST | `/api/v1/service/query-protection-options` | 当前登录用户针对显式原生表或可证明单表 SQL 来源的字段可选脱敏方式；SQL 与参数仅放 JSON Body。 |
 | PUT | `/api/v1/service/query/:id` | 更新当前定义。 |
 | DELETE | `/api/v1/service/query/:id` | 删除定义。 |
 | POST | `/api/query/:serviceName/query` | 数据查询；公开/私有、发布版本及保护检查由消费路径执行。 |

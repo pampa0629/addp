@@ -2186,13 +2186,16 @@
             }
         },
         "/query-protection-options": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅当前第一方登录用户及精确 DataItem 来源，沿 Service 保护投影核验 | Verify the current first-party User and exact DataItem against the Service protection projection",
+                "description": "当前第一方用户的原生表或可证明单表直接字段 SQL 候选；SQL 只准备不执行，沿 Service 独立投影核验，不接受角色或算法参数 | Native-table or provable direct-field single-table SQL methods for the current first-party User; SQL is prepared without execution against the Service projection; caller roles and algorithm parameters are not accepted",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -2202,11 +2205,13 @@
                 "summary": "查询字段脱敏可选方式 | List selectable field masking methods",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "来源 DataItem locator | Source DataItem locator",
-                        "name": "target_locator",
-                        "in": "query",
-                        "required": true
+                        "description": "原生表或可证明的单表 SQL 来源 | Native table or provable single-table SQL source",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryProtectionOptionsRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -5932,6 +5937,26 @@
                     "type": "integer"
                 },
                 "next_cursor": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryProtectionOptionsRequest": {
+            "type": "object",
+            "properties": {
+                "config_type": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "parameters": {
+                    "type": "object"
+                },
+                "sql": {
+                    "type": "string"
+                },
+                "target_locator": {
                     "type": "string"
                 }
             }

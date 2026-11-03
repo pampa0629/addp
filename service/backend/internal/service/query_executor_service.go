@@ -140,7 +140,22 @@ func (s *QueryExecutorService) executeDirectQuery(
 	if s.protectionGate == nil {
 		return nil, fmt.Errorf("Service 查询保护门禁未配置")
 	}
-	selection, err := s.serviceRoleSelection(ctx, queryService)
+	var roleSource *queryRoleSource
+	choices, err := queryService.ProtectionChoices()
+	if err != nil {
+		return nil, err
+	}
+	if len(choices) > 0 {
+		if queryService.ConfigType == "sql" {
+			roleSource, err = sqlRoleSource(ctx, enginePlugin, prepared, queryService.GetEngineID())
+		} else {
+			roleSource, err = tableRoleSource(queryService)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	selection, err := s.roleSelectionForSource(ctx, queryService, roleSource)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +169,7 @@ func (s *QueryExecutorService) executeDirectQuery(
 		return nil, fmt.Errorf("execute query plan: %w", err)
 	}
 	if selection != nil {
-		if _, err := s.serviceRoleSelection(ctx, queryService); err != nil {
+		if _, err := s.roleSelectionForSource(ctx, queryService, roleSource); err != nil {
 			return nil, err
 		}
 	}

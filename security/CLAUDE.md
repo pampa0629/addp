@@ -1,3 +1,7 @@
+Service SQL 角色方式（2026-11-03）：已按[查询发布与执行规范](../service/docs/architecture/查询发布与执行.md)接入非联邦、Provider 可证明唯一普通表的直接字段及别名；候选统一为 POST，保存仅准备元数据并复用保护编译器，实际执行与交付核验当前本人角色。Common 保留资格失效与方式失效的具体原因，不改变授权规则。默认保护及已有原生表方式保持原契约。
+
+本轮 Go T1、Service PostgreSQL 11 项及 Common 投影存储 PostgreSQL 子门禁 8 项、Service 119 单元／构建和相关 10 项受控浏览器回归通过；不是 Common 全部 PostgreSQL 门禁或个人环境／Hosted T4。全 Console 门禁仍有非本功能导航失败，未计通过。证据 `/tmp/p145-service-sql-role-20261103/verification.json`；下一步由用户全量重启后验收实际 SQL JSON／CSV／续页、资格／方式失效及主动恢复，CI 仍由专门会话跟进。当前状态与剩余边界统一维护于[后续工作专题](../docs/sessions/数据脱敏与保护后续工作专题.md)。
+
 Graph 保护消费者（2026-10-17）：固定 `addp-graph` 仅消费 `graph` 投影及确认 cursor，纳入安装／解除屏障；启动事务补齐存量未 released 资源及 releasing 的解除变化。Graph 领域读取复用 Common 显式 graph leaf 门禁，命中纳管拒绝，不提供属性脱敏、Policy 或原值豁免；System 源数据授权本轮不调整。当前消费者集合以 `protection_owner_contract.go` 为准，下文四 Owner 的历史验收不作为 Graph 已通过的证据。验证沿 Graph/Security/System Go、Security PostgreSQL、System migration 和 Common Neo4j/FalkorDB 标准门禁，既有 CI 自动发现。
 
 # Security 模块说明

@@ -1,6 +1,10 @@
 package models
 
-import "github.com/addp/common/dataprotection"
+import (
+	"strings"
+
+	"github.com/addp/common/dataprotection"
+)
 
 const QueryProtectionChoicesKey = "protection_choices"
 
@@ -18,4 +22,27 @@ func (q *QueryService) ProtectionChoices() ([]dataprotection.FieldRoleChoice, er
 
 type QueryProtectionOptionsResponse struct {
 	Fields []dataprotection.FieldRoleOptions `json:"fields"`
+}
+
+// QueryProtectionOptionsRequest identifies one explicit source; SQL stays out of URLs.
+type QueryProtectionOptionsRequest struct {
+	ConfigType    string         `json:"config_type"`
+	TargetLocator string         `json:"target_locator,omitempty"`
+	EngineID      uint           `json:"engine_id,omitempty"`
+	SQL           string         `json:"sql,omitempty"`
+	Parameters    map[string]any `json:"parameters,omitempty" swaggertype:"object"`
+}
+
+func (r *QueryProtectionOptionsRequest) Valid() bool {
+	if r == nil {
+		return false
+	}
+	switch r.ConfigType {
+	case "table":
+		return strings.TrimSpace(r.TargetLocator) != "" && r.EngineID == 0 && r.SQL == "" && r.Parameters == nil
+	case "sql":
+		return r.TargetLocator == "" && r.EngineID > 0 && strings.TrimSpace(r.SQL) != ""
+	default:
+		return false
+	}
 }

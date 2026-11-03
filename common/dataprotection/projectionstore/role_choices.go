@@ -49,18 +49,27 @@ func (s *Store) ValidateRoleChoices(ctx context.Context, tenantID int64, selecti
 	if selection == nil {
 		return nil
 	}
+	if err := s.EnsureCurrent(ctx, tenantID); err != nil {
+		return err
+	}
 	for _, choice := range selection.Choices {
-		candidates, err := s.RoleOptions(ctx, tenantID, choice.Target, action, selection.RoleKeys, now)
-		if err != nil {
-			return err
+		gate := s.Gate(tenantID, choice.Target, now)
+		if gate.Managed && (gate.Err != nil || gate.State != dataprotection.ProjectionStateActive) {
+			return deniedGateError(gate)
 		}
 		found := false
-		for _, field := range candidates {
-			if field.ComponentKey != choice.ComponentKey || field.PolicyID != choice.Selection.PolicyID || field.AssessmentRevision != choice.Selection.AssessmentRevision || field.PolicyRevision != choice.Selection.PolicyRevision {
-				continue
-			}
-			for _, option := range field.Options {
-				found = found || option.ID == choice.Selection.OptionID
+		for _, projection := range gate.Projections {
+			for _, rule := range projection.Rules {
+				if rule.Action != action || rule.Component.Key != choice.ComponentKey || rule.RoleOptions == nil || rule.RoleOptions.PolicyID != choice.Selection.PolicyID {
+					continue
+				}
+				// Validate the exact persisted option before checking role eligibility.
+				// Candidate filtering intentionally hides ineligible methods; using it
+				// here would erase the distinction between revoked roles and options.
+				if _, err := rule.ResolveRoleOption(choice.Selection, selection.RoleKeys); err != nil {
+					return errors.Join(dataprotection.ErrDenied, err)
+				}
+				found = true
 			}
 		}
 		if !found {

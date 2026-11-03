@@ -2536,10 +2536,14 @@ def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, 
             raise ValueError
     except (ValueError, TypeError, AttributeError) as error:
         raise SuiteError("role cursor Policy did not return a canonical option UUID") from error
-    option_path = "/source-protection-options?" if owner == "transfer" else "/query-protection-options?"
-    options = _object(client.request("GET", "/api/v1/" + owner + option_path +
-        urllib.parse.urlencode({("source_locator" if owner == "transfer" else "target_locator"): locator,
-                               **({"engine_id": engine_id} if owner == "develop" else {})}), (200,)).payload, "Owner role options")
+    if owner == "service":
+        options = _object(client.request("POST", "/api/v1/service/query-protection-options", (200,),
+            {"config_type": "table", "target_locator": locator}).payload, "Owner role options")
+    else:
+        option_path = "/source-protection-options?" if owner == "transfer" else "/query-protection-options?"
+        options = _object(client.request("GET", "/api/v1/" + owner + option_path +
+            urllib.parse.urlencode({("source_locator" if owner == "transfer" else "target_locator"): locator,
+                                   **({"engine_id": engine_id} if owner == "develop" else {})}), (200,)).payload, "Owner role options")
     matches = [field for field in _array(options.get("fields"), "Owner role fields")
                if isinstance(field, dict) and field.get("component_key") == BANK_FIELD]
     if len(matches) != 1:
@@ -2832,8 +2836,8 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
                 or role_projection(client, enrollment_id) != installed
                 or fresh.request("GET", service_path, (200,)).payload != selected):
             raise SuiteError("membership revocation must not change Policy, protection projection or Service definition")
-        options = _object(fresh.request("GET", "/api/v1/service/query-protection-options?" +
-            urllib.parse.urlencode({"target_locator": locator}), (200,)).payload, "revoked role options")
+        options = _object(fresh.request("POST", "/api/v1/service/query-protection-options", (200,),
+            {"config_type": "table", "target_locator": locator}).payload, "revoked role options")
         if any(_object(field, "revoked role field").get("options") for field in _array(options.get("fields"), "revoked role fields")):
             raise SuiteError("revoked User still observes eligible masking options")
         denials = assert_service_eligibility_denials(fresh, query_path, cursor)

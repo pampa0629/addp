@@ -550,7 +550,7 @@ const maskingFields = ref([])
 const maskingLoading = ref(false)
 const maskingError = ref('')
 let maskingSequence = 0
-const maskingSupported = computed(() => form.config_type === 'table' && !tableUsesRuntime.value && !form.runtime_engine_id)
+const maskingSupported = computed(() => !form.runtime_engine_id && (form.config_type === 'sql' || (form.config_type === 'table' && !tableUsesRuntime.value)))
 const refreshMaskingOptions = async () => {
   const sequence = ++maskingSequence
   const version = editorVersion
@@ -558,10 +558,12 @@ const refreshMaskingOptions = async () => {
   maskingFields.value = []
   maskingError.value = ''
   if (!maskingSupported.value) { maskingError.value = t('service.query.maskingUnsupported'); return }
-  if (!form.locator) { maskingError.value = t('fieldMaskingChoices.sourceRequired'); return }
+  if (form.config_type === 'table' ? !form.locator : !form.execution_engine_id || !form.sql_query.trim()) { maskingError.value = t('fieldMaskingChoices.sourceRequired'); return }
   maskingLoading.value = true
   try {
-    const response = await queryServiceAPI.getProtectionOptions(form.locator)
+    const response = await queryServiceAPI.getProtectionOptions(form.config_type === 'table'
+      ? { config_type: 'table', target_locator: form.locator }
+      : { config_type: 'sql', engine_id: form.execution_engine_id, sql: form.sql_query, parameters: sqlNamedParameterValues() })
     if (current()) maskingFields.value = response.fields
   } catch (error) {
     if (current()) maskingError.value = error.response?.data?.error || t('service.query.maskingLoadFailed')
@@ -569,12 +571,7 @@ const refreshMaskingOptions = async () => {
     if (current()) maskingLoading.value = false
   }
 }
-watch(() => [form.locator, form.config_type, form.engine_id, form.runtime_engine_id], () => {
-  ++maskingSequence
-  maskingFields.value = []
-  maskingError.value = ''
-  maskingLoading.value = false
-})
+
 
 
 // Meta resource-tree API 基础 URL。资源选择使用 locator 主身份，业务层按需检测空间能力。
@@ -594,6 +591,12 @@ const sqlOutputContract = ref(null)
 const sqlStableKey = ref([])
 const sqlStableKeyFilter = ref('')
 const sqlNamedParameters = ref([])
+watch(() => [form.locator, form.config_type, form.engine_id, form.runtime_engine_id, form.execution_engine_id, form.sql_query, sqlNamedParameters.value], () => {
+  ++maskingSequence
+  maskingFields.value = []
+  maskingError.value = ''
+  maskingLoading.value = false
+}, { deep: true })
 const sqlNamedParameterTypes = ['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'uuid']
 const numericSQLNamedParameterTypes = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 

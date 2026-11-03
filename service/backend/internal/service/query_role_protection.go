@@ -42,29 +42,52 @@ func (s *QueryExecutorService) currentProtectionRoles(ctx context.Context, tenan
 	return roles, nil
 }
 
-func (s *QueryExecutorService) QueryProtectionOptions(ctx context.Context, tenant uint, locator string) (*models.QueryProtectionOptionsResponse, error) {
+func (s *QueryExecutorService) QueryProtectionOptions(ctx context.Context, tenant uint, request *models.QueryProtectionOptionsRequest) (*models.QueryProtectionOptionsResponse, error) {
 	roles, err := s.currentProtectionRoles(ctx, tenant)
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := resourcetree.ParseURI(strings.TrimSpace(locator))
-	if err != nil || parsed.EngineID == 0 || parsed.ItemID == nil || *parsed.ItemID == 0 {
+	if request == nil {
 		return nil, dataprotection.ErrRoleOptionUnavailable
 	}
-	descriptor, err := s.systemService.WithTenantID(tenant).GetEngineRuntimeDescriptor(ctx, parsed.EngineID)
-	if err != nil {
-		return nil, err
-	}
-	model, err := dbbridge.EngineCatalogModel(descriptor.EngineType)
-	if err != nil {
-		return nil, dataprotection.ErrRoleOptionUnavailable
-	}
-	path, err := resourcetree.EngineCatalogPathFromLocator(model, parsed)
-	if err != nil {
-		return nil, dataprotection.ErrRoleOptionUnavailable
-	}
-	target, err := dataprotection.DataItemTargetFromCatalogPath(model, path)
-	if err != nil {
+	var target dataprotection.ResourceReference
+	var sqlSource *queryRoleSource
+	switch request.ConfigType {
+	case "table":
+		if request.EngineID != 0 || request.SQL != "" || request.Parameters != nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
+		parsed, err := resourcetree.ParseURI(strings.TrimSpace(request.TargetLocator))
+		if err != nil || parsed.EngineID == 0 || parsed.ItemID == nil || *parsed.ItemID == 0 {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
+		descriptor, err := s.systemService.WithTenantID(tenant).GetEngineRuntimeDescriptor(ctx, parsed.EngineID)
+		if err != nil {
+			return nil, err
+		}
+		model, err := dbbridge.EngineCatalogModel(descriptor.EngineType)
+		if err != nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
+		path, err := resourcetree.EngineCatalogPathFromLocator(model, parsed)
+		if err != nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
+		target, err = dataprotection.DataItemTargetFromCatalogPath(model, path)
+		if err != nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
+	case "sql":
+		if request.TargetLocator != "" {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
+		source, err := s.prepareRoleSQL(ctx, tenant, request.EngineID, request.SQL, request.Parameters)
+		if err != nil {
+			return nil, err
+		}
+		target = source.target
+		sqlSource = source
+	default:
 		return nil, dataprotection.ErrRoleOptionUnavailable
 	}
 	gate, ok := s.protectionGate.(queryRoleGate)
@@ -74,6 +97,15 @@ func (s *QueryExecutorService) QueryProtectionOptions(ctx context.Context, tenan
 	fields, err := gate.RoleOptions(ctx, int64(tenant), target, roles.RoleKeys)
 	if err != nil {
 		return nil, err
+	}
+	if sqlSource != nil {
+		eligible := make([]dataprotection.FieldRoleOptions, 0, len(fields))
+		for _, field := range fields {
+			if sqlSource.fields[field.ComponentKey] {
+				eligible = append(eligible, field)
+			}
+		}
+		fields = eligible
 	}
 	if !roles.ExpiresAt.After(time.Now().UTC()) {
 		return nil, dataprotection.ErrRoleOptionIneligible
@@ -86,20 +118,36 @@ func (s *QueryExecutorService) serviceRoleSelection(ctx context.Context, service
 	if err != nil || len(choices) == 0 {
 		return nil, err
 	}
-	snapshot := service.SourceSnapshot()
-	if service.ConfigType != "table" || service.UsesFederatedQueryRuntime() || snapshot == nil || snapshot.Source == nil || snapshot.ObjectTable != nil || snapshot.Table == nil {
+	source, err := s.definitionRoleSource(ctx, service)
+	if err != nil {
+		return nil, err
+	}
+	selection, err := s.roleSelectionForSource(ctx, service, source)
+	if err != nil {
+		return nil, err
+	}
+	if service.ConfigType == "sql" {
+		// Reuse the actual protection compiler for schema/consumption proof;
+		// do not execute this metadata-only plan or persist a parallel snapshot.
+		_, end, err := s.protectionGate.BeginPreparedQuery(ctx, service.TenantID, source.engine, source.prepared, selection)
+		if err != nil {
+			return nil, err
+		}
+		end()
+	}
+	return selection, nil
+}
+
+func (s *QueryExecutorService) roleSelectionForSource(ctx context.Context, service *models.QueryService, source *queryRoleSource) (*dataprotection.QueryRoleSelection, error) {
+	choices, err := service.ProtectionChoices()
+	if err != nil || len(choices) == 0 {
+		return nil, err
+	}
+	if source == nil {
 		return nil, dataprotection.ErrRoleOptionUnavailable
 	}
-	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: snapshot.Source.ItemFingerprint}
 	for _, choice := range choices {
-		found := false
-		for _, field := range snapshot.Table.Fields {
-			if field.Name == choice.ComponentKey {
-				found = true
-				break
-			}
-		}
-		if choice.Target != target || !found {
+		if choice.Target != source.target || !source.fields[choice.ComponentKey] {
 			return nil, dataprotection.ErrRoleOptionUnavailable
 		}
 	}

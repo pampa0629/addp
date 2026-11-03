@@ -404,7 +404,7 @@
       "executionQueryParameter": "Bound parameter",
       "executionQueryType": "Type",
       "executionQueryValue": "Value (canonical text)",
-      "maskingUnsupported": "Role-specific masking currently supports native single-table query services. Other sources retain default protection; explicitly remove any saved selection.",
+      "maskingUnsupported": "Role-specific masking supports native single-table services and SQL services with provable direct fields from one ordinary table. Other sources retain default protection; explicitly remove any saved selection.",
       "maskingLoadFailed": "Failed to load field masking methods"
     },
     "published": {

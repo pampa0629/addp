@@ -156,6 +156,7 @@ test('source and editor changes invalidate pending candidates without silently c
   await h.switchTo(42)
   assert.equal(h.guard.isDirty(), false)
   h.state.form.config_type = 'sql'
+  h.state.form.runtime_engine_id = 22 // Federated SQL remains outside this role-choice slice.
   await Vue.nextTick()
   await h.state.refreshMaskingOptions()
   assert.equal(h.state.maskingError.value, 'service.query.maskingUnsupported')
@@ -265,4 +266,22 @@ test('creation saves only the submitted snapshot and blocks duplicate requests',
     assert.deepEqual(h.navigations, [{ path: '/query-services/41', dirty: lateChange }])
     assert.equal(h.guard.isDirty(), lateChange)
   }
+})
+
+test('SQL candidates bind the current SQL source and parameters while saved choices remain source identities', async () => {
+  let captured, saved
+  const h = harness({
+    getService: async id => ({ ...service(id), engine_id: 11, sql_query: 'SELECT id, phone AS phone_alias FROM persons WHERE id >= :minimum',
+      named_parameters: [{ name: 'minimum', type: 'bigint', required: false, default: 7 }],
+      output_contract: { table: { fields: [{name:'id',type:'bigint'},{name:'phone_alias',type:'string'}],primary_key:['id'] } }, stable_key:['id'],
+      data_config: { protection_choices: [structuredClone(roleChoice)] } }),
+    getProtectionOptions: async source => { captured = source; return {fields:[]} },
+    updateService: async (_id,body) => { saved=body; return {id:41,version:3} }
+  }, {id:'41'})
+  await h.mount()
+  await h.state.refreshMaskingOptions()
+  assert.deepEqual(JSON.parse(JSON.stringify(captured)), {config_type:'sql',engine_id:11,sql:'SELECT id, phone AS phone_alias FROM persons WHERE id >= :minimum',parameters:{minimum:7}})
+  await h.state.handleSubmit()
+  assert.deepEqual(saved.data_config.protection_choices,[roleChoice])
+  h.unmount()
 })

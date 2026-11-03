@@ -124,3 +124,49 @@ func TestRoleChoiceRequiresCurrentQualificationExactLineageAndSeparateHistory(t 
 		})
 	}
 }
+
+func TestRoleChoiceValidationPreservesEligibilityAndOptionReasons(t *testing.T) {
+	for _, pair := range [][2]string{{"manager", "preview"}, {"develop", "query"}, {"service", "service_execute"}, {"transfer", "export"}} {
+		t.Run(pair[0], func(t *testing.T) {
+			now := time.Now().UTC()
+			model := plugin.TabularCatalogModel("schema")
+			path := plugin.TabularItemPath(91, "schema", "public", "persons")
+			fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true}}
+			p := activeTableProjection(t, pair[0], pair[1], model, path, fields)
+			option := dataprotection.RoleMaskingOption{ID: uuid.NewString(), Name: "Hash", RoleKeys: []string{"custom.analytics"}, Decision: dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmSM3V1, Parameters: map[string]any{}, InvalidValueEffect: dataprotection.EffectSuppress}}
+			p.Rules[0].RoleOptions = &dataprotection.RoleMaskingOptions{PolicyID: uuid.NewString(), PolicyRevision: 1, AssessmentRevision: 1, Options: []dataprotection.RoleMaskingOption{option}}
+			if err := p.Seal(); err != nil {
+				t.Fatal(err)
+			}
+			db := openProjectionStoreDB(t)
+			if pair[0] == "service" {
+				if err := db.Exec("ATTACH DATABASE ':memory:' AS service").Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			store, err := Migrate(db, pair[0], pair[0], nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1, Changes: []dataprotection.ProjectionChange{{ChangeID: "reason", Operation: dataprotection.ChangeOperationUpsert, Projection: &p}}, NextCursor: "reason"}, now); err != nil {
+				t.Fatal(err)
+			}
+			original := dataprotection.QueryRoleSelection{RoleKeys: []string{"custom.analytics"}, ExpiresAt: now.Add(time.Minute), Choices: []dataprotection.FieldRoleChoice{{Target: p.Target, ComponentKey: "phone", Selection: dataprotection.RoleOptionSelection{PolicyID: p.Rules[0].RoleOptions.PolicyID, PolicyRevision: 1, AssessmentRevision: 1, OptionID: option.ID}}}}
+			if err := store.ValidateRoleChoices(t.Context(), 7, &original, pair[1], now); err != nil {
+				t.Fatal(err)
+			}
+			for name, mutate := range map[string]func(*dataprotection.QueryRoleSelection){"revoked role": func(s *dataprotection.QueryRoleSelection) { s.RoleKeys = []string{} }, "expired role": func(s *dataprotection.QueryRoleSelection) { s.ExpiresAt = now }, "changed option": func(s *dataprotection.QueryRoleSelection) { s.Choices[0].Selection.OptionID = uuid.NewString() }, "changed revision": func(s *dataprotection.QueryRoleSelection) { s.Choices[0].Selection.PolicyRevision++ }} {
+				copy := original
+				copy.Choices = append([]dataprotection.FieldRoleChoice(nil), original.Choices...)
+				mutate(&copy)
+				expected := dataprotection.ErrRoleOptionUnavailable
+				if name == "revoked role" || name == "expired role" {
+					expected = dataprotection.ErrRoleOptionIneligible
+				}
+				if err := store.ValidateRoleChoices(t.Context(), 7, &copy, pair[1], now); !errors.Is(err, expected) {
+					t.Fatalf("%s classification: %v", name, err)
+				}
+			}
+		})
+	}
+}

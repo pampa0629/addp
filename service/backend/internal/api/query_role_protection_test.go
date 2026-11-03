@@ -10,7 +10,6 @@ import (
 	_ "github.com/addp/common/engine/plugins/postgresql"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -109,7 +108,7 @@ func TestApplicationHeaderDoesNotBorrowUserRoleContext(t *testing.T) {
 	executor.SetProtectionGate(apiRoleOptionsGate{})
 	handler := NewQueryServiceHandler(nil, executor)
 	for _, application := range []bool{false, true} {
-		request := httptest.NewRequest(http.MethodGet, "/?target_locator="+url.QueryEscape("addp://engine/11/path/public/persons?type=table&item_id=33"), nil)
+		request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"config_type":"table","target_locator":"addp://engine/11/path/public/persons?type=table&item_id=33"}`))
 		request.Header.Set("Authorization", "Bearer addp_at_current")
 		if application {
 			request.Header.Set("X-API-Key", "application-present")
@@ -144,6 +143,18 @@ func TestQueryDefinitionAcceptsOnlyRoleReferencesNotAlgorithms(t *testing.T) {
 			if _, err := q.ProtectionChoices(); err == nil {
 				t.Fatal("invalid role configuration accepted")
 			}
+		}
+	}
+}
+
+func TestQueryProtectionCandidatesRejectAmbiguousOrCredentialBearingInputs(t *testing.T) {
+	for _, raw := range []string{`{}`, `null`, `{"config_type":"sql","engine_id":11,"sql":"SELECT id FROM public.persons","target_locator":"addp://engine/11/path/public/persons?type=table"}`, `{"config_type":"table","target_locator":"a","parameters":{}}`, `{"config_type":"sql","engine_id":11,"sql":"SELECT id FROM public.persons","role_keys":["tenant.administrator"]}`, `{"config_type":"table","target_locator":"a"} {}`} {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest("POST", "/", strings.NewReader(raw))
+		NewQueryServiceHandler(nil, nil).QueryProtectionOptions(c)
+		if c.Writer.Status() != 400 {
+			t.Fatalf("invalid source admitted: %s, status=%d", raw, c.Writer.Status())
 		}
 	}
 }

@@ -2366,7 +2366,8 @@ class ServiceRoleCursorClient:
             if self.fault == "cleanup_policy" and method == "GET" and self.policy["state"] == "revoked":
                 current["state"] = "active"
             return response(200, current)
-        if path.startswith("/api/v1/service/query-protection-options?"):
+        if path == "/api/v1/service/query-protection-options":
+            assert method == "POST" and body.get("config_type") == "table" and set(body) == {"config_type", "target_locator"}
             field = {"target": self.target, "component_key": ONLINE.BANK_FIELD, "policy_id": "owned-policy",
                      "policy_revision": 1, "assessment_revision": 4,
                      "options": [{"id": self.option["id"], "name": self.option["name"]}]}
@@ -2580,7 +2581,7 @@ class MembershipBackend(ServiceRoleCursorClient):
         if path == "/api/v1/system/login":
             assert token == "" and body == {"username": "external-online-security-role-reader", "password": "private-password"}
             return response(200, {"next_action": "session_issued", "session": {"access_token": "reader-fresh"}})
-        if path.startswith("/api/v1/service/query-protection-options?") and self.revoked:
+        if path == "/api/v1/service/query-protection-options" and self.revoked:
             return response(200, {"fields": []})
         if path.startswith("/api/query/"):
             assert token in {"reader-old", "reader-fresh"}, "controller/owner must never consume role results"
@@ -2893,7 +2894,8 @@ class DevelopRoleExpiryBackend(RoleExpiryBackend):
         original_path = path
         if path.startswith("/api/v1/develop/query-protection-options?"):
             assert ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlsplit(path).query)["engine_id"] == ["23"]
-            path = path.replace("/develop/", "/service/")
+            values = ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlsplit(path).query)
+            method, path, body = "POST", "/api/v1/service/query-protection-options", {"config_type": "table", "target_locator": values["target_locator"][0]}
         if path == "/api/v1/system/login":
             assert body["username"] == ONLINE.DEVELOP_ROLE_USERNAME
             body = dict(body, username="external-online-security-role-reader")
@@ -3008,7 +3010,7 @@ class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
             if path.startswith("/api/v1/transfer/source-protection-options?"):
                 values=ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlsplit(path).query)
                 assert set(values)=={"source_locator"}
-                return ServiceRoleCursorClient.request(self,method,"/api/v1/service/query-protection-options?source",expected,body,**kwargs)
+                return ServiceRoleCursorClient.request(self,"POST","/api/v1/service/query-protection-options",expected,{"config_type":"table","target_locator":values["source_locator"][0]},**kwargs)
             if path=="/api/v1/transfer/source-protection-checks":
                 return self.refusal("transfer_protection_roles_unavailable") if self.expired else response(200,{"valid":True})
             if path=="/api/v1/transfer/task-definitions":

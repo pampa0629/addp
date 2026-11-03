@@ -4,8 +4,8 @@ import queryExecutionClient from './queryExecutionClient'
 export default {
   // 查询服务管理 API
 
-  getProtectionOptions(targetLocator) {
-    return client.get('/service/query-protection-options', { params: { target_locator: targetLocator } })
+  getProtectionOptions(source) {
+    return client.post('/service/query-protection-options', source)
   },
 
   // 获取查询服务列表
