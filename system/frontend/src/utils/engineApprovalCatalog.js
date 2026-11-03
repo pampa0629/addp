@@ -108,20 +108,21 @@ export function isGrantNodePath(path, engineID) {
   if (root?.name !== '' || root.kind !== root.term) return false
   const validName = (name, limit) => typeof name === 'string' && name.length > 0 && new TextEncoder().encode(name).length <= limit && new TextDecoder().decode(new TextEncoder().encode(name)) === name && !name.includes('\0')
   if (root.term === 'server') return parts.length <= 1 && parts.every(part => part.term === 'schema' && part.kind === 'namespace' && validName(part.name, 512))
+  if (root.term === 'service') return parts.length <= 63 && parts.every((part, index) => part.term === (index === 0 ? 'bucket' : 'prefix') && part.kind === part.term && validName(part.name, 4096) && !['.', '..'].includes(part.name) && !/[\\/]/.test(part.name))
   return root.term === 'root' && parts.length <= 63 && parts.every(part => part.term === 'directory' && part.kind === 'directory' && validName(part.name, 4096) && !['.', '..'].includes(part.name) && !/[\\/]/.test(part.name))
 }
 export const isApprovalNode = node => !!node?.metadata?.node_identity && isGrantNodePath(node.metadata.node_identity.target, node.metadata.engine_id)
 
 export function createApprovalNodeCatalogAdapter(engine, readPage) {
-  if (!['postgresql', 'nfs'].includes(engine.engine_type)) throw new Error('invalidCatalogTarget')
-  const id = safePickerEngineID(engine.id), term = engine.engine_type === 'postgresql' ? 'server' : 'root'
+  if (!['postgresql', 'nfs', 'minio'].includes(engine.engine_type)) throw new Error('invalidCatalogTarget')
+  const id = safePickerEngineID(engine.id), term = engine.engine_type === 'postgresql' ? 'server' : engine.engine_type === 'minio' ? 'service' : 'root'
   const rootPath = { version: 'catalog.path/v1', engine_id: id, segments: [{ term, kind: term, name: '' }] }
   let epoch = 0, rootPromise, nodes = new Map(), childrenPromises = new Map()
   const pathKey = path => serializeEngineCatalogTarget({ ...path, engine_id: String(id) })
   const make = (fact, hasChildren) => {
     if (fact?.exists !== true || !isGrantNodePath(fact.target, id) || fact.target.segments[0].term !== term) throw new Error('invalidCatalogTarget')
     const path = structuredClone(fact.target), root = path.segments.length === 1
-    const type = root ? 'root' : term === 'server' ? 'schema' : 'dir'
+    const type = root ? 'root' : term === 'server' ? 'schema' : term === 'service' ? path.segments.at(-1).term : 'dir'
     const locator = buildLocator({ engineId: id, path: path.segments.slice(1).map(part => part.name), type })
     const node = { id: pathKey(path), locator, label: root ? engine.name : path.segments.at(-1).name, type, hasChildren,
       metadata: { engine_id: id, engine_type: engine.engine_type, engine_name: engine.name, has_children: hasChildren, node_identity: { target: path, exists: true } } }
@@ -151,7 +152,7 @@ export function createApprovalNodeCatalogAdapter(engine, readPage) {
           for (const fact of current.nodes) {
             if (!isGrantNodePath(fact.target, id) || fact.target.segments.length !== target.segments.length + 1 || !target.segments.every((part, i) => ['term', 'kind', 'name'].every(k => fact.target.segments[i][k] === part[k])) || fact.exists !== true) throw new Error('invalidCatalogTarget')
             const childKey = pathKey(fact.target); if (seen.has(childKey)) throw new Error('invalidCatalogTarget'); seen.add(childKey)
-            result.push(make(fact, term === 'root'))
+            result.push(make(fact, term !== 'server'))
           }
         }
         return result
@@ -177,7 +178,7 @@ export function createApprovalNodeCatalogAdapter(engine, readPage) {
 // One tree, two owner facts. Each expansion reads only the direct owner's
 // item pages; searching is filtered and bounded by Meta before transmission.
 export function createMixedApprovalCatalogAdapter(engine, listItems, readFacts, readNodes) {
-  if (!['postgresql', 'nfs'].includes(engine.engine_type)) return createApprovalCatalogAdapter(engine, listItems, readFacts)
+  if (!['postgresql', 'nfs', 'minio'].includes(engine.engine_type)) return createApprovalCatalogAdapter(engine, listItems, readFacts)
   const id = safePickerEngineID(engine.id)
   const scopes = createApprovalNodeCatalogAdapter(engine, readNodes)
   let generation = 0, leaves = new Map(), children = new Map()
@@ -201,7 +202,7 @@ export function createMixedApprovalCatalogAdapter(engine, listItems, readFacts, 
   function direct(row, parent) {
     const names = parent.segments.slice(1).map(part => part.name), ancestry = row.ancestors.slice(1).map(part => part.name)
     if (!names.every((name, i) => ancestry[i] === name)) return false
-    return ancestry.length === names.length || (parent.segments[0].term === 'root' && ancestry.length === names.length + 1 &&
+    return ancestry.length === names.length || (['root', 'service'].includes(parent.segments[0].term) && ancestry.length === names.length + 1 &&
       ancestry.at(-1) === row.name && ancestry.join('/') === row.full_name)
   }
   return {

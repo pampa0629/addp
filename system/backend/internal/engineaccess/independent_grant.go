@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
@@ -218,7 +219,7 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 				if err != nil {
 					return err
 				}
-				if !sourceAccessActionSupported(row.Action, engine.EngineType) || (row.NodeRecursive != nil && engine.EngineType != "postgresql" && engine.EngineType != "nfs") {
+				if !sourceAccessActionSupported(row.Action, engine.EngineType) || (row.NodeRecursive != nil && !authorizationfacts.NodeIdentityMatchesEngine(engine.EngineType, input.CatalogPath)) {
 					return commonapi.ErrBadRequest
 				}
 				if engine.Version != engineVersion {

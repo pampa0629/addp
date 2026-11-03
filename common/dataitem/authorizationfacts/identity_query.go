@@ -146,6 +146,6 @@ func identityDirectChild(item DataItemIdentity, parent plugin.EngineCatalogPath)
 	if len(nodes) == len(parts) {
 		return true
 	}
-	return parts[0].Term == "root" && len(nodes) == len(parts)+1 && nodes[len(parts)].NodeType == "dir" &&
+	return ((parts[0].Term == "root" && nodes[len(nodes)-1].NodeType == "dir") || (parts[0].Term == "service" && (nodes[len(nodes)-1].NodeType == "prefix" || nodes[len(nodes)-1].NodeType == "bucket"))) && len(nodes) == len(parts)+1 &&
 		nodes[len(parts)].Name == item.Name && item.FullName == strings.TrimPrefix(parent.StringPath()+"/"+item.Name, "/")
 }

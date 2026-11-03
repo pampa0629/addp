@@ -288,7 +288,7 @@
 | deep scan | 深度扫描 | 补充类型信息、格式信息、访问索引和横切能力的扫描。 | 与 basic 使用相同扫描权限；须核验集中采集管理范围或精确目标刷新资格，并执行适用 Security、Provider／reader 与成本约束。采集资格不向操作者授予样本、统计或内容查看权。 |
 | centralized metadata collection | 租户集中元数据采集 | 租户按统一范围维护技术事实的后台采集活动。 | 目标规则为采集功能权限加引擎管理范围，不依赖操作者的 DataItem 读取 Grant，不再逐任务批准。basic／deep 不划分权限；定时任务归租户，创建人离职不自动停止，结果查看另行授权。首期落地 PG。 |
 | metadata viewing authorization | 元数据查看授权 | 允许接收方查看被有效 DataItem 或节点范围 Grant 覆盖的资源身份与允许展示的技术结构。 | 不包含样本、正文、业务值和内容统计；数据读取包含必要元数据查看，不隐式签发第二条 Grant。有效来源取并集，无来源默认拒绝；源数据授权不设显式 Deny。System 为唯一规则 owner，Catalog 复用既有业务批准流程。 |
-| node scope grant | 节点范围授权 | 对真实 Engine Catalog 节点签发的持续范围 Grant，覆盖范围内当前及以后新识别的 DataItem。 | 绑定租户、引擎、类型化节点路径及显式递归选项，支持元数据查看和数据读取；非递归只覆盖直属数据项，递归包括后代数据项。不逐项复制 Grant，不把 node 变成 DataItem 或 whole，不授权范围外依赖。撤销仅收回该来源，其他有效来源继续生效。 |
+| node scope grant | 节点范围授权 | 对真实 Engine Catalog 节点签发的持续范围 Grant，覆盖范围内当前及以后新识别的 DataItem。 | 绑定租户、引擎、类型化节点路径及显式递归选项，支持元数据查看和数据读取；非递归只覆盖直属数据项，递归包括后代数据项。PG 根／schema、NFS 普通根／目录及 MinIO bucket／普通 prefix 共用同一 Grant；MinIO 服务根只导航，whole 容器仍按精确 DataItem 授权。不逐项复制 Grant，不授权范围外依赖。撤销仅收回该来源，其他有效来源继续生效。 |
 | exact-target collection | 精确目标采集 | 仅覆盖明确指定数据项及其经核验合法组成边界的采集。 | 不包含兄弟项或未来新增的独立 DataItem；有限 refs、locator 和执行来源都是范围事实，不是许可。 |
 | full-scope collection | 完整范围采集 | 对明确 Engine、schema 或目录边界内的资源开展统一采集。 | 范围内未来新增项属于采集范围，不因此向人员授予查看或读取权；范围声明不是许可，仍须核验操作功能权限、引擎管理范围及真实执行计划。首期推进 PG 整引擎计划；basic／deep 共用权限，其他引擎与节点计划不据此宣称已实现。 |
 | initial engine management scope | 初始引擎管理范围 | 引擎注册时为真实注册人的当前租户成员关系建立的本引擎管理资格。 | 持续至成员关系或引擎结束，也可由有权管理员显式撤销；不因重新登录或重新加入恢复，不授予功能角色或数据读取 Grant。其他账号通过现有委托取得管理范围。 |

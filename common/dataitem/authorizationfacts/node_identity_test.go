@@ -98,3 +98,34 @@ func TestNodeIdentityPageRejectsScopeAndPaginationDrift(t *testing.T) {
 		t.Fatal("past-end empty page rejected")
 	}
 }
+
+func TestMinIONodeIdentitiesBindBucketAndPrefix(t *testing.T) {
+	for _, path := range []plugin.EngineCatalogPath{plugin.ObjectRootPath(9), plugin.ObjectDirectoryPath(9, "bucket", ""), plugin.ObjectDirectoryPath(9, "bucket", "a/ exact.prefix ")} {
+		if !ValidNodeIdentityTarget(path) || !NodeIdentityMatchesEngine("minio", path) || NodeIdentityMatchesEngine("nfs", path) {
+			t.Fatal("wrong MinIO profile", path)
+		}
+	}
+	for _, path := range []plugin.EngineCatalogPath{plugin.ObjectItemPath(9, "bucket", "a/file.ifc"), plugin.FileDirectoryPath(9, "bucket/a")} {
+		if NodeIdentityMatchesEngine("minio", path) {
+			t.Fatal("non-node or wrong profile", path)
+		}
+	}
+	path := plugin.ObjectDirectoryPath(9, "bucket", "a")
+	for _, name := range []string{"", ".", "..", "bad/name", "bad\\name", "bad\x00name"} {
+		changed := path
+		changed.Segments = append([]plugin.EngineCatalogSegment(nil), path.Segments...)
+		changed.Segments[2].Name = name
+		if ValidNodeIdentityTarget(changed) {
+			t.Fatal("ambiguous object prefix", name)
+		}
+	}
+	page := NodeIdentityPage{Parent: NodeIdentity{TenantID: 7, Target: plugin.ObjectRootPath(9), Exists: true}, Nodes: []NodeIdentity{{TenantID: 7, Target: plugin.ObjectDirectoryPath(9, "bucket", ""), Exists: true}}, Total: 1, Page: 1, PageSize: 100}
+	q := NodeIdentityPageQuery{Target: page.Parent.Target, Page: 1, PageSize: 100}
+	if err := page.Validate(7, q); err != nil {
+		t.Fatal(err)
+	}
+	page.Nodes[0].Target = path
+	if page.Validate(7, q) == nil {
+		t.Fatal("root skipped bucket ancestry")
+	}
+}

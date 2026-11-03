@@ -43,7 +43,7 @@ func RegisterEngineAccessNodeIdentityRoutes(api *gin.RouterGroup, runtime *IAMRu
 
 // Query godoc
 // @Summary 浏览授权候选节点 | Browse authorization candidate nodes
-// @Description 当前Tenant User须具有源授权读取功能和目标引擎管理范围。仅查询Meta已识别PG server/schema或NFS普通root/directory的直接子节点身份，排除whole容器，不枚举数据项、源目录、内容、属性或统计；查询前后重核当前人员资格。结果不是Grant，签发仍独立核对真实节点 | Current Tenant User needs source-grant read permission and target engine management scope, rechecked before and after Meta IO. Lists only immediate Meta-identified PG server/schema or NFS ordinary root/directory node identities, excluding whole containers. No DataItem enumeration, native source browsing, content, attributes or statistics. Not a Grant; issuance independently verifies the exact node
+// @Description 当前Tenant User须具有源授权读取功能和目标引擎管理范围。仅查询Meta已识别PG server/schema、NFS普通root/directory或MinIO service/bucket/prefix的直接子节点身份，排除whole容器，不枚举数据项、源目录、内容、属性或统计；查询前后重核当前人员资格。结果不是Grant，签发仍独立核对真实节点 | Current Tenant User needs source-grant read permission and target engine management scope, rechecked before and after Meta IO. Lists only immediate Meta-identified PG server/schema, NFS ordinary root/directory or MinIO service/bucket/prefix node identities, excluding whole containers. No DataItem enumeration, native source browsing, content, attributes or statistics. Not a Grant; issuance independently verifies the exact node
 // @Tags 源数据授权 | Source Data Grants
 // @Accept json
 // @Produce json

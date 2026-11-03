@@ -36,6 +36,9 @@ func resolveNodeIdentitySnapshot(tx *gorm.DB, tenantID uint, input authorization
 	target.Segments = append([]plugin.EngineCatalogSegment(nil), target.Segments...)
 	result := &authorizationfacts.NodeIdentity{TenantID: tenantID, Target: target}
 	rootType, childType := "server", "schema"
+	if target.Segments[0].Term == "service" {
+		rootType, childType = "service", "bucket"
+	}
 	if target.Segments[0].Term == "root" {
 		rootType, childType = "root", "dir"
 	}
@@ -53,6 +56,9 @@ func resolveNodeIdentitySnapshot(tx *gorm.DB, tenantID uint, input authorization
 	}
 	parent := roots[0].ID
 	for i, segment := range target.Segments[1:] {
+		if rootType == "service" && i > 0 {
+			childType = "prefix"
+		}
 		var nodes []models.MetaNode
 		if err := tx.Model(&models.MetaNode{}).Select("id,name,full_name").Where("tenant_id=? AND engine_id=? AND parent_node_id=? AND node_type=? AND name=? AND deleted_at IS NULL", tenantID, target.EngineID, parent, childType, segment.Name).Limit(2).Find(&nodes).Error; err != nil {
 			return nil, 0, err
@@ -65,16 +71,16 @@ func resolveNodeIdentitySnapshot(tx *gorm.DB, tenantID uint, input authorization
 			names = append(names, p.Name)
 		}
 		expected := segment.Name
-		if childType == "dir" {
+		if childType == "dir" || childType == "prefix" {
 			expected = strings.Join(names, "/")
 		}
 		if len(nodes) != 1 || nodes[0].FullName != expected {
 			return nil, 0, errors.New("ambiguous node identity")
 		}
 		parent = nodes[0].ID
-		if childType == "dir" {
+		if childType == "dir" || childType == "prefix" || childType == "bucket" {
 			var whole int64
-			if err := tx.Model(&models.MetaItem{}).Where("tenant_id=? AND engine_id=? AND node_id=? AND attributes -> 'item' ->> 'layout'='whole'", tenantID, target.EngineID, parent).Count(&whole).Error; err != nil {
+			if err := tx.Model(&models.MetaItem{}).Where("tenant_id=? AND engine_id=? AND node_id=? AND attributes -> 'item' ->> 'layout'='whole' AND deleted_at IS NULL", tenantID, target.EngineID, parent).Count(&whole).Error; err != nil {
 				return nil, 0, err
 			}
 			if whole > 0 {
@@ -104,11 +110,17 @@ func (s *MetadataQueryService) QueryNodeIdentities(ctx context.Context, tenantID
 			return nil
 		}
 		childType := "schema"
+		if input.Target.Segments[0].Term == "service" {
+			childType = "bucket"
+			if len(input.Target.Segments) > 1 {
+				childType = "prefix"
+			}
+		}
 		if input.Target.Segments[0].Term == "root" {
 			childType = "dir"
 		}
 		query := tx.Model(&models.MetaNode{}).Where("tenant_id=? AND engine_id=? AND parent_node_id=? AND node_type=? AND deleted_at IS NULL", tenantID, input.Target.EngineID, id, childType)
-		if childType == "dir" {
+		if childType == "dir" || childType == "prefix" || childType == "bucket" {
 			query = query.Where("NOT EXISTS (SELECT 1 FROM meta.meta_item i WHERE i.tenant_id=meta.meta_node.tenant_id AND i.engine_id=meta.meta_node.engine_id AND i.node_id=meta.meta_node.id AND i.attributes -> 'item' ->> 'layout'='whole' AND i.deleted_at IS NULL)")
 		}
 		var total int64
@@ -122,15 +134,21 @@ func (s *MetadataQueryService) QueryNodeIdentities(ctx context.Context, tenantID
 		}
 		for _, node := range nodes {
 			expected := node.Name
-			if childType == "dir" {
+			if childType == "dir" || childType == "prefix" {
 				expected = strings.TrimPrefix(input.Target.StringPath()+"/"+node.Name, "/")
 			}
 			if expected != node.FullName {
 				return errors.New("inconsistent child node identity")
 			}
 			target := plugin.TabularNamespacePath(input.Target.EngineID, plugin.EngineCatalogTermSchema, node.Name)
-			if childType == "dir" {
+			if childType == "dir" || childType == "prefix" {
 				target = plugin.FileDirectoryPath(input.Target.EngineID, node.FullName)
+			}
+			if childType == "bucket" {
+				target = plugin.ObjectDirectoryPath(input.Target.EngineID, node.Name, "")
+			}
+			if childType == "prefix" {
+				target = plugin.ObjectDirectoryPath(input.Target.EngineID, input.Target.Segments[1].Name, strings.TrimPrefix(node.FullName, input.Target.Segments[1].Name+"/"))
 			}
 			result.Nodes = append(result.Nodes, authorizationfacts.NodeIdentity{TenantID: tenantID, Target: target, Exists: true})
 		}

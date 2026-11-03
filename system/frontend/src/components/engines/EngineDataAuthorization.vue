@@ -14,7 +14,7 @@
       <el-alert v-if="!canBrowse" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.browseRequired')" />
       <el-alert v-else-if="!adapter" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.unsupported')" />
       <template v-else>
-        <ResourceTreePicker ref="picker" :key="authorizationKey" :model-value="selections" multiple :branch-selection="!['postgresql', 'nfs'].includes(engine.engine_type)"
+        <ResourceTreePicker ref="picker" :key="authorizationKey" :model-value="selections" multiple :branch-selection="!['postgresql', 'nfs', 'minio'].includes(engine.engine_type)"
           :engine-id="engine.id" :adapter="adapter" mode="any" :selectable-filter="isSelectableTarget"
           :max-selections="200" :validate-selection="validateSelection" :disabled="!authorizationReady || grantBusy"
           :show-engine-selector="false" :show-selection-summary="false" :show-count="false" :title="engine.name"
@@ -22,7 +22,7 @@
           data-testid="approval-resource-tree" @update:model-value="applySelection" @busy="selecting = $event"
           @loading="loading = $event" @ready="selectionReady" @error="selectionError" />
         <template v-if="workspaceView === 'create'">
-          <p class="hint">{{ t(['postgresql', 'nfs'].includes(engine.engine_type) ? 'system.engine.dataAuthorization.mixedSelection' : 'system.engine.dataAuthorization.snapshotOnly') }}</p>
+          <p class="hint">{{ t(['postgresql', 'nfs', 'minio'].includes(engine.engine_type) ? 'system.engine.dataAuthorization.mixedSelection' : 'system.engine.dataAuthorization.snapshotOnly') }}</p>
           <el-table v-if="targets.length" :data="targets" data-testid="approval-targets">
             <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row) || engine.name }}</template></el-table-column>
             <el-table-column :label="t('system.engine.dataAuthorization.scope')" min-width="230"><template #default="{ row }">
@@ -96,7 +96,7 @@ const adapter = computed(() => {
   if (!itemAdapter.value) return null
   return createMixedApprovalCatalogAdapter(catalogEngine.value, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts, enginesAPI.listAuthorizationNodes)
 })
-const isSelectableTarget = node => isApprovalTarget(node) || isApprovalNode(node)
+const isSelectableTarget = node => isApprovalTarget(node) || (isApprovalNode(node) && !(node.metadata.node_identity.target.segments[0].term === 'service' && node.metadata.node_identity.target.segments.length === 1))
 const isNodePath = path => selections.value.some(selection => isApprovalNode(selection.raw?.node) && approvalTargetsEqual(targetPaths.get(selection.identity.locator), path))
 const isOverlapping = path => targets.value.some(other => !approvalTargetsEqual(path, other) && (
   (isNodePath(other) && approvalScopeContains(other, path, !!nodeRecursions.value[basisKey(other)], isNodePath(path))) ||

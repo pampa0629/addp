@@ -36,10 +36,7 @@ func (s *Service) ListAuthorizationNodes(ctx context.Context, actor Actor, engin
 			if err != nil {
 				return err
 			}
-			if engine.EngineType != "postgresql" && engine.EngineType != "nfs" {
-				return commonapi.ErrBadRequest
-			}
-			if (engine.EngineType == "postgresql") != (query.Target.Segments[0].Term == "server") {
+			if !authorizationfacts.NodeIdentityMatchesEngine(engine.EngineType, query.Target) {
 				return commonapi.ErrBadRequest
 			}
 			return check()
@@ -115,10 +112,7 @@ func (s *Service) verifyNewIndependentGrantTarget(ctx context.Context, input Cre
 		if err != nil {
 			return 0, err
 		}
-		if engine.EngineType != "postgresql" && engine.EngineType != "nfs" {
-			return 0, commonapi.ErrBadRequest
-		}
-		if (engine.EngineType == "postgresql") != (input.CatalogPath.Segments[0].Term == "server") {
+		if !authorizationfacts.NodeIdentityMatchesEngine(engine.EngineType, input.CatalogPath) {
 			return 0, commonapi.ErrBadRequest
 		}
 		if s.nodeIdentities == nil {

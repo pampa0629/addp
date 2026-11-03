@@ -1,6 +1,8 @@
 package authorization
 
 import (
+	"errors"
+
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 )
@@ -12,7 +14,13 @@ type SourceNodeScope struct {
 }
 
 func (s SourceNodeScope) Validate() error {
-	return (authorizationfacts.NodeIdentityQuery{Target: s.Target}).Validate()
+	if err := (authorizationfacts.NodeIdentityQuery{Target: s.Target}).Validate(); err != nil {
+		return err
+	}
+	if s.Target.Segments[0].Term == "service" && len(s.Target.Segments) < 2 {
+		return errors.New("MinIO Grant requires a bucket or prefix")
+	}
+	return nil
 }
 
 // Covers compares trusted typed paths only. Callers must independently establish
@@ -22,10 +30,10 @@ func (s SourceNodeScope) Covers(target plugin.EngineCatalogPath) bool {
 		len(target.Segments) <= len(s.Target.Segments) || (!s.Recursive && len(target.Segments) != len(s.Target.Segments)+1) {
 		return false
 	}
-	// A whole filesystem DataItem has a directory target. Its identity and
+	// A whole DataItem has a directory or prefix target. Its identity and
 	// complete composition are proved by the caller, not inferred here.
-	if target.Segments[0].Term == plugin.EngineCatalogTermRoot &&
-		target.Segments[len(target.Segments)-1].Kind == plugin.EngineCatalogKindDirectory {
+	if (target.Segments[0].Term == plugin.EngineCatalogTermRoot && target.Segments[len(target.Segments)-1].Kind == plugin.EngineCatalogKindDirectory) ||
+		(target.Segments[0].Term == plugin.EngineCatalogTermService && target.Segments[len(target.Segments)-1].Kind == plugin.EngineCatalogKindPrefix) {
 		if !authorizationfacts.ValidNodeIdentityTarget(target) {
 			return false
 		}

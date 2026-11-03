@@ -94,7 +94,7 @@ func (h *EngineAccessAuthorizationFactsHandler) Get(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "引擎 ID | Engine ID"
-// @Param parent query string false "直属父节点的类型化路径 JSON，仅 PG／NFS | Typed parent path JSON for direct children, PG/NFS only"
+// @Param parent query string false "直属父节点的类型化路径 JSON，仅 PG／NFS／MinIO | Typed parent path JSON for direct children, PG/NFS/MinIO only"
 // @Param search query string false "按名称或路径搜索，最多512字节 | Literal name or path search, at most 512 bytes"
 // @Param page query int false "页码 | Page number" default(1) minimum(1)
 // @Param page_size query int false "每页数量 | Page size" default(100) minimum(1) maximum(100)

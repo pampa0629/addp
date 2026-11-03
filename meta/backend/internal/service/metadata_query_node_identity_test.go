@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
@@ -130,5 +131,76 @@ func TestNFSOrdinaryNodeIdentityExcludesWholeContainers(t *testing.T) {
 	pq.Target = plugin.FileDirectoryPath(129, "")
 	if got, e := svc.QueryNodeIdentities(context.Background(), 7, pq); e != nil || got.Total != 1 || got.Nodes[0].Target.StringPath() != dir.FullName {
 		t.Fatalf("direct node page: %+v %v", got, e)
+	}
+}
+
+func TestMinIONodeIdentityAndDirectItems(t *testing.T) {
+	exerciseMinIONodeIdentity(t, metatest.OpenMetadataDB(t))
+}
+func exerciseMinIONodeIdentity(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	const tenant, engine = 7, 829
+	root := models.MetaNode{TenantID: tenant, EngineID: engine, NodeType: "service", Name: "MinIO", FullName: ""}
+	create := func(node *models.MetaNode) {
+		t.Helper()
+		if err := db.Create(node).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	create(&root)
+	bucket := models.MetaNode{TenantID: tenant, EngineID: engine, NodeType: "bucket", Name: "bucket", FullName: "bucket", ParentNodeID: &root.ID}
+	create(&bucket)
+	prefix := models.MetaNode{TenantID: tenant, EngineID: engine, NodeType: "prefix", Name: " exact.prefix ", FullName: "bucket/ exact.prefix ", ParentNodeID: &bucket.ID}
+	create(&prefix)
+	whole := models.MetaNode{TenantID: tenant, EngineID: engine, NodeType: "prefix", Name: "whole.parquet", FullName: "bucket/ exact.prefix /whole.parquet", ParentNodeID: &prefix.ID}
+	create(&whole)
+	child := models.MetaNode{TenantID: tenant, EngineID: engine, NodeType: "prefix", Name: "child", FullName: "bucket/ exact.prefix /child", ParentNodeID: &prefix.ID}
+	create(&child)
+	for i, row := range []models.MetaItem{
+		{NodeID: prefix.ID, Name: "scene.ifc", FullName: "bucket/ exact.prefix /scene.ifc"},
+		{NodeID: whole.ID, Name: whole.Name, FullName: whole.FullName, Attributes: models.JSONMap{"item": map[string]any{"layout": "whole", "format": "parquet"}}},
+		{NodeID: child.ID, Name: "nested.ifc", FullName: "bucket/ exact.prefix /child/nested.ifc"},
+	} {
+		row.TenantID = tenant
+		row.EngineID = engine
+		row.ItemType = "object"
+		row.Fingerprint = fmt.Sprintf("%064x", 8290+i)
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewMetadataQueryService(db)
+	targets := []plugin.EngineCatalogPath{plugin.ObjectRootPath(engine), plugin.ObjectDirectoryPath(engine, "bucket", ""), plugin.ObjectDirectoryPath(engine, "bucket", prefix.Name)}
+	for i, target := range targets {
+		q := authorizationfacts.NodeIdentityPageQuery{Target: target, Page: 1, PageSize: 100}
+		result, err := svc.QueryNodeIdentities(t.Context(), tenant, q)
+		if err != nil || !result.Parent.Exists || result.Total != 1 || !result.Nodes[0].Exists {
+			t.Fatalf("level%d: %+v %v", i, result, err)
+		}
+		result, err = svc.QueryNodeIdentities(t.Context(), tenant+1, q)
+		if err != nil || result.Parent.Exists || result.Total != 0 {
+			t.Fatalf("foreign tenant %+v %v", result, err)
+		}
+	}
+	wholePath := plugin.ObjectDirectoryPath(engine, "bucket", prefix.Name+"/whole.parquet")
+	fact, err := svc.ResolveNodeIdentity(t.Context(), tenant, authorizationfacts.NodeIdentityQuery{Target: wholePath})
+	if err != nil || fact.Exists {
+		t.Fatalf("whole prefix became node %+v %v", fact, err)
+	}
+	parent := targets[2]
+	page, err := svc.QueryDataItemIdentities(t.Context(), tenant, authorizationfacts.IdentityQuery{EngineID: engine, Parent: &parent, Page: 1, PageSize: 100})
+	if err != nil || page.Total != 2 {
+		t.Fatalf("direct object/whole items %+v %v", page, err)
+	}
+	for _, row := range page.Data {
+		if row.Name == "nested.ifc" {
+			t.Fatal("descendant leaked into direct items")
+		}
+	}
+	if err := db.Model(&prefix).Update("full_name", "bucket/other").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ResolveNodeIdentity(t.Context(), tenant, authorizationfacts.NodeIdentityQuery{Target: parent}); err == nil {
+		t.Fatal("changed prefix identity accepted")
 	}
 }

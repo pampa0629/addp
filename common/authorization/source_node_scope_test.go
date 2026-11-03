@@ -42,3 +42,30 @@ func TestNFSNodeScopeUsesOpaqueDirectorySegments(t *testing.T) {
 		t.Fatal("typed NFS scope mismatch")
 	}
 }
+
+func TestMinIONodeScopeCoversTypedCurrentAndFutureObjects(t *testing.T) {
+	bucket := plugin.ObjectDirectoryPath(9, "bucket", "")
+	scope := SourceNodeScope{Target: plugin.ObjectDirectoryPath(9, "bucket", "a/ exact.prefix ")}
+	for _, name := range []string{"current.ifc", "future.ifc"} {
+		target := plugin.ObjectItemPath(9, "bucket", "a/ exact.prefix /"+name)
+		if !scope.Covers(target) || !(SourceNodeScope{Target: bucket, Recursive: true}).Covers(target) || (SourceNodeScope{Target: bucket}).Covers(target) {
+			t.Fatal("current/future depth mismatch", target)
+		}
+	}
+	nested := plugin.ObjectItemPath(9, "bucket", "a/ exact.prefix /child/file.ifc")
+	if scope.Covers(nested) {
+		t.Fatal("nonrecursive crossed child prefix")
+	}
+	scope.Recursive = true
+	if !scope.Covers(nested) || !scope.Covers(plugin.ObjectDirectoryPath(9, "bucket", "a/ exact.prefix /whole.parquet")) {
+		t.Fatal("recursive scope failed")
+	}
+	for _, path := range []plugin.EngineCatalogPath{scope.Target, plugin.ObjectItemPath(10, "bucket", "a/ exact.prefix /file.ifc"), plugin.ObjectItemPath(9, "other", "a/ exact.prefix /file.ifc"), plugin.ObjectItemPath(9, "bucket", "a/ exact.prefix suffix/file.ifc")} {
+		if scope.Covers(path) {
+			t.Fatal("foreign/self target covered", path)
+		}
+	}
+	if (SourceNodeScope{Target: plugin.ObjectRootPath(9), Recursive: true}).Validate() == nil {
+		t.Fatal("service root became a Grant")
+	}
+}

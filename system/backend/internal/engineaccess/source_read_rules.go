@@ -217,7 +217,7 @@ const sourceReadRuleCTEs = `, targets AS (
    OR (g.node_recursive IS NOT NULL AND system.source_node_covers(g.catalog_path, g.node_recursive, target.path)
        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(target.proven_boundary->'file_composition'->'refs','[]'::jsonb)) AS ref
          WHERE system.source_node_covers(g.catalog_path,g.node_recursive,ref->'target') IS NOT TRUE)
-       AND EXISTS (SELECT 1 FROM system.engines e WHERE e.id=target.engine_id AND e.tenant_id=input.tenant_id AND e.engine_type IN ('postgresql','nfs')))
+       AND EXISTS (SELECT 1 FROM system.engines e WHERE e.id=target.engine_id AND e.tenant_id=input.tenant_id AND e.engine_type IN ('postgresql','nfs','minio')))
   )
  JOIN recipients r ON r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id
  WHERE (g.action = target.requested_action OR (target.requested_action = 'metadata_read' AND g.action = 'read'))

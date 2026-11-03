@@ -16,7 +16,7 @@ import (
 
 // ResolveNodeIdentity godoc
 // @Summary 核对节点身份事实 | Resolve node identity facts
-// @Description 仅 addp-system Tenant Service，以完整类型化路径读取当前租户精确引擎的 PG 根或 schema 节点存在事实；不返回属性、内容或统计，不扫描、不签发 Grant。正文最多16KiB，不接受query或额外字段 | Fixed addp-system Tenant Service; resolves the existence of one PG root or schema node in the current tenant and exact engine by typed path. No attributes, content, statistics, scans or grants. Body is at most 16KiB; query and extra fields are rejected
+// @Description 仅 addp-system Tenant Service，以完整类型化路径读取当前租户精确引擎的 PG 根／schema、NFS 普通根／目录、MinIO service／bucket／普通 prefix 节点存在事实；不返回属性、内容或统计，不扫描、不签发 Grant。正文最多16KiB，不接受query或额外字段 | Fixed addp-system Tenant Service; resolves the existence of one PG root/schema, ordinary NFS root/directory or MinIO service/bucket/ordinary prefix node in the current tenant and exact engine by typed path. No attributes, content, statistics, scans or grants. Body is at most 16KiB; query and extra fields are rejected
 // @Tags Meta Runtime
 // @Accept json
 // @Produce json
@@ -38,7 +38,7 @@ func (h *Handler) ResolveNodeIdentity(c *gin.Context) {
 
 // QueryNodeIdentities godoc
 // @Summary 查询直接子节点身份 | Query immediate child node identities
-// @Description 仅当前租户 addp-system Service 通过独立机器权限查询指定 PG server/schema 的直接子节点；不返回数据项、内容、属性、统计或权限裁决。分页最多100项，正文最多16KiB，不接受query或额外字段 | Fixed tenant addp-system Service with the node identity permission. Returns immediate PG owner nodes only; no DataItems, content, attributes, statistics or access decisions. At most 100 nodes per page and 16KiB request body; query and extra fields are rejected
+// @Description 仅当前租户 addp-system Service 通过独立机器权限查询指定 PG server/schema、NFS root/directory 或 MinIO service/bucket/prefix 的直接子节点；不返回数据项、内容、属性、统计或权限裁决。分页最多100项，正文最多16KiB，不接受query或额外字段 | Fixed tenant addp-system Service with the node identity permission. Returns immediate PG, NFS or MinIO owner nodes only; no DataItems, content, attributes, statistics or access decisions. At most 100 nodes per page and 16KiB request body; query and extra fields are rejected
 // @Tags Meta Runtime
 // @Accept json
 // @Produce json

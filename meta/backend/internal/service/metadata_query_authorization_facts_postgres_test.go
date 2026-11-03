@@ -50,6 +50,7 @@ scanned_depth TEXT, attributes JSONB, created_at TIMESTAMPTZ, deleted_at TIMESTA
 	exerciseDataItemIdentityQuery(t, tx)
 	exerciseDataItemIdentityDirectChildren(t, tx)
 	exerciseNodeIdentity(t, tx)
+	exerciseMinIONodeIdentity(t, tx)
 	exerciseUploadIdentificationFacts(t, tx)
 	exerciseUploadLeaseScope(t, tx)
 	exerciseFileAuthorizationFacts(t, tx)

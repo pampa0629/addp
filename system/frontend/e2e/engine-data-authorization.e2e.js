@@ -88,7 +88,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     if (path.endsWith('/authorization-nodes/query')) {
       reads.push(request.url())
       const query=request.postDataJSON(), root={version:'catalog.path/v1',engine_id:2,segments:[{term:'server',kind:'server',name:''}]}
-      const nodes=query.target.segments.length===1 ? sourceType === 'nfs' && ftp ? [{tenant_id:2,target:ftpDirectoryPath,exists:true}] : [{tenant_id:2,target:schemaPath,exists:true},{tenant_id:2,target:{...schemaPath,segments:[...root.segments,{term:'schema',kind:'namespace',name:'public'}]},exists:true}] : []
+      const nodes=query.target.segments.length===1 ? ['nfs','minio'].includes(sourceType) && ftp ? [{tenant_id:2,target:sourceType==='minio' ? minioBucketPath : ftpDirectoryPath,exists:true}] : [{tenant_id:2,target:schemaPath,exists:true},{tenant_id:2,target:{...schemaPath,segments:[...root.segments,{term:'schema',kind:'namespace',name:'public'}]},exists:true}] : []
       return reply({parent:{tenant_id:2,target:query.target,exists:true},nodes,total:nodes.length,page:query.page,page_size:query.page_size})
     }
     if (path.endsWith('/authorization-facts')) {
@@ -1464,7 +1464,7 @@ for (const sourceType of ['postgresql','nfs','minio']) test(`${sourceType} engin
   await resourceOption(tree,label).click()
   await expect(tree.getByRole('checkbox',{name:label,exact:true})).toBeChecked()
   await expect(page.getByTestId('approval-basis-status')).toHaveCount(1)
-  await expect(page.getByTestId('approval-basis-status')).toContainText(sourceType === 'postgresql' || sourceType === 'nfs' ? '节点' : '基础识别完整')
+  await expect(page.getByTestId('approval-basis-status')).toContainText('节点')
   const identityReads = () => reads.filter(url => /data-items|authorization-nodes|authorization-facts/.test(url))
   const baseline = identityReads().length, initialPolls = polls
   for (let round = 0; round < 2; round++) {
@@ -1476,4 +1476,54 @@ for (const sourceType of ['postgresql','nfs','minio']) test(`${sourceType} engin
   }
   expect(polls).toBeGreaterThanOrEqual(initialPolls+2)
   expect(writes).toEqual([])
+})
+
+
+for (const recursive of [false,true]) for (const action of ['metadata_read','read']) test(`MinIO one bucket Grant ${action} recursive=${recursive} does not expand into items`,async({page})=>{
+ const {reads,writes}=await fixture(page,{allowed:grantPermissions,sourceType:'minio',ftp:'gpkg',metadataOnly:true})
+ await page.goto('/engines/2?tab=data-authorization');await openNewAuthorization(page)
+ const tree=page.getByTestId('approval-resource-tree'), targets=page.getByTestId('approval-targets')
+ await resourceOption(tree,'Models').click()
+ await expect(targets.locator('.el-table__body tr.el-table__row')).toHaveCount(1)
+ await expect(targets).toContainText('持续节点范围')
+ if(recursive) await targets.getByTestId('authorization-node-recursive').check()
+ expect(reads.filter(url=>url.includes('/authorization-facts'))).toEqual([])
+ const itemQueries=reads.filter(url=>new URL(url).pathname.endsWith('/data-items')).map(url=>new URL(url).searchParams)
+ expect(itemQueries).toHaveLength(1)
+ expect(JSON.parse(itemQueries[0].get('parent'))).toEqual(minioRootPath)
+ expect(itemQueries[0].get('page')).toBe('1')
+ await page.getByTestId('source-grant-action').click()
+ await expect(page.getByRole('option',{name:'读取数据（含元数据）',exact:true})).not.toHaveClass(/is-disabled/)
+ await page.getByRole('option',{name:action==='read'?'读取数据（含元数据）':'仅查看元数据',exact:true}).click()
+ await grantDraft(page,action==='read'?'读取数据（含元数据）':'仅查看元数据');await confirmGrant(page)
+ expect(writes).toHaveLength(1)
+ expect(writes[0].body.catalog_path).toEqual(minioBucketPath)
+ expect(writes[0].body.node_recursive).toBe(recursive)
+ expect(writes[0].body.action).toBe(action)
+ expect(writes[0].body.item_fingerprint).toBeUndefined()
+ expect(writes[0].body.expected_boundary_hash).toBeUndefined()
+})
+
+
+test('MinIO prefix and exact item can share a batch without upgrading metadata-only items',async({page})=>{
+ const {writes}=await fixture(page,{allowed:grantPermissions,sourceType:'minio',ftp:'gpkg',metadataOnly:true})
+ const prefix={...minioBucketPath,segments:[...minioBucketPath.segments,{term:'prefix',kind:'prefix',name:'sub'}]}
+ await page.route('**/system/engines/2/authorization-nodes/query',route=>{
+  const q=route.request().postDataJSON(),children=q.target.segments.length===1?[minioBucketPath]:q.target.segments.length===2?[prefix]:[]
+  return route.fulfill({json:{parent:{tenant_id:2,target:q.target,exists:true},nodes:children.map(target=>({tenant_id:2,target,exists:true})),total:children.length,page:q.page,page_size:q.page_size}})
+ })
+ await page.goto('/engines/2?tab=data-authorization');await openNewAuthorization(page)
+ const tree=page.getByTestId('approval-resource-tree')
+ await expandSchema(tree,'Models');await resourceOption(tree,'sub').click()
+ await expect(page.getByTestId('approval-targets').locator('.el-table__body tr.el-table__row')).toHaveCount(1)
+ await page.getByTestId('source-grant-action').click()
+ await expect(page.getByRole('option',{name:'读取数据（含元数据）',exact:true})).not.toHaveClass(/is-disabled/)
+ await page.getByRole('option',{name:'读取数据（含元数据）',exact:true}).click()
+ // An explicitly added metadata-only item still constrains a mixed batch.
+ await tree.getByRole('textbox').fill('model.gpkg');await resourceOption(tree,'model.gpkg').click()
+ await expect(page.getByTestId('approval-targets').locator('.el-table__body tr.el-table__row')).toHaveCount(2)
+ await page.getByTestId('source-grant-action').click()
+ await expect(page.getByRole('option',{name:'读取数据（含元数据）',exact:true})).toHaveClass(/is-disabled/)
+ await page.getByRole('option',{name:'仅查看元数据',exact:true}).click()
+ expect(writes).toEqual([])
 })

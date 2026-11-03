@@ -268,3 +268,29 @@ describe('bounded authorization identity discovery', () => {
     expect(list).toHaveBeenCalledExactlyOnceWith('2',{search:'table',page:1,page_size:20})
   })
 })
+
+
+describe('MinIO continuous bucket/prefix selection',()=>{
+ it('loads scopes without an item inventory and treats whole containers as one item',async()=>{
+  const root={version:'catalog.path/v1',engine_id:2,segments:[{term:'service',kind:'service',name:''}]}
+  const bucket={...root,segments:[...root.segments,{term:'bucket',kind:'bucket',name:'bucket'}]}
+  const prefix={...root,segments:[...bucket.segments,{term:'prefix',kind:'prefix',name:' exact.prefix '}]}
+  const fact=target=>({tenant_id:7,target,exists:true})
+  const nodes=vi.fn(async(_,q)=>{const child=q.target.segments.length===1?[fact(bucket)]:q.target.segments.length===2?[fact(prefix)]:[];return {parent:fact(q.target),nodes:child,total:child.length,page:q.page,page_size:q.page_size}})
+  const row={...item,name:'whole.parquet',full_name:'bucket/ exact.prefix /whole.parquet',item_type:'object',ancestors:[{id:'1',name:'',node_type:'service'},{id:'2',name:'bucket',node_type:'bucket'},{id:'3',name:' exact.prefix ',node_type:'prefix'},{id:'4',name:'whole.parquet',node_type:'prefix'}]}
+  const list=vi.fn(async(_,q)=>filteredPage([row],q)),read=vi.fn()
+  const adapter=createMixedApprovalCatalogAdapter({...engine,engine_type:'minio'},list,read,nodes)
+  const tree=await adapter.getTreeRoot(),[b]=await adapter.getNodeChildren(tree)
+  expect(list.mock.calls).toHaveLength(1)
+  expect(await adapter.resolveTarget(b)).toEqual(bucket)
+  expect(list).toHaveBeenCalledTimes(1)
+  const [p]=await adapter.getNodeChildren(b)
+  expect(await adapter.resolveTarget(p)).toEqual(prefix)
+  const leaves=await adapter.getNodeChildren(p)
+  expect(leaves.map(n=>n.label)).toEqual(['whole.parquet'])
+  expect(leaves[0].hasChildren).toBe(false)
+  expect(read).not.toHaveBeenCalled()
+  expect(approvalScopeContains(bucket,prefix,true,true)).toBe(true)
+  expect(approvalScopeContains(bucket,prefix,false,true)).toBe(false)
+ })
+})

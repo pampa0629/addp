@@ -17,11 +17,35 @@ type NodeIdentityQuery struct {
 	Target plugin.EngineCatalogPath `json:"target"`
 }
 
-// ValidNodeIdentityTarget admits PG root/schema and canonical NFS root/directories.
+// ValidNodeIdentityTarget admits PG, NFS and MinIO navigation identities.
 // Names remain opaque; a dot or slash inside a quoted schema is not a hierarchy.
 func ValidNodeIdentityTarget(path plugin.EngineCatalogPath) bool {
 	if path.EngineID == 0 || uint64(path.EngineID) > 1<<63-1 || len(path.Segments) < 1 || len(path.Segments) > 64 {
 		return false
+	}
+	if path.Segments[0].Term == plugin.EngineCatalogTermService {
+		if path.Segments[0] != (plugin.EngineCatalogSegment{Term: "service", Kind: "service", Name: ""}) {
+			return false
+		}
+		for i, part := range path.Segments[1:] {
+			term := plugin.EngineCatalogTermPrefix
+			kind := plugin.EngineCatalogKindPrefix
+			if i == 0 {
+				term = plugin.EngineCatalogTermBucket
+				kind = plugin.EngineCatalogKindBucket
+			}
+			if part.Term != term || part.Kind != kind || part.Name == "" || len(part.Name) > 4096 || !utf8.ValidString(part.Name) || strings.ContainsAny(part.Name, "/\\\x00") || part.Name == "." || part.Name == ".." {
+				return false
+			}
+		}
+		if len(path.Segments) == 1 {
+			return reflect.DeepEqual(path, plugin.ObjectRootPath(path.EngineID))
+		}
+		names := []string{}
+		for _, part := range path.Segments[2:] {
+			names = append(names, part.Name)
+		}
+		return reflect.DeepEqual(path, plugin.ObjectDirectoryPath(path.EngineID, path.Segments[1].Name, strings.Join(names, "/")))
 	}
 	if path.Segments[0].Term == plugin.EngineCatalogTermRoot {
 		for i, part := range path.Segments {
@@ -126,4 +150,13 @@ func (p NodeIdentityPage) Validate(tenantID uint, q NodeIdentityPageQuery) error
 		seen[name] = true
 	}
 	return nil
+}
+
+// NodeIdentityMatchesEngine keeps admission aligned across discovery and signing.
+func NodeIdentityMatchesEngine(engineType string, path plugin.EngineCatalogPath) bool {
+	if !ValidNodeIdentityTarget(path) {
+		return false
+	}
+	term := path.Segments[0].Term
+	return (engineType == "postgresql" && term == "server") || (engineType == "nfs" && term == "root") || (engineType == "minio" && term == "service")
 }

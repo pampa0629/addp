@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -335,6 +336,188 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		}
 		check(current, false)
 		check(whole, false)
+		recursive := true
+		command.NodeRecursive = &recursive
+		command.RequestID = uuid.New()
+		var now time.Time
+		if err := db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+			t.Fatal(err)
+		}
+		expiry := now.Add(2 * time.Second)
+		command.ExpiryMode = shared.SharingExpiryAtTime
+		command.ExpiresAt = &expiry
+		finite, err := service.CreateIndependentGrant(ctx, command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(nested, true)
+		check(cross, true)
+		time.Sleep(time.Until(expiry) + 20*time.Millisecond)
+		check(nested, false)
+		check(future, false)
+		var revocations int64
+		if err := db.Table("system.engine_access_grant_revocations").Where("request_id=?", finite.RequestID).Count(&revocations).Error; err != nil || revocations != 0 {
+			t.Fatal("natural expiry was replaced by revocation", err)
+		}
+		raw, _ := json.Marshal(scope)
+		for _, bad := range []string{`{}`, `{"version":"catalog.path/v1","segments":[]}`, `{"version":"catalog.path/v1","engine_id":` + fmt.Sprint(base.EngineID) + `,"segments":[{"term":"root","kind":"root","name":""},{}]}`} {
+			var valid, covered bool
+			if err := db.Raw("SELECT system.valid_source_node_path(?::jsonb,?),system.source_node_covers(?::jsonb,true,?::jsonb)", bad, base.EngineID, string(raw), bad).Row().Scan(&valid, &covered); err != nil || valid || covered {
+				t.Fatalf("malformed scope: valid=%v covered=%v err=%v", valid, covered, err)
+			}
+		}
+	})
+	t.Run("MinIO bucket and prefix scope uses current complete boundaries", func(t *testing.T) {
+		ctx := t.Context()
+		// This existing disposable fixture changes profile only inside this
+		// subtest; no real engine or source is contacted.
+		if err := db.Exec("UPDATE system.engines SET engine_type='minio' WHERE tenant_id=? AND id=?", actor.TenantID, base.EngineID).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := db.Exec("UPDATE system.engines SET engine_type='postgresql' WHERE tenant_id=? AND id=?", actor.TenantID, base.EngineID).Error; err != nil {
+				t.Error(err)
+			}
+		})
+		service.WithNodeIdentityReader(nodeIdentityReaderFunc(func(_ context.Context, tenant uint, q authorizationfacts.NodeIdentityQuery) (*authorizationfacts.NodeIdentity, error) {
+			return &authorizationfacts.NodeIdentity{TenantID: tenant, Target: q.Target, Exists: true}, nil
+		}))
+		t.Cleanup(func() { service.WithNodeIdentityReader(nil) })
+		user, _ := newUser(t, time.Hour)
+		scope := plugin.ObjectDirectoryPath(base.EngineID, "models", " exact.dir ")
+		direct := false
+		command := CreateIndependentGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: scope, NodeRecursive: &direct, RecipientType: "user", RecipientID: user.PrincipalID, Action: shared.SourceAccessRead, ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "MinIO current and future items"}
+		bucketCommand := command
+		bucketCommand.RequestID = uuid.New()
+		bucketCommand.CatalogPath = plugin.ObjectDirectoryPath(base.EngineID, "models", "")
+		bucketCommand.Action = shared.SourceAccessMetadataRead
+		bucketGrant, bucketErr := service.CreateIndependentGrant(ctx, bucketCommand)
+		if bucketErr != nil {
+			t.Fatal(bucketErr)
+		}
+		rootCommand := bucketCommand
+		rootCommand.RequestID = uuid.New()
+		rootCommand.CatalogPath = plugin.ObjectRootPath(base.EngineID)
+		if _, e := service.CreateIndependentGrant(ctx, rootCommand); !errors.Is(e, commonapi.ErrBadRequest) {
+			t.Fatalf("service root Grant admitted: %v", e)
+		}
+		if _, e := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: bucketGrant.RequestID, Reason: "End bucket setup"}); e != nil {
+			t.Fatal(e)
+		}
+		service.WithNodeIdentityReader(nil)
+		rejected := command
+		rejected.RequestID = uuid.New()
+		if _, err := service.CreateIndependentGrant(ctx, rejected); !errors.Is(err, ErrAuthorizationFactsUnavailable) {
+			t.Fatalf("missing facts did not reject: %v", err)
+		}
+		var residue int64
+		if err := db.Model(&sourceGrant{}).Where("request_id=?", rejected.RequestID).Count(&residue).Error; err != nil || residue != 0 {
+			t.Fatal("failed issuance left a Grant", residue, err)
+		}
+		service.WithNodeIdentityReader(nodeIdentityReaderFunc(func(_ context.Context, tenant uint, q authorizationfacts.NodeIdentityQuery) (*authorizationfacts.NodeIdentity, error) {
+			return &authorizationfacts.NodeIdentity{TenantID: tenant, Target: q.Target, Exists: true}, nil
+		}))
+		grant, err := service.CreateIndependentGrant(ctx, command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bindingFor := func(name string, whole bool, dependency string) authorizationfacts.Binding {
+			t.Helper()
+			primary := plugin.ObjectItemPath(base.EngineID, "models", " exact.dir /"+name)
+			var boundary *authorizationfacts.AuthorizationBoundary
+			if whole {
+				primary = plugin.ObjectDirectoryPath(base.EngineID, "models", " exact.dir /"+name)
+				boundary = &authorizationfacts.AuthorizationBoundary{Layout: "whole", MetadataTarget: &authorizationfacts.MetadataBoundary{Target: primary, Layout: "whole", DataType: "table", Format: "parquet", CompositionDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+			} else {
+				refs := []authorizationfacts.FileCompositionRef{{Target: primary, Primary: true, Required: true, Role: "model"}}
+				format := "ifc"
+				if dependency != "" {
+					format = "3ds"
+					refs = append(refs, authorizationfacts.FileCompositionRef{Target: plugin.ObjectItemPath(base.EngineID, "models", strings.TrimPrefix(dependency, "models/")), Required: true, Role: "texture"})
+				}
+				composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)
+				if err != nil {
+					t.Fatal(err)
+				}
+				boundary = &authorizationfacts.AuthorizationBoundary{Layout: "single", FileComposition: composition}
+			}
+			fp, err := authorizationfacts.PrimaryCandidateFingerprint(primary)
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts := authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1, EngineID: base.EngineID, ItemType: "object", FullName: primary.StringPath(), ItemFingerprint: fp, BasisState: authorizationfacts.AuthorizationBasisComplete, Boundary: boundary, ObservedAt: time.Now().UTC()}
+			hash, err := facts.ComputeBoundaryHash()
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts.BoundaryHash = &hash
+			binding, err := facts.MetadataBinding()
+			if err != nil {
+				t.Fatal(err)
+			}
+			return binding
+		}
+		check := func(binding authorizationfacts.Binding, want bool) {
+			t.Helper()
+			primary, err := binding.PrimaryTarget()
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: "metadata_read", TenantID: actor.TenantID, Source: user, Targets: []plugin.EngineCatalogPath{primary}, Bindings: []authorizationfacts.Binding{binding}})
+			if err != nil || result == nil || result.Covered != want {
+				t.Fatalf("covered=%v result=%+v err=%v", want, result, err)
+			}
+			if binding.MetadataTarget == nil {
+				content, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: "read", TenantID: actor.TenantID, Source: user, Targets: []plugin.EngineCatalogPath{primary}, Bindings: []authorizationfacts.Binding{binding}})
+				if err != nil || content.Covered != want {
+					t.Fatalf("content covered=%v result=%+v err=%v", want, content, err)
+				}
+			}
+		}
+		current := bindingFor("current.ifc", false, "")
+		future := bindingFor("later.ifc", false, "")
+		whole := bindingFor("whole.parquet", true, "")
+		nested := bindingFor("child/nested.ifc", false, "")
+		cross := bindingFor("scene.3ds", false, scope.StringPath()+"/child/texture.png")
+		check(current, true)
+		check(future, true)
+		check(whole, true)
+		check(nested, false)
+		check(cross, false)
+		other, _ := newUser(t, time.Hour)
+		primary, _ := current.PrimaryTarget()
+		foreign, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: "read", TenantID: actor.TenantID, Source: other, Targets: []plugin.EngineCatalogPath{primary}, Bindings: []authorizationfacts.Binding{current}})
+		if err != nil || foreign.Covered {
+			t.Fatalf("unauthorized account read: %+v %v", foreign, err)
+		}
+		bindingSibling := bindingFor("sibling.ifc", false, "")
+		bindingSibling.FileComposition.Refs[0].Target = plugin.ObjectItemPath(base.EngineID, "another-bucket", " exact.dir /sibling.ifc")
+		if _, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: "read", TenantID: actor.TenantID, Source: user, Targets: []plugin.EngineCatalogPath{primary}, Bindings: []authorizationfacts.Binding{bindingSibling}}); err == nil {
+			t.Fatal("mismatched frozen boundary accepted")
+		}
+
+		if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: grant.RequestID, Reason: "Withdraw MinIO direct scope"}); err != nil {
+			t.Fatal(err)
+		}
+		check(current, false)
+		check(whole, false)
+		metadataCommand := command
+		metadataCommand.RequestID = uuid.New()
+		metadataCommand.Action = shared.SourceAccessMetadataRead
+		metadataGrant, err := service.CreateIndependentGrant(ctx, metadataCommand)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, action := range []string{"metadata_read", "read"} {
+			result, e := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: action, TenantID: actor.TenantID, Source: user, Targets: []plugin.EngineCatalogPath{primary}, Bindings: []authorizationfacts.Binding{current}})
+			if e != nil || result.Covered != (action == "metadata_read") {
+				t.Fatalf("metadata-only scope upgraded read: %+v %v", result, e)
+			}
+		}
+		if _, e := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: metadataGrant.RequestID, Reason: "Withdraw metadata independently"}); e != nil {
+			t.Fatal(e)
+		}
+
 		recursive := true
 		command.NodeRecursive = &recursive
 		command.RequestID = uuid.New()

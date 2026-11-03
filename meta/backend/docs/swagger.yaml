@@ -3222,14 +3222,14 @@ paths:
       consumes:
       - application/json
       description: 仅供 addp-system Tenant Service 查询当前租户精确引擎内已识别数据项；返回最小身份及同快照的完整父节点链（最多128级），缺失或循环父链失败，不读取源内容、不扫描、不裁决权限。可按
-        PG／NFS 类型化父节点只读直属项（whole 容器为外层目录的一项叶子），或按名称／路径搜索；先过滤再计数分页；最多 20000 个不重复指纹、每页最多
+        PG／NFS／MinIO 类型化父节点只读直属项（whole 容器为外层目录的一项叶子），或按名称／路径搜索；先过滤再计数分页；最多 20000 个不重复指纹、每页最多
         100 项，正文最多 2 MiB。include 空集合返回空结果 | Restricted to addp-system Tenant Service.
         Reads minimal identified DataItem identities with complete same-snapshot ancestry
         (at most 128 levels; missing or cyclic parents fail) for one engine in the
         current tenant, without source reads, scans or access decisions. An optional
-        typed PG/NFS parent restricts rows to direct children (whole containers appear
-        once under their outer directory); literal search filters names and paths.
-        Filters precede counting and pagination. At most 20000 unique fingerprints,
+        typed PG/NFS/MinIO parent restricts rows to direct children (whole containers
+        appear once under their outer directory); literal search filters names and
+        paths. Filters precede counting and pagination. At most 20000 unique fingerprints,
         100 rows per page and 2 MiB body. Empty include means no matches
       parameters:
       - description: 身份查询 | Identity query
@@ -3573,11 +3573,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: 仅当前租户 addp-system Service 通过独立机器权限查询指定 PG server/schema 的直接子节点；不返回数据项、内容、属性、统计或权限裁决。分页最多100项，正文最多16KiB，不接受query或额外字段
+      description: 仅当前租户 addp-system Service 通过独立机器权限查询指定 PG server/schema、NFS root/directory
+        或 MinIO service/bucket/prefix 的直接子节点；不返回数据项、内容、属性、统计或权限裁决。分页最多100项，正文最多16KiB，不接受query或额外字段
         | Fixed tenant addp-system Service with the node identity permission. Returns
-        immediate PG owner nodes only; no DataItems, content, attributes, statistics
-        or access decisions. At most 100 nodes per page and 16KiB request body; query
-        and extra fields are rejected
+        immediate PG, NFS or MinIO owner nodes only; no DataItems, content, attributes,
+        statistics or access decisions. At most 100 nodes per page and 16KiB request
+        body; query and extra fields are rejected
       parameters:
       - description: 节点查询及分页 | Node query and pagination
         in: body
@@ -3629,11 +3630,13 @@ paths:
     post:
       consumes:
       - application/json
-      description: 仅 addp-system Tenant Service，以完整类型化路径读取当前租户精确引擎的 PG 根或 schema 节点存在事实；不返回属性、内容或统计，不扫描、不签发
-        Grant。正文最多16KiB，不接受query或额外字段 | Fixed addp-system Tenant Service; resolves
-        the existence of one PG root or schema node in the current tenant and exact
-        engine by typed path. No attributes, content, statistics, scans or grants.
-        Body is at most 16KiB; query and extra fields are rejected
+      description: 仅 addp-system Tenant Service，以完整类型化路径读取当前租户精确引擎的 PG 根／schema、NFS
+        普通根／目录、MinIO service／bucket／普通 prefix 节点存在事实；不返回属性、内容或统计，不扫描、不签发 Grant。正文最多16KiB，不接受query或额外字段
+        | Fixed addp-system Tenant Service; resolves the existence of one PG root/schema,
+        ordinary NFS root/directory or MinIO service/bucket/ordinary prefix node in
+        the current tenant and exact engine by typed path. No attributes, content,
+        statistics, scans or grants. Body is at most 16KiB; query and extra fields
+        are rejected
       parameters:
       - description: 节点身份查询 | Node identity query
         in: body
