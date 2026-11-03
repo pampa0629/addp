@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -25,6 +26,14 @@ SUPPORT = importlib.util.module_from_spec(SUPPORT_SPEC)
 assert SUPPORT_SPEC.loader is not None
 sys.modules[SUPPORT_SPEC.name] = SUPPORT
 SUPPORT_SPEC.loader.exec_module(SUPPORT)
+
+REGISTRATION_SPEC = importlib.util.spec_from_file_location(
+    "relational_consumer_registration", Path(__file__).with_name("online-engine-registration.py")
+)
+REGISTRATION = importlib.util.module_from_spec(REGISTRATION_SPEC)
+assert REGISTRATION_SPEC.loader is not None
+sys.modules[REGISTRATION_SPEC.name] = REGISTRATION
+REGISTRATION_SPEC.loader.exec_module(REGISTRATION)
 
 GatewayClient = SUPPORT.GatewayClient
 SuiteError = SUPPORT.SuiteError
@@ -665,7 +674,30 @@ def run_scenario(
     return result
 
 
+def initialize_source_reads(
+    client: GatewayClient, authorizer: GatewayClient, tenant_id: int, engine_id: int,
+    namespace: str, profile: ConsumerProfile, deadline: float,
+) -> dict[str, object]:
+    """Prepare only the two approved openGauss fixture tables, never a namespace."""
+    if profile.engine_type != "opengauss" or namespace != "public":
+        raise SuiteError("source preparation is limited to the approved openGauss public tables")
+    validate_user_identity(client, tenant_id)
+    scan_id = wait_for_scan(client, engine_id, deadline)
+    try:
+        receipts = REGISTRATION.initialize_exact_record_read_grants(
+            authorizer, client, tenant_id,
+            [(engine_id, "schema", namespace, table) for table in (SOURCE_TABLE, TARGET_TABLE)],
+        )
+    except REGISTRATION.RegistrationError as error:
+        raise SuiteError(str(error)) from error
+    return {"engine_id": str(engine_id), "scan_execution_id": scan_id,
+            "exact_read_grants": len(receipts)}
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--initialize-source-read", action="store_true")
+    arguments = parser.parse_args()
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")
     tenant_id = positive_int(
@@ -691,11 +723,32 @@ def main() -> int:
         required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"),
         min(timeout, 30),
     )
+    namespace = required_environment("ADDP_ONLINE_CONSUMER_NAMESPACE")
+    if arguments.initialize_source_read:
+        if (os.environ.get("ADDP_ONLINE_HOSTED") != "1"
+                or os.environ.get("GITHUB_ACTIONS") != "true"
+                or os.environ.get("RUNNER_OS") != "Linux"
+                or os.environ.get("ADDP_ONLINE_HOST") != "1"):
+            raise SuiteError("source preparation requires the disposable Hosted Linux profile")
+        gateway = urllib.parse.urlsplit(required_environment("GATEWAY_URL"))
+        if gateway.scheme != "http" or gateway.hostname not in {"127.0.0.1", "localhost"}:
+            raise SuiteError("source preparation requires a loopback Gateway")
+        authorizer = GatewayClient(
+            required_environment("GATEWAY_URL"),
+            required_environment("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"), min(timeout, 30),
+        )
+        report = initialize_source_reads(
+            client, authorizer, tenant_id, engine_id, namespace, profile, time.monotonic() + timeout
+        )
+        print(json.dumps(report, sort_keys=True))
+        return 0
+    if os.environ.get("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"):
+        raise SuiteError("source initializer credential must be removed before consumer assertions")
     report = run_scenario(
         client,
         tenant_id,
         engine_id,
-        required_environment("ADDP_ONLINE_CONSUMER_NAMESPACE"),
+        namespace,
         profile,
         required_environment("ADDP_ONLINE_TEST_RUN_ID"),
         timeout,

@@ -119,7 +119,7 @@ var sourceInitializerPermissions = []string{
 
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
-	case "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects":
+	case "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow":
 		return append([]string{}, sourceInitializerPermissions...)
 	default:
 		return nil

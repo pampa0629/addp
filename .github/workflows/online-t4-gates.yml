@@ -1769,6 +1769,9 @@ jobs:
           cache: npm
           cache-dependency-path: '**/package-lock.json'
 
+      - name: Verify openGauss owner runner contract
+        run: make test-opengauss-online-runner
+
       - name: Validate Hosted openGauss readiness
         env:
           ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}

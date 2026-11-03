@@ -233,9 +233,10 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             for argument in "$@"; do
               if [ "$previous" = "--output" ]; then
                 cat > "$argument" <<'EOF'
-            ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN=provisioner-token
-            ADDP_ONLINE_TEST_TENANT_ID=2
-            ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=consumer-token
+            export ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN=provisioner-token
+            export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN=source-initializer-token
+            export ADDP_ONLINE_TEST_TENANT_ID=2
+            export ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=consumer-token
             EOF
                 exit 0
               fi
@@ -249,6 +250,20 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             """
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            """,
+        )
+        self._write_repository_script(
+            "scripts/test/relational-consumer-flow-online.py",
+            """
+            #!/usr/bin/env python3
+            import os, sys
+            assert sys.argv[1:] == ["--initialize-source-read"]
+            assert os.environ["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] == "source-initializer-token"
+            assert "ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN" not in os.environ
+            with open(os.environ["ADDP_TEST_GATE_TRACE"], "a") as output:
+                output.write("prepare:exact-two-table-read\\n")
+            if os.environ.get("ADDP_TEST_SOURCE_READ_FAIL") == "1":
+                raise SystemExit(1)
             """,
         )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
@@ -293,6 +308,32 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         self.assertIn("start:-security", trace)
         self.assertIn("--wait-protection-owners manager,develop,service,transfer", trace)
         self.assertNotIn("make:test-online", trace)
+        self.assertFalse(self.secrets.exists())
+
+    def test_exact_read_preparation_precedes_unprivileged_consumer(self):
+        self.prepare_run_fixture()
+        self._executable("make", """
+            #!/usr/bin/env bash
+            [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN+x}" ] || exit 1
+            [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN+x}" ] || exit 1
+            grep -q '^prepare:exact-two-table-read$' "$ADDP_TEST_GATE_TRACE" || exit 1
+            echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+        """)
+        result = self.run_gate()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = self.trace.read_text()
+        self.assertLess(trace.index("prepare:exact-two-table-read"), trace.index("make:test-online"))
+
+    def test_source_grant_failure_cleans_up_without_starting_consumers(self):
+        self.prepare_run_fixture()
+        result = self.run_gate(ADDP_TEST_SOURCE_READ_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.trace.read_text()
+        self.assertIn("prepare:exact-two-table-read", trace)
+        self.assertNotIn("make:test-online", trace)
+        self.assertIn("application-stop", trace)
+        self.assertIn("fixture:stop", trace)
+        self.assertIn("infra-down", trace)
         self.assertFalse(self.secrets.exists())
 
     def test_check_only_accepts_clean_github_linux_and_separates_secrets(self) -> None:

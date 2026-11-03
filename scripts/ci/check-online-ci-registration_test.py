@@ -3588,6 +3588,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "for start_target in -security -manager -develop -service -transfer\n"
             "--wait-protection-owners manager,develop,service,transfer\n"
             "unset ADDP_TEST_OPENGAUSS_DSN\n"
+            "python3 scripts/test/relational-consumer-flow-online.py --initialize-source-read\n"
+            "unset ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN\n"
             'make test-online "ONLINE_SUITE=$ONLINE_SUITE"\n'
             "bash scripts/dev/stop.sh\n"
             "bash scripts/infra/down.sh --volumes --force\n",
@@ -3654,6 +3656,16 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_opengauss_consumer_flow_profile(
             self.repository, {"opengauss-consumer-flow"}
         )
+
+        hosted_text = hosted.read_text(encoding="utf-8")
+        for preparation in (
+            "python3 scripts/test/relational-consumer-flow-online.py --initialize-source-read",
+            "unset ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
+        ):
+            hosted.write_text(hosted_text.replace(preparation, "removed", 1), encoding="utf-8")
+            with self.assertRaisesRegex(CHECK.RegistrationError, "Hosted profile is missing"):
+                CHECK.validate_opengauss_consumer_flow_profile(self.repository, {"opengauss-consumer-flow"})
+        hosted.write_text(hosted_text, encoding="utf-8")
 
         owner_text = owner.read_text(encoding="utf-8")
         owner.write_text(owner_text + '"system.engine.read"\n', encoding="utf-8")

@@ -1422,6 +1422,8 @@ def validate_opengauss_consumer_flow_profile(
         "for start_target in -security -manager -develop -service -transfer",
         "--wait-protection-owners manager,develop,service,transfer",
         "unset ADDP_TEST_OPENGAUSS_DSN",
+        "python3 scripts/test/relational-consumer-flow-online.py --initialize-source-read",
+        "unset ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
         "bash scripts/dev/stop.sh",
         "bash scripts/infra/down.sh --volumes --force",

@@ -1182,7 +1182,14 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 	@python3 -m unittest scripts/test/pg-source-authorization-online_test.py scripts/test/online-hosted-pg-authorization-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_pg_authorization_requires_isolated_manual_profile scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_opengauss_hosted_owner_and_identity_contracts
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
+.PHONY: test-opengauss-online-runner
+test-opengauss-online-runner: ## 验证 openGauss 精确授权准备、关系消费及 Hosted 隔离清理
+	@bash -n scripts/test/online-hosted-opengauss-gate.sh business/scripts/online-opengauss-consumer-fixture.sh
+	@python3 -m unittest -v scripts/test/relational-consumer-flow-online_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-engine-registration_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_opengauss_hosted_owner_and_identity_contracts $(OPENGAUSS_ONLINE_TEST_ARGS)
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-opengauss-online-runner
 	@$(MAKE) test-execution-retention-online-runner
 	@$(MAKE) test-execution-events-pagination-runner
 	@$(MAKE) test-catalog-domain-online-runner
@@ -1209,7 +1216,7 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py
 	@python3 -m unittest scripts/test/ontology-revision-lifecycle-online_test.py scripts/test/online-hosted-ontology-gate_test.py
 	@$(MAKE) test-quality-online-runner
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-hosted-metric-gate_test.py scripts/test/online-security-owner-fixture_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/metric-service-revision-lifecycle-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-metric-gate_test.py scripts/test/online-security-owner-fixture_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/metric-service-revision-lifecycle-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 .PHONY: test-workflow-runtime-health-online-runner

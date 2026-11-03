@@ -1,4 +1,6 @@
 import importlib.util
+import hashlib
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -18,6 +20,124 @@ class RelationalConsumerFlowOnlineTest(unittest.TestCase):
     opengauss = ONLINE.PROFILES["opengauss"]
     kingbase = ONLINE.PROFILES["kingbase"]
     tidb = ONLINE.PROFILES["tidb"]
+
+    def source_clients(self):
+        """Persisted records exist independently of the recipient's visible list."""
+        client, issuer = Mock(), Mock()
+        state = {"scanned": False, "granted": set(), "events": []}
+        items = [{"id": i, "node_id": 2, "item_type": "table", "full_name": "public." + name,
+                  "fingerprint": hashlib.sha256(f"17:public.{name}".encode()).hexdigest()}
+                 for i, name in enumerate((ONLINE.SOURCE_TABLE, ONLINE.TARGET_TABLE), 1)]
+        def context(principal, permissions, role):
+            return {"principal": {"type": "user", "id": principal},
+                    "context": {"type": "tenant", "tenant_id": "2"},
+                    "token": {"type": "first_party_access_token"},
+                    "authorization": {"role_assignments": [{"role_key": role, "permissions": sorted(permissions)}]}}
+        def consume(method, path, expected, body=None):
+            if path.endswith("/auth/context"):
+                return ONLINE.SUPPORT.Response(200, context("7", ONLINE.REQUIRED_PERMISSIONS, "online.opengauss_consumer_flow"))
+            if path == "/api/v1/meta/scan/run/manual":
+                self.assertEqual(body["engine_id"], 17)
+                state["events"].append("scan")
+                return ONLINE.SUPPORT.Response(201, {"execution_id": "scan-1"})
+            if path == "/api/v1/meta/executions/scan-1":
+                state["scanned"] = True
+                return ONLINE.SUPPORT.Response(200, {"status": "success"})
+            if path.startswith("/api/v1/meta/engines/17/items"):
+                state["events"].append("recipient_catalog")
+                return ONLINE.SUPPORT.Response(200, [item for item in items if item["fingerprint"] in state["granted"]])
+            self.assertEqual(path, "/api/v1/system/engine-access/read-checks/manager-preview")
+            name = body["targets"][0]["segments"][-1]["name"]
+            item = next(item for item in items if item["full_name"] == "public." + name)
+            allowed = item["fingerprint"] in state["granted"]
+            self.assertEqual(expected, (200,) if allowed else (403,))
+            state["events"].append("allowed" if allowed else "denied")
+            return ONLINE.SUPPORT.Response(expected[0], {"observed_at": "2026-11-03T00:00:00Z"} if allowed else {})
+        def authorize(method, path, expected, body=None):
+            if path.endswith("/auth/context"):
+                return ONLINE.SUPPORT.Response(200, context("8", ONLINE.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS, ONLINE.REGISTRATION.SOURCE_INITIALIZER_ROLE))
+            if path.endswith("/authorization-facts"):
+                self.assertTrue(state["scanned"])
+                state["events"].append("authoritative_facts")
+                fingerprint = path.split("/")[-2]
+                item = next(item for item in items if item["fingerprint"] == fingerprint)
+                target = {"version": "catalog.path/v1", "engine_id": 17, "segments": [
+                    {"term": "server", "kind": "server", "name": ""},
+                    {"term": "schema", "kind": "namespace", "name": "public"},
+                    {"term": "table", "kind": "table", "name": item["full_name"][7:]}]}
+                return ONLINE.SUPPORT.Response(200, {"schema_version": "meta.data_item_authorization_facts/v1",
+                    "engine_id": "17", "item_fingerprint": fingerprint, "item_type": "table",
+                    "full_name": item["full_name"], "basis_state": "complete", "boundary_hash": "a" * 64,
+                    "observed_at": "2026-11-03T00:00:00Z", "boundary": {"layout": "single", "native_target": target}})
+            self.assertEqual((method, path, expected), ("POST", "/api/v1/system/engines/17/access_grants", (201,)))
+            self.assertEqual((body["action"], body["recipient_id"]), ("read", "7"))
+            state["events"].append("grant")
+            state["granted"].add(body["item_fingerprint"])
+            return ONLINE.SUPPORT.Response(201, dict(body, engine_id="17", approval_mode="independent",
+                revocation=None, boundary_hash=body["expected_boundary_hash"]))
+        client.request.side_effect, issuer.request.side_effect = consume, authorize
+        return client, issuer, state
+
+    def test_source_grants_make_only_two_persisted_tables_visible_before_consumption(self):
+        client, issuer, state = self.source_clients()
+        with self.assertRaisesRegex(ONLINE.SuiteError, "Meta must return exactly one"):
+            ONLINE.find_item(client, 17, "public." + ONLINE.SOURCE_TABLE, "table")
+        state["events"].clear()
+        result = ONLINE.initialize_source_reads(client, issuer, 2, 17, "public", self.opengauss, ONLINE.time.monotonic() + 30)
+        self.assertEqual(result, {"engine_id": "17", "scan_execution_id": "scan-1", "exact_read_grants": 2})
+        self.assertEqual(state["events"], ["scan"] + ["authoritative_facts", "denied", "grant", "allowed", "recipient_catalog"] * 2)
+        self.assertEqual(len(state["granted"]), 2)
+        for table in (ONLINE.SOURCE_TABLE, ONLINE.TARGET_TABLE):
+            self.assertEqual(ONLINE.find_item(client, 17, "public." + table, "table")["full_name"], "public." + table)
+
+    def test_source_preparation_refuses_other_profiles_and_namespaces_without_io(self):
+        for profile, namespace in ((self.oceanbase, "public"), (self.kingbase, "public"),
+                                   (self.tidb, "public"), (self.opengauss, "other")):
+            with self.subTest(engine=profile.engine_type, namespace=namespace):
+                client, issuer = Mock(), Mock()
+                with self.assertRaisesRegex(ONLINE.SuiteError, "limited to the approved"):
+                    ONLINE.initialize_source_reads(client, issuer, 2, 17, namespace, profile, 30)
+                client.request.assert_not_called()
+                issuer.request.assert_not_called()
+
+    def test_incomplete_source_facts_stop_preparation_before_any_grant(self):
+        client, issuer, state = self.source_clients()
+        original = issuer.request.side_effect
+        def incomplete(method, path, expected, body=None):
+            result = original(method, path, expected, body)
+            if path.endswith("/authorization-facts"):
+                result.payload["basis_state"] = "incomplete"
+            return result
+        issuer.request.side_effect = incomplete
+        with self.assertRaisesRegex(ONLINE.SuiteError, "complete matching"):
+            ONLINE.initialize_source_reads(client, issuer, 2, 17, "public", self.opengauss, ONLINE.time.monotonic() + 30)
+        self.assertEqual(state["granted"], set())
+        self.assertNotIn("recipient_catalog", state["events"])
+
+    @patch.dict(os.environ, {"ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "2",
+        "ADDP_ONLINE_CONSUMER_ENGINE_TYPE": "opengauss", "ADDP_ONLINE_CONSUMER_ENGINE_ID": "17",
+        "ADDP_ONLINE_CONSUMER_NAMESPACE": "public", "GATEWAY_URL": "http://127.0.0.1:8000",
+        "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "consumer-token", "ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN": "issuer-token"}, clear=True)
+    def test_business_entry_refuses_initializer_credential_before_consumer_calls(self):
+        with patch.object(sys, "argv", [str(SCRIPT)]), patch.object(ONLINE, "GatewayClient") as client, patch.object(ONLINE, "run_scenario") as run:
+            with self.assertRaisesRegex(ONLINE.SuiteError, "credential must be removed"):
+                ONLINE.main()
+            client.return_value.request.assert_not_called()
+            run.assert_not_called()
+
+    @patch.dict(os.environ, {"ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "2",
+        "ADDP_ONLINE_CONSUMER_ENGINE_TYPE": "opengauss", "ADDP_ONLINE_CONSUMER_ENGINE_ID": "17",
+        "ADDP_ONLINE_CONSUMER_NAMESPACE": "public", "GATEWAY_URL": "http://127.0.0.1:8000",
+        "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "consumer-token", "ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN": "issuer-token",
+        "GITHUB_ACTIONS": "true", "RUNNER_OS": "Linux", "ADDP_ONLINE_HOSTED": "1", "ADDP_ONLINE_HOST": "1"}, clear=True)
+    def test_source_entry_rejects_personal_or_remote_profiles_before_io(self):
+        for key, value in (("GITHUB_ACTIONS", "false"), ("RUNNER_OS", "Darwin"),
+                           ("ADDP_ONLINE_HOSTED", "0"), ("ADDP_ONLINE_HOST", "0"),
+                           ("GATEWAY_URL", "https://remote.invalid")):
+            with self.subTest(key=key), patch.dict(os.environ, {key: value}), patch.object(sys, "argv", [str(SCRIPT), "--initialize-source-read"]), patch.object(ONLINE, "GatewayClient") as client:
+                with self.assertRaisesRegex(ONLINE.SuiteError, "Hosted Linux profile|loopback Gateway"):
+                    ONLINE.main()
+                client.return_value.request.assert_not_called()
 
     def test_transfer_uses_bounded_watermark_and_idempotent_upsert(self) -> None:
         payload = ONLINE.transfer_payload(

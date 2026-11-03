@@ -1508,6 +1508,30 @@ func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 	}
 }
 
+func TestOpenGaussFixtureSeparatesExactSourceIssuerFromConsumer(t *testing.T) {
+	permissions, err := suitePermissions("opengauss-consumer-flow")
+	if err != nil || !slices.Equal(permissions, consumerPermissions) || len(permissions) != 16 {
+		t.Fatal("openGauss retains exactly the existing sixteen consumer permissions", err)
+	}
+	issuer := suiteSourceInitializerPermissions("opengauss-consumer-flow")
+	if !slices.Equal(issuer, sourceInitializerPermissions) || len(issuer) != 11 {
+		t.Fatal("openGauss requires the existing independent exact-source issuer")
+	}
+	for _, key := range issuer {
+		if slices.Contains(permissions, key) {
+			t.Fatalf("openGauss consumer must not receive source issuer permission %s", key)
+		}
+	}
+	environment := consumerEnvironment("opengauss-consumer-flow", 2, "consumer-token", "private-password")
+	if _, exists := environment["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"]; exists {
+		t.Fatal("consumer identity must not manufacture a source issuer token")
+	}
+	issuer[0] = "mutated"
+	if !slices.Equal(suiteSourceInitializerPermissions("opengauss-consumer-flow"), sourceInitializerPermissions) {
+		t.Fatal("openGauss issuer must not mutate shared permissions")
+	}
+}
+
 func TestWorkflowRuntimeHealthFixtureRequiresNoUserPermissionsOrEngineProvisioner(t *testing.T) {
 	permissions, err := suitePermissions("workflow-runtime-health-recovery")
 	if err != nil || len(permissions) != 0 || needsEngineProvisioner("workflow-runtime-health-recovery") {
