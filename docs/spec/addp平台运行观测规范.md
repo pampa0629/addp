@@ -672,6 +672,12 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 
 2026-11-02用户确认APT连接环节的最小取证：仍仅解析唯一失败APT步骤的错误文本，在原apt下增加唯一transport摘要。operation仅为connect／body_read／unknown，endpoint仅为desktop_proxy／official_debian／unknown；两维各有explicit／unavailable／ambiguous状态。仅Could not／Failed to／Unable to connect等明确建连失败语句可计connect，仅明确正文读取失败语句可计body_read；通用timeout、下载URL、成功请求或IP标注不能推导连接环节及端点。端点只取同一明确建连／正文读取错误语句直接指向的主机，精确匹配既有Desktop内部代理名或官方Debian主机；不能把Failed to fetch里的源URL误当作出错连接端点，不反查IP、解析DNS或读取当前代理补全。缺失或无法识别为unavailable／unknown，多个互斥结论为ambiguous／unknown，两维独立处理，不选择最后一条或用另一维猜测。凭据URL、私有／相似域名、任意IP／端口及原文均不导出。默认、不可归属及超预算回执同样给出封闭未知字段，不保留旧摘要或新增并行路径。沿原128 KiB整份输入、4 KiB整组诊断及首失败／哈希约束；不增加读取、探针、负载或命令，不改变四秒、资源、恢复与清理要求。先修规范及确定性门禁，不重试构建、开新窗口或改APT／镜像／代理策略；分类只证明错误文字明确表达的环节，不证明物理故障点或历史根因。
 
+2026-11-03用户确认Monitor APT最小取证扩展，仍使用唯一`public_build`与同一次已捕获输出，不增加Docker／Registry／网络读取。`base`的精确FROM白名单在原Python之外增加`localhost:5001/debian-slim:bookworm@sha256:<64位十六进制>`，固定kind为`debian_bookworm_slim`；重复同一候选去重，多个不同候选记ambiguous，缺少摘要或非白名单仍unavailable，不查询当前tag补填历史值。
+
+APT只解析唯一失败RUN步骤的带步骤编号输出。明确错误行及紧随其后的同一步骤带缩进、固定HTTP状态或签名诊断开头的续行组成错误上下文；空行、其他步骤、成功Get／Hit／Ign、普通进度、RUN标题及最终ERROR命令回显均中断续行，不从未编号正文或任意缩进行猜归属。HTTP状态、固定错误及transport统一消费这份错误上下文，不保留旧的并行识别路线。`apt.signature_kinds`为去重固定枚举：missing_key、expired_key、bad_signature、unsigned_repository、invalid_clearsigned；仅明确签名验证失败且没有更具体证据时记verification_failed，无证据／不可归属／超限均为空，不代表签名验证成功。错误标记必须处于明确签名诊断，不从包名／版本／URL／命令或成功输出提取；不输出密钥ID、指纹、时间、NOSPLIT等任意附带值或原文。多项明确错误可同时记录，不挑最后一项或推定物理根因。
+
+本批仍限128 KiB整份输入、4 KiB整组诊断，保留原集合、首因／哈希、四秒、资源及清理边界。代理日志中的502只作为离线候选线索，不能回填构建APT状态、签名子类或FROM摘要；旧报告不追填新字段。先修规范与确定性门禁，不改任何产品Dockerfile、APT源／包／重试／签名校验、基础镜像或代理策略，不重试构建或新开本地窗口，不运行Hosted／容量／定时。
+
 新Tenant创建后，身份夹具必须在导出凭据前复用既有`waitForOwnerProtection`，只读等待当次Tenant的Develop持久保护初始化checkpoint，最长60秒并计入原窗口／身份准备预算。固定Owner为Develop，不开放额外Owner参数，不直接写投影或checkpoint，也不把业务拒绝重试为成功。实际Owner从Security完整消费后才可开始执行；实例`/health/ready`不能替代该Tenant状态。此要求沿数据安全规范既有初始化边界，不改变普通User权限、源读取授权或数据保护裁决。
 
 采样 v2 和所有查询预算保持；失败终态须实际可查，普通阶段或 Link 目标独立未保留可以按规范查无数据，不强制全采样或凭空补链。真实 Console/Monitor 页面必须经密码／MFA 登录，不 mock API／注入 Token。验证 Tenant 无新增私有观测字段，负例无权访问平台 Trace／日志，正式退出后旧令牌拒绝；不将会话撤销冒充单实例撤权。

@@ -169,6 +169,88 @@ class PublicAPTBuildEvidence(unittest.TestCase):
         v=m.public_build_failure_diagnostic(raw);self.assertEqual(v['status'],'over_budget');self.assertEqual(v['dockerfile_lines'],[])
         self.assertLessEqual(len(json.dumps(v).encode()),4096)
 
+    def test_debian_from_digest_is_exact_deduplicated_and_never_inferred(self):
+        base='#4 [1/2] FROM localhost:5001/debian-slim:bookworm@sha256:'+'d'*64
+        v=m.public_build_failure_diagnostic(self.output('E: PRIVATE',prefix=base+'\n'+base))
+        self.assertEqual(v['base'],{'status':'resolved','kind':'debian_bookworm_slim','resolved_digest':'sha256:'+'d'*64})
+        for reference in ('debian-slim:bookworm','debian-slim:bookworm@sha256:'+'a'*63,
+                'debian-slim:bookworm-updates@sha256:'+'a'*64,
+                'debian-slim:bookworm@sha256:'+'a'*64+'PRIVATE',
+                'debian-slim:bookworm@sha256:'+'a'*64+'?PRIVATE',
+                'debian:bookworm-slim@sha256:'+'a'*64):
+            with self.subTest(reference=reference):
+                v=m.public_build_failure_diagnostic(self.output('E: PRIVATE',prefix='#4 [1/2] FROM localhost:5001/'+reference))
+                self.assertEqual(v['base']['status'],'unavailable')
+        for second in (base.replace('d'*64,'e'*64),'#5 [1/2] FROM localhost:5001/python:3.11-slim@sha256:'+'f'*64):
+            v=m.public_build_failure_diagnostic(self.output('E: PRIVATE',prefix=base+'\n'+second))
+            self.assertEqual(v['base'],{'status':'ambiguous','kind':None,'resolved_digest':None})
+
+    def test_signature_subclasses_require_explicit_diagnostics_and_remove_details(self):
+        cases=[('W: NO_PUBKEY PRIVATEKEY','missing_key'),
+               ('W: GPG error: PRIVATE The following signatures were invalid: EXPKEYSIG PRIVATEKEY PRIVATEIDENTITY','expired_key'),
+               ('W: BADSIG PRIVATEKEY PRIVATEIDENTITY','bad_signature'),
+               ('W: GPG error: PRIVATE At least one invalid signature was encountered.','bad_signature'),
+               ("E: The repository 'http://deb.debian.org/debian bookworm InRelease' is not signed.",'unsigned_repository'),
+               ("E: Clearsigned file isn't valid, got 'PRIVATE-NOSPLIT'",'invalid_clearsigned'),
+               ("W: The following signatures couldn't be verified: PRIVATE",'verification_failed'),
+               ("W: GPG error: PRIVATE The following signatures couldn't be verified: PRIVATE",'verification_failed')]
+        for body,kind in cases:
+            with self.subTest(kind=kind,body=body):
+                apt=m.public_build_failure_diagnostic(self.output(body))['apt']
+                self.assertEqual(apt['signature_kinds'],[kind]);self.assertIn('signature',apt['error_kinds'])
+                for secret in ('PRIVATE','http://','NOSPLIT'):self.assertNotIn(secret,repr(apt))
+        apt=m.public_build_failure_diagnostic(self.output("W: The following signatures couldn't be verified because the public key is not available: NO_PUBKEY PRIVATE"))['apt']
+        self.assertEqual(apt['signature_kinds'],['missing_key'])
+
+    def test_owned_error_continuations_share_http_signature_and_transport_context(self):
+        body=('Err:1 http://deb.debian.org/debian/dists/bookworm/InRelease\n'
+              '  502 Bad Gateway [IP: 192.0.2.1 80]\n'
+              '  Could not connect to http.docker.internal:3128\n'
+              '  The following signatures were invalid: EXPKEYSIG PRIVATEKEY')
+        apt=m.public_build_failure_diagnostic(self.output(body))['apt']
+        self.assertEqual(apt['phase'],'index_download');self.assertEqual(apt['http_statuses'],[502])
+        self.assertEqual(apt['signature_kinds'],['expired_key']);self.assertIn('signature',apt['error_kinds'])
+        self.assertEqual(apt['transport'],{'operation':'connect','operation_status':'explicit','endpoint':'desktop_proxy','endpoint_status':'explicit'})
+        for secret in ('PRIVATE','192.0.2','3128'):self.assertNotIn(secret,repr(apt))
+
+    def test_error_continuations_stop_at_boundaries_and_never_adopt_other_output(self):
+        root='Err:1 http://deb.debian.org/debian/dists/bookworm/InRelease'
+        suffix='  502 Bad Gateway\n  NO_PUBKEY PRIVATEKEY'
+        for boundary in ('','Get:1 http://deb.debian.org/debian/dists/bookworm/InRelease',
+                '  Hit:1 PRIVATE','  Ign:1 PRIVATE','Reading package lists...',
+                '  Reading package lists...','  Fetched 502 bytes','  PRIVATE progress',
+                '[3/9] RUN echo PRIVATE','ERROR: process "echo PRIVATE"'):
+            with self.subTest(boundary=boundary):
+                apt=m.public_build_failure_diagnostic(self.output(root+'\n'+boundary+'\n'+suffix))['apt']
+                self.assertEqual(apt['http_statuses'],[]);self.assertEqual(apt['signature_kinds'],[])
+        for injected in ('#2 1.0 unrelated\n#7 1.0   502 Bad Gateway',
+                         'unowned PRIVATE\n#7 1.0   502 Bad Gateway',
+                         '#2 1.0   502 Bad Gateway'):
+            raw=self.output(root).replace(b'#7 ERROR:',(injected+'\n#7 ERROR:').encode())
+            apt=m.public_build_failure_diagnostic(raw)['apt'];self.assertEqual(apt['http_statuses'],[])
+
+    def test_signature_and_http_markers_in_packages_urls_success_and_commands_do_not_count(self):
+        for body in ('E: Unable to locate package NO_PUBKEY',
+                'E: Failed to fetch http://deb.debian.org/debian/pool/main/p/NO_PUBKEY_PRIVATE.deb Unknown error',
+                'Get:1 http://deb.debian.org/debian/dists/bookworm/InRelease\n  NO_PUBKEY PRIVATE',
+                'ERROR: process "echo NO_PUBKEY PRIVATE"',
+                'Fetched package description: NO_PUBKEY PRIVATE',
+                'Err:1 http://deb.debian.org/debian/dists/bookworm/InRelease\n  PRIVATE_502_504 407502 bytes'):
+            with self.subTest(body=body):
+                apt=m.public_build_failure_diagnostic(self.output(body))['apt']
+                self.assertEqual(apt['signature_kinds'],[]);self.assertEqual(apt['http_statuses'],[])
+        raw=self.output('E: PRIVATE',prefix='#2 [1/2] RUN apt-get update\n#2 1.0 W: NO_PUBKEY PRIVATE')
+        self.assertEqual(m.public_build_failure_diagnostic(raw)['apt']['signature_kinds'],[])
+
+    def test_signature_collections_are_unique_and_empty_when_unavailable_or_over_budget(self):
+        raw=self.output('W: NO_PUBKEY PRIVATE\nW: NO_PUBKEY PRIVATE\nW: BADSIG PRIVATE')
+        apt=m.public_build_failure_diagnostic(raw)['apt'];self.assertEqual(apt['signature_kinds'],['missing_key','bad_signature'])
+        for output in (b'',raw+self.output('W: EXPKEYSIG PRIVATE',step='8'),raw+b'x'*131073):
+            self.assertEqual(m.public_build_failure_diagnostic(output)['apt']['signature_kinds'],[])
+        with mock.patch.object(m.json,'dumps',return_value='x'*4097):
+            v=m.public_build_failure_diagnostic(raw)
+        self.assertEqual(v['status'],'over_budget');self.assertEqual(v['apt']['signature_kinds'],[])
+
     def test_proxy_facts_keep_validated_sources_but_no_values_or_secrets(self):
         daemon=m.build_proxy_facts({'HTTP_PROXY':'http://http.docker.internal:3128','HTTPS_PROXY':'http://http.docker.internal:3128'},'docker_info')
         client=m.build_proxy_facts({'HTTP_PROXY':'http://127.0.0.1:17890'},'host_environment')
