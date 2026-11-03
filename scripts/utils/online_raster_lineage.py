@@ -22,6 +22,7 @@ SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persist
     'raster-zonal-percentiles-persistence': 'zonal-percentiles-lineage', 'raster-zonal-class-frequency-persistence': 'zonal-class-frequency-lineage', 'raster-zonal-weighted-persistence': 'zonal-weighted-lineage', 'raster-zonal-weighted-stddev-persistence': 'zonal-weighted-stddev-lineage', 'vector-zonal-percentile-persistence': 'vector-zonal-percentile-lineage',
     'vector-zonal-percentiles-persistence': 'vector-zonal-percentiles-lineage', 'raster-sample-points-persistence': 'raster-sample-points-lineage', 'raster-sample-points-bilinear-persistence': 'raster-sample-points-bilinear-lineage', 'vector-zonal-class-frequency-persistence': 'vector-zonal-class-frequency-lineage', 'raster-sample-lines-persistence': 'raster-sample-lines-lineage',
     'raster-interpolate-idw-persistence': 'raster-interpolate-idw-lineage',
+    'raster-interpolate-idw-min-points-persistence': 'raster-interpolate-idw-min-points-lineage',
     'raster-focal-percentiles-persistence': 'raster-focal-percentiles-lineage', 'vector-zonal-weighted-persistence': 'vector-zonal-weighted-lineage', 'vector-zonal-weighted-stddev-persistence': 'vector-zonal-weighted-stddev-lineage', 'vector-zonal-area-weighted-persistence': 'vector-zonal-area-weighted-lineage', 'vector-zonal-area-weighted-stddev-persistence': 'vector-zonal-area-weighted-stddev-lineage'}
 RECEIPT = 'raster-lineage-owner.json'
 FIELDS = {'schema_version', 'inputs', 'outputs', 'operations'}
