@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
@@ -164,17 +165,28 @@ func snapshotFromEvidence(raw interface{}) *commonExecution.LineageSchemaSnapsho
 	return &snapshot
 }
 
-func fieldProjectionStatus(pair relationPair) string {
+func fieldProjectionStatus(pair relationPair, previousStatus string) string {
 	if pair.granularity() != "field" {
 		return "active"
 	}
 	for _, ref := range []*resolvedRef{pair.source, pair.target} {
+		if ref.ref.SchemaSnapshot == nil {
+			return "stale"
+		}
+		// The execution snapshots were validated by fieldOperationPairs. Basic
+		// identity recognition need not have collected the current fields yet.
+		if _, declared := commonJSON.Section(ref.item.Attributes, "type_info.table")["fields"]; !declared {
+			if previousStatus == "stale" {
+				return "stale"
+			}
+			continue
+		}
 		fields, err := metaquery.FieldsFromMetaItem(ref.item)
 		if err != nil {
 			return "stale"
 		}
 		current, err := commonExecution.NewLineageSchemaSnapshot(fields)
-		if err != nil || ref.ref.SchemaSnapshot == nil || current.Hash != ref.ref.SchemaSnapshot.Hash {
+		if err != nil || current.Hash != ref.ref.SchemaSnapshot.Hash {
 			return "stale"
 		}
 	}

@@ -446,7 +446,7 @@ func (s *LineageService) persistItemRelation(ctx context.Context, tenantID uint,
 		if errors.Is(relationErr, gorm.ErrRecordNotFound) {
 			relation = models.LineageItemRelation{
 				TenantID: tenantID, SourceItemID: pair.source.item.ID, TargetItemID: pair.target.item.ID,
-				LineageFieldEndpoints: pair.fields, Transformation: pair.transformation, RelationKind: pair.kind, Granularity: granularity, Status: fieldProjectionStatus(pair), FirstObservedAt: now, LastObservedAt: now,
+				LineageFieldEndpoints: pair.fields, Transformation: pair.transformation, RelationKind: pair.kind, Granularity: granularity, Status: fieldProjectionStatus(pair, ""), FirstObservedAt: now, LastObservedAt: now,
 			}
 			if pair.target.ref.WriteMode != "" {
 				relation.WriteMode = stringPtr(pair.target.ref.WriteMode)
@@ -456,7 +456,7 @@ func (s *LineageService) persistItemRelation(ctx context.Context, tenantID uint,
 		if relationErr != nil {
 			return relationErr
 		}
-		updates := map[string]interface{}{"last_observed_at": now, "status": fieldProjectionStatus(pair), "updated_at": now}
+		updates := map[string]interface{}{"last_observed_at": now, "status": fieldProjectionStatus(pair, relation.Status), "updated_at": now}
 		if granularity == "field" {
 			updates["transformation"] = pair.transformation
 		}

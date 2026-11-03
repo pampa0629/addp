@@ -19,6 +19,8 @@ PG 用户元数据总数只计入当前可见的有效数据项；引擎选项�
 
 血缘图的 `permission_filtered` 仅告知本次方向、深度及可见路径边界上存在因权限隐藏的数据项关系；不返回隐藏身份、数量或证据，不穿过隐藏节点，服务关系不触发此标记。item／field 复用各自精确查询条件和时态约束。Go T1 与已有 `TestUserLineageVisibilityAgainstPostgres` 子用例覆盖该行为，沿原 `make test-meta-postgres` 和 CI 自动执行；真实跨服务验收仍单独留证。
 
+已验证的执行字段结构快照可先于 deep 扫描提供血缘。当前 Meta 未声明字段不表示结构变化；已声明结构不一致仍标 stale，已有 stale／closed 不因信息缺失或旧执行重放恢复。显式结构 hash 查询仍校验冻结证据和当前用户可见性，不补采集、不补权限、不改写 Meta 当前结构。规则见[字段级契约](../docs/spec/addp数据血缘能力规范.md#61-字段级首期契约)，basic 对照、撤权过滤与过时保留由原 Meta Go T1 和 `TestUserLineageVisibilityAgainstPostgres` 覆盖；完整 PG T4 需单独取得真实结果。
+
 ## 技术栈与端口
 
 - 后端：Go + Gin + GORM，默认端口 `8082`，环境变量 `META_BACKEND_PORT`。

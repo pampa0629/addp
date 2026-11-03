@@ -222,7 +222,7 @@ func exerciseUserLineagePermissionBoundary(t *testing.T, db *gorm.DB) {
 }
 
 func TestUserLineageVisibilityAgainstPostgres(t *testing.T) {
-	for name, verify := range map[string]func(*testing.T, *gorm.DB){"item": exerciseUserLineageVisibility, "field": exerciseUserFieldLineageVisibility, "permission_boundary": exerciseUserLineagePermissionBoundary} {
+	for name, verify := range map[string]func(*testing.T, *gorm.DB){"item": exerciseUserLineageVisibility, "field": exerciseUserFieldLineageVisibility, "permission_boundary": exerciseUserLineagePermissionBoundary, "basic_execution_snapshot": exerciseBasicExecutionFieldLineage, "missing_fields_keep_stale": exerciseMissingCurrentFieldsNeverRestoreStaleLineage} {
 		t.Run(name, func(t *testing.T) {
 			db := openLineageCollectorPostgresDB(t)
 			if err := db.AutoMigrate(&models.LineageServiceDependency{}); err != nil {

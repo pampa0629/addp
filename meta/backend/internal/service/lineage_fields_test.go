@@ -191,6 +191,137 @@ func fieldTestExecution(t *testing.T, db *gorm.DB, id string, source, target mod
 	}
 }
 
+func TestBasicExecutionFieldLineage(t *testing.T) {
+	exerciseBasicExecutionFieldLineage(t, openLineageTestDB(t))
+}
+
+func exerciseBasicExecutionFieldLineage(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for _, basic := range []string{"neither", "source", "target", "both"} {
+		t.Run(basic, func(t *testing.T) {
+			svc := NewLineageService(db, lineageTestEngineCatalog{})
+			schema := fieldTestSchema(t, "person_id")
+			source := fieldTestItem(t, db, 7, "basic-source-"+basic, schema)
+			target := fieldTestItem(t, db, 7, "basic-target-"+basic, schema)
+			for _, endpoint := range []struct {
+				item  models.MetaItem
+				clear bool
+			}{{source, basic == "source" || basic == "both"}, {target, basic == "target" || basic == "both"}} {
+				if endpoint.clear {
+					attrs := models.JSONMap{"type_info": map[string]interface{}{"table": map[string]interface{}{"kind": "table"}}}
+					if err := db.Model(&endpoint.item).Updates(map[string]interface{}{"attributes": attrs, "scanned_depth": "basic"}).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			execution := "basic-fields-" + basic
+			at := time.Now().UTC().Add(-time.Minute)
+			fieldTestExecution(t, db, execution, source, target, schema, schema, "replace", at,
+				commonExecution.LineageFieldMapping{SourceField: "person_id", TargetField: "person_id", Transformation: "direct"})
+			if result, err := svc.CollectExecution(t.Context(), 7, execution); err != nil || result.Observed != 2 {
+				t.Fatalf("collect complete execution: %+v %v", result, err)
+			}
+			visible := []uint{source.ID, target.ID}
+			ctx := WithLineageVisibility(t.Context(), func(context.Context) ([]uint, error) { return visible, nil })
+			request := models.LineageGraphRequest{SubjectKind: "field_ref", ItemID: &target.ID, FieldName: "person_id", SchemaSnapshotHash: schema.Hash, Direction: "upstream", Depth: 2, Limit: 2}
+			graph, err := svc.GetGraph(ctx, 7, request)
+			if err != nil || len(graph.Nodes) != 2 || len(graph.Edges) != 1 || graph.Edges[0].Status != "active" || graph.PermissionFiltered {
+				t.Fatalf("execution snapshot requires no deep scan: %+v %v", graph, err)
+			}
+			for _, id := range []uint{source.ID, target.ID} {
+				var current models.MetaItem
+				if err := db.First(&current, id).Error; err != nil {
+					t.Fatal(err)
+				}
+				if (id == source.ID && (basic == "source" || basic == "both")) || (id == target.ID && (basic == "target" || basic == "both")) {
+					if current.ScannedDepth != "basic" || strings.Contains(fmt.Sprint(current.Attributes), "person_id") {
+						t.Fatalf("lineage altered basic metadata: %+v", current)
+					}
+				}
+			}
+			request.SchemaSnapshotHash = "sha256:" + strings.Repeat("0", 64)
+			if _, err := svc.GetGraph(ctx, 7, request); err != gorm.ErrRecordNotFound {
+				t.Fatalf("unproven schema must remain absent: %v", err)
+			}
+			request.SchemaSnapshotHash = schema.Hash
+			visible = []uint{target.ID}
+			for _, asOf := range []*time.Time{nil, &at} {
+				request.AsOf = asOf
+				graph, err = svc.GetGraph(ctx, 7, request)
+				if err != nil || len(graph.Nodes) != 1 || len(graph.Edges) != 0 || !graph.PermissionFiltered {
+					t.Fatalf("withdrawal must filter frozen evidence too: %+v %v", graph, err)
+				}
+			}
+			visible = nil
+			if _, err := svc.GetGraph(ctx, 7, request); err != gorm.ErrRecordNotFound {
+				t.Fatalf("withdrawn root must remain absent: %v", err)
+			}
+		})
+	}
+}
+
+func TestMissingCurrentFieldsNeverRestoreStaleLineage(t *testing.T) {
+	exerciseMissingCurrentFieldsNeverRestoreStaleLineage(t, openLineageTestDB(t))
+}
+
+func exerciseMissingCurrentFieldsNeverRestoreStaleLineage(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	schema := fieldTestSchema(t, "person_id")
+	source := fieldTestItem(t, db, 7, "stale-basic-source", schema)
+	target := fieldTestItem(t, db, 7, "stale-basic-target", fieldTestSchema(t, "changed"))
+	at := time.Now().UTC().Add(-time.Hour)
+	for index, execution := range []string{"known-mismatch", "unknown-append"} {
+		if index == 1 {
+			if err := db.Model(&target).Update("attributes", models.JSONMap{}).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		fieldTestExecution(t, db, execution, source, target, schema, schema, "append", at.Add(time.Duration(index)*time.Minute),
+			commonExecution.LineageFieldMapping{SourceField: "person_id", TargetField: "person_id", Transformation: "direct"})
+		if _, err := svc.CollectExecution(t.Context(), 7, execution); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := svc.CollectExecution(t.Context(), 7, "known-mismatch"); err != nil {
+		t.Fatal(err)
+	}
+	var rows []models.LineageItemRelation
+	if err := db.Where("target_item_id = ? AND granularity = 'field'", target.ID).Find(&rows).Error; err != nil || len(rows) != 1 || rows[0].Status != "stale" {
+		t.Fatalf("missing fields/replay restored stale projection: %+v %v", rows, err)
+	}
+}
+
+func TestFieldLineageDeclaredStructureStillRequiresMatchingSnapshot(t *testing.T) {
+	for name, fields := range map[string]interface{}{"empty": []interface{}{}, "null": nil, "malformed": "invalid", "different": fieldTestSchema(t, "other").Fields, "different_with_unknown_source": fieldTestSchema(t, "other").Fields} {
+		t.Run(name, func(t *testing.T) {
+			db := openLineageTestDB(t)
+			svc := NewLineageService(db, lineageTestEngineCatalog{})
+			schema := fieldTestSchema(t, "person_id")
+			source := fieldTestItem(t, db, 7, "declared-source", schema)
+			target := fieldTestItem(t, db, 7, "declared-target", schema)
+			if name == "different_with_unknown_source" {
+				if err := db.Model(&source).Update("attributes", models.JSONMap{}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			attrs := models.JSONMap{"type_info": map[string]interface{}{"table": map[string]interface{}{"fields": fields}}}
+			if err := db.Model(&target).Update("attributes", attrs).Error; err != nil {
+				t.Fatal(err)
+			}
+			fieldTestExecution(t, db, "declared-fields", source, target, schema, schema, "append", time.Now().UTC(),
+				commonExecution.LineageFieldMapping{SourceField: "person_id", TargetField: "person_id", Transformation: "direct"})
+			if _, err := svc.CollectExecution(t.Context(), 7, "declared-fields"); err != nil {
+				t.Fatal(err)
+			}
+			var relation models.LineageItemRelation
+			if err := db.Where("target_item_id = ? AND granularity = 'field'", target.ID).First(&relation).Error; err != nil || relation.Status != "stale" {
+				t.Fatalf("declared invalid/mismatched fields must remain stale: %+v %v", relation, err)
+			}
+		})
+	}
+}
+
 func TestFieldLineageReplacementReplayAndGeneratedFields(t *testing.T) {
 	db := openLineageTestDB(t)
 	svc := NewLineageService(db, lineageTestEngineCatalog{})
