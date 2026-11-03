@@ -65,7 +65,7 @@ function completed(message) {
   message.parts.find(part => part.type === 'interaction_ref').status = 'completed'
 }
 
-async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null, checkedDraft = false, withPlan = false, runApproval = false, approvalExpired = false } = {}) {
+async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null, checkedDraft = false, withPlan = false, runApproval = false, approvalExpired = false, decisionError = null, language = 'zh-cn' } = {}) {
   const question = clarification(questionId, '请选择行粒度', [{ label: '展开数组', value: 'unwind' }])
   const review = clarification(reviewId, `仅创建，不运行。请复核配置。\n\n${unknownWarning}\n\n\`\`\`json\n{"name":"outdoor_copy","config":{"runtime":{"boundary":"bounded"},"load":{"mode":"snapshot"}}}\n\`\`\``, reviewOptions)
   review.parts.splice(1, 0, checkReport('unknown').parts[0])
@@ -86,12 +86,17 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
   const requests = []
   const decisions = []
   const unexpected = []
-  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
   await page.route(/^https?:\/\/[^/]+\/api\//, async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     let body
-    if (path === '/api/v1/system/refresh') body = { access_token: 'fixture-token', expires_in: 3600 }
+    if (path === '/api/v1/system/refresh') {
+      if (decisionError?.status === 401 && decisions.length) {
+        return route.fulfill({ status: 401, json: { error_code: 'token_expired', error: 'private-refresh-response' } })
+      }
+      body = { access_token: 'fixture-token', expires_in: 3600 }
+    }
     else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
     else if (path === '/api/v1/system/auth/context') body = {
       context: { type: 'tenant', tenant_id: '7' },
@@ -108,6 +113,7 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
       expect(decision.request_fingerprint).toBe('a'.repeat(64))
       expect(['approved', 'rejected']).toContain(decision.decision)
       decisions.push(decision)
+      if (decisionError) return route.fulfill({ status: decisionError.status, json: decisionError.body })
       body = { id: approvalId, status: decision.decision, request_fingerprint: 'a'.repeat(64) }
     }
     else if (path === '/api/v1/agent/chat' && request.method() === 'POST') {
@@ -198,6 +204,46 @@ for (const [button, result, decision] of [
     await page.reload()
     await expect(page.getByText(result, { exact: true })).toBeVisible()
     expect(backend.decisions).toHaveLength(1)
+  })
+}
+
+const decisionFailures = [
+  ['zh-cn', 'mismatch', 409, 'approval_request_mismatch', '审批请求或任务配置不匹配，本次确认未完成；未提交启动。'],
+  ['en', 'mismatch', 409, 'approval_request_mismatch', 'The approval request or task configuration does not match. Confirmation did not complete; no start was submitted.'],
+  ['zh-cn', 'expired', 410, 'approval_expired', '本次审批已过期，确认未完成；未提交启动。'],
+  ['en', 'expired', 410, 'approval_expired', 'This approval has expired. Confirmation did not complete; no start was submitted.'],
+  ['zh-cn', 'unknown', 409, 'unknown_owner_error', '运行确认未完成，请检查审批状态；不要重复提交启动。'],
+  ['zh-cn', 'wrong-status', 409, 'approval_expired', '运行确认未完成，请检查审批状态；不要重复提交启动。'],
+  ['zh-cn', 'no-code', 409, null, '运行确认未完成，请检查审批状态；不要重复提交启动。'],
+  ['zh-cn', 'unauthenticated', 401, 'approval_request_mismatch', '运行确认未完成，请检查审批状态；不要重复提交启动。']
+]
+
+for (const [language, reason, status, code, expected] of decisionFailures) {
+  test(`Transfer rejected decision feedback ${language} ${reason} preserves the no-resume boundary`, async ({ page }) => {
+    const backend = await installBackend(page, { runApproval: true, language,
+      decisionError: { status, body: { ...(code ? { error_code: code } : {}), error: 'private-owner-response <script>unsafe()</script>' } } })
+    await page.goto(`/module-ui/agent/sessions/${sessionId}`)
+    await page.getByRole('button', { name: language === 'en' ? 'Confirm run' : '确认运行', exact: true }).click()
+    if (status === 401) {
+      // Preserve the shared authentication flow: a failed refresh returns to login.
+      await expect(page).toHaveURL(/\/login(?:\?|$)/)
+      await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible()
+    } else {
+      await expect(page.getByText(expected, { exact: true })).toBeVisible()
+    }
+    await expect(page.getByText(/private-owner-response|private-refresh-response|unsafe\(\)/)).toHaveCount(0)
+    expect(backend.decisions).toHaveLength(1)
+    expect(backend.requests).toEqual([])
+    expect(backend.unexpected).toEqual([])
+    if (status !== 401) {
+      // A rejected decision neither completes nor hides the original interaction.
+      await expect(page.getByRole('button', { name: language === 'en' ? 'Confirm run' : '确认运行', exact: true })).toBeEnabled()
+      await page.reload()
+      await expect(page.getByRole('button', { name: language === 'en' ? 'Confirm run' : '确认运行', exact: true })).toBeVisible()
+      expect(backend.decisions).toHaveLength(1)
+      expect(backend.requests).toEqual([])
+      expect(backend.unexpected).toEqual([])
+    }
   })
 }
 

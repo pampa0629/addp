@@ -64,7 +64,9 @@
         "taskCount": "Task Count",
         "expiresAt": "Expires At",
         "openOwner": "Open Develop approval",
-        "checkStatus": "Check approval status"
+        "checkStatus": "Check approval status",
+        "requestMismatch": "The approval request or task configuration does not match. Confirmation did not complete; no start was submitted.",
+        "decisionExpired": "This approval has expired. Confirmation did not complete; no start was submitted."
       },
       "toolStatus": {
         "running": "Running",

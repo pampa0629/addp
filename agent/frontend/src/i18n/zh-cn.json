@@ -64,7 +64,9 @@
         "taskCount": "任务数",
         "expiresAt": "过期时间",
         "openOwner": "打开 Develop 审批页",
-        "checkStatus": "检查审批状态"
+        "checkStatus": "检查审批状态",
+        "requestMismatch": "审批请求或任务配置不匹配，本次确认未完成；未提交启动。",
+        "decisionExpired": "本次审批已过期，确认未完成；未提交启动。"
       },
       "toolStatus": {
         "running": "执行中",

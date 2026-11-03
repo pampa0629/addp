@@ -698,7 +698,13 @@ async function handleA2UIAction(action) {
       }
       await resumeInteraction(interactionId, { action: 'check' })
     } catch (error) {
-      ElMessage.error(t('agent.chat.approval.decisionFailed'))
+      let messageKey = 'agent.chat.approval.decisionFailed'
+      if (error?.response?.status === 409 && error.response.data?.error_code === 'approval_request_mismatch') {
+        messageKey = 'agent.chat.approval.requestMismatch'
+      } else if (error?.response?.status === 410 && error.response.data?.error_code === 'approval_expired') {
+        messageKey = 'agent.chat.approval.decisionExpired'
+      }
+      ElMessage.error(t(messageKey))
     } finally {
       ownerDecisionPending.value = false
     }

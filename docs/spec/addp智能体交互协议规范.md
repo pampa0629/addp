@@ -58,6 +58,8 @@ running|waiting -> cancelled
 
 Transfer 运行审批的合法状态检查收到 Owner 正式 `expired` 时，沿原 resume 完成 Interaction（answer.status 为 `expired`），由 Runtime 固定提示“审批已过期，未启动”并完成本次 AgentRun，不调用模型、启动或重新申请审批。该完成态不是批准或业务执行成功；原审批卡片随 Interaction 完成移除，持久消息、刷新及回放保持一致。客户端不能自报 expired 或仅按显示期限完成交互；Owner 不可达、身份／指纹不符和未知状态继续拒绝恢复。新审批只来自用户新的运行请求。
 
+Transfer 决定请求失败时，Agent 只按公开契约中的 HTTP 状态与稳定错误码展示安全的本地化原因：`409 + approval_request_mismatch` 表示审批请求／任务配置不匹配，`410 + approval_expired` 表示本次审批已过期。两者均不得被通用失败提示遮蔽；未知码、状态与码不符、网络错误或非法响应仍使用通用失败，不直接显示任意 Owner 正文，也不解析本地化文案。错误展示不改变 Owner 或 Agent Interaction 状态，不隐藏卡片、不额外发起检查、resume、业务重试、重新申请或启动；共享客户端既有 401 认证刷新流程保持。用户单独检查审批状态是另一操作；随后读到 pending 或 expired，不能倒推前一次决定的拒绝原因。原始拒绝码缺失的现场必须保留证据缺口，受控浏览器反例不能替代该现场验收。
+
 ### 3.3 检查点与步骤
 
 语义检查点 Schema 固定为 `addp.agent-checkpoint/v1`，只保存已经观察和用户确认的紧凑事实，不保存模型私有状态、Token、完整 Tool 结果或审批 payload。检查点最大 256 KiB。
