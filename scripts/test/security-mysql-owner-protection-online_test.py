@@ -2376,8 +2376,9 @@ class ServiceRoleCursorClient:
             else:
                 assert set(body) == {"config_type", "engine_id", "sql", "parameters"}
                 assert body["config_type"] == "sql" and body["engine_id"] == 23
-                assert body["sql"] == self.service["sql_query"]
-                assert body["parameters"] == ({"minimum_id": 1} if self.service.get("named_parameters") else {})
+                assert body["parameters"] == ({"minimum_id": 1} if ":minimum_id" in body["sql"] else {})
+                if self.service.get("config_type") == "sql":
+                    assert body["sql"] == self.service["sql_query"]
             field = {"target": self.target, "component_key": ONLINE.BANK_FIELD, "policy_id": "owned-policy",
                      "policy_revision": 1, "assessment_revision": 4,
                      "options": [{"id": self.option["id"], "name": self.option["name"]}]}
@@ -2589,12 +2590,89 @@ class ServiceRoleCursorRevocationTest(unittest.TestCase):
             ONLINE.wait_role_projection(None, "enrollment", previous, time.monotonic() + 1)
 
 
+class ServiceRoleSQLEligibilityContractTest(unittest.TestCase):
+    def test_sql_denials_require_four_no_store_json_errors(self):
+        client = Mock()
+        client.request.return_value = ONLINE.SUPPORT.Response(403,
+            {"error":"Role unavailable", "error_code":"query_protection_roles_unavailable"},
+            cache_control=("no-store",), content_type="application/json")
+        result = ONLINE.assert_service_eligibility_denials(client, "/api/query/sql/query", "private-cursor",
+            output_sources=ONLINE.BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id":1})
+        self.assertEqual(set(result), {"json", "csv", "no_cursor", "no_cursor_csv"})
+        for call in client.request.call_args_list:
+            request = call.args[3]
+            self.assertEqual(request["select"], list(ONLINE.BANK_ROLE_SQL_OUTPUTS))
+            self.assertEqual(request["parameters"], {"minimum_id":1})
+        self.assertTrue(all(x["cache_control"] == "no-store" for x in result.values()))
+
+    def test_sql_refusal_wrong_status_type_cache_or_result_never_passes(self):
+        for fault in ("status","type","cache","rows","code"):
+            response = ONLINE.SUPPORT.Response(403, {"error":"Unavailable", "error_code":"query_protection_roles_unavailable"}, cache_control=("no-store",), content_type="application/json")
+            if fault == "status": response.status = 409
+            if fault == "type": response.content_type = "text/csv"
+            if fault == "cache": response.cache_control = ()
+            if fault == "rows": response.payload["data"] = []
+            if fault == "code": response.payload["error_code"] = "invalid_structured_query"
+            client = Mock(); client.request.return_value = response
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_service_eligibility_denials(client,"/sql","cursor",output_sources=ONLINE.BANK_ROLE_SQL_OUTPUTS,parameters={"minimum_id":1})
+
+
+
 class MembershipClient:
     def __init__(self, backend, token):
         self.backend, self.token, self.base_url, self.timeout = backend, token, "http://127.0.0.1:8000", 1
+        if not hasattr(backend, "routed_services"):
+            backend.routed_services, backend.routed_deleted, backend.routed_events = {}, set(), []
 
     def request(self, method, path, expected, body=None, **kwargs):
-        response = self.backend.for_user(self.token, method, path, expected, body, **kwargs)
+        backend = self.backend
+        backend.routed_events.append((self.token, method, path, copy.deepcopy(body)))
+        identifier = None
+        for service_id, service in backend.routed_services.items():
+            if path == f"/api/v1/service/query/{service_id}" or path == "/api/query/" + service["service_name"] + "/query":
+                identifier = service_id
+                backend.service = service
+                backend.deleted = service_id in backend.routed_deleted
+                break
+        routed = "/api/v1/service/query/701" if identifier is not None and path.startswith("/api/v1/service/query/") else path
+        fault = getattr(backend, "member_fault", None) or getattr(backend, "expiry_fault", None)
+        is_sql = bool(backend.service and backend.service.get("config_type") == "sql")
+        if identifier == 702 and method == "DELETE" and fault == "sql_cleanup":
+            raise ONLINE.SuiteError("controlled SQL-only cleanup failure")
+        response = backend.for_user(self.token, method, routed, expected, body, **kwargs)
+        if path == "/api/v1/service/query-protection-options" and body.get("config_type") == "sql" and fault == "sql_candidate_survived" and (getattr(backend,"revoked",False) or getattr(backend,"expired",False)):
+            response.payload = {"fields":[{"options":[{"id":"stale-option"}]}]}
+        if is_sql and path.startswith("/api/query/"):
+            if response.status == 403:
+                if fault == "sql_denial_status": response.status = 409
+                if fault == "sql_denial_code": response.payload["error_code"] = "query_protection_choice_invalid"
+                if fault == "sql_denial_rows": response.payload["data"] = []
+                if fault == "sql_denial_cache": response.cache_control = ()
+                if fault == "sql_denial_type": response.content_type = "text/csv"
+                if fault == "sql_interrupt_refusal": raise KeyboardInterrupt("controlled SQL refusal interruption")
+            elif response.status == 200:
+                if fault == "sql_plaintext" and not kwargs.get("raw_response"):
+                    response.payload["data"][0]["card_copy"] = ONLINE.BANK_SOURCE_VALUES["1"]
+                if fault == "sql_csv_empty" and kwargs.get("raw_response"):
+                    response.payload = response.payload.replace(b",,", b",<nil>,")
+        if is_sql and method == "GET" and path.startswith("/api/v1/service/query/") and response.status == 200:
+            if fault == "sql_invented_source":
+                response.payload["data_config"]["source_snapshot"] = {"source":{"item_id":99}}
+            if fault == "sql_persisted_default":
+                response.payload["named_parameters"][0]["default"] = 1
+            if fault == "sql_definition_changed" and (getattr(backend,"revoked",False) or getattr(backend,"expired",False)):
+                response.payload["version"] += 1
+        if path == "/api/v1/service/query" and method == "POST" and response.status == 201:
+            identifier = 701 + len(backend.routed_services)
+            backend.service["id"] = identifier
+            backend.routed_services[identifier] = backend.service
+            response.payload["id"] = identifier
+        if identifier is not None:
+            if method == "DELETE" and response.status == 200:
+                backend.routed_deleted.add(identifier)
+            if path.startswith("/api/v1/service/query/") and response.status == 200 and isinstance(response.payload, dict) and "id" in response.payload:
+                response.payload["id"] = identifier
         if response.status not in expected:
             raise ONLINE.SuiteError("controlled fixture HTTP status differs")
         return response
@@ -2797,7 +2875,7 @@ class MembershipBackend(ServiceRoleCursorClient):
                     payload["error_code"] = "data_protection_required"
                 if fault == "denial_rows":
                     payload["data"] = []
-                return response(status, payload)
+                return response(status, payload, cache_control=("no-store",), content_type="application/json")
         value = super().request(method, path, expected, body, **kwargs)
         if self.revoked and path == "/api/v1/security/protection-policies/owned-policy" and method == "GET" and fault == "policy_changed":
             value.payload["current_revision"] += 1
@@ -2810,7 +2888,8 @@ class MembershipBackend(ServiceRoleCursorClient):
 
 class ServiceRoleMembershipRevocationTest(unittest.TestCase):
     def run_case(self, backend):
-        source = {"id": 1, "full_name": "fixture.bank_card_accounts", "item_type": "table", "fingerprint": "sha256:bank-fixture"}
+        source = {"id": 1, "full_name": "fixture.bank_card_accounts", "item_type": "table", "fingerprint": "sha256:bank-fixture", "attributes": {"type_info": {"table": {"fields": [
+            {"name":name,"type":"int" if name in {"id","credit_card_number"} else "string"} for name in ONLINE.BANK_FIELDS]}}}}
         environment = dict(zip(ONLINE.SERVICE_ROLE_ENVIRONMENT,
             ("reader-old", "external-online-security-role-reader", "private-password", "42", "controller")))
         factory = lambda base, token, timeout: MembershipClient(backend, token)
@@ -2827,19 +2906,52 @@ class ServiceRoleMembershipRevocationTest(unittest.TestCase):
         self.assertEqual(report["identity_before"]["permissions"], report["identity_after"]["permissions"])
         self.assertEqual(report["role_keys_after"], ["online.functional"])
         self.assertEqual(report["assignment_after"]["status"], "revoked")
-        self.assertEqual(set(report["fresh_user_refusals"]), {"json", "csv", "no_cursor"})
+        self.assertEqual(set(report["fresh_user_refusals"]), {"json", "csv", "no_cursor", "no_cursor_csv"})
         for refusal in report["fresh_user_refusals"].values():
-            self.assertEqual(refusal, {"http_status": 403, "error_code": "query_protection_roles_unavailable", "result_absent": True})
+            self.assertEqual(refusal, {"http_status": 403, "error_code": "query_protection_roles_unavailable", "result_absent": True, "cache_control": "no-store"})
         self.assertTrue(report["policy_projection_and_saved_choice_unchanged_at_refusal"])
         self.assertEqual(report["explicit_default_recovery"]["total_rows"], 5)
         self.assertTrue(backend.deleted and backend.revoked and report["eligibility_assignment_revoked"])
         self.assertEqual(backend.policy["state"], "revoked")
         self.assertEqual(sum(path.endswith("/42/revoke") for _, _, path, _ in backend.events), 1)
         outputs = [(token, body["page"].get("cursor")) for token, _, path, body in backend.events if path.startswith("/api/query/")]
-        self.assertEqual([cursor for _, cursor in outputs[2:6]], [backend.cursor] * 4)
-        self.assertEqual([token for token, _ in outputs[4:7]], ["reader-fresh"] * 3)
+        login_index = next(i for i,e in enumerate(backend.routed_events) if e[2] == "/api/v1/system/login")
+        self.assertTrue(all(e[0] == "reader-fresh" for e in backend.routed_events[login_index+1:] if e[2].startswith("/api/query/")))
+        self.assertEqual(backend.routed_deleted, {701,702})
+        self.assertEqual(report["sql_eligibility"]["service_id"], 702)
+        sql = report["sql_eligibility"]
+        self.assertTrue(sql["ineligible_sql_options_absent"])
+        self.assertEqual(set(sql["eligibility_refusals"]), {"json","csv","no_cursor","no_cursor_csv"})
+        self.assertEqual(sql["explicit_default_recovery"]["total_rows"],5)
+        self.assertEqual(sql["protected_output_fields"],["card_alias","card_copy"])
+        self.assertEqual((report["created_resources"],report["deleted_resources"]),(2,2))
         for secret in ("private-password", "reader-old", "reader-fresh", "controller", backend.cursor):
             self.assertNotIn('"'+secret+'"', json.dumps(report))
+
+    def test_sql_only_failures_cannot_be_hidden_by_native_success(self):
+        for fault in ("sql_denial_status","sql_denial_code","sql_denial_rows","sql_denial_cache",
+                      "sql_denial_type","sql_plaintext","sql_csv_empty","sql_invented_source",
+                      "sql_persisted_default","sql_definition_changed","sql_candidate_survived"):
+            backend = MembershipBackend(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                self.run_case(backend)
+            self.assertEqual(backend.routed_deleted, {701,702})
+            self.assertEqual(backend.policy["state"], "revoked")
+
+    def test_sql_cleanup_failure_still_cleans_native_service_and_policy(self):
+        backend = MembershipBackend("sql_cleanup")
+        with self.assertRaisesRegex(ONLINE.SuiteError,"cleanup failed"):
+            self.run_case(backend)
+        self.assertIn(701,backend.routed_deleted)
+        self.assertNotIn(702,backend.routed_deleted)
+        self.assertEqual(backend.policy["state"], "revoked")
+
+    def test_sql_refusal_interruption_cleans_both_services(self):
+        backend = MembershipBackend("sql_interrupt_refusal")
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_case(backend)
+        self.assertEqual(backend.routed_deleted,{701,702})
+        self.assertEqual(backend.policy["state"], "revoked")
 
     def test_wrong_status_permissions_roles_or_mutated_protection_cannot_pass(self):
         for fault in ("stale_session_live", "foreign_relogin", "permission_lost", "kept_role", "policy_changed",
@@ -2950,6 +3062,8 @@ class RoleExpiryBackend(ServiceRoleCursorClient):
         if path == "/api/v1/system/tenant/role_assignments/43/revoke":
             self.timed["status"] = "revoked"
             return response(200, copy.deepcopy(self.timed))
+        if path == "/api/v1/service/query-protection-options" and self.expired:
+            return response(200, {"fields": []})
         if path.startswith("/api/query/"):
             assert token == "reader-active", "only the same ordinary Access Token may consume results"
             if self.expired and self.service["data_config"].get("protection_choices"):
@@ -2957,7 +3071,7 @@ class RoleExpiryBackend(ServiceRoleCursorClient):
                 value = {"error": "Current User lacks role eligibility", "error_code": "query_protection_roles_unavailable"}
                 if fault == "wrong_code": value["error_code"] = "data_protection_required"
                 if fault == "denial_data": value["data"] = []
-                return response(status, value)
+                return response(status, value, cache_control=("no-store",), content_type="application/json")
         value = super().request(method, path, expected, body, **kwargs)
         if self.expired and fault == "policy_changed" and path == "/api/v1/security/protection-policies/owned-policy" and method == "GET":
             value.payload["current_revision"] += 1
@@ -2973,7 +3087,8 @@ class ServiceRoleNaturalExpiryTest(unittest.TestCase):
         class Clock(ONLINE.datetime):
             @classmethod
             def now(cls, tz=None): return backend.now
-        source = {"id": 1, "full_name": "fixture.bank_card_accounts", "item_type": "table", "fingerprint": "sha256:bank-fixture"}
+        source = {"id": 1, "full_name": "fixture.bank_card_accounts", "item_type": "table", "fingerprint": "sha256:bank-fixture", "attributes": {"type_info": {"table": {"fields": [
+            {"name":name,"type":"int" if name in {"id","credit_card_number"} else "string"} for name in ONLINE.BANK_FIELDS]}}}}
         environment = dict(zip(ONLINE.SERVICE_ROLE_ENVIRONMENT,
             ("unused-old-reader", "external-online-security-role-reader", "private-password", "42", "controller")))
         factory = lambda base, token, timeout: MembershipClient(backend, token)
@@ -2995,17 +3110,49 @@ class ServiceRoleNaturalExpiryTest(unittest.TestCase):
         self.assertEqual(report["timed_assignment_cleanup"], "expired")
         self.assertEqual(report["explicit_default_recovery"]["total_rows"], 5)
         for refusal in report["same_session_refusals"].values():
-            self.assertEqual(refusal, {"http_status": 403, "error_code": "query_protection_roles_unavailable", "result_absent": True})
+            self.assertEqual(refusal, {"http_status": 403, "error_code": "query_protection_roles_unavailable", "result_absent": True, "cache_control": "no-store"})
         self.assertFalse(any(str(path).endswith("/revoke") for _, _, path, _ in backend.events))
         wait_index = next(i for i, item in enumerate(backend.events) if item[0] == "wait")
         self.assertEqual(sum(path == "/api/v1/system/login" for _, _, path, _ in backend.events), 2)
         self.assertFalse(any(path == "/api/v1/system/login" for _, _, path, _ in backend.events[wait_index+1:]))
         queries = [(token, body["page"].get("cursor")) for token, _, path, body in backend.events if str(path).startswith("/api/query/")]
-        self.assertEqual([cursor for _, cursor in queries[2:6]], [backend.cursor] * 4)
+        self.assertEqual(backend.routed_deleted, {701,702})
+        self.assertEqual(report["sql_eligibility"]["service_id"], 702)
+        sql = report["sql_eligibility"]
+        self.assertTrue(sql["ineligible_sql_options_absent"])
+        self.assertEqual(set(sql["eligibility_refusals"]), {"json","csv","no_cursor","no_cursor_csv"})
+        self.assertEqual(sql["explicit_default_recovery"]["total_rows"],5)
+        self.assertEqual(sql["protected_output_fields"],["card_alias","card_copy"])
+        self.assertEqual((report["created_resources"],report["deleted_resources"]),(2,2))
         self.assertEqual({token for token, _ in queries}, {"reader-active"})
         self.assertTrue(backend.deleted)
         for secret in (backend.cursor, "private-password", "reader-active", "reader-initial"):
             self.assertNotIn('"'+secret+'"', json.dumps(report))
+
+    def test_sql_only_failures_cannot_be_hidden_by_native_success(self):
+        for fault in ("sql_denial_status","sql_denial_code","sql_denial_rows","sql_denial_cache",
+                      "sql_denial_type","sql_plaintext","sql_csv_empty","sql_invented_source",
+                      "sql_persisted_default","sql_definition_changed","sql_candidate_survived"):
+            backend = RoleExpiryBackend(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                self.run_case(backend)
+            self.assertEqual(backend.routed_deleted, {701,702})
+            self.assertEqual(backend.policy["state"], "revoked")
+
+    def test_sql_cleanup_failure_still_cleans_native_service_and_policy(self):
+        backend = RoleExpiryBackend("sql_cleanup")
+        with self.assertRaisesRegex(ONLINE.SuiteError,"cleanup failed"):
+            self.run_case(backend)
+        self.assertIn(701,backend.routed_deleted)
+        self.assertNotIn(702,backend.routed_deleted)
+        self.assertEqual(backend.policy["state"], "revoked")
+
+    def test_sql_refusal_interruption_cleans_both_services(self):
+        backend = RoleExpiryBackend("sql_interrupt_refusal")
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_case(backend)
+        self.assertEqual(backend.routed_deleted,{701,702})
+        self.assertEqual(backend.policy["state"], "revoked")
 
     def test_session_failure_revocation_permission_or_protection_change_cannot_mimic_expiry(self):
         for fault in ("session401", "version_changed", "permission_lost", "role_survived", "premature_wait", "revoked_instead",

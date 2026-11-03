@@ -2888,20 +2888,98 @@ def formal_service_role_login(public: GatewayClient, environment: Mapping[str, s
     return GatewayClient(public.base_url, token, public.timeout)
 
 
-def assert_service_eligibility_denials(reader: GatewayClient, query_path: str, cursor: str) -> dict[str, object]:
+def assert_service_eligibility_denials(reader: GatewayClient, query_path: str, cursor: str, *,
+        output_sources: Mapping[str, str] | None = None,
+        parameters: Mapping[str, object] | None = None) -> dict[str, object]:
     denials = {}
-    for format_name in ("json", "csv", "no_cursor"):
-        request = {"select": BANK_FIELDS, "order_by": [{"field": "id", "direction": "asc"}],
-                   "page": {"limit": 4, **({"cursor": cursor} if format_name != "no_cursor" else {})},
-                   "format": "json" if format_name == "no_cursor" else format_name}
+    fields = output_sources if output_sources is not None else BANK_FIELDS
+    for label, format_name, value in (("json", "json", cursor), ("csv", "csv", cursor),
+                                     ("no_cursor", "json", ""), ("no_cursor_csv", "csv", "")):
+        request = service_role_query_request(fields, value, parameters=parameters, format_name=format_name)
         refusal = reader.request("POST", query_path, (403,), request)
         payload = _object(refusal.payload, "role eligibility refusal")
         if (refusal.status != 403 or set(payload) != {"error", "error_code"}
                 or payload.get("error_code") != "query_protection_roles_unavailable"
-                or not isinstance(payload.get("error"), str) or not payload["error"].strip()):
+                or not isinstance(payload.get("error"), str) or not payload["error"].strip()
+                or not isinstance(refusal.content_type, str)
+                or refusal.content_type.split(";", 1)[0].strip().lower() != "application/json"):
             raise SuiteError("membership refusal must be exact 403 roles-unavailable with no result")
-        denials[format_name] = {"http_status": refusal.status, "error_code": payload["error_code"], "result_absent": True}
+        denials[label] = {"http_status": refusal.status, "error_code": payload["error_code"],
+                         "result_absent": True, "cache_control": export_no_store(refusal)}
     return denials
+
+
+def prepare_service_sql_eligibility(reader: GatewayClient, engine_id: int, source: Mapping[str, object],
+        locator: str, policy: Mapping[str, object], name: str, owned_ids: list[int]) -> dict[str, object]:
+    parameters = {"minimum_id": 1}
+    body = bank_card_sql_service_payload(name, engine_id, source, locator,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameter_name="minimum_id")
+    choice = owner_role_choice(reader, locator, source, policy, engine_id=engine_id,
+                              service_sql=body["sql_query"], parameters=parameters)
+    body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
+    body["data_config"]["protection_choices"] = [choice]
+    created = _object(reader.request("POST", "/api/v1/service/query", (201,), body).payload, "SQL eligibility Service")
+    service_id = positive_int(created.get("id"), "SQL eligibility Service ID")
+    owned_ids.append(service_id)
+    path = f"/api/v1/service/query/{service_id}"
+    selected = _object(reader.request("GET", path, (200,)).payload, "SQL eligibility definition")
+    snapshot = _object(_object(selected.get("data_config"), "SQL eligibility config").get("source_snapshot", {}), "SQL snapshot")
+    if (selected.get("config_type") != "sql" or selected.get("engine_id") != engine_id
+            or selected.get("status") != "active" or selected.get("public_access") is not False
+            or selected.get("sql_query") != body["sql_query"]
+            or selected.get("named_parameters") != body["named_parameters"]
+            or snapshot.get("source") is not None
+            or selected["data_config"].get("protection_choices") != [choice]):
+        raise SuiteError("SQL eligibility definition changed source, parameter declaration or selected method")
+    query_path = "/api/query/" + urllib.parse.quote(name, safe="") + "/query"
+    first, cursor, version = assert_service_role_page(reader, query_path, ["1", "2", "3", "4"], True,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters=parameters)
+    continuation, _, last_version = assert_service_role_page(reader, query_path, ["5"], True, cursor,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters=parameters)
+    if version != last_version:
+        raise SuiteError("SQL eligibility positive control changed Service version")
+    return {"service_id": service_id, "service_path": path, "query_path": query_path,
+            "selected": selected, "choice": choice, "cursor": cursor, "version": version,
+            "first_page": first, "valid_cursor_continuation": continuation}
+
+
+def verify_service_sql_eligibility(reader: GatewayClient, prepared: Mapping[str, object]) -> dict[str, object]:
+    path = str(prepared["service_path"])
+    if reader.request("GET", path, (200,)).payload != prepared["selected"]:
+        raise SuiteError("SQL eligibility loss changed the saved Service definition")
+    selected = _object(prepared["selected"], "SQL eligibility saved definition")
+    options = _object(reader.request("POST", "/api/v1/service/query-protection-options", (200,),
+        {"config_type": "sql", "engine_id": selected["engine_id"], "sql": selected["sql_query"],
+         "parameters": {"minimum_id": 1}}).payload, "SQL expired eligibility options")
+    if any(_object(field, "SQL eligibility field").get("options")
+           for field in _array(options.get("fields"), "SQL eligibility fields")):
+        raise SuiteError("ineligible SQL User still observes a role option")
+    denials = assert_service_eligibility_denials(reader, str(prepared["query_path"]), str(prepared["cursor"]),
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 1})
+    recovery, version = restore_service_default(reader, path, str(prepared["query_path"]),
+        prepared["choice"], prepared["selected"], output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 1})
+    if version == prepared["version"]:
+        raise SuiteError("SQL eligibility default recovery retained selected version")
+    return {"config_type": "sql", "service_id": prepared["service_id"],
+            "named_parameters": [{"name": "minimum_id", "type": "int", "required": True}],
+            "protected_output_fields": ["card_alias", "card_copy"], "saved_definition_unchanged_at_refusal": True,
+            "ineligible_sql_options_absent": True,
+            "first_page": prepared["first_page"], "valid_cursor_continuation": prepared["valid_cursor_continuation"],
+            "old_cursor": {"length": len(str(prepared["cursor"])),
+                           "sha256": hashlib.sha256(str(prepared["cursor"]).encode()).hexdigest()},
+            "eligibility_refusals": denials, "explicit_default_recovery": recovery}
+
+
+def cleanup_service_sql_eligibility(client: GatewayClient, service_ids: list[int],
+                                    cause: BaseException | None) -> None:
+    errors = []
+    for service_id in service_ids:
+        try:
+            cleanup_service_role_resources(client, None, service_id, cause)
+        except BaseException as error:
+            errors.append(str(error))
+    if errors:
+        raise SuiteError("SQL eligibility cleanup failed: " + "; ".join(errors)) from cause
 
 
 def exercise_service_role_membership_revocation(client: GatewayClient, engine_id: int, database: str,
@@ -2928,6 +3006,7 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
     policy_id = service_id = None
     failure = None
     result = {}
+    sql_service_ids = []
     try:
         source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
         locator = build_item_locator(engine_id, source)
@@ -2956,6 +3035,8 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
         continuation, _, last_version = assert_service_role_page(reader, query_path, ["5"], True, cursor)
         if last_version != version:
             raise SuiteError("membership Service version changed before role revocation")
+        sql_prepared = prepare_service_sql_eligibility(reader, engine_id, source, locator, policy,
+            ("online-security-sql-membership-" + run_suffix(run_id, "-"))[:120].rstrip("-"), sql_service_ids)
         revoked = assert_service_eligibility_assignment(controller.request("POST", assignment_path + "/revoke", (200,),
             {"reason": "Disposable masking eligibility revocation; keep functional permissions and Policy unchanged"}).payload,
             identity, assignment_id, "revoked")
@@ -2982,6 +3063,7 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
         if any(_object(field, "revoked role field").get("options") for field in _array(options.get("fields"), "revoked role fields")):
             raise SuiteError("revoked User still observes eligible masking options")
         denials = assert_service_eligibility_denials(fresh, query_path, cursor)
+        sql_result = verify_service_sql_eligibility(fresh, sql_prepared)
         recovery, recovered_version = restore_service_default(fresh, service_path, query_path, choice, selected)
         if (recovered_version == version or client.request("GET", policy_path, (200,)).payload != published_policy
                 or role_projection(client, enrollment_id) != installed
@@ -2995,7 +3077,7 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
             "old_session_http_status": 401, "formal_same_user_login_verified": True,
             "first_page": first, "valid_cursor_continuation": continuation,
             "old_cursor": {"length": len(cursor), "sha256": hashlib.sha256(cursor.encode()).hexdigest()},
-            "fresh_user_refusals": denials, "explicit_default_recovery": recovery}
+            "fresh_user_refusals": denials, "explicit_default_recovery": recovery, "sql_eligibility": sql_result}
     except BaseException as error:
         failure = error
     errors = []
@@ -3010,6 +3092,10 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
     except BaseException as error:
         errors.append(str(error))
     try:
+        cleanup_service_sql_eligibility(client, sql_service_ids, failure)
+    except BaseException as error:
+        errors.append(str(error))
+    try:
         cleanup_service_role_resources(client, policy_id, service_id, failure)
     except BaseException as error:
         errors.append(str(error))
@@ -3017,7 +3103,7 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
         raise SuiteError("membership revocation cleanup failed: " + "; ".join(errors)) from failure
     if failure:
         raise failure
-    return dict(result, created_resources=1, deleted_resources=1, residual_resources=0,
+    return dict(result, created_resources=2, deleted_resources=2, residual_resources=0,
                 eligibility_assignment_revoked=True, policy_revoked=True, service_deleted=True)
 
 
@@ -3085,6 +3171,7 @@ def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: in
     expires_at = None
     failure = None
     result = {}
+    sql_service_ids = []
     try:
         source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
         locator = build_item_locator(engine_id, source)
@@ -3140,6 +3227,8 @@ def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: in
         query_path = "/api/query/" + urllib.parse.quote(name, safe="") + "/query"
         first, cursor, version = assert_service_role_page(active_reader, query_path, ["1", "2", "3", "4"], True)
         continuation, _, last_version = assert_service_role_page(active_reader, query_path, ["5"], True, cursor)
+        sql_prepared = prepare_service_sql_eligibility(active_reader, engine_id, source, locator, policy,
+            ("online-security-sql-role-expiry-" + run_suffix(run_id, "-"))[:120].rstrip("-"), sql_service_ids)
         before_wait = service_subject_role_observation(active_reader, active)
         if (last_version != version or SERVICE_ELIGIBILITY_ROLE not in before_wait["role_keys"]
                 or utc_timestamp(before_wait.get("observed_at"), "baseline database observation") >= expires_at):
@@ -3158,6 +3247,7 @@ def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: in
                 or active_reader.request("GET", service_path, (200,)).payload != selected):
             raise SuiteError("natural role expiry changed Policy, protection projection or saved Service choice")
         denials = assert_service_eligibility_denials(active_reader, query_path, cursor)
+        sql_result = verify_service_sql_eligibility(active_reader, sql_prepared)
         recovery, recovered_version = restore_service_default(active_reader, service_path, query_path, choice, selected)
         if (recovered_version == version or service_role_user_identity(active_reader, identity["tenant_id"], SERVICE_ROLE_READER_PERMISSIONS) != active
                 or client.request("GET", policy_path, (200,)).payload != published_policy
@@ -3174,7 +3264,7 @@ def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: in
             "choice": choice, "service_id": service_id, "installed_projection": installed,
             "first_page": first, "valid_cursor_continuation": continuation,
             "old_cursor": {"length": len(cursor), "sha256": hashlib.sha256(cursor.encode()).hexdigest()},
-            "same_session_refusals": denials, "explicit_default_recovery": recovery}
+            "same_session_refusals": denials, "explicit_default_recovery": recovery, "sql_eligibility": sql_result}
     except BaseException as error:
         failure = error
     errors = []
@@ -3185,6 +3275,10 @@ def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: in
         except BaseException as error:
             errors.append(str(error))
     try:
+        cleanup_service_sql_eligibility(client, sql_service_ids, failure)
+    except BaseException as error:
+        errors.append(str(error))
+    try:
         cleanup_service_role_resources(client, policy_id, service_id, failure)
     except BaseException as error:
         errors.append(str(error))
@@ -3194,7 +3288,7 @@ def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: in
         raise failure
     if assignment_cleanup != "expired":
         raise SuiteError("natural role expiry cannot pass by revoking eligibility")
-    return dict(result, created_resources=1, deleted_resources=1, residual_resources=0,
+    return dict(result, created_resources=2, deleted_resources=2, residual_resources=0,
                 timed_assignment_cleanup="expired", policy_revoked=True, service_deleted=True)
 
 
@@ -4233,7 +4327,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v35",
+            "schema_version": "addp.security-mysql-owner-protection-online/v36",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -4273,8 +4367,8 @@ def run_scenario(
                     "records_written": transfer_execution.get("records_written"),
                 },
             },
-            "created_resources": 11 + len(task_ids),
-            "deleted_resources": 11 + len(task_ids),
+            "created_resources": 13 + len(task_ids),
+            "deleted_resources": 13 + len(task_ids),
             "residual_resources": 0,
         }
     except BaseException as error:
