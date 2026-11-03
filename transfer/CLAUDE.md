@@ -437,6 +437,12 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 
 五个产品前端文件最终逐字节匹配修复提交 `90fbcfc16bac188ebfc72f6b1629c9940d7ae8d8`；System／Gateway／Meta／Transfer 的 Ready 报告均为 `39059d2ed2d711b992947c1debee6872a0d60578`，前后端不是同一构建版本。最终 `acceptance_complete=true` 仅指本轮中文日常 Console 中“有执行权的新建”与“仅创建且无 Cron”两分支；英文、编辑和 Cron 仍依赖上述自动化证据，不计这些分支的实机通过，也不计同 SHA 隔离 T4／Hosted 或完整产品通过。未重跑 CI；上述 Platform consistency 和模块聚合失败保持原判定。本机持久归档不是 GitHub Artifact 或跨主机备份，不扩展原验收范围。
 
+##### 编辑保真修复与定向 CI（2026-11-04 补录）
+
+修复提交 `54e47bbdb4575870832f75ca3d69adcf082ca78b` 保留编辑任务已有扫描开关和批大小字段归属，行为约定见[前端公开路由](#前端公开路由)。原源码九项反例失败、修复后九项通过；本地 `make test-transfer-frontend` 的 130 项单元、69 项浏览器和构建，以及前端 CI 登记 27 项／21 个前端通过。受控回归使用正式编辑路由 GET、`loadFromTask` 和 Meta 回填，仅跳转向导步骤后由 UI 修改批大小，经正式确认调用一次 PUT；完整载荷核对 MQL、16 项 JSON 映射、disabled／schedule／扫描开关等不变，且无启动、审批或扫描请求，不是直接 API 保存。
+
+同一源码的 push attempt 1 [Transfer frontend Job 125935242969](https://github.com/pampa0629/addp/actions/runs/41641312473/job/125935242969) 已实际选中并执行 `make test-transfer-frontend`：130 项单元（130 通过、零失败）、单 Worker 的 69 项浏览器及构建 6.64 秒全部通过，结束于北京时间 2026-11-03 23:25:30。补录核对官方 Job／Run 身份和原始日志，88335 字节日志 SHA-256 为 `228583df008110f506c0372801ec37bb354df6f13267fb8b296e9047a3e7590a`；证据位于 `/tmp/addp-transfer-edit-fidelity-20261103/`，`evidence.json`／`ci-frontend.log`／`sha256.json` 保存结果及摘要，原排队观察保留在 `evidence-queued-checkpoint.json`，不改写旧时间点事实。本次只补证据与文档，没有重跑、另派或操作真实 Task55、审批、执行、扫描及开发服务；不以该定向 T1／受控 T3 结果认定父 Platform 整轮或 Task55 真实配置漂移验收通过，后者仍由原 Meta／Ontology owner 沿既有授权和重启前置跟进。
+
 ## 相关文档
 
 - [快速开始](docs/快速开始.md)
