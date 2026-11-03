@@ -1074,6 +1074,91 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 with self.subTest(mutation=mutation), self.assertRaises(S.SuiteError):
                     M.NativeControls(SimpleNamespace(secret=Path(directory), run_id='native-1'), 2, 'manager-success')
 
+    def test_manager_grants_before_consumer_catalog_and_validates_same_source(self):
+        import hashlib
+        name = 'source/model3d/obj/model.obj'
+        fingerprint = hashlib.sha256(f'9:{name}'.encode()).hexdigest()
+        refs = [{'target': M.GRANTS.file_target(9, path, 'minio'), 'role': role,
+                 'required': True, 'primary': role == 'model'} for path, role in (
+            (name, 'model'), ('source/model3d/obj/texture.png', 'texture'),
+            ('source/model3d/obj/model.mtl', 'material_library'))]
+        refs.sort(key=lambda ref: json.dumps(ref['target'], ensure_ascii=False, separators=(',', ':')))
+        baseline_facts = dict(schema_version='meta.data_item_authorization_facts/v1', engine_id='9',
+            item_fingerprint=fingerprint, full_name=name, item_type='object', basis_state='complete',
+            boundary={'layout': 'single', 'file_composition': {'format': 'obj', 'refs': refs}},
+            boundary_hash='a' * 64, observed_at='2026-11-03T00:00:00Z')
+        for mutation in ('none', 'foreign_facts', 'facts_unavailable', 'grant_denied',
+                         'different_visible_fingerprint', 'consumer_still_hidden'):
+            calls, issued, prepared, checkpoints = [], [], [], []
+            facts = copy.deepcopy(baseline_facts)
+            if mutation == 'foreign_facts': facts['engine_id'] = '10'
+            class User:
+                def __init__(self, principal, permissions):
+                    self.principal, self.permissions = principal, permissions
+                def request(self, method, path, expected, body=None):
+                    calls.append((self.principal, method, path))
+                    if path == '/api/v1/system/auth/context':
+                        return SimpleNamespace(payload=dict(principal={'id': self.principal, 'type': 'user'},
+                            context={'type': 'tenant', 'tenant_id': '2'}, token={'type': 'first_party_access_token'},
+                            authorization={'role_assignments': [{'role_key': 'online.native',
+                                'permissions': sorted(self.permissions)}]}))
+                    if path.endswith('/authorization-facts'):
+                        self_check.assertEqual(self.principal, '17')
+                        self_check.assertEqual(path, f'/api/v1/system/engines/9/data-items/{fingerprint}/authorization-facts')
+                        if mutation == 'facts_unavailable': raise M.GRANTS.SuiteError('GET /private returned HTTP 503 (private)')
+                        return SimpleNamespace(payload=facts)
+                    if method == 'POST' and path.endswith('/access_grants'):
+                        self_check.assertEqual(self.principal, '17')
+                        self_check.assertEqual(body['item_fingerprint'], fingerprint)
+                        self_check.assertEqual(body['recipient_id'], '18')
+                        if mutation == 'grant_denied': raise M.GRANTS.SuiteError('POST /private returned HTTP 403 (private)')
+                        issued.append(body)
+                        return SimpleNamespace(payload={**body, 'engine_id': '9', 'approval_mode': 'independent',
+                            'expires_at': None, 'boundary_hash': facts['boundary_hash'],
+                            'file_composition': facts['boundary']['file_composition'],
+                            'operator_principal_id': '17', 'revocation': None})
+                    if path == '/api/v1/meta/engines/9/items':
+                        self_check.assertEqual(self.principal, '18')
+                        # Current Meta visibility hides an ordinary consumer's
+                        # ungranted source. A path/fingerprint is only a lookup key.
+                        visible = issued and mutation != 'consumer_still_hidden'
+                        return SimpleNamespace(payload=[dict(id=7, item_type='object', full_name=name,
+                            fingerprint='b' * 64 if mutation == 'different_visible_fingerprint' else fingerprint)] if visible else [])
+                    raise AssertionError((method, path))
+            self_check = self
+            manager = User('18', set(S.CONTRACT['native_permissions']['manager']))
+            issuer = User('17', M.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
+            report = {'principals': {'manager': '18'}}
+            controls = SimpleNamespace(tenant=2, manifest={'source_bucket': 'source'},
+                source_objects=lambda: None, descriptor=lambda kind: {})
+            workflow = SimpleNamespace(register=lambda descriptor: 9)
+            model = SimpleNamespace(result_id=7)
+            def prepare(*args):
+                self.assertTrue(issued)
+                prepared.append(1)
+                return model
+            with self.subTest(mutation=mutation), patch.object(M.MANAGER, 'wait_for_meta_scan'), \
+                    patch.object(M.MANAGER, 'prepare_model_fixture', side_effect=prepare):
+                invoke = lambda: M.prepare_manager(manager, workflow, controls, issuer, report,
+                    lambda: checkpoints.append(report['stage']))
+                if mutation == 'none':
+                    self.assertEqual(invoke(), (9, model))
+                    grant_pos = next(i for i, call in enumerate(calls) if call[1:] == ('POST', '/api/v1/system/engines/9/access_grants'))
+                    browse_pos = next(i for i, call in enumerate(calls) if call[2] == '/api/v1/meta/engines/9/items')
+                    self.assertLess(grant_pos, browse_pos)
+                    self.assertEqual(prepared, [1])
+                    self.assertEqual(checkpoints, ['manager_native_prepare', 'manager_source_scan',
+                        'manager_source_grant', 'manager_source_identity', 'manager_model_prepare'])
+                else:
+                    with self.assertRaises((S.SuiteError, M.GRANTS.SuiteError, M.MANAGER.SuiteError)):
+                        invoke()
+                    self.assertEqual(prepared, [])
+                    self.assertEqual(report['stage'], 'manager_source_grant' if mutation in
+                        ('foreign_facts', 'facts_unavailable', 'grant_denied') else 'manager_source_identity')
+                    if mutation in ('foreign_facts', 'facts_unavailable', 'grant_denied'):
+                        self.assertFalse(issued)
+                        self.assertFalse(any(call[2] == '/api/v1/meta/engines/9/items' for call in calls))
+
     def test_manager_prepares_grant_before_source_download_and_rejects_missing_native_evidence(self):
         for case in ('manager-success', 'manager-object-unknown', 'manager-index-unknown'):
             for mutation in ('none', 'missing_effect', 'lost_hold', 'dirty_audit', 'changed_after_refusal'):
@@ -1120,7 +1205,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 def wait(read, predicate, message, **kwargs):
                     value = read(); M.require(predicate(value), message); return value
                 snapshots = []
-                with patch.object(M.MANAGER, 'wait_for_meta_scan'), patch.object(M.MANAGER, 'find_fixture_item', return_value={'fingerprint': 'fp'}), \
+                with patch.object(M.MANAGER, 'wait_for_meta_scan'), patch.object(M.MANAGER, 'find_fixture_item', return_value={'fingerprint': M.hashlib.sha256(b'9:source/model3d/obj/model.obj').hexdigest()}), \
                      patch.object(M.MANAGER, 'prepare_model_fixture', side_effect=prepare), patch.object(M.MANAGER, 'generate_model_glb'), \
                      patch.object(M.GRANTS, 'ModelSourceAuthorization', return_value=SimpleNamespace(grant=lambda value: granted.append(value))), \
                      patch.object(M, 'professional', return_value={'summary': {'deleted_physical_artifacts': 1}}), patch.object(S, 'wait_for', side_effect=wait):

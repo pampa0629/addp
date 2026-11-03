@@ -814,30 +814,41 @@ def prepare_manager(manager, workflow, controls, source, report, checkpoint):
     report['stage'] = 'manager_native_prepare'; checkpoint()
     controls.source_objects()
     engine_id = workflow.register(controls.descriptor('minio'))
+    report['stage'] = 'manager_source_scan'; checkpoint()
     MANAGER.wait_for_meta_scan(manager, engine_id, time.monotonic() + 180)
     bucket = controls.manifest['source_bucket']
     require(isinstance(bucket, str) and re.fullmatch(r'[a-z0-9.-]+', bucket), 'invalid owned source bucket')
     full_name = bucket + '/model3d/obj/model.obj'
-    item = MANAGER.find_fixture_item(manager, engine_id, full_name, 'obj')
+    # The canonical fingerprint locates trusted System facts; it is never
+    # authorization or proof that the source exists. The consumer cannot
+    # enumerate the ungranted source through Meta.
+    fingerprint = hashlib.sha256(f'{engine_id}:{full_name}'.encode()).hexdigest()
+    report['stage'] = 'manager_source_grant'; checkpoint()
     grants = GRANTS.ModelSourceAuthorization(source, manager,
         dict(tenant_id=controls.tenant, engine_id=engine_id, principal_id=report['principals']['manager']),
         source_type='minio', consumer_permissions=set(S.CONTRACT['native_permissions']['manager']),
         issuer_permissions=REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
-    grants.grant(dict(format='obj', full_name=full_name, fingerprint=item['fingerprint'], composition=[
+    grants.grant(dict(format='obj', full_name=full_name, fingerprint=fingerprint, composition=[
         dict(path=full_name, role='model', required=True, primary=True),
         dict(path=bucket + '/model3d/obj/texture.png', role='texture', required=True, primary=False),
         dict(path=bucket + '/model3d/obj/model.mtl', role='material_library', required=True, primary=False)]))
     # Explicit Grants and original source bytes remain owned by this disposable
     # Tenant and are destroyed with it. A failed case never abandons its evidence.
+    report['stage'] = 'manager_source_identity'; checkpoint()
+    item = MANAGER.find_fixture_item(manager, engine_id, full_name, 'obj')
+    require(item['fingerprint'] == fingerprint, 'authorized Manager source identity differs')
+    report['stage'] = 'manager_model_prepare'; checkpoint()
     model = MANAGER.prepare_model_fixture(manager, engine_id, bucket, 'obj')
     return engine_id, model
 
 
 def run_manager(manager, workflow, controls, source, case, report, checkpoint):
     engine_id, model = prepare_manager(manager, workflow, controls, source, report, checkpoint)
+    report['stage'] = 'manager_generation'; checkpoint()
     MANAGER.generate_model_glb(manager, model, controls.tenant, 180)
     report.update(artifact_id=S.positive(model.result_id), generation_execution_id=S.identifier(model.execution_id))
     checkpoint()
+    report['stage'] = 'manager_native_inventory'; checkpoint()
     ref = controls.glb_storage(model.result_id)
     object_path = controls.object(ref, present=True)
     S.wait_for(lambda: controls.index_count(engine_id), lambda n: n > 0, 'real source indexing never completed')
