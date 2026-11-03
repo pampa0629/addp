@@ -530,14 +530,10 @@ def main():
             raise SuiteError('table preparation requires exactly one online Spark Runtime')
         runtime = support.positive_int(selected[0]['id'], 'Runtime')
         cluster = support.positive_int(require('ADDP_ONLINE_SPARK_ENGINE_ID'), 'Spark')
-        prepared = TABLES.prepare(table_host(), consumer, principal, tenant_id, runtime, cluster, 300)
-        try:
-            for engine, facts in prepared['tables'].items():
-                REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id,
-                    [(facts['engine_id'], 'database', 'spark_results', TABLES.target_name())])
-        except BaseException:
-            TABLES.cleanup()
-            raise
+        def grant_created_table(engine_id, table):
+            REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id,
+                [(engine_id, 'database', 'spark_results', table)])
+        TABLES.prepare(table_host(), consumer, principal, tenant_id, runtime, cluster, 300, grant_created_table)
         print('Disposable PostgreSQL/MySQL/Doris exact table read Grants are ready')
         return 0
     if os.environ.get('ADDP_ONLINE_TEST') != '1' or os.environ.get('ADDP_ONLINE_HOSTED') != '1':

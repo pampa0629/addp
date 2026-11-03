@@ -7,7 +7,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 
 def load(name, path):
@@ -71,13 +71,54 @@ class SparkTableConsumerTest(unittest.TestCase):
         self.assertIn('9007199254740993', query)
         self.assertFalse(any(key in json.dumps(tasks) for key in ('password', 'connection_info', 'jdbc')))
 
-    def test_save_requires_auto_scan_and_precise_receipt_without_manual_target_scan(self):
+    def publication_fixture(self):
         locator = 'addp://engine/8/path/spark_results/' + TABLE + '?type=table'
         receipt = {'status': 'success', 'rows': 5, 'target': 'spark_results.' + TABLE}
         base = {'outputs': {'save': {'resource': {'locator': locator, 'type': 'table', 'write_mode': 'replace'}}},
                 'metadata': {'result': {'final_result': receipt, 'runtime_execution_id': 'runtime',
                     'produced_targets': [{'locator': locator, 'task_id': 'save'}],
                     'meta_scan_runs': [{'status': 'submitted', 'target_locator': locator, 'execution_id': 'scan'}]}}}
+        return base
+
+    def test_first_saved_table_grant_is_after_auto_scan_before_recipient_metadata(self):
+        events, granted = [], set()
+        host, client = Mock(), Mock()
+        host.submit_and_wait.return_value = ('created', self.publication_fixture())
+        host.support._object.side_effect = lambda payload, _: payload
+        def scan(method, path, expected):
+            self.assertEqual((method, path, expected), ('GET', '/api/v1/meta/executions/scan', (200,)))
+            events.append('automatic_scan_success')
+            return SimpleNamespace(payload={'status': 'success'})
+        client.request.side_effect = scan
+        def metadata(_client, engine, full_name, kind):
+            events.append('recipient_metadata')
+            if (engine, full_name) not in granted:
+                raise ValueError('Meta must return exactly one ' + full_name + ' DataItem')
+            return {'id': 17, 'attributes': {'type_info': {'table': {'fields': FIELDS}}}}
+        host.support.find_item.side_effect = metadata
+        def grant(engine, table):
+            self.assertEqual(events, ['automatic_scan_success'])
+            self.assertEqual((engine, table), (8, TABLE))
+            events.append('exact_read_grant')
+            granted.add((engine, 'spark_results.' + table))
+        with patch.dict(os.environ, ADDP_ONLINE_SPARK_RUNTIME_URL='http://runtime'):
+            result = TABLES.save(host, client, 3, 4, 8, TABLE, float('inf'), grant_read=grant)
+        self.assertEqual(result['item_id'], 17)
+        self.assertEqual(events, ['automatic_scan_success', 'exact_read_grant', 'recipient_metadata'])
+
+    def test_grant_failure_after_publication_does_not_browse_ungranted_metadata(self):
+        host, client = Mock(), Mock()
+        host.submit_and_wait.return_value = ('created', self.publication_fixture())
+        host.support._object.side_effect = lambda payload, _: payload
+        client.request.return_value = SimpleNamespace(payload={'status': 'success'})
+        grant = Mock(side_effect=ValueError('exact read Grant rejected'))
+        with patch.dict(os.environ, ADDP_ONLINE_SPARK_RUNTIME_URL='http://runtime'):
+            with self.assertRaisesRegex(ValueError, 'exact read Grant rejected'):
+                TABLES.save(host, client, 3, 4, 8, TABLE, float('inf'), grant_read=grant)
+        host.support.find_item.assert_not_called()
+
+    def test_save_requires_auto_scan_and_precise_receipt_without_manual_target_scan(self):
+        base = self.publication_fixture()
         for mutation in ('rows', 'output', 'scan', 'target', ''):
             execution = json.loads(json.dumps(base))
             if mutation == 'rows': execution['metadata']['result']['final_result']['rows'] = 4
@@ -111,6 +152,36 @@ class SparkTableConsumerTest(unittest.TestCase):
                     self.assertEqual(query.call_count, 2)
                 evidence = json.loads(Path(temporary, 'spark-table-cleanup.json').read_text())
                 self.assertEqual(set(evidence), {'mysql', 'doris'} - {failure})
+
+    def test_prepare_wires_exact_grant_for_both_targets_and_cleans_partial_failure(self):
+        for fail_second in (False, True):
+            with self.subTest(fail_second=fail_second), tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ,
+                    ADDP_ONLINE_SECRET_DIR=temporary, ADDP_ONLINE_TEST_RUN_ID='run-tables',
+                    ADDP_ONLINE_MYSQL_ENGINE_ID='8', ADDP_ONLINE_DORIS_ENGINE_ID='9'):
+                host, client = Mock(), Mock()
+                host.support.positive_int.side_effect = lambda value, _: int(value)
+                def authorize(engine, table):
+                    if fail_second and engine == 9:
+                        raise ValueError('grant rejected')
+                grant = Mock(side_effect=authorize)
+                def publication(_host, _client, runtime, cluster, engine, table, deadline, *, grant_read):
+                    self.assertIs(grant_read, grant)
+                    grant_read(engine, table)
+                    return {'execution_id': 'created-' + str(engine)}
+                with patch.object(TABLES, 'save', side_effect=publication), patch.object(TABLES, 'physical',
+                        return_value={'rows': TABLES.ROWS, 'staging_tables': 0}), patch.object(TABLES, 'cleanup') as cleanup:
+                    if fail_second:
+                        with self.assertRaisesRegex(ValueError, 'grant rejected'):
+                            TABLES.prepare(host, client, '7', 2, 3, 4, 300, grant)
+                        cleanup.assert_called_once_with()
+                        self.assertFalse(Path(temporary, 'spark-table-prepared.json').exists())
+                    else:
+                        prepared = TABLES.prepare(host, client, '7', 2, 3, 4, 300, grant)
+                        self.assertEqual(set(prepared['tables']), {'mysql', 'doris'})
+                        cleanup.assert_not_called()
+                        self.assertEqual(Path(temporary, 'spark-table-prepared.json').stat().st_mode & 0o777, 0o600)
+                    self.assertEqual(grant.call_args_list, [call(8, TABLES.target_name()),
+                                                          call(9, TABLES.target_name())])
 
     def test_overwrite_requires_same_physical_and_meta_identity_and_exact_downstream_rows(self):
         report = {'principal_id': '42', 'tenant_id': 2, 'runtime_id': 3, 'cluster_id': 4}

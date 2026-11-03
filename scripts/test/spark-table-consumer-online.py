@@ -72,7 +72,7 @@ def wait_scan(host, client, execution, locator, deadline):
     raise ValueError('table automatic Meta scan timed out')
 
 
-def save(host, client, runtime, cluster, engine, table, deadline):
+def save(host, client, runtime, cluster, engine, table, deadline, *, grant_read=None):
     workflow = definition(engine, table)
     identifier, execution = host.submit_and_wait(client, workflow, runtime, cluster, deadline)
     locator = f'addp://engine/{engine}/path/spark_results/{table}?type=table'
@@ -92,6 +92,8 @@ def save(host, client, runtime, cluster, engine, table, deadline):
     runtime_evidence = host.SPARK.runtime_status_evidence(os.environ['ADDP_ONLINE_SPARK_RUNTIME_URL'],
         result['runtime_execution_id'], final, 2, validate_nodes, {'seed': 'spark_dataframe', 'save': 'save'})
     scan_id = wait_scan(host, client, execution, locator, deadline)
+    if grant_read is not None:
+        grant_read(engine, table)
     item = host.support.find_item(client, engine, 'spark_results.' + table, 'table')
     fields = item.get('attributes', {}).get('type_info', {}).get('table', {}).get('fields', [])
     validate_fields(fields)
@@ -122,14 +124,14 @@ def cleanup():
         raise ValueError('table domain cleanup unverified: ' + ', '.join(failures))
 
 
-def prepare(host, client, principal, tenant, runtime, cluster, timeout):
+def prepare(host, client, principal, tenant, runtime, cluster, timeout, grant_read):
     prepared = {'run_id': os.environ['ADDP_ONLINE_TEST_RUN_ID'], 'principal_id': principal,
                 'tenant_id': tenant, 'runtime_id': runtime, 'cluster_id': cluster, 'tables': {}}
     try:
         deadline = time.monotonic() + timeout
         for engine in ('mysql', 'doris'):
             engine_id = host.support.positive_int(os.environ['ADDP_ONLINE_' + engine.upper() + '_ENGINE_ID'], engine)
-            created = save(host, client, runtime, cluster, engine_id, target_name(), deadline)
+            created = save(host, client, runtime, cluster, engine_id, target_name(), deadline, grant_read=grant_read)
             native = physical(engine, target_name())
             validate_rows(native['rows'], manager=True)
             if native['staging_tables'] != 0:
