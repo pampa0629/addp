@@ -8561,3 +8561,172 @@ def test_centroid_keeps_nonunique_index_and_original_row_order():
     assert [(value.x, value.y) for value in result.geometry] == [(2., 0.), (1.5, .5)]
     pd.testing.assert_frame_equal(result.drop(columns='shape'), source.drop(columns='shape'))
     assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('crs', [3857, 2263])
+def test_representative_point_selects_largest_net_area_instead_of_widest_scanline(crs):
+    largest = box(0, 0, 2, 10)
+    widest = box(10, 0, 19, 1)
+    perforated = Polygon([(30, 0), (40, 0), (40, 10), (30, 10), (30, 0)],
+                        [[(30.5, .5), (39.5, .5), (39.5, 9.5), (30.5, 9.5), (30.5, .5)]])
+    net_largest = box(50, 0, 55, 5)
+    source = buffer_source([shapely.MultiPolygon([largest, widest]), shapely.MultiPolygon([perforated, net_largest])], crs)
+    source['enabled'] = pd.array([None, True], dtype='boolean'); before = source.copy(deep=True)
+    result = get_operator('representative_point')(source)
+    assert largest.area == 20 and widest.area == 9 and perforated.area == 19 and net_largest.area == 25
+    for i, selected in enumerate([largest, net_largest]):
+        point = result.geometry.iloc[i]
+        assert point.geom_type == 'Point' and selected.contains(point) and source.geometry.iloc[i].contains(point)
+    assert result.geometry.name == 'shape' and result.crs == source.crs
+    assert result.index.equals(source.index) and result.columns.equals(source.columns)
+    pd.testing.assert_frame_equal(result.drop(columns='shape'), source.drop(columns='shape'))
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_representative_point_equal_net_area_selects_first_original_part(reverse):
+    parts = [box(0, 0, 2, 2), box(10, 0, 14, 1)]
+    if reverse: parts.reverse()
+    source = buffer_source([shapely.MultiPolygon(parts)]); before = source.copy(deep=True)
+    point = get_operator('representative_point')(source).geometry.iloc[0]
+    assert parts[0].contains(point) and not parts[1].contains(point)
+    assert_geodataframe_equal(source, before)
+
+
+def test_representative_point_is_strictly_inside_concave_holed_and_tiny_positive_area_sources():
+    source = buffer_source([
+        Polygon([(0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4), (0, 0)]),
+        Polygon([(10, 0), (16, 0), (16, 2), (10, 2), (10, 0)], [[(10.5, .5), (14.5, .5), (14.5, 1.5), (10.5, 1.5), (10.5, .5)]]),
+        box(20, 0, 21, 2 ** -40),
+    ])
+    before = source.copy(deep=True); result = get_operator('representative_point')(source)
+    assert len(result) == len(source) and not result.geometry.is_empty.any()
+    assert all(shape.contains(point) for shape, point in zip(source.geometry, result.geometry))
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('problem', ['not_gdf', 'no_active', 'duplicate_columns', 'extra_geometry', 'point', 'line', 'collection', 'missing', 'empty', 'invalid', 'z', 'm', 'nonfinite', 'no_crs', 'geographic', 'geocentric'])
+def test_representative_point_source_rejection_is_not_silent_conversion(problem):
+    from operators.geometric_operators import InteriorPointInputError
+    source = buffer_source([box(0, 0, 2, 2)])
+    if problem == 'not_gdf': source = pd.DataFrame({'a': [1]})
+    elif problem == 'no_active': source = gpd.GeoDataFrame({'a': [1]})
+    elif problem == 'duplicate_columns': source.columns = ['same'] * len(source.columns)
+    elif problem == 'extra_geometry': source['other'] = source.geometry.copy()
+    elif problem in ('no_crs', 'geographic', 'geocentric'):
+        source = source.set_crs({'no_crs': None, 'geographic': 4326, 'geocentric': 4978}[problem], allow_override=True)
+    else:
+        source['shape'] = [{'point': Point(0, 0), 'line': LineString([(0, 0), (1, 1)]),
+            'collection': shapely.GeometryCollection([box(0, 0, 2, 2)]), 'missing': None, 'empty': Polygon(),
+            'invalid': Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)]),
+            'z': shapely.from_wkt('POLYGON Z ((0 0 1,2 0 1,2 2 1,0 2 1,0 0 1))'),
+            'm': shapely.from_wkt('POLYGON M ((0 0 1,2 0 1,2 2 1,0 2 1,0 0 1))'),
+            'nonfinite': Polygon([(0, 0), (float('inf'), 0), (0, 2), (0, 0)])}[problem]]
+    before = source.copy(deep=True)
+    with pytest.raises(InteriorPointInputError) as caught: get_operator('representative_point')(source)
+    assert caught.value.code == ('crs' if problem in ('no_crs', 'geographic', 'geocentric') else 'source')
+    pd.testing.assert_frame_equal(pd.DataFrame(source), pd.DataFrame(before))
+
+
+def test_representative_point_empty_batch_retains_schema_but_requires_projected_crs():
+    from operators.geometric_operators import InteriorPointInputError
+    source = buffer_source([box(0, 0, 1, 1)]).iloc[:0]
+    assert_geodataframe_equal(get_operator('representative_point')(source), source)
+    for crs in (None, 4326, 4978):
+        with pytest.raises(InteriorPointInputError) as caught:
+            get_operator('representative_point')(source.set_crs(crs, allow_override=True))
+        assert caught.value.code == 'crs'
+
+
+def test_representative_point_real_point_geopackage_roundtrip_preserves_source_attributes(tmp_path):
+    from osgeo import ogr
+    source = buffer_source([box(0, 0, 4, 4), shapely.MultiPolygon([box(10, 0, 11, 1), box(20, 0, 24, 4)])])
+    source['enabled'] = pd.array([None, True], dtype='boolean'); before = source.copy(deep=True)
+    result = get_operator('representative_point')(source)
+    assert source.geometry.iloc[0].contains(result.geometry.iloc[0]) and source.geometry.iloc[1].geoms[1].contains(result.geometry.iloc[1])
+    computed = result.geometry.to_wkb(byte_order=1, flavor='iso').tolist()
+    conn = {'engine_type': 'nfs', 'mount_path': str(tmp_path)}
+    get_operator('save')(input_df=result, connection_info=conn, path='interior.gpkg', mode='fail')
+    ds = ogr.Open(str(tmp_path / 'interior.gpkg')); layer = ds.GetLayer(0); rows = list(layer)
+    assert len(rows) == 2 and layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
+    for i, row in enumerate(rows):
+        point = row.GetGeometryRef()
+        assert point.GetGeometryName() == 'POINT' and bytes(point.ExportToIsoWkb()) == computed[i]
+        assert row.GetField('label') == f'row-{i}' and row.GetField('geometry') == 'business'
+        assert row.GetField('grade') == [None, 2 ** 53 + 2][i] and row.GetField('enabled') == [None, True][i]
+    physical_name = layer.GetGeometryColumn(); ds = None
+    loaded = get_operator('load')(connection_info=conn, path='interior.gpkg')
+    assert loaded.geometry.name == physical_name and loaded.crs == source.crs
+    assert loaded.geometry.to_wkb(byte_order=1, flavor='iso').tolist() == computed
+    assert str(loaded.grade.dtype) == 'Int64' and str(loaded.enabled.dtype) == 'boolean'
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('problem', ['source', 'crs'])
+def test_representative_point_runtime_diagnostic_is_frozen_and_blocks_save(language, problem, monkeypatch):
+    import workflow_engine
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from operators.geometric_operators import InteriorPointInputError
+    source = buffer_source([box(0, 0, 2, 2)])
+    if problem == 'source': source['shape'] = [None]
+    else: source = source.set_crs(4326, allow_override=True)
+    lookup = workflow_engine.get_operator; calls = []
+    def guarded(name):
+        calls.append(name)
+        if name == 'save': raise AssertionError('interior point input error reached save')
+        if name == 'load': return lambda **params: source
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine, 'get_operator', guarded)
+    tasks = [
+        {'id': 'PRIVATE', 'operator': 'representative_point', 'params': {'input_gdf': {'$ref': 'load'}}, 'depends_on': ['load']},
+        {'id': 'load', 'operator': 'load', 'params': {}, 'depends_on': []},
+        {'id': 'saved', 'operator': 'save', 'params': {'input_df': {'$ref': 'PRIVATE'}}, 'depends_on': ['PRIVATE']},
+    ]
+    with pytest.raises(WorkflowExecutionError) as caught: GeoPythonWorkflowRunner(language=language).execute({'tasks': tasks})
+    reason, parameter = ('operator_input_invalid', 'input_gdf') if problem == 'source' else ('operator_crs_invalid', '')
+    assert caught.value.error_code == 'INVALID_PARAMS' and calls == ['load', 'representative_point']
+    assert caught.value.diagnostic == {'schema_version': 'addp.execution-failure/v3', 'stage': 'execution', 'reason': reason,
+        'operator': {'node_index': 1, 'operator_id': 'representative_point', **({'parameter': parameter} if parameter else {})}}
+    assert InteriorPointInputError(problem).message(language) in str(caught.value)
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+
+
+@pytest.mark.parametrize('fault', ['exception', 'missing', 'empty', 'line', 'multipoint', 'z', 'm', 'nonfinite', 'length', 'rank', 'boundary', 'hole', 'outside', 'smaller_part'])
+def test_representative_point_native_candidate_failure_never_moves_or_falls_back(fault, monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    largest = Polygon([(0, 0), (6, 0), (6, 4), (0, 4), (0, 0)], [[(2, 1), (4, 1), (4, 3), (2, 3), (2, 1)]])
+    smaller = box(10, 0, 11, 1); source = buffer_source([shapely.MultiPolygon([largest, smaller])]); calls = []
+    def broken(values, *args, **kwargs):
+        calls.append(values.copy())
+        if fault == 'exception': raise shapely.errors.GEOSException('PRIVATE interior failure')
+        value = {'missing': None, 'empty': Point(), 'line': LineString([(0, 0), (1, 1)]),
+            'multipoint': shapely.MultiPoint([(0, 0), (1, 1)]), 'z': Point(1, 1, 1), 'm': shapely.from_wkt('POINT M (1 1 1)'),
+            'nonfinite': Point(float('inf'), 0), 'length': Point(1, 1), 'rank': Point(1, 1),
+            'boundary': Point(0, 2), 'hole': Point(3, 2), 'outside': Point(100, 100), 'smaller_part': Point(10.5, .5)}[fault]
+        if fault == 'length': return np.array([], dtype=object)
+        return np.array([[value]] if fault == 'rank' else [value], dtype=object)
+    monkeypatch.setattr(shapely, 'point_on_surface', broken)
+    with pytest.raises(WorkflowExecutionError) as caught:
+        GeoPythonWorkflowRunner().execute({'tasks': [{'id': 'PRIVATE', 'operator': 'representative_point', 'params': {'input_gdf': source}, 'depends_on': []}]})
+    assert caught.value.error_code == 'EXECUTION_FAILED' and caught.value.diagnostic is None
+    assert len(calls) == 1 and len(calls[0]) == 1 and calls[0][0].equals(largest)
+
+
+@pytest.mark.parametrize('area', [float('nan'), float('inf'), 0., -1.])
+def test_representative_point_native_net_area_failure_is_not_source_diagnostic(area, monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source = buffer_source([shapely.MultiPolygon([box(0, 0, 4, 4), box(10, 0, 11, 1)])])
+    monkeypatch.setattr(shapely, 'area', lambda values, *args, **kwargs: np.full(np.shape(values), area))
+    calls = []
+    def forbidden(*args, **kwargs):
+        calls.append(1)
+        raise AssertionError('unproven net area reached candidate selection')
+    monkeypatch.setattr(shapely, 'point_on_surface', forbidden)
+    with pytest.raises(WorkflowExecutionError) as caught:
+        GeoPythonWorkflowRunner().execute({'tasks': [{'id': 'PRIVATE', 'operator': 'representative_point', 'params': {'input_gdf': source}, 'depends_on': []}]})
+    assert caught.value.error_code == 'EXECUTION_FAILED' and caught.value.diagnostic is None
+    assert calls == []

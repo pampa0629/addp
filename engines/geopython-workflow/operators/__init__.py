@@ -12,7 +12,7 @@ from .base import OperatorMetadata, OperatorParam, OperatorCategory, OperatorTyp
 # 导入所有空间算子实现
 from .io_operators import load, save
 from .geometric_operators import (
-    buffer, intersection, union, centroid, difference,
+    buffer, intersection, union, centroid, representative_point, difference,
     simplify, convex_hull, minimum_rotated_rectangle, envelope, dissolve, polygonize, extract_polygon_rings, check_geometry, repair_geometry, snap_geometry, snap_line_endpoints, extend_line_endpoints,
     check_polygon_overlap, check_polygon_gap, check_dangling_points, check_line_proximity, check_line_overlap
 )
@@ -222,6 +222,7 @@ __all__ = [
     'intersection',
     'union',
     'centroid',
+    'representative_point',
     'difference',
     'simplify',
     'convex_hull',

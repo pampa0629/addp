@@ -471,16 +471,66 @@ class UnaryConstructionInputError(ValueError):
         return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
 
 
-def _construct_unary_geometry(input_gdf, kernel, allowed_types):
-    _unary_frame_geometry(input_gdf, UnaryConstructionInputError)
-    geometry = _prepare_projected_xy_source(input_gdf, UnaryConstructionInputError)
-    values = np.asarray(kernel(geometry.array), dtype=object)
-    if (values.shape != (len(geometry),) or shapely.is_missing(values).any()
+def _validated_unary_result(values, size, allowed_types):
+    values = np.asarray(values, dtype=object)
+    if (values.shape != (size,) or shapely.is_missing(values).any()
             or shapely.is_empty(values).any() or not shapely.is_valid(values).all()
             or not np.isin(shapely.get_type_id(values), allowed_types).all()
             or shapely.has_z(values).any() or shapely.has_m(values).any()
             or not np.isfinite(shapely.get_coordinates(values)).all()):
         raise RuntimeError('geometry construction produced an invalid or non-finite XY result')
+    return values
+
+
+def _construct_unary_geometry(input_gdf, kernel, allowed_types):
+    _unary_frame_geometry(input_gdf, UnaryConstructionInputError)
+    geometry = _prepare_projected_xy_source(input_gdf, UnaryConstructionInputError)
+    values = _validated_unary_result(kernel(geometry.array), len(geometry), allowed_types)
+    result = input_gdf.copy()
+    result[geometry.name] = gpd.GeoSeries(values, index=geometry.index, crs=geometry.crs)
+    return result
+
+
+class InteriorPointInputError(ValueError):
+    """Typed polygon-only source admission; candidate failures are computation errors."""
+    _messages = {
+        'zh-cn': {
+            'source': '面内点仅接受有效、非空、非缺失、有限二维XY的Polygon或MultiPolygon，且列名和实际活动几何须唯一；请先显式整理或修复面图层。',
+            'crs': '面内点要求已知投影坐标系和匹配、有限且为正的水平线性单位；请先显式重投影，不自动换算单位。',
+        },
+        'en': {
+            'source': 'Interior point requires valid non-empty non-missing finite XY Polygon or MultiPolygon sources with unique column names and one active geometry column; prepare or explicitly repair the polygon layer first.',
+            'crs': 'Interior point requires a known projected CRS with matching finite positive horizontal linear units; reproject explicitly first, without automatic unit conversion.',
+        },
+    }
+
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
+def representative_point(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Strict interior point of each source's first maximum-net-area polygon part."""
+    _unary_frame_geometry(input_gdf, InteriorPointInputError)
+    geometry = _prepare_projected_xy_source(input_gdf, InteriorPointInputError)
+    if not geometry.geom_type.isin(['Polygon', 'MultiPolygon']).all():
+        raise InteriorPointInputError('source')
+    parts, owners = shapely.get_parts(geometry.array, return_index=True)
+    areas = np.asarray(shapely.area(parts), dtype=float)
+    if areas.shape != (len(parts),) or not np.isfinite(areas).all() or not (areas > 0).all():
+        raise RuntimeError('interior point could not measure finite positive polygon part areas')
+    selected = np.empty(len(geometry), dtype=object)
+    largest = np.full(len(geometry), -np.inf)
+    for part, owner, area in zip(parts, owners, areas):
+        if area > largest[owner]:
+            largest[owner] = area
+            selected[owner] = part
+    values = _validated_unary_result(shapely.point_on_surface(selected), len(geometry), (0,))
+    if not shapely.contains(selected, values).all() or not shapely.contains(geometry.array, values).all():
+        raise RuntimeError('interior point calculation did not produce a strict interior point in the selected polygon')
     result = input_gdf.copy()
     result[geometry.name] = gpd.GeoSeries(values, index=geometry.index, crs=geometry.crs)
     return result
@@ -2772,6 +2822,24 @@ SIMPLIFY_METADATA = OperatorMetadata(
 )
 
 
+REPRESENTATIVE_POINT_METADATA = OperatorMetadata(
+    name="representative_point", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_CONSTRUCTION,
+    description="面内点", brief_description="逐源在最大净面积面部件内生成严格内点，失败不挪点或换部件",
+    execution_modes=["workflow"], effects=["read"],
+    overview="对已知投影CRS的有效非空有限二维Polygon/MultiPolygon，逐源选择最大净面积部件，精确等面积按原部件顺序决胜；原生求点后严格验证位于选中部件及原源内部。边界、孔洞或面外结果整批计算失败。",
+    params=[OperatorParam(name="input_gdf",type="input",data_type="GeoDataFrame",required=True,
+        description="有效非空有限二维投影面图层",notes="仅Polygon/MultiPolygon、唯一实际活动几何与列名；已知投影及匹配有限正水平单位，空批仍验准入")],
+    use_cases=["在多部件地块的最大净面积部件内生成一个点", "为带孔或凹面生成严格面内位置"],
+    notes=["每源一条Point，保原属性类型/null、索引/顺序、实际几何列及CRS；源不变，不跨源汇总，不加部件编号字段",
+        "净面积扣除孔洞，不是最宽截段或最大外包矩形；精确相等选择原始顺序第一部件，无epsilon或最小面积阈值",
+        "点须严格位于选中部件和原源内，不含外环、内环边界或孔内；不得用covers/intersects放宽",
+        "极窄面或原生精度限制可能失败，不自动微移、吸附、换次优、改精度网格或替换质心",
+        "不承诺最远边界/最佳标注或最大内切圆中心，不固定坐标或跨GEOS版本WKB恒等",
+        "不自动修复或投影；Point/线/GeometryCollection拒绝，仅登记representative_point，无point_on_surface别名"],
+    workflow_example={'id':'inside','operator':'representative_point','params':{'input_gdf':{'$ref':'load_projected_polygons'}},'depends_on':['load_projected_polygons']},
+)
+
+
 CONVEX_HULL_METADATA = OperatorMetadata(
     name="convex_hull", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_CONSTRUCTION,
     description="凸包", brief_description="逐源生成凸包，合法退化保留点或线，不跨行汇总",
@@ -2870,6 +2938,7 @@ OPERATORS = dict([
     register_operator(INTERSECTION_METADATA, intersection),
     register_operator(UNION_METADATA, union),
     register_operator(CENTROID_METADATA, centroid),
+    register_operator(REPRESENTATIVE_POINT_METADATA, representative_point),
     register_operator(DIFFERENCE_METADATA, difference),
     register_operator(SIMPLIFY_METADATA, simplify),
     register_operator(CONVEX_HULL_METADATA, convex_hull),

@@ -27,7 +27,7 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	}
 	parameter, field, ok := "", "", false
 	switch o.OperatorID {
-	case "centroid", "convex_hull", "minimum_rotated_rectangle":
+	case "representative_point", "centroid", "convex_hull", "minimum_rotated_rectangle":
 		switch reason {
 		case "operator_input_invalid":
 			parameter, ok = "input_gdf", true

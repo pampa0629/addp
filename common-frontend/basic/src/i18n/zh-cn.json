@@ -388,7 +388,18 @@
           "operator_crs_invalid": "先确认源坐标系并显式重投影到合适的投影坐标系，再重新执行；不会自动投影。"
         }
       },
+      "interiorPoint": {
+        "reasons": {
+          "operator_input_invalid": "源图层须有唯一列名和唯一活动几何列，且仅接受有效、非空、有限二维 XY 的 Polygon 或 MultiPolygon 几何。",
+          "operator_crs_invalid": "源图层须使用已知投影坐标系，水平轴的线性单位须匹配、有限且为正。"
+        },
+        "actions": {
+          "operator_input_invalid": "仅使用 Polygon 或 MultiPolygon 源几何；先在上游显式整理缺失、空、无效、Z/M 或非有限几何后重新执行；不会自动修复。",
+          "operator_crs_invalid": "先确认源坐标系并显式重投影到合适的投影坐标系，再重新执行；不会自动投影。"
+        }
+      },
       "operatorNames": {
+        "representative_point": "面内点",
         "centroid": "计算质心",
         "convex_hull": "凸包",
         "minimum_rotated_rectangle": "最小外接矩形",

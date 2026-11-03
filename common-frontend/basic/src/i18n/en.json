@@ -388,7 +388,18 @@
           "operator_crs_invalid": "Confirm the source CRS and explicitly reproject to a suitable projected CRS before a new execution; no automatic projection is performed."
         }
       },
+      "interiorPoint": {
+        "reasons": {
+          "operator_input_invalid": "The source layer requires unique column names, one active geometry column and valid non-empty finite XY Polygon or MultiPolygon geometries only.",
+          "operator_crs_invalid": "The source layer requires a known projected CRS with matching finite positive horizontal linear units."
+        },
+        "actions": {
+          "operator_input_invalid": "Use only Polygon or MultiPolygon source geometries; explicitly prepare missing, empty, invalid, Z/M or non-finite geometries upstream before a new execution. No automatic repair is performed.",
+          "operator_crs_invalid": "Confirm the source CRS and explicitly reproject to a suitable projected CRS before a new execution; no automatic projection is performed."
+        }
+      },
       "operatorNames": {
+        "representative_point": "Interior point",
         "centroid": "Calculate centroid",
         "convex_hull": "Convex hull",
         "minimum_rotated_rectangle": "Minimum-area bounding rectangle",
