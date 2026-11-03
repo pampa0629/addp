@@ -8,7 +8,8 @@ for (const lang of ['zh-cn', 'en']) test(`GRIB fields preserve decoded units and
   const root = { id: rootLocator, locator: rootLocator, label: 'GRIB source', type: 'root', hasChildren: true, children: [item] }
   const variables = [4, 3].map((width, index) => ({ name: `message-${index + 1}`, child_kind: 'array', data_type: 'media', format: 'grib', native: {
     type: 'Float64', dimensions: [{ name: 'y', size: '2' }, { name: 'x', size: String(width) }], value_mode: 'decoded_native_units', slice_supported: true,
-    attributes: { GRIB_UNIT: { values: ['[K]'] }, GRIB_ELEMENT: { values: ['TMP'] }, GRIB_FORECAST_SECONDS: { values: [String(index * 10800)] } }
+    grid: {"crs_wkt": "GEOGCS[\"Coordinate System imported from GRIB file\",DATUM[\"unnamed\",SPHEROID[\"Sphere\",6371229,0]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AXIS[\"Latitude\",NORTH],AXIS[\"Longitude\",EAST]]", "longitude_policy": "unchanged", "transform": [249.5, 1, 0, -9.5, 0, -1]},
+    attributes: {"GRIB_COMMENT": {"type": "String", "values": ["Temperature [K]"]}, "GRIB_DISCIPLINE": {"type": "String", "values": ["0(Meteorological)"]}, "GRIB_ELEMENT": {"type": "String", "values": ["TMP"]}, "GRIB_FORECAST_SECONDS": {"type": "String", "values": ["21600"]}, "GRIB_IDS": {"type": "String", "values": ["CENTER=7(US-NCEP) SUBCENTER=0 MASTER_TABLE=2 LOCAL_TABLE=0 SIGNF_REF_TIME=1(Start_of_Forecast) REF_TIME=2026-01-02T03:00:00Z PROD_STATUS=0(Operational) TYPE=1(Forecast)"]}, "GRIB_PDS_PDTN": {"type": "String", "values": ["0"]}, "GRIB_PDS_TEMPLATE_ASSEMBLED_VALUES": {"type": "String", "values": ["0 0 2 0 0 0 0 1 6 103 0 2 255 -127 -2147483647"]}, "GRIB_PDS_TEMPLATE_NUMBERS": {"type": "String", "values": ["0 0 2 0 0 0 0 0 1 0 0 0 6 103 0 0 0 0 2 255 255 255 255 255 255"]}, "GRIB_REF_TIME": {"type": "String", "values": ["1767322800"]}, "GRIB_SHORT_NAME": {"type": "String", "values": ["2-HTGL"]}, "GRIB_UNIT": {"type": "String", "values": ["[K]"]}, "GRIB_VALID_TIME": {"type": "String", "values": ["1767344400"]}}
   } }))
   const slices = []
   let changed = false
@@ -43,6 +44,10 @@ for (const lang of ['zh-cn', 'en']) test(`GRIB fields preserve decoded units and
   await page.getByTestId('read-grid-slice').click()
   await expect(page.locator('td[data-raw="9999.0"]').first()).toHaveAttribute('data-valid', 'true')
   await expect(page.locator('td[data-raw="NaN"]')).toHaveAttribute('data-valid', 'false')
+  const grid = page.getByTestId('grid-slice-result')
+  await grid.scrollIntoViewIfNeeded()
+  await expect(grid.locator('td').last()).toBeInViewport({ ratio: 1 })
+  await expect(page.locator('td[data-raw="9999.0"]').first()).toBeInViewport({ ratio: 1 })
   await expect(page.locator('.geojson-preview')).toHaveCount(0)
   await page.locator('.grid-container-preview .el-select').click()
   await page.getByRole('option', { name: 'message-2', exact: true }).click()

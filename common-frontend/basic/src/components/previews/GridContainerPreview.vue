@@ -98,7 +98,9 @@ onBeforeUnmount(clear)
 </script>
 
 <style scoped>
-.grid-container-preview :deep(.child-preview) { overflow: auto; }
+.grid-container-preview :deep(.container-body) { overflow: auto; }
+.grid-container-preview :deep(.container-body > *) { flex-shrink: 0; }
+.grid-container-preview :deep(.child-preview) { flex: 0 0 auto; overflow: visible; }
 .grid-container-preview :deep(.child-preview > *) { flex-shrink: 0; }
 .grid-details { margin-bottom: 12px; overflow-wrap: anywhere; }
 .grid-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }

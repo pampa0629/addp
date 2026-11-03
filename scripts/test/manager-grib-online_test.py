@@ -41,6 +41,16 @@ class GRIBOracleTest(unittest.TestCase):
             bad=copy.deepcopy(result);change(bad)
             with self.assertRaises(ValueError):SCENE.validate_slice(bad,spec,field)
 
+    def test_browser_dom_presence_cannot_replace_viewport_evidence(self):
+        spec=FIXTURE.sources()[0];case=dict(locator='exact-source',spec=spec)
+        observed=dict(locator='exact-source',values_verified=True,viewport_grid_verified=True,visible_message_count=3,download_sha256=spec['sha256'],download_size=spec['size_bytes'])
+        SCENE.validate_browser_case(case,observed)
+        for field,value in [('viewport_grid_verified',False),('visible_message_count',2),('download_sha256','wrong')]:
+            bad=dict(observed);bad[field]=value
+            with self.assertRaises(ValueError):SCENE.validate_browser_case(case,bad)
+        del observed['viewport_grid_verified']
+        with self.assertRaises(ValueError):SCENE.validate_browser_case(case,observed)
+
     def test_non_hosted_guard_never_starts_container(self):
         with mock.patch.object(FIXTURE.subprocess,'run') as run:
             with self.assertRaises(ValueError):FIXTURE.physical('seed',Path('/repository'),{})

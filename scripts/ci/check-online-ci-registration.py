@@ -533,7 +533,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     grib_owner=(repository/grib_paths[0]).read_text()
     if ("if case == 'native-grib':" not in netcdf_case_owner
         or any(path not in netcdf_make for path in (grib_paths[1],grib_paths[3],'test_online_grib_fixture.py'))
-        or any(value not in grib_owner for value in ('addp.manager-grib/v1','decoded_native_units','source_drift_denied','original_download_verified','manager-grib.json'))):
+        or any(value not in grib_owner for value in ('addp.manager-grib/v2','addp.manager-grib-browser/v2','viewport_grid_verified','decoded_native_units','source_drift_denied','original_download_verified','manager-grib.json'))):
         raise RegistrationError('GRIB case must retain decoded units, message windows, version, downloads and cleanup evidence')
     envi_paths=('scripts/test/manager-envi-online.py','scripts/test/manager-envi-online_test.py','business/scripts/online-envi-fixture.py','engines/geopython-workflow/test_online_envi_fixture.py')
     if any(not (repository/path).is_file() for path in envi_paths):

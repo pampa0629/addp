@@ -29,6 +29,13 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
     require(result.get('spatial') is None,'GRIB gained unapproved map preview')
 
 
+def validate_browser_case(case,observed):
+    require(observed.get('locator')==case['locator'] and observed.get('values_verified') is True
+        and observed.get('viewport_grid_verified') is True and observed.get('visible_message_count')==len(case['spec']['fields'])
+        and observed.get('download_sha256')==case['spec']['sha256'] and observed.get('download_size')==case['spec']['size_bytes'],
+        'GRIB real visible grid or original button download incomplete')
+
+
 def read(client,locator,selection,status=200):
     response=client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':locator,'grid_slice':json.dumps(selection,separators=(',',':'))}),(status,)).payload
     return response.get('data',{}).get('object',{}).get('content',{}).get('json') if status==200 else response
@@ -37,7 +44,7 @@ def read(client,locator,selection,status=200):
 def run(repository,environment,owner,*,physical_runner=None,browser_runner=None):
     require(environment.get('ADDP_ONLINE_MANAGER_CASE')=='native-grib','GRIB requires its independent case')
     artifact=Path(environment['ADDP_ONLINE_ARTIFACT_DIR']);physical=physical_runner or (lambda action:FIXTURE.physical(action,repository,environment))
-    report={'schema_version':'addp.manager-grib/v1','case':'native-grib','run_id':environment['ADDP_ONLINE_TEST_RUN_ID'],'result':'incomplete','cases':[],'cleanup':{}}
+    report={'schema_version':'addp.manager-grib/v2','case':'native-grib','run_id':environment['ADDP_ONLINE_TEST_RUN_ID'],'result':'incomplete','cases':[],'cleanup':{}}
     client=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30)
     tenant=owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'],'GRIB tenant')
     report['identity']=owner.validate_user_identity(client,tenant,PERMISSIONS)
@@ -82,9 +89,12 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         else:
             subprocess.run(['npm','exec','--','playwright','test','e2e/online/manager-grib.spec.js','--config=playwright.online.config.js'],cwd=Path(repository)/'console/frontend',env=dict(environment,ADDP_ONLINE_MANAGER_GRIB_JSON=json.dumps(context)),check=True)
             browser=json.loads((artifact/'manager-grib-browser.json').read_text())
-        require(browser.get('result')=='passed' and browser.get('run_id')==report['run_id'] and len(browser.get('cases',[]))==2*len(FIXTURE.sources()),'GRIB browser report incomplete')
+        require(browser.get('schema_version')=='addp.manager-grib-browser/v2' and browser.get('result')=='passed' and browser.get('run_id')==report['run_id'] and len(browser.get('cases',[]))==2*len(FIXTURE.sources()),'GRIB browser report incomplete')
         for case,observed in zip(report['cases'],browser['cases']):
-            require(observed.get('locator')==case['locator'] and observed.get('values_verified') is True and observed.get('download_sha256')==case['spec']['sha256'] and observed.get('download_size')==case['spec']['size_bytes'],'GRIB real UI or original button download incomplete')
+            validate_browser_case(case,observed)
+            for field in case['spec']['fields']:
+                screenshot=artifact/f"grib-{case['source_case']}-{case['spec']['case_id']}-message{field['number']}-slice.png"
+                require(screenshot.is_file() and screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),'GRIB visible slice screenshot missing')
         if not physical_runner:
             inspected=subprocess.run(['docker','exec','addp-manager-raster-runtime','python','-c',
                 'import pathlib,json,tempfile; print(json.dumps([p.name for p in pathlib.Path(tempfile.gettempdir()).glob("addp-grib-*")]))'],

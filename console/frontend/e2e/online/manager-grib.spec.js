@@ -58,6 +58,12 @@ test('ordinary user reads independent GRIB messages with native units and downlo
             await expect(cell).toHaveAttribute('data-valid', String(valid[y][x]))
             if (valid[y][x]) await expect(cell).toHaveText(values[y][x])
           }
+          const grid = frame.getByTestId('grid-slice-result')
+          await grid.scrollIntoViewIfNeeded()
+          await expect(grid.locator('td').first()).toBeInViewport({ ratio: 1 })
+          await expect(grid.locator('td').last()).toBeInViewport({ ratio: 1 })
+          await expect(grid.locator('td').last()).toHaveText(values.at(-1).at(-1))
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `grib-${source.source_case}-${source.spec.case_id}-message${field.number}-slice.png`) })
           await expect(frame.locator('.geojson-preview')).toHaveCount(0)
           await expect(frame.getByTestId('grid-no-location')).toContainText(/暂不提供地图预览|map preview is not available/)
         }
@@ -73,12 +79,12 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           const original = await api.get('/api/v1/manager/downloads/file?locator=' + encodeURIComponent(source.locator))
           expect(original.status()).toBe(200); expect(await original.body()).toEqual(raw)
           await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `grib-${source.source_case}-${source.spec.case_id}-page.png`) })
-          outcomes.push({ locator: source.locator, values_verified: true, mask_verified: true, message_switch_verified: true, grid_verified: true, native_units_verified: true, download_sha256: digest, download_size: raw.length })
+          outcomes.push({ locator: source.locator, values_verified: true, mask_verified: true, message_switch_verified: true, grid_verified: true, native_units_verified: true, viewport_grid_verified: true, visible_message_count: source.spec.fields.length, download_sha256: digest, download_size: raw.length })
         } finally { await download.delete() }
       } finally { await api.dispose() }
     }
     expect(browserErrors).toEqual([]); passed = true
   } finally {
-    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-grib-browser.json'), JSON.stringify({ schema_version: 'addp.manager-grib-browser/v1', run_id: context.run_id, result: passed ? 'passed' : 'failed', cases: outcomes, browser_errors: browserErrors }, null, 2) + '\n')
+    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-grib-browser.json'), JSON.stringify({ schema_version: 'addp.manager-grib-browser/v2', run_id: context.run_id, result: passed ? 'passed' : 'failed', cases: outcomes, browser_errors: browserErrors }, null, 2) + '\n')
   }
 })
