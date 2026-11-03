@@ -161,7 +161,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokens)
 		metaFacts, metaScanFacts, metaIdentities, metaNodes = metaClient, metaClient, metaClient, metaClient
 		authorizationFactsService.WithAuthorizationFactsReader(metaFacts).WithDataItemIdentityReader(metaIdentities).WithNodeIdentityPageReader(metaClient)
-		fulfillmentService.WithAuthorizationFactsReader(metaFacts)
+		fulfillmentService.WithAuthorizationFactsReader(metaFacts).WithNodeIdentityReader(metaNodes)
 		fulfillmentService.WithTransferProductionReceiptReader(commonClient.NewTransferClient(cfg.TransferServiceURL, tokens))
 		fulfillmentService.WithUploadReaders(commonClient.NewManagerUploadClient(cfg.ManagerServiceURL, tokens, nil), metaClient)
 	}

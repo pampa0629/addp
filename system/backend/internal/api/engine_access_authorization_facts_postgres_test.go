@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	shared "github.com/addp/common/authorization"
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
@@ -22,6 +24,7 @@ import (
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -49,7 +52,7 @@ func exerciseAuthorizationFactsAPI(t *testing.T, db *gorm.DB, identity *iam.Repo
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		roles := iam.NewTenantRoleService(identity, time.Now)
-		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: actor.TenantID, RoleKey: "custom.authorization_fact_reader", Name: "Authorization facts reader", PermissionKeys: []string{"system.engine_access_grant.read", "system.engine_access_delegation.create"}, ActorPrincipalID: actor.PrincipalID})
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: actor.TenantID, RoleKey: "custom.authorization_fact_reader", Name: "Authorization facts reader", PermissionKeys: []string{"system.engine_access_grant.read", "system.engine_access_delegation.create", "meta.scan_task.execute"}, ActorPrincipalID: actor.PrincipalID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -151,6 +154,8 @@ func exerciseAuthorizationItemsRouter(t *testing.T, db *gorm.DB, actor engineacc
 		expectedQuery := authorizationfacts.IdentityQuery{EngineID: engine.ID, Page: 1, PageSize: 100}
 		var calls atomic.Int32
 		var unavailable atomic.Bool
+		var nodeCalls atomic.Int32
+		nodeTarget := plugin.FileDirectoryPath(engine.ID, "images")
 		owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			switch r.URL.Path {
@@ -164,6 +169,21 @@ func exerciseAuthorizationItemsRouter(t *testing.T, db *gorm.DB, actor engineacc
 					return
 				}
 				_, _ = w.Write([]byte(`{"access_token":"addp_at_identity_fixture","token_type":"Bearer","expires_in":300,"scope":"addp.api"}`))
+			case "/api/v1/meta/runtime/node-identities/resolve":
+				nodeCalls.Add(1)
+				var query authorizationfacts.NodeIdentityQuery
+				if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer addp_at_identity_fixture" ||
+					r.Header.Get("X-Tenant-ID") != "" || json.NewDecoder(r.Body).Decode(&query) != nil || !reflect.DeepEqual(query.Target, nodeTarget) {
+					t.Error("wrong node identity owner query or forwarded human credential")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if unavailable.Load() {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_, _ = w.Write([]byte(`{"error":"unavailable","error_code":"fixture_unavailable"}`))
+					return
+				}
+				_ = json.NewEncoder(w).Encode(authorizationfacts.NodeIdentity{TenantID: uint(actor.TenantID), Target: nodeTarget, Exists: true})
 			case "/api/v1/meta/runtime/data-item-identities/query":
 				calls.Add(1)
 				var query authorizationfacts.IdentityQuery
@@ -236,5 +256,53 @@ func exerciseAuthorizationItemsRouter(t *testing.T, db *gorm.DB, actor engineacc
 			failure["error_code"] != "authorization_facts_unavailable" || len(failure) != 2 || calls.Load() != 3 {
 			t.Fatalf("owner failure must not become empty inventory or retry: status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
 		}
+		// Use the same production router and real User session as the page.
+		// A handler/service-only fixture would hide a missing node reader.
+		t.Run("NFS node refresh preserves current Grant and owner failure boundaries", func(t *testing.T) {
+			if err := db.Exec("UPDATE system.engines SET engine_type='nfs' WHERE id=?", engine.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := db.Exec("UPDATE system.engines SET engine_type=? WHERE id=?", engine.EngineType, engine.ID).Error; err != nil {
+					t.Error(err)
+				}
+			}()
+			id := uuid.New()
+			raw, _ := json.Marshal(nodeTarget)
+			if err := db.Exec(`INSERT INTO system.engine_access_grants(request_id,approval_mode,tenant_id,engine_id,catalog_path,item_fingerprint,boundary_hash,node_recursive,recipient_type,recipient_id,action,expiry_mode,operator_principal_id,operator_membership_id,operator_authorization_version,reason)
+VALUES(?,'independent',?,?,?::jsonb,'','',false,'user',?,'metadata_read','until_revoked',?,?,?,'Router refresh fixture')`, id, actor.TenantID, engine.ID, string(raw), actor.PrincipalID, actor.PrincipalID, actor.MembershipID, actor.AuthorizationVersion).Error; err != nil {
+				t.Fatal(err)
+			}
+			query := shared.MetadataRefreshQuery{Kind: "node", Target: nodeTarget}
+			body, _ := json.Marshal(query)
+			refreshRequest := func() *httptest.ResponseRecorder {
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/system/engine-access/metadata-refresh-scopes/query", bytes.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", "Bearer "+session.Session.AccessToken)
+				r := httptest.NewRecorder()
+				router.ServeHTTP(r, req)
+				return r
+			}
+			unavailable.Store(false)
+			result := refreshRequest()
+			var scope shared.MetadataRefreshScope
+			if result.Code != 200 || json.Unmarshal(result.Body.Bytes(), &scope) != nil || scope.Validate() != nil || !reflect.DeepEqual(scope.Query, query) || scope.TenantID != actor.TenantID || scope.Operator.PrincipalID != actor.PrincipalID || len(scope.Ranges) != 1 || scope.Ranges[0].Node == nil || scope.Ranges[0].Node.Recursive || !reflect.DeepEqual(scope.Ranges[0].Node.Target, nodeTarget) || nodeCalls.Load() != 2 || result.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("production NFS refresh: status=%d node_calls=%d body=%s", result.Code, nodeCalls.Load(), result.Body.String())
+			}
+			unavailable.Store(true)
+			result = refreshRequest()
+			var failure map[string]any
+			if result.Code != 503 || json.Unmarshal(result.Body.Bytes(), &failure) != nil || failure["error_code"] != "authorization_facts_unavailable" || len(failure) != 2 || nodeCalls.Load() != 3 {
+				t.Fatalf("node owner failure retried or admitted: status=%d calls=%d body=%s", result.Code, nodeCalls.Load(), result.Body.String())
+			}
+			unavailable.Store(false)
+			if err := db.Exec(`INSERT INTO system.engine_access_grant_revocations(request_id,revoked_by_principal_id,revoked_by_membership_id,reason,revoked_request_ids) VALUES(?,?,?,'Router fixture withdrawal',jsonb_build_array((?::uuid)::text))`, id, actor.PrincipalID, actor.MembershipID, id).Error; err != nil {
+				t.Fatal(err)
+			}
+			result = refreshRequest()
+			if result.Code != 403 {
+				t.Fatalf("withdrawn node still refreshes: status=%d body=%s", result.Code, result.Body.String())
+			}
+		})
 	})
 }
