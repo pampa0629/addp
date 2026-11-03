@@ -747,6 +747,8 @@ Service 从实际执行校验同源投影字段选择、筛选操作符、排序
 
 ## 八、渲染体系
 
+配置示例：[Table](#82-table-renderer-config) · [Chart](#83-chart-renderer-config) · [Map](#84-map-renderer-config) · [Value](#85-value-renderer-config)。共同约束见[字段呈现](#810-字段呈现规则)、[结果完整性](#87-结果完整性原则)和[运行布局](#812-运行布局与选择反馈)。
+
 当前 renderer 固定为：
 
 | Renderer | 开放条件 |
@@ -779,7 +781,7 @@ renderer 只能消费输出契约，不根据业务名称猜测角色。第一�
 - 通过事件返回排序、分页、选择、bbox 和地图视角等交互意图；
 - 只使用 ADDP 主题变量和导出的双语 i18n 消息，不持久化业务状态。
 
-Service 返回的 decimal 字符串在表格、数值卡片及图表的数据标签和提示中，必须直接按原始十进制值与显式精度格式化，不得先转换为 JavaScript `Number` 而改变展示值。图表坐标计算可以使用有限浮点近似，但这一近似不能覆盖原始值的文本展示，也不能回写 Service 结果或应用快照。
+十进制精度与原始值保持规则统一见[原始值与共享格式化](#8103-原始值与共享格式化)。
 
 现有 `TablePreview` 和 `GeoJsonPreview` 继续表示 Manager 式数据预览：它们消费预览响应结构并包含原始内容展示，不改名或扩张为 Workbench 结果 renderer。新增组件不保留另一个 Workbench 私有同功能实现。
 
@@ -790,23 +792,25 @@ Data Application Component 中的 `renderer_type` 是 `renderer_config` 的可�
 ```json
 {
   "columns": [
+    "person_id",
+    "activity_count"
+  ],
+  "field_presentations": [
     {
       "field": "person_id",
-      "label": "人员",
-      "format": {"type": "auto"}
+      "label": "人员"
     },
     {
       "field": "activity_count",
       "label": "活动数",
-      "format": {"type": "number", "precision": 0}
+      "precision": 0
     }
   ]
 }
 ```
 
-- `columns` 同时决定可见字段和顺序，字段必须存在于当前输出契约；
-- `label` 是数据应用所有者定义的展示文本，不改变字段语义；
-- 格式类型第一阶段只使用 `auto | number | percent | date | time | datetime | boolean | json`，并按 `FieldType` 限制可用组合；
+- `columns` 是字段名数组，同时决定可见字段和顺序，字段必须存在于当前输出契约；
+- 标签、单位、精度与日期时间格式只经 `field_presentations` 配置，按 `FieldType` 校验，详见[字段呈现规则](#810-字段呈现规则)；
 - 排序属于 `query_template.order_by`，不在 renderer config 中重复保存；
 - Table 可显示当前页并通过 Workbench 维护的 cursor 栈前后翻页，不在浏览器对跨页数据重排或聚合；
 - 第一阶段不支持行编辑、分组、透视、合计行或计算列。
@@ -818,16 +822,21 @@ Table Component 的查询字段与可见列是两项不同配置：`query_templa
 ```json
 {
   "chart_type": "bar",
-  "dimension_field": "person_id",
-  "measure_fields": [
+  "dimension": "person_id",
+  "measures": [
+    "activity_count"
+  ],
+  "field_presentations": [
     {
       "field": "activity_count",
       "label": "活动数",
-      "format": {"type": "number", "precision": 0}
+      "precision": 0
     }
   ]
 }
 ```
+
+`dimension` 是维度字段名，`measures` 是度量字段名数组；字段标签和格式统一通过 `field_presentations` 声明，见[字段呈现规则](#810-字段呈现规则)。
 
 - `chart_type` 第一阶段固定为 `bar | line | pie`；
 - `bar` 使用一个标量维度和 1–5 个数值度量；
@@ -841,7 +850,7 @@ Chart 可显式启用 `total_as_value: true`：维度必须已配置 `temporal_f
 
 Chart 可显式选择 `result_name_field` 展示当前查询对象名称，字段必须是当前 Consumer Descriptor 输出且已 select 的 string 字段，名称标签复用该字段的 `field_presentations.label`。Renderer Host 只读取本组件成功查询的完整结果：所有行名称一致时显示该名称（全期与按月规则相同），全为空时显示未提供名称，部分结果、混合空值、非字符串或不同名称时提示无法确定单一名称，不猜取第一行。参数改变后名称与结果同时清除，迟到请求不能覆盖新名称。查询和选择仍使用原始标识，配置随应用修订冻结；不从目录当前页、其他组件结果或输入字段名推断名称，不额外查询。指标服务的名称由 Model 既有主体显示名称契约提供，Workbench 不依赖 Model 内部结构。
 
-桌面运行与整页预览中，若一个独立横排内的组件均已切换为全期数字卡片，该排按内容高度呈现并带动下方组件上移；标题、说明、日期范围和多度量换行共同决定高度，不使用固定的缩小高度。与图表、表格混排或存在跨排组件时保留原网格行高，避免挤压其他内容。按月及参数失效后恢复保存的图表布局。编辑画布与大屏保持显式 placement；此适配不写回快照，不增加布局字段或查询。窄屏数字卡片同样按内容展开。
+全期数字卡片的桌面排版与快照隔离见[运行布局与选择反馈](#812-运行布局与选择反馈)。
 
 ### 8.4 Map Renderer Config
 
@@ -849,8 +858,10 @@ Chart 可显式选择 `result_name_field` 展示当前查询对象名称，字�
 {
   "geometry_field": "geometry",
   "label_field": "person_name",
-  "tooltip_fields": ["person_id", "activity_count"],
-  "base_map_profile_id": "osm",
+  "tooltip_fields": [
+    "person_id",
+    "activity_count"
+  ],
   "style": {
     "mode": "continuous",
     "field": "activity_count",
@@ -862,11 +873,10 @@ Chart 可显式选择 `result_name_field` 展示当前查询对象名称，字�
 
 - `geometry_field` 必须是 Descriptor 空间契约明确声明的 geometry 字段，不默认为 `geom` 或 `geometry`；
 - `label_field` 可选，`tooltip_fields` 只能引用输出契约字段；
-- `base_map_profile_id` 可省略；省略时使用平台当前默认 profile，显式值只能引用平台已批准底图 profile，不保存 URL、Key 或颜色值；
+- 当前 Map 配置不接收 `base_map_profile_id`；按组件选择底图 profile、保存引用及失效检查尚未实现，规划约束见[后续能力清单](../next/ADDP%20Workbench数据服务消费与数据应用专题.md#一延期能力)；
 - `style.mode` 只允许 `uniform | categorical | continuous`；`categorical` 使用已选标量字段，`continuous` 使用已选数值字段；
 - `style.palette` 只保存受控的 ADDP 主题色板标识，共享 renderer 在运行时解析主题变量；快照不保存原始颜色、函数或任意样式 DSL；
 - 专题样式只对当前服务已返回的值进行分类或连续映射，不产生聚合、业务分级或指标口径；
-- 已保存 profile 失效时显式报告不可用，不自动改用另一底图；
 - 地图根据 Descriptor 的 SpatialInfo 和 CRS definition 进行展示转换，不把 GeoJSON 坐标无条件当作 WGS84；
 - 第一阶段只消费 Query Service 的 GeoJSON FeatureCollection，最多 1000 个 Feature；`page.has_more=true` 时不把局部 Feature 当作完整地图；
 - Tile Service、自定义分级阈值、热力图、聚合点、三维和任意样式 DSL 暂不进入当前阶段。
@@ -990,6 +1000,10 @@ Data Application Component 当前结构化查询
 
 Workbench 的正式运行入口必须比 Manager 数据预览和 Service 服务预览更贴近业务用户。Service Consumer Descriptor 只提供可信的字段名、类型和原始注释；它不应为每个数据应用决定“显示为什么业务标签、使用什么单位和精度”。这些是 Data Application Component 在具体应用中的发布事实，统一称为 **Field Presentation / 字段呈现规则**。
 
+本节导航：[字段配置与校验](#8101-字段配置与校验) · [有限值与动态维度](#8102-有限值名称与动态维度) · [原始值与共享格式化](#8103-原始值与共享格式化)。
+
+#### 8.10.1 字段配置与校验
+
 字段呈现规则位于 Table、Chart 和 Map 的 `renderer_config.field_presentations`，每项固定引用一个 renderer 已使用的输出字段，并只允许以下受控语义：
 
 - `label`：所有标量字段均可声明，作为表头、图例、地图弹窗键名和主显示字段标签；
@@ -997,17 +1011,23 @@ Workbench 的正式运行入口必须比 Manager 数据预览和 Service 服务�
 - `temporal_format`：日期与时间格式必须与输出类型匹配；统计期间可使用 8.3 节既有的 `period` 格式与显式参数绑定；
 - `width`：只允许 Table 使用，范围为 `80..600` CSS px。
 
+Backend 对重复字段、renderer 未使用字段、不匹配类型的格式、越界精度或列宽严格失败关闭。Frontend 不接受任意 formatter 名、函数或格式化代码；Table、Chart 和 Map 必须共享 `common-frontend` 内唯一的标签解析和标量格式化实现，Workbench 只负责根据 Descriptor 创作、保存并传入配置。未显式配置的字段使用 Descriptor `comment || name` 和原始值作为唯一默认行为，不引入域、服务 ID、业务字段名或 Outdoor 特例。
+
+Component 编辑器从当前 renderer 实际使用字段生成一组字段呈现配置，预览与保存复用同一个 `buildRendererConfig()` 编译器，不维护另一套 renderer 组装逻辑。空间探索向导也通过同一同步函数生成普通 Component 配置，没有新增模板运行时、Outdoor 分支或样例字段。Backend 使用强类型结构和严格 JSON 解码校验上述约束，有效配置随草稿及不可变 Revision 直接保存。
+
+#### 8.10.2 有限值名称与动态维度
+
 `value_labels` 为有限值配置显示名称，每项只包含类型化 `value` 与 `label`，最多 32 项。本阶段支持 `string | bool` 字段；字符串精确区分大小写和空白，最长 1000 字符，允许空字符串；标签去除首尾空白后必填，最长 100 字符。禁止重复值、null、跨类型匹配、表达式和动态请求。未命中时按原值展示，null 仍显示缺失标记。映射只替换显示文本，状态规则仍对原始值求值；共享格式化器统一用于表格、图表维度/提示和地图标签/弹窗，不改变查询、导出或选择事件。创作界面和 Backend 同时按 Descriptor 校验，配置随不可变 Application Revision 保存。
 
 人员昵称等可变化的维度属性不属于静态 `value_labels`。关联由服务侧基于显式键关系完成，输出同时保留稳定标识和显示名称；Workbench 仅通过 Consumer SDK 读取 Descriptor 与结果并选择展示字段。不得从当前目录组件的分页结果拼接名称，也不得直连 Model 或数据库。关联键唯一性、未匹配行保留和属性时点应由服务关联契约明确，不能让名称关联改变指标粒度或放大计算值。
 
+#### 8.10.3 原始值与共享格式化
+
 Table 的 `columns`、Chart 的 `dimension / measures`、Map 的 `label_field / tooltip_fields / style.field` 仍是字段身份与查询事实源。字段呈现规则只格式化 renderer 展示，不修改 rows，不改变选择联动、参数绑定或导出数据，不把标签当作字段名回传 Service。Value renderer 的 `items` 已以字段、标签、单位和精度表达同一职责，继续作为它的唯一配置，不再叠加第二份 `field_presentations`。
 
-Backend 对重复字段、renderer 未使用字段、不匹配类型的格式、越界精度或列宽严格失败关闭。Frontend 不接受任意 formatter 名、函数或格式化代码；Table、Chart 和 Map 必须共享 `common-frontend` 内唯一的标签解析和标量格式化实现，Workbench 只负责根据 Descriptor 创作、保存并传入配置。未显式配置的字段使用 Descriptor `comment || name` 和原始值作为唯一默认行为，不引入域、服务 ID、业务字段名或 Outdoor 特例。
+Service 返回的 decimal 字符串在表格、数值卡片及图表的数据标签和提示中，必须直接按原始十进制值与显式精度格式化，不得先转换为 JavaScript `Number` 而改变展示值。图表坐标计算可以使用有限浮点近似，但这一近似不能覆盖原始值的文本展示，也不能回写 Service 结果或应用快照。
 
 字段查找、Descriptor 标签回退、数值格式化和时间格式化由 `common-frontend/basic` 的唯一纯函数承担。共享 Table 消费标签、列宽和单元格值；Chart 保留原始数值 series，在 tooltip 显示格式化后的值与单位，在度量轴标题集中显示单位而不向每个刻度重复追加，维度轴标题固定居中避免窄组件右侧截断；Map 只格式化弹窗主字段、属性键值和主题图图例。三者均不改写 Service rows，选择事件仍使用原始 `row_index`。
-
-Component 编辑器从当前 renderer 实际使用字段生成一组字段呈现配置，并将预览与保存收敛到同一个 `buildRendererConfig()` 编译器，删除了编辑器内的重复 renderer 组装逻辑。空间探索向导也通过同一同步函数生成普通 Component 配置，没有新增模板运行时、Outdoor 分支或样例字段。Backend 使用强类型结构和严格 JSON 解码校验上述约束，有效配置随草稿及不可变 Revision 直接保存。
 
 ### 8.11 状态呈现规则
 
@@ -1028,6 +1048,8 @@ Backend 必须按当前冻结 Descriptor 对规则数量、操作符、operand �
 ### 8.12 运行布局与选择反馈
 
 最终应用的 Component placement 既是位置约束也是可用展示区域。Chart、Map、Table 等可伸展 renderer 必须填满卡片标题和固定操作区之外的剩余高度，不能继续使用固定 `420px` 形成大块无意义留白；移动端退化为纵向流式布局时仍保留受控最小高度。该行为只改变运行画布布局，不修改 Snapshot placement、查询契约或 renderer 数据语义。表格渲染宿主必须把剩余高度传递到共享表格的内部滚动区，分页区不参与压缩；大量结果行不得溢出覆盖分页按钮或截获其点击。
+
+桌面运行与整页预览中，若一个独立横排内的组件均已切换为全期数字卡片，该排按内容高度呈现并带动下方组件上移；标题、说明、日期范围和多度量换行共同决定高度，不使用固定的缩小高度。与图表、表格混排或存在跨排组件时保留原网格行高，避免挤压其他内容。按月及参数失效后恢复保存的图表布局。编辑画布与大屏保持显式 placement；此适配不写回快照，不增加布局字段或查询。窄屏数字卡片同样按内容展开。
 
 Map popup 必须在当前地图 viewport 内完整可见。点击靠近任一边界的要素时，由共享 Map renderer 使用受控边距自动平移地图，使 popup 完整进入视口；popup 自身保留最大高度和内部滚动，不能溢出后由 Workbench 页面裁切。自动平移只服务信息可见性，不改变数据查询、要素选择或持久视图状态。
 

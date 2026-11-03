@@ -27,6 +27,7 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 | 消费投影与服务发现 | [Consumer Descriptor](../docs/spec/addp数据服务消费与数据应用规范.md#61-消费描述职责)、[Consumer Catalog](../docs/spec/addp数据服务消费与数据应用规范.md#64-service-consumer-catalog-与唯一-api) |
 | Component、草稿与发布修订 | [聚合与 Component](../docs/spec/addp数据服务消费与数据应用规范.md#531-聚合component-与创作范围)、[参数与查询配置](../docs/spec/addp数据服务消费与数据应用规范.md#52-component-参数与查询配置)、[草稿、修订与并发](../docs/spec/addp数据服务消费与数据应用规范.md#532-草稿修订与并发) |
 | Renderer 所有权与字段显示 | [共享层与模块分工](../docs/spec/addp数据服务消费与数据应用规范.md#81-common-frontend-与-workbench-边界)、[字段呈现与有限值名称](../docs/spec/addp数据服务消费与数据应用规范.md#810-字段呈现规则) |
+| Renderer 配置示例 | [Table](../docs/spec/addp数据服务消费与数据应用规范.md#82-table-renderer-config)、[Chart](../docs/spec/addp数据服务消费与数据应用规范.md#83-chart-renderer-config)、[Map](../docs/spec/addp数据服务消费与数据应用规范.md#84-map-renderer-config)、[Value](../docs/spec/addp数据服务消费与数据应用规范.md#85-value-renderer-config) |
 | 空草稿空间探索向导 | [通用空间组合](../docs/spec/addp数据服务消费与数据应用规范.md#86-通用空间数据应用组合) |
 | 应用参数、选择联动与预设 | [Selection Binding](../docs/spec/addp数据服务消费与数据应用规范.md#54-组件联动与受控下钻设计)、[参数控件与提交](../docs/spec/addp数据服务消费与数据应用规范.md#77-参数控件与查询提交)、[Parameter Preset](../docs/spec/addp数据服务消费与数据应用规范.md#510-application-parameter-preset) |
 | 展示模式、刷新与区块 | [展示模式](../docs/spec/addp数据服务消费与数据应用规范.md#55-单页-wallboard-展示模式)、[刷新策略](../docs/spec/addp数据服务消费与数据应用规范.md#56-wallboard-应用刷新策略)、[呈现区块](../docs/spec/addp数据服务消费与数据应用规范.md#57-wallboard-应用呈现区块) |

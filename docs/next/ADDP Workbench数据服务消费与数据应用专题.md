@@ -5,6 +5,7 @@
 ## 一、延期能力
 
 - Graph、Tile、Registered Service 适配；
+- Map 按组件选择底图 profile（未实现）：规划允许 `base_map_profile_id` 省略时使用平台当前默认 profile，显式值只引用平台已批准底图 profile，不保存 URL、Key 或颜色值；已保存 profile 失效时显式报告不可用，不自动改用另一底图。当前配置不接收该字段，见[Map 配置与拒绝边界](../spec/addp数据服务消费与数据应用规范.md#84-map-renderer-config)。
 - 多服务 JOIN；
 - 自由 SQL 和计算字段语言；
 - 多页面 Data Application；
