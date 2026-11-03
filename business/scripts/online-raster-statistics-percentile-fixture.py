@@ -20,21 +20,21 @@ WIDTH, HEIGHT = 1025, 513
 GRID = (100., 2., .25, 200., .125, -3.)
 CASES = {
     'original': {'source': 'values.tif', 'band': 2},
-    'p0': {'source': 'values.tif', 'band': 2, 'percentile': 0},
-    'p100': {'source': 'values.tif', 'band': 2, 'percentile': 100},
-    'p50-even': {'source': 'even.tif', 'band': 2, 'percentile': 50},
-    'p50-odd': {'source': 'odd.tif', 'band': 2, 'percentile': 50},
-    'p25': {'source': 'values.tif', 'band': 2, 'percentile': 25},
-    'p75': {'source': 'values.tif', 'band': 2, 'percentile': 75},
-    'p33': {'source': 'values.tif', 'band': 2, 'percentile': 33.3},
-    'p33-reversed': {'source': 'reversed.tif', 'band': 2, 'percentile': 33.3},
-    'reclassified': {'source': 'values.tif', 'band': 2, 'percentile': 90, 'stage': 'reclassify'},
-    'int64': {'source': 'int64.tif', 'band': 2, 'percentile': 50},
-    'uint64': {'source': 'uint64.tif', 'band': 2, 'percentile': 50},
-    'coverage': {'source': 'coverage.tif', 'band': 2, 'percentile': 50},
-    'single': {'source': 'single.tif', 'band': 2, 'percentile': 33.3},
-    'invalid': {'source': 'invalid.tif', 'band': 2, 'percentile': 50},
-    'unlocated': {'source': 'unlocated.tif', 'band': 2, 'percentile': 25},
+    'p0': {'source': 'values.tif', 'band': 2, 'percentiles': [0]},
+    'p100': {'source': 'values.tif', 'band': 2, 'percentiles': [100]},
+    'p50-even': {'source': 'even.tif', 'band': 2, 'percentiles': [50]},
+    'p50-odd': {'source': 'odd.tif', 'band': 2, 'percentiles': [50]},
+    'p25': {'source': 'values.tif', 'band': 2, 'percentiles': [25]},
+    'p75': {'source': 'values.tif', 'band': 2, 'percentiles': [75]},
+    'p33': {'source': 'values.tif', 'band': 2, 'percentiles': [33.3]},
+    'p33-reversed': {'source': 'reversed.tif', 'band': 2, 'percentiles': [33.3]},
+    'reclassified': {'source': 'values.tif', 'band': 2, 'percentiles': [90], 'stage': 'reclassify'},
+    'int64': {'source': 'int64.tif', 'band': 2, 'percentiles': [50]},
+    'uint64': {'source': 'uint64.tif', 'band': 2, 'percentiles': [50]},
+    'coverage': {'source': 'coverage.tif', 'band': 2, 'percentiles': [50]},
+    'single': {'source': 'single.tif', 'band': 2, 'percentiles': [33.3]},
+    'invalid': {'source': 'invalid.tif', 'band': 2, 'percentiles': [50]},
+    'unlocated': {'source': 'unlocated.tif', 'band': 2, 'percentiles': [25]},
 }
 FAILURES = ('percentile_null', 'percentile_boolean', 'percentile_string', 'percentile_array',
             'percentile_object', 'percentile_low', 'percentile_high',
@@ -147,14 +147,16 @@ def expected_result(case, ordered, total):
     result = {'band': 1 if case.get('stage') == 'reclassify' else case['band'], 'strategy': 'full',
               'valid_count': count, 'invalid_count': total-count, 'nodata_ratio': (total-count)/total,
               'min': ordered[0] if count else None, 'max': ordered[-1] if count else None, 'mean': mean, 'stddev': stddev}
-    if 'percentile' in case:
-        p = float(case['percentile']); value = None
-        if count:
-            position = (count-1)*Fraction(p)/100
-            low = position.numerator//position.denominator; weight = position-low
-            high = low + bool(weight)
-            value = float(Fraction(ordered[low])*(1-weight) + Fraction(ordered[high])*weight)
-        result.update(percentile=p, percentile_value=value)
+    if 'percentiles' in case:
+        result['percentiles'] = []
+        for percentile in case['percentiles']:
+            p = float(percentile); value = None
+            if count:
+                position = (count-1)*Fraction(p)/100
+                low = position.numerator//position.denominator; weight = position-low
+                high = low + bool(weight)
+                value = float(Fraction(ordered[low])*(1-weight) + Fraction(ordered[high])*weight)
+            result['percentiles'].append({'percentile': p, 'value': value})
     json.dumps(result, allow_nan=False)
     return result
 

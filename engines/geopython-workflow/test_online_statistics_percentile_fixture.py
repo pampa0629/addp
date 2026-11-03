@@ -41,17 +41,17 @@ def test_statistics_percentile_sixteen_complete_objects_real_gdal_and_immutable_
             source = raster_load(plan(root/case['source'])); workspace = source.workspace
             before = set(workspace.iterdir()); band = case['band']
             if case.get('stage') == 'reclassify': source = raster_reclassify(source, fixture.class_rules(), band=band); band = 1
-            kwargs = {'percentile': case['percentile']} if 'percentile' in case else {}
+            kwargs = {'percentiles': case['percentiles']} if 'percentiles' in case else {}
             actual = raster_statistics(source, band=band, **kwargs)
             runner.compare(actual, expectations[name]); actuals[name] = actual
             if not case.get('stage'): assert set(workspace.iterdir()) == before
         assert not workspace.exists()
-    assert actuals['p33']['percentile_value'] == actuals['p33-reversed']['percentile_value']
-    assert actuals['int64']['percentile_value'] == actuals['uint64']['percentile_value'] == 12.
+    assert actuals['p33']['percentiles'][0]['value'] == actuals['p33-reversed']['percentiles'][0]['value']
+    assert actuals['int64']['percentiles'][0]['value'] == actuals['uint64']['percentiles'][0]['value'] == 12.
     assert actuals['int64']['valid_count'] == actuals['uint64']['valid_count'] == 3
-    assert actuals['coverage']['valid_count'] == 2 and actuals['coverage']['percentile_value'] == -3.
-    assert actuals['single']['percentile_value'] == 0. and actuals['invalid']['percentile_value'] is None
-    assert actuals['p50-even']['percentile_value'] == 2. and actuals['p50-odd']['percentile_value'] == 0.
+    assert actuals['coverage']['valid_count'] == 2 and actuals['coverage']['percentiles'][0]['value'] == -3.
+    assert actuals['single']['percentiles'][0]['value'] == 0. and actuals['invalid']['percentiles'][0]['value'] is None
+    assert actuals['p50-even']['percentiles'][0]['value'] == 2. and actuals['p50-odd']['percentiles'][0]['value'] == 0.
     assert fixture.verify(root)['sources'] == original['sources'] and not list((root/'outputs').iterdir())
 
 
@@ -98,14 +98,14 @@ def test_statistics_percentile_object_oracle_rejects_wrong_semantics(statistics_
     _, _, oracle = statistics_sources
     name = 'p50-even' if fault == 'p50-ulp' else 'single' if fault == 'zero' else 'invalid' if fault == 'null' else 'p33'
     expected = oracle[name]; changed = copy.deepcopy(expected)
-    if fault == 'percentile': changed['percentile_value'] += .125
+    if fault == 'percentile': changed['percentiles'][0]['value'] += .125
     elif fault == 'count-type': changed['valid_count'] = float(changed['valid_count'])
-    elif fault == 'null': changed['percentile_value'] = 0.
-    elif fault == 'zero': changed['percentile_value'] = None
+    elif fault == 'null': changed['percentiles'][0]['value'] = 0.
+    elif fault == 'zero': changed['percentiles'][0]['value'] = None
     elif fault == 'extra': changed['private_path'] = '/tmp/forbidden'
-    elif fault == 'nan': changed['percentile_value'] = float('nan')
+    elif fault == 'nan': changed['percentiles'][0]['value'] = float('nan')
     elif fault == 'mean': changed['mean'] += 1.
-    else: changed['percentile_value'] = float(np.nextafter(changed['percentile_value'], np.inf))
+    else: changed['percentiles'][0]['value'] = float(np.nextafter(changed['percentiles'][0]['value'], np.inf))
     with pytest.raises(runner.SuiteError): runner.compare(changed, expected)
 
 
@@ -130,5 +130,5 @@ def test_statistics_percentile_complex_alpha_remains_separate_native_mixed_mem_e
     monkeypatch.setattr(compute, '_open', lambda value: source)
     for language, message in [('zh-cn','复数alpha'),('en','complex alpha')]:
         with raster_workspace(), raster_error_language(language), pytest.raises(ValueError, match=message):
-            raster_statistics(object(), percentile=50)
+            raster_statistics(object(), percentiles=[50])
     source = None

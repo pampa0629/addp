@@ -2207,6 +2207,8 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
 
 _PERCENTILE_MERGE_VALUES = 32768
 _STATISTICS_MESSAGES = {
+    'percentiles': ('percentiles必须为非空、严格递增且不重复的列表，各项为0至100之间的有限实数且不能为布尔值',
+                    'percentiles must be a nonempty, strictly increasing list without duplicates of finite real numbers from 0 to 100, excluding booleans'),
     'io': ('整幅栅格百分位临时排序读写失败', 'Full-raster percentile temporary sorting I/O failed'),
     'zonal_io': ('栅格分区百分位临时排序读写失败', 'Raster zonal percentile temporary sorting I/O failed'),
     'vector_io': ('矢量面分区百分位临时排序读写失败', 'Vector zonal percentile temporary sorting I/O failed'),
@@ -2291,17 +2293,23 @@ class _PercentileRuns:
             raise OSError('Incomplete private percentile ranks')
         return carry
 
-    def value(self, count, percentile):
+    def values(self, count, percentiles):
         carry = self.finish(count)
         if carry is None:
-            return None
-        lower, upper, weight = _percentile_ranks(count, percentile)
+            return [None] * len(percentiles)
+        results = []
         with carry.open('rb') as stream:
-            stream.seek(lower * 8)
-            values = np.fromfile(stream, dtype=np.float64, count=1 + (upper != lower))
-        if values.size != 1 + (upper != lower):
-            raise OSError('Incomplete private percentile rank read')
-        return float(_focal_linear_values(values[:1], values[-1:], weight)[0])
+            for percentile in percentiles:
+                lower, upper, weight = _percentile_ranks(count, percentile)
+                stream.seek(lower * 8)
+                values = np.fromfile(stream, dtype=np.float64, count=1 + (upper != lower))
+                if values.size != 1 + (upper != lower):
+                    raise OSError('Incomplete private percentile rank read')
+                results.append(float(_focal_linear_values(values[:1], values[-1:], weight)[0]))
+        return results
+
+    def value(self, count, percentile):
+        return self.values(count, [percentile])[0]
 
 
 def _zonal_percentiles(runs, statistics, percentile):
@@ -2346,10 +2354,25 @@ def _percentile_runs(dataset, *, zonal=False, window=None):
                     shutil.rmtree(directory)
 
 
-def raster_statistics(input_raster, band=1, percentile=_PERCENTILE_UNSET):
-    requested = percentile is not _PERCENTILE_UNSET
+def _statistics_percentiles(value):
+    if not isinstance(value, list) or not value:
+        raise _statistics_error('percentiles')
+    result = []
+    for item in value:
+        if (isinstance(item, (bool, np.bool_)) or not isinstance(item, Real)
+                or not 0 <= item <= 100 or not math.isfinite(float(item))):
+            raise _statistics_error('percentiles')
+        item = float(item)
+        if result and item <= result[-1]:
+            raise _statistics_error('percentiles')
+        result.append(item)
+    return result
+
+
+def raster_statistics(input_raster, band=1, percentiles=_PERCENTILE_UNSET):
+    requested = percentiles is not _PERCENTILE_UNSET
     if requested:
-        percentile = _percentile_parameter(percentile)
+        percentiles = _statistics_percentiles(percentiles)
     dataset = _open(input_raster)
     _band(dataset, band)
     for index in range(1, dataset.RasterCount + 1):
@@ -2382,7 +2405,9 @@ def raster_statistics(input_raster, band=1, percentile=_PERCENTILE_UNSET):
         if count and not all(math.isfinite(result[key]) for key in ('min', 'max', 'mean', 'stddev')):
             raise _statistics_error('range')
         if requested:
-            result.update(percentile=percentile, percentile_value=runs.value(count, percentile))
+            result['percentiles'] = [
+                {'percentile': percentile, 'value': value}
+                for percentile, value in zip(percentiles, runs.values(count, percentiles))]
         return result
 
 
@@ -6114,7 +6139,7 @@ _SPECS = [
     (raster_footprint, OperatorCategory.RASTER_EXTENT, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
     (raster_polygonize, OperatorCategory.RASTER_FORMAT, '分类栅格转面', [_INPUT(), _param('band', 'int', '从 1 开始的整数分类数据波段'), _param('connectivity', 'int', '同分类像元的邻接方式，仅接受整数 4 或 8', 4, False)], 'GeoDataFrame', ['read']),
     (vector_rasterize, OperatorCategory.RASTER_FORMAT, '矢量栅格化', [_param('input_gdf', 'GeoDataFrame', '有效二维面输入，后输入要素覆盖前者', role='input'), _param('reference_raster', 'raster', '仅提供同 CRS 的完整网格，不继承像元值或有效性', role='input'), _param('field', 'str', '数值属性字段，与常量二选一', None, False), _param('burn_value', 'float', '有限数值常量，与属性字段二选一', None, False), _param('all_touched', 'bool', '是否烧写所有触及像元；默认使用 GDAL 像元中心语义', False, False)], 'raster', ['read']),
-    (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('percentile', 'float', '可选单个0至100的有限百分位；全量固定线性插值，50为中位数；未提供时只返回原统计', None, False)], 'object', ['read']),
+    (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('percentiles', 'list[float]', '可选非空严格递增且不重复的0至100有限百分位列表；共享一次全量排序与线性插值，50为中位数；未提供时只返回原统计', None, False)], 'object', ['read']),
     (raster_cut_fill, OperatorCategory.RASTER_STATISTICS, '双DEM填挖方统计', [_INPUT(), _param('after_raster', 'raster', '施工后DEM，须与施工前同CRS、尺寸和完整网格，由用户保证相同高程基准', role='input'), _param('band', 'int', '显式施工前高程数据波段'), _param('after_band', 'int', '显式施工后高程数据波段'), _param('elevation_unit', 'str', '显式施工前高程单位', enum=list(_ELEVATION_METRES)), _param('after_elevation_unit', 'str', '显式施工后高程单位；挖填体积各非负，净增加为填方减挖方，统一立方米', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('method', 'str', 'summary保留原数值统计；class_frequency按分区／类别计数，以有效分类数为比例分母，全无效分区保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对显式提供；有限非负，缺失权重不补零，与percentile互斥', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；追加权重总和、加权求和与加权均值，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用加权总体标准差，须提供权重；总体分母，全1沿用原stddev，全零为null，原统计保持', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),

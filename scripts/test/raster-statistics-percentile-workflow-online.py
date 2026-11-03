@@ -27,7 +27,9 @@ SUITE = fixture.SUITE
 FAILURES = fixture.FAILURES
 PERCENTILE_MESSAGES = ('percentile必须为0至100之间的有限数值，且不能为布尔值',
                        'percentile must be a finite number from 0 to 100, excluding booleans')
-MESSAGES = {**{name: PERCENTILE_MESSAGES for name in FAILURES if name.startswith('percentile_')},
+PERCENTILES_MESSAGES = ('percentiles必须为非空、严格递增且不重复的列表，各项为0至100之间的有限实数且不能为布尔值',
+                       'percentiles must be a nonempty, strictly increasing list without duplicates of finite real numbers from 0 to 100, excluding booleans')
+MESSAGES = {**{name: PERCENTILES_MESSAGES for name in FAILURES if name.startswith('percentile_')},
             **{name: ('band must be a valid one-based index',)*2 for name in FAILURES if name.startswith('band_')},
             'complex': ('Complex-valued bands are not supported by numeric analysis',)*2}
 
@@ -56,11 +58,11 @@ def definition(sources, name, *, invalid=None):
         raise SuiteError('unknown exact whole-raster statistics case')
     case = fixture.CASES[name]; source = 'complex.tif' if invalid == 'complex' else case['source']
     params = {'input_raster': {'$ref': 'source'}, 'band': case['band']}
-    if 'percentile' in case: params['percentile'] = case['percentile']
+    if 'percentiles' in case: params['percentiles'] = case['percentiles']
     if invalid and invalid.startswith('percentile_'):
-        params['percentile'] = {'percentile_null': None, 'percentile_boolean': True, 'percentile_string': '25',
-                                'percentile_array': [25], 'percentile_object': {'p': 25},
-                                'percentile_low': -1, 'percentile_high': 101}[invalid]
+        params['percentiles'] = {'percentile_null': None, 'percentile_boolean': [True], 'percentile_string': ['25'],
+                                'percentile_array': [[25]], 'percentile_object': [{'p': 25}],
+                                'percentile_low': [-1], 'percentile_high': [101]}[invalid]
     if invalid and invalid.startswith('band_'):
         params['band'] = {'band_zero': 0, 'band_high': 99, 'band_boolean': True, 'band_string': '2'}[invalid]
     tasks = [{'id': 'source', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': sources[source]}}]
@@ -78,13 +80,26 @@ def compare(actual, expected):
         value = actual[key]
         if type(target) is float:
             if type(value) not in (int, float) or not math.isfinite(value): raise SuiteError('nonfinite or nonnumeric statistic')
-            if key == 'percentile_value':
-                equal = value == target if target == 0 or expected.get('percentile') in (0., 50., 100.) else math.isclose(value, target, rel_tol=4e-15, abs_tol=0.)
-            elif key in ('percentile', 'min', 'max'):
+            if key in ('min', 'max'):
                 equal = value == target
             else:
                 equal = math.isclose(value, target, rel_tol=1e-10, abs_tol=1e-12)
             if not equal: raise SuiteError('independent full-domain statistic differs: '+key)
+        elif key == 'percentiles':
+            if type(value) is not list or len(value) != len(target):
+                raise SuiteError('complete ordered percentile list differs')
+            for actual_item, expected_item in zip(value, target):
+                if (type(actual_item) is not dict or actual_item.keys() != {'percentile', 'value'}
+                    or type(actual_item['percentile']) not in (int, float)
+                    or actual_item['percentile'] != expected_item['percentile']):
+                    raise SuiteError('exact requested percentile differs')
+                actual_value, expected_value = actual_item['value'], expected_item['value']
+                if expected_value is None:
+                    if actual_value is not None: raise SuiteError('percentile null differs')
+                elif (type(actual_value) not in (int, float) or not math.isfinite(actual_value)
+                      or not (actual_value == expected_value if expected_value == 0 or expected_item['percentile'] in (0., 50., 100.)
+                              else math.isclose(actual_value, expected_value, rel_tol=4e-15, abs_tol=0.))):
+                    raise SuiteError('independent full-domain percentile differs')
         elif type(value) is not type(target) or value != target:
             raise SuiteError('exact statistic/count/null differs: '+key)
 
@@ -246,9 +261,9 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                 failures.append({'problem': problem, 'language': language, 'execution_id': identifier, 'diagnostic': diagnostic})
             else:
                 actual = raster.transient_result(execution); compare(actual, expectations[name])
-                if name in ('p0', 'p100') and actual['percentile_value'] != actual['min' if name == 'p0' else 'max']:
+                if name in ('p0', 'p100') and actual['percentiles'][0]['value'] != actual['min' if name == 'p0' else 'max']:
                     raise SuiteError('percentile endpoint does not equal the corresponding statistic')
-                if name == 'p33-reversed' and actual['percentile_value'] != cases[7]['json_result']['percentile_value']:
+                if name == 'p33-reversed' and actual['percentiles'][0]['value'] != cases[7]['json_result']['percentiles'][0]['value']:
                     raise SuiteError('source ordering changed the exact percentile')
                 if name in ('p0', 'p100', 'p25', 'p75', 'p33') and {k:v for k,v in actual.items() if not k.startswith('percentile')} != cases[0]['json_result']:
                     raise SuiteError('requested percentile changed original statistics')

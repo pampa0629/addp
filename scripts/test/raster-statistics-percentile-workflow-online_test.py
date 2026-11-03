@@ -17,9 +17,11 @@ def expectations():
     for name, case in m.fixture.CASES.items():
         item = {'band': 1 if case.get('stage') else 2, 'strategy': 'full', 'valid_count': 4, 'invalid_count': 0,
                 'nodata_ratio': 0., 'min': -4., 'max': 8., 'mean': 2., 'stddev': math.sqrt(20.)}
-        if 'percentile' in case: item.update(percentile=float(case['percentile']), percentile_value=-4+12*case['percentile']/100)
-        if name == 'invalid': item.update(valid_count=0, invalid_count=4, nodata_ratio=1., min=None, max=None, mean=None, stddev=None, percentile_value=None)
-        if name == 'single': item.update(valid_count=1, invalid_count=3, nodata_ratio=.75, min=0., max=0., mean=0., stddev=0., percentile_value=0.)
+        if 'percentiles' in case: item['percentiles'] = [{'percentile': float(p), 'value': -4+12*p/100} for p in case['percentiles']]
+        if name == 'invalid': item.update(valid_count=0, invalid_count=4, nodata_ratio=1., min=None, max=None, mean=None, stddev=None)
+        if name == 'invalid': item['percentiles'][0]['value'] = None
+        if name == 'single': item.update(valid_count=1, invalid_count=3, nodata_ratio=.75, min=0., max=0., mean=0., stddev=0.)
+        if name == 'single': item['percentiles'][0]['value'] = 0.
         result[name] = item
     return result
 
@@ -199,6 +201,21 @@ class StatisticsPercentileWorkflowTest(unittest.TestCase):
             self.env['ADDP_ONLINE_ARTIFACT_DIR']=str(self.root/f'scan-{index}')
             client=Client();client.scan_mutation=mutation
             with self.subTest(index=index),self.assertRaises(m.SuiteError):self.run_case(client)
+
+
+    def test_ordered_list_oracle_checks_every_item_and_rejects_partial_or_old_shape(self):
+        expected = {'percentiles': [{'percentile': 0., 'value': 0.}, {'percentile': 50., 'value': 2.}, {'percentile': 100., 'value': None}]}
+        m.compare(copy.deepcopy(expected), expected)
+        mutations = [lambda v: v['percentiles'].reverse(), lambda v: v['percentiles'].pop(),
+                     lambda v: v['percentiles'][1].update(value=3.),
+                     lambda v: v['percentiles'][1].update(value=True),
+                     lambda v: v['percentiles'][1].update(percentile=True),
+                     lambda v: v['percentiles'][1].update(extra=1),
+                     lambda v: v['percentiles'][2].update(value=0.),
+                     lambda v: v.update(percentile=50., percentile_value=2.)]
+        for index, mutate in enumerate(mutations):
+            value = copy.deepcopy(expected); mutate(value)
+            with self.subTest(index=index), self.assertRaises(m.SuiteError): m.compare(value, expected)
 
 
 if __name__=='__main__':unittest.main()

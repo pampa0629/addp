@@ -1379,10 +1379,11 @@ def test_full_percentile_keeps_single_statistics_object_entry_and_optional_param
     assert len(specs)==1
     spec=specs[0]
     params={param['name']:param for param in spec['parameters']}
-    assert set(params)=={'input_raster','band','percentile'}
-    assert params['percentile']['type']=='float' and not params['percentile']['required']
-    assert 'default' not in params['percentile']
-    assert all(word in params['percentile']['description'] for word in ('0','100','50','线性','原统计'))
+    assert set(params)=={'input_raster','band','percentiles'}
+    assert params['percentiles']['type']=='array' and params['percentiles']['item_type']=='float'
+    assert not params['percentiles']['required']
+    assert 'default' not in params['percentiles']
+    assert all(word in params['percentiles']['description'] for word in ('0','100','50','线性','原统计'))
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='object'
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
     assert spec['attributes']['resource_groups']==['raster'] and len(spec['output_ports'])==1

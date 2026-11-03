@@ -1015,7 +1015,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                     CHECK.validate_raster_statistics_percentile(self.repository, {'raster-statistics-percentile-workflow'})
                 target.write_text(original)
         target=self.repository/'business/scripts/online-raster-statistics-percentile-fixture.py';original=target.read_text()
-        for before,after in [("'percentile': 33.3", "'percentile': 33.4"), ("'percentile_object',", "'different',")]:
+        for before,after in [("'percentiles': [33.3]", "'percentiles': [33.4]"), ("'percentile_object',", "'different',")]:
             self.assertIn(before,original);target.write_text(original.replace(before,after,1))
             with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_statistics_percentile(self.repository, {'raster-statistics-percentile-workflow'})
