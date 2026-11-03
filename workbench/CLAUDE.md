@@ -4,7 +4,7 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 
 ## 必读文档
 
-- `docs/spec/addp数据服务消费与数据应用规范.md`
+- [数据服务消费与数据应用规范](../docs/spec/addp数据服务消费与数据应用规范.md)
 - `docs/concepts/addp术语表.md`
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp新模块开发指南.md`
@@ -13,27 +13,27 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 
 ## 边界
 
-- 只消费 Service Consumer Catalog、Consumer Descriptor 和 Descriptor 声明的 operation，不读取 Service 管理 DTO。
-- 不直连 Engine、数据库、Model、Develop execution 或上游业务表。
-- Data Application 是 Workbench 唯一持久化的用户创作聚合根；草稿、发布、下线和管理读写均同时匹配当前 Tenant 与 owner User。
-- Data Application Component 直接消费 Service Consumer Descriptor，持有 ServiceReference、结构化查询模板、参数定义、renderer 和契约指纹；不存在 Workbench View 中间资源或双轨创建路径。
-- Renderer 只能由 Consumer Descriptor 字段事实和 Data Application 显式配置驱动；不根据表名、字段名或验收领域推断业务角色。Value 只消费唯一汇总行，Chart 不聚合，Map 只使用显式 geometry、label、tooltip 和受控主题样式。
-- string/bool 字段的 `value_labels` 仅负责有限值显示名称，沿用共享字段呈现格式化器；动态维度名称必须由服务输出，不得使用目录组件当前页补全。映射边界、草稿回显与不可变发布由现有共享前端、Workbench Go 和浏览器门禁覆盖。
-- 空间探索创作向导只把用户显式选择的两个 Query Service、字段、默认参数和受控样式编译为现有 Value + Chart + Map + Table Component、Parameter Binding、Selection Binding 与布局；它不是持久化 Template，不增加 Backend API、运行时分支或领域默认值，并且只能用于空的应用草稿。
-- 发布产生不可变 Application Revision；草稿使用 `version` 并发控制，发布版次单独使用 `revision_number`。
-- Application Parameter Preset 是 Application Revision 内由创作者发布的一组完整命名参数值；它只更新浏览器会话中的 Application Parameter 并复用现有 Parameter Binding 与查询主路径，不单独持久化、不保存结果，也不接受运行 URL 中的任意原始参数值。
-- Selection Binding 只把同页源 Component 当前结果的显式标量字段写入 Application Parameter；目标 Component 必须由既有 Parameter Binding 推导，不能在 renderer 或快照中保存查询、URL、任意动作或第二套目标关系。
-- Application Display Mode 是同一 Data Application 页面的运行呈现方式；当前只允许 `desktop | wallboard`。全屏只保存在浏览器会话中，不能进入发布快照；wallboard 不能拥有第二套 Component、查询、授权或数据源。
-- Application Refresh Policy 只允许 wallboard 使用关闭、30 秒、60 秒、300 秒四档浏览器前台刷新；页面不可见时暂停，当前查询未完成时跳过本轮，不能创建 Task、Schedule、Execution 或后台刷新旁路。
-- Application Presentation Sections 只允许 wallboard 从 `title | parameters | query_actions` 中隐藏运行页区块；修订与刷新状态、全屏入口、Component 标题和错误提示始终显示。隐藏查询操作必须启用自动刷新，隐藏参数区必须保证全部必填参数有可执行默认值。
-- 保存前整页预览只消费编辑器当前内存 Snapshot 的归一化副本，并与已发布运行页复用唯一应用运行画布；不得新增预览路由、Backend API、临时持久对象、查询代理或第二套查询状态，关闭预览即销毁全部运行会话状态。
-- 预览中的“设为应用初始值”是唯一显式回写动作，只复制经过 Descriptor、必填和可选值验证的 Application Parameter 原始值到当前草稿 default_value；普通关闭不回写，保存草稿才持久化，不修改场景预设或发布修订。既有 `dataApplicationDraft.test.mjs` 与 `application-studio.spec.js` 覆盖取消隔离、选择原始 ID、保存重载、无效值和契约未就绪；使用现有 Workbench 前端 T1/T3 与完整模块门禁，无新增依赖或 CI 入口。
-- 服务契约变化后，组件编辑器提供显式“按当前契约重新配置”入口，复用既有 Service 选择与 Descriptor 加载逻辑重建字段和参数；确认组件后仍须保存、检查应用参数映射并发布新修订，不能自动改写历史快照。
-- 创建、更新和发布 Data Application 时使用当前 User Bearer 重新校验每个 Component 的 Descriptor；运行端由浏览器使用当前 User Bearer 调用 Service，全链路不保存 Token。
-- 列表、管理详情和删除只读取 Workbench 自身事实，不因 Service 不可达而失败。
-- Workbench 不代理真实数据查询，浏览器按 Descriptor operation 直接调用 Service。
-- 创作入口使用 Console iframe；正式数据应用运行入口只使用 Console 同 origin 的 `/data-apps/:application_id`，不增加第二条 iframe 运行 URL。
+- 只消费 Service Consumer Catalog、Consumer Descriptor 和声明的 operation，不读取管理 DTO，不直连 Engine、数据库、Model、Develop execution 或上游业务表；真实查询由浏览器直接调用 Service，Workbench 不做代理。
+- Data Application 是唯一持久化的用户创作聚合根，Component 直接保存在其快照中；不恢复 Workbench View 中间资源或双轨创建路径。
+- 管理读写、发布和下线匹配当前 Tenant 与 owner User。创建、更新和发布使用当前 User Bearer 重新校验各 Component Descriptor；运行查询也使用当前 User Bearer，全链路不保存 Token。列表、管理详情与删除的依赖只限 Workbench 自身事实，不依赖 Service 可达。
+- Renderer 只按 Descriptor 字段事实与显式应用配置工作，不按名称或验收领域推断业务角色。Value 只消费唯一汇总行，Chart 不聚合，Map 只使用显式 geometry、label、tooltip 和受控主题样式。
+- 创作入口使用 Console iframe；正式运行只使用 Console 同 origin 的 `/data-apps/:application_id`，不增加第二条 iframe 运行 URL。运行与保存前预览复用唯一应用画布，预览不增加查询代理或持久对象。
 - Workbench 不是 TaskProvider；在线查看、筛选和刷新不进入 Orchestrator。
+
+聚合字段、交互细节与配置限制统一引用正式规范；修改对应功能前直达下表正文，验证入口见[前端验证](#前端验证)。
+
+| 主题 | 权威正文 |
+| --- | --- |
+| 消费投影与服务发现 | [Consumer Descriptor](../docs/spec/addp数据服务消费与数据应用规范.md#61-消费描述职责)、[Consumer Catalog](../docs/spec/addp数据服务消费与数据应用规范.md#64-service-consumer-catalog-与唯一-api) |
+| Component、草稿与发布修订 | [参数与查询配置](../docs/spec/addp数据服务消费与数据应用规范.md#52-component-参数与查询配置)、[Data Application 与版本](../docs/spec/addp数据服务消费与数据应用规范.md#53-data-application) |
+| Renderer 所有权与字段显示 | [共享层与模块分工](../docs/spec/addp数据服务消费与数据应用规范.md#81-common-frontend-与-workbench-边界)、[字段呈现与有限值名称](../docs/spec/addp数据服务消费与数据应用规范.md#810-字段呈现规则) |
+| 空草稿空间探索向导 | [通用空间组合](../docs/spec/addp数据服务消费与数据应用规范.md#86-通用空间数据应用组合) |
+| 应用参数、选择联动与预设 | [Selection Binding](../docs/spec/addp数据服务消费与数据应用规范.md#54-组件联动与受控下钻设计)、[Parameter Preset](../docs/spec/addp数据服务消费与数据应用规范.md#510-application-parameter-preset) |
+| 展示模式、刷新与区块 | [展示模式](../docs/spec/addp数据服务消费与数据应用规范.md#55-单页-wallboard-展示模式)、[刷新策略](../docs/spec/addp数据服务消费与数据应用规范.md#56-wallboard-应用刷新策略)、[呈现区块](../docs/spec/addp数据服务消费与数据应用规范.md#57-wallboard-应用呈现区块) |
+| 预览隔离与显式初始值回写 | [保存前预览](../docs/spec/addp数据服务消费与数据应用规范.md#89-保存前整页预览)、[创作端的显式回写动作](../docs/spec/addp数据服务消费与数据应用规范.md#21-创作端与运行端) |
+| 权限、访问身份与契约变化 | [用户交互](../docs/spec/addp数据服务消费与数据应用规范.md#91-用户交互)、[BFF 与服务身份](../docs/spec/addp数据服务消费与数据应用规范.md#92-bff-和服务身份)、[契约变化](../docs/spec/addp数据服务消费与数据应用规范.md#十契约变化) |
+
+契约漂移使用组件编辑器已有“按当前契约重新配置”入口，复用 Service 选择与 Descriptor 加载；确认后仍须保存、检查应用参数映射并发布新修订，不能自动改写历史快照。
 
 ## 前端验证
 
@@ -52,6 +52,8 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 Playwright 自动管理当轮独立回环端口的 Workbench Vite 测试服务和 Console Vite 代理，使用独立缓存并关闭 Gateway 代理，不接管已有开发服务。数据应用运行页通过 Console 同源 `/data-apps/` 入口测试，资源由 `/module-ui/workbench/` 代理加载。失败截图和 trace 写入系统临时目录 `addp-workbench-playwright-results-*`，CI 失败时上传对应 artifact。真实后端联调使用 `make test-online ONLINE_SUITE=workbench-service-consumption`，准备与收尾统一见[Online 场景](../docs/spec/testing/scenarios/授权与共享.md#workbench-service-consumption)，不能由本节受控浏览器测试代替。
 
 ### 创作与组件编辑
+
+“设为应用初始值”的取消隔离、选择原始 ID、保存重载、无效值和契约未就绪，由 `dataApplicationDraft.test.mjs` 与 `application-studio.spec.js` 覆盖；按[标准入口](#标准入口与隔离环境)验证，不新增依赖或 CI 入口。
 
 创作端主屏为唯一运行画布的编辑呈现与组件属性侧栏，组件点击只选中、拖动手柄和前移/后移编译为同一 placement 排序，宽高与单/双列排版统一重排避免重叠。查询上下文变化使旧结果和在途请求失效；标题、格式和布局变化复用当前结果。空应用按展示类型进入同一组件编辑器的“数据、展示、条件”步骤。筛选、联动、场景与页面设置收纳于按需面板；未保存离页保护复用共享 `useUnsavedChangesGuard`。`applicationEditorLayout.test.mjs` 与 `application-studio.spec.js` 覆盖排版、新建草稿、中英文、编辑保存、查询失效、预览隔离和窄屏离页保护。不引入新依赖、API、快照字段或创作路由。
 
@@ -88,6 +90,8 @@ Application Parameter 可显式配置 `display_source: {source_component_id, lab
 搜索列表向导复用用户显式选择的名称字段；仅当该取值字段支持 eq 且名称字段是 string 时，为尚未配置名称来源的目标条件生成 display_source。已有条件可在筛选设置中选择一个既有选择源及名称字段。该变更不新增实体、API 路由、服务依赖或 CI 注册；同步 Swagger，并保留生成与路由覆盖校验。
 
 ### 指标与结果呈现
+
+有限值名称（`value_labels`）的映射边界、草稿回显与不可变发布由现有共享前端、Workbench Go 和浏览器门禁覆盖。
 
 Table/Chart 的 date 字段可显式配置 `temporal_format=period` 和 `period`（`grain_parameter/start_parameter/end_parameter`），引用当前 Service Descriptor 的必填命名参数：粒度为 string 且选项为 `total/month`，起止为 date。结果展示只使用成功查询当时的参数快照；按月显示年月，全期显示“所选期间合计”，Renderer Host 同时显示开始日期包含、结束日期不包含的完整范围。不得根据 `bucket` 等字段名推断语义；原始行、排序、选择与导出不变。共享组件只接受已解析的展示上下文，不读取 Service DTO。无新增依赖或 CI 入口。
 
