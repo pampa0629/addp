@@ -1159,3 +1159,26 @@ report.assertions为空，无images最终身份清单、Python依赖、浏览器
 Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方artifact13239563817名为monitor-http-budget-41613913398-1，26623字节；下载ZIP的SHA256=`c3b7e325ca3baa7e226409c479eaef427a29f58d110dc3f051d718fe6e56e4b8`与GitHub digest一致，CRC及唯一monitor-http-budget.json成员核验通过。原JSON148561字节，SHA256=`f5605587decceb00c1be9788a037730963aa2b0b1b8089370d52b08356baa6e5`；368项input_sha256逐文件与固定64a6a3b16源码一致，inputs_unchanged=true，日志末尾封闭预算摘要所有字段与原JSON逐项相同。完整日志134242字节，SHA256=`8d572e324e55c06b69550171c23b348d1c34659dc67a3c3b2efeed917e10cef1`；没有只依据绿色徽标或下载摘要判断通过。
 
 原始job／run／artifacts元数据、job.log／budget.zip／report.json及独立audit在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-125925007987-20261104-pvikyz67/`（0700／0600）。本轮仅更新58主题证据与索引、核对固定输入／归档／请求／资源／清理及文档锚点，不重跑有效代码门禁，也不触发额外CI。原eb8af3281准备目录失败保持独立failed，本轮是后继固定源码的一次Linux HTTP T2通过，不宣称根因修复、稳定性、正式密码／MFA产品页面、Hosted或72小时容量验收；未运行Hosted、容量或定时，未新开本地窗口。更新证据并回报维护会话后，建议下一步回到正式Agent／Copilot产品到页面的剩余准入与验收方案，真实窗口仍须另行确认。
+
+
+<a id="http-full-agent-build-deadline-20261104"></a>
+
+## 2026-11-04 单次正式产品full窗口在Agent镜像命令期限失败
+
+用户明确批准新的一次60分钟full窗口，冻结启动时已提交main，不自动重试或续窗。准备北京时间2026-11-04 06:18:23.729089开始，55分钟工作截止07:13:23.729089，总截止07:18:23.729089；固定源码`8a34ecb841881c507ceb700d69f6126c2ef50ec5`。15项入口／集成文件与提交及启动前保存的SHA256逐一相同，标准Infra状态读取退出0，不接管个人服务。准备内HTTP runner44项／1.113秒与Trace runner169项／4.627秒及既有JS／登记／System身份Go子门禁均退出0；离线TLS OpenSSL4.1.0、35命令／0.999713秒、峰值125481字节、4次预期拒绝、清理完成，不冒充产品身份实链。
+
+唯一命令make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full于06:19:27.614491启动，run_id=`addp-http-local-711a69cbda83495383c2a33b08cc62b5`，06:35:51.611218结束；含准备1047.873994秒、入口983.118327秒，make退出2／report failed。外部监督未发55分钟截止信号，原60分钟期限未延长；用户中断等待工具后，只复核已经结束的同一入口及归档，没有重启或复用剩余时间。
+
+| 实际阶段／核验 | 结果及边界 |
+| --- | --- |
+| 准入与Go编译 | 固定ARM64 Nginx缓存／隔离网络／私有证书／配置投影／受限构建器／测量器通过；24.21秒进入Go编译，270.29秒进入缓存预检，原编译命令成功 |
+| 缓存及镜像 | 完整资源预检0.585184秒、当次Go缓存删除含锁等待1.468580秒，分别守原四秒，回收子进程退出及cleanup_child_stopped=true。System／Gateway／Monitor镜像构建命令依次成功返回，327.24／354.75／378.21秒进入下一阶段；本轮未复发上一acff源码的Monitor APT失败，不据此认定间歇根因修复 |
+| Agent首因 | 378.21秒进入product_image_agent_backend，978.81秒进入清理；同一产品镜像命令达到原600秒期限，error_code=command_deadline_exceeded。不是完整资源检查超时、4 GiB停止线或55分钟工作截止，未将其改写为原生进程退出码或APT失败 |
+| 输出取证缺口 | command_failure和resource_guard_failure均未出现。原command在等待异常路径先终止／回收子进程后抛出，未进入正常退出后的输出读取／public_build分类，临时输出随上下文关闭。现有归档没有构建正文、哈希或APT／pip细阶段，不能确定是哪类安装／网络等待或唯一根因，亦不能用旧502或其他构建的诊断补填 |
+| 完整守卫 | 242次完整成功样本（Go编译61次、Agent构建150次），最长2.187825秒，开始最大间隔4.008027秒，零读取重试；242条同run／phase／唯一command_id的原卷检查点完整，最大读取68字节 |
+| 资源峰值 | 硬配额2.25 CPU／3288334336字节内存；卷／容器可写层／私有目录完整占用峰值4158320640字节，约3.87 GiB且低于4294967296字节停止线，已包含可写层，不重复相加。后续未执行阶段空间是否充足仍未知 |
+| 清理与未运行项 | cleanup.zero_owned_resources=true、failures=[]；4条cleanup归属列表记录完整通过，当次工作目录0，入口与外部监督退出。assertions为空，无images最终身份、完整Python依赖、受控请求、browser或停源回执；Copilot及前端镜像、密码／MFA、采集／API、页面、停源、注销未执行，不借资源／清理通过反转整轮failed |
+
+本次完整四秒、8 CPU／12 GiB、4 GiB停止线及业务／控制面／浏览器预算未改变，无重试、续窗、Hosted、容量、定时或个人环境接管；没有修改APT源、包、基础镜像、代理或签名校验策略。此前固定64a6a3b16自然Linux HTTP T2通过保持独立范围，不代替正式产品构建和页面闭环。本单次授权已经消费，后续真实运行仍待新授权。
+
+私有归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-window-20261104-ycdtsdrn/`（0700／0600），包括launch、expected-inputs、Infra状态、两组准备runner日志、entry-started／entry.log／completion、原report及独立audit。报告2758017字节，SHA256=`ebe06bd937ca2c63a8be205908eaf5f9e6f1cb552b0f6c505c2f37ff2f4d6c25`；入口日志SHA256=`b887005af98378dd29939272f264afe0810a07f30ac461d256014646a23de8d8`。本轮只补59主题证据与索引，核对固定15项来源、原哈希、全部样本／检查点／清理及文档链接，代码未改且不额外触发CI。更新证据并回报维护会话，保留部分实现／正式产品未验收；建议下一步先只读关联既有Agent构建和代理记录，判断600秒耗尽位置及超时输出缺口，再讨论最小取证或修正，不现在放宽超时或重试构建。
