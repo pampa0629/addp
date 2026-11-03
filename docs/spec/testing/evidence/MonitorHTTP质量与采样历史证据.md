@@ -1057,3 +1057,26 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 本轮assertions为空，报告独立scope为compile_checkpoint_collection_only、controlled_requests=0；没有产品images、Python依赖、浏览器、采集API、停源、注销或缓存回收回执。仅认“编译阶段真实检查点采集通过”。本次未复现偶发超时，不能认定先前CLI／daemon／VM或卷扫描性能问题已定位或修复；旧92309920b失败仍保留，历史Copilot APT下载根因未改变。正式Agent／Copilot产品构建→真实密码／MFA→采集／API→Console／Monitor页面→停源／注销清理闭环仍未验收，停源历史读取另批。本轮未运行Hosted、容量或定时，单次授权已经使用，不复用余时追加其他场景。
 
 原始归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-compile-window-20261103-kc5b9jtp/`（目录0700、文件0600），含launch／Infra状态／expected-inputs／entry-started／completion／独立audit／原始report。报告528685字节，SHA256=`5abbd1aab2c49e67da5db420f06259d4d9493a30c31fb8456881f4bf5a46c260`；入口日志SHA256=`9beea1452883a3db51314dde7b22fb0677ce34225c4a78e5e0beed8e851df04a`。准备快照及门禁摘要在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-compile-profile-before-20261103-auwt01zn/`与`/tmp/addp-p19-compile-profile-{http,trace}-runner-20261103.log`。本轮更新证据并回报维护会话，整体仍为部分实现／部分验收。
+
+
+<a id="http-full-monitor-apt-index-failed-20261103"></a>
+
+## 2026-11-03 单次完整本地窗口在Monitor镜像APT索引阶段失败
+
+用户另行明确批准一次60分钟full窗口，不再单独重跑编译诊断。准备从北京时间2026-11-03 14:49:36.127363起计，55分钟工作截止15:44:36.127363、总截止15:49:36.127363；标准Infra状态读取仅用于准入，不接管个人服务。冻结已提交main为`acff6e395e7f4ae7e7a6ec91a351ddf542b04950`，仅运行一次`make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full`，入口14:50:08.402151启动，14:57:56.742306结束；含准备500.615274秒，入口生命周期467.722303秒，make退出2／report failed。run_id=`addp-http-local-ae777177f61145fc9ed4863e4874235b`；12项入口及3项集成文件的15项摘要独立逐一匹配启动前保存值及固定提交，不混入共享工作区未提交代码。
+
+| 实际阶段 | 结果及边界 |
+| --- | --- |
+| 准入／Go编译 | 固定ARM64 Nginx缓存、当次私有证书／配置投影／空卷／构建器及卷测量器准备成功，14.69秒进入原Go编译；编译命令成功返回，169.55秒进入原缓存预检 |
+| Go缓存回收 | 预检0.262398秒，删除含锁等待0.593403秒，分别低于原四秒；child_stopped／cleanup_child_stopped为true，未保留清理锁，不改统计范围或删除其他缓存 |
+| 产品镜像 | System构建命令成功返回后于241.71秒进入Gateway，Gateway成功返回后于386.86秒进入Monitor；Monitor构建命令失败，463.42秒进入清理，尚未执行Agent／Copilot或前端镜像构建 |
+| 首因 | stage=`product_image_monitor_backend`、error_code=`command_failed_2`；外层构建命令退出2，失败APT进程退出100。唯一失败步骤的封闭诊断为`index_download`，error_kinds为signature／download，官方Debian／HTTP／bookworm；无HTTP状态，连接操作与端点均unknown／unavailable，FROM摘要unavailable |
+| 完整资源检查 | 保存116次完整成功样本，其中Go编译38次；最长0.604424秒，开始最大间隔4.005120秒，零读取重试。116条当次唯一命令的进入测量／管道返回检查点均完整，最大已读残片67字节；无resource_guard_failure，本轮未复现四秒超时 |
+| 资源峰值 | 硬配额2.25 CPU／3288334336字节内存；卷／容器可写层／私有目录完整占用峰值4027965440字节（约3.75 GiB），低于4 GiB停止线。该字段已包含可写层，不重复相加，不证明未运行的后续镜像与页面空间充足 |
+| 清理 | 首次失败即停；cleanup.zero_owned_resources=true、failures为空，4条cleanup归属列表记录完整通过，当次私有工作目录剩余0，入口及外部编排退出；无截止信号、重试或续窗 |
+
+本次诊断分类只证明APT索引阶段出现签名／下载错误，不能由此判定官方仓库签名损坏、代理篡改、缓存内容错误或具体网络节点故障。BuildKit及RUN build args沿既有docker_info投影为desktop_internal，宿主CLI代理沿host_environment为loopback；这些是配置来源类别，不是本次请求的实际路径或根因证明。原始构建输出只保留SHA256=`97a0c283e8471b9680d7ae7319924f4796744edea52cb00642b8b5907f4e2b83`及封闭诊断，没有留存原始URL／包名／正文，不能事后还原具体签名错误子类。未修改APT源、依赖、镜像、代理、签名校验或预算。
+
+report.assertions为空，无images最终身份清单、Python依赖、浏览器、业务计数、采集API、停源或注销回执；正式Agent／Copilot构建→真实密码／MFA→采集／API→Console／Monitor页面→停源／注销闭环仍未验收。System／Gateway构建命令成功、资源采样通过及清理成功不能反转本次failed，也不合并为之前Copilot deb下载失败的同一根因。停源历史读取仍另批；本轮未运行Hosted、容量或定时，不接管个人开发环境，单次授权已消费。
+
+私有归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-window-20261103-7cmces4n/`（目录0700、文件0600），包含launch／Infra状态／expected-inputs／entry-started／completion／entry.log／原report及独立audit。报告1326657字节，SHA256=`b081119705eef0f5900e61d31a7b141675c215072c93f3fa68cbd52a5c9637ed`；入口日志SHA256=`dd3df5a21f2887266695b964de0509edefb77fe391d8f4e7989847db1b7b0724`。仅更新两份既有证据及55主题索引，验证固定输入、原归档散列、样本／检查点／时限／零残留、唯一锚点和引用，未因文档更新重跑代码门禁。本轮回报维护会话，整体维持部分实现／部分验收；建议下一步先只读关联现存Monitor Dockerfile、索引签名分类及已有构建／代理记录，提出最小修正与验收方案后再讨论，不自动重试构建或开启新窗口。
