@@ -10,7 +10,7 @@
 
 ## 现行契约与证据边界
 
-当前领域报告为 `addp.security-mysql-owner-protection-online/v33`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v33 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
+当前领域报告为 `addp.security-mysql-owner-protection-online/v34`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v34 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
 
 保护方式、角色资格及导出有效性的能力契约见[数据安全规范](../../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)。本文维护 suite 断言与版本差异；已归档的固定源码、运行尝试、失败和清理结果见[数据保护与执行血缘历史证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md)，不由版本号推导某次验收已通过。其中[四出口实际停机 v9](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)分别维护对应旧证据，不作为 v23～v33 新增范围的通过记录。
 
@@ -18,7 +18,7 @@
 
 确定性入口为 `make test-security-online-runner`，由 `make test-online-runner` 与既有 Platform CI 覆盖；共享存储与 Provider 的 PostgreSQL／MySQL 门禁仍各自认定 T2。真实 HTTP／浏览器使用既有 `security-mysql-owner-protection` Hosted suite，由专门 CI 会话安排与回传。本次文档整理不新增部署、账号、角色、权限、产品接口或 CI 路线；各场景明确列出的最小身份和权限仍是独立前提。
 
-确定性回归、协议单元格、旧版本结果与实际 T4 分开记录。本文没有新增或刷新运行证据，各新增断言原有的“未运行／待回传”状态仍保留；尤其 v27 不证明自然到期或其他出口、v30 不证明 v31 的新错误区分、v24 不证明 v25 的新增 runtime 单元格，当前 v33 仍待独立 Hosted 证据。未运行、失败、跳过或清理失败均不能计为通过，身份、敏感信息和清理要求继续按各主题执行。
+确定性回归、协议单元格、旧版本结果与实际 T4 分开记录。本文没有新增或刷新运行证据，各新增断言原有的“未运行／待回传”状态仍保留；尤其 v27 不证明自然到期或其他出口、v30 不证明 v31 的新错误区分、v24 不证明 v25 的新增 runtime 单元格，当前 v34 的新增 SQL 范围仍待独立 Hosted 证据。未运行、失败、跳过或清理失败均不能计为通过，身份、敏感信息和清理要求继续按各主题执行。
 
 ## Transfer 保护与原值访问
 
@@ -95,6 +95,16 @@ Hosted `security-mysql-owner-protection` 报告 v23 的 `bank_card_metadata.deve
 
 运行报告仅保留游标 SHA256／长度、定义及策略修订、同步回执、HTTP 矩阵和独立结果断言，不归档游标、令牌或源值。成功、失败和中断均撤销本轮捕获的 Policy 并核对 revoked，删除本轮 Service 并确认 404，已有默认规则保持不变。新增场景是正式 HTTP T4，既有 Console 浏览器 v9 验收保持原范围；不新增浏览器通过声明。门禁与待回传状态沿[统一结果认定](#统一门禁与结果认定)。
 
+### v34：SQL 双别名、撤销与默认恢复
+
+同一领域 Runner 增加 `service_sql_role_cursor_revocation`，与原生表场景复用同一生命周期与逐页校验，不新增 suite、账号、权限或引擎。复用已扫描的合成银行卡表及正式 Assessment，发布私有单表 SQL，仅将敏感源字段直接输出为 `card_alias`、`card_copy`，不构造 SQL 的 Meta Source 快照。候选仅通过 POST JSON 提交 SQL 与引擎，必须只返回一个真实源字段身份；保存的单条角色选择不能改成别名身份。新选项 ID 由 Security 返回，Runner 不自造。
+
+原生表和 SQL 场景均先发布空选择的默认服务，读取 4/1 两页 JSON／CSV；再创建本轮 Service 全遮盖方式并等待同一 Owner 投影新 revision/cursor acknowledged，保存选择并验证两个输出副本、Unicode、NULL、空字符串移除及普通字段。撤销后保持定义和旧游标不变，JSON／CSV 续读及无游标请求精确 409/`query_protection_choice_invalid`，无数据、不可缓存；保留选择的保存及停用后再次启用同样拒绝，版本不前进。直接停用保留失效选择，主动移除并保存后才恢复默认，恢复两页 CSV 的哈希必须与初始默认文件一致，不能把 `default_restored` 按全遮盖验算。
+
+成功及拒绝响应严格验证单个 `Cache-Control: no-store`；报告只保存行数、结构、CSV 哈希、游标哈希／长度、角色观察和策略／定义／投影修订，不归档原值、CSV 正文、完整游标或令牌。本人角色、Membership、授权版本和默认 Baseline 保持；不做角色资格或原值／源授权变更。新 SQL 场景增加一个受控 Service 的创建／删除计数，政策修订保留为隔离 Infra 内审计事实，成功、失败及中断仍按捕获 ID 撤销 Policy、删除服务并确认 404。Console 浏览器 v9 及原有图片数量与边界不变。
+
+确定性入口仍为 `make test-security-online-runner`，CI 自动登记必须同时约束 v34、SQL 场景派发及报告字段，不能仅新增未执行函数。本文约定的是新增断言，不表示 v34 已实际执行通过；既有本地 MySQL Persons 的十二项／六份 CSV 证据见 [Service 本地 SQL 验收](../../service/docs/testing/查询与要素协议.md#sql-单表角色方式本地验收2026-11-03)，不能替代隔离合成来源的新 Hosted/T4。CI 仍由专门会话跟进，不自行派发、查询、重跑或设置定时。
+
 ## 用户角色资格撤销
 
 领域报告 v27 的 `service_role_membership_revocation` 与上述方式撤销独立执行。System-owned 初始化夹具只在该隔离 suite 另建普通 Service 用户，功能权限放在其主角色，脱敏选择资格放在第二个仅重复已有服务定义读取权限的业务角色；角色管理 Permission 不可租户自定义，因此仅复用初始化时已有的隔离 Tenant 管理员，限定读取/撤销精确 Assignment，不进入数据消费路径。业务阶段经正式 IAM API 精确撤销第二个 Assignment，不修改主角色、Policy、Assessment、Service 选择或保护投影，不使用管理员消费身份或直接 SQL。
@@ -145,13 +155,13 @@ v31 修正上述 v30 的 BFF 原因合并：Transfer资格自然到期时，Deve
 
 ### v32：响应缓存证据
 
-v32 在同一角色资格自然到期场景中增加导出响应缓存证据，当时取代 v31；当前领域报告已由 v33 接续，不保留平行运行契约。该版本不新增部署、账号、角色、权限或验收入口。共享 HTTP 传输只额外保留实际 `Cache-Control` 头的全部值，不收集 Cookie 或其他凭据头；正常 JSON、CSV 字节流和 HTTP 错误响应均走同一读取路径。
+v32 在同一角色资格自然到期场景中增加导出响应缓存证据，当时取代 v31；当前领域报告已由 v34 接续，不保留平行运行契约。该版本不新增部署、账号、角色、权限或验收入口。共享 HTTP 传输只额外保留实际 `Cache-Control` 头的全部值，不收集 Cookie 或其他凭据头；正常 JSON、CSV 字节流和 HTTP 错误响应均走同一读取路径。
 
 到期前角色 CSV 与主动清空选择后的默认 CSV，创建、每次状态读取、文件下载都必须精确返回单一 `no-store`，并在各自 CSV 证据中保留三阶段头值。
 
 到期后的旧会话状态、旧文件下载、原查询再次导出，以及默认恢复后的旧文件复读，继续要求精确 `409/query_protection_roles_unavailable`、无结果，并在 `export_refusal_cache_control` 中分别保留四个实际头值。
 
-缺失、空值、`no-cache`、允许保存／公开缓存或重复矛盾头均拒绝验收；不能以此前默认 CSV 的成功响应头替代这些资格失效证据。既有六个真实 UUID、同会话自然到期、投影与目标不变、默认恢复及精确清理边界全部保留。确定性反例和传输回归沿[统一门禁](#统一门禁与结果认定)，该版本要求不替代当前 v33 的独立运行证据。
+缺失、空值、`no-cache`、允许保存／公开缓存或重复矛盾头均拒绝验收；不能以此前默认 CSV 的成功响应头替代这些资格失效证据。既有六个真实 UUID、同会话自然到期、投影与目标不变、默认恢复及精确清理边界全部保留。确定性反例和传输回归沿[统一门禁](#统一门禁与结果认定)，该版本要求不替代当前 v34 的独立运行证据。
 
 ## 四出口逐原因矩阵
 
