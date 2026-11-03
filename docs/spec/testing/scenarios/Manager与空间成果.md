@@ -1143,3 +1143,18 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 32类各以中英文提交，共64次准确失败：未知／空方法，percentile值／null、外部权重、单独权重波段、启用加权标准差、非布尔开关，两个角色零／越界／布尔／字符串波段，两个角色选alpha及所选复数数据，类别小数／不安全浮点整数／原生64位越界，分区小数／不安全浮点整数／UInt64越界，尺寸／位置／CRS不符、缺CRS／缺网格／奇异网格。须在实际analysis任务准确拒绝，反向查询不改提交语言；混合复数alpha、计数溢出及故障注入继续单列Native，不冒充Hosted。
 
 执行前冻结独立逐像元整数计数与精确比例预期；逐区核数量守恒、有效分类分母、零／负类别、诊断null行、完整七列及排序、空表Schema和最多50行预览；两条summary核原九列。每次成功全检已有CSV，每次失败重查16份，共136＋64×16＝1160次实际完整CSV检查。归档16份原CSV、源、冻结预期及大小／hash清单，保存声明精确核目标／file类型／create写入方式，物理／Meta大小相等且为正整数，归档原字节另核大小／hash，不冒充产品声明大小；核精确扫描父执行／用户／租户／引擎、当前执行全部实际输入内外血缘／Monitor、源和全部先前成果原字节与Meta不变、失败零发布／新增扫描血缘以及所有退出清理。仅准备与本地Native／mock不计真实Hosted、Linux全量、UI或容量；实际运行仍由CI会话协调。
+
+
+<a id="vector-zonal-class-frequency-persistence"></a>
+### 矢量面分区分类频数持久化
+
+独立手工 `vector-zonal-class-frequency-persistence`，入口 `scripts/test/online-hosted-vector-zonal-class-frequency-gate.sh`；复用 Hosted／NFS、同源产品默认 Runtime 与普通 User 原12权限，业务预算固定600秒，不重跑旧套件或扩预算。16条成功链覆盖两种覆盖、孔洞／重叠／多部件、矩形／旋转／地理网格、NoData／mask／alpha、跨块、全无效／无覆盖／空批、三种业务fid大小写与原summary对照。32类参数、来源编号、波段／复数、分类精度、几何／CRS及字段冲突各按中英文提交，共64次准确失败。独立逐面逐像元计数、有效分母及守恒，完整核原属性／类型／几何／行序；归档16份GeoPackage原字节和大小／hash，逐次累计1160次成果全检，81次物理取证调用（不含收尾），冻结预期绑定本轮root／run／源码／源文件hash。
+
+每次真实成功核声明目标／类型／写入模式、物理＝Meta正整数大小、精确自动扫描父执行／用户／租户／引擎、当前全部实际输入的内部血缘及公共安全投影、Monitor和Meta快照；失败须准确落analysis及原始双语原因，无发布／新增扫描／血缘，反向查询不改提交语言。业务fid允许展开重复，存储FID独立且唯一，两者均完整取证。源与全部先前成果不变、Runtime工作区／冻结预期／NFS／部署／Infra清理严格核验。底层写入／发布／清理故障注入与竞争条件继续单列Native，不伪造Hosted故障；不计UI、容量、任意影像或已完成Hosted，实际Linux／Hosted仍由CI会话协调。准备及本地门禁状态见栅格后续专题。
+
+<a id="raster-sample-lines-persistence"></a>
+### 沿线栅格采样持久化
+
+独立手工 `raster-sample-lines-persistence`，入口 `scripts/test/online-hosted-raster-sample-lines-gate.sh`；同样沿原普通User12权限、NFS和同源默认Runtime，独立600秒预算。16条成功链覆盖cell／bilinear、米／正式国际英尺／美制测量英尺CRS、折线与重复内顶点、短线／闭合线／准确终点、矩形／旋转网格、outside／nodata／alpha及三种业务fid展开保存。28类参数、间距、来源编号、几何／CRS、波段和字段冲突各按中英文提交，共56次准确失败。独立Decimal段长与逐点路径定位、精确支持权重oracle核完整里程／坐标／数值／状态及原属性；使用CRS声明的水平单位事实，不把独立浮点近似当成容差。归档16份GeoPackage原件及大小／hash，累计1032次成果全检，73次物理调用（不含收尾）。
+
+沿上一场景相同严格声明／大小、扫描、两源内部血缘与公共投影、Monitor、源及先前成果与Meta快照、语言冻结和全部清理。失败精确落sample并且零发布／新增扫描／血缘；正权重无效支持不得补值／归一化，闭合起终点按不同里程保留。混合类型与数值极限、底层故障注入继续单列Native，不计UI或容量，不修改原点位套件、算法或权限；Linux和实际Hosted由CI会话协调，不重试、不扩预算。
