@@ -350,17 +350,21 @@ Notebook 消费这些契约时还须遵守：
 
 错误必须保持可区分且 fail-closed：空列表只表示引擎真实返回零个子项，权限失效、对象不存在、不支持、超时和 Provider 故障都不能降级为空列表或占位对象。Provider 的错误类别、Go 因果链与敏感信息保护统一见[Engine Catalog 错误契约](../spec/addp引擎插件接口规范.md#engine-catalog-错误契约)；下表保留 Notebook Engine Catalog API 的稳定 `error_code`、会话专用拒绝与 SDK 异常映射：
 
-| HTTP | `error_code` | SDK 语义 | 是否自动重试 |
+本表只描述当前 Kernel Session 的 `catalog/children` 目录错误；引擎发现 `engines.list()` 与业务数据读取的异常分别判断。SDK 不自动重试目录请求、不调度退避，也不自动重新打开 Session；目录分页产生的多次 HTTP 请求不是错误重试。末列描述调用者的显式处理，不允许原样循环重放参数、会话、权限、目标或能力错误。
+
+当前目录错误出口只提供 `error`、`error_code`，未提供 `retry_after` 或 `Retry-After`，SDK 也不消费这些提示。平台的[HTTP 重试提示](../spec/api/AI-Agent友好性.md#agent-与-sdk-错误响应增加-error_type)是可选契约，不能由通用示例推定此接口已实现。
+
+| HTTP | `error_code` | SDK 语义 | 调用者显式处理 |
 | --- | --- | --- | --- |
-| 400 | `engine_catalog_request_invalid` | 参数或路径无效 | 否 |
-| 401 | `notebook_session_unavailable` | Kernel Capability 或 Session 已失效 | 否，重新打开 Session |
-| 403 | `notebook_engine_catalog_forbidden` | Notebook 会话授权、Membership 或 Permission 已失效 | 否 |
-| 404 | `engine_not_found` / `engine_catalog_entry_not_found` | Engine 或原生对象不存在 | 否 |
-| 422 | `engine_catalog_operation_unsupported` | Engine capabilities / Engine Catalog Model 不支持该方法 | 否 |
+| 400 | `engine_catalog_request_invalid` | 参数或路径无效 | 修正参数或路径 |
+| 401 | `notebook_session_unavailable` | Kernel Capability 或 Session 已失效 | 重新打开 Session，不复用失效能力 |
+| 403 | `notebook_engine_catalog_forbidden` | Notebook 会话授权、Membership 或 Permission 已失效 | 核清当前会话与权限，不绕过拒绝 |
+| 404 | `engine_not_found` / `engine_catalog_entry_not_found` | Engine 或原生对象不存在 | 核实目标与当前可见范围 |
+| 422 | `engine_catalog_operation_unsupported` | Engine capabilities / Engine Catalog Model 不支持该方法 | 核实当前能力与目录模型，不伪造支持 |
 | 502 | `engine_catalog_control_plane_failed` | Develop 到 System 的服务认证、协议或响应异常 | 仅由调用者显式重试 |
 | 502 | `engine_catalog_provider_failed` | Provider 返回未分类上游错误 | 仅由调用者显式重试 |
-| 503 | `engine_unavailable` | Engine 当前不可用 | 可按 `retry_after` 重试 |
-| 504 | `engine_catalog_timeout` | 端到端 deadline 到期 | 可重试 |
+| 503 | `engine_unavailable` | Engine 当前不可用 | 可由调用者显式重试 |
+| 504 | `engine_catalog_timeout` | 端到端 deadline 到期 | 可由调用者显式重试 |
 
 ---
 
