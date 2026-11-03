@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "2aca7a4dd19899bd0be802162534d05f9ea1ec017a95f3c2fdc581684665b678",
+      "commit": "0cee1d0da2cc7e0f1ecc72e456c9517df1f90a9b",
+      "sha256": "4e075ddc228fc40810f6ee1b9a6c492b782948e7d9172b46479dbad6d7866dd9",
       "use": {
-        "zh-cn": "本次将目录核验的所选能力身份传入 Runtime 并在同一 Run 恢复，不从同 Skill 的其他 Tool 猜操作；历史原参数路由保持。",
-        "en": "Passes the catalog-validated selected capability into Runtime and restores it within the Run instead of guessing from other tools in the Skill; historical exact-parameter routing remains."
+        "zh-cn": "当前轮明确只预检、不创建时不选择历史原参数创建；当前配置预检仍先读平台目录与正式预检，原所选能力身份传递、互斥拒绝和历史只读路径保持。",
+        "en": "Explicit precheck-only requests do not select historical exact-parameter creation. Current configuration checks still use the platform catalog and formal precheck; selected-capability identity, route rejection and read-only history remain."
       }
     },
     {
@@ -320,11 +320,11 @@
       "kind": "contract",
       "path": "agent/backend/graph/state.py",
       "anchor": "class RouteDecision(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "ddb3e6ec62ab53fcc2eab1a860b9086424cb74633a4b16532bd6d587d88732f3",
+      "commit": "0cee1d0da2cc7e0f1ecc72e456c9517df1f90a9b",
+      "sha256": "084a4690248e3b389ee36aa194b4c1531da0fa385785168c53d54eea54d31fc4",
       "use": {
-        "zh-cn": "本次增加私有所选能力身份，不添加可由客户端提供的批准。",
-        "en": "Adds private selected-capability identity, without client-supplied approval."
+        "zh-cn": "路由 Schema 明确只有本轮肯定创建历史草稿才选择 create；不创建／只预检走原平台路线，普通 Skill 来自当前注册清单；私有能力身份、互斥字段和批准边界不变。",
+        "en": "Routing descriptions reserve create for an affirmative request to create a historical draft. Precheck-only requests use the platform route and ordinary Skills use the current registry; private capability identity, field exclusivity and approval boundaries remain."
       }
     },
     {
