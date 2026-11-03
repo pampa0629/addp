@@ -48,11 +48,11 @@ def test_zonal_percentile_sixteen_real_csvs_complete_independent_oracle_and_raw_
         assert (tmp_path/archive[name]['path']).read_bytes() == (root/'outputs'/name).read_bytes()
         assert archive[name]['size_bytes'] > 0
     assert len(expected['many-zones.csv']) == 79 and previews['many-zones.csv']['truncated'] is True
-    assert expected['empty-zones.csv'] == [] and all(r['percentile_value'] is None for r in expected['invalid-values.csv'])
+    assert expected['empty-zones.csv'] == [] and all(r['percentile_value_1'] is None for r in expected['invalid-values.csv'])
     assert [r['zone_value'] for r in expected['int64.csv']] == [0, 2**63-2, 2**63-1]
-    assert [r['percentile_value'] for r in expected['p33-reversed.csv']] == [r['percentile_value'] for r in expected['p33.csv']]
-    assert expected['p50-even.csv'][0]['valid_count'] == 4 and expected['p50-even.csv'][0]['percentile_value'] == 2.5
-    assert expected['p50-odd.csv'][0]['valid_count'] == 3 and expected['p50-odd.csv'][0]['percentile_value'] == 0.
+    assert [r['percentile_value_1'] for r in expected['p33-reversed.csv']] == [r['percentile_value_1'] for r in expected['p33.csv']]
+    assert expected['p50-even.csv'][0]['valid_count'] == 4 and expected['p50-even.csv'][0]['percentile_value_1'] == 2.5
+    assert expected['p50-odd.csv'][0]['valid_count'] == 3 and expected['p50-odd.csv'][0]['percentile_value_1'] == 0.
 
 @pytest.mark.parametrize('problem', f.FAILURES)
 @pytest.mark.parametrize('language', ['zh-cn','en'])

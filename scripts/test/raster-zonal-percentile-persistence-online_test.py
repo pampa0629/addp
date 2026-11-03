@@ -16,8 +16,8 @@ def expectations():
         rows = []
         for code in range(79 if name == 'many-zones.csv' else 2):
             row = dict(zip(m.fixture.BASE_COLUMNS, [code, 3, 3, 0, 6., 0., 4., 2., (8/3)**.5]))
-            if case[2] is not None: row.update(percentile=float(case[2]), percentile_value=4*float(case[2])/100)
-            if name == 'invalid-values.csv': row.update(valid_count=0, invalid_count=3, sum=None, min=None, max=None, mean=None, stddev=None, percentile_value=None)
+            if case[2] is not None: row.update(percentile_1=float(case[2]), percentile_value_1=4*float(case[2])/100)
+            if name == 'invalid-values.csv': row.update(valid_count=0, invalid_count=3, sum=None, min=None, max=None, mean=None, stddev=None, percentile_value_1=None)
             rows.append(row)
         result[name] = [] if name == 'empty-zones.csv' else rows
     return result

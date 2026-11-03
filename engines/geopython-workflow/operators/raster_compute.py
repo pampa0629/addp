@@ -1679,8 +1679,8 @@ _ZONAL_WEIGHTS_UNSET = object()
 _ZONAL_WEIGHT_MESSAGES = {
     'pair': ('weights_raster和weights_band必须同时显式提供且不能为null',
              'weights_raster and weights_band must be explicitly provided together and cannot be null'),
-    'percentile': ('栅格分区统计的权重与percentile参数不能同时提供',
-                   'Zonal statistics weights and percentile cannot be provided together'),
+    'percentile': ('栅格分区统计的权重与percentiles参数不能同时提供',
+                   'Zonal statistics weights and percentiles cannot be provided together'),
     'grid': ('权重栅格必须与数值和分区栅格具有相同尺寸、完整网格及语义等价CRS',
              'The weight raster must match the value and zone rasters in dimensions, complete grid and equivalent CRS'),
     'band': ('栅格分区权重必须显式选择有效的一基数据波段',
@@ -1822,8 +1822,8 @@ class _ZoneWeights:
 
 _ZONAL_FREQUENCY_MESSAGES = {
     'method': ('栅格分区统计方法必须为summary或class_frequency', 'Zonal statistics method must be summary or class_frequency'),
-    'conflict': ('分类频数模式不能提供percentile或外部权重，也不能启用加权标准差',
-                 'Class frequency cannot accept percentile or external weights, or enable weighted standard deviation'),
+    'conflict': ('分类频数模式不能提供percentiles或外部权重，也不能启用加权标准差',
+                 'Class frequency cannot accept percentiles or external weights, or enable weighted standard deviation'),
     'grid': ('分类频数的两个栅格须具有相同尺寸、完整网格及明确等价CRS',
              'Class frequency rasters require identical dimensions, complete grids and explicit equivalent CRS'),
     'band': ('分类频数必须显式选择有效的一基分类波段', 'Class frequency requires an explicit valid one-based class band'),
@@ -1923,7 +1923,7 @@ def _zonal_class_frequency(input_raster, zones_raster, band, zones_band):
         dataset = zones = None
 
 
-def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percentile=_PERCENTILE_UNSET,
+def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percentiles=_PERCENTILE_UNSET,
                             *, weights_raster=_ZONAL_WEIGHTS_UNSET, weights_band=_ZONAL_WEIGHTS_UNSET,
                             include_weighted_stddev=False, method='summary'):
     if type(include_weighted_stddev) is not bool:
@@ -1931,16 +1931,16 @@ def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percen
     if not isinstance(method, str) or method not in ('summary', 'class_frequency'):
         raise _zonal_frequency_error('method')
     if method == 'class_frequency':
-        if (percentile is not _PERCENTILE_UNSET or weights_raster is not _ZONAL_WEIGHTS_UNSET
+        if (percentiles is not _PERCENTILE_UNSET or weights_raster is not _ZONAL_WEIGHTS_UNSET
                 or weights_band is not _ZONAL_WEIGHTS_UNSET or include_weighted_stddev):
             raise _zonal_frequency_error('conflict')
         return _zonal_class_frequency(input_raster, zones_raster, band, zones_band)
-    requested = percentile is not _PERCENTILE_UNSET
+    requested = percentiles is not _PERCENTILE_UNSET
     weighted = _zonal_weights_requested(weights_raster, weights_band, requested, _zonal_weight_error)
     if include_weighted_stddev and not weighted:
         raise _zonal_weight_error('stddev_weights')
     if requested:
-        percentile = _percentile_parameter(percentile)
+        percentiles = _statistics_percentiles(percentiles)
     dataset, zones = _open(input_raster), _open(zones_raster)
     _require_same_grid(dataset, zones)
     for source, index in ((dataset, band), (zones, zones_band)):
@@ -1989,8 +1989,11 @@ def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percen
         result = pd.DataFrame(rows, columns=columns)
         result = result.astype({name: 'int64' if i < 4 else 'Float64' for i, name in enumerate(columns)})
         if requested:
-            result['percentile'] = pd.array([percentile] * len(result), dtype='Float64')
-            result['percentile_value'] = pd.array(_zonal_percentiles(runs, statistics, percentile), dtype='Float64')
+            values = _zonal_percentiles(runs, statistics, percentiles)
+            for index, percentile in enumerate(percentiles, 1):
+                result[f'percentile_{index}'] = pd.array([percentile] * len(result), dtype='Float64')
+                result[f'percentile_value_{index}'] = pd.array(
+                    [row[index-1] for row in values], dtype='Float64')
         return result
 
 
@@ -2450,23 +2453,27 @@ class _PercentileRuns:
         return self.values(count, [percentile])[0]
 
 
-def _zonal_percentiles(runs, statistics, percentile):
+def _zonal_percentiles(runs, statistics, percentiles):
+    """One final merge and one read-only handle for every zone/request rank."""
     path = runs.finish(sum(group.count for group in statistics.values()))
     if path is None:
-        return [None] * len(statistics)
+        return [[None] * len(percentiles) for _ in statistics]
     values, offset = [], 0
     with path.open('rb') as stream:
         for code in sorted(statistics):
             count = statistics[code].count
-            if not count:
-                values.append(None)
-                continue
-            lower, upper, weight = _percentile_ranks(count, percentile)
-            stream.seek((offset + lower) * runs.dtype.itemsize)
-            records = np.fromfile(stream, dtype=runs.dtype, count=1 + (upper != lower))
-            if records.size != 1 + (upper != lower) or not np.all(records['zone'] == code):
-                raise OSError('Incomplete private zonal percentile ranks')
-            values.append(float(_focal_linear_values(records['value'][:1], records['value'][-1:], weight)[0]))
+            row = []
+            for percentile in percentiles:
+                if not count:
+                    row.append(None)
+                    continue
+                lower, upper, weight = _percentile_ranks(count, percentile)
+                stream.seek((offset + lower) * runs.dtype.itemsize)
+                records = np.fromfile(stream, dtype=runs.dtype, count=1 + (upper != lower))
+                if records.size != 1 + (upper != lower) or not np.all(records['zone'] == code):
+                    raise OSError('Incomplete private zonal percentile ranks')
+                row.append(float(_focal_linear_values(records['value'][:1], records['value'][-1:], weight)[0]))
+            values.append(row)
             offset += count
     return values
 
@@ -6297,7 +6304,7 @@ _SPECS = [
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('percentiles', 'list[float]', '可选非空严格递增且不重复的0至100有限百分位列表；共享一次全量排序与线性插值，50为中位数；未提供时只返回原统计', None, False)], 'object', ['read']),
     (raster_cut_fill, OperatorCategory.RASTER_STATISTICS, '双DEM填挖方统计', [_INPUT(), _param('after_raster', 'raster', '施工后DEM，须与施工前同CRS、尺寸和完整网格，由用户保证相同高程基准', role='input'), _param('band', 'int', '显式施工前高程数据波段'), _param('after_band', 'int', '显式施工后高程数据波段'), _param('elevation_unit', 'str', '显式施工前高程单位', enum=list(_ELEVATION_METRES)), _param('after_elevation_unit', 'str', '显式施工后高程单位；挖填体积各非负，净增加为填方减挖方，统一立方米', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
-    (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('method', 'str', 'summary保留原数值统计；class_frequency按分区／类别计数，以有效分类数为比例分母，全无效分区保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对显式提供；有限非负，缺失权重不补零，与percentile互斥', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；追加权重总和、加权求和与加权均值，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用加权总体标准差，须提供权重；总体分母，全1沿用原stddev，全零为null，原统计保持', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
+    (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('method', 'str', 'summary保留原数值统计；class_frequency按分区／类别计数，以有效分类数为比例分母，全无效分区保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对显式提供；有限非负，缺失权重不补零，与percentiles互斥', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；追加权重总和、加权求和与加权均值，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用加权总体标准差，须提供权重；总体分母，全1沿用原stddev，全零为null，原统计保持', False, False), _param('percentiles', 'list[float]', '可选非空严格递增且不重复的0至100有限百分位列表；每区全量固定线性插值、共享一次排序归并，50为中位数；按顺序追加百分位与结果列对，未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_type', 'str', 'square_pixels为像元方窗，circle_metres为米制圆窗；保留原十二方法，圆窗仅九种非加权方法', 'square_pixels', False, enum=['square_pixels', 'circle_metres']), _param('window_size', 'int', 'square_pixels时必须显式提供以像元为单位的正方形窗口边长3或5；圆窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['square_pixels']}}), _param('radius_metres', 'float', 'circle_metres时必须显式提供有限正米制半径；中心距离等于半径纳入、不设epsilon，候选外接窗口最多5×5；方窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['circle_metres']}}), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）/weighted_stddev（非负矩阵加权总体标准差）/weighted_sum（非负矩阵加权求和；不归一化）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev', 'weighted_sum']), _param('percentiles', 'list[float]', 'method=percentile时必须显式指定非空严格递增且不重复的0至100有限百分位列表；固定线性插值，50与median一致；按顺序输出多波段，其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean/weighted_stddev/weighted_sum必填：同窗口3×3或5×5有限非负二维权重，至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean', 'weighted_stddev', 'weighted_sum']}})], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('method', 'str', 'summary保持原统计；class_frequency按面／类别展开并保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('id_field', 'str', 'class_frequency须显式选择现有非空唯一面编号；保留原类型，不从索引推断', None, False).model_copy(update={'show_when': {'method': ['class_frequency']}}), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对提供且与percentile互斥；沿原面覆盖，重叠面独立统计，缺失权重不补零', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；有限非负，追加三项加权统计，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用逐面加权总体标准差，须提供权重；全1沿用原stddev，全零null，原统计和重叠面独立规则保持', False, False), _param('include_area_weighted', 'bool', '显式追加覆盖平方米、有效覆盖平方米及面积加权均值；原八列保持，新面积独立于all_touched；与外部权重、百分位及加权标准差互斥', False, False), _param('include_area_weighted_stddev', 'bool', '仅面积模式显式启用总体标准差；正有效面积常量0、无有效面积null，单位沿数值，保留原十一列及重叠独立规则', False, False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
     (raster_sample_points, OperatorCategory.RASTER_STATISTICS, '点位栅格采样', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同CRS的有效二维Point，保留全部点、几何及属性；新增列冲突拒绝', role='input'), _param('band', 'int', '显式一基数据波段；sample_status区分ok／outside／nodata'), _param('method', 'str', 'cell取所在像元原值；bilinear按像元中心插值，正权重支持须全部有效，不补值或重新归一化', 'cell', False, enum=['cell', 'bilinear'])], 'GeoDataFrame', ['read']),

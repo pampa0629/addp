@@ -27,7 +27,7 @@ obj, array, positive, SuiteError = base.obj, base.array, base.positive, base.Sui
 SUITE, FAILURES = fixture.SUITE, fixture.FAILURES
 SubmittedLanguageClient, BudgetClient = base.SubmittedLanguageClient, base.BudgetClient
 encoded, immutable, archive_response = base.encoded, base.immutable, base.archive_response
-MESSAGES = {name: base.PERCENTILE_MESSAGES for name in FAILURES[:7]}
+MESSAGES = {name: ('percentiles必须为非空、严格递增且不重复的列表，各项为0至100之间的有限实数且不能为布尔值','percentiles must be a nonempty, strictly increasing list without duplicates of finite real numbers from 0 to 100, excluding booleans') for name in FAILURES[:7]}
 MESSAGES.update({name: ('band must be a valid one-based index',)*2 for name in FAILURES if '_band_' in name})
 MESSAGES.update({name: ('Complex-valued bands are not supported by numeric analysis',)*2 for name in ('values_complex', 'zones_complex')})
 MESSAGES.update({name: ('Zonal statistics require data bands, not alpha',)*2 for name in ('values_alpha', 'zones_alpha')})
@@ -62,9 +62,9 @@ def definition(sources, parent, name, *, invalid=None, language='zh-cn'):
                       'params': {'input_raster': {'$ref': 'zones'}, 'band': 2, 'rules': fixture.class_rules()}})
         zone_ref, zone_band = 'classes', 1
     params = {'input_raster': {'$ref': 'values'}, 'zones_raster': {'$ref': zone_ref}, 'band': band, 'zones_band': zone_band}
-    if p is not None: params['percentile'] = p
-    if invalid in FAILURES[:7]: params['percentile'] = {'percentile_null': None, 'percentile_boolean': True,
-        'percentile_string': '25', 'percentile_array': [25], 'percentile_object': {'p': 25}, 'percentile_low': -1, 'percentile_high': 101}[invalid]
+    if p is not None: params['percentiles'] = [p]
+    if invalid in FAILURES[:7]: params['percentiles'] = [ {'percentile_null': None, 'percentile_boolean': True,
+        'percentile_string': '25', 'percentile_array': [25], 'percentile_object': {'p': 25}, 'percentile_low': -1, 'percentile_high': 101}[invalid]]
     if invalid and '_band_' in invalid:
         params['band' if invalid.startswith('values_') else 'zones_band'] = {'zero': 0, 'high': 99, 'boolean': True, 'string': '2'}[invalid.rsplit('_', 1)[-1]]
     if invalid == 'values_alpha': params['band'] = 3

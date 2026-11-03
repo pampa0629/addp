@@ -32,7 +32,7 @@ PAIR = ('weights_raster和weights_band必须同时显式提供且不能为null',
 COVERAGE = ('分区有效且数值有效的位置必须具有有效且有限的权重，不能补零', 'Every valid value in a valid zone must have a valid finite weight; missing weights cannot be filled with zero')
 WEIGHT_GRID = ('权重栅格必须与数值和分区栅格具有相同尺寸、完整网格及语义等价CRS', 'The weight raster must match the value and zone rasters in dimensions, complete grid and equivalent CRS')
 MESSAGES.update({name: PAIR for name in FAILURES[:5]})
-MESSAGES['percentile_conflict'] = ('栅格分区统计的权重与percentile参数不能同时提供','Zonal statistics weights and percentile cannot be provided together')
+MESSAGES['percentile_conflict'] = ('栅格分区统计的权重与percentiles参数不能同时提供','Zonal statistics weights and percentiles cannot be provided together')
 MESSAGES['negative_weight'] = ('分区有效且数值有效的位置的权重必须非负','Weights at valid values in valid zones must be nonnegative')
 MESSAGES.update({name: COVERAGE for name in FAILURES[7:12]})
 for role in ('values','zones','weights'):
@@ -79,7 +79,7 @@ def definition(sources, parent, name, *, invalid=None, language='zh-cn'):
         if invalid == 'only_band': params.pop('weights_raster')
         if invalid in ('raster_null','both_null'): params['weights_raster']=None
         if invalid in ('band_null','both_null'): params['weights_band']=None
-        if invalid == 'percentile_conflict': params['percentile']=50
+        if invalid == 'percentile_conflict': params['percentiles']=[50]
     if invalid and '_band_' in invalid:
         role,suffix=invalid.split('_band_'); params[{'values':'band','zones':'zones_band','weights':'weights_band'}[role]]={'zero':0,'high':99,'boolean':True,'string':'2'}[suffix]
     if invalid in ('values_alpha','zones_alpha','weights_alpha'): params[{'values_alpha':'band','zones_alpha':'zones_band','weights_alpha':'weights_band'}[invalid]]=3

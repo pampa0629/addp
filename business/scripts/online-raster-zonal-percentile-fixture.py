@@ -150,7 +150,7 @@ def seed(root):
     return {'sources': {name: digest(root/name) for name in SOURCES}}
 
 def class_rules(): return [{'value': value, 'class': 10 if value in (-3, 0) else 20 if value == 2 else 30} for value in (-3, 0, 2, 7, 11)]
-def columns(name): return list(BASE_COLUMNS) + ([] if CASES[name][2] is None else ['percentile', 'percentile_value'])
+def columns(name): return list(BASE_COLUMNS) + ([] if CASES[name][2] is None else ['percentile_1', 'percentile_value_1'])
 
 def groups(case, reclassified=False):
     import numpy as np
@@ -184,7 +184,7 @@ def oracle():
                     position = (count-1)*Fraction(p)/100
                     low = position.numerator//position.denominator; weight = position-low
                     value = float(Fraction(values[low])*(1-weight) + Fraction(values[low+bool(weight)])*weight)
-                row.update(percentile=p, percentile_value=value)
+                row.update(percentile_1=p, percentile_value_1=value)
             rows.append(row)
         results[name] = rows
     return results
@@ -200,9 +200,9 @@ def validate_records(rows, expected, name):
             elif key in BASE_COLUMNS[:4]:
                 if type(value) is not int or value != target: raise FixtureError('exact Int64 class or count differs')
             elif type(value) not in (int, float) or not math.isfinite(value): raise FixtureError('nonfinite or nonnumeric statistic')
-            elif key in ('percentile', 'min', 'max') or (key == 'percentile_value' and (target == 0 or CASES[name][2] in (0, 50, 100))):
+            elif key in ('percentile_1', 'min', 'max') or (key == 'percentile_value_1' and (target == 0 or CASES[name][2] in (0, 50, 100))):
                 if value != target: raise FixtureError('exact percentile or endpoint differs')
-            elif not math.isclose(value, target, rel_tol=4e-15 if key == 'percentile_value' else 1e-12, abs_tol=0. if key == 'percentile_value' else 1e-12): raise FixtureError('independent complete statistic differs')
+            elif not math.isclose(value, target, rel_tol=4e-15 if key == 'percentile_value_1' else 1e-12, abs_tol=0. if key == 'percentile_value_1' else 1e-12): raise FixtureError('independent complete statistic differs')
 
 def read_csv(path, name):
     with path.open(newline='', encoding='utf-8') as stream:
@@ -254,7 +254,7 @@ def verify(root, names, expectations):
     if 'original.csv' in records:
         for name in ('p0.csv', 'p100.csv', 'p25.csv', 'p75.csv', 'p33.csv'):
             if name in records and [{key: row[key] for key in BASE_COLUMNS} for row in records[name]] != records['original.csv']: raise FixtureError('requested percentile changed original nine columns')
-    if 'p33-reversed.csv' in records and [r['percentile_value'] for r in records['p33-reversed.csv']] != [r['percentile_value'] for r in records['p33.csv']]: raise FixtureError('source order changed percentile')
+    if 'p33-reversed.csv' in records and [r['percentile_value_1'] for r in records['p33-reversed.csv']] != [r['percentile_value_1'] for r in records['p33.csv']]: raise FixtureError('source order changed percentile')
     return result
 
 def worker(action, root, names):

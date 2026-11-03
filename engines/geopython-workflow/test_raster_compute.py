@@ -4834,6 +4834,7 @@ def test_zonal_statistics_rotated_grid_validity_groups_and_empty_zones(tmp_path)
     assert [p.read_bytes() for p in (v,z)] == snapshots
 
 
+
 @pytest.mark.parametrize('kind', ['float_safe','int64','uint64','empty'])
 def test_zonal_statistics_classification_precision_and_empty_schema(tmp_path, kind):
     from operators.raster_compute import raster_zonal_statistics
@@ -4854,6 +4855,7 @@ def test_zonal_statistics_classification_precision_and_empty_schema(tmp_path, ki
     assert result.columns.tolist()==['zone_value','total_count','valid_count','invalid_count','sum','min','max','mean','stddev']
     assert result.dtypes.astype(str).tolist()==['int64']*4+['Float64']*5
     if kind!='empty':assert result['sum'].tolist()==[1.,2.,3.]
+
 
 
 @pytest.mark.parametrize('problem',['fraction','unsafe_float','uint_overflow','alpha','complex','complex_alpha',
@@ -4886,7 +4888,8 @@ def test_zonal_statistics_rejects_invalid_categories_bands_and_grids(tmp_path,pr
     band={'band_zero':0,'band_bool':True,'band_float':1.,'band_missing':3}.get(problem,1)
     with raster_workspace(),pytest.raises(ValueError):
         raster_zonal_statistics(raster_load(source_plan(v)),raster_load(source_plan(z)),band,1,
-                                **({'percentile': 50} if requested else {}))
+                                **({'percentiles': [50]} if requested else {}))
+
 
 
 @pytest.mark.parametrize('case',['cancellation','opposite_extremes','tiny','large_offset','overflow'])
@@ -4929,6 +4932,7 @@ def test_zonal_statistics_block_streaming_and_stable_float_statistics(tmp_path,m
                 expected=1e308 if case=='opposite_extremes' else 1e-300
                 assert row.stddev==pytest.approx(expected,rel=1e-14,abs=0)
         assert reads and {r[0] for r in reads}=={0,512,1024}
+
 
 
 @pytest.mark.parametrize('invalid',[False,True],ids=['full-table-saved','failure-cleanup'])
@@ -4975,6 +4979,7 @@ def test_zonal_statistics_async_full_table_save_and_bounded_preview(tmp_path,mon
     assert client.post('/api/operators/raster_zonal_statistics/invoke',json={'params':{}}).status_code==403
 
 
+
 def test_zonal_statistics_metadata_typed_inputs_required_bands_and_executable_example(tmp_path):
     spec=next(item for item in list_operators() if item['id']=='raster_zonal_statistics')
     params={item['name']:item for item in spec['parameters']}
@@ -4991,6 +4996,7 @@ def test_zonal_statistics_metadata_typed_inputs_required_bands_and_executable_ex
     preview=json.loads(result['final_result'])
     assert preview['row_count']==1 and preview['truncated'] is False
     assert preview['preview_rows'][0]['zone_value']==0 and preview['preview_rows'][0]['sum']==0.
+
 
 
 def test_zonal_statistics_multiband_cross_block_independent_oracle(tmp_path):
@@ -5012,6 +5018,7 @@ def test_zonal_statistics_multiband_cross_block_independent_oracle(tmp_path):
         assert row.valid_count==sample.size and row.invalid_count==np.count_nonzero(group)-sample.size
         np.testing.assert_allclose(row[['sum','min','max','mean','stddev']].to_numpy(dtype=float),
             [math.fsum(sample),sample.min(),sample.max(),sample.mean(),sample.std()],rtol=1e-11,atol=1e-11)
+
 
 
 def _focal_oracle(values, valid, window_size, method):
@@ -14019,14 +14026,14 @@ def test_zonal_percentile_preserves_original_columns_groups_and_exact_ranks(tmp_
         z, v = raster_load(source_plan(zp)), raster_load(source_plan(vp))
         baseline = compute.raster_zonal_statistics(v, z, 1, 1)
         files = set(v.workspace.iterdir())
-        result = compute.raster_zonal_statistics(v, z, 1, 1, percentile=percent)
+        result = compute.raster_zonal_statistics(v, z, 1, 1, percentiles=[percent])
         pd.testing.assert_frame_equal(result.iloc[:, :9], baseline, check_exact=True)
-        assert result.columns.tolist() == baseline.columns.tolist() + ['percentile', 'percentile_value']
+        assert result.columns.tolist() == baseline.columns.tolist() + ['percentile_1', 'percentile_value_1']
         assert result.dtypes.astype(str).tolist() == ['int64']*4 + ['Float64']*7
         assert result.zone_value.tolist() == [-3, 0, 8, 9, 12]
-        assert result.percentile.tolist() == [float(percent)]*5
+        assert result.percentile_1.tolist() == [float(percent)]*5
         for code, samples in {-3: [-8, 6], 0: [0, 12], 8: [], 9: [-3, 7], 12: [0]}.items():
-            actual = result.set_index('zone_value').loc[code, 'percentile_value']
+            actual = result.set_index('zone_value').loc[code, 'percentile_value_1']
             expected = _full_percentile_oracle(samples, percent)
             if expected is None:
                 assert pd.isna(actual)
@@ -14038,6 +14045,7 @@ def test_zonal_percentile_preserves_original_columns_groups_and_exact_ranks(tmp_
     assert [path.read_bytes() for path in (zp, vp)] == snapshots
 
 
+
 @pytest.mark.parametrize('percent', [None, True, False, '50', [50], {}, -1, 101,
                                       float('nan'), float('inf'), -float('inf'), 10**400])
 @pytest.mark.parametrize('language', ['zh-cn', 'en'])
@@ -14045,9 +14053,8 @@ def test_zonal_percentile_invalid_parameter_bilingual_before_read(monkeypatch, p
     import operators.raster_compute as compute
     monkeypatch.setattr(compute, '_open', lambda *a: pytest.fail('invalid percentile opened source'))
     with raster_error_language(language), pytest.raises(ValueError) as error:
-        compute.raster_zonal_statistics(object(), object(), 1, 1, percentile=percent)
-    assert str(error.value) == ('percentile必须为0至100之间的有限数值，且不能为布尔值' if language == 'zh-cn'
-                                else 'percentile must be a finite number from 0 to 100, excluding booleans')
+        compute.raster_zonal_statistics(object(), object(), 1, 1, percentiles=[percent])
+    with raster_error_language(language): assert str(error.value) == str(compute._statistics_error('percentiles'))
 
 
 @pytest.mark.parametrize('percent', [0, 50, 100])
@@ -14057,14 +14064,15 @@ def test_zonal_percentile_empty_schema_and_null_population(tmp_path, percent):
     vp = create_raster(tmp_path/'values.tif', np.full((2, 3), -9999.))
     with raster_workspace():
         v, z = raster_load(source_plan(vp)), raster_load(source_plan(zp))
-        result = compute.raster_zonal_statistics(v, z, 1, 1, percentile=percent)
+        result = compute.raster_zonal_statistics(v, z, 1, 1, percentiles=[percent])
         assert result.empty and result.dtypes.astype(str).tolist() == ['int64']*4 + ['Float64']*7
     ds = gdal.Open(str(zp), gdal.GA_Update); ds.GetRasterBand(1).Fill(0); ds = None
     with raster_workspace():
-        result = compute.raster_zonal_statistics(raster_load(source_plan(vp)), raster_load(source_plan(zp)), 1, 1, percentile=percent)
+        result = compute.raster_zonal_statistics(raster_load(source_plan(vp)), raster_load(source_plan(zp)), 1, 1, percentiles=[percent])
         assert result.zone_value.tolist() == [0] and result.total_count.tolist() == [6]
         assert result.valid_count.tolist() == [0] and result.iloc[:, 4:9].isna().all().all()
-        assert result.percentile_value.isna().all()
+        assert result.percentile_value_1.isna().all()
+
 
 
 @pytest.mark.parametrize('kind', ['Int64', 'UInt64'])
@@ -14091,11 +14099,12 @@ def test_zonal_percentile_native_nodata_and_large_zone_codes(tmp_path, kind):
     with raster_workspace():
         v, z = raster_load(source_plan(vp)), raster_load(source_plan(zp))
         baseline = compute.raster_zonal_statistics(v, z, 1, 1)
-        result = compute.raster_zonal_statistics(v, z, 1, 1, percentile=50)
+        result = compute.raster_zonal_statistics(v, z, 1, 1, percentiles=[50])
         pd.testing.assert_frame_equal(result.iloc[:, :9], baseline, check_exact=True)
         assert result.zone_value.tolist() == [0, high-1, high]
         assert result.valid_count.tolist() == [2, 2, 3]
-        assert result.percentile_value.tolist() == [6., 4., 12.]
+        assert result.percentile_value_1.tolist() == [6., 4., 12.]
+
 
 
 def test_zonal_percentile_multiband_mask_alpha_and_raw_storage_values(tmp_path):
@@ -14116,11 +14125,12 @@ def test_zonal_percentile_multiband_mask_alpha_and_raw_storage_values(tmp_path):
         ds.GetRasterBand(2).GetMaskBand().WriteArray(mask); ds = None
         paths.append(path)
     with raster_workspace():
-        result = compute.raster_zonal_statistics(raster_load(source_plan(paths[1])), raster_load(source_plan(paths[0])), 2, 2, percentile=50).set_index('zone_value')
+        result = compute.raster_zonal_statistics(raster_load(source_plan(paths[1])), raster_load(source_plan(paths[0])), 2, 2, percentiles=[50]).set_index('zone_value')
     assert result.index.tolist() == [-3, 0, 7, 9]
-    assert result.loc[0, 'percentile_value'] == -3.
-    assert result.loc[[-3, 7, 9], 'percentile_value'].isna().all()
+    assert result.loc[0, 'percentile_value_1'] == -3.
+    assert result.loc[[-3, 7, 9], 'percentile_value_1'].isna().all()
     assert result.loc[0, 'valid_count'] == 2 and result.loc[-3, 'invalid_count'] == 1
+
 
 
 @pytest.mark.parametrize('percent', [0, 33.3, 50, 100])
@@ -14167,12 +14177,13 @@ def test_zonal_percentile_cross_blocks_exact_groups_bounded_files_and_reads(tmp_
         before = [p.read_bytes() for p in (vp, zp)]
         with raster_workspace(), monkeypatch.context() as patch:
             patch.setattr(np, 'fromfile', bounded_read)
-            table = compute.raster_zonal_statistics(raster_load(source_plan(vp)), raster_load(source_plan(zp)), 1, 1, percentile=percent)
-            results.append(table.percentile_value.tolist())
-            for code, actual in zip(table.zone_value, table.percentile_value):
+            table = compute.raster_zonal_statistics(raster_load(source_plan(vp)), raster_load(source_plan(zp)), 1, 1, percentiles=[percent])
+            results.append(table.percentile_value_1.tolist())
+            for code, actual in zip(table.zone_value, table.percentile_value_1):
                 assert actual == pytest.approx(expected[code], rel=4e-15, abs=0)
         assert [p.read_bytes() for p in (vp, zp)] == before
     assert results[0] == results[1] and sizes and reads and peaks
+
 
 
 @pytest.mark.parametrize('phase', ['sort', 'merge', 'ranks', 'source-read', 'corrupt-rank'])
@@ -14200,11 +14211,12 @@ def test_zonal_percentile_io_failure_bilingual_cleanup_and_recovery(tmp_path, mo
                     return path
                 patch.setattr(compute._PercentileRuns, 'finish', corrupt)
             with pytest.raises(ValueError) as error:
-                compute.raster_zonal_statistics(v, z, 1, 1, percentile=50)
+                compute.raster_zonal_statistics(v, z, 1, 1, percentiles=[50])
             assert str(error.value) == ('栅格分区百分位临时排序读写失败' if language == 'zh-cn' else 'Raster zonal percentile temporary sorting I/O failed')
             assert isinstance(error.value.__cause__, OSError)
         assert set(v.workspace.iterdir()) == files and not compute._DISK_RESERVATIONS
-        assert compute.raster_zonal_statistics(v, z, 1, 1, percentile=50).percentile_value.tolist() == [8.]
+        assert compute.raster_zonal_statistics(v, z, 1, 1, percentiles=[50]).percentile_value_1.tolist() == [8.]
+
 
 
 @pytest.mark.parametrize('fault', ['insufficient', 'unavailable'])
@@ -14223,9 +14235,10 @@ def test_zonal_percentile_disk_refusal_before_sort_no_leak_and_recovery(tmp_path
             patch.setattr(compute.shutil, 'disk_usage', capacity)
             patch.setattr(compute._PercentileRuns, 'add', lambda *a: pytest.fail('sorted before capacity admission'))
             with pytest.raises(RuntimeError, match='zonal_percentile'):
-                compute.raster_zonal_statistics(v, z, 1, 1, percentile=50)
+                compute.raster_zonal_statistics(v, z, 1, 1, percentiles=[50])
         assert set(v.workspace.iterdir()) == files and not compute._DISK_RESERVATIONS
-        assert compute.raster_zonal_statistics(v, z, 1, 1, percentile=50).percentile_value.tolist() == [2.]
+        assert compute.raster_zonal_statistics(v, z, 1, 1, percentiles=[50]).percentile_value_1.tolist() == [2.]
+
 
 
 @pytest.mark.parametrize('pair', [(-np.finfo(float).max, np.finfo(float).max),
@@ -14236,8 +14249,9 @@ def test_zonal_percentile_native_numeric_limits_exact_linear_interpolation(tmp_p
     vp = create_raster(tmp_path/'v.tif', np.array([pair]))
     zp = create_raster(tmp_path/'z.tif', np.zeros((1, 2)))
     with raster_workspace():
-        result = compute.raster_zonal_statistics(raster_load(source_plan(vp)), raster_load(source_plan(zp)), 1, 1, percentile=percent)
-    assert result.percentile_value.tolist() == [_full_percentile_oracle(pair, percent)]
+        result = compute.raster_zonal_statistics(raster_load(source_plan(vp)), raster_load(source_plan(zp)), 1, 1, percentiles=[percent])
+    assert result.percentile_value_1.tolist() == [_full_percentile_oracle(pair, percent)]
+
 
 
 @pytest.mark.parametrize('percent', [25, '25'])
@@ -14255,7 +14269,7 @@ def test_zonal_percentile_async_csv_full_table_preview_language_and_cleanup(tmp_
     tasks = [{'id': name, 'operator': 'raster_load', 'params': {'access_plan': source_plan(path)}, 'depends_on': []}
              for name, path in [('v', vp), ('z', zp)]]
     tasks += [{'id': 'stats', 'operator': 'raster_zonal_statistics', 'depends_on': ['v', 'z'], 'params': {
-        'input_raster': {'$ref': 'v'}, 'zones_raster': {'$ref': 'z'}, 'band': 1, 'zones_band': 1, 'percentile': percent}},
+        'input_raster': {'$ref': 'v'}, 'zones_raster': {'$ref': 'z'}, 'band': 1, 'zones_band': 1, 'percentiles': [percent]}},
         {'id': 'save', 'operator': 'save', 'depends_on': ['stats'], 'params': {
         'input_df': {'$ref': 'stats'}, 'connection_info': {'mount_path': str(tmp_path)}, 'path': target.name, 'mode': 'fail'}}]
     workspaces = []; original = workflow_engine._execute_operator
@@ -14276,19 +14290,20 @@ def test_zonal_percentile_async_csv_full_table_preview_language_and_cleanup(tmp_
     assert [p.read_bytes() for p in (vp, zp, old)] == before
     if isinstance(percent, str):
         assert state['status'] == 'failed' and not target.exists(), state
-        assert ('有限数值' if language == 'zh-cn' else 'finite number') in state['error']
+        assert ('有限实数' if language == 'zh-cn' else 'finite real numbers') in state['error']
     else:
         assert state['status'] == 'success', state
         table = pd.read_csv(target)
         assert len(table) == 72 and table.zone_value.tolist() == list(range(72))
-        assert table.percentile.tolist() == [25.]*72 and table.percentile_value.tolist() == [2.]*72
+        assert table.percentile_1.tolist() == [25.]*72 and table.percentile_value_1.tolist() == [2.]*72
         preview = json.loads(state['all_results']['stats'])
         assert preview['type'] == 'pandas_dataframe' and preview['row_count'] == 72
         assert preview['truncated'] is True and preview['preview_limit'] == len(preview['preview_rows']) == 50
-        assert preview['schema'][-2:] == [{'name': 'percentile', 'type': 'Float64'}, {'name': 'percentile_value', 'type': 'Float64'}]
-        assert all(row['percentile'] == 25. and row['percentile_value'] == 2. for row in preview['preview_rows'])
+        assert preview['schema'][-2:] == [{'name': 'percentile_1', 'type': 'Float64'}, {'name': 'percentile_value_1', 'type': 'Float64'}]
+        assert all(row['percentile_1'] == 25. and row['percentile_value_1'] == 2. for row in preview['preview_rows'])
         assert json.loads(state['result']) == preview
     assert client.post('/api/operators/raster_zonal_statistics/invoke', json={'params': {}}).status_code == 403
+
 
 
 @pytest.mark.parametrize('role', ['values', 'zones'])
@@ -14311,7 +14326,8 @@ def test_zonal_percentile_both_roles_reject_invalid_or_complex_bands(monkeypatch
     index = {'zero-band': 0, 'high-band': 3, 'bool-band': True, 'string-band': '1'}.get(fault, 1)
     with raster_workspace(), pytest.raises(ValueError):
         compute.raster_zonal_statistics(sentinel, object(), index if role == 'values' else 1,
-                                        index if role == 'zones' else 1, percentile=50)
+                                        index if role == 'zones' else 1, percentiles=[50])
+
 
 
 def test_zonal_percentile_statistics_overflow_preserves_failure_and_cleans(tmp_path):
@@ -14321,10 +14337,11 @@ def test_zonal_percentile_statistics_overflow_preserves_failure_and_cleans(tmp_p
     with raster_workspace():
         v, z = raster_load(source_plan(values)), raster_load(source_plan(zones))
         files = set(v.workspace.iterdir())
-        for params in ({}, {'percentile': 50}):
+        for params in ({}, {'percentiles': [50]}):
             with pytest.raises(ValueError, match='finite Float64'):
                 compute.raster_zonal_statistics(v, z, 1, 1, **params)
             assert set(v.workspace.iterdir()) == files and not compute._DISK_RESERVATIONS
+
 
 
 @pytest.mark.parametrize('percent', [0, 25, 33.3, 50, 75, 100])
@@ -15941,6 +15958,7 @@ def _zonal_weight_result(paths,*,weights_band=1,band=1,zones_band=1):
     return compute.raster_zonal_statistics(v,z,band,zones_band,weights_raster=w,weights_band=weights_band)
 
 
+
 def _assert_zonal_weight_table(table,expected):
     import pandas as pd
     assert table.columns.tolist()==_ZONAL_ORIGINAL_COLUMNS+_ZONAL_WEIGHT_COLUMNS
@@ -15974,6 +15992,7 @@ def test_zonal_weighted_independent_decimal_all_rows_original_nine_columns_and_s
     assert snapshots==[p.read_bytes()for p in paths]
 
 
+
 @pytest.mark.parametrize('case',['one','zero','empty-table','single','ignored-bad-weights'])
 def test_zonal_weighted_all_one_zero_and_empty_rules_preserve_schema_and_original_counts(tmp_path,case):
     import pandas as pd,operators.raster_compute as compute
@@ -15991,6 +16010,7 @@ def test_zonal_weighted_all_one_zero_and_empty_rules_preserve_schema_and_origina
         if case=='one':
             for new,old in [('weighted_sum','sum'),('weighted_mean','mean')]:pd.testing.assert_series_equal(actual[new],original[old],check_names=False,check_exact=True)
         if case=='zero':assert actual.weight_sum.iloc[0]==0 and actual.weighted_sum.iloc[0]==0 and pd.isna(actual.weighted_mean.iloc[0])
+
 
 
 @pytest.mark.parametrize('factor',[.5,2.,8.])
@@ -16034,6 +16054,7 @@ def test_zonal_weighted_pair_contract_fails_before_opening_or_allocating(monkeyp
     with raster_error_language(language):assert str(error.value)==str(compute._zonal_weight_error('pair'))
 
 
+
 @pytest.mark.parametrize('percentile',[0,50,100,None,True,'50'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_zonal_weighted_percentile_is_explicitly_mutually_exclusive_before_open(monkeypatch,percentile,language):
@@ -16041,6 +16062,7 @@ def test_zonal_weighted_percentile_is_explicitly_mutually_exclusive_before_open(
     monkeypatch.setattr(compute,'_open',lambda *_:pytest.fail('conflicting request opened inputs'))
     with raster_error_language(language),pytest.raises(ValueError)as error:compute.raster_zonal_statistics(None,None,1,1,percentile,weights_raster=object(),weights_band=1)
     with raster_error_language(language):assert str(error.value)==str(compute._zonal_weight_error('percentile'))
+
 
 
 @pytest.mark.parametrize('fault',['missing','mask','alpha','nan','infinity','negative'])
@@ -16140,6 +16162,7 @@ def test_zonal_weighted_cross_block_full_table_exact_cancellation_and_bounded_th
     assert snapshots==[p.read_bytes()for p in paths]and all(not v.workspace.exists()for v in loaded)
 
 
+
 @pytest.mark.parametrize('role',['values','zones','weights'])
 def test_zonal_weighted_explicit_three_role_bands_raw_values_masks_and_partial_alpha(tmp_path,role):
     values=np.arange(15,dtype=float).reshape(3,5)/4-1;zones=np.tile(np.arange(5)%2,(3,1)).astype(float);weights=np.tile(np.arange(5)%4+1,(3,1)).astype(float)
@@ -16172,6 +16195,7 @@ def test_zonal_weighted_mixed_complex_alpha_on_weights_fails_before_accumulation
         value=raster_load(source_plan(path));compute.raster_zonal_statistics(value,value,1,1,weights_raster=marker,weights_band=1)
 
 
+
 @pytest.mark.parametrize('case',['direct','reclassify-weights','zero','negative','missing','bad-band','conflict','save-existing','summary-failure'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_zonal_weighted_async_full_csv_preview_submitted_language_source_and_old_result_cleanup(tmp_path,monkeypatch,case,language):
@@ -16187,7 +16211,7 @@ def test_zonal_weighted_async_full_csv_preview_submitted_language_source_and_old
     if case=='reclassify-weights':
         tasks.append({'id':'mass','operator':'raster_reclassify','depends_on':['weights'],'params':{'input_raster':{'$ref':'weights'},'band':1,'rules':[{'min':None,'max':1,'class':0},{'min':1,'max':None,'class':2}]}});prior='mass';expected_weights=np.where(weights<1,0.,2.)
     params={'input_raster':{'$ref':'values'},'zones_raster':{'$ref':'zones'},'band':1,'zones_band':1,'weights_raster':{'$ref':prior},'weights_band':99 if case=='bad-band'else 1}
-    if case=='conflict':params['percentile']=50
+    if case=='conflict':params['percentiles']=[50]
     tasks.extend([{'id':'stats','operator':'raster_zonal_statistics','depends_on':['values','zones',prior],'params':params},
         {'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}])
     workspaces=[];execute=workflow_engine._execute_operator
@@ -16221,6 +16245,7 @@ def test_zonal_weighted_async_full_csv_preview_submitted_language_source_and_old
         assert status['error']=='任务 stats 执行失败: '+cause
         assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
     assert client.post('/api/operators/raster_zonal_statistics/invoke',json={'params':{}}).status_code==403
+
 
 
 _VECTOR_ORIGINAL_STATS=['total_count','valid_count','invalid_count','sum','min','max','mean','stddev']
@@ -16616,6 +16641,7 @@ def _zonal_stddev_result(paths):
     return compute.raster_zonal_statistics(v,z,1,1,weights_raster=w,weights_band=1,include_weighted_stddev=True)
 
 
+
 def _assert_stddev_values(actual,expected):
     import pandas as pd
     assert actual.columns.tolist()==_ZONAL_ORIGINAL_COLUMNS+_ZONAL_WEIGHT_COLUMNS+['weighted_stddev']
@@ -16645,6 +16671,7 @@ def test_zonal_weighted_stddev_independent_deviation_formula_all_rows_and_origin
     assert snapshots==[p.read_bytes()for p in paths]and all(not x.workspace.exists()for x in(v,z,w))
 
 
+
 @pytest.mark.parametrize('case',['ones','zero','single','constant','empty-table','invalid-values','zero-exclusion'])
 def test_zonal_weighted_stddev_ones_exact_null_zero_and_complete_empty_schema(tmp_path,case):
     import pandas as pd,operators.raster_compute as compute
@@ -16663,6 +16690,7 @@ def test_zonal_weighted_stddev_ones_exact_null_zero_and_complete_empty_schema(tm
         if case=='ones':pd.testing.assert_series_equal(actual.weighted_stddev,before.stddev,check_names=False,check_exact=True)
         else:_assert_stddev_values(actual,_zonal_stddev_oracle(values,zones,weights,zones!=-9999,values!=-9999))
         if case=='zero-exclusion':assert actual.iloc[1].valid_count==3 and actual.iloc[1].stddev!=actual.iloc[1].weighted_stddev
+
 
 
 @pytest.mark.parametrize('factor',[.125,.5,2.,8.])
@@ -16708,7 +16736,8 @@ def test_zonal_weighted_stddev_strict_bool_rejected_before_io(monkeypatch,flag,l
     assert str(error.value)==compute._ZONAL_WEIGHT_MESSAGES['stddev_flag'][language=='en']
 
 
-@pytest.mark.parametrize('params,code',[({},'stddev_weights'),({'weights_band':1},'pair'),({'weights_raster':None,'weights_band':1},'pair'),({'weights_raster':object(),'weights_band':1,'percentile':50},'percentile')])
+
+@pytest.mark.parametrize('params,code',[({},'stddev_weights'),({'weights_band':1},'pair'),({'weights_raster':None,'weights_band':1},'pair'),({'weights_raster':object(),'weights_band':1,'percentiles':[50]},'percentile')])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_zonal_weighted_stddev_requires_explicit_pair_and_no_percentile_before_io(monkeypatch,params,code,language):
     import operators.raster_compute as compute
@@ -16718,18 +16747,20 @@ def test_zonal_weighted_stddev_requires_explicit_pair_and_no_percentile_before_i
     assert str(error.value)==compute._ZONAL_WEIGHT_MESSAGES[code][language=='en']
 
 
+
 @pytest.mark.parametrize('mode',['plain','percentile','weights'])
 def test_zonal_weighted_stddev_false_preserves_old_schemas_and_skips_second_moment(tmp_path,monkeypatch,mode):
     import pandas as pd,operators.raster_compute as compute
     paths=[create_raster(tmp_path/(n+'.tif'),np.array([[2.,5.]]))for n in('v','z','w')]
     with raster_workspace():
-        v,z,w=[raster_load(source_plan(p))for p in paths];args={'percentile':50}if mode=='percentile'else({'weights_raster':w,'weights_band':1}if mode=='weights'else{})
+        v,z,w=[raster_load(source_plan(p))for p in paths];args={'percentiles':[50]}if mode=='percentile'else({'weights_raster':w,'weights_band':1}if mode=='weights'else{})
         old=compute.raster_zonal_statistics(v,z,1,1,**args)
         monkeypatch.setattr(compute,'_sqrt_fraction',lambda *a,**k:pytest.fail('disabled flag invoked square root'))
         actual=compute.raster_zonal_statistics(v,z,1,1,include_weighted_stddev=False,**args)
         pd.testing.assert_frame_equal(actual,old,check_exact=True)
         assert 'weighted_stddev'not in actual
         accumulator=compute._ZoneWeights();accumulator.add(np.array([np.finfo(float).max]),np.array([.5]));assert accumulator.squares==0
+
 
 
 @pytest.mark.parametrize('rotated',[False,True])
@@ -16832,7 +16863,7 @@ def test_zonal_weighted_stddev_async_full_csv_preview_submitted_language_source_
     if case=='reclassify-weights':
         tasks.append({'id':'mass','operator':'raster_reclassify','depends_on':['weights'],'params':{'input_raster':{'$ref':'weights'},'band':1,'rules':[{'min':None,'max':1,'class':0},{'min':1,'max':None,'class':2}]}});prior='mass';expected_weights=np.where(weights<1,0.,2.)
     params={'input_raster':{'$ref':'values'},'zones_raster':{'$ref':'zones'},'band':1,'zones_band':1,'weights_raster':{'$ref':prior},'weights_band':99 if case=='bad-band'else 1,'include_weighted_stddev':True}
-    if case=='conflict':params['percentile']=50
+    if case=='conflict':params['percentiles']=[50]
     tasks.extend([{'id':'stats','operator':'raster_zonal_statistics','depends_on':['values','zones',prior],'params':params},
         {'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}])
     workspaces=[];execute=workflow_engine._execute_operator
@@ -16886,6 +16917,7 @@ def test_zonal_weighted_stddev_async_full_csv_preview_submitted_language_source_
     assert client.post('/api/operators/raster_zonal_statistics/invoke',json={'params':{}}).status_code==403
 
 
+
 @pytest.mark.parametrize('role',['values','zones','weights'])
 def test_zonal_weighted_stddev_explicit_three_role_bands_raw_values_masks_and_partial_alpha(tmp_path,role):
     values=np.arange(15,dtype=float).reshape(3,5)/4-1;zones=np.tile(np.arange(5)%2,(3,1)).astype(float);weights=np.tile(np.arange(5)%4+1,(3,1)).astype(float)
@@ -16911,6 +16943,7 @@ def test_zonal_weighted_stddev_explicit_three_role_bands_raw_values_masks_and_pa
     assert before==[p.read_bytes()for p in paths]
 
 
+
 def test_zonal_weighted_stddev_mixed_complex_alpha_on_weights_fails_before_accumulation(tmp_path,monkeypatch):
     import operators.raster_compute as compute
     path=create_raster(tmp_path/'v.tif',np.ones((2,2)));marker=object();source=gdal.Open(str(path))
@@ -16919,6 +16952,7 @@ def test_zonal_weighted_stddev_mixed_complex_alpha_on_weights_fails_before_accum
     monkeypatch.setattr(compute._ZoneWeights,'add',lambda *a:pytest.fail('complex alpha reached accumulation'))
     with raster_workspace(),raster_error_language('en'),pytest.raises(ValueError,match='complex alpha'):
         value=raster_load(source_plan(path));compute.raster_zonal_statistics(value,value,1,1,weights_raster=marker,weights_band=1,include_weighted_stddev=True)
+
 
 
 def _vector_stddev_decimal(values,weights,covered,valid):
@@ -18554,6 +18588,7 @@ def test_region_group_labels_connect_existing_zonal_statistics_per_patch(tmp_pat
             assert row.min==row.max==category
 
 
+
 def test_region_group_ignores_unselected_data_and_its_independent_mask(tmp_path,monkeypatch):
     import operators.raster_compute as c
     ds=gdal.GetDriverByName('MEM').Create('',3,2,2,gdal.GDT_Float64)
@@ -19010,6 +19045,7 @@ def test_zonal_frequency_complete_scalar_counts_valid_denominator_diagnostic_and
         assert int(group['count'].sum())==int(group.valid_count.iloc[0])and group.total_count.iloc[0]==group.valid_count.iloc[0]+group.invalid_count.iloc[0]
     assert [p.read_bytes()for p in paths]==before
 
+
 @pytest.mark.parametrize('case',['empty-zones','invalid-values','one-category','zero-category'])
 def test_zonal_frequency_empty_and_diagnostic_schema_and_real_zero(tmp_path,case):
     import pandas as pd,operators.raster_compute as c
@@ -19024,6 +19060,7 @@ def test_zonal_frequency_empty_and_diagnostic_schema_and_real_zero(tmp_path,case
     if case=='invalid-values':assert result.class_value.isna().all()and result.proportion.isna().all()and result['count'].tolist()==[0,0,0]
     if case=='zero-category':assert result.class_value.tolist()==[0,0,0]and result.proportion.tolist()==[1.,1.,1.]
 
+
 @pytest.mark.parametrize('method',[None,True,1,1.,'',[],{},'CLASS_FREQUENCY','histogram'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_zonal_frequency_strict_method_before_io(monkeypatch,method,language):
@@ -19032,13 +19069,15 @@ def test_zonal_frequency_strict_method_before_io(monkeypatch,method,language):
     with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics(object(),object(),1,1,method=method)
     assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['method'][language=='en']
 
-@pytest.mark.parametrize('kwargs',[{'percentile':None},{'percentile':50},{'weights_raster':None},{'weights_band':1},{'weights_raster':object(),'weights_band':1},{'include_weighted_stddev':True}])
+
+@pytest.mark.parametrize('kwargs',[{'percentiles':[None]},{'percentiles':[50]},{'weights_raster':None},{'weights_band':1},{'weights_raster':object(),'weights_band':1},{'include_weighted_stddev':True}])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_zonal_frequency_unused_numeric_options_conflict_before_io(monkeypatch,kwargs,language):
     import operators.raster_compute as c
     monkeypatch.setattr(c,'_open',lambda *a:pytest.fail('no opening before conflict'))
     with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics(object(),object(),1,1,method='class_frequency',**kwargs)
     assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['conflict'][language=='en']
+
 
 @pytest.mark.parametrize('role',['values','zones'])
 @pytest.mark.parametrize('fault',['zero','negative','high','boolean','string','null','list','alpha','complex','complex-alpha'])
@@ -19056,6 +19095,7 @@ def test_zonal_frequency_both_roles_exact_band_diagnostics_before_read(monkeypat
     with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics('values','zones',band if role=='values'else 1,band if role=='zones'else 1,method='class_frequency')
     assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES[code][language=='en']
 
+
 @pytest.mark.parametrize('fault',['dimensions','grid','crs','missing-crs','missing-grid','singular'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_zonal_frequency_grid_admission_is_exact_and_bilingual(monkeypatch,fault,language):
@@ -19070,6 +19110,7 @@ def test_zonal_frequency_grid_admission_is_exact_and_bilingual(monkeypatch,fault
     sentinel=object();monkeypatch.setattr(c,'_open',lambda token:sources[0]if token is sentinel else sources[1]);monkeypatch.setattr(c,'_blocks',lambda *a,**k:pytest.fail('grid rejected before read'))
     with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics(sentinel,object(),1,1,method='class_frequency')
     assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['grid'][language=='en']
+
 
 @pytest.mark.parametrize('role',['values','zones'])
 @pytest.mark.parametrize('dtype,nodata,code',[(gdal.GDT_Int64,-2**63,-2**63+1),(gdal.GDT_UInt64,2**64-1,2**64-2)])
@@ -19091,6 +19132,7 @@ def test_zonal_frequency_native_nodata_neighbor_checked_before_float_conversion(
             with pytest.raises(ValueError)as error:c.raster_zonal_statistics('values','zones',1,1,method='class_frequency')
             assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['classes'if role=='values'else'zones'][language=='en']
 
+
 @pytest.mark.parametrize('role',['values','zones'])
 @pytest.mark.parametrize('value',[.5,float(2**53),-float(2**53)])
 @pytest.mark.parametrize('language',['zh-cn','en'])
@@ -19100,6 +19142,7 @@ def test_zonal_frequency_fractional_or_unsafe_float_codes_fail_exactly(tmp_path,
     paths={n:create_raster(tmp_path/(n+'.tif'),a)for n,a in arrays.items()}
     with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics(raster_load(source_plan(paths['values'])),raster_load(source_plan(paths['zones'])),1,1,method='class_frequency')
     assert str(error.value)==c._ZONAL_FREQUENCY_MESSAGES['classes'if role=='values'else'zones'][language=='en']
+
 
 @pytest.mark.parametrize('case',['limit','overflow','invalid-count'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
@@ -19118,8 +19161,9 @@ def test_zonal_frequency_explicit_summary_preserves_all_original_fields_and_resu
     import pandas as pd,operators.raster_compute as c
     values=create_raster(tmp_path/'v.tif',np.array([[0.,2.,-9999],[4.,-2.,8.]]));zones=create_raster(tmp_path/'z.tif',np.array([[0.,0.,1.],[1.,1.,1.]]));weights=create_raster(tmp_path/'w.tif',np.array([[0.,2.,5.],[2.,1.,1.]]))
     with raster_workspace():
-        v,z,w=(raster_load(source_plan(p))for p in(values,zones,weights));kwargs={'percentile':25}if case=='percentile'else{'weights_raster':w,'weights_band':1,'include_weighted_stddev':case=='weighted-stddev'}if case.startswith('weighted')else{}
+        v,z,w=(raster_load(source_plan(p))for p in(values,zones,weights));kwargs={'percentiles':[25]}if case=='percentile'else{'weights_raster':w,'weights_band':1,'include_weighted_stddev':case=='weighted-stddev'}if case.startswith('weighted')else{}
         pd.testing.assert_frame_equal(c.raster_zonal_statistics(v,z,1,1,**kwargs),c.raster_zonal_statistics(v,z,1,1,method='summary',**kwargs),check_exact=True)
+
 
 
 def test_zonal_frequency_explicit_second_bands_raw_values_all_alpha_masks_and_cross_blocks(tmp_path,monkeypatch):
@@ -19147,6 +19191,7 @@ def test_zonal_frequency_explicit_second_bands_raw_values_all_alpha_masks_and_cr
     pd.testing.assert_frame_equal(result,_zonal_frequency_oracle(values,zones,valid['values'],valid['zones']),check_exact=True)
     assert len(reads)==8 and len(set(reads))==8 and {n:p.read_bytes()for n,p in paths.items()}==snapshots
 
+
 @pytest.mark.parametrize('case',['full','diagnostic','empty','fractional','conflict','method','read','save-existing'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_zonal_frequency_async_complete_csv_light_preview_exact_language_and_cleanup(tmp_path,monkeypatch,case,language):
@@ -19159,7 +19204,7 @@ def test_zonal_frequency_async_complete_csv_light_preview_exact_language_and_cle
     if case=='save-existing':target.write_bytes(b'current target unchanged')
     snapshots=[p.read_bytes()for p in(vp,zp,old)]
     params={'input_raster':{'$ref':'values'},'zones_raster':{'$ref':'zones'},'band':1,'zones_band':1,'method':'CLASS_FREQUENCY'if case=='method'else'class_frequency'}
-    if case=='conflict':params['percentile']=None
+    if case=='conflict':params['percentiles']=None
     tasks=[{'id':name,'operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}for name,path in(('values',vp),('zones',zp))]
     tasks.extend([{'id':'stats','operator':'raster_zonal_statistics','depends_on':['values','zones'],'params':params},{'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}])
     workspaces=[];original=workflow_engine._execute_operator
@@ -19193,6 +19238,7 @@ def test_zonal_frequency_async_complete_csv_light_preview_exact_language_and_cle
         assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
     assert client.post('/api/operators/raster_zonal_statistics/invoke',json={'params':{}}).status_code==403
 
+
 @pytest.mark.parametrize('role',['values','zones'])
 @pytest.mark.parametrize('fault',['partial-alpha','alpha-zero','alpha-nodata','alpha-nan','alpha-negative','mask'])
 def test_zonal_frequency_each_role_mask_and_native_alpha_validity(role,fault,monkeypatch):
@@ -19210,6 +19256,7 @@ def test_zonal_frequency_each_role_mask_and_native_alpha_validity(role,fault,mon
     removed=fault!='partial-alpha';assert result['count'].tolist()==[3 if removed else 4]and result.proportion.tolist()==[1.]
     assert result.total_count.tolist()==[3 if removed and role=='zones'else 4]and result.invalid_count.tolist()==[1 if removed and role=='values'else 0]
 
+
 @pytest.mark.parametrize('role',['values','zones'])
 def test_zonal_frequency_multiple_native_uint64_alpha_nodata_does_not_drop_adjacent_value(monkeypatch,role):
     import operators.raster_compute as c
@@ -19224,6 +19271,7 @@ def test_zonal_frequency_multiple_native_uint64_alpha_nodata_does_not_drop_adjac
     assert result.total_count.tolist()==[2 if role=='zones'else 3]
 
 
+
 def test_zonal_frequency_signed_zone_and_safe_class_extremes_keep_exact_identifiers(tmp_path):
     import pandas as pd,operators.raster_compute as c
     zones=np.array([[-2**63+1,2**63-1,2**63-1]],np.int64);values=np.array([[-(2**53-1),2**53-1,0]],np.int64);paths=[]
@@ -19232,6 +19280,7 @@ def test_zonal_frequency_signed_zone_and_safe_class_extremes_keep_exact_identifi
     with raster_workspace():result=c.raster_zonal_statistics(*(raster_load(source_plan(p))for p in paths),1,1,method='class_frequency')
     pd.testing.assert_frame_equal(result,_zonal_frequency_oracle(values,zones,np.ones(values.shape,bool),np.ones(zones.shape,bool)),check_exact=True)
 
+
 @pytest.mark.parametrize('flag',[None,0,1,'false',[],{}])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_zonal_frequency_preserves_strict_bool_parameter_before_read(monkeypatch,flag,language):
@@ -19239,6 +19288,7 @@ def test_zonal_frequency_preserves_strict_bool_parameter_before_read(monkeypatch
     monkeypatch.setattr(c,'_open',lambda *a:pytest.fail('strict bool before opening'))
     with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_zonal_statistics(object(),object(),1,1,method='class_frequency',include_weighted_stddev=flag)
     assert str(error.value)==c._ZONAL_WEIGHT_MESSAGES['stddev_flag'][language=='en']
+
 
 @pytest.mark.parametrize('stage',['open-zones','frame'])
 def test_zonal_frequency_partial_failure_closes_execution_and_preserves_old_results(tmp_path,monkeypatch,stage):
@@ -19257,6 +19307,7 @@ def test_zonal_frequency_partial_failure_closes_execution_and_preserves_old_resu
             monkeypatch.setattr(c,'_open',opening)
         c.raster_zonal_statistics(v,z,1,1,method='class_frequency')
     assert work is not None and not work.exists()and [p.read_bytes()for p in(*paths,old)]==before
+
 
 
 @pytest.mark.parametrize('invalid', [None, 50, True, '50', (), (25, 50), {}, [],
@@ -19744,3 +19795,155 @@ def test_focal_percentiles_async_multiband_cog_and_late_failure_no_publication(t
         assert not target.exists()and len(calls)==2
         with raster_error_language(language):cause='second percentile failed'if case=='rank'else str(c._focal_error('write'))
         assert cause in state['error']
+
+
+@pytest.mark.parametrize('invalid',[None,True,50,'50',{},(),[],[None],[True],['50'],[[50]],[{}],[-1],[101],[float('nan')],[float('inf')],[10**400],[50,50],[75,25],[1,1.0]])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_multi_percentiles_strict_list_before_source_open(monkeypatch,invalid,language):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda *_:pytest.fail('invalid list opened input'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:
+        c.raster_zonal_statistics(object(),object(),1,1,percentiles=invalid)
+    with raster_error_language(language):assert str(error.value)==str(c._statistics_error('percentiles'))
+
+
+@pytest.mark.parametrize('reverse',[False,True])
+def test_zonal_multi_percentiles_original_nine_pairs_singletons_and_empty_groups(tmp_path,reverse):
+    import pandas as pd,operators.raster_compute as c
+    zones=np.array([[-3,0,-3,0,8,12,8,9,9]],dtype=float);values=np.array([[-8,0,6,12,-9999,0,np.inf,-3,7]],dtype=float)
+    if reverse:zones,values=zones[:,::-1],values[:,::-1]
+    paths=[create_raster(tmp_path/(name+'.tif'),a)for name,a in(('v',values),('z',zones))];before=[p.read_bytes()for p in paths]
+    ps=[0.,np.nextafter(0.,1.),25.,33.3,50.,np.nextafter(50.,100.),75.,100.];frozen=ps.copy()
+    with raster_workspace():
+        v,z=[raster_load(source_plan(p))for p in paths];original=c.raster_zonal_statistics(v,z,1,1);files=set(v.workspace.iterdir())
+        actual=c.raster_zonal_statistics(v,z,1,1,percentiles=ps)
+        pd.testing.assert_frame_equal(actual.iloc[:,:9],original,check_exact=True)
+        assert actual.columns.tolist()==original.columns.tolist()+[k for i in range(1,len(ps)+1)for k in(f'percentile_{i}',f'percentile_value_{i}')]
+        assert actual.dtypes.astype(str).tolist()==['int64']*4+['Float64']*(5+2*len(ps))
+        assert actual.zone_value.tolist()==[-3,0,8,9,12]
+        for i,p in enumerate(ps,1):
+            single=c.raster_zonal_statistics(v,z,1,1,percentiles=[p])
+            assert actual[f'percentile_{i}'].tolist()==[p]*len(actual)
+            pd.testing.assert_series_equal(actual[f'percentile_value_{i}'],single.percentile_value_1,check_names=False,check_exact=True)
+            for code,samples in {-3:[-8,6],0:[0,12],8:[],9:[-3,7],12:[0]}.items():
+                observed=actual.set_index('zone_value').loc[code,f'percentile_value_{i}'];wanted=_full_percentile_oracle(samples,p)
+                if wanted is None:assert pd.isna(observed)
+                else:assert observed==wanted
+        assert set(v.workspace.iterdir())==files and not c._DISK_RESERVATIONS
+    assert ps==frozen and [p.read_bytes()for p in paths]==before
+
+
+@pytest.mark.parametrize('zones_valid',[False,True])
+def test_zonal_multi_percentiles_all_invalid_and_empty_schema(tmp_path,zones_valid):
+    import operators.raster_compute as c
+    paths=[create_raster(tmp_path/'v.tif',np.full((2,3),-9999.)),create_raster(tmp_path/'z.tif',np.full((2,3),0. if zones_valid else-9999.))]
+    with raster_workspace():
+        v,z=[raster_load(source_plan(p))for p in paths];result=c.raster_zonal_statistics(v,z,1,1,percentiles=[0.,50.,100.])
+        assert result.columns.tolist()[-6:]==[k for i in range(1,4)for k in(f'percentile_{i}',f'percentile_value_{i}')]
+        assert result.dtypes.astype(str).tolist()==['int64']*4+['Float64']*11
+        if zones_valid:
+            assert len(result)==1 and result.total_count.tolist()==[6]and result.valid_count.tolist()==[0]
+            for i,p in enumerate([0.,50.,100.],1):assert result[f'percentile_{i}'].tolist()==[p]and result[f'percentile_value_{i}'].isna().all()
+        else:assert result.empty
+
+
+def test_zonal_multi_percentiles_share_reads_sorts_merge_handle_and_disk_budget(tmp_path,monkeypatch):
+    from contextlib import contextmanager
+    import operators.raster_compute as c
+    data=(np.arange(513*519).reshape(513,519)%997).astype(float);zones=(np.indices(data.shape).sum(axis=0)%3-1).astype(float);data[::19,::17]=-9999.
+    paths=[create_raster(tmp_path/(n+'.tif'),a)for n,a in(('v',data),('z',zones))]
+    blocks,sort,finish,merge,budget=c._blocks,np.sort,c._PercentileRuns.finish,c._merge_percentile_runs,c._disk_budget
+    seen={}
+    def read(*a,**kw):
+        for item in blocks(*a,**kw):
+            seen['reads']+=1;assert max(item[2][0].shape)<=512;yield item
+    def sorted_values(*a,**kw):seen['sorts']+=1;return sort(*a,**kw)
+    def finalize(*a,**kw):seen['finish']+=1;return finish(*a,**kw)
+    def merged(*a,**kw):seen['merges']+=1;return merge(*a,**kw)
+    @contextmanager
+    def reserved(required,phase,**kw):
+        seen['budgets'].append((required,phase))
+        with budget(required,phase,**kw):yield
+    with raster_workspace():
+        v,z=[raster_load(source_plan(p))for p in paths];receipts=[]
+        for ps in([50.],[0.,25.,33.3,50.,75.,100.]):
+            seen={'reads':0,'sorts':0,'finish':0,'merges':0,'budgets':[]}
+            with monkeypatch.context()as patch:
+                patch.setattr(c,'_blocks',read);patch.setattr(np,'sort',sorted_values);patch.setattr(c._PercentileRuns,'finish',finalize);patch.setattr(c,'_merge_percentile_runs',merged);patch.setattr(c,'_disk_budget',reserved)
+                actual=c.raster_zonal_statistics(v,z,1,1,percentiles=ps)
+            receipts.append(seen)
+            for i,p in enumerate(ps,1):
+                for code,row in actual.set_index('zone_value').iterrows():assert row[f'percentile_value_{i}']==pytest.approx(_full_percentile_oracle(data[(zones==code)&(data!=-9999.)],p),rel=4e-15,abs=0)
+        assert receipts[0]==receipts[1]and receipts[0]['finish']==1 and receipts[0]['reads']==8 and receipts[0]['sorts']==4 and receipts[0]['merges']>0
+        assert receipts[0]['budgets'][0][0]==data.size*32+5*65536
+    assert not c._DISK_RESERVATIONS
+
+
+def test_zonal_multi_percentiles_omission_does_not_sort_and_removed_keyword_is_rejected(tmp_path,monkeypatch):
+    import operators.raster_compute as c
+    paths=[create_raster(tmp_path/(n+'.tif'),np.array([[0.,1.,2.]]))for n in('v','z')]
+    monkeypatch.setattr(c,'_percentile_runs',lambda *a,**kw:pytest.fail('unrequested sort'))
+    with raster_workspace():
+        v,z=[raster_load(source_plan(p))for p in paths];assert len(c.raster_zonal_statistics(v,z,1,1).columns)==9
+        with pytest.raises(TypeError,match='percentile'):c.raster_zonal_statistics(v,z,1,1,percentile=50.)
+
+
+@pytest.mark.parametrize('fault',['read','interpolation'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_multi_percentiles_late_rank_failure_releases_budget_without_partial_table(tmp_path,monkeypatch,fault,language):
+    import operators.raster_compute as c
+    paths=[create_raster(tmp_path/'v.tif',np.array([[0.,1.,2.,3.]])),create_raster(tmp_path/'z.tif',np.zeros((1,4)))];before=[p.read_bytes()for p in paths];calls=[]
+    original=np.fromfile if fault=='read'else c._focal_linear_values
+    def third(*a,**kw):
+        calls.append(1)
+        if len(calls)==3:raise OSError('third rank read')if fault=='read'else RuntimeError('third percentile failed')
+        return original(*a,**kw)
+    with raster_workspace(),raster_error_language(language):
+        v,z=[raster_load(source_plan(p))for p in paths];files=set(v.workspace.iterdir())
+        with monkeypatch.context()as patch:
+            patch.setattr(np,'fromfile',third)if fault=='read'else patch.setattr(c,'_focal_linear_values',third)
+            with pytest.raises(ValueError if fault=='read'else RuntimeError)as error:c.raster_zonal_statistics(v,z,1,1,percentiles=[0.,25.,50.,100.])
+        assert len(calls)==3 and set(v.workspace.iterdir())==files and not c._DISK_RESERVATIONS
+        if fault=='read':assert str(error.value)==str(c._statistics_error('zonal_io'))
+        else:assert str(error.value)=='third percentile failed'
+        assert c.raster_zonal_statistics(v,z,1,1,percentiles=[50.]).percentile_value_1.tolist()==[1.5]
+    assert [p.read_bytes()for p in paths]==before
+
+
+@pytest.mark.parametrize('case',['success','invalid','late-rank'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_zonal_multi_percentiles_async_csv_full_pairs_and_no_failed_publication(tmp_path,monkeypatch,case,language):
+    import pandas as pd,operators.raster_compute as c,workflow_engine,api_server
+    zones=np.tile(np.arange(72,dtype=float),(3,1));values=np.tile(np.array([[0.],[4.],[12.]]),(1,72))
+    paths=[create_raster(tmp_path/(n+'.tif'),a)for n,a in(('v',values),('z',zones))];old=tmp_path/'old.csv';old.write_bytes(b'keep,original\n');before=[p.read_bytes()for p in(*paths,old)];target=tmp_path/'new.csv';ps=[0.,25.,50.,100.]if case!='invalid'else[50.,25.]
+    tasks=[{'id':n,'operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(p)}}for n,p in zip(('v','z'),paths)]
+    tasks +=[{'id':'stats','operator':'raster_zonal_statistics','depends_on':['v','z'],'params':{'input_raster':{'$ref':'v'},'zones_raster':{'$ref':'z'},'band':1,'zones_band':1,'percentiles':ps}},{'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}]
+    work=[];execute=workflow_engine._execute_operator;interpolate=c._focal_linear_values;calls=[]
+    def tracked(name,params):
+        if name=='raster_zonal_statistics':work.append(params['input_raster'].workspace)
+        return execute(name,params)
+    def late(*a,**kw):
+        calls.append(1)
+        if len(calls)==3:raise OSError('third rank interpolation I/O')
+        return interpolate(*a,**kw)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',tracked)
+    if case=='late-rank':monkeypatch.setattr(c,'_focal_linear_values',late)
+    client=api_server.app.test_client()
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json;deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        result=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if result['status']in('success','failed'):break
+        time.sleep(.01)
+    if case=='success':
+        assert result['status']=='success',result
+        table=pd.read_csv(target);assert len(table)==72 and table.zone_value.tolist()==list(range(72))
+        for i,p in enumerate(ps,1):assert table[f'percentile_{i}'].tolist()==[p]*72 and table[f'percentile_value_{i}'].tolist()==[_full_percentile_oracle([0.,4.,12.],p)]*72
+        preview=json.loads(result['all_results']['stats']);assert preview['row_count']==72 and len(preview['preview_rows'])==50 and preview['truncated']is True
+        assert [col['name']for col in preview['schema']]==table.columns.tolist()
+        assert list(preview['preview_rows'][0])==table.columns.tolist()
+    else:
+        assert result['status']=='failed',result
+        with raster_error_language(language):cause=str(c._statistics_error('percentiles'if case=='invalid'else'zonal_io'))
+        assert result['error']=='任务 stats 执行失败: '+cause and not target.exists()
+    assert work and all(not p.exists()for p in work)and not c._DISK_RESERVATIONS and [p.read_bytes()for p in(*paths,old)]==before
