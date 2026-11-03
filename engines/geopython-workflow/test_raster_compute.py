@@ -20387,13 +20387,14 @@ def test_point_density_zero_is_valid_and_empty_points_are_zero_at_all_grid_pixel
 
 
 @pytest.mark.parametrize('shape',[(3,515),(515,3)])
-def test_point_density_blocks_ignore_all_template_values_mask_alpha_and_save_complete_cog(tmp_path,monkeypatch,shape):
+@pytest.mark.parametrize('method',['uniform','quartic'])
+def test_point_density_blocks_ignore_all_template_values_mask_alpha_and_save_complete_cog(tmp_path,monkeypatch,shape,method):
     import operators.raster_compute as c
     h,w=shape;grid=(0,1,.25,h,.125,-1);path=create_raster(tmp_path/'ignored-density.tif',np.full((3,h,w),np.nan),grid,'EPSG:3857');ds=gdal.Open(str(path),gdal.GA_Update)
     ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(1).SetScale(17);ds.GetRasterBand(1).SetOffset(500);ds.GetRasterBand(1).SetUnitType('ft')
     with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
     ds.GetRasterBand(1).GetMaskBand().Fill(0);ds=None;raw=path.read_bytes()
-    points=_idw_points([(.625,h-.4375)]*2,[None,None]);expected=_point_density_oracle(points,grid,shape,2.);calls=[];write=gdal.Band.WriteRaster
+    points=_idw_points([(.625,h-.4375)]*2,[None,None]);expected=(_point_density_oracle if method=='uniform'else _point_quartic_oracle)(points,grid,shape,2.);calls=[];write=gdal.Band.WriteRaster
     def bounded(self,x,y,w,h,raw,*a,**kw):
         assert 0<w<=512 and 0<h<=512;calls.append((x,y,w,h));return write(self,x,y,w,h,raw,*a,**kw)
     def forbidden(*a,**kw):pytest.fail('density must not read template values/mask/alpha')
@@ -20401,7 +20402,7 @@ def test_point_density_blocks_ignore_all_template_values_mask_alpha_and_save_com
         source=raster_load(source_plan(path))
         with monkeypatch.context()as patch:
             patch.setattr(gdal.Band,'ReadAsArray',forbidden);patch.setattr(gdal.Band,'ReadRaster',forbidden);patch.setattr(gdal.Band,'WriteRaster',bounded)
-            result=c.raster_point_density(points,source,2.)
+            result=c.raster_point_density(points,source,2.,method=method)
         assert len(calls)==2 and sum(w*h for x,y,w,h in calls)==shape[0]*shape[1]
         target=tmp_path/'density.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
         assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0
@@ -20422,7 +20423,8 @@ def test_point_density_blocks_ignore_all_template_values_mask_alpha_and_save_com
 @pytest.mark.parametrize('problem',['radius-null','radius-bool','radius-string','radius-zero','radius-negative','radius-nan','radius-inf','radius-huge','gdf','columns','no-active',
  'point-null','point-empty','point-line','point-multi','point-z','point-m','point-nan','point-inf','invalid-outside','crs-missing','crs-different','crs-geographic','crs-geocentric','crs-compound','crs-unknown-unit','grid-missing','grid-singular','grid-nonfinite'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_point_density_strict_exact_bilingual_admission_and_no_partial_output(tmp_path,problem,language):
+@pytest.mark.parametrize('method',['uniform','quartic'])
+def test_point_density_strict_exact_bilingual_admission_and_no_partial_output(tmp_path,problem,language,method):
     import operators.raster_compute as c
     import geopandas as gpd
     from shapely import from_wkt
@@ -20449,7 +20451,7 @@ def test_point_density_strict_exact_bilingual_admission_and_no_partial_output(tm
     path=create_raster(tmp_path/'bad-density.tif',np.zeros((1,1)),grid,epsg);raw=path.read_bytes()
     with raster_workspace(),raster_error_language(language):
         source=raster_load(source_plan(path));files=set(source.workspace.iterdir())
-        with pytest.raises(ValueError)as error:c.raster_point_density(points,source,radius)
+        with pytest.raises(ValueError)as error:c.raster_point_density(points,source,radius,method=method)
         expected={'radius':('点密度搜索半径必须为有限非布尔正米数','Point density search radius must be a finite positive number of metres, excluding booleans'),
           'gdf':('点密度需要列名唯一且具有活动几何列的GeoDataFrame','Point density requires a GeoDataFrame with unique columns and an active geometry column'),
           'geometry':('点密度仅接受非空、有效、有限XY的二维Point','Point density requires non-empty valid finite XY two-dimensional Points'),
@@ -20471,15 +20473,16 @@ def test_point_density_positive_overflow_or_underflow_never_becomes_zero_or_part
 
 
 @pytest.mark.parametrize('language',['zh-cn','en'])
-@pytest.mark.parametrize('case',['success','empty','radius','geometry','calculation-failure','write-failure','save-existing'])
-def test_point_density_async_real_cog_submission_language_and_all_exit_cleanup(tmp_path,monkeypatch,case,language):
+@pytest.mark.parametrize('case',['success','empty','radius','method','geometry','calculation-failure','write-failure','save-existing'])
+@pytest.mark.parametrize('method',['uniform','quartic'])
+def test_point_density_async_real_cog_submission_language_and_all_exit_cleanup(tmp_path,monkeypatch,case,language,method):
     import api_server,workflow_engine,operators.raster_compute as c
     xy=[]if case=='empty'else[(.5,2.5),(.5,2.5),(2.5,.5)];points=_idw_points(xy,[None]*len(xy));grid=(0,1,0,3,0,-1)
     path=create_raster(tmp_path/'density-reference.tif',np.full((3,3),-9999.),grid,'EPSG:3857');raw=path.read_bytes();target=tmp_path/'density-result.tif';prior=tmp_path/'prior.tif';prior.write_bytes(b'old unchanged')
     if case=='save-existing':target.write_bytes(b'owned target unchanged')
     tasks=[{'id':'reference','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
            {'id':'points','operator':'load_from_wkt','depends_on':[],'params':{'wkt_list':['LINESTRING(0 0,1 1)']if case=='geometry'else[p.wkt for p in points.geometry],'crs':'EPSG:3857'}},
-           {'id':'density','operator':'raster_point_density','depends_on':['reference','points'],'params':{'input_gdf':{'$ref':'points'},'reference_raster':{'$ref':'reference'},'radius_metres':0 if case=='radius'else 2.}},
+           {'id':'density','operator':'raster_point_density','depends_on':['reference','points'],'params':{'input_gdf':{'$ref':'points'},'reference_raster':{'$ref':'reference'},'radius_metres':0 if case=='radius'else 2.,'method':'gaussian'if case=='method'else method}},
            {'id':'save','operator':'raster_save','depends_on':['density'],'params':{'input_raster':{'$ref':'density'},'access_plan':target_plan(target),'profile':'cog'}}]
     work=[];execute=workflow_engine._execute_operator
     def track(name,params):
@@ -20499,10 +20502,121 @@ def test_point_density_async_real_cog_submission_language_and_all_exit_cleanup(t
     assert status['status']==('success'if case in('success','empty')else'failed'),status
     assert work and all(not p.exists()for p in work)
     if case in('success','empty'):
-        ds=gdal.Open(str(target));np.testing.assert_array_equal(ds.ReadAsArray(),_point_density_oracle(points,grid,(3,3),2.));assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG'and ds.GetRasterBand(1).GetUnitType()=='points/m2';ds=None
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(ds.ReadAsArray(),(_point_density_oracle if method=='uniform'else _point_quartic_oracle)(points,grid,(3,3),2.));assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG'and ds.GetRasterBand(1).GetUnitType()=='points/m2';ds=None
     elif case=='save-existing':assert target.read_bytes()==b'owned target unchanged'
     else:
         assert not target.exists()
-        with raster_error_language(language):cause='injected density calculation failure'if case=='calculation-failure'else str(c._point_density_error({'radius':'radius','geometry':'geometry','write-failure':'write'}[case]))
+        with raster_error_language(language):cause='injected density calculation failure'if case=='calculation-failure'else str(c._point_density_error({'radius':'radius','method':'method','geometry':'geometry','write-failure':'write'}[case]))
         assert cause in status['error']
     assert path.read_bytes()==raw and prior.read_bytes()==b'old unchanged'
+
+
+
+def _point_quartic_oracle(points,grid,shape,radius):
+    """Independent all-point metric distances and expanded high-precision kernel."""
+    from fractions import Fraction as Q
+    from decimal import Decimal,localcontext
+    def decimal(q):return Decimal(q.numerator)/Decimal(q.denominator)
+    gt=list(map(Q,grid));factor=Q(points.crs.axis_info[0].unit_conversion_factor);limit=Q(float(radius))**2
+    coordinates=[(Q(p.x),Q(p.y))for p in points.geometry];result=np.zeros(shape)
+    with localcontext()as context:
+        context.prec=2000
+        denominator=Decimal.from_float(math.pi)*Decimal.from_float(float(radius))**6
+        for row,col in np.ndindex(shape):
+            xx=gt[0]+gt[1]*Q(2*col+1,2)+gt[2]*Q(2*row+1,2);yy=gt[3]+gt[4]*Q(2*col+1,2)+gt[5]*Q(2*row+1,2)
+            squares=[((px-xx)**2+(py-yy)**2)*factor**2 for px,py in coordinates]
+            numerator=sum((decimal(limit-distance)**2 for distance in squares if distance<=limit),Decimal(0))
+            result[row,col]=float(3*numerator/denominator)
+    return result
+
+
+@pytest.mark.parametrize('grid',[(0.,1.,0.,6.,0.,-1.),(3.,2.,.5,8.,.25,-3.),(0.,-2.,.5,1.,1.,2.)])
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+def test_point_density_quartic_complete_decimal_oracle_duplicates_order_default_uniform_and_grid(tmp_path,grid,epsg):
+    import operators.raster_compute as c
+    rng=np.random.default_rng(1661);xy=rng.uniform(-4,12,(19,2)).tolist();xy.extend([xy[0],xy[0],[-0.,0.],[0.,-0.]])
+    points=_idw_points(xy,[None]*len(xy),epsg);points.index=[7]*len(points);before=points.copy(deep=True)
+    path=create_raster(tmp_path/'kernel-reference.tif',np.full((5,7),-9999.),grid,f'EPSG:{epsg}');raw=path.read_bytes();outputs={}
+    with raster_workspace():
+        loaded=raster_load(source_plan(path))
+        for method in (None,'uniform','quartic','reversed'):
+            actual_points=points.iloc[::-1].copy()if method=='reversed'else points
+            args={}if method is None else{'method':'quartic'if method=='reversed'else method}
+            result=c.raster_point_density(actual_points,loaded,3.,**args);ds=gdal.Open(str(result.path));outputs[method]=ds.ReadAsArray()
+            np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),np.full((5,7),255));assert ds.GetGeoTransform()==grid and ds.GetRasterBand(1).GetUnitType()=='points/m2';ds=None
+    np.testing.assert_array_equal(outputs[None],_point_density_oracle(points,grid,(5,7),3.))
+    np.testing.assert_array_equal(outputs['uniform'],outputs[None])
+    np.testing.assert_array_equal(outputs['quartic'],_point_quartic_oracle(points,grid,(5,7),3.))
+    np.testing.assert_array_equal(outputs['quartic'],outputs['reversed'])
+    assert points.equals(before)and points.index.equals(before.index)and path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+@pytest.mark.parametrize('kind',['below','equal','above'])
+def test_point_density_quartic_exact_boundary_zero_neighbours_and_outside_template(tmp_path,epsg,kind):
+    import operators.raster_compute as c
+    points=_idw_points([(-1.,0.),(1.,0.),(1.,0.)],[None]*3,epsg);factor=points.crs.axis_info[0].unit_conversion_factor
+    radius=factor if kind=='equal'else math.nextafter(factor,0 if kind=='below'else math.inf)
+    grid=(-.5,1,0,.5,0,-1);path=create_raster(tmp_path/'kernel-boundary.tif',np.zeros((1,1)),grid,f'EPSG:{epsg}')
+    with raster_workspace():
+        result=c.raster_point_density(points,raster_load(source_plan(path)),radius,method='quartic');ds=gdal.Open(str(result.path));actual=ds.ReadAsArray();mask=ds.GetRasterBand(1).GetMaskBand().ReadAsArray();ds=None
+    np.testing.assert_array_equal(actual,_point_quartic_oracle(points,grid,(1,1),radius));assert mask[0,0]==255
+    assert actual[0,0]>0 if kind=='above'else actual[0,0]==0.
+
+
+@pytest.mark.parametrize('radius',[1e-200,1.,1e200])
+@pytest.mark.parametrize('case',['empty','boundary','outside'])
+def test_point_density_quartic_valid_zero_at_extreme_radii_has_no_false_range_failure(tmp_path,radius,case):
+    import operators.raster_compute as c
+    xy=[]if case=='empty'else[(radius if case=='boundary'else radius*2,0.)]
+    points=_idw_points(xy,[None]*len(xy));path=create_raster(tmp_path/'kernel-zero.tif',np.full((1,1),-9999.),(-.5,1,0,.5,0,-1),'EPSG:3857')
+    with raster_workspace():
+        result=c.raster_point_density(points,raster_load(source_plan(path)),radius,method='quartic');ds=gdal.Open(str(result.path))
+        assert ds.ReadAsArray()[0,0]==0. and ds.GetRasterBand(1).GetMaskBand().ReadAsArray()[0,0]==255;ds=None
+
+
+@pytest.mark.parametrize('method',[None,True,False,0,1.,'Quartic','gaussian','',[],{}])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_point_density_quartic_invalid_method_precedes_any_input_read_or_output(tmp_path,monkeypatch,method,language):
+    import operators.raster_compute as c
+    def forbidden(*a,**kw):pytest.fail('invalid method touched an input or allocated output')
+    for name in('_open','_point_geometries','_point_grid_output'):monkeypatch.setattr(c,name,forbidden)
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_point_density(object(),object(),1.,method=method)
+    assert str(error.value)==('点密度方法必须为uniform或quartic'if language=='zh-cn'else'Point density method must be uniform or quartic')
+
+
+@pytest.mark.parametrize('radius',[1e-200,1e200,1e155])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_point_density_quartic_true_positive_overflow_underflow_and_near_boundary_no_fake_zero(tmp_path,radius,language):
+    import operators.raster_compute as c
+    xy=[(math.nextafter(radius,0.)if radius==1e155 else 0.,0.)];points=_idw_points(xy,[None])
+    path=create_raster(tmp_path/'kernel-range.tif',np.zeros((1,1)),(-.5,1,0,.5,0,-1),'EPSG:3857');raw=path.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));files=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as error:c.raster_point_density(points,source,radius,method='quartic')
+        assert str(error.value)==('点密度结果超出有限正Float64可表示范围'if language=='zh-cn'else'Point density result is outside the finite positive Float64 range')
+        assert set(source.workspace.iterdir())==files
+    assert path.read_bytes()==raw
+
+
+def test_point_density_quartic_center_duplicate_linear_scaling_and_representable_subnormal(tmp_path):
+    import operators.raster_compute as c
+    from fractions import Fraction as Q
+    radius=1e155;path=create_raster(tmp_path/'kernel-subnormal.tif',np.zeros((1,1)),(-.5,1,0,.5,0,-1),'EPSG:3857');answers=[]
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        for count in(1,3):
+            points=_idw_points([(0.,0.)]*count,[None]*count);result=c.raster_point_density(points,source,radius,method='quartic');ds=gdal.Open(str(result.path));answers.append(ds.ReadAsArray()[0,0]);ds=None
+            assert answers[-1]==float(Q(3*count)/(Q(math.pi)*Q(radius)**2))and 0<answers[-1]<np.finfo(float).tiny
+    assert answers[1]>answers[0]
+
+
+
+def test_point_density_quartic_analytic_center_half_radius_and_exact_edge(tmp_path):
+    import operators.raster_compute as c
+    from fractions import Fraction as Q
+    grid=(-.25,.5,0,.5,0,-1);points=_idw_points([(0.,0.)],[None]);path=create_raster(tmp_path/'analytic-kernel.tif',np.full((1,3),-9999.),grid,'EPSG:3857')
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=c.raster_point_density(points,source,1.,method='quartic');ds=gdal.Open(str(result.path));actual=ds.ReadAsArray()
+        expected=np.array([[float(3/Q(math.pi)),float(Q(27,16)/Q(math.pi)),0.]])
+        np.testing.assert_array_equal(actual,expected);np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),np.full((1,3),255));ds=None

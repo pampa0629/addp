@@ -1827,8 +1827,11 @@ def test_point_density_single_workflow_read_entry_exact_sources_radius_and_units
     import inspect
     spec=next(s for s in list_operators()if s['id']=='raster_point_density')
     params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_gdf','reference_raster','radius_metres'}
-    assert all(p['required']for p in params.values())
+    assert set(params)=={'input_gdf','reference_raster','radius_metres','method'}
+    assert all(params[n]['required']for n in ('input_gdf','reference_raster','radius_metres'))
+    assert params['method']['type']=='string'and params['method']['default']=='uniform'and params['method']['enum']==['uniform','quartic']and params['method']['required']is False
+    assert inspect.signature(get_operator('raster_point_density')).parameters['method'].default=='uniform'
+    assert len([s for s in list_operators()if s['id']=='raster_point_density'])==1
     assert params['input_gdf']['param_type']==params['reference_raster']['param_type']=='input'
     assert params['input_gdf']['type']=='object'and params['reference_raster']['type']=='raster'
     assert params['radius_metres']['type']=='float'and 'default'not in params['radius_metres']

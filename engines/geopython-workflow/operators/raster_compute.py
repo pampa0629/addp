@@ -1555,6 +1555,7 @@ def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres, mi
 
 
 _POINT_DENSITY_MESSAGES = {
+    'method': ('点密度方法必须为uniform或quartic', 'Point density method must be uniform or quartic'),
     'radius': ('点密度搜索半径必须为有限非布尔正米数', 'Point density search radius must be a finite positive number of metres, excluding booleans'),
     'gdf': ('点密度需要列名唯一且具有活动几何列的GeoDataFrame', 'Point density requires a GeoDataFrame with unique columns and an active geometry column'),
     'geometry': ('点密度仅接受非空、有效、有限XY的二维Point', 'Point density requires non-empty valid finite XY two-dimensional Points'),
@@ -1569,11 +1570,11 @@ def _point_density_error(code):
     return ValueError(_POINT_DENSITY_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _point_density_value(count, area):
-    if count == 0:
+def _point_density_value(mass, area):
+    if mass == 0:
         return 0.
     try:
-        value = float(Fraction(count) / area)
+        value = float(Fraction(mass) / area)
     except OverflowError as cause:
         raise _point_density_error('result') from cause
     if not math.isfinite(value) or value <= 0:
@@ -1581,8 +1582,19 @@ def _point_density_value(count, area):
     return value
 
 
-def raster_point_density(input_gdf, reference_raster, radius_metres):
-    """Count every feature in the exact metric circle, divided by its full area."""
+def _point_density_mass(sites, radius, method):
+    if method == 'uniform':
+        return sum(1 for _ in sites)
+    squared_radius = radius*radius
+    # The ratio is dimensionless: sites and radius share the original CRS units.
+    # Keep boundary cancellation exact, including a legitimate all-boundary zero.
+    return 3*sum(((1-squared/squared_radius)**2 for _, squared in sites), Fraction(0))
+
+
+def raster_point_density(input_gdf, reference_raster, radius_metres, method='uniform'):
+    """Exact metric point density with uniform or normalized 2D quartic kernel."""
+    if not isinstance(method, str) or method not in ('uniform', 'quartic'):
+        raise _point_density_error('method')
     radius_metres = _point_radius(radius_metres, _point_density_error)
     geometries = _point_geometries(input_gdf, _point_density_error)
     coordinates = [_point_xy(point, _point_density_error) for point in geometries]
@@ -1594,7 +1606,8 @@ def raster_point_density(input_gdf, reference_raster, radius_metres):
         area = Fraction(math.pi)*radius_metres*radius_metres
         tree = STRtree(list(geometries))
         return _point_grid_output(dataset, transform,
-            lambda x, y: _point_density_value(sum(1 for _ in _circle_sites(x, y, radius, tree, coordinates)), area),
+            lambda x, y: _point_density_value(_point_density_mass(
+                _circle_sites(x, y, radius, tree, coordinates), radius, method), area),
             _point_density_error, unit='points/m2')
     finally:
         dataset = None
@@ -6385,7 +6398,7 @@ _SPECS = [
     (raster_reclassify, OperatorCategory.RASTER_CLASSIFICATION, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
     (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类集合，允许零、不可重复；北向矩形网格按实际米制距离选点，方形结果保持')], 'raster', ['read']),
     (raster_interpolate_idw, OperatorCategory.RASTER_CALCULATION, '点数据IDW插值', [_param('input_gdf', 'GeoDataFrame', '同CRS二维Point及有限数值字段；重复XY拒绝', role='input'), _param('reference_raster', 'raster', '仅提供网格和CRS，不读取或继承模板值／NoData／mask／alpha', role='input'), _param('field', 'str', '显式数值属性字段；合法零负值保留，整数须精确表示'), _param('radius_metres', 'float', '显式有限正米制圆半径；等号纳入、全部样本、固定距离平方反比'), _param('min_points', 'int', '非布尔正整数，默认1；非重合支撑不足为NoData，精确重合仍保留样本值', 1, False), _param('max_points', 'int', '省略不限；显式非布尔正整数且不小于min_points，按精确距离／X／Y取最近N点，精确重合保留原值', None, False)], 'raster', ['read']),
-    (raster_point_density, OperatorCategory.RASTER_CALCULATION, '米制圆形点密度', [_param('input_gdf', 'GeoDataFrame', '二维Point逐要素计数，重复XY保留；无数值字段', role='input'), _param('reference_raster', 'raster', '仅提供网格／CRS，原像元与mask／alpha不参与', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；等号纳入，密度按完整圆面积计算，无支持为0，单位points/m2')], 'raster', ['read']),
+    (raster_point_density, OperatorCategory.RASTER_CALCULATION, '米制圆形点密度', [_param('input_gdf', 'GeoDataFrame', '二维Point逐要素计数，重复XY保留；无数值字段', role='input'), _param('reference_raster', 'raster', '仅提供网格／CRS，原像元与mask／alpha不参与', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；无支持为0，单位points/m2'), _param('method', 'str', 'uniform等权计数；quartic二维四次核，半径边界贡献0', 'uniform', False, enum=['uniform', 'quartic'])], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
     (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '正整数像元数阈值；与min_area_m2必须且只能提供一个，等于阈值保留', None, False), _param('min_area_m2', 'float', '有限正平方米阈值；与min_pixels互斥，北向无旋转投影网格、按CRS线性单位换算，精确比较且等于阈值保留', None, False), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结'), _param('protected_values', 'list[int]', '免于替换的安全整数分类，列表不可重复；空列表保持原结果，保护斑块作为供体仍须原始大小达标', [], False)], 'raster', ['read']),
@@ -6499,7 +6512,7 @@ for function, category, label, params, output, effects in _SPECS:
     if name == 'raster_interpolate_idw':
         examples = {'input_gdf': {'$ref': 'points'}, 'reference_raster': {'$ref': 'reference'}, 'field': 'value', 'radius_metres': 100., 'min_points': 1}
     if name == 'raster_point_density':
-        examples = {'input_gdf': {'$ref': 'points'}, 'reference_raster': {'$ref': 'reference'}, 'radius_metres': 100.}
+        examples = {'input_gdf': {'$ref': 'points'}, 'reference_raster': {'$ref': 'reference'}, 'radius_metres': 100., 'method': 'uniform'}
     if name == 'vector_rasterize':
         examples = {'input_gdf': {'$ref': 'polygons'}, 'reference_raster': {'$ref': 'reference'},
                     'field': 'class_value', 'all_touched': False}
