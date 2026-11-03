@@ -139,7 +139,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 | 优先级 | 剩余项 | 继续条件／交付要求 |
 | --- | --- | --- |
-| 1 | Neo4j 九阶段原生 T2 的 Linux 终态 | 只跟实际相关 Job，核标准入口、六项生命周期 T1、九个阶段、原领域用例、0 skip 和零残留；本地结果不代替 Linux |
+| 1 | 后继 Neo4j CI 启动夹具故障 | 九阶段 T2 的42ae源码已获 Linux 实际通过；后继19e源码启动前置 exit64 由 CI 会话跟进，不计专项通过，不自动重跑 |
 | 2 | Graph 恢复目标与证据来源 | §8.42 的新概念／职责先讨论；现有严格阻断保持，不能先补不可信绑定或空 Provider 接口 |
 | 3 | Graph Provider／绑定／正向 reopen | 取得充分证据并统一正式契约后实施；还须分别证明原目标、准确操作结果、旧运行体及在途调用终结，锁外读取／CAS 与原生写入边界均须验证 |
 | 4 | 其余真实故障验收 | Graph 原生写图回包丢失、两引擎完整生命周期／正向恢复；Manager 对象／索引未知效果和真正迟到 writer；Cleanup 协调／授权／真实浏览器全矩阵。runner 或 PG 通过不计已完成 T4 |
@@ -231,7 +231,9 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 首次 T2 曾因 Docker port=0 在重启后重新分配端口而失败；检查正确拒绝，清理零残留。已先用 T1 复现，再在采集基线前固定本轮首次分配端口，后续端口冲突直接失败，不换地址规避同目标断言；旧失败不改记通过。
 
-**Linux CI 待核终态。** 准确 `3527dccc5` 没有独立 push Run；其已推送后继 `42ae2bc5996b389fceea940f3ed3825457744bc7` 包含该提交，十个任务文件逐字节相同。[Release Run41529522013](https://github.com/pampa0629/addp/actions/runs/41529522013) 的 `Neo4j local read scope and graph contracts` 是待核作业，最后核验仍排队，尚未计通过。CI 终态须核准确源码、标准 Make、六项 T1、九阶段、实际版本／edition、原领域用例、0SKIP及零残留；不以本地或前序源码替代。
+**Linux 实际终态。** `3527dccc5` 没有独立 push Run；已推送后继 `42ae2bc5996b389fceea940f3ed3825457744bc7` 包含该提交，十个任务文件及 CI Make 输入已独立核同。[Run41529522013／Job125579406480](https://github.com/pampa0629/addp/actions/runs/41529522013/job/125579406480) 于北京时间2026-11-03 **06:09:42—06:17:38** 实际 success（push／attempt1）。主责 fresh API 和独立原日志确认真实选中、标准 Make、六项 T1、原 Common／Graph 主项、九个唯一阶段全部通过，版本5.26.24／community、0SKIP、zero_residuals；整卷克隆身份反例同样成立。原日志82718字节，SHA-256 `d0a9c169a8882a0087f4b1bf7aedfaf3fde2a7981fdcacaa15002d3db5358882`；独立证明 `/tmp/addp-neo4j-identity-t2-20261103/linux-final/root-independent-proof.json`。
+
+该成功只收口准确42ae的身份反例 T2，不声明可信身份、Provider／绑定／正向 reopen 已实现或重复运行稳定。后继19e05289c的 [Job125628721437](https://github.com/pampa0629/addp/actions/runs/41548048797/job/125628721437) 启动前置 exit64／缺少 initial-password 参数，未进入领域或九阶段测试；由 CI 会话跟进，保持失败事实，不用前序成功覆盖、不在本轮追加运行。
 
 ### 8.42 正向恢复的新边界（待讨论）
 
