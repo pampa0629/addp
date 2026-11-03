@@ -244,6 +244,10 @@ Component 禁止保存 SQL、MQL、Cypher 等查询语言、Engine 或来源定�
 
 Data Application 是 Workbench 唯一持久化的用户创作聚合根，中文统一为“数据应用”。用户从创建页选择已发布数据服务，直接配置一个或多个 Component，随后完成布局、应用参数、组件联动、发布和独立运行。单组件应用与多组件应用使用同一条路径。
 
+本节导航：[聚合与范围](#531-聚合component-与创作范围) · [草稿、修订与并发](#532-草稿修订与并发) · [API 与创建校验](#533-用户-api-与创建校验) · [运行授权与资产](#534-运行授权与资产衔接)。
+
+#### 5.3.1 聚合、Component 与创作范围
+
 Data Application Component 是应用内聚实体，不单独拥有 CRUD、权限、共享或发布生命周期。每个 Component 至少持有：
 
 - `service_ref` 和 `contract_fingerprint`；
@@ -261,13 +265,19 @@ Data Application 聚合根负责：
 - 草稿、发布、下线和版本生命周期；
 - 稳定运行入口以及与 CatalogEntry 的发布衔接。
 
-草稿由创建者维护。发布产生不可变的 Application Revision；后续编辑基于新草稿形成新 Revision，不能原地修改已发布版本。首次发布为 Data Application 建立稳定 CatalogEntry，后续 Revision 沿用同一 Data Application 与 CatalogEntry 身份，不为每个版本创建平行目录项。
-
 Data Application 可以只有一个 Component。是否成为应用取决于显式的组合和发布意图，而不是组件数量。
 
-Data Application 不授予底层数据访问权。运行时每个 Component 都使用当前访问者身份调用其 Service，由 Service 实时执行 Permission、Resource Grant / Policy 和契约校验；Application 发布、CatalogEntry 或 Asset 授权都不能替代 Service 最终授权。
-
 当前创作范围固定为一个页面、十二列栅格和一个或多个 Component，支持同页 Selection Binding 与 `desktop | wallboard` 展示模式。`mobile`、多页面和轮播仍属后续范围，数据库快照不得预埋未实现的第二套页面或展示模式字段。
+
+#### 5.3.2 草稿、修订与并发
+
+草稿由创建者维护。发布产生不可变的 Application Revision；后续编辑基于新草稿形成新 Revision，不能原地修改已发布版本。首次发布为 Data Application 建立稳定 CatalogEntry，后续 Revision 沿用同一 Data Application 与 CatalogEntry 身份，不为每个版本创建平行目录项。
+
+聚合根保存当前草稿快照、正整数并发 `version`、`unpublished | published | offline` 发布状态和当前 Revision 编号。`PUT` 原子完整替换草稿；发布在一个事务中校验 `version`、写入新的不可变 Application Revision、切换当前 Revision 并递增聚合版本；下线只切换发布状态并递增聚合版本，不删除最后发布修订。只有从未发布的应用允许携带当前 `version` 删除，已产生 Revision 的应用只能下线。
+
+应用发布版次使用 `revision_number`，不得复用资源并发字段 `version`。应用更新、删除、发布和下线都必须在请求体携带当前正整数 `version`；冲突统一返回 `409 + workbench_data_application_version_conflict`，不得自动重试或服务端兜底当前版本。
+
+#### 5.3.3 用户 API 与创建校验
 
 Data Application 使用 Workbench 唯一的用户创作 API：
 
@@ -284,13 +294,15 @@ GET    /api/v1/workbench/data_applications/:id/runtime
 
 创建请求提交名称、说明和完整 `snapshot`。`snapshot.components` 至少包含一个当前用户可消费的已发布 Service；Workbench Backend 逐一读取 Consumer Descriptor，不信任客户端提交的契约指纹，并将当前权威指纹归一化进草稿。Component 直接配置 Service，不依赖中间资源。
 
-聚合根保存当前草稿快照、正整数并发 `version`、`unpublished | published | offline` 发布状态和当前 Revision 编号。`PUT` 原子完整替换草稿；发布在一个事务中校验 `version`、写入新的不可变 Application Revision、切换当前 Revision 并递增聚合版本；下线只切换发布状态并递增聚合版本，不删除最后发布修订。只有从未发布的应用允许携带当前 `version` 删除，已产生 Revision 的应用只能下线。
+#### 5.3.4 运行授权与资产衔接
 
-应用发布版次使用 `revision_number`，不得复用资源并发字段 `version`。应用更新、删除、发布和下线都必须在请求体携带当前正整数 `version`；冲突统一返回 `409 + workbench_data_application_version_conflict`，不得自动重试或服务端兜底当前版本。
+Data Application 不授予底层数据访问权。运行时每个 Component 都使用当前访问者身份调用其 Service，由 Service 实时执行 Permission、Resource Grant / Policy 和契约校验；Application 发布、CatalogEntry 或 Asset 授权都不能替代 Service 最终授权。
 
 稳定运行响应要求 `workbench.data_application.execute`，并校验当前用户是创建者或持有 Asset 履约产生的有效 owner Resource Grant。不得用“同 Tenant 即可读”、公开链接、API Key、专属 Token 或 Catalog 可见性代替资源授权。
 
 发布后的 Data Application 先由 Catalog 建立企业 CatalogEntry，再由 Asset 通过 `AssetComponent.catalog_entry_id` 组合为 `application` 类型资产。Asset 只保存资产组合、发布和授权履约事实，不保存应用页面、组件树或运行配置。
+
+具体操作的权限交集与 Asset 履约协议分别见[用户交互](#91-用户交互)和[Asset 授权](#93-asset-授权)。
 
 ### 5.4 组件联动与受控下钻设计
 

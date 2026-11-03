@@ -25,7 +25,7 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 | 主题 | 权威正文 |
 | --- | --- |
 | 消费投影与服务发现 | [Consumer Descriptor](../docs/spec/addp数据服务消费与数据应用规范.md#61-消费描述职责)、[Consumer Catalog](../docs/spec/addp数据服务消费与数据应用规范.md#64-service-consumer-catalog-与唯一-api) |
-| Component、草稿与发布修订 | [参数与查询配置](../docs/spec/addp数据服务消费与数据应用规范.md#52-component-参数与查询配置)、[Data Application 与版本](../docs/spec/addp数据服务消费与数据应用规范.md#53-data-application) |
+| Component、草稿与发布修订 | [聚合与 Component](../docs/spec/addp数据服务消费与数据应用规范.md#531-聚合component-与创作范围)、[参数与查询配置](../docs/spec/addp数据服务消费与数据应用规范.md#52-component-参数与查询配置)、[草稿、修订与并发](../docs/spec/addp数据服务消费与数据应用规范.md#532-草稿修订与并发) |
 | Renderer 所有权与字段显示 | [共享层与模块分工](../docs/spec/addp数据服务消费与数据应用规范.md#81-common-frontend-与-workbench-边界)、[字段呈现与有限值名称](../docs/spec/addp数据服务消费与数据应用规范.md#810-字段呈现规则) |
 | 空草稿空间探索向导 | [通用空间组合](../docs/spec/addp数据服务消费与数据应用规范.md#86-通用空间数据应用组合) |
 | 应用参数、选择联动与预设 | [Selection Binding](../docs/spec/addp数据服务消费与数据应用规范.md#54-组件联动与受控下钻设计)、[Parameter Preset](../docs/spec/addp数据服务消费与数据应用规范.md#510-application-parameter-preset) |
