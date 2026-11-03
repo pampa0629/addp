@@ -23,6 +23,7 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
 const operatorFailureTemplates = Object.freeze({ contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
+  convex_hull: 'construction', minimum_rotated_rectangle: 'construction',
   'buffer:operator_input_invalid': 'buffer', 'buffer:operator_crs_invalid': 'buffer',
   'batch_buffer:operator_crs_invalid': 'buffer',
   'simplify:operator_input_invalid': 'simplify', 'simplify:operator_crs_invalid': 'simplify' })
@@ -62,6 +63,10 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["convex_hull", "operator_input_invalid", "input_gdf", ""],
+  ["convex_hull", "operator_crs_invalid", "", ""],
+  ["minimum_rotated_rectangle", "operator_input_invalid", "input_gdf", ""],
+  ["minimum_rotated_rectangle", "operator_crs_invalid", "", ""],
   ["simplify", "operator_input_invalid", "input_gdf", ""],
   ["simplify", "operator_crs_invalid", "", ""],
   ["simplify", "operator_nonnegative_number_required", "tolerance", ""],

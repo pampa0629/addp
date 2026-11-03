@@ -497,3 +497,43 @@ def test_simplify_diagnostics_keep_original_frozen_task_position_and_stop_before
     assert caught.value.diagnostic == {'schema_version': 'addp.execution-failure/v3', 'stage': 'execution', 'reason': reason,
         'operator': {'node_index': 1, 'operator_id': 'simplify', **({'parameter': parameter} if parameter else {})}}
     assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+
+
+@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+def test_enclosing_construction_diagnostics_have_only_two_no_field_rules(operator):
+    import copy
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES, OperatorInputError, validated_operator_diagnostic
+    expected = {(operator, 'operator_input_invalid', ''): 'input_gdf', (operator, 'operator_crs_invalid', ''): ''}
+    assert {key: value for key, value in OPERATOR_INPUT_RULES.items() if key[0] == operator} == expected
+    for (_, reason, _), parameter in expected.items():
+        value = OperatorInputError(reason, 'PRIVATE').diagnostic(operator, 2)
+        assert value['operator'] == {'node_index': 2, 'operator_id': operator, **({'parameter': parameter} if parameter else {})}
+        assert validated_operator_diagnostic(value) == value
+        for patch in ({'field': ''}, {'field': 'geometry'}, {'parameter': 'distance'}, {'parameter': 'reference_gdf'}, {'operator_id': 'foreign'}, {'node_index': 0}, {'node_index': True}):
+            forged = copy.deepcopy(value); forged['operator'].update(patch)
+            assert validated_operator_diagnostic(forged) is None
+    for reason in ('operator_reference_invalid', 'operator_number_invalid', 'operator_nonnegative_number_required', 'operator_boolean_required'):
+        assert OperatorInputError(reason, 'PRIVATE').diagnostic(operator, 1) is None
+
+
+@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('reason,parameter', [('operator_input_invalid', 'input_gdf'), ('operator_crs_invalid', '')])
+def test_enclosing_construction_diagnostics_bind_original_frozen_task_position(operator, reason, parameter):
+    from addp_common.workflow_runtime import OperatorInputError
+    calls = []
+    def execute(name, params):
+        calls.append(name)
+        if name == operator: raise OperatorInputError(reason, 'PRIVATE')
+        return {'kept': True}
+    definition = {'tasks': [
+        {'id': 'PRIVATE', 'operator': operator, 'params': {}, 'depends_on': ['load']},
+        {'id': 'load', 'operator': 'load', 'params': {}, 'depends_on': []},
+        {'id': 'saved', 'operator': 'save', 'params': {}, 'depends_on': ['PRIVATE']},
+    ]}
+    with pytest.raises(WorkflowExecutionError) as caught:
+        WorkflowRunner({'load', operator, 'save'}, execute).execute(definition)
+    assert calls == ['load', operator] and caught.value.error_code == 'INVALID_PARAMS'
+    assert caught.value.all_results == {'load': {'kept': True}}
+    assert caught.value.diagnostic == {'schema_version': 'addp.execution-failure/v3', 'stage': 'execution', 'reason': reason,
+        'operator': {'node_index': 1, 'operator_id': operator, **({'parameter': parameter} if parameter else {})}}
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)

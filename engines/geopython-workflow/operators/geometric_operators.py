@@ -461,25 +461,55 @@ def simplify(input_gdf: gpd.GeoDataFrame, tolerance: float, preserve_topology: b
     return result
 
 
-def convex_hull(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    计算凸包
+class UnaryConstructionInputError(ValueError):
+    """Closed single-source convex/rectangular construction admission facts."""
+    _messages = {
+        'zh-cn': {
+            'source': '几何构造源图层须具有唯一列名及唯一活动几何列，源几何须有效、非空、非缺失且为有限二维XY；请先显式整理或修复源图层。',
+            'crs': '几何构造要求已知投影坐标系和匹配、有限且为正的水平线性单位；请先显式重投影，不自动换算单位。',
+        },
+        'en': {
+            'source': 'Geometry construction requires unique column names, one active geometry column and valid non-empty non-missing finite XY source geometries; prepare or explicitly repair the source first.',
+            'crs': 'Geometry construction requires a known projected CRS with matching finite positive horizontal linear units; reproject explicitly first, without automatic unit conversion.',
+        },
+    }
 
-    Args:
-        input_gdf: 输入 GeoDataFrame
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
 
-    Returns:
-        GeoDataFrame 凸包结果
-    """
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
+def _enclosing_geometry(input_gdf, kernel):
+    _unary_frame_geometry(input_gdf, UnaryConstructionInputError)
+    geometry = _prepare_projected_xy_source(input_gdf, UnaryConstructionInputError)
+    values = np.asarray(kernel(geometry.array), dtype=object)
+    if (values.shape != (len(geometry),) or shapely.is_missing(values).any()
+            or shapely.is_empty(values).any() or not shapely.is_valid(values).all()
+            or not np.isin(shapely.get_type_id(values), [0, 1, 3]).all()
+            or shapely.has_z(values).any() or shapely.has_m(values).any()
+            or not np.isfinite(shapely.get_coordinates(values)).all()):
+        raise RuntimeError('geometry construction produced an invalid or non-finite XY enclosing result')
     result = input_gdf.copy()
-    geom_col = result.geometry.name
-    result[geom_col] = result.geometry.convex_hull
+    result[geometry.name] = gpd.GeoSeries(values, index=geometry.index, crs=geometry.crs)
     return result
+
+
+def convex_hull(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Per-source convex hull, retaining valid Point and LineString degeneracies."""
+    return _enclosing_geometry(input_gdf, shapely.convex_hull)
+
+
+def minimum_rotated_rectangle(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Per-source minimum-area oriented rectangle, retaining point/line results."""
+    return _enclosing_geometry(input_gdf, shapely.minimum_rotated_rectangle)
 
 
 def envelope(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
-    计算最小外接矩形（MBR）
+    计算轴对齐外包矩形（envelope）
 
     Args:
         input_gdf: 输入 GeoDataFrame
@@ -2782,48 +2812,34 @@ SIMPLIFY_METADATA = OperatorMetadata(
 
 
 CONVEX_HULL_METADATA = OperatorMetadata(
-    name="convex_hull",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_CONSTRUCTION,
-    description="凸包",
-    brief_description="计算几何对象的最小凸包(凸多边形),常用于范围分析和形状概括",
-    execution_modes=["workflow"],
-    effects=["read"],
+    name="convex_hull", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_CONSTRUCTION,
+    description="凸包", brief_description="逐源生成凸包，合法退化保留点或线，不跨行汇总",
+    execution_modes=["workflow"], effects=["read"],
+    overview="在已知投影CRS下，逐源包含全部部件坐标的最小凸几何：同位点为Point、精确共线为LineString、非共线为凸Polygon。多部件及GeometryCollection每行共同参与，不将不同源点行自动汇总成面。",
+    params=[OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True,
+        description="有效非空有限二维投影源图层", notes="唯一实际活动几何和列名；已知投影及匹配有限正水平单位，空批仍验证准入")],
+    use_cases=["概括单个多部件要素的凸范围", "对上游显式构造的MultiPoint逐源计算凸包"],
+    notes=["保原行数、索引/顺序、属性类型/null、实际几何列及CRS；仅替换几何，输入不变",
+        "合法重复坐标不改变源；无效零面积面、零长线及缺失/空/Z/M/非有限源拒绝，不自动修复",
+        "凹陷、孔洞及部件间空隙可被覆盖，不代表精确源边界；不自动融合、投影或添加面积字段",
+        "沿投影原单位，不加epsilon、缓冲或舍入压维；不承诺跨GEOS重新计算WKB相同"],
+    workflow_example={'id':'hull','operator':'convex_hull','params':{'input_gdf':{'$ref':'load_multipoints'}},'depends_on':['load_multipoints']},
+)
 
-    overview="计算包含几何对象所有顶点的最小凸多边形。凸包类似用橡皮筋包裹几何对象的外轮廓,适用于范围估算、离群点检测等场景。",
 
-    params=[
-        OperatorParam(
-            name="input_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="输入的地理数据"
-        )
-    ],
-
-    use_cases=[
-        "活动范围估算: 计算GPS轨迹点的凸包估算人员活动范围",
-        "建筑群轮廓: 计算建筑物点集的凸包生成建筑群外轮廓",
-        "数据质量检查: 检测离群点(凸包面积异常大)",
-        "服务范围概算: 用设施点的凸包快速估算覆盖范围"
-    ],
-
-    notes=[
-        "凸包会忽略凹陷部分,不能精确表示复杂形状",
-        "如需精确边界,建议使用alpha_shape或buffer",
-        "点的凸包是点本身,线的凸包可能是线或面",
-        "凸包面积通常大于原始几何面积"
-    ],
-
-    workflow_example={
-        'id': 'get_activity_range',
-        'operator': 'convex_hull',
-        'params': {
-            'input_gdf': {'$ref': 'load_gps_points'}
-        },
-        'depends_on': ['load_gps_points']
-    }
+MINIMUM_ROTATED_RECTANGLE_METADATA = OperatorMetadata(
+    name="minimum_rotated_rectangle", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_CONSTRUCTION,
+    description="最小外接矩形", brief_description="逐源生成可旋转的最小面积外接矩形，合法退化保留点或线",
+    execution_modes=["workflow"], effects=["read"],
+    overview="在已知投影CRS下，逐源包含全部部件坐标并允许旋转，以面积最小为目标；同位点为Point、精确共线为LineString、非共线为矩形Polygon。不同于轴对齐envelope，不跨行汇总。",
+    params=[OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True,
+        description="有效非空有限二维投影源图层", notes="唯一实际活动几何和列名；已知投影及匹配有限正水平单位，空批仍验证准入")],
+    use_cases=["概括单个旋转建筑的外接范围", "逐多部件要素生成紧凑的矩形范围"],
+    notes=["保原行数、索引/顺序、全部属性类型/null、实际几何列和CRS，输入不变；不新增角度或宽高字段",
+        "合法点或共线退化直接保留，不扩宽成面；缺失/空/无效/Z/M/非有限源拒绝，不自动修复",
+        "以最小面积而非最小周长为目标；等面积最优方向可能不唯一，不固定环起点或顶点顺序",
+        "多部件/GeometryCollection每行合算，不跨行融合；不自动重投影、舍入或设置精度网格"],
+    workflow_example={'id':'rectangle','operator':'minimum_rotated_rectangle','params':{'input_gdf':{'$ref':'load_shapes'}},'depends_on':['load_shapes']},
 )
 
 
@@ -2896,6 +2912,7 @@ OPERATORS = dict([
     register_operator(DIFFERENCE_METADATA, difference),
     register_operator(SIMPLIFY_METADATA, simplify),
     register_operator(CONVEX_HULL_METADATA, convex_hull),
+    register_operator(MINIMUM_ROTATED_RECTANGLE_METADATA, minimum_rotated_rectangle),
     register_operator(ENVELOPE_METADATA, envelope),
     register_operator(DISSOLVE_METADATA, dissolve),
     register_operator(POLYGONIZE_METADATA, polygonize),

@@ -449,6 +449,9 @@
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
+| convex hull | 凸包 | 包含单个源要素全部部件坐标的最小凸几何。 | 可为Point、LineString或Polygon；逐源一行，不把不同源点行隐式汇总成面，不以凹包或缓冲替代。 |
+| envelope | 外包矩形 | 包含源要素、边平行于源坐标轴的外包几何。 | 轴对齐范围，不表示可旋转的最小面积外接矩形；算子标识为envelope。 |
+| minimum-area bounding rectangle | 最小外接矩形 | 包含单个源要素、允许旋转且面积最小的外接矩形。 | 唯一算子标识minimum_rotated_rectangle；合法点或共线点集保留Point/LineString，不扩宽成面；最优方向可能不唯一，不等于最小周长或轴对齐范围。 |
 | ADDP Operator | ADDP 算子 | ADDP 平台统一的可编排能力定义，包含稳定 ID、参数、输入输出端口、执行模式和展示元数据。 | 面向 Develop 前端、工作流定义、参数校验、执行历史和血缘；不承载具体引擎私有类名。 |
 | Workflow Runtime | 工作流运行时 | 按 `addp.workflow/v1` 协议接收算子列表查询和 workflow_def 执行请求的独立执行服务。 | 例如 GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow。 |
 | GeoPython Workflow | GeoPython Workflow 运行时 | 基于 Python 地理计算生态实现的 Workflow Runtime，提供 Pandas、GeoPandas、GDAL/OGR 等算子能力。 | 用户可见名称、System Engine Instance 名称和文档专名统一使用 `GeoPython Workflow`；`engine_type` 固定为 `geopython_workflow`，不得使用其他历史别名。 |

@@ -8280,3 +8280,177 @@ def test_simplify_native_calculation_failures_never_become_input_diagnostics(mon
         GeoPythonWorkflowRunner().execute({'tasks': [{'id': 'simplify', 'operator': 'simplify',
             'params': {'input_gdf': source, 'tolerance': 1}, 'depends_on': []}]})
     assert caught.value.error_code == 'EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('crs', [3857, 2263])
+def test_enclosing_constructions_exact_degenerate_and_rotated_native_units(operator, crs):
+    rotated = Polygon([(0, 0), (2, 2), (1, 3), (-1, 1), (0, 0)])
+    tiny = 2 ** -40
+    source = buffer_source([
+        Point(8, 9), shapely.MultiPoint([(8, 9), (8, 9)]),
+        shapely.MultiPoint([(4, 4), (0, 0)]),
+        MultiLineString([[(2, 2), (0, 0), (1, 1)], [(4, 4), (3, 3)]]),
+        shapely.MultiPoint(list(rotated.exterior.coords)[:-1]),
+        shapely.MultiPoint([(0, 0), (1, 0), (0, tiny)]),
+    ], crs)
+    before = source.copy(deep=True)
+    result = get_operator(operator)(source)
+    for i in (0, 1): assert result.geometry.iloc[i].equals_exact(Point(8, 9), 0)
+    for i in (2, 3):
+        line = result.geometry.iloc[i]
+        assert line.geom_type == 'LineString' and set(line.coords) == {(0., 0.), (4., 4.)}
+        assert len(line.coords) == 2
+    assert result.geometry.iloc[4].equals(rotated)
+    assert result.geometry.iloc[4].area == 4
+    assert result.geometry.iloc[5].geom_type == 'Polygon'
+    assert result.geometry.iloc[5].area == (tiny / 2 if operator == 'convex_hull' else tiny)
+    assert result.geometry.name == 'shape' and result.crs == source.crs
+    assert result.index.equals(source.index) and result.columns.equals(source.columns)
+    pd.testing.assert_frame_equal(result.drop(columns='shape'), source.drop(columns='shape'))
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+def test_enclosing_constructions_each_row_combines_parts_and_collection_without_merging_rows(operator):
+    triangle = Polygon([(0, 0), (4, 0), (0, 4), (0, 0)])
+    concave = Polygon([(0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4), (0, 0)])
+    with_hole = Polygon([(0, 0), (4, 0), (4, 4), (0, 4), (0, 0)], [[(2, 2), (3, 2), (3, 3), (2, 3), (2, 2)]])
+    source = buffer_source([
+        MultiLineString([[(0, 0), (4, 0)], [(0, 4), (0, 0)]]),
+        shapely.GeometryCollection([Point(0, 0), LineString([(4, 0), (0, 4)]), Point(0, 0)]),
+        concave, with_hole, Point(100, 100),
+    ])
+    before = source.copy(deep=True); result = get_operator(operator)(source)
+    assert len(result) == 5 and result.geometry.iloc[4].equals_exact(Point(100, 100), 0)
+    for i in (0, 1):
+        assert result.geometry.iloc[i].area == (8 if operator == 'convex_hull' else 16)
+        assert result.geometry.iloc[i].covers(triangle)
+        if operator == 'convex_hull': assert result.geometry.iloc[i].equals(triangle)
+    assert result.geometry.iloc[2].area == (11.5 if operator == 'convex_hull' else 16)
+    assert result.geometry.iloc[2].covers(concave)
+    assert result.geometry.iloc[3].equals(box(0, 0, 4, 4))
+    assert len(result.geometry.iloc[3].interiors) == 0
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('problem', ['not_gdf', 'no_active', 'duplicate_columns', 'extra_geometry', 'missing', 'empty', 'invalid', 'z', 'm', 'infinite', 'no_crs', 'geographic', 'geocentric'])
+def test_enclosing_constructions_source_and_crs_admission_without_autofix(operator, problem):
+    from operators.geometric_operators import UnaryConstructionInputError
+    source = buffer_source([Point(0, 0)])
+    if problem == 'not_gdf': source = pd.DataFrame({'a': [1]})
+    elif problem == 'no_active': source = gpd.GeoDataFrame({'a': [1]})
+    elif problem == 'duplicate_columns': source.columns = ['same'] * len(source.columns)
+    elif problem == 'extra_geometry': source['other_shape'] = source.geometry.copy()
+    elif problem in ('no_crs', 'geographic', 'geocentric'):
+        source = source.set_crs({'no_crs': None, 'geographic': 4326, 'geocentric': 4978}[problem], allow_override=True)
+    else:
+        source['shape'] = [{'missing': None, 'empty': Point(),
+            'invalid': Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)]),
+            'z': Point(0, 0, 1), 'm': shapely.from_wkt('POINT M (0 0 1)'), 'infinite': Point(float('inf'), 0)}[problem]]
+    before = source.copy(deep=True)
+    with pytest.raises(UnaryConstructionInputError) as caught: get_operator(operator)(source)
+    assert caught.value.code == ('crs' if problem in ('no_crs', 'geographic', 'geocentric') else 'source')
+    pd.testing.assert_frame_equal(pd.DataFrame(source), pd.DataFrame(before))
+
+
+@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+def test_enclosing_constructions_empty_batch_keeps_schema_and_validates_crs(operator):
+    from operators.geometric_operators import UnaryConstructionInputError
+    source = buffer_source().iloc[:0]
+    assert_geodataframe_equal(get_operator(operator)(source), source)
+    for crs in (None, 4326, 4978):
+        with pytest.raises(UnaryConstructionInputError) as caught:
+            get_operator(operator)(source.set_crs(crs, allow_override=True))
+        assert caught.value.code == 'crs'
+
+
+@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+def test_enclosing_constructions_real_mixed_geopackage_roundtrip(operator, tmp_path):
+    from osgeo import ogr
+    source = buffer_source([Point(5, 6), MultiLineString([[(2, 2), (0, 0)], [(4, 4), (3, 3)]]),
+        shapely.MultiPoint([(0, 0), (2, 2), (1, 3), (-1, 1)])])
+    source['enabled'] = pd.array([None, True, False], dtype='boolean'); before = source.copy(deep=True)
+    result = get_operator(operator)(source)
+    assert result.geometry.geom_type.tolist() == ['Point', 'LineString', 'Polygon']
+    computed = result.geometry.to_wkb(byte_order=1, flavor='iso').tolist()
+    conn = {'engine_type': 'nfs', 'mount_path': str(tmp_path)}
+    get_operator('save')(input_df=result, connection_info=conn, path='enclosing.gpkg', mode='fail')
+    ds = ogr.Open(str(tmp_path / 'enclosing.gpkg')); layer = ds.GetLayer(0); rows = list(layer)
+    assert len(rows) == 3 and layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
+    for i, row in enumerate(rows):
+        native = row.GetGeometryRef()
+        assert native is not None and bytes(native.ExportToIsoWkb()) == computed[i]
+        assert row.GetField('label') == f'row-{i}' and row.GetField('geometry') == 'business'
+        assert row.GetField('grade') == [None, 2 ** 53 + 2, 2 ** 53 + 3][i]
+        assert row.GetField('enabled') == [None, True, False][i]
+    physical_name = layer.GetGeometryColumn(); ds = None
+    loaded = get_operator('load')(connection_info=conn, path='enclosing.gpkg')
+    assert loaded.geometry.name == physical_name and loaded.crs == source.crs
+    assert loaded.geometry.to_wkb(byte_order=1, flavor='iso').tolist() == computed
+    assert str(loaded.grade.dtype) == 'Int64' and str(loaded.enabled.dtype) == 'boolean'
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('problem', ['source', 'crs'])
+def test_enclosing_constructions_runtime_diagnostics_bind_frozen_node_and_block_save(operator, language, problem, monkeypatch):
+    import workflow_engine
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from operators.geometric_operators import UnaryConstructionInputError
+    source = buffer_source()
+    if problem == 'source': source['shape'] = [None] * len(source)
+    else: source = source.set_crs(4326, allow_override=True)
+    lookup = workflow_engine.get_operator; calls = []
+    def guarded(name):
+        calls.append(name)
+        if name == 'save': raise AssertionError('enclosing input error reached save')
+        if name == 'load': return lambda **params: source
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine, 'get_operator', guarded)
+    tasks = [
+        {'id': 'PRIVATE', 'operator': operator, 'params': {'input_gdf': {'$ref': 'load'}}, 'depends_on': ['load']},
+        {'id': 'load', 'operator': 'load', 'params': {}, 'depends_on': []},
+        {'id': 'saved', 'operator': 'save', 'params': {'input_df': {'$ref': 'PRIVATE'}}, 'depends_on': ['PRIVATE']},
+    ]
+    with pytest.raises(WorkflowExecutionError) as caught: GeoPythonWorkflowRunner(language=language).execute({'tasks': tasks})
+    reason, parameter = ('operator_input_invalid', 'input_gdf') if problem == 'source' else ('operator_crs_invalid', '')
+    assert caught.value.error_code == 'INVALID_PARAMS' and calls == ['load', operator]
+    assert caught.value.task_order == ['load', 'PRIVATE']
+    assert caught.value.diagnostic == {'schema_version': 'addp.execution-failure/v3', 'stage': 'execution', 'reason': reason,
+        'operator': {'node_index': 1, 'operator_id': operator, **({'parameter': parameter} if parameter else {})}}
+    assert UnaryConstructionInputError(problem).message(language) in str(caught.value)
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+
+
+@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('fault', ['exception', 'missing', 'empty', 'invalid', 'z', 'm', 'nonfinite', 'length', 'rank', 'collection'])
+def test_enclosing_constructions_native_faults_are_execution_failures(operator, fault, monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source = buffer_source([Point(0, 0)])
+    def broken(*args, **kwargs):
+        if fault == 'exception': raise shapely.errors.GEOSException('PRIVATE native failure')
+        value = {'missing': None, 'empty': Point(), 'invalid': Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)]),
+            'z': Point(0, 0, 1), 'm': shapely.from_wkt('POINT M (0 0 1)'), 'nonfinite': Point(float('inf'), 0),
+            'length': Point(0, 0), 'rank': Point(0, 0), 'collection': shapely.GeometryCollection([Point(0, 0)])}[fault]
+        if fault == 'length': return np.array([], dtype=object)
+        return np.array([[value]] if fault == 'rank' else [value], dtype=object)
+    monkeypatch.setattr(shapely, operator, broken)
+    with pytest.raises(WorkflowExecutionError) as caught:
+        GeoPythonWorkflowRunner().execute({'tasks': [{'id': 'PRIVATE', 'operator': operator, 'params': {'input_gdf': source}, 'depends_on': []}]})
+    assert caught.value.error_code == 'EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+def test_axis_aligned_envelope_retains_existing_calculation_and_crs_policy():
+    source = buffer_source([Point(1, 2), LineString([(0, 0), (2, 3)])], crs=4326)
+    before = source.copy(deep=True)
+    result = get_operator('envelope')(source)
+    assert result.geometry.iloc[0].equals_exact(Point(1, 2), 0)
+    assert result.geometry.iloc[1].equals(box(0, 0, 2, 3))
+    assert result.crs == source.crs and result.geometry.name == source.geometry.name
+    pd.testing.assert_frame_equal(result.drop(columns='shape'), source.drop(columns='shape'))
+    assert_geodataframe_equal(source, before)

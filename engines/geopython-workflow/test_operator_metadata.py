@@ -1079,7 +1079,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("通用处理", "数据清洗"), "fill_null drop_duplicates"),
         (("通用处理", "数据筛选"), "filter_by_attribute sort_by_field select_top_n sample random_split"),
         (("通用处理", "数值统计"), "normalize_field encode_categorical bin_field aggregate"),
-        (("矢量处理", "几何构造"), "buffer centroid convex_hull envelope voronoi batch_buffer"),
+        (("矢量处理", "几何构造"), "buffer centroid convex_hull envelope minimum_rotated_rectangle voronoi batch_buffer"),
         (("矢量处理", "几何整理"), "simplify dissolve check_geometry repair_geometry snap_geometry snap_line_endpoints extend_line_endpoints trim_line_endpoints"),
         (("矢量处理", "拓扑检查"), "check_polygon_overlap check_polygon_gap check_dangling_points check_line_proximity check_line_overlap check_line_self_overlap check_line_intersection check_line_self_intersection"),
         (("矢量处理", "线网处理"), "polygonize extract_polygon_rings split_line_intersections group_line_components merge_line_chains normalize_line_network extract_line_nodes"),
@@ -1250,10 +1250,10 @@ def test_dem_tri_single_workflow_explicit_band_unit_metres_and_complete_window_m
 
 
 def test_vector_geometry_groups_have_expected_counts_and_clear_display_names():
-    expected = {'几何构造': 6, '几何整理': 8, '拓扑检查': 8, '线网处理': 7}
+    expected = {'几何构造': 7, '几何整理': 8, '拓扑检查': 8, '线网处理': 7}
     operators = list_operators()
     moved = [op for op in operators if op['category_path'][0] == '矢量处理' and op['category'] in expected]
-    assert len(moved) == len({op['id'] for op in moved}) == 29
+    assert len(moved) == len({op['id'] for op in moved}) == 30
     assert {group: sum(op['category'] == group for op in moved) for group in expected} == expected
     assert not any(op['category_path'] == ['矢量处理', '几何处理'] for op in operators)
     names = {op['id']: op['display_name'] for op in moved}
@@ -1751,3 +1751,26 @@ def test_simplify_metadata_declares_runtime_topology_default_and_source_crs_unit
     assert topology['default'] is inspect.signature(get_operator('simplify')).parameters['preserve_topology'].default is True
     assert '投影坐标单位不固定为米' in params['tolerance']['notes']
     assert '投影坐标系单位为米' not in params['tolerance']['notes']
+
+
+@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+def test_enclosing_constructions_discovery_is_unique_workflow_read_and_one_geometry_input(operator):
+    from operators import get_operator, OPERATORS
+
+    operators = list_operators()
+    matches = [item for item in operators if item['id'] == operator]
+    assert len(matches) == 1
+    spec = matches[0]
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert spec['category_path'] == ['矢量处理', '几何构造']
+    params = {item['name']: item for item in spec['parameters']}
+    assert set(params) == {'input_gdf'}
+    assert params['input_gdf']['required'] is True and params['input_gdf']['param_type'] == 'input'
+    assert params['input_gdf']['type'] == 'object'
+    assert OPERATORS[operator]['param_schema'][0]['type'] == 'GeoDataFrame'
+    assert 'default' not in params['input_gdf']
+    assert len(spec['output_ports']) == 1
+    port = spec['output_ports'][0]
+    assert port['name'] == 'default' and port['type'].lower() == 'geodataframe' and port['is_default'] is True
+    assert '投影' in spec['detailed_description']['overview']
+    assert get_operator(operator) is not None

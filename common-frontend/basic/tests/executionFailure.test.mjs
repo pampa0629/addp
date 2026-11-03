@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 69)
+  assert.equal(canonical.length, 73)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -143,6 +143,7 @@ test('operator input contract matches the canonical runtime tuples and rejects u
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
     const profiles = { contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
+      convex_hull:'construction', minimum_rotated_rectangle:'construction',
       'buffer:operator_input_invalid':'buffer', 'buffer:operator_crs_invalid':'buffer', 'batch_buffer:operator_crs_invalid':'buffer',
       'simplify:operator_input_invalid':'simplify', 'simplify:operator_crs_invalid':'simplify' }
     const profile = profiles[`${operator_id}:${reason}`] || profiles[operator_id]
@@ -448,6 +449,48 @@ test('buffer diagnostics accept four closed facts and signed finite distances wi
       const rejected = executionFailurePresentation({ diagnostic:{ schema_version:'addp.execution-failure/v3', stage:'execution', reason,
         operator:{ node_index:2, operator_id:'buffer', parameter:'distance' } } },translate)
       assert.equal(rejected.stage,'')
+    }
+  }
+})
+
+test('construction diagnostics close four facts with a shared single-source profile and no private values', () => {
+  const expected = ['convex_hull','minimum_rotated_rectangle'].flatMap(name => [
+    [name,'operator_input_invalid','input_gdf',''],
+    [name,'operator_crs_invalid','','']
+  ])
+  assert.deepEqual(operatorInputRules.filter(([name]) => ['convex_hull','minimum_rotated_rectangle'].includes(name)),expected)
+  for (const locale of ['zh-cn','en']) {
+    const messages = JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate = (key,params={}) => key.replace('common.executionFailure.','').split('.').reduce((node,part) => node[part],messages).replace(/\{(\w+)\}/g,(_,key) => params[key])
+    for (const [operator_id,reason,parameter] of expected) {
+      const operator = { node_index:2,operator_id,...(parameter?{parameter}:{}) }
+      const diagnostic = { schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator }
+      const got = executionFailurePresentation({ diagnostic,message:'private-password /private/input.gpkg PRIVATE_BIZ_FIELD' },translate)
+      assert.equal(got.operator,messages.operatorNames[operator_id])
+      assert.equal(got.reason,messages.construction.reasons[reason])
+      assert.equal(got.action,messages.construction.actions[reason])
+      assert.equal(got.parameter,parameter ? messages.operatorParameters[parameter] : '')
+      assert.equal(got.field,'')
+      assert.ok(got.node)
+      assert.doesNotMatch(JSON.stringify(got),/PRIVATE_BIZ_FIELD|private-password|\/private\/input\.gpkg/)
+      assert.doesNotMatch(`${got.reason} ${got.action}`,/两个图层|Both layers|标识|identifier|buffer|缓冲|tolerance|容差/i)
+      if (reason==='operator_input_invalid') {
+        assert.match(got.reason,locale==='zh-cn'?/唯一活动几何列.*非空.*有效.*有限.*二维 XY/:/one active geometry column.*valid non-empty finite XY/)
+        assert.match(got.action,/Z\/M/)
+      } else {
+        assert.match(got.reason,locale==='zh-cn'?/已知投影坐标系.*线性单位.*有限.*正/:/known projected CRS.*matching finite positive horizontal linear units/)
+        assert.match(got.action,locale==='zh-cn'?/不会自动投影/:/no automatic projection/)
+      }
+      for (const patch of [{field:'source_id'},{field:'PRIVATE_BIZ_FIELD'},{parameter:'distance'},{parameter:'preserve_topology'},{parameter_value:'private-password'},{operator_id:'envelope'},{operator_id:'centroid'},{node_index:true}]) {
+        const rejected = executionFailurePresentation({diagnostic:{...diagnostic,operator:{...operator,...patch}},message:'private-password'},translate)
+        assert.equal(rejected.stage,'')
+        assert.equal(rejected.operator,'')
+        assert.doesNotMatch(JSON.stringify(rejected),/PRIVATE_BIZ_FIELD|private-password/)
+      }
+      for (const legacyReason of ['operator_geometry_invalid','operator_field_conflict','operator_nonnegative_number_required']) {
+        const rejected = executionFailurePresentation({diagnostic:{...diagnostic,reason:legacyReason}},translate)
+        assert.equal(rejected.stage,'')
+      }
     }
   }
 })

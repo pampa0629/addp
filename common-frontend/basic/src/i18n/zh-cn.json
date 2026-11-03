@@ -378,7 +378,19 @@
           "operator_crs_invalid": "先确认源坐标系并显式重投影到合适的投影坐标系，按其原水平单位填写容差；不会自动投影或换算为米。"
         }
       },
+      "construction": {
+        "reasons": {
+          "operator_input_invalid": "源图层须有唯一列名和唯一活动几何列，且每行几何须非空、有效、有限并为二维 XY。",
+          "operator_crs_invalid": "源图层须使用已知投影坐标系，水平轴的线性单位须匹配、有限且为正。"
+        },
+        "actions": {
+          "operator_input_invalid": "检查源图层结构及几何，先在上游显式整理缺失、空、无效或 Z/M 几何后重新执行；不会自动修复。",
+          "operator_crs_invalid": "先确认源坐标系并显式重投影到合适的投影坐标系，再重新执行；不会自动投影。"
+        }
+      },
       "operatorNames": {
+        "convex_hull": "凸包",
+        "minimum_rotated_rectangle": "最小外接矩形",
         "simplify": "简化几何",
         "buffer": "缓冲区分析",
         "voronoi": "泰森多边形",

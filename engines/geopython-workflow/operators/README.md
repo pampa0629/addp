@@ -56,7 +56,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
-| 矢量处理 | 几何构造 | 6 | `buffer`、`centroid`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer` |
+| 矢量处理 | 几何构造 | 7 | `buffer`、`centroid`、`convex_hull`、`minimum_rotated_rectangle`、`envelope`、`voronoi`、`batch_buffer` |
 | 矢量处理 | 几何整理 | 8 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints`、`trim_line_endpoints` |
 | 矢量处理 | 拓扑检查 | 8 | `check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
 | 矢量处理 | 线网处理 | 7 | `polygonize`、`extract_polygon_rings`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network`、`extract_line_nodes` |
@@ -302,3 +302,5 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 简化几何的 preserve_topology 发现类型为 boolean、默认 True，与实际函数一致；仅保单个几何拓扑。量测仍沿原平面坐标单位：面积为单位平方，长度为单位，bounds 为四个坐标列；返回保源几何的 GeoDataFrame 副本，不自动换算米制。简化准入见下文统一契约；量测的几何/CRS/空值政策保持既有范围。
 
 简化几何 `simplify` 的严格准入、原单位非负容差、默认单几何保拓扑、零容差可去共线顶点及空结果保行遵循[矢量算子契约](../../../docs/spec/workflow/矢量算子契约.md#简化几何统一契约)。仅检查输入，不自动修复、投影或维持跨要素共享边；参数诊断与计算失败分开。
+
+`convex_hull`（凸包）及`minimum_rotated_rectangle`（最小外接矩形）逐源保行，合法单点/同位点保Point、精确共线保LineString、非共线输出面；单行多部件共同计算，跨行不隐式汇总。唯一实际几何、有效非空有限XY与已知投影准入、属性/index/CRS保护及闭合诊断遵循[统一契约](../../../docs/spec/workflow/矢量算子契约.md#凸包与最小外接矩形统一契约)。`envelope`仍为轴对齐外包矩形，不改成旋转矩形。

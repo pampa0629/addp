@@ -378,7 +378,19 @@
           "operator_crs_invalid": "Confirm the source CRS and explicitly reproject to a suitable projected CRS, using its original horizontal units for tolerance; no automatic projection or conversion to metres is performed."
         }
       },
+      "construction": {
+        "reasons": {
+          "operator_input_invalid": "The source layer requires unique column names, one active geometry column and valid non-empty finite XY geometries.",
+          "operator_crs_invalid": "The source layer requires a known projected CRS with matching finite positive horizontal linear units."
+        },
+        "actions": {
+          "operator_input_invalid": "Check the source structure and geometries; explicitly prepare missing, empty, invalid or Z/M geometries upstream before a new execution. No automatic repair is performed.",
+          "operator_crs_invalid": "Confirm the source CRS and explicitly reproject to a suitable projected CRS before a new execution; no automatic projection is performed."
+        }
+      },
       "operatorNames": {
+        "convex_hull": "Convex hull",
+        "minimum_rotated_rectangle": "Minimum-area bounding rectangle",
         "simplify": "Simplify geometry",
         "buffer": "Buffer analysis",
         "voronoi": "Voronoi polygons",

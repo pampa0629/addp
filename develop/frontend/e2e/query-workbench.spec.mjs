@@ -1257,6 +1257,7 @@ for (const locale of ['zh-cn', 'en']) for (const cause of ['roles', 'choice', 'r
 
 for (const locale of ['zh-cn','en']) {
   for (const [operator_id,reason,parameter,field,name] of [
+    ...[['convex_hull','凸包','Convex hull'],['minimum_rotated_rectangle','最小外接矩形','Minimum-area bounding rectangle']].flatMap(([operator_id,zh,en])=>[['operator_input_invalid','input_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>[operator_id,reason,parameter,'',locale==='zh-cn'?zh:en])),
     ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_nonnegative_number_required','tolerance'],['operator_boolean_required','preserve_topology']].map(([reason,parameter])=>['simplify',reason,parameter,'',locale==='zh-cn'?'简化几何':'Simplify geometry']),
     ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_number_invalid','distance'],['operator_positive_integer_required','resolution']].map(([reason,parameter])=>['buffer',reason,parameter,'',locale==='zh-cn'?'缓冲区分析':'Buffer analysis']),
     ['batch_buffer','operator_crs_invalid','','',locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'],
@@ -1277,6 +1278,8 @@ for (const locale of ['zh-cn','en']) {
     }})
     await page.goto(`/executions/${EXECUTION_ID}`)
     const panel=page.locator('.execution-failure')
+    const construction=['convex_hull','minimum_rotated_rectangle'].includes(operator_id)
+    const constructionMarker=reason==='operator_input_invalid'?(locale==='zh-cn'?'几何':'geometry'):(locale==='zh-cn'?'投影坐标系':'projected CRS')
     const simplifyMarker={operator_input_invalid:locale==='zh-cn'?'几何':'geometry',operator_crs_invalid:locale==='zh-cn'?'投影坐标系':'projected CRS',operator_nonnegative_number_required:locale==='zh-cn'?'非负':'non-negative',operator_boolean_required:locale==='zh-cn'?'布尔值':'boolean'}[reason]
     await expect(panel).toContainText(name)
     await expect(panel).toContainText(locale==='zh-cn'?'定义中的第 2 个节点':'Node 2 in the workflow definition')
@@ -1288,6 +1291,7 @@ for (const locale of ['zh-cn','en']) {
     } else if(reason==='operator_endpoint_network_invalid') await expect(panel).toContainText(locale==='zh-cn'?'双方端点':'both endpoints')
     else if(reason==='operator_source_topology_invalid') await expect(panel).toContainText(locale==='zh-cn'?'内部自交':'internal self-intersections')
     else if(reason==='operator_trim_conflict') await expect(panel).toContainText(locale==='zh-cn'?'交错或相遇':'cross or meet')
+    else if(construction) await expect(panel).toContainText(constructionMarker)
     else if(operator_id==='simplify') await expect(panel).toContainText(simplifyMarker)
     else if(operator_id==='voronoi') await expect(panel).toContainText(reason==='operator_input_invalid'?(locale==='zh-cn'?'重复 XY':'duplicate XY'):reason==='operator_mask_invalid'?'Polygon':locale==='zh-cn'?'投影坐标系':'projected CRS')
     else if(operator_id==='buffer'||operator_id==='batch_buffer'&&reason==='operator_crs_invalid') await expect(panel).toContainText(reason==='operator_number_invalid'?(locale==='zh-cn'?'正数、零或负数':'positive, zero or negative'):reason==='operator_positive_integer_required'?(locale==='zh-cn'?'大于零的整数':'positive integer'):reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):locale==='zh-cn'?'几何':'geometry')
@@ -1299,6 +1303,20 @@ for (const locale of ['zh-cn','en']) {
     expect(copied).toContain(EXECUTION_ID)
     if(field) expect(copied).toContain(field)
     if(reason==='operator_geometry_invalid') expect(copied).toContain(locale==='zh-cn'?'未通过有效性检查':'failed the validity check')
+    if(construction) {
+      expect(copied).toContain(constructionMarker)
+      if(parameter) { await expect(panel).toContainText(parameter); expect(copied).toContain(parameter) }
+      if(reason==='operator_input_invalid') {
+        await expect(panel).toContainText(locale==='zh-cn'?'唯一活动几何列':'one active geometry column')
+        expect(copied).toContain('Z/M')
+      } else {
+        await expect(panel).toContainText(locale==='zh-cn'?'线性单位':'horizontal linear units')
+        expect(copied).toContain(locale==='zh-cn'?'不会自动投影':'no automatic projection')
+      }
+      await expect(panel).not.toContainText('/private/input.gpkg')
+      expect(copied).not.toContain('/private/input.gpkg')
+      expect(copied).not.toMatch(/两个图层|Both layers|标识|identifier|buffer|缓冲|tolerance|容差/i)
+    }
     if(operator_id==='simplify') {
       await expect(panel).toContainText(simplifyMarker)
       expect(copied).toContain(simplifyMarker)
