@@ -17,6 +17,8 @@ from urllib.parse import urlsplit
 spec=importlib.util.spec_from_file_location('metrics_source_private',Path(__file__).with_name('private-state.py'))
 private=importlib.util.module_from_spec(spec);spec.loader.exec_module(private)
 
+RECOVERY_REASONS = frozenset({'source-image-unavailable'})
+
 RUNTIME = ('{"image":{{json .Image}},"user":{{json .Config.User}},'
            '"read_only":{{json .HostConfig.ReadonlyRootfs}},"privileged":{{json .HostConfig.Privileged}},'
            '"cap_add":{{json .HostConfig.CapAdd}},"cap_drop":{{json .HostConfig.CapDrop}},'
@@ -94,7 +96,13 @@ class Source:
     def installed_image(self, image):
         if not isinstance(image,str) or not re.fullmatch(r'sha256:[0-9a-f]{64}',image):
             raise self.error('Metrics recovery image identity rejected')
-        fact = decode(self.docker.run(['image','inspect',image]))[0]
+        try:
+            raw = self.docker.run(['image','inspect',image])
+        except self.error:
+            error = self.error('Installed metrics source image is unavailable; use the standard deployment entry')
+            error.source_recovery_reason = 'source-image-unavailable'
+            raise error from None
+        fact = decode(raw)[0]
         if fact.get('Id') != image or (fact.get('Config',{}).get('Labels') or {}).get(self.owner) != str(self.root):
             raise self.error('Metrics recovery image ownership changed')
 

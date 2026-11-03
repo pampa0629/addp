@@ -118,6 +118,9 @@ def apply(action, kind, scope, env):
     result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=600)
     # Provider logs may contain deployment information. Publish closed stages only.
     if result.returncode:
+        reason = re.search(r'\[reason=([a-z-]+)\]', result.stderr)
+        if reason and reason[1] == 'source-image-unavailable':
+            raise ValueError('操作失败：原采集镜像不可用；请通过标准指标启动入口重新构建并应用来源')
         stage = re.search(r'\[stage=([a-z-]+)\]', result.stderr)
         detail = ('；阶段 '+stage[1]) if stage and stage[1] in {
             'session-check', 'transport-check', 'private-state', 'authentication-read', 'account-install',

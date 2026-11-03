@@ -657,3 +657,12 @@ Redis核验精确启用ACL、已提交持久记录、密码摘要及私有安装
 首次MinIO T2在Compose start不支持--wait处失败，临时对象已清理；改为单一up --no-recreate --no-build --wait，只启动原临时容器，未改Docker版本或增加兼容分支。中间有效T2在共用helper及运行权限检查完善后重新执行，以最终verified日志为准。make test-dev-lifecycle首次有4项Worker夹具失败及1项停止夹具超时，未唯一定位瞬时原因、未改时间预算；容器门禁退出后串行复验原24项和206项通过，随后44项HTTP与169项Trace单测通过，但被其他会话Security Online v34登记校验阻断，整体仍退出2，后续145项等未执行，不计整套通过。本会话未修改该登记或其他owner实现。失败及受阻证据分别保留/tmp/addp-metrics-recovery-dev.log与/tmp/addp-metrics-recovery-dev-final.log；本批新增启动接线由上述2项独立标准入口验证，不用聚焦通过冒充完整门禁通过。
 
 本轮未对个人Infra／Business执行up/down/recover、重启或修改配置、凭据、账号与数据库业务数据；个人环境恢复与跨Docker重启的实际应用仍未验。CI／Hosted继续等专门会话回传，未查询、触发、重跑或设置定时任务。不把本地T2、来源Running或零残留扩大为正式身份页面验收。
+
+
+### Infra MinIO 恢复的原镜像不可用诊断（2026-11-04）
+
+用户执行统一`recover --scope infra --kind minio`返回泛化“操作失败”。本轮只读分段核验：私有账号phase=enabled、原父身份／数据卷绑定匹配，原生账号on、固定指标JWT认证HTTP200，TLS及原Compose声明匹配；在原来源image inspect处失败，Docker明确No such image。来源容器仍Running、其.Image与私有Compose保存的完整镜像ID一致，但该ID已不在当前本机镜像库，其他已有tag不能替代原受管镜像。没有证据证明镜像何时或由谁移除，不归因为某次清理或Docker缺陷。
+
+恢复继续拒绝镜像不可核验，不放宽归属、不自动构建／拉取／替换。修正的是故障可诊断性：唯一来源内核将镜像读取失败转换为封闭source-image-unavailable，Redis／MinIO CLI只输出白名单reason，统一管理翻译为“原采集镜像不可用；请通过标准指标启动入口重新构建并应用来源”，不回显原始Docker输出、凭据或其他未知reason。用户须显式运行`python3 scripts/infra/metrics-sources.py up --scope infra --kind minio`重建本方来源；本会话未执行该动作，实际镜像恢复与后续采集未验。
+
+先增缺失镜像回归，旧代码在Redis／MinIO两case均因无封闭reason失败（/tmp/addp-metrics-image-diagnostic-red.log）。最终make test-metrics-sources退出0，共享恢复7项、编排16项、标准启动守卫2项通过；make test-monitor-redis-source-unit test-monitor-minio-observation-unit标准门禁退出0，Redis14／MinIO24项及相关Go专项通过。门禁覆盖镜像失败不删除／构建／重建、两种CLI只转发已知reason、统一中文建议及未知reason不泄漏。日志/tmp/addp-metrics-image-diagnostic-{green,final}.log。只读调用新installed_image在本机同一镜像上得到正确reason，前后同一来源完整fact未变，收据/tmp/addp-minio-recovery-image-diagnostic-20261104.json。本次仅错误路径和提示变更，既有T2成功路径未改，未重复创建隔离部署；既有来源T2输入声明及Platform编排已覆盖六个修改文件，无新登记。git diff --check通过。个人服务未启停，未改配置、账号／权限／凭据、卷、镜像或业务数据；CI／Hosted仍等专门会话回传，无定时任务。

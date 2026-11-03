@@ -903,3 +903,8 @@ b0420db65已随共享main发布，固定dfeff7c9b自然Linux原始日志确认HT
 [实际步骤、同次预算及覆盖限制](MonitorHTTP质量与采样历史证据.md#http-natural-linux-budget-passed-20261104)
 
 自然main/push/attempt1固定64a6a3b16，HTTP Job125925007987实际成功，原artifact13239563817的digest／CRC／368输入及日志摘要全部核对。816.46秒、197次完整检查最长0.969338秒，251次请求、资源原限额内及零残留清理；Go/Python SDK采集→Monitor查询／告警签名重试／同一事件恢复／停源实际通过。目录消失本轮未复发，不计历史根因修复或正式Agent/Copilot产品页面、Hosted／容量通过；未重跑／新窗口／定时。
+
+
+### 2026-11-04 Infra MinIO 原采集镜像不可用（诊断修正，实际应用待执行）
+
+用户recover失败已只读定位：账号、JWT认证、TLS、Compose均有效，运行容器仍在，但原完整镜像ID无法image inspect并明确No such image。新增白名单reason和可执行的重新构建提示，保持拒绝自动接管／重建；共享7、编排16、启动守卫2、Redis14／MinIO24项及Go专项通过。本机新诊断已只读复验且来源fact不变，个人实际重建与CI／Hosted未验。[完整证据](Monitor采集来源与引擎指标历史证据.md#infra-minio-恢复的原镜像不可用诊断2026-11-04)。

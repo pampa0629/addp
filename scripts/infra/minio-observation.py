@@ -404,7 +404,9 @@ def main():
         run(args.action, args.scope, os.environ)
     except (ValueError, OSError, KeyError, TypeError) as error:
         cleanup = ' [cleanup=failed]' if getattr(error, 'minio_cleanup_failed', False) or getattr(error,'source_recovery_cleanup_failed',False) else ''
-        print('MinIO observation source unavailable'+cleanup+'; core services remain independent', file=sys.stderr)
+        reason = getattr(error,'source_recovery_reason',None)
+        detail = ' [reason='+reason+']' if reason in sources.RECOVERY_REASONS else ''
+        print('MinIO observation source unavailable'+cleanup+detail+'; core services remain independent', file=sys.stderr)
         return 1
     return 0
 

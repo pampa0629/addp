@@ -135,6 +135,17 @@ class MetricsSourcesTest(unittest.TestCase):
         with patch.object(manager.subprocess, 'run', return_value=result), self.assertRaisesRegex(ValueError, 'authentication-update.*清理未确认'):
             manager.apply('up','postgresql','business',{})
 
+    def test_image_recovery_failure_is_actionable_without_echoing_provider_output(self):
+        for kind in ('redis','minio'):
+            result=subprocess.CompletedProcess([],1,'private-output','[reason=source-image-unavailable] private-password')
+            with patch.object(manager.subprocess,'run',return_value=result),self.assertRaisesRegex(ValueError,'原采集镜像不可用.*重新构建') as error:
+                manager.apply('recover',kind,'infra',{})
+            self.assertNotIn('private',str(error.exception))
+        result=subprocess.CompletedProcess([],1,'','[reason=private-password]')
+        with patch.object(manager.subprocess,'run',return_value=result),self.assertRaises(ValueError) as error:
+            manager.apply('recover','minio','infra',{})
+        self.assertEqual(str(error.exception),'操作失败')
+
     def test_standard_lifecycles_use_one_coordinator(self):
         infra = (ROOT/'scripts/infra/up.sh').read_text()
         self.assertEqual(infra.count('metrics-sources.py" up --resolved-env --scope infra'), 2)

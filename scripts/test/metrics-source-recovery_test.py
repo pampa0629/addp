@@ -1,5 +1,6 @@
 """Shared Redis/MinIO recovery proof; no real Docker, accounts or services."""
 import base64
+from contextlib import redirect_stderr
 from contextlib import contextmanager
 import copy
 import importlib.util
@@ -7,6 +8,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -18,6 +20,28 @@ M = importlib.util.module_from_spec(spec); spec.loader.exec_module(M)
 
 
 class RecoveryTest(unittest.TestCase):
+    def test_provider_cli_exports_only_closed_recovery_reason(self):
+        for kind,script in (('redis','redis-metrics.py'),('minio','minio-observation.py')):
+            spec=importlib.util.spec_from_file_location('recovery_reason_'+kind,ROOT/'scripts/infra'/script)
+            provider=importlib.util.module_from_spec(spec);spec.loader.exec_module(provider)
+            for reason in ('source-image-unavailable','private-untrusted-detail'):
+                with self.subTest(kind=kind,reason=reason):
+                    error=provider.Error('private failure body');error.source_recovery_reason=reason
+                    output=io.StringIO()
+                    with patch.object(provider,'run',side_effect=error),patch.object(sys,'argv',[script,'recover','--scope','infra']),redirect_stderr(output):
+                        self.assertEqual(provider.main(),1)
+                    self.assertEqual('[reason=source-image-unavailable]' in output.getvalue(),reason=='source-image-unavailable')
+                    self.assertNotIn('private-untrusted-detail',output.getvalue())
+
+    def test_unavailable_installed_image_has_closed_reason_and_preserves_source(self):
+        for kind in ('redis','minio'):
+            with self.subTest(kind=kind),self.fixture(kind) as (source,db,config,fact,commands,check,recover):
+                source.docker.run.side_effect=ValueError('private Docker stderr')
+                with self.assertRaises(ValueError) as failure: recover()
+                self.assertEqual(getattr(failure.exception,'source_recovery_reason',None),'source-image-unavailable')
+                self.assertNotIn('private',str(failure.exception))
+                source.stop.assert_not_called();source.start.assert_not_called();source.build.assert_not_called()
+
     @contextmanager
     def fixture(self, kind='redis'):
         with tempfile.TemporaryDirectory() as temporary:

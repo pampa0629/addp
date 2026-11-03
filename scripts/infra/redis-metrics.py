@@ -334,6 +334,8 @@ def main():
     try: run(args.action,args.scope,os.environ)
     except (ValueError,OSError,KeyError,TypeError) as error:
         detail=' [cleanup=failed]' if getattr(error,'redis_cleanup_failed',False) or getattr(error,'source_recovery_cleanup_failed',False) else ''
+        recovery_reason=getattr(error,'source_recovery_reason',None)
+        if recovery_reason in sources.RECOVERY_REASONS: detail+=' [reason='+recovery_reason+']'
         reason=str(error) if isinstance(error,(Error,private.PrivateStateError)) else 'deployment ownership, private state or source configuration rejected'
         print('Redis metrics unavailable'+detail+': '+reason+'; core services remain independent',file=sys.stderr)
         return 1
