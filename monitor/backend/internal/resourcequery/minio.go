@@ -45,8 +45,9 @@ func (s EngineScope) minioSnapshotGuard(offset string) string {
 	for _, field := range []string{"observed_at_seconds", "start_time_seconds", "uptime_seconds"} {
 		guard += s.minioFieldGuard(field, offset)
 	}
-	observed, start, uptime := `max(`+s.selector("observed_at_seconds")+offset+`)`, `max(`+s.selector("start_time_seconds")+offset+`)`, `max(`+s.selector("uptime_seconds")+offset+`)`
-	return guard + ` and (` + observed + `>=` + stamp + `-5) and (` + observed + `<=` + stamp + `+5) and (` + start + `>0) and (` + start + `>=` + strconv.FormatInt(s.Source.StartedAt.Unix()-1, 10) + `) and (` + start + `<=` + observed + `) and (abs(` + observed + `-` + start + `-` + uptime + `)<=5)`
+	// Native procfs start and application uptime do not share a clock origin.
+	observed, start := `max(`+s.selector("observed_at_seconds")+offset+`)`, `max(`+s.selector("start_time_seconds")+offset+`)`
+	return guard + ` and (` + observed + `>=` + stamp + `-5) and (` + observed + `<=` + stamp + `+5) and (` + start + `>0) and (` + start + `>=` + strconv.FormatInt(s.Source.StartedAt.Unix()-1, 10) + `) and (` + start + `<=` + observed + `)`
 }
 
 func (s EngineScope) minioRate(field string) (string, string) {

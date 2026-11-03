@@ -82,6 +82,12 @@ func TestIntegrationMinIOMetricQueries(t *testing.T) {
 		{"source_down", "minio.capacity.total_bytes", "down", nil},
 		{"missing_uptime", "minio.capacity.total_bytes", "missing-uptime", nil},
 		{"old_observation", "minio.capacity.total_bytes", "old-observation", nil},
+		{"different_native_clock_origins_capacity", "minio.capacity.total_bytes", "clock-origin", ptr(100)},
+		{"different_native_clock_origins_uptime", "minio.uptime_seconds", "clock-origin", ptr(3917)},
+		{"different_native_clock_origins_rate", "minio.requests.per_second", "clock-origin", ptr(90 * factor)},
+		{"future_process_start", "minio.capacity.total_bytes", "future-start", nil},
+		{"process_before_current_container", "minio.capacity.total_bytes", "before-container", nil},
+		{"negative_uptime", "minio.capacity.total_bytes", "negative-uptime", nil},
 		{"foreign_identity", "minio.capacity.total_bytes", "identity", nil},
 		{"duplicate_optional", "minio.drives.online", "duplicate", nil},
 		{"duplicate_optional_is_local", "minio.uptime_seconds", "duplicate", ptr(119)},
@@ -126,6 +132,12 @@ func TestIntegrationMinIOMetricQueries(t *testing.T) {
 				r.Values = "1x7 0"
 			case tc.change == "missing-uptime" && r.Series == raw("uptime_seconds", ""):
 				r.Values = "0 14+15x6 stale"
+			case tc.change == "clock-origin" && r.Series == raw("uptime_seconds", ""):
+				r.Values = "3797+15x8"
+			case tc.change == "future-start" && r.Series == raw("start_time_seconds", ""):
+				r.Values = "121x8"
+			case tc.change == "negative-uptime" && r.Series == raw("uptime_seconds", ""):
+				r.Values = "-1x8"
 			case tc.change == "old-observation" && r.Series == raw("observed_at_seconds", ""):
 				r.Values = "0x8"
 			case tc.change == "no-epoch" && r.Series == raw("requests_total", epoch):
@@ -147,6 +159,12 @@ func TestIntegrationMinIOMetricQueries(t *testing.T) {
 			rows = append(rows, input{raw("requests_total", strings.Repeat("b", 64)), "_x4 0+30x3"})
 		case "identity":
 			current.Instance = "127.0.0.2:9443"
+		case "before-container":
+			at := time.Unix(60, 0).UTC()
+			current.Source.StartedAt = &at
+			for i := range rows {
+				rows[i].Series = strings.ReplaceAll(rows[i].Series, started.Format(time.RFC3339Nano), at.Format(time.RFC3339Nano))
+			}
 		case "historic-scan":
 			at := time.Unix(60, 0).UTC()
 			current.Source.StartedAt = &at
