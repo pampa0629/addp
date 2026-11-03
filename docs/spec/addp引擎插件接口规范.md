@@ -167,7 +167,7 @@ type EngineCatalogProvider interface {
 }
 ```
 
-公共调用方必须优先使用该统一入口，不再调用 `ListSchemas`、`ListTables`、`ListBuckets`、`ListCollections` 等旧上层接口。
+公共调用方必须优先使用该统一入口，不再调用 `ListSchemas`、`ListTables`、`ListBuckets`、`ListCollections` 等旧上层接口。已确定 leaf 路径的处理见[精确叶子解析](#精确叶子解析)。
 
 `ListChildren` 不接受 empty path 作为业务枚举入口。实时浏览需要展示根层时，由上层通过 `EngineCatalogRootEntry(model, engineID, engineName)` 返回结构 root；枚举第一层业务节点时必须调用 `ListChildren(rootPath)`。provider 收到 empty path 应视为调用错误。
 
@@ -176,6 +176,8 @@ type EngineCatalogProvider interface {
 `EngineCatalogEntry.Role` 只允许 `branch` / `leaf`，表达 catalog 结构角色；`EngineCatalogEntry.Term` 表达引擎原生术语，例如 `schema`、`table`、`bucket`、`prefix`、`object`、`file`、`collection`、`graph`。Engine 层不得用 `item` 表达 ADDP data item，也不得用 `is_item` / `is_container` 这类布尔字段作为主路径。
 
 `EngineCatalogEntry` 是实时列表和路径解析用的轻量 catalog 条目，`Entry` 表达“目录条目 / 列表项”，不是“入口”。它回答“当前位置下面有什么、结构上怎么走”，不回答完整详情。稳定列表摘要必须使用显式字段：表格型 leaf 摘要进入 `Table *datatype.TableInfo`，branch 下直接 leaf 数量摘要进入 `LeafCount`，文件 / 对象列表事实进入 `Storage *EngineCatalogStorageFacts` 和 `UpdatedAt`。`EngineCatalogEntry.Table` 只能承载 `Name`、`Kind`、`Comment`、`EstimatedRowCount`、`SizeBytes`、`UpdatedAt`、`Native` 等列表级表摘要；只有来源能保证低成本值就是精确值时才可填充 `RowCount`，不得用估算值填充。列表摘要不应填充 `Fields` / `PrimaryKey`；`EngineCatalogEntry.Storage` 只能承载 `Path`、`ContentType`、`ETag`、`SizeBytes` 等列表级存储摘要，不应填充 `Name` / `Extension` 等详情或派生事实。字段、主键、索引、graph schema、采样、完整 storage facts 等详情事实必须通过 `EngineCatalogFactsProvider` 返回。`EngineCatalogEntry` 不保留 `Attributes` 或 `Stats` 兜底口袋；Meta item attributes 和展示统计是扫描落库后的上层语义，不应回流为 engine listing 字段。
+
+#### 精确叶子解析
 
 表格型 Provider 的 `ResolvePath` 对明确的 table leaf 路径必须按命名空间和目标名称精确查询，只返回该目标的轻量摘要，不读取字段，也不得通过 `ListChildren`／`ListTables` 枚举父级后寻找目标。`DescribeEngineCatalogFacts` 使用相同的精确目标查找，再按选项读取该目标的详情；目标不存在或源账号不可见时返回 `not_found`，查询失败直接返回错误，禁止退回父级枚举。公共表格适配器的 `GetTable` 回调是必需能力，关系型插件必须实现带目标名称谓词的原生查询，并保留系统目录隐藏与源账号权限过滤。显式 branch 列表仍由 `ListTables` 承担。
 
