@@ -610,3 +610,12 @@ Infra来源实际UP后，Safari平台管理员的专业详情仍返回“未取�
 先明确运行观测规范的原生时间来源，再删除唯一MinIO查询路径中的错误加法等式；保留同次唯一UP／字段、16秒新鲜度、采集时刻偏差、当前容器身份／启动边界、非负值、一分钟四样本／完整窗口／重置／counter_epoch保护。不增加Desktop特判、容差配置、替代时间或补零。原API目录、DTO、权限和Swagger契约不变。新增六项真实PromQL情形：计时基准不同的容量／运行时长／请求速率有效，以及未来启动、当前容器前启动和负运行时长拒绝。原标准MinIO T2和既有Monitor Go门禁自动覆盖，无新增入口或CI编排。
 
 旧查询沿`make test-monitor-minio-observation`实际失败，容量和运行时长的非空预期得到nil；账号、mTLS和持久化前置均通过，但整命令不计通过。原日志`/tmp/addp-minio-clock-red-20261103.log`；独立核对当次fb7240bce31d及两个来源项目的容器／网络／卷均0，见`/tmp/addp-minio-clock-red-cleanup-20261103.json`。修复后原标准MinIO命令退出0：21项Python检查、来源Go专项、双MinIO原生权限／mTLS／停用恢复／重建持久化及46项真实PromQL全部通过，containers/networks/volumes/private state=0；日志`/tmp/addp-minio-clock-green-20261103.log`。Monitor后端首次`make test-module MODULE=monitor GO_ONLY=1`有一项模拟Docker脚本生命周期测试在原30秒截止被终止；同期本机load约70、08:20—08:29无Sleep／Wake／DarkWake事件，未确认具体超时根因，不改原预算。待本轮T2退出后原样执行相同命令，退出0，resourcequery实际执行20.463秒，其余有效包缓存复用；保留首次失败`/tmp/addp-minio-clock-monitor-go-20261103.log`与最终通过`/tmp/addp-minio-clock-monitor-go-final-20261103.log`，不把第一次命令改记通过。末次只读核对个人Infra／Business MinIO原完整ID、启动时刻及RestartCount=0不变。真实专业页面仍待用户仅重启Monitor后复验，不将来源UP或上述隔离测试当作实际页面验收完成。CI／Hosted继续等专门会话回传，未查询、触发、重跑或设置定时任务。
+
+
+### Infra MinIO 修复应用后的真实页面截图（2026-11-03）
+
+用户确认重启Monitor后，公共ready显示运行构建`eb8af602ca8a494142cbbf201104884e92cd1433`，包含`04ce9ec57`且MinIO查询文件与该修复逐字节一致；System／Monitor／Prometheus ready及MinIO mTLS来源均200，来源14项样本、精确部署目标UP，Business仍not_deployed。只读收据为`/tmp/addp-minio-runtime-build-20261103.json`与`/tmp/addp-minio-after-monitor-restart-20261103.json`。
+
+用户提供Safari实际截图，页面为平台系统管理员的Infra MinIO，关联原Docker Desktop Linux VM，显示正在采集：运行21小时47分钟5秒、在线1盘、总容量1.87TiB、剩余866GiB、空间占用54.71%、最近扫描对象10.1GiB／7408个／10桶、扫描距今1分钟25秒。容量／状态十项中九项显示真实值，离线盘数留空与此前原生省略事实一致，不补造0。空间占用率近五分钟曲线实际渲染，页面标注10:09:20—10:14:20、15秒评估间隔。本图补齐修复应用后的容量／状态及该趋势真实显示证据；不是自动化交互通过，也不据标签“自动刷新已开启”推导刷新、缩放或视口保持已经验收。
+
+截图附件`codex-clipboard-8e405148-6c4f-483b-a5fd-c8f86b97559e.png`，SHA256=`37a38369c3d7917345f591f73bb8d90a2814e1b5fe1a97ae49827fb19e7bdb22`。后续工具读取时Safari再次报告隐藏并按原规则清除观测，不能用该稍后状态否定用户截图，也未绕过隐藏保护。请求／流量七项、真实缩放与手动／自动刷新保持尚待实操复验；Business和Hosted／T4未验。CI／Hosted仍由专门会话回传，本会话未设置定时任务或启停个人服务。
