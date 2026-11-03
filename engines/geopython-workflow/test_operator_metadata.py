@@ -1718,13 +1718,17 @@ def test_idw_single_workflow_read_entry_two_sources_and_no_extra_parameters():
     from operators import list_operators
     spec=next(s for s in list_operators()if s['id']=='raster_interpolate_idw')
     params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_gdf','reference_raster','field','radius_metres','min_points'}
+    assert set(params)=={'input_gdf','reference_raster','field','radius_metres','min_points','max_points'}
     assert all(params[n]['required']for n in('input_gdf','reference_raster','field','radius_metres'))
     assert params['min_points']['type']=='integer'and params['min_points']['default']==1 and not params['min_points']['required']
     assert '精确重合' in params['min_points']['description']
+    assert params['max_points']['type']=='integer'and not params['max_points']['required']and 'default'not in params['max_points']
+    assert 'X' in params['max_points']['description']and 'Y' in params['max_points']['description']
     import inspect
     from operators import get_operator
     assert inspect.signature(get_operator('raster_interpolate_idw')).parameters['min_points'].default==1
+    import operators.raster_compute as c
+    assert inspect.signature(get_operator('raster_interpolate_idw')).parameters['max_points'].default is c._IDW_MAX_POINTS_UNSET
     assert params['input_gdf']['param_type']==params['reference_raster']['param_type']=='input'
     assert params['input_gdf']['type']=='object'and params['reference_raster']['type']=='raster'
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']

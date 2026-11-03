@@ -1358,7 +1358,10 @@ def _polygon_geometries(input_gdf):
     return geometries
 
 
+_IDW_MAX_POINTS_UNSET = object()
 _IDW_MESSAGES = {
+    'max_points': ('IDW最多支撑点数必须为非布尔正整数，省略时不限', 'IDW maximum support count must be a positive integer, excluding booleans; omit it for unlimited support'),
+    'point_counts': ('IDW最多支撑点数不得小于最少支撑点数', 'IDW maximum support count must not be less than minimum support count'),
     'min_points': ('IDW最少支撑点数必须为非布尔正整数', 'IDW minimum support count must be a positive integer, excluding booleans'),
     'radius': ('IDW搜索半径必须为有限正米数且不能为布尔值', 'IDW search radius must be a finite positive number of metres, excluding booleans'),
     'gdf': ('IDW需要具有活动几何列且列名唯一的GeoDataFrame', 'IDW requires a GeoDataFrame with an active geometry column and unique columns'),
@@ -1392,21 +1395,26 @@ def _idw_bound(value, upper):
     return max(-limit, min(limit, result))
 
 
-def _idw_value(x, y, radius, tree, coordinates, values, min_points):
+def _idw_value(x, y, radius, tree, coordinates, values, min_points, max_points):
     candidates = tree.query(box(_idw_bound(x-radius, False), _idw_bound(y-radius, False),
                                 _idw_bound(x+radius, True), _idw_bound(y+radius, True)))
+    def nearby():
+        for index in candidates:
+            px, py = coordinates[index]
+            squared = (px-x)**2 + (py-y)**2
+            if squared <= radius*radius:
+                yield squared, px, py, values[index]
+    support = nearby()
+    if max_points is not _IDW_MAX_POINTS_UNSET:
+        support = heapq.nsmallest(max_points, support, key=lambda sample: sample[:3])
     total, weight_sum = Fraction(0), Fraction(0)
     support_count = 0
-    for index in candidates:
-        px, py = coordinates[index]
-        squared = (px-x)**2 + (py-y)**2
-        if squared > radius*radius:
-            continue
+    for squared, px, py, value in support:
         if not squared:
-            return float(values[index])
+            return float(value)
         support_count += 1
         weight = 1 / squared
-        total += values[index] * weight
+        total += value * weight
         weight_sum += weight
     if support_count < min_points:
         return float('nan')
@@ -1417,10 +1425,17 @@ def _idw_value(x, y, radius, tree, coordinates, values, min_points):
     return value
 
 
-def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres, min_points=1):
-    """Exact power-two IDW with minimum support; exact samples always survive."""
+def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres, min_points=1, max_points=_IDW_MAX_POINTS_UNSET):
+    """Exact power-two IDW; optional nearest support ranks by distance, X and Y."""
     if isinstance(min_points, (bool, np.bool_)) or not isinstance(min_points, Integral) or min_points <= 0:
         raise _idw_error('min_points')
+    min_points = int(min_points)
+    if max_points is not _IDW_MAX_POINTS_UNSET:
+        if isinstance(max_points, (bool, np.bool_)) or not isinstance(max_points, Integral) or max_points <= 0:
+            raise _idw_error('max_points')
+        max_points = int(max_points)
+        if max_points < min_points:
+            raise _idw_error('point_counts')
     try:
         if (isinstance(radius_metres, (bool, np.bool_)) or not isinstance(radius_metres, Real)
                 or radius_metres <= 0 or not math.isfinite(float(radius_metres))):
@@ -1489,7 +1504,7 @@ def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres, mi
                     for column in range(span_x):
                         xx = Fraction(2*(left+column)+1, 2)
                         result[row,column] = _idw_value(origin_x+a*xx+b*yy, origin_y+c*xx+d*yy,
-                                                       radius, tree, coordinates, values, min_points)
+                                                       radius, tree, coordinates, values, min_points, max_points)
                 if destination.WriteRaster(left, top, span_x, span_y, result.tobytes(), buf_type=gdal.GDT_Float64) != gdal.CE_None:
                     raise _idw_error('write')
         destination = None; output.FlushCache(); output = None
@@ -6285,7 +6300,7 @@ _SPECS = [
     (raster_band_math, OperatorCategory.RASTER_CALCULATION, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
     (raster_reclassify, OperatorCategory.RASTER_CLASSIFICATION, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
     (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类集合，允许零、不可重复；北向矩形网格按实际米制距离选点，方形结果保持')], 'raster', ['read']),
-    (raster_interpolate_idw, OperatorCategory.RASTER_CALCULATION, '点数据IDW插值', [_param('input_gdf', 'GeoDataFrame', '同CRS二维Point及有限数值字段；重复XY拒绝', role='input'), _param('reference_raster', 'raster', '仅提供网格和CRS，不读取或继承模板值／NoData／mask／alpha', role='input'), _param('field', 'str', '显式数值属性字段；合法零负值保留，整数须精确表示'), _param('radius_metres', 'float', '显式有限正米制圆半径；等号纳入、全部样本、固定距离平方反比'), _param('min_points', 'int', '非布尔正整数，默认1；非重合支撑不足为NoData，精确重合仍保留样本值', 1, False)], 'raster', ['read']),
+    (raster_interpolate_idw, OperatorCategory.RASTER_CALCULATION, '点数据IDW插值', [_param('input_gdf', 'GeoDataFrame', '同CRS二维Point及有限数值字段；重复XY拒绝', role='input'), _param('reference_raster', 'raster', '仅提供网格和CRS，不读取或继承模板值／NoData／mask／alpha', role='input'), _param('field', 'str', '显式数值属性字段；合法零负值保留，整数须精确表示'), _param('radius_metres', 'float', '显式有限正米制圆半径；等号纳入、全部样本、固定距离平方反比'), _param('min_points', 'int', '非布尔正整数，默认1；非重合支撑不足为NoData，精确重合仍保留样本值', 1, False), _param('max_points', 'int', '省略不限；显式非布尔正整数且不小于min_points，按精确距离／X／Y取最近N点，精确重合保留原值', None, False)], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
     (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '正整数像元数阈值；与min_area_m2必须且只能提供一个，等于阈值保留', None, False), _param('min_area_m2', 'float', '有限正平方米阈值；与min_pixels互斥，北向无旋转投影网格、按CRS线性单位换算，精确比较且等于阈值保留', None, False), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结'), _param('protected_values', 'list[int]', '免于替换的安全整数分类，列表不可重复；空列表保持原结果，保护斑块作为供体仍须原始大小达标', [], False)], 'raster', ['read']),
