@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "3307ff4b538c94009629a25f9fa54e11a2c3c389",
-      "sha256": "36add8bc22e3734cf3c2e4594daf6cc49af505d87866fd1f22256a01c5a1ad53",
+      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
+      "sha256": "d3887e0b185e1ea0079cdb5fa8029beaf05945a7fd1bcf9d5c07e6dd7a0605f7",
       "use": {
-        "zh-cn": "任务／执行、预检权限与三态；replace需实例、插件和Provider删除能力，unsupported优先。Describe保留Meta类型，运行保护核对不扩权。复核已有bounded/continuous Worker分工、格式与raw copy继承差别、CDC扫描及运行策略正文归属；停止态native创建仍无执行、调度或扫描，encoded执行未建模。",
-        "en": "Task/execution, tri-state precheck and permissions; replace needs instance/plugin delete support and Provider; unsupported wins. Describe preserves Meta types and runtime protection adds no grants. Reviewed existing worker split, encoded/raw-copy distinctions, CDC scans and runtime-policy references retain stopped native creation: no execution, schedule or scan; encoded execution remains unmodeled."
+        "zh-cn": "补充采样源表示反证与 JSON／原生数组的区别；unknown 不构成写入保证，已观察不匹配优先拒绝；修改表示仍重新复核和审批。",
+        "en": "Clarifies sampled source counterexamples and JSON versus native arrays; unknown is no write guarantee, observed incompatibilities reject first, and representation changes require fresh review and approval."
       }
     },
     {
@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "2e1bacfc302f04451083be249a71536ecc9e73ea290d47f121da4074c42ec18a",
+      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
+      "sha256": "2e0ff0df55efa15755657e63835eee5f98fe21e01fb4a831c43d54091e7785dc",
       "use": {
-        "zh-cn": "本次增加独立运行审批与受限结果观察的步骤；按所选能力读语义，用户手动批准，不由模型决定重放。",
-        "en": "Separate run approval and bounded result observation read the selected semantics and require a manual User decision, without model-controlled write replay."
+        "zh-cn": "整体保留对象、嵌套、混合或未知元素数组时生成 JSON 候选，再由正式预检和用户复核；不删字段、不字符串化，不沿用原运行批准。",
+        "en": "Retained object, nested, mixed or unknown-element arrays use a JSON candidate followed by formal checking and review; no field omission, stringification or reuse of run approval."
       }
     },
     {
@@ -151,11 +151,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "2babbacf9975312867741703f00f4fc6503a6f82ea5d3adae95811b2e1a31b4c",
+      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
+      "sha256": "a2bf2c72fd61fa20e3a84d100473ff7d4a22b046e7423c91ea2934ddf7d4a97c",
       "use": {
-        "zh-cn": "夹具显式传递创建能力，不要求运行本体已发布；正式预检和原参数创建断言保留。",
-        "en": "Fixtures explicitly pass creation capability without requiring published run semantics; formal precheck and exact-parameter creation assertions remain."
+        "zh-cn": "原 Runtime 预检、确认及提交边界不变；新增受控链路验证对象数组拒绝诊断交给模型、JSON 候选重新预检后才出现一次复核，零创建或运行。",
+        "en": "Existing Runtime precheck, confirmation and commit boundaries remain; a controlled Harness trace verifies object-array rejection feedback and a fresh JSON check before a single review, with no creation or run."
       }
     },
     {
@@ -417,6 +417,58 @@
         "zh-cn": "本次规定独立运行／读取 Tool、用户手动 Owner 审批与确定性恢复，并按已选能力收窄白名单；创建／预检仍不授运行权。",
         "en": "Defines separate run/read tools, manual User owner approval and deterministic resume, with tools narrowed by selected capability; creation/precheck still confer no run authority."
       }
+    },
+    {
+      "id": "owner_precheck",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/service/task_config_check.go",
+      "anchor": "func (s *TaskConfigCheckService) Check(",
+      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
+      "sha256": "85d7ad96066628ac6ba1cd2654a974f6d3570ed4fcf9d7c7d702be7e28f66ba4",
+      "use": {
+        "zh-cn": "只用已保存完整／采样结构检查目标 Provider；保留确定反证，采样正向赋值降为 unknown，无有效快照不补造源类型；不读取业务行。",
+        "en": "Checks target Provider rules from persisted complete or sampled schemas, retaining contradictions but keeping sampled assignments unknown; no invented unobserved types or business-row reads."
+      }
+    },
+    {
+      "id": "precheck_transform",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/executor/table_definition.go",
+      "anchor": "func TransformTableDefinition(",
+      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
+      "sha256": "feed5566c3b11e16a8df0c7ff962941b3c010a78b49ce9581cf8671aa6c115df",
+      "use": {
+        "zh-cn": "映射后保留源字段及元素类型的已观察事实，不继承采样目标约束；未观察字段仍未知，跟随既有字段映射主链路。",
+        "en": "Preserves observed source and element types through mapping without inheriting sampled target constraints; unobserved fields stay unknown on the existing mapping path."
+      }
+    },
+    {
+      "id": "owner_precheck_test",
+      "owner": "transfer",
+      "kind": "test",
+      "path": "transfer/backend/internal/service/task_config_check_test.go",
+      "anchor": "func TestConfigCheckMongoObservedArrayMismatchIsNotHiddenBySampleCoverage(",
+      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
+      "sha256": "855a3da534f5ea3abcb76a59b1d07208562e20a251c3e267fad542515d48f5a6",
+      "use": {
+        "zh-cn": "纯 Mongo 投影别名到 PostgreSQL 定义检查：对象／数字数组拒绝；字符串、未知元素、JSON、复杂查询及未观察快照保留 unknown，诊断绑定映射位置且不改事实。",
+        "en": "Pure Mongo projection aliases reach PostgreSQL definition checking: object/numeric arrays reject; strings, unknown elements, JSON, complex queries and unobserved snapshots stay unknown; locations remain bound and facts unchanged."
+      }
+    },
+    {
+      "id": "precheck_transform_test",
+      "owner": "transfer",
+      "kind": "test",
+      "path": "transfer/backend/internal/executor/table_definition_test.go",
+      "anchor": "func TestTransformDefinitionIncompleteSourceDoesNotInventNullOrInheritedConstraints(",
+      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
+      "sha256": "abb0774e3156545a246c551ffda4075e296ffd4d68f159b9ef28afca88cc53d9",
+      "use": {
+        "zh-cn": "验证采样源反证保留、不成为目标类型／精度约束，未观察字段不变成确定 NULL，原始字段映射来源保持。",
+        "en": "Verifies sampled counterexamples survive without becoming target type/precision constraints; unobserved fields never become known NULL and mapping provenance is preserved."
+      }
     }
   ],
   "bindings": [
@@ -441,7 +493,11 @@
         "draft_renderer",
         "draft_renderer_test",
         "chat_renderer",
-        "chat_renderer_test"
+        "chat_renderer_test",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {
@@ -451,7 +507,11 @@
         "manifest",
         "skill",
         "runtime",
-        "runtime_test"
+        "runtime_test",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {
@@ -461,7 +521,11 @@
         "condition_test",
         "skill",
         "runtime",
-        "runtime_test"
+        "runtime_test",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {
@@ -471,7 +535,11 @@
         "condition_test",
         "skill",
         "runtime",
-        "runtime_test"
+        "runtime_test",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {
@@ -481,7 +549,11 @@
         "manifest",
         "skill",
         "runtime",
-        "runtime_test"
+        "runtime_test",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {
@@ -491,7 +563,11 @@
         "manifest",
         "skill",
         "runtime",
-        "runtime_test"
+        "runtime_test",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {
@@ -560,7 +636,11 @@
       "sources": [
         "skill",
         "conditions",
-        "condition_test"
+        "condition_test",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {
@@ -568,7 +648,11 @@
       "sources": [
         "skill",
         "conditions",
-        "manifest"
+        "manifest",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {
@@ -764,7 +848,11 @@
         "manifest",
         "conditions",
         "condition_test",
-        "skill"
+        "skill",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {
@@ -772,7 +860,11 @@
       "sources": [
         "conditions",
         "condition_test",
-        "skill"
+        "skill",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {
@@ -891,7 +983,11 @@
       "sources": [
         "conditions",
         "condition_test",
-        "skill"
+        "skill",
+        "owner_precheck",
+        "precheck_transform",
+        "owner_precheck_test",
+        "precheck_transform_test"
       ]
     },
     {

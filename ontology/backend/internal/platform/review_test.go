@@ -210,6 +210,41 @@ func TestReviewBoundToSnapshotAndNotAgentContext(t *testing.T) {
 	}
 }
 
+func TestReviewSourceBudgetIsIndependentOfAgentContext(t *testing.T) {
+	var definition Context
+	var review Review
+	if json.Unmarshal(transferDefinition, &definition) != nil || json.Unmarshal(transferReview, &review) != nil {
+		t.Fatal("invalid deployment fixtures")
+	}
+	for len(review.Sources) < maxReviewSources {
+		source := review.Sources[0]
+		source.ID = fmt.Sprintf("extra_source_%d", len(review.Sources))
+		source.Use = map[string]string{"zh-cn": "依据", "en": "Evidence"}
+		review.Sources = append(review.Sources, source)
+	}
+	if err := validateReview(definition, review); err != nil {
+		t.Fatal("bounded release evidence rejected", err)
+	}
+	data, _ := json.Marshal(review)
+	if _, err := Compile(transferDefinition, data); err != nil {
+		t.Fatal("valid evidence exceeds unchanged byte budget", err)
+	}
+	source := review.Sources[0]
+	source.ID = "source_over_budget"
+	review.Sources = append(review.Sources, source)
+	if err := validateReview(definition, review); err == nil {
+		t.Fatal("excess release sources accepted")
+	}
+	review.Sources = review.Sources[:maxReviewSources]
+	for i := range review.Sources {
+		review.Sources[i].Use = map[string]string{"zh-cn": strings.Repeat("x", 512), "en": strings.Repeat("x", 512)}
+	}
+	data, _ = json.Marshal(review)
+	if _, err := Compile(transferDefinition, data); err == nil {
+		t.Fatal("release evidence bypassed byte budget")
+	}
+}
+
 func TestCompileRejectsInvalidReview(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

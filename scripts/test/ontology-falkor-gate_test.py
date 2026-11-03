@@ -110,8 +110,9 @@ exit "${TEST_MAIN_EXIT:-0}"
             time.sleep(0.01)
         else:
             process.kill()
-            process.communicate()
-            self.fail("fake test did not start")
+            stdout, stderr = process.communicate()
+            invocations = self.log.read_text() if self.log.exists() else "<none>"
+            self.fail(f"fake test did not start; exit={process.returncode}; invocations={invocations}; stdout={stdout}; stderr={stderr}")
         process.terminate()
         process.communicate(timeout=10)
         self.assertEqual(143, process.returncode)

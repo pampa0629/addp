@@ -44,6 +44,8 @@ type Coverage struct {
 var contentHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var gitCommit = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
+const maxReviewSources = 64
+
 // Review returns independent evidence from the stored release. It never opens
 // repository files; only the static gate checks current source drift.
 func (s *Snapshot) Review() (Review, error) {
@@ -83,7 +85,7 @@ func ReviewSubjects(d Context) []string {
 }
 
 func validateReview(d Context, r Review) error {
-	if r.Method != "curated" || r.Scope != "selected_capability" || len(r.Sources) == 0 || len(r.Sources) > 32 ||
+	if r.Method != "curated" || r.Scope != "selected_capability" || len(r.Sources) == 0 || len(r.Sources) > maxReviewSources ||
 		len(r.Bindings) == 0 || len(r.Bindings) > 256 || len(r.Coverage) == 0 || len(r.Coverage) > 32 {
 		return fmt.Errorf("invalid_platform_review")
 	}
