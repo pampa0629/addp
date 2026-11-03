@@ -482,7 +482,8 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     ADDP_ONLINE_CLEANUP_NATIVE_ENGINE_ACCESS_TOKEN='engine-token',
                     ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='source-token')
                 deployment, controls = SimpleNamespace(run_id='native-1', close=lambda: None), SimpleNamespace(close=lambda: None)
-                clients = [object(), object(), object(), object()]
+                clients = [SimpleNamespace(base_url='http://127.0.0.1:8000', token='manager-token', timeout=60),
+                           object(), object(), object()]
                 with patch.dict(M.os.environ, environment, clear=True), \
                         patch.object(S, 'OwnedDeployment', return_value=deployment), \
                         patch.object(S, 'local_client', side_effect=clients) as local, \
@@ -494,9 +495,106 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     self.assertEqual(M.main(), 1)
                     run = late if case == 'manager-late-writer' else manager
                     run.assert_called_once()
+                    domain = run.call_args.args[0]
+                    self.assertIsInstance(domain, M.MANAGER.GatewayClient)
+                    self.assertEqual((domain.base_url, domain.token, domain.timeout),
+                                     ('http://127.0.0.1:8000', 'manager-token', 60))
                     self.assertIs(run.call_args.args[3], clients[3])
                     self.assertEqual(local.call_count, 4)
                     self.assertEqual(local.call_args.args[1:], ('source-token', 30))
+
+    def test_manager_entries_preserve_binary_transport_and_source_refusals(self):
+        import io
+        import re
+        import subprocess
+        import threading
+        import zipfile
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        facts = M.MANAGER.MESH_SOURCE_FACTS['obj']['download_members']
+        fixture = S.ROOT / 'business/fixtures/manager'
+        script = (S.ROOT / 'business/scripts/online-manager-minio-fixture.sh').read_text()
+        program = re.search(r"generate_fixtures\(\) \{\n  python3 [^\n]+ <<'PY'\n(.*?)\nPY", script, re.S).group(1)
+        with tempfile.TemporaryDirectory() as generated:
+            subprocess.run([sys.executable, '-', generated, str(fixture / 'addp_online_exchange_texture.png'), '1'],
+                           input=program, text=True, capture_output=True, check=True, timeout=10)
+            members = {name: (Path(generated) / 'obj' / name).read_bytes() for name in facts}
+        glb = b'glTF\x02\x00\x00\x00\xff\x80'  # Transport bytes, not a GLB geometry oracle.
+        observed, completed = [], []
+        mode = 'good'
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                observed.append((self.path.split('?')[0], self.headers.get('Authorization')))
+                status, content_type, raw = 200, 'application/json', b'{"items":[],"total":0}'
+                if self.path.startswith('/api/v1/manager/downloads/file?'):
+                    if mode == 'denied':
+                        status, raw = 403, b'{"error_code":"manager.source.read_denied"}'
+                    else:
+                        archive = io.BytesIO()
+                        with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as zipped:
+                            for name, data in members.items():
+                                zipped.writestr(name, data + b'x' if mode == 'changed_member' and name == 'model.mtl' else data)
+                            if mode == 'unexpected_member': zipped.writestr('ungranted.txt', b'not allowed')
+                        content_type, raw = 'application/zip', archive.getvalue()
+                elif self.path.endswith('/content'):
+                    content_type, raw = 'model/gltf-binary', glb
+                elif mode == 'invalid_json':
+                    raw = b'not JSON'
+                self.send_response(status)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Content-Length', str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def log_message(self, *args): pass
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            for case in ('manager-success', 'manager-object-unknown', 'manager-index-unknown', 'manager-late-writer'):
+                for mode in ('good', 'changed_member', 'unexpected_member', 'denied', 'invalid_json'):
+                    with self.subTest(case=case, mode=mode), tempfile.TemporaryDirectory() as directory:
+                        observed.clear(); completed.clear()
+                        environment = dict(ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_NATIVE_CASE=case,
+                            ADDP_ONLINE_TEST_TENANT_ID='2', GATEWAY_URL=f'http://127.0.0.1:{server.server_port}',
+                            ADDP_ONLINE_CLEANUP_NATIVE_MANAGER_ACCESS_TOKEN='manager-token',
+                            ADDP_ONLINE_CLEANUP_NATIVE_TRANSFER_ACCESS_TOKEN='transfer-token',
+                            ADDP_ONLINE_CLEANUP_NATIVE_ENGINE_ACCESS_TOKEN='engine-token',
+                            ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='source-token')
+                        def probe(client, *args):
+                            args[-2]['stage'] = 'manager_model_prepare'
+                            M.MANAGER.verify_source_download(client, dict(format='obj', locator='owned-source', download_members=facts))
+                            response = client.request('GET', '/api/v1/manager/model_3d_glb/7/content', (200,))
+                            self.assertEqual(response.raw, glb)
+                            self.assertEqual(response.headers['Content-Type'], 'model/gltf-binary')
+                            self.assertEqual(client.request('GET', '/api/v1/manager/tasks?page=1', (200,)).payload,
+                                             {'items': [], 'total': 0})
+                            self.assertEqual(client.timeout, 60)
+                            completed.append(True)
+                            raise S.SuiteError('bounded transport probe complete')
+                        with patch.dict(M.os.environ, environment, clear=True), \
+                                patch.object(S, 'OwnedDeployment', return_value=SimpleNamespace(run_id='native-1', close=lambda: None)), \
+                                patch.object(S, 'user_identity', side_effect=('33', '34', '35')), \
+                                patch.object(M, 'EngineWorkflow'), \
+                                patch.object(M, 'NativeControls', return_value=SimpleNamespace(close=lambda: None)), \
+                                patch.object(M, 'run_manager', side_effect=probe), \
+                                patch.object(M, 'run_late_writer', side_effect=probe), patch('builtins.print'):
+                            self.assertEqual(M.main(), 1)
+                        report = json.loads((Path(directory) / 'cleanup-native-effects.json').read_text())
+                        self.assertEqual(report['control_cleanup'], 'passed')
+                        self.assertEqual(report['checks'], [])  # This transport probe is never Hosted acceptance.
+                        self.assertEqual(report['error_type'], 'SuiteError')
+                        self.assertEqual(report['failure_kind'], 'http_unexpected_status' if mode == 'denied'
+                                         else 'http_invalid_json' if mode == 'invalid_json' else 'assertion_failed')
+                        self.assertEqual(completed, [True] if mode == 'good' else [])
+                        self.assertEqual(len(observed), 3 if mode in ('good', 'invalid_json') else 1)
+                        self.assertTrue(all(auth == 'Bearer manager-token' for _, auth in observed))
+                        if mode == 'denied': self.assertEqual(report['failure_http_status'], 403)
+        finally:
+            server.shutdown(); server.server_close(); thread.join(timeout=5)
+        self.assertFalse(thread.is_alive())
 
     def test_runtime_wait_retains_only_last_scoped_observation_with_original_budget(self):
         for status in ('pending', 'failed', 'timeout', 'cancelled', 'success'):

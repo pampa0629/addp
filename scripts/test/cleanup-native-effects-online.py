@@ -1113,8 +1113,12 @@ def main():
         checkpoint()
         if case.startswith('manager-'):
             source = S.local_client(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
-            if case == 'manager-late-writer': run_late_writer(clients['manager'], workflow, controls, source, report, checkpoint)
-            else: run_manager(clients['manager'], workflow, controls, source, case, report, checkpoint)
+            # Domain helpers consume raw ZIP/GLB and headers as well as JSON.
+            # Keep the same loopback-validated User and request budget.
+            identity = clients['manager']
+            manager = MANAGER.GatewayClient(identity.base_url, identity.token, identity.timeout)
+            if case == 'manager-late-writer': run_late_writer(manager, workflow, controls, source, report, checkpoint)
+            else: run_manager(manager, workflow, controls, source, case, report, checkpoint)
         else: run_transfer(clients['transfer'], workflow, controls, case, report, checkpoint)
         require(set(report['checks']) == set(S.CONTRACT['native_case_checks'][case])
                 and len(report['checks']) == len(set(report['checks'])), 'native case checks missing, duplicated or outside scope')
