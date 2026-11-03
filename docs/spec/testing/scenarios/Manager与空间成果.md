@@ -1237,6 +1237,18 @@ A显式唯一非空来源ID与FID不同且在JSON安全整数内；输出每源�
 
 1.0与1的原始类型区别、非有限JSON、numpy整数、数值极限、无法可靠持久化的非法网格及故障注入单列Native，不修改产品格式支持。只记录准备／本地验证，不冒充Linux全量、真实Hosted、UI或容量通过。
 
+## 米制圆形点密度栅格独立 Hosted 验收
+
+独立手工suite为`raster-point-density-persistence`，准备门禁`make test-raster-point-density-online-runner`。复用NFS、同源产品默认入口Runtime、普通User原12权限及4CPU／2GiB／无额外swap，业务预算固定600秒；实际Linux全量和Hosted由CI会话协调，不自行触发、不重试、不扩预算，不改产品逻辑或原套件。
+
+16条成功COG链：普通点集／倒序／整批三倍重复／像元中心重合点4条，半径略小于／等于／略大于边界3条，模板外支持／局部无支持／空点集3条，全无效模板／mask-alpha及缩放元数据模板2条，非方形横跨512块／旋转兼剪切纵跨512块2条，国际英尺／美制测量英尺2条。所有重复XY逐条计数；像元中心精确米制平方距离小于等于半径平方纳入、不设epsilon，固定完整圆面积分母、不做边缘补偿；模板只给网格和CRS，无支持处有效0、全部成功像元有效。实际保存文件核普通／逆序、普通／全无效模板、普通／mask-alpha相等，以及整批三倍重复与独立计数对应关系；各文件仍须全像元精确oracle相等。
+
+半径null／true／false／0／负数／字符串／列表／对象8类，缺失几何／空Point／LineString／MultiPoint／范围内三维Point／范围外三维Point6类，点模板CRS不一致／地理CRS2类，共16类×中英文＝32次准确density失败。核正确失败节点／原始原因和提交语言冻结，反向查询不改旧错误；读取或提交前置失败不得冒充算子拒绝。成功终态重读1至16份成果（136次），32失败终态各重读16份（512次），共648次真实COG全检／49次物理调用（含初始源基线）。
+
+独立逐点Fraction oracle精确核全部距离和计数，以Float64 math.pi的精确有理值乘半径平方作为完整圆面积、密度一次舍入；不复用产品索引／距离助手。只读冻结oracle绑定root／run、全部源hash和夹具源码。严格核完整像元／mask／合法零、Float64／NaN定义／points每平方米、原六参数网格／CRS、COG布局及实际nearest概览，artifact＝物理＝Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前点源＋模板两源实际内外血缘和Monitor、源及先前成果字节／Meta不变、失败零发布／新增扫描血缘和部分启动／全部退出清理。归档16份COG原字节、全部源、冻结预期、大小／hash清单及48执行的96份Develop／Monitor原始终态响应。
+
+非有限JSON、异常持久化格式、重复索引、数值极限和故障注入单列Native；不扩产品格式，不计UI、容量或稳定吞吐，准备／本地门禁不计实际Linux全量或Hosted通过。
+
 ## IDW最近N个支撑点独立 Hosted 验收
 
 独立手工suite为`raster-interpolate-idw-max-points-persistence`，准备门禁`make test-raster-interpolate-idw-max-points-online-runner`。复用NFS、同源默认入口Runtime、普通User原12权限和4CPU／2GiB／无额外swap，业务预算固定600秒；由CI会话协调实际运行，不自行触发、重试或扩预算。原两套IDW套件与产品逻辑保持。

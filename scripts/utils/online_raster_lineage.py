@@ -24,6 +24,7 @@ SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persist
     'raster-interpolate-idw-persistence': 'raster-interpolate-idw-lineage',
     'raster-interpolate-idw-min-points-persistence': 'raster-interpolate-idw-min-points-lineage',
     'raster-interpolate-idw-max-points-persistence': 'raster-interpolate-idw-max-points-lineage',
+    'raster-point-density-persistence': 'raster-point-density-lineage',
     'raster-focal-percentiles-persistence': 'raster-focal-percentiles-lineage', 'vector-zonal-weighted-persistence': 'vector-zonal-weighted-lineage', 'vector-zonal-weighted-stddev-persistence': 'vector-zonal-weighted-stddev-lineage', 'vector-zonal-area-weighted-persistence': 'vector-zonal-area-weighted-lineage', 'vector-zonal-area-weighted-stddev-persistence': 'vector-zonal-area-weighted-stddev-lineage'}
 RECEIPT = 'raster-lineage-owner.json'
 FIELDS = {'schema_version', 'inputs', 'outputs', 'operations'}

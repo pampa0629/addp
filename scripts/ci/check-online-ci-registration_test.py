@@ -1326,6 +1326,27 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_interpolate_idw_max_points(self.repository, {'raster-interpolate-idw-max-points-persistence'})
             target.write_text(original)
+    def test_point_density_requires_exact_cog_matrix_budget_and_regressions(self):
+        source = Path(__file__).resolve().parents[2]
+        required = CHECK.POINT_DENSITY_REQUIRED
+        for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml', *required):
+            target = self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source/relative,target)
+        CHECK.validate_point_density(self.repository, {'raster-point-density-persistence'})
+        for relative, fragments in required.items():
+            target=self.repository/relative; original=target.read_text()
+            for fragment in fragments:
+                target.write_text(original.replace(fragment, 'omitted'))
+                with self.subTest(relative=relative,fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_point_density(self.repository, {'raster-point-density-persistence'})
+                target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-point-density-fixture.py';original=target.read_text()
+        for before,after in [("'base.cog.tif'","'extra.gpkg'"),("'radius_null'","'radius_omitted'"),("4.)","5.)"),("'triplicated.gpkg'","'changed.gpkg'"),(".cog.tif',3)",".cog.tif',2)")]:
+            self.assertIn(before,original);target.write_text(original.replace(before,after,1))
+            with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_point_density(self.repository, {'raster-point-density-persistence'})
+            target.write_text(original)
     def test_focal_percentiles_requires_exact_cog_matrix_budget_and_regressions(self):
         source = Path(__file__).resolve().parents[2]
         required = CHECK.FOCAL_PERCENTILES_REQUIRED
