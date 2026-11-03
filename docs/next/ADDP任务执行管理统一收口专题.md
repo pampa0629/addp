@@ -255,10 +255,10 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ### 8.43 Manager 原生成功基线准备
 
-用户已同意继续验收收尾，优先 `manager-success`，再分别验证对象／索引未知效果和旧 Runtime 迟到写入；Graph 高级恢复仍暂缓。沿原三业务 User、既有独立源办理员、准确权限、九项断言、独占 Hosted 部署与原预算推进，不改变删除语义或个人环境。
+近期先验证 `manager-success`，再分别验证对象／索引未知效果和旧 Runtime 迟到写入；沿原三业务 User、独立源办理员、准确权限、九项断言及独占 Hosted 部署推进。Graph 高级恢复继续暂缓。
 
-已用功能反例收口三项准备缺口：先由办理员读取 System 准确事实并办理 Grant，之后 Manager 才枚举并核对同一源；Meta 仅消费结构投影，源大小／完整性沿原授权下载逐项核验 OBJ／MTL／纹理长度和固定摘要；扫描与准确 MinIO 的 active／online 观察共用原180秒窗口，原 Engine User 单次读取限于原60秒与剩余预算，超时不补读、不准备模型。CDC 两 Engine 复用同一有界观察器。未知事实和授权失败继续阻断，不新增权限、原生变更或重试。
+准备链已统一为：办理准确源 Grant 后枚举 Meta；只消费结构身份，源完整性仍由原授权下载逐项核验 OBJ／MTL／纹理长度和摘要；扫描与 MinIO 就绪共用原180秒窗口。镜像准备复用公共构建器 `--jobs 1` 实时日志，固定阶段记录开始／返回码并保留失败退出状态。原下载／ZIP／GLB 验证器、机器契约、120分钟总预算和900秒业务预算不变。
 
-CI 负责人以 `5fc2980a1` 仅在既有原生 Cleanup Make 目标增加共享 Manager helper 测试模块，无新 Job／服务／预算。最终固定源码副本的 `make test-execution-online-ci-runner` 实际 exit0，195项原生／helper与175项共享测试、语法及登记一致通过；`make test-manager-online-runner` 完整230项及 System 身份夹具 Go通过，对应 helper 输入未变。后继 `efc224545` 固定源码的同一入口195＋177项及 System／Meta Go T1通过；Manager 后端既有标准入口结果保持有效。原始下载、ZIP成员、GLB几何验证器和机器契约逐项核同；旧实现的三个准备反例均失败，未把模拟或编译失败计为原生故障证据。
+确定性证据：[修正 `3ba9d31b6` 的 Linux 专项](https://github.com/pampa0629/addp/actions/runs/41612312845/job/125836995242)实际执行标准入口，197＋179项通过、0 FAIL／SKIP；覆盖 Model3D 叶进程未退出时日志可见及 exit17 后既有销毁链。[准确 b7 源码的 Cleanup PostgreSQL](https://github.com/pampa0629/addp/actions/runs/41568648644/job/125719055627)6个顶层 PASS、0 FAIL／SKIP，仅证明其准入／协调／只读／DTO 范围。
 
-本批 runner／夹具修正已推送 `b7c6a18d37`。[准确源码的 Linux 专项](https://github.com/pampa0629/addp/actions/runs/41568648577/job/125696137575)实际 success，标准入口执行195＋175项；产品二进制编译通过，镜像验证仅覆盖 System／Console／Nginx／Agent，Manager／Model3D 仍由原 Hosted 脚本构建验证。[System Cleanup PostgreSQL](https://github.com/pampa0629/addp/actions/runs/41568648644/job/125719055627)实际运行标准入口，6个顶层 PASS、0 FAIL／SKIP。后继 `692287dfb` 固定源码的同入口195＋178项通过；已核对其后主线的实际消费路径等价，并仅启动一次 [Manager Hosted](https://github.com/pampa0629/addp/actions/runs/41586728539/job/125753855807)（`50f5d66ca`），实际因超过120分钟取消。仅归档准入文件，无业务报告、九断言或零残留证明。最后可见 Gateway 镜像验证成功，16镜像中只有15个退出结果；双并发调度器仅在子进程退出后输出日志，Model3D内部未返回子阶段未证。runner 实时日志和阶段返回码修正已推送 `3ba9d31b6`，[准确源码的 Linux 专项](https://github.com/pampa0629/addp/actions/runs/41612312845/job/125836995242)实际197＋179项通过、0 FAIL／SKIP；仅闭合日志盲区，未证明原停滞解除。对象／索引未知效果及迟到写入另待各自证据。私有分层证明 `/tmp/addp-manager-cleanup-baseline-20261103/`；既有 Transfer三case与Neo4j身份反例不升级为全矩阵完成。
+真实证据：[首轮 `50f5d66ca`](https://github.com/pampa0629/addp/actions/runs/41586728539/job/125753855807)因超过120分钟取消，仅有准入文件，无九断言、控制恢复或零残留证明。15镜像返回成功，Model3D 未有退出结果；其内部停滞子阶段仍未证实。修正日志后，按既定授权唯一启动[第二轮 `ceb16901b`](https://github.com/pampa0629/addp/actions/runs/41639055422/job/125927590186)，当前 queued，不计业务通过。后续故障 case 仍待各自证据；不将确定性检查、旧 Transfer 或 Neo4j 身份反例扩展为本轮验收。两轮私有证明分别位于 `/tmp/addp-manager-success-hosted-first-20261103/` 与 `/tmp/addp-manager-success-hosted-second-20261103/`。
