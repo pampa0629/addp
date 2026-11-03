@@ -128,6 +128,9 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 key=ids[int(path.split('/')[-1])];status=200 if authorized(key)else 404;payload=records[key]
             elif path in ('/api/v1/manager/downloads/file','/api/v1/manager/preview','/api/v1/manager/quick-view/capability'):
                 locator=urlparse(q['locator'][0]);engine=int(locator.path.split('/')[1])
+                locator_query=parse_qs(locator.query)
+                self_test.assertEqual(set(locator_query),{'type','item_id'},'content locator must identify a scanned data item')
+                self_test.assertEqual(ids[int(locator_query['item_id'][0])],(engine,locator.path.split('/path/',1)[1]))
                 name=locator.path.split('/path/',1)[1];key=key_name(engine,name);status=200 if authorized(key)else 403
                 if path.endswith('downloads/file') and status==200:raw=raw_zip(key)
                 elif path.endswith('preview') and status==200:payload=self_test.metadata_pair(specs_by_name[name.split('/')[-1]],name.rsplit('/',1)[0]+'/')[1]
@@ -181,7 +184,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,'owned browser failure'):CASE.run(Path('/repo'),env,owner,physical_runner=physical)
                 report=json.loads(Path(directory,'manager-envi.json').read_text())
             else:report=CASE.run(Path('/repo'),env,owner,physical_runner=physical)
-        self.assertEqual(active,{});self.assertEqual(len(receipts),14)
+        self.assertEqual(active,{});self.assertEqual(len(receipts),20)
         self.assertEqual((report['source_authorization']['operator_principal_id'],report['source_authorization']['recipient_principal_id']),('34','33'))
         self.assertEqual(report['source_authorization']['cleanup'],dict(read_grants_revoked=True,metadata_details_hidden=6))
         self.assertEqual(sum(e[0]=='generate'for e in events),4);self.assertEqual(sum(e[0]=='task-delete'for e in events),4)
@@ -194,6 +197,8 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 self.assertEqual(report['schema_version'],'addp.manager-envi/v3')
                 self.assertEqual(report['result'],'failed'if failure else 'passed')
                 self.assertEqual(len(report['cases']),6)
+                self.assertTrue(all(c['original_withdrawal_verified']for c in report['cases']))
+                self.assertTrue(all(c['original_withdrawal']['revoked_request_id']!=c['original_withdrawal']['renewed_request_id']for c in report['cases']))
                 if failure:self.assertEqual((report['stage'],report['error']),('browser','RuntimeError'))
                 for key in ('metadata_projection_verified','content_metadata_verified','current_user_download_verified'):
                     if not failure:

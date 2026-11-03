@@ -101,9 +101,6 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 require(isinstance(visible,list) and not any(v.get('full_name')==name for v in visible),'unapproved ENVI visible in consumer catalog')
                 expected=[dict(path=name,role='raster',primary=True,required=True),dict(path=header,role='header',primary=False,required=True)]
                 model=dict(format='envi',full_name=name,fingerprint=hashlib.sha256(f'{engine}:{name}'.encode()).hexdigest(),composition=expected)
-                locator=f"addp://engine/{engine}/path/{name}?"+urlencode({'type':'object' if storage=='minio' else 'file'})
-                path='/api/v1/manager/downloads/file?'+urlencode({'locator':locator})
-                client.request('GET',path,(403,))
                 receipt=grant.grant(model)
                 report['source_authorization']['grants'].append(dict(model=model,receipt=receipt))
                 stage='metadata'
@@ -111,6 +108,16 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 require(item['fingerprint']==model['fingerprint'],'consumer source identity differs from approved System facts')
                 detail=client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload
                 fixture=owner.ArtifactFixture('envi-'+storage+'-'+spec['case'],item,owner.build_item_locator(engine,item));fixtures.append(fixture)
+                stage='download_withdrawal'
+                path='/api/v1/manager/downloads/file?'+urlencode({'locator':fixture.locator})
+                initial_receipt=receipt
+                grant.revoke(initial_receipt['request_id'])
+                client.request('GET',path,(403,))
+                client.request('GET',f"/api/v1/meta/items/{item['id']}",(404,))
+                receipt=grant.grant(model)
+                require(receipt['request_id']!=initial_receipt['request_id'] and receipt['boundary_hash']==initial_receipt['boundary_hash'],'original read must be reapproved on the identical complete pair')
+                report['source_authorization']['grants'].append(dict(model=model,receipt=receipt))
+                client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,))
                 native=client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':fixture.locator}),(200,)).payload
                 validate_content_metadata(detail,native,spec,expected)
                 # Download and content facts are protected by the same exact pair read Grant.
@@ -118,7 +125,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 stage='download';raw=client.request('GET',path,(200,)).raw;owner.validate_model_bundle(raw,spec['members'])
                 (artifact/f'envi-{storage}-{spec["case"]}-original.zip').write_bytes(raw)
                 (artifact/f'envi-{storage}-{spec["case"]}-meta.json').write_text(json.dumps({'meta':detail,'manager':native},ensure_ascii=False,indent=2)+'\n')
-                case=dict(spec,case=storage+'-'+spec['case'],item_id=item['id'],locator=fixture.locator,download_members=spec['members'],metadata_verified=True,metadata_projection_verified=True,content_metadata_verified=True,original_download_verified=True)
+                case=dict(spec,case=storage+'-'+spec['case'],item_id=item['id'],locator=fixture.locator,download_members=spec['members'],metadata_verified=True,metadata_projection_verified=True,content_metadata_verified=True,original_download_verified=True,original_withdrawal_verified=True,original_withdrawal=dict(revoked_request_id=initial_receipt['request_id'],renewed_request_id=receipt['request_id'],boundary_hash=receipt['boundary_hash']))
                 report['cases'].append(case)
                 if spec['case']=='bsq':
                     stage='composition-change'
