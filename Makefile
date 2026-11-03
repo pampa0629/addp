@@ -136,6 +136,10 @@ test-agent-postgres: ## 验证 Agent 版本化迁移、会话版本与租户隔�
 test-agent-eval: ## 运行 Agent 统一离线评测门禁
 	@bash scripts/test/agent-evaluation-gate.sh offline
 
+.PHONY: test-agent-model
+test-agent-model: ## 显式运行真实模型回归；工具事实受控，不创建或运行业务任务
+	@bash scripts/test/agent-evaluation-gate.sh model
+
 # T5 owner 内部目标；公共入口统一由 test-release 分发。
 test-agent-eval-release:
 	@bash scripts/test/agent-evaluation-gate.sh release

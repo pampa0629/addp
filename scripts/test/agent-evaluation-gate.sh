@@ -1,7 +1,7 @@
 #!/bin/bash
 # agent-evaluation-gate.sh - Run the ADDP Agent evaluation gate.
 #
-# Usage: bash scripts/test/agent-evaluation-gate.sh [offline|release|compare|compare-release]
+# Usage: bash scripts/test/agent-evaluation-gate.sh [offline|model|release|compare|compare-release]
 #
 # release requires:
 #   ADDP_AGENT_READ_ONLY_EVIDENCE
@@ -24,6 +24,14 @@ if [ ! -x "$PYTHON" ]; then
     exit 1
 fi
 case "$MODE" in
+    model)
+        : "${ADDP_AGENT_MODEL_TENANT_ID:?ADDP_AGENT_MODEL_TENANT_ID is required}"
+        : "${ADDP_AGENT_EVAL_REPORT:?ADDP_AGENT_EVAL_REPORT must select a new external file}"
+        : "${POSTGRES_PORT:?POSTGRES_PORT must be verified with scripts/infra/status.sh}"
+        exec "$PYTHON" "$ROOT_DIR/evals/agent-scenarios/model_runner.py" \
+            --tenant-id "$ADDP_AGENT_MODEL_TENANT_ID" \
+            --repeat "${ADDP_AGENT_MODEL_REPEATS:-1}" --output "$REPORT"
+        ;;
     offline)
         exec "$PYTHON" "$ROOT_DIR/evals/agent-scenarios/gate.py" --output "$REPORT"
         ;;

@@ -2,7 +2,7 @@
 
 回答阶段的私有 `answer_ready` 在运行步骤中仍完整审计；离线轨迹单列 `runtime_actions`（名称、完成状态和错误），不将其伪装为平台 Manifest Tool 或业务 read 风险。场景可声明 `required_runtime_actions` 并精确比较动作顺序，已启动动作必须具有终态；公开 Tool 的风险、输入字段、顺序及 owner 副作用断言保持原检查。
 
-更新日期：2026-07-31
+更新日期：2026-11-03
 
 状态：正式规范。智能体场景、在线证据、统一门禁、报告比较和正式发布评测基线以本文为准。
 
@@ -10,12 +10,14 @@
 
 评测用于验证 ADDP Agent 在稳定 Skill、Tool、Interaction、ResultRef、Presentation、错误和 owner 副作用上的行为，不逐字匹配模型回答，也不把模型主观评分作为发布事实。
 
-本文规定当前四个唯一 Schema：
+现有场景、在线证据、门禁和比较分别使用以下唯一 Schema：
 
 - `addp.agent-scenario/v1`；
 - `addp.agent-online-evidence/v1`；
 - `addp.agent-evaluation-gate/v2`；
 - `addp.agent-evaluation-comparison/v1`。
+
+真实模型回归另输出 `addp.agent-model-regression/v1`，只证明模型在固定事实下的结构化行为，不作为上述正式发布基线或主观质量评分。
 
 旧 Schema 不兼容读取。在线证据、报告和比较结果必须位于 ADDP 仓库外；凭据、环境私有 ID 和完整业务 payload 不得进入 fixture 或评测报告。
 
@@ -41,6 +43,20 @@ DeerFlow Harness 回归使用真实内核、共享 Inference Adapter 与 Manifes
 
 User Access Token 只能通过正式 `addp` OAuth 登录保存在 OS Keychain 中的 Refresh Token 刷新获得；Runner 不接受 `ADDP_TOKEN`、命令参数或其他手工 Token 注入。workflow 输入、阶段性审批证据和最终证据都必须显式指定仓库外路径。
 
+### 2.3 真实模型回归
+
+唯一实现为 `evals/agent-scenarios/model_runner.py`，公共入口为 `make test-agent-model`，由现有薄脚本映射。它调用生产 `stream_agent_response`、当前 Skill、Manifest Adapter 和 DeerFlow Harness；模型通过 Agent 现有 Inference Service Principal 和当前 Tenant 的 `reasoning` 场景绑定解析，不接入 Provider、不指定另一套模型配置、不修改绑定。Tenant 由 `ADDP_AGENT_MODEL_TENANT_ID` 显式指定；缺失凭据、绑定、服务或超时均失败，不能回退脚本模型或记为通过。
+
+工具边界固定为受控事实：唯一替换点是 ToolExecutor 调用，不发起真实 Owner 请求。每次调用先核对 Manifest、场景白名单、参数 Schema 和必要参数值；所有 write Tool、未声明 Tool 和错误参数均记录为回归并阻断，不因模型自行修正而消除失败。保留生产 Tool Schema 与 Skill 白名单，不靠隐藏写工具或提示词保证安全。不持久化 AgentRun、Interaction 或业务实体；历史草稿使用经生产快照校验器生成的合成输入，不读取真实用户草稿。
+
+首批场景覆盖引擎只读查询、查询候选草稿、传输配置预检和历史草稿说明。沿用 `addp.agent-scenario/v1` 与 `evaluate_trace`，不新增场景 DSL。固定事实和精确参数断言由同目录的模型夹具提供；验证路由、必需与禁止工具、无多余澄清、参数保真、原报告投影及非空真实正文。正文只在内存中检查必要的稳定事实，不逐字比较措辞、不调用模型自评，也不把关键词通过宣称为整体语义质量通过。
+
+路由诊断只从实际模型响应投影 `draft_action`、注册 Skill、是否需要平台目录及是否返回草稿引用；禁止保存原引用或自由文本依据。该投影只用于定位回归，不改变或替代生产路由决定。
+
+报告严格输出源码身份、场景/夹具契约摘要、实际 Skill、工具名称与状态、断言布尔值、稳定错误码及实际耗时/首正文耗时。模型身份只保存实际响应的 deployment 摘要和 profile_version，不保存 Provider 配置。不保存输入输出全文、Tool 参数值、原始结果、历史草稿引用、Tenant ID、凭据或异常原文。报告必须在仓库外原子写入；失败同样生成报告并返回非零。不设置耗时阈值、综合分或自动重跑至通过。每次显式执行保留全部样本，个例修复前后的失败证据不能覆盖。
+
+该层需要真实 Inference 与只读场景绑定查询，属于显式运行的模型集成回归，不是无外部依赖的 T1，也不是生产 Owner 或完整 T4。现有 Agent 离线 CI 自动运行其契约、安全和编排单测，不自动消费在线模型凭据；真实页面验收另行核对真实资源、报告与回答，只允许查询、草稿和预检，不创建或运行业务任务。自由文本事实正确性和表达质量仍需人工复核，结构化通过不能替代该结论。
+
 ## 三、场景契约
 
 ### 3.1 目录与 Schema
@@ -61,6 +77,10 @@ evals/agent-scenarios/<scenario-name>/scenario.yaml
 | `approval-execution` | 在线黄金场景 | 首次 write 返回 owner approval；同一 AgentRun 批准后恢复；只创建一次 execution。 |
 | `rejection-and-forbidden` | 在线黄金场景 | 拒绝后不执行；跨 AgentRun 重放返回 `approval_forbidden` 且不泄露终态。 |
 | `railway-farmland-area` | 离线端到端场景 | `workflow-analysis` 的检索、澄清、预览、生成、校验、审批、执行和引用链路。 |
+| `model-engine-inventory` | 真实模型回归 | 普通引擎查询不误入本体目录，保留离线引擎，不请求多余澄清。 |
+| `model-query-draft` | 真实模型回归 | 保留当前引擎、语言及资源事实，生成查询候选但不执行。 |
+| `model-transfer-precheck` | 真实模型回归 | 经平台语义路由按完整原参数预检，不创建或运行，不改写正式报告。 |
+| `model-historical-draft` | 真实模型回归 | 无 Skill 路由（契约标记 `none`），仅私有 `draft.inspect`，不重新读取资源或预检。 |
 
 增加场景必须解决新的稳定风险或用户路径；不能为单次环境数据复制一个场景 DSL。
 
@@ -94,6 +114,7 @@ Runner 写文件必须使用临时文件后原子替换。审批场景固定为�
 
 ```bash
 make test-agent-eval
+make test-agent-model
 make test-release RELEASE_SUITE=agent-evaluation
 make compare-agent-eval
 make compare-agent-eval-release
@@ -219,6 +240,19 @@ make test-agent-eval
 ```
 
 发布门禁和比较按需要使用四个标准 Make 入口，并显式提供所需仓库外输入。正式发布资格必须通过 `compare-agent-eval-release` 验证，不能用一次 dirty 工作区的发布门禁结果替代。
+
+真实模型回归显式运行：
+
+```bash
+ADDP_AGENT_MODEL_TENANT_ID=<当前验收租户ID> \
+POSTGRES_PORT=<Infra状态显示的实际端口> \
+ADDP_AGENT_EVAL_REPORT=/tmp/addp-agent-model-<本次唯一标识>.json \
+make test-agent-model
+```
+
+复用根 `.env` 与 `.dev-state/ports.env` 的运行配置，实际 Infra 端口先用 `bash scripts/infra/status.sh` 核对。该入口只读取现有配置，不启动或重启服务，也不更改测试数据库。确定性单测不加载个人 `.env` 或运行配置。
+
+`ADDP_AGENT_MODEL_REPEATS=1..3` 可显式重复整套场景，默认一次，所有样本均写入同一新报告，任一样本失败则本轮失败；不允许筛选成功样本或覆盖已有文件。
 
 ## 十二、相关文档
 

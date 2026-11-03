@@ -12,6 +12,8 @@ Agent 模块是 ADDP 平台的**自然语言交互入口**，用户通过对话�
 
 平台级 Tool、交互和评测契约分别以 `docs/spec/addp智能体Tool开放规范.md`、`docs/spec/addp智能体交互协议规范.md`、`docs/spec/addp智能体评测规范.md` 为事实源；本文只记录 Agent 模块实现和运行约束。
 
+当前时序见 `docs/当前实现的时序图分析.md`；旧的自研 LangGraph 领域专家设计已删除，不作为另一条实现路线。真实模型回归使用 `make test-agent-model`：生产路由、Skill、Harness 和 Inference，工具事实受控且写调用预先阻断。场景复用现有评测契约，报告不含正文或参数；它不替代真实 Owner / 浏览器验收或正式发布评测基线。默认 Agent CI 只自动执行该 Runner 的确定性单测，在线模型须显式执行，完整边界见评测规范 2.3。
+
 平台语义选择：`platform_routed=true` 的任务领域先识别是否需查询目录，再用 `platform.capabilities.list` 读取 Ontology 已激活定义，LLM 根据概念/条件/效果选择 capability，Runtime 核验 owner、Skill 与 Tool 白名单后才进入领域 Harness。不接受模型直接选择该 Skill，不从空目录选择首项，目录失败终止相关 run；普通对话及其他 Skill 不依赖 Ontology。Transfer 的创建、运行审批和执行观察分别消费独立能力；多步目标先选必要操作，不把创建当运行或为运行重建任务。`tests/test_platform_routing.py` 用短业务输入验证消费与拒绝边界，是脚本化模型 T1，不宣称真实 LLM 或 T4 已验收。
 
 Transfer 运行确认留在 Agent 页面，复用共享 `ApprovalRequest` 卡片及 Owner Interaction。浏览器以当前 User 身份直接向 Transfer 保存批准／拒绝；Agent 后端只在同步恢复请求中读取 Owner 状态。Runtime 重读启动本体，核对原审批引用、任务、配置指纹及本体身份，正式批准恢复先持久化消费本地确认，再经同一 Tool Adapter 启动一次，不经模型决定或收尾。已消费的审批只查询原执行，拒绝或语义变化不启动；失败／结果不明不自动重试。正式 Owner 返回 expired 且身份和指纹核验通过时完成原 Interaction，Runtime 固定显示“审批已过期，未启动”并结束本次等待；拒绝／过期的无执行收尾不因本体修订变化重新要求复核。刷新后不保留决策按钮，不按客户端时钟判定，不自动续期、重新申请或运行。流程不授予用户权限，创建确认也不成为运行批准；具体协议以 Tool 与本体规范为准。`tests/test_transfer_run_runtime.py` 覆盖真实 Harness／Manifest／SDK 的受控链路，前端浏览器用例验证手动点击、保持当前 Agent 页面和刷新恢复；两者不代替真实身份、Worker 与 Business 数据的 T4 验收。

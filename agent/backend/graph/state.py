@@ -56,12 +56,12 @@ class RouteDecision(BaseModel):
     """只返回路由决策；正文由独立回答阶段生成"""
 
     model_config = ConfigDict(extra="forbid")
-    draft_action: Optional[Literal["inspect", "create"]] = Field(default=None, description="草稿动作优先于通用平台领域分类。inspect 只解释已有草稿：skill=null 且 needs_platform_semantics=false；create 仅明确沿用全部原参数创建、不修改、不运行：skill=null 且 needs_platform_semantics=true。请求修改则本字段为 null，走普通平台路线。指代不明时保留动作但 draft_ref=null，不能猜选。")
+    draft_action: Optional[Literal["inspect", "create"]] = Field(default=None, description="草稿动作优先于通用平台领域分类。inspect 只解释已有历史草稿：skill=null 且 needs_platform_semantics=false；create 仅本轮明确肯定地请求沿用全部历史原参数创建、不修改、不运行：skill=null 且 needs_platform_semantics=true。明确不创建、只预检或只生成草稿时禁止create；当前请求附带完整传输配置并要求按原参数预检时，本字段和draft_ref为null、skill=null、needs_platform_semantics=true，不索要历史草稿引用。请求修改也走普通平台路线。历史草稿指代不明时保留其动作但draft_ref=null，不能猜选。")
     draft_ref: Optional[str] = Field(default=None, description="只选近期受信任草稿目录的确切 reference；缺失或有歧义时为 null，不能从正文推测。")
     skill: Optional[str] = Field(
         default=None,
         description=(
-            "需要激活的技能名称，例如 data-browse、execute-sql、data-preview、metadata-search。"
+            "需要激活的已注册普通技能名称；具体名称以当前路由提示词的可用技能清单为准。"
             "draft_action 非 null 时必须为 null；无草稿动作且不需要技能时也为 null。"
         ),
     )

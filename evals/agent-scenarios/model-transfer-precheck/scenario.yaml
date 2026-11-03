@@ -1,0 +1,45 @@
+{
+  "schema": "addp.agent-scenario/v1",
+  "name": "model-transfer-precheck",
+  "category": "business_capability",
+  "skill": "transfer-generation",
+  "prompt": "对本场景给出的完整传输配置按原参数做预检，只展示草稿及报告，不修改配置，不创建或运行任务，不读取样本。",
+  "expectations": {
+    "phases": {
+      "model": {
+        "status": "completed",
+        "required_tools": [
+          "platform.capabilities.list",
+          "platform.capability.context",
+          "transfer.task.config.check"
+        ],
+        "forbidden_tools": [
+          "workflow.run",
+          "transfer.task.create",
+          "transfer.task.start"
+        ],
+        "required_errors": [],
+        "interactions": [],
+        "presentations": [
+          "TransferConfigCheckReport"
+        ],
+        "result_refs": {
+          "count": 0,
+          "kinds": []
+        },
+        "owner_effects": {
+          "tasks_created": 0,
+          "executions_created": 0
+        },
+        "allowed_tool_risks": [
+          "read"
+        ]
+      }
+    },
+    "forbidden_persisted_fields": [
+      "authorization",
+      "token",
+      "sample_rows"
+    ]
+  }
+}

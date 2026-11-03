@@ -1,0 +1,44 @@
+{
+  "schema": "addp.agent-scenario/v1",
+  "name": "model-query-draft",
+  "category": "business_capability",
+  "skill": "query-generation",
+  "prompt": "当前查询工作台已选择引擎321，语言sql，方言PostgreSQL，资源为addp://engine/321/path/public/orders?type=table&item_id=3210。按status统计订单数量，生成可编辑的SQL草稿，不执行。",
+  "expectations": {
+    "phases": {
+      "model": {
+        "status": "completed",
+        "required_tools": [
+          "resource.ancestors.get",
+          "resource.facts.get",
+          "query.draft.generate"
+        ],
+        "forbidden_tools": [
+          "workflow.run",
+          "transfer.task.create",
+          "transfer.task.start"
+        ],
+        "required_errors": [],
+        "interactions": [],
+        "presentations": [],
+        "result_refs": {
+          "count": 0,
+          "kinds": []
+        },
+        "owner_effects": {
+          "tasks_created": 0,
+          "executions_created": 0
+        },
+        "allowed_tool_risks": [
+          "read",
+          "propose"
+        ]
+      }
+    },
+    "forbidden_persisted_fields": [
+      "authorization",
+      "token",
+      "sample_rows"
+    ]
+  }
+}
