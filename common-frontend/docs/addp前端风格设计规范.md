@@ -12,11 +12,9 @@
 
 ### 2. DRY（Don't Repeat Yourself）原则
 
-- 前端组件唯一实现规则以 [ADDP 开发原则](../../docs/spec/addp开发原则.md) 为规范真源
-- 所有共享的 UI 组件必须放在 `common-frontend/` 目录
-- 相同语义职责、输入输出和交互契约的能力不得在各模块中重复实现
-- 业务模块只保留领域组合和协议适配，不复制共享组件内部的基础渲染、状态管理、格式化或通用交互
-- 优先使用 Element Plus 官方组件
+共享能力在 `common-frontend/` 维护，业务模块只保留领域组合和协议适配；唯一所有权与重复职责判定以[开发原则](../../docs/spec/addp开发原则.md#8-dry-dont-repeat-yourself--不要重复自己)为准。创建、归属与替换步骤见[工程约束](frontend-style/工程约束.md#1-新建共享组件)，所有权测试、消费方验证与证据边界见[测试规范](frontend-style/工程约束.md#测试规范)。
+
+优先使用 Element Plus 官方组件。
 
 ### 3. 响应式设计
 
