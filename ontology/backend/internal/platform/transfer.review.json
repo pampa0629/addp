@@ -307,11 +307,11 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "function ensureLiveTextPart(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "61c46bad77efee1e978ba9e9795c77673ed544216b34b4289edb0d792feb6f29",
+      "commit": "a656769264f7395a7e12b062c322aeb61028fbc9",
+      "sha256": "37a3a2769131791cc251054ad190e250cfcac0fe1754d13269246d6b76f1d774",
       "use": {
-        "zh-cn": "本次新增 Agent 内用户手动批准／拒绝：以 User 身份直达 Transfer 决定，核验响应后只请求状态恢复，不跳转；复用共享 DataPagination。",
-        "en": "Adds manual User approve/reject within Agent: submit directly to Transfer, verify the response, then request status-based resume without navigation; uses shared DataPagination."
+        "zh-cn": "用户在 Agent 内以本人身份提交 Transfer 批准／拒绝，核验成功响应后才请求状态恢复；决定失败仅按公开状态码与错误码显示安全原因，不额外检查、恢复或启动。",
+        "en": "The User decides Transfer approval within Agent; only a verified success requests status-based resume. Decision failures show safe reasons from public status/code pairs without extra checks, resume or start."
       }
     },
     {
@@ -346,11 +346,11 @@
       "kind": "test",
       "path": "agent/frontend/e2e/clarification-resume.spec.js",
       "anchor": "test('exact checked draft streams and reloads",
-      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
-      "sha256": "669c3831bf5cfa06aee1c5d3e50ad712e46d5f7ca9e2509e12d7f26511f50455",
+      "commit": "a656769264f7395a7e12b062c322aeb61028fbc9",
+      "sha256": "9f447025d15d60a147659b01eb1938f6fd07218d6b5f0a92ac35ba58c7b2b627",
       "use": {
-        "zh-cn": "本次增加 Agent 内批准／拒绝、刷新不重发、零直接启动／扫描和不跳转的受控浏览器断言；原创建复核继续保留。",
-        "en": "Adds controlled-browser assertions for inline approve/reject, no refresh replay, no direct start/scan and no navigation, while retaining creation review coverage."
+        "zh-cn": "保留创建复核和手动批准／拒绝断言，增加中英配置不匹配／决定过期提示及未知码、状态码错配、无错误码和401认证流程反例；决定失败零恢复、刷新不重发且不显示原始Owner正文。",
+        "en": "Retains creation review and manual decisions; adds bilingual mismatch/decision-expiry feedback plus unknown-code, status-mismatch, missing-code and 401 authentication cases. Failed decisions never resume, reload never replays and raw owner text is not displayed."
       }
     },
     {

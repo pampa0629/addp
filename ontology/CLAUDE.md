@@ -12,6 +12,10 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 ## 当前交付范围
 
+平台 Transfer 创建修订 57／运行修订 4 复核 Agent `a65676926` 的决定失败提示。仅公开 `409 + approval_request_mismatch`、`410 + approval_expired` 显示安全双语原因；未知码、状态与码不符及非法响应保持通用提示，不显示任意 Owner 正文。成功响应核验后才恢复的原路径保持，失败不新增检查、恢复、重试、审批或启动，不改变 Interaction 状态或隐藏卡片；共享 401 认证流程保持。仅前向更新创建的 `chat_renderer`／`chat_renderer_test` 和运行的 `approval_ui`／`expiry_ui_test`，其他来源、绑定、覆盖及能力定义语义保持，执行查询修订 2 不变。原任务 55 的决定请求虽已证实返回 409 且零新增执行，但原拒绝码缺失；受控反例不能补写配置漂移现场验收通过。本轮沿已有来源审查及 Ontology Go T1，无新入口、依赖或 CI 编排，不重放原卡或自行重启。
+
+修订 57／4 本地验证：`GOFLAGS=-count=1 make test-platform-review` 先准确复现四项漂移，冻结后通过；`GOFLAGS=-count=1 make test-module MODULE=ontology GO_ONLY=1` 通过。36／19／8 项来源的当前字节、真实提交字节、摘要及锚点逐项一致，四项更新、其余 59 项及全部绑定／覆盖保持。证据 `/tmp/addp-ontology-r57-{review-red.log,review-green.log,t1.log,source-audit.json}`。已有 Platform／Go CI 入口覆盖；完整模块 T0–T3、PG／FalkorDB T2、自然 CI、发布激活及真实页面本轮未运行，不计通过。
+
 平台 Transfer 创建修订 56／运行修订 3 复核 Agent `426de5f38` 的历史说明职责调整。Runtime 从已校验历史快照固定解释状态、策略、执行结束条件及与授权的区别；只问这些主题不调用正文模型，混合问题只把明确选中的已有映射／查询片段交给无工具的正文流，删除完整请求加整份快照的自由说明路径。私有解释范围必须与 inspect 匹配，缺失、混用、重复或未知字段拒绝，不保留旧解析路径；历史引用仍由原路由选择并由服务端核验。创建复核、当前授权、运行审批及执行语义不扩张。创建仅更新五项依据，运行仅因 i18n 整文件变化更新一项依据；其余来源、绑定／覆盖和定义语义保持，读取修订 2 不变。Agent 的 14 个真实模型结构样本不代表人工语义或真实业务页面通过。本次只沿已有来源审查与 Ontology Go T1，不重复模型、PG／FalkorDB 或 Hosted，不自行重启或改动业务任务。
 
 修订 56／3 本地验证：`GOFLAGS=-count=1 make test-platform-review` 先准确复现上述六项来源漂移，冻结后通过；`GOFLAGS=-count=1 make test-module MODULE=ontology GO_ONLY=1` 通过。36／19／8 项来源的当前字节与真实提交、摘要、锚点全匹配；创建保留另外 31 项、运行保留另外 18 项、读取 8 项全部不变，全部绑定／覆盖保持。AST 复核证明 i18n 非历史说明函数及原快照恢复／参数校验未改，创建与批准路径无扩张。证据 `/tmp/addp-ontology-r56-{review-red.log,review-green.log,t1.log,source-audit.json,semantic-review.json}`。已有 Platform／Go CI 自动发现覆盖，无新入口、依赖或编排；完整 T0–T3、PG／FalkorDB T2、自然 CI、激活及真实页面本轮未运行，不计通过。
