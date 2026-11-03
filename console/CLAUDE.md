@@ -43,6 +43,7 @@ console/frontend/
 - Element Plus 组件按页面模板实际依赖导入，不全量注册组件库；`App.vue` 统一提供随语言切换的 locale，入口仅显式注册 loading 指令并加载完整主题样式。开发启动时预构建依赖，避免首次导航替换优化产物；`make test-console-frontend` 的生产构建拒绝完整组件库安装器进入产物，现有浏览器门禁覆盖按需导入后的导航、认证和四主题交互。
 - 各模块仍应支持独立运行，Console iframe 集成不能破坏 standalone 模式。
 - Console 外层 URL 是 iframe 集成模式下的公开路由事实源。子模块通过共享 Console navigation bridge 同步自身路由；同模块已完成的导航只同步地址栏，不得重载 iframe，浏览器前进/后退或跨页面导航再由 Console 驱动 iframe 到目标路由。公开状态分类、canonical URL 和单历史约束统一遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。
+- 页面描述只更新当前已提交路由的最近访问，不参与导航；提前到达或迟到的其他路由描述不得覆盖会话切换的历史。`make test-console-frontend` 加载真实 Agent 页面，验证会话切换的单历史、iframe 保留、刷新与前进/后退，以及描述消息的路由隔离。HTTP 全部使用只读夹具；CI 准备 Agent 锁定依赖，Agent 前端变化同步选中 Console 门禁。
 - Graph 本体导航回归在同一 Console 门禁加载真实列表和详情，覆盖查看、稳定页签、单历史项、iframe 保留与前进/后退、刷新。图谱浏览回归另覆盖 Console 四主题切换，核对真实 G6 节点/边标签、选中与取消选中描边、详情、位置及视口保留。夹具仅模拟 HTTP 响应，拒绝 Graph 写请求，不写开发数据库；CI 同步准备 Graph 锁定依赖，Graph 前端改动会选中该宿主门禁。
 - Portal 是独立顶层产品界面，但正式入口固定为当前 Console origin 的 `/portal/`；开发环境由 Console Vite 代理到 Portal 前端，不能直接打开 `5185` 形成第二个顶层认证 origin。
 

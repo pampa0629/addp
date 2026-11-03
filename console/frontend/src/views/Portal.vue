@@ -338,6 +338,19 @@ const handleConsoleNavigationBridge = async (payload = {}, _message, event) => {
   const history = payload.history === 'replace' ? 'replace' : 'push'
   const synchronized = payload.synchronized === true
 
+  // A descriptor describes the committed page. It must never win a race
+  // against the real navigation and replace its source history entry.
+  if (payload.pageDescriptor) {
+    if (!synchronized || payload.draft || !targetModule || targetModule !== currentModule.value) {
+      throw new Error('page descriptor must describe the active module iframe')
+    }
+    if (resolvedRoute !== route.fullPath || !canOpenPage(splitConsoleRoute(resolvedRoute)[0])) {
+      return { cancelled: true }
+    }
+    recordRecentVisit(targetModule, resolvedRoute, payload.pageDescriptor)
+    return { route: resolvedRoute, history }
+  }
+
   if (synchronized) {
     if (!targetModule || targetModule !== currentModule.value) {
       throw new Error('synchronized navigation must stay within the active module')
@@ -361,9 +374,6 @@ const handleConsoleNavigationBridge = async (payload = {}, _message, event) => {
     }
   }
   if (failure) { if (draftTicket !== undefined) navigationDraft.clear(draftTicket); return { cancelled: true } }
-  if (payload.pageDescriptor && targetModule) {
-    recordRecentVisit(targetModule, resolvedRoute, payload.pageDescriptor)
-  }
   return { route: resolvedRoute, history }
 }
 

@@ -226,6 +226,16 @@ class ChangedGateTest(unittest.TestCase):
             self.assertEqual(["console", "graph"], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual(["graph"], MODULE.affected_modules(self.repository, ["graph/backend/internal/service/ontology.go"]))
 
+    def test_agent_frontend_changes_include_console_session_navigation_gate(self) -> None:
+        for name in ("agent", "console"):
+            path = self.repository / name / "frontend/package.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for path in ("agent/frontend/src/views/ChatView.vue", "agent/frontend/package-lock.json"):
+            self.assertEqual(["agent", "console"], MODULE.affected_modules(self.repository, [path]))
+        self.assertEqual(["agent"], MODULE.affected_modules(self.repository, ["agent/backend/api/chat.py"]))
+
     def test_console_delivery_route_changes_include_workbench_browser_gate(self) -> None:
         console_manifest = self.repository / "console/frontend/package.json"
         console_manifest.parent.mkdir(parents=True)

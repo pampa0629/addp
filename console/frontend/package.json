@@ -59,6 +59,10 @@
       {
         "module": "graph",
         "readyPath": "/module-ui/graph/login"
+      },
+      {
+        "module": "agent",
+        "readyPath": "/module-ui/agent/login"
       }
     ]
   }

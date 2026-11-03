@@ -208,6 +208,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if any(path.startswith("graph/frontend/") for path in files):
         affected.add("console")
 
+    # Console's navigation gate mounts real Agent sessions and their page descriptors.
+    if any(path.startswith("agent/frontend/") for path in files):
+        affected.add("console")
+
     # Workbench's browser gate loads its delivery runtime through the Console Vite proxy.
     if any(path in {
         "console/frontend/vite.config.js",
