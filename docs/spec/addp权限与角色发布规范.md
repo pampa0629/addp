@@ -39,7 +39,7 @@ Permission 回答“Principal 是否允许使用一类产品能力”，Role 是
 
 System 不维护第二份手写业务 Permission 总表。业务模块也不得在启动时动态注册 Permission，或在 Handler 中发明 Manifest 不存在的 Key。
 
-Permission owner 不必已拥有 HTTP 服务。当前 Ontology 只有语义内核和发布准入库，其 `ontology.revision.publish` 由 System 执行授权接口实际消费；覆盖登记明确指向 System 的真实 OpenAPI，不生成占位 Ontology Swagger，也不豁免未引用权限检查。Ontology 建立自有 HTTP 服务时必须同步把 API 覆盖归回自身，不能同时保留托管登记。
+Permission owner 与入口服务归属分别核验。Ontology 已有自有 HTTP 服务，其修订发布入口及权限见[本体管理契约](addp本体定义与发布规范.md#四管理入口与建模页面)，HTTP 覆盖读取 `ontology/backend/docs/swagger.json`。System 执行授权接口仍独立声明其实际消费的 `ontology.revision.publish` 条件权限；该声明不能替代 Ontology 自身入口的覆盖，也不豁免未引用权限检查。不生成占位 Swagger 或保留旧托管登记。
 
 文档中的 Role 和 Permission 例子只解释规则，不是精确目录。精确目录必须读取上述 Manifest，避免文档快照与发布产物漂移。
 
@@ -128,11 +128,11 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 角色交接绑定原任人和接任人，在同一事务中完成授予和撤任；不能先撤掉最后一个岗位持有人再创建接任角色。独立撤任必须保留同岗位可用持有人。新增角色、交接和恢复均不允许目标或接任人参与申请／复核。身份暂停立即撤销旧会话；恢复不复活旧会话。普通账号生命周期接口不得再执行平台角色持有人的受控状态变更。
 
-> 直接许可职责以《授权上下文规范》5.5.5 为准：DataItem 许可取代互斥批准模式，业务批准后办理始终保留。迁移 000248 撤销旧配置 Permission 的角色绑定并停用旧 Permission，发布新的读取与管理 Permission；不把旧首次配置或自定义配置权升级为许可管理权。迁移与运行验收状态见《System IAM 数据模型与迁移规范》。
+> 直接授权与业务批准的现行职责见[授权上下文规范 5.5.5](addp授权上下文规范.md#555-直接授权业务批准与明确交接)，不再配置逐 DataItem 的直接许可。迁移 000248 是旧许可机制的历史升级输入；000257 向前退役该机制，移除对应角色绑定并停用许可专用 Permission，不改写历史 SQL。清理范围、迁移与实际验收状态见[System IAM 的直接授权简化](../../system/docs/IAM数据模型与迁移规范.md#直接授权简化2026-10-31)，旧版本证据不代表当前版本已验收。
 
 引擎授权管理员（`tenant.engine_access_delegation_administrator`）是专职 Tenant Management Role，只允许当前 Tenant Scope 的 User。它组合委托管理、只读 Grant 创建／历史读取／撤销及必要页面候选读取。当前租户有效的委托创建 Permission 表达管理员管理范围，管理员无需委托自己；每项操作仍独立核验功能 Permission。角色不授予数据内容读取、Catalog 业务批准或 Explicit Deny，不自动分配账号，不创建委托或 Grant。模板变更沿既有发布机制推进受影响主体授权版本并撤销旧会话。
 
-数据授权办理员（`tenant.source_data_authorizer`）只允许 Tenant Scope 的 User，统一组合直接 Grant 创建与业务批准后办理：直接许可读取、只读 Grant 创建／历史读取／撤销、Catalog 条目读取和人类授权办理，以及页面所需引擎和账号／部门／项目组候选读取。直接办理使用 Grant 创建 Permission，并要求目标有效许可允许；业务办理使用 `system.engine_access_fulfillment.create`，由 Catalog 验证有效业务批准，再由 System 受理和签发，不读取直接许可。两项 Permission 保持独立校验，由同一内置角色组合；角色不包含开启／关闭许可能力。
+数据授权办理员（`tenant.source_data_authorizer`）只允许 Tenant Scope 的 User，统一组合直接 Grant 创建与业务批准后办理，以及 Grant 历史读取／撤销、Catalog 条目读取和页面所需的引擎、账号／部门／项目组候选读取。直接办理使用 `system.engine_access_grant.create`；业务办理使用 `system.engine_access_fulfillment.create`，由 Catalog 验证有效业务批准，再由 System 受理和签发。两项 Permission 保持独立校验，由同一内置角色组合；精确集合以 `system/authorization/builtin_roles.yaml` 为准。
 
 每项正式办理仍须具有当前租户授权管理员资格或目标引擎的有效管理委派。该角色不提供委派管理、业务共享确认、机器 execute、Explicit Deny 或数据内容读取／导出／写入，不自动创建委派或 Grant。角色扩展沿现有 IAM 发布机制推进已分配主体授权版本并撤销旧会话；不新增 Role Assignment，不扩张其他角色，不重写租户自定义角色及其历史。既有自定义角色仍按显式 Permission 集合判权，但产品完整办理职责只使用这个内置模板。具备角色分配权限的账号可以给自己分配该高风险角色，但须完成现有 MFA 增强认证；自我分配不豁免审计、会话失效或管理范围核验。小团队可由同一管理员兼任委派管理和授权办理，另一个账号仅作为数据接收方，无需增加专职账号。
 
