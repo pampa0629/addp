@@ -28,7 +28,7 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 | Component、草稿与发布修订 | [聚合与 Component](../docs/spec/addp数据服务消费与数据应用规范.md#531-聚合component-与创作范围)、[参数与查询配置](../docs/spec/addp数据服务消费与数据应用规范.md#52-component-参数与查询配置)、[草稿、修订与并发](../docs/spec/addp数据服务消费与数据应用规范.md#532-草稿修订与并发) |
 | Renderer 所有权与字段显示 | [共享层与模块分工](../docs/spec/addp数据服务消费与数据应用规范.md#81-common-frontend-与-workbench-边界)、[字段呈现与有限值名称](../docs/spec/addp数据服务消费与数据应用规范.md#810-字段呈现规则) |
 | 空草稿空间探索向导 | [通用空间组合](../docs/spec/addp数据服务消费与数据应用规范.md#86-通用空间数据应用组合) |
-| 应用参数、选择联动与预设 | [Selection Binding](../docs/spec/addp数据服务消费与数据应用规范.md#54-组件联动与受控下钻设计)、[Parameter Preset](../docs/spec/addp数据服务消费与数据应用规范.md#510-application-parameter-preset) |
+| 应用参数、选择联动与预设 | [Selection Binding](../docs/spec/addp数据服务消费与数据应用规范.md#54-组件联动与受控下钻设计)、[参数控件与提交](../docs/spec/addp数据服务消费与数据应用规范.md#77-参数控件与查询提交)、[Parameter Preset](../docs/spec/addp数据服务消费与数据应用规范.md#510-application-parameter-preset) |
 | 展示模式、刷新与区块 | [展示模式](../docs/spec/addp数据服务消费与数据应用规范.md#55-单页-wallboard-展示模式)、[刷新策略](../docs/spec/addp数据服务消费与数据应用规范.md#56-wallboard-应用刷新策略)、[呈现区块](../docs/spec/addp数据服务消费与数据应用规范.md#57-wallboard-应用呈现区块) |
 | 预览隔离与显式初始值回写 | [保存前预览](../docs/spec/addp数据服务消费与数据应用规范.md#89-保存前整页预览)、[创作端的显式回写动作](../docs/spec/addp数据服务消费与数据应用规范.md#212-画布联动与预览回写) |
 | 权限、访问身份与契约变化 | [用户交互](../docs/spec/addp数据服务消费与数据应用规范.md#91-用户交互)、[BFF 与服务身份](../docs/spec/addp数据服务消费与数据应用规范.md#92-bff-和服务身份)、[契约变化](../docs/spec/addp数据服务消费与数据应用规范.md#十契约变化) |
