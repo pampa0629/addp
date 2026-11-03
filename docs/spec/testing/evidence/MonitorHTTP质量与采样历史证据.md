@@ -1138,3 +1138,24 @@ report.assertions为空，无images最终身份清单、Python依赖、浏览器
 最早已查询到包含新分类的[自然Release run41613913398](https://github.com/pampa0629/addp/actions/runs/41613913398)为main／push／attempt1，固定源码`64a6a3b16fbf639a051d96061502cfe694840135`；预算实现、预算测试及shell编排与已验证f0aa912a8逐字节一致。该源码包含分类实现，尚不含其后49e08b6ac证据提交，不能将两者混作相同源码。北京时间2026-11-03 20:42:26 API仍queued／conclusion=null；Release and T2 gate selection Job125842451761排队、steps为空，本专项http-quality Job尚未创建，artifact列表为0。没有实际Linux HTTP步骤、原始预算或目录消失复发证据，不计Linux通过或失败，不借后续其他Job、旧绿或仅源码相同补齐。后续含分类的自然run也仍排队，本轮固定前述候选，不取消、重跑或调查无关CI。
 
 原始run列表／jobs／artifacts及独立audit位于`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-directory-natural-ci-20261103-t0ebcp9f/`（0700／0600）。只追加本专题与索引状态、核对主题数／锚点／引用及metadata归属，未重跑已有效本地门禁，未新开窗口、构建、Hosted、容量或定时；本次观察证据仅本地提交，回报维护会话时保持部分验收及自然Linux待执行。下一步仅手动核对该候选实际步骤及上传的同次原始预算，若目录消失复发先按新增类别定位，再讨论最小修正。
+
+
+<a id="http-natural-linux-budget-passed-20261104"></a>
+
+## 2026-11-04 固定Linux HTTP Job125925007987及原始预算通过
+
+用户要求继续手动核对唯一固定HTTP Job，未手动重跑或开启新窗口。本轮北京时间2026-11-04 05:58取得最终API、完整原始日志及同次预算artifact：[Release run41613913398／HTTP Job125925007987](https://github.com/pampa0629/addp/actions/runs/41613913398/job/125925007987)为main／自然push／attempt1，固定源码`64a6a3b16fbf639a051d96061502cfe694840135`。Job于北京时间2026-11-03 22:41:39—22:55:39实际运行并success，覆盖前次22:40仍queued的历史快照，不改写其当时事实。实际checkout SHA与API一致；该固定源码含f0aa912a8准备目录分类，预算实现／测试／shell与已验证输入一致。整run API也为success，但本次仅核验HTTP专项，不外推其他Job或全仓验收。
+
+| 实际步骤／原始记录 | 结果及边界 |
+| --- | --- |
+| 真实入口 | Verify isolated metrics lifecycle于22:41:57—22:55:34执行成功，日志明确make test-monitor-metrics及MONITOR_METRICS_TEST_ARGS=--case=http-quality；配置136项／17.694秒通过后进入真实Linux场景，没有将选择／跳过冒充实际执行 |
+| 公共前置／Go来源 | mTLS、实际IP换证、匿名／错误CA／明文及非法转发拒绝通过；真实Go进程采集、固定窗口／Monitor查询、来源隔离与停源可见，HTTPWindow／HTTPRealSource实际PASS |
+| Go告警 | HTTPAlertLifecycle实际153.34秒PASS，原生请求／固定Prometheus窗口、事件与outbox、签名通知、503重试及新成功窗口恢复同一事件的日志断言完整 |
+| Python来源与告警 | 两个真实ASGI SDK来源启动、身份隔离、自然分钟窗口、Monitor查询与历史趋势通过；第二组HTTPAlertLifecycle实际172.87秒PASS，签名重试／同一事件恢复及Python停源隔离通过，不能冒充正式Agent／Copilot产品镜像或Console页面 |
+| 编译及原预算 | report passed／exit0／error_code=null，816.455593秒<1200；三个compile_stages均完整、按序且exit0。197次完整样本最长0.969338409秒<4；26次编译采样均confirmed／resumed，无恢复错误。报告未保存每次采样开始端点，采样间隔只由原运行期五秒守卫通过证明，不另造独立间隔最大值 |
+| 资源／流量 | 硬配额峰值3.25 CPU／4026531840字节内存，完整私有写上界峰值1542680639字节，分别低于原4 CPU／4 GiB／2 GiB停止线；逐样本核对work＋volume＋writable＋tmpfs等于总量。Go148次、Python75／28次，共251≤300；三源均有失败／健康两阶段且各自预算内，健康最后请求晚于失败阶段 |
+| 清理与失败语义 | cleanup_verified=true、private_directory_removed=true，日志确认当次容器／网络／卷及临时文件零残留；无compile_cleanup_error／request_traffic_error／cleanup_overdue，无failure_detail或目录消失。本轮未复发不证明历史删除者或准备并发风险已修复，不据此增加重试或放宽du失败 |
+
+Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方artifact13239563817名为monitor-http-budget-41613913398-1，26623字节；下载ZIP的SHA256=`c3b7e325ca3baa7e226409c479eaef427a29f58d110dc3f051d718fe6e56e4b8`与GitHub digest一致，CRC及唯一monitor-http-budget.json成员核验通过。原JSON148561字节，SHA256=`f5605587decceb00c1be9788a037730963aa2b0b1b8089370d52b08356baa6e5`；368项input_sha256逐文件与固定64a6a3b16源码一致，inputs_unchanged=true，日志末尾封闭预算摘要所有字段与原JSON逐项相同。完整日志134242字节，SHA256=`8d572e324e55c06b69550171c23b348d1c34659dc67a3c3b2efeed917e10cef1`；没有只依据绿色徽标或下载摘要判断通过。
+
+原始job／run／artifacts元数据、job.log／budget.zip／report.json及独立audit在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-125925007987-20261104-pvikyz67/`（0700／0600）。本轮仅更新58主题证据与索引、核对固定输入／归档／请求／资源／清理及文档锚点，不重跑有效代码门禁，也不触发额外CI。原eb8af3281准备目录失败保持独立failed，本轮是后继固定源码的一次Linux HTTP T2通过，不宣称根因修复、稳定性、正式密码／MFA产品页面、Hosted或72小时容量验收；未运行Hosted、容量或定时，未新开本地窗口。更新证据并回报维护会话后，建议下一步回到正式Agent／Copilot产品到页面的剩余准入与验收方案，真实窗口仍须另行确认。

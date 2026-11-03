@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 17 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 57 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 58 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -896,3 +896,10 @@ b0420db65已随共享main发布，固定dfeff7c9b自然Linux原始日志确认HT
 ### 2026-11-04 Redis／MinIO 既有来源恢复（专项T1／T2通过）
 
 统一recover及完整本地启动已接通两域PG／Redis／MinIO，健康来源保持，已停用账号不重启；只恢复同一数据库容器的原受管来源，不重建账号或权限。共享恢复与编排、启动守卫、两协议T1、双Redis／双MinIO真实mTLS／恢复／拒绝及零残留通过；完整开发门禁在相关206项等通过后被其他owner的Security Online登记阻断，整套仍未通过。个人实际恢复及CI／Hosted未验，无个人服务启停或定时任务。[完整证据与失败边界](Monitor采集来源与引擎指标历史证据.md#redisminio-已安装来源的无账号修改恢复2026-11-04)。
+
+
+### 2026-11-04 固定Linux HTTP Job125925007987及原始预算通过
+
+[实际步骤、同次预算及覆盖限制](MonitorHTTP质量与采样历史证据.md#http-natural-linux-budget-passed-20261104)
+
+自然main/push/attempt1固定64a6a3b16，HTTP Job125925007987实际成功，原artifact13239563817的digest／CRC／368输入及日志摘要全部核对。816.46秒、197次完整检查最长0.969338秒，251次请求、资源原限额内及零残留清理；Go/Python SDK采集→Monitor查询／告警签名重试／同一事件恢复／停源实际通过。目录消失本轮未复发，不计历史根因修复或正式Agent/Copilot产品页面、Hosted／容量通过；未重跑／新窗口／定时。
