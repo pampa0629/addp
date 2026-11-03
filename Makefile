@@ -1695,7 +1695,7 @@ test-execution-online-ci-runner: ## 验证 Graph/Cleanup 编排、前置、报�
 .PHONY: test-cleanup-native-online-runner
 test-cleanup-native-online-runner: ## 验证原生 Cleanup 显式选择、隔离编排、代理及证据反例，不启动 Hosted
 	@bash -n scripts/test/online-hosted-cleanup-native-gate.sh business/scripts/online-manager-minio-fixture.sh business/scripts/online-continuous-fixture.sh
-	@python3 -m unittest scripts/test/cleanup-native-effects-online_test.py scripts/test/native-effect-proxy_test.py scripts/test/cleanup-native-infra_test.py scripts/test/online-hosted-cleanup-native-gate_test.py scripts/test/online-continuous-fixture_test.py scripts/test/online-manager-minio-fixture_test.py
+	@python3 -m unittest scripts/test/cleanup-native-effects-online_test.py scripts/test/native-effect-proxy_test.py scripts/test/cleanup-native-infra_test.py scripts/test/online-hosted-cleanup-native-gate_test.py scripts/test/online-continuous-fixture_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/manager-internal-artifact-lineage-online_test.py
 
 .PHONY: test-protection-deployment-runner
 test-protection-deployment-runner: ## 验证保护消费者隔离部署、租户初始化和精确清理诊断
