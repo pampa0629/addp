@@ -20,6 +20,7 @@ import time
 import tempfile
 import uuid
 import zipfile
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlencode
 
 API = import_module('scripts.utils.online-api')
@@ -573,6 +574,7 @@ class ModelSourceAuthorization:
         self.base = f'/api/v1/system/engines/{self.engine_id}'
         self.grants = []
         self.confirmed = set()
+        self.node_receipts = {}
         self.denies = []
         self.confirmed_denies = set()
 
@@ -622,9 +624,65 @@ class ModelSourceAuthorization:
                             {'reason': 'Disposable FTP model source withdrawal'})
         self.grants.remove(command)
         self.confirmed.discard(command)
+        self.node_receipts.pop(command, None)
+
+    def node_grant(self, target, *, action, recursive, seconds=300):
+        require(self.source_type == 'minio' and action in {'metadata_read', 'read'} and
+                type(recursive) is bool and type(seconds) is int and 0 < seconds <= 300,
+                'bounded MinIO node fixture required')
+        command = str(uuid.uuid4())
+        body = dict(request_id=command, catalog_path=target, node_recursive=recursive,
+                    recipient_type='user', recipient_id=self.recipient, action=action,
+                    expiry_mode='at_time', expires_at=(datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat(),
+                    reason='Disposable MinIO persistent node scope')
+        self.grants.append(command)
+        self.node_receipts[command] = dict(body, engine_id=str(self.engine_id), operator_principal_id=self.operator)
+        receipt = self.issuer.request('POST', self.base + '/access_grants', (201,), body).payload
+        require(isinstance(receipt, dict) and all(receipt.get(k) == body[k] for k in
+                ('request_id', 'catalog_path', 'node_recursive', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')) and
+                type(receipt.get('node_recursive')) is bool and receipt.get('operator_principal_id') == self.operator and
+                receipt.get('engine_id') == str(self.engine_id) and receipt.get('approval_mode') == 'independent' and
+                receipt.get('revocation') is None and not any(receipt.get(k) for k in
+                ('item_fingerprint', 'boundary_hash', 'file_composition', 'scope', 'metadata_target')) and
+                datetime.fromisoformat(receipt['expires_at'].replace('Z', '+00:00')) == datetime.fromisoformat(body['expires_at']),
+                'node Grant changed its scope, subject, expiry or gained a precise binding')
+        self.confirmed.add(command)
+        return receipt
+
+    def _retire_expired_node_grants(self):
+        receipts = self.node_receipts
+        if not receipts:
+            return
+        history = self.issuer.request('GET', self.base + '/access_grants/history?' + urlencode({
+            'recipient_type': 'user', 'recipient_id': self.recipient, 'state': 'expired', 'page_size': 100}), (200,)).payload
+        require(isinstance(history, dict) and isinstance(history.get('data'), list) and
+                type(history.get('total')) is int and history['total'] == len(history['data']) <= 100,
+                'complete expired node history required for cleanup')
+        settled = []
+        for row in history['data']:
+            require(isinstance(row, dict), 'invalid expired node history')
+            command = row.get('request_id')
+            if command not in receipts:
+                continue
+            expected = receipts[command]
+            require(all(row.get(k) == expected[k] for k in ('catalog_path', 'node_recursive', 'recipient_type',
+                    'recipient_id', 'action', 'expiry_mode', 'engine_id', 'operator_principal_id')) and
+                    type(row.get('node_recursive')) is bool and row.get('revocation') is None and
+                    datetime.fromisoformat(row['expires_at'].replace('Z', '+00:00')) ==
+                    datetime.fromisoformat(expected['expires_at'].replace('Z', '+00:00')),
+                    'expired node history changed its owned scope or lifecycle')
+            settled.append(command)
+        for command in settled:
+            self.grants.remove(command)
+            self.confirmed.discard(command)
+            del receipts[command]
 
     def cleanup(self):
         errors = []
+        try:
+            self._retire_expired_node_grants()
+        except Exception:
+            errors.append('expired node history')
         for command in list(self.denies):
             try:
                 self.release(command, cleanup=True)

@@ -17,6 +17,170 @@ FIXTURE=importlib.import_module('business.scripts.online-envi-fixture')
 OWNER=importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
 CASE=importlib.import_module('scripts.test.manager-envi-online')
 class ENVIHostedCaseTest(unittest.TestCase):
+    def test_expired_minio_node_cleanup_requires_database_history(self):
+        original=dict(request_id='owned',catalog_path={'engine_id':12},node_recursive=False,recipient_type='user',
+            recipient_id='33',action='read',expiry_mode='at_time',expires_at='2000-01-01T00:00:00Z',
+            engine_id='12',operator_principal_id='34',revocation=None)
+        for changed in (None,dict(action='metadata_read'),dict(revocation={'request_id':'owned'}),dict(expires_at='2001-01-01T00:00:00Z')):
+            obj=CASE.GRANTS.ModelSourceAuthorization.__new__(CASE.GRANTS.ModelSourceAuthorization)
+            obj.grants=['owned'];obj.confirmed={'owned'};obj.denies=[];obj.node_receipts={'owned':original};obj.base='/owned';obj.recipient='33'
+            calls=[]
+            def request(method,path,statuses,*args):
+                calls.append((method,path))
+                if method!='GET':raise RuntimeError('expired Grant must not be revoked again')
+                self.assertEqual(parse_qs(urlparse(path).query)['state'],['expired'])
+                row=dict(original,**(changed or {}))
+                return SimpleNamespace(payload=dict(total=1,data=[row]))
+            obj.issuer=SimpleNamespace(request=request)
+            if changed:
+                with self.assertRaises(CASE.GRANTS.SuiteError):obj.cleanup()
+                self.assertEqual(obj.grants,['owned'])
+            else:
+                obj.cleanup();self.assertEqual(obj.grants,[]);self.assertEqual(obj.node_receipts,{})
+                self.assertEqual([method for method,_ in calls],['GET'])
+
+    def test_minio_node_grant_is_one_owned_strict_command(self):
+        grant_class=CASE.GRANTS.ModelSourceAuthorization
+        target=dict(version='catalog.path/v1',engine_id=12,segments=[
+            dict(term='service',kind='service',name=''),dict(term='bucket',kind='bucket',name='bucket')])
+        for action in ('metadata_read','read'):
+            for recursive in (False,True):
+                obj=grant_class.__new__(grant_class)
+                obj.source_type='minio';obj.engine_id=12;obj.operator='34';obj.recipient='33';obj.base='/owned';obj.grants=[];obj.confirmed=set();obj.node_receipts={}
+                sent=[]
+                def request(method,path,statuses,body):
+                    self.assertIn(body['request_id'],obj.grants)
+                    sent.append(copy.deepcopy(body))
+                    return SimpleNamespace(payload=dict(body,engine_id='12',operator_principal_id='34',approval_mode='independent',revocation=None))
+                obj.issuer=SimpleNamespace(request=request)
+                receipt=obj.node_grant(target,action=action,recursive=recursive)
+                self.assertEqual(len(sent),1);self.assertEqual(receipt['node_recursive'],recursive)
+                self.assertNotIn('item_fingerprint',sent[0]);self.assertNotIn('expected_boundary_hash',sent[0])
+                self.assertEqual(obj.confirmed,{sent[0]['request_id']})
+        for change in (dict(operator_principal_id='other'),dict(node_recursive=1),dict(boundary_hash='a'*64),dict(expires_at='2000-01-01T00:00:00+00:00')):
+            obj.grants=[];obj.confirmed=set();obj.node_receipts={}
+            def wrong(method,path,statuses,body):
+                return SimpleNamespace(payload=dict(dict(body,engine_id='12',operator_principal_id='34',approval_mode='independent',revocation=None),**change))
+            obj.issuer=SimpleNamespace(request=wrong)
+            with self.assertRaises((ValueError,CASE.GRANTS.SuiteError)):obj.node_grant(target,action='read',recursive=True)
+            self.assertEqual(len(obj.grants),1);self.assertEqual(obj.confirmed,set())
+
+    def test_minio_future_physical_fixture_has_fixed_bytes_and_exact_cleanup(self):
+        class S3Error(Exception):
+            def __init__(self,code):self.code=code
+        class Response(io.BytesIO):
+            def release_conn(self):pass
+        objects={f'envi/{key}':value for spec in FIXTURE.sources()for key,value in FIXTURE.pair(spec).items()}
+        class Storage:
+            def __init__(self,*args,**kwargs):pass
+            def get_object(self,bucket,key):
+                if key not in objects:raise S3Error('NoSuchKey')
+                return Response(objects[key])
+            def put_object(self,bucket,key,stream,size,**kwargs):
+                objects[key]=stream.read();self_test.assertEqual(len(objects[key]),size)
+            def remove_object(self,bucket,key):objects.pop(key,None)
+            def list_objects(self,bucket,*,prefix,recursive):return [SimpleNamespace(object_name=k)for k in objects if k.startswith(prefix)]
+        self_test=self
+        with tempfile.TemporaryDirectory()as directory:
+            root=Path(directory);(root/'envi').mkdir()
+            for spec in FIXTURE.sources():
+                for name,raw in FIXTURE.pair(spec).items():(root/'envi'/name).write_bytes(raw)
+            args=dict(storage=dict(endpoint='fixture',access_key='fake',secret_key='fake',bucket='bucket'),nfs_root=str(root))
+            with mock.patch.dict(sys.modules,{'minio':SimpleNamespace(Minio=Storage),'minio.error':SimpleNamespace(S3Error=S3Error)}):
+                self.assertEqual(FIXTURE.worker(dict(args,action='node-create')),dict(objects_created=6,sources_unchanged=True))
+                self.assertTrue(all(objects[k]==v for k,v in FIXTURE.node_sources().items()))
+                with self.assertRaisesRegex(ValueError,'collided'):FIXTURE.worker(dict(args,action='node-create'))
+                key=next(iter(FIXTURE.node_sources()));objects[key]=b'foreign'
+                with self.assertRaisesRegex(ValueError,'changed'):FIXTURE.worker(dict(args,action='node-delete'))
+                objects[key]=FIXTURE.node_sources()[key]
+                self.assertEqual(FIXTURE.worker(dict(args,action='node-delete')),dict(objects_removed=6,sources_unchanged=True))
+                self.assertTrue(all(k.startswith('envi/') and '/'not in k[5:] for k in objects))
+
+    def node_scope_scenario(self, *, failure=None):
+        from datetime import datetime, timezone
+        spec=FIXTURE.sources()[0];state={'now':1000.,'active':{},'created':False,'removed':False,'next':0};events=[]
+        class Authorization:
+            recipient='33';base='/api/v1/system/engines/12'
+            def node_grant(self,target,*,action,recursive,seconds=300):
+                state['next']+=1;key=str(state['next']);events.append(('grant',action,recursive))
+                row=dict(request_id=key,catalog_path=target,action=action,node_recursive=recursive,
+                    expires_at=datetime.fromtimestamp(state['now']+seconds,timezone.utc).isoformat())
+                state['active'][key]=row;return row
+            def revoke(self,key):events.append(('revoke',key));del state['active'][key]
+            def cleanup(self):events.append(('cleanup',));state['active'].clear()
+        auth=Authorization()
+        def allowed(name,action):
+            for row in state['active'].values():
+                if state['now']>=datetime.fromisoformat(row['expires_at']).timestamp():continue
+                if action=='read' and row['action']!='read':continue
+                parts=[p['name']for p in row['catalog_path']['segments'][1:]];target=name.split('/')
+                if target[:len(parts)]==parts and (row['node_recursive'] or len(target)==len(parts)+1):return True
+            return False
+        def request(method,path,statuses):
+            parsed=urlparse(path)
+            if parsed.path.endswith('/access_grants'):
+                return SimpleNamespace(payload={'total':len(state['active']),'data':list(state['active'].values())})
+            if '/meta/items/' in path:
+                code=404 if not state['active'] else 200;payload={};raw=b''
+            else:
+                name=parse_qs(parsed.query)['locator'][0];permitted=allowed(name,'read')
+                code=200 if permitted else 403
+                payload={} if permitted else {'error':'denied','error_code':'source_access_denied'};raw=b''
+                if permitted:
+                    if failure=='read':raise RuntimeError('source read failed')
+                    if name.endswith('node-future-'+spec['name']):label='node-future-'
+                    elif '/future-' in name:label='future-'
+                    else:label=''
+                    data=io.BytesIO()
+                    with zipfile.ZipFile(data,'w',compression=zipfile.ZIP_DEFLATED)as archive:
+                        for key,value in FIXTURE.pair(spec).items():archive.writestr(label+key,value)
+                    raw=data.getvalue()
+                    if failure=='bytes':raw=b'changed'
+                elif failure=='denial':payload['source_data']='leaked'
+            if code not in statuses:raise ValueError('unexpected status '+str(code))
+            return SimpleNamespace(payload=payload,raw=raw)
+        client=SimpleNamespace(request=request);auth.issuer=client
+        def find(client,engine,name,label):
+            if not allowed(name,'metadata_read'):raise RuntimeError('metadata hidden')
+            return dict(id=name,full_name=name)
+        def physical(action):
+            events.append((action,))
+            if action=='node-create':
+                self.assertTrue(any(row['action']=='read' and not row['node_recursive']for row in state['active'].values()))
+                state['created']=True
+                if failure=='create':raise RuntimeError('partial source creation')
+                return dict(objects_created=6,sources_unchanged=True)
+            self.assertEqual(action,'node-delete');state['removed']=True
+            if failure=='cleanup':raise RuntimeError('source cleanup failed')
+            return dict(objects_removed=6,sources_unchanged=True)
+        owner=SimpleNamespace(find_fixture_item=find,build_item_locator=lambda engine,item:item['full_name'],
+            validate_model_bundle=OWNER.validate_model_bundle,wait_for_meta_scan=lambda *a,**k:events.append(('scan',k['scope'])))
+        report=dict(checks={},commands=[],cleanup={})
+        def run():return CASE.verify_minio_node_scope(client,auth,12,'bucket',spec,owner,physical,180,
+            clock=lambda:state['now'],sleep=lambda n:state.update(now=state['now']+n),evidence=report)
+        return run,state,events,report
+
+    def test_minio_nodes_future_depth_expiry_and_independent_metadata(self):
+        run,state,events,report=self.node_scope_scenario();self.assertIs(run(),report)
+        self.assertEqual(set(report['checks']),{'metadata_does_not_read','nonrecursive_future_and_sibling_isolation',
+            'withdrawal_retains_independent_metadata','recursive_prefix_isolation','bucket_recursion','natural_expiry'})
+        self.assertTrue(all(report['checks'].values()));self.assertEqual(len(report['commands']),6)
+        self.assertTrue(all(row['item_id']==row['full_name'] for row in report['downloads']))
+        self.assertTrue(all(row['bundle']['members'] and row['bundle']['sha256'] for row in report['downloads'] if row['status']==200))
+        self.assertTrue(all(row['error_code']=='source_access_denied' for row in report['downloads'] if row['status']==403))
+        self.assertEqual(state['active'],{});self.assertTrue(state['removed'])
+        self.assertEqual(report['cleanup'],dict(zero_current_source_rules=True,future_objects_removed=True))
+        self.assertEqual(events[0],('grant','metadata_read',True))
+
+    def test_minio_node_failure_always_cleans_owned_grants_and_future_objects(self):
+        for failure in ('read','bytes','denial','create','cleanup'):
+            with self.subTest(failure=failure):
+                run,state,events,report=self.node_scope_scenario(failure=failure)
+                with self.assertRaises((ValueError,RuntimeError,zipfile.BadZipFile)):run()
+                self.assertEqual(state['active'],{});self.assertIn(('cleanup',),events)
+                if failure in ('create','cleanup'):self.assertTrue(state['removed'])
+                if failure=='cleanup':self.assertIn('errors',report['cleanup'])
+
     def test_read_approval_precedes_consumer_catalog_and_is_withdrawn_on_failure(self):
         events=[]
         class Authorization:
@@ -41,7 +205,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='test-envi',GATEWAY_URL='http://fixture',
                 ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',
                 ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
-            with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization):
+            with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}):
                 with self.assertRaisesRegex(RuntimeError,'owned catalog failure'):
                     CASE.run(Path('/repo'),env,owner,physical_runner=physical)
             report=json.loads(Path(directory,'manager-envi.json').read_text())
@@ -184,7 +348,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
             wait_for_meta_scan=scan,find_fixture_item=find,ArtifactFixture=OWNER.ArtifactFixture,build_item_locator=OWNER.build_item_locator,
             validate_model_bundle=OWNER.validate_model_bundle,generate_raster_cog=generate,cleanup_managed_artifact=cleanup,RASTER_TASK_TYPE=OWNER.RASTER_TASK_TYPE)
         env=dict(ADDP_ONLINE_MANAGER_CASE='native-envi',ADDP_ONLINE_ARTIFACT_DIR=directory,ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='envi-test',GATEWAY_URL='http://fixture',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='engine',ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
-        with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE.MEDIA,'run_browser',browser):
+        with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE.MEDIA,'run_browser',browser),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}):
             if browser_failure:
                 with self.assertRaisesRegex(RuntimeError,'owned browser failure'):CASE.run(Path('/repo'),env,owner,physical_runner=physical)
                 report=json.loads(Path(directory,'manager-envi.json').read_text())
@@ -206,7 +370,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
         for failure in (False,True):
             with self.subTest(failure=failure),tempfile.TemporaryDirectory()as directory:
                 report=self.full_scenario(directory,browser_failure=failure)
-                self.assertEqual(report['schema_version'],'addp.manager-envi/v3')
+                self.assertEqual(report['schema_version'],'addp.manager-envi/v4')
                 self.assertEqual(report['result'],'failed'if failure else 'passed')
                 self.assertEqual(len(report['cases']),6)
                 self.assertTrue(all(c['original_withdrawal_verified']for c in report['cases']))
@@ -330,7 +494,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
         self.assertIn('issuer_permissions=ENVI_INITIALIZER_PERMISSIONS',runner)
         self.assertNotIn('grant.deny(',runner)
         self.assertNotIn('grant.release(',runner)
-        self.assertIn('addp.manager-envi/v3',runner)
+        self.assertIn('addp.manager-envi/v4',runner)
 
     def test_infra_failure_diagnostic_is_owned_bounded_and_redacted(self):
         with tempfile.TemporaryDirectory() as directory:

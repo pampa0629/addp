@@ -5,6 +5,7 @@ import importlib
 import json
 from pathlib import Path
 import time
+from datetime import datetime
 from urllib.parse import urlencode
 
 FIXTURE=importlib.import_module('business.scripts.online-envi-fixture')
@@ -77,6 +78,111 @@ def cleanup_fixture(client,fixture,timeout,tenant,owner,physical):
         require(proof==dict(object_deleted=True,temporary_inputs_removed=True,source_unchanged=True),'incomplete exact physical cleanup')
     return dict(fixture.cleanup,results_observed=len(rows),**proof)
 
+
+def verify_minio_node_scope(client, authorization, engine, bucket, spec, owner, physical, timeout, *, clock=time.time, sleep=time.sleep, evidence=None):
+    """Existing MinIO fixture only; no personal account, extra role or source ACL."""
+    report = evidence if evidence is not None else dict(checks={}, commands=[], cleanup={})
+    root = {'version':'catalog.path/v1','engine_id':engine,'segments':[
+        {'term':'service','kind':'service','name':''}, {'term':'bucket','kind':'bucket','name':bucket}]}
+    prefix = dict(root, segments=root['segments'] + [{'term':'prefix','kind':'prefix','name':'envi'}])
+    names = [bucket+'/envi/'+spec['name'], bucket+'/envi/node-future-'+spec['name'],
+             bucket+'/envi/node-child/future-'+spec['name'], bucket+'/envi-neighbor/future-'+spec['name']]
+    items = {}
+    report['result']='incomplete'
+    created = False
+    def issue(target, action, recursive, seconds=300):
+        receipt=authorization.node_grant(target, action=action, recursive=recursive, seconds=seconds)
+        report['commands'].append(dict(request_id=receipt['request_id'],catalog_path=target,
+            action=action,recursive=recursive,expires_at=receipt['expires_at']))
+        return receipt
+    def visible(name):
+        item=owner.find_fixture_item(client,engine,name,'MinIO node fixture')
+        items[name]=item
+        return item
+    def download(name,status):
+        item=items[name]
+        path='/api/v1/manager/downloads/file?'+urlencode({'locator':owner.build_item_locator(engine,item)})
+        response=client.request('GET',path,(status,))
+        observation=dict(item_id=item['id'],full_name=name,status=status)
+        if status==200:
+            label='node-future-' if name==names[1] else 'future-' if name in names[2:] else ''
+            members={label+k:v for k,v in spec['members'].items()}
+            observation['bundle']=owner.validate_model_bundle(response.raw,members)
+        else:
+            require(isinstance(response.payload,dict) and set(response.payload)<= {'error','error_code'} and
+                    response.payload.get('error') and response.payload.get('error_code')!='security_protection_required',
+                    'node denial returned source data or an uninitialized Security boundary')
+            observation['error_code']=response.payload.get('error_code')
+        report.setdefault('downloads',[]).append(observation)
+        return status
+    failure=None
+    def zero_current_rules():
+        current=authorization.issuer.request('GET',authorization.base+'/access_grants?'+urlencode({
+            'recipient_type':'user','recipient_id':authorization.recipient,'page_size':100}),(200,)).payload
+        require(isinstance(current,dict) and current.get('total')==0 and current.get('data')==[], 'node scenario requires zero current source rules')
+    try:
+        zero_current_rules()
+        issue(root,'metadata_read',True)
+        visible(names[0]);download(names[0],403)
+        report['checks']['metadata_does_not_read']=True
+        direct=issue(prefix,'read',False)
+        download(names[0],200)
+        # New source objects and their first Meta identities both follow issuance.
+        created=True
+        require(physical('node-create')==dict(objects_created=6,sources_unchanged=True),'future source creation proof')
+        for path in (bucket+'/envi',bucket+'/envi-neighbor'):
+            owner.wait_for_meta_scan(client,engine,time.monotonic()+timeout,scope={'catalog_paths':[path]})
+        for name in names[1:]:visible(name)
+        download(names[1],200);download(names[2],403);download(names[3],403)
+        report['checks']['nonrecursive_future_and_sibling_isolation']=True
+        authorization.revoke(direct['request_id'])
+        download(names[0],403);visible(names[0])
+        report['checks']['withdrawal_retains_independent_metadata']=True
+        recursive=issue(prefix,'read',True)
+        download(names[2],200);download(names[3],403)
+        authorization.revoke(recursive['request_id'])
+        report['checks']['recursive_prefix_isolation']=True
+        direct_bucket=issue(root,'read',False)
+        download(names[0],403)
+        authorization.revoke(direct_bucket['request_id'])
+        recursive_bucket=issue(root,'read',True)
+        download(names[3],200)
+        authorization.revoke(recursive_bucket['request_id'])
+        report['checks']['bucket_recursion']=True
+        expiring=issue(prefix,'read',False,seconds=5)
+        download(names[1],200)
+        expires=datetime.fromisoformat(expiring['expires_at'].replace('Z','+00:00')).timestamp()
+        require(0 < expires-clock() <= 6,'bounded expiry window required')
+        while True:
+            remaining=expires-clock()
+            if remaining<0:break
+            sleep(min(0.25,remaining+0.01))
+        download(names[1],403);visible(names[1])
+        report['checks']['natural_expiry']=True
+        report['result']='passed'
+        return report
+    except BaseException as error:
+        failure=error
+        report['result']='failed'
+        raise
+    finally:
+        errors=[]
+        try:
+            authorization.cleanup()
+            zero_current_rules()
+            for item in items.values():client.request('GET',f"/api/v1/meta/items/{item['id']}",(404,))
+            report['cleanup']['zero_current_source_rules']=True
+        except Exception as error:errors.append(type(error).__name__)
+        if created:
+            try:
+                require(physical('node-delete')==dict(objects_removed=6,sources_unchanged=True),'future objects remain')
+                report['cleanup']['future_objects_removed']=True
+            except Exception as error:errors.append(type(error).__name__)
+        if errors:
+            report['cleanup']['errors']=errors
+            report['result']='failed'
+            if failure is None:raise ValueError('MinIO node fixture cleanup failed')
+
 def run(repository,environment,owner,*,physical_runner=None,browser_runner=None):
     require(environment.get('ADDP_ONLINE_MANAGER_CASE')=='native-envi','independent ENVI case required')
     physical=physical_runner or (lambda action,request=None:FIXTURE.physical(action,repository,environment,request))
@@ -84,7 +190,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     client=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30)
     identity=owner.validate_user_identity(client,tenant)
     issuer=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30)
-    report=dict(source_authorization={'grants':[]},schema_version='addp.manager-envi/v3',case='native-envi',run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],result='incomplete',identity=identity,cases=[],cleanup={})
+    report=dict(source_authorization={'grants':[]},schema_version='addp.manager-envi/v4',case='native-envi',run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],result='incomplete',identity=identity,cases=[],cleanup={})
     grants=[];fixtures=[];seeded=False;stage='seed';failure=None
     timeout=float(environment.get('ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS','180'))
     try:
@@ -101,6 +207,12 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 require(isinstance(execution,str) and bool(execution),'ENVI source scan execution required')
                 report.setdefault('source_scans',[]).append(dict(storage=storage,engine_id=engine,phase=phase,catalog_paths=[prefix+'envi'],principal_id=grant.operator if storage=='nfs' else grant.recipient,execution_id=execution))
             stage='scan';scan_source('initial')
+            if storage=='minio':
+                stage='minio-node-scope'
+                # Retain partial evidence even when the new scope scenario fails.
+                node_report=report['minio_node_scope']=dict(checks={},commands=[],cleanup={})
+                verify_minio_node_scope(client,grant,engine,
+                    environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET'],seed['sources'][0],owner,physical,timeout,evidence=node_report)
             for spec in seed['sources']:
                 name=prefix+'envi/'+spec['name'];header=prefix+'envi/'+spec['header']
                 stage='source_approval'

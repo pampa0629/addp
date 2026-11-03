@@ -44,6 +44,11 @@ def sources():
         result.append(spec)
     return result
 
+def node_sources():
+    spec = sources()[0]
+    return {prefix + name: raw for prefix in ('envi/node-future-', 'envi/node-child/future-', 'envi-neighbor/future-')
+            for name, raw in pair(spec).items()}
+
 def worker(request):
     from minio import Minio
     storage=request['storage'];client=Minio(storage['endpoint'],access_key=storage['access_key'],secret_key=storage['secret_key'],secure=False)
@@ -63,6 +68,29 @@ def worker(request):
                 target=directory/name;target.write_bytes(raw);target.chmod(0o644)
                 client.put_object(bucket,'envi/'+name,io.BytesIO(raw),len(raw),content_type='application/octet-stream')
         verify_sources();return {'sources':specs}
+    if action in ('node-create', 'node-delete'):
+        from minio.error import S3Error
+        expected = node_sources()
+        # Fixed disposable keys only; never copy/delete a user-supplied path.
+        for key, raw in expected.items():
+            try:
+                response = client.get_object(bucket, key)
+            except S3Error as error:
+                require(error.code in ('NoSuchKey', 'NoSuchObject'), 'unknown node fixture state')
+                current = None
+            else:
+                try: current = response.read()
+                finally: response.close(); response.release_conn()
+            require(current is None if action == 'node-create' else current in (None, raw), 'node fixture collided or changed')
+            if action == 'node-create':
+                client.put_object(bucket, key, io.BytesIO(raw), len(raw), content_type='application/octet-stream')
+            elif current is not None:
+                client.remove_object(bucket, key)
+        remaining = [entry.object_name for prefix in ('envi/node-future-', 'envi/node-child/', 'envi-neighbor/')
+                     for entry in client.list_objects(bucket, prefix=prefix, recursive=True)]
+        require(set(remaining) == (set(expected) if action == 'node-create' else set()), 'node fixture residuals differ')
+        verify_sources()
+        return {'objects_created' if action == 'node-create' else 'objects_removed': len(expected), 'sources_unchanged': True}
     if action in ('header-layout','header-version'):
         require(request.get('source_type') in ('nfs','minio') and request.get('case')=='bsq' and type(request.get('changed')) is bool,'bounded header mutation required')
         spec=next(s for s in specs if s['case']=='bsq');original=spec['header'];alternate=spec['name']+'.hdr'
@@ -159,7 +187,7 @@ def capture_infra_diagnostic(environment,*,runner=subprocess.run):
     return evidence
 
 def physical(action,repository,environment,request=None):
-    require(action in ('seed','verify','delete','cog','deleted-cog','residuals','header-layout','header-version'),'unknown physical action')
+    require(action in ('seed','verify','delete','cog','deleted-cog','residuals','header-layout','header-version','node-create','node-delete'),'unknown physical action')
     require(all(environment.get(k)==v for k,v in {'ADDP_ONLINE_HOSTED':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux','ADDP_ONLINE_MANAGER_CASE':'native-envi'}.items()),'exclusive Hosted ENVI case required')
     state=Path(environment['ADDP_ONLINE_SECRET_DIR'])/'nfs-root';require(not state.is_symlink(),'invalid state');root=Path(state.read_text().strip())
     require(re.fullmatch(r'/tmp/addp-online-manager-nfs\.[A-Za-z0-9]{6}',str(root)) and not root.is_symlink() and (root/'.addp-online-owner').read_text().strip()==environment['ADDP_ONLINE_TEST_RUN_ID'],'unowned NFS root')
