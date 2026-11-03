@@ -19,7 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestUploadRouteChecksUserAndAllPermissionsBeforeReadingFiles(t *testing.T) {
+func TestUploadRouteChecksUserAndUploadPermissionBeforeReadingFiles(t *testing.T) {
 	permissions := []string{"manager.data_item.create", "meta.scan_task.execute", "meta.scan_task.read"}
 	identities := map[string]authorization.AuthContext{
 		"allowed": authtest.NewTenantUserAuthContext("7", "31", permissions),
@@ -60,7 +60,7 @@ func TestUploadRouteChecksUserAndAllPermissionsBeforeReadingFiles(t *testing.T) 
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
 			want := http.StatusForbidden
-			if token == "allowed" {
+			if token == "allowed" || token == "meta.scan_task.execute" || token == "meta.scan_task.read" {
 				want = http.StatusInternalServerError
 			} // authorized request reaches the unconfigured handler
 			if response.Code != want {

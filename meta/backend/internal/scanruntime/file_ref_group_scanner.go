@@ -33,6 +33,7 @@ func scanFileRefGroups(
 	if !ok {
 		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement EngineCatalogProvider", resource.EngineType)
 	}
+	contentReader = scanresource.BoundRefreshReader(ctx, resource, contentReader)
 	itemTerm := scanflow.EngineCatalogLeafTermForPlugin(enginePlugin, plugin.EngineCatalogTermFile)
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
@@ -52,6 +53,12 @@ func scanFileRefGroups(
 		// Refs define the boundary; storage facts must come from the engine,
 		// just as they do for an exact leaf or a full directory scan.
 		for j, file := range candidates.Files {
+			if err := scanresource.CheckCollectionRead(ctx, resource); err != nil {
+				return result, err
+			}
+			if err := scanresource.CheckRefreshContent(ctx, file.EngineCatalogPath); err != nil {
+				return result, err
+			}
 			entry, err := resolveRefGroupSource(ctx, catalogProvider, connInfo, file.EngineCatalogPath)
 			if err != nil {
 				return result, err

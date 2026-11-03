@@ -41,6 +41,8 @@ export const resolveCanonicalNodeSelection = async ({ node, locator, loadTree })
 export const resourceTreeRefreshKind = (locator) => {
   const loc = parseLocator(locator)
   if (loc.itemId) return 'item'
+  // Engine roots are navigation only. Centralized scans belong to Meta.
+  if (loc.path.length === 0) return ''
   if (loc.nodeId) return 'node'
   throw new Error('resource tree refresh requires node_id or item_id')
 }

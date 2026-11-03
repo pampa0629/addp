@@ -2050,7 +2050,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 node locator 提交一次后台基础扫描；run 为安全扫描观察，不包含配置、任意原始 metadata、授权或租约凭据 | Submit a background basic scan by node locator; run is a safe scan observation without config, arbitrary raw metadata, authorization or lease credentials",
+                "description": "按普通 node locator 提交一次后台基础扫描，引擎根拒绝；run 为安全扫描观察，不包含配置、任意原始 metadata、授权或租约凭据 | Submit a background basic scan by ordinary node locator; engine roots are rejected. The run is a safe scan observation without config, arbitrary raw metadata, authorization or lease credentials",
                 "produces": [
                     "application/json"
                 ],
@@ -2493,6 +2493,150 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "meta.security_facts.read"
+                ]
+            }
+        },
+        "/runtime/manager-uploads/{upload_id}/basic-scan": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 System 运行身份；只读 Meta 既有扫描结果，不回源、不创建任务或授权 | Fixed System Runtime only. Reads existing Meta results without source reads, scan creation or Grants",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "读取上传首次识别事实 | Read first identification facts for an upload",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "上传 UUID | Upload UUID",
+                        "name": "upload_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.MetaUploadIdentification"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.task_provider.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 Manager 运行身份；反查同租户真实上传回执，不扩大父目录、不签发权限。重复调用返回原扫描 | Fixed Manager Runtime only. Resolves real same-tenant upload receipt; no parent enumeration or Grant. Replays return the original scan",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "识别成功上传的精确文件 | Identify exact committed upload files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "上传 UUID | Upload UUID",
+                        "name": "upload_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.MetaUploadIdentification"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
                 ]
             }
         },
@@ -4183,6 +4327,88 @@
         }
     },
     "definitions": {
+        "authorization.MetadataRefreshQuery": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "node",
+                        "item",
+                        "engine"
+                    ]
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorization.MetadataRefreshRange": {
+            "type": "object",
+            "properties": {
+                "item": {
+                    "$ref": "#/definitions/authorizationfacts.Binding"
+                },
+                "node": {
+                    "$ref": "#/definitions/authorization.SourceNodeScope"
+                }
+            }
+        },
+        "authorization.MetadataRefreshScope": {
+            "type": "object",
+            "properties": {
+                "engine_version": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "operator": {
+                    "$ref": "#/definitions/authorization.SharingFulfillmentOperator"
+                },
+                "query": {
+                    "$ref": "#/definitions/authorization.MetadataRefreshQuery"
+                },
+                "ranges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorization.MetadataRefreshRange"
+                    }
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "authorization.SharingFulfillmentOperator": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "tenant_membership_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "authorization.SourceNodeScope": {
+            "type": "object",
+            "properties": {
+                "recursive": {
+                    "type": "boolean"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
         "authorizationfacts.AuthorizationBasisState": {
             "type": "string",
             "enum": [
@@ -4296,6 +4522,29 @@
                 },
                 "item_fingerprint": {
                     "type": "string"
+                }
+            }
+        },
+        "authorizationfacts.Binding": {
+            "type": "object",
+            "properties": {
+                "boundary_hash": {
+                    "type": "string"
+                },
+                "file_composition": {
+                    "$ref": "#/definitions/authorizationfacts.FileCompositionBoundary"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "metadata_target": {
+                    "$ref": "#/definitions/authorizationfacts.MetadataBoundary"
+                },
+                "native_target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "scope": {
+                    "$ref": "#/definitions/authorizationfacts.ScopeBoundary"
                 }
             }
         },
@@ -4603,6 +4852,26 @@
                 }
             }
         },
+        "client.MetaUploadIdentification": {
+            "type": "object",
+            "properties": {
+                "new_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.Binding"
+                    }
+                },
+                "scan_execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "upload_id": {
+                    "type": "string"
+                }
+            }
+        },
         "dataprotection.DataItemSecurityFacts": {
             "type": "object",
             "properties": {
@@ -4870,6 +5139,9 @@
                 },
                 "read_options": {
                     "$ref": "#/definitions/execution.MetaScanReadOptions"
+                },
+                "refresh_scope": {
+                    "$ref": "#/definitions/authorization.MetadataRefreshScope"
                 },
                 "scan_depth": {
                     "type": "string",

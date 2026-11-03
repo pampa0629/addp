@@ -111,6 +111,25 @@ func TestResourceTreeRefreshHandlerRejectsItemLocator(t *testing.T) {
 	}
 }
 
+func TestResourceTreeRefreshHandlerRejectsEngineRootWithoutCreatingExecution(t *testing.T) {
+	router, db, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
+	defer cleanup()
+	for _, kind := range []string{"root", "server", "service"} {
+		resp := httptest.NewRecorder()
+		locator := url.QueryEscape("addp://engine/9/path/?type=" + kind + "&node_id=1")
+		req := httptest.NewRequest(http.MethodPost, "/resource-tree/9/refresh?locator="+locator, nil)
+		req.Header.Set("Authorization", "Bearer user-token")
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("root kind=%s status=%d body=%s", kind, resp.Code, resp.Body.String())
+		}
+	}
+	var count int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatal("root scan submission created an execution", count, err)
+	}
+}
+
 func TestResourceTreeRefreshHandlerSubmitsNodeScanRun(t *testing.T) {
 	router, db, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
 	defer cleanup()

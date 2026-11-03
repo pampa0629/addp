@@ -97,6 +97,7 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		exerciseGrantRevocations(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseInitialProductionSources(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseInitialProductionGrants(t, db, service, actor, binding, roles, base.Operator.PrincipalID, newOperator)
+		exerciseUploadInitialGrants(t, db, actor.TenantID, base.Operator.PrincipalID, roles, newOperator)
 		exerciseCurrentSourceRules(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseIndependentGrantCommands(t, db, actor.TenantID, binding.Path, roles, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseFileCompositionGrants(t, db, actor.TenantID, base.Operator.PrincipalID, roles, newOperator)

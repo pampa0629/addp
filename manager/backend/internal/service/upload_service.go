@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"sort"
 	"strings"
 
+	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/authorization"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
@@ -16,6 +17,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/engineaccess"
+	"gorm.io/gorm"
 )
 
 var (
@@ -37,6 +39,12 @@ type UploadMetaClient interface {
 }
 
 type UploadService struct {
+	db                   *gorm.DB
+	uploadIdentification interface {
+		EnsureUploadBasicScan(context.Context, uint, string) (*commonClient.MetaUploadIdentification, error)
+	}
+	issueUploadGrant func(context.Context, uint, string, string) (*authorization.UploadInitialResult, error)
+
 	systemClient UploadSystemClient
 	metaClient   UploadMetaClient
 }
@@ -51,6 +59,7 @@ type UploadRequest struct {
 	TargetNodeLocator string
 	Files             []UploadFile
 	TenantID          uint
+	ScanAllowed       bool // current request guard fact; never accepted from multipart fields
 }
 
 type UploadedFileResult struct {
@@ -61,7 +70,10 @@ type UploadedFileResult struct {
 type UploadResult struct {
 	TargetNodeLocator string               `json:"target_node_locator"`
 	Files             []UploadedFileResult `json:"files"`
-	ScanExecutionID   string               `json:"scan_execution_id"`
+	ScanExecutionID   string               `json:"scan_execution_id,omitempty"`
+	UploadID          string               `json:"upload_id,omitempty"`
+	InitialStatus     string               `json:"initial_status,omitempty"`
+	Failures          []string             `json:"failed_files,omitempty"`
 }
 
 func NewUploadService(systemClient UploadSystemClient, metaClient UploadMetaClient) *UploadService {
@@ -81,9 +93,6 @@ func (s *UploadService) UploadFiles(ctx context.Context, req *UploadRequest, use
 	}
 	if s == nil || s.systemClient == nil {
 		return nil, fmt.Errorf("system client is required")
-	}
-	if s.metaClient == nil || strings.TrimSpace(userBearer) == "" {
-		return nil, errors.New("upload requires a configured Meta user client and current User credential")
 	}
 	engine, err := s.systemClient.GetEngineForTenant(ctx, req.TenantID, loc.EngineID)
 	if err != nil {
@@ -120,6 +129,15 @@ func (s *UploadService) UploadFiles(ctx context.Context, req *UploadRequest, use
 		return nil, err
 	}
 
+	if engine.EngineType == "nfs" {
+		return s.uploadNFS(ctx, req, loc, engine, writer, parentPath)
+	}
+	if !req.ScanAllowed {
+		return nil, commonapi.ErrForbidden
+	}
+	if s.metaClient == nil || strings.TrimSpace(userBearer) == "" {
+		return nil, errors.New("upload requires a configured Meta user client and current User credential")
+	}
 	results := make([]UploadedFileResult, 0, len(req.Files))
 	uploadedPaths := make([]string, 0, len(req.Files))
 	for _, file := range req.Files {
@@ -242,7 +260,7 @@ func uploadLeafLocatorType(parentType resourcetree.ResourceType) resourcetree.Re
 }
 
 func (s *UploadService) submitUploadScan(ctx context.Context, userBearer string, engineID uint, uploadedPaths []string) (*commonClient.MetaScanRun, error) {
-	refGroups := uploadScanRefGroups(uploadedPaths)
+	refGroups := commonClient.UploadScanRefGroups(uploadedPaths)
 	if len(refGroups) == 0 {
 		return nil, errors.New("upload produced no scan targets")
 	}
@@ -255,95 +273,4 @@ func (s *UploadService) submitUploadScan(ctx context.Context, userBearer string,
 		Source:      commonExecution.ModuleManager,
 	}
 	return s.metaClient.CreateManualScanRun(ctx, userBearer, opts)
-}
-
-func uploadScanRefGroups(uploadedPaths []string) []commonClient.MetaScanRefGroup {
-	type groupKey struct {
-		dir  string
-		base string
-	}
-	grouped := map[groupKey][]string{}
-	for _, rawPath := range uploadedPaths {
-		catalogPath := strings.Trim(strings.TrimSpace(rawPath), "/")
-		if catalogPath == "" {
-			continue
-		}
-		dir := path.Dir(catalogPath)
-		if dir == "." {
-			dir = ""
-		}
-		base := strings.TrimSuffix(path.Base(catalogPath), path.Ext(catalogPath))
-		key := groupKey{dir: dir, base: base}
-		grouped[key] = append(grouped[key], catalogPath)
-	}
-
-	keys := make([]groupKey, 0, len(grouped))
-	for key := range grouped {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].dir != keys[j].dir {
-			return keys[i].dir < keys[j].dir
-		}
-		return keys[i].base < keys[j].base
-	})
-
-	groups := make([]commonClient.MetaScanRefGroup, 0, len(keys))
-	for _, key := range keys {
-		paths := dedupeAndSortCatalogPaths(grouped[key])
-		if len(paths) == 0 {
-			continue
-		}
-		primary := uploadScanPrimaryPath(paths)
-		refs := make([]commonClient.MetaScanRef, 0, len(paths))
-		for _, catalogPath := range paths {
-			refs = append(refs, commonClient.MetaScanRef{
-				Path:     catalogPath,
-				Role:     uploadScanRefRole(catalogPath, primary),
-				Required: catalogPath == primary,
-				Primary:  catalogPath == primary,
-			})
-		}
-		groups = append(groups, commonClient.MetaScanRefGroup{
-			Primary: primary,
-			Refs:    refs,
-		})
-	}
-	return groups
-}
-
-func dedupeAndSortCatalogPaths(paths []string) []string {
-	seen := map[string]bool{}
-	result := make([]string, 0, len(paths))
-	for _, rawPath := range paths {
-		catalogPath := strings.Trim(strings.TrimSpace(rawPath), "/")
-		if catalogPath == "" || seen[catalogPath] {
-			continue
-		}
-		seen[catalogPath] = true
-		result = append(result, catalogPath)
-	}
-	sort.Strings(result)
-	return result
-}
-
-func uploadScanPrimaryPath(paths []string) string {
-	if len(paths) == 0 {
-		return ""
-	}
-	for _, ext := range []string{".shp", ".geojson", ".json", ".csv", ".parquet"} {
-		for _, catalogPath := range paths {
-			if strings.EqualFold(path.Ext(catalogPath), ext) {
-				return catalogPath
-			}
-		}
-	}
-	return paths[0]
-}
-
-func uploadScanRefRole(catalogPath, primary string) string {
-	if catalogPath == primary {
-		return "main"
-	}
-	return "sidecar"
 }

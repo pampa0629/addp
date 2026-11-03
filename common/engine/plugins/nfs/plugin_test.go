@@ -164,20 +164,6 @@ func TestNFSReadCloseDoesNotCommitAndStopsReadSeek(t *testing.T) {
 	}
 }
 
-func TestNFSWriteCloseStillCommits(t *testing.T) {
-	stream := &testCommitStream{Reader: strings.NewReader("")}
-	writer := &lockedWriteCloser{WriteCloser: stream, mu: &sync.Mutex{}}
-	if n, err := writer.Write([]byte("payload")); n != 7 || err != nil {
-		t.Fatalf("write = %d, %v", n, err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if stream.commits != 1 {
-		t.Fatalf("write close commits = %d, want 1", stream.commits)
-	}
-}
-
 type testNFSReadTarget struct {
 	types       map[string]uint32
 	lookups     int

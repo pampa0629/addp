@@ -14,7 +14,7 @@
       <el-alert v-if="!canBrowse" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.browseRequired')" />
       <el-alert v-else-if="!adapter" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.unsupported')" />
       <template v-else>
-        <ResourceTreePicker ref="picker" :key="authorizationKey" :model-value="selections" multiple :branch-selection="engine.engine_type !== 'postgresql'"
+        <ResourceTreePicker ref="picker" :key="authorizationKey" :model-value="selections" multiple :branch-selection="!['postgresql', 'nfs'].includes(engine.engine_type)"
           :engine-id="engine.id" :adapter="adapter" mode="any" :selectable-filter="isSelectableTarget"
           :max-selections="200" :validate-selection="validateSelection" :disabled="!authorizationReady || grantBusy"
           :show-engine-selector="false" :show-selection-summary="false" :show-count="false" :title="engine.name"
@@ -22,7 +22,7 @@
           data-testid="approval-resource-tree" @update:model-value="applySelection" @busy="selecting = $event"
           @loading="loading = $event" @ready="selectionReady" @error="selectionError" />
         <template v-if="workspaceView === 'create'">
-          <p class="hint">{{ t(engine.engine_type === 'postgresql' ? 'system.engine.dataAuthorization.mixedSelection' : 'system.engine.dataAuthorization.snapshotOnly') }}</p>
+          <p class="hint">{{ t(['postgresql', 'nfs'].includes(engine.engine_type) ? 'system.engine.dataAuthorization.mixedSelection' : 'system.engine.dataAuthorization.snapshotOnly') }}</p>
           <el-table v-if="targets.length" :data="targets" data-testid="approval-targets">
             <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row) || engine.name }}</template></el-table-column>
             <el-table-column :label="t('system.engine.dataAuthorization.scope')" min-width="230"><template #default="{ row }">
@@ -55,7 +55,7 @@ import { useI18n } from 'vue-i18n'
 import { ResourceTreePicker, serializeEngineCatalogTarget, readNativeApprovalFacts } from '@common-ui'
 import { enginesAPI } from '../../api/engines'
 import { useAuthStore } from '../../store/auth'
-import { approvalPathLabel, approvalTargetsEqual, approvalTargetFromSelection, isApprovalTarget, isApprovalNode, isPGGrantNodePath, approvalScopeContains, createApprovalCatalogAdapter, createMixedApprovalCatalogAdapter } from '../../utils/engineApprovalCatalog'
+import { approvalPathLabel, approvalTargetsEqual, approvalTargetFromSelection, isApprovalTarget, isApprovalNode, approvalScopeContains, createApprovalCatalogAdapter, createMixedApprovalCatalogAdapter } from '../../utils/engineApprovalCatalog'
 import EngineSourceGrants from './EngineSourceGrants.vue'
 
 const props = defineProps({ engine: { type: Object, required: true }, authorizationKey: { type: String, required: true }, authorizationReady: Boolean })
@@ -89,10 +89,10 @@ const adapter = computed(() => {
   return createMixedApprovalCatalogAdapter(props.engine, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts, enginesAPI.listAuthorizationNodes)
 })
 const isSelectableTarget = node => isApprovalTarget(node) || isApprovalNode(node)
-const isNodePath = path => props.engine.engine_type === 'postgresql' && isPGGrantNodePath(path, props.engine.id)
+const isNodePath = path => selections.value.some(selection => isApprovalNode(selection.raw?.node) && approvalTargetsEqual(targetPaths.get(selection.identity.locator), path))
 const isOverlapping = path => targets.value.some(other => !approvalTargetsEqual(path, other) && (
-  (isNodePath(other) && approvalScopeContains(other, path, !!nodeRecursions.value[basisKey(other)])) ||
-  (isNodePath(path) && approvalScopeContains(path, other, !!nodeRecursions.value[basisKey(path)]))
+  (isNodePath(other) && approvalScopeContains(other, path, !!nodeRecursions.value[basisKey(other)], isNodePath(path))) ||
+  (isNodePath(path) && approvalScopeContains(path, other, !!nodeRecursions.value[basisKey(path)], isNodePath(other)))
 ))
 const directRequirementCandidates = computed(() => targets.value.map(path => ({ engine_id: String(props.engine.id), engine_name: props.engine.name, catalog_path: path, metadata_only: !!basisBindings.value[basisKey(path)]?.metadata_target, ...(isNodePath(path) ? { node_recursive: !!nodeRecursions.value[basisKey(path)] } : {}) })))
 const directRequirements = ref([])

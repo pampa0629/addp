@@ -150,7 +150,7 @@ test('loads and expands an engine catalog root with the first arrow click', asyn
   await expect(treeNodeContent(page, 'business')).toBeVisible()
 })
 
-test('expands an unloaded TiDB database after refreshing the catalog root', async ({ page }) => {
+test('keeps engine roots navigation-only while child databases remain expandable', async ({ page }) => {
   const backend = await installMockBackend(page)
   await page.goto('/data-explorer')
 
@@ -158,9 +158,10 @@ test('expands an unloaded TiDB database after refreshing the catalog root', asyn
   await expect(treeNodeContent(page, 'business')).toBeVisible()
 
   const rootContent = treeNodeContent(page, TIDB_ENGINE.name)
-  await rootContent.getByTitle('基础刷新：重新发现此节点下的新资源').click()
-
-  await expect.poll(() => backend.refreshRequests).toEqual([ROOT_LOCATOR])
+  await expect(rootContent.getByTitle('基础刷新：重新发现此节点下的新资源')).toHaveCount(0)
+  await expect(page.locator('.node-panel').getByRole('button', { name: '深度扫描', exact: true })).toHaveCount(0)
+  expect(backend.refreshRequests).toEqual([])
+  expect(backend.deepScanRequests).toEqual([])
   const businessContent = treeNodeContent(page, 'business')
   const expandIcon = businessContent.locator(':scope > .el-tree-node__expand-icon')
   await expect(expandIcon).toHaveClass(/is-leaf/)
@@ -186,15 +187,15 @@ function escapeRegExp(value) {
 
 test('shows a scan submission conflict without marking a scan as failed', async ({ page }) => {
   const message = '该扫描范围正在执行中，请等待当前扫描完成'
-  const backend = await installMockBackend(page, { conflictLocator: ROOT_LOCATOR })
+  const backend = await installMockBackend(page, { conflictLocator: BUSINESS_LOCATOR })
   await page.goto('/data-explorer')
   await treeNodeContent(page, TIDB_ENGINE.name).click()
   await expect(treeNodeContent(page, 'business')).toBeVisible()
-  await treeNodeContent(page, TIDB_ENGINE.name).getByTitle('基础刷新：重新发现此节点下的新资源').click()
+  await treeNodeContent(page, 'business').getByTitle('基础刷新：重新发现此节点下的新资源').click()
   await expect(page.locator('.el-message--warning')).toHaveText(message)
   await expect(page.locator('.scan-status')).toHaveCount(0)
   await expect(page.getByText('后台扫描失败', { exact: true })).toHaveCount(0)
-  await expect.poll(() => backend.refreshRequests).toEqual([ROOT_LOCATOR])
+  await expect.poll(() => backend.refreshRequests).toEqual([BUSINESS_LOCATOR])
 })
 
 test('preserves an active scan progress when another submission conflicts', async ({ page }) => {
@@ -202,7 +203,9 @@ test('preserves an active scan progress when another submission conflicts', asyn
   await page.goto('/data-explorer')
   await treeNodeContent(page, TIDB_ENGINE.name).click()
   await expect(treeNodeContent(page, 'business')).toBeVisible()
-  await treeNodeContent(page, TIDB_ENGINE.name).getByTitle('基础刷新：重新发现此节点下的新资源').click()
+  await treeNodeContent(page, 'business').click()
+  await page.getByRole('button', { name: '深度扫描', exact: true }).click()
+  await expect.poll(() => backend.deepScanRequests.length).toBe(1)
   await expect(page.locator('.scan-status__percent')).toHaveText('41%')
   await treeNodeContent(page, 'business').getByTitle('基础刷新：重新发现此节点下的新资源').click()
   await expect(page.locator('.el-message--warning')).toBeVisible()
@@ -211,7 +214,7 @@ test('preserves an active scan progress when another submission conflicts', asyn
   await expect(page.locator('.el-progress.is-exception')).toHaveCount(0)
   backend.executionStatus = 'success'
   await expect(page.locator('.scan-status__title')).toHaveText('扫描已完成，资源树已刷新')
-  await expect.poll(() => backend.refreshRequests).toEqual([ROOT_LOCATOR, BUSINESS_LOCATOR])
+  await expect.poll(() => backend.refreshRequests).toEqual([BUSINESS_LOCATOR])
 })
 
 test('keeps real server errors visible with their returned explanation', async ({ page }) => {
@@ -219,7 +222,7 @@ test('keeps real server errors visible with their returned explanation', async (
   await page.goto('/data-explorer')
   await treeNodeContent(page, TIDB_ENGINE.name).click()
   await expect(treeNodeContent(page, 'business')).toBeVisible()
-  await treeNodeContent(page, TIDB_ENGINE.name).getByTitle('基础刷新：重新发现此节点下的新资源').click()
+  await treeNodeContent(page, 'business').getByTitle('基础刷新：重新发现此节点下的新资源').click()
   await expect(page.locator('.scan-status__title')).toHaveText('后台扫描失败')
   await expect(page.locator('.scan-status__detail')).toHaveText('扫描服务暂时不可用')
   await expect(page.locator('.el-message--error')).toContainText('扫描服务暂时不可用')

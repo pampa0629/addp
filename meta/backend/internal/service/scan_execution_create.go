@@ -102,6 +102,10 @@ func (s *ScanExecutionService) createManualRun(ctx context.Context, tenantID, us
 	if err != nil {
 		return nil, fmt.Errorf("验证资源失败: %w", err)
 	}
+	refreshScope, err := s.prepareManualRefreshScope(ctx, userOrigin, resource, req, scope)
+	if err != nil {
+		return nil, err
+	}
 
 	execution := scantask.NewManualExecution(
 		tenantID,
@@ -130,6 +134,9 @@ func (s *ScanExecutionService) createManualRun(ctx context.Context, tenantID, us
 		execution.ExecutionConfig["has_header"] = *req.HasHeader
 	}
 	freezeScanEngineSnapshot(execution, resource)
+	if err := freezeManualRefreshScope(execution, refreshScope); err != nil {
+		return nil, err
+	}
 
 	lockKey := ""
 	lockAcquired := false

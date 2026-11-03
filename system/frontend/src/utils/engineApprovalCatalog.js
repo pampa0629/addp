@@ -102,69 +102,83 @@ export async function readAuthorizationTarget(engineID, fingerprint, readFacts) 
 
 // Nodes have their own owner projection. Never derive this scope from a loaded
 // list of current DataItems or use native directory browsing as its identity.
-export function isPGGrantNodePath(path, engineID) {
- return path?.version === 'catalog.path/v1' && String(path.engine_id) === String(engineID) &&
-  Array.isArray(path.segments) && [1, 2].includes(path.segments.length) &&
-  path.segments[0]?.term === 'server' && path.segments[0]?.kind === 'server' && path.segments[0]?.name === '' &&
-  (path.segments.length === 1 || (path.segments[1]?.term === 'schema' && path.segments[1]?.kind === 'namespace' && typeof path.segments[1]?.name === 'string' && path.segments[1].name.length > 0 && new TextEncoder().encode(path.segments[1].name).length <= 512 && new TextDecoder().decode(new TextEncoder().encode(path.segments[1].name)) === path.segments[1].name && !path.segments[1].name.includes('\0')))
+export function isGrantNodePath(path, engineID) {
+  if (path?.version !== 'catalog.path/v1' || String(path.engine_id) !== String(engineID) || !Array.isArray(path.segments)) return false
+  const [root, ...parts] = path.segments
+  if (root?.name !== '' || root.kind !== root.term) return false
+  const validName = (name, limit) => typeof name === 'string' && name.length > 0 && new TextEncoder().encode(name).length <= limit && new TextDecoder().decode(new TextEncoder().encode(name)) === name && !name.includes('\0')
+  if (root.term === 'server') return parts.length <= 1 && parts.every(part => part.term === 'schema' && part.kind === 'namespace' && validName(part.name, 512))
+  return root.term === 'root' && parts.length <= 63 && parts.every(part => part.term === 'directory' && part.kind === 'directory' && validName(part.name, 4096) && !['.', '..'].includes(part.name) && !/[\\/]/.test(part.name))
 }
-export const isApprovalNode = node => !!node?.metadata?.node_identity && isPGGrantNodePath(node.metadata.node_identity.target, node.metadata.engine_id)
+export const isApprovalNode = node => !!node?.metadata?.node_identity && isGrantNodePath(node.metadata.node_identity.target, node.metadata.engine_id)
 
 export function createApprovalNodeCatalogAdapter(engine, readPage) {
- if (engine.engine_type !== 'postgresql') throw new Error('invalidCatalogTarget')
- const id = safePickerEngineID(engine.id), rootPath = { version: 'catalog.path/v1', engine_id: id, segments: [{ term: 'server', kind: 'server', name: '' }] }
- let epoch = 0, rootPromise, nodes = new Map(), childPromise
- const pathKey = path => serializeEngineCatalogTarget({ ...path, engine_id: String(id) })
- const make = (fact, hasChildren) => {
-  if (fact?.exists !== true || !isPGGrantNodePath(fact.target, id)) throw new Error('invalidCatalogTarget')
-  const path = structuredClone(fact.target), root = path.segments.length === 1
-  const locator = buildLocator({ engineId: id, path: path.segments.filter(part => part.name !== '').map(part => part.name), type: root ? 'root' : 'schema' })
-  const node = { id: pathKey(path), locator, label: root ? engine.name : path.segments[1].name, type: root ? 'root' : 'schema', hasChildren,
-   metadata: { engine_id: id, engine_type: engine.engine_type, engine_name: engine.name, has_children: hasChildren, node_identity: { target: path, exists: true } } }
-  nodes.set(node.id, node); return node
- }
- async function page(target, number, captured) {
-  const result = await readPage(String(id), { target, page: number, page_size: 100 })
-  if (captured !== epoch || !approvalTargetsEqual(result?.parent?.target, target) || result.parent.exists !== true ||
-   result.page !== number || result.page_size !== 100 || !Array.isArray(result.nodes) || !Number.isSafeInteger(result.total) || result.total < 0 ||
-   result.nodes.length !== Math.max(0, Math.min(100, result.total - (number - 1) * 100))) throw new Error('invalidCatalogTarget')
-  return result
- }
- async function root() {
-  if (!rootPromise) { const captured = epoch; rootPromise = page(rootPath, 1, captured).then(first => ({ node: make(first.parent, first.total > 0), first })).catch(error => { if (captured === epoch) rootPromise = undefined; throw error }) }
-  return (await rootPromise).node
- }
- async function children() {
-  if (!childPromise) { const captured = epoch; childPromise = (async () => {
-   await root(); const first = (await rootPromise).first, result = [], seen = new Set()
-   if (first.total > 20000) throw new Error('permissionTreeCapacity')
-   for (let number = 1; result.length < first.total; number++) {
-    const current = number === 1 ? first : await page(rootPath, number, captured)
-    if (current.total !== first.total) throw new Error('invalidCatalogTarget')
-    for (const fact of current.nodes) {
-     if (!isPGGrantNodePath(fact.target, id) || fact.target.segments.length !== 2 || fact.exists !== true) throw new Error('invalidCatalogTarget')
-     const key = pathKey(fact.target); if (seen.has(key)) throw new Error('invalidCatalogTarget'); seen.add(key)
-     result.push(make(fact, false))
+  if (!['postgresql', 'nfs'].includes(engine.engine_type)) throw new Error('invalidCatalogTarget')
+  const id = safePickerEngineID(engine.id), term = engine.engine_type === 'postgresql' ? 'server' : 'root'
+  const rootPath = { version: 'catalog.path/v1', engine_id: id, segments: [{ term, kind: term, name: '' }] }
+  let epoch = 0, rootPromise, nodes = new Map(), childrenPromises = new Map()
+  const pathKey = path => serializeEngineCatalogTarget({ ...path, engine_id: String(id) })
+  const make = (fact, hasChildren) => {
+    if (fact?.exists !== true || !isGrantNodePath(fact.target, id) || fact.target.segments[0].term !== term) throw new Error('invalidCatalogTarget')
+    const path = structuredClone(fact.target), root = path.segments.length === 1
+    const type = root ? 'root' : term === 'server' ? 'schema' : 'dir'
+    const locator = buildLocator({ engineId: id, path: path.segments.slice(1).map(part => part.name), type })
+    const node = { id: pathKey(path), locator, label: root ? engine.name : path.segments.at(-1).name, type, hasChildren,
+      metadata: { engine_id: id, engine_type: engine.engine_type, engine_name: engine.name, has_children: hasChildren, node_identity: { target: path, exists: true } } }
+    nodes.set(node.id, node); return node
+  }
+  async function page(target, number, captured) {
+    const result = await readPage(String(id), { target, page: number, page_size: 100 })
+    if (captured !== epoch || !approvalTargetsEqual(result?.parent?.target, target) || result.parent.exists !== true || result.page !== number || result.page_size !== 100 || !Array.isArray(result.nodes) || !Number.isSafeInteger(result.total) || result.total < 0 || result.nodes.length !== Math.max(0, Math.min(100, result.total - (number - 1) * 100))) throw new Error('invalidCatalogTarget')
+    return result
+  }
+  async function root() {
+    if (!rootPromise) { const captured = epoch; rootPromise = page(rootPath, 1, captured).then(first => ({ node: make(first.parent, first.total > 0), first })).catch(error => { if (captured === epoch) rootPromise = undefined; throw error }) }
+    return (await rootPromise).node
+  }
+  async function children(node) {
+    const target = node.metadata.node_identity.target, key = pathKey(target)
+    if (term === 'server' && target.segments.length > 1) return []
+    if (!childrenPromises.has(key)) {
+      const captured = epoch
+      const promise = (async () => {
+        const first = target.segments.length === 1 ? (await rootPromise).first : await page(target, 1, captured)
+        const result = [], seen = new Set()
+        if (first.total > 20000) throw new Error('permissionTreeCapacity')
+        for (let number = 1; result.length < first.total; number++) {
+          const current = number === 1 ? first : await page(target, number, captured)
+          if (current.total !== first.total) throw new Error('invalidCatalogTarget')
+          for (const fact of current.nodes) {
+            if (!isGrantNodePath(fact.target, id) || fact.target.segments.length !== target.segments.length + 1 || !target.segments.every((part, i) => ['term', 'kind', 'name'].every(k => fact.target.segments[i][k] === part[k])) || fact.exists !== true) throw new Error('invalidCatalogTarget')
+            const childKey = pathKey(fact.target); if (seen.has(childKey)) throw new Error('invalidCatalogTarget'); seen.add(childKey)
+            result.push(make(fact, term === 'root'))
+          }
+        }
+        return result
+      })().catch(error => { if (captured === epoch) childrenPromises.delete(key); throw error })
+      childrenPromises.set(key, promise)
     }
-   }
-   return result
-  })().catch(error => { if (captured === epoch) childPromise = undefined; throw error }) }
-  return childPromise
- }
- return {
-  listEngines: async () => [{ ...engine, id }], getTreeRoot: root,
-  invalidate() { epoch++; rootPromise = childPromise = undefined; nodes = new Map() },
-  async getNodeChildren(node) { const owned = nodes.get(node?.id); if (!owned || owned.locator !== node.locator) throw new Error('invalidCatalogTarget'); return owned.type === 'root' ? children() : [] },
-  async resolveTarget(node) { const owned = nodes.get(node?.id); if (!owned || owned.locator !== node.locator || !isApprovalNode(owned)) throw new Error('invalidCatalogTarget'); return structuredClone(owned.metadata.node_identity.target) },
-  async search(engineID, keyword, { limit = 20 } = {}) { if (String(engineID) !== String(id) || !Number.isSafeInteger(limit) || limit <= 0) throw new Error('invalidCatalogTarget'); const query = keyword.trim().toLocaleLowerCase(); if (!query) return []; return [await root(), ...await children()].filter(node => node.label.toLocaleLowerCase().includes(query)).slice(0, Math.min(limit, 20)) }
- }
+    return childrenPromises.get(key)
+  }
+  return {
+    listEngines: async () => [{ ...engine, id }], getTreeRoot: root,
+    invalidate() { epoch++; rootPromise = undefined; childrenPromises = new Map(); nodes = new Map() },
+    async getNodeChildren(node) { const owned = nodes.get(node?.id); if (!owned || owned.locator !== node.locator) throw new Error('invalidCatalogTarget'); return children(owned) },
+    async resolveTarget(node) { const owned = nodes.get(node?.id); if (!owned || owned.locator !== node.locator || !isApprovalNode(owned)) throw new Error('invalidCatalogTarget'); return structuredClone(owned.metadata.node_identity.target) },
+    async search(engineID, keyword, { limit = 20 } = {}) {
+      if (String(engineID) !== String(id) || !Number.isSafeInteger(limit) || limit <= 0) throw new Error('invalidCatalogTarget')
+      const query = keyword.trim().toLocaleLowerCase(); if (!query) return []
+      await children(await root())
+      return [...nodes.values()].filter(node => node.label.toLocaleLowerCase().includes(query)).slice(0, Math.min(limit, 20))
+    }
+  }
 }
 
 // One selectable tree, two owner facts. Nodes stay available independently of
 // the bounded DataItem snapshot, which is fetched only on item browsing/search.
 export function createMixedApprovalCatalogAdapter(engine, listItems, readFacts, readNodes) {
   const items = createApprovalCatalogAdapter(engine, listItems, readFacts)
-  if (engine.engine_type !== 'postgresql') return items
+  if (!['postgresql', 'nfs'].includes(engine.engine_type)) return items
   const scopes = createApprovalNodeCatalogAdapter(engine, readNodes)
   let generation = 0
   const display = node => ({ ...node, hasChildren: true, metadata: { ...node.metadata, has_children: true } })
@@ -180,10 +194,12 @@ export function createMixedApprovalCatalogAdapter(engine, listItems, readFacts, 
       const epoch = generation
       if (!isApprovalNode(node)) return []
       const path = await scopes.resolveTarget(node)
-      if (path.segments.length === 1) return current(epoch, (await scopes.getNodeChildren(node)).map(display))
-      const root = await items.getTreeRoot()
-      const branch = root.children.find(child => child.type === 'schema' && child.label === path.segments[1].name)
-      return current(epoch, branch ? await items.getNodeChildren(branch) : [])
+      const branches = await scopes.getNodeChildren(node)
+      if (engine.engine_type === 'postgresql' && path.segments.length === 1) return current(epoch, branches.map(display))
+      let branch = await items.getTreeRoot()
+      for (const segment of path.segments.slice(1)) branch = branch?.children.find(child => !isApprovalTarget(child) && child.label === segment.name)
+      const leaves = branch ? (await items.getNodeChildren(branch)).filter(isApprovalTarget) : []
+      return current(epoch, [...branches.map(display), ...leaves])
     },
     resolveTarget(node) { return isApprovalNode(node) ? scopes.resolveTarget(node) : items.resolveTarget(node) },
     async search(engineID, keyword, options = {}) {
@@ -195,8 +211,8 @@ export function createMixedApprovalCatalogAdapter(engine, listItems, readFacts, 
   }
 }
 
-export function approvalScopeContains(scope, target, recursive) {
-  if (!isPGGrantNodePath(scope, scope?.engine_id) || !target || String(scope.engine_id) !== String(target.engine_id) || scope.version !== target.version) return false
+export function approvalScopeContains(scope, target, recursive, targetIsNode = isGrantNodePath(target, target?.engine_id)) {
+  if (!isGrantNodePath(scope, scope?.engine_id) || !target || String(scope.engine_id) !== String(target.engine_id) || scope.version !== target.version) return false
   const prefix = scope.segments.every((part, index) => ['term', 'kind', 'name'].every(key => part[key] === target.segments?.[index]?.[key]))
-  return prefix && target.segments.length > scope.segments.length && (recursive || (target.segments.length === scope.segments.length + 1 && !isPGGrantNodePath(target, target.engine_id)))
+  return prefix && target.segments.length > scope.segments.length && (recursive || (target.segments.length === scope.segments.length + 1 && !targetIsNode))
 }

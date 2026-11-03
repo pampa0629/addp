@@ -163,6 +163,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		authorizationFactsService.WithAuthorizationFactsReader(metaFacts).WithDataItemIdentityReader(metaIdentities).WithNodeIdentityPageReader(metaClient)
 		fulfillmentService.WithAuthorizationFactsReader(metaFacts)
 		fulfillmentService.WithTransferProductionReceiptReader(commonClient.NewTransferClient(cfg.TransferServiceURL, tokens))
+		fulfillmentService.WithUploadReaders(commonClient.NewManagerUploadClient(cfg.ManagerServiceURL, tokens, nil), metaClient)
 	}
 	if err := RegisterEngineAccessNodeIdentityRoutes(api, runtime, &EngineAccessNodeIdentityHandler{service: authorizationFactsService}); err != nil {
 		panic(err)
@@ -179,10 +180,16 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterEngineAccessFulfillmentGrantRoutes(api, runtime, &EngineAccessFulfillmentGrantHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}
+	if err := RegisterUploadInitialGrantRoute(api, runtime, &UploadInitialGrantHandler{service: fulfillmentService}); err != nil {
+		panic(err)
+	}
 	if err := RegisterEngineAccessInitialGrantRoutes(api, runtime, &EngineAccessInitialGrantHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}
 	if err := RegisterMetaScanManagementScopeRoute(api, runtime, &MetaScanManagementScopeHandler{service: fulfillmentService}); err != nil {
+		panic(err)
+	}
+	if err := RegisterMetadataRefreshScopeRoutes(api, runtime, &MetadataRefreshScopeHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}
 

@@ -59,6 +59,12 @@ describe('data explorer node selection', () => {
 })
 
 describe('resource tree refresh identity', () => {
+  it('keeps engine roots navigation-only, even with a canonical node identity', () => {
+    for (const type of ['root', 'server', 'service']) {
+      expect(resourceTreeRefreshKind(`addp://engine/11/path/?type=${type}&node_id=267`)).toBe('')
+      expect(resourceTreeRefreshKind(`addp://engine/11/path/?type=${type}`)).toBe('')
+    }
+  })
   it('uses locator identity instead of the visual node type', () => {
     expect(resourceTreeRefreshKind('addp://engine/11/path/models?type=directory&node_id=267')).toBe('node')
     expect(resourceTreeRefreshKind('addp://engine/11/path/models?type=directory&item_id=418')).toBe('item')

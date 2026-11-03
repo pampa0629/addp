@@ -4,7 +4,7 @@
       <div class="panel-header">
         <span class="header-title">{{ selectedNode?.label || t('manager.explorer.dataPreview') }}</span>
         <div class="header-actions">
-          <el-tooltip v-if="selectedNode?.locator" :content="t('manager.explorer.deepScanNodeTooltip')">
+          <el-tooltip v-if="canRefreshNode" :content="t('manager.explorer.deepScanNodeTooltip')">
             <el-button
               size="small"
               :icon="Refresh"
@@ -148,6 +148,7 @@ import { useExplorerStore } from '@/stores/explorer'
 import { useAuthStore } from '@/store/auth'
 import { isVectorizableRangeNode } from '@/utils/vectorization'
 import { buildNodeScanSummary } from '@/utils/nodeScanSummary'
+import { resourceTreeRefreshKind } from '@/utils/dataExplorerSelection'
 
 const { t } = useI18n()
 const store = useExplorerStore()
@@ -169,6 +170,15 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['open-node'])
+
+const canRefreshNode = computed(() => {
+  if (!props.selectedNode?.locator) return false
+  try {
+    return resourceTreeRefreshKind(props.selectedNode.locator) === 'node'
+  } catch {
+    return false
+  }
+})
 
 const pageSize = 50
 const childNodePage = ref(1)
@@ -264,7 +274,7 @@ const showImportButton = computed(() => resourceActions.value?.actions?.import?.
 
 const handleDeepScanNode = async () => {
   const locator = props.selectedNode?.locator
-  if (!locator || scanning.value || !store.isEngineAvailable(selectedEngineId.value)) return
+  if (!canRefreshNode.value || !locator || scanning.value || !store.isEngineAvailable(selectedEngineId.value)) return
   const hooks = props.scanHooks
   failedScanExecution.value = null
   try {
@@ -362,12 +372,12 @@ const handleImportSuccess = async ({ executionId, targetNodeLocator }) => {
   }
 }
 
-const handleUploadSuccess = async () => {
+const handleUploadSuccess = async (payload) => {
   uploadDialogVisible.value = false
   if (!props.selectedNode?.locator) return
   try {
     await store.loadNodeChildren(props.selectedNode.locator, true)
-    ElMessage.success(t('manager.explorer.uploadSuccessRefreshed'))
+    if (!payload?.upload_id || payload.metadataReady) ElMessage.success(t('manager.explorer.uploadSuccessRefreshed'))
   } catch (error) {
     console.error('刷新节点失败:', error)
   }

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/authorization"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
@@ -727,8 +728,12 @@ func TestManualItemHeaderModeCanBeDeclaredWithoutEncoding(t *testing.T) {
 		createTaskExecutionTable(t, db)
 		tenantID := uint(1)
 		engineSvc := NewEngineService(db, nil)
-		engineSvc.cacheEngine(tenantID, &commonModels.Engine{ID: 9, TenantID: &tenantID, EngineType: "nfs", LifecycleState: "active"})
-		item := models.MetaItem{TenantID: tenantID, EngineID: 9, NodeID: 1, ItemType: "file", Name: "sample.tsv", FullName: "sample.tsv", Fingerprint: "header-mode-item", Attributes: models.JSONMap{
+		engineSvc.cacheEngine(tenantID, &commonModels.Engine{ID: 9, TenantID: &tenantID, EngineType: "nfs", Version: 1, LifecycleState: "active"})
+		root := models.MetaNode{TenantID: tenantID, EngineID: 9, NodeType: "root", Name: "NFS", FullName: ""}
+		if err := db.Create(&root).Error; err != nil {
+			t.Fatal(err)
+		}
+		item := models.MetaItem{TenantID: tenantID, EngineID: 9, NodeID: root.ID, ItemType: "file", Name: "sample.tsv", FullName: "sample.tsv", Fingerprint: commonModels.GenerateItemFingerprint(9, "sample.tsv"), ScannedDepth: "basic", Attributes: models.JSONMap{
 			"item":    map[string]interface{}{"layout": "single", "data_type": "table", "format": "tsv"},
 			"storage": map[string]interface{}{"physical_path": "sample.tsv"},
 		}}
@@ -736,7 +741,26 @@ func TestManualItemHeaderModeCanBeDeclaredWithoutEncoding(t *testing.T) {
 			t.Fatal(err)
 		}
 		svc := NewScanExecutionService(db, NewScanService(db, engineSvc), engineSvc, nil)
-		run, err := svc.CreateManualRun(withMetaTestUserOrigin(t.Context(), tenantID, 7), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, HasHeader: &header, ScanDepth: "deep"})
+		requestCtx := WithScanRefreshCredential(withMetaTestUserOrigin(t.Context(), tenantID, 7), "addp_at_header_fixture")
+		svc.SetMetadataRefreshScopeClient(refreshScopeClientFunc(func(ctx context.Context, token string, query authorization.MetadataRefreshQuery) (*authorization.MetadataRefreshScope, error) {
+			if token != "addp_at_header_fixture" || query.Kind != "item" {
+				t.Fatal("wrong request origin or selector")
+			}
+			facts, err := NewMetadataQueryService(db).GetDataItemAuthorizationFacts(ctx, tenantID, item.Fingerprint)
+			if err != nil {
+				return nil, err
+			}
+			binding, err := facts.MetadataBinding()
+			if err != nil {
+				return nil, err
+			}
+			origin, err := verifiedScanUserOrigin(ctx, tenantID, 7)
+			if err != nil {
+				return nil, err
+			}
+			return &authorization.MetadataRefreshScope{TenantID: 1, EngineVersion: "1", Query: query, Operator: authorization.SharingFulfillmentOperator{PrincipalID: *origin.ActorPrincipalID, MembershipID: *origin.ActorTenantMembershipID, AuthorizationVersion: *origin.IssuedAuthorizationVersion}, ObservedAt: time.Now(), Ranges: []authorization.MetadataRefreshRange{{Item: &binding}}}, nil
+		}))
+		run, err := svc.CreateManualRun(requestCtx, tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, HasHeader: &header, ScanDepth: "deep"})
 		if err != nil {
 			t.Fatal(err)
 		}

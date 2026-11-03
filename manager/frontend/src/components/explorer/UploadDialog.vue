@@ -40,14 +40,14 @@
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">{{ t('manager.upload.cancel') }}</el-button>
       <el-button type="primary" :loading="uploading" @click="handleUpload">
-        {{ uploading ? t('manager.upload.uploading') : t('manager.upload.start') }}
+        {{ uploading ? t('manager.upload.uploading') : t(uploadId ? 'manager.upload.checkStatus' : 'manager.upload.start') }}
       </el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -78,6 +78,9 @@ const uploadRef = ref(null)
 const fileList = ref([])
 const uploading = ref(false)
 const progressText = ref('')
+const uploadId = ref('')
+let pollGeneration = 0
+let committedPayload = null
 
 const handleFileChange = (_file, files) => {
   fileList.value = files
@@ -88,6 +91,7 @@ const handleFileRemove = (_file, files) => {
 }
 
 const handleUpload = async () => {
+  if (uploadId.value) { await checkUploadedStatus(); return }
   const files = fileList.value.map(file => file.raw).filter(Boolean)
   if (!files.length) {
     ElMessage.warning(t('manager.upload.selectFiles'))
@@ -100,6 +104,15 @@ const handleUpload = async () => {
     formData.append('target_node_locator', props.targetNodeLocator)
     files.forEach(file => formData.append('files', file))
     const payload = await dataExplorerAPI.uploadFiles(formData)
+    if (payload.upload_id) {
+      uploadId.value = payload.upload_id
+      committedPayload = payload
+      fileList.value = []
+      uploadRef.value?.clearFiles()
+      progressText.value = t(payload.failed_files?.length ? 'manager.upload.partialCommitted' : 'manager.upload.initialPending')
+      await checkUploadedStatus()
+      return
+    }
     const scanExecutionId = payload.scan_execution_id
     progressText.value = t('manager.upload.scanningMetadata')
     await waitForMetaScanExecution(scanExecutionId)
@@ -115,6 +128,42 @@ const handleUpload = async () => {
     uploading.value = false
   }
 }
+
+const checkUploadedStatus = async () => {
+  const generation = ++pollGeneration
+  uploading.value = true
+  try {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const state = await dataExplorerAPI.getOwnUpload(uploadId.value)
+      if (generation !== pollGeneration) return
+      if (state.initial_status === 'settled' || state.initial_status === 'denied') {
+        const outcomes = Array.isArray(state.outcomes) ? state.outcomes : []
+        const issued = outcomes.filter(item => item.outcome === 'issued')
+        const hasRead = issued.some(item => item.action === 'read')
+        const key = state.initial_status === 'denied' || !issued.length
+          ? 'manager.upload.initialNotGranted'
+          : hasRead ? 'manager.upload.initialReadIssued' : 'manager.upload.initialMetadataIssued'
+        progressText.value = t(key)
+        ElMessage.info(t(key))
+        emit('success', { ...committedPayload, ...state, metadataReady: state.status !== 'failed' && Boolean(state.scan_execution_id) })
+        emit('update:modelValue', false)
+        return
+      }
+      if (state.initial_status === 'pending_receipt') break
+      progressText.value = t('manager.upload.initialPending')
+      await sleep(SCAN_POLL_INTERVAL_MS)
+      if (generation !== pollGeneration) return
+    }
+    progressText.value = t('manager.upload.initialPending')
+  } catch (error) {
+    // The physical upload was acknowledged. A status failure must never invite
+    // another upload POST or label the confirmed bytes as failed.
+    if (generation === pollGeneration) progressText.value = t('manager.upload.initialStatusUnavailable')
+  } finally {
+    if (generation === pollGeneration) uploading.value = false
+  }
+}
+onBeforeUnmount(() => { pollGeneration += 1 })
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -137,6 +186,9 @@ const waitForMetaScanExecution = async (executionId) => {
 }
 
 const reset = () => {
+  pollGeneration += 1
+  uploadId.value = ''
+  committedPayload = null
   fileList.value = []
   progressText.value = ''
   uploading.value = false

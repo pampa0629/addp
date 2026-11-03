@@ -102,7 +102,7 @@ describe('persistent PG node candidates', () => {
   expect(await adapter.getNodeChildren(children[0])).toEqual([])
   expect(read).toHaveBeenCalledTimes(3)
   expect((await adapter.search('2','schema.204'))).toHaveLength(1)
-  expect(() => createApprovalNodeCatalogAdapter(engine,read)).toThrow()
+  expect(() => createApprovalNodeCatalogAdapter({ ...engine, engine_type: 'mysql' },read)).toThrow()
  })
  it('rejects changed page totals and duplicate or foreign node identities', async () => {
   const pg={id:'2',name:'PG',engine_type:'postgresql'},root={version:'catalog.path/v1',engine_id:2,segments:[{term:'server',kind:'server',name:''}]}
@@ -150,7 +150,7 @@ describe('mixed PG authorization tree', () => {
     expect(results.filter(isApprovalNode)).toHaveLength(1)
     expect(results.filter(node => node.metadata.data_item)).toHaveLength(1)
     expect(read).not.toHaveBeenCalled()
-    const nonPG = createMixedApprovalCatalogAdapter(engine, async () => page([item]), async () => facts, () => { throw new Error('node permission must not expand') })
+    const nonPG = createMixedApprovalCatalogAdapter({ ...engine, engine_type: 'ftp' }, async () => page([item]), async () => facts, () => { throw new Error('node permission must not expand') })
     expect(nonPG.completeTree).toBe(true)
     expect((await nonPG.getTreeRoot()).children[0].children).toHaveLength(1)
   })
@@ -182,5 +182,41 @@ describe('mixed PG authorization tree', () => {
     expect(approvalScopeContains(schema, leaf, false)).toBe(true)
     expect(approvalScopeContains(schema, { ...leaf, engine_id: 3 }, true)).toBe(false)
     expect(approvalScopeContains(schemaPath('pub'), leaf, true)).toBe(false)
+  })
+})
+
+
+describe('NFS ordinary nodes and exact whole items share one picker', () => {
+  it('lazily proves ordinary directories and keeps a whole FileGDB as one leaf', async () => {
+    const root = { ...path, segments: path.segments.slice(0, 1) }
+    const exports = { ...path, segments: path.segments.slice(0, 2) }
+    const empty = { ...exports, segments: [...exports.segments, { term: 'directory', kind: 'directory', name: ' empty ' }] }
+    const fact = target => ({ tenant_id: 7, target, exists: true })
+    const list = vi.fn(async () => page([item]))
+    const read = vi.fn(async () => structuredClone(facts))
+    const nodes = vi.fn(async (_, query) => {
+      const children = query.target.segments.length === 1 ? [fact(exports)] : query.target.segments.length === 2 ? [fact(empty)] : []
+      return { parent: fact(query.target), nodes: children, total: children.length, page: 1, page_size: 100 }
+    })
+    const adapter = createMixedApprovalCatalogAdapter(engine, list, read, nodes)
+    const tree = await adapter.getTreeRoot()
+    expect(isApprovalNode(tree)).toBe(true)
+    expect(list).not.toHaveBeenCalled()
+    const [dir] = await adapter.getNodeChildren(tree)
+    expect(isApprovalNode(dir)).toBe(true)
+    const children = await adapter.getNodeChildren(dir)
+    expect(children.map(child => child.label)).toEqual([' empty ', 'test.gdb'])
+    expect(isApprovalNode(children[0])).toBe(true)
+    expect(isApprovalNode(children[1])).toBe(false)
+    expect(children[1].hasChildren).toBe(false)
+    expect(await adapter.resolveTarget(children[1])).toEqual({ ...path, engine_id: '2' })
+    expect(await adapter.resolveTarget(children[0])).toEqual(empty)
+    expect(await adapter.getNodeChildren(children[0])).toEqual([])
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(approvalScopeContains(exports, path, false, false)).toBe(true)
+    expect(approvalScopeContains(exports, empty, false, true)).toBe(false)
+    adapter.invalidate()
+    await expect(adapter.resolveTarget(children[0])).rejects.toThrow()
   })
 })

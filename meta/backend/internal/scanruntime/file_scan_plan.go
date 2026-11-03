@@ -52,6 +52,9 @@ func (s *FilesystemCatalogRuntime) prepareFileScan(ctx context.Context, reader p
 		defer delete(visiting, path)
 		plan.progress.Operation("listing", path)
 		files, dirs, ignored, err := s.listDirectoryWithIgnored(ctx, resource, provider, conn, path)
+		if scanresource.DirectDirectoryRefresh(ctx) {
+			dirs = nil
+		}
 		d := &fileDirectoryPlan{files: files, subdirs: dirs, ignored: ignored, listingErr: err}
 		plan.directories[path] = d
 		if err != nil {
@@ -119,7 +122,8 @@ func (s *FilesystemCatalogRuntime) prepareFileScan(ctx context.Context, reader p
 		return nil
 	}
 	for _, path := range roots {
-		if err := identify(path, path == ""); err != nil {
+		refresh := scanresource.MetadataRefreshScope(ctx)
+		if err := identify(path, path == "" || (refresh != nil && refresh.Query.Kind == "node")); err != nil {
 			return nil, err
 		}
 	}

@@ -1460,6 +1460,91 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engine-access/metadata-refresh-scopes/query": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 PG 与 NFS 的普通 User；node／item 核验扫描功能及当前个人与组织元数据／读取 Grant，并独立验证 Meta 身份；node 不接受引擎根。显式 engine 集中扫描必须具有引擎管理范围，可用于首次基础识别。精确项不扩大到父目录。结果不授予读取或可缓存扫描许可 | Ordinary User for PG and NFS only. Node/item checks scan function, current personal/organization metadata/read Grants and independent Meta identity; node rejects engine roots. Explicit centralized engine scans require engine management authority and may bootstrap basic identification. Exact items never expand to parents. The result grants neither read access nor a cacheable scan permission",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据集中采集 | Centralized Metadata Collection"
+                ],
+                "summary": "查询当前授权范围内的元数据刷新范围 | Query metadata refresh scope within current grants",
+                "parameters": [
+                    {
+                        "description": "目标种类与类型化路径 | Target kind and typed path",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorization.MetadataRefreshQuery"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前最大刷新范围 | Current maximum refresh scope",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.MetadataRefreshScope"
+                        }
+                    },
+                    "400": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
+            }
+        },
         "/engine-access/read-checks/manager-preview": {
             "post": {
                 "security": [
@@ -2986,7 +3071,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前Tenant User须具有源授权读取功能和目标引擎管理范围。仅查询Meta已识别PG server/schema的直接子节点身份，不枚举数据项、源目录、内容、属性或统计；查询前后重核当前人员资格。结果不是Grant，签发仍独立核对真实节点 | Current Tenant User needs source-grant read permission and target engine management scope, rechecked before and after Meta IO. Lists only immediate Meta-identified PG server/schema node identities. No DataItem enumeration, native source browsing, content, attributes or statistics. Not a Grant; issuance independently verifies the exact node",
+                "description": "当前Tenant User须具有源授权读取功能和目标引擎管理范围。仅查询Meta已识别PG server/schema或NFS普通root/directory的直接子节点身份，排除whole容器，不枚举数据项、源目录、内容、属性或统计；查询前后重核当前人员资格。结果不是Grant，签发仍独立核对真实节点 | Current Tenant User needs source-grant read permission and target engine management scope, rechecked before and after Meta IO. Lists only immediate Meta-identified PG server/schema or NFS ordinary root/directory node identities, excluding whole containers. No DataItem enumeration, native source browsing, content, attributes or statistics. Not a Grant; issuance independently verifies the exact node",
                 "consumes": [
                     "application/json"
                 ],
@@ -10455,6 +10540,75 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/initial-upload-grants/{upload_id}/items/{fingerprint}": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 Manager 运行身份；System 反查真实上传回执、Meta 首次识别与当前边界、原上传者和历史。成功与审计原子提交，重放不恢复已撤销授权，暂时故障不记录拒绝终态 | Fixed Manager Runtime only. System independently verifies committed receipt, Meta first identification/current boundary, uploader and history. Grant and audit commit atomically; replay never restores revoked Grants; temporary failures create no terminal denial",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源授权办理 | Source Access Fulfillment"
+                ],
+                "summary": "续办上传新数据初始使用权 | Continue initial access for a newly uploaded DataItem",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "上传 UUID | Upload UUID",
+                        "name": "upload_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项指纹 | DataItem fingerprint",
+                        "name": "fingerprint",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.UploadInitialResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_initial_grant.execute"
+                ]
+            }
+        },
         "/runtime/initial_production_grants/transfer/{execution_id}": {
             "get": {
                 "security": [
@@ -16088,6 +16242,60 @@ const docTemplate = `{
                 }
             }
         },
+        "authorization.MetadataRefreshQuery": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "node",
+                        "item",
+                        "engine"
+                    ]
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorization.MetadataRefreshRange": {
+            "type": "object",
+            "properties": {
+                "item": {
+                    "$ref": "#/definitions/authorizationfacts.Binding"
+                },
+                "node": {
+                    "$ref": "#/definitions/authorization.SourceNodeScope"
+                }
+            }
+        },
+        "authorization.MetadataRefreshScope": {
+            "type": "object",
+            "properties": {
+                "engine_version": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "operator": {
+                    "$ref": "#/definitions/authorization.SharingFulfillmentOperator"
+                },
+                "query": {
+                    "$ref": "#/definitions/authorization.MetadataRefreshQuery"
+                },
+                "ranges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorization.MetadataRefreshRange"
+                    }
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
         "authorization.OrganizationContext": {
             "type": "object",
             "properties": {
@@ -16350,6 +16558,17 @@ const docTemplate = `{
                 }
             }
         },
+        "authorization.SourceNodeScope": {
+            "type": "object",
+            "properties": {
+                "recursive": {
+                    "type": "boolean"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
         "authorization.TokenFacts": {
             "type": "object",
             "properties": {
@@ -16360,6 +16579,36 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.UploadInitialResult": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "granted_at": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "outcome": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "upload_id": {
                     "type": "string"
                 }
             }
@@ -16444,6 +16693,29 @@ const docTemplate = `{
                 },
                 "schema_version": {
                     "type": "string"
+                }
+            }
+        },
+        "authorizationfacts.Binding": {
+            "type": "object",
+            "properties": {
+                "boundary_hash": {
+                    "type": "string"
+                },
+                "file_composition": {
+                    "$ref": "#/definitions/authorizationfacts.FileCompositionBoundary"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "metadata_target": {
+                    "$ref": "#/definitions/authorizationfacts.MetadataBoundary"
+                },
+                "native_target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "scope": {
+                    "$ref": "#/definitions/authorizationfacts.ScopeBoundary"
                 }
             }
         },
@@ -17984,6 +18256,9 @@ const docTemplate = `{
                 },
                 "scope": {
                     "type": "object"
+                },
+                "upload_id": {
+                    "type": "string"
                 }
             }
         },

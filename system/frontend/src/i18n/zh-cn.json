@@ -729,7 +729,7 @@
           "engine_catalog": "引擎目录",
           "engine_access_fulfillment": "源授权办理",
           "engine_access_grant": "源数据授权",
-          "engine_access_initial_grant": "任务产出初始授权",
+          "engine_access_initial_grant": "新数据初始使用权",
           "engine_access_deny": "源读取拒绝规则",
           "engine_access_delegation": "引擎授权管理委派",
           "engine_descriptor": "引擎描述",
@@ -857,7 +857,8 @@
           "http_observation": "HTTP 接口质量读取",
           "platform_http_rule": "HTTP 接口质量规则",
           "trace": "HTTP 调用链",
-          "node_identity": "节点身份事实"
+          "node_identity": "节点身份事实",
+          "upload_receipt": "上传写入回执"
         },
         "types": {
           "tenant_builtin": "租户内置角色",
@@ -1180,7 +1181,8 @@
           "independent": "直接批准",
           "catalog": "业务批准",
           "task_production": "任务产出初始授权",
-          "mixed": "多种授权来源"
+          "mixed": "多种授权来源",
+          "upload_creation": "上传新数据初始授权"
         },
         "nodeRecursive": "递归包含下级节点的数据项",
         "mixedSelection": "可同时勾选数据项与节点。节点覆盖当前及以后新增的数据项；每个节点可单独设置递归。",

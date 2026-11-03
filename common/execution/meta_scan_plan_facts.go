@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/addp/common/authorization"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/jsonmap"
@@ -20,6 +21,7 @@ const MetaScanPlanFactsSchemaV1 = "meta.scan_plan_facts/v1"
 // MetaScanPlanFacts is an immutable plan's owner projection, never an Allow.
 // System independently checks execution identity, current qualification and engine.
 type MetaScanPlanFacts struct {
+	RefreshScope         *authorization.MetadataRefreshScope        `json:"refresh_scope,omitempty"`
 	SchemaVersion        string                                     `json:"schema_version"`
 	ExecutionID          string                                     `json:"execution_id"`
 	TaskID               *string                                    `json:"task_id"`
@@ -86,11 +88,17 @@ func (f MetaScanPlanFacts) Validate() error {
 	}
 	switch f.BasisState {
 	case authorizationfacts.AuthorizationBasisComplete:
-		if err := f.SourceScope.Validate(f.EngineID); err != nil {
-			return err
+		if f.RefreshScope != nil {
+			if f.TaskID != nil || f.SourceScope != nil || f.RefreshScope.Validate() != nil || f.RefreshScope.Query.Target.EngineID != f.EngineID || f.RefreshScope.EngineVersion != f.EngineVersion {
+				return errors.New("invalid Meta refresh plan")
+			}
+		} else {
+			if err := f.SourceScope.Validate(f.EngineID); err != nil {
+				return err
+			}
 		}
 	case authorizationfacts.AuthorizationBasisIncomplete, authorizationfacts.AuthorizationBasisNeedsRefresh, authorizationfacts.AuthorizationBasisUnsupported:
-		if f.SourceScope != nil {
+		if f.SourceScope != nil || f.RefreshScope != nil {
 			return errors.New("unresolved Meta scan facts cannot declare a scope")
 		}
 	default:
@@ -147,6 +155,14 @@ func (f *MetaScanPlanFacts) Clone() *MetaScanPlanFacts {
 		return nil
 	}
 	copy := *f
+	if f.RefreshScope != nil {
+		raw, _ := json.Marshal(f.RefreshScope)
+		var scope authorization.MetadataRefreshScope
+		if json.Unmarshal(raw, &scope) != nil {
+			return nil
+		}
+		copy.RefreshScope = &scope
+	}
 	if f.TaskID != nil {
 		value := *f.TaskID
 		copy.TaskID = &value
@@ -196,7 +212,7 @@ func metaScanClosedObject(value any, required, optional []string, nullable map[s
 func (f *MetaScanPlanFacts) UnmarshalJSON(raw []byte) error {
 	invalid := errors.New("invalid strict Meta scan plan facts")
 	object, err := jsonmap.DecodeObjectStrict(raw, MaxExecutionConfigBytes, 64)
-	if err != nil || !metaScanClosedObject(object, []string{"schema_version", "execution_id", "task_id", "task_definition_digest", "execution_plan_digest", "engine_id", "engine_version", "scan_depth", "source_scope", "read_options", "basis_state"}, nil, map[string]bool{"task_id": true, "task_definition_digest": true, "source_scope": true}) ||
+	if err != nil || !metaScanClosedObject(object, []string{"schema_version", "execution_id", "task_id", "task_definition_digest", "execution_plan_digest", "engine_id", "engine_version", "scan_depth", "source_scope", "read_options", "basis_state"}, []string{"refresh_scope"}, map[string]bool{"task_id": true, "task_definition_digest": true, "source_scope": true}) ||
 		!metaScanClosedObject(object["read_options"], nil, []string{"encoding", "has_header"}, nil) {
 		return invalid
 	}

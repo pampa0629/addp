@@ -137,29 +137,6 @@ func (r *nfsFileReadCloser) Seek(offset int64, whence int) (int64, error) {
 	return seeker.Seek(target, io.SeekStart)
 }
 
-type lockedWriteCloser struct {
-	io.WriteCloser
-	mu *sync.Mutex
-}
-
-func (w *lockedWriteCloser) Write(p []byte) (int, error) {
-	if w == nil || w.WriteCloser == nil {
-		return 0, io.ErrClosedPipe
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.WriteCloser.Write(p)
-}
-
-func (w *lockedWriteCloser) Close() error {
-	if w == nil || w.WriteCloser == nil {
-		return nil
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.WriteCloser.Close()
-}
-
 func init() {
 	plugin.Register(&NFSPlugin{})
 }
@@ -258,7 +235,17 @@ func (p *NFSPlugin) CreateContent(ctx context.Context, connInfo plugin.Connectio
 	if err != nil {
 		return nil, err
 	}
-	return p.openFileForWrite(ctx, connInfo, filePath, opts.Overwrite)
+	writer, err := p.openFileForWrite(ctx, connInfo, filePath, opts.Overwrite)
+	if err != nil {
+		return nil, err
+	}
+	committed, ok := writer.(*committedNFSWriter)
+	if !ok {
+		_ = writer.Close()
+		return nil, errors.New("NFS committed writer unavailable")
+	}
+	committed.target = path
+	return committed, nil
 }
 
 func (p *NFSPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
@@ -459,19 +446,11 @@ func (p *NFSPlugin) openFileForWrite(ctx context.Context, connInfo plugin.Connec
 			return nil, err
 		}
 	}
-	if overwrite {
-		// go-nfs-client 的 OpenFile 不会自动截断，覆盖写必须先删除旧文件。
-		_ = entry.target.Remove(filePath)
-	} else if _, _, err := entry.target.Lookup(filePath); err == nil {
-		return nil, fmt.Errorf("NFS file %s already exists", filePath)
+	protocol, ok := entry.reader.(nfsWriteProtocol)
+	if !ok {
+		return nil, errors.New("NFS committed writer unavailable")
 	}
-
-	f, err := entry.target.OpenFile(filePath, 0644)
-	if err != nil {
-		invalidatePool(server, exportPath)
-		return nil, fmt.Errorf("failed to open NFS file for write %s: %w", filePath, err)
-	}
-	return &lockedWriteCloser{WriteCloser: f, mu: &entry.mu}, nil
+	return openCommittedNFSWriter(ctx, protocol, &entry.mu, strings.TrimPrefix(filePath, "/"), overwrite)
 }
 
 func (p *NFSPlugin) deleteFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) error {

@@ -168,6 +168,9 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 		parentNode.ID != item.NodeID || parentNode.TenantID != tenantID || parentNode.EngineID != resource.ID {
 		return scanprocessor.Result{}, fmt.Errorf("item refresh identity does not match its engine and parent")
 	}
+	if err := scanresource.CheckCollectionRead(ctx, resource); err != nil {
+		return scanprocessor.Result{}, err
+	}
 	if scanDepth != scanflow.ScanDepthBasic && scanDepth != scanflow.ScanDepthDeep {
 		return scanprocessor.Result{}, fmt.Errorf("item refresh scan depth is invalid")
 	}
@@ -195,6 +198,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 	if !ok && scanDepth == scanflow.ScanDepthDeep {
 		return scanprocessor.Result{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
+	contentReader = scanresource.BoundRefreshReader(ctx, resource, contentReader)
 
 	descriptor := scanflow.KnownItemDescriptorFromAttributes(item.Attributes)
 	if err := scanflow.ValidateKnownItemRefreshDescriptor(descriptor, &item); err != nil {
@@ -208,7 +212,11 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 	var attrs models.JSONMap
 	var redetected *metaitem.DetectedItem
 	if scanDepth == scanflow.ScanDepthDeep {
-		redetected, _ = r.reDetectKnownWholeScopeItem(ctx, resource, p, contentReader, connInfo, descriptor, physicalPath)
+		var err error
+		redetected, _, err = r.reDetectKnownWholeScopeItem(ctx, resource, p, contentReader, connInfo, descriptor, physicalPath)
+		if err != nil {
+			return scanprocessor.Result{}, err
+		}
 	}
 	if redetected != nil {
 		descriptor = knownItemDescriptorFromDetected(redetected, descriptor)
@@ -352,26 +360,26 @@ func (r *ItemRefreshRuntime) reDetectKnownWholeScopeItem(
 	connInfo plugin.ConnectionInfo,
 	descriptor dataitem.ItemDescriptor,
 	physicalPath string,
-) (*metaitem.DetectedItem, bool) {
+) (*metaitem.DetectedItem, bool, error) {
 	if resource == nil || descriptor.Layout != format.LayoutWhole || contentReader == nil || strings.TrimSpace(physicalPath) == "" {
-		return nil, false
+		return nil, false, nil
 	}
 	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogProvider)
 	if !ok || scanflow.EngineCatalogLeafTermForPlugin(enginePlugin, "") != plugin.EngineCatalogTermFile {
-		return nil, false
+		return nil, false, nil
 	}
 
 	scopePath := strings.Trim(physicalPath, "/")
-	files, subdirs, err := listKnownFileDirectory(ctx, resource.ID, catalogProvider, connInfo, scopePath, false)
+	files, subdirs, err := listKnownFileDirectory(ctx, resource, catalogProvider, connInfo, scopePath, false)
 	if err != nil {
-		return nil, false
+		return nil, true, err
 	}
 	var recursiveFiles []metaitem.StorageFileRef
 	var recursiveSubdirs []metaitem.StorageDirectoryRef
 	if len(subdirs) > 0 {
-		recursiveFiles, recursiveSubdirs, err = listKnownFileDirectory(ctx, resource.ID, catalogProvider, connInfo, scopePath, true)
+		recursiveFiles, recursiveSubdirs, err = listKnownFileDirectory(ctx, resource, catalogProvider, connInfo, scopePath, true)
 		if err != nil {
-			return nil, false
+			return nil, true, err
 		}
 	}
 
@@ -386,29 +394,38 @@ func (r *ItemRefreshRuntime) reDetectKnownWholeScopeItem(
 		recursiveFiles,
 		recursiveSubdirs,
 	)
-	if err != nil || detection == nil {
-		return nil, false
+	if err != nil {
+		return nil, true, err
+	}
+	if detection == nil {
+		return nil, true, nil
 	}
 	for _, item := range detection.Items {
 		if item == nil || item.Layout != format.LayoutWhole {
 			continue
 		}
 		if strings.Trim(item.ScopePath, "/") == scopePath || strings.Trim(item.PhysicalPath, "/") == scopePath {
-			return item, true
+			return item, true, nil
 		}
 	}
-	return nil, false
+	return nil, false, nil
 }
 
 func listKnownFileDirectory(
 	ctx context.Context,
-	engineID uint,
+	resource *commonModels.Engine,
 	catalogProvider plugin.EngineCatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
 	recursive bool,
 ) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(engineID, dirPath), plugin.ListOptions{Recursive: recursive})
+	if err := scanresource.CheckCollectionRead(ctx, resource); err != nil {
+		return nil, nil, err
+	}
+	if err := scanresource.CheckRefreshEnumeration(ctx, plugin.FileDirectoryPath(resource.ID, dirPath), recursive); err != nil {
+		return nil, nil, err
+	}
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(resource.ID, dirPath), plugin.ListOptions{Recursive: recursive})
 	if err != nil {
 		return nil, nil, err
 	}

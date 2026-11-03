@@ -959,6 +959,7 @@ roles:
       - security.protection_projection.update
       - system.cleanup_authorization.execute
       - system.engine.read
+      - system.engine_access_initial_grant.execute
       - system.engine_catalog.read
       - system.engine_descriptor.read
       - system.execution_authorization.execute
@@ -976,6 +977,7 @@ roles:
     permissions:
       - audit.tenant_event.create
       - manager.content_index.update
+      - manager.upload_receipt.read
       - system.cleanup_authorization.execute
       - system.engine.read
       - system.engine_catalog.read
@@ -1239,6 +1241,7 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - catalog.sharing_fulfillment.read
+      - manager.upload_receipt.read
       - meta.authorization_facts.read
       - meta.data_item_identity.read
       - meta.node_identity.read

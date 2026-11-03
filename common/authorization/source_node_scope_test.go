@@ -25,3 +25,20 @@ func TestNodeScopeCoversCurrentAndFutureTypedItems(t *testing.T) {
 		}
 	}
 }
+
+func TestNFSNodeScopeUsesOpaqueDirectorySegments(t *testing.T) {
+	scope := SourceNodeScope{Target: plugin.FileDirectoryPath(9, "data/ a.b ")}
+	for _, p := range []plugin.EngineCatalogPath{plugin.FileItemPath(9, "data/ a.b /new.csv"), plugin.FileDirectoryPath(9, "data/ a.b /new.gdb")} {
+		if !scope.Covers(p) {
+			t.Fatalf("direct NFS item not covered: %+v", p)
+		}
+	}
+	nested := plugin.FileItemPath(9, "data/ a.b /child/new.csv")
+	if scope.Covers(nested) {
+		t.Fatal("nonrecursive directory crossed a child node")
+	}
+	scope.Recursive = true
+	if !scope.Covers(nested) || scope.Covers(plugin.FileItemPath(9, "data/ a.b suffix/new.csv")) || scope.Covers(plugin.FileItemPath(10, "data/ a.b /new.csv")) {
+		t.Fatal("typed NFS scope mismatch")
+	}
+}

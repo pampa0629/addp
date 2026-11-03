@@ -100,6 +100,10 @@ export const dataExplorerAPI = {
       params: { locator }
     })
   },
+  getOwnUpload(uploadId) {
+    return client.get(`/manager/uploads/${encodeURIComponent(uploadId)}`)
+  },
+
   uploadFiles(formData) {
     return client.post('/manager/uploads', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }

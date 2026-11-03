@@ -41,6 +41,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	// 创建Handler
 	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, inspectService, lineageService)
 	handler.scanManagementScope = systemClient
+	if executionService != nil {
+		executionService.SetMetadataRefreshScopeClient(systemClient)
+	}
 	handler.metadataVisibility = systemClient
 	handler.lineageVisibility = systemClient
 	handler.dataItemChangeService = service.NewDataItemChangeService(db)
@@ -86,6 +89,8 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.POST("/executions/:execution_id/cancel", permission(metaauthorization.PermissionMetaScanTaskCancel), handler.CancelScanExecution)
 		api.GET("/executions/:execution_id", permission(metaauthorization.PermissionMetaScanTaskRead), handler.GetExecution)
 		api.GET("/runtime/mosaic-scans/:execution_id/result", auth.MustNewServiceClientGuard("addp-manager"), permission(metaauthorization.PermissionMetaScanTaskExecute), handler.GetMosaicScanResult)
+		api.POST("/runtime/manager-uploads/:upload_id/basic-scan", auth.MustNewServiceClientGuard("addp-manager"), permission(metaauthorization.PermissionMetaScanTaskExecute), handler.EnsureUploadBasicScan)
+		api.GET("/runtime/manager-uploads/:upload_id/basic-scan", auth.MustNewServiceClientGuard("addp-system"), permission(metaauthorization.PermissionMetaTaskProviderRead), handler.ReadUploadIdentification)
 		api.POST("/runtime/transfer-productions/:execution_id/basic-scan", auth.MustNewServiceClientGuard("addp-transfer"), permission(metaauthorization.PermissionMetaScanTaskExecute), handler.EnsureProductionBasicScan)
 		api.GET("/scan/tasks", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ListScanTasks)
 		api.POST("/scan/tasks", permission(metaauthorization.PermissionMetaScanTaskCreate), handler.CreateScanTask)

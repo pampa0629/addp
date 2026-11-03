@@ -50,6 +50,7 @@ type sourceGrant struct {
 	OperatorAuthorizationVersion int64
 	Reason                       *string
 	ProducerOwner                *string
+	UploadID                     *uuid.UUID `gorm:"type:uuid"`
 	ProductionExecutionID        *uuid.UUID `gorm:"type:uuid"`
 	IssuerPrincipalID            *int64
 	IssuerMembershipID           *int64
@@ -76,7 +77,7 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 	file := len(primary.Segments) > 0 && (primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermFile || primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermObject)
 	if len(grant.MetadataTarget) != 0 {
 		var metadata authorizationfacts.MetadataBoundary
-		if grant.Action != shared.SourceAccessMetadataRead || grant.NodeRecursive != nil || grant.ApprovalMode != approvalModeIndependent || len(grant.FileComposition) != 0 || len(grant.ScopeBoundary) != 0 || json.Unmarshal(grant.MetadataTarget, &metadata) != nil {
+		if grant.Action != shared.SourceAccessMetadataRead || grant.NodeRecursive != nil || (grant.ApprovalMode != approvalModeIndependent && grant.ApprovalMode != shared.UploadInitialSource) || len(grant.FileComposition) != 0 || len(grant.ScopeBoundary) != 0 || json.Unmarshal(grant.MetadataTarget, &metadata) != nil {
 			return commonapi.ErrBadRequest
 		}
 		binding := authorizationfacts.Binding{ItemFingerprint: grant.ItemFingerprint, BoundaryHash: grant.BoundaryHash, MetadataTarget: &metadata}
@@ -86,7 +87,7 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 		}
 	} else if len(grant.ScopeBoundary) != 0 || authorizationfacts.ValidWholeScopeRoot(primary) {
 		var scope authorizationfacts.ScopeBoundary
-		if grant.ApprovalMode != approvalModeIndependent || len(grant.FileComposition) != 0 || json.Unmarshal(grant.ScopeBoundary, &scope) != nil {
+		if (grant.ApprovalMode != approvalModeIndependent && grant.ApprovalMode != shared.UploadInitialSource) || len(grant.FileComposition) != 0 || json.Unmarshal(grant.ScopeBoundary, &scope) != nil {
 			return commonapi.ErrBadRequest
 		}
 		binding := authorizationfacts.Binding{ItemFingerprint: grant.ItemFingerprint, BoundaryHash: grant.BoundaryHash, Scope: &scope}
@@ -96,7 +97,7 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 		}
 	} else if file || len(grant.FileComposition) != 0 {
 		var composition authorizationfacts.FileCompositionBoundary
-		if !file || grant.ApprovalMode != approvalModeIndependent || json.Unmarshal(grant.FileComposition, &composition) != nil {
+		if !file || (grant.ApprovalMode != approvalModeIndependent && grant.ApprovalMode != shared.UploadInitialSource) || json.Unmarshal(grant.FileComposition, &composition) != nil {
 			return commonapi.ErrBadRequest
 		}
 		binding := authorizationfacts.Binding{ItemFingerprint: grant.ItemFingerprint, BoundaryHash: grant.BoundaryHash, FileComposition: &composition}

@@ -27,6 +27,12 @@ func (s *FilesystemCatalogRuntime) listDirectoryWithIgnored(
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
 ) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, []plugin.EngineCatalogEntry, error) {
+	if err := scanresource.CheckCollectionRead(ctx, resource); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := scanresource.CheckRefreshEnumeration(ctx, plugin.FileDirectoryPath(resource.ID, dirPath), false); err != nil {
+		return nil, nil, nil, err
+	}
 	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(resource.ID, dirPath), plugin.ListOptions{})
 	if err != nil {
 		return nil, nil, nil, err
@@ -42,6 +48,12 @@ func (s *FilesystemCatalogRuntime) listDirectoryRecursive(
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
 ) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, error) {
+	if err := scanresource.CheckCollectionRead(ctx, resource); err != nil {
+		return nil, nil, err
+	}
+	if err := scanresource.CheckRefreshEnumeration(ctx, plugin.FileDirectoryPath(resource.ID, dirPath), true); err != nil {
+		return nil, nil, err
+	}
 	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(resource.ID, dirPath), plugin.ListOptions{Recursive: true})
 	if err != nil {
 		return nil, nil, err

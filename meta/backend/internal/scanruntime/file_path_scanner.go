@@ -10,6 +10,7 @@ import (
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func scanFilePaths(
@@ -36,6 +37,7 @@ func scanFilePaths(
 	if !ok {
 		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
+	contentReader = scanresource.BoundRefreshReader(ctx, resource, contentReader)
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	if len(paths) == 0 {
@@ -85,7 +87,12 @@ func scanFilePaths(
 		}
 
 		var nodeStateErr error
-		if err := repo.ResetNodeState(scanNode, "running"); err != nil {
+		if err := func() error {
+			if scanresource.DirectDirectoryRefresh(ctx) {
+				return nil
+			}
+			return repo.ResetNodeState(scanNode, "running")
+		}(); err != nil {
 			failures.Add(rootPath, err)
 			nodeStateErr = err
 		}
@@ -97,7 +104,9 @@ func scanFilePaths(
 			failures.Add(rootPath, scanErr)
 			nodeStateErr = scanErr
 		}
-		if nodeStateErr != nil {
+		if scanresource.DirectDirectoryRefresh(ctx) {
+			// The parent subtree was not scanned. Preserve its previous range facts.
+		} else if nodeStateErr != nil {
 			if err := repo.FinalizeNodeState(scanNode, "failed", nodeStateErr.Error()); err != nil {
 				failures.Add(rootPath, err)
 			}

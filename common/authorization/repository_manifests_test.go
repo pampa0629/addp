@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 541 {
-		t.Fatalf("descriptor count = %d, want 541", len(descriptors))
+	if len(descriptors) != 542 {
+		t.Fatalf("descriptor count = %d, want 542", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.Key == "system.meta_collection.execute" && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
@@ -77,8 +77,11 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if strings.HasPrefix(key, "system.meta_collection.") && (key != "system.meta_collection.execute" || role.Key != "tenant.meta_runtime") {
 				t.Fatalf("unexpected collection authority %s in %s", key, role.Key)
 			}
-			if key == "system.engine_access_initial_grant.execute" && role.Key != "tenant.transfer_runtime" {
+			if key == "system.engine_access_initial_grant.execute" && role.Key != "tenant.transfer_runtime" && role.Key != "tenant.manager_runtime" {
 				t.Fatalf("unexpected initial production runtime role %q", role.Key)
+			}
+			if key == "manager.upload_receipt.read" && role.Key != "tenant.meta_runtime" && role.Key != "tenant.system_runtime" {
+				t.Fatalf("unexpected upload receipt reader %q", role.Key)
 			}
 			if key == "meta.inspect.execute" && role.Key != "tenant.transfer_runtime" {
 				t.Fatalf("unexpected Infra inspection role %q", role.Key)
@@ -173,7 +176,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "meta.authorization_facts.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
-	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read", "meta.data_item_identity.read", "meta.node_identity.read", "meta.task_provider.read", "transfer.production_receipt.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read", "manager.upload_receipt.read", "meta.authorization_facts.read", "meta.data_item_identity.read", "meta.node_identity.read", "meta.task_provider.read", "transfer.production_receipt.read"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.system_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.duckdb_runtime", []string{"system.execution_authorization.execute"})
@@ -233,6 +236,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"security.protection_projection.update",
 		"system.cleanup_authorization.execute",
 		"system.engine.read",
+		"system.engine_access_initial_grant.execute",
 		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
@@ -245,6 +249,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.meta_runtime", []string{
 		"audit.tenant_event.create",
 		"manager.content_index.update",
+		"manager.upload_receipt.read",
 		"system.cleanup_authorization.execute",
 		"system.engine.read",
 		"system.engine_catalog.read",

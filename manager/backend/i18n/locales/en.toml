@@ -350,3 +350,8 @@ other = "The source changed while packaging. Retry after the source is stable."
 
 [manager.error.grid_slice_invalid]
 other = "Grid slice selection is invalid or outside the supported bounds"
+
+[permissions.manager.upload_receipt.read.name]
+other = "Read committed upload receipts"
+[permissions.manager.upload_receipt.read.description]
+other = "Only Meta/System Runtime may read exact committed upload writes in the current tenant; no content or data access is granted"

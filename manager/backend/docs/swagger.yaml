@@ -1,5 +1,25 @@
 basePath: /api/v1/manager
 definitions:
+  authorization.UploadInitialResult:
+    properties:
+      action:
+        type: string
+      granted_at:
+        type: string
+      item_fingerprint:
+        type: string
+      outcome:
+        type: string
+      reason:
+        type: string
+      request_id:
+        type: string
+      tenant_id:
+        example: ""
+        type: string
+      upload_id:
+        type: string
+    type: object
   cleanup.Result:
     properties:
       action:
@@ -155,6 +175,41 @@ definitions:
         type: string
       task_id:
         type: integer
+    type: object
+  client.UploadReceipt:
+    properties:
+      committed_at:
+        type: string
+      engine_id:
+        example: ""
+        type: string
+      engine_version:
+        type: string
+      schema_version:
+        type: string
+      tenant_id:
+        example: ""
+        type: string
+      upload_id:
+        type: string
+      uploader:
+        $ref: '#/definitions/client.UploadUserOrigin'
+      writes:
+        items:
+          $ref: '#/definitions/plugin.ContentWriteEvidence'
+        type: array
+    type: object
+  client.UploadUserOrigin:
+    properties:
+      authorization_version:
+        example: ""
+        type: string
+      membership_id:
+        example: ""
+        type: string
+      principal_id:
+        example: ""
+        type: string
     type: object
   datatype.Bounds3D:
     properties:
@@ -1861,13 +1916,21 @@ definitions:
     type: object
   github_com_addp_manager_internal_service.UploadResult:
     properties:
+      failed_files:
+        items:
+          type: string
+        type: array
       files:
         items:
           $ref: '#/definitions/github_com_addp_manager_internal_service.UploadedFileResult'
         type: array
+      initial_status:
+        type: string
       scan_execution_id:
         type: string
       target_node_locator:
+        type: string
+      upload_id:
         type: string
     type: object
   github_com_addp_manager_internal_service.UploadedFileResult:
@@ -3064,6 +3127,21 @@ definitions:
     - locator
     - view_state
     type: object
+  internal_api.UploadInitialView:
+    properties:
+      initial_status:
+        type: string
+      outcomes:
+        items:
+          $ref: '#/definitions/authorization.UploadInitialResult'
+        type: array
+      scan_execution_id:
+        type: string
+      status:
+        type: string
+      upload_id:
+        type: string
+    type: object
   internal_api.VectorMaterializedViewTaskGeometryResponse:
     properties:
       geometry_column:
@@ -3138,6 +3216,41 @@ definitions:
       source_engine_id:
         type: integer
       table:
+        type: string
+    type: object
+  plugin.ContentWriteEvidence:
+    properties:
+      committed:
+        type: boolean
+      disposition:
+        enum:
+        - created
+        - replaced
+        type: string
+      size_bytes:
+        example: ""
+        type: string
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  plugin.EngineCatalogPath:
+    properties:
+      engine_id:
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogSegment'
+        type: array
+      version:
+        type: string
+    type: object
+  plugin.EngineCatalogSegment:
+    properties:
+      kind:
+        type: string
+      name:
+        type: string
+      term:
         type: string
     type: object
   query.ResourceQueryReference:
@@ -6303,6 +6416,63 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.import_provenance.read
+  /runtime/uploads/{upload_id}/receipt:
+    get:
+      description: 仅固定 Meta、System 运行身份；返回精确成功写入及原人员来源，不返回凭据、文件内容或授权结论；不创建扫描或授权 |
+        Fixed Meta/System Runtime only. Returns precise committed writes and original
+        human provenance, never credentials, content or access verdicts. No scan or
+        Grant side effects
+      parameters:
+      - description: 上传 UUID | Upload UUID
+        in: path
+        name: upload_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.UploadReceipt'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取本租户成功上传写入回执 | Read a committed upload receipt in the current tenant
+      tags:
+      - Manager Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.upload_receipt.read
   /search:
     get:
       description: 执行全文检索与向量语义检索，对候选去重后使用对称 RRF 融合排序并统一分页；field_matches 保留实际命中的已登记字段定义与高亮，纯向量命中不声明字段匹配
@@ -7267,10 +7437,12 @@ paths:
     post:
       consumes:
       - multipart/form-data
-      description: 仅租户用户；写入前同时检查上传、Meta 扫描和读取权限，当前请求以用户身份同步提交 Meta 扫描；只返回扫描 UUID |
-        Tenant users only; check upload, Meta scan and read permissions before writes;
-        submit scan with the current user in the synchronous request and return only
-        its UUID
+      description: 仅租户用户；NFS 上传按成功写入回执限定识别及初始授权，无需取得通用扫描功能。其他引擎写入前仍须扫描执行及状态查看功能；仅在当前请求传递用户凭据。上传后识别或签发失败不重放写入
+        | Tenant users only. NFS identification and initial Grants are bounded by
+        committed upload evidence without general scan functions. Other engines still
+        require scan execution and status-read functions before writes; User credentials
+        stay in the current request. Post-upload identification or issuance failure
+        never replays writes
       parameters:
       - description: 目标存储节点 ResourceLocator | Target storage node ResourceLocator
         in: formData
@@ -7325,10 +7497,63 @@ paths:
       tags:
       - Manager
       x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - manager.data_item.create
+      x-addp-conditional-permissions:
       - meta.scan_task.execute
       - meta.scan_task.read
+      x-addp-required-permissions:
+      - manager.data_item.create
+  /uploads/{upload_id}:
+    get:
+      description: '仅当前租户原上传者，需上传功能；只读、不续办、不重新上传。已签发表示历史结果，不代替当前读取裁决 | Original uploader
+        in current tenant with upload function only. Read-only: no continuation or
+        re-upload. Issuance is historical, not a current read verdict'
+      parameters:
+      - description: 上传 UUID | Upload UUID
+        in: path
+        name: upload_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.UploadInitialView'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询本人上传的识别及初始授权状态 | Query identification and initial Grant status for
+        one's own upload
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.create
   /vector_materialized_view:
     get:
       parameters:

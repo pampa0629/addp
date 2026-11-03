@@ -186,6 +186,7 @@ const (
 	// Orchestrator 模块
 	TaskTypeOrchestration = "orchestration"
 	// Manager 模块
+	TaskTypeUpload                           = "upload" // synchronous file write; no persistent task definition
 	TaskTypeVectorTileCacheGeneration        = "vector_tile_cache_generation"
 	TaskTypeVectorTileSetGeneration          = "vector_tile_set_generation"
 	TaskTypeVectorMaterializedViewGeneration = "vector_materialized_view_generation"

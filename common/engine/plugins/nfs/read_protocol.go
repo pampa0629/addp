@@ -29,10 +29,11 @@ type nfsRPCCaller interface {
 }
 
 type nfsRPCReader struct {
-	target  nfsRPCCaller
-	root    []byte
-	auth    rpc.Auth
-	maxRead uint32
+	target   nfsRPCCaller
+	root     []byte
+	auth     rpc.Auth
+	maxRead  uint32
+	maxWrite uint32
 }
 
 func (r *nfsRPCReader) Root() []byte { return append([]byte(nil), r.root...) }
@@ -337,6 +338,13 @@ func newNFSRPCReader(target *gonfs.Target) (*nfsRPCReader, error) {
 	if maxRead > 64*1024 {
 		maxRead = 64 * 1024
 	}
+	maxWrite := fsinfo.WTPref
+	if maxWrite > fsinfo.WTMax {
+		maxWrite = fsinfo.WTMax
+	}
+	if maxWrite > 64*1024 {
+		maxWrite = 64 * 1024
+	}
 	auth := rpc.NewAuthUnix("addp-nfs-client", uint32(os.Getuid()), uint32(os.Getgid())).Auth()
-	return &nfsRPCReader{target: target, root: append([]byte(nil), root...), auth: auth, maxRead: maxRead}, nil
+	return &nfsRPCReader{target: target, root: append([]byte(nil), root...), auth: auth, maxRead: maxRead, maxWrite: maxWrite}, nil
 }

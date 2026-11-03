@@ -729,7 +729,7 @@
           "engine_catalog": "Engine Catalog",
           "engine_access_fulfillment": "Source Access Fulfillment",
           "engine_access_grant": "Source Data Grant",
-          "engine_access_initial_grant": "Initial Task Output Grant",
+          "engine_access_initial_grant": "Initial New Data Access",
           "engine_access_deny": "Source Read Deny",
           "engine_access_delegation": "Engine Access Management Delegation",
           "engine_descriptor": "Engine Descriptor",
@@ -857,7 +857,8 @@
           "http_observation": "HTTP quality observations",
           "platform_http_rule": "HTTP quality alert rules",
           "trace": "HTTP traces",
-          "node_identity": "Node identity facts"
+          "node_identity": "Node identity facts",
+          "upload_receipt": "Committed Upload Receipt"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",
@@ -1180,7 +1181,8 @@
           "independent": "Direct approval",
           "catalog": "Business approval",
           "task_production": "Initial task output grant",
-          "mixed": "Multiple authorization sources"
+          "mixed": "Multiple authorization sources",
+          "upload_creation": "Initial uploaded DataItem grant"
         },
         "nodeRecursive": "Include descendant DataItems recursively",
         "mixedSelection": "Select DataItems and nodes together. Nodes cover current and future DataItems; set recursion separately for each node.",

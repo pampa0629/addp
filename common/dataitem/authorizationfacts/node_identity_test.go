@@ -9,7 +9,7 @@ import (
 
 func TestNodeIdentityRequiresCanonicalRootOrSchema(t *testing.T) {
 	root := plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), 9)
-	for _, target := range []plugin.EngineCatalogPath{root, plugin.TabularNamespacePath(9, "schema", " exact.schema/ ")} {
+	for _, target := range []plugin.EngineCatalogPath{root, plugin.TabularNamespacePath(9, "schema", " exact.schema/ "), plugin.FileRootPath(9), plugin.FileDirectoryPath(9, "public/ a.b ")} {
 		query := NodeIdentityQuery{Target: target}
 		if query.Validate() != nil {
 			t.Fatal("canonical node rejected")
@@ -27,10 +27,17 @@ func TestNodeIdentityRequiresCanonicalRootOrSchema(t *testing.T) {
 		plugin.TabularNamespacePath(9, "schema", "bad\x00name"),
 		plugin.TabularNamespacePath(9, "database", "public"),
 		plugin.TabularItemPath(9, "schema", "public", "people"),
-		plugin.FileDirectoryPath(9, "public"),
+		plugin.FileItemPath(9, "public/file.csv"),
 	} {
 		if (NodeIdentityQuery{Target: target}).Validate() == nil {
 			t.Fatal("unsupported or malformed node accepted")
+		}
+	}
+	for _, name := range []string{"", ".", "..", "a/b", "a\\b", "bad\x00name"} {
+		target := plugin.FileDirectoryPath(9, "public")
+		target.Segments[1].Name = name
+		if (NodeIdentityQuery{Target: target}).Validate() == nil {
+			t.Fatalf("malformed directory segment accepted: %q", name)
 		}
 	}
 	for _, mutate := range []func(*plugin.EngineCatalogPath){

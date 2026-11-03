@@ -23,7 +23,9 @@ type ScanExecutionService struct {
 	log                     *slog.Logger
 	activeLeases            sync.Map
 	productionReceipts      transferProductionReceiptReader
+	uploadReceipts          uploadReceiptReader
 	collectionAuthorization collectionAuthorizationClient
+	refreshScopes           metadataRefreshScopeClient
 }
 
 // NewScanExecutionService 创建扫描执行服务

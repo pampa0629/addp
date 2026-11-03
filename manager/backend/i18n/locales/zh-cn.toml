@@ -350,3 +350,8 @@ other = "源数据在打包期间发生变化，请待源数据稳定后重试�
 
 [manager.error.grid_slice_invalid]
 other = "网格切片选择无效或超出支持范围"
+
+[permissions.manager.upload_receipt.read.name]
+other = "读取上传提交回执"
+[permissions.manager.upload_receipt.read.description]
+other = "仅 Meta、System 运行身份读取本租户真实成功上传的精确写入事实；不返回文件内容或数据权限"

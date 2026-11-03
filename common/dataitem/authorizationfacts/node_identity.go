@@ -17,10 +17,27 @@ type NodeIdentityQuery struct {
 	Target plugin.EngineCatalogPath `json:"target"`
 }
 
-// ValidNodeIdentityTarget admits the first supported node profile: PG root/schema.
+// ValidNodeIdentityTarget admits PG root/schema and canonical NFS root/directories.
 // Names remain opaque; a dot or slash inside a quoted schema is not a hierarchy.
 func ValidNodeIdentityTarget(path plugin.EngineCatalogPath) bool {
-	if path.EngineID == 0 || uint64(path.EngineID) > 1<<63-1 || len(path.Segments) < 1 || len(path.Segments) > 2 {
+	if path.EngineID == 0 || uint64(path.EngineID) > 1<<63-1 || len(path.Segments) < 1 || len(path.Segments) > 64 {
+		return false
+	}
+	if path.Segments[0].Term == plugin.EngineCatalogTermRoot {
+		for i, part := range path.Segments {
+			if i == 0 {
+				if part != (plugin.EngineCatalogSegment{Term: "root", Kind: "root", Name: ""}) {
+					return false
+				}
+				continue
+			}
+			if part.Term != "directory" || part.Kind != "directory" || part.Name == "" || len(part.Name) > 4096 || !utf8.ValidString(part.Name) || strings.ContainsAny(part.Name, "/\\\x00") || part.Name == "." || part.Name == ".." {
+				return false
+			}
+		}
+		return reflect.DeepEqual(path, plugin.FileDirectoryPath(path.EngineID, path.StringPath()))
+	}
+	if len(path.Segments) > 2 {
 		return false
 	}
 	model := plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema)
@@ -89,7 +106,7 @@ func (p NodeIdentityPage) Validate(tenantID uint, q NodeIdentityPageQuery) error
 	if remaining > q.PageSize {
 		remaining = q.PageSize
 	}
-	if len(p.Nodes) != remaining || (!p.Parent.Exists && p.Total != 0) || (len(q.Target.Segments) == 2 && p.Total != 0) {
+	if len(p.Nodes) != remaining || (!p.Parent.Exists && p.Total != 0) || (q.Target.Segments[0].Term == "server" && len(q.Target.Segments) == 2 && p.Total != 0) {
 		return errors.New("invalid node identity page size")
 	}
 	seen := make(map[string]bool, len(p.Nodes))

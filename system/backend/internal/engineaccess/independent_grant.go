@@ -59,6 +59,7 @@ type SourceGrantView struct {
 	Reason                *string          `json:"reason"`
 	Revocation            *GrantRevocation `json:"revocation"`
 	ProducerOwner         *string          `json:"producer_owner,omitempty"`
+	UploadID              *uuid.UUID       `json:"upload_id,omitempty"`
 	ProductionExecutionID *uuid.UUID       `json:"production_execution_id,omitempty"`
 	IssuerPrincipalID     *int64           `json:"issuer_principal_id,omitempty,string" swaggertype:"string"`
 	IssuerMembershipID    *int64           `json:"issuer_membership_id,omitempty,string" swaggertype:"string"`
@@ -71,7 +72,7 @@ func sourceGrantView(row *sourceGrant) SourceGrantView {
 		RecipientType: row.RecipientType, RecipientID: row.RecipientID, Action: row.Action,
 		ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt,
 		OperatorPrincipalID: row.OperatorPrincipalID, OperatorMembershipID: row.OperatorMembershipID, Reason: row.Reason,
-		ProducerOwner: row.ProducerOwner, ProductionExecutionID: row.ProductionExecutionID,
+		ProducerOwner: row.ProducerOwner, UploadID: row.UploadID, ProductionExecutionID: row.ProductionExecutionID,
 		IssuerPrincipalID: row.IssuerPrincipalID, IssuerMembershipID: row.IssuerMembershipID}
 }
 
@@ -217,7 +218,7 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 				if err != nil {
 					return err
 				}
-				if !sourceAccessActionSupported(row.Action, engine.EngineType) || (row.NodeRecursive != nil && engine.EngineType != "postgresql") {
+				if !sourceAccessActionSupported(row.Action, engine.EngineType) || (row.NodeRecursive != nil && engine.EngineType != "postgresql" && engine.EngineType != "nfs") {
 					return commonapi.ErrBadRequest
 				}
 				if engine.Version != engineVersion {

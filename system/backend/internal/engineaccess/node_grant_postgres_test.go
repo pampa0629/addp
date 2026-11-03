@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -247,5 +248,122 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		}
 		service.WithNodeIdentityPageReader(nil)
 		service.WithNodeIdentityReader(nil)
+	})
+	t.Run("NFS node scope uses current complete boundaries", func(t *testing.T) {
+		ctx := t.Context()
+		// This existing disposable fixture changes profile only inside this
+		// subtest; no real engine or source is contacted.
+		if err := db.Exec("UPDATE system.engines SET engine_type='nfs' WHERE tenant_id=? AND id=?", actor.TenantID, base.EngineID).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := db.Exec("UPDATE system.engines SET engine_type='postgresql' WHERE tenant_id=? AND id=?", actor.TenantID, base.EngineID).Error; err != nil {
+				t.Error(err)
+			}
+		})
+		service.WithNodeIdentityReader(nodeIdentityReaderFunc(func(_ context.Context, tenant uint, q authorizationfacts.NodeIdentityQuery) (*authorizationfacts.NodeIdentity, error) {
+			return &authorizationfacts.NodeIdentity{TenantID: tenant, Target: q.Target, Exists: true}, nil
+		}))
+		t.Cleanup(func() { service.WithNodeIdentityReader(nil) })
+		user, _ := newUser(t, time.Hour)
+		scope := plugin.FileDirectoryPath(base.EngineID, "models/ exact.dir ")
+		direct := false
+		command := CreateIndependentGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: scope, NodeRecursive: &direct, RecipientType: "user", RecipientID: user.PrincipalID, Action: shared.SourceAccessRead, ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "NFS current and future items"}
+		grant, err := service.CreateIndependentGrant(ctx, command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bindingFor := func(name string, whole bool, dependency string) authorizationfacts.Binding {
+			t.Helper()
+			primary := plugin.FileItemPath(base.EngineID, scope.StringPath()+"/"+name)
+			var boundary *authorizationfacts.AuthorizationBoundary
+			if whole {
+				primary = plugin.FileDirectoryPath(base.EngineID, scope.StringPath()+"/"+name)
+				boundary = &authorizationfacts.AuthorizationBoundary{Layout: "whole", Scope: &authorizationfacts.ScopeBoundary{Format: "filegdb", RuleVersion: 1, Root: primary}}
+			} else {
+				refs := []authorizationfacts.FileCompositionRef{{Target: primary, Primary: true, Required: true, Role: "model"}}
+				format := "ifc"
+				if dependency != "" {
+					format = "3ds"
+					refs = append(refs, authorizationfacts.FileCompositionRef{Target: plugin.FileItemPath(base.EngineID, dependency), Required: true, Role: "texture"})
+				}
+				composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)
+				if err != nil {
+					t.Fatal(err)
+				}
+				boundary = &authorizationfacts.AuthorizationBoundary{Layout: "single", FileComposition: composition}
+			}
+			fp, err := authorizationfacts.PrimaryCandidateFingerprint(primary)
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts := authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1, EngineID: base.EngineID, ItemType: "file", FullName: primary.StringPath(), ItemFingerprint: fp, BasisState: authorizationfacts.AuthorizationBasisComplete, Boundary: boundary, ObservedAt: time.Now().UTC()}
+			hash, err := facts.ComputeBoundaryHash()
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts.BoundaryHash = &hash
+			binding, err := facts.ApprovedBinding()
+			if err != nil {
+				t.Fatal(err)
+			}
+			return binding
+		}
+		check := func(binding authorizationfacts.Binding, want bool) {
+			t.Helper()
+			primary, err := binding.PrimaryTarget()
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{Action: "metadata_read", TenantID: actor.TenantID, Source: user, Targets: []plugin.EngineCatalogPath{primary}, Bindings: []authorizationfacts.Binding{binding}})
+			if err != nil || result == nil || result.Covered != want {
+				t.Fatalf("covered=%v result=%+v err=%v", want, result, err)
+			}
+		}
+		current := bindingFor("current.ifc", false, "")
+		future := bindingFor("later.ifc", false, "")
+		whole := bindingFor("whole.gdb", true, "")
+		nested := bindingFor("child/nested.ifc", false, "")
+		cross := bindingFor("scene.3ds", false, scope.StringPath()+"/child/texture.png")
+		check(current, true)
+		check(future, true)
+		check(whole, true)
+		check(nested, false)
+		check(cross, false)
+		if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: grant.RequestID, Reason: "Withdraw NFS direct scope"}); err != nil {
+			t.Fatal(err)
+		}
+		check(current, false)
+		check(whole, false)
+		recursive := true
+		command.NodeRecursive = &recursive
+		command.RequestID = uuid.New()
+		var now time.Time
+		if err := db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+			t.Fatal(err)
+		}
+		expiry := now.Add(2 * time.Second)
+		command.ExpiryMode = shared.SharingExpiryAtTime
+		command.ExpiresAt = &expiry
+		finite, err := service.CreateIndependentGrant(ctx, command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(nested, true)
+		check(cross, true)
+		time.Sleep(time.Until(expiry) + 20*time.Millisecond)
+		check(nested, false)
+		check(future, false)
+		var revocations int64
+		if err := db.Table("system.engine_access_grant_revocations").Where("request_id=?", finite.RequestID).Count(&revocations).Error; err != nil || revocations != 0 {
+			t.Fatal("natural expiry was replaced by revocation", err)
+		}
+		raw, _ := json.Marshal(scope)
+		for _, bad := range []string{`{}`, `{"version":"catalog.path/v1","segments":[]}`, `{"version":"catalog.path/v1","engine_id":` + fmt.Sprint(base.EngineID) + `,"segments":[{"term":"root","kind":"root","name":""},{}]}`} {
+			var valid, covered bool
+			if err := db.Raw("SELECT system.valid_source_node_path(?::jsonb,?),system.source_node_covers(?::jsonb,true,?::jsonb)", bad, base.EngineID, string(raw), bad).Row().Scan(&valid, &covered); err != nil || valid || covered {
+				t.Fatalf("malformed scope: valid=%v covered=%v err=%v", valid, covered, err)
+			}
+		}
 	})
 }

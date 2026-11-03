@@ -1,5 +1,60 @@
 basePath: /api/v1/meta
 definitions:
+  authorization.MetadataRefreshQuery:
+    properties:
+      kind:
+        enum:
+        - node
+        - item
+        - engine
+        type: string
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  authorization.MetadataRefreshRange:
+    properties:
+      item:
+        $ref: '#/definitions/authorizationfacts.Binding'
+      node:
+        $ref: '#/definitions/authorization.SourceNodeScope'
+    type: object
+  authorization.MetadataRefreshScope:
+    properties:
+      engine_version:
+        type: string
+      observed_at:
+        type: string
+      operator:
+        $ref: '#/definitions/authorization.SharingFulfillmentOperator'
+      query:
+        $ref: '#/definitions/authorization.MetadataRefreshQuery'
+      ranges:
+        items:
+          $ref: '#/definitions/authorization.MetadataRefreshRange'
+        type: array
+      tenant_id:
+        example: ""
+        type: string
+    type: object
+  authorization.SharingFulfillmentOperator:
+    properties:
+      authorization_version:
+        example: ""
+        type: string
+      principal_id:
+        example: ""
+        type: string
+      tenant_membership_id:
+        example: ""
+        type: string
+    type: object
+  authorization.SourceNodeScope:
+    properties:
+      recursive:
+        type: boolean
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
   authorizationfacts.AuthorizationBasisState:
     enum:
     - complete
@@ -77,6 +132,21 @@ definitions:
         $ref: '#/definitions/authorizationfacts.AuthorizationFacts'
       item_fingerprint:
         type: string
+    type: object
+  authorizationfacts.Binding:
+    properties:
+      boundary_hash:
+        type: string
+      file_composition:
+        $ref: '#/definitions/authorizationfacts.FileCompositionBoundary'
+      item_fingerprint:
+        type: string
+      metadata_target:
+        $ref: '#/definitions/authorizationfacts.MetadataBoundary'
+      native_target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      scope:
+        $ref: '#/definitions/authorizationfacts.ScopeBoundary'
     type: object
   authorizationfacts.DataItemIdentity:
     properties:
@@ -276,6 +346,19 @@ definitions:
       status:
         type: string
     type: object
+  client.MetaUploadIdentification:
+    properties:
+      new_items:
+        items:
+          $ref: '#/definitions/authorizationfacts.Binding'
+        type: array
+      scan_execution_id:
+        type: string
+      status:
+        type: string
+      upload_id:
+        type: string
+    type: object
   dataprotection.DataItemSecurityFacts:
     properties:
       fields:
@@ -463,6 +546,8 @@ definitions:
         type: string
       read_options:
         $ref: '#/definitions/execution.MetaScanReadOptions'
+      refresh_scope:
+        $ref: '#/definitions/authorization.MetadataRefreshScope'
       scan_depth:
         enum:
         - basic
@@ -3001,9 +3086,10 @@ paths:
       - meta.catalog.read
   /resource-tree/{engine_id}/refresh:
     post:
-      description: 按 node locator 提交一次后台基础扫描；run 为安全扫描观察，不包含配置、任意原始 metadata、授权或租约凭据
-        | Submit a background basic scan by node locator; run is a safe scan observation
-        without config, arbitrary raw metadata, authorization or lease credentials
+      description: 按普通 node locator 提交一次后台基础扫描，引擎根拒绝；run 为安全扫描观察，不包含配置、任意原始 metadata、授权或租约凭据
+        | Submit a background basic scan by ordinary node locator; engine roots are
+        rejected. The run is a safe scan observation without config, arbitrary raw
+        metadata, authorization or lease credentials
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
@@ -3321,6 +3407,106 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.authorization_facts.read
+  /runtime/manager-uploads/{upload_id}/basic-scan:
+    get:
+      description: 仅固定 System 运行身份；只读 Meta 既有扫描结果，不回源、不创建任务或授权 | Fixed System Runtime
+        only. Reads existing Meta results without source reads, scan creation or Grants
+      parameters:
+      - description: 上传 UUID | Upload UUID
+        in: path
+        name: upload_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.MetaUploadIdentification'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取上传首次识别事实 | Read first identification facts for an upload
+      tags:
+      - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.task_provider.read
+    post:
+      description: 仅固定 Manager 运行身份；反查同租户真实上传回执，不扩大父目录、不签发权限。重复调用返回原扫描 | Fixed Manager
+        Runtime only. Resolves real same-tenant upload receipt; no parent enumeration
+        or Grant. Replays return the original scan
+      parameters:
+      - description: 上传 UUID | Upload UUID
+        in: path
+        name: upload_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.MetaUploadIdentification'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 识别成功上传的精确文件 | Identify exact committed upload files
+      tags:
+      - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.execute
   /runtime/mosaic-scans/{execution_id}/result:
     get:
       description: 仅允许 addp-manager，在当前父执行有效 lease/attempt 和精确目标绑定下读取专用子扫描状态及正式 whole

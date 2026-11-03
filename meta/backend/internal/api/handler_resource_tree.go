@@ -195,7 +195,7 @@ func (h *Handler) SearchResourceTree(c *gin.Context) {
 
 // RefreshResourceTreeNode 刷新标准资源树节点
 // @Summary 刷新标准资源树节点 | Refresh resource tree node
-// @Description 按 node locator 提交一次后台基础扫描；run 为安全扫描观察，不包含配置、任意原始 metadata、授权或租约凭据 | Submit a background basic scan by node locator; run is a safe scan observation without config, arbitrary raw metadata, authorization or lease credentials
+// @Description 按普通 node locator 提交一次后台基础扫描，引擎根拒绝；run 为安全扫描观察，不包含配置、任意原始 metadata、授权或租约凭据 | Submit a background basic scan by ordinary node locator; engine roots are rejected. The run is a safe scan observation without config, arbitrary raw metadata, authorization or lease credentials
 // @Tags Meta Resource Tree
 // @Produce json
 // @Param engine_id path int true "存储引擎ID | Engine ID"
@@ -241,6 +241,10 @@ func (h *Handler) RefreshResourceTreeNode(c *gin.Context) {
 	}
 	if loc.NodeID == nil || *loc.NodeID == 0 {
 		h.handleServiceError(c, fmt.Errorf("%w: resource tree refresh requires locator node_id", metaErrors.ErrInvalidResourceLocator))
+		return
+	}
+	if len(loc.Path) == 0 {
+		h.handleServiceError(c, fmt.Errorf("%w: engine root is not an interactive refresh target", metaErrors.ErrInvalidResourceLocator))
 		return
 	}
 

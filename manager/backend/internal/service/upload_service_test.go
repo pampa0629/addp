@@ -60,6 +60,7 @@ func TestUploadFilesWritesMultipleObjectsAndSubmitsScan(t *testing.T) {
 
 	result, err := svc.UploadFiles(context.Background(), &UploadRequest{
 		TargetNodeLocator: "addp://engine/9/path/bucket/raw?type=prefix&node_id=5",
+		ScanAllowed:       true,
 		TenantID:          7,
 		Files: []UploadFile{
 			{FileName: "roads.shp", Reader: strings.NewReader("shape")},
@@ -120,6 +121,7 @@ func TestUploadFilesSubmitsSeparateRefGroupsByBaseName(t *testing.T) {
 
 	_, err := svc.UploadFiles(context.Background(), &UploadRequest{
 		TargetNodeLocator: "addp://engine/9/path/bucket/raw?type=prefix&node_id=5",
+		ScanAllowed:       true,
 		Files: []UploadFile{
 			{FileName: "roads.shp", Reader: strings.NewReader("shape")},
 			{FileName: "roads.dbf", Reader: strings.NewReader("attrs")},
@@ -237,7 +239,7 @@ func TestUploadFailsBeforeWritingWithoutSynchronousUserClient(t *testing.T) {
 				token = "current-user"
 			}
 			svc := NewUploadService(fakeUploadSystemClient{engine: &commonModels.Engine{ID: 9, EngineType: engineType, TenantID: uintPtr(7), LifecycleState: "active"}}, meta)
-			_, err := svc.UploadFiles(context.Background(), &UploadRequest{TenantID: 7, TargetNodeLocator: "addp://engine/9/path/bucket/raw?type=prefix", Files: []UploadFile{{FileName: "a.txt", Reader: strings.NewReader("file")}}}, token)
+			_, err := svc.UploadFiles(context.Background(), &UploadRequest{TenantID: 7, ScanAllowed: true, TargetNodeLocator: "addp://engine/9/path/bucket/raw?type=prefix", Files: []UploadFile{{FileName: "a.txt", Reader: strings.NewReader("file")}}}, token)
 			if err == nil || len(writer.writes) != 0 {
 				t.Fatal("upload wrote files without a synchronous User identity/client")
 			}
@@ -252,7 +254,7 @@ func TestUploadScanFailureDoesNotRetryOrReturnInternalExecution(t *testing.T) {
 	t.Cleanup(func() { plugin.Unregister(engineType) })
 	meta := &fakeUploadMetaClient{err: &commonClient.MetaScanSubmissionError{StatusCode: 403}}
 	svc := NewUploadService(fakeUploadSystemClient{engine: &commonModels.Engine{ID: 9, EngineType: engineType, TenantID: uintPtr(7), LifecycleState: "active"}}, meta)
-	result, err := svc.UploadFiles(context.Background(), &UploadRequest{TenantID: 7, TargetNodeLocator: "addp://engine/9/path/bucket/raw?type=prefix", Files: []UploadFile{{FileName: "a.txt", Reader: strings.NewReader("file")}}}, "current-user")
+	result, err := svc.UploadFiles(context.Background(), &UploadRequest{TenantID: 7, ScanAllowed: true, TargetNodeLocator: "addp://engine/9/path/bucket/raw?type=prefix", Files: []UploadFile{{FileName: "a.txt", Reader: strings.NewReader("file")}}}, "current-user")
 	if result != nil || !errors.Is(err, ErrUploadScanSubmission) || writer.writes["bucket/raw/a.txt"] != "file" || meta.bearer != "current-user" {
 		t.Fatalf("invalid partial-write failure: %v", err)
 	}

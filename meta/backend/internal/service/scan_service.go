@@ -18,6 +18,7 @@ import (
 	"github.com/addp/meta/internal/scanadapter"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanresolver"
+	"github.com/addp/meta/internal/scanresource"
 	"github.com/addp/meta/internal/scanruntime"
 	"gorm.io/gorm"
 )
@@ -126,6 +127,10 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 	ctx := opts.Context
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if scope := scanresource.MetadataRefreshScope(ctx); scope != nil && scope.Query.Kind != "engine" {
+		opts.Context = ctx
+		return s.scanAuthorizedRefresh(opts, scope)
 	}
 	tenantID := opts.TenantID
 	reporter := opts.Reporter

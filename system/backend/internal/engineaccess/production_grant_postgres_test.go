@@ -21,7 +21,7 @@ import (
 // Flush the new deferred FK events before the fixture's ALTER TABLE; this
 // validates them normally rather than disabling constraints or production guards.
 func restoreGrantRelationFixtureTrigger(tx *gorm.DB) error {
-	if err := tx.Exec("SET CONSTRAINTS system.source_grant_initial_outcome IMMEDIATE").Error; err != nil {
+	if err := tx.Exec("SET CONSTRAINTS system.source_grant_initial_outcome, system.source_grant_upload_outcome IMMEDIATE").Error; err != nil {
 		return err
 	}
 	return tx.Exec("ALTER TABLE system.engine_access_grants ENABLE TRIGGER trg_source_grant_relation").Error

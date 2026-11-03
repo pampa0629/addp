@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/authorization"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
@@ -91,6 +92,19 @@ func (s *ScanExecutionService) GetScanPlanFacts(ctx context.Context, tenantID ui
 				return ErrScanPlanFactsUnavailable
 			}
 			facts.ReadOptions.HasHeader = &value
+		}
+		if saved, exists := config["refresh_scope"]; exists {
+			raw, err := json.Marshal(saved)
+			var scope authorization.MetadataRefreshScope
+			if err != nil || json.Unmarshal(raw, &scope) != nil || scope.TenantID != int64(tenantID) ||
+				row.SourceTaskID != nil || row.ParentExecutionID != nil || row.TriggerType != "manual" ||
+				row.ActorPrincipalID == nil || *row.ActorPrincipalID != scope.Operator.PrincipalID ||
+				row.ActorTenantMembershipID == nil || *row.ActorTenantMembershipID != scope.Operator.MembershipID ||
+				row.IssuedAuthorizationVersion == nil || *row.IssuedAuthorizationVersion != scope.Operator.AuthorizationVersion {
+				return ErrScanPlanFactsUnavailable
+			}
+			facts.RefreshScope, facts.BasisState = &scope, authorizationfacts.AuthorizationBasisComplete
+			return facts.Validate()
 		}
 		if row.SourceTaskID != nil {
 			frozen, ok := config["task_definition_digest"].(string)

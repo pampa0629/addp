@@ -88,7 +88,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     if (path.endsWith('/authorization-nodes/query')) {
       reads.push(request.url())
       const query=request.postDataJSON(), root={version:'catalog.path/v1',engine_id:2,segments:[{term:'server',kind:'server',name:''}]}
-      const nodes=query.target.segments.length===1?[{tenant_id:2,target:schemaPath,exists:true},{tenant_id:2,target:{...schemaPath,segments:[...root.segments,{term:'schema',kind:'namespace',name:'public'}]},exists:true}]:[]
+      const nodes=query.target.segments.length===1 ? sourceType === 'nfs' && ftp ? [{tenant_id:2,target:ftpDirectoryPath,exists:true}] : [{tenant_id:2,target:schemaPath,exists:true},{tenant_id:2,target:{...schemaPath,segments:[...root.segments,{term:'schema',kind:'namespace',name:'public'}]},exists:true}] : []
       return reply({parent:{tenant_id:2,target:query.target,exists:true},nodes,total:nodes.length,page:query.page,page_size:query.page_size})
     }
     if (path.endsWith('/authorization-facts')) {
@@ -629,7 +629,7 @@ async function selectFTPModel(page, format) {
   await page.goto('/engines/2?tab=data-authorization'); await openNewAuthorization(page)
   const tree = page.getByTestId('approval-resource-tree')
   await tree.getByRole('textbox').fill(`model.${format}`)
-  await tree.getByRole('checkbox', { name: `model.${format}`, exact: true }).locator('..').click()
+  await resourceOption(tree, `model.${format}`).click()
 }
 for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds'], ['minio','dae'], ['ftp','obj'], ['minio','obj'], ['ftp','stl'], ['nfs','stl'], ['minio','stl'], ['ftp','glb'], ['nfs','glb'], ['minio','glb'], ['ftp','fbx'], ['nfs','fbx'], ['minio','fbx'], ['nfs','gdb']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
   const { reads, writes } = await fixture(page, { allowed: [...grantPermissions, 'catalog.entry.read'], ftp: format, sourceType })

@@ -60,6 +60,62 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			}
 			return session, tokens
 		}
+		t.Run("refresh scope uses current function precise grants and withdrawal", func(t *testing.T) {
+			user, _ := newUser(t, time.Hour)
+			query := shared.MetadataRefreshQuery{Kind: "node", Target: engineplugin.TabularNamespacePath(path.EngineID, "schema", path.Segments[1].Name)}
+			sourceID := grant(t, "user", user.PrincipalID, nil)
+			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
+			ownerCalls := 0
+			withdrawDuringIO := false
+			service.WithNodeIdentityReader(nodeIdentityReaderFunc(func(_ context.Context, tenant uint, q authorizationfacts.NodeIdentityQuery) (*authorizationfacts.NodeIdentity, error) {
+				ownerCalls++
+				if withdrawDuringIO {
+					revoke(t, sourceID)
+					withdrawDuringIO = false
+				}
+				return &authorizationfacts.NodeIdentity{TenantID: tenant, Target: q.Target, Exists: true}, nil
+			}))
+			session, _ := issue(t, user, time.Minute)
+			if result, err := service.GetMetadataRefreshScope(ctx, session.AccessToken, query); result != nil || !errors.Is(err, commonapi.ErrForbidden) || ownerCalls != 0 {
+				t.Fatalf("missing scan function result=%+v calls=%d err=%v", result, ownerCalls, err)
+			}
+			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.metadata_refresh", Name: "Metadata refresh fixture", PermissionKeys: []string{metadataRefreshPermission}, ActorPrincipalID: adminID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Explicit refresh fixture"}); err != nil {
+				t.Fatal(err)
+			}
+			session, _ = issue(t, user, time.Minute)
+			result, err := service.GetMetadataRefreshScope(ctx, session.AccessToken, query)
+			if err != nil || result == nil || result.Validate() != nil || len(result.Ranges) != 1 || result.Ranges[0].Node != nil || result.Ranges[0].Item == nil {
+				t.Fatalf("precise grants became a parent scan: %+v %v", result, err)
+			}
+			itemQuery := shared.MetadataRefreshQuery{Kind: "item", Target: path}
+			exact, err := service.GetMetadataRefreshScope(ctx, session.AccessToken, itemQuery)
+			if err != nil || exact == nil || exact.Validate() != nil || exact.Ranges[0].Item.ItemFingerprint != result.Ranges[0].Item.ItemFingerprint {
+				t.Fatalf("exact scope=%+v err=%v", exact, err)
+			}
+			checkFrozenAfterWithdrawal := exerciseFrozenRefreshRuntime(t, db, service, result)
+			withdrawDuringIO = true
+			if result, err := service.GetMetadataRefreshScope(ctx, session.AccessToken, query); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("revoked during owner IO admitted %+v %v", result, err)
+			}
+			checkFrozenAfterWithdrawal()
+			var now time.Time
+			if err := db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+				t.Fatal(err)
+			}
+			expiry := now.Add(time.Second)
+			grant(t, "user", user.PrincipalID, &expiry)
+			if _, err := service.GetMetadataRefreshScope(ctx, session.AccessToken, query); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(time.Until(expiry) + 20*time.Millisecond)
+			if result, err := service.GetMetadataRefreshScope(ctx, session.AccessToken, query); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("expired scope reused %+v %v", result, err)
+			}
+		})
 		t.Run("metadata candidates use current User and no source details", func(t *testing.T) {
 			other := engineplugin.TabularItemPath(path.EngineID, "schema", "public", "ungranted_metadata")
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path, other}})

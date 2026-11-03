@@ -41,6 +41,9 @@ func (s *Service) CheckMetaCollection(ctx context.Context, actor Actor, request 
 		}
 		return nil, ErrMetaCollectionFactsUnavailable
 	}
+	if facts != nil && facts.RefreshScope != nil {
+		return s.checkMetaRefreshExecution(ctx, actor, request, facts)
+	}
 	if facts == nil || facts.Validate() != nil || facts.ExecutionID != request.ExecutionID || facts.ExecutionPlanDigest != request.ExecutionPlanDigest || facts.TaskID == nil || facts.TaskDefinitionDigest == nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete || facts.ScanDepth != "basic" || facts.SourceScope == nil || facts.SourceScope.Mode != "full" || len(facts.SourceScope.Anchors) != 1 {
 		return nil, commonapi.ErrForbidden
 	}

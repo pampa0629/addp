@@ -198,7 +198,7 @@ WITH input AS MATERIALIZED (
 // Both actual reads and management inspection consume these exact predicates.
 // The caller supplies input from trusted credential resolution or IAM lookup.
 const sourceReadRuleCTEs = `, targets AS (
- SELECT primary_path.path, target.ordinality AS position, target.value->>'requested_action' AS requested_action,
+ SELECT primary_path.path, target.value->'binding' AS proven_boundary, target.ordinality AS position, target.value->>'requested_action' AS requested_action,
        (primary_path.path->>'engine_id')::bigint AS engine_id,
        target.value->'binding'->>'item_fingerprint' AS item_fingerprint, target.value->'binding'->>'boundary_hash' AS boundary_hash
 	FROM input, jsonb_array_elements(input.targets) WITH ORDINALITY AS target(value, ordinality)
@@ -215,14 +215,13 @@ const sourceReadRuleCTEs = `, targets AS (
   AND g.engine_id = target.engine_id AND (
    (g.node_recursive IS NULL AND g.item_fingerprint = target.item_fingerprint AND g.boundary_hash = target.boundary_hash)
    OR (g.node_recursive IS NOT NULL AND system.source_node_covers(g.catalog_path, g.node_recursive, target.path)
-       AND EXISTS (SELECT 1 FROM system.engines e WHERE e.id=target.engine_id AND e.tenant_id=input.tenant_id AND e.engine_type='postgresql'))
+       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(target.proven_boundary->'file_composition'->'refs','[]'::jsonb)) AS ref
+         WHERE system.source_node_covers(g.catalog_path,g.node_recursive,ref->'target') IS NOT TRUE)
+       AND EXISTS (SELECT 1 FROM system.engines e WHERE e.id=target.engine_id AND e.tenant_id=input.tenant_id AND e.engine_type IN ('postgresql','nfs')))
   )
  JOIN recipients r ON r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id
  WHERE (g.action = target.requested_action OR (target.requested_action = 'metadata_read' AND g.action = 'read'))
-  AND g.granted_at <= input.observed_at
-  AND ((g.expiry_mode = 'until_revoked' AND g.expires_at IS NULL)
-       OR (g.expiry_mode = 'at_time' AND g.expires_at > input.observed_at))
-  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations revocation WHERE revocation.request_id = g.request_id)
+  AND ` + sourceGrantCurrentPredicate + `
 ), grant_deadlines AS (
  SELECT position,
  CASE WHEN bool_or(effective_expires_at IS NULL) THEN NULL ELSE max(effective_expires_at) END AS expires_at
@@ -241,6 +240,11 @@ FROM targets target CROSS JOIN input
 ), rules AS (
  SELECT r.*, CASE WHEN r.reason = 'grant' THEN d.expires_at END AS expires_at
  FROM rule_reasons r LEFT JOIN grant_deadlines d USING (position))`
+
+const sourceGrantCurrentPredicate = `g.granted_at <= input.observed_at
+ AND ((g.expiry_mode = 'until_revoked' AND g.expires_at IS NULL)
+ OR (g.expiry_mode = 'at_time' AND g.expires_at > input.observed_at))
+ AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations revocation WHERE revocation.request_id=g.request_id)`
 
 // Current identity and direct organization membership are shared by actual reads
 // and management observations. Neither a historical operator nor a parent

@@ -58,13 +58,17 @@ func (s *FilesystemCatalogRuntime) scanPreparedDirectory(
 		s.log.Warn("清理系统噪声文件数据项失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
 		failures.Add(dirPath, err)
 	}
-	if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, ignoredFullNames); err != nil {
-		s.log.Warn("清理系统噪声目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
-		failures.Add(dirPath, err)
+	if !scanresource.DirectDirectoryRefresh(ctx) {
+		if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, ignoredFullNames); err != nil {
+			s.log.Warn("清理系统噪声目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+			failures.Add(dirPath, err)
+		}
 	}
-	if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, scannedFileFullNames); err != nil {
-		s.log.Warn("清理文件路径冲突节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
-		failures.Add(dirPath, err)
+	if !scanresource.DirectDirectoryRefresh(ctx) {
+		if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, scannedFileFullNames); err != nil {
+			s.log.Warn("清理文件路径冲突节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+			failures.Add(dirPath, err)
+		}
 	}
 	scannedItemFullNames := make(map[string]bool)
 	scannedSubdirFullNames := make(map[string]bool)
@@ -76,9 +80,11 @@ func (s *FilesystemCatalogRuntime) scanPreparedDirectory(
 			s.log.Warn("清理已消失的文件数据项失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
 			failures.Add(dirPath, err)
 		}
-		if err := s.repo.HardDeleteChildNodesExceptFullNames(parentNode.ID, scannedSubdirFullNames); err != nil {
-			s.log.Warn("清理已消失的子目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
-			failures.Add(dirPath, err)
+		if !scanresource.DirectDirectoryRefresh(ctx) {
+			if err := s.repo.HardDeleteChildNodesExceptFullNames(parentNode.ID, scannedSubdirFullNames); err != nil {
+				s.log.Warn("清理已消失的子目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+				failures.Add(dirPath, err)
+			}
 		}
 	}
 	applyDetection := func(detection *metaitem.DetectionResult) {

@@ -382,7 +382,7 @@ func main() {
 		repository.NewImportSourceRepository(db),
 	)
 	importHandler := api.NewImportHandler(importService)
-	uploadService := service.NewUploadService(systemClient, commonClient.NewMetaScanUserClient(cfg.MetaServiceURL))
+	uploadService := service.NewUploadService(systemClient, commonClient.NewMetaScanUserClient(cfg.MetaServiceURL)).WithInitialUploads(db, metaClient, systemServiceClient)
 	uploadHandler := api.NewUploadHandler(uploadService)
 	resourceActionService := service.NewResourceActionService(systemClient, metadataService)
 	resourceActionHandler := api.NewResourceActionHandler(resourceActionService)
@@ -540,6 +540,7 @@ func main() {
 	}
 	notifyExecutionEnqueued = supervisor.Notify
 	searchService.StartContentRecovery(runtimeContext)
+	uploadService.StartUploadRecovery(runtimeContext)
 	projectionstore.NewRunner(protectionStore, securityClient, systemServiceClient, 30*time.Second,
 		managerprotection.NewAcknowledgementBarrier(db, protectionReadBoundary, searchService)).Start(runtimeContext)
 	addr := ":" + cfg.Port

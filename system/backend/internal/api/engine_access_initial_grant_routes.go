@@ -43,19 +43,23 @@ func RegisterEngineAccessInitialGrantRoutes(api *gin.RouterGroup, runtime *IAMRu
 }
 
 func initialGrantRuntimeInput(c *gin.Context) (engineaccess.ProductionRuntimeActor, bool) {
+	return initialSourceRuntimeInput(c, "addp-transfer", "execution_id")
+}
+
+func initialSourceRuntimeInput(c *gin.Context, clientID, idParam string) (engineaccess.ProductionRuntimeActor, bool) {
 	var actor engineaccess.ProductionRuntimeActor
 	c.Header("Cache-Control", "no-store")
 	if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return actor, false
 	}
-	id, err := uuid.Parse(c.Param("execution_id"))
-	if err != nil || id == uuid.Nil || id.String() != c.Param("execution_id") {
+	id, err := uuid.Parse(c.Param(idParam))
+	if err != nil || id == uuid.Nil || id.String() != c.Param(idParam) {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return actor, false
 	}
 	ac, ok := sharedauth.AuthContextFromGin(c)
-	if !ok || ac.Principal.Type != "service_principal" || ac.Context.Type != "tenant" || ac.Context.TenantID == nil || ac.Context.TenantMembershipID == nil || ac.Client.ClientID == nil || *ac.Client.ClientID != "addp-transfer" {
+	if !ok || ac.Principal.Type != "service_principal" || ac.Context.Type != "tenant" || ac.Context.TenantID == nil || ac.Context.TenantMembershipID == nil || ac.Client.ClientID == nil || *ac.Client.ClientID != clientID {
 		respondIAMError(c, commonapi.ErrForbidden)
 		return actor, false
 	}

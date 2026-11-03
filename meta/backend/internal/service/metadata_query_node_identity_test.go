@@ -92,3 +92,43 @@ func exerciseNodeIdentity(t *testing.T, db *gorm.DB) {
 		t.Fatal("ambiguous root treated as absence")
 	}
 }
+
+func TestNFSOrdinaryNodeIdentityExcludesWholeContainers(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	root := models.MetaNode{TenantID: 7, EngineID: 129, NodeType: "root", Name: "NFS"}
+	if e := db.Create(&root).Error; e != nil {
+		t.Fatal(e)
+	}
+	dir := models.MetaNode{TenantID: 7, EngineID: 129, ParentNodeID: &root.ID, NodeType: "dir", Name: " a.b ", FullName: " a.b "}
+	if e := db.Create(&dir).Error; e != nil {
+		t.Fatal(e)
+	}
+	whole := models.MetaNode{TenantID: 7, EngineID: 129, ParentNodeID: &dir.ID, NodeType: "dir", Name: "one.gdb", FullName: " a.b /one.gdb"}
+	if e := db.Create(&whole).Error; e != nil {
+		t.Fatal(e)
+	}
+	item := models.MetaItem{TenantID: 7, EngineID: 129, NodeID: whole.ID, Name: whole.Name, FullName: whole.FullName, ItemType: "file", Fingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Attributes: models.JSONMap{"item": map[string]any{"layout": "whole", "format": "filegdb"}}}
+	if e := db.Create(&item).Error; e != nil {
+		t.Fatal(e)
+	}
+	svc := NewMetadataQueryService(db)
+	for _, target := range []plugin.EngineCatalogPath{plugin.FileDirectoryPath(129, ""), plugin.FileDirectoryPath(129, dir.FullName)} {
+		q := authorizationfacts.NodeIdentityQuery{Target: target}
+		got, e := svc.ResolveNodeIdentity(context.Background(), 7, q)
+		if e != nil || !got.Exists {
+			t.Fatalf("ordinary node: %+v %v", got, e)
+		}
+	}
+	q := authorizationfacts.NodeIdentityQuery{Target: plugin.FileDirectoryPath(129, whole.FullName)}
+	if got, e := svc.ResolveNodeIdentity(context.Background(), 7, q); e != nil || got.Exists {
+		t.Fatalf("whole became a node grant: %+v %v", got, e)
+	}
+	pq := authorizationfacts.NodeIdentityPageQuery{Target: plugin.FileDirectoryPath(129, dir.FullName), Page: 1, PageSize: 100}
+	if got, e := svc.QueryNodeIdentities(context.Background(), 7, pq); e != nil || got.Total != 0 {
+		t.Fatalf("whole candidate leaked: %+v %v", got, e)
+	}
+	pq.Target = plugin.FileDirectoryPath(129, "")
+	if got, e := svc.QueryNodeIdentities(context.Background(), 7, pq); e != nil || got.Total != 1 || got.Nodes[0].Target.StringPath() != dir.FullName {
+		t.Fatalf("direct node page: %+v %v", got, e)
+	}
+}

@@ -333,6 +333,7 @@ type StoreProvider interface {
 
 - `ContentReadableProvider.OpenContent()`：读取对象或文件内容。
 - `ContentWritableProvider.CreateContent()`：写对象或文件内容。
+  返回的 writer 可实现 `ContentWriteCommitter`，在同一次真实创建、写入和提交后给出中性 `ContentWriteEvidence`（精确 target、created/replaced、字节数及 committed）；证据只在成功 Close 后有效，不包含账号、Grant 或权限结论。NFS 首期提供该能力：新建使用原子 GUARDED 创建，并发撞名失败；已有目标保留原覆盖策略且标为 replaced，不能因删后重建变成 created。源读取/写入句柄只留在 Provider 内，不持久为授权身份。
 - `RangeReadableProvider.OpenRange()`：按 byte range 读取对象或文件内容。
 - `RangeWritableProvider.WriteRange()`：按 byte range / offset 写入内容。
 - `BatchReadableProvider.ReadBatch()`：执行一次有界的固定 schema 批量读取；大表连续扫描优先使用 `TableReadSessionProvider`，动态 schema collection 使用 `RecordReadSessionProvider`，图数据使用 `GraphSampleProvider` / `GraphQueryProvider`。

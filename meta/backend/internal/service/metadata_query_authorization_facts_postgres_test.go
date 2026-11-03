@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/addp/common/execution"
 	"os"
 	"testing"
 
@@ -24,6 +25,9 @@ func TestDataItemAuthorizationFactsAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sqlDB.Close()
+	if err := execution.EnsureStore(db); err != nil {
+		t.Fatal(err)
+	}
 	tx := db.Begin()
 	if tx.Error != nil {
 		t.Fatal(tx.Error)
@@ -45,6 +49,8 @@ scanned_depth TEXT, attributes JSONB, created_at TIMESTAMPTZ, deleted_at TIMESTA
 	exerciseAuthorizationFacts(t, tx)
 	exerciseDataItemIdentityQuery(t, tx)
 	exerciseNodeIdentity(t, tx)
+	exerciseUploadIdentificationFacts(t, tx)
+	exerciseUploadLeaseScope(t, tx)
 	exerciseFileAuthorizationFacts(t, tx)
 	exerciseWholeContainerAuthorizationFacts(t, tx)
 	exerciseScannedFileAuthorizationFacts(t, tx)

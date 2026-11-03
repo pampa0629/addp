@@ -49,6 +49,8 @@ type Service struct {
 	dataItemIdentities      DataItemIdentityReader
 	nodeIdentities          NodeIdentityReader
 	nodeIdentityPages       NodeIdentityPageReader
+	uploadReceipts          UploadReceiptReader
+	uploadIdentification    UploadIdentificationReader
 	productionReceipts      TransferProductionReceiptReader
 	metaScanFacts           MetaScanFactsReader
 	executionEngineSnapshot func(*models.Engine) (*models.Engine, error)

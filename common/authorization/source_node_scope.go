@@ -22,7 +22,14 @@ func (s SourceNodeScope) Covers(target plugin.EngineCatalogPath) bool {
 		len(target.Segments) <= len(s.Target.Segments) || (!s.Recursive && len(target.Segments) != len(s.Target.Segments)+1) {
 		return false
 	}
-	if _, err := plugin.NewQueryReadSet(target); err != nil {
+	// A whole filesystem DataItem has a directory target. Its identity and
+	// complete composition are proved by the caller, not inferred here.
+	if target.Segments[0].Term == plugin.EngineCatalogTermRoot &&
+		target.Segments[len(target.Segments)-1].Kind == plugin.EngineCatalogKindDirectory {
+		if !authorizationfacts.ValidNodeIdentityTarget(target) {
+			return false
+		}
+	} else if _, err := plugin.NewQueryReadSet(target); err != nil {
 		return false
 	}
 	for i, segment := range s.Target.Segments {
