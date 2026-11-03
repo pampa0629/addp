@@ -4,7 +4,7 @@
 
 DAG 共享前端库，提供可编辑画布的 composable、交互与布局工具，以及只读工作流查看器。业务模块维护节点参数、执行与授权等领域语义。
 
-本页内容：[安装](#安装)、[基础编辑示例](#基础-dag-编辑器)、[只读展示示例](#只读-dag-展示)、[API 分类](#api)、[交互与布局约束](#交互与布局约束)、[编辑器主题与状态保持](#编辑器主题与状态保持)。
+本页内容：[安装](#安装)、[编辑器接入](#基础-dag-编辑器)、[只读展示示例](#只读-dag-展示)、[API 分类](#api)、[交互与布局约束](#交互与布局约束)、[编辑器主题与状态保持](#编辑器主题与状态保持)、[布局恢复与自动布局](#布局恢复与自动布局)、[撤销重做与历史恢复](#撤销重做与历史恢复)。
 
 ## 安装
 
@@ -14,57 +14,9 @@ DAG 共享前端库，提供可编辑画布的 composable、交互与布局工�
 
 ### 基础 DAG 编辑器
 
-```vue
-<script setup>
-import { ref, onMounted } from 'vue'
-import {
-  createDAGDirectEdgeBehavior,
-  createDAGDragNodeBehavior,
-  createDAGKeyboardHandler,
-  useDAGClipboard,
-  useDAGCore,
-  useDAGHistory,
-  useDAGLayout,
-  useDAGSelection,
-  useDAGViewport,
-  useLoopDetection
-} from '@addp/common-frontend/dag'
+编辑器的初始化、节点／连线映射及事件接线分别参考 [Develop 工作流画布](../../develop/frontend/src/components/workflow/WorkflowDAGCanvas.vue)、[Orchestrator 编排画布](../../orchestrator/frontend/src/components/DAGEditor.vue)。端口映射、节点 ID 生成与领域通知由各消费方维护。
 
-const container = ref(null)
-const { graph, initGraph } = useDAGCore(container, {
-  modes: {
-    default: [
-      'drag-canvas',
-      'zoom-canvas',
-      createDAGDragNodeBehavior(),
-      createDAGDirectEdgeBehavior({
-        resolveSource: event => event.shape?.cfg?.portType === 'output' ? event.shape.cfg : null,
-        resolveTarget: event => event.shape?.cfg?.portType === 'input' ? event.shape.cfg : null
-      })
-    ]
-  }
-})
-const { hasLoop } = useLoopDetection(graph)
-const { selectedItem, deleteSelected } = useDAGSelection(graph)
-const { zoomIn, zoomOut, fitView, autoLayout } = useDAGViewport(graph)
-const { captureLayout, restoreViewport } = useDAGLayout(graph)
-const history = useDAGHistory({
-  capture: () => graph.value.save(),
-  restore: data => graph.value.changeData(data)
-})
-const clipboard = useDAGClipboard(graph, {
-  createNodeId: node => `${node.id}-copy-${Date.now()}`
-})
-
-onMounted(() => {
-  initGraph()
-})
-</script>
-
-<template>
-  <div ref="container" style="width: 100%; height: 600px;"></div>
-</template>
-```
+按职责接入：[实例与公开 API](#composables) · [键盘与依赖编辑](#键盘与依赖编辑) · [布局恢复与自动布局](#布局恢复与自动布局) · [撤销重做与历史恢复](#撤销重做与历史恢复) · [主题与卸载清理](#编辑器主题与状态保持)。引用实际实现用于定位接入方式，不代表该消费方当前版本已通过验收；验证入口见[测试与验收导航](../docs/components/预览与结果展示.md#测试与验收导航)。
 
 ### 只读 DAG 展示
 
@@ -101,9 +53,9 @@ const dagData = {
 - `useLoopDetection(graph)` - 循环检测
 - `useDAGSelection(graph, { focusTarget })` - 选中管理；鼠标选择节点或连线后可把焦点移交给画布容器，并按画布坐标循环选择前后节点
 - `useDAGViewport(graph, options)` - 缩放、适应窗口和自动布局
-- `useDAGHistory(options)` - 撤销/重做历史，支持使用 `mergeKey` 合并连续参数输入
+- `useDAGHistory(options)` - 编辑历史入口；记录、合并与恢复职责见[撤销重做与历史恢复](#撤销重做与历史恢复)。
 - `useDAGClipboard(graph, options)` - 节点复制和粘贴；只复制节点模型，不复制连线
-- `useDAGLayout(graph)` - 捕获和恢复节点坐标及画布视口
+- `useDAGLayout(graph)` - 布局捕获、坐标应用与视口恢复入口，见[布局恢复与自动布局](#布局恢复与自动布局)。
 - `useDAGTheme(refresh)` - 主题观察入口；宿主重绘、状态保持与卸载职责见[编辑器主题与状态保持](#编辑器主题与状态保持)。
 
 ### 组件
@@ -129,7 +81,7 @@ const dagData = {
 #### 布局、历史与主题
 
 - `normalizeDAGEditorLayout(layout)` - 规范化统一的 `editor_layout` 结构
-- 布局捕获、坐标应用、视口恢复、复制及历史存储的独立工具见[编辑工具](src/utils/editing.js)；缩放上限与下限由同一实现维护，业务模块复用相应 composable。
+- 布局、复制及历史存储的独立工具由[编辑工具](src/utils/editing.js)维护；接入分别沿[布局恢复](#布局恢复与自动布局)、[历史恢复](#撤销重做与历史恢复)，业务模块复用相应 composable。
 - `updateDAGItemTheme(graph, item, appearance)` - 更新节点或连线的基础样式后，恢复原有 G6 活动状态；与 `useDAGTheme` 配合使用，不由共享层推断领域配色。
 
 #### 节点与结构
@@ -158,7 +110,13 @@ Develop 与 Orchestrator 的真实页面浏览器用例分别验证主题与编�
 
 ### 布局恢复与自动布局
 
+本节导航：[视口边界](#编辑器视口边界) · [坐标与视口恢复](#编辑器坐标与视口恢复) · [等待自动布局完成](#等待自动布局完成)。
+
+#### 编辑器视口边界
+
 使用 `useDAGViewport` 的可编辑画布统一限制在 `50%–150%` 缩放范围内，按钮按 `10%` 调整；滚轮缩放、适应窗口和持久化视口也遵循相同边界。
+
+#### 编辑器坐标与视口恢复
 
 编辑器布局使用独立的展示状态，不得混入运行时 DAG：
 
@@ -175,4 +133,18 @@ Develop 与 Orchestrator 的真实页面浏览器用例分别验证主题与编�
 }
 ```
 
+`useDAGLayout(graph)` 的 `captureLayout()` 捕获节点坐标及视口，`normalizeLayout(layout)` 统一布局结构；`applyNodePositions(nodes, layout)` 返回应用已存坐标的节点列表，不直接修改图实例。宿主将这些节点载入画布后，再用 `restoreViewport(layout)` 恢复缩放和平移；该方法不恢复节点或重新排列。使用 `useDAGViewport` 的宿主随后调用 `syncZoom()` 同步缩放控件状态。方法实现统一见[布局 composable](src/composables/useDAGLayout.js)与[编辑工具](src/utils/editing.js)。
+
+#### 等待自动布局完成
+
 `useDAGViewport().autoLayout({ layout, fit })` 可按当前图传入布局配置及视口适配函数，省略时使用 composable 的配置；在 `afterlayout` 后适配视图并返回 Promise；需要记录布局历史或保存坐标时应等待完成。节点实际宽高通过 G6 节点模型的 `size: [width, height]` 提供。
+
+恢复已存布局与触发自动布局是不同动作；后者会重新排列并适配视口。历史记录规则见[撤销重做与历史恢复](#撤销重做与历史恢复)，主题及观察器清理见[编辑器主题与状态保持](#编辑器主题与状态保持)。
+
+### 撤销重做与历史恢复
+
+`useDAGHistory({ capture, restore })` 由宿主提供快照采集与恢复回调，不自动监听图变更。载入工作流后用 `reset(snapshot)` 建立新基线并丢弃旧历史；业务编辑完成后调用 `record()`，连续参数输入可通过相同 `mergeKey` 在合并窗口内合并。合并窗口、历史容量和快照去重统一由[历史存储实现](src/utils/editing.js)维护；撤销后记录新变更会丢弃旧的重做分支。
+
+`undo()`／`redo()` 将克隆后的快照交给 `restore`，当前 [history composable](src/composables/useDAGHistory.js) 同步调用该回调，不等待异步恢复；恢复期间的 `record()` 被忽略。宿主负责画布重载、旧选择清理和领域通知；恢复后的配色统一按[编辑器主题与状态保持](#编辑器主题与状态保持)处理。编辑快照不等于已持久化保存或业务执行回滚。
+
+共享能力与唯一所有权沿[共享测试入口](../README.md#测试)验证；布局、视口和历史分支的现有工具断言见 [Develop 编辑工具测试](../../develop/frontend/tests/commonDAGEditing.test.mjs)，由 Develop 门禁执行。消费方布局持久化、撤销重做、状态保持及清理沿[测试与验收导航](../docs/components/预览与结果展示.md#测试与验收导航)核对。接入示例和受控画布回归不代替真实后端验收，未运行、失败或未覆盖项不计通过。
