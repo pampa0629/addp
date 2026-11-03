@@ -2252,7 +2252,7 @@
       "service": "Deployed service",
       "discoveryStatus": "Admission status",
       "noCandidates": "No discovered services",
-      "discoveryHint": "Select services and confirm their host. Only single-container PostgreSQL and Redis are supported; admission does not prove successful engine metrics collection.",
+      "discoveryHint": "Select services and confirm their host. Only single-container PostgreSQL, Redis and MinIO are supported; admission does not prove successful engine metrics collection.",
       "sourceChanged": "Sources changed or expired. Reload, check and select again.",
       "discoveryStates": {
         "available": "Source available",

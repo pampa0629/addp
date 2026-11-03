@@ -190,3 +190,14 @@
 - 使用既有受管source CA为Infra生成独立serverAuth叶子证书／私钥，SAN为IP127.0.0.1与DNShost.docker.internal；不创建CA、不修改既有信任、CA序列文件或其他证书。目录0700、私钥0600；有效期63天，限制在既有CA到期前。离线调用产品唯一sources.transport校验，且以Monitor与collector各自CA分别验证服务器IP／DNS、证书私钥匹配及两类客户端链，全部通过。没有执行账户或来源up/down。
 - 末次只读复验两侧数据库容器ID／启动时刻与准备前一致、来源仍为not_deployed；账户安装、指标抓取、真实页面与趋势联调尚未开始。外部准备收据为/tmp/addp-infra-minio-preparation-receipt.json，最终脱敏前置报告为/tmp/addp-minio-local-preflight-final.json；不记录凭据或CA私钥内容。
 - 下一步由用户执行标准指标应用并更新ADDP开发运行版本，再核对System候选及明确主机绑定、来源实际抓取和真实页面。指标应用会调和中心及已配置来源，可能产生短暂监控间断；AI未启停个人服务、升级Business或改数据库。CI／Hosted继续等专门会话回传，未查询、重跑或设定时任务。本次仅准备和离线验证，不计为T4或实时指标验收通过。
+
+
+### Infra MinIO 用户应用后的本机采集复验（2026-11-03）
+
+用户确认执行标准指标应用及开发服务更新后，本会话只读核对：Infra MinIO 独立采集账号安装记录为 enabled，来源 mTLS `https://127.0.0.1:19111/metrics` 返回200及14条真实样本；System与Monitor ready均200，运行Monitor Swagger已含MinIO，受管发现快照的minio_metrics为available，容器ID／启动时刻与原Infra数据库一致。Business仍not_deployed，原容器身份未变，未升级或启用Business。
+
+Safari平台管理员的“平台引擎部署”原仅有两个PostgreSQL。沿正式自动发现入口，只选择Infra MinIO并明确绑定现有“Docker Desktop Linux VM（Business / Infra）”，保存后列表新增Infra MinIO且关联有效；部署UUID为`bf6a6a99-e304-4955-9c5f-d6ede4925d0f`。随后Prometheus通过原HTTP SD自动出现该精确UUID／MinIO来源／容器身份目标，health=up、lastError为空；只读PromQL按该UUID和addp_source=minio核对14项原生指标均各一条序列，没有手填采集目标、改权限或补造缺省零。实际返回字段包含容量、在线磁盘、扫描汇总、请求／字节计数及进程边界；未发布的离线磁盘、瞬时请求和5xx等零值仍不能由此推定为零。
+
+新发现联调文案遗漏：System接入说明仍只列PostgreSQL／Redis，已在原中英文词条追加MinIO，不改变接入、权限或查询契约。标准命令`make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS='e2e/engine-deployments.e2e.js --grep MinIO'`退出0：28文件157项单测、1项MinIO批量接入受控浏览器测试及Vite构建通过；日志`/tmp/addp-minio-local-hint-20261103.log`。这是文案修改的最小充分回归，不计System全部浏览器或真实专业页面通过；现有前端门禁自动覆盖词条，无新增测试入口或CI编排。
+
+后台只读证据为`/tmp/addp-minio-local-preflight.json`、`/tmp/addp-minio-live-check-20261103.json`及`/tmp/addp-minio-prometheus-series-20261103.json`。真实专业详情页已打开，但Safari仍报告页面隐藏，加载与自动刷新暂停；当前不计页面指标、趋势缩放或刷新保持验收通过，等待用户保持该标签页前台后续验。CI／Hosted继续由专门会话回传，本会话未查询、触发、重跑、设置定时任务或启停个人服务；本记录不是Hosted／T4通过。

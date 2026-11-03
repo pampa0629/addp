@@ -2252,7 +2252,7 @@
       "service": "部署服务",
       "discoveryStatus": "接入状态",
       "noCandidates": "尚未发现可展示的服务",
-      "discoveryHint": "选择服务并核对承载主机后确认接入。当前支持单容器 PostgreSQL 和 Redis；接入不代表已开始专业指标采集。",
+      "discoveryHint": "选择服务并核对承载主机后确认接入。当前支持单容器 PostgreSQL、Redis 和 MinIO；接入不代表已开始专业指标采集。",
       "sourceChanged": "来源已变化或过期，请重新读取后核对并选择。",
       "discoveryStates": {
         "available": "来源读取成功",
