@@ -5344,6 +5344,80 @@ def validate_raster_statistics_percentile(repository: Path, registered: set[str]
         raise RegistrationError('statistics oracle must remain independent of product/NumPy percentile')
 
 
+STATISTICS_PERCENTILES_REQUIRED = {
+    'scripts/test/online-hosted-raster-statistics-percentiles-gate.sh': (
+        'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
+        '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600',
+        'online-raster-statistics-percentiles-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+    'business/scripts/online-raster-statistics-percentiles-fixture.py': (
+        'NFSExport', 'owned_root', 'source_fixture.expected_population', 'source_fixture.expected_result',
+        'source_fixture.verify', 'source_fixture.seed', 'source_fixture.archive_sources',
+        'worker_source', 'types.ModuleType', 'fixture_sources_sha256', 'hashlib.sha256',
+        'source file or fixture source changed', 'Worker source binding differs',
+        'runtime_workspaces_removed', "'constant': True"),
+    'scripts/test/raster-statistics-percentiles-workflow-online.py': (
+        'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'raster.transient_result',
+        'readonly.no_publication', 'readonly.graph',
+        'BudgetClient', 'budget != 600', 'physical_runner(repository, env, \'oracle\', remaining())',
+        'physical_runner(repository, env, \'verify\', remaining())',
+        'current_execution', 'SubmittedLanguageClient', 'invalid_diagnostic',
+        'query language rewrote stored failure', 'previous execution result changed',
+        'scan_ids(client) != scans', 'statistics-responses-manifest.json', 'archive_response = base.encoded, base.immutable, base.archive_response',
+        'previous original response bytes changed', 'current_execution, compare = base.current_execution, base.compare', 'fixture.fixture_sources()',
+        'same-source singleton P50 and batch differ', 'source ordering changed the complete percentile list',
+        'constant zero batch lost requested positions', 'previous_config',
+        'all 56 calls, 57 physical checks and 760 previous-result checks are required'),
+    'scripts/test/raster-statistics-percentile-workflow-online.py': (
+        'readonly.execution_snapshot', 'response.raw', 'for actual_item, expected_item in zip(value, target)',
+        'rel_tol=4e-15, abs_tol=0.', 'archive_response', 'no_publication'),
+    'engines/geopython-workflow/test_online_statistics_percentiles_fixture.py': (
+        'test_statistics_percentiles_sixteen_complete_objects_and_original_suite_unchanged',
+        'test_statistics_percentiles_forty_exact_analysis_failures_preserve_sources',
+        'test_statistics_percentiles_full_ordered_oracle_rejects_every_item_tampering',
+        'test_statistics_percentiles_full_source_and_archive_tampering_fails',
+        'test_statistics_percentiles_standalone_worker_binds_both_sources_and_rechecks_all_arrays'),
+    'Makefile': ('test_online_statistics_percentiles_fixture.py', '@$(MAKE) test-raster-statistics-percentiles-online-runner',
+        'scripts/test/raster-statistics-percentiles-workflow-online_test.py',
+        'scripts/test/online-raster-statistics-percentiles-fixture_test.py',
+        'scripts/test/online-hosted-raster-statistics-percentiles-gate_test.py',
+        'test_statistics_percentiles_requires_exact_readonly_matrix_budget_and_regressions'),
+}
+
+
+def validate_raster_statistics_percentiles(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-statistics-percentiles-workflow'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-statistics-percentiles-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-statistics-percentiles-workflow'" not in job.group('body')
+        or "&& inputs.suite != 'raster-statistics-percentiles-workflow'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('statistics percentile requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_statistics_percentiles_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('statistics percentile Native fixture omitted from standard recipe')
+    for relative, fragments in STATISTICS_PERCENTILES_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('statistics percentile strict contract incomplete: '+relative)
+    tree = ast.parse((repository/'business/scripts/online-raster-statistics-percentiles-fixture.py').read_text())
+    actual = {name: [node.value for node in tree.body if isinstance(node,ast.Assign)
+                    and any(isinstance(target,ast.Name) and target.id==name for target in node.targets)]
+              for name in ('CASES','FAILURES')}
+    expected_cases = {'original': {'source': 'values.tif', 'band': 2}, 'endpoints': {'source': 'values.tif', 'band': 2, 'percentiles': [0, 100]}, 'quartiles': {'source': 'values.tif', 'band': 2, 'percentiles': [0, 25, 50, 75, 100]}, 'p50-control': {'source': 'values.tif', 'band': 2, 'percentiles': [50]}, 'fractional': {'source': 'values.tif', 'band': 2, 'percentiles': [10, 33.3, 90]}, 'reversed': {'source': 'reversed.tif', 'band': 2, 'percentiles': [10, 33.3, 90]}, 'odd': {'source': 'odd.tif', 'band': 2, 'percentiles': [0, 25, 50, 75, 100]}, 'even': {'source': 'even.tif', 'band': 2, 'percentiles': [0, 50, 100]}, 'constant': {'source': 'values.tif', 'band': 2, 'percentiles': [0, 25, 50, 75, 100], 'stage': 'reclassify', 'constant': True}, 'reclassified': {'source': 'values.tif', 'band': 2, 'percentiles': [0, 25, 50, 75, 100], 'stage': 'reclassify'}, 'int64': {'source': 'int64.tif', 'band': 2, 'percentiles': [0, 25, 50, 75, 100]}, 'uint64': {'source': 'uint64.tif', 'band': 2, 'percentiles': [0, 25, 50, 75, 100]}, 'coverage': {'source': 'coverage.tif', 'band': 2, 'percentiles': [0, 25, 50, 100]}, 'single': {'source': 'single.tif', 'band': 2, 'percentiles': [0, 33.3, 50, 100]}, 'invalid': {'source': 'invalid.tif', 'band': 2, 'percentiles': [0, 33.3, 50, 100]}, 'unlocated': {'source': 'unlocated.tif', 'band': 2, 'percentiles': [0, 25, 50, 100]}}
+    expected_failures = ('list_null', 'list_boolean', 'list_number', 'list_string', 'list_object', 'list_empty', 'item_boolean', 'item_string', 'item_null', 'item_list', 'item_object', 'item_low', 'item_high', 'duplicate', 'descending', 'band_zero', 'band_high', 'band_boolean', 'band_string', 'complex')
+    if (any(len(values)!=1 for values in actual.values()) or ast.literal_eval(actual['CASES'][0]) != expected_cases
+        or ast.literal_eval(actual['FAILURES'][0]) != expected_failures):
+        raise RegistrationError('statistics percentile fixed sixteen-success/forty-failure matrix changed')
+    if any(word in (repository/'business/scripts/online-raster-statistics-percentiles-fixture.py').read_text()
+           for word in ('operators.raster_compute', 'np.percentile', 'np.quantile')):
+        raise RegistrationError('statistics oracle must remain independent of product/NumPy percentile')
+
+
 def validate_raster_band_recommendation_profile(repository: Path, registered: set[str]) -> None:
     suite = 'raster-band-recommendation-workflow'
     if suite not in registered:
@@ -6496,6 +6570,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_snap_pour_points_profile(repository, registered)
     validate_raster_band_recommendation_profile(repository, registered)
     validate_raster_statistics_percentile(repository, registered)
+    validate_raster_statistics_percentiles(repository, registered)
     validate_raster_zonal_percentile(repository, registered)
     validate_raster_zonal_class_frequency(repository, registered)
     validate_raster_zonal_weighted(repository, registered)

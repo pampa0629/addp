@@ -1021,6 +1021,28 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_raster_statistics_percentile(self.repository, {'raster-statistics-percentile-workflow'})
             target.write_text(original)
 
+    def test_statistics_percentiles_requires_exact_readonly_matrix_budget_and_regressions(self):
+        source = Path(__file__).resolve().parents[2]
+        required = CHECK.STATISTICS_PERCENTILES_REQUIRED
+        for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml', *required):
+            target = self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source/relative,target)
+        CHECK.validate_raster_statistics_percentiles(self.repository, {'raster-statistics-percentiles-workflow'})
+        for relative, fragments in required.items():
+            target=self.repository/relative; original=target.read_text()
+            for fragment in fragments:
+                target.write_text(original.replace(fragment, 'omitted'))
+                with self.subTest(relative=relative,fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_raster_statistics_percentiles(self.repository, {'raster-statistics-percentiles-workflow'})
+                target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-statistics-percentiles-fixture.py';original=target.read_text()
+        for before,after in [("[10, 33.3, 90]", "[10, 33.4, 90]"), ("'list_object',", "'different',")]:
+            self.assertIn(before,original);target.write_text(original.replace(before,after,1))
+            with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_statistics_percentiles(self.repository, {'raster-statistics-percentiles-workflow'})
+            target.write_text(original)
+
     def test_zonal_percentile_requires_exact_csv_matrix_budget_and_regressions(self):
         source = Path(__file__).resolve().parents[2]
         required = CHECK.ZONAL_PERCENTILE_REQUIRED

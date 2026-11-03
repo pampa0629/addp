@@ -909,6 +909,18 @@ NaN／Infinity参数、整数形式浮点[1.0]保护值、混合类型复数alph
 本地入口为`make test-raster-statistics-percentile-online-runner`及标准`make test-geopython-workflow`中的`test_online_statistics_percentile_fixture.py`；已同步Online registry、changed gate、独立workflow与固定矩阵／删除断言变异检查，仅登记不代表已运行Hosted。
 
 
+## 整幅栅格多百分位独立 Hosted 验收
+
+`raster-statistics-percentiles-workflow`是独立手工只读套件，复用NFS、同源产品默认入口Runtime及普通User原12权限，业务预算固定600秒；保留原单元素套件与产品算法、权限和原统计。实际Linux全量及Hosted由CI会话协调，不触发、重跑或扩预算，不计页面或容量。
+
+固定16成功：原统计不请求列表、同源单元素P50对照各1条；端点／常用分位／小数分位／源像元逆序4条；奇数／偶数总体、常量重分类／原两类重分类4条；原生Int64／UInt64 NoData邻接2条；显式第二波段覆盖、单有效、全无效及缺定位4条。共14条多项请求及2条原字段／单元素对照。完整结果逐项用独立标量排序及Fraction确切二进制位置核验，跨六块含旋转源；P50真实对照、像元逆序及不同百分位合法同值不得被合并。全面逐项与单元素计算的一致性仍由Native覆盖，不虚称Hosted逐项重跑。
+
+固定20类各中英文提交，共40准确失败：列表null／布尔／数值／字符串／对象／空6类，布尔项／字符串项／null项／嵌套列表项／对象项／越下界／越上界7类，重复／降序2类，波段0／越界／布尔／字符串及所选复数5类；须准确到analysis任务，前置失败不能充数。新增列表诊断核提交中英语言；既有波段／复数按原诊断契约精确核验，双语提交不等于全部诊断已翻译。反向查询不改旧失败。非有限JSON、旧单值参数、混合类型复数alpha、数值极限及IO／磁盘注入仍单列Native。
+
+56执行全部零发布、零新增扫描、零派生血缘；初始扫描精确核目标／无父执行／普通用户／租户／引擎，当前DAG／语言快照／Monitor严格核对。共57次完整物理复核、760次先前成功结果复核；每步核源及归档不变，最终核全部源Meta及血缘快照。归档11份源TIFF原字节、112份专业详情／Monitor原始终态响应、独立期望及大小／hash清单，不虚构成果声明大小。物理复核每次重读所有像元／mask／网格／CRS／类型／NoData／scale-offset，不缓存实际结果；只缓存独立期望且首次生成计入预算。源夹具与新矩阵打包为只读stdin Worker，依赖源码hash冻结，源码或原件漂移均失败。所有执行工作区及NFS／容器／镜像／部署／Infra退出清理不弱化；超时或清理失败整套失败。
+
+本地标准入口：`make test-raster-statistics-percentiles-online-runner`；Native夹具加入既有`make test-geopython-workflow`；Online、影响选择、手工workflow和严格矩阵登记同次接入。准备与本地通过不记实际Hosted通过。
+
 ## 栅格分区加权总体标准差独立 Hosted 验收
 
 `raster-zonal-weighted-stddev-persistence`独立手工套件，复用NFS、同源默认入口产品Runtime、非默认租户普通User原12权限及既有隔离生命周期。固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全部物理复核、原件归档及执行工作区／期望缓存清理；退出严格核NFS／Runtime／registry／Infra零残留，清理失败整套失败。不改原套件、权限、安全投影或产品逻辑，Linux全量及实际Hosted仍由CI会话协调，不自行触发、重试或扩预算。
