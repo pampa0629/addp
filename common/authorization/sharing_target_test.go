@@ -54,6 +54,27 @@ func TestSharingTargetExactIdentityAndBounds(t *testing.T) {
 	}
 }
 
+func TestSharingTargetPreservesWhitespaceNames(t *testing.T) {
+	for _, leaf := range []string{"file", "object", "table"} {
+		root := "root"
+		if leaf == "object" {
+			root = "service"
+		} else if leaf == "table" {
+			root = "server"
+		}
+		path := plugin.EngineCatalogPath{Version: plugin.EngineCatalogPathVersion, EngineID: 9, Segments: []plugin.EngineCatalogSegment{{Term: root, Kind: root}, {Term: leaf, Kind: leaf, Name: " "}}}
+		encoded, err := EncodeSharingTarget(path)
+		original, _ := json.Marshal(path)
+		if err != nil || !bytes.Equal(encoded, original) {
+			t.Fatalf("whitespace %s identity rejected or changed: %s %v", leaf, encoded, err)
+		}
+		request := SourceMetadataCheckRequest{Targets: []plugin.EngineCatalogPath{path}}
+		if !request.Valid() {
+			t.Fatalf("whitespace %s metadata request rejected", leaf)
+		}
+	}
+}
+
 func TestSharingTargetRejectsInvalidOrLossyIdentity(t *testing.T) {
 	for name, mutate := range map[string]func(*plugin.EngineCatalogPath){
 		"zero engine":           func(p *plugin.EngineCatalogPath) { p.EngineID = 0 },
@@ -61,7 +82,7 @@ func TestSharingTargetRejectsInvalidOrLossyIdentity(t *testing.T) {
 		"unknown version":       func(p *plugin.EngineCatalogPath) { p.Version = "unknown" },
 		"no structural root":    func(p *plugin.EngineCatalogPath) { p.Segments = p.Segments[1:] },
 		"non-leaf":              func(p *plugin.EngineCatalogPath) { p.Segments = p.Segments[:2] },
-		"empty name":            func(p *plugin.EngineCatalogPath) { p.Segments[2].Name = " " },
+		"empty name":            func(p *plugin.EngineCatalogPath) { p.Segments[2].Name = "" },
 		"lossy name":            func(p *plugin.EngineCatalogPath) { p.Segments[2].Name = "invalid\xff" },
 		"lossy kind":            func(p *plugin.EngineCatalogPath) { p.Segments[2].Kind = "invalid\xff" },
 		"lossy term":            func(p *plugin.EngineCatalogPath) { p.Segments[2].Term = "invalid\xff" },

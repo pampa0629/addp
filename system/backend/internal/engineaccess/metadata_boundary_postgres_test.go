@@ -47,10 +47,10 @@ func exerciseMetadataOnlyGrants(t *testing.T, db *gorm.DB, tenantID, adminID int
 		}
 		operator := qualify(issuerRole.ID)
 		actor := Actor{TenantID: tenantID, PrincipalID: operator.PrincipalID, MembershipID: operator.MembershipID, AuthorizationVersion: operator.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Hour)}
-		for _, kind := range []string{"nfs", "ftp", "minio", "nfs-whole", "minio-whole", "postgresql", "mysql", "mongodb", "elasticsearch", "redis", "neo4j", "kafka"} {
+		for _, kind := range []string{"nfs", "ftp", "minio", "ftp-whitespace", "minio-whitespace", "nfs-whole", "minio-whole", "postgresql", "mysql", "mongodb", "elasticsearch", "redis", "neo4j", "kafka"} {
 			t.Run(kind, func(t *testing.T) {
 				tenant := uint(tenantID)
-				engineType := strings.TrimSuffix(kind, "-whole")
+				engineType := strings.TrimSuffix(strings.TrimSuffix(kind, "-whole"), "-whitespace")
 				engine := models.Engine{Name: "Metadata identity " + kind, EngineType: engineType, TenantID: &tenant, Version: 1, LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{"host": "metadata-" + kind + ".invalid"}, IdentityKey: models.JSONString(`{"host":"metadata-` + kind + `.invalid"}`)}
 				if err := db.Table("system.engines").Create(&engine).Error; err != nil {
 					t.Fatal(err)
@@ -81,6 +81,15 @@ func exerciseMetadataOnlyGrants(t *testing.T, db *gorm.DB, tenantID, adminID int
 				}
 				if kind == "neo4j" {
 					target.Segments = append(target.Segments[:1], plugin.EngineCatalogSegment{Term: "database", Kind: "namespace", Name: "neo4j"}, target.Segments[1])
+				}
+				if strings.HasSuffix(kind, "-whitespace") {
+					target = plugin.FileItemPath(engine.ID, "outputs/ ")
+					if engineType == "minio" {
+						target = plugin.ObjectItemPath(engine.ID, "outputs", " ")
+					}
+					if target.Segments[len(target.Segments)-1].Name != " " {
+						t.Fatal("physical whitespace identity changed")
+					}
 				}
 				layout := "single"
 				if strings.HasSuffix(kind, "-whole") {

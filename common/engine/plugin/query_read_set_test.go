@@ -27,6 +27,25 @@ func TestNewQueryReadSetCanonicalizesPaths(t *testing.T) {
 	}
 }
 
+func TestQueryReadSetPreservesWhitespaceNames(t *testing.T) {
+	for _, namespace := range []string{" ", " folder "} {
+		for _, name := range []string{" ", " file.csv "} {
+			path := EngineCatalogPath{Version: EngineCatalogPathVersion, EngineID: 9, Segments: []EngineCatalogSegment{{Term: "root", Kind: "root"}, {Term: "directory", Kind: "directory", Name: namespace}, {Term: "file", Kind: "file", Name: name}}}
+			readSet, err := NewQueryReadSet(path)
+			if err != nil || len(readSet.Paths) != 1 || readSet.Paths[0].Segments[1].Name != namespace || readSet.Paths[0].Segments[2].Name != name {
+				t.Fatalf("physical names changed or rejected: %+v %v", readSet, err)
+			}
+		}
+	}
+	for _, name := range []string{"", " "} {
+		path := TabularItemPath(9, "schema", "public", name)
+		_, err := NewQueryReadSet(path)
+		if (name == "") != errors.Is(err, ErrQueryReadSetUnresolved) {
+			t.Fatalf("empty and whitespace names conflated: %q %v", name, err)
+		}
+	}
+}
+
 func TestValidateQueryReadSetBindsReadOnlyQueryAndEngine(t *testing.T) {
 	request := QueryRequest{
 		EngineID: 9,

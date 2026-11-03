@@ -231,13 +231,13 @@ func TestFileAndObjectMetadataViewsShareCurrentVisibility(t *testing.T) {
 			root := createResourceTreeNode(t, db, models.MetaNode{TenantID: tenant, EngineID: engine, NodeType: rootTerm, Name: "Files", FullName: "", Depth: 1})
 			folder := createResourceTreeNode(t, db, models.MetaNode{TenantID: tenant, EngineID: engine, ParentNodeID: &root.ID, NodeType: branchTerm, Name: "outputs", FullName: "outputs", Depth: 2})
 			candidates := []models.MetaItemLite{}
-			for _, name := range []string{"nodes.gpkg", "hidden.gpkg"} {
+			for _, name := range []string{"nodes.gpkg", "hidden.gpkg", " "} {
 				item := createResourceTreeItem(t, db, models.MetaItem{TenantID: tenant, EngineID: engine, NodeID: folder.ID, ItemType: itemType, Name: name, FullName: "outputs/" + name, Fingerprint: commonModels.GenerateItemFingerprint(engine, "outputs/"+name), Attributes: models.JSONMap{"item": map[string]any{"layout": "single", "format": "geopackage", "data_type": "container"}, "statistics": map[string]any{"private": "private sample"}}})
 				candidates = append(candidates, models.MetaItemLite{ID: item.ID, TenantID: tenant, EngineID: engine, NodeID: folder.ID, ItemType: itemType, Name: item.Name, FullName: item.FullName, Attributes: map[string]any(item.Attributes)})
 			}
 			allow := true
 			ctx := WithMetadataVisibility(t.Context(), func(_ context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
-				if len(targets) != 2 {
+				if len(targets) != 3 {
 					t.Fatalf("candidate set incomplete: %d", len(targets))
 				}
 				result := &authorization.SourceMetadataCheck{ObservedAt: time.Now()}

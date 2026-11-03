@@ -312,7 +312,7 @@ func validateQueryReadPath(path EngineCatalogPath) error {
 		return fmt.Errorf("%w: catalog leaf requires an explicit structural root", ErrQueryReadSetUnresolved)
 	}
 	for index, segment := range path.Segments[1:] {
-		if strings.TrimSpace(segment.Term) == "" || strings.TrimSpace(segment.Kind) == "" || strings.TrimSpace(segment.Name) == "" {
+		if strings.TrimSpace(segment.Term) == "" || strings.TrimSpace(segment.Kind) == "" || segment.Name == "" {
 			return fmt.Errorf("%w: invalid catalog business segment %d", ErrQueryReadSetUnresolved, index)
 		}
 	}
