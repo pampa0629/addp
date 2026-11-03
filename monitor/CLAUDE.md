@@ -52,7 +52,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - 主机选择和清单校验复用共享 HostNodeSelect；System `/host-admission` 独占 v2 主机接入，Monitor 只接受同一内存导航草稿并独立校验已有主机及来源，草稿不进入 URL 或客户端持久存储，未知创建结果阻止重复提交。
 - 服务与引擎监控的主机引用使用唯一 [loadHostReferences](frontend/src/utils/hostReferences.js)，仅解析当前有权读取的一页，去重且最多四并发；无权/失败只显示已有 ID，未绑定显示未关联，迟到结果不得保留。当前 System node_id 是唯一绑定事实，不用主机名、IP 或部署别名补造。服务与引擎名称链接复用同一 MonitoredHostLink 领域组件；引擎关联失效不回用历史声明的主机，跳转保留原页面地址供浏览器返回恢复。
 - 服务登记端点复用 Basic `getRegisteredEndpoint`，只显示 HTTP(S) 主机与端口；Worker 用途只读 System metadata.runtime_name，未知值只显示正式角色，不据此判断任务正在运行。
-- 主机、进程和总览复用 ChartRenderer 与共享格式化；刷新控件、调度和取消生命周期统一沿[可见页面自动刷新](../common-frontend/docs/components/页面状态与导航.md#可见页面自动刷新)、[请求隔离](../common-frontend/docs/components/页面状态与导航.md#请求取消与迟到响应隔离)。默认十五秒，允许间隔沿共享选项并由公开 URL 恢复；隐藏时取消，可见且允许刷新时重读。401/403/404 停止循环；失败清除相应旧值，不覆盖未提交筛选。状态、单位、零值、缺样和历史窗口沿[正式展示口径](../docs/spec/addp平台运行观测规范.md#63-趋势时段比较与总览)，不由共享工具判断。
+- 主机、进程和总览复用 ChartRenderer 与共享格式化；刷新控件、调度和取消生命周期统一沿[可见页面自动刷新](../common-frontend/docs/components/页面状态与导航.md#可见页面自动刷新)、[请求隔离](../common-frontend/docs/components/页面状态与导航.md#请求取消与迟到响应隔离)。默认十五秒，允许间隔沿共享选项并由公开 URL 恢复；隐藏时取消，可见且允许刷新时重读。401/403/404 停止循环；失败清除相应旧值，不覆盖未提交筛选。列表的文本提交与刷新衔接统一见[自动筛选与已提交范围](../common-frontend/docs/components/页面状态与导航.md#自动筛选与已提交范围)，后台刷新不提交草稿。状态、单位、零值、缺样和历史窗口沿[正式展示口径](../docs/spec/addp平台运行观测规范.md#63-趋势时段比较与总览)，不由共享工具判断。
 
 ## 运行观测与平台规则
 
