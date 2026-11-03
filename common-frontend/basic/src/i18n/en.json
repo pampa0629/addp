@@ -389,6 +389,7 @@
         }
       },
       "operatorNames": {
+        "centroid": "Calculate centroid",
         "convex_hull": "Convex hull",
         "minimum_rotated_rectangle": "Minimum-area bounding rectangle",
         "simplify": "Simplify geometry",

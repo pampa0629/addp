@@ -499,7 +499,7 @@ def test_simplify_diagnostics_keep_original_frozen_task_position_and_stop_before
     assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
 
 
-@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('operator', ['centroid', 'convex_hull', 'minimum_rotated_rectangle'])
 def test_enclosing_construction_diagnostics_have_only_two_no_field_rules(operator):
     import copy
     from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES, OperatorInputError, validated_operator_diagnostic
@@ -516,7 +516,7 @@ def test_enclosing_construction_diagnostics_have_only_two_no_field_rules(operato
         assert OperatorInputError(reason, 'PRIVATE').diagnostic(operator, 1) is None
 
 
-@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('operator', ['centroid', 'convex_hull', 'minimum_rotated_rectangle'])
 @pytest.mark.parametrize('reason,parameter', [('operator_input_invalid', 'input_gdf'), ('operator_crs_invalid', '')])
 def test_enclosing_construction_diagnostics_bind_original_frozen_task_position(operator, reason, parameter):
     from addp_common.workflow_runtime import OperatorInputError

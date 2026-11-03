@@ -8334,7 +8334,7 @@ def test_enclosing_constructions_each_row_combines_parts_and_collection_without_
     assert_geodataframe_equal(source, before)
 
 
-@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('operator', ['centroid', 'convex_hull', 'minimum_rotated_rectangle'])
 @pytest.mark.parametrize('problem', ['not_gdf', 'no_active', 'duplicate_columns', 'extra_geometry', 'missing', 'empty', 'invalid', 'z', 'm', 'infinite', 'no_crs', 'geographic', 'geocentric'])
 def test_enclosing_constructions_source_and_crs_admission_without_autofix(operator, problem):
     from operators.geometric_operators import UnaryConstructionInputError
@@ -8355,7 +8355,7 @@ def test_enclosing_constructions_source_and_crs_admission_without_autofix(operat
     pd.testing.assert_frame_equal(pd.DataFrame(source), pd.DataFrame(before))
 
 
-@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('operator', ['centroid', 'convex_hull', 'minimum_rotated_rectangle'])
 def test_enclosing_constructions_empty_batch_keeps_schema_and_validates_crs(operator):
     from operators.geometric_operators import UnaryConstructionInputError
     source = buffer_source().iloc[:0]
@@ -8393,7 +8393,7 @@ def test_enclosing_constructions_real_mixed_geopackage_roundtrip(operator, tmp_p
     assert_geodataframe_equal(source, before)
 
 
-@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('operator', ['centroid', 'convex_hull', 'minimum_rotated_rectangle'])
 @pytest.mark.parametrize('language', ['zh-cn', 'en'])
 @pytest.mark.parametrize('problem', ['source', 'crs'])
 def test_enclosing_constructions_runtime_diagnostics_bind_frozen_node_and_block_save(operator, language, problem, monkeypatch):
@@ -8452,5 +8452,112 @@ def test_axis_aligned_envelope_retains_existing_calculation_and_crs_policy():
     assert result.geometry.iloc[0].equals_exact(Point(1, 2), 0)
     assert result.geometry.iloc[1].equals(box(0, 0, 2, 3))
     assert result.crs == source.crs and result.geometry.name == source.geometry.name
+    pd.testing.assert_frame_equal(result.drop(columns='shape'), source.drop(columns='shape'))
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('crs', [3857, 2263])
+def test_centroid_analytic_native_weights_repeated_points_paths_and_parts(crs):
+    holed = Polygon([(0, 0), (6, 0), (6, 2), (0, 2), (0, 0)],
+                     [[(.5, .5), (4.5, .5), (4.5, 1.5), (.5, 1.5), (.5, .5)]])
+    repeated_line = LineString([(0, 0), (2, 0), (0, 0), (0, 4)])
+    source = buffer_source([
+        Point(7, 8), shapely.MultiPoint([(0, 0), (0, 0), (6, 0)]),
+        LineString([(0, 0), (2, 0), (2, 2)]), repeated_line,
+        MultiLineString([[(0, 0), (2, 0)], [(0, 0), (2, 0)], [(0, 0), (0, 4)]]),
+        holed, shapely.MultiPolygon([box(0, 0, 2, 2), box(10, 0, 16, 2)]),
+        shapely.GeometryCollection([box(0, 0, 2, 2), box(0, 0, 2, 2), box(10, 0, 14, 2)]),
+    ], crs)
+    source['enabled'] = pd.array([None, True, False, None, True, False, None, True], dtype='boolean')
+    before = source.copy(deep=True); result = get_operator('centroid')(source)
+    # Equal point occurrences; each traversed segment length; polygon net area.
+    expected = [(7., 8.), (2., 0.), (1.5, .5), (.5, 1.), (.5, 1.), (3.25, 1.), (10., 1.), (6.5, 1.)]
+    assert [(point.x, point.y) for point in result.geometry] == expected
+    assert result.geometry.geom_type.tolist() == ['Point'] * len(source)
+    assert not source.geometry.iloc[2].covers(result.geometry.iloc[2])  # L-line centroid is off the line.
+    assert not holed.covers(result.geometry.iloc[5])  # Net-area centroid lies inside the hole.
+    assert result.geometry.name == source.geometry.name and result.crs == source.crs
+    assert result.index.equals(source.index) and result.columns.equals(source.columns)
+    pd.testing.assert_frame_equal(result.drop(columns='shape'), source.drop(columns='shape'))
+    assert_geodataframe_equal(source, before)
+
+
+def test_centroid_collection_uses_highest_dimension_and_can_lie_outside_polygon():
+    line = LineString([(0, 0), (2, 0), (2, 2)])
+    concave = Polygon([(0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4), (0, 0)])
+    source = buffer_source([
+        shapely.GeometryCollection([Point(1000, 1000), LineString([(100, 0), (100, 10)]), box(0, 0, 4, 2)]),
+        shapely.GeometryCollection([line, Point(1000, 1000)]),
+        shapely.GeometryCollection([Point(0, 0), Point(0, 0), Point(6, 0)]),
+        concave,
+    ])
+    before = source.copy(deep=True); result = get_operator('centroid')(source)
+    assert [(point.x, point.y) for point in result.geometry] == [(2., 1.), (1.5, .5), (2., 0.), (19 / 14, 19 / 14)]
+    assert not concave.covers(result.geometry.iloc[3])
+    assert_geodataframe_equal(source, before)
+
+
+def test_centroid_real_point_geopackage_keeps_every_attribute_and_nullable_type(tmp_path):
+    from osgeo import ogr
+    source = buffer_source([shapely.MultiPoint([(0, 0), (0, 0), (6, 0)]),
+                           LineString([(0, 0), (2, 0), (2, 2)]), box(10, 0, 16, 2)])
+    source['enabled'] = pd.array([None, True, False], dtype='boolean'); before = source.copy(deep=True)
+    result = get_operator('centroid')(source)
+    expected = [(2., 0.), (1.5, .5), (13., 1.)]
+    assert [(point.x, point.y) for point in result.geometry] == expected
+    computed = result.geometry.to_wkb(byte_order=1, flavor='iso').tolist()
+    conn = {'engine_type': 'nfs', 'mount_path': str(tmp_path)}
+    get_operator('save')(input_df=result, connection_info=conn, path='centroids.gpkg', mode='fail')
+    ds = ogr.Open(str(tmp_path / 'centroids.gpkg')); layer = ds.GetLayer(0); rows = list(layer)
+    assert len(rows) == 3 and layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
+    for i, row in enumerate(rows):
+        geometry = row.GetGeometryRef()
+        assert geometry.GetGeometryName() == 'POINT' and (geometry.GetX(), geometry.GetY()) == expected[i]
+        assert bytes(geometry.ExportToIsoWkb()) == computed[i]
+        assert row.GetField('label') == f'row-{i}' and row.GetField('geometry') == 'business'
+        assert row.GetField('grade') == [None, 2 ** 53 + 2, 2 ** 53 + 3][i]
+        assert row.GetField('enabled') == [None, True, False][i]
+    physical_name = layer.GetGeometryColumn(); ds = None
+    loaded = get_operator('load')(connection_info=conn, path='centroids.gpkg')
+    assert loaded.geometry.name == physical_name and loaded.crs == source.crs
+    assert loaded.geometry.to_wkb(byte_order=1, flavor='iso').tolist() == computed
+    assert str(loaded.grade.dtype) == 'Int64' and str(loaded.enabled.dtype) == 'boolean'
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('fault', ['exception', 'missing', 'empty', 'line', 'polygon', 'multipoint', 'z', 'm', 'nonfinite', 'length', 'rank'])
+def test_centroid_native_faults_require_one_valid_nonempty_finite_xy_point_per_source(fault, monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source = buffer_source([Point(0, 0)])
+    def broken(*args, **kwargs):
+        if fault == 'exception': raise shapely.errors.GEOSException('PRIVATE native centroid failure')
+        value = {'missing': None, 'empty': Point(), 'line': LineString([(0, 0), (1, 1)]), 'polygon': box(0, 0, 1, 1),
+                 'multipoint': shapely.MultiPoint([(0, 0), (1, 1)]), 'z': Point(0, 0, 1), 'm': shapely.from_wkt('POINT M (0 0 1)'),
+                 'nonfinite': Point(float('inf'), 0), 'length': Point(0, 0), 'rank': Point(0, 0)}[fault]
+        if fault == 'length': return np.array([], dtype=object)
+        return np.array([[value]] if fault == 'rank' else [value], dtype=object)
+    monkeypatch.setattr(shapely, 'centroid', broken)
+    with pytest.raises(WorkflowExecutionError) as caught:
+        GeoPythonWorkflowRunner().execute({'tasks': [{'id': 'PRIVATE', 'operator': 'centroid', 'params': {'input_gdf': source}, 'depends_on': []}]})
+    assert caught.value.error_code == 'EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('point', [Point(float('inf'), 0), Point(100, 100, 1), shapely.from_wkt('POINT M (100 100 1)')])
+def test_centroid_ignored_lower_dimension_still_obeys_whole_source_xy_admission(point):
+    from operators.geometric_operators import UnaryConstructionInputError
+    source = buffer_source([shapely.GeometryCollection([box(0, 0, 2, 2), point])])
+    with pytest.raises(UnaryConstructionInputError) as caught:
+        get_operator('centroid')(source)
+    assert caught.value.code == 'source'
+
+
+def test_centroid_keeps_nonunique_index_and_original_row_order():
+    source = buffer_source([shapely.MultiPoint([(0, 0), (0, 0), (6, 0)]), LineString([(0, 0), (2, 0), (2, 2)])])
+    source.index = pd.Index(['repeated', 'repeated'], name='source_index')
+    before = source.copy(deep=True)
+    result = get_operator('centroid')(source)
+    assert result.index.equals(source.index) and result.index.name == 'source_index'
+    assert [(value.x, value.y) for value in result.geometry] == [(2., 0.), (1.5, .5)]
     pd.testing.assert_frame_equal(result.drop(columns='shape'), source.drop(columns='shape'))
     assert_geodataframe_equal(source, before)

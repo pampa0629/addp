@@ -311,19 +311,8 @@ def union(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
 
 
 def centroid(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    计算质心
-
-    Args:
-        input_gdf: 输入 GeoDataFrame
-
-    Returns:
-        GeoDataFrame 质心点结果
-    """
-    result = input_gdf.copy()
-    geom_col = result.geometry.name
-    result[geom_col] = result.geometry.centroid
-    return result
+    """Per-source planar centroid with native weights; exterior points remain valid."""
+    return _construct_unary_geometry(input_gdf, shapely.centroid, (0,))
 
 
 class DifferenceInputError(ValueError):
@@ -462,7 +451,7 @@ def simplify(input_gdf: gpd.GeoDataFrame, tolerance: float, preserve_topology: b
 
 
 class UnaryConstructionInputError(ValueError):
-    """Closed single-source convex/rectangular construction admission facts."""
+    """Closed single-source projected geometry construction admission facts."""
     _messages = {
         'zh-cn': {
             'source': '几何构造源图层须具有唯一列名及唯一活动几何列，源几何须有效、非空、非缺失且为有限二维XY；请先显式整理或修复源图层。',
@@ -482,16 +471,16 @@ class UnaryConstructionInputError(ValueError):
         return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
 
 
-def _enclosing_geometry(input_gdf, kernel):
+def _construct_unary_geometry(input_gdf, kernel, allowed_types):
     _unary_frame_geometry(input_gdf, UnaryConstructionInputError)
     geometry = _prepare_projected_xy_source(input_gdf, UnaryConstructionInputError)
     values = np.asarray(kernel(geometry.array), dtype=object)
     if (values.shape != (len(geometry),) or shapely.is_missing(values).any()
             or shapely.is_empty(values).any() or not shapely.is_valid(values).all()
-            or not np.isin(shapely.get_type_id(values), [0, 1, 3]).all()
+            or not np.isin(shapely.get_type_id(values), allowed_types).all()
             or shapely.has_z(values).any() or shapely.has_m(values).any()
             or not np.isfinite(shapely.get_coordinates(values)).all()):
-        raise RuntimeError('geometry construction produced an invalid or non-finite XY enclosing result')
+        raise RuntimeError('geometry construction produced an invalid or non-finite XY result')
     result = input_gdf.copy()
     result[geometry.name] = gpd.GeoSeries(values, index=geometry.index, crs=geometry.crs)
     return result
@@ -499,12 +488,12 @@ def _enclosing_geometry(input_gdf, kernel):
 
 def convex_hull(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Per-source convex hull, retaining valid Point and LineString degeneracies."""
-    return _enclosing_geometry(input_gdf, shapely.convex_hull)
+    return _construct_unary_geometry(input_gdf, shapely.convex_hull, (0, 1, 3))
 
 
 def minimum_rotated_rectangle(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Per-source minimum-area oriented rectangle, retaining point/line results."""
-    return _enclosing_geometry(input_gdf, shapely.minimum_rotated_rectangle)
+    return _construct_unary_geometry(input_gdf, shapely.minimum_rotated_rectangle, (0, 1, 3))
 
 
 def envelope(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -2675,48 +2664,20 @@ UNION_METADATA = OperatorMetadata(
 )
 
 CENTROID_METADATA = OperatorMetadata(
-    name="centroid",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_CONSTRUCTION,
-    description="计算质心",
-    brief_description="计算几何对象的质心(中心点),常用于位置标注和点化处理",
-    execution_modes=["workflow"],
-    effects=["read"],
-
-    overview="计算每个几何对象的质心坐标,将面或线转换为点。质心是几何对象的几何中心,适用于标注位置、聚合分析等场景。",
-
-    params=[
-        OperatorParam(
-            name="input_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="输入的地理数据"
-        )
-    ],
-
-    use_cases=[
-        "行政区标注: 计算省市边界质心用于地图标注",
-        "建筑物点化: 将建筑物面转为中心点用于密度分析",
-        "河流中心线提取: 计算河流面的中心线用于网络分析",
-        "地块代表点: 为每个地块生成代表点用于空间连接"
-    ],
-
-    notes=[
-        "质心可能位于几何对象外部(如环形面),如需保证点在内部请使用representative_point",
-        "线的质心是沿线中点,不一定是线的端点",
-        "点的质心就是自身",
-        "质心坐标单位与输入坐标系一致"
-    ],
-
-    workflow_example={
-        'id': 'get_province_centers',
-        'operator': 'centroid',
-        'params': {
-            'input_gdf': {'$ref': 'load_provinces'}
-        },
-        'depends_on': ['load_provinces']
-    }
+    name="centroid", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_CONSTRUCTION,
+    description="计算质心", brief_description="逐源按原生几何权重计算平面质心，面外或线外仍为正常结果",
+    execution_modes=["workflow"], effects=["read"],
+    overview="逐源计算已知投影CRS下的真实平面几何质心：多点等权、线按原段长度、面按扣除孔洞后的面积计权；混合GeometryCollection只由最高维度参与。面外、孔内、部件间空隙或线外Point均正常保留，不替换为面内点。",
+    params=[OperatorParam(name="input_gdf",type="input",data_type="GeoDataFrame",required=True,
+        description="有效非空有限二维投影源图层",notes="唯一实际活动几何及列名；已知投影CRS和匹配有限正水平线性单位，空批仍验证准入")],
+    use_cases=["按几何权重概括多部件要素的位置", "将面或线逐源点化并保留原属性", "分析真实质心与面内代表位置的差别"],
+    notes=["Point位置不变，MultiPoint重复点分别贡献；线按线段长度而非顶点数或部件数平均",
+        "多面按净面积贡献，孔洞扣除；集合有面计面、否则有线计线、仅点时等权",
+        "合法重复经过和重复部件保留原生权重贡献，不先去重或融合，不新增业务属性weight参数",
+        "质心不保证落在面内或线上，不是沿线半程点、中心线或面内标注点，不自动替换结果",
+        "保原行数、属性类型/null、索引/顺序、实际几何列和CRS；源不变，不跨源汇总",
+        "已知投影原单位，不默认米、不自动重投影或修复；缺失/空/无效/Z/M/非有限源拒绝"],
+    workflow_example={'id':'centers','operator':'centroid','params':{'input_gdf':{'$ref':'load_projected_shapes'}},'depends_on':['load_projected_shapes']},
 )
 
 

@@ -1753,7 +1753,7 @@ def test_simplify_metadata_declares_runtime_topology_default_and_source_crs_unit
     assert '投影坐标系单位为米' not in params['tolerance']['notes']
 
 
-@pytest.mark.parametrize('operator', ['convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('operator', ['centroid', 'convex_hull', 'minimum_rotated_rectangle'])
 def test_enclosing_constructions_discovery_is_unique_workflow_read_and_one_geometry_input(operator):
     from operators import get_operator, OPERATORS
 
@@ -1774,3 +1774,16 @@ def test_enclosing_constructions_discovery_is_unique_workflow_read_and_one_geome
     assert port['name'] == 'default' and port['type'].lower() == 'geodataframe' and port['is_default'] is True
     assert '投影' in spec['detailed_description']['overview']
     assert get_operator(operator) is not None
+
+
+def test_centroid_metadata_keeps_one_id_no_weight_parameter_and_no_removed_batch_alias():
+    from operators import get_operator
+    operators = list_operators()
+    spec = next(item for item in operators if item['id'] == 'centroid')
+    assert sum(item['id'] == 'centroid' for item in operators) == 1
+    assert set(item['name'] for item in spec['parameters']) == {'input_gdf'}
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert spec['category_path'] == ['矢量处理', '几何构造']
+    assert [(port['name'], port['type'].lower(), port['is_default']) for port in spec['output_ports']] == [('default', 'geodataframe', True)]
+    assert 'batch_centroid' not in {item['id'] for item in operators}
+    with pytest.raises(ValueError, match='Unknown operator: batch_centroid'): get_operator('batch_centroid')

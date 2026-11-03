@@ -18,6 +18,8 @@ class WorkflowExecutionError(RuntimeError):
 
 # Closed protocol tuples; never classify arbitrary exception text as input errors.
 OPERATOR_INPUT_RULES = {
+    ('centroid', 'operator_input_invalid', ''): 'input_gdf',
+    ('centroid', 'operator_crs_invalid', ''): '',
     ('convex_hull', 'operator_input_invalid', ''): 'input_gdf',
     ('convex_hull', 'operator_crs_invalid', ''): '',
     ('minimum_rotated_rectangle', 'operator_input_invalid', ''): 'input_gdf',

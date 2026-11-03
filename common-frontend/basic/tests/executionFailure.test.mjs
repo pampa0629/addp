@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 73)
+  assert.equal(canonical.length, 75)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -143,7 +143,7 @@ test('operator input contract matches the canonical runtime tuples and rejects u
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
     const profiles = { contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
-      convex_hull:'construction', minimum_rotated_rectangle:'construction',
+      centroid:'construction', convex_hull:'construction', minimum_rotated_rectangle:'construction',
       'buffer:operator_input_invalid':'buffer', 'buffer:operator_crs_invalid':'buffer', 'batch_buffer:operator_crs_invalid':'buffer',
       'simplify:operator_input_invalid':'simplify', 'simplify:operator_crs_invalid':'simplify' }
     const profile = profiles[`${operator_id}:${reason}`] || profiles[operator_id]
@@ -234,7 +234,7 @@ test('intersection overlay presents closed admissions in both languages without 
       assert.ok(got.reason&&got.action&&got.node)
       assert.doesNotMatch(JSON.stringify(got),/PRIVATE|field_id|GEOS/)
       if(parameter==='gdf_b')assert.ok(got.parameter.includes('gdf_b'))
-      for (const patch of [{field:'source_id_a'},{field:'PRIVATE_FIELD'},{parameter:'reference_gdf'},{operator_id:'centroid'}]) {
+      for (const patch of [{field:'source_id_a'},{field:'PRIVATE_FIELD'},{parameter:'reference_gdf'},{operator_id:'envelope'}]) {
         const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}
         assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
       }
@@ -279,7 +279,7 @@ test('difference presents three closed admissions bilingually without B identifi
         assert.match(got.reason,locale==='zh-cn'?/面/:/Polygon/)
         assert.match(got.action,locale==='zh-cn'?/无需指定范围图层/:/no business identifier/)
       }
-      for (const patch of [{field:'source_id'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'centroid'}]) {
+      for (const patch of [{field:'source_id'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'envelope'}]) {
         const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}
         assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
       }
@@ -305,7 +305,7 @@ test('clip presents three closed admissions bilingually without B identifier req
         assert.match(got.reason,locale==='zh-cn'?/面/:/Polygon/)
         assert.match(got.action,locale==='zh-cn'?/无需指定范围图层/:/no business identifier/)
       }
-      for (const patch of [{field:'source_id'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'centroid'}]) {
+      for (const patch of [{field:'source_id'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'envelope'}]) {
         const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}
         assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
       }
@@ -330,7 +330,7 @@ test('union presents six closed admissions and side-specific overlap remedies bi
         assert.ok(got.parameter)
       }
       assert.doesNotMatch(JSON.stringify(got),/PRIVATE|GEOS/)
-      for (const patch of [{field:'source_id_a'},{field:'PRIVATE'},{parameter:'mask_gdf'},{operator_id:'centroid'}]) {
+      for (const patch of [{field:'source_id_a'},{field:'PRIVATE'},{parameter:'mask_gdf'},{operator_id:'envelope'}]) {
         assert.equal(executionFailurePresentation({diagnostic:{...diagnostic,operator:{...diagnostic.operator,...patch}}},translate).stage,'')
       }
     }
@@ -368,7 +368,7 @@ test('relation filters use precise geographic-or-projected guidance and keep oth
         assert.equal(got.action,messages.spatialRelation.actions[reason])
         assert.doesNotMatch(JSON.stringify(got),/PRIVATE|GEOS|唯一标识|unique.*identifier/)
         if(reason==='operator_crs_invalid')assert.match(got.reason,locale==='zh-cn'?/地理或投影/:/geographic or projected/)
-        for(const patch of [{field:'contains'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'centroid'}]) {
+        for(const patch of [{field:'contains'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'envelope'}]) {
           const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}
           assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
         }
@@ -396,7 +396,7 @@ test('voronoi explains explicit coverage, unique station positions and projected
       if(reason==='operator_input_invalid')assert.match(got.action,locale==='zh-cn'?/重复 XY/:/duplicate XY/)
       if(reason==='operator_mask_invalid')assert.ok(got.parameter.includes('mask_gdf'))
       if(reason==='operator_crs_invalid')assert.match(got.action,locale==='zh-cn'?/投影坐标系/:/projected CRSs/)
-      for(const patch of [{field:'station'},{field:'PRIVATE'},{parameter:'gdf_b'},{operator_id:'centroid'}]) {
+      for(const patch of [{field:'station'},{field:'PRIVATE'},{parameter:'gdf_b'},{operator_id:'envelope'}]) {
         assert.equal(executionFailurePresentation({diagnostic:{...diagnostic,operator:{...diagnostic.operator,...patch}}},translate).stage,'')
       }
     }
@@ -438,7 +438,7 @@ test('buffer diagnostics accept four closed facts and signed finite distances wi
         assert.equal(got.reason,messages.buffer.reasons[reason])
         assert.equal(got.action,messages.buffer.actions[reason])
       }
-      for (const patch of [{ field:'distance' },{ field:'PRIVATE_FIELD' },{ parameter:'reference_gdf' },{ operator_id:'centroid' }]) {
+      for (const patch of [{ field:'distance' },{ field:'PRIVATE_FIELD' },{ parameter:'reference_gdf' },{ operator_id:'envelope' }]) {
         const rejected = executionFailurePresentation({ diagnostic:{ ...diagnostic, operator:{ ...diagnostic.operator, ...patch } }, message:'private-password' },translate)
         assert.equal(rejected.stage,'')
         assert.equal(rejected.operator,'')
@@ -453,12 +453,16 @@ test('buffer diagnostics accept four closed facts and signed finite distances wi
   }
 })
 
-test('construction diagnostics close four facts with a shared single-source profile and no private values', () => {
-  const expected = ['convex_hull','minimum_rotated_rectangle'].flatMap(name => [
+test('construction diagnostics close six facts with a shared single-source profile and no private values', () => {
+  const expected = ['centroid','convex_hull','minimum_rotated_rectangle'].flatMap(name => [
     [name,'operator_input_invalid','input_gdf',''],
     [name,'operator_crs_invalid','','']
   ])
-  assert.deepEqual(operatorInputRules.filter(([name]) => ['convex_hull','minimum_rotated_rectangle'].includes(name)),expected)
+  assert.deepEqual(operatorInputRules.filter(([name]) => ['centroid','convex_hull','minimum_rotated_rectangle'].includes(name)),expected)
+  assert.deepEqual(operatorInputRules.filter(([name]) => name==='centroid'),[
+    ['centroid','operator_input_invalid','input_gdf',''],
+    ['centroid','operator_crs_invalid','','']
+  ])
   for (const locale of ['zh-cn','en']) {
     const messages = JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
     const translate = (key,params={}) => key.replace('common.executionFailure.','').split('.').reduce((node,part) => node[part],messages).replace(/\{(\w+)\}/g,(_,key) => params[key])
@@ -481,7 +485,7 @@ test('construction diagnostics close four facts with a shared single-source prof
         assert.match(got.reason,locale==='zh-cn'?/已知投影坐标系.*线性单位.*有限.*正/:/known projected CRS.*matching finite positive horizontal linear units/)
         assert.match(got.action,locale==='zh-cn'?/不会自动投影/:/no automatic projection/)
       }
-      for (const patch of [{field:'source_id'},{field:'PRIVATE_BIZ_FIELD'},{parameter:'distance'},{parameter:'preserve_topology'},{parameter_value:'private-password'},{operator_id:'envelope'},{operator_id:'centroid'},{node_index:true}]) {
+      for (const patch of [{field:'source_id'},{field:'PRIVATE_BIZ_FIELD'},{parameter:'distance'},{parameter:'preserve_topology'},{parameter_value:'private-password'},{operator_id:'envelope'},{node_index:true}]) {
         const rejected = executionFailurePresentation({diagnostic:{...diagnostic,operator:{...operator,...patch}},message:'private-password'},translate)
         assert.equal(rejected.stage,'')
         assert.equal(rejected.operator,'')
@@ -531,7 +535,7 @@ test('simplify diagnostics close four facts without borrowing buffer, identifier
         assert.match(got.reason,locale === 'zh-cn' ? /布尔值.*true.*false/ : /boolean.*true.*false/)
         assert.equal(got.parameter,locale === 'zh-cn' ? '保留单几何拓扑（preserve_topology）' : 'Preserve single-geometry topology (preserve_topology)')
       }
-      for (const patch of [{ field:'preserve_topology' },{ field:'PRIVATE_BIZ_FIELD' },{ parameter:'distance' },{ operator_id:'centroid' },{ node_index:true }]) {
+      for (const patch of [{ field:'preserve_topology' },{ field:'PRIVATE_BIZ_FIELD' },{ parameter:'distance' },{ operator_id:'envelope' },{ node_index:true }]) {
         const rejected = executionFailurePresentation({ diagnostic:{ ...diagnostic, operator:{ ...diagnostic.operator, ...patch } }, message:'private-password' },translate)
         assert.equal(rejected.stage,'')
         assert.equal(rejected.operator,'')

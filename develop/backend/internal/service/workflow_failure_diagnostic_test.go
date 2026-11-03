@@ -451,7 +451,7 @@ func TestSimplifyDiagnosticsRequireClosedTupleAndFrozenDefinition(t *testing.T) 
 }
 
 func TestEnclosingConstructionDiagnosticsRequireClosedTupleAndFrozenDefinition(t *testing.T) {
-	for _, operator := range []string{"convex_hull", "minimum_rotated_rectangle"} {
+	for _, operator := range []string{"centroid", "convex_hull", "minimum_rotated_rectangle"} {
 		for reason, parameter := range map[string]string{"operator_input_invalid": "input_gdf", "operator_crs_invalid": ""} {
 			t.Run(operator+"/"+reason, func(t *testing.T) {
 				context := map[string]interface{}{"node_index": 1, "operator_id": operator}

@@ -389,6 +389,7 @@
         }
       },
       "operatorNames": {
+        "centroid": "计算质心",
         "convex_hull": "凸包",
         "minimum_rotated_rectangle": "最小外接矩形",
         "simplify": "简化几何",
