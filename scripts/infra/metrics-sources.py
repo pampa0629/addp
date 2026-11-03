@@ -167,7 +167,7 @@ def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
                 result = '部署输入检查通过（采集待验证）' if selected else '未启用'
             elif action == 'recover' and not selected:
                 result = '未选择恢复'
-            elif action == 'recover' and kind != 'postgresql':
+            elif action == 'recover' and kind == 'node':
                 raise ValueError('尚不支持无账号修改恢复；请显式执行 up')
             elif action == 'up' and kind == 'node' and not selected:
                 result = '未启用（未改变现有来源）'

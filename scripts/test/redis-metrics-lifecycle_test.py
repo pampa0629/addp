@@ -120,6 +120,43 @@ class RedisLifecycleTest(unittest.TestCase):
         with mock.patch.object(module.deployment,'Docker',side_effect=AssertionError('must not contact Docker')):
             module.run('up','infra',{'ADDP_REDIS_METRICS_STATE_DIR':str(self.state.parent/'uninstalled')})
 
+    def test_recovery_never_changes_the_account_record_or_private_credentials(self):
+        self.up(); self.events.clear(); self.manager.image.reset_mock(); self.db.locked.reset_mock()
+        before = (self.state/'owner.json').read_bytes()
+        source = mock.Mock()
+        source.recover.side_effect = lambda *args,**kwargs:(args[5](),'healthy; source unchanged')[1]
+        with mock.patch.object(self.manager,'container_source',return_value=source):
+            self.assertIn('unchanged',self.manager.run('recover',{'ADDP_REDIS_METRICS_ENABLED':'true'}))
+        self.assertEqual(self.events,[])
+        self.assertEqual((self.state/'owner.json').read_bytes(),before)
+        self.manager.image.assert_not_called(); self.db.locked.assert_not_called()
+        source.stop.assert_not_called(); source.build.assert_not_called()
+
+    def test_recovery_refuses_disabled_drifted_and_incomplete_accounts_without_repair(self):
+        self.up(); baseline=self.state_json(); account=copy.deepcopy(self.account); record=self.record
+        for problem in ('disabled','record','pending','image','volume','failure'):
+            with self.subTest(problem=problem):
+                self.account=copy.deepcopy(account);self.record=record;self.db.volume='owned-volume'
+                state=dict(baseline)
+                if problem=='disabled': self.account['flags']=['off']
+                if problem=='record': self.record='foreign'
+                if problem=='pending': state['pending_record']=record
+                if problem=='image': state['image']=''
+                if problem=='volume': self.db.volume='another-volume'
+                module.write(self.state/'owner.json',json.dumps(state)); self.events.clear()
+                source=mock.Mock();source.recover.side_effect=module.Error('source unavailable')
+                with mock.patch.object(self.manager,'container_source',return_value=source),self.assertRaises(ValueError):
+                    self.manager.run('recover',{'ADDP_REDIS_METRICS_ENABLED':'true'})
+                self.assertEqual(self.events,[])
+                source.stop.assert_not_called()
+                if problem!='failure': source.recover.assert_not_called()
+
+    def test_unselected_and_absent_recovery_do_not_construct_docker(self):
+        with mock.patch.object(module.deployment,'Docker') as docker:
+            for enabled in ('false','true'):
+                module.run('recover','infra',{'ADDP_REDIS_METRICS_ENABLED':enabled,'ADDP_REDIS_METRICS_STATE_DIR':str(self.state)})
+            docker.assert_not_called()
+
     def test_foreign_source_or_volume_is_never_removed(self):
         manager=module.Lifecycle(self.docker,'business',self.state,lambda:self.db,project='owned')
         self.docker.run.side_effect=lambda args,**kwargs:'a'*64 if args[0]=='ps' else self.fail('mutating foreign resources')
@@ -133,12 +170,13 @@ class RedisLifecycleTest(unittest.TestCase):
 
 class RedisLifecycleScriptTest(unittest.TestCase):
     def test_business_unsets_both_scope_inputs_before_configuration(self):
-        for name in ('start','stop'):
-            text=(ROOT/'business/scripts'/f'{name}.sh').read_text()
-            self.assertIn('unset ADDP_REDIS_METRICS_ENABLED ADDP_REDIS_METRICS_TLS_DIR ADDP_REDIS_METRICS_LISTEN ADDP_REDIS_METRICS_STATE_DIR',text)
         start=(ROOT/'business/scripts/start.sh').read_text()
+        self.assertIn('unset ADDP_REDIS_METRICS_ENABLED ADDP_REDIS_METRICS_TLS_DIR ADDP_REDIS_METRICS_LISTEN ADDP_REDIS_METRICS_STATE_DIR',start)
         start=start[start.index('# Redis\n'):]
-        self.assertLess(start.index('redis-metrics.py" down'),start.index('docker compose up'))
+        self.assertLess(start.index('metrics-sources.py" down --resolved-env --scope business --kind redis'),start.index('docker compose up'))
+        stop=(ROOT/'business/scripts/stop.sh').read_text()
+        self.assertIn('observation_kinds+=(--kind redis)',stop)
+        self.assertIn('metrics-sources.py" down --scope business',stop)
 
 
 if __name__=='__main__':unittest.main()

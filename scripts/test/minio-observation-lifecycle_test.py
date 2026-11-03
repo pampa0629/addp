@@ -122,6 +122,18 @@ class MinIOObservationTest(unittest.TestCase):
             with self.assertRaises(M.Error): M.state_directory({'ADDP_MINIO_METRICS_STATE_DIR': value}, 'infra')
         with self.assertRaises(M.Error): M.run('up', 'infra', {'ADDP_MINIO_METRICS_ENABLED': 'yes'})
 
+    def test_invalid_enable_flag_never_blocks_explicit_owned_shutdown(self):
+        directory=self.directory/'infra'
+        M.private.directory(directory,0o700)
+        M.private.atomic(directory/'owner.json','{}',0o600)
+        env={'ADDP_MINIO_METRICS_STATE_DIR':str(self.directory),'ADDP_MINIO_METRICS_ENABLED':'invalid'}
+        with patch.object(M.deployment,'Docker'),patch.object(M,'Lifecycle') as lifecycle:
+            M.run('down','infra',env)
+            lifecycle.return_value.run.assert_called_once_with(False,env)
+            lifecycle.reset_mock()
+            with self.assertRaises(M.Error): M.run('recover','infra',env)
+            lifecycle.assert_not_called()
+
     def test_missing_account_is_not_inferred_from_shared_error_code(self):
         missing = {'Code': 'XMinioInvalidIAMCredentials', 'Message': 'The specified service account is not found (Specified service account does not exist)'}
         self.assertTrue(M.Database._missing({'error': {'cause': {'error': missing}}}))
@@ -202,6 +214,38 @@ class MinIOObservationTest(unittest.TestCase):
     def test_uninstalled_account_disable_does_not_open_management_connection(self):
         manager = M.AccountLifecycle('infra', self.directory, Mock(side_effect=AssertionError('no management')))
         manager.run(False)
+
+    def test_recovery_is_readonly_for_account_and_private_state_even_when_source_fails(self):
+        self.manager.run(True)
+        manager=self.source_manager(); before=(self.directory/'owner.json').read_bytes()
+        self.db.enable.reset_mock();self.db.create.reset_mock()
+        manager.source.recover.side_effect=lambda *args:(args[5](),'healthy; source unchanged')[1]
+        with patch.object(M,'bind_source'),patch.object(M.sources,'transport',return_value=('127.0.0.1',9443,{})):
+            self.assertIn('unchanged',manager.recover({}))
+            manager.source.recover.side_effect=M.Error('source start failed')
+            with self.assertRaises(M.Error): manager.recover({})
+        self.assertEqual((self.directory/'owner.json').read_bytes(),before)
+        self.db.enable.assert_not_called();self.db.create.assert_not_called()
+        manager.source.stop.assert_not_called();manager.source.build.assert_not_called()
+
+    def test_recovery_refuses_disabled_or_drifted_account_and_missing_installation(self):
+        self.manager.run(True)
+        manager=self.source_manager()
+        baseline=copy.deepcopy(self.account)
+        for problem in ('disabled','policy','source'):
+            with self.subTest(problem=problem),patch.object(M,'bind_source'):
+                self.account=copy.deepcopy(baseline)
+                if problem=='disabled': self.account['accountStatus']='off'
+                if problem=='policy': self.account['policy']={}
+                state=manager.account.read()
+                if problem=='source': state['source_key']={};manager.account.write(state)
+                self.db.enable.reset_mock()
+                with self.assertRaises(M.Error): manager.recover({})
+                self.db.enable.assert_not_called();manager.source.recover.assert_not_called()
+        with patch.object(M.deployment,'Docker') as docker:
+            for enabled in ('false','true'):
+                M.run('recover','infra',{'ADDP_MINIO_METRICS_ENABLED':enabled,'ADDP_MINIO_METRICS_STATE_DIR':str(self.directory/'absent')})
+            docker.assert_not_called()
 
     def network_database(self, *, project='owned', driver='bridge', address='10.1.2.3', duplicate=False):
         db = Mock()

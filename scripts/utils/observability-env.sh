@@ -192,6 +192,6 @@ addp_metrics_query_preflight() {
 
 # Full local development startup only. Each deployment owns its configuration;
 # neither scope inherits the other scope's selection or secret-file locations.
-addp_recover_postgres_sources() {
-  python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" recover --scope infra --scope business --kind postgresql
+addp_recover_metrics_sources() {
+  python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" recover --scope infra --scope business --kind postgresql --kind redis --kind minio
 }

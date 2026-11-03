@@ -187,10 +187,8 @@ class Lifecycle:
         return self.container_source().build(files)
 
     def plan(self, image, state):
-        args = ['run', '--rm', '--pull=never', '-i', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--memory', '64m', '--cpus', '.25', '--pids-limit', '32',
-                '--label', 'com.docker.compose.project='+self.project, '--label', 'com.docker.compose.service=redis-metrics-init', '--label', OWNER+'='+str(ROOT), '--label', SCOPE+'='+self.scope,
-                image, 'account-plan']
-        value = decode(self.docker.run(args, input=json.dumps({k:state[k] for k in ('scope', 'password', 'owner')})))
+        value = decode(self.container_source().helper(image,['account-plan'],
+            input=json.dumps({k:state[k] for k in ('scope','password','owner')})))
         if set(value) != {'enabled', 'disabled', 'enabled_record', 'disabled_record', 'password_hash'}:
             raise Error('Redis account plan rejected')
         return value
@@ -243,6 +241,26 @@ class Lifecycle:
     def start_source(self, database, image, state, ip, port, material):
         self.container_source().start(database,image,{'address':database.address,'scope':self.scope,'password':state['password']},ip,port,material,database.unchanged)
 
+    def recover(self, env):
+        with private.locked(self.state):
+            database = self.database()
+            state = self.load_state(database, False)
+            if not state or not state['image'] or state['pending_record']:
+                raise Error('Redis recovery installation is incomplete')
+            source = self.container_source()
+            source.installed_image(state['image'])
+            plan = self.plan(state['image'],state)
+            def check():
+                database.unchanged()
+                if (state['record'] != plan['enabled_record'] or database.record() != state['record']
+                        or not matches(database.account(),plan['password_hash'],True)):
+                    raise Error('Redis recovery account disabled or ownership drifted')
+                database.unchanged()
+            check()
+            ip,port,material = transport(env)
+            return source.recover(database,{'address':database.address,'scope':self.scope,'password':state['password']},
+                                  ip,port,material,check,expected_image=state['image'])
+
     def _run(self, action, env):
         with private.locked(self.state):
             self.stop_sources()
@@ -272,6 +290,8 @@ class Lifecycle:
                 self.start_source(database,image,state,ip,port,material)
 
     def run(self, action, env):
+        if action == 'recover':
+            return self.recover(env)
         try:
             return self._run(action,env)
         except Exception as error:
@@ -283,6 +303,16 @@ class Lifecycle:
 
 def run(action, scope, env):
     state=state_directory(env,scope)
+    if action == 'recover':
+        flag = env.get('ADDP_REDIS_METRICS_ENABLED','false')
+        if flag == 'false':
+            print('Redis metrics '+scope+': recovery not selected'); return
+        if flag != 'true':
+            raise Error('ADDP_REDIS_METRICS_ENABLED must be true or false')
+        if any(path.is_symlink() for path in (state,*state.parents)):
+            raise Error('Linked Redis recovery state')
+        if not state.exists() or not any(state.iterdir()):
+            print('Redis metrics '+scope+': not installed; recovery skipped'); return
     # Off/uninstalled is independent from Docker and Redis readiness.
     if env.get('ADDP_REDIS_METRICS_ENABLED','false')=='false' and not state.exists():
         print('Redis metrics '+scope+': not installed; disabled')
@@ -291,17 +321,19 @@ def run(action, scope, env):
     project,working=inventory.SCOPES[scope]
     password=env.get('REDIS_PASSWORD','') if scope=='infra' else env.get('BUSINESS_REDIS_ADMIN_PASSWORD','')
     manager=Lifecycle(docker,scope,state,lambda:Database(docker,scope,project,working,password))
-    manager.run(action,env)
+    result = manager.run(action,env)
+    if action == 'recover':
+        print('Redis metrics '+scope+': '+result); return
     print('Redis metrics '+scope+(': disabled; owned source removed and account cleared' if action=='down' or env.get('ADDP_REDIS_METRICS_ENABLED','false')=='false' else ': source deployed; successful scraping requires Monitor verification'))
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=['up','down']); parser.add_argument('--scope',choices=['infra','business'],required=True)
+    parser.add_argument('action',choices=['up','down','recover']); parser.add_argument('--scope',choices=['infra','business'],required=True)
     args=parser.parse_args()
     try: run(args.action,args.scope,os.environ)
     except (ValueError,OSError,KeyError,TypeError) as error:
-        detail=' [cleanup=failed]' if getattr(error,'redis_cleanup_failed',False) else ''
+        detail=' [cleanup=failed]' if getattr(error,'redis_cleanup_failed',False) or getattr(error,'source_recovery_cleanup_failed',False) else ''
         reason=str(error) if isinstance(error,(Error,private.PrivateStateError)) else 'deployment ownership, private state or source configuration rejected'
         print('Redis metrics unavailable'+detail+': '+reason+'; core services remain independent',file=sys.stderr)
         return 1

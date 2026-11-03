@@ -146,7 +146,7 @@ class LifecycleTest(unittest.TestCase):
         script=(ROOT/'scripts/dev/start.sh').read_text()
         block=script[script.index('# Only full local startup may recover'):script.index('# Refresh deployment-side facts')]
         for full,online,selected in [('true','0',True),('false','0',False),('true','1',False)]:
-            command="source() { :; }; addp_recover_postgres_sources() { echo RECOVER; return 1; };\n"+block+'\necho CONTINUED'
+            command="source() { :; }; addp_recover_metrics_sources() { echo RECOVER; return 1; };\n"+block+'\necho CONTINUED'
             result=subprocess.run(['bash','-eu','-c',command],env=dict(os.environ,START_ALL=full,ADDP_ONLINE_HOST=online,ROOT_DIR='/fixture'),capture_output=True,text=True,check=True,timeout=5)
             self.assertEqual('RECOVER' in result.stdout,selected)
             self.assertIn('CONTINUED',result.stdout)
@@ -157,9 +157,9 @@ class LifecycleTest(unittest.TestCase):
             stub=root/'tools/python3'
             stub.write_text('#!/bin/bash\nprintf \'%s\\n\' "$@"\nexit 1\n')
             stub.chmod(0o700)
-            result=subprocess.run(['bash','-eu','-c','source "$1"; addp_recover_postgres_sources','test',str(ROOT/'scripts/utils/observability-env.sh')],env=dict(os.environ,PROJECT_ROOT=str(root),PATH=str(root/'tools')+os.pathsep+os.environ['PATH'],ADDP_POSTGRES_METRICS_ENABLED='true',ADDP_POSTGRES_METRICS_LISTEN='127.0.0.1:8888'),capture_output=True,text=True,timeout=5)
+            result=subprocess.run(['bash','-eu','-c','source "$1"; addp_recover_metrics_sources','test',str(ROOT/'scripts/utils/observability-env.sh')],env=dict(os.environ,PROJECT_ROOT=str(root),PATH=str(root/'tools')+os.pathsep+os.environ['PATH'],ADDP_POSTGRES_METRICS_ENABLED='true',ADDP_POSTGRES_METRICS_LISTEN='127.0.0.1:8888'),capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,1)
-            self.assertEqual(result.stdout.splitlines(),[str(root/'scripts/infra/metrics-sources.py'),'recover','--scope','infra','--scope','business','--kind','postgresql'])
+            self.assertEqual(result.stdout.splitlines(),[str(root/'scripts/infra/metrics-sources.py'),'recover','--scope','infra','--scope','business','--kind','postgresql','--kind','redis','--kind','minio'])
 
     def test_activation_failure_reports_only_closed_stage_and_keeps_cleanup(self):
         from contextlib import nullcontext, redirect_stderr

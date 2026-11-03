@@ -91,7 +91,7 @@ class MetricsSourcesTest(unittest.TestCase):
         env = {value[1]+'_ENABLED':'true' for value in manager.PROVIDERS.values()}
         code, output, mocks = self.invoke('recover', env=env, apply={'return_value':'已恢复'})
         self.assertEqual(code, 1)
-        self.assertEqual([(call.args[0],call.args[1],call.args[2]) for call in mocks['apply'].call_args_list], [('recover','postgresql','infra'),('recover','postgresql','business')])
+        self.assertEqual([(call.args[0],call.args[1],call.args[2]) for call in mocks['apply'].call_args_list], [(a,k,s) for s in ('infra','business') for k in ('postgresql','redis','minio') for a in ('recover',)])
         self.assertIn('尚不支持无账号修改恢复', output)
 
     def test_invalid_selection_never_blocks_shutdown_or_other_sources(self):
@@ -141,8 +141,8 @@ class MetricsSourcesTest(unittest.TestCase):
         business = (ROOT/'business/scripts/start.sh').read_text().split('observation_kinds=()')[-1]
         self.assertIn('metrics-sources.py" up --resolved-env --scope business', business)
         self.assertNotIn('lifecycle.py" up --scope business', business)
-        recovery = (ROOT/'scripts/utils/observability-env.sh').read_text().split('addp_recover_postgres_sources() {')[1]
-        self.assertIn('metrics-sources.py" recover --scope infra --scope business --kind postgresql', recovery)
+        recovery = (ROOT/'scripts/utils/observability-env.sh').read_text().split('addp_recover_metrics_sources() {')[1]
+        self.assertIn('metrics-sources.py" recover --scope infra --scope business --kind postgresql --kind redis --kind minio', recovery)
         self.assertNotIn('source "$config"', recovery)
         for path in ('scripts/infra/up.sh','scripts/infra/down.sh','business/scripts/start.sh','business/scripts/stop.sh','scripts/utils/observability-env.sh'):
             subprocess.run(['bash','-n',str(ROOT/path)],check=True,capture_output=True)

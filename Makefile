@@ -1662,11 +1662,16 @@ test-monitor-metrics-config: test-metrics-sources ## 验证指标配置与服务
 	@python3 -m unittest scripts/test/metrics-deployment-config_test.py
 
 .PHONY: test-metrics-sources
-test-metrics-sources: ## 验证统一采集管理的范围、配置隔离、只读状态与失败汇总
+test-metrics-sources: test-metrics-source-recovery ## 验证统一采集管理的范围、配置隔离、只读状态与失败汇总
 	@python3 -m unittest scripts/test/metrics-sources_test.py
+	@python3 -m unittest scripts.test.postgres-metrics-lifecycle_test.LifecycleTest.test_full_start_recovery_selection_and_optional_failure_are_executable scripts.test.postgres-metrics-lifecycle_test.LifecycleTest.test_recovery_uses_unified_entry_for_both_scopes_and_preserves_failure
+
+.PHONY: test-metrics-source-recovery
+test-metrics-source-recovery: ## 验证 Redis/MinIO 既有来源恢复、私有卷只读校验及拒绝边界
+	@python3 -m unittest scripts/test/metrics-source-recovery_test.py
 
 .PHONY: test-monitor-minio-observation-unit test-monitor-minio-observation
-test-monitor-minio-observation-unit: ## MinIO 固定指标、来源边界、专用账号和失败关闭 T1
+test-monitor-minio-observation-unit: test-metrics-source-recovery ## MinIO 固定指标、来源边界、专用账号和失败关闭 T1
 	@python3 -m unittest scripts/test/minio-observation-lifecycle_test.py
 	@cd monitor/backend && GOWORK=off go test ./internal/miniosource ./internal/sourceserver ./cmd/minio-metrics-source ./internal/redissource ./cmd/redis-metrics-source -run '^Test(MinIO|Source|Snapshot|Observer)' -count=1
 
@@ -1674,7 +1679,7 @@ test-monitor-minio-observation: ## 独占双 MinIO 验证账号、真实 mTLS �
 	@bash scripts/test/monitor-minio-observation-gate.sh
 
 .PHONY: test-monitor-redis-source test-monitor-redis-source-unit
-test-monitor-redis-source-unit: ## Redis 专业采集固定协议与账号白名单 T1
+test-monitor-redis-source-unit: test-metrics-source-recovery ## Redis 专业采集固定协议与账号白名单 T1
 	@cd monitor/backend && GOWORK=off go test ./internal/redissource ./cmd/redis-metrics-source -run '^Test(Snapshot|Observer|Source)' -count=1
 	@python3 -m unittest scripts/test/redis-metrics-lifecycle_test.py
 

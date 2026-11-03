@@ -642,3 +642,18 @@ Infra来源实际UP后，Safari平台管理员的专业详情仍返回“未取�
 保留首次失败：独立指标配置门禁中两个无真实进程的停止夹具分别超过10秒／5秒，未唯一定位瞬时超时原因，未增加预算；随后同一136项及包含它们的206项原样通过，不将首次失败改记通过。完整生命周期回归先发现测试副本漏复制新入口，补齐后又发现旧原始 Redis 日志断言不适用统一输出；测试改为要求 Redis 行已停用和全部三项零失败，仍保留实际删除标记断言。最后完整标准命令通过。日志分别为 `/tmp/addp-metrics-sources-config-final.log`、`/tmp/addp-metrics-sources-dev-final.log`、`/tmp/addp-metrics-sources-dev-recheck.log`、最终 `/tmp/addp-metrics-sources-config-recheck.log`、`/tmp/addp-metrics-sources-business-final.log`、`/tmp/addp-metrics-sources-dev-verified.log`、`/tmp/addp-metrics-sources-unit-verified.log`。
 
 本机仅执行统一 `status` 和 `check`，分别退出0，七项汇总失败0：主机、Infra PostgreSQL／MinIO、Business PostgreSQL启用且来源运行；Infra Redis、Business Redis／MinIO停用且未部署。部署输入检查通过四项，另三项未启用。记录在 `/tmp/addp-metrics-sources-local-status-final.txt` 与 `/tmp/addp-metrics-sources-local-check-final.txt`。本轮未在个人环境执行 up／down／recover，实际统一应用仍待部署者操作；未改个人配置、凭据、数据库或服务，不把本机只读状态作为新安装、mTLS、Prometheus、页面或完整七来源部署验收。CI／Hosted继续等专门会话回传，未查询、触发、重跑或设置定时任务。
+
+
+### Redis／MinIO 已安装来源的无账号修改恢复（2026-11-04）
+
+承接用户对统一采集管理的继续授权，先补正式规范和指南，再为Redis／MinIO接通recover；完整本地ADDP启动通过同一入口选择Infra／Business的PG、Redis和MinIO。删除原PG专属恢复函数名，保持完整启动／非Hosted守卫；单模块、Hosted、Node及显式未选择／未安装的来源不自动启动。来源恢复只读核验已有账号，不创建／启用／停用／轮换账号，不写ACL、持久记录、MinIO策略或数据库数据，不构建镜像，不启动数据库。显式up／down仍沿唯一原安装与停用实现，不作为恢复兜底；同时补齐MinIO底层down不因错误启用标志而跳过清理，错误选择的recover仍拒绝，最后24项T1已验证。
+
+Redis核验精确启用ACL、已提交持久记录、密码摘要及私有安装；MinIO核验phase、原生账号归属／父身份／策略、启用状态及固定指标JWT读取。两者共用来源恢复：核验原私有Compose、镜像、Owner／scope／当前数据库完整ID；逐字段核对私有配置与凭据，逐字节核对证书。原容器ID相同且仅启动时刻／私网地址变化时允许重建；新数据库容器、停用／漂移／不完整安装、证书或端口变化拒绝。已有来源还核对非root、只读根、capabilities、安全选项、CPU／内存／PID预算及唯一只读来源卷，不只信任标签。私有卷读取与Redis纯账号配方生成复用同一短时无网络只读helper，随机标记限定回收，超时也检查并清理当次helper；不挂数据库数据、宿主目录或Docker Socket。健康来源容器与凭据保持；停止／缺失来源按原镜像恢复，重建前后重读数据库和账号，失败只清理本方来源、不变更账号。
+
+本地最终标准门禁：make test-metrics-sources退出0，含5项共享恢复、15项统一编排及2项完整／局部／Hosted启动守卫与失败继续的可执行检查；Redis T1为14项、MinIO T1最终为24项，相关固定来源Go专项通过。make test-t2-ci-registration退出0，78项登记、9项runner及24个hosted-service／16个owned-compose／9个hosted-only／2个owner-managed实际登记核对通过。标准T2输入声明已登记新共享测试，原Platform／Monitor门禁自动覆盖，不增加workflow或定时任务。
+
+最终make test-monitor-redis-source、make test-monitor-minio-observation均退出0，仅在命令PATH中使用本机已安装OpenSSL3.6.4，无系统配置变更。各独占两域数据库，真实验证健康来源ID保持、来源停止／删除恢复、数据库停止时拒绝且来源不变、同一数据库容器重启重新绑定、账号停用拒绝、原私有凭据／ACL记录不变、mTLS／精确发现恢复；MinIO另在保卷换容器后验证recover拒绝，再沿显式up重新应用。既有越权拒绝、失败关闭、持久化、数据保留及15项Redis／46项MinIO真实PromQL继续通过。临时容器、网络、数据／私有卷、helper及私有文件最终清零；当次源项目只读复核亦全0，见/tmp/addp-metrics-recovery-cleanup-verified.json。最终日志为/tmp/addp-metrics-recovery-{coordinator-final,unit-final,minio-shutdown-unit,source-runtime-unit,redis-verified,minio-verified,registration}.log。
+
+首次MinIO T2在Compose start不支持--wait处失败，临时对象已清理；改为单一up --no-recreate --no-build --wait，只启动原临时容器，未改Docker版本或增加兼容分支。中间有效T2在共用helper及运行权限检查完善后重新执行，以最终verified日志为准。make test-dev-lifecycle首次有4项Worker夹具失败及1项停止夹具超时，未唯一定位瞬时原因、未改时间预算；容器门禁退出后串行复验原24项和206项通过，随后44项HTTP与169项Trace单测通过，但被其他会话Security Online v34登记校验阻断，整体仍退出2，后续145项等未执行，不计整套通过。本会话未修改该登记或其他owner实现。失败及受阻证据分别保留/tmp/addp-metrics-recovery-dev.log与/tmp/addp-metrics-recovery-dev-final.log；本批新增启动接线由上述2项独立标准入口验证，不用聚焦通过冒充完整门禁通过。
+
+本轮未对个人Infra／Business执行up/down/recover、重启或修改配置、凭据、账号与数据库业务数据；个人环境恢复与跨Docker重启的实际应用仍未验。CI／Hosted继续等专门会话回传，未查询、触发、重跑或设置定时任务。不把本地T2、来源Running或零残留扩大为正式身份页面验收。

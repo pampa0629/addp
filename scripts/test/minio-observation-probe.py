@@ -154,6 +154,31 @@ def source_contracts(managers, environments, contexts, roots):
     for scope in ('infra', 'business'):
         manager, environment, ctx = managers[scope], environments[scope], contexts[scope]
         epoch, port = source_read(scope, manager, environment, ctx); epochs[scope] = epoch
+        before=(manager.directory/'owner.json').read_bytes()
+        ids=docker.run(['ps','-q','--filter','label=com.docker.compose.project='+manager.source.project]).split()
+        with mock.patch.object(M.Database,'enable',side_effect=AssertionError('recovery attempted account enable')), mock.patch.object(M.Database,'create',side_effect=AssertionError('recovery attempted account creation')), mock.patch.object(manager.source,'build',side_effect=AssertionError('recovery attempted source build')):
+            assert manager.recover(environment)=='healthy; source unchanged', 'healthy source not reused'
+            assert docker.run(['ps','-q','--filter','label=com.docker.compose.project='+manager.source.project]).split()==ids, 'healthy source rebuilt'
+            docker.run(['stop',ids[0]])
+            assert 'source recovered' in manager.recover(environment), 'stopped source not recovered'
+            ready(port,ctx)
+            source=docker.run(['ps','-q','--filter','label=com.docker.compose.project='+manager.source.project]).strip()
+            docker.run(['rm','-f',source])
+            assert 'source recovered' in manager.recover(environment), 'missing source not recovered'
+            ready(port,ctx)
+        assert (manager.directory/'owner.json').read_bytes()==before, 'recovery changed native private account state'
+        service='minio-'+scope
+        compose=['docker','compose','--project-name',project,'--project-directory',str(working),'-f',str(working/'docker-compose.minio-observation-t2.yml')]
+        source=docker.run(['ps','-q','--filter','label=com.docker.compose.project='+manager.source.project]).strip()
+        subprocess.run([*compose,'stop',service],check=True,stdout=subprocess.DEVNULL)
+        try: manager.recover(environment)
+        except ValueError: pass
+        else: raise AssertionError('recovery started stopped MinIO')
+        assert docker.run(['ps','-q','--filter','label=com.docker.compose.project='+manager.source.project]).strip()==source, 'rejected recovery changed source'
+        subprocess.run([*compose,'up','-d','--no-recreate','--no-build','--wait','--wait-timeout','90',service],check=True,stdout=subprocess.DEVNULL)
+        assert 'source recovered' in manager.recover(environment), 'same-container restart not recovered'
+        ready(port,ctx); discover_source(scope,manager,'available')
+        assert (manager.directory/'owner.json').read_bytes()==before, 'same-container restart changed private account state'
         for bad in (tls.context(roots[scope], client=False), tls.context(roots[scope], wrong=True)):
             try: tls.request(port, bad)
             except (OSError, urllib.error.URLError): pass
@@ -169,6 +194,11 @@ def source_contracts(managers, environments, contexts, roots):
         manager.account.run(False)
         status, body = tls.request(port, ctx)
         assert status == 503 and 'addp_minio_' not in body, 'disabled native identity retained successful data'
+        before=(manager.directory/'owner.json').read_bytes()
+        try: manager.recover(environment)
+        except ValueError: pass
+        else: raise AssertionError('recovery enabled stopped MinIO identity')
+        assert (manager.directory/'owner.json').read_bytes()==before, 'recovery changed disabled state'
         manager.account.run(True)
         assert ready(port, ctx), 're-enabled observer failed to recover'
         manager.run(False, environment)
@@ -183,7 +213,8 @@ def source_contracts(managers, environments, contexts, roots):
         assert manager.account.read()['phase'] == 'disabled', 'TLS failure left observer enabled'
         assert not docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+manager.source.project]).strip(), 'TLS failure left source running'
         assert s3(database(scope), database(scope).parent, database(scope).config['aliases']['owned']['secretKey'], 'GET', '/permission-fixture/fixture') == (200, None), 'optional failure changed object service'
-        print('MinIO '+scope+': fixed projection, isolated mTLS, non-root/read-only/budgets, native disable -> 503, recovery/stop/failure cleanup PASS', flush=True)
+        manager.run(True,environment);ready(port,ctx)
+        print('MinIO '+scope+': read-only reuse/recovery, stopped database/identity rejection, fixed projection, isolated mTLS, native disable -> 503 and failure cleanup PASS', flush=True)
     return epochs
 
 
@@ -248,6 +279,11 @@ def main():
     # Replace only these two disposable containers; preserve their owned data volumes.
     subprocess.run([*compose, 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90'], check=True, stdout=subprocess.DEVNULL)
     for scope, previous in states.items():
+        before=(state_root/scope/'owner.json').read_bytes()
+        try: managers[scope].recover(environments[scope])
+        except ValueError: pass
+        else: raise AssertionError('recovery adopted a replacement MinIO container')
+        assert (state_root/scope/'owner.json').read_bytes()==before, 'replacement rejection changed account state'
         manager = M.AccountLifecycle(scope, state_root/scope, lambda: database(scope))
         manager.run(True)
         assert manager.read() == previous

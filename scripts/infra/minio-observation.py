@@ -329,6 +329,24 @@ class Lifecycle:
         self.source = sources.Source(docker, scope, self.directory/'source', ROOT, 'minio', project, Error)
         self.account = AccountLifecycle(scope, directory, factory)
 
+    def recover(self, env):
+        with private.locked(self.directory/'source'), private.locked(self.directory):
+            state = self.account.read()
+            if state is None or state['phase'] != 'enabled':
+                raise Error('MinIO recovery account is not enabled')
+            database = self.factory(); bind_source(database,self.scope,network_key=self.network_key)
+            if state['source_key'] != database.key or state['parent_user'] != database.parent:
+                raise Error('MinIO recovery source identity changed')
+            def check():
+                database.same()
+                info = database.info(state['access_key']); self.account.check(info,state)
+                if info['accountStatus'] != 'on' or database.probe(jwt(state['access_key'],state['secret_key'])) != 200:
+                    raise Error('MinIO recovery identity disabled or not ready')
+                database.same()
+            check()
+            ip,port,material = sources.transport(env,ROOT,'ADDP_MINIO_METRICS',Error)
+            return self.source.recover(database,source_config(database,state),ip,port,material,check)
+
     def run(self, enabled, env):
         with private.locked(self.directory/'source'):
             self.source.stop()
@@ -352,30 +370,40 @@ class Lifecycle:
 
 def run(action, scope, env):
     selected = env.get('ADDP_MINIO_METRICS_ENABLED', 'false')
-    if selected not in {'true', 'false'}:
+    if action != 'down' and selected not in {'true', 'false'}:
         raise Error('MinIO observation selection must be true or false')
     directory = state_directory(env, scope)
+    if action == 'recover':
+        if selected == 'false':
+            print('MinIO observation '+scope+': recovery not selected'); return
+        if any(path.is_symlink() for path in (directory,*directory.parents)):
+            raise Error('Linked MinIO recovery state')
+        if not directory.exists() or not any(directory.iterdir()):
+            print('MinIO observation '+scope+': not installed; recovery skipped'); return
     enabled = action == 'up' and selected == 'true'
-    if not enabled and not os.path.lexists(directory/'owner.json') and not os.path.lexists(directory/'source/compose.json'):
+    if action != 'recover' and not enabled and not os.path.lexists(directory/'owner.json') and not os.path.lexists(directory/'source/compose.json'):
         print('MinIO observation '+scope+': not installed; disabled')
         return
     docker = deployment.Docker(env)
     project, working = deployment.inventory.SCOPES[scope]
     factory = lambda: Database(docker, project, working, env.get('MINIO_ROOT_USER', ''), env.get('MINIO_ROOT_PASSWORD', ''))
     source_project = deployment.inventory.minio_metrics_project(scope)
-    Lifecycle(docker, scope, directory, factory, source_project).run(enabled, env)
+    lifecycle = Lifecycle(docker, scope, directory, factory, source_project)
+    if action == 'recover':
+        print('MinIO observation '+scope+': '+lifecycle.recover(env)); return
+    lifecycle.run(enabled, env)
     print('MinIO observation '+scope+(': source deployed; successful scraping requires Monitor verification' if enabled else ': source and account disabled'))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['up', 'down'])
+    parser.add_argument('action', choices=['up', 'down', 'recover'])
     parser.add_argument('--scope', choices=['infra', 'business'], required=True)
     args = parser.parse_args()
     try:
         run(args.action, args.scope, os.environ)
     except (ValueError, OSError, KeyError, TypeError) as error:
-        cleanup = ' [cleanup=failed]' if getattr(error, 'minio_cleanup_failed', False) else ''
+        cleanup = ' [cleanup=failed]' if getattr(error, 'minio_cleanup_failed', False) or getattr(error,'source_recovery_cleanup_failed',False) else ''
         print('MinIO observation source unavailable'+cleanup+'; core services remain independent', file=sys.stderr)
         return 1
     return 0
