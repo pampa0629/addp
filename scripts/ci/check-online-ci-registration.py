@@ -530,7 +530,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     netcdf_owner = (repository / netcdf_paths[0]).read_text(encoding='utf-8')
     netcdf_case_owner = (repository / 'scripts/test/manager-internal-artifact-lineage-online.py').read_text(encoding='utf-8')
     netcdf_make = (repository / 'Makefile').read_text(encoding='utf-8')
-    if (any(fragment not in netcdf_owner for fragment in ('native-netcdf', 'addp.manager-netcdf/v1', 'manager-netcdf.json', 'source_drift_denied', 'original_download_verified'))
+    if (any(fragment not in netcdf_owner for fragment in ('native-netcdf', 'addp.manager-netcdf/v2', 'manager-netcdf.json', 'source_drift_denied', 'original_download_verified', 'ExactFileMetadataGrants', 'metadata_authorization', 'validate_structural_metadata'))
             or "if case == 'native-netcdf':" not in netcdf_case_owner
             or any(fragment not in netcdf_make for fragment in (netcdf_paths[1], netcdf_paths[3]))):
         raise RegistrationError('NetCDF case must retain explicit dispatch, standard gates, raw values, source version, download and cleanup evidence')

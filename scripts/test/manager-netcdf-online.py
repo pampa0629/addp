@@ -9,6 +9,7 @@ import time
 from urllib.parse import urlencode
 
 FIXTURE=importlib.import_module('business.scripts.online-netcdf-fixture')
+REGISTRATION=importlib.import_module('scripts.test.online-engine-registration')
 PERMISSIONS={'manager.content.read','manager.data_item.read','meta.catalog.read','meta.scan_task.execute','meta.scan_task.read','monitor.execution.read'}
 
 def require(value,message):
@@ -27,6 +28,33 @@ def validate_slice(result,spec,layer,x=0,y=0,width=4,height=3):
     else:require(result.get('spatial') is None,'unlocated NetCDF gained a CRS')
 
 
+def validate_structural_metadata(detail):
+    attrs=detail.get('attributes',{})
+    require(set(attrs)=={'schema_version','item','type_info'} and attrs.get('schema_version')==1
+        and attrs.get('item')=={'data_type':'container','format':'netcdf','layout':'single'},
+        'NetCDF Meta must expose only the canonical structural projection')
+    container=attrs.get('type_info',{}).get('container',{})
+    children=container.get('children')
+    require(set(attrs['type_info'])=={'container'} and set(container)<= {'children','default_child'}
+        and isinstance(children,list) and bool(children),'NetCDF Meta container structure missing')
+    names=[]
+    for child in children:
+        require(isinstance(child,dict) and set(child)=={'name','child_kind','data_type'}
+            and isinstance(child['name'],str) and child['name'].startswith('/') and child['child_kind']=='array'
+            and child['data_type'] in {'media','unknown'},'NetCDF Meta disclosed native content or lost variable identity')
+        names.append(child['name'])
+    require(len(set(names))==len(names) and {'/temperature','/time'}<=set(names)
+        and (not container.get('default_child') or container['default_child'] in names),'NetCDF structural variables changed')
+    return children
+
+
+def validate_browser_case(case,observed):
+    require(observed.get('locator')==case['locator'] and all(observed.get(k) is True for k in
+        ('values_verified','mask_verified','time_index_button_verified'))
+        and observed.get('download_sha256')==case['spec']['sha256'] and observed.get('download_size')==case['spec']['size_bytes'],
+        'NetCDF real UI, mask, time selection or original button download incomplete')
+
+
 def read(client,locator,selection,status=200):
     response=client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':locator,'grid_slice':json.dumps(selection,separators=(',',':'))}),(status,)).payload
     return response.get('data',{}).get('object',{}).get('content',{}).get('json') if status==200 else response
@@ -35,10 +63,13 @@ def read(client,locator,selection,status=200):
 def run(repository,environment,owner,*,physical_runner=None,browser_runner=None):
     require(environment.get('ADDP_ONLINE_MANAGER_CASE')=='native-netcdf','NetCDF requires its independent case')
     artifact=Path(environment['ADDP_ONLINE_ARTIFACT_DIR']);physical=physical_runner or (lambda action:FIXTURE.physical(action,repository,environment))
-    report={'schema_version':'addp.manager-netcdf/v1','case':'native-netcdf','run_id':environment['ADDP_ONLINE_TEST_RUN_ID'],'result':'incomplete','cases':[],'cleanup':{}}
+    report={'schema_version':'addp.manager-netcdf/v2','case':'native-netcdf','run_id':environment['ADDP_ONLINE_TEST_RUN_ID'],'result':'incomplete','cases':[],'cleanup':{}}
     client=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30)
     tenant=owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'],'NetCDF tenant')
     report['identity']=owner.validate_user_identity(client,tenant,PERMISSIONS)
+    issuer=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30)
+    grants=REGISTRATION.ExactFileMetadataGrants(issuer,client,tenant)
+    report['metadata_authorization']={'operator_principal_id':grants.operator,'recipient_principal_id':grants.recipient,'grants':[]}
     seeded=False;stage='seed'
     try:
         seeded=True;seed=physical('seed');require(seed=={'sources':FIXTURE.sources()},'NetCDF source bytes differ from the independent oracle')
@@ -46,20 +77,31 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         for storage,engine,scope,prefix in [('minio',owner.positive_int(environment['ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID'],'MinIO'),'netcdf',bucket+'/'),('nfs',owner.positive_int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID'],'NFS'),'netcdf','')]:
             stage='scan';owner.wait_for_meta_scan(client,engine,time.monotonic()+180,scope={'catalog_paths':[prefix+scope]})
             for spec in seed['sources']:
+                stage='metadata_grant'
+                visible=client.request('GET',f'/api/v1/meta/engines/{engine}/items',(200,)).payload
+                require(isinstance(visible,list) and not any(v.get('full_name')==prefix+'netcdf/'+spec['name'] for v in visible),'NetCDF Meta disclosed an unapproved source')
+                receipt=grants.grant(engine,prefix+'netcdf/'+spec['name'],storage,data_type='container',format_name='netcdf',layout='single')
+                report['metadata_authorization']['grants'].append(receipt)
                 item=owner.find_fixture_item(client,engine,prefix+'netcdf/'+spec['name'],'NetCDF '+storage)
-                detail=client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload;attrs=detail.get('attributes',{})
+                detail=client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload
+                structural=validate_structural_metadata(detail)
+                locator=owner.build_item_locator(engine,item)
+                native=client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':locator}),(200,)).payload
+                attrs=native.get('data',{}).get('object',{}).get('attributes',{})
+                (artifact/f"netcdf-{storage}-{spec['case_id']}-metadata.json").write_text(json.dumps({'meta':detail,'manager':native},ensure_ascii=False,indent=2)+'\n')
                 require({k:attrs.get('item',{}).get(k) for k in ('data_type','format','layout')}=={'data_type':'container','format':'netcdf','layout':'single'},'NetCDF canonical identity changed')
                 info=attrs.get('format_info',{}).get('netcdf',{})
                 require(info.get('source_version')=='sha256:'+spec['sha256'] and info.get('scan_complete') is True and info.get('encoding')==spec['encoding'],'NetCDF content version missing')
                 if spec['encoding']=='NetCDF-4':require(info.get('composition')=={'profile':'root_numeric_v1','complete':True},'NetCDF-4 composition evidence missing')
                 require(not attrs.get('capabilities',{}).get('spatial'),'parent container gained unified spatial extent')
                 children=attrs.get('type_info',{}).get('container',{}).get('children',[])
+                require(structural==[{k:v[k] for k in ('name','child_kind','data_type')} for v in children],'NetCDF public structure differs from the protected parent index')
                 temperature,=[v['native'] for v in children if v.get('name')=='/temperature']
                 require(temperature['type']==spec['native_type'],'NetCDF original numeric type changed')
                 require([(d['name'],d['size']) for d in temperature['dimensions']]==[('/time','2'),('/y','3'),('/x','4')],'NetCDF dimension order or size changed')
                 coordinate,=[v['native'] for v in children if v.get('name')=='/time']
                 require(coordinate['attributes']['calendar']['values']==['360_day'] and coordinate['slice_supported'] is False,'time coordinate silently converted to Gregorian or grid')
-                locator=owner.build_item_locator(engine,item);stage='slice'
+                stage='slice'
                 selection=dict(variable='/temperature',indices=[0],x=0,y=0,width=4,height=3)
                 for layer in (0,1):
                     selection['indices']=[layer];result=read(client,locator,selection);validate_slice(result,spec,layer)
@@ -82,11 +124,17 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         stage='browser';context={'run_id':report['run_id'],'identity':report['identity'],'cases':report['cases']}
         if browser_runner:browser=browser_runner(context)
         else:
-            subprocess.run(['npm','exec','--','playwright','test','e2e/online/manager-netcdf.spec.js','--config=playwright.online.config.js'],cwd=Path(repository)/'console/frontend',env=dict(environment,ADDP_ONLINE_MANAGER_NETCDF_JSON=json.dumps(context)),check=True)
+            browser_environment={k:v for k,v in environment.items() if k not in {'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}}
+            subprocess.run(['npm','exec','--','playwright','test','e2e/online/manager-netcdf.spec.js','--config=playwright.online.config.js'],cwd=Path(repository)/'console/frontend',env=dict(browser_environment,ADDP_ONLINE_MANAGER_NETCDF_JSON=json.dumps(context)),check=True)
             browser=json.loads((artifact/'manager-netcdf-browser.json').read_text())
-        require(browser.get('result')=='passed' and browser.get('run_id')==report['run_id'] and len(browser.get('cases',[]))==2*len(FIXTURE.sources()),'NetCDF browser report incomplete')
+        require(browser.get('schema_version')=='addp.manager-netcdf-browser/v1' and browser.get('browser_errors')==[] and browser.get('result')=='passed' and browser.get('run_id')==report['run_id'] and len(browser.get('cases',[]))==2*len(FIXTURE.sources()),'NetCDF browser report incomplete')
         for case,observed in zip(report['cases'],browser['cases']):
-            require(observed.get('locator')==case['locator'] and observed.get('values_verified') is True and observed.get('download_sha256')==case['spec']['sha256'] and observed.get('download_size')==case['spec']['size_bytes'],'NetCDF real UI or original button download incomplete')
+            validate_browser_case(case,observed)
+            names=[f"netcdf-{case['source_case']}-{case['spec']['case_id']}-page.png"]
+            if case['spec']['projected']:names.append(f"netcdf-{case['source_case']}-{case['spec']['case_id']}-grid.png")
+            for name in names:
+                screenshot=artifact/name
+                require(screenshot.is_file() and screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),'NetCDF real page or grid screenshot missing')
         if not physical_runner:
             inspected=subprocess.run(['docker','exec','addp-manager-raster-runtime','python','-c',
                 'import pathlib,json,tempfile; print(json.dumps([p.name for p in pathlib.Path(tempfile.gettempdir()).glob("addp-netcdf-*")]))'],
@@ -98,9 +146,20 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     except BaseException as error:
         report.update(result='failed',stage=stage,error=type(error).__name__);raise
     finally:
+        cleanup_errors=[]
+        try:
+            report['metadata_authorization']['cleanup']=grants.cleanup()
+            for case in report['cases']:
+                client.request('GET',f"/api/v1/meta/items/{case['item_id']}",(404,))
+            report['metadata_authorization']['cleanup']['details_hidden']=len(report['cases'])
+        except Exception as error:
+            cleanup_errors.append(type(error).__name__+': metadata Grant cleanup failed')
         try:
             if seeded:report['cleanup']=physical('delete')
             require(report['cleanup']=={'objects_removed':True,'files_removed':True},'NetCDF physical cleanup incomplete')
-        except BaseException:
-            report['result']='failed';raise
-        finally:(artifact/'manager-netcdf.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+        except Exception as error:
+            cleanup_errors.append(type(error).__name__+': physical source cleanup failed')
+        if cleanup_errors:
+            report['result']='failed';report['cleanup_errors']=cleanup_errors
+        (artifact/'manager-netcdf.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+        if cleanup_errors:raise ValueError('; '.join(cleanup_errors))

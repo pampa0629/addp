@@ -3245,6 +3245,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (make, 'console/frontend/e2e/online/manager-filegdb.spec.js', 'NFS FileGDB'),
             (hosted, 'src=$nfs_read_mount,dst=$nfs_root,readonly', 'NFS FileGDB'),
             (netcdf, 'source_drift_denied', 'NetCDF'),
+            (netcdf, 'ExactFileMetadataGrants', 'NetCDF'),
+            (netcdf, 'validate_structural_metadata', 'NetCDF'),
             (hosted, 'manager-case.json', 'acceptance case'),
             (hosted, 'full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-authorization)', 'acceptance case'),
             (kml_owner, 'source_unchanged=True', 'KML export'),
