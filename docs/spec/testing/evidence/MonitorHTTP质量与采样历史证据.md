@@ -1032,3 +1032,28 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 判定继续分开：归属、输入、检查点、最小样本、资源和清理完整，只证明该次真实采集链路；未复发不等于超时修复；若复发仍保留运行失败及有界诊断，不能计稳定性通过，标记缺失不推断未执行或根因。原窗口失败、自然Linux HTTP37／Trace163确定性分项通过和整作业取消的独立证据均不改写。正式Agent／Copilot身份／采集API／页面闭环、真实超时残片及性能根因继续未验收，整体仍部分实现／部分验收。
 
 本次只执行文档差异、锚点／引用、主题计数及既有实现／入口哈希不变校验，没有重跑代码门禁，也未运行探针、Docker、构建或真实采集。规范及[验收条款](../T0-T3测试规范.md)指向同一[随行采集准入](../../addp平台运行观测规范.md#volume-checkpoint-follow-acceptance)，本批不运行Hosted、容量或定时；后续实际执行仍待另行明确授权。
+
+
+<a id="http-compile-checkpoints-local-20261103"></a>
+
+## 2026-11-03 仅Go编译阶段真实检查点采集通过（偶发超时未复现）
+
+用户明确批准先修规范、原入口及确定性门禁，再运行一次独立15分钟本地取证；13分钟停止新工作，保持原四秒、8 CPU／12 GiB和4 GiB停止线，首次失败即停清理、不自动重试或续窗。本授权仅本次compile-checkpoints，不将旧“随行采集待授权”解释为长期禁令或自动新窗口。
+
+准备提交`b5a36b44f1edc1601018b2fbc7d8524095a9f261`：原`make test-monitor-http-local`新增受限`MONITOR_HTTP_LOCAL_CASE=compile-checkpoints`，缺省仍full，非法case在资源创建前拒绝。唯一构建内核只增加编译完成即返回，复用原Go构建、准入、守卫、检查点及清理，不进入缓存回收、构建器恢复、产品镜像、APT、浏览器或身份／业务。所有命令扣减900／780秒及原120秒清理绝对预算，report及终端明确case，不把诊断通过当作正式产品通过。共享登记文件只提交本专项2行校验，其他会话原差异保留；本轮没有执行推送。
+
+实际运行前最小门禁：`make test-monitor-http-local-runner`44项／0.839秒、JS语法／HTTP登记／System身份Go通过；新增6项case回归及1项登记反例，覆盖默认full原setup／business路径、严格case、900／780／120秒、同一Go容器参数、编译后镜像／缓存／身份／业务阻断、最小样本／阶段／归属／重复／缺失／超限／四秒／五秒拒绝与清理。原离线TLS T1为OpenSSL4.1.0、35命令／0.749348秒、125481字节、4次预期拒绝、清理完成。`make test-monitor-traces-local-runner`163项／4.676秒、JS／Online登记／System身份Go通过。AST复核共享内核仅build_products定义改变，命令／四秒扫描／检查点／监测／互斥／清理／builder与缓存回收原定义未改，Make及CI登记同步命中原入口，公共CI仍禁止任何真实case。上述门禁为提交前共享工作区结果，本专项实现及case登记函数与冻结提交一致，其他会话登记差异未并入；不据此宣称固定b5a36b44f全仓CI通过。
+
+本次准备于北京时间2026-11-03 14:16:35.963869开始，13分钟工作截止14:29:35.963869、15分钟总截止14:31:35.963869；先执行标准Infra状态读取，不接管个人服务。只运行一次`make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=compile-checkpoints`，入口14:17:14.478811开始，14:20:27.967320结束；含准备232.003425秒，生命周期192.703208秒，make退出0／report passed。固定上述b5a36b44f，run_id=`addp-http-local-f62be96e4f1044eea8f537d36012c83f`；12项入口与3项集成文件的15项摘要逐一匹配当次保存值及固定源码，无未提交工作混入。
+
+| 实际检查 | 结果及边界 |
+| --- | --- |
+| 原Go编译 | 原System／Gateway／Monitor／runtime-log编译命令成功，2 CPU／3 GiB、原线程／依赖缓存设置；约16.86秒进入编译，190.01秒进入诊断汇总，不运行镜像构建或业务 |
+| 完整资源检查 | 46次成功：43次product_compile、2次测量器准入、1次最终汇总；最大0.463051秒，最大开始间隔4.005049秒，零读取重试 |
+| 真实编译检查点 | 43条当次唯一命令，全部有完整进入／管道返回标记及同run／phase／command_id，原计量全部有效；残片读取最大64字节，摘要最大114字节；超过12次最低要求 |
+| 资源峰值 | 合计硬配额2.25 CPU／3288334336字节内存；卷／可写层／私有目录完整占用峰值4027449344字节，低于4 GiB停止线（该字段已包含可写层，不重复相加）。剩余约255 MiB，不由此保证后续完整产品构建空间充足 |
+| 退出清理 | cleanup.zero_owned_resources=true、failures为空；4条cleanup归属列表记录完整通过，当次私有工作目录剩余0，标准入口及外部编排均退出，无13分钟截止信号、无重试或续窗 |
+
+本轮assertions为空，报告独立scope为compile_checkpoint_collection_only、controlled_requests=0；没有产品images、Python依赖、浏览器、采集API、停源、注销或缓存回收回执。仅认“编译阶段真实检查点采集通过”。本次未复现偶发超时，不能认定先前CLI／daemon／VM或卷扫描性能问题已定位或修复；旧92309920b失败仍保留，历史Copilot APT下载根因未改变。正式Agent／Copilot产品构建→真实密码／MFA→采集／API→Console／Monitor页面→停源／注销清理闭环仍未验收，停源历史读取另批。本轮未运行Hosted、容量或定时，单次授权已经使用，不复用余时追加其他场景。
+
+原始归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-compile-window-20261103-kc5b9jtp/`（目录0700、文件0600），含launch／Infra状态／expected-inputs／entry-started／completion／独立audit／原始report。报告528685字节，SHA256=`5abbd1aab2c49e67da5db420f06259d4d9493a30c31fb8456881f4bf5a46c260`；入口日志SHA256=`9beea1452883a3db51314dde7b22fb0677ce34225c4a78e5e0beed8e851df04a`。准备快照及门禁摘要在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-compile-profile-before-20261103-auwt01zn/`与`/tmp/addp-p19-compile-profile-{http,trace}-runner-20261103.log`。本轮更新证据并回报维护会话，整体仍为部分实现／部分验收。

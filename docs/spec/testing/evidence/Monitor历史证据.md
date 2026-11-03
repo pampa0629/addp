@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 17 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 53 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 54 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -847,3 +847,10 @@ b0420db65已随共享main发布，固定dfeff7c9b自然Linux原始日志确认HT
 [完整记录、运行另行授权及验收边界](MonitorHTTP质量与采样历史证据.md#http-checkpoint-follow-clauses-20261103)
 
 只补随行采集条款，新增负载／构建／Docker请求为零，编译至少12次完整检查为离线验收初值，不足不补跑；原四秒、资源和清理预算保持。真实采集待另行授权，未运行不计通过，不将无超时或诊断完整当作性能问题已修复，正式产品页面闭环仍未验收。
+
+
+### 2026-11-03 仅Go编译阶段真实检查点采集通过（偶发超时未复现）
+
+[完整记录、单次15分钟case与清理](MonitorHTTP质量与采样历史证据.md#http-compile-checkpoints-local-20261103)
+
+固定b5a36b44f经HTTP44／Trace163等确定性门禁后，单次compile-checkpoints含准备232秒通过，46次完整四秒检查、43条编译真实检查点及零残留清理通过。未复现超时，不计性能根因修复；未进入产品镜像、APT、登录／API／页面／停源／注销，正式闭环仍未验收，无重试或续窗。
