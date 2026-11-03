@@ -328,6 +328,12 @@ SDK 注册与引擎 Provider 能力分别判断：引擎自身的能力与限制
 
 首次按名称直接访问尚未缓存的父级时，SDK 通过逐层 `ListChildren` 找到规范路径。Provider 的 `ResolvePath` 不等于 SDK 已提供独立的解析 HTTP API；当前不为减少一次往返新增这类入口，须先以真实 E2E 延迟度量决定是否扩展唯一 Engine Catalog 契约。
 
+#### 列表摘要与详情事实
+
+Facade 目录导航与路径解析消费 `EngineCatalogEntry` 的轻量摘要，字段范围统一见[列表摘要与详情边界](../spec/addp引擎插件接口规范.md#列表摘要与详情边界)。字段、几何列／CRS、统计等详情按[EngineCatalogFactsProvider](../spec/addp引擎插件接口规范.md#enginecatalogfactsprovider)的类型与选项契约取得；Facts 响应成功不表示所有可选事实都已请求或返回。
+
+SDK 资源对象的私有 `_facts` 来自目录响应附带的摘要片段，不是公开详情接口，不能据此认定字段与空间事实已经核验。目录或 Facts 成功均不代替后续内容读取的独立授权，Notebook 的实际消费仍沿[Owner 数据访问](../../develop/CLAUDE.md#数据访问与-native-facade)；生成流程的事实复核见[Notebook Copilot](../../develop/CLAUDE.md#copilot-生成与插入)。
+
 #### 目录新鲜度与调用期限
 
 - Session 的签发、期限与撤销统一见[会话授权规范 5.3](../spec/addp授权上下文规范.md#53-notebook-会话授权)；每个 Facade 方法不得重新签发授权。

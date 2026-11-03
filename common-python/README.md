@@ -205,9 +205,9 @@ spatial_frame = table.to_geopandas(
 )
 ```
 
-`scan()` 是算法读取全部数据的主路径；`to_pandas()` 消费同一条 `scan()`，检查目录返回的大小估算和实际 Arrow 解码字节，超限时抛出 `NotebookMemoryLimitError`，不返回部分 DataFrame。`memory_limit` 不是 Kernel 进程 RSS 的硬上限，后续 Pandas／GeoPandas 构造仍会使用内存。
+`scan()` 是算法读取全部数据的主路径；`to_pandas()` 消费同一条 `scan()`，检查目录摘要中的大小估算（如有）和实际 Arrow 解码字节，超限时抛出 `NotebookMemoryLimitError`，不返回部分 DataFrame。`memory_limit` 不是 Kernel 进程 RSS 的硬上限，后续 Pandas／GeoPandas 构造仍会使用内存。
 
-PostgreSQL `to_geopandas()` 在上述边界内将受控扫描返回的 EWKB 列构造为 GeoDataFrame；当前检查列名存在并按传入的 `crs` 构造，不包含来源 CRS 查询、源 CRS 与传入值的一致性复核或坐标重投影步骤。调用方必须先核实几何列与源 CRS，不能因构造成功就认定坐标含义正确；也不读取私有 `_facts` 作为完整字段／空间事实接口。生成流程的实时事实复核见[Notebook Copilot](../develop/CLAUDE.md#copilot-生成与插入)。
+PostgreSQL `to_geopandas()` 在上述边界内将受控扫描返回的 EWKB 列构造为 GeoDataFrame；当前检查列名存在并按传入的 `crs` 构造，不包含来源 CRS 查询、源 CRS 与传入值的一致性复核或坐标重投影步骤。调用方必须先核实几何列与源 CRS，不能因构造成功就认定坐标含义正确；列表摘要不替代字段／空间详情，分工统一见[列表摘要与详情事实](../docs/concepts/addp引擎体系图.md#列表摘要与详情事实)。生成流程的实时事实复核见[Notebook Copilot](../develop/CLAUDE.md#copilot-生成与插入)。
 
 ### 有界 SQL 与访问边界
 
