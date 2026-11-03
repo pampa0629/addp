@@ -1,8 +1,10 @@
 package scanflow
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"path"
 	"strconv"
@@ -75,12 +77,26 @@ func detectRasterMosaicCompositeItems(
 }
 
 func readRasterMosaicManifest(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, resource scanresource.StorageResource) (rastermosaic.Manifest, error) {
-	reader, err := contentReader.OpenContent(ctx, connInfo, plugin.ObjectItemPath(engineID, resource.RootName, resource.Path), plugin.ReadOptions{})
+	if resource.SizeBytes > rasterMosaicManifestMaxBytes {
+		return rastermosaic.Manifest{}, fmt.Errorf("raster mosaic manifest exceeds %d bytes", rasterMosaicManifestMaxBytes)
+	}
+	rangeReader, ok := contentReader.(plugin.RangeReadableProvider)
+	if !ok {
+		return rastermosaic.Manifest{}, fmt.Errorf("raster mosaic manifest requires native Range reads")
+	}
+	reader, err := rangeReader.OpenRange(ctx, connInfo, plugin.ObjectItemPath(engineID, resource.RootName, resource.Path), plugin.ReadOptions{Length: rasterMosaicManifestMaxBytes + 1})
 	if err != nil {
 		return rastermosaic.Manifest{}, fmt.Errorf("open raster mosaic manifest: %w", err)
 	}
 	defer reader.Close()
-	manifest, err := rastermosaic.DecodeManifest(reader, rasterMosaicManifestMaxBytes)
+	data, err := io.ReadAll(io.LimitReader(reader, rasterMosaicManifestMaxBytes+1))
+	if err != nil {
+		return rastermosaic.Manifest{}, fmt.Errorf("read raster mosaic manifest: %w", err)
+	}
+	if len(data) > int(rasterMosaicManifestMaxBytes) {
+		return rastermosaic.Manifest{}, fmt.Errorf("raster mosaic manifest exceeds %d bytes", rasterMosaicManifestMaxBytes)
+	}
+	manifest, err := rastermosaic.DecodeManifest(bytes.NewReader(data), rasterMosaicManifestMaxBytes)
 	if err != nil {
 		return rastermosaic.Manifest{}, fmt.Errorf("decode raster mosaic manifest: %w", err)
 	}

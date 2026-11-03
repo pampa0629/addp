@@ -27,6 +27,9 @@ func DetectObjectCatalogCompositeItems(
 	deepScan bool,
 ) (map[string]bool, []scanresource.ObjectCompositeItem, []ObjectCatalogCompositeDetectionError) {
 	skipPaths := map[string]bool{}
+	// Manifest validation establishes the whole boundary at both depths. Keep
+	// its bounded structural read separate from deep content enhancement.
+	manifestReader := contentReader
 	if !deepScan {
 		contentReader = nil
 	}
@@ -50,7 +53,7 @@ func DetectObjectCatalogCompositeItems(
 	}
 	items := make([]scanresource.ObjectCompositeItem, 0)
 	warnings := make([]ObjectCatalogCompositeDetectionError, 0)
-	rasterMosaicItems, rasterMosaicWarnings := detectRasterMosaicCompositeItems(ctx, contentReader, connInfo, engineID, resources, skipPaths)
+	rasterMosaicItems, rasterMosaicWarnings := detectRasterMosaicCompositeItems(ctx, manifestReader, connInfo, engineID, resources, skipPaths)
 	items = append(items, rasterMosaicItems...)
 	warnings = append(warnings, rasterMosaicWarnings...)
 	groupKeys := make([]string, 0, len(groups))

@@ -343,9 +343,9 @@ func TestObjectCatalogBasicScanGroupsGeoTIFFRefsWithoutSidecarItems(t *testing.T
 	})
 }
 
-func TestObjectCatalogDeepScanDetectsRasterMosaicDatasetItem(t *testing.T) {
+func TestObjectCatalogBasicDeepBasicPreservesRasterMosaicWholeScope(t *testing.T) {
 	metaenrich.RegisterItemResolvers()
-	reader := staticObjectContentReader{content: `{
+	reader := &rasterMosaicObjectTestProvider{objectCatalogScanTestProvider: objectCatalogScanTestProvider{content: `{
 		"schema_version":"addp.raster_mosaic.v1",
 		"data_type":"media",
 		"format":"raster_mosaic",
@@ -362,7 +362,7 @@ func TestObjectCatalogDeepScanDetectsRasterMosaicDatasetItem(t *testing.T) {
 			"overview_height":4535
 		},
 		"capabilities":{"leaf_cog":true,"global_overview_cog":true,"backend_tile_preview":true}
-	}`}
+	}`}}
 	pluginRegisterForTest(t, reader)
 
 	db := openObjectCatalogScanTestDB(t)
@@ -381,72 +381,98 @@ func TestObjectCatalogDeepScanDetectsRasterMosaicDatasetItem(t *testing.T) {
 		geotiffObjectResource(9, "addp", "mosaics/srtm-test/srtm-test/leaf/srtm_40_01.cog.tif", 4000),
 		geotiffObjectResource(9, "addp", "mosaics/srtm-test/srtm-test/leaf/srtm_46_02.cog.tif", 5000),
 	}
-	stats := newObjectCatalogScanState()
-	count, _, err := runtime.persistObjectResources(context.Background(),
-		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
-		1,
-		9,
-		bucketNode,
-		resources,
-		stats,
-		true,
-		models.ScannedDepthDeep,
-		true,
-		"",
-		map[string]bool{},
-		"object",
-	)
-	if err != nil {
-		t.Fatalf("persistObjectResources() error = %v", err)
-	}
-	if count != 1 {
-		t.Fatalf("persisted count = %d, want one raster mosaic dataset item", count)
-	}
+	var firstID uint
+	var firstFingerprint string
+	for phase, depth := range []string{models.ScannedDepthBasic, models.ScannedDepthDeep, models.ScannedDepthBasic} {
+		if phase == 2 {
+			// Reproduce components rebuilt by the old basic scanner. The next
+			// ordinary scan must converge them without replaying a migration.
+			stale, err := repo.EnsureObjectCatalogPrefixPath(1, 9, bucketNode, "mosaics/srtm-test/srtm-test/stale")
+			if err != nil {
+				t.Fatal(err)
+			}
+			insertObjectItemForTest(t, repo, 1, 9, stale, "addp", "mosaics/srtm-test/srtm-test/stale/old.cog.tif", 10)
+		}
+		beforeStreams, beforeRanges := reader.streams, len(reader.ranges)
+		stats := newObjectCatalogScanState()
+		count, _, err := runtime.persistObjectResources(context.Background(),
+			&commonModels.Engine{ID: 9, EngineType: reader.Type()},
+			1,
+			9,
+			bucketNode,
+			resources,
+			stats,
+			true,
+			depth,
+			true,
+			"",
+			map[string]bool{},
+			"object",
+		)
+		if err != nil {
+			t.Fatalf("persistObjectResources() error = %v", err)
+		}
+		if depth == models.ScannedDepthBasic && (reader.streams != beforeStreams || len(reader.ranges) != beforeRanges+1 || reader.ranges[len(reader.ranges)-1] != "addp/mosaics/srtm-test/srtm-test/mosaic.addp.json") {
+			t.Fatalf("basic opened content beyond its one observed manifest: streams=%d ranges=%v", reader.streams-beforeStreams, reader.ranges[beforeRanges:])
+		}
+		if count != 1 {
+			t.Fatalf("persisted count = %d, want one raster mosaic dataset item", count)
+		}
 
-	var items []models.MetaItem
-	if err := db.Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL", 1, 9).Order("full_name").Find(&items).Error; err != nil {
-		t.Fatalf("query items: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("items = %#v, want only raster mosaic dataset item", items)
-	}
-	var nodes []models.MetaNode
-	if err := db.Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL", 1, 9).Order("full_name").Find(&nodes).Error; err != nil {
-		t.Fatalf("query nodes: %v", err)
-	}
-	nodeNames := make([]string, 0, len(nodes))
-	for _, node := range nodes {
-		nodeNames = append(nodeNames, node.FullName)
-	}
-	wantNodes := []string{
-		"addp",
-		"addp/mosaics",
-		"addp/mosaics/srtm-test",
-		"addp/mosaics/srtm-test/srtm-test",
-	}
-	if !reflect.DeepEqual(nodeNames, wantNodes) {
-		t.Fatalf("nodes = %#v, want only mosaic parent path nodes %#v", nodeNames, wantNodes)
-	}
-	item := items[0]
-	if item.FullName != "addp/mosaics/srtm-test/srtm-test" || item.Name != "srtm-test" {
-		t.Fatalf("item identity = %s/%s, want addp/mosaics/srtm-test/srtm-test", item.FullName, item.Name)
-	}
-	if got := jsonStringAt(item.Attributes, "item", "format"); got != "raster_mosaic" {
-		t.Fatalf("item.format = %q, want raster_mosaic", got)
-	}
-	if got := jsonStringAt(item.Attributes, "item", "layout"); got != "whole" {
-		t.Fatalf("item.layout = %q, want whole", got)
-	}
-	info := jsonMapAt(item.Attributes, "format_info", "raster_mosaic")
-	if info["overview_ref"] != "overviews/overview.cog.tif" || info["index_ref"] != "index/source-index.json" {
-		t.Fatalf("raster_mosaic format_info = %#v", info)
-	}
-	spatial := jsonMapAt(item.Attributes, "capabilities", "spatial")
-	if commonJSON.InterfaceInt64(spatial["srid"]) != 4326 {
-		t.Fatalf("spatial = %#v, want srid 4326", spatial)
+		var items []models.MetaItem
+		if err := db.Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL", 1, 9).Order("full_name").Find(&items).Error; err != nil {
+			t.Fatalf("query items: %v", err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("items = %#v, want only raster mosaic dataset item", items)
+		}
+		var nodes []models.MetaNode
+		if err := db.Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL", 1, 9).Order("full_name").Find(&nodes).Error; err != nil {
+			t.Fatalf("query nodes: %v", err)
+		}
+		nodeNames := make([]string, 0, len(nodes))
+		for _, node := range nodes {
+			nodeNames = append(nodeNames, node.FullName)
+		}
+		wantNodes := []string{
+			"addp",
+			"addp/mosaics",
+			"addp/mosaics/srtm-test",
+			"addp/mosaics/srtm-test/srtm-test",
+		}
+		if !reflect.DeepEqual(nodeNames, wantNodes) {
+			t.Fatalf("nodes = %#v, want only mosaic parent path nodes %#v", nodeNames, wantNodes)
+		}
+		item := items[0]
+		if firstID == 0 {
+			firstID, firstFingerprint = item.ID, item.Fingerprint
+		}
+		if item.ID != firstID || item.Fingerprint != firstFingerprint {
+			t.Fatal("whole identity changed across basic/deep/basic")
+		}
+		var scope models.MetaNode
+		if err := db.First(&scope, item.NodeID).Error; err != nil || scope.FullName != item.FullName || scope.Name != item.Name {
+			t.Fatalf("whole lost named root: %+v %v", scope, err)
+		}
+		if item.FullName != "addp/mosaics/srtm-test/srtm-test" || item.Name != "srtm-test" {
+			t.Fatalf("item identity = %s/%s, want addp/mosaics/srtm-test/srtm-test", item.FullName, item.Name)
+		}
+		if got := jsonStringAt(item.Attributes, "item", "format"); got != "raster_mosaic" {
+			t.Fatalf("item.format = %q, want raster_mosaic", got)
+		}
+		if got := jsonStringAt(item.Attributes, "item", "layout"); got != "whole" {
+			t.Fatalf("item.layout = %q, want whole", got)
+		}
+		info := jsonMapAt(item.Attributes, "format_info", "raster_mosaic")
+		if info["overview_ref"] != "overviews/overview.cog.tif" || info["index_ref"] != "index/source-index.json" {
+			t.Fatalf("raster_mosaic format_info = %#v", info)
+		}
+		spatial := jsonMapAt(item.Attributes, "capabilities", "spatial")
+		if commonJSON.InterfaceInt64(spatial["srid"]) != 4326 {
+			t.Fatalf("spatial = %#v, want srid 4326", spatial)
+		}
 	}
 }
-
 func TestObjectCatalogDeepScanDetectsGLBModel3DItem(t *testing.T) {
 	metaenrich.RegisterItemResolvers()
 	content := scanRuntimeTestGLB([]byte(`{
@@ -776,7 +802,7 @@ func TestObjectCatalogPrefixScanDeletesLegacyGeoTIFFSidecarItems(t *testing.T) {
 
 func TestObjectCatalogPrefixScanKeepsWholeScopeAndDeletesInternalNodes(t *testing.T) {
 	metaenrich.RegisterItemResolvers()
-	reader := objectCatalogScanTestProvider{
+	reader := &rasterMosaicObjectTestProvider{objectCatalogScanTestProvider: objectCatalogScanTestProvider{
 		contentByPath: map[string]string{
 			"addp/mosaics/bigmosaic/bigmosaic/mosaic.addp.json": `{
 				"schema_version":"addp.raster_mosaic.v1",
@@ -787,7 +813,7 @@ func TestObjectCatalogPrefixScanKeepsWholeScopeAndDeletesInternalNodes(t *testin
 				"summary":{"leaf_count":1,"source_count":1,"extent":[82,2,124,28],"source_crs":"EPSG:4326","overview_width":16,"overview_height":8}
 			}`,
 		},
-	}
+	}}
 	pluginRegisterForTest(t, reader)
 
 	db := openObjectCatalogScanTestDB(t)
@@ -876,7 +902,7 @@ func TestObjectCatalogPrefixScanKeepsWholeScopeAndDeletesInternalNodes(t *testin
 
 func TestObjectCatalogPrefixScanKeepsWholeItemInOwnScope(t *testing.T) {
 	metaenrich.RegisterItemResolvers()
-	reader := objectCatalogScanTestProvider{
+	reader := &rasterMosaicObjectTestProvider{objectCatalogScanTestProvider: objectCatalogScanTestProvider{
 		contentByPath: map[string]string{
 			"addp/mosaics/srtm-e2e/mosaic.addp.json": `{
 				"schema_version":"addp.raster_mosaic.v1",
@@ -887,7 +913,7 @@ func TestObjectCatalogPrefixScanKeepsWholeItemInOwnScope(t *testing.T) {
 				"summary":{"leaf_count":1,"source_count":1,"extent":[15,15,155,60],"source_crs":"EPSG:4326","overview_width":16,"overview_height":8}
 			}`,
 		},
-	}
+	}}
 	pluginRegisterForTest(t, reader)
 
 	db := openObjectCatalogScanTestDB(t)
@@ -1087,4 +1113,27 @@ func geotiffCatalogEntriesForTest(engineID uint, bucket string) []plugin.EngineC
 		})
 	}
 	return entries
+}
+
+// This provider records structural I/O independently from deep content reads.
+type rasterMosaicObjectTestProvider struct {
+	objectCatalogScanTestProvider
+	streams int
+	ranges  []string
+}
+
+func (p *rasterMosaicObjectTestProvider) OpenContent(ctx context.Context, conn plugin.ConnectionInfo, target plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	p.streams++
+	return p.objectCatalogScanTestProvider.OpenContent(ctx, conn, target, opts)
+}
+func (p *rasterMosaicObjectTestProvider) OpenRange(_ context.Context, _ plugin.ConnectionInfo, target plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	p.ranges = append(p.ranges, target.StringPath())
+	if opts.Offset != 0 || opts.Length <= 0 || opts.Length > (1<<20)+1 {
+		return nil, io.ErrUnexpectedEOF
+	}
+	raw := p.content
+	if value, ok := p.contentByPath[target.StringPath()]; ok {
+		raw = value
+	}
+	return io.NopCloser(strings.NewReader(raw[:min(int64(len(raw)), opts.Length)])), nil
 }
