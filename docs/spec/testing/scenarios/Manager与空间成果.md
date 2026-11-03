@@ -1237,6 +1237,18 @@ A显式唯一非空来源ID与FID不同且在JSON安全整数内；输出每源�
 
 1.0与1的原始类型区别、非有限JSON、numpy整数、数值极限、无法可靠持久化的非法网格及故障注入单列Native，不修改产品格式支持。只记录准备／本地验证，不冒充Linux全量、真实Hosted、UI或容量通过。
 
+## IDW最近N个支撑点独立 Hosted 验收
+
+独立手工suite为`raster-interpolate-idw-max-points-persistence`，准备门禁`make test-raster-interpolate-idw-max-points-online-runner`。复用NFS、同源默认入口Runtime、普通User原12权限和4CPU／2GiB／无额外swap，业务预算固定600秒；由CI会话协调实际运行，不自行触发、重试或扩预算。原两套IDW套件与产品逻辑保持。
+
+16条COG成功链：省略上限／N超过总数实际对照、N=1／N=2等距截断（分别核X优先及同X再按Y升序）、N=2点序反转实际对照、半径相邻下浮点／等于／上浮点（模板外支持）、合法大门槛下精确重合零值和负值保留、无重合支撑不足全NoData、空点批、全无效模板及mask／alpha／scale-offset忽略、矩形横跨512块、旋转兼剪切纵跨512块、国际英尺和美制测量英尺。全部按精确圆半径过滤后才排序选点和判断min_points，额外包含非等距选择与全体支撑结果不同的明确见证；不因等距多取、不设epsilon，所有输入先完整校验。
+
+保留原18类IDW和9类min_points准入，新增max_points的null／true／false／零／负数／小数1.5／字符串／列表／对象9类，以及max<min的普通样本／空批／精确重合3类，共39类×中英文=78次准确interpolate失败。旧非法样本及重复XY场景设置小N，含未选中／范围外坏样本不被隐藏；反向语言查询不得改写提交语言与已存错误。成功终态重读1至16份成果（136次），78失败终态各重读16份（1248次），共1384次实际COG全检／95次物理调用。独立逐像元Fraction穷举／完整排序oracle不复用产品、索引或选择堆；只读冻结预期绑定本轮root／run、所有源hash和夹具源码。
+
+严格核完整像元／mask／合法零、Float64／NaN、原六参数网格／CRS、COG布局及实际nearest概览、实际默认不限／大N及原序／逆序对照，artifact＝物理＝Meta正整数大小、精确扫描父执行／用户／租户／引擎、当前点源＋模板两源实际内外血缘和Monitor、源及先前成果字节／Meta不变、失败零发布／新增扫描血缘和部分启动／全部退出清理。归档16份COG原字节、全部源、冻结预期和大小／hash清单，以及94执行的188份Develop／Monitor原始终态响应。
+
+1.0与1的原始类型区别、非有限JSON、numpy整数、重复索引、数值极限及故障注入继续单列Native，不扩产品格式支持。准备／本地门禁不计Linux全量、实际Hosted、UI或容量通过。
+
 ### 邻域多百分位独立保存验收
 
 手工套件 `raster-focal-percentiles-persistence` 复用同源默认入口Runtime、NFS、普通User原12权限和4CPU／2GiB／无额外swap，业务预算固定600秒、不重试、不扩预算。16条COG链覆盖3／5方窗批量及逐项堆叠对照、两种方窗median、米制圆窗批量／堆叠／median、国际英尺／美制测量英尺圆窗、重分类、缺定位Int64／UInt64原生NoData邻接大整数、跨双块轴及全无效。请求列表固定[0,25,33.3,50,75,100]；逐项堆叠沿原空描述契约，批量波段严格核percentile描述和顺序。
