@@ -1712,3 +1712,16 @@ def test_relation_filter_metadata_has_single_subset_output_and_no_boolean_field(
     assert '不新增布尔列' in spec['detailed_description']['overview']
     assert 'GeometryCollection' in spec['detailed_description']['overview']
     assert any('地理或投影' in note for note in spec['detailed_description']['notes'])
+
+
+def test_idw_single_workflow_read_entry_two_sources_and_no_extra_parameters():
+    from operators import list_operators
+    spec=next(s for s in list_operators()if s['id']=='raster_interpolate_idw')
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_gdf','reference_raster','field','radius_metres'}
+    assert all(p['required']for p in params.values())
+    assert params['input_gdf']['param_type']==params['reference_raster']['param_type']=='input'
+    assert params['input_gdf']['type']=='object'and params['reference_raster']['type']=='raster'
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert spec['category_path']==['栅格处理','基础计算']and spec['attributes']['resource_groups']==['raster']
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'

@@ -22,8 +22,8 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-from shapely import from_wkb, get_coordinates, has_m, has_z, make_valid
-from shapely.geometry import LineString, MultiPolygon, Point
+from shapely import STRtree, from_wkb, get_coordinates, has_m, has_z, make_valid
+from shapely.geometry import LineString, MultiPolygon, Point, box
 from osgeo import gdal, ogr, osr
 from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate as validate_layout
 from addp_common.workflow_access import (
@@ -1356,6 +1356,144 @@ def _polygon_geometries(input_gdf):
                 not np.isfinite(get_coordinates(geometry)).all()):
             raise ValueError('Raster polygon analysis requires valid non-empty finite two-dimensional Polygon or MultiPolygon geometry')
     return geometries
+
+
+_IDW_MESSAGES = {
+    'radius': ('IDW搜索半径必须为有限正米数且不能为布尔值', 'IDW search radius must be a finite positive number of metres, excluding booleans'),
+    'gdf': ('IDW需要具有活动几何列且列名唯一的GeoDataFrame', 'IDW requires a GeoDataFrame with an active geometry column and unique columns'),
+    'field': ('IDW必须显式选择一个现有非几何数值字段', 'IDW requires an explicit existing non-geometry numeric field'),
+    'geometry': ('IDW仅接受非空、有效、有限XY的二维Point', 'IDW requires non-empty valid finite XY two-dimensional Points'),
+    'duplicate': ('IDW不允许重复XY坐标，包括相同数值的重复点', 'IDW forbids duplicate XY coordinates, including duplicate points with equal values'),
+    'value': ('IDW样本必须为有限非布尔实数，整数须能由Float64精确表示', 'IDW samples must be finite non-boolean real numbers with integers exactly representable as Float64'),
+    'crs': ('IDW点和模板必须具有相同的明确二维投影CRS及相同已知水平线性单位', 'IDW points and template must share an explicit two-dimensional projected CRS with equal known horizontal linear units'),
+    'grid': ('IDW模板必须具有有限可逆的完整仿射网格', 'IDW template requires a complete finite invertible affine grid'),
+    'write': ('IDW栅格块写入失败', 'IDW raster block write failed'),
+    'result': ('IDW插值结果超出Float64可表示范围', 'IDW interpolation result is outside the representable Float64 range'),
+}
+
+
+def _idw_error(code):
+    return ValueError(_IDW_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _idw_bound(value, upper):
+    """Outward rounding only for the index box; the actual circle is exact."""
+    limit = np.finfo(np.float64).max
+    try:
+        result = float(value)
+    except OverflowError:
+        return limit if value > 0 else -limit
+    if not math.isfinite(result):
+        return limit if value > 0 else -limit
+    rounded_inward = Fraction(result) < value if upper else Fraction(result) > value
+    if rounded_inward:
+        result = math.nextafter(result, math.inf if upper else -math.inf)
+    return max(-limit, min(limit, result))
+
+
+def _idw_value(x, y, radius, tree, coordinates, values):
+    candidates = tree.query(box(_idw_bound(x-radius, False), _idw_bound(y-radius, False),
+                                _idw_bound(x+radius, True), _idw_bound(y+radius, True)))
+    total, weight_sum = Fraction(0), Fraction(0)
+    for index in candidates:
+        px, py = coordinates[index]
+        squared = (px-x)**2 + (py-y)**2
+        if squared > radius*radius:
+            continue
+        if not squared:
+            return float(values[index])
+        weight = 1 / squared
+        total += values[index] * weight
+        weight_sum += weight
+    if not weight_sum:
+        return float('nan')
+    exact = total / weight_sum
+    value = float(exact)
+    if not math.isfinite(value) or (exact and value == 0):
+        raise _idw_error('result')
+    return value
+
+
+def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres):
+    """Exact power-two IDW; reference pixels/mask never constrain the output."""
+    try:
+        if (isinstance(radius_metres, (bool, np.bool_)) or not isinstance(radius_metres, Real)
+                or radius_metres <= 0 or not math.isfinite(float(radius_metres))):
+            raise _idw_error('radius')
+    except (OverflowError, TypeError) as cause:
+        raise _idw_error('radius') from cause
+    if not isinstance(input_gdf, gpd.GeoDataFrame) or not input_gdf.columns.is_unique:
+        raise _idw_error('gdf')
+    try:
+        geometries = input_gdf.geometry
+    except AttributeError as cause:
+        raise _idw_error('gdf') from cause
+    if not isinstance(field, str) or not field.strip() or field not in input_gdf.columns or field == geometries.name:
+        raise _idw_error('field')
+    coordinates, values, seen = [], [], set()
+    for point, raw in zip(geometries, input_gdf[field]):
+        if (point is None or point.is_empty or point.geom_type != 'Point' or has_z(point) or has_m(point)
+                or not point.is_valid or not np.isfinite(get_coordinates(point)).all()):
+            raise _idw_error('geometry')
+        coordinate = (Fraction(point.x), Fraction(point.y))
+        if coordinate in seen:
+            raise _idw_error('duplicate')
+        seen.add(coordinate)
+        try:
+            if isinstance(raw, (bool, np.bool_)) or not isinstance(raw, Real):
+                raise _idw_error('value')
+            number = float(raw)
+            if not math.isfinite(number) or (isinstance(raw, Integral) and int(number) != int(raw)):
+                raise _idw_error('value')
+        except (OverflowError, TypeError) as cause:
+            raise _idw_error('value') from cause
+        coordinates.append(coordinate); values.append(Fraction(number))
+    dataset = output = destination = None
+    output_path = None; completed = False
+    try:
+        dataset = _open(reference_raster)
+        try:
+            reference = _crs(dataset.GetProjection()); crs = input_gdf.crs
+            axes = [] if crs is None else crs.axis_info
+            if (crs is None or not crs.is_projected or crs.is_compound or len(axes) != 2
+                    or not reference.IsProjected() or reference.IsCompound() or reference.GetAxesCount() != 2
+                    or not _crs(crs.to_wkt()).IsSame(reference)
+                    or any(not math.isfinite(axis.unit_conversion_factor) or axis.unit_conversion_factor <= 0
+                           or axis.unit_name.strip().lower() in ('', 'unknown') for axis in axes)
+                    or axes[0].unit_conversion_factor != axes[1].unit_conversion_factor):
+                raise _idw_error('crs')
+            radius = Fraction(float(radius_metres)) / Fraction(axes[0].unit_conversion_factor)
+        except (ValueError, RuntimeError, TypeError, AttributeError) as cause:
+            raise _idw_error('crs') from cause
+        transform = dataset.GetGeoTransform(can_return_null=True)
+        if transform is None or len(transform) != 6 or not all(math.isfinite(v) for v in transform):
+            raise _idw_error('grid')
+        origin_x, a, b, origin_y, c, d = map(Fraction, transform)
+        if not a*d-b*c:
+            raise _idw_error('grid')
+        width, height = dataset.RasterXSize, dataset.RasterYSize
+        tree = STRtree(list(geometries))
+        output = _numeric_output(dataset, 1); output_path = Path(output.GetDescription())
+        destination = output.GetRasterBand(1)
+        for top in range(0, height, 512):
+            for left in range(0, width, 512):
+                span_x, span_y = min(512, width-left), min(512, height-top)
+                result = np.full((span_y, span_x), np.nan)
+                for row in range(span_y):
+                    yy = Fraction(2*(top+row)+1, 2)
+                    for column in range(span_x):
+                        xx = Fraction(2*(left+column)+1, 2)
+                        result[row,column] = _idw_value(origin_x+a*xx+b*yy, origin_y+c*xx+d*yy,
+                                                       radius, tree, coordinates, values)
+                if destination.WriteRaster(left, top, span_x, span_y, result.tobytes(), buf_type=gdal.GDT_Float64) != gdal.CE_None:
+                    raise _idw_error('write')
+        destination = None; output.FlushCache(); output = None
+        result = _raster(output_path); completed = True
+        return result
+    finally:
+        destination = output = dataset = None
+        if output_path is not None and not completed:
+            output_path.unlink(missing_ok=True)
 
 
 def vector_rasterize(input_gdf, reference_raster, field=None, burn_value=None, all_touched=False):
@@ -6130,6 +6268,7 @@ _SPECS = [
     (raster_band_math, OperatorCategory.RASTER_CALCULATION, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
     (raster_reclassify, OperatorCategory.RASTER_CLASSIFICATION, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
     (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类集合，允许零、不可重复；北向矩形网格按实际米制距离选点，方形结果保持')], 'raster', ['read']),
+    (raster_interpolate_idw, OperatorCategory.RASTER_CALCULATION, '点数据IDW插值', [_param('input_gdf', 'GeoDataFrame', '同CRS二维Point及有限数值字段；重复XY拒绝', role='input'), _param('reference_raster', 'raster', '仅提供网格和CRS，不读取或继承模板值／NoData／mask／alpha', role='input'), _param('field', 'str', '显式数值属性字段；合法零负值保留，整数须精确表示'), _param('radius_metres', 'float', '显式有限正米制圆半径；等号纳入、全部样本、固定距离平方反比')], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
     (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '正整数像元数阈值；与min_area_m2必须且只能提供一个，等于阈值保留', None, False), _param('min_area_m2', 'float', '有限正平方米阈值；与min_pixels互斥，北向无旋转投影网格、按CRS线性单位换算，精确比较且等于阈值保留', None, False), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结'), _param('protected_values', 'list[int]', '免于替换的安全整数分类，列表不可重复；空列表保持原结果，保护斑块作为供体仍须原始大小达标', [], False)], 'raster', ['read']),
@@ -6240,6 +6379,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'validity': 'any'})
     if name == 'raster_polygonize':
         examples.update({'band': 1, 'connectivity': 4})
+    if name == 'raster_interpolate_idw':
+        examples = {'input_gdf': {'$ref': 'points'}, 'reference_raster': {'$ref': 'reference'}, 'field': 'value', 'radius_metres': 100.}
     if name == 'vector_rasterize':
         examples = {'input_gdf': {'$ref': 'polygons'}, 'reference_raster': {'$ref': 'reference'},
                     'field': 'class_value', 'all_touched': False}

@@ -71,7 +71,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 栅格处理 | 网格处理 | 3 | `raster_reproject`、`raster_resample`、`raster_align` |
 | 栅格处理 | 范围处理 | 5 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint` |
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
-| 栅格处理 | 基础计算 | 3 | `raster_band_math`、`raster_aggregate`、`raster_proximity` |
+| 栅格处理 | 基础计算 | 4 | `raster_band_math`、`raster_aggregate`、`raster_proximity`、`raster_interpolate_idw` |
 | 栅格处理 | 分类处理 | 6 | `raster_reclassify`、`raster_nibble`、`raster_boundary_clean`、`raster_sieve`、`raster_region_group`、`raster_thin` |
 | 栅格处理 | 地形分析 | 10 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_twi`、`raster_spi`、`raster_contour` |
 | 栅格处理 | 水流分析 | 5 | `raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8` |
