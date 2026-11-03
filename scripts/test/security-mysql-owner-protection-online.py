@@ -1778,7 +1778,8 @@ def assert_bank_card_mixed_rows(rows: Iterable[Mapping[str, object]], owner: str
 
 
 def bank_card_sql_service_payload(name: str, engine_id: int, source: Mapping[str, object], locator: str,
-                                  *, output_sources: Mapping[str, str] | None = None) -> dict[str, object]:
+                                  *, output_sources: Mapping[str, str] | None = None,
+                                  parameter_name: str | None = None) -> dict[str, object]:
     attributes = _object(source.get("attributes"), "bank-card source attributes")
     table = _object(_object(attributes.get("type_info"), "bank-card type info").get("table"), "bank-card table")
     fields = _array(table.get("fields"), "bank-card source fields")
@@ -1800,7 +1801,9 @@ def bank_card_sql_service_payload(name: str, engine_id: int, source: Mapping[str
         contract["fields"].append(copied)
     payload = service_payload(name, engine_id, locator, list(output_sources))
     payload["config_type"] = "sql"
-    payload["sql_query"] = "SELECT " + projection + " FROM " + BANK_SOURCE + " b WHERE b.id>=1 ORDER BY b.id LIMIT 100"
+    payload["sql_query"] = "SELECT " + projection + " FROM " + BANK_SOURCE + " b WHERE b.id>=" + (":" + parameter_name if parameter_name else "1") + " ORDER BY b.id LIMIT 100"
+    if parameter_name:
+        payload["named_parameters"] = [{"name": parameter_name, "type": "int", "required": True}]
     payload["data_config"].pop("locator")
     payload["data_config"]["stable_key"] = ["id"]
     payload["output_contract"] = {"table": contract}
@@ -2440,13 +2443,22 @@ def wait_role_projection(client: GatewayClient, enrollment_id: str,
     raise SuiteError("role cursor Owner projection did not acknowledge a new revision")
 
 
+def service_role_query_request(fields: Iterable[str], cursor: str = "", *,
+                               parameters: Mapping[str, object] | None = None, format_name: str = "json") -> dict[str, object]:
+    request = {"select": list(fields), "order_by": [{"field": "id", "direction": "asc"}],
+               "page": {"limit": 4, **({"cursor": cursor} if cursor else {})}, "format": format_name}
+    if parameters is not None:
+        request["parameters"] = dict(parameters)
+    return request
+
+
 def assert_service_role_page(client: GatewayClient, path: str, expected_ids: list[str],
                              role_selected: bool, cursor: str = "", *,
-                             output_sources: Mapping[str, str] | None = None) -> tuple[dict[str, object], str, str]:
+                             output_sources: Mapping[str, str] | None = None,
+                             parameters: Mapping[str, object] | None = None) -> tuple[dict[str, object], str, str]:
     output_sources = output_sources if output_sources is not None else {field: field for field in BANK_FIELDS}
     fields = list(output_sources)
-    request = {"select": fields, "order_by": [{"field": "id", "direction": "asc"}],
-               "page": {"limit": 4, **({"cursor": cursor} if cursor else {})}, "format": "json"}
+    request = service_role_query_request(fields, cursor, parameters=parameters)
     response = client.request("POST", path, (200,), request)
     json_cache = export_no_store(response)
     if not isinstance(response.content_type, str) or response.content_type.split(";", 1)[0].strip().lower() != "application/json":
@@ -2550,7 +2562,7 @@ def create_role_policy(client: GatewayClient, assessment_id: str, role_keys: lis
     return _object(client.request("POST", "/api/v1/security/protection-policies", (201,),
         dict(body, assessment_id=assessment_id, consumer_owner=owner, action=action)).payload, "role cursor Policy")
 
-def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, object], policy: Mapping[str, object], owner: str = "service", engine_id: int | None = None, *, service_sql: str | None = None) -> dict[str, object]:
+def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, object], policy: Mapping[str, object], owner: str = "service", engine_id: int | None = None, *, service_sql: str | None = None, parameters: Mapping[str, object] | None = None) -> dict[str, object]:
     policy_id = str(policy["id"])
     saved_options = _array(_object(policy.get("current"), "role Policy current").get("role_options"), "saved role options")
     if len(saved_options) != 1:
@@ -2563,7 +2575,7 @@ def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, 
         raise SuiteError("role cursor Policy did not return a canonical option UUID") from error
     if owner == "service":
         request = ({"config_type": "table", "target_locator": locator} if service_sql is None else
-                   {"config_type": "sql", "engine_id": positive_int(engine_id, "SQL role engine"), "sql": service_sql, "parameters": {}})
+                   {"config_type": "sql", "engine_id": positive_int(engine_id, "SQL role engine"), "sql": service_sql, "parameters": dict(parameters or {})})
         options = _object(client.request("POST", "/api/v1/service/query-protection-options", (200,), request).payload, "Owner role options")
         if service_sql is not None and len(_array(options.get("fields"), "SQL role fields")) != 1:
             raise SuiteError("SQL aliases must expose exactly one source field choice")
@@ -2589,7 +2601,8 @@ def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, 
 
 
 def restore_service_default(client: GatewayClient, service_path: str, query_path: str, choice: Mapping[str, object], retained: Mapping[str, object], *,
-                            output_sources: Mapping[str, str] | None = None) -> tuple[dict[str, object], str]:
+                            output_sources: Mapping[str, str] | None = None,
+                            parameters: Mapping[str, object] | None = None) -> tuple[dict[str, object], str]:
     def definition():
         return _object(client.request("GET", service_path, (200,)).payload, "role cursor saved Service")
     if retained.get("status") != "inactive":
@@ -2603,8 +2616,8 @@ def restore_service_default(client: GatewayClient, service_path: str, query_path
     if cleared["data_config"].get("protection_choices") != [] or cleared.get("status") != "inactive":
         raise SuiteError("role cursor explicit removal did not persist")
     client.request("PUT", service_path, (200,), {"version": cleared["version"], "status": "active"})
-    recovery, recovered_cursor, recovered_version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], False, output_sources=output_sources)
-    recovered_last, _, last_version = assert_service_role_page(client, query_path, ["5"], False, recovered_cursor, output_sources=output_sources)
+    recovery, recovered_cursor, recovered_version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], False, output_sources=output_sources, parameters=parameters)
+    recovered_last, _, last_version = assert_service_role_page(client, query_path, ["5"], False, recovered_cursor, output_sources=output_sources, parameters=parameters)
     recovery.update(continuation=recovered_last, total_rows=5)
     if last_version != recovered_version:
         raise SuiteError("default recovery pagination changed its Service version")
@@ -2634,12 +2647,44 @@ def cleanup_service_role_resources(client: GatewayClient, policy_id: str | None,
     return final_policy
 
 
+def service_role_parameter_boundaries(client: GatewayClient, query_path: str, cursor: str,
+                                      version: str, selected: bool) -> dict[str, object]:
+    alternate, _, alternate_version = assert_service_role_page(
+        client, query_path, ["2", "3", "4", "5"], selected,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 2})
+    if alternate_version != version:
+        raise SuiteError("runtime parameter values changed the published Service version")
+    refusals = {}
+    probes = {"cursor_parameter_changed": ({"minimum_id": 2}, cursor),
+              "required_missing": ({}, ""), "undeclared": ({"minimum_id": 1, "undeclared": 1}, ""),
+              "invalid_scalar": ({"minimum_id": {"not_a_scalar": True}}, "")}
+    for name, (values, probe_cursor) in probes.items():
+        refusals[name] = {}
+        for format_name in ("json", "csv"):
+            response = client.request("POST", query_path, (400,), service_role_query_request(
+                BANK_ROLE_SQL_OUTPUTS, probe_cursor, parameters=values, format_name=format_name))
+            error = _object(response.payload, "SQL parameter refusal")
+            if (response.status != 400 or set(error) != {"error", "error_code"}
+                    or error.get("error_code") != "invalid_structured_query"
+                    or not isinstance(error.get("error"), str) or not error["error"].strip()
+                    or not isinstance(response.content_type, str)
+                    or response.content_type.split(";", 1)[0].strip().lower() != "application/json"):
+                raise SuiteError("SQL parameter error must be exact 400 structured-query, not a protection refusal or result")
+            refusals[name][format_name] = {"http_status": 400, "error_code": "invalid_structured_query",
+                                          "result_absent": True, "cache_control": export_no_store(response)}
+    return {"alternate_value_output": alternate, "refusals": refusals,
+            "published_service_version_unchanged": True, "continuation_parameters_bound": True}
+
+
 def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: int, database: str,
         bank: Mapping[str, object], identity: Mapping[str, object], run_id: str, deadline: float,
-        *, config_type: str = "table") -> dict[str, object]:
+        *, config_type: str = "table", parameters: Mapping[str, object] | None = None) -> dict[str, object]:
     """One owned lifecycle for native tables and proven single-table SQL aliases."""
     if config_type not in {"table", "sql"}:
         raise SuiteError("role cursor fixture supports only native table or direct SQL")
+    if parameters is not None and (config_type != "sql" or not isinstance(parameters, Mapping)
+            or set(parameters) != {"minimum_id"} or type(parameters["minimum_id"]) is not int or parameters["minimum_id"] != 1):
+        raise SuiteError("parameterized SQL fixture requires exactly one integer minimum_id=1")
     source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
     locator = build_item_locator(engine_id, source)
     output_sources = BANK_ROLE_SQL_OUTPUTS if config_type == "sql" else {field: field for field in BANK_FIELDS}
@@ -2656,9 +2701,11 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
     service_id = None
     failure = None
     result = {}
+    parameter_checks = {}
     try:
-        name = ("online-security-" + ("sql-" if config_type == "sql" else "") + "role-cursor-" + run_suffix(run_id, "-"))[:120].rstrip("-")
-        body = (bank_card_sql_service_payload(name, engine_id, source, locator, output_sources=output_sources)
+        name = ("online-security-" + ("sql-parameter-" if parameters is not None else "sql-" if config_type == "sql" else "") + "role-cursor-" + run_suffix(run_id, "-"))[:120].rstrip("-")
+        body = (bank_card_sql_service_payload(name, engine_id, source, locator, output_sources=output_sources,
+                            parameter_name="minimum_id" if parameters is not None else None)
                 if config_type == "sql" else service_payload(name, engine_id, locator, fields))
         body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
         body["data_config"]["protection_choices"] = []
@@ -2672,7 +2719,8 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
                 raise SuiteError("role cursor Service must retain its private source configuration")
             if config_type == "sql":
                 snapshot = _object(_object(current.get("data_config"), "SQL role config").get("source_snapshot", {}), "SQL role snapshot")
-                if snapshot.get("source") is not None or current.get("sql_query") != body["sql_query"]:
+                if (snapshot.get("source") is not None or current.get("sql_query") != body["sql_query"]
+                        or current.get("named_parameters", []) != body.get("named_parameters", [])):
                     raise SuiteError("SQL role service invented a Meta source or changed the query")
             return current
         initial = definition()
@@ -2680,27 +2728,35 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
             raise SuiteError("role cursor Service must start with explicit default protection")
         query_path = "/api/query/" + urllib.parse.quote(name, safe="") + "/query"
         default_first, default_cursor, default_version = assert_service_role_page(
-            client, query_path, ["1", "2", "3", "4"], False, output_sources=output_sources)
+            client, query_path, ["1", "2", "3", "4"], False, output_sources=output_sources, parameters=parameters)
         default_last, _, last_default_version = assert_service_role_page(
-            client, query_path, ["5"], False, default_cursor, output_sources=output_sources)
+            client, query_path, ["5"], False, default_cursor, output_sources=output_sources, parameters=parameters)
         if last_default_version != default_version:
             raise SuiteError("initial default pagination changed its Service version")
+        if parameters is not None:
+            parameter_checks["default_before_selection"] = service_role_parameter_boundaries(client, query_path, default_cursor, default_version, False)
+            if definition() != initial:
+                raise SuiteError("SQL parameter probes changed the initial definition")
         policy = create_role_policy(client, assessment_id, roles["role_keys"])
         policy_id = str(policy["id"])
         installed = wait_role_projection(client, enrollment_id, previous, deadline)
         choice = owner_role_choice(client, locator, source, policy, engine_id=engine_id,
-                                   service_sql=body["sql_query"] if config_type == "sql" else None)
+                                   service_sql=body["sql_query"] if config_type == "sql" else None, parameters=parameters)
         client.request("PUT", service_path, (200,), {"version": initial["version"],
                        "data_config": {"protection_choices": [choice]}})
         selected = definition()
         if selected.get("status") != "active" or selected["data_config"].get("protection_choices") != [choice]:
             raise SuiteError("role cursor Service must persist the explicit source choice")
         first, cursor, version = assert_service_role_page(
-            client, query_path, ["1", "2", "3", "4"], True, output_sources=output_sources)
+            client, query_path, ["1", "2", "3", "4"], True, output_sources=output_sources, parameters=parameters)
         continuation, _, continued_version = assert_service_role_page(
-            client, query_path, ["5"], True, cursor, output_sources=output_sources)
+            client, query_path, ["5"], True, cursor, output_sources=output_sources, parameters=parameters)
         if continued_version != version or version == default_version:
             raise SuiteError("role selection did not bind a distinct stable Service version")
+        if parameters is not None:
+            parameter_checks["role_selected"] = service_role_parameter_boundaries(client, query_path, cursor, version, True)
+            if definition() != selected:
+                raise SuiteError("SQL parameter probes changed the selected definition")
         current = _object(client.request("GET", "/api/v1/security/protection-policies/" + policy_id, (200,)).payload, "role Policy version")
         client.request("DELETE", "/api/v1/security/protection-policies/" + policy_id, (200,),
                        {"version": current["version"], "rationale": "Revoke only this run's role option; retain saved Service choice"})
@@ -2711,8 +2767,7 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
         denials = {}
         controls = {}
         for format_name in ("json", "csv"):
-            request = {"select": fields, "order_by": [{"field": "id", "direction": "asc"}],
-                       "page": {"limit": 4, "cursor": cursor}, "format": format_name}
+            request = service_role_query_request(fields, cursor, parameters=parameters, format_name=format_name)
             denials[format_name] = assert_service_role_refusal(client.request("POST", query_path, (409,), request))
             controls[format_name] = assert_service_role_refusal(client.request(
                 "POST", query_path, (409,), dict(request, page={"limit": 4})))
@@ -2729,17 +2784,26 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
         if definition() != stopped:
             raise SuiteError("rejected stale-choice re-enable changed the Service")
         recovery, recovered_version = restore_service_default(
-            client, service_path, query_path, choice, stopped, output_sources=output_sources)
+            client, service_path, query_path, choice, stopped, output_sources=output_sources, parameters=parameters)
         if (recovered_version == version or recovery["csv_sha256"] != default_first["csv_sha256"]
                 or recovery["continuation"]["csv_sha256"] != default_last["csv_sha256"]):
             raise SuiteError("explicit default recovery did not restore the original CSV bytes and choice version")
-        definition()
+        recovered = definition()
+        if parameters is not None:
+            _, recovery_cursor, recovery_version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], False,
+                output_sources=output_sources, parameters=parameters)
+            if recovery_version != recovered_version:
+                raise SuiteError("parameter default recovery changed its Service version")
+            parameter_checks["default_restored"] = service_role_parameter_boundaries(client, query_path, recovery_cursor, recovered_version, False)
+            if definition() != recovered:
+                raise SuiteError("SQL parameter probes changed the recovered definition")
         if service_subject_roles(client, identity) != roles:
             raise SuiteError("role cursor recovery changed current User eligibility facts")
         if definition_array(client, "/api/v1/security/protection-baselines") != baseline_before:
             raise SuiteError("role cursor acceptance changed a default Baseline")
         result = {"source_locator": locator, "service_id": service_id, "policy_id": policy_id,
-                  "config_type": config_type, "protected_output_fields": [name for name, source in output_sources.items() if source == BANK_FIELD],
+                  "config_type": config_type, "named_parameters": body.get("named_parameters", []),
+                  "parameter_boundary_checks": parameter_checks, "protected_output_fields": [name for name, source in output_sources.items() if source == BANK_FIELD],
                   "principal_id": identity["principal_id"], "tenant_id": identity["tenant_id"],
                   "choice": choice, "installed_projection": installed, "revoked_projection": revoked,
                   "default_before_selection": dict(default_first, continuation=default_last, total_rows=5),
@@ -4072,6 +4136,9 @@ def run_scenario(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline)
     service_sql_role_cursor_revocation = exercise_service_role_cursor_revocation(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, config_type="sql")
+    service_sql_parameter_role_cursor_revocation = exercise_service_role_cursor_revocation(
+        client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline,
+        config_type="sql", parameters={"minimum_id": 1})
     service_role_membership_revocation = exercise_service_role_membership_revocation(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
     service_role_membership_expiry = exercise_service_role_membership_expiry(
@@ -4166,7 +4233,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v34",
+            "schema_version": "addp.security-mysql-owner-protection-online/v35",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -4175,6 +4242,7 @@ def run_scenario(
             "bank_card_metadata": bank_card_metadata,
             "service_role_cursor_revocation": service_role_cursor_revocation,
             "service_sql_role_cursor_revocation": service_sql_role_cursor_revocation,
+            "service_sql_parameter_role_cursor_revocation": service_sql_parameter_role_cursor_revocation,
             "service_role_membership_revocation": service_role_membership_revocation,
             "service_role_membership_expiry": service_role_membership_expiry,
             "develop_role_membership_expiry": develop_role_membership_expiry,
@@ -4205,8 +4273,8 @@ def run_scenario(
                     "records_written": transfer_execution.get("records_written"),
                 },
             },
-            "created_resources": 10 + len(task_ids),
-            "deleted_resources": 10 + len(task_ids),
+            "created_resources": 11 + len(task_ids),
+            "deleted_resources": 11 + len(task_ids),
             "residual_resources": 0,
         }
     except BaseException as error:
