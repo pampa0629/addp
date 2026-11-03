@@ -627,3 +627,18 @@ Infra来源实际UP后，Safari平台管理员的专业详情仍返回“未取�
 用户随后确认恢复；原生AX实际读到“自动刷新已开启”，Infra分区仅MinIO／PostgreSQL两张卡片，均“正在采集”：MinIO总容量1.87TiB、剩余866GiB、空间占用54.73%、S3请求0.07次/秒；Infra PostgreSQL连接55、活跃0、提交151.83次/秒、容量6.79GiB。Business分区仅Business PostgreSQL一张卡片，关联原Docker Desktop Linux VM，连接1、活跃0、容量78.3GiB，连续只读观察提交速率从0.58变为0.60次/秒；后一原生截图实际显示该数值与“自动刷新已开启”。这证明当次来源分区、真实采集数值及界面更新，不扩大为长时自动刷新／DOM保持或所有专业趋势已验收。AX与截图保留于本会话，不读取Token或业务数据。
 
 用户按本会话步骤手动验证Infra搜索MinIO不按Enter即自动只剩一张卡片，进入监控详情再返回仍保留MinIO，并明确回复“自动筛选正常，返回后仍保留MinIO”。此项为人工实操确认；工具随后读取时页面已切至Business，未声称独立读到MinIO返回URL。完整Console／Monitor受控回归沿`250bcf176`原有效证据，不把人工确认改写成自动化回执。本轮只补运行证据，`git diff --check`通过；无新CI／Hosted、容量、定时任务、配置更改或个人服务启停。租户关联及租户级监控仍仅讨论，未实施。
+
+
+### 统一采集管理入口首版（2026-11-03）
+
+用户确认在保持独立采集来源、账号、凭据及 Compose 项目的前提下，先实现统一管理入口。新增 `scripts/infra/metrics-sources.py`，统一主机与 Infra／Business 的 PostgreSQL、Redis、MinIO 七项选择、状态、部署输入检查、安装／应用、停用和失败汇总；标准 Infra／Business 启停移除重复的来源调用清单，通过同一编排调用原有唯一生命周期实现。选中一个 Business 服务不会作用于其他服务；来源失败返回非零，核心启停继续。来源容器运行与真实采集成功仍分别表达，不将 Running 当成 Monitor 查询通过。
+
+直接调用分别读取根 `.env`／`business/.env`，不让父环境采集开关和凭据混入另一域；Hosted 只读取显式隔离文件。标准已解析环境只允许以 `--resolved-env` 交接一个明确 scope，避免重新加载配置覆盖标准入口的实际注入值。停用不因启用标志无效而被跳过；操作超时报告结果未知，不自动重试。状态仅使用本地 Docker 元数据，核验 Owner、scope、来源组件集合、当前数据库完整容器身份及启动时刻，不读容器环境／业务数据。未部署、停止、组件缺失、归属冲突、数据库运行身份变化均不作为正常运行。
+
+首版无账号修改的 `recover` 仅覆盖原 PostgreSQL 证明路径；完整 ADDP 启动仍只选择两域 PostgreSQL，正常来源保持不变。其他已启用来源明确报告尚不支持并要求显式 up，不以账号重新安装冒充恢复。主机来源须明确选择，不随 Infra／Business 自动启用；指标中心沿原 Infra 入口管理，不新增常驻协调器、定时任务、集中凭据或配置副本。指南已补统一操作和当前限制。
+
+本地验证：`make test-metrics-sources` 最终15项通过；`make test-monitor-metrics-config test-t2-ci-registration` 退出0，136项指标配置、78项登记、9项 PostgreSQL runner 检查及实际登记核对通过，入口前置的13项旧计数由最终15项独立复验更新。`make test-business-config` 退出0，覆盖 Business Compose、部署发现、受影响启动入口及既有独立消费回归。最终 `make test-dev-lifecycle` 退出0：24项原生准备、206项部署／Worker／资源输入、15项统一管理、44项 HTTP runner、169项 Trace runner及145项生命周期／预算检查，端口与停机防护、原子构建和选择性启停脚本回归、共享 Go 包及四模块 cmd 编译检查均通过。三条现有 Monitor T2 来源门禁的输入声明已包含统一入口和新测试，Platform 原有生命周期／Business 入口自动覆盖，无新增 CI Job。`git diff --check`通过。
+
+保留首次失败：独立指标配置门禁中两个无真实进程的停止夹具分别超过10秒／5秒，未唯一定位瞬时超时原因，未增加预算；随后同一136项及包含它们的206项原样通过，不将首次失败改记通过。完整生命周期回归先发现测试副本漏复制新入口，补齐后又发现旧原始 Redis 日志断言不适用统一输出；测试改为要求 Redis 行已停用和全部三项零失败，仍保留实际删除标记断言。最后完整标准命令通过。日志分别为 `/tmp/addp-metrics-sources-config-final.log`、`/tmp/addp-metrics-sources-dev-final.log`、`/tmp/addp-metrics-sources-dev-recheck.log`、最终 `/tmp/addp-metrics-sources-config-recheck.log`、`/tmp/addp-metrics-sources-business-final.log`、`/tmp/addp-metrics-sources-dev-verified.log`、`/tmp/addp-metrics-sources-unit-verified.log`。
+
+本机仅执行统一 `status` 和 `check`，分别退出0，七项汇总失败0：主机、Infra PostgreSQL／MinIO、Business PostgreSQL启用且来源运行；Infra Redis、Business Redis／MinIO停用且未部署。部署输入检查通过四项，另三项未启用。记录在 `/tmp/addp-metrics-sources-local-status-final.txt` 与 `/tmp/addp-metrics-sources-local-check-final.txt`。本轮未在个人环境执行 up／down／recover，实际统一应用仍待部署者操作；未改个人配置、凭据、数据库或服务，不把本机只读状态作为新安装、mTLS、Prometheus、页面或完整七来源部署验收。CI／Hosted继续等专门会话回传，未查询、触发、重跑或设置定时任务。

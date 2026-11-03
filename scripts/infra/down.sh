@@ -147,37 +147,15 @@ echo ""
 
 # 执行停止操作
 discovery_cleanup_result=0
-(
-  runtime_env_file="$PROJECT_ROOT/.env"
-  if [[ "${ADDP_ONLINE_HOST:-0}" == 1 ]]; then runtime_env_file="${ADDP_ONLINE_ENV_FILE:?}"; fi
-  if [[ -f "$runtime_env_file" ]]; then set -a; source "$runtime_env_file"; set +a; fi
-  python3 "$SCRIPT_DIR/postgres-observation/lifecycle.py" down --scope infra
-) || {
-  echo 'PostgreSQL metrics shutdown could not be fully verified; core shutdown continues' >&2
+python3 "$SCRIPT_DIR/metrics-sources.py" down --scope infra || {
+  echo 'Metrics source shutdown could not be fully verified; core shutdown continues' >&2
   discovery_cleanup_result=1
 }
 python3 "$PROJECT_ROOT/scripts/utils/deployment-inventory.py" stop || {
   echo 'Infra deployment discovery shutdown could not be verified' >&2
   discovery_cleanup_result=1
 }
-(
-  runtime_env_file="$PROJECT_ROOT/.env"
-  if [[ "${ADDP_ONLINE_HOST:-0}" == 1 ]]; then runtime_env_file="${ADDP_ONLINE_ENV_FILE:?}"; fi
-  if [[ -f "$runtime_env_file" ]]; then set -a; source "$runtime_env_file"; set +a; fi
-  python3 "$SCRIPT_DIR/redis-metrics.py" down --scope infra
-) || {
-  echo 'Redis metrics shutdown could not be fully verified; core shutdown continues' >&2
-  discovery_cleanup_result=1
-}
-(
-  runtime_env_file="$PROJECT_ROOT/.env"
-  if [[ "${ADDP_ONLINE_HOST:-0}" == 1 ]]; then runtime_env_file="${ADDP_ONLINE_ENV_FILE:?}"; fi
-  if [[ -f "$runtime_env_file" ]]; then set -a; source "$runtime_env_file"; set +a; fi
-  python3 "$SCRIPT_DIR/minio-observation.py" down --scope infra
-) || {
-  echo 'MinIO observation account shutdown could not be fully verified; core shutdown continues' >&2
-  discovery_cleanup_result=1
-}
+
 if [[ "$REMOVE_VOLUMES" == true ]]; then
   echo -e "${RED}⚠️  警告：即将删除所有数据卷，所有数据将丢失！${NC}"
   echo -e "${YELLOW}▶ 停止并删除基础设施容器和数据卷${NC}"

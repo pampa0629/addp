@@ -474,7 +474,8 @@ exit 0
         result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_LOGS_ENABLED='false',
                              ADDP_POSTGRES_METRICS_ENABLED='true')
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn('PostgreSQL metrics unavailable:', result.stderr)
+        self.assertIn('Infra PostgreSQL', result.stdout)
+        self.assertIn('失败', result.stdout)
         self.assertTrue(any('up' in call and 'postgres' in call for call in self.calls()))
         self.assertFalse(any('down' in call or 'stop' in call for call in self.calls()))
 

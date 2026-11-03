@@ -347,7 +347,7 @@ fi
 
 # 3. 检测 CPU 架构
 if [ "$ENABLE_PG" = true ]; then
-    python3 "$PROJECT_ROOT/../scripts/infra/postgres-observation/lifecycle.py" down --scope business || echo 'Previous PostgreSQL metrics unavailable; business startup continues' >&2
+    python3 "$PROJECT_ROOT/../scripts/infra/metrics-sources.py" down --resolved-env --scope business --kind postgresql || echo 'Previous PostgreSQL metrics unavailable; business startup continues' >&2
     # Deployment-owned directory mount: atomic host replacement becomes visible
     # inside the read-only container without rewriting repository configuration.
     ADDP_BUSINESS_POSTGRES_AUTH_DIR=$(python3 "$PROJECT_ROOT/../scripts/infra/postgres-observation/authentication.py" prepare-business) || exit 1
@@ -602,7 +602,7 @@ fi
 
 # Redis
 if [ "$ENABLE_REDIS" = true ]; then
-    python3 "$PROJECT_ROOT/../scripts/infra/redis-metrics.py" down --scope business || echo 'Previous Redis metrics unavailable; business startup continues' >&2
+    python3 "$PROJECT_ROOT/../scripts/infra/metrics-sources.py" down --resolved-env --scope business --kind redis || echo 'Previous Redis metrics unavailable; business startup continues' >&2
     docker compose up -d --wait --wait-timeout 120 redis
     docker compose exec -T redis sh /addp/redis/init.sh
     echo "✓ Business Redis 已就绪，只读账号 addp_business_reader"
@@ -1294,23 +1294,12 @@ if [ "$ENABLE_FALKORDB" = true ]; then
 fi
 
 python3 "$PROJECT_ROOT/../scripts/utils/deployment-inventory.py" start || echo 'Business deployment discovery unavailable; business services remain running' >&2
+observation_kinds=()
+if [ "$ENABLE_PG" = true ]; then observation_kinds+=(--kind postgresql); fi
+if [ "$ENABLE_REDIS" = true ]; then observation_kinds+=(--kind redis); fi
+if [ "$ENABLE_MINIO" = true ]; then observation_kinds+=(--kind minio); fi
 observation_result=0
-if [ "$ENABLE_PG" = true ]; then
-    python3 "$PROJECT_ROOT/../scripts/infra/postgres-observation/lifecycle.py" up --scope business || {
-        echo 'PostgreSQL metrics unavailable; business services remain running' >&2
-        observation_result=1
-    }
-fi
-if [ "$ENABLE_REDIS" = true ]; then
-    python3 "$PROJECT_ROOT/../scripts/infra/redis-metrics.py" up --scope business || {
-        echo 'Redis metrics unavailable; business services remain running' >&2
-        observation_result=1
-    }
-fi
-if [ "$ENABLE_MINIO" = true ]; then
-    python3 "$PROJECT_ROOT/../scripts/infra/minio-observation.py" up --scope business || {
-        echo 'MinIO observation account unavailable; business services remain running' >&2
-        observation_result=1
-    }
+if [ ${#observation_kinds[@]} -gt 0 ]; then
+    python3 "$PROJECT_ROOT/../scripts/infra/metrics-sources.py" up --resolved-env --scope business "${observation_kinds[@]}" || observation_result=1
 fi
 exit "$observation_result"

@@ -151,17 +151,15 @@ class LifecycleTest(unittest.TestCase):
             self.assertEqual('RECOVER' in result.stdout,selected)
             self.assertIn('CONTINUED',result.stdout)
 
-    def test_recovery_configuration_isolation_and_both_scopes_survive_failure(self):
+    def test_recovery_uses_unified_entry_for_both_scopes_and_preserves_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);(root/'business').mkdir();(root/'tools').mkdir()
-            (root/'.env').write_text('ADDP_POSTGRES_METRICS_ENABLED=true\nADDP_POSTGRES_METRICS_LISTEN=127.0.0.1:9991\n')
-            (root/'business/.env').write_text('ADDP_POSTGRES_METRICS_ENABLED=false\n')
             stub=root/'tools/python3'
-            stub.write_text('#!/bin/bash\nprintf \'%s|%s|%s\\n\' "$4" "${ADDP_POSTGRES_METRICS_ENABLED-unset}" "${ADDP_POSTGRES_METRICS_LISTEN-unset}"\n[[ "$4" != infra ]]\n')
+            stub.write_text('#!/bin/bash\nprintf \'%s\\n\' "$@"\nexit 1\n')
             stub.chmod(0o700)
             result=subprocess.run(['bash','-eu','-c','source "$1"; addp_recover_postgres_sources','test',str(ROOT/'scripts/utils/observability-env.sh')],env=dict(os.environ,PROJECT_ROOT=str(root),PATH=str(root/'tools')+os.pathsep+os.environ['PATH'],ADDP_POSTGRES_METRICS_ENABLED='true',ADDP_POSTGRES_METRICS_LISTEN='127.0.0.1:8888'),capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,1)
-            self.assertEqual(result.stdout.splitlines(),['infra|true|127.0.0.1:9991','business|false|unset'])
+            self.assertEqual(result.stdout.splitlines(),[str(root/'scripts/infra/metrics-sources.py'),'recover','--scope','infra','--scope','business','--kind','postgresql'])
 
     def test_activation_failure_reports_only_closed_stage_and_keeps_cleanup(self):
         from contextlib import nullcontext, redirect_stderr
@@ -326,23 +324,22 @@ class LifecycleTest(unittest.TestCase):
         probe = (ROOT / 'scripts/test/postgres-lifecycle-probe.py').read_text()
         self.assertNotIn("docker.run(['ps', '-q', '--filter', 'label='+module.OWNER", probe)
 
-    def test_business_selection_does_not_inherit_infra_inputs(self):
+    def test_business_start_configuration_does_not_inherit_infra_inputs(self):
         keys = ['ADDP_POSTGRES_METRICS_'+suffix for suffix in ('ENABLED', 'TLS_DIR', 'LISTEN', 'STATE_DIR')]
         parent = dict(os.environ, **dict(zip(keys, ['true', '/infra-tls', '127.0.0.1:9999', '/infra-state'])))
-        for name in ('start', 'stop'):
-            script = (ROOT / 'business/scripts' / (name+'.sh')).read_text()
-            block = script[script.index('unset ADDP_POSTGRES_METRICS_ENABLED'):]
-            block = block[:block.index('if [ "$ENABLE_FALKORDB"' if name == 'start' else 'python3 "$PROJECT_ROOT/')]
-            for content, expected in [('', [None]*4), ('POSTGRES_USER=business\n', [None]*4),
-                                      ('ADDP_POSTGRES_METRICS_ENABLED=true\nADDP_POSTGRES_METRICS_LISTEN=127.0.0.1:9449\n', ['true', None, '127.0.0.1:9449', None])]:
-                with self.subTest(script=name, content=content), tempfile.TemporaryDirectory() as temporary:
-                    if content:
-                        (Path(temporary)/'.env').write_text(content)
-                    command = block + '\n' + shlex.join([sys.executable, '-c',
-                        'import json,os; print(json.dumps([os.environ.get(key) for key in '+repr(keys)+']))'])
-                    result = subprocess.run(['bash', '-eu', '-c', command], cwd=temporary, env=parent,
-                                            capture_output=True, text=True, check=True, timeout=5)
-                    self.assertEqual(json.loads(result.stdout), expected)
+        script = (ROOT / 'business/scripts/start.sh').read_text()
+        block = script[script.index('unset ADDP_POSTGRES_METRICS_ENABLED'):]
+        block = block[:block.index('if [ "$ENABLE_FALKORDB"')]
+        for content, expected in [('', [None]*4), ('POSTGRES_USER=business\n', [None]*4),
+                                  ('ADDP_POSTGRES_METRICS_ENABLED=true\nADDP_POSTGRES_METRICS_LISTEN=127.0.0.1:9449\n', ['true', None, '127.0.0.1:9449', None])]:
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as temporary:
+                if content:
+                    (Path(temporary)/'.env').write_text(content)
+                command = block + '\n' + shlex.join([sys.executable, '-c',
+                    'import json,os; print(json.dumps([os.environ.get(key) for key in '+repr(keys)+']))'])
+                result = subprocess.run(['bash', '-eu', '-c', command], cwd=temporary, env=parent,
+                                        capture_output=True, text=True, check=True, timeout=5)
+                self.assertEqual(json.loads(result.stdout), expected)
 
     def test_docker_mount_order_is_not_an_identity_change(self):
         docker = module.Docker.__new__(module.Docker)

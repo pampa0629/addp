@@ -1279,7 +1279,7 @@ test-gaussdb-certification-build: ## 验证 GaussDB 四平台构建及宿主驱�
 	@python3 scripts/test/gaussdb-official-media-release-gate.py --compile-only
 
 .PHONY: test-infra-runtime-log-lifecycle
-test-infra-runtime-log-lifecycle: ## 验证 Infra 日志及指标的启动选择、隔离和失败边界
+test-infra-runtime-log-lifecycle: test-metrics-sources ## 验证 Infra 日志及指标的启动选择、隔离和失败边界
 	@$(MAKE) test-monitor-http-local-runner
 	@$(MAKE) test-monitor-traces-local-runner
 	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-http-budget_test.py scripts/test/trace-deployment-config_test.py scripts/test/trace-capacity_test.py scripts/test/postgres-metrics-lifecycle_test.py
@@ -1651,8 +1651,12 @@ test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、
 	@python3 scripts/test/metrics-http-budget.py bash scripts/test/monitor-metrics-gate.sh $(MONITOR_METRICS_TEST_ARGS)
 
 .PHONY: test-monitor-metrics-config
-test-monitor-metrics-config: ## 验证指标配置与服务部署意图 T1，不启动服务或实源
+test-monitor-metrics-config: test-metrics-sources ## 验证指标配置与服务部署意图 T1，不启动服务或实源
 	@python3 -m unittest scripts/test/metrics-deployment-config_test.py
+
+.PHONY: test-metrics-sources
+test-metrics-sources: ## 验证统一采集管理的范围、配置隔离、只读状态与失败汇总
+	@python3 -m unittest scripts/test/metrics-sources_test.py
 
 .PHONY: test-monitor-minio-observation-unit test-monitor-minio-observation
 test-monitor-minio-observation-unit: ## MinIO 固定指标、来源边界、专用账号和失败关闭 T1

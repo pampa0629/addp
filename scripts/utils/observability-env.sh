@@ -193,19 +193,5 @@ addp_metrics_query_preflight() {
 # Full local development startup only. Each deployment owns its configuration;
 # neither scope inherits the other scope's selection or secret-file locations.
 addp_recover_postgres_sources() {
-  local scope result=0
-  for scope in infra business; do
-    (
-      unset ADDP_POSTGRES_METRICS_ENABLED ADDP_POSTGRES_METRICS_TLS_DIR ADDP_POSTGRES_METRICS_LISTEN ADDP_POSTGRES_METRICS_STATE_DIR
-      local config="$PROJECT_ROOT/.env"
-      [[ "$scope" != business ]] || config="$PROJECT_ROOT/business/.env"
-      if [[ -f "$config" ]]; then
-        set -a
-        source "$config" || exit 1
-        set +a
-      fi
-      python3 "$PROJECT_ROOT/scripts/infra/postgres-observation/lifecycle.py" recover --scope "$scope"
-    ) || result=1
-  done
-  return "$result"
+  python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" recover --scope infra --scope business --kind postgresql
 }

@@ -209,11 +209,13 @@ TEST_DIR=$(mktemp -d)
 trap 'result=$?; if [[ $result != 0 && -f "$TEST_DIR/online.log" ]]; then cat "$TEST_DIR/online.log" >&2; fi; rm -rf "$TEST_DIR"' EXIT
 mkdir -p "$TEST_DIR/bin" "$TEST_DIR/repo/scripts/infra"
 cp "${SCRIPT_DIR}/../infra/down.sh" "$TEST_DIR/repo/scripts/infra/down.sh"
+cp "${SCRIPT_DIR}/../infra/metrics-sources.py" "$TEST_DIR/repo/scripts/infra/metrics-sources.py"
 cp -R "${SCRIPT_DIR}/../infra/postgres-observation" "$TEST_DIR/repo/scripts/infra/"
 cp "${SCRIPT_DIR}/../infra/redis-metrics.py" "$TEST_DIR/repo/scripts/infra/redis-metrics.py"
 cp "${SCRIPT_DIR}/../infra/minio-observation.py" "$TEST_DIR/repo/scripts/infra/minio-observation.py"
 cp -R "${SCRIPT_DIR}/../infra/minio-observation" "$TEST_DIR/repo/scripts/infra/"
-printf 'ADDP_POSTGRES_METRICS_ENABLED=false\nADDP_REDIS_METRICS_ENABLED=false\n' > "$TEST_DIR/online.env"
+printf 'ADDP_POSTGRES_METRICS_ENABLED=false\nADDP_REDIS_METRICS_ENABLED=false\nADDP_MINIO_METRICS_ENABLED=false\nADDP_POSTGRES_METRICS_STATE_DIR="%s"\nADDP_REDIS_METRICS_STATE_DIR="%s"\nADDP_MINIO_METRICS_STATE_DIR="%s"\n' \
+  "$TEST_DIR/postgres-state" "$TEST_DIR/redis-state" "$TEST_DIR/minio-state" > "$TEST_DIR/online.env"
 mkdir -p "$TEST_DIR/repo/scripts/utils"
 for dependency in deployment-inventory.py private-state.py deployment-docker.py metrics-source.py; do
   cp "${SCRIPT_DIR}/../utils/$dependency" "$TEST_DIR/repo/scripts/utils/$dependency"
@@ -294,6 +296,7 @@ env GITHUB_ACTIONS=true ADDP_ONLINE_HOST=1 ADDP_ONLINE_TEST=1 \
   MOCK_WORKING_DIR="$TEST_DIR/repo" \
   bash "$DOWN_SCRIPT" --volumes --force </dev/null >"$TEST_DIR/online.log" 2>&1
 [ "$(cat "$MOCK_MARKER")" = -v ]
-grep -Fq "Redis metrics infra: not installed; disabled" "$TEST_DIR/online.log"
+grep -Eq '^Infra Redis[[:space:]]+已停用$' "$TEST_DIR/online.log"
+grep -Fq '汇总：共 3 项，失败 0 项。' "$TEST_DIR/online.log"
 
 echo 'ADDP Infra down safety OK'
