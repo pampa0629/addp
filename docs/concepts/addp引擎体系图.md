@@ -300,14 +300,7 @@ flowchart LR
 
 Facade 按精确 `engine_type` 选择显式注册的原生客户端，并用 Runtime Descriptor 中的 capabilities 与 `EngineCatalogModelSpec` 校验该客户端是否适配；不得只按 `engine_family` 猜测，不得为未知引擎回退到一个暴露内部 Engine Catalog 术语的通用客户端。`engines.list()` 只返回当前 Notebook Session Authorization 可访问、处于 `active` 且声明受支持 `EngineCatalogModelSpec` 的数据引擎；授权复核与列表生成必须在 System 的同一请求中完成。DuckDB 是联邦查询 Runtime，不拥有可导航的数据源 Engine Catalog，因此不进入 `engines.list()` 和 `engines.client()`。
 
-PostgreSQL 使用示例：
-
-```python
-pg = engines.client(engine_id)
-pg.schemas()
-pg.tables(schema="public")
-pg.table(schema="public", name="roads")
-```
+资源实例与原生目录的操作示例统一见[SDK 发现与资源选择](../../common-python/README.md#发现与资源选择)；使用者显式确认实例和原生名称，不按列表顺序代选，也不把示例 Schema／表名当作平台默认值。
 
 全部支持引擎沿同一注册机制扩展：
 
@@ -331,15 +324,7 @@ pg.table(schema="public", name="roads")
 - SDK 可以在当前 Python Engine Client 内缓存服务端已经返回的 root 和 branch `EngineCatalogPath`，减少 `tables(schema=...)` 等后续导航的重复列举；不得缓存 children 列表、EngineCatalogFacts 或失败响应。
 - 首次按名称直接访问尚未缓存的父级时，SDK 通过逐层 `ListChildren` 找到规范路径。第一阶段不为减少一次往返新增 Engine Catalog resolve API；先以真实 E2E 延迟度量决定是否需要扩展唯一 Engine Catalog 契约。
 
-数据读取沿用同一 Facade，但不使用 Session Authorization 直接访问数据：
-
-```python
-table = pg.table(schema="public", name="farmland")
-table.head(100)
-table.scan(batch_size=65536)
-table.to_pandas(memory_limit="8GiB")
-pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=1000, timeout=30)
-```
+数据读取沿用同一 Facade，但不使用 Session Authorization 直接访问数据；操作示例与内存、几何列／源 CRS 前提统一见[SDK 读取与空间转换](../../common-python/README.md#读取与空间转换)，独立查询的目标与参数准备见[有界 SQL](../../common-python/README.md#有界-sql-与访问边界)。各 Provider 的读取、授权、快照与失败约束如下：
 
 - 关系表的 `head()` 是有显式 `max_rows` 的单次只读查询；`scan()` 复用 `TableReadSessionProvider`，以服务端 Cursor 和 Arrow IPC 流返回扫描开始时的一致快照，不得使用 `LIMIT/OFFSET` 假装全量流。
 - MongoDB collection 的 `scan()` 使用 `RecordReadSessionProvider`，保留 MongoDB Cursor 的读取与关闭语义，通过 Arrow IPC 返回动态 schema 记录；不复用表语义的 `TableReadSessionProvider`。

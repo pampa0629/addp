@@ -145,7 +145,16 @@ SDK 只返回 Consumer Contract 类型和原始 Python records。pandas、GeoPan
 
 ## Notebook 会话能力
 
-Develop 创建的隔离 Notebook 会话可以通过专用同步 SDK 获取当前租户、当前用户可用的查询 Engine 描述：
+使用前先由 Develop 创建隔离 Notebook Session；原生门面的职责、类型和实时目录规则见[引擎体系](../docs/concepts/addp引擎体系图.md#notebook-原生引擎门面)。以下片段演示 PostgreSQL，运行前须提供已核实的输入：
+
+| 输入 | 来源与前提 |
+| --- | --- |
+| `selected_engine_id` | 当前 Session 发现列表中用户明确选定的 PostgreSQL 实例 ID；同类型存在多个实例时不任取第一项。 |
+| `schema_name`、`table_name` | 该实例当前原生目录中已确认的 Schema／表名；不假定存在 `public`、`roads` 或固定业务列。 |
+| `geometry_column`、`source_crs` | 同一目标表已核实的 Engine Catalog facts，供空间转换片段使用；不能把列名、非空几何或示例 EPSG 值当作 CRS 证明。 |
+| `read_query`、`query_params` | 针对选定实例另行确认的只读 SQL 与有序参数列表；选择了 `table` 对象不会自动绑定后续 SQL 的表或字段。 |
+
+### 发现与资源选择
 
 ```python
 from addp_common.notebook import engines
@@ -153,56 +162,61 @@ from addp_common.notebook import engines
 available_engines = engines.list()
 available_engines
 
-# 下例只演示 PostgreSQL，先按精确类型选择当前会话可用的实例
+# 根据用户明确选择的 ID 复核，不能按列表顺序或同名实例代选
 pg_descriptor = next(
-    (engine for engine in available_engines if engine["engine_type"] == "postgresql"),
+    (engine for engine in available_engines if engine["id"] == selected_engine_id),
     None,
 )
-if pg_descriptor is None:
-    raise RuntimeError("当前会话没有可用的 PostgreSQL 引擎")
+if pg_descriptor is None or pg_descriptor["engine_type"] != "postgresql":
+    raise RuntimeError("请选择当前会话中已确认的 PostgreSQL 实例")
 
-# PostgreSQL 使用原生 Schema / Table 术语，无需理解 EngineCatalogPath
 pg = engines.client(pg_descriptor["id"])
-schemas = pg.schemas()
-tables = pg.tables(schema="public")
-roads = pg.table(schema="public", name="roads")
+pg.schemas()
+pg.tables(schema=schema_name)
+table = pg.table(schema=schema_name, name=table_name)
+```
 
-# 也可以从 Schema 对象继续导航
-public = next(schema for schema in schemas if schema.name == "public")
-public.tables()
-public.table("roads")
+`engines.client()` 按精确 `engine_type` 返回已注册的原生只读门面，类型以[客户端注册表](addp_common/notebook/engines.py)为准，并校验当前描述符的目录模型与能力；未知类型明确拒绝，不提供通用 fallback。也可以从 `pg.schemas()` 返回的 Schema 对象继续调用 `tables()` 或 `table(name)`；SDK 只缓存服务端返回的 root／branch 规范路径，不缓存 children、失败或数据内容。
 
+### 读取与空间转换
+
+以下按用途选用；逐批处理、完整 DataFrame 与 GeoDataFrame 是不同用法，不要求连续运行全部示例。
+
+```python
 # 小样本读取返回 pandas.DataFrame
-roads.head(100)
+preview = table.head(100)
 
-# 全量读取使用 Arrow RecordBatch 流，不会一次性装入内存
-for batch in roads.scan(batch_size=65536):
-    train_one_batch(batch)
+# 全量读取逐批消费 Arrow RecordBatch；此处仅显示批行数
+for batch in table.scan(batch_size=65536):
+    print(batch.num_rows)
 
-# 确实需要单机完整 DataFrame 时必须显式声明内存预算
-roads_df = roads.to_pandas(memory_limit="8GiB")
+# 确实需要单机完整 DataFrame 时显式声明预算；8GiB 仅为示例
+frame = table.to_pandas(memory_limit="8GiB")
 
-# 空间表扫描由 Develop 统一返回 EWKB；使用已验证的几何列和 CRS 构造 GeoDataFrame
-roads_gdf = roads.to_geopandas(
+# 仅在已确认同一表的空间列和源 CRS 后运行
+spatial_frame = table.to_geopandas(
     memory_limit="8GiB",
-    geometry_column="shape",
-    crs="EPSG:4326",
+    geometry_column=geometry_column,
+    crs=source_crs,
 )
+```
 
-# 原生 PostgreSQL 参数化只读 SQL 必须显式限制行数和整数秒超时
+`scan()` 是算法读取全部数据的主路径；`to_pandas()` 消费同一条 `scan()`，检查目录返回的大小估算和实际 Arrow 解码字节，超限时不返回部分 DataFrame。`memory_limit` 不是 Kernel 进程 RSS 的硬上限，后续 Pandas／GeoPandas 构造仍会使用内存。
+
+PostgreSQL `to_geopandas()` 在上述边界内将受控扫描返回的 EWKB 列构造为 GeoDataFrame；当前检查列名存在并按传入的 `crs` 构造，不包含来源 CRS 查询、源 CRS 与传入值的一致性复核或坐标重投影步骤。调用方必须先核实几何列与源 CRS，不能因构造成功就认定坐标含义正确；也不读取私有 `_facts` 作为完整字段／空间事实接口。生成流程的实时事实复核见[Notebook Copilot](../develop/CLAUDE.md#copilot-生成与插入)。
+
+### 有界 SQL 与访问边界
+
+```python
 filtered = pg.sql(
-    "SELECT * FROM public.roads WHERE id > $1",
-    params=[100],
+    read_query,
+    params=query_params,
     max_rows=1000,
     timeout=30,
 )
 ```
 
-`engines.client()` 按精确 `engine_type` 返回已注册的原生只读门面，类型以[客户端注册表](addp_common/notebook/engines.py)为准，并校验当前描述符的目录模型与能力；未知类型明确拒绝，不提供通用 fallback。上例仅演示 PostgreSQL，不能假设发现列表的第一项具有 PostgreSQL 方法。
-
-SDK 内部仍使用统一 Engine Catalog 契约，只缓存服务端返回的 root/branch 规范路径，不缓存 children、失败或数据内容。`scan()` 是算法读取全部数据的主路径；`to_pandas()` 只消费 `scan()`，并同时检查 Engine Catalog 估算大小和实际 Arrow 解码字节；PostgreSQL `to_geopandas()` 在同一内存边界内把受控扫描返回的 EWKB 空间列转换为 GeoDataFrame，几何列和 CRS 必须来自调用方已验证的 Engine Catalog facts。
-
-任意 SQL 的流式 `scan_sql()` 属于后续阶段，当前 `sql()` 固定返回有 `max_rows` 边界的 DataFrame。
+原生 PostgreSQL 参数化只读 SQL 必须显式限制返回行数和整数秒超时；`query_params` 对应 SQL 的值参数，不通过字符串替换拼接查询。任意 SQL 的流式 `scan_sql()` 属于后续阶段，当前 `sql()` 固定返回有 `max_rows` 边界的 DataFrame。
 
 该 SDK 只读取 Runtime 注入当前 Kernel process 的短期 Notebook Kernel Capability，不接受手工 Token，不读取 `ADDP_TOKEN`，也不返回 `connection_info`。在普通 Python process、已关闭或已过期的 Notebook 会话中调用时会 fail-closed。SDK 标准回归见[开发与验证](#开发与验证)，Owner、Runtime 与真实链路的覆盖分工见[Notebook 验证](../develop/CLAUDE.md#notebook-验证分工)；客户端已注册不等于真实读取已获权或验收通过。
 

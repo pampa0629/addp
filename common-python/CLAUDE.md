@@ -20,7 +20,7 @@ common-python/
 │   ├── tools/              # Tool Manifest、校验与唯一执行映射
 │   ├── workflow_runtime/   # 通用工作流协议、执行与就绪核心
 │   ├── workflow_access.py  # 工作流源访问与目录暂存
-│   ├── notebook/           # Notebook 引擎发现门面
+│   ├── notebook/           # Notebook 原生目录与受控读取门面
 │   ├── module_lifecycle.py # Python Backend 健康、就绪与注册生命周期
 │   ├── runtime_logging.py  # 服务正文日志 JSON 出口
 │   ├── http_observation.py # HTTP 观测共用传输归一化
@@ -37,6 +37,8 @@ common-python/
 客户端导出入口见 [`client/__init__.py`](addp_common/client/__init__.py)，包含 Service Consumer、Inference、Ontology、Transfer 等 SDK；服务令牌、模块实例登记和 Runtime 引擎登记分别见 [`service_token.py`](addp_common/client/service_token.py)、[`module_registry.py`](addp_common/client/module_registry.py) 和 [`runtime_registration.py`](addp_common/client/runtime_registration.py)。栅格策略客户端 [`raster_policy.py`](addp_common/client/raster_policy.py) 的访问身份限定为 Platform Service OAuth，不因位于共享库而扩大权限。
 
 Tool 契约与执行映射分别定位到 [`manifest.json`](addp_common/tools/manifest.json) 和 [`executor.py`](addp_common/tools/executor.py)；目录导航不代表功能或运行验收通过，覆盖范围与结果认定见[验证](#验证)。
+
+Notebook 的[资源选择](README.md#发现与资源选择)、[读取与空间转换](README.md#读取与空间转换)及[SQL 与访问边界](README.md#有界-sql-与访问边界)在 README 维护，原生门面与唯一 Engine Catalog 契约的分工见[引擎体系](../docs/concepts/addp引擎体系图.md#notebook-原生引擎门面)。
 
 ## 开发规则
 
