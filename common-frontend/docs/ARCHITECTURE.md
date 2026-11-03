@@ -2,7 +2,7 @@
 
 `common-frontend` 按依赖与职责划分共享源码。业务模块复用规范实现，只承担领域组合和协议适配；组件唯一所有权遵循[开发原则](../../docs/spec/addp开发原则.md#8-dry-dont-repeat-yourself--不要重复自己)。
 
-[返回共享前端入口](../README.md) · [共享测试与浏览器隔离](../README.md#测试)。
+[返回共享前端入口](../README.md) · [资源选择组合边界](#资源选择组合边界) · [共享测试与浏览器隔离](../README.md#测试)。
 
 ## 目录结构
 
@@ -25,7 +25,7 @@
 `@common-ui` 指向 `basic/src`；包名 `@addp/common-frontend` 的主入口也为 `basic/src/index.js`。例如：
 
 ```javascript
-import { StorageEngineForm, ResourceTree } from '@common-ui'
+import { StorageEngineForm, ResourceTreePicker } from '@common-ui'
 ```
 
 基础入口的依赖不止 Vue 和 Element Plus；以[包依赖声明](../package.json)及消费模块的 `package.json`、锁文件为准。
@@ -47,6 +47,12 @@ import { MapContainer, GeoJsonPreview, TablePreview } from '@common-ui-map'
 ```
 
 地图使用方声明 `ol`、`@amap/amap-jsapi-loader` 等实际依赖；预览、图、DAG 和图表也按使用的入口维护依赖，不以模块名称推断。版本约束遵循[技术栈规约](../../docs/spec/addp技术栈规约.md)，具体别名和去重配置可核对[Manager Vite 配置](../../manager/frontend/vite.config.js)与[System Vite 配置](../../system/frontend/vite.config.js)。
+
+## 资源选择组合边界
+
+资源选择的规范实现由 `basic/` 持有：表单复用 `ResourceTreePicker`／`ResourceTreeSelect`，完整领域工作区可组合 `ResourceTree`。共享组件与宿主的职责、请求会话及唯一所有权要求统一见[选择器职责边界](components/资源定位与树组件.md#共享所有权与访问会话)。
+
+身份回显、多选核验、实时目录与 System 授权按[README 接入导航](../README.md#资源树选择器接入导航)进入现行专题；权限复核、候选边界和失败回退规则不在本文重复维护。接入示例与实际验收范围见[选择与创建示例](components/资源定位与树组件.md#选择与创建示例)，不能以导入示例或静态检查代替真实接入验收。
 
 ## 表格预览组合边界
 
