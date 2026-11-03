@@ -2,6 +2,8 @@
 
 `common-frontend` 按依赖与职责划分共享源码。业务模块复用规范实现，只承担领域组合和协议适配；组件唯一所有权遵循[开发原则](../../docs/spec/addp开发原则.md#8-dry-dont-repeat-yourself--不要重复自己)。
 
+[返回共享前端入口](../README.md) · [共享测试与浏览器隔离](../README.md#测试)。
+
 ## 目录结构
 
 | 源码位置 | 职责与入口 |
@@ -14,7 +16,7 @@
 | [graph/src](../graph/src/index.js) | 图结果、Schema、本体与血缘查看器。 |
 | [agent-ui/src](../agent-ui/src/index.js) | Agent A2UI 协议到受信任共享 Vue 组件的适配。 |
 
-组件与结果契约的详细说明见[共享前端 README](../README.md)，地图与 DAG 的专项边界分别见[Map 说明](../map/README.md)和[DAG 说明](../dag/README.md)。
+组件与结果契约见[组件契约索引](../README.md#组件列表)，地图与 DAG 的专项边界分别见[Map 说明](../map/README.md)和[DAG 说明](../dag/README.md)。
 
 ## 使用方法
 
@@ -58,4 +60,4 @@ import { MapContainer, GeoJsonPreview, TablePreview } from '@common-ui-map'
 
 新模块的依赖、别名、单一 Vue 实例、主题及语言初始化统一按[新模块开发指南](../../docs/spec/addp新模块开发指南.md#创建新模块前端)接入，不在本文重复整份 Vite 配置或保留旧迁移步骤。现有模块仍须通过 `overrides`、alias 与 dedupe 保持 Vue 单一实例，`common-frontend` 不保留自己的 `node_modules`。
 
-视觉与交互要求见[前端风格规范](addp前端风格设计规范.md)。共享组件与唯一所有权通过根 `make test-common-frontend` 验证；消费模块按实际影响选择标准门禁，确定性浏览器回归与真实运行验收分别记录，规则见[测试与验收规范](../../docs/spec/addp测试与验收规范.md)。
+视觉与交互要求见[前端风格规范](addp前端风格设计规范.md)。共享测试入口与浏览器隔离细节统一见[README 验证说明](../README.md#测试)；消费模块按实际影响选择标准门禁，确定性浏览器回归与真实运行验收分别记录，规则见[测试与验收规范](../../docs/spec/addp测试与验收规范.md)。

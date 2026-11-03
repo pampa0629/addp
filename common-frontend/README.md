@@ -4,6 +4,8 @@ ADDP 平台前端共享组件库，提供跨模块复用的 Vue 3 组件、工�
 
 前端开发先阅读[前端风格设计规范](docs/addp前端风格设计规范.md)，再按视觉与布局、组件交互、主题接入或工程约束进入对应专题。
 
+阅读导航：[入口与用法](docs/ARCHITECTURE.md#使用方法) · [组件契约](#组件列表) · [安装接入](#安装) · [共享验证](#测试) · [开发约束](#开发)。
+
 ## 使用
 
 入口、依赖与职责见[共享前端架构](docs/ARCHITECTURE.md)；下表按使用场景导航到具体契约与示例。
@@ -19,24 +21,21 @@ ADDP 平台前端共享组件库，提供跨模块复用的 Vue 3 组件、工�
 
 ## 安装
 
-```bash
-# 在模块的 frontend 目录中
-npm install file:../../common-frontend
-```
+模块接入统一按[创建新模块前端](../docs/spec/addp新模块开发指南.md#创建新模块前端)准备消费模块的依赖声明、锁文件和工程配置；共享入口、别名与 Vue 单一实例约束见[接入与验证](docs/ARCHITECTURE.md#接入与验证)。
 
 ## 测试
 
 共享组件、结果契约和唯一所有权测试由 `common-frontend` 自己维护，统一入口为：
 
 ```bash
-npm --prefix common-frontend test
+make test-common-frontend
 ```
 
-根 `make test-platform` 会调用该入口。业务模块只验证自身的协议适配和组合行为，不再代跑共享组件测试。
+根 `make test-platform` 调用同一入口。业务模块只验证自身的协议适配和组合行为，不代跑共享组件测试；本入口不代替消费模块的浏览器回归或真实后端验收。门禁选择见[测试与验收规范](../docs/spec/addp测试与验收规范.md)。
 
 ### 浏览器测试隔离
 
-确定性浏览器门禁通过 `scripts/test/frontend-browser-gate.mjs` 和共享 `withBrowserTestIsolation` 统一隔离当轮端口、代理、地址与输出目录。模块在 `package.json` 声明 `addpBrowserTest.fixtures`，不得复制启动、端口分配或缓存清理逻辑；浏览器断言使用 `browserTestOrigin`。继续使用原有 `make test-<owner>-frontend` / `npm run test:e2e` 入口。
+确定性浏览器门禁通过 `scripts/test/frontend-browser-gate.mjs` 和共享 `withBrowserTestIsolation` 统一隔离当轮端口、代理、地址与输出目录。模块在 `package.json` 声明 `addpBrowserTest.fixtures`，不得复制启动、端口分配或缓存清理逻辑；浏览器断言使用 `browserTestOrigin`。运行统一从已登记的 `make test-<owner>-frontend` 进入，模块浏览器脚本与 fixture 启停由标准门禁编排。
 
 Vite 配置直接导入 `basic/src/utils/viteTestIsolation.mjs`，以 `defineConfig(withFrontendTestIsolation(模块名, 配置对象))` 包装。`ADDP_E2E=1` 时统一关闭 HMR，使用模块和进程独立的临时依赖缓存，并在 Vite 关闭、进程正常退出及收到 `SIGTERM` / `SIGINT` 时清理；普通开发返回原配置。Playwright 每个 `webServer` 显式传入该标记、回环地址、独立端口与 `--strictPort`，且不得复用现有服务；配置带正数超时的 `gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 }`，避免 Playwright 默认强制结束进程而留下缓存。隔离逻辑及清理测试归共享库，配置接入检查归平台 T0。
 
