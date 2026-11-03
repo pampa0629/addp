@@ -15,9 +15,9 @@
 | `id` | SERIAL | PRIMARY KEY |
 | `tenant_id` | INTEGER | 租户 ID |
 | `engine_id` | INTEGER | 引擎 ID |
-| `node_id` | INTEGER | 所属节点 ID |
+| `node_id` | INTEGER | 持久归属节点 ID；single／multi 为主资源父节点，whole 为自身范围根节点 |
 | `item_type` | VARCHAR(64) | 引擎叶子术语，例如 table/view/collection/file/object，不是 data_type |
-| `name` | VARCHAR(255) | 项名称 |
+| `name` | VARCHAR(255) | 显示名称；whole 直接使用自身范围根真实名称，不新增别名 |
 | `full_name` | TEXT | 引擎内规范全名；具体坐标由路径规范决定 |
 | `fingerprint` | VARCHAR(64) | 规范 full_name 与永久 engine_id 派生的身份指纹，不是内容哈希 |
 | `row_count` | BIGINT | 精确表行数的列表投影，未知为 NULL，不能用估算值或未知冒充 0 |

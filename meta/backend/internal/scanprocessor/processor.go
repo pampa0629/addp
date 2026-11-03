@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
@@ -120,6 +121,9 @@ func isNilAssetIndexer(indexer AssetIndexer) bool {
 }
 
 func (p Processor) Process(ctx context.Context, input input) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	if err := validateInput(input); err != nil {
 		return Result{}, err
 	}
@@ -178,7 +182,15 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 			return err
 		}
 		removed, err = repo.DeleteClaimedSingleItems(item, input.ClaimedFullNames)
-		return err
+		if err != nil {
+			return err
+		}
+		if input.Detected.Layout == format.LayoutWhole && input.ExistingItemID == 0 {
+			members, err := repo.ReconcileWholeScope(item)
+			removed = append(removed, members...)
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return Result{}, err
@@ -206,12 +218,21 @@ func validateInput(input input) error {
 	if input.Detected == nil {
 		return fmt.Errorf("detected item is nil")
 	}
+	parent := input.ParentNode
+	if parent.TenantID != input.TenantID || parent.EngineID != input.EngineID {
+		return fmt.Errorf("item owner does not match tenant and engine")
+	}
+	whole := input.Detected.Layout == format.LayoutWhole
+	if whole && (parent.Name != input.ItemName || parent.FullName != input.FullName ||
+		(input.ItemType != "object" && input.ItemType != "file") ||
+		(input.ItemType == "object" && parent.NodeType != "prefix") ||
+		(input.ItemType == "file" && parent.NodeType != "dir")) {
+		return fmt.Errorf("whole item must belong to its named scope root")
+	}
 	if input.IndexRootName != "" {
-		parent := input.ParentNode
-		if parent.TenantID != input.TenantID || parent.EngineID != input.EngineID ||
-			(parent.NodeType != "bucket" && parent.NodeType != "prefix") ||
+		if (parent.NodeType != "bucket" && parent.NodeType != "prefix") ||
 			!strings.HasPrefix(input.FullName, input.IndexRootName+"/") ||
-			input.FullName != parent.FullName+"/"+input.ItemName {
+			(!whole && input.FullName != parent.FullName+"/"+input.ItemName) {
 			return fmt.Errorf("object catalog identity mismatch: item %q, parent %q (node %d)", input.FullName, parent.FullName, parent.ID)
 		}
 	}

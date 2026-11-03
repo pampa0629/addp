@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path"
 	"sort"
 	"strings"
 	"testing"
@@ -39,7 +38,11 @@ func TestParquetWholeScopeDeepScanAndRefresh(t *testing.T) {
 					root = "addp/" + root
 					parentAttrs = scanresource.ObjectBucketNodeAttributes("addp")
 				}
-				parent, err := repo.UpsertNode(1, 7, nil, "directory", "samples", strPtr(path.Dir(root)), parentAttrs)
+				ownerType := "dir"
+				if storage == "object" {
+					ownerType = "prefix"
+				}
+				parent, err := repo.UpsertNode(1, 7, nil, ownerType, "result", strPtr(root), parentAttrs)
 				if err != nil {
 					t.Fatal(err)
 				}

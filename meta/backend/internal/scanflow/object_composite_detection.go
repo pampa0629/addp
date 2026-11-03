@@ -125,5 +125,22 @@ func DetectObjectCatalogCompositeItems(
 			}
 		}
 	}
+	// Exclusive whole scopes own their auxiliary files and internal prefixes as
+	// well as their content refs. None may be rebuilt as independent resources.
+	for _, composite := range items {
+		if composite.Item == nil || composite.Item.Layout != format.LayoutWhole {
+			continue
+		}
+		prefix := strings.Trim(composite.Prefix, "/")
+		if prefix == "" {
+			continue
+		}
+		for _, resource := range resources {
+			p := strings.Trim(resource.Path, "/")
+			if resource.RootName == composite.Bucket && (p == prefix || strings.HasPrefix(p, prefix+"/")) {
+				skipPaths[p] = true
+			}
+		}
+	}
 	return skipPaths, items, warnings
 }

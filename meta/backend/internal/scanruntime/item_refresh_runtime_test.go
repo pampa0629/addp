@@ -438,9 +438,9 @@ func TestRefreshKnownWholeOSGBSceneRedetectsStaleOSGBFormat(t *testing.T) {
 	parentNode := models.MetaNode{
 		TenantID:   tenantID,
 		EngineID:   engineID,
-		NodeType:   plugin.EngineCatalogTermDirectory,
-		Name:       "3d",
-		FullName:   "3d",
+		NodeType:   "dir",
+		Name:       "baita",
+		FullName:   scopePath,
 		Depth:      1,
 		Attributes: models.JSONMap{},
 	}

@@ -66,7 +66,7 @@ PY
 
 cd "$SOURCE_ROOT/meta/backend"
 if [ "$test_group" = all ]; then
-    go test ./internal/repository -run '^(TestClaimedComponentsAgainstPostgres|TestDataItemChangeMigrationAgainstPostgres|TestLineageLifecycleMigrationAgainstPostgres|TestNodeStatisticsMigrationAgainstPostgres|TestNodeScanTimeMigrationAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/meta.log"
+    go test ./internal/repository -run '^(TestWholeScopeMigrationAgainstPostgres|TestClaimedComponentsAgainstPostgres|TestDataItemChangeMigrationAgainstPostgres|TestLineageLifecycleMigrationAgainstPostgres|TestNodeStatisticsMigrationAgainstPostgres|TestNodeScanTimeMigrationAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/meta.log"
 fi
 service_tests='^(TestDataItemAuthorizationFactsAgainstPostgres|TestScanPlanFactsAgainstPostgres)$'
 if [ "$test_group" = all ]; then

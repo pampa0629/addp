@@ -512,6 +512,10 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 
 ---
 
+### whole 范围根的持久归属与名称
+
+所有 whole 数据项的 `node_id` 指向自身范围根：文件系统为 dir，对象存储为 prefix。item 与根节点使用相同的真实 `name` 和规范 `full_name`；资源树显示该名称，仅输出 DataItem 身份，隐藏同路径节点及内部碎片。single／multi 仍归主资源的父节点。目录名与产出目录命名由源端／产出 owner 决定，Meta 不新增别名或改名。此规则不把普通目录识别为 whole，不开放管理根／bucket whole 识别，也不扩大内容或普通节点范围授权。
+
 ## 七、对象存储与文件系统模型边界
 
 对象存储和文件系统在树形浏览和内容流读取上有相似性，但路径模型和 catalog 模型不能共享：

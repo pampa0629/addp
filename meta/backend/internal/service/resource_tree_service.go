@@ -89,6 +89,9 @@ func (s *ResourceTreeService) GetNode(ctx context.Context, tenantID, engineID ui
 	if targetNode.EngineID != engineID {
 		return nil, fmt.Errorf("%w: locator node_id does not belong to engine_id %d", metaErrors.ErrNodeNotFound, engineID)
 	}
+	if err := s.requireOrdinaryTreeNode(tenantID, *targetNode); err != nil {
+		return nil, err
+	}
 	childNodes, err := s.metadataQueryService.GetNodeChildren(tenantID, *loc.NodeID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to get meta node children: %v", metaErrors.ErrNodeNotFound, err)
@@ -259,6 +262,9 @@ func (s *ResourceTreeService) getNodeAncestors(tenantID uint, engine *commonMode
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to resolve meta node by locator path: %v", metaErrors.ErrNodeNotFound, err)
 	}
+	if err := s.requireOrdinaryTreeNode(tenantID, *currentNode); err != nil {
+		return nil, err
+	}
 	nodes, err := s.metadataQueryService.GetNodeAncestors(tenantID, currentNode.ID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to get meta node ancestors: %v", metaErrors.ErrNodeNotFound, err)
@@ -352,6 +358,17 @@ func commonItemsFromLite(items []metaModels.MetaItemLite) []commonModels.MetaIte
 		})
 	}
 	return out
+}
+
+func (s *ResourceTreeService) requireOrdinaryTreeNode(tenantID uint, node metaModels.MetaNodeLite) error {
+	whole, err := s.wholeScopeItemsForChildContainers(tenantID, []metaModels.MetaNodeLite{node})
+	if err != nil {
+		return err
+	}
+	if len(whole) != 0 {
+		return metaErrors.ErrNodeNotFound
+	}
+	return nil
 }
 
 func (s *ResourceTreeService) wholeScopeItemsForChildContainers(tenantID uint, childNodes []metaModels.MetaNodeLite) ([]commonModels.MetaItem, error) {

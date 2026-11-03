@@ -422,6 +422,7 @@ func TestObjectCatalogDeepScanDetectsRasterMosaicDatasetItem(t *testing.T) {
 		"addp",
 		"addp/mosaics",
 		"addp/mosaics/srtm-test",
+		"addp/mosaics/srtm-test/srtm-test",
 	}
 	if !reflect.DeepEqual(nodeNames, wantNodes) {
 		t.Fatalf("nodes = %#v, want only mosaic parent path nodes %#v", nodeNames, wantNodes)
@@ -773,7 +774,7 @@ func TestObjectCatalogPrefixScanDeletesLegacyGeoTIFFSidecarItems(t *testing.T) {
 	})
 }
 
-func TestObjectCatalogPrefixScanDeletesStalePrefixConflictingWithWholeItem(t *testing.T) {
+func TestObjectCatalogPrefixScanKeepsWholeScopeAndDeletesInternalNodes(t *testing.T) {
 	metaenrich.RegisterItemResolvers()
 	reader := objectCatalogScanTestProvider{
 		contentByPath: map[string]string{
@@ -802,7 +803,7 @@ func TestObjectCatalogPrefixScanDeletesStalePrefixConflictingWithWholeItem(t *te
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
-	mosaicRoot, err := repo.EnsureObjectCatalogPrefixPath(1, 9, bucketNode, "mosaics/bigmosaic")
+	_, err = repo.EnsureObjectCatalogPrefixPath(1, 9, bucketNode, "mosaics/bigmosaic")
 	if err != nil {
 		t.Fatalf("create mosaic root prefix: %v", err)
 	}
@@ -852,10 +853,8 @@ func TestObjectCatalogPrefixScanDeletesStalePrefixConflictingWithWholeItem(t *te
 	}
 
 	var stale models.MetaNode
-	if err := db.Where("id = ?", staleWholePathNode.ID).First(&stale).Error; err == nil {
-		t.Fatalf("stale whole item prefix still exists: %#v", stale)
-	} else if err != gorm.ErrRecordNotFound {
-		t.Fatalf("query stale whole item prefix: %v", err)
+	if err := db.First(&stale, staleWholePathNode.ID).Error; err != nil {
+		t.Fatalf("whole scope root was deleted: %v", err)
 	}
 	var staleItem models.MetaItem
 	if err := db.Where("full_name LIKE ? AND deleted_at IS NULL", "addp/mosaics/bigmosaic/bigmosaic/mosaics/%").First(&staleItem).Error; err == nil {
@@ -867,15 +866,15 @@ func TestObjectCatalogPrefixScanDeletesStalePrefixConflictingWithWholeItem(t *te
 	if err != nil {
 		t.Fatalf("FindItemByFullName() error = %v", err)
 	}
-	if !ok || item.NodeID != mosaicRoot.ID {
-		t.Fatalf("mosaic item = %#v, found=%v, want item under mosaic root %d", item, ok, mosaicRoot.ID)
+	if !ok || item.NodeID != staleWholePathNode.ID {
+		t.Fatalf("mosaic item = %#v, found=%v, want item in scope root %d", item, ok, staleWholePathNode.ID)
 	}
 	if got := commonJSON.Int64(item.Attributes, "capabilities.spatial", "srid"); got != 4326 {
 		t.Fatalf("capabilities.spatial.srid = %d, want inferred EPSG:4326", got)
 	}
 }
 
-func TestObjectCatalogPrefixScanKeepsWholeItemAtScanRoot(t *testing.T) {
+func TestObjectCatalogPrefixScanKeepsWholeItemInOwnScope(t *testing.T) {
 	metaenrich.RegisterItemResolvers()
 	reader := objectCatalogScanTestProvider{
 		contentByPath: map[string]string{
@@ -944,8 +943,12 @@ func TestObjectCatalogPrefixScanKeepsWholeItemAtScanRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindItemByFullName() error = %v", err)
 	}
-	if !ok || item.NodeID != mosaicParent.ID {
-		t.Fatalf("mosaic item = %#v, found=%v, want item under mosaic parent %d", item, ok, mosaicParent.ID)
+	if !ok {
+		t.Fatal("whole item missing")
+	}
+	var scope models.MetaNode
+	if err := db.First(&scope, item.NodeID).Error; err != nil || scope.FullName != item.FullName || scope.Name != item.Name || scope.ParentNodeID == nil || *scope.ParentNodeID != mosaicParent.ID {
+		t.Fatalf("wrong whole scope: %+v %v", scope, err)
 	}
 }
 

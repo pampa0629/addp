@@ -173,13 +173,14 @@ System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/r
 
 ### 对象目录归属不变量
 
-对象 item 的父 node 只能由其规范 bucket 内路径决定，与 selector、扫描起点及扫描深度无关。`full_name = 父 node.full_name + "/" + item.name` 必须成立；whole 布局使用逻辑 item 路径的父目录，不能使用内部主文件的父目录。
+对象 item 的持久归属只能由其规范 bucket 内路径与布局决定，与 selector、扫描起点及扫描深度无关。single／multi 归主资源的父 bucket／prefix，满足 `full_name = 所属 node.full_name + "/" + item.name`；whole 统一归自身范围根 prefix，满足 `item.name = node.name`、`item.full_name = node.full_name`。文件系统 whole 同样归自身 dir。whole 的名称使用范围根真实名称，不新增别名，不使用内部 manifest／分片名作为显示名称。
 
 - `scanresource` 规划 item 身份与 bucket 内父路径；repository 从 bucket 构造完整 prefix 链，普通对象、组合对象与上传 `ref_groups` 共用这一条实现。
 - 对象 detector 的 scope、content refs 与回调参数统一使用 bucket 内路径；构造持久化 item plan 时只添加一次 bucket。禁止通过首段是否等于 bucket 猜测路径类型，否则同名目录会被误删。进入 processor 的 refs 则使用外部完整 content path。
 - 不得将扫描起点当作资源树根、从 item 路径剥离扫描前缀后另行拼接父链，或要求调用者预先建好扫描起点作为隐式前置条件。
 - 创建 prefix 链不等于枚举父目录，不扩大 `ref_groups` 的内容边界。节点扫描状态只覆盖本次完整枚举的范围；引用组扫描不宣称完成父目录扫描，也不写目录数量或大小。
-- 写入前必须检查对象 item 身份与父节点是否一致，不能把挂错目录的写入报告为成功。目录扫描遇到既有错误归属时，即使内容未变化，也必须按规范路径重新归属。
+- 写入前按布局检查 item 身份与归属节点一致。whole 成功落库时，范围根及完整父链保留，内部组件项和子目录不再成为独立资源树项；收敛与落库在同一事务完成，basic／deep 使用相同规则。普通文件与同路径目录的冲突清理不得删除合法 whole 范围根。
+- 存量 whole 通过一次性前向迁移归自身根；仅凭完整持久父链及独立名称可证明的记录原位调整，保留正确项身份。断链、跨租户／引擎及无法可靠裁决的错误 whole 直接删除，不保留运行时旧归属兼容或双读路线。源授权仍需回查当前精确项与边界，已删除项不能继续产生有效读取资格。
 
 
 ## ScanTask 与 Execution 边界

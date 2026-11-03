@@ -129,7 +129,7 @@ MinIO IFC/3DS/DAE 的模型组成在 basic 扫描建立，3DS/DAE 使用各自�
 
 对象存储 catalog scan：
 
-目录归属只取决于 bucket 内规范路径，不取决于扫描起点。single、composite 和 `ref_groups` 必须共用 repository 的完整 prefix 链构造；扫描范围只控制枚举与扫描状态，不能参与父节点路径拼接。目录归属统一见[对象目录归属不变量](../docs/spec/addp元数据扫描机制规范.md#对象目录归属不变量)，节点统计、Node／DataItem 身份与展开规则见[资源查询与树投影](../docs/spec/addp元数据扫描机制规范.md#资源查询与树投影)。
+目录归属只取决于 bucket 内规范路径和已识别布局，不取决于扫描起点。single／multi 归父 bucket／prefix，whole 归自身范围根 prefix，名称与范围根一致。single、composite 和 `ref_groups` 必须共用 repository 的完整 prefix 链构造；扫描范围只控制枚举与扫描状态，不能参与父节点路径拼接。目录归属统一见[对象目录归属不变量](../docs/spec/addp元数据扫描机制规范.md#对象目录归属不变量)，节点统计、Node／DataItem 身份与展开规则见[资源查询与树投影](../docs/spec/addp元数据扫描机制规范.md#资源查询与树投影)。
 
 精确 file/object 目标由 `ResolvePath` 返回的 `EngineCatalogEntry` 直接进入内容运行时 `ScanLeaf`，复用完整扫描的资源转换和 single processor，保留大小、源修改时间、MIME 与对象 ETag。不得转为只含路径的 `ref_groups`；不枚举同级内容、不清理兄弟 item、不完成父范围状态。`TestPreciseContentStorageFacts` 与标准 `make test-meta-postgres` 中的 `TestPreciseContentStorageFactsAgainstPostgres` 覆盖基本、深度和重复精确扫描的事实与范围不变量；真实 COG 自动扫描仍由既有 Raster Hosted T4 复验。
 

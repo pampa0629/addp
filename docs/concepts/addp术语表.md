@@ -227,6 +227,7 @@
 | data type | 数据类型 | 用户和平台理解 data item 的高层语义类型。 | 比文件格式更高层，例如 `table`、`document`、`media`。 |
 | format | 文件格式 | data item 或 content 的编码方式或格式族。 | 例如 `csv`、`parquet`、`pdf`、`shapefile`。 |
 | layout | 内容布局 | content 如何组成 data item 的布局维度。 | `format.layouts` 表示格式支持的布局列表，`attributes.item.layout` 表示已识别 item 的布局结果；取值为 `single`、`multi`、`whole`。 |
+| whole scope ownership | 整体范围归属 | `layout=whole` 数据项以自身范围根节点作为持久归属，名称与完整路径取该根节点的真实名称和路径。 | 文件系统使用 dir、对象存储使用 prefix；根节点只证明范围及父链，资源树将其折叠为唯一 DataItem，不成为普通节点范围授权。`name` 用于显示，`item_id` 与 `fingerprint` 用于内部身份；不新增别名。 |
 | grid slice preview | 网格切片预览 | 对容器内选定数值变量按显式前导维索引及二维窗口读取的临时有界视图。 | 不是新data type、DataItem、任务或产物；按格式声明保留原存储值或原单位解码值、掩膜和维序，不从变量名称猜测CRS或时间语义。NetCDF声明raw_storage，GRIB声明decoded_native_units；均沿GeoPython GDAL单一路线读取。 |
 | GRIB field message | GRIB 气象场消息 | 自带要素、层次、时间和网格描述的一条气象编码记录；单个 GRIB 文件可依次保存多条消息。 | 首期 GRIB2 每条单场消息是 single/container 内的二维 array child，消息序号绑定源版本；解码值保留原单位，不能冒称 NetCDF 原存储值或合并异质网格。 |
 | vector tile set | 矢量瓦片集 | 以 PMTiles v3 单文件封装、可作为业务数据长期保存和跨平台交换的二维矢量瓦片 data item。 | 统一使用 `data_type=media`、`format=pmtiles`、`layout=single`；当前瓦片编码固定为 MVT。 |

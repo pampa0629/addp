@@ -148,6 +148,10 @@ func PlanObjectCompositeItem(engineID uint, composite ObjectCompositeItem, itemT
 	itemName, objectPath := ObjectCompositeName(composite)
 	parentPath := ParentObjectPath(objectPath)
 	fullName := commonModels.JoinObjectPath(composite.Bucket, parentPath, itemName)
+	if composite.Item.Layout == format.LayoutWhole {
+		// A whole item belongs to its own scope, independently of scan origin.
+		parentPath = objectPath
+	}
 	// detector 保持 bucket 内坐标；持久化计划持有独立的完整 content path 副本。
 	dataItem := *composite.Item
 	dataItem.Attributes = commonModels.JSONMap(composite.Item.Attributes).Clone()
@@ -160,7 +164,7 @@ func PlanObjectCompositeItem(engineID uint, composite ObjectCompositeItem, itemT
 		metaattr.SetTableFields(attrs, composite.Item.Fields)
 	}
 	metaattr.SetStorage(attrs, "bucket", composite.Bucket)
-	metaattr.SetStorage(attrs, "path", parentPath)
+	metaattr.SetStorage(attrs, "path", ParentObjectPath(objectPath))
 	metaattr.SetStorage(attrs, "name", itemName)
 	metaattr.SetStorage(attrs, "physical_path", fullName)
 	metaattr.SetItem(attrs, "mode", ObjectCompositeMode(composite.Item))

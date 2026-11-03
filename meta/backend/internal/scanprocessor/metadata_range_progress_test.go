@@ -80,6 +80,7 @@ func TestPLYAttributeRangesReportRealProgressAndHonorCancellation(t *testing.T) 
 			var err error
 			if cancelled {
 				input.Resource = &commonModels.Engine{ID: 14}
+				input.TenantID = 1
 				input.ParentNode = &models.MetaNode{ID: 1, TenantID: 1, EngineID: 14}
 				input.ScanDepth = "deep"
 				_, err = (Processor{}).Process(ctx, *input)

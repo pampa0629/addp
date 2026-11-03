@@ -361,6 +361,10 @@ func TestFileScanRefGroupsPersistsFileGDBScopeItem(t *testing.T) {
 	if !ok {
 		t.Fatal("FileGDB item not found")
 	}
+	var scope models.MetaNode
+	if err := db.First(&scope, item.NodeID).Error; err != nil || scope.NodeType != "dir" || scope.FullName != item.FullName || scope.Name != item.Name {
+		t.Fatalf("FileGDB refs did not persist its own scope: %+v %v", scope, err)
+	}
 	if got := commonJSON.String(item.Attributes, "item", "layout"); got != "whole" {
 		t.Fatalf("item.layout = %q, want whole", got)
 	}

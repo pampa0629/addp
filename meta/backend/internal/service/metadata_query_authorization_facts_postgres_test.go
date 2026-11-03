@@ -48,5 +48,6 @@ scanned_depth TEXT, attributes JSONB, created_at TIMESTAMPTZ, deleted_at TIMESTA
 	exerciseFileAuthorizationFacts(t, tx)
 	exerciseWholeContainerAuthorizationFacts(t, tx)
 	exerciseScannedFileAuthorizationFacts(t, tx)
+	exerciseScannedWholeAuthorizationFacts(t, tx)
 	t.Run("batch_owner_boundary", func(t *testing.T) { exerciseAuthorizationFactsBatch(t, tx) })
 }

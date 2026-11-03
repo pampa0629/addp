@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
@@ -92,7 +93,14 @@ func scanFileRefGroups(
 			return result, err
 		}
 		for _, detected := range detection.Items {
-			persisted, fullName, itemExtractionStats, persistErr := runtime.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, candidates.DirPath, detected, candidates.Files, itemTerm, contentReader, connInfo, scanDepth)
+			owner := parentNode
+			if detected.Layout == format.LayoutWhole {
+				_, owner, err = runtime.ensureFilesystemScanRoot(tenantID, resource, enginePlugin, candidates.DirPath)
+				if err != nil {
+					return result, err
+				}
+			}
+			persisted, fullName, itemExtractionStats, persistErr := runtime.persistFileCatalogDetectedItem(ctx, resource, tenantID, owner, candidates.DirPath, detected, candidates.Files, itemTerm, contentReader, connInfo, scanDepth)
 			if persistErr != nil {
 				return result, fmt.Errorf("failed to persist file ref group item %s: %w", fullName, persistErr)
 			}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
+	commonjson "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -38,6 +39,43 @@ func (r *ScanRepository) DeleteClaimedSingleItems(item *models.MetaItem, fullNam
 		if err := r.db.Unscoped().Where("tenant_id = ? AND engine_id = ? AND id IN ?", item.TenantID, item.EngineID, ids).Delete(&models.MetaItem{}).Error; err != nil {
 			return nil, err
 		}
+	}
+	return removed, nil
+}
+
+// ReconcileWholeScope removes obsolete independent resources inside an identified
+// whole scope. The caller persists the item in the same transaction. Membership
+// follows tenant/engine-bound parent edges, never cached node.path or LIKE names.
+func (r *ScanRepository) ReconcileWholeScope(item *models.MetaItem) ([]models.MetaItem, error) {
+	if item == nil || commonjson.String(item.Attributes, "item", "layout") != "whole" {
+		return nil, fmt.Errorf("whole scope item required")
+	}
+	var root models.MetaNode
+	if err := r.db.Where("id = ? AND tenant_id = ? AND engine_id = ?", item.NodeID, item.TenantID, item.EngineID).First(&root).Error; err != nil {
+		return nil, err
+	}
+	if root.Name != item.Name || root.FullName != item.FullName ||
+		!((item.ItemType == "object" && root.NodeType == "prefix") || (item.ItemType == "file" && root.NodeType == "dir")) {
+		return nil, fmt.Errorf("whole scope owner mismatch")
+	}
+	const descendants = `WITH RECURSIVE scope(id) AS (
+		SELECT id FROM meta.meta_node WHERE id = ? AND tenant_id = ? AND engine_id = ?
+		UNION SELECT n.id FROM meta.meta_node n JOIN scope s ON n.parent_node_id = s.id
+		WHERE n.tenant_id = ? AND n.engine_id = ?
+	) SELECT id FROM scope`
+	args := []interface{}{root.ID, item.TenantID, item.EngineID, item.TenantID, item.EngineID}
+	query := "node_id IN (" + descendants + ") AND tenant_id = ? AND engine_id = ? AND id <> ?"
+	itemArgs := append(append([]interface{}{}, args...), item.TenantID, item.EngineID, item.ID)
+	var removed []models.MetaItem
+	if err := r.db.Unscoped().Where(query, itemArgs...).Find(&removed).Error; err != nil {
+		return nil, err
+	}
+	if err := r.db.Unscoped().Where(query, itemArgs...).Delete(&models.MetaItem{}).Error; err != nil {
+		return nil, err
+	}
+	nodeArgs := append(append([]interface{}{}, args...), root.ID)
+	if err := r.db.Unscoped().Where("id IN ("+descendants+") AND id <> ?", nodeArgs...).Delete(&models.MetaNode{}).Error; err != nil {
+		return nil, err
 	}
 	return removed, nil
 }
@@ -202,6 +240,10 @@ func (r *ScanRepository) HardDeleteInvalidEngineGraph(tenantID, engineID uint) e
 		        AND i.engine_id = n.engine_id
 		        AND i.full_name = n.full_name
 		        AND i.deleted_at IS NULL
+		        AND NOT (i.node_id = n.id AND i.name = n.name
+		            AND COALESCE(i.attributes -> 'item' ->> 'layout', '') = 'whole'
+		            AND ((i.item_type = 'object' AND n.node_type = 'prefix')
+		              OR (i.item_type = 'file' AND n.node_type = 'dir')))
 		  )
 	`, tenantID, engineID).Scan(&conflictNodes).Error; err != nil {
 		return err

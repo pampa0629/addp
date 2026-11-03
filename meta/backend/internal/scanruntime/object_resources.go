@@ -77,7 +77,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 			}
 			continue
 		}
-		if catalogResource.NodeType == "object" && compositeSkipPaths[catalogResource.Path] {
+		if compositeSkipPaths[strings.Trim(catalogResource.Path, "/")] {
 			continue
 		}
 
