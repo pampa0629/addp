@@ -259,6 +259,6 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 已用功能反例收口三项准备缺口：先由办理员读取 System 准确事实并办理 Grant，之后 Manager 才枚举并核对同一源；Meta 仅消费结构投影，源大小／完整性沿原授权下载逐项核验 OBJ／MTL／纹理长度和固定摘要；扫描与准确 MinIO 的 active／online 观察共用原180秒窗口，原 Engine User 单次读取限于原60秒与剩余预算，超时不补读、不准备模型。CDC 两 Engine 复用同一有界观察器。未知事实和授权失败继续阻断，不新增权限、原生变更或重试。
 
-CI 负责人以 `5fc2980a1` 仅在既有原生 Cleanup Make 目标增加共享 Manager helper 测试模块，无新 Job／服务／预算。最终固定源码副本的 `make test-execution-online-ci-runner` 实际 exit0，195项原生／helper与176项共享测试、语法及登记一致通过；`make test-manager-online-runner` 完整230项及 System 身份夹具 Go通过，对应 helper 输入未变。当前 System／Meta Go-only与Manager后端标准入口均通过。原始下载、ZIP成员、GLB几何验证器和机器契约逐项核同；旧实现的三个准备反例均失败，未把模拟或编译失败计为原生故障证据。
+CI 负责人以 `5fc2980a1` 仅在既有原生 Cleanup Make 目标增加共享 Manager helper 测试模块，无新 Job／服务／预算。最终固定源码副本的 `make test-execution-online-ci-runner` 实际 exit0，195项原生／helper与175项共享测试、语法及登记一致通过；`make test-manager-online-runner` 完整230项及 System 身份夹具 Go通过，对应 helper 输入未变。当前 System／Meta Go-only与Manager后端标准入口均通过。原始下载、ZIP成员、GLB几何验证器和机器契约逐项核同；旧实现的三个准备反例均失败，未把模拟或编译失败计为原生故障证据。
 
 本批仅 runner／夹具／文档改动，未运行新的 Hosted；修正提交的相关 Linux CI及Manager真实九项断言仍待实际结果。首次Grant顺序修正为 `e71b8a4ac`；其后结构投影与就绪窗口补修的准确自然CI单独核验。私有分层证明 `/tmp/addp-manager-cleanup-baseline-20261103/`；已有 Transfer三case与Neo4j身份反例证据保持，不升级为全矩阵完成。
