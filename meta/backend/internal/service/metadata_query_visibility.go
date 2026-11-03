@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"errors"
+	"database/sql"
 
 	"gorm.io/gorm"
 
@@ -41,13 +41,18 @@ func (s *ResourceTreeService) FilterMetadataItems(ctx context.Context, tenantID 
 		targets := []plugin.EngineCatalogPath{}
 		keys := map[uint]string{}
 		seen := map[string]bool{}
+		ids := make([]uint, 0, len(candidates))
 		for _, candidate := range candidates {
-			target, err := s.metadataItemVisibilityTarget(ctx, tenantID, engineID, candidate.ID)
-			if errors.Is(err, errMetadataItemIdentity) || errors.Is(err, gorm.ErrRecordNotFound) {
+			ids = append(ids, candidate.ID)
+		}
+		targetsByID, err := s.metadataItemVisibilityTargets(ctx, tenantID, engineID, ids)
+		if err != nil {
+			return nil, err
+		}
+		for _, candidate := range candidates {
+			target, ok := targetsByID[candidate.ID]
+			if !ok {
 				continue
-			}
-			if err != nil {
-				return nil, err
 			}
 			key, err := authorization.EncodeSharingTarget(target)
 			if err != nil {
@@ -278,19 +283,86 @@ func (s *ResourceTreeService) CheckMetadataBranch(ctx context.Context, tenantID,
 
 // Lists and trees resolve the same persisted typed identity. Locator display
 // spelling is never parsed to reconstruct an authorization target.
-func (s *ResourceTreeService) metadataItemVisibilityTarget(ctx context.Context, tenantID, engineID, itemID uint) (plugin.EngineCatalogPath, error) {
-	var item models.MetaItem
-	db := s.metadataQueryService.db.WithContext(ctx)
-	if err := db.Select("id", "tenant_id", "engine_id", "node_id", "item_type", "name", "full_name", "fingerprint", "attributes").Where("tenant_id=? AND engine_id=? AND id=? AND deleted_at IS NULL", tenantID, engineID, itemID).First(&item).Error; err != nil {
-		return plugin.EngineCatalogPath{}, err
+func (s *ResourceTreeService) metadataItemVisibilityTargets(ctx context.Context, tenantID, engineID uint, ids []uint) (map[uint]plugin.EngineCatalogPath, error) {
+	result := map[uint]plugin.EngineCatalogPath{}
+	// Bound SQL parameters and ancestor frontiers independently of catalog size.
+	for offset := 0; offset < len(ids); offset += 200 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		end := offset + 200
+		if end > len(ids) {
+			end = len(ids)
+		}
+		err := s.metadataQueryService.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var items []models.MetaItem
+			if err := tx.Select("id", "tenant_id", "engine_id", "node_id", "item_type", "name", "full_name", "fingerprint", "attributes").Where("tenant_id=? AND engine_id=? AND id IN ? AND deleted_at IS NULL", tenantID, engineID, ids[offset:end]).Find(&items).Error; err != nil {
+				return err
+			}
+			lookup, err := loadMetadataIdentityNodes(tx, tenantID, items)
+			if err != nil {
+				return err
+			}
+			for _, item := range items {
+				target, err := metadataItemTarget(lookup, item)
+				if err == errMetadataItemIdentity {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				result[item.ID] = target
+			}
+			return nil
+		}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+		if err != nil {
+			return nil, err
+		}
 	}
-	return metadataItemTarget(db, item)
+	return result, nil
 }
+
 func (s *ResourceTreeService) filterMetadataTree(ctx context.Context, root *resourcetree.TreeNode, tenantID, engineID uint, check MetadataVisibilityCheck) (*resourcetree.TreeNode, error) {
 	if s == nil || s.metadataQueryService == nil {
 		return nil, commonapi.ErrForbidden
 	}
+	ids := []uint{}
+	var collect func(*resourcetree.TreeNode) error
+	collect = func(n *resourcetree.TreeNode) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if n == nil {
+			return nil
+		}
+		loc, err := resourcetree.ParseURI(n.Locator)
+		if err != nil || loc.EngineID != engineID {
+			return commonapi.ErrForbidden
+		}
+		if loc.ItemID != nil {
+			ids = append(ids, *loc.ItemID)
+		}
+		for _, child := range n.Children {
+			if err := collect(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := collect(root); err != nil {
+		return nil, err
+	}
+	targets, err := s.metadataItemVisibilityTargets(ctx, tenantID, engineID, ids)
+	if err != nil {
+		return nil, err
+	}
 	return filterMetadataResourceTree(ctx, root, engineID, func(c context.Context, id uint) (plugin.EngineCatalogPath, error) {
-		return s.metadataItemVisibilityTarget(c, tenantID, engineID, id)
+		if err := c.Err(); err != nil {
+			return plugin.EngineCatalogPath{}, err
+		}
+		if target, ok := targets[id]; ok {
+			return target, nil
+		}
+		return plugin.EngineCatalogPath{}, errMetadataItemIdentity
 	}, check)
 }

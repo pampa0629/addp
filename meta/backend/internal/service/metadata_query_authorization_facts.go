@@ -2,10 +2,9 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"errors"
+	"time"
 
-	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	commonjson "github.com/addp/common/jsonmap"
@@ -13,42 +12,44 @@ import (
 	"gorm.io/gorm"
 )
 
-// GetDataItemAuthorizationFacts reads one committed Meta snapshot without source I/O.
+// Single-item internal consumers use the same committed batch projection.
 func (s *MetadataQueryService) GetDataItemAuthorizationFacts(ctx context.Context, tenantID uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
-	if tenantID == 0 || !authorizationfacts.ValidItemFingerprint(fingerprint) {
-		return nil, commonapi.ErrBadRequest
+	batch, err := s.QueryDataItemAuthorizationFacts(ctx, tenantID, authorizationfacts.AuthorizationFactsQuery{Fingerprints: []string{fingerprint}})
+	if err != nil {
+		return nil, err
 	}
-	var facts *authorizationfacts.AuthorizationFacts
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var item models.MetaItem
-		if err := tx.Where("tenant_id = ? AND fingerprint = ? AND deleted_at IS NULL", tenantID, fingerprint).First(&item).Error; err != nil {
-			return err
-		}
-		facts = &authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1,
-			ItemFingerprint: item.Fingerprint, EngineID: item.EngineID, ItemType: item.ItemType, FullName: item.FullName,
-			ObservedAt: tx.NowFunc().UTC(), BasisState: authorizationfacts.AuthorizationBasisIncomplete}
+	if batch.Data[0].Facts == nil {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return batch.Data[0].Facts, nil
+}
+
+func projectDataItemAuthorizationFacts(item models.MetaItem, observedAt time.Time, lookup metadataNodeLookup) (*authorizationfacts.AuthorizationFacts, error) {
+	facts := &authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1,
+		ItemFingerprint: item.Fingerprint, EngineID: item.EngineID, ItemType: item.ItemType, FullName: item.FullName,
+		ObservedAt: observedAt, BasisState: authorizationfacts.AuthorizationBasisIncomplete}
+	err := func() error {
 		layout := commonjson.String(item.Attributes, "item", "layout")
 		if item.ItemType == plugin.EngineCatalogTermFile || item.ItemType == plugin.EngineCatalogTermObject {
-			if err := projectFileAuthorizationFacts(tx, item, facts); err != nil {
+			if err := projectFileAuthorizationFacts(lookup, item, facts); err != nil {
 				return err
 			}
 			if facts.BasisState != authorizationfacts.AuthorizationBasisComplete {
-				return projectMetadataAuthorizationFacts(tx, item, facts)
+				return projectMetadataAuthorizationFacts(lookup, item, facts)
 			}
 			return nil
 		}
 		tableKind := commonjson.String(item.Attributes, "type_info.table", "kind")
 		if (item.ItemType == "table" && tableKind != "" && tableKind != "table") || (item.ItemType != "table" && item.ItemType != "collection") || (layout != "" && layout != "single") {
 			facts.BasisState = authorizationfacts.AuthorizationBasisUnsupported
-			return projectMetadataAuthorizationFacts(tx, item, facts)
+			return projectMetadataAuthorizationFacts(lookup, item, facts)
 		}
 		if layout == "" || item.Name == "" {
-			return projectMetadataAuthorizationFacts(tx, item, facts)
+			return projectMetadataAuthorizationFacts(lookup, item, facts)
 		}
-		var parent models.MetaNode
-		err := tx.Where("tenant_id = ? AND engine_id = ? AND id = ? AND deleted_at IS NULL", tenantID, item.EngineID, item.NodeID).First(&parent).Error
+		parent, err := lookup(item.TenantID, item.EngineID, item.NodeID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return projectMetadataAuthorizationFacts(tx, item, facts)
+			return projectMetadataAuthorizationFacts(lookup, item, facts)
 		}
 		if err != nil {
 			return err
@@ -56,15 +57,14 @@ func (s *MetadataQueryService) GetDataItemAuthorizationFacts(ctx context.Context
 		if (parent.NodeType != plugin.EngineCatalogTermSchema && parent.NodeType != plugin.EngineCatalogTermDatabase) ||
 			(item.ItemType == "collection" && parent.NodeType != plugin.EngineCatalogTermDatabase) {
 			facts.BasisState = authorizationfacts.AuthorizationBasisUnsupported
-			return projectMetadataAuthorizationFacts(tx, item, facts)
+			return projectMetadataAuthorizationFacts(lookup, item, facts)
 		}
 		if parent.Name == "" || parent.ParentNodeID == nil {
-			return projectMetadataAuthorizationFacts(tx, item, facts)
+			return projectMetadataAuthorizationFacts(lookup, item, facts)
 		}
-		var root models.MetaNode
-		err = tx.Where("tenant_id = ? AND engine_id = ? AND id = ? AND deleted_at IS NULL", tenantID, item.EngineID, *parent.ParentNodeID).First(&root).Error
+		root, err := lookup(item.TenantID, item.EngineID, *parent.ParentNodeID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return projectMetadataAuthorizationFacts(tx, item, facts)
+			return projectMetadataAuthorizationFacts(lookup, item, facts)
 		}
 		if err != nil {
 			return err
@@ -73,7 +73,7 @@ func (s *MetadataQueryService) GetDataItemAuthorizationFacts(ctx context.Context
 			parent.FullName != parent.Name || item.FullName != parent.Name+"."+item.Name ||
 			(item.ItemType == "table" && commonjson.String(item.Attributes, "storage", "schema_name") != parent.Name) {
 			facts.BasisState = authorizationfacts.AuthorizationBasisNeedsRefresh
-			return projectMetadataAuthorizationFacts(tx, item, facts)
+			return projectMetadataAuthorizationFacts(lookup, item, facts)
 		}
 		target := plugin.TabularItemPath(item.EngineID, parent.NodeType, parent.Name, item.Name)
 		if item.ItemType == "collection" {
@@ -86,7 +86,7 @@ func (s *MetadataQueryService) GetDataItemAuthorizationFacts(ctx context.Context
 		}
 		facts.BoundaryHash, facts.BasisState = &hash, authorizationfacts.AuthorizationBasisComplete
 		return facts.Validate()
-	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	}()
 	if err != nil {
 		return nil, err
 	}

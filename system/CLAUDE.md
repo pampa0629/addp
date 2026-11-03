@@ -589,3 +589,5 @@ ES Hosted T4 的 System-owned `cmd/online-test-fixture --suite elasticsearch-con
 平台引擎部署的标准单容器目录包含PostgreSQL／Redis／MinIO；复用原管理员确认、来源唯一性、CAS、审计和有效主机关联。迁移000261／000262只扩展类型／清单约束，不变更权限、角色或声明历史。唯一受管发现v2文件分别提供postgresql_metrics／redis_metrics／minio_metrics私有来源；同一解析内核核对当前数据库容器ID、启动时刻和来源键，只向既有Monitor身份投影，浏览器排除专业端点。来源缺失／过期／错配不改变已确认部署。列表可按engine_type=postgresql|redis|minio在计数和分页前精确筛选；Monitor专业查询按System当前User裁决的真实类型选择PG／Redis／MinIO固定目录，不能跨类型代用；本地专项与正式身份全链路验收分别记录。MinIO已接同一发现、确认、绑定及HTTP SD，17项专业查询及分组指标页已由Monitor实现，管理列表复用现有监控跳转；真实来源页面及正式身份全链路独立验收。正式约束见平台运行观测规范4.4—4.5及各引擎节。
 
 2026-11-03 跨引擎精确 DataItem 元数据授权复用同一源 Grant 表和当前 User 裁决。迁移 000267 增加互斥的 `metadata_target` JSONB，只允许独立 `metadata_read`；Common 内容绑定、执行授权与 `read` 签发拒绝该表示。Meta 完整持久父链及已声明引擎目录模型共同证明目标；不读取源内容，不扩大 Catalog 业务办理或非 PG 节点范围。新增授权页面沿共享身份树与事实观察，元数据专用目标禁止选择内容读取；列表、当前规则与撤销共用同一来源链。
+
+元数据可见性批次在一次请求内仅复用同一引擎已登记目录模型的技术读取，每个 typed target 仍独立证明并进入当前源规则观察；不跨请求保留模型、绑定或许可，下一请求重读当前引擎事实。

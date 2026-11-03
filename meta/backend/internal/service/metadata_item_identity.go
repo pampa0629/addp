@@ -18,7 +18,7 @@ var errMetadataItemIdentity = errors.New("incomplete metadata item identity")
 
 // metadataItemTarget consumes a complete, tenant-bound persisted parent chain.
 // No flattened name, caller locator or source enumeration supplies identity.
-func metadataItemTarget(db *gorm.DB, item models.MetaItem) (plugin.EngineCatalogPath, error) {
+func metadataItemTarget(lookup metadataNodeLookup, item models.MetaItem) (plugin.EngineCatalogPath, error) {
 	invalid := errMetadataItemIdentity
 	if item.ID == 0 || item.EngineID == 0 || item.TenantID == 0 || item.Name == "" {
 		return plugin.EngineCatalogPath{}, invalid
@@ -31,8 +31,8 @@ func metadataItemTarget(db *gorm.DB, item models.MetaItem) (plugin.EngineCatalog
 			return plugin.EngineCatalogPath{}, invalid
 		}
 		seen[id] = true
-		var n models.MetaNode
-		if err := db.Select("id", "tenant_id", "engine_id", "parent_node_id", "name", "node_type", "full_name").Where("tenant_id=? AND engine_id=? AND id=? AND deleted_at IS NULL", item.TenantID, item.EngineID, id).First(&n).Error; err != nil {
+		n, err := lookup(item.TenantID, item.EngineID, id)
+		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return plugin.EngineCatalogPath{}, invalid
 			}
@@ -99,8 +99,8 @@ func metadataItemTarget(db *gorm.DB, item models.MetaItem) (plugin.EngineCatalog
 	return p, nil
 }
 
-func projectMetadataAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *authorizationfacts.AuthorizationFacts) error {
-	target, err := metadataItemTarget(tx, item)
+func projectMetadataAuthorizationFacts(lookup metadataNodeLookup, item models.MetaItem, facts *authorizationfacts.AuthorizationFacts) error {
+	target, err := metadataItemTarget(lookup, item)
 	if err != nil {
 		if errors.Is(err, errMetadataItemIdentity) {
 			return facts.Validate()

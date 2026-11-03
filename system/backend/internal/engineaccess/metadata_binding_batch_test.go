@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"github.com/addp/common/engine/plugin"
+	"gorm.io/gorm"
 )
 
 type metadataBatchReaderFunc func(context.Context, uint, []string) (*authorizationfacts.AuthorizationFactsBatch, error)
@@ -134,5 +135,52 @@ func TestMetadataVisibilityUsesBoundedFactQueriesAndNoPartialFailure(t *testing.
 				t.Fatalf("failure returned partial facts: calls=%d err=%v", calls, err)
 			}
 		})
+	}
+}
+
+func TestMetadataBindingReadsEngineModelOncePerRequestWithoutCachingPermit(t *testing.T) {
+	db := productionBindingDB(t)
+	reads := 0
+	if err := db.Callback().Query().After("gorm:query").Register("test:count-engine-model", func(tx *gorm.DB) {
+		if tx.Statement.Table == "system.engines" || tx.Statement.Table == "engines" {
+			reads++
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Callback().Query().Remove("test:count-engine-model")
+	paths := make([]plugin.EngineCatalogPath, 200)
+	facts := map[string]authorizationfacts.AuthorizationFacts{}
+	for i := range paths {
+		paths[i] = plugin.TabularItemPath(2, "schema", "public", fmt.Sprint(i))
+		f := factstest.Single(paths[i])
+		facts[f.ItemFingerprint] = f
+	}
+	svc := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(metadataBatchReaderFunc(func(ctx context.Context, tenant uint, fps []string) (*authorizationfacts.AuthorizationFactsBatch, error) {
+		batch := &authorizationfacts.AuthorizationFactsBatch{}
+		for _, fp := range fps {
+			f := facts[fp]
+			batch.Data = append(batch.Data, authorizationfacts.AuthorizationFactsResult{ItemFingerprint: fp, Facts: &f})
+		}
+		return batch, nil
+	}))
+	bindings, err := svc.resolveMetadataBindings(t.Context(), 7, paths)
+	if err != nil || len(bindings) != 200 {
+		t.Fatal(err)
+	}
+	for _, b := range bindings {
+		if b.ItemFingerprint == "" {
+			t.Fatal("lost proven target")
+		}
+	}
+	if reads != 1 {
+		t.Fatalf("engine model queried %d times for one request", reads)
+	}
+	if err := db.Table("system.engines").Where("tenant_id=7 AND id=2").Update("engine_type", "nfs").Error; err != nil {
+		t.Fatal(err)
+	}
+	bindings, err = svc.resolveMetadataBindings(t.Context(), 7, paths[:1])
+	if err != nil || len(bindings) != 1 || bindings[0].ItemFingerprint != "" || reads != 2 {
+		t.Fatal("a previous request's engine model or proof survived", err, reads)
 	}
 }

@@ -49,6 +49,7 @@ func (s *Service) resolveMetadataBindings(ctx context.Context, tenant int64, pat
 			factsByKey[entry.ItemFingerprint] = entry.Facts
 		}
 	}
+	catalogModels := map[uint]plugin.EngineCatalogModelSpec{}
 	for index, target := range paths {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -61,15 +62,20 @@ func (s *Service) resolveMetadataBindings(ctx context.Context, tenant int64, pat
 		if err != nil {
 			continue
 		}
-		engine, err := s.repository.engine(ctx, tenant, int64(target.EngineID), false)
-		if err != nil {
-			return nil, err
-		}
-		// Every representation must match the actual registered catalog model.
-		// Metadata admission never depends on a content reader or source IO.
-		model, err := dbbridge.EngineCatalogModel(engine.EngineType)
-		if err != nil {
-			continue
+		// The registered model is a technical fact shared only within this
+		// request. Every target still proves its own exact typed identity;
+		// current source rules are observed separately after these bindings.
+		model, ok := catalogModels[target.EngineID]
+		if !ok {
+			engine, err := s.repository.engine(ctx, tenant, int64(target.EngineID), false)
+			if err != nil {
+				return nil, err
+			}
+			model, err = dbbridge.EngineCatalogModel(engine.EngineType)
+			if err != nil {
+				continue
+			}
+			catalogModels[target.EngineID] = model
 		}
 		names := make([]string, 0, len(target.Segments)-1)
 		for _, segment := range target.Segments[1:] {

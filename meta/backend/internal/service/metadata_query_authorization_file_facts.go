@@ -30,7 +30,7 @@ type fileAuthorizationRef struct {
 
 // This projection consumes committed facts only. Source reads and current
 // permissions belong to the execution owner and System, respectively.
-func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *authorizationfacts.AuthorizationFacts) error {
+func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaItem, facts *authorizationfacts.AuthorizationFacts) error {
 	finish := func(state authorizationfacts.AuthorizationBasisState) error {
 		facts.BasisState = state
 		return facts.Validate()
@@ -42,7 +42,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
 	if layout == "whole" {
-		return projectWholeContainerAuthorizationFacts(tx, item, facts)
+		return projectWholeContainerAuthorizationFacts(lookup, item, facts)
 	}
 	identity := authorizationfacts.FileCompositionBoundary{Format: format}
 	if layout != identity.Layout() || dataType != identity.DataType() || identity.DataType() == "" {
@@ -60,7 +60,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 		(format != "envi" && strings.ToLower(path.Ext(item.FullName)) != "."+format) || commonjson.String(item.Attributes, "storage", "physical_path") != item.FullName {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 	}
-	state, err := validateFileAuthorizationParents(tx, item)
+	state, err := validateFileAuthorizationParents(lookup, item)
 	if err != nil {
 		return err
 	}
@@ -218,7 +218,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	return finish(authorizationfacts.AuthorizationBasisComplete)
 }
 
-func validateFileAuthorizationParents(tx *gorm.DB, item models.MetaItem) (authorizationfacts.AuthorizationBasisState, error) {
+func validateFileAuthorizationParents(lookup metadataNodeLookup, item models.MetaItem) (authorizationfacts.AuthorizationBasisState, error) {
 	parts := strings.Split(item.FullName, "/")
 	if len(parts) > 64 {
 		return authorizationfacts.AuthorizationBasisNeedsRefresh, nil
@@ -229,8 +229,7 @@ func validateFileAuthorizationParents(tx *gorm.DB, item models.MetaItem) (author
 		rootTerm = plugin.EngineCatalogTermService
 	}
 	for i := len(parts) - 2; i >= -1; i-- {
-		var node models.MetaNode
-		err := tx.Where("tenant_id = ? AND engine_id = ? AND id = ? AND deleted_at IS NULL", item.TenantID, item.EngineID, id).First(&node).Error
+		node, err := lookup(item.TenantID, item.EngineID, id)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return authorizationfacts.AuthorizationBasisIncomplete, nil
 		}

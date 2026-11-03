@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func projectWholeContainerAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *authorizationfacts.AuthorizationFacts) error {
+func projectWholeContainerAuthorizationFacts(lookup metadataNodeLookup, item models.MetaItem, facts *authorizationfacts.AuthorizationFacts) error {
 	finish := func(state authorizationfacts.AuthorizationBasisState) error {
 		facts.BasisState = state
 		return facts.Validate()
@@ -35,8 +35,7 @@ func projectWholeContainerAuthorizationFacts(tx *gorm.DB, item models.MetaItem, 
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 	}
 	// Whole items belong to their scope node, not to the directory's parent.
-	var node models.MetaNode
-	err := tx.Where("tenant_id = ? AND engine_id = ? AND id = ? AND deleted_at IS NULL", item.TenantID, item.EngineID, item.NodeID).First(&node).Error
+	node, err := lookup(item.TenantID, item.EngineID, item.NodeID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
@@ -48,7 +47,7 @@ func projectWholeContainerAuthorizationFacts(tx *gorm.DB, item models.MetaItem, 
 	}
 	parentItem := item
 	parentItem.NodeID = *node.ParentNodeID
-	state, err := validateFileAuthorizationParents(tx, parentItem)
+	state, err := validateFileAuthorizationParents(lookup, parentItem)
 	if err != nil {
 		return err
 	}
