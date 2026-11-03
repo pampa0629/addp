@@ -441,7 +441,15 @@ T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与
 
 修复提交 `54e47bbdb4575870832f75ca3d69adcf082ca78b` 保留编辑任务已有扫描开关和批大小字段归属，行为约定见[前端公开路由](#前端公开路由)。原源码九项反例失败、修复后九项通过；本地 `make test-transfer-frontend` 的 130 项单元、69 项浏览器和构建，以及前端 CI 登记 27 项／21 个前端通过。受控回归使用正式编辑路由 GET、`loadFromTask` 和 Meta 回填，仅跳转向导步骤后由 UI 修改批大小，经正式确认调用一次 PUT；完整载荷核对 MQL、16 项 JSON 映射、disabled／schedule／扫描开关等不变，且无启动、审批或扫描请求，不是直接 API 保存。
 
-同一源码的 push attempt 1 [Transfer frontend Job 125935242969](https://github.com/pampa0629/addp/actions/runs/41641312473/job/125935242969) 已实际选中并执行 `make test-transfer-frontend`：130 项单元（130 通过、零失败）、单 Worker 的 69 项浏览器及构建 6.64 秒全部通过，结束于北京时间 2026-11-03 23:25:30。补录核对官方 Job／Run 身份和原始日志，88335 字节日志 SHA-256 为 `228583df008110f506c0372801ec37bb354df6f13267fb8b296e9047a3e7590a`；证据位于 `/tmp/addp-transfer-edit-fidelity-20261103/`，`evidence.json`／`ci-frontend.log`／`sha256.json` 保存结果及摘要，原排队观察保留在 `evidence-queued-checkpoint.json`，不改写旧时间点事实。本次只补证据与文档，没有重跑、另派或操作真实 Task55、审批、执行、扫描及开发服务；不以该定向 T1／受控 T3 结果认定父 Platform 整轮或 Task55 真实配置漂移验收通过，后者仍由原 Meta／Ontology owner 沿既有授权和重启前置跟进。
+同一源码的 push attempt 1 [Transfer frontend Job 125935242969](https://github.com/pampa0629/addp/actions/runs/41641312473/job/125935242969) 已实际选中并执行 `make test-transfer-frontend`：130 项单元（130 通过、零失败）、单 Worker 的 69 项浏览器及构建 6.64 秒全部通过，结束于北京时间 2026-11-03 23:25:30。补录核对官方 Job／Run 身份和原始日志，88335 字节日志 SHA-256 为 `228583df008110f506c0372801ec37bb354df6f13267fb8b296e9047a3e7590a`；证据位于 `/tmp/addp-transfer-edit-fidelity-20261103/`，`evidence.json`／`ci-frontend.log`／`sha256.json` 保存结果及摘要，原排队观察保留在 `evidence-queued-checkpoint.json`，不改写旧时间点事实。本次只补证据与文档，没有重跑、另派或操作真实 Task55、审批、执行、扫描及开发服务；不以该定向 T1／受控 T3 结果认定父 Platform 整轮或 Task55 真实配置漂移验收通过，后续 Task55 本机现场结果单列如下，不回写本次定向 CI 的原范围。
+
+##### Task55 后续本机现场验收（2026-11-04）
+
+**旧审批拒绝**：Session `58` 的审批绑定批大小 1000；Task `55` 经正式编辑仅将 `batch_size` 改为 500，其余完整可写配置不变。保留的原响应为 HTTP 409／`approval_request_mismatch`，独立 PostgreSQL 快照确认旧审批仍为 pending、未获批未消费，该轮零新增 execution。两个观察 tab 共记录四个 409，其中三份原始响应正文已保存，一份正文缺失；不能据请求数认定点击次数或自动重试。更早 Session `56` 缺原始 decision body，不追认通过。负向回执 `/tmp/addp-task55-round2-final-receipt-20261104.json` 的 SHA-256 为 `301ba1dc8227967565d093230c9ffb4e9e5562a72bb7c3d26155f4c612f7c85f`，所列 22 份原件逐项核验一致。
+
+**当前配置的新审批执行**：原 owner 在用户另行授权下完成 Session `59` 的新审批；审批仅消费一次，唯一新增 execution `dcc73e0c-2486-45ef-9712-e1f81d5b4295` 为 success，读写各 2188 条。执行事件为四批 500 加尾批 188，Agent 的正式 `transfer.execution.get` 报告与独立 PostgreSQL 结果一致。正向回执 `/tmp/addp-task55-normal-final-receipt-20261104.json` 的 SHA-256 为 `906fc41bf5a6b89cf2c8e8d89e9a5b7be2619a031a2b6c4654f088753c5e9f38`，所列 12 份原件逐项核验一致。收尾 Task 保持批大小 500、原完整可写配置不变，idle／stopped／disabled、`auto_scan_metadata=false`、无调度；任务、写入数据和本次成功执行保留，不宣称业务零残留。
+
+**验收边界**：两轮本机运行事实与前述修复源码的定向 CI 分开认定，不据重复的 409 请求推定自动重试；本次文档补录没有修改权限或代码，也没有再执行审批、启动、扫描、重启、自动重试或 CI。正向任务页 reload 的资源事件缓冲截断保留为缺口，后续执行详情事件完整；不宣称逐行逐字段数据等价、Hosted、同 SHA 全链路或平台全绿。上述回执位于本机临时目录，不代表持久归档、GitHub Artifact 或跨主机备份。
 
 ## 相关文档
 
