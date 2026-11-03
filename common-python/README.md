@@ -176,7 +176,7 @@ pg.tables(schema=schema_name)
 table = pg.table(schema=schema_name, name=table_name)
 ```
 
-`engines.client()` 按精确 `engine_type` 返回已注册的原生只读门面，类型以[客户端注册表](addp_common/notebook/engines.py)为准，并校验当前描述符的目录模型与能力；未知类型明确拒绝，不提供通用 fallback。也可以从 `pg.schemas()` 返回的 Schema 对象继续调用 `tables()` 或 `table(name)`；SDK 只缓存服务端返回的 root／branch 规范路径，不缓存 children、失败或数据内容。
+`engines.client()` 按精确 `engine_type` 返回已注册的原生只读门面，类型以[客户端注册表](addp_common/notebook/engines.py)为准，并校验当前描述符的目录模型与能力；未知类型明确拒绝，不提供通用 fallback。也可以从 `pg.schemas()` 返回的 Schema 对象继续调用 `tables()` 或 `table(name)`。目录的路径缓存、当次授权复核和调用期限统一见[目录新鲜度与调用期限](../docs/concepts/addp引擎体系图.md#目录新鲜度与调用期限)；`engines.client(..., timeout=...)` 的目录方法预算，与下文 `pg.sql(..., timeout=...)` 的单次查询时限分别设置。
 
 ### 读取与空间转换
 

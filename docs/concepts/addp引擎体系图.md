@@ -316,12 +316,12 @@ Facade 按精确 `engine_type` 选择显式注册的原生客户端，并用 Run
 
 列表方法返回可继续导航的原生资源对象，而不是无结构 `dict`；对象公开 `name` 和所属原生父级，内部保留服务端返回的规范 `EngineCatalogPath`。`table()` 等单对象方法也必须通过实时列举结果解析并保存服务端路径，不能根据 schema、database、bucket 或名称自行拼接路径。名称不存在时返回明确错误，不能生成一个未经引擎确认的对象。
 
-延迟和新鲜度规则：
+#### 目录新鲜度与调用期限
 
-- Notebook Interactive Session 创建时只签发一次 Notebook Session Authorization；每个 Facade 方法不得重新签发授权。
+- Session 的签发、期限与撤销统一见[会话授权规范 5.3](../spec/addp授权上下文规范.md#53-notebook-会话授权)；每个 Facade 方法不得重新签发授权。
 - Develop 到 System 的一次 Engine Catalog 请求必须同时完成授权校验和 `ListChildren`，不能先调用授权检查 API 再发第二次 Engine Catalog 请求。
 - SDK 默认使用单一端到端 deadline，并把取消向 Develop、System 和 Provider 传播；多层调用不能在每一层重新开始完整超时。
-- SDK 可以在当前 Python Engine Client 内缓存服务端已经返回的 root 和 branch `EngineCatalogPath`，减少 `tables(schema=...)` 等后续导航的重复列举；不得缓存 children 列表、EngineCatalogFacts 或失败响应。
+- SDK 可以在当前 Python Engine Client 内缓存服务端已经返回的 root 和 branch `EngineCatalogPath`，减少 `tables(schema=...)` 等后续导航的重复列举；不得缓存 children 列表、EngineCatalogFacts、数据内容或失败响应。路径缓存命中不代表当前获权，目录请求仍须当次核验。
 - 首次按名称直接访问尚未缓存的父级时，SDK 通过逐层 `ListChildren` 找到规范路径。第一阶段不为减少一次往返新增 Engine Catalog resolve API；先以真实 E2E 延迟度量决定是否需要扩展唯一 Engine Catalog 契约。
 
 #### 读取契约与授权
