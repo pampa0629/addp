@@ -55,17 +55,112 @@ def read_exact_record_authorization_facts(authorizer, path):
     return facts
 
 
-def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, item_term="table"):
-    """Prepare precise reads with separate Users and the formal System command."""
+def source_grant_participants(authorizer, consumer, tenant_id):
+    """Verify separate tenant Users; preparation confers no consumer authority."""
+    if type(tenant_id) is not int or tenant_id <= 1:
+        raise RegistrationError('source Grant preparation requires a disposable nondefault Tenant')
     def identity(client):
         context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
         if not isinstance(context, dict):
             raise RegistrationError('source Grant preparation requires a current User AuthContext')
         principal, scope = context.get('principal', {}), context.get('context', {})
+        principal_id = principal.get('id')
         if (principal.get('type') != 'user' or scope.get('type') != 'tenant'
-            or scope.get('tenant_id') != str(tenant_id) or not principal.get('id')):
+            or scope.get('tenant_id') != str(tenant_id) or not isinstance(principal_id, str)
+            or not re.fullmatch('[1-9][0-9]*', principal_id)):
             raise RegistrationError('source Grant preparation requires current Users in the disposable Tenant')
-        return context, str(principal['id'])
+        return context, principal_id
+    current, initializer_id = identity(authorizer)
+    _, recipient_id = identity(consumer)
+    roles = current.get('authorization', {}).get('role_assignments', [])
+    permissions = {permission for role in roles for permission in role.get('permissions', [])}
+    if (initializer_id == recipient_id or permissions != SOURCE_INITIALIZER_PERMISSIONS
+        or not any(role.get('role_key') == SOURCE_INITIALIZER_ROLE for role in roles)):
+        raise RegistrationError('source initializer must be separate and have the exact formal engine authorization administrator permissions')
+    return initializer_id, recipient_id
+
+
+class ExactFileMetadataGrants:
+    """Existing metadata-only Grant contract; never a content completeness proof."""
+    def __init__(self, authorizer, consumer, tenant_id):
+        self.operator, self.recipient = source_grant_participants(authorizer, consumer, tenant_id)
+        self.authorizer, self.consumer = authorizer, consumer
+        self.pending = []
+
+    @staticmethod
+    def target(engine, full_name, storage):
+        parts = full_name.split('/') if isinstance(full_name, str) else []
+        if (type(engine) is not int or engine <= 0 or storage not in {'nfs', 'minio'} or not parts
+            or len(parts) > 63 or any(not p or p in {'.', '..'} or any(c in p for c in '\\:\x00') for p in parts)
+            or (storage == 'minio' and len(parts) < 2)):
+            raise RegistrationError('metadata Grant requires an exact file or object target')
+        if storage == 'minio':
+            segments = [dict(term='service', kind='service', name=''), dict(term='bucket', kind='bucket', name=parts[0])]
+            segments += [dict(term='prefix', kind='prefix', name=p) for p in parts[1:-1]]
+            segments += [dict(term='object', kind='object', name=parts[-1])]
+        else:
+            segments = [dict(term='root', kind='root', name='')]
+            segments += [dict(term='directory', kind='directory', name=p) for p in parts[:-1]]
+            segments += [dict(term='file', kind='file', name=parts[-1])]
+        return dict(version='catalog.path/v1', engine_id=engine, segments=segments)
+
+    def observe(self, target, visible):
+        result = self.consumer.request('POST', '/api/v1/system/engine-access/metadata-checks/meta-query',
+                                       (200,), {'targets': [target]}).payload
+        if (not isinstance(result, dict) or not result.get('observed_at')
+            or result.get('targets') != [dict(target=target, visible=visible)]):
+            raise RegistrationError('metadata visibility does not match the current precise Grant')
+
+    def grant(self, engine, full_name, storage, *, data_type, format_name, layout):
+        target = self.target(engine, full_name, storage)
+        fingerprint = hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
+        facts = self.authorizer.request('GET', f'/api/v1/system/engines/{engine}/data-items/{fingerprint}/authorization-facts', (200,)).payload
+        metadata = facts.get('boundary', {}).get('metadata_target', {}) if isinstance(facts, dict) else {}
+        expected_metadata = dict(target=target, layout=layout, data_type=data_type, format=format_name,
+                                 composition_digest=metadata.get('composition_digest'))
+        if (not isinstance(facts, dict) or any(facts.get(k) != v for k,v in {
+            'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': str(engine),
+            'item_fingerprint': fingerprint, 'item_type': target['segments'][-1]['term'], 'full_name': full_name,
+            'basis_state': 'complete', 'boundary': dict(layout=layout, metadata_target=expected_metadata)}.items())
+            or not re.fullmatch('[0-9a-f]{64}', str(metadata.get('composition_digest', '')))
+            or not re.fullmatch('[0-9a-f]{64}', str(facts.get('boundary_hash', ''))) or not facts.get('observed_at')):
+            raise RegistrationError('metadata Grant requires complete matching System metadata-only facts')
+        self.observe(target, False)
+        command = str(uuid.uuid4())
+        body = dict(request_id=command, catalog_path=target, item_fingerprint=fingerprint,
+                    expected_boundary_hash=facts['boundary_hash'], recipient_type='user', recipient_id=self.recipient,
+                    action='metadata_read', expiry_mode='until_revoked', reason='Disposable Online exact structural metadata acceptance')
+        pending = dict(engine=engine, request_id=command, target=target, confirmed=False)
+        self.pending.append(pending)  # Unknown write outcomes must also be cleaned.
+        receipt = self.authorizer.request('POST', f'/api/v1/system/engines/{engine}/access_grants', (201,), body).payload
+        expected = {k:body[k] for k in ('request_id','catalog_path','item_fingerprint','recipient_type','recipient_id','action','expiry_mode')}
+        expected.update(engine_id=str(engine), boundary_hash=facts['boundary_hash'], metadata_target=metadata,
+                        approval_mode='independent', operator_principal_id=self.operator, revocation=None, expires_at=None)
+        if (not isinstance(receipt, dict) or any(receipt.get(k) != v for k,v in expected.items())
+            or receipt.get('file_composition') or receipt.get('native_target') or receipt.get('scope')
+            or receipt.get('node_recursive') is not None):
+            raise RegistrationError('metadata Grant receipt changed its precise metadata-only boundary')
+        pending['confirmed'] = True
+        self.observe(target, True)
+        return receipt
+
+    def cleanup(self):
+        errors = []
+        for row in list(self.pending):
+            try:
+                self.authorizer.request('POST', f"/api/v1/system/engines/{row['engine']}/access_grants/{row['request_id']}/revoke",
+                    (200,) if row['confirmed'] else (200,404), {'reason':'Disposable Online metadata cleanup'})
+                self.observe(row['target'], False)
+                self.pending.remove(row)
+            except Exception:
+                errors.append(row['request_id'])
+        if errors:
+            raise RegistrationError('owned metadata Grant cleanup or withdrawal observation failed')
+        return {'grants_revoked': True, 'metadata_hidden': True}
+
+
+def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, item_term="table"):
+    """Prepare precise reads with separate Users and the formal System command."""
     if not isinstance(tenant_id, int) or tenant_id <= 1 or not targets or len(targets) > 200:
         raise RegistrationError('source Grant preparation requires a nondefault Tenant and exact record datasets')
     if item_term not in ("table", "collection"):
@@ -74,14 +169,7 @@ def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets
         if (not isinstance(engine_id, int) or engine_id <= 0 or namespace_term not in (('database',) if item_term == 'collection' else ('schema', 'database'))
             or not isinstance(namespace, str) or not namespace or not isinstance(table, str) or not table):
             raise RegistrationError('source Grant preparation requires an exact ordinary record target')
-    current, initializer_id = identity(authorizer)
-    _, recipient_id = identity(consumer)
-    permissions = {permission for role in current.get('authorization', {}).get('role_assignments', [])
-                   for permission in role.get('permissions', [])}
-    roles = current.get('authorization', {}).get('role_assignments', [])
-    if (initializer_id == recipient_id or permissions != SOURCE_INITIALIZER_PERMISSIONS
-        or not any(role.get('role_key') == SOURCE_INITIALIZER_ROLE for role in roles)):
-        raise RegistrationError('source initializer must be separate and have the exact formal engine authorization administrator permissions')
+    _, recipient_id = source_grant_participants(authorizer, consumer, tenant_id)
     receipts = []
     for engine_id, namespace_term, namespace, table in targets:
         body = {

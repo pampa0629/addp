@@ -1642,7 +1642,7 @@ test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物�
 	@node --check --input-type=module < console/frontend/e2e/online/manager-orc.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-netcdf.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-grib.spec.js
-	@python3 -m unittest scripts/test/manager-netcdf-online_test.py scripts/test/manager-grib-online_test.py scripts/test/manager-envi-online_test.py
+	@python3 -m unittest scripts/test/manager-netcdf-online_test.py scripts/test/manager-grib-online_test.py scripts/test/manager-envi-online_test.py scripts/test/online-engine-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@python3 -m unittest scripts/test/manager-filegdb-online_test.py
 	@python3 -m unittest scripts/test/manager-orc-online_test.py

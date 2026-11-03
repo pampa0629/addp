@@ -74,6 +74,98 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         authorizer.request.side_effect, consumer.request.side_effect = prepare, read
         return current, authorizer, consumer
 
+    def metadata_clients(self):
+        current, issuer, consumer = self.grant_clients()
+        target = REGISTRATION.ExactFileMetadataGrants.target(14, 'grib/weather.grb2', 'nfs')
+        fingerprint = hashlib.sha256(b'14:grib/weather.grb2').hexdigest()
+        metadata = dict(target=target, layout='single', data_type='container', format='grib', composition_digest='b'*64)
+        facts = dict(schema_version='meta.data_item_authorization_facts/v1', engine_id='14', item_fingerprint=fingerprint,
+            item_type='file', full_name='grib/weather.grb2', basis_state='complete', boundary_hash='a'*64,
+            observed_at='2026-11-03T00:00:00Z', boundary=dict(layout='single',metadata_target=metadata))
+        issuer_identity, consumer_identity = issuer.request.side_effect, consumer.request.side_effect
+        state = dict(visible=False, events=[])
+        def authorize(method, path, expected, body=None):
+            if path.endswith('/auth/context'):return issuer_identity(method,path,expected,body)
+            state['events'].append((method,path,body))
+            if path.endswith('/authorization-facts'):return SimpleNamespace(payload=facts)
+            if path.endswith('/revoke'):
+                state['visible']=False
+                return SimpleNamespace(payload={})
+            self.assertEqual((method,expected),('POST',(201,)))
+            self.assertEqual(body['action'],'metadata_read')
+            self.assertEqual(body['catalog_path'],target)
+            self.assertFalse(state['visible'])
+            state['visible']=True
+            return SimpleNamespace(payload=dict(body,engine_id='14',boundary_hash='a'*64,metadata_target=metadata,
+                approval_mode='independent',operator_principal_id='8',revocation=None,expires_at=None))
+        def observe(method,path,expected,body=None):
+            if path.endswith('/auth/context'):return consumer_identity(method,path,expected,body)
+            self.assertEqual((method,path,expected),('POST','/api/v1/system/engine-access/metadata-checks/meta-query',(200,)))
+            self.assertEqual(body,dict(targets=[target]))
+            state['events'].append(('observe',state['visible'],None))
+            return SimpleNamespace(payload=dict(observed_at='2026-11-03T00:00:00Z',targets=[dict(target=target,visible=state['visible'])]))
+        issuer.request.side_effect, consumer.request.side_effect = authorize, observe
+        return issuer,consumer,facts,state
+
+    def test_metadata_grant_exact_facts_hidden_visible_then_revoked(self):
+        issuer,consumer,_,state=self.metadata_clients()
+        grants=REGISTRATION.ExactFileMetadataGrants(issuer,consumer,2)
+        receipt=grants.grant(14,'grib/weather.grb2','nfs',data_type='container',format_name='grib',layout='single')
+        self.assertEqual(receipt['action'],'metadata_read')
+        self.assertEqual([e[1] for e in state['events'] if e[0]=='observe'],[False,True])
+        self.assertEqual(grants.cleanup(),dict(grants_revoked=True,metadata_hidden=True))
+        self.assertFalse(state['visible']);self.assertFalse(grants.pending)
+        self.assertEqual([e[1] for e in state['events'] if e[0]=='observe'],[False,True,False])
+        self.assertFalse(any('/manager/' in e[1] for e in state['events'] if e[0] in {'GET','POST'}))
+
+    def test_metadata_grant_rejects_untrusted_or_content_boundary_before_write(self):
+        for mutation in ('fingerprint','identity','composition','content','missing','scope'):
+            with self.subTest(mutation=mutation):
+                issuer,consumer,facts,state=self.metadata_clients()
+                if mutation=='fingerprint':facts['item_fingerprint']='c'*64
+                elif mutation=='identity':facts['boundary']['metadata_target']['format']='netcdf'
+                elif mutation=='composition':facts['boundary']['metadata_target']['composition_digest']='invalid'
+                elif mutation=='content':facts['boundary']['file_composition']={'format':'grib'}
+                elif mutation=='missing':facts['basis_state']='incomplete'
+                else:facts['boundary']['metadata_target']['target']['segments'].pop()
+                grants=REGISTRATION.ExactFileMetadataGrants(issuer,consumer,2)
+                with self.assertRaises(REGISTRATION.RegistrationError):
+                    grants.grant(14,'grib/weather.grb2','nfs',data_type='container',format_name='grib',layout='single')
+                self.assertFalse(grants.pending)
+                self.assertFalse(any(e[0]=='POST' for e in state['events']))
+
+    def test_metadata_grant_unknown_write_outcome_is_revoked(self):
+        issuer,consumer,_,state=self.metadata_clients();original=issuer.request.side_effect
+        def lost(method,path,expected,body=None):
+            result=original(method,path,expected,body)
+            if path.endswith('/access_grants'):raise TimeoutError('lost receipt')
+            return result
+        issuer.request.side_effect=lost
+        grants=REGISTRATION.ExactFileMetadataGrants(issuer,consumer,2)
+        with self.assertRaises(TimeoutError):
+            grants.grant(14,'grib/weather.grb2','nfs',data_type='container',format_name='grib',layout='single')
+        self.assertTrue(state['visible']);self.assertEqual(len(grants.pending),1)
+        grants.cleanup();self.assertFalse(state['visible']);self.assertFalse(grants.pending)
+
+    def test_metadata_grant_receipt_content_escalation_rejected_and_cleaned(self):
+        issuer,consumer,_,state=self.metadata_clients();original=issuer.request.side_effect
+        def escalated(method,path,expected,body=None):
+            result=original(method,path,expected,body)
+            if path.endswith('/access_grants'):result.payload['action']='read'
+            return result
+        issuer.request.side_effect=escalated
+        grants=REGISTRATION.ExactFileMetadataGrants(issuer,consumer,2)
+        with self.assertRaises(REGISTRATION.RegistrationError):
+            grants.grant(14,'grib/weather.grb2','nfs',data_type='container',format_name='grib',layout='single')
+        grants.cleanup();self.assertFalse(state['visible'])
+
+    def test_metadata_grant_exact_object_and_invalid_leaf_paths(self):
+        target=REGISTRATION.ExactFileMetadataGrants.target(12,'bucket/grib/weather.grb2','minio')
+        self.assertEqual([s['term'] for s in target['segments']],['service','bucket','prefix','object'])
+        for name in ('','/grib/a','grib//a','grib/../a','grib/a\\b','grib/a:b'):
+            with self.assertRaises(REGISTRATION.RegistrationError):REGISTRATION.ExactFileMetadataGrants.target(14,name,'nfs')
+        with self.assertRaises(REGISTRATION.RegistrationError):REGISTRATION.ExactFileMetadataGrants.target(12,'bucket','minio')
+
     def test_consumer_metadata_hidden_until_grant_uses_administrator_facts_first(self):
         _, authorizer, consumer = self.grant_clients()
         events = []

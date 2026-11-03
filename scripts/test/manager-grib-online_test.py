@@ -51,6 +51,49 @@ class GRIBOracleTest(unittest.TestCase):
         del observed['viewport_grid_verified']
         with self.assertRaises(ValueError):SCENE.validate_browser_case(case,observed)
 
+    def test_structural_meta_rejects_content_and_derived_statistics(self):
+        detail=dict(attributes=dict(schema_version=1,item=dict(data_type='container',format='grib',layout='single'),
+            type_info=dict(container=dict(children=[dict(name='message-'+str(i),child_kind='array',data_type='media') for i in range(1,4)]))))
+        SCENE.validate_structural_metadata(detail)
+        for path,key,value in [(('attributes',),'format_info',{'grib':{'source_version':'hash'}}),
+            (('attributes','type_info','container','children',0),'native',{'values':[9999]}),
+            (('attributes','type_info','container'),'child_count',3)]:
+            bad=copy.deepcopy(detail);obj=bad
+            for step in path:obj=obj[step]
+            obj[key]=value
+            with self.assertRaises(ValueError):SCENE.validate_structural_metadata(bad)
+
+    def test_grants_precede_consumer_catalog_and_cleanup_survives_business_failure(self):
+        events=[]
+        class Grants:
+            operator='8';recipient='7'
+            def __init__(self,*args):pass
+            def grant(self,engine,name,storage,**identity):
+                events.append(('grant',engine,name,storage,identity));return {'action':'metadata_read'}
+            def cleanup(self):events.append(('revoke',));return dict(grants_revoked=True,metadata_hidden=True)
+        def find(*args):
+            self.assertEqual(events[-1][0],'grant')
+            raise ValueError('consumer catalog failure')
+        def physical(action):
+            events.append((action,))
+            if action=='seed':return {'sources':FIXTURE.sources()}
+            self.assertEqual(action,'delete');return dict(objects_removed=True,files_removed=True)
+        client=mock.Mock();client.request.return_value=types.SimpleNamespace(payload=[])
+        owner=types.SimpleNamespace(GatewayClient=mock.Mock(return_value=client),positive_int=lambda value,label:int(value),
+            validate_user_identity=lambda *args:{'principal_id':'7'},wait_for_meta_scan=mock.Mock(),find_fixture_item=find)
+        with tempfile.TemporaryDirectory() as d:
+            env=dict(ADDP_ONLINE_MANAGER_CASE='native-grib',ADDP_ONLINE_ARTIFACT_DIR=d,ADDP_ONLINE_TEST_RUN_ID='test',
+                GATEWAY_URL='http://local',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',
+                ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
+            with mock.patch.object(SCENE.REGISTRATION,'ExactFileMetadataGrants',Grants):
+                with self.assertRaisesRegex(ValueError,'consumer catalog failure'):
+                    SCENE.run(Path('/repo'),env,owner,physical_runner=physical)
+            import json
+            report=json.loads((Path(d)/'manager-grib.json').read_text())
+            self.assertEqual(report['result'],'failed');self.assertEqual(report['stage'],'metadata_grant')
+            self.assertEqual(report['metadata_authorization']['cleanup'],dict(grants_revoked=True,metadata_hidden=True,details_hidden=0))
+            self.assertEqual(events[-2:],[('revoke',),('delete',)])
+
     def test_non_hosted_guard_never_starts_container(self):
         with mock.patch.object(FIXTURE.subprocess,'run') as run:
             with self.assertRaises(ValueError):FIXTURE.physical('seed',Path('/repository'),{})

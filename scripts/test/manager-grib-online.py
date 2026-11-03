@@ -9,6 +9,7 @@ import time
 from urllib.parse import urlencode
 
 FIXTURE=importlib.import_module('business.scripts.online-grib-fixture')
+REGISTRATION=importlib.import_module('scripts.test.online-engine-registration')
 PERMISSIONS={'manager.content.read','manager.data_item.read','meta.catalog.read','meta.scan_task.execute','meta.scan_task.read','monitor.execution.read'}
 
 def require(value,message):
@@ -36,6 +37,17 @@ def validate_browser_case(case,observed):
         'GRIB real visible grid or original button download incomplete')
 
 
+def validate_structural_metadata(detail):
+    attrs=detail.get('attributes',{})
+    require(set(attrs)=={'schema_version','item','type_info'} and attrs.get('schema_version')==1
+        and attrs.get('item')=={'data_type':'container','format':'grib','layout':'single'},
+        'GRIB Meta must expose only the canonical structural projection')
+    container=attrs.get('type_info',{}).get('container',{})
+    require(set(attrs['type_info'])=={'container'} and set(container)<= {'children','default_child'}
+        and container.get('children')==[dict(name='message-'+str(i),child_kind='array',data_type='media') for i in range(1,4)],
+        'GRIB Meta container must not disclose native content or derived statistics')
+
+
 def read(client,locator,selection,status=200):
     response=client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':locator,'grid_slice':json.dumps(selection,separators=(',',':'))}),(status,)).payload
     return response.get('data',{}).get('object',{}).get('content',{}).get('json') if status==200 else response
@@ -48,6 +60,9 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     client=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30)
     tenant=owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'],'GRIB tenant')
     report['identity']=owner.validate_user_identity(client,tenant,PERMISSIONS)
+    issuer=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30)
+    grants=REGISTRATION.ExactFileMetadataGrants(issuer,client,tenant)
+    report['metadata_authorization']={'operator_principal_id':grants.operator,'recipient_principal_id':grants.recipient,'grants':[]}
     seeded=False;stage='seed'
     try:
         seeded=True;seed=physical('seed');require(seed=={'sources':FIXTURE.sources()},'GRIB source bytes differ from the independent oracle')
@@ -55,15 +70,25 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         for storage,engine,scope,prefix in [('minio',owner.positive_int(environment['ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID'],'MinIO'),'grib',bucket+'/'),('nfs',owner.positive_int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID'],'NFS'),'grib','')]:
             stage='scan';owner.wait_for_meta_scan(client,engine,time.monotonic()+180,scope={'catalog_paths':[prefix+scope]})
             for spec in seed['sources']:
+                stage='metadata_grant'
+                visible=client.request('GET',f'/api/v1/meta/engines/{engine}/items',(200,)).payload
+                require(isinstance(visible,list) and not any(v.get('full_name')==prefix+'grib/'+spec['name'] for v in visible),'GRIB Meta disclosed an unapproved source')
+                receipt=grants.grant(engine,prefix+'grib/'+spec['name'],storage,data_type='container',format_name='grib',layout='single')
+                report['metadata_authorization']['grants'].append(receipt)
                 item=owner.find_fixture_item(client,engine,prefix+'grib/'+spec['name'],'GRIB '+storage)
-                detail=client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload;attrs=detail.get('attributes',{})
+                detail=client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload
+                validate_structural_metadata(detail)
+                locator=owner.build_item_locator(engine,item)
+                native=client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':locator}),(200,)).payload
+                attrs=native.get('data',{}).get('object',{}).get('attributes',{})
+                (artifact/f"grib-{storage}-{spec['case_id']}-metadata.json").write_text(json.dumps({'meta':detail,'manager':native},ensure_ascii=False,indent=2)+'\n')
                 require({k:attrs.get('item',{}).get(k) for k in ('data_type','format','layout')}=={'data_type':'container','format':'grib','layout':'single'},'GRIB canonical identity changed')
                 info=attrs.get('format_info',{}).get('grib',{})
                 require(info.get('source_version')=='sha256:'+spec['sha256'] and info.get('scan_complete') is True and info.get('encoding')=='GRIB2' and info.get('profile')=='grib2_regular_fields/v1','GRIB content version missing')
                 require(not attrs.get('capabilities',{}).get('spatial'),'GRIB parent gained unified spatial extent')
                 children=attrs.get('type_info',{}).get('container',{}).get('children',[])
                 require([v['name'] for v in children]==['message-1','message-2','message-3'],'GRIB message identity or enumeration changed')
-                locator=owner.build_item_locator(engine,item);stage='slice'
+                stage='slice'
                 for field in spec['fields']:
                     selection=dict(variable='message-'+str(field['number']),indices=[],x=0,y=0,width=field['width'],height=field['height'])
                     result=read(client,locator,selection);validate_slice(result,spec,field)
@@ -87,7 +112,8 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         stage='browser';context={'run_id':report['run_id'],'identity':report['identity'],'cases':report['cases']}
         if browser_runner:browser=browser_runner(context)
         else:
-            subprocess.run(['npm','exec','--','playwright','test','e2e/online/manager-grib.spec.js','--config=playwright.online.config.js'],cwd=Path(repository)/'console/frontend',env=dict(environment,ADDP_ONLINE_MANAGER_GRIB_JSON=json.dumps(context)),check=True)
+            browser_environment={k:v for k,v in environment.items() if k not in {'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}}
+            subprocess.run(['npm','exec','--','playwright','test','e2e/online/manager-grib.spec.js','--config=playwright.online.config.js'],cwd=Path(repository)/'console/frontend',env=dict(browser_environment,ADDP_ONLINE_MANAGER_GRIB_JSON=json.dumps(context)),check=True)
             browser=json.loads((artifact/'manager-grib-browser.json').read_text())
         require(browser.get('schema_version')=='addp.manager-grib-browser/v2' and browser.get('result')=='passed' and browser.get('run_id')==report['run_id'] and len(browser.get('cases',[]))==2*len(FIXTURE.sources()),'GRIB browser report incomplete')
         for case,observed in zip(report['cases'],browser['cases']):
@@ -106,9 +132,20 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     except BaseException as error:
         report.update(result='failed',stage=stage,error=type(error).__name__);raise
     finally:
+        cleanup_errors=[]
+        try:
+            report['metadata_authorization']['cleanup']=grants.cleanup()
+            for case in report['cases']:
+                client.request('GET',f"/api/v1/meta/items/{case['item_id']}",(404,))
+            report['metadata_authorization']['cleanup']['details_hidden']=len(report['cases'])
+        except Exception as error:
+            cleanup_errors.append(type(error).__name__+': metadata Grant cleanup failed')
         try:
             if seeded:report['cleanup']=physical('delete')
             require(report['cleanup']=={'objects_removed':True,'files_removed':True},'GRIB physical cleanup incomplete')
-        except BaseException:
-            report['result']='failed';raise
-        finally:(artifact/'manager-grib.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+        except Exception as error:
+            cleanup_errors.append(type(error).__name__+': physical source cleanup failed')
+        if cleanup_errors:
+            report['result']='failed';report['cleanup_errors']=cleanup_errors
+        (artifact/'manager-grib.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+        if cleanup_errors:raise ValueError('; '.join(cleanup_errors))
