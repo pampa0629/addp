@@ -15,7 +15,7 @@ func TestWorkflowInputDiagnosticMatchesCanonicalLanguageContract(t *testing.T) {
 	}
 	pattern := regexp.MustCompile(`\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'`)
 	tuples := pattern.FindAllStringSubmatch(string(source), -1)
-	if len(tuples) != 51 {
+	if len(tuples) != 57 {
 		t.Fatalf("rules=%d", len(tuples))
 	}
 	valid := map[string]bool{}
@@ -24,7 +24,7 @@ func TestWorkflowInputDiagnosticMatchesCanonicalLanguageContract(t *testing.T) {
 		valid[strings.Join([]string{r[1], r[2], r[4], r[3]}, "|")] = true
 		reasons[r[2]] = true
 	}
-	for _, op := range []string{"dissolve", "union", "clip", "difference", "intersection", "batch_buffer", "distance_to", "check_line_proximity", "extract_polygon_rings", "trim_line_endpoints", "extract_line_nodes", "foreign"} {
+	for _, op := range []string{"contains", "intersects", "dissolve", "union", "clip", "difference", "intersection", "batch_buffer", "distance_to", "check_line_proximity", "extract_polygon_rings", "trim_line_endpoints", "extract_line_nodes", "foreign"} {
 		for reason := range reasons {
 			for _, parameter := range []string{"", "input_gdf", "gdf_b", "mask_gdf", "group_fields", "reference_gdf", "distances", "resolution", "tolerance", "max_distance", "private"} {
 				for _, field := range []string{"", "distance", "source_id", "part_no", "ring_no", "ring_id", "is_hole", "node_id", "degree", "source_part_no", "end", "private"} {

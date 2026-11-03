@@ -4,6 +4,8 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 ## 栅格计算
 
+`raster_interpolate_idw`以二维Point、显式数值字段和同CRS模板网格生成连续面：固定幂次2、显式米制半径、等号纳入、全体支持、精确重合取原值；重复XY／非法数值拒绝，无样本为NaN。模板只提供网格与CRS，不读取／继承NoData、mask或alpha，支持有限可逆旋转／矩形／剪切网格；结果单波段Float64，同网格／CRS，沿原COG保存及清理。归“基础计算”，无新权限／依赖；[完整IDW契约](../../../docs/spec/workflow/栅格算子契约.md#点数据idw插值)。
+
 通用算子由 [raster_compute.py](raster_compute.py) 聚合，分类与算子归属见[算子分类](#算子分类)。栅格通过当前 execution 的 `raster` / `raster_tiles` 私有对象在 DAG 中流转；公开资源使用 ResourceLocator，由 Develop 派生访问计划，不能用原始路径或普通 JSON 代替栅格端口。
 
 | 阅读目的 | 正式契约 |
@@ -282,3 +284,8 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 栅格矢量分区统计同一入口新增`method=class_frequency`，默认summary原八项、百分位、外权重与面积模式保持。频数模式显式指定唯一非空`id_field`，按原面行序／类别升序展开原属性和完整面几何，以有效分类数为比例分母，无有效分类保留null诊断行；孔洞、覆盖、重叠独立及原生有效性保持，不与权重／百分位／面积模式混用。
 
 `raster_sample_lines`按显式米制间距沿二维LineString生成里程Point，保留起终点、源编号与全部业务属性，再调用唯一点位取样核心提供cell／bilinear值及outside／nodata状态。要求同一已知线性单位二维投影CRS、有效正长度及显式唯一非空来源ID；不自动投影、修复、插补或截断样本数，源值不转高程单位。两项沿既有GeoPackage保存和严格清理，Native／Linux／Hosted／UI／容量分别记账，独立Hosted另议。
+
+
+## 包含与相交筛选
+
+`contains(input_gdf, gdf_b)` 和 `intersects(input_gdf, gdf_b)` 逐 A 判断与任一 B 的精确关系，仅返回命中的 A 原始行，完整保留几何、属性、类型、索引及行序，不新增或覆盖同名布尔字段，不按匹配数复制 A，不附加 B 属性或要求来源 ID。包含不等于 covers/contains_properly；相交含共点共边。有效有限二维混合几何及空批沿[包含与相交筛选契约](../../../docs/spec/workflow/矢量算子契约.md#包含与相交筛选契约)准入；相同已知二维地理或投影 CRS 均可，地理坐标仍为平面判断，不隐式重投影。空间索引仅选候选，错误接入既有闭合参数诊断。

@@ -135,14 +135,15 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 51)
+  assert.equal(canonical.length, 57)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
     const operator = { node_index: 2, operator_id, ...(parameter ? { parameter } : {}), ...(field ? { field } : {}) }
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
-    assert.equal(result.reason, `common.executionFailure.reasons.${reason}`)
+    const templates = ['contains','intersects'].includes(operator_id) ? 'common.executionFailure.spatialRelation' : 'common.executionFailure'
+    assert.equal(result.reason, `${templates}.reasons.${reason}`)
     assert.ok(result.node)
     assert.equal(result.field, field)
     for (const bad of [
@@ -343,5 +344,34 @@ test('dissolve has four closed bilingual input presentations and no private valu
       assert.equal(got.operator,locale==='zh-cn'?'融合几何':'Dissolve geometry');assert.ok(got.reason&&got.action);assert.doesNotMatch(JSON.stringify(got),/PRIVATE/)
       assert.equal(executionFailurePresentation({diagnostic:{...diagnostic,operator:{...diagnostic.operator,field:'source_id'}}},translate).stage,'')
     }
+  }
+})
+
+
+test('relation filters use precise geographic-or-projected guidance and keep other operators unchanged', () => {
+  for (const locale of ['zh-cn','en']) {
+    const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate=(key,params={})=>key.replace('common.executionFailure.','').split('.').reduce((node,part)=>node[part],messages).replace(/\{(\w+)\}/g,(_,key)=>params[key])
+    for (const operator_id of ['contains','intersects']) {
+      const rules=operatorInputRules.filter(([name])=>name===operator_id)
+      assert.equal(rules.length,3)
+      for (const [,reason,parameter] of rules) {
+        const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,...(parameter?{parameter}:{})}}
+        const got=executionFailurePresentation({diagnostic,message:'PRIVATE GEOS fields'},translate)
+        assert.equal(got.operator,messages.operatorNames[operator_id])
+        assert.equal(got.reason,messages.spatialRelation.reasons[reason])
+        assert.equal(got.action,messages.spatialRelation.actions[reason])
+        assert.doesNotMatch(JSON.stringify(got),/PRIVATE|GEOS|唯一标识|unique.*identifier/)
+        if(reason==='operator_crs_invalid')assert.match(got.reason,locale==='zh-cn'?/地理或投影/:/geographic or projected/)
+        for(const patch of [{field:'contains'},{field:'PRIVATE'},{parameter:'reference_gdf'},{operator_id:'centroid'}]) {
+          const bad={...diagnostic,operator:{...diagnostic.operator,...patch}}
+          assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
+        }
+      }
+    }
+    const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason:'operator_crs_invalid',operator:{node_index:2,operator_id:'intersection'}}
+    const got=executionFailurePresentation({diagnostic},translate)
+    assert.equal(got.reason,messages.reasons.operator_crs_invalid)
+    assert.equal(got.action,messages.actions.operator_crs_invalid)
   }
 })

@@ -328,7 +328,21 @@
       "parameter": "参数或输入",
       "field": "冲突字段",
       "operatorNodeIndex": "定义中的第 {index} 个节点",
+      "spatialRelation": {
+        "reasons": {
+          "operator_input_invalid": "图层 A 的结构或几何不符合空间关系筛选要求。",
+          "operator_reference_invalid": "图层 B 的结构或几何不符合空间关系筛选要求。",
+          "operator_crs_invalid": "两个图层须使用相同的已知二维地理或投影坐标系。"
+        },
+        "actions": {
+          "operator_input_invalid": "检查图层 A 的唯一活动几何列和列名，以及有效、非空、有限二维几何；修正后重新执行。",
+          "operator_reference_invalid": "检查图层 B 的唯一活动几何列和列名，以及有效、非空、有限二维几何；修正后重新执行。",
+          "operator_crs_invalid": "先显式统一双方的二维地理或投影坐标系，再重新执行；不会隐式重投影。"
+        }
+      },
       "operatorNames": {
+        "contains": "包含判断",
+        "intersects": "相交判断",
         "dissolve": "融合几何",
         "union": "联合叠加",
         "clip": "裁剪几何",

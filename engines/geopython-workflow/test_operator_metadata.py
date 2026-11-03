@@ -1094,7 +1094,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "网格处理"), "raster_reproject raster_resample raster_align"),
         (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint"),
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
-        (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity"),
+        (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity raster_interpolate_idw"),
         (("栅格处理", "分类处理"), "raster_reclassify raster_nibble raster_boundary_clean raster_sieve raster_region_group raster_thin"),
         (("栅格处理", "地形分析"), "raster_slope raster_aspect raster_hillshade raster_curvature raster_tpi raster_tri raster_roughness raster_twi raster_spi raster_contour"),
         (("栅格处理", "水流分析"), "raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8"),
@@ -1700,3 +1700,15 @@ def test_vector_dissolve_metadata_has_explicit_groups_and_default_plus_members()
     assert [(p['name'],p['is_default'])for p in spec['output_ports']]==[('result',True),('members',False)]
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']
     assert params['group_fields']['type']=='array' and params['group_fields']['item_type']=='string'
+
+
+@pytest.mark.parametrize('operator',['contains','intersects'])
+def test_relation_filter_metadata_has_single_subset_output_and_no_boolean_field(operator):
+    spec=next(item for item in list_operators() if item['name']==operator)
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert {p['name']for p in spec['parameters']}=={'input_gdf','gdf_b'}
+    assert all(p['required']for p in spec['parameters'])
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='geodataframe'
+    assert '不新增布尔列' in spec['detailed_description']['overview']
+    assert 'GeometryCollection' in spec['detailed_description']['overview']
+    assert any('地理或投影' in note for note in spec['detailed_description']['notes'])

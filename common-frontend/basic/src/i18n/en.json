@@ -328,7 +328,21 @@
       "parameter": "Parameter or input",
       "field": "Conflicting field",
       "operatorNodeIndex": "Node {index} in the workflow definition",
+      "spatialRelation": {
+        "reasons": {
+          "operator_input_invalid": "Layer A has an invalid structure or geometry for spatial relation filtering.",
+          "operator_reference_invalid": "Layer B has an invalid structure or geometry for spatial relation filtering.",
+          "operator_crs_invalid": "Both layers require the same known two-dimensional geographic or projected CRS."
+        },
+        "actions": {
+          "operator_input_invalid": "Check layer A for unique column names, one active geometry column and valid non-empty finite XY geometries, then submit a new execution.",
+          "operator_reference_invalid": "Check layer B for unique column names, one active geometry column and valid non-empty finite XY geometries, then submit a new execution.",
+          "operator_crs_invalid": "Explicitly align both two-dimensional geographic or projected CRSs before submitting a new execution; no implicit reprojection is performed."
+        }
+      },
       "operatorNames": {
+        "contains": "Contains filtering",
+        "intersects": "Intersects filtering",
         "dissolve": "Dissolve geometry",
         "union": "Union overlay",
         "clip": "Clip geometry",

@@ -7506,3 +7506,176 @@ def test_difference_t4_mixed_mask_and_four_refusals_independent_ogr(tmp_path,pro
         if problem!='boolean_type':assert layer.SetFeature(row)==0
         row=layer=ds=None
     with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.DIFFERENCE_CASE)
+
+
+@pytest.mark.parametrize('operator', ['contains', 'intersects'])
+@pytest.mark.parametrize('geom_name', ['shape', 'contains', 'intersects'])
+def test_relation_filter_preserves_every_source_column_index_and_duplicate_row(operator, geom_name):
+    source = gpd.GeoDataFrame({
+        'grade': pd.Series([2**53+1, None, -1], dtype='Int64'),
+        'enabled': pd.Series([True, None, False], dtype='boolean'),
+        **{name: [f'{name}-{i}' for i in range(3)] for name in ('contains', 'intersects') if name != geom_name},
+    }, geometry=[box(0,0,2,2), box(9,9,10,10), box(0,0,2,2)], crs=4326).rename_geometry(geom_name)
+    source['geometry'] = pd.Series(['business-a', None, 'business-c'], dtype='string')
+    source.index = pd.Index(['same', 'away', 'same'], name='source-index')
+    reference = gpd.GeoDataFrame({'grade':[None,None]}, geometry=[Point(1,1),Point(1,1)], crs=4326)
+    before_a, before_b = source.copy(), reference.copy()
+    result = get_operator(operator)(source, reference)
+    assert_geodataframe_equal(result, source.iloc[[0,2]])
+    assert_geodataframe_equal(source, before_a)
+    assert_geodataframe_equal(reference, before_b)
+    assert list(result.columns) == list(source.columns)
+
+
+@pytest.mark.parametrize('a,b,contains_expected,intersects_expected', [
+    (box(0,0,2,2), Point(1,1), True, True),
+    (box(0,0,2,2), Point(0,1), False, True),
+    (box(0,0,2,2), LineString([(0,0),(0,2)]), False, True),
+    (box(0,0,2,2), box(0,0,1,1), True, True),
+    (box(0,0,2,2), box(0,0,2,2), True, True),
+    (box(0,0,2,2), box(2,0,3,1), False, True),
+    (Point(1,1), Point(1,1), True, True),
+    (Point(1,1), LineString([(0,1),(2,1)]), False, True),
+    (Point(1,1), box(0,0,2,2), False, True),
+    (LineString([(0,1),(2,1)]), Point(1,1), True, True),
+    (LineString([(0,1),(2,1)]), Point(0,1), False, True),
+    (LineString([(0,1),(2,1)]), LineString([(1,0),(1,2)]), False, True),
+    (LineString([(0,1),(2,1)]), box(0,0,2,2), False, True),
+    (Polygon([(0,0),(4,0),(4,4),(0,4)], holes=[[(1,1),(3,1),(3,3),(1,3)]]), Point(2,2), False, False),
+    (shapely.MultiPoint([(0,0),(1,1)]), shapely.MultiPoint([(0,0),(1,1)]), True, True),
+    (shapely.GeometryCollection([Point(5,5), box(0,0,2,2)]), Point(5,5), True, True),
+    (box(0,0,2,2), shapely.GeometryCollection([Point(1,1),LineString([(0.5,0.5),(1.5,1.5)])]), True, True),
+    (box(0,0,2,2), Point(2+2**-40,1), False, False),
+])
+def test_relation_filter_exact_topology_not_bbox_or_proper_contains(a,b,contains_expected,intersects_expected):
+    left,right=overlay_inputs([a],[b])
+    for name,expected in [('contains',contains_expected),('intersects',intersects_expected)]:
+        result=get_operator(name)(left,right)
+        assert len(result)==int(expected)
+        assert_geodataframe_equal(result,left if expected else left.iloc[:0])
+
+
+@pytest.mark.parametrize('operator', ['contains','intersects'])
+@pytest.mark.parametrize('side', ['left','right','both'])
+def test_relation_filter_empty_batch_keeps_source_schema(operator,side):
+    left,right=overlay_inputs([box(0,0,2,2)],[Point(1,1)])
+    if side in ('left','both'):left=left.iloc[:0]
+    if side in ('right','both'):right=right.iloc[:0]
+    assert_geodataframe_equal(get_operator(operator)(left,right),left.iloc[:0])
+
+
+def test_relation_filter_contains_matches_any_individual_not_reference_union():
+    left,right=overlay_inputs([box(0,0,2,2)],[Point(1,1),Point(100,100)])
+    assert_geodataframe_equal(get_operator('contains')(left,right),left)
+    assert_geodataframe_equal(get_operator('intersects')(left,right),left)
+
+
+@pytest.mark.parametrize('operator',['contains','intersects'])
+@pytest.mark.parametrize('problem',['missing','empty','invalid','z','m','infinite','duplicate_columns','extra_geometry','unknown_crs','mismatch','geocentric','three_axis'])
+@pytest.mark.parametrize('side',['left','right'])
+def test_relation_filter_rejects_known_input_facts_even_when_other_side_empty(operator,problem,side):
+    from operators.spatial_relations import RelationInputError
+    left,right=overlay_inputs([box(0,0,2,2)],[Point(1,1)])
+    frame=left if side=='left' else right
+    if problem in ('missing','empty','invalid','z','m','infinite'):
+        value={'missing':None,'empty':Point(),'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),
+               'z':Point(0,0,1),'m':shapely.from_wkt('POINT M (0 0 1)'), 'infinite':Point(float('inf'),0)}[problem]
+        frame[frame.geometry.name]=[value]
+    elif problem=='duplicate_columns':frame.columns=[frame.geometry.name]*len(frame.columns)
+    elif problem=='extra_geometry':frame['second_shape']=frame.geometry.copy()
+    elif problem=='unknown_crs':frame=frame.set_crs(None,allow_override=True)
+    elif problem=='mismatch':frame=frame.set_crs(4326,allow_override=True)
+    elif problem=='geocentric':frame=frame.set_crs(4978,allow_override=True)
+    elif problem=='three_axis':frame=frame.set_crs(4979,allow_override=True)
+    if side=='left':left,right=frame,right.iloc[:0]
+    else:left,right=left.iloc[:0],frame
+    with pytest.raises(RelationInputError) as caught:get_operator(operator)(left,right)
+    assert caught.value.code==('crs' if problem in ('unknown_crs','mismatch','geocentric','three_axis') else 'source' if side=='left' else 'reference')
+
+
+@pytest.mark.parametrize('operator',['contains','intersects'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('problem,reason,param',[('source','operator_input_invalid','input_gdf'),('reference','operator_reference_invalid','gdf_b'),('crs','operator_crs_invalid','')])
+def test_relation_filter_typed_diagnostics_and_failure_before_save(operator,language,problem,reason,param,monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    import workflow_engine
+    left,right=overlay_inputs([box(0,0,2,2)],[Point(1,1)])
+    if problem=='source':left[left.geometry.name]=[None]
+    elif problem=='reference':right[right.geometry.name]=[None]
+    else:right=right.set_crs(None,allow_override=True)
+    original=workflow_engine.get_operator
+    def lookup(name):
+        if name=='save':raise AssertionError('invalid relation input reached save')
+        return original(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',lookup)
+    tasks=[{'id':'PRIVATE_NODE','operator':operator,'params':{'input_gdf':left,'gdf_b':right},'depends_on':[]},
+           {'id':'save','operator':'save','params':{'input_df':{'$ref':'PRIVATE_NODE'}},'depends_on':['PRIVATE_NODE']}]
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert caught.value.error_code=='INVALID_PARAMS'
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+        'operator':{'node_index':1,'operator_id':operator,**({'parameter':param}if param else{})}}
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+    if problem=='crs':assert ('地理或投影' if language=='zh-cn' else 'geographic or projected') in str(caught.value)
+
+
+@pytest.mark.parametrize('operator',['contains','intersects'])
+def test_relation_filter_calculation_exception_not_misclassified(monkeypatch,operator):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    left,right=overlay_inputs([box(0,0,2,2)],[Point(1,1)])
+    def fail(*args,**kwargs):raise shapely.errors.GEOSException('PRIVATE calculation')
+    monkeypatch.setattr(shapely,operator,fail)
+    with pytest.raises(WorkflowExecutionError) as caught:GeoPythonWorkflowRunner().execute({'tasks':[
+        {'id':'filter','operator':operator,'params':{'input_gdf':left,'gdf_b':right},'depends_on':[]}]})
+    assert caught.value.error_code=='EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('operator',['contains','intersects'])
+def test_relation_filter_uses_index_for_distant_candidates(monkeypatch,operator):
+    left,right=overlay_inputs([box(0,0,2,2)],[Point(1,1)]+[Point(100+i,100+i)for i in range(100)])
+    original=getattr(shapely,operator);calls=[]
+    def observed(a,b):
+        calls.append(b)
+        return original(a,b)
+    monkeypatch.setattr(shapely,operator,observed)
+    assert_geodataframe_equal(get_operator(operator)(left,right),left)
+    assert len(calls)==1 and calls[0]==Point(1,1)
+
+
+@pytest.mark.parametrize('operator',['contains','intersects'])
+@pytest.mark.parametrize('crs',[4326,3857])
+def test_relation_filter_native_save_reload_preserves_business_fields_and_original_geometries(tmp_path,operator,crs):
+    from osgeo import ogr
+    source=gpd.GeoDataFrame({'key':pd.Series([2**60+1,2**60+3,2**60+5],dtype='Int64'),
+        'grade':pd.Series([None,1,2**53+1],dtype='Int64'),
+        'enabled':pd.Series([None,True,False],dtype='boolean'),
+        'contains':['kept-a','away','kept-c'],'intersects':['kept-x','away','kept-z']},
+        geometry=[box(0,0,2,2),box(9,9,10,10),box(0,0,2,2)],crs=crs).rename_geometry('actual_shape')
+    source['geometry']=pd.Series(['ordinary',None,'original'],dtype='string')
+    reference=gpd.GeoDataFrame({'key':[None,None]},geometry=[Point(1,1),Point(1,1)],crs=crs).rename_geometry('reference_shape')
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    result=get_operator(operator)(source,reference)
+    get_operator('save')(input_df=result,connection_info=conn,path='result.gpkg',mode='fail')
+    ds=ogr.Open(str(tmp_path/'result.gpkg'));layer=ds.GetLayer(0);rows=list(layer)
+    assert len(rows)==2 and layer.GetSpatialRef().GetAuthorityCode(None)==str(crs)
+    defn=layer.GetLayerDefn()
+    assert defn.GetFieldDefn(defn.GetFieldIndex('key')).GetType()==ogr.OFTInteger64
+    assert defn.GetFieldDefn(defn.GetFieldIndex('enabled')).GetSubType()==ogr.OFSTBoolean
+    for i,row in enumerate(rows):
+        assert row.GetField('key')==[2**60+1,2**60+5][i]
+        assert row.GetField('grade')==[None,2**53+1][i]
+        assert row.GetField('enabled')==[None,False][i]
+        assert row.GetField('geometry')==['ordinary','original'][i]
+        assert row.GetField('contains')==['kept-a','kept-c'][i]
+        assert row.GetField('intersects')==['kept-x','kept-z'][i]
+        assert row.GetGeometryRef().Normalize().ExportToIsoWkb()==ogr.CreateGeometryFromWkt(source.geometry.iloc[[0,2][i]].wkt).Normalize().ExportToIsoWkb()
+    physical_name=layer.GetGeometryColumn();assert physical_name
+    ds=None
+    reloaded=get_operator('load')(connection_info=conn,path='result.gpkg')
+    assert reloaded.geometry.name==physical_name
+    assert str(reloaded.grade.dtype)=='Int64' and str(reloaded.enabled.dtype)=='boolean'
+    assert list(reloaded['contains'])==['kept-a','kept-c']
+    assert list(reloaded['intersects'])==['kept-x','kept-z']
+    assert list(reloaded['geometry'])==['ordinary','original']
+    assert all(a.equals_exact(b,0)for a,b in zip(reloaded.geometry,result.geometry))

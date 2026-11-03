@@ -37,13 +37,15 @@ export function executionFailurePresentation(details, translate) {
   const code = typeof rawCode === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(rawCode) && !/secret/i.test(rawCode) ? rawCode : ''
   const operator = controlled ? diagnostic.operator : null
   const parameters = operator ? { field: operator.field || '' } : undefined
+  const templates = operator && ['contains', 'intersects'].includes(operator.operator_id)
+    ? 'common.executionFailure.spatialRelation' : 'common.executionFailure'
   const sql = controlled ? diagnostic.sql : null
   const object = sql?.object ? translate(`common.executionFailure.objects.${sql.object.kind}`, { name: sql.object.name }) : ''
   const position = sql?.position ? translate('common.executionFailure.sourcePosition', sql.position) : ''
   return {
     stage: controlled ? translate(`common.executionFailure.stages.${diagnostic.stage}`) : '',
-    reason: translate(controlled ? `common.executionFailure.reasons.${diagnostic.reason}` : `common.executionFailure.${category}`, parameters),
-    action: translate(controlled ? `common.executionFailure.actions.${diagnostic.reason}` : 'common.executionFailure.unrecordedAction', parameters),
+    reason: translate(controlled ? `${templates}.reasons.${diagnostic.reason}` : `common.executionFailure.${category}`, parameters),
+    action: translate(controlled ? `${templates}.actions.${diagnostic.reason}` : 'common.executionFailure.unrecordedAction', parameters),
     code, object, position,
     operator: operator ? translate(`common.executionFailure.operatorNames.${operator.operator_id}`) : '',
     node: operator ? translate('common.executionFailure.operatorNodeIndex', { index: operator.node_index }) : '',
@@ -55,6 +57,12 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["contains", "operator_input_invalid", "input_gdf", ""],
+  ["contains", "operator_reference_invalid", "gdf_b", ""],
+  ["contains", "operator_crs_invalid", "", ""],
+  ["intersects", "operator_input_invalid", "input_gdf", ""],
+  ["intersects", "operator_reference_invalid", "gdf_b", ""],
+  ["intersects", "operator_crs_invalid", "", ""],
   ["dissolve", "operator_input_invalid", "input_gdf", ""],
   ["dissolve", "operator_crs_invalid", "", ""],
   ["dissolve", "operator_group_fields_invalid", "group_fields", ""],

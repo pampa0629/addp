@@ -337,3 +337,19 @@ def test_dissolve_four_closed_diagnostic_rules():
         good=OperatorInputError(reason,'PRIVATE').diagnostic('dissolve',1);assert validated_operator_diagnostic(good)==good
         for patch in [{'field':'source_id'},{'parameter':'by'},{'node_index':True}]:
             bad=copy.deepcopy(good);bad['operator'].update(patch);assert validated_operator_diagnostic(bad)is None
+
+
+@pytest.mark.parametrize('operator_id', ['contains', 'intersects'])
+def test_relation_filter_three_closed_input_rules_without_identifiers_or_private_context(operator_id):
+    import copy
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES, OperatorInputError, validated_operator_diagnostic
+    expected={'operator_input_invalid':'input_gdf','operator_reference_invalid':'gdf_b','operator_crs_invalid':''}
+    assert {key:value for key,value in OPERATOR_INPUT_RULES.items() if key[0]==operator_id} == {(operator_id,key,''):value for key,value in expected.items()}
+    for reason,parameter in expected.items():
+        value=OperatorInputError(reason,'PRIVATE original data').diagnostic(operator_id,2)
+        assert value['operator']=={'node_index':2,'operator_id':operator_id,**({'parameter':parameter}if parameter else{})}
+        assert validated_operator_diagnostic(value)==value
+        for patch in ({'field':'source_id'},{'field':'PRIVATE'},{'parameter':'reference_gdf'},{'node_index':True}):
+            bad=copy.deepcopy(value);bad['operator'].update(patch)
+            assert validated_operator_diagnostic(bad) is None
+    assert OperatorInputError('operator_overlay_fields_conflict','PRIVATE').diagnostic(operator_id,2) is None

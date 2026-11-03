@@ -263,3 +263,35 @@ func TestDissolveDiagnosticBindsOnlyExactFrozenOperatorAndInput(t *testing.T) {
 		}
 	}
 }
+
+func TestRelationFilterDiagnosticBindsExactFrozenOperatorAndNoBusinessFields(t *testing.T) {
+	for _, operator := range []string{"contains", "intersects"} {
+		for reason, parameter := range map[string]string{"operator_input_invalid": "input_gdf", "operator_reference_invalid": "gdf_b", "operator_crs_invalid": ""} {
+			context := map[string]interface{}{"node_index": 1, "operator_id": operator}
+			if parameter != "" {
+				context["parameter"] = parameter
+			}
+			diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": context}
+			raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+			frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "PRIVATE_NODE", "operator": operator}, map[string]interface{}{"operator": "load"}}}
+			got := executionFailureDetails("workflow", "execution_failed", "PRIVATE source data", raw, frozen)
+			if got["diagnostic"] == nil || got["code"] != "develop.workflow.invalid_params" {
+				t.Fatalf("lost relation admission %s/%s: %+v", operator, reason, got)
+			}
+			context["node_index"] = 2
+			if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+				t.Fatal("trusted scheduling order")
+			}
+			context["node_index"] = 1
+			context["field"] = "source_id"
+			if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+				t.Fatal("trusted business fields")
+			}
+			delete(context, "field")
+			context["parameter"] = "reference_gdf"
+			if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+				t.Fatal("trusted unrelated parameter")
+			}
+		}
+	}
+}

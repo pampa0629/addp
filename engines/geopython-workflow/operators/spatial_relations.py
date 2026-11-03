@@ -5,10 +5,11 @@
 """
 
 import geopandas as gpd
+import shapely
 from .base import (
     OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator
 )
-from .geometric_operators import _require_projected_xy_crs
+from .geometric_operators import _require_projected_xy_crs, _finite_xy_geometry
 
 
 # ==================== 算子实现 ====================
@@ -40,42 +41,66 @@ class DistanceInputError(ValueError):
         return self._messages[language][self.code]
 
 
+class RelationInputError(ValueError):
+    """Proven spatial-filter admission errors without business data."""
+
+    _messages = {
+        'zh-cn': {
+            'source': '空间关系筛选的图层 A 须具有唯一活动几何列和唯一列名，几何须有效、非空且为有限二维 XY；请先整理源图层。',
+            'reference': '空间关系筛选的图层 B 须具有唯一活动几何列和唯一列名，几何须有效、非空且为有限二维 XY；请先整理参考图层。',
+            'crs': '空间关系筛选要求两个输入使用相同的已知二维地理或投影坐标系；请先显式统一坐标系。',
+        },
+        'en': {
+            'source': 'Spatial relation filtering requires unique columns, one active geometry column and valid non-empty finite XY geometries in layer A; prepare the source layer first.',
+            'reference': 'Spatial relation filtering requires unique columns, one active geometry column and valid non-empty finite XY geometries in layer B; prepare the reference layer first.',
+            'crs': 'Spatial relation filtering requires the same known two-dimensional geographic or projected CRS on both inputs; explicitly align the CRSs first.',
+        },
+    }
+
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
+def _relation_filter(input_gdf, gdf_b, predicate):
+    """Select original A rows with at least one exact matching B geometry."""
+    geometries = []
+    for frame, code in ((input_gdf, 'source'), (gdf_b, 'reference')):
+        try:
+            if (not isinstance(frame, gpd.GeoDataFrame) or not frame.columns.is_unique
+                    or sum(isinstance(dtype, gpd.array.GeometryDtype) for dtype in frame.dtypes) != 1):
+                raise ValueError('spatial filter requires one geometry and unique columns')
+            geometry = _finite_xy_geometry(frame)
+            if geometry.isna().any() or geometry.is_empty.any() or not shapely.is_valid(geometry.array).all():
+                raise ValueError('invalid spatial filter geometry')
+        except (ValueError, TypeError) as exc:
+            raise RelationInputError(code) from exc
+        geometries.append(geometry)
+    left, right = geometries
+    if (any(crs is None or not (crs.is_geographic or crs.is_projected) or len(crs.axis_info) != 2
+            for crs in (left.crs, right.crs)) or not left.crs.equals(right.crs)):
+        raise RelationInputError('crs')
+    if left.empty or right.empty:
+        return input_gdf.iloc[:0].copy()
+    tree = shapely.STRtree(right.array)
+    rows = []
+    for position, geometry in enumerate(left.array):
+        if any(predicate(geometry, right.array[index]) for index in tree.query(geometry)):
+            rows.append(position)
+    return input_gdf.iloc[rows].copy()
+
+
 def contains(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    包含关系判断（返回 A 中包含 B 的记录）
-
-    Args:
-        input_gdf: 输入图层 A（主图层）
-        gdf_b: 输入图层 B（参考图层）
-
-    Returns:
-        GeoDataFrame A 中包含 B 的记录
-    """
-    result = input_gdf.copy()
-    geom_col = result.geometry.name
-    result['contains'] = result.geometry.apply(
-        lambda geom: any(geom.contains(g) for g in gdf_b.geometry)
-    )
-    return result[result['contains']]
+    """Keep each original A row containing at least one individual B geometry."""
+    return _relation_filter(input_gdf, gdf_b, shapely.contains)
 
 
 def intersects(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    相交关系判断（返回 A 中与 B 相交的记录）
-
-    Args:
-        input_gdf: 输入图层 A（主图层）
-        gdf_b: 输入图层 B（参考图层）
-
-    Returns:
-        GeoDataFrame A 中与 B 相交的记录
-    """
-    result = input_gdf.copy()
-    geom_col = result.geometry.name
-    result['intersects'] = result.geometry.apply(
-        lambda geom: any(geom.intersects(g) for g in gdf_b.geometry)
-    )
-    return result[result['intersects']]
+    """Keep each original A row intersecting at least one individual B geometry."""
+    return _relation_filter(input_gdf, gdf_b, shapely.intersects)
 
 
 def distance_to(input_gdf: gpd.GeoDataFrame, target_geom: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -120,7 +145,7 @@ CONTAINS_METADATA = OperatorMetadata(
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="对图层A和图层B进行空间包含关系判断,返回布尔值表示A是否完全包含B。常用于点在面内查询、边界检查等场景。",
+    overview="逐图层A要素判断是否包含任一图层B要素，返回命中的A原始行，完整保留属性、几何、索引及行序，不新增布尔列。使用精确contains语义，允许有效混合几何和GeometryCollection。",
 
     params=[
         OperatorParam(
@@ -144,14 +169,14 @@ CONTAINS_METADATA = OperatorMetadata(
         "点在面内查询: 判断POI点是否在行政区内",
         "建筑物归属: 判断建筑物是否完全在地块内",
         "数据质量检查: 检查子区域是否完全在父区域内",
-        "权限验证: 判断用户操作范围是否在授权区域内"
+        "地块筛选: 保留包含至少一个目标设施的地块"
     ],
 
     notes=[
-        "包含关系要求B完全在A内部,边界接触不算包含",
-        "如需包含边界接触情况,使用covers关系",
-        "大数据集判断建议先用空间索引过滤",
-        "返回布尔Series,可用于过滤数据"
+        "面不包含仅在边界上的点或线；可以包含与其共边且内部位于其中的面，非空同一几何可包含自身",
+        "两输入须为相同已知二维地理或投影CRS；不隐式重投影，地理坐标仍按平面关系计算",
+        "输入几何须有效非空有限XY；空批合法，空参考输出保留A完整Schema的空结果",
+        "按B空间索引筛候选后精确判断，命中任一B即保留一次A，不复制B属性或覆盖contains业务字段"
     ],
 
     workflow_example={
@@ -175,7 +200,7 @@ INTERSECTS_METADATA = OperatorMetadata(
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="判断图层A和图层B的几何对象是否存在空间相交关系(包括重叠、接触、包含等)。返回布尔值,是最常用的空间关系判断算子。",
+    overview="逐图层A要素判断是否与任一图层B要素相交，包括共点、共边、重叠及包含；返回命中的A原始行，完整保留属性、几何、索引及行序，不新增布尔列。允许有效混合几何和GeometryCollection。",
 
     params=[
         OperatorParam(
@@ -204,9 +229,10 @@ INTERSECTS_METADATA = OperatorMetadata(
 
     notes=[
         "intersects包含所有非分离情况:重叠、接触、包含、被包含",
-        "边界接触也算相交,与contains不同",
-        "是最宽松的空间关系判断,适用于初步筛选",
-        "大数据集建议先用空间索引过滤候选对象"
+        "共点和共边均算相交；结果保留完整A原几何，不输出交集几何",
+        "两输入须为相同已知二维地理或投影CRS；不隐式重投影，地理坐标仍按平面关系计算",
+        "输入几何须有效非空有限XY；空批合法，空参考输出保留A完整Schema的空结果",
+        "按B空间索引筛候选后精确判断，命中任一B即保留一次A，不复制B属性或覆盖intersects业务字段"
     ],
 
     workflow_example={
