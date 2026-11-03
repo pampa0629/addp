@@ -1,6 +1,6 @@
 # Meta 模块说明
 
-阅读导航：[模块定位](#模块定位)、[扫描分层](#meta-扫描分层约定)、[核心 API](#核心-api)、[服务身份与来源](#服务身份与-system-调用)、[前端监控边界](#前端执行监控边界)、[开发与验证](#开发与验证)、[数据库启动所有权](#数据库启动所有权)。
+阅读导航：[模块定位](#模块定位)、[用户资源树可见性](#用户资源树可见性)、[扫描分层](#meta-扫描分层约定)、[核心 API](#核心-api)、[服务身份与来源](#服务身份与-system-调用)、[前端监控边界](#前端执行监控边界)、[开发与验证](#开发与验证)、[数据库启动所有权](#数据库启动所有权)。
 
 ## 模块定位
 
@@ -123,7 +123,7 @@ MinIO IFC/3DS/DAE 的模型组成在 basic 扫描建立，3DS/DAE 使用各自�
 
 对象存储 catalog scan：
 
-目录归属只取决于 bucket 内规范路径，不取决于扫描起点。single、composite 和 `ref_groups` 必须共用 repository 的完整 prefix 链构造；扫描范围只控制枚举与扫描状态，不能参与父节点路径拼接。目录数量和大小只由查询层从有效子树的 item 记录批量聚合，不存储在 node，不由扫描或上传入口维护。详见《addp元数据扫描机制规范》的“对象目录归属不变量”和“节点统计的唯一事实来源”。
+目录归属只取决于 bucket 内规范路径，不取决于扫描起点。single、composite 和 `ref_groups` 必须共用 repository 的完整 prefix 链构造；扫描范围只控制枚举与扫描状态，不能参与父节点路径拼接。目录归属统一见[对象目录归属不变量](../docs/spec/addp元数据扫描机制规范.md#对象目录归属不变量)，节点统计、Node／DataItem 身份与展开规则见[资源查询与树投影](../docs/spec/addp元数据扫描机制规范.md#资源查询与树投影)。
 
 精确 file/object 目标由 `ResolvePath` 返回的 `EngineCatalogEntry` 直接进入内容运行时 `ScanLeaf`，复用完整扫描的资源转换和 single processor，保留大小、源修改时间、MIME 与对象 ETag。不得转为只含路径的 `ref_groups`；不枚举同级内容、不清理兄弟 item、不完成父范围状态。`TestPreciseContentStorageFacts` 与标准 `make test-meta-postgres` 中的 `TestPreciseContentStorageFactsAgainstPostgres` 覆盖基本、深度和重复精确扫描的事实与范围不变量；真实 COG 自动扫描仍由既有 Raster Hosted T4 复验。
 

@@ -14,6 +14,7 @@
 | ScanTask 任务定义、调度边界与 execution 关系 | 全平台所有模块任务体系的通用规范 |
 | 手动 / 定时触发的默认组合 | Manager 前端 DTO 和预览 UI |
 | 不强制扫描时的低成本跳过判断 | 具体格式 parser 的字段细节 |
+| 已登记资源的节点统计、身份投影与展开边界 | 资源查看／数据读取授权的签发与裁决 |
 
 data item 识别规则见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)，格式与数据类型能力边界见 [ADDP 数据类型与格式能力规范](addp数据类型与格式能力规范.md)。全平台任务定义、执行记录、TaskProvider、Orchestrator 和 Monitor 的通用约束见 [ADDP 任务体系规范](addp任务体系规范.md)。
 
@@ -438,6 +439,26 @@ Transfer 通过 Meta 手动扫描入口提交上述扫描，使用 `source=trans
 
 回归验证必须同时核对请求范围和落库影响：目标产物得到更新，未覆盖的兄弟项及祖先节点扫描事实保持不变。创建必要的结构父链不计为父范围扫描完成。
 
+## 资源查询与树投影
+
+本节定义已登记元数据的聚合与身份投影，不以扫描深度决定结果可见性。返回用户前仍须按[元数据查看与数据读取](addp授权上下文规范.md#5511-元数据查看与数据读取2026-11-01-已确认部分实现)裁剪可见范围和统计字段，不能将底层聚合直接作为用户响应；机器事实入口沿各自契约。当前实现、未完成消费端和验收范围见[Meta 用户资源树可见性](../../meta/CLAUDE.md#用户资源树可见性)。
+
+### 节点统计的唯一事实来源
+
+- 节点 API 的 `item_count`、`total_size_bytes` 是 Meta 查询层的派生结果，不是 `meta_node` 存储字段，也不是上次扫描快照。所有树、详情、子节点和祖先链入口共用 repository 的批量子树聚合。
+- 子树按当前 `parent_node_id` 关系确定，包含节点自身，限定相同 tenant、engine，并排除已删除节点及其不可达后代。只统计这些节点下未删除的 `meta_item`；每个逻辑 DataItem 计一次，multi/whole 的 content refs 和容器内部 children 不单独计数。
+- `total_size_bytes` 汇总已登记 item 的 `size_bytes`，忽略未知值；没有已知大小时返回 0。这是已知大小合计，不声称大小信息完整，也不访问源引擎补全。
+- 上传、覆盖、删除、归属修正只改变节点和 item 事实；查询自然反映最新已提交记录。不得逐入口加减计数、写回祖先统计或维护另一份统计缓存。API 保持现有字段和路由，不增加兼容字段。
+- 目录统计与扫描状态独立。局部内容同步不能更新父目录完整扫描时间、深度或状态。Manager 等待 Meta 同步完成后重新读取目录；同步失败不能以文件上传成功代替目录已同步。
+
+### 资源树投影的身份与展开边界
+
+- `TreeNode` 仅为统一展示结构。Common 分别将真实 MetaNode、MetaItem 直接投影为树分支和数据项，按真实父节点关系关联；禁止为 MetaItem 创建虚拟 MetaNode、偏移 ID 或通过 attributes 注入身份后再转换。
+- Node 使用真实 `node_id`，DataItem 使用真实 `item_id`；locator 与响应身份必须一致，DataItem 不携带冒充自身身份的 `node_id`。whole DataItem 与同路径目录折叠展示时，保留 DataItem 身份，不暴露内部原生碎片。
+- `item_count` 仅属于 Node 聚合。DataItem 的树、祖先链、搜索及扫描目录前端适配均不得返回或补造该字段，包括 0 或 1。用户可见性投影中，DataItem 对祖先计数贡献 1 仅是聚合算法内部值，不能写回叶子响应。
+- 展开能力只来自已加载的直接 `children` 或查询层显式 `has_children` / 树字段 `hasChildren`；DataItem 是资源树叶子。不得从 `item_count`、记录数、存储对象数或容器内部结构数量推断展开能力，也不得保留数量兜底。
+- 表记录数使用 `row_count`；容器内部结构数量使用 `type_info.container.child_count` / `resource_count`。容器内容不转换为独立 MetaItem 或资源树分支。
+
 ## Basic / Deep 边界
 
 ### EngineCatalogEntry / EngineCatalogFacts 消费规则
@@ -455,22 +476,6 @@ Meta 扫描按已解析的 `ScanScope` 获取 `EngineCatalogEntry`：显式 root
 可选详情的请求开关、按能力读取及禁止 DDL、统计刷新／全表扫描的约束统一见[EngineCatalogFactsProvider](addp引擎插件接口规范.md#enginecatalogfactsprovider)。Meta 的身份与低成本事实范围见[Basic 扫描](#basic-扫描)，增强事实及内容 reader 分工见[Deep 扫描](#deep-扫描)；扫描深度不等同于请求了全部 Facts，失败与可选跳过分别按[失败聚合](#扫描执行的失败聚合)认定。
 
 graph basic 只使用 catalog graph 叶身份与低成本摘要，保留已有 deep 事实；不因缺少 GraphInfo 而拒绝建立身份，也不伪造空 schema 或零计数。当前 FalkorDB／Neo4j 的 Describe 包含图统计和属性观察，统一归 deep；不得用 IncludeSamples=false 把它作为 basic 的低成本例外。
-
-### 节点统计的唯一事实来源
-
-- 节点 API 的 `item_count`、`total_size_bytes` 是 Meta 查询层的派生结果，不是 `meta_node` 存储字段，也不是上次扫描快照。所有树、详情、子节点和祖先链入口共用 repository 的批量子树聚合。
-- 子树按当前 `parent_node_id` 关系确定，包含节点自身，限定相同 tenant、engine，并排除已删除节点及其不可达后代。只统计这些节点下未删除的 `meta_item`；每个逻辑 DataItem 计一次，multi/whole 的 content refs 和容器内部 children 不单独计数。
-- `total_size_bytes` 汇总已登记 item 的 `size_bytes`，忽略未知值；没有已知大小时返回 0。这是已知大小合计，不声称大小信息完整，也不访问源引擎补全。
-- 上传、覆盖、删除、归属修正只改变节点和 item 事实；查询自然反映最新已提交记录。不得逐入口加减计数、写回祖先统计或维护另一份统计缓存。API 保持现有字段和路由，不增加兼容字段。
-- 目录统计与扫描状态独立。局部内容同步不能更新父目录完整扫描时间、深度或状态。Manager 等待 Meta 同步完成后重新读取目录；同步失败不能以文件上传成功代替目录已同步。
-
-### 资源树投影的身份与展开边界
-
-- `TreeNode` 仅为统一展示结构。Common 分别将真实 MetaNode、MetaItem 直接投影为树分支和数据项，按真实父节点关系关联；禁止为 MetaItem 创建虚拟 MetaNode、偏移 ID 或通过 attributes 注入身份后再转换。
-- Node 使用真实 `node_id`，DataItem 使用真实 `item_id`；locator 与响应身份必须一致，DataItem 不携带冒充自身身份的 `node_id`。whole DataItem 与同路径目录折叠展示时，保留 DataItem 身份，不暴露内部原生碎片。
-- `item_count` 仅属于 Node 聚合。DataItem 的树、祖先链、搜索及扫描目录前端适配均不得返回或补造该字段，包括 0 或 1。用户可见性投影中，DataItem 对祖先计数贡献 1 仅是聚合算法内部值，不能写回叶子响应。
-- 展开能力只来自已加载的直接 `children` 或查询层显式 `has_children` / 树字段 `hasChildren`；DataItem 是资源树叶子。不得从 `item_count`、记录数、存储对象数或容器内部结构数量推断展开能力，也不得保留数量兜底。
-- 表记录数使用 `row_count`；容器内部结构数量使用 `type_info.container.child_count` / `resource_count`。容器内容不转换为独立 MetaItem 或资源树分支。
 
 ### Basic 扫描
 

@@ -35,7 +35,7 @@
 
 扫描调度配置不属于本表，定义与每次执行分别归 [scan_tasks](scan_tasks表.md)和 Common execution。
 
-节点 API 的 `item_count`、`total_size_bytes` 不入表，由当前有效子树内未删除的逻辑数据项聚合数量与已知大小；上传、覆盖、删除或重新归属后按当前事实读取，不改变扫描状态。完整口径见[节点统计的唯一事实来源](../../../docs/spec/addp元数据扫描机制规范.md#节点统计的唯一事实来源)。[024 号迁移](../../backend/migrations/024_drop_node_scan_statistics.sql)删除旧统计列，无需重扫源数据；[025 号迁移](../../backend/migrations/025_clear_unsuccessful_node_scan_times.sql)仅清空旧 running／failed 节点的歧义扫描时间，不改内容、状态或已完成深度，也不补造无法还原的成功时间。
+节点 API 的 `item_count`、`total_size_bytes` 不入表；聚合口径、身份投影与用户返回边界统一见[资源查询与树投影](../../../docs/spec/addp元数据扫描机制规范.md#资源查询与树投影)。[024 号迁移](../../backend/migrations/024_drop_node_scan_statistics.sql)删除旧统计列，无需重扫源数据；[025 号迁移](../../backend/migrations/025_clear_unsuccessful_node_scan_times.sql)仅清空旧 running／failed 节点的歧义扫描时间，不改内容、状态或已完成深度，也不补造无法还原的成功时间。
 
 ### 索引与唯一性声明
 
