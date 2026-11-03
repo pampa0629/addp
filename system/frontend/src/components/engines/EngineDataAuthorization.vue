@@ -80,13 +80,21 @@ const basisState = path => path?.segments ? basisStates.value[basisKey(path)] ||
 const basisTag = path => ({ complete: 'success', failed: 'danger', incomplete: 'warning', needs_refresh: 'warning', missing: 'warning' }[basisState(path)] || 'info')
 const operating = computed(() => selecting.value || grantBusy.value)
 const busy = computed(() => !props.authorizationReady || operating.value)
+// Health polling replaces the engine projection every ten seconds. Keep
+// navigation stable unless one of its actual inputs changes; authorization
+// identity and availability continue to be checked by the session boundary.
+const catalogEngineKey = computed(() => JSON.stringify([props.engine.id, props.engine.name, props.engine.engine_type, props.engine.lifecycle_state, props.engine.connection_status]))
+const catalogEngine = computed(() => {
+  const [id, name, engine_type, lifecycle_state, connection_status] = JSON.parse(catalogEngineKey.value)
+  return { id, name, engine_type, lifecycle_state, connection_status }
+})
 const itemAdapter = computed(() => {
-  if (!canBrowse.value || props.engine.lifecycle_state !== 'active' || props.engine.connection_status !== 'online') return null
-  try { return createApprovalCatalogAdapter(props.engine, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts) } catch { return null }
+  if (!canBrowse.value || catalogEngine.value.lifecycle_state !== 'active' || catalogEngine.value.connection_status !== 'online') return null
+  try { return createApprovalCatalogAdapter(catalogEngine.value, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts) } catch { return null }
 })
 const adapter = computed(() => {
   if (!itemAdapter.value) return null
-  return createMixedApprovalCatalogAdapter(props.engine, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts, enginesAPI.listAuthorizationNodes)
+  return createMixedApprovalCatalogAdapter(catalogEngine.value, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts, enginesAPI.listAuthorizationNodes)
 })
 const isSelectableTarget = node => isApprovalTarget(node) || isApprovalNode(node)
 const isNodePath = path => selections.value.some(selection => isApprovalNode(selection.raw?.node) && approvalTargetsEqual(targetPaths.get(selection.identity.locator), path))

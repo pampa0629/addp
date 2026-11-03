@@ -1452,3 +1452,28 @@ test('NFS authorization expands one directory without loading its 5234-item engi
   expect(writes).toEqual([])
   await page.screenshot({path:testInfo.outputPath('nfs-lazy-authorization-tree.png'),fullPage:true})
 })
+
+
+for (const sourceType of ['postgresql','nfs','minio']) test(`${sourceType} engine status polling does not reload the authorization tree`, async ({ page }) => {
+  await page.clock.install()
+  const { reads, writes } = await fixture(page, { allowed: grantPermissions, ...(sourceType === 'postgresql' ? {} : {sourceType, ftp:'glb'}) })
+  let polls = 0
+  page.on('request', request => { if (request.method() === 'GET' && new URL(request.url()).pathname.endsWith('/engines')) polls++ })
+  await page.goto('/engines/2?tab=data-authorization'); await openNewAuthorization(page)
+  const tree = page.getByTestId('approval-resource-tree'), label = sourceType === 'postgresql' ? 'outdoor' : 'Models'
+  await resourceOption(tree,label).click()
+  await expect(tree.getByRole('checkbox',{name:label,exact:true})).toBeChecked()
+  await expect(page.getByTestId('approval-basis-status')).toHaveCount(1)
+  await expect(page.getByTestId('approval-basis-status')).toContainText(sourceType === 'postgresql' || sourceType === 'nfs' ? '节点' : '基础识别完整')
+  const identityReads = () => reads.filter(url => /data-items|authorization-nodes|authorization-facts/.test(url))
+  const baseline = identityReads().length, initialPolls = polls
+  for (let round = 0; round < 2; round++) {
+    const response = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/engines'))
+    await page.clock.runFor(10000); await response
+    await page.clock.runFor(1000)
+    await expect(tree.getByRole('checkbox',{name:label,exact:true})).toBeChecked()
+    expect(identityReads()).toHaveLength(baseline)
+  }
+  expect(polls).toBeGreaterThanOrEqual(initialPolls+2)
+  expect(writes).toEqual([])
+})
