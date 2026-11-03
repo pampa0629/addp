@@ -2280,7 +2280,7 @@ class OverlayClient(InputDiagnosticClient):
         item['attributes']['type_info']['container']['children'][0].update(row_count=self.profile['result_count'],column_count=len(rows[0]['properties'])+2);self.outputs=[item]
         self.scans=['scan-'+n for n in self.profile['sources']]
         self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}' for i,n in enumerate(self.profile['sources'])]
-        self.parent='addp://engine/3/path/outputs?type=directory';target=f'addp://engine/3/path/outputs/{self.profile['target']}?type=file'
+        self.parent='addp://engine/3/path/outputs?type=directory';target=f"addp://engine/3/path/outputs/{self.profile['target']}?type=file"
         self.success={'execution_id':self.run_id,'status':'success','triggered_by':33,
             'outputs':{'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}},
             'execution_config':{'content':{'workflow_definition':self.profile['definition'](self.locators,self.parent)}},
