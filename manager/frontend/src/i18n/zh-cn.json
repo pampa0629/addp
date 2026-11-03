@@ -1347,6 +1347,7 @@
         "refresh": "刷新剖析",
         "refreshSubmitted": "剖析刷新已提交",
         "requestFailed": "数据剖析请求失败",
+        "sourceUnsupported": "当前来源暂不支持数据剖析。目前仅支持已扫描的 PostgreSQL 普通单表，不支持集合、视图、物化视图或容器子内容。此提示表示剖析能力尚未覆盖该来源。",
         "dataScope": "数据范围",
         "allData": "全部数据",
         "conditionRange": "条件范围",

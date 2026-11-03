@@ -1347,6 +1347,7 @@
         "refresh": "Refresh Profile",
         "refreshSubmitted": "Profile refresh submitted",
         "requestFailed": "Data profiling request failed",
+        "sourceUnsupported": "Data profiling is not yet supported for this source. Only scanned PostgreSQL ordinary single tables are supported; collections, views, materialized views and container children are not. This notice describes the current profiling capability.",
         "dataScope": "Data Scope",
         "allData": "All Data",
         "conditionRange": "Condition Range",

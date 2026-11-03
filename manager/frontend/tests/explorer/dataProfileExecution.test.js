@@ -35,6 +35,7 @@ describe('profile result read failures', () => {
       const error = code => ({response:{data:{error_code:code,error:'stale generic backend wording'}}})
       expect(profileReadFailureMessage(error('security_protection_required'),t)).toBe(t('manager.explorer.profile.protectionReadFailed'))
       expect(profileReadFailureMessage(error('source_authorization_required'),t)).toBe(t('manager.explorer.profile.sourceAuthorizationRequired'))
+      expect(profileReadFailureMessage(error('data_profile_source_unsupported'),t)).toBe(t('manager.explorer.profile.sourceUnsupported'))
       expect(profileReadFailureMessage(error('other'),t)).toBe('stale generic backend wording')
     }
   })

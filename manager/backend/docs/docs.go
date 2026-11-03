@@ -193,7 +193,7 @@ const docTemplate = `{
                         }
                     },
                     "422": {
-                        "description": "资源不支持剖析 | Resource is not profileable",
+                        "description": "当前来源不支持剖析（data_profile_source_unsupported）；仅支持已扫描 PostgreSQL 普通单表 | Source unsupported (data_profile_source_unsupported); only scanned PostgreSQL ordinary single tables are supported",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -298,7 +298,7 @@ const docTemplate = `{
                         }
                     },
                     "422": {
-                        "description": "资源不支持剖析 | Resource is not profileable",
+                        "description": "当前来源不支持剖析（data_profile_source_unsupported）；仅支持已扫描 PostgreSQL 普通单表 | Source unsupported (data_profile_source_unsupported); only scanned PostgreSQL ordinary single tables are supported",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

@@ -48,9 +48,11 @@ func (p *PreviewDataProfileSampleProvider) Prepare(ctx context.Context, target *
 	if p == nil || p.resolver == nil || target == nil || target.resolved == nil || target.EngineID == 0 ||
 		target.resolved.Engine == nil || target.resolved.Engine.ID != target.EngineID ||
 		target.resolved.Locator == nil || target.resolved.Locator.ToURI() != target.Locator ||
-		target.Selection != normalizeDataProfileSelection(target.Selection) ||
-		target.Selection != (DataProfileSelection{}) {
+		target.Selection != normalizeDataProfileSelection(target.Selection) {
 		return nil, ErrDataProfileInvalidRequest
+	}
+	if err := requireDataProfileSource(target.resolved.Engine.EngineType, target.Selection); err != nil {
+		return nil, err
 	}
 	positions, err := dataProfilePagePositions(target.RowCount, scope, budget)
 	if err != nil {

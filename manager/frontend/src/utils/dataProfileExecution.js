@@ -9,6 +9,7 @@ export const profileFailureMessage = (execution, translate) => {
 }
 
 export const profileReadFailureMessage = (error, translate) => {
+  if (error?.response?.data?.error_code === 'data_profile_source_unsupported') return translate('manager.explorer.profile.sourceUnsupported')
   if (error?.response?.data?.error_code === 'security_protection_required') return translate('manager.explorer.profile.protectionReadFailed')
   if (error?.response?.data?.error_code === 'source_authorization_required') return translate('manager.explorer.profile.sourceAuthorizationRequired')
   return error?.response?.data?.error || error?.message || translate('manager.explorer.profile.requestFailed')

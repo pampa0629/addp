@@ -224,7 +224,7 @@ other = "Task source rebinding is unavailable"
 other = "Failed to rebind the task source resource"
 
 [manager.error.data_profile_unsupported]
-other = "Data profiling is not supported for this resource"
+other = "Data profiling is not yet supported for this source; only scanned PostgreSQL ordinary single tables are supported, excluding collections, views, materialized views and container children"
 
 [manager.error.data_profile_unavailable]
 other = "Data profiling is currently unavailable"

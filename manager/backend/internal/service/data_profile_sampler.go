@@ -122,6 +122,12 @@ func (p *PreviewDataProfileSampleProvider) ResolveTarget(
 	if err != nil {
 		return nil, err
 	}
+	if resolved == nil || resolved.Engine == nil {
+		return nil, ErrDataProfileUnavailable
+	}
+	if err := requireDataProfileSource(resolved.Engine.EngineType, selection); err != nil {
+		return nil, err
+	}
 	if resolved.MetaItemID == nil || strings.TrimSpace(resolved.ItemFingerprint) == "" {
 		return nil, fmt.Errorf("%w: a scanned data item is required", ErrDataProfileUnsupported)
 	}
@@ -290,6 +296,13 @@ func normalizeDataProfileSelection(selection DataProfileSelection) DataProfileSe
 	selection.RefPath = strings.Trim(selection.RefPath, "/")
 	selection.NestedChildPath = strings.Trim(selection.NestedChildPath, "/")
 	return selection
+}
+
+func requireDataProfileSource(engineType string, selection DataProfileSelection) error {
+	if engineType != "postgresql" || selectionTargetsChild(selection) {
+		return ErrDataProfileUnsupported
+	}
+	return nil
 }
 
 func selectionTargetsChild(selection DataProfileSelection) bool {

@@ -42,7 +42,7 @@ func (h *DataProfileHandler) SetExecutionEnqueueNotifier(notify func()) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "缺少可信认证上下文或认证已过期 | Missing trusted authentication context or expired authentication"
 // @Failure 403 {object} map[string]interface{} "主体不支持此入口、来源证据缺失或当前无权读取全部来源 | Principal unsupported, source provenance missing or current access to all sources denied"
-// @Failure 422 {object} map[string]interface{} "资源不支持剖析 | Resource is not profileable"
+// @Failure 422 {object} map[string]interface{} "当前来源不支持剖析（data_profile_source_unsupported）；仅支持已扫描 PostgreSQL 普通单表 | Source unsupported (data_profile_source_unsupported); only scanned PostgreSQL ordinary single tables are supported"
 // @Failure 503 {object} map[string]interface{} "剖析服务不可用 | Profiling unavailable"
 // @Failure 500 {object} map[string]interface{} "查询剖析结果失败 | Failed to query profile"
 // @x-ai-hint "查询指定 locator 已保存的数据剖析结果；该接口不会触发源数据读取。"
@@ -93,7 +93,7 @@ func (h *DataProfileHandler) GetCurrent(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "缺少可信认证上下文或认证已过期 | Missing trusted authentication context or expired authentication"
 // @Failure 403 {object} map[string]interface{} "主体不支持此入口、来源授权被拒绝或保护规则禁止剖析 | Unsupported principal, denied source authorization, or protection rules prohibit profiling"
-// @Failure 422 {object} map[string]interface{} "资源不支持剖析 | Resource is not profileable"
+// @Failure 422 {object} map[string]interface{} "当前来源不支持剖析（data_profile_source_unsupported）；仅支持已扫描 PostgreSQL 普通单表 | Source unsupported (data_profile_source_unsupported); only scanned PostgreSQL ordinary single tables are supported"
 // @Failure 503 {object} map[string]interface{} "剖析服务不可用 | Profiling unavailable"
 // @Failure 500 {object} map[string]interface{} "创建剖析执行失败 | Failed to create profiling execution"
 // @x-ai-hint "为指定 locator 发起有界采样剖析；mode 首期只允许 sample，data_scope 只允许 all 或单层 and/or 结构化条件，重复的活动执行会被复用。"
@@ -151,7 +151,10 @@ func handleDataProfileError(c *gin.Context, err error, fallbackMessage string) {
 	case errors.Is(err, service.ErrDataProfileProtectionRequired):
 		protectionRequired(c)
 	case errors.Is(err, service.ErrDataProfileUnsupported):
-		managerError(c, http.StatusUnprocessableEntity, manageri18n.MsgDataProfileUnsupported)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error":      commoni18n.T(c, manageri18n.MsgDataProfileUnsupported),
+			"error_code": "data_profile_source_unsupported",
+		})
 	case errors.Is(err, service.ErrDataProfileUnavailable):
 		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgDataProfileUnavailable)
 	case errors.Is(err, service.ErrDataProfileInvalidRequest):

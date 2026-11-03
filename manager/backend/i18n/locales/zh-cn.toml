@@ -230,7 +230,7 @@ other = "任务重新绑定服务暂不可用"
 other = "重新绑定任务源资源失败"
 
 [manager.error.data_profile_unsupported]
-other = "当前资源不支持数据剖析"
+other = "当前来源暂不支持数据剖析；目前仅支持已扫描的 PostgreSQL 普通单表，不支持集合、视图、物化视图或容器子内容"
 
 [manager.error.data_profile_unavailable]
 other = "数据剖析服务暂不可用"

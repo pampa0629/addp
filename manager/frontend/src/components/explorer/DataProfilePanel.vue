@@ -8,7 +8,7 @@
         </el-tag>
       </div>
       <el-button
-        v-if="profile || latestExecution"
+        v-if="!sourceUnsupported && (profile || latestExecution)"
         size="small"
         :icon="Refresh"
         :loading="submitting || (executionActive && !readFailed)"
@@ -121,7 +121,7 @@
 
     <el-alert
       v-if="errorText"
-      type="error"
+      :type="sourceUnsupported ? 'info' : 'error'"
       :title="errorText"
       show-icon
       :closable="false"
@@ -137,7 +137,7 @@
       class="profile-alert"
     />
 
-    <div v-if="executionActive && !readFailed" class="execution-strip">
+    <div v-if="executionActive && !readFailed && !sourceUnsupported" class="execution-strip">
       <div>
         <div class="execution-title">{{ t('manager.explorer.profile.running') }}</div>
         <div class="execution-id">{{ activeExecution.execution_id }}</div>
@@ -289,10 +289,10 @@
       </div>
     </template>
 
-    <div v-else-if="!readFailed && (executionActive || submitting)" class="empty-state">
+    <div v-else-if="!sourceUnsupported && !readFailed && (executionActive || submitting)" class="empty-state">
       <el-empty :description="t('manager.explorer.profile.waitingForFirstResult')" />
     </div>
-    <div v-else class="empty-state">
+    <div v-else-if="!sourceUnsupported" class="empty-state">
       <el-empty :description="readFailed ? t('manager.explorer.profile.readFailed') : latestFailureText || t('manager.explorer.profile.noResult')">
         <el-button type="primary" :icon="Refresh" :loading="submitting" @click="refreshProfile">
           {{ t(readFailed ? 'manager.explorer.profile.retryRead' : 'manager.explorer.profile.retry') }}
@@ -332,6 +332,8 @@ const current = ref(null)
 const loading = ref(false)
 const submitting = ref(false)
 const errorText = ref('')
+const errorCode = ref('')
+const sourceUnsupported = computed(() => errorCode.value === 'data_profile_source_unsupported')
 const readFailed = ref(false)
 const fieldSearch = ref('')
 const fieldTypeFilter = ref('')
@@ -353,7 +355,7 @@ const selection = computed(() => ({
   nestedChildPath: props.nestedChildPath
 }))
 const targetKey = computed(() => [props.locator, props.childName, props.refPath, props.nestedChildPath].join('|'))
-const profile = computed(() => readFailed.value ? null : current.value?.profile || null)
+const profile = computed(() => readFailed.value || sourceUnsupported.value ? null : current.value?.profile || null)
 const activeExecution = computed(() => current.value?.active_execution || null)
 const latestExecution = computed(() => current.value?.latest_execution || null)
 const profileExecution = computed(() => current.value?.profile_execution || null)
@@ -569,7 +571,7 @@ const applyConditions = async () => {
 }
 
 const startExecution = async (manual = false, scope = appliedScope.value) => {
-  if (!props.locator || submitting.value || executionActive.value) return
+  if (!props.locator || submitting.value || executionActive.value || sourceUnsupported.value) return
   submitting.value = true
   errorText.value = ''
   try {
@@ -584,9 +586,11 @@ const startExecution = async (manual = false, scope = appliedScope.value) => {
     if (manual) ElMessage.success(t('manager.explorer.profile.refreshSubmitted'))
     schedulePoll()
   } catch (error) {
-    const message = error.response?.data?.error || error.message || t('manager.explorer.profile.requestFailed')
+    clearPoll()
+    errorCode.value = error.response?.data?.error_code || ''
+    const message = profileReadFailureMessage(error, t)
     errorText.value = message
-    if (manual) ElMessage.error(message)
+    if (manual && !sourceUnsupported.value) ElMessage.error(message)
   } finally {
     submitting.value = false
   }
@@ -610,6 +614,7 @@ const loadCurrent = async (allowAutoStart = true) => {
       return
     }
     readFailed.value = false
+    errorCode.value = ''
     current.value = response
     if (response?.profile?.data_scope?.kind === 'condition') {
       scopeMode.value = 'condition'
@@ -631,6 +636,7 @@ const loadCurrent = async (allowAutoStart = true) => {
     if (sequence !== requestSequence) return
     clearPoll()
     readFailed.value = true
+    errorCode.value = error.response?.data?.error_code || ''
     errorText.value = profileReadFailureMessage(error, t)
   } finally {
     if (sequence === requestSequence) loading.value = false
@@ -638,6 +644,7 @@ const loadCurrent = async (allowAutoStart = true) => {
 }
 
 const refreshProfile = () => {
+  if (sourceUnsupported.value) return
   if (readFailed.value) return loadCurrent(false)
   autoRequested.value = true
   startExecution(true)
@@ -649,6 +656,7 @@ watch(targetKey, () => {
   current.value = null
   readFailed.value = false
   errorText.value = ''
+  errorCode.value = ''
   selectedFieldName.value = ''
   autoRequested.value = false
   scopeMode.value = 'all'
