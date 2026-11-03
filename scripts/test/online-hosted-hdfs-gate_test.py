@@ -126,7 +126,8 @@ class HostedHDFSGateTest(unittest.TestCase):
             if sys.argv[1:] == ['--cleanup-data-access']:
                 assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-token'
                 with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as trace:
-                    trace.write('table-domain-cleanup\\n')
+                    assert 'application-stop' not in open(os.environ['ADDP_TEST_GATE_TRACE']).read()
+                    trace.write('data-access-cleanup\\n')
                 sys.exit(1 if os.environ.get('ADDP_TEST_TABLE_CLEANUP_FAIL') == '1' else 0)
             assert sys.argv[1:] == ['--prepare-data-access']
             assert os.environ['ADDP_ONLINE_SPARK_B_ENGINE_ID'] == '23'
@@ -210,7 +211,7 @@ class HostedHDFSGateTest(unittest.TestCase):
                     'playwright install --with-deps chromium', '--suite hdfs-spark-consumer-flow',
                     '--wait-protection-owners develop,manager',
                     'engine-register', 'source-grant', 'make:test-online ONLINE_SUITE=hdfs-spark-consumer-flow',
-                    'docker-rm:addp-hdfs-online-runtime', 'application-stop', 'table-domain-cleanup', 'hdfs-fixture:stop', 'docker-rm:addp-hdfs-online-registry', 'infra-down')
+                    'data-access-cleanup', 'docker-rm:addp-hdfs-online-runtime', 'application-stop', 'hdfs-fixture:stop', 'docker-rm:addp-hdfs-online-registry', 'infra-down')
         indices = [trace.index(step) for step in sequence]
         self.assertEqual(indices, sorted(indices))
         self.assertNotIn('start:-all', trace)
@@ -251,7 +252,7 @@ class HostedHDFSGateTest(unittest.TestCase):
                 self.assertIn('hdfs-fixture:stop', trace)
                 self.assertIn('infra-down', trace)
                 publication_started = any(flag in flags for flag in ('ADDP_TEST_GRANT_FAIL', 'ADDP_TEST_SUITE_FAIL'))
-                self.assertEqual('table-domain-cleanup' in trace, publication_started)
+                self.assertEqual('data-access-cleanup' in trace, publication_started)
                 self.assertFalse(self.host.secrets.exists())
                 summary = (self.host.artifacts / 'summary.txt').read_text()
                 self.assertIn('result=failed', summary)

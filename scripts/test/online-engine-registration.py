@@ -122,7 +122,10 @@ class ExactFileMetadataGrants:
         target = self.target(engine, full_name, storage, layout=layout)
         fingerprint = hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
         facts = self.authorizer.request('GET', f'/api/v1/system/engines/{engine}/data-items/{fingerprint}/authorization-facts', (200,)).payload
-        metadata = facts.get('boundary', {}).get('metadata_target', {}) if isinstance(facts, dict) else {}
+        boundary = facts.get('boundary') if isinstance(facts, dict) else None
+        metadata = boundary.get('metadata_target') if isinstance(boundary, dict) else None
+        if not isinstance(metadata, dict):
+            raise RegistrationError('metadata Grant requires a complete matching metadata-only boundary')
         expected_metadata = dict(target=target, layout=layout, data_type=data_type, format=format_name,
                                  composition_digest=metadata.get('composition_digest'))
         if (not isinstance(facts, dict) or any(facts.get(k) != v for k,v in {

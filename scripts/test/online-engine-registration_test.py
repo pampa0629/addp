@@ -170,7 +170,7 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         self.assertFalse(any(e[0] == 'POST' for e in state['events']))
 
     def test_metadata_grant_rejects_untrusted_or_content_boundary_before_write(self):
-        for mutation in ('fingerprint','identity','composition','content','missing','scope'):
+        for mutation in ('fingerprint','identity','composition','content','missing','scope','null_boundary','null_metadata','boundary_shape','metadata_shape'):
             with self.subTest(mutation=mutation):
                 issuer,consumer,facts,state=self.metadata_clients()
                 if mutation=='fingerprint':facts['item_fingerprint']='c'*64
@@ -178,6 +178,10 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
                 elif mutation=='composition':facts['boundary']['metadata_target']['composition_digest']='invalid'
                 elif mutation=='content':facts['boundary']['file_composition']={'format':'grib'}
                 elif mutation=='missing':facts['basis_state']='incomplete'
+                elif mutation=='null_boundary':facts['boundary']=None
+                elif mutation=='null_metadata':facts['boundary']['metadata_target']=None
+                elif mutation=='boundary_shape':facts['boundary']=[]
+                elif mutation=='metadata_shape':facts['boundary']['metadata_target']=[]
                 else:facts['boundary']['metadata_target']['target']['segments'].pop()
                 grants=REGISTRATION.ExactFileMetadataGrants(issuer,consumer,2)
                 with self.assertRaises(REGISTRATION.RegistrationError):

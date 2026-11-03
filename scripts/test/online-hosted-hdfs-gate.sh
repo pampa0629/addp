@@ -11,13 +11,14 @@ RUNTIME_CONTAINER=addp-hdfs-online-runtime
 RUNTIME_IMAGE=localhost:5001/addp-spark-workflow-engine:online-hdfs
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim-bookworm localhost:5001/eclipse-temurin:11-jre-jammy)
 HOSTED_SPARK_REGISTRY=addp-hdfs-online-registry
-table_publication_started=0
+data_access_preparation_started=0
+before_online_application_stop() {
+  # Revoke precise Grants while System/Meta and the domain stores still run.
+  [ "$data_access_preparation_started" -eq 1 ] || return 0
+  run_logged bash -c 'source "$1"; python3 scripts/test/hdfs-spark-consumer-flow-online.py --cleanup-data-access' _ "$IDENTITY_ENV"
+}
 stop_online_fixture() {
   local status=0 image
-  # Also run domain cleanup after a timeout/signal killed the scenario process.
-  if [ "$table_publication_started" -eq 1 ]; then
-    run_logged bash -c 'source "$1"; python3 scripts/test/hdfs-spark-consumer-flow-online.py --cleanup-data-access' _ "$IDENTITY_ENV" || status=1
-  fi
   run_logged bash business/scripts/online-hdfs-spark-fixture.sh stop || status=1
   stop_online_spark_image_registry || status=1
   return "$status"
@@ -62,7 +63,7 @@ for engine in hdfs spark spark-b postgres minio mysql doris; do
     export ADDP_ONLINE_SPARK_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
   fi
 done
-table_publication_started=1
+data_access_preparation_started=1
 run_logged python3 scripts/test/hdfs-spark-consumer-flow-online.py --prepare-data-access
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
