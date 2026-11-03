@@ -1792,7 +1792,7 @@ test-catalog-browser-local-runner: ## Catalog本地隔离、身份、清理与CI
 
 .PHONY: test-monitor-http-local test-monitor-http-local-runner
 test-monitor-http-local: ## 人工运行正式 Agent/Copilot 到接口质量页面的本机隔离验收（不运行 Hosted）
-	@python3 scripts/test/monitor-http-local-gate.py
+	@python3 scripts/test/monitor-http-local-gate.py --case=$(or $(MONITOR_HTTP_LOCAL_CASE),full)
 
 test-monitor-http-local-runner: ## 验证本地 Python HTTP 产品准入、预算及页面契约，不启动服务
 	@command -v openssl >/dev/null

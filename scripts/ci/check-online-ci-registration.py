@@ -6064,6 +6064,8 @@ def validate_local_http_quality_profile(repository: Path) -> None:
     entry="scripts/test/monitor-http-local-gate.py"
     if not (repository / entry).exists() and "test-monitor-http-local:" not in make:
         return
+    if '--case=$(or $(MONITOR_HTTP_LOCAL_CASE),full)' not in make_target_commands(make,"test-monitor-http-local"):
+        raise RegistrationError("local HTTP quality requires bounded case forwarding through its original entry")
     for marker in ("test-monitor-http-local:", "@python3 "+entry,
                    "test-monitor-http-local-runner:", "@$(MAKE) test-monitor-http-local-runner",
                    "scripts/test/monitor-http-local-gate_test.py", "scripts/test/monitor-http-local-online_test.py"):

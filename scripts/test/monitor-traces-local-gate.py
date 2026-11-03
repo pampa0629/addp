@@ -1363,7 +1363,7 @@ def reclaim_go_build_cache(life):
             raise GateError(step['error_code'])
 
 
-def build_products(life,env,proxies):
+def build_products(life,env,proxies,*,compile_only=False):
     docker_path = shutil.which('docker', path=env['PATH'])
     shim = life.work/'tools';shim.mkdir()
     wrapper = shim/'docker'
@@ -1393,6 +1393,8 @@ def build_products(life,env,proxies):
                 '-e','ADDP_BUILD_GOMODCACHE=/dependencies','-w', '/workspace',
                 '-e', 'GOMAXPROCS=2', '-e', 'GOFLAGS=-p=2', 'golang:1.24',
                 'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(life.compile_services), timeout=2200)
+    if compile_only:
+        return {}
     # Product binaries are complete; reclaim only this run's disposable Go
     # object cache before the next bounded build consumes the same disk budget.
     reclaim_go_build_cache(life)

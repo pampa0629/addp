@@ -30,6 +30,7 @@ LIMITS={name:(.025,32) for name in FRONTENDS}|{
     'agent-backend':(1,2048),'copilot-backend':(.75,1024),'postgres':(.5,768),
     'redis':(.1,128),'prometheus':(1,2048),'metrics-control':(.25,128)}
 SAMPLER_IMAGE='nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284'
+CASE_LIMITS={'full':(3600,3300),'compile-checkpoints':(900,780)}
 OWN_INPUTS=('scripts/test/monitor-http-local-gate.py','scripts/test/monitor-http-local-gate_test.py',
     'scripts/test/monitor-http-local-online.py','scripts/test/monitor-http-local-online_test.py',
     'scripts/test/monitor-traces-local-gate.py','scripts/test/monitor-traces-local-online.py',
@@ -45,6 +46,7 @@ class Lifecycle(core.Lifecycle):
     run_prefix='addp-http-local-'
     strict_resources=True
     work_seconds=3300  # reserve five minutes of the original 60-minute window for cleanup
+    total_seconds=3600
     product_services=BACKENDS+FRONTENDS
     compile_services=('system-backend','gateway','monitor-backend','runtime-log')
     @property
@@ -69,10 +71,14 @@ class Lifecycle(core.Lifecycle):
             remaining=self.cleanup_deadline-time.monotonic()
             require(remaining>0,'cleanup_deadline_exceeded')
             kwargs['timeout']=min(kwargs.get('timeout',600),remaining)
+        elif self.total_seconds==900:
+            remaining=self.started+self.work_seconds-time.monotonic()
+            require(remaining>0,'total_deadline_exceeded')
+            kwargs['timeout']=min(kwargs.get('timeout',600),remaining)
         return super().command(*args,**kwargs)
 
     def cleanup(self):
-        self.cleanup_deadline=min(self.started+3600,time.monotonic()+120)
+        self.cleanup_deadline=min(self.started+self.total_seconds,time.monotonic()+120)
         return super().cleanup()
 
 
@@ -241,7 +247,7 @@ def project(life,env,images):
     return config
 
 
-def build(life):
+def build(life,*,compile_only=False):
     life.phase='source_snapshot'
     commit=life.command(['git','rev-parse','HEAD']).strip()
     life.input_hashes={}
@@ -274,7 +280,10 @@ def build(life):
     proxies=core.prepare_builder(life)
     life.sample();life.thread=threading.Thread(target=life.monitor,daemon=True);life.thread.start()
     life.stop_builder()
-    images=core.build_products(life,env,proxies)
+    images=core.build_products(life,env,proxies,compile_only=compile_only)
+    if compile_only:
+        life.phase='compile_checkpoint_summary'
+        return env
     life.images=images
     for name,image in images.items():life.deployment_config['services'][name]['image']=image
     life.compose_path.write_text(json.dumps(life.deployment_config))
@@ -325,22 +334,56 @@ def setup(life,env):
     core.identity(life,env,suite='python-http-product-local',prefix='ADDP_HTTP_LOCAL_')
 
 
+def local_case(arguments):
+    require(arguments in ([],['--case=full'],['--case=compile-checkpoints']),'local_case_invalid')
+    return arguments[0].split('=',1)[1] if arguments else 'full'
+
+
+def compile_checkpoint_summary(life):
+    samples=[row for row in life.samples if row['phase']=='product_compile']
+    require(len(samples)>=12,'compile_checkpoint_samples_insufficient')
+    identifiers=set()
+    for sample in samples:
+        require(sample['sample_duration_seconds']<4,'compile_checkpoint_sample_deadline')
+        commands=[command for step in sample['steps'] if step['operation']=='measure_owned_volumes' for command in step['commands']]
+        require(len(commands)==1,'compile_checkpoint_command_missing')
+        command=commands[0];checkpoint=command.get('volume_measurement_checkpoints',{})
+        require(command.get('record_complete') is True and command.get('result')=='passed' and
+                command.get('run_id')==life.run_id and command.get('phase')=='product_compile' and
+                type(command.get('command_id')) is int and command['command_id']>0 and command['command_id'] not in identifiers,
+                'compile_checkpoint_command_identity')
+        require(checkpoint.get('fragment_status')=='complete' and checkpoint.get('measurement_entered')=='observed' and
+                checkpoint.get('pipeline_returned')=='observed' and type(checkpoint.get('examined_bytes')) is int and
+                0<checkpoint['examined_bytes']<=4096,'compile_checkpoint_fragment_incomplete')
+        identifiers.add(command['command_id'])
+    starts=[row['sample_started_monotonic'] for row in samples]
+    require(all(0<b-a<=5 for a,b in zip(starts,starts[1:])),'compile_checkpoint_cadence')
+    return {'completed_compile_samples':len(samples),'complete_volume_checkpoints':len(identifiers),
+            'controlled_requests':0,'scope':'compile_checkpoint_collection_only'}
+
+
 def main():
-    require(len(sys.argv)==1,'local_entry_has_no_options')
+    case=local_case(sys.argv[1:])
     life=Lifecycle()
+    life.total_seconds,life.work_seconds=CASE_LIMITS[case]
     report={'schema':'addp.http-quality-local/v1','run_id':life.run_id,'result':'failed','hosted':False,'capacity':False,
             'formal_runner_t4':False,'assertions':{},'started_at':datetime.now(timezone.utc).isoformat(),
-            'limits':{'seconds':3600,'cpu':8,'memory_bytes':12*1024**3,'private_writable_stop_bytes':4*1024**3,'complete_scan_seconds':4}}
+            'case':case,'limits':{'seconds':life.total_seconds,'work_seconds':life.work_seconds,'cpu':8,'memory_bytes':12*1024**3,'private_writable_stop_bytes':4*1024**3,'complete_scan_seconds':4}}
     target=Path(tempfile.gettempdir())/(life.run_id+'-report.json')
     try:
         validate_profile(os.environ,platform.machine(),platform.machine())
         endpoint=core.effective_docker_endpoint(os.environ,lambda name:json.loads(life.docker('context','inspect',*([name] if name else [])))[0]['Endpoints']['docker']['Host'])
         core.private_docker_client(life,endpoint)
         validate_profile(os.environ,platform.machine(),life.docker('info','--format','{{.Architecture}}').strip())
-        env=build(life);setup(life,env)
-        os.environ['NO_PROXY']=os.environ['no_proxy']='127.0.0.1,localhost'
-        business=core.module('monitor-http-local-online',life.checkout)
-        business.run(life,env,report)
+        env=build(life,compile_only=case=='compile-checkpoints')
+        if case=='compile-checkpoints':
+            report['compile_checkpoint_diagnostic']=compile_checkpoint_summary(life)
+            report['not_accepted']=['product_images','APT','password_mfa','collection_api','pages','stop','logout','performance_fix']
+        else:
+            setup(life,env)
+            os.environ['NO_PROXY']=os.environ['no_proxy']='127.0.0.1,localhost'
+            business=core.module('monitor-http-local-online',life.checkout)
+            business.run(life,env,report)
         life.sample();life.check();report['result']='passed'
     except BaseException as error:
         report.update(stage=life.phase,error_code=str(error) if re.fullmatch('[a-z0-9_]+',str(error)) else type(error).__name__)
@@ -357,9 +400,9 @@ def main():
         elapsed=time.monotonic()-life.started
         report.update(elapsed_seconds=elapsed,owned_list_commands=life.command_evidence.snapshot(),
             cleanup={'zero_owned_resources':not errors,'failures':errors})
-        if errors or elapsed>3600:report['result']='failed'
+        if errors or elapsed>life.total_seconds:report['result']='failed'
         with open(target,'x',opener=lambda p,f:os.open(p,f,0o600)) as stream:json.dump(report,stream,indent=2)
-    print('Local formal Python HTTP: '+report['result']+'; report='+str(target),flush=True)
+    print('Local formal Python HTTP: '+report['result']+'; case='+case+'; report='+str(target),flush=True)
     return 0 if report['result']=='passed' else 1
 
 if __name__=='__main__':

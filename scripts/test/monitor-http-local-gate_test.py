@@ -185,6 +185,113 @@ class HTTPProductLocalTests(unittest.TestCase):
             self.assertNotIn('entry',config['services']['agent-backend']['networks'])
             self.assertIn('cluster_name=addp-http-quality-local-run',config['services']['postgres']['command'])
 
+class CompileCheckpointCaseTests(unittest.TestCase):
+    def samples(self,run_id='synthetic-compile',count=12):
+        return [{'phase':'product_compile','sample_duration_seconds':.5,'sample_started_monotonic':i*4,
+            'steps':[{'operation':'measure_owned_volumes','commands':[{'command_id':i+1,'run_id':run_id,
+                'phase':'product_compile','record_complete':True,'result':'passed','volume_measurement_checkpoints':{
+                    'fragment_status':'complete','measurement_entered':'observed','pipeline_returned':'observed','examined_bytes':64}}]}]}
+            for i in range(count)]
+
+    def test_strict_case_selection_and_fixed_limits(self):
+        self.assertEqual(m.local_case([]),'full');self.assertEqual(m.local_case(['--case=full']),'full')
+        self.assertEqual(m.local_case(['--case=compile-checkpoints']),'compile-checkpoints')
+        for args in (['--case=unknown'],['--case=compile-checkpoints','--retry'],['--case','compile-checkpoints']):
+            with self.assertRaisesRegex(m.core.GateError,'local_case_invalid'):m.local_case(args)
+        self.assertEqual(m.CASE_LIMITS,{'full':(3600,3300),'compile-checkpoints':(900,780)})
+        with mock.patch.object(m.sys,'argv',['gate','--case=unknown']),mock.patch.object(m,'Lifecycle') as start:
+            with self.assertRaisesRegex(m.core.GateError,'local_case_invalid'):m.main()
+        start.assert_not_called()
+
+    def test_work_and_cleanup_keep_the_same_absolute_cutoff(self):
+        life=m.Lifecycle.__new__(m.Lifecycle);life.started=0;life._phase='product_compile'
+        life.total_seconds=900;life.work_seconds=780
+        with mock.patch.object(m.core.time,'monotonic',return_value=779),mock.patch.object(m.core.Lifecycle,'command',return_value='') as command:
+            life.command(['synthetic'],timeout=30);self.assertEqual(command.call_args.kwargs['timeout'],1)
+        with mock.patch.object(m.core.time,'monotonic',return_value=780),mock.patch.object(m.core.Lifecycle,'command') as command:
+            with self.assertRaisesRegex(m.core.GateError,'total_deadline_exceeded'):life.command(['synthetic'])
+        command.assert_not_called()
+        with mock.patch.object(m.core.time,'monotonic',return_value=850),mock.patch.object(m.core.Lifecycle,'cleanup',return_value=[]):life.cleanup()
+        self.assertEqual(life.cleanup_deadline,900)
+        life._phase='cleanup'
+        with mock.patch.object(m.core.time,'monotonic',return_value=899),mock.patch.object(m.core.Lifecycle,'command',return_value='') as command:
+            life.command(['synthetic'],timeout=30);self.assertEqual(command.call_args.kwargs['timeout'],1)
+        with mock.patch.object(m.core.time,'monotonic',return_value=900),self.assertRaisesRegex(m.core.GateError,'cleanup_deadline_exceeded'):life.command(['synthetic'])
+
+    def test_summary_rejects_missing_wrong_phase_duplicate_or_incomplete_samples(self):
+        life=SimpleNamespace(run_id='synthetic-compile',samples=self.samples())
+        self.assertEqual(m.compile_checkpoint_summary(life)['completed_compile_samples'],12)
+        for kind in ('count','phase','run','duplicate','missing','over_limit','deadline','cadence'):
+            rows=self.samples();command=rows[-1]['steps'][0]['commands'][0]
+            if kind=='count':rows.pop()
+            elif kind=='phase':rows[-1]['phase']='idle'
+            elif kind=='run':command['run_id']='foreign'
+            elif kind=='duplicate':command['command_id']=1
+            elif kind=='missing':command.pop('volume_measurement_checkpoints')
+            elif kind=='over_limit':command['volume_measurement_checkpoints']['examined_bytes']=4097
+            elif kind=='deadline':rows[-1]['sample_duration_seconds']=4
+            elif kind=='cadence':rows[-1]['sample_started_monotonic']+=2
+            with self.subTest(kind=kind),self.assertRaises(m.core.GateError):m.compile_checkpoint_summary(SimpleNamespace(run_id=life.run_id,samples=rows))
+
+    def test_same_go_build_returns_before_cache_images_or_browser(self):
+        for fail in (False,True):
+            with self.subTest(fail=fail),tempfile.TemporaryDirectory() as directory:
+                work=Path(directory);cache=work/'public';(cache/'cache/download').mkdir(parents=True)
+                life=SimpleNamespace(work=work,checkout=work/'source',phase='prepared',env={'PATH':os.defpath},
+                    run_id='owned',label=m.LABEL,builder='owned',compile_services=m.Lifecycle.compile_services,
+                    product_services=m.Lifecycle.product_services,docker=mock.Mock(),command=mock.Mock(return_value=str(cache)),
+                    resume_builder=mock.Mock(side_effect=AssertionError('no image build')))
+                if fail:life.docker.side_effect=m.core.GateError('compile_failed')
+                with mock.patch.object(m.core,'reclaim_go_build_cache',side_effect=AssertionError('no cache reclaim')) as reclaim:
+                    if fail:
+                        with self.assertRaisesRegex(m.core.GateError,'compile_failed'):m.core.build_products(life,life.env,{},compile_only=True)
+                    else:self.assertEqual(m.core.build_products(life,life.env,{},compile_only=True),{})
+                reclaim.assert_not_called();life.resume_builder.assert_not_called()
+                life.docker.assert_called_once();args=life.docker.call_args.args
+                self.assertEqual(args[args.index('--cpus')+1],'2');self.assertEqual(args[args.index('--memory')+1],'3g')
+                self.assertIn('make',args);self.assertIn('BUILD_ARGS=--arch arm64 --services system-backend,gateway,monitor-backend,runtime-log',args)
+                self.assertEqual(life.command.call_count,1)
+
+    def test_main_compile_case_never_prepares_identity_or_business(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=SimpleNamespace(run_id='synthetic-compile',phase='compile_checkpoint_summary',env={},started=time.monotonic(),
+                samples=self.samples(),command_evidence=SimpleNamespace(snapshot=lambda:[]),docker=mock.Mock(return_value='arm64'),
+                cleanup=mock.Mock(return_value=[]),sample=mock.Mock(),check=mock.Mock())
+            with mock.patch.object(m.sys,'argv',['gate','--case=compile-checkpoints']),mock.patch.object(m,'Lifecycle',return_value=life), \
+                 mock.patch.object(m,'validate_profile'),mock.patch.object(m.core,'effective_docker_endpoint',return_value='unix:///synthetic'), \
+                 mock.patch.object(m.core,'private_docker_client'),mock.patch.object(m,'build',return_value={}) as build, \
+                 mock.patch.object(m,'setup',side_effect=AssertionError('no identity')) as setup, \
+                 mock.patch.object(m.core,'module',side_effect=AssertionError('no business')) as business, \
+                 mock.patch.object(m.tempfile,'gettempdir',return_value=directory),mock.patch('builtins.print'):
+                self.assertEqual(m.main(),0)
+            build.assert_called_once_with(life,compile_only=True);setup.assert_not_called();business.assert_not_called()
+            payload=json.loads((Path(directory)/'synthetic-compile-report.json').read_text())
+            self.assertEqual(payload['case'],'compile-checkpoints');self.assertEqual(payload['limits']['seconds'],900)
+            self.assertEqual(payload['assertions'],{});self.assertTrue(payload['cleanup']['zero_owned_resources'])
+            self.assertEqual(payload['compile_checkpoint_diagnostic']['controlled_requests'],0)
+            self.assertIn('product_images',payload['not_accepted'])
+
+
+    def test_main_default_full_keeps_original_setup_and_business(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=SimpleNamespace(run_id='synthetic-full',phase='formal',env={},started=time.monotonic(),
+                samples=[],command_evidence=SimpleNamespace(snapshot=lambda:[]),docker=mock.Mock(return_value='arm64'),
+                cleanup=mock.Mock(return_value=[]),sample=mock.Mock(),check=mock.Mock(),checkout=Path(directory))
+            business=SimpleNamespace(run=mock.Mock())
+            with mock.patch.object(m.sys,'argv',['gate']),mock.patch.object(m,'Lifecycle',return_value=life), \
+                 mock.patch.object(m,'validate_profile'),mock.patch.object(m.core,'effective_docker_endpoint',return_value='unix:///synthetic'), \
+                 mock.patch.object(m.core,'private_docker_client'),mock.patch.object(m,'build',return_value={}) as build, \
+                 mock.patch.object(m,'setup') as setup,mock.patch.object(m.core,'module',return_value=business), \
+                 mock.patch.object(m,'compile_checkpoint_summary',side_effect=AssertionError('not compile case')) as summary, \
+                 mock.patch.object(m.tempfile,'gettempdir',return_value=directory),mock.patch.dict(m.os.environ,{}),mock.patch('builtins.print'):
+                self.assertEqual(m.main(),0)
+            build.assert_called_once_with(life,compile_only=False);setup.assert_called_once_with(life,{})
+            business.run.assert_called_once();summary.assert_not_called()
+            payload=json.loads((Path(directory)/'synthetic-full-report.json').read_text())
+            self.assertEqual(payload['case'],'full');self.assertEqual(payload['limits']['seconds'],3600)
+            self.assertNotIn('compile_checkpoint_diagnostic',payload)
+
+
 class HTTPPrivateTLSConfigTests(unittest.TestCase):
     def fixture(self,directory,failure=None):
         life=SimpleNamespace(work=Path(directory),phase='metrics_deployment_projection',
