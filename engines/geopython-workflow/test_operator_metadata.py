@@ -1718,8 +1718,13 @@ def test_idw_single_workflow_read_entry_two_sources_and_no_extra_parameters():
     from operators import list_operators
     spec=next(s for s in list_operators()if s['id']=='raster_interpolate_idw')
     params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_gdf','reference_raster','field','radius_metres'}
-    assert all(p['required']for p in params.values())
+    assert set(params)=={'input_gdf','reference_raster','field','radius_metres','min_points'}
+    assert all(params[n]['required']for n in('input_gdf','reference_raster','field','radius_metres'))
+    assert params['min_points']['type']=='integer'and params['min_points']['default']==1 and not params['min_points']['required']
+    assert '精确重合' in params['min_points']['description']
+    import inspect
+    from operators import get_operator
+    assert inspect.signature(get_operator('raster_interpolate_idw')).parameters['min_points'].default==1
     assert params['input_gdf']['param_type']==params['reference_raster']['param_type']=='input'
     assert params['input_gdf']['type']=='object'and params['reference_raster']['type']=='raster'
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']

@@ -19427,7 +19427,7 @@ def _idw_points(xy, values, crs=3857):
         geometry=gpd.GeoSeries([Point(x,y) for x,y in xy], crs=crs), crs=crs).rename_geometry('source_shape')
 
 
-def _idw_oracle(points, transform, shape, radius):
+def _idw_oracle(points, transform, shape, radius, min_points=1):
     from fractions import Fraction as Q
     units=Q(points.crs.axis_info[0].unit_conversion_factor);limit=Q(float(radius))**2
     result=np.full(shape,np.nan);gt=list(map(Q,transform))
@@ -19441,7 +19441,7 @@ def _idw_oracle(points, transform, shape, radius):
             if d2<=limit:support.append((d2,z))
         direct=[z for d2,z in support if d2==0]
         if direct:result[row,col]=float(direct[0])
-        elif support:
+        elif len(support)>=min_points:
             top=sum((z/d2 for d2,z in support),Q(0));bottom=sum((1/d2 for d2,z in support),Q(0))
             result[row,col]=float(top/bottom)
     return result
@@ -19449,16 +19449,17 @@ def _idw_oracle(points, transform, shape, radius):
 
 @pytest.mark.parametrize('grid',[(0,1,0,6,0,-1),(3,2,.5,8,.25,-3),(0,-2,.5,1,1,2)])
 @pytest.mark.parametrize('reverse',[False,True])
-def test_idw_complete_exact_oracle_rotated_sheared_rectangular_and_order_independent(tmp_path,grid,reverse):
+@pytest.mark.parametrize('min_points',[1,4,14])
+def test_idw_complete_exact_oracle_rotated_sheared_rectangular_and_order_independent(tmp_path,grid,reverse,min_points):
     import operators.raster_compute as c
     rng=np.random.default_rng(442);xy=rng.uniform(-3,10,(13,2)).tolist()
     points=_idw_points(xy,[0.,-4.,12.,7.,2.,0.,9.,3.,-2.,10.,21.,1.,8.])
     if reverse:points=points.iloc[::-1].copy()
     points.index=[5]*len(points);before=points.copy(deep=True)
     template=create_raster(tmp_path/'template.tif',np.full((5,7),-9999.),grid,'EPSG:3857');raw=template.read_bytes()
-    expected=_idw_oracle(points,grid,(5,7),5.)
+    expected=_idw_oracle(points,grid,(5,7),5.,min_points)
     with raster_workspace():
-        result=c.raster_interpolate_idw(points,raster_load(source_plan(template)),'value',5.)
+        result=c.raster_interpolate_idw(points,raster_load(source_plan(template)),'value',5.,min_points=min_points)
         ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),expected)
         np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
         assert ds.GetGeoTransform()==grid and ds.RasterCount==1;ds=None
@@ -19499,7 +19500,8 @@ def test_idw_numeric_extremes_no_threshold_and_empty_population(tmp_path,case):
             assert np.isnan(actual)if case=='empty'else actual==expected
 
 
-def test_idw_does_not_read_template_pixels_mask_alpha_or_scale_and_cog_is_complete(tmp_path,monkeypatch):
+@pytest.mark.parametrize('min_points',[1,2,3])
+def test_idw_does_not_read_template_pixels_mask_alpha_or_scale_and_cog_is_complete(tmp_path,monkeypatch,min_points):
     import operators.raster_compute as c
     points=_idw_points([(.5,5.5),(4.5,1.5)],[-4.,12.]);grid=(0,1,0,6,0,-1)
     path=create_raster(tmp_path/'ignored.tif',np.full((3,6,7),np.nan),grid,'EPSG:3857')
@@ -19507,13 +19509,13 @@ def test_idw_does_not_read_template_pixels_mask_alpha_or_scale_and_cog_is_comple
     ds.GetRasterBand(1).SetScale(17);ds.GetRasterBand(1).SetOffset(500);ds.GetRasterBand(1).SetUnitType('ft')
     with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
     ds.GetRasterBand(1).GetMaskBand().Fill(0);ds=None;before=path.read_bytes()
-    expected=_idw_oracle(points,grid,(6,7),5.)
+    expected=_idw_oracle(points,grid,(6,7),5.,min_points)
     with raster_workspace():
         source=raster_load(source_plan(path))
         with monkeypatch.context()as patch:
             def forbidden(*a,**kw):pytest.fail('IDW read template pixels or mask')
             patch.setattr(gdal.Band,'ReadAsArray',forbidden);patch.setattr(gdal.Band,'ReadRaster',forbidden)
-            result=c.raster_interpolate_idw(points,source,'value',5.)
+            result=c.raster_interpolate_idw(points,source,'value',5.,min_points=min_points)
         target=tmp_path/'idw.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
         assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0
         assert validate_cog(raster_load(source_plan(target)))['valid']
@@ -19566,7 +19568,7 @@ def test_idw_strict_bilingual_admission_before_output_all_points_even_outside(tm
 
 
 @pytest.mark.parametrize('language',['zh-cn','en'])
-@pytest.mark.parametrize('case',['success','duplicate','radius','calculation-failure','save-existing'])
+@pytest.mark.parametrize('case',['success','success-minimum','success-insufficient','min-points','duplicate','radius','calculation-failure','save-existing'])
 def test_idw_async_cog_save_submitted_language_no_partial_publication_and_cleanup(tmp_path,monkeypatch,case,language):
     import api_server,workflow_engine,operators.raster_compute as c
     points=_idw_points([(.5,2.5),(2.5,.5)],[0.,12.]);grid=(0,1,0,3,0,-1)
@@ -19580,6 +19582,8 @@ def test_idw_async_cog_save_submitted_language_no_partial_publication_and_cleanu
         {'id':'idw','operator':'raster_interpolate_idw','depends_on':['reference','points'],
          'params':{'input_gdf':{'$ref':'points'},'reference_raster':{'$ref':'reference'},'field':'value','radius_metres':0 if case=='radius'else 4.}},
         {'id':'save','operator':'raster_save','depends_on':['idw'],'params':{'input_raster':{'$ref':'idw'},'access_plan':target_plan(target),'profile':'cog'}}]
+    minimum={'success-minimum':2,'success-insufficient':3,'min-points':0}.get(case,1)
+    if case in('success-minimum','success-insufficient','min-points'):tasks[2]['params']['min_points']=minimum
     workspaces=[];execute=workflow_engine._execute_operator
     def track(name,params):
         if name=='raster_interpolate_idw':workspaces.append(params['reference_raster'].workspace)
@@ -19594,20 +19598,21 @@ def test_idw_async_cog_save_submitted_language_no_partial_publication_and_cleanu
         status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
         if status['status']in('success','failed'):break
         time.sleep(.01)
-    assert status['status']==('success'if case=='success'else'failed'),status
+    assert status['status']==('success'if case.startswith('success')else'failed'),status
     assert workspaces and all(not p.exists()for p in workspaces)
-    if case=='success':
-        ds=gdal.Open(str(target));np.testing.assert_array_equal(ds.ReadAsArray(),_idw_oracle(points,grid,(3,3),4.));assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG';ds=None
+    if case.startswith('success'):
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(ds.ReadAsArray(),_idw_oracle(points,grid,(3,3),4.,minimum));assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG';ds=None
     elif case=='save-existing':assert target.read_bytes()==b'existing untouched target'
     else:
         assert not target.exists()
-        with raster_error_language(language):cause=str(c._idw_error('duplicate'if case=='duplicate'else'radius'))if case!='calculation-failure'else'injected IDW calculation failure'
+        with raster_error_language(language):cause=str(c._idw_error('min_points'if case=='min-points'else'duplicate'if case=='duplicate'else'radius'))if case!='calculation-failure'else'injected IDW calculation failure'
         assert cause in status['error']
     assert path.read_bytes()==before and prior.read_bytes()==b'previous unchanged'
 
 
 @pytest.mark.parametrize('shape',[(2,515),(513,2)])
-def test_idw_both_block_axes_are_bounded_and_all_pixels_written(tmp_path,monkeypatch,shape):
+@pytest.mark.parametrize('min_points',[1,2])
+def test_idw_both_block_axes_are_bounded_and_all_pixels_written(tmp_path,monkeypatch,shape,min_points):
     import operators.raster_compute as c
     path=create_raster(tmp_path/'blocks.tif',np.full(shape,-9999.),(0,1,0,0,0,-1),'EPSG:3857')
     points=_idw_points([(0.,0.)],[7.]);calls=[];write=gdal.Band.WriteRaster
@@ -19616,8 +19621,8 @@ def test_idw_both_block_axes_are_bounded_and_all_pixels_written(tmp_path,monkeyp
     with raster_workspace():
         source=raster_load(source_plan(path))
         with monkeypatch.context()as patch:
-            patch.setattr(gdal.Band,'WriteRaster',bounded);result=c.raster_interpolate_idw(points,source,'value',10000.)
-        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),np.full(shape,7.));ds=None
+            patch.setattr(gdal.Band,'WriteRaster',bounded);result=c.raster_interpolate_idw(points,source,'value',10000.,min_points=min_points)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),np.full(shape,7. if min_points==1 else np.nan));ds=None
     assert len(calls)==2 and sum(w*h for _,_,w,h in calls)==shape[0]*shape[1]
 
 
@@ -19631,6 +19636,74 @@ def test_idw_failed_block_write_never_returns_partial_raster_and_cleans(tmp_path
         with pytest.raises(ValueError)as error:c.raster_interpolate_idw(_idw_points([(0.,0.)],[0.]),source,'value',1.)
         assert str(error.value)==str(c._idw_error('write')) and set(source.workspace.iterdir())==files
     assert path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+@pytest.mark.parametrize('radius_kind',['below','equal','above'])
+@pytest.mark.parametrize('minimum',[2,3])
+def test_idw_min_points_exact_circle_before_count_and_unit_conversion(tmp_path,epsg,radius_kind,minimum):
+    import operators.raster_compute as c
+    points=_idw_points([(-1.,0.),(1.,0.),(100.,100.)],[0.,8.,-999.],epsg)
+    factor=points.crs.axis_info[0].unit_conversion_factor
+    radius=factor if radius_kind=='equal'else float(np.nextafter(factor,0 if radius_kind=='below'else np.inf))
+    grid=(-.5,1,0,.5,0,-1);path=create_raster(tmp_path/'circle.tif',np.array([[-9999.]]),grid,f'EPSG:{epsg}')
+    with raster_workspace():
+        result=c.raster_interpolate_idw(points,raster_load(source_plan(path)),'value',radius,min_points=minimum)
+        ds=gdal.Open(str(result.path));actual=ds.ReadAsArray();mask=ds.GetRasterBand(1).GetMaskBand().ReadAsArray();ds=None
+    expected=np.array([[4. if minimum==2 and radius_kind!='below'else np.nan]])
+    np.testing.assert_array_equal(actual,expected);np.testing.assert_array_equal(mask!=0,np.isfinite(expected))
+
+
+@pytest.mark.parametrize('minimum',[2,10**100,np.int64(3),np.uint64(2**64-1)])
+@pytest.mark.parametrize('value',[0.,-7.])
+def test_idw_min_points_coincidence_overrides_shortfall_even_above_total(tmp_path,minimum,value):
+    import operators.raster_compute as c
+    grid=(-.5,1,0,.5,0,-1);path=create_raster(tmp_path/'coincident.tif',np.array([[-9999.,-9999.]]),grid,'EPSG:3857')
+    points=_idw_points([(0.,0.)],[value]);before=points.copy(deep=True)
+    with raster_workspace():
+        result=c.raster_interpolate_idw(points,raster_load(source_plan(path)),'value',2.,min_points=minimum)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),[[value,np.nan]])
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,[[True,False]]);ds=None
+    assert points.equals(before)
+
+
+@pytest.mark.parametrize('minimum',[None,True,False,np.bool_(True),0,-1,1.,1.5,np.float64(2),float('nan'),float('inf'),-float('inf'),'2',[],{},[2]])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_idw_min_points_strict_bilingual_validation_before_any_source_or_output(tmp_path,monkeypatch,minimum,language):
+    import operators.raster_compute as c
+    def forbidden(*a,**kw):pytest.fail('invalid min_points opened a source')
+    monkeypatch.setattr(c,'_open',forbidden)
+    with raster_workspace(),raster_error_language(language):
+        with pytest.raises(ValueError)as error:c.raster_interpolate_idw(_idw_points([(0.,0.)],[0.]),None,'value',1.,min_points=minimum)
+        assert str(error.value)==('IDW最少支撑点数必须为非布尔正整数'if language=='zh-cn'else'IDW minimum support count must be a positive integer, excluding booleans')
+
+
+def test_idw_min_points_default_and_explicit_one_match_full_original_oracle(tmp_path):
+    import operators.raster_compute as c
+    points=_idw_points([(0.,0.),(1.5,0.),(-1.,2.)],[0.,-4.,12.]);grid=(-.5,1,0,2.5,0,-1)
+    path=create_raster(tmp_path/'default.tif',np.full((5,7),-9999.),grid,'EPSG:3857');raw=path.read_bytes()
+    expected=_idw_oracle(points,grid,(5,7),2.)
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        for kwargs in({},dict(min_points=1)):
+            result=c.raster_interpolate_idw(points,source,'value',2.,**kwargs)
+            ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),expected)
+            np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));ds=None
+    assert path.read_bytes()==raw
+
+
+def test_idw_min_points_empty_and_shortfall_precede_numeric_result_conversion(tmp_path):
+    import operators.raster_compute as c
+    tiny=float(np.nextafter(0.,1.));path=create_raster(tmp_path/'shortfall.tif',np.array([[9.]]),(-.5,1,0,.5,0,-1),'EPSG:3857')
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        for xy,values,minimum in[([],[],1),([],[],10**100),([(-1.,0.),(1.,0.)],[0.,tiny],3),([(1e-200,0.)],[7.],2)]:
+            result=c.raster_interpolate_idw(_idw_points(xy,values),source,'value',2.,min_points=minimum)
+            ds=gdal.Open(str(result.path));assert np.isnan(ds.ReadAsArray()[0,0]);ds=None
+        for minimum in(1,2):
+            files=set(source.workspace.iterdir())
+            with pytest.raises(ValueError,match='Float64'):c.raster_interpolate_idw(_idw_points([(-1.,0.),(1.,0.)],[0.,tiny]),source,'value',2.,min_points=minimum)
+            assert set(source.workspace.iterdir())==files
 
 
 @pytest.mark.parametrize('window', ['square3','square5','circle-metre','circle-foot','circle-survey'])
