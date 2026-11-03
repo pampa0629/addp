@@ -8007,9 +8007,9 @@ def test_buffer_positive_integral_quarter_circle_resolution(operator,resolution)
 def test_buffer_single_and_multiple_distances_share_one_admission_and_kernel(monkeypatch):
     import operators.data_operations as operations
     import operators.geometric_operators as geometry
-    source=buffer_source();calls=[];original=geometry._prepare_buffer_geometry
+    source=buffer_source();calls=[];original=geometry._prepare_projected_xy_source
     def observed(*args,**kwargs):calls.append(1);return original(*args,**kwargs)
-    monkeypatch.setattr(operations,'_prepare_buffer_geometry',observed)
+    monkeypatch.setattr(operations,'_prepare_projected_xy_source',observed)
     result=get_operator('batch_buffer')(source,[2,0,-1,2],resolution=1)
     assert len(calls)==1 and len(result)==4*len(source)
     for i,distance in enumerate([2,0,-1,2]):
@@ -8125,3 +8125,158 @@ def test_buffer_and_multi_buffer_discovery_explicit_types_defaults_and_projected
         assert '四分之一圆'in params['resolution']['description']
         assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='geodataframe'
         assert '投影'in spec['detailed_description']['overview']
+
+
+@pytest.mark.parametrize('crs', [3857, 2263])
+def test_simplify_native_units_zero_collinear_and_source_rows_are_preserved(crs):
+    source = buffer_source([LineString([(0, 0), (1, .5), (2, 0)]), Point(10, 10), box(20, 0, 24, 4)], crs)
+    source['enabled'] = pd.array([None, True, False], dtype='boolean')
+    before = source.copy(deep=True)
+    result = get_operator('simplify')(source, .6)
+    assert list(result.geometry.iloc[0].coords) == [(0., 0.), (2., 0.)]
+    assert result.geometry.iloc[1].equals_exact(Point(10, 10), 0)
+    assert result.geometry.iloc[2].equals(source.geometry.iloc[2])
+    assert result.geometry.name == 'shape' and result.crs == source.crs
+    assert result.index.equals(source.index) and result.columns.equals(source.columns)
+    pd.testing.assert_frame_equal(result.drop(columns='shape'), source.drop(columns='shape'))
+    assert_geodataframe_equal(source, before)
+    collinear = buffer_source([LineString([(0, 0), (1, 0), (2, 0)])], crs)
+    assert list(get_operator('simplify')(collinear, 0).geometry.iloc[0].coords) == [(0., 0.), (2., 0.)]
+
+
+@pytest.mark.parametrize('value', [True, False, None, '1', [1], np.array([1]), -1, float('nan'), float('inf'), -float('inf'), 10 ** 500])
+def test_simplify_tolerance_rejects_nonfinite_nonreal_and_negative_even_empty_source(value):
+    from operators.geometric_operators import SimplifyInputError
+    source = buffer_source().iloc[:0]
+    with pytest.raises(SimplifyInputError) as caught:
+        get_operator('simplify')(source, value)
+    assert caught.value.code == 'tolerance'
+
+
+@pytest.mark.parametrize('value', [0, 1, 'true', 'false', None, np.bool_(True), np.bool_(False)])
+def test_simplify_preserve_topology_requires_python_bool_even_empty_source(value):
+    from operators.geometric_operators import SimplifyInputError
+    with pytest.raises(SimplifyInputError) as caught:
+        get_operator('simplify')(buffer_source().iloc[:0], 0, value)
+    assert caught.value.code == 'preserve_topology'
+
+
+@pytest.mark.parametrize('problem', ['not_gdf', 'no_active_geometry', 'duplicate_columns', 'extra_geometry', 'missing', 'empty', 'invalid', 'z', 'm', 'infinite', 'no_crs', 'geographic', 'geocentric'])
+def test_simplify_source_admission_is_explicit_without_repair(problem):
+    from operators.geometric_operators import SimplifyInputError
+    source = buffer_source([Point(0, 0)])
+    if problem == 'not_gdf':
+        source = pd.DataFrame({'a': [1]})
+    elif problem == 'no_active_geometry':
+        source = gpd.GeoDataFrame({'a': [1]})
+    elif problem == 'duplicate_columns':
+        source.columns = ['same'] * len(source.columns)
+    elif problem == 'extra_geometry':
+        source['second_shape'] = source.geometry.copy()
+    elif problem in ('no_crs', 'geographic', 'geocentric'):
+        source = source.set_crs({'no_crs': None, 'geographic': 4326, 'geocentric': 4978}[problem], allow_override=True)
+    else:
+        source['shape'] = [{'missing': None, 'empty': Point(),
+            'invalid': Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)]),
+            'z': Point(0, 0, 1), 'm': shapely.from_wkt('POINT M (0 0 1)'),
+            'infinite': Point(float('inf'), 0)}[problem]]
+    before = source.copy(deep=True)
+    with pytest.raises(SimplifyInputError) as caught:
+        get_operator('simplify')(source, 1)
+    assert caught.value.code == ('crs' if problem in ('no_crs', 'geographic', 'geocentric') else 'source')
+    pd.testing.assert_frame_equal(pd.DataFrame(source), pd.DataFrame(before))
+
+
+def test_simplify_empty_batch_keeps_schema_but_still_requires_projected_crs():
+    from operators.geometric_operators import SimplifyInputError
+    source = buffer_source().iloc[:0]
+    assert_geodataframe_equal(get_operator('simplify')(source, 0, False), source)
+    for crs in (None, 4326):
+        with pytest.raises(SimplifyInputError) as caught:
+            get_operator('simplify')(source.set_crs(crs, allow_override=True), 0)
+        assert caught.value.code == 'crs'
+
+
+def test_simplify_false_collapse_keeps_empty_polygon_row_through_real_geopackage(tmp_path):
+    from osgeo import ogr
+    source = buffer_source([Polygon([(0, 0), (2, 0), (1, 1), (0, 0)]), box(10, 0, 14, 4)])
+    source['enabled'] = pd.array([None, True], dtype='boolean')
+    before = source.copy(deep=True)
+    assert not get_operator('simplify')(source, 100).geometry.is_empty.any()
+    result = get_operator('simplify')(source, 100, False)
+    assert len(result) == 2 and result.geometry.is_empty.all() and not result.geometry.isna().any()
+    assert result.index.equals(source.index) and result.crs == source.crs
+    pd.testing.assert_frame_equal(result.drop(columns='shape'), source.drop(columns='shape'))
+    computed = result.geometry.to_wkb(byte_order=1, flavor='iso').tolist()
+    conn = {'engine_type': 'nfs', 'mount_path': str(tmp_path)}
+    get_operator('save')(input_df=result, connection_info=conn, path='simplified.gpkg', mode='fail')
+    ds = ogr.Open(str(tmp_path / 'simplified.gpkg')); layer = ds.GetLayer(0)
+    rows = list(layer)
+    assert len(rows) == 2 and layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
+    for i, row in enumerate(rows):
+        geometry = row.GetGeometryRef()
+        assert geometry is not None and geometry.IsEmpty()
+        assert bytes(geometry.ExportToIsoWkb()) == computed[i]
+        assert row.GetField('label') == f'row-{i}' and row.GetField('geometry') == 'business'
+        assert row.GetField('grade') == [None, 2 ** 53 + 2][i]
+        assert row.GetField('enabled') == [None, True][i]
+    physical_name = layer.GetGeometryColumn(); ds = None
+    loaded = get_operator('load')(connection_info=conn, path='simplified.gpkg')
+    assert loaded.geometry.name == physical_name and loaded.geometry.to_wkb(byte_order=1, flavor='iso').tolist() == computed
+    assert loaded.geometry.is_empty.all() and not loaded.geometry.isna().any()
+    assert str(loaded.grade.dtype) == 'Int64' and str(loaded.enabled.dtype) == 'boolean'
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('problem', ['source', 'crs', 'tolerance', 'preserve_topology'])
+def test_simplify_runtime_diagnostic_binds_frozen_position_and_blocks_save(monkeypatch, language, problem):
+    import workflow_engine
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from operators.geometric_operators import SimplifyInputError
+    source = buffer_source(); tolerance = 1; preserve_topology = True
+    if problem == 'source': source['shape'] = [None] * len(source)
+    elif problem == 'crs': source = source.set_crs(4326, allow_override=True)
+    elif problem == 'tolerance': tolerance = -1
+    else: preserve_topology = 1
+    lookup = workflow_engine.get_operator
+    calls = []
+    def guarded(name):
+        calls.append(name)
+        if name == 'save': raise AssertionError('simplify admission reached save')
+        if name == 'load': return lambda **params: source
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine, 'get_operator', guarded)
+    tasks = [
+        {'id': 'PRIVATE', 'operator': 'simplify', 'params': {'input_gdf': {'$ref': 'load'}, 'tolerance': tolerance, 'preserve_topology': preserve_topology}, 'depends_on': ['load']},
+        {'id': 'load', 'operator': 'load', 'params': {}, 'depends_on': []},
+        {'id': 'saved', 'operator': 'save', 'params': {'input_df': {'$ref': 'PRIVATE'}}, 'depends_on': ['PRIVATE']},
+    ]
+    with pytest.raises(WorkflowExecutionError) as caught:
+        GeoPythonWorkflowRunner(language=language).execute({'tasks': tasks})
+    reason, parameter = {'source': ('operator_input_invalid', 'input_gdf'), 'crs': ('operator_crs_invalid', ''),
+        'tolerance': ('operator_nonnegative_number_required', 'tolerance'), 'preserve_topology': ('operator_boolean_required', 'preserve_topology')}[problem]
+    assert caught.value.error_code == 'INVALID_PARAMS' and calls == ['load', 'simplify']
+    assert caught.value.task_order == ['load', 'PRIVATE']
+    assert caught.value.diagnostic == {'schema_version': 'addp.execution-failure/v3', 'stage': 'execution', 'reason': reason,
+        'operator': {'node_index': 1, 'operator_id': 'simplify', **({'parameter': parameter} if parameter else {})}}
+    assert SimplifyInputError(problem).message(language) in str(caught.value)
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+
+
+@pytest.mark.parametrize('fault', ['exception', 'missing', 'nonfinite', 'length', 'index'])
+def test_simplify_native_calculation_failures_never_become_input_diagnostics(monkeypatch, fault):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source = buffer_source([LineString([(0, 0), (1, .5), (2, 0)])])
+    def failed(*args, **kwargs):
+        if fault == 'exception': raise shapely.errors.GEOSException('PRIVATE native failure')
+        value = None if fault == 'missing' else LineString([(0, 0), (float('inf'), 0)]) if fault == 'nonfinite' else source.geometry.iloc[0]
+        return gpd.GeoSeries([] if fault == 'length' else [value], crs=source.crs,
+                             index=[] if fault == 'length' else ['wrong'] if fault == 'index' else source.index)
+    monkeypatch.setattr(gpd.GeoSeries, 'simplify', failed)
+    with pytest.raises(WorkflowExecutionError) as caught:
+        GeoPythonWorkflowRunner().execute({'tasks': [{'id': 'simplify', 'operator': 'simplify',
+            'params': {'input_gdf': source, 'tolerance': 1}, 'depends_on': []}]})
+    assert caught.value.error_code == 'EXECUTION_FAILED' and caught.value.diagnostic is None

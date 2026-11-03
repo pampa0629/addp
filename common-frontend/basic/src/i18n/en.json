@@ -248,6 +248,8 @@
         "operator_field_conflict": "Source field {field} conflicts with a fixed operator output field.",
         "operator_geometry_field_conflict": "The source active geometry column {field} conflicts with the distance output field.",
         "operator_number_invalid": "The parameter must be a finite real number and may be positive, zero or negative.",
+        "operator_nonnegative_number_required": "Tolerance must be a finite non-negative real number; zero is allowed.",
+        "operator_boolean_required": "The parameter must be a strict boolean value, true or false.",
         "operator_number_array_invalid": "Distances must be an array of finite numbers without booleans, strings or nulls.",
         "operator_positive_integer_required": "The parameter must be a positive integer.",
         "operator_positive_number_required": "Tolerance must be a finite positive number in the source CRS horizontal units.",
@@ -312,6 +314,8 @@
         "operator_field_conflict": "Manually rename source field {field} upstream before submitting a new execution; it is not renamed or overwritten automatically.",
         "operator_geometry_field_conflict": "Manually rename source active geometry column {field} upstream before submitting a new execution.",
         "operator_number_invalid": "Enter a finite real number, allowing positive, zero or negative values; do not use booleans, strings, nulls, arrays or non-finite values.",
+        "operator_nonnegative_number_required": "Enter a finite non-negative number, allowing zero; do not use booleans, strings, nulls, arrays or non-finite values.",
+        "operator_boolean_required": "Select a boolean value, true or false; do not use numbers, strings, nulls, arrays or other types.",
         "operator_number_array_invalid": "Check every distances array element; valid zero, negative and duplicate distances remain allowed.",
         "operator_positive_integer_required": "Set the parameter to an integer greater than zero before submitting a new execution.",
         "operator_positive_number_required": "Set a finite positive tolerance in source CRS units; it is not converted to metres automatically.",
@@ -364,7 +368,18 @@
           "operator_crs_invalid": "Explicitly reproject the source to a suitable projected CRS and enter distances in its original units; no automatic conversion to metres is performed."
         }
       },
+      "simplify": {
+        "reasons": {
+          "operator_input_invalid": "The source layer requires unique column names, one active geometry column and valid non-empty finite XY geometries.",
+          "operator_crs_invalid": "The source layer requires a known projected CRS with matching finite positive horizontal linear units."
+        },
+        "actions": {
+          "operator_input_invalid": "Check the source structure and geometry; explicitly prepare missing, empty, invalid or Z/M geometries upstream before a new execution. No automatic repair is performed.",
+          "operator_crs_invalid": "Confirm the source CRS and explicitly reproject to a suitable projected CRS, using its original horizontal units for tolerance; no automatic projection or conversion to metres is performed."
+        }
+      },
       "operatorNames": {
+        "simplify": "Simplify geometry",
         "buffer": "Buffer analysis",
         "voronoi": "Voronoi polygons",
         "contains": "Contains filtering",
@@ -382,6 +397,7 @@
         "intersection": "Intersection overlay"
       },
       "operatorParameters": {
+        "preserve_topology": "Preserve single-geometry topology (preserve_topology)",
         "distance": "Buffer distance (distance)",
         "group_fields": "Group fields (group_fields)",
         "mask_gdf": "Clip mask (mask_gdf)",

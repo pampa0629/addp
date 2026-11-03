@@ -248,6 +248,8 @@
         "operator_field_conflict": "源图层字段 {field} 与算子的固定输出字段重名。",
         "operator_geometry_field_conflict": "源图层活动几何列 {field} 与距离输出字段重名。",
         "operator_number_invalid": "该参数须为有限实数，可为正数、零或负数。",
+        "operator_nonnegative_number_required": "容差须为有限非负实数，允许为零。",
+        "operator_boolean_required": "该参数须为严格布尔值 true 或 false。",
         "operator_number_array_invalid": "距离列表必须为有限数值数组，不能包含布尔值、字符串或空值。",
         "operator_positive_integer_required": "参数必须是大于零的整数。",
         "operator_positive_number_required": "容差必须为以源坐标系水平单位表示的有限正数。",
@@ -312,6 +314,8 @@
         "operator_field_conflict": "先在上游手动重命名源字段 {field}，再重新执行；不会自动改名或覆盖。",
         "operator_geometry_field_conflict": "先在上游手动重命名源活动几何列 {field}，再重新执行。",
         "operator_number_invalid": "填写有限数值，可为正数、零或负数；不接受布尔值、字符串、空值、数组或非有限值。",
+        "operator_nonnegative_number_required": "填写有限非负数，零值合法；不接受布尔值、字符串、空值、数组或非有限值。",
+        "operator_boolean_required": "选择布尔值 true 或 false，不接受数字、字符串、空值、数组或其他类型。",
         "operator_number_array_invalid": "检查 distances 数组中的全部元素；保留合法的零值、负值和重复距离。",
         "operator_positive_integer_required": "将该参数设为大于零的整数后重新执行。",
         "operator_positive_number_required": "按源坐标系单位设置有限且大于零的容差后重新执行，不自动换算为米。",
@@ -364,7 +368,18 @@
           "operator_crs_invalid": "先将源图层显式重投影到合适的投影坐标系，再按该坐标系原单位填写距离；不自动换算为米。"
         }
       },
+      "simplify": {
+        "reasons": {
+          "operator_input_invalid": "源图层须有唯一列名和唯一活动几何列，且每行几何须非空、有效、有限并为二维 XY。",
+          "operator_crs_invalid": "源图层须使用已知投影坐标系，水平轴的线性单位须匹配、有限且为正。"
+        },
+        "actions": {
+          "operator_input_invalid": "检查源图层结构及几何，先在上游显式整理缺失、空、无效或 Z/M 几何后重新执行；不会自动修复。",
+          "operator_crs_invalid": "先确认源坐标系并显式重投影到合适的投影坐标系，按其原水平单位填写容差；不会自动投影或换算为米。"
+        }
+      },
       "operatorNames": {
+        "simplify": "简化几何",
         "buffer": "缓冲区分析",
         "voronoi": "泰森多边形",
         "contains": "包含判断",
@@ -382,6 +397,7 @@
         "intersection": "相交叠加"
       },
       "operatorParameters": {
+        "preserve_topology": "保留单几何拓扑（preserve_topology）",
         "distance": "缓冲距离（distance）",
         "group_fields": "分组字段（group_fields）",
         "mask_gdf": "裁剪掩膜（mask_gdf）",

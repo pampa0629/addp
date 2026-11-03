@@ -11,7 +11,7 @@ export const failureReasons = Object.freeze([
   'operator_input_overlap', 'operator_reference_overlap',
   'operator_overlay_fields_conflict', 'operator_endpoint_network_invalid', 'operator_distance_limit_invalid', 'operator_source_topology_invalid', 'operator_trim_conflict',
   'operator_input_invalid', 'operator_mask_invalid', 'operator_reference_invalid', 'operator_field_conflict', 'operator_geometry_field_conflict',
-  'operator_number_invalid', 'operator_number_array_invalid', 'operator_positive_integer_required', 'operator_positive_number_required',
+  'operator_number_invalid', 'operator_nonnegative_number_required', 'operator_boolean_required', 'operator_number_array_invalid', 'operator_positive_integer_required', 'operator_positive_number_required',
   'operator_projected_crs_required', 'operator_crs_mismatch', 'operator_crs_invalid', 'operator_geometry_invalid',
   'timeout', 'cancelled', 'resource_exhausted', 'query_failed', 'result_invalid', 'database_required', 'data_protection_required', 'local_read_unsupported',
   'protection_computed_output_unsupported', 'protection_lineage_unverified', 'protection_role_choice_unavailable', 'protection_not_ready',
@@ -24,7 +24,8 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
 
 const operatorFailureTemplates = Object.freeze({ contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
   'buffer:operator_input_invalid': 'buffer', 'buffer:operator_crs_invalid': 'buffer',
-  'batch_buffer:operator_crs_invalid': 'buffer' })
+  'batch_buffer:operator_crs_invalid': 'buffer',
+  'simplify:operator_input_invalid': 'simplify', 'simplify:operator_crs_invalid': 'simplify' })
 
 export function executionFailurePresentation(details, translate) {
   const diagnostic = details?.diagnostic
@@ -61,6 +62,10 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["simplify", "operator_input_invalid", "input_gdf", ""],
+  ["simplify", "operator_crs_invalid", "", ""],
+  ["simplify", "operator_nonnegative_number_required", "tolerance", ""],
+  ["simplify", "operator_boolean_required", "preserve_topology", ""],
   ["buffer", "operator_input_invalid", "input_gdf", ""],
   ["buffer", "operator_crs_invalid", "", ""],
   ["buffer", "operator_number_invalid", "distance", ""],

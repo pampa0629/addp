@@ -11,7 +11,7 @@ from operators.io_operators import GeoPackageSaveError
 from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.spatial_relations import DistanceInputError, RelationInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError, VoronoiInputError
-from operators.geometric_operators import BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
+from operators.geometric_operators import SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -82,8 +82,10 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
             return _execute_workflow_operator(operator, params)
         except (EndpointSnapError, LineExtensionError, GeoPackageSaveError) as exc:
             raise ValueError(exc.message(self.language)) from exc
-        except (BufferInputError, VoronoiInputError, RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
+        except (SimplifyInputError, BufferInputError, VoronoiInputError, RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
             reasons = {
+                SimplifyInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid',
+                                     'tolerance':'operator_nonnegative_number_required','preserve_topology':'operator_boolean_required'},
                 BufferInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid',
                                    'distance':'operator_number_invalid','resolution':'operator_positive_integer_required'},
                 VoronoiInputError: {'source': 'operator_input_invalid', 'mask': 'operator_mask_invalid', 'crs': 'operator_crs_invalid'},

@@ -447,3 +447,53 @@ def test_buffer_diagnostics_bind_original_definition_position_before_save(operat
                      **({'parameter': parameter} if parameter else {})},
     }
     assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)
+
+
+def test_simplify_input_rules_are_exact_and_reject_foreign_parameter_domains():
+    import copy
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES, OperatorInputError, validated_operator_diagnostic
+
+    expected = {
+        ('simplify', 'operator_input_invalid', ''): 'input_gdf',
+        ('simplify', 'operator_crs_invalid', ''): '',
+        ('simplify', 'operator_nonnegative_number_required', ''): 'tolerance',
+        ('simplify', 'operator_boolean_required', ''): 'preserve_topology',
+    }
+    assert {key: value for key, value in OPERATOR_INPUT_RULES.items() if key[0] == 'simplify'} == expected
+    for (_, reason, _), parameter in expected.items():
+        value = OperatorInputError(reason, 'PRIVATE').diagnostic('simplify', 2)
+        assert value['operator'] == {'node_index': 2, 'operator_id': 'simplify', **({'parameter': parameter} if parameter else {})}
+        assert validated_operator_diagnostic(value) == value
+        for patch in ({'field': ''}, {'field': 'tolerance'}, {'parameter': 'distance'}, {'operator_id': 'unknown_simplify'}, {'node_index': True}, {'node_index': 0}):
+            forged = copy.deepcopy(value); forged['operator'].update(patch)
+            assert validated_operator_diagnostic(forged) is None
+    for operator in ('buffer', 'batch_buffer', 'distance_to', 'unknown_simplify'):
+        for reason in ('operator_nonnegative_number_required', 'operator_boolean_required'):
+            assert OperatorInputError(reason, 'PRIVATE').diagnostic(operator, 1) is None
+    for reason in ('operator_positive_number_required', 'operator_number_invalid', 'operator_number_array_invalid'):
+        assert OperatorInputError(reason, 'PRIVATE').diagnostic('simplify', 1) is None
+
+
+@pytest.mark.parametrize('reason,parameter', [
+    ('operator_input_invalid', 'input_gdf'), ('operator_crs_invalid', ''),
+    ('operator_nonnegative_number_required', 'tolerance'), ('operator_boolean_required', 'preserve_topology'),
+])
+def test_simplify_diagnostics_keep_original_frozen_task_position_and_stop_before_save(reason, parameter):
+    from addp_common.workflow_runtime import OperatorInputError
+    calls = []
+    def execute(operator, params):
+        calls.append(operator)
+        if operator == 'simplify': raise OperatorInputError(reason, 'PRIVATE')
+        return {'kept': True}
+    definition = {'tasks': [
+        {'id': 'PRIVATE', 'operator': 'simplify', 'params': {}, 'depends_on': ['load']},
+        {'id': 'load', 'operator': 'load', 'params': {}, 'depends_on': []},
+        {'id': 'saved', 'operator': 'save', 'params': {}, 'depends_on': ['PRIVATE']},
+    ]}
+    with pytest.raises(WorkflowExecutionError) as caught:
+        WorkflowRunner({'load', 'simplify', 'save'}, execute).execute(definition)
+    assert calls == ['load', 'simplify'] and caught.value.error_code == 'INVALID_PARAMS'
+    assert caught.value.all_results == {'load': {'kept': True}}
+    assert caught.value.diagnostic == {'schema_version': 'addp.execution-failure/v3', 'stage': 'execution', 'reason': reason,
+        'operator': {'node_index': 1, 'operator_id': 'simplify', **({'parameter': parameter} if parameter else {})}}
+    assert 'PRIVATE' not in json.dumps(caught.value.diagnostic)

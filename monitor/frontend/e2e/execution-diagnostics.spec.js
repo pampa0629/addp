@@ -414,6 +414,7 @@ for (const locale of ['zh-cn', 'en']) test(`shows actionable create conflict in 
 
 
 for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field,parameter='input_gdf'] of [
+  ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_nonnegative_number_required','tolerance'],['operator_boolean_required','preserve_topology']].map(([reason,parameter])=>['simplify',reason,'',parameter]),
   ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_number_invalid','distance'],['operator_positive_integer_required','resolution']].map(([reason,parameter])=>['buffer',reason,'',parameter]),
   ['batch_buffer','operator_crs_invalid','',''],
   ...[['operator_input_invalid','input_gdf'],['operator_mask_invalid','mask_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>['voronoi',reason,'',parameter]),
@@ -427,9 +428,11 @@ for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field,parame
       operator:{node_index:2,operator_id,...(parameter?{parameter}:{}),...(field?{field}:{})}}}})
   await page.goto('/executions?execution_id=diagnostic-run')
   const panel=page.locator('.execution-detail-content > .execution-failure')
-  const name=operator_id==='buffer'?(locale==='zh-cn'?'缓冲区分析':'Buffer analysis'):operator_id==='voronoi'?(locale==='zh-cn'?'泰森多边形':'Voronoi polygons'):operator_id==='batch_buffer'?(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'):(locale==='zh-cn'?'面界提取':'Extract polygon rings')
+  const simplifyMarker={operator_input_invalid:locale==='zh-cn'?'几何':'geometry',operator_crs_invalid:locale==='zh-cn'?'投影坐标系':'projected CRS',operator_nonnegative_number_required:locale==='zh-cn'?'非负':'non-negative',operator_boolean_required:locale==='zh-cn'?'布尔值':'boolean'}[reason]
+  const name=operator_id==='simplify'?(locale==='zh-cn'?'简化几何':'Simplify geometry'):operator_id==='buffer'?(locale==='zh-cn'?'缓冲区分析':'Buffer analysis'):operator_id==='voronoi'?(locale==='zh-cn'?'泰森多边形':'Voronoi polygons'):operator_id==='batch_buffer'?(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'):(locale==='zh-cn'?'面界提取':'Extract polygon rings')
   await expect(panel).toContainText(name)
   if(field) await expect(panel).toContainText(field)
+  else if(operator_id==='simplify') await expect(panel).toContainText(simplifyMarker)
   else if(operator_id==='voronoi') await expect(panel).toContainText(reason==='operator_input_invalid'?(locale==='zh-cn'?'重复 XY':'duplicate XY'):reason==='operator_mask_invalid'?'Polygon':locale==='zh-cn'?'投影坐标系':'projected CRS')
   else if(operator_id==='buffer'||operator_id==='batch_buffer'&&reason==='operator_crs_invalid') await expect(panel).toContainText(reason==='operator_number_invalid'?(locale==='zh-cn'?'正数、零或负数':'positive, zero or negative'):reason==='operator_positive_integer_required'?(locale==='zh-cn'?'大于零的整数':'positive integer'):reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):locale==='zh-cn'?'几何':'geometry')
   else {
@@ -444,6 +447,21 @@ for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field,parame
   expect(copied).toContain(name)
   expect(copied).toContain('diagnostic-run')
   if(field) expect(copied).toContain(field)
+  if(operator_id==='simplify') {
+    expect(copied).toContain(simplifyMarker)
+    if(parameter) { await expect(panel).toContainText(parameter); expect(copied).toContain(parameter) }
+    if(reason==='operator_nonnegative_number_required') {
+      await expect(panel).toContainText(locale==='zh-cn'?'零':'zero')
+      expect(copied).toContain(locale==='zh-cn'?'零':'zero')
+    }
+    if(reason==='operator_boolean_required') {
+      await expect(panel).toContainText(locale==='zh-cn'?'保留单几何拓扑':'Preserve single-geometry topology')
+      expect(copied).toContain('true');expect(copied).toContain('false')
+    }
+    expect(copied).not.toMatch(/两个图层|Both layers|标识|identifier|buffer|缓冲/i)
+    await page.setViewportSize({width:390,height:844})
+    expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
+  }
   if(operator_id==='buffer'||operator_id==='batch_buffer'&&reason==='operator_crs_invalid') {
     if(parameter) { await expect(panel).toContainText(parameter); expect(copied).toContain(parameter) }
     expect(copied).toContain(reason==='operator_number_invalid'?(locale==='zh-cn'?'正数、零或负数':'positive, zero or negative'):reason==='operator_positive_integer_required'?(locale==='zh-cn'?'大于零的整数':'positive integer'):reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):locale==='zh-cn'?'几何':'geometry')

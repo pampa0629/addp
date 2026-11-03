@@ -1257,6 +1257,7 @@ for (const locale of ['zh-cn', 'en']) for (const cause of ['roles', 'choice', 'r
 
 for (const locale of ['zh-cn','en']) {
   for (const [operator_id,reason,parameter,field,name] of [
+    ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_nonnegative_number_required','tolerance'],['operator_boolean_required','preserve_topology']].map(([reason,parameter])=>['simplify',reason,parameter,'',locale==='zh-cn'?'简化几何':'Simplify geometry']),
     ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_number_invalid','distance'],['operator_positive_integer_required','resolution']].map(([reason,parameter])=>['buffer',reason,parameter,'',locale==='zh-cn'?'缓冲区分析':'Buffer analysis']),
     ['batch_buffer','operator_crs_invalid','','',locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'],
     ...[['operator_input_invalid','input_gdf'],['operator_mask_invalid','mask_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>['voronoi',reason,parameter,'',locale==='zh-cn'?'泰森多边形':'Voronoi polygons']),
@@ -1276,6 +1277,7 @@ for (const locale of ['zh-cn','en']) {
     }})
     await page.goto(`/executions/${EXECUTION_ID}`)
     const panel=page.locator('.execution-failure')
+    const simplifyMarker={operator_input_invalid:locale==='zh-cn'?'几何':'geometry',operator_crs_invalid:locale==='zh-cn'?'投影坐标系':'projected CRS',operator_nonnegative_number_required:locale==='zh-cn'?'非负':'non-negative',operator_boolean_required:locale==='zh-cn'?'布尔值':'boolean'}[reason]
     await expect(panel).toContainText(name)
     await expect(panel).toContainText(locale==='zh-cn'?'定义中的第 2 个节点':'Node 2 in the workflow definition')
     await expect(panel).toContainText(locale==='zh-cn'?'执行操作':'Execute operation')
@@ -1286,6 +1288,7 @@ for (const locale of ['zh-cn','en']) {
     } else if(reason==='operator_endpoint_network_invalid') await expect(panel).toContainText(locale==='zh-cn'?'双方端点':'both endpoints')
     else if(reason==='operator_source_topology_invalid') await expect(panel).toContainText(locale==='zh-cn'?'内部自交':'internal self-intersections')
     else if(reason==='operator_trim_conflict') await expect(panel).toContainText(locale==='zh-cn'?'交错或相遇':'cross or meet')
+    else if(operator_id==='simplify') await expect(panel).toContainText(simplifyMarker)
     else if(operator_id==='voronoi') await expect(panel).toContainText(reason==='operator_input_invalid'?(locale==='zh-cn'?'重复 XY':'duplicate XY'):reason==='operator_mask_invalid'?'Polygon':locale==='zh-cn'?'投影坐标系':'projected CRS')
     else if(operator_id==='buffer'||operator_id==='batch_buffer'&&reason==='operator_crs_invalid') await expect(panel).toContainText(reason==='operator_number_invalid'?(locale==='zh-cn'?'正数、零或负数':'positive, zero or negative'):reason==='operator_positive_integer_required'?(locale==='zh-cn'?'大于零的整数':'positive integer'):reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):locale==='zh-cn'?'几何':'geometry')
     else await expect(panel).toContainText(locale==='zh-cn'?'有限正数':'finite positive')
@@ -1296,6 +1299,22 @@ for (const locale of ['zh-cn','en']) {
     expect(copied).toContain(EXECUTION_ID)
     if(field) expect(copied).toContain(field)
     if(reason==='operator_geometry_invalid') expect(copied).toContain(locale==='zh-cn'?'未通过有效性检查':'failed the validity check')
+    if(operator_id==='simplify') {
+      await expect(panel).toContainText(simplifyMarker)
+      expect(copied).toContain(simplifyMarker)
+      if(parameter) { await expect(panel).toContainText(parameter); expect(copied).toContain(parameter) }
+      if(reason==='operator_nonnegative_number_required') {
+        await expect(panel).toContainText(locale==='zh-cn'?'零':'zero')
+        expect(copied).toContain(locale==='zh-cn'?'零':'zero')
+      }
+      if(reason==='operator_boolean_required') {
+        await expect(panel).toContainText(locale==='zh-cn'?'保留单几何拓扑':'Preserve single-geometry topology')
+        expect(copied).toContain('true');expect(copied).toContain('false')
+      }
+      expect(copied).not.toMatch(/两个图层|Both layers|标识|identifier|buffer|缓冲/i)
+      await expect(panel).not.toContainText('/private/input.gpkg')
+      expect(copied).not.toContain('/private/input.gpkg')
+    }
     if(operator_id==='buffer'||operator_id==='batch_buffer'&&reason==='operator_crs_invalid') {
       if(parameter) { await expect(panel).toContainText(parameter); expect(copied).toContain(parameter) }
       expect(copied).toContain(reason==='operator_number_invalid'?(locale==='zh-cn'?'正数、零或负数':'positive, zero or negative'):reason==='operator_positive_integer_required'?(locale==='zh-cn'?'大于零的整数':'positive integer'):reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):locale==='zh-cn'?'几何':'geometry')

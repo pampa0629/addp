@@ -47,7 +47,7 @@ class BufferInputError(ValueError):
         return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
 
 
-def _buffer_frame_geometry(input_gdf, error_type=BufferInputError):
+def _unary_frame_geometry(input_gdf, error_type):
     if (not isinstance(input_gdf, gpd.GeoDataFrame) or not input_gdf.columns.is_unique
             or sum(isinstance(dtype, gpd.array.GeometryDtype) for dtype in input_gdf.dtypes) != 1):
         raise error_type('source')
@@ -57,12 +57,12 @@ def _buffer_frame_geometry(input_gdf, error_type=BufferInputError):
         raise error_type('source') from exc
 
 
-def _prepare_buffer_geometry(input_gdf, error_type=BufferInputError):
+def _prepare_projected_xy_source(input_gdf, error_type):
     # The public callers have already admitted the frame schema.
     try:
         geometry = _finite_xy_geometry(input_gdf)
         if geometry.isna().any() or geometry.is_empty.any() or not shapely.is_valid(geometry.array).all():
-            raise ValueError('invalid buffer geometry')
+            raise ValueError('invalid projected XY source geometry')
     except (ValueError, TypeError) as exc:
         raise error_type('source') from exc
     try:
@@ -72,16 +72,20 @@ def _prepare_buffer_geometry(input_gdf, error_type=BufferInputError):
     return geometry
 
 
-def _buffer_distance(value):
+def _finite_real_scalar(value, error_type, code):
     if isinstance(value, bool) or not isinstance(value, Real):
-        raise BufferInputError('distance')
+        raise error_type(code)
     try:
-        distance = float(value)
+        number = float(value)
     except (ValueError, OverflowError) as exc:
-        raise BufferInputError('distance') from exc
-    if not np.isfinite(distance):
-        raise BufferInputError('distance')
-    return distance
+        raise error_type(code) from exc
+    if not np.isfinite(number):
+        raise error_type(code)
+    return number
+
+
+def _buffer_distance(value):
+    return _finite_real_scalar(value, BufferInputError, 'distance')
 
 
 def _buffer_resolution(value, error_type=BufferInputError):
@@ -106,8 +110,8 @@ def _compute_buffer(input_gdf, geometry, distance, resolution):
 
 def buffer(input_gdf: gpd.GeoDataFrame, distance: float, resolution: int = 16) -> gpd.GeoDataFrame:
     """Full per-source planar buffers in projected CRS units, retaining empty rows."""
-    _buffer_frame_geometry(input_gdf)
-    geometry = _prepare_buffer_geometry(input_gdf)
+    _unary_frame_geometry(input_gdf, BufferInputError)
+    geometry = _prepare_projected_xy_source(input_gdf, BufferInputError)
     return _compute_buffer(input_gdf, geometry, _buffer_distance(distance), _buffer_resolution(resolution))
 
 
@@ -412,21 +416,48 @@ def difference(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame,
     return result
 
 
+class SimplifyInputError(ValueError):
+    """Closed simplification admission facts without source values."""
+    _messages = {
+        'zh-cn': {
+            'source': '简化源图层须具有唯一列名和唯一活动几何列，源几何须有效、非空、非缺失且为有限二维XY；请先显式整理或修复源图层。',
+            'crs': '简化要求已知投影坐标系和匹配、有限且为正的水平线性单位；容差沿原坐标单位，请先显式重投影。',
+            'tolerance': '简化容差必须为有限非负实数标量，零合法；不接受布尔值、字符串、空值、数组或非有限值。',
+            'preserve_topology': '保留单几何拓扑参数必须为布尔值True或False；不接受整数、字符串或空值。',
+        },
+        'en': {
+            'source': 'Simplification requires unique column names, one active geometry column and valid non-empty non-missing finite XY source geometries; prepare or explicitly repair the source first.',
+            'crs': 'Simplification requires a known projected CRS with matching finite positive horizontal units; tolerance uses the original coordinate units. Reproject explicitly first.',
+            'tolerance': 'Simplification tolerance must be a finite non-negative real scalar, including zero; booleans, strings, nulls, arrays and non-finite values are rejected.',
+            'preserve_topology': 'Preserve single-geometry topology must be a boolean True or False; integers, strings and nulls are rejected.',
+        },
+    }
+
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
 def simplify(input_gdf: gpd.GeoDataFrame, tolerance: float, preserve_topology: bool = True) -> gpd.GeoDataFrame:
-    """
-    简化几何（Douglas-Peucker 算法）
-
-    Args:
-        input_gdf: 输入 GeoDataFrame
-        tolerance: 简化容差
-        preserve_topology: 是否保持单个几何的拓扑
-
-    Returns:
-        GeoDataFrame 简化结果
-    """
+    """Simplify each valid projected XY source, retaining attributes and empty rows."""
+    _unary_frame_geometry(input_gdf, SimplifyInputError)
+    geometry = _prepare_projected_xy_source(input_gdf, SimplifyInputError)
+    tolerance = _finite_real_scalar(tolerance, SimplifyInputError, 'tolerance')
+    if tolerance < 0:
+        raise SimplifyInputError('tolerance')
+    if not isinstance(preserve_topology, bool):
+        raise SimplifyInputError('preserve_topology')
+    values = geometry.simplify(tolerance, preserve_topology=preserve_topology)
+    if (len(values) != len(geometry) or not values.index.equals(geometry.index)
+            or values.isna().any() or shapely.has_z(values.array).any() or shapely.has_m(values.array).any()
+            or not np.isfinite(shapely.get_coordinates(values.array)).all()
+            or (preserve_topology and not shapely.is_valid(values.array).all())):
+        raise RuntimeError('simplification calculation produced an invalid or non-finite XY result')
     result = input_gdf.copy()
-    geom_col = result.geometry.name
-    result[geom_col] = result.geometry.simplify(tolerance, preserve_topology=preserve_topology)
+    result[geometry.name] = values
     return result
 
 
@@ -2692,7 +2723,7 @@ SIMPLIFY_METADATA = OperatorMetadata(
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="使用Douglas-Peucker算法简化几何对象,减少顶点数量同时保持形状特征。适用于大比例尺制图、Web地图加载优化等场景。",
+    overview="对已知投影CRS的有效非空有限二维源几何逐行简化，容差为原单位的有限非负实数；默认保持单个几何拓扑，显式关闭后塌缩为空仍保行，不自动修复、重投影或维持跨要素共享边。",
 
     params=[
         OperatorParam(
@@ -2700,7 +2731,8 @@ SIMPLIFY_METADATA = OperatorMetadata(
             type="input",
             data_type="GeoDataFrame",
             required=True,
-            description="输入的地理数据"
+            description="有效非空有限二维的投影源图层",
+            notes="唯一实际活动几何与列名；已知投影CRS，空批仍验证全部参数"
         ),
         OperatorParam(
             name="tolerance",
@@ -2708,7 +2740,7 @@ SIMPLIFY_METADATA = OperatorMetadata(
             data_type="float",
             required=True,
             description="简化容差,单位与坐标系一致",
-            notes="值越大简化越激进；容差沿源CRS的坐标单位，投影坐标单位不固定为米，不自动换算单位或重投影"
+            notes="有限非负实数，零合法且允许去除严格共线顶点；容差沿源CRS的坐标单位，投影坐标单位不固定为米，不自动换算单位或重投影"
         ),
         OperatorParam(
             name="preserve_topology",
@@ -2729,10 +2761,11 @@ SIMPLIFY_METADATA = OperatorMetadata(
     ],
 
     notes=[
-        "tolerance过大会导致几何变形严重甚至崩溃",
-        "地理坐标系(EPSG:4326)简化效果较差,建议先转投影坐标系",
+        "容差过大会明显改变形状；零容差也允许移除严格共线的冗余顶点，不承诺原始WKB不变",
+        "未知或地理CRS、源缺失/空/无效/Z/M/非有限几何拒绝；先显式整理、修复或重投影",
         "preserve_topology=True仅保持单个几何拓扑，不保证邻接面无缝隙或重叠",
-        "简化后的几何可能不满足原始精度要求,需权衡数据量和精度"
+        "保留原属性、类型、索引/行序及CRS；False允许空或无效结果，空结果仍保行，不自动修复",
+        "preserve_topology严格为布尔值且默认True，不转换整数、字符串或空值；输入不变"
     ],
 
     workflow_example={

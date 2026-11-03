@@ -402,3 +402,50 @@ func TestBufferDiagnosticsRejectForeignDistanceReasonsEvenWithMatchingFrozenOper
 		}
 	}
 }
+
+func TestSimplifyDiagnosticsRequireClosedTupleAndFrozenDefinition(t *testing.T) {
+	for reason, parameter := range map[string]string{
+		"operator_input_invalid": "input_gdf", "operator_crs_invalid": "",
+		"operator_nonnegative_number_required": "tolerance", "operator_boolean_required": "preserve_topology",
+	} {
+		t.Run(reason, func(t *testing.T) {
+			context := map[string]interface{}{"node_index": 1, "operator_id": "simplify"}
+			if parameter != "" {
+				context["parameter"] = parameter
+			}
+			diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": context}
+			raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+			frozen := map[string]interface{}{"tasks": []interface{}{
+				map[string]interface{}{"id": "PRIVATE", "operator": "simplify", "depends_on": []string{"load"}},
+				map[string]interface{}{"id": "load", "operator": "load"},
+			}}
+			if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] == nil || got["code"] != "develop.workflow.invalid_params" {
+				t.Fatalf("lost simplify input fact: %+v", got)
+			}
+			for _, patch := range []map[string]interface{}{
+				{"node_index": 2}, {"node_index": 0}, {"node_index": true}, {"node_index": 1.5},
+				{"operator_id": "unknown_simplify"}, {"parameter": "distance"}, {"parameter": ""},
+				{"field": "tolerance"}, {"field": ""}, {"node_id": "PRIVATE"},
+			} {
+				forged := map[string]interface{}{}
+				for key, value := range context {
+					forged[key] = value
+				}
+				for key, value := range patch {
+					forged[key] = value
+				}
+				diagnostic["operator"] = forged
+				if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] != nil || got["code"] != "develop.workflow.execution_failed" {
+					t.Fatalf("trusted forged simplify context %+v: %+v", patch, got)
+				}
+			}
+			diagnostic["operator"] = context
+			for _, foreignReason := range []string{"operator_positive_number_required", "operator_number_invalid", "operator_number_array_invalid"} {
+				diagnostic["reason"] = foreignReason
+				if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] != nil {
+					t.Fatalf("trusted foreign simplify reason %s: %+v", foreignReason, got)
+				}
+			}
+		})
+	}
+}

@@ -11,7 +11,7 @@ from typing import Dict, List, Any
 from .base import (
     OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator, OutputPort
 )
-from .geometric_operators import (BufferInputError, _buffer_frame_geometry, _prepare_buffer_geometry,
+from .geometric_operators import (BufferInputError, _unary_frame_geometry, _prepare_projected_xy_source,
                                   _buffer_distance, _buffer_resolution, _compute_buffer, _geometry_for_output, _polygon_mask_inputs,
                                   _combined_polygon_mask, _require_valid_mask_result, _union_polygon_result)
 
@@ -181,7 +181,7 @@ class MultiBufferInputError(ValueError):
 
 def batch_buffer(input_gdf: gpd.GeoDataFrame, distances: List[float], resolution: int = 16) -> gpd.GeoDataFrame:
     """Expand full buffers into one layer, ordered by distance and original row."""
-    _buffer_frame_geometry(input_gdf, MultiBufferInputError)
+    _unary_frame_geometry(input_gdf, MultiBufferInputError)
     if 'distance' in input_gdf.columns:
         raise MultiBufferInputError('distance_conflict')
     if not isinstance(distances, list):
@@ -193,7 +193,7 @@ def batch_buffer(input_gdf: gpd.GeoDataFrame, distances: List[float], resolution
         except BufferInputError as exc:
             raise MultiBufferInputError('distances') from exc
     resolution = _buffer_resolution(resolution, MultiBufferInputError)
-    geometry = _prepare_buffer_geometry(input_gdf, MultiBufferInputError)
+    geometry = _prepare_projected_xy_source(input_gdf, MultiBufferInputError)
 
     if not normalized or input_gdf.empty:
         result = input_gdf.iloc[:0].copy().reset_index(drop=True)

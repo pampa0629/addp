@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 65)
+  assert.equal(canonical.length, 69)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -143,7 +143,8 @@ test('operator input contract matches the canonical runtime tuples and rejects u
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
     const profiles = { contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
-      'buffer:operator_input_invalid':'buffer', 'buffer:operator_crs_invalid':'buffer', 'batch_buffer:operator_crs_invalid':'buffer' }
+      'buffer:operator_input_invalid':'buffer', 'buffer:operator_crs_invalid':'buffer', 'batch_buffer:operator_crs_invalid':'buffer',
+      'simplify:operator_input_invalid':'simplify', 'simplify:operator_crs_invalid':'simplify' }
     const profile = profiles[`${operator_id}:${reason}`] || profiles[operator_id]
     const templates = `common.executionFailure${profile ? `.${profile}` : ''}`
     assert.equal(result.reason, `${templates}.reasons.${reason}`)
@@ -447,6 +448,64 @@ test('buffer diagnostics accept four closed facts and signed finite distances wi
       const rejected = executionFailurePresentation({ diagnostic:{ schema_version:'addp.execution-failure/v3', stage:'execution', reason,
         operator:{ node_index:2, operator_id:'buffer', parameter:'distance' } } },translate)
       assert.equal(rejected.stage,'')
+    }
+  }
+})
+
+test('simplify diagnostics close four facts without borrowing buffer, identifiers or two-layer guidance', () => {
+  const expected = [
+    ['simplify','operator_input_invalid','input_gdf',''],
+    ['simplify','operator_crs_invalid','',''],
+    ['simplify','operator_nonnegative_number_required','tolerance',''],
+    ['simplify','operator_boolean_required','preserve_topology','']
+  ]
+  assert.deepEqual(operatorInputRules.filter(([name]) => name === 'simplify'),expected)
+  for (const locale of ['zh-cn','en']) {
+    const messages = JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate = (key,params={}) => key.replace('common.executionFailure.','').split('.').reduce((node,part) => node[part],messages).replace(/\{(\w+)\}/g,(_,key) => params[key])
+    for (const [operator_id,reason,parameter] of expected) {
+      const diagnostic = { schema_version:'addp.execution-failure/v3', stage:'execution', reason,
+        operator:{ node_index:2, operator_id, ...(parameter ? { parameter } : {}) } }
+      const got = executionFailurePresentation({ diagnostic, message:'PRIVATE_BIZ_FIELD private-password /private/input.gpkg' },translate)
+      const profile = ['operator_input_invalid','operator_crs_invalid'].includes(reason) ? messages.simplify : messages
+      assert.equal(got.operator,locale === 'zh-cn' ? '简化几何' : 'Simplify geometry')
+      assert.equal(got.reason,profile.reasons[reason])
+      assert.equal(got.action,profile.actions[reason])
+      assert.equal(got.field,'')
+      assert.equal(got.parameter,parameter ? messages.operatorParameters[parameter] : '')
+      assert.ok(got.node)
+      assert.doesNotMatch(JSON.stringify(got),/PRIVATE_BIZ_FIELD|private-password|\/private\/input\.gpkg/)
+      if (reason === 'operator_input_invalid' || reason === 'operator_crs_invalid') {
+        assert.doesNotMatch(`${got.reason} ${got.action}`,/两个图层|Both layers|标识|identifier|buffer|缓冲/i)
+      }
+      if (reason === 'operator_crs_invalid') assert.match(got.reason,locale === 'zh-cn' ? /投影坐标系/ : /projected CRS/)
+      if (reason === 'operator_nonnegative_number_required') {
+        assert.match(got.reason,locale === 'zh-cn' ? /非负.*零/ : /non-negative.*zero/)
+        assert.doesNotMatch(got.reason,/有限正数|finite positive|正整数|positive integer|数组|array/)
+        assert.match(got.action,locale === 'zh-cn' ? /布尔值.*字符串.*数组/ : /booleans.*strings.*arrays/)
+      }
+      if (reason === 'operator_boolean_required') {
+        assert.match(got.reason,locale === 'zh-cn' ? /布尔值.*true.*false/ : /boolean.*true.*false/)
+        assert.equal(got.parameter,locale === 'zh-cn' ? '保留单几何拓扑（preserve_topology）' : 'Preserve single-geometry topology (preserve_topology)')
+      }
+      for (const patch of [{ field:'preserve_topology' },{ field:'PRIVATE_BIZ_FIELD' },{ parameter:'distance' },{ operator_id:'centroid' },{ node_index:true }]) {
+        const rejected = executionFailurePresentation({ diagnostic:{ ...diagnostic, operator:{ ...diagnostic.operator, ...patch } }, message:'private-password' },translate)
+        assert.equal(rejected.stage,'')
+        assert.equal(rejected.operator,'')
+        assert.doesNotMatch(JSON.stringify(rejected),/PRIVATE_BIZ_FIELD|private-password/)
+      }
+    }
+    for (const reason of ['operator_positive_number_required','operator_number_invalid','operator_number_array_invalid']) {
+      const rejected = executionFailurePresentation({ diagnostic:{ schema_version:'addp.execution-failure/v3', stage:'execution', reason,
+        operator:{ node_index:2, operator_id:'simplify', parameter:'tolerance' } } },translate)
+      assert.equal(rejected.stage,'')
+    }
+    for (const [reason,parameter] of [['operator_nonnegative_number_required','tolerance'],['operator_boolean_required','preserve_topology']]) {
+      for (const operator_id of ['buffer','batch_buffer','distance_to','voronoi','contains']) {
+        const rejected = executionFailurePresentation({ diagnostic:{ schema_version:'addp.execution-failure/v3', stage:'execution', reason,
+          operator:{ node_index:2, operator_id, parameter } } },translate)
+        assert.equal(rejected.stage,'')
+      }
     }
   }
 })
