@@ -519,6 +519,31 @@ class ProductionLineageObservation:
         self.as_of = None
         require(set(schemas) == {source_id, output_id}, 'lineage schema identities differ')
         self.schemas = dict(schemas)
+        # Closed diagnostics only: never serialize payloads, keys, error text or credentials.
+        self.diagnostic = {'result': 'pending', 'operation': 'not_started'}
+
+    def check(self, condition, assertion, message, **matches):
+        if not condition:
+            self.diagnostic.update(result='failed', assertion=assertion, matches=matches)
+        require(condition, message)  # Keep the original exception and fail-closed behavior.
+
+    def request(self, client, query, expected):
+        service = query['subject_kind'] == 'published_service'
+        self.diagnostic.update(result='pending', stage='request', assertion=None, matches={},
+            location=None, graph=None, consumer='reader' if client is self.reader else 'outsider',
+            granularity=query.get('granularity'), subject='service' if service else
+                'source' if query['item_id'] == self.source else 'output',
+            historical='as_of' in query, expected_status=expected, observed_status=None)
+        try:
+            response = client.request('GET', '/api/v1/meta/lineage/graph?' + urlencode(query), (expected,))
+        except Exception:
+            # The client may reject HTTP/JSON/transport before returning a response.
+            # Do not guess a status or publish potentially private exception text.
+            self.diagnostic.update(result='failed', assertion='request_failed')
+            raise
+        status = getattr(response, 'status', None)
+        self.diagnostic.update(stage='response', observed_status=status if type(status) is int else None)
+        return response.payload
 
     def query(self, client, granularity, *, root=None, expected=200, as_of=None):
         query = {'subject_kind': 'data_item' if granularity == 'item' else 'field_ref',
@@ -529,61 +554,93 @@ class ProductionLineageObservation:
             query['schema_snapshot_hash'] = self.schemas[query['item_id']]
         if as_of is not None:
             query['as_of'] = as_of
-        result = client.request('GET', '/api/v1/meta/lineage/graph?' + urlencode(query), (expected,)).payload
+        result = self.request(client, query, expected)
         if expected != 200:
-            require(set(result) == {'error', 'error_code'} and bool(result['error'])
+            self.check(set(result) == {'error', 'error_code'} and bool(result['error'])
                     and result['error_code'] == 'lineage_subject_not_found',
-                    'hidden lineage root must have the ordinary not-found response')
+                    'hidden_root_response', 'hidden lineage root must have the ordinary not-found response')
         return result
 
     def validate(self, graph, granularity, *, source_visible, pending=False):
-        require(isinstance(graph, dict) and set(graph) <= {
+        self.diagnostic.update(stage='validation', graph={
+            'node_count': len(graph['nodes']) if isinstance(graph, dict) and isinstance(graph.get('nodes'), list) else None,
+            'edge_count': len(graph['edges']) if isinstance(graph, dict) and isinstance(graph.get('edges'), list) else None})
+        self.check(isinstance(graph, dict) and set(graph) <= {
                     'granularity', 'field_lineage_status', 'subject', 'nodes', 'edges', 'truncated', 'permission_filtered', 'as_of'}
                 and graph.get('granularity') == granularity and graph.get('truncated') is False
                 and graph.get('permission_filtered') is (not source_visible)
                 and isinstance(graph.get('nodes'), list) and isinstance(graph.get('edges'), list),
-                'invalid or truncated lineage response')
+                'graph_envelope', 'invalid or truncated lineage response',
+                object=isinstance(graph, dict), allowed_keys=isinstance(graph, dict) and set(graph) <= {
+                    'granularity', 'field_lineage_status', 'subject', 'nodes', 'edges', 'truncated', 'permission_filtered', 'as_of'},
+                granularity=isinstance(graph, dict) and graph.get('granularity') == granularity,
+                not_truncated=isinstance(graph, dict) and graph.get('truncated') is False,
+                permission_filtered=isinstance(graph, dict) and graph.get('permission_filtered') is (not source_visible),
+                nodes_list=isinstance(graph, dict) and isinstance(graph.get('nodes'), list),
+                edges_list=isinstance(graph, dict) and isinstance(graph.get('edges'), list))
         kind = 'data_item' if granularity == 'item' else 'field_ref'
         allowed = {self.output, self.source} if source_visible else {self.output}
-        def node(value):
-            require(isinstance(value, dict) and set(value) <= {
+        def node(value, location):
+            self.diagnostic['location'] = location
+            self.check(isinstance(value, dict) and set(value) <= {
                 'kind', 'item_id', 'item_fingerprint', 'engine_id', 'engine_name', 'item_type', 'name', 'full_name',
                 'field_name', 'schema_snapshot_hash', 'field_lineage_status',
                 'hidden_upstream_count', 'hidden_downstream_count'}
                 and value.get('kind') == kind and type(value.get('item_id')) is int
                 and value['item_id'] in allowed
                 and value.get('hidden_upstream_count') == 0 and value.get('hidden_downstream_count') == 0,
-                'lineage leaked a hidden/service node or neighbor count')
+                'node_identity', 'lineage leaked a hidden/service node or neighbor count',
+                object=isinstance(value, dict), allowed_keys=isinstance(value, dict) and set(value) <= {
+                    'kind', 'item_id', 'item_fingerprint', 'engine_id', 'engine_name', 'item_type', 'name', 'full_name',
+                    'field_name', 'schema_snapshot_hash', 'field_lineage_status', 'hidden_upstream_count', 'hidden_downstream_count'},
+                kind=isinstance(value, dict) and value.get('kind') == kind,
+                permitted_item=isinstance(value, dict) and type(value.get('item_id')) is int and value['item_id'] in allowed,
+                zero_hidden_counts=isinstance(value, dict) and value.get('hidden_upstream_count') == 0
+                    and value.get('hidden_downstream_count') == 0)
             if granularity == 'field':
-                require(value.get('field_name') == 'person_id'
+                self.check(value.get('field_name') == 'person_id'
                         and value.get('schema_snapshot_hash') == self.schemas[value['item_id']],
-                        'field lineage lost the exact field and schema identity')
-        node(graph.get('subject'))
-        require(graph['subject']['item_id'] == self.output, 'lineage root changed')
+                        'field_identity', 'field lineage lost the exact field and schema identity',
+                        field_name=value.get('field_name') == 'person_id',
+                        schema_snapshot=value.get('schema_snapshot_hash') == self.schemas[value['item_id']])
+        node(graph.get('subject'), 'subject')
+        self.check(graph['subject']['item_id'] == self.output, 'root_identity', 'lineage root changed')
         for value in graph['nodes']:
-            node(value)
+            node(value, 'nodes')
         ids = [value['item_id'] for value in graph['nodes']]
-        require(len(ids) == len(set(ids)) and self.output in ids, 'lineage nodes duplicated or root missing')
+        self.check(len(ids) == len(set(ids)) and self.output in ids, 'node_set', 'lineage nodes duplicated or root missing')
         for edge in graph['edges']:
-            require(isinstance(edge, dict) and set(edge) <= {
+            self.diagnostic['location'] = 'edges'
+            self.check(isinstance(edge, dict) and set(edge) <= {
                         'source', 'target', 'relation_kind', 'granularity', 'status', 'last_observed_at', 'evidence'}
                     and edge.get('granularity') == granularity and edge.get('relation_kind') == 'derive'
-                    and edge.get('status') == 'active', 'lineage leaked expressions or unexpected relation')
-            node(edge.get('source'))
-            node(edge.get('target'))
-            require(edge['source']['item_id'] == self.source and edge['target']['item_id'] == self.output,
-                    'lineage relation targets changed')
+                    and edge.get('status') == 'active', 'edge_shape', 'lineage leaked expressions or unexpected relation',
+                    object=isinstance(edge, dict), allowed_keys=isinstance(edge, dict) and set(edge) <= {
+                        'source', 'target', 'relation_kind', 'granularity', 'status', 'last_observed_at', 'evidence'},
+                    granularity=isinstance(edge, dict) and edge.get('granularity') == granularity,
+                    relation=isinstance(edge, dict) and edge.get('relation_kind') == 'derive',
+                    active=isinstance(edge, dict) and edge.get('status') == 'active')
+            node(edge.get('source'), 'edge_source')
+            node(edge.get('target'), 'edge_target')
+            self.check(edge['source']['item_id'] == self.source and edge['target']['item_id'] == self.output,
+                    'edge_endpoints', 'lineage relation targets changed')
             evidence = edge.get('evidence', {})
-            require(isinstance(evidence, dict) and set(evidence) <= {'execution_id', 'write_mode', 'field_lineage_status'}
+            self.check(isinstance(evidence, dict) and set(evidence) <= {'execution_id', 'write_mode', 'field_lineage_status'}
                     and evidence.get('execution_id') == self.execution
                     and all(isinstance(value, str) for value in evidence.values()),
-                    'lineage evidence leaked details or belongs to another execution')
+                    'edge_evidence', 'lineage evidence leaked details or belongs to another execution',
+                    object=isinstance(evidence, dict), allowed_keys=isinstance(evidence, dict) and set(evidence) <= {
+                        'execution_id', 'write_mode', 'field_lineage_status'},
+                    execution=isinstance(evidence, dict) and evidence.get('execution_id') == self.execution,
+                    string_values=isinstance(evidence, dict) and all(isinstance(value, str) for value in evidence.values()))
         complete = set(ids) == allowed and len(graph['edges']) == (1 if source_visible else 0)
-        require(complete or (pending and source_visible and ids == [self.output] and not graph['edges']),
-                'lineage did not exactly match the currently visible endpoints')
+        self.check(complete or (pending and source_visible and ids == [self.output] and not graph['edges']),
+                'visible_endpoints', 'lineage did not exactly match the currently visible endpoints',
+                exact_items=set(ids) == allowed, exact_edge_count=len(graph['edges']) == (1 if source_visible else 0))
         return complete
 
     def issued(self):
+        self.diagnostic['operation'] = 'issued'
         deadline = time.monotonic() + 120
         while True:
             item_complete = self.validate(self.query(self.reader, 'item'), 'item', source_visible=True, pending=True)
@@ -592,27 +649,30 @@ class ProductionLineageObservation:
             # authorization/protocol errors are still immediate failures.
             if item_complete and self.validate(self.query(self.reader, 'field'), 'field', source_visible=True):
                 break
-            require(time.monotonic() < deadline, 'production lineage was not collected before deadline')
+            self.check(time.monotonic() < deadline, 'collection_deadline', 'production lineage was not collected before deadline')
             time.sleep(1)
         self.as_of = datetime.now(timezone.utc).isoformat()
         for level in ('item', 'field'):
             self.query(self.outsider, level, expected=404)
-        response = self.reader.request('GET', '/api/v1/meta/lineage/graph?' + urlencode({
-            'subject_kind': 'published_service', 'service_id': 1, 'revision': 'test'}), (403,)).payload
-        require(set(response) <= {'error', 'error_code'} and bool(response.get('error')),
-                'service lineage denial leaked facts')
+        response = self.request(self.reader, {
+            'subject_kind': 'published_service', 'service_id': 1, 'revision': 'test'}, 403)
+        self.check(set(response) <= {'error', 'error_code'} and bool(response.get('error')),
+                'service_root_response', 'service lineage denial leaked facts')
 
     def source_withdrawn(self):
-        require(self.as_of is not None, 'lineage visibility was not established before withdrawal')
+        self.diagnostic['operation'] = 'source_withdrawn'
+        self.check(self.as_of is not None, 'visibility_established', 'lineage visibility was not established before withdrawal')
         for level in ('item', 'field'):
             for at in (None, self.as_of):
                 self.validate(self.query(self.reader, level, as_of=at), level, source_visible=False)
             self.query(self.reader, level, root=self.source, expected=404)
 
     def output_withdrawn(self, report):
+        self.diagnostic['operation'] = 'output_withdrawn'
         for level in ('item', 'field'):
             self.query(self.reader, level, expected=404)
-        require(self.reader.token == self.token, 'lineage acceptance changed the consumer credential')
+        self.check(self.reader.token == self.token, 'same_credential', 'lineage acceptance changed the consumer credential')
+        self.diagnostic.update(result='passed', stage='complete', assertion=None, matches={})
         report['lineage_visibility'] = {'source_item_id': self.source, 'output_item_id': self.output,
             'execution_id': self.execution, 'visible_item_nodes': 2, 'visible_field_nodes': 2,
             'item_edges': 1, 'field_edges': 1, 'outsider_status': 404, 'service_root_status': 403,
@@ -1645,6 +1705,7 @@ class Lifecycle:
         schemas = production_lineage_schemas(current, self.engine, source['id'], output['id'], self.path, path)
         lineage = ProductionLineageObservation(self.reader, self.outsider, source['id'], output['id'], execution, schemas)
         report['phase'] = 'production_lineage_visibility'
+        report['lineage_diagnostic'] = lineage.diagnostic
         lineage.issued()
         report['phase'] = 'concurrent_and_batch_read_load'
         self.measure_read_load(report, [(self.path, facts, source_grant),

@@ -1794,6 +1794,51 @@ class ProductionLineageObservationTest(unittest.TestCase):
         self.reader, self.outsider = Mock(token='unchanged'), Mock(token='outsider')
         self.probe = ONLINE.ProductionLineageObservation(self.reader, self.outsider, 10, 12, 'execution', {10: 'sha256:' + 'a' * 64, 12: 'sha256:' + 'a' * 64})
 
+    def test_field_failure_retains_exact_predicate_without_retry_or_private_payload(self):
+        def query(method, url, expected):
+            level = parse_qs(urlsplit(url).query)['granularity'][0]
+            graph = production_lineage_graph(level, 'execution')
+            if level == 'field':
+                graph['subject']['schema_snapshot_hash'] = 'private-schema-hash'
+            return SimpleNamespace(status=200, payload=graph)
+        self.reader.request.side_effect = query
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'field lineage lost the exact field and schema identity'):
+            self.probe.issued()
+        self.assertEqual(self.reader.request.call_count, 2)
+        self.assertEqual(self.probe.diagnostic['result'], 'failed')
+        self.assertEqual(self.probe.diagnostic['operation'], 'issued')
+        self.assertEqual(self.probe.diagnostic['granularity'], 'field')
+        self.assertEqual(self.probe.diagnostic['consumer'], 'reader')
+        self.assertEqual(self.probe.diagnostic['observed_status'], 200)
+        self.assertEqual(self.probe.diagnostic['assertion'], 'field_identity')
+        self.assertEqual(self.probe.diagnostic['location'], 'subject')
+        self.assertEqual(self.probe.diagnostic['matches'], {'field_name': True, 'schema_snapshot': False})
+        self.assertNotIn('private-schema-hash', json.dumps(self.probe.diagnostic))
+
+    def test_request_failure_preserves_original_exception_without_publishing_its_text(self):
+        original = ONLINE.SuiteError('private response bearer-token and SQL password')
+        self.reader.request.side_effect = original
+        with self.assertRaises(ONLINE.SuiteError) as raised:
+            self.probe.issued()
+        self.assertIs(raised.exception, original)
+        self.assertEqual(self.reader.request.call_count, 1)
+        self.assertEqual(self.probe.diagnostic['assertion'], 'request_failed')
+        self.assertIsNone(self.probe.diagnostic['observed_status'])
+        self.assertEqual(self.probe.diagnostic['expected_status'], 200)
+        self.assertNotIn(str(original), json.dumps(self.probe.diagnostic))
+
+    def test_unknown_structure_is_only_a_boolean_in_bounded_diagnostic(self):
+        graph = production_lineage_graph('item', 'execution')
+        graph['private-property-name'] = 'private-content' * 10000
+        self.reader.request.return_value = SimpleNamespace(status=200, payload=graph)
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'invalid or truncated lineage response'):
+            self.probe.issued()
+        observed = json.dumps(self.probe.diagnostic)
+        self.assertLess(len(observed), 2000)
+        self.assertNotIn('private', observed)
+        self.assertEqual(self.probe.diagnostic['assertion'], 'graph_envelope')
+        self.assertFalse(self.probe.diagnostic['matches']['allowed_keys'])
+
     def test_rejects_each_hidden_fact_and_wrong_execution(self):
         for level in ('item', 'field'):
             mutations = [
@@ -2032,10 +2077,13 @@ class InitialProductionOnlineTest(unittest.TestCase):
                 raise ONLINE.SuiteError('lineage failed')
             return original(method, url, expected, body, **kwargs)
         self.reader.request.side_effect = failed
-        report = {'checks': []}
+        report = {'checks': ['preceding_check_passed']}
         with self.assertRaisesRegex(ONLINE.SuiteError, 'lineage failed'):
             self.lifecycle.production_flow(report)
-        self.assertEqual(report['checks'], [])
+        self.assertEqual(report['checks'], ['preceding_check_passed'])
+        self.assertEqual(report['phase'], 'production_lineage_visibility')
+        self.assertEqual(report['lineage_diagnostic']['assertion'], 'request_failed')
+        self.assertEqual(report['lineage_diagnostic']['operation'], 'issued')
         self.lifecycle.cleanup()
         self.assertTrue(self.source_revoked and self.output_revoked)
 
