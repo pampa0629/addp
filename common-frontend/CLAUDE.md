@@ -22,6 +22,7 @@ common-frontend/
 ## 开发规则
 
 - 新增前端页面或共享组件前，先阅读[前端风格设计规范](docs/addp前端风格设计规范.md)和[共享前端总入口](README.md)。
+- 资源选择按[README 接入导航](README.md#资源树选择器接入导航)定位场景；共享组件与 Owner 的职责、权限复核和失败语义以[选择器职责边界](docs/components/资源定位与树组件.md#表单选择与领域树的职责边界)为准，不在模块入口重复维护细则。
 - AI 助手类功能必须遵守风格规范中的“AI 助手入口规范”：默认使用魔法棒入口并固定在页面右下角，各模块保持入口和助手面板的基础交互一致；可复用的入口、面板和状态能力优先沉淀到 `common-frontend/`。
 - 不要硬编码 ADDP 主题色，应使用平台主题变量和已有共享能力。
 - `common-frontend` 不应保留自己的 `node_modules`；各前端模块通过 `overrides` 和 Vite alias 保持 Vue 单一实例。
@@ -45,6 +46,7 @@ common-frontend/
 | --- | --- |
 | 组件索引、共享验证与依赖 | [共享前端总入口](README.md) |
 | 子包职责、导出与接入 | [共享前端架构](docs/ARCHITECTURE.md) |
+| 资源选择契约、接入示例与验收范围 | [资源树选择器](docs/components/资源定位与树组件.md#资源树选择器)、[选择与创建示例](docs/components/资源定位与树组件.md#选择与创建示例) |
 | 视觉、交互、主题与工程约束 | [前端风格设计规范](docs/addp前端风格设计规范.md) |
 | 地图预览、CRS 与底图展示 | [Map 说明](map/README.md) |
 | DAG 编辑、只读展示与 API 分类 | [DAG 说明](dag/README.md) |
