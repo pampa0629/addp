@@ -16,7 +16,7 @@ stop_online_fixture() {
   local status=0 image
   # Also run domain cleanup after a timeout/signal killed the scenario process.
   if [ "$table_publication_started" -eq 1 ]; then
-    run_logged python3 scripts/test/hdfs-spark-consumer-flow-online.py --cleanup-tables || status=1
+    run_logged bash -c 'source "$1"; python3 scripts/test/hdfs-spark-consumer-flow-online.py --cleanup-data-access' _ "$IDENTITY_ENV" || status=1
   fi
   run_logged bash business/scripts/online-hdfs-spark-fixture.sh stop || status=1
   stop_online_spark_image_registry || status=1
@@ -63,6 +63,6 @@ for engine in hdfs spark spark-b postgres minio mysql doris; do
   fi
 done
 table_publication_started=1
-run_logged python3 scripts/test/hdfs-spark-consumer-flow-online.py --initialize-table-read
+run_logged python3 scripts/test/hdfs-spark-consumer-flow-online.py --prepare-data-access
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

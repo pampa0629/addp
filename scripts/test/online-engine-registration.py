@@ -82,22 +82,29 @@ def source_grant_participants(authorizer, consumer, tenant_id):
 
 class ExactFileMetadataGrants:
     """Existing metadata-only Grant contract; never a content completeness proof."""
-    def __init__(self, authorizer, consumer, tenant_id):
+    def __init__(self, authorizer, consumer, tenant_id, *, on_change=None):
         self.operator, self.recipient = source_grant_participants(authorizer, consumer, tenant_id)
         self.authorizer, self.consumer = authorizer, consumer
         self.pending = []
+        self.on_change = on_change
+
+    def checkpoint(self):
+        if self.on_change is not None:
+            self.on_change(self.pending)
 
     @staticmethod
-    def target(engine, full_name, storage):
+    def target(engine, full_name, storage, *, layout='single'):
         parts = full_name.split('/') if isinstance(full_name, str) else []
-        if (type(engine) is not int or engine <= 0 or storage not in {'nfs', 'minio'} or not parts
+        if (type(engine) is not int or engine <= 0 or storage not in {'nfs', 'minio', 'hdfs'} or not parts
             or len(parts) > 63 or any(not p or p in {'.', '..'} or any(c in p for c in '\\:\x00') for p in parts)
-            or (storage == 'minio' and len(parts) < 2)):
+            or (storage == 'minio' and len(parts) < 2) or layout not in {'single', 'multi', 'whole'}
+            or (layout == 'whole' and storage != 'minio')):
             raise RegistrationError('metadata Grant requires an exact file or object target')
         if storage == 'minio':
             segments = [dict(term='service', kind='service', name=''), dict(term='bucket', kind='bucket', name=parts[0])]
-            segments += [dict(term='prefix', kind='prefix', name=p) for p in parts[1:-1]]
-            segments += [dict(term='object', kind='object', name=parts[-1])]
+            segments += [dict(term='prefix', kind='prefix', name=p) for p in (parts[1:] if layout == 'whole' else parts[1:-1])]
+            if layout != 'whole':
+                segments += [dict(term='object', kind='object', name=parts[-1])]
         else:
             segments = [dict(term='root', kind='root', name='')]
             segments += [dict(term='directory', kind='directory', name=p) for p in parts[:-1]]
@@ -112,7 +119,7 @@ class ExactFileMetadataGrants:
             raise RegistrationError('metadata visibility does not match the current precise Grant')
 
     def grant(self, engine, full_name, storage, *, data_type, format_name, layout):
-        target = self.target(engine, full_name, storage)
+        target = self.target(engine, full_name, storage, layout=layout)
         fingerprint = hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
         facts = self.authorizer.request('GET', f'/api/v1/system/engines/{engine}/data-items/{fingerprint}/authorization-facts', (200,)).payload
         metadata = facts.get('boundary', {}).get('metadata_target', {}) if isinstance(facts, dict) else {}
@@ -120,7 +127,7 @@ class ExactFileMetadataGrants:
                                  composition_digest=metadata.get('composition_digest'))
         if (not isinstance(facts, dict) or any(facts.get(k) != v for k,v in {
             'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': str(engine),
-            'item_fingerprint': fingerprint, 'item_type': target['segments'][-1]['term'], 'full_name': full_name,
+            'item_fingerprint': fingerprint, 'item_type': 'object' if storage == 'minio' else 'file', 'full_name': full_name,
             'basis_state': 'complete', 'boundary': dict(layout=layout, metadata_target=expected_metadata)}.items())
             or not re.fullmatch('[0-9a-f]{64}', str(metadata.get('composition_digest', '')))
             or not re.fullmatch('[0-9a-f]{64}', str(facts.get('boundary_hash', ''))) or not facts.get('observed_at')):
@@ -132,6 +139,7 @@ class ExactFileMetadataGrants:
                     action='metadata_read', expiry_mode='until_revoked', reason='Disposable Online exact structural metadata acceptance')
         pending = dict(engine=engine, request_id=command, target=target, confirmed=False)
         self.pending.append(pending)  # Unknown write outcomes must also be cleaned.
+        self.checkpoint()
         receipt = self.authorizer.request('POST', f'/api/v1/system/engines/{engine}/access_grants', (201,), body).payload
         expected = {k:body[k] for k in ('request_id','catalog_path','item_fingerprint','recipient_type','recipient_id','action','expiry_mode')}
         expected.update(engine_id=str(engine), boundary_hash=facts['boundary_hash'], metadata_target=metadata,
@@ -141,6 +149,7 @@ class ExactFileMetadataGrants:
             or receipt.get('node_recursive') is not None):
             raise RegistrationError('metadata Grant receipt changed its precise metadata-only boundary')
         pending['confirmed'] = True
+        self.checkpoint()
         self.observe(target, True)
         return receipt
 
@@ -152,6 +161,7 @@ class ExactFileMetadataGrants:
                     (200,) if row['confirmed'] else (200,404), {'reason':'Disposable Online metadata cleanup'})
                 self.observe(row['target'], False)
                 self.pending.remove(row)
+                self.checkpoint()
             except Exception:
                 errors.append(row['request_id'])
         if errors:

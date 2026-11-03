@@ -74,14 +74,15 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         authorizer.request.side_effect, consumer.request.side_effect = prepare, read
         return current, authorizer, consumer
 
-    def metadata_clients(self):
+    def metadata_clients(self, engine=14, full_name='grib/weather.grb2', storage='nfs',
+                         data_type='container', format_name='grib', layout='single'):
         current, issuer, consumer = self.grant_clients()
-        target = REGISTRATION.ExactFileMetadataGrants.target(14, 'grib/weather.grb2', 'nfs')
-        fingerprint = hashlib.sha256(b'14:grib/weather.grb2').hexdigest()
-        metadata = dict(target=target, layout='single', data_type='container', format='grib', composition_digest='b'*64)
-        facts = dict(schema_version='meta.data_item_authorization_facts/v1', engine_id='14', item_fingerprint=fingerprint,
-            item_type='file', full_name='grib/weather.grb2', basis_state='complete', boundary_hash='a'*64,
-            observed_at='2026-11-03T00:00:00Z', boundary=dict(layout='single',metadata_target=metadata))
+        target = REGISTRATION.ExactFileMetadataGrants.target(engine, full_name, storage, layout=layout)
+        fingerprint = hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
+        metadata = dict(target=target, layout=layout, data_type=data_type, format=format_name, composition_digest='b'*64)
+        facts = dict(schema_version='meta.data_item_authorization_facts/v1', engine_id=str(engine), item_fingerprint=fingerprint,
+            item_type='object' if storage == 'minio' else 'file', full_name=full_name, basis_state='complete', boundary_hash='a'*64,
+            observed_at='2026-11-03T00:00:00Z', boundary=dict(layout=layout,metadata_target=metadata))
         issuer_identity, consumer_identity = issuer.request.side_effect, consumer.request.side_effect
         state = dict(visible=False, events=[])
         def authorize(method, path, expected, body=None):
@@ -96,7 +97,7 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
             self.assertEqual(body['catalog_path'],target)
             self.assertFalse(state['visible'])
             state['visible']=True
-            return SimpleNamespace(payload=dict(body,engine_id='14',boundary_hash='a'*64,metadata_target=metadata,
+            return SimpleNamespace(payload=dict(body,engine_id=str(engine),boundary_hash='a'*64,metadata_target=metadata,
                 approval_mode='independent',operator_principal_id='8',revocation=None,expires_at=None))
         def observe(method,path,expected,body=None):
             if path.endswith('/auth/context'):return consumer_identity(method,path,expected,body)
@@ -117,6 +118,56 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         self.assertFalse(state['visible']);self.assertFalse(grants.pending)
         self.assertEqual([e[1] for e in state['events'] if e[0]=='observe'],[False,True,False])
         self.assertFalse(any('/manager/' in e[1] for e in state['events'] if e[0] in {'GET','POST'}))
+
+    def test_hdfs_and_minio_whole_metadata_grants_keep_exact_item_shapes_and_journal(self):
+        for engine, name, storage, fmt, layout in (
+            (17, 'samples/orders.csv', 'hdfs', 'csv', 'single'),
+            (20, 'result/results/hdfs_totals/one-result', 'minio', 'parquet', 'whole'),
+        ):
+            with self.subTest(storage=storage):
+                issuer, consumer, _, state = self.metadata_clients(engine, name, storage, 'table', fmt, layout)
+                snapshots = []
+                grants = REGISTRATION.ExactFileMetadataGrants(issuer, consumer, 2,
+                    on_change=lambda rows: snapshots.append(json.loads(json.dumps(rows))))
+                receipt = grants.grant(engine, name, storage, data_type='table', format_name=fmt, layout=layout)
+                segments = receipt['catalog_path']['segments']
+                self.assertEqual(segments[-1]['term'], 'prefix' if layout == 'whole' else 'file')
+                self.assertEqual(receipt['action'], 'metadata_read')
+                self.assertFalse(snapshots[0][0]['confirmed'])
+                self.assertTrue(snapshots[1][0]['confirmed'])
+                grants.cleanup()
+                self.assertEqual(snapshots[-1], [])
+                self.assertEqual([e[1] for e in state['events'] if e[0] == 'observe'], [False, True, False])
+
+    def test_pending_metadata_grant_can_be_recovered_after_lost_write_response(self):
+        issuer, consumer, _, state = self.metadata_clients(17, 'samples/orders.csv', 'hdfs', 'table', 'csv')
+        original, durable = issuer.request.side_effect, []
+        def lose_response(method, path, expected, body=None):
+            response = original(method, path, expected, body)
+            if method == 'POST' and path.endswith('/access_grants'):
+                raise TimeoutError('response lost after actual write')
+            return response
+        issuer.request.side_effect = lose_response
+        grants = REGISTRATION.ExactFileMetadataGrants(issuer, consumer, 2,
+            on_change=lambda rows: durable.append(json.loads(json.dumps(rows))))
+        with self.assertRaises(TimeoutError):
+            grants.grant(17, 'samples/orders.csv', 'hdfs', data_type='table', format_name='csv', layout='single')
+        self.assertTrue(state['visible'])
+        self.assertEqual(len(durable), 1)
+        self.assertFalse(durable[0][0]['confirmed'])
+        recovered = REGISTRATION.ExactFileMetadataGrants(issuer, consumer, 2)
+        recovered.pending = durable[0]
+        self.assertEqual(recovered.cleanup(), dict(grants_revoked=True, metadata_hidden=True))
+        self.assertFalse(state['visible'])
+
+    def test_failed_metadata_checkpoint_prevents_a_grant_write(self):
+        issuer, consumer, _, state = self.metadata_clients()
+        grants = REGISTRATION.ExactFileMetadataGrants(issuer, consumer, 2,
+            on_change=Mock(side_effect=OSError('checkpoint unavailable')))
+        with self.assertRaises(OSError):
+            grants.grant(14, 'grib/weather.grb2', 'nfs', data_type='container', format_name='grib', layout='single')
+        self.assertFalse(state['visible'])
+        self.assertFalse(any(e[0] == 'POST' for e in state['events']))
 
     def test_metadata_grant_rejects_untrusted_or_content_boundary_before_write(self):
         for mutation in ('fingerprint','identity','composition','content','missing','scope'):

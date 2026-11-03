@@ -123,11 +123,12 @@ class HostedHDFSGateTest(unittest.TestCase):
         ''')
         self.host._write_repository_script('scripts/test/hdfs-spark-consumer-flow-online.py', '''
             import os, sys
-            if sys.argv[1:] == ['--cleanup-tables']:
+            if sys.argv[1:] == ['--cleanup-data-access']:
+                assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-token'
                 with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as trace:
                     trace.write('table-domain-cleanup\\n')
                 sys.exit(1 if os.environ.get('ADDP_TEST_TABLE_CLEANUP_FAIL') == '1' else 0)
-            assert sys.argv[1:] == ['--initialize-table-read']
+            assert sys.argv[1:] == ['--prepare-data-access']
             assert os.environ['ADDP_ONLINE_SPARK_B_ENGINE_ID'] == '23'
             assert os.environ['ADDP_ONLINE_POSTGRES_ENGINE_ID'] == '19'
             assert os.environ['ADDP_ONLINE_MYSQL_ENGINE_ID'] == '21'

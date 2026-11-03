@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import math
+import stat
 import os
 from pathlib import Path
 import subprocess
@@ -117,7 +119,7 @@ def worker_evidence(engine_id, before):
         raise SuiteError(str(error)) from error
 
 
-def run(client, tenant_id, engine_id, cluster_id, timeout, physical=worker_evidence):
+def run(client, tenant_id, engine_id, cluster_id, timeout, source_scan_id, expected_runtime_id, physical=worker_evidence):
     if engine_id == cluster_id:
         raise SuiteError('HDFS source and Spark cluster must be distinct Engines')
     principal = validate_identity(client, tenant_id)
@@ -135,8 +137,12 @@ def run(client, tenant_id, engine_id, cluster_id, timeout, physical=worker_evide
     if len(selected) != 1:
         raise SuiteError('exactly one online self-registered Spark Workflow Runtime is required')
     runtime_id = support.positive_int(selected[0]['id'], 'Runtime')
+    if runtime_id != expected_runtime_id:
+        raise SuiteError('prepared Runtime identity changed before consumption')
     deadline = time.monotonic() + timeout
-    scan = support.wait_for_scan(client, engine_id, deadline)
+    scan = support._object(client.request('GET', '/api/v1/meta/executions/' + urllib.parse.quote(source_scan_id), (200,)).payload, 'prepared source scan')
+    if scan.get('status') != 'success':
+        raise SuiteError('prepared HDFS source scan is no longer successful')
     locators, item_ids = {}, {}
     for name, filename in FILES.items():
         item = support.find_item(client, engine_id, filename, 'file')
@@ -163,7 +169,7 @@ def run(client, tenant_id, engine_id, cluster_id, timeout, physical=worker_evide
         raise SuiteError('HDFS workflow did not converge')
     return {'schema_version': 'addp.hdfs-spark-consumer-online/v1', 'engine_id': engine_id, 'cluster_id': cluster_id,
             'runtime_id': runtime_id, 'tenant_id': tenant_id, 'principal_id': principal, 'locators': locators,
-            'item_ids': item_ids, 'scan_execution_id': scan, 'execution_id': execution_id,
+            'item_ids': item_ids, 'scan_execution_id': source_scan_id, 'execution_id': execution_id,
             'runtime_execution_id': execution['metadata']['result']['runtime_execution_id'],
             'final_result': final, 'worker': physical(cluster_id, before),
             'runtime_status': runtime_status_evidence(execution['metadata']['result']['runtime_execution_id'], final)}
@@ -246,7 +252,7 @@ def persistence_physical():
     return {'table_oid': before['oid'], 'structure_and_grants_preserved': True, 'staging_tables': 0}
 
 
-def run_persistence(client, report, target_engine_id, timeout, target_type="table"):
+def publish_persistence(client, report, target_engine_id, timeout, target_type="table"):
     deadline = time.monotonic() + timeout
     if target_engine_id in (report['engine_id'], report['cluster_id'], report['runtime_id']):
         raise SuiteError('PostgreSQL target must be a distinct Engine')
@@ -279,7 +285,38 @@ def run_persistence(client, report, target_engine_id, timeout, target_type="tabl
         time.sleep(1)
     else:
         raise SuiteError('Spark result automatic scan did not converge')
-    item_path = 'result/results/hdfs_totals/' + leaf if target_type == 'file' else 'results.hdfs_totals'
+    return {'execution_id': execution_id, 'target_locator': target_locator, 'scan_execution_id': scan_id,
+            'runtime_execution_id': execution['metadata']['result']['runtime_execution_id'],
+            'runtime_status': runtime, 'final_result': final, 'remaining_seconds': deadline - time.monotonic()}
+
+
+def publication_item_path(publication, engine, target_type):
+    execution_id = publication.get('execution_id')
+    if not isinstance(execution_id, str) or not execution_id:
+        raise SuiteError('prepared publication execution identity is missing')
+    item_path = ('result/results/hdfs_totals/' + execution_id + '-' + str(uuid.uuid5(uuid.NAMESPACE_OID, 'save'))
+                 if target_type == 'file' else 'results/hdfs_totals')
+    expected = f'addp://engine/{engine}/path/{item_path}?type=' + ('object' if target_type == 'file' else 'table')
+    if publication.get('target_locator') != expected:
+        raise SuiteError('prepared publication target differs from its original execution and Engine')
+    return item_path if target_type == 'file' else 'results.hdfs_totals'
+
+
+def consume_persistence(client, report, target_engine_id, publication, timeout, target_type="table"):
+    item_path = publication_item_path(publication, target_engine_id, target_type)
+    remaining = publication.get('remaining_seconds')
+    if (isinstance(remaining, bool) or not isinstance(remaining, (int, float))
+            or not math.isfinite(remaining) or not 0 < remaining <= timeout):
+        raise SuiteError('prepared publication has no valid remaining original budget')
+    deadline = time.monotonic() + remaining
+    execution_id, target_locator = publication['execution_id'], publication['target_locator']
+    scan_id, runtime, final = publication['scan_execution_id'], publication['runtime_status'], publication['final_result']
+    execution = support._object(client.request('GET', '/api/v1/develop/executions/' + urllib.parse.quote(execution_id), (200,)).payload,
+                                'original publication execution')
+    current_final, current_scan = validate_persistence(execution, report['locators'], target_locator, target_type)
+    if (execution.get('status') != 'success' or current_final != final or current_scan != scan_id
+            or execution['metadata']['result']['runtime_execution_id'] != publication['runtime_execution_id']):
+        raise SuiteError('prepared publication differs from the original User execution')
     item = support.find_item(client, target_engine_id, item_path, 'object' if target_type == 'file' else 'table')
     if target_type == 'file':
         facts = support._object(item.get('attributes', {}).get('item'), 'Meta result item facts')
@@ -296,6 +333,9 @@ def run_persistence(client, report, target_engine_id, timeout, target_type="tabl
         observed_types = [{key: type(value).__name__ for key, value in row.items()} for row in rows]
         raise SuiteError('Manager persisted result differs from the computed totals / bigint JSON contract: '
                          + json.dumps(observed_types, sort_keys=True))
+    baseline = publication.get('manager_preview_before_second')
+    if baseline is not None and sorted(rows, key=lambda row: row['region']) != sorted(baseline, key=lambda row: row['region']):
+        raise SuiteError('Second publication changed the original first-result Manager baseline')
     query = urllib.parse.urlencode({'subject_kind': 'data_item', 'item_id': item['id'], 'direction': 'upstream'})
     expected_sources = {report['item_ids'][name] for name in ('csv', 'json', 'parquet')}
     while time.monotonic() < deadline:
@@ -318,11 +358,14 @@ def run_persistence(client, report, target_engine_id, timeout, target_type="tabl
         raise SuiteError('Downstream Spark could not reuse the stable table output')
     reuse_runtime = SPARK.runtime_status_evidence(support.required_environment('ADDP_ONLINE_SPARK_RUNTIME_URL'),
         reused['metadata']['result']['runtime_execution_id'], reused_final, 1)
-    return {'engine_id': target_engine_id, 'execution_id': execution_id, 'target_locator': target_locator,
+    evidence = {'engine_id': target_engine_id, 'execution_id': execution_id, 'target_locator': target_locator,
             'preview_locator': preview_locator, 'manager_preview_rows': rows, 'item_id': item['id'], 'scan_execution_id': scan_id,
             'final_result': final, 'runtime_status': runtime, 'physical': minio_physical(item_path) if target_type == 'file' else persistence_physical(),
             'lineage_sources': sorted(observed), 'reuse_execution_id': reuse_id, 'reuse_final_result': reused_final,
             'reuse_runtime_status': reuse_runtime}
+    if baseline is not None:
+        evidence['manager_preview_before_second'] = baseline
+    return evidence
 
 
 def validate_minio_independent_results(client, first, second):
@@ -501,17 +544,193 @@ def run_multicluster_browser(client, report):
     return evidence
 
 
+def write_private(name, value, *, new=False):
+    path = Path(support.required_environment('ADDP_ONLINE_SECRET_DIR'), name)
+    if new and path.exists():
+        raise SuiteError('preparation checkpoint must be new')
+    temporary = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
+    try:
+        with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as stream:
+            json.dump(value, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if new:
+            os.link(temporary, path)
+            temporary.unlink()
+        else:
+            os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def read_private(name):
+    path = Path(support.required_environment('ADDP_ONLINE_SECRET_DIR'), name)
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), 'r') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_uid != os.getuid():
+            raise SuiteError('preparation checkpoint must be an owner-only regular file')
+        value = json.load(stream)
+    if not isinstance(value, dict):
+        raise SuiteError('preparation checkpoint must be an object')
+    return value
+
+
+def preparation_identity(client):
+    require = support.required_environment
+    tenant = support.positive_int(require('ADDP_ONLINE_TEST_TENANT_ID'), 'Tenant')
+    return {'run_id': require('ADDP_ONLINE_TEST_RUN_ID'), 'tenant_id': tenant,
+            'principal_id': validate_identity(client, tenant),
+            'engine_id': support.positive_int(require('ADDP_ONLINE_HDFS_ENGINE_ID'), 'HDFS'),
+            'cluster_id': support.positive_int(require('ADDP_ONLINE_SPARK_ENGINE_ID'), 'Spark'),
+            'minio_engine_id': support.positive_int(require('ADDP_ONLINE_MINIO_ENGINE_ID'), 'MinIO')}
+
+
+def validate_metadata_journal(journal, identity):
+    if (journal.get('schema_version') != 'addp.hdfs-metadata-grants/v1'
+            or any(journal.get(key) != value for key, value in identity.items())):
+        raise SuiteError('metadata Grant checkpoint belongs to another run or identity')
+    rows = journal.get('pending')
+    issued = journal.get('issued_count')
+    if (not isinstance(rows, list) or type(issued) is not int or not len(rows) <= issued <= 6):
+        raise SuiteError('metadata Grant checkpoint exceeds the six approved targets')
+    sources = [REGISTRATION.ExactFileMetadataGrants.target(identity['engine_id'], name, 'hdfs') for name in FILES.values()]
+    requests, targets = set(), set()
+    counts = {'hdfs': 0, 'minio': 0}
+    try:
+        for row in rows:
+            if set(row) != {'engine', 'request_id', 'target', 'confirmed'} or type(row['confirmed']) is not bool:
+                raise ValueError('invalid pending record')
+            request = str(uuid.UUID(row['request_id']))
+            if request != row['request_id'] or request in requests:
+                raise ValueError('invalid request identity')
+            requests.add(request)
+            target = row['target']
+            key = json.dumps(target, sort_keys=True)
+            if key in targets:
+                raise ValueError('duplicate target')
+            targets.add(key)
+            if row['engine'] == identity['engine_id'] and target in sources:
+                counts['hdfs'] += 1
+            elif row['engine'] == identity['minio_engine_id']:
+                parts = [segment['name'] for segment in target['segments'][1:]]
+                if len(parts) != 4 or parts[:3] != ['result', 'results', 'hdfs_totals']:
+                    raise ValueError('not a run result')
+                execution_id = parts[-1][:-37]
+                if str(uuid.UUID(execution_id)) != execution_id or parts[-1] != execution_id + '-' + str(uuid.uuid5(uuid.NAMESPACE_OID, 'save')):
+                    raise ValueError('not the original publication')
+                expected = REGISTRATION.ExactFileMetadataGrants.target(row['engine'], '/'.join(parts), 'minio', layout='whole')
+                if target != expected:
+                    raise ValueError('not the whole DataItem root')
+                counts['minio'] += 1
+            else:
+                raise ValueError('unapproved target')
+        if counts['hdfs'] > 4 or counts['minio'] > 2:
+            raise ValueError('target count differs')
+    except (KeyError, ValueError, TypeError, AttributeError) as error:
+        raise SuiteError('metadata Grant checkpoint contains an unapproved target') from error
+
+
+def metadata_grants(authorizer, consumer, identity, journal):
+    def persist(rows):
+        journal['pending'] = rows
+        journal['issued_count'] = max(journal['issued_count'], len(rows))
+        validate_metadata_journal(journal, identity)
+        write_private('hdfs-metadata-grants.json', journal)
+    grants = REGISTRATION.ExactFileMetadataGrants(authorizer, consumer, identity['tenant_id'], on_change=persist)
+    grants.pending = journal['pending']
+    return grants
+
+
+def prepare_file_metadata(consumer, authorizer, tenant, principal, runtime, cluster, timeout):
+    identity = preparation_identity(consumer)
+    if (identity['tenant_id'], identity['principal_id'], identity['cluster_id']) != (tenant, principal, cluster):
+        raise SuiteError('file preparation identity differs from the verified User')
+    journal = dict(identity, schema_version='addp.hdfs-metadata-grants/v1', pending=[], issued_count=0)
+    write_private('hdfs-metadata-grants.json', journal, new=True)
+    grants = metadata_grants(authorizer, consumer, identity, journal)
+    deadline = time.monotonic() + timeout
+    scan = support.wait_for_scan(consumer, identity['engine_id'], deadline)
+    prepared = dict(identity, runtime_id=runtime, scan_execution_id=scan, locators={}, item_ids={})
+    for key, name in FILES.items():
+        grants.grant(identity['engine_id'], name, 'hdfs', data_type='table', format_name=name.rsplit('.', 1)[1], layout='single')
+        item = support.find_item(consumer, identity['engine_id'], name, 'file')
+        prepared['locators'][key], prepared['item_ids'][key] = locator(identity['engine_id'], item), item['id']
+    prepared['source_remaining_seconds'] = deadline - time.monotonic()
+    if prepared['source_remaining_seconds'] <= 0:
+        raise SuiteError('source preparation exhausted the original HDFS budget')
+    return prepared, grants
+
+
+def cleanup_metadata_access():
+    REGISTRATION.require_external_environment(os.environ)
+    require = support.required_environment
+    consumer = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), 30)
+    authorizer = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
+    identity = preparation_identity(consumer)
+    journal = read_private('hdfs-metadata-grants.json')
+    validate_metadata_journal(journal, identity)
+    result = metadata_grants(authorizer, consumer, identity, journal).cleanup()
+    result['targets'] = journal['issued_count']
+    Path(require('ADDP_ONLINE_ARTIFACT_DIR'), 'hdfs-metadata-cleanup.json').write_text(json.dumps(result))
+
+
+def observe_first_minio(client):
+    expected = preparation_identity(client)
+    snapshot = read_private('hdfs-first-minio.json')
+    journal = read_private('hdfs-metadata-grants.json')
+    validate_metadata_journal(journal, expected)
+    if (any(snapshot.get(key) != value for key, value in expected.items())
+            or journal['issued_count'] != 5 or len(journal['pending']) != 5
+            or not all(row['confirmed'] for row in journal['pending'])):
+        raise SuiteError('first-result observation requires this User and exactly five prepared metadata Grants')
+    publication = snapshot['publication']
+    name = publication_item_path(publication, expected['minio_engine_id'], 'file')
+    item = support.find_item(client, expected['minio_engine_id'], name, 'object')
+    _, rows = support.preview_rows(client, publication['target_locator'] + '&item_id=' + str(item['id']))
+    if len(rows) != 2 or {row.get('region') for row in rows} != {'east', 'west'}:
+        raise SuiteError('first-result Manager baseline does not contain the original two regions')
+    snapshot['manager_preview_before_second'] = rows
+    write_private('hdfs-first-minio.json', snapshot)
+    return 0
+
+
+def capture_first_minio(consumer, publication):
+    started = time.monotonic()
+    identity = preparation_identity(consumer)
+    write_private('hdfs-first-minio.json', dict(identity, publication=publication), new=True)
+    environment = dict(os.environ)
+    for key in ('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'):
+        environment.pop(key, None)
+    remaining = publication['remaining_seconds'] - (time.monotonic() - started)
+    if remaining <= 0:
+        raise SuiteError('first-result baseline exhausted the original publication budget')
+    subprocess.run([sys.executable, str(Path(__file__).resolve()), '--observe-first-minio'], env=environment,
+                   check=True, timeout=remaining)
+    snapshot = read_private('hdfs-first-minio.json')
+    if any(snapshot.get(key) != value for key, value in identity.items()) or snapshot.get('publication') != publication:
+        raise SuiteError('first-result baseline changed the publication or User identity')
+    publication['manager_preview_before_second'] = snapshot['manager_preview_before_second']
+    publication['remaining_seconds'] -= time.monotonic() - started
+    if publication['remaining_seconds'] <= 0:
+        raise SuiteError('first-result baseline exhausted the original publication budget')
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--initialize-table-read', action='store_true')
-    parser.add_argument('--cleanup-tables', action='store_true')
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument('--prepare-data-access', action='store_true')
+    actions.add_argument('--cleanup-data-access', action='store_true')
+    actions.add_argument('--observe-first-minio', action='store_true')
     arguments = parser.parse_args()
-    if arguments.cleanup_tables:
+    if arguments.cleanup_data_access:
         if os.environ.get('ADDP_ONLINE_HOSTED') != '1' or os.environ.get('GITHUB_ACTIONS') != 'true':
             raise SuiteError('table cleanup requires the disposable Hosted profile')
-        TABLES.cleanup()
+        try:
+            cleanup_metadata_access()
+        finally:
+            TABLES.cleanup()
         return 0
-    if arguments.initialize_table_read:
+    if arguments.prepare_data_access:
         REGISTRATION.require_external_environment(os.environ)
         if os.environ.get('ADDP_ONLINE_HOSTED') != '1':
             raise SuiteError('HDFS source Grant preparation requires the disposable Hosted profile')
@@ -520,27 +739,47 @@ def main():
         consumer = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), 30)
         principal = validate_identity(consumer, tenant_id)
         authorizer = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
-        postgres_id = support.positive_int(require('ADDP_ONLINE_POSTGRES_ENGINE_ID'), 'PostgreSQL')
-        support.wait_for_scan(consumer, postgres_id, time.monotonic() + 180)
-        REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, [
-            (postgres_id, 'schema', 'results', 'hdfs_totals')])
         runtimes = support._array(consumer.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
         selected = [runtime for runtime in runtimes if runtime.get('engine_type') == 'spark_workflow' and runtime.get('connection_status') == 'online']
         if len(selected) != 1:
             raise SuiteError('table preparation requires exactly one online Spark Runtime')
         runtime = support.positive_int(selected[0]['id'], 'Runtime')
         cluster = support.positive_int(require('ADDP_ONLINE_SPARK_ENGINE_ID'), 'Spark')
+        timeout = float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '900'))
+        prepared, metadata_grants = prepare_file_metadata(consumer, authorizer, tenant_id, principal, runtime, cluster, timeout)
+        postgres_id = support.positive_int(require('ADDP_ONLINE_POSTGRES_ENGINE_ID'), 'PostgreSQL')
+        support.wait_for_scan(consumer, postgres_id, time.monotonic() + 180)
+        REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, [
+            (postgres_id, 'schema', 'results', 'hdfs_totals')])
         def grant_created_table(engine_id, table):
             REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id,
                 [(engine_id, 'database', 'spark_results', table)])
         TABLES.prepare(table_host(), consumer, principal, tenant_id, runtime, cluster, 300, grant_created_table)
-        print('Disposable PostgreSQL/MySQL/Doris exact table read Grants are ready')
+        publications = []
+        for _ in range(2):
+            publication = publish_persistence(consumer, prepared, prepared['minio_engine_id'], timeout, 'file')
+            name = publication_item_path(publication, prepared['minio_engine_id'], 'file')
+            grant_started = time.monotonic()
+            metadata_grants.grant(prepared['minio_engine_id'], name, 'minio', data_type='table', format_name='parquet', layout='whole')
+            publication['remaining_seconds'] -= time.monotonic() - grant_started
+            if publication['remaining_seconds'] <= 0:
+                raise SuiteError('publication preparation exhausted its original budget')
+            if not publications:
+                capture_first_minio(consumer, publication)
+            publications.append(publication)
+        prepared['minio_publications'] = publications
+        write_private('hdfs-file-prepared.json', prepared, new=True)
+        print('Disposable table reads and six exact file metadata Grants are ready')
         return 0
     if os.environ.get('ADDP_ONLINE_TEST') != '1' or os.environ.get('ADDP_ONLINE_HOSTED') != '1':
         raise SuiteError('HDFS suite requires the Hosted Online entry')
+    if os.environ.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN') or os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'):
+        raise SuiteError('preparation credentials must be removed before ordinary consumption')
     require = support.required_environment
     timeout = float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '900'))
     client = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), min(timeout, 30))
+    if arguments.observe_first_minio:
+        return observe_first_minio(client)
     try:
         return run_scenario(client, timeout)
     finally:
@@ -549,13 +788,39 @@ def main():
 
 def run_scenario(client, timeout):
     require = support.required_environment
-    report = run(client, support.positive_int(require('ADDP_ONLINE_TEST_TENANT_ID'), 'tenant'),
-                 support.positive_int(require('ADDP_ONLINE_HDFS_ENGINE_ID'), 'HDFS'),
-                 support.positive_int(require('ADDP_ONLINE_SPARK_ENGINE_ID'), 'Spark'), timeout)
-    report['persistence'] = run_persistence(client, report, support.positive_int(require('ADDP_ONLINE_POSTGRES_ENGINE_ID'), 'PostgreSQL'), timeout)
+    prepared = read_private('hdfs-file-prepared.json')
+    expected = preparation_identity(client)
+    if any(prepared.get(key) != value for key, value in expected.items()):
+        raise SuiteError('file preparation belongs to another run, Tenant, User or Engine')
+    source_budget = prepared.get('source_remaining_seconds')
+    if (isinstance(source_budget, bool) or not isinstance(source_budget, (int, float))
+            or not math.isfinite(source_budget) or not 0 < source_budget <= timeout):
+        raise SuiteError('source preparation has no valid remaining original budget')
+    journal = read_private('hdfs-metadata-grants.json')
+    validate_metadata_journal(journal, expected)
+    if journal['issued_count'] != 6 or len(journal['pending']) != 6 or not all(row['confirmed'] for row in journal['pending']):
+        raise SuiteError('six confirmed metadata Grant receipts are required before consumption')
+    publications = prepared.get('minio_publications')
+    if not isinstance(publications, list) or len(publications) != 2:
+        raise SuiteError('exactly two original MinIO publications are required')
+    paths = [publication_item_path(publication, expected['minio_engine_id'], 'file') for publication in publications]
+    if len(set(paths)) != 2:
+        raise SuiteError('prepared MinIO publications must be independent')
+    if not isinstance(publications[0].get('manager_preview_before_second'), list):
+        raise SuiteError('first publication must retain its ordinary User baseline from before the second write')
+    report = run(client, expected['tenant_id'], expected['engine_id'], expected['cluster_id'], source_budget,
+                 prepared['scan_execution_id'], prepared['runtime_id'])
+    if any(prepared.get(key) != report.get(key) for key in ('runtime_id', 'locators', 'item_ids')):
+        raise SuiteError('prepared source identities or Runtime changed before consumption')
+    postgres = support.positive_int(require('ADDP_ONLINE_POSTGRES_ENGINE_ID'), 'PostgreSQL')
+    publication = publish_persistence(client, report, postgres, timeout)
+    report['persistence'] = consume_persistence(client, report, postgres, publication, timeout)
     minio_id = support.positive_int(require('ADDP_ONLINE_MINIO_ENGINE_ID'), 'MinIO')
-    report['minio'] = run_persistence(client, report, minio_id, timeout, 'file')
-    report['minio_second'] = run_persistence(client, report, minio_id, timeout, 'file')
+    report['minio'] = consume_persistence(client, report, minio_id, publications[0], timeout, 'file')
+    report['minio_second'] = consume_persistence(client, report, minio_id, publications[1], timeout, 'file')
+    report['metadata_preparation'] = {'action': 'metadata_read', 'hdfs_sources': 4, 'minio_publications': 2,
+        'source_scan_execution_id': prepared['scan_execution_id'],
+        'publication_execution_ids': [publication['execution_id'] for publication in publications]}
     validate_minio_independent_results(client, report['minio'], report['minio_second'])
     report['tables'] = TABLES.run(table_host(), client, report, timeout)
     Path(require('ADDP_ONLINE_ARTIFACT_DIR'), 'spark-table-consumer-flow.json').write_text(json.dumps(report['tables'], ensure_ascii=False, indent=2))

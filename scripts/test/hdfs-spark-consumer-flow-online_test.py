@@ -3,9 +3,10 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import uuid
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SPEC = importlib.util.spec_from_file_location('hdfs_online', Path(__file__).with_name('hdfs-spark-consumer-flow-online.py'))
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -22,7 +23,252 @@ def final_result():
     return {'type': 'spark_dataframe', 'preview_rows': rows}
 
 
+def persistence_flow(client, report, engine, timeout, target_type="table"):
+    publication = MODULE.publish_persistence(client, report, engine, timeout, target_type)
+    return MODULE.consume_persistence(client, report, engine, publication, timeout, target_type)
+
+
+def preparation_fixture():
+    identity = {'run_id': 'run-files', 'tenant_id': 2, 'principal_id': '42', 'engine_id': 17,
+                'cluster_id': 18, 'minio_engine_id': 20}
+    sources = [MODULE.REGISTRATION.ExactFileMetadataGrants.target(17, name, 'hdfs') for name in MODULE.FILES.values()]
+    publications = []
+    for number in (1, 2):
+        execution = str(uuid.UUID(int=number))
+        name = 'result/results/hdfs_totals/' + execution + '-' + str(uuid.uuid5(uuid.NAMESPACE_OID, 'save'))
+        sources.append(MODULE.REGISTRATION.ExactFileMetadataGrants.target(20, name, 'minio', layout='whole'))
+        publications.append({'execution_id': execution, 'target_locator': f'addp://engine/20/path/{name}?type=object',
+                             'remaining_seconds': 60})
+    publications[0]['manager_preview_before_second'] = [{key: value if key == 'region' else str(value) for key, value in row.items()} for row in final_result()['preview_rows']]
+    rows = [{'engine': path['engine_id'], 'target': path, 'request_id': str(uuid.UUID(int=number + 10)), 'confirmed': True}
+            for number, path in enumerate(sources)]
+    journal = dict(identity, schema_version='addp.hdfs-metadata-grants/v1', pending=rows, issued_count=6)
+    prepared = dict(identity, runtime_id=3, scan_execution_id='source-scan', source_remaining_seconds=60,
+        locators={key: MODULE.locator(17, {'full_name': name, 'id': i}) for i, (key, name) in enumerate(MODULE.FILES.items(), 1)},
+        item_ids={key: i for i, key in enumerate(MODULE.FILES, 1)}, minio_publications=publications)
+    return identity, journal, prepared
+
+
 class HDFSOnlineTest(unittest.TestCase):
+    def test_source_preparation_scans_once_then_grants_each_exact_file_before_lookup(self):
+        identity, _, _ = preparation_fixture()
+        events, granted = [], set()
+        grants = Mock()
+        def grant(engine, name, storage, **kwargs):
+            self.assertEqual((engine, storage), (17, 'hdfs'))
+            self.assertEqual(kwargs, {'data_type': 'table', 'format_name': name.rsplit('.', 1)[1], 'layout': 'single'})
+            events.append(('grant', name)); granted.add(name)
+        grants.grant.side_effect = grant
+        def find(client, engine, name, kind):
+            self.assertIn(name, granted)
+            self.assertEqual((engine, kind), (17, 'file'))
+            events.append(('ordinary_lookup', name))
+            return {'id': list(MODULE.FILES.values()).index(name) + 1, 'full_name': name}
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, ADDP_ONLINE_SECRET_DIR=temporary), \
+             patch.object(MODULE, 'preparation_identity', return_value=identity), \
+             patch.object(MODULE, 'metadata_grants', return_value=grants), \
+             patch.object(MODULE.support, 'wait_for_scan', return_value='source-scan') as scan, \
+             patch.object(MODULE.support, 'find_item', side_effect=find), \
+             patch.object(MODULE.support, 'preview_rows') as preview, patch.object(MODULE, 'submit_and_wait') as submit:
+            prepared, result = MODULE.prepare_file_metadata(Mock(), Mock(), 2, '42', 3, 18, 60)
+            self.assertIs(result, grants)
+            self.assertEqual(scan.call_count, 1)
+            self.assertEqual(scan.call_args.args[1], 17)
+            self.assertEqual(prepared['scan_execution_id'], 'source-scan')
+            self.assertTrue(0 < prepared['source_remaining_seconds'] <= 60)
+            self.assertEqual(set(prepared['locators']), set(MODULE.FILES))
+            self.assertEqual(events, [(event, name) for name in MODULE.FILES.values() for event in ('grant', 'ordinary_lookup')])
+            self.assertEqual(MODULE.read_private('hdfs-metadata-grants.json')['issued_count'], 0)
+            preview.assert_not_called(); submit.assert_not_called()
+
+    def test_metadata_journal_refuses_extra_scope_cross_run_and_duplicate_commands(self):
+        for mutation in ('run', 'tenant', 'user', 'engine', 'source', 'broad', 'duplicate', 'unconfirmed_type', 'count', ''):
+            identity, journal, _ = preparation_fixture()
+            if mutation in ('run', 'tenant', 'engine'): journal[{'run':'run_id','tenant':'tenant_id','engine':'engine_id'}[mutation]] = 'other'
+            if mutation == 'user': journal['principal_id'] = 'other'
+            if mutation == 'source': journal['pending'][0]['target']['segments'][-1]['name'] = 'other.csv'
+            if mutation == 'broad': journal['pending'][-1]['target']['segments'].pop()
+            if mutation == 'duplicate': journal['pending'][1]['request_id'] = journal['pending'][0]['request_id']
+            if mutation == 'unconfirmed_type': journal['pending'][0]['confirmed'] = 1
+            if mutation == 'count': journal['issued_count'] = 7
+            with self.subTest(mutation=mutation):
+                if mutation:
+                    with self.assertRaises(MODULE.SuiteError): MODULE.validate_metadata_journal(journal, identity)
+                else: MODULE.validate_metadata_journal(journal, identity)
+
+    def test_ordinary_scenario_uses_original_publications_and_never_repeats_source_scan_or_minio_save(self):
+        identity, journal, prepared = preparation_fixture()
+        report = {key: prepared[key] for key in ('principal_id','tenant_id','engine_id','cluster_id','runtime_id','locators','item_ids')}
+        report['final_result'] = final_result()
+        def publish(client, current, engine, timeout):
+            self.assertEqual(engine, 19)
+            return {'execution_id': 'pg-published'}
+        def consume(client, current, engine, publication, timeout, target_type='table'):
+            if engine == 20:
+                self.assertEqual(target_type, 'file')
+                self.assertIn(publication, prepared['minio_publications'])
+            return {'execution_id': publication['execution_id'], 'target_locator': publication.get('target_locator', 'pg')}
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, ADDP_ONLINE_SECRET_DIR=temporary,
+                ADDP_ONLINE_ARTIFACT_DIR=temporary, ADDP_ONLINE_POSTGRES_ENGINE_ID='19', ADDP_ONLINE_MINIO_ENGINE_ID='20'), \
+             patch.object(MODULE, 'preparation_identity', return_value=identity), patch.object(MODULE, 'run', return_value=report) as run, \
+             patch.object(MODULE, 'publish_persistence', side_effect=publish) as publication, \
+             patch.object(MODULE, 'consume_persistence', side_effect=consume) as consumption, \
+             patch.object(MODULE, 'validate_minio_independent_results'), patch.object(MODULE.TABLES, 'run', return_value={}), \
+             patch.object(MODULE, 'run_browser', return_value={}), patch.object(MODULE, 'run_multicluster_browser', return_value={}), \
+             patch.object(MODULE.support, 'wait_for_scan') as scan, patch('builtins.print'):
+            MODULE.write_private('hdfs-file-prepared.json', prepared, new=True)
+            MODULE.write_private('hdfs-metadata-grants.json', journal, new=True)
+            self.assertEqual(MODULE.run_scenario(Mock(), 60), 0)
+            self.assertEqual(publication.call_count, 1)
+            self.assertEqual(consumption.call_count, 3)
+            self.assertEqual(run.call_args.args[-2:], ('source-scan', 3))
+            scan.assert_not_called()
+            result = json.loads(Path(temporary, 'hdfs-spark-consumer-flow.json').read_text())
+            self.assertEqual(result['metadata_preparation']['publication_execution_ids'],
+                             [row['execution_id'] for row in prepared['minio_publications']])
+
+    def test_missing_unconfirmed_or_foreign_preparation_fails_before_workflow_submission(self):
+        for mutation in ('missing', 'foreign', 'grant', 'duplicate'):
+            identity, journal, prepared = preparation_fixture()
+            if mutation == 'foreign': prepared['principal_id'] = '99'
+            if mutation == 'grant': journal['pending'][0]['confirmed'] = False
+            if mutation == 'duplicate': prepared['minio_publications'][1] = prepared['minio_publications'][0]
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary, \
+                 patch.dict(os.environ, ADDP_ONLINE_SECRET_DIR=temporary), \
+                 patch.object(MODULE, 'preparation_identity', return_value=identity), patch.object(MODULE, 'run') as run:
+                if mutation != 'missing': MODULE.write_private('hdfs-file-prepared.json', prepared, new=True)
+                MODULE.write_private('hdfs-metadata-grants.json', journal, new=True)
+                with self.assertRaises((MODULE.SuiteError, FileNotFoundError)): MODULE.run_scenario(Mock(), 60)
+                run.assert_not_called()
+
+    def test_private_preparation_refuses_replacement_symlinks_and_permissive_files(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, ADDP_ONLINE_SECRET_DIR=temporary):
+            MODULE.write_private('prepared.json', {'id': 1}, new=True)
+            self.assertEqual(Path(temporary, 'prepared.json').stat().st_mode & 0o777, 0o600)
+            with self.assertRaises(MODULE.SuiteError): MODULE.write_private('prepared.json', {'id': 2}, new=True)
+            Path(temporary, 'prepared.json').chmod(0o644)
+            with self.assertRaises(MODULE.SuiteError): MODULE.read_private('prepared.json')
+            Path(temporary, 'link.json').symlink_to(Path(temporary, 'prepared.json'))
+            with self.assertRaises(OSError): MODULE.read_private('link.json')
+
+    def test_cleanup_reloads_only_owned_journal_and_refuses_foreign_targets(self):
+        for foreign in (False, True):
+            identity, journal, _ = preparation_fixture()
+            if foreign: journal['pending'][0]['target']['segments'][-1]['name'] = 'foreign.csv'
+            factory = Mock()
+            factory.return_value.cleanup.return_value = {'grants_revoked': True, 'metadata_hidden': True}
+            with self.subTest(foreign=foreign), tempfile.TemporaryDirectory() as temporary, \
+                 patch.dict(os.environ, ADDP_ONLINE_SECRET_DIR=temporary, ADDP_ONLINE_ARTIFACT_DIR=temporary,
+                    GATEWAY_URL='http://127.0.0.1:8000', ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',
+                    ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer'), \
+                 patch.object(MODULE.REGISTRATION, 'require_external_environment'), \
+                 patch.object(MODULE.support, 'GatewayClient') as clients, \
+                 patch.object(MODULE, 'preparation_identity', return_value=identity), patch.object(MODULE, 'metadata_grants', factory):
+                MODULE.write_private('hdfs-metadata-grants.json', journal, new=True)
+                if foreign:
+                    with self.assertRaises(MODULE.SuiteError): MODULE.cleanup_metadata_access()
+                    factory.assert_not_called()
+                else:
+                    MODULE.cleanup_metadata_access()
+                    self.assertEqual(clients.call_args_list[0].args[1], 'consumer')
+                    self.assertEqual(clients.call_args_list[1].args[1], 'issuer')
+                    result = json.loads(Path(temporary, 'hdfs-metadata-cleanup.json').read_text())
+                    self.assertEqual(result, {'targets': 6, 'grants_revoked': True, 'metadata_hidden': True})
+
+    def test_prepared_publication_cannot_change_target_execution_or_budget(self):
+        for mutation in ('engine', 'execution', 'path', 'budget', 'infinite', 'boolean'):
+            _, _, prepared = preparation_fixture()
+            publication = prepared['minio_publications'][0]
+            if mutation == 'engine': publication['target_locator'] = publication['target_locator'].replace('engine/20', 'engine/99')
+            if mutation == 'execution': publication['execution_id'] = str(uuid.uuid4())
+            if mutation == 'path': publication['target_locator'] = 'addp://engine/20/path/result?type=bucket'
+            if mutation == 'budget': publication['remaining_seconds'] = 61
+            if mutation == 'infinite': publication['remaining_seconds'] = float('inf')
+            if mutation == 'boolean': publication['remaining_seconds'] = True
+            with self.subTest(mutation=mutation):
+                client = Mock()
+                with self.assertRaises(MODULE.SuiteError): MODULE.consume_persistence(client, {}, 20, publication, 60, 'file')
+                client.request.assert_not_called()
+
+    def test_first_publication_baseline_is_taken_by_an_unprivileged_child_before_second(self):
+        identity, journal, prepared = preparation_fixture()
+        publication = prepared['minio_publications'][0]
+        baseline = publication.pop('manager_preview_before_second')
+        journal['pending'].pop(); journal['issued_count'] = 5
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ,
+                ADDP_ONLINE_SECRET_DIR=temporary, ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='ordinary',
+                ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='provisioner', ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer'), \
+             patch.object(MODULE, 'preparation_identity', return_value=identity), \
+             patch.object(MODULE.support, 'find_item', return_value={'id': 7}) as find, \
+             patch.object(MODULE.support, 'preview_rows', return_value=([], baseline)) as preview:
+            MODULE.write_private('hdfs-metadata-grants.json', journal, new=True)
+            def child(command, env, check, timeout):
+                self.assertEqual(command[-1], '--observe-first-minio')
+                self.assertNotIn('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', env)
+                self.assertNotIn('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN', env)
+                self.assertEqual(env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 'ordinary')
+                self.assertTrue(0 < timeout <= 60)
+                with patch.dict(os.environ, env, clear=True):
+                    self.assertEqual(MODULE.observe_first_minio(Mock()), 0)
+                return SimpleNamespace(returncode=0)
+            with patch.object(MODULE.subprocess, 'run', side_effect=child):
+                MODULE.capture_first_minio(Mock(), publication)
+            self.assertEqual(publication['manager_preview_before_second'], baseline)
+            self.assertTrue(0 < publication['remaining_seconds'] < 60)
+            self.assertEqual(find.call_args.args[1:3], (20, MODULE.publication_item_path(publication, 20, 'file')))
+            preview.assert_called_once()
+
+    def test_prepare_entry_publishes_twice_and_captures_first_before_second(self):
+        identity, _, prepared = preparation_fixture()
+        originals = json.loads(json.dumps(prepared['minio_publications']))
+        for row in originals: row.pop('manager_preview_before_second', None)
+        events = []
+        grants = Mock()
+        grants.grant.side_effect = lambda *args, **kwargs: events.append('metadata_grant')
+        def publish(client, source, engine, timeout, target_type):
+            self.assertEqual((engine, target_type), (20, 'file'))
+            events.append('publish')
+            return originals.pop(0)
+        def baseline(client, publication):
+            self.assertEqual(events, ['publish', 'metadata_grant'])
+            events.append('baseline')
+            publication['manager_preview_before_second'] = final_result()['preview_rows']
+        environment = {'GITHUB_ACTIONS':'true', 'RUNNER_OS':'Linux', 'ADDP_ONLINE_HOSTED':'1',
+            'SYSTEM_URL':'http://127.0.0.1:8180', 'GATEWAY_URL':'http://127.0.0.1:8000',
+            'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN':'provisioner', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'issuer',
+            'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'ordinary', 'ADDP_ONLINE_TEST_TENANT_ID':'2',
+            'ADDP_ONLINE_POSTGRES_ENGINE_ID':'19', 'ADDP_ONLINE_SPARK_ENGINE_ID':'18'}
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, dict(environment, ADDP_ONLINE_SECRET_DIR=temporary), clear=True), \
+             patch.object(MODULE.sys, 'argv', ['hdfs', '--prepare-data-access']), \
+             patch.object(MODULE.support, 'GatewayClient') as clients, patch.object(MODULE, 'validate_identity', return_value='42'), \
+             patch.object(MODULE, 'prepare_file_metadata', return_value=(prepared, grants)) as files, \
+             patch.object(MODULE.support, 'wait_for_scan') as scan, \
+             patch.object(MODULE.REGISTRATION, 'initialize_exact_record_read_grants') as reads, \
+             patch.object(MODULE.TABLES, 'prepare') as tables, patch.object(MODULE, 'publish_persistence', side_effect=publish), \
+             patch.object(MODULE, 'capture_first_minio', side_effect=baseline), patch('builtins.print'):
+            clients.return_value.request.return_value.payload = [{'id':3,'engine_type':'spark_workflow','connection_status':'online'}]
+            self.assertEqual(MODULE.main(), 0)
+            self.assertEqual(events, ['publish','metadata_grant','baseline','publish','metadata_grant'])
+            files.assert_called_once(); scan.assert_called_once(); tables.assert_called_once()
+            self.assertEqual(reads.call_args.args[-1], [(19,'schema','results','hdfs_totals')])
+            self.assertEqual(len(MODULE.read_private('hdfs-file-prepared.json')['minio_publications']), 2)
+
+    def test_changed_first_result_baseline_is_not_replaced_by_later_preview(self):
+        _, _, prepared = preparation_fixture()
+        publication = prepared['minio_publications'][0]
+        publication.update(scan_execution_id='scan', runtime_status={}, runtime_execution_id='runtime-save',
+                           final_result={'status':'success','rows':2})
+        publication['manager_preview_before_second'][0]['csv_rows'] = '11'
+        execution = {'status':'success','metadata':{'result':{'runtime_execution_id':'runtime-save'}}}
+        report = {'locators':{}, 'final_result':final_result()}
+        rows = [{key:value if key=='region' else str(value) for key,value in row.items()} for row in final_result()['preview_rows']]
+        client = Mock(); client.request.return_value.payload = execution
+        with patch.object(MODULE, 'validate_persistence', return_value=(publication['final_result'],'scan')), \
+             patch.object(MODULE.support, 'find_item', return_value={'id':7,'attributes':{'item':{'data_type':'table','format':'parquet','layout':'whole'}}}), \
+             patch.object(MODULE.support, 'preview_rows', return_value=([],rows)), patch.object(MODULE, 'submit_and_wait') as submit:
+            with self.assertRaisesRegex(MODULE.SuiteError, 'original first-result Manager baseline'):
+                MODULE.consume_persistence(client, report, 20, publication, 60, 'file')
+            submit.assert_not_called()
     def test_minio_physical_reports_committed_objects_without_claiming_multipart_absence(self):
         calls = []
         def run(command, **kwargs):
@@ -60,7 +306,7 @@ class HDFSOnlineTest(unittest.TestCase):
             preview.assert_not_called()
 
     def test_source_preparation_refuses_personal_environment_before_any_request(self):
-        with patch.dict(os.environ, {}, clear=True), patch.object(MODULE.sys, 'argv', ['hdfs', '--initialize-table-read']), patch.object(MODULE.support, 'GatewayClient') as client:
+        with patch.dict(os.environ, {}, clear=True), patch.object(MODULE.sys, 'argv', ['hdfs', '--prepare-data-access']), patch.object(MODULE.support, 'GatewayClient') as client:
             with self.assertRaises(MODULE.REGISTRATION.RegistrationError):
                 MODULE.main()
             client.assert_not_called()
@@ -291,7 +537,7 @@ class HDFSOnlineTest(unittest.TestCase):
                   'locators': {name: 'addp://engine/7/path/orders.' + name + '?type=file' for name in ('csv', 'json', 'parquet')},
                   'item_ids': {'csv': 1, 'json': 2, 'parquet': 3}, 'final_result': expected}
         receipt = {'status': 'success', 'rows': 2, 'target': 'results.hdfs_totals'}
-        saved = {'metadata': {'result': {'runtime_execution_id': 'runtime-save'}}}
+        saved = {'status': 'success', 'metadata': {'result': {'runtime_execution_id': 'runtime-save'}}}
         reused = {'metadata': {'result': {'runtime_execution_id': 'runtime-reuse', 'final_result': final_result()}}}
         graph = {'edges': [{'source': {'item_id': source}, 'target': {'item_id': 5},
                  'evidence': {'execution_id': 'saved'}, 'status': 'active', 'relation_kind': 'derive'} for source in (1, 2, 3)]}
@@ -304,7 +550,7 @@ class HDFSOnlineTest(unittest.TestCase):
             if wrong == 'missing': rows[0].pop('parquet_rows')
             if wrong == 'duplicate': rows.append(rows[0].copy())
             client = Mock()
-            client.request.side_effect = [SimpleNamespace(payload={'status': 'success'}), SimpleNamespace(payload=graph)]
+            client.request.side_effect = [SimpleNamespace(payload={'status': 'success'}), SimpleNamespace(payload=saved), SimpleNamespace(payload=graph)]
             with self.subTest(wrong=wrong), patch.dict(os.environ, ADDP_ONLINE_SPARK_RUNTIME_URL='http://127.0.0.1:8098'), \
                  patch.object(MODULE, 'submit_and_wait', side_effect=[('saved', saved), ('reused', reused)]), \
                  patch.object(MODULE, 'validate_persistence', return_value=(receipt, 'scan')), \
@@ -314,9 +560,9 @@ class HDFSOnlineTest(unittest.TestCase):
                  patch.object(MODULE, 'persistence_physical', return_value={}):
                 if wrong:
                     with self.assertRaisesRegex(MODULE.SuiteError, 'Manager persisted result'):
-                        MODULE.run_persistence(client, report, 9, 30)
+                        persistence_flow(client, report, 9, 30)
                 else:
-                    result = MODULE.run_persistence(client, report, 9, 30)
+                    result = persistence_flow(client, report, 9, 30)
                     self.assertEqual(result['lineage_sources'], [1, 2, 3])
                     self.assertEqual(result['manager_preview_rows'], rows)
                     self.assertEqual(result['reuse_final_result'], final_result())
@@ -327,13 +573,13 @@ class HDFSOnlineTest(unittest.TestCase):
         report = {'engine_id': 7, 'cluster_id': 8, 'runtime_id': 10,
                   'locators': {name: 'addp://engine/7/path/orders.' + name + '?type=file' for name in ('csv', 'json', 'parquet')},
                   'item_ids': {'csv': 1, 'json': 2, 'parquet': 3}, 'final_result': final_result()}
-        saved = {'metadata': {'result': {'runtime_execution_id': 'runtime-save'}}}
+        saved = {'status': 'success', 'metadata': {'result': {'runtime_execution_id': 'runtime-save'}}}
         reused = {'metadata': {'result': {'runtime_execution_id': 'runtime-reuse', 'final_result': final_result()}}}
         graph = {'edges': [{'source': {'item_id': source}, 'target': {'item_id': 5},
                  'evidence': {'execution_id': 'saved'}, 'status': 'active', 'relation_kind': 'derive'} for source in (1, 2, 3)]}
         for layout in ('whole', 'single'):
             client = Mock()
-            client.request.side_effect = [SimpleNamespace(payload={'status': 'success'}), SimpleNamespace(payload=graph)]
+            client.request.side_effect = [SimpleNamespace(payload={'status': 'success'}), SimpleNamespace(payload=saved), SimpleNamespace(payload=graph)]
             item = {'id': 5, 'attributes': {'item': {'data_type': 'table', 'format': 'parquet', 'layout': layout}}}
             with self.subTest(layout=layout), patch.dict(os.environ, ADDP_ONLINE_SPARK_RUNTIME_URL='http://runtime'), \
                  patch.object(MODULE, 'submit_and_wait', side_effect=[('saved', saved), ('reused', reused)]) as submit, \
@@ -344,9 +590,9 @@ class HDFSOnlineTest(unittest.TestCase):
                  patch.object(MODULE, 'minio_physical', return_value={'committer': 'magic'}):
                 if layout != 'whole':
                     with self.assertRaisesRegex(MODULE.SuiteError, 'table/parquet/whole'):
-                        MODULE.run_persistence(client, report, 9, 30, 'file')
+                        persistence_flow(client, report, 9, 30, 'file')
                 else:
-                    result = MODULE.run_persistence(client, report, 9, 30, 'file')
+                    result = persistence_flow(client, report, 9, 30, 'file')
                     self.assertIn('/hdfs_totals/saved-', result['target_locator'])
                     self.assertEqual(result['lineage_sources'], [1, 2, 3])
                     self.assertEqual(find.call_args.args[-1], 'object')
