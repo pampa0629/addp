@@ -84,7 +84,7 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 // ListEngineItems 获取引擎下已扫描的数据项列表。
 // @Summary 列出引擎数据项 | List engine items
 // @Description 获取指定引擎下已扫描的数据项，可按 catalog 第一层业务分支过滤 | List scanned metadata items for an engine, optionally filtered by catalog first business branch
-// @Description PG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
+// @Description 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | User queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
 // @Tags Meta Query
 // @Produce json
 // @Param engine_id path int true "存储引擎ID | Engine ID"
@@ -140,7 +140,7 @@ func (h *Handler) ListEngineItems(c *gin.Context) {
 // GetItemFieldsByID 按 item_id 获取数据项字段。
 // @Summary 按 ID 获取数据项字段 | Get item fields by ID
 // @Description 按数据项 ID 获取字段详情 | Get item field details by item ID
-// @Description PG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
+// @Description 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | User queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract
 // @Tags Meta Query
 // @Produce json
 // @Param item_id path int true "数据项ID | Item ID"

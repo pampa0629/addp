@@ -103,3 +103,14 @@ it('captures a persistent node scope independently of DataItem boundaries', () =
  expect(zh.system.engine.sourceGrants.confirmNode).toContain('以后新识别')
  expect(en.system.engine.sourceGrants.confirmNode).toContain('newly identified')
 })
+
+it('metadata-only targets can issue metadata grants without content elevation', () => {
+ const target={engine_id:'2',version:'catalog.path/v1',segments:[{term:'root',kind:'root',name:''},{term:'directory',kind:'directory',name:'outputs'},{term:'file',kind:'file',name:'nodes.gpkg'}]}
+ const metadata_target={target,layout:'single',data_type:'container',format:'geopackage',composition_digest:'c'.repeat(64)}
+ const requirement={engine_id:'2',catalog_path:target,binding:{item_fingerprint:'a'.repeat(64),boundary_hash:'b'.repeat(64),metadata_target}}
+ const captured=captureIndependentGrant('2',requirement,{...form,action:'metadata_read'},candidates)
+ expect(JSON.parse(captured.payload)).toMatchObject({action:'metadata_read',item_fingerprint:'a'.repeat(64),expected_boundary_hash:'b'.repeat(64)})
+ expect(JSON.parse(captured.payload).metadata_target).toBeUndefined()
+ expect(()=>captureIndependentGrant('2',requirement,form,candidates)).toThrow()
+ expect(()=>captureIndependentGrant('2',{...requirement,binding:{...requirement.binding,native_target:target}},{...form,action:'metadata_read'},candidates)).toThrow()
+})

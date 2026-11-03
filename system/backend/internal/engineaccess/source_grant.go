@@ -39,6 +39,7 @@ type sourceGrant struct {
 	BoundaryHash                 string
 	FileComposition              json.RawMessage `gorm:"type:jsonb"`
 	ScopeBoundary                json.RawMessage `gorm:"type:jsonb"`
+	MetadataTarget               json.RawMessage `gorm:"type:jsonb"`
 	RecipientType                string
 	RecipientID                  int64
 	Action                       string
@@ -73,7 +74,17 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 		}
 	}
 	file := len(primary.Segments) > 0 && (primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermFile || primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermObject)
-	if len(grant.ScopeBoundary) != 0 || authorizationfacts.ValidWholeScopeRoot(primary) {
+	if len(grant.MetadataTarget) != 0 {
+		var metadata authorizationfacts.MetadataBoundary
+		if grant.Action != shared.SourceAccessMetadataRead || grant.NodeRecursive != nil || grant.ApprovalMode != approvalModeIndependent || len(grant.FileComposition) != 0 || len(grant.ScopeBoundary) != 0 || json.Unmarshal(grant.MetadataTarget, &metadata) != nil {
+			return commonapi.ErrBadRequest
+		}
+		binding := authorizationfacts.Binding{ItemFingerprint: grant.ItemFingerprint, BoundaryHash: grant.BoundaryHash, MetadataTarget: &metadata}
+		target, err := binding.PrimaryTarget()
+		if err != nil || !reflect.DeepEqual(target, primary) {
+			return commonapi.ErrBadRequest
+		}
+	} else if len(grant.ScopeBoundary) != 0 || authorizationfacts.ValidWholeScopeRoot(primary) {
 		var scope authorizationfacts.ScopeBoundary
 		if grant.ApprovalMode != approvalModeIndependent || len(grant.FileComposition) != 0 || json.Unmarshal(grant.ScopeBoundary, &scope) != nil {
 			return commonapi.ErrBadRequest

@@ -61,7 +61,7 @@ func encodeBoundSourceTargets(paths []engineplugin.EngineCatalogPath, bindings [
 		return nil, errSourceReadRules
 	}
 	for i, b := range bindings {
-		if b.Validate() != nil {
+		if b.Validate() != nil || (b.MetadataTarget != nil && action != authorization.SourceAccessMetadataRead) {
 			return nil, errSourceReadRules
 		}
 		a, err := authorization.EncodeSharingTarget(paths[i])
@@ -204,7 +204,9 @@ const sourceReadRuleCTEs = `, targets AS (
 	FROM input, jsonb_array_elements(input.targets) WITH ORDINALITY AS target(value, ordinality)
  CROSS JOIN LATERAL (SELECT CASE WHEN jsonb_exists(target.value->'binding', 'file_composition') THEN
    (SELECT ref->'target' FROM jsonb_array_elements(target.value->'binding'->'file_composition'->'refs') AS ref
-    WHERE ref->>'primary' = 'true') WHEN jsonb_exists(target.value->'binding', 'scope') THEN target.value->'binding'->'scope'->'root' ELSE target.value->'binding'->'native_target' END AS path) primary_path
+    WHERE ref->>'primary' = 'true') WHEN jsonb_exists(target.value->'binding', 'scope') THEN target.value->'binding'->'scope'->'root'
+    WHEN jsonb_exists(target.value->'binding', 'metadata_target') THEN target.value->'binding'->'metadata_target'->'target'
+    ELSE target.value->'binding'->'native_target' END AS path) primary_path
 )` + sourceReadSubjectCTEs + `, matched_grants AS MATERIALIZED (
  SELECT g.*, target.position,
   LEAST(g.expires_at, (SELECT membership_expires_at FROM current_source)) AS effective_expires_at
@@ -230,9 +232,9 @@ SELECT target.position, input.observed_at,
 CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
      WHEN NOT EXISTS (SELECT 1 FROM system.engines e WHERE e.tenant_id = input.tenant_id
                       AND e.id = target.engine_id AND e.lifecycle_state = 'active'
-                      AND (target.requested_action <> 'metadata_read' OR e.engine_type = 'postgresql')
-                      AND (target.path->'segments'->-1->>'term' <> 'file' OR e.engine_type IN ('ftp','nfs'))
-                      AND (target.path->'segments'->-1->>'term' <> 'object' OR e.engine_type = 'minio')) THEN 'target_unavailable'
+                      AND (target.requested_action = 'metadata_read' OR
+                       ((target.path->'segments'->-1->>'term' <> 'file' OR e.engine_type IN ('ftp','nfs'))
+                       AND (target.path->'segments'->-1->>'term' <> 'object' OR e.engine_type = 'minio')))) THEN 'target_unavailable'
      WHEN EXISTS (SELECT 1 FROM matched_grants g WHERE g.position = target.position) THEN 'grant'
      ELSE 'no_grant' END AS reason
 FROM targets target CROSS JOIN input

@@ -504,9 +504,11 @@ System 的数据授权消费 Meta 已可靠识别的 DataItem，不要求 deep �
 
 ### 授权资源描述契约
 
-本节定义 Meta → System／Catalog 最小事实投影；当前实现范围见本节“实施与验收”。它只描述数据项及其组成；System 仍独立判断操作者、接收方、批准要求、Grant、Deny 与期限。Meta 的完整详情、Catalog 变化摘要和 `common/dataitem.ItemDescriptor` 均不能直接当作这一可信契约：前两者的用途不同，后者尚未表达基础识别完整性与授权组成约束。
+元数据查看的可靠身份与内容可读边界分别表达：现有 native／file composition／whole 内容边界可供元数据查看复用；其他 DataItem 使用互斥的 `boundary.metadata_target`，含真实 `target`、`layout`、`data_type`、`format`、`composition_digest`，外层 layout 必须一致。whole 元数据目标绑定已识别 DataItem 自身的 directory／bucket／prefix 根，其身份来自该 item 的持久归属节点；它不是普通目录节点范围授权，不允许据此读取整个目录。既有完整 FileGDB 内容 scope 保持原契约。它来自同一已提交快照中的 item 和完整父链，不读取源内容、不扫描；组成摘要只包含已持久的身份／组成声明，不含样本、大小、时间、字段值或统计。`basis_state=complete` 在此表示元数据身份完整，不能当作内容读取完整。Common 的内容绑定方法明确拒绝 metadata_target，System 只允许该边界签发 metadata_read；普通内容入口不因新增事实表示扩权。缺失根、断裂父链、身份不符和路径歧义仍拒绝，不从显示 full_name 拆分猜测。
 
-接口为 `GET /api/v1/meta/runtime/data-items/{fingerprint}/authorization-facts`，仅供当前 Tenant Context 的 `addp-system`、`addp-catalog` Service 使用。两者均通过唯一的 `common/client.MetaClient.ReadAuthorizationFacts` 和各自独立服务凭据读取，不直查 Meta 数据库、不从祖先链或完整详情另造授权边界。Tenant 从 AuthContext 派生；`meta.authorization_facts.read` 只授予内置 `tenant.system_runtime` 与 `tenant.catalog_runtime`，不可委托或租户定制。Catalog 用于核验业务批准目标，System 仍独占 Grant／Deny 与访问裁决；该机器读取资格不授予人员数据权限。该 GET 在同一已提交快照中读取 Meta 持久事实，不访问源内容、不扫描、不写回，也不持有调用方的业务／授权事务锁。响应使用 `Cache-Control: no-store`，不能跨请求缓存为许可。
+本节定义 Meta → System／Catalog 最小事实投影；当前实现范围见本节“实施与验收”。它只描述数据项及其组成；System 仍独立判断操作者、接收方、批准要求、Grant、撤销与期限。Meta 的完整详情、Catalog 变化摘要和 `common/dataitem.ItemDescriptor` 均不能直接当作这一可信契约：前两者的用途不同，后者尚未表达基础识别完整性与授权组成约束。
+
+接口为 `GET /api/v1/meta/runtime/data-items/{fingerprint}/authorization-facts`，仅供当前 Tenant Context 的 `addp-system`、`addp-catalog` Service 使用。两者均通过唯一的 `common/client.MetaClient.ReadAuthorizationFacts` 和各自独立服务凭据读取，不直查 Meta 数据库、不从祖先链或完整详情另造授权边界。Tenant 从 AuthContext 派生；`meta.authorization_facts.read` 只授予内置 `tenant.system_runtime` 与 `tenant.catalog_runtime`，不可委托或租户定制。Catalog 用于核验业务批准目标，System 仍独占 Grant、撤销与访问裁决；该机器读取资格不授予人员数据权限。该 GET 在同一已提交快照中读取 Meta 持久事实，不访问源内容、不扫描、不写回，也不持有调用方的业务／授权事务锁。响应使用 `Cache-Control: no-store`，不能跨请求缓存为许可。
 
 | 响应部分 | 最小内容与事实来源 |
 | --- | --- |
@@ -568,7 +570,7 @@ System 在本地权威写事务外取得这一事实，事务内核验当前管�
 
 System 的 `GET /api/v1/system/engines/{id}/data-items/{fingerprint}/authorization-facts` 供有当前 `system.engine_access_grant.read` 及引擎管理资格的 User 只读核对；服务端以独立 `addp-system` Tenant Service 调用 Meta，返回后再次检查 User 资格和目标 Engine。目标不存在或属于其他 Engine 时返回 404 `authorization_target_not_found`，不混同认证故障；缺少服务配置或依赖故障返回明确 503，不影响 System Ready，不回退到实时目录或浏览器自报事实。该入口不创建授权；新增批准及正式读取独立消费同一事实契约，不把前端展示结果当作凭据。
 
-T1 覆盖严格 DTO、摘要稳定性、状态派生、服务凭据及错误区分；既有 Meta PostgreSQL 门禁覆盖持久身份、删除、租户隔离和 basic/deep 一致。System IAM PostgreSQL 门禁另覆盖边界变化阻断旧 Grant、Deny 持续约束同一数据项、跨边界版本聚合与撤销，以及前向迁移保留 IAM、委托和通用审计。重启后真实 PostgreSQL 调用及跨模块 Online T4 仍待验收。后续按格式补齐 multi／whole 可执行组成契约，不以接口成功宣称全平台权限贯通。相关 owner 使用 `make test-module MODULE=meta|system|common`（分别运行）；代码变更按共享依赖扩散 CI，消费者沿用对应既有跨模块入口。
+T1 覆盖严格 DTO、摘要稳定性、状态派生、服务凭据及错误区分；既有 Meta PostgreSQL 门禁覆盖持久身份、删除、租户隔离和 basic/deep 一致。System IAM PostgreSQL 门禁另覆盖边界变化阻断旧 Grant、跨边界版本聚合与撤销，以及前向迁移保留 IAM、委托和通用审计。重启后真实 PostgreSQL 调用及跨模块 Online T4 仍待验收。后续按格式补齐 multi／whole 可执行组成契约，不以接口成功宣称全平台权限贯通。相关 owner 使用 `make test-module MODULE=meta|system|common`（分别运行）；代码变更按共享依赖扩散 CI，消费者沿用对应既有跨模块入口。
 
 ### Deep 扫描
 

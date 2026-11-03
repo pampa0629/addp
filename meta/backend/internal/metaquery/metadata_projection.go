@@ -27,6 +27,35 @@ func MetadataOnlyItem(item models.MetaItemLite) models.MetaItemLite {
 			Name: table.Name, Kind: table.Kind, Fields: metadataOnlyFields(table.Fields), PrimaryKey: append([]string(nil), table.PrimaryKey...),
 		})}
 	}
+	// Container names and kinds are structure. Never copy child row counts,
+	// sizes, bounds, native expressions or arbitrary child attributes.
+	if raw := commonJSON.Section(item.Attributes, "type_info.container"); raw != nil {
+		container := map[string]interface{}{}
+		if children, ok := raw["children"].([]interface{}); ok {
+			structural := make([]interface{}, 0, len(children))
+			for _, child := range children {
+				if obj, ok := child.(map[string]interface{}); ok {
+					c := map[string]interface{}{}
+					for _, key := range []string{"name", "child_kind", "data_type"} {
+						if value, ok := obj[key].(string); ok {
+							c[key] = value
+						}
+					}
+					structural = append(structural, c)
+				}
+			}
+			container["children"] = structural
+		}
+		if value, ok := raw["default_child"].(string); ok {
+			container["default_child"] = value
+		}
+		if len(container) > 0 {
+			if safe.Attributes["type_info"] == nil {
+				safe.Attributes["type_info"] = map[string]interface{}{}
+			}
+			safe.Attributes["type_info"].(map[string]interface{})["container"] = container
+		}
+	}
 	if spatial := spatialInfoFromMetaAttributes(item.Attributes); spatial != nil {
 		// Declaration facts only; extent/capture location are derived from content.
 		declaration := &datatype.SpatialInfo{SRID: spatial.SRID, CRSRef: spatial.CRSRef,

@@ -100,7 +100,7 @@ func (h *Handler) handleServiceError(c *gin.Context, err error) {
 
 // GetStats 获取元数据统计
 // @Summary 获取元数据统计 | Get metadata stats
-// @Description 获取当前租户有效元数据项数；PG 用户仅统计当前可见数据项 | Count active tenant metadata items; PG user counts include only currently visible items
+// @Description 获取当前租户有效元数据项数；用户仅统计当前可见数据项 | Count active tenant metadata items; User counts include only currently visible items
 // @Tags Meta
 // @Produce json
 // @Success 200 {object} map[string]interface{} "统计信息 | Stats"
@@ -125,7 +125,7 @@ func (h *Handler) GetStats(c *gin.Context) {
 // GetResources 获取存储引擎列表及 catalog 扫描统计
 // GET /api/v1/meta/engines
 // @Summary 获取引擎列表 | Get engine list
-// @Description 获取当前租户 active 存储引擎选择项、标准能力声明、连接状态及统计信息；PG 用户扫描统计仅计可见分支；非 online 项由前端展示并禁选 | Get active storage engine options with canonical capabilities, connection status, and statistics for the current tenant; PG user scan statistics include visible branches only; clients must show but disable non-online options
+// @Description 获取当前租户 active 存储引擎选择项、标准能力声明、连接状态及统计信息；用户扫描统计仅计可见分支；非 online 项由前端展示并禁选 | Get active storage engine options with canonical capabilities, connection status, and statistics for the current tenant; User scan statistics include visible branches only; clients must show but disable non-online options
 // @Tags Meta
 // @Produce json
 // @Success 200 {array} models.ResourceWithStats "引擎列表 | Engine list"

@@ -18,7 +18,7 @@ func TestMetadataProjectionPreservesNestedStructureWithoutContentOrMutation(t *t
 		Attributes: map[string]interface{}{
 			"item":         map[string]interface{}{"data_type": "table", "format": "postgresql", "layout": "single", "sample": secret},
 			"storage":      map[string]interface{}{"physical_path": secret},
-			"type_info":    map[string]interface{}{"table": datatype.TableInfoPayload(&datatype.TableInfo{Name: "visible", Fields: []datatype.FieldInfo{field}, RowCount: &count, Native: map[string]interface{}{"sample": secret}})},
+			"type_info":    map[string]interface{}{"container": map[string]interface{}{"children": []interface{}{map[string]interface{}{"name": "roads", "child_kind": "feature_class", "data_type": "table", "row_count": 99, "native": secret, "sample": secret}}, "default_child": "roads", "child_count": 99}, "table": datatype.TableInfoPayload(&datatype.TableInfo{Name: "visible", Fields: []datatype.FieldInfo{field}, RowCount: &count, Native: map[string]interface{}{"sample": secret}})},
 			"capabilities": map[string]interface{}{"statistics": map[string]interface{}{"sample": secret}, "spatial": map[string]interface{}{"srid": 4326, "extent": []float64{1, 2, 3, 4}}},
 		}}
 	before, _ := json.Marshal(item)
@@ -31,6 +31,10 @@ func TestMetadataProjectionPreservesNestedStructureWithoutContentOrMutation(t *t
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("projection leaked %s: %s", forbidden, encoded)
 		}
+	}
+	container := safe.Attributes["type_info"].(map[string]interface{})["container"].(map[string]interface{})
+	if container["default_child"] != "roads" || len(container["children"].([]interface{})) != 1 {
+		t.Fatal("container structure lost")
 	}
 	table := tableInfoFromMetaAttributes(safe.Attributes)
 	if table == nil || len(table.Fields) != 1 || len(table.Fields[0].Fields) != 1 || table.Fields[0].Element == nil || table.Fields[0].Fields[0].NativeType != "int4" || table.Fields[0].Element.Name != "value" {

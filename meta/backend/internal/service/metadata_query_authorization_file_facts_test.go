@@ -127,8 +127,11 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 					t.Fatal(err)
 				}
 				incomplete, err := s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
-				if err != nil || incomplete.BasisState != authorizationfacts.AuthorizationBasisIncomplete || incomplete.Boundary != nil {
-					t.Fatalf("deep promoted STL basic closure: %+v %v", incomplete, err)
+				if err != nil || incomplete.BasisState != authorizationfacts.AuthorizationBasisComplete || incomplete.Boundary.MetadataTarget == nil {
+					t.Fatalf("metadata identity missing for incomplete content: %+v %v", incomplete, err)
+				}
+				if _, err := incomplete.ApprovedBinding(); err == nil {
+					t.Fatal("unfinished content became readable")
 				}
 				native["composition_complete"] = true
 				if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
@@ -143,8 +146,11 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 						t.Fatal(err)
 					}
 					denied, err := s.GetDataItemAuthorizationFacts(t.Context(), 7, item.Fingerprint)
-					if err != nil || denied.BasisState != authorizationfacts.AuthorizationBasisIncomplete || denied.Boundary != nil {
-						t.Fatalf("unproven FBX profile accepted: %+v %v", denied, err)
+					if err != nil || denied.BasisState != authorizationfacts.AuthorizationBasisComplete || denied.Boundary.MetadataTarget == nil {
+						t.Fatalf("FBX metadata identity missing: %+v %v", denied, err)
+					}
+					if _, err := denied.ApprovedBinding(); err == nil {
+						t.Fatal("unproven FBX profile became readable")
 					}
 				}
 				native["profile"] = fbx.Profile
@@ -155,8 +161,11 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 					t.Fatal(err)
 				}
 				denied, err := s.GetDataItemAuthorizationFacts(t.Context(), 7, item.Fingerprint)
-				if err != nil || denied.BasisState != authorizationfacts.AuthorizationBasisUnsupported || denied.Boundary != nil {
-					t.Fatalf("FBX acquired a dependency: %+v %v", denied, err)
+				if err != nil || denied.BasisState != authorizationfacts.AuthorizationBasisComplete || denied.Boundary.MetadataTarget == nil {
+					t.Fatalf("FBX metadata identity missing: %+v %v", denied, err)
+				}
+				if _, err := denied.ApprovedBinding(); err == nil {
+					t.Fatal("FBX unsupported dependency acquired content proof")
 				}
 				attrs["refs"] = originalRefs
 			}
@@ -261,8 +270,11 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 				t.Fatal(err)
 			}
 			facts, err := NewMetadataQueryService(db).GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
-			if err != nil || facts.BasisState != tc.state || facts.Boundary != nil || facts.BoundaryHash != nil {
-				t.Fatalf("unsafe composition facts=%+v err=%v, want %s", facts, err, tc.state)
+			if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete || facts.Boundary.MetadataTarget == nil {
+				t.Fatalf("metadata identity missing for %s: facts=%+v err=%v", tc.name, facts, err)
+			}
+			if _, err := facts.ApprovedBinding(); err == nil {
+				t.Fatal("unsafe composition acquired content proof")
 			}
 		})
 	}
@@ -304,8 +316,12 @@ func TestDAEFileAuthorizationFactsDecodeURIsExactlyOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 		facts, err := NewMetadataQueryService(db).GetDataItemAuthorizationFacts(t.Context(), 7, item.Fingerprint)
-		if err != nil || facts.BasisState != tc.state {
+		if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete {
 			t.Fatalf("%s: %+v %v", tc.raw, facts, err)
+		}
+		_, proofErr := facts.ApprovedBinding()
+		if (proofErr == nil) != (tc.state == authorizationfacts.AuthorizationBasisComplete) {
+			t.Fatal("DAE content proof did not preserve strict URI validation", proofErr)
 		}
 	}
 }

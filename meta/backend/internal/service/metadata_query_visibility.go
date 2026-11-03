@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+
 	"gorm.io/gorm"
 
 	commonapi "github.com/addp/common/api"
@@ -35,41 +37,24 @@ func (s *ResourceTreeService) FilterMetadataItems(ctx context.Context, tenantID 
 		if err != nil {
 			return nil, err
 		}
-		if engine.EngineType != "postgresql" {
-			for _, item := range candidates {
-				projected[item.ID] = item
-			}
-			continue
-		}
-		ids := []uint{}
-		for _, item := range candidates {
-			ids = append(ids, item.NodeID)
-		}
-		var parents []models.MetaNode
-		if err := s.metadataQueryService.db.WithContext(ctx).Where("tenant_id = ? AND engine_id = ? AND id IN ? AND deleted_at IS NULL", tenantID, engineID, ids).Find(&parents).Error; err != nil {
-			return nil, err
-		}
-		parentByID := map[uint]models.MetaNode{}
-		for _, parent := range parents {
-			parentByID[parent.ID] = parent
-		}
+		_ = engine // getEngine above establishes the exact Tenant owner.
 		targets := []plugin.EngineCatalogPath{}
 		keys := map[uint]string{}
-		for _, item := range candidates {
-			if item.ItemType != "table" {
-				continue
+		seen := map[string]bool{}
+		for _, candidate := range candidates {
+			target, err := s.metadataItemVisibilityTarget(ctx, tenantID, engineID, candidate.ID)
+			if err != nil {
+				return nil, err
 			}
-			parent, ok := parentByID[item.NodeID]
-			if !ok || parent.NodeType != plugin.EngineCatalogTermSchema || parent.Name == "" || parent.FullName != parent.Name || item.Name == "" || item.FullName != parent.Name+"."+item.Name {
-				return nil, commonapi.ErrForbidden
-			}
-			target := plugin.TabularItemPath(engineID, plugin.EngineCatalogTermSchema, parent.Name, item.Name)
 			key, err := authorization.EncodeSharingTarget(target)
 			if err != nil {
 				return nil, commonapi.ErrForbidden
 			}
-			keys[item.ID] = string(key)
-			targets = append(targets, target)
+			keys[candidate.ID] = string(key)
+			if !seen[string(key)] {
+				targets = append(targets, target)
+				seen[string(key)] = true
+			}
 		}
 		visibility, err := observeMetadataVisibility(ctx, targets, check)
 		if err != nil {
@@ -100,29 +85,17 @@ func (s *ResourceTreeService) FilterMetadataNodes(ctx context.Context, tenantID 
 		return nil, commonapi.ErrForbidden
 	}
 	indexes := map[uint]map[uint]*resourcetree.TreeNode{}
-	pg := map[uint]bool{}
 	result := make([]models.MetaNodeLite, 0, len(nodes))
 	for _, node := range nodes {
 		if node.TenantID != tenantID {
 			return nil, commonapi.ErrForbidden
 		}
-		if _, checked := pg[node.EngineID]; !checked {
-			engine, err := s.getEngine(node.EngineID, tenantID)
+		if _, checked := indexes[node.EngineID]; !checked {
+			tree, err := s.GetTree(ctx, tenantID, node.EngineID, -1)
 			if err != nil {
 				return nil, err
 			}
-			pg[node.EngineID] = engine.EngineType == "postgresql"
-			if pg[node.EngineID] {
-				tree, err := s.GetTree(ctx, tenantID, node.EngineID, -1)
-				if err != nil {
-					return nil, err
-				}
-				indexes[node.EngineID], _ = metadataTreeIdentityIndex(tree)
-			}
-		}
-		if !pg[node.EngineID] {
-			result = append(result, node)
-			continue
+			indexes[node.EngineID], _ = metadataTreeIdentityIndex(tree)
 		}
 		if visible, ok := indexes[node.EngineID][node.ID]; ok {
 			count, _ := visible.Metadata["item_count"].(int)
@@ -144,14 +117,11 @@ func (s *ResourceTreeService) FilterMetadataTree(ctx context.Context, tenantID, 
 	if err != nil {
 		return nil, err
 	}
-	if engine.EngineType != "postgresql" {
-		return tree, nil
-	}
 	built, err := s.treeBuilder.BuildFromMetadataTree(engine, commonMetadataTree(tree))
 	if err != nil {
 		return nil, err
 	}
-	visible, err := filterPGResourceTree(ctx, built, engineID, check)
+	visible, err := s.filterMetadataTree(ctx, built, tenantID, engineID, check)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +195,7 @@ func (s *ResourceTreeService) CountVisibleMetadataItems(ctx context.Context, ten
 	return int64(len(visible)), nil
 }
 
-// FilterMetadataEngineStats preserves engine selection facts while recomputing PG
+// FilterMetadataEngineStats preserves engine selection facts while recomputing
 // scan counts from visible branches only. It never changes stored scan statistics.
 func (s *ResourceTreeService) FilterMetadataEngineStats(ctx context.Context, tenantID uint, engines []*models.ResourceWithStats) ([]*models.ResourceWithStats, error) {
 	if _, userQuery := metadataVisibility(ctx); !userQuery {
@@ -237,10 +207,6 @@ func (s *ResourceTreeService) FilterMetadataEngineStats(ctx context.Context, ten
 	result := make([]*models.ResourceWithStats, 0, len(engines))
 	for _, engine := range engines {
 		if engine == nil {
-			continue
-		}
-		if engine.ResourceType != "postgresql" {
-			result = append(result, engine)
 			continue
 		}
 		tree, err := s.metadataQueryService.GetMetadataTree(tenantID, engine.EngineID)
@@ -292,9 +258,7 @@ func (s *ResourceTreeService) CheckMetadataBranch(ctx context.Context, tenantID,
 	if err != nil {
 		return err
 	}
-	if engine.EngineType != "postgresql" {
-		return nil
-	}
+	_ = engine
 	node, err := s.metadataQueryService.GetNodeByCatalogPath(tenantID, engineID, branch)
 	if err != nil {
 		return err
@@ -307,4 +271,27 @@ func (s *ResourceTreeService) CheckMetadataBranch(ctx context.Context, tenantID,
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// Lists and trees resolve the same persisted typed identity. Locator display
+// spelling is never parsed to reconstruct an authorization target.
+func (s *ResourceTreeService) metadataItemVisibilityTarget(ctx context.Context, tenantID, engineID, itemID uint) (plugin.EngineCatalogPath, error) {
+	var item models.MetaItem
+	db := s.metadataQueryService.db.WithContext(ctx)
+	if err := db.Select("id", "tenant_id", "engine_id", "node_id", "item_type", "name", "full_name", "fingerprint", "attributes").Where("tenant_id=? AND engine_id=? AND id=? AND deleted_at IS NULL", tenantID, engineID, itemID).First(&item).Error; err != nil {
+		return plugin.EngineCatalogPath{}, err
+	}
+	target, err := metadataItemTarget(db, item)
+	if errors.Is(err, errMetadataItemIdentity) {
+		return plugin.EngineCatalogPath{}, commonapi.ErrForbidden
+	}
+	return target, err
+}
+func (s *ResourceTreeService) filterMetadataTree(ctx context.Context, root *resourcetree.TreeNode, tenantID, engineID uint, check MetadataVisibilityCheck) (*resourcetree.TreeNode, error) {
+	if s == nil || s.metadataQueryService == nil {
+		return nil, commonapi.ErrForbidden
+	}
+	return filterMetadataResourceTree(ctx, root, engineID, func(c context.Context, id uint) (plugin.EngineCatalogPath, error) {
+		return s.metadataItemVisibilityTarget(c, tenantID, engineID, id)
+	}, check)
 }

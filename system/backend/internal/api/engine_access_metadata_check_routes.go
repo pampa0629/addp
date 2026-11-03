@@ -73,7 +73,7 @@ func RegisterEngineAccessMetadataCheckRoutes(api *gin.RouterGroup, runtime *IAMR
 
 // CheckMetaQuery godoc
 // @Summary 检查 Meta 查询候选的当前元数据可见性 | Check current metadata visibility for Meta query candidates
-// @Description 当前 Tenant 第一方或 OAuth API User，或唯一 meta audience 且仅含 resource.children.list 或 resource.ancestors.get 一种 Scope 的真实委托凭据；固定核验 meta.catalog.read 和 PostgreSQL DataItem 当前规则。拒绝机器、资源票据、自报身份或边界 | Current Tenant first-party or OAuth API User, or a real delegate with sole meta audience and exactly one resource.children.list or resource.ancestors.get scope. Checks fixed meta.catalog.read and current PostgreSQL DataItem rules. Rejects Service, Resource Ticket and caller-supplied identity or boundaries
+// @Description 当前 Tenant 第一方或 OAuth API User，或唯一 meta audience 且仅含 resource.children.list 或 resource.ancestors.get 一种 Scope 的真实委托凭据；固定核验 meta.catalog.read 和可靠身份的 DataItem 当前规则。拒绝机器、资源票据、自报身份或边界 | Current Tenant first-party or OAuth API User, or a real delegate with sole meta audience and exactly one resource.children.list or resource.ancestors.get scope. Checks fixed meta.catalog.read and current rules for reliably identified DataItems. Rejects Service, Resource Ticket and caller-supplied identity or boundaries
 // @Description 每个候选只返回原目标及可见布尔值；不返回授权来源或拒绝原因，不授予内容读取或扫描权限，不构成可缓存许可。调用方须在分页计数及安全字段投影前应用结果 | Returns each original candidate and its visibility only, without rule sources or denial reasons. Grants neither content read nor scan authority and is not a cacheable lease. Consumers must apply results before pagination, counting and safe-field projection
 // @Tags 源数据读取检查 | Source Data Read Checks
 // @Accept json
@@ -90,7 +90,7 @@ func (h *EngineAccessMetadataCheckHandler) CheckMetaQuery(c *gin.Context) {
 }
 
 // CheckMetaLineage godoc
-// @Summary 检查 PG 血缘端点可见性 | Check PG lineage endpoint visibility
+// @Summary 检查血缘端点可见性 | Check lineage endpoint visibility
 // @Description 仅当前 Tenant 第一方或 OAuth User，固定核验 meta.lineage.read 与当前元数据权限；拒绝委托、机器和资源票据。不返回服务可见性或可缓存许可 | Current Tenant first-party or OAuth User only; checks fixed meta.lineage.read and current metadata access. Rejects delegates, Service and resource tickets. Returns neither service visibility nor cacheable authority
 // @Tags 源数据读取检查 | Source Data Read Checks
 // @Accept json

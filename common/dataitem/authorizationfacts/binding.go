@@ -13,9 +13,10 @@ import (
 )
 
 // Binding is the immutable minimal approved boundary. NativeTarget,
-// FileComposition and Scope are mutually exclusive representations, not separate ACLs.
+// FileComposition, Scope and MetadataTarget are mutually exclusive representations, not separate ACLs.
 // Observation time and mutable metadata never belong to an approval binding.
 type Binding struct {
+	MetadataTarget  *MetadataBoundary        `json:"metadata_target,omitempty"`
 	ItemFingerprint string                   `json:"item_fingerprint"`
 	BoundaryHash    string                   `json:"boundary_hash"`
 	NativeTarget    plugin.EngineCatalogPath `json:"native_target"`
@@ -30,7 +31,14 @@ func (b Binding) Validate() error {
 	p := b.NativeTarget
 	boundary := &AuthorizationBoundary{Layout: "single", NativeTarget: p}
 	itemType, fullName, err := nativeSingleIdentity(p)
-	if b.Scope != nil {
+	if b.MetadataTarget != nil {
+		if b.MetadataTarget.Validate() != nil || b.Scope != nil || b.FileComposition != nil || !reflect.DeepEqual(p, plugin.EngineCatalogPath{}) {
+			return errors.New("ambiguous metadata boundary")
+		}
+		p = b.MetadataTarget.Target
+		itemType, fullName, err = MetadataTargetIdentity(p)
+		boundary = &AuthorizationBoundary{Layout: b.MetadataTarget.Layout, MetadataTarget: b.MetadataTarget}
+	} else if b.Scope != nil {
 		if b.FileComposition != nil || !reflect.DeepEqual(p, plugin.EngineCatalogPath{}) || b.Scope.Validate(b.Scope.Root.EngineID) != nil {
 			return errors.New("ambiguous or invalid whole boundary")
 		}
@@ -60,7 +68,7 @@ func (b Binding) Validate() error {
 }
 
 func (f AuthorizationFacts) ApprovedBinding() (Binding, error) {
-	if f.Validate() != nil || f.BasisState != AuthorizationBasisComplete {
+	if f.Validate() != nil || f.BasisState != AuthorizationBasisComplete || f.Boundary.MetadataTarget != nil {
 		return Binding{}, errors.New("complete DataItem boundary required")
 	}
 	b := Binding{ItemFingerprint: f.ItemFingerprint, BoundaryHash: *f.BoundaryHash, NativeTarget: f.Boundary.NativeTarget}
@@ -73,6 +81,9 @@ func (f AuthorizationFacts) ApprovedBinding() (Binding, error) {
 func (b Binding) PrimaryTarget() (plugin.EngineCatalogPath, error) {
 	if err := b.Validate(); err != nil {
 		return plugin.EngineCatalogPath{}, err
+	}
+	if b.MetadataTarget != nil {
+		return b.MetadataTarget.Clone().Target, nil
 	}
 	if b.Scope != nil {
 		return b.Scope.Clone().Root, nil
@@ -88,6 +99,13 @@ func (b Binding) PrimaryTarget() (plugin.EngineCatalogPath, error) {
 func (b Binding) MarshalJSON() ([]byte, error) {
 	if err := b.Validate(); err != nil {
 		return nil, err
+	}
+	if b.MetadataTarget != nil {
+		return json.Marshal(struct {
+			ItemFingerprint string            `json:"item_fingerprint"`
+			BoundaryHash    string            `json:"boundary_hash"`
+			MetadataTarget  *MetadataBoundary `json:"metadata_target"`
+		}{b.ItemFingerprint, b.BoundaryHash, b.MetadataTarget})
 	}
 	if b.Scope != nil {
 		return json.Marshal(struct {
@@ -115,7 +133,7 @@ func (b *Binding) UnmarshalJSON(raw []byte) error {
 	// immutable identity/hash envelope instead of truncating a valid snapshot.
 	fields, err := jsonmap.DecodeObjectStrict(raw, MaxAuthorizationFactsBytes, 64)
 	if err != nil || len(fields) != 3 || fields["item_fingerprint"] == nil || fields["boundary_hash"] == nil ||
-		(fields["native_target"] == nil && fields["file_composition"] == nil && fields["scope"] == nil) {
+		(fields["native_target"] == nil && fields["file_composition"] == nil && fields["scope"] == nil && fields["metadata_target"] == nil) {
 		return errors.New("invalid approved boundary JSON")
 	}
 	type wire Binding
@@ -147,7 +165,11 @@ func PrimaryCandidateFingerprint(path plugin.EngineCatalogPath) (string, error) 
 	if ValidWholeScopeRoot(path) {
 		return models.GenerateItemFingerprint(path.EngineID, path.StringPath()), nil
 	}
-	return NativeCandidateFingerprint(path)
+	_, name, err := MetadataTargetIdentity(path)
+	if err != nil {
+		return "", err
+	}
+	return models.GenerateItemFingerprint(path.EngineID, name), nil
 }
 
 func (f AuthorizationFacts) ProvePrimaryTarget(path plugin.EngineCatalogPath) (Binding, error) {

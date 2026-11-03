@@ -53,14 +53,18 @@ func exerciseWholeContainerAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	identity := item.Attributes["item"].(map[string]any)
 	identity["refs"] = []any{map[string]any{"path": "outside.gdb"}}
 	save()
-	if f := read(); f.BasisState != authorizationfacts.AuthorizationBasisNeedsRefresh || f.Boundary != nil {
-		t.Fatal("outside composition became part of whole scope")
+	if f := read(); f.BasisState != authorizationfacts.AuthorizationBasisComplete || f.Boundary.MetadataTarget == nil {
+		t.Fatal("reliable whole metadata identity missing")
+	} else if _, err := f.ApprovedBinding(); err == nil {
+		t.Fatal("outside composition acquired content proof")
 	}
 	delete(identity, "refs")
 	identity["claim_policy"] = "other"
 	save()
-	if f := read(); f.BasisState != authorizationfacts.AuthorizationBasisIncomplete {
-		t.Fatal("missing exclusive claim accepted")
+	if f := read(); f.BasisState != authorizationfacts.AuthorizationBasisComplete || f.Boundary.MetadataTarget == nil {
+		t.Fatal("whole metadata identity missing without content claim")
+	} else if _, err := f.ApprovedBinding(); err == nil {
+		t.Fatal("missing content claim accepted")
 	}
 	identity["claim_policy"] = "whole_scope"
 	item.NodeID = *scope.ParentNodeID
@@ -71,7 +75,9 @@ func exerciseWholeContainerAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	item.NodeID = scope.ID
 	item.Attributes["storage"].(map[string]any)["physical_path"] = "models/replaced.gdb"
 	save()
-	if f := read(); f.BasisState != authorizationfacts.AuthorizationBasisNeedsRefresh {
-		t.Fatal("changed physical root inherited the boundary")
+	if f := read(); f.BasisState != authorizationfacts.AuthorizationBasisComplete || f.Boundary.MetadataTarget == nil {
+		t.Fatal("logical whole metadata identity missing")
+	} else if _, err := f.ApprovedBinding(); err == nil {
+		t.Fatal("changed physical root inherited content proof")
 	}
 }

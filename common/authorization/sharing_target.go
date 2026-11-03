@@ -19,7 +19,7 @@ func EncodeSharingTarget(path plugin.EngineCatalogPath) (json.RawMessage, error)
 	if path.EngineID == 0 || uint64(path.EngineID) > math.MaxInt64 || len(path.Segments) > 64 {
 		return nil, ErrInvalidSharingTarget
 	}
-	if _, err := plugin.NewQueryReadSet(path); err != nil && !authorizationfacts.ValidWholeScopeRoot(path) {
+	if _, err := plugin.NewQueryReadSet(path); err != nil && !authorizationfacts.ValidMetadataScopeRoot(path) {
 		return nil, ErrInvalidSharingTarget
 	}
 	for _, segment := range path.Segments {

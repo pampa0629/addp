@@ -37,6 +37,7 @@ func seedAuthorizationFacts(t *testing.T, db *gorm.DB, namespaceTerm, itemType s
 
 func exerciseAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
+	exerciseMetadataItemFacts(t, db)
 	for index, target := range []struct{ namespace, itemType string }{{"schema", "table"}, {"database", "table"}, {"database", "collection"}} {
 		t.Run(target.namespace+"/"+target.itemType, func(t *testing.T) {
 			exerciseSingleAuthorizationFacts(t, db, target.namespace, target.itemType, uint(index+2))
@@ -122,23 +123,30 @@ func exerciseSingleAuthorizationFacts(t *testing.T, db *gorm.DB, namespaceTerm, 
 	if err := db.Model(&models.MetaNode{}).Where("id = ?", item.NodeID).Update("engine_id", engineID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Model(&item).Update("item_type", "view").Error; err != nil {
-		t.Fatal(err)
-	}
-	facts, err = s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
-	if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisUnsupported {
-		t.Fatal("view accepted as ordinary single item", err)
-	}
-	if err := db.Model(&item).Update("item_type", itemType).Error; err != nil {
-		t.Fatal(err)
+	if itemType == "table" {
+		item.Attributes["type_info"] = map[string]any{"table": map[string]any{"kind": "view"}}
+		if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
+			t.Fatal(err)
+		}
+		facts, err = s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
+		if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete || facts.Boundary.MetadataTarget == nil {
+			t.Fatal("view metadata identity missing", err)
+		}
+		if _, err := facts.ApprovedBinding(); err == nil {
+			t.Fatal("view metadata became ordinary content proof")
+		}
+		delete(item.Attributes, "type_info")
+		if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	if itemType == "collection" {
 		if err := db.Model(&models.MetaNode{}).Where("id = ?", item.NodeID).Update("node_type", "schema").Error; err != nil {
 			t.Fatal(err)
 		}
 		facts, err = s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
-		if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisUnsupported {
-			t.Fatal("collection under schema accepted", err)
+		if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete || facts.Boundary.MetadataTarget == nil {
+			t.Fatal("metadata identity missing for typed collection", err)
 		}
 		if err := db.Model(&models.MetaNode{}).Where("id = ?", item.NodeID).Update("node_type", namespaceTerm).Error; err != nil {
 			t.Fatal(err)
@@ -172,8 +180,17 @@ func exerciseSingleAuthorizationFacts(t *testing.T, db *gorm.DB, namespaceTerm, 
 		t.Fatal(err)
 	}
 	facts, err = s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
-	if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisNeedsRefresh {
-		t.Fatal("inconsistent stored coordinates allowed", err)
+	if itemType == "collection" {
+		if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisNeedsRefresh {
+			t.Fatal("inconsistent parent identity accepted", err)
+		}
+	} else {
+		if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete || facts.Boundary.MetadataTarget == nil {
+			t.Fatal("metadata identity depends on content entrypoint", err)
+		}
+		if _, err := facts.ApprovedBinding(); err == nil {
+			t.Fatal("inconsistent content entrypoint became readable")
+		}
 	}
 	if err := db.Delete(&item).Error; err != nil {
 		t.Fatal(err)
@@ -185,4 +202,116 @@ func exerciseSingleAuthorizationFacts(t *testing.T, db *gorm.DB, namespaceTerm, 
 
 func TestDataItemAuthorizationFacts(t *testing.T) {
 	exerciseAuthorizationFacts(t, metatest.OpenMetadataDB(t))
+}
+
+// Runs in both SQLite T1 and the existing authorization-facts PostgreSQL gate.
+func exerciseMetadataItemFacts(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for index, label := range []string{"file", "object", "view", "index", "keyspace", "topic", "file-whole", "object-whole", "catalog-table"} {
+		t.Run("metadata-only/"+label, func(t *testing.T) {
+			kind := strings.TrimSuffix(label, "-whole")
+			if label == "catalog-table" {
+				kind = "table"
+			}
+			engineID := uint(7800 + index)
+			rootTerm, branchTerm, branchKind, sep := "server", "schema", "namespace", "."
+			if kind == "file" {
+				rootTerm, branchTerm, branchKind, sep = "root", "dir", "directory", "/"
+			}
+			if kind == "object" {
+				rootTerm, branchTerm, branchKind, sep = "service", "bucket", "bucket", "/"
+			}
+			if kind == "index" || kind == "topic" {
+				rootTerm = "service"
+			}
+			root := models.MetaNode{TenantID: 7, EngineID: engineID, NodeType: rootTerm, Name: "Engine", FullName: ""}
+			if err := db.Create(&root).Error; err != nil {
+				t.Fatal(err)
+			}
+			nodeID := root.ID
+			fullName := "a.b 空格"
+			parent := models.MetaNode{}
+			if kind == "file" || kind == "object" || kind == "view" || kind == "table" {
+				parent = models.MetaNode{TenantID: 7, EngineID: engineID, ParentNodeID: &root.ID, NodeType: branchTerm, Name: "out.put", FullName: "out.put"}
+				if label == "catalog-table" {
+					catalog := models.MetaNode{TenantID: 7, EngineID: engineID, ParentNodeID: &root.ID, NodeType: "catalog", Name: "cat.alog", FullName: "cat.alog"}
+					if err := db.Create(&catalog).Error; err != nil {
+						t.Fatal(err)
+					}
+					parent.ParentNodeID = &catalog.ID
+					parent.FullName = catalog.FullName + "." + parent.Name
+				}
+				if err := db.Create(&parent).Error; err != nil {
+					t.Fatal(err)
+				}
+				nodeID = parent.ID
+				fullName = parent.FullName + sep + fullName
+			}
+			item := models.MetaItem{TenantID: 7, EngineID: engineID, NodeID: nodeID, ItemType: kind, Name: "a.b 空格", FullName: fullName, Attributes: models.JSONMap{"item": map[string]any{"layout": "single", "data_type": "container", "format": "geopackage"}, "statistics": map[string]any{"private": "never return"}}}
+			if strings.HasSuffix(label, "-whole") {
+				scope := models.MetaNode{TenantID: 7, EngineID: engineID, ParentNodeID: &nodeID, NodeType: "dir", Name: item.Name, FullName: item.FullName}
+				if kind == "object" {
+					scope.NodeType = "prefix"
+				}
+				if err := db.Create(&scope).Error; err != nil {
+					t.Fatal(err)
+				}
+				nodeID = scope.ID
+				item.NodeID = nodeID
+				item.Attributes["item"] = map[string]any{"layout": "whole", "data_type": "table", "format": "parquet"}
+			}
+			if kind == "view" {
+				item.ItemType = "table"
+				item.Attributes["type_info"] = map[string]any{"table": map[string]any{"kind": "view"}}
+			}
+			item.Fingerprint = commonModels.GenerateItemFingerprint(engineID, fullName)
+			if err := db.Create(&item).Error; err != nil {
+				t.Fatal(err)
+			}
+			service := NewMetadataQueryService(db)
+			facts, err := service.GetDataItemAuthorizationFacts(t.Context(), 7, item.Fingerprint)
+			if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete || facts.Boundary.MetadataTarget == nil {
+				t.Fatalf("metadata identity: %+v %v", facts, err)
+			}
+			b, err := facts.MetadataBinding()
+			if err != nil {
+				t.Fatal(err)
+			}
+			target, err := b.PrimaryTarget()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if target.Segments[len(target.Segments)-1].Name != item.Name {
+				t.Fatal("opaque item name was split")
+			}
+			if parent.ID != 0 && target.Segments[1].Kind != branchKind {
+				t.Fatal("persisted directory/namespace type was not normalized")
+			}
+			if _, err := facts.ApprovedBinding(); err == nil {
+				t.Fatal("metadata-only identity authorized content")
+			}
+			raw, err := json.Marshal(facts)
+			if err != nil || strings.Contains(string(raw), "never return") {
+				t.Fatal("private facts leaked", err)
+			}
+			hash := *facts.BoundaryHash
+			if err := db.Model(&item).Updates(map[string]any{"row_count": 99, "size_bytes": 123, "scanned_depth": "deep"}).Error; err != nil {
+				t.Fatal(err)
+			}
+			again, err := service.GetDataItemAuthorizationFacts(t.Context(), 7, item.Fingerprint)
+			if err != nil || *again.BoundaryHash != hash {
+				t.Fatal("content statistics changed metadata identity", err)
+			}
+			if _, err := service.GetDataItemAuthorizationFacts(t.Context(), 8, item.Fingerprint); !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatal("cross tenant exposed metadata", err)
+			}
+			if err := db.Model(&models.MetaNode{}).Where("id=?", nodeID).Update("tenant_id", 8).Error; err != nil {
+				t.Fatal(err)
+			}
+			denied, err := service.GetDataItemAuthorizationFacts(t.Context(), 7, item.Fingerprint)
+			if err != nil || denied.BasisState == authorizationfacts.AuthorizationBasisComplete || denied.Boundary != nil {
+				t.Fatal("foreign parent accepted", err)
+			}
+		})
+	}
 }

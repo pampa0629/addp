@@ -76,6 +76,13 @@ func sameOptionalBool(a, b *bool) bool {
 
 func validateIndependentGrantTarget(input CreateIndependentGrantInput) error {
 	if input.NodeRecursive == nil {
+		if input.Action == shared.SourceAccessMetadataRead {
+			candidate, err := authorizationfacts.PrimaryCandidateFingerprint(input.CatalogPath)
+			if err != nil || candidate != input.ItemFingerprint || !authorizationfacts.ValidItemFingerprint(input.ExpectedBoundaryHash) {
+				return commonapi.ErrBadRequest
+			}
+			return nil
+		}
 		return validateExpectedPrimary(input.CatalogPath, input.ItemFingerprint, input.ExpectedBoundaryHash)
 	}
 	if input.ItemFingerprint != "" || input.ExpectedBoundaryHash != "" {
@@ -121,21 +128,50 @@ func (s *Service) verifyNewIndependentGrantTarget(ctx context.Context, input Cre
 		}
 		return engine.Version, nil
 	}
-	binding, err := s.resolveApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash)
-	if err != nil {
-		return 0, err
+	var binding *authorizationfacts.Binding
+	if input.Action == shared.SourceAccessMetadataRead {
+		bindings, err := s.resolveMetadataBindings(ctx, row.TenantID, []plugin.EngineCatalogPath{input.CatalogPath})
+		if err != nil {
+			return 0, err
+		}
+		if len(bindings) != 1 || bindings[0].ItemFingerprint != row.ItemFingerprint || bindings[0].BoundaryHash != row.BoundaryHash {
+			return 0, ErrAuthorizationBoundaryChanged
+		}
+		binding = &bindings[0]
+	} else {
+		var err error
+		binding, err = s.resolveApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash)
+		if err != nil {
+			return 0, err
+		}
 	}
 	if binding.Scope != nil {
-		row.ScopeBoundary, err = json.Marshal(binding.Scope)
+		encoded, err := json.Marshal(binding.Scope)
 		if err != nil {
 			return 0, err
 		}
+		row.ScopeBoundary = encoded
 	}
 	if binding.FileComposition != nil {
-		row.FileComposition, err = json.Marshal(binding.FileComposition)
+		encoded, err := json.Marshal(binding.FileComposition)
 		if err != nil {
 			return 0, err
 		}
+		row.FileComposition = encoded
+	}
+	if binding.MetadataTarget != nil {
+		encoded, err := json.Marshal(binding.MetadataTarget)
+		if err != nil {
+			return 0, err
+		}
+		row.MetadataTarget = encoded
+	}
+	if input.Action == shared.SourceAccessMetadataRead {
+		engine, err := s.repository.engine(ctx, row.TenantID, row.EngineID, false)
+		if err != nil {
+			return 0, err
+		}
+		return engine.Version, nil
 	}
 	if s.independentTarget == nil {
 		return 0, ErrIndependentGrantSourceUnavailable

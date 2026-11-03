@@ -89,7 +89,7 @@ export function createApprovalCatalogAdapter(engine, listItems, readFacts) {
 
 export async function readAuthorizationTarget(engineID, fingerprint, readFacts) {
   const facts = await readFacts(engineID, fingerprint)
-  const target = facts?.boundary?.scope?.root || facts?.boundary?.native_target || facts?.boundary?.file_composition?.refs?.find(ref => ref.primary === true)?.target
+  const target = facts?.boundary?.metadata_target?.target || facts?.boundary?.scope?.root || facts?.boundary?.native_target || facts?.boundary?.file_composition?.refs?.find(ref => ref.primary === true)?.target
   if (String(target?.engine_id) !== String(engineID) || facts?.item_fingerprint !== fingerprint) throw new Error('invalidDataItemBoundary')
   const observed = await readNativeApprovalFacts(target, async (id, fp) => {
     if (String(id) !== String(engineID) || fp !== fingerprint) throw new Error('invalidDataItemBoundary')

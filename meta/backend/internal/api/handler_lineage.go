@@ -87,7 +87,7 @@ func (h *Handler) RecordServicePublication(c *gin.Context) {
 }
 
 // GetLineageGraph 查询数据项或已发布服务版本的血缘图。
-// @Description 用户查询仅返回当前可见的 PG 数据项与字段；两端可见才展示关系，计数与截断只基于可见关系。permission_filtered 仅告知查询边界上存在因权限隐藏的关系，不返回隐藏身份或数量。服务起点拒绝，表达式与任意证据不返回 | User queries return currently visible PG items and fields only. Both endpoints must be visible; counts and truncation use visible relations only. permission_filtered indicates hidden relations at the query boundary without hidden identities or counts. Service roots are denied; expressions and arbitrary evidence are omitted
+// @Description 用户查询仅返回当前可见的数据项与字段；两端可见才展示关系，计数与截断只基于可见关系。permission_filtered 仅告知查询边界上存在因权限隐藏的关系，不返回隐藏身份或数量。服务起点拒绝，表达式与任意证据不返回 | User queries return currently visible items and fields only. Both endpoints must be visible; counts and truncation use visible relations only. permission_filtered indicates hidden relations at the query boundary without hidden identities or counts. Service roots are denied; expressions and arbitrary evidence are omitted
 // @Failure 403,503 {object} models.LineageErrorResponse "可见性核验拒绝或不可用 | Visibility denied or unavailable"
 // @Summary 查询数据血缘图 | Get lineage graph
 // @Description 按数据项、精确字段引用或已发布服务版本查询血缘关系；字段边只返回执行 ID、写入模式、字段状态和转换摘要，不重复整份 operation 字段映射 | Query lineage for a data item, exact field reference or published service revision; field edges expose execution ID, write mode, field status and transformation summaries without full operation mappings

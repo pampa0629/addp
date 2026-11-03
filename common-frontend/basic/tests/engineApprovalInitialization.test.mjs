@@ -298,3 +298,19 @@ test('ENVI approval requires a complete same-directory raster/header pair', asyn
   }
  }
 })
+
+test('metadata-only file and native identities preserve exact targets and reject ambiguous facts', async () => {
+ for (const target of [filePath('nodes.gpkg'), {engine_id:33,version:'catalog.path/v1',segments:[{term:'service',kind:'service',name:''},{term:'index',kind:'index',name:'a.b / 中文'}]}, {engine_id:'9007199254740993',version:'catalog.path/v1',segments:[{term:'service',kind:'service',name:''},{term:'index',kind:'index',name:'exact id'}]}, {engine_id:33,version:'catalog.path/v1',segments:[{term:'root',kind:'root',name:''},{term:'directory',kind:'directory',name:'scene'}]}, {engine_id:33,version:'catalog.path/v1',segments:[{term:'service',kind:'service',name:''},{term:'bucket',kind:'bucket',name:'bucket'},{term:'prefix',kind:'prefix',name:'scene'}]}]) {
+  const scope=['directory','bucket','prefix'].includes(target.segments.at(-1).term),layout=scope?'whole':'single'
+  const itemType=scope?target.segments.at(-1).term==='directory'?'file':'object':target.segments.at(-1).term
+  const fullName=target.segments.slice(1).map(part=>part.name).join(['file','object','directory','bucket','prefix'].includes(target.segments.at(-1).kind)?'/':'.')
+  const make = fingerprint => ({schema_version:'meta.data_item_authorization_facts/v1',engine_id:target.engine_id,item_type:itemType,full_name:fullName,item_fingerprint:fingerprint,basis_state:'complete',boundary_hash:'d'.repeat(64),boundary:{layout,metadata_target:{target,layout,data_type:'container',format:'geopackage',composition_digest:'a'.repeat(64)}}})
+  const observed=await readNativeApprovalFacts(target,async(_,fp)=>make(fp))
+  assert.equal(observed.state,'complete')
+  assert.equal(Object.isFrozen(observed.binding.metadata_target.target.segments),true)
+  assert.deepEqual(approvedBoundaryFields(target,observed.binding),{item_fingerprint:observed.binding.item_fingerprint,expected_boundary_hash:'d'.repeat(64)})
+  for (const change of [facts=>({...facts,boundary:{...facts.boundary,native_target:target}}),facts=>({...facts,full_name:fullName+'wrong'}),facts=>({...facts,boundary:{...facts.boundary,metadata_target:{...facts.boundary.metadata_target,format:null}}})]) {
+   await assert.rejects(readNativeApprovalFacts(target,async(_,fp)=>change(make(fp))))
+  }
+ }
+})

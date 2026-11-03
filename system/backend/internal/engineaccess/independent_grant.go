@@ -48,6 +48,7 @@ type SourceGrantView struct {
 	BoundaryHash          string           `json:"boundary_hash,omitempty"`
 	FileComposition       json.RawMessage  `json:"file_composition,omitempty" swaggertype:"object"`
 	ScopeBoundary         json.RawMessage  `json:"scope,omitempty" swaggertype:"object"`
+	MetadataTarget        json.RawMessage  `json:"metadata_target,omitempty" swaggertype:"object"`
 	RecipientType         string           `json:"recipient_type"`
 	RecipientID           int64            `json:"recipient_id,string" swaggertype:"string"`
 	Action                string           `json:"action"`
@@ -66,7 +67,7 @@ type SourceGrantView struct {
 func sourceGrantView(row *sourceGrant) SourceGrantView {
 	return SourceGrantView{RequestID: row.RequestID, GrantedAt: row.GrantedAt, ApprovalMode: row.ApprovalMode,
 		CatalogRequestID: row.CatalogRequestID, EngineID: row.EngineID, CatalogPath: row.CatalogPath, NodeRecursive: row.NodeRecursive,
-		ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash, FileComposition: row.FileComposition, ScopeBoundary: row.ScopeBoundary,
+		ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash, FileComposition: row.FileComposition, ScopeBoundary: row.ScopeBoundary, MetadataTarget: row.MetadataTarget,
 		RecipientType: row.RecipientType, RecipientID: row.RecipientID, Action: row.Action,
 		ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt,
 		OperatorPrincipalID: row.OperatorPrincipalID, OperatorMembershipID: row.OperatorMembershipID, Reason: row.Reason,
@@ -98,7 +99,7 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 	segments := input.CatalogPath.Segments
 	if err != nil || expiryErr != nil || input.RequestID == uuid.Nil ||
 		input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID ||
-		(input.NodeRecursive == nil && (len(segments) < 2 || !independentReadTargetSegment(segments[len(segments)-1]))) ||
+		(input.NodeRecursive == nil && input.Action != shared.SourceAccessMetadataRead && (len(segments) < 2 || !independentReadTargetSegment(segments[len(segments)-1]))) ||
 		input.RecipientID <= 0 || !oneOfRecipient(input.RecipientType) || !shared.ValidSourceAccessAction(input.Action) || !validReason(input.Reason) {
 		return nil, commonapi.ErrBadRequest
 	}

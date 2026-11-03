@@ -12,7 +12,7 @@
         <div :inert="saving || !!attempt || undefined">
           <el-form-item :label="t('system.engine.sourceGrants.action')" required>
             <el-select v-model="form.action" data-testid="source-grant-action" :placeholder="t('system.engine.sourceGrants.selectAction')">
-              <el-option v-for="action in (engine.engine_type === 'postgresql' ? ['metadata_read', 'read'] : ['read'])" :key="action" :value="action" :label="actionLabel(action)" />
+              <el-option v-for="action in ['metadata_read', 'read']" :key="action" :value="action" :label="actionLabel(action)" :disabled="action === 'read' && requirements.some(row => row.metadata_only)" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('system.engine.sourceGrants.recipientType')" required>
@@ -360,6 +360,7 @@ watch(() => JSON.stringify(props.requirements), (value, previous) => {
     approvalTargetsEqual(row.catalog_path, current[index].catalog_path) && (!row.source || JSON.stringify(row) === JSON.stringify(current[index])))
   generation++; attempt.value = null; outcomes.value = []; saving.value = false; formError.value = ''
   ElMessageBox.close()
+  if (form.action === 'read' && current.some(row => row.metadata_only)) form.action = ''
   if (!completedObservation) { form.action = ''; form.recipientType = 'user'; form.recipientID = ''; form.expiryMode = ''; form.expiresAt = null; form.reason = '' }
   loadCandidates({ preserveSelection: completedObservation }); load()
 })

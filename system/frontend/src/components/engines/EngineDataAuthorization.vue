@@ -68,7 +68,7 @@ const loading = ref(false), ready = ref(false), error = ref(''), selecting = ref
 const targets = ref([]), generation = ref(0), selections = ref([]), picker = ref(null)
 // Domain cache contains only independently resolved signing boundaries.
 const targetPaths = new Map()
-const basisStates = ref({}), basisRequests = new Map()
+const basisStates = ref({}), basisBindings = ref({}), basisRequests = new Map()
 let basisSequence = 0
 // jsonb may reorder object keys; UI identity follows ordered path values, not
 // their original JSON spelling. Facts/signing validate the target separately.
@@ -88,16 +88,16 @@ const nodeAdapter = computed(() => {
 })
 const adapter = computed(() => targetMode.value === 'nodes' ? nodeAdapter.value : itemAdapter.value)
 function changeTargetMode() {
- generation.value++; targets.value = []; selections.value = []; targetPaths.clear(); basisStates.value = {}; basisRequests.clear(); ready.value = false; error.value = ''
+ generation.value++; targets.value = []; selections.value = []; targetPaths.clear(); basisStates.value = {}; basisBindings.value = {}; basisRequests.clear(); ready.value = false; error.value = ''
 }
-const directRequirementCandidates = computed(() => targets.value.map(path => ({ engine_id: String(props.engine.id), engine_name: props.engine.name, catalog_path: path, ...(targetMode.value === 'nodes' ? { node_recursive: nodeRecursive.value } : {}) })))
+const directRequirementCandidates = computed(() => targets.value.map(path => ({ engine_id: String(props.engine.id), engine_name: props.engine.name, catalog_path: path, metadata_only: !!basisBindings.value[basisKey(path)]?.metadata_target, ...(targetMode.value === 'nodes' ? { node_recursive: nodeRecursive.value } : {}) })))
 const directRequirements = ref([])
 watch([() => props.authorizationReady, directRequirementCandidates], ([isReady, requirements]) => {
   if (isReady) directRequirements.value = requirements
 }, { immediate: true })
 function changeWorkspace(tab) {
   error.value = ''
-  if (tab !== 'create') { generation.value++; selections.value = []; targets.value = []; basisStates.value = {}; basisRequests.clear(); targetPaths.clear() }
+  if (tab !== 'create') { generation.value++; selections.value = []; targets.value = []; basisStates.value = {}; basisBindings.value = {}; basisRequests.clear(); targetPaths.clear() }
 }
 function closeGrant() {
   if (busy.value) return
@@ -145,7 +145,7 @@ function remove(index) {
   const path = targets.value[index], key = basisKey(path)
   const selection = selections.value.find(item => approvalTargetsEqual(targetPaths.get(item.identity.locator), path))
   if (!selection) return
-  basisRequests.delete(key); delete basisStates.value[key]
+  basisRequests.delete(key); delete basisStates.value[key]; delete basisBindings.value[key]
   picker.value?.removeSelection(selection.identity.locator)
 }
 async function inspectTargets(paths) {
@@ -157,27 +157,27 @@ async function inspectTargets(paths) {
       if (!targets.value.some(target => approvalTargetsEqual(target, path))) continue
       basisRequests.set(key, sequence)
       if (!canReadGrants.value) { basisStates.value[key] = 'forbidden'; continue }
-      basisStates.value[key] = 'checking'
-      let state
+      basisStates.value[key] = 'checking'; delete basisBindings.value[key]
+      let state, binding = null
       try {
         if (targetMode.value === 'nodes') {
           const observed = await enginesAPI.listAuthorizationNodes(props.engine.id, { target: path, page: 1, page_size: 100 })
           state = approvalTargetsEqual(observed?.parent?.target, path) && observed.parent.exists === true ? 'node' : 'missing'
         } else {
           const observed = await readNativeApprovalFacts(path, enginesAPI.getAuthorizationFacts)
-          state = observed.state
+          state = observed.state; binding = observed.binding
         }
       }
       catch (e) {
         state = e?.response?.status === 404 && e.response.data?.error_code === 'authorization_target_not_found' ? 'missing'
           : e?.response?.status === 403 ? 'forbidden' : 'failed'
       }
-      if (epoch === generation.value && basisRequests.get(key) === sequence && targets.value.some(target => approvalTargetsEqual(target, path))) basisStates.value[key] = state
+      if (epoch === generation.value && basisRequests.get(key) === sequence && targets.value.some(target => approvalTargetsEqual(target, path))) { basisStates.value[key] = state; if (binding) basisBindings.value[key] = binding }
     }
   }))
 }
 watch(() => props.authorizationKey, () => {
-  basisStates.value = {}; basisRequests.clear()
+  basisStates.value = {}; basisBindings.value = {}; basisRequests.clear()
   generation.value++; targets.value = []; selections.value = []; targetPaths.clear()
   workspaceTab.value = 'current'; targetMode.value = props.engine.engine_type === 'postgresql' ? '' : 'items'; nodeRecursive.value = false
   ready.value = loading.value = selecting.value = grantBusy.value = false
@@ -185,7 +185,7 @@ watch(() => props.authorizationKey, () => {
 }, { immediate: true })
 watch(() => props.authorizationReady, isReady => {
   if (!isReady) {
-    basisStates.value = {}; basisRequests.clear()
+    basisStates.value = {}; basisBindings.value = {}; basisRequests.clear()
     generation.value++
     loading.value = selecting.value = grantBusy.value = false
     ready.value = false

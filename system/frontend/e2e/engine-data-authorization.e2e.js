@@ -55,16 +55,16 @@ test('all records state filter applies before pagination and survives current vi
   await expect(page.getByTestId('engine-source-grants').locator('.el-pagination')).toContainText('共 25 条')
   expect(writes).toEqual([])
 })
-async function fixture(page, { allowed = permissions, conflict = false, denied = false, identityRows = null, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', ftp = '', sourceType = 'ftp', factsTarget = null } = {}) {
+async function fixture(page, { allowed = permissions, conflict = false, denied = false, identityRows = null, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', ftp = '', sourceType = 'ftp', factsTarget = null, metadataOnly = false, wholeMetadata = false } = {}) {
   const modelRoot = sourceType === 'minio' ? minioRootPath : ftpRootPath
   const modelBranch = sourceType === 'minio' ? minioBucketPath : ftpDirectoryPath
-  const modelPath = ftp === 'gdb' ? gdbPath : sourceType === 'minio' ? minioObjectPath : ftpFilePath
+  const modelPath = wholeMetadata ? sourceType === 'minio' ? name => ({...minioObjectPath(name),segments:[...minioBucketPath.segments,{term:'prefix',kind:'prefix',name}]}) : gdbPath : ftp === 'gdb' ? gdbPath : sourceType === 'minio' ? minioObjectPath : ftpFilePath
   const modelKind = sourceType === 'minio' ? 'object' : 'file'
   const writes = [], reads = []
   const fingerprintOf = target => createHash('sha256').update(`2:${target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.')}`).digest('hex')
   const rowFor = target => ({ engine_id: '2', item_fingerprint: fingerprintOf(target), full_name: target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.'), name: target.segments.at(-1).name, item_type: ftp ? modelKind : 'table' })
   const items = ftp ? [modelPath(`model.${ftp}`)] : [tablePath, ...(secondTable ? [{ ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }] : [])]
-  let rows = (identityRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || (ftp ? [{ id: '1', name: '', node_type: sourceType === 'minio' ? 'service' : 'root' }, { id: '2', name: 'Models', node_type: sourceType === 'minio' ? 'bucket' : 'dir' }, ...(ftp === 'gdb' ? [{ id: '3', name: 'model.gdb', node_type: 'dir' }] : [])] : [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: 'outdoor', node_type: 'schema' }]) })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
+  let rows = (identityRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || (ftp ? [{ id: '1', name: '', node_type: sourceType === 'minio' ? 'service' : 'root' }, { id: '2', name: 'Models', node_type: sourceType === 'minio' ? 'bucket' : 'dir' }, ...(ftp === 'gdb' || wholeMetadata ? [{ id: '3', name: `model.${ftp}`, node_type: sourceType === 'minio' ? 'prefix' : 'dir' }] : [])] : [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: 'outdoor', node_type: 'schema' }]) })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
   let grants = [...history], failedGrant = false
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
@@ -99,7 +99,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
         if (fingerprint !== candidate) return reply({ error: 'Not a model DataItem', error_code: 'authorization_target_not_found' }, 404)
         return reply({ schema_version: 'meta.data_item_authorization_facts/v1', engine_id: 2, item_fingerprint: fingerprint, item_type: modelKind,
           full_name: `Models/model.${ftp}`, basis_state: factsState, boundary_hash: factsState === 'complete' ? 'c'.repeat(64) : null,
-          boundary: factsState === 'complete' ? ftp === 'gdb' ? { layout: 'whole', scope: { format: 'filegdb', rule_version: 1, root: primary } } : { layout: 'single', file_composition: { format: ftp, refs: [
+          boundary: factsState === 'complete' ? metadataOnly ? { layout: wholeMetadata ? 'whole' : 'single', metadata_target: {target:primary,layout:wholeMetadata ? 'whole' : 'single',data_type:'container',format:ftp,composition_digest:'a'.repeat(64)} } : ftp === 'gdb' ? { layout: 'whole', scope: { format: 'filegdb', rule_version: 1, root: primary } } : { layout: 'single', file_composition: { format: ftp, refs: [
             ...(ftp === 'obj' ? [{ target: modelPath('model.mtl'), role: 'material_library', required: true, primary: false }] : []),
             ...(['3ds', 'dae', 'obj'].includes(ftp) ? [{ target: modelPath('TEST.PNG'), role: 'texture', required: true, primary: false }] : []),
             { target: primary, role: 'model', required: true, primary: true }
@@ -1367,4 +1367,32 @@ for(const recursive of [false,true]) test(`persistent PG schema scope is explici
  expect(reads.some(url=>/\/data-items(?:\?|$)|authorization-facts/.test(url))).toBe(false)
  expect(reads.some(url=>url.includes('/authorization-nodes/query'))).toBe(true)
  await expect(page.getByTestId('source-grant-list')).toContainText(recursive?'节点及后代数据项':'节点直属数据项')
+})
+
+
+for (const sourceType of ['nfs', 'minio']) test(`${sourceType} GeoPackage metadata authorization cannot select content read`, async ({page}) => {
+ const {writes}=await fixture(page,{allowed:grantPermissions,sourceType,ftp:'gpkg',metadataOnly:true})
+ await selectFTPModel(page,'gpkg')
+ await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+ await page.getByTestId('source-grant-action').click()
+ await expect(page.getByRole('option',{name:'读取数据（含元数据）',exact:true})).toHaveClass(/is-disabled/)
+ await page.getByRole('option',{name:'仅查看元数据',exact:true}).click()
+ await grantDraft(page,'仅查看元数据')
+ await confirmGrant(page)
+ expect(writes).toHaveLength(1)
+ expect(writes[0].body.action).toBe('metadata_read')
+ expect(writes[0].body.catalog_path.segments.at(-1).name).toBe('model.gpkg')
+ expect(writes[0].body.metadata_target).toBeUndefined()
+})
+
+
+for (const sourceType of ['nfs','minio']) test(`${sourceType} whole Parquet metadata binds the DataItem root without content access`,async({page})=>{
+ const {writes}=await fixture(page,{allowed:grantPermissions,sourceType,ftp:'parquet',metadataOnly:true,wholeMetadata:true})
+ await selectFTPModel(page,'parquet')
+ await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+ await grantDraft(page,'仅查看元数据');await confirmGrant(page)
+ expect(writes).toHaveLength(1)
+ expect(writes[0].body.action).toBe('metadata_read')
+ expect(writes[0].body.catalog_path.segments.at(-1).term).toBe(sourceType==='minio'?'prefix':'directory')
+ expect(writes[0].body.node_recursive).toBeUndefined()
 })

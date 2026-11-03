@@ -97,7 +97,6 @@ const accountGrantRelationsSQL = `WITH account AS MATERIALIZED (
  CROSS JOIN LATERAL (SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM current_source) THEN 'source_unavailable'
  WHEN NOT EXISTS(SELECT 1 FROM system.engines e WHERE e.tenant_id=input.tenant_id
  AND e.id=(target.catalog_path->>'engine_id')::bigint AND e.lifecycle_state='active'
- AND (target.action<>'metadata_read' OR e.engine_type='postgresql')
  AND (target.node_recursive IS NULL OR e.engine_type='postgresql')) THEN 'target_unavailable'
  WHEN s.grant_count>0 THEN 'grant' ELSE 'no_grant' END AS value) reason
 ), page AS (SELECT * FROM applicable ORDER BY catalog_path::text,node_recursive,action LIMIT ? OFFSET ?)

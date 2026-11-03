@@ -315,6 +315,15 @@ func (b *FileCompositionBoundary) UnmarshalJSON(encoded []byte) error {
 // MarshalJSON expresses exact native or file boundaries without a zero-value
 // native path beside file refs. Native canonical bytes remain unchanged.
 func (b AuthorizationBoundary) MarshalJSON() ([]byte, error) {
+	if b.MetadataTarget != nil {
+		if b.MetadataTarget.Validate() != nil || b.Layout != b.MetadataTarget.Layout || b.Scope != nil || b.FileComposition != nil || !reflect.DeepEqual(b.NativeTarget, plugin.EngineCatalogPath{}) {
+			return nil, errFileComposition
+		}
+		return json.Marshal(struct {
+			Layout         string            `json:"layout"`
+			MetadataTarget *MetadataBoundary `json:"metadata_target"`
+		}{b.Layout, b.MetadataTarget})
+	}
 	if b.Scope != nil {
 		if b.FileComposition != nil || !reflect.DeepEqual(b.NativeTarget, plugin.EngineCatalogPath{}) || b.Layout != "whole" || b.Scope.Validate(b.Scope.Root.EngineID) != nil {
 			return nil, errFileComposition
@@ -343,7 +352,7 @@ func (b *AuthorizationBoundary) UnmarshalJSON(encoded []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.UseNumber()
 	keys, err := authorizationJSONValue(decoder, 0)
-	if err != nil || !keys["layout"] || len(keys) != 2 || (!keys["native_target"] && !keys["file_composition"] && !keys["scope"]) {
+	if err != nil || !keys["layout"] || len(keys) != 2 || (!keys["native_target"] && !keys["file_composition"] && !keys["scope"] && !keys["metadata_target"]) {
 		return errFileComposition
 	}
 	if _, err := decoder.Token(); err != io.EOF {
@@ -357,7 +366,11 @@ func (b *AuthorizationBoundary) UnmarshalJSON(encoded []byte) error {
 		(keys["file_composition"] && result.FileComposition == nil) || (keys["scope"] && result.Scope == nil) {
 		return errFileComposition
 	}
-	if keys["scope"] {
+	if keys["metadata_target"] {
+		if result.MetadataTarget == nil || result.MetadataTarget.Validate() != nil || result.Layout != result.MetadataTarget.Layout {
+			return errFileComposition
+		}
+	} else if keys["scope"] {
 		if result.Layout != "whole" || result.Scope.Validate(result.Scope.Root.EngineID) != nil {
 			return errFileComposition
 		}

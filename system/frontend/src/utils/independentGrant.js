@@ -12,7 +12,8 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
   const id = String(safePickerEngineID(engineID)), path = requirement?.catalog_path
   const leaf = path?.segments?.at(-1), node = typeof requirement?.node_recursive === 'boolean'
   if (String(requirement.engine_id) !== id || String(path?.engine_id) !== id ||
-    !(node ? !requirement.binding && isPGGrantNodePath(path, id) : ((leaf?.term === 'table' && leaf.kind === 'table') || (leaf?.term === 'directory' && leaf.kind === 'directory' && requirement.binding?.scope) || (['file', 'object'].includes(leaf?.term) && leaf.kind === leaf.term)))) throw new Error('invalidGrant')
+    !(node ? !requirement.binding && isPGGrantNodePath(path, id) : (requirement.binding?.metadata_target || (leaf?.term === 'table' && leaf.kind === 'table') || (leaf?.term === 'directory' && leaf.kind === 'directory' && requirement.binding?.scope) || (['file', 'object'].includes(leaf?.term) && leaf.kind === leaf.term)))) throw new Error('invalidGrant')
+  if (requirement.binding?.metadata_target && form.action !== 'metadata_read') throw new Error('invalidGrant')
   const candidate = candidates.find(row => row.id === form.recipientID)
   const reason = form.reason?.trim()
   if (!['read', 'metadata_read'].includes(form.action) || !['user', 'department', 'project_group'].includes(form.recipientType) || !candidate || !reason || Array.from(reason).length > 2000 ||

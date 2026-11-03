@@ -186,7 +186,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户 active 存储引擎选择项、标准能力声明、连接状态及统计信息；PG 用户扫描统计仅计可见分支；非 online 项由前端展示并禁选 | Get active storage engine options with canonical capabilities, connection status, and statistics for the current tenant; PG user scan statistics include visible branches only; clients must show but disable non-online options",
+                "description": "获取当前租户 active 存储引擎选择项、标准能力声明、连接状态及统计信息；用户扫描统计仅计可见分支；非 online 项由前端展示并禁选 | Get active storage engine options with canonical capabilities, connection status, and statistics for the current tenant; User scan statistics include visible branches only; clients must show but disable non-online options",
                 "produces": [
                     "application/json"
                 ],
@@ -246,7 +246,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定引擎下已扫描的数据项，可按 catalog 第一层业务分支过滤 | List scanned metadata items for an engine, optionally filtered by catalog first business branch\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
+                "description": "获取指定引擎下已扫描的数据项，可按 catalog 第一层业务分支过滤 | List scanned metadata items for an engine, optionally filtered by catalog first business branch\n用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | User queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -914,7 +914,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按数据项 ID 获取字段详情 | Get item field details by item ID\nPG 用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | PG user queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
+                "description": "按数据项 ID 获取字段详情 | Get item field details by item ID\n用户查询按当前 metadata_read/read 权限过滤，仅返回身份与结构，不含样本、源数据统计或原始 attributes；不可见单项与不存在均返回 404；受控机器事实查询保留既有契约 | User queries enforce current metadata_read/read visibility and return identity and structure only, without samples, source statistics or raw attributes; hidden and absent single targets both return 404; guarded machine facts retain their contract",
                 "produces": [
                     "application/json"
                 ],
@@ -1208,7 +1208,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "用户查询仅返回当前可见的 PG 数据项与字段；两端可见才展示关系，计数与截断只基于可见关系。permission_filtered 仅告知查询边界上存在因权限隐藏的关系，不返回隐藏身份或数量。服务起点拒绝，表达式与任意证据不返回 | User queries return currently visible PG items and fields only. Both endpoints must be visible; counts and truncation use visible relations only. permission_filtered indicates hidden relations at the query boundary without hidden identities or counts. Service roots are denied; expressions and arbitrary evidence are omitted\n按数据项、精确字段引用或已发布服务版本查询血缘关系；字段边只返回执行 ID、写入模式、字段状态和转换摘要，不重复整份 operation 字段映射 | Query lineage for a data item, exact field reference or published service revision; field edges expose execution ID, write mode, field status and transformation summaries without full operation mappings",
+                "description": "用户查询仅返回当前可见的数据项与字段；两端可见才展示关系，计数与截断只基于可见关系。permission_filtered 仅告知查询边界上存在因权限隐藏的关系，不返回隐藏身份或数量。服务起点拒绝，表达式与任意证据不返回 | User queries return currently visible items and fields only. Both endpoints must be visible; counts and truncation use visible relations only. permission_filtered indicates hidden relations at the query boundary without hidden identities or counts. Service roots are denied; expressions and arbitrary evidence are omitted\n按数据项、精确字段引用或已发布服务版本查询血缘关系；字段边只返回执行 ID、写入模式、字段状态和转换摘要，不重复整份 operation 字段映射 | Query lineage for a data item, exact field reference or published service revision; field edges expose execution ID, write mode, field status and transformation summaries without full operation mappings",
                 "produces": [
                     "application/json"
                 ],
@@ -1818,7 +1818,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine\n委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters",
+                "description": "用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine\n委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters",
                 "produces": [
                     "application/json"
                 ],
@@ -1897,7 +1897,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n按 locator 获取 root 到目标资源的标准资源树祖先链，并重写为当前 Meta 事实 locator | Get resource tree ancestor chain by locator and rewrite target locator from current Meta facts",
+                "description": "用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n按 locator 获取 root 到目标资源的标准资源树祖先链，并重写为当前 Meta 事实 locator | Get resource tree ancestor chain by locator and rewrite target locator from current Meta facts",
                 "produces": [
                     "application/json"
                 ],
@@ -1977,7 +1977,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n按 locator 获取资源树节点及直接子级，返回 common/resourcetree.TreeNode | Get resource tree node and direct children by locator",
+                "description": "用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n按 locator 获取资源树节点及直接子级，返回 common/resourcetree.TreeNode | Get resource tree node and direct children by locator",
                 "produces": [
                     "application/json"
                 ],
@@ -2151,7 +2151,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "PG 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | PG users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n在指定引擎的标准资源树中按关键词搜索节点 | Search nodes in a standard resource tree by keyword",
+                "description": "用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n在指定引擎的标准资源树中按关键词搜索节点 | Search nodes in a standard resource tree by keyword",
                 "produces": [
                     "application/json"
                 ],
@@ -3774,7 +3774,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户有效元数据项数；PG 用户仅统计当前可见数据项 | Count active tenant metadata items; PG user counts include only currently visible items",
+                "description": "获取当前租户有效元数据项数；用户仅统计当前可见数据项 | Count active tenant metadata items; User counts include only currently visible items",
                 "produces": [
                     "application/json"
                 ],
@@ -4214,6 +4214,9 @@ const docTemplate = `{
                         "whole"
                     ]
                 },
+                "metadata_target": {
+                    "$ref": "#/definitions/authorizationfacts.MetadataBoundary"
+                },
                 "native_target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
                 },
@@ -4387,6 +4390,26 @@ const docTemplate = `{
                 },
                 "search": {
                     "type": "string"
+                }
+            }
+        },
+        "authorizationfacts.MetadataBoundary": {
+            "type": "object",
+            "properties": {
+                "composition_digest": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "layout": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 }
             }
         },

@@ -236,11 +236,25 @@ func TestLineageGraphRequestDefaultCapacityByGranularity(t *testing.T) {
 	}
 }
 
-func TestPGLineageHTTPUsesCurrentVisibilityAndSafeErrors(t *testing.T) {
+func TestLineageHTTPUsesCurrentVisibilityAndSafeErrors(t *testing.T) {
+	for _, engineType := range []string{"postgresql", "nfs", "ftp", "minio"} {
+		t.Run(engineType, func(t *testing.T) { exerciseLineageHTTPVisibility(t, engineType) })
+	}
+}
+
+func exerciseLineageHTTPVisibility(t *testing.T, engineType string) {
+	rootTerm, branchTerm, branchName, itemType, rootName, sep := "server", "schema", "public", "table", "root", "."
+	if engineType == "nfs" || engineType == "ftp" {
+		rootTerm, branchTerm, branchName, itemType, rootName, sep = "root", "dir", "outputs", "file", "nodes.gpkg", "/"
+	}
+	if engineType == "minio" {
+		rootTerm, branchTerm, branchName, itemType, rootName, sep = "service", "bucket", "outputs", "object", "nodes.gpkg", "/"
+	}
+
 	tenant := uint(7)
 	allow, unavailable, checks := true, false, 0
 	caps := commonModels.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"postgresql","engine_family":"tabular","storage":{"store":{}}}`)
-	engine := commonModels.Engine{ID: 9, TenantID: &tenant, Name: "PG", EngineType: "postgresql", LifecycleState: "active", Capabilities: &caps}
+	engine := commonModels.Engine{ID: 9, TenantID: &tenant, Name: "PG", EngineType: engineType, LifecycleState: "active", Capabilities: &caps}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -266,7 +280,7 @@ func TestPGLineageHTTPUsesCurrentVisibilityAndSafeErrors(t *testing.T) {
 			}
 			result := authorization.SourceMetadataCheck{ObservedAt: time.Now()}
 			for _, target := range request.Targets {
-				result.Targets = append(result.Targets, authorization.SourceMetadataTargetCheck{Target: target, Visible: allow && target.Segments[len(target.Segments)-1].Name == "root"})
+				result.Targets = append(result.Targets, authorization.SourceMetadataTargetCheck{Target: target, Visible: allow && target.Segments[len(target.Segments)-1].Name == rootName})
 			}
 			json.NewEncoder(w).Encode(result)
 		default:
@@ -281,9 +295,18 @@ func TestPGLineageHTTPUsesCurrentVisibilityAndSafeErrors(t *testing.T) {
 	}
 	client := commonClient.NewSystemServiceClient(upstream.URL, tokenSource, upstream.Client())
 	db := openLineageRouteTestDB(t)
-	createResourceTreeHandlerNode(t, db, models.MetaNode{ID: 1, TenantID: 7, EngineID: 9, NodeType: "schema", Name: "public", FullName: "public", Depth: 1})
-	root := createLineageRouteItem(t, db, 7, "root")
-	hidden := createLineageRouteItem(t, db, 7, "hidden")
+	serverRoot := createResourceTreeHandlerNode(t, db, models.MetaNode{ID: 90, TenantID: 7, EngineID: 9, NodeType: rootTerm, Name: "Engine", FullName: "", Depth: 1})
+	createResourceTreeHandlerNode(t, db, models.MetaNode{ID: 1, TenantID: 7, EngineID: 9, ParentNodeID: &serverRoot.ID, NodeType: branchTerm, Name: branchName, FullName: branchName, Depth: 2})
+	makeItem := func(name string) models.MetaItem {
+		item := models.MetaItem{TenantID: 7, EngineID: 9, NodeID: 1, ItemType: itemType, Name: name, FullName: branchName + sep + name}
+		item.Fingerprint = commonModels.GenerateItemFingerprint(item.EngineID, item.FullName)
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+		return item
+	}
+	root := makeItem(rootName)
+	hidden := makeItem("hidden")
 	now := time.Now().UTC()
 	if err := db.Create(&models.LineageItemRelation{TenantID: 7, SourceItemID: hidden.ID, TargetItemID: root.ID, RelationKind: "derive", Granularity: "item", Status: "active", FirstObservedAt: now, LastObservedAt: now}).Error; err != nil {
 		t.Fatal(err)
@@ -312,7 +335,7 @@ func TestPGLineageHTTPUsesCurrentVisibilityAndSafeErrors(t *testing.T) {
 	}
 	response := get(query)
 	var graph models.LineageGraphResponse
-	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &graph) != nil || len(graph.Nodes) != 1 || len(graph.Edges) != 0 || graph.Subject.HiddenUpstreamCount != 0 || graph.Truncated {
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &graph) != nil || len(graph.Nodes) != 1 || len(graph.Edges) != 0 || graph.Subject.HiddenUpstreamCount != 0 || graph.Truncated || !graph.PermissionFiltered || strings.Contains(response.Body.String(), branchName+sep+"hidden") {
 		t.Fatalf("visible graph: %d %s", response.Code, response.Body.String())
 	}
 	allow = false

@@ -23,8 +23,8 @@ func metadataVisibility(ctx context.Context) (MetadataVisibilityCheck, bool) {
 	return check, ok
 }
 
-func filterPGResourceTree(ctx context.Context, root *resourcetree.TreeNode, engineID uint, check MetadataVisibilityCheck) (*resourcetree.TreeNode, error) {
-	if root == nil || check == nil {
+func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode, engineID uint, resolve func(context.Context, uint) (plugin.EngineCatalogPath, error), check MetadataVisibilityCheck) (*resourcetree.TreeNode, error) {
+	if root == nil || check == nil || resolve == nil {
 		return nil, commonapi.ErrForbidden
 	}
 	targets := []plugin.EngineCatalogPath{}
@@ -39,11 +39,11 @@ func filterPGResourceTree(ctx context.Context, root *resourcetree.TreeNode, engi
 			return commonapi.ErrForbidden
 		}
 		if loc.ItemID != nil {
-			if loc.Type != resourcetree.TypeTable {
-				return nil
-			}
-			target, err := resourcetree.EngineCatalogPathFromLocator(plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema), loc)
+			target, err := resolve(ctx, *loc.ItemID)
 			if err != nil {
+				return err
+			}
+			if target.EngineID != engineID {
 				return commonapi.ErrForbidden
 			}
 			key, err := authorization.EncodeSharingTarget(target)

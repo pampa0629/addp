@@ -11,6 +11,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -91,7 +92,7 @@ func TestPGTreeWhitelistAndIncompleteDecisionFailClosed(t *testing.T) {
 	root := &resourcetree.TreeNode{ID: "root", Type: "server", Locator: resourcetree.EngineRootLocatorForType(9, resourcetree.TypeServer), Children: []*resourcetree.TreeNode{leaf}, Metadata: map[string]interface{}{"item_count": 88, "secret": "private"}}
 	for _, mode := range []string{"allow", "error", "wrong-target", "missing"} {
 		t.Run(mode, func(t *testing.T) {
-			result, err := filterPGResourceTree(t.Context(), root, 9, func(_ context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
+			result, err := filterMetadataResourceTree(t.Context(), root, 9, visibilityTestTargetResolver(root, "postgresql"), func(_ context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
 				if mode == "error" {
 					return nil, commonapi.ErrForbidden
 				}
@@ -133,7 +134,7 @@ func TestPGTreeVisibilityBatchesAndDiscardsPartialObservations(t *testing.T) {
 	for _, failSecond := range []bool{false, true} {
 		t.Run(fmt.Sprintf("second_batch_failure_%v", failSecond), func(t *testing.T) {
 			calls := 0
-			result, err := filterPGResourceTree(t.Context(), root, 9, func(_ context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
+			result, err := filterMetadataResourceTree(t.Context(), root, 9, visibilityTestTargetResolver(root, "postgresql"), func(_ context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
 				calls++
 				want := 200
 				if calls == 2 {
@@ -162,5 +163,104 @@ func TestPGTreeVisibilityBatchesAndDiscardsPartialObservations(t *testing.T) {
 				t.Fatalf("complete batch result: %+v %v", result, err)
 			}
 		})
+	}
+}
+
+func TestFileAndObjectMetadataViewsShareCurrentVisibility(t *testing.T) {
+	for _, kind := range []string{"nfs", "minio"} {
+		t.Run(kind, func(t *testing.T) {
+			db := metatest.OpenMetadataDB(t)
+			tenant, engine := uint(7), uint(9)
+			svc := newResourceTreeTestServiceWithDB(t, db, tenant, engine)
+			svc.engineService.cacheEngine(tenant, &commonModels.Engine{ID: engine, TenantID: &tenant, Name: "Files", EngineType: kind, LifecycleState: "active"})
+			rootTerm, branchTerm, itemType := "root", "dir", "file"
+			if kind == "minio" {
+				rootTerm, branchTerm, itemType = "service", "bucket", "object"
+			}
+			root := createResourceTreeNode(t, db, models.MetaNode{TenantID: tenant, EngineID: engine, NodeType: rootTerm, Name: "Files", FullName: "", Depth: 1})
+			folder := createResourceTreeNode(t, db, models.MetaNode{TenantID: tenant, EngineID: engine, ParentNodeID: &root.ID, NodeType: branchTerm, Name: "outputs", FullName: "outputs", Depth: 2})
+			candidates := []models.MetaItemLite{}
+			for _, name := range []string{"nodes.gpkg", "hidden.gpkg"} {
+				item := createResourceTreeItem(t, db, models.MetaItem{TenantID: tenant, EngineID: engine, NodeID: folder.ID, ItemType: itemType, Name: name, FullName: "outputs/" + name, Fingerprint: commonModels.GenerateItemFingerprint(engine, "outputs/"+name), Attributes: models.JSONMap{"item": map[string]any{"layout": "single", "format": "geopackage", "data_type": "container"}, "statistics": map[string]any{"private": "private sample"}}})
+				candidates = append(candidates, models.MetaItemLite{ID: item.ID, TenantID: tenant, EngineID: engine, NodeID: folder.ID, ItemType: itemType, Name: item.Name, FullName: item.FullName, Attributes: map[string]any(item.Attributes)})
+			}
+			allow := true
+			ctx := WithMetadataVisibility(t.Context(), func(_ context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
+				if len(targets) != 2 {
+					t.Fatalf("candidate set incomplete: %d", len(targets))
+				}
+				result := &authorization.SourceMetadataCheck{ObservedAt: time.Now()}
+				for _, target := range targets {
+					if target.Segments[0].Term != rootTerm {
+						t.Fatal("wrong engine root")
+					}
+					result.Targets = append(result.Targets, authorization.SourceMetadataTargetCheck{Target: target, Visible: allow && target.Segments[len(target.Segments)-1].Name == "nodes.gpkg"})
+				}
+				return result, nil
+			})
+			items, err := svc.FilterMetadataItems(ctx, tenant, candidates)
+			if err != nil || len(items) != 1 || items[0].Name != "nodes.gpkg" {
+				t.Fatalf("items: %+v %v", items, err)
+			}
+			raw, _ := json.Marshal(items)
+			if strings.Contains(string(raw), "private") || strings.Contains(string(raw), "hidden.gpkg") {
+				t.Fatal("metadata list leaked content or hidden item")
+			}
+			count, err := svc.CountVisibleMetadataItems(ctx, tenant)
+			if err != nil || count != 1 {
+				t.Fatal("count differs from list", count, err)
+			}
+			tree, err := svc.GetTree(ctx, tenant, engine, -1)
+			raw, _ = json.Marshal(tree)
+			if err != nil || tree.Metadata["item_count"] != 1 || strings.Contains(string(raw), "hidden.gpkg") || strings.Contains(string(raw), "private") {
+				t.Fatalf("tree: %s %v", raw, err)
+			}
+			if err := svc.CheckMetadataBranch(ctx, tenant, engine, "outputs"); err != nil {
+				t.Fatal(err)
+			}
+			allow = false
+			count, err = svc.CountVisibleMetadataItems(ctx, tenant)
+			if err != nil || count != 0 {
+				t.Fatal("revoked count retained", count, err)
+			}
+			tree, err = svc.GetTree(ctx, tenant, engine, -1)
+			if err != nil || len(tree.Children) != 0 || tree.Metadata["item_count"] != 0 {
+				t.Fatal("revoked tree retained", err)
+			}
+		})
+	}
+}
+
+func visibilityTestTargetResolver(root *resourcetree.TreeNode, engineType string) func(context.Context, uint) (plugin.EngineCatalogPath, error) {
+	return func(_ context.Context, itemID uint) (plugin.EngineCatalogPath, error) {
+		model, err := dbbridge.EngineCatalogModel(engineType)
+		if err != nil {
+			return plugin.EngineCatalogPath{}, err
+		}
+		var result plugin.EngineCatalogPath
+		var walk func(*resourcetree.TreeNode) error
+		walk = func(node *resourcetree.TreeNode) error {
+			loc, err := resourcetree.ParseURI(node.Locator)
+			if err != nil {
+				return err
+			}
+			if loc.ItemID != nil && *loc.ItemID == itemID {
+				result, err = resourcetree.EngineCatalogPathFromLocator(model, loc)
+				return err
+			}
+			for _, child := range node.Children {
+				if err := walk(child); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if err := walk(root); err != nil {
+			return result, err
+		}
+		if result.EngineID == 0 {
+			return result, commonapi.ErrForbidden
+		}
+		return result, nil
 	}
 }

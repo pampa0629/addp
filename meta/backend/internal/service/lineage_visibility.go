@@ -18,8 +18,8 @@ func WithLineageVisibility(ctx context.Context, observe func(context.Context) ([
 	return context.WithValue(ctx, lineageVisibilityKey{}, observe)
 }
 
-// VisibleLineageItems reuses the exact PG identity construction and System
-// metadata decision used by browsing. Non-PG items cannot become graph bridges.
+// VisibleLineageItems uses the same typed item identities and current System
+// metadata decision as browsing, independent of the storage engine family.
 func (s *ResourceTreeService) VisibleLineageItems(ctx context.Context, tenant uint) ([]uint, error) {
 	if s == nil || s.engineService == nil || s.metadataQueryService == nil {
 		return nil, commonapi.ErrForbidden
@@ -33,13 +33,13 @@ func (s *ResourceTreeService) VisibleLineageItems(ctx context.Context, tenant ui
 	}
 	engineIDs := []uint{}
 	for _, engine := range engines {
-		if engine != nil && engine.EngineType == "postgresql" {
+		if engine != nil {
 			engineIDs = append(engineIDs, engine.ID)
 		}
 	}
 	var items []models.MetaItem
 	if len(engineIDs) > 0 {
-		err = s.metadataQueryService.db.WithContext(ctx).Select("id", "tenant_id", "engine_id", "node_id", "item_type", "name", "full_name", "fingerprint").Where("tenant_id = ? AND engine_id IN ? AND item_type = 'table' AND deleted_at IS NULL", tenant, engineIDs).Order("id").Find(&items).Error
+		err = s.metadataQueryService.db.WithContext(ctx).Select("id", "tenant_id", "engine_id", "node_id", "item_type", "name", "full_name", "fingerprint").Where("tenant_id = ? AND engine_id IN ? AND deleted_at IS NULL", tenant, engineIDs).Order("id").Find(&items).Error
 		if err != nil {
 			return nil, err
 		}

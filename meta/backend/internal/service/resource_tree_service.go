@@ -41,8 +41,8 @@ func (s *ResourceTreeService) GetTree(ctx context.Context, tenantID, engineID ui
 	if err != nil {
 		return nil, err
 	}
-	if check, userQuery := metadataVisibility(ctx); userQuery && engine.EngineType == "postgresql" {
-		tree, err = filterPGResourceTree(ctx, tree, engineID, check)
+	if check, userQuery := metadataVisibility(ctx); userQuery {
+		tree, err = s.filterMetadataTree(ctx, tree, tenantID, engineID, check)
 		if err != nil {
 			return nil, err
 		}
@@ -68,7 +68,7 @@ func (s *ResourceTreeService) GetNode(ctx context.Context, tenantID, engineID ui
 	if err != nil {
 		return nil, err
 	}
-	if _, userQuery := metadataVisibility(ctx); userQuery && engine.EngineType == "postgresql" {
+	if _, userQuery := metadataVisibility(ctx); userQuery {
 		tree, err := s.GetTree(ctx, tenantID, engineID, -1)
 		if err != nil {
 			return nil, err
@@ -136,7 +136,7 @@ func (s *ResourceTreeService) GetAncestors(ctx context.Context, tenantID, engine
 	if err != nil {
 		return nil, err
 	}
-	if _, userQuery := metadataVisibility(ctx); userQuery && engine.EngineType == "postgresql" {
+	if _, userQuery := metadataVisibility(ctx); userQuery {
 		var canonical *metaModels.ResourceTreeAncestorsResponse
 		if loc.ItemID != nil && *loc.ItemID > 0 {
 			canonical, err = s.getItemAncestors(tenantID, engine, loc)
