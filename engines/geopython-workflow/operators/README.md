@@ -6,6 +6,8 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 `raster_interpolate_idw`以二维Point、显式数值字段和同CRS模板网格生成连续面：固定幂次2、显式米制半径、等号纳入、默认全体支持、精确重合取原值；可选正整数`min_points`默认1，`max_points`省略不限、提供时须为正整数且不小于最少点数；精确半径过滤后按距离平方／X／Y取最近N点，非重合位置支撑不足为NaN，精确重合仍保留样本值；重复XY／非法数值拒绝。模板只提供网格与CRS，不读取／继承NoData、mask或alpha，支持有限可逆旋转／矩形／剪切网格；结果单波段Float64，同网格／CRS，沿原COG保存及清理。归“基础计算”，无新权限／依赖；[完整IDW契约](../../../docs/spec/workflow/栅格算子契约.md#点数据idw插值)。
 
+`raster_point_density`以二维Point、同CRS参考网格和显式米制圆半径生成点／平方米密度。圆周等号纳入、重复XY逐条计数，分母固定完整圆面积；无支持为0、空批全0，模板仅提供网格／CRS（允许矩形／旋转／剪切）。单波段Float64、单位points/m2，沿原COG保存和清理；严格边界见[点密度契约](../../../docs/spec/workflow/栅格算子契约.md#米制圆形点密度栅格)。
+
 矢量面分区统计沿原入口使用非空严格递增`percentiles`列表：原八列保持，每面一行，按请求顺序追加带原前缀的percentile_i／percentile_value_i列对；覆盖、孔洞、重叠面独立、原属性／几何／索引及CRS保持，每面共享一次覆盖读取／排序／归并。旧单值参数及列删除，旧DAG须显式改写；原单项套件只迁移单元素列表／列名，既有矩阵／预算保持。完整边界见栅格算子契约，Linux全量与实际Hosted分别记账。
 
 通用算子由 [raster_compute.py](raster_compute.py) 聚合，分类与算子归属见[算子分类](#算子分类)。栅格通过当前 execution 的 `raster` / `raster_tiles` 私有对象在 DAG 中流转；公开资源使用 ResourceLocator，由 Develop 派生访问计划，不能用原始路径或普通 JSON 代替栅格端口。
@@ -73,7 +75,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 栅格处理 | 网格处理 | 3 | `raster_reproject`、`raster_resample`、`raster_align` |
 | 栅格处理 | 范围处理 | 5 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint` |
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
-| 栅格处理 | 基础计算 | 4 | `raster_band_math`、`raster_aggregate`、`raster_proximity`、`raster_interpolate_idw` |
+| 栅格处理 | 基础计算 | 5 | `raster_band_math`、`raster_aggregate`、`raster_proximity`、`raster_interpolate_idw`、`raster_point_density` |
 | 栅格处理 | 分类处理 | 6 | `raster_reclassify`、`raster_nibble`、`raster_boundary_clean`、`raster_sieve`、`raster_region_group`、`raster_thin` |
 | 栅格处理 | 地形分析 | 10 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_twi`、`raster_spi`、`raster_contour` |
 | 栅格处理 | 水流分析 | 5 | `raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8` |

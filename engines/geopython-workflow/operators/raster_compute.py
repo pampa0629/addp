@@ -1380,7 +1380,56 @@ def _idw_error(code):
     return ValueError(_IDW_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _idw_bound(value, upper):
+def _point_radius(radius_metres, error):
+    try:
+        if (isinstance(radius_metres, (bool, np.bool_)) or not isinstance(radius_metres, Real)
+                or radius_metres <= 0 or not math.isfinite(float(radius_metres))):
+            raise error('radius')
+        return Fraction(float(radius_metres))
+    except (OverflowError, TypeError) as cause:
+        raise error('radius') from cause
+
+
+def _point_geometries(input_gdf, error):
+    if not isinstance(input_gdf, gpd.GeoDataFrame) or not input_gdf.columns.is_unique:
+        raise error('gdf')
+    try:
+        return input_gdf.geometry
+    except AttributeError as cause:
+        raise error('gdf') from cause
+
+
+def _point_xy(point, error):
+    if (point is None or point.is_empty or point.geom_type != 'Point' or has_z(point) or has_m(point)
+            or not point.is_valid or not np.isfinite(get_coordinates(point)).all()):
+        raise error('geometry')
+    return Fraction(point.x), Fraction(point.y)
+
+
+def _point_grid_spec(dataset, crs, error):
+    try:
+        reference = _crs(dataset.GetProjection())
+        axes = [] if crs is None else crs.axis_info
+        if (crs is None or not crs.is_projected or crs.is_compound or len(axes) != 2
+                or not reference.IsProjected() or reference.IsCompound() or reference.GetAxesCount() != 2
+                or not _crs(crs.to_wkt()).IsSame(reference)
+                or any(not math.isfinite(axis.unit_conversion_factor) or axis.unit_conversion_factor <= 0
+                       or axis.unit_name.strip().lower() in ('', 'unknown') for axis in axes)
+                or axes[0].unit_conversion_factor != axes[1].unit_conversion_factor):
+            raise error('crs')
+        factor = Fraction(axes[0].unit_conversion_factor)
+    except (ValueError, RuntimeError, TypeError, AttributeError) as cause:
+        raise error('crs') from cause
+    transform = dataset.GetGeoTransform(can_return_null=True)
+    if transform is None or len(transform) != 6 or not all(math.isfinite(v) for v in transform):
+        raise error('grid')
+    transform = tuple(map(Fraction, transform))
+    if not transform[1]*transform[5]-transform[2]*transform[4]:
+        raise error('grid')
+    return transform, factor
+
+
+def _circle_index_bound(value, upper):
     """Outward rounding only for the index box; the actual circle is exact."""
     limit = np.finfo(np.float64).max
     try:
@@ -1395,15 +1444,53 @@ def _idw_bound(value, upper):
     return max(-limit, min(limit, result))
 
 
+
+def _circle_sites(x, y, radius, tree, coordinates):
+    candidates = tree.query(box(_circle_index_bound(x-radius, False), _circle_index_bound(y-radius, False),
+                                _circle_index_bound(x+radius, True), _circle_index_bound(y+radius, True)))
+    limit = radius*radius
+    for index in candidates:
+        px, py = coordinates[index]
+        squared = (px-x)**2 + (py-y)**2
+        if squared <= limit:
+            yield index, squared
+
+
+def _point_grid_output(dataset, transform, value_at, error, *, unit=''):
+    output = destination = None
+    output_path = None; completed = False
+    try:
+        origin_x, a, b, origin_y, c, d = transform
+        width, height = dataset.RasterXSize, dataset.RasterYSize
+        output = _numeric_output(dataset, 1); output_path = Path(output.GetDescription())
+        destination = output.GetRasterBand(1)
+        if unit:
+            destination.SetUnitType(unit)
+        for top in range(0, height, 512):
+            for left in range(0, width, 512):
+                span_x, span_y = min(512, width-left), min(512, height-top)
+                result = np.full((span_y, span_x), np.nan)
+                for row in range(span_y):
+                    yy = Fraction(2*(top+row)+1, 2)
+                    for column in range(span_x):
+                        xx = Fraction(2*(left+column)+1, 2)
+                        result[row,column] = value_at(origin_x+a*xx+b*yy, origin_y+c*xx+d*yy)
+                if destination.WriteRaster(left, top, span_x, span_y, result.tobytes(), buf_type=gdal.GDT_Float64) != gdal.CE_None:
+                    raise error('write')
+        destination = None; output.FlushCache(); output = None
+        result = _raster(output_path); completed = True
+        return result
+    finally:
+        destination = output = None
+        if output_path is not None and not completed:
+            output_path.unlink(missing_ok=True)
+
+
 def _idw_value(x, y, radius, tree, coordinates, values, min_points, max_points):
-    candidates = tree.query(box(_idw_bound(x-radius, False), _idw_bound(y-radius, False),
-                                _idw_bound(x+radius, True), _idw_bound(y+radius, True)))
     def nearby():
-        for index in candidates:
+        for index, squared in _circle_sites(x, y, radius, tree, coordinates):
             px, py = coordinates[index]
-            squared = (px-x)**2 + (py-y)**2
-            if squared <= radius*radius:
-                yield squared, px, py, values[index]
+            yield squared, px, py, values[index]
     support = nearby()
     if max_points is not _IDW_MAX_POINTS_UNSET:
         support = heapq.nsmallest(max_points, support, key=lambda sample: sample[:3])
@@ -1436,26 +1523,13 @@ def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres, mi
         max_points = int(max_points)
         if max_points < min_points:
             raise _idw_error('point_counts')
-    try:
-        if (isinstance(radius_metres, (bool, np.bool_)) or not isinstance(radius_metres, Real)
-                or radius_metres <= 0 or not math.isfinite(float(radius_metres))):
-            raise _idw_error('radius')
-    except (OverflowError, TypeError) as cause:
-        raise _idw_error('radius') from cause
-    if not isinstance(input_gdf, gpd.GeoDataFrame) or not input_gdf.columns.is_unique:
-        raise _idw_error('gdf')
-    try:
-        geometries = input_gdf.geometry
-    except AttributeError as cause:
-        raise _idw_error('gdf') from cause
+    radius_metres = _point_radius(radius_metres, _idw_error)
+    geometries = _point_geometries(input_gdf, _idw_error)
     if not isinstance(field, str) or not field.strip() or field not in input_gdf.columns or field == geometries.name:
         raise _idw_error('field')
     coordinates, values, seen = [], [], set()
     for point, raw in zip(geometries, input_gdf[field]):
-        if (point is None or point.is_empty or point.geom_type != 'Point' or has_z(point) or has_m(point)
-                or not point.is_valid or not np.isfinite(get_coordinates(point)).all()):
-            raise _idw_error('geometry')
-        coordinate = (Fraction(point.x), Fraction(point.y))
+        coordinate = _point_xy(point, _idw_error)
         if coordinate in seen:
             raise _idw_error('duplicate')
         seen.add(coordinate)
@@ -1468,52 +1542,62 @@ def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres, mi
         except (OverflowError, TypeError) as cause:
             raise _idw_error('value') from cause
         coordinates.append(coordinate); values.append(Fraction(number))
-    dataset = output = destination = None
-    output_path = None; completed = False
+    dataset = None
     try:
         dataset = _open(reference_raster)
-        try:
-            reference = _crs(dataset.GetProjection()); crs = input_gdf.crs
-            axes = [] if crs is None else crs.axis_info
-            if (crs is None or not crs.is_projected or crs.is_compound or len(axes) != 2
-                    or not reference.IsProjected() or reference.IsCompound() or reference.GetAxesCount() != 2
-                    or not _crs(crs.to_wkt()).IsSame(reference)
-                    or any(not math.isfinite(axis.unit_conversion_factor) or axis.unit_conversion_factor <= 0
-                           or axis.unit_name.strip().lower() in ('', 'unknown') for axis in axes)
-                    or axes[0].unit_conversion_factor != axes[1].unit_conversion_factor):
-                raise _idw_error('crs')
-            radius = Fraction(float(radius_metres)) / Fraction(axes[0].unit_conversion_factor)
-        except (ValueError, RuntimeError, TypeError, AttributeError) as cause:
-            raise _idw_error('crs') from cause
-        transform = dataset.GetGeoTransform(can_return_null=True)
-        if transform is None or len(transform) != 6 or not all(math.isfinite(v) for v in transform):
-            raise _idw_error('grid')
-        origin_x, a, b, origin_y, c, d = map(Fraction, transform)
-        if not a*d-b*c:
-            raise _idw_error('grid')
-        width, height = dataset.RasterXSize, dataset.RasterYSize
+        transform, factor = _point_grid_spec(dataset, input_gdf.crs, _idw_error)
+        radius = radius_metres / factor
         tree = STRtree(list(geometries))
-        output = _numeric_output(dataset, 1); output_path = Path(output.GetDescription())
-        destination = output.GetRasterBand(1)
-        for top in range(0, height, 512):
-            for left in range(0, width, 512):
-                span_x, span_y = min(512, width-left), min(512, height-top)
-                result = np.full((span_y, span_x), np.nan)
-                for row in range(span_y):
-                    yy = Fraction(2*(top+row)+1, 2)
-                    for column in range(span_x):
-                        xx = Fraction(2*(left+column)+1, 2)
-                        result[row,column] = _idw_value(origin_x+a*xx+b*yy, origin_y+c*xx+d*yy,
-                                                       radius, tree, coordinates, values, min_points, max_points)
-                if destination.WriteRaster(left, top, span_x, span_y, result.tobytes(), buf_type=gdal.GDT_Float64) != gdal.CE_None:
-                    raise _idw_error('write')
-        destination = None; output.FlushCache(); output = None
-        result = _raster(output_path); completed = True
-        return result
+        return _point_grid_output(dataset, transform,
+            lambda x, y: _idw_value(x, y, radius, tree, coordinates, values, min_points, max_points), _idw_error)
     finally:
-        destination = output = dataset = None
-        if output_path is not None and not completed:
-            output_path.unlink(missing_ok=True)
+        dataset = None
+
+
+_POINT_DENSITY_MESSAGES = {
+    'radius': ('点密度搜索半径必须为有限非布尔正米数', 'Point density search radius must be a finite positive number of metres, excluding booleans'),
+    'gdf': ('点密度需要列名唯一且具有活动几何列的GeoDataFrame', 'Point density requires a GeoDataFrame with unique columns and an active geometry column'),
+    'geometry': ('点密度仅接受非空、有效、有限XY的二维Point', 'Point density requires non-empty valid finite XY two-dimensional Points'),
+    'crs': ('点密度点与模板必须具有相同的明确二维投影CRS及相同已知水平线性单位', 'Point density points and template must share an explicit two-dimensional projected CRS with equal known horizontal linear units'),
+    'grid': ('点密度模板必须具有有限可逆的完整仿射网格', 'Point density template requires a complete finite invertible affine grid'),
+    'write': ('点密度栅格块写入失败', 'Point density raster block write failed'),
+    'result': ('点密度结果超出有限正Float64可表示范围', 'Point density result is outside the finite positive Float64 range'),
+}
+
+
+def _point_density_error(code):
+    return ValueError(_POINT_DENSITY_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _point_density_value(count, area):
+    if count == 0:
+        return 0.
+    try:
+        value = float(Fraction(count) / area)
+    except OverflowError as cause:
+        raise _point_density_error('result') from cause
+    if not math.isfinite(value) or value <= 0:
+        raise _point_density_error('result')
+    return value
+
+
+def raster_point_density(input_gdf, reference_raster, radius_metres):
+    """Count every feature in the exact metric circle, divided by its full area."""
+    radius_metres = _point_radius(radius_metres, _point_density_error)
+    geometries = _point_geometries(input_gdf, _point_density_error)
+    coordinates = [_point_xy(point, _point_density_error) for point in geometries]
+    dataset = None
+    try:
+        dataset = _open(reference_raster)
+        transform, factor = _point_grid_spec(dataset, input_gdf.crs, _point_density_error)
+        radius = radius_metres / factor
+        area = Fraction(math.pi)*radius_metres*radius_metres
+        tree = STRtree(list(geometries))
+        return _point_grid_output(dataset, transform,
+            lambda x, y: _point_density_value(sum(1 for _ in _circle_sites(x, y, radius, tree, coordinates)), area),
+            _point_density_error, unit='points/m2')
+    finally:
+        dataset = None
 
 
 def vector_rasterize(input_gdf, reference_raster, field=None, burn_value=None, all_touched=False):
@@ -6301,6 +6385,7 @@ _SPECS = [
     (raster_reclassify, OperatorCategory.RASTER_CLASSIFICATION, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
     (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类集合，允许零、不可重复；北向矩形网格按实际米制距离选点，方形结果保持')], 'raster', ['read']),
     (raster_interpolate_idw, OperatorCategory.RASTER_CALCULATION, '点数据IDW插值', [_param('input_gdf', 'GeoDataFrame', '同CRS二维Point及有限数值字段；重复XY拒绝', role='input'), _param('reference_raster', 'raster', '仅提供网格和CRS，不读取或继承模板值／NoData／mask／alpha', role='input'), _param('field', 'str', '显式数值属性字段；合法零负值保留，整数须精确表示'), _param('radius_metres', 'float', '显式有限正米制圆半径；等号纳入、全部样本、固定距离平方反比'), _param('min_points', 'int', '非布尔正整数，默认1；非重合支撑不足为NoData，精确重合仍保留样本值', 1, False), _param('max_points', 'int', '省略不限；显式非布尔正整数且不小于min_points，按精确距离／X／Y取最近N点，精确重合保留原值', None, False)], 'raster', ['read']),
+    (raster_point_density, OperatorCategory.RASTER_CALCULATION, '米制圆形点密度', [_param('input_gdf', 'GeoDataFrame', '二维Point逐要素计数，重复XY保留；无数值字段', role='input'), _param('reference_raster', 'raster', '仅提供网格／CRS，原像元与mask／alpha不参与', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；等号纳入，密度按完整圆面积计算，无支持为0，单位points/m2')], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
     (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '正整数像元数阈值；与min_area_m2必须且只能提供一个，等于阈值保留', None, False), _param('min_area_m2', 'float', '有限正平方米阈值；与min_pixels互斥，北向无旋转投影网格、按CRS线性单位换算，精确比较且等于阈值保留', None, False), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结'), _param('protected_values', 'list[int]', '免于替换的安全整数分类，列表不可重复；空列表保持原结果，保护斑块作为供体仍须原始大小达标', [], False)], 'raster', ['read']),
@@ -6413,6 +6498,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'connectivity': 4})
     if name == 'raster_interpolate_idw':
         examples = {'input_gdf': {'$ref': 'points'}, 'reference_raster': {'$ref': 'reference'}, 'field': 'value', 'radius_metres': 100., 'min_points': 1}
+    if name == 'raster_point_density':
+        examples = {'input_gdf': {'$ref': 'points'}, 'reference_raster': {'$ref': 'reference'}, 'radius_metres': 100.}
     if name == 'vector_rasterize':
         examples = {'input_gdf': {'$ref': 'polygons'}, 'reference_raster': {'$ref': 'reference'},
                     'field': 'class_value', 'all_touched': False}

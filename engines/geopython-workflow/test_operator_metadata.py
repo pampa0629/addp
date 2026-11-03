@@ -1094,7 +1094,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "网格处理"), "raster_reproject raster_resample raster_align"),
         (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint"),
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
-        (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity raster_interpolate_idw"),
+        (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity raster_interpolate_idw raster_point_density"),
         (("栅格处理", "分类处理"), "raster_reclassify raster_nibble raster_boundary_clean raster_sieve raster_region_group raster_thin"),
         (("栅格处理", "地形分析"), "raster_slope raster_aspect raster_hillshade raster_curvature raster_tpi raster_tri raster_roughness raster_twi raster_spi raster_contour"),
         (("栅格处理", "水流分析"), "raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8"),
@@ -1820,3 +1820,19 @@ def test_axis_aligned_envelope_metadata_exposes_exact_degenerate_projected_polic
     for marker in ['水平', '垂直', 'LineString', 'Polygon', 'Point', '斜向共线', '投影', '不扩宽', '不按面积0']:
         assert marker in text
     assert '旧GeoSeries.envelope' not in text
+
+
+def test_point_density_single_workflow_read_entry_exact_sources_radius_and_units():
+    from operators import get_operator
+    import inspect
+    spec=next(s for s in list_operators()if s['id']=='raster_point_density')
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_gdf','reference_raster','radius_metres'}
+    assert all(p['required']for p in params.values())
+    assert params['input_gdf']['param_type']==params['reference_raster']['param_type']=='input'
+    assert params['input_gdf']['type']=='object'and params['reference_raster']['type']=='raster'
+    assert params['radius_metres']['type']=='float'and 'default'not in params['radius_metres']
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert spec['category_path']==['栅格处理','基础计算']and spec['attributes']['resource_groups']==['raster']
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
+    assert set(inspect.signature(get_operator('raster_point_density')).parameters)==set(params)
