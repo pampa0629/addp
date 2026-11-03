@@ -310,6 +310,8 @@ const searchKeyword = ref('')
 const searchResults = ref([])
 const recursive = ref(false)
 const selectionPending = ref(false)
+const pendingResources = ref(null)
+const displayedResources = computed(() => pendingResources.value ?? selectedResources.value)
 const snapshotReady = ref(false)
 let selectionRequestSeq = 0
 const interactionDisabled = computed(() => props.disabled || selectionPending.value)
@@ -320,8 +322,9 @@ const originalNodes = computed(() => {
   return index
 })
 const nodeResources = node => collectSelectableResources(originalNodes.value.get(node.id), isSelectableTreeNode, recursive.value)
-const nodeSelectionState = node => resourceSelectionState(selectedResources.value, nodeResources(node))
+const nodeSelectionState = node => resourceSelectionState(displayedResources.value, nodeResources(node))
 function cancelSelection() {
+  pendingResources.value = null
   selectionRequestSeq++
   selectionPending.value = false
 }
@@ -329,7 +332,12 @@ async function commitSelection(next) {
   if (interactionDisabled.value) return
   const request = ++selectionRequestSeq
   selectionPending.value = true
+  pendingResources.value = next
   try {
+    // Let the controlled checkbox observe the proposed value before validation.
+    // On rejection its prop must change back, not leave the native input checked.
+    await nextTick()
+    if (request !== selectionRequestSeq || props.disabled) return
     if (next.length > props.maxSelections) throw new Error('resourceSelectionLimit')
     await props.validateSelection?.(next)
     if (request !== selectionRequestSeq || props.disabled) return
@@ -339,7 +347,7 @@ async function commitSelection(next) {
   } catch (error) {
     if (request === selectionRequestSeq) handleError(error, { silent: Boolean(props.validateSelection) })
   } finally {
-    if (request === selectionRequestSeq) selectionPending.value = false
+    if (request === selectionRequestSeq) { pendingResources.value = null; selectionPending.value = false }
   }
 }
 async function selectBranch(node, selected) {
@@ -640,7 +648,7 @@ const selectNode = (node, engine = selectedEngine.value) => {
   emit('select', selection)
 }
 
-const isResourceSelected = node => selectedResources.value.some(selection => selection.identity.locator === node.locator)
+const isResourceSelected = node => displayedResources.value.some(selection => selection.identity.locator === node.locator)
 
 const toggleSelectedResource = selection => {
   return commitSelection(toggleResourceSelection(selectedResources.value, selection))

@@ -1182,13 +1182,12 @@
           "task_production": "Initial task output grant",
           "mixed": "Multiple authorization sources"
         },
-        "targetModes": {
-          "items": "Exact DataItems (current selection)",
-          "nodes": "Persistent node scopes"
-        },
-        "nodeRecursive": "Include DataItems in descendant nodes",
-        "persistentNode": "Covers current and newly identified DataItems for the Grant lifetime. Without recursion, only direct DataItems are covered. Issuance independently verifies the node; no per-item Grants are created.",
-        "chooseTargetMode": "Choose exact DataItems or persistent node scopes. Node scopes include newly identified items."
+        "nodeRecursive": "Include descendant DataItems recursively",
+        "mixedSelection": "Select DataItems and nodes together. Nodes cover current and future DataItems; set recursion separately for each node.",
+        "scope": "Authorization scope",
+        "nodeTarget": "Persistent node scope",
+        "itemTarget": "Exact DataItem",
+        "overlap": "Overlaps another selection. Both are retained; deselecting an item does not exclude it from a node scope."
       },
       "delegations": {
         "new": "New delegation",

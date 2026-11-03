@@ -1,4 +1,4 @@
-直接授权简化（2026-10-31）：逐 DataItem 直接许可、许可 Tab 与部署默认退出。直接办理沿既有 Grant 创建权限及引擎管理范围，Catalog 业务批准始终保留；新增授权支持 DataItem 多选、节点本级／递归当前项选择。实现与验证状态见 IAM 数据模型规范。
+直接授权简化（2026-10-31）：逐 DataItem 直接许可、许可 Tab 与部署默认退出。直接办理沿既有 Grant 创建权限及引擎管理范围，Catalog 业务批准始终保留；PG 新增授权在共享资源树混选精确 DataItem 与真实持续节点；逐节点设置递归、提示范围重叠，展开不隐式勾选子项，选择节点不枚举叶子；其他引擎的现有 DataItem 快照选择不变。实现与验证状态见 IAM 数据模型规范。
 
 Graph 保护投影 Runtime（000218）：只向既有 `tenant.graph_runtime` 发布 `security.protection_projection.read/update`，向 `platform.graph_runtime` 发布 `platform.tenant.read` 以发现待同步租户；不新增用户授权或 Role Assignment，不调整源数据访问授权。绑定变更沿现有 IAM 触发器推进服务主体授权版本。验证使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test graph-protection-runtime"`，完整迁移门禁与既有 System CI 自动发现。
 

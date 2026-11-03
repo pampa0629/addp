@@ -14,23 +14,25 @@
       <el-alert v-if="!canBrowse" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.browseRequired')" />
       <el-alert v-else-if="!adapter" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.unsupported')" />
       <template v-else>
-        <el-radio-group v-if="engine.engine_type === 'postgresql'" v-model="targetMode" :disabled="busy" data-testid="authorization-target-mode" @change="changeTargetMode">
-          <el-radio-button value="items">{{ t('system.engine.dataAuthorization.targetModes.items') }}</el-radio-button>
-          <el-radio-button value="nodes">{{ t('system.engine.dataAuthorization.targetModes.nodes') }}</el-radio-button>
-        </el-radio-group>
-        <el-checkbox v-if="targetMode === 'nodes'" v-model="nodeRecursive" :disabled="busy" data-testid="authorization-node-recursive">{{ t('system.engine.dataAuthorization.nodeRecursive') }}</el-checkbox>
-        <el-alert v-if="!targetMode" type="info" :closable="false" :title="t('system.engine.dataAuthorization.chooseTargetMode')" />
-        <ResourceTreePicker v-if="targetMode" ref="picker" :key="`${authorizationKey}:${targetMode}`" :model-value="selections" multiple :branch-selection="targetMode === 'items'"
-          :engine-id="engine.id" :adapter="adapter" mode="any" :selectable-filter="targetMode === 'nodes' ? isApprovalNode : isApprovalTarget"
+        <ResourceTreePicker ref="picker" :key="authorizationKey" :model-value="selections" multiple :branch-selection="engine.engine_type !== 'postgresql'"
+          :engine-id="engine.id" :adapter="adapter" mode="any" :selectable-filter="isSelectableTarget"
           :max-selections="200" :validate-selection="validateSelection" :disabled="!authorizationReady || grantBusy"
           :show-engine-selector="false" :show-selection-summary="false" :show-count="false" :title="engine.name"
           :search-placeholder="t('system.engine.sourceGrants.tableSearch')" tree-height="min(44vh, 480px)"
           data-testid="approval-resource-tree" @update:model-value="applySelection" @busy="selecting = $event"
           @loading="loading = $event" @ready="selectionReady" @error="selectionError" />
         <template v-if="workspaceView === 'create'">
-          <p class="hint">{{ t(targetMode === 'nodes' ? 'system.engine.dataAuthorization.persistentNode' : 'system.engine.dataAuthorization.snapshotOnly') }}</p>
+          <p class="hint">{{ t(engine.engine_type === 'postgresql' ? 'system.engine.dataAuthorization.mixedSelection' : 'system.engine.dataAuthorization.snapshotOnly') }}</p>
           <el-table v-if="targets.length" :data="targets" data-testid="approval-targets">
             <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row) || engine.name }}</template></el-table-column>
+            <el-table-column :label="t('system.engine.dataAuthorization.scope')" min-width="230"><template #default="{ row }">
+              <template v-if="isNodePath(row)">
+                <el-tag>{{ t('system.engine.dataAuthorization.nodeTarget') }}</el-tag>
+                <el-checkbox v-model="nodeRecursions[basisKey(row)]" :disabled="busy" data-testid="authorization-node-recursive">{{ t('system.engine.dataAuthorization.nodeRecursive') }}</el-checkbox>
+              </template>
+              <el-tag v-else type="info">{{ t('system.engine.dataAuthorization.itemTarget') }}</el-tag>
+              <p v-if="isOverlapping(row)" class="hint" data-testid="authorization-scope-overlap">{{ t('system.engine.dataAuthorization.overlap') }}</p>
+            </template></el-table-column>
             <el-table-column :label="t('system.engine.dataAuthorization.basis.title')" min-width="260"><template #default="{ row }">
               <div class="basis-status" data-testid="approval-basis-status">
                 <el-tag :type="basisTag(row)">{{ t(`system.engine.dataAuthorization.basis.${basisState(row)}`) }}</el-tag>
@@ -53,14 +55,14 @@ import { useI18n } from 'vue-i18n'
 import { ResourceTreePicker, serializeEngineCatalogTarget, readNativeApprovalFacts } from '@common-ui'
 import { enginesAPI } from '../../api/engines'
 import { useAuthStore } from '../../store/auth'
-import { approvalPathLabel, approvalTargetsEqual, approvalTargetFromSelection, isApprovalTarget, isApprovalNode, createApprovalCatalogAdapter, createApprovalNodeCatalogAdapter } from '../../utils/engineApprovalCatalog'
+import { approvalPathLabel, approvalTargetsEqual, approvalTargetFromSelection, isApprovalTarget, isApprovalNode, isPGGrantNodePath, approvalScopeContains, createApprovalCatalogAdapter, createMixedApprovalCatalogAdapter } from '../../utils/engineApprovalCatalog'
 import EngineSourceGrants from './EngineSourceGrants.vue'
 
 const props = defineProps({ engine: { type: Object, required: true }, authorizationKey: { type: String, required: true }, authorizationReady: Boolean })
 const auth = useAuthStore(), { t } = useI18n()
 const canGrant = computed(() => auth.hasPermission('system.engine_access_grant.create'))
 const canReadGrants = computed(() => auth.hasPermission('system.engine_access_grant.read'))
-const workspaceTab = ref('current'), targetMode = ref(''), nodeRecursive = ref(false)
+const workspaceTab = ref('current'), nodeRecursions = ref({})
 const workspaceView = computed(() => workspaceTab.value === 'create' ? 'create' : 'list')
 const currentTab = ref(null)
 const canBrowse = computed(() => canReadGrants.value)
@@ -82,22 +84,24 @@ const itemAdapter = computed(() => {
   if (!canBrowse.value || props.engine.lifecycle_state !== 'active' || props.engine.connection_status !== 'online') return null
   try { return createApprovalCatalogAdapter(props.engine, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts) } catch { return null }
 })
-const nodeAdapter = computed(() => {
- if (!canBrowse.value || props.engine.engine_type !== 'postgresql' || props.engine.lifecycle_state !== 'active' || props.engine.connection_status !== 'online') return null
- return createApprovalNodeCatalogAdapter(props.engine, enginesAPI.listAuthorizationNodes)
+const adapter = computed(() => {
+  if (!itemAdapter.value) return null
+  return createMixedApprovalCatalogAdapter(props.engine, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts, enginesAPI.listAuthorizationNodes)
 })
-const adapter = computed(() => targetMode.value === 'nodes' ? nodeAdapter.value : itemAdapter.value)
-function changeTargetMode() {
- generation.value++; targets.value = []; selections.value = []; targetPaths.clear(); basisStates.value = {}; basisBindings.value = {}; basisRequests.clear(); ready.value = false; error.value = ''
-}
-const directRequirementCandidates = computed(() => targets.value.map(path => ({ engine_id: String(props.engine.id), engine_name: props.engine.name, catalog_path: path, metadata_only: !!basisBindings.value[basisKey(path)]?.metadata_target, ...(targetMode.value === 'nodes' ? { node_recursive: nodeRecursive.value } : {}) })))
+const isSelectableTarget = node => isApprovalTarget(node) || isApprovalNode(node)
+const isNodePath = path => props.engine.engine_type === 'postgresql' && isPGGrantNodePath(path, props.engine.id)
+const isOverlapping = path => targets.value.some(other => !approvalTargetsEqual(path, other) && (
+  (isNodePath(other) && approvalScopeContains(other, path, !!nodeRecursions.value[basisKey(other)])) ||
+  (isNodePath(path) && approvalScopeContains(path, other, !!nodeRecursions.value[basisKey(path)]))
+))
+const directRequirementCandidates = computed(() => targets.value.map(path => ({ engine_id: String(props.engine.id), engine_name: props.engine.name, catalog_path: path, metadata_only: !!basisBindings.value[basisKey(path)]?.metadata_target, ...(isNodePath(path) ? { node_recursive: !!nodeRecursions.value[basisKey(path)] } : {}) })))
 const directRequirements = ref([])
 watch([() => props.authorizationReady, directRequirementCandidates], ([isReady, requirements]) => {
   if (isReady) directRequirements.value = requirements
 }, { immediate: true })
 function changeWorkspace(tab) {
   error.value = ''
-  if (tab !== 'create') { generation.value++; selections.value = []; targets.value = []; basisStates.value = {}; basisBindings.value = {}; basisRequests.clear(); targetPaths.clear() }
+  if (tab !== 'create') { nodeRecursions.value = {}; generation.value++; selections.value = []; targets.value = []; basisStates.value = {}; basisBindings.value = {}; basisRequests.clear(); targetPaths.clear() }
 }
 function closeGrant() {
   if (busy.value) return
@@ -128,7 +132,7 @@ async function validateSelection(next) {
   for (const selection of next) {
     const key = selection.identity.locator
     // Retained selections keep their exact boundary; a refresh is checked separately.
-    const path = targetPaths.get(key) || (targetMode.value === 'nodes' ? await adapter.value.resolveTarget(selection.raw.node) : await approvalTargetFromSelection(selection, props.engine.id, adapter.value))
+    const path = targetPaths.get(key) || (isApprovalNode(selection.raw?.node) ? await adapter.value.resolveTarget(selection.raw.node) : await approvalTargetFromSelection(selection, props.engine.id, adapter.value))
     if (epoch !== generation.value || !props.authorizationReady) throw new Error('selectionContextChanged')
     resolved.set(key, path)
   }
@@ -136,6 +140,8 @@ async function validateSelection(next) {
   for (const [key, path] of resolved) targetPaths.set(key, path)
 }
 function applySelection(next) {
+  const retained = new Set(next.map(selection => targetPaths.get(selection.identity.locator)).filter(Boolean).map(basisKey))
+  nodeRecursions.value = Object.fromEntries(Object.entries(nodeRecursions.value).filter(([key]) => retained.has(key)))
   selections.value = next
   targets.value = next.map(selection => targetPaths.get(selection.identity.locator)).filter(Boolean)
   inspectTargets(targets.value)
@@ -145,7 +151,7 @@ function remove(index) {
   const path = targets.value[index], key = basisKey(path)
   const selection = selections.value.find(item => approvalTargetsEqual(targetPaths.get(item.identity.locator), path))
   if (!selection) return
-  basisRequests.delete(key); delete basisStates.value[key]; delete basisBindings.value[key]
+  basisRequests.delete(key); delete basisStates.value[key]; delete basisBindings.value[key]; delete nodeRecursions.value[key]
   picker.value?.removeSelection(selection.identity.locator)
 }
 async function inspectTargets(paths) {
@@ -160,7 +166,7 @@ async function inspectTargets(paths) {
       basisStates.value[key] = 'checking'; delete basisBindings.value[key]
       let state, binding = null
       try {
-        if (targetMode.value === 'nodes') {
+        if (isNodePath(path)) {
           const observed = await enginesAPI.listAuthorizationNodes(props.engine.id, { target: path, page: 1, page_size: 100 })
           state = approvalTargetsEqual(observed?.parent?.target, path) && observed.parent.exists === true ? 'node' : 'missing'
         } else {
@@ -179,7 +185,7 @@ async function inspectTargets(paths) {
 watch(() => props.authorizationKey, () => {
   basisStates.value = {}; basisBindings.value = {}; basisRequests.clear()
   generation.value++; targets.value = []; selections.value = []; targetPaths.clear()
-  workspaceTab.value = 'current'; targetMode.value = props.engine.engine_type === 'postgresql' ? '' : 'items'; nodeRecursive.value = false
+  workspaceTab.value = 'current'; nodeRecursions.value = {}
   ready.value = loading.value = selecting.value = grantBusy.value = false
   load()
 }, { immediate: true })

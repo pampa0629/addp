@@ -83,12 +83,9 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
     checks.push('exclusive_workspace_tabs')
 
     phase = 'create_picker'
-    const targetModes = system.getByTestId('authorization-target-mode')
-    await targetModes.getByText('精确数据项（本次选择）', { exact: true }).click()
-    await expect(targetModes.getByRole('radio', { name: '精确数据项（本次选择）', exact: true })).toBeChecked()
     const selectionTree = system.getByTestId('approval-resource-tree')
     await selectionTree.getByRole('textbox').fill('metric_people')
-    await selectionTree.getByRole('checkbox', { name: 'metric_people', exact: true }).locator('..').click()
+    await selectionTree.locator('.search-result-label').filter({ hasText: /^metric_people$/ }).locator('..').locator('..').click()
     await expect(system.getByTestId('approval-targets')).toContainText('metric_people')
     await expect(system.getByTestId('source-grant-form')).toBeVisible()
     await expect(system.getByTestId('approval-basis-status')).toContainText('基础识别完整')

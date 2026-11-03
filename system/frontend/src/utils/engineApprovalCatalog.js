@@ -159,3 +159,44 @@ export function createApprovalNodeCatalogAdapter(engine, readPage) {
   async search(engineID, keyword, { limit = 20 } = {}) { if (String(engineID) !== String(id) || !Number.isSafeInteger(limit) || limit <= 0) throw new Error('invalidCatalogTarget'); const query = keyword.trim().toLocaleLowerCase(); if (!query) return []; return [await root(), ...await children()].filter(node => node.label.toLocaleLowerCase().includes(query)).slice(0, Math.min(limit, 20)) }
  }
 }
+
+// One selectable tree, two owner facts. Nodes stay available independently of
+// the bounded DataItem snapshot, which is fetched only on item browsing/search.
+export function createMixedApprovalCatalogAdapter(engine, listItems, readFacts, readNodes) {
+  const items = createApprovalCatalogAdapter(engine, listItems, readFacts)
+  if (engine.engine_type !== 'postgresql') return items
+  const scopes = createApprovalNodeCatalogAdapter(engine, readNodes)
+  let generation = 0
+  const display = node => ({ ...node, hasChildren: true, metadata: { ...node.metadata, has_children: true } })
+  const current = (epoch, value) => {
+    if (epoch !== generation) throw new Error('stalePermissionTree')
+    return value
+  }
+  return {
+    listEngines: items.listEngines,
+    async getTreeRoot() { const epoch = generation; return current(epoch, display(await scopes.getTreeRoot())) },
+    invalidate() { generation++; items.invalidate(); scopes.invalidate() },
+    async getNodeChildren(node) {
+      const epoch = generation
+      if (!isApprovalNode(node)) return []
+      const path = await scopes.resolveTarget(node)
+      if (path.segments.length === 1) return current(epoch, (await scopes.getNodeChildren(node)).map(display))
+      const root = await items.getTreeRoot()
+      const branch = root.children.find(child => child.type === 'schema' && child.label === path.segments[1].name)
+      return current(epoch, branch ? await items.getNodeChildren(branch) : [])
+    },
+    resolveTarget(node) { return isApprovalNode(node) ? scopes.resolveTarget(node) : items.resolveTarget(node) },
+    async search(engineID, keyword, options = {}) {
+      const epoch = generation
+      const nodes = await scopes.search(engineID, keyword, options)
+      const leaves = (await items.search(engineID, keyword, options)).filter(isApprovalTarget)
+      return current(epoch, [...nodes.map(display), ...leaves].slice(0, Math.min(options.limit ?? 20, 20)))
+    }
+  }
+}
+
+export function approvalScopeContains(scope, target, recursive) {
+  if (!isPGGrantNodePath(scope, scope?.engine_id) || !target || String(scope.engine_id) !== String(target.engine_id) || scope.version !== target.version) return false
+  const prefix = scope.segments.every((part, index) => ['term', 'kind', 'name'].every(key => part[key] === target.segments?.[index]?.[key]))
+  return prefix && target.segments.length > scope.segments.length && (recursive || (target.segments.length === scope.segments.length + 1 && !isPGGrantNodePath(target, target.engine_id)))
+}

@@ -1182,13 +1182,12 @@
           "task_production": "任务产出初始授权",
           "mixed": "多种授权来源"
         },
-        "targetModes": {
-          "items": "精确数据项（本次选择）",
-          "nodes": "持续节点范围"
-        },
         "nodeRecursive": "递归包含下级节点的数据项",
-        "persistentNode": "在授权有效期内覆盖节点内当前及以后新识别的数据项；未勾选递归时仅覆盖直属数据项。签发时独立核验真实节点，不逐项生成 Grant。",
-        "chooseTargetMode": "先选择精确数据项或持续节点范围。节点范围会覆盖以后新识别的数据项。"
+        "mixedSelection": "可同时勾选数据项与节点。节点覆盖当前及以后新增的数据项；每个节点可单独设置递归。",
+        "scope": "授权范围",
+        "nodeTarget": "持续节点范围",
+        "itemTarget": "精确数据项",
+        "overlap": "与其他已选范围重叠，将分别保留；取消单项不能排除节点覆盖。"
       },
       "delegations": {
         "new": "新增委托",

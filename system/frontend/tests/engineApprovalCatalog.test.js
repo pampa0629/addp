@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { approvalTargetFromSelection, approvalTargetsEqual, createApprovalCatalogAdapter, isApprovalSelection, createApprovalNodeCatalogAdapter, isApprovalNode } from '../src/utils/engineApprovalCatalog'
+import { approvalTargetFromSelection, approvalTargetsEqual, createApprovalCatalogAdapter, isApprovalSelection, createApprovalNodeCatalogAdapter, isApprovalNode, createMixedApprovalCatalogAdapter, approvalScopeContains } from '../src/utils/engineApprovalCatalog'
 const engine = { id: '2', name: 'NFS', engine_type: 'nfs' }
 const fingerprint = name => createHash('sha256').update(`2:${name}`).digest('hex')
 const ancestors = [{ id: '1', name: 'NFS', node_type: 'root' }, { id: '2', name: 'exports', node_type: 'dir' }]
@@ -112,4 +112,75 @@ describe('persistent PG node candidates', () => {
    await expect(adapter.getNodeChildren(await adapter.getTreeRoot())).rejects.toThrow()
   }
  })
+})
+
+// The combined picker retains typed identity owners and never enumerates items
+// just to select a scope. Pagination/capacity remain the existing item contract.
+describe('mixed PG authorization tree', () => {
+  const pg = { id: '2', name: 'PG', engine_type: 'postgresql' }
+  const rootPath = { version: 'catalog.path/v1', engine_id: 2, segments: [{ term: 'server', kind: 'server', name: '' }] }
+  const schemaPath = name => ({ ...rootPath, segments: [...rootPath.segments, { term: 'schema', kind: 'namespace', name }] })
+  const fact = target => ({ tenant_id: 7, target, exists: true })
+  function mixedFixture() {
+    const schema = 'a.b/x', table = 't/x'
+    const row = { ...item, item_type: 'table', name: table, full_name: `${schema}.${table}`, item_fingerprint: fingerprint(`${schema}.${table}`), ancestors: [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: schema, node_type: 'schema' }] }
+    const target = { ...schemaPath(schema), segments: [...schemaPath(schema).segments, { term: 'table', kind: 'table', name: table }] }
+    const list = vi.fn(async () => page([row]))
+    const read = vi.fn(async () => ({ ...facts, item_type: 'table', item_fingerprint: row.item_fingerprint, full_name: row.full_name, boundary: { layout: 'single', native_target: target } }))
+    const nodes = vi.fn(async (_, query) => ({ parent: fact(query.target), nodes: query.target.segments.length === 1 ? [fact(schemaPath(schema)), fact(schemaPath('empty'))] : [], total: query.target.segments.length === 1 ? 2 : 0, page: 1, page_size: 100 }))
+    return { list, read, nodes, target, adapter: createMixedApprovalCatalogAdapter(pg, list, read, nodes) }
+  }
+  it('selects true root and empty schema without loading items; expands a schema into exact items', async () => {
+    const { adapter, list, read, target } = mixedFixture()
+    const root = await adapter.getTreeRoot(), schemas = await adapter.getNodeChildren(root)
+    expect(schemas.map(node => node.label)).toEqual(['a.b/x', 'empty'])
+    expect(await adapter.resolveTarget(schemas[1])).toEqual(schemaPath('empty'))
+    expect(list).not.toHaveBeenCalled(); expect(read).not.toHaveBeenCalled()
+    const leaves = await adapter.getNodeChildren(schemas[0])
+    expect(leaves.map(node => node.label)).toEqual(['t/x'])
+    expect(isApprovalNode(leaves[0])).toBe(false)
+    expect(await adapter.resolveTarget(leaves[0])).toEqual({ ...target, engine_id: '2' })
+    expect(await adapter.getNodeChildren(schemas[1])).toEqual([])
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+  it('searches both kinds while keeping whole non-PG containers as a single item', async () => {
+    const { adapter, read } = mixedFixture()
+    const results = await adapter.search('2', 'a.b/x')
+    expect(results.filter(isApprovalNode)).toHaveLength(1)
+    expect(results.filter(node => node.metadata.data_item)).toHaveLength(1)
+    expect(read).not.toHaveBeenCalled()
+    const nonPG = createMixedApprovalCatalogAdapter(engine, async () => page([item]), async () => facts, () => { throw new Error('node permission must not expand') })
+    expect(nonPG.completeTree).toBe(true)
+    expect((await nonPG.getTreeRoot()).children[0].children).toHaveLength(1)
+  })
+  it('fails an incomplete item snapshot without losing independently proven scopes', async () => {
+    const { adapter, list, read } = mixedFixture()
+    const schemas = await adapter.getNodeChildren(await adapter.getTreeRoot())
+    list.mockResolvedValue({ ...page([item]), total: 101 })
+    await expect(adapter.getNodeChildren(schemas[0])).rejects.toThrow('incompletePermissionTree')
+    expect(await adapter.resolveTarget(schemas[1])).toEqual(schemaPath('empty'))
+    expect(read).not.toHaveBeenCalled()
+    adapter.invalidate()
+    await expect(adapter.resolveTarget(schemas[1])).rejects.toThrow()
+  })
+  it('does not return a mixed snapshot completing after refresh', async () => {
+    const { adapter, list } = mixedFixture()
+    const schemas = await adapter.getNodeChildren(await adapter.getTreeRoot())
+    let release
+    list.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const result = adapter.getNodeChildren(schemas[0])
+    const rejection = expect(result).rejects.toThrow('stalePermissionTree')
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    adapter.invalidate(); release(page([])); await rejection
+  })
+  it('detects only actual typed scope overlap, respecting per-node recursion', () => {
+    const schema = schemaPath('public'), leaf = { ...schema, segments: [...schema.segments, { term: 'table', kind: 'table', name: 'a' }] }
+    expect(approvalScopeContains(rootPath, leaf, false)).toBe(false)
+    expect(approvalScopeContains(rootPath, leaf, true)).toBe(true)
+    expect(approvalScopeContains(rootPath, schema, false)).toBe(false)
+    expect(approvalScopeContains(schema, leaf, false)).toBe(true)
+    expect(approvalScopeContains(schema, { ...leaf, engine_id: 3 }, true)).toBe(false)
+    expect(approvalScopeContains(schemaPath('pub'), leaf, true)).toBe(false)
+  })
 })

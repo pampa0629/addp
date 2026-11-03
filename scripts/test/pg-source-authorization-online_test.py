@@ -620,7 +620,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                                        capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_workspace_picker_selects_visible_mode_before_searching_its_textbox(self):
+    def test_workspace_mixed_picker_uses_the_explicit_item_search_control(self):
         spec = Path(__file__).resolve().parents[2] / 'console/frontend/e2e/online/pg-source-authorization.spec.js'
         program = r"""
             const { readFileSync } = require('node:fs')
@@ -628,49 +628,26 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             const block = source.match(/phase = 'create_picker'\n([\s\S]*?)await expect\(system.getByTestId\('approval-targets'\)\)/)
             if (!block) throw new Error('picker selection scenario missing')
             const events = []
-            let selected = false
-            const radio = { check() { throw new Error('visible radio label intercepts native input pointer events') } }
-            const modes = {
-                getByText(label, options) {
-                    if (label !== '精确数据项（本次选择）' || !options.exact) throw new Error('wrong mode label')
-                    return { async click() { selected = true; events.push(['mode', 'items']) } }
-                },
-                getByRole(role, options) {
-                    if (role !== 'radio' || options.name !== '精确数据项（本次选择）' || !options.exact) throw new Error('wrong mode radio')
-                    return radio
-                }
-            }
-            const expect = value => ({ async toBeChecked() {
-                if (value !== radio || !selected) throw new Error('mode was not selected')
-            } })
-            const recursive = { fill() { throw new Error('checkbox is not a text input') } }
             const textbox = { async fill(value) { events.push(['search', value]) } }
-            const row = { locator(selector) {
-                if (selector !== '..') throw new Error('wrong row')
-                return { async click() { events.push(['select', 'metric_people']) } }
-            } }
             const picker = {
+                getByRole(role) { if (role !== 'textbox') throw new Error('wrong semantic input'); return textbox },
                 locator(selector) {
-                    if (selector !== 'input') throw new Error('unexpected selector')
-                    return { first: () => recursive }
-                },
-                getByRole(role, options) {
-                    if (role === 'textbox') return textbox
-                    if (role === 'checkbox' && options.name === 'metric_people' && options.exact) return row
-                    throw new Error('wrong semantic control')
+                    if (selector !== '.search-result-label') throw new Error('wrong control')
+                    return { filter(options) {
+                        if (!options.hasText.test('metric_people') || options.hasText.test('metric_people_copy')) throw new Error('wrong exact item')
+                        const button = { async click() { events.push(['select', 'metric_people']) } }
+                        const parent = { locator(selector) { if (selector !== '..') throw new Error('wrong result parent'); return button } }
+                        return { locator(selector) { if (selector !== '..') throw new Error('wrong label parent'); return parent } }
+                    } }
                 }
             }
             const system = { getByTestId(id) {
-                if (id === 'authorization-target-mode') return modes
-                if (id !== 'approval-resource-tree') throw new Error('wrong picker')
-                if (!selected) throw new Error('picker accessed before explicit mode selection')
+                if (id !== 'approval-resource-tree') throw new Error('mutually exclusive mode must be absent')
                 return picker
             } }
-            new (Object.getPrototypeOf(async function(){}).constructor)('system', 'expect', block[1])(system, expect)
+            new (Object.getPrototypeOf(async function(){}).constructor)('system', block[1])(system)
               .then(() => {
-                if (JSON.stringify(events) !== JSON.stringify([['mode','items'],['search','metric_people'],['select','metric_people']])) {
-                  throw new Error('search or selected item changed')
-                }
+                if (JSON.stringify(events) !== JSON.stringify([['search','metric_people'],['select','metric_people']])) throw new Error('search or selection changed')
               }).catch(error => { console.error(error.message); process.exitCode = 1 })
         """
         result = ONLINE.subprocess.run(['node', '-e', program, str(spec)], capture_output=True, text=True, timeout=10)

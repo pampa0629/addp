@@ -187,10 +187,15 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
   return { writes, reads, setFactsState: value => { factsState = value } }
 }
 
-async function openNewAuthorization(page,mode='items') {
+async function openNewAuthorization(page) {
  await page.getByTestId('authorization-new').click()
- const modes=page.getByTestId('authorization-target-mode')
- if(await modes.isVisible()) await modes.getByText(mode==='nodes'?'持续节点范围':'精确数据项（本次选择）',{exact:true}).click()
+}
+function resourceOption(tree, name) {
+  return tree.getByRole('checkbox', { name, exact: true }).locator('..').or(
+    tree.locator('.search-result').filter({ has: tree.page().getByText(name, { exact: true }) }))
+}
+async function expandSchema(tree, name = 'outdoor') {
+  await tree.getByRole('treeitem', { name, exact: true }).locator(':scope > .el-tree-node__content .el-tree-node__expand-icon').click()
 }
 async function selectAccountFilter(page) {
   await page.getByTestId('source-grant-type-filter').click()
@@ -480,10 +485,10 @@ async function selectData(page, schema = false, incomplete = false) {
   const panel = page.getByTestId('engine-data-authorization')
   await openNewAuthorization(page)
   const tree = page.getByTestId('approval-resource-tree')
-  if (schema) await tree.getByRole('checkbox', { name: 'outdoor', exact: true }).locator('..').click()
+  if (schema) { await expandSchema(tree); await resourceOption(tree, 'activities').click(); await resourceOption(tree, 'persons').click() }
   else {
     await tree.getByRole('textbox').fill('activities')
-    await tree.getByRole('checkbox', { name: 'activities', exact: true }).locator('..').click()
+    await resourceOption(tree, 'activities').click()
   }
   if (!incomplete) await expect(page.getByTestId('approval-targets')).toBeVisible()
   return panel
@@ -495,55 +500,52 @@ test('new authorization filters Meta identities and selects only explicit checkb
   await input.fill('arbitrary table')
   await expect(page.getByTestId('approval-targets')).toHaveCount(0)
   await input.fill(' outdoor.activities ')
-  await tree.getByRole('checkbox', { name: 'activities', exact: true }).locator('..').click()
+  await resourceOption(tree, 'activities').click()
   await expect(page.getByTestId('approval-targets')).toContainText('outdoor / activities')
   await input.fill('persons')
-  await tree.getByRole('checkbox', { name: 'persons', exact: true }).locator('..').click()
+  await resourceOption(tree, 'persons').click()
   await expect(page.getByTestId('approval-targets').getByTestId('approval-basis-status')).toHaveCount(2)
-  await tree.getByRole('checkbox', { name: 'persons', exact: true }).locator('..').click()
+  await resourceOption(tree, 'persons').click()
   await expect(page.getByTestId('approval-targets').getByTestId('approval-basis-status')).toHaveCount(1)
   await expect(page.getByRole('tab', { name: '直接授权许可', exact: true })).toHaveCount(0)
   expect(reads.some(url => url.includes('direct-permission'))).toBe(false)
   expect(writes).toEqual([])
   await page.screenshot({ path: testInfo.outputPath('new-authorization-multi-tree.png'), fullPage: true })
 })
-test('node selection covers its current items despite filtering, while root recursion is explicit and reversible', async ({ page }) => {
+test('mixed tree keeps node and item selection independent and warns about overlapping scopes', async ({ page }) => {
   const { writes } = await fixture(page, { allowed: grantPermissions, secondTable: true })
   await page.goto('/engines/2?tab=data-authorization'); await openNewAuthorization(page)
   const tree = page.getByTestId('approval-resource-tree'), targets = page.getByTestId('approval-targets')
-  const root = tree.getByRole('checkbox', { name: '授权验证 PostgreSQL', exact: true })
-  await expect(root).toBeDisabled()
-  await tree.getByRole('textbox').fill('activities')
+  await expect(page.getByTestId('authorization-target-mode')).toHaveCount(0)
   const node = tree.getByRole('checkbox', { name: 'outdoor', exact: true })
+  await expandSchema(tree)
+  await expect(node).not.toBeChecked()
+  await expect(targets).toHaveCount(0)
+  await resourceOption(tree, 'activities').click()
+  await expect(node).not.toBeChecked()
   await node.locator('..').click()
   await expect(targets.getByTestId('approval-basis-status')).toHaveCount(2)
-  await expect(targets).toContainText('persons')
-  await tree.getByRole('textbox').fill('')
-  await page.getByTestId('resource-picker-recursive').click()
-  await expect(root).toBeChecked()
-  await root.locator('..').click()
-  await expect(targets).toHaveCount(0)
-  await root.locator('..').click()
-  await expect(targets.getByTestId('approval-basis-status')).toHaveCount(2)
-  await page.getByTestId('resource-picker-recursive').click()
-  await expect(root).toBeDisabled()
-  await expect(targets.getByTestId('approval-basis-status')).toHaveCount(2)
+  await expect(targets.getByTestId('authorization-scope-overlap')).toHaveCount(2)
+  await expect(targets).not.toContainText('persons')
+  await resourceOption(tree, 'activities').click()
+  await expect(node).toBeChecked()
+  await expect(targets.getByTestId('approval-basis-status')).toHaveCount(1)
   await node.locator('..').click()
   await expect(targets).toHaveCount(0)
   expect(writes).toEqual([])
 })
-test('shared picker shows half selection and preserves it when another item fails boundary validation', async ({ page }) => {
+test('mixed picker preserves an existing node when item boundary validation fails', async ({ page }) => {
   const { writes, setFactsState } = await fixture(page, { allowed: grantPermissions, secondTable: true })
-  await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
+  await page.goto('/engines/2?tab=data-authorization'); await openNewAuthorization(page)
   const tree = page.getByTestId('approval-resource-tree')
-  const node = tree.getByRole('checkbox', { name: 'outdoor', exact: true })
-  await expect(node.locator('..')).toHaveClass(/is-indeterminate/)
+  await resourceOption(tree, 'outdoor').click()
+  await expandSchema(tree)
   setFactsState('incomplete')
-  await node.locator('..').click()
+  await resourceOption(tree, 'persons').click()
   await expect(page.getByTestId('engine-data-authorization')).toContainText('本次未加入任何数据项')
   await expect(page.getByTestId('approval-targets').getByTestId('approval-basis-status')).toHaveCount(1)
-  await expect(tree.getByRole('checkbox', { name: 'activities', exact: true })).toBeChecked()
-  await expect(node.locator('..')).toHaveClass(/is-indeterminate/)
+  await expect(tree.getByRole('checkbox', { name: 'outdoor', exact: true })).toBeChecked()
+  await expect(tree.getByRole('checkbox', { name: 'persons', exact: true })).not.toBeChecked()
   expect(writes).toEqual([])
 })
 
@@ -556,9 +558,9 @@ test('leaving during shared picker boundary validation discards the late selecti
   try {
     const tree = page.getByTestId('approval-resource-tree')
     await tree.getByRole('textbox').fill('activities')
-    await tree.getByRole('checkbox', { name: 'activities', exact: true }).locator('..').click()
+    await resourceOption(tree, 'activities').click()
     await observed
-    await expect(tree.getByRole('checkbox', { name: 'activities', exact: true })).toBeDisabled()
+    await expect(resourceOption(tree, 'activities')).toBeDisabled()
     await page.goto('/engines')
     release()
     await page.goto('/engines/2?tab=data-authorization'); await openNewAuthorization(page)
@@ -576,22 +578,22 @@ test('shared picker exposes no selectable partial tree when the second identity 
   })
   await page.goto('/engines/2?tab=data-authorization'); await openNewAuthorization(page)
   const panel = page.getByTestId('engine-data-authorization'), tree = page.getByTestId('approval-resource-tree')
+  await expandSchema(tree)
   await expect(panel).toContainText('Identity page unavailable')
-  await expect(tree.locator('.picker-node input[type="checkbox"]')).toHaveCount(0)
-  await expect(tree.getByTestId('resource-picker-recursive').getByRole('checkbox')).toBeDisabled()
+  await expect(tree.getByRole('checkbox', { name: 't0', exact: true })).toHaveCount(0)
+  await expect(tree.getByRole('checkbox', { name: 'outdoor', exact: true })).toBeEnabled()
   await expect(page.getByTestId('approval-targets')).toHaveCount(0)
   expect(reads.filter(path => path.includes('/authorization-facts'))).toEqual([])
   expect(writes).toEqual([])
 })
 
-test('node selection over the 200-item limit adds nothing and makes no facts or signing requests', async ({ page }) => {
+test('a persistent node with over 200 items stays one target without item or facts requests', async ({ page }) => {
   const identityRows = Array.from({ length: 201 }, (_, i) => ({ engine_id: '2', name: `t${i}`, full_name: `outdoor.t${i}`, item_type: 'table', item_fingerprint: createHash('sha256').update(`2:outdoor.t${i}`).digest('hex') }))
   const { reads, writes } = await fixture(page, { allowed: grantPermissions, identityRows })
   await page.goto('/engines/2?tab=data-authorization'); await openNewAuthorization(page)
-  await page.getByTestId('approval-resource-tree').getByRole('checkbox', { name: 'outdoor', exact: true }).locator('..').click()
-  await expect(page.getByTestId('engine-data-authorization')).toContainText('本次未加入任何数据项')
-  await expect(page.getByTestId('approval-targets')).toHaveCount(0)
-  expect(reads.filter(path => path.includes('/authorization-facts'))).toEqual([])
+  await resourceOption(page.getByTestId('approval-resource-tree'), 'outdoor').click()
+  await expect(page.getByTestId('approval-targets').getByTestId('approval-basis-status')).toHaveCount(1)
+  expect(reads.filter(url => /\/data-items(?:\?|$)|authorization-facts/.test(url))).toEqual([])
   expect(writes).toEqual([])
 })
 test('new authorization tree fits a narrow viewport', async ({ page }) => {
@@ -784,7 +786,7 @@ test('late DataItem basis responses cannot overwrite a removed and re-added targ
     await page.getByTestId('approval-basis-refresh').click(); await observed
     await expect(page.getByTestId('approval-basis-status')).toContainText('正在核对')
     await page.getByTestId('approval-targets').getByRole('button', { name: '移除', exact: true }).click()
-    await page.getByTestId('approval-resource-tree').getByRole('checkbox', { name: 'activities', exact: true }).locator('..').click()
+    await resourceOption(page.getByTestId('approval-resource-tree'), 'activities').click()
     await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
     const response = page.waitForResponse(item => item.url().includes('/authorization-facts') && item.status() === 503)
     release(); await response
@@ -1028,7 +1030,7 @@ test('new grants select Meta identities without native catalog permission', asyn
   await page.goto('/engines/2?tab=data-authorization')
   await openNewAuthorization(page)
   await expect(page.getByTestId('approval-resource-tree')).toBeVisible()
-  await expect.poll(() => reads.some(url => /\/data-items\?/.test(url))).toBe(true)
+  await expect.poll(() => reads.some(url => url.includes('/authorization-nodes/query'))).toBe(true)
   expect(reads.some(path => path.includes('/catalog/'))).toBe(false); expect(writes).toEqual([])
 })
 test('conflicting grant observation retains the original command and does not fall back', async ({ page }) => {
@@ -1347,11 +1349,11 @@ test('new PG authorization requires an explicit action and freezes metadata acro
 for(const recursive of [false,true]) test(`persistent PG schema scope is explicit, recursive=${recursive} and never reads item identities`,async({page})=>{
  const {reads,writes}=await fixture(page,{allowed:grantPermissions})
  await page.goto('/engines/2?tab=data-authorization')
- await openNewAuthorization(page,'nodes')
+ await openNewAuthorization(page)
  const picker=page.getByTestId('approval-resource-tree')
  await expect(picker.getByRole('treeitem',{name:'outdoor',exact:true})).toBeVisible()
- if(recursive) await page.getByTestId('authorization-node-recursive').getByRole('checkbox').locator('..').click()
  await picker.getByRole('treeitem',{name:'outdoor',exact:true}).getByRole('checkbox').locator('..').click()
+ if(recursive) await page.getByTestId('authorization-node-recursive').getByRole('checkbox').locator('..').click()
  await expect(page.getByTestId('approval-basis-status')).toContainText('节点存在')
  await grantDraft(page)
  await page.getByTestId('source-grant-confirm').click()
@@ -1395,4 +1397,32 @@ for (const sourceType of ['nfs','minio']) test(`${sourceType} whole Parquet meta
  expect(writes[0].body.action).toBe('metadata_read')
  expect(writes[0].body.catalog_path.segments.at(-1).term).toBe(sourceType==='minio'?'prefix':'directory')
  expect(writes[0].body.node_recursive).toBeUndefined()
+})
+
+
+test('one batch freezes item and two independent node recursion choices; cancelling writes nothing', async ({ page }, testInfo) => {
+ const {writes}=await fixture(page,{allowed:grantPermissions})
+ await page.goto('/engines/2?tab=data-authorization');await openNewAuthorization(page)
+ const tree=page.getByTestId('approval-resource-tree'), targets=page.getByTestId('approval-targets')
+ await resourceOption(tree,'outdoor').click()
+ await resourceOption(tree,'授权验证 PostgreSQL').click()
+ const rootRow=targets.getByRole('row').filter({hasText:'授权验证 PostgreSQL'})
+ await rootRow.getByTestId('authorization-node-recursive').click()
+ await expandSchema(tree)
+ await resourceOption(tree,'activities').click()
+ await expect(targets.getByTestId('approval-basis-status')).toHaveCount(3)
+ await expect(targets.getByTestId('authorization-node-recursive')).toHaveCount(2)
+ const schemaRow=targets.getByRole('row').filter({hasText:'outdoor'}).filter({has:page.getByTestId('authorization-node-recursive')})
+ await expect(schemaRow.getByRole('checkbox')).not.toBeChecked()
+ await expect(rootRow.getByRole('checkbox')).toBeChecked()
+ await grantDraft(page);await confirmGrant(page,true)
+ expect(writes).toEqual([])
+ await page.screenshot({path:testInfo.outputPath('mixed-authorization-tree.png'),fullPage:true})
+ await confirmGrant(page)
+ expect(writes).toHaveLength(3)
+ expect(writes.map(row=>row.body.catalog_path)).toEqual([schemaPath,rootPath,tablePath])
+ expect(writes.map(row=>row.body.node_recursive)).toEqual([false,true,undefined])
+ expect(writes[0].body.item_fingerprint).toBeUndefined()
+ expect(writes[1].body.item_fingerprint).toBeUndefined()
+ expect(writes[2].body.item_fingerprint).toMatch(/^[a-f0-9]{64}$/)
 })
