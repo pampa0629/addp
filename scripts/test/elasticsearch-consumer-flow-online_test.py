@@ -135,7 +135,7 @@ class ElasticsearchSparkWorkflowTest(unittest.TestCase):
                 payload = {'execution_id': 'formal-execution'}
             else: payload = execution
             return SimpleNamespace(payload=payload)
-        with patch.dict(os.environ, ADDP_ONLINE_SPARK_RUNTIME_URL='http://runtime'), patch.object(MODULE.SPARK, 'runtime_status_evidence', return_value={}), patch.object(MODULE.SPARK, 'worker_evidence', return_value={}):
+        with patch.dict(os.environ, ADDP_ONLINE_SPARK_RUNTIME_URL='http://runtime'), patch.object(MODULE.SPARK, 'runtime_status_evidence', return_value={}), patch.object(MODULE.SPARK, 'application_snapshot', return_value={'completedapps': []}), patch.object(MODULE.SPARK, 'worker_evidence', return_value={}):
             report = MODULE.execute_workflow(SimpleNamespace(request=request), 'orders', 'empty', 9, MODULE.time.monotonic()+10)
         self.assertEqual(report['execution_id'], 'formal-execution')
         self.assertEqual(calls, ['/api/v1/develop/workflow-engines', '/api/v1/develop/workflow-engines/8/operators',

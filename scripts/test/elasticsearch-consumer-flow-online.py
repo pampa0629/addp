@@ -134,6 +134,7 @@ def execute_workflow(client, target, empty, cluster_id, deadline):
     picker = next(parameter for parameter in load['public_parameters'] if parameter['name'] == 'source_resource')
     if 'index' not in picker['ui_config']['selectable_node_types'] or any(p['name'] in ('index', 'connection_info') for p in load['public_parameters']):
         raise SuiteError('Spark load must expose index selection and hide derived connection/index')
+    before = SPARK.application_ids(SPARK.application_snapshot('http://127.0.0.1:18080'))
     started = SUPPORT._object(client.request('POST', '/api/v1/develop/executions', (200,), {
         'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': 300,
         'content': {'workflow_definition': workflow(target, empty)},
@@ -149,7 +150,7 @@ def execute_workflow(client, target, empty, cluster_id, deadline):
             return {'execution_id': execution_id, 'runtime_id': runtime_id, 'cluster_id': cluster_id,
                     'runtime_execution_id': result['runtime_execution_id'], 'final_result': final,
                     'runtime_status': SPARK.runtime_status_evidence(SUPPORT.required_environment('ADDP_ONLINE_SPARK_RUNTIME_URL'), result['runtime_execution_id'], final, 4, validate_workflow_nodes),
-                    'worker': SPARK.worker_evidence(cluster_id, 'elasticsearch-consumer-flow', 'addp-elasticsearch-online-worker', 'http://127.0.0.1:18080')}
+                    'worker': SPARK.worker_evidence(cluster_id, 'elasticsearch-consumer-flow', 'addp-elasticsearch-online-worker', 'http://127.0.0.1:18080', before)}
         time.sleep(1)
     raise SuiteError('ES Spark workflow did not converge')
 

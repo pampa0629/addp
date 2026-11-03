@@ -7077,6 +7077,9 @@ jobs:
           distribution: temurin
           java-version: '11'
 
+      - name: Verify HDFS owner runner contract
+        run: make test-hdfs-online-runner
+
       - name: Validate Hosted HDFS readiness
         env:
           ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}

@@ -101,13 +101,13 @@ class HDFSOnlineTest(unittest.TestCase):
                    'authorization': {'role_assignments': [{'role_key': 'tenant.hdfs-reader', 'permissions': sorted(MODULE.PERMISSIONS)}]}}
         client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload=context))
         self.assertEqual(MODULE.validate_identity(client, 2), '42')
-        context['authorization']['role_assignments'][0]['permissions'].append('develop.task.create')
+        context['authorization']['role_assignments'][0]['permissions'].append('develop.task.delete')
         with self.assertRaises(MODULE.SuiteError): MODULE.validate_identity(client, 2)
 
     def test_physical_evidence_requires_exact_application_owned_worker_and_finished_tasks(self):
         for failure in ('missing', 'local', 'foreign', 'no_tasks', ''):
-            master = {'aliveworkers': 1, 'activeapps': [{'id': 'app-20261004-0001', 'name': 'ADDP-Workflow-Engine-18', 'cores': 1, 'state': 'RUNNING'}]}
-            if failure == 'missing': master['activeapps'] = []
+            master = {'status': 'ALIVE', 'aliveworkers': 1, 'activeapps': [], 'completedapps': [{'id': 'app-20261004-0001', 'name': 'ADDP-Workflow-Engine-18', 'state': 'FINISHED'}]}
+            if failure == 'missing': master['completedapps'] = []
             if failure == 'local': master['aliveworkers'] = 0
             import io
             def docker(command, **kwargs):
@@ -117,9 +117,105 @@ class HDFSOnlineTest(unittest.TestCase):
                 return SimpleNamespace(stdout='' if failure == 'no_tasks' else 'Finished task 0.0 in stage 1.0 (TID 2)')
             with self.subTest(failure=failure), patch.object(MODULE.urllib.request, 'urlopen', return_value=io.BytesIO(json.dumps(master).encode())), patch.object(MODULE.subprocess, 'run', side_effect=docker):
                 if failure:
-                    with self.assertRaises(MODULE.SuiteError): MODULE.worker_evidence(18)
+                    with self.assertRaises(MODULE.SuiteError): MODULE.worker_evidence(18, set())
                 else:
-                    self.assertEqual(MODULE.worker_evidence(18)['completed_tasks'], 1)
+                    self.assertEqual(MODULE.worker_evidence(18, set())['completed_tasks'], 1)
+
+    def test_completed_invocation_rejects_cached_running_reused_extra_or_wrong_application(self):
+        master = {'status': 'ALIVE', 'aliveworkers': 1, 'activeapps': [],
+                  'completedapps': [{'id': 'app-20261103-0001', 'name': 'ADDP-Workflow-Engine-18', 'state': 'FINISHED'}]}
+        app = MODULE.SPARK.completed_application(master, set(), 'ADDP-Workflow-Engine-18')
+        self.assertEqual(app['id'], 'app-20261103-0001')
+        for failure in ('active', 'reused', 'extra', 'wrong', 'unfinished', 'bad_id'):
+            value = json.loads(json.dumps(master))
+            before = set()
+            if failure == 'active': value['activeapps'] = [value['completedapps'].pop()]
+            if failure == 'reused': before = {'app-20261103-0001'}
+            if failure == 'extra': value['completedapps'].append(dict(app, id='app-20261103-0002'))
+            if failure == 'wrong': value['completedapps'][0]['name'] = 'foreign'
+            if failure == 'unfinished': value['completedapps'][0]['state'] = 'FAILED'
+            if failure == 'bad_id': value['completedapps'][0]['id'] = '../../foreign'
+            with self.subTest(failure=failure), self.assertRaises(ValueError):
+                MODULE.SPARK.completed_application(value, before, 'ADDP-Workflow-Engine-18')
+
+    def test_dual_receipt_requires_both_page_sequences_concurrency_failure_recovery_and_distinct_executions(self):
+        report = {'tenant_id': 2, 'principal_id': '42', 'runtime_id': 8,
+                  'multicluster': {'query': 'SELECT valid', 'failure_query': 'SELECT missing',
+                                  'clusters': {'a': {'id': 18}, 'b': {'id': 19}}}}
+        receipt = {'run_id': 'dual-run', 'tenant_id': 2, 'principal_id': '42', 'runtime_id': 8,
+                   'tasks': {'a': 71, 'b': 72}, 'observations': [], 'manager_no_spark': True}
+        for index in range(12):
+            kind, step = ('workflow' if index < 6 else 'query'), index % 6
+            pairs = [[('a', 'success')], [('b', 'success')], [('a', 'success')],
+                     [('a', 'success'), ('b', 'success')], [('a', 'failed'), ('b', 'success')], [('a', 'success')]][step]
+            observation = {'kind': kind, 'phase': f'sequence-{index}' if step < 3 else {3: 'concurrent', 4: 'failure-isolation', 5: 'recovery'}[step],
+                           'operations': [], 'before': {'a': [], 'b': []}, 'applications': {'a': [], 'b': []}, 'overlap': step in (3, 4)}
+            for key, status in pairs:
+                identifier = f'{kind}-{index}-{key}'
+                operation = {'cluster': key, 'status': status, 'execution_id': identifier}
+                if kind == 'workflow': operation['task_id'] = receipt['tasks'][key]
+                else: operation['query'] = report['multicluster']['failure_query' if status == 'failed' else 'query']
+                observation['operations'].append(operation)
+                observation['applications'][key].append({'id': f'app-20261103-{index:04d}', 'state': 'FINISHED',
+                    'name': 'ADDP-Workflow-Engine-' + str(report['multicluster']['clusters'][key]['id']) if kind == 'workflow' else 'ADDP-federated-query'})
+            receipt['observations'].append(observation)
+        with patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='dual-run'):
+            self.assertEqual({key: len(values) for key, values in MODULE.validate_multicluster_receipt(receipt, report).items()}, {'a': 10, 'b': 6})
+            for failure in ('identity', 'runtime', 'one_task', 'missing_phase', 'overlap', 'wrong_master', 'reused_app', 'task', 'duplicate_execution', 'query', 'status', 'phase'):
+                value = json.loads(json.dumps(receipt))
+                if failure == 'identity': value['principal_id'] = '43'
+                if failure == 'runtime': value['runtime_id'] = 9
+                if failure == 'one_task': value['tasks']['b'] = value['tasks']['a']
+                if failure == 'missing_phase': value['observations'].pop()
+                if failure == 'overlap': value['observations'][3]['overlap'] = False
+                if failure == 'wrong_master': value['observations'][0]['applications']['b'] = value['observations'][0]['applications']['a']; value['observations'][0]['applications']['a'] = []
+                if failure == 'reused_app': value['observations'][2]['applications']['a'][0]['id'] = value['observations'][0]['applications']['a'][0]['id']
+                if failure == 'task': value['observations'][0]['operations'][0]['task_id'] = 72
+                if failure == 'duplicate_execution': value['observations'][2]['operations'][0]['execution_id'] = value['observations'][0]['operations'][0]['execution_id']
+                if failure == 'query': value['observations'][6]['operations'][0]['query'] = 'SELECT other'
+                if failure == 'status': value['observations'][4]['operations'][0]['status'] = 'success'
+                if failure == 'phase': value['observations'][5]['phase'] = 'concurrent'
+                with self.subTest(failure=failure), self.assertRaises(MODULE.SuiteError):
+                    MODULE.validate_multicluster_receipt(value, report)
+
+    def test_runtime_cleanup_requires_owned_container_zero_drivers_and_private_directories(self):
+        for failure in ('foreign', 'driver', 'directory', ''):
+            calls = []
+            def docker(command, **kwargs):
+                calls.append(command)
+                if 'inspect' in command:
+                    return SimpleNamespace(stdout='foreign' if failure == 'foreign' else 'hdfs-spark-consumer-flow')
+                self.assertEqual(command[:4], ['docker', 'exec', 'owned-runtime', 'python'])
+                return SimpleNamespace(stdout=json.dumps({'driver_processes': int(failure == 'driver'), 'private_directories': int(failure == 'directory')}))
+            with self.subTest(failure=failure), patch.object(MODULE.SPARK.subprocess, 'run', side_effect=docker), patch.object(MODULE.SPARK.time, 'monotonic', side_effect=[0, 31]):
+                if failure:
+                    with self.assertRaises(ValueError): MODULE.SPARK.runtime_cleanup_evidence('hdfs-spark-consumer-flow', 'owned-runtime')
+                else:
+                    self.assertEqual(MODULE.SPARK.runtime_cleanup_evidence('hdfs-spark-consumer-flow', 'owned-runtime'), {'driver_processes': 0, 'private_directories': 0})
+                if failure == 'foreign': self.assertEqual(len(calls), 1)
+
+    def test_actual_listener_oracle_requires_each_approved_loopback_port(self):
+        ipv4 = 'header\n 0: 0100007F:1BA6 00000000:0000 0A rest\n'
+        ipv6 = 'header\n 0: 0000000000000000FFFF00000100007F:46A2 00000000000000000000000000000000:0000 0A rest\n'
+        self.assertEqual(MODULE.SPARK.loopback_listener_evidence([(False, ipv4), (True, ipv6)], (7078, 18082)),
+                         {'7078': '127.0.0.1', '18082': '127.0.0.1'})
+        for failure in ('missing', 'public', 'duplicate'):
+            text = ipv4
+            if failure == 'missing': text = 'header\n'
+            if failure == 'public': text = ipv4.replace('0100007F', '00000000')
+            if failure == 'duplicate': text += ipv4.splitlines()[1] + '\n'
+            with self.subTest(failure=failure), self.assertRaises(ValueError):
+                MODULE.SPARK.loopback_listener_evidence([(False, text), (True, ipv6)], (7078, 18082))
+
+    def test_worker_receipt_waits_for_the_exact_unregister_event(self):
+        app = {'id': 'app-20261103-0001', 'name': 'ADDP-Workflow-Engine-18', 'state': 'RUNNING'}
+        states = [{'status': 'ALIVE', 'aliveworkers': 1, 'activeapps': [app], 'completedapps': []},
+                  {'status': 'ALIVE', 'aliveworkers': 1, 'activeapps': [], 'completedapps': [dict(app, state='FINISHED')]}]
+        with patch.object(MODULE.SPARK, 'application_snapshot', side_effect=states), patch.object(MODULE.SPARK.time, 'sleep') as wait, patch.object(MODULE.SPARK, 'worker_application_evidence', return_value={'application_id': app['id']}):
+            evidence = MODULE.SPARK.worker_evidence(18, 'owned', 'worker', 'http://master', set())
+            self.assertEqual(evidence['application_id'], app['id'])
+            self.assertEqual(evidence['state'], 'FINISHED')
+            wait.assert_called_once_with(.1)
 
     def test_runtime_status_uses_exact_formal_id_and_shared_canonical_results(self):
         import io

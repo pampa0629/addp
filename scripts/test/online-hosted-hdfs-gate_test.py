@@ -1,5 +1,6 @@
 import importlib
 import os
+import signal
 import shutil
 import subprocess
 import unittest
@@ -74,6 +75,7 @@ class HostedHDFSGateTest(unittest.TestCase):
             if [ "$1" = start ]; then
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/hdfs-engine.json"
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/spark-engine.json"
+              printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/spark-b-engine.json"
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/postgres-engine.json"
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/minio-engine.json"
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/mysql-engine.json"
@@ -116,7 +118,7 @@ class HostedHDFSGateTest(unittest.TestCase):
             if os.environ.get('ADDP_TEST_REGISTRATION_FAIL') == '1':
                 sys.exit(1)
             assert os.environ['ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'] == 'provisioner-token'
-            identifier = next((value for key, value in {'hdfs': 17, 'spark': 18, 'postgres': 19, 'minio': 20, 'mysql': 21, 'doris': 22}.items() if key + '-engine.json' in sys.argv[-3]), 0)
+            identifier = next((value for key, value in {'hdfs': 17, 'spark': 18, 'postgres': 19, 'minio': 20, 'mysql': 21, 'doris': 22, 'spark-b': 23}.items() if key + '-engine.json' in sys.argv[-3]), 0)
             Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={identifier}\\n')
         ''')
         self.host._write_repository_script('scripts/test/hdfs-spark-consumer-flow-online.py', '''
@@ -126,6 +128,7 @@ class HostedHDFSGateTest(unittest.TestCase):
                     trace.write('table-domain-cleanup\\n')
                 sys.exit(1 if os.environ.get('ADDP_TEST_TABLE_CLEANUP_FAIL') == '1' else 0)
             assert sys.argv[1:] == ['--initialize-table-read']
+            assert os.environ['ADDP_ONLINE_SPARK_B_ENGINE_ID'] == '23'
             assert os.environ['ADDP_ONLINE_POSTGRES_ENGINE_ID'] == '19'
             assert os.environ['ADDP_ONLINE_MYSQL_ENGINE_ID'] == '21'
             assert os.environ['ADDP_ONLINE_DORIS_ENGINE_ID'] == '22'
@@ -175,7 +178,16 @@ class HostedHDFSGateTest(unittest.TestCase):
                    ADDP_TEST_GATE_TRACE=str(self.host.trace), ADDP_TEST_BACKGROUND_PIDS=str(self.host.background_pids))
         env.update(overrides)
         command = ['bash', 'scripts/test/online-hosted-hdfs-gate.sh'] + (['--check-only'] if check else [])
-        return subprocess.run(command, cwd=self.host.repository, env=env, capture_output=True, text=True, timeout=20)
+        with subprocess.Popen(command, cwd=self.host.repository, env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True, start_new_session=True) as process:
+            try:
+                stdout, stderr = process.communicate(timeout=20)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+                stages = self.host.trace.read_text().splitlines() if self.host.trace.exists() else []
+                raise AssertionError(f'Hosted simulation exceeded 20 seconds; last stage={stages[-1] if stages else "none"}')
+            return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
     def test_preflight_is_read_only_and_refuses_personal_and_other_profiles(self):
         result = self.run_gate(check=True)
@@ -202,7 +214,7 @@ class HostedHDFSGateTest(unittest.TestCase):
         self.assertEqual(indices, sorted(indices))
         self.assertNotIn('start:-all', trace)
         self.assertNotIn('start:-spark-workflow', trace)
-        self.assertEqual(trace.count('engine-register'), 6)
+        self.assertEqual(trace.count('engine-register'), 7)
         self.assertIn('default_entry=python api_server.py', (self.host.artifacts / 'hdfs-runtime-build.txt').read_text())
         self.assertFalse(list(self.host.root.glob('trace.log.addp-hdfs-*')))
         self.assertFalse(Path(str(self.host.trace) + '.image').exists())

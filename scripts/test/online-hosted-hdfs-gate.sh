@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=hdfs-spark-consumer-flow
-HOSTED_FIXTURE_CONTAINERS=(addp-hdfs-online-namenode addp-hdfs-online-datanode addp-hdfs-online-master addp-hdfs-online-worker addp-hdfs-online-postgres addp-hdfs-online-minio addp-hdfs-online-mysql addp-hdfs-online-doris addp-hdfs-online-runtime addp-hdfs-online-registry)
+HOSTED_FIXTURE_CONTAINERS=(addp-hdfs-online-namenode addp-hdfs-online-datanode addp-hdfs-online-master addp-hdfs-online-worker addp-hdfs-online-master-b addp-hdfs-online-worker-b addp-hdfs-online-postgres addp-hdfs-online-minio addp-hdfs-online-mysql addp-hdfs-online-doris addp-hdfs-online-runtime addp-hdfs-online-registry)
 RUNTIME_CONTAINER=addp-hdfs-online-runtime
 RUNTIME_IMAGE=localhost:5001/addp-spark-workflow-engine:online-hdfs
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim-bookworm localhost:5001/eclipse-temurin:11-jre-jammy)
@@ -42,12 +42,14 @@ start_online_spark_runtime online-hdfs hdfs
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite hdfs-spark-consumer-flow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
-for engine in hdfs spark postgres minio mysql doris; do
+for engine in hdfs spark spark-b postgres minio mysql doris; do
   run_logged python3 scripts/test/online-engine-registration.py \
     --descriptor "$ADDP_ONLINE_SECRET_DIR/$engine-engine.json" --output "$ENGINE_RESULT_ENV"
   source "$ENGINE_RESULT_ENV"
   if [ "$engine" = hdfs ]; then
     export ADDP_ONLINE_HDFS_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+  elif [ "$engine" = spark-b ]; then
+    export ADDP_ONLINE_SPARK_B_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
   elif [ "$engine" = postgres ]; then
     export ADDP_ONLINE_POSTGRES_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
   elif [ "$engine" = minio ]; then

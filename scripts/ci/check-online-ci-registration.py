@@ -5676,6 +5676,8 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
         raise RegistrationError("HDFS requires a manual Ubuntu Hosted job with Java 11")
     if "&& inputs.suite != 'hdfs-spark-consumer-flow'" not in workflow:
         raise RegistrationError("HDFS must not dispatch on self-hosted")
+    if '      - name: Verify HDFS owner runner contract\n        run: make test-hdfs-online-runner\n' not in job.group("body"):
+        raise RegistrationError("HDFS Hosted must pass the same owner runner contract before deployment")
     suite = load_suite_registry(repository)["hdfs-spark-consumer-flow"]
     if suite.nightly:
         raise RegistrationError("HDFS requires real evidence before schedule registration")
@@ -5702,7 +5704,7 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
         "business/scripts/online-hdfs-spark-fixture.sh": (
             'com.addp.online-fixture', '--network host', '--tmpfs /data', '/addp/hdfs/init.py',
             'refusing to delete a foreign container', 'fixture containers remain', 'addp-hdfs-online-minio', 'minio-engine.json',
-            'addp-hdfs-online-mysql', 'addp-hdfs-online-doris', 'common-spark-table-gate.sh', '/addp/doris/init.sh',
+            'addp-hdfs-online-mysql', 'addp-hdfs-online-doris', 'addp-hdfs-online-master-b', 'addp-hdfs-online-worker-b', '18084', 'spark-b-engine.json', 'common-spark-table-gate.sh', '/addp/doris/init.sh',
         ),
         "scripts/test/spark-online-evidence.py": (
             'Finished task', 'ADDP-Workflow-Engine-', 'com.addp.online-fixture',
@@ -5711,7 +5713,7 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
         "scripts/test/hdfs-spark-consumer-flow-online.py": (
             '/api/v1/develop/executions', 'spark_cluster_id', 'SPARK.worker_evidence', 'SPARK.runtime_status_evidence',
             'e2e/online/hdfs-spark-consumer-flow.spec.js', 'evidence != expected', 'minio_physical', 'minio_second',
-            'TABLES.prepare', 'TABLES.run', 'TABLES.cleanup', "expected['tables']",
+            'TABLES.prepare', 'TABLES.run', 'TABLES.cleanup', "expected['tables']", 'run_multicluster_browser', 'validate_multicluster_receipt', 'spark-dual-physical.json',
         ),
         "scripts/test/spark-table-consumer-online.py": (
             'physical_before', 'physical_after', 'validate_fields', 'validate_rows', 'runtime_status_evidence',
@@ -5727,9 +5729,14 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
             'The selected scope has been scanned',
             'facts.physical_after.rows', "['created', 'overwrite', 'reuse']", "getAttribute('class')",
         ),
+        "console/frontend/e2e/online/spark-multicluster.spec.js": (
+            'login(', 'query-preflight', 'postDataJSON()', 'source_task_id', 'task-definitions',
+            "batch('workflow', 'failure-isolation'", "batch('query', 'failure-isolation'", 'overlap',
+            'before:', 'applications', 'ADDP_ONLINE_SPARK_DUAL_BROWSER_REPORT',
+        ),
         "Makefile": ('$(MAKE) test-hdfs-online-runner', 'scripts/test/hdfs-spark-consumer-flow-online_test.py',
                      'scripts/test/online-hdfs-spark-fixture_test.py', 'scripts/test/online-hosted-hdfs-gate_test.py',
-                     'scripts/test/spark-table-consumer-online_test.py'),
+                     'scripts/test/spark-table-consumer-online_test.py', 'console/frontend/e2e/online/spark-multicluster.spec.js'),
     }
     for relative, fragments in required.items():
         path = repository / relative

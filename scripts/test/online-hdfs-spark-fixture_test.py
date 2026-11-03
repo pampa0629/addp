@@ -1,6 +1,7 @@
 import json
 import importlib
 import os
+import signal
 from pathlib import Path
 import shutil
 import stat
@@ -73,10 +74,15 @@ else: sys.exit(2)
 import io, json, os, subprocess, sys
 from unittest.mock import patch, MagicMock
 if sys.argv[1:] != ['-']:
-    raise SystemExit(subprocess.call([{sys.executable!r}] + sys.argv[1:]))
+    os.execv({sys.executable!r}, [{sys.executable!r}] + sys.argv[1:])
 code = sys.stdin.read()
 master = {{'status': 'ALIVE', 'aliveworkers': 1, 'activeapps': []}}
-with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return_value=io.BytesIO(json.dumps(master).encode())):
+probe = MagicMock()
+def bind(address):
+    if str(address[1]) == os.environ.get('FAIL_PORT'):
+        raise OSError('port already owned')
+probe.return_value.__enter__.return_value.bind.side_effect = bind
+with patch('socket.socket', probe), patch('urllib.request.urlopen', side_effect=lambda *a, **k: io.BytesIO(json.dumps(master).encode())):
     exec(compile(code, '<fixture-inline>', 'exec'), {{'__name__': '__main__'}})
 ''')
         compose = (SCRIPT.parents[1] / 'docker-compose.yml').read_text()
@@ -93,20 +99,35 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
     def tearDown(self): self.temporary.cleanup()
 
     def run_fixture(self, action, **flags):
-        return subprocess.run(['bash', 'business/scripts/' + SCRIPT.name, action], cwd=self.root,
-                              env=dict(self.env, **flags), capture_output=True, text=True, timeout=15)
+        with subprocess.Popen(['bash', 'business/scripts/' + SCRIPT.name, action], cwd=self.root,
+                              env=dict(self.env, **flags), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True, start_new_session=True) as process:
+            try:
+                # Ten containers require more Python stub invocations than the former eight;
+                # keep a bounded test-only budget and kill the whole fake process group on failure.
+                stdout, stderr = process.communicate(timeout=30)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+                commands = [json.loads(line) for line in self.trace.read_text().splitlines()] if self.trace.exists() else []
+                message = f'fixture {action} exceeded 30 seconds after {len(commands)} Docker calls; last command={commands[-1][:3] if commands else []}'
+                print(message, file=sys.stderr)
+                raise AssertionError(message)
+            return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
 
     def test_shared_images_samples_host_network_and_distinct_owner_only_descriptors(self):
         result = self.run_fixture('start')
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        for engine in ('hdfs', 'spark', 'postgres', 'minio', 'mysql', 'doris'):
+        for engine in ('hdfs', 'spark', 'spark-b', 'postgres', 'minio', 'mysql', 'doris'):
             descriptor = self.secret / (engine + '-engine.json')
             self.assertEqual(stat.S_IMODE(descriptor.stat().st_mode), 0o600)
-            self.assertEqual(REGISTRATION.load_descriptor(descriptor)['engine_type'], 'postgresql' if engine == 'postgres' else engine)
+            self.assertEqual(REGISTRATION.load_descriptor(descriptor)['engine_type'], 'postgresql' if engine == 'postgres' else 'spark' if engine == 'spark-b' else engine)
         hdfs = json.loads((self.secret / 'hdfs-engine.json').read_text())['connection_info']
         self.assertEqual((hdfs['authentication'], hdfs['user'], hdfs['root_path']), ('simple', 'addp_business_reader', '/addp'))
         spark = json.loads((self.secret / 'spark-engine.json').read_text())['connection_info']
         self.assertEqual(spark, {'host': '127.0.0.1', 'port': 7077, 'web_ui_url': 'http://127.0.0.1:18080'})
+        spark_b = json.loads((self.secret / 'spark-b-engine.json').read_text())['connection_info']
+        self.assertEqual(spark_b, {'host': '127.0.0.1', 'port': 7078, 'web_ui_url': 'http://127.0.0.1:18082'})
         self.assertNotIn('start-thriftserver', self.trace.read_text())
         postgres = json.loads((self.secret / 'postgres-engine.json').read_text())['connection_info']
         self.assertEqual(postgres['user'], 'spark_writer')
@@ -121,7 +142,7 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
         self.assertEqual(mysql['port'], 15438)
         self.assertNotIn(mysql['password'], result.stdout + result.stderr)
         self.assertEqual(stat.S_IMODE((self.secret / 'mysql.env').stat().st_mode), 0o600)
-        self.assertEqual(len(list(self.state.iterdir())), 8)
+        self.assertEqual(len(list(self.state.iterdir())), 10)
         commands = [json.loads(line) for line in self.trace.read_text().splitlines()]
         for command in commands:
             if command[0] == 'run': self.assertIn('host', command)
@@ -135,6 +156,16 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
         self.assertNotIn('local[*]', self.trace.read_text())
         self.assertEqual(self.run_fixture('stop').returncode, 0)
         self.assertEqual(list(self.state.iterdir()), [])
+
+    def test_second_cluster_port_conflict_refuses_before_creating_services(self):
+        for port in ('7078', '18082', '18084'):
+            with self.subTest(port=port):
+                result = self.run_fixture('start', FAIL_PORT=port)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(list(self.state.iterdir()), [])
+                self.assertEqual(list(self.secret.iterdir()), [])
+                commands = [json.loads(line) for line in self.trace.read_text().splitlines()]
+                self.assertFalse(any(command[0] == 'run' for command in commands))
 
     def test_personal_profile_rejected_before_docker(self):
         for flags in ({'GITHUB_ACTIONS': 'false'}, {'ADDP_ONLINE_HOSTED': '0'}, {'ADDP_ONLINE_OWNER_MANAGED': '1'}, {'FAKE_OS': 'Darwin'}):
@@ -170,6 +201,7 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
     def test_partial_creation_or_seed_failure_cleans_all_owned_containers(self):
         for flags in ({'FAIL_RUN': 'addp-hdfs-online-postgres'}, {'FAIL_RUN': 'addp-hdfs-online-namenode'}, {'FAIL_RUN': 'addp-hdfs-online-minio'}, {'FAIL_RUN': 'addp-hdfs-online-worker'},
                       {'FAIL_RUN': 'addp-hdfs-online-mysql'}, {'FAIL_RUN': 'addp-hdfs-online-doris'},
+                      {'FAIL_RUN': 'addp-hdfs-online-master-b'}, {'FAIL_RUN': 'addp-hdfs-online-worker-b'}, {'FAIL_SIGNAL': 'addp-hdfs-online-worker-b'},
                       {'FAIL_SEED': '1'}, {'FAIL_SIGNAL': 'addp-hdfs-online-worker'}):
             with self.subTest(flags=flags):
                 result = self.run_fixture('start', **flags)

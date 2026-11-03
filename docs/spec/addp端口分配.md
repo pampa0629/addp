@@ -304,3 +304,5 @@ T3 Vite 夹具不占用模块开发端口，也不使用固定的 41xx 端口表
 ## 可选 HTTP 追踪端口
 
 显式选择追踪时，Infra 将共享 Alloy 的 OTLP HTTPS `4318` 发布到回环首选 `TRACE_OTLP_PORT=14318`，只读 mTLS 查询代理 `8443` 发布到回环首选 `TRACE_QUERY_PORT=14320`。实际本地映射由标准 Infra 端口解析/归属校验决定；未选追踪时不占用这两个端口，不因遗留值要求证书或 Secret。Tempo 的 HTTP `3200` 与 OTLP `4318` 仅在私有 trace-backend 网络，不另发布宿主机端口。生产跨节点接入需部署者明确端点、证书及网络约束，本批不宣称跨节点或 HA 已验。
+
+`hdfs-spark-consumer-flow` 手工 Hosted T4 只在独占 Linux Runner 临时建立双 Spark 集群：A 的 Master RPC／Master UI／Worker UI 为回环 `7077/18080/18081`，B 为回环 `7078/18082/18084`。第二套端口不属于日常 Business 或 ADDP 服务，不使用已分配给 Kafka Connect 的 `18083`；启动前全部检查冲突，退出销毁本轮两套容器及数据。

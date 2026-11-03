@@ -32,7 +32,7 @@ spec.loader.exec_module(TABLES)
 PERMISSIONS = {'system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read',
                'manager.data_item.read', 'manager.content.read', 'develop.task.read', 'develop.task.execute',
                'develop.data_read.execute', 'develop.data_write.execute', 'develop.data_ddl.execute',
-               'meta.lineage.read', 'system.execution_authorization.create'}
+               'meta.lineage.read', 'system.execution_authorization.create', 'develop.task.create', 'develop.task.update'}
 FILES = {'csv': 'samples/orders.csv', 'json': 'samples/orders.json', 'parquet': 'samples/orders.parquet',
          'original': '订单 100%.csv'}
 
@@ -110,9 +110,9 @@ def runtime_status_evidence(execution_id, final_result):
         raise SuiteError(str(error)) from error
 
 
-def worker_evidence(engine_id):
+def worker_evidence(engine_id, before):
     try:
-        return SPARK.worker_evidence(engine_id, 'hdfs-spark-consumer-flow', 'addp-hdfs-online-worker', 'http://127.0.0.1:18080')
+        return SPARK.worker_evidence(engine_id, 'hdfs-spark-consumer-flow', 'addp-hdfs-online-worker', 'http://127.0.0.1:18080', before)
     except ValueError as error:
         raise SuiteError(str(error)) from error
 
@@ -144,6 +144,7 @@ def run(client, tenant_id, engine_id, cluster_id, timeout, physical=worker_evide
         _, rows = support.preview_rows(client, locators[name])
         validate_rows(rows)
     definition = workflow(locators)
+    before = SPARK.application_ids(SPARK.application_snapshot('http://127.0.0.1:18080'))
     started = support._object(client.request('POST', '/api/v1/develop/executions', (200,), {
         'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': 300,
         'content': {'workflow_definition': definition},
@@ -164,7 +165,7 @@ def run(client, tenant_id, engine_id, cluster_id, timeout, physical=worker_evide
             'runtime_id': runtime_id, 'tenant_id': tenant_id, 'principal_id': principal, 'locators': locators,
             'item_ids': item_ids, 'scan_execution_id': scan, 'execution_id': execution_id,
             'runtime_execution_id': execution['metadata']['result']['runtime_execution_id'],
-            'final_result': final, 'worker': physical(cluster_id),
+            'final_result': final, 'worker': physical(cluster_id, before),
             'runtime_status': runtime_status_evidence(execution['metadata']['result']['runtime_execution_id'], final)}
 
 
@@ -380,6 +381,126 @@ def run_browser(report):
     return evidence
 
 
+def multicluster_expectations(client, report):
+    cluster_b = support.positive_int(support.required_environment('ADDP_ONLINE_SPARK_B_ENGINE_ID'), 'Spark B')
+    if cluster_b == report['cluster_id']:
+        raise SuiteError('two distinct registered compute clusters are required')
+    catalog = support._array(client.request('GET', '/api/v1/system/engine-catalog/engines', (200,)).payload, 'catalog')
+    clusters = support._array(client.request('GET', '/api/v1/develop/spark-runtimes', (200,)).payload, 'clusters')
+    selected = {}
+    for key, identifier, port, worker in [('a', report['cluster_id'], 18080, 'addp-hdfs-online-worker'),
+                                          ('b', cluster_b, 18082, 'addp-hdfs-online-worker-b')]:
+        cluster = SPARK.require_compute_cluster(identifier, catalog, clusters)
+        selected[key] = {'id': identifier, 'name': cluster['name'], 'master_url': f'http://127.0.0.1:{port}', 'worker': worker}
+    runtimes = support._array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
+    matches = [item for item in runtimes if item['id'] == report['runtime_id'] and item['engine_type'] == 'spark_workflow']
+    if len(matches) != 1:
+        raise SuiteError('same built-in Runtime must serve both clusters')
+    # Fixed synthetic source name belongs to this fixture, never a user's table.
+    source = next(item for item in catalog if item['id'] == int(os.environ['ADDP_ONLINE_POSTGRES_ENGINE_ID']))
+    if source['name'] != 'Hosted PostgreSQL':
+        raise SuiteError('unexpected disposable PostgreSQL source identity')
+    table = '`Hosted_PostgreSQL`.`results`.`hdfs_totals`'
+    return {'clusters': selected, 'runtime_name': matches[0]['name'], 'permissions': sorted(PERMISSIONS),
+            'query': f'SELECT region, CAST(csv_rows AS STRING) AS rows FROM {table} ORDER BY region',
+            'failure_query': f'SELECT p65_missing_column FROM {table}',
+            'query_rows': [{'region': 'east', 'rows': '10'}, {'region': 'west', 'rows': '10'}],
+            'workflow_query': "SELECT 'dual-workflow' AS marker, count(*) AS rows FROM range(0,4,1,2)"}
+
+
+def validate_multicluster_receipt(receipt, report):
+    if (receipt.get('run_id') != support.required_environment('ADDP_ONLINE_TEST_RUN_ID')
+            or receipt.get('tenant_id') != report['tenant_id'] or receipt.get('principal_id') != report['principal_id']
+            or receipt.get('runtime_id') != report['runtime_id'] or receipt.get('manager_no_spark') is not True):
+        raise SuiteError('dual-cluster receipt identity differs from the ordinary browser User')
+    tasks = receipt.get('tasks', {})
+    if set(tasks) != {'a', 'b'} or any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in tasks.values()) or tasks['a'] == tasks['b']:
+        raise SuiteError('two independently saved workflow definitions are required')
+    observations = receipt.get('observations', [])
+    if len(observations) != 12:
+        raise SuiteError('both page kinds require A/B/A, concurrency, failure isolation and recovery')
+    seen = {'a': set(), 'b': set()}
+    execution_ids = set()
+    for index, observation in enumerate(observations):
+        kind = 'workflow' if index < 6 else 'query'
+        step = index % 6
+        expected_pairs = [[('a', 'success')], [('b', 'success')], [('a', 'success')],
+                          [('a', 'success'), ('b', 'success')], [('a', 'failed'), ('b', 'success')], [('a', 'success')]][step]
+        operations = observation.get('operations', [])
+        if (observation.get('kind') != kind or [(op.get('cluster'), op.get('status')) for op in operations] != expected_pairs
+                or (step in (3, 4) and observation.get('overlap') is not True)):
+            raise SuiteError('dual-cluster sequence, overlap or failure isolation evidence is incomplete')
+        phase = f'sequence-{index}' if step < 3 else {3: 'concurrent', 4: 'failure-isolation', 5: 'recovery'}[step]
+        if observation.get('phase') != phase:
+            raise SuiteError('dual-cluster phase is missing or reordered')
+        for key in ('a', 'b'):
+            apps = observation.get('applications', {}).get(key, [])
+            selected = [op for op in operations if op['cluster'] == key]
+            if len(apps) != len(selected) or len(set(observation.get('before', {}).get(key, []))) != len(observation.get('before', {}).get(key, [])):
+                raise SuiteError('unexpected Master Application count')
+            for app, operation in zip(apps, selected):
+                cluster = report['multicluster']['clusters'][key]
+                expected_name = f"ADDP-Workflow-Engine-{cluster['id']}" if kind == 'workflow' else 'ADDP-federated-query'
+                app_id = app.get('id')
+                if (not isinstance(app_id, str) or app_id in seen[key] or app_id in observation['before'][key]
+                        or app.get('name') != expected_name or app.get('state') != 'FINISHED'):
+                    raise SuiteError('Application identity reused, unfinished or routed to the wrong Master')
+                seen[key].add(app_id)
+                if kind == 'workflow' and operation.get('task_id') != tasks[key]:
+                    raise SuiteError('workflow page executed a different saved task')
+                if kind == 'query' and operation.get('query') != report['multicluster']['failure_query' if operation['status'] == 'failed' else 'query']:
+                    raise SuiteError('query page source or SQL differs from the fixture')
+                identifier = operation.get('execution_id')
+                if not isinstance(identifier, str) or not identifier or identifier in execution_ids:
+                    raise SuiteError('page execution IDs must be distinct')
+                execution_ids.add(identifier)
+    return seen
+
+
+def run_multicluster_browser(client, report):
+    report['multicluster'] = multicluster_expectations(client, report)
+    listeners = SPARK.loopback_listener_evidence([(False, Path('/proc/net/tcp').read_text()),
+        (True, Path('/proc/net/tcp6').read_text())], (7077, 18080, 18081, 7078, 18082, 18084))
+    artifacts = Path(support.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
+    output = artifacts / 'spark-dual-console.json'
+    output.unlink(missing_ok=True)
+    environment = dict(os.environ, ADDP_ONLINE_HDFS_EXPECTATIONS=json.dumps(report),
+                       ADDP_ONLINE_SPARK_DUAL_BROWSER_REPORT=str(output))
+    result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/spark-multicluster.spec.js',
+                             '--config=playwright.online.config.js'], cwd=Path(__file__).resolve().parents[2] / 'console/frontend', env=environment)
+    if result.returncode or not output.is_file():
+        raise SuiteError('dual-cluster Console acceptance failed or omitted its receipt')
+    receipt = json.loads(output.read_text())
+    seen = validate_multicluster_receipt(receipt, report)
+    physical = []
+    for key, cluster in report['multicluster']['clusters'].items():
+        master = SPARK.application_snapshot(cluster['master_url'])
+        apps = {app['id']: app for app in master.get('completedapps', [])}
+        if master.get('activeapps') or not seen[key].issubset(apps):
+            raise SuiteError('dual-cluster Driver cleanup or Master receipts are incomplete')
+        for observation in receipt['observations']:
+            for app, operation in zip(observation['applications'][key], [op for op in observation['operations'] if op['cluster'] == key]):
+                if apps[app['id']]['name'] != app['name'] or apps[app['id']]['state'] != 'FINISHED':
+                    raise SuiteError('archived page Application differs from the live Master')
+                evidence = SPARK.worker_application_evidence(app['id'], 'hdfs-spark-consumer-flow', cluster['worker'], operation['status'] == 'success')
+                physical.append(dict(evidence, cluster=key, kind=observation['kind'], phase=observation['phase']))
+                if operation.get('execution_id'):
+                    execution = support._object(client.request('GET', '/api/v1/develop/executions/' + operation['execution_id'], (200,)).payload, 'page execution')
+                    if execution.get('status') != operation['status']:
+                        raise SuiteError('page execution status differs from the formal owner')
+                    config = execution.get('execution_config', {})
+                    if observation['kind'] == 'workflow':
+                        if (execution.get('source_task_id') != str(receipt['tasks'][key]) or config.get('engine_id') != report['runtime_id']
+                                or config.get('engine_specific', {}).get('spark_cluster_id') != cluster['id']):
+                            raise SuiteError('formal workflow target differs from saved page selection')
+                    elif config.get('engine_id') != cluster['id']:
+                        raise SuiteError('formal query target differs from page selection')
+    evidence = {'browser': receipt, 'physical': physical, 'active_applications': 0, 'loopback_listeners': listeners,
+                'runtime_cleanup': SPARK.runtime_cleanup_evidence('hdfs-spark-consumer-flow', 'addp-hdfs-online-runtime')}
+    (artifacts / 'spark-dual-physical.json').write_text(json.dumps(evidence, indent=2, ensure_ascii=False))
+    return evidence
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--initialize-table-read', action='store_true')
@@ -442,8 +563,8 @@ def run_scenario(client, timeout):
     validate_minio_independent_results(client, report['minio'], report['minio_second'])
     report['tables'] = TABLES.run(table_host(), client, report, timeout)
     Path(require('ADDP_ONLINE_ARTIFACT_DIR'), 'spark-table-consumer-flow.json').write_text(json.dumps(report['tables'], ensure_ascii=False, indent=2))
-    report['worker'] = worker_evidence(report['cluster_id'])
     report['browser'] = run_browser(report)
+    report['dual_cluster'] = run_multicluster_browser(client, report)
     Path(require('ADDP_ONLINE_ARTIFACT_DIR'), 'hdfs-spark-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     return 0

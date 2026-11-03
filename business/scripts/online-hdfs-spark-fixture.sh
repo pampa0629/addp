@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 SUITE=hdfs-spark-consumer-flow
 LABEL=com.addp.online-fixture
-CONTAINERS=(addp-hdfs-online-namenode addp-hdfs-online-datanode addp-hdfs-online-master addp-hdfs-online-worker addp-hdfs-online-postgres addp-hdfs-online-minio addp-hdfs-online-mysql addp-hdfs-online-doris)
+CONTAINERS=(addp-hdfs-online-namenode addp-hdfs-online-datanode addp-hdfs-online-master addp-hdfs-online-worker addp-hdfs-online-master-b addp-hdfs-online-worker-b addp-hdfs-online-postgres addp-hdfs-online-minio addp-hdfs-online-mysql addp-hdfs-online-doris)
 fail() { echo "Online HDFS fixture failed: $*" >&2; exit 1; }
 [ "${GITHUB_ACTIONS:-}" = true ] && [ "${RUNNER_OS:-}" = Linux ] &&
   [ "${ADDP_ONLINE_HOST:-}" = 1 ] && [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] &&
@@ -28,7 +28,7 @@ stop() {
         if [[ "$container" != *-postgres && "$container" != *-minio && "$container" != *-mysql && "$container" != *-doris ]]; then
           docker logs --tail 80 "$container" > "$ADDP_ONLINE_ARTIFACT_DIR/$container.log" 2>&1 || status=1
         fi
-        if [[ "$container" = *-master || "$container" = *-worker ]]; then
+        if [[ "$container" = *-master || "$container" = *-worker || "$container" = *-master-b || "$container" = *-worker-b ]]; then
           docker exec "$container" bash -c 'find /opt/spark/logs /opt/spark/work -name "*.out" -o -name stderr | while read -r file; do echo "$file"; tail -80 "$file"; done' > "$ADDP_ONLINE_ARTIFACT_DIR/$container-spark.log" 2>&1 || true
         fi
       fi
@@ -55,7 +55,7 @@ from pathlib import Path
 root = Path(os.environ['ADDP_ONLINE_SECRET_DIR']).resolve(strict=True)
 if stat.S_IMODE(root.stat().st_mode) != 0o700:
     raise SystemExit('secret directory must have mode 0700')
-for name in ('hdfs-engine.json', 'spark-engine.json', 'postgres-engine.json', 'minio-engine.json', 'mysql-engine.json', 'doris-engine.json', 'mysql.env', 'minio.env', 'postgres.env', 'postgres-seed.sql', 'postgres-before.json'):
+for name in ('hdfs-engine.json', 'spark-engine.json', 'spark-b-engine.json', 'postgres-engine.json', 'minio-engine.json', 'mysql-engine.json', 'doris-engine.json', 'mysql.env', 'minio.env', 'postgres.env', 'postgres-seed.sql', 'postgres-before.json'):
     output = root / name
     if output.exists() or output.is_symlink():
         raise SystemExit('descriptors must be new secret files')
@@ -96,7 +96,7 @@ MINIO_IMAGE=$(docker container inspect --format '{{.Image}}' addp-minio)
 # Check all fixed ports before claiming any resource.
 python3 - <<'PY'
 import socket
-for port in (8020, 9870, 9864, 9866, 9867, 7077, 10000, 18080, 18081, 15435, 15436, 15437, 15438, 8030, 9030, 8040, 9050, 9060, 8060):
+for port in (8020, 9870, 9864, 9866, 9867, 7077, 7078, 18080, 18081, 18082, 18084, 15435, 15436, 15437, 15438, 8030, 9030, 8040, 9050, 9060, 8060):
     with socket.socket() as probe:
         probe.bind(('127.0.0.1', port))
 PY
@@ -106,7 +106,7 @@ finish_start() {
   trap - EXIT INT TERM
   if [ "$status" -ne 0 ] && [ "$created" -eq 1 ]; then
     stop || status=1
-    rm -f "$ADDP_ONLINE_SECRET_DIR"/{hdfs-engine.json,spark-engine.json,postgres-engine.json,minio-engine.json,mysql-engine.json,doris-engine.json,mysql.env,minio.env,postgres.env,postgres-seed.sql,postgres-before.json}
+    rm -f "$ADDP_ONLINE_SECRET_DIR"/{hdfs-engine.json,spark-engine.json,spark-b-engine.json,postgres-engine.json,minio-engine.json,mysql-engine.json,doris-engine.json,mysql.env,minio.env,postgres.env,postgres-seed.sql,postgres-before.json}
   fi
   exit "$status"
 }
@@ -244,17 +244,21 @@ for role in namenode datanode; do
     --mount "type=bind,source=$ROOT_DIR/business/hdfs,target=/addp/hdfs,readonly" \
     --tmpfs /data:mode=1777 --memory 1g --entrypoint bash "$HADOOP_IMAGE" /addp/hdfs/start.sh "$role" >/dev/null
 done
-docker run -d --name addp-hdfs-online-master --label "$LABEL=$SUITE" --network host --user root --memory 2g \
-  --env HDFS_RPC_URI=hdfs://127.0.0.1:8020 \
-  --mount "type=bind,source=$ROOT_DIR/business/hdfs,target=/addp/hdfs,readonly" \
-  --entrypoint bash "$SPARK_IMAGE" -c '
-    set -e
-    /opt/spark/sbin/start-master.sh --host 127.0.0.1 --port 7077 --webui-port 18080
-    exec tail -f /dev/null' >/dev/null
-docker run -d --name addp-hdfs-online-worker --label "$LABEL=$SUITE" --network host --user root --memory 3g \
-  --add-host host.docker.internal:127.0.0.1 \
-  --entrypoint /opt/spark/bin/spark-class "$SPARK_IMAGE" org.apache.spark.deploy.worker.Worker \
-    --host 127.0.0.1 --cores 2 --memory 2g --webui-port 18081 spark://127.0.0.1:7077 >/dev/null
+for cluster in a b; do
+  suffix='' rpc=7077 master_ui=18080 worker_ui=18081
+  if [ "$cluster" = b ]; then suffix=-b; rpc=7078; master_ui=18082; worker_ui=18084; fi
+  docker run -d --name "addp-hdfs-online-master$suffix" --label "$LABEL=$SUITE" --network host --user root --memory 2g \
+    --env SPARK_LOCAL_IP=127.0.0.1 --env HDFS_RPC_URI=hdfs://127.0.0.1:8020 \
+    --mount "type=bind,source=$ROOT_DIR/business/hdfs,target=/addp/hdfs,readonly" \
+    --entrypoint bash "$SPARK_IMAGE" -c '
+      set -e
+      /opt/spark/sbin/start-master.sh --host 127.0.0.1 --port "$1" --webui-port "$2"
+      exec tail -f /dev/null' _ "$rpc" "$master_ui" >/dev/null
+  docker run -d --name "addp-hdfs-online-worker$suffix" --label "$LABEL=$SUITE" --network host --user root --memory 3g \
+    --env SPARK_LOCAL_IP=127.0.0.1 --add-host host.docker.internal:127.0.0.1 \
+    --entrypoint /opt/spark/bin/spark-class "$SPARK_IMAGE" org.apache.spark.deploy.worker.Worker \
+      --host 127.0.0.1 --cores 2 --memory 2g --webui-port "$worker_ui" "spark://127.0.0.1:$rpc" >/dev/null
+done
 docker exec --env HADOOP_USER_NAME=root addp-hdfs-online-master /opt/spark/bin/spark-submit /addp/hdfs/init.py
 python3 - <<'PY'
 import json, os, time, urllib.request
@@ -262,9 +266,11 @@ from pathlib import Path
 deadline = time.monotonic() + 120
 while time.monotonic() < deadline:
     try:
-        with urllib.request.urlopen('http://127.0.0.1:18080/json/', timeout=5) as response:
-            master = json.load(response)
-        if master.get('status') == 'ALIVE' and master.get('aliveworkers') == 1:
+        masters = []
+        for port in (18080, 18082):
+            with urllib.request.urlopen(f'http://127.0.0.1:{port}/json/', timeout=5) as response:
+                masters.append(json.load(response))
+        if all(master.get('status') == 'ALIVE' and master.get('aliveworkers') == 1 for master in masters):
             break
     except (OSError, ValueError):
         pass
@@ -276,6 +282,7 @@ for name, engine_type, connection in (
     ('hdfs', 'hdfs', {'webhdfs_endpoint': 'http://127.0.0.1:9870', 'rpc_uri': 'hdfs://127.0.0.1:8020',
                       'root_path': '/addp', 'authentication': 'simple', 'user': 'addp_business_reader'}),
     ('spark', 'spark', {'host': '127.0.0.1', 'port': 7077, 'web_ui_url': 'http://127.0.0.1:18080'}),
+    ('spark-b', 'spark', {'host': '127.0.0.1', 'port': 7078, 'web_ui_url': 'http://127.0.0.1:18082'}),
 ):
     value = {'name': 'Hosted ' + name.upper(), 'engine_type': engine_type, 'engine_origin': 'general',
              'description': 'Disposable HDFS distributed Spark acceptance', 'connection_info': connection}

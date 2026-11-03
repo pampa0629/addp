@@ -333,7 +333,7 @@ func suitePermissions(suite string) ([]string, error) {
 	case "elasticsearch-consumer-flow":
 		return readWorkflowConsumerPermissions, nil
 	case "hdfs-spark-consumer-flow":
-		return append(append([]string{}, readWorkflowConsumerPermissions...), "develop.data_write.execute", "develop.data_ddl.execute", "meta.lineage.read"), nil
+		return append(append([]string{}, readWorkflowConsumerPermissions...), "develop.data_write.execute", "develop.data_ddl.execute", "meta.lineage.read", "develop.task.create", "develop.task.update"), nil
 	case "gaussdb-consumer-flow", "starrocks-consumer-flow":
 		return append(append([]string{}, catalogConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"), nil
 	case "redis-consumer-flow":

@@ -2108,6 +2108,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "console/frontend/e2e/online/hdfs-spark-consumer-flow.spec.js", "Makefile",
             ".github/workflows/online-t4-gates.yml", "scripts/test/spark-online-evidence.py", "scripts/utils/hosted-online.sh", "scripts/utils/hosted-product-runtime.sh",
             'scripts/test/spark-table-consumer-online.py', 'business/scripts/online-spark-table-oracle.py',
+            'console/frontend/e2e/online/spark-multicluster.spec.js',
         )
         for relative in paths:
             destination = self.repository / relative
@@ -2124,14 +2125,15 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[8], 'make build-images'), (paths[9], '${RUNTIME_REPORT}-runtime-build.txt'),
             (paths[8], '${RUNTIME_REPORT}-runtime.log'), (paths[8], 'com.addp.online-runtime'),
             (paths[2], 'refusing to delete a foreign container'),
-            (paths[0], 'ADDP_ONLINE_DORIS_ENGINE_ID'), (paths[2], 'addp-hdfs-online-mysql'),
+            (paths[0], 'ADDP_ONLINE_DORIS_ENGINE_ID'), (paths[2], 'addp-hdfs-online-worker-b'),
+            (paths[12], "batch('query', 'failure-isolation'"), (paths[3], 'validate_multicluster_receipt'), (paths[2], 'addp-hdfs-online-mysql'),
             (paths[3], 'TABLES.cleanup'), (paths[10], 'physical_after'), (paths[11], 'INNODB_TABLES'),
             (paths[3], 'SPARK.worker_evidence'), (paths[7], 'Finished task'), (paths[4], 'login('),
             (paths[4], "getByRole('dialog'"), (paths[4], 'Confirm and start scan'),
             (paths[4], 'postDataJSON()'), (paths[4], "catalog_paths: ['samples']"),
             (paths[4], 'The selected scope has been scanned'),
             (paths[5], '$(MAKE) test-hdfs-online-runner'),
-            (paths[6], "java-version: '11'"),
+            (paths[6], "java-version: '11'"), (paths[6], '      - name: Verify HDFS owner runner contract'),
             (paths[6], "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'hdfs-spark-consumer-flow'\n"),
         ):
             path = self.repository / relative
