@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 17 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 55 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 56 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -861,3 +861,10 @@ b0420db65已随共享main发布，固定dfeff7c9b自然Linux原始日志确认HT
 [完整记录、固定源码、原诊断与清理](MonitorHTTP质量与采样历史证据.md#http-full-monitor-apt-index-failed-20261103)
 
 固定acff6e395的单次full含准备500.62秒失败：Go及System／Gateway镜像构建命令返回成功，Monitor APT索引阶段签名／下载分类、进程退出100；具体原因未唯一定位。116次资源检查最长0.604424秒、未触线及零残留清理通过，但尚未进入Agent／Copilot镜像、真实登录、采集／API、页面／停源／注销。正式产品闭环仍未验收，首次失败即停，无重试、续窗、Hosted、容量或定时。
+
+
+### 2026-11-03 Monitor APT索引只读关联与最小取证门禁
+
+[完整记录、候选502及确定性边界](MonitorHTTP质量与采样历史证据.md#http-monitor-apt-signature-diagnostics-20261103)
+
+既有代理日志有Monitor对应墙钟时段的Bookworm InRelease 502，但构建归属、正文及校时未证实，历史根因仍不唯一。ea8923111补精确Debian FROM、固定签名子类与唯一失败步骤续行，旧解析器反证失败，最终Trace169／HTTP44及登记、JS、身份子门禁通过。只补取证，不重试构建或新开窗口，正式产品页面闭环仍未验收；无Hosted、容量或定时。

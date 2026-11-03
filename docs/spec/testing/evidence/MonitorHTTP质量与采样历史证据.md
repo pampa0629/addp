@@ -1080,3 +1080,25 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 report.assertions为空，无images最终身份清单、Python依赖、浏览器、业务计数、采集API、停源或注销回执；正式Agent／Copilot构建→真实密码／MFA→采集／API→Console／Monitor页面→停源／注销闭环仍未验收。System／Gateway构建命令成功、资源采样通过及清理成功不能反转本次failed，也不合并为之前Copilot deb下载失败的同一根因。停源历史读取仍另批；本轮未运行Hosted、容量或定时，不接管个人开发环境，单次授权已消费。
 
 私有归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-window-20261103-7cmces4n/`（目录0700、文件0600），包含launch／Infra状态／expected-inputs／entry-started／completion／entry.log／原report及独立audit。报告1326657字节，SHA256=`b081119705eef0f5900e61d31a7b141675c215072c93f3fa68cbd52a5c9637ed`；入口日志SHA256=`dd3df5a21f2887266695b964de0509edefb77fe391d8f4e7989847db1b7b0724`。仅更新两份既有证据及55主题索引，验证固定输入、原归档散列、样本／检查点／时限／零残留、唯一锚点和引用，未因文档更新重跑代码门禁。本轮回报维护会话，整体维持部分实现／部分验收；建议下一步先只读关联现存Monitor Dockerfile、索引签名分类及已有构建／代理记录，提出最小修正与验收方案后再讨论，不自动重试构建或开启新窗口。
+
+
+<a id="http-monitor-apt-signature-diagnostics-20261103"></a>
+
+## 2026-11-03 Monitor APT索引只读关联与最小取证门禁
+
+本批先只读关联上一专题固定acff6e395、run_id=addp-http-local-ae777177f61145fc9ed4863e4874235b的原始报告及b0811197哈希，再按用户确认实施最小取证。没有重试构建、运行APT、新开本地窗口或执行Docker探针。冻结源码中Monitor／System／Gateway的FROM及APT命令完全一致，均由本地Registry的debian-slim:bookworm开始，安装ca-certificates／tzdata；标准预热映射到debian:bookworm-slim。预热可以复用已有Registry tag，且三次实际解析摘要未保留，不能由相同Dockerfile或前两项构建成功推定实际基础层完全相同；不读取当前可变tag冒充历史。
+
+只读Desktop既有httpproxy.log，在由入口UTC起点及四舍五入阶段耗时形成的候选时段内，System及Gateway各记录6条官方Bookworm系列索引GET状态行且均200；Monitor时段有5条，其中Bookworm InRelease一条502，updates／security各两条200。该502的同一代理请求共3条日志，06:56:38.296333—06:56:43.298023 UTC跨度5.001690秒，后续虽有successful日志仍不能当作上游200或正文完整。只确认代理请求内关联，缺少构建Owner归属、host／VM校时和正文，不能把这条502回填原APT报告的HTTP状态或唯一归因签名错误。各候选时段选中内容7272／7538／3477字节，只保留计数、封闭分类及片段哈希，未保存原文、请求ID、URL或代理值。旧Copilot deb下载失败继续单列，不合并根因。
+
+实现提交`ea8923111ba6647795a938f9ed4082768de39a2c`仅含唯一分类器、其测试及两份规范。先补运行观测和T0–T3条款，再实现精确Bookworm FROM白名单／摘要及重复去重／多候选ambiguous；APT错误上下文统一沿唯一失败步骤的明确错误及带缩进固定错误续行，成功Get／Hit／Ign、普通进度、空行、其他步骤、未编号行、RUN及ERROR命令回显均中断。签名新增signature_kinds封闭枚举，明确子类优先、没有具体证据才记verification_failed；缺失／不可归属／超限为空，不保留旧独立签名识别路线或任意附带值。原128 KiB整份输入、4 KiB整组诊断、首因／哈希及资源／四秒／清理语义保持。原规范Python-only描述同步收敛到当前白名单，不留冲突口径。
+
+| 确定性验证 | 实际结果与范围 |
+| --- | --- |
+| 旧解析器反证 | 原make test-monitor-traces-local-runner新增6项测试后运行169项／4.702秒，2 failures／23 subtest errors；包括Debian摘要缺失、错误续行HTTP502遗漏及新签名字段缺失，按预期失败，不计通过 |
+| 最终Trace runner | make test-monitor-traces-local-runner退出0；169项／4.559秒、两项JS语法、Online CI登记及System身份Go子门禁通过 |
+| 最终HTTP runner | make test-monitor-http-local-runner退出0；44项／0.907秒、两项JS语法、HTTP登记及System身份Go子门禁通过。原离线证书T1为OpenSSL4.1.0、35命令／0.802712秒、材料与在途输出预留125489字节、4次预期拒绝、清理完成；不是产品构建或正式身份实链 |
+| 独立自查 | AST仅public_build_failure_diagnostic改变，所有构建／命令／采样／互斥／恢复／清理定义不变；9项产品Dockerfile／Make／CI登记与基线一致，测试沿原聚合自动发现，不新增入口或workflow；diff检查通过 |
+
+首轮绿色测试后日志包装使用zsh只读变量status而退出1，两组子门禁输出当时已通过；未把包装异常当完整入口通过。收紧普通进度边界后改由Python记录最终make退出码，以上最后两组均明确退出0，作为本批交付证据。只运行受控文本、替身、原离线证书及身份子门禁，没有真实APT、镜像或网络探针；不以分类通过声称历史APT或资源超时根因修复，正式Agent／Copilot到Console／Monitor页面仍未验收。
+
+原只读关联及实现审核位于`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-monitor-apt-offline-20261103-czdxdxpo/`的correlation.json／implementation-audit.json（0700／0600）；红、最终Trace及HTTP日志为`/tmp/addp-p19-monitor-apt-{red,trace-final,http-final}-20261103.log`（0600），审核收据保存实现输入与日志SHA256。仅更新本专题、56主题索引并回报维护会话，本会话不推送以避免额外触发镜像构建。原失败报告不改写、不追填新字段，不运行Hosted、容量、定时或接管个人开发服务；下一步只宜在另行批准的原产品运行中使用新增诊断，具体修复仍待充分证据与讨论。

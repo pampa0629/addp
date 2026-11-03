@@ -666,7 +666,7 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 
 产品镜像构建失败仅在`product_image_*`阶段沿唯一public_build分类器补充封闭诊断：固定原因／失败步骤、已知产物输入名、Dockerfile行号及有界HTTP状态／进程退出码。2026-11-01用户确认首批APT取证：仅在同一份完整BuildKit输出中，以唯一失败步骤编号关联其RUN apt-get及该编号输出；索引下载／deb下载／dpkg／unknown阶段只从该步骤实际错误推断，不能从未失败步骤、缓存提示或全局timed out／not found标记推定APT原因。固定错误类别涵盖DNS、超时、连接、HTTP、TLS、签名、包缺失、下载、dpkg、锁、空间及other；HTTP状态须带实际错误上下文，不从包名、版本、路径哈希或字节数中的数字提取。官方Debian源只输出HTTP／HTTPS、仓库类别及固定发行套件枚举，未知或含凭据／查询参数的URL不导出；不读取额外源文件或发探针。
 
-同一已捕获输出仅对已识别的公共Python3.11／3.12 slim（含bookworm变体）FROM步骤保留解析到的sha256；缺失或多个不同结果明确unavailable／ambiguous，不用当前可变tag或宿主机image inspect替代历史输入，不输出任意摘要或私有镜像名。代理证明只复用原prepare_builder的docker info及原宿主环境读取、既有无凭据本地代理校验结果，分别记录BuildKit／RUN构建参数／host CLI的来源和none／loopback／desktop_internal枚举，不保留端点、端口、代理值或完整环境，不追加Docker读取。
+同一已捕获输出仅对精确白名单中的公共Python3.11／3.12 slim（含bookworm变体）及Debian Bookworm slim FROM步骤保留解析到的sha256；缺失或多个不同结果明确unavailable／ambiguous，不用当前可变tag或宿主机image inspect替代历史输入，不输出任意摘要或私有镜像名。代理证明只复用原prepare_builder的docker info及原宿主环境读取、既有无凭据本地代理校验结果，分别记录BuildKit／RUN构建参数／host CLI的来源和none／loopback／desktop_internal枚举，不保留端点、端口、代理值或完整环境，不追加Docker读取。
 
 解析输入整份合计最多128 KiB，超限整份记over_budget、不截尾冒充完整；集合上限或结构化诊断以紧凑JSON的UTF-8字节计，超过4 KiB同样明确超限，不截断为完整。缺失／无法唯一归属时明确不可用，不导出原始日志、URL、路径、任意符号或凭据；这些上限仅约束解析及结构化回执，不改变原命令输出捕获方式或声称捕获硬上限。原输出哈希、首失败、四秒与全部资源／清理要求不变，不将其他身份／业务命令正文送入分类。只修规范、取证和确定性回归，不改Agent／Copilot Dockerfile、apt源／包／重试／签名校验、基础镜像或代理，不触发产品镜像重试、联网验收或新窗口。真实构建验收另行确认；同时段日志、当前tag或HTTP200不能唯一证明历史正文下载／构建归属，单次通过也不能证明间歇失败根因已修复。
 
