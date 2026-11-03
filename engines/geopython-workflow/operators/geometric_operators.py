@@ -546,20 +546,33 @@ def minimum_rotated_rectangle(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return _construct_unary_geometry(input_gdf, shapely.minimum_rotated_rectangle, (0, 1, 3))
 
 
+def _axis_aligned_envelope(geometry):
+    bounds = np.asarray(shapely.bounds(geometry), dtype=float)
+    if (bounds.shape != (len(geometry), 4) or not np.isfinite(bounds).all()
+            or (bounds[:, :2] > bounds[:, 2:]).any()):
+        raise RuntimeError('envelope calculation produced invalid or non-finite bounds')
+    same_x = bounds[:, 0] == bounds[:, 2]
+    same_y = bounds[:, 1] == bounds[:, 3]
+    points = same_x & same_y
+    lines = same_x ^ same_y
+    polygons = ~(same_x | same_y)
+    values = np.empty(len(geometry), dtype=object)
+    if points.any():
+        values[points] = shapely.points(bounds[points, :2])
+    if lines.any():
+        values[lines] = shapely.linestrings(np.stack((bounds[lines, :2], bounds[lines, 2:]), axis=1))
+    if polygons.any():
+        values[polygons] = shapely.box(*bounds[polygons].T)
+    expected_types = np.where(points, 0, np.where(lines, 1, 3))
+    if (not np.array_equal(shapely.get_type_id(values), expected_types)
+            or not np.array_equal(shapely.bounds(values), bounds)):
+        raise RuntimeError('envelope result differs from its exact axis-aligned source bounds')
+    return values
+
+
 def envelope(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    计算轴对齐外包矩形（envelope）
-
-    Args:
-        input_gdf: 输入 GeoDataFrame
-
-    Returns:
-        GeoDataFrame 外接矩形结果
-    """
-    result = input_gdf.copy()
-    geom_col = result.geometry.name
-    result[geom_col] = result.geometry.envelope
-    return result
+    """Per-source exact XY envelope, retaining valid axis-degenerate points/lines."""
+    return _construct_unary_geometry(input_gdf, _axis_aligned_envelope, (0, 1, 3))
 
 
 class DissolveInputError(ValueError):
@@ -2886,52 +2899,22 @@ DISSOLVE_METADATA = OperatorMetadata(
 
 
 ENVELOPE_METADATA = OperatorMetadata(
-    name="envelope",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_CONSTRUCTION,
-    description="外包矩形",
-    brief_description="计算几何对象的轴对齐外包矩形(MBR),常用于快速范围查询和空间索引",
-    execution_modes=["workflow"],
-    effects=["read"],
-
-    overview="计算包含几何对象的最小轴对齐矩形(Minimum Bounding Rectangle),边平行于坐标轴。常用于空间索引、粗略范围查询等场景。",
-
-    params=[
-        OperatorParam(
-            name="input_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="输入的地理数据"
-        )
-    ],
-
-    use_cases=[
-        "空间索引构建: 为复杂几何创建快速索引矩形",
-        "地图瓦片切割: 计算要素范围用于地图瓦片分配",
-        "粗略相交判断: 用矩形快速过滤候选对象再精确计算",
-        "图框生成: 为地图要素生成标准矩形图框"
-    ],
-
-    notes=[
-        "矩形边平行于坐标轴,对旋转的狭长几何可能产生很大冗余",
-        "如需最小面积外接矩形,使用minimum_rotated_rectangle",
-        "envelope面积通常大于原始几何面积",
-        "点和线的envelope可能退化为线或点"
-    ],
-
-    workflow_example={
-        'id': 'get_bounds_rect',
-        'operator': 'envelope',
-        'params': {
-            'input_gdf': {'$ref': 'load_buildings'}
-        },
-        'depends_on': ['load_buildings']
-    }
+    name="envelope", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_CONSTRUCTION,
+    description="外包矩形", brief_description="逐源取轴对齐范围，同位输出点、单轴跨度输出线、双轴跨度输出面",
+    execution_modes=["workflow"], effects=["read"],
+    overview="逐源包含全部部件及集合的XY极值，不跨行汇总、不旋转；双轴同位为Point、单轴同位为水平/垂直LineString，两个轴均有跨度为Polygon，斜向共线仍是面。",
+    params=[OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True,
+        description="有效非空有限二维投影几何", notes="唯一列名及实际活动几何；已知投影及匹配有限正水平线性单位；空批仍验结构和CRS")],
+    use_cases=["逐源计算空间检索候选范围", "对多部件整体生成轴对齐外包几何"],
+    notes=["仅按原始XY极值精确相等分型，不按面积0、epsilon或舍入判断退化；微小双轴跨度仍为Polygon",
+        "合法Point或同位MultiPoint保留Point；水平/垂直线保LineString；无效零长线、零面积面不能借退化规则放行",
+        "保属性原名/类型/null、原索引/顺序、实际几何列及CRS，逐源一行；不加来源ID或宽高/面积字段",
+        "不扩宽、不缓冲、不自动修复或投影；仅已知投影CRS与有效非空有限XY，拒绝Z/M",
+        "凹陷、孔洞和部件间空隙可能被覆盖；不等于精确源边界或可旋转的minimum_rotated_rectangle",
+        "范围或结果故障整批计算失败，无兼容路径；混合点线面保存由save校验目标能力，不强转面或删行"],
+    workflow_example={'id':'extent','operator':'envelope','params':{'input_gdf':{'$ref':'source'}},'depends_on':['source']},
 )
 
-
-# ==================== 注册算子 ====================
 
 OPERATORS = dict([
     register_operator(BUFFER_METADATA, buffer),

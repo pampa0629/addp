@@ -1800,3 +1800,14 @@ def test_representative_point_discovery_has_one_id_without_native_kernel_alias()
     assert [(port['name'], port['type'].lower(), port['is_default']) for port in spec['output_ports']] == [('default', 'geodataframe', True)]
     assert 'point_on_surface' not in {item['id'] for item in operators}
     with pytest.raises(ValueError, match='Unknown operator: point_on_surface'): get_operator('point_on_surface')
+
+
+def test_axis_aligned_envelope_metadata_exposes_exact_degenerate_projected_policy():
+    spec = next(item for item in list_operators() if item['id'] == 'envelope')
+    assert spec['description'] == '外包矩形' and spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert [p['name'] for p in spec['parameters']] == ['input_gdf']
+    assert len(spec['output_ports']) == 1 and spec['output_ports'][0]['type'] == 'geodataframe'
+    text = str(spec['detailed_description'])
+    for marker in ['水平', '垂直', 'LineString', 'Polygon', 'Point', '斜向共线', '投影', '不扩宽', '不按面积0']:
+        assert marker in text
+    assert '旧GeoSeries.envelope' not in text

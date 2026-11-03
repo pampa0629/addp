@@ -303,7 +303,7 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 
 简化几何 `simplify` 的严格准入、原单位非负容差、默认单几何保拓扑、零容差可去共线顶点及空结果保行遵循[矢量算子契约](../../../docs/spec/workflow/矢量算子契约.md#简化几何统一契约)。仅检查输入，不自动修复、投影或维持跨要素共享边；参数诊断与计算失败分开。
 
-`convex_hull`（凸包）及`minimum_rotated_rectangle`（最小外接矩形）逐源保行，合法单点/同位点保Point、精确共线保LineString、非共线输出面；单行多部件共同计算，跨行不隐式汇总。唯一实际几何、有效非空有限XY与已知投影准入、属性/index/CRS保护及闭合诊断遵循[统一契约](../../../docs/spec/workflow/矢量算子契约.md#凸包与最小外接矩形统一契约)。`envelope`仍为轴对齐外包矩形，不改成旋转矩形。
+`convex_hull`（凸包）及`minimum_rotated_rectangle`（最小外接矩形）逐源保行，合法单点/同位点保Point、精确共线保LineString、非共线输出面；单行多部件共同计算，跨行不隐式汇总。唯一实际几何、有效非空有限XY与已知投影准入、属性/index/CRS保护及闭合诊断遵循[统一契约](../../../docs/spec/workflow/矢量算子契约.md#凸包与最小外接矩形统一契约)。`envelope`按[轴对齐契约](../../../docs/spec/workflow/矢量算子契约.md#轴对齐外包矩形统一契约)取逐源全部件极值：同位Point、单轴同位LineString、双轴跨度Polygon；统一已知投影/有限有效XY准入，不扩宽或自动修复。
 
 `centroid`（计算质心）逐源保行，沿投影平面原单位计算原生权重：多点等权、线按原段长、面按扣孔后的面积；混合集合只计最高维度，重复贡献保留。面外/孔内/线外Point正常成功，不当作沿线中点、中心线或面内代表点。唯一实际几何/有效非空有限XY/已知投影、属性与index保护及闭合诊断见[统一契约](../../../docs/spec/workflow/矢量算子契约.md#计算质心统一契约)。不新增weight参数或batch_centroid入口，不自动修复/投影/融合。
 

@@ -1257,7 +1257,7 @@ for (const locale of ['zh-cn', 'en']) for (const cause of ['roles', 'choice', 'r
 
 for (const locale of ['zh-cn','en']) {
   for (const [operator_id,reason,parameter,field,name] of [
-    ...[['representative_point','面内点','Interior point'],['centroid','计算质心','Calculate centroid'],['convex_hull','凸包','Convex hull'],['minimum_rotated_rectangle','最小外接矩形','Minimum-area bounding rectangle']].flatMap(([operator_id,zh,en])=>[['operator_input_invalid','input_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>[operator_id,reason,parameter,'',locale==='zh-cn'?zh:en])),
+    ...[['envelope','外包矩形','Axis-aligned envelope'],['representative_point','面内点','Interior point'],['centroid','计算质心','Calculate centroid'],['convex_hull','凸包','Convex hull'],['minimum_rotated_rectangle','最小外接矩形','Minimum-area bounding rectangle']].flatMap(([operator_id,zh,en])=>[['operator_input_invalid','input_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>[operator_id,reason,parameter,'',locale==='zh-cn'?zh:en])),
     ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_nonnegative_number_required','tolerance'],['operator_boolean_required','preserve_topology']].map(([reason,parameter])=>['simplify',reason,parameter,'',locale==='zh-cn'?'简化几何':'Simplify geometry']),
     ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_number_invalid','distance'],['operator_positive_integer_required','resolution']].map(([reason,parameter])=>['buffer',reason,parameter,'',locale==='zh-cn'?'缓冲区分析':'Buffer analysis']),
     ['batch_buffer','operator_crs_invalid','','',locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'],
@@ -1278,7 +1278,7 @@ for (const locale of ['zh-cn','en']) {
     }})
     await page.goto(`/executions/${EXECUTION_ID}`)
     const panel=page.locator('.execution-failure')
-    const construction=['representative_point','centroid','convex_hull','minimum_rotated_rectangle'].includes(operator_id)
+    const construction=['envelope','representative_point','centroid','convex_hull','minimum_rotated_rectangle'].includes(operator_id)
     const constructionMarker=reason==='operator_input_invalid'?(locale==='zh-cn'?'几何':'geometry'):(locale==='zh-cn'?'投影坐标系':'projected CRS')
     const simplifyMarker={operator_input_invalid:locale==='zh-cn'?'几何':'geometry',operator_crs_invalid:locale==='zh-cn'?'投影坐标系':'projected CRS',operator_nonnegative_number_required:locale==='zh-cn'?'非负':'non-negative',operator_boolean_required:locale==='zh-cn'?'布尔值':'boolean'}[reason]
     await expect(panel).toContainText(name)

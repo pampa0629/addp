@@ -399,6 +399,7 @@
         }
       },
       "operatorNames": {
+        "envelope": "外包矩形",
         "representative_point": "面内点",
         "centroid": "计算质心",
         "convex_hull": "凸包",

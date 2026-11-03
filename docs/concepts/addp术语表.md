@@ -452,7 +452,7 @@
 | interior point | 面内点 | 严格属于所选面内部的Point，不含外环或孔洞边界及孔洞内部。 | 唯一算子representative_point：每源最大净面积部件、精确等面积按原部件顺序；严格包含校验失败即计算失败，不自动挪点、换部件或替代质心。 |
 | geometric centroid | 几何质心 | 单个几何的平面几何中心；多点等权、线按原线段长度、面按扣除孔洞后的面积计权。 | 混合几何仅最高维度参与；原生重复贡献保留，不去重或融合。质心可位于面外、孔内或线外，不等于面内点、沿线中点或中心线。 |
 | convex hull | 凸包 | 包含单个源要素全部部件坐标的最小凸几何。 | 可为Point、LineString或Polygon；逐源一行，不把不同源点行隐式汇总成面，不以凹包或缓冲替代。 |
-| envelope | 外包矩形 | 包含源要素、边平行于源坐标轴的外包几何。 | 轴对齐范围，不表示可旋转的最小面积外接矩形；算子标识为envelope。 |
+| envelope | 外包矩形 | 包含源要素、边平行于源坐标轴的外包几何。 | 算子envelope逐源取全部部件范围；双轴同位为Point、单轴同位为水平/垂直LineString、双轴均有跨度为Polygon。仅精确极值分型，不扩宽、不旋转；斜向共线仍为面。 |
 | minimum-area bounding rectangle | 最小外接矩形 | 包含单个源要素、允许旋转且面积最小的外接矩形。 | 唯一算子标识minimum_rotated_rectangle；合法点或共线点集保留Point/LineString，不扩宽成面；最优方向可能不唯一，不等于最小周长或轴对齐范围。 |
 | ADDP Operator | ADDP 算子 | ADDP 平台统一的可编排能力定义，包含稳定 ID、参数、输入输出端口、执行模式和展示元数据。 | 面向 Develop 前端、工作流定义、参数校验、执行历史和血缘；不承载具体引擎私有类名。 |
 | Workflow Runtime | 工作流运行时 | 按 `addp.workflow/v1` 协议接收算子列表查询和 workflow_def 执行请求的独立执行服务。 | 例如 GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow。 |

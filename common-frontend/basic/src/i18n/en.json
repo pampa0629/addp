@@ -399,6 +399,7 @@
         }
       },
       "operatorNames": {
+        "envelope": "Axis-aligned envelope",
         "representative_point": "Interior point",
         "centroid": "Calculate centroid",
         "convex_hull": "Convex hull",

@@ -414,7 +414,7 @@ for (const locale of ['zh-cn', 'en']) test(`shows actionable create conflict in 
 
 
 for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field,parameter='input_gdf'] of [
-  ...['representative_point','centroid','convex_hull','minimum_rotated_rectangle'].flatMap(operator_id=>[['operator_input_invalid','input_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>[operator_id,reason,'',parameter])),
+  ...['envelope','representative_point','centroid','convex_hull','minimum_rotated_rectangle'].flatMap(operator_id=>[['operator_input_invalid','input_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>[operator_id,reason,'',parameter])),
   ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_nonnegative_number_required','tolerance'],['operator_boolean_required','preserve_topology']].map(([reason,parameter])=>['simplify',reason,'',parameter]),
   ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_number_invalid','distance'],['operator_positive_integer_required','resolution']].map(([reason,parameter])=>['buffer',reason,'',parameter]),
   ['batch_buffer','operator_crs_invalid','',''],
@@ -424,15 +424,15 @@ for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field,parame
   ['extract_polygon_rings','operator_geometry_invalid','']
 ]) test(`workflow operator diagnostic uses the shared panel in Monitor (${operator_id}, ${reason}, ${field}, ${locale})`,async({page})=>{
   await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
-  await installBackend(page,{locale,empty:true,targetExists:true,errorDetails:{category:'execution_failed',code:'develop.workflow.invalid_params',message:['representative_point','centroid','convex_hull','minimum_rotated_rectangle'].includes(operator_id)?'private-password /private/input.gpkg PRIVATE_BIZ_FIELD':'private-password',
+  await installBackend(page,{locale,empty:true,targetExists:true,errorDetails:{category:'execution_failed',code:'develop.workflow.invalid_params',message:['envelope','representative_point','centroid','convex_hull','minimum_rotated_rectangle'].includes(operator_id)?'private-password /private/input.gpkg PRIVATE_BIZ_FIELD':'private-password',
     diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,
       operator:{node_index:2,operator_id,...(parameter?{parameter}:{}),...(field?{field}:{})}}}})
   await page.goto('/executions?execution_id=diagnostic-run')
   const panel=page.locator('.execution-detail-content > .execution-failure')
-  const construction=['representative_point','centroid','convex_hull','minimum_rotated_rectangle'].includes(operator_id)
+  const construction=['envelope','representative_point','centroid','convex_hull','minimum_rotated_rectangle'].includes(operator_id)
   const constructionMarker=reason==='operator_input_invalid'?(locale==='zh-cn'?'几何':'geometry'):(locale==='zh-cn'?'投影坐标系':'projected CRS')
   const simplifyMarker={operator_input_invalid:locale==='zh-cn'?'几何':'geometry',operator_crs_invalid:locale==='zh-cn'?'投影坐标系':'projected CRS',operator_nonnegative_number_required:locale==='zh-cn'?'非负':'non-negative',operator_boolean_required:locale==='zh-cn'?'布尔值':'boolean'}[reason]
-  const name=operator_id==='representative_point'?(locale==='zh-cn'?'面内点':'Interior point'):operator_id==='centroid'?(locale==='zh-cn'?'计算质心':'Calculate centroid'):operator_id==='convex_hull'?(locale==='zh-cn'?'凸包':'Convex hull'):operator_id==='minimum_rotated_rectangle'?(locale==='zh-cn'?'最小外接矩形':'Minimum-area bounding rectangle'):operator_id==='simplify'?(locale==='zh-cn'?'简化几何':'Simplify geometry'):operator_id==='buffer'?(locale==='zh-cn'?'缓冲区分析':'Buffer analysis'):operator_id==='voronoi'?(locale==='zh-cn'?'泰森多边形':'Voronoi polygons'):operator_id==='batch_buffer'?(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'):(locale==='zh-cn'?'面界提取':'Extract polygon rings')
+  const name=operator_id==='envelope'?(locale==='zh-cn'?'外包矩形':'Axis-aligned envelope'):operator_id==='representative_point'?(locale==='zh-cn'?'面内点':'Interior point'):operator_id==='centroid'?(locale==='zh-cn'?'计算质心':'Calculate centroid'):operator_id==='convex_hull'?(locale==='zh-cn'?'凸包':'Convex hull'):operator_id==='minimum_rotated_rectangle'?(locale==='zh-cn'?'最小外接矩形':'Minimum-area bounding rectangle'):operator_id==='simplify'?(locale==='zh-cn'?'简化几何':'Simplify geometry'):operator_id==='buffer'?(locale==='zh-cn'?'缓冲区分析':'Buffer analysis'):operator_id==='voronoi'?(locale==='zh-cn'?'泰森多边形':'Voronoi polygons'):operator_id==='batch_buffer'?(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'):(locale==='zh-cn'?'面界提取':'Extract polygon rings')
   await expect(panel).toContainText(name)
   if(field) await expect(panel).toContainText(field)
   else if(construction) await expect(panel).toContainText(constructionMarker)

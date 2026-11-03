@@ -8334,7 +8334,7 @@ def test_enclosing_constructions_each_row_combines_parts_and_collection_without_
     assert_geodataframe_equal(source, before)
 
 
-@pytest.mark.parametrize('operator', ['centroid', 'convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('operator', ['envelope', 'centroid', 'convex_hull', 'minimum_rotated_rectangle'])
 @pytest.mark.parametrize('problem', ['not_gdf', 'no_active', 'duplicate_columns', 'extra_geometry', 'missing', 'empty', 'invalid', 'z', 'm', 'infinite', 'no_crs', 'geographic', 'geocentric'])
 def test_enclosing_constructions_source_and_crs_admission_without_autofix(operator, problem):
     from operators.geometric_operators import UnaryConstructionInputError
@@ -8355,7 +8355,7 @@ def test_enclosing_constructions_source_and_crs_admission_without_autofix(operat
     pd.testing.assert_frame_equal(pd.DataFrame(source), pd.DataFrame(before))
 
 
-@pytest.mark.parametrize('operator', ['centroid', 'convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('operator', ['envelope', 'centroid', 'convex_hull', 'minimum_rotated_rectangle'])
 def test_enclosing_constructions_empty_batch_keeps_schema_and_validates_crs(operator):
     from operators.geometric_operators import UnaryConstructionInputError
     source = buffer_source().iloc[:0]
@@ -8393,7 +8393,7 @@ def test_enclosing_constructions_real_mixed_geopackage_roundtrip(operator, tmp_p
     assert_geodataframe_equal(source, before)
 
 
-@pytest.mark.parametrize('operator', ['centroid', 'convex_hull', 'minimum_rotated_rectangle'])
+@pytest.mark.parametrize('operator', ['envelope', 'centroid', 'convex_hull', 'minimum_rotated_rectangle'])
 @pytest.mark.parametrize('language', ['zh-cn', 'en'])
 @pytest.mark.parametrize('problem', ['source', 'crs'])
 def test_enclosing_constructions_runtime_diagnostics_bind_frozen_node_and_block_save(operator, language, problem, monkeypatch):
@@ -8445,14 +8445,119 @@ def test_enclosing_constructions_native_faults_are_execution_failures(operator, 
     assert caught.value.error_code == 'EXECUTION_FAILED' and caught.value.diagnostic is None
 
 
-def test_axis_aligned_envelope_retains_existing_calculation_and_crs_policy():
-    source = buffer_source([Point(1, 2), LineString([(0, 0), (2, 3)])], crs=4326)
-    before = source.copy(deep=True)
-    result = get_operator('envelope')(source)
-    assert result.geometry.iloc[0].equals_exact(Point(1, 2), 0)
-    assert result.geometry.iloc[1].equals(box(0, 0, 2, 3))
-    assert result.crs == source.crs and result.geometry.name == source.geometry.name
+@pytest.mark.parametrize('crs', [3857, 2263])
+def test_axis_aligned_envelope_exact_degenerate_types_and_all_parts(crs):
+    tiny = 2 ** -40
+    source = buffer_source([
+        Point(1, 2), shapely.MultiPoint([(1, 2), (1, 2)]),
+        LineString([(5, 2), (1, 2), (3, 2)]), LineString([(3, 7), (3, 1)]),
+        LineString([(1, 1), (5, 5)]), shapely.MultiPoint([(0, 0), (1, tiny)]),
+        MultiLineString([[(0, 2), (1, 2)], [(4, 2), (5, 2)]]),
+        shapely.GeometryCollection([Point(-1, 2), LineString([(1, 2), (3, 2)])]),
+        shapely.MultiPolygon([box(0, 0, 1, 1), box(4, 4, 5, 5)]),
+        Polygon([(0, 0), (6, 0), (6, 6), (0, 6), (0, 0)], [[(1, 1), (5, 1), (5, 5), (1, 5), (1, 1)]]),
+        Point(100, 100),
+    ], crs)
+    expected_bounds = [(1, 2, 1, 2), (1, 2, 1, 2), (1, 2, 5, 2), (3, 1, 3, 7),
+        (1, 1, 5, 5), (0, 0, 1, tiny), (0, 2, 5, 2), (-1, 2, 3, 2), (0, 0, 5, 5), (0, 0, 6, 6), (100, 100, 100, 100)]
+    expected_types = ['Point', 'Point', 'LineString', 'LineString', 'Polygon', 'Polygon', 'LineString', 'LineString', 'Polygon', 'Polygon', 'Point']
+    before = source.copy(deep=True); result = get_operator('envelope')(source)
+    assert result.geometry.geom_type.tolist() == expected_types
+    assert result.geometry.is_valid.all() and not result.geometry.is_empty.any()
+    for value, bounds in zip(result.geometry, expected_bounds): assert value.bounds == bounds
+    for row in (2, 3, 6, 7):
+        xmin, ymin, xmax, ymax = expected_bounds[row]
+        assert list(result.geometry.iloc[row].coords) == [(xmin, ymin), (xmax, ymax)]
+    for row in (4, 5, 8, 9):
+        xmin, ymin, xmax, ymax = expected_bounds[row]
+        assert set(result.geometry.iloc[row].exterior.coords) == {(xmin,ymin),(xmax,ymin),(xmax,ymax),(xmin,ymax)}
+        assert len(result.geometry.iloc[row].interiors) == 0
+    assert result.geometry.iloc[5].area == tiny
+    assert result.crs == source.crs and result.geometry.name == 'shape'
+    assert result.columns.equals(source.columns) and result.index.equals(source.index)
     pd.testing.assert_frame_equal(result.drop(columns='shape'), source.drop(columns='shape'))
+    assert_geodataframe_equal(source, before)
+
+
+def test_axis_aligned_envelope_huge_axis_span_does_not_subtract_or_widen():
+    source = buffer_source([shapely.MultiPoint([(-1e308, 2), (1e308, 2)])])
+    result = get_operator('envelope')(source).geometry.iloc[0]
+    assert result.geom_type == 'LineString' and result.is_valid
+    assert list(result.coords) == [(-1e308, 2), (1e308, 2)]
+
+
+@pytest.mark.parametrize('invalid', [LineString([(1, 1), (1, 1)]), Polygon([(0, 0), (1, 0), (2, 0), (0, 0)])])
+def test_axis_aligned_envelope_invalid_degenerate_sources_are_not_legal_collapse(invalid):
+    from operators.geometric_operators import UnaryConstructionInputError
+    with pytest.raises(UnaryConstructionInputError) as caught: get_operator('envelope')(buffer_source([invalid]))
+    assert caught.value.code == 'source'
+
+
+@pytest.mark.parametrize('fault', ['exception', 'nan', 'rank', 'length', 'reversed'])
+def test_axis_aligned_envelope_native_bounds_fault_is_atomic_execution_failure(fault, monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source = buffer_source([Point(0, 0)])
+    def broken(*args, **kwargs):
+        if fault == 'exception': raise shapely.errors.GEOSException('PRIVATE bounds failure')
+        return {'nan': np.array([[0, 0, float('nan'), 1]]), 'rank': np.zeros((1, 2, 2)),
+            'length': np.zeros((0, 4)), 'reversed': np.array([[1, 0, 0, 1]])}[fault]
+    monkeypatch.setattr(shapely, 'bounds', broken)
+    with pytest.raises(WorkflowExecutionError) as caught:
+        GeoPythonWorkflowRunner().execute({'tasks': [{'id': 'PRIVATE', 'operator': 'envelope', 'params': {'input_gdf': source}, 'depends_on': []}]})
+    assert caught.value.error_code == 'EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('kind,geometry', [('point', Point(0, 0)), ('line', LineString([(0, 0), (1, 0)])), ('polygon', box(0, 0, 1, 1))])
+@pytest.mark.parametrize('fault', ['exception', 'missing', 'empty', 'z', 'nonfinite', 'wrong_bounds', 'wrong_type'])
+def test_axis_aligned_envelope_native_construction_faults_never_become_input_errors(kind, geometry, fault, monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source = buffer_source([geometry])
+    def broken(*args, **kwargs):
+        if fault == 'exception': raise shapely.errors.GEOSException('PRIVATE construction failure')
+        value = {'missing': None, 'empty': Point(), 'z': Point(0, 0, 1), 'nonfinite': Point(float('inf'), 0),
+            'wrong_bounds': Point(99, 99), 'wrong_type': shapely.GeometryCollection([geometry])}[fault]
+        return np.array([value], dtype=object)
+    monkeypatch.setattr(shapely, {'point':'points','line':'linestrings','polygon':'box'}[kind], broken)
+    with pytest.raises(WorkflowExecutionError) as caught:
+        GeoPythonWorkflowRunner().execute({'tasks': [{'id': 'PRIVATE', 'operator': 'envelope', 'params': {'input_gdf': source}, 'depends_on': []}]})
+    assert caught.value.error_code == 'EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+def test_axis_aligned_envelope_real_mixed_geopackage_keeps_properties_and_source(tmp_path):
+    from osgeo import ogr
+    source = buffer_source([Point(5, 6), LineString([(4, 2), (0, 2)]), LineString([(3, 7), (3, 1)]), LineString([(0, 0), (4, 4)])])
+    source['enabled'] = pd.array([None, True, False, True], dtype='boolean')
+    before = source.copy(deep=True); result = get_operator('envelope')(source)
+    conn = {'storage_type': 'nfs', 'mount_path': str(tmp_path)}
+    get_operator('save')(input_df=result, connection_info=conn, path='envelope.gpkg', mode='fail')
+    ds = ogr.Open(str(tmp_path / 'envelope.gpkg')); layer = ds.GetLayer(0); rows = list(layer)
+    assert len(rows) == 4 and layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
+    definition = layer.GetLayerDefn()
+    for field in ('label', 'geometry'):
+        assert definition.GetFieldDefn(definition.GetFieldIndex(field)).GetType() == ogr.OFTString
+    assert definition.GetFieldDefn(definition.GetFieldIndex('grade')).GetType() == ogr.OFTInteger64
+    names = ['POINT', 'LINESTRING', 'LINESTRING', 'POLYGON']
+    for i, row in enumerate(rows):
+        geom = row.GetGeometryRef()
+        assert geom.GetGeometryName() == names[i] and geom.IsValid()
+        assert row.GetField('label') == f'row-{i}' and row.GetField('geometry') == 'business'
+        assert row.GetField('grade') == [None, 2**53+2, 2**53+3, 2**53+4][i]
+        assert row.GetField('enabled') == [None, True, False, True][i]
+        if i == 0: assert geom.GetPoint_2D(0) == (5, 6)
+        elif i == 1: assert geom.GetPoints() == [(0, 2), (4, 2)]
+        elif i == 2: assert geom.GetPoints() == [(3, 1), (3, 7)]
+        else: assert set(geom.GetGeometryRef(0).GetPoints()) == {(0,0),(4,0),(4,4),(0,4)}
+    physical_name = layer.GetGeometryColumn(); ds = None
+    loaded = get_operator('load')(connection_info=conn, path='envelope.gpkg')
+    assert loaded.geometry.name == physical_name and loaded.crs == source.crs
+    assert loaded.geometry.to_wkb(byte_order=1, flavor='iso').tolist() == result.geometry.to_wkb(byte_order=1, flavor='iso').tolist()
+    expected = source.drop(columns='shape').reset_index(drop=True)
+    # OGR String fields reload as Python string objects, not pandas StringDtype.
+    for field in ('label', 'geometry'): expected[field] = expected[field].astype(object)
+    pd.testing.assert_frame_equal(loaded.drop(columns=physical_name).reset_index(drop=True), expected)
+    assert str(loaded.grade.dtype) == 'Int64' and str(loaded.enabled.dtype) == 'boolean'
     assert_geodataframe_equal(source, before)
 
 
