@@ -840,6 +840,8 @@ System 从已确认部署来源项目派生只读 `scope`，在计数与分页�
 
 中英文 System→Monitor→浏览器返回新增 Business 场景，连同 Infra、无观测权限隐藏入口、Redis 详情分组／刷新／来源返回及即时搜索，共九项定向通过。`make test-console-frontend` 退出0：31文件／237项单元、297项真实 iframe 浏览器回归及生产构建全部通过；共享夹具受影响的 Monitor 四份引擎场景及 engine Enter／IME 场景共69项通过。日志：`/tmp/addp-engine-scope-console-{red,green,full}-20261103.log`、`/tmp/addp-engine-scope-consumer-monitor-20261103.log`。既有标准入口与浏览器 glob 已覆盖，无需修改 Makefile／CI 登记；未轮询、重试或取消远端运行，未触发 Hosted、容量或定时任务。个人 Safari 的可见性与实际数值恢复仍未验收；本批测试修正无需服务重启，自然 Linux Console 结果继续等专门 CI 会话回传。
 
+后续当次Safari实操已确认来源分区与真实指标恢复，用户另确认MinIO即时搜索及详情返回保持；[完整运行证据与人工／工具边界](Monitor采集来源与引擎指标历史证据.md#来源分区应用后的-safari-真实值恢复与人工导航复验2026-11-03)。顶层与iframe此前hidden的历史成因尚未唯一定位，不认定为代码修复或长时刷新／全部趋势通过；租户监控尚未实施。
+
 
 ### 2026-11-03 卷测量检查点自然Linux分项通过（整作业取消，真实超时未验）
 
