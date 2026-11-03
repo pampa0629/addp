@@ -8,8 +8,8 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "### 4.8 Transfer 运行审批与执行读取",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "4739bf695a0ec6c47b8a2dae0f5bb882bda440b6be757a4d5144a10988dc7eb6",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "b128e88046ae3f6c8983028a117b6f16cfbe45677f6a7e96f494aab5dfadcc93",
       "use": {
         "zh-cn": "运行审批、精确委托与受限结果，受理不等于成功",
         "en": "Owner approval, exact delegation and bounded results; admission is not success"
@@ -73,8 +73,8 @@
       "kind": "implementation",
       "path": "agent/backend/agents/transfer_run.py",
       "anchor": "def platform_identity(",
-      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
-      "sha256": "1190e217023e828f077fba1f042d498e26110a72e6e95f445eda2fa7136b2d4d",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "4e3d59d60bc6a2ffde22b8eab5b571cb6b2f530b4609e9798c21beb25d02bc62",
       "use": {
         "zh-cn": "读取也必须核对当前独立本体条件身份，缺少或未知条件拒绝，不把 Schema 当作完整语义判断",
         "en": "Reads also validate the current independent ontology condition identities, refusing missing or unknown conditions rather than treating Schema as all semantics"
@@ -86,8 +86,8 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _resume_confirmed_start(",
-      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
-      "sha256": "66bb7356009e0898be34c4073cbaf66eeaab860c2b95f3993f64c8909db76f89",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "6003a85feb2a1444390101d439e01291c994f3dea683bdcc25d69cec9bb66e30",
       "use": {
         "zh-cn": "批准恢复由 Runtime 确定性调用一次，原状态不明不重发，查询不装入启动 Tool",
         "en": "Runtime deterministically submits approved resume once, does not retry uncertainty, and omits start tools for observations"
@@ -99,8 +99,8 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_run_runtime.py",
       "anchor": "async def test_unknown_read_condition_stops_before_owner_observation(",
-      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
-      "sha256": "f1142a3c040384d1a0ddf3e57eb71ce7c9cce1cfe8feadaad297573e408bd9af",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "8058ed47cebc8c55139859cf2ce65d8050cec160c50b344222ba4fd89d8ff878",
       "use": {
         "zh-cn": "真实 Harness/SDK 的受控调用验证未知读取条件在 Owner GET 前被拒绝，查询时不装配创建／启动工具",
         "en": "Controlled real Harness/SDK verifies unknown read conditions refuse before owner GET and that observations do not receive create/start tools"

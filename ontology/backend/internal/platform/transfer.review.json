@@ -138,8 +138,8 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
-      "sha256": "66bb7356009e0898be34c4073cbaf66eeaab860c2b95f3993f64c8909db76f89",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "6003a85feb2a1444390101d439e01291c994f3dea683bdcc25d69cec9bb66e30",
       "use": {
         "zh-cn": "本次按正式所选能力和依赖收窄 Tool 白名单；创建仍确定性提交一次；运行通过正式 Owner 状态及提交屏障独立消费，拒绝或未知不重发。",
         "en": "Tools narrow to the selected capability and dependencies; creation still commits once deterministically, while run consumption separately requires formal owner state and the commit barrier, without retries after rejection or uncertainty."
@@ -164,8 +164,8 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "24155a5458abc011e743ae65697aeb8b2f9848b7fdaf8f202759bf44c2d3cbca",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "a769607a3fb6a3f0353a4efa8992b02f91254c1ada5c6805c2cf19f4528b1ea7",
       "use": {
         "zh-cn": "本次补充独立运行的拒绝、结果不明和真实 execution 身份／状态文案，pending 不称为完成；创建文案边界不变。",
         "en": "Adds separate run refusal, uncertainty and real execution identity/state messages without calling pending complete; creation wording retains its boundary."
@@ -216,8 +216,8 @@
       "kind": "implementation",
       "path": "agent/backend/api/chat.py",
       "anchor": "async def draft_reader(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "237743b92c1cb9c92ff47ac8ced1e3e5097dfe30e475ea7235ef06d2449aa640",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "32127454342e32fc0a753f336ed0d60758263438301b6d51eb0821b5f57be20e",
       "use": {
         "zh-cn": "本次按 owner 精确读取审批状态，User 决定后恢复 Transfer；不把客户端 check 当批准，不代批，权限与依赖失败分开。",
         "en": "Approval reads are keyed by owner and Transfer resumes after a User decision; client check is not approval, the backend cannot approve, and authorization failure is distinct from dependency failure."
@@ -268,8 +268,8 @@
       "kind": "test",
       "path": "agent/backend/tests/test_messages.py",
       "anchor": "def test_text_merges_only_adjacent_deltas_without_crossing_presentations(",
-      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
-      "sha256": "3b788001e145f568dbc6731517a33519d21dd99de907b9674f8dab3c808234ba",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "f4efad0a67dbe10de43b1d5edd2b9b044d42b0dd07a0af1a989dd037a9b41c87",
       "use": {
         "zh-cn": "验证空 delta、相邻合并与卡片后的新文字段，不丢弃模型输出",
         "en": "Verify empty deltas, adjacent merging and new text after cards without dropping model output"
@@ -346,8 +346,8 @@
       "kind": "test",
       "path": "agent/frontend/e2e/clarification-resume.spec.js",
       "anchor": "test('exact checked draft streams and reloads",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "942deed1b929b9aac268f4a1513b9f8cac3965c001a7aacdf9aaad566c64587c",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "669c3831bf5cfa06aee1c5d3e50ad712e46d5f7ca9e2509e12d7f26511f50455",
       "use": {
         "zh-cn": "本次增加 Agent 内批准／拒绝、刷新不重发、零直接启动／扫描和不跳转的受控浏览器断言；原创建复核继续保留。",
         "en": "Adds controlled-browser assertions for inline approve/reject, no refresh replay, no direct start/scan and no navigation, while retaining creation review coverage."
@@ -411,8 +411,8 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "同批 Tool 按模型返回顺序进入唯一 Runtime 调用路径",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "4739bf695a0ec6c47b8a2dae0f5bb882bda440b6be757a4d5144a10988dc7eb6",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "b128e88046ae3f6c8983028a117b6f16cfbe45677f6a7e96f494aab5dfadcc93",
       "use": {
         "zh-cn": "本次规定独立运行／读取 Tool、用户手动 Owner 审批与确定性恢复，并按已选能力收窄白名单；创建／预检仍不授运行权。",
         "en": "Defines separate run/read tools, manual User owner approval and deterministic resume, with tools narrowed by selected capability; creation/precheck still confer no run authority."

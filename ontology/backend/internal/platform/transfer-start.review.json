@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "### 4.8 Transfer 运行审批与执行读取",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "4739bf695a0ec6c47b8a2dae0f5bb882bda440b6be757a4d5144a10988dc7eb6",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "b128e88046ae3f6c8983028a117b6f16cfbe45677f6a7e96f494aab5dfadcc93",
       "use": {
-        "zh-cn": "运行审批、精确委托与受限结果，受理不等于成功",
-        "en": "Owner approval, exact delegation and bounded results; admission is not success"
+        "zh-cn": "运行审批、正式过期无执行收尾、精确委托与受限结果，受理不等于成功",
+        "en": "Owner approval, formal expiry completion without execution, exact delegation and bounded results; admission is not success"
       }
     },
     {
@@ -99,11 +99,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/transfer_run.py",
       "anchor": "def validate_start(",
-      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
-      "sha256": "1190e217023e828f077fba1f042d498e26110a72e6e95f445eda2fa7136b2d4d",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "4e3d59d60bc6a2ffde22b8eab5b571cb6b2f530b4609e9798c21beb25d02bc62",
       "use": {
-        "zh-cn": "当前本体与正式审批引用核对，不接受模型代批",
-        "en": "Current semantics and formal review references, no model approval"
+        "zh-cn": "当前本体与正式审批引用核对，拒绝客户端代批，正式 expired 只能进入无执行收尾",
+        "en": "Current semantics and formal review references; no client approval and formal expiry only ends without execution"
       }
     },
     {
@@ -151,11 +151,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _resume_confirmed_start(",
-      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
-      "sha256": "66bb7356009e0898be34c4073cbaf66eeaab860c2b95f3993f64c8909db76f89",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "6003a85feb2a1444390101d439e01291c994f3dea683bdcc25d69cec9bb66e30",
       "use": {
-        "zh-cn": "批准恢复由 Runtime 确定性调用一次，原状态不明不重发，查询不装入启动 Tool",
-        "en": "Runtime deterministically submits approved resume once, does not retry uncertainty, and omits start tools for observations"
+        "zh-cn": "批准确定性调用一次，消费后只查；拒绝／过期固定无执行收尾，不因修订变化重开运行确认，不明结果不重发",
+        "en": "One deterministic approved start and read-only observation after consumption; rejection/expiry finish without execution or renewed review on revision drift; no uncertainty retry"
       }
     },
     {
@@ -164,11 +164,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_run_runtime.py",
       "anchor": "async def test_approved_resume_is_deterministic_and_consumes_local_confirmation(",
-      "commit": "f8bceb9f3f79106f80de7dd2335c26a869e4d1fa",
-      "sha256": "f1142a3c040384d1a0ddf3e57eb71ce7c9cce1cfe8feadaad297573e408bd9af",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "8058ed47cebc8c55139859cf2ce65d8050cec160c50b344222ba4fd89d8ff878",
       "use": {
-        "zh-cn": "受控真实 Harness/SDK 验证手动决定后零模型、一次启动及拒绝／漂移／提交失败阻断",
-        "en": "Controlled real Harness/SDK verifies zero model calls, one approved start and refusal after rejection, drift or failed checkpoint commit"
+        "zh-cn": "受控真实 Harness/SDK 验证过期中英文固定输出、修订变化仍收尾、零模型及零 Transfer 调用，原批准／拒绝／漂移／提交屏障保持",
+        "en": "Controlled real Harness/SDK verifies bilingual expiry, completion despite revision drift, zero inference and Transfer calls; approved/rejected/drift/commit boundaries remain"
       }
     },
     {
@@ -182,6 +182,71 @@
       "use": {
         "zh-cn": "标准 PG 门禁验证并发只能消费一次，执行身份关联且无 Worker 或业务库写入",
         "en": "Standard PG gate verifies single concurrent consumption and associated execution identity without workers or business writes"
+      }
+    },
+    {
+      "id": "owner_interaction",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/services/interactions.py",
+      "anchor": "async def resolve_interaction(",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "ffdb9c0848df1303998b94947dc4d0d733c83bc4bcfaff2c47154feaccff1b2b",
+      "use": {
+        "zh-cn": "正式 Owner 状态及原身份指纹核验，过期完成原交互",
+        "en": "Formal owner status and original identity/fingerprint checks; expiry completes the original interaction"
+      }
+    },
+    {
+      "id": "owner_interaction_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_interactions.py",
+      "anchor": "async def test_expired_owner_result_still_requires_the_original_fingerprint(",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "8f496ed66bc9408adc126dc86d6377a86d7c1b70d2410549e77766b4724a8078",
+      "use": {
+        "zh-cn": "过期完成、重复恢复拒绝、未知状态和指纹不符拒绝，不能按显示时钟判定",
+        "en": "Expiry completion, duplicate refusal, unknown-state and fingerprint refusal; no display-clock inference"
+      }
+    },
+    {
+      "id": "message_projection_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_messages.py",
+      "anchor": "async def test_expired_owner_interaction_is_completed_in_reloaded_message_parts(",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "f4efad0a67dbe10de43b1d5edd2b9b044d42b0dd07a0af1a989dd037a9b41c87",
+      "use": {
+        "zh-cn": "刷新从持久交互重建完成状态，不修改历史消息原件",
+        "en": "Reload reconstructs completed state from the persisted interaction without rewriting historical messages"
+      }
+    },
+    {
+      "id": "expiry_ui_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/frontend/e2e/clarification-resume.spec.js",
+      "anchor": "test('formal Transfer expiry ends the wait and removes decision buttons after refresh'",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "669c3831bf5cfa06aee1c5d3e50ad712e46d5f7ca9e2509e12d7f26511f50455",
+      "use": {
+        "zh-cn": "正式过期提示、移除决策按钮及刷新保持，零审批决定调用",
+        "en": "Formal expiry notice, removal of decision buttons and reload persistence with no approval decision calls"
+      }
+    },
+    {
+      "id": "runtime_messages",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/i18n.py",
+      "anchor": "'transfer_run_expired'",
+      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
+      "sha256": "a769607a3fb6a3f0353a4efa8992b02f91254c1ada5c6805c2cf19f4528b1ea7",
+      "use": {
+        "zh-cn": "中英文固定说明审批过期未启动，不由模型收尾",
+        "en": "Fixed Chinese and English expiry/no-start output without model completion"
       }
     }
   ],
@@ -197,7 +262,12 @@
         "approval_ui",
         "runtime_boundary",
         "runtime_test",
-        "owner_pg_test"
+        "owner_pg_test",
+        "owner_interaction",
+        "owner_interaction_test",
+        "message_projection_test",
+        "expiry_ui_test",
+        "runtime_messages"
       ]
     },
     {
@@ -218,7 +288,12 @@
         "owner_approval",
         "owner_api",
         "runtime",
-        "owner_test"
+        "owner_test",
+        "owner_interaction",
+        "owner_interaction_test",
+        "message_projection_test",
+        "expiry_ui_test",
+        "runtime_messages"
       ]
     },
     {
@@ -253,7 +328,12 @@
         "approval_ui",
         "runtime_boundary",
         "runtime_test",
-        "owner_pg_test"
+        "owner_pg_test",
+        "owner_interaction",
+        "owner_interaction_test",
+        "message_projection_test",
+        "expiry_ui_test",
+        "runtime_messages"
       ]
     },
     {

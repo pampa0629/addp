@@ -2,7 +2,7 @@
   "schema_version": "addp.platform-capability-context/v1",
   "knowledge_kind": "platform_definition",
   "capability": "transfer.task.start",
-  "revision": 1,
+  "revision": 2,
   "digest": "",
   "availability": "not_observed",
   "concepts": [
@@ -37,8 +37,8 @@
     {
       "id": "owner_run_approval",
       "name": {
-        "zh-cn": "首次只申请运行审批；用户手动批准后，原 AgentRun 按原任务配置和指纹消费一次；不明结果不重试",
-        "en": "Initially request approval only; after explicit User approval, the original AgentRun consumes it once for the unchanged task and fingerprint; no uncertain-write retry"
+        "zh-cn": "首次只申请运行审批；用户手动批准后，原 AgentRun 按原任务配置和指纹消费一次；正式拒绝或过期结束等待且不启动，不自动续期或重试",
+        "en": "Initially request approval only; after explicit User approval, the original AgentRun consumes it once for unchanged task and fingerprint; formal rejection or expiry ends waiting without starting, renewal or automatic retry"
       }
     },
     {
