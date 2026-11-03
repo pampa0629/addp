@@ -50,6 +50,6 @@ common-frontend/
 | 页面导航、离页保护与草稿移交 | [模块公开导航与历史](docs/components/页面状态与导航.md#模块公开导航与历史)、[离页保护](docs/components/页面状态与导航.md#未保存修改的离页保护)、[Console 草稿移交](docs/components/页面状态与导航.md#console-草稿移交) |
 | 视觉、交互、主题与工程约束 | [前端风格设计规范](docs/addp前端风格设计规范.md) |
 | 地图预览、CRS 与底图展示 | [Map 说明](map/README.md) |
-| DAG 编辑、只读展示与 API 分类 | [DAG 说明](dag/README.md) |
+| DAG 编辑、只读展示、API 与验证分工 | [DAG 接入与验证导航](README.md#dag-接入与验证) |
 | 认证组合式函数的使用 | [认证使用指南](basic/composables/AUTH_USAGE_GUIDE.md) |
 | Agent 受信任组件与协议边界 | [交互协议](../docs/spec/addp智能体交互协议规范.md)、[评测规范](../docs/spec/addp智能体评测规范.md) |

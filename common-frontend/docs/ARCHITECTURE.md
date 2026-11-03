@@ -12,7 +12,7 @@
 | [basic/src/previews.js](../basic/src/previews.js) | 文件预览的独立入口，避免基础入口直接导出带预览依赖的组件。 |
 | [map/src](../map/src/index.js) | 地图、空间预览、CRS 与底图展示，组合基础表格和分页。 |
 | [chart/src](../chart/src/index.js) | 数据服务结果图表与受控图表配置。 |
-| [dag/src](../dag/src/index.js) | DAG 查看器、编辑交互与共享 composable。 |
+| [dag/src](../dag/src/index.js) | DAG 查看器、编辑交互与共享 composable；[接入与验证导航](../README.md#dag-接入与验证)。 |
 | [graph/src](../graph/src/index.js) | 图结果、Schema、本体与血缘查看器。 |
 | [agent-ui/src](../agent-ui/src/index.js) | Agent A2UI 协议到受信任共享 Vue 组件的适配。 |
 
