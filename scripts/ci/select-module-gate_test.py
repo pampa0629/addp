@@ -92,6 +92,11 @@ class SelectModuleGateTest(unittest.TestCase):
         self.assertTrue(MODULE.select_module(self.repository, "sample", environment)[0])
         self.assertTrue(MODULE.select_module(self.repository, "other", environment)[0])
 
+    def test_ontology_model_fixture_definition_selects_agent_ci(self) -> None:
+        environment = self.commit("ontology/backend/internal/platform/transfer.json")
+        self.assertTrue(MODULE.select_module(self.repository, "agent", environment)[0])
+        self.assertFalse(MODULE.select_module(self.repository, "other", environment)[0])
+
     def push(self, relative_path: str) -> dict[str, str]:
         before = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=self.repository,

@@ -62,6 +62,16 @@ class ChangedGateTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def test_agent_model_definition_change_selects_producer_and_consumer(self) -> None:
+        path = self.repository / "ontology/backend/go.mod"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("module example.com/ontology\n")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        self.assertEqual(["agent", "ontology"], MODULE.affected_modules(
+            self.repository, ["ontology/backend/internal/platform/transfer.json"]))
+        self.assertEqual(["ontology"], MODULE.affected_modules(
+            self.repository, ["ontology/backend/internal/platform/transfer.review.json"]))
+
     def test_native_gdal_preparation_selects_both_real_consumers(self):
         for relative in ("manager/backend/go.mod", "engines/duckdb/go.mod"):
             path = self.repository / relative

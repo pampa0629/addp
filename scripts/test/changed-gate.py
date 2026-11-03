@@ -180,6 +180,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if "skills" in roots:
         affected.add("agent")
 
+    # Agent model fixtures consume this owner definition, including its revision.
+    if "ontology/backend/internal/platform/transfer.json" in files:
+        affected.add("agent")
+
     # The Quality PostgreSQL gate includes Orchestrator's Quality-plan reference migration.
     if "orchestrator" in roots:
         affected.add("quality")
