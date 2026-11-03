@@ -15,6 +15,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import time
 
 SUITE = 'raster-zonal-weighted-stddev-persistence'
 PREFIX = 'zonal-weighted-stddev'
@@ -187,7 +188,7 @@ def population(case, reclassified=False, include_stddev=True):
     valid = (values != nodata) & np.isfinite(values) & (mask != 0) & np.isfinite(data[2]) & (data[2] > 0)
     weights = source_arrays(weight_source)[0][1] if weight_source else np.ones(values.shape)
     if weight_source == 'weight-classes.tif': weights = weights/2
-    counts, samples, masses, totals, pairs = {}, {}, {}, {}, {}
+    counts, samples, masses, totals, origins, first_moments, second_moments = {}, {}, {}, {}, {}, {}, {}
     with localcontext() as context:
         context.prec = 2000
         for raw, value, accepted, mass in zip(classes[covered], values[covered], valid[covered], weights[covered]):
@@ -197,7 +198,14 @@ def population(case, reclassified=False, include_stddev=True):
                 v, w = float(value), float(mass)
                 samples.setdefault(code,[]).append(v)
                 dw = Decimal.from_float(w)
-                pairs.setdefault(code,[]).append((Decimal.from_float(v),dw))
+                if include_stddev and w:
+                    # A positive-weight source value is an exact finite reference. Each
+                    # observation contributes once; never subtract a repeating
+                    # 2000-digit mean and square it for every pixel.
+                    origin = origins.setdefault(code, Decimal.from_float(v))
+                    delta = Decimal.from_float(v)-origin
+                    first_moments[code] = first_moments.get(code,Decimal(0))+dw*delta
+                    second_moments[code] = second_moments.get(code,Decimal(0))+dw*delta*delta
                 masses[code] = masses.get(code,Decimal(0))+dw
                 totals[code] = totals.get(code,Decimal(0))+Decimal.from_float(v)*dw
         rows = []
@@ -214,17 +222,30 @@ def population(case, reclassified=False, include_stddev=True):
                     if not mass: deviation=None
                     else:
                         center=total/mass
-                        deviation=float((sum((w*(v-center)**2 for v,w in pairs[code]),Decimal(0))/mass).sqrt())
+                        shift=center-origins[code]
+                        # Exact centered-moment identity, at the same 2000-digit
+                        # precision: sum(w*(delta-shift)^2). No clipping or epsilon.
+                        variance=(second_moments[code]-2*shift*first_moments[code]+shift*shift*mass)/mass
+                        deviation=float(variance.sqrt())
                     weighted.append(deviation)
                 row.update(zip(WEIGHT_COLUMNS,weighted))
             rows.append(row)
     return rows
 
+def stage(name, started=None):
+    # Owned fixture phases only: no paths, credentials, identities or pixel data.
+    suffix = '' if started is None else ' elapsed_ms='+str(round((time.monotonic()-started)*1000))
+    print('zonal-weighted-stddev stage='+name+suffix, file=sys.stderr, flush=True)
+
+
 def oracle():
     populations, results = {}, {}
     for name,case in CASES.items():
         key=(*case,name == 'zones-reclassified.csv',enabled(name))
-        if key not in populations: populations[key] = population(case,key[-2],key[-1])
+        if key not in populations:
+            started=time.monotonic();stage('population:'+name+':start')
+            populations[key] = population(case,key[-2],key[-1])
+            stage('population:'+name+':done',started)
         results[name]=populations[key]
     return results
 
@@ -313,9 +334,11 @@ def worker(action, root, names):
         if path.is_symlink(): raise FixtureError('oracle symlink')
         path.unlink(missing_ok=True); return {'oracle_cache_removed': not path.exists()}
     if action == 'oracle' and not names:
-        expectations = oracle(); raw = encoded(expectations)
+        started=time.monotonic();stage('oracle:start')
+        expectations = oracle();stage('oracle:computed',started)
+        raw = encoded(expectations);stage('oracle:encoded')
         with (root/ORACLE).open('xb') as stream: stream.write(raw)
-        (root/ORACLE).chmod(0o444); anchor = hashlib.sha256(raw).hexdigest()
+        (root/ORACLE).chmod(0o444); anchor = hashlib.sha256(raw).hexdigest();stage('oracle:frozen')
     elif action == 'verify' and names and re.fullmatch('[0-9a-f]{64}', names[0]):
         anchor, names = names[0], names[1:]; path = root/ORACLE
         if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != anchor: raise FixtureError('oracle cache hash changed')
@@ -323,7 +346,9 @@ def worker(action, root, names):
         if set(expectations) != set(CASES): raise FixtureError('oracle scope changed')
     else: raise FixtureError('unknown oracle action or anchor')
     if list(Path(tempfile.gettempdir()).glob('addp-raster-*')): raise FixtureError('Runtime execution workspace residual')
-    result = {**verify(root, names, expectations), 'runtime_workspaces_removed': True, 'oracle_sha256': anchor}
+    started=time.monotonic();stage('verify:start')
+    physical=verify(root,names,expectations);stage('verify:done',started)
+    result = {**physical, 'runtime_workspaces_removed': True, 'oracle_sha256': anchor}
     if action == 'oracle': result['expectations'] = expectations
     return result
 

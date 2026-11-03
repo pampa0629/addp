@@ -4,6 +4,7 @@ import csv
 import importlib
 import json
 import math
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -121,6 +122,10 @@ def test_zonal_weighted_stddev_worker_stdin_frozen_oracle_poison_and_cleanup(tmp
     result = subprocess.run([sys.executable, '-', '--worker', 'oracle', str(root)], input=Path(f.__file__).read_text(),
         cwd=tmp_path, env={**os.environ, 'TMPDIR': str(scratch)}, capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, result.stderr
+    phases=result.stderr
+    for marker in ('oracle:start','population:weighted.csv:start','population:weighted.csv:done','oracle:computed','oracle:encoded','oracle:frozen','verify:start','verify:done'):
+        assert 'stage='+marker in phases, phases
+    assert phases.index('stage=oracle:computed')<phases.index('stage=oracle:frozen')<phases.index('stage=verify:start')<phases.index('stage=verify:done')
     evidence = json.loads(result.stdout); assert len(evidence['expectations']) == 16 and evidence['full_source_pixels_verified'] is True
     path = root/f.ORACLE; path.chmod(0o644); path.write_bytes(path.read_bytes()+b' ')
     with pytest.raises(f.FixtureError, match='oracle cache hash changed'): f.worker('verify', root, [evidence['oracle_sha256']])
@@ -161,3 +166,38 @@ def test_zonal_weighted_stddev_rejects_stddev_semantics_and_unchanged_original_c
         changed=repr(math.nextafter(float(row['weighted_stddev']),math.inf));row['stddev']=row['weighted_stddev']=changed
     with path.open('w',newline='')as stream:writer=csv.DictWriter(stream,fieldnames=fields);writer.writeheader();writer.writerows(rows)
     with pytest.raises(f.FixtureError):f.verify(root,list(f.CASES),expected)
+
+
+def test_zonal_weighted_stddev_oracle_preserves_every_frozen_legacy_row(zonal_sources):
+    # Complete old 2000-digit centered oracle, business fixture SHA256
+    # 5bd333e2ca2a955175249869316cf29adc984616f153da4a4c427d9ecfb2b4cc.
+    # No product results define this baseline; include every column of all 16 tables.
+    expected_hashes = {'weighted.csv': '5f76fbbb12b3b26011eb630ef0a44afa1e7a34f8ff1cfba7bb466194e464435b', 'scaled.csv': '2d1dc17bd35a9f0ad135d6ce54bd90641dfb44df5eb7205d48328eba57a3c953', 'ones.csv': 'b2be5eafec75539c4bf20eed6ce284c45c61fcfd33c06e6a541bcf9dc70e38f0', 'control-default.csv': '3734350f1c044c739933d8a3511a439dfde9712025b2d365b7988934dbf4307b', 'control-false.csv': '3734350f1c044c739933d8a3511a439dfde9712025b2d365b7988934dbf4307b', 'control-original.csv': '2fe81d095d27b2f9fad3d4019d03f94b1d265a643c78f18b204e183226e3ab57', 'weights-reclassified.csv': '5f76fbbb12b3b26011eb630ef0a44afa1e7a34f8ff1cfba7bb466194e464435b', 'zones-reclassified.csv': '1e7926b08254831d79be5364f71ffb816dacc4f16f20bae2420be45621d31412', 'zero.csv': 'f25212e94bb3d916f6b67fff6e0a339cd340de556c38df3ce357fcd4267a820c', 'mixed-empty.csv': '0c9b2c4d0ca45d55f18e6bfc0db189a95aed669227d5f02f68f9585bd85301b0', 'invalid-values.csv': 'ce365c861aceec628aa2c6322400a12e53445bd54e477cc9c71f53a5428e3693', 'empty-zones.csv': '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570', 'coverage.csv': 'a2f6a4fe767336919268b79243d70c67a779d84f4dd407b21c5daa5cbcc818da', 'rotated.csv': 'b2be5eafec75539c4bf20eed6ce284c45c61fcfd33c06e6a541bcf9dc70e38f0', 'int64.csv': 'b0383f7e0bfceeb2beb5a6b4e36c760544d391c7e55558c5c905423a645b4163', 'uint64.csv': '476cbf1ce54773ad0afa4e388e4d2ce2c886b6b0f124fd5cd7e57a852c46577f'}
+    _,_,expected,_=zonal_sources
+    assert set(expected_hashes)==set(f.CASES)==set(expected)
+    assert {name:hashlib.sha256(f.encoded(rows)).hexdigest()for name,rows in expected.items()}==expected_hashes
+
+
+@pytest.mark.parametrize('values,weights',[
+    ([1e16,1e16+2,1e16+4],[1.,2.,3.]),
+    ([1e150,1e150,1e150],[1.,2.,3.]),
+    ([1e150,math.nextafter(1e150,math.inf),math.nextafter(1e150,0.)],[1.,2.,3.]),
+    ([-7.,0.,11.],[2.**-1022,2.**-1021,2.**-1020]),
+    ([0.,4.,12.],[0.,0.,0.]),
+    ([1e300,0.,0.],[0.,1.,2.]),
+])
+def test_zonal_weighted_stddev_fixed_reference_matches_direct_centered_decimal(monkeypatch,values,weights):
+    import numpy as np
+    from decimal import Decimal,localcontext
+    def source(name):
+        data=np.array([values if name=='v'else weights if name=='w'else[7.,7.,7.]])
+        return np.stack([np.zeros(data.shape),data,np.full(data.shape,128.)]),np.full(data.shape,255,np.uint8),'Float64',-9999.,3857,f.GRID
+    monkeypatch.setattr(f,'source_arrays',source)
+    row=f.population(('v','z','w'))[0]
+    with localcontext()as context:
+        context.prec=2000;pairs=[(Decimal.from_float(v),Decimal.from_float(w))for v,w in zip(values,weights)];mass=sum((w for v,w in pairs),Decimal(0))
+        if mass:
+            center=sum((v*w for v,w in pairs),Decimal(0))/mass
+            expected=float((sum((w*(v-center)**2 for v,w in pairs),Decimal(0))/mass).sqrt())
+        else:expected=None
+    assert row['weighted_stddev']==expected

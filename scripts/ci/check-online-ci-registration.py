@@ -4225,7 +4225,7 @@ ZONAL_WEIGHTED_STDDEV_REQUIRED = {
     'business/scripts/online-raster-zonal-weighted-stddev-fixture.py': ('NFSExport','owned_root','WIDTH, HEIGHT = 513, 513','context.prec = 2000',
         'Decimal.from_float(v)*dw','np.array_equal','GDAL_TIFF_INTERNAL_MASK','full_csv_checks','full_source_pixels_verified','runtime_workspaces_removed',
         'archive_files','previous archive was deleted','previous archived bytes changed','oracle cache hash changed','source file changed',
-        'weights changed original nine columns','all-one weights changed ordinary sum mean or stddev','absolute weight scale or mean invariance changed','exact weighted statistic differs','zonal-weighted-stddev-csvs','include_stddev','center=total/mass','w*(v-center)**2','weighted_stddev'),
+        'weights changed original nine columns','all-one weights changed ordinary sum mean or stddev','absolute weight scale or mean invariance changed','exact weighted statistic differs','zonal-weighted-stddev-csvs','include_stddev','center=total/mass','second_moments[code]-2*shift*first_moments[code]+shift*shift*mass','variance.sqrt()','stage(\'oracle:start\')','stage(\'verify:done\',started)','weighted_stddev'),
     'scripts/test/raster-zonal-weighted-stddev-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS',
         'budget != 600', 'BudgetClient', 'remaining()', 'validate_preview', 'legacy.validate_success', 'lineage.collect',
         "inputs.sort(key=lambda value:value['port'])", "[value['locator'] for value in wanted['inputs']]",
@@ -4238,7 +4238,7 @@ ZONAL_WEIGHTED_STDDEV_REQUIRED = {
         'test_zonal_weighted_stddev_ninety_eight_exact_submitted_failures_and_no_output',
         'test_zonal_weighted_stddev_real_physical_corruption_is_rejected', 'one-ulp',
         'test_zonal_weighted_stddev_csv_archive_never_repairs_or_overwrites',
-        'test_zonal_weighted_stddev_worker_stdin_frozen_oracle_poison_and_cleanup','test_zonal_weighted_stddev_independent_oracle_rejects_wrong_weight_semantics','normalize-sum','drop-scale','zero-as-null','test_zonal_weighted_stddev_rejects_stddev_semantics_and_unchanged_original_controls','sample-denominator','one-ulp-stddev','all-one-both'),
+        'test_zonal_weighted_stddev_worker_stdin_frozen_oracle_poison_and_cleanup','timeout=90','test_zonal_weighted_stddev_oracle_preserves_every_frozen_legacy_row','test_zonal_weighted_stddev_fixed_reference_matches_direct_centered_decimal','test_zonal_weighted_stddev_independent_oracle_rejects_wrong_weight_semantics','normalize-sum','drop-scale','zero-as-null','test_zonal_weighted_stddev_rejects_stddev_semantics_and_unchanged_original_controls','sample-denominator','one-ulp-stddev','all-one-both'),
     'scripts/test/raster-zonal-weighted-stddev-persistence-online_test.py': (
         'test_full_matrix_16_success_98_failures_1704_checks_and_cleanup', 'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
         'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken', 'test_failures_preserve_primary_and_cleanup_error',
