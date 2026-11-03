@@ -4,7 +4,7 @@
 
 DAG 共享前端库，提供可编辑画布的 composable、交互与布局工具，以及只读工作流查看器。业务模块维护节点参数、执行与授权等领域语义。
 
-本页内容：[安装](#安装)、[编辑器接入](#基础-dag-编辑器)、[只读展示示例](#只读-dag-展示)、[API 分类](#api)、[交互与布局约束](#交互与布局约束)、[编辑器主题与状态保持](#编辑器主题与状态保持)、[布局恢复与自动布局](#布局恢复与自动布局)、[撤销重做与历史恢复](#撤销重做与历史恢复)。
+本页内容：[安装](#安装)、[编辑器接入](#基础-dag-编辑器)、[只读展示示例](#只读-dag-展示)、[API 分类](#api)、[交互与布局约束](#交互与布局约束)、[选择与依赖候选](#选择与依赖候选)、[编辑器主题与状态保持](#编辑器主题与状态保持)、[布局恢复与自动布局](#布局恢复与自动布局)、[撤销重做与历史恢复](#撤销重做与历史恢复)。
 
 ## 安装
 
@@ -16,7 +16,7 @@ DAG 共享前端库，提供可编辑画布的 composable、交互与布局工�
 
 编辑器的初始化、节点／连线映射及事件接线分别参考 [Develop 工作流画布](../../develop/frontend/src/components/workflow/WorkflowDAGCanvas.vue)、[Orchestrator 编排画布](../../orchestrator/frontend/src/components/DAGEditor.vue)。端口映射、节点 ID 生成与领域通知由各消费方维护。
 
-按职责接入：[实例与公开 API](#composables) · [键盘与依赖编辑](#键盘与依赖编辑) · [布局恢复与自动布局](#布局恢复与自动布局) · [撤销重做与历史恢复](#撤销重做与历史恢复) · [主题与卸载清理](#编辑器主题与状态保持)。引用实际实现用于定位接入方式，不代表该消费方当前版本已通过验收；验证入口见[测试与验收导航](../docs/components/预览与结果展示.md#测试与验收导航)。
+按职责接入：[实例与公开 API](#composables) · [键盘与依赖编辑](#键盘与依赖编辑) · [选择与依赖候选](#选择与依赖候选) · [布局恢复与自动布局](#布局恢复与自动布局) · [撤销重做与历史恢复](#撤销重做与历史恢复) · [主题与卸载清理](#编辑器主题与状态保持)。引用实际实现用于定位接入方式，不代表该消费方当前版本已通过验收；验证入口见[测试与验收导航](../docs/components/预览与结果展示.md#测试与验收导航)。
 
 ### 只读 DAG 展示
 
@@ -51,7 +51,7 @@ const dagData = {
 
 - `useDAGCore(containerRef, options)` - G6 实例管理
 - `useLoopDetection(graph)` - 循环检测
-- `useDAGSelection(graph, { focusTarget })` - 选中、焦点移交与节点导航，见[画布焦点与快捷键](#画布焦点与快捷键)。
+- `useDAGSelection(graph, { focusTarget })` - 选中与操作入口；选择状态、焦点及修改职责见[选择状态与操作归属](#选择状态与操作归属)。
 - `useDAGViewport(graph, options)` - 缩放、适应窗口和自动布局
 - `useDAGHistory(options)` - 编辑历史入口；记录、合并与恢复职责见[撤销重做与历史恢复](#撤销重做与历史恢复)。
 - `useDAGClipboard(graph, options)` - 节点复制和粘贴；只复制节点模型，不复制连线
@@ -71,10 +71,10 @@ const dagData = {
 - `createDAGDragNodeBehavior()` - 与端口拖拽互斥的节点拖动行为
 - `createDAGKeyboardHandler(actions)` - 快捷键适配入口；事件范围与宿主回调见[画布焦点与快捷键](#画布焦点与快捷键)。
 - `validateDAGConnection(options)` - 基础连线校验；拒绝条件、判重与领域职责见[依赖写入与连线校验](#依赖写入与连线校验)。
-- `getDAGIncomingEdgeModels(graph, targetId)` - 查询目标节点的当前入边模型
-- `getDAGUpstreamCandidates(options)` - 查询可作为目标节点上游的候选节点，并标记当前连接和环路禁用状态
+- `getDAGIncomingEdgeModels(graph, targetId)` - 当前入边查询，见[上游候选与提交校验](#上游候选与提交校验)。
+- `getDAGUpstreamCandidates(options)` - 上游候选投影，标记规则与领域校验见[上游候选与提交校验](#上游候选与提交校验)。
 
-`focusDAGConnections(graph, item)` 聚焦节点的直接关联连线或单条连线，传 `null` 恢复全图；只改变渲染透明度，不写入节点、边或布局模型。
+- `focusDAGConnections(graph, item)` - 关联连线展示聚焦，见[关联连线展示与重置](#关联连线展示与重置)。
 
 端口事件识别与键盘节点排序等辅助函数分别见[连线工具](src/utils/directEdge.js)和[键盘工具](src/utils/keyboard.js)；共享层提供的校验范围与消费模块职责见[键盘与依赖编辑](#键盘与依赖编辑)。
 
@@ -100,7 +100,7 @@ const dagData = {
 
 可编辑画布容器必须可通过 `Tab` 聚焦，使用 `role="region"`、国际化的 `aria-label` 和共享 `addp-dag-focus-region` 类。快捷键仅在画布区域持有焦点时生效；左右/上下方向键按节点的横坐标、纵坐标和 ID 稳定顺序循环选择节点，Enter 激活节点配置，`Esc` 清除当前选择。输入框、文本域、下拉框和可编辑区域中的删除、复制、粘贴行为不得被画布接管。
 
-宿主将 `createDAGKeyboardHandler(actions)` 绑定到画布 `keydown`，由该绑定限定焦点范围；共享处理器不自行检查当前活动元素。撤销、重做、复制、粘贴、快速复制、删除及上述导航动作均由宿主注入回调，未提供的动作不接管事件，已处理或来自编辑控件的事件被忽略；具体键位统一见[键盘工具](src/utils/keyboard.js)。鼠标选择节点或连线后可通过 `useDAGSelection(graph, { focusTarget })` 将焦点移交给画布容器。
+宿主将 `createDAGKeyboardHandler(actions)` 绑定到画布 `keydown`，由该绑定限定焦点范围；共享处理器不自行检查当前活动元素。撤销、重做、复制、粘贴、快速复制、删除及上述导航动作均由宿主注入回调，未提供的动作不接管事件，已处理或来自编辑控件的事件被忽略；具体键位统一见[键盘工具](src/utils/keyboard.js)。选择与焦点移交见[选择状态与操作归属](#选择状态与操作归属)。
 
 #### 依赖写入与连线校验
 
@@ -113,6 +113,30 @@ DAG 连线不得要求进入全局“连线模式”。画布边是依赖关系�
 `createDAGDirectEdgeBehavior` 通过宿主 `canConnect` 接入上述校验，只有结果严格为 `true` 才提交连线并发出 `aftercreateedge`；拒绝或拖拽结束取消时清除临时边，不发成功事件。成功修改由宿主记录历史并同步领域状态；基线、合并和恢复规则统一见[撤销重做与历史恢复](#撤销重做与历史恢复)。
 
 验收分别核对画布焦点、编辑控件事件不被接管、快捷键回调、环路与重复边拒绝、取消临时边，以及成功编辑的撤销重做；标准入口见[测试与验收导航](../docs/components/预览与结果展示.md#测试与验收导航)。工具断言与消费方页面分别验证，不能以连线成功推定业务可执行或授权，未运行或未覆盖项不计通过。
+
+### 选择与依赖候选
+
+本节导航：[选择状态](#选择状态与操作归属) · [关联连线展示](#关联连线展示与重置) · [上游候选](#上游候选与提交校验)。
+
+#### 选择状态与操作归属
+
+`useDAGSelection` 维护当前 `selectedItem`；图就绪后由宿主注册 `initSelectionListener()` 接收选择事件，`selectItem()` 更新图项的选中状态，`clearSelection()` 清除当前选择。鼠标选择节点或连线后可通过 `useDAGSelection(graph, { focusTarget })` 将焦点移交给画布容器。键盘范围与节点顺序统一见[画布焦点与快捷键](#画布焦点与快捷键)。
+
+`deleteSelected()` 删除当前选中的图项，`clearGraph()` 清空图并清除选择，均属于图数据修改；这些助手不记录历史或发送领域通知。宿主负责参数绑定、依赖同步与编辑后的记录，具体组合见[编辑器接入](#基础-dag-编辑器)，记录与恢复统一见[撤销重做与历史恢复](#撤销重做与历史恢复)。共享选择行为以[选择 composable](src/composables/useDAGSelection.js)为准。
+
+#### 关联连线展示与重置
+
+`focusDAGConnections(graph, item)` 聚焦节点的直接关联连线或单条连线，传 `null` 恢复全图透明度；只调整渲染透明度与聚焦连线的绘制层级，不写入节点、边或布局模型。
+
+节点聚焦包含该节点的直接入边和出边，不递归展开祖先或后代；聚焦单条边按图项区分平行连线。该工具不设置 `selectedItem` 或记录编辑历史；选择、详情和重置的联动由宿主组合。Orchestrator 的关联面板随当前选择更新，悬停不替换点击选择，空白画布或清除选择后恢复全图，接入见[编排画布](../../orchestrator/frontend/src/components/DAGEditor.vue)。
+
+#### 上游候选与提交校验
+
+`getDAGIncomingEdgeModels(graph, targetId)` 只读取目标节点的当前直接入边模型。`getDAGUpstreamCandidates({ graph, targetId, hasLoop })` 从当前画布中排除目标自身和无 ID 节点，按已有入边标记 `connected`；仅未连接候选按宿主 `hasLoop` 标记 `disabled`，已连接候选不据此禁用，目标 ID 为空时返回空列表。共享查询与展示聚焦均由[关联查询与聚焦工具](src/utils/connections.js)维护。
+
+候选表示当前画布上的节点关系，不等于已通过端口类型、绑定或执行授权校验。Develop 继续按输入／输出端口类型组合候选，Orchestrator 按步骤依赖与参数／控制连线处理写入；领域映射见[编辑器接入](#基础-dag-编辑器)。提交仍复用[依赖写入与连线校验](#依赖写入与连线校验)，成功编辑才进入宿主历史；不在候选查询中创建连线或写历史。
+
+现有[聚焦工具断言](../basic/tests/dagConnectionFocus.test.mjs)核对平行连线、全图恢复与模型不变，归共享门禁；[候选标记断言](../../develop/frontend/tests/commonDAGDirectEdge.test.mjs)归 Develop 门禁。消费方页面的选择、悬停、详情重置与编辑恢复按[测试与验收导航](../docs/components/预览与结果展示.md#测试与验收导航)分别验证，工具夹具不代替真实执行或授权验收，未运行或未覆盖项不计通过。
 
 ### 编辑器主题与状态保持
 
