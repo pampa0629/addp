@@ -302,17 +302,23 @@ Facade 按精确 `engine_type` 选择显式注册的原生客户端，并用 Run
 
 资源实例与原生目录的操作示例统一见[SDK 发现与资源选择](../../common-python/README.md#发现与资源选择)；使用者显式确认实例和原生名称，不按列表顺序代选，也不把示例 Schema／表名当作平台默认值。
 
-全部支持引擎沿同一注册机制扩展：
+#### 原生表达与 SDK 注册状态
 
-| Engine | Facade 原生层级 | 公开发现方法 | 公开读取方法 |
-| --- | --- | --- | --- |
-| PostgreSQL、openGauss、KingbaseES、GaussDB（只读首版） | schema -> table/view | `schemas()`、`tables(schema=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
-| MySQL、OceanBase、TiDB、Doris、ClickHouse | database -> table/view | `databases()`、`tables(database=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
-| MongoDB | database -> collection | `databases()`、`collections(database=...)` | collection: `head()`、`scan()`、`to_pandas()`；engine: `mql()` |
-| Neo4j | database -> graph | `databases()`、`graphs(database=...)` | graph: `sample()`；engine: `cypher()` |
-| MinIO、S3 | bucket -> prefix -> object | `buckets()`、`objects(bucket=..., prefix=...)` | object: `open()`、`read_range()` |
-| NFS | directory -> file | `directories(path=...)`、`files(path=...)` | file: `open()`、`read_range()` |
-| Kafka | service -> topic | `topics()` | topic: `stream(initial_position=..., positions=...)` |
+下表列主要原生方法与当前 SDK 注册状态，实际映射以[客户端注册表](../../common-python/addp_common/notebook/engines.py)为准。未注册行保留既有层级与方法约定，不表示当前可调用：
+
+| Engine | SDK 注册状态 | Facade 原生层级 | 发现方法 | 读取方法 |
+| --- | --- | --- | --- | --- |
+| PostgreSQL、openGauss | 已注册 | schema -> table/view | `schemas()`、`tables(schema=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
+| KingbaseES（`kingbase`）、GaussDB（`gaussdb`，只读首版） | 未注册 | schema -> table/view | `schemas()`、`tables(schema=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
+| MySQL、Doris、ClickHouse | 已注册 | database -> table/view | `databases()`、`tables(database=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
+| OceanBase（`oceanbase`）、TiDB（`tidb`） | 未注册 | database -> table/view | `databases()`、`tables(database=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
+| MongoDB | 已注册 | database -> collection | `databases()`、`collections(database=...)` | collection: `head()`、`scan()`、`to_pandas()`；engine: `mql()` |
+| Neo4j | 已注册 | database -> graph | `databases()`、`graphs(database=...)` | graph: `sample()`；engine: `cypher()` |
+| MinIO、S3 | 已注册 | bucket -> prefix -> object | `buckets()`、`objects(bucket=..., prefix=...)` | object: `open()`、`read_range()` |
+| NFS | 已注册 | directory -> file | `directories(path=...)`、`files(path=...)` | file: `open()`、`read_range()` |
+| Kafka | 已注册 | service -> topic | `topics()` | topic: `stream(initial_position=..., positions=...)` |
+
+SDK 注册与引擎 Provider 能力分别判断：引擎自身的能力与限制仍以[正式能力规范](../spec/addp引擎能力声明规范.md)为准；协议兼容或目录可见不代表已有 Facade，未注册类型不得改写为其他 `engine_type` 代用。已注册项仍须当前 Session 授权、精确目录模型及对应读取能力，注册本身不证明实例可用或真实链路已通过，[验证分工](../../develop/CLAUDE.md#notebook-验证分工)分别认定门禁与已验范围。
 
 列表方法返回可继续导航的原生资源对象，而不是无结构 `dict`；对象公开 `name` 和所属原生父级，内部保留服务端返回的规范 `EngineCatalogPath`。`table()` 等单对象方法也必须通过实时列举结果解析并保存服务端路径，不能根据 schema、database、bucket 或名称自行拼接路径。名称不存在时返回明确错误，不能生成一个未经引擎确认的对象。
 

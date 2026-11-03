@@ -538,7 +538,7 @@ curl -H "Authorization: Bearer <token>" \
 | Develop Owner 后端 | 上述 Develop 模块门禁；[Session 回归](backend/internal/service/notebook_session_service_test.go)验证主体／能力绑定、关闭取消和有界读取，[原生读取回归](backend/internal/service/notebook_session_native_data_test.go)验证 Provider 选择与只读限制，[重绑回归](backend/internal/service/notebook_runtime_binding_test.go)验证只改当前定义，[Copilot 回归](backend/internal/service/notebook_copilot_service_test.go)验证候选与角色路径。 |
 | Develop 前端 | 模块门禁包含 `make test-develop-frontend`；[Notebook 绑定浏览器用例](frontend/e2e/notebook-engine-binding.spec.mjs)使用受控 API 夹具验证引擎／Kernel 展示、重绑及对话框，不运行真实 JupyterLab；[Copilot 静态用例](frontend/tests/notebookCopilotBehavior.test.mjs)核对接线，不能证明 bridge 已在浏览器实际插入单元。 |
 | Jupyter Runtime | [Runtime 验证](../engines/jupyter/README.md#验证)维护标准命令、身份／摘要／隔离会话用例与替身边界。 |
-| Common Python Facade | [共享库标准验证](../common-python/README.md#开发与验证)运行全量 SDK 回归；[Notebook 用例](../common-python/tests/test_notebook_engines.py)覆盖注入能力、精确引擎注册、原生目录与分页、单方法 deadline 及有界读取；不以 mock HTTP 或受控时钟结果证明真实 Owner 授权、跨模块取消传播或实际延迟。目录错误的调用者处理方式统一见[失败语义](../docs/concepts/addp引擎体系图.md#失败语义)。 |
+| Common Python Facade | [共享库标准验证](../common-python/README.md#开发与验证)运行全量 SDK 回归；[Notebook 用例](../common-python/tests/test_notebook_engines.py)覆盖注入能力、精确引擎注册、原生目录与分页、单方法 deadline 及有界读取；不以 mock HTTP 或受控时钟结果证明真实 Owner 授权、跨模块取消传播或实际延迟。目录错误的调用者处理方式统一见[失败语义](../docs/concepts/addp引擎体系图.md#失败语义)，SDK 当前类型范围见[注册状态](../docs/concepts/addp引擎体系图.md#原生表达与-sdk-注册状态)。 |
 
 上述分项与镜像检查不能替代真实 System → Develop → Runtime 会话、同源代理、文件保存、撤权／到期和公开 HTTPS 的实际验收，也不证明排队运行授权闭环。历史门禁数量、失败、修复和清理只认下节记录的版本与场景；未执行或未覆盖项不计为通过。
 
