@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resourcetree"
+	"gorm.io/gorm"
 )
 
 type MetadataVisibilityCheck func(context.Context, []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error)
@@ -40,6 +42,9 @@ func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode
 		}
 		if loc.ItemID != nil {
 			target, err := resolve(ctx, *loc.ItemID)
+			if errors.Is(err, errMetadataItemIdentity) || errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
 			if err != nil {
 				return err
 			}

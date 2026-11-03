@@ -43,6 +43,9 @@ func (s *ResourceTreeService) FilterMetadataItems(ctx context.Context, tenantID 
 		seen := map[string]bool{}
 		for _, candidate := range candidates {
 			target, err := s.metadataItemVisibilityTarget(ctx, tenantID, engineID, candidate.ID)
+			if errors.Is(err, errMetadataItemIdentity) || errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -281,11 +284,7 @@ func (s *ResourceTreeService) metadataItemVisibilityTarget(ctx context.Context, 
 	if err := db.Select("id", "tenant_id", "engine_id", "node_id", "item_type", "name", "full_name", "fingerprint", "attributes").Where("tenant_id=? AND engine_id=? AND id=? AND deleted_at IS NULL", tenantID, engineID, itemID).First(&item).Error; err != nil {
 		return plugin.EngineCatalogPath{}, err
 	}
-	target, err := metadataItemTarget(db, item)
-	if errors.Is(err, errMetadataItemIdentity) {
-		return plugin.EngineCatalogPath{}, commonapi.ErrForbidden
-	}
-	return target, err
+	return metadataItemTarget(db, item)
 }
 func (s *ResourceTreeService) filterMetadataTree(ctx context.Context, root *resourcetree.TreeNode, tenantID, engineID uint, check MetadataVisibilityCheck) (*resourcetree.TreeNode, error) {
 	if s == nil || s.metadataQueryService == nil {

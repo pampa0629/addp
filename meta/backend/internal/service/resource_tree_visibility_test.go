@@ -18,7 +18,58 @@ import (
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
+	"gorm.io/gorm"
 )
+
+func TestMetadataVisibilityIsolatesUnresolvedItems(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	tenant, engine := uint(7), uint(9)
+	svc := newResourceTreeTestServiceWithDB(t, db, tenant, engine)
+	root := createResourceTreeNode(t, db, models.MetaNode{TenantID: tenant, EngineID: engine, NodeType: "service", Name: "Objects"})
+	bucket := createResourceTreeNode(t, db, models.MetaNode{TenantID: tenant, EngineID: engine, ParentNodeID: &root.ID, NodeType: "bucket", Name: "outputs", FullName: "outputs"})
+	prefix := createResourceTreeNode(t, db, models.MetaNode{TenantID: tenant, EngineID: engine, ParentNodeID: &bucket.ID, NodeType: "prefix", Name: "mosaic", FullName: "outputs/mosaic"})
+	valid := createResourceTreeItem(t, db, models.MetaItem{TenantID: tenant, EngineID: engine, NodeID: bucket.ID, ItemType: "object", Name: "visible.csv", FullName: "outputs/visible.csv", Fingerprint: "valid"})
+	// A persisted whole item whose name was appended twice cannot prove identity.
+	invalid := createResourceTreeItem(t, db, models.MetaItem{TenantID: tenant, EngineID: engine, NodeID: prefix.ID, ItemType: "object", Name: "mosaic", FullName: "outputs/mosaic/mosaic", Fingerprint: "invalid", Attributes: models.JSONMap{"item": map[string]any{"layout": "whole"}}})
+	candidates := []models.MetaItemLite{}
+	for _, item := range []models.MetaItem{valid, invalid} {
+		candidates = append(candidates, models.MetaItemLite{ID: item.ID, TenantID: tenant, EngineID: engine})
+	}
+	candidates = append(candidates, models.MetaItemLite{ID: 99999, TenantID: tenant, EngineID: engine})
+	failure := error(nil)
+	ctx := WithMetadataVisibility(t.Context(), func(_ context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
+		if failure != nil {
+			return nil, failure
+		}
+		if len(targets) != 1 || targets[0].Segments[len(targets[0].Segments)-1].Name != valid.Name {
+			t.Fatalf("unresolved identity reached authorization: %+v", targets)
+		}
+		return &authorization.SourceMetadataCheck{ObservedAt: time.Now(), Targets: []authorization.SourceMetadataTargetCheck{{Target: targets[0], Visible: true}}}, nil
+	})
+	items, err := svc.FilterMetadataItems(ctx, tenant, candidates)
+	if err != nil || len(items) != 1 || items[0].ID != valid.ID {
+		t.Fatalf("unresolved item blocked valid sibling: %+v %v", items, err)
+	}
+	tree, err := svc.GetTree(ctx, tenant, engine, -1)
+	raw, _ := json.Marshal(tree)
+	if err != nil || tree.Metadata["item_count"] != 1 || strings.Contains(string(raw), "mosaic") {
+		t.Fatalf("unresolved tree item leaked or blocked sibling: %s %v", raw, err)
+	}
+	failure = errors.New("authority unavailable")
+	if items, err = svc.FilterMetadataItems(ctx, tenant, candidates); !errors.Is(err, failure) || items != nil {
+		t.Fatalf("authority failure accepted partial items: %+v %v", items, err)
+	}
+	if tree, err = svc.GetTree(ctx, tenant, engine, -1); !errors.Is(err, failure) || tree != nil {
+		t.Fatalf("authority failure accepted partial tree: %+v %v", tree, err)
+	}
+	failure = nil
+	if err := db.Exec("DROP TABLE meta.meta_node").Error; err != nil {
+		t.Fatal(err)
+	}
+	if items, err = svc.FilterMetadataItems(ctx, tenant, candidates); err == nil || errors.Is(err, gorm.ErrRecordNotFound) || items != nil {
+		t.Fatalf("database failure treated as absent identity: %+v %v", items, err)
+	}
+}
 
 func TestPGUserResourceTreeFiltersBeforeDepthSearchAndAncestors(t *testing.T) {
 	db := metatest.OpenMetadataDB(t)
