@@ -1,6 +1,10 @@
 # ADDP Map Frontend Components
 
+[返回共享前端总入口](../README.md) · [公共导出](src/index.js) · [接入与依赖](../docs/ARCHITECTURE.md#接入与验证) · [共享测试与覆盖边界](../README.md#测试) · [消费模块浏览器隔离](../README.md#浏览器测试隔离)
+
 `common-frontend/map` 提供 Manager 普通预览、Workbench 有界数据服务结果等场景共用的地图组件、CRS registry、底图 profile 和展示坐标适配能力。
+
+组件入口与文件／空间预览的分工见[预览与结果展示](../docs/components/预览与结果展示.md#预览组件)，有界服务结果见[数据服务结果渲染器](../docs/components/预览与结果展示.md#数据服务结果渲染器)。
 
 `GeoJSONResultRenderer` 的服务消费边界是：geometry 字段、SRID 与 CRS 只来自 Consumer Descriptor；单次结果必须完整且不超过 1000 行。它不按 `geom` 等名称猜测字段，不拼接 cursor，也不承担批量空间计算。
 
@@ -10,13 +14,13 @@ GeoJSON 的顶层 `geometry` 与 `properties` 分别表达真实几何和业务�
 
 OpenLayers 适配器为每个要素选择不与任何业务字段重名的内部几何键，业务属性继续以原名读取；原始 GeoJSON 在独立的 WeakMap 中关联，不写入要素业务属性。统一属性读取器仅移除该要素实际的内部几何键，不设置保留业务字段名。主题样式读取业务属性，弹窗分别接收业务属性和真实几何类型；OpenLayers 与高德共用该格式化契约，不将几何对象混入业务字典。瓦片要素按其实际 Feature / RenderFeature 几何接口读取，不按源字段名称丢弃业务属性。
 
-共享契约由 `make test-common-frontend` 验证，真实 OpenLayers 几何、属性取值、主题样式、弹窗与表格联动由 `make test-manager-frontend` 自动发现；Service、Workbench 等消费者沿已有共享依赖 CI 验证，无新增依赖、API 或测试入口。
+真实 OpenLayers 几何、属性取值、主题样式、弹窗与表格联动由 `make test-manager-frontend` 自动发现；Service、Workbench 等消费者沿已有共享依赖 CI 验证，无新增依赖、API 或测试入口。
 
 ## GeometryCollection 完整显示
 
 GeometryCollection（含嵌套集合）保持一个原始要素、一份业务属性和同一来源身份，不拆成多行或生成派生来源。OpenLayers 默认预览、瓦片默认样式与受控专题样式均须为集合同时提供点符号、线描边和面填充；不按集合顶层类型仅套面样式而遗漏点成员。集合样式复用现有点、线／面样式的视觉参数，普通单一几何显示行为保持。
 
-真实几何与业务属性继续经同一隔离适配器进入地图；样式、弹窗、表格选择和高亮均指向原始集合要素，不能用拆分渲染结果覆盖业务属性。确定性浏览器回归通过现有 `make test-manager-frontend` 自动发现，核对默认／专题样式的真实点像素、点线面成员与属性、单要素数量、弹窗及高亮；共享契约沿 `make test-common-frontend`，不新增组件、依赖或旁路。
+真实几何与业务属性继续经同一隔离适配器进入地图；样式、弹窗、表格选择和高亮均指向原始集合要素，不能用拆分渲染结果覆盖业务属性。确定性浏览器回归通过现有 `make test-manager-frontend` 自动发现，核对默认／专题样式的真实点像素、点线面成员与属性、单要素数量、弹窗及高亮；不新增组件、依赖或旁路。
 
 ## CRS registry 边界
 

@@ -1,17 +1,12 @@
 # Common Frontend DAG 模块
 
+[返回共享前端总入口](../README.md) · [公共导出](src/index.js) · [接入与依赖](../docs/ARCHITECTURE.md#接入与验证) · [共享测试与覆盖边界](../README.md#测试) · [消费模块浏览器隔离](../README.md#浏览器测试隔离)
+
 DAG 编辑器共享组件库，提供可复用的 composable 和组件。
 
 ## 安装
 
-```bash
-# 在模块的 package.json 中添加
-{
-  "dependencies": {
-    "@addp/common-frontend": "file:../../common-frontend"
-  }
-}
-```
+依赖声明、别名、Vue 单一实例和主题／语言初始化统一按[新模块前端接入指南](../../docs/spec/addp新模块开发指南.md#创建新模块前端)配置。DAG 的 G6 等依赖由消费模块维护，版本遵循[技术栈规约](../../docs/spec/addp技术栈规约.md#地图与可视化)。
 
 ## 使用示例
 
@@ -70,6 +65,8 @@ onMounted(() => {
 ```
 
 ### 只读 DAG 展示
+
+只读组件与 Web Component 的职责、主题及清理约束，以及 Agent、Develop 和 Orchestrator 各入口的浏览器验证分工，统一见[只读 DAG 查看器](../docs/components/预览与结果展示.md#只读-dag-查看器)；共享门禁不代替这些消费方验证。
 
 ```vue
 <script setup>
