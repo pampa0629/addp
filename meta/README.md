@@ -6,6 +6,7 @@
 
 - **README.md** (本文件) - 快速入门和功能概览
 - **[CLAUDE.md](./CLAUDE.md)** - 详细技术文档，包含架构设计、开发指南、常见场景和调试方法；冻结计划分组导读见[人工来源与冻结计划](./CLAUDE.md#人工来源与冻结计划)
+- [目录条目与 Facts 消费规则](../docs/spec/addp元数据扫描机制规范.md#enginecatalogentry--enginecatalogfacts-消费规则)、[Facts 选项与扫描深度](../docs/spec/addp元数据扫描机制规范.md#facts-读取选项与扫描深度) - 摘要与详情、basic／deep、可选跳过及失败聚合
 
 ## 🎯 核心功能
 

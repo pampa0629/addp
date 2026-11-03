@@ -218,7 +218,7 @@ type EngineCatalogFactsProvider interface {
 
 关系型详细事实使用受控公共结构：`IndexFacts` 只表达索引名、有序字段、唯一性和索引类型；`ConstraintFacts` 的 `constraint_type` 只允许 `primary_key`、`unique`、`foreign_key`，外键使用 `referenced_namespace`、`referenced_table`、`referenced_fields` 表达引用目标；`TablePartitioningFacts` 表达主分区/子分区策略、键字段和分区数，不保存供应商私有分区表达式。`TableInfo.PrimaryKey` 和 `FieldInfo.PrimaryKey` 是主键字段的通用投影，必须与 `primary_key` 约束事实一致。
 
-`EngineCatalogFactsOptions.IncludeIndexes`、`IncludeConstraints`、`IncludePartitioning` 分别控制这三类详细事实读取。列表、路径解析和 basic scan 不得主动读取；deep scan 或明确的 item 详情刷新按能力声明显式请求。Provider 不得因为请求某类事实而执行 DDL、统计刷新或数据全表扫描。
+`EngineCatalogFactsOptions.IncludeIndexes`、`IncludeConstraints`、`IncludePartitioning` 分别控制这三类详细事实读取。列表、路径解析和 basic scan 不得主动读取；deep scan 或明确的 item 详情刷新按能力声明显式请求。Provider 不得因为请求某类事实而执行 DDL、统计刷新或数据全表扫描。Meta 对这些选项的深度分派与图数据限制统一见[扫描消费规则](addp元数据扫描机制规范.md#facts-读取选项与扫描深度)。
 
 PostgreSQL 与已认证的 HighGo V4.5 通过同一 PG catalog 回调读取关系事实。`ProtocolIdentity.CatalogFacts` 绑定拥有者插件的事实能力声明，未绑定的协议复用者不启用新增关系回调。索引字段只包含有序键列，不含 INCLUDE 列；表达式索引、部分索引和无效索引不进入当前可移植结构。主键、唯一约束和外键保留原生键列顺序，外键按位置对应引用列；命名主键事实与表级主键投影保持一致。分区事实只描述字段分区键与直属分区数；表达式分区键不补推字段，同层子分区定义不一致时不输出统一子分区策略。
 

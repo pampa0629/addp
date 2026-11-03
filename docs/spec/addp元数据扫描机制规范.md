@@ -446,6 +446,16 @@ Meta 扫描按已解析的 `ScanScope` 获取 `EngineCatalogEntry`：显式 root
 
 对 `meta_node`，通常只消费 `EngineCatalogEntry`：root、schema、database、bucket、prefix、directory 等 branch 的身份、层级、展示名、`full_name` 和低成本 `Storage.Path` 足以建立资源树。node 的 `scan_status`、`scanned_depth`、`scanned_at` 来自扫描过程，不是 engine 对 node 的原生 facts。第一阶段不为 node 设计 deep-only facts；如果后续要持久化 bucket region、owner、目录权限、生命周期策略等原生事实，必须先单独扩展规范，不能把它们混入 item facts。
 
+对 `meta_item`，摘要字段与详情的边界统一见[Provider 列表摘要规范](addp引擎插件接口规范.md#列表摘要与详情边界)。`basic` 可以使用 `EngineCatalogEntry.Table`、`EngineCatalogEntry.Storage`、`EngineCatalogEntry.UpdatedAt` 等低成本摘要建立 item 身份、存储属性和跳过判断；需要字段、主键、索引、graph schema、动态 schema 采样、文件内容格式信息、容器 children 或访问索引时，必须显式通过 `EngineCatalogFactsProvider`、`DynamicSchemaSamplingProvider`、content reader 或 format info provider 获取。
+
+`EngineCatalogFacts` 不是每个 entry 自动携带的隐含字段。Meta 需要详情时必须使用 `EngineCatalogEntry.Path` 显式调用对应 provider；不得把 `EngineCatalogEntry` 原样写入 `meta_item.attributes`，也不得从 `EngineCatalogEntry.Table` 推断字段、主键或索引。
+
+#### Facts 读取选项与扫描深度
+
+可选详情的请求开关、按能力读取及禁止 DDL、统计刷新／全表扫描的约束统一见[EngineCatalogFactsProvider](addp引擎插件接口规范.md#enginecatalogfactsprovider)。Meta 的身份与低成本事实范围见[Basic 扫描](#basic-扫描)，增强事实及内容 reader 分工见[Deep 扫描](#deep-扫描)；扫描深度不等同于请求了全部 Facts，失败与可选跳过分别按[失败聚合](#扫描执行的失败聚合)认定。
+
+graph basic 只使用 catalog graph 叶身份与低成本摘要，保留已有 deep 事实；不因缺少 GraphInfo 而拒绝建立身份，也不伪造空 schema 或零计数。当前 FalkorDB／Neo4j 的 Describe 包含图统计和属性观察，统一归 deep；不得用 IncludeSamples=false 把它作为 basic 的低成本例外。
+
 ### 节点统计的唯一事实来源
 
 - 节点 API 的 `item_count`、`total_size_bytes` 是 Meta 查询层的派生结果，不是 `meta_node` 存储字段，也不是上次扫描快照。所有树、详情、子节点和祖先链入口共用 repository 的批量子树聚合。
@@ -461,10 +471,6 @@ Meta 扫描按已解析的 `ScanScope` 获取 `EngineCatalogEntry`：显式 root
 - `item_count` 仅属于 Node 聚合。DataItem 的树、祖先链、搜索及扫描目录前端适配均不得返回或补造该字段，包括 0 或 1。用户可见性投影中，DataItem 对祖先计数贡献 1 仅是聚合算法内部值，不能写回叶子响应。
 - 展开能力只来自已加载的直接 `children` 或查询层显式 `has_children` / 树字段 `hasChildren`；DataItem 是资源树叶子。不得从 `item_count`、记录数、存储对象数或容器内部结构数量推断展开能力，也不得保留数量兜底。
 - 表记录数使用 `row_count`；容器内部结构数量使用 `type_info.container.child_count` / `resource_count`。容器内容不转换为独立 MetaItem 或资源树分支。
-
-对 `meta_item`，`EngineCatalogEntry` 只提供路径坐标、身份和列表级摘要，不能当作完整详情事实使用。`basic` 可以使用 `EngineCatalogEntry.Table`、`EngineCatalogEntry.Storage`、`EngineCatalogEntry.UpdatedAt` 等低成本摘要建立 item 身份、存储属性和跳过判断；需要字段、主键、索引、graph schema、动态 schema 采样、文件内容格式信息、容器 children 或访问索引时，必须显式通过 `EngineCatalogFactsProvider`、`DynamicSchemaSamplingProvider`、content reader 或 format info provider 获取。
-
-`EngineCatalogFacts` 不是每个 entry 自动携带的隐含字段。Meta 需要详情时必须使用 `EngineCatalogEntry.Path` 显式调用对应 provider；不得把 `EngineCatalogEntry` 原样写入 `meta_item.attributes`，也不得从 `EngineCatalogEntry.Table` 推断字段、主键或索引。
 
 ### Basic 扫描
 
@@ -586,10 +592,10 @@ T1 覆盖严格 DTO、摘要稳定性、状态派生、服务凭据及错误区�
 - `capabilities.spatial`、`statistics`、`extraction`、`semantic`、`partitioning`、`indexing`。
 - `access_index`，例如 CSV 稀疏行索引。
 
-Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界：
+Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界；Facts 请求选项及图数据的深度约束统一见[Facts 读取选项与扫描深度](#facts-读取选项与扫描深度)：
 
 - 元数据事实通过 info provider 写入 `type_info` / `format_info` / `capabilities`。
-- 数据库 table deep 扫描应通过 `EngineCatalogFactsProvider.DescribeEngineCatalogFacts()` 获取 `TableInfo.Fields`、`PrimaryKey` 和索引等详情；collection deep 扫描可通过 `DynamicSchemaSamplingProvider` 获取采样字段和索引；graph basic 只使用 catalog graph 叶身份与低成本摘要，保留已有 deep 事实；不因缺少 GraphInfo 而拒绝建立身份，也不伪造空 schema 或零计数。当前 FalkorDB／Neo4j 的 Describe 包含图统计和属性观察，统一归 deep；不得用 IncludeSamples=false 把它作为 basic 的低成本例外。
+- 数据库 table deep 扫描应通过 `EngineCatalogFactsProvider.DescribeEngineCatalogFacts()` 获取 `TableInfo.Fields`、`PrimaryKey` 和索引等详情；collection deep 扫描可通过 `DynamicSchemaSamplingProvider` 获取采样字段和索引。
 - 内容窗口、样本、原始文本、缩略图不直接塞进 `type_info`。
 - 大文件 deep 扫描应由 provider 自己控制成本和阈值，不能无边界全量读取。
 - Meta deep 扫描不得继续识别并持久化容器 children 的下一层 data item。比如 ZIP 中的 Shapefile 组件应作为 ZIP 的直接 entry 写入 children；把这些 entry 临时组合成 Shapefile 预览项属于 Manager 动态预览职责，不写回 Meta。
