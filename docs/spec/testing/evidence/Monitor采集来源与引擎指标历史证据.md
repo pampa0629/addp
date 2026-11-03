@@ -666,3 +666,10 @@ Redis核验精确启用ACL、已提交持久记录、密码摘要及私有安装
 恢复继续拒绝镜像不可核验，不放宽归属、不自动构建／拉取／替换。修正的是故障可诊断性：唯一来源内核将镜像读取失败转换为封闭source-image-unavailable，Redis／MinIO CLI只输出白名单reason，统一管理翻译为“原采集镜像不可用；请通过标准指标启动入口重新构建并应用来源”，不回显原始Docker输出、凭据或其他未知reason。用户须显式运行`python3 scripts/infra/metrics-sources.py up --scope infra --kind minio`重建本方来源；本会话未执行该动作，实际镜像恢复与后续采集未验。
 
 先增缺失镜像回归，旧代码在Redis／MinIO两case均因无封闭reason失败（/tmp/addp-metrics-image-diagnostic-red.log）。最终make test-metrics-sources退出0，共享恢复7项、编排16项、标准启动守卫2项通过；make test-monitor-redis-source-unit test-monitor-minio-observation-unit标准门禁退出0，Redis14／MinIO24项及相关Go专项通过。门禁覆盖镜像失败不删除／构建／重建、两种CLI只转发已知reason、统一中文建议及未知reason不泄漏。日志/tmp/addp-metrics-image-diagnostic-{green,final}.log。只读调用新installed_image在本机同一镜像上得到正确reason，前后同一来源完整fact未变，收据/tmp/addp-minio-recovery-image-diagnostic-20261104.json。本次仅错误路径和提示变更，既有T2成功路径未改，未重复创建隔离部署；既有来源T2输入声明及Platform编排已覆盖六个修改文件，无新登记。git diff --check通过。个人服务未启停，未改配置、账号／权限／凭据、卷、镜像或业务数据；CI／Hosted仍等专门会话回传，无定时任务。
+
+
+### 用户重新应用后的 Infra MinIO 采集恢复（2026-11-04）
+
+用户已执行`python3 scripts/infra/metrics-sources.py up --scope infra --kind minio`，返回已应用、单项失败0。本会话随后只读核对：新来源唯一且运行，原私有Compose中的完整镜像ID已可inspect并通过工作区Owner校验；账号on，来源的数据库ID及启动时刻精确匹配当前原MinIO容器。既有Monitor准入客户端的真实mTLS GET返回200、14项原始指标、在线盘数1；Prometheus按显式来源端口定位到唯一目标，health=up，严格使用该目标完整标签查询在线盘数得到1。后续以timestamp(metric)核对实际scrape时间、以observed_at值核对来源快照，而非使用即时query的评估时间冒充新鲜度；当次scrape距今2.80秒、来源快照距今3.44秒，均新鲜。
+
+只读收据为/tmp/addp-minio-source-reapplied-20261104.json。这补齐用户实际重新应用后的镜像可用、来源mTLS与Prometheus采集恢复，不表示已实操recover健康不重建、Monitor当前User API／Safari专业页面／趋势或正式Hosted通过。14项为原生实际发布，未将省略值补0或承诺17项全有。未启停个人服务、修改配置／账号／凭据或业务数据；本轮仅补证据，git diff --check通过，无产品代码变更及新测试部署，无CI／Hosted轮询或定时任务。下一步优先复验引擎监控页面真实值及趋势恢复。

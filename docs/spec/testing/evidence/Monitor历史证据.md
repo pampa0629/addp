@@ -908,3 +908,8 @@ b0420db65已随共享main发布，固定dfeff7c9b自然Linux原始日志确认HT
 ### 2026-11-04 Infra MinIO 原采集镜像不可用（诊断修正，实际应用待执行）
 
 用户recover失败已只读定位：账号、JWT认证、TLS、Compose均有效，运行容器仍在，但原完整镜像ID无法image inspect并明确No such image。新增白名单reason和可执行的重新构建提示，保持拒绝自动接管／重建；共享7、编排16、启动守卫2、Redis14／MinIO24项及Go专项通过。本机新诊断已只读复验且来源fact不变，个人实际重建与CI／Hosted未验。[完整证据](Monitor采集来源与引擎指标历史证据.md#infra-minio-恢复的原镜像不可用诊断2026-11-04)。
+
+
+### 2026-11-04 用户重新应用后 Infra MinIO 后台采集恢复
+
+用户已通过统一up重建来源。只读复验新镜像／Owner可核验，原数据库ID和启动时刻匹配，mTLS200／14项实际指标；Prometheus唯一目标UP、在线盘数1，真实scrape／来源快照分别约2.8／3.44秒新鲜。后台采集恢复已证，Safari页面及recover不重建实操未验。[完整运行证据](Monitor采集来源与引擎指标历史证据.md#用户重新应用后的-infra-minio-采集恢复2026-11-04)。
