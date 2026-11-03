@@ -2,6 +2,8 @@
 
 本文维护已实现的 Service 消费契约和 Workbench 数据应用边界。阶段记录、真实 BI Connector 与未闭合验收见[后续专题](../next/ADDP%20Workbench数据服务消费与数据应用专题.md)。
 
+常用入口：[创作与运行](#21-创作端与运行端) · [领域模型](#五领域模型) · [消费描述与目录](#六service-consumer-descriptor-与-consumer-catalog) · [动态参数](#七动态参数与查询) · [渲染体系](#八渲染体系) · [权限与身份](#九权限与身份) · [契约变化](#十契约变化) · [验证与维护](#十二验证入口与维护)。
+
 ## 一、消费范围
 
 ADDP 通过 Service、Workbench、Catalog、Asset 和 Portal 串联数据服务发布、数据应用创作与用户侧消费：
@@ -60,13 +62,29 @@ Workbench 由同一 owner 承担创作和运行职责，但两个页面职责使
 | Workbench 创作端 | `/workbench/...` | Console iframe 模块 |
 | Data Application 运行端 | `/data-apps/:application_id` | Console 当前 origin 下的独立顶层页面 |
 
+本节导航：[入口与身份](#211-入口身份与模块归属) · [画布与预览回写](#212-画布联动与预览回写) · [组件创建与复用](#213-组件创建复用与复制)。
+
+#### 2.1.1 入口、身份与模块归属
+
 创作端只维护 Data Application：选择服务后直接配置 Component 的字段、参数和 renderer，再完成布局、共享参数、选择联动和发布。Console 外层 URL 是 iframe 模式的公开路由事实源，模块内使用同一 canonical path，并通过 `common-frontend` Console navigation bridge 同步；前端仍按模块规范支持 standalone 开发和验证，但正式入口不形成第二个认证 origin。
+
+已发布 Data Application 的运行端不嵌入 Console iframe，不显示 Console 管理导航，供 Portal 打开、全屏运行和后续 wallboard 使用。稳定 URL `/data-apps/:application_id` 由 Workbench 解析当前有效发布 Revision；同一页面不存在另一条 `/workbench/...` 运行 URL。
+
+两个界面仍属于同一个 `workbench` 模块，复用同一 Backend、领域模型、renderer 和 Browser AuthSession，不新增 `data-app` 模块、数据库 schema、Service Principal 或独立认证体系。运行端使用当前 User Bearer 调用 Workbench 和 Service，不使用 API Key。
+
+System 的 OAuth Client 与 API Consumer 分别登记 OAuth 客户端和外部数据面调用方，不是 Data Application 注册表。Data Application 不自动创建 OAuth Client、API Consumer 或 API Consumer Credential。System 模块运行注册表只登记 `workbench` 模块运行实例，不为每个 Data Application 注册模块；Data Application 的企业发现身份仍由 CatalogEntry 承担。
+
+#### 2.1.2 画布、联动与预览回写
 
 创作界面以应用画布和选中组件的属性为主入口。画布复用唯一 `DataApplicationCanvas` 与 renderer；编辑时点击只选择组件，查询条件和选择联动通过显式整页试用验证。标题、说明、位置和尺寸直接修改同一草稿；布局以组件顺序、占宽和高度重新排布，避免重叠，不要求填写 X/Y。筛选默认值、参数映射、选择联动、场景预设与页面设置按需打开，保存和发布仍是显式动作。
 
 筛选设置以条件卡片展示名称、初始值和受影响组件，映射按组件归组；共享条件只允许 Descriptor 类型、可选值及已有选择联动一致的组合，不按名称自动合并。选择联动先在局部表单显式选择来源组件、结果字段及目标条件，再应用到同一草稿；应用前展示由参数绑定推导的刷新范围，取消不修改草稿。字段显示别名同时保留字段名供辨认，传递的仍是原始值。
 
 整页预览提供显式“设为应用初始值”动作：将当前全部 Application Parameter 的原始值经完整性、必填项、Descriptor 与可选值检查后复制回草稿 default_value，并返回编辑页；保存草稿才持久化。普通关闭预览仍丢弃试用状态。该动作不回写场景预设、结果行、分页、地图视角或已发布 Revision，也不增加参数查询或持久化接口。
+
+预览的运行隔离、退出清理与共享画布职责见[保存前整页预览](#89-保存前整页预览)。
+
+#### 2.1.3 组件创建、复用与复制
 
 空应用从选择首个展示类型开始，组件配置按“数据来源、展示、查询条件”逐步完成；字段事实与必要输入来自 Service Consumer Descriptor，用户显式选择业务字段和默认值，不依据名称自动推断共享参数或联动。空间探索入口继续复用现有空草稿向导。两类入口都生成同一 Component 与 Snapshot，不新增 Template、持久化创作模式、Backend API 或第二套运行查询。编辑画布首次按可执行默认值加载数据；修改查询配置后清除旧结果，用户显式刷新，纯展示及布局修改不重复查询。
 
@@ -75,12 +93,6 @@ Workbench 由同一 owner 承担创作和运行职责，但两个页面职责使
 新增组件选择 Service 后可提供至多四种展示起点：明细表、类别对比柱图、时间趋势折线图、空间分布。候选只采用 Descriptor 中同时可选择且声明输出的字段，优先使用默认选择顺序；柱图使用非数值标量维度与数值度量，折线图使用稳定排序键中的日期/时间字段，地图使用显式 primary geometry。界面显示实际字段组合，由用户点击后填入同一组件表单，不进行聚合、业务角色推断或参数自动合并；数字卡片无法仅凭字段类型证明唯一汇总行，仍由用户手动配置。必填条件齐全时点击方案复用现有查询预览，否则进入条件步骤等待填写；服务切换清空旧方案和结果，不生成样例数据、Template 或持久化方案字段。
 
 复制 Component 复用同一组件编辑器与新增提交路径：以原组件的服务、查询与展示配置初始化新的组件 ID，默认沿用原有 Parameter Binding 并使用应用条件初始值，直接打开条件步骤，允许显式切换已有条件或创建独立条件。确认前不写草稿，取消即丢弃；确认后保留原卡片宽高并排在原组件之后，统一重排避免重叠。复制不生成新的 Selection Binding；已有条件作为联动目标时，副本按既有 Parameter Binding 自然参与更新。契约变化仍须显式重新配置，不能通过复制绕过校验。
-
-已发布 Data Application 的运行端不嵌入 Console iframe，不显示 Console 管理导航，供 Portal 打开、全屏运行和后续 wallboard 使用。稳定 URL `/data-apps/:application_id` 由 Workbench 解析当前有效发布 Revision；同一页面不存在另一条 `/workbench/...` 运行 URL。
-
-两个界面仍属于同一个 `workbench` 模块，复用同一 Backend、领域模型、renderer 和 Browser AuthSession，不新增 `data-app` 模块、数据库 schema、Service Principal 或独立认证体系。运行端使用当前 User Bearer 调用 Workbench 和 Service，不使用 API Key。
-
-System 的 OAuth Client 与 API Consumer 分别登记 OAuth 客户端和外部数据面调用方，不是 Data Application 注册表。Data Application 不自动创建 OAuth Client、API Consumer 或 API Consumer Credential。System 模块运行注册表只登记 `workbench` 模块运行实例，不为每个 Data Application 注册模块；Data Application 的企业发现身份仍由 CatalogEntry 承担。
 
 ## 三、通用业务边界
 
@@ -931,6 +943,8 @@ Data Application Component 当前结构化查询
 ### 8.9 保存前整页预览
 
 保存前整页预览用于让创作者在不写入草稿、不发布 Revision 的前提下，以最终运行布局检查当前内存中的 Data Application Snapshot。它不是新的 Data Application 状态、页面类型或运行入口。
+
+创作端的显式“设为应用初始值”动作见[画布、联动与预览回写](#212-画布联动与预览回写)；本节维护运行隔离、唯一画布和退出清理边界。
 
 固定边界如下：
 

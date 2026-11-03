@@ -30,7 +30,7 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 | 空草稿空间探索向导 | [通用空间组合](../docs/spec/addp数据服务消费与数据应用规范.md#86-通用空间数据应用组合) |
 | 应用参数、选择联动与预设 | [Selection Binding](../docs/spec/addp数据服务消费与数据应用规范.md#54-组件联动与受控下钻设计)、[Parameter Preset](../docs/spec/addp数据服务消费与数据应用规范.md#510-application-parameter-preset) |
 | 展示模式、刷新与区块 | [展示模式](../docs/spec/addp数据服务消费与数据应用规范.md#55-单页-wallboard-展示模式)、[刷新策略](../docs/spec/addp数据服务消费与数据应用规范.md#56-wallboard-应用刷新策略)、[呈现区块](../docs/spec/addp数据服务消费与数据应用规范.md#57-wallboard-应用呈现区块) |
-| 预览隔离与显式初始值回写 | [保存前预览](../docs/spec/addp数据服务消费与数据应用规范.md#89-保存前整页预览)、[创作端的显式回写动作](../docs/spec/addp数据服务消费与数据应用规范.md#21-创作端与运行端) |
+| 预览隔离与显式初始值回写 | [保存前预览](../docs/spec/addp数据服务消费与数据应用规范.md#89-保存前整页预览)、[创作端的显式回写动作](../docs/spec/addp数据服务消费与数据应用规范.md#212-画布联动与预览回写) |
 | 权限、访问身份与契约变化 | [用户交互](../docs/spec/addp数据服务消费与数据应用规范.md#91-用户交互)、[BFF 与服务身份](../docs/spec/addp数据服务消费与数据应用规范.md#92-bff-和服务身份)、[契约变化](../docs/spec/addp数据服务消费与数据应用规范.md#十契约变化) |
 
 契约漂移使用组件编辑器已有“按当前契约重新配置”入口，复用 Service 选择与 Descriptor 加载；确认后仍须保存、检查应用参数映射并发布新修订，不能自动改写历史快照。
