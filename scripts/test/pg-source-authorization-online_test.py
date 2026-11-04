@@ -1056,6 +1056,55 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             self.assertEqual(ONLINE.main(), 1)
             client.assert_not_called()
 
+    def test_late_load_failure_keeps_scoped_refresh_evidence_and_runs_final_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            server, _ = self.lifecycle()
+            env = dict(ADDP_ONLINE_TEST='1', ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1',
+                GITHUB_ACTIONS='true', RUNNER_OS='Linux', POSTGRES_DB='addp_online',
+                ADDP_ONLINE_TEST_TENANT_ID='3', ADDP_ONLINE_CONSUMER_ENGINE_ID='2',
+                ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_TEST_RUN_ID='pg-fixture',
+                GATEWAY_URL='http://127.0.0.1:8000', ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='reader',
+                ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='operator',
+                ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN='outsider',
+                ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN='business',
+                ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN='coordinator', ADDP_ONLINE_PG_PROBE_ACCESS_TOKEN='probe',
+                ADDP_ONLINE_TEST_USER_USERNAME='external-online-consumer',
+                ADDP_ONLINE_TEST_USER_PASSWORD='private-password',
+                ADDP_ONLINE_FIXTURE_DEPARTMENT_ID='41', ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID='51')
+            life = Mock(grants=[], paths=[])
+            collection = Mock()
+            collection.run.side_effect = lambda report: report.update(meta_collection={})
+            completed = []
+            def refresh(*args, **kwargs):
+                proof = args[7]
+                scenario = Mock()
+                scenario.precise_and_node_flow.side_effect = lambda *a, **k: completed.append('ranges')
+                def cutoff(node, names, kind, barrier):
+                    completed.append(kind)
+                    proof.update(result='passed', completed=list(completed))
+                scenario.inflight_items.side_effect = cutoff
+                return scenario
+            def late_failure(report):
+                self.assertEqual(completed, ['ranges', 'withdrawal', 'expiry'])
+                raise ONLINE.SuiteError('read load exceeded its budget')
+            life.production_flow.side_effect = late_failure
+            with patch.dict(ONLINE.os.environ, env, clear=True), \
+                 patch.object(ONLINE.API, 'GatewayClient', side_effect=lambda base, token, timeout: server.client(token)), \
+                 patch.object(ONLINE, 'identity', side_effect=[('33', {}), ('31', {}), ('34', {}), ('36', {})]), \
+                 patch.object(ONLINE, 'organization_administrator', return_value=('35', {})), \
+                 patch.object(ONLINE, 'organization_memberships'), \
+                 patch.object(ONLINE, 'Lifecycle', return_value=life), \
+                 patch.object(ONLINE, 'MetaCollectionScenario', return_value=collection), \
+                 patch.object(ONLINE.REFRESH, 'PersistedScanObservation'), \
+                 patch.object(ONLINE.REFRESH, 'ScopedRefreshScenario', side_effect=refresh):
+                self.assertEqual(ONLINE.main(), 1)
+            report = json.loads((Path(directory) / (ONLINE.SUITE + '.json')).read_text())
+            self.assertEqual(report['result'], 'failed')
+            self.assertEqual(report['scoped_refresh']['completed'], ['ranges', 'withdrawal', 'expiry'])
+            life.production_flow.assert_called_once()
+            life.cleanup.assert_called_once()
+            self.assertEqual(report['cleanup'], 'zero_current_source_rules')
+
     def test_main_failure_after_writes_still_cleans_and_reports_no_secrets(self):
         for second_grant in (False, True):
             with self.subTest(second_grant=second_grant), tempfile.TemporaryDirectory() as directory:
@@ -1697,8 +1746,10 @@ class PGReadLoadTest(unittest.TestCase):
                 clock[0] = 100
             return response
         self.reader.request = expired
+        report = {}
         with patch.object(ONLINE.time, 'monotonic', side_effect=lambda: clock[0]), self.assertRaises(ONLINE.SuiteError):
-            self.lifecycle.measure_read_load({}, self.bindings)
+            self.lifecycle.measure_read_load(report, self.bindings)
+        self.assertEqual(report['authorization_load']['failure_code'], 'read_load_budget_exceeded')
         self.assertEqual(self.active, 0)
         for payload, status in (({'error': 'denied', 'data': []}, 403),
                                 ({'error': 'denied', 'error_code': 'permission_denied'}, 403),

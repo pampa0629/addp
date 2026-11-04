@@ -1816,7 +1816,9 @@ class Lifecycle:
 
         def guard():
             observer.healthy()
-            require(time.monotonic() < deadline, 'read load exceeded its budget')
+            if time.monotonic() >= deadline:
+                result['failure_code'] = 'read_load_budget_exceeded'
+                raise SuiteError('read load exceeded its budget')
             require((self.reader.token, self.operator.token, self.outsider.token) == tokens,
                     'read load credentials changed')
 
@@ -2889,7 +2891,6 @@ def main():
         lifecycle.catalog_flow(report, business, confirmer)
         lifecycle.workspace_flow(report, issuer)
         lifecycle.metadata_access_flow(report, business, confirmer)
-        lifecycle.production_flow(report)
         lifecycle.collection = MetaCollectionScenario(lifecycle, issuer, run_id)
         lifecycle.collection.run(report)
         lifecycle.collection.run_scheduled(report)
@@ -2913,6 +2914,7 @@ def main():
             lifecycle.collection.source_barriers.append(barrier)
             lifecycle.scoped_refresh.inflight_items('public', ['public.metric_people', 'public.metric_events'],
                                                    cutoff, barrier)
+        lifecycle.production_flow(report)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)
