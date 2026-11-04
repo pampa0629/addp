@@ -120,7 +120,7 @@ func TestVFFSKCRestrictionComparisonsAndWitnessCopiesUseSharedBudget(t *testing.
 			stop()
 		}
 		b := &vffSKCBinder{ctx: ctx, budget: &vffSKCBindingBudget{remaining: 1, depth: 8}}
-		_, err := b.equalScalar(vffSKCScalar{text: "aa"}, vffSKCScalar{text: "aa"})
+		_, err := b.equalValue(vffSKCValue{text: "aa"}, vffSKCValue{text: "aa"})
 		stop()
 		if cancel && !errors.Is(err, context.Canceled) || !cancel && (err == nil || !strings.Contains(err.Error(), "budget")) {
 			t.Fatal("enum comparison budget/cancellation bypass")

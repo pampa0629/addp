@@ -7,11 +7,12 @@ import (
 )
 
 type vffSKCEnumerationValue struct {
-	value  vffSKCScalar
+	value  vffSKCValue
 	source vffSKCDeclarationWitness
 }
 type vffSKCRestrictionProfile struct {
 	primitive xml.Name
+	item      *vffSKCRestrictionProfile
 	levels    [][]vffSKCEnumerationValue
 	facets    []vffSKCDeclarationWitness
 	bounds    map[string]string
@@ -54,6 +55,8 @@ func (c *vffSKCRestrictionChecker) profile(node *vffXMLNode, depth int) (*vffSKC
 		allowed["name"] = true
 	case "restriction":
 		allowed["base"] = true
+	case "list":
+		allowed["itemType"] = true
 	default:
 		return unknown, nil
 	}
@@ -84,20 +87,19 @@ func (c *vffSKCRestrictionChecker) profile(node *vffXMLNode, depth int) (*vffSKC
 			return unknown, nil
 		}
 	}
+	if node.name.Local == "list" {
+		return c.listProfile(node, depth)
+	}
 	role := "type"
 	if node.name.Local == "restriction" {
 		role = "base"
 	}
 	var base *vffSKCRestrictionProfile
 	if ref, ok := c.refs[vffSKCTypeReferenceKey{b.witness(node), role}]; ok {
-		if ref.name.Space == vffXSDNS {
-			base = &vffSKCRestrictionProfile{primitive: ref.name, known: vffSKCSupportedScalar(ref.name)}
-		} else if ref.target != nil && ref.target.kind == "simpleType" {
-			var err error
-			base, err = c.profile(b.nodes[vffSKCNodeKey{ref.target.member, ref.target.begin}], depth+1)
-			if err != nil {
-				return nil, err
-			}
+		var err error
+		base, err = c.referenceProfile(ref, depth)
+		if err != nil {
+			return nil, err
 		}
 	} else {
 		var child *vffXMLNode
@@ -105,7 +107,7 @@ func (c *vffSKCRestrictionChecker) profile(node *vffXMLNode, depth int) (*vffSKC
 			if err := b.tick(0); err != nil {
 				return nil, err
 			}
-			if n.name.Local == "simpleType" || node.name.Local == "simpleType" && n.name.Local == "restriction" {
+			if n.name.Local == "simpleType" || node.name.Local == "simpleType" && (n.name.Local == "restriction" || n.name.Local == "list") {
 				if child != nil {
 					return nil, fmt.Errorf("conflicting restriction sources")
 				}
@@ -188,7 +190,7 @@ func (c *vffSKCRestrictionChecker) profile(node *vffXMLNode, depth int) (*vffSKC
 	if err != nil {
 		return nil, err
 	}
-	p := &vffSKCRestrictionProfile{primitive: base.primitive, known: true, levels: append([][]vffSKCEnumerationValue(nil), base.levels...), facets: facets}
+	p := &vffSKCRestrictionProfile{primitive: base.primitive, item: base.item, known: true, levels: append([][]vffSKCEnumerationValue(nil), base.levels...), facets: facets}
 	proved, err := c.addBounds(p, base, bounds)
 	if err != nil {
 		return nil, err
@@ -222,11 +224,18 @@ func (c *vffSKCRestrictionChecker) profile(node *vffXMLNode, depth int) (*vffSKC
 	return p, nil
 }
 
-func (c *vffSKCRestrictionChecker) evaluate(p *vffSKCRestrictionProfile, n *vffXMLNode, raw string) (vffSKCScalar, bool, error) {
+func (c *vffSKCRestrictionChecker) evaluate(p *vffSKCRestrictionProfile, n *vffXMLNode, raw string) (vffSKCValue, bool, error) {
 	if !p.known {
-		return vffSKCScalar{}, false, nil
+		return vffSKCValue{}, false, nil
 	}
-	value, known, err := c.b.scalar(n, p.primitive, raw)
+	var value vffSKCValue
+	var known bool
+	var err error
+	if p.item != nil {
+		value, known, err = c.integerList(p.item, n, raw)
+	} else {
+		value, known, err = c.b.scalar(n, p.primitive, raw)
+	}
 	if err != nil || !known {
 		return value, known, err
 	}
@@ -236,7 +245,7 @@ func (c *vffSKCRestrictionChecker) evaluate(p *vffSKCRestrictionProfile, n *vffX
 			if err := c.b.tick(0); err != nil {
 				return value, false, err
 			}
-			equal, err := c.b.equalScalar(value, candidate.value)
+			equal, err := c.b.equalValue(value, candidate.value)
 			if err != nil {
 				return value, false, err
 			}
@@ -255,7 +264,7 @@ func (c *vffSKCRestrictionChecker) evaluate(p *vffSKCRestrictionProfile, n *vffX
 	return value, true, nil
 }
 
-func (b *vffSKCBinder) equalScalar(a, c vffSKCScalar) (bool, error) {
+func (b *vffSKCBinder) equalValue(a, c vffSKCValue) (bool, error) {
 	for _, s := range []string{a.text, c.text, a.qname.Space, c.qname.Space, a.qname.Local, c.qname.Local} {
 		for range len(s) {
 			if err := b.tick(0); err != nil {
@@ -282,16 +291,20 @@ type vffSKCConstraintValue struct {
 	source, declaration, use vffSKCDeclarationWitness
 	kind                     string
 	primitive                xml.Name
-	value                    vffSKCScalar
+	itemPrimitive            xml.Name
+	value                    vffSKCValue
 	facets                   []vffSKCDeclarationWitness
+	itemFacets               []vffSKCDeclarationWitness
 	known                    bool
 }
 
-type vffSKCScalarTypeFact struct {
-	declaration vffSKCDeclarationWitness
-	primitive   xml.Name
-	facets      []vffSKCDeclarationWitness
-	known       bool
+type vffSKCValueTypeFact struct {
+	declaration   vffSKCDeclarationWitness
+	primitive     xml.Name
+	itemPrimitive xml.Name
+	facets        []vffSKCDeclarationWitness
+	itemFacets    []vffSKCDeclarationWitness
+	known         bool
 }
 
 func (b *vffSKCBinder) copyFacetWitnesses(src []vffSKCDeclarationWitness) ([]vffSKCDeclarationWitness, error) {
@@ -325,7 +338,7 @@ func (b *vffSKCBinder) checkRestrictionValues(result *vffSKCValueBinding, refs m
 			return err
 		}
 		if knownLeft && knownRight {
-			equal, err := b.equalScalar(left, right)
+			equal, err := b.equalValue(left, right)
 			if err != nil {
 				return err
 			}
@@ -334,7 +347,8 @@ func (b *vffSKCBinder) checkRestrictionValues(result *vffSKCValueBinding, refs m
 			}
 			comparison.useValue, comparison.baseValue, comparison.known = left, right, true
 			comparison.primitive = p.primitive
-			comparison.facets, err = b.copyFacetWitnesses(p.facets)
+			comparison.itemPrimitive = p.itemPrimitive()
+			comparison.facets, comparison.itemFacets, err = b.profileFacets(p)
 			if err != nil {
 				return err
 			}
@@ -356,11 +370,11 @@ func (b *vffSKCBinder) checkRestrictionValues(result *vffSKCValueBinding, refs m
 		if err != nil {
 			return err
 		}
-		facets, err := b.copyFacetWitnesses(p.facets)
+		facets, itemFacets, err := b.profileFacets(p)
 		if err != nil {
 			return err
 		}
-		result.constraintValues = append(result.constraintValues, vffSKCConstraintValue{source: source, declaration: decl, use: use, kind: kind, primitive: p.primitive, value: value, facets: facets, known: known})
+		result.constraintValues = append(result.constraintValues, vffSKCConstraintValue{source: source, declaration: decl, use: use, kind: kind, primitive: p.primitive, itemPrimitive: p.itemPrimitive(), value: value, facets: facets, itemFacets: itemFacets, known: known})
 		return nil
 	}
 	for _, structure := range result.structures {
@@ -382,11 +396,11 @@ func (b *vffSKCBinder) checkRestrictionValues(result *vffSKCValueBinding, refs m
 		if err != nil {
 			return err
 		}
-		facets, err := b.copyFacetWitnesses(p.facets)
+		facets, itemFacets, err := b.profileFacets(p)
 		if err != nil {
 			return err
 		}
-		result.scalarTypes = append(result.scalarTypes, vffSKCScalarTypeFact{declaration: structure.source, primitive: p.primitive, facets: facets, known: p.known})
+		result.valueTypes = append(result.valueTypes, vffSKCValueTypeFact{declaration: structure.source, primitive: p.primitive, itemPrimitive: p.itemPrimitive(), facets: facets, itemFacets: itemFacets, known: p.known})
 		for _, kind := range []string{"default", "fixed"} {
 			if raw, present := n.attrs[kind]; present {
 				if err := check(structure.source, structure.source, structure.source, kind, raw); err != nil {

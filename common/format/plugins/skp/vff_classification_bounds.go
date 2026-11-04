@@ -59,12 +59,14 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 				typ.Local = "positiveInteger"
 			}
 		} else if length {
-			switch typ.Local {
-			case "string", "normalizedString", "token":
-			case "QName":
-				return false, nil // Deprecated QName length semantics remain unproved.
-			default:
-				return false, fmt.Errorf("length facet not applicable to %s", typ.Local)
+			if p.item == nil {
+				switch typ.Local {
+				case "string", "normalizedString", "token":
+				case "QName":
+					return false, nil // Deprecated QName length semantics remain unproved.
+				default:
+					return false, fmt.Errorf("length facet not applicable to %s", typ.Local)
+				}
 			}
 			typ = xml.Name{Space: vffXSDNS, Local: "nonNegativeInteger"}
 		} else if _, _, _, ok := vffSKCIntegerBounds(typ.Local); !ok && typ.Local != "decimal" {
@@ -138,7 +140,7 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 			if strings.HasSuffix(kind, "Exclusive") {
 				if old, ok := base.bounds[kind]; ok {
 					var err error
-					sameExclusive, err = c.b.equalScalar(vffSKCScalar{text: v}, vffSKCScalar{text: old})
+					sameExclusive, err = c.b.equalValue(vffSKCValue{text: v}, vffSKCValue{text: old})
 					if err != nil {
 						return false, err
 					}
@@ -249,7 +251,7 @@ func (c *vffSKCRestrictionChecker) checkMixedLength(base *vffSKCRestrictionProfi
 	return nil
 }
 
-func (c *vffSKCRestrictionChecker) checkBounds(p *vffSKCRestrictionProfile, value vffSKCScalar) error {
+func (c *vffSKCRestrictionChecker) checkBounds(p *vffSKCRestrictionProfile, value vffSKCValue) error {
 	length := ""
 	for _, kind := range []string{"minInclusive", "minExclusive", "maxInclusive", "maxExclusive", "length", "minLength", "maxLength", "totalDigits", "fractionDigits"} {
 		bound, ok := p.bounds[kind]
@@ -280,12 +282,14 @@ func (c *vffSKCRestrictionChecker) checkBounds(p *vffSKCRestrictionProfile, valu
 		isLength := strings.Contains(kind, "Length") || kind == "length"
 		if isLength {
 			if length == "" {
-				count := 0
-				for range value.text {
-					if err := c.b.tick(0); err != nil {
-						return err
+				count := value.items
+				if !value.list {
+					for range value.text {
+						if err := c.b.tick(0); err != nil {
+							return err
+						}
+						count++
 					}
-					count++
 				}
 				length = strconv.Itoa(count)
 			}

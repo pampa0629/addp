@@ -15,7 +15,7 @@ func (b *vffSKCBinder) checkAttributeValues(result *vffSKCValueBinding) error {
 		if err := b.tick(0); err != nil {
 			return err
 		}
-		if ref.role == "type" || ref.role == "base" {
+		if ref.role == "type" || ref.role == "base" || ref.role == "itemType" {
 			refs[vffSKCTypeReferenceKey{ref.source, ref.role}] = ref
 		}
 	}
@@ -34,6 +34,10 @@ func (b *vffSKCBinder) checkAttributeValues(result *vffSKCValueBinding) error {
 		}
 		if active[node] {
 			return "", fmt.Errorf("cyclic attribute type ancestry")
+		}
+		if node.name.Local == "list" {
+			ids[node] = "not_id" // The list itself is not its atomic item type.
+			return "not_id", nil
 		}
 		active[node] = true
 		defer delete(active, node)
@@ -58,13 +62,13 @@ func (b *vffSKCBinder) checkAttributeValues(result *vffSKCValueBinding) error {
 				}
 			}
 		} else {
-			// Only restriction ancestry, never list items or union members.
+			// Only type ancestry; recognize list variety without following items.
 			var child *vffXMLNode
 			for _, candidate := range node.children {
 				if err := b.tick(0); err != nil {
 					return "", err
 				}
-				if candidate.name.Local == "simpleType" || node.name.Local == "simpleType" && candidate.name.Local == "restriction" {
+				if candidate.name.Local == "simpleType" || node.name.Local == "simpleType" && (candidate.name.Local == "restriction" || candidate.name.Local == "list") {
 					if child != nil {
 						return "", fmt.Errorf("conflicting attribute type ancestry")
 					}

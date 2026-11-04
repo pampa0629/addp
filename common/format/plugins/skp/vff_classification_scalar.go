@@ -6,32 +6,36 @@ import (
 	"strings"
 )
 
-type vffSKCScalar struct {
+type vffSKCValue struct {
 	text  string
 	qname xml.Name
+	list  bool
+	items int
 }
 type vffSKCFixedValueComparison struct {
 	source, declaration vffSKCDeclarationWitness
 	typeName            xml.Name
-	useValue, baseValue vffSKCScalar
+	useValue, baseValue vffSKCValue
 	known               bool
 	primitive           xml.Name
+	itemPrimitive       xml.Name
 	facets              []vffSKCDeclarationWitness
+	itemFacets          []vffSKCDeclarationWitness
 }
 
 // Only explicit builtins: no user facets, floating-point coercion, or source
 // rewriting. Each decoded byte is charged before any scalar work.
-func (b *vffSKCBinder) scalar(n *vffXMLNode, typ xml.Name, raw string) (vffSKCScalar, bool, error) {
+func (b *vffSKCBinder) scalar(n *vffXMLNode, typ xml.Name, raw string) (vffSKCValue, bool, error) {
 	for range len(raw) {
 		if err := b.tick(0); err != nil {
-			return vffSKCScalar{}, false, err
+			return vffSKCValue{}, false, err
 		}
 	}
 	if typ.Space != vffXSDNS {
-		return vffSKCScalar{}, false, nil
+		return vffSKCValue{}, false, nil
 	}
 	text := strings.Trim(raw, " \t\r\n")
-	value := vffSKCScalar{}
+	value := vffSKCValue{}
 	switch typ.Local {
 	case "string":
 		// XML attribute normalization distinguishes literal whitespace from

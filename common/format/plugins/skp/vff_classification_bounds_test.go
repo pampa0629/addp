@@ -241,7 +241,7 @@ func TestVFFSKCDigitsSingleDefaultAndBudget(t *testing.T) {
 		}
 		b := &vffSKCBinder{ctx: ctx, budget: &vffSKCBindingBudget{remaining: 1, depth: 8}}
 		c := &vffSKCRestrictionChecker{b: b}
-		err := c.checkBounds(&vffSKCRestrictionProfile{bounds: map[string]string{"totalDigits": "1000"}}, vffSKCScalar{text: strings.Repeat("1", 100)})
+		err := c.checkBounds(&vffSKCRestrictionProfile{bounds: map[string]string{"totalDigits": "1000"}}, vffSKCValue{text: strings.Repeat("1", 100)})
 		stop()
 		if cancel && !errors.Is(err, context.Canceled) || !cancel && err == nil {
 			t.Fatal("digit counting bypassed budget/cancel")
