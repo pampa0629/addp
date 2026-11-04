@@ -128,6 +128,16 @@ func (s *TaskConfigDraftService) Build(ctx context.Context, subject authorizatio
 	if len(parts) == 0 {
 		return nil, ErrConfigCheckDependency
 	}
+	// Flattened display full_name is ambiguous when names contain dots.
+	// The exact URI segments must identify the same physical owner path.
+	if len(parts) != len(source.Path) {
+		return nil, draftError("draft_source_identity_mismatch", "/source_locator")
+	}
+	for i, part := range parts {
+		if part.Name != source.Path[i] {
+			return nil, draftError("draft_source_identity_mismatch", "/source_locator")
+		}
+	}
 	var node *commonmodels.MetaNode
 	if parent.NodeID != nil {
 		node, err = metadata.GetNodeByID(ctx, *parent.NodeID)

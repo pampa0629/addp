@@ -165,7 +165,7 @@ func (f *draftMetadataFixture) GetNodeByCatalogPath(context.Context, uint, strin
 }
 
 func TestTaskConfigDraftOwnerReadsAndAuthorization(t *testing.T) {
-	for _, name := range []string{"user", "delegated", "missing_manager_permission", "extra_scope", "tenant_mismatch", "source_mismatch", "parent_mismatch", "missing_structure", "untrusted_schema", "dependency"} {
+	for _, name := range []string{"user", "delegated", "missing_manager_permission", "extra_scope", "tenant_mismatch", "source_mismatch", "source_path_collision", "parent_mismatch", "missing_structure", "untrusted_schema", "dependency"} {
 		t.Run(name, func(t *testing.T) {
 			_, engines, subject, _ := configCheckFixture(t)
 			subject.Authorization.RoleAssignments[0].Permissions = append([]string{}, draftPermissions...)
@@ -204,6 +204,11 @@ func TestTaskConfigDraftOwnerReadsAndAuthorization(t *testing.T) {
 				engines.engines[1].TenantID = &tenant
 			case "source_mismatch":
 				metadata.ancestors.Item.ID++
+			case "source_path_collision":
+				request.SourceLocator = "addp://engine/1/path/synthetic.extra/source?type=collection"
+				item.Name = "extra.source"
+				item.FullName = "synthetic.extra.source"
+				metadata.ancestors.Item = *item
 			case "parent_mismatch":
 				metadata.parent.EngineID++
 			case "missing_structure":
