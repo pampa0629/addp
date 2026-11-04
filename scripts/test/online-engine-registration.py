@@ -23,6 +23,71 @@ class RegistrationError(RuntimeError):
     pass
 
 
+class MetadataGrantError(RegistrationError):
+    """Stable fixture diagnostics; never include remote text or credentials."""
+    def __init__(self, stage, code):
+        self.stage, self.code = stage, code
+        super().__init__(f'metadata_grant.{stage}.{code}')
+
+
+def metadata_error_evidence(error, stage='scenario'):
+    """Stable labels plus a digest; exception text may contain transport secrets."""
+    result={'error_type':type(error).__name__,'stage':stage,
+            'message_sha256':hashlib.sha256(str(error).encode()).hexdigest()}
+    if isinstance(error,MetadataGrantError):result.update(stage=error.stage,code=error.code)
+    else:
+        result['code']='unexpected_error'
+        match=re.search(r' returned HTTP ([1-5][0-9]{2})(?: \([a-zA-Z0-9_]{1,64}\))?$',str(error))
+        if match:result.update(http_status=int(match[1]),code='http_request_failed')
+    return result
+
+
+def metadata_facts_evidence(facts, expected):
+    """Keep contract facts; hash unknown identities and omit arbitrary payloads."""
+    def digest(value):
+        if value is None:return None
+        try:
+            raw=json.dumps(value,sort_keys=True,ensure_ascii=False,allow_nan=False,separators=(',',':')).encode()
+            return {'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}
+        except (ValueError,TypeError,RecursionError):
+            return {'invalid_type':type(value).__name__}
+    def known(value, allowed):
+        return value if isinstance(value,str) and value in allowed else digest(value)
+    def hex_value(value):
+        return value if isinstance(value,str) and re.fullmatch('[0-9a-f]{64}',value) else digest(value)
+    if not isinstance(facts,dict): return {'invalid_type':type(facts).__name__,'body':digest(facts)}
+    fields={'schema_version','engine_id','item_fingerprint','item_type','full_name','basis_state','boundary_hash','observed_at','boundary'}
+    result={'body':digest(facts),'unrecognized_field_count':len(set(facts)-fields)}
+    for key in ('schema_version','engine_id','item_fingerprint','item_type','full_name'):
+        if key in facts:result[key]=known(facts[key],{expected[key]})
+    if 'basis_state' in facts:
+        result['basis_state']=known(facts['basis_state'],{'complete','incomplete','needs_refresh','unsupported'})
+    if 'boundary_hash' in facts:result['boundary_hash']=hex_value(facts['boundary_hash'])
+    if 'observed_at' in facts:
+        value=facts['observed_at']
+        result['observed_at']=value if isinstance(value,str) and re.fullmatch(
+            r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})',value) else digest(value)
+    boundary=facts.get('boundary')
+    if not isinstance(boundary,dict):
+        result['boundary']=digest(boundary);return result
+    clean={'unrecognized_field_count':len(set(boundary)-{'layout','metadata_target'})}
+    if 'layout' in boundary:clean['layout']=known(boundary['layout'],{'single','multi','whole'})
+    metadata=boundary.get('metadata_target')
+    if isinstance(metadata,dict):
+        view={'unrecognized_field_count':len(set(metadata)-{'target','layout','data_type','format','composition_digest'})}
+        if 'target' in metadata:
+            target=metadata['target']; matches=[t for t in expected['targets'] if t==target]
+            view['target']=matches[0] if matches else digest(target)
+        for key in ('data_type','format'):
+            if key in metadata:view[key]=known(metadata[key],{expected[key]})
+        if 'layout' in metadata:view['layout']=known(metadata['layout'],{'single','multi','whole'})
+        if 'composition_digest' in metadata:view['composition_digest']=hex_value(metadata['composition_digest'])
+        clean['metadata_target']=view
+    else:clean['metadata_target']=digest(metadata)
+    result['boundary']=clean
+    return result
+
+
 SOURCE_INITIALIZER_ROLE = 'tenant.engine_access_delegation_administrator'
 SOURCE_INITIALIZER_PERMISSIONS = {
     'iam.department.read',
@@ -83,11 +148,13 @@ def source_grant_participants(authorizer, consumer, tenant_id):
 
 class ExactFileMetadataGrants:
     """Existing metadata-only Grant contract; never a content completeness proof."""
-    def __init__(self, authorizer, consumer, tenant_id, *, on_change=None):
+    def __init__(self, authorizer, consumer, tenant_id, *, on_change=None, on_evidence=None):
+        self.phase = 'participants'
         self.operator, self.recipient = source_grant_participants(authorizer, consumer, tenant_id)
         self.authorizer, self.consumer = authorizer, consumer
         self.pending = []
         self.on_change = on_change
+        self.on_evidence = on_evidence
 
     def checkpoint(self):
         if self.on_change is not None:
@@ -112,37 +179,75 @@ class ExactFileMetadataGrants:
             segments += [dict(term='file', kind='file', name=parts[-1])]
         return dict(version='catalog.path/v1', engine_id=engine, segments=segments)
 
-    def observe(self, target, visible):
+    def observe(self, target, visible, *, phase='visibility_check'):
+        self.phase=phase
         result = self.consumer.request('POST', '/api/v1/system/engine-access/metadata-checks/meta-query',
                                        (200,), {'targets': [target]}).payload
         if (not isinstance(result, dict) or not result.get('observed_at')
             or result.get('targets') != [dict(target=target, visible=visible)]):
-            raise RegistrationError('metadata visibility does not match the current precise Grant')
+            raise MetadataGrantError(phase,'visibility_mismatch')
+
+    def metadata_facts(self, engine, full_name, storage, *, data_type, format_name, layouts):
+        if (not isinstance(layouts,tuple) or not layouts
+            or any(not isinstance(layout,str) or layout not in {'single','multi','whole'} for layout in layouts)
+            or len(set(layouts))!=len(layouts)):
+            raise MetadataGrantError('facts_validate','allowed_layouts_invalid')
+        targets=[self.target(engine,full_name,storage,layout=layout) for layout in layouts]
+        fingerprint=hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
+        expected=dict(schema_version='meta.data_item_authorization_facts/v1',engine_id=str(engine),
+            item_fingerprint=fingerprint,item_type='object' if storage=='minio' else 'file',full_name=full_name,
+            data_type=data_type,format=format_name,targets=targets)
+        context={'engine_id':engine,'full_name':full_name,'allowed_layouts':list(layouts),
+                 'expected_data_type':data_type,'expected_format':format_name}
+        def fail(code):
+            if self.on_evidence:self.on_evidence({'stage':'failure','error_stage':'facts_validate','code':code,**context})
+            raise MetadataGrantError('facts_validate',code)
+        self.phase='facts_read'
+        try:
+            facts=self.authorizer.request('GET',f'/api/v1/system/engines/{engine}/data-items/{fingerprint}/authorization-facts',(200,)).payload
+        except Exception as error:
+            if self.on_evidence:self.on_evidence({'stage':'failure','error_stage':'facts_read',
+                'code':'request_failed','error':metadata_error_evidence(error,'facts_read'),**context})
+            raise MetadataGrantError('facts_read','request_failed') from None
+        self.phase='facts_validate'
+        if self.on_evidence:self.on_evidence({'stage':'authorization_facts',**context,
+                                              'facts':metadata_facts_evidence(facts,expected)})
+        if not isinstance(facts,dict):fail('response_shape_invalid')
+        if any(facts.get(k)!=expected[k] for k in ('schema_version','engine_id','item_fingerprint','item_type','full_name')):
+            fail('identity_mismatch')
+        if facts.get('basis_state')!='complete':fail('basis_not_complete')
+        boundary=facts.get('boundary')
+        if not isinstance(boundary,dict):fail('boundary_shape_invalid')
+        layout=boundary.get('layout')
+        if not isinstance(layout,str) or layout not in layouts:fail('layout_not_allowed')
+        metadata=boundary.get('metadata_target')
+        if not isinstance(metadata,dict):fail('metadata_target_missing')
+        if metadata.get('layout')!=layout:fail('boundary_layout_mismatch')
+        if metadata.get('target')!=self.target(engine,full_name,storage,layout=layout):fail('target_mismatch')
+        if metadata.get('data_type')!=data_type or metadata.get('format')!=format_name:fail('item_type_mismatch')
+        if not re.fullmatch('[0-9a-f]{64}',str(metadata.get('composition_digest',''))):fail('composition_digest_invalid')
+        if boundary!={'layout':layout,'metadata_target':dict(target=metadata['target'],layout=layout,
+            data_type=data_type,format=format_name,composition_digest=metadata['composition_digest'])}:fail('boundary_fields_mismatch')
+        if not re.fullmatch('[0-9a-f]{64}',str(facts.get('boundary_hash',''))):fail('boundary_hash_invalid')
+        observed=facts.get('observed_at')
+        try:
+            if not isinstance(observed,str) or datetime.fromisoformat(observed.replace('Z','+00:00')).tzinfo is None:raise ValueError()
+        except (ValueError,TypeError):fail('observed_at_invalid')
+        return facts
 
     def grant(self, engine, full_name, storage, *, data_type, format_name, layout, expires_at=None):
+        self.phase='expiry_validate'
         if expires_at is not None:
             try:
                 remaining = (datetime.fromisoformat(expires_at.replace('Z', '+00:00')) - datetime.now(timezone.utc)).total_seconds()
                 if not 0 < remaining <= 10800: raise ValueError()
             except (ValueError, TypeError, AttributeError):
-                raise RegistrationError('metadata Grant expiry must be within the next 10800 seconds') from None
+                raise MetadataGrantError('expiry_validate','expiry_out_of_bounds') from None
         target = self.target(engine, full_name, storage, layout=layout)
         fingerprint = hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
-        facts = self.authorizer.request('GET', f'/api/v1/system/engines/{engine}/data-items/{fingerprint}/authorization-facts', (200,)).payload
-        boundary = facts.get('boundary') if isinstance(facts, dict) else None
-        metadata = boundary.get('metadata_target') if isinstance(boundary, dict) else None
-        if not isinstance(metadata, dict):
-            raise RegistrationError('metadata Grant requires a complete matching metadata-only boundary')
-        expected_metadata = dict(target=target, layout=layout, data_type=data_type, format=format_name,
-                                 composition_digest=metadata.get('composition_digest'))
-        if (not isinstance(facts, dict) or any(facts.get(k) != v for k,v in {
-            'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': str(engine),
-            'item_fingerprint': fingerprint, 'item_type': 'object' if storage == 'minio' else 'file', 'full_name': full_name,
-            'basis_state': 'complete', 'boundary': dict(layout=layout, metadata_target=expected_metadata)}.items())
-            or not re.fullmatch('[0-9a-f]{64}', str(metadata.get('composition_digest', '')))
-            or not re.fullmatch('[0-9a-f]{64}', str(facts.get('boundary_hash', ''))) or not facts.get('observed_at')):
-            raise RegistrationError('metadata Grant requires complete matching System metadata-only facts')
-        self.observe(target, False)
+        facts=self.metadata_facts(engine,full_name,storage,data_type=data_type,format_name=format_name,layouts=(layout,))
+        metadata=facts['boundary']['metadata_target']
+        self.observe(target,False,phase='visibility_before_grant')
         command = str(uuid.uuid4())
         body = dict(request_id=command, catalog_path=target, item_fingerprint=fingerprint,
                     expected_boundary_hash=facts['boundary_hash'], recipient_type='user', recipient_id=self.recipient,
@@ -152,7 +257,9 @@ class ExactFileMetadataGrants:
         pending = dict(engine=engine, request_id=command, target=target, confirmed=False)
         self.pending.append(pending)  # Unknown write outcomes must also be cleaned.
         self.checkpoint()
+        self.phase='grant_create'
         receipt = self.authorizer.request('POST', f'/api/v1/system/engines/{engine}/access_grants', (201,), body).payload
+        self.phase='receipt_validate'
         expected = {k:body[k] for k in ('request_id','catalog_path','item_fingerprint','recipient_type','recipient_id','action','expiry_mode')}
         expected.update(engine_id=str(engine), boundary_hash=facts['boundary_hash'], metadata_target=metadata,
                         approval_mode='independent', operator_principal_id=self.operator, revocation=None)
@@ -163,29 +270,34 @@ class ExactFileMetadataGrants:
                 if datetime.fromisoformat(receipt['expires_at'].replace('Z', '+00:00')) != datetime.fromisoformat(expires_at.replace('Z', '+00:00')):
                     raise ValueError()
             except (KeyError, TypeError, ValueError):
-                raise RegistrationError('metadata Grant receipt changed its expiry') from None
+                raise MetadataGrantError('receipt_validate','expiry_mismatch') from None
         if (not isinstance(receipt, dict) or any(receipt.get(k) != v for k,v in expected.items())
             or receipt.get('file_composition') or receipt.get('native_target') or receipt.get('scope')
             or receipt.get('node_recursive') is not None):
-            raise RegistrationError('metadata Grant receipt changed its precise metadata-only boundary')
+            raise MetadataGrantError('receipt_validate','boundary_mismatch')
         pending['confirmed'] = True
         self.checkpoint()
-        self.observe(target, True)
+        self.observe(target,True,phase='visibility_after_grant')
         return receipt
 
     def cleanup(self):
         errors = []
         for row in list(self.pending):
             try:
+                self.phase='grant_revoke'
                 self.authorizer.request('POST', f"/api/v1/system/engines/{row['engine']}/access_grants/{row['request_id']}/revoke",
                     (200,) if row['confirmed'] else (200,404), {'reason':'Disposable Online metadata cleanup'})
-                self.observe(row['target'], False)
+                self.observe(row['target'],False,phase='visibility_after_revoke')
                 self.pending.remove(row)
                 self.checkpoint()
-            except Exception:
+            except Exception as error:
                 errors.append(row['request_id'])
+                if self.on_evidence:
+                    try:self.on_evidence({'stage':'failure','request_id':row['request_id'],
+                        'error':metadata_error_evidence(error,self.phase)})
+                    except Exception:errors.append('evidence_write_failed')
         if errors:
-            raise RegistrationError('owned metadata Grant cleanup or withdrawal observation failed')
+            raise MetadataGrantError('cleanup','revoke_or_visibility_failed')
         return {'grants_revoked': True, 'metadata_hidden': True}
 
 

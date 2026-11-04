@@ -2235,6 +2235,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 (paths[4], 'authorization.cleanup()'), (paths[4], 'def verify_basic_rescans('),
                 (paths[4], 's.parent_execution_id=e.execution_id'),
                 (paths[11], 'remaining <= 10800'),
+                (paths[11], 'def metadata_facts_evidence('), (paths[11], 'basis_not_complete'),
+                (paths[4], 'on_evidence=self.capture_facts'), (paths[4], 'capacity-failure.json'),
+                (paths[12], 'test_capacity_grants_observed_multi_tiff_and_archives_authorization_facts'),
                 (paths[12], 'test_cleanup_runs_for_success_scope_rejection_and_failed_business')):
             path = self.repository / relative
             original = path.read_text()

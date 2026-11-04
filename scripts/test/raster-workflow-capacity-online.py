@@ -16,6 +16,7 @@ import urllib.parse
 
 scene=importlib.import_module('scripts.test.raster-workflow-online')
 fixture=importlib.import_module('business.scripts.online-raster-capacity-fixture')
+registration=importlib.import_module('scripts.test.online-engine-registration')
 SUITE=fixture.SUITE
 RUNTIME='addp-raster-capacity-runtime'
 CACHE_VALUES=(64,128,256)
@@ -290,40 +291,70 @@ class CapacityMetadataGrants:
     """Exact, expiring metadata visibility; never an execution/content Allow."""
     def __init__(self, env):
         self.env = env
-        self.registration = importlib.import_module('scripts.test.online-engine-registration')
+        self.registration = registration
         self.client = scene.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
         issuer = scene.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
         self.path = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'capacity-metadata-grants.json'
-        self.report = {'issued': [], 'pending': [], 'already_visible': [], 'cleanup': 'pending'}
+        self.report = {'issued': [], 'pending': [], 'already_visible': [], 'facts': [], 'failures': [], 'cleanup': 'pending'}
+        self.phase='participants'
+        self.operation_active=False
         self.expires_at = (datetime.now(timezone.utc)+timedelta(seconds=10800)).isoformat()
         def checkpoint(pending):
             self.report['pending'] = list(pending)
             self.save()
-        self.grants = self.registration.ExactFileMetadataGrants(issuer, self.client,
-            int(env['ADDP_ONLINE_TEST_TENANT_ID']), on_change=checkpoint)
+        self.save()
+        try:
+            self.grants = self.registration.ExactFileMetadataGrants(issuer,self.client,
+                int(env['ADDP_ONLINE_TEST_TENANT_ID']),on_change=checkpoint,on_evidence=self.capture_facts)
+        except Exception as error:
+            self.record_failure('initialization',error)
+            raise
+        self.phase='idle'
         self.save()
 
     def save(self):
         self.path.write_text(json.dumps(self.report, sort_keys=True))
 
-    def ensure(self, engine, full_name, *, layout='single'):
+    def capture_facts(self, evidence):
+        self.report['facts'].append(evidence)
+        self.save()
+
+    def record_failure(self, role, error):
+        stage=self.phase if role=='initialization' else role
+        if role=='business' and self.operation_active:
+            stage=getattr(self.grants,'phase',self.phase) if self.phase in {'grant','facts_observe'} else self.phase
+        detail=self.registration.metadata_error_evidence(error,stage)
+        self.report['failures'].append({'role':role,**detail})
+        self.save()
+        (self.path.parent/'capacity-failure.json').write_text(json.dumps({
+            'schema_version':'addp.raster-capacity-failure/v1','run_id':self.env.get('ADDP_ONLINE_TEST_RUN_ID'),
+            'failures':self.report['failures']},sort_keys=True))
+
+    def ensure(self, engine, full_name):
+        self.phase='fixture_scope';self.operation_active=True
         source = int(self.env['ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID'])
         target = int(self.env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID'])
         if engine == source:
             allowed = {'raster-source/'+fixture.SOURCE_NAME} | {
                 'raster-source/'+fixture.MOSAIC_SOURCE_PREFIX+'/'+name for name in fixture.mosaic_windows()}
-            valid = full_name in allowed and layout == 'single'
+            valid = full_name in allowed
+            layouts=('single','multi'); format_name='tiff'
         elif engine == target:
             name = full_name.removeprefix('raster-target/')
             singles = {f'capacity-c{cache}-n{running}-r{repetition}-{index}.cog.tif'
                        for repetition,cache,running in matrix() for index in range(2)}
             wholes = {f'capacity-mosaic-l{concurrency}-r{repetition}' for repetition,concurrency in directory_matrix()}
-            valid = full_name == 'raster-target/'+name and (layout == 'single' and name in singles
-                                                          or layout == 'whole' and name in wholes)
+            valid = full_name == 'raster-target/'+name and (name in singles or name in wholes)
+            layouts=('whole',) if name in wholes else ('single','multi')
+            format_name='raster_mosaic' if name in wholes else 'tiff'
         else:
             valid = False
         if not valid:
-            raise scene.SuiteError('capacity metadata Grant is outside the exact owned fixtures')
+            raise self.registration.MetadataGrantError('fixture_scope','target_out_of_scope')
+        self.phase='facts_observe'
+        facts=self.grants.metadata_facts(engine,full_name,'minio',data_type='media',format_name=format_name,layouts=layouts)
+        layout=facts['boundary']['layout']
+        self.phase='target_visibility'
         if engine == target:
             path = self.registration.ExactFileMetadataGrants.target(engine,full_name,'minio',layout=layout)
             visibility = scene.obj(self.client.request('POST','/api/v1/system/engine-access/metadata-checks/meta-query',
@@ -334,10 +365,13 @@ class CapacityMetadataGrants:
                 raise scene.SuiteError('capacity target metadata visibility is incomplete')
             if rows[0]['visible']:
                 self.report['already_visible'].append({'target':path,'observed_at':visibility['observed_at']}); self.save()
+                self.operation_active=False;self.phase='idle'
                 return None
+        self.phase='grant'
         receipt = self.grants.grant(engine, full_name, 'minio', data_type='media',
-            format_name='raster_mosaic' if layout == 'whole' else 'tiff', layout=layout, expires_at=self.expires_at)
+            format_name=format_name, layout=layout, expires_at=self.expires_at)
         self.report['issued'].append(receipt); self.save()
+        self.operation_active=False;self.phase='idle'
         return receipt
 
     def cleanup(self):
@@ -721,7 +755,7 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
         scan_observation=validate_directory_scan(execution,scan_execution,scan,report['identity'],target_engine)
         verification['automatic_scan_observation']=scan_observation
         verification_path.write_text(json.dumps(verification,sort_keys=True))
-        authorization.ensure(target_engine,'raster-target/'+name,layout='whole')
+        authorization.ensure(target_engine,'raster-target/'+name)
         item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'mosaic whole target')
         item=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
         validate_directory_item_identity(item,facts['outputs'][0],target_engine,name)
@@ -848,19 +882,30 @@ def run_capacity(env,authorization,scopes):
 
 def run(env):
     authorization=CapacityMetadataGrants(env)
-    failure=None; report=None
+    failure=None; report=None; evidence_errors=[]
     try:
         report=run_capacity(env,authorization,MosaicScopeFixture(env))
     except BaseException as error:
         failure=error
+        try:authorization.record_failure('business',error)
+        except Exception:evidence_errors.append('business')
     try:
         cleanup=authorization.cleanup()
     except BaseException as error:
+        try:authorization.record_failure('cleanup',error)
+        except Exception:evidence_errors.append('cleanup')
         if failure is None: raise
-        raise scene.SuiteError('capacity business failed and metadata Grant cleanup also failed') from error
+        first=registration.metadata_error_evidence(failure)
+        raise scene.SuiteError('capacity business failed ('+first['stage']+'.'+first['code']+') and metadata Grant cleanup also failed') from None
+    if evidence_errors:
+        raise scene.SuiteError('capacity failure evidence could not be persisted; cleanup was attempted') from None
     if failure is not None: raise failure
     report['metadata_authorization']={**authorization.report,'cleanup':cleanup}
     return report
+
+
+def capacity_error_message(error):
+    return 'Raster capacity Online failed: '+json.dumps(registration.metadata_error_evidence(error),sort_keys=True)
 
 
 def main():
@@ -870,5 +915,5 @@ def main():
 if __name__=='__main__':
     try:main()
     except Exception as error:
-        print('Raster capacity Online failed: '+(str(error) if isinstance(error,scene.SuiteError) else type(error).__name__),file=sys.stderr)
+        print(capacity_error_message(error),file=sys.stderr)
         raise SystemExit(1)

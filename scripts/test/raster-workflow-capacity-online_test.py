@@ -669,6 +669,7 @@ class CapacityAuthorizationBoundaryTest(unittest.TestCase):
                 'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID':'8','ADDP_ONLINE_RASTER_TARGET_ENGINE_ID':'9',
                 'ADDP_ONLINE_ARTIFACT_DIR':directory}
             helper = Mock(); helper.grant.return_value={'request_id':'grant','action':'metadata_read'}
+            helper.metadata_facts.side_effect=lambda engine,name,storage,**kwargs:{'boundary':{'layout':kwargs['layouts'][0]}}
             helper.cleanup.return_value={'grants_revoked':True,'metadata_hidden':True}
             factory=Mock(return_value=helper)
             factory.target=registration.ExactFileMetadataGrants.target
@@ -681,7 +682,7 @@ class CapacityAuthorizationBoundaryTest(unittest.TestCase):
                 (8,'raster-source/'+m.fixture.MOSAIC_SOURCE_PREFIX+'/'+name,'single') for name in m.fixture.mosaic_windows()]+[
                 (9,'raster-target/capacity-c64-n1-r1-0.cog.tif','single'),
                 (9,'raster-target/capacity-mosaic-l1-r1','whole')]
-            for engine,name,layout in expected: authorization.ensure(engine,name,layout=layout)
+            for engine,name,layout in expected: authorization.ensure(engine,name)
             self.assertEqual(helper.grant.call_count,7)
             for call in helper.grant.call_args_list:
                 self.assertEqual(call.args[2],'minio'); self.assertEqual(call.kwargs['expires_at'],authorization.expires_at)
@@ -689,12 +690,12 @@ class CapacityAuthorizationBoundaryTest(unittest.TestCase):
             before=helper.grant.call_count
             for engine,name,layout in [(8,'raster-source/neighbor.tif','single'),(9,'raster-target','whole'),
                 (9,'raster-target/capacity-mosaic-l1-r1/index/source-index.json','single'),
-                (8,'raster-source/'+m.fixture.SOURCE_NAME,'whole'),(10,expected[0][1],'single'),(9,'raster-target/capacity-c64-n1-r3-0.cog.tif','single')]:
-                with self.subTest(name=name),self.assertRaises(m.scene.SuiteError):authorization.ensure(engine,name,layout=layout)
+                (10,expected[0][1],'single'),(9,'raster-target/capacity-c64-n1-r3-0.cog.tif','single')]:
+                with self.subTest(name=name),self.assertRaises(m.registration.RegistrationError):authorization.ensure(engine,name)
             self.assertEqual(helper.grant.call_count,before)
             consumer.request.side_effect=lambda method,path,statuses,body: SimpleNamespace(payload={
                 'observed_at':'later','targets':[{'target':body['targets'][0],'visible':True}]})
-            authorization.ensure(9,'raster-target/capacity-mosaic-l1-r1',layout='whole')
+            authorization.ensure(9,'raster-target/capacity-mosaic-l1-r1')
             self.assertEqual(helper.grant.call_count,before)
             self.assertEqual(len(authorization.report['already_visible']),1)
             authorization.cleanup()
@@ -750,3 +751,224 @@ class CapacityAuthorizationBoundaryTest(unittest.TestCase):
         for key,value in [('size_bytes',123),('attributes',{'format_info':{}}),('fingerprint','b'*64)]:
             wrong={**item,key:value}
             with self.subTest(key=key),self.assertRaises(m.scene.SuiteError):scope.produced_item(wrong,result,scan,identity)
+
+
+class CapacityObservedLayoutRegressionTest(unittest.TestCase):
+    def test_capacity_grants_observed_multi_tiff_and_archives_authorization_facts(self):
+        builder=importlib.import_module('scripts.test.online-engine-registration_test').OnlineEngineRegistrationTest()
+        name='raster-source/'+m.fixture.SOURCE_NAME
+        issuer,consumer,facts,state=builder.metadata_clients(engine=8,full_name=name,storage='minio',
+            data_type='media',format_name='tiff',layout='multi')
+        with tempfile.TemporaryDirectory() as directory:
+            env={'GATEWAY_URL':'http://gateway','ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'user-secret',
+                 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'issuer-secret','ADDP_ONLINE_TEST_TENANT_ID':'2',
+                 'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID':'8','ADDP_ONLINE_RASTER_TARGET_ENGINE_ID':'9',
+                 'ADDP_ONLINE_ARTIFACT_DIR':directory}
+            with patch.object(m.scene,'GatewayClient',side_effect=[consumer,issuer]):
+                authorization=m.CapacityMetadataGrants(env)
+            receipt=authorization.ensure(8,name)
+            self.assertEqual(receipt['metadata_target']['layout'],'multi')
+            self.assertEqual(receipt['action'],'metadata_read')
+            authorization.cleanup()
+            evidence=json.loads(authorization.path.read_text())
+            observed=[row for row in evidence['facts'] if row['stage']=='authorization_facts']
+            self.assertEqual(len(observed),2)
+            self.assertTrue(all(row['facts']['boundary']['layout']=='multi' for row in observed))
+            self.assertFalse(evidence['pending'])
+            self.assertNotIn('issuer-secret',authorization.path.read_text())
+
+
+class CapacityAuthorizationDiagnosticTest(unittest.TestCase):
+    def clients(self, layout='multi'):
+        builder=importlib.import_module('scripts.test.online-engine-registration_test').OnlineEngineRegistrationTest()
+        self.name='raster-source/'+m.fixture.SOURCE_NAME
+        return builder.metadata_clients(engine=8,full_name=self.name,storage='minio',
+            data_type='media',format_name='tiff',layout=layout)
+
+    def run_fixture(self, directory, issuer, consumer):
+        from unittest.mock import Mock
+        env={'GATEWAY_URL':'http://gateway','ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'user-secret',
+             'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'issuer-secret','ADDP_ONLINE_TEST_TENANT_ID':'2',
+             'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID':'8','ADDP_ONLINE_RASTER_TARGET_ENGINE_ID':'9',
+             'ADDP_ONLINE_ARTIFACT_DIR':directory,'ADDP_ONLINE_TEST_RUN_ID':'raster-capacity-123-1'}
+        def business(env,authorization,scope):
+            return {'result':'passed','receipt':authorization.ensure(8,self.name)}
+        with patch.object(m.scene,'GatewayClient',side_effect=[consumer,issuer]), \
+             patch.object(m,'MosaicScopeFixture',return_value=Mock()),patch.object(m,'run_capacity',side_effect=business):
+            return m.run(env)
+
+    def test_actual_single_and_multi_tiff_layouts_are_used_without_conversion(self):
+        for layout in ('single','multi'):
+            with self.subTest(layout=layout),tempfile.TemporaryDirectory() as directory:
+                issuer,consumer,facts,state=self.clients(layout)
+                result=self.run_fixture(directory,issuer,consumer)
+                self.assertEqual(result['receipt']['metadata_target']['layout'],layout)
+                self.assertEqual(result['receipt']['action'],'metadata_read')
+                self.assertEqual(result['receipt']['expiry_mode'],'at_time')
+                self.assertFalse(result['metadata_authorization']['pending'])
+                self.assertFalse(result['metadata_authorization']['failures'])
+                observed=[e for e in result['metadata_authorization']['facts'] if e['stage']=='authorization_facts']
+                self.assertEqual([e['facts']['boundary']['layout'] for e in observed],[layout,layout])
+
+    def test_incomplete_malformed_or_mismatched_facts_are_archived_before_cleanup(self):
+        for fault,code in (('basis','basis_not_complete'),('layout','layout_not_allowed'),
+            ('inner_layout','boundary_layout_mismatch'),('fingerprint','identity_mismatch'),
+            ('engine','identity_mismatch'),('target','target_mismatch'),('format','item_type_mismatch'),
+            ('digest','composition_digest_invalid'),('hash','boundary_hash_invalid'),
+            ('time','observed_at_invalid'),('extra_boundary','boundary_fields_mismatch')):
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
+                issuer,consumer,facts,state=self.clients()
+                if fault=='basis':facts['basis_state']='needs_refresh'
+                if fault=='layout':facts['boundary']['layout']='whole'
+                if fault=='inner_layout':facts['boundary']['metadata_target']['layout']='single'
+                if fault=='fingerprint':facts['item_fingerprint']='b'*64
+                if fault=='engine':facts['engine_id']='9'
+                if fault=='target':facts['boundary']['metadata_target']['target']['segments'][-1]['name']='neighbor.tif'
+                if fault=='format':facts['boundary']['metadata_target']['format']='jpeg'
+                if fault=='digest':facts['boundary']['metadata_target']['composition_digest']='bad'
+                if fault=='hash':facts['boundary_hash']=None
+                if fault=='time':facts['observed_at']='not-a-time'
+                if fault=='extra_boundary':facts['boundary']['scope']={'private':'must-not-escape'}
+                with self.assertRaises(m.registration.MetadataGrantError) as raised:
+                    self.run_fixture(directory,issuer,consumer)
+                self.assertEqual(raised.exception.code,code)
+                report=json.loads((Path(directory)/'capacity-metadata-grants.json').read_text())
+                failure=json.loads((Path(directory)/'capacity-failure.json').read_text())
+                self.assertEqual(failure['failures'][0]['code'],code)
+                self.assertEqual(failure['failures'][0]['stage'],'facts_validate')
+                self.assertTrue(any(e['stage']=='authorization_facts' for e in report['facts']))
+                self.assertFalse(report['issued']);self.assertFalse(report['pending'])
+                self.assertTrue(report['cleanup']['grants_revoked'])
+                self.assertFalse(any(e[0]=='POST' for e in state['events']))
+                self.assertNotIn('must-not-escape',json.dumps(report))
+
+    def test_second_fact_read_detects_layout_drift_without_granting_or_rewriting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            issuer,consumer,facts,state=self.clients();original=issuer.request.side_effect;reads=0
+            def request(method,path,statuses,body=None):
+                nonlocal reads
+                result=original(method,path,statuses,body)
+                if path.endswith('/authorization-facts'):
+                    reads+=1; result=SimpleNamespace(payload=copy.deepcopy(result.payload))
+                    if reads==2:
+                        result.payload['boundary']['layout']='single'
+                        result.payload['boundary']['metadata_target']['layout']='single'
+                return result
+            issuer.request.side_effect=request
+            with self.assertRaises(m.registration.MetadataGrantError) as raised:self.run_fixture(directory,issuer,consumer)
+            self.assertEqual(raised.exception.code,'layout_not_allowed')
+            report=json.loads((Path(directory)/'capacity-metadata-grants.json').read_text())
+            self.assertEqual([e['facts']['boundary']['layout'] for e in report['facts'] if e['stage']=='authorization_facts'],['multi','single'])
+            self.assertFalse(any(e[0]=='POST' for e in state['events']))
+
+    def test_transport_and_unknown_write_errors_are_safe_and_cleanup_failure_is_separate(self):
+        marker='private-Bearer-token-postgres-password'
+        for failure in ('facts_read','write','write_and_cleanup'):
+            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as directory:
+                issuer,consumer,facts,state=self.clients();original=issuer.request.side_effect
+                def request(method,path,statuses,body=None):
+                    if failure=='facts_read' and path.endswith('/authorization-facts'):
+                        raise m.scene.SuiteError('GET '+marker+' returned HTTP 503 (unavailable)')
+                    if failure=='write_and_cleanup' and path.endswith('/revoke'):raise OSError(marker)
+                    result=original(method,path,statuses,body)
+                    if path.endswith('/access_grants'):raise TimeoutError(marker)
+                    return result
+                issuer.request.side_effect=request
+                with self.assertRaises(Exception):self.run_fixture(directory,issuer,consumer)
+                report=json.loads((Path(directory)/'capacity-metadata-grants.json').read_text())
+                self.assertNotIn(marker,json.dumps(report))
+                saved=(Path(directory)/'capacity-failure.json').read_text()
+                self.assertNotIn(marker,saved);self.assertNotIn('issuer-secret',saved)
+                self.assertEqual(report['failures'][0]['role'],'business')
+                if failure=='facts_read':
+                    self.assertEqual(report['failures'][0]['stage'],'facts_read')
+                    event=next(e for e in report['facts'] if e.get('error_stage')=='facts_read')
+                    self.assertEqual(event['error']['http_status'],503)
+                else:self.assertEqual(report['failures'][0]['stage'],'grant_create')
+                if failure=='write_and_cleanup':
+                    self.assertEqual([e['role'] for e in report['failures']],['business','cleanup'])
+                    self.assertEqual(report['failures'][1]['code'],'revoke_or_visibility_failed')
+                    self.assertEqual(len(report['pending']),1);self.assertEqual(report['cleanup'],'failed')
+                else:self.assertFalse(report['pending']);self.assertFalse(state['visible'])
+
+    def test_fact_evidence_omits_unknown_fields_and_hashes_unexpected_identities(self):
+        marker='secret://user:password@private-host'
+        with tempfile.TemporaryDirectory() as directory:
+            issuer,consumer,facts,state=self.clients()
+            facts['credentials']=marker;facts['full_name']=marker
+            facts['boundary']['metadata_target']['private']=marker
+            facts['observed_at']=marker
+            with self.assertRaises(m.registration.MetadataGrantError):self.run_fixture(directory,issuer,consumer)
+            report=json.loads((Path(directory)/'capacity-metadata-grants.json').read_text())
+            self.assertNotIn(marker,json.dumps(report))
+            observed=next(e['facts'] for e in report['facts'] if e['stage']=='authorization_facts')
+            self.assertEqual(observed['unrecognized_field_count'],1)
+            self.assertIn('sha256',observed['full_name'])
+            self.assertEqual(observed['boundary']['metadata_target']['unrecognized_field_count'],1)
+            self.assertNotIn('credentials',observed)
+
+    def test_cli_errors_have_stable_stage_code_and_no_remote_exception_text(self):
+        error=m.registration.MetadataGrantError('facts_validate','layout_not_allowed')
+        message=m.capacity_error_message(error)
+        self.assertIn('facts_validate',message);self.assertIn('layout_not_allowed',message)
+        unknown=m.capacity_error_message(TimeoutError('Bearer private-token password=private'))
+        self.assertIn('TimeoutError',unknown);self.assertNotIn('private-token',unknown);self.assertNotIn('password=',unknown)
+
+
+class CapacityAdditionalAuthorizationTest(unittest.TestCase):
+    clients=CapacityAuthorizationDiagnosticTest.clients
+    run_fixture=CapacityAuthorizationDiagnosticTest.run_fixture
+
+    def test_fact_archive_failure_prevents_grant_creation(self):
+        from unittest.mock import Mock
+        issuer,consumer,facts,state=self.clients()
+        grants=m.registration.ExactFileMetadataGrants(issuer,consumer,2,
+            on_evidence=Mock(side_effect=OSError('archive unavailable')))
+        with self.assertRaises(OSError):
+            grants.grant(8,self.name,'minio',data_type='media',format_name='tiff',layout='multi')
+        self.assertFalse(grants.pending)
+        self.assertFalse(any(e[0]=='POST' for e in state['events']))
+
+    def test_successful_authorization_does_not_mislabel_later_business_failure(self):
+        from unittest.mock import Mock
+        issuer,consumer,facts,state=self.clients()
+        with tempfile.TemporaryDirectory() as directory:
+            env={'GATEWAY_URL':'http://gateway','ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'user-secret',
+                 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'issuer-secret','ADDP_ONLINE_TEST_TENANT_ID':'2',
+                 'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID':'8','ADDP_ONLINE_RASTER_TARGET_ENGINE_ID':'9',
+                 'ADDP_ONLINE_ARTIFACT_DIR':directory}
+            def business(env,authorization,scope):
+                authorization.ensure(8,self.name)
+                raise m.scene.SuiteError('workflow stopped')
+            with patch.object(m.scene,'GatewayClient',side_effect=[consumer,issuer]), \
+                 patch.object(m,'MosaicScopeFixture',return_value=Mock()),patch.object(m,'run_capacity',side_effect=business):
+                with self.assertRaisesRegex(m.scene.SuiteError,'workflow stopped'):m.run(env)
+            report=json.loads((Path(directory)/'capacity-metadata-grants.json').read_text())
+            self.assertEqual(report['failures'][0]['stage'],'business')
+            self.assertFalse(report['pending']);self.assertFalse(state['visible'])
+
+    def test_whole_remains_exact_metadata_item_and_rejects_single_layout(self):
+        builder=importlib.import_module('scripts.test.online-engine-registration_test').OnlineEngineRegistrationTest()
+        name='raster-target/capacity-mosaic-l1-r1'
+        for layout in ('whole','single'):
+            with self.subTest(layout=layout),tempfile.TemporaryDirectory() as directory:
+                issuer,consumer,facts,state=builder.metadata_clients(engine=9,full_name=name,storage='minio',
+                    data_type='media',format_name='raster_mosaic',layout=layout)
+                env={'GATEWAY_URL':'http://gateway','ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'user-secret',
+                     'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'issuer-secret','ADDP_ONLINE_TEST_TENANT_ID':'2',
+                     'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID':'8','ADDP_ONLINE_RASTER_TARGET_ENGINE_ID':'9',
+                     'ADDP_ONLINE_ARTIFACT_DIR':directory}
+                with patch.object(m.scene,'GatewayClient',side_effect=[consumer,issuer]):
+                    authorization=m.CapacityMetadataGrants(env)
+                if layout=='single':
+                    with self.assertRaises(m.registration.MetadataGrantError) as raised:authorization.ensure(9,name)
+                    self.assertEqual(raised.exception.code,'layout_not_allowed')
+                else:
+                    receipt=authorization.ensure(9,name)
+                    self.assertEqual(receipt['metadata_target']['layout'],'whole')
+                    self.assertEqual(receipt['action'],'metadata_read')
+                    self.assertEqual(receipt['catalog_path']['segments'][-1]['term'],'prefix')
+                    self.assertIn('item_fingerprint',receipt)
+                    self.assertNotIn('node_recursive',receipt)
+                authorization.cleanup()
+                self.assertFalse(authorization.report['pending'])
