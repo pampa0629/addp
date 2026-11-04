@@ -409,6 +409,86 @@ def capacity_error_evidence(error, stage='scenario'):
     return result
 
 
+LINEAGE_RESOURCE_FIELDS = ('port','locator','item_id','item_fingerprint','field_name','write_mode')
+
+
+def projection_signature(value, *, present=True):
+    """The artifact never receives original field values or unknown field names."""
+    if not present:return {'present':False}
+    kind={dict:'object',list:'array',str:'string',int:'number',float:'number',bool:'boolean',type(None):'null'}
+    result={'present':True,'type':kind.get(type(value),'other')}
+    try:
+        encoded=json.dumps(value,sort_keys=True,ensure_ascii=False,allow_nan=False,separators=(',',':')).encode()
+        result.update(bytes=len(encoded),sha256=hashlib.sha256(encoded).hexdigest())
+    except (TypeError,ValueError,RecursionError):result['digest_unavailable']=True
+    return result
+
+
+def lineage_projection_evidence(public, owner):
+    """Bounded diagnostics only; the shared validator remains the acceptance gate."""
+    evidence={'operation':'execution','phase':'public_projection','result':'passed','code':None,
+              'public_facts':projection_signature(public),'differences':[],'differences_truncated':False}
+    def difference(direction, field, actual, expected, *, index=None, actual_present=True, expected_present=True):
+        if len(evidence['differences'])>=16:
+            evidence['differences_truncated']=True;return
+        row={'direction':direction,'field':field,'actual':projection_signature(actual,present=actual_present),
+             'expected':projection_signature(expected,present=expected_present)}
+        if index is not None:row['index']=index
+        evidence['differences'].append(row)
+    if not isinstance(public,dict) or not isinstance(owner,dict):
+        evidence['owner_projection']=projection_signature(None)
+        difference('facts','shape',public,owner);return evidence
+    projected={'schema_version':owner.get('schema_version')}
+    if public.get('schema_version')!=owner.get('schema_version'):
+        difference('facts','schema_version',public.get('schema_version'),owner.get('schema_version'))
+    if public.get('operations') not in (None,[]):difference('facts','operations',public['operations'],None)
+    def locator(value):
+        if not isinstance(value,str):return value
+        try:
+            uri=urllib.parse.urlsplit(value)
+            return (uri.scheme,uri.netloc,uri.path,urllib.parse.parse_qs(uri.query,keep_blank_values=True))
+        except ValueError:return None
+    for direction in ('inputs','outputs'):
+        actual,expected=public.get(direction),owner.get(direction)
+        if not isinstance(actual,list) or not isinstance(expected,list):
+            difference(direction,'shape',actual,expected);continue
+        projected[direction]=[{k:v for k,v in ref.items() if k in LINEAGE_RESOURCE_FIELDS}
+                              if isinstance(ref,dict) else None for ref in expected]
+        if len(actual)!=len(expected):difference(direction,'cardinality',actual,projected[direction])
+        if max(len(actual),len(expected))>16:evidence['differences_truncated']=True
+        for index,(got,wanted) in enumerate(zip(actual[:16],expected[:16])):
+            if not isinstance(got,dict) or not isinstance(wanted,dict):
+                difference(direction,'shape',got,wanted,index=index);continue
+            unknown={k:v for k,v in got.items() if k not in LINEAGE_RESOURCE_FIELDS}
+            if unknown:difference(direction,'unrecognized_fields',unknown,{},index=index)
+            for field in LINEAGE_RESOURCE_FIELDS:
+                left,right=got.get(field),wanted.get(field)
+                if field=='locator':left,right=locator(left),locator(right)
+                invalid_locator=field=='locator' and (
+                    not isinstance(got.get(field),str) or not isinstance(wanted.get(field),str)
+                    or left is None or right is None)
+                if (field in got)!=(field in wanted) or left!=right or invalid_locator:
+                    difference(direction,field,got.get(field),wanted.get(field),index=index,
+                               actual_present=field in got,expected_present=field in wanted)
+    evidence['owner_projection']=projection_signature(projected)
+    return evidence
+
+
+def lineage_projection_reason(error):
+    if isinstance(error,ValueError):return 'locator_invalid'
+    reasons={
+        'Monitor lineage schema_version is invalid':'schema_version_mismatch',
+        'Monitor exposes lineage operations':'private_operations_exposed',
+        'Monitor exposes private lineage resource fields':'private_resource_fields_exposed',
+        'Monitor lineage resource locator is missing':'locator_missing',
+        'Monitor lineage locator contains private context':'locator_private_context',
+        'Monitor lineage resource differs from Owner safe projection':'resource_mismatch',
+        'Monitor lineage inputs count differs from Owner':'input_cardinality_mismatch',
+        'Monitor lineage outputs count differs from Owner':'output_cardinality_mismatch',
+    }
+    return reasons.get(str(error),'shape_or_comparison_failed')
+
+
 class MosaicScopeFixture:
     """Meta-owned wrong-record fixture, confined to this disposable capacity run."""
     def __init__(self, env):
@@ -421,7 +501,7 @@ class MosaicScopeFixture:
         except Exception:
             raise SnapshotQueryError('owner','ownership','owner_rejected') from None
         self.query_report = {'schema_version':'addp.capacity-snapshots/v1',
-            'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],'queries':[]}
+            'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],'queries':[],'projections':[]}
 
         (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'mosaic-scope-owner.json').write_text(json.dumps({
             'container_id': self.owner['Id'], 'started_at': self.owner['State']['StartedAt'],
@@ -553,6 +633,15 @@ class MosaicScopeFixture:
 
     def archive_query(self, receipt):
         self.query_report['queries'].append(receipt.copy())
+        self.save_snapshot_report(receipt)
+
+    def archive_projection(self, receipt):
+        if len(self.query_report['projections'])>=128:
+            raise SnapshotQueryError('execution','archive','projection_limit_exceeded')
+        self.query_report['projections'].append(receipt)
+        self.save_snapshot_report(receipt)
+
+    def save_snapshot_report(self, receipt):
         try:
             (Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'capacity-snapshots.json').write_text(
                 json.dumps(self.query_report,sort_keys=True))
@@ -647,11 +736,22 @@ class MosaicScopeFixture:
             principal=identity['principal_id'],started_at=self.owner['State']['StartedAt']), operation='execution')
         if any(result.get(k) != observation.get(k) for k in ('execution_id', 'module', 'task_type', 'status', 'triggered_by')):
             raise SnapshotQueryError('execution','identity','public_identity_mismatch')
-        # The public layer has resources, while operation facts remain internal.
+        # Professional execution metadata may contain result; only the lineage
+        # contract is shared with Monitor. Full Monitor DTOs are checked separately.
+        metadata=observation.get('metadata')
+        public=metadata.get('lineage_facts') if isinstance(metadata,dict) else None
+        internal=result.get('metadata')
+        owner=internal.get('lineage_facts') if isinstance(internal,dict) else None
+        proof=lineage_projection_evidence(public,owner)
         try:
-            scene.support.validate_monitor_lineage({'metadata': observation.get('metadata', {})}, result['metadata']['lineage_facts'])
-        except (scene.SuiteError,KeyError,TypeError):
-            raise SnapshotQueryError('execution','public_projection','lineage_mismatch') from None
+            scene.obj(owner,'Owner lineage facts')
+            scene.support.validate_monitor_lineage({'metadata':{'lineage_facts':public}},owner)
+        except (scene.SuiteError,KeyError,TypeError,ValueError) as error:
+            proof.update(result='failed',code='lineage_mismatch',reason=lineage_projection_reason(error),
+                         cause_sha256=hashlib.sha256(str(error).encode()).hexdigest())
+            self.archive_projection(proof)
+            raise SnapshotQueryError('execution','public_projection','lineage_mismatch',proof) from None
+        self.archive_projection(proof)
         return {**observation, **result}
 
     def produced_item(self, item, execution, scan, identity):

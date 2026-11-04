@@ -732,10 +732,14 @@ class CapacityAuthorizationBoundaryTest(unittest.TestCase):
         identity={'tenant_id':'2','principal_id':'33'}
         facts={'schema_version':'addp.lineage-facts/v1','inputs':[],'outputs':[],'operations':[{'kind':'derive'}]}
         public={'execution_id':identifier,'module':'develop','task_type':'workflow','status':'success','triggered_by':33,
-            'execution_config':{'content':{'workflow_definition':{}}},'metadata':{'lineage_facts':{**facts,'operations':None}}}
+            'execution_config':{'content':{'workflow_definition':{}}},'metadata':{'result':{'final_result':{'size_bytes':123}},'lineage_facts':{**facts,'operations':None}}}
         internal={**public,'metadata':{'lineage_facts':facts}}
         scope.query=Mock(return_value=internal)
+        scope.archive_projection=Mock()
+        original=copy.deepcopy(public)
         result=scope.execution(public,identity,'develop')
+        self.assertEqual(public,original)
+        self.assertEqual(scope.archive_projection.call_args.args[0]['result'],'passed')
         self.assertEqual(result['metadata']['lineage_facts']['operations'],[{'kind':'derive'}])
         self.assertIsNone(public['metadata']['lineage_facts']['operations'])
         sql,values=scope.query.call_args.args
@@ -1099,6 +1103,132 @@ class SnapshotDiagnosticsTest(unittest.TestCase):
         auth.cleanup.assert_called_once()
 
 
+class LineageProjectionDiagnosticsTest(unittest.TestCase):
+    setUp = MosaicScopeFixtureTest.setUp
+    scope = SnapshotDiagnosticsTest.scope
+
+    def pair(self):
+        source={'port':'input.load','locator':'addp://engine/8/path/raster-source/sample.tif?type=object&item_id=101',
+                'item_id':101,'item_fingerprint':'a'*64,'schema_snapshot':{'private':'PRIVATE_SCHEMA_VALUE'}}
+        target={'port':'output.save','locator':'addp://engine/9/path/raster-target/result.tif?item_id=102&type=object',
+                'item_id':102,'write_mode':'create'}
+        owner={'schema_version':'addp.lineage-facts/v1','inputs':[source],'outputs':[target],
+               'operations':[{'kind':'derive','operator':'PRIVATE_OPERATOR'}]}
+        public={**copy.deepcopy(owner),'operations':None}
+        public['inputs'][0].pop('schema_snapshot')
+        # Same canonical locator with a different query ordering is valid.
+        public['outputs'][0]['locator']='addp://engine/9/path/raster-target/result.tif?type=object&item_id=102'
+        observation={'execution_id':self.parent,'module':'develop','task_type':'workflow',
+            'tenant_id':2,'triggered_by':33,'status':'success',
+            'metadata':{'result':{'final_result':{'private':'PRIVATE_RESULT'}},'lineage_facts':public}}
+        internal={k:v for k,v in observation.items() if k!='metadata'}
+        internal['metadata']={'lineage_facts':owner}
+        return observation,internal
+
+    def test_professional_result_is_accepted_without_weakening_full_monitor_guard(self):
+        scope=self.scope();public,internal=self.pair();before=copy.deepcopy(public)
+        with patch.object(scope,'query',return_value=internal) as query:
+            self.assertEqual(scope.execution(public,self.identity,'develop')['metadata']['lineage_facts'],internal['metadata']['lineage_facts'])
+        query.assert_called_once();self.assertEqual(public,before)
+        with self.assertRaisesRegex(m.scene.SuiteError,'Monitor exposes private execution metadata'):
+            m.scene.support.validate_monitor_lineage(public,internal['metadata']['lineage_facts'])
+        proof=scope.query_report['projections'][0]
+        self.assertEqual(proof['result'],'passed');self.assertEqual(proof['differences'],[])
+        body=(self.root/'capacity-snapshots.json').read_text()
+        for private in ('PRIVATE_','addp://','sample.tif','result.tif','input.load','output.save'):
+            self.assertNotIn(private,body)
+
+    def test_resource_schema_order_and_private_field_mismatches_remain_strict_and_safe(self):
+        scope=self.scope()
+        for fault,reason,field in [
+            ('schema','schema_version_mismatch','schema_version'),
+            ('operations','private_operations_exposed','operations'),
+            ('private_field','private_resource_fields_exposed','unrecognized_fields'),
+            ('missing_locator','locator_missing','locator'),
+            ('private_query','locator_private_context','locator'),
+            ('credentials','locator_private_context','locator'),
+            ('item_id','resource_mismatch','item_id'),
+            ('missing_fingerprint','resource_mismatch','item_fingerprint'),
+            ('different_path','resource_mismatch','locator'),
+            ('cardinality','input_cardinality_mismatch','cardinality'),
+            ('shape','shape_or_comparison_failed','shape'),
+            ('missing_facts','shape_or_comparison_failed','shape'),
+            ('missing_owner','shape_or_comparison_failed','shape'),
+            ('both_missing_locator','locator_missing','locator'),
+            ('malformed_locator','locator_invalid','locator'),
+        ]:
+            with self.subTest(fault=fault):
+                public,internal=self.pair();facts=public['metadata']['lineage_facts']
+                if fault=='schema':facts['schema_version']='PRIVATE_SCHEMA'
+                if fault=='operations':facts['operations']=[{'private':'PRIVATE_OPERATION'}]
+                if fault=='private_field':facts['inputs'][0]['PRIVATE_FIELD_NAME']='PRIVATE_FIELD_VALUE'
+                if fault=='missing_locator':facts['inputs'][0].pop('locator')
+                if fault=='private_query':facts['inputs'][0]['locator']+='&token=PRIVATE_TOKEN'
+                if fault=='credentials':facts['inputs'][0]['locator']='addp://user:PRIVATE_PASSWORD@engine/8/path/private?type=object'
+                if fault=='item_id':facts['inputs'][0]['item_id']=999
+                if fault=='missing_fingerprint':facts['inputs'][0].pop('item_fingerprint')
+                if fault=='different_path':facts['inputs'][0]['locator']='addp://engine/8/path/PRIVATE_PATH?type=object'
+                if fault=='cardinality':facts['inputs']=[]
+                if fault=='shape':facts['inputs']=None
+                if fault=='missing_facts':public['metadata'].pop('lineage_facts')
+                if fault=='missing_owner':internal['metadata']['lineage_facts']=None
+                if fault=='both_missing_locator':
+                    facts['inputs'][0].pop('locator');internal['metadata']['lineage_facts']['inputs'][0].pop('locator')
+                if fault=='malformed_locator':facts['inputs'][0]['locator']='addp://[PRIVATE_INVALID/path?type=object'
+                with patch.object(scope,'query',return_value=internal) as query:
+                    with self.assertRaises(m.SnapshotQueryError) as raised:scope.execution(public,self.identity,'develop')
+                query.assert_called_once()
+                proof=raised.exception.diagnostics
+                self.assertEqual(proof['reason'],reason)
+                self.assertIn(field,[d['field'] for d in proof['differences']])
+                self.assertEqual(scope.query_report['projections'][-1],proof)
+                body=json.dumps(proof)+m.capacity_error_message(raised.exception)
+                for private in ('PRIVATE_','addp://','input.load','sample.tif'):
+                    self.assertNotIn(private,body)
+        self.assertNotIn('PRIVATE_', (self.root/'capacity-snapshots.json').read_text())
+
+    def test_diagnostics_are_bounded_and_keep_missing_type_and_order_information(self):
+        scope=self.scope();public,internal=self.pair()
+        expected=internal['metadata']['lineage_facts']
+        expected['inputs']*=20
+        public['metadata']['lineage_facts']['inputs']=[{'port':'PRIVATE_MISMATCH'} for _ in range(20)]
+        with patch.object(scope,'query',return_value=internal),self.assertRaises(m.SnapshotQueryError) as raised:
+            scope.execution(public,self.identity,'develop')
+        proof=raised.exception.diagnostics
+        self.assertEqual(len(proof['differences']),16);self.assertTrue(proof['differences_truncated'])
+        self.assertTrue(any(not d['actual']['present'] for d in proof['differences']))
+        self.assertNotIn('PRIVATE_',json.dumps(proof))
+        public,internal=self.pair()
+        internal['metadata']['lineage_facts']['inputs'].append({'port':'input.other','locator':'addp://engine/8/path/other?type=object'})
+        public['metadata']['lineage_facts']['inputs'].append({'port':'input.other','locator':'addp://engine/8/path/other?type=object'})
+        public['metadata']['lineage_facts']['inputs'].reverse()
+        with patch.object(scope,'query',return_value=internal),self.assertRaises(m.SnapshotQueryError) as raised:
+            scope.execution(public,self.identity,'develop')
+        self.assertEqual(raised.exception.diagnostics['reason'],'resource_mismatch')
+        self.assertEqual(raised.exception.diagnostics['differences'][0]['index'],0)
+
+    def test_projection_failure_is_saved_before_metadata_cleanup_and_secondary_failure(self):
+        from unittest.mock import Mock
+        scope=self.scope();public,internal=self.pair();public['metadata']['lineage_facts']['inputs'][0]['item_id']=999
+        with patch.object(scope,'query',return_value=internal):
+            with self.assertRaises(m.SnapshotQueryError) as raised:scope.execution(public,self.identity,'develop')
+        error=raised.exception
+        auth=object.__new__(m.CapacityMetadataGrants)
+        auth.env=self.env;auth.path=self.root/'capacity-metadata-grants.json';auth.phase='idle';auth.operation_active=False
+        auth.report={'failures':[]};auth.cleanup=Mock(side_effect=m.scene.SuiteError('PRIVATE_CLEANUP'))
+        def run_capacity(*_):
+            self.assertEqual(json.loads((self.root/'capacity-snapshots.json').read_text())['projections'][-1]['result'],'failed')
+            raise error
+        with patch.object(m,'CapacityMetadataGrants',return_value=auth),patch.object(m,'MosaicScopeFixture',return_value=scope),\
+                patch.object(m,'run_capacity',side_effect=run_capacity):
+            with self.assertRaises(m.scene.SuiteError):m.run(self.env)
+        failures=json.loads((self.root/'capacity-failure.json').read_text())['failures']
+        self.assertEqual(failures[0]['stage'],'snapshot.execution.public_projection')
+        self.assertEqual(failures[0]['diagnostics']['reason'],'resource_mismatch')
+        self.assertEqual(failures[1]['role'],'cleanup');auth.cleanup.assert_called_once()
+        self.assertNotIn('PRIVATE_',json.dumps(failures))
+
+
 def postgres_snapshot_suite():
     """T2 only: the Common gate validates the DSN before enabling this suite."""
     class PostgresSnapshotTest(unittest.TestCase):
@@ -1223,10 +1353,10 @@ INSERT INTO meta_item VALUES(88,2,9,55,'object',{literal(name)},{literal(full)},
                     observation={'execution_id':self.parent,'module':module,
                         'task_type':'workflow' if module=='develop' else 'raster_mosaic_generation',
                         'tenant_id':2,'triggered_by':33,'status':'success',
-                        'metadata':{'lineage_facts':{**self.metadata()['lineage_facts'],'operations':None}}}
+                        'metadata':{'result':self.metadata()['result'],'lineage_facts':{**self.metadata()['lineage_facts'],'operations':None}}}
                     try:actual=self.scope.execution(observation,self.identity,module)
-                    except m.scene.SuiteError:
-                        self.fail('actual snapshot SQL failed; SQLSTATE='+str(self.sqlstate))
+                    except m.SnapshotQueryError as error:
+                        self.fail(error.stage+'.'+error.code+'; SQLSTATE='+str(self.sqlstate))
                     self.assertEqual(actual['metadata']['result']['final_result'],{'size_bytes':123})
                     self.assertEqual(actual['outputs'],[])
                     self.assertEqual(actual['metadata']['lineage_facts']['operations'],[{'kind':'derive'}])
