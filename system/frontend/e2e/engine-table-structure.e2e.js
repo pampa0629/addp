@@ -57,8 +57,14 @@ async function fixture(page, { allowed = ['system.engine.read', 'system.engine_c
 async function openTables(page) {
   await page.goto('/engines/2?tab=structure')
   const tree = page.getByTestId('engine-table-structure').locator('.resource-tree-picker')
-  await tree.locator('.el-tree-node__content').filter({ hasText: /^outdoor$/ }).locator('.el-tree-node__expand-icon').click()
+  const namespace = tree.locator('.el-tree-node__content').filter({ hasText: /^outdoor$/ })
+  await expect(namespace).toBeVisible()
+  // A mounted lazy row can still be clipped by an ancestor's expansion.
+  // Wait for real tree interaction readiness, within the existing expect budget.
+  await expect(tree.locator('.el-collapse-transition-enter-active')).toHaveCount(0)
+  await namespace.locator('.el-tree-node__expand-icon').click()
   await expect(tree.getByText('ontology_r53_persons_json_check', { exact: true })).toBeVisible()
+  await expect(tree.locator('.el-collapse-transition-enter-active')).toHaveCount(0)
   return tree
 }
 const choose = (tree, name = 'ontology_r53_persons_json_check') => tree.getByText(name, { exact: true }).click()
