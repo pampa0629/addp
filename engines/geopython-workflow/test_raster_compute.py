@@ -20620,3 +20620,245 @@ def test_point_density_quartic_analytic_center_half_radius_and_exact_edge(tmp_pa
         source=raster_load(source_plan(path));result=c.raster_point_density(points,source,1.,method='quartic');ds=gdal.Open(str(result.path));actual=ds.ReadAsArray()
         expected=np.array([[float(3/Q(math.pi)),float(Q(27,16)/Q(math.pi)),0.]])
         np.testing.assert_array_equal(actual,expected);np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),np.full((1,3),255));ds=None
+
+
+
+def _point_weighted_density_oracle(points,grid,shape,radius,method):
+    """Exhaustive metric support plus independently expanded 2000-digit weighted kernel."""
+    from fractions import Fraction as Q
+    from decimal import Decimal,localcontext
+    def decimal(q):return Decimal(q.numerator)/Decimal(q.denominator)
+    gt=list(map(Q,grid));factor=Q(points.crs.axis_info[0].unit_conversion_factor);limit=Q(float(radius))**2
+    samples=[(Q(p.x),Q(p.y),Q(int(v))if isinstance(v,(int,np.integer))else Q(float(v)))for p,v in zip(points.geometry,points['mass'])];result=np.zeros(shape)
+    with localcontext()as context:
+        context.prec=2000;denominator=Decimal.from_float(math.pi)*Decimal.from_float(float(radius))**(6 if method=='quartic'else 2)
+        for row,col in np.ndindex(shape):
+            xx=gt[0]+gt[1]*Q(2*col+1,2)+gt[2]*Q(2*row+1,2);yy=gt[3]+gt[4]*Q(2*col+1,2)+gt[5]*Q(2*row+1,2);total=Decimal(0)
+            for px,py,weight in samples:
+                distance=((px-xx)**2+(py-yy)**2)*factor**2
+                if distance<=limit:total+=3*decimal(weight)*decimal(limit-distance)**2 if method=='quartic'else decimal(weight)
+            result[row,col]=float(total/denominator)
+    return result
+
+
+@pytest.mark.parametrize('method',['uniform','quartic'])
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+@pytest.mark.parametrize('grid',[(0,1,0,6,0,-1),(2,2,.5,9,.25,-3)])
+def test_point_density_weights_full_oracle_order_duplicate_indices_and_original_inputs(tmp_path,method,epsg,grid):
+    import operators.raster_compute as c
+    import pandas as pd
+    rng=np.random.default_rng(2661);xy=rng.uniform(-4,12,(15,2)).tolist();xy.extend([xy[0],xy[0]])
+    points=_idw_points(xy,[None]*len(xy),epsg);points['mass']=pd.array([0.,.5,3.,1.,2.]*3+[.25,4.],dtype='Float64');points.index=[8]*len(points);before=points.copy(deep=True)
+    path=create_raster(tmp_path/'weighted-density.tif',np.full((5,7),-9999.),grid,f'EPSG:{epsg}');raw=path.read_bytes();arrays=[]
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        for frame in(points,points.iloc[::-1].copy()):
+            result=c.raster_point_density(frame,source,3.,method=method,weight_field='mass');ds=gdal.Open(str(result.path));arrays.append(ds.ReadAsArray())
+            np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),np.full((5,7),255));assert ds.GetRasterBand(1).GetUnitType()=='weight/m2';ds=None
+    np.testing.assert_array_equal(arrays[0],_point_weighted_density_oracle(points,grid,(5,7),3.,method));np.testing.assert_array_equal(arrays[0],arrays[1])
+    assert points.equals(before)and points.index.equals(before.index)and path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('method',['uniform','quartic'])
+def test_point_density_weights_ones_originals_and_integer_replication_are_not_normalized(tmp_path,method):
+    import operators.raster_compute as c
+    points=_idw_points([(.5,2.5),(1.5,1.5),(1.5,1.5)],[None,-4,'ignored']);points['mass']=[1,1,1]
+    path=create_raster(tmp_path/'density-controls.tif',np.zeros((3,3)),(0,1,0,3,0,-1),'EPSG:3857');outputs=[]
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        for case in('omitted','ones','three','replicated'):
+            frame=points if case!='replicated'else points.iloc[[i for i in range(len(points))for _ in range(3)]].copy()
+            kwargs={}if case in('omitted','replicated')else{'weight_field':'mass'}
+            if case=='three':frame=points.copy();frame['mass']=3
+            result=c.raster_point_density(frame,source,2.,method=method,**kwargs);ds=gdal.Open(str(result.path));outputs.append(ds.ReadAsArray())
+            assert ds.GetRasterBand(1).GetUnitType()==('points/m2'if case in('omitted','replicated')else'weight/m2');ds=None
+    np.testing.assert_array_equal(outputs[0],outputs[1]);np.testing.assert_array_equal(outputs[2],outputs[3]);assert np.any(outputs[2]>outputs[1])
+
+
+@pytest.mark.parametrize('method',['uniform','quartic'])
+@pytest.mark.parametrize('case',['empty','zeros','outside','boundary'])
+def test_point_density_weights_zero_valid_and_quartic_edge_still_zero(tmp_path,method,case):
+    import operators.raster_compute as c
+    xy=[]if case=='empty'else[(999.,999.)]if case=='outside'else[(1.,0.)]if case=='boundary'else[(0.,0.)]
+    points=_idw_points(xy,[None]*len(xy));points['mass']=[2.]if case in('boundary','outside')else[0.]*len(xy)
+    path=create_raster(tmp_path/'density-zeros.tif',np.full((1,1),-9999.),(-.5,1,0,.5,0,-1),'EPSG:3857')
+    with raster_workspace():
+        result=c.raster_point_density(points,raster_load(source_plan(path)),1.,method=method,weight_field='mass');ds=gdal.Open(str(result.path));wanted=_point_weighted_density_oracle(points,(-.5,1,0,.5,0,-1),(1,1),1.,method)
+        np.testing.assert_array_equal(ds.ReadAsArray(),wanted);assert ds.GetRasterBand(1).GetMaskBand().ReadAsArray()[0,0]==255;ds=None
+
+
+@pytest.mark.parametrize('selector',[None,'','  ','absent','source_shape',True,1,[],{}])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_point_density_weights_invalid_field_before_reference_open(tmp_path,monkeypatch,selector,language):
+    import operators.raster_compute as c
+    points=_idw_points([(0.,0.)],[1.])
+    monkeypatch.setattr(c,'_open',lambda*a:pytest.fail('bad field opened reference'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_point_density(points,object(),1.,weight_field=selector)
+    assert str(error.value)==('点密度权重字段必须显式选择现有非几何数值列名'if language=='zh-cn'else'Point density weight field must name an existing non-geometry numeric column')
+
+
+@pytest.mark.parametrize('bad',[None,float('nan'),float('inf'),float('-inf'),-1.,True,False,'3',1+0j])
+@pytest.mark.parametrize('method',['uniform','quartic'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_point_density_weights_all_rows_bad_values_including_outside_fail_before_reference(tmp_path,monkeypatch,bad,method,language):
+    import operators.raster_compute as c
+    import pandas as pd
+    points=_idw_points([(0.,0.),(999.,999.)],[None,None]);points['mass']=pd.Series([1.,bad],dtype=object)
+    monkeypatch.setattr(c,'_open',lambda*a:pytest.fail('invalid outside weight opened reference'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_point_density(points,object(),1.,method=method,weight_field='mass')
+    assert str(error.value)==('点密度权重必须为有限非布尔非负实数，缺失值不可跳过'if language=='zh-cn'else'Point density weights must be finite non-boolean nonnegative real numbers; missing values cannot be skipped')
+
+
+@pytest.mark.parametrize('dtype',['Int64','UInt64'])
+@pytest.mark.parametrize('method',['uniform','quartic'])
+def test_point_density_weights_native_integer_never_rounds_before_accumulation(tmp_path,monkeypatch,dtype,method):
+    import operators.raster_compute as c
+    import pandas as pd
+    from fractions import Fraction as Q
+    values=[2**53+1,2**63-1]if dtype=='Int64'else[2**53+1,2**64-1]
+    points=_idw_points([(0.,0.),(0.,0.)],[None,None]);points['mass']=pd.array(values,dtype=dtype);seen=[];mass=c._point_density_mass
+    def observe(*args,**kwargs):
+        seen.append(args[3]);return mass(*args,**kwargs)
+    monkeypatch.setattr(c,'_point_density_mass',observe)
+    path=create_raster(tmp_path/'integer-weights.tif',np.zeros((1,1)),(-.5,1,0,.5,0,-1),'EPSG:3857')
+    with raster_workspace():
+        result=c.raster_point_density(points,raster_load(source_plan(path)),1.,method=method,weight_field='mass');ds=gdal.Open(str(result.path));assert ds.ReadAsArray()[0,0]==float(Q(sum(values)*(3 if method=='quartic'else 1))/Q(math.pi));ds=None
+    assert seen and all(v==[Q(n)for n in values]for v in seen)
+
+
+@pytest.mark.parametrize('method',['uniform','quartic'])
+@pytest.mark.parametrize('case',['large-finite','underflow','overflow','subnormal','zero-extreme','edge-extreme'])
+def test_point_density_weights_native_extremes_validate_final_value_only(tmp_path,method,case):
+    import operators.raster_compute as c
+    import pandas as pd
+    from fractions import Fraction as Q
+    radius=1e200 if case in('large-finite','zero-extreme','edge-extreme')else 1e100 if case=='underflow'else 1e55 if case=='subnormal'else 1.
+    value=10**400 if case in('large-finite','overflow','edge-extreme')else 0 if case=='zero-extreme'else 1e-200
+    points=_idw_points([(radius if case=='edge-extreme'else 0.,0.)],[None]);points['mass']=pd.Series([value],dtype=object)
+    path=create_raster(tmp_path/'extreme-weights.tif',np.zeros((1,1)),(-.5,1,0,.5,0,-1),'EPSG:3857');raw=path.read_bytes()
+    with raster_workspace(),raster_error_language('en'):
+        source=raster_load(source_plan(path));files=set(source.workspace.iterdir())
+        if case in('underflow','overflow'):
+            with pytest.raises(ValueError,match='Point density result is outside'):c.raster_point_density(points,source,radius,method=method,weight_field='mass')
+            assert set(source.workspace.iterdir())==files
+        else:
+            result=c.raster_point_density(points,source,radius,method=method,weight_field='mass');ds=gdal.Open(str(result.path));actual=ds.ReadAsArray()[0,0];ds=None
+            mass=Q(value)*(3 if method=='quartic'else 1)if isinstance(value,int)else Q(value)*(3 if method=='quartic'else 1)
+            if case=='edge-extreme'and method=='quartic':mass=Q(0)
+            assert actual==float(mass/(Q(math.pi)*Q(radius)**2))
+    assert path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('method',['uniform','quartic'])
+@pytest.mark.parametrize('shape',[(3,515),(515,3)])
+def test_point_density_weights_blocks_template_ignored_and_all_cog_overviews(tmp_path,monkeypatch,method,shape):
+    import operators.raster_compute as c
+    h,w=shape;grid=(0,1,.25,h,.125,-1);path=create_raster(tmp_path/'weighted-blocks.tif',np.full((3,h,w),np.nan),grid,'EPSG:3857');ds=gdal.Open(str(path),gdal.GA_Update)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(1).SetScale(17);ds.GetRasterBand(1).SetOffset(500)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().Fill(0);ds=None;raw=path.read_bytes();x,y=w-.5,h-.5
+    points=_idw_points([(.625,h-.4375),(x+.25*y,h+.125*x-y)],[None,None]);points['mass']=[.5,3.]
+    expected=_point_weighted_density_oracle(points,grid,shape,2.,method);calls=[];write=gdal.Band.WriteRaster
+    def bounded(self,x,y,w,h,raw,*a,**kw):
+        assert 0<w<=512 and 0<h<=512;calls.append((x,y,w,h));return write(self,x,y,w,h,raw,*a,**kw)
+    def forbidden(*a,**kw):pytest.fail('weighted density read template pixels or coverage')
+    with raster_workspace():
+        loaded=raster_load(source_plan(path))
+        with monkeypatch.context()as patch:
+            patch.setattr(gdal.Band,'ReadAsArray',forbidden);patch.setattr(gdal.Band,'ReadRaster',forbidden);patch.setattr(gdal.Band,'WriteRaster',bounded)
+            result=c.raster_point_density(points,loaded,2.,method=method,weight_field='mass')
+        assert len(calls)==2 and sum(bw*bh for _,_,bw,bh in calls)==h*w
+        target=tmp_path/'weighted-density.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(band.ReadAsArray(),expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),np.full(shape,255));assert expected[-1,-1]>0
+        assert band.GetUnitType()=='weight/m2'and band.GetScale()is None and band.GetOffset()is None and ds.GetGeoTransform()==grid
+        oh,ow=shape;previous=expected;dimensions=[]
+        while max(oh,ow)>128:ow,oh=max(1,ow//2),max(1,oh//2);dimensions.append((ow,oh))
+        assert band.GetOverviewCount()==len(dimensions)
+        for index,(ow,oh)in enumerate(dimensions):
+            level=band.GetOverview(index);assert(level.XSize,level.YSize)==(ow,oh)
+            ys=np.floor(.5+np.arange(oh)*previous.shape[0]/oh).astype(int);xs=np.floor(.5+np.arange(ow)*previous.shape[1]/ow).astype(int);wanted=previous[np.ix_(ys,xs)]
+            np.testing.assert_array_equal(level.ReadAsArray(),wanted);np.testing.assert_array_equal(level.GetMaskBand().ReadAsArray(),np.full((oh,ow),255));previous=wanted
+        level=band=ds=None
+    assert path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('method',['uniform','quartic'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['success','all-zero','negative','missing','field-null','geometry-zero','write-failure','calculation-failure','save-existing'])
+def test_point_density_weights_async_cog_language_and_all_failure_cleanup(tmp_path,monkeypatch,method,language,case):
+    import api_server,workflow_engine,operators.raster_compute as c
+    grid=(0,1,0,3,0,-1);xy=[(.5,2.5),(1.5,1.5),(999.,999.)];points=_idw_points(xy,[None]*3);weights=[1.,.5,2.]
+    if case=='all-zero':weights=[0.,0.,0.]
+    if case in('negative','missing'):weights[-1]=-1. if case=='negative'else None
+    if case=='geometry-zero':weights[0]=0.
+    points['mass']=weights;path=create_raster(tmp_path/'weights-async.tif',np.full((3,3),-9999.),grid,'EPSG:3857');raw=path.read_bytes();prior=tmp_path/'prior.tif';prior.write_bytes(b'prior untouched');target=tmp_path/'weighted.cog.tif'
+    if case=='save-existing':target.write_bytes(b'existing owned target')
+    dag={'tasks':[{'id':'reference','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
+      {'id':'points','operator':'load_from_wkt','depends_on':[],'params':{'wkt_list':['LINESTRING(0 0,1 1)'if case=='geometry-zero'and i==0 else p.wkt for i,p in enumerate(points.geometry)],'properties':[{'mass':v}for v in weights],'crs':'EPSG:3857'}},
+      {'id':'density','operator':'raster_point_density','depends_on':['points','reference'],'params':{'input_gdf':{'$ref':'points'},'reference_raster':{'$ref':'reference'},'radius_metres':2.,'method':method,'weight_field':None if case=='field-null'else'mass'}},
+      {'id':'save','operator':'raster_save','depends_on':['density'],'params':{'input_raster':{'$ref':'density'},'access_plan':target_plan(target),'profile':'cog'}}]}
+    work=[];execute=workflow_engine._execute_operator
+    def track(name,params):
+        if name=='raster_point_density':work.append(params['reference_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',track)
+    if case=='write-failure':monkeypatch.setattr(gdal.Band,'WriteRaster',lambda*a,**kw:gdal.CE_Failure)
+    if case=='calculation-failure':
+        def fail(*a,**kw):raise RuntimeError('injected weighted density failure')
+        monkeypatch.setattr(c,'_point_density_value',fail)
+    client=api_server.app.test_client();submitted=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':dag,'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert submitted.status_code==202,submitted.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        state=client.get('/api/executions/'+submitted.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if state['status']in('success','failed'):break
+        time.sleep(.01)
+    assert state['status']==('success'if case in('success','all-zero')else'failed'),state
+    if case in('success','all-zero'):
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(ds.ReadAsArray(),_point_weighted_density_oracle(points,grid,(3,3),2.,method));assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG'and ds.GetRasterBand(1).GetUnitType()=='weight/m2';ds=None
+    elif case=='save-existing':assert target.read_bytes()==b'existing owned target'
+    else:
+        assert not target.exists()and not state.get('final_result')
+        with raster_error_language(language):cause='injected weighted density failure'if case=='calculation-failure'else str(c._point_density_error({'negative':'weight','missing':'weight','field-null':'weight_field','geometry-zero':'geometry','write-failure':'write'}[case]))
+        assert state['error']=='任务 density 执行失败: '+cause
+    assert work and all(not p.exists()for p in work)and prior.read_bytes()==b'prior untouched'and path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('dtype',['Int64','Float64'])
+@pytest.mark.parametrize('method',['uniform','quartic'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_point_density_weights_nullable_missing_is_not_skipped(tmp_path,monkeypatch,dtype,method,language):
+    import operators.raster_compute as c,pandas as pd
+    points=_idw_points([(0.,0.),(999.,999.)],[None,None]);points['mass']=pd.array([1,pd.NA],dtype=dtype)
+    monkeypatch.setattr(c,'_open',lambda*a:pytest.fail('missing nullable weight opened reference'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_point_density(points,object(),1.,method=method,weight_field='mass')
+    assert str(error.value)==('点密度权重必须为有限非布尔非负实数，缺失值不可跳过'if language=='zh-cn'else'Point density weights must be finite non-boolean nonnegative real numbers; missing values cannot be skipped')
+
+
+@pytest.mark.parametrize('method',['uniform','quartic'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_point_density_weights_zero_still_rejects_conflicting_crs_without_output(tmp_path,method,language):
+    import operators.raster_compute as c
+    points=_idw_points([(0.,0.)],[None],4326);points['mass']=[0.];path=create_raster(tmp_path/'zero-weight-crs.tif',np.zeros((1,1)),(-.5,1,0,.5,0,-1),'EPSG:3857');before=path.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));files=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as error:c.raster_point_density(points,source,1.,method=method,weight_field='mass')
+        assert str(error.value)==('点密度点与模板必须具有相同的明确二维投影CRS及相同已知水平线性单位'if language=='zh-cn'else'Point density points and template must share an explicit two-dimensional projected CRS with equal known horizontal linear units')
+        assert set(source.workspace.iterdir())==files
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('method',['uniform','quartic'])
+@pytest.mark.parametrize('case',['huge-rational','tiny-rational','float32'])
+def test_point_density_weights_exact_ratio_before_final_float_conversion(tmp_path,method,case):
+    import operators.raster_compute as c,pandas as pd
+    from fractions import Fraction as Q
+    value=Q(2*10**400+1,2)if case=='huge-rational'else Q(1,10**400)if case=='tiny-rational'else np.float32(.1)
+    radius=1e200 if case=='huge-rational'else 1e-200 if case=='tiny-rational'else 1.
+    points=_idw_points([(0.,0.)],[None]);points['mass']=pd.Series([value],dtype=object);before=points.copy(deep=True)
+    path=create_raster(tmp_path/'ratio-weight.tif',np.zeros((1,1)),(-.5,1,0,.5,0,-1),'EPSG:3857')
+    with raster_workspace():
+        result=c.raster_point_density(points,raster_load(source_plan(path)),radius,method=method,weight_field='mass');ds=gdal.Open(str(result.path));actual=ds.ReadAsArray()[0,0];ds=None
+        numerator,denominator=value.as_integer_ratio();wanted=float(Q(numerator,denominator)*(3 if method=='quartic'else 1)/(Q(math.pi)*Q(radius)**2))
+        assert actual==wanted and actual>0
+    assert points.equals(before)
