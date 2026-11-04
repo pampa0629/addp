@@ -1270,6 +1270,16 @@ uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、�
 
 数值极限、非有限JSON、异常格式、重复索引和故障注入单列Native，不扩大产品格式、权限或UI／容量／吞吐认证；准备／本地门禁不计真实Linux全量或Hosted通过。
 
+## 米制圆形线密度栅格独立 Hosted 验收
+
+独立手工suite为`raster-line-density-persistence`，准备门禁`make test-raster-line-density-online-runner`；复用NFS、同源产品默认入口Runtime、普通User原12权限、4CPU／2GiB／无额外swap，业务预算固定600秒，包含首次预期生成、执行、全检、归档和业务清理。Linux全量及实际Hosted仍由CI协调，不自行触发、不重试、不扩预算；不改产品、原点密度套件或权限。
+
+16条COG成功链：普通／逆序2条，双倍重复／原线折返2条，等价MultiLineString／拆段并反向2条，部分重叠1条，相切／略内／略外／端点接触4条，无支持／合法空集2条，全无效mask-alpha模板1条，国际英尺矩形横跨块／美制测量英尺旋转剪切纵跨块2条。基线含直径、弦、闭合／自交线和模板外圆内段。核实际保存文件的顺序／多部／细分／模板忽略等价，以及重复／折返双倍贡献；每份仍逐像元独立oracle相等。固定完整圆面积，逐原始线段重数累计，相切或无支持为有效0，单位metre/m2。
+
+半径null／true／false／0／负数／字符串／列表／对象8类；缺失几何／空线／Point／Polygon／GeometryCollection／整线零长／多部零长分量／范围内Z线／范围外Z线／范围外零长线10类；不一致／地理CRS2类，共20类×中英文＝40次准确density失败。先完整核源WKB／Schema／属性及CRS事实，异常格式归一化、读取或提交前置失败不得冒充算子拒绝；无法保真须报告，不换负例补数。准确核失败节点／原因／冻结提交语言，反向查询不改旧失败。成功后重读全部已有COG共136次，40失败后各重读16份共640次，合计776次全检／57次物理调用（含初始基线）、56执行／112份Develop及Monitor原始终态响应。
+
+独立全线段2000位Decimal二次方程oracle，不复用产品索引／投影裁圆／根式区间或舍入助手；只读冻结root／run／全部源hash／夹具源码。严格核完整像元／mask／零／Float64／NaN定义、metre/m2、原网格／CRS、完整COG及所有实际nearest概览、artifact＝物理＝Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前线源＋模板两源实际内外血缘和Monitor、源及先前成果字节／Meta不变、失败零发布／新增扫描血缘与部分启动／所有退出清理。归档16份COG原字节、全部源、冻结预期、大小／hash及112份终态响应。数值极限、不可JSON数值、M维异常格式、故障注入及已有目标写入保护单列Native；不计UI／容量，准备不等于Linux全量或真实Hosted通过。
+
 ## 米制圆形点密度栅格独立 Hosted 验收
 
 独立手工suite为`raster-point-density-persistence`，准备门禁`make test-raster-point-density-online-runner`。复用NFS、同源产品默认入口Runtime、普通User原12权限及4CPU／2GiB／无额外swap，业务预算固定600秒；实际Linux全量和Hosted由CI会话协调，不自行触发、不重试、不扩预算，不改产品逻辑或原套件。
