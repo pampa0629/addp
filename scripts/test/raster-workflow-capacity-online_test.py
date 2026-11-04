@@ -429,7 +429,8 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                         return actual
                     if action=='purge-mosaic':return {'source_unchanged':True}
                     raise AssertionError(action)
-                with patch.object(m,'physical',side_effect=physical),patch.object(m.scene.support,'wait_for_meta_scan'), \
+                with patch.object(m,'MosaicScopeFixture'),patch.object(m,'verify_basic_rescans',return_value={'result':'passed'}), \
+                     patch.object(m,'physical',side_effect=physical),patch.object(m.scene.support,'wait_for_meta_scan'), \
                      patch.object(m.scene.support,'find_fixture_item',side_effect=lambda client,engine,full_name,label:next(v for v in items.values() if v['full_name']==full_name)),patch.object(m.fixture,'require_disk'), \
                      patch.object(m,'restart_runtime',return_value={'Id':'fresh','State':{'Pid':17}}),patch.object(m,'cgroup_directory'), \
                      patch.object(m,'Sampler',side_effect=sampler),patch.object(m,'wait_applied'),patch.object(m.scene,'wait_execution',side_effect=wait):
@@ -480,3 +481,177 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main()
+
+
+class MosaicBasicRescanTest(unittest.TestCase):
+    def setUp(self):
+        self.item = {'id': 88, 'node_id': 55, 'engine_id': 9, 'name': 'capacity-mosaic-l1-r1',
+                     'full_name': 'raster-target/capacity-mosaic-l1-r1', 'fingerprint': 'a'*64}
+        self.identity = {'principal_id': '33', 'tenant_id': '2'}
+        self.parent = '11111111-1111-4111-8111-111111111111'
+        self.ids = ['22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333']
+        self.target = 'addp://engine/9/path/' + self.item['full_name'] + '?type=prefix'
+        self.state = {'identity': self.item.copy(), 'internal_items': 0, 'internal_nodes': 0,
+                      'seed_items_remaining': 0, 'seed_nodes_remaining': 0,
+                      'scan': None, 'outside_items': 'stable-items', 'outside_nodes': 'stable-nodes'}
+        self.tree = {'id': 'root', 'locator': 'addp://engine/9/path/?type=root',
+                     'children': [{'id': 'leaf', 'label': self.item['name'], 'type': 'object',
+                     'locator': 'addp://engine/9/path/' + self.item['full_name'] + '?type=object&item_id=88',
+                     'hasChildren': False, 'children': [], 'metadata': {'item_id': 88}}]}
+
+    def execution(self, identifier):
+        return {'execution_id': identifier, 'module': 'meta', 'task_type': 'scan', 'status': 'success',
+                'tenant_id': 2, 'triggered_by': 33, 'scan_context': {'engine_id': 9,
+                    'scan_depth': 'basic', 'force': False, 'targets': [self.target]}}
+
+    def test_two_real_basic_scans_clear_seeded_records_and_preserve_current_scope(self):
+        from unittest.mock import Mock
+        seed = {'nodes': [101], 'items': [102, 103]}
+        seeded = {**self.state, 'internal_items': 2, 'internal_nodes': 1,
+                  'seed_items_remaining': 2, 'seed_nodes_remaining': 1}
+        for fault in (None, 'automatic_fragments', 'seed', 'seed_boundary', 'soft_deleted_item', 'orphan_node',
+                      'recreated_item', 'identity', 'outside', 'tree', 'scope', 'deep', 'force', 'user', 'tenant', 'reused_scan', 'failed'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                before = copy.deepcopy(self.state); after = copy.deepcopy(self.state)
+                states = [before, copy.deepcopy(seed), copy.deepcopy(seeded), after, copy.deepcopy(self.state)]
+                trees = [copy.deepcopy(self.tree) for _ in range(3)]
+                executions = [self.execution(v) for v in self.ids]
+                for state, execution in zip((after, states[-1]), executions):
+                    state['scan'] = {'execution_id': execution['execution_id'], 'status': 'success',
+                                     'config': execution['scan_context']}
+                if fault == 'automatic_fragments': before['internal_items'] = 1
+                if fault == 'seed': states[1]['items'] = []
+                if fault == 'seed_boundary': states[2]['outside_items'] = 'modified'
+                if fault == 'soft_deleted_item': after['seed_items_remaining'] = 1
+                if fault == 'orphan_node': after['seed_nodes_remaining'] = 1
+                if fault == 'recreated_item': states[-1]['internal_items'] = 1
+                if fault == 'identity': after['identity']['node_id'] = 99
+                if fault == 'outside': after['outside_items'] = 'modified'
+                if fault == 'tree': trees[1]['children'].append(copy.deepcopy(trees[1]['children'][0]))
+                if fault == 'scope': executions[0]['scan_context']['targets'] = []
+                if fault == 'deep': executions[0]['scan_context']['scan_depth'] = 'deep'
+                if fault == 'force': executions[0]['scan_context']['force'] = True
+                if fault == 'user': executions[0]['triggered_by'] = 44
+                if fault == 'tenant': executions[0]['tenant_id'] = 3
+                if fault == 'reused_scan': executions[1] = copy.deepcopy(executions[0])
+                if fault == 'failed': executions[0]['status'] = 'failed'
+                # A real public execution exposes engine/depth only; the fixed DB read proves force/targets.
+                for execution in executions:
+                    execution['scan_context'] = {k: v for k, v in execution['scan_context'].items() if k in ('engine_id', 'scan_depth')}
+                fixture = SimpleNamespace(state=Mock(side_effect=states))
+                client = SimpleNamespace(request=Mock(side_effect=[SimpleNamespace(payload=t) for t in trees]))
+                scan_ids = self.ids if fault != 'reused_scan' else [self.ids[0]]*2
+                with patch.object(m.scene.support, 'wait_for_meta_scan', side_effect=scan_ids) as submit, \
+                     patch.object(m.scene, 'wait_execution', side_effect=executions):
+                    args = ({'ADDP_ONLINE_ARTIFACT_DIR': directory}, client, self.item, self.parent, self.identity, fixture)
+                    if fault:
+                        with self.assertRaises(m.scene.SuiteError): m.verify_basic_rescans(*args)
+                    else:
+                        proof = m.verify_basic_rescans(*args)
+                        self.assertEqual(proof['result'], 'passed')
+                        self.assertEqual(len(proof['scans']), 2)
+                        for call in submit.call_args_list:
+                            self.assertEqual(call.kwargs['depth'], 'basic')
+                            self.assertIs(call.kwargs['force'], False)
+                            self.assertEqual(call.kwargs['scope'], {'targets': [self.target], 'source': 'meta'})
+                proof = json.loads((Path(directory)/(self.item['name']+'-basic-rescans.json')).read_text())
+                self.assertEqual(proof.get('result'), None if fault else 'passed')
+                if fault == 'automatic_fragments': self.assertEqual(fixture.state.call_count, 1)
+
+    def test_tree_rejects_wrong_leaf_identity_directory_or_component_expansion(self):
+        for fault in (None, 'node', 'id', 'label', 'directory', 'children', 'hidden', 'component', 'locator'):
+            tree = copy.deepcopy(self.tree); leaf = tree['children'][0]
+            if fault == 'node': leaf['metadata']['node_id'] = 55
+            if fault == 'id': leaf['metadata']['item_id'] = 99
+            if fault == 'label': leaf['label'] = 'mosaic.addp.json'
+            if fault == 'directory': leaf['type'] = 'prefix'
+            if fault == 'children': leaf['hasChildren'] = True
+            if fault == 'hidden': tree['children'] = []
+            if fault == 'component': leaf['children'] = [{'locator': leaf['locator'].split('?')[0]+'/index', 'children': []}]
+            if fault == 'locator': leaf['locator'] = leaf['locator'].replace('item_id=88', 'item_id=99')
+            client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload=tree))
+            with self.subTest(fault=fault):
+                if fault:
+                    with self.assertRaises(m.scene.SuiteError): m.whole_tree(client, self.item)
+                else: self.assertEqual(m.whole_tree(client, self.item), tree)
+        changed = copy.deepcopy(self.tree); changed['metadata'] = {'scanned_at': 'new'}
+        self.assertEqual(m.tree_identity_shape(self.tree), m.tree_identity_shape(changed))
+
+class MosaicScopeFixtureTest(unittest.TestCase):
+    def setUp(self):
+        MosaicBasicRescanTest.setUp(self)
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.env = {'ONLINE_SUITE': m.SUITE, 'ADDP_ONLINE_TEST_RUN_ID': 'raster-capacity-123-1',
+                    'ADDP_ONLINE_SECRET_DIR': str(self.root/'secret'), 'ADDP_ONLINE_ARTIFACT_DIR': str(self.root),
+                    'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1'}
+        self.base = importlib.import_module('scripts.test.execution-retention-readonly-online')
+        self.container = {'Id': 'b'*64, 'Config': {'Labels': {'com.docker.compose.project': 'addp-infra',
+            'com.docker.compose.service': 'postgres', 'com.docker.compose.project.working_dir': str(self.base.ROOT)},
+            'Env': ['POSTGRES_DB=addp_online', 'POSTGRES_USER=addp', 'POSTGRES_PASSWORD=private']},
+            'State': {'Running': True, 'StartedAt': '2026-11-04T00:00:00Z'}}
+
+    def test_personal_environment_rejected_before_inspection_or_query(self):
+        with patch.object(m.subprocess, 'run') as command, patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises((ValueError, m.scene.SuiteError)): m.MosaicScopeFixture(self.env)
+            command.assert_not_called()
+
+    def test_fixed_seed_and_readonly_sql_bind_real_parent_scope_and_original_seed_ids(self):
+        for seed in (False, True):
+            with self.subTest(seed=seed), patch.dict(os.environ, self.env, clear=True), \
+                 patch.object(self.base, 'boundary'), patch.object(m.MosaicScopeFixture, 'inspect', return_value=self.container), \
+                 patch.object(m.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='{}')) as command:
+                fixture = m.MosaicScopeFixture(self.env)
+                fixture.state(self.item, self.parent, self.identity, seed=seed, seeds={'nodes': [101], 'items': [102, 103]})
+                args = command.call_args.args[0]; sql = command.call_args.kwargs['input']
+                for text in ("e.actor_principal_id=:'principal'", "e.triggered_by=:'principal'", "e.tenant_id=i.tenant_id",
+                             "e.created_at>=:'started_at'", "e.status='success'", "e.module='manager'",
+                             "i.node_id=:'node'", "i.fingerprint=:'fingerprint'", "n.full_name=i.full_name",
+                             "e.metadata->'lineage_facts'->'outputs'", "'format'='raster_mosaic'"):
+                    self.assertIn(text, sql)
+                self.assertIn('item=88', args); self.assertIn('node=55', args)
+                self.assertIn('seed_items={102,103}', args); self.assertIn('seed_nodes={101}', args)
+                self.assertEqual(args[args.index('-d')+1], 'addp_online')
+                self.assertNotIn('private', ' '.join(args)+sql)
+                self.assertEqual(command.call_args.kwargs['timeout'], 8)
+                self.assertNotIn('DELETE', sql); self.assertNotIn('UPDATE ', sql)
+                if seed:
+                    self.assertIn('INSERT INTO meta.meta_node', sql)
+                    self.assertIn('INSERT INTO meta.meta_item', sql)
+                    self.assertIn('FROM owned', sql)
+                else:
+                    self.assertIn('BEGIN READ ONLY;', sql)
+                    self.assertNotIn('INSERT', sql)
+                    self.assertIn('JOIN descendants d ON n.parent_node_id=d.id', sql)
+                    self.assertNotIn('LIKE', sql)
+                    # No deleted_at predicate may hide seeded soft-deleted or orphaned rows.
+                    self.assertIn("FROM meta.meta_item WHERE id=ANY(:'seed_items'::integer[])", sql)
+                receipt = (self.root/'mosaic-scope-owner.json').read_text()
+                self.assertNotIn('private', receipt); self.assertNotIn('POSTGRES', receipt)
+
+    def test_run_container_scope_and_query_failures_are_closed(self):
+        for fault in ('run', 'id', 'restart', 'database', 'labels', 'stopped', 'name', 'item',
+                      'parent', 'fingerprint', 'seed_ids', 'sql', 'empty', 'oversize', 'invalid_json'):
+            with self.subTest(fault=fault), patch.dict(os.environ, self.env, clear=True), \
+                 patch.object(self.base, 'boundary'), patch.object(m.MosaicScopeFixture, 'inspect', return_value=self.container), \
+                 patch.object(m.subprocess, 'run') as command:
+                fixture = m.MosaicScopeFixture(self.env)
+                changed = copy.deepcopy(self.container); item = self.item.copy(); parent = self.parent
+                seeds = None
+                if fault == 'run': fixture.env = {**self.env, 'ADDP_ONLINE_TEST_RUN_ID': 'raster-capacity-999-1'}
+                if fault == 'id': changed['Id'] = 'c'*64
+                if fault == 'restart': changed['State']['StartedAt'] = 'new'
+                if fault == 'database': changed['Config']['Env'][0] = 'POSTGRES_DB=addp'
+                if fault == 'labels': changed['Config']['Labels']['com.docker.compose.project'] = 'personal'
+                if fault == 'stopped': changed['State']['Running'] = False
+                if fault == 'name': item['name'] = '../another'
+                if fault == 'item': item['id'] = True
+                if fault == 'parent': parent = "'; DROP TABLE meta.meta_item;--"
+                if fault == 'fingerprint': item['fingerprint'] = 'invalid'
+                if fault == 'seed_ids': seeds = {'nodes': [True], 'items': [102, 103]}
+                command.return_value = SimpleNamespace(returncode=1 if fault == 'sql' else 0,
+                    stdout={'empty': '', 'oversize': ' '*8193, 'invalid_json': 'invalid'}.get(fault, '{}'))
+                with patch.object(fixture, 'inspect', return_value=changed):
+                    with self.assertRaises((m.scene.SuiteError, ValueError)):
+                        fixture.state(item, parent, self.identity, seeds=seeds)
+                if fault not in ('sql', 'empty', 'oversize', 'invalid_json'): command.assert_not_called()

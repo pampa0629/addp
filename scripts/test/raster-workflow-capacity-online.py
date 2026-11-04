@@ -5,6 +5,8 @@ import importlib
 import json
 import math
 import os
+import re
+import subprocess
 from pathlib import Path
 import sys
 import threading
@@ -282,10 +284,242 @@ def validate_directory_item(item,physical):
             'object_total_size_bytes':physical['object_size_bytes'],'data_item_size_bytes':item['size_bytes']}
 
 
+
+class MosaicScopeFixture:
+    """Meta-owned wrong-record fixture, confined to this disposable capacity run."""
+    def __init__(self, env):
+        self.env = env
+        self.base = importlib.import_module('scripts.test.execution-retention-readonly-online')
+        self.boundary()
+        self.owner = self.inspect()
+        self.validate_owner(self.owner)
+        (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'mosaic-scope-owner.json').write_text(json.dumps({
+            'container_id': self.owner['Id'], 'started_at': self.owner['State']['StartedAt'],
+            'run_id': env['ADDP_ONLINE_TEST_RUN_ID']}, sort_keys=True))
+
+    def boundary(self):
+        self.base.boundary(SUITE)
+        keys = ('ONLINE_SUITE', 'ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_SECRET_DIR',
+                'ADDP_ONLINE_ARTIFACT_DIR', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')
+        if (any(self.env.get(k) != os.environ.get(k) for k in keys)
+            or self.env.get('ADDP_ONLINE_TEST_RUN_ID') !=
+                f"raster-capacity-{self.env.get('GITHUB_RUN_ID')}-{self.env.get('GITHUB_RUN_ATTEMPT')}"
+            or not re.fullmatch(r'raster-capacity-[0-9]+-[0-9]+', self.env.get('ADDP_ONLINE_TEST_RUN_ID', ''))):
+            raise scene.SuiteError('mosaic scope fixture run differs from its Hosted deployment')
+
+    @staticmethod
+    def inspect():
+        try:
+            result = subprocess.run(['docker', 'inspect', 'addp-postgres'], check=True,
+                                    capture_output=True, text=True, timeout=10)
+            container, = json.loads(result.stdout)
+            return container
+        except Exception:
+            raise scene.SuiteError('mosaic scope PostgreSQL inspection unavailable') from None
+
+    def validate_owner(self, container):
+        values = dict(v.split('=', 1) for v in container.get('Config', {}).get('Env', []) if '=' in v)
+        try:
+            user = self.base.validate_container(container, self.owner['Id'], values)
+        except self.base.API.SuiteError:
+            raise scene.SuiteError('mosaic scope PostgreSQL ownership differs') from None
+        if (not re.fullmatch(r'[0-9a-f]{64}', container['Id']) or not self.owner['State'].get('StartedAt')
+            or container['State'].get('StartedAt') != self.owner['State']['StartedAt']):
+            raise scene.SuiteError('mosaic scope PostgreSQL restarted or changed')
+        return user
+
+    def state(self, item, parent, identity, *, seed=False, seeds=None, scan=None):
+        self.boundary()
+        user = self.validate_owner(self.inspect())
+        name = item.get('name', '')
+        try:
+            fixture.mosaic_names_checked([name])
+        except fixture.shared.FixtureError:
+            raise scene.SuiteError('invalid mosaic scope dataset name') from None
+        for field in ('id', 'node_id', 'engine_id'):
+            scene.positive(item.get(field), 'whole ' + field)
+        tenant = scene.positive(int(identity['tenant_id']), 'whole Tenant')
+        principal = scene.positive(int(identity['principal_id']), 'whole User')
+        if (tenant <= 1 or item.get('full_name') != 'raster-target/' + name
+            or not re.fullmatch(r'[0-9a-f]{64}', item.get('fingerprint', ''))
+            or not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', parent)):
+            raise scene.SuiteError('mosaic scope fixture needs the exact current whole identity')
+        seeds = seeds or {'items': [], 'nodes': []}
+        if (set(seeds) != {'items', 'nodes'} or any(type(v) is not int or v <= 0
+            for values in seeds.values() for v in values) or len(seeds['items']) > 2 or len(seeds['nodes']) > 1):
+            raise scene.SuiteError('invalid mosaic seed record IDs')
+        if scan is not None and not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', scan):
+            raise scene.SuiteError('invalid mosaic rescan UUID')
+        # The successful, current Manager execution must itself declare this item.
+        owned = """WITH RECURSIVE owned AS (
+ SELECT i.*, n.name AS node_name, n.full_name AS node_full_name,
+ n.node_type, n.scanned_depth AS node_scanned_depth, n.depth AS node_depth
+ FROM meta.meta_item i JOIN meta.meta_node n ON n.id=i.node_id
+ AND n.tenant_id=i.tenant_id AND n.engine_id=i.engine_id AND n.deleted_at IS NULL
+ WHERE i.id=:'item'::integer AND i.node_id=:'node'::integer
+ AND i.engine_id=:'engine'::integer AND i.tenant_id=:'tenant'::integer
+ AND i.fingerprint=:'fingerprint' AND i.full_name=:'full_name' AND i.name=:'name'
+ AND n.name=i.name AND n.full_name=i.full_name AND n.node_type='prefix'
+ AND i.deleted_at IS NULL AND i.attributes->'item'->>'layout'='whole'
+ AND i.attributes->'item'->>'format'='raster_mosaic'
+ AND EXISTS (SELECT 1 FROM common.task_executions e
+ WHERE e.execution_id=:'parent' AND e.tenant_id=i.tenant_id
+ AND e.actor_principal_id=:'principal'::bigint AND e.triggered_by=:'principal'::integer
+ AND e.module='manager' AND e.task_type='raster_mosaic_generation' AND e.status='success'
+ AND e.created_at>=:'started_at'::timestamptz
+ AND e.metadata->'lineage_facts'->'outputs' @> jsonb_build_array(jsonb_build_object(
+ 'item_id',i.id,'fingerprint',i.fingerprint))))"""
+        if seed:
+            # Two real component names, one direct and one below a child node.
+            statement = "BEGIN; SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';\n" + owned + """,
+ child AS (INSERT INTO meta.meta_node
+ (tenant_id,engine_id,parent_node_id,node_type,name,depth,full_name,path,scanned_depth,created_at)
+ SELECT tenant_id,engine_id,node_id,'prefix','index',node_depth+1,full_name||'/index',
+ full_name||'/index','basic',now() FROM owned RETURNING *),
+ fragments AS (INSERT INTO meta.meta_item
+ (tenant_id,engine_id,node_id,item_type,name,full_name,fingerprint,scanned_depth,attributes,created_at)
+ SELECT o.tenant_id,o.engine_id,v.node_id,'object',v.name,v.full_name,
+ encode(sha256(convert_to(o.engine_id::text||':'||v.full_name,'UTF8')),'hex'),
+ 'basic','{"item":{"layout":"single"}}'::jsonb,now() FROM owned o
+ CROSS JOIN LATERAL (SELECT o.node_id,'mosaic.addp.json'::text AS name,
+ o.full_name||'/mosaic.addp.json' AS full_name UNION ALL
+ SELECT c.id,'source-index.json',c.full_name||'/source-index.json' FROM child c) v
+ RETURNING id)
+ SELECT json_build_object('nodes',(SELECT array_agg(id) FROM child),
+ 'items',(SELECT array_agg(id) FROM fragments)); COMMIT;
+"""
+        else:
+            statement = "BEGIN READ ONLY; SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';\n" + owned + """,
+ descendants(id) AS (SELECT node_id FROM owned UNION
+ SELECT n.id FROM meta.meta_node n JOIN descendants d ON n.parent_node_id=d.id
+ WHERE n.tenant_id=:'tenant'::integer AND n.engine_id=:'engine'::integer)
+ SELECT json_build_object('scan',(SELECT json_build_object('execution_id',execution_id,
+ 'config',execution_config,'status',status) FROM common.task_executions e
+ WHERE e.execution_id=:'scan' AND e.tenant_id=o.tenant_id AND e.actor_principal_id=:'principal'::bigint
+ AND e.triggered_by=:'principal'::integer AND e.module='meta' AND e.task_type='scan'
+ AND e.created_at>=:'started_at'::timestamptz), 'identity',json_build_object('id',o.id,'node_id',o.node_id,
+ 'engine_id',o.engine_id,'tenant_id',o.tenant_id,'name',o.name,'full_name',o.full_name,
+ 'fingerprint',o.fingerprint,'scanned_depth',o.scanned_depth,'node_name',o.node_name,
+ 'node_full_name',o.node_full_name,'node_type',o.node_type,'node_scanned_depth',o.node_scanned_depth),
+ 'seed_items_remaining',(SELECT count(*) FROM meta.meta_item WHERE id=ANY(:'seed_items'::integer[])),
+ 'seed_nodes_remaining',(SELECT count(*) FROM meta.meta_node WHERE id=ANY(:'seed_nodes'::integer[])),
+ 'internal_nodes',(SELECT count(*) FROM descendants WHERE id<>o.node_id),
+ 'internal_items',(SELECT count(*) FROM meta.meta_item i WHERE i.tenant_id=o.tenant_id
+ AND i.engine_id=o.engine_id AND i.id<>o.id AND i.node_id IN (SELECT id FROM descendants)),
+ 'outside_items',(SELECT md5(coalesce(string_agg(json_build_array(id,node_id,name,full_name,
+ fingerprint,deleted_at)::text,'|' ORDER BY id),'')) FROM meta.meta_item
+ WHERE tenant_id=o.tenant_id AND engine_id=o.engine_id AND node_id NOT IN (SELECT id FROM descendants)),
+ 'outside_nodes',(SELECT md5(coalesce(string_agg(json_build_array(id,parent_node_id,name,
+ full_name,node_type,deleted_at)::text,'|' ORDER BY id),'')) FROM meta.meta_node
+ WHERE tenant_id=o.tenant_id AND engine_id=o.engine_id AND id NOT IN (SELECT id FROM descendants)))
+ FROM owned o; COMMIT;
+"""
+        command = ['docker', 'exec', '-i', self.owner['Id'], 'psql', '-X', '-qAt',
+                   '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', user, '-d', 'addp_online']
+        values = dict(item=item['id'], node=item['node_id'], engine=item['engine_id'], tenant=tenant,
+                      principal=principal, fingerprint=item['fingerprint'], full_name=item['full_name'],
+                      name=name, parent=parent, scan=scan or '', started_at=self.owner['State']['StartedAt'],
+                      seed_items='{'+','.join(map(str,seeds['items']))+'}',
+                      seed_nodes='{'+','.join(map(str,seeds['nodes']))+'}')
+        for key, value in values.items(): command.extend(['-v', key + '=' + str(value)])
+        try:
+            result = subprocess.run(command, input=statement, capture_output=True, text=True, timeout=8)
+            if result.returncode or not 0 < len(result.stdout.encode()) <= 8192: raise ValueError()
+            return scene.obj(json.loads(result.stdout), 'mosaic scope database snapshot')
+        except Exception:
+            raise scene.SuiteError('bounded mosaic scope fixture query failed') from None
+
+
+def whole_tree(client, item):
+    tree = scene.obj(client.request('GET', f'/api/v1/meta/resource-tree/{item["engine_id"]}?expand_depth=-1', (200,)).payload,
+                     'mosaic resource tree')
+    matches = []
+    def visit(node):
+        node = scene.obj(node, 'resource node')
+        locator = urllib.parse.urlparse(node.get('locator', ''))
+        path = urllib.parse.unquote(locator.path).removeprefix(f'/{item["engine_id"]}/path/')
+        if path == item['full_name'] or path.startswith(item['full_name'] + '/'):
+            matches.append(node)
+        for child in node.get('children') or []: visit(child)
+    visit(tree)
+    if len(matches) != 1:
+        raise scene.SuiteError('whole resource tree must have exactly one scope leaf')
+    leaf = matches[0]
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(leaf['locator']).query)
+    if (leaf.get('label') != item['name'] or leaf.get('type') != 'object'
+        or leaf.get('hasChildren') is not False or leaf.get('children')
+        or leaf.get('metadata', {}).get('item_id') != item['id']
+        or leaf.get('metadata', {}).get('node_id') is not None
+        or urllib.parse.urlparse(leaf['locator']).netloc != 'engine'
+        or query.get('item_id') != [str(item['id'])] or query.get('type') != ['object']):
+        raise scene.SuiteError('whole resource tree identity or leaf shape differs')
+    return tree
+
+
+def tree_identity_shape(tree):
+    """Compare visible identities and structure; scan timestamps may advance."""
+    metadata = tree.get('metadata') or {}
+    return {**{key: tree.get(key) for key in ('id', 'locator', 'label', 'type', 'hasChildren')},
+            'identity': {key: metadata.get(key) for key in ('item_id', 'node_id', 'fingerprint', 'layout')},
+            'children': [tree_identity_shape(child) for child in tree.get('children') or []]}
+
+
+def verify_basic_rescans(env, client, item, parent, identity, scopes):
+    root = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
+    proof = {'before': scopes.state(item, parent, identity), 'scans': []}
+    path = root/(item['name']+'-basic-rescans.json')
+    def save(): path.write_text(json.dumps(proof, sort_keys=True))
+    save()
+    if proof['before'].get('internal_items') != 0 or proof['before'].get('internal_nodes') != 0:
+        raise scene.SuiteError('automatic mosaic scan left internal fragments')
+    proof['tree_before'] = whole_tree(client, item); save()
+    proof['seed'] = scopes.state(item, parent, identity, seed=True); save()
+    if len(proof['seed'].get('nodes') or []) != 1 or len(proof['seed'].get('items') or []) != 2:
+        raise scene.SuiteError('mosaic wrong-fragment fixture is incomplete')
+    proof['seed_state'] = scopes.state(item, parent, identity, seeds=proof['seed']); save()
+    expected_seed = {**proof['before'], 'internal_items': 2, 'internal_nodes': 1,
+                     'seed_items_remaining': 2, 'seed_nodes_remaining': 1}
+    if proof['seed_state'] != expected_seed:
+        raise scene.SuiteError('mosaic wrong-fragment fixture altered its boundary')
+    target = f'addp://engine/{item["engine_id"]}/path/{item["full_name"]}?type=prefix'
+    for _ in range(2):
+        identifier = scene.support.wait_for_meta_scan(client, item['engine_id'], time.monotonic()+120,
+            depth='basic', scope={'targets': [target], 'source': 'meta'}, force=False)
+        execution = scene.wait_execution(client, 'meta', identifier, 1)
+        observation = {'execution': execution}
+        proof['scans'].append(observation); save()
+        context = execution.get('scan_context', {})
+        if (identifier in [s['execution']['execution_id'] for s in proof['scans'][:-1]]
+            or execution.get('execution_id') != identifier or execution.get('module') != 'meta'
+            or execution.get('task_type') != 'scan' or execution.get('status') != 'success'
+            or str(execution.get('tenant_id')) != identity['tenant_id']
+            or str(execution.get('triggered_by')) != identity['principal_id']
+            or context.get('engine_id') != item['engine_id'] or context.get('scan_depth') != 'basic'):
+            raise scene.SuiteError('mosaic basic rescan execution scope or identity differs')
+        observation['state'] = scopes.state(item, parent, identity, seeds=proof['seed'], scan=identifier); save()
+        frozen = observation['state'].get('scan') or {}
+        config = frozen.get('config', {})
+        if (frozen.get('execution_id') != identifier or frozen.get('status') != 'success'
+            or config.get('engine_id') != item['engine_id'] or config.get('scan_depth') != 'basic'
+            or config.get('force') is not False or config.get('targets') != [target]):
+            raise scene.SuiteError('persisted basic rescan scope differs')
+        observation['frozen_scan'] = frozen
+        observation['state']['scan'] = None
+        if observation['state'] != proof['before']:
+            raise scene.SuiteError('basic rescan left fragments or changed whole/outside identities')
+        observation['tree'] = whole_tree(client, item); save()
+        # Compare the full visible identity tree, excluding mutable scan observations.
+        if tree_identity_shape(observation['tree']) != tree_identity_shape(proof['tree_before']):
+            raise scene.SuiteError('basic rescan changed the resource tree')
+    proof['result'] = 'passed'; save()
+    return proof
+
+
 def run_directories(env,client,platform,path,image,source_engine,target_engine,report,scans):
     source=physical('seed-mosaic',[])
     if source.get('source_unchanged') is not True or set(source.get('tiles',{}))!=set(fixture.mosaic_windows()):
         raise scene.SuiteError('capacity mosaic source preparation is incomplete')
+    scopes=MosaicScopeFixture(env)
     report['mosaic_source']=source
     scene.support.wait_for_meta_scan(client,source_engine,time.monotonic()+600)
     source_locator=f'addp://engine/{source_engine}/path/raster-source/{fixture.MOSAIC_SOURCE_PREFIX}?type=prefix'
@@ -355,6 +589,9 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
         scene.support.validate_monitor_lineage(monitor,facts)
         verification['monitor_verified']=True
         verification_path.write_text(json.dumps(verification,sort_keys=True))
+        rescan_proof=verify_basic_rescans(env,client,item,identifier,report['identity'],scopes)
+        verification['basic_rescans']=rescan_proof
+        verification_path.write_text(json.dumps(verification,sort_keys=True))
         if physical('purge-mosaic',[name]).get('source_unchanged') is not True:
             raise scene.SuiteError('capacity mosaic purge changed source')
         report['mosaic_groups'].append({'dataset_name':name,'task_id':task_id,'execution_id':identifier,
@@ -362,7 +599,7 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
             'elapsed_seconds':elapsed,'timing_method':DIRECTORY_TIMING_METHOD,
             'policy_version':saved['version'],'runtime_container_id':container['Id'],'runtime_pid':container['State']['Pid'],
             'measurement':metrics,'samples':samples,'target_item_id':item['id'],'target_item_fingerprint':item['fingerprint'],
-            'automatic_scan_execution_id':scan,
+            'automatic_scan_execution_id':scan,'basic_rescans':rescan_proof,
             'automatic_scan_observation':scan_observation,
             'owner_facts':facts,'size_evidence':sizes,'physical':actual,'purge':'passed'})
         save_progress(Path(env['ADDP_ONLINE_ARTIFACT_DIR']),report)
@@ -449,7 +686,7 @@ def run(env):
         if len(hashes)!=1 or len(scans)!=24:raise scene.SuiteError('capacity results differ between groups')
         run_directories(env,client,platform,path,image,source_engine,target_engine,report,scans)
         if len(scans)!=28:raise scene.SuiteError('capacity automatic scans are incomplete')
-        report.update(result='passed',automatic_scans=28,output_sha256=next(iter(hashes)))
+        report.update(result='passed',automatic_scans=28,basic_rescans=8,output_sha256=next(iter(hashes)))
         return report
     finally:
         current=platform.request('GET',path,(200,)).payload['policy']

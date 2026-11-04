@@ -231,8 +231,8 @@ test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
 test-vector-topology-capacity: ## 手工 Linux 容量基线，4 CPU/2 GiB/无 swap/每档180秒，不计业务T4
 	@python3 -m scripts.test.vector-topology-capacity
 
-test-vector-topology-capacity-runner: ## 验证线拓扑容量矩阵、资源限制和共享计量，不执行大规模负载
-	@python3 -m unittest scripts/test/vector-topology-capacity_test.py scripts/test/raster-workflow-capacity-online_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_capacity_requires_full_scene_resource_profile_and_owner_regressions
+test-vector-topology-capacity-runner: ## 验证容量矩阵、资源限制、镶嵌重扫和隔离生命周期，不执行大规模负载
+	@python3 -m unittest scripts/test/vector-topology-capacity_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_capacity_requires_full_scene_resource_profile_and_owner_regressions
 	@python3 scripts/ci/check-python-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 

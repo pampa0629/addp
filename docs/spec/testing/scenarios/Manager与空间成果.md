@@ -260,6 +260,13 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 
 ## raster-workflow
 
+### 镶嵌 whole 的 basic 重扫收敛
+
+既有 `raster-workflow-capacity` Hosted T4 在四个 Manager 镶嵌成果的自动扫描、物理 oracle 和 Monitor 校验分别通过后，对每个成果自身 prefix 连续执行两次 `basic / force=false` 定向扫描；不新增 suite、权限、Runtime、容量组或预算。自动扫描 28 次与新增手工重扫 8 次分别计数，不用手工重扫补救自动链路。
+
+Meta 夹具仅在当轮 Hosted 独占 `addp_online`、同一非默认 Tenant／普通 User 的成功 Manager 父执行及真实 whole 身份均匹配时，向该 whole 内部准备两个错误组件项和一个子 prefix，模拟旧扫描碎片。夹具不删除记录、不修改源对象或 Grant；生产扫描负责清理。首轮须物理删除这些记录（含软删残留），第二轮须保持内部节点／数据项为零。两轮均以只读数据库快照核对 whole 的 item_id、fingerprint、node_id、真实名称／完整路径和扫描深度稳定，范围外原身份不变；同一普通 User 的正式资源树 API 须始终将 whole 展示为同一路径上的单一叶子，不暴露内部组件或同路径普通目录。保存扫描 UUID、终态／范围、数据库快照和资源树原始回执；失败时保留已有阶段证据，原有策略恢复与部署清理继续执行。夹具拒绝个人环境、其他 suite、容器重建／重启、身份或目标漂移，不提供产品旁路。该扩展须经既有 Runner 确定性门禁和一次实际 Hosted 终态验证，代码与本地通过不计为 T4 通过。当前旧容量套件尚未接入现行资源 Grant 初始化，且旧大小／范围断言仍消费已收紧的公开 Meta 内容字段；实际派发前须先完成该测试前置适配，不能为回归放宽公开投影或业务授权。
+
+
 普通 PNG／JPEG 图片导出沿用本套件、同源产品 Runtime、原有普通 User 权限和清理入口，不另设 suite。完整既有场景之后，经真实 Develop 页面导入双节点工作流、选择编码（JPEG 显式质量 85）、首次保存、重开及执行，再在 Monitor 核对成功及目标资源。物理夹具独立读取 37×23 的 RGBA PNG／RGB JPEG：PNG 核完整像元和透明覆盖，JPEG 完整解码并按平滑合成源核误差（平均绝对误差 <5，最大 <15；非通用质量承诺），同时核原始／解码哈希、无 CRS／网格／GCP／RPC／EXIF／旁文件、源及既有成果不变。必须核精确输出、自动扫描、三方大小、保存任务删除和共享部署／物理对象／Infra 清理；页面生成不等同浏览器下载或 GIS 定位交付。确定性入口 `make test-geopython-workflow`、`make test-module MODULE=develop GO_ONLY=1`、`make test-develop-frontend` 和 `make test-raster-online-runner`；正式结果须另记实际 SHA 与原始产物。
 
 ### 部署与主场景
