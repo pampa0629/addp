@@ -111,28 +111,34 @@
 
 Three.js S3M 的 `renderer_runtime` 只作为 `quick_view.scene_3d` 内部字段保存；恢复相机时必须同时匹配 `render_source`、可选 `artifact_version` 和 `renderer_runtime=three_s3m`，旧 Cesium ECEF 相机直接忽略。
 
-## 九、已完成职责收敛
+<a id="九已完成职责收敛"></a>
 
-`preview_state` 不再保存以下旧字段或语义：
+## 九、字段禁入与事实归属
+
+`preview_state` 不持久化下列源身份别名、能力、产物或执行事实；合法偏好身份和交互状态分别以[核心字段](#二目标核心字段)、[预览交互状态](#八预览交互状态)为准：
 
 1. `engine_id` / `schema_name` / `table_name`
 2. `min_zoom` / `max_zoom` / `actual_max_zoom`
 3. `total_tiles` / `cached_tiles`
 4. `fingerprint`
 5. `extent` / `extent_srid`
-6. 历史准备状态字段 `preparation_status`
+6. 准备状态字段 `preparation_status`
 7. `started_at` / `completed_at`
 8. `can_use_quick_view` / `can_generate_vector_tile_cache`
 9. `default_vector_tile_cache_id` / `status` / `unavailable_reason` / `last_checked_at`
 
-这些信息已按目标职责迁移：
+事实归属如下，字段与状态语义以对应正文为准：
 
-| 旧信息 | 目标落点 |
+| 事实类别 | 归属与权威正文 |
 | --- | --- |
-| 产物范围、层级、格式、存储引用 | `manager.vector_tile_cache` |
-| 生成配置 | `manager.task_definitions.config` |
-| 执行进度、耗时、错误详情、统计摘要 | `common.task_executions.metadata` / `error_details` |
-| 矢量物化视图目标状态 | `manager.vector_materialized_view` |
+| 产物范围、层级、格式、存储引用 | `manager.vector_tile_cache`；[结果核心字段](vector_tile_cache表.md#二目标核心字段) |
+| 生成配置 | `manager.task_definitions.config`；[任务定义字段](task_definitions表.md#二核心字段) |
+| 执行进度、耗时、错误详情、统计摘要 | `common.task_executions.metadata` / `error_details`；[执行记录规范](../../../docs/spec/tasks/执行记录与租约.md#执行记录规范) |
+| 矢量物化视图目标状态 | `manager.vector_materialized_view`；[结果核心字段](vector_materialized_view表.md#二目标核心字段) |
+
+持久字段不等于公开响应字段。Manager 专业执行的读取权限与安全 DTO 统一见[专业读取契约](../../../docs/spec/tasks/执行监控.md#manager-专业执行读取与响应)，Monitor 通用响应见[执行详情与安全投影](../../../docs/spec/tasks/执行监控.md#执行详情与安全投影)。
+
+标准门禁与分版本证据见[Manager 开发与验证](../../CLAUDE.md#开发与验证)；本节的职责划分不作为迁移已落库或运行验收通过的证据。
 
 ## 十、相关文档
 
