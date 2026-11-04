@@ -1237,3 +1237,26 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 私有归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-standard-window-20261104-gvjti9if/`（0700／0600），包含launch／15项expected-inputs／Infra状态／准备runner／entry-started／entry.log／completion／原report及独立audit。报告2453810字节，SHA256=`a82c1e82a80bd1fe21d01758a7be66848ede6a2008a083272f6108efefdd6f91`；入口日志SHA256=`e0447a84141beaedcc5d1dcc9763b58d28db65921795295b5ee17952083a221f`。本轮仅更新61主题证据与索引、核对固定来源／全部样本／诊断拒绝边界／清理及文档链接，不修改诊断上限、构建或产品代码，也不额外推送触发CI。
 
 本轮严格不运行Hosted、容量或定时，无APT源／依赖／镜像／代理／签名策略调整。旧8a34ecb84超时及09:04未启动窗口各自保留，本次新增的是“新诊断真实触发但输入超预算”的证据，Agent耗尽位置及根因仍未确定，正式产品闭环仍未验收。单次授权已消费，更新证据并回报维护会话；下一步建议先只读评估构建输出为何超过现有限额及可行的有界步骤记录方案，讨论确认后再修规范／实现，不自动扩大读取上限或重跑。
+
+
+<a id="http-incremental-build-progress-20261104"></a>
+
+## 2026-11-04 有界增量构建步骤观测与确定性门禁
+
+用户先确认仅只读评估，再明确批准修规范及确定性门禁，不推送触发构建、不重试构建或开窗口。原3506802ce失败的command_failure只证实读到131073字节而超过128 KiB，不是完整输出大小；捕获的整条make命令混合预热／BuildKit标题及APT／pip正文，原日志与调度临时材料已清理，无法还原各部分占比或具体耗时步骤。本批没有恢复旧原文、扩大读取旧报告或用候选代理时序补填根因。
+
+实现`0a7d3d3682613e00bb184826d6eded20a28ce36d`先修运行观测及T0–T3条款，再用唯一BuildProgress替换旧capture_product_deadline及超时后整份快照进度解析。精确当次product_image服务／make build-images原命令、非采样线程才创建观测；原等待循环以位置读取观察同一捕获文件，每轮≤32768字节、全命令累计≤8388608字节、完整行含换行≤4096字节、内部≤64个编号步骤。固定类别apt／python_dependency／common_package／verification／other及running／done／cached／error／canceled状态只存内存，不保存命令、包名、URL、路径、正文或输出哈希。原正常非零失败的128 KiB public_build错误归属保持独立职责，没有第二条超时进度路线或旧字段兼容。
+
+当前线程CPU逐块前后及最终摘要累计计量，预算1秒；实际扫描／解析和摘要开销如实记录并计入原600秒，读／解析异常使观测不可用，不改变原构建退出或业务结果。原取消finally返回后最多再读一块已有数据，不循环追尾或等待；只对连续完整读至所见EOF、无半行／超限／异常的唯一未完成候选记录类别、状态及宿主观测单调端点。多候选ambiguous、重复／未知终态编号或捕获缩短为invalid，尾部未读unread、半行truncated、读取异常unavailable，任何预算失败over_budget，均不能使用旧候选冒充当前步骤。观测时刻不是BuildKit执行起止；停止CPU检查不宣称内核硬限额，也不把完整捕获当构建成功。
+
+| 验证 | 实际结果与范围 |
+| --- | --- |
+| 旧路线反证 | 新增首轮增量用例替换旧快照测试后，原Trace runner176项／4.907秒出现预期1 failure／21 subtest errors，证明旧类／协调接口及等待循环不满足新契约，不计通过 |
+| 最终Trace runner | make test-monitor-traces-local-runner退出0，178项／5.711秒；两项JS语法、Online CI登记与System身份Go子门禁通过。旧175项中的6项快照用例删除，新增9项增量观测测试及子例，不保留双轨实现或测试开关 |
+| 最终HTTP runner | make test-monitor-http-local-runner退出0，44项／0.816秒，JS／HTTP登记／System身份Go子门禁通过；原离线TLS T1为OpenSSL4.1.0、35命令／0.720430秒、材料与在途输出预留125497字节、4次预期拒绝和清理完成，不是正式产品环境 |
+| 关键边界 | 逐字节／跨行拆块及超过128 KiB正文仍可定位；32 KiB位置读取且不改变写指针；精确8 MiB／4 KiB行／64步及超限、4 KiB摘要／1秒CPU、末尾未读／截断／文件缩短／读取异常、DONE／CACHED／ERROR／CANCELED、并行／重复／编号碰撞／畸形帧、错误run及采样线程拒绝与脱敏分别通过；观察耗尽原600秒时不增加一次等待，仍取消并保留原首因 |
+| 自查与登记 | 原取消finally AST相同，采样／互斥／构建／监测／恢复／清理定义未改，无新进程／线程、Docker或网络请求；通用build-images、Agent／Copilot Dockerfile与原HTTP入口未改。现有Make／CI自动发现命中这些测试，无新入口或workflow。共享运行观测文档原有其他会话差异保留，仅当前段落补丁入索引；不宣称整个共享HEAD或自然CI已通过 |
+
+超时报告仅输出≤4 KiB封闭进度／计数／观测端点及CPU／耗时，删除旧captured_bytes／output_status／输出哈希快照路线；正常非零失败原哈希及错误分类保留。原600秒、完整四秒、8 CPU／12 GiB、4 GiB停止线、60／55分钟及清理要求保持；本轮没有运行真实构建、APT、Docker／网络探针或产品窗口，不推送，不运行Hosted、容量或定时。确定性门禁通过不证明历史Agent步骤／根因已定位、目录消失已修复或正式产品到页面闭环通过，旧a82c1e82失败报告保持不变。
+
+本批只读方案审核为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-output-progress-assessment-20261104-fq2xv7n2/assessment.json`；实施前共享文件快照、独立输入／日志散列与审核在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-stream-progress-20261104-5v3aewmd/`（0700／0600），红与最终门禁日志`/tmp/addp-p19-stream-progress-{red,trace-verified,http-verified}-20261104.log`（0600）。更新62主题证据及索引并回报维护会话；下一步仅在另行批准的原产品full运行中验证真实步骤回执，若仍不完整先定位原因再讨论，不自动重跑或放宽预算。

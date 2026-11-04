@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 17 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 61 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 62 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -968,3 +968,10 @@ Safari已核对18核、62.68GiB、CPU／内存／磁盘真实值、手工刷新�
 [固定源码、真实超时诊断及守卫清理](MonitorHTTP质量与采样历史证据.md#http-full-agent-timeout-over-budget-20261104)
 
 固定3506802ce严格标准准入后，单次full含准备934.10秒失败：Go及System／Gateway／Monitor镜像命令成功，Agent仍到原600秒；新增超时捕获实际131073B，按128KiB上限明确over_budget，不解析前缀或留部分哈希，具体步骤仍未知。215完整检查最长0.501秒、资源约3.75GiB且清理零残留；正式登录/API/页面尚未执行。未扩限／重试／续窗／Hosted／容量／定时。
+
+
+### 2026-11-04 有界增量构建步骤观测与确定性门禁
+
+[唯一增量路线、预算与验收限制](MonitorHTTP质量与采样历史证据.md#http-incremental-build-progress-20261104)
+
+0a7d3d368以原等待循环有界位置读取替换超时整份快照：32KiB/轮、8MiB累计、4KiB行、64步、4KiB摘要及1秒解析CPU，超限／缺口／歧义均未知，原600秒及四秒/资源/清理保持。旧路线反证失败，最终Trace178／HTTP44及子门禁通过；未改通用构建脚本或增进程／线程。仅本地确定性，不推送/构建重试/新窗口/Hosted/容量/定时，真实Agent步骤与正式页面仍未验。
