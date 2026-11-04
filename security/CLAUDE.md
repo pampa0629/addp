@@ -1,8 +1,8 @@
 Service SQL 角色方式（2026-11-03）：已按[查询发布与执行规范](../service/docs/architecture/查询发布与执行.md)接入非联邦、Provider 可证明唯一普通表的直接字段及别名；候选统一为 POST，保存仅准备元数据并复用保护编译器，实际执行与交付核验当前本人角色。Common 保留资格失效与方式失效的具体原因，不改变授权规则。默认保护及已有原生表方式保持原契约。
 
-新默认续页：临时HTTP脚本与独立审计已准备，6组离线夹具回归通过，实际HTTP未运行；覆盖两种省略／显式参数续读、10行对照、CSV分页头、新游标改参数拒绝及清理。只补验现有契约，未改产品源码／权限／保护规则，不需重启。准备与证据统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)。
+新默认续页本地HTTP独立审计通过（2026-11-04）：#33/addp-web/MySQL #3，9项检查／36条受控响应／9组JSON与CSV；两种省略／显式参数续页与更新前同参数第二页CSV一致，两页逐行等于10行参考、稳定排序不重叠，逐页版本／has-more头一致；旧游标4次、新游标改参数4次均400/no-store，脱敏和CSV空单元格保持。#12按version2删除404、#7不变、已注销。事实与边界统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)；索引verification.json的new_default_pagination_passed。仍是限定本地默认保护，不是活动角色方式或Hosted证据；下一步接入既有隔离Runner，CI专门会话跟进。
 
-SQL默认值本地HTTP独立审计通过（2026-11-04）：#33/addp-web/MySQL #3，正式可选int默认1→2更新，7项检查／24条受控响应／5组第一页JSON及CSV，旧游标两格式四次400、非法更新三次400、版本冲突409、双别名默认掩码及CSV空单元格均核对。#11按version=2删除404，#9/#10前后清理证据闭合，#7不变、已注销。前两轮临时夹具失败及修正保留在[唯一测试正文](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)，不再代表当前状态；索引`/tmp/p145-published-default-edit-20261104/verification.json`。本地只验默认保护／第一页，不扩展为角色选择、string默认修改、新默认连续第二页或Hosted已验。
+SQL默认值本地HTTP独立审计通过（2026-11-04）：#33/addp-web/MySQL #3，正式可选int默认1→2更新，7项检查／24条受控响应／5组第一页JSON及CSV，旧游标两格式四次400、非法更新三次400、版本冲突409、双别名默认掩码及CSV空单元格均核对。#11按version=2删除404，#9/#10前后清理证据闭合，#7不变、已注销。前两轮临时夹具失败及修正保留在[唯一测试正文](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)，不再代表当前状态；索引`/tmp/p145-published-default-edit-20261104/verification.json`。该轮只验默认保护／第一页；上段已补续页结果，仍不扩展为角色选择、string默认修改或Hosted已验。
 
 Service SQL发布默认值修改（2026-11-04，v38）：用户已批准仅修改可选参数默认值。正式版本PUT及真实编辑页已接入，SQL和其他声明只读，拒绝／事务／保护边界沿[Service规范](../service/docs/architecture/查询发布与执行.md#已发布-sql-参数默认值修改)。真实PG存储与源读取门禁、Go T1、Service前端单元／构建及中英文受控浏览器已通过；隔离Runner新增默认1→2的旧游标拒绝／新默认输出，沿[v38合同](../scripts/docs/Online数据保护.md#v38发布默认值修订与旧游标拒绝)。完整`make test-security-online-runner`退出0（41／80／198／185／376项及登记CLI），所属171项通过；Service前端120单元／构建通过，12项受控浏览器通过（4项中英文角色／默认编辑、8项SQL创建／草稿回归）。固定文件摘要与验证日志见`/tmp/p145-published-default-edit-20261104/verification.json`；限定本地正式HTTP结果已在上段补录，新增Hosted仍未验，CI由专门会话跟进。
 
