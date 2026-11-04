@@ -575,3 +575,18 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 整Job在其后的`Post Prepare Monitor frontend environment`归档Node缓存tar时取消；因此只认定“固定源码的Linux产品门禁通过、整Job取消”，不改为Job或父workflow通过，不重复运行有效验收。独立结论文件为`/tmp/addp-ci-20261102-104553/Monitor74-independent-product-pass-job-post-cancel-proof.json`。旧584通过／6失败、7e2原Job未运行完以及本机266项组合的5项失败全部保留，不把新固定版本成功倒写为旧记录成功。
 
 另逐字节比较本工作区的`NodeResources.vue`、`host-resource-zoom.spec.js`、`network-bars.spec.js`与受验74ed，三文件完全一致；协调会话也已核对远端固定`4243aefa676f93c71916872dda30c6127aa91546`的同三文件（`/tmp/addp-ci-20261102-123449/Monitor-current-owned-input-recheck.json`）。该一致性只支持复用缩放修复的Linux证据，不外推当前main全部前端输入、个人Safari、Hosted或新增`59d4adaee`MinIO来源的CI／正式验收。此次只核验回传材料及同步进展，没有查询、触发或重跑CI／Hosted，没有设置定时任务。
+
+
+### 主机恢复后的Safari复验与缺样提示修正（2026-11-04）
+
+在正式主机来源up／健康recover已验基础上，Safari沿Console平台管理员正式会话核对列表及详情：18核、62.68GiB、CPU忙碌率／内存使用率及vda吞吐均有真实值，点击详情刷新后查询时间与读数更新。通过可访问滚动条定位资源趋势，实际截图呈现内存总量、可用内存和使用率三曲线、左右GiB／%双轴及图例；休眠时段保留缺样断点。TCP、文件系统和网卡沿当前Desktop来源能力显示缺失／未提供，不补零；当前容量采样器未启用，不将此页当作新增容量来源验收。
+
+发现汇总提示在任意标量no_data时一律写“尚未形成有效样本或完整统计窗口”，会误导来源长期未提供的TCP也能靠等待恢复。本批仅修订Monitor中英文词条为“部分指标暂无有效值，具体原因见对应指标说明”，不变更判定、指标或权限；原因仍在相应指标旁。Safari实际AX和截图已看到新版提示。新增中英文T3覆盖采集成功而TCP缺样、其他有效内存保留、TCP恢复为有效零后提示消失及正常单位。有效红测两项均因旧提示失败，修订后两项通过；测试钩子仅处理响应中实际存在的TCP序列。
+
+`make test-monitor-frontend`中135项单元通过；完整浏览器首轮受环境休眠干扰出现8项失败，随后验证唯一自有Monitor runner／cwd／npm父链，发送SIGINT并由标准入口清理，浏览器入口退出130、make退出2，结果为534通过、8失败、1中断、141未运行，不记整条命令通过。只读pmset日志确认09:41:23发生Clamshell Sleep，随后反复Maintenance Sleep／DarkWake；六项趋势失败截图时间09:42:14、09:43:44、09:46:15、09:46:45、09:47:38、09:50:04逐一对应唤醒点，身份用例09:54:18也对应唤醒，文件系统用例09:55:06处于短暂DarkWake中。09:55:11恢复FullWake，后续只读核验开盖；未改电源设置或添加唤醒断言。
+
+保持唤醒后，通过原标准`npm run test:e2e`入口，仅选择上述8项、原预算／源码／断言不变，8项全部通过（40.7秒）；再按原文件顺序选择process-resources起至uptime-units的11个文件，144项全部通过（4.8分钟），其中2项是首轮已通过项的文件边界重复。程序按完整测试名集合核对，534＋8＋144－2＝684个不同浏览器场景均有通过证据；这是分批覆盖结论，不改写首轮退出状态，也不作为单次完整命令或CI通过。单独`npm run build`退出0（7.65秒）。原自有浏览器运行目录和端口租约已回收；失败截图保留。既有Monitor前端门禁自动发现两项新增测试，无需新增CI路径。
+
+日志：`/tmp/addp-node-collection-copy-red.log`、`/tmp/addp-node-collection-copy-frontend.log`、`/tmp/addp-node-collection-awake-recheck.log`、`/tmp/addp-node-collection-remaining.log`、`/tmp/addp-node-collection-copy-build.log`；测试集合收据`/tmp/addp-node-collection-browser-coverage.json`，只读电源记录`/tmp/addp-node-collection-power-20261104.log`。首轮浏览器失败证据目录为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-dsytDF`。
+
+Safari通过“窗口→当前控制台窗口”确认过“自动刷新已开启”，非手工刷新期间查询时间亦前移，但后续观察再次报告隐藏，尚无稳定连续前台定时、视觉无闪及缩放刷新保持的充分个人证据。原生拖拽仍报noWindowsAvailable，不用受控T3替代个人拖拽验收；真实数值、手工刷新、双轴图展示与上述缺口分别记录。本轮未重启服务、改个人配置／凭据／数据库，未查询或手动触发CI／Hosted、未设置定时任务。下一步优先细化统一采集恢复的失败诊断，保留Safari剩余交互复验。

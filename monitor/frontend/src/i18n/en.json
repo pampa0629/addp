@@ -665,7 +665,7 @@
         "collecting": "Collection connection is working",
         "failed": "Collection failed. Check the collection address, network and certificates. Missing values do not mean zero load.",
         "stale": "Collection evidence has expired. Current data cannot indicate real-time status.",
-        "waiting": "The latest collection succeeded. Some metrics do not yet have valid samples or a complete measurement window."
+        "waiting": "The latest collection succeeded. Some metric values are unavailable. See each metric for details."
       },
       "configure": "Configure collection",
       "viewCollection": "View collection settings",

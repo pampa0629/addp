@@ -498,6 +498,24 @@ test('inode budget failure clears only inode values and recovery stays in the sa
   await expect(page.getByTestId('resource-filesystem-table')).toContainText('20.00 %')
 })
 
+for (const locale of ['zh-cn', 'en']) test(`missing scalar evidence keeps collection success without promising a future window (${locale})`, async ({ page }) => {
+  let missing = true
+  await resourceBackend(page, { locale, observationResponse(body) {
+    if (!missing) return
+    const point = body.series.find(row => row.metric_key === 'node.tcp.current_connections')?.points[0]
+    if (point) Object.assign(point, { value: null, sampled_at: null, data_state: 'no_data' })
+  } })
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  const status = page.getByTestId('resource-collection-status')
+  await expect(status).toContainText(locale === 'en' ? 'See each metric for details' : '具体原因见对应指标说明')
+  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+  await expect(page.getByTestId('resource-tcpConnections').locator('strong')).toHaveText('—')
+  missing = false
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(status).toHaveCount(0)
+  await expect(page.getByTestId('resource-tcpConnections').locator('strong')).toHaveText(locale === 'en' ? '0 connections' : '0 条')
+})
+
 test('reports a collection failure without presenting it as zero load or unsupported filesystem', async ({ page }) => {
   await resourceBackend(page, { mode: 'collection-failed' })
   await page.goto(`/node-resources/${node}?refresh=off`)
