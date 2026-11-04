@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
-      "sha256": "15ce8fc4a2b789d14b0a216d88617fa6fe6d49fb210a79ae6692a2e55ca5a1b7",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "b8dbe3b6fe2ac454c3f32b90480e59045fff22d3c350bd394f9b9d8f888402e9",
       "use": {
-        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
-        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
-      "sha256": "6003a85feb2a1444390101d439e01291c994f3dea683bdcc25d69cec9bb66e30",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "be266aed74b426356017a77dbfb0f588a15a2d99cfe99887a1c0fa040293e00f",
       "use": {
-        "zh-cn": "本次按正式所选能力和依赖收窄 Tool 白名单；创建仍确定性提交一次；运行通过正式 Owner 状态及提交屏障独立消费，拒绝或未知不重发。",
-        "en": "Tools narrow to the selected capability and dependencies; creation still commits once deterministically, while run consumption separately requires formal owner state and the commit barrier, without retries after rejection or uncertainty."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -151,11 +151,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
-      "sha256": "91d0e968298bdc12b5a00a78f634d672f4dbb8f1c57b91e0478f524712bdf639",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "1889cbe97c133223a479a61a7eb9d668b6d29d4d2bb4498bcab58b835bdfd644",
       "use": {
-        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
-        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -164,11 +164,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
-      "sha256": "e342dfe9883eb35e6f2133b700084cfc5a105e4d459218281d379071ccd9c549",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "d216c43f68ae1af3eb5bfab2cae992abc3ce26f237dce259ece008b7666b5abf",
       "use": {
-        "zh-cn": "按历史快照固定说明预检状态、写入策略、执行边界与当前授权的区别；纯关键主题不调正文模型，混合说明仅解释已有映射／查询片段；不改创建或运行文案边界。",
-        "en": "Explains historical check status, write policy, execution boundary and current-authority limits from verified facts; key topics need no body model and mixed explanations use selected mapping/query fragments without changing create/run messages."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -190,11 +190,11 @@
       "kind": "implementation",
       "path": "agent/backend/services/drafts.py",
       "anchor": "def draft_snapshot(",
-      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
-      "sha256": "4abf8a28930b7e8dc9ed532379a71ed6bee1ed483cfa84aa27dfa84a9b6f3401",
+      "commit": "124da835318212eade6533a0d9720720158d8841",
+      "sha256": "8ed4b9fb9dbce5b7718775e0721bc73abdda37758beb4317b96a123f8a45118d",
       "use": {
-        "zh-cn": "保持身份限定的历史参数／报告恢复与确认指纹校验；新增有界解释投影，仅传所选映射／已有查询，缺失或混用范围拒绝，不修改原快照或推导当前事实。",
-        "en": "Preserves scoped snapshot restoration and confirmation checks; bounded explanation projection passes only selected mappings or existing queries, rejects invalid scope, and neither mutates snapshots nor infers current facts."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
-      "sha256": "5f774bbacaa240711572d3d0d47e2f8fc65f6dcc78b667cf9e7fca6e6f4ae284",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "1762169961856ed813455fa39e19b841e8111b35e6be322a36c8ab4b04bf0178",
       "use": {
-        "zh-cn": "历史解释须声明私有范围并核对引用；关键结论由 Runtime 固定说明，混合补充只收选中片段，无业务 Tool；删除整请求／整快照自由说明，创建及当前能力复核路径保持。",
-        "en": "Historical inspection validates its private scope and reference. Runtime states key facts; optional body generation receives selected fragments without business tools. Removes full-request/snapshot explanation while retaining creation and capability review."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -216,11 +216,11 @@
       "kind": "implementation",
       "path": "agent/backend/api/chat.py",
       "anchor": "async def draft_reader(",
-      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
-      "sha256": "32127454342e32fc0a753f336ed0d60758263438301b6d51eb0821b5f57be20e",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "3c0bae562feaa4603a4dc9681dd5600c0c2c77b6839565e6559de292d9256b1e",
       "use": {
-        "zh-cn": "本次按 owner 精确读取审批状态，User 决定后恢复 Transfer；不把客户端 check 当批准，不代批，权限与依赖失败分开。",
-        "en": "Approval reads are keyed by owner and Transfer resumes after a User decision; client check is not approval, the backend cannot approve, and authorization failure is distinct from dependency failure."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -229,11 +229,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_drafts.py",
       "anchor": "class DraftScopeTests(",
-      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
-      "sha256": "13b78c31878ae680ebcc3e12d6533b88c9e5b5509fcb37c9fc107213d85bba64",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "c4bd2d13881333b322ae3509951c09497f07459fa17b7df9468b729466f5d942",
       "use": {
-        "zh-cn": "覆盖双语三态历史说明、字段／查询最小投影、无效范围拒绝、混合正文取消和零业务 Tool；原历史参数、路由互斥、原参数创建及流关闭断言保持。",
-        "en": "Covers bilingual historical states, minimal field/query fragments, invalid-scope refusal, mixed-stream cancellation and no business tools while preserving snapshot, route-exclusivity, exact-argument creation and stream-close assertions."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -320,11 +320,11 @@
       "kind": "contract",
       "path": "agent/backend/graph/state.py",
       "anchor": "class RouteDecision(",
-      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
-      "sha256": "67fb67f601c040ff7764badf0da52db19a0544b869ef03fffed6d821c7b630da",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "4ba9f32e6c26a4f974b85a959e5fbab2f1c5c00da6fe839a28466ec2c0cf4b28",
       "use": {
-        "zh-cn": "私有 inspect 解释范围限定主题与精确字段；其他路由不得携带，缺失不兼容兜底；不新增公开参数、持久化、权限或批准，原能力身份和创建互斥边界保持。",
-        "en": "Private inspect scope bounds topics and exact fields, is forbidden on other routes and has no legacy fallback. Adds no public parameters, persistence, permissions or approval; selected-capability identity and creation exclusivity remain."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -333,11 +333,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/checkpoint.py",
       "anchor": "def normalize_checkpoint(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "f7b933f9d89db4ee1bbb08eaa3c1ba880c7455571dcc97c8ac6e78f0e4b70a9c",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "106c02fa38ecf24ad9f1abff5e1ad5793932ff54bca12aa227406f4410e1bbbc",
       "use": {
-        "zh-cn": "本次保存经 Manifest 核验的所选能力和正式 Owner 审批引用；不保存批准凭据，缺失能力身份明确拒绝，不推测旧 Run。",
-        "en": "Stores the manifest-validated selected capability and formal owner review reference, not approval credentials; a missing operation identity is refused rather than inferred from an old Run."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -385,11 +385,11 @@
       "kind": "implementation",
       "path": "agent/backend/services/runs.py",
       "anchor": "async def resume_agent_run(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "ecab0bd6863b07f84077a1d8fee2e9cbaab3571a1a9a858f6b694ed79d541513",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "58260bdf62bfe94acb992a2a1fd15a293a2a91ad09f4b7f62d4dfcb1baeb4587",
       "use": {
-        "zh-cn": "本次仅从已完成正式 Owner Interaction 写入运行确认引用，普通文本清除该引用；原创建消费与失败屏障保持。",
-        "en": "Run confirmation references come only from a completed formal owner interaction and are cleared by ordinary text; existing creation consumption and failure barriers remain."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -489,11 +489,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_config_draft_owner.go",
       "anchor": "func (s *TaskConfigDraftService) Build(",
-      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
-      "sha256": "1865e1403e57a2e1bc28221d858f51d2282c6a71ba61252a3ecaf50e1f8101a7",
+      "commit": "a018214b7605ee9c5d53e65d0bea2b894a092a94",
+      "sha256": "bf5c0b16acdd9244fa8857e0f8824109ee6019011dfde378b8b318a8df536643",
       "use": {
-        "zh-cn": "从已确认选择只读编译配置，核验正式结构、四项权限和独立预检组合。草稿不保存任务、不授权运行。",
-        "en": "Read-only compilation of confirmed choices with formal facts, four permissions and independent preflight composition. Draft construction neither persists a task nor approves a run."
+        "zh-cn": "按正式祖先链核验完整分段身份，拒绝含点名称的 full_name 碰撞；构建与预检仍只读，三种参数来源保留。",
+        "en": "Verify complete owner ancestor identity segments and reject flattened full_name collisions for dotted names, retaining read-only compilation/preflight and the three parameter sources."
       }
     },
     {
@@ -515,11 +515,11 @@
       "kind": "test",
       "path": "transfer/backend/internal/service/task_config_draft_test.go",
       "anchor": "func TestTaskConfigDraftComposesWithOwnerPrecheck(",
-      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
-      "sha256": "640cbff0ab6953955d76614bd6b0e2a0f9ccd4309c11cd9f5a93275afc8b4719",
+      "commit": "c9bafc6035995f729a6ff24881af27cfaf985a6f",
+      "sha256": "8cf430f66b5ca600da8aa6b166b727a9fa2c2ed58995d6d7aac5411bfdedf864",
       "use": {
-        "zh-cn": "从已确认选择只读编译配置，核验正式结构、四项权限和独立预检组合。草稿不保存任务、不授权运行。",
-        "en": "Read-only compilation of confirmed choices with formal facts, four permissions and independent preflight composition. Draft construction neither persists a task nor approves a run."
+        "zh-cn": "按正式祖先链核验完整分段身份，拒绝含点名称的 full_name 碰撞；构建与预检仍只读，三种参数来源保留。",
+        "en": "Verify complete owner ancestor identity segments and reject flattened full_name collisions for dotted names, retaining read-only compilation/preflight and the three parameter sources."
       }
     },
     {
@@ -559,6 +559,84 @@
       "use": {
         "zh-cn": "从已确认选择只读编译配置，核验正式结构、四项权限和独立预检组合。草稿不保存任务、不授权运行。",
         "en": "Read-only compilation of confirmed choices with formal facts, four permissions and independent preflight composition. Draft construction neither persists a task nor approves a run."
+      }
+    },
+    {
+      "id": "parameter_core",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/agents/transfer_parameters.py",
+      "anchor": "def explicit_user_arguments(",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "100bf63493dec0a47365b5495a0033903db4a981ffabca053e56c99179188c59",
+      "use": {
+        "zh-cn": "核验三种原参数来源、同身份恢复、拒绝改写及短输入构建预检链。受控测试不代替真实业务环境。",
+        "en": "Verifies three exact parameter sources, identity-bound recovery, mutation rejection and short-request construction/preflight. Controlled tests do not replace real business acceptance."
+      }
+    },
+    {
+      "id": "parameter_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_transfer_parameters.py",
+      "anchor": "class TransferParameterRuntimeTests(",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "5e3bd68bd5b8446cfceb486417649d8b3fadfe56a0c66f564758ff10f7e0a85e",
+      "use": {
+        "zh-cn": "核验三种原参数来源、同身份恢复、拒绝改写及短输入构建预检链。受控测试不代替真实业务环境。",
+        "en": "Verifies three exact parameter sources, identity-bound recovery, mutation rejection and short-request construction/preflight. Controlled tests do not replace real business acceptance."
+      }
+    },
+    {
+      "id": "parameter_protocol",
+      "owner": "agent",
+      "kind": "normative",
+      "path": "docs/spec/addp智能体交互协议规范.md",
+      "anchor": "Transfer 参数来源只接受三种受信任输入",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "2889ccfae7f911735496f7781b23bd526fb3b9b1658ade9e5baa4a9fc03e3144",
+      "use": {
+        "zh-cn": "核验三种原参数来源、同身份恢复、拒绝改写及短输入构建预检链。受控测试不代替真实业务环境。",
+        "en": "Verifies three exact parameter sources, identity-bound recovery, mutation rejection and short-request construction/preflight. Controlled tests do not replace real business acceptance."
+      }
+    },
+    {
+      "id": "parameter_model",
+      "owner": "agent",
+      "kind": "contract",
+      "path": "evals/agent-scenarios/model-transfer-short-precheck/scenario.yaml",
+      "anchor": "\"name\": \"model-transfer-short-precheck\"",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "2a82782a5010dc93c64c848edc1bef626f54b710a3c5e08e220ea63115c84c0a",
+      "use": {
+        "zh-cn": "核验三种原参数来源、同身份恢复、拒绝改写及短输入构建预检链。受控测试不代替真实业务环境。",
+        "en": "Verifies three exact parameter sources, identity-bound recovery, mutation rejection and short-request construction/preflight. Controlled tests do not replace real business acceptance."
+      }
+    },
+    {
+      "id": "parameter_model_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_agent_model_runner.py",
+      "anchor": "async def test_short_request_discovers_builds_and_checks_owner_result(",
+      "commit": "92424b9624b1086b6a1522c52ec6c6ea78c516f7",
+      "sha256": "9f2f3c826ba7b9498398b29edbd5dae2db881cda76a8e6343f5d244d90c938e4",
+      "use": {
+        "zh-cn": "核验三种原参数来源、同身份恢复、拒绝改写及短输入构建预检链。受控测试不代替真实业务环境。",
+        "en": "Verifies three exact parameter sources, identity-bound recovery, mutation rejection and short-request construction/preflight. Controlled tests do not replace real business acceptance."
+      }
+    },
+    {
+      "id": "parameter_model_runner",
+      "owner": "agent",
+      "kind": "test",
+      "path": "evals/agent-scenarios/model_runner.py",
+      "anchor": "def fixture_executor(",
+      "commit": "92424b9624b1086b6a1522c52ec6c6ea78c516f7",
+      "sha256": "1f343ac5d76eab23f2f67e9b18b9b174bb9934e89a59f932aab3a13c97b949f0",
+      "use": {
+        "zh-cn": "受控模型夹具提供正式目录根节点，并按 Owner 契约回显可选 nullable 选择；字段、类型和参数变化仍精确拒绝。报告不含原始参数。",
+        "en": "Controlled model fixtures provide formal catalog roots and honor optional nullable choices as the owner does, while rejecting changed fields, types and arguments. Reports exclude raw parameters."
       }
     }
   ],
@@ -789,7 +867,13 @@
         "role_protection",
         "current_user_roles",
         "draft_compiler",
-        "draft_owner"
+        "draft_owner",
+        "parameter_core",
+        "parameter_test",
+        "parameter_protocol",
+        "parameter_model",
+        "parameter_model_test",
+        "parameter_model_runner"
       ]
     },
     {
@@ -968,7 +1052,13 @@
         "condition_test",
         "runtime",
         "runtime_test",
-        "confirmation_resume"
+        "confirmation_resume",
+        "parameter_core",
+        "parameter_test",
+        "parameter_protocol",
+        "parameter_model",
+        "parameter_model_test",
+        "parameter_model_runner"
       ]
     },
     {
@@ -979,7 +1069,13 @@
         "skill",
         "runtime",
         "runtime_test",
-        "confirmation_resume"
+        "confirmation_resume",
+        "parameter_core",
+        "parameter_test",
+        "parameter_protocol",
+        "parameter_model",
+        "parameter_model_test",
+        "parameter_model_runner"
       ]
     },
     {
@@ -1223,7 +1319,12 @@
         "draft_test",
         "draft_route_test",
         "draft_sdk",
-        "draft_sdk_test"
+        "draft_sdk_test",
+        "parameter_core",
+        "parameter_test",
+        "parameter_protocol",
+        "parameter_model",
+        "parameter_model_test"
       ]
     },
     {
@@ -1253,7 +1354,13 @@
         "draft_test",
         "draft_route_test",
         "draft_sdk",
-        "draft_sdk_test"
+        "draft_sdk_test",
+        "parameter_core",
+        "parameter_test",
+        "parameter_protocol",
+        "parameter_model",
+        "parameter_model_test",
+        "parameter_model_runner"
       ]
     }
   ],

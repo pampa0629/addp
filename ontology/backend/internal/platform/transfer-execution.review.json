@@ -86,11 +86,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _resume_confirmed_start(",
-      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
-      "sha256": "6003a85feb2a1444390101d439e01291c994f3dea683bdcc25d69cec9bb66e30",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "be266aed74b426356017a77dbfb0f588a15a2d99cfe99887a1c0fa040293e00f",
       "use": {
-        "zh-cn": "批准恢复由 Runtime 确定性调用一次，原状态不明不重发，查询不装入启动 Tool",
-        "en": "Runtime deterministically submits approved resume once, does not retry uncertainty, and omits start tools for observations"
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {

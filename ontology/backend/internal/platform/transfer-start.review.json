@@ -151,11 +151,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _resume_confirmed_start(",
-      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
-      "sha256": "6003a85feb2a1444390101d439e01291c994f3dea683bdcc25d69cec9bb66e30",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "be266aed74b426356017a77dbfb0f588a15a2d99cfe99887a1c0fa040293e00f",
       "use": {
-        "zh-cn": "批准确定性调用一次，消费后只查；拒绝／过期固定无执行收尾，不因修订变化重开运行确认，不明结果不重发",
-        "en": "One deterministic approved start and read-only observation after consumption; rejection/expiry finish without execution or renewed review on revision drift; no uncertainty retry"
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     },
     {
@@ -242,11 +242,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "'transfer_run_expired'",
-      "commit": "426de5f38c3a5c87ba43d4d4cfeb6a2c21d74c14",
-      "sha256": "e342dfe9883eb35e6f2133b700084cfc5a105e4d459218281d379071ccd9c549",
+      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
+      "sha256": "d216c43f68ae1af3eb5bfab2cae992abc3ce26f237dce259ece008b7666b5abf",
       "use": {
-        "zh-cn": "i18n 整文件新增历史说明；运行审批拒绝、过期、结果不明及真实 execution 身份／状态函数保持，固定过期收尾不调用模型。",
-        "en": "The i18n file adds historical explanations; run refusal, expiry, uncertainty and execution identity/state functions remain unchanged, including fixed expiry completion without a model."
+        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
+        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
       }
     }
   ],

@@ -175,6 +175,19 @@ func platformTestReview(t *testing.T, d platform.Context) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Synthetic budget fixtures need one source of each required kind, not
+	// every production provenance record accumulated by the real capability.
+	sources := make([]platform.Source, 0, 4)
+	kinds := map[string]bool{}
+	for _, source := range r.Sources {
+		if !kinds[source.Kind] {
+			kinds[source.Kind] = true
+			sources = append(sources, source)
+		}
+	}
+	r.Sources = sources
+	r.Coverage = r.Coverage[:1]
+	r.Coverage[0].Sources = []string{r.Sources[0].ID}
 	r.Bindings = nil
 	for _, subject := range platform.ReviewSubjects(d) {
 		r.Bindings = append(r.Bindings, platform.SourceBinding{Subject: subject, Sources: []string{r.Sources[0].ID}})

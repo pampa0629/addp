@@ -2,7 +2,7 @@
   "schema_version": "addp.platform-capability-context/v1",
   "knowledge_kind": "platform_definition",
   "capability": "transfer.task.create",
-  "revision": 58,
+  "revision": 59,
   "digest": "",
   "availability": "not_observed",
   "concepts": [
@@ -20,7 +20,7 @@
     {"id": "snapshot", "name": {"zh-cn": "快照装载模式", "en": "Snapshot load mode"}},
     {"id": "explicit_apply_policy", "name": {"zh-cn": "快照写入明确选择 replace（清理后写入）或 append（仅追加），不支持 upsert", "en": "Explicit snapshot policy: replace (clear then write) or append (insert only); upsert is not supported"}},
     {"id": "confirmed_row_grain_and_fields", "name": {"zh-cn": "按真实结构分别确认行粒度与字段保留范围；不展开数组不等于删除数组字段，删减须明确确认；整体保留容器须核实目标可写表示，不将源数组类型当作目标支持证明；查询与映射随完整配置复核", "en": "Confirm row grain and retained fields separately from schema facts; not expanding arrays does not mean dropping them, and omissions need explicit confirmation; verify the target representation of retained containers rather than treating source arrays as target support; review query and mapping with the full configuration"}},
-    {"id": "user_review", "name": {"zh-cn": "用户确认确切配置；参数、能力修订或结构事实变化后重新确认", "en": "User reviews exact configuration; changed arguments, capability revision or schema facts require a new review"}},
+    {"id": "user_review", "name": {"zh-cn": "Runtime 按正式构建步骤、历史原稿或用户唯一完整配置核验确切参数来源；用户确认完整配置，参数、能力修订或结构事实变化后重新确认", "en": "Runtime binds exact parameters to formal construction, a historical draft or one complete original user configuration; the user reviews the full configuration again after argument, capability or schema changes"}},
     {"id": "readonly_config_check", "name": {"zh-cn": "完整配置经正式只读预检；unsupported 阻止创建；保留已观察结构对目标类型的反证，采样不能证明可写；unknown 明示限制后知情确认；创建前复检，稳定事实变化后重新确认", "en": "Formal read-only check of complete arguments; unsupported blocks creation; retain observed schema counterexamples without treating samples as write guarantees; unknown requires informed confirmation; recheck before creation and re-review changed stable facts"}},
     {"id": "draft_construction", "name": {"zh-cn": "Transfer 只读草稿构建入口：确认资源、行粒度、字段范围及写入意图后由 Owner 编译完整配置；新 MongoDB 到 PostgreSQL 快照使用该入口，返回候选参数仍需正式预检与复核", "en": "Transfer read-only draft construction: compile confirmed resources, row grain, fields and write intent into complete configuration; new MongoDB to PostgreSQL snapshots use this entry and still require formal preflight and review"}},
     {"id": "config_precheck", "name": {"zh-cn": "Transfer 完整配置的正式只读预检入口；草稿明确要求检查时也使用，不进入创建复核或批准创建；不读取业务行或保证执行成功", "en": "Formal read-only check entry for complete Transfer arguments, also used when a draft check is explicitly requested without creation review or approval; no business rows or execution guarantee"}},
