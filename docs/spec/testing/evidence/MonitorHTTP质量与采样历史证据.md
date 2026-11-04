@@ -1260,3 +1260,32 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 超时报告仅输出≤4 KiB封闭进度／计数／观测端点及CPU／耗时，删除旧captured_bytes／output_status／输出哈希快照路线；正常非零失败原哈希及错误分类保留。原600秒、完整四秒、8 CPU／12 GiB、4 GiB停止线、60／55分钟及清理要求保持；本轮没有运行真实构建、APT、Docker／网络探针或产品窗口，不推送，不运行Hosted、容量或定时。确定性门禁通过不证明历史Agent步骤／根因已定位、目录消失已修复或正式产品到页面闭环通过，旧a82c1e82失败报告保持不变。
 
 本批只读方案审核为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-output-progress-assessment-20261104-fq2xv7n2/assessment.json`；实施前共享文件快照、独立输入／日志散列与审核在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-stream-progress-20261104-5v3aewmd/`（0700／0600），红与最终门禁日志`/tmp/addp-p19-stream-progress-{red,trace-verified,http-verified}-20261104.log`（0600）。更新62主题证据及索引并回报维护会话；下一步仅在另行批准的原产品full运行中验证真实步骤回执，若仍不完整先定位原因再讨论，不自动重跑或放宽预算。
+
+
+<a id="http-full-stream-resource-deadline-20261104"></a>
+
+## 2026-11-04 增量步骤full窗口在Gateway构建期间资源四秒失败
+
+用户明确批准一次60分钟full，使用新增增量步骤记录，保持600秒产品命令、完整四秒、8 CPU／12 GiB、4 GiB停止线及首次失败即停／不重试／不续窗。准备北京时间2026-11-04 11:29:46.147388起计，55分钟工作截止12:24:46.147388、总截止12:29:46.147388；先按标准12项OWN_INPUTS及三份已提交集成标记准入，不附加整份共享文件一致要求。准备时HEAD为ada61ed137dfa776db8cd97e7d270d97aefee420，期间共享main推进；正式入口启动时固定为`8b320fb8eaa35696753dd3d3b40575a94a5324ef`。本专项12项输入与通过门禁时字节相同，最终15项摘要与当次保存值及固定源码逐一匹配；准备commit和启动commit分别记录，不重置窗口时限、不把启动前HEAD一致检查当成一次真实构建重试。
+
+先尝试核对最近门禁可复用性，因共享提交范围含后续Infra改动而未复用，转为本窗口内标准最小验证；这是证据复用条件不满足，不是产品或门禁失败。标准Infra状态读取退出0；HTTP runner44项／0.983秒、Trace runner178项／5.881秒及JS／登记／System身份Go子门禁均退出0。离线TLS T1为OpenSSL4.1.0、35命令／0.850065秒、125461字节、4次预期拒绝与清理完成。随后仅实际执行一次make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full，原入口报告started_at为11:32:06.898171，run_id=`addp-http-local-29078910b1d34180b764f66260daacc8`；11:38:24.060591结束，含准备517.904227秒，生命周期376.287201秒，make2／report failed。55分钟截止信号未触发，无续窗／额外构建。
+
+固定Nginx缓存、私有网络／TLS／配置投影及测量器准入通过，17.25秒进入Go编译，291.12秒成功后进入缓存预检；完整预检0.430415秒、当次删除1.188114秒分别守原四秒，子进程退出且无遗留锁。System镜像构建命令成功返回，330.44秒进入Gateway构建；353.23秒进入清理。首因stage=product_image_gateway、error_code=resource_sample_deadline_exceeded，operation=measure_owned_volumes；不是Gateway编译／APT失败、Agent600秒或整体窗口到期，没有command_failure回执。
+
+| 失败完整检查步骤 | 实际耗时及意义 |
+| --- | --- |
+| list_owned_containers | 1.418197秒，原CLI等待1.405629秒 |
+| inspect_owned_containers | 1.045219秒，等待1.033554秒 |
+| validate_container_states | 0.000025秒 |
+| list_owned_volumes | 0.097149秒，等待0.090748秒 |
+| measure_owned_volumes | 1.449310秒含取消，等待1.433084秒、取消0.009256秒；只剩原完整四秒余量，未独享四秒 |
+
+失败轮完整跨度4.010071秒，原锁等待0.000026秒；四条CLI等待合计3.963015秒、创建0.028783秒、取消0.009256秒，主要是串行子命令累计等待。容器3／卷7；卷测量的原检查点fragment_status=partial、examined_bytes=0，进入／返回均not_observed。不能将未观测到标记推断为容器内绝未执行、daemon未收到或唯一网络／VM根因；也不能把整轮四秒都归给最后一条测量命令。该失败的私有目录／卷完整占用未取得，不能按零或之前读数补算。
+
+此前86次完整样本全部成功、零读取重试，最长3.084200秒，开始最大间隔4.011820秒；最后五次耗时0.607152／3.084200／0.541188／0.436084／0.693247秒，不是持续单调升高。完整样本硬配额峰值2.25 CPU／3288334336字节内存，已含可写层的私有占用峰值4261007360字节（约3.97 GiB），低于4294967296停止线；这些仅是既往完整样本，不能证明失败轮仍未触线。失败轮只完成容器配额／可写层部分度量，缺卷及私有目录，首因仍保留资源时间预算失败。
+
+清理cleanup.zero_owned_resources=true、failures=[]，4条cleanup归属列表记录完整通过，当次工作目录0，原入口及外部监督退出；不借清理成功反转本轮失败。assertions为空，无最终images／完整Python依赖／受控请求／browser／停源回执，Monitor／Agent／Copilot及前端镜像、真实密码／MFA、采集／API／页面／停源／注销尚未执行。新增增量观测随精确产品构建命令接入，但原600秒超时分支未触发，报告没有步骤摘要；不能据摘要缺失推定观测未运行、已真实验收或构成本次资源等待根因，Agent耗时仍未定位。
+
+原始归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-stream-window-20261104-65cs6cc3/`（0700／0600），含launch（分别保存prepared_commit／source_commit）、15项expected-inputs、未复用门禁说明、准备门禁、Infra状态、entry-started／entry.log／completion、原report及独立audit。报告991343字节，SHA256=`bbbed09f1db3f07a9417b39b6fa5a7753ce6d530b8aec0c0e17ff62333857a98`；入口日志SHA256=`4b189503cf9f87b48a26624ff580e94bae8e60b24da65a4180ba57cd35eb70d4`。核对固定15项来源、所有已完成样本、失败分步／标记／缺失计量、原时限及清理，更新63主题证据与索引并回报维护会话，代码未改也不额外推送触发CI。
+
+本次没有手动重跑／续窗、Hosted、容量或定时，不接管个人环境，不改APT源／依赖／镜像／代理策略，原600秒／四秒及全部资源预算保持。先前Agent命令超时与本次资源守卫失败分别保留；正式产品闭环及增量步骤真实定位均未验收。单次授权已消费，建议下一步先只读关联本次串行CLI等待及已有Docker记录，给出保持原四秒口径的最小方案后讨论，不自动放宽或重跑。
