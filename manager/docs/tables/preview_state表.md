@@ -132,7 +132,21 @@
 }
 ```
 
-顶层按显示模式区分，避免基础预览和快显互相覆盖状态；模式内按渲染域区分，避免把数据类型耦合进 UI 状态。`map` 保存地图视口状态，`scene_3d` 保存三维相机及轻量显示状态；点云 `color_mode` 只允许 `rgb8`、`rgb16`、`elevation`，保存用户明确选择的色值解释或高程着色，不保存自动推断的源数据事实。`table.visible_columns` 按用户选择顺序保存所有引擎表格预览的可见字段名；动态 schema 的稳定对象子字段使用 Provider 声明的点路径身份，例如 `userInfo.gender`。空间表的原始几何字段不写入 `visible_columns`。字段结构变化后，前端只恢复仍然存在的字段；已不存在的字段直接忽略，不保留兼容映射。`scene_3d.render_source` 标识产生该相机的实际渲染源；Manager 受管 artifact 还应写 `scene_3d.artifact_version`，优先使用结果的 `last_execution_id`。读取时只有渲染源和 artifact 版本均匹配才可恢复相机，否则按当前数据重新定位。具体渲染器可以在对应对象内保存自身需要的字段，但不得新增 `model_3d`、`tiles_3d`、`gaussian_splat` 等按数据类型拆分的顶层或模式内 key。
+### 状态分组
+
+顶层按显示模式区分，避免基础预览和快显互相覆盖状态；模式内按渲染域区分，避免把数据类型耦合进 UI 状态。具体渲染器可以在对应对象内保存自身需要的字段，但不得新增 `model_3d`、`tiles_3d`、`gaussian_splat` 等按数据类型拆分的顶层或模式内 key。
+
+### 表格字段选择与恢复
+
+`table.visible_columns` 按用户选择顺序保存所有引擎表格预览的可见字段名；列身份与动态 schema 点路径规则见[表格显示偏好与结构来源](../数据预览与资源树实现规范.md#表格显示偏好与结构来源)。空间表的原始几何字段不写入 `visible_columns`。字段结构变化后，前端只恢复仍然存在的字段；已不存在的字段直接忽略，不保留兼容映射。
+
+### 地图与三维恢复
+
+`map` 保存地图视口状态，`scene_3d` 保存三维相机及轻量显示状态；点云 `color_mode` 只允许 `rgb8`、`rgb16`、`elevation`，保存用户明确选择的色值解释或高程着色，不保存自动推断的源数据事实。
+
+`scene_3d.render_source` 标识产生该相机的实际渲染源；Manager 受管 artifact 还应写 `scene_3d.artifact_version`，优先使用结果的 `last_execution_id`。读取时只有渲染源和 artifact 版本均匹配才可恢复相机，否则按当前数据重新定位。
+
+Three.js S3M 的 `renderer_runtime` 只作为 `quick_view.scene_3d` 内部字段保存；恢复相机时必须同时匹配 `render_source`、可选 `artifact_version` 和 `renderer_runtime=three_s3m`，旧 Cesium ECEF 相机直接忽略。
 
 ## 九、已完成职责收敛
 
@@ -161,4 +175,6 @@
 
 - [快显概念说明](../快显概念说明.md)
 - [快显实现规范](../快显实现规范.md)
+- [快显能力与偏好写入](../quick-view/共用契约.md#api)
+- [预览接口与表格结构来源](../数据预览与资源树实现规范.md#表格显示偏好与结构来源)
 - [数据库架构](../数据库架构.md)
