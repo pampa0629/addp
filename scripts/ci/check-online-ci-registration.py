@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import fnmatch
+from functools import lru_cache
 import json
 import importlib.util
 import re
@@ -130,7 +131,7 @@ def validate_execution_runner_ci(repository: Path) -> None:
                 "          ADDP_CI_HEAD: ${{ github.sha }}\n", "          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}\n",
                 "        uses: ./.github/actions/ci-gate-summary\n", "          gate: Execution online CI runner\n",
                 "          selected: ${{ steps.selection.outputs.run }}\n", "          status: ${{ job.status }}\n")
-    if any(fragment not in job for fragment in required):
+    if any(not source_contract_contains(job, fragment, repository) for fragment in required):
         raise RegistrationError("Execution runner runtime, selection environment or truthful summary is incomplete")
     runs = re.findall(r"(?m)^        run: \|\n((?:          .*\n)+)", job)
     if len(runs) != 2 or len(re.findall(r"(?m)^        run:", job)) != 2:
@@ -148,6 +149,29 @@ def validate_execution_runner_ci(repository: Path) -> None:
         raise RegistrationError("Execution runner must invoke the canonical Make target without masking its exit")
 
 
+@lru_cache(maxsize=16)
+def make_target_definitions(source: str) -> tuple[tuple[str, str, str, str], ...]:
+    """Cache immutable parsing by complete source bytes, never by path or mtime."""
+    return tuple((match.group(1), match.group(2), match.group(3), match.group(0))
+                 for match in re.finditer(r"(?ms)^([a-zA-Z0-9_.-]+):([^\n]*)\n(.*?)(?=^[^\t\n#]|\Z)", source))
+
+
+@lru_cache(maxsize=16)
+def required_test_definitions(source: str) -> frozenset[str]:
+    classes = [node for node in ast.parse(source).body if isinstance(node, ast.ClassDef)]
+    collected = set()
+    while True:
+        found = {node.name for node in classes if node.name not in collected and any(
+            (isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name)
+             and base.value.id == "unittest" and base.attr == "TestCase")
+            or (isinstance(base, ast.Name) and base.id in collected) for base in node.bases)}
+        if not found:
+            break
+        collected.update(found)
+    return frozenset(method.name for node in classes if node.name in collected
+                     for method in node.body if isinstance(method, ast.FunctionDef) and method.name.startswith("test"))
+
+
 def make_target_commands(makefile: str, target: str, visited: set[str] | None = None) -> str:
     """Resolve the same focused Make owners invoked by the Online aggregate."""
     if visited is None:
@@ -155,12 +179,40 @@ def make_target_commands(makefile: str, target: str, visited: set[str] | None = 
     if target in visited:
         return ""
     visited.add(target)
-    match = re.search(rf"(?ms)^{re.escape(target)}:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
+    match = next((entry for entry in make_target_definitions(makefile) if entry[0] == target), None)
     if match is None:
         return ""
-    body = match.group("body")
-    children = re.findall(r"\$\(MAKE\)\s+(test-[a-z0-9-]+)", body)
-    return body + "".join(make_target_commands(makefile, child, visited) for child in children)
+    _, dependencies, body, definition = match
+    children = re.findall(r"\btest-[a-z0-9-]+\b", dependencies.split("#", 1)[0])
+    children += re.findall(r"\$\(MAKE\)\s+(test-[a-z0-9-]+)", body)
+    return definition + "".join(make_target_commands(makefile, child, visited) for child in children)
+
+
+
+def source_contract_contains(source: str, fragment: str, repository: Path | None = None) -> bool:
+    """Make owner calls assert dependency reachability, independent of Make syntax."""
+    owner = re.fullmatch(r"\s*@?\$\(MAKE\)\s+(test-[a-z0-9-]+)\s*", fragment)
+    if owner is None:
+        if (repository is not None and re.fullmatch(r"test_[a-zA-Z0-9_]+", fragment)
+                and re.search(r"(?m)^test-[a-z0-9-]+:", source)):
+            first = re.search(r"(?m)^(test-[a-z0-9-]+):", source).group(1)
+            root = "test-online-runner" if re.search(r"(?m)^test-online-runner:", source) else first
+            closure = make_target_commands(source, root)
+            selector = "scripts/ci/check-online-ci-registration_test.py"
+            tests = repository / selector
+            if selector in closure and tests.is_file():
+                return fragment in required_test_definitions(tests.read_text())
+        return fragment in source
+    target = owner.group(1)
+    definitions = make_target_definitions(source)
+    if not any(match[0] == target for match in definitions):
+        return False
+    for match in definitions:
+        dependencies = re.findall(r"\btest-[a-z0-9-]+\b", match[1].split("#", 1)[0])
+        dependencies += re.findall(r"\$\(MAKE\)\s+(test-[a-z0-9-]+)", match[2])
+        if target in dependencies:
+            return True
+    return False
 
 
 def compose_service_block(compose: str, service: str) -> str | None:
@@ -224,7 +276,7 @@ def load_deployment_profiles(repository: Path) -> dict[str, str]:
         'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
         "printf 'database=%s\\n' \"$POSTGRES_DB\"",
     )
-    missing = [fragment for fragment in required_fragments if fragment not in text]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(text, fragment, repository)]
     if missing:
         raise RegistrationError(
             "Online host gate is missing: " + ", ".join(missing)
@@ -282,11 +334,11 @@ def validate_workflow_runtime_health_profile(repository: Path, registered: set[s
         if not (repository / "scripts/test" / filename).is_file():
             raise RegistrationError(f"Runtime health requires {filename}")
     makefile = (repository / "Makefile").read_text()
-    if "$(MAKE) test-workflow-runtime-health-online-runner" not in make_target_commands(makefile, "test-online-runner"):
+    if not source_contract_contains(make_target_commands(makefile, "test-online-runner"), "$(MAKE) test-workflow-runtime-health-online-runner", repository):
         raise RegistrationError("Runtime health regression must belong to test-online-runner")
     commands = make_target_commands(makefile, "test-workflow-runtime-health-online-runner")
     for fragment in ("workflow-runtime-health-recovery-online_test.py", "online-hosted-workflow-health-gate_test.py", "WorkflowRuntimeHealth"):
-        if fragment not in commands:
+        if not source_contract_contains(commands, fragment, repository):
             raise RegistrationError(f"Runtime health regression missing {fragment}")
     gate = (repository / "scripts/test/online-hosted-workflow-health-gate.sh").read_text()
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
@@ -295,7 +347,7 @@ def validate_workflow_runtime_health_profile(repository: Path, registered: set[s
                      'workflow-runtime-health-recovery-online.py --restore-only', 'docker rm -fv', 'runtime_cleanup=',
                      'workflow-runtime-health-recovery-online.py --assert-empty', 'image-missing',
                      'verify_online_product_identity', 'startup-missing'):
-        if fragment not in gate:
+        if not source_contract_contains(gate, fragment, repository):
             raise RegistrationError(f"Runtime health Hosted lifecycle missing {fragment}")
     scenario = (repository / "scripts/test/workflow-runtime-health-recovery-online.py").read_text()
     tests = (repository / "scripts/test/workflow-runtime-health-recovery-online_test.py").read_text()
@@ -327,7 +379,7 @@ def validate_module_registry_process_profile(repository: Path, registered: set[s
         "ADDP_HOST_NODE_IPS",
         "bash scripts/dev/stop-exact-process.sh -manager",
     )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
         raise RegistrationError(
             "module-registry-recovery process profile is missing: " + ", ".join(missing)
@@ -340,7 +392,7 @@ def validate_module_registry_process_profile(repository: Path, registered: set[s
             raise RegistrationError(f"module-registry-recovery process profile requires {relative}")
     start_script = (repository / "scripts/dev/start.sh").read_text(encoding="utf-8")
     for fragment in ("--exact-process", "ADDP_ONLINE_HOST", "--wait-live"):
-        if fragment not in start_script:
+        if not source_contract_contains(start_script, fragment, repository):
             raise RegistrationError(
                 f"module-registry-recovery exact start contract is missing {fragment}"
             )
@@ -358,7 +410,7 @@ def validate_consumer_engine_recovery_profile(repository: Path, registered: set[
         "consumer-process-stability-online.py",
         "consumer-engine-recovery-online.py --restore-only",
     )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
         raise RegistrationError(
             "consumer-engine-recovery process profile is missing: " + ", ".join(missing)
@@ -374,7 +426,7 @@ def validate_consumer_engine_recovery_profile(repository: Path, registered: set[
             raise RegistrationError(f"consumer-engine-recovery requires {relative}")
     fixture = (repository / "business/scripts/online-engine-fixture.sh").read_text(encoding="utf-8")
     for fragment in ("ADDP_ONLINE_HOST", "--env-file /dev/null", "business-postgres"):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"consumer-engine-recovery fixture contract is missing {fragment}"
             )
@@ -396,7 +448,7 @@ def validate_enterprise_catalog_publishing_profile(repository: Path, registered:
         'bash scripts/dev/start.sh "$START_TARGET"',
         "playwright install chromium",
     )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
         raise RegistrationError(
             "enterprise-catalog-publishing profile is missing: " + ", ".join(missing)
@@ -423,13 +475,13 @@ def validate_enterprise_catalog_publishing_profile(repository: Path, registered:
         "catalog-withdraw-curation-action",
         "catalog_lifecycle_actions",
     ):
-        if fragment not in browser_spec:
+        if not source_contract_contains(browser_spec, fragment, repository):
             raise RegistrationError(
                 f"enterprise-catalog-publishing browser contract is missing {fragment}"
             )
     fixture = (repository / "business/scripts/online-engine-fixture.sh").read_text(encoding="utf-8")
     for fragment in ("addp_online_catalog_fixture", "CREATE TABLE IF NOT EXISTS", "ON CONFLICT"):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"enterprise-catalog-publishing fixture contract is missing {fragment}"
             )
@@ -452,7 +504,7 @@ def validate_workbench_service_consumption_profile(repository: Path, registered:
         'bash scripts/dev/start.sh "$START_TARGET"',
         "playwright install chromium",
     )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
         raise RegistrationError(
             "workbench-service-consumption profile is missing: " + ", ".join(missing)
@@ -473,7 +525,7 @@ def validate_workbench_service_consumption_profile(repository: Path, registered:
         "REVOKE ALL PRIVILEGES, GRANT OPTION",
         "GRANT SELECT ON",
     ):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"workbench-service-consumption fixture contract is missing {fragment}"
             )
@@ -506,20 +558,20 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         'scripts/test/online-engine-registration.py',
         'playwright install --with-deps chromium',
     ):
-        if fragment not in hosted:
+        if not source_contract_contains(hosted, fragment, repository):
             raise RegistrationError(f"manager-internal-artifact-lineage Hosted profile is missing {fragment}")
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
     job = re.search(r"(?ms)^  manager-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     if not job or "runs-on: ubuntu-24.04" not in job.group("body"):
         raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
     manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
-    if (not manager_input or any(fragment not in manager_input.group('body') for fragment in
+    if (not manager_input or any(not source_contract_contains(manager_input.group('body'), fragment, repository) for fragment in
             ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-netcdf', '- native-grib', '- native-envi', '- kml-export', '- filegdb-authorization'))
-            or any(fragment not in job.group('body') for fragment in (
+            or any(not source_contract_contains(job.group('body'), fragment, repository) for fragment in (
                 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}',
                 'name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)',
                 'name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}'))
-            or any(fragment not in hosted for fragment in (
+            or any(not source_contract_contains(hosted, fragment, repository) for fragment in (
                 'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-authorization)',
                 'manager-case.json', 'addp.manager-acceptance-case/v1'))):
         raise RegistrationError('Manager acceptance case requires explicit full/media selection and case-specific evidence')
@@ -530,9 +582,9 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     netcdf_owner = (repository / netcdf_paths[0]).read_text(encoding='utf-8')
     netcdf_case_owner = (repository / 'scripts/test/manager-internal-artifact-lineage-online.py').read_text(encoding='utf-8')
     netcdf_make = (repository / 'Makefile').read_text(encoding='utf-8')
-    if (any(fragment not in netcdf_owner for fragment in ('native-netcdf', 'addp.manager-netcdf/v2', 'manager-netcdf.json', 'source_drift_denied', 'original_download_verified', 'ExactFileMetadataGrants', 'metadata_authorization', 'validate_structural_metadata'))
+    if (any(not source_contract_contains(netcdf_owner, fragment, repository) for fragment in ('native-netcdf', 'addp.manager-netcdf/v2', 'manager-netcdf.json', 'source_drift_denied', 'original_download_verified', 'ExactFileMetadataGrants', 'metadata_authorization', 'validate_structural_metadata'))
             or "if case == 'native-netcdf':" not in netcdf_case_owner
-            or any(fragment not in netcdf_make for fragment in (netcdf_paths[1], netcdf_paths[3]))):
+            or any(not source_contract_contains(netcdf_make, fragment, repository) for fragment in (netcdf_paths[1], netcdf_paths[3]))):
         raise RegistrationError('NetCDF case must retain explicit dispatch, standard gates, raw values, source version, download and cleanup evidence')
     grib_paths=('scripts/test/manager-grib-online.py','scripts/test/manager-grib-online_test.py',
                 'business/scripts/online-grib-fixture.py','console/frontend/e2e/online/manager-grib.spec.js',
@@ -541,7 +593,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         raise RegistrationError('GRIB case requires owner, byte oracle, browser and native regressions')
     grib_owner=(repository/grib_paths[0]).read_text()
     if ("if case == 'native-grib':" not in netcdf_case_owner
-        or any(path not in netcdf_make for path in (grib_paths[1],grib_paths[3],'test_online_grib_fixture.py'))
+        or any(not source_contract_contains(netcdf_make, path, repository) for path in (grib_paths[1],grib_paths[3],'test_online_grib_fixture.py'))
         or any(value not in grib_owner for value in ('addp.manager-grib/v2','addp.manager-grib-browser/v2','viewport_grid_verified','decoded_native_units','source_drift_denied','original_download_verified','manager-grib.json'))):
         raise RegistrationError('GRIB case must retain decoded units, message windows, version, downloads and cleanup evidence')
     envi_paths=('scripts/test/manager-envi-online.py','scripts/test/manager-envi-online_test.py','business/scripts/online-envi-fixture.py','engines/geopython-workflow/test_online_envi_fixture.py')
@@ -549,8 +601,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         raise RegistrationError('ENVI requires its exact pair owner, physical oracle and regressions')
     envi_owner=(repository/envi_paths[0]).read_text()
     if ("if case == 'native-envi':" not in netcdf_case_owner
-        or 'scripts/test/manager-envi-online_test.py' not in netcdf_make
-        or 'test_online_envi_fixture.py' not in netcdf_make
+        or not source_contract_contains(netcdf_make, 'scripts/test/manager-envi-online_test.py', repository)
+        or not source_contract_contains(netcdf_make, 'test_online_envi_fixture.py', repository)
         or any(value not in envi_owner for value in ('addp.manager-envi/v4','verify_minio_node_scope','minio_node_scope','nonrecursive_future_and_sibling_isolation','natural_expiry','zero_current_source_rules','future_objects_removed','validate_model_bundle','validate_structural_metadata','validate_content_metadata','source_authorization','metadata_details_hidden','current_source_revocation_verified','issuer_permissions=ENVI_INITIALIZER_PERMISSIONS',"scan_client=issuer if storage=='nfs' else client",'initializer_permissions_verified','source_scans','deleted-cog','grant.cleanup()','manager-envi.json'))):
         raise RegistrationError('ENVI requires page/download/current authorization/cache/cleanup through standard gates')
     envi_browser=(repository/'console/frontend/e2e/online/manager-img.spec.js').read_text()
@@ -585,7 +637,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
                      'def run_native_raster_media_case(', 'manager-native-raster-media.json',
                      'addp.manager-native-raster-media/v2', 'case = manager_case(os.environ)',
                      'if case == "native-raster-media":'):
-        if fragment not in manager_owner:
+        if not source_contract_contains(manager_owner, fragment, repository):
             raise RegistrationError('Manager acceptance case owner must preserve full and separate media routing: ' + fragment)
     make = (repository / 'Makefile').read_text(encoding='utf-8')
     img_runner = re.search(r'(?ms)^test-manager-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)', make)
@@ -593,8 +645,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     filegdb_browser = repository / 'console/frontend/e2e/online/manager-filegdb.spec.js'
     if (not filegdb.is_file() or not (repository / 'scripts/test/manager-filegdb-physical.py').is_file()
             or not filegdb_browser.is_file()
-            or not img_runner or 'scripts/test/manager-filegdb-online_test.py' not in img_runner.group('body')
-            or 'console/frontend/e2e/online/manager-filegdb.spec.js' not in img_runner.group('body')
+            or not img_runner or 'scripts/test/manager-filegdb-online_test.py' not in make_target_commands(make, "test-manager-online-runner")
+            or 'console/frontend/e2e/online/manager-filegdb.spec.js' not in make_target_commands(make, "test-manager-online-runner")
             or "if case == 'filegdb-authorization':" not in manager_owner
             or 'manager-filegdb-online' not in manager_owner
             or 'python3 -m scripts.test.manager-filegdb-physical unmount' not in hosted
@@ -604,25 +656,25 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     kml_browser = (repository / 'console/frontend/e2e/online/manager-kml-export.spec.js').read_text(encoding='utf-8')
     if ("if case == 'kml-export':" not in manager_owner
             or 'manager-kml-export-online' not in manager_owner
-            or not img_runner or 'scripts/test/manager-kml-export-online_test.py' not in img_runner.group('body')
-            or 'console/frontend/e2e/online/manager-kml-export.spec.js' not in img_runner.group('body')
-            or any(fragment not in hosted for fragment in ('online-metric-postgres-fixture.sh start', 'online-metric-postgres-fixture.sh stop', '-security -meta -manager -monitor -transfer', '--wait-protection-owners manager,transfer'))
-            or any(fragment not in kml_owner for fragment in ('initialize_exact_record_read_grants', 'validate_kml', 'source_snapshot', 'manager-kml-export-browser.json', 'source_unchanged=True'))
-            or any(fragment not in kml_browser for fragment in ("name: 'KML'", "waitForEvent('download'", 'actual_button_download: true', 'monitor_verified: true'))):
+            or not img_runner or 'scripts/test/manager-kml-export-online_test.py' not in make_target_commands(make, "test-manager-online-runner")
+            or 'console/frontend/e2e/online/manager-kml-export.spec.js' not in make_target_commands(make, "test-manager-online-runner")
+            or any(not source_contract_contains(hosted, fragment, repository) for fragment in ('online-metric-postgres-fixture.sh start', 'online-metric-postgres-fixture.sh stop', '-security -meta -manager -monitor -transfer', '--wait-protection-owners manager,transfer'))
+            or any(not source_contract_contains(kml_owner, fragment, repository) for fragment in ('initialize_exact_record_read_grants', 'validate_kml', 'source_snapshot', 'manager-kml-export-browser.json', 'source_unchanged=True'))
+            or any(not source_contract_contains(kml_browser, fragment, repository) for fragment in ("name: 'KML'", "waitForEvent('download'", 'actual_button_download: true', 'monitor_verified: true'))):
         raise RegistrationError('Manager KML export requires real button, physical oracle, identity and isolated cleanup regressions')
     if ("img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)" not in manager_owner
             or "for source_format in ('img', 'jpeg2000', 'grd', 'tiff')" not in manager_owner
-            or not img_runner or '\t@python3 -m unittest scripts/test/manager-img-online_test.py' not in img_runner.group('body')
-            or '\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js' not in img_runner.group('body')
-            or any(fragment not in img_owner for fragment in ('manager-img.spec.js', 'generate_raster_cog', 'cleanup_managed_artifact', 'source_format', 'JPEG2000_SOURCES', 'GRD_SOURCES', 'grid_facts', 'addp.manager-raster-media/v2'))
-            or any(fragment not in img_browser for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'source_image_absent', 'unsupported_message_visible', 'download_sha256', 'matchesSourcePreviewResponse', 'source_preview_verified', 'addp.manager-raster-media-browser/v4'))):
+            or not img_runner or '\t@python3 -m unittest scripts/test/manager-img-online_test.py' not in make_target_commands(make, "test-manager-online-runner")
+            or '\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js' not in make_target_commands(make, "test-manager-online-runner")
+            or any(not source_contract_contains(img_owner, fragment, repository) for fragment in ('manager-img.spec.js', 'generate_raster_cog', 'cleanup_managed_artifact', 'source_format', 'JPEG2000_SOURCES', 'GRD_SOURCES', 'grid_facts', 'addp.manager-raster-media/v2'))
+            or any(not source_contract_contains(img_browser, fragment, repository) for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'source_image_absent', 'unsupported_message_visible', 'download_sha256', 'matchesSourcePreviewResponse', 'source_preview_verified', 'addp.manager-raster-media-browser/v4'))):
         raise RegistrationError('Manager IMG Hosted subscene must include real generation, browser, cleanup and standard regressions')
     tiff_physical=(repository/'business/scripts/online-raster-minio-fixture.py').read_text()
     tiff_native=(repository/'engines/geopython-workflow/test_online_raster_fixture.py').read_text()
-    if (any(fragment not in img_owner for fragment in ('TIFF_SOURCES','validate_tiff_meta','validate_tiff_physical','refresh_tiff','download_members'))
-            or any(fragment not in img_browser for fragment in ('tiff_pages_verified','cog_metadata_visible','zero_overviews_verified','refreshed_metadata_verified','tiff-unlocated-small-cog-button.zip'))
-            or any(fragment not in tiff_physical for fragment in ('def manager_tiff_facts','def manager_seed_tiff','def manager_tiff_source','tiff-source','full_check=True'))
-            or any(fragment not in tiff_native for fragment in ('test_manager_tiff_unlocated_small_cog_complete_pixels_and_source_bytes','test_manager_tiff_rejects_semantic_tampering_even_with_rewritten_receipt'))):
+    if (any(not source_contract_contains(img_owner, fragment, repository) for fragment in ('TIFF_SOURCES','validate_tiff_meta','validate_tiff_physical','refresh_tiff','download_members'))
+            or any(not source_contract_contains(img_browser, fragment, repository) for fragment in ('tiff_pages_verified','cog_metadata_visible','zero_overviews_verified','refreshed_metadata_verified','tiff-unlocated-small-cog-button.zip'))
+            or any(not source_contract_contains(tiff_physical, fragment, repository) for fragment in ('def manager_tiff_facts','def manager_seed_tiff','def manager_tiff_source','tiff-source','full_check=True'))
+            or any(not source_contract_contains(tiff_native, fragment, repository) for fragment in ('test_manager_tiff_unlocated_small_cog_complete_pixels_and_source_bytes','test_manager_tiff_rejects_semantic_tampering_even_with_rewritten_receipt'))):
         raise RegistrationError('Manager TIFF COG requires complete physical, exact refresh, browser and regression proofs')
     for relative in ('scripts/test/manager-orc-online.py','scripts/test/manager-orc-online_test.py',
                      'business/scripts/online-orc-fixture.py','console/frontend/e2e/online/manager-orc.spec.js'):
@@ -632,10 +684,10 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     orc_browser = (repository / 'console/frontend/e2e/online/manager-orc.spec.js').read_text()
     if ("if case == 'native-table-orc':" not in manager_owner
             or 'manager-orc-online' not in manager_owner
-            or not img_runner or 'scripts/test/manager-orc-online_test.py' not in img_runner.group('body')
-            or 'console/frontend/e2e/online/manager-orc.spec.js' not in img_runner.group('body')
-            or any(fragment not in orc_owner for fragment in ('task-definitions','source_version','physical("verify")','physical("delete")','manager-orc.json'))
-            or any(fragment not in orc_browser for fragment in ('page_button_verified: true','original_button_download_verified: true',"expect(expected.permissions.size).toBe(11)"))):
+            or not img_runner or 'scripts/test/manager-orc-online_test.py' not in make_target_commands(make, "test-manager-online-runner")
+            or 'console/frontend/e2e/online/manager-orc.spec.js' not in make_target_commands(make, "test-manager-online-runner")
+            or any(not source_contract_contains(orc_owner, fragment, repository) for fragment in ('task-definitions','source_version','physical("verify")','physical("delete")','manager-orc.json'))
+            or any(not source_contract_contains(orc_browser, fragment, repository) for fragment in ('page_button_verified: true','original_button_download_verified: true',"expect(expected.permissions.size).toBe(11)"))):
         raise RegistrationError('Manager ORC requires complete page, download, batch and cleanup evidence')
     browser_config = (repository / "console/frontend/playwright.online.config.js").read_text(encoding="utf-8")
     for flag in ("--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"):
@@ -671,7 +723,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "index-tsv-restore",
         "index source restoration refused unexpected bytes",
     ):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"manager-internal-artifact-lineage fixture contract is missing {fragment}"
             )
@@ -738,17 +790,17 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "addp.manager-execution-events/v1",
         "manager-execution-events.json",
     ):
-        if fragment not in owner:
+        if not source_contract_contains(owner, fragment, repository):
             raise RegistrationError(
                 f"manager-internal-artifact-lineage owner contract is missing {fragment}"
             )
     nfs = (repository / "business/scripts/online-manager-nfs-fixture.sh").read_text(encoding="utf-8")
     for fragment in ("GITHUB_ACTIONS", "ADDP_ONLINE_HOSTED", "127.0.0.1(ro,sync", ".addp-online-owner", "online-content-boundary-fixture.py", "NFS export cleanup has residuals"):
-        if fragment not in nfs:
+        if not source_contract_contains(nfs, fragment, repository):
             raise RegistrationError(f"Manager NFS lifecycle contract is missing {fragment}")
     generator = (repository / "business/scripts/online-content-boundary-fixture.py").read_text(encoding="utf-8")
     for fragment in ("directory-convergence", "refs-convergence"):
-        if fragment not in generator:
+        if not source_contract_contains(generator, fragment, repository):
             raise RegistrationError(f"Manager boundary fixture contract is missing {fragment}")
     browser = (
         repository
@@ -816,7 +868,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "refresh_preserved_page",
         "refresh_preserved_empty_sheet",
     ):
-        if fragment not in browser:
+        if not source_contract_contains(browser, fragment, repository):
             raise RegistrationError(
                 f"manager-internal-artifact-lineage browser contract is missing {fragment}"
             )
@@ -842,7 +894,7 @@ def validate_manager_hybrid_search_profile(repository: Path, registered: set[str
         "bash business/scripts/online-manager-minio-fixture.sh stop",
         'bash scripts/dev/start.sh "$START_TARGET"',
     )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
         raise RegistrationError(
             "manager-hybrid-search profile is missing: " + ", ".join(missing)
@@ -862,7 +914,7 @@ def validate_manager_hybrid_search_profile(repository: Path, registered: set[str
         "ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT",
         "MC_HOST_fixture",
     ):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"manager-hybrid-search fixture contract is missing {fragment}"
             )
@@ -878,7 +930,7 @@ def validate_manager_hybrid_search_profile(repository: Path, registered: set[str
         "vector_hits",
         '"residual_resources": -1',
     ):
-        if fragment not in owner:
+        if not source_contract_contains(owner, fragment, repository):
             raise RegistrationError(
                 f"manager-hybrid-search owner contract is missing {fragment}"
             )
@@ -898,7 +950,7 @@ def validate_security_transfer_protection_profile(repository: Path, registered: 
         "bash business/scripts/online-security-transfer-fixture.sh stop",
         'bash scripts/dev/start.sh "$START_TARGET"',
     )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
         raise RegistrationError(
             "security-transfer-protection profile is missing: " + ", ".join(missing)
@@ -918,7 +970,7 @@ def validate_security_transfer_protection_profile(repository: Path, registered: 
         'role: "read"',
         "addp_online_security.transfer_masked",
     ):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"security-transfer-protection fixture contract is missing {fragment}"
             )
@@ -932,7 +984,7 @@ def validate_security_transfer_protection_profile(repository: Path, registered: 
         "cleanup_tasks(client, tasks)",
         '"residual_resources": 0',
     ):
-        if fragment not in owner:
+        if not source_contract_contains(owner, fragment, repository):
             raise RegistrationError(
                 f"security-transfer-protection owner contract is missing {fragment}"
             )
@@ -992,7 +1044,7 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
             raise RegistrationError(f"security-plaintext-access requires {relative}")
         text = path.read_text()
         for fragment in fragments:
-            if fragment not in text:
+            if not source_contract_contains(text, fragment, repository):
                 raise RegistrationError("security-plaintext-access contract is missing " + fragment)
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
     job = re.search(r"(?ms)^  security-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
@@ -1002,7 +1054,7 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
         raise RegistrationError("security-plaintext-access must not also dispatch on self-hosted")
     aggregate = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
     for test in ("security-plaintext-access-online_test.py", "online-hosted-security-gate_test.py"):
-        if not aggregate or test not in aggregate:
+        if not aggregate or not source_contract_contains(aggregate, test, repository):
             raise RegistrationError("security-plaintext-access regression must enter test-online-runner")
 
 
@@ -1034,7 +1086,7 @@ def validate_security_mysql_owner_protection_profile(
         'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN',
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
     ):
-        if fragment not in hosted:
+        if not source_contract_contains(hosted, fragment, repository):
             raise RegistrationError(f"security-mysql-owner-protection Hosted profile is missing {fragment}")
     host = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
     if "security-mysql-owner-protection" in host:
@@ -1049,7 +1101,7 @@ def validate_security_mysql_owner_protection_profile(
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     aggregate = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
     for test in ("online-hosted-security-gate_test.py", "online-security-owner-fixture_test.py", "security-mysql-owner-protection-online_test.py"):
-        if not aggregate or test not in aggregate:
+        if not aggregate or not source_contract_contains(aggregate, test, repository):
             raise RegistrationError("security-mysql-owner-protection regression must enter test-online-runner")
     for relative in (
         "business/scripts/online-security-owner-fixture.sh",
@@ -1072,7 +1124,7 @@ def validate_security_mysql_owner_protection_profile(
         'sourceVersion: NumberLong("9007199254740993")',
         "addp_online_security.mongodb_query_transfer", "addp_online_security.mongodb_query_control", "addp_online_security.mongodb_query_denied",
     ):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError("security-mysql-owner-protection fixture contract is missing " + fragment)
     owner = (
         repository / "scripts/test/security-mysql-owner-protection-online.py"
@@ -1103,7 +1155,7 @@ def validate_security_mysql_owner_protection_profile(
         '"effect": "suppress"',
         '"residual_resources": 0',
     ):
-        if fragment not in owner_contract:
+        if not source_contract_contains(owner_contract, fragment, repository):
             raise RegistrationError(
                 "security-mysql-owner-protection owner contract is missing "
                 + fragment
@@ -1229,7 +1281,7 @@ def validate_security_mysql_owner_protection_profile(
                      'verify_mysql_transfer_output(', '"security.enrollment.update"',
                      'exercise_resource_validity(', 'wait_protection_deadline(', '"resource_validity": resource_validity',
                      '"natural_expiry_verified"', '"permanent_restored"', '"resource_permanent_validity_visible"'):
-        if fragment not in owner:
+        if not source_contract_contains(owner, fragment, repository):
             raise RegistrationError("security-mysql-owner-protection must dispatch and validate export browser: " + fragment)
     browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")
     for fragment in (
@@ -1257,7 +1309,7 @@ def validate_security_mysql_owner_protection_profile(
         "security-manager-protected-preview.png", "security-manager-field-search.png", ".field-name mark",
         "expect(browserErrors).toEqual([])", "expect(failedResponses).toEqual([])",
     ):
-        if fragment not in browser:
+        if not source_contract_contains(browser, fragment, repository):
             raise RegistrationError("security-mysql-owner-protection export browser contract is missing " + fragment)
 
 
@@ -1281,7 +1333,7 @@ def validate_oceanbase_consumer_flow_profile(
         "bash business/scripts/online-oceanbase-consumer-fixture.sh stop",
         'bash scripts/dev/start.sh "$START_TARGET"',
     )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
         raise RegistrationError(
             "oceanbase-consumer-flow profile is missing: " + ", ".join(missing)
@@ -1307,7 +1359,7 @@ def validate_oceanbase_consumer_flow_profile(
         "start|advance|stop|status",
         "reset_fixture",
     ):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"oceanbase-consumer-flow fixture contract is missing {fragment}"
             )
@@ -1334,7 +1386,7 @@ def validate_oceanbase_consumer_flow_profile(
         "cleanup_service(client, service_id)",
         '"residual_resources": 0',
     ):
-        if fragment not in owner_contract:
+        if not source_contract_contains(owner_contract, fragment, repository):
             raise RegistrationError(
                 f"oceanbase-consumer-flow owner contract is missing {fragment}"
             )
@@ -1363,7 +1415,7 @@ def validate_tidb_consumer_flow_profile(
         "bash business/scripts/online-tidb-consumer-fixture.sh stop",
         'bash scripts/dev/start.sh "$START_TARGET"',
     )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
         raise RegistrationError(
             "tidb-consumer-flow profile is missing: " + ", ".join(missing)
@@ -1391,7 +1443,7 @@ def validate_tidb_consumer_flow_profile(
         "down --volumes --remove-orphans",
         "assert_zero_residue",
     ):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"tidb-consumer-flow fixture contract is missing {fragment}"
             )
@@ -1428,7 +1480,7 @@ def validate_tidb_consumer_flow_profile(
         '"schema_version": "addp.relational-consumer-flow-online/v1"',
         '"residual_resources": 0',
     ):
-        if fragment not in owner:
+        if not source_contract_contains(owner, fragment, repository):
             raise RegistrationError(
                 f"tidb-consumer-flow owner contract is missing {fragment}"
             )
@@ -1473,7 +1525,7 @@ def validate_opengauss_consumer_flow_profile(
         "bash scripts/dev/stop.sh",
         "bash scripts/infra/down.sh --volumes --force",
     ):
-        if fragment not in hosted:
+        if not source_contract_contains(hosted, fragment, repository):
             raise RegistrationError(
                 f"opengauss-consumer-flow Hosted profile is missing {fragment}"
             )
@@ -1483,7 +1535,7 @@ def validate_opengauss_consumer_flow_profile(
         "docker build --file scripts/infra/Dockerfile.postgres",
         '--tag "$POSTGRES_IMAGE" scripts/infra',
     ):
-        if fragment not in infra_up:
+        if not source_contract_contains(infra_up, fragment, repository):
             raise RegistrationError(
                 f"opengauss-consumer-flow Infra lifecycle is missing {fragment}"
             )
@@ -1519,7 +1571,7 @@ def validate_opengauss_consumer_flow_profile(
         "ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE",
         '"engine_type": "opengauss"',
     ):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"opengauss-consumer-flow fixture contract is missing {fragment}"
             )
@@ -1535,7 +1587,7 @@ def validate_opengauss_consumer_flow_profile(
         'test_result.get("success") is not True',
         "ADDP_ONLINE_CONSUMER_ENGINE_ID",
     ):
-        if fragment not in registration:
+        if not source_contract_contains(registration, fragment, repository):
             raise RegistrationError(
                 f"opengauss-consumer-flow registration helper is missing {fragment}"
             )
@@ -1551,7 +1603,7 @@ def validate_opengauss_consumer_flow_profile(
         '"schema_version": "addp.relational-consumer-flow-online/v1"',
         '"residual_resources": 0',
     ):
-        if fragment not in owner:
+        if not source_contract_contains(owner, fragment, repository):
             raise RegistrationError(
                 f"opengauss-consumer-flow owner contract is missing {fragment}"
             )
@@ -1570,7 +1622,7 @@ def validate_opengauss_consumer_flow_profile(
         "PermissionKeys: permissions",
         '"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"',
     ):
-        if fragment not in identity_fixture:
+        if not source_contract_contains(identity_fixture, fragment, repository):
             raise RegistrationError(
                 f"opengauss-consumer-flow identity fixture is missing {fragment}"
             )
@@ -1606,7 +1658,7 @@ def validate_kingbase_consumer_flow_profile(
         "media_sha256=",
         "license_sha256=",
     ):
-        if fragment not in owner_gate:
+        if not source_contract_contains(owner_gate, fragment, repository):
             raise RegistrationError(
                 f"kingbase-consumer-flow owner-managed profile is missing {fragment}"
             )
@@ -1639,7 +1691,7 @@ def validate_kingbase_consumer_flow_profile(
         '"engine_type": "kingbase"',
         "start|advance|stop|status",
     ):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"kingbase-consumer-flow fixture contract is missing {fragment}"
             )
@@ -1654,7 +1706,7 @@ def validate_kingbase_consumer_flow_profile(
         '"schema_version": "addp.relational-consumer-flow-online/v1"',
         '"residual_resources": 0',
     ):
-        if fragment not in owner:
+        if not source_contract_contains(owner, fragment, repository):
             raise RegistrationError(
                 f"kingbase-consumer-flow owner contract is missing {fragment}"
             )
@@ -1682,7 +1734,7 @@ def validate_transfer_insert_only_mysql_profile(
         'bash scripts/dev/start.sh "$START_TARGET"',
         "playwright install chromium",
     )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
         raise RegistrationError(
             "transfer-insert-only-mysql profile is missing: " + ", ".join(missing)
@@ -1727,7 +1779,7 @@ def validate_transfer_insert_only_mysql_profile(
         "target rows do not prove insert-only semantics",
         "DECIMAL(6,2)",
     ):
-        if fragment not in fixture:
+        if not source_contract_contains(fixture, fragment, repository):
             raise RegistrationError(
                 f"transfer-insert-only-mysql fixture contract is missing {fragment}"
             )
@@ -1746,7 +1798,7 @@ def validate_transfer_insert_only_mysql_profile(
         owner_contract = owner + (
             repository / "scripts/test/security-transfer-protection-online.py"
         ).read_text(encoding="utf-8")
-        if fragment not in owner_contract:
+        if not source_contract_contains(owner_contract, fragment, repository):
             raise RegistrationError(
                 f"transfer-insert-only-mysql owner contract is missing {fragment}"
             )
@@ -1763,7 +1815,7 @@ def validate_transfer_insert_only_mysql_profile(
         "controlFixture(repository, 'verify')",
         "task_deleted: true",
     ):
-        if fragment not in browser:
+        if not source_contract_contains(browser, fragment, repository):
             raise RegistrationError(
                 f"transfer-insert-only-mysql browser contract is missing {fragment}"
             )
@@ -1796,7 +1848,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
         'playwright install --with-deps chromium',
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
     ):
-        if fragment not in hosted:
+        if not source_contract_contains(hosted, fragment, repository):
             raise RegistrationError(f"transfer-relational-sql-etl Hosted profile is missing {fragment}")
     host = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
     if "transfer-relational-sql-etl" in host:
@@ -1812,8 +1864,8 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
     owner_gate = re.search(r"(?ms)^test-transfer-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)", makefile)
-    if (aggregate is None or "$(MAKE) test-transfer-online-runner" not in aggregate.group("body")
-            or owner_gate is None or "scripts/test/online-hosted-transfer-gate_test.py" not in owner_gate.group("body")):
+    if (aggregate is None or not source_contract_contains(make_target_commands(makefile, "test-online-runner"), "$(MAKE) test-transfer-online-runner", repository)
+            or owner_gate is None or "scripts/test/online-hosted-transfer-gate_test.py" not in make_target_commands(makefile, "test-transfer-online-runner")):
         raise RegistrationError("transfer-relational-sql-etl Hosted regression must enter test-online-runner")
     contracts = {
         "Makefile": ("go test ./internal/planner -run '^TestHostedWriteFailureTaskContract$$' -count=1",),
@@ -1869,7 +1921,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
             raise RegistrationError(f"transfer-relational-sql-etl requires {relative}")
         content = path.read_text(encoding="utf-8")
         for fragment in fragments:
-            if fragment not in content:
+            if not source_contract_contains(content, fragment, repository):
                 raise RegistrationError(f"transfer-relational-sql-etl {relative} contract is missing {fragment}")
 
 
@@ -1892,7 +1944,7 @@ def load_workflow_suites(
         "bash scripts/test/online-host-gate.sh",
         "actions/upload-artifact@",
     )
-    missing = [fragment for fragment in required_fragments if fragment not in text]
+    missing = [fragment for fragment in required_fragments if not source_contract_contains(text, fragment, repository)]
     if missing:
         raise RegistrationError("Online T4 workflow is missing: " + ", ".join(missing))
     jobs_text = text.split("\njobs:\n", 1)
@@ -1954,7 +2006,7 @@ def load_workflow_suites(
             lifecycle_flag,
             "ADDP_ONLINE_SECRET_DIR:",
         ):
-            if fragment not in text:
+            if not source_contract_contains(text, fragment, repository):
                 raise RegistrationError(
                     f"Online T4 workflow is missing external profile fragment: {fragment}"
                 )
@@ -2067,7 +2119,7 @@ def validate_metric_engine_variant(repository: Path, registered: set[str]) -> No
         "      ADDP_ONLINE_METRIC_ENGINE_TYPE: ${{ matrix.metric_engine }}\n",
         "          name: online-t4-metric-service-revision-lifecycle-${{ matrix.metric_engine }}-${{ github.run_id }}\n",
     )
-    if any(fragment not in body for fragment in required):
+    if any(not source_contract_contains(body, fragment, repository) for fragment in required):
         raise RegistrationError("Hosted metric T4 must schedule both engines and dispatch only the selected engine")
 
 
@@ -2087,10 +2139,10 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
     makefile = (repository / "Makefile").read_text()
     owned = re.search(r"(?ms)^test-node-metrics-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
     aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
-    if owned is None or aggregate is None or "$(MAKE) test-node-metrics-online-runner" not in aggregate.group("body"):
+    if owned is None or aggregate is None or not source_contract_contains(make_target_commands(makefile, "test-online-runner"), "$(MAKE) test-node-metrics-online-runner", repository):
         raise RegistrationError("platform-node-metrics requires its owner regression in test-online-runner")
     for filename in ("platform-node-metrics-online_test.py", "platform-node-metrics-fixture_test.py", "online-hosted-node-metrics-gate_test.py"):
-        if filename not in owned.group("body"):
+        if filename not in make_target_commands(makefile, 'test-node-metrics-online-runner'):
             raise RegistrationError(f"platform-node-metrics regression is missing {filename}")
     gate = (repository / "scripts/test/online-hosted-node-metrics-gate.sh").read_text()
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', "scripts/infra/node-metrics.py up",
@@ -2098,7 +2150,7 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
                      'if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then modules+=(-system); fi',
                      'scripts/dev/start.sh "${modules[@]}"',
                      'make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
-        if fragment not in gate:
+        if not source_contract_contains(gate, fragment, repository):
             raise RegistrationError(f"platform-node-metrics lifecycle is missing {fragment}")
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
     job = re.search(r"(?ms)^  node-metrics-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
@@ -2135,10 +2187,10 @@ def validate_orchestrator_execution_profile(repository: Path, registered: set[st
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     owned = re.search(r"(?ms)^test-orchestrator-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
     aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
-    if owned is None or aggregate is None or "$(MAKE) test-orchestrator-online-runner" not in aggregate.group("body"):
+    if owned is None or aggregate is None or not source_contract_contains(makefile, "$(MAKE) test-orchestrator-online-runner", repository):
         raise RegistrationError("orchestrator-execution requires its owner T1 entry in test-online-runner")
     for test in ("orchestrator-execution-online_test.py", "orchestrator-execution-faults_test.py", "online-hosted-orchestrator-gate_test.py"):
-        if test not in owned.group("body"):
+        if test not in make_target_commands(makefile, "test-orchestrator-online-runner"):
             raise RegistrationError(f"orchestrator-execution owner T1 entry is missing {test}")
     text = gate.read_text(encoding="utf-8")
     for fragment in (
@@ -2154,7 +2206,7 @@ def validate_orchestrator_execution_profile(repository: Path, registered: set[st
         "python3 scripts/test/online-engine-registration.py",
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
     ):
-        if fragment not in text:
+        if not source_contract_contains(text, fragment, repository):
             raise RegistrationError(f"orchestrator-execution Hosted profile is missing {fragment}")
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
     job = re.search(r"(?ms)^  orchestrator-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
@@ -2199,7 +2251,7 @@ def validate_quality_dynamic_binding_profile(repository: Path, registered: set[s
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f"Quality Hosted owner contract is incomplete: {relative}")
 
 
@@ -2239,7 +2291,7 @@ def validate_vector_pmtiles_profile(repository: Path, registered: set[str]) -> N
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f"PMTiles owner contract is incomplete: {relative}")
 
 
@@ -2280,7 +2332,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
             "[*args,'--list','--reporter=json']"),
     }
     for relative,fragments in normalize_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology normalization case contract incomplete: '+relative)
     buffer_required = {
         '.github/workflows/online-t4-gates.yml': ('          - multi-distance-buffer',),
@@ -2292,7 +2344,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/vector-topology-persistence-online_test.py': ('test_buffer_uses_only_selected_sources_one_output_and_exact_conflict_diagnostic',),
     }
     for relative,fragments in buffer_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology buffer case contract incomplete: '+relative)
     diagnostics_required = {
         '.github/workflows/online-t4-gates.yml': ('          - operator-input-diagnostics',),
@@ -2304,7 +2356,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('算子参数诊断独立普通User双语失败页', 'assertInputDiagnosticPanel', 'navigator.clipboard.readText()', 'await page.reload()', 'browserAPIFromResponse(response', 'observations).toHaveLength(16)'),
     }
     for relative,fragments in diagnostics_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology operator input diagnostics contract incomplete: '+relative)
     nodes_required = {
         '.github/workflows/online-t4-gates.yml': ('          - line-nodes',),
@@ -2318,7 +2370,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-vector-topology-fixture_test.py': ('class NodesFixtureTest',),
     }
     for relative,fragments in nodes_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology nodes case contract incomplete: '+relative)
     difference_required = {
         '.github/workflows/online-t4-gates.yml': ('          - geometry-difference',),
@@ -2332,7 +2384,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate_test.py': ('test_difference_case_is_bound_without_old_business_or_capacity',),
     }
     for relative,fragments in difference_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology difference independent case contract incomplete: '+relative)
     dissolve_required = {
         '.github/workflows/online-t4-gates.yml': ('          - polygon-dissolve',),
@@ -2346,7 +2398,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate_test.py': ('test_dissolve_case_is_bound_without_old_business_or_capacity',),
     }
     for relative,fragments in dissolve_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology dissolve independent case contract incomplete: '+relative)
     overlay_required = {
         '.github/workflows/online-t4-gates.yml': ('          - intersection-overlay',),
@@ -2361,7 +2413,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate_test.py': ('test_overlay_case_is_bound_without_old_business_or_capacity',),
     }
     for relative,fragments in overlay_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology complete intersection case contract incomplete: '+relative)
     trim_required = {
         '.github/workflows/online-t4-gates.yml': ('          - line-trimming',),
@@ -2374,7 +2426,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate_test.py': ('test_trim_case_is_bound_without_old_business_or_capacity',),
     }
     for relative,fragments in trim_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology trim case contract incomplete: '+relative)
     extension_required = {
         '.github/workflows/online-t4-gates.yml': ('          - line-extension',),
@@ -2387,7 +2439,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate_test.py': ('test_extension_case_is_bound_without_old_business_or_capacity',),
     }
     for relative,fragments in extension_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology extension case contract incomplete: '+relative)
     vertices_required = {
         '.github/workflows/online-t4-gates.yml': ('          - vertex-extraction',),
@@ -2401,7 +2453,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate_test.py': ('test_vertices_case_is_bound_without_old_business_or_capacity',),
     }
     for relative,fragments in vertices_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology vertex extraction case contract incomplete: '+relative)
     rings_required = {
         '.github/workflows/online-t4-gates.yml': ('          - polygon-rings',),
@@ -2414,7 +2466,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate_test.py': ('test_rings_case_is_bound_without_old_business_or_capacity',),
     }
     for relative,fragments in rings_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology polygon rings case contract incomplete: '+relative)
     rings_diagnostic_required = {
         '.github/workflows/online-t4-gates.yml': ('          - polygon-rings-input-diagnostics',),
@@ -2427,7 +2479,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate_test.py': ('test_rings_diagnostic_case_runs_only_two_failures_without_old_business',),
     }
     for relative,fragments in rings_diagnostic_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology polygon ring diagnostics case incomplete: '+relative)
     rings_script=(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js').read_text()
     rings_match=re.search(r"(?ms)^test\('面界提取独立普通User单成果与两失败保护'.*?^\}\)",rings_script)
@@ -2445,7 +2497,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate_test.py': ('test_endpoint_case_is_bound_without_old_business_or_capacity',),
     }
     for relative,fragments in endpoint_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology endpoint case contract incomplete: '+relative)
     extension_script=(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js').read_text()
     helper=re.search(r"(?ms)^async function verifyLineEditCase\(.*?^\}",extension_script)
@@ -2466,7 +2518,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/vector-topology-persistence-online_test.py': ('class ProximityOnlineTest',),
     }
     for relative,fragments in proximity_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology proximity case contract incomplete: '+relative)
     composition_required = {
         'business/scripts/online-vector-topology-fixture.py': ('line-network-normalize-chains', 'composition_source_features',
@@ -2479,7 +2531,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate.sh': ('full|line-network-normalize|line-network-normalize-chains',),
     }
     for relative,fragments in composition_required.items():
-        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology composition case contract incomplete: '+relative)
     required = {
         "scripts/test/online-hosted-topology-gate.sh": ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
@@ -2502,7 +2554,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f"topology owner contract is incomplete: {relative}")
 
 def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> None:
@@ -2566,7 +2618,7 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f"raster-workflow owner contract is incomplete: {relative}")
 
 
@@ -2599,7 +2651,7 @@ def validate_raster_vector_profile(repository: Path, registered: set[str], domai
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f"{domain} persistence contract is incomplete: {relative}")
 
 
@@ -2646,7 +2698,7 @@ def validate_vector_rasterize_profile(repository: Path, registered: set[str]) ->
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'rasterize persistence contract is incomplete: {relative}')
 
 
@@ -2687,7 +2739,7 @@ def validate_vector_zonal_statistics_profile(repository: Path, registered: set[s
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'vector-zone statistics persistence contract is incomplete: {relative}')
 
 
@@ -2728,7 +2780,7 @@ def validate_raster_proximity_profile(repository: Path, registered: set[str]) ->
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'proximity persistence contract is incomplete: {relative}')
 
 
@@ -2770,7 +2822,7 @@ def validate_raster_focal_mode_profile(repository: Path, registered: set[str]) -
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'focal mode persistence contract is incomplete: {relative}')
 
 
@@ -2812,7 +2864,7 @@ def validate_raster_boundary_clean_profile(repository: Path, registered: set[str
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'boundary clean persistence contract is incomplete: {relative}')
 
 
@@ -2854,7 +2906,7 @@ def validate_raster_thin_profile(repository: Path, registered: set[str]) -> None
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'thinning persistence contract is incomplete: {relative}')
 
 def validate_raster_fill_depressions_profile(repository: Path, registered: set[str]) -> None:
@@ -2895,7 +2947,7 @@ def validate_raster_fill_depressions_profile(repository: Path, registered: set[s
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'DEM filling persistence contract is incomplete: {relative}')
 
 
@@ -2937,7 +2989,7 @@ def validate_raster_flow_direction_d8_profile(repository: Path, registered: set[
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'DEM D8 flow direction persistence contract is incomplete: {relative}')
 
 
@@ -2979,7 +3031,7 @@ def validate_raster_flow_accumulation_d8_profile(repository: Path, registered: s
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 flow accumulation persistence contract is incomplete: {relative}')
 
 
@@ -3021,7 +3073,7 @@ def validate_raster_drainage_basins_d8_profile(repository: Path, registered: set
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 drainage basins persistence contract is incomplete: {relative}')
 
 
@@ -3063,7 +3115,7 @@ def validate_raster_flow_length_d8_profile(repository: Path, registered: set[str
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 downstream flow length persistence contract is incomplete: {relative}')
 
 
@@ -3105,7 +3157,7 @@ def validate_raster_flow_accumulation_area_d8_profile(repository: Path, register
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 contributing area persistence contract is incomplete: {relative}')
 
 
@@ -3195,7 +3247,7 @@ def validate_raster_distance_to_stream_d8_profile(repository: Path, registered: 
     }
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 distance to stream persistence contract is incomplete: {relative}')
 
 
@@ -3211,7 +3263,7 @@ def validate_raster_curvature_profile(repository: Path, registered: set[str]) ->
         or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('DEM curvature requires a manual isolated Hosted NFS job')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_curvature_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_curvature_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('curvature Native fixture must run in the standard GeoPython recipe')
     required={
       'scripts/test/online-hosted-raster-curvature-gate.sh':('source "$ROOT_DIR/scripts/utils/hosted-online.sh"','start_online_geopython_runtime','--mount','--suite raster-workflow','--wait-protection-owners develop,manager','online-raster-curvature-fixture.py stop','unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
@@ -3222,7 +3274,7 @@ def validate_raster_curvature_profile(repository: Path, registered: set[str]) ->
     }
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('DEM curvature persistence contract is incomplete: '+relative)
 
 
@@ -3238,7 +3290,7 @@ def validate_raster_cut_fill(repository: Path, registered: set[str]) -> None:
         or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('DEM cut/fill requires a manual isolated Hosted NFS job')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_cut_fill_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_cut_fill_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('cut/fill Native fixture must run in the standard GeoPython recipe')
     required={'scripts/test/online-hosted-raster-cut-fill-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
                                                         'start_online_geopython_runtime',
@@ -3310,7 +3362,7 @@ def validate_raster_cut_fill(repository: Path, registered: set[str]) -> None:
               'test_cut_fill_requires_manual_nfs_complete_csv_archive_and_regressions')}
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('cut/fill persistence contract is incomplete: '+relative)
     # Fixed first-phase matrix is executable data, not a comment claiming coverage.
     import ast
@@ -3334,12 +3386,12 @@ def validate_raster_surface_area(repository: Path, registered: set[str]) -> None
         or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('DEM surface area requires a manual isolated Hosted NFS job')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_surface_area_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_surface_area_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('surface area Native fixture must run in the standard GeoPython recipe')
     required={'scripts/test/online-hosted-raster-surface-area-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-surface-area-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-surface-area-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_surface_area', 'input.source', 'output.save', 'archived_csv', 'query language rewrote stored failure', 'CSV physical/Meta sizes must be equal positive integers', 'all 48 calls and 510 full actual CSV checks are required', 'physical_verification_calls', 'full_target_checks', 'previous CSV manifest changed', 'previous CSV manifest inventory differs', 'archived CSV has no original manifest', 'exact contracted serialized preview row differs', 'preview_serialized_row'), 'business/scripts/online-raster-surface-area-fixture.py': ('NFSExport', 'owned_root', 'expected_row', 'context.prec=200', 'cross=[u[1]*v[2]-u[2]*v[1]', 'min(ad,bc)', 'max(ad,bc)', 'low+=', 'high+=', 'mean=(low+high)/2', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'csv_base64', 'complete_table_verified', 'dual_diagonal_and_centre_domain_verified', 'source_measurement_geometry_verified', 'value!=target', 'float(value)', 'int64.csv', 'uint64.csv', 'single.csv', "(spec['width']-1)*(spec['height']-1)", 'double_precision=15', 'preview_serialized_row', 'quads=Counter()', 'anchors='), 'engines/geopython-workflow/test_online_surface_area_fixture.py': ('test_surface_area_persistence_real_gdal_twelve_csv_chains_complete_oracle_and_original_bytes', 'test_surface_area_persistence_thirty_six_exact_failures_no_publication', 'test_surface_area_persistence_oracle_rejects_csv_corruption', 'one_ulp', 'test_surface_area_persistence_independent_full_scalar_four_corner_count', 'test_surface_area_persistence_worker_runs_from_stdin_without_repository_imports', 'test_surface_area_independent_csv_oracle_rejects_wrong_semantics', 'half', 'one_diagonal', 'frame_area', 'test_surface_area_original_csv_manifest_never_silently_repaired', 'scene.validate_preview', 'test_surface_area_host_oracle_requires_no_numpy_pandas_or_gdal'), 'Makefile': ('@$(MAKE) test-raster-surface-area-online-runner', 'scripts/test/raster-surface-area-persistence-online_test.py', 'scripts/test/online-raster-surface-area-fixture_test.py', 'scripts/test/online-hosted-raster-surface-area-gate_test.py', 'test_surface_area_requires_manual_nfs_complete_csv_archive_and_regressions'), 'scripts/test/raster-surface-area-persistence-online_test.py': ('test_twelve_exact_dags_one_actual_source_bands_units_and_existing_save', 'test_complete_matrix_exact_current_scan_lineage_and_original_csv_archive', 'physical_verification_calls', 'full_target_checks', 'test_identity_size_and_failure_publication_are_fail_closed', 'test_previous_physical_or_archive_bytes_cannot_change')}
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('surface area persistence contract is incomplete: '+relative)
     # Fixed first-phase matrix is executable data, not a comment claiming coverage.
     import ast
@@ -3369,7 +3421,7 @@ def validate_raster_profile_curvature(repository: Path, registered: set[str]) ->
         or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('DEM curvature requires a manual isolated Hosted NFS job')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_profile_curvature_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_profile_curvature_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('curvature Native fixture must run in the standard GeoPython recipe')
     required={
       'scripts/test/online-hosted-raster-profile-curvature-gate.sh':('source "$ROOT_DIR/scripts/utils/hosted-online.sh"','start_online_geopython_runtime','--mount','--suite raster-workflow','--wait-protection-owners develop,manager','online-raster-profile-curvature-fixture.py stop','unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
@@ -3380,7 +3432,7 @@ def validate_raster_profile_curvature(repository: Path, registered: set[str]) ->
     }
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('DEM curvature persistence contract is incomplete: '+relative)
 
 
@@ -3396,7 +3448,7 @@ def validate_raster_tangential_curvature(repository: Path, registered: set[str])
         or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('DEM curvature requires a manual isolated Hosted NFS job')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_tangential_curvature_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_tangential_curvature_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('curvature Native fixture must run in the standard GeoPython recipe')
     required={
       'scripts/test/online-hosted-raster-tangential-curvature-gate.sh':('source "$ROOT_DIR/scripts/utils/hosted-online.sh"','start_online_geopython_runtime','--mount','--suite raster-workflow','--wait-protection-owners develop,manager','online-raster-tangential-curvature-fixture.py stop','unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
@@ -3407,7 +3459,7 @@ def validate_raster_tangential_curvature(repository: Path, registered: set[str])
     }
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('DEM curvature persistence contract is incomplete: '+relative)
 
 
@@ -3419,13 +3471,13 @@ def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> 
     }
     for path,fragments in required.items():
         text=(repository/path).read_text()
-        if any(fragment not in text for fragment in fragments):raise RegistrationError('bounded raster internal lineage evidence incomplete: '+path)
+        if any(not source_contract_contains(text, fragment, repository) for fragment in fragments):raise RegistrationError('bounded raster internal lineage evidence incomplete: '+path)
     make=(repository/'Makefile').read_text()
     for prefix in ('cut-fill','tpi','tri','roughness','surface-area','twi', 'spi', 'sieve', 'focal-percentile'):
         gate=(repository/f'scripts/test/online-hosted-raster-{prefix}-gate.sh').read_text()
         if 'run_logged python3 scripts/utils/online_raster_lineage.py prepare' not in gate:raise RegistrationError('raster owner receipt preparation omitted')
-        block=make.split(f'test-raster-{prefix}-online-runner:',1)[1].split('\n.PHONY:',1)[0]
-        if 'scripts/test/online-raster-lineage_test.py' not in block:raise RegistrationError('raster observer regression missing from standard gate')
+        block=make_target_commands(make, f'test-raster-{prefix}-online-runner')
+        if not source_contract_contains(block, 'scripts/test/online-raster-lineage_test.py', repository):raise RegistrationError('raster observer regression missing from standard gate')
 
 
 def validate_raster_tpi(repository: Path, registered: set[str]) -> None:
@@ -3441,12 +3493,12 @@ def validate_raster_tpi(repository: Path, registered: set[str]) -> None:
         or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('TPI requires a manual isolated Hosted NFS job and whole original-COG evidence upload')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_tpi_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_tpi_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('TPI Native fixture must run in the standard GeoPython recipe')
     required={'scripts/test/online-hosted-raster-tpi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-tpi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-tpi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_tpi', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed TPI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_TPI_ORACLE_ANCHOR_SHA256'), 'business/scripts/online-raster-tpi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', 'Decimal(8)', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'tpi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms'), 'engines/geopython-workflow/test_online_tpi_fixture.py': ('test_tpi_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_tpi_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_tpi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'centre_in_mean', 'test_tpi_original_cog_archive_cannot_change_or_silently_repair', 'test_tpi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_tpi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_tpi_oracle_cache_poison_or_cross_scope_fails', 'test_tpi_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-tpi-online-runner', 'test_online_tpi_fixture.py', 'scripts/test/raster-tpi-persistence-online_test.py', 'scripts/test/online-raster-tpi-fixture_test.py', 'scripts/test/online-hosted-raster-tpi-gate_test.py', 'test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-tpi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-tpi-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('TPI persistence contract is incomplete: '+relative)
     for relative,key,size in [('business/scripts/online-raster-tpi-fixture.py','CASES',13),('scripts/test/raster-tpi-persistence-online.py','FAILURES',13)]:
         tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==key for t in n.targets)]
@@ -3466,12 +3518,12 @@ def validate_raster_tri(repository: Path, registered: set[str]) -> None:
         or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('TRI requires a manual isolated Hosted NFS job and whole original-COG evidence upload')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_tri_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_tri_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('TRI Native fixture must run in the standard GeoPython recipe')
     required={'scripts/test/online-hosted-raster-tri-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-tri-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-tri-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_tri', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed TRI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_TRI_ORACLE_ANCHOR_SHA256', 'nonnegative_verified', 'inclined plane or saddle must have strictly positive complete TRI values'), 'business/scripts/online-raster-tri-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', 'sum((centre-v)**2 for v in samples).sqrt()*factor', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'tri-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms', 'negative Riley TRI value', 'inclined plane or saddle TRI must be positive', 'nonnegative_verified'), 'engines/geopython-workflow/test_online_tri_fixture.py': ('test_tri_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_tri_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_tri_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'rms', 'test_tri_original_cog_archive_cannot_change_or_silently_repair', 'test_tri_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_tri_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_tri_oracle_cache_poison_or_cross_scope_fails', 'test_tri_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-tri-online-runner', 'test_online_tri_fixture.py', 'scripts/test/raster-tri-persistence-online_test.py', 'scripts/test/online-raster-tri-fixture_test.py', 'scripts/test/online-hosted-raster-tri-gate_test.py', 'test_tri_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-tri-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-tri-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('TRI persistence contract is incomplete: '+relative)
     for relative,key,size in [('business/scripts/online-raster-tri-fixture.py','CASES',13),('scripts/test/raster-tri-persistence-online.py','FAILURES',13)]:
         tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==key for t in n.targets)]
@@ -3491,12 +3543,12 @@ def validate_raster_roughness(repository: Path, registered: set[str]) -> None:
         or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('ROUGHNESS requires a manual isolated Hosted NFS job and whole original-COG evidence upload')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_roughness_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_roughness_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('ROUGHNESS Native fixture must run in the standard GeoPython recipe')
     required={'scripts/test/online-hosted-raster-roughness-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-roughness-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-roughness-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_roughness', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed ROUGHNESS matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_ROUGHNESS_ORACLE_ANCHOR_SHA256', 'nonnegative_verified', 'inclined plane or saddle must have strictly positive complete ROUGHNESS values'), 'business/scripts/online-raster-roughness-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', '(max(samples)-min(samples))*factor', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'roughness-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms', 'negative nine-point roughness value', 'inclined plane or saddle ROUGHNESS must be positive', 'nonnegative_verified', 'centre extrema or opposite-neighbour full range differs', 'inclined plane full range must be ten metres'), 'engines/geopython-workflow/test_online_roughness_fixture.py': ('test_roughness_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_roughness_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_roughness_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'half_range', 'test_roughness_original_cog_archive_cannot_change_or_silently_repair', 'test_roughness_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_roughness_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_roughness_oracle_cache_poison_or_cross_scope_fails', 'test_roughness_partial_oracle_preparation_always_has_an_owned_cleanup', 'test_roughness_independent_oracle_rejects_centre_omission_and_detrending', 'exclude_centre_max', 'exclude_centre_min', 'max_centre_difference', 'detrend_plane'), 'Makefile': ('@$(MAKE) test-raster-roughness-online-runner', 'test_online_roughness_fixture.py', 'scripts/test/raster-roughness-persistence-online_test.py', 'scripts/test/online-raster-roughness-fixture_test.py', 'scripts/test/online-hosted-raster-roughness-gate_test.py', 'test_roughness_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-roughness-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-roughness-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('ROUGHNESS persistence contract is incomplete: '+relative)
     for relative,key,size in [('business/scripts/online-raster-roughness-fixture.py','CASES',13),('scripts/test/raster-roughness-persistence-online.py','FAILURES',13)]:
         tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==key for t in n.targets)]
@@ -3516,12 +3568,12 @@ def validate_raster_twi(repository: Path, registered: set[str]) -> None:
         or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('TWI requires a manual isolated Hosted NFS job and whole original-COG evidence upload')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_twi_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_twi_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('TWI Native fixture must run in the standard GeoPython recipe')
     required={'scripts/test/online-hosted-raster-twi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-twi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-twi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_twi', 'input.area', 'input.slope', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed TWI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 66 calls and 833 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_TWI_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', 'fixed_area_over_width_verified', 'no_slope_threshold_verified',"maximum=52 if name=='negative'",'len(self.stages)>=113'), 'business/scripts/online-raster-twi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'context.prec=200', 'for odd in range(599,0,-2)', 'denominator=Decimal(odd)-x*x/denominator', '(Decimal(a)/d/tangents[b]).ln()', 'measurement_width', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'int64.cog.tif', 'uint64.cog.tif', 'disjoint.cog.tif', 'zero-slope.cog.tif', 'archive_cogs', 'twi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'joint_coverage_verified', 'dimensionless_unit_verified', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', 'legal_signed_zero_verified'), 'engines/geopython-workflow/test_online_twi_fixture.py': ('test_twi_persistence_real_gdal_fourteen_chains_exact_pixels_mask_and_original_cogs', 'test_twi_persistence_fifty_two_accurate_bilingual_failures_no_publication', 'test_twi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_twi_independent_oracle_rejects_wrong_semantics', 'width_multiplied', 'count_as_area', 'base10', 'tiny_threshold', 'test_twi_original_cog_archive_cannot_change_or_silently_repair', 'test_twi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_twi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_twi_oracle_cache_poison_or_cross_scope_fails', 'test_twi_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-twi-online-runner', 'test_online_twi_fixture.py', 'scripts/test/raster-twi-persistence-online_test.py', 'scripts/test/online-raster-twi-fixture_test.py', 'scripts/test/online-hosted-raster-twi-gate_test.py', 'test_twi_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-twi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-twi-persistence-online_test.py': ('test_complete_14_success_52_bilingual_failures_833_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('TWI persistence contract is incomplete: '+relative)
     for relative,key,size in [('business/scripts/online-raster-twi-fixture.py','CASES',14),('scripts/test/raster-twi-persistence-online.py','FAILURES',26)]:
         tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==key for t in n.targets)]
@@ -3558,7 +3610,7 @@ def validate_raster_focal_percentile(repository: Path, registered: set[str]) -> 
     required={'scripts/test/online-hosted-raster-focal-percentile-gate.sh': ('start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-focal-percentile-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-focal-percentile-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'validate_target_item(item,expectation', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_focal_statistics', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed PERCENTILE matrix', 'oracle_prepare', 'oracle_cleanup', 'all 52 calls and 712 full target checks are required', 'ADDP_ONLINE_FOCAL_PERCENTILE_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', "maximum=36 if name=='negative'", 'len(self.stages)>=105', 'Meta fabricated missing spatial facts', 'actual endpoint/median comparison evidence differs'), 'business/scripts/online-raster-focal-percentile-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'from fractions import Fraction', 'position=(len(ordered)-1)*Fraction(float(percentile))/100', 'scalar_value(sample,percentile)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'archive_cogs', 'percentile-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'independent_fraction_oracle_verified', 'linear_position_verified', 'explicit_selected_band_verified', 'percentile_encoding_verified', 'missing source CRS was fabricated', 'actual percentile endpoint or median control differs', 'RTOL=4e-15', 'ATOL=0.'), 'engines/geopython-workflow/test_online_focal_percentile_fixture.py': ('test_percentile_persistence_real_gdal_sixteen_chains_complete_controls_pixels_masks_and_cogs', 'test_percentile_persistence_thirty_six_accurate_submitted_language_failures_no_publication', 'test_percentile_complex_alpha_is_separate_native_mixed_mem_evidence_only', 'test_percentile_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_percentile_oracle_rejects_wrong_rank_precision_scale_and_coverage', 'nearest_rank', 'median_instead', 'implicit_scale', 'zero_discarded', 'hole_filled', 'test_percentile_original_cog_archive_cannot_change_or_silently_repair', 'test_percentile_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_percentile_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_percentile_oracle_cache_poison_or_cross_scope_fails', 'test_percentile_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-focal-percentile-online-runner', 'test_online_focal_percentile_fixture.py', 'scripts/test/raster-focal-percentile-persistence-online_test.py', 'scripts/test/online-raster-focal-percentile-fixture_test.py', 'scripts/test/online-hosted-raster-focal-percentile-gate_test.py', 'test_focal_percentile_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-focal-percentile-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-focal-percentile-persistence-online_test.py': ('test_complete_16_success_36_submitted_language_failures_712_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound', 'test_unlocated_artifact_and_meta_reject_fabricated_location')}
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text()for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):
             raise RegistrationError('Focal percentile acceptance contract incomplete: '+relative)
     for relative,key,expected in [('business/scripts/online-raster-focal-percentile-fixture.py','CASES',{'p0-3.cog.tif': ('values.tif', 3, 'percentile', 0, 'direct'), 'min-3.cog.tif': ('values.tif', 3, 'min', None, 'direct'), 'p100-5.cog.tif': ('values.tif', 5, 'percentile', 100, 'direct'), 'max-5.cog.tif': ('values.tif', 5, 'max', None, 'direct'), 'p50-3.cog.tif': ('values.tif', 3, 'percentile', 50, 'direct'), 'median-3.cog.tif': ('values.tif', 3, 'median', None, 'direct'), 'p50-5.cog.tif': ('values.tif', 5, 'percentile', 50, 'direct'), 'median-5.cog.tif': ('values.tif', 5, 'median', None, 'direct'), 'p25-3.cog.tif': ('values.tif', 3, 'percentile', 25, 'direct'), 'p75-5.cog.tif': ('values.tif', 5, 'percentile', 75, 'direct'), 'p33-5.cog.tif': ('values.tif', 5, 'percentile', 33.3, 'direct'), 'reclassified.cog.tif': ('values.tif', 3, 'percentile', 90, 'reclassify'), 'int64.cog.tif': ('int64.tif', 3, 'percentile', 25, 'direct'), 'uint64.cog.tif': ('uint64.tif', 5, 'percentile', 75, 'direct'), 'unlocated.cog.tif': ('unlocated.tif', 5, 'percentile', 25, 'direct'), 'invalid.cog.tif': ('invalid.tif', 3, 'percentile', 50, 'direct')}),
                                   ('business/scripts/online-raster-focal-percentile-fixture.py','COMPARISONS',(('p0-3.cog.tif', 'min-3.cog.tif'), ('p100-5.cog.tif', 'max-5.cog.tif'), ('p50-3.cog.tif', 'median-3.cog.tif'), ('p50-5.cog.tif', 'median-5.cog.tif'))),
@@ -3582,12 +3634,12 @@ def validate_raster_sieve(repository: Path, registered: set[str]) -> None:
         or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('SIEVE requires a manual isolated Hosted NFS job and whole original-COG evidence upload')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_sieve_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_sieve_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('SIEVE Native fixture must run in the standard GeoPython recipe')
     required={'scripts/test/online-hosted-raster-sieve-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-sieve-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-sieve-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'validate_target_item(item,expectation', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_sieve', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed SIEVE matrix', 'oracle_prepare', 'oracle_cleanup', 'all 34 calls and 189 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_SIEVE_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', "maximum=28 if name=='negative'", 'len(self.stages)>=57', 'Meta fabricated missing spatial facts'), 'business/scripts/online-raster-sieve-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'from collections import deque', 'len(pixels)<minimum', 'len(components[other][1])>=minimum', 'donor_ids=set()', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'archive_cogs', 'sieve-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'independent_bfs_oracle_verified', 'frozen_components_verified', 'explicit_connectivity_verified', 'classification_encoding_verified', 'missing source CRS was fabricated'), 'engines/geopython-workflow/test_online_sieve_fixture.py': ('test_sieve_persistence_real_gdal_six_chains_exact_pixels_mask_and_original_cogs', 'test_sieve_persistence_twenty_eight_accurate_bilingual_failures_no_publication', 'test_sieve_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_sieve_independent_oracle_rejects_wrong_semantics', 'wrong_connectivity', 'threshold_inclusive', 'class_global_count', 'small_transit', 'iterated_growth', 'nodata_fill', 'no_donor_replaced', 'implicit_scale', 'zero_discarded', 'test_sieve_original_cog_archive_cannot_change_or_silently_repair', 'test_sieve_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_sieve_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_sieve_oracle_cache_poison_or_cross_scope_fails', 'test_sieve_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-sieve-online-runner', 'test_online_sieve_fixture.py', 'scripts/test/raster-sieve-persistence-online_test.py', 'scripts/test/online-raster-sieve-fixture_test.py', 'scripts/test/online-hosted-raster-sieve-gate_test.py', 'test_sieve_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-sieve-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-sieve-persistence-online_test.py': ('test_complete_6_success_28_bilingual_failures_189_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound', 'test_unlocated_artifact_and_meta_reject_fabricated_location')}
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('Sieve persistence contract is incomplete: '+relative)
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('Sieve persistence contract is incomplete: '+relative)
     expected_cases={'four.cog.tif': ('classes.tif', 5, 4, 'direct'), 'eight.cog.tif': ('classes.tif', 5, 8, 'direct'), 'reclassified.cog.tif': ('classes.tif', 5, 4, 'reclassify'), 'identity.cog.tif': ('classes.tif', 1, 4, 'direct'), 'no-donor.cog.tif': ('unlocated.tif', 5, 4, 'direct'), 'invalid.cog.tif': ('invalid.tif', 5, 8, 'direct')}
     expected_faults=('band', 'threshold_zero', 'threshold_negative', 'threshold_fractional', 'threshold_boolean', 'connectivity_value', 'connectivity_fractional', 'connectivity_boolean', 'fractional', 'unsafe', 'int64', 'uint64', 'alpha', 'complex')
     for relative,key,expected in [('business/scripts/online-raster-sieve-fixture.py','CASES',expected_cases),('scripts/test/raster-sieve-persistence-online.py','FAILURES',expected_faults)]:
@@ -3608,12 +3660,12 @@ def validate_raster_spi(repository: Path, registered: set[str]) -> None:
         or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('SPI requires a manual isolated Hosted NFS job and whole original-COG evidence upload')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_spi_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_spi_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('SPI Native fixture must run in the standard GeoPython recipe')
     required={'scripts/test/online-hosted-raster-spi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-spi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-spi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_spi', 'input.area', 'input.slope', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed SPI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 66 calls and 833 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_SPI_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', "maximum=52 if name=='negative'", 'len(self.stages)>=113', "if fact['negative_pixels']", 'flat SPI must stay valid zero'), 'business/scripts/online-raster-spi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'context.prec=200', 'for odd in range(599,0,-2)', 'denominator=Decimal(odd)-x*x/denominator', 'Decimal(a)/d*tangents[b]', 'measurement_width', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'int64.cog.tif', 'uint64.cog.tif', 'disjoint.cog.tif', 'zero-slope.cog.tif', 'archive_cogs', 'spi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'joint_coverage_verified', 'metre_unit_verified', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', 'legal_zero_verified', 'complete=valid', "band.GetUnitType()!='metre'", 'Decimal(a)/d*tangents[b]'), 'engines/geopython-workflow/test_online_spi_fixture.py': ('test_spi_persistence_real_gdal_fourteen_chains_exact_pixels_mask_and_original_cogs', 'test_spi_persistence_fifty_two_accurate_bilingual_failures_no_publication', 'test_spi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_spi_independent_oracle_rejects_wrong_semantics', 'width_multiplied', 'count_as_area', 'logarithm', 'tiny_threshold', 'test_spi_original_cog_archive_cannot_change_or_silently_repair', 'test_spi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_spi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_spi_oracle_cache_poison_or_cross_scope_fails', 'test_spi_partial_oracle_preparation_always_has_an_owned_cleanup', 'zero_slope_nodata', 'negative_index', 'percent_not_divided'), 'Makefile': ('@$(MAKE) test-raster-spi-online-runner', 'test_online_spi_fixture.py', 'scripts/test/raster-spi-persistence-online_test.py', 'scripts/test/online-raster-spi-fixture_test.py', 'scripts/test/online-hosted-raster-spi-gate_test.py', 'test_spi_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-spi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-spi-persistence-online_test.py': ('test_complete_14_success_52_bilingual_failures_833_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('SPI persistence contract is incomplete: '+relative)
     for relative,key,size in [('business/scripts/online-raster-spi-fixture.py','CASES',14),('scripts/test/raster-spi-persistence-online.py','FAILURES',26)]:
         tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==key for t in n.targets)]
@@ -3644,7 +3696,7 @@ def validate_raster_plan_curvature(repository: Path, registered: set[str]) -> No
         or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('DEM curvature requires a manual isolated Hosted NFS job')
     make=(repository/'Makefile').read_text()
-    if 'test-geopython-workflow:' not in make or 'test_online_plan_curvature_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+    if not source_contract_contains(make, 'test-geopython-workflow:', repository) or 'test_online_plan_curvature_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
         raise RegistrationError('curvature Native fixture must run in the standard GeoPython recipe')
     required={
       'scripts/test/online-hosted-raster-plan-curvature-gate.sh':('source "$ROOT_DIR/scripts/utils/hosted-online.sh"','start_online_geopython_runtime','--mount','--suite raster-workflow','--wait-protection-owners develop,manager','online-raster-plan-curvature-fixture.py stop','unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
@@ -3655,7 +3707,7 @@ def validate_raster_plan_curvature(repository: Path, registered: set[str]) -> No
     }
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('DEM curvature persistence contract is incomplete: '+relative)
 
 
@@ -3745,7 +3797,7 @@ def validate_raster_hand_d8_profile(repository: Path, registered: set[str]) -> N
                   'test_hand_d8_requires_manual_nfs_full_pixels_and_regressions')}
     for relative,fragments in required.items():
         path=repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 HAND persistence contract is incomplete: {relative}')
 
 
@@ -3787,7 +3839,7 @@ def validate_raster_flow_length_upstream_d8_profile(repository: Path, registered
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 longest upstream flow length persistence contract is incomplete: {relative}')
 
 def validate_raster_stream_order_d8_profile(repository: Path, registered: set[str]) -> None:
@@ -3828,7 +3880,7 @@ def validate_raster_stream_order_d8_profile(repository: Path, registered: set[st
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 Strahler stream order persistence contract is incomplete: {relative}')
 
 def validate_raster_stream_shreve_d8_profile(repository: Path, registered: set[str]) -> None:
@@ -3869,7 +3921,7 @@ def validate_raster_stream_shreve_d8_profile(repository: Path, registered: set[s
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 Shreve stream magnitude persistence contract is incomplete: {relative}')
 
 
@@ -3895,7 +3947,7 @@ def validate_raster_stream_to_vector_d8_profile(repository: Path, registered: se
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 stream vectorization persistence contract is incomplete: {relative}')
 
 
@@ -3937,7 +3989,7 @@ def validate_raster_stream_link_d8_profile(repository: Path, registered: set[str
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 stream link persistence contract is incomplete: {relative}')
 
 
@@ -3980,7 +4032,7 @@ def validate_raster_flow_accumulation_weighted_d8_profile(repository: Path, regi
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 weighted flow accumulation persistence contract is incomplete: {relative}')
 
 
@@ -4023,7 +4075,7 @@ def validate_raster_watershed_d8_profile(repository: Path, registered: set[str])
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 specified-outlet watershed persistence contract is incomplete: {relative}')
 
 
@@ -4069,7 +4121,7 @@ def validate_raster_subcatchments_d8_profile(repository: Path, registered: set[s
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'D8 incremental subcatchments persistence contract is incomplete: {relative}')
 
 
@@ -4115,7 +4167,7 @@ def validate_raster_snap_pour_points_profile(repository: Path, registered: set[s
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'pour-point snapping persistence contract is incomplete: {relative}')
 
 
@@ -4171,7 +4223,7 @@ def validate_raster_zonal_percentile(repository: Path, registered: set[str]) -> 
         raise RegistrationError('zonal percentile Native omitted from standard recipe')
     for relative, fragments in ZONAL_PERCENTILE_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('zonal percentile strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-zonal-percentile-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4233,7 +4285,7 @@ def validate_raster_zonal_percentiles(repository: Path, registered: set[str]) ->
         raise RegistrationError('zonal percentiles Native omitted from standard recipe')
     for relative, fragments in ZONAL_PERCENTILES_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('zonal percentiles strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-zonal-percentiles-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4264,7 +4316,7 @@ def validate_raster_zonal_class_frequency(repository: Path, registered: set[str]
         raise RegistrationError('zonal class frequency Native omitted from standard recipe')
     for relative, fragments in ZONAL_CLASS_FREQUENCY_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('zonal class frequency strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-zonal-class-frequency-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4327,7 +4379,7 @@ def validate_raster_zonal_weighted(repository: Path, registered: set[str]) -> No
         raise RegistrationError('zonal weighted Native omitted from standard recipe')
     for relative, fragments in ZONAL_WEIGHTED_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('zonal weighted strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-zonal-weighted-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4389,7 +4441,7 @@ def validate_raster_zonal_weighted_stddev(repository: Path, registered: set[str]
         raise RegistrationError('zonal weighted stddev Native omitted from standard recipe')
     for relative, fragments in ZONAL_WEIGHTED_STDDEV_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('zonal weighted stddev strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-zonal-weighted-stddev-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4534,7 +4586,7 @@ def validate_raster_focal_variety(repository: Path, registered: set[str]) -> Non
         raise RegistrationError('focal variety Native omitted from standard recipe')
     for relative, fragments in VARIETY_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('focal variety strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-focal-variety-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4566,7 +4618,7 @@ def validate_raster_focal_circle(repository: Path, registered: set[str]) -> None
         raise RegistrationError('focal circle Native omitted from standard recipe')
     for relative, fragments in CIRCLE_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('focal circle strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-focal-circle-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4597,7 +4649,7 @@ def validate_raster_region_group(repository: Path, registered: set[str]) -> None
         raise RegistrationError('focal region Native omitted from standard recipe')
     for relative, fragments in REGION_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('focal region strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-region-group-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4688,7 +4740,7 @@ def validate_raster_focal_weighted_mean(repository: Path, registered: set[str]) 
         raise RegistrationError('focal weighted_mean Native omitted from standard recipe')
     for relative, fragments in WEIGHTED_MEAN_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('focal weighted_mean strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-focal-weighted-mean-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4779,7 +4831,7 @@ def validate_raster_focal_weighted_stddev(repository: Path, registered: set[str]
         raise RegistrationError('focal weighted_stddev Native omitted from standard recipe')
     for relative, fragments in WEIGHTED_STDDEV_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('focal weighted_stddev strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-focal-weighted-stddev-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4872,7 +4924,7 @@ def validate_raster_focal_weighted_sum(repository: Path, registered: set[str]) -
         raise RegistrationError('focal weighted_sum Native omitted from standard recipe')
     for relative, fragments in WEIGHTED_SUM_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('focal weighted_sum strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-focal-weighted-sum-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4907,7 +4959,7 @@ def validate_raster_proximity_rectangular(repository: Path, registered: set[str]
         raise RegistrationError('focal proximity_rectangular Native omitted from standard recipe')
     for relative, fragments in PROXIMITY_RECTANGULAR_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('focal proximity_rectangular strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-proximity-rectangular-fixture.py').read_text()
     tree = ast.parse(source)
@@ -4999,7 +5051,7 @@ def validate_raster_sieve_protected(repository: Path, registered: set[str]) -> N
         raise RegistrationError('protected sieve Native omitted from standard recipe')
     for relative, fragments in PROTECTED_SIEVE_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('protected sieve strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-sieve-protected-fixture.py').read_text()
     tree = ast.parse(source)
@@ -5089,7 +5141,7 @@ def validate_raster_sieve_area(repository: Path, registered: set[str]) -> None:
         raise RegistrationError('area sieve Native omitted from standard recipe')
     for relative, fragments in AREA_SIEVE_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('area sieve strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-sieve-area-fixture.py').read_text()
     tree = ast.parse(source)
@@ -5117,7 +5169,7 @@ def validate_vector_zonal_percentile(repository: Path, registered: set[str]) -> 
         raise RegistrationError('zonal percentile Native omitted from standard recipe')
     for relative, fragments in VECTOR_ZONAL_PERCENTILE_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('zonal percentile strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-vector-zonal-percentile-fixture.py').read_text()
     tree = ast.parse(source)
@@ -5148,7 +5200,7 @@ def validate_vector_zonal_percentiles(repository: Path, registered: set[str]) ->
         raise RegistrationError('vector zonal percentiles Native omitted from standard recipe')
     for relative, fragments in VECTOR_ZONAL_PERCENTILES_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('vector zonal percentiles strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-vector-zonal-percentiles-fixture.py').read_text()
     tree = ast.parse(source)
@@ -5179,7 +5231,7 @@ def validate_sample_points(repository: Path, registered: set[str]) -> None:
         raise RegistrationError('point sampling Native omitted from standard recipe')
     for relative, fragments in SAMPLE_POINTS_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('point sampling strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-sample-points-fixture.py').read_text()
     tree = ast.parse(source)
@@ -5210,7 +5262,7 @@ def validate_sample_points_bilinear(repository: Path, registered: set[str]) -> N
         raise RegistrationError('point sampling Native omitted from standard recipe')
     for relative, fragments in SAMPLE_POINTS_BILINEAR_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('point sampling strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-raster-sample-points-bilinear-fixture.py').read_text()
     tree = ast.parse(source)
@@ -5329,7 +5381,7 @@ def validate_vector_zonal_weighted(repository: Path, registered: set[str]) -> No
         raise RegistrationError('zonal weighted Native omitted from standard recipe')
     for relative, fragments in VECTOR_ZONAL_WEIGHTED_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('zonal weighted strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-vector-zonal-weighted-fixture.py').read_text()
     tree = ast.parse(source)
@@ -5360,7 +5412,7 @@ def validate_vector_zonal_weighted_stddev(repository: Path, registered: set[str]
         raise RegistrationError('zonal weighted stddev Native omitted from standard recipe')
     for relative, fragments in VECTOR_ZONAL_WEIGHTED_STDDEV_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('zonal weighted stddev strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-vector-zonal-weighted-stddev-fixture.py').read_text()
     tree = ast.parse(source)
@@ -5391,7 +5443,7 @@ def validate_vector_zonal_area_weighted(repository: Path, registered: set[str]) 
         raise RegistrationError('zonal area weighted Native omitted from standard recipe')
     for relative, fragments in VECTOR_ZONAL_AREA_WEIGHTED_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('zonal area weighted strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-vector-zonal-area-weighted-fixture.py').read_text()
     tree = ast.parse(source)
@@ -5422,7 +5474,7 @@ def validate_vector_zonal_area_weighted_stddev(repository: Path, registered: set
         raise RegistrationError('zonal area weighted Native omitted from standard recipe')
     for relative, fragments in VECTOR_ZONAL_AREA_WEIGHTED_STDDEV_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('zonal area weighted strict contract incomplete: '+relative)
     source = (repository/'business/scripts/online-vector-zonal-area-weighted-stddev-fixture.py').read_text()
     tree = ast.parse(source)
@@ -5492,7 +5544,7 @@ def validate_raster_statistics_percentile(repository: Path, registered: set[str]
         raise RegistrationError('statistics percentile Native fixture omitted from standard recipe')
     for relative, fragments in STATISTICS_PERCENTILE_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('statistics percentile strict contract incomplete: '+relative)
     tree = ast.parse((repository/'business/scripts/online-raster-statistics-percentile-fixture.py').read_text())
     actual = {name: [node.value for node in tree.body if isinstance(node,ast.Assign)
@@ -5566,7 +5618,7 @@ def validate_raster_statistics_percentiles(repository: Path, registered: set[str
         raise RegistrationError('statistics percentile Native fixture omitted from standard recipe')
     for relative, fragments in STATISTICS_PERCENTILES_REQUIRED.items():
         path = repository/relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('statistics percentile strict contract incomplete: '+relative)
     tree = ast.parse((repository/'business/scripts/online-raster-statistics-percentiles-fixture.py').read_text())
     actual = {name: [node.value for node in tree.body if isinstance(node,ast.Assign)
@@ -5632,7 +5684,7 @@ def validate_raster_band_recommendation_profile(repository: Path, registered: se
               'test_band_recommendation_requires_manual_nfs_readonly_oif_and_regressions')}
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'band-recommendation persistence contract is incomplete: {relative}')
 
 
@@ -5681,7 +5733,7 @@ def validate_raster_nibble_capacity_profile(repository: Path, registered: set[st
             'test_nibble_capacity_requires_manual_limits_disk_and_full_oracle')}
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'nibble capacity contract incomplete: {relative}')
 
 
@@ -5721,7 +5773,7 @@ def validate_raster_disk_pressure_profile(repository: Path, registered: set[str]
             'scripts/test/online-hosted-raster-disk-pressure-gate_test.py')}
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('disk pressure strict contract incomplete: '+relative)
 
 
@@ -5777,7 +5829,7 @@ def validate_raster_nibble_profile(repository: Path, registered: set[str]) -> No
               'test_nibble_requires_manual_nfs_exact_donors_and_regressions')}
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'nibble persistence contract is incomplete: {relative}')
 
 
@@ -5818,7 +5870,7 @@ def validate_raster_focal_statistics_profile(repository: Path, registered: set[s
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'focal statistics persistence contract is incomplete: {relative}')
 
 
@@ -5859,7 +5911,7 @@ def validate_raster_zonal_statistics_profile(repository: Path, registered: set[s
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'zonal statistics persistence contract is incomplete: {relative}')
 
 
@@ -5956,7 +6008,7 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f"raster capacity owner contract is incomplete: {relative}")
 
 
@@ -6035,7 +6087,7 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f"HDFS owner contract is incomplete: {relative}")
 
 
@@ -6069,7 +6121,7 @@ def validate_elasticsearch_spark_profile(repository: Path, registered: set[str])
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f'ES Spark owner contract is incomplete: {relative}')
 
 
@@ -6097,7 +6149,7 @@ def validate_public_origin_browser_profile(repository: Path, registered: set[str
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f"compose-public-origin browser contract is incomplete: {relative}")
 
 
@@ -6113,7 +6165,7 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
         "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'pg-source-authorization'\n" not in job.group("body")
     ) or "&& inputs.suite != 'pg-source-authorization'" not in workflow:
         raise RegistrationError("PG authorization must use its single manual Hosted job")
-    if '      pg_source_commit:\n' not in workflow or any(fragment not in job.group('body') for fragment in (
+    if '      pg_source_commit:\n' not in workflow or any(not source_contract_contains(job.group('body'), fragment, repository) for fragment in (
         'name: Validate requested PG source commit', 'name: Verify PG source ancestry',
         'PG_SOURCE_COMMIT: ${{ inputs.pg_source_commit }}', 'PG_DISPATCH_COMMIT: ${{ github.sha }}',
         '^[0-9a-f]{40}$', 'ref: ${{ inputs.pg_source_commit || github.sha }}',
@@ -6170,7 +6222,7 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError(f"PG authorization owner contract is incomplete: {relative}")
 
 
@@ -6214,7 +6266,7 @@ def validate_highgo_profile(repository: Path, registered: set[str]) -> None:
             raise RegistrationError(f"highgo-consumer-flow requires {relative}")
         text = path.read_text(encoding="utf-8")
         for fragment in fragments:
-            if fragment not in text:
+            if not source_contract_contains(text, fragment, repository):
                 raise RegistrationError(f"highgo-consumer-flow {relative} is missing {fragment}")
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
     job = re.search(r"(?ms)^  highgo-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
@@ -6228,12 +6280,12 @@ def validate_local_execution_trace_profile(repository: Path) -> None:
     """The formal-identity local technical gate is never a GitHub dispatch."""
     path=repository / "scripts/test/monitor-traces-local-gate.py"
     make=(repository / "Makefile").read_text() if (repository / "Makefile").is_file() else ""
-    if not path.exists() and "test-monitor-traces-local:" not in make:
+    if not path.exists() and not source_contract_contains(make, "test-monitor-traces-local:", repository):
         return
     required=("test-monitor-traces-local:", "@python3 scripts/test/monitor-traces-local-gate.py",
               "test-monitor-traces-local-runner:", "@$(MAKE) test-monitor-traces-local-runner",
               "scripts/test/monitor-traces-local-gate_test.py", "scripts/test/monitor-traces-local-online_test.py")
-    if not path.is_file() or any(value not in make for value in required):
+    if not path.is_file() or any(not source_contract_contains(make, value, repository) for value in required):
         raise RegistrationError("local execution Trace requires its manual entry and existing lifecycle runner")
     for relative in ("scripts/test/monitor-traces-local-online.py", "console/frontend/e2e/online/execution-trace-local.spec.js",
                      "system/backend/cmd/online-test-fixture/execution_trace_local.go"):
@@ -6248,14 +6300,14 @@ def validate_local_http_quality_profile(repository: Path) -> None:
     """Run mocks in normal lifecycle CI, never the real manual product profile."""
     make=(repository / "Makefile").read_text() if (repository / "Makefile").is_file() else ""
     entry="scripts/test/monitor-http-local-gate.py"
-    if not (repository / entry).exists() and "test-monitor-http-local:" not in make:
+    if not (repository / entry).exists() and not source_contract_contains(make, "test-monitor-http-local:", repository):
         return
     if '--case=$(or $(MONITOR_HTTP_LOCAL_CASE),full)' not in make_target_commands(make,"test-monitor-http-local"):
         raise RegistrationError("local HTTP quality requires bounded case forwarding through its original entry")
     for marker in ("test-monitor-http-local:", "@python3 "+entry,
                    "test-monitor-http-local-runner:", "@$(MAKE) test-monitor-http-local-runner",
                    "scripts/test/monitor-http-local-gate_test.py", "scripts/test/monitor-http-local-online_test.py"):
-        if marker not in make:
+        if not source_contract_contains(make, marker, repository):
             raise RegistrationError("local HTTP quality requires manual entry and deterministic lifecycle registration")
     commands=make_target_commands(make,"test-monitor-http-local-runner")
     if "node --test scripts/test/http-quality-local-browser_test.mjs" not in [line.strip().removeprefix("@") for line in commands.splitlines()]:
@@ -6291,7 +6343,7 @@ def validate_local_catalog_browser_profile(repository: Path) -> None:
         return
     for fragment in ("test-catalog-browser-local:", "clean-catalog-browser-local:", "finish-catalog-browser-local:",
                      "test-catalog-browser-local-runner:", "@$(MAKE) test-catalog-browser-local-runner"):
-        if fragment not in make:
+        if not source_contract_contains(make, fragment, repository):
             raise RegistrationError("local Catalog browser lifecycle/runner entry missing")
     for relative in ("scripts/test/catalog-browser-local-gate.py", "scripts/test/catalog-browser-local-gate_test.py",
                      "scripts/test/catalog-browser-local-fixture.py", "scripts/test/catalog-browser-local-fixture_test.py",
@@ -6314,13 +6366,13 @@ def validate_local_sgm_profile(repository: Path) -> None:
     if not script.is_file() or "@python3 scripts/test/manager-sgm-local-gate.py" not in make:
         raise RegistrationError("local SGM requires its manual Make entry")
     if ("@python3 -m unittest scripts/test/manager-sgm-local-gate_test.py" not in make
-            or "@$(MAKE) test-manager-sgm-local-runner" not in make):
+            or not source_contract_contains(make, "@$(MAKE) test-manager-sgm-local-runner", repository)):
         raise RegistrationError("local SGM lifecycle tests must join the existing Manager runner")
     text = script.read_text()
     for fragment in ('"local-isolated-technical-page-acceptance"', '"formal_t4": False',
                      '"com.addp.sgm-local"', '"--no-hardlinks"', 'life.cleanup()', 'preflight()',
                      'MANAGER.cleanup_managed_artifact(', '"--env-file", "/dev/null"'):
-        if fragment not in text:
+        if not source_contract_contains(text, fragment, repository):
             raise RegistrationError("local SGM lifecycle is missing " + fragment)
     for workflow in (repository / ".github/workflows").glob("*.y*ml"):
         if re.search(r"(?:make\s+test-manager-sgm-local(?![A-Za-z0-9_-])|python3?\s+scripts/test/manager-sgm-local-gate.py)", workflow.read_text()):
@@ -6379,7 +6431,7 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
     }
     for path, fragments in required.items():
         file = repository / path
-        if not file.is_file() or any(fragment not in file.read_text() for fragment in fragments):
+        if not file.is_file() or any(not source_contract_contains(file.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError("Graph native protection contract is incomplete: " + path)
     # The host preflight must reach every service declared by the suite, even
     # though normal browser traffic only enters through production Nginx.
@@ -6387,9 +6439,9 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
     environment = (repository / "scripts/utils/hosted-online.sh").read_text() + "\n" + lifecycle
     workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
     case_selector = re.search(r"(?ms)^      graph_case:\n(?P<body>.*?)(?=^      [a-zA-Z0-9_-]+:\n|\Z)", workflow)
-    if (case_selector is None or any(token not in case_selector.group('body') for token in ('type: choice', 'default: full', '- full', '- endpoint-geometry', '- endpoint-same-color'))
+    if (case_selector is None or any(not source_contract_contains(case_selector.group('body'), token, repository) for token in ('type: choice', 'default: full', '- full', '- endpoint-geometry', '- endpoint-same-color'))
             or 'ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}' not in workflow
-            or any(token not in lifecycle for token in ('ADDP_ONLINE_GRAPH_CASE=${ADDP_ONLINE_GRAPH_CASE-full}', 'full|endpoint-geometry|endpoint-same-color|execution-lifecycle)'))):
+            or any(not source_contract_contains(lifecycle, token, repository) for token in ('ADDP_ONLINE_GRAPH_CASE=${ADDP_ONLINE_GRAPH_CASE-full}', 'full|endpoint-geometry|endpoint-same-color|execution-lifecycle)'))):
         raise RegistrationError('Graph endpoint geometry requires explicit bounded case selection')
     if lifecycle.index('full|endpoint-geometry|endpoint-same-color|execution-lifecycle)') > lifecycle.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Graph case validation must precede Hosted lifecycle')
@@ -6407,13 +6459,13 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
             raise RegistrationError(f"Graph preflight {variable} requires exactly one loopback diagnostic binding on {service}: {port}")
     commands = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
     for test in ("graph-review-online_test.py", "graph-protection-online_test.py", "online-graph-fixture_test.py"):
-        if test not in commands:
+        if not source_contract_contains(commands, test, repository):
             raise RegistrationError("Graph protection regression must enter test-online-runner")
-    if "console/frontend/e2e/online/graph-review.spec.js" not in commands:
+    if not source_contract_contains(commands, "console/frontend/e2e/online/graph-review.spec.js", repository):
         raise RegistrationError("Graph review browser syntax must enter test-online-runner")
-    if "console/frontend/e2e/online/graph-protection.spec.js" not in commands:
+    if not source_contract_contains(commands, "console/frontend/e2e/online/graph-protection.spec.js", repository):
         raise RegistrationError("Graph Console browser syntax must enter test-online-runner")
-    if "console/frontend/e2e/online/develop-graph-query.spec.js" not in commands:
+    if not source_contract_contains(commands, "console/frontend/e2e/online/develop-graph-query.spec.js", repository):
         raise RegistrationError("Develop native browser syntax must enter test-online-runner")
     if 'if [ "$ONLINE_SUITE" != graph-protection ]; then' in lifecycle or "playwright install --with-deps chromium" not in lifecycle:
         raise RegistrationError("Graph Console requires Chromium in the same Hosted lifecycle")
@@ -6462,7 +6514,7 @@ def validate_execution_profiles(repository: Path, registered: set[str]) -> None:
     }
     for path, fragments in required.items():
         file = repository / path
-        if not file.is_file() or any(fragment not in file.read_text() for fragment in fragments):
+        if not file.is_file() or any(not source_contract_contains(file.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError("Execution CI contract is incomplete: " + path)
     overlay = (repository / "scripts/test/docker-compose.cleanup-execution-t4.yml").read_text()
     if compose_service_block(overlay, "graph-backend-peer"):
@@ -6501,9 +6553,9 @@ def validate_execution_profiles(repository: Path, registered: set[str]) -> None:
     if not (repository / "console/frontend/e2e/online/cleanup-execution.spec.js").is_file():
         raise RegistrationError("Cleanup browser scenario is missing")
     commands = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
-    if "console/frontend/e2e/online/cleanup-execution.spec.js" not in commands:
+    if not source_contract_contains(commands, "console/frontend/e2e/online/cleanup-execution.spec.js", repository):
         raise RegistrationError("Cleanup browser syntax must enter the standard Online gate")
-    if "scripts/ci/check-online-ci-registration_test.py" not in commands:
+    if not source_contract_contains(commands, "scripts/ci/check-online-ci-registration_test.py", repository):
         raise RegistrationError("Execution registration regressions must enter the standard Online gate")
 
 
@@ -6534,7 +6586,7 @@ def validate_native_cleanup_profile(repository: Path, registered: set[str]) -> N
     }
     for relative, fragments in required.items():
         path = repository / relative
-        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('Native Cleanup contract incomplete: ' + relative)
     contract = json.loads((repository / 'scripts/test/execution-online-contract.json').read_text())
     cases = set(contract['native_case_checks'])
@@ -6563,19 +6615,19 @@ def validate_native_cleanup_profile(repository: Path, registered: set[str]) -> N
         raise RegistrationError('Native Cleanup must archive only five public reports/outcomes')
     commands = make_target_commands((repository / 'Makefile').read_text(), 'test-online-runner')
     for relative in ('cleanup-native-effects-online_test.py', 'native-effect-proxy_test.py', 'cleanup-native-infra_test.py'):
-        if relative not in commands:
+        if not source_contract_contains(commands, relative, repository):
             raise RegistrationError('Native Cleanup deterministic tests missing from standard Online gate')
     overlay = (repository / 'scripts/test/docker-compose.cleanup-native-t4.yml').read_text()
     if compose_service_block(overlay, 'graph-backend-peer'):
         raise RegistrationError('Native Cleanup requires one Graph Owner')
     for owner in owners | {'system', 'security', 'monitor'}:
         block = compose_service_block(overlay, owner + '-backend') or ''
-        if any(fragment not in block for fragment in ('ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_HOSTED: "1"', 'ports: !override ["127.0.0.1:')):
+        if any(not source_contract_contains(block, fragment, repository) for fragment in ('ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_HOSTED: "1"', 'ports: !override ["127.0.0.1:')):
             raise RegistrationError('Native Owner identity/loopback boundary missing: ' + owner)
     manager = compose_service_block(overlay, 'manager-backend') or ''
     transfer = compose_service_block(overlay, 'transfer-backend') or ''
     if 'cleanup-native-object-proxy:19000' not in manager or 'cleanup-native-index-proxy:17700' not in manager or any(
-            fragment not in transfer for fragment in ('cleanup-native-dlq-proxy:29092', 'cleanup-native-capture-proxy:18083')):
+            not source_contract_contains(transfer, fragment, repository) for fragment in ('cleanup-native-dlq-proxy:29092', 'cleanup-native-capture-proxy:18083')):
         raise RegistrationError('Native app endpoints must be fixed before startup')
 
 
@@ -6598,7 +6650,7 @@ def validate_administrator_governance_profile(repository: Path, registered: set[
     commands = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
     for fragment in ("platform-administrator-governance-online_test.py", "online-hosted-administrator-governance-gate_test.py",
                      "platform-administrator-governance.spec.js", "test_administrator_governance_requires_manual_isolated_profile"):
-        if fragment not in commands:
+        if not source_contract_contains(commands, fragment, repository):
             raise RegistrationError("administrator governance regression missing: " + fragment)
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
     job = re.search(r"(?ms)^  administrator-governance-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
@@ -6610,7 +6662,7 @@ def validate_administrator_governance_profile(repository: Path, registered: set[
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite platform-administrator-governance',
                      'make build-iam-recovery build-iam-bootstrap GOOS=linux GOARCH=amd64 OUT_DIR=dist BUILD_TYPE=release',
                      'playwright install --with-deps chromium', 'make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
-        if fragment not in gate:
+        if not source_contract_contains(gate, fragment, repository):
             raise RegistrationError("administrator governance lifecycle missing: " + fragment)
 
 
@@ -6637,7 +6689,7 @@ def validate_catalog_domain_overview_profile(repository: Path, registered: set[s
         if not path.is_file():
             raise RegistrationError("Catalog domain overview requires " + relative)
         content = path.read_text(encoding="utf-8")
-        if any(fragment not in content for fragment in fragments):
+        if any(not source_contract_contains(content, fragment, repository) for fragment in fragments):
             raise RegistrationError("Catalog domain overview profile is incomplete: " + relative)
 
 
@@ -6654,21 +6706,21 @@ def validate_execution_retention_profile(repository: Path, registered: set[str])
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'scripts/dev/stop-exact-process.sh -system',
                      'scripts/dev/start.sh --exact-process -system', '-m "$RETENTION_DRIVER" prepare',
                      'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
-        if fragment not in gate:
+        if not source_contract_contains(gate, fragment, repository):
             raise RegistrationError("Execution retention lifecycle missing " + fragment)
     makefile = (repository / "Makefile").read_text()
-    if "$(MAKE) test-execution-retention-online-runner" not in make_target_commands(makefile, "test-online-runner"):
+    if not source_contract_contains(make_target_commands(makefile, "test-online-runner"), "$(MAKE) test-execution-retention-online-runner", repository):
         raise RegistrationError("Execution retention regressions must belong to test-online-runner")
     commands = make_target_commands(makefile, "test-execution-retention-online-runner")
     for name in ("execution-retention-readonly-online_test.py", "online-hosted-execution-retention-gate_test.py"):
-        if name not in commands or not (repository / "scripts/test" / name).is_file():
+        if not source_contract_contains(commands, name, repository) or not (repository / "scripts/test" / name).is_file():
             raise RegistrationError("Execution retention regression missing " + name)
 
     if "execution-events-retention" in registered:
         if ("ONLINE_SUITE_INPUT: ${{ inputs.suite }}" not in job.group("body")
                 or "inputs.suite != 'execution-events-retention'" not in workflow
                 or "scripts.test.execution-events-retention-online" not in gate
-                or "execution-events-retention-online_test.py" not in commands
+                or not source_contract_contains(commands, "execution-events-retention-online_test.py", repository)
                 or not (repository / "scripts/test/execution-events-retention-online_test.py").is_file()):
             raise RegistrationError("Execution events require a dedicated manual Hosted profile and regressions")
 
@@ -6677,7 +6729,7 @@ def validate_execution_retention_profile(repository: Path, registered: set[str])
                 or "timeout-minutes: ${{ inputs.suite == 'execution-retention-hourly' && 180 || 60 }}" not in job.group("body")
                 or "execution-retention-hourly) RETENTION_DRIVER=scripts.test.execution-retention-hourly-online" not in gate
                 or "if [ \"$ONLINE_SUITE\" = execution-retention-hourly ]; then export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=8100; fi" not in gate
-                or "execution-retention-hourly-online_test.py" not in commands
+                or not source_contract_contains(commands, "execution-retention-hourly-online_test.py", repository)
                 or not (repository / "scripts/test/execution-retention-hourly-online_test.py").is_file()):
             raise RegistrationError("Hourly retention requires its manual-only long budget and regressions")
 
@@ -6697,14 +6749,14 @@ def validate_event_pagination_profile(repository: Path, registered: set[str]) ->
         if part not in gate:
             raise RegistrationError("Event pagination lifecycle missing " + part)
     makefile = (repository / "Makefile").read_text()
-    if "$(MAKE) test-execution-events-pagination-runner" not in make_target_commands(makefile, "test-online-runner"):
+    if not source_contract_contains(make_target_commands(makefile, "test-online-runner"), "$(MAKE) test-execution-events-pagination-runner", repository):
         raise RegistrationError("Event pagination regressions need the standard Online owner")
     commands = make_target_commands(makefile, "test-execution-events-pagination-runner")
     for name in ("execution-events-pagination-online_test.py", "online-hosted-event-pagination-gate_test.py", "execution-event-pagination-fixture_test.go", "execution-events-pagination.spec.js"):
-        if name not in commands:
+        if not source_contract_contains(commands, name, repository):
             raise RegistrationError("Event pagination regression missing " + name)
     fixture = make_target_commands(makefile, "test-execution-event-pagination-fixture")
-    if "ADDP_EXECUTION_EVENT_FIXTURE=1" not in fixture or "TestHostedExecutionEventPaginationFixture" not in fixture:
+    if not source_contract_contains(fixture, "ADDP_EXECUTION_EVENT_FIXTURE=1", repository) or not source_contract_contains(fixture, "TestHostedExecutionEventPaginationFixture", repository):
         raise RegistrationError("Event pagination fixture requires explicit guarded entry")
 
 
@@ -6863,7 +6915,7 @@ def validate_vector_zonal_class_frequency(repository: Path, registered: set[str]
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in VECTOR_ZONAL_CLASS_FREQUENCY_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-vector-zonal-class-frequency-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES')}
     fixed={'CASES': {'direct.gpkg': ('values.tif', 'zones.gpkg', 'frequency', False, 'zonal_'), 'touched.gpkg': ('values.tif', 'zones.gpkg', 'frequency', True, 'zonal_'), 'holes.gpkg': ('values.tif', 'holes.gpkg', 'frequency', False, 'zonal_'), 'overlap.gpkg': ('values.tif', 'overlap.gpkg', 'frequency', False, 'zonal_'), 'multipart.gpkg': ('values.tif', 'multipart.gpkg', 'frequency', False, 'zonal_'), 'rotated.gpkg': ('rotated.tif', 'rotated.gpkg', 'frequency', False, 'zonal_'), 'geographic.gpkg': ('geographic.tif', 'geographic.gpkg', 'frequency', False, 'zonal_'), 'coverage.gpkg': ('coverage.tif', 'zones.gpkg', 'frequency', False, 'zonal_'), 'cross-block.gpkg': ('large.tif', 'large.gpkg', 'frequency', False, 'zonal_'), 'all-invalid.gpkg': ('invalid.tif', 'zones.gpkg', 'frequency', False, 'zonal_'), 'outside.gpkg': ('values.tif', 'outside.gpkg', 'frequency', False, 'zonal_'), 'empty.gpkg': ('values.tif', 'empty.gpkg', 'frequency', False, 'zonal_'), 'business-fid.gpkg': ('values.tif', 'fid.gpkg', 'frequency', False, 'zonal_'), 'business-uppercase-fid.gpkg': ('values.tif', 'upper-fid.gpkg', 'frequency', False, 'zonal_'), 'business-mixed-fid.gpkg': ('values.tif', 'mixed-fid.gpkg', 'frequency', False, 'custom_'), 'summary.gpkg': ('values.tif', 'zones.gpkg', 'summary', False, 'zonal_')}, 'FAILURES': ('method_null', 'method_unknown', 'percentile_null', 'weights_null', 'weights_band', 'stddev', 'area', 'area_stddev', 'flag_string', 'id_missing', 'id_null', 'id_duplicate', 'id_unknown', 'band_zero', 'band_high', 'band_boolean', 'band_string', 'band_null', 'alpha', 'fractional', 'unsafe', 'different_crs', 'prefix_null', 'collision', 'touched_numeric', 'point', 'invalid_polygon', 'z_geometry', 'summary_id', 'prefix_boolean', 'touched_null', 'complex')}
@@ -6884,7 +6936,7 @@ def validate_raster_sample_lines(repository: Path, registered: set[str]) -> None
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in RASTER_SAMPLE_LINES_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-sample-lines-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES')}
     fixed={'CASES': {'cell.gpkg': ('values.tif', 'lines.gpkg', 'direct', 'cell', 1.0), 'bilinear.gpkg': ('values.tif', 'lines.gpkg', 'direct', 'bilinear', 1.0), 'feet.gpkg': ('feet.tif', 'feet.gpkg', 'direct', 'cell', 0.5), 'survey-feet.gpkg': ('survey-feet.tif', 'survey-feet.gpkg', 'direct', 'bilinear', 0.5), 'corners.gpkg': ('values.tif', 'corners.gpkg', 'direct', 'cell', 2.0), 'short.gpkg': ('values.tif', 'short.gpkg', 'direct', 'bilinear', 10.0), 'closed.gpkg': ('values.tif', 'closed.gpkg', 'direct', 'cell', 1.0), 'endpoint.gpkg': ('values.tif', 'endpoint.gpkg', 'direct', 'bilinear', 2.0), 'rotated.gpkg': ('rotated.tif', 'rotated.gpkg', 'direct', 'bilinear', 1.0), 'rectangular.gpkg': ('values.tif', 'lines.gpkg', 'direct', 'cell', 0.5), 'outside.gpkg': ('values.tif', 'outside.gpkg', 'direct', 'bilinear', 2.0), 'nodata.gpkg': ('invalid.tif', 'lines.gpkg', 'direct', 'cell', 1.0), 'coverage.gpkg': ('coverage.tif', 'lines.gpkg', 'direct', 'bilinear', 1.0), 'business-fid.gpkg': ('values.tif', 'fid.gpkg', 'direct', 'cell', 1.0), 'business-uppercase-fid.gpkg': ('values.tif', 'upper-fid.gpkg', 'direct', 'bilinear', 1.0), 'business-mixed-fid.gpkg': ('values.tif', 'mixed-fid.gpkg', 'direct', 'bilinear', 1.0)}, 'FAILURES': ('band_zero', 'band_high', 'band_boolean', 'band_string', 'band_null', 'alpha', 'method_null', 'method_unknown', 'spacing_zero', 'spacing_negative', 'spacing_boolean', 'spacing_string', 'spacing_null', 'spacing_list', 'id_geometry', 'id_null', 'id_unknown', 'id_duplicate', 'different_crs', 'geographic', 'point', 'polygon', 'multiline', 'zero_line', 'z_line', 'collision_distance', 'collision_value', 'collision_status')}
@@ -6905,7 +6957,7 @@ def validate_interpolate_idw(repository: Path, registered: set[str]) -> None:
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in INTERPOLATE_IDW_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-interpolate-idw-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES')}
     fixed={'CASES': {'base.cog.tif': ('template.tif', 'points.gpkg', 4.0), 'reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0), 'coincident.cog.tif': ('template.tif', 'coincident.gpkg', 4.0), 'boundary.cog.tif': ('template.tif', 'boundary.gpkg', 1.0), 'below.cog.tif': ('template.tif', 'boundary.gpkg', 0.9999999999999999), 'above.cog.tif': ('template.tif', 'boundary.gpkg', 1.0000000000000002), 'outside.cog.tif': ('template.tif', 'outside.gpkg', 1.0), 'partial.cog.tif': ('template.tif', 'boundary.gpkg', 0.125), 'empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0), 'invalid-template.cog.tif': ('invalid.tif', 'points.gpkg', 4.0), 'mask-alpha.cog.tif': ('coverage.tif', 'points.gpkg', 4.0), 'rectangular-block.cog.tif': ('rectangular.tif', 'points.gpkg', 4.0), 'rotated.cog.tif': ('rotated.tif', 'points.gpkg', 4.0), 'sheared.cog.tif': ('sheared.tif', 'points.gpkg', 4.0), 'foot.cog.tif': ('foot.tif', 'foot.gpkg', 1.5), 'survey-foot.cog.tif': ('survey.tif', 'survey.gpkg', 1.5)}, 'FAILURES': ('radius_zero', 'radius_negative', 'radius_boolean', 'radius_string', 'field_missing', 'field_geometry', 'value_null', 'value_string', 'value_unsafe', 'duplicate_equal', 'duplicate_different', 'duplicate_outside', 'null_geometry', 'line', 'multipoint', 'z_point', 'different_crs', 'geographic')}
@@ -6926,7 +6978,7 @@ def validate_interpolate_idw_min_points(repository: Path, registered: set[str]) 
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in INTERPOLATE_IDW_MIN_POINTS_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-interpolate-idw-min-points-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES','CONTROLS')}
     fixed={'CASES': {'base.cog.tif': ('template.tif', 'points.gpkg', 4.0, None), 'one.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1), 'threshold.cog.tif': ('template.tif', 'points.gpkg', 4.0, 3), 'shortfall.cog.tif': ('template.tif', 'points.gpkg', 4.0, 4), 'coincident.cog.tif': ('template.tif', 'coincident.gpkg', 4.0, 10), 'no-support.cog.tif': ('template.tif', 'noncoincident.gpkg', 4.0, 2), 'below.cog.tif': ('one.tif', 'boundary.gpkg', 0.9999999999999999, 2), 'boundary.cog.tif': ('one.tif', 'boundary.gpkg', 1.0, 2), 'above.cog.tif': ('one.tif', 'boundary.gpkg', 1.0000000000000002, 2), 'reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 3), 'empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 2), 'mask-alpha.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 2), 'rectangular-block.cog.tif': ('rectangular.tif', 'points.gpkg', 4.0, 2), 'rotated-sheared-block.cog.tif': ('sheared.tif', 'points.gpkg', 4.0, 2), 'foot.cog.tif': ('foot.tif', 'foot.gpkg', 1.5, 2), 'survey-foot.cog.tif': ('survey.tif', 'survey.gpkg', 1.5, 2)}, 'CONTROLS': (('base.cog.tif', 'one.cog.tif'), ('threshold.cog.tif', 'reversed.cog.tif')), 'FAILURES': ('radius_zero', 'radius_negative', 'radius_boolean', 'radius_string', 'field_missing', 'field_geometry', 'value_null', 'value_string', 'value_unsafe', 'duplicate_equal', 'duplicate_different', 'duplicate_outside', 'null_geometry', 'line', 'multipoint', 'z_point', 'different_crs', 'geographic', 'min_points_null', 'min_points_true', 'min_points_false', 'min_points_zero', 'min_points_negative', 'min_points_fraction', 'min_points_string', 'min_points_array', 'min_points_object')}
@@ -6947,7 +6999,7 @@ def validate_interpolate_idw_max_points(repository: Path, registered: set[str]) 
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in INTERPOLATE_IDW_MAX_POINTS_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-interpolate-idw-max-points-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES','CONTROLS','RASTERS','VECTORS')}
     fixed={'CASES': {'base.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1, None), 'unlimited.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1, 100), 'nearest-one.cog.tif': ('template.tif', 'ties.gpkg', 4.0, 1, 1), 'nearest-two.cog.tif': ('template.tif', 'ties.gpkg', 4.0, 2, 2), 'reversed.cog.tif': ('template.tif', 'ties-reversed.gpkg', 4.0, 2, 2), 'below.cog.tif': ('one.tif', 'boundary.gpkg', 0.9999999999999999, 2, 2), 'boundary.cog.tif': ('one.tif', 'boundary.gpkg', 1.0, 2, 2), 'above.cog.tif': ('one.tif', 'boundary.gpkg', 1.0000000000000002, 2, 2), 'coincident.cog.tif': ('template.tif', 'coincident.gpkg', 4.0, 10, 10), 'shortfall.cog.tif': ('template.tif', 'noncoincident.gpkg', 4.0, 2, 2), 'empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 1, 3), 'mask-alpha.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 1, 2), 'rectangular-block.cog.tif': ('rectangular.tif', 'points.gpkg', 4.0, 1, 2), 'rotated-sheared-block.cog.tif': ('sheared.tif', 'points.gpkg', 4.0, 1, 2), 'foot.cog.tif': ('foot.tif', 'foot.gpkg', 1.5, 1, 2), 'survey-foot.cog.tif': ('survey.tif', 'survey.gpkg', 1.5, 1, 2)}, 'CONTROLS': (('base.cog.tif', 'unlimited.cog.tif'), ('nearest-two.cog.tif', 'reversed.cog.tif')), 'FAILURES': ('radius_zero', 'radius_negative', 'radius_boolean', 'radius_string', 'field_missing', 'field_geometry', 'value_null', 'value_string', 'value_unsafe', 'duplicate_equal', 'duplicate_different', 'duplicate_outside', 'null_geometry', 'line', 'multipoint', 'z_point', 'different_crs', 'geographic', 'min_points_null', 'min_points_true', 'min_points_false', 'min_points_zero', 'min_points_negative', 'min_points_fraction', 'min_points_string', 'min_points_array', 'min_points_object', 'max_points_null', 'max_points_true', 'max_points_false', 'max_points_zero', 'max_points_negative', 'max_points_fraction', 'max_points_string', 'max_points_array', 'max_points_object', 'point_counts', 'point_counts_empty', 'point_counts_coincident'), 'RASTERS': ('template.tif', 'invalid.tif', 'coverage.tif', 'rectangular.tif', 'rotated.tif', 'sheared.tif', 'foot.tif', 'survey.tif', 'geographic.tif', 'one.tif'), 'VECTORS': ('points.gpkg', 'reversed.gpkg', 'coincident.gpkg', 'boundary.gpkg', 'outside.gpkg', 'empty.gpkg', 'foot.gpkg', 'survey.gpkg', 'value_null.gpkg', 'value_string.gpkg', 'value_unsafe.gpkg', 'duplicate_equal.gpkg', 'duplicate_different.gpkg', 'duplicate_outside.gpkg', 'null_geometry.gpkg', 'line.gpkg', 'multipoint.gpkg', 'z_point.gpkg', 'different_crs.gpkg', 'geographic.gpkg', 'noncoincident.gpkg', 'ties.gpkg', 'ties-reversed.gpkg')}
@@ -6969,7 +7021,7 @@ def validate_interpolate_idw_power(repository: Path, registered: set[str]) -> No
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in INTERPOLATE_IDW_POWER_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-interpolate-idw-power-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES','CONTROLS','RASTERS','VECTORS')}
     fixed={'CASES': {'p1-base.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1, None, 1), 'p1-reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 1, None, 1), 'p1-nearest.cog.tif': ('profile.tif', 'ties.gpkg', 1.0, 2, 2, 1), 'p1-coincident.cog.tif': ('template.tif', 'coincident.gpkg', 4.0, 10, 10, 1), 'p1-empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 1, None, 1), 'p1-masked.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 1, None, 1), 'p1-foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 10000.0, 1, 2, 1), 'p1-survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 10000.0, 1, 2, 1), 'p2-default.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1, None, None), 'p2-explicit.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1, None, 2), 'p2-nearest.cog.tif': ('profile.tif', 'ties.gpkg', 1.0, 2, 2, 2), 'p2-coincident.cog.tif': ('template.tif', 'coincident.gpkg', 4.0, 10, 10, 2), 'p2-empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 1, None, 2), 'p2-masked.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 1, None, 2), 'p2-foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 10000.0, 1, 2, 2), 'p2-survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 10000.0, 1, 2, 2), 'p3-base.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1, None, 3), 'p3-reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 1, None, 3), 'p3-nearest.cog.tif': ('profile.tif', 'ties.gpkg', 1.0, 2, 2, 3), 'p3-coincident.cog.tif': ('template.tif', 'coincident.gpkg', 4.0, 10, 10, 3), 'p3-empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 1, None, 3), 'p3-masked.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 1, None, 3), 'p3-foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 10000.0, 1, 2, 3), 'p3-survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 10000.0, 1, 2, 3)}, 'CONTROLS': (('p1-base.cog.tif', 'p1-reversed.cog.tif'), ('p1-base.cog.tif', 'p1-masked.cog.tif'), ('p2-default.cog.tif', 'p2-explicit.cog.tif'), ('p2-default.cog.tif', 'p2-masked.cog.tif'), ('p3-base.cog.tif', 'p3-reversed.cog.tif'), ('p3-base.cog.tif', 'p3-masked.cog.tif')), 'FAILURES': ('power_null', 'power_true', 'power_false', 'power_zero', 'power_negative', 'power_large', 'power_fraction', 'power_string', 'power_array', 'power_object', 'p1_min_zero', 'p1_max_zero', 'p1_counts_regular', 'p1_counts_empty', 'p1_counts_coincident', 'p1_duplicate_outside', 'p1_outside_null', 'p1_unselected_null', 'p1_line', 'p1_different_crs', 'p2_min_zero', 'p2_max_zero', 'p2_counts_regular', 'p2_counts_empty', 'p2_counts_coincident', 'p2_duplicate_outside', 'p2_outside_null', 'p2_unselected_null', 'p2_line', 'p2_different_crs', 'p3_min_zero', 'p3_max_zero', 'p3_counts_regular', 'p3_counts_empty', 'p3_counts_coincident', 'p3_duplicate_outside', 'p3_outside_null', 'p3_unselected_null', 'p3_line', 'p3_different_crs'), 'RASTERS': ('template.tif', 'coverage.tif', 'profile.tif', 'rectangular.tif', 'sheared.tif'), 'VECTORS': ('points.gpkg', 'reversed.gpkg', 'coincident.gpkg', 'empty.gpkg', 'foot.gpkg', 'survey.gpkg', 'ties.gpkg', 'duplicate_outside.gpkg', 'outside_null.gpkg', 'unselected_null.gpkg', 'line.gpkg', 'different_crs.gpkg')}
@@ -6994,7 +7046,7 @@ def validate_point_density(repository: Path, registered: set[str]) -> None:
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in POINT_DENSITY_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-point-density-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES','CONTROLS','SCALE_CONTROL','RASTERS','VECTORS')}
     fixed={'CASES': {'base.cog.tif': ('template.tif', 'points.gpkg', 4.0), 'reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0), 'triplicated.cog.tif': ('template.tif', 'triplicated.gpkg', 4.0), 'coincident.cog.tif': ('template.tif', 'coincident.gpkg', 4.0), 'below.cog.tif': ('one.tif', 'boundary.gpkg', 0.9999999999999999), 'boundary.cog.tif': ('one.tif', 'boundary.gpkg', 1.0), 'above.cog.tif': ('one.tif', 'boundary.gpkg', 1.0000000000000002), 'outside.cog.tif': ('template.tif', 'outside.gpkg', 1.0), 'partial.cog.tif': ('template.tif', 'points.gpkg', 0.5), 'empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0), 'invalid-template.cog.tif': ('invalid.tif', 'points.gpkg', 4.0), 'mask-alpha.cog.tif': ('coverage.tif', 'points.gpkg', 4.0), 'rectangular-block.cog.tif': ('rectangular.tif', 'points.gpkg', 4.0), 'rotated-sheared-block.cog.tif': ('sheared.tif', 'points.gpkg', 4.0), 'foot.cog.tif': ('foot.tif', 'foot.gpkg', 1.5), 'survey-foot.cog.tif': ('survey.tif', 'survey.gpkg', 1.5)}, 'CONTROLS': (('base.cog.tif', 'reversed.cog.tif'), ('base.cog.tif', 'invalid-template.cog.tif'), ('base.cog.tif', 'mask-alpha.cog.tif')), 'SCALE_CONTROL': ('base.cog.tif', 'triplicated.cog.tif', 3), 'FAILURES': ('radius_null', 'radius_true', 'radius_false', 'radius_zero', 'radius_negative', 'radius_string', 'radius_array', 'radius_object', 'null_geometry', 'empty_geometry', 'line', 'multipoint', 'z_point', 'outside_z_point', 'different_crs', 'geographic'), 'RASTERS': ('template.tif', 'invalid.tif', 'coverage.tif', 'rectangular.tif', 'sheared.tif', 'foot.tif', 'survey.tif', 'geographic.tif', 'one.tif'), 'VECTORS': ('points.gpkg', 'reversed.gpkg', 'triplicated.gpkg', 'coincident.gpkg', 'boundary.gpkg', 'outside.gpkg', 'empty.gpkg', 'foot.gpkg', 'survey.gpkg', 'null_geometry.gpkg', 'empty_geometry.gpkg', 'line.gpkg', 'multipoint.gpkg', 'z_point.gpkg', 'outside_z_point.gpkg', 'different_crs.gpkg', 'geographic.gpkg')}
@@ -7016,7 +7068,7 @@ def validate_line_density(repository: Path, registered: set[str]) -> None:
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in LINE_DENSITY_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-line-density-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES','CONTROLS','SCALE_CONTROLS','RASTERS','VECTORS')}
     fixed={'CASES': {'base.cog.tif': ('template.tif', 'lines.gpkg', 4.0), 'reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0), 'doubled.cog.tif': ('template.tif', 'doubled.gpkg', 4.0), 'retraced.cog.tif': ('template.tif', 'retraced.gpkg', 4.0), 'multipart.cog.tif': ('template.tif', 'multipart.gpkg', 4.0), 'subdivided.cog.tif': ('template.tif', 'subdivided.gpkg', 4.0), 'overlap.cog.tif': ('template.tif', 'overlap.gpkg', 4.0), 'tangent.cog.tif': ('one.tif', 'tangent.gpkg', 1.0), 'inside-tangent.cog.tif': ('one.tif', 'inside-tangent.gpkg', 1.0), 'outside-tangent.cog.tif': ('one.tif', 'outside-tangent.gpkg', 1.0), 'endpoint.cog.tif': ('one.tif', 'endpoint.gpkg', 1.0), 'outside.cog.tif': ('template.tif', 'outside.gpkg', 4.0), 'empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0), 'mask-alpha.cog.tif': ('coverage.tif', 'lines.gpkg', 4.0), 'foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 4.0), 'survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 4.0)}, 'CONTROLS': (('base.cog.tif', 'reversed.cog.tif'), ('base.cog.tif', 'multipart.cog.tif'), ('base.cog.tif', 'subdivided.cog.tif'), ('base.cog.tif', 'mask-alpha.cog.tif'), ('tangent.cog.tif', 'outside-tangent.cog.tif'), ('tangent.cog.tif', 'endpoint.cog.tif'), ('outside.cog.tif', 'empty.cog.tif')), 'SCALE_CONTROLS': (('base.cog.tif', 'doubled.cog.tif', 2), ('base.cog.tif', 'retraced.cog.tif', 2)), 'FAILURES': ('radius_null', 'radius_true', 'radius_false', 'radius_zero', 'radius_negative', 'radius_string', 'radius_array', 'radius_object', 'null_geometry', 'empty_geometry', 'point', 'polygon', 'collection', 'zero_line', 'zero_component', 'z_line', 'outside_z_line', 'outside_zero_line', 'different_crs', 'geographic'), 'RASTERS': ('template.tif', 'coverage.tif', 'rectangular.tif', 'sheared.tif', 'geographic.tif', 'one.tif'), 'VECTORS': ('lines.gpkg', 'reversed.gpkg', 'doubled.gpkg', 'retraced.gpkg', 'multipart.gpkg', 'subdivided.gpkg', 'overlap.gpkg', 'tangent.gpkg', 'inside-tangent.gpkg', 'outside-tangent.gpkg', 'endpoint.gpkg', 'outside.gpkg', 'empty.gpkg', 'foot.gpkg', 'survey.gpkg', 'null_geometry.gpkg', 'empty_geometry.gpkg', 'point.gpkg', 'polygon.gpkg', 'collection.gpkg', 'zero_line.gpkg', 'zero_component.gpkg', 'z_line.gpkg', 'outside_z_line.gpkg', 'outside_zero_line.gpkg', 'different_crs.gpkg', 'geographic.gpkg')}
@@ -7038,7 +7090,7 @@ def validate_line_density_weighted(repository: Path, registered: set[str]) -> No
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in LINE_DENSITY_WEIGHTED_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-line-density-weighted-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES','CONTROLS','SCALE_CONTROLS','RASTERS','VECTORS')}
     fixed={'CASES': {'omitted.cog.tif': ('template.tif', 'lines.gpkg', 4.0, None), 'ones.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'ones'), 'mixed.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'mass'), 'reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 'mass'), 'integer.cog.tif': ('template.tif', 'integer.gpkg', 4.0, 'mass'), 'replicated.cog.tif': ('template.tif', 'replicated.gpkg', 4.0, None), 'scaled.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'scaled'), 'retraced.cog.tif': ('template.tif', 'retraced.gpkg', 4.0, 'mass'), 'multipart.cog.tif': ('template.tif', 'multipart.gpkg', 4.0, 'mass'), 'subdivided.cog.tif': ('template.tif', 'subdivided.gpkg', 4.0, 'mass'), 'zero.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'zero'), 'empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 'mass'), 'mask-alpha.cog.tif': ('coverage.tif', 'lines.gpkg', 4.0, 'mass'), 'boundary-profile.cog.tif': ('profile.tif', 'profile.gpkg', 1.0, 'mass'), 'foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 4.0, 'mass'), 'survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 4.0, 'mass')}, 'CONTROLS': (('omitted.cog.tif', 'ones.cog.tif'), ('mixed.cog.tif', 'reversed.cog.tif'), ('integer.cog.tif', 'replicated.cog.tif'), ('mixed.cog.tif', 'multipart.cog.tif'), ('mixed.cog.tif', 'subdivided.cog.tif'), ('mixed.cog.tif', 'mask-alpha.cog.tif'), ('zero.cog.tif', 'empty.cog.tif')), 'SCALE_CONTROLS': (('mixed.cog.tif', 'scaled.cog.tif', 8), ('mixed.cog.tif', 'retraced.cog.tif', 2)), 'FAILURES': ('field_null', 'field_empty', 'field_blank', 'field_bool', 'field_number', 'field_array', 'field_object', 'field_missing', 'field_geometry', 'missing', 'negative', 'string', 'outside_missing', 'outside_negative', 'zero_point', 'zero_line', 'zero_component', 'zero_outside_z', 'zero_crs', 'zero_radius'), 'RASTERS': ('template.tif', 'coverage.tif', 'profile.tif', 'rectangular.tif', 'sheared.tif'), 'VECTORS': ('lines.gpkg', 'reversed.gpkg', 'integer.gpkg', 'replicated.gpkg', 'retraced.gpkg', 'multipart.gpkg', 'subdivided.gpkg', 'empty.gpkg', 'profile.gpkg', 'foot.gpkg', 'survey.gpkg', 'missing.gpkg', 'negative.gpkg', 'string.gpkg', 'outside_missing.gpkg', 'outside_negative.gpkg', 'zero_point.gpkg', 'zero_line.gpkg', 'zero_component.gpkg', 'zero_outside_z.gpkg', 'zero_crs.gpkg')}
@@ -7064,7 +7116,7 @@ def validate_line_kernel_density(repository: Path, registered: set[str]) -> None
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in LINE_KERNEL_DENSITY_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-line-kernel-density-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES','CONTROLS','SCALE_CONTROLS','RASTERS','VECTORS','METHOD_CONTROLS')}
     fixed={'CASES': {'uniform-default.cog.tif': ('template.tif', 'lines.gpkg', 4.0, None, None), 'uniform-explicit.cog.tif': ('template.tif', 'lines.gpkg', 4.0, None, 'uniform'), 'uniform-weighted-default.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'mass', None), 'uniform-weighted-explicit.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'mass', 'uniform'), 'uniform-zero.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'zero', 'uniform'), 'uniform-boundary-profile.cog.tif': ('profile.tif', 'profile.gpkg', 1.0, 'mass', 'uniform'), 'omitted.cog.tif': ('template.tif', 'lines.gpkg', 4.0, None, 'quartic'), 'ones.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'ones', 'quartic'), 'mixed.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'mass', 'quartic'), 'reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 'mass', 'quartic'), 'integer.cog.tif': ('template.tif', 'integer.gpkg', 4.0, 'mass', 'quartic'), 'replicated.cog.tif': ('template.tif', 'replicated.gpkg', 4.0, None, 'quartic'), 'scaled.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'scaled', 'quartic'), 'retraced.cog.tif': ('template.tif', 'retraced.gpkg', 4.0, 'mass', 'quartic'), 'multipart.cog.tif': ('template.tif', 'multipart.gpkg', 4.0, 'mass', 'quartic'), 'subdivided.cog.tif': ('template.tif', 'subdivided.gpkg', 4.0, 'mass', 'quartic'), 'zero.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'zero', 'quartic'), 'empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 'mass', 'quartic'), 'mask-alpha.cog.tif': ('coverage.tif', 'lines.gpkg', 4.0, 'mass', 'quartic'), 'boundary-profile.cog.tif': ('profile.tif', 'profile.gpkg', 1.0, 'mass', 'quartic'), 'foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 4.0, 'mass', 'quartic'), 'survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 4.0, 'mass', 'quartic'), 'diameter.cog.tif': ('profile.tif', 'diameter.gpkg', 1.0, 'mass', 'quartic'), 'chord.cog.tif': ('profile.tif', 'chord.gpkg', 1.0, 'mass', 'quartic')}, 'CONTROLS': (('uniform-default.cog.tif', 'uniform-explicit.cog.tif'), ('uniform-weighted-default.cog.tif', 'uniform-weighted-explicit.cog.tif'), ('uniform-zero.cog.tif', 'zero.cog.tif'), ('omitted.cog.tif', 'ones.cog.tif'), ('mixed.cog.tif', 'reversed.cog.tif'), ('integer.cog.tif', 'replicated.cog.tif'), ('mixed.cog.tif', 'multipart.cog.tif'), ('mixed.cog.tif', 'subdivided.cog.tif'), ('mixed.cog.tif', 'mask-alpha.cog.tif'), ('zero.cog.tif', 'empty.cog.tif')), 'SCALE_CONTROLS': (('mixed.cog.tif', 'scaled.cog.tif', 8), ('mixed.cog.tif', 'retraced.cog.tif', 2)), 'FAILURES': ('field_null', 'field_empty', 'field_blank', 'field_bool', 'field_number', 'field_array', 'field_object', 'field_missing', 'field_geometry', 'missing', 'negative', 'string', 'outside_missing', 'outside_negative', 'zero_point', 'zero_line', 'zero_component', 'zero_outside_z', 'zero_crs', 'zero_radius', 'method_null', 'method_true', 'method_false', 'method_number', 'method_list', 'method_object', 'method_empty', 'method_blank', 'method_case', 'method_unknown'), 'RASTERS': ('template.tif', 'coverage.tif', 'profile.tif', 'rectangular.tif', 'sheared.tif'), 'VECTORS': ('lines.gpkg', 'reversed.gpkg', 'integer.gpkg', 'replicated.gpkg', 'retraced.gpkg', 'multipart.gpkg', 'subdivided.gpkg', 'empty.gpkg', 'profile.gpkg', 'foot.gpkg', 'survey.gpkg', 'missing.gpkg', 'negative.gpkg', 'string.gpkg', 'outside_missing.gpkg', 'outside_negative.gpkg', 'zero_point.gpkg', 'zero_line.gpkg', 'zero_component.gpkg', 'zero_outside_z.gpkg', 'zero_crs.gpkg', 'diameter.gpkg', 'chord.gpkg'), 'METHOD_CONTROLS': (('uniform-default.cog.tif', 'omitted.cog.tif'), ('uniform-weighted-default.cog.tif', 'mixed.cog.tif'), ('uniform-boundary-profile.cog.tif', 'boundary-profile.cog.tif'))}
@@ -7092,7 +7144,7 @@ def validate_point_kernel_density(repository: Path, registered: set[str]) -> Non
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in POINT_KERNEL_DENSITY_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-point-kernel-density-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES','CONTROLS','SCALE_CONTROL','RASTERS','VECTORS')}
     fixed={'CASES': {'base.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'quartic'), 'reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 'quartic'), 'triplicated.cog.tif': ('template.tif', 'triplicated.gpkg', 4.0, 'quartic'), 'coincident.cog.tif': ('profile.tif', 'coincident.gpkg', 1.0, 'quartic'), 'below.cog.tif': ('one.tif', 'boundary.gpkg', 0.9999999999999999, 'quartic'), 'boundary.cog.tif': ('one.tif', 'boundary.gpkg', 1.0, 'quartic'), 'above.cog.tif': ('one.tif', 'boundary.gpkg', 1.0000000000000002, 'quartic'), 'outside.cog.tif': ('template.tif', 'outside.gpkg', 1.0, 'quartic'), 'partial.cog.tif': ('template.tif', 'points.gpkg', 0.5, 'quartic'), 'empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 'quartic'), 'invalid-template.cog.tif': ('invalid.tif', 'points.gpkg', 4.0, 'quartic'), 'mask-alpha.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 'quartic'), 'rectangular-block.cog.tif': ('rectangular.tif', 'points.gpkg', 4.0, 'quartic'), 'rotated-sheared-block.cog.tif': ('sheared.tif', 'points.gpkg', 4.0, 'quartic'), 'foot.cog.tif': ('foot.tif', 'foot.gpkg', 1.5, 'quartic'), 'survey-foot.cog.tif': ('survey.tif', 'survey.gpkg', 1.5, 'quartic'), 'default-uniform.cog.tif': ('template.tif', 'points.gpkg', 4.0, None), 'explicit-uniform.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'uniform')}, 'CONTROLS': (('base.cog.tif', 'reversed.cog.tif'), ('base.cog.tif', 'invalid-template.cog.tif'), ('base.cog.tif', 'mask-alpha.cog.tif'), ('default-uniform.cog.tif', 'explicit-uniform.cog.tif')), 'SCALE_CONTROL': ('base.cog.tif', 'triplicated.cog.tif', 3), 'FAILURES': ('radius_null', 'radius_true', 'radius_false', 'radius_zero', 'radius_negative', 'radius_string', 'radius_array', 'radius_object', 'null_geometry', 'empty_geometry', 'line', 'multipoint', 'z_point', 'outside_z_point', 'different_crs', 'geographic', 'method_null', 'method_true', 'method_false', 'method_zero', 'method_fraction', 'method_case', 'method_unknown', 'method_empty', 'method_array', 'method_object'), 'RASTERS': ('template.tif', 'invalid.tif', 'coverage.tif', 'rectangular.tif', 'sheared.tif', 'foot.tif', 'survey.tif', 'geographic.tif', 'one.tif', 'profile.tif'), 'VECTORS': ('points.gpkg', 'reversed.gpkg', 'triplicated.gpkg', 'coincident.gpkg', 'boundary.gpkg', 'outside.gpkg', 'empty.gpkg', 'foot.gpkg', 'survey.gpkg', 'null_geometry.gpkg', 'empty_geometry.gpkg', 'line.gpkg', 'multipoint.gpkg', 'z_point.gpkg', 'outside_z_point.gpkg', 'different_crs.gpkg', 'geographic.gpkg')}
@@ -7113,7 +7165,7 @@ def validate_point_density_weighted(repository: Path, registered: set[str]) -> N
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in POINT_DENSITY_WEIGHTED_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-point-density-weighted-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES','CONTROLS','SCALE_CONTROLS','RASTERS','VECTORS')}
     fixed={'CASES': {'uniform-omitted.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'uniform', None), 'uniform-ones.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'uniform', 'ones'), 'uniform-mixed.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'uniform', 'mass'), 'uniform-reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 'uniform', 'mass'), 'uniform-integer.cog.tif': ('template.tif', 'integer.gpkg', 4.0, 'uniform', 'mass'), 'uniform-replicated.cog.tif': ('template.tif', 'replicated.gpkg', 4.0, 'uniform', None), 'uniform-scaled.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'uniform', 'scaled'), 'uniform-zero.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 'uniform', 'zero'), 'uniform-empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 'uniform', 'mass'), 'uniform-masked.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 'uniform', 'mass'), 'uniform-rectangular.cog.tif': ('rectangular.tif', 'foot.gpkg', 4.0, 'uniform', 'mass'), 'uniform-rotated.cog.tif': ('sheared.tif', 'survey.gpkg', 4.0, 'uniform', 'mass'), 'quartic-omitted.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'quartic', None), 'quartic-ones.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'quartic', 'ones'), 'quartic-mixed.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'quartic', 'mass'), 'quartic-reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 'quartic', 'mass'), 'quartic-integer.cog.tif': ('template.tif', 'integer.gpkg', 4.0, 'quartic', 'mass'), 'quartic-replicated.cog.tif': ('template.tif', 'replicated.gpkg', 4.0, 'quartic', None), 'quartic-scaled.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'quartic', 'scaled'), 'quartic-zero.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 'quartic', 'zero'), 'quartic-empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 'quartic', 'mass'), 'quartic-masked.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 'quartic', 'mass'), 'quartic-rectangular.cog.tif': ('rectangular.tif', 'foot.gpkg', 4.0, 'quartic', 'mass'), 'quartic-rotated.cog.tif': ('sheared.tif', 'survey.gpkg', 4.0, 'quartic', 'mass')}, 'CONTROLS': (('uniform-omitted.cog.tif', 'uniform-ones.cog.tif'), ('uniform-mixed.cog.tif', 'uniform-reversed.cog.tif'), ('uniform-integer.cog.tif', 'uniform-replicated.cog.tif'), ('uniform-mixed.cog.tif', 'uniform-masked.cog.tif'), ('quartic-omitted.cog.tif', 'quartic-ones.cog.tif'), ('quartic-mixed.cog.tif', 'quartic-reversed.cog.tif'), ('quartic-integer.cog.tif', 'quartic-replicated.cog.tif'), ('quartic-mixed.cog.tif', 'quartic-masked.cog.tif')), 'SCALE_CONTROLS': (('uniform-mixed.cog.tif', 'uniform-scaled.cog.tif', 8), ('quartic-mixed.cog.tif', 'quartic-scaled.cog.tif', 8)), 'FAILURES': ('uniform_field_null', 'uniform_field_empty', 'uniform_field_blank', 'uniform_field_bool', 'uniform_field_number', 'uniform_field_array', 'uniform_field_object', 'uniform_field_missing', 'uniform_field_geometry', 'uniform_missing', 'uniform_negative', 'uniform_string', 'uniform_outside_missing', 'uniform_outside_negative', 'uniform_zero_line', 'uniform_zero_crs', 'quartic_field_null', 'quartic_field_empty', 'quartic_field_blank', 'quartic_field_bool', 'quartic_field_number', 'quartic_field_array', 'quartic_field_object', 'quartic_field_missing', 'quartic_field_geometry', 'quartic_missing', 'quartic_negative', 'quartic_string', 'quartic_outside_missing', 'quartic_outside_negative', 'quartic_zero_line', 'quartic_zero_crs'), 'RASTERS': ('template.tif', 'coverage.tif', 'rectangular.tif', 'sheared.tif'), 'VECTORS': ('points.gpkg', 'reversed.gpkg', 'integer.gpkg', 'replicated.gpkg', 'empty.gpkg', 'foot.gpkg', 'survey.gpkg', 'missing.gpkg', 'negative.gpkg', 'string.gpkg', 'outside_missing.gpkg', 'outside_negative.gpkg', 'zero_line.gpkg', 'zero_crs.gpkg')}
@@ -7138,7 +7190,7 @@ def validate_focal_percentiles(repository: Path, registered: set[str]) -> None:
         raise RegistrationError('independent manual Hosted NFS job required')
     for relative,fragments in FOCAL_PERCENTILES_REQUIRED.items():
         path=repository/relative
-        if not path.is_file()or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
+        if not path.is_file()or any(not source_contract_contains(path.read_text(), fragment, repository)for fragment in fragments):raise RegistrationError('strict Hosted contract incomplete: '+relative)
     source=(repository/'business/scripts/online-raster-focal-percentiles-fixture.py').read_text();tree=ast.parse(source)
     actual={key:[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]for key in('CASES','FAILURES','PERCENTILES')}
     fixed={'PERCENTILES': [0.0, 25.0, 33.3, 50.0, 75.0, 100.0], 'CASES': {'square3.cog.tif': ('values.tif', 'square_pixels', 3, 'batch'), 'square3-stack.cog.tif': ('values.tif', 'square_pixels', 3, 'singles'), 'square5.cog.tif': ('values.tif', 'square_pixels', 5, 'batch'), 'square5-stack.cog.tif': ('values.tif', 'square_pixels', 5, 'singles'), 'square3-median.cog.tif': ('values.tif', 'square_pixels', 3, 'median'), 'square5-median.cog.tif': ('values.tif', 'square_pixels', 5, 'median'), 'circle.cog.tif': ('metre.tif', 'circle_metres', 3.0, 'batch'), 'circle-stack.cog.tif': ('metre.tif', 'circle_metres', 3.0, 'singles'), 'circle-median.cog.tif': ('metre.tif', 'circle_metres', 3.0, 'median'), 'foot.cog.tif': ('foot.tif', 'circle_metres', 1.5, 'batch'), 'survey-foot.cog.tif': ('survey.tif', 'circle_metres', 1.5, 'batch'), 'reclassified.cog.tif': ('values.tif', 'square_pixels', 3, 'reclassify'), 'int64-unlocated.cog.tif': ('int64.tif', 'square_pixels', 3, 'batch'), 'uint64.cog.tif': ('uint64.tif', 'square_pixels', 5, 'batch'), 'cross-block.cog.tif': ('cross.tif', 'square_pixels', 5, 'batch'), 'invalid.cog.tif': ('invalid.tif', 'square_pixels', 3, 'batch')}, 'FAILURES': ('list_missing', 'list_null', 'list_empty', 'scalar_number', 'scalar_boolean', 'scalar_string', 'scalar_object', 'item_boolean', 'item_string', 'item_null', 'item_list', 'item_object', 'item_low', 'item_high', 'duplicate', 'descending', 'unused', 'unused_null', 'band_zero', 'band_high', 'band_boolean', 'band_alpha', 'square_size', 'square_radius', 'circle_window', 'circle_radius_missing', 'circle_size', 'circle_geographic')}

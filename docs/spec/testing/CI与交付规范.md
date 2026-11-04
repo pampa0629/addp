@@ -22,7 +22,11 @@ Manager Hosted 的 Infra MinIO 构建准备复用固定输入缓存：继续使�
 
 Platform CI 的 `frontend-deterministic` 默认每个 Job 最长20分钟。Monitor 的完整单测、浏览器回归及构建沿唯一 `make test-monitor-frontend`，保持单Worker；两轮原始check-run注释明确20分钟超时，第二轮至423/424仍未出完整报告，此前因此仅 Monitor 获准使用 `timeout_minutes: 30`。Console 沿唯一 `make test-console-frontend`，按用户确认保留20分钟预算，浏览器采用两个Worker按文件并行，`fullyParallel: false` 保持同文件用例顺序；不删减单测、浏览器回归或构建，不改变单用例时限或重试。隔离前提是测试独立的浏览器上下文和page/context级HTTP夹具，Vite只服务源码，运行端口、缓存和证据由共享标准入口隔离与清理。Job统一读取矩阵预算、缺省20，登记检查拒绝扩大Console或其他模块预算，以及删除或扩大Monitor例外。预算包含安装、测试、构建和退出。2026-11-02 的精确0911裁剪来源中，Monitor 133单测和602浏览器通过后，构建在30分钟Job上限被取消；本次将Monitor唯一例外固定为40分钟。GeoPython 的109项NetCDF子集通过，但全量pytest在45分钟Job上限仍无终态，完整Job固定为60分钟。保持原标准入口、Monitor单Worker、所有测试与断言、单用例期限及重试策略；旧取消仍未通过，须以后继自然运行实际完整结果验收。Console 先前 `40254270886`、`40254922673`、`40255039253` 的20分钟超时仍保留为未通过；门禁级隔离或本地并行通过不能替代Linux完整门禁实际通过，文档提交的选择跳过也不能补齐前序缺口。
 
-执行管理确定性专项在 Platform CI 中使用独立的 `Execution online CI runner` Job，复用唯一 `make test-execution-online-ci-runner`，不依赖 Platform 聚合 Job 或复制语言测试列表。该 Job 只做现有 Graph／Cleanup 编排、准入、报告、恢复和登记的 T0/T1，不启动产品部署、数据库或 T4；输入闭包由登记检查约束，并复用标准路径选择的 push／PR 差异与 schedule／manual 语义。跳过必须明确 `selected:false`，不替代前序代码的实际执行证据；专项成功也不替代原聚合及 review 的失败结果。原聚合入口与全部断言保留；`Platform consistency` Job 的总预算固定为 60 分钟，包含冷 Swagger 准备、完整 `make test-platform` 和退出清理。各专项 Job、单项测试期限、串行执行与重试策略保持不变，未引入第二套实现或容错放行。
+执行管理确定性专项在 Platform CI 中使用独立的 `Execution online CI runner` Job，复用唯一 `make test-execution-online-ci-runner`，不依赖 Platform 聚合 Job 或复制语言测试列表。该 Job 只做现有 Graph／Cleanup 编排、准入、报告、恢复和登记的 T0/T1，不启动产品部署、数据库或 T4；输入闭包由登记检查约束，并复用标准路径选择的 push／PR 差异与 schedule／manual 语义。跳过必须明确 `selected:false`，不替代前序代码的实际执行证据；专项成功也不替代原聚合及 review 的失败结果。原聚合入口与全部断言保留；`Platform consistency` Job 的总预算固定为 60 分钟，包含冷 Swagger 准备、完整 `make test-platform` 和退出清理。除下述 GeoPython 测试进程调度外，各专项 Job、单项测试期限、串行执行与重试策略保持不变，未引入第二套实现或容错放行。
+
+**2026-11-04 完整门禁耗时优化。** 两次固定提交的 Platform consistency 与 GeoPython GDAL tests 均触及既有 60 分钟上限；预算、全部唯一测试及断言、单用例时限与重试语义保持不变。在 Online 聚合依赖图中，公共分发器、变更选择、栅格血缘观察和登记测试分别由唯一 Make 目标拥有，owner 入口通过依赖复用；Online 聚合以 Make 依赖图串行执行，同一 Make 进程内共享目标只执行一次，单独执行 owner 仍完整检查。不得使用跨运行测试结果缓存、环境分支跳过或重复实现换取通过。登记校验必须沿真实依赖闭包验证 owner 的公共回归可达，不能因命令移入依赖而删除检查。
+
+GeoPython 沿唯一 `make test-geopython-workflow` 使用固定两个隔离 pytest Worker 和 worksteal 调度，保持完整收集集合，每个用例实际执行一次；pytest-xdist 仅作为测试依赖。Worker 使用各自临时目录，网络夹具须使用动态端口，不共享可变文件或产品服务；产品 Gunicorn 的单 Worker 约束不变。`--max-worker-restart=0` 禁止崩溃后自动重启，任何失败或不完整执行均阻断；不增加重试或放宽资源、像元、耗时及清理断言。序列收集与并发执行的用例集合必须一致，本地优化与 Linux 完整 Job 的通过证据分别记录。
 
 Workflow 只负责：
 

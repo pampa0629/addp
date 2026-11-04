@@ -225,7 +225,7 @@ test-raster-mosaic-runtime: ## 运行 Manager 栅格镶嵌单测及真实 GDAL/C
 GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
-	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_orc_table.py test_netcdf.py test_grib.py test_online_grib_fixture.py test_gdal_vector_dataset.py test_raster_compute.py test_raster_vector_zonal_frequency.py test_raster_sample_lines.py test_online_vector_zonal_class_frequency_fixture.py test_online_raster_sample_lines_fixture.py test_online_interpolate_idw_fixture.py test_online_interpolate_idw_min_points_fixture.py test_online_interpolate_idw_max_points_fixture.py test_online_interpolate_idw_power_fixture.py test_online_point_density_fixture.py test_online_line_density_fixture.py test_online_line_density_weighted_fixture.py test_online_line_kernel_density_fixture.py test_online_point_kernel_density_fixture.py test_online_point_density_weighted_fixture.py test_online_focal_percentiles_fixture.py test_raster_image_export.py test_raster_surfer.py test_raster_envi.py test_online_envi_fixture.py test_online_raster_fixture.py test_online_focal_mode_fixture.py test_online_boundary_clean_fixture.py test_online_thin_fixture.py test_online_fill_depressions_fixture.py test_online_flow_direction_d8_fixture.py test_online_flow_accumulation_d8_fixture.py test_online_flow_accumulation_area_d8_fixture.py test_online_distance_to_stream_d8_fixture.py test_online_hand_d8_fixture.py test_online_curvature_fixture.py test_online_profile_curvature_fixture.py test_online_cut_fill_fixture.py test_online_surface_area_fixture.py test_online_tangential_curvature_fixture.py test_online_plan_curvature_fixture.py test_online_tpi_fixture.py test_online_tri_fixture.py test_online_roughness_fixture.py test_online_twi_fixture.py test_online_spi_fixture.py test_online_sieve_fixture.py test_online_focal_percentile_fixture.py test_online_focal_variety_fixture.py test_online_focal_circle_fixture.py test_online_region_group_fixture.py test_online_focal_weighted_mean_fixture.py test_online_focal_weighted_stddev_fixture.py test_online_focal_weighted_sum_fixture.py test_online_proximity_rectangular_fixture.py test_online_sieve_protected_fixture.py test_online_sieve_area_fixture.py test_online_drainage_basins_d8_fixture.py test_online_flow_length_d8_fixture.py test_online_flow_length_upstream_d8_fixture.py test_online_stream_order_d8_fixture.py test_online_stream_shreve_d8_fixture.py test_online_stream_to_vector_d8_fixture.py test_online_stream_link_d8_fixture.py test_online_flow_accumulation_weighted_d8_fixture.py test_online_watershed_d8_fixture.py test_online_subcatchments_d8_fixture.py test_online_snap_pour_points_fixture.py test_raster_band_recommendation.py test_raster_nibble.py test_online_band_recommendation_fixture.py test_online_statistics_percentile_fixture.py test_online_statistics_percentiles_fixture.py test_online_zonal_percentile_fixture.py test_online_zonal_percentiles_fixture.py test_online_zonal_class_frequency_fixture.py test_online_zonal_weighted_fixture.py test_online_zonal_weighted_stddev_fixture.py test_online_vector_zonal_percentile_fixture.py test_online_vector_zonal_percentiles_fixture.py test_online_sample_points_fixture.py test_online_sample_points_bilinear_fixture.py test_online_vector_zonal_weighted_fixture.py test_online_vector_zonal_weighted_stddev_fixture.py test_online_vector_zonal_area_weighted_fixture.py test_online_vector_zonal_area_weighted_stddev_fixture.py test_online_nibble_fixture.py test_online_nibble_capacity_fixture.py test_online_disk_pressure_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_topology_operators.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py test_topology_capacity.py ../docs $(GEOPYTHON_WORKFLOW_TEST_ARGS)'
+	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q -n 2 --dist worksteal --max-worker-restart 0 test_orc_table.py test_netcdf.py test_grib.py test_online_grib_fixture.py test_gdal_vector_dataset.py test_raster_compute.py test_raster_vector_zonal_frequency.py test_raster_sample_lines.py test_online_vector_zonal_class_frequency_fixture.py test_online_raster_sample_lines_fixture.py test_online_interpolate_idw_fixture.py test_online_interpolate_idw_min_points_fixture.py test_online_interpolate_idw_max_points_fixture.py test_online_interpolate_idw_power_fixture.py test_online_point_density_fixture.py test_online_line_density_fixture.py test_online_line_density_weighted_fixture.py test_online_line_kernel_density_fixture.py test_online_point_kernel_density_fixture.py test_online_point_density_weighted_fixture.py test_online_focal_percentiles_fixture.py test_raster_image_export.py test_raster_surfer.py test_raster_envi.py test_online_envi_fixture.py test_online_raster_fixture.py test_online_focal_mode_fixture.py test_online_boundary_clean_fixture.py test_online_thin_fixture.py test_online_fill_depressions_fixture.py test_online_flow_direction_d8_fixture.py test_online_flow_accumulation_d8_fixture.py test_online_flow_accumulation_area_d8_fixture.py test_online_distance_to_stream_d8_fixture.py test_online_hand_d8_fixture.py test_online_curvature_fixture.py test_online_profile_curvature_fixture.py test_online_cut_fill_fixture.py test_online_surface_area_fixture.py test_online_tangential_curvature_fixture.py test_online_plan_curvature_fixture.py test_online_tpi_fixture.py test_online_tri_fixture.py test_online_roughness_fixture.py test_online_twi_fixture.py test_online_spi_fixture.py test_online_sieve_fixture.py test_online_focal_percentile_fixture.py test_online_focal_variety_fixture.py test_online_focal_circle_fixture.py test_online_region_group_fixture.py test_online_focal_weighted_mean_fixture.py test_online_focal_weighted_stddev_fixture.py test_online_focal_weighted_sum_fixture.py test_online_proximity_rectangular_fixture.py test_online_sieve_protected_fixture.py test_online_sieve_area_fixture.py test_online_drainage_basins_d8_fixture.py test_online_flow_length_d8_fixture.py test_online_flow_length_upstream_d8_fixture.py test_online_stream_order_d8_fixture.py test_online_stream_shreve_d8_fixture.py test_online_stream_to_vector_d8_fixture.py test_online_stream_link_d8_fixture.py test_online_flow_accumulation_weighted_d8_fixture.py test_online_watershed_d8_fixture.py test_online_subcatchments_d8_fixture.py test_online_snap_pour_points_fixture.py test_raster_band_recommendation.py test_raster_nibble.py test_online_band_recommendation_fixture.py test_online_statistics_percentile_fixture.py test_online_statistics_percentiles_fixture.py test_online_zonal_percentile_fixture.py test_online_zonal_percentiles_fixture.py test_online_zonal_class_frequency_fixture.py test_online_zonal_weighted_fixture.py test_online_zonal_weighted_stddev_fixture.py test_online_vector_zonal_percentile_fixture.py test_online_vector_zonal_percentiles_fixture.py test_online_sample_points_fixture.py test_online_sample_points_bilinear_fixture.py test_online_vector_zonal_weighted_fixture.py test_online_vector_zonal_weighted_stddev_fixture.py test_online_vector_zonal_area_weighted_fixture.py test_online_vector_zonal_area_weighted_stddev_fixture.py test_online_nibble_fixture.py test_online_nibble_capacity_fixture.py test_online_disk_pressure_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_topology_operators.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py test_topology_capacity.py ../docs $(GEOPYTHON_WORKFLOW_TEST_ARGS)'
 
 .PHONY: test-vector-topology-capacity test-vector-topology-capacity-runner
 test-vector-topology-capacity: ## 手工 Linux 容量基线，4 CPU/2 GiB/无 swap/每档180秒，不计业务T4
@@ -495,11 +495,10 @@ test-common-ftp: test-common-ftp-unit ## 独占官方 FTP/FTPS 协议准入与�
 	@bash scripts/test/common-ftp-gate.sh
 
 .PHONY: test-ftp-online-runner
-test-ftp-online-runner: ## FTP 普通 User 页面验收与 Hosted 隔离生命周期回归
-	@python3 -m unittest scripts/test/ftp-consumer-flow-online_test.py scripts/test/online-hosted-ftp-gate_test.py scripts/test/online-file-model-nfs-fixture_test.py scripts/test/online-file-model-minio-fixture_test.py scripts/test/online-gate_test.py
+test-ftp-online-runner: test-online-dispatcher-unit test-online-registration-unit ## FTP 普通 User 页面验收与 Hosted 隔离生命周期回归
+	@python3 -m unittest scripts/test/ftp-consumer-flow-online_test.py scripts/test/online-hosted-ftp-gate_test.py scripts/test/online-file-model-nfs-fixture_test.py scripts/test/online-file-model-minio-fixture_test.py
 	@node --check console/frontend/e2e/online/ftp-consumer-flow.spec.js
 	@bash -n scripts/test/online-hosted-ftp-gate.sh
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-common-starrocks test-common-starrocks-unit
@@ -513,11 +512,10 @@ test-common-starrocks: ## 独占官方 StarRocks 验证原生目录、精度及�
 	@bash scripts/test/common-starrocks-gate.sh
 
 .PHONY: test-starrocks-online-runner
-test-starrocks-online-runner: ## 验证 StarRocks 只读页面验收、原生边界及 Hosted 隔离清理
-	@python3 -m unittest scripts/test/starrocks-consumer-flow-online_test.py scripts/test/online-hosted-starrocks-gate_test.py scripts/test/online-gate_test.py
+test-starrocks-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证 StarRocks 只读页面验收、原生边界及 Hosted 隔离清理
+	@python3 -m unittest scripts/test/starrocks-consumer-flow-online_test.py scripts/test/online-hosted-starrocks-gate_test.py
 	@node --check console/frontend/e2e/online/readonly-sql-consumer-flow.spec.js
 	@bash -n scripts/test/online-hosted-starrocks-gate.sh
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-common-gaussdb test-common-gaussdb-unit
@@ -660,488 +658,416 @@ test-orchestrator-online-runner: ## 验证 Orchestrator Online 故障、权限�
 	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/orchestrator-execution-faults_test.py scripts/test/online-hosted-orchestrator-gate_test.py
 
 .PHONY: test-vector-pmtiles-online-runner
-test-vector-pmtiles-online-runner: ## 验证 PMTiles T4 场景、物理夹具与隔离生命周期
+test-vector-pmtiles-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证 PMTiles T4 场景、物理夹具与隔离生命周期
 	@node --check console/frontend/e2e/online/vector-pmtiles-workflow.spec.js
 	@bash -n scripts/test/online-hosted-vector-pmtiles-gate.sh
-	@python3 -m unittest scripts/test/vector-pmtiles-workflow-online_test.py scripts/test/online-vector-pmtiles-fixture_test.py scripts/test/online-hosted-vector-pmtiles-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_pmtiles_requires_manual_isolation_content_and_cleanup
+	@python3 -m unittest scripts/test/vector-pmtiles-workflow-online_test.py scripts/test/online-vector-pmtiles-fixture_test.py scripts/test/online-hosted-vector-pmtiles-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-vector-topology-online-runner
-test-vector-topology-online-runner: ## 验证构面、几何修复、严格吸附、面叠面缝悬点线叠自叠及普通User的Hosted隔离生命周期
+test-vector-topology-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证构面、几何修复、严格吸附、面叠面缝悬点线叠自叠及普通User的Hosted隔离生命周期
 	@node --check console/frontend/e2e/online/vector-topology-persistence.spec.js
 	@bash -n scripts/test/online-hosted-topology-gate.sh
-	@python3 -m unittest scripts/test/vector-topology-persistence-online_test.py scripts/test/online-vector-topology-fixture_test.py scripts/test/online-hosted-topology-gate_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_topology_requires_manual_nfs_identity_and_regressions scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_contour_requires_manual_nfs_identity_and_registered_regressions
+	@python3 -m unittest scripts/test/vector-topology-persistence-online_test.py scripts/test/online-vector-topology-fixture_test.py scripts/test/online-hosted-topology-gate_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 .PHONY: test-vector-zonal-statistics-online-runner
-test-vector-zonal-statistics-online-runner: ## 验证矢量分区统计独立 T4、完整 GeoPackage 与隔离生命周期
+test-vector-zonal-statistics-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证矢量分区统计独立 T4、完整 GeoPackage 与隔离生命周期
 	@bash -n scripts/test/online-hosted-vector-zonal-statistics-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/vector-zonal-statistics-persistence-online_test.py scripts/test/online-vector-zonal-statistics-fixture_test.py scripts/test/online-hosted-vector-zonal-statistics-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_vector_zonal_requires_manual_nfs_complete_gpkg_and_regressions
+	@python3 -m unittest scripts/test/vector-zonal-statistics-persistence-online_test.py scripts/test/online-vector-zonal-statistics-fixture_test.py scripts/test/online-hosted-vector-zonal-statistics-gate_test.py
 
 .PHONY: test-raster-proximity-online-runner
-test-raster-proximity-online-runner: ## 验证邻近距离独立 T4、完整 COG 与隔离生命周期
+test-raster-proximity-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证邻近距离独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-proximity-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-proximity-persistence-online_test.py scripts/test/online-raster-proximity-fixture_test.py scripts/test/online-hosted-raster-proximity-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_proximity_requires_manual_nfs_identity_exact_distances_and_regressions
+	@python3 -m unittest scripts/test/raster-proximity-persistence-online_test.py scripts/test/online-raster-proximity-fixture_test.py scripts/test/online-hosted-raster-proximity-gate_test.py
 
 .PHONY: test-raster-focal-mode-online-runner
-test-raster-focal-mode-online-runner: ## 验证分类众数滤波独立 T4、完整 COG 与隔离生命周期
+test-raster-focal-mode-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分类众数滤波独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-mode-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-focal-mode-persistence-online_test.py scripts/test/online-raster-focal-mode-fixture_test.py scripts/test/online-hosted-raster-focal-mode-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_focal_mode_requires_manual_nfs_exact_integer_pixels_and_regressions
+	@python3 -m unittest scripts/test/raster-focal-mode-persistence-online_test.py scripts/test/online-raster-focal-mode-fixture_test.py scripts/test/online-hosted-raster-focal-mode-gate_test.py
 
 .PHONY: test-raster-boundary-clean-online-runner
-test-raster-boundary-clean-online-runner: ## 验证分类边界清理独立 T4、完整 COG 与隔离生命周期
+test-raster-boundary-clean-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分类边界清理独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-boundary-clean-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-boundary-clean-persistence-online_test.py scripts/test/online-raster-boundary-clean-fixture_test.py scripts/test/online-hosted-raster-boundary-clean-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_boundary_clean_requires_manual_nfs_exact_integer_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-boundary-clean-persistence-online_test.py scripts/test/online-raster-boundary-clean-fixture_test.py scripts/test/online-hosted-raster-boundary-clean-gate_test.py
 
 .PHONY: test-raster-thin-online-runner
-test-raster-thin-online-runner: ## 验证分类栅格细化独立 T4、完整 COG 与隔离生命周期
+test-raster-thin-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分类栅格细化独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-thin-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-thin-persistence-online_test.py scripts/test/online-raster-thin-fixture_test.py scripts/test/online-hosted-raster-thin-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_thin_requires_manual_nfs_exact_integer_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-thin-persistence-online_test.py scripts/test/online-raster-thin-fixture_test.py scripts/test/online-hosted-raster-thin-gate_test.py
 
 .PHONY: test-raster-fill-depressions-online-runner
-test-raster-fill-depressions-online-runner: ## 验证DEM 填洼独立 T4、完整 COG 与隔离生命周期
+test-raster-fill-depressions-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证DEM 填洼独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-fill-depressions-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-fill-depressions-persistence-online_test.py scripts/test/online-raster-fill-depressions-fixture_test.py scripts/test/online-hosted-raster-fill-depressions-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_fill_depressions_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-fill-depressions-persistence-online_test.py scripts/test/online-raster-fill-depressions-fixture_test.py scripts/test/online-hosted-raster-fill-depressions-gate_test.py
 
 .PHONY: test-raster-flow-direction-d8-online-runner
-test-raster-flow-direction-d8-online-runner: ## 验证DEM D8 流向独立 T4、完整 COG 与隔离生命周期
+test-raster-flow-direction-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证DEM D8 流向独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-flow-direction-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-flow-direction-d8-persistence-online_test.py scripts/test/online-raster-flow-direction-d8-fixture_test.py scripts/test/online-hosted-raster-flow-direction-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_flow_direction_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-flow-direction-d8-persistence-online_test.py scripts/test/online-raster-flow-direction-d8-fixture_test.py scripts/test/online-hosted-raster-flow-direction-d8-gate_test.py
 
 .PHONY: test-raster-flow-accumulation-d8-online-runner
-test-raster-flow-accumulation-d8-online-runner: ## 验证D8 汇流累积独立 T4、完整 COG 与隔离生命周期
+test-raster-flow-accumulation-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 汇流累积独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-flow-accumulation-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-flow-accumulation-d8-persistence-online_test.py scripts/test/online-raster-flow-accumulation-d8-fixture_test.py scripts/test/online-hosted-raster-flow-accumulation-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_flow_accumulation_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-flow-accumulation-d8-persistence-online_test.py scripts/test/online-raster-flow-accumulation-d8-fixture_test.py scripts/test/online-hosted-raster-flow-accumulation-d8-gate_test.py
 
 .PHONY: test-raster-drainage-basins-d8-online-runner
-test-raster-drainage-basins-d8-online-runner: ## 验证D8 汇水分区独立 T4、完整 COG 与隔离生命周期
+test-raster-drainage-basins-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 汇水分区独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-drainage-basins-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-drainage-basins-d8-persistence-online_test.py scripts/test/online-raster-drainage-basins-d8-fixture_test.py scripts/test/online-hosted-raster-drainage-basins-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_drainage_basins_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-drainage-basins-d8-persistence-online_test.py scripts/test/online-raster-drainage-basins-d8-fixture_test.py scripts/test/online-hosted-raster-drainage-basins-d8-gate_test.py
 
 .PHONY: test-raster-flow-length-d8-online-runner
-test-raster-flow-length-d8-online-runner: ## 验证D8 下游流长独立 T4、完整 COG 与隔离生命周期
+test-raster-flow-length-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 下游流长独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-flow-length-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-flow-length-d8-persistence-online_test.py scripts/test/online-raster-flow-length-d8-fixture_test.py scripts/test/online-hosted-raster-flow-length-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_flow_length_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-flow-length-d8-persistence-online_test.py scripts/test/online-raster-flow-length-d8-fixture_test.py scripts/test/online-hosted-raster-flow-length-d8-gate_test.py
 
 .PHONY: test-raster-flow-accumulation-area-d8-online-runner
-test-raster-flow-accumulation-area-d8-online-runner: ## 验证D8 汇流面积独立 T4、完整 COG 与隔离生命周期
+test-raster-flow-accumulation-area-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 汇流面积独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-flow-accumulation-area-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-flow-accumulation-area-d8-persistence-online_test.py scripts/test/online-raster-flow-accumulation-area-d8-fixture_test.py scripts/test/online-hosted-raster-flow-accumulation-area-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_flow_accumulation_area_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-flow-accumulation-area-d8-persistence-online_test.py scripts/test/online-raster-flow-accumulation-area-d8-fixture_test.py scripts/test/online-hosted-raster-flow-accumulation-area-d8-gate_test.py
 
 .PHONY: test-raster-distance-to-stream-d8-online-runner
-test-raster-distance-to-stream-d8-online-runner: ## 验证D8 到河网沿流距离独立 T4、完整 COG 与隔离生命周期
+test-raster-distance-to-stream-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 到河网沿流距离独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-distance-to-stream-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-distance-to-stream-d8-persistence-online_test.py scripts/test/online-raster-distance-to-stream-d8-fixture_test.py scripts/test/online-hosted-raster-distance-to-stream-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_distance_to_stream_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-distance-to-stream-d8-persistence-online_test.py scripts/test/online-raster-distance-to-stream-d8-fixture_test.py scripts/test/online-hosted-raster-distance-to-stream-d8-gate_test.py
 
 .PHONY: test-raster-curvature-online-runner
-test-raster-curvature-online-runner: ## 验证DEM 平均曲率独立 T4、完整 COG 与隔离生命周期
+test-raster-curvature-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证DEM 平均曲率独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-curvature-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-curvature-persistence-online_test.py scripts/test/online-raster-curvature-fixture_test.py scripts/test/online-hosted-raster-curvature-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_curvature_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-curvature-persistence-online_test.py scripts/test/online-raster-curvature-fixture_test.py scripts/test/online-hosted-raster-curvature-gate_test.py
 
 .PHONY: test-raster-profile-curvature-online-runner
-test-raster-profile-curvature-online-runner: ## 验证DEM 剖面曲率独立 T4、完整 COG 与隔离生命周期
+test-raster-profile-curvature-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证DEM 剖面曲率独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-profile-curvature-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-profile-curvature-persistence-online_test.py scripts/test/online-raster-profile-curvature-fixture_test.py scripts/test/online-hosted-raster-profile-curvature-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_profile_curvature_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-profile-curvature-persistence-online_test.py scripts/test/online-raster-profile-curvature-fixture_test.py scripts/test/online-hosted-raster-profile-curvature-gate_test.py
 .PHONY: test-raster-cut-fill-online-runner
-test-raster-cut-fill-online-runner: ## 验证DEM 双DEM填挖方独立 T4、完整 CSV 与隔离生命周期
+test-raster-cut-fill-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证DEM 双DEM填挖方独立 T4、完整 CSV 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-cut-fill-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-cut-fill-persistence-online_test.py scripts/test/online-raster-cut-fill-fixture_test.py scripts/test/online-hosted-raster-cut-fill-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_cut_fill_requires_manual_nfs_complete_csv_archive_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-cut-fill-persistence-online_test.py scripts/test/online-raster-cut-fill-fixture_test.py scripts/test/online-hosted-raster-cut-fill-gate_test.py
 
 .PHONY: test-raster-surface-area-online-runner
-test-raster-surface-area-online-runner: ## 验证DEM DEM 三维表面积统计独立 T4、完整 CSV 与隔离生命周期
+test-raster-surface-area-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证DEM DEM 三维表面积统计独立 T4、完整 CSV 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-surface-area-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-surface-area-persistence-online_test.py scripts/test/online-raster-surface-area-fixture_test.py scripts/test/online-hosted-raster-surface-area-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_surface_area_requires_manual_nfs_complete_csv_archive_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-surface-area-persistence-online_test.py scripts/test/online-raster-surface-area-fixture_test.py scripts/test/online-hosted-raster-surface-area-gate_test.py
 
 .PHONY: test-raster-tangential-curvature-online-runner
-test-raster-tangential-curvature-online-runner: ## 验证DEM 切向曲率独立 T4、完整 COG 与隔离生命周期
+test-raster-tangential-curvature-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证DEM 切向曲率独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-tangential-curvature-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-tangential-curvature-persistence-online_test.py scripts/test/online-raster-tangential-curvature-fixture_test.py scripts/test/online-hosted-raster-tangential-curvature-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_tangential_curvature_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-tangential-curvature-persistence-online_test.py scripts/test/online-raster-tangential-curvature-fixture_test.py scripts/test/online-hosted-raster-tangential-curvature-gate_test.py
 .PHONY: test-raster-plan-curvature-online-runner
-test-raster-plan-curvature-online-runner: ## 验证DEM 平面曲率独立 T4、完整 COG 与隔离生命周期
+test-raster-plan-curvature-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证DEM 平面曲率独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-plan-curvature-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-plan-curvature-persistence-online_test.py scripts/test/online-raster-plan-curvature-fixture_test.py scripts/test/online-hosted-raster-plan-curvature-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_plan_curvature_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-plan-curvature-persistence-online_test.py scripts/test/online-raster-plan-curvature-fixture_test.py scripts/test/online-hosted-raster-plan-curvature-gate_test.py
 
 .PHONY: test-raster-tpi-online-runner
-test-raster-tpi-online-runner: ## 验证DEM 地形位置指数独立 T4、完整 COG 与隔离生命周期
+test-raster-tpi-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证DEM 地形位置指数独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-tpi-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-tpi-persistence-online_test.py scripts/test/online-raster-tpi-fixture_test.py scripts/test/online-hosted-raster-tpi-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-tpi-persistence-online_test.py scripts/test/online-raster-tpi-fixture_test.py scripts/test/online-hosted-raster-tpi-gate_test.py
 
 .PHONY: test-raster-tri-online-runner
-test-raster-tri-online-runner: ## 验证DEM 地形崎岖度独立 T4、完整 COG 与隔离生命周期
+test-raster-tri-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证DEM 地形崎岖度独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-tri-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-tri-persistence-online_test.py scripts/test/online-raster-tri-fixture_test.py scripts/test/online-hosted-raster-tri-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_tri_requires_manual_nfs_exact_pixels_archive_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-tri-persistence-online_test.py scripts/test/online-raster-tri-fixture_test.py scripts/test/online-hosted-raster-tri-gate_test.py
 
 .PHONY: test-raster-roughness-online-runner
-test-raster-roughness-online-runner: ## 验证DEM 地形粗糙度独立 T4、完整 COG 与隔离生命周期
+test-raster-roughness-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证DEM 地形粗糙度独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-roughness-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-roughness-persistence-online_test.py scripts/test/online-raster-roughness-fixture_test.py scripts/test/online-hosted-raster-roughness-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_roughness_requires_manual_nfs_exact_pixels_archive_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-roughness-persistence-online_test.py scripts/test/online-raster-roughness-fixture_test.py scripts/test/online-hosted-raster-roughness-gate_test.py
 
 .PHONY: test-raster-twi-online-runner
-test-raster-twi-online-runner: ## 验证地形湿度指数 TWI独立 T4、完整 COG 与隔离生命周期
+test-raster-twi-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证地形湿度指数 TWI独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-twi-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-twi-persistence-online_test.py scripts/test/online-raster-twi-fixture_test.py scripts/test/online-hosted-raster-twi-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_twi_requires_manual_nfs_full_oracle_archive_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-twi-persistence-online_test.py scripts/test/online-raster-twi-fixture_test.py scripts/test/online-hosted-raster-twi-gate_test.py
 
 .PHONY: test-raster-spi-online-runner
-test-raster-spi-online-runner: ## 验证水流功率指数 SPI独立 T4、完整 COG 与隔离生命周期
+test-raster-spi-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证水流功率指数 SPI独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-spi-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-spi-persistence-online_test.py scripts/test/online-raster-spi-fixture_test.py scripts/test/online-hosted-raster-spi-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_spi_requires_manual_nfs_full_oracle_archive_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-spi-persistence-online_test.py scripts/test/online-raster-spi-fixture_test.py scripts/test/online-hosted-raster-spi-gate_test.py
 
 .PHONY: test-raster-sieve-online-runner
-test-raster-sieve-online-runner: ## 验证分类栅格小斑块筛除独立 T4、完整 COG 与隔离生命周期
+test-raster-sieve-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证分类栅格小斑块筛除独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-sieve-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-sieve-persistence-online_test.py scripts/test/online-raster-sieve-fixture_test.py scripts/test/online-hosted-raster-sieve-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_sieve_requires_manual_nfs_full_oracle_archive_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-sieve-persistence-online_test.py scripts/test/online-raster-sieve-fixture_test.py scripts/test/online-hosted-raster-sieve-gate_test.py
 
 .PHONY: test-raster-focal-percentile-online-runner
-test-raster-focal-percentile-online-runner: ## 验证邻域线性百分位独立 T4、完整 COG 与隔离生命周期
+test-raster-focal-percentile-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证邻域线性百分位独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-percentile-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-focal-percentile-persistence-online_test.py scripts/test/online-raster-focal-percentile-fixture_test.py scripts/test/online-hosted-raster-focal-percentile-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_focal_percentile_requires_manual_nfs_full_oracle_archive_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-focal-percentile-persistence-online_test.py scripts/test/online-raster-focal-percentile-fixture_test.py scripts/test/online-hosted-raster-focal-percentile-gate_test.py
 
 .PHONY: test-raster-focal-variety-online-runner
-test-raster-focal-variety-online-runner: ## 验证分类种类数16成功28失败584全检及600秒隔离生命周期
+test-raster-focal-variety-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证分类种类数16成功28失败584全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-variety-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-focal-variety-persistence-online_test.py scripts/test/online-raster-focal-variety-fixture_test.py scripts/test/online-hosted-raster-focal-variety-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_variety_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-focal-variety-persistence-online_test.py scripts/test/online-raster-focal-variety-fixture_test.py scripts/test/online-hosted-raster-focal-variety-gate_test.py
 
 .PHONY: test-raster-focal-circle-online-runner
-test-raster-focal-circle-online-runner: ## 验证分类种类数18成功100失败1971全检及600秒隔离生命周期
+test-raster-focal-circle-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证分类种类数18成功100失败1971全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-circle-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-focal-circle-persistence-online_test.py scripts/test/online-raster-focal-circle-fixture_test.py scripts/test/online-hosted-raster-focal-circle-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_circle_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-focal-circle-persistence-online_test.py scripts/test/online-raster-focal-circle-fixture_test.py scripts/test/online-hosted-raster-focal-circle-gate_test.py
 
 .PHONY: test-raster-region-group-online-runner
-test-raster-region-group-online-runner: ## 验证连通斑块编号18成功36失败819全检及600秒隔离生命周期
+test-raster-region-group-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证连通斑块编号18成功36失败819全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-region-group-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-region-group-persistence-online_test.py scripts/test/online-raster-region-group-fixture_test.py scripts/test/online-hosted-raster-region-group-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_region_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-region-group-persistence-online_test.py scripts/test/online-raster-region-group-fixture_test.py scripts/test/online-hosted-raster-region-group-gate_test.py
 
 .PHONY: test-raster-focal-weighted-mean-online-runner
-test-raster-focal-weighted-mean-online-runner: ## 验证邻域加权均值16成功56失败1032全检及600秒隔离生命周期
+test-raster-focal-weighted-mean-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证邻域加权均值16成功56失败1032全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-weighted-mean-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-focal-weighted-mean-persistence-online_test.py scripts/test/online-raster-focal-weighted-mean-fixture_test.py scripts/test/online-hosted-raster-focal-weighted-mean-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_weighted_mean_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-focal-weighted-mean-persistence-online_test.py scripts/test/online-raster-focal-weighted-mean-fixture_test.py scripts/test/online-hosted-raster-focal-weighted-mean-gate_test.py
 
 .PHONY: test-raster-focal-weighted-stddev-online-runner
-test-raster-focal-weighted-stddev-online-runner: ## 验证邻域加权总体标准差16成功56失败1032全检及600秒隔离生命周期
+test-raster-focal-weighted-stddev-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证邻域加权总体标准差16成功56失败1032全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-weighted-stddev-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-focal-weighted-stddev-persistence-online_test.py scripts/test/online-raster-focal-weighted-stddev-fixture_test.py scripts/test/online-hosted-raster-focal-weighted-stddev-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_weighted_stddev_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-focal-weighted-stddev-persistence-online_test.py scripts/test/online-raster-focal-weighted-stddev-fixture_test.py scripts/test/online-hosted-raster-focal-weighted-stddev-gate_test.py
 
 .PHONY: test-raster-focal-weighted-sum-online-runner
-test-raster-focal-weighted-sum-online-runner: ## 验证邻域加权求和16成功56失败1032全检及600秒隔离生命周期
+test-raster-focal-weighted-sum-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证邻域加权求和16成功56失败1032全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-weighted-sum-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-focal-weighted-sum-persistence-online_test.py scripts/test/online-raster-focal-weighted-sum-fixture_test.py scripts/test/online-hosted-raster-focal-weighted-sum-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_weighted_sum_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-focal-weighted-sum-persistence-online_test.py scripts/test/online-raster-focal-weighted-sum-fixture_test.py scripts/test/online-hosted-raster-focal-weighted-sum-gate_test.py
 
 .PHONY: test-raster-proximity-rectangular-online-runner
-test-raster-proximity-rectangular-online-runner: ## 验证矩形像元邻近距离16成功52失败968全检及600秒隔离生命周期
+test-raster-proximity-rectangular-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证矩形像元邻近距离16成功52失败968全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-proximity-rectangular-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-proximity-rectangular-persistence-online_test.py scripts/test/online-raster-proximity-rectangular-fixture_test.py scripts/test/online-hosted-raster-proximity-rectangular-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_proximity_rectangular_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-proximity-rectangular-persistence-online_test.py scripts/test/online-raster-proximity-rectangular-fixture_test.py scripts/test/online-hosted-raster-proximity-rectangular-gate_test.py
 
 .PHONY: test-raster-sieve-protected-online-runner
-test-raster-sieve-protected-online-runner: ## 验证分类保护16成功52失败968全检及600秒隔离生命周期
+test-raster-sieve-protected-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证分类保护16成功52失败968全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-sieve-protected-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-sieve-protected-persistence-online_test.py scripts/test/online-raster-sieve-protected-fixture_test.py scripts/test/online-hosted-raster-sieve-protected-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_protected_sieve_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-sieve-protected-persistence-online_test.py scripts/test/online-raster-sieve-protected-fixture_test.py scripts/test/online-hosted-raster-sieve-protected-gate_test.py
 
 .PHONY: test-raster-sieve-area-online-runner
-test-raster-sieve-area-online-runner: ## 验证分类保护16成功64失败1160全检及600秒隔离生命周期
+test-raster-sieve-area-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证分类保护16成功64失败1160全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-sieve-area-gate.sh
-	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_approved_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-sieve-area-persistence-online_test.py scripts/test/online-raster-sieve-area-fixture_test.py scripts/test/online-hosted-raster-sieve-area-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_area_sieve_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-sieve-area-persistence-online_test.py scripts/test/online-raster-sieve-area-fixture_test.py scripts/test/online-hosted-raster-sieve-area-gate_test.py
 
 .PHONY: test-raster-hand-d8-online-runner
-test-raster-hand-d8-online-runner: ## 验证D8 到河网相对高程（HAND）独立 T4、完整 COG 与隔离生命周期
+test-raster-hand-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 到河网相对高程（HAND）独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-hand-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-hand-d8-persistence-online_test.py scripts/test/online-raster-hand-d8-fixture_test.py scripts/test/online-hosted-raster-hand-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_hand_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-hand-d8-persistence-online_test.py scripts/test/online-raster-hand-d8-fixture_test.py scripts/test/online-hosted-raster-hand-d8-gate_test.py
 
 .PHONY: test-raster-flow-length-upstream-d8-online-runner
-test-raster-flow-length-upstream-d8-online-runner: ## 验证D8 上游最长流长独立 T4、完整 COG 与隔离生命周期
+test-raster-flow-length-upstream-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 上游最长流长独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-flow-length-upstream-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-flow-length-upstream-d8-persistence-online_test.py scripts/test/online-raster-flow-length-upstream-d8-fixture_test.py scripts/test/online-hosted-raster-flow-length-upstream-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_flow_length_upstream_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-flow-length-upstream-d8-persistence-online_test.py scripts/test/online-raster-flow-length-upstream-d8-fixture_test.py scripts/test/online-hosted-raster-flow-length-upstream-d8-gate_test.py
 
 .PHONY: test-raster-stream-order-d8-online-runner
-test-raster-stream-order-d8-online-runner: ## 验证D8 Strahler 河流分级独立 T4、完整 COG 与隔离生命周期
+test-raster-stream-order-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 Strahler 河流分级独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-stream-order-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-stream-order-d8-persistence-online_test.py scripts/test/online-raster-stream-order-d8-fixture_test.py scripts/test/online-hosted-raster-stream-order-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_stream_order_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-stream-order-d8-persistence-online_test.py scripts/test/online-raster-stream-order-d8-fixture_test.py scripts/test/online-hosted-raster-stream-order-d8-gate_test.py
 
 .PHONY: test-raster-stream-shreve-d8-online-runner
-test-raster-stream-shreve-d8-online-runner: ## 验证D8 Shreve 河流量级独立 T4、完整 COG 与隔离生命周期
+test-raster-stream-shreve-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 Shreve 河流量级独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-stream-shreve-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-stream-shreve-d8-persistence-online_test.py scripts/test/online-raster-stream-shreve-d8-fixture_test.py scripts/test/online-hosted-raster-stream-shreve-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_stream_shreve_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-stream-shreve-d8-persistence-online_test.py scripts/test/online-raster-stream-shreve-d8-fixture_test.py scripts/test/online-hosted-raster-stream-shreve-d8-gate_test.py
 
 .PHONY: test-raster-stream-to-vector-d8-online-runner
-test-raster-stream-to-vector-d8-online-runner: ## 验证D8 河网转矢量线独立 T4、完整 GeoPackage 与隔离生命周期
+test-raster-stream-to-vector-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 河网转矢量线独立 T4、完整 GeoPackage 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-stream-to-vector-d8-persistence-online_test.py scripts/test/online-raster-stream-to-vector-d8-fixture_test.py scripts/test/online-hosted-raster-stream-to-vector-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_stream_to_vector_d8_requires_manual_nfs_complete_edges_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-stream-to-vector-d8-persistence-online_test.py scripts/test/online-raster-stream-to-vector-d8-fixture_test.py scripts/test/online-hosted-raster-stream-to-vector-d8-gate_test.py
 
 .PHONY: test-raster-stream-link-d8-online-runner
-test-raster-stream-link-d8-online-runner: ## 验证D8 河段编号独立 T4、完整 COG 与隔离生命周期
+test-raster-stream-link-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 河段编号独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-stream-link-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-stream-link-d8-persistence-online_test.py scripts/test/online-raster-stream-link-d8-fixture_test.py scripts/test/online-hosted-raster-stream-link-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_stream_link_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-stream-link-d8-persistence-online_test.py scripts/test/online-raster-stream-link-d8-fixture_test.py scripts/test/online-hosted-raster-stream-link-d8-gate_test.py
 
 .PHONY: test-raster-flow-accumulation-weighted-d8-online-runner
-test-raster-flow-accumulation-weighted-d8-online-runner: ## 验证D8 加权汇流累积独立 T4、完整 COG 与隔离生命周期
+test-raster-flow-accumulation-weighted-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 加权汇流累积独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-flow-accumulation-weighted-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-flow-accumulation-weighted-d8-persistence-online_test.py scripts/test/online-raster-flow-accumulation-weighted-d8-fixture_test.py scripts/test/online-hosted-raster-flow-accumulation-weighted-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_flow_accumulation_weighted_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-flow-accumulation-weighted-d8-persistence-online_test.py scripts/test/online-raster-flow-accumulation-weighted-d8-fixture_test.py scripts/test/online-hosted-raster-flow-accumulation-weighted-d8-gate_test.py
 
 .PHONY: test-raster-watershed-d8-online-runner
-test-raster-watershed-d8-online-runner: ## 验证D8 指定汇水点汇水区独立 T4、完整 COG 与隔离生命周期
+test-raster-watershed-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 指定汇水点汇水区独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-watershed-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-watershed-d8-persistence-online_test.py scripts/test/online-raster-watershed-d8-fixture_test.py scripts/test/online-hosted-raster-watershed-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_watershed_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-watershed-d8-persistence-online_test.py scripts/test/online-raster-watershed-d8-fixture_test.py scripts/test/online-hosted-raster-watershed-d8-gate_test.py
 
 .PHONY: test-raster-subcatchments-d8-online-runner
-test-raster-subcatchments-d8-online-runner: ## 验证D8 增量子汇水区独立 T4、完整 COG 与隔离生命周期
+test-raster-subcatchments-d8-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证D8 增量子汇水区独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-subcatchments-d8-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-subcatchments-d8-persistence-online_test.py scripts/test/online-raster-subcatchments-d8-fixture_test.py scripts/test/online-hosted-raster-subcatchments-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_subcatchments_d8_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-subcatchments-d8-persistence-online_test.py scripts/test/online-raster-subcatchments-d8-fixture_test.py scripts/test/online-hosted-raster-subcatchments-d8-gate_test.py
 
 .PHONY: test-raster-snap-pour-points-online-runner
-test-raster-snap-pour-points-online-runner: ## 验证汇水点吸附独立 T4、完整 COG 与隔离生命周期
+test-raster-snap-pour-points-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证汇水点吸附独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-snap-pour-points-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-snap-pour-points-persistence-online_test.py scripts/test/online-raster-snap-pour-points-fixture_test.py scripts/test/online-hosted-raster-snap-pour-points-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_snap_pour_points_requires_manual_nfs_full_pixels_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-snap-pour-points-persistence-online_test.py scripts/test/online-raster-snap-pour-points-fixture_test.py scripts/test/online-hosted-raster-snap-pour-points-gate_test.py
 
 .PHONY: test-raster-band-recommendation-online-runner
-test-raster-band-recommendation-online-runner: ## 验证OIF 三波段推荐只读工作流及隔离生命周期
+test-raster-band-recommendation-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证OIF 三波段推荐只读工作流及隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-band-recommendation-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-band-recommendation-workflow-online_test.py scripts/test/online-raster-band-recommendation-fixture_test.py scripts/test/online-hosted-raster-band-recommendation-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_band_recommendation_requires_manual_nfs_readonly_oif_and_regressions
+	@python3 -m unittest scripts/test/raster-band-recommendation-workflow-online_test.py scripts/test/online-raster-band-recommendation-fixture_test.py scripts/test/online-hosted-raster-band-recommendation-gate_test.py
 
 .PHONY: test-raster-statistics-percentile-online-runner
-test-raster-statistics-percentile-online-runner: ## 验证整幅百分位只读16成功24失败及600秒隔离生命周期
+test-raster-statistics-percentile-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证整幅百分位只读16成功24失败及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-statistics-percentile-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-statistics-percentile-workflow-online_test.py scripts/test/online-raster-statistics-percentile-fixture_test.py scripts/test/online-hosted-raster-statistics-percentile-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_statistics_percentile_requires_exact_readonly_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-statistics-percentile-workflow-online_test.py scripts/test/online-raster-statistics-percentile-fixture_test.py scripts/test/online-hosted-raster-statistics-percentile-gate_test.py
 
 .PHONY: test-raster-statistics-percentiles-online-runner
-test-raster-statistics-percentiles-online-runner: ## 验证整幅百分位只读16成功40失败57次物理760次结果复核及600秒隔离生命周期
+test-raster-statistics-percentiles-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证整幅百分位只读16成功40失败57次物理760次结果复核及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-statistics-percentiles-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-statistics-percentiles-workflow-online_test.py scripts/test/online-raster-statistics-percentiles-fixture_test.py scripts/test/online-hosted-raster-statistics-percentiles-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_statistics_percentiles_requires_exact_readonly_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-statistics-percentiles-workflow-online_test.py scripts/test/online-raster-statistics-percentiles-fixture_test.py scripts/test/online-hosted-raster-statistics-percentiles-gate_test.py
 
 .PHONY: test-raster-zonal-percentile-online-runner
-test-raster-zonal-percentile-online-runner: ## 验证分区百分位16成功56失败1032次CSV全检及600秒隔离生命周期
+test-raster-zonal-percentile-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分区百分位16成功56失败1032次CSV全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-zonal-percentile-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-zonal-percentile-persistence-online_test.py scripts/test/online-raster-zonal-percentile-fixture_test.py scripts/test/online-hosted-raster-zonal-percentile-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_zonal_percentile_requires_exact_csv_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-zonal-percentile-persistence-online_test.py scripts/test/online-raster-zonal-percentile-fixture_test.py scripts/test/online-hosted-raster-zonal-percentile-gate_test.py
 
 .PHONY: test-raster-zonal-percentiles-online-runner
-test-raster-zonal-percentiles-online-runner: ## 验证分区多百分位16成功80失败1416次CSV全检及600秒隔离生命周期
+test-raster-zonal-percentiles-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分区多百分位16成功80失败1416次CSV全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-zonal-percentiles-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-zonal-percentiles-persistence-online_test.py scripts/test/online-raster-zonal-percentiles-fixture_test.py scripts/test/online-hosted-raster-zonal-percentiles-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_zonal_percentiles_requires_exact_csv_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-zonal-percentiles-persistence-online_test.py scripts/test/online-raster-zonal-percentiles-fixture_test.py scripts/test/online-hosted-raster-zonal-percentiles-gate_test.py
 
 .PHONY: test-raster-zonal-class-frequency-online-runner
-test-raster-zonal-class-frequency-online-runner: ## 验证分区分类频数16成功64失败1160次CSV全检及600秒隔离生命周期
+test-raster-zonal-class-frequency-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分区分类频数16成功64失败1160次CSV全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-zonal-class-frequency-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-zonal-class-frequency-persistence-online_test.py scripts/test/online-raster-zonal-class-frequency-fixture_test.py scripts/test/online-hosted-raster-zonal-class-frequency-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_zonal_class_frequency_requires_exact_csv_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-zonal-class-frequency-persistence-online_test.py scripts/test/online-raster-zonal-class-frequency-fixture_test.py scripts/test/online-hosted-raster-zonal-class-frequency-gate_test.py
 
 .PHONY: test-raster-zonal-weighted-online-runner
-test-raster-zonal-weighted-online-runner: ## 验证分区加权16成功80失败1416次CSV全检及600秒隔离生命周期
+test-raster-zonal-weighted-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分区加权16成功80失败1416次CSV全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-zonal-weighted-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-zonal-weighted-persistence-online_test.py scripts/test/online-raster-zonal-weighted-fixture_test.py scripts/test/online-hosted-raster-zonal-weighted-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_zonal_weighted_requires_exact_csv_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-zonal-weighted-persistence-online_test.py scripts/test/online-raster-zonal-weighted-fixture_test.py scripts/test/online-hosted-raster-zonal-weighted-gate_test.py
 
 .PHONY: test-raster-zonal-weighted-stddev-online-runner
-test-raster-zonal-weighted-stddev-online-runner: ## 验证分区加权16成功98失败1704次CSV全检及600秒隔离生命周期
+test-raster-zonal-weighted-stddev-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分区加权16成功98失败1704次CSV全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-zonal-weighted-stddev-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-zonal-weighted-stddev-persistence-online_test.py scripts/test/online-raster-zonal-weighted-stddev-fixture_test.py scripts/test/online-hosted-raster-zonal-weighted-stddev-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_zonal_weighted_stddev_requires_exact_csv_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-zonal-weighted-stddev-persistence-online_test.py scripts/test/online-raster-zonal-weighted-stddev-fixture_test.py scripts/test/online-hosted-raster-zonal-weighted-stddev-gate_test.py
 
 .PHONY: test-vector-zonal-percentile-online-runner
-test-vector-zonal-percentile-online-runner: ## 验证矢量面分区百分位16成功48失败904次GeoPackage全检及600秒隔离生命周期
+test-vector-zonal-percentile-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证矢量面分区百分位16成功48失败904次GeoPackage全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-vector-zonal-percentile-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/vector-zonal-percentile-persistence-online_test.py scripts/test/online-vector-zonal-percentile-fixture_test.py scripts/test/online-hosted-vector-zonal-percentile-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_vector_zonal_percentile_requires_exact_gpkg_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/vector-zonal-percentile-persistence-online_test.py scripts/test/online-vector-zonal-percentile-fixture_test.py scripts/test/online-hosted-vector-zonal-percentile-gate_test.py
 
 .PHONY: test-vector-zonal-percentiles-online-runner
-test-vector-zonal-percentiles-online-runner: ## 验证矢量面分区百分位16成功80失败1416次GeoPackage全检及600秒隔离生命周期
+test-vector-zonal-percentiles-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证矢量面分区百分位16成功80失败1416次GeoPackage全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-vector-zonal-percentiles-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/vector-zonal-percentiles-persistence-online_test.py scripts/test/online-vector-zonal-percentiles-fixture_test.py scripts/test/online-hosted-vector-zonal-percentiles-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_vector_zonal_percentiles_requires_exact_gpkg_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/vector-zonal-percentiles-persistence-online_test.py scripts/test/online-vector-zonal-percentiles-fixture_test.py scripts/test/online-hosted-vector-zonal-percentiles-gate_test.py
 
 .PHONY: test-raster-sample-points-online-runner
-test-raster-sample-points-online-runner: ## 验证点位栅格采样16成功36失败712次GeoPackage全检及600秒隔离生命周期
+test-raster-sample-points-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证点位栅格采样16成功36失败712次GeoPackage全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-sample-points-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-sample-points-persistence-online_test.py scripts/test/online-raster-sample-points-fixture_test.py scripts/test/online-hosted-raster-sample-points-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_sample_points_requires_exact_gpkg_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-sample-points-persistence-online_test.py scripts/test/online-raster-sample-points-fixture_test.py scripts/test/online-hosted-raster-sample-points-gate_test.py
 
 .PHONY: test-vector-zonal-class-frequency-online-runner
-test-vector-zonal-class-frequency-online-runner: ## 验证独立16条GeoPackage成功链、双语拒绝、原字节归档与600秒生命周期
+test-vector-zonal-class-frequency-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立16条GeoPackage成功链、双语拒绝、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-vector-zonal-class-frequency-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/vector-zonal-class-frequency-persistence-online_test.py scripts/test/online-vector-zonal-class-frequency-fixture_test.py scripts/test/online-hosted-vector-zonal-class-frequency-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_vector_zonal_class_frequency_requires_exact_gpkg_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/vector-zonal-class-frequency-persistence-online_test.py scripts/test/online-vector-zonal-class-frequency-fixture_test.py scripts/test/online-hosted-vector-zonal-class-frequency-gate_test.py
 
 .PHONY: test-raster-sample-lines-online-runner
-test-raster-sample-lines-online-runner: ## 验证独立16条GeoPackage成功链、双语拒绝、原字节归档与600秒生命周期
+test-raster-sample-lines-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立16条GeoPackage成功链、双语拒绝、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-sample-lines-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-sample-lines-persistence-online_test.py scripts/test/online-raster-sample-lines-fixture_test.py scripts/test/online-hosted-raster-sample-lines-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_raster_sample_lines_requires_exact_gpkg_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-sample-lines-persistence-online_test.py scripts/test/online-raster-sample-lines-fixture_test.py scripts/test/online-hosted-raster-sample-lines-gate_test.py
 
 .PHONY: test-raster-interpolate-idw-online-runner
-test-raster-interpolate-idw-online-runner: ## 验证独立16条COG成功链、双语拒绝、原字节归档与600秒生命周期
+test-raster-interpolate-idw-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立16条COG成功链、双语拒绝、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-interpolate-idw-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-interpolate-idw-persistence-online_test.py scripts/test/online-raster-interpolate-idw-fixture_test.py scripts/test/online-hosted-raster-interpolate-idw-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_interpolate_idw_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-interpolate-idw-persistence-online_test.py scripts/test/online-raster-interpolate-idw-fixture_test.py scripts/test/online-hosted-raster-interpolate-idw-gate_test.py
 
 .PHONY: test-raster-interpolate-idw-min-points-online-runner
-test-raster-interpolate-idw-min-points-online-runner: ## 验证独立16条COG成功链、54次双语拒绝及1000次全检、原字节归档与600秒生命周期
+test-raster-interpolate-idw-min-points-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立16条COG成功链、54次双语拒绝及1000次全检、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-interpolate-idw-min-points-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-interpolate-idw-min-points-persistence-online_test.py scripts/test/online-raster-interpolate-idw-min-points-fixture_test.py scripts/test/online-hosted-raster-interpolate-idw-min-points-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_interpolate_idw_min_points_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-interpolate-idw-min-points-persistence-online_test.py scripts/test/online-raster-interpolate-idw-min-points-fixture_test.py scripts/test/online-hosted-raster-interpolate-idw-min-points-gate_test.py
 
 .PHONY: test-raster-interpolate-idw-max-points-online-runner
-test-raster-interpolate-idw-max-points-online-runner: ## 验证独立16条COG成功链、78次双语拒绝及1384次全检、原字节归档与600秒生命周期
+test-raster-interpolate-idw-max-points-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立16条COG成功链、78次双语拒绝及1384次全检、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-interpolate-idw-max-points-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-interpolate-idw-max-points-persistence-online_test.py scripts/test/online-raster-interpolate-idw-max-points-fixture_test.py scripts/test/online-hosted-raster-interpolate-idw-max-points-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_interpolate_idw_max_points_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-interpolate-idw-max-points-persistence-online_test.py scripts/test/online-raster-interpolate-idw-max-points-fixture_test.py scripts/test/online-hosted-raster-interpolate-idw-max-points-gate_test.py
 
 .PHONY: test-raster-interpolate-idw-power-online-runner
-test-raster-interpolate-idw-power-online-runner: ## 验证独立24条COG成功链、80次双语拒绝及2220次全检、原字节归档与600秒生命周期
+test-raster-interpolate-idw-power-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立24条COG成功链、80次双语拒绝及2220次全检、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-interpolate-idw-power-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-interpolate-idw-power-persistence-online_test.py scripts/test/online-raster-interpolate-idw-power-fixture_test.py scripts/test/online-hosted-raster-interpolate-idw-power-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_interpolate_idw_power_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-interpolate-idw-power-persistence-online_test.py scripts/test/online-raster-interpolate-idw-power-fixture_test.py scripts/test/online-hosted-raster-interpolate-idw-power-gate_test.py
 
 .PHONY: test-raster-point-density-online-runner
-test-raster-point-density-online-runner: ## 验证独立16条COG成功链、32次双语拒绝及648次全检、原字节归档与600秒生命周期
+test-raster-point-density-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立16条COG成功链、32次双语拒绝及648次全检、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-point-density-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-point-density-persistence-online_test.py scripts/test/online-raster-point-density-fixture_test.py scripts/test/online-hosted-raster-point-density-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_point_density_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-point-density-persistence-online_test.py scripts/test/online-raster-point-density-fixture_test.py scripts/test/online-hosted-raster-point-density-gate_test.py
 
 .PHONY: test-raster-line-density-online-runner
-test-raster-line-density-online-runner: ## 验证独立16条COG成功链、40次双语拒绝及776次全检、原字节归档与600秒生命周期
+test-raster-line-density-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立16条COG成功链、40次双语拒绝及776次全检、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-line-density-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-line-density-persistence-online_test.py scripts/test/online-raster-line-density-fixture_test.py scripts/test/online-hosted-raster-line-density-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_line_density_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-line-density-persistence-online_test.py scripts/test/online-raster-line-density-fixture_test.py scripts/test/online-hosted-raster-line-density-gate_test.py
 
 .PHONY: test-raster-line-density-weighted-online-runner
-test-raster-line-density-weighted-online-runner: ## 验证独立16条COG成功链、40次双语拒绝及776次全检、原字节归档与600秒生命周期
+test-raster-line-density-weighted-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立16条COG成功链、40次双语拒绝及776次全检、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-line-density-weighted-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-line-density-weighted-persistence-online_test.py scripts/test/online-raster-line-density-weighted-fixture_test.py scripts/test/online-hosted-raster-line-density-weighted-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_line_density_weighted_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-line-density-weighted-persistence-online_test.py scripts/test/online-raster-line-density-weighted-fixture_test.py scripts/test/online-hosted-raster-line-density-weighted-gate_test.py
 
 .PHONY: test-raster-line-kernel-density-online-runner
-test-raster-line-kernel-density-online-runner: ## 验证独立24条COG成功链、60次双语拒绝及1740次全检、原字节归档与600秒生命周期
+test-raster-line-kernel-density-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立24条COG成功链、60次双语拒绝及1740次全检、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-line-kernel-density-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-line-kernel-density-persistence-online_test.py scripts/test/online-raster-line-kernel-density-fixture_test.py scripts/test/online-hosted-raster-line-kernel-density-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_line_kernel_density_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-line-kernel-density-persistence-online_test.py scripts/test/online-raster-line-kernel-density-fixture_test.py scripts/test/online-hosted-raster-line-kernel-density-gate_test.py
 
 .PHONY: test-raster-point-kernel-density-online-runner
-test-raster-point-kernel-density-online-runner: ## 验证独立18条COG成功链、52次双语拒绝及1107次全检、原字节归档与600秒生命周期
+test-raster-point-kernel-density-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立18条COG成功链、52次双语拒绝及1107次全检、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-point-kernel-density-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-point-kernel-density-persistence-online_test.py scripts/test/online-raster-point-kernel-density-fixture_test.py scripts/test/online-hosted-raster-point-kernel-density-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_point_kernel_density_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-point-kernel-density-persistence-online_test.py scripts/test/online-raster-point-kernel-density-fixture_test.py scripts/test/online-hosted-raster-point-kernel-density-gate_test.py
 
 .PHONY: test-raster-point-density-weighted-online-runner
-test-raster-point-density-weighted-online-runner: ## 验证独立24条COG成功链、64次双语拒绝及1836次全检、原字节归档与600秒生命周期
+test-raster-point-density-weighted-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立24条COG成功链、64次双语拒绝及1836次全检、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-point-density-weighted-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-point-density-weighted-persistence-online_test.py scripts/test/online-raster-point-density-weighted-fixture_test.py scripts/test/online-hosted-raster-point-density-weighted-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_point_density_weighted_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-point-density-weighted-persistence-online_test.py scripts/test/online-raster-point-density-weighted-fixture_test.py scripts/test/online-hosted-raster-point-density-weighted-gate_test.py
 
 .PHONY: test-raster-focal-percentiles-online-runner
-test-raster-focal-percentiles-online-runner: ## 验证独立16条COG成功链、双语拒绝、原字节归档与600秒生命周期
+test-raster-focal-percentiles-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证独立16条COG成功链、双语拒绝、原字节归档与600秒生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-percentiles-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-focal-percentiles-persistence-online_test.py scripts/test/online-raster-focal-percentiles-fixture_test.py scripts/test/online-hosted-raster-focal-percentiles-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_focal_percentiles_requires_exact_cog_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-focal-percentiles-persistence-online_test.py scripts/test/online-raster-focal-percentiles-fixture_test.py scripts/test/online-hosted-raster-focal-percentiles-gate_test.py
 
 .PHONY: test-raster-sample-points-bilinear-online-runner
-test-raster-sample-points-bilinear-online-runner: ## 验证双线性点位栅格采样16成功52失败968次GeoPackage全检及600秒隔离生命周期
+test-raster-sample-points-bilinear-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证双线性点位栅格采样16成功52失败968次GeoPackage全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-sample-points-bilinear-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/raster-sample-points-bilinear-persistence-online_test.py scripts/test/online-raster-sample-points-bilinear-fixture_test.py scripts/test/online-hosted-raster-sample-points-bilinear-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_sample_points_bilinear_requires_exact_gpkg_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-sample-points-bilinear-persistence-online_test.py scripts/test/online-raster-sample-points-bilinear-fixture_test.py scripts/test/online-hosted-raster-sample-points-bilinear-gate_test.py
 
 .PHONY: test-vector-zonal-weighted-online-runner
-test-vector-zonal-weighted-online-runner: ## 验证矢量面分区加权16成功86失败1512次GeoPackage全检及600秒隔离生命周期
+test-vector-zonal-weighted-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证矢量面分区加权16成功86失败1512次GeoPackage全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-vector-zonal-weighted-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/vector-zonal-weighted-persistence-online_test.py scripts/test/online-vector-zonal-weighted-fixture_test.py scripts/test/online-hosted-vector-zonal-weighted-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_vector_zonal_weighted_requires_exact_gpkg_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/vector-zonal-weighted-persistence-online_test.py scripts/test/online-vector-zonal-weighted-fixture_test.py scripts/test/online-hosted-vector-zonal-weighted-gate_test.py
 
 .PHONY: test-vector-zonal-weighted-stddev-online-runner
-test-vector-zonal-weighted-stddev-online-runner: ## 验证矢量面分区加权16成功106失败1832次GeoPackage全检及600秒隔离生命周期
+test-vector-zonal-weighted-stddev-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证矢量面分区加权16成功106失败1832次GeoPackage全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-vector-zonal-weighted-stddev-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/vector-zonal-weighted-stddev-persistence-online_test.py scripts/test/online-vector-zonal-weighted-stddev-fixture_test.py scripts/test/online-hosted-vector-zonal-weighted-stddev-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_vector_zonal_weighted_stddev_requires_exact_gpkg_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/vector-zonal-weighted-stddev-persistence-online_test.py scripts/test/online-vector-zonal-weighted-stddev-fixture_test.py scripts/test/online-hosted-vector-zonal-weighted-stddev-gate_test.py
 
 .PHONY: test-vector-zonal-area-weighted-online-runner
-test-vector-zonal-area-weighted-online-runner: ## 验证矢量面分区加权16成功76失败1352次GeoPackage全检及600秒隔离生命周期
+test-vector-zonal-area-weighted-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证矢量面分区加权16成功76失败1352次GeoPackage全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-vector-zonal-area-weighted-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/vector-zonal-area-weighted-persistence-online_test.py scripts/test/online-vector-zonal-area-weighted-fixture_test.py scripts/test/online-hosted-vector-zonal-area-weighted-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_vector_zonal_area_weighted_requires_exact_gpkg_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/vector-zonal-area-weighted-persistence-online_test.py scripts/test/online-vector-zonal-area-weighted-fixture_test.py scripts/test/online-hosted-vector-zonal-area-weighted-gate_test.py
 
 .PHONY: test-vector-zonal-area-weighted-stddev-online-runner
-test-vector-zonal-area-weighted-stddev-online-runner: ## 验证矢量面分区加权16成功100失败1736次GeoPackage全检及600秒隔离生命周期
+test-vector-zonal-area-weighted-stddev-online-runner: test-gate-selection-unit test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证矢量面分区加权16成功100失败1736次GeoPackage全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-vector-zonal-area-weighted-stddev-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/online-raster-lineage_test.py scripts/test/vector-zonal-area-weighted-stddev-persistence-online_test.py scripts/test/online-vector-zonal-area-weighted-stddev-fixture_test.py scripts/test/online-hosted-vector-zonal-area-weighted-stddev-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_vector_zonal_area_weighted_stddev_requires_exact_gpkg_matrix_budget_and_regressions
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/vector-zonal-area-weighted-stddev-persistence-online_test.py scripts/test/online-vector-zonal-area-weighted-stddev-fixture_test.py scripts/test/online-hosted-vector-zonal-area-weighted-stddev-gate_test.py
 
 .PHONY: test-raster-disk-pressure-online-runner
-test-raster-disk-pressure-online-runner: ## 验证真实低磁盘拒绝、恢复与隔离磁盘清理
+test-raster-disk-pressure-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证真实低磁盘拒绝、恢复与隔离磁盘清理
 	@bash -n scripts/test/online-hosted-raster-disk-pressure-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-disk-pressure-online_test.py scripts/test/online-raster-disk-pressure-fixture_test.py scripts/test/online-hosted-raster-disk-pressure-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_disk_pressure_requires_owned_ext4_exact_rejection_recovery_and_cleanup
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-disk-pressure-online_test.py scripts/test/online-raster-disk-pressure-fixture_test.py scripts/test/online-hosted-raster-disk-pressure-gate_test.py
 
 .PHONY: test-raster-nibble-capacity-online-runner
-test-raster-nibble-capacity-online-runner: ## 验证分类蚕食容量矩阵、资源采样、完整成果与隔离生命周期
+test-raster-nibble-capacity-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分类蚕食容量矩阵、资源采样、完整成果与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-nibble-capacity-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-nibble-capacity-online_test.py scripts/test/online-raster-nibble-capacity-fixture_test.py scripts/test/online-hosted-raster-nibble-capacity-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_nibble_capacity_requires_manual_limits_disk_and_full_oracle
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/raster-nibble-capacity-online_test.py scripts/test/online-raster-nibble-capacity-fixture_test.py scripts/test/online-hosted-raster-nibble-capacity-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-raster-nibble-online-runner
-test-raster-nibble-online-runner: ## 验证分类蚕食持久化及隔离生命周期
+test-raster-nibble-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分类蚕食持久化及隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-nibble-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-nibble-persistence-online_test.py scripts/test/online-raster-nibble-fixture_test.py scripts/test/online-hosted-raster-nibble-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_nibble_requires_manual_nfs_exact_donors_and_regressions
+	@python3 -m unittest scripts/test/raster-nibble-persistence-online_test.py scripts/test/online-raster-nibble-fixture_test.py scripts/test/online-hosted-raster-nibble-gate_test.py
 
 .PHONY: test-raster-focal-statistics-online-runner
-test-raster-focal-statistics-online-runner: ## 验证邻域统计独立 T4、完整 COG 与隔离生命周期
+test-raster-focal-statistics-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证邻域统计独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-statistics-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-focal-statistics-persistence-online_test.py scripts/test/online-raster-focal-statistics-fixture_test.py scripts/test/online-hosted-raster-focal-statistics-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_focal_requires_manual_nfs_identity_strict_sizes_and_regressions
+	@python3 -m unittest scripts/test/raster-focal-statistics-persistence-online_test.py scripts/test/online-raster-focal-statistics-fixture_test.py scripts/test/online-hosted-raster-focal-statistics-gate_test.py
 
 .PHONY: test-raster-zonal-statistics-online-runner
-test-raster-zonal-statistics-online-runner: ## 验证分区统计独立 T4 夹具、完整 CSV 与隔离生命周期
+test-raster-zonal-statistics-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分区统计独立 T4 夹具、完整 CSV 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-zonal-statistics-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-zonal-statistics-persistence-online_test.py scripts/test/online-raster-zonal-statistics-fixture_test.py scripts/test/online-hosted-raster-zonal-statistics-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_zonal_requires_manual_nfs_identity_complete_csv_and_regressions
+	@python3 -m unittest scripts/test/raster-zonal-statistics-persistence-online_test.py scripts/test/online-raster-zonal-statistics-fixture_test.py scripts/test/online-hosted-raster-zonal-statistics-gate_test.py
 
 .PHONY: test-vector-rasterize-online-runner
-test-vector-rasterize-online-runner: ## 验证矢量栅格化独立 T4 夹具、断言与生命周期
+test-vector-rasterize-online-runner: test-gate-selection-unit test-online-registration-unit ## 验证矢量栅格化独立 T4 夹具、断言与生命周期
 	@bash -n scripts/test/online-hosted-vector-rasterize-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/vector-rasterize-persistence-online_test.py scripts/test/online-vector-rasterize-fixture_test.py scripts/test/online-hosted-vector-rasterize-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_rasterize_requires_manual_nfs_identity_strict_sizes_and_regressions
+	@python3 -m unittest scripts/test/vector-rasterize-persistence-online_test.py scripts/test/online-vector-rasterize-fixture_test.py scripts/test/online-hosted-vector-rasterize-gate_test.py
 
 .PHONY: test-raster-image-export-online-runner
-test-raster-image-export-online-runner: ## 验证普通 PNG/JPEG 导出、真实编辑器参数及其 CI 登记
-	@python3 -m unittest scripts/test/raster-image-export-online_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_raster_requires_manual_disposable_profile_and_registered_regressions
+test-raster-image-export-online-runner: test-online-registration-unit ## 验证普通 PNG/JPEG 导出、真实编辑器参数及其 CI 登记
+	@python3 -m unittest scripts/test/raster-image-export-online_test.py
 	@python3 -m unittest scripts/test/raster-workflow-online_test.py -k editor
 	@node --check --input-type=module < console/frontend/e2e/online/raster-workflow.spec.js
 
@@ -1149,96 +1075,15 @@ test-raster-image-export-online-runner: ## 验证普通 PNG/JPEG 导出、真实
 test-raster-workflow-online-runner: ## 验证栅格工作流 Online runner 的成功、部分提交与失败契约
 	@python3 -m unittest scripts/test/raster-workflow-online_test.py $(RASTER_WORKFLOW_ONLINE_TEST_ARGS)
 
-test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
-	@$(MAKE) test-raster-workflow-online-runner
-	@$(MAKE) test-raster-image-export-online-runner
-	@$(MAKE) test-raster-boundary-clean-online-runner
-	@$(MAKE) test-raster-thin-online-runner
-	@$(MAKE) test-raster-fill-depressions-online-runner
-	@$(MAKE) test-raster-flow-direction-d8-online-runner
-	@$(MAKE) test-raster-flow-accumulation-d8-online-runner
-	@$(MAKE) test-raster-drainage-basins-d8-online-runner
-	@$(MAKE) test-raster-flow-length-d8-online-runner
-	@$(MAKE) test-raster-flow-accumulation-area-d8-online-runner
-	@$(MAKE) test-raster-distance-to-stream-d8-online-runner
-	@$(MAKE) test-raster-hand-d8-online-runner
-	@$(MAKE) test-raster-curvature-online-runner
-	@$(MAKE) test-raster-profile-curvature-online-runner
-	@$(MAKE) test-raster-cut-fill-online-runner
-	@$(MAKE) test-raster-surface-area-online-runner
-	@$(MAKE) test-raster-tangential-curvature-online-runner
-	@$(MAKE) test-raster-plan-curvature-online-runner
-	@$(MAKE) test-raster-tpi-online-runner
-	@$(MAKE) test-raster-tri-online-runner
-	@$(MAKE) test-raster-roughness-online-runner
-	@$(MAKE) test-raster-twi-online-runner
-	@$(MAKE) test-raster-spi-online-runner
-	@$(MAKE) test-raster-sieve-online-runner
-	@$(MAKE) test-raster-focal-percentile-online-runner
-	@$(MAKE) test-raster-focal-variety-online-runner
-	@$(MAKE) test-raster-focal-circle-online-runner
-	@$(MAKE) test-raster-region-group-online-runner
-	@$(MAKE) test-raster-focal-weighted-mean-online-runner
-	@$(MAKE) test-raster-focal-weighted-stddev-online-runner
-	@$(MAKE) test-raster-focal-weighted-sum-online-runner
-	@$(MAKE) test-raster-proximity-rectangular-online-runner
-	@$(MAKE) test-raster-sieve-protected-online-runner
-	@$(MAKE) test-raster-sieve-area-online-runner
-	@$(MAKE) test-raster-flow-length-upstream-d8-online-runner
-	@$(MAKE) test-raster-stream-order-d8-online-runner
-	@$(MAKE) test-raster-stream-shreve-d8-online-runner
-	@$(MAKE) test-raster-stream-to-vector-d8-online-runner
-	@$(MAKE) test-raster-stream-link-d8-online-runner
-	@$(MAKE) test-raster-flow-accumulation-weighted-d8-online-runner
-	@$(MAKE) test-raster-watershed-d8-online-runner
-	@$(MAKE) test-raster-subcatchments-d8-online-runner
-	@$(MAKE) test-raster-snap-pour-points-online-runner
-	@$(MAKE) test-raster-disk-pressure-online-runner
-	@$(MAKE) test-raster-proximity-online-runner
-	@$(MAKE) test-vector-zonal-statistics-online-runner
-	@$(MAKE) test-raster-focal-mode-online-runner
-	@$(MAKE) test-raster-band-recommendation-online-runner
-	@$(MAKE) test-raster-statistics-percentile-online-runner
-	@$(MAKE) test-raster-statistics-percentiles-online-runner
-	@$(MAKE) test-raster-zonal-percentile-online-runner
-	@$(MAKE) test-raster-zonal-percentiles-online-runner
-	@$(MAKE) test-raster-zonal-class-frequency-online-runner
-	@$(MAKE) test-raster-zonal-weighted-online-runner
-	@$(MAKE) test-raster-zonal-weighted-stddev-online-runner
-	@$(MAKE) test-vector-zonal-percentile-online-runner
-	@$(MAKE) test-vector-zonal-percentiles-online-runner
-	@$(MAKE) test-raster-sample-points-online-runner
-	@$(MAKE) test-raster-sample-points-bilinear-online-runner
-	@$(MAKE) test-vector-zonal-class-frequency-online-runner
-	@$(MAKE) test-raster-sample-lines-online-runner
-	@$(MAKE) test-raster-interpolate-idw-online-runner
-	@$(MAKE) test-raster-interpolate-idw-min-points-online-runner
-	@$(MAKE) test-raster-interpolate-idw-max-points-online-runner
-	@$(MAKE) test-raster-interpolate-idw-power-online-runner
-	@$(MAKE) test-raster-point-density-online-runner
-	@$(MAKE) test-raster-line-density-online-runner
-	@$(MAKE) test-raster-line-density-weighted-online-runner
-	@$(MAKE) test-raster-line-kernel-density-online-runner
-	@$(MAKE) test-raster-point-kernel-density-online-runner
-	@$(MAKE) test-raster-point-density-weighted-online-runner
-	@$(MAKE) test-raster-focal-percentiles-online-runner
-	@$(MAKE) test-vector-zonal-weighted-online-runner
-	@$(MAKE) test-vector-zonal-weighted-stddev-online-runner
-	@$(MAKE) test-vector-zonal-area-weighted-online-runner
-	@$(MAKE) test-vector-zonal-area-weighted-stddev-online-runner
-	@$(MAKE) test-raster-nibble-online-runner
-	@$(MAKE) test-raster-nibble-capacity-online-runner
-	@$(MAKE) test-raster-focal-statistics-online-runner
-	@$(MAKE) test-raster-zonal-statistics-online-runner
-	@$(MAKE) test-vector-rasterize-online-runner
+test-raster-online-runner: test-raster-workflow-online-runner test-raster-image-export-online-runner test-raster-boundary-clean-online-runner test-raster-thin-online-runner test-raster-fill-depressions-online-runner test-raster-flow-direction-d8-online-runner test-raster-flow-accumulation-d8-online-runner test-raster-drainage-basins-d8-online-runner test-raster-flow-length-d8-online-runner test-raster-flow-accumulation-area-d8-online-runner test-raster-distance-to-stream-d8-online-runner test-raster-hand-d8-online-runner test-raster-curvature-online-runner test-raster-profile-curvature-online-runner test-raster-cut-fill-online-runner test-raster-surface-area-online-runner test-raster-tangential-curvature-online-runner test-raster-plan-curvature-online-runner test-raster-tpi-online-runner test-raster-tri-online-runner test-raster-roughness-online-runner test-raster-twi-online-runner test-raster-spi-online-runner test-raster-sieve-online-runner test-raster-focal-percentile-online-runner test-raster-focal-variety-online-runner test-raster-focal-circle-online-runner test-raster-region-group-online-runner test-raster-focal-weighted-mean-online-runner test-raster-focal-weighted-stddev-online-runner test-raster-focal-weighted-sum-online-runner test-raster-proximity-rectangular-online-runner test-raster-sieve-protected-online-runner test-raster-sieve-area-online-runner test-raster-flow-length-upstream-d8-online-runner test-raster-stream-order-d8-online-runner test-raster-stream-shreve-d8-online-runner test-raster-stream-to-vector-d8-online-runner test-raster-stream-link-d8-online-runner test-raster-flow-accumulation-weighted-d8-online-runner test-raster-watershed-d8-online-runner test-raster-subcatchments-d8-online-runner test-raster-snap-pour-points-online-runner test-raster-disk-pressure-online-runner test-raster-proximity-online-runner test-vector-zonal-statistics-online-runner test-raster-focal-mode-online-runner test-raster-band-recommendation-online-runner test-raster-statistics-percentile-online-runner test-raster-statistics-percentiles-online-runner test-raster-zonal-percentile-online-runner test-raster-zonal-percentiles-online-runner test-raster-zonal-class-frequency-online-runner test-raster-zonal-weighted-online-runner test-raster-zonal-weighted-stddev-online-runner test-vector-zonal-percentile-online-runner test-vector-zonal-percentiles-online-runner test-raster-sample-points-online-runner test-raster-sample-points-bilinear-online-runner test-vector-zonal-class-frequency-online-runner test-raster-sample-lines-online-runner test-raster-interpolate-idw-online-runner test-raster-interpolate-idw-min-points-online-runner test-raster-interpolate-idw-max-points-online-runner test-raster-interpolate-idw-power-online-runner test-raster-point-density-online-runner test-raster-line-density-online-runner test-raster-line-density-weighted-online-runner test-raster-line-kernel-density-online-runner test-raster-point-kernel-density-online-runner test-raster-point-density-weighted-online-runner test-raster-focal-percentiles-online-runner test-vector-zonal-weighted-online-runner test-vector-zonal-weighted-stddev-online-runner test-vector-zonal-area-weighted-online-runner test-vector-zonal-area-weighted-stddev-online-runner test-raster-nibble-online-runner test-raster-nibble-capacity-online-runner test-raster-focal-statistics-online-runner test-raster-zonal-statistics-online-runner test-vector-rasterize-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证栅格 T4 场景、物理夹具与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-polygonize-gate.sh
-	@python3 -m unittest scripts/test/raster-polygonize-persistence-online_test.py scripts/test/online-raster-polygonize-fixture_test.py scripts/test/online-hosted-raster-polygonize-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_polygonize_requires_manual_nfs_identity_and_registered_regressions scripts/test/raster-contour-persistence-online_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_capacity_requires_full_scene_resource_profile_and_owner_regressions scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_contour_requires_manual_nfs_identity_and_registered_regressions
+	@python3 -m unittest scripts/test/raster-polygonize-persistence-online_test.py scripts/test/online-raster-polygonize-fixture_test.py scripts/test/online-hosted-raster-polygonize-gate_test.py scripts/test/raster-contour-persistence-online_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 HDFS_ONLINE_TEST_ARGS ?=
 .PHONY: test-hdfs-online-runner
-test-hdfs-online-runner: ## 验证 HDFS Spark 及 MySQL/Doris 页面 T4、物理夹具与隔离生命周期
-	@python3 -m unittest -v scripts/test/hdfs-spark-consumer-flow-online_test.py scripts/test/spark-table-consumer-online_test.py scripts/test/online-hdfs-spark-fixture_test.py scripts/test/online-hosted-hdfs-gate_test.py scripts/test/online-engine-registration_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_hdfs_requires_manual_java11_lifecycle_browser_and_owner_tests $(HDFS_ONLINE_TEST_ARGS)
+test-hdfs-online-runner: test-online-registration-unit ## 验证 HDFS Spark 及 MySQL/Doris 页面 T4、物理夹具与隔离生命周期
+	@python3 -m unittest -v scripts/test/hdfs-spark-consumer-flow-online_test.py scripts/test/spark-table-consumer-online_test.py scripts/test/online-hdfs-spark-fixture_test.py scripts/test/online-hosted-hdfs-gate_test.py scripts/test/online-engine-registration_test.py $(HDFS_ONLINE_TEST_ARGS)
 	@node --check --input-type=module < console/frontend/e2e/online/hdfs-spark-consumer-flow.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/spark-multicluster.spec.js
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
@@ -1248,10 +1093,10 @@ test-elasticsearch-online-runner: ## 验证 ES Spark T4 场景、物理夹具与
 	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py scripts/test/online-hosted-elasticsearch-gate_test.py scripts/test/online-elasticsearch-consumer-fixture_test.py
 
 .PHONY: test-node-metrics-online-runner
-test-node-metrics-online-runner: ## 验证节点指标 Online 身份边界、浏览器证据与 Hosted 清理
+test-node-metrics-online-runner: test-online-registration-unit ## 验证节点指标 Online 身份边界、浏览器证据与 Hosted 清理
 	@node --check --input-type=module < console/frontend/e2e/online/platform-node-resources.spec.js
 	@bash -n scripts/test/online-hosted-node-metrics-gate.sh
-	@python3 -m unittest scripts/test/platform-node-metrics-online_test.py scripts/test/platform-node-metrics-fixture_test.py scripts/test/online-hosted-node-metrics-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_node_metrics_requires_owned_regressions_and_manual_hosted_dispatch
+	@python3 -m unittest scripts/test/platform-node-metrics-online_test.py scripts/test/platform-node-metrics-fixture_test.py scripts/test/online-hosted-node-metrics-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run Metrics -count=1
 
 .PHONY: test-quality-online-runner
@@ -1261,10 +1106,10 @@ test-quality-online-runner: ## 验证 Quality Hosted 准备、身份、事件及
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-transfer-online-runner
-test-transfer-online-runner: ## 验证 Transfer Hosted 身份、只读预检、场景与清理契约
+test-transfer-online-runner: test-online-registration-unit ## 验证 Transfer Hosted 身份、只读预检、场景与清理契约
 	@node --check --input-type=module < console/frontend/e2e/online/transfer-relational-sql-etl.spec.js
 	@bash -n business/scripts/online-transfer-relational-sql-etl-fixture.sh
-	@python3 -m unittest scripts/test/online-hosted-transfer-gate_test.py scripts/test/online-transfer-relational-sql-etl-fixture_test.py scripts/test/transfer-relational-sql-etl-online_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_transfer_field_lineage_services_proofs_and_cleanup
+	@python3 -m unittest scripts/test/online-hosted-transfer-gate_test.py scripts/test/online-transfer-relational-sql-etl-fixture_test.py scripts/test/transfer-relational-sql-etl-online_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 	@cd transfer/backend && GOWORK=off go test ./internal/planner -run '^TestHostedWriteFailureTaskContract$$' -count=1
 
@@ -1276,56 +1121,45 @@ test-transfer-continuous-online-runner: ## 验证连续任务 Hosted 生命周�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-pg-authorization-online-runner
-test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔离和清理
+test-pg-authorization-online-runner: test-online-registration-unit test-online-dispatcher-unit ## 验证 PG 源授权 Online 场景、隔离和清理
 	@python3 -m unittest scripts/test/metadata-refresh-scope-online_test.py
 	@node --check --input-type=module < console/frontend/e2e/online/pg-source-authorization.spec.js
 	@bash -n scripts/test/online-hosted-pg-authorization-gate.sh business/scripts/online-metric-postgres-fixture.sh
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
-	@python3 -m unittest scripts/test/pg-source-authorization-online_test.py scripts/test/online-hosted-pg-authorization-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_pg_authorization_requires_isolated_manual_profile scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_opengauss_hosted_owner_and_identity_contracts
+	@python3 -m unittest scripts/test/pg-source-authorization-online_test.py scripts/test/online-hosted-pg-authorization-gate_test.py scripts/test/online-engine-registration_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-opengauss-online-runner
-test-opengauss-online-runner: ## 验证 openGauss 精确授权准备、关系消费及 Hosted 隔离清理
+test-opengauss-online-runner: test-online-registration-unit ## 验证 openGauss 精确授权准备、关系消费及 Hosted 隔离清理
 	@bash -n scripts/test/online-hosted-opengauss-gate.sh business/scripts/online-opengauss-consumer-fixture.sh
-	@python3 -m unittest -v scripts/test/relational-consumer-flow-online_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-engine-registration_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_opengauss_hosted_owner_and_identity_contracts $(OPENGAUSS_ONLINE_TEST_ARGS)
+	@python3 -m unittest -v scripts/test/relational-consumer-flow-online_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-engine-registration_test.py $(OPENGAUSS_ONLINE_TEST_ARGS)
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
-test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@$(MAKE) test-opengauss-online-runner
-	@$(MAKE) test-execution-retention-online-runner
-	@$(MAKE) test-execution-events-pagination-runner
-	@$(MAKE) test-catalog-domain-online-runner
-	@$(MAKE) test-workflow-runtime-health-online-runner
-	@$(MAKE) test-starrocks-online-runner
-	@$(MAKE) test-ftp-online-runner
-	@$(MAKE) test-common-gaussdb-unit
-	@$(MAKE) test-security-online-runner
-	@$(MAKE) test-highgo-online-runner
-	@$(MAKE) test-pg-authorization-online-runner
-	@$(MAKE) test-transfer-continuous-online-runner
-	@$(MAKE) test-transfer-online-runner
-	@$(MAKE) test-node-metrics-online-runner
-	@$(MAKE) test-platform-administrator-online-runner
-	@$(MAKE) test-hdfs-online-runner
-	@$(MAKE) test-raster-online-runner
-	@$(MAKE) test-vector-pmtiles-online-runner
-	@$(MAKE) test-vector-topology-online-runner
+
+# Shared Online regressions have one owner; GNU Make executes each dependency once.
+.PHONY: test-online-dispatcher-unit test-gate-selection-unit test-raster-lineage-observer-unit test-online-registration-unit
+test-online-dispatcher-unit:
+	@python3 -m unittest scripts/test/online-gate_test.py
+test-gate-selection-unit:
+	@python3 -m unittest scripts/test/changed-gate_test.py
+test-raster-lineage-observer-unit:
+	@python3 -m unittest scripts/test/online-raster-lineage_test.py
+test-online-registration-unit:
+	@python3 -m unittest scripts/ci/check-online-ci-registration_test.py
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+
+.NOTPARALLEL: test-catalog-domain-online-runner test-execution-online-ci-runner test-graph-online-runner test-manager-online-runner test-online-runner test-raster-online-runner test-security-online-runner
+
+test-online-runner: test-opengauss-online-runner test-execution-retention-online-runner test-execution-events-pagination-runner test-catalog-domain-online-runner test-workflow-runtime-health-online-runner test-starrocks-online-runner test-ftp-online-runner test-common-gaussdb-unit test-security-online-runner test-highgo-online-runner test-pg-authorization-online-runner test-transfer-continuous-online-runner test-transfer-online-runner test-node-metrics-online-runner test-platform-administrator-online-runner test-hdfs-online-runner test-raster-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-elasticsearch-online-runner test-orchestrator-online-runner test-manager-online-runner test-quality-online-runner test-online-dispatcher-unit test-online-registration-unit ## 运行 Online 分发器和预检器的确定性测试
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
-	@$(MAKE) test-elasticsearch-online-runner
-	@$(MAKE) test-orchestrator-online-runner
-	@$(MAKE) test-manager-online-runner
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py
 	@python3 -m unittest scripts/test/ontology-revision-lifecycle-online_test.py scripts/test/online-hosted-ontology-gate_test.py
-	@$(MAKE) test-quality-online-runner
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-metric-gate_test.py scripts/test/online-security-owner-fixture_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/metric-service-revision-lifecycle-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/ci/check-online-ci-registration_test.py
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-metric-gate_test.py scripts/test/online-security-owner-fixture_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/metric-service-revision-lifecycle-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-hybrid-search-online_test.py
 
 .PHONY: test-workflow-runtime-health-online-runner
-test-workflow-runtime-health-online-runner: ## 验证三组原生 Runtime 健康故障的隔离、恢复与标准登记
+test-workflow-runtime-health-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证三组原生 Runtime 健康故障的隔离、恢复与标准登记
 	@bash -n scripts/dev/start.sh scripts/test/online-hosted-workflow-health-gate.sh scripts/utils/hosted-product-runtime.sh
-	@python3 -m unittest scripts/test/workflow-runtime-health-recovery-online_test.py scripts/test/online-hosted-workflow-health-gate_test.py scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/workflow-runtime-health-recovery-online_test.py scripts/test/online-hosted-workflow-health-gate_test.py
 	@python3 scripts/ci/check-engine-startup-isolation.py --repository "$(CURDIR)"
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run WorkflowRuntimeHealth -count=1
 
@@ -1754,7 +1588,7 @@ test-monitor-redis-source: ## 复用独占 Redis 夹具验证专业采集与越�
 	@bash scripts/test/monitor-redis-source-gate.sh
 
 .PHONY: test-manager-online-runner
-test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
+test-manager-online-runner: test-online-registration-unit test-manager-sgm-local-runner ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
 	@node --check --input-type=module < console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-kml-export.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-filegdb.spec.js
@@ -1765,20 +1599,18 @@ test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物�
 	@node --check --input-type=module < console/frontend/e2e/online/manager-netcdf.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-grib.spec.js
 	@python3 -m unittest scripts/test/manager-netcdf-online_test.py scripts/test/manager-grib-online_test.py scripts/test/manager-envi-online_test.py scripts/test/online-engine-registration_test.py scripts/test/metadata-refresh-scope-online_test.py
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@python3 -m unittest scripts/test/manager-filegdb-online_test.py
 	@python3 -m unittest scripts/test/manager-orc-online_test.py
 	@python3 -m unittest scripts/test/manager-kml-export-online_test.py
 	@bash -n business/scripts/online-metric-postgres-fixture.sh
 	@python3 -m unittest scripts/test/manager-img-online_test.py
-	@$(MAKE) test-manager-sgm-local-runner
 	@bash -n scripts/test/online-hosted-manager-gate.sh business/scripts/online-manager-nfs-fixture.sh
-	@python3 -m unittest scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-manager-nfs-fixture_test.py scripts/test/meta-content-boundary-online_test.py scripts/test/online-hosted-manager-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite
+	@python3 -m unittest scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-manager-nfs-fixture_test.py scripts/test/meta-content-boundary-online_test.py scripts/test/online-hosted-manager-gate_test.py
 
 .PHONY: test-highgo-online-runner
-test-highgo-online-runner: ## 验证瀚高 Online 场景、普通身份、物理夹具和 Hosted 隔离清理
+test-highgo-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证瀚高 Online 场景、普通身份、物理夹具和 Hosted 隔离清理
 	@node --check --input-type=module < console/frontend/e2e/online/highgo-consumer-flow.spec.js
-	@python3 -m unittest scripts/test/highgo-consumer-flow-online_test.py scripts/test/online-highgo-consumer-fixture_test.py scripts/test/online-hosted-highgo-gate_test.py scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 -m unittest scripts/test/highgo-consumer-flow-online_test.py scripts/test/online-highgo-consumer-fixture_test.py scripts/test/online-hosted-highgo-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-common-neo4j
@@ -1795,31 +1627,25 @@ test-common-falkordb: ## 独占 FalkorDB 验证图目录、参数化查询、保
 	@bash scripts/test/common-falkordb-gate.sh
 
 .PHONY: test-security-online-runner
-test-security-online-runner: ## 验证 Security Hosted 生命周期、保护消费者回执及已有出口验收断言
+test-security-online-runner: test-protection-deployment-runner test-graph-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Security Hosted 生命周期、保护消费者回执及已有出口验收断言
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'TestSecurity(Fixture|Masking)' -count=1
-	@$(MAKE) test-protection-deployment-runner
-	@$(MAKE) test-graph-online-runner
-	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py scripts.test.online-host-gate_test.OnlineHostGateTest.test_runs_security_transfer_suite_with_composite_fixture
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-transfer-protection-online_test.py scripts.test.online-host-gate_test.OnlineHostGateTest.test_runs_security_transfer_suite_with_composite_fixture
 
 .PHONY: test-graph-online-runner
-test-graph-online-runner: ## 验证图保护和人工审核原生夹具、普通身份、浏览器证据与 CI 登记
+test-graph-online-runner: test-execution-online-ci-runner ## 验证图保护和人工审核原生夹具、普通身份、浏览器证据与 CI 登记
 	@node --check --input-type=module < console/frontend/e2e/graph-visual.fixture.js
 	@node --check --input-type=module < console/frontend/e2e/graph-relationship.fixture.js
 	@node --check --input-type=module < console/frontend/e2e/online/graph-review.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/graph-protection.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/develop-graph-query.spec.js
 	@python3 -m unittest scripts/test/graph-review-online_test.py scripts/test/graph-protection-online_test.py scripts/test/online-graph-fixture_test.py
-	@$(MAKE) test-execution-online-ci-runner
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run GraphProtection -count=1
 
 .PHONY: test-execution-online-ci-runner
-test-execution-online-ci-runner: ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
-	@$(MAKE) test-cleanup-native-online-runner
+test-execution-online-ci-runner: test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
 	@bash -n scripts/test/online-hosted-security-gate.sh
-	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/ci/check-online-ci-registration_test.py
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py
 
 .PHONY: test-cleanup-native-online-runner
 test-cleanup-native-online-runner: ## 验证原生 Cleanup 显式选择、隔离编排、代理及证据反例，不启动 Hosted
@@ -1831,10 +1657,10 @@ test-protection-deployment-runner: ## 验证保护消费者隔离部署、租户
 	@python3 -m unittest scripts/test/online-hosted-metric-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-hosted-public-origin-gate_test.py scripts/test/compose-public-origin-online_test.py
 
 .PHONY: test-platform-administrator-online-runner
-test-platform-administrator-online-runner: ## 验证三员 Hosted 准入、身份矩阵、浏览器代码与退出清理
+test-platform-administrator-online-runner: test-online-registration-unit ## 验证三员 Hosted 准入、身份矩阵、浏览器代码与退出清理
 	@node --check --input-type=module < console/frontend/e2e/online/platform-administrator-governance.spec.js
 	@bash -n scripts/test/online-hosted-administrator-governance-gate.sh
-	@python3 -m unittest scripts/test/platform-administrator-governance-online_test.py scripts/test/online-hosted-administrator-governance-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_administrator_governance_requires_manual_isolated_profile
+	@python3 -m unittest scripts/test/platform-administrator-governance-online_test.py scripts/test/online-hosted-administrator-governance-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'AdministratorGovernanceFixture|MetricsBootstrap' -count=1
 
 .PHONY: test-monitor-traces-local test-monitor-traces-local-runner
@@ -1862,27 +1688,23 @@ test-system-audit-archive: ## 仅 GitHub Hosted 独占 PostgreSQL 与对象存�
 	@bash scripts/test/system-audit-archive-gate.sh
 
 .PHONY: test-catalog-domain-online-runner
-test-catalog-domain-online-runner: ## 验证业务域总览 Online 契约、隔离清理与 CI 注册
-	@$(MAKE) test-catalog-browser-local-runner
-	@python3 -m unittest scripts/test/catalog-domain-overview-online_test.py scripts/test/online-hosted-catalog-domain-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_catalog_overview_requires_cleanup_permissions_and_browser_contract
+test-catalog-domain-online-runner: test-catalog-browser-local-runner test-online-registration-unit ## 验证业务域总览 Online 契约、隔离清理与 CI 注册
+	@python3 -m unittest scripts/test/catalog-domain-overview-online_test.py scripts/test/online-hosted-catalog-domain-gate_test.py
 	@node --check console/frontend/e2e/catalog-domain-overview.spec.js
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 .PHONY: test-execution-retention-online-runner
-test-execution-retention-online-runner: ## 验证租户执行概览只读评估及30天事件清理的 Hosted 准入、断言与清理
+test-execution-retention-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证租户执行概览只读评估及30天事件清理的 Hosted 准入、断言与清理
 	@bash -n scripts/test/online-hosted-execution-retention-gate.sh
-	@python3 -m unittest scripts/test/execution-retention-readonly-online_test.py scripts/test/execution-events-retention-online_test.py scripts/test/execution-retention-hourly-online_test.py scripts/test/online-hosted-execution-retention-gate_test.py scripts/test/online-gate_test.py
+	@python3 -m unittest scripts/test/execution-retention-readonly-online_test.py scripts/test/execution-events-retention-online_test.py scripts/test/execution-retention-hourly-online_test.py scripts/test/online-hosted-execution-retention-gate_test.py
 	@cd system/backend && GOWORK=off go test -v ./cmd/online-test-fixture
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 .PHONY: test-execution-events-pagination-runner test-execution-event-pagination-fixture
-test-execution-events-pagination-runner: ## 验证租户大事件分页、截断及真实入口验收守卫
+test-execution-events-pagination-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证租户大事件分页、截断及真实入口验收守卫
 	@bash -n scripts/test/online-hosted-event-pagination-gate.sh
-	@python3 -m unittest scripts/test/execution-events-pagination-online_test.py scripts/test/online-hosted-event-pagination-gate_test.py scripts/test/online-gate_test.py
+	@python3 -m unittest scripts/test/execution-events-pagination-online_test.py scripts/test/online-hosted-event-pagination-gate_test.py
 	@cd common && GOWORK=off go test ../scripts/test/execution-event-pagination-fixture_test.go -count=1 -v
 	@cd system/backend && GOWORK=off go test -v ./cmd/online-test-fixture
 	@node --check console/frontend/e2e/online/execution-events-pagination.spec.js
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 test-execution-event-pagination-fixture: ## 仅显式隔离Hosted生成Common真实写入事件夹具
 	@cd common && ADDP_EXECUTION_EVENT_FIXTURE=1 GOWORK=off go test ../scripts/test/execution-event-pagination-fixture_test.go -run '^TestHostedExecutionEventPaginationFixture$$' -count=1 -v

@@ -18,6 +18,26 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    @staticmethod
+    def contract_mutations(cases):
+        """Mutate required Make edges and required test definitions at their owners."""
+        for relative, fragment, *tail in cases:
+            if relative == "Makefile":
+                owner = re.fullmatch(r"\s*@?\$\(MAKE\)\s+(test-[a-z0-9-]+)\s*", fragment)
+                if owner:
+                    fragment = owner.group(1)
+                elif re.fullmatch(r"test_[a-zA-Z0-9_]+", fragment):
+                    relative = "scripts/ci/check-online-ci-registration_test.py"
+            yield (relative, fragment, *tail)
+
+    @classmethod
+    def contract_mutation_requirements(cls, requirements):
+        result = {}
+        for relative, fragment in cls.contract_mutations(
+                (relative, fragment) for relative, fragments in requirements.items() for fragment in fragments):
+            result.setdefault(relative, []).append(fragment)
+        return result
+
     def test_catalog_overview_requires_cleanup_permissions_and_browser_contract(self):
         source = SCRIPT.parents[2]
         paths = ("scripts/test/online-hosted-catalog-domain-gate.sh", "scripts/test/catalog-domain-overview-online.py",
@@ -28,11 +48,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, target)
         registered = {"catalog-domain-overview"}
         CHECK.validate_catalog_domain_overview_profile(self.repository, registered)
-        for relative, fragment in ((paths[0], "-model -catalog -quality"),
+        for relative, fragment in self.contract_mutations(((paths[0], "-model -catalog -quality"),
                                    (paths[1], "reference_element_unchanged"),
                                    (paths[2], "test_cleanup_attempts_all_exact_resources_and_reports_failure"),
                                    (paths[3], "catalog-domain-overview"),
-                                   (paths[4], "$(MAKE) test-catalog-domain-online-runner")):
+                                   (paths[4], "test-catalog-domain-online-runner"))):
             target = self.repository / relative
             original = target.read_text()
             target.write_text(original.replace(fragment, "omitted"))
@@ -60,7 +80,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[5], 'refusing foreign loop cleanup'), (paths[5], 'nodiscard'), (paths[5], 'loop_detached'),
             (paths[5], 'np.array_equal(band.ReadAsArray(), expected, equal_nan=True)'),
             (paths[6], 'test_pressure_native_exact_phase_rejection_and_same_process_recovery'))
-        for relative, fragment in mutations:
+        for relative, fragment in self.contract_mutations(mutations):
             target = self.repository/relative; original = target.read_text()
             target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
@@ -79,14 +99,14 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, target)
         registered = {"workflow-runtime-health-recovery"}
         CHECK.validate_workflow_runtime_health_profile(self.repository, registered)
-        for relative, fragment in ((paths[0], "$(MAKE) test-workflow-runtime-health-online-runner"),
+        for relative, fragment in self.contract_mutations(((paths[0], "test-workflow-runtime-health-online-runner"),
                                    (paths[0], "WorkflowRuntimeHealth"),
                                    (paths[2], "inputs.suite != 'workflow-runtime-health-recovery'"),
                                    (paths[6], "workflow-runtime-health-recovery-online.py --restore-only"),
                                    (paths[6], "--suite workflow-runtime-health-recovery"),
                                    (paths[6], "workflow-runtime-health-recovery-online.py --assert-empty"),
                                    (paths[3], '"startup_cycles": startup_cycles'),
-                                   (paths[4], "test_startup_recovery_uses_only_automatic_registration_and_periodic_observation")):
+                                   (paths[4], "test_startup_recovery_uses_only_automatic_registration_and_periodic_observation"))):
             target = self.repository / relative
             original = target.read_text()
             target.write_text(original.replace(fragment, "omitted"))
@@ -115,12 +135,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, target)
         registered = {'platform-administrator-governance'}
         CHECK.validate_administrator_governance_profile(self.repository, registered)
-        for relative, fragment in ((paths[0], "inputs.suite != 'platform-administrator-governance'"),
+        for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite != 'platform-administrator-governance'"),
                                    (paths[0], "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'platform-administrator-governance'"),
-                                   (paths[1], '$(MAKE) test-platform-administrator-online-runner'),
+                                   (paths[1], 'test-platform-administrator-online-runner'),
                                    (paths[2], 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'),
                                    (paths[2], '--suite platform-administrator-governance'),
-                                   (paths[2], 'make build-iam-recovery build-iam-bootstrap GOOS=linux GOARCH=amd64 OUT_DIR=dist BUILD_TYPE=release')):
+                                   (paths[2], 'make build-iam-recovery build-iam-bootstrap GOOS=linux GOARCH=amd64 OUT_DIR=dist BUILD_TYPE=release'))):
             target = self.repository / relative; original = target.read_text()
             target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
@@ -137,12 +157,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'vector-zonal-statistics-persistence'}
         CHECK.validate_vector_zonal_statistics_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'vector-zonal-statistics-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-vector-zonal-statistics-online-runner'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'vector-zonal-statistics-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-vector-zonal-statistics-online-runner'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'triggered_by'),
                 (paths[4],'validate_item'),(paths[4],'complete_geometry_attributes_statistics_verified'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_rows'),(paths[6],'root_squash'),(paths[7],'test_vector_zonal_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_rows'),(paths[6],'root_squash'),(paths[7],'test_vector_zonal_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_vector_zonal_statistics_profile(self.repository,registered)
@@ -158,12 +178,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-proximity-persistence'}
         CHECK.validate_raster_proximity_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-proximity-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-proximity-online-runner'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-proximity-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-proximity-online-runner'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'triggered_by'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[6],'root_squash'),(paths[7],'test_proximity_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[6],'root_squash'),(paths[7],'test_proximity_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_proximity_profile(self.repository,registered)
@@ -179,12 +199,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-focal-mode-persistence'}
         CHECK.validate_raster_focal_mode_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-focal-mode-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-focal-mode-online-runner'),(paths[2],'test_online_focal_mode_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-focal-mode-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-focal-mode-online-runner'),(paths[2],'test_online_focal_mode_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'triggered_by'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'Counter'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'exact_integer_pixels_verified'),(paths[6],'root_squash'),(paths[7],'test_focal_mode_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'Counter'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'exact_integer_pixels_verified'),(paths[6],'root_squash'),(paths[7],'test_focal_mode_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_focal_mode_profile(self.repository,registered)
@@ -200,12 +220,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-boundary-clean-persistence'}
         CHECK.validate_raster_boundary_clean_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-boundary-clean-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-boundary-clean-online-runner'),(paths[2],'test_online_boundary_clean_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-boundary-clean-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-boundary-clean-online-runner'),(paths[2],'test_online_boundary_clean_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'Counter'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'exact_integer_pixels_verified'),(paths[4],'source_edges(client'),(paths[5],'empty-clean.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_boundary_clean_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'Counter'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'exact_integer_pixels_verified'),(paths[4],'source_edges(client'),(paths[5],'empty-clean.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_boundary_clean_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_boundary_clean_profile(self.repository,registered)
@@ -221,12 +241,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-thin-persistence'}
         CHECK.validate_raster_thin_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-thin-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-thin-online-runner'),(paths[2],'test_online_thin_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-thin-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-thin-online-runner'),(paths[2],'test_online_thin_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'adjacent_a'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'exact_integer_pixels_verified'),(paths[4],'source_edges(client'),(paths[4],'binary_skeleton_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'foreground_value'),(paths[5],'empty-thin.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_thin_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'adjacent_a'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'exact_integer_pixels_verified'),(paths[4],'source_edges(client'),(paths[4],'binary_skeleton_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'foreground_value'),(paths[5],'empty-thin.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_thin_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_thin_profile(self.repository,registered)
@@ -242,12 +262,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-fill-depressions-persistence'}
         CHECK.validate_raster_fill_depressions_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-fill-depressions-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-fill-depressions-online-runner'),(paths[2],'test_online_fill_depressions_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-fill-depressions-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-fill-depressions-online-runner'),(paths[2],'test_online_fill_depressions_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'raw_filled_pixels'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'unit_metres_verified'),(paths[4],'source_edges(client'),(paths[4],'depression_fill_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[5],'empty-filled.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_fill_depressions_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'raw_filled_pixels'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'unit_metres_verified'),(paths[4],'source_edges(client'),(paths[4],'depression_fill_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[5],'empty-filled.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_fill_depressions_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_fill_depressions_profile(self.repository,registered)
@@ -263,12 +283,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-flow-direction-d8-persistence'}
         CHECK.validate_raster_flow_direction_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-flow-direction-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-flow-direction-d8-online-runner'),(paths[2],'test_online_flow_direction_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-flow-direction-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-flow-direction-d8-online-runner'),(paths[2],'test_online_flow_direction_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'routing_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'direction_unit_cleared'),(paths[4],'source_edges(client'),(paths[4],'shortest_flat_paths_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'acyclic_verified'),(paths[4],'final_open_outlets_verified'),(paths[5],'empty-direction.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_flow_direction_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'routing_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'direction_unit_cleared'),(paths[4],'source_edges(client'),(paths[4],'shortest_flat_paths_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'acyclic_verified'),(paths[4],'final_open_outlets_verified'),(paths[5],'empty-direction.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_flow_direction_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_flow_direction_d8_profile(self.repository,registered)
@@ -284,12 +304,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-flow-accumulation-d8-persistence'}
         CHECK.validate_raster_flow_accumulation_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-flow-accumulation-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-flow-accumulation-d8-online-runner'),(paths[2],'test_online_flow_accumulation_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-flow-accumulation-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-flow-accumulation-d8-online-runner'),(paths[2],'test_online_flow_accumulation_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'conservation_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'count_unit_cleared'),(paths[4],'source_edges(client'),(paths[4],'terminal_conservation_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'counts_exclude_self'),(paths[5],'empty-accumulation.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_flow_accumulation_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'conservation_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'count_unit_cleared'),(paths[4],'source_edges(client'),(paths[4],'terminal_conservation_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'counts_exclude_self'),(paths[5],'empty-accumulation.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_flow_accumulation_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_flow_accumulation_d8_profile(self.repository,registered)
@@ -305,12 +325,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-drainage-basins-d8-persistence'}
         CHECK.validate_raster_drainage_basins_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-drainage-basins-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-drainage-basins-d8-online-runner'),(paths[2],'test_online_drainage_basins_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-drainage-basins-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-drainage-basins-d8-online-runner'),(paths[2],'test_online_drainage_basins_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'basin_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'basin_conservation_verified'),(paths[4],'basin_unit_cleared'),(paths[4],'source_edges(client'),(paths[4],'outlet_order_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'unique_membership_verified'),(paths[5],'empty-basins.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_drainage_basins_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'basin_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'basin_conservation_verified'),(paths[4],'basin_unit_cleared'),(paths[4],'source_edges(client'),(paths[4],'outlet_order_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'unique_membership_verified'),(paths[5],'empty-basins.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_drainage_basins_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_drainage_basins_d8_profile(self.repository,registered)
@@ -326,12 +346,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-flow-length-d8-persistence'}
         CHECK.validate_raster_flow_length_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-flow-length-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-flow-length-d8-online-runner'),(paths[2],'test_online_flow_length_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-flow-length-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-flow-length-d8-online-runner'),(paths[2],'test_online_flow_length_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],"'operator':'raster_flow_length_d8'"),(paths[4],"'method':'downstream'"),(paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'distance_evidence'),(paths[5],'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)'),(paths[4],'metre_unit_verified'),(paths[4],'source_edges(client'),(paths[4],'centre_steps_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'terminals_zero'),(paths[5],'empty-length.cog.tif'),(paths[5],'feet-length.cog.tif'),(paths[5],'survey-feet-length.cog.tif'),(paths[5],'SOURCE_UNITS'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_flow_length_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'distance_evidence'),(paths[5],'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)'),(paths[4],'metre_unit_verified'),(paths[4],'source_edges(client'),(paths[4],'centre_steps_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'terminals_zero'),(paths[5],'empty-length.cog.tif'),(paths[5],'feet-length.cog.tif'),(paths[5],'survey-feet-length.cog.tif'),(paths[5],'SOURCE_UNITS'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_flow_length_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_flow_length_d8_profile(self.repository,registered)
@@ -348,12 +368,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-flow-accumulation-area-d8-persistence'}
         CHECK.validate_raster_flow_accumulation_area_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-flow-accumulation-area-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-flow-accumulation-area-d8-online-runner'),(paths[2],'test_online_flow_accumulation_area_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-flow-accumulation-area-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-flow-accumulation-area-d8-online-runner'),(paths[2],'test_online_flow_accumulation_area_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'measure_evidence'),(paths[5],'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)'),(paths[4],'count_control_equivalence_verified'),(paths[4],'nearest_overviews_verified'),(paths[5],'default-count.cog.tif'),(paths[5],'explicit-count.cog.tif'),(paths[4],'measure_unit_verified'),(paths[4],'source_edges(client'),(paths[4],'independent_measure_oracle_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'isolated_terminal_self_verified'),(paths[5],'empty-area.cog.tif'),(paths[5],'feet-area.cog.tif'),(paths[5],'survey-feet-area.cog.tif'),(paths[5],'SOURCE_UNITS'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_flow_accumulation_area_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'measure_evidence'),(paths[5],'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)'),(paths[4],'count_control_equivalence_verified'),(paths[4],'nearest_overviews_verified'),(paths[5],'default-count.cog.tif'),(paths[5],'explicit-count.cog.tif'),(paths[4],'measure_unit_verified'),(paths[4],'source_edges(client'),(paths[4],'independent_measure_oracle_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'isolated_terminal_self_verified'),(paths[5],'empty-area.cog.tif'),(paths[5],'feet-area.cog.tif'),(paths[5],'survey-feet-area.cog.tif'),(paths[5],'SOURCE_UNITS'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_flow_accumulation_area_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_flow_accumulation_area_d8_profile(self.repository,registered)
@@ -428,7 +448,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 'test_distance_to_stream_d8_persistence_twenty_four_failures_no_publication',
             ),
             'Makefile': (
-                '@$(MAKE) test-raster-distance-to-stream-d8-online-runner',
+                'test-raster-distance-to-stream-d8-online-runner',
                 'test_online_distance_to_stream_d8_fixture.py',
                 'scripts/test/raster-distance-to-stream-d8-persistence-online_test.py',
                 'scripts/test/online-raster-distance-to-stream-d8-fixture_test.py',
@@ -443,7 +463,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_raster_distance_to_stream_d8_profile(self.repository,registered)
         fragments=[(extras[0],"inputs.suite != 'raster-distance-to-stream-d8-persistence'"),(extras[0],'nfs-kernel-server nfs-common')]
         fragments.extend((p,fragment) for p,values in required.items() for fragment in values)
-        for relative,fragment in fragments:
+        for relative,fragment in self.contract_mutations(fragments):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_distance_to_stream_d8_profile(self.repository,registered)
@@ -458,11 +478,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'scripts/test/raster-curvature-persistence-online.py':('raster.strict_sizes','raster.EDITOR_PERMISSIONS','case_inputs(name)','SubmittedLanguageClient','overview_count','query language rewrote stored failure'),
             'business/scripts/online-raster-curvature-fixture.py':('np.linalg.lstsq','np.linalg.solve','GDAL_TIFF_INTERNAL_MASK','small.cog.tif','1/metre','source file changed','full_check=True'),
             'engines/geopython-workflow/test_online_curvature_fixture.py':('test_curvature_persistence_real_gdal_eight_cog_chains_and_complete_pixels','test_curvature_persistence_twenty_four_failures_no_publication','forced_centre'),
-            'Makefile':('test_online_curvature_fixture.py','@$(MAKE) test-raster-curvature-online-runner','scripts/test/raster-curvature-persistence-online_test.py','test_curvature_requires_manual_nfs_full_pixels_and_regressions')}
+            'Makefile':('test_online_curvature_fixture.py','test-raster-curvature-online-runner','scripts/test/raster-curvature-persistence-online_test.py','test_curvature_requires_manual_nfs_full_pixels_and_regressions')}
         for relative in ('scripts/test/online-gate.py',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_curvature_profile(self.repository,{'raster-curvature-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -537,7 +557,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                                                 'test_cut_fill_persistence_oracle_rejects_csv_corruption',
                                                                 'one_ulp',
                                                                 'test_cut_fill_persistence_worker_runs_from_stdin_without_repository_imports'),
- 'Makefile': ('@$(MAKE) test-raster-cut-fill-online-runner',
+ 'Makefile': ('test-raster-cut-fill-online-runner',
               'scripts/test/raster-cut-fill-persistence-online_test.py',
               'scripts/test/online-raster-cut-fill-fixture_test.py',
               'scripts/test/online-hosted-raster-cut-fill-gate_test.py',
@@ -545,7 +565,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative in ('scripts/test/online-gate.py',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_cut_fill(self.repository,{'raster-cut-fill-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -559,18 +579,18 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
     def test_surface_area_requires_manual_nfs_complete_csv_archive_and_regressions(self):
         source=SCRIPT.parents[2]
-        required={'scripts/test/online-hosted-raster-surface-area-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-surface-area-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-surface-area-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_surface_area', 'input.source', 'output.save', 'archived_csv', 'query language rewrote stored failure', 'CSV physical/Meta sizes must be equal positive integers', 'all 48 calls and 510 full actual CSV checks are required', 'physical_verification_calls', 'full_target_checks', 'previous CSV manifest changed', 'previous CSV manifest inventory differs', 'archived CSV has no original manifest', 'exact contracted serialized preview row differs', 'preview_serialized_row'), 'business/scripts/online-raster-surface-area-fixture.py': ('NFSExport', 'owned_root', 'expected_row', 'context.prec=200', 'cross=[u[1]*v[2]-u[2]*v[1]', 'min(ad,bc)', 'max(ad,bc)', 'low+=', 'high+=', 'mean=(low+high)/2', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'csv_base64', 'complete_table_verified', 'dual_diagonal_and_centre_domain_verified', 'source_measurement_geometry_verified', 'value!=target', 'float(value)', 'int64.csv', 'uint64.csv', 'single.csv', "(spec['width']-1)*(spec['height']-1)", 'double_precision=15', 'preview_serialized_row', 'quads=Counter()', 'anchors='), 'engines/geopython-workflow/test_online_surface_area_fixture.py': ('test_surface_area_persistence_real_gdal_twelve_csv_chains_complete_oracle_and_original_bytes', 'test_surface_area_persistence_thirty_six_exact_failures_no_publication', 'test_surface_area_persistence_oracle_rejects_csv_corruption', 'one_ulp', 'test_surface_area_persistence_independent_full_scalar_four_corner_count', 'test_surface_area_persistence_worker_runs_from_stdin_without_repository_imports', 'test_surface_area_independent_csv_oracle_rejects_wrong_semantics', 'half', 'one_diagonal', 'frame_area', 'test_surface_area_original_csv_manifest_never_silently_repaired', 'scene.validate_preview', 'test_surface_area_host_oracle_requires_no_numpy_pandas_or_gdal'), 'Makefile': ('@$(MAKE) test-raster-surface-area-online-runner', 'scripts/test/raster-surface-area-persistence-online_test.py', 'scripts/test/online-raster-surface-area-fixture_test.py', 'scripts/test/online-hosted-raster-surface-area-gate_test.py', 'test_surface_area_requires_manual_nfs_complete_csv_archive_and_regressions'), 'scripts/test/raster-surface-area-persistence-online_test.py': ('test_twelve_exact_dags_one_actual_source_bands_units_and_existing_save', 'test_complete_matrix_exact_current_scan_lineage_and_original_csv_archive', 'physical_verification_calls', 'full_target_checks', 'test_identity_size_and_failure_publication_are_fail_closed', 'test_previous_physical_or_archive_bytes_cannot_change')}
+        required={'scripts/test/online-hosted-raster-surface-area-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-surface-area-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-surface-area-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_surface_area', 'input.source', 'output.save', 'archived_csv', 'query language rewrote stored failure', 'CSV physical/Meta sizes must be equal positive integers', 'all 48 calls and 510 full actual CSV checks are required', 'physical_verification_calls', 'full_target_checks', 'previous CSV manifest changed', 'previous CSV manifest inventory differs', 'archived CSV has no original manifest', 'exact contracted serialized preview row differs', 'preview_serialized_row'), 'business/scripts/online-raster-surface-area-fixture.py': ('NFSExport', 'owned_root', 'expected_row', 'context.prec=200', 'cross=[u[1]*v[2]-u[2]*v[1]', 'min(ad,bc)', 'max(ad,bc)', 'low+=', 'high+=', 'mean=(low+high)/2', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'csv_base64', 'complete_table_verified', 'dual_diagonal_and_centre_domain_verified', 'source_measurement_geometry_verified', 'value!=target', 'float(value)', 'int64.csv', 'uint64.csv', 'single.csv', "(spec['width']-1)*(spec['height']-1)", 'double_precision=15', 'preview_serialized_row', 'quads=Counter()', 'anchors='), 'engines/geopython-workflow/test_online_surface_area_fixture.py': ('test_surface_area_persistence_real_gdal_twelve_csv_chains_complete_oracle_and_original_bytes', 'test_surface_area_persistence_thirty_six_exact_failures_no_publication', 'test_surface_area_persistence_oracle_rejects_csv_corruption', 'one_ulp', 'test_surface_area_persistence_independent_full_scalar_four_corner_count', 'test_surface_area_persistence_worker_runs_from_stdin_without_repository_imports', 'test_surface_area_independent_csv_oracle_rejects_wrong_semantics', 'half', 'one_diagonal', 'frame_area', 'test_surface_area_original_csv_manifest_never_silently_repaired', 'scene.validate_preview', 'test_surface_area_host_oracle_requires_no_numpy_pandas_or_gdal'), 'Makefile': ('test-raster-surface-area-online-runner', 'scripts/test/raster-surface-area-persistence-online_test.py', 'scripts/test/online-raster-surface-area-fixture_test.py', 'scripts/test/online-hosted-raster-surface-area-gate_test.py', 'test_surface_area_requires_manual_nfs_complete_csv_archive_and_regressions'), 'scripts/test/raster-surface-area-persistence-online_test.py': ('test_twelve_exact_dags_one_actual_source_bands_units_and_existing_save', 'test_complete_matrix_exact_current_scan_lineage_and_original_csv_archive', 'physical_verification_calls', 'full_target_checks', 'test_identity_size_and_failure_publication_are_fail_closed', 'test_previous_physical_or_archive_bytes_cannot_change')}
         for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_surface_area(self.repository,{'raster-surface-area-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
                 with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                     CHECK.validate_raster_surface_area(self.repository,{'raster-surface-area-persistence'})
                 target.write_text(original)
-        for relative,fragment in [('business/scripts/online-raster-surface-area-fixture.py',"'mixed.csv':"),('scripts/test/raster-surface-area-persistence-online.py',"'width_one'")]:
+        for relative,fragment in self.contract_mutations([('business/scripts/online-raster-surface-area-fixture.py',"'mixed.csv':"),('scripts/test/raster-surface-area-persistence-online.py',"'width_one'")]):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,"'removed.csv':"if fragment.endswith(':')else"'removed'",1))
             with self.subTest(matrix=relative),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_surface_area(self.repository,{'raster-surface-area-persistence'})
             target.write_text(original)
@@ -584,11 +604,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'scripts/test/raster-profile-curvature-persistence-online.py':('raster.strict_sizes','raster.EDITOR_PERMISSIONS','case_inputs(name)','SubmittedLanguageClient','overview_count','query language rewrote stored failure','curvature_method','flat_zero_verified','zero_gradient_nodata_verified','mean_control_verified','mean_controls_equal'),
             'business/scripts/online-raster-profile-curvature-fixture.py':('np.linalg.lstsq','np.linalg.solve','GDAL_TIFF_INTERNAL_MASK','small.cog.tif','1/metre','source file changed','full_check=True','semantic_masks','math.fsum','np.einsum','mean-default.cog.tif','mean-explicit.cog.tif','stationary.cog.tif','flat.cog.tif'),
             'engines/geopython-workflow/test_online_profile_curvature_fixture.py':('test_profile_curvature_persistence_real_gdal_twelve_cog_chains_and_complete_pixels','test_profile_curvature_persistence_twenty_six_failures_no_publication','forced_centre'),
-            'Makefile':('test_online_profile_curvature_fixture.py','@$(MAKE) test-raster-profile-curvature-online-runner','scripts/test/raster-profile-curvature-persistence-online_test.py','test_profile_curvature_requires_manual_nfs_full_pixels_and_regressions')}
+            'Makefile':('test_online_profile_curvature_fixture.py','test-raster-profile-curvature-online-runner','scripts/test/raster-profile-curvature-persistence-online_test.py','test_profile_curvature_requires_manual_nfs_full_pixels_and_regressions')}
         for relative in ('scripts/test/online-gate.py',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_profile_curvature(self.repository,{'raster-profile-curvature-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -604,11 +624,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'scripts/test/raster-tangential-curvature-persistence-online.py':('raster.strict_sizes','raster.EDITOR_PERMISSIONS','case_inputs(name)','SubmittedLanguageClient','overview_count','query language rewrote stored failure','curvature_method','flat_zero_verified','zero_gradient_nodata_verified','mean_control_verified','mean_controls_equal','directional_identity_verified','directional_identity_pixels','profile_control_verified','tiny_gradient_verified','plan_distinction_verified'),
             'business/scripts/online-raster-tangential-curvature-fixture.py':('np.linalg.lstsq','np.linalg.solve','GDAL_TIFF_INTERNAL_MASK','small.cog.tif','1/metre','source file changed','full_check=True','semantic_masks','math.fsum','np.einsum','mean-default.cog.tif','mean-explicit.cog.tif','stationary.cog.tif','flat.cog.tif','profile-control.cog.tif','mode_controls','saved directional curvatures do not sum to twice the mean'),
             'engines/geopython-workflow/test_online_tangential_curvature_fixture.py':('test_tangential_curvature_persistence_real_gdal_thirteen_cog_chains_and_complete_pixels','test_tangential_curvature_persistence_twenty_six_failures_no_publication','forced_centre'),
-            'Makefile':('test_online_tangential_curvature_fixture.py','@$(MAKE) test-raster-tangential-curvature-online-runner','scripts/test/raster-tangential-curvature-persistence-online_test.py','test_tangential_curvature_requires_manual_nfs_full_pixels_and_regressions')}
+            'Makefile':('test_online_tangential_curvature_fixture.py','test-raster-tangential-curvature-online-runner','scripts/test/raster-tangential-curvature-persistence-online_test.py','test_tangential_curvature_requires_manual_nfs_full_pixels_and_regressions')}
         for relative in ('scripts/test/online-gate.py',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_tangential_curvature(self.repository,{'raster-tangential-curvature-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -635,18 +655,18 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                    (paths[10],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    (paths[11],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    ('Makefile','scripts/test/online-raster-lineage_test.py')]
-        for relative,fragment in mutations:
+        for relative,fragment in self.contract_mutations(mutations):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_lineage_observer(self.repository,{'raster-tpi-persistence'})
             target.write_text(original)
 
     def test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions(self):
         source=SCRIPT.parents[2]
-        required={'scripts/test/online-hosted-raster-tpi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-tpi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-tpi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_tpi', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed TPI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_TPI_ORACLE_ANCHOR_SHA256'), 'business/scripts/online-raster-tpi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', 'Decimal(8)', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'tpi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms'), 'engines/geopython-workflow/test_online_tpi_fixture.py': ('test_tpi_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_tpi_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_tpi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'centre_in_mean', 'test_tpi_original_cog_archive_cannot_change_or_silently_repair', 'test_tpi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_tpi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_tpi_oracle_cache_poison_or_cross_scope_fails', 'test_tpi_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-tpi-online-runner', 'test_online_tpi_fixture.py', 'scripts/test/raster-tpi-persistence-online_test.py', 'scripts/test/online-raster-tpi-fixture_test.py', 'scripts/test/online-hosted-raster-tpi-gate_test.py', 'test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-tpi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-tpi-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
+        required={'scripts/test/online-hosted-raster-tpi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-tpi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-tpi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_tpi', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed TPI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_TPI_ORACLE_ANCHOR_SHA256'), 'business/scripts/online-raster-tpi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', 'Decimal(8)', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'tpi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms'), 'engines/geopython-workflow/test_online_tpi_fixture.py': ('test_tpi_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_tpi_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_tpi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'centre_in_mean', 'test_tpi_original_cog_archive_cannot_change_or_silently_repair', 'test_tpi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_tpi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_tpi_oracle_cache_poison_or_cross_scope_fails', 'test_tpi_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('test-raster-tpi-online-runner', 'test_online_tpi_fixture.py', 'scripts/test/raster-tpi-persistence-online_test.py', 'scripts/test/online-raster-tpi-fixture_test.py', 'scripts/test/online-hosted-raster-tpi-gate_test.py', 'test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-tpi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-tpi-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
         for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_tpi(self.repository,{'raster-tpi-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -659,11 +679,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
     def test_tri_requires_manual_nfs_exact_pixels_archive_and_regressions(self):
         source=SCRIPT.parents[2]
-        required={'scripts/test/online-hosted-raster-tri-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-tri-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-tri-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_tri', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed TRI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_TRI_ORACLE_ANCHOR_SHA256', 'nonnegative_verified', 'inclined plane or saddle must have strictly positive complete TRI values'), 'business/scripts/online-raster-tri-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', 'sum((centre-v)**2 for v in samples).sqrt()*factor', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'tri-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms', 'negative Riley TRI value', 'inclined plane or saddle TRI must be positive', 'nonnegative_verified'), 'engines/geopython-workflow/test_online_tri_fixture.py': ('test_tri_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_tri_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_tri_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'rms', 'test_tri_original_cog_archive_cannot_change_or_silently_repair', 'test_tri_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_tri_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_tri_oracle_cache_poison_or_cross_scope_fails', 'test_tri_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-tri-online-runner', 'test_online_tri_fixture.py', 'scripts/test/raster-tri-persistence-online_test.py', 'scripts/test/online-raster-tri-fixture_test.py', 'scripts/test/online-hosted-raster-tri-gate_test.py', 'test_tri_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-tri-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-tri-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
+        required={'scripts/test/online-hosted-raster-tri-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-tri-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-tri-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_tri', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed TRI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_TRI_ORACLE_ANCHOR_SHA256', 'nonnegative_verified', 'inclined plane or saddle must have strictly positive complete TRI values'), 'business/scripts/online-raster-tri-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', 'sum((centre-v)**2 for v in samples).sqrt()*factor', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'tri-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms', 'negative Riley TRI value', 'inclined plane or saddle TRI must be positive', 'nonnegative_verified'), 'engines/geopython-workflow/test_online_tri_fixture.py': ('test_tri_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_tri_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_tri_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'rms', 'test_tri_original_cog_archive_cannot_change_or_silently_repair', 'test_tri_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_tri_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_tri_oracle_cache_poison_or_cross_scope_fails', 'test_tri_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('test-raster-tri-online-runner', 'test_online_tri_fixture.py', 'scripts/test/raster-tri-persistence-online_test.py', 'scripts/test/online-raster-tri-fixture_test.py', 'scripts/test/online-hosted-raster-tri-gate_test.py', 'test_tri_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-tri-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-tri-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
         for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_tri(self.repository,{'raster-tri-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -677,11 +697,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
     def test_roughness_requires_manual_nfs_exact_pixels_archive_and_regressions(self):
         source=SCRIPT.parents[2]
-        required={'scripts/test/online-hosted-raster-roughness-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-roughness-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-roughness-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_roughness', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed ROUGHNESS matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_ROUGHNESS_ORACLE_ANCHOR_SHA256', 'nonnegative_verified', 'inclined plane or saddle must have strictly positive complete ROUGHNESS values'), 'business/scripts/online-raster-roughness-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', '(max(samples)-min(samples))*factor', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'roughness-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms', 'negative nine-point roughness value', 'inclined plane or saddle ROUGHNESS must be positive', 'nonnegative_verified', 'centre extrema or opposite-neighbour full range differs', 'inclined plane full range must be ten metres'), 'engines/geopython-workflow/test_online_roughness_fixture.py': ('test_roughness_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_roughness_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_roughness_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'half_range', 'test_roughness_original_cog_archive_cannot_change_or_silently_repair', 'test_roughness_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_roughness_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_roughness_oracle_cache_poison_or_cross_scope_fails', 'test_roughness_partial_oracle_preparation_always_has_an_owned_cleanup', 'test_roughness_independent_oracle_rejects_centre_omission_and_detrending', 'exclude_centre_max', 'exclude_centre_min', 'max_centre_difference', 'detrend_plane'), 'Makefile': ('@$(MAKE) test-raster-roughness-online-runner', 'test_online_roughness_fixture.py', 'scripts/test/raster-roughness-persistence-online_test.py', 'scripts/test/online-raster-roughness-fixture_test.py', 'scripts/test/online-hosted-raster-roughness-gate_test.py', 'test_roughness_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-roughness-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-roughness-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
+        required={'scripts/test/online-hosted-raster-roughness-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-roughness-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-roughness-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_roughness', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed ROUGHNESS matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_ROUGHNESS_ORACLE_ANCHOR_SHA256', 'nonnegative_verified', 'inclined plane or saddle must have strictly positive complete ROUGHNESS values'), 'business/scripts/online-raster-roughness-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', '(max(samples)-min(samples))*factor', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'roughness-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms', 'negative nine-point roughness value', 'inclined plane or saddle ROUGHNESS must be positive', 'nonnegative_verified', 'centre extrema or opposite-neighbour full range differs', 'inclined plane full range must be ten metres'), 'engines/geopython-workflow/test_online_roughness_fixture.py': ('test_roughness_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_roughness_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_roughness_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'half_range', 'test_roughness_original_cog_archive_cannot_change_or_silently_repair', 'test_roughness_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_roughness_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_roughness_oracle_cache_poison_or_cross_scope_fails', 'test_roughness_partial_oracle_preparation_always_has_an_owned_cleanup', 'test_roughness_independent_oracle_rejects_centre_omission_and_detrending', 'exclude_centre_max', 'exclude_centre_min', 'max_centre_difference', 'detrend_plane'), 'Makefile': ('test-raster-roughness-online-runner', 'test_online_roughness_fixture.py', 'scripts/test/raster-roughness-persistence-online_test.py', 'scripts/test/online-raster-roughness-fixture_test.py', 'scripts/test/online-hosted-raster-roughness-gate_test.py', 'test_roughness_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-roughness-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-roughness-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
         for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_roughness(self.repository,{'raster-roughness-persistence','raster-surface-area-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -695,17 +715,17 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
     def test_twi_requires_manual_nfs_full_oracle_archive_and_regressions(self):
         source=SCRIPT.parents[2]
-        required={'scripts/test/online-hosted-raster-twi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-twi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-twi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_twi', 'input.area', 'input.slope', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed TWI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 66 calls and 833 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_TWI_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', 'fixed_area_over_width_verified', 'no_slope_threshold_verified',"maximum=52 if name=='negative'",'len(self.stages)>=113'), 'business/scripts/online-raster-twi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'context.prec=200', 'for odd in range(599,0,-2)', 'denominator=Decimal(odd)-x*x/denominator', '(Decimal(a)/d/tangents[b]).ln()', 'measurement_width', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'int64.cog.tif', 'uint64.cog.tif', 'disjoint.cog.tif', 'zero-slope.cog.tif', 'archive_cogs', 'twi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'joint_coverage_verified', 'dimensionless_unit_verified', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', 'legal_signed_zero_verified'), 'engines/geopython-workflow/test_online_twi_fixture.py': ('test_twi_persistence_real_gdal_fourteen_chains_exact_pixels_mask_and_original_cogs', 'test_twi_persistence_fifty_two_accurate_bilingual_failures_no_publication', 'test_twi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_twi_independent_oracle_rejects_wrong_semantics', 'width_multiplied', 'count_as_area', 'base10', 'tiny_threshold', 'test_twi_original_cog_archive_cannot_change_or_silently_repair', 'test_twi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_twi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_twi_oracle_cache_poison_or_cross_scope_fails', 'test_twi_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-twi-online-runner', 'test_online_twi_fixture.py', 'scripts/test/raster-twi-persistence-online_test.py', 'scripts/test/online-raster-twi-fixture_test.py', 'scripts/test/online-hosted-raster-twi-gate_test.py', 'test_twi_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-twi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-twi-persistence-online_test.py': ('test_complete_14_success_52_bilingual_failures_833_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
+        required={'scripts/test/online-hosted-raster-twi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-twi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-twi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_twi', 'input.area', 'input.slope', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed TWI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 66 calls and 833 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_TWI_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', 'fixed_area_over_width_verified', 'no_slope_threshold_verified',"maximum=52 if name=='negative'",'len(self.stages)>=113'), 'business/scripts/online-raster-twi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'context.prec=200', 'for odd in range(599,0,-2)', 'denominator=Decimal(odd)-x*x/denominator', '(Decimal(a)/d/tangents[b]).ln()', 'measurement_width', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'int64.cog.tif', 'uint64.cog.tif', 'disjoint.cog.tif', 'zero-slope.cog.tif', 'archive_cogs', 'twi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'joint_coverage_verified', 'dimensionless_unit_verified', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', 'legal_signed_zero_verified'), 'engines/geopython-workflow/test_online_twi_fixture.py': ('test_twi_persistence_real_gdal_fourteen_chains_exact_pixels_mask_and_original_cogs', 'test_twi_persistence_fifty_two_accurate_bilingual_failures_no_publication', 'test_twi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_twi_independent_oracle_rejects_wrong_semantics', 'width_multiplied', 'count_as_area', 'base10', 'tiny_threshold', 'test_twi_original_cog_archive_cannot_change_or_silently_repair', 'test_twi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_twi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_twi_oracle_cache_poison_or_cross_scope_fails', 'test_twi_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('test-raster-twi-online-runner', 'test_online_twi_fixture.py', 'scripts/test/raster-twi-persistence-online_test.py', 'scripts/test/online-raster-twi-fixture_test.py', 'scripts/test/online-hosted-raster-twi-gate_test.py', 'test_twi_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-twi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-twi-persistence-online_test.py': ('test_complete_14_success_52_bilingual_failures_833_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
         for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_twi(self.repository,{'raster-twi-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
                 with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_twi(self.repository,{'raster-twi-persistence'})
                 target.write_text(original)
-        for relative,fragment in [('business/scripts/online-raster-twi-fixture.py',"'degree.cog.tif':"),('scripts/test/raster-twi-persistence-online.py',"'slope_offset'")]:
+        for relative,fragment in self.contract_mutations([('business/scripts/online-raster-twi-fixture.py',"'degree.cog.tif':"),('scripts/test/raster-twi-persistence-online.py',"'slope_offset'")]):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,"'removed.cog.tif':"if fragment.endswith(':')else"'removed'",1))
             with self.subTest(matrix=relative),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_twi(self.repository,{'raster-twi-persistence'})
             target.write_text(original)
@@ -718,19 +738,19 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
     def test_focal_percentile_requires_manual_nfs_full_oracle_archive_and_regressions(self):
         source=SCRIPT.parents[2]
-        required={'scripts/test/online-hosted-raster-focal-percentile-gate.sh': ('start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-focal-percentile-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-focal-percentile-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'validate_target_item(item,expectation', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_focal_statistics', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed PERCENTILE matrix', 'oracle_prepare', 'oracle_cleanup', 'all 52 calls and 712 full target checks are required', 'ADDP_ONLINE_FOCAL_PERCENTILE_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', "maximum=36 if name=='negative'", 'len(self.stages)>=105', 'Meta fabricated missing spatial facts', 'actual endpoint/median comparison evidence differs'), 'business/scripts/online-raster-focal-percentile-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'from fractions import Fraction', 'position=(len(ordered)-1)*Fraction(float(percentile))/100', 'scalar_value(sample,percentile)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'archive_cogs', 'percentile-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'independent_fraction_oracle_verified', 'linear_position_verified', 'explicit_selected_band_verified', 'percentile_encoding_verified', 'missing source CRS was fabricated', 'actual percentile endpoint or median control differs', 'RTOL=4e-15', 'ATOL=0.'), 'engines/geopython-workflow/test_online_focal_percentile_fixture.py': ('test_percentile_persistence_real_gdal_sixteen_chains_complete_controls_pixels_masks_and_cogs', 'test_percentile_persistence_thirty_six_accurate_submitted_language_failures_no_publication', 'test_percentile_complex_alpha_is_separate_native_mixed_mem_evidence_only', 'test_percentile_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_percentile_oracle_rejects_wrong_rank_precision_scale_and_coverage', 'nearest_rank', 'median_instead', 'implicit_scale', 'zero_discarded', 'hole_filled', 'test_percentile_original_cog_archive_cannot_change_or_silently_repair', 'test_percentile_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_percentile_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_percentile_oracle_cache_poison_or_cross_scope_fails', 'test_percentile_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-focal-percentile-online-runner', 'test_online_focal_percentile_fixture.py', 'scripts/test/raster-focal-percentile-persistence-online_test.py', 'scripts/test/online-raster-focal-percentile-fixture_test.py', 'scripts/test/online-hosted-raster-focal-percentile-gate_test.py', 'test_focal_percentile_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-focal-percentile-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-focal-percentile-persistence-online_test.py': ('test_complete_16_success_36_submitted_language_failures_712_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound', 'test_unlocated_artifact_and_meta_reject_fabricated_location')}
+        required={'scripts/test/online-hosted-raster-focal-percentile-gate.sh': ('start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-focal-percentile-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-focal-percentile-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'validate_target_item(item,expectation', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_focal_statistics', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed PERCENTILE matrix', 'oracle_prepare', 'oracle_cleanup', 'all 52 calls and 712 full target checks are required', 'ADDP_ONLINE_FOCAL_PERCENTILE_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', "maximum=36 if name=='negative'", 'len(self.stages)>=105', 'Meta fabricated missing spatial facts', 'actual endpoint/median comparison evidence differs'), 'business/scripts/online-raster-focal-percentile-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'from fractions import Fraction', 'position=(len(ordered)-1)*Fraction(float(percentile))/100', 'scalar_value(sample,percentile)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'archive_cogs', 'percentile-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'independent_fraction_oracle_verified', 'linear_position_verified', 'explicit_selected_band_verified', 'percentile_encoding_verified', 'missing source CRS was fabricated', 'actual percentile endpoint or median control differs', 'RTOL=4e-15', 'ATOL=0.'), 'engines/geopython-workflow/test_online_focal_percentile_fixture.py': ('test_percentile_persistence_real_gdal_sixteen_chains_complete_controls_pixels_masks_and_cogs', 'test_percentile_persistence_thirty_six_accurate_submitted_language_failures_no_publication', 'test_percentile_complex_alpha_is_separate_native_mixed_mem_evidence_only', 'test_percentile_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_percentile_oracle_rejects_wrong_rank_precision_scale_and_coverage', 'nearest_rank', 'median_instead', 'implicit_scale', 'zero_discarded', 'hole_filled', 'test_percentile_original_cog_archive_cannot_change_or_silently_repair', 'test_percentile_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_percentile_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_percentile_oracle_cache_poison_or_cross_scope_fails', 'test_percentile_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('test-raster-focal-percentile-online-runner', 'test_online_focal_percentile_fixture.py', 'scripts/test/raster-focal-percentile-persistence-online_test.py', 'scripts/test/online-raster-focal-percentile-fixture_test.py', 'scripts/test/online-hosted-raster-focal-percentile-gate_test.py', 'test_focal_percentile_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-focal-percentile-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-focal-percentile-persistence-online_test.py': ('test_complete_16_success_36_submitted_language_failures_712_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound', 'test_unlocated_artifact_and_meta_reject_fabricated_location')}
         for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_focal_percentile(self.repository,{'raster-focal-percentile-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
                 with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                     CHECK.validate_raster_focal_percentile(self.repository,{'raster-focal-percentile-persistence'})
                 target.write_text(original)
-        for relative,fragment in [('business/scripts/online-raster-focal-percentile-fixture.py',"'p33-5.cog.tif':"),
-                                  ('scripts/test/raster-focal-percentile-persistence-online.py',"'band_zero'")]:
+        for relative,fragment in self.contract_mutations([('business/scripts/online-raster-focal-percentile-fixture.py',"'p33-5.cog.tif':"),
+                                  ('scripts/test/raster-focal-percentile-persistence-online.py',"'band_zero'")]):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,"'removed'",1))
             with self.assertRaises((CHECK.RegistrationError,SyntaxError)):CHECK.validate_raster_focal_percentile(self.repository,{'raster-focal-percentile-persistence'})
             target.write_text(original)
@@ -741,17 +761,17 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
     def test_sieve_requires_manual_nfs_full_oracle_archive_and_regressions(self):
         source=SCRIPT.parents[2]
-        required={'scripts/test/online-hosted-raster-sieve-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-sieve-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-sieve-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'validate_target_item(item,expectation', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_sieve', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed SIEVE matrix', 'oracle_prepare', 'oracle_cleanup', 'all 34 calls and 189 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_SIEVE_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', "maximum=28 if name=='negative'", 'len(self.stages)>=57', 'Meta fabricated missing spatial facts'), 'business/scripts/online-raster-sieve-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'from collections import deque', 'len(pixels)<minimum', 'len(components[other][1])>=minimum', 'donor_ids=set()', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'archive_cogs', 'sieve-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'independent_bfs_oracle_verified', 'frozen_components_verified', 'explicit_connectivity_verified', 'classification_encoding_verified', 'missing source CRS was fabricated'), 'engines/geopython-workflow/test_online_sieve_fixture.py': ('test_sieve_persistence_real_gdal_six_chains_exact_pixels_mask_and_original_cogs', 'test_sieve_persistence_twenty_eight_accurate_bilingual_failures_no_publication', 'test_sieve_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_sieve_independent_oracle_rejects_wrong_semantics', 'wrong_connectivity', 'threshold_inclusive', 'class_global_count', 'small_transit', 'iterated_growth', 'nodata_fill', 'no_donor_replaced', 'implicit_scale', 'zero_discarded', 'test_sieve_original_cog_archive_cannot_change_or_silently_repair', 'test_sieve_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_sieve_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_sieve_oracle_cache_poison_or_cross_scope_fails', 'test_sieve_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-sieve-online-runner', 'test_online_sieve_fixture.py', 'scripts/test/raster-sieve-persistence-online_test.py', 'scripts/test/online-raster-sieve-fixture_test.py', 'scripts/test/online-hosted-raster-sieve-gate_test.py', 'test_sieve_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-sieve-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-sieve-persistence-online_test.py': ('test_complete_6_success_28_bilingual_failures_189_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound', 'test_unlocated_artifact_and_meta_reject_fabricated_location')}
+        required={'scripts/test/online-hosted-raster-sieve-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-sieve-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-sieve-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'validate_target_item(item,expectation', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_sieve', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed SIEVE matrix', 'oracle_prepare', 'oracle_cleanup', 'all 34 calls and 189 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_SIEVE_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', "maximum=28 if name=='negative'", 'len(self.stages)>=57', 'Meta fabricated missing spatial facts'), 'business/scripts/online-raster-sieve-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'from collections import deque', 'len(pixels)<minimum', 'len(components[other][1])>=minimum', 'donor_ids=set()', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'archive_cogs', 'sieve-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'independent_bfs_oracle_verified', 'frozen_components_verified', 'explicit_connectivity_verified', 'classification_encoding_verified', 'missing source CRS was fabricated'), 'engines/geopython-workflow/test_online_sieve_fixture.py': ('test_sieve_persistence_real_gdal_six_chains_exact_pixels_mask_and_original_cogs', 'test_sieve_persistence_twenty_eight_accurate_bilingual_failures_no_publication', 'test_sieve_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_sieve_independent_oracle_rejects_wrong_semantics', 'wrong_connectivity', 'threshold_inclusive', 'class_global_count', 'small_transit', 'iterated_growth', 'nodata_fill', 'no_donor_replaced', 'implicit_scale', 'zero_discarded', 'test_sieve_original_cog_archive_cannot_change_or_silently_repair', 'test_sieve_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_sieve_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_sieve_oracle_cache_poison_or_cross_scope_fails', 'test_sieve_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('test-raster-sieve-online-runner', 'test_online_sieve_fixture.py', 'scripts/test/raster-sieve-persistence-online_test.py', 'scripts/test/online-raster-sieve-fixture_test.py', 'scripts/test/online-hosted-raster-sieve-gate_test.py', 'test_sieve_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-sieve-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-sieve-persistence-online_test.py': ('test_complete_6_success_28_bilingual_failures_189_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound', 'test_unlocated_artifact_and_meta_reject_fabricated_location')}
         for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_sieve(self.repository,{'raster-sieve-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
                 with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_sieve(self.repository,{'raster-sieve-persistence'})
                 target.write_text(original)
-        for relative,fragment in [('business/scripts/online-raster-sieve-fixture.py',"'four.cog.tif':"),('scripts/test/raster-sieve-persistence-online.py',"'threshold_boolean'")]:
+        for relative,fragment in self.contract_mutations([('business/scripts/online-raster-sieve-fixture.py',"'four.cog.tif':"),('scripts/test/raster-sieve-persistence-online.py',"'threshold_boolean'")]):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,"'removed.cog.tif':"if fragment.endswith(':')else"'removed'",1))
             with self.subTest(matrix=relative),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_sieve(self.repository,{'raster-sieve-persistence'})
             target.write_text(original)
@@ -764,17 +784,17 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
     def test_spi_requires_manual_nfs_full_oracle_archive_and_regressions(self):
         source=SCRIPT.parents[2]
-        required={'scripts/test/online-hosted-raster-spi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-spi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-spi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_spi', 'input.area', 'input.slope', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed SPI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 66 calls and 833 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_SPI_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', "maximum=52 if name=='negative'", 'len(self.stages)>=113', "if fact['negative_pixels']", 'flat SPI must stay valid zero'), 'business/scripts/online-raster-spi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'context.prec=200', 'for odd in range(599,0,-2)', 'denominator=Decimal(odd)-x*x/denominator', 'Decimal(a)/d*tangents[b]', 'measurement_width', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'int64.cog.tif', 'uint64.cog.tif', 'disjoint.cog.tif', 'zero-slope.cog.tif', 'archive_cogs', 'spi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'joint_coverage_verified', 'metre_unit_verified', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', 'legal_zero_verified', 'complete=valid', "band.GetUnitType()!='metre'", 'Decimal(a)/d*tangents[b]'), 'engines/geopython-workflow/test_online_spi_fixture.py': ('test_spi_persistence_real_gdal_fourteen_chains_exact_pixels_mask_and_original_cogs', 'test_spi_persistence_fifty_two_accurate_bilingual_failures_no_publication', 'test_spi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_spi_independent_oracle_rejects_wrong_semantics', 'width_multiplied', 'count_as_area', 'logarithm', 'tiny_threshold', 'test_spi_original_cog_archive_cannot_change_or_silently_repair', 'test_spi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_spi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_spi_oracle_cache_poison_or_cross_scope_fails', 'test_spi_partial_oracle_preparation_always_has_an_owned_cleanup', 'zero_slope_nodata', 'negative_index', 'percent_not_divided'), 'Makefile': ('@$(MAKE) test-raster-spi-online-runner', 'test_online_spi_fixture.py', 'scripts/test/raster-spi-persistence-online_test.py', 'scripts/test/online-raster-spi-fixture_test.py', 'scripts/test/online-hosted-raster-spi-gate_test.py', 'test_spi_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-spi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-spi-persistence-online_test.py': ('test_complete_14_success_52_bilingual_failures_833_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
+        required={'scripts/test/online-hosted-raster-spi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-spi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-spi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_spi', 'input.area', 'input.slope', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed SPI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 66 calls and 833 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_SPI_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', "maximum=52 if name=='negative'", 'len(self.stages)>=113', "if fact['negative_pixels']", 'flat SPI must stay valid zero'), 'business/scripts/online-raster-spi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'context.prec=200', 'for odd in range(599,0,-2)', 'denominator=Decimal(odd)-x*x/denominator', 'Decimal(a)/d*tangents[b]', 'measurement_width', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'int64.cog.tif', 'uint64.cog.tif', 'disjoint.cog.tif', 'zero-slope.cog.tif', 'archive_cogs', 'spi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'joint_coverage_verified', 'metre_unit_verified', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', 'legal_zero_verified', 'complete=valid', "band.GetUnitType()!='metre'", 'Decimal(a)/d*tangents[b]'), 'engines/geopython-workflow/test_online_spi_fixture.py': ('test_spi_persistence_real_gdal_fourteen_chains_exact_pixels_mask_and_original_cogs', 'test_spi_persistence_fifty_two_accurate_bilingual_failures_no_publication', 'test_spi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_spi_independent_oracle_rejects_wrong_semantics', 'width_multiplied', 'count_as_area', 'logarithm', 'tiny_threshold', 'test_spi_original_cog_archive_cannot_change_or_silently_repair', 'test_spi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_spi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_spi_oracle_cache_poison_or_cross_scope_fails', 'test_spi_partial_oracle_preparation_always_has_an_owned_cleanup', 'zero_slope_nodata', 'negative_index', 'percent_not_divided'), 'Makefile': ('test-raster-spi-online-runner', 'test_online_spi_fixture.py', 'scripts/test/raster-spi-persistence-online_test.py', 'scripts/test/online-raster-spi-fixture_test.py', 'scripts/test/online-hosted-raster-spi-gate_test.py', 'test_spi_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-spi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-spi-persistence-online_test.py': ('test_complete_14_success_52_bilingual_failures_833_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
         for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_spi(self.repository,{'raster-spi-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
                 with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_spi(self.repository,{'raster-spi-persistence'})
                 target.write_text(original)
-        for relative,fragment in [('business/scripts/online-raster-spi-fixture.py',"'degree.cog.tif':"),('scripts/test/raster-spi-persistence-online.py',"'slope_offset'")]:
+        for relative,fragment in self.contract_mutations([('business/scripts/online-raster-spi-fixture.py',"'degree.cog.tif':"),('scripts/test/raster-spi-persistence-online.py',"'slope_offset'")]):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,"'removed.cog.tif':"if fragment.endswith(':')else"'removed'",1))
             with self.subTest(matrix=relative),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_spi(self.repository,{'raster-spi-persistence'})
             target.write_text(original)
@@ -793,11 +813,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'scripts/test/raster-plan-curvature-persistence-online.py':('raster.strict_sizes','raster.EDITOR_PERMISSIONS','case_inputs(name)','SubmittedLanguageClient','overview_count','query language rewrote stored failure','curvature_method','flat_zero_verified','zero_gradient_nodata_verified','mean_control_verified','mean_controls_equal','directional_identity_verified','directional_identity_pixels','profile_control_verified','tiny_gradient_verified','plan_distinction_verified','circle_verified','height_invariance_verified','plan_tangential_identity_verified','plan_tangential_identity_pixels','tangential_control_verified'),
             'business/scripts/online-raster-plan-curvature-fixture.py':('np.linalg.lstsq','np.linalg.solve','GDAL_TIFF_INTERNAL_MASK','small.cog.tif','1/metre','source file changed','full_check=True','semantic_masks','math.fsum','np.einsum','mean-default.cog.tif','mean-explicit.cog.tif','stationary.cog.tif','flat.cog.tif','profile-control.cog.tif','mode_controls','height-transformed.cog.tif','tangential-control.cog.tif','circle inverse radius','positive height scale and shift','saved plan and tangential relation','saved directional curvatures do not sum to twice the mean'),
             'engines/geopython-workflow/test_online_plan_curvature_fixture.py':('test_plan_curvature_persistence_real_gdal_fifteen_cog_chains_and_complete_pixels','test_plan_curvature_persistence_twenty_six_failures_no_publication','forced_centre'),
-            'Makefile':('test_online_plan_curvature_fixture.py','@$(MAKE) test-raster-plan-curvature-online-runner','scripts/test/raster-plan-curvature-persistence-online_test.py','test_plan_curvature_requires_manual_nfs_full_pixels_and_regressions')}
+            'Makefile':('test_online_plan_curvature_fixture.py','test-raster-plan-curvature-online-runner','scripts/test/raster-plan-curvature-persistence-online_test.py','test_plan_curvature_requires_manual_nfs_full_pixels_and_regressions')}
         for relative in ('scripts/test/online-gate.py',*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_plan_curvature(self.repository,{'raster-plan-curvature-persistence'})
-        for relative,fragments in required.items():
+        for relative,fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative;original=target.read_text()
             for fragment in fragments:
                 self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -807,7 +827,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
     def test_hand_d8_requires_manual_nfs_full_pixels_and_regressions(self):
         source=SCRIPT.parents[2]
-        required={'scripts/test/online-hosted-raster-hand-d8-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-hand-d8-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-hand-d8-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'fixture.SOURCES', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'fixture.artifact_expectation(name)', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'case_inputs(name)', 'stream_raster', 'stream_band', 'elevation_raster', 'elevation_band', 'elevation_unit', 'uphill_before', 'uphill_after', 'uphill_empty', 'mixed_original', 'non_increasing_elevation_verified', 'flat_zero_verified', 'first_hit_verified', 'unreachable_nodata_verified', 'river_zero_verified', 'metre_unit_verified', 'nearest_overviews_verified'), 'business/scripts/online-raster-hand-d8-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'walked_paths', 'hand_evidence', 'SOURCE_UNITS', 'empty.cog.tif', 'invalid.cog.tif', 'feet.cog.tif', 'survey-feet.cog.tif', 'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True'), 'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'), 'engines/geopython-workflow/test_online_hand_d8_fixture.py': ('test_hand_d8_persistence_real_gdal_eight_cog_chains_and_complete_pixels', 'test_hand_d8_persistence_oracle_rejects_corruption', 'test_hand_d8_persistence_forty_two_failures_no_publication'), 'Makefile': ('@$(MAKE) test-raster-hand-d8-online-runner', 'test_online_hand_d8_fixture.py', 'scripts/test/raster-hand-d8-persistence-online_test.py', 'scripts/test/online-raster-hand-d8-fixture_test.py', 'scripts/test/online-hosted-raster-hand-d8-gate_test.py', 'test_hand_d8_requires_manual_nfs_full_pixels_and_regressions')}
+        required={'scripts/test/online-hosted-raster-hand-d8-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-hand-d8-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-hand-d8-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'fixture.SOURCES', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'fixture.artifact_expectation(name)', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'case_inputs(name)', 'stream_raster', 'stream_band', 'elevation_raster', 'elevation_band', 'elevation_unit', 'uphill_before', 'uphill_after', 'uphill_empty', 'mixed_original', 'non_increasing_elevation_verified', 'flat_zero_verified', 'first_hit_verified', 'unreachable_nodata_verified', 'river_zero_verified', 'metre_unit_verified', 'nearest_overviews_verified'), 'business/scripts/online-raster-hand-d8-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'walked_paths', 'hand_evidence', 'SOURCE_UNITS', 'empty.cog.tif', 'invalid.cog.tif', 'feet.cog.tif', 'survey-feet.cog.tif', 'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True'), 'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'), 'engines/geopython-workflow/test_online_hand_d8_fixture.py': ('test_hand_d8_persistence_real_gdal_eight_cog_chains_and_complete_pixels', 'test_hand_d8_persistence_oracle_rejects_corruption', 'test_hand_d8_persistence_forty_two_failures_no_publication'), 'Makefile': ('test-raster-hand-d8-online-runner', 'test_online_hand_d8_fixture.py', 'scripts/test/raster-hand-d8-persistence-online_test.py', 'scripts/test/online-raster-hand-d8-fixture_test.py', 'scripts/test/online-hosted-raster-hand-d8-gate_test.py', 'test_hand_d8_requires_manual_nfs_full_pixels_and_regressions')}
         extras=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py')
         for relative in (*extras,*required):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
@@ -815,7 +835,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_raster_hand_d8_profile(self.repository,registered)
         fragments=[(extras[0],"inputs.suite != 'raster-hand-d8-persistence'"),(extras[0],'nfs-kernel-server nfs-common'),('Makefile','test-geopython-workflow:')]
         fragments.extend((p,fragment) for p,values in required.items() for fragment in values)
-        for relative,fragment in fragments:
+        for relative,fragment in self.contract_mutations(fragments):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_hand_d8_profile(self.repository,registered)
@@ -831,12 +851,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-flow-length-upstream-d8-persistence'}
         CHECK.validate_raster_flow_length_upstream_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-flow-length-upstream-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-flow-length-upstream-d8-online-runner'),(paths[2],'test_online_flow_length_upstream_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-flow-length-upstream-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-flow-length-upstream-d8-online-runner'),(paths[2],'test_online_flow_length_upstream_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],"'operator':'raster_flow_length_d8'"),(paths[4],"'method':'upstream_longest'"),(paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'distance_evidence'),(paths[5],'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)'),(paths[4],'metre_unit_verified'),(paths[4],'source_edges(client'),(paths[4],'centre_steps_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'sources_zero'),(paths[4],'longest_path_verified'),(paths[4],'confluence_max_verified'),(paths[4],'outlets_receive_upstream'),(paths[5],'empty-length.cog.tif'),(paths[5],'feet-length.cog.tif'),(paths[5],'survey-feet-length.cog.tif'),(paths[5],'SOURCE_UNITS'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_flow_length_upstream_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'distance_evidence'),(paths[5],'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)'),(paths[4],'metre_unit_verified'),(paths[4],'source_edges(client'),(paths[4],'centre_steps_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'sources_zero'),(paths[4],'longest_path_verified'),(paths[4],'confluence_max_verified'),(paths[4],'outlets_receive_upstream'),(paths[5],'empty-length.cog.tif'),(paths[5],'feet-length.cog.tif'),(paths[5],'survey-feet-length.cog.tif'),(paths[5],'SOURCE_UNITS'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_flow_length_upstream_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_flow_length_upstream_d8_profile(self.repository,registered)
@@ -851,12 +871,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-stream-order-d8-persistence'}
         CHECK.validate_raster_stream_order_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-stream-order-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-stream-order-d8-online-runner'),(paths[2],'test_online_stream_order_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-stream-order-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-stream-order-d8-online-runner'),(paths[2],'test_online_stream_order_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'backward_oracle'),(paths[5],'order_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'strahler_verified'),(paths[4],'source_edges(client'),(paths[4],'stream_closure_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'stream_raster'),(paths[4],'stream_band'),(paths[4],'confluence_verified'),(paths[4],'zero_background_verified'),(paths[5],'empty-order.cog.tif'),(paths[5],'invalid-order.cog.tif'),(paths[5],'binary_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_stream_order_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'backward_oracle'),(paths[5],'order_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'strahler_verified'),(paths[4],'source_edges(client'),(paths[4],'stream_closure_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'stream_raster'),(paths[4],'stream_band'),(paths[4],'confluence_verified'),(paths[4],'zero_background_verified'),(paths[5],'empty-order.cog.tif'),(paths[5],'invalid-order.cog.tif'),(paths[5],'binary_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_stream_order_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_stream_order_d8_profile(self.repository,registered)
@@ -872,12 +892,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-stream-shreve-d8-persistence'}
         CHECK.validate_raster_stream_shreve_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-stream-shreve-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-stream-shreve-d8-online-runner'),(paths[2],'test_online_stream_shreve_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-stream-shreve-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-stream-shreve-d8-online-runner'),(paths[2],'test_online_stream_shreve_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'headwater_walk_oracle'),(paths[5],'default-strahler.cog.tif'),(paths[5],'explicit-strahler.cog.tif'),(paths[5],'backward_oracle'),(paths[5],'order_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'independent_method_oracle_verified'),(paths[4],'headwater_conservation_verified'),(paths[4],'default_strahler_equivalent_verified'),(paths[4],'strahler_verified'),(paths[4],'source_edges(client'),(paths[4],'stream_closure_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'stream_raster'),(paths[4],'stream_band'),(paths[4],'confluence_verified'),(paths[4],'zero_background_verified'),(paths[5],'empty-shreve.cog.tif'),(paths[5],'invalid-shreve.cog.tif'),(paths[5],'binary_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_stream_shreve_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'headwater_walk_oracle'),(paths[5],'default-strahler.cog.tif'),(paths[5],'explicit-strahler.cog.tif'),(paths[5],'backward_oracle'),(paths[5],'order_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'independent_method_oracle_verified'),(paths[4],'headwater_conservation_verified'),(paths[4],'default_strahler_equivalent_verified'),(paths[4],'strahler_verified'),(paths[4],'source_edges(client'),(paths[4],'stream_closure_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'stream_raster'),(paths[4],'stream_band'),(paths[4],'confluence_verified'),(paths[4],'zero_background_verified'),(paths[5],'empty-shreve.cog.tif'),(paths[5],'invalid-shreve.cog.tif'),(paths[5],'binary_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_stream_shreve_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_stream_shreve_d8_profile(self.repository,registered)
@@ -890,7 +910,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-stream-to-vector-d8-persistence'}
         CHECK.validate_raster_stream_to_vector_d8_profile(self.repository,registered)
-        for relative,fragment in (('.github/workflows/online-t4-gates.yml', "inputs.suite != 'raster-stream-to-vector-d8-persistence'"), ('.github/workflows/online-t4-gates.yml', 'nfs-kernel-server nfs-common'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', 'start_online_geopython_runtime'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', '--mount'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', '--suite raster-workflow'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', '--wait-protection-owners develop,manager'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', 'online-raster-stream-to-vector-d8-fixture.py stop'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'raster.validate_identity'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'raster.EDITOR_PERMISSIONS'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'fixture.SOURCES'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'validate_success(execution'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'vector_persistence.validate_item'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'validate_scan(scanned,scan,identifier'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'source_edges(client'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'scan_ids(client)!=before_scans'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'rasterize.check_physical(native,previous)'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'for name in fixture.TARGETS'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'for problem in FAILURES'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', "for language in ('zh-cn','en')"), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'SubmittedLanguageClient'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'invalid_diagnostic'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'case_inputs(name)'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'stream_raster'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'stream_band'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'elevation_unit'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'complete_geometry_attributes_verified'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'independent_edge_coverage_verified'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'terminal_confluence_verified'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'metre_lengths_verified'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'empty_schema_crs_verified'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'skipped_terminal_link_ids'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'RasterArtifact'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'NFSExport'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'owned_root'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'expected_lines'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'Counter(edges.items())'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'complete centre coordinates'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'Integer64'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'GetSpatialRef'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'source file changed'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'runtime_workspaces_removed'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'GDAL_TIFF_INTERNAL_MASK'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'isolated-streams.tif'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'mixed-streams.tif'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'foot.gpkg'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'survey.gpkg'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'empty.gpkg'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'invalid.gpkg'), ('scripts/utils/online_nfs_fixture.py', 'root_squash'), ('scripts/utils/online_nfs_fixture.py', 'nfs_export_removed'), ('scripts/utils/online_nfs_fixture.py', 'owned_root'), ('engines/geopython-workflow/test_online_stream_to_vector_d8_fixture.py', 'test_stream_to_vector_d8_persistence_real_gdal_eight_gpkg_chains_and_complete_edges'), ('engines/geopython-workflow/test_online_stream_to_vector_d8_fixture.py', 'test_stream_to_vector_d8_persistence_oracle_rejects_corruption'), ('engines/geopython-workflow/test_online_stream_to_vector_d8_fixture.py', 'test_stream_to_vector_d8_persistence_twenty_precise_failures_no_publication'), ('Makefile', '@$(MAKE) test-raster-stream-to-vector-d8-online-runner'), ('Makefile', 'test_online_stream_to_vector_d8_fixture.py'), ('Makefile', 'scripts/test/raster-stream-to-vector-d8-persistence-online_test.py'), ('Makefile', 'scripts/test/online-raster-stream-to-vector-d8-fixture_test.py'), ('Makefile', 'scripts/test/online-hosted-raster-stream-to-vector-d8-gate_test.py'), ('Makefile', 'test_stream_to_vector_d8_requires_manual_nfs_complete_edges_and_regressions')):
+        for relative,fragment in self.contract_mutations((('.github/workflows/online-t4-gates.yml', "inputs.suite != 'raster-stream-to-vector-d8-persistence'"), ('.github/workflows/online-t4-gates.yml', 'nfs-kernel-server nfs-common'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', 'start_online_geopython_runtime'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', '--mount'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', '--suite raster-workflow'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', '--wait-protection-owners develop,manager'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', 'online-raster-stream-to-vector-d8-fixture.py stop'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), ('scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'raster.validate_identity'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'raster.EDITOR_PERMISSIONS'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'fixture.SOURCES'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'validate_success(execution'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'vector_persistence.validate_item'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'validate_scan(scanned,scan,identifier'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'source_edges(client'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'scan_ids(client)!=before_scans'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'rasterize.check_physical(native,previous)'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'for name in fixture.TARGETS'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'for problem in FAILURES'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', "for language in ('zh-cn','en')"), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'SubmittedLanguageClient'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'invalid_diagnostic'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'case_inputs(name)'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'stream_raster'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'stream_band'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'elevation_unit'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'complete_geometry_attributes_verified'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'independent_edge_coverage_verified'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'terminal_confluence_verified'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'metre_lengths_verified'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'empty_schema_crs_verified'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'skipped_terminal_link_ids'), ('scripts/test/raster-stream-to-vector-d8-persistence-online.py', 'RasterArtifact'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'NFSExport'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'owned_root'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'expected_lines'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'Counter(edges.items())'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'complete centre coordinates'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'Integer64'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'GetSpatialRef'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'source file changed'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'runtime_workspaces_removed'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'GDAL_TIFF_INTERNAL_MASK'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'isolated-streams.tif'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'mixed-streams.tif'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'foot.gpkg'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'survey.gpkg'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'empty.gpkg'), ('business/scripts/online-raster-stream-to-vector-d8-fixture.py', 'invalid.gpkg'), ('scripts/utils/online_nfs_fixture.py', 'root_squash'), ('scripts/utils/online_nfs_fixture.py', 'nfs_export_removed'), ('scripts/utils/online_nfs_fixture.py', 'owned_root'), ('engines/geopython-workflow/test_online_stream_to_vector_d8_fixture.py', 'test_stream_to_vector_d8_persistence_real_gdal_eight_gpkg_chains_and_complete_edges'), ('engines/geopython-workflow/test_online_stream_to_vector_d8_fixture.py', 'test_stream_to_vector_d8_persistence_oracle_rejects_corruption'), ('engines/geopython-workflow/test_online_stream_to_vector_d8_fixture.py', 'test_stream_to_vector_d8_persistence_twenty_precise_failures_no_publication'), ('Makefile', 'test-raster-stream-to-vector-d8-online-runner'), ('Makefile', 'test_online_stream_to_vector_d8_fixture.py'), ('Makefile', 'scripts/test/raster-stream-to-vector-d8-persistence-online_test.py'), ('Makefile', 'scripts/test/online-raster-stream-to-vector-d8-fixture_test.py'), ('Makefile', 'scripts/test/online-hosted-raster-stream-to-vector-d8-gate_test.py'), ('Makefile', 'test_stream_to_vector_d8_requires_manual_nfs_complete_edges_and_regressions'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_stream_to_vector_d8_profile(self.repository,registered)
@@ -906,12 +926,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-stream-link-d8-persistence'}
         CHECK.validate_raster_stream_link_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-stream-link-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-stream-link-d8-online-runner'),(paths[2],'test_online_stream_link_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-stream-link-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-stream-link-d8-online-runner'),(paths[2],'test_online_stream_link_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'backward_oracle'),(paths[5],'walk_oracle'),(paths[5],'DIRECT_STARTS'),(paths[4],'start_order_verified'),(paths[4],'unique_coverage_verified'),(paths[5],'link_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'stream_links_verified'),(paths[4],'source_edges(client'),(paths[4],'stream_closure_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'stream_raster'),(paths[4],'stream_band'),(paths[4],'confluence_verified'),(paths[4],'zero_background_verified'),(paths[5],'empty-links.cog.tif'),(paths[5],'invalid-links.cog.tif'),(paths[5],'binary_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_stream_link_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'backward_oracle'),(paths[5],'walk_oracle'),(paths[5],'DIRECT_STARTS'),(paths[4],'start_order_verified'),(paths[4],'unique_coverage_verified'),(paths[5],'link_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'stream_links_verified'),(paths[4],'source_edges(client'),(paths[4],'stream_closure_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'stream_raster'),(paths[4],'stream_band'),(paths[4],'confluence_verified'),(paths[4],'zero_background_verified'),(paths[5],'empty-links.cog.tif'),(paths[5],'invalid-links.cog.tif'),(paths[5],'binary_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_stream_link_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_stream_link_d8_profile(self.repository,registered)
@@ -927,12 +947,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-flow-accumulation-weighted-d8-persistence'}
         CHECK.validate_raster_flow_accumulation_weighted_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-flow-accumulation-weighted-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-flow-accumulation-weighted-d8-online-runner'),(paths[2],'test_online_flow_accumulation_weighted_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-flow-accumulation-weighted-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-flow-accumulation-weighted-d8-online-runner'),(paths[2],'test_online_flow_accumulation_weighted_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'walk_oracle'),(paths[5],'weighted_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'weighted_sum_verified'),(paths[4],'source_edges(client'),(paths[4],'self_exclusion_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'weights_raster'),(paths[4],'weights_band'),(paths[4],'mass_balance_verified'),(paths[4],'valid_zero_verified'),(paths[4],'weight_unit_verified'),(paths[4],'all_ones_equivalent_verified'),(paths[5],'ones.cog.tif'),(paths[5],'invalid-weighted.cog.tif'),(paths[5],'weight_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_flow_accumulation_weighted_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'walk_oracle'),(paths[5],'weighted_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'weighted_sum_verified'),(paths[4],'source_edges(client'),(paths[4],'self_exclusion_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'weights_raster'),(paths[4],'weights_band'),(paths[4],'mass_balance_verified'),(paths[4],'valid_zero_verified'),(paths[4],'weight_unit_verified'),(paths[4],'all_ones_equivalent_verified'),(paths[5],'ones.cog.tif'),(paths[5],'invalid-weighted.cog.tif'),(paths[5],'weight_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_flow_accumulation_weighted_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_flow_accumulation_weighted_d8_profile(self.repository,registered)
@@ -947,12 +967,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-watershed-d8-persistence'}
         CHECK.validate_raster_watershed_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-watershed-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-watershed-d8-online-runner'),(paths[2],'test_online_watershed_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-watershed-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-watershed-d8-online-runner'),(paths[2],'test_online_watershed_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'walk_oracle'),(paths[5],'watershed_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'watershed_verified'),(paths[4],'source_edges(client'),(paths[4],'point_self_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'points_raster'),(paths[4],'points_band'),(paths[4],'point_ids_verified'),(paths[4],'unselected_zero_verified'),(paths[4],'unit_cleared_verified'),(paths[4],'nonnested_verified'),(paths[5],'reclass.cog.tif'),(paths[5],'dem-watershed.cog.tif'),(paths[5],'point_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_watershed_d8_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[5],'walk_oracle'),(paths[5],'watershed_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'watershed_verified'),(paths[4],'source_edges(client'),(paths[4],'point_self_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'points_raster'),(paths[4],'points_band'),(paths[4],'point_ids_verified'),(paths[4],'unselected_zero_verified'),(paths[4],'unit_cleared_verified'),(paths[4],'nonnested_verified'),(paths[5],'reclass.cog.tif'),(paths[5],'dem-watershed.cog.tif'),(paths[5],'point_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_watershed_d8_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_watershed_d8_profile(self.repository,registered)
@@ -968,12 +988,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-subcatchments-d8-persistence'}
         CHECK.validate_raster_subcatchments_d8_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-subcatchments-d8-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-subcatchments-d8-online-runner'),(paths[2],'test_online_subcatchments_d8_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-subcatchments-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-subcatchments-d8-online-runner'),(paths[2],'test_online_subcatchments_d8_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'walk_oracle'),(paths[5],'subcatchments_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'subcatchments_verified'),(paths[4],'source_edges(client'),(paths[4],'point_self_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'points_raster'),(paths[4],'points_band'),(paths[4],'point_ids_verified'),(paths[4],'unselected_zero_verified'),(paths[4],'unit_cleared_verified'),(paths[4],'first_downstream_point_verified'),(paths[4],'disjoint_verified'),(paths[4],'partition_conservation_verified'),(paths[4],'nested_supported_verified'),(paths[4],'nonnested_reference_equal'),(paths[4],'full_nested'),(paths[4],'failure_task'),(paths[4],'raster_watershed_d8'),(paths[4],'raster_snap_pour_points'),(paths[5],'snap_oracle'),(paths[5],'SNAP_RADIUS'),(paths[5],'full-reference.cog.tif'),(paths[5],'nested.cog.tif'),(paths[5],'snapped.cog.tif'),(paths[5],'reclass.cog.tif'),(paths[5],'dem-subcatchments.cog.tif'),(paths[5],'point_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_subcatchments_d8_persistence_oracle_rejects_corruption'),(paths[7],'test_subcatchments_d8_stdin_worker_is_self_contained_in_empty_directory')):
+                (paths[5],'expected_pixels'),(paths[5],'walk_oracle'),(paths[5],'subcatchments_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'subcatchments_verified'),(paths[4],'source_edges(client'),(paths[4],'point_self_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'points_raster'),(paths[4],'points_band'),(paths[4],'point_ids_verified'),(paths[4],'unselected_zero_verified'),(paths[4],'unit_cleared_verified'),(paths[4],'first_downstream_point_verified'),(paths[4],'disjoint_verified'),(paths[4],'partition_conservation_verified'),(paths[4],'nested_supported_verified'),(paths[4],'nonnested_reference_equal'),(paths[4],'full_nested'),(paths[4],'failure_task'),(paths[4],'raster_watershed_d8'),(paths[4],'raster_snap_pour_points'),(paths[5],'snap_oracle'),(paths[5],'SNAP_RADIUS'),(paths[5],'full-reference.cog.tif'),(paths[5],'nested.cog.tif'),(paths[5],'snapped.cog.tif'),(paths[5],'reclass.cog.tif'),(paths[5],'dem-subcatchments.cog.tif'),(paths[5],'point_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_subcatchments_d8_persistence_oracle_rejects_corruption'),(paths[7],'test_subcatchments_d8_stdin_worker_is_self_contained_in_empty_directory'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_subcatchments_d8_profile(self.repository,registered)
@@ -989,12 +1009,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-snap-pour-points-persistence'}
         CHECK.validate_raster_snap_pour_points_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-snap-pour-points-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-snap-pour-points-online-runner'),(paths[2],'test_online_snap_pour_points_fixture.py'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-snap-pour-points-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-snap-pour-points-online-runner'),(paths[2],'test_online_snap_pour_points_fixture.py'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[5],'snap_oracle'),(paths[5],'snap_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'snap_verified'),(paths[4],'source_edges(client'),(paths[4],'radius_and_tie_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'points_raster'),(paths[4],'points_band'),(paths[4],'point_ids_verified'),(paths[4],'unselected_zero_verified'),(paths[4],'unit_cleared_verified'),(paths[5],'reclass.cog.tif'),(paths[5],'dem-snap.cog.tif'),(paths[5],'point_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_snap_pour_points_persistence_oracle_rejects_corruption'),(paths[7],'test_snap_pour_points_worker_is_self_contained_without_repository_imports')):
+                (paths[5],'expected_pixels'),(paths[5],'snap_oracle'),(paths[5],'snap_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'snap_verified'),(paths[4],'source_edges(client'),(paths[4],'radius_and_tie_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'points_raster'),(paths[4],'points_band'),(paths[4],'point_ids_verified'),(paths[4],'unselected_zero_verified'),(paths[4],'unit_cleared_verified'),(paths[5],'reclass.cog.tif'),(paths[5],'dem-snap.cog.tif'),(paths[5],'point_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_snap_pour_points_persistence_oracle_rejects_corruption'),(paths[7],'test_snap_pour_points_worker_is_self_contained_without_repository_imports'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_snap_pour_points_profile(self.repository,registered)
@@ -1008,7 +1028,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_statistics_percentile(self.repository, {'raster-statistics-percentile-workflow'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1030,7 +1050,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_statistics_percentiles(self.repository, {'raster-statistics-percentiles-workflow'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1052,7 +1072,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_zonal_percentile(self.repository, {'raster-zonal-percentile-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1074,7 +1094,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_zonal_percentiles(self.repository, {'raster-zonal-percentiles-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1096,7 +1116,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_zonal_class_frequency(self.repository, {'raster-zonal-class-frequency-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1118,7 +1138,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_zonal_weighted(self.repository, {'raster-zonal-weighted-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1140,7 +1160,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_zonal_weighted_stddev(self.repository, {'raster-zonal-weighted-stddev-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1162,7 +1182,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_vector_zonal_percentile(self.repository, {'vector-zonal-percentile-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1184,7 +1204,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_vector_zonal_percentiles(self.repository, {'vector-zonal-percentiles-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1206,7 +1226,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_sample_points(self.repository, {'raster-sample-points-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1228,7 +1248,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_sample_points_bilinear(self.repository, {'raster-sample-points-bilinear-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1250,7 +1270,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_sample_lines(self.repository, {'raster-sample-lines-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1271,7 +1291,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_interpolate_idw(self.repository, {'raster-interpolate-idw-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1292,7 +1312,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_interpolate_idw_min_points(self.repository, {'raster-interpolate-idw-min-points-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1313,7 +1333,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_interpolate_idw_max_points(self.repository, {'raster-interpolate-idw-max-points-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1334,7 +1354,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_interpolate_idw_power(self.repository, {'raster-interpolate-idw-power-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1355,7 +1375,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_point_density(self.repository, {'raster-point-density-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1376,7 +1396,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_line_density(self.repository, {'raster-line-density-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1397,7 +1417,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_line_density_weighted(self.repository, {'raster-line-density-weighted-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1424,7 +1444,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_line_kernel_density(self.repository, {'raster-line-kernel-density-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1457,7 +1477,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_point_kernel_density(self.repository, {'raster-point-kernel-density-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1478,7 +1498,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_point_density_weighted(self.repository, {'raster-point-density-weighted-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1499,7 +1519,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_focal_percentiles(self.repository, {'raster-focal-percentiles-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1520,7 +1540,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_vector_zonal_class_frequency(self.repository, {'vector-zonal-class-frequency-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1542,7 +1562,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_vector_zonal_weighted(self.repository, {'vector-zonal-weighted-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1564,7 +1584,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_vector_zonal_weighted_stddev(self.repository, {'vector-zonal-weighted-stddev-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1586,7 +1606,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_vector_zonal_area_weighted(self.repository, {'vector-zonal-area-weighted-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1608,7 +1628,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_vector_zonal_area_weighted_stddev(self.repository, {'vector-zonal-area-weighted-stddev-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1630,7 +1650,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_focal_variety(self.repository, {'raster-focal-variety-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1652,7 +1672,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_focal_circle(self.repository, {'raster-focal-circle-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1674,7 +1694,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_region_group(self.repository, {'raster-region-group-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1696,7 +1716,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_focal_weighted_mean(self.repository, {'raster-focal-weighted-mean-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1718,7 +1738,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_focal_weighted_stddev(self.repository, {'raster-focal-weighted-stddev-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1740,7 +1760,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_focal_weighted_sum(self.repository, {'raster-focal-weighted-sum-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1762,7 +1782,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_proximity_rectangular(self.repository, {'raster-proximity-rectangular-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1784,7 +1804,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_sieve_protected(self.repository, {'raster-sieve-protected-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1806,7 +1826,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(source/relative,target)
         CHECK.validate_raster_sieve_area(self.repository, {'raster-sieve-area-persistence'})
-        for relative, fragments in required.items():
+        for relative, fragments in self.contract_mutation_requirements(required).items():
             target=self.repository/relative; original=target.read_text()
             for fragment in fragments:
                 target.write_text(original.replace(fragment, 'omitted'))
@@ -1827,7 +1847,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-band-recommendation-workflow'}
         CHECK.validate_raster_band_recommendation_profile(self.repository,registered)
-        for relative,fragment in (('.github/workflows/online-t4-gates.yml', "inputs.suite != 'raster-band-recommendation-workflow'"), ('.github/workflows/online-t4-gates.yml', 'nfs-kernel-server nfs-common'), ('Makefile', 'test_online_band_recommendation_fixture.py'), ('scripts/test/online-hosted-raster-band-recommendation-gate.sh', 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'), ('scripts/test/online-hosted-raster-band-recommendation-gate.sh', 'start_online_geopython_runtime'), ('scripts/test/online-hosted-raster-band-recommendation-gate.sh', '--mount'), ('scripts/test/raster-band-recommendation-workflow-online.py', 'raster.validate_identity'), ('scripts/test/raster-band-recommendation-workflow-online.py', 'raster.EDITOR_PERMISSIONS'), ('scripts/test/raster-band-recommendation-workflow-online.py', 'raster.transient_result'), ('business/scripts/online-raster-band-recommendation-fixture.py', 'NFSExport'), ('business/scripts/online-raster-band-recommendation-fixture.py', 'owned_root'), ('business/scripts/online-raster-band-recommendation-fixture.py', 'expected_result'), ('scripts/utils/online_nfs_fixture.py', 'root_squash'), ('scripts/utils/online_nfs_fixture.py', 'nfs_export_removed'), ('scripts/utils/online_nfs_fixture.py', 'owned_root'), ('engines/geopython-workflow/test_online_band_recommendation_fixture.py', 'test_band_recommendation_fixture_complete_sources_and_full_product_object'), ('engines/geopython-workflow/test_online_band_recommendation_fixture.py', 'test_band_recommendation_fixture_object_comparison_is_complete_and_strict')):
+        for relative,fragment in self.contract_mutations((('.github/workflows/online-t4-gates.yml', "inputs.suite != 'raster-band-recommendation-workflow'"), ('.github/workflows/online-t4-gates.yml', 'nfs-kernel-server nfs-common'), ('Makefile', 'test_online_band_recommendation_fixture.py'), ('scripts/test/online-hosted-raster-band-recommendation-gate.sh', 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'), ('scripts/test/online-hosted-raster-band-recommendation-gate.sh', 'start_online_geopython_runtime'), ('scripts/test/online-hosted-raster-band-recommendation-gate.sh', '--mount'), ('scripts/test/raster-band-recommendation-workflow-online.py', 'raster.validate_identity'), ('scripts/test/raster-band-recommendation-workflow-online.py', 'raster.EDITOR_PERMISSIONS'), ('scripts/test/raster-band-recommendation-workflow-online.py', 'raster.transient_result'), ('business/scripts/online-raster-band-recommendation-fixture.py', 'NFSExport'), ('business/scripts/online-raster-band-recommendation-fixture.py', 'owned_root'), ('business/scripts/online-raster-band-recommendation-fixture.py', 'expected_result'), ('scripts/utils/online_nfs_fixture.py', 'root_squash'), ('scripts/utils/online_nfs_fixture.py', 'nfs_export_removed'), ('scripts/utils/online_nfs_fixture.py', 'owned_root'), ('engines/geopython-workflow/test_online_band_recommendation_fixture.py', 'test_band_recommendation_fixture_complete_sources_and_full_product_object'), ('engines/geopython-workflow/test_online_band_recommendation_fixture.py', 'test_band_recommendation_fixture_object_comparison_is_complete_and_strict'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_band_recommendation_profile(self.repository,registered)
@@ -1845,7 +1865,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source/relative, target)
         registered = {'raster-nibble-capacity'}
         CHECK.validate_raster_nibble_capacity_profile(self.repository, registered)
-        for relative, fragment in ((paths[0], "inputs.suite != 'raster-nibble-capacity'"),
+        for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite != 'raster-nibble-capacity'"),
                 (paths[3], '--suite raster-nibble-capacity'),
                 (paths[3], '--cpus 4 --memory 2g --memory-swap 2g'),
                 (paths[3], 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=10800'), (paths[3], 'TMPDIR='),
@@ -1853,7 +1873,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 (paths[4], 'validate_disk'), (paths[5], 'expected_block'),
                 (paths[5], 'running*size**2*64'), (paths[6], 'test_capacity_analytical_oracle_matches_original_donor_bruteforce'),
                 (paths[7], 'case "raster-workflow", "raster-nibble-capacity":'),
-                (paths[8], 'TestNibbleCapacityRetainsExactlyTheOrdinaryRasterPermissions')):
+                (paths[8], 'TestNibbleCapacityRetainsExactlyTheOrdinaryRasterPermissions'))):
             target = self.repository/relative; original = target.read_text()
             target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
@@ -1867,7 +1887,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-nibble-persistence'}
         CHECK.validate_raster_nibble_profile(self.repository,registered)
-        for relative,fragment in (('.github/workflows/online-t4-gates.yml', "inputs.suite != 'raster-nibble-persistence'"), ('.github/workflows/online-t4-gates.yml', 'nfs-kernel-server nfs-common'), ('Makefile', 'test_online_nibble_fixture.py'), ('scripts/test/online-hosted-raster-nibble-gate.sh', 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'), ('scripts/test/online-hosted-raster-nibble-gate.sh', 'start_online_geopython_runtime'), ('scripts/test/online-hosted-raster-nibble-gate.sh', '--mount'), ('scripts/test/raster-nibble-persistence-online.py', 'raster.validate_identity'), ('scripts/test/raster-nibble-persistence-online.py', 'raster.EDITOR_PERMISSIONS'), ('scripts/test/raster-nibble-persistence-online.py', 'fixture.SOURCES'), ('business/scripts/online-raster-nibble-fixture.py', 'NFSExport'), ('business/scripts/online-raster-nibble-fixture.py', 'owned_root'), ('business/scripts/online-raster-nibble-fixture.py', 'expected_pixels'), ('scripts/utils/online_nfs_fixture.py', 'root_squash'), ('scripts/utils/online_nfs_fixture.py', 'nfs_export_removed'), ('scripts/utils/online_nfs_fixture.py', 'owned_root'), ('engines/geopython-workflow/test_online_nibble_fixture.py', 'test_nibble_persistence_real_gdal_three_cog_chains_and_complete_pixels'), ('engines/geopython-workflow/test_online_nibble_fixture.py', 'test_nibble_persistence_oracle_rejects_corruption')):
+        for relative,fragment in self.contract_mutations((('.github/workflows/online-t4-gates.yml', "inputs.suite != 'raster-nibble-persistence'"), ('.github/workflows/online-t4-gates.yml', 'nfs-kernel-server nfs-common'), ('Makefile', 'test_online_nibble_fixture.py'), ('scripts/test/online-hosted-raster-nibble-gate.sh', 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'), ('scripts/test/online-hosted-raster-nibble-gate.sh', 'start_online_geopython_runtime'), ('scripts/test/online-hosted-raster-nibble-gate.sh', '--mount'), ('scripts/test/raster-nibble-persistence-online.py', 'raster.validate_identity'), ('scripts/test/raster-nibble-persistence-online.py', 'raster.EDITOR_PERMISSIONS'), ('scripts/test/raster-nibble-persistence-online.py', 'fixture.SOURCES'), ('business/scripts/online-raster-nibble-fixture.py', 'NFSExport'), ('business/scripts/online-raster-nibble-fixture.py', 'owned_root'), ('business/scripts/online-raster-nibble-fixture.py', 'expected_pixels'), ('scripts/utils/online_nfs_fixture.py', 'root_squash'), ('scripts/utils/online_nfs_fixture.py', 'nfs_export_removed'), ('scripts/utils/online_nfs_fixture.py', 'owned_root'), ('engines/geopython-workflow/test_online_nibble_fixture.py', 'test_nibble_persistence_real_gdal_three_cog_chains_and_complete_pixels'), ('engines/geopython-workflow/test_online_nibble_fixture.py', 'test_nibble_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_nibble_profile(self.repository,registered)
@@ -1883,12 +1903,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-focal-statistics-persistence'}
         CHECK.validate_raster_focal_statistics_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-focal-statistics-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-focal-statistics-online-runner'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-focal-statistics-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-focal-statistics-online-runner'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'triggered_by'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'expected_pixels'),(paths[6],'root_squash'),(paths[7],'test_focal_persistence_oracle_rejects_corruption')):
+                (paths[5],'expected_pixels'),(paths[6],'root_squash'),(paths[7],'test_focal_persistence_oracle_rejects_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_focal_statistics_profile(self.repository,registered)
@@ -1904,12 +1924,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-zonal-statistics-persistence'}
         CHECK.validate_raster_zonal_statistics_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'raster-zonal-statistics-persistence'"),
-                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-zonal-statistics-online-runner'),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'raster-zonal-statistics-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'test-raster-zonal-statistics-online-runner'),
                 (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'triggered_by'),
                 (paths[4],'validate_preview'),(paths[4],'validate_item'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[5],'validate_records'),(paths[6],'root_squash'),(paths[7],'test_zonal_persistence_oracle_rejects_csv_corruption')):
+                (paths[5],'validate_records'),(paths[6],'root_squash'),(paths[7],'test_zonal_persistence_oracle_rejects_csv_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_zonal_statistics_profile(self.repository,registered)
@@ -1925,12 +1945,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'vector-rasterize-persistence'}
         CHECK.validate_vector_rasterize_profile(self.repository,registered)
-        for relative,fragment in ((paths[0],"inputs.suite != 'vector-rasterize-persistence'"),
+        for relative,fragment in self.contract_mutations(((paths[0],"inputs.suite != 'vector-rasterize-persistence'"),
                 (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'online-vector-rasterize-fixture_test.py'),
-                (paths[2],'@$(MAKE) test-vector-rasterize-online-runner'),
+                (paths[2],'test-vector-rasterize-online-runner'),
                 (paths[3],'--wait-protection-owners develop,manager'),(paths[3],'--mount'),
                 (paths[4],'raster.strict_sizes'),(paths[4],'triggered_by'),(paths[4],'scan_ids(client)!=before_scans'),
-                (paths[6],'root_squash'),(paths[7],'test_rasterize_persistence_oracle_rejects_real_file_corruption')):
+                (paths[6],'root_squash'),(paths[7],'test_rasterize_persistence_oracle_rejects_real_file_corruption'))):
             target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_vector_rasterize_profile(self.repository,registered)
@@ -1946,10 +1966,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, target)
         registered = {'raster-contour-persistence'}
         CHECK.validate_raster_contour_profile(self.repository, registered)
-        for relative, fragment in ((paths[0], "inputs.suite != 'raster-contour-persistence'"),
+        for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite != 'raster-contour-persistence'"),
                 (paths[0], 'nfs-kernel-server nfs-common'), (paths[2], 'online-raster-contour-fixture_test.py'),
                 (paths[3], '--wait-protection-owners develop,manager'), (paths[3], '--mount'),
-                (paths[8], 'triggered_by'), (paths[7], 'root_squash'), (paths[6], 'test_contour_persistence_oracle_rejects_real_file_corruption')):
+                (paths[8], 'triggered_by'), (paths[7], 'root_squash'), (paths[6], 'test_contour_persistence_oracle_rejects_real_file_corruption'))):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_contour_profile(self.repository, registered)
@@ -1965,10 +1985,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, target)
         registered = {'raster-polygonize-persistence'}
         CHECK.validate_raster_polygonize_profile(self.repository, registered)
-        for relative, fragment in ((paths[0], "inputs.suite != 'raster-polygonize-persistence'"),
+        for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite != 'raster-polygonize-persistence'"),
                 (paths[0], 'nfs-kernel-server nfs-common'), (paths[2], 'online-raster-polygonize-fixture_test.py'),
                 (paths[3], '--wait-protection-owners develop,manager'), (paths[3], '--mount'),
-                (paths[8], 'triggered_by'), (paths[7], 'root_squash'), (paths[6], 'test_polygonize_persistence_oracle_rejects_real_file_corruption')):
+                (paths[8], 'triggered_by'), (paths[7], 'root_squash'), (paths[6], 'test_polygonize_persistence_oracle_rejects_real_file_corruption'))):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_polygonize_profile(self.repository, registered)
@@ -1989,7 +2009,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, target)
         registered = {'vector-topology-persistence'}
         CHECK.validate_vector_topology_profile(self.repository, registered)
-        for relative, fragment in ((paths[0], "inputs.suite != 'vector-topology-persistence'"),
+        for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite != 'vector-topology-persistence'"),
             (paths[0], 'nfs-kernel-server nfs-common'), (paths[2], 'online-hosted-topology-gate_test.py'),
             (paths[3], '--suite vector-topology-persistence'), (paths[4], 'triggered_by'), (paths[7], 'browserAPIFromResponse('),
             (paths[5], 'validate_features'), (paths[5], 'SNAP_EXPECTED'), (paths[5], 'verify_snap'), (paths[5], 'archive_physical_evidence'), (paths[7], 'graph, preview'), (paths[4], 'snap_geometry'), (paths[4], 'check_polygon_overlap'), (paths[4], 'check_polygon_gap'), (paths[4], 'check_line_self_overlap'), (paths[4], 'line_self_overlap_expected'), (paths[4], 'line_self_overlap_input'), (paths[4], 'check_line_self_intersection'), (paths[4], 'line_self_intersection_expected'), (paths[4], 'line_self_intersection_input'), (paths[4], 'split_line_intersections'), (paths[4], "'scope': 'all'"), (paths[4], 'split_line_scope'), (paths[5], '多次到访'), (paths[5], '切点原重'), (paths[7], "expect(evidence.split_line_scope).toBe('all')"), (paths[7], "split_lines: ['LineString', 43]"), (paths[7], 'fullPageRead'), (paths[7], ".table-preview .el-pagination__sizes .el-select"), (paths[4], 'split_line_expected'), (paths[4], 'split_line_input'), (paths[4], 'group_line_components'), (paths[4], 'line_component_input'), (paths[4], 'line_component_expected'), (paths[5], 'verify_line_component'), (paths[5], 'line_component_expected_features'), (paths[5], 'line-component-input.gpkg'), (paths[5], 'line-components.gpkg'), (paths[7], 'line_component_expected'), (paths[7], '[evidence.sources[13].id]'), (paths[5], 'component_id'), (paths[4], 'merge_line_chains'), (paths[4], 'line_chain_input'), (paths[5], 'verify_line_chain'), (paths[5], 'line-chain-input.gpkg'), (paths[7], 'line_chain_expected'), (paths[7], 'line_chain_members_expected'), (paths[7], '[evidence.sources[14].id]'), (paths[5], 'source_part_no'), (paths[5], 'is_reversed'), (paths[7], 'expectedOriginalLines'), (paths[7], 'Object.keys(partExpected[0].properties)'), (paths[7], 'Object.fromEntries(fields.map(name => [name,feature.get(name)]))'), (paths[7], 'expectedOutputGeometry'), (paths[7], 'expectedGeometryTypes(output.port)'), (paths[7], 'expectedTypes.length'), (paths[7], '.toEqual(expectedTypes)'), (paths[5], 'verify_split_line'), (paths[5], 'split_line_expected_features'), (paths[5], 'split-line-input.gpkg'), (paths[5], 'split-lines.gpkg'), (paths[7], 'split_line_expected'), (paths[7], '[evidence.sources[12].id]'), (paths[5], 'part_no'), (paths[5], 'segment_no'), (paths[4], 'check_line_intersection'), (paths[4], 'line_intersection_expected'), (paths[4], 'line_intersection_input'), (paths[5], 'verify_line_self_overlap'), (paths[5], 'line_self_overlap_expected_features'), (paths[5], 'line-self-overlap-input.gpkg'), (paths[5], 'line-self-overlaps.gpkg'), (paths[5], 'verify_line_self_intersection'), (paths[5], 'line_self_intersection_expected_features'), (paths[5], 'line-self-intersection-input.gpkg'), (paths[5], 'line-self-intersections.gpkg'), (paths[5], 'verify_line_intersection'), (paths[5], 'line_intersection_expected_features'), (paths[5], 'line-intersection-input.gpkg'), (paths[5], 'line-intersections.gpkg'), (paths[7], 'line_self_overlap_expected'), (paths[7], '[evidence.sources[9].id]'), (paths[7], 'line_self_intersection_expected'), (paths[7], '[evidence.sources[11].id]'), (paths[7], 'line_intersection_expected'), (paths[7], '[evidence.sources[10].id]'), (paths[4], 'check_line_overlap'), (paths[4], 'line_overlap_expected'), (paths[4], 'line_overlap_input'), (paths[5], 'verify_line_overlap'), (paths[5], 'line_overlap_expected_features'), (paths[5], 'line-overlap-input.gpkg'), (paths[5], 'line-overlaps.gpkg'), (paths[7], 'line_overlap_expected'), (paths[7], 'overlap_length'), (paths[7], '[evidence.sources[8].id]'), (paths[4], 'check_dangling_points'), (paths[4], 'dangling_expected'), (paths[4], 'dangling_input'), (paths[5], 'verify_dangling'), (paths[5], 'dangling_expected_features'), (paths[5], 'dangling-input.gpkg'), (paths[5], 'dangling.gpkg'), (paths[7], 'dangling_expected'), (paths[7], "source_id:feature.get('source_id')"), (paths[7], "geometry.type).toBe('Point')"), (paths[7], '[evidence.sources[7].id]'), (paths[4], 'gap_coverage'), (paths[5], 'verify_gap'), (paths[5], 'gap_expected_features'), (paths[5], 'gap-input.gpkg'), (paths[5], 'gap-coverage.gpkg'), (paths[5], 'gaps.gpkg'), (paths[7], 'gap_expected'), (paths[7], 'gapRings'), (paths[7], 'gap_area'), (paths[7], '[evidence.sources[5].id, evidence.sources[6].id]'), (paths[4], 'post_browser_physical'), (paths[5], 'verify_overlap'), (paths[5], 'overlap_expected_features'), (paths[7], 'overlap_expected'), (paths[7], 'rendered'), (paths[4], 'validate_failed_snap'), (paths[4], 'collapsed_snap_diagnostic'), (paths[4], 'topology-snap-failure.json'), (paths[4], 'scan_ids(client)'), (paths[7], 'decodePreviewEWKB'), (paths[7], 'snapCoordinates'), (paths[7], 'failed_execution_id'), (paths[5], 'validate_repaired'), (paths[4], 'repair_geometry'), (paths[7], 'row.after_valid'), (paths[7], 'topology-source-lineage-raw.json'), (paths[6], 'root_squash'), (paths[7], 'getImageData'),
@@ -2081,7 +2101,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[7], '多距缓冲独立普通User单成果与重名拒绝'),
             (paths[9], 'test_hosted_buffer_case_real_save_and_independent_oracle'),
             (paths[14], 'frontend-directory: console/frontend'), (paths[14], 'frontend-directory: manager/frontend')
-        ):
+        )):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_vector_topology_profile(self.repository, registered)
@@ -2120,7 +2140,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                      (paths[1], 'internal://cleanup-native-dlq-proxy:29092'), (paths[2], "contract['native_case_checks']"),
                      (paths[6], 'cleanup-native-object-proxy:19000'), (paths[7], 'scripts/test/cleanup-native-infra_test.py'),
                      (paths[8], "inputs.suite != 'cleanup-native-effects'"), (paths[8], '/cleanup-native-effects.json'))
-        for relative, fragment in mutations:
+        for relative, fragment in self.contract_mutations(mutations):
             path = self.repository / relative; original = path.read_text(); path.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_native_cleanup_profile(self.repository, {'cleanup-native-effects'})
@@ -2137,12 +2157,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
         CHECK.validate_execution_profiles(self.repository, {'graph-protection', 'cleanup-execution'})
-        for relative, fragment in ((paths[0], "inputs.suite != 'cleanup-execution'"), (paths[0], '- execution-lifecycle'), (paths[0], 'Upload Hosted execution evidence'),
+        for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite != 'cleanup-execution'"), (paths[0], '- execution-lifecycle'), (paths[0], 'Upload Hosted execution evidence'),
                                    (paths[0], '/execution-recovery.txt'),
                                    (paths[2], 'validate_execution_archive(profile, suite_report'), (paths[2], 'running_process_crash_without_replay'),
                                    (paths[4], 'independent runtime instance identities'), (paths[5], 'python3 -m scripts.test.execution-online-support resume'),
                                    (paths[6], 'test_execution_recovery_scenario_and_residual_failures_still_destroy_and_fail'),
-                                   (paths[7], '127.0.0.1:18186:8186'), (paths[7], 'ports: !override'), (paths[7], 'restart: "no"'), (paths[8], '  asset-backend:')):
+                                   (paths[7], '127.0.0.1:18186:8186'), (paths[7], 'ports: !override'), (paths[7], 'restart: "no"'), (paths[8], '  asset-backend:'))):
             file = self.repository / relative; original = file.read_text()
             with self.subTest(fragment=fragment):
                 if fragment == 'restart: "no"':
@@ -2169,7 +2189,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
         CHECK.validate_graph_protection_profile(self.repository, {'graph-protection'})
-        for relative, fragment in ((paths[0], 'ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}'), (paths[0], '- endpoint-geometry'), (paths[0], '- endpoint-same-color'), (paths[2], 'full|endpoint-geometry|endpoint-same-color|execution-lifecycle)'), (paths[3], 'verify_same_color_geometry'), (paths[17], 'graphOverlapPaint'), (paths[3], 'verify_endpoint_geometry'), (paths[3], 'run_endpoint_case'), (paths[17], 'node_geometry'), (paths[16], 'graphEndpointGeometry'), (paths[16], 'stableExposedGraphPixels'), (paths[16], 'page.mouse.down'), (paths[0], "inputs.suite != 'graph-protection'"),
+        for relative, fragment in self.contract_mutations(((paths[0], 'ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}'), (paths[0], '- endpoint-geometry'), (paths[0], '- endpoint-same-color'), (paths[2], 'full|endpoint-geometry|endpoint-same-color|execution-lifecycle)'), (paths[3], 'verify_same_color_geometry'), (paths[17], 'graphOverlapPaint'), (paths[3], 'verify_endpoint_geometry'), (paths[3], 'run_endpoint_case'), (paths[17], 'node_geometry'), (paths[16], 'graphEndpointGeometry'), (paths[16], 'stableExposedGraphPixels'), (paths[16], 'page.mouse.down'), (paths[0], "inputs.suite != 'graph-protection'"),
                                    (paths[1], 'graph-protection-online_test.py'), (paths[1], 'graph-review-online_test.py'),
                                    (paths[1], 'console/frontend/e2e/online/graph-review.spec.js'),
                                    (paths[2], 'develop,graph,manager,service,transfer'),
@@ -2207,7 +2227,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[16], 'fillPixelCount'), (paths[6], 'count: found.nodes.length, color, fillColor'), (paths[16], 'getImageData'), (paths[16], 'exploreGraphLayouts'), (paths[16], 'clickGraphNode'), (paths[16], 'getAnimations'),
                                    (paths[8], '127.0.0.1:8186:8186'),
                                    (paths[2], 'GRAPH_URL=http://127.0.0.1:8186'),
-                                   (paths[1], 'console/frontend/e2e/online/develop-graph-query.spec.js')):
+                                   (paths[1], 'console/frontend/e2e/online/develop-graph-query.spec.js'))):
             target = self.repository / relative; original = target.read_text()
             target.write_text(original.replace(fragment, 'removed'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
@@ -2232,7 +2252,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
     def test_online_aggregate_follows_focused_security_owner(self):
         makefile = "test-online-runner:\n\t@$(MAKE) test-security-online-runner\n\ntest-security-online-runner:\n\t@python3 -m unittest security_fixture_test.py\n"
         self.assertIn("security_fixture_test.py", CHECK.make_target_commands(makefile, "test-online-runner"))
-        self.assertNotIn("security_fixture_test.py", CHECK.make_target_commands(makefile.replace("@$(MAKE) test-security-online-runner", "@true"), "test-online-runner"))
+        self.assertNotIn("security_fixture_test.py", CHECK.make_target_commands(makefile.replace("test-security-online-runner", "@true"), "test-online-runner"))
 
     def test_pg_authorization_requires_isolated_manual_profile(self):
         source = SCRIPT.parents[2]
@@ -2246,13 +2266,13 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, destination)
         CHECK.validate_pg_authorization_profile(self.repository, {'pg-source-authorization'})
-        for relative, fragment in ((paths[0], "inputs.suite != 'pg-source-authorization'"),
+        for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite != 'pg-source-authorization'"),
                                    (paths[0], 'name: Validate requested PG source commit'),
                                    (paths[0], 'ref: ${{ inputs.pg_source_commit || github.sha }}'),
                                    (paths[0], 'git merge-base --is-ancestor "$selected" "$PG_DISPATCH_COMMIT"'),
                                    (paths[2], 'online-metric-postgres-fixture.sh stop'),
                                    (paths[3], 'lifecycle.cleanup()'),
-                                   (paths[4], '@$(MAKE) test-pg-authorization-online-runner'),
+                                   (paths[4], 'test-pg-authorization-online-runner'),
                                    (paths[2], 'playwright install --with-deps chromium'),
                                    (paths[3], 'browser.finish()'), (paths[5], 'same_iframe_without_relogin'),
                                    (paths[3], 'self.meta_recovery_flow('), (paths[3], "with DependencyOutage('meta')"),
@@ -2280,7 +2300,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[3], 'existing_grant_reads_reset_content'),
                                    (paths[6], 'LOCK TABLE public.metric_people'),
                                    (paths[6], 'pg-content:baseline'),
-                                   (paths[2], 'export CATALOG_SERVICE_CLIENT_SECRET=')):
+                                   (paths[2], 'export CATALOG_SERVICE_CLIENT_SECRET='))):
             path = self.repository / relative
             original = path.read_text()
             self.assertIn(fragment, original, 'PG profile mutation must remove an existing requirement')
@@ -2302,7 +2322,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, destination)
         registered = {'raster-workflow-capacity'}
         CHECK.validate_raster_capacity_profile(self.repository, registered)
-        for relative, fragment in ((paths[0], "inputs.suite == 'raster-workflow-capacity'"),
+        for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite == 'raster-workflow-capacity'"),
                 (paths[2], '--cpus 4 --memory 2g --memory-swap 2g'),
                 (paths[2], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
                 (paths[3], 'Runtime default entry mismatch'), (paths[4], 'strict_sizes(artifact,actual,item)'),
@@ -2330,7 +2350,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 (paths[11], 'def metadata_facts_evidence('), (paths[11], 'basis_not_complete'),
                 (paths[4], 'on_evidence=self.capture_facts'), (paths[4], 'capacity-failure.json'),
                 (paths[12], 'test_capacity_grants_observed_multi_tiff_and_archives_authorization_facts'),
-                (paths[12], 'test_cleanup_runs_for_success_scope_rejection_and_failed_business')):
+                (paths[12], 'test_cleanup_runs_for_success_scope_rejection_and_failed_business'))):
             path = self.repository / relative
             original = path.read_text()
             path.write_text(original.replace(fragment, 'removed'))
@@ -2342,6 +2362,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="addp-online-registration-")
         self.repository = Path(self.temporary.name)
         (self.repository / "scripts/test").mkdir(parents=True)
+        (self.repository / "scripts/ci").mkdir(parents=True)
+        shutil.copy2(Path(__file__), self.repository / "scripts/ci/check-online-ci-registration_test.py")
         (self.repository / ".github/workflows").mkdir(parents=True)
         (self.repository / "scripts/test/online-gate.py").write_text(
             textwrap.dedent(
@@ -2429,12 +2451,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, destination)
         registered = {"compose-public-origin"}
         CHECK.validate_public_origin_browser_profile(self.repository, registered)
-        for relative, fragment in (
+        for relative, fragment in self.contract_mutations((
             (paths[0], "playwright install --with-deps chromium"),
             (paths[0], "up -d --no-deps --wait security-backend"),
             (paths[0], "--wait-protection-owners manager,transfer"), (paths[1], "browser = run_browser()"),
             (paths[2], "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT"), (paths[3], 'values["ADDP_ONLINE_READ_USER_PASSWORD"]'),
-        ):
+        )):
             path = self.repository / relative
             original = path.read_text()
             path.write_text(original.replace(fragment, "removed"))
@@ -2465,7 +2487,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {"hdfs-spark-consumer-flow"}
         CHECK.validate_hdfs_spark_profile(self.repository, registered)
         self.assertIn(('security', 'SECURITY_URL'), CHECK.load_suite_registry(self.repository)['hdfs-spark-consumer-flow'].services)
-        for relative, fragment in (
+        for relative, fragment in self.contract_mutations((
             (paths[0], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
             (paths[0], '-security'), (paths[0], '--wait-protection-owners develop,manager'),
             (paths[0], 'SECURITY_URL=http://127.0.0.1:8194'),
@@ -2480,10 +2502,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[4], "getByRole('dialog'"), (paths[4], 'Confirm and start scan'),
             (paths[4], 'postDataJSON()'), (paths[4], "catalog_paths: ['samples']"),
             (paths[4], 'The selected scope has been scanned'),
-            (paths[5], '$(MAKE) test-hdfs-online-runner'),
+            (paths[5], 'test-hdfs-online-runner'),
             (paths[6], "java-version: '11'"), (paths[6], '      - name: Verify HDFS owner runner contract'),
             (paths[6], "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'hdfs-spark-consumer-flow'\n"),
-        ):
+        )):
             path = self.repository / relative
             original = path.read_text()
             path.write_text(original.replace(fragment, 'removed'))
@@ -2508,9 +2530,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, destination)
         CHECK.validate_elasticsearch_spark_profile(self.repository, {'elasticsearch-consumer-flow'})
-        for relative, fragment in ((paths[6], '--network host'), (paths[1], 'start_online_spark_runtime online-elasticsearch elasticsearch'),
+        for relative, fragment in self.contract_mutations(((paths[6], '--network host'), (paths[1], 'start_online_spark_runtime online-elasticsearch elasticsearch'),
                                    (paths[2], 'validate_workflow_nodes'), (paths[3], 'Finished task'),
-                                   (paths[4], '.workflow-final-result-json'), (paths[5], '$(MAKE) test-elasticsearch-online-runner')):
+                                   (paths[4], '.workflow-final-result-json'), (paths[5], 'test-elasticsearch-online-runner'))):
             path = self.repository / relative
             original = path.read_text()
             path.write_text(original.replace(fragment, 'removed'))
@@ -2605,7 +2627,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         self.workflow.write_text(original)
         makefile = self.repository / "Makefile"
         original = makefile.read_text()
-        makefile.write_text(original.replace("$(MAKE) test-node-metrics-online-runner", ""))
+        makefile.write_text(original.replace("test-node-metrics-online-runner", ""))
         with self.assertRaises(CHECK.RegistrationError):
             CHECK.validate_platform_node_metrics_profile(self.repository, {"platform-node-metrics"})
         makefile.write_text(original)
@@ -2642,7 +2664,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         self.prepare_orchestrator_profile()
         makefile = self.repository / "Makefile"
         text = makefile.read_text()
-        for missing in ("$(MAKE) test-orchestrator-online-runner", "scripts/test/orchestrator-execution-faults_test.py"):
+        for missing in ("test-orchestrator-online-runner", "scripts/test/orchestrator-execution-faults_test.py"):
             with self.subTest(missing=missing):
                 makefile.write_text(text.replace(missing, ""))
                 with self.assertRaises(CHECK.RegistrationError):
@@ -3034,7 +3056,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.write_text((root / relative).read_text())
         registered = {"security-plaintext-access"}
         CHECK.validate_security_plaintext_access_profile(self.repository, registered)
-        for relative, fragment in ((paths[0], "# ADDP_ONLINE_SUITES=security-plaintext-access"),
+        for relative, fragment in self.contract_mutations(((paths[0], "# ADDP_ONLINE_SUITES=security-plaintext-access"),
                                    (paths[5], "review-queue?scope=pending"),
                                    (paths[5], "revoked_applicant"),
                                    (paths[5], 'addp.security-plaintext-access-online/v6'),
@@ -3058,7 +3080,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[7], "await synchronized"),
                                    (paths[7], "await secondSynchronized"),
                                    (paths[7], "state.started = true"),
-                                   (paths[2], "&& inputs.suite != 'security-plaintext-access'")):
+                                   (paths[2], "&& inputs.suite != 'security-plaintext-access'"))):
             with self.subTest(fragment=fragment):
                 target = self.repository / relative
                 original = target.read_text()
@@ -3422,7 +3444,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[6], 'evidence.tile_sha256'), (paths[6], "value === 'no-store'"),
             (paths[8], 'test_online_pmtiles_fixture.py'),
             (paths[8], 'test_pmtiles_requires_manual_isolation_content_and_cleanup')]
-        for relative, fragment in faults:
+        for relative, fragment in self.contract_mutations(faults):
             path = self.repository / relative
             original = path.read_text()
             self.assertIn(fragment, original)
@@ -3456,8 +3478,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/online-hosted-raster-gate.sh", "online-raster-minio-fixture.py stop", "true"),
             ("scripts/test/online-hosted-raster-gate.sh", "unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN", "true"),
             ("Makefile", "scripts/test/online-raster-minio-fixture_test.py", ""),
-            ("Makefile", "@$(MAKE) test-raster-image-export-online-runner", ""),
-            ("Makefile", "@$(MAKE) test-raster-workflow-online-runner", ""),
+            ("Makefile", "test-raster-image-export-online-runner", ""),
+            ("Makefile", "test-raster-workflow-online-runner", ""),
             ("scripts/test/raster-image-export-online.py", "preserved_sha256", "omitted"),
             ("scripts/test/raster-workflow-online.py", "report['image_exports']", "omitted_image_phase"),
             ("console/frontend/e2e/online/raster-workflow.spec.js", "auth.principalID", "other"),
@@ -3468,7 +3490,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("business/scripts/online-raster-minio-fixture.py", "verify-analysis", "omitted_analysis"),
             ("console/frontend/e2e/online/raster-workflow.spec.js", ".workflow-final-result-json", ".omitted-preview"),
         )
-        for relative, old, new in faults:
+        for relative, old, new in self.contract_mutations(faults):
             with self.subTest(relative=relative, fragment=old):
                 path = self.repository / relative
                 original = path.read_text()
@@ -4254,6 +4276,76 @@ class ExecutionRunnerCIRegistrationTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(output.read_text().strip(), "run=" + str(selected).lower())
                 self.assertIn("selected:" if selected else "skipped:", result.stdout)
+
+
+
+class SharedOnlineMakeGraphTest(unittest.TestCase):
+    def test_registration_follows_dependency_and_recipe_edges_once(self):
+        makefile = """root: test-first test-shared ## test-comment is not a dependency
+\t@echo root
+
+test-first: test-shared
+\t@$(MAKE) test-second
+
+test-second: test-shared
+\t@echo second
+
+test-shared:
+\t@echo shared
+
+test-comment:
+\t@echo forbidden
+"""
+        commands = CHECK.make_target_commands(makefile, "root")
+        self.assertEqual(commands.count("echo shared"), 1)
+        self.assertIn("echo second", commands)
+        self.assertNotIn("echo forbidden", commands)
+
+    def test_source_changes_invalidate_parsing_and_missing_edges_fail_closed(self):
+        source = "test-online-runner: test-owner\n\t@echo aggregate\n\ntest-owner:\n\t@echo owner\n"
+        self.assertTrue(CHECK.source_contract_contains(source, "$(MAKE) test-owner"))
+        changed = source.replace("test-online-runner: test-owner", "test-online-runner:")
+        self.assertFalse(CHECK.source_contract_contains(changed, "$(MAKE) test-owner"))
+        self.assertTrue(CHECK.source_contract_contains(source, "$(MAKE) test-owner"))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tests = root / "scripts/ci/check-online-ci-registration_test.py"
+            tests.parent.mkdir(parents=True)
+            original = "import unittest\nclass RequiredTest(unittest.TestCase):\n    def test_required(self):\n        assert True\n"
+            tests.write_text(original)
+            makefile = "test-online-runner:\n\t@python3 -m unittest scripts/ci/check-online-ci-registration_test.py\n"
+            self.assertTrue(CHECK.source_contract_contains(makefile, "test_required", root))
+            tests.write_text(original.replace("test_required", "test_removed"))
+            self.assertFalse(CHECK.source_contract_contains(makefile, "test_required", root))
+            tests.write_text("def helper():\n    def test_required():\n        assert True\n")
+            self.assertFalse(CHECK.source_contract_contains(makefile, "test_required", root))
+            tests.write_text(original)
+            self.assertTrue(CHECK.source_contract_contains(makefile, "test_required", root))
+
+    def test_real_online_make_plan_runs_shared_modules_once(self):
+        root = SCRIPT.parents[2]
+        plan = subprocess.run(["make", "--no-print-directory", "-n", "test-online-runner"],
+                              cwd=root, check=True, capture_output=True, text=True, timeout=60).stdout
+        for module in ("scripts/test/online-gate_test.py", "scripts/test/changed-gate_test.py",
+                       "scripts/test/online-raster-lineage_test.py", "scripts/ci/check-online-ci-registration_test.py"):
+            with self.subTest(module=module):
+                self.assertEqual(plan.count(module), 1)
+        self.assertEqual(plan.count('python3 scripts/ci/check-online-ci-registration.py --repository'), 1)
+        for owner in ("test-raster-tpi-online-runner", "test-workflow-runtime-health-online-runner"):
+            commands = CHECK.make_target_commands((root / "Makefile").read_text(), owner)
+            self.assertIn("scripts/test/online-gate_test.py", commands)
+        self.assertIn("scripts/test/online-raster-lineage_test.py",
+                      CHECK.make_target_commands((root / "Makefile").read_text(), "test-raster-tpi-online-runner"))
+
+    def test_geopython_keeps_two_processes_and_no_crash_retry(self):
+        root = SCRIPT.parents[2]
+        commands = CHECK.make_target_commands((root / "Makefile").read_text(), "test-geopython-workflow")
+        self.assertIn("-n 2 --dist worksteal --max-worker-restart 0", commands)
+        self.assertIn("pytest-xdist==3.8.0", (root / "engines/geopython-workflow/requirements-dev.txt").read_text())
+        workflow = (root / ".github/workflows/platform-ci.yml").read_text()
+        for job in ("platform-consistency", "geopython-workflow-tests"):
+            block = re.search(rf"(?ms)^  {job}:\n.*?(?=^  [a-z][a-z0-9-]*:|\Z)", workflow).group()
+            self.assertIn("timeout-minutes: 60", block)
 
 
 if __name__ == "__main__":
