@@ -2,6 +2,11 @@ import copy
 import importlib
 import json
 import os
+import re
+import subprocess
+import sys
+import urllib.parse
+import uuid
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -483,7 +488,7 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                     self.assertEqual(json.loads((root/'capacity-progress.json').read_text())['completed_mosaic_groups'],4)
 
 
-if __name__=='__main__': unittest.main()
+
 
 
 class MosaicBasicRescanTest(unittest.TestCase):
@@ -603,7 +608,7 @@ class MosaicScopeFixtureTest(unittest.TestCase):
         for seed in (False, True):
             with self.subTest(seed=seed), patch.dict(os.environ, self.env, clear=True), \
                  patch.object(self.base, 'boundary'), patch.object(m.MosaicScopeFixture, 'inspect', return_value=self.container), \
-                 patch.object(m.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='{}')) as command:
+                 patch.object(m.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=json.dumps({'nodes':[], 'items':[]} if seed else self.state), stderr='')) as command:
                 fixture = m.MosaicScopeFixture(self.env)
                 fixture.state(self.item, self.parent, self.identity, seed=seed, seeds={'nodes': [101], 'items': [102, 103]})
                 args = command.call_args.args[0]; sql = command.call_args.kwargs['input']
@@ -653,7 +658,7 @@ class MosaicScopeFixtureTest(unittest.TestCase):
                 if fault == 'fingerprint': item['fingerprint'] = 'invalid'
                 if fault == 'seed_ids': seeds = {'nodes': [True], 'items': [102, 103]}
                 command.return_value = SimpleNamespace(returncode=1 if fault == 'sql' else 0,
-                    stdout={'empty': '', 'oversize': ' '*65537, 'invalid_json': 'invalid'}.get(fault, '{}'))
+                    stdout={'empty': '', 'oversize': ' '*65537, 'invalid_json': 'invalid'}.get(fault, '{}'), stderr='ERROR:  42601' if fault=='sql' else '')
                 with patch.object(fixture, 'inspect', return_value=changed):
                     with self.assertRaises((m.scene.SuiteError, ValueError)):
                         fixture.state(item, parent, self.identity, seeds=seeds)
@@ -972,3 +977,287 @@ class CapacityAdditionalAuthorizationTest(unittest.TestCase):
                     self.assertNotIn('node_recursive',receipt)
                 authorization.cleanup()
                 self.assertFalse(authorization.report['pending'])
+
+
+class SnapshotDiagnosticsTest(unittest.TestCase):
+    setUp = MosaicScopeFixtureTest.setUp
+
+    def scope(self):
+        self.enterContext(patch.dict(os.environ,self.env,clear=True))
+        self.enterContext(patch.object(self.base,'boundary'))
+        self.enterContext(patch.object(m.MosaicScopeFixture,'inspect',return_value=self.container))
+        return m.MosaicScopeFixture(self.env)
+
+    def test_sqlstate_response_shapes_and_sensitive_output_are_classified(self):
+        scope=self.scope()
+        payload={field:None for field in m.SNAPSHOT_FIELDS['execution']}
+        cases=[
+            (3,'', 'psql:<stdin>:4: ERROR:  42601\nprivate connection SQL','execute','sql_failed','42601',None),
+            (2,'private output','password=private','execute','process_failed','unavailable',None),
+            (0,'','', 'response_bounds','empty',None,None),
+            (0,' '*65537,'', 'response_bounds','oversize',None,None),
+            (0,'{}\n{}','', 'response_bounds','multiple_rows',None,None),
+            (0,'private invalid JSON','', 'decode','invalid_json',None,None),
+            (0,'{"metadata":NaN}','', 'decode','invalid_json',None,None),
+            (0,'null','', 'shape','not_object',None,'null'),
+            (0,'[]','', 'shape','not_object',None,'array'),
+            (0,'true','', 'shape','not_object',None,'boolean'),
+            (0,'1','', 'shape','not_object',None,'number'),
+            (0,'"private"','', 'shape','not_object',None,'string'),
+            (0,'{}','', 'shape','fields_mismatch',None,'object'),
+            (0,json.dumps({**payload,'private-key':'password'}),'', 'shape','fields_mismatch',None,'object'),
+        ]
+        for returncode,stdout,stderr,phase,code,sqlstate,json_type in cases:
+            with self.subTest(code=code,json_type=json_type),patch.object(m.subprocess,'run',
+                    return_value=SimpleNamespace(returncode=returncode,stdout=stdout,stderr=stderr)):
+                with self.assertRaises(m.SnapshotQueryError) as raised:
+                    scope.query('SELECT private_parameter',{'secret':'private'},operation='execution')
+                error=raised.exception
+                self.assertEqual(error.stage,'snapshot.execution.'+phase)
+                self.assertEqual(error.code,code)
+                evidence=m.capacity_error_evidence(error)
+                self.assertEqual(evidence['diagnostics']['sqlstate'],sqlstate)
+                self.assertEqual(evidence['diagnostics'].get('json_type'),json_type)
+                self.assertNotIn('private',json.dumps(evidence))
+                self.assertNotIn('password',m.capacity_error_message(error))
+        archive=json.loads((self.root/'capacity-snapshots.json').read_text())
+        self.assertEqual(len(archive['queries']),len(cases))
+        self.assertNotIn('private',json.dumps(archive))
+        self.assertNotIn('password',json.dumps(archive))
+
+    def test_success_receipts_are_bounded_and_keep_only_shape_and_digests(self):
+        scope=self.scope()
+        for operation,fields in m.SNAPSHOT_FIELDS.items():
+            payload={field:'private' for field in fields}
+            with patch.object(m.subprocess,'run',return_value=SimpleNamespace(
+                    returncode=0,stdout=json.dumps(payload),stderr='private-warning')) as run:
+                self.assertEqual(scope.query('SELECT private',{},operation=operation),payload)
+                self.assertEqual(run.call_args.kwargs['timeout'],8)
+                self.assertIn('addp_online',run.call_args.args[0])
+        archive=(self.root/'capacity-snapshots.json').read_text()
+        self.assertNotIn('private',archive)
+        self.assertTrue(all(x['result']=='passed' for x in json.loads(archive)['queries']))
+        scope.query_report['queries']=[{}]*128
+        with patch.object(m.subprocess,'run') as run,self.assertRaises(m.SnapshotQueryError) as raised:
+            scope.query('SELECT private',{},operation='execution')
+        self.assertEqual(raised.exception.code,'query_limit_exceeded');run.assert_not_called()
+
+    def test_owner_transport_timeout_archive_and_identity_failures_are_distinct(self):
+        scope=self.scope()
+        for response in (None,SimpleNamespace(returncode=0,stdout='{}'),
+                         SimpleNamespace(returncode=True,stdout='{}',stderr=''),
+                         SimpleNamespace(returncode=0,stdout=b'{}',stderr='')):
+            with self.subTest(response_type=type(response).__name__),patch.object(m.subprocess,'run',return_value=response):
+                with self.assertRaises(m.SnapshotQueryError) as raised:
+                    scope.query('SELECT private',{},operation='execution')
+                self.assertEqual(raised.exception.code,'transport_shape_invalid')
+        with patch.object(scope,'inspect',side_effect=m.scene.SuiteError('private owner')),\
+                patch.object(m.subprocess,'run') as run:
+            with self.assertRaises(m.SnapshotQueryError) as raised:
+                scope.query('SELECT private',{},operation='whole_state')
+            self.assertEqual(raised.exception.stage,'snapshot.whole_state.ownership');run.assert_not_called()
+        for failure,code in [(subprocess.TimeoutExpired('private command',8,output='private',stderr='private'),'timeout'),
+                              (OSError('private command'),'command_failed')]:
+            with self.subTest(code=code),patch.object(m.subprocess,'run',side_effect=failure):
+                with self.assertRaises(m.SnapshotQueryError) as raised:
+                    scope.query('SELECT private',{},operation='seed_fragments')
+                self.assertEqual(raised.exception.code,code)
+                self.assertEqual(raised.exception.diagnostics['sqlstate'],'unavailable')
+                self.assertNotIn('private',m.capacity_error_message(raised.exception))
+        with patch.object(m.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout='',stderr='')),\
+                patch.object(Path,'write_text',side_effect=OSError('private path')):
+            with self.assertRaises(m.SnapshotQueryError) as raised:
+                scope.query('SELECT private',{},operation='produced_item')
+            self.assertEqual(raised.exception.stage,'snapshot.produced_item.archive')
+            self.assertEqual(raised.exception.diagnostics['primary']['code'],'empty')
+            self.assertEqual(raised.exception.diagnostics['primary']['phase'],'response_bounds')
+        with patch.object(scope,'query',return_value={}),self.assertRaises(m.SnapshotQueryError) as raised:
+            scope.execution({'execution_id':self.parent,'status':'success'},self.identity,'develop')
+        self.assertEqual(raised.exception.stage,'snapshot.execution.identity')
+
+    def test_snapshot_failure_is_retained_before_cleanup_and_cli_uses_same_stage(self):
+        from unittest.mock import Mock
+        scope=self.scope()
+        failure=m.SnapshotQueryError('execution','execute','sql_failed',{'sqlstate':'42601'})
+        auth=object.__new__(m.CapacityMetadataGrants)
+        auth.env=self.env;auth.path=self.root/'capacity-metadata-grants.json'
+        auth.phase='idle';auth.operation_active=False;auth.report={'failures':[]}
+        auth.record_failure('business',failure)
+        auth.record_failure('cleanup',m.scene.SuiteError('private cleanup'))
+        detail=json.loads((self.root/'capacity-failure.json').read_text())['failures']
+        self.assertEqual(detail[0]['stage'],'snapshot.execution.execute')
+        self.assertEqual(detail[0]['diagnostics']['sqlstate'],'42601')
+        self.assertEqual(detail[1]['role'],'cleanup')
+        self.assertNotIn('private',json.dumps(detail))
+        self.assertIn('snapshot.execution.execute',m.capacity_error_message(failure))
+        self.assertIn('42601',m.capacity_error_message(failure))
+        auth=Mock();auth.report={'issued':[]}
+        with patch.object(m,'CapacityMetadataGrants',return_value=auth),patch.object(m,'MosaicScopeFixture'),\
+                patch.object(m,'run_capacity',side_effect=failure):
+            with self.assertRaises(m.SnapshotQueryError):m.run({})
+        self.assertEqual(auth.record_failure.call_args.args,('business',failure))
+        auth.cleanup.assert_called_once()
+
+
+def postgres_snapshot_suite():
+    """T2 only: the Common gate validates the DSN before enabling this suite."""
+    class PostgresSnapshotTest(unittest.TestCase):
+        def setUp(self):
+            self.base = MosaicScopeFixtureTest()
+            self.base.setUp(); self.addCleanup(self.base.doCleanups)
+            self.item = {**self.base.item, 'item_type':'object', 'size_bytes':123,
+                'scanned_depth':'deep','attributes':{'item':{'layout':'whole','format':'raster_mosaic'}}}
+            self.parent = self.base.parent; self.scan = self.base.ids[0]
+            self.identity = self.base.identity
+            self.module = 'develop'
+            self.raw_run = subprocess.run
+            self.dsn = os.environ['ADDP_CAPACITY_SNAPSHOT_POSTGRES_DSN']
+            self.sqlstate = None
+            self.poison=False
+            self.table_prefix='cap_'+uuid.uuid4().hex[:12]+'_'
+            self.enterContext(patch.dict(os.environ,self.base.env))
+            self.enterContext(patch.object(self.base.base,'boundary'))
+            self.enterContext(patch.object(m.MosaicScopeFixture,'inspect',return_value=self.base.container))
+            self.scope = m.MosaicScopeFixture(self.base.env)
+            self.enterContext(patch.object(m.subprocess,'run',side_effect=self.transport))
+
+        def metadata(self):
+            return {'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[],
+                'outputs':[{'item_id':88,'item_fingerprint':'a'*64,
+                    'locator':'addp://engine/9/path/'+self.item['full_name']+'?type=object'}],
+                'operations':[{'kind':'derive'}]},
+                'result':{'final_result':{'size_bytes':123},'meta_scan_runs':[]},
+                'workflow_runtime':{},'outputs':[]}
+
+        def setup_sql(self):
+            # These relations vanish when psql disconnects, including on failure.
+            literal=lambda value:"'"+str(value).replace("'","''")+"'"
+            name=self.item['name']; full=self.item['full_name']
+            return """
+CREATE TEMP TABLE task_executions(execution_id text, module text, task_type text, status text,
+ tenant_id integer, triggered_by integer, actor_principal_id bigint, created_at timestamptz,
+ metadata jsonb, execution_config jsonb, parent_execution_id text);
+CREATE TEMP TABLE meta_node(id serial PRIMARY KEY, tenant_id integer, engine_id integer,
+ parent_node_id integer, node_type text, name text, depth integer, full_name text, path text,
+ scanned_depth text, deleted_at timestamptz, created_at timestamptz);
+CREATE TEMP TABLE meta_item(id serial PRIMARY KEY, tenant_id integer, engine_id integer,
+ node_id integer, item_type text, name text, full_name text, fingerprint text, size_bytes bigint,
+ scanned_depth text, attributes jsonb, deleted_at timestamptz, created_at timestamptz);
+"""+f"""
+INSERT INTO task_executions VALUES ({literal(self.parent)},{literal(self.module)},
+ {literal('workflow' if self.module=='develop' else 'raster_mosaic_generation')},'success',2,33,33,
+ now(),{literal(json.dumps(self.metadata()))}::jsonb,'{{}}',NULL),
+ ({literal(self.scan)},'meta','scan','success',2,33,33,now(),'{{}}','{{"engine_id":9}}',{literal(self.parent)});
+INSERT INTO meta_node VALUES(55,2,9,NULL,'prefix',{literal(name)},1,{literal(full)},{literal(full)},'basic',NULL,now());
+INSERT INTO meta_item VALUES(88,2,9,55,'object',{literal(name)},{literal(full)},'{self.item['fingerprint']}',123,
+ 'deep',{literal(json.dumps(self.item['attributes']))}::jsonb,NULL,now());
+"""
+
+        def transport(self, command, *, input, **kwargs):
+            # Preserve the exact query/quoted bindings; adapt only relation names and
+            # test transport. The product path remains Hosted-only addp_online.
+            uri=urllib.parse.urlsplit(self.dsn)
+            config=urllib.parse.parse_qs(uri.query)
+            target=['psql','-X','-qAt','-h',uri.hostname,'-p',str(uri.port or 5432),
+                '-U',urllib.parse.unquote(uri.username or ''),'-d',uri.path.lstrip('/')]
+            source=command[command.index('psql')+1:]
+            for index,value in enumerate(source):
+                if value=='-v':target.extend(source[index:index+2])
+            statement=input
+            if self.poison:
+                old="'meta_scan_runs')),";new="'meta_scan_runs'))),"
+                self.assertIn(old,statement);statement=statement.replace(old,new,1)
+            prefix=self.setup_sql()
+            for table in ('common.task_executions','meta.meta_node','meta.meta_item'):
+                name=table.split('.')[1];temporary=self.table_prefix+name
+                statement=statement.replace(table,'pg_temp.'+temporary)
+                prefix=prefix.replace('CREATE TEMP TABLE '+name+'(', 'CREATE TEMP TABLE '+temporary+'(')
+                prefix=prefix.replace('INSERT INTO '+name+' ', 'INSERT INTO '+temporary+' ')
+            env={**os.environ,'PGPASSWORD':urllib.parse.unquote(uri.password or ''),
+                'PGSSLMODE':config.get('sslmode',['disable'])[0],'PGCONNECT_TIMEOUT':'5'}
+            self.target,self.connection_env=target[:],env
+            result=self.raw_run(target,input=prefix+statement,env=env,**kwargs)
+            match=re.search(r'ERROR:\s+([0-9A-Z]{5})\b',result.stderr)
+            self.sqlstate=match.group(1) if match else None
+            return result
+
+        def tearDown(self):
+            if not hasattr(self,'target'):return
+            statement=("SELECT count(*) FROM pg_class WHERE left(relname,"+str(len(self.table_prefix))+")='"+
+                       self.table_prefix+"';")
+            result=self.raw_run(self.target,input=statement,env=self.connection_env,
+                                capture_output=True,text=True,timeout=8)
+            self.assertEqual(result.returncode,0,'temporary relation cleanup query failed')
+            self.assertEqual(result.stdout.strip(),'0','connection-local fixture relations leaked')
+
+        def test_original_syntax_defect_has_safe_sqlstate_and_operation(self):
+            self.poison=True
+            with self.assertRaises(m.SnapshotQueryError) as raised:
+                self.scope.execution({'execution_id':self.parent},self.identity,'develop')
+            self.assertEqual(raised.exception.stage,'snapshot.execution.execute')
+            self.assertEqual(raised.exception.code,'sql_failed')
+            self.assertEqual(raised.exception.diagnostics['sqlstate'],'42601')
+            receipt=json.loads((self.base.root/'capacity-snapshots.json').read_text())['queries'][-1]
+            self.assertEqual(receipt['sqlstate'],'42601')
+            self.assertNotIn('SELECT',json.dumps(receipt))
+            self.assertNotIn('private',json.dumps(receipt))
+
+        def test_unmatched_identity_and_original_size_limits_fail_closed(self):
+            for fault in ('tenant','principal','size'):
+                with self.subTest(fault=fault):
+                    identity={**self.identity,'tenant_id':'3'} if fault=='tenant' else self.identity.copy()
+                    if fault=='principal':identity['principal_id']='34'
+                    metadata=self.metadata()
+                    if fault=='size':metadata['workflow_runtime']={'large':'x'*4097}
+                    with patch.object(self,'metadata',return_value=metadata):
+                        with self.assertRaises(m.SnapshotQueryError) as raised:
+                            self.scope.execution({'execution_id':self.parent},identity,'develop')
+                    self.assertEqual(raised.exception.code,'empty')
+                    self.assertEqual(raised.exception.stage,'snapshot.execution.response_bounds')
+                    self.assertEqual(raised.exception.diagnostics['stdout_rows'],0)
+
+        def test_execution_query_runs_on_real_postgres(self):
+            for module in ('develop','manager'):
+                with self.subTest(module=module):
+                    self.module=module
+                    observation={'execution_id':self.parent,'module':module,
+                        'task_type':'workflow' if module=='develop' else 'raster_mosaic_generation',
+                        'tenant_id':2,'triggered_by':33,'status':'success',
+                        'metadata':{'lineage_facts':{**self.metadata()['lineage_facts'],'operations':None}}}
+                    try:actual=self.scope.execution(observation,self.identity,module)
+                    except m.scene.SuiteError:
+                        self.fail('actual snapshot SQL failed; SQLSTATE='+str(self.sqlstate))
+                    self.assertEqual(actual['metadata']['result']['final_result'],{'size_bytes':123})
+                    self.assertEqual(actual['outputs'],[])
+                    self.assertEqual(actual['metadata']['lineage_facts']['operations'],[{'kind':'derive'}])
+                    self.assertIsNone(observation['metadata']['lineage_facts']['operations'])
+
+        def test_produced_item_query_runs_on_real_postgres(self):
+            for module in ('develop','manager'):
+                with self.subTest(module=module):
+                    self.module=module
+                    name='capacity-c64-n1-r1-0.cog.tif' if module=='develop' else self.base.item['name']
+                    self.item.update(name=name,full_name='raster-target/'+name)
+                    item={k:v for k,v in self.item.items() if k!='size_bytes'}
+                    result=self.scope.produced_item(item,{'module':module,'execution_id':self.parent},self.scan,self.identity)
+                    self.assertEqual(result['id'],88);self.assertEqual(result['size_bytes'],123)
+
+        def test_whole_state_and_seed_queries_run_on_real_postgres(self):
+            self.module='manager'
+            for seed in (False,True):
+                with self.subTest(seed=seed):
+                    result=self.scope.state(self.item,self.parent,self.identity,seed=seed)
+                    if seed:
+                        self.assertEqual(len(result['nodes']),1);self.assertEqual(len(result['items']),2)
+                    else:
+                        self.assertEqual(result['internal_nodes'],0);self.assertEqual(result['internal_items'],0)
+                        self.assertEqual(result['identity']['id'],88)
+
+    return unittest.defaultTestLoader.loadTestsFromTestCase(PostgresSnapshotTest)
+
+
+if __name__=='__main__':
+    if sys.argv[1:]==['--postgres']:
+        result=unittest.TextTestRunner(verbosity=2).run(postgres_snapshot_suite())
+        raise SystemExit(not result.wasSuccessful() or bool(result.skipped) or result.testsRun!=5)
+    unittest.main()

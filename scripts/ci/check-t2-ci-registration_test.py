@@ -867,6 +867,15 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 'addp_infra_verify_test_postgres_dsn() { return 0; }\n',
                 encoding="utf-8",
             )
+            for name in ("scripts/__init__.py", "scripts/test/__init__.py"):
+                (root/name).touch()
+            (root/"scripts/test/raster-workflow-capacity-online_test.py").write_text(
+                "import os,sys\n"
+                "assert sys.argv[1:]==['--postgres']\n"
+                "assert os.environ['ADDP_CAPACITY_SNAPSHOT_POSTGRES_DSN']=='fixture-dsn'\n"
+                "print('capacity-snapshot-fixture-ran')\n"
+                "sys.exit(37 if os.environ['FAKE_PG_TEST_NAME']=='CapacitySnapshots' and "
+                "os.environ['FAKE_PG_OUTCOME']=='fail' else 0)\n")
             fake_go = root / "bin/go"
             fake_go.write_text(
                 f"#!{sys.executable}\n"
@@ -920,6 +929,7 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
             )
             fake_go.chmod(0o700)
             trace = root / "go-arguments.json"
+            trace.touch()
             environment = dict(os.environ)
             environment.update(
                 PATH=f"{root / 'bin'}{os.pathsep}{environment['PATH']}",
@@ -940,6 +950,27 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
             )
             self.assertTrue(trace.is_file(), result.stdout + result.stderr)
             return result, [json.loads(line) for line in trace.read_text().splitlines()]
+
+    def test_capacity_snapshots_run_in_full_and_focused_groups_and_fail_closed(self):
+        for group in ('all','online-capacity-snapshots'):
+            with self.subTest(group=group):
+                result,calls=self.run_gate_fixture('pass',group,'CapacitySnapshots')
+                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                self.assertIn('capacity-snapshot-fixture-ran',result.stdout)
+                self.assertEqual(bool(calls),group=='all')
+                result,calls=self.run_gate_fixture('fail',group,'CapacitySnapshots')
+                self.assertNotEqual(result.returncode,0)
+                self.assertEqual(calls,[])
+                self.assertNotIn('group passed',result.stdout)
+
+    def test_capacity_snapshot_inputs_select_the_existing_common_t2_owner(self):
+        source=SCRIPT.parents[2]
+        spec=importlib.util.spec_from_file_location('capacity_changed_gate',source/'scripts/test/changed-gate.py')
+        changed=importlib.util.module_from_spec(spec);spec.loader.exec_module(changed)
+        for path in ('scripts/test/raster-workflow-capacity-online.py',
+                     'scripts/test/raster-workflow-capacity-online_test.py'):
+            with self.subTest(path=path):
+                self.assertIn('common',changed.affected_modules(source,[path]))
 
     def test_focused_group_executes_only_the_exact_pg_lifecycle_case(self) -> None:
         result, calls = self.run_gate_fixture("pass")

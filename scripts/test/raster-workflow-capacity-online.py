@@ -2,6 +2,7 @@
 """Manual full-scene T4 capacity evidence through authoritative policy and Develop."""
 from __future__ import annotations
 import importlib
+import hashlib
 from datetime import datetime, timedelta, timezone
 import json
 import math
@@ -323,7 +324,7 @@ class CapacityMetadataGrants:
         stage=self.phase if role=='initialization' else role
         if role=='business' and self.operation_active:
             stage=getattr(self.grants,'phase',self.phase) if self.phase in {'grant','facts_observe'} else self.phase
-        detail=self.registration.metadata_error_evidence(error,stage)
+        detail=capacity_error_evidence(error,stage)
         self.report['failures'].append({'role':role,**detail})
         self.save()
         (self.path.parent/'capacity-failure.json').write_text(json.dumps({
@@ -383,14 +384,45 @@ class CapacityMetadataGrants:
         return result
 
 
+SNAPSHOT_FIELDS = {
+    'execution': {'execution_id','module','task_type','tenant_id','triggered_by','status','metadata','outputs'},
+    'produced_item': {'id','tenant_id','engine_id','node_id','name','full_name','item_type','fingerprint',
+                      'size_bytes','attributes','scanned_depth'},
+    'whole_state': {'scan','identity','seed_items_remaining','seed_nodes_remaining','internal_nodes',
+                    'internal_items','outside_items','outside_nodes'},
+    'seed_fragments': {'nodes','items'},
+}
+
+
+class SnapshotQueryError(scene.SuiteError):
+    """Only controlled labels and bounded shape diagnostics may leave the fixture."""
+    def __init__(self, operation, phase, code, diagnostics=None):
+        self.stage, self.code = 'snapshot.'+operation+'.'+phase, code
+        self.diagnostics = diagnostics or {}
+        super().__init__(self.stage+'.'+code)
+
+
+def capacity_error_evidence(error, stage='scenario'):
+    result=registration.metadata_error_evidence(error,stage)
+    if isinstance(error,SnapshotQueryError):
+        result.update(stage=error.stage,code=error.code,diagnostics=error.diagnostics)
+    return result
+
+
 class MosaicScopeFixture:
     """Meta-owned wrong-record fixture, confined to this disposable capacity run."""
     def __init__(self, env):
         self.env = env
         self.base = importlib.import_module('scripts.test.execution-retention-readonly-online')
-        self.boundary()
-        self.owner = self.inspect()
-        self.validate_owner(self.owner)
+        try:
+            self.boundary()
+            self.owner = self.inspect()
+            self.validate_owner(self.owner)
+        except Exception:
+            raise SnapshotQueryError('owner','ownership','owner_rejected') from None
+        self.query_report = {'schema_version':'addp.capacity-snapshots/v1',
+            'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],'queries':[]}
+
         (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'mosaic-scope-owner.json').write_text(json.dumps({
             'container_id': self.owner['Id'], 'started_at': self.owner['State']['StartedAt'],
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID']}, sort_keys=True))
@@ -517,20 +549,76 @@ class MosaicScopeFixture:
                       name=name, parent=parent, scan=scan or '', started_at=self.owner['State']['StartedAt'],
                       seed_items='{'+','.join(map(str,seeds['items']))+'}',
                       seed_nodes='{'+','.join(map(str,seeds['nodes']))+'}')
-        return self.query(statement, values)
+        return self.query(statement, values, operation='seed_fragments' if seed else 'whole_state')
 
-    def query(self, statement, values):
-        self.boundary()
-        user = self.validate_owner(self.inspect())
+    def archive_query(self, receipt):
+        self.query_report['queries'].append(receipt.copy())
+        try:
+            (Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'capacity-snapshots.json').write_text(
+                json.dumps(self.query_report,sort_keys=True))
+        except OSError:
+            raise SnapshotQueryError(receipt['operation'],'archive','write_failed',
+                {'primary':receipt.copy()}) from None
+
+    def query(self, statement, values, *, operation):
+        if operation not in SNAPSHOT_FIELDS:
+            raise ValueError('unknown snapshot operation')
+        if len(self.query_report['queries']) >= 128:
+            raise SnapshotQueryError(operation,'archive','query_limit_exceeded')
+        receipt={'operation':operation,'statement_sha256':hashlib.sha256(statement.encode()).hexdigest(),
+                 'phase':'ownership','result':'failed','code':None,'sqlstate':None,'returncode':None}
+        def reject(phase, code):
+            receipt.update(phase=phase,code=code)
+            self.archive_query(receipt)
+            raise SnapshotQueryError(operation,phase,code,receipt.copy()) from None
+        try:
+            self.boundary()
+            user = self.validate_owner(self.inspect())
+        except Exception:
+            reject('ownership','owner_rejected')
         command = ['docker', 'exec', '-i', self.owner['Id'], 'psql', '-X', '-qAt',
                    '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', user, '-d', 'addp_online']
         for key, value in values.items(): command.extend(['-v', key + '=' + str(value)])
         try:
             result = subprocess.run(command, input=statement, capture_output=True, text=True, timeout=8)
-            if result.returncode or not 0 < len(result.stdout.encode()) <= 65536: raise ValueError()
-            return scene.obj(json.loads(result.stdout), 'mosaic scope database snapshot')
+        except subprocess.TimeoutExpired:
+            receipt['sqlstate']='unavailable'
+            reject('execute','timeout')
         except Exception:
-            raise scene.SuiteError('bounded mosaic scope fixture query failed') from None
+            receipt['sqlstate']='unavailable'
+            reject('execute','command_failed')
+        if (type(getattr(result,'returncode',None)) is not int
+            or not isinstance(getattr(result,'stdout',None),str)
+            or not isinstance(getattr(result,'stderr',None),str)):
+            receipt['sqlstate']='unavailable'
+            reject('execute','transport_shape_invalid')
+        stdout,stderr=result.stdout.encode(),result.stderr.encode()
+        receipt.update(returncode=result.returncode,stdout_bytes=len(stdout),stderr_bytes=len(stderr),
+            stdout_sha256=hashlib.sha256(stdout).hexdigest(),stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+            stdout_rows=sum(bool(line.strip()) for line in result.stdout.split('\n')))
+        if result.returncode:
+            match=re.search(r'(?m)^(?:psql:[^\r\n]*: )?ERROR:\s+([0-9A-Z]{5})[ \t]*$',result.stderr)
+            receipt['sqlstate']=match.group(1) if match else 'unavailable'
+            reject('execute','sql_failed' if match else 'process_failed')
+        if len(stdout)>65536: reject('response_bounds','oversize')
+        if not stdout.strip(): reject('response_bounds','empty')
+        if receipt['stdout_rows']!=1: reject('response_bounds','multiple_rows')
+        try:
+            def invalid_constant(_): raise ValueError()
+            payload=json.loads(result.stdout,parse_constant=invalid_constant)
+        except (ValueError,RecursionError):
+            reject('decode','invalid_json')
+        receipt['json_type']={dict:'object',list:'array',str:'string',int:'number',float:'number',
+                              bool:'boolean',type(None):'null'}[type(payload)]
+        if not isinstance(payload,dict): reject('shape','not_object')
+        receipt['field_count']=len(payload)
+        missing=SNAPSHOT_FIELDS[operation]-payload.keys()
+        receipt['missing_fields']=sorted(missing)
+        receipt['unexpected_field_count']=len(payload.keys()-SNAPSHOT_FIELDS[operation])
+        if missing or receipt['unexpected_field_count']: reject('shape','fields_mismatch')
+        receipt.update(phase='complete',result='passed')
+        self.archive_query(receipt)
+        return payload
 
 
     def execution(self, observation, identity, module):
@@ -542,7 +630,7 @@ class MosaicScopeFixture:
  'tenant_id',tenant_id,'triggered_by',triggered_by,'status',status,
  'metadata',json_build_object('lineage_facts',metadata->'lineage_facts',
  'workflow_runtime',metadata->'workflow_runtime','result',json_build_object(
- 'final_result',metadata->'result'->'final_result','meta_scan_runs',metadata->'result'->'meta_scan_runs'))),
+ 'final_result',metadata->'result'->'final_result','meta_scan_runs',metadata->'result'->'meta_scan_runs')),
  'outputs',metadata->'outputs') FROM common.task_executions
  WHERE execution_id=:'execution' AND module=:'module' AND tenant_id=:'tenant'::integer
  AND actor_principal_id=:'principal'::bigint AND triggered_by=:'principal'::integer
@@ -556,11 +644,14 @@ class MosaicScopeFixture:
  COMMIT;
 """
         result = self.query(statement, dict(execution=identifier,module=module,tenant=identity['tenant_id'],
-            principal=identity['principal_id'],started_at=self.owner['State']['StartedAt']))
+            principal=identity['principal_id'],started_at=self.owner['State']['StartedAt']), operation='execution')
         if any(result.get(k) != observation.get(k) for k in ('execution_id', 'module', 'task_type', 'status', 'triggered_by')):
-            raise scene.SuiteError('capacity internal execution differs from the public owner observation')
+            raise SnapshotQueryError('execution','identity','public_identity_mismatch')
         # The public layer has resources, while operation facts remain internal.
-        scene.support.validate_monitor_lineage({'metadata': observation.get('metadata', {})}, result['metadata']['lineage_facts'])
+        try:
+            scene.support.validate_monitor_lineage({'metadata': observation.get('metadata', {})}, result['metadata']['lineage_facts'])
+        except (scene.SuiteError,KeyError,TypeError):
+            raise SnapshotQueryError('execution','public_projection','lineage_mismatch') from None
         return {**observation, **result}
 
     def produced_item(self, item, execution, scan, identity):
@@ -594,9 +685,9 @@ class MosaicScopeFixture:
         locator = f'addp://engine/{engine}/path/{name}?type=object'
         result = self.query(statement, dict(item=item['id'],tenant=identity['tenant_id'],principal=identity['principal_id'],
             engine=engine,full_name=name,fingerprint=item['fingerprint'],execution=identifier,scan=scan,module=module,
-            locator=locator,started_at=self.owner['State']['StartedAt']))
+            locator=locator,started_at=self.owner['State']['StartedAt']), operation='produced_item')
         if any(result.get(k) != item.get(k) for k in ('id','engine_id','node_id','name','full_name','fingerprint')):
-            raise scene.SuiteError('capacity database item differs from the public identity')
+            raise SnapshotQueryError('produced_item','identity','public_identity_mismatch')
         attrs = item.get('attributes', {})
         if (item.get('size_bytes') is not None or 'format_info' in attrs
             or attrs.get('capabilities', {}).get('spatial', {}).get('extent') is not None):
@@ -895,7 +986,7 @@ def run(env):
         try:authorization.record_failure('cleanup',error)
         except Exception:evidence_errors.append('cleanup')
         if failure is None: raise
-        first=registration.metadata_error_evidence(failure)
+        first=capacity_error_evidence(failure)
         raise scene.SuiteError('capacity business failed ('+first['stage']+'.'+first['code']+') and metadata Grant cleanup also failed') from None
     if evidence_errors:
         raise scene.SuiteError('capacity failure evidence could not be persisted; cleanup was attempted') from None
@@ -905,7 +996,7 @@ def run(env):
 
 
 def capacity_error_message(error):
-    return 'Raster capacity Online failed: '+json.dumps(registration.metadata_error_evidence(error),sort_keys=True)
+    return 'Raster capacity Online failed: '+json.dumps(capacity_error_evidence(error),sort_keys=True)
 
 
 def main():

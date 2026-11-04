@@ -778,6 +778,11 @@ jobs:
           go-version-file: common/go.mod
           cache: false
 
+      - name: Prepare PostgreSQL snapshot client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
       - name: Run Common PostgreSQL gate
         env:
           ADDP_TEST_POSTGRES_HOST: 127.0.0.1

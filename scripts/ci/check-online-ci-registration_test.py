@@ -2255,7 +2255,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                  'scripts/test/online-hosted-raster-capacity-gate.sh', 'scripts/utils/hosted-product-runtime.sh',
                  'scripts/test/raster-workflow-capacity-online.py', 'business/scripts/online-raster-capacity-fixture.py', 'Makefile', 'scripts/test/raster-workflow-online.py',
                  'system/backend/cmd/online-test-fixture/main.go', 'engines/geopython-workflow/test_online_raster_fixture.py', 'scripts/utils/capacity_resources.py', 'scripts/test/online-engine-registration.py',
-                 'scripts/test/raster-workflow-capacity-online_test.py')
+                 'scripts/test/raster-workflow-capacity-online_test.py', 'scripts/test/common-postgres-gate.sh')
         for relative in paths:
             destination = self.repository / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -2282,6 +2282,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 (paths[4], 'class CapacityMetadataGrants:'),
                 (paths[4], 'authorization.cleanup()'), (paths[4], 'def verify_basic_rescans('),
                 (paths[4], 's.parent_execution_id=e.execution_id'),
+                (paths[4], 'class SnapshotQueryError('), (paths[4], 'capacity-snapshots.json'),
+                (paths[12], 'test_sqlstate_response_shapes_and_sensitive_output_are_classified'),
+                (paths[12], 'test_execution_query_runs_on_real_postgres'),
+                (paths[13], 'online-capacity-snapshots'),
                 (paths[11], 'remaining <= 10800'),
                 (paths[11], 'def metadata_facts_evidence('), (paths[11], 'basis_not_complete'),
                 (paths[4], 'on_evidence=self.capture_facts'), (paths[4], 'capacity-failure.json'),

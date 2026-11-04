@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
-# ADDP_T2_INPUT_FILES=graph/backend/
+# ADDP_T2_INPUT_FILES=graph/backend/ scripts/test/raster-workflow-capacity-online.py scripts/test/raster-workflow-capacity-online_test.py
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_POSTGRES_PORT,ADDP_TEST_POSTGRES_PASSWORD
 # common-postgres-gate.sh - Run Common PostgreSQL Engine Provider integration tests.
 
@@ -13,15 +13,15 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --test)
             case "${2:-}" in
-                all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export) test_group="$2"; shift 2 ;;
-                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+                all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export|online-capacity-snapshots) test_group="$2"; shift 2 ;;
+                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export|online-capacity-snapshots] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
             esac
             ;;
         --highgo-native) highgo_native=true; shift ;;
         --source-root)
             [ -n "${2:-}" ] || { echo '--source-root requires a checkout path' >&2; exit 2; }
             source_root="$2"; shift 2 ;;
-        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export|online-capacity-snapshots] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
     esac
 done
 
@@ -103,6 +103,16 @@ except BlockingIOError:
     print('Common PostgreSQL gate is already running; no database operation started', file=sys.stderr)
     sys.exit(1)
 PY
+
+# Run the actual Online SQL against connection-local temporary relations only.
+if [ "$test_group" = all ] || [ "$test_group" = online-capacity-snapshots ]; then
+    (cd "$SOURCE_ROOT" && ADDP_CAPACITY_SNAPSHOT_POSTGRES_DSN="$execution_dsn" \
+        python3 -m scripts.test.raster-workflow-capacity-online_test --postgres)
+    if [ "$test_group" = online-capacity-snapshots ]; then
+        echo 'Online capacity snapshot PostgreSQL group passed (not the full Common gate)'
+        exit 0
+    fi
+fi
 
 if [ "$test_group" = execution-retention ]; then
     cd "$SOURCE_ROOT/common"
