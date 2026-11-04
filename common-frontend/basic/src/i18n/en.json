@@ -454,7 +454,8 @@
         "extract_polygon_rings": "Extract polygon rings",
         "intersection": "Intersection overlay",
         "get_bounds": "Get bounds",
-        "split_multipart": "Multipart split"
+        "split_multipart": "Multipart split",
+        "extract_vertices": "Extract vertices"
       },
       "operatorParameters": {
         "target_geom": "Target layer (target_geom)",
@@ -493,6 +494,18 @@
           "operator_input_invalid": "Prepare the source and id_field explicitly: unique column names and unique non-null non-geometry scalar identifiers; reject Z/M without recursive collection expansion or dropping empty rows.",
           "operator_crs_invalid": "Set the correct two-dimensional CRS explicitly first; preserve original XY and units, without projection, conversion or axis swapping.",
           "operator_field_conflict": "Rename field {field} manually upstream first, without replacing original attributes or automatic renaming."
+        }
+      },
+      "vertices": {
+        "reasons": {
+          "operator_input_invalid": "Vertex extraction requires valid finite XY Point/LineString/Polygon or Multi types and a unique non-null id_field; GeometryCollection, NULL, EMPTY and empty parts/rings are rejected.",
+          "operator_crs_invalid": "Vertex extraction requires a known two-dimensional geographic or projected CRS; unknown, geocentric, 3D and compound CRS are rejected.",
+          "operator_field_conflict": "Fixed vertex field {field} conflicts with an input field."
+        },
+        "actions": {
+          "operator_input_invalid": "Prepare the source and id_field explicitly with unique column names and unique non-null non-geometry scalar identifiers; reject Z/M without dropping empty rows. Closing and repeated coordinates are retained separately, without computing network nodes.",
+          "operator_crs_invalid": "Set the correct two-dimensional CRS explicitly first; retain original XY and units without projection, conversion or axis swapping.",
+          "operator_field_conflict": "Rename field {field} manually upstream first to preserve attributes; vertex_id is unique only within this result, without automatic replacement or renaming."
         }
       }
     },

@@ -63,7 +63,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
 | 矢量处理 | 几何构造 | 8 | `buffer`、`centroid`、`representative_point`、`convex_hull`、`minimum_rotated_rectangle`、`envelope`、`voronoi`、`batch_buffer` |
-| 矢量处理 | 几何整理 | 9 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints`、`trim_line_endpoints`、`split_multipart` |
+| 矢量处理 | 几何整理 | 10 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints`、`trim_line_endpoints`、`split_multipart`、`extract_vertices` |
 | 矢量处理 | 拓扑检查 | 8 | `check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
 | 矢量处理 | 线网处理 | 7 | `polygonize`、`extract_polygon_rings`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network`、`extract_line_nodes` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
@@ -324,3 +324,7 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 ## 多部拆分
 
 `split_multipart(input_gdf,id_field)`按源行/原部件顺序生成单部件，完整保留来源属性并追加source_id/part_no；单部件保一行，面孔洞不拆出，重复部件不去重。GeometryCollection、NULL/EMPTY及固定字段重名明确拒绝，已知二维地理/投影CRS沿原坐标不变。边界以[多部拆分契约](../../../docs/spec/workflow/矢量算子契约.md#多部拆分契约)为准。
+
+## 顶点提取
+
+`extract_vertices(input_gdf,id_field)`逐原始坐标位置输出Point，保闭环首尾、重复坐标/部件/孔洞及全部来源属性，追加source_id/part_no/ring_no/vertex_no/vertex_id；不去重、不补交点或计算网络度数。部件和源准入复用多部拆分，原XY/CRS不变；GeometryCollection/NULL/EMPTY及固定字段重名整批拒绝。完整规则见[顶点提取契约](../../../docs/spec/workflow/矢量算子契约.md#顶点提取契约)。

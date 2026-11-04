@@ -876,14 +876,21 @@ components:
               description: 原workflow_def.tasks的1起始位置，不是拓扑调度顺序。
             operator_id:
               type: string
-              enum: [split_multipart, get_bounds, get_area, get_length, split_by_area, envelope, representative_point, centroid, convex_hull, minimum_rotated_rectangle, simplify, buffer, voronoi, contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
+              enum: [extract_vertices, split_multipart, get_bounds, get_area, get_length, split_by_area, envelope, representative_point, centroid, convex_hull, minimum_rotated_rectangle, simplify, buffer, voronoi, contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
             parameter:
               type: string
               enum: [target_geom, threshold, input_gdf, reference_gdf, preserve_topology, distance, distances, resolution, tolerance, max_distance, gdf_b, mask_gdf, group_fields]
             field:
               type: string
-              enum: [minx, miny, maxx, maxy, area, length, distance, source_id, part_no, ring_no, ring_id, is_hole, node_id, degree, source_part_no, end]
+              enum: [vertex_no, vertex_id, minx, miny, maxx, maxy, area, length, distance, source_id, part_no, ring_no, ring_id, is_hole, node_id, degree, source_part_no, end]
       x-addp-operator-input-rules:
+        - ["extract_vertices", "operator_input_invalid", "input_gdf", ""]
+        - ["extract_vertices", "operator_crs_invalid", "", ""]
+        - ["extract_vertices", "operator_field_conflict", "input_gdf", "source_id"]
+        - ["extract_vertices", "operator_field_conflict", "input_gdf", "part_no"]
+        - ["extract_vertices", "operator_field_conflict", "input_gdf", "ring_no"]
+        - ["extract_vertices", "operator_field_conflict", "input_gdf", "vertex_no"]
+        - ["extract_vertices", "operator_field_conflict", "input_gdf", "vertex_id"]
         - ["split_multipart", "operator_input_invalid", "input_gdf", ""]
         - ["split_multipart", "operator_crs_invalid", "", ""]
         - ["split_multipart", "operator_field_conflict", "input_gdf", "source_id"]

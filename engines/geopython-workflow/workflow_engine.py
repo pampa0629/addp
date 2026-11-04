@@ -12,7 +12,7 @@ from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.properties_operators import MeasurementInputError, BoundsInputError
 from operators.spatial_relations import DistanceInputError, RelationInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError, VoronoiInputError
-from operators.geometric_operators import MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
+from operators.geometric_operators import VertexInputError, MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,7 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
             raise ValueError(exc.message(self.language)) from exc
         except (MultipartInputError, BoundsInputError, MeasurementInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, VoronoiInputError, RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
             reasons = {
+                VertexInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid','field':'operator_field_conflict'},
                 MultipartInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid','field':'operator_field_conflict'},
                 BoundsInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid','field':'operator_geometry_field_conflict'},
                 MeasurementInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid','area':'operator_geometry_field_conflict','length':'operator_geometry_field_conflict','threshold':'operator_nonnegative_number_required'},

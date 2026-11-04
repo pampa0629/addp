@@ -644,3 +644,25 @@ def test_multipart_split_closed_contract_and_runtime_order(operator,reason,param
     assert d['operator']=={'node_index':1,'operator_id':operator,**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}
     for patch in [{'field':'area'},{'field':'PRIVATE_FIELD'},{'parameter':'reference_gdf'},{'node_index':True},{'operator_id':'foreign_parts'},{'extra':'PRIVATE'}]:
         bad=copy.deepcopy(d);bad['operator'].update(patch);assert validated_operator_diagnostic(bad)is None
+
+
+VERTEX_RULES = [['extract_vertices', 'operator_input_invalid', 'input_gdf', ''], ['extract_vertices', 'operator_crs_invalid', '', ''], ['extract_vertices', 'operator_field_conflict', 'input_gdf', 'source_id'], ['extract_vertices', 'operator_field_conflict', 'input_gdf', 'part_no'], ['extract_vertices', 'operator_field_conflict', 'input_gdf', 'ring_no'], ['extract_vertices', 'operator_field_conflict', 'input_gdf', 'vertex_no'], ['extract_vertices', 'operator_field_conflict', 'input_gdf', 'vertex_id']]
+
+@pytest.mark.parametrize('operator,reason,parameter,field',VERTEX_RULES)
+def test_vertices_extraction_closed_contract_and_runtime_order(operator,reason,parameter,field):
+    import copy
+    from addp_common.workflow_runtime import OperatorInputError
+    from addp_common.workflow_runtime.errors import validated_operator_diagnostic, OPERATOR_INPUT_RULES
+    assert [(op,r,p,f)for(op,r,f),p in OPERATOR_INPUT_RULES.items()if op=='extract_vertices']==[tuple(r)for r in VERTEX_RULES]
+    calls=[]
+    def execute(name,params):
+        calls.append(name)
+        if name==operator:raise OperatorInputError(reason,'PRIVATE',field=field)
+        return {'kept':True}
+    tasks=[{'id':'PRIVATE','operator':operator,'params':{},'depends_on':['load']}, {'id':'load','operator':'load','params':{},'depends_on':[]}, {'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]
+    with pytest.raises(WorkflowExecutionError)as caught:WorkflowRunner({'load',operator,'save'},execute).execute({'tasks':tasks})
+    d=caught.value.diagnostic
+    assert calls==['load',operator]and caught.value.error_code=='INVALID_PARAMS'
+    assert d['operator']=={'node_index':1,'operator_id':operator,**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}
+    for patch in [{'field':'area'},{'field':'PRIVATE_FIELD'},{'parameter':'reference_gdf'},{'node_index':True},{'operator_id':'foreign_vertices'},{'extra':'PRIVATE'}]:
+        bad=copy.deepcopy(d);bad['operator'].update(patch);assert validated_operator_diagnostic(bad)is None

@@ -652,3 +652,43 @@ func TestMultipartSplitDiagnosticsBindFieldsAndOriginalDefinition(t *testing.T) 
 		}
 	}
 }
+
+func TestVertexExtractionDiagnosticsBindOriginalDefinitionAndFiveFields(t *testing.T) {
+	rows := []struct{ reason, parameter, field string }{
+		{"operator_input_invalid", "input_gdf", ""},
+		{"operator_crs_invalid", "", ""},
+		{"operator_field_conflict", "input_gdf", "source_id"},
+		{"operator_field_conflict", "input_gdf", "part_no"},
+		{"operator_field_conflict", "input_gdf", "ring_no"},
+		{"operator_field_conflict", "input_gdf", "vertex_no"},
+		{"operator_field_conflict", "input_gdf", "vertex_id"},
+	}
+	for _, row := range rows {
+		context := map[string]interface{}{"node_index": 1, "operator_id": "extract_vertices"}
+		if row.parameter != "" {
+			context["parameter"] = row.parameter
+		}
+		if row.field != "" {
+			context["field"] = row.field
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": row.reason, "operator": context}
+		raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+		frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "PRIVATE", "operator": "extract_vertices", "depends_on": []string{"load"}}, map[string]interface{}{"id": "load", "operator": "load"}}}
+		if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] == nil || got["code"] != "develop.workflow.invalid_params" {
+			t.Fatalf("lost vertex context %+v", got)
+		}
+		for _, patch := range []map[string]interface{}{{"field": "PRIVATE_FIELD"}, {"parameter": "reference_gdf"}, {"node_index": 2}, {"node_index": true}, {"node_id": "PRIVATE"}, {"operator_id": "unknown_vertices"}} {
+			forged := map[string]interface{}{}
+			for k, v := range context {
+				forged[k] = v
+			}
+			for k, v := range patch {
+				forged[k] = v
+			}
+			diagnostic["operator"] = forged
+			if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] != nil {
+				t.Fatalf("trusted wrong vertex context %+v", got)
+			}
+		}
+	}
+}

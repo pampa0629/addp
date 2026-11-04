@@ -135,14 +135,14 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 101)
+  assert.equal(canonical.length, 108)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
     const operator = { node_index: 2, operator_id, ...(parameter ? { parameter } : {}), ...(field ? { field } : {}) }
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
-    const profiles = { split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
+    const profiles = { extract_vertices:'vertices', split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
       envelope:'construction', centroid:'construction', convex_hull:'construction', minimum_rotated_rectangle:'construction',
       representative_point:'interiorPoint',
       'buffer:operator_input_invalid':'buffer', 'buffer:operator_crs_invalid':'buffer', 'batch_buffer:operator_crs_invalid':'buffer',
@@ -694,6 +694,31 @@ test("multipart split closes four facts without exposing source values",()=>{
    if(reason==='operator_input_invalid'){assert.match(got.reason,/EMPTY/);assert.match(got.reason,/NULL/);assert.match(got.action,/Z\/M/)}
    if(reason==='operator_crs_invalid')assert.match(got.reason,locale==='zh-cn'?/地理或投影/:/geographic or projected/)
    for(const patch of [{field:'area'},{field:'PRIVATE_FIELD'},{parameter:'reference_gdf'},{node_index:true},{operator_id:'foreign_parts'},{parameter_value:99}]){
+    const bad=executionFailurePresentation({diagnostic:{...diagnostic,operator:{...operator,...patch}}},translate)
+    assert.equal(bad.stage,'');assert.equal(bad.operator,'')
+   }
+   assert.doesNotMatch(JSON.stringify(got),/PRIVATE_FIELD|private-password|\/private\/input.gpkg/)
+  }
+ }
+})
+
+
+test("vertices extraction closes seven facts and retains coordinate occurrences",()=>{
+ const rows=[["extract_vertices", "operator_input_invalid", "input_gdf", ""], ["extract_vertices", "operator_crs_invalid", "", ""], ["extract_vertices", "operator_field_conflict", "input_gdf", "source_id"], ["extract_vertices", "operator_field_conflict", "input_gdf", "part_no"], ["extract_vertices", "operator_field_conflict", "input_gdf", "ring_no"], ["extract_vertices", "operator_field_conflict", "input_gdf", "vertex_no"], ["extract_vertices", "operator_field_conflict", "input_gdf", "vertex_id"]]
+ assert.deepEqual(operatorInputRules.filter(([op])=>op==='extract_vertices'),rows)
+ for(const locale of ['zh-cn','en']){
+  const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+  const translate=(key,params={})=>key.replace('common.executionFailure.','').split('.').reduce((node,part)=>node[part],messages).replace(/\{(\w+)\}/g,(_,key)=>params[key])
+  for(const [operator_id,reason,parameter,field]of rows){
+   const operator={node_index:2,operator_id,...(parameter?{parameter}:{}),...(field?{field}:{})}
+   const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator}
+   const got=executionFailurePresentation({diagnostic,message:'PRIVATE_FIELD private-password /private/input.gpkg'},translate)
+   assert.equal(got.operator,messages.operatorNames.extract_vertices);assert.equal(got.field,field)
+   assert.equal(got.reason,translate(`common.executionFailure.vertices.reasons.${reason}`,{field}))
+   assert.equal(got.action,translate(`common.executionFailure.vertices.actions.${reason}`,{field}))
+   if(reason==='operator_input_invalid'){assert.match(got.reason,/EMPTY/);assert.match(got.reason,/NULL/);assert.match(got.action,/Z\/M/)}
+   if(reason==='operator_crs_invalid')assert.match(got.reason,locale==='zh-cn'?/地理或投影/:/geographic or projected/)
+   for(const patch of [{field:'area'},{field:'PRIVATE_FIELD'},{parameter:'reference_gdf'},{node_index:true},{operator_id:'foreign_vertices'},{parameter_value:99}]){
     const bad=executionFailurePresentation({diagnostic:{...diagnostic,operator:{...operator,...patch}}},translate)
     assert.equal(bad.stage,'');assert.equal(bad.operator,'')
    }

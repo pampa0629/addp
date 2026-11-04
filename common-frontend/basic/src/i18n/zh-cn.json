@@ -454,7 +454,8 @@
         "extract_polygon_rings": "面界提取",
         "intersection": "相交叠加",
         "get_bounds": "获取边界框",
-        "split_multipart": "多部拆分"
+        "split_multipart": "多部拆分",
+        "extract_vertices": "顶点提取"
       },
       "operatorParameters": {
         "target_geom": "目标图层（target_geom）",
@@ -493,6 +494,18 @@
           "operator_input_invalid": "请显式整理源图层和id_field；列名唯一、来源为非几何唯一非空标量，拒绝Z/M，不递归展开集合或丢弃空行。",
           "operator_crs_invalid": "请先显式设置正确的二维CRS；拆分保持原XY和单位，不自动投影、换单位或交换轴。",
           "operator_field_conflict": "请在上游手动重命名字段 {field} 后执行，不覆盖原属性或自动改名。"
+        }
+      },
+      "vertices": {
+        "reasons": {
+          "operator_input_invalid": "顶点提取要求有效有限二维XY点/线/面或Multi类型及唯一非空来源id_field；GeometryCollection、NULL、EMPTY、空部件/环拒绝。",
+          "operator_crs_invalid": "顶点提取要求已知二维地理或投影CRS，拒绝未知、地心、三维和复合CRS。",
+          "operator_field_conflict": "固定顶点字段 {field} 与输入字段冲突。"
+        },
+        "actions": {
+          "operator_input_invalid": "请显式整理源图层和id_field，列名唯一、来源为非几何唯一非空标量；拒绝Z/M，不丢弃空行。闭环首尾和重复坐标会分别保留，不计算网络节点。",
+          "operator_crs_invalid": "请先显式设置正确的二维CRS；保持原XY和单位，不自动投影、换单位或交换轴。",
+          "operator_field_conflict": "请先在上游手动重命名字段 {field}，保留原属性；vertex_id仅在本次成果内唯一，不自动覆盖或改名。"
         }
       }
     },

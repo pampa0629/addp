@@ -15,7 +15,7 @@ func TestWorkflowInputDiagnosticMatchesCanonicalLanguageContract(t *testing.T) {
 	}
 	pattern := regexp.MustCompile(`\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'`)
 	tuples := pattern.FindAllStringSubmatch(string(source), -1)
-	if len(tuples) != 101 {
+	if len(tuples) != 108 {
 		t.Fatalf("rules=%d", len(tuples))
 	}
 	valid := map[string]bool{}
@@ -24,10 +24,10 @@ func TestWorkflowInputDiagnosticMatchesCanonicalLanguageContract(t *testing.T) {
 		valid[strings.Join([]string{r[1], r[2], r[4], r[3]}, "|")] = true
 		reasons[r[2]] = true
 	}
-	for _, op := range []string{"split_multipart", "get_bounds", "get_area", "get_length", "split_by_area", "envelope", "representative_point", "centroid", "convex_hull", "minimum_rotated_rectangle", "simplify", "buffer", "voronoi", "contains", "intersects", "dissolve", "union", "clip", "difference", "intersection", "batch_buffer", "distance_to", "check_line_proximity", "extract_polygon_rings", "trim_line_endpoints", "extract_line_nodes", "foreign"} {
+	for _, op := range []string{"extract_vertices", "split_multipart", "get_bounds", "get_area", "get_length", "split_by_area", "envelope", "representative_point", "centroid", "convex_hull", "minimum_rotated_rectangle", "simplify", "buffer", "voronoi", "contains", "intersects", "dissolve", "union", "clip", "difference", "intersection", "batch_buffer", "distance_to", "check_line_proximity", "extract_polygon_rings", "trim_line_endpoints", "extract_line_nodes", "foreign"} {
 		for reason := range reasons {
 			for _, parameter := range []string{"", "target_geom", "threshold", "distance", "input_gdf", "gdf_b", "mask_gdf", "group_fields", "reference_gdf", "distances", "resolution", "tolerance", "preserve_topology", "max_distance", "private"} {
-				for _, field := range []string{"", "minx", "miny", "maxx", "maxy", "area", "length", "distance", "source_id", "part_no", "ring_no", "ring_id", "is_hole", "node_id", "degree", "source_part_no", "end", "private"} {
+				for _, field := range []string{"", "vertex_no", "vertex_id", "minx", "miny", "maxx", "maxy", "area", "length", "distance", "source_id", "part_no", "ring_no", "ring_id", "is_hole", "node_id", "degree", "source_part_no", "end", "private"} {
 					context := &WorkflowOperatorFailure{NodeIndex: 2, OperatorID: op, Parameter: parameter, Field: field}
 					want := valid[strings.Join([]string{op, reason, parameter, field}, "|")]
 					if context.Valid(reason) != want {

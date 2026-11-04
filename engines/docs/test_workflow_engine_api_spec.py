@@ -162,7 +162,7 @@ def test_typed_operator_diagnostic_spec_matches_the_single_runtime_contract():
     assert context['required'] == ['node_index', 'operator_id']
     assert set(context['properties']['operator_id']['enum']) == {op for op, _, _ in OPERATOR_INPUT_RULES}
     assert set(context['properties']['parameter']['enum']) == {parameter for parameter in OPERATOR_INPUT_RULES.values() if parameter}
-    assert context['properties']['field']['enum'] == ['minx', 'miny', 'maxx', 'maxy', 'area', 'length', 'distance', 'source_id', 'part_no', 'ring_no', 'ring_id', 'is_hole', 'node_id', 'degree', 'source_part_no', 'end']
+    assert context['properties']['field']['enum'] == ['vertex_no', 'vertex_id', 'minx', 'miny', 'maxx', 'maxy', 'area', 'length', 'distance', 'source_id', 'part_no', 'ring_no', 'ring_id', 'is_hole', 'node_id', 'degree', 'source_part_no', 'end']
     assert set(context['properties']['field']['enum']) == {field for _, _, field in OPERATOR_INPUT_RULES if field}
     for enum in (props['reason']['enum'], *(context['properties'][name]['enum'] for name in ('operator_id', 'parameter', 'field'))):
         assert len(enum) == len(set(enum))

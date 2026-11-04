@@ -738,45 +738,104 @@ class MultipartInputError(ValueError):
         return self._messages['en' if language == 'en' else 'zh-cn'][self.code].format(field=self.field)
 
 
-def split_multipart(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
-    """Split original single-level parts, preserving every source attribute."""
+class VertexInputError(MultipartInputError):
+    """Vertex extraction admissions share original-part facts, not free text."""
+    _messages = {
+        'zh-cn': {
+            'source': '顶点提取要求唯一列名、活动几何及显式id_field唯一非空标量来源；只接受有效有限二维XY点/线/面及Multi类型。GeometryCollection、NULL、EMPTY、空部件/环和Z/M整批拒绝，闭合首尾及重复坐标保留。',
+            'crs': '顶点提取要求已知二维地理或投影CRS；未知、地心、三维及复合CRS拒绝，不自动投影、换单位或交换XY。',
+            'field': '顶点提取固定输出字段{field}与输入字段冲突；请先手动重命名，不覆盖或自动改名。',
+        },
+        'en': {
+            'source': 'Vertex extraction requires unique column names, an active geometry and explicit unique non-null scalar id_field identifiers. Only valid finite XY Point/LineString/Polygon and their Multi types are accepted; GeometryCollection, NULL, EMPTY, empty parts/rings and Z/M are rejected for the whole batch. Closing and repeated coordinate occurrences are retained.',
+            'crs': 'Vertex extraction requires a known two-dimensional geographic or projected CRS; unknown, geocentric, 3D and compound CRS are rejected, without projection, unit conversion or XY swapping.',
+            'field': 'Fixed vertex output field {field} conflicts with an input field; rename it manually first, without replacement or automatic renaming.',
+        },
+    }
+
+
+def _original_geometry_parts(input_gdf, id_field, fields, error_type):
+    """One original-part source map for mechanical multipart/vertex extraction."""
     try:
         if not isinstance(input_gdf, gpd.GeoDataFrame) or not input_gdf.columns.is_unique:
-            raise ValueError('multipart split requires unique columns')
+            raise ValueError('original parts require unique columns')
         geometry = _finite_xy_geometry(input_gdf)
         allowed = {'Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'}
         if (geometry.isna().any() or shapely.is_empty(geometry.array).any()
                 or not geometry.geom_type.isin(allowed).all() or not shapely.is_valid(geometry.array).all()):
-            raise ValueError('multipart split requires valid non-empty single or Multi geometry')
+            raise ValueError('original parts require valid non-empty single or Multi geometry')
         ids = _source_identifiers(input_gdf, id_field)
     except (ValueError, TypeError) as exc:
-        raise MultipartInputError('source') from exc
-    for field in ('source_id', 'part_no'):
+        raise error_type('source') from exc
+    for field in fields:
         if field in input_gdf.columns:
-            raise MultipartInputError('field', field)
+            raise error_type('field', field)
     crs = geometry.crs
     if crs is None or crs.is_compound or len(crs.axis_info) != 2 or not (crs.is_geographic or crs.is_projected):
-        raise MultipartInputError('crs')
+        raise error_type('crs')
     parts, source_rows = shapely.get_parts(geometry.array, return_index=True)
     parts, source_rows = np.asarray(parts), np.asarray(source_rows)
     counts = np.asarray(shapely.get_num_geometries(geometry.array))
     if (parts.ndim != 1 or source_rows.shape != parts.shape or source_rows.dtype.kind not in 'iu'
             or counts.shape != (len(geometry),) or counts.dtype.kind not in 'iu'
             or (counts < 1).any() or counts.sum(dtype=np.int64) != len(parts)):
-        raise RuntimeError('multipart split produced invalid part counts or source mapping')
+        raise RuntimeError('original parts produced invalid part counts or source mapping')
     counts = counts.astype(np.int64)
     if not np.array_equal(source_rows, np.repeat(np.arange(len(geometry), dtype=np.int64), counts)):
-        raise RuntimeError('multipart split changed original source order')
+        raise RuntimeError('original parts changed original source order')
     if shapely.is_empty(parts).any():
-        raise MultipartInputError('source')
+        raise error_type('source')
     if (shapely.is_missing(parts).any() or not np.isin(shapely.get_type_id(parts), [0, 1, 3]).all()
             or not shapely.is_valid(parts).all() or shapely.has_z(parts).any() or shapely.has_m(parts).any()
             or not np.isfinite(shapely.get_coordinates(parts)).all()):
-        raise RuntimeError('multipart split produced invalid single parts')
+        raise RuntimeError('original parts produced invalid single parts')
+    part_numbers = np.arange(len(parts), dtype=np.int64) - np.repeat(np.cumsum(counts) - counts, counts) + 1
+    return geometry, ids, parts, source_rows, part_numbers
+
+
+def split_multipart(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Split original single-level parts, preserving every source attribute."""
+    geometry, ids, parts, source_rows, part_numbers = _original_geometry_parts(
+        input_gdf, id_field, ('source_id', 'part_no'), MultipartInputError)
     result = input_gdf.iloc[source_rows].copy().reset_index(drop=True)
-    result[geometry.name] = gpd.GeoSeries(parts, index=result.index, crs=crs)
+    result[geometry.name] = gpd.GeoSeries(parts, index=result.index, crs=geometry.crs)
     result['source_id'] = ids.iloc[source_rows].reset_index(drop=True)
-    result['part_no'] = np.arange(len(parts), dtype=np.int64) - np.repeat(np.cumsum(counts) - counts, counts) + 1
+    result['part_no'] = part_numbers
+    return result
+
+
+def extract_vertices(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Emit each stored coordinate occurrence, including closing duplicates."""
+    fields = ('source_id', 'part_no', 'ring_no', 'vertex_no', 'vertex_id')
+    geometry, ids, parts, source_rows, part_numbers = _original_geometry_parts(
+        input_gdf, id_field, fields, VertexInputError)
+    coordinates, rows, numbers, rings, vertices = [], [], [], [], []
+    for part, source_row, part_no in zip(parts, source_rows, part_numbers):
+        paths = enumerate((part.exterior, *part.interiors), 1) if part.geom_type == 'Polygon' else [(0, part)]
+        for ring_no, path in paths:
+            values = np.asarray(path.coords)
+            if values.ndim != 2 or values.shape[1] != 2 or not len(values) or values.dtype.kind not in 'fiu' or not np.isfinite(values).all():
+                raise RuntimeError('vertex extraction produced an invalid coordinate sequence')
+            count = len(values)
+            coordinates.append(values)
+            rows.append(np.full(count, source_row, dtype=np.int64))
+            numbers.append(np.full(count, part_no, dtype=np.int64))
+            rings.append(np.full(count, ring_no, dtype=np.int64))
+            vertices.append(np.arange(1, count + 1, dtype=np.int64))
+    xy = np.concatenate(coordinates) if coordinates else np.empty((0, 2), dtype=float)
+    source_positions = np.concatenate(rows) if rows else np.empty(0, dtype=np.int64)
+    points = np.asarray(shapely.points(xy))
+    if (points.shape != (len(xy),) or shapely.is_missing(points).any() or shapely.is_empty(points).any()
+            or not (shapely.get_type_id(points) == 0).all() or not shapely.is_valid(points).all()
+            or shapely.has_z(points).any() or shapely.has_m(points).any()
+            or not np.array_equal(shapely.get_coordinates(points), xy)):
+        raise RuntimeError('vertex extraction did not preserve original finite XY coordinates')
+    result = input_gdf.iloc[source_positions].copy().reset_index(drop=True)
+    result[geometry.name] = gpd.GeoSeries(points, index=result.index, crs=geometry.crs)
+    result['source_id'] = ids.iloc[source_positions].reset_index(drop=True)
+    for name, chunks in [('part_no', numbers), ('ring_no', rings), ('vertex_no', vertices)]:
+        result[name] = np.concatenate(chunks) if chunks else np.empty(0, dtype=np.int64)
+    result['vertex_id'] = np.arange(1, len(points) + 1, dtype=np.int64)
     return result
 
 
@@ -2950,6 +3009,20 @@ MINIMUM_ROTATED_RECTANGLE_METADATA = OperatorMetadata(
 )
 
 
+EXTRACT_VERTICES_METADATA = OperatorMetadata(
+    name="extract_vertices", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
+    description="顶点提取", brief_description="逐原始坐标位置输出Point，保留闭环首尾、重复坐标、全部来源与属性",
+    execution_modes=["workflow"], effects=["read"],
+    overview="按源行、原部件、外环后内环及原顶点顺序提取，不计算新交点或网络度数；闭环首尾和同位坐标分别保留，追加本次成果内唯一vertex_id。",
+    params=[OperatorParam(name="input_gdf",type="input",data_type="GeoDataFrame",required=True,description="有效非空有限二维源图层",notes="Point/LineString/Polygon及对应Multi，可跨行混合；实际活动几何，拒绝GeometryCollection、NULL/EMPTY、空部件/环、Z/M；允许空表"),
+            OperatorParam(name="id_field",type="param",data_type="str",required=True,description="唯一非空来源标识字段",notes="显式非几何标量列，保留来源类型，不推断索引或FID")],
+    output_ports=[OutputPort(name="result",type="geodataframe",description="全部源属性及Point、source_id/part_no/ring_no/vertex_no/vertex_id",is_default=True)],
+    use_cases=["逐原始顶点检查线和面边界", "提取面外环与孔洞点并保留原顺序", "按本次vertex_id继续点分析而不丢来源"],
+    notes=["已知二维地理或投影CRS，保原XY/单位，不投影/交换轴；源不变，重建RangeIndex", "part_no每源1起始；ring_no点/线0、面外环1/内环2起；vertex_no每线/环1起始，点为1", "vertex_id按本次成果顺序1至N，仅本次结果内唯一，不是永久资源身份", "闭环末尾重复点独立编号；连续重复坐标、不同部件同位点均保留，不排序/去重/修复", "source_id/part_no/ring_no/vertex_no/vertex_id重名须上游手动改名；空表也拒绝，不覆盖", "下游保存沿现有save/格式能力；不新增X/Y字段或容量承诺"],
+    workflow_example={'id':'vertices','operator':'extract_vertices','params':{'input_gdf':{'$ref':'load'},'id_field':'feature_id'},'depends_on':['load']},
+)
+
+
 SPLIT_MULTIPART_METADATA = OperatorMetadata(
     name="split_multipart", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
     description="多部拆分", brief_description="按原始部件顺序拆成单部件，完整保留来源属性及部件编号",
@@ -3008,6 +3081,7 @@ OPERATORS = dict([
     register_operator(ENVELOPE_METADATA, envelope),
     register_operator(DISSOLVE_METADATA, dissolve),
     register_operator(SPLIT_MULTIPART_METADATA, split_multipart),
+    register_operator(EXTRACT_VERTICES_METADATA, extract_vertices),
     register_operator(POLYGONIZE_METADATA, polygonize),
     register_operator(CHECK_GEOMETRY_METADATA, check_geometry),
     register_operator(REPAIR_GEOMETRY_METADATA, repair_geometry),

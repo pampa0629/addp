@@ -9605,3 +9605,230 @@ def test_multipart_split_successful_runtime_implicit_and_explicit_result_refs(ex
     assert [f['properties']['minx']for f in result['features']]==[1,3,5]
     assert [f['geometry']['coordinates']for f in result['features']]==[[1,2],[3,4],[5,6]]
     assert all('geometry'in f['properties']for f in result['features'])
+
+
+VERTEX_FIELDS = ['source_id','part_no','ring_no','vertex_no','vertex_id']
+VERTEX_CASES = [('operator_input_invalid','input_gdf',''),('operator_crs_invalid','','')]+[('operator_field_conflict','input_gdf',f)for f in VERTEX_FIELDS]
+
+
+def vertices_witness():
+    shapes,_,_,_=multipart_mixed_witness()
+    shapes[-1]=shapely.MultiPolygon([Polygon([(30,0),(33,0),(33,2),(30,2),(30,0)]),Polygon([(20,0),(20,1),(21,1),(21,0),(20,0)])])
+    coordinates=[(2,3),(4,5),(4,5),(-1,-2),(0,0),(2,1),(0,0),
+      (9,8),(7,6),(7,6),(3,2),(9,8),(7,6),(7,6),(3,2),(5,0),(5,4),
+      (10,10),(10,18),(18,18),(18,10),(10,10),(11,11),(13,11),(13,13),(11,13),(11,11),
+      (30,0),(33,0),(33,2),(30,2),(30,0),(20,0),(20,1),(21,1),(21,0),(20,0)]
+    parents=[0]+[1]*3+[2]*3+[3]*10+[4]*10+[5]*10
+    parts=[1]+[1,2,3]+[1]*3+[1]*4+[2]*4+[3]*2+[1]*10+[1]*5+[2]*5
+    rings=[0]*17+[1]*5+[2]*5+[1]*10
+    vertices=[1]+[1]*3+[1,2,3]+[1,2,3,4]*2+[1,2]+list(range(1,6))*4
+    assert len(coordinates)==len(parents)==len(parts)==len(rings)==len(vertices)==37
+    return shapes,coordinates,parents,parts,rings,vertices
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:4326','OGC:CRS84','EPSG:2263','+proj=aeqd +lat_0=23 +lon_0=113 +datum=WGS84 +units=m +no_defs'])
+@pytest.mark.parametrize('id_type',['Int64','UInt64','string'])
+def test_vertices_extraction_exact_closures_repeats_parts_holes_attributes_ids_and_order(crs,id_type):
+    shapes,xy,parents,parts,rings,numbers=vertices_witness();source=multipart_source(shapes,crs,id_type);before=source.copy(deep=True)
+    result=get_operator('extract_vertices')(source,'feature_key')
+    assert result.geometry.to_wkb().tolist()==[Point(*p).wkb for p in xy]
+    assert shapely.get_coordinates(result.geometry.array).tolist()==[list(p)for p in xy]
+    assert result.part_no.tolist()==parts and result.ring_no.tolist()==rings and result.vertex_no.tolist()==numbers
+    assert result.vertex_id.tolist()==list(range(1,38))and result.vertex_id.is_unique
+    assert result.source_id.tolist()==source.feature_key.iloc[parents].tolist()and str(result.source_id.dtype)==id_type
+    assert result.geometry.name=='shape'and result.crs==source.crs and result.index.equals(pd.RangeIndex(37))
+    assert list(result.columns)==list(source.columns)+VERTEX_FIELDS
+    assert all(str(result[f].dtype)=='int64'for f in VERTEX_FIELDS[1:])
+    assert not result[['source_id','part_no','ring_no','vertex_no']].duplicated().any()
+    pd.testing.assert_frame_equal(result.drop(columns=['shape',*VERTEX_FIELDS]),source.iloc[parents].drop(columns='shape').reset_index(drop=True))
+    assert_geodataframe_equal(source,before)
+    # The ring seam and consecutive duplicates are separate occurrences.
+    assert xy[7:11]==[(9,8),(7,6),(7,6),(3,2)]
+    assert result.vertex_id.iloc[17]!=result.vertex_id.iloc[21]and result.geometry.iloc[17].equals(result.geometry.iloc[21])
+
+
+@pytest.mark.parametrize('shape,xy',[(LineString([(-0.,0.),(2**-40,2**-40),(2**-40,0.)]),[(-0.,0.),(2**-40,2**-40),(2**-40,0.)]),(Point(1e308,-1e308),[(1e308,-1e308)])])
+def test_vertices_extraction_keeps_binary_tiny_coordinates_and_large_finite_positions(shape,xy):
+    result=get_operator('extract_vertices')(multipart_source([shape]),'feature_key')
+    assert result.geometry.to_wkb().tolist()==[Point(*p).wkb for p in xy]
+
+
+def test_vertices_extraction_preserves_nonactive_geometry_as_source_attribute():
+    source=multipart_source([LineString([(0,0),(1,1)])]);source['inactive_shape']=gpd.GeoSeries([Point(9,9)],index=source.index,crs=3857)
+    before=source.copy(deep=True);result=get_operator('extract_vertices')(source,'feature_key')
+    assert result.geometry.to_wkt().tolist()==['POINT (0 0)','POINT (1 1)']and result.inactive_shape.to_wkt().tolist()==['POINT (9 9)','POINT (9 9)']
+    assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('wkt',['GEOMETRYCOLLECTION (POINT (1 2))','GEOMETRYCOLLECTION EMPTY','POINT EMPTY','LINESTRING EMPTY','POLYGON EMPTY','MULTIPOINT EMPTY','MULTILINESTRING EMPTY','MULTIPOLYGON EMPTY','MULTIPOINT (EMPTY,(1 2))','MULTILINESTRING (EMPTY,(0 0,1 1))','MULTIPOLYGON (EMPTY,((0 0,1 0,1 1,0 0)))','POINT Z (1 2 3)','POINT M (1 2 3)','POINT (Infinity 2)','POINT (NaN 2)','POLYGON ((0 0,2 2,0 2,2 0,0 0))','MULTIPOLYGON (((0 0,2 0,2 2,0 2,0 0)),((1 1,3 1,3 3,1 3,1 1)))',None])
+def test_vertices_extraction_refuses_invalid_empty_collections_or_dimensions_atomically(wkt):
+    from operators.geometric_operators import VertexInputError
+    source=multipart_source([Point(8,9),shapely.from_wkt(wkt)if wkt else None]);before=source.copy(deep=True)
+    with pytest.raises(VertexInputError)as caught:get_operator('extract_vertices')(source,'feature_key')
+    assert caught.value.code=='source'
+    assert source.geometry.to_wkb().tolist()==before.geometry.to_wkb().tolist()
+    pd.testing.assert_frame_equal(source.drop(columns='shape'),before.drop(columns='shape'))
+
+
+@pytest.mark.parametrize('problem',['unknown_id','geometry_id','empty_id_name','non_string_id','null_id','duplicate_id','blank_id','container_id','duplicate_columns','no_active','plain_frame'])
+@pytest.mark.parametrize('empty',[False,True])
+def test_vertices_extraction_requires_proven_structure_and_source_ids(problem,empty):
+    from operators.geometric_operators import VertexInputError
+    source=multipart_source([Point(1,2),Point(3,4)]);id_field='feature_key'
+    if problem=='unknown_id':id_field='PRIVATE_FIELD'
+    elif problem=='geometry_id':id_field='shape'
+    elif problem=='empty_id_name':id_field=''
+    elif problem=='non_string_id':id_field=False
+    elif problem=='null_id':source['feature_key']=pd.array([None,2],dtype='Int64')
+    elif problem=='duplicate_id':source['feature_key']=pd.array([2,2],dtype='Int64')
+    elif problem=='blank_id':source['feature_key']=pd.array(['ok','  '],dtype='string')
+    elif problem=='container_id':source['feature_key']=[[1],[2]]
+    elif problem=='duplicate_columns':source.columns=['feature_key','geometry','grade','grade','fid','shape']
+    elif problem=='no_active':source=source.drop(columns='shape')
+    elif problem=='plain_frame':source=pd.DataFrame(source)
+    if empty:source=source.iloc[:0]
+    if empty and problem in ['null_id','duplicate_id','blank_id','container_id']:
+        assert len(get_operator('extract_vertices')(source,id_field))==0;return
+    with pytest.raises(VertexInputError)as caught:get_operator('extract_vertices')(source,id_field)
+    assert caught.value.code=='source'
+
+
+@pytest.mark.parametrize('crs',[None,'EPSG:4978','EPSG:4979','EPSG:7415'])
+@pytest.mark.parametrize('empty',[False,True])
+def test_vertices_extraction_requires_known_2d_geographic_or_projected_crs(crs,empty):
+    from operators.geometric_operators import VertexInputError
+    source=multipart_source([]if empty else[Point(1,2)],crs)
+    with pytest.raises(VertexInputError)as caught:get_operator('extract_vertices')(source,'feature_key')
+    assert caught.value.code=='crs'
+
+
+@pytest.mark.parametrize('field',VERTEX_FIELDS)
+@pytest.mark.parametrize('active',[False,True])
+@pytest.mark.parametrize('empty',[False,True])
+def test_vertices_extraction_rejects_all_fixed_field_collisions_including_empty_frames(field,active,empty):
+    from operators.geometric_operators import VertexInputError
+    source=multipart_source([]if empty else[Point(1,2)])
+    if active:source=source.rename_geometry(field)
+    else:source[field]='PRIVATE'
+    before=source.copy(deep=True)
+    with pytest.raises(VertexInputError)as caught:get_operator('extract_vertices')(source,'feature_key')
+    assert caught.value.code=='field'and caught.value.field==field;assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('id_type',['Int64','UInt64','string'])
+def test_vertices_extraction_empty_batch_retains_all_field_types_without_point_placeholder(id_type):
+    source=multipart_source([],id_type=id_type);result=get_operator('extract_vertices')(source,'feature_key')
+    assert len(result)==0 and result.geometry.name=='shape'and result.crs==source.crs
+    assert str(result.source_id.dtype)==id_type and all(str(result[f].dtype)=='int64'for f in VERTEX_FIELDS[1:])
+    assert result.index.equals(pd.RangeIndex(0))and list(result.columns)==list(source.columns)+VERTEX_FIELDS
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('reason,parameter,field',VERTEX_CASES)
+def test_vertices_extraction_runtime_diagnostics_bind_original_node_and_stop_save(language,reason,parameter,field,monkeypatch):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from operators.geometric_operators import VertexInputError
+    import workflow_engine
+    source=multipart_source([Point(1,2)])
+    if reason=='operator_input_invalid':source['shape']=[None]
+    elif reason=='operator_crs_invalid':source=source.set_crs(None,allow_override=True)
+    else:source[field]='PRIVATE'
+    lookup=workflow_engine.get_operator;calls=[]
+    def guarded(name):
+        calls.append(name)
+        if name=='load':return lambda **kw:source
+        if name=='save':raise AssertionError('invalid vertices reached save')
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    tasks=[{'id':'PRIVATE','operator':'extract_vertices','params':{'input_gdf':{'$ref':'load'},'id_field':'feature_key'},'depends_on':['load']},
+      {'id':'load','operator':'load','params':{},'depends_on':[]},{'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]
+    with pytest.raises(WorkflowExecutionError)as caught:workflow_engine.GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert calls==['load','extract_vertices']and caught.value.error_code=='INVALID_PARAMS'
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+      'operator':{'node_index':1,'operator_id':'extract_vertices',**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}}
+    assert 'PRIVATE'not in json.dumps(caught.value.diagnostic)
+    assert VertexInputError({'operator_input_invalid':'source','operator_crs_invalid':'crs','operator_field_conflict':'field'}[reason],field).message(language) in str(caught.value)
+
+
+@pytest.mark.parametrize('fault',['exception','count','shape','missing','empty','line','z','inf','shifted','reordered'])
+def test_vertices_extraction_native_point_faults_are_execution_failures_without_partial_save(fault,monkeypatch):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=multipart_source([LineString([(1,2),(3,4),(5,6)])]);native=shapely.points
+    def broken(xy):
+        if fault=='exception':raise RuntimeError('PRIVATE native')
+        points=native(xy)
+        if fault=='count':return points[:1]
+        if fault=='shape':return points.reshape(-1,1)
+        if fault=='missing':points[0]=None
+        if fault=='empty':points[0]=Point()
+        if fault=='line':points[0]=LineString([(1,2),(3,4)])
+        if fault=='z':points[0]=Point(1,2,3)
+        if fault=='inf':points[0]=Point(float('inf'),2)
+        if fault=='shifted':points[0]=Point(9,9)
+        if fault=='reordered':return points[::-1]
+        return points
+    monkeypatch.setattr(shapely,'points',broken);lookup=workflow_engine.get_operator
+    def guarded(name):
+        if name=='load':return lambda **kw:source
+        if name=='save':raise AssertionError('bad native points reached save')
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    tasks=[{'id':'load','operator':'load','params':{},'depends_on':[]},
+      {'id':'vertices','operator':'extract_vertices','params':{'input_gdf':{'$ref':'load'},'id_field':'feature_key'},'depends_on':['load']},
+      {'id':'save','operator':'save','params':{},'depends_on':['vertices']}]
+    with pytest.raises(WorkflowExecutionError)as caught:workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':tasks})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('explicit_port',[False,True])
+def test_vertices_extraction_successful_workflow_implicit_and_explicit_result_refs(explicit_port,monkeypatch):
+    import workflow_engine
+    source=multipart_source([LineString([(1,2),(3,4),(1,2)])]);lookup=workflow_engine.get_operator
+    def guarded(name):return (lambda **kw:source)if name=='load'else lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    tasks=[{'id':'load','operator':'load','params':{},'depends_on':[]},
+      {'id':'vertices','operator':'extract_vertices','params':{'input_gdf':{'$ref':'load'},'id_field':'feature_key'},'depends_on':['load']},
+      {'id':'bounds','operator':'get_bounds','params':{'input_gdf':{'$ref':'vertices',**({'port':'result'}if explicit_port else{})}},'depends_on':['vertices']}]
+    run=workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':tasks});result=json.loads(run.final_result)
+    assert run.task_order==['load','vertices','bounds']and len(result['features'])==3
+    assert [f['geometry']['coordinates']for f in result['features']]==[[1,2],[3,4],[1,2]]
+    assert [f['properties']['vertex_id']for f in result['features']]==[1,2,3]
+    assert [f['properties']['vertex_no']for f in result['features']]==[1,2,3]
+    assert all(f['properties']['ring_no']==0 for f in result['features'])
+
+
+@pytest.mark.parametrize('family',['point','line','polygon'])
+def test_vertices_extraction_real_geopackage_source_independent_ogr_point_order_and_reload(tmp_path,family):
+    from osgeo import ogr
+    if family=='point':
+        shapes=[shapely.MultiPoint([(1,2),(1,2)]),Point(3,4)];xy=[(1,2),(1,2),(3,4)];parents=[0,0,1];parts=[1,2,1];rings=[0,0,0];vertices=[1,1,1]
+    elif family=='line':
+        shapes=[MultiLineString([[(1,2),(3,4),(1,2)],[(5,6),(5,6),(7,8)]]),LineString([(9,10),(11,12)])]
+        xy=[(1,2),(3,4),(1,2),(5,6),(5,6),(7,8),(9,10),(11,12)];parents=[0]*6+[1]*2;parts=[1]*3+[2]*3+[1]*2;rings=[0]*8;vertices=[1,2,3,1,2,3,1,2]
+    else:
+        a=Polygon([(0,0),(0,5),(5,5),(5,0),(0,0)], [[(1,1),(2,1),(2,2),(1,2),(1,1)]]);b=Polygon([(10,0),(11,0),(11,2),(10,2),(10,0)])
+        shapes=[shapely.MultiPolygon([a,b]),Polygon([(-4,0),(-2,0),(-2,1),(-4,1),(-4,0)])]
+        xy=[(0,0),(0,5),(5,5),(5,0),(0,0),(1,1),(2,1),(2,2),(1,2),(1,1),(10,0),(11,0),(11,2),(10,2),(10,0),(-4,0),(-2,0),(-2,1),(-4,1),(-4,0)]
+        parents=[0]*15+[1]*5;parts=[1]*10+[2]*5+[1]*5;rings=[1]*5+[2]*5+[1]*10;vertices=list(range(1,6))*4
+    source=multipart_source(shapes);conn={'storage_type':'nfs','mount_path':str(tmp_path)}
+    get_operator('save')(input_df=source,connection_info=conn,path='source.gpkg',mode='fail')
+    loaded=get_operator('load')(connection_info=conn,path='source.gpkg');before=loaded.copy(deep=True);result=get_operator('extract_vertices')(loaded,'feature_key')
+    get_operator('save')(input_df=result,connection_info=conn,path='vertices.gpkg',mode='fail')
+    ds=ogr.Open(str(tmp_path/'vertices.gpkg'));layer=ds.GetLayer(0);records=list(layer)
+    assert layer.GetSpatialRef().GetAuthorityCode(None)=='3857'and len(records)==len(xy)
+    for i,feature in enumerate(records):
+        parent=parents[i];geom=feature.GetGeometryRef()
+        assert geom.GetGeometryType()==ogr.wkbPoint and geom.GetX()==xy[i][0]and geom.GetY()==xy[i][1]
+        assert bytes(geom.ExportToIsoWkb())==Point(*xy[i]).wkb
+        assert [feature.GetField(f)for f in VERTEX_FIELDS]==[2**53+3+parent,parts[i],rings[i],vertices[i],i+1]
+        assert feature.GetField('feature_key')==2**53+3+parent
+        assert feature.GetField('grade')==[None,2**53+1][parent]and feature.GetField('enabled')==[None,True][parent]
+        assert feature.GetField('geometry')==[None,'business'][parent]and feature.GetField('fid')==[None,4][parent]
+    physical_name=layer.GetGeometryColumn();ds=None;reloaded=get_operator('load')(connection_info=conn,path='vertices.gpkg')
+    assert reloaded.geometry.name==physical_name and reloaded.crs==loaded.crs
+    assert reloaded.geometry.to_wkb().tolist()==[Point(*p).wkb for p in xy]
+    expected=result.drop(columns=result.geometry.name).copy()
+    for field in VERTEX_FIELDS[1:]:expected[field]=pd.array(expected[field],dtype='Int64')
+    pd.testing.assert_frame_equal(reloaded.drop(columns=physical_name),expected)
+    assert_geodataframe_equal(loaded,before)
