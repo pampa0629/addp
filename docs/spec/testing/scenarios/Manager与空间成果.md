@@ -1375,3 +1375,7 @@ uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、�
 七失败为source_id、part_no、ring_no、vertex_no、vertex_id分别冲突，以及GeometryCollection、缺失CRS；固定v3诊断，冻结算子置tasks首位而load先调度，准确绑定定义节点、当前UUID、同User/Tenant，Develop/Monitor中英文页面与复制内容不泄漏私有字段／值／路径／原生异常；下游save不执行、无成果／扫描／输出facts／本次derive，失败前后物理及Meta／扫描库存不变。
 
 三成果物理与Meta严格正整数大小相等、三自动扫描公开严格整数tenant_id/triggered_by同主体，稳定outputs/facts均create，三条对应来源→成果当前execution active derive及Monitor一致；保存预览原始EWKB／FID与业务ID、完整OL数据与Point蓝色像素、三幅地图及失败页。重合Point的数据行分别存在，不要求重复位置呈现分离符号。保留incomplete检查点与唯一最终报告、原始图／Meta／浏览器响应／原文件及前后SHA大小，最后隔离NFS/export/ownedroot/Runtime/registry/部署/Infra清0，不外推业务DELETE。
+
+### 正交旋转网格邻近距离独立保存
+
+`raster-proximity-orthogonal-persistence`复用Hosted、NFS、同源默认入口Runtime及普通用户原12权限，4CPU／2GiB／无额外swap；固定600秒，不重试、不扩预算。18条COG保存链覆盖原北向三单位对照、90／180／270度与斜向正交方形／非方形、真实最近目标反转、第二波段、零负目标、NoData／mask／alpha与跨块概览；30类各中英文共60次准确拒绝。每次成功复查全部已生成成果、每次失败复查18成果，共1251次。完整仿射／CRS／米制距离与mask由独立世界向量枚举oracle核验；严格核COG、artifact＝物理＝Meta正整数大小、扫描父执行／用户／租户／引擎、当前血缘／Monitor、源旧成果不变与零残留。归档18份原始COG和大小／SHA256清单及冻结预期；失败无发布／新增扫描血缘，反向查询不改提交语言。数值极限、私有故障注入和等距目标身份单列Native，不冒充Hosted。实际Linux／Hosted由CI会话协调，登记与本地通过不计真实验收通过。

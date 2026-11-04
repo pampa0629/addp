@@ -1796,6 +1796,28 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_raster_proximity_rectangular(self.repository, {'raster-proximity-rectangular-persistence'})
             target.write_text(original)
 
+    def test_proximity_orthogonal_requires_exact_cog_matrix_budget_and_regressions(self):
+        source = Path(__file__).resolve().parents[2]
+        required = CHECK.PROXIMITY_ORTHOGONAL_REQUIRED
+        for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml', *required):
+            target = self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source/relative,target)
+        CHECK.validate_raster_proximity_orthogonal(self.repository, {'raster-proximity-orthogonal-persistence'})
+        for relative, fragments in self.contract_mutation_requirements(required).items():
+            target=self.repository/relative; original=target.read_text()
+            for fragment in fragments:
+                target.write_text(original.replace(fragment, 'omitted'))
+                with self.subTest(relative=relative,fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_raster_proximity_orthogonal(self.repository, {'raster-proximity-orthogonal-persistence'})
+                target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-proximity-orthogonal-fixture.py';original=target.read_text()
+        for before,after in [("('wide.tif', 2, [1])", "('wide.tif', 1, [1])"),("'band_zero'", "'omitted_zero'"),("'square-foot.cog.tif'", "'missing-square.cog.tif'")]:
+            self.assertIn(before,original);target.write_text(original.replace(before,after,1))
+            with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_proximity_orthogonal(self.repository, {'raster-proximity-orthogonal-persistence'})
+            target.write_text(original)
+
     def test_protected_sieve_requires_exact_cog_matrix_budget_and_regressions(self):
         source = Path(__file__).resolve().parents[2]
         required = CHECK.PROTECTED_SIEVE_REQUIRED
