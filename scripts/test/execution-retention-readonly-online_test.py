@@ -163,10 +163,18 @@ class ExecutionRetentionReadonlyTest(unittest.TestCase):
                      'scripts/test/execution-retention-readonly-online_test.py', 'scripts/test/online-hosted-execution-retention-gate_test.py']
             for name in files:
                 path = root/name; path.parent.mkdir(parents=True, exist_ok=True);path.write_text((M.ROOT/name).read_text())
-            for name, marker in [('Makefile', '$(MAKE) test-execution-retention-online-runner'),
+            CHECK.validate_execution_retention_profile(root, {M.SUITE})
+            for name, marker in [('Makefile', 'test-execution-retention-online-runner'),
                                  ('.github/workflows/online-t4-gates.yml', "inputs.suite != 'execution-retention-readonly'"),
                                  ('scripts/test/online-hosted-execution-retention-gate.sh', 'scripts/dev/stop-exact-process.sh -system')]:
-                path = root/name; original = path.read_text();path.write_text(original.replace(marker, 'removed'))
+                path = root/name; original = path.read_text()
+                if name == 'Makefile':
+                    changed = re.sub(rf'(?m)^(test-online-runner:[^\n]*?)\b{re.escape(marker)}\b',
+                                     r'\1removed', original, count=1)
+                else:
+                    changed = original.replace(marker, 'removed')
+                self.assertNotEqual(original, changed, name)
+                path.write_text(changed)
                 with self.assertRaises(CHECK.RegistrationError):
                     CHECK.validate_execution_retention_profile(root, {M.SUITE})
                 path.write_text(original)
