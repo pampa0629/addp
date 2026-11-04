@@ -424,9 +424,31 @@ def projection_signature(value, *, present=True):
     return result
 
 
-def lineage_projection_evidence(public, owner):
+MANAGER_OPERATION_FIELDS = ('kind','operator','input_ports','output_ports')
+
+
+def manager_operation_projection(owner):
+    """Match the declared ManagerExecutionOperation DTO, including omitempty."""
+    projected=[]
+    for raw in scene.array(owner.get('operations'),'Owner Manager lineage operations'):
+        row=scene.obj(raw,'Owner Manager lineage operation')
+        if not isinstance(row.get('kind'),str):
+            raise scene.SuiteError('Owner Manager lineage operation has invalid declared fields')
+        operation={'kind':row['kind']}
+        for field in MANAGER_OPERATION_FIELDS[1:]:
+            value=row.get(field)
+            if value is not None and (not isinstance(value,str) if field=='operator'
+                else not isinstance(value,list) or any(not isinstance(port,str) for port in value)):
+                raise scene.SuiteError('Owner Manager lineage operation has invalid declared fields')
+            if value:operation[field]=value
+        projected.append(operation)
+    return projected
+
+
+def lineage_projection_evidence(public, owner, *, module):
     """Bounded diagnostics only; the shared validator remains the acceptance gate."""
     evidence={'operation':'execution','phase':'public_projection','result':'passed','code':None,
+              'contract':'manager_professional' if module=='manager' else 'develop_professional',
               'public_facts':projection_signature(public),'differences':[],'differences_truncated':False}
     def difference(direction, field, actual, expected, *, index=None, actual_present=True, expected_present=True):
         if len(evidence['differences'])>=16:
@@ -441,7 +463,29 @@ def lineage_projection_evidence(public, owner):
     projected={'schema_version':owner.get('schema_version')}
     if public.get('schema_version')!=owner.get('schema_version'):
         difference('facts','schema_version',public.get('schema_version'),owner.get('schema_version'))
-    if public.get('operations') not in (None,[]):difference('facts','operations',public['operations'],None)
+    if module=='manager':
+        try:expected_operations=manager_operation_projection(owner)
+        except (scene.SuiteError,KeyError,TypeError):expected_operations=None
+        projected['operations']=expected_operations
+        actual_operations=public.get('operations')
+        if not isinstance(actual_operations,list) or not isinstance(expected_operations,list):
+            difference('operations','shape',actual_operations,expected_operations)
+        else:
+            if len(actual_operations)!=len(expected_operations):
+                difference('operations','cardinality',actual_operations,expected_operations)
+            if max(len(actual_operations),len(expected_operations))>16:evidence['differences_truncated']=True
+            for index,(got,wanted) in enumerate(zip(actual_operations[:16],expected_operations[:16])):
+                if not isinstance(got,dict):
+                    difference('operations','shape',got,wanted,index=index);continue
+                unknown={k:v for k,v in got.items() if k not in MANAGER_OPERATION_FIELDS}
+                if unknown:difference('operations','unrecognized_fields',unknown,{},index=index)
+                for field in MANAGER_OPERATION_FIELDS:
+                    if (field in got)!=(field in wanted) or got.get(field)!=wanted.get(field):
+                        difference('operations',field,got.get(field),wanted.get(field),index=index,
+                                   actual_present=field in got,expected_present=field in wanted)
+    elif public.get('operations') not in (None,[]):
+        difference('facts','operations',public['operations'],None)
+
     def locator(value):
         if not isinstance(value,str):return value
         try:
@@ -478,6 +522,13 @@ def lineage_projection_reason(error):
     if isinstance(error,ValueError):return 'locator_invalid'
     reasons={
         'Monitor lineage schema_version is invalid':'schema_version_mismatch',
+        'Manager lineage operations differ from Owner declared projection':'manager_operations_mismatch',
+        'Owner Manager lineage operation has invalid declared fields':'manager_operation_shape_mismatch',
+        'Manager execution exposed internal fields':'manager_private_execution_fields',
+        'Manager execution metadata exposed undeclared fields':'manager_private_metadata_fields',
+        'Manager lineage exposed undeclared fields':'manager_private_lineage_fields',
+        'Manager lineage resource exposed undeclared fields':'manager_private_resource_fields',
+        'Manager lineage operation exposed undeclared fields':'manager_private_operation_fields',
         'Monitor exposes lineage operations':'private_operations_exposed',
         'Monitor exposes private lineage resource fields':'private_resource_fields_exposed',
         'Monitor lineage resource locator is missing':'locator_missing',
@@ -742,10 +793,18 @@ class MosaicScopeFixture:
         public=metadata.get('lineage_facts') if isinstance(metadata,dict) else None
         internal=result.get('metadata')
         owner=internal.get('lineage_facts') if isinstance(internal,dict) else None
-        proof=lineage_projection_evidence(public,owner)
+        proof=lineage_projection_evidence(public,owner,module=module)
         try:
             scene.obj(owner,'Owner lineage facts')
-            scene.support.validate_monitor_lineage({'metadata':{'lineage_facts':public}},owner)
+            resources=public
+            if module=='manager':
+                scene.support.assert_manager_execution_projection(observation)
+                if public['operations']!=manager_operation_projection(owner):
+                    raise scene.SuiteError('Manager lineage operations differ from Owner declared projection')
+                # Operations have already been checked against Manager's DTO.
+                # Only the resource comparison view uses the Monitor projection.
+                resources={**public,'operations':None}
+            scene.support.validate_monitor_lineage({'metadata':{'lineage_facts':resources}},owner)
         except (scene.SuiteError,KeyError,TypeError,ValueError) as error:
             proof.update(result='failed',code='lineage_mismatch',reason=lineage_projection_reason(error),
                          cause_sha256=hashlib.sha256(str(error).encode()).hexdigest())

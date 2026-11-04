@@ -1138,6 +1138,105 @@ class LineageProjectionDiagnosticsTest(unittest.TestCase):
         for private in ('PRIVATE_','addp://','sample.tif','result.tif','input.load','output.save'):
             self.assertNotIn(private,body)
 
+    def test_manager_declared_operations_and_omitempty_match_owner_projection(self):
+        scope=self.scope();public,internal=self.pair()
+        public.update(module='manager',task_type='raster_mosaic_generation')
+        public.pop('tenant_id');public['metadata'].pop('result')
+        operations=[{'kind':'derive','operator':'raster_mosaic_generation',
+                     'input_ports':['source'],'output_ports':['result'],
+                     'field_mappings':[{'private':'PRIVATE_MAPPING'}]},
+                    {'kind':'embed','operator':'','input_ports':[],'output_ports':None}]
+        internal.update(module='manager',task_type='raster_mosaic_generation')
+        internal['metadata']['lineage_facts']['operations']=copy.deepcopy(operations)
+        public['metadata']['lineage_facts']['operations']=[
+            {'kind':'derive','operator':'raster_mosaic_generation','input_ports':['source'],'output_ports':['result']},
+            {'kind':'embed'}]
+        before=copy.deepcopy(public);owner_before=copy.deepcopy(internal)
+        with patch.object(scope,'query',return_value=internal) as query:
+            scope.execution(public,self.identity,'manager')
+        query.assert_called_once();self.assertEqual(public,before);self.assertEqual(internal,owner_before)
+        proof=scope.query_report['projections'][-1]
+        self.assertEqual(proof['result'],'passed');self.assertEqual(proof['differences'],[])
+        self.assertEqual(proof['contract'],'manager_professional')
+        self.assertNotIn('PRIVATE_',json.dumps(proof))
+        self.assertNotIn('raster_mosaic_generation',json.dumps(proof))
+        with self.assertRaisesRegex(m.scene.SuiteError,'Monitor exposes lineage operations'):
+            m.scene.support.validate_monitor_lineage(public,internal['metadata']['lineage_facts'])
+
+    def test_manager_operation_differences_and_private_dto_fields_fail_closed(self):
+        scope=self.scope()
+        faults={
+            'operator':('manager_operations_mismatch','operator'),
+            'kind':('manager_operations_mismatch','kind'),
+            'missing_operator':('manager_operations_mismatch','operator'),
+            'input_ports':('manager_operations_mismatch','input_ports'),
+            'output_ports':('manager_operations_mismatch','output_ports'),
+            'missing_operations':('manager_operations_mismatch','cardinality'),
+            'null_operations':('shape_or_comparison_failed','shape'),
+            'extra_operation':('manager_operations_mismatch','cardinality'),
+            'field_mappings':('manager_private_operation_fields','unrecognized_fields'),
+            'private_name':('manager_private_operation_fields','unrecognized_fields'),
+            'resource':('resource_mismatch','item_id'),
+            'root_private':('manager_private_execution_fields',None),
+            'metadata_result':('manager_private_metadata_fields',None),
+        }
+        for fault,(reason,field) in faults.items():
+            with self.subTest(fault=fault):
+                public,internal=self.pair()
+                public.update(module='manager',task_type='raster_mosaic_generation')
+                internal.update(module='manager',task_type='raster_mosaic_generation')
+                public.pop('tenant_id');public['metadata'].pop('result')
+                operation={'kind':'derive','operator':'raster_mosaic_generation',
+                    'input_ports':['source','other'],'output_ports':['result']}
+                internal['metadata']['lineage_facts']['operations']=[copy.deepcopy(operation)]
+                public['metadata']['lineage_facts']['operations']=[copy.deepcopy(operation)]
+                current=public['metadata']['lineage_facts'];row=current['operations'][0]
+                if fault=='operator':row['operator']='PRIVATE_OPERATOR'
+                if fault=='kind':row['kind']='embed'
+                if fault=='missing_operator':row.pop('operator')
+                if fault=='input_ports':row['input_ports'].reverse()
+                if fault=='output_ports':row['output_ports']=['PRIVATE_PORT']
+                if fault=='missing_operations':current['operations']=[]
+                if fault=='null_operations':current['operations']=None
+                if fault=='extra_operation':current['operations'].append(copy.deepcopy(operation))
+                if fault=='field_mappings':row['field_mappings']=[{'private':'PRIVATE_MAPPING'}]
+                if fault=='private_name':row['PRIVATE_FIELD']='PRIVATE_VALUE'
+                if fault=='resource':current['inputs'][0]['item_id']=999
+                if fault=='root_private':public['execution_config']={'secret':'PRIVATE_CONFIG'}
+                if fault=='metadata_result':public['metadata']['result']={'secret':'PRIVATE_RESULT'}
+                with patch.object(scope,'query',return_value=internal) as query:
+                    with self.assertRaises(m.SnapshotQueryError) as raised:
+                        scope.execution(public,self.identity,'manager')
+                query.assert_called_once();proof=raised.exception.diagnostics
+                self.assertEqual(proof['contract'],'manager_professional')
+                self.assertEqual(proof['reason'],reason)
+                if field:self.assertIn(field,[d['field'] for d in proof['differences']])
+                self.assertEqual(scope.query_report['projections'][-1],proof)
+                self.assertNotIn('PRIVATE_',json.dumps(proof)+m.capacity_error_message(raised.exception))
+                self.assertNotIn('raster_mosaic_generation',json.dumps(proof))
+
+    def test_manager_operation_shape_order_and_private_owner_fields_are_explicit(self):
+        scope=self.scope()
+        for fault in ('order','invalid_kind','invalid_operator','invalid_ports'):
+            with self.subTest(fault=fault):
+                public,internal=self.pair()
+                public.update(module='manager',task_type='raster_mosaic_generation')
+                internal.update(module='manager',task_type='raster_mosaic_generation')
+                public.pop('tenant_id');public['metadata'].pop('result')
+                operations=[{'kind':'derive','operator':'raster_mosaic_generation'},
+                            {'kind':'embed','operator':'embedding'}]
+                internal['metadata']['lineage_facts']['operations']=copy.deepcopy(operations)
+                public['metadata']['lineage_facts']['operations']=copy.deepcopy(operations)
+                if fault=='order':public['metadata']['lineage_facts']['operations'].reverse()
+                if fault=='invalid_kind':internal['metadata']['lineage_facts']['operations'][0]['kind']=False
+                if fault=='invalid_operator':internal['metadata']['lineage_facts']['operations'][0]['operator']=123
+                if fault=='invalid_ports':internal['metadata']['lineage_facts']['operations'][0]['input_ports']=['source',123]
+                with patch.object(scope,'query',return_value=internal),self.assertRaises(m.SnapshotQueryError) as raised:
+                    scope.execution(public,self.identity,'manager')
+                self.assertEqual(raised.exception.diagnostics['reason'],
+                    'manager_operations_mismatch' if fault=='order' else 'manager_operation_shape_mismatch')
+                self.assertTrue(raised.exception.diagnostics['differences'])
+
     def test_resource_schema_order_and_private_field_mismatches_remain_strict_and_safe(self):
         scope=self.scope()
         for fault,reason,field in [
@@ -1353,14 +1452,18 @@ INSERT INTO meta_item VALUES(88,2,9,55,'object',{literal(name)},{literal(full)},
                     observation={'execution_id':self.parent,'module':module,
                         'task_type':'workflow' if module=='develop' else 'raster_mosaic_generation',
                         'tenant_id':2,'triggered_by':33,'status':'success',
-                        'metadata':{'result':self.metadata()['result'],'lineage_facts':{**self.metadata()['lineage_facts'],'operations':None}}}
+                        'metadata':{'lineage_facts':{**self.metadata()['lineage_facts'],'operations':
+                            self.metadata()['lineage_facts']['operations'] if module=='manager' else None}}}
+                    if module=='develop':observation['metadata']['result']=self.metadata()['result']
+                    else:observation.pop('tenant_id')
                     try:actual=self.scope.execution(observation,self.identity,module)
                     except m.SnapshotQueryError as error:
                         self.fail(error.stage+'.'+error.code+'; SQLSTATE='+str(self.sqlstate))
                     self.assertEqual(actual['metadata']['result']['final_result'],{'size_bytes':123})
                     self.assertEqual(actual['outputs'],[])
                     self.assertEqual(actual['metadata']['lineage_facts']['operations'],[{'kind':'derive'}])
-                    self.assertIsNone(observation['metadata']['lineage_facts']['operations'])
+                    self.assertEqual(observation['metadata']['lineage_facts']['operations'],
+                        [{'kind':'derive'}] if module=='manager' else None)
 
         def test_produced_item_query_runs_on_real_postgres(self):
             for module in ('develop','manager'):
