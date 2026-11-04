@@ -568,3 +568,35 @@ def test_measurement_runtime_diagnostic_blocks_following_task_with_frozen_contex
     assert calls==['load',operator] and caught.value.error_code=='INVALID_PARAMS'
     assert caught.value.all_results=={'load':{'kept':True}}
     assert caught.value.diagnostic['operator']=={'node_index':1,'operator_id':operator,**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}
+
+
+DISTANCE_RULES = [('operator_input_invalid', 'input_gdf', ''), ('operator_reference_invalid', 'target_geom', ''), ('operator_geometry_field_conflict', 'input_gdf', 'distance'), ('operator_projected_crs_required', '', ''), ('operator_crs_mismatch', '', '')]
+
+@pytest.mark.parametrize('reason,parameter,field',DISTANCE_RULES)
+def test_distance_admission_closed_context_rejects_wrong_target_parameter_and_fields(reason,parameter,field):
+    import copy
+    from addp_common.workflow_runtime.errors import OperatorInputError,validated_operator_diagnostic,OPERATOR_INPUT_RULES
+    assert len([k for k in OPERATOR_INPUT_RULES if k[0]=='distance_to'])==5
+    value=OperatorInputError(reason,'PRIVATE',field=field).diagnostic('distance_to',2)
+    assert value['operator']=={'node_index':2,'operator_id':'distance_to',**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}
+    assert validated_operator_diagnostic(value)==value
+    for patch in [{'field':'PRIVATE_FIELD'},{'parameter':'reference_gdf'},{'node_index':True},{'node_index':0},{'operator_id':'unknown_distance'},{'parameter_value':0}]:
+        forged=copy.deepcopy(value);forged['operator'].update(patch);assert validated_operator_diagnostic(forged)is None
+    if parameter:
+        forged=copy.deepcopy(value);forged['operator']['parameter']='input_gdf'if parameter=='target_geom'else'target_geom'
+        assert validated_operator_diagnostic(forged)is None
+
+
+@pytest.mark.parametrize('reason,parameter,field',DISTANCE_RULES)
+def test_distance_admission_frozen_runtime_context_blocks_following_save(reason,parameter,field):
+    from addp_common.workflow_runtime import OperatorInputError
+    calls=[]
+    def execute(name,params):
+        calls.append(name)
+        if name=='distance_to':raise OperatorInputError(reason,'PRIVATE',field=field)
+        return {'kept':True}
+    definition={'tasks':[{'id':'PRIVATE','operator':'distance_to','params':{},'depends_on':['load']},
+        {'id':'load','operator':'load','params':{},'depends_on':[]},{'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]}
+    with pytest.raises(WorkflowExecutionError)as caught:WorkflowRunner({'load','distance_to','save'},execute).execute(definition)
+    assert calls==['load','distance_to']and caught.value.error_code=='INVALID_PARAMS'and caught.value.all_results=={'load':{'kept':True}}
+    assert caught.value.diagnostic['operator']=={'node_index':1,'operator_id':'distance_to',**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}

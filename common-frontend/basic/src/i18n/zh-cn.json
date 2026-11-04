@@ -398,6 +398,22 @@
           "operator_crs_invalid": "先确认源坐标系并显式重投影到合适的投影坐标系，再重新执行；不会自动投影。"
         }
       },
+      "distance": {
+        "reasons": {
+          "operator_input_invalid": "距离源图层须具有唯一列名及唯一活动几何列，记录须有效、非NULL、整体非EMPTY且为有限二维XY。",
+          "operator_reference_invalid": "距离目标图层须至少一条记录，且具有唯一列名及唯一活动几何列；记录须有效、非NULL、整体非EMPTY且为有限二维XY。",
+          "operator_geometry_field_conflict": "源活动几何列 {field} 与distance距离输出列冲突。",
+          "operator_projected_crs_required": "双方须使用已知投影坐标系及匹配、有限且为正的水平线性单位。",
+          "operator_crs_mismatch": "双方使用的投影CRS不一致，不能仅因单位相同就混算。"
+        },
+        "actions": {
+          "operator_input_invalid": "请先显式整理源图层中的NULL、整体EMPTY、无效、Z/M或非有限几何；不跳过记录、不填0或NaN，不自动修复。",
+          "operator_reference_invalid": "请提供至少一条可用目标记录；空源仍验证目标。请先显式整理NULL、整体EMPTY、无效、Z/M或非有限几何，不忽略坏目标。",
+          "operator_geometry_field_conflict": "请先手动重命名源活动几何列 {field} 再执行；普通distance结果列沿原规则更新，不自动改名或覆盖几何。",
+          "operator_projected_crs_required": "请先显式重投影；距离沿CRS原水平单位，不自动投影或换算米制。",
+          "operator_crs_mismatch": "请先显式统一投影CRS；相同单位不代表相同坐标系，不自动换算或重投影。"
+        }
+      },
       "measurement": {
         "reasons": {
           "operator_input_invalid": "量测源须具有唯一列名及唯一活动几何列，几何须有效且为有限二维XY；NULL不允许，合法EMPTY保留并计0。",
@@ -439,6 +455,7 @@
         "intersection": "相交叠加"
       },
       "operatorParameters": {
+        "target_geom": "目标图层（target_geom）",
         "threshold": "面积阈值（threshold）",
         "preserve_topology": "保留单几何拓扑（preserve_topology）",
         "distance": "缓冲距离（distance）",

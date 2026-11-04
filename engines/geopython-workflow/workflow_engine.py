@@ -111,7 +111,7 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
                 PolygonRingInputError: {"field_conflict": "operator_field_conflict", "geometry_invalid": "operator_geometry_invalid"},
                 MultiBufferInputError: {'source': 'operator_input_invalid', 'crs': 'operator_crs_invalid', 'distance_conflict': 'operator_field_conflict',
                                        'distances': 'operator_number_array_invalid', 'resolution': 'operator_positive_integer_required'},
-                DistanceInputError: {'geometry_column_conflict': 'operator_geometry_field_conflict',
+                DistanceInputError: {'source': 'operator_input_invalid', 'reference': 'operator_reference_invalid', 'geometry_column_conflict': 'operator_geometry_field_conflict',
                                      'projected_crs': 'operator_projected_crs_required', 'crs_mismatch': 'operator_crs_mismatch'},
                 NearLineInputError: {'tolerance': 'operator_positive_number_required', 'source': 'operator_input_invalid',
                                     'reference': 'operator_reference_invalid', 'crs': 'operator_crs_invalid'},

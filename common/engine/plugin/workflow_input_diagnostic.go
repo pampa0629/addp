@@ -184,6 +184,10 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 		}
 	case "distance_to":
 		switch reason {
+		case "operator_input_invalid":
+			parameter, ok = "input_gdf", true
+		case "operator_reference_invalid":
+			parameter, ok = "target_geom", true
 		case "operator_geometry_field_conflict":
 			parameter, field, ok = "input_gdf", "distance", true
 		case "operator_projected_crs_required", "operator_crs_mismatch":

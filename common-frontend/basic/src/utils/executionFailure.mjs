@@ -22,7 +22,7 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'resource_exhausted', 'invalid_input', 'execution_failed', 'submission_uncertain',
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
-const operatorFailureTemplates = Object.freeze({ get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
+const operatorFailureTemplates = Object.freeze({ distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
   envelope: 'construction', centroid: 'construction', convex_hull: 'construction', minimum_rotated_rectangle: 'construction',
   representative_point: 'interiorPoint',
   'buffer:operator_input_invalid': 'buffer', 'buffer:operator_crs_invalid': 'buffer',
@@ -143,6 +143,8 @@ export const operatorInputRules = Object.freeze([
   ["batch_buffer", "operator_field_conflict", "input_gdf", "distance"],
   ["batch_buffer", "operator_number_array_invalid", "distances", ""],
   ["batch_buffer", "operator_positive_integer_required", "resolution", ""],
+  ["distance_to", "operator_input_invalid", "input_gdf", ""],
+  ["distance_to", "operator_reference_invalid", "target_geom", ""],
   ["distance_to", "operator_geometry_field_conflict", "input_gdf", "distance"],
   ["distance_to", "operator_projected_crs_required", "", ""],
   ["distance_to", "operator_crs_mismatch", "", ""],

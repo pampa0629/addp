@@ -398,6 +398,22 @@
           "operator_crs_invalid": "Confirm the source CRS and explicitly reproject to a suitable projected CRS before a new execution; no automatic projection is performed."
         }
       },
+      "distance": {
+        "reasons": {
+          "operator_input_invalid": "The distance source requires unique column names, one active geometry column and valid non-NULL, non-EMPTY finite XY records.",
+          "operator_reference_invalid": "The distance target requires at least one record, unique column names, one active geometry column and valid non-NULL, non-EMPTY finite XY records.",
+          "operator_geometry_field_conflict": "Source active geometry column {field} conflicts with the distance output field.",
+          "operator_projected_crs_required": "Both inputs require a known projected CRS with matching finite positive horizontal linear units.",
+          "operator_crs_mismatch": "The projected CRSs differ; matching units alone do not allow the inputs to be mixed."
+        },
+        "actions": {
+          "operator_input_invalid": "Explicitly prepare NULL, wholly EMPTY, invalid, Z/M or non-finite source geometries; do not skip records, fill zero or NaN, or repair automatically.",
+          "operator_reference_invalid": "Provide at least one usable target record, even for an empty source. Explicitly prepare NULL, wholly EMPTY, invalid, Z/M or non-finite targets without ignoring bad records.",
+          "operator_geometry_field_conflict": "Rename source active geometry column {field} manually before execution; ordinary distance result fields are updated as before, without automatic renaming or geometry replacement.",
+          "operator_projected_crs_required": "Reproject explicitly first; distances use original horizontal CRS units, without automatic projection or conversion to metres.",
+          "operator_crs_mismatch": "Explicitly align the projected CRSs first; matching units do not mean matching coordinate systems. No automatic conversion or reprojection is performed."
+        }
+      },
       "measurement": {
         "reasons": {
           "operator_input_invalid": "Measurement requires unique column names, one active geometry column and valid finite XY geometries; NULL is rejected while valid EMPTY is retained with zero.",
@@ -439,6 +455,7 @@
         "intersection": "Intersection overlay"
       },
       "operatorParameters": {
+        "target_geom": "Target layer (target_geom)",
         "threshold": "Area threshold (threshold)",
         "preserve_topology": "Preserve single-geometry topology (preserve_topology)",
         "distance": "Buffer distance (distance)",

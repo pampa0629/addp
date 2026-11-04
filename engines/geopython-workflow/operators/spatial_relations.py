@@ -4,6 +4,7 @@
 提供空间关系判断算子：包含、相交、距离计算
 """
 
+import numpy as np
 import geopandas as gpd
 import shapely
 from .base import (
@@ -19,11 +20,15 @@ class DistanceInputError(ValueError):
 
     _messages = {
         'zh-cn': {
+            'source': '距离源图层须具有唯一列名及唯一活动几何列，每条记录须有效、非NULL、整体非EMPTY且为有限二维XY；不跳过坏记录，请先显式整理源图层。',
+            'reference': '距离目标图层须至少一条记录、唯一列名及唯一活动几何列，每条记录须有效、非NULL、整体非EMPTY且为有限二维XY；空源也须有可用目标，不自动忽略坏记录。',
             'geometry_column_conflict': '源图层的活动几何列名 distance 与距离输出列冲突；请先手动重命名源几何列，再执行距离计算。',
             'projected_crs': '距离计算要求两个输入均具有已知的投影坐标系，且两个水平轴使用相同、有限且为正的线性单位；请先显式重投影。',
             'crs_mismatch': '距离计算要求两个输入使用相同的投影坐标系；请先显式重投影，不能仅因单位相同就直接计算。',
         },
         'en': {
+            'source': 'Distance source requires unique column names, one active geometry column and valid non-NULL, non-EMPTY finite XY records; prepare the source explicitly without skipping bad records.',
+            'reference': 'Distance target requires at least one record, unique column names, one active geometry column and valid non-NULL, non-EMPTY finite XY records; an empty source still needs usable targets, without skipping bad records.',
             'geometry_column_conflict': 'Source active geometry column distance conflicts with the distance output column; '
                                         'rename the source geometry column before running distance calculation.',
             'projected_crs': 'Distance calculation requires both inputs to have a known projected CRS with matching, '
@@ -103,34 +108,47 @@ def intersects(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoD
     return _relation_filter(input_gdf, gdf_b, shapely.intersects)
 
 
-def distance_to(input_gdf: gpd.GeoDataFrame, target_geom: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    距离计算（计算每个几何到目标几何的最短距离）
-
-    Args:
-        input_gdf: 输入 GeoDataFrame
-        target_geom: 目标几何 GeoDataFrame
-
-    Returns:
-        GeoDataFrame 添加 distance 列
-    """
-    if input_gdf.geometry.name == 'distance':
-        raise DistanceInputError('geometry_column_conflict')
-
+def _distance_geometry(frame, code):
     try:
-        _require_projected_xy_crs(input_gdf.crs)
-        _require_projected_xy_crs(target_geom.crs)
+        if not isinstance(frame, gpd.GeoDataFrame) or not frame.columns.is_unique:
+            raise ValueError('distance requires a GeoDataFrame with unique columns')
+        geometry = _finite_xy_geometry(frame)
+        if geometry.isna().any() or geometry.is_empty.any() or not shapely.is_valid(geometry.array).all():
+            raise ValueError('distance requires valid non-empty non-missing XY records')
+    except (ValueError, TypeError) as exc:
+        raise DistanceInputError(code) from exc
+    return geometry
+
+
+def distance_to(input_gdf: gpd.GeoDataFrame, target_geom: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """One finite nearest planar distance per source; no skipped or empty target records."""
+    source = _distance_geometry(input_gdf, 'source')
+    if source.name == 'distance':
+        raise DistanceInputError('geometry_column_conflict')
+    target = _distance_geometry(target_geom, 'reference')
+    try:
+        _require_projected_xy_crs(source.crs)
+        _require_projected_xy_crs(target.crs)
     except ValueError as exc:
         raise DistanceInputError('projected_crs') from exc
-    if not input_gdf.crs.equals(target_geom.crs):
+    if not source.crs.equals(target.crs):
         raise DistanceInputError('crs_mismatch')
-
+    if target.empty:
+        raise DistanceInputError('reference')
+    values = np.empty(0, dtype=float)
+    if not source.empty:
+        combined = shapely.union_all(target.array)
+        if (not isinstance(combined, shapely.Geometry) or combined.is_empty or not combined.is_valid
+                or shapely.has_z(combined) or shapely.has_m(combined)
+                or not np.isfinite(shapely.get_coordinates(combined)).all()):
+            raise RuntimeError('distance target union produced invalid or non-finite geometry')
+        values = np.asarray(shapely.distance(source.array, combined))
+        if (values.shape != (len(source),) or values.dtype.kind not in 'fiu'
+                or not np.isfinite(values).all() or (values < 0).any()):
+            raise RuntimeError('distance calculation produced invalid or non-finite scalar results')
+        values = values.astype(float)
     result = input_gdf.copy()
-
-    # 计算到目标几何集合中最近点的距离
-    target_union = target_geom.geometry.unary_union
-    result['distance'] = result.geometry.apply(lambda g: g.distance(target_union))
-
+    result['distance'] = values
     return result
 
 
@@ -286,8 +304,12 @@ DISTANCE_TO_METADATA = OperatorMetadata(
     notes=[
         "距离保留源投影坐标系的水平单位：米制为米、英尺制为对应英尺，不自动换算米",
         "未知、地理、地心或不匹配坐标系明确拒绝；须先显式重投影，仅单位相同仍不能混算不同投影",
-        "返回的是最近距离,如需到所有目标的距离需遍历",
-        "大数据集建议先用空间索引加速最近邻查询"
+        "返回每源到目标整体的最近距离，重复目标不改变最小值，不输出最近目标ID/属性或全部等距来源",
+        "双方唯一实际几何及列名，有效非NULL、整体非EMPTY、有限XY；源和目标不变，源属性/索引/CRS保留",
+        "目标0行拒绝，即使源0行；空源仍校验全部输入再返回空float distance列，不进行原生距离计算",
+        "相交/接触/包含可为0，面内点距离为0；不等于到面边界距离，不用0/NULL/NaN/Inf代替无距离",
+        "不跳过坏记录、不自动修复或投影；原生故障及非法结果整批计算失败",
+        "本算子沿唯一目标整体求并与最近距离路线，不新增索引/算法选项或容量保证"
     ],
 
     workflow_example={

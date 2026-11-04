@@ -538,3 +538,41 @@ func TestMeasurementDiagnosticsRequireClosedFieldsAndFrozenDefinition(t *testing
 		}
 	}
 }
+
+func TestDistanceAdmissionDiagnosticsBindSourceTargetAndOriginalDefinition(t *testing.T) {
+	rows := []struct{ reason, parameter, field string }{
+		{"operator_input_invalid", "input_gdf", ""},
+		{"operator_reference_invalid", "target_geom", ""},
+		{"operator_geometry_field_conflict", "input_gdf", "distance"},
+		{"operator_projected_crs_required", "", ""},
+		{"operator_crs_mismatch", "", ""},
+	}
+	for _, row := range rows {
+		context := map[string]interface{}{"node_index": 1, "operator_id": "distance_to"}
+		if row.parameter != "" {
+			context["parameter"] = row.parameter
+		}
+		if row.field != "" {
+			context["field"] = row.field
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": row.reason, "operator": context}
+		raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+		frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "PRIVATE", "operator": "distance_to", "depends_on": []string{"load"}}, map[string]interface{}{"id": "load", "operator": "load"}}}
+		if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] == nil || got["code"] != "develop.workflow.invalid_params" {
+			t.Fatalf("lost distance context %+v", got)
+		}
+		for _, patch := range []map[string]interface{}{{"field": "PRIVATE_FIELD"}, {"parameter": "reference_gdf"}, {"node_index": 2}, {"node_index": true}, {"node_id": "PRIVATE"}, {"operator_id": "unknown_distance"}} {
+			forged := map[string]interface{}{}
+			for k, v := range context {
+				forged[k] = v
+			}
+			for k, v := range patch {
+				forged[k] = v
+			}
+			diagnostic["operator"] = forged
+			if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] != nil {
+				t.Fatalf("trusted wrong distance context %+v", got)
+			}
+		}
+	}
+}

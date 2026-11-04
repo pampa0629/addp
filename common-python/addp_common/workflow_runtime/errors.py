@@ -101,6 +101,8 @@ OPERATOR_INPUT_RULES = {
     ('batch_buffer', 'operator_field_conflict', 'distance'): 'input_gdf',
     ('batch_buffer', 'operator_number_array_invalid', ''): 'distances',
     ('batch_buffer', 'operator_positive_integer_required', ''): 'resolution',
+    ('distance_to', 'operator_input_invalid', ''): 'input_gdf',
+    ('distance_to', 'operator_reference_invalid', ''): 'target_geom',
     ('distance_to', 'operator_geometry_field_conflict', 'distance'): 'input_gdf',
     ('distance_to', 'operator_projected_crs_required', ''): '',
     ('distance_to', 'operator_crs_mismatch', ''): '',

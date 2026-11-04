@@ -314,3 +314,5 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 `representative_point`（面内点）只接投影CRS下有效非空有限XY Polygon/MultiPolygon，逐源取最大净面积部件，精确等面积原部件顺序；原生求点后必须严格位于选中部件和原源内部，否则整批计算失败，不挪点/换次优。保属性类型/null/index/CRS及实际几何列，唯一Point图层输出；无数值参数或point_on_surface别名。详见[面内点契约](../../../docs/spec/workflow/矢量算子契约.md#面内点统一契约)。
 
 `get_area`、`get_length`及`split_by_area`遵循[统一量测契约](../../../docs/spec/workflow/矢量算子契约.md#面积长度与面积分流统一契约)：已知投影原单位、有效有限XY，NULL拒绝、EMPTY0保行；面积扣孔洞、周长计全部环，集合/重复部件按原生贡献累加不融合。普通area/length列更新，活动几何重名报错；面积分流复用唯一面积计算，有限非负threshold，large严格大于、small小于等于，每源恰入一端口。
+
+`distance_to`按[距离契约](../../../docs/spec/workflow/矢量算子契约.md#distance_to-活动几何列)逐源计算到目标整体的最近平面距离：双方有效非NULL/整体非EMPTY有限XY及相同已知投影，空目标拒绝，空源仍验全部输入后返回空结果；原单位、源字段（包括已有非活动几何列）及distance更新/几何重名规则保留，不输出最近目标ID或边界距离，不自动修复/投影或补无效距离。

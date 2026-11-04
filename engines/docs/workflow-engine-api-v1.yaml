@@ -879,7 +879,7 @@ components:
               enum: [get_area, get_length, split_by_area, envelope, representative_point, centroid, convex_hull, minimum_rotated_rectangle, simplify, buffer, voronoi, contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
             parameter:
               type: string
-              enum: [threshold, input_gdf, reference_gdf, preserve_topology, distance, distances, resolution, tolerance, max_distance, gdf_b, mask_gdf, group_fields]
+              enum: [target_geom, threshold, input_gdf, reference_gdf, preserve_topology, distance, distances, resolution, tolerance, max_distance, gdf_b, mask_gdf, group_fields]
             field:
               type: string
               enum: [area, length, distance, source_id, part_no, ring_no, ring_id, is_hole, node_id, degree, source_part_no, end]
@@ -960,6 +960,8 @@ components:
         - ["batch_buffer", "operator_field_conflict", "input_gdf", "distance"]
         - ["batch_buffer", "operator_number_array_invalid", "distances", ""]
         - ["batch_buffer", "operator_positive_integer_required", "resolution", ""]
+        - ["distance_to", "operator_input_invalid", "input_gdf", ""]
+        - ["distance_to", "operator_reference_invalid", "target_geom", ""]
         - ["distance_to", "operator_geometry_field_conflict", "input_gdf", "distance"]
         - ["distance_to", "operator_projected_crs_required", "", ""]
         - ["distance_to", "operator_crs_mismatch", "", ""]

@@ -9015,3 +9015,207 @@ def test_measurement_null_source_cannot_silently_disappear_from_both_area_split_
     with pytest.raises(MeasurementInputError) as caught:get_operator('split_by_area')(source,0.)
     assert caught.value.code=='source'
     assert_geodataframe_equal(source,before)
+
+
+DISTANCE_ADMISSION_RULES = [('operator_input_invalid','input_gdf',''),('operator_reference_invalid','target_geom',''),
+    ('operator_geometry_field_conflict','input_gdf','distance'),('operator_projected_crs_required','',''),('operator_crs_mismatch','','')]
+
+
+@pytest.mark.parametrize('crs',[3857,2263])
+def test_distance_admission_analytic_nearest_whole_target_parts_duplicates_and_native_units(crs):
+    source=buffer_source([Point(-3,-4),LineString([(3,4),(3,8)]),
+        shapely.GeometryCollection([Point(5,12),Point(5,-12)]),
+        shapely.MultiPoint([(100,100),(10,0)]),Point(20,0)],crs)
+    source['distance']=-999.
+    target=buffer_source([Point(0,0),Point(10,0),Point(0,0)],crs).rename_geometry('distance')
+    before_source=source.copy(deep=True);before_target=target.copy(deep=True)
+    result=get_operator('distance_to')(source,target)
+    assert result['distance'].tolist()==[5.,5.,13.,0.,10.] and result['distance'].dtype==np.dtype('float64')
+    assert result.index.equals(source.index) and result.columns.equals(source.columns)
+    pd.testing.assert_frame_equal(result.drop(columns='distance'),source.drop(columns='distance'))
+    assert result.geometry.to_wkb().tolist()==source.geometry.to_wkb().tolist() and result.crs==source.crs
+    assert_geodataframe_equal(source,before_source);assert_geodataframe_equal(target,before_target)
+
+
+def test_distance_admission_polygon_interior_contact_hole_and_separation_are_not_boundary_only_distances():
+    polygon=Polygon([(0,0),(10,0),(10,10),(0,10),(0,0)], [[(2,2),(4,2),(4,4),(2,4),(2,2)]])
+    source=buffer_source([Point(1,1),Point(3,3),Point(2,3),Point(13,14),LineString([(2.5,3),(3.5,3)])])
+    result=get_operator('distance_to')(source,buffer_source([polygon]))
+    assert result['distance'].tolist()==[0.,1.,0.,5.,.5]
+
+
+def test_distance_admission_nonempty_collections_may_keep_empty_members_without_mutation():
+    source=buffer_source([shapely.GeometryCollection([Point(),Point(0,0)])])
+    target=buffer_source([shapely.GeometryCollection([LineString(),Point(3,4)])])
+    before_source=source.copy(deep=True);before_target=target.copy(deep=True)
+    assert get_operator('distance_to')(source,target)['distance'].tolist()==[5.]
+    assert_geodataframe_equal(source,before_source);assert_geodataframe_equal(target,before_target)
+
+
+@pytest.mark.parametrize('side',['source','reference'])
+@pytest.mark.parametrize('problem',['not_gdf','duplicate','no_active','null','empty_point','empty_line','empty_polygon','empty_collection','invalid','z','m','nonfinite'])
+def test_distance_admission_rejects_each_bad_record_without_skipping_or_mutation(side,problem,monkeypatch):
+    from operators.spatial_relations import DistanceInputError
+    source=buffer_source([Point(0,0),Point(1,1)]);target=buffer_source([Point(3,4),Point(10,10)])
+    bad=source.copy(deep=True)if side=='source'else target.copy(deep=True)
+    if problem=='not_gdf':bad=pd.DataFrame({'x':[1]})
+    elif problem=='duplicate':bad.columns=['same']*len(bad.columns)
+    elif problem=='no_active':bad=gpd.GeoDataFrame({'x':[1]})
+    else:bad['shape']=[Point(3,4),{'null':None,'empty_point':Point(),'empty_line':LineString(),'empty_polygon':Polygon(),
+        'empty_collection':shapely.GeometryCollection(),'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),
+        'z':Point(1,2,3),'m':shapely.from_wkt('POINT M (1 2 3)'),'nonfinite':Point(float('inf'),0)}[problem]]
+    if side=='source':source=bad
+    else:target=bad
+    before_source=source.copy(deep=True);before_target=target.copy(deep=True)
+    def forbidden(*args,**kwargs):raise AssertionError('bad distance input reached union')
+    monkeypatch.setattr(shapely,'union_all',forbidden)
+    with pytest.raises(DistanceInputError)as caught:get_operator('distance_to')(source,target)
+    assert caught.value.code==side
+    pd.testing.assert_frame_equal(source,before_source);pd.testing.assert_frame_equal(target,before_target)
+
+
+@pytest.mark.parametrize('empty_source',[False,True])
+def test_distance_admission_zero_row_target_is_rejected_even_for_empty_source(empty_source):
+    from operators.spatial_relations import DistanceInputError
+    source=buffer_source([Point(0,0)]);target=buffer_source([Point(3,4)]).iloc[:0]
+    if empty_source:source=source.iloc[:0]
+    with pytest.raises(DistanceInputError)as caught:get_operator('distance_to')(source,target)
+    assert caught.value.code=='reference'
+
+
+@pytest.mark.parametrize('bad_target',[None,Point(),LineString(),Polygon(),shapely.GeometryCollection()])
+def test_distance_admission_empty_source_still_rejects_each_bad_target_record(bad_target):
+    from operators.spatial_relations import DistanceInputError
+    source=buffer_source([Point(0,0)]).iloc[:0];target=buffer_source([Point(3,4),bad_target])
+    with pytest.raises(DistanceInputError)as caught:get_operator('distance_to')(source,target)
+    assert caught.value.code=='reference'
+
+
+def test_distance_admission_empty_source_validates_all_inputs_but_skips_numerical_kernels(monkeypatch):
+    from operators.spatial_relations import DistanceInputError
+    source=buffer_source([Point(0,0)]).iloc[:0];source['distance']=pd.Series(dtype='float64')
+    target=buffer_source([Point(3,4)])
+    def forbidden(*args,**kwargs):raise AssertionError('empty source should not enter native kernels')
+    monkeypatch.setattr(shapely,'union_all',forbidden);monkeypatch.setattr(shapely,'distance',forbidden)
+    result=get_operator('distance_to')(source,target)
+    assert result.empty and result['distance'].dtype==np.dtype('float64')
+    assert result.columns.equals(source.columns)and result.index.equals(source.index)
+    assert_geodataframe_equal(result.drop(columns='distance'),source.drop(columns='distance'))
+    with pytest.raises(DistanceInputError)as caught:get_operator('distance_to')(source,target.set_crs(4326,allow_override=True))
+    assert caught.value.code=='projected_crs'
+    with pytest.raises(DistanceInputError)as caught:get_operator('distance_to')(source,target.set_crs(3395,allow_override=True))
+    assert caught.value.code=='crs_mismatch'
+
+
+@pytest.mark.parametrize('fault',['exception','missing','empty','invalid','z','m','nonfinite','array','not_geometry'])
+def test_distance_admission_bad_union_is_computation_failure_without_input_diagnostic(fault,monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=buffer_source([Point(0,0)]);target=buffer_source([Point(3,4)])
+    def broken(*args,**kwargs):
+        if fault=='exception':raise shapely.errors.GEOSException('PRIVATE native union failure')
+        return {'missing':None,'empty':Point(),'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),
+            'z':Point(1,2,3),'m':shapely.from_wkt('POINT M (1 2 3)'),'nonfinite':Point(float('inf'),0),
+            'array':np.array([Point(3,4)],dtype=object),'not_geometry':1}[fault]
+    monkeypatch.setattr(shapely,'union_all',broken)
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner().execute({'tasks':[
+        {'id':'PRIVATE','operator':'distance_to','params':{'input_gdf':source,'target_geom':target},'depends_on':[]},
+        {'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None and caught.value.task_order==['PRIVATE']
+
+
+@pytest.mark.parametrize('fault',['exception','nan','infinity','negative','rank','length','missing','string','boolean','complex'])
+def test_distance_admission_bad_distance_is_computation_failure_and_blocks_save(fault,monkeypatch):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=buffer_source([Point(0,0)]);target=buffer_source([Point(3,4)])
+    def broken(*args,**kwargs):
+        if fault=='exception':raise shapely.errors.GEOSException('PRIVATE native distance failure')
+        return {'nan':np.array([float('nan')]),'infinity':np.array([float('inf')]),'negative':np.array([-1.]),
+            'rank':np.array([[1.]]),'length':np.array([]),'missing':None,'string':np.array(['5']),
+            'boolean':np.array([True]),'complex':np.array([5+0j])}[fault]
+    monkeypatch.setattr(shapely,'distance',broken)
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner().execute({'tasks':[
+        {'id':'PRIVATE','operator':'distance_to','params':{'input_gdf':source,'target_geom':target},'depends_on':[]},
+        {'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None and caught.value.task_order==['PRIVATE']
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('reason,parameter,field',DISTANCE_ADMISSION_RULES)
+def test_distance_admission_runtime_diagnostics_freeze_definition_and_block_save(language,reason,parameter,field,monkeypatch):
+    import workflow_engine
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=buffer_source([Point(0,0)]);target=buffer_source([Point(3,4)])
+    if reason=='operator_input_invalid':source['shape']=[None]
+    elif reason=='operator_reference_invalid':target=target.iloc[:0]
+    elif field:source=source.rename_geometry(field)
+    elif reason=='operator_projected_crs_required':target=target.set_crs(4326,allow_override=True)
+    else:target=target.set_crs(3395,allow_override=True)
+    original=workflow_engine.get_operator;calls=[]
+    def guarded(name):
+        calls.append(name)
+        if name=='source_load':return lambda **kwargs:source
+        if name=='target_load':return lambda **kwargs:target
+        if name=='save':raise AssertionError('distance input refusal reached save')
+        return original(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    # Existing registered load is used twice, with the actual frame chosen by its controlled parameter.
+    def lookup(name):
+        if name=='load':
+            return lambda **kwargs: source if kwargs.get('path')=='source'else target
+        return guarded(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',lookup)
+    tasks=[{'id':'PRIVATE','operator':'distance_to','params':{'input_gdf':{'$ref':'s'},'target_geom':{'$ref':'t'}},'depends_on':['s','t']},
+        {'id':'s','operator':'load','params':{'path':'source'},'depends_on':[]},
+        {'id':'t','operator':'load','params':{'path':'target'},'depends_on':[]},
+        {'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]
+    with pytest.raises(WorkflowExecutionError)as caught:GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert caught.value.error_code=='INVALID_PARAMS'and calls==['distance_to']
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+        'operator':{'node_index':1,'operator_id':'distance_to',**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}}
+    assert caught.value.task_order[-1]=='PRIVATE'and'save'not in caught.value.task_order
+    assert 'PRIVATE'not in json.dumps(caught.value.diagnostic)
+
+
+def test_distance_admission_real_geopackage_keeps_distances_source_wkb_and_business_fields(tmp_path):
+    from osgeo import ogr
+    source=buffer_source([Point(-3,-4),Point(10,0)]);source['enabled']=pd.array([None,True],dtype='boolean');source['distance']=-1
+    target=buffer_source([Point(0,0),Point(10,0)]).rename_geometry('reference_shape')
+    before_source=source.copy(deep=True);before_target=target.copy(deep=True)
+    result=get_operator('distance_to')(source,target);conn={'storage_type':'nfs','mount_path':str(tmp_path)}
+    get_operator('save')(input_df=result,connection_info=conn,path='distances.gpkg',mode='fail')
+    ds=ogr.Open(str(tmp_path/'distances.gpkg'));layer=ds.GetLayer(0);rows=list(layer)
+    assert len(rows)==2 and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    for i,row in enumerate(rows):
+        assert row.GetField('distance')==[5.,0.][i]and row.GetField('geometry')=='business'
+        assert row.GetField('grade')==[None,2**53+2][i]and row.GetField('enabled')==[None,True][i]
+        assert row.GetGeometryRef().GetPoint_2D(0)==[(-3.,-4.),(10.,0.)][i]
+        assert bytes(row.GetGeometryRef().ExportToIsoWkb())==source.geometry.to_wkb(byte_order=1,flavor='iso').iloc[i]
+    actual_name=layer.GetGeometryColumn();ds=None
+    loaded=get_operator('load')(connection_info=conn,path='distances.gpkg')
+    assert loaded.geometry.name==actual_name and loaded.crs==source.crs and loaded['distance'].tolist()==[5.,0.]
+    assert loaded.geometry.to_wkb().tolist()==source.geometry.to_wkb().tolist()
+    assert str(loaded.grade.dtype)=='Int64'and str(loaded.enabled.dtype)=='boolean'
+    assert_geodataframe_equal(source,before_source);assert_geodataframe_equal(target,before_target)
+
+
+@pytest.mark.parametrize('bad_target',[None,Point()])
+def test_distance_admission_bad_target_must_not_be_silently_ignored_during_union(bad_target):
+    from operators.spatial_relations import DistanceInputError
+    source=buffer_source([Point(0,0)]);target=buffer_source([Point(3,4),bad_target])
+    with pytest.raises(DistanceInputError)as caught:get_operator('distance_to')(source,target)
+    assert caught.value.code=='reference'
+
+
+def test_distance_admission_preserves_inactive_geometry_typed_columns_and_uses_only_active_columns():
+    source=buffer_source([Point(0,0),Point(9,12)])
+    target=buffer_source([Point(3,4),Point(30,40)]).rename_geometry('reference_shape')
+    source['geometry']=gpd.GeoSeries([Point(100,100),Point(101,101)],index=source.index,crs=source.crs)
+    target['geometry']=gpd.GeoSeries([Point(100,100),Point(200,200)],index=target.index,crs=target.crs)
+    before_source=source.copy(deep=True);before_target=target.copy(deep=True)
+    result=get_operator('distance_to')(source,target)
+    assert result['distance'].tolist()==[5.,10.]
+    assert_geodataframe_equal(result.drop(columns='distance'),source)
+    assert_geodataframe_equal(source,before_source);assert_geodataframe_equal(target,before_target)

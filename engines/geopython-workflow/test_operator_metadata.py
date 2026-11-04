@@ -1854,3 +1854,13 @@ def test_measurement_discovery_projected_empty_zero_and_original_unit_policy(ope
     if operator=='split_by_area':
         assert [port['name']for port in spec['output_ports']]==['large','small']
         assert 'threshold' in text and '非负' in text
+
+
+def test_distance_admission_metadata_describes_empty_targets_sources_and_complete_geometries():
+    spec=next(item for item in list_operators()if item['id']=='distance_to')
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert [p['name']for p in spec['parameters']]==['input_gdf','target_geom']
+    text=str(spec['detailed_description'])
+    for marker in ['NULL','EMPTY','目标0行拒绝','空源','distance','英尺','不自动换算米','包含','不输出最近目标ID']:
+        assert marker in text
+    assert len(spec['output_ports'])==1

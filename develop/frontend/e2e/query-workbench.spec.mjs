@@ -1392,3 +1392,31 @@ for(const locale of ['zh-cn','en'])for(const [operator_id,reason,parameter,field
     await page.setViewportSize({width:390,height:844})
     expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
  })
+
+
+for(const locale of ['zh-cn','en'])for(const [reason,parameter,field]of [["operator_input_invalid", "input_gdf", ""], ["operator_reference_invalid", "target_geom", ""], ["operator_geometry_field_conflict", "input_gdf", "distance"], ["operator_projected_crs_required", "", ""], ["operator_crs_mismatch", "", ""]])
+ test(`distance admission diagnostics in develop (${reason}, ${field}, ${locale})`,async({page})=>{
+    await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
+    const details={category:'execution_failed',code:'develop.workflow.invalid_params',message:'PRIVATE_BIZ_FIELD private-password /private/input.gpkg',
+      diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id:'distance_to',...(parameter?{parameter}:{}),...(field?{field}:{})}}}
+    await installMockBackend(page,{resultKind:'table',executionType:'workflow',locale,errorDetails:details})
+    await page.goto(`/executions/${EXECUTION_ID}`)
+    const panel=page.locator('.execution-failure')
+    const name=locale==='zh-cn'?'距离计算':'Distance calculation'
+    await expect(panel).toContainText(name)
+    await expect(panel).toContainText(locale==='zh-cn'?'定义中的第 2 个节点':'Node 2 in the workflow definition')
+    if(parameter)await expect(panel).toContainText(parameter)
+    if(reason==='operator_input_invalid'||reason==='operator_reference_invalid'){
+      await expect(panel).toContainText('NULL');await expect(panel).toContainText('EMPTY');await expect(panel).toContainText('Z/M')
+    }
+    if(reason==='operator_reference_invalid')await expect(panel).toContainText(locale==='zh-cn'?'空源仍验证目标':'even for an empty source')
+    if(reason==='operator_projected_crs_required')await expect(panel).toContainText(locale==='zh-cn'?'原水平单位':'original horizontal CRS units')
+    if(field){await expect(panel).toContainText(field);await expect(panel).toContainText(locale==='zh-cn'?'手动重命名':'Rename')}
+    await expect(panel).not.toContainText('PRIVATE_BIZ_FIELD');await expect(panel).not.toContainText('private-password')
+    await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
+    const copied=await page.evaluate(()=>window.copiedDiagnostic)
+    expect(copied).toContain(name);if(parameter)expect(copied).toContain(parameter)
+    expect(copied).not.toMatch(/PRIVATE_BIZ_FIELD|private-password|\/private\/input.gpkg/)
+    await page.setViewportSize({width:390,height:844})
+    expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
+ })
