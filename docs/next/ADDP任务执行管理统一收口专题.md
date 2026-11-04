@@ -264,7 +264,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | 准确源 Grant 前置；Meta 只取结构身份；统一 GatewayClient 保留 ZIP／GLB raw、响应头及 JSON；OBJ／MTL／纹理逐项核验长度和摘要 | `a641b1b6e` [Linux 专项](https://github.com/pampa0629/addp/actions/runs/41677128582/job/126241760694)198＋182项通过，不替代本轮403的定位与完整业务验收。 |
 | 既有 `--jobs 1` 实时委托日志、固定阶段及返回码；固定 vcpkg 仅构建产品消费的 Release，保留依赖版本和全部 smoke | `f5bd7b905` [Product build](https://github.com/pampa0629/addp/actions/runs/41758545081/job/126340402757)真实 Linux amd64 Converter／Runtime 及全部 smoke 通过，不外推 arm64 或保证后续冷构建时长。 |
 | Manager 私有 `storage_ref` 的唯一四字段 JSON 协议，复用已有 `object_ref`；保留 Manager 桶／本 Tenant 围栏及对象名的字面百分号、空格和 Unicode；删除误用 infra locator 的 URL 路线 | `277c8f6c5` 本地及[同提交 Linux 专项](https://github.com/pampa0629/addp/actions/runs/41815464385/job/126524957842)均200＋189项通过；第五轮尚未到达其真实库存核验。 |
-| 模型准备 HTTP 失败只记录闭集操作及白名单错误码；成功报告拒绝该诊断，即使为空或 null；不加请求、重试、身份或等待窗口 | 本地 `make test-execution-online-ci-runner` 201＋190项通过、登记一致；Linux 专项待同提交终态，未追加 Hosted。 |
+| 模型准备 HTTP 失败只记录闭集操作及白名单错误码；成功报告拒绝该诊断，即使为空或 null；不加请求、重试、身份或等待窗口 | `3eae16d39` 本地及[同提交 Linux 专项](https://github.com/pampa0629/addp/actions/runs/41852005816/job/126650489413)均201＋190项通过、登记一致；Linux selected=true，未追加 Hosted。 |
 
 **历史范围。** [首轮](https://github.com/pampa0629/addp/actions/runs/41586728539/job/125753855807)及[第三轮](https://github.com/pampa0629/addp/actions/runs/41736284282/job/126266219326)构建超时取消；[第二轮](https://github.com/pampa0629/addp/actions/runs/41639055422/job/125927590186)遇到 ZIP 解码错误；[第四轮](https://github.com/pampa0629/addp/actions/runs/41791842460/job/126446790438)已完成 GLB 生成／授权下载，但库存引用解析失败。各轮均没有九项完整业务通过证据，清理结果按各轮独立核验。本轮准备门禁初次本地8秒日志夹具失败；同源同预算复核200＋190项通过，初次时序原因仍未证实，未据此改代码或放宽预算。
 
