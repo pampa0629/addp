@@ -98,17 +98,8 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 		}
 		local[kind] = value.text
 	}
-	// Do not claim the more intricate inherited length/min/max combination rules.
-	_, hasLength := p.bounds["length"]
-	_, newLength := local["length"]
-	if hasLength || newLength {
-		for _, k := range []string{"minLength", "maxLength"} {
-			_, a := p.bounds[k]
-			_, b := local[k]
-			if a || b {
-				return false, nil
-			}
-		}
+	if err := c.checkMixedLength(base, local); err != nil {
+		return false, err
 	}
 	for _, pair := range [][2]string{{"minInclusive", "minExclusive"}, {"maxInclusive", "maxExclusive"}} {
 		_, a := local[pair[0]]
@@ -214,6 +205,48 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 		}
 	}
 	return true, nil
+}
+
+// With length present, each coexisting min/max must equal a limit from an
+// ancestor without length (XSD 1.0 4.3.1.4). A checked base can only narrow its
+// bounds until length appears; from then on these limits cannot change. Thus
+// its effective limit already proves that ancestor, without a second graph.
+func (c *vffSKCRestrictionChecker) checkMixedLength(base *vffSKCRestrictionProfile, local map[string]string) error {
+	length, hasLength := local["length"]
+	if !hasLength {
+		length, hasLength = base.bounds["length"]
+	}
+	if !hasLength {
+		return nil
+	}
+	for _, kind := range []string{"minLength", "maxLength"} {
+		limit, present := local[kind]
+		if !present {
+			limit, present = base.bounds[kind]
+		}
+		if !present {
+			continue
+		}
+		ancestor, ok := base.bounds[kind]
+		if !ok {
+			return fmt.Errorf("%s with length requires an inherited limit", kind)
+		}
+		cmp, err := c.b.compareDecimal(limit, ancestor)
+		if err != nil {
+			return err
+		}
+		if cmp != 0 {
+			return fmt.Errorf("%s with length changes its inherited limit", kind)
+		}
+		cmp, err = c.b.compareDecimal(limit, length)
+		if err != nil {
+			return err
+		}
+		if kind == "minLength" && cmp > 0 || kind == "maxLength" && cmp < 0 {
+			return fmt.Errorf("length conflicts with inherited %s", kind)
+		}
+	}
+	return nil
 }
 
 func (c *vffSKCRestrictionChecker) checkBounds(p *vffSKCRestrictionProfile, value vffSKCScalar) error {

@@ -78,8 +78,8 @@ func TestVFFSKCBoundsUnknownNeverFallBack(t *testing.T) {
 	}
 	f := skcEnumFiles(t, `<x:length value="2"/><x:minLength value="1"/>`, "", "ab", "ab")
 	f["Schemas/extra.xsd"] = []byte(strings.Replace(string(f["Schemas/extra.xsd"]), `base="x:int"`, `base="x:string"`, 1))
-	if v := skcAttributeValue(t, f); v.fixedValues[0].known {
-		t.Fatal("mixed length semantics claimed proved")
+	if got, err := readVFFClassificationBindings(context.Background(), skcGraphContainer(t, f), skcBindingLimits()); err == nil || got != nil {
+		t.Fatal("mixed length without an ancestor limit admitted")
 	}
 }
 
