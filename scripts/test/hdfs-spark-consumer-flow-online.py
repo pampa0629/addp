@@ -636,7 +636,7 @@ def metadata_grants(authorizer, consumer, identity, journal):
         journal['issued_count'] = max(journal['issued_count'], len(rows))
         validate_metadata_journal(journal, identity)
         write_private('hdfs-metadata-grants.json', journal)
-    grants = REGISTRATION.ExactFileMetadataGrants(authorizer, consumer, identity['tenant_id'], on_change=persist)
+    grants = REGISTRATION.ExactFileMetadataGrants(authorizer, consumer, identity['tenant_id'], on_change=persist, scan_preparation=True)
     grants.pending = journal['pending']
     return grants
 
@@ -748,12 +748,12 @@ def main():
         timeout = float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '900'))
         prepared, metadata_grants = prepare_file_metadata(consumer, authorizer, tenant_id, principal, runtime, cluster, timeout)
         postgres_id = support.positive_int(require('ADDP_ONLINE_POSTGRES_ENGINE_ID'), 'PostgreSQL')
-        support.wait_for_scan(consumer, postgres_id, time.monotonic() + 180)
+        support.wait_for_scan(authorizer, postgres_id, time.monotonic() + 180)
         REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, [
-            (postgres_id, 'schema', 'results', 'hdfs_totals')])
+            (postgres_id, 'schema', 'results', 'hdfs_totals')], scan_preparation=True)
         def grant_created_table(engine_id, table):
             REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id,
-                [(engine_id, 'database', 'spark_results', table)])
+                [(engine_id, 'database', 'spark_results', table)], scan_preparation=True)
         TABLES.prepare(table_host(), consumer, principal, tenant_id, runtime, cluster, 300, grant_created_table)
         publications = []
         for _ in range(2):

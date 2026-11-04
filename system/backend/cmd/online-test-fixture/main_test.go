@@ -1284,6 +1284,10 @@ func TestHDFSFixtureUsesPersistedWorkflowConsumerAndSeparateProvisioner(t *testi
 			t.Fatalf("missing %s", key)
 		}
 	}
+	wantIssuer := append(append([]string{}, sourceInitializerPermissions...), "meta.scan_task.execute", "meta.scan_task.read")
+	if !slices.Equal(suiteSourceInitializerPermissions("hdfs-spark-consumer-flow"), wantIssuer) || len(sourceInitializerPermissions) != 11 {
+		t.Fatal("only the HDFS preparation identity receives the two scan permissions")
+	}
 }
 
 func TestPlaintextIdentitiesHaveSeparateMinimumPermissions(t *testing.T) {
@@ -1496,7 +1500,7 @@ func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 	if !slices.Equal(suiteSourceInitializerPermissions("ftp-consumer-flow"), wantIssuer) || len(sourceInitializerPermissions) != 11 {
 		t.Fatal("FTP-specific lifecycle permissions must not mutate the shared initializer")
 	}
-	for _, suite := range []string{"highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow"} {
+	for _, suite := range []string{"highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access"} {
 		if !slices.Equal(suiteSourceInitializerPermissions(suite), sourceInitializerPermissions) {
 			t.Fatalf("FTP issuer permissions leaked into %s", suite)
 		}

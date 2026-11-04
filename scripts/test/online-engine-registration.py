@@ -121,7 +121,7 @@ def read_exact_record_authorization_facts(authorizer, path):
     return facts
 
 
-def source_grant_participants(authorizer, consumer, tenant_id):
+def source_grant_participants(authorizer, consumer, tenant_id, *, scan_preparation=False):
     """Verify separate tenant Users; preparation confers no consumer authority."""
     if type(tenant_id) is not int or tenant_id <= 1:
         raise RegistrationError('source Grant preparation requires a disposable nondefault Tenant')
@@ -140,7 +140,10 @@ def source_grant_participants(authorizer, consumer, tenant_id):
     _, recipient_id = identity(consumer)
     roles = current.get('authorization', {}).get('role_assignments', [])
     permissions = {permission for role in roles for permission in role.get('permissions', [])}
-    if (initializer_id == recipient_id or permissions != SOURCE_INITIALIZER_PERMISSIONS
+    expected_permissions = SOURCE_INITIALIZER_PERMISSIONS
+    if scan_preparation:
+        expected_permissions = expected_permissions | {'meta.scan_task.execute', 'meta.scan_task.read'}
+    if (type(scan_preparation) is not bool or initializer_id == recipient_id or permissions != expected_permissions
         or not any(role.get('role_key') == SOURCE_INITIALIZER_ROLE for role in roles)):
         raise RegistrationError('source initializer must be separate and have the exact formal engine authorization administrator permissions')
     return initializer_id, recipient_id
@@ -148,9 +151,9 @@ def source_grant_participants(authorizer, consumer, tenant_id):
 
 class ExactFileMetadataGrants:
     """Existing metadata-only Grant contract; never a content completeness proof."""
-    def __init__(self, authorizer, consumer, tenant_id, *, on_change=None, on_evidence=None):
+    def __init__(self, authorizer, consumer, tenant_id, *, on_change=None, on_evidence=None, scan_preparation=False):
         self.phase = 'participants'
-        self.operator, self.recipient = source_grant_participants(authorizer, consumer, tenant_id)
+        self.operator, self.recipient = source_grant_participants(authorizer, consumer, tenant_id, scan_preparation=scan_preparation)
         self.authorizer, self.consumer = authorizer, consumer
         self.pending = []
         self.on_change = on_change
@@ -301,7 +304,7 @@ class ExactFileMetadataGrants:
         return {'grants_revoked': True, 'metadata_hidden': True}
 
 
-def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, item_term="table"):
+def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, item_term="table", scan_preparation=False):
     """Prepare precise reads with separate Users and the formal System command."""
     if not isinstance(tenant_id, int) or tenant_id <= 1 or not targets or len(targets) > 200:
         raise RegistrationError('source Grant preparation requires a nondefault Tenant and exact record datasets')
@@ -311,7 +314,7 @@ def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets
         if (not isinstance(engine_id, int) or engine_id <= 0 or namespace_term not in (('database',) if item_term == 'collection' else ('schema', 'database'))
             or not isinstance(namespace, str) or not namespace or not isinstance(table, str) or not table):
             raise RegistrationError('source Grant preparation requires an exact ordinary record target')
-    _, recipient_id = source_grant_participants(authorizer, consumer, tenant_id)
+    _, recipient_id = source_grant_participants(authorizer, consumer, tenant_id, scan_preparation=scan_preparation)
     receipts = []
     for engine_id, namespace_term, namespace, table in targets:
         body = {

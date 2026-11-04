@@ -20,6 +20,33 @@ SPEC.loader.exec_module(REGISTRATION)
 
 
 class OnlineEngineRegistrationTest(unittest.TestCase):
+    def test_scan_preparation_requires_exact_explicit_permissions(self):
+        for scan_preparation, extra, accepted in (
+                (False, set(), True),
+                (False, {'meta.scan_task.execute', 'meta.scan_task.read'}, False),
+                (True, set(), False),
+                (True, {'meta.scan_task.execute'}, False),
+                (True, {'meta.scan_task.execute', 'meta.scan_task.read'}, True),
+                (True, {'meta.scan_task.execute', 'meta.scan_task.read', 'system.engine.create'}, False)):
+            with self.subTest(scan_preparation=scan_preparation, extra=extra):
+                current, issuer, consumer = self.grant_clients()
+                current['authorization']['role_assignments'][0]['permissions'] += sorted(extra)
+                if accepted:
+                    self.assertEqual(REGISTRATION.source_grant_participants(
+                        issuer, consumer, 2, scan_preparation=scan_preparation), ('8', '7'))
+                else:
+                    with self.assertRaises(REGISTRATION.RegistrationError):
+                        REGISTRATION.source_grant_participants(issuer, consumer, 2, scan_preparation=scan_preparation)
+
+    def test_scan_preparation_profile_reaches_both_grant_helpers(self):
+        current, issuer, consumer = self.grant_clients()
+        current['authorization']['role_assignments'][0]['permissions'] += ['meta.scan_task.execute', 'meta.scan_task.read']
+        grants = REGISTRATION.ExactFileMetadataGrants(issuer, consumer, 2, scan_preparation=True)
+        self.assertEqual((grants.operator, grants.recipient), ('8', '7'))
+        result = REGISTRATION.initialize_exact_record_read_grants(
+            issuer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')], scan_preparation=True)
+        self.assertEqual(len(result), 1)
+
     def grant_clients(self):
         current = {'principal': {'type': 'user', 'id': '8'},
                    'context': {'type': 'tenant', 'tenant_id': '2'},

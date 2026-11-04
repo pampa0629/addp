@@ -224,15 +224,22 @@ class HDFSOnlineTest(unittest.TestCase):
         for row in originals: row.pop('manager_preview_before_second', None)
         events = []
         grants = Mock()
+        consumer, authorizer = Mock(), Mock()
         grants.grant.side_effect = lambda *args, **kwargs: events.append('metadata_grant')
         def publish(client, source, engine, timeout, target_type):
+            self.assertIs(client, consumer)
             self.assertEqual((engine, target_type), (20, 'file'))
             events.append('publish')
             return originals.pop(0)
         def baseline(client, publication):
+            self.assertIs(client, consumer)
             self.assertEqual(events, ['publish', 'metadata_grant'])
             events.append('baseline')
             publication['manager_preview_before_second'] = final_result()['preview_rows']
+        def prepare_tables(*args):
+            self.assertIs(args[1], consumer)
+            for engine, table in ((21, 'mysql_result'), (22, 'doris_result')):
+                args[-1](engine, table)
         environment = {'GITHUB_ACTIONS':'true', 'RUNNER_OS':'Linux', 'ADDP_ONLINE_HOSTED':'1',
             'SYSTEM_URL':'http://127.0.0.1:8180', 'GATEWAY_URL':'http://127.0.0.1:8000',
             'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN':'provisioner', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'issuer',
@@ -244,13 +251,23 @@ class HDFSOnlineTest(unittest.TestCase):
              patch.object(MODULE, 'prepare_file_metadata', return_value=(prepared, grants)) as files, \
              patch.object(MODULE.support, 'wait_for_scan') as scan, \
              patch.object(MODULE.REGISTRATION, 'initialize_exact_record_read_grants') as reads, \
-             patch.object(MODULE.TABLES, 'prepare') as tables, patch.object(MODULE, 'publish_persistence', side_effect=publish), \
+             patch.object(MODULE.TABLES, 'prepare', side_effect=prepare_tables) as tables, patch.object(MODULE, 'publish_persistence', side_effect=publish), \
              patch.object(MODULE, 'capture_first_minio', side_effect=baseline), patch('builtins.print'):
-            clients.return_value.request.return_value.payload = [{'id':3,'engine_type':'spark_workflow','connection_status':'online'}]
+            clients.side_effect = [consumer, authorizer]
+            consumer.request.return_value.payload = [{'id':3,'engine_type':'spark_workflow','connection_status':'online'}]
             self.assertEqual(MODULE.main(), 0)
             self.assertEqual(events, ['publish','metadata_grant','baseline','publish','metadata_grant'])
             files.assert_called_once(); scan.assert_called_once(); tables.assert_called_once()
-            self.assertEqual(reads.call_args.args[-1], [(19,'schema','results','hdfs_totals')])
+            self.assertIs(scan.call_args.args[0], authorizer)
+            self.assertEqual(files.call_args.args[:2], (consumer, authorizer))
+            self.assertIs(tables.call_args.args[1], consumer)
+            self.assertEqual(reads.call_args.args[:2], (authorizer, consumer))
+            self.assertEqual([call.args[-1] for call in reads.call_args_list], [
+                [(19, 'schema', 'results', 'hdfs_totals')],
+                [(21, 'database', 'spark_results', 'mysql_result')],
+                [(22, 'database', 'spark_results', 'doris_result')]])
+            self.assertTrue(all(call.args[:2] == (authorizer, consumer) and
+                call.kwargs == {'scan_preparation': True} for call in reads.call_args_list))
             self.assertEqual(len(MODULE.read_private('hdfs-file-prepared.json')['minio_publications']), 2)
 
     def test_changed_first_result_baseline_is_not_replaced_by_later_preview(self):

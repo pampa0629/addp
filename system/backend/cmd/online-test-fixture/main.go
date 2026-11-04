@@ -121,7 +121,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
 	case "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow":
 		permissions := append([]string{}, sourceInitializerPermissions...)
-		if suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-envi" {
+		if suite == "hdfs-spark-consumer-flow" || (suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-envi") {
 			permissions = append(permissions, "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		return permissions
