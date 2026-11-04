@@ -1336,3 +1336,29 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 旧夹具反证运行make test-monitor-metrics-config，137项／13.114秒中新增两种输入各报一项ERROR，退出2；不启动Go或Docker。修正后向标准配置入口局部注入一个本次未发布的外层回执路径，make test-monitor-metrics-config完整退出0，137项／11.928秒及来源恢复前置通过，注入的外层文件和锁均未被创建。make test-infra-runtime-log-lifecycle完整退出0：最终148项／63.688秒，含HTTP44项／1.072秒、Trace183项／5.979秒及JS／登记／System身份Go子门禁通过；离线TLS T1为OpenSSL4.1.0、35命令／0.918689秒、125485字节、4次预期拒绝及清理完成。最小修正沿原配置／Platform生命周期／自然Linux HTTP路径自动覆盖，不新增标准入口或workflow。
 
 本批快照基准HEAD=2d35280aafc2e86463df4f6f8054c9ba1779c546；快照、产品不变审核与verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-window-fixture-20261104-uukj5y5k/，日志/tmp/addp-p19-window-fixture-{red,config,lifecycle}-20261104.log。仍仅本地确定性修正，未推送、未手动重跑CI、未新增本地窗口，不运行Hosted、容量或定时；其他会话要求推送不替代用户此前“本批不推送”的边界。两个自然Job的失败不被本地通过覆盖；修正后的自然Linux配置前置、四阶段／预算／清理、历史删除者与正式产品页面闭环仍未验收。下一步须用户明确允许推送后，跟进新输入的自然HTTP结果及原始预算报告。
+
+
+<a id="http-natural-four-stage-budget-passed-20261104"></a>
+
+## 2026-11-04 四阶段与窗口夹具修正：自然Linux HTTP实际通过
+
+用户明确允许推送4d5072b7b并跟进自然CI；只读核对时该提交已随共享main进入远端，故本会话没有重复推送或额外触发运行。最新两个绿色Release的HTTP矩阵被skipped，不作为通过证据；本次锁定真正选中的[Run41816593195／HTTP Job126544907993](https://github.com/pampa0629/addp/actions/runs/41816593195/job/126544907993)，push／main／attempt1，完整固定源码fca35fa31adf1376e0415a040266400fb5affe0c。固定源码包含4d5072b7bc8ee3eaacaca7d3f2d6252fb529a84d及b6c669022修正，三份核心实现／配置测试与4d5072b7b一致。选择Job126528775550原日志确认monitor gate selected，SHA256 b0b28c044474ed75c7b3dcc64ea207d4ecfbf269e82cee72b882c785012c3a97；不把未选中汇总绿色或继承关系单独当作实际执行。
+
+HTTP Job北京时间19:31:13—19:46:12，Verify isolated metrics lifecycle于19:31:32—19:46:07实际success，Preserve HTTP functional budget evidence随后success，最终Job completed／success。原始Job日志134834字节，SHA256 646fa1a13f555720f78e883c0e8a2552774ae7f265e969b927374265bdeae9bc；原日志明确137项配置测试／9.953秒及OK，先前四项FileNotFoundError未在本轮发生。真实窗口编译开始／二进制执行后标记、Go真实查询／告警生命周期及Python双来源通过标记均已核对，不仅依据Job状态。
+
+官方artifact13317703287（monitor-http-budget-41816593195-1）ZIP29100字节，SHA256 9b6539a9ccef6b4bb7f43c36487009675a30c3a178c1cb73ed83e26df1ae3d66，与官方digest一致，CRC通过且只有monitor-http-budget.json；原报告177385字节，SHA256 763ea2843de3ec881f5b6ebc90eaf0bb3dcee07a69bcb6652fab17187f47b1c2。报告375项输入逐一与固定fca35fa31adf1376e0415a040266400fb5affe0c的git对象匹配，零差异；inputs_unchanged=true。此结论只绑定本固定来源，不外推收尾时已继续推进的共享HEAD。
+
+报告case=http-quality、result=passed、exit_code=0／error_code=null，hosted／capacity／schedule均false，整体874.387260秒／原1200秒。四阶段均finished／exit0且同一主机单调端点依序不重叠：
+
+| 编译阶段 | 实际耗时 |
+| --- | ---: |
+| process_source | 89.016223秒 |
+| resource_windows | 31.569300秒 |
+| http_query | 1.157441秒 |
+| http_alert | 73.641286秒 |
+
+214次完整资源样本最长1.264099秒，均小于原四秒。CPU硬限合计峰值3.25核／上限4核，内存硬限合计4026531840字节（3.75 GiB）／上限4 GiB，私有可写上界1543061567字节（约1.4371 GiB）／停止线2 GiB，未触线；不把配额当实际CPU用量或RSS。48次受管采样均确认并恢复且无恢复错误，其中process_source22次、resource_windows8次、http_alert18次；短http_query阶段没有受管采样样本，阶段自身成功边界完整，不补造一次暂停。报告不含每次采样绝对起点，最长五秒开始间隔沿固定入口的原运行守卫判定，不由舍入时长反算独立测量值。
+
+受控请求Go148、Python67／26，总241次，原失败／恢复阶段预算回执用现有complete_request_traffic核验完整，未超过300。Go真实HTTP来源、自然分钟窗口、告警打开、事件／outbox、签名503重试及恢复实际PASS；Python日志明确两个实际ASGI SDK来源、身份隔离、Monitor查询／历史趋势、签名重试恢复及停源隔离通过。两Python来源startup passed／native_imported=true，依赖挂载exec／nosuid／nodev符合；回收无stop／wait／nonzero错误，discovery_restored／traffic_available=true。mTLS localhost叶证书和实际IP检查均passed、无TLS错误，原子换证identity改变且passed=true。cleanup_verified／private_directory_removed=true，compile_cleanup_error／request_traffic_error／cleanup_overdue均无错误；清理与业务通过分别核验。
+
+原始选择／Job元数据、ZIP、JSON、日志及逐项verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-fixture-natural-20261104-6jtlv6sc/（私有目录／文件）。本轮仅跟进已有自然CI，不手动重跑、不新开窗口，不运行Hosted、容量或定时。上次两个配置前置失败及更早go_tmp失败原件继续保留，不被本次覆盖；本次证明这一次Linux HTTP四阶段／采样／功能／清理通过，不证明具体历史删除进程已直接定位或长期偶发已根除。正式Agent/Copilot产品镜像、真实密码/MFA及Console/Monitor页面full仍未验收。同源Platform Job126528774946的最后一次只读快照仍in_progress，本批不据此宣称远端Platform整轮或HTTP／Trace确定性runner已实际通过；本地原137／148及HTTP44／Trace183有效结果保持独立。下一步优先回到正式产品页面闭环的准入核对，真实本地窗口另行确认。
