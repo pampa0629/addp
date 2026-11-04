@@ -285,6 +285,7 @@
                   <div class="catalogEntry-actions">
                     <el-button
                       v-if="canExecuteScan"
+                      data-testid="scan-catalog-entry"
                       type="primary"
                       size="default"
                       @click.stop="handleScanCatalogEntry(row)"
