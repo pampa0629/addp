@@ -108,6 +108,12 @@ var toolAuthorizations = map[string]commonauth.ToolAuthorization{
 		RequiredScopes:      []string{"transfer.task.create"},
 		RequiredPermissions: []string{"transfer.task.create"},
 	},
+	"transfer.task.draft.build": {
+		Name:                "transfer.task.draft.build",
+		Owner:               "transfer",
+		RequiredScopes:      []string{"transfer.task.draft.build"},
+		RequiredPermissions: []string{"manager.data_item.read", "meta.catalog.read", "system.engine.read", "transfer.task.create"},
+	},
 	"transfer.task.start": {
 		Name:                "transfer.task.start",
 		Owner:               "transfer",

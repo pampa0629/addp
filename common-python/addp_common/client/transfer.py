@@ -58,6 +58,19 @@ class TransferClient(BaseClient):
             "schedule": "", "enabled": False, "auto_scan_metadata": False,
         }
 
+    async def build_task_config_draft(self, **choices) -> dict:
+        """Compile confirmed choices without persisting or running a task."""
+        from jsonschema import Draft202012Validator
+        from addp_common.tools.manifest import get_tool
+
+        response = await self.post("/api/v1/transfer/task-config-drafts", json=choices)
+        if not isinstance(response, dict) or set(response) != {"arguments"}:
+            raise ValueError("transfer draft response must contain only arguments")
+        # Reuse the single creation contract, never maintain a second config schema.
+        if list(Draft202012Validator(get_tool("transfer.task.create").input_schema).iter_errors(response["arguments"])):
+            raise ValueError("transfer draft arguments violate the creation contract")
+        return response
+
     async def check_task_config(self, *, name: str, config: dict,
                                 description: str = "", batch_size: int = 1000) -> dict:
         """Check a stopped task definition without saving or executing it.

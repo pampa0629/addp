@@ -645,3 +645,40 @@ Transfer 只提交本次实际写出的目标边界；encoded/raw content 目标
 | Shapefile refs | 本次实际生成的 refs group，不补不存在的 sidecar refs。 |
 
 Transfer 不直接写目标 Meta attributes。
+
+## 只读草稿构建
+
+
+ Transfer 将用户的业务选择编成任务参数。内置 Agent 和外部 Harness 都通过同一 Manifest、ToolExecutor 和 SDK 经 Gateway 调用 Transfer。用户可以只说“把 MongoDB 的 Outdoor 同步到 PostgreSQL 的 outdoor”。有多个集合时，智能体先展示当前用户可见的候选。选定集合之后，再确认一行代表什么、保留哪些字段、目标表名及写入方式。用户无需编写查询或任务 JSON。
+
+**入口**为 `POST /api/v1/transfer/task-config-drafts`，对应只读 Tool `transfer.task.draft.build`。成功返回 HTTP 200。调用不创建可寻址的草稿资源，也不保存任务。首个验收切片为 MongoDB 集合到 PostgreSQL 原生表的 bounded snapshot，支持每文档一行或按一个已观察数组展开。其他引擎组合须单独验证后再声明。
+
+| 请求字段 | 语义 |
+|---|---|
+| `name`，可选 `description`、`batch_size` | 创建请求中的同名参数及限制。未指定的可选字段保持缺省。 |
+| `source_locator` | 已选源数据项的正式 locator。Transfer 按当前主体核实身份和结构。 |
+| `target.parent_locator`、`target.name`、`target.apply_mode` | 已选目标父节点、表名、显式选择的 `append` 或 `replace`。即使目标表尚未创建也须确认父节点。仅凭目录未命中不能承诺目标为空或保证运行时只会新建表。 |
+| `row_grain` | `{"mode":"document"}` 或 `{"mode":"array_element","path":["成员数组字段"]}`。路径为区分大小写的字段名段；展开模式下必须引用已观察的数组。 |
+| `fields[]` | 1 至 128 项，数组顺序即目标字段顺序。每项须有 `path`（源字段名段）及 `target`（目标列名）。可选 `target_type` 使用 ADDP 标准类型；可选 `nullable`、`precision`、`scale` 沿用现有字段映射约束。调用方表达字段选择与转换意图，实际源类型以 owner 事实为准。 |
+
+请求示例使用占位符表示资源发现结果，实际调用须原样传入正式 locator。此例仅选择一个字段，不能作为“保留全部字段”的请求。
+
+```json
+{
+  "name": "persons_snapshot",
+  "source_locator": "<已选择集合的 locator>",
+  "target": {
+    "parent_locator": "<已选择 PostgreSQL schema 的 locator>",
+    "name": "persons_snapshot",
+    "apply_mode": "append"
+  },
+  "row_grain": {"mode": "document"},
+  "fields": [{"path": ["_id"], "target": "person_id", "target_type": "string"}]
+}
+```
+
+**Transfer 如何构建。** 使用受主体和租户约束的 owner API 获取引擎身份、源结构、查询引用及目标父节点，再用 Provider 的定义层能力和已有配置模型编译。使用数组路径段查找真实字段，对无法无歧义编码的字段名、重复目标列、跨越未展开数组、无法确定的类型转换返回具体诊断。MongoDB 的集合名取自正式 MQL 查询引用。行粒度决定是否生成单个 `$unwind`，有序字段选择决定 `$project` 和对应的 `field_mapping`；显式处理 MongoDB 隐含的 `_id`，使投影与映射一致。整列保留对象数组时给出保留结构的 JSON 映射，不能因“不展开”删列或擅自转字符串。要求保留全部字段而快照覆盖不完整时，调用方须说明覆盖范围，不能声称已保留全部。请求不接收 schema 副本、原始 MQL、DDL、凭据或完整 config。
+
+**输出及错误。** 成功体只有 `arguments`，内容直接符合与 `transfer.task.config.check` 和 `transfer.task.create` 共用的 `transfer_task_input`。同一组选择及相同 owner 事实应得到相同参数。调用方原样传给预检，不从模型的文字总结重建。HTTP 400 表示输入结构不合法；422 表示已授权的选择无法构建（如字段无法解析或写入策略超出范围），返回稳定 `error_code` 与可安全展示的字段位置；这两类响应均无可提交参数。身份、资源不可见性及依赖故障沿 owner 的 401、403、404 或 5xx 语义处理，不泄露被隐藏的资源信息，不以空结构继续生成。
+
+**权限与效果。** 当前租户用户必须同时具备 `transfer.task.create`、`meta.catalog.read`、`system.engine.read`、`manager.data_item.read`。委托只接受唯一 audience `transfer` 和精确 scope `transfer.task.draft.build`。正式 System 客户端核验引擎 Tenant 和 active 状态，Meta 客户端读取同 Tenant 源快照、祖先链及目标父节点，共享路径校验还原物理查询名称。跨 owner 控制面读取使用 Transfer 的 Service 身份，原主体资格在读取前核验，不转发委托令牌。该读取复用当前资源事实的引擎 Tenant 边界，不读取业务数据或证明业务行读取资格。构建只读已登记元数据和定义层能力，不打开业务读写会话、读取样本、运行查询、扫描或刷新元数据。返回结果仅表示可以表达该配置。预检仍独立核对当前事实并返回三态报告，用户复核绑定精确参数；启动仍消费 Transfer 持有的一次性运行审批。仅查看草稿到构建即结束。

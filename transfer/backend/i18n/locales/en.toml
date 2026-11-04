@@ -168,3 +168,6 @@ other = "This task run was rejected"
 
 [transfer.approval_already_consumed]
 other = "This run approval was consumed; check the original execution instead of starting again"
+
+[transfer.draft.invalid]
+other = "Cannot build a draft from the selected resources and fields. Check the input and diagnostic path."

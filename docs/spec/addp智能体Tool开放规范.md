@@ -109,6 +109,7 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 | `platform.capability.context` | Ontology | `ontology.semantic.read` | read | none | none | 32 KiB |
 | `platform.capabilities.list` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
 | `transfer.task.create` | Transfer | `transfer.task.create` | write | none | none | 256 KiB |
+| `transfer.task.draft.build` | Transfer | `transfer.task.create` ∩ `meta.catalog.read` ∩ `system.engine.read` ∩ `manager.data_item.read` | read | none | none | 128 KiB |
 | `transfer.task.config.check` | Transfer | `transfer.task.create` ∩ `meta.catalog.read` ∩ `system.engine.read` | read | none | none | 128 KiB |
 | `transfer.task.start` | Transfer | `transfer.task.execute` ∩ `transfer.task.read` | write | owner_policy | none | 64 KiB |
 | `transfer.execution.get` | Transfer | `transfer.task.read` | read | none | none | 64 KiB |
@@ -116,6 +117,8 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 这是当前完整集合。未出现在 Manifest 中的 API 不能被 Adapter 自行包装为 ADDP Tool。
 
 `workflow.draft.generate` 在此表中描述 Agent Tool，仍按 Manifest 使用委托令牌；同一 Copilot HTTP 生成端点保留普通用户直调。普通用户、Agent 委托、入站服务令牌拒绝要求及 Copilot 内部服务调用的边界统一见[工作流入口身份](workflow/Develop资源与执行.md#copilot-工作流入口身份)，当前未落实项与实际验收范围见[守卫缺口与验收边界](workflow/Develop资源与执行.md#当前守卫缺口与验收边界)。
+
+`transfer.task.draft.build` 通过 Transfer 正式 `POST /task-config-drafts` 把已确认的业务选择编为创建参数。请求不接收源 schema 或原始查询，返回 `arguments` 由 SDK 以唯一 `transfer.task.create` 输入契约核验后原样使用。覆盖范围、事实读取和效果以 [草稿构建](../../transfer/docs/transfer-基本概念及配置说明.md#只读草稿构建) 为准。
 
 `transfer.task.config.check` 与 `transfer.task.create` 共用输入 Schema 和 SDK 请求构造，固定未启用、无调度、无自动扫描。它只读取控制面快照，不创建任务、读取业务行或执行 DDL。返回完整 `addp.transfer_task_config_check/v1` 报告；HTTP 200 不代表 `supported`。`unsupported` 阻止 Agent 创建，`unknown` 必须向用户明确未检查项与运行时检查要求，取得知情确认后才可只保存未运行任务；`supported` 也不是执行保证。委托失败、依赖错误或损坏报告不能转换为 `unknown`。报告摘要不是授权票据，创建前仍须 owner 当前授权与 Runtime 的配置/事实复核；观察时间变化本身不表示配置变化。
 

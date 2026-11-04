@@ -259,6 +259,44 @@ definitions:
       policy_revision:
         type: integer
     type: object
+  datatype.FieldType:
+    enum:
+    - unknown
+    - string
+    - bool
+    - bytes
+    - mixed
+    - int
+    - bigint
+    - float
+    - double
+    - decimal
+    - date
+    - time
+    - timestamp
+    - json
+    - array
+    - uuid
+    - geometry
+    type: string
+    x-enum-varnames:
+    - FieldTypeUnknown
+    - FieldTypeString
+    - FieldTypeBool
+    - FieldTypeBytes
+    - FieldTypeMixed
+    - FieldTypeInt
+    - FieldTypeBigInt
+    - FieldTypeFloat
+    - FieldTypeDouble
+    - FieldTypeDecimal
+    - FieldTypeDate
+    - FieldTypeTime
+    - FieldTypeTimestamp
+    - FieldTypeJSON
+    - FieldTypeArray
+    - FieldTypeUUID
+    - FieldTypeGeometry
   events.CleanupResultSummary:
     properties:
       affected_records:
@@ -1309,6 +1347,66 @@ definitions:
         $ref: '#/definitions/plugin.DefinitionCheckStatus'
       tenant_id:
         type: integer
+    type: object
+  github_com_addp_transfer_internal_service.TaskConfigDraftField:
+    properties:
+      nullable:
+        type: boolean
+      path:
+        items:
+          type: string
+        type: array
+      precision:
+        type: integer
+      scale:
+        type: integer
+      target:
+        type: string
+      target_type:
+        $ref: '#/definitions/datatype.FieldType'
+    type: object
+  github_com_addp_transfer_internal_service.TaskConfigDraftRequest:
+    properties:
+      batch_size:
+        type: integer
+      description:
+        type: string
+      fields:
+        items:
+          $ref: '#/definitions/github_com_addp_transfer_internal_service.TaskConfigDraftField'
+        type: array
+      name:
+        type: string
+      row_grain:
+        $ref: '#/definitions/github_com_addp_transfer_internal_service.TaskConfigDraftRowGrain'
+      source_locator:
+        type: string
+      target:
+        $ref: '#/definitions/github_com_addp_transfer_internal_service.TaskConfigDraftTarget'
+    type: object
+  github_com_addp_transfer_internal_service.TaskConfigDraftResponse:
+    properties:
+      arguments:
+        additionalProperties: true
+        type: object
+    type: object
+  github_com_addp_transfer_internal_service.TaskConfigDraftRowGrain:
+    properties:
+      mode:
+        type: string
+      path:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_addp_transfer_internal_service.TaskConfigDraftTarget:
+    properties:
+      apply_mode:
+        type: string
+      name:
+        type: string
+      parent_locator:
+        type: string
     type: object
   github_com_addp_transfer_internal_service.UpdateContinuousPolicyInput:
     properties:
@@ -3077,6 +3175,70 @@ paths:
       - transfer.task.create
       - meta.catalog.read
       - system.engine.read
+  /task-config-drafts:
+    post:
+      consumes:
+      - application/json
+      description: 基于当前租户可见的已登记源结构和目标父节点构建 MongoDB 到 PostgreSQL 的 bounded snapshot。需要四项权限交集。仅返回可交给正式预检的完整候选参数，不读取业务行、不保存任务或启动执行。|
+        Build a MongoDB to PostgreSQL bounded snapshot from tenant-visible persisted
+        structure and target parent facts. Requires all four permissions. Returns
+        complete candidate arguments for formal preflight without business reads,
+        task persistence or execution.
+      parameters:
+      - description: 资源引用与业务选择 | Resource references and business choices
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_transfer_internal_service.TaskConfigDraftRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 候选创建参数 | Candidate creation arguments
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_service.TaskConfigDraftResponse'
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权限 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: 选择无法构建 | Choices cannot be compiled
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: 事实服务不可用 | Fact dependency unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 只读构建传输任务草稿 | Build transfer configuration read-only
+      tags:
+      - 任务管理 | Task Management
+      x-addp-auth-mode: delegated_tool
+      x-addp-required-permissions:
+      - transfer.task.create
+      - meta.catalog.read
+      - system.engine.read
+      - manager.data_item.read
   /task-definitions:
     get:
       consumes:

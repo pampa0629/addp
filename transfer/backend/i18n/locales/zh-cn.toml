@@ -171,3 +171,6 @@ other = "本次任务运行已被拒绝"
 
 [transfer.approval_already_consumed]
 other = "本次运行审批已使用，请核对原执行记录，不要重复启动"
+
+[transfer.draft.invalid]
+other = "无法根据所选资源与字段构建草稿，请检查输入及诊断位置"

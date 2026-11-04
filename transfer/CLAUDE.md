@@ -90,6 +90,10 @@ Transfer Permission 的精确目录与状态只由本模块 [Manifest](authoriza
 
 页面创建助手与统一 Monitor 入口见[前端公开路由](#前端公开路由)。路由登记、能力发现和读取范围不代表真实授权或执行通过；标准入口、固定版本证据及未覆盖项统一见[开发与验证](#开发与验证)。
 
+### 只读草稿构建
+
+`POST /api/v1/transfer/task-config-drafts` 将已确认的资源引用、行粒度、目标和字段选择编译为完整候选参数。范围、四项权限与纯元数据读取边界见 [正式契约](docs/transfer-基本概念及配置说明.md#只读草稿构建)。同一入口由 `transfer.task.draft.build` 开放给内置 Agent 与外部智能体，返回参数仍须走正式预检和后续确认。
+
 ### 只读配置预检
 
 `POST /api/v1/transfer/task-config-checks` 接收完整创建请求，要求当前租户用户的 `transfer.task.create`、`meta.catalog.read`、`system.engine.read` 三项权限交集；委托使用唯一 `transfer` audience 和精确 `transfer.task.config.check` Scope。共用输入 Schema 与委托校验见 [Tool 契约](../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)。

@@ -16,6 +16,7 @@ const (
 	MsgExecutionReadUnavailable        = "transfer.execution.read_unavailable"
 	MsgExecutionFailed                 = "transfer.execution.failed"
 	MsgExecutionDiagnosticsUnavailable = "transfer.execution.diagnostics_unavailable"
+	MsgDraftInvalid                    = "transfer.draft.invalid"
 	MsgConfigCheckInvalid              = "transfer.config_check.invalid"
 	MsgConfigCheckUnavailable          = "transfer.config_check.unavailable"
 	MsgDelegatedTaskInvalid            = "transfer.task.delegated_invalid"

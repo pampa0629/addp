@@ -457,7 +457,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_object_array_rejection_requires_json_recheck_before_creation_review(self):
         registry = _load_skill_registry()
         body = registry["transfer-generation"].load_body(registry)
-        self.assertIn('target_type="json"', body)
+        self.assertIn("让构建器选择可表达的表示，再交正式预检", body)
         self.assertIn("对象数组、嵌套数组、混合数组或元素类型未知", body)
         original = copy.deepcopy(self.arguments)
         original["config"]["source"]["query"]["statement"] = json.dumps({

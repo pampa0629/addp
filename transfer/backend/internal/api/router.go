@@ -96,6 +96,7 @@ func SetupRouter(
 	protected.GET("/source-protection-options", permission(transferauthorization.PermissionTransferTaskExecute), taskHandler.SourceProtectionOptions)
 	protected.POST("/source-protection-checks", permission(transferauthorization.PermissionTransferTaskExecute), taskHandler.CheckSourceProtection)
 	protected.GET("/capabilities", capabilityHandler.Get)
+	protected.POST("/task-config-drafts", permission(transferauthorization.PermissionTransferTaskCreate, "meta.catalog.read", "system.engine.read", "manager.data_item.read"), taskHandler.BuildTaskConfigDraft)
 	protected.POST("/task-config-checks", permission(transferauthorization.PermissionTransferTaskCreate, "meta.catalog.read", "system.engine.read"), taskHandler.CheckTaskConfig)
 	protected.POST("/field-definition-recommendations", permission(transferauthorization.PermissionTransferTaskCreate), fieldDefinitionRecommendationHandler.Create)
 	// TaskProvider 只允许 Orchestrator Runtime 使用专用最小权限访问。
@@ -146,6 +147,7 @@ func SetupRouter(
 
 func transferDelegatedToolPolicies() map[string]commonAuth.DelegatedRoutePolicyEntry {
 	return map[string]commonAuth.DelegatedRoutePolicyEntry{
+		"POST /api/v1/transfer/task-config-drafts": {RequiredScopes: []string{"transfer.task.draft.build"}, RequiredPermissions: []string{transferauthorization.PermissionTransferTaskCreate, "meta.catalog.read", "system.engine.read", "manager.data_item.read"}},
 		"POST /api/v1/transfer/task-config-checks": {
 			RequiredScopes:      []string{"transfer.task.config.check"},
 			RequiredPermissions: []string{transferauthorization.PermissionTransferTaskCreate, "meta.catalog.read", "system.engine.read"},

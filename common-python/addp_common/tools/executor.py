@@ -53,6 +53,7 @@ class ToolExecutor:
             "platform.capabilities.list": self._platform_capabilities_list,
             "transfer.task.create": self._transfer_task_create,
             "transfer.task.config.check": self._transfer_task_config_check,
+            "transfer.task.draft.build": self._transfer_task_draft_build,
             "transfer.task.start": self._transfer_task_start,
             "transfer.execution.get": self._transfer_execution_get,
         }
@@ -183,6 +184,10 @@ class ToolExecutor:
     async def _transfer_task_create(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(TransferClient, delegated_token) as client:
             return await client.create_task(**arguments)
+
+    async def _transfer_task_draft_build(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(TransferClient, delegated_token) as client:
+            return await client.build_task_config_draft(**arguments)
 
     async def _transfer_task_config_check(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(TransferClient, delegated_token) as client:

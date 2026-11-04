@@ -1408,6 +1408,97 @@ const docTemplate = `{
                 ]
             }
         },
+        "/task-config-drafts": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "基于当前租户可见的已登记源结构和目标父节点构建 MongoDB 到 PostgreSQL 的 bounded snapshot。需要四项权限交集。仅返回可交给正式预检的完整候选参数，不读取业务行、不保存任务或启动执行。| Build a MongoDB to PostgreSQL bounded snapshot from tenant-visible persisted structure and target parent facts. Requires all four permissions. Returns complete candidate arguments for formal preflight without business reads, task persistence or execution.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "只读构建传输任务草稿 | Build transfer configuration read-only",
+                "parameters": [
+                    {
+                        "description": "资源引用与业务选择 | Resource references and business choices",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_service.TaskConfigDraftRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "候选创建参数 | Candidate creation arguments",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_service.TaskConfigDraftResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "选择无法构建 | Choices cannot be compiled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "事实服务不可用 | Fact dependency unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "delegated_tool",
+                "x-addp-required-permissions": [
+                    "transfer.task.create",
+                    "meta.catalog.read",
+                    "system.engine.read",
+                    "manager.data_item.read"
+                ]
+            }
+        },
         "/task-definitions": {
             "get": {
                 "security": [
@@ -3354,6 +3445,47 @@ const docTemplate = `{
                 }
             }
         },
+        "datatype.FieldType": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "string",
+                "bool",
+                "bytes",
+                "mixed",
+                "int",
+                "bigint",
+                "float",
+                "double",
+                "decimal",
+                "date",
+                "time",
+                "timestamp",
+                "json",
+                "array",
+                "uuid",
+                "geometry"
+            ],
+            "x-enum-varnames": [
+                "FieldTypeUnknown",
+                "FieldTypeString",
+                "FieldTypeBool",
+                "FieldTypeBytes",
+                "FieldTypeMixed",
+                "FieldTypeInt",
+                "FieldTypeBigInt",
+                "FieldTypeFloat",
+                "FieldTypeDouble",
+                "FieldTypeDecimal",
+                "FieldTypeDate",
+                "FieldTypeTime",
+                "FieldTypeTimestamp",
+                "FieldTypeJSON",
+                "FieldTypeArray",
+                "FieldTypeUUID",
+                "FieldTypeGeometry"
+            ]
+        },
         "events.CleanupResultSummary": {
             "type": "object",
             "properties": {
@@ -4888,6 +5020,98 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.TaskConfigDraftField": {
+            "type": "object",
+            "properties": {
+                "nullable": {
+                    "type": "boolean"
+                },
+                "path": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "precision": {
+                    "type": "integer"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "target_type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.TaskConfigDraftRequest": {
+            "type": "object",
+            "properties": {
+                "batch_size": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_service.TaskConfigDraftField"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "row_grain": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_service.TaskConfigDraftRowGrain"
+                },
+                "source_locator": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_service.TaskConfigDraftTarget"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.TaskConfigDraftResponse": {
+            "type": "object",
+            "properties": {
+                "arguments": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.TaskConfigDraftRowGrain": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.TaskConfigDraftTarget": {
+            "type": "object",
+            "properties": {
+                "apply_mode": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_locator": {
+                    "type": "string"
                 }
             }
         },

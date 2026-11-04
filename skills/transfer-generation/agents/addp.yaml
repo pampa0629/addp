@@ -9,7 +9,7 @@ required_tools:
   - resource.children.list
   - resource.ancestors.get
   - resource.facts.get
-  - transfer.draft.generate
+  - transfer.task.draft.build
   - transfer.task.config.check
   - transfer.task.create
   - transfer.task.start

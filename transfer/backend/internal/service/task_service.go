@@ -64,6 +64,7 @@ type TaskService struct {
 	roleProtection   *RoleProtectionService
 	taskAuthorizer   TaskSubjectAuthorizer
 	configChecker    *TaskConfigCheckService
+	configDrafter    *TaskConfigDraftService
 	db               *gorm.DB
 	taskRepo         *repository.TaskRepository
 	deadLetterRepo   *repository.DeadLetterRepository

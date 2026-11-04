@@ -1158,6 +1158,240 @@
       }
     },
     {
+      "name": "transfer.task.draft.build",
+      "version": "1.0.0",
+      "description": "根据已确认的资源引用、行粒度和字段选择只读构建 MongoDB 到 PostgreSQL 的 bounded snapshot 参数。Transfer 重新读取正式结构事实；返回 arguments 可原样交给正式预检，不证明执行成功，不创建、运行或读取业务行。",
+      "owner": "transfer",
+      "risk": "read",
+      "approval": {
+        "mode": "none"
+      },
+      "auth": {
+        "type": "delegated_access_token",
+        "audience": "transfer",
+        "required_scopes": [
+          "transfer.task.draft.build"
+        ],
+        "required_permissions": [
+          "transfer.task.create",
+          "meta.catalog.read",
+          "system.engine.read",
+          "manager.data_item.read"
+        ]
+      },
+      "permission_enforced_by": "owner",
+      "audit": {
+        "mode": "owner"
+      },
+      "result_ref": {
+        "mode": "none"
+      },
+      "limits": {
+        "max_bytes": 131072
+      },
+      "errors": [
+        "invalid_arguments",
+        "delegation_rejected",
+        "delegation_unavailable",
+        "invalid_delegation_response",
+        "owner_api_error",
+        "owner_api_unavailable",
+        "invalid_owner_response",
+        "result_too_large"
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "name",
+          "source_locator",
+          "target",
+          "row_grain",
+          "fields"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "batch_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "source_locator": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "target": {
+            "type": "object",
+            "required": [
+              "parent_locator",
+              "name",
+              "apply_mode"
+            ],
+            "properties": {
+              "parent_locator": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "apply_mode": {
+                "enum": [
+                  "replace",
+                  "append"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "row_grain": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "const": "document"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "mode",
+                  "path"
+                ],
+                "properties": {
+                  "mode": {
+                    "const": "array_element"
+                  },
+                  "path": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "target"
+              ],
+              "properties": {
+                "path": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "target": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "target_type": {
+                  "type": "string",
+                  "enum": [
+                    "unknown",
+                    "string",
+                    "bool",
+                    "bytes",
+                    "mixed",
+                    "int",
+                    "bigint",
+                    "float",
+                    "double",
+                    "decimal",
+                    "date",
+                    "time",
+                    "timestamp",
+                    "json",
+                    "array",
+                    "uuid",
+                    "geometry"
+                  ],
+                  "description": "ADDP 标准字段类型标识，不是目标数据库 DDL 类型名；具体类型可写性和实际值转换仍由 Transfer/Provider 校验。"
+                },
+                "nullable": {
+                  "type": "boolean"
+                },
+                "precision": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "scale": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "arguments"
+        ],
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "config": {
+                "type": "object"
+              },
+              "description": {
+                "type": "string"
+              },
+              "batch_size": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "transfer.task.config.check",
       "version": "1.0.0",
       "description": "只读核对 bounded snapshot native-table Transfer 配置。仅控制面快照，不读业务行、不创建或运行任务、不扫描。完整返回 supported/unsupported/unknown 与未检查项，HTTP 200 或 supported 均不保证运行成功；unknown 不是通过，依赖或权限失败不得降级。",

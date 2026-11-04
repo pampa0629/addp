@@ -23,8 +23,8 @@ Runtime 已明确绑定原草稿时，只沿用恢复的候选参数，不重建
 2. 用 `engine.list` 确认用户可访问的源/目标引擎。按 `data-discovery` 只搜索源侧数据项，必要时限定源 engine_id；多个集合或引擎候选等待用户选择。搜索失败时明确报告并终止当前运行，不能把失败当作零召回，也不能静默改用源目录枚举来继续生成或创建。
 3. 通过 `resource.ancestors.get → resource.facts.get` 确认源身份和最新结构，不用样本猜 Schema。缺扫描事实则要求补扫描，不能读取原始行兜底。
 4. 用 `resource.children.list(engine_id=<目标>)` 从 owner 返回的真实根节点开始逐层浏览；后续父 locator 只取自返回结果。让用户确认目标 `parent_locator + name`，目标尚不存在时不能把它当成已有输入搜索。不可假定 PostgreSQL schema 是 public。
-5. 根据能力定义分别确定行粒度和字段保留范围，再补齐运行边界、装载、写入策略、目标字段及类型。不展开数组不等于删除数组字段；用户要求保留顶层字段时，数组和对象也应保留，不能把嵌套叶子误当成顶层列。不能确定目标表示时通过正式预检或澄清处理，不得为规避类型检查而静默删字段。有嵌套字段时让用户决定一文档一行还是单数组元素一行，再用明确的 MQL `$project`/单次 `$unwind` 表达；配置编码只覆盖直接字段引用，不生成复杂表达式。复杂计算交给 Develop，不伪造本次 Tool 能力。
-6. 如需名称、描述或直接字段映射辅助，可调用 `transfer.draft.generate`；调用前由本步骤的 Owner Tool 确认资源和字段并提交完整上下文。Copilot 不再代替 Agent 访问资源，不申请二次委托，只产生草稿；结果不是授权或资源真实性证明，不负责创建，且不能覆盖用户确定的 endpoint/边界/策略。没有资源时 Tool 只返回意图检索词，由 Agent 继续调用 Owner Tool，不把检索词当作候选身份。已有完整确认配置时不必调用 Copilot。
+5. 根据能力定义分别确认行粒度和字段保留范围，再补齐写入策略、目标字段及转换意图。不展开数组不等于删除数组字段。缺少业务决定时澄清，不能静默删字段或改行粒度。复杂计算交给 Develop。
+6. MongoDB 到 PostgreSQL 的新 bounded snapshot 草稿必须调用 `transfer.task.draft.build`。提交已确认的 `source_locator`、`target.parent_locator/name/apply_mode`、`row_grain` 和有序 `fields` 选择，字段 path 使用正式结构中的原始名称分段。用户不需要填写查询或配置 JSON。Transfer 自行读取当前事实并构建查询、类型映射和完整参数，后续原样使用返回的 `arguments` 预检或复核，不由模型重新拼装。构建失败按诊断澄清或修正业务选择，不换用 Copilot 或手拼配置绕过；已绑定历史原稿仍沿原参数复核。其他组合仅在当前本体及正式 Tool 明确覆盖时使用对应入口，不把此切片扩张为所有 Transfer 能力。
 7. 调用 `request_clarification`：`reason="transfer_create_review"`。未绑定原草稿时提交 `operation_review={"tool":"transfer.task.create","arguments":<完整创建参数>}`；已绑定原草稿时只提交 `operation_review={"tool":"transfer.task.create"}`，原参数由 Runtime 提供。options 提供 value 为 `confirm` 和 `cancel` 的两个选项及用户语言的标签。Runtime 自动通过正式 `transfer.task.config.check` 预检完整参数，再生成配置复核与绑定指纹；不必由模型重复调用预检。unsupported 必须修正配置，不能继续创建；unknown 不是通过，Runtime 展示未检查项及运行时要求，并取得用户知情确认。supported 也不保证执行成功。prompt 用简短业务摘要说明源/目标名称、行粒度、边界/装载方式、字段处理概要、写入策略及其影响，并明确只创建、不运行；不要在摘要中重复 locator、MQL、完整字段清单或 JSON。不能用摘要替代 Runtime 的完整参数和报告复核。只有用户选择 Runtime 绑定的确认选项后才提交同一配置，不能改字段、查询、策略、名称或批大小；文字回答是补充要求，不是创建确认，有修改先重新复核。只要求草稿时不进入此步骤，也不能宣称已经预检通过。
 8. 用户选择正式“仅创建、不运行”后，由 Runtime 恢复同一份完整参数，刷新本体、源结构和目标父节点事实，并重新预检；指纹匹配后沿同一 `transfer.task.create` Adapter、确认消费与持久提交屏障创建一次，不再请求模型选择下一步或收尾。模型不得重复复核或重新拼装已确认参数。配置、本体、事实或稳定报告变化后由 Runtime 重新展示同参数复核；条件不满足、依赖失败或创建结果不明终止，不自动重试。成功固定提示“任务已创建，尚未运行”，只消费正式返回的真实 ID、idle/stopped、无计划，不宣称数据已同步，不调用其他执行 Tool；结果不明时核对 Transfer 审计。
 
@@ -40,14 +40,12 @@ Runtime 已明确绑定原草稿时，只沿用恢复的候选参数，不重建
 
 显式检查结束后用户要求修改时，沿原流程重新获取必要事实、澄清、构造及检查，不静默改变已确定的字段范围、行粒度或写入策略。创建流程中的自动预检仍将完整诊断提供给模型，unsupported 必须修正后重新复核，unknown 仍需知情确认。只读草稿不要求用户批准创建；预检服务或权限失败明确报告，不当作 unknown、不自动重试。只有没有要求检查的普通草稿，才仅展示草稿且明确尚未正式预检。
 
-## 配置编码要求
+## 草稿构建要求
 
-- `source.query.statement` 是序列化后的单个 JSON command object，不是 mongosh / JavaScript 文本。基础投影使用 `{"aggregate":"<已确认的 query_references.mql.parts 的唯一元素>","pipeline":[{"$project":{"<已确认的字段>":1}}]}` 的结构；占位符必须替换为 owner 事实，不能提交示例占位符。禁止 `db.<collection>.find(...)`、`db.<collection>.aggregate(...)` 或只提交 `$project` 阶段。不要从 full_name 或 locator 拼接 collection 名。
-- `field_mapping.fields[].target_type` 使用 ADDP 的标准字段类型，不使用目标数据库的 DDL 类型。字符串与布尔字段分别提交 `string`、`bool`；用户提出 PostgreSQL `text`、`boolean` 时，复核中可保留其物理类型意图，但任务配置必须使用 `string`、`bool`，具体数据库类型由 owner Provider 映射。其他类型依照平台字段类型事实确定，不猜测。
-- 整体保留对象和数组时，类型映射必须区分 JSON 容器与原生数组。对象数组、嵌套数组、混合数组或元素类型未知的数组整体保留，使用 `target_type="json"` 作为候选并交正式预检核验，不把源 `type=array` 原样复制为目标 `array`。`element_type` 是源表示事实，不是目标支持证明；只有源元素事实及目标 Provider 检查均支持用户明确选择的原生数组时才使用 `array`。当前 PostgreSQL 原生 `array` 只对应字符串数组 `TEXT[]`，不能存对象元素；对象数组保留为 JSON 不改变一文档一行或字段保留范围。预检不支持时修正候选并重新复核，不静默删字段、不把对象转成字符串数组、不改已确认任务后直接运行。
-- 目标 schema 等父节点用 `resource.ancestors.get` / `resource.children.list` 确认；`resource.facts.get` 只查询已存在的数据项，不用于 schema、database 或尚未创建的目标。
-- 可选 `transfer.draft.generate` 的 `resources[]` 使用已确认的 `ResourceFact`，必须包含 `role + locator`；源用途可明确为 `role="source"`。不要直接提交搜索候选，也不要混入 `name`、`item_type`、`row_grain`、`project_fields`。行粒度与投影通过正式 `source.query` 表达，不是资源事实字段。
-- 草稿调用中的 `task` 使用 `name/description/task_type/config` 层级，`task_type="sync"`。`runtime/load/source/target/transforms` 全部放入 `task.config`，写入策略放在 `task.config.target.policy`，字段映射放在 `task.config.transforms` 的 `field_mapping` 中；源查询放在 `task.config.source.query`。不能把创建 Tool 的顶层 `config` 参数误当作草稿调用的 `task`，也不能自造顶层 `field_mapping`。缺少目标或配置时先澄清，不让 Copilot 猜测。
+- 当前 MongoDB → PostgreSQL 切片的查询编码与字段类型规则由 Transfer 构建器持有。LLM 提交字段选择和转换意图，完整配置以正式 Tool 的 `arguments` 为准。`target_type` 如有指定，使用 ADDP 标准字段类型，物理 DDL 类型由 Provider 处理。
+- 整体保留对象数组、嵌套数组、混合数组或元素类型未知的数组时，让构建器选择可表达的表示，再交正式预检。源 `element_type` 不是目标可写性证明，unknown 不是通过。不得删除数组字段或擅自改变用户确认的表示以规避诊断。
+- 目标父节点用目录和祖先入口确认，尚未创建的目标表没有可供事实读取的虚拟 locator。字段缺失、结构覆盖不完整或多个候选必须明确处理，不用自报 schema 补齐。
+- 构建成功仅表示生成了候选参数。只有正式预检返回才展示预检结果，只有创建 Tool 成功才报告任务已创建。
 
 ## 补齐条件
 
