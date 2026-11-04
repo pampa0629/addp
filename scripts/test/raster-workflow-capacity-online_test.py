@@ -216,7 +216,7 @@ class CapacityEvidenceTest(unittest.TestCase):
                  patch.object(m,'restart_runtime',return_value={'Id':'container','State':{'Pid':17}}), \
                  patch.object(m,'cgroup_directory'), patch.object(m,'wait_applied'), patch.object(m,'Sampler',return_value=sampler), \
                  patch.object(m.scene,'submit',side_effect=m.scene.SuiteError('submission rejected')):
-                with self.assertRaisesRegex(m.scene.SuiteError,'submission rejected'): m.run(env)
+                with self.assertRaisesRegex(m.scene.SuiteError,'submission rejected'): m.run_capacity(env,Mock(),Mock())
             evidence=json.loads((root/'capacity-c64-n1-r1-measurements.json').read_text())
             self.assertEqual(evidence['samples'],samples)
             self.assertEqual(evidence['before'],before)
@@ -429,6 +429,9 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                         return actual
                     if action=='purge-mosaic':return {'source_unchanged':True}
                     raise AssertionError(action)
+                scope=Mock()
+                scope.execution.side_effect=lambda execution,*args:execution
+                scope.produced_item.side_effect=lambda item,*args:item
                 with patch.object(m,'MosaicScopeFixture'),patch.object(m,'verify_basic_rescans',return_value={'result':'passed'}), \
                      patch.object(m,'physical',side_effect=physical),patch.object(m.scene.support,'wait_for_meta_scan'), \
                      patch.object(m.scene.support,'find_fixture_item',side_effect=lambda client,engine,full_name,label:next(v for v in items.values() if v['full_name']==full_name)),patch.object(m.fixture,'require_disk'), \
@@ -438,8 +441,8 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                         message={'parent':'Manager execution failed','physical':'physical pixels differ',
                                  'meta':'Meta execution returned HTTP 404','monitor':'Monitor lineage resource locator is missing'}[fail]
                         with self.assertRaisesRegex(m.scene.SuiteError,message):
-                            m.run_directories(env,client,client,'/policy','image',8,9,report,scans)
-                    else:m.run_directories(env,client,client,'/policy','image',8,9,report,scans)
+                            m.run_directories(env,client,client,'/policy','image',8,9,report,scans,Mock(),scope)
+                    else:m.run_directories(env,client,client,'/policy','image',8,9,report,scans,Mock(),scope)
                 measurements=list(root.glob('*-measurements.json'))
                 self.assertEqual(len(measurements),1 if fail else 4)
                 self.assertEqual(len(report['mosaic_groups']),0 if fail else 4)
@@ -650,8 +653,100 @@ class MosaicScopeFixtureTest(unittest.TestCase):
                 if fault == 'fingerprint': item['fingerprint'] = 'invalid'
                 if fault == 'seed_ids': seeds = {'nodes': [True], 'items': [102, 103]}
                 command.return_value = SimpleNamespace(returncode=1 if fault == 'sql' else 0,
-                    stdout={'empty': '', 'oversize': ' '*8193, 'invalid_json': 'invalid'}.get(fault, '{}'))
+                    stdout={'empty': '', 'oversize': ' '*65537, 'invalid_json': 'invalid'}.get(fault, '{}'))
                 with patch.object(fixture, 'inspect', return_value=changed):
                     with self.assertRaises((m.scene.SuiteError, ValueError)):
                         fixture.state(item, parent, self.identity, seeds=seeds)
                 if fault not in ('sql', 'empty', 'oversize', 'invalid_json'): command.assert_not_called()
+
+class CapacityAuthorizationBoundaryTest(unittest.TestCase):
+    def test_only_fixed_precise_sources_and_results_gain_expiring_metadata(self):
+        from unittest.mock import Mock
+        registration = importlib.import_module('scripts.test.online-engine-registration')
+        with tempfile.TemporaryDirectory() as directory:
+            env = {'GATEWAY_URL':'http://gateway','ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'user-secret',
+                'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'issuer-secret','ADDP_ONLINE_TEST_TENANT_ID':'2',
+                'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID':'8','ADDP_ONLINE_RASTER_TARGET_ENGINE_ID':'9',
+                'ADDP_ONLINE_ARTIFACT_DIR':directory}
+            helper = Mock(); helper.grant.return_value={'request_id':'grant','action':'metadata_read'}
+            helper.cleanup.return_value={'grants_revoked':True,'metadata_hidden':True}
+            factory=Mock(return_value=helper)
+            factory.target=registration.ExactFileMetadataGrants.target
+            consumer=Mock()
+            consumer.request.side_effect=lambda method,path,statuses,body: SimpleNamespace(payload={
+                'observed_at':'now','targets':[{'target':body['targets'][0],'visible':False}]})
+            with patch.object(registration,'ExactFileMetadataGrants',factory),patch.object(m.scene,'GatewayClient',return_value=consumer):
+                authorization = m.CapacityMetadataGrants(env)
+            expected = [(8,'raster-source/'+m.fixture.SOURCE_NAME,'single')]+[
+                (8,'raster-source/'+m.fixture.MOSAIC_SOURCE_PREFIX+'/'+name,'single') for name in m.fixture.mosaic_windows()]+[
+                (9,'raster-target/capacity-c64-n1-r1-0.cog.tif','single'),
+                (9,'raster-target/capacity-mosaic-l1-r1','whole')]
+            for engine,name,layout in expected: authorization.ensure(engine,name,layout=layout)
+            self.assertEqual(helper.grant.call_count,7)
+            for call in helper.grant.call_args_list:
+                self.assertEqual(call.args[2],'minio'); self.assertEqual(call.kwargs['expires_at'],authorization.expires_at)
+                self.assertEqual(call.kwargs['data_type'],'media')
+            before=helper.grant.call_count
+            for engine,name,layout in [(8,'raster-source/neighbor.tif','single'),(9,'raster-target','whole'),
+                (9,'raster-target/capacity-mosaic-l1-r1/index/source-index.json','single'),
+                (8,'raster-source/'+m.fixture.SOURCE_NAME,'whole'),(10,expected[0][1],'single'),(9,'raster-target/capacity-c64-n1-r3-0.cog.tif','single')]:
+                with self.subTest(name=name),self.assertRaises(m.scene.SuiteError):authorization.ensure(engine,name,layout=layout)
+            self.assertEqual(helper.grant.call_count,before)
+            consumer.request.side_effect=lambda method,path,statuses,body: SimpleNamespace(payload={
+                'observed_at':'later','targets':[{'target':body['targets'][0],'visible':True}]})
+            authorization.ensure(9,'raster-target/capacity-mosaic-l1-r1',layout='whole')
+            self.assertEqual(helper.grant.call_count,before)
+            self.assertEqual(len(authorization.report['already_visible']),1)
+            authorization.cleanup()
+            receipt=(Path(directory)/'capacity-metadata-grants.json').read_text()
+            self.assertNotIn('user-secret',receipt);self.assertNotIn('issuer-secret',receipt)
+            self.assertEqual(json.loads(receipt)['cleanup'],helper.cleanup.return_value)
+
+    def test_cleanup_runs_for_success_scope_rejection_and_failed_business(self):
+        from unittest.mock import Mock
+        for failure in (None,'scope','business','cleanup','both'):
+            with self.subTest(failure=failure):
+                auth=Mock();auth.report={'issued':[]};auth.cleanup.return_value={'grants_revoked':True}
+                if failure in ('cleanup','both'):auth.cleanup.side_effect=m.scene.SuiteError('cleanup failed')
+                with patch.object(m,'CapacityMetadataGrants',return_value=auth), \
+                     patch.object(m,'MosaicScopeFixture',side_effect=m.scene.SuiteError('scope failed') if failure=='scope' else None), \
+                     patch.object(m,'run_capacity',return_value={'result':'passed'},
+                        side_effect=m.scene.SuiteError('business failed') if failure in ('business','both') else None):
+                    if failure:
+                        with self.assertRaises(m.scene.SuiteError):m.run({})
+                    else:self.assertEqual(m.run({})['metadata_authorization']['cleanup'],{'grants_revoked':True})
+                auth.cleanup.assert_called_once()
+
+    def test_private_snapshots_bind_public_user_parent_scan_item_and_preserve_public_projection(self):
+        from unittest.mock import Mock
+        scope=object.__new__(m.MosaicScopeFixture)
+        scope.owner={'State':{'StartedAt':'2026-11-04T00:00:00Z'}}
+        identifier='12345678-1234-4234-8234-123456789abc'
+        scan='22345678-1234-4234-8234-123456789abc'
+        identity={'tenant_id':'2','principal_id':'33'}
+        facts={'schema_version':'addp.lineage-facts/v1','inputs':[],'outputs':[],'operations':[{'kind':'derive'}]}
+        public={'execution_id':identifier,'module':'develop','task_type':'workflow','status':'success','triggered_by':33,
+            'execution_config':{'content':{'workflow_definition':{}}},'metadata':{'lineage_facts':{**facts,'operations':None}}}
+        internal={**public,'metadata':{'lineage_facts':facts}}
+        scope.query=Mock(return_value=internal)
+        result=scope.execution(public,identity,'develop')
+        self.assertEqual(result['metadata']['lineage_facts']['operations'],[{'kind':'derive'}])
+        self.assertIsNone(public['metadata']['lineage_facts']['operations'])
+        sql,values=scope.query.call_args.args
+        self.assertIn('BEGIN READ ONLY;',sql);self.assertIn("actor_principal_id=:'principal'",sql)
+        self.assertIn("created_at>=:'started_at'",sql);self.assertIn('octet_length',sql)
+        self.assertEqual(values['execution'],identifier)
+        item={'id':88,'engine_id':9,'node_id':55,'name':'capacity-c64-n1-r1-0.cog.tif',
+              'full_name':'raster-target/capacity-c64-n1-r1-0.cog.tif','fingerprint':'a'*64,'attributes':{'item':{'format':'tiff'}}}
+        raw={**copy.deepcopy(item),'size_bytes':123,'attributes':{'format_info':{'tiff':{'is_tiled':True}}}}
+        scope.query.return_value=raw
+        self.assertEqual(scope.produced_item(item,result,scan,identity),raw)
+        sql,values=scope.query.call_args.args
+        self.assertIn('s.parent_execution_id=e.execution_id',sql)
+        self.assertIn("s.actor_principal_id=e.actor_principal_id",sql)
+        self.assertIn("i.fingerprint=:'fingerprint'",sql)
+        self.assertIn('lineage_facts',sql);self.assertIn('octet_length(i.attributes::text)<=32768',sql)
+        self.assertEqual(values['scan'],scan)
+        for key,value in [('size_bytes',123),('attributes',{'format_info':{}}),('fingerprint','b'*64)]:
+            wrong={**item,key:value}
+            with self.subTest(key=key),self.assertRaises(m.scene.SuiteError):scope.produced_item(wrong,result,scan,identity)

@@ -54,6 +54,7 @@ source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=10800
 export ADDP_ONLINE_TEST_RUN_ID="raster-capacity-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
+export SECURITY_URL=http://127.0.0.1:8194
 fixture_owned=1
 registry_owned=1
 run_logged docker run -d --name addp-raster-capacity-registry --label "com.addp.online-runtime=$ONLINE_SUITE" -p 127.0.0.1:5001:5000 registry:2
@@ -69,12 +70,12 @@ infra_owned=1
 run_logged bash scripts/infra/up.sh
 run_logged python3 business/scripts/online-raster-capacity-fixture.py start
 application_owned=1
-for start_target in -develop -manager -monitor; do
+for start_target in -security -develop -manager -monitor; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 start_online_geopython_runtime "$RUNTIME_TAG" --cpus 4 --memory 2g --memory-swap 2g
 run_logged python3 business/scripts/online-raster-capacity-fixture.py seed
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow-capacity --output "$1"' _ "$IDENTITY_ENV"
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow-capacity --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 for role in source target; do
   run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/raster-$role-engine.json" --output "$ENGINE_RESULT_ENV"

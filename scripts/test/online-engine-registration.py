@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import re
 import json
@@ -118,7 +119,13 @@ class ExactFileMetadataGrants:
             or result.get('targets') != [dict(target=target, visible=visible)]):
             raise RegistrationError('metadata visibility does not match the current precise Grant')
 
-    def grant(self, engine, full_name, storage, *, data_type, format_name, layout):
+    def grant(self, engine, full_name, storage, *, data_type, format_name, layout, expires_at=None):
+        if expires_at is not None:
+            try:
+                remaining = (datetime.fromisoformat(expires_at.replace('Z', '+00:00')) - datetime.now(timezone.utc)).total_seconds()
+                if not 0 < remaining <= 10800: raise ValueError()
+            except (ValueError, TypeError, AttributeError):
+                raise RegistrationError('metadata Grant expiry must be within the next 10800 seconds') from None
         target = self.target(engine, full_name, storage, layout=layout)
         fingerprint = hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
         facts = self.authorizer.request('GET', f'/api/v1/system/engines/{engine}/data-items/{fingerprint}/authorization-facts', (200,)).payload
@@ -140,13 +147,23 @@ class ExactFileMetadataGrants:
         body = dict(request_id=command, catalog_path=target, item_fingerprint=fingerprint,
                     expected_boundary_hash=facts['boundary_hash'], recipient_type='user', recipient_id=self.recipient,
                     action='metadata_read', expiry_mode='until_revoked', reason='Disposable Online exact structural metadata acceptance')
+        if expires_at is not None:
+            body.update(expiry_mode='at_time', expires_at=expires_at)
         pending = dict(engine=engine, request_id=command, target=target, confirmed=False)
         self.pending.append(pending)  # Unknown write outcomes must also be cleaned.
         self.checkpoint()
         receipt = self.authorizer.request('POST', f'/api/v1/system/engines/{engine}/access_grants', (201,), body).payload
         expected = {k:body[k] for k in ('request_id','catalog_path','item_fingerprint','recipient_type','recipient_id','action','expiry_mode')}
         expected.update(engine_id=str(engine), boundary_hash=facts['boundary_hash'], metadata_target=metadata,
-                        approval_mode='independent', operator_principal_id=self.operator, revocation=None, expires_at=None)
+                        approval_mode='independent', operator_principal_id=self.operator, revocation=None)
+        if expires_at is None:
+            expected['expires_at'] = None
+        else:
+            try:
+                if datetime.fromisoformat(receipt['expires_at'].replace('Z', '+00:00')) != datetime.fromisoformat(expires_at.replace('Z', '+00:00')):
+                    raise ValueError()
+            except (KeyError, TypeError, ValueError):
+                raise RegistrationError('metadata Grant receipt changed its expiry') from None
         if (not isinstance(receipt, dict) or any(receipt.get(k) != v for k,v in expected.items())
             or receipt.get('file_composition') or receipt.get('native_target') or receipt.get('scope')
             or receipt.get('node_recursive') is not None):

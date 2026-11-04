@@ -2164,7 +2164,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',
                  'scripts/test/online-hosted-raster-capacity-gate.sh', 'scripts/utils/hosted-product-runtime.sh',
                  'scripts/test/raster-workflow-capacity-online.py', 'business/scripts/online-raster-capacity-fixture.py', 'Makefile', 'scripts/test/raster-workflow-online.py',
-                 'system/backend/cmd/online-test-fixture/main.go', 'engines/geopython-workflow/test_online_raster_fixture.py', 'scripts/utils/capacity_resources.py')
+                 'system/backend/cmd/online-test-fixture/main.go', 'engines/geopython-workflow/test_online_raster_fixture.py', 'scripts/utils/capacity_resources.py', 'scripts/test/online-engine-registration.py',
+                 'scripts/test/raster-workflow-capacity-online_test.py')
         for relative in paths:
             destination = self.repository / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -2187,7 +2188,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 (paths[4], 'capacity_resources.read_metrics'),
                 (paths[10], 'memory.peak'), (paths[10], 'oom_kill'),
                 (paths[10], 'memory.swap.max'), (paths[10], 'quota/period!=4'),
-                (paths[10], 'maximum!=2*(1<<30)')):
+                (paths[10], 'maximum!=2*(1<<30)'),
+                (paths[4], 'class CapacityMetadataGrants:'),
+                (paths[4], 'authorization.cleanup()'), (paths[4], 'def verify_basic_rescans('),
+                (paths[4], 's.parent_execution_id=e.execution_id'),
+                (paths[11], 'remaining <= 10800'),
+                (paths[12], 'test_cleanup_runs_for_success_scope_rejection_and_failed_business')):
             path = self.repository / relative
             original = path.read_text()
             path.write_text(original.replace(fragment, 'removed'))

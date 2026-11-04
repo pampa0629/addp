@@ -1722,3 +1722,15 @@ func TestENVIInitializerHasOnlyApprovedThirteenPermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestRasterCapacitySeparatesBoundedMetadataIssuerFromConsumer(t *testing.T) {
+	permissions, err := suitePermissions("raster-workflow-capacity")
+	if err != nil || len(permissions) != 12 || !slices.Equal(suiteSourceInitializerPermissions("raster-workflow-capacity"), sourceInitializerPermissions) {
+		t.Fatalf("capacity issuer or consumer permissions differ: %v %v", permissions, err)
+	}
+	for _, permission := range sourceInitializerPermissions {
+		if slices.Contains(permissions, permission) {
+			t.Fatalf("capacity consumer gained issuer permission %s", permission)
+		}
+	}
+}

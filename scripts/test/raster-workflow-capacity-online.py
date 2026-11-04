@@ -2,6 +2,7 @@
 """Manual full-scene T4 capacity evidence through authoritative policy and Develop."""
 from __future__ import annotations
 import importlib
+from datetime import datetime, timedelta, timezone
 import json
 import math
 import os
@@ -285,6 +286,69 @@ def validate_directory_item(item,physical):
 
 
 
+class CapacityMetadataGrants:
+    """Exact, expiring metadata visibility; never an execution/content Allow."""
+    def __init__(self, env):
+        self.env = env
+        self.registration = importlib.import_module('scripts.test.online-engine-registration')
+        self.client = scene.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
+        issuer = scene.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+        self.path = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'capacity-metadata-grants.json'
+        self.report = {'issued': [], 'pending': [], 'already_visible': [], 'cleanup': 'pending'}
+        self.expires_at = (datetime.now(timezone.utc)+timedelta(seconds=10800)).isoformat()
+        def checkpoint(pending):
+            self.report['pending'] = list(pending)
+            self.save()
+        self.grants = self.registration.ExactFileMetadataGrants(issuer, self.client,
+            int(env['ADDP_ONLINE_TEST_TENANT_ID']), on_change=checkpoint)
+        self.save()
+
+    def save(self):
+        self.path.write_text(json.dumps(self.report, sort_keys=True))
+
+    def ensure(self, engine, full_name, *, layout='single'):
+        source = int(self.env['ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID'])
+        target = int(self.env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID'])
+        if engine == source:
+            allowed = {'raster-source/'+fixture.SOURCE_NAME} | {
+                'raster-source/'+fixture.MOSAIC_SOURCE_PREFIX+'/'+name for name in fixture.mosaic_windows()}
+            valid = full_name in allowed and layout == 'single'
+        elif engine == target:
+            name = full_name.removeprefix('raster-target/')
+            singles = {f'capacity-c{cache}-n{running}-r{repetition}-{index}.cog.tif'
+                       for repetition,cache,running in matrix() for index in range(2)}
+            wholes = {f'capacity-mosaic-l{concurrency}-r{repetition}' for repetition,concurrency in directory_matrix()}
+            valid = full_name == 'raster-target/'+name and (layout == 'single' and name in singles
+                                                          or layout == 'whole' and name in wholes)
+        else:
+            valid = False
+        if not valid:
+            raise scene.SuiteError('capacity metadata Grant is outside the exact owned fixtures')
+        if engine == target:
+            path = self.registration.ExactFileMetadataGrants.target(engine,full_name,'minio',layout=layout)
+            visibility = scene.obj(self.client.request('POST','/api/v1/system/engine-access/metadata-checks/meta-query',
+                (200,),{'targets':[path]}).payload,'current target metadata visibility')
+            rows = visibility.get('targets')
+            if (not visibility.get('observed_at') or not isinstance(rows,list) or len(rows)!=1
+                or rows[0].get('target')!=path or type(rows[0].get('visible')) is not bool):
+                raise scene.SuiteError('capacity target metadata visibility is incomplete')
+            if rows[0]['visible']:
+                self.report['already_visible'].append({'target':path,'observed_at':visibility['observed_at']}); self.save()
+                return None
+        receipt = self.grants.grant(engine, full_name, 'minio', data_type='media',
+            format_name='raster_mosaic' if layout == 'whole' else 'tiff', layout=layout, expires_at=self.expires_at)
+        self.report['issued'].append(receipt); self.save()
+        return receipt
+
+    def cleanup(self):
+        try:
+            result = self.grants.cleanup()
+        except BaseException:
+            self.report['cleanup'] = 'failed'; self.save(); raise
+        self.report['cleanup'] = result; self.save()
+        return result
+
+
 class MosaicScopeFixture:
     """Meta-owned wrong-record fixture, confined to this disposable capacity run."""
     def __init__(self, env):
@@ -368,7 +432,7 @@ class MosaicScopeFixture:
  AND e.module='manager' AND e.task_type='raster_mosaic_generation' AND e.status='success'
  AND e.created_at>=:'started_at'::timestamptz
  AND e.metadata->'lineage_facts'->'outputs' @> jsonb_build_array(jsonb_build_object(
- 'item_id',i.id,'fingerprint',i.fingerprint))))"""
+ 'item_id',i.id,'item_fingerprint',i.fingerprint))))"""
         if seed:
             # Two real component names, one direct and one below a child node.
             statement = "BEGIN; SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';\n" + owned + """,
@@ -414,20 +478,97 @@ class MosaicScopeFixture:
  WHERE tenant_id=o.tenant_id AND engine_id=o.engine_id AND id NOT IN (SELECT id FROM descendants)))
  FROM owned o; COMMIT;
 """
-        command = ['docker', 'exec', '-i', self.owner['Id'], 'psql', '-X', '-qAt',
-                   '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', user, '-d', 'addp_online']
         values = dict(item=item['id'], node=item['node_id'], engine=item['engine_id'], tenant=tenant,
                       principal=principal, fingerprint=item['fingerprint'], full_name=item['full_name'],
                       name=name, parent=parent, scan=scan or '', started_at=self.owner['State']['StartedAt'],
                       seed_items='{'+','.join(map(str,seeds['items']))+'}',
                       seed_nodes='{'+','.join(map(str,seeds['nodes']))+'}')
+        return self.query(statement, values)
+
+    def query(self, statement, values):
+        self.boundary()
+        user = self.validate_owner(self.inspect())
+        command = ['docker', 'exec', '-i', self.owner['Id'], 'psql', '-X', '-qAt',
+                   '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', user, '-d', 'addp_online']
         for key, value in values.items(): command.extend(['-v', key + '=' + str(value)])
         try:
             result = subprocess.run(command, input=statement, capture_output=True, text=True, timeout=8)
-            if result.returncode or not 0 < len(result.stdout.encode()) <= 8192: raise ValueError()
+            if result.returncode or not 0 < len(result.stdout.encode()) <= 65536: raise ValueError()
             return scene.obj(json.loads(result.stdout), 'mosaic scope database snapshot')
         except Exception:
             raise scene.SuiteError('bounded mosaic scope fixture query failed') from None
+
+
+    def execution(self, observation, identity, module):
+        identifier = observation.get('execution_id', '')
+        if module not in {'develop', 'manager'} or not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', identifier):
+            raise scene.SuiteError('capacity snapshot requires a current production execution')
+        statement = """BEGIN READ ONLY; SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+ SELECT json_build_object('execution_id',execution_id,'module',module,'task_type',task_type,
+ 'tenant_id',tenant_id,'triggered_by',triggered_by,'status',status,
+ 'metadata',json_build_object('lineage_facts',metadata->'lineage_facts',
+ 'workflow_runtime',metadata->'workflow_runtime','result',json_build_object(
+ 'final_result',metadata->'result'->'final_result','meta_scan_runs',metadata->'result'->'meta_scan_runs'))),
+ 'outputs',metadata->'outputs') FROM common.task_executions
+ WHERE execution_id=:'execution' AND module=:'module' AND tenant_id=:'tenant'::integer
+ AND actor_principal_id=:'principal'::bigint AND triggered_by=:'principal'::integer
+ AND status='success' AND task_type=CASE WHEN module='manager' THEN 'raster_mosaic_generation' ELSE 'workflow' END
+ AND created_at>=:'started_at'::timestamptz
+ AND octet_length(coalesce((metadata->'lineage_facts')::text,''))<=16384
+ AND octet_length(coalesce((metadata->'result'->'final_result')::text,''))<=16384
+ AND octet_length(coalesce((metadata->'result'->'meta_scan_runs')::text,''))<=8192
+ AND octet_length(coalesce((metadata->'workflow_runtime')::text,''))<=4096
+ AND octet_length(coalesce((metadata->'outputs')::text,''))<=8192;
+ COMMIT;
+"""
+        result = self.query(statement, dict(execution=identifier,module=module,tenant=identity['tenant_id'],
+            principal=identity['principal_id'],started_at=self.owner['State']['StartedAt']))
+        if any(result.get(k) != observation.get(k) for k in ('execution_id', 'module', 'task_type', 'status', 'triggered_by')):
+            raise scene.SuiteError('capacity internal execution differs from the public owner observation')
+        # The public layer has resources, while operation facts remain internal.
+        scene.support.validate_monitor_lineage({'metadata': observation.get('metadata', {})}, result['metadata']['lineage_facts'])
+        return {**observation, **result}
+
+    def produced_item(self, item, execution, scan, identity):
+        module = execution.get('module'); name = item.get('full_name', '')
+        engine = item.get('engine_id'); identifier = execution.get('execution_id', '')
+        if (module not in {'develop','manager'} or type(engine) is not int or engine<=0
+            or not name.startswith('raster-target/') or type(item.get('id')) is not int or item['id']<=0
+            or not re.fullmatch(r'[0-9a-f]{64}', item.get('fingerprint',''))
+            or not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', scan)):
+            raise scene.SuiteError('capacity snapshot requires exact produced item identities')
+        if module == 'develop': fixture.names_checked([name.removeprefix('raster-target/')])
+        else: fixture.mosaic_names_checked([name.removeprefix('raster-target/')])
+        statement = """BEGIN READ ONLY; SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+ SELECT json_build_object('id',i.id,'tenant_id',i.tenant_id,'engine_id',i.engine_id,'node_id',i.node_id,
+ 'name',i.name,'full_name',i.full_name,'item_type',i.item_type,'fingerprint',i.fingerprint,
+ 'size_bytes',i.size_bytes,'attributes',i.attributes,'scanned_depth',i.scanned_depth)
+ FROM meta.meta_item i JOIN common.task_executions e ON e.execution_id=:'execution'
+ JOIN common.task_executions s ON s.execution_id=:'scan' AND s.parent_execution_id=e.execution_id
+ WHERE i.id=:'item'::integer AND i.tenant_id=:'tenant'::integer AND i.engine_id=:'engine'::integer
+ AND i.full_name=:'full_name' AND i.fingerprint=:'fingerprint' AND i.deleted_at IS NULL
+ AND e.tenant_id=i.tenant_id AND s.tenant_id=i.tenant_id
+ AND e.actor_principal_id=:'principal'::bigint AND s.actor_principal_id=e.actor_principal_id
+ AND e.triggered_by=:'principal'::integer AND s.triggered_by=e.triggered_by
+ AND e.module=:'module' AND e.status='success' AND s.module='meta' AND s.task_type='scan' AND s.status='success'
+ AND e.created_at>=:'started_at'::timestamptz AND s.execution_config->>'engine_id'=i.engine_id::text
+ AND (e.metadata->'lineage_facts'->'outputs' @> jsonb_build_array(jsonb_build_object('item_id',i.id,'item_fingerprint',i.fingerprint))
+ OR e.metadata->'lineage_facts'->'outputs' @> jsonb_build_array(jsonb_build_object('locator',:'locator')))
+ AND octet_length(i.attributes::text)<=32768;
+ COMMIT;
+"""
+        locator = f'addp://engine/{engine}/path/{name}?type=object'
+        result = self.query(statement, dict(item=item['id'],tenant=identity['tenant_id'],principal=identity['principal_id'],
+            engine=engine,full_name=name,fingerprint=item['fingerprint'],execution=identifier,scan=scan,module=module,
+            locator=locator,started_at=self.owner['State']['StartedAt']))
+        if any(result.get(k) != item.get(k) for k in ('id','engine_id','node_id','name','full_name','fingerprint')):
+            raise scene.SuiteError('capacity database item differs from the public identity')
+        attrs = item.get('attributes', {})
+        if (item.get('size_bytes') is not None or 'format_info' in attrs
+            or attrs.get('capabilities', {}).get('spatial', {}).get('extent') is not None):
+            raise scene.SuiteError('public Meta disclosed content-derived facts')
+        scene.obj(result.get('attributes'), 'persisted item facts')
+        return result
 
 
 def whole_tree(client, item):
@@ -515,13 +656,14 @@ def verify_basic_rescans(env, client, item, parent, identity, scopes):
     return proof
 
 
-def run_directories(env,client,platform,path,image,source_engine,target_engine,report,scans):
+def run_directories(env,client,platform,path,image,source_engine,target_engine,report,scans,authorization,scopes):
     source=physical('seed-mosaic',[])
     if source.get('source_unchanged') is not True or set(source.get('tiles',{}))!=set(fixture.mosaic_windows()):
         raise scene.SuiteError('capacity mosaic source preparation is incomplete')
-    scopes=MosaicScopeFixture(env)
     report['mosaic_source']=source
     scene.support.wait_for_meta_scan(client,source_engine,time.monotonic()+600)
+    for tile in fixture.mosaic_windows():
+        authorization.ensure(source_engine,'raster-source/'+fixture.MOSAIC_SOURCE_PREFIX+'/'+tile)
     source_locator=f'addp://engine/{source_engine}/path/raster-source/{fixture.MOSAIC_SOURCE_PREFIX}?type=prefix'
     expected_hashes=None
     for repetition,leaf_concurrency in directory_matrix():
@@ -556,6 +698,8 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
                           'before':sampler.before,'after':getattr(sampler,'after',None)}
                 (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/(name+'-measurements.json')).write_text(json.dumps(evidence,sort_keys=True))
         metrics=validate_measurement(samples,sampler.before,sampler.after,64,1,saved['version'],submitted_tasks=1)
+        public_execution=execution
+        execution=scopes.execution(public_execution,report['identity'],'manager')
         facts,scan=validate_directory_execution(execution,source_locator,name,target_engine)
         if scan in scans:raise scene.SuiteError('capacity mosaic automatic scan reused')
         verification={'dataset_name':name,'task_id':task_id,'execution_id':identifier,
@@ -577,10 +721,12 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
         scan_observation=validate_directory_scan(execution,scan_execution,scan,report['identity'],target_engine)
         verification['automatic_scan_observation']=scan_observation
         verification_path.write_text(json.dumps(verification,sort_keys=True))
+        authorization.ensure(target_engine,'raster-target/'+name,layout='whole')
         item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'mosaic whole target')
         item=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
         validate_directory_item_identity(item,facts['outputs'][0],target_engine,name)
-        sizes=validate_directory_item(item,actual)
+        persisted=scopes.produced_item(item,execution,scan,report['identity'])
+        sizes=validate_directory_item(persisted,actual)
         verification.update(target_item_id=item['id'],target_item_fingerprint=item['fingerprint'],size_evidence=sizes,monitor_verified=False)
         verification_path.write_text(json.dumps(verification,sort_keys=True))
         monitor=scene.obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'mosaic Monitor')
@@ -608,7 +754,7 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
     report['mosaic_raster_sha256']=expected_hashes
 
 
-def run(env):
+def run_capacity(env,authorization,scopes):
     client=scene.GatewayClient(env['GATEWAY_URL'],env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30)
     platform=scene.GatewayClient(env['GATEWAY_URL'],env['ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN'],30)
     tenant=scene.GatewayClient(env['GATEWAY_URL'],env['ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN'],30)
@@ -624,6 +770,7 @@ def run(env):
     if quota['running'] is not None or quota['waiting'] is not None:raise scene.SuiteError('capacity tenant must inherit policy')
     source_engine=int(env['ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID']);target_engine=int(env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID'])
     scene.support.wait_for_meta_scan(client,source_engine,time.monotonic()+600)
+    authorization.ensure(source_engine,'raster-source/'+fixture.SOURCE_NAME)
     source=scene.support.find_fixture_item(client,source_engine,'raster-source/'+fixture.SOURCE_NAME,'capacity source')
     locator=scene.support.build_item_locator(source_engine,source)
     image=json.loads(fixture.shared.command(['docker','image','inspect',env['ADDP_ONLINE_RASTER_RUNTIME_IMAGE']]))[0]['Id']
@@ -663,16 +810,21 @@ def run(env):
                 raise scene.SuiteError('capacity source changed')
             for name,identifier,execution in zip(names,identifiers,executions):
                 target_locator=f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
+                public_execution=execution
+                execution=scopes.execution(public_execution,identity,'develop')
                 facts,scan=scene.validate_success(execution,[locator],target_locator,'create',expectation())
                 if scan in scans:raise scene.SuiteError('capacity scan reused')
                 scans.add(scan);scene.wait_execution(client,'meta',scan,600)
+                authorization.ensure(target_engine,'raster-target/'+name)
                 item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'capacity target')
+                item=scopes.produced_item(item,execution,scan,identity)
                 artifact=execution['metadata']['result']['final_result'];actual=native['outputs'][name]
                 scene.strict_sizes(artifact,actual,item);scene.validate_target_item(item,expectation(),actual)
                 graph=scene.wait_lineage(client,source['id'],item['id'],identifier,120)
                 monitor=client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload
-                if monitor.get('status')!='success' or monitor.get('metadata',{}).get('lineage_facts')!=facts:
+                if monitor.get('status')!='success' or monitor.get('execution_id')!=identifier or monitor.get('module')!='develop':
                     raise scene.SuiteError('capacity Monitor differs from Develop')
+                scene.support.validate_monitor_lineage(monitor,facts)
                 hashes.add(actual['sha256'])
                 cases.append({'execution_id':identifier,'target_name':name,'target_item_id':item['id'],
                     'artifact':artifact,'data_item_size_bytes':item['size_bytes'],'physical':actual,
@@ -684,7 +836,7 @@ def run(env):
             report['groups'].append(group)
             save_progress(Path(env['ADDP_ONLINE_ARTIFACT_DIR']),report)
         if len(hashes)!=1 or len(scans)!=24:raise scene.SuiteError('capacity results differ between groups')
-        run_directories(env,client,platform,path,image,source_engine,target_engine,report,scans)
+        run_directories(env,client,platform,path,image,source_engine,target_engine,report,scans,authorization,scopes)
         if len(scans)!=28:raise scene.SuiteError('capacity automatic scans are incomplete')
         report.update(result='passed',automatic_scans=28,basic_rescans=8,output_sha256=next(iter(hashes)))
         return report
@@ -692,6 +844,23 @@ def run(env):
         current=platform.request('GET',path,(200,)).payload['policy']
         fields=('running','waiting','cache_mib','default_tenant_running','default_tenant_waiting')
         platform.request('PUT',path,(200,),{**{key:original[key] for key in fields},'version':current['version']})
+
+
+def run(env):
+    authorization=CapacityMetadataGrants(env)
+    failure=None; report=None
+    try:
+        report=run_capacity(env,authorization,MosaicScopeFixture(env))
+    except BaseException as error:
+        failure=error
+    try:
+        cleanup=authorization.cleanup()
+    except BaseException as error:
+        if failure is None: raise
+        raise scene.SuiteError('capacity business failed and metadata Grant cleanup also failed') from error
+    if failure is not None: raise failure
+    report['metadata_authorization']={**authorization.report,'cleanup':cleanup}
+    return report
 
 
 def main():

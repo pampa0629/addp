@@ -5858,6 +5858,7 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
             'online-raster-capacity-fixture.py stop', 'online-raster-capacity-fixture.py seed',
             'scripts/test/online-engine-registration.py', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
             'env -u POSTGRES_PASSWORD make test-online', 'launch_online_geopython_runtime',
+            'for start_target in -security -develop -manager -monitor;', 'export SECURITY_URL=',
         ),
         "scripts/utils/hosted-product-runtime.sh": (
             'com.addp.online-run-id', 'Runtime default entry mismatch', 'Runtime image identity mismatch',
@@ -5865,6 +5866,10 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
         "scripts/test/raster-workflow-capacity-online.py": (
             'CACHE_VALUES=(64,128,256)', 'REPETITIONS=2', 'validate_measurement', 'wait_applied',
             'def run_directories(', 'def directory_matrix(', 'manager.derived_artifact.create',
+            'class CapacityMetadataGrants:', 'class MosaicScopeFixture:', 'def verify_basic_rescans(',
+            'authorization.cleanup()', 'expires_at=self.expires_at', 'def produced_item(',
+            'def execution(self, observation, identity, module)', 'BEGIN READ ONLY;',
+            's.parent_execution_id=e.execution_id', 'basic_rescans=8',
             'manager.derived_artifact.read', 'mosaic_groups', 'submitted_tasks=1', 'automatic_scans=28',
             "physical('verify-mosaic',[name])", "physical('purge-mosaic',[name])",
             "validate_monitor_lineage(monitor,facts)",
@@ -5890,6 +5895,15 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
         "engines/geopython-workflow/test_online_raster_fixture.py": (
             'test_capacity_directory_all_bands_global_base_grid_and_full_pyramids',
             'test_capacity_directory_oracle_rejects_corrupt_components_and_scope',
+        ),
+        "scripts/test/online-engine-registration.py": (
+            "class ExactFileMetadataGrants:", "expires_at=None", "remaining <= 10800",
+            "body.update(expiry_mode='at_time', expires_at=expires_at)",
+        ),
+        "scripts/test/raster-workflow-capacity-online_test.py": (
+            'test_only_fixed_precise_sources_and_results_gain_expiring_metadata',
+            'test_cleanup_runs_for_success_scope_rejection_and_failed_business',
+            'test_private_snapshots_bind_public_user_parent_scan_item_and_preserve_public_projection',
         ),
         "Makefile": ('scripts/test/raster-workflow-capacity-online_test.py',
                      'scripts/test/online-raster-capacity-fixture_test.py',

@@ -98,7 +98,7 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
             self.assertFalse(state['visible'])
             state['visible']=True
             return SimpleNamespace(payload=dict(body,engine_id=str(engine),boundary_hash='a'*64,metadata_target=metadata,
-                approval_mode='independent',operator_principal_id='8',revocation=None,expires_at=None))
+                approval_mode='independent',operator_principal_id='8',revocation=None,expires_at=body.get('expires_at')))
         def observe(method,path,expected,body=None):
             if path.endswith('/auth/context'):return consumer_identity(method,path,expected,body)
             self.assertEqual((method,path,expected),('POST','/api/v1/system/engine-access/metadata-checks/meta-query',(200,)))
@@ -107,6 +107,20 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
             return SimpleNamespace(payload=dict(observed_at='2026-11-03T00:00:00Z',targets=[dict(target=target,visible=state['visible'])]))
         issuer.request.side_effect, consumer.request.side_effect = authorize, observe
         return issuer,consumer,facts,state
+
+    def test_exact_metadata_grant_keeps_explicit_bounded_expiry_and_revokes(self):
+        from datetime import datetime, timedelta, timezone
+        expiry=(datetime.now(timezone.utc)+timedelta(seconds=3600)).isoformat()
+        issuer,consumer,_,state=self.metadata_clients()
+        grants=REGISTRATION.ExactFileMetadataGrants(issuer,consumer,2)
+        receipt=grants.grant(14,'grib/weather.grb2','nfs',data_type='container',format_name='grib',layout='single',expires_at=expiry)
+        self.assertEqual(receipt['expiry_mode'],'at_time')
+        self.assertEqual(receipt['expires_at'],expiry)
+        self.assertEqual(grants.cleanup(),{'grants_revoked':True,'metadata_hidden':True})
+        for bad in ('invalid','2000-01-01T00:00:00+00:00',
+                    (datetime.now(timezone.utc)+timedelta(seconds=10801)).isoformat()):
+            with self.subTest(bad=bad),self.assertRaises(REGISTRATION.RegistrationError):
+                grants.grant(14,'grib/weather.grb2','nfs',data_type='container',format_name='grib',layout='single',expires_at=bad)
 
     def test_metadata_grant_exact_facts_hidden_visible_then_revoked(self):
         issuer,consumer,_,state=self.metadata_clients()
