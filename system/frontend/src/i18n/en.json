@@ -1050,6 +1050,17 @@
       "versionConflict": "Another administrator updated the policy; the latest version has been loaded"
     },
     "engine": {
+      "tableStructure": {
+        "title": "Table structure",
+        "selectTable": "Select a table to view its fields",
+        "fieldCount": "{count} fields",
+        "name": "Column name",
+        "nativeType": "Native type",
+        "type": "Standard type",
+        "nullable": "Nullable",
+        "primaryKey": "Primary key",
+        "failed": "Unable to read the table structure. Select the table again or refresh to retry."
+      },
       "sourceGrants": {
         "selectAction": "Select permission type",
         "action": "Access type",

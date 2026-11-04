@@ -52,6 +52,8 @@ System 不创建默认全权管理员、默认租户或共享弱密码账号。�
 
 ## 📡 主要 API 端点
 
+引擎管理的“详情 → 表结构”（`/system/engines/:id?tab=structure`）沿当前账号的 `system.engine_catalog.read` 查看实时列名、标准／原生类型、可空性和主键。入口仅适用于声明实时 Catalog、原生表格模型与字段事实的引擎；使用共享资源树按层浏览，通过既有 `catalog/children`、`catalog/facts` 接口读取结构，不查询业务行、不采样，也不代替 Meta 数据项可见性。切换目标、失去权限或查询失败时清除旧结构，不回退 Meta 或缓存结果。普通连接观测和等价列表投影不重建资源树；沿现有授权会话的主体、租户成员关系、客户端、授权版本与权限语义核验，并在引擎配置版本、目录能力或可用性发生实际变化时清除原选择。
+
 ```text
 认证与上下文: /api/v1/system/login、/refresh、/logout、/auth/*
 OAuth 2.0:       /api/v1/system/oauth/*

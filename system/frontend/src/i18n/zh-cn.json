@@ -1050,6 +1050,17 @@
       "versionConflict": "策略已被其他管理员更新，已重新加载"
     },
     "engine": {
+      "tableStructure": {
+        "title": "表结构",
+        "selectTable": "选择表以查看字段结构",
+        "fieldCount": "共 {count} 个字段",
+        "name": "列名",
+        "nativeType": "原生类型",
+        "type": "标准类型",
+        "nullable": "可为空",
+        "primaryKey": "主键",
+        "failed": "无法读取表结构，请重新选择或刷新后重试"
+      },
       "sourceGrants": {
         "selectAction": "请选择权限类型",
         "action": "权限类型",

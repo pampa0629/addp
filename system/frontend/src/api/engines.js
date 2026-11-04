@@ -10,6 +10,7 @@ export const enginesAPI = {
   revokeSourceGrant: (id, requestID, reason) => client.post(`/system/engines/${encodeURIComponent(id)}/access_grants/${encodeURIComponent(requestID)}/revoke`, { reason }),
   listAuthorizationNodes: (id, query) => client.post(`/system/engines/${encodeURIComponent(id)}/authorization-nodes/query`, query),
   listCatalogChildren: (id, path = { segments: [] }) => client.post(`/system/engines/${encodeURIComponent(id)}/catalog/children`, { path }),
+  describeCatalogFacts: (id, path) => client.post(`/system/engines/${encodeURIComponent(id)}/catalog/facts`, { path }),
   listAccessDelegations: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/access_delegations`, { params }),
   createAccessDelegation: (id, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_delegations`, payload),
   revokeAccessDelegation: (id, delegationID, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_delegations/${encodeURIComponent(delegationID)}/revoke`, payload),

@@ -519,6 +519,10 @@
             </el-descriptions>
           </el-tab-pane>
 
+          <el-tab-pane v-if="canViewTableStructure" name="structure" :label="t('system.engine.tableStructure.title')">
+            <EngineTableStructure v-if="detailTab === 'structure'" :key="String(selectedEngine.id)" :engine="selectedEngine" />
+          </el-tab-pane>
+
           <!-- 连接配置标签页 -->
           <el-tab-pane v-if="selectedEngine.connection_info && Object.keys(selectedEngine.connection_info).length > 0" name="connection" :label="t('system.engine.dialog.detailTabs.connection')">
             <el-descriptions :column="1" border>
@@ -778,6 +782,8 @@ import { resolveEngineDetailRouteState } from '../utils/routeState'
 import EngineAccessDelegations from '../components/engines/EngineAccessDelegations.vue'
 import EngineDataAuthorization from '../components/engines/EngineDataAuthorization.vue'
 import EngineFilterBar from '../components/engines/EngineFilterBar.vue'
+import EngineTableStructure from '../components/engines/EngineTableStructure.vue'
+import { supportsEngineTableStructure } from '../utils/engineTableStructure'
 import { useEngineAuthorizationSession } from '../utils/engineAuthorizationSession'
 
 const { t, te } = useI18n()
@@ -2000,8 +2006,10 @@ const renderedAuthorizationTabs = computed(() => {
   return applicableAuthorizationTabs(selectedEngine.value, authorizationPending.value ? settledAuthorizationTabs.value : availableAuthorizationTabs.value)
 })
 
+const canViewTableStructure = computed(() => authStore.hasPermission('system.engine_catalog.read') && supportsEngineTableStructure(selectedEngine.value))
 const availableDetailTabs = computed(() => {
   const tabs = ['basic']
+  if (canViewTableStructure.value) tabs.push('structure')
   if (selectedEngine.value?.connection_info && Object.keys(selectedEngine.value.connection_info).length > 0) {
     tabs.push('connection')
   }
