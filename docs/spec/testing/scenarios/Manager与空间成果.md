@@ -1282,6 +1282,16 @@ uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、�
 
 非有限JSON、异常持久化格式、重复索引、数值极限和故障注入单列Native；不扩产品格式，不计UI、容量或稳定吞吐，准备／本地门禁不计实际Linux全量或Hosted通过。
 
+## IDW距离幂次独立 Hosted 验收
+
+独立手工suite为`raster-interpolate-idw-power-persistence`，准备门禁`make test-raster-interpolate-idw-power-online-runner`。复用NFS、同源产品默认入口Runtime、普通User原12权限及4CPU／2GiB／无额外swap，业务预算固定600秒，含首次预期生成、执行、全检、原件归档及清理。实际Linux全量和Hosted由CI协调，不自行触发、不重试、不扩预算；原三套IDW矩阵保持。
+
+24条COG成功链：每种幂次8条。1／3各普通点集与逆序两条，2为省略power与显式2两条（同源／模板／半径／支撑配置）；其余每种幂次各最近N点／距离与X-Y决胜、精确重合零负值及非重合支撑不足、空批、全无效mask-alpha模板、国际英尺矩形横跨512块、美制测量英尺旋转剪切纵跨512块各一条。基础夹具含3／1.8／1的三幂次解析见证、合法抵消零与负值；最近点夹具精确核半径等号及相邻浮点先筛后排、不足NoData、X后Y决胜。实际保存文件核默认2与显式2／原Fraction公式一致、1／3点序和三幂次模板隔离一致。
+
+80次中英文准确失败：power为null／true／false／0／负数／4／1.5／字符串／列表／对象10类各中英20次；每种合法幂次各min_points=0、max_points=0、普通／空批／精确重合三类min-max冲突、范围外重复XY、范围外缺失数值、未选中点缺失数值、非法几何、CRS不一致10类各中英，共60次。必须到达interpolate节点并核准确原始原因，提交／读取前置失败不得充数，反向查询不改冻结语言。原生浮点2.0、非有限JSON、宽整数／复数／数值极限及故障注入继续单列Native，不扩产品格式或共享JSON数值契约。
+
+幂次2用独立Fraction旧公式；1／3用全点精确米制距离与2000位Decimal欧氏距离幂公式，解析／有理见证单独核算，不复用产品索引／根式分组／区间舍入。只读冻结预期绑定root／run、源hash及夹具源码。全部像元／mask／NoData／合法零、原网格／CRS、COG及全部实际nearest概览、artifact＝物理＝Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前两源实际内外血缘／Monitor、源及先前成果字节／Meta不变、失败零发布／新增扫描血缘及部分启动／所有退出清理保持。成功重检300次、失败重检1920次，合计2220次全检；104执行、105物理调用（含基线），归档24原COG、全部源／冻结预期／大小hash及208份Develop／Monitor终态响应。本地准备不计Linux全量、真实Hosted、UI或容量通过。
+
 ## IDW最近N个支撑点独立 Hosted 验收
 
 独立手工suite为`raster-interpolate-idw-max-points-persistence`，准备门禁`make test-raster-interpolate-idw-max-points-online-runner`。复用NFS、同源默认入口Runtime、普通User原12权限和4CPU／2GiB／无额外swap，业务预算固定600秒；由CI会话协调实际运行，不自行触发、重试或扩预算。原两套IDW套件与产品逻辑保持。

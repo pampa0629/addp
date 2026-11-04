@@ -1326,6 +1326,27 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_interpolate_idw_max_points(self.repository, {'raster-interpolate-idw-max-points-persistence'})
             target.write_text(original)
+    def test_interpolate_idw_power_requires_exact_cog_matrix_budget_and_regressions(self):
+        source = Path(__file__).resolve().parents[2]
+        required = CHECK.INTERPOLATE_IDW_POWER_REQUIRED
+        for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml', *required):
+            target = self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source/relative,target)
+        CHECK.validate_interpolate_idw_power(self.repository, {'raster-interpolate-idw-power-persistence'})
+        for relative, fragments in required.items():
+            target=self.repository/relative; original=target.read_text()
+            for fragment in fragments:
+                target.write_text(original.replace(fragment, 'omitted'))
+                with self.subTest(relative=relative,fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_interpolate_idw_power(self.repository, {'raster-interpolate-idw-power-persistence'})
+                target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-interpolate-idw-power-fixture.py';original=target.read_text()
+        for before,after in [("'p2-default.cog.tif'","'extra.gpkg'"),("'power_null'","'power_omitted'"),("'points.gpkg', 4.0, 1, None, None)","'points.gpkg', 4.0, 1, None, 2)"),("10000.0","9999.0")]:
+            self.assertIn(before,original);target.write_text(original.replace(before,after,1))
+            with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_interpolate_idw_power(self.repository, {'raster-interpolate-idw-power-persistence'})
+            target.write_text(original)
     def test_point_density_requires_exact_cog_matrix_budget_and_regressions(self):
         source = Path(__file__).resolve().parents[2]
         required = CHECK.POINT_DENSITY_REQUIRED

@@ -24,6 +24,7 @@ SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persist
     'raster-interpolate-idw-persistence': 'raster-interpolate-idw-lineage',
     'raster-interpolate-idw-min-points-persistence': 'raster-interpolate-idw-min-points-lineage',
     'raster-interpolate-idw-max-points-persistence': 'raster-interpolate-idw-max-points-lineage',
+    'raster-interpolate-idw-power-persistence': 'raster-interpolate-idw-power-lineage',
     'raster-point-density-persistence': 'raster-point-density-lineage',
     'raster-point-kernel-density-persistence': 'raster-point-kernel-density-lineage',
     'raster-point-density-weighted-persistence': 'raster-point-density-weighted-lineage',
