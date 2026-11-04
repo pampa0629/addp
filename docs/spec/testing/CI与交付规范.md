@@ -26,7 +26,7 @@ Platform CI 的 `frontend-deterministic` 默认每个 Job 最长20分钟。Monit
 
 **2026-11-04 完整门禁耗时优化。** 两次固定提交的 Platform consistency 与 GeoPython GDAL tests 均触及既有 60 分钟上限；预算、全部唯一测试及断言、单用例时限与重试语义保持不变。在 Online 聚合依赖图中，公共分发器、变更选择、栅格血缘观察和登记测试分别由唯一 Make 目标拥有，owner 入口通过依赖复用；Online 聚合以 Make 依赖图串行执行，同一 Make 进程内共享目标只执行一次，单独执行 owner 仍完整检查。不得使用跨运行测试结果缓存、环境分支跳过或重复实现换取通过。登记校验必须沿真实依赖闭包验证 owner 的公共回归可达，不能因命令移入依赖而删除检查。 `.PHONY`、`.NOTPARALLEL` 等 Make 特殊目标只声明属性，不构成 owner 执行依赖；负例必须实际移除普通目标的依赖边，并先确认基线有效且输入确已改变。 原先先行检查 JavaScript 语法的 owner 必须保留该顺序：语法预检作为首个依赖串行完成后，才运行共享回归及其他 owner 依赖；不因去重而改变失败阶段。
 
-GeoPython 沿唯一 `make test-geopython-workflow` 使用固定两个隔离 pytest Worker 和 worksteal 调度，完整 pytest 阶段保持完整收集集合，每个用例实际执行一次；既有 NetCDF 前置子集仍独立执行，pytest-xdist 仅作为测试依赖。Worker 使用各自临时目录，网络夹具须使用动态端口，不共享可变文件或产品服务；产品 Gunicorn 的单 Worker 约束不变。`--max-worker-restart=0` 禁止崩溃后自动重启，任何失败或不完整执行均阻断；不增加重试或放宽资源、像元、耗时及清理断言。序列收集与并发执行的用例集合必须一致，本地优化与 Linux 完整 Job 的通过证据分别记录。
+GeoPython 沿唯一 `make test-geopython-workflow` 使用固定四个隔离 pytest Worker 和 worksteal 调度，利用现有公开仓库 `ubuntu-24.04` 标准 Runner 的四个 CPU（[GitHub Runner 规格](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)），不提高 Runner 规格或 Job 预算，完整 pytest 阶段保持完整收集集合，每个用例实际执行一次；既有 NetCDF 前置子集仍独立执行，pytest-xdist 仅作为测试依赖。Worker 使用各自临时目录，网络夹具须使用动态端口，不共享可变文件或产品服务；产品 Gunicorn 的单 Worker 约束不变。`--max-worker-restart=0` 禁止崩溃后自动重启，任何失败或不完整执行均阻断；不增加重试或放宽资源、像元、耗时及清理断言。序列收集与并发执行的用例集合必须一致，本地优化与 Linux 完整 Job 的通过证据分别记录。
 
 Workflow 只负责：
 

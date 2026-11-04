@@ -4391,10 +4391,10 @@ test-comment:
                 self.assertIn('SyntaxError', result.stderr)
                 self.assertNotIn('ModuleNotFoundError', result.stderr)
 
-    def test_geopython_keeps_two_processes_and_no_crash_retry(self):
+    def test_geopython_keeps_four_processes_and_no_crash_retry(self):
         root = SCRIPT.parents[2]
         commands = CHECK.make_target_commands((root / "Makefile").read_text(), "test-geopython-workflow")
-        self.assertIn("-n 2 --dist worksteal --max-worker-restart 0", commands)
+        self.assertIn("-n 4 --dist worksteal --max-worker-restart 0", commands)
         self.assertIn("pytest-xdist==3.8.0", (root / "engines/geopython-workflow/requirements-dev.txt").read_text())
         workflow = (root / ".github/workflows/platform-ci.yml").read_text()
         for job in ("platform-consistency", "geopython-workflow-tests"):
