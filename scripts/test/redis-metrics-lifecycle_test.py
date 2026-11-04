@@ -78,6 +78,15 @@ class RedisLifecycleTest(unittest.TestCase):
         state=self.state_json();self.assertEqual(state['pending_record'],'');self.assertTrue(self.record.endswith(' reset off\n'))
         self.assertEqual(self.account['commands'],'-@all');self.assertEqual(self.account['passwords'],[])
 
+    def test_account_failure_keeps_its_stage_and_cleanup_result(self):
+        failure=module.Error('account operation failed')
+        self.db.cli.side_effect=failure
+        with self.assertRaises(module.Error) as result:self.up()
+        self.assertIs(result.exception,failure)
+        self.assertEqual(result.exception.observation_stage,'account-update')
+        self.assertTrue(result.exception.redis_cleanup_failed)
+        self.manager.start_source.assert_not_called()
+
     def test_refuses_existing_account_or_record_without_private_ownership(self):
         for which in ('account','record'):
             with self.subTest(which=which):

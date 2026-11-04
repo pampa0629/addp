@@ -132,8 +132,35 @@ class MetricsSourcesTest(unittest.TestCase):
             self.assertEqual(run.call_args.kwargs['env'], {'PATH':'fixture'})
             self.assertNotIn('secret-password', text)
         result = subprocess.CompletedProcess([], 1, 'secret-password', '[stage=authentication-update] [cleanup=failed] secret-password')
-        with patch.object(manager.subprocess, 'run', return_value=result), self.assertRaisesRegex(ValueError, 'authentication-update.*清理未确认'):
+        with patch.object(manager.subprocess, 'run', return_value=result), self.assertRaisesRegex(ValueError, '更新 PostgreSQL 认证规则阶段失败.*清理未确认'):
             manager.apply('up','postgresql','business',{})
+
+    def test_engine_failure_stages_are_chinese_bounded_and_keep_unknown_results(self):
+        cases = {
+            'session-check':'核对采集会话', 'transport-check':'校验采集端口与 TLS',
+            'private-state':'核对私有安装状态', 'authentication-read':'读取 PostgreSQL 认证规则',
+            'account-install':'安装采集账号', 'authentication-update':'更新 PostgreSQL 认证规则',
+            'account-enable':'启用采集账号', 'connection-check':'验证采集连接',
+            'source-files':'准备采集来源文件', 'identity-recheck':'重新核对引擎身份',
+            'source-start':'部署采集来源', 'source-health':'检查来源容器运行状态',
+            'deployment-check':'核对引擎部署', 'account-plan':'准备采集账号配置',
+            'account-update':'核对及更新采集账号', 'source-check':'核验既有采集来源',
+            'source-stop':'移除采集来源', 'source-build':'构建采集来源镜像',
+        }
+        for kind in ('postgresql','redis','minio'):
+            for stage,label in cases.items():
+                result=subprocess.CompletedProcess([],1,'private-output','[stage='+stage+'] [cleanup=failed] private-password /private/path')
+                with patch.object(manager.subprocess,'run',return_value=result),self.assertRaises(ValueError) as error:
+                    manager.apply('up',kind,'infra',{})
+                text=str(error.exception)
+                self.assertIn(label,text);self.assertIn('阶段失败',text);self.assertIn('请核对',text)
+                self.assertTrue(text.endswith('清理未确认'))
+                self.assertNotIn('private',text);self.assertNotIn(stage,text)
+        for stage in ('private-password','unknown-stage'):
+            result=subprocess.CompletedProcess([],1,'private-output','[stage='+stage+'] [cleanup=failed] private-password')
+            with patch.object(manager.subprocess,'run',return_value=result),self.assertRaises(ValueError) as error:
+                manager.apply('recover','minio','business',{})
+            self.assertEqual(str(error.exception),'操作失败；清理未确认')
 
     def test_image_recovery_failure_is_actionable_without_echoing_provider_output(self):
         for kind in ('redis','minio','node'):

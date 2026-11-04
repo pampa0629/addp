@@ -19,6 +19,54 @@ spec = importlib.util.spec_from_file_location('metrics_source_recovery', ROOT/'s
 M = importlib.util.module_from_spec(spec); spec.loader.exec_module(M)
 
 
+class ObservationStageTest(unittest.TestCase):
+    def test_nested_stage_keeps_original_exception_and_cleanup_metadata(self):
+        failure = subprocess.TimeoutExpired('private-command', 5, output='private-output')
+        failure.source_recovery_cleanup_failed = True
+        @M.observed('source-check')
+        @M.observed('identity-recheck')
+        def operation(): raise failure
+        with self.assertRaises(subprocess.TimeoutExpired) as result: operation()
+        self.assertIs(result.exception, failure)
+        self.assertEqual(result.exception.observation_stage, 'identity-recheck')
+        self.assertTrue(result.exception.source_recovery_cleanup_failed)
+        self.assertEqual(M.observed('private-state')(lambda value: value)(7), 7)
+        with self.assertRaises(ValueError): M.observed('private-stage')
+
+    def test_shared_source_boundaries_mark_only_the_operation_that_failed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            docker=Mock(); source=M.Source(docker,'infra',Path(temporary),ROOT,'minio','owned-source')
+            failure=ValueError('private-output'); docker.run.side_effect=failure
+            for operation,stage in ((source.stop,'source-stop'),(lambda:source.build([]),'source-build'),
+                    (lambda:source.start(Mock(), 'image', {}, '127.0.0.1', 9443, {}, Mock()),'source-start')):
+                with self.subTest(stage=stage), self.assertRaises(ValueError) as result:operation()
+                self.assertIs(result.exception,failure)
+                self.assertEqual(result.exception.observation_stage,stage)
+                del failure.observation_stage
+            with self.assertRaises(OSError) as result:
+                source.recover(Mock(),{},'127.0.0.1',9443,{},Mock())
+            self.assertEqual(result.exception.observation_stage,'source-check')
+            with self.assertRaises(ValueError) as result:M.transport({},ROOT,'ADDP_MINIO_METRICS')
+            self.assertEqual(result.exception.observation_stage,'transport-check')
+
+    def test_engine_cli_emits_closed_stage_and_independent_cleanup_markers(self):
+        for name in ('redis-metrics.py','minio-observation.py'):
+            spec=importlib.util.spec_from_file_location('stage_cli_'+name,ROOT/'scripts/infra'/name)
+            provider=importlib.util.module_from_spec(spec);spec.loader.exec_module(provider)
+            for stage in ('private-state','source-build','source-start','private-secret'):
+                error=ValueError('private-output /private/path')
+                error.observation_stage=stage;error.source_recovery_cleanup_failed=True
+                error.source_recovery_reason='source-image-unavailable'
+                output=io.StringIO()
+                with patch.object(sys,'argv',[name,'recover','--scope','infra']),patch.object(provider,'run',side_effect=error),redirect_stderr(output):
+                    self.assertEqual(provider.main(),1)
+                text=output.getvalue()
+                self.assertIn('[cleanup=failed]',text);self.assertIn('[reason=source-image-unavailable]',text)
+                if stage!='private-secret':self.assertIn('[stage='+stage+']',text)
+                else:self.assertNotIn('[stage=',text)
+                self.assertNotIn('private-output',text);self.assertNotIn('/private/path',text)
+
+
 class RecoveryTest(unittest.TestCase):
     def test_provider_cli_exports_only_closed_recovery_reason(self):
         for kind,script in (('redis','redis-metrics.py'),('minio','minio-observation.py')):

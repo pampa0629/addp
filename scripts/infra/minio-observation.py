@@ -62,6 +62,7 @@ def jwt(access, secret, now=None, *, expired=False):
     return (body + b'.' + encode(hmac.new(secret.encode(), body, hashlib.sha512).digest())).decode()
 
 
+@sources.observed('private-state')
 def state_directory(env, scope):
     value = env.get('ADDP_MINIO_METRICS_STATE_DIR', '')
     parent = Path(value) if value else Path.home().resolve()/'.local/state/addp'/hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]/'minio-observation'
@@ -71,6 +72,7 @@ def state_directory(env, scope):
 
 
 class Database:
+    @sources.observed('deployment-check')
     def __init__(self, docker, project, working, access, secret, *, service='minio'):
         self.docker, self.parent = docker, access
         if not all(isinstance(v, str) and 3 <= len(v) <= 512 and all(32 <= ord(c) < 127 for c in v) for v in (access, secret)):
@@ -103,6 +105,7 @@ class Database:
         if docker.run(['exec', self.identity, 'minio-observation-status', '--version']).strip() != 'addp.minio-observation-status/v1':
             raise Error('MinIO observation status tool unavailable')
 
+    @sources.observed('identity-recheck')
     def same(self):
         if self.docker.fact(self.identity) != self.facts:
             raise Error('MinIO deployment changed during observation management')
@@ -176,6 +179,7 @@ esac'''
         if decode(result) != {'status': 'success'}:
             raise Error('MinIO observation status response rejected')
 
+    @sources.observed('connection-check')
     def probe(self, token):
         self.same()
         config = 'url = "http://127.0.0.1:9000'+METRICS_PATH+'"\nheader = "Authorization: Bearer '+token+'"\n'
@@ -196,6 +200,7 @@ class AccountLifecycle:
         previous = private.read(path, 0o600)[0] if os.path.lexists(path) else None
         private.atomic(path, json.dumps(state, sort_keys=True), 0o600, previous=previous)
 
+    @sources.observed('private-state')
     def read(self):
         path = self.directory/'owner.json'
         if not os.path.lexists(path):
@@ -237,6 +242,7 @@ class AccountLifecycle:
             raise Error('Disabled MinIO observation identity remained authorized')
         state['phase'] = 'disabled'; self.write(state)
 
+    @sources.observed('account-update')
     def run(self, enabled):
         with private.locked(self.directory):
             state = self.read()
@@ -286,6 +292,7 @@ class AccountLifecycle:
                 raise
 
 
+@sources.observed('deployment-check')
 def bind_source(database, scope, *, network_key=None):
     expected = network_key or {'infra': 'addp-network', 'business': 'business-network'}[scope]
     candidates = []
@@ -329,6 +336,7 @@ class Lifecycle:
         self.source = sources.Source(docker, scope, self.directory/'source', ROOT, 'minio', project, Error)
         self.account = AccountLifecycle(scope, directory, factory)
 
+    @sources.observed('source-check')
     def recover(self, env):
         with private.locked(self.directory/'source'), private.locked(self.directory):
             state = self.account.read()
@@ -406,6 +414,8 @@ def main():
         cleanup = ' [cleanup=failed]' if getattr(error, 'minio_cleanup_failed', False) or getattr(error,'source_recovery_cleanup_failed',False) else ''
         reason = getattr(error,'source_recovery_reason',None)
         detail = ' [reason='+reason+']' if reason in sources.RECOVERY_REASONS else ''
+        stage = getattr(error,'observation_stage',None)
+        if stage in sources.OBSERVATION_STAGES: detail += ' [stage='+stage+']'
         print('MinIO observation source unavailable'+cleanup+detail+'; core services remain independent', file=sys.stderr)
         return 1
     return 0

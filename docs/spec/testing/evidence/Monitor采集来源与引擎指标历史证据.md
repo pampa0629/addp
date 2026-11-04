@@ -719,3 +719,13 @@ T2通过的是受限桥接夹具中的真实恢复事务；其测试签名明确
 本地验证：新增原因断言先在旧实现失败（缺少／合并原因码），修正后`make test-monitor-metrics-config`退出0，涵盖共享恢复7项、主机恢复15项、编排18项、启动守卫2项和配置136项；最终主机15项还由下述T2入口再次执行，包含损坏／重复字段／错误类型证明和原私有文件拒绝路径。`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=node-recovery`退出0，真实桥接隔离来源精确断言证明缺失、证书输入变化、组件被删除、安装停用四类原因；健康不变、仅采样器及全部停止恢复、回执丢失清理和恢复后mTLS指标均通过，容器／网络／卷／临时私有状态清零。日志分别为`/tmp/addp-node-recovery-diagnosis-config.log`、`/tmp/addp-node-recovery-diagnosis-t2.log`。
 
 `make test-infra-runtime-log-lifecycle`退出0（HTTP44、Trace175及生命周期145项等）；`make test-t2-ci-registration`退出0（登记78、runner9项及实际门禁登记检查）。日志`/tmp/addp-node-recovery-diagnosis-lifecycle.log`、`/tmp/addp-node-recovery-diagnosis-registration.log`。现有Monitor指标门禁输入和node-recovery矩阵已登记这些实现／测试，不新增测试入口或workflow。未知／退役原因码的原始输出不透传且清理提示保留由T1验证；T2是受限桥接来源，不外推为个人故障恢复、原生Linux实机或Hosted验收。本轮未启停个人来源、改配置／账号／数据库、操作Safari或查询远程CI／Hosted，未设置定时任务。
+
+### 引擎来源失败阶段的中文提示（2026-11-04）
+
+PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英文码；Redis、MinIO除镜像原因外未发布阶段。本批先修规范与操作指南，将十八项固定阶段映射为中文步骤及核对建议，在两类引擎原有部署、私有状态、账号处理和来源操作边界补标记。共享来源内核负责在原异常对象上记录阶段，内层阶段优先，不覆盖主要原因或清理标记；未知阶段不输出，已知具体原因仍优先于阶段。提示只定位步骤，不把它当成根因、操作未生效或已回滚的证明，不建议自动重试。未新增读取、权限、配置或恢复路径，原命令／期限／清理范围保持；去除诊断装饰器后，三个部署实现文件中66个既有操作函数的AST与提交前相同（排除输出字段改变的main）。
+
+本地标准门禁：`make test-monitor-metrics-config test-infra-runtime-log-lifecycle`退出0，覆盖共享恢复／诊断10项、主机15项、统一编排19项、启动守卫2项、配置136项、HTTP44／Trace175及生命周期145项。新提示断言先在旧实现失败，最终覆盖十八类阶段、未知阶段不透传、嵌套原异常与超时／清理字段保留、实际来源操作边界和Redis／MinIO命令行封闭输出。`make test-t2-ci-registration`退出0（登记78项、runner9项及实际门禁登记）；现有两类来源T2输入清单已包含本批实现与测试，无需改workflow或新增入口。日志`/tmp/addp-engine-stage-config-lifecycle.log`、`/tmp/addp-engine-stage-registration.log`。
+
+`make test-monitor-redis-source`退出0（含Redis生命周期15项T1、Go固定协议T1），双域真实ACL／固定快照、十五项PromQL、只读复用／停止恢复／同一数据库容器重启后的来源重建、mTLS、发现、持久化及越权拒绝通过；自有来源和配置卷、私有文件清零。`make test-monitor-minio-observation`退出0（含MinIO生命周期25项T1及Go协议T1），双域仅指标授权、S3／管理拒绝、过期／停用、只读复用恢复、mTLS、固定投影及失败清理通过；独立作用域和容器替换后的账号持久化、四十六项PromQL通过；外层容器／网络／卷／私有状态清零。日志`/tmp/addp-engine-stage-redis-t2.log`、`/tmp/addp-engine-stage-minio-t2.log`。实源T2证明诊断加入后的既有生命周期回归；全部失败阶段的注入及中文展示仍是T1，不声称每个阶段均在实源制造过故障。
+
+本批未修改个人来源、账号、数据库、Docker设置或启停个人服务，未操作Safari；PostgreSQL未重跑实库安装或T2，复用其未改的原阶段，仅经本地生命周期与提示T1验证。远端CI和Hosted等专门会话回传，未手动调度或轮询验收，未设置定时任务。下一步优先补主机Safari连续前台刷新及原生缩放保持的剩余真实交互证据。

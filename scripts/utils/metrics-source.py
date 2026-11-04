@@ -1,5 +1,6 @@
 """Fixed private deployment-source transport, image and container ownership."""
 import base64
+from functools import wraps
 import hashlib
 import importlib.util
 import io
@@ -18,6 +19,25 @@ spec=importlib.util.spec_from_file_location('metrics_source_private',Path(__file
 private=importlib.util.module_from_spec(spec);spec.loader.exec_module(private)
 
 RECOVERY_REASONS = frozenset({'source-image-unavailable'})
+OBSERVATION_STAGES = frozenset({'transport-check', 'private-state', 'identity-recheck',
+    'connection-check', 'deployment-check', 'account-plan', 'account-update',
+    'source-check', 'source-stop', 'source-build', 'source-start'})
+
+
+def observed(stage):
+    """Annotate the original exception, preserving a more specific inner stage."""
+    if stage not in OBSERVATION_STAGES:
+        raise ValueError('Unknown metrics observation stage')
+    def decorate(operation):
+        @wraps(operation)
+        def call(*args, **kwargs):
+            try:
+                return operation(*args, **kwargs)
+            except Exception as error:
+                error.observation_stage = getattr(error, 'observation_stage', stage)
+                raise
+        return call
+    return decorate
 
 RUNTIME = ('{"image":{{json .Image}},"user":{{json .Config.User}},'
            '"read_only":{{json .HostConfig.ReadonlyRootfs}},"privileged":{{json .HostConfig.Privileged}},'
@@ -30,6 +50,7 @@ def write(path,value):
     previous=private.read(path,0o600)[0] if os.path.lexists(path) else None
     private.atomic(path,value,0o600,previous=previous)
 
+@observed('transport-check')
 def transport(env, root, prefix, error=ValueError):
     Error = error
     match = re.fullmatch(r'(\[[0-9a-f:]+\]|[0-9.]+):([1-9][0-9]{0,4})', env.get(prefix+'_LISTEN', ''))
@@ -157,6 +178,7 @@ class Source:
             raise self.error('Metrics source private material changed')
         return files
 
+    @observed('source-check')
     def recover(self, database, config, ip, port, material, check, *, expected_image=None):
         """Reuse an exact enabled installation without account or image builds."""
         def unique(pairs):
@@ -227,6 +249,7 @@ class Source:
             raise
         return 'source recovered; successful scraping requires Monitor verification'
 
+    @observed('source-stop')
     def stop(self):
         ROOT, OWNER, SCOPE, Error = self.root, self.owner, self.scope_label, self.error
         identities = self.docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+self.project]).split()
@@ -244,6 +267,7 @@ class Source:
         for volume in volumes:
             self.docker.run(['volume', 'rm', volume])
 
+    @observed('source-build')
     def build(self, files):
         ROOT, OWNER, Error = self.root, self.owner, self.error
         digest = hashlib.sha256()
@@ -262,6 +286,7 @@ class Source:
             raise Error('Metrics source build identity rejected')
         return fact['Id']
 
+    @observed('source-start')
     def start(self, database, image, config, ip, port, material, check):
         ROOT, OWNER, SCOPE, Error = self.root, self.owner, self.scope_label, self.error
         files = dict(material, **{'config.json':json.dumps(config).encode()})

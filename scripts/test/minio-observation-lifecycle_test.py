@@ -44,6 +44,14 @@ class MinIOObservationTest(unittest.TestCase):
         self.assertTrue(hmac.compare_digest(decode(signature), hmac.new(b'private', (head+'.'+payload).encode(), hashlib.sha512).digest()))
         self.assertEqual(json.loads(decode(M.jwt('observer', 'private', 1000, expired=True).split('.')[1]))['exp'], 940)
 
+    def test_account_creation_failure_keeps_the_original_exception_and_stage(self):
+        failure=M.Error('account operation failed')
+        self.db.create.side_effect=failure
+        with self.assertRaises(M.Error) as result:self.manager.run(True)
+        self.assertIs(result.exception,failure)
+        self.assertEqual(result.exception.observation_stage,'account-update')
+        self.db.enable.assert_not_called()
+
     def test_installation_persists_one_identity_and_disable_preserves_its_credentials(self):
         self.manager.run(True); first = self.manager.read()
         self.assertEqual(first['phase'], 'enabled')

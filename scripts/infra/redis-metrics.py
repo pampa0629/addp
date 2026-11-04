@@ -49,6 +49,7 @@ def write(path, value):
     private.atomic(path, value, 0o600, previous=previous)
 
 
+@sources.observed('private-state')
 def state_directory(env, scope):
     value = env.get('ADDP_REDIS_METRICS_STATE_DIR', '')
     parent = Path(value) if value else Path.home().resolve()/'.local/state/addp'/hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]/'redis-metrics'
@@ -61,6 +62,7 @@ def transport(env):
     return sources.transport(env, ROOT, 'ADDP_REDIS_METRICS', Error)
 
 class Database:
+    @sources.observed('deployment-check')
     def __init__(self, docker, scope, project, working, password, *, service='redis'):
         self.docker, self.scope = docker, scope
         self.admin = 'default' if scope == 'infra' else 'addp_business_admin'
@@ -153,6 +155,7 @@ trap - EXIT''', 'redis-observation', digest], input=value)
         finally:
             self.docker.run(['exec', '--user', 'redis', self.identity, 'sh', '-c', 'set -eu; test "$(cat /data/.addp-redis-observation/control.lock/owner)" = "$1"; rm /data/.addp-redis-observation/control.lock/owner; rmdir /data/.addp-redis-observation/control.lock', 'redis-observation', token])
 
+    @sources.observed('identity-recheck')
     def unchanged(self):
         if self.docker.fact(self.identity) != self.facts:
             raise Error('Redis deployment changed during lifecycle')
@@ -186,6 +189,7 @@ class Lifecycle:
             files.extend(str(p.relative_to(ROOT)) for p in sorted((ROOT/folder).glob('*.go')) if not p.name.endswith('_test.go'))
         return self.container_source().build(files)
 
+    @sources.observed('account-plan')
     def plan(self, image, state):
         value = decode(self.container_source().helper(image,['account-plan'],
             input=json.dumps({k:state[k] for k in ('scope','password','owner')})))
@@ -193,6 +197,7 @@ class Lifecycle:
             raise Error('Redis account plan rejected')
         return value
 
+    @sources.observed('private-state')
     def load_state(self, database, create):
         expected = {'schema':'addp.redis-metrics/v1', 'workspace':str(ROOT), 'scope':self.scope,
             'source_key':{'docker_engine_id':self.docker.info['id'], 'project':database.facts['labels']['com.docker.compose.project'], 'service':database.facts['labels']['com.docker.compose.service']}, 'volume':database.volume}
@@ -213,6 +218,7 @@ class Lifecycle:
         write(path, json.dumps(state, sort_keys=True))
         return state
 
+    @sources.observed('account-update')
     def transition(self, database, state, plan, enabled):
         current = database.record()
         records = {state['record'], state['pending_record']}
@@ -241,6 +247,7 @@ class Lifecycle:
     def start_source(self, database, image, state, ip, port, material):
         self.container_source().start(database,image,{'address':database.address,'scope':self.scope,'password':state['password']},ip,port,material,database.unchanged)
 
+    @sources.observed('source-check')
     def recover(self, env):
         with private.locked(self.state):
             database = self.database()
@@ -336,6 +343,8 @@ def main():
         detail=' [cleanup=failed]' if getattr(error,'redis_cleanup_failed',False) or getattr(error,'source_recovery_cleanup_failed',False) else ''
         recovery_reason=getattr(error,'source_recovery_reason',None)
         if recovery_reason in sources.RECOVERY_REASONS: detail+=' [reason='+recovery_reason+']'
+        stage=getattr(error,'observation_stage',None)
+        if stage in sources.OBSERVATION_STAGES: detail+=' [stage='+stage+']'
         reason=str(error) if isinstance(error,(Error,private.PrivateStateError)) else 'deployment ownership, private state or source configuration rejected'
         print('Redis metrics unavailable'+detail+': '+reason+'; core services remain independent',file=sys.stderr)
         return 1

@@ -27,6 +27,26 @@ FAILURE_REASONS = {
     'node-inputs-changed': '主机部署输入已变化（配置、证书、模板或 Docker 环境）；请核对后显式执行 up 重新应用',
     'node-installation-changed': '主机安装身份或安全配置已变化；请核对后显式执行 up 重新应用',
 }
+FAILURE_STAGES = {
+    'session-check': '核对采集会话阶段失败；请核对既有采集会话及账号状态',
+    'transport-check': '校验采集端口与 TLS 阶段失败；请核对监听地址、端口、证书及私钥保护',
+    'private-state': '核对私有安装状态阶段失败；请核对当前工作区、安装记录及文件保护',
+    'authentication-read': '读取 PostgreSQL 认证规则阶段失败；请核对受管认证文件及容器内可读性',
+    'account-install': '安装采集账号阶段失败；请核对数据库管理连接及既有采集账号状态',
+    'authentication-update': '更新 PostgreSQL 认证规则阶段失败；请核对受管文件的读写、发布及重载状态',
+    'account-enable': '启用采集账号阶段失败；请核对账号及认证规则的实际状态',
+    'connection-check': '验证采集连接阶段失败；请核对采集账号、认证配置及引擎可达性',
+    'source-files': '准备采集来源文件阶段失败；请核对私有目录保护、可写性及证书文件',
+    'identity-recheck': '重新核对引擎身份阶段失败；请核对引擎容器是否发生变化',
+    'source-start': '部署采集来源阶段失败；请核对来源配置、私有卷、镜像及容器实际状态',
+    'source-health': '检查来源容器运行状态阶段失败；请核对来源组件及退出状态，运行中仍不等于采集成功',
+    'deployment-check': '核对引擎部署阶段失败；请核对引擎运行状态、归属及部署管理连接',
+    'account-plan': '准备采集账号配置阶段失败；请核对已安装镜像及私有账号记录',
+    'account-update': '核对及更新采集账号阶段失败；请核对账号归属、权限、持久记录及实际启停状态',
+    'source-check': '核验既有采集来源阶段失败；请核对安装记录、账号、证书及来源归属',
+    'source-stop': '移除采集来源阶段失败；请核对来源容器及专属卷的归属和实际状态',
+    'source-build': '构建采集来源镜像阶段失败；请核对构建输入、Docker 状态及构建依赖的可达性',
+}
 
 
 def load(path):
@@ -133,10 +153,7 @@ def apply(action, kind, scope, env):
         if reason and reason[1] in FAILURE_REASONS:
             raise ValueError('操作失败：'+FAILURE_REASONS[reason[1]]+cleanup)
         stage = re.search(r'\[stage=([a-z-]+)\]', result.stderr)
-        detail = ('；阶段 '+stage[1]) if stage and stage[1] in {
-            'session-check', 'transport-check', 'private-state', 'authentication-read', 'account-install',
-            'authentication-update', 'account-enable', 'connection-check', 'source-files', 'identity-recheck',
-            'source-start', 'source-health'} else ''
+        detail = ('：'+FAILURE_STAGES[stage[1]]) if stage and stage[1] in FAILURE_STAGES else ''
         raise ValueError('操作失败'+detail+cleanup)
     if action == 'recover':
         if 'healthy; source unchanged' in result.stdout:
