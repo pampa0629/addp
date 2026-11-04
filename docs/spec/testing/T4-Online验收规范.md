@@ -131,7 +131,7 @@ System-owned fixture 通过正式 Bootstrap 建立三个不同三员，通过正
 
 `cleanup-native-effects` 是手动选择的独立 Hosted profile；不能用既有 `cleanup-execution` 的逻辑回执或浏览器通过替代原生效果证明。`ADDP_ONLINE_NATIVE_CASE` 必须明确为 `manager-success`、`manager-object-unknown`、`manager-index-unknown`、`transfer-engine`、`transfer-dlq-unknown`、`transfer-capture-unknown` 之一，无默认或全矩阵。每个 case 使用全新部署；新的 Hosted 运行与环境切换仍需单独确认。
 
-Manager 源准备先沿当前扫描权限生成本轮元数据，再由独立授权办理员按规范指纹读取 System 的准确 DataItem 授权事实并办理既定源 Grant；普通消费者只能在 Grant 成功后枚举 Meta，并核对同一 full_name／fingerprint 后准备 Model3D。规范指纹仅用于定位服务端事实，不作为身份、授权或存在证明；事实缺失／冲突、Grant 拒绝或授权后对象不匹配均停止，不加权限或回退机器身份。Manager 的扫描／授权／源身份／模型准备／生成／原生库存分别记录固定阶段，仅保留既有安全失败类别／HTTP 状态，不归档原始路径或响应，不增加请求重试和等待预算。
+Manager 源准备先沿当前扫描权限生成本轮元数据，再由独立授权办理员按规范指纹读取 System 的准确 DataItem 授权事实并办理既定源 Grant；普通消费者只能在 Grant 成功后枚举 Meta，并核对同一 full_name／fingerprint 后准备 Model3D。规范指纹仅用于定位服务端事实，不作为身份、授权或存在证明；事实缺失／冲突、Grant 拒绝或授权后对象不匹配均停止，不加权限或回退机器身份。Manager 的扫描／授权／源身份／模型准备／生成／原生库存分别记录固定阶段，失败保留安全类别／HTTP 状态。仅 `manager_model_prepare` 已观察到 HTTP 异常时可增加 `model_prepare_diagnostic`，且仅有 `operation`、`error_code` 两个字段：操作仅为 `meta_items_read`、`manager_model_results_read`、`manager_model_tasks_read`、`manager_source_download` 或 `unrecognized`；错误码仅为 `permission_denied`、`security_protection_required`、`source_authorization_required`、`source_composition_incomplete`、`engine_unavailable`、`authorization_service_unavailable`、`download_bundle_invalid`、`download_source_changed`、`unknown` 或 `unrecognized`。未提供错误码记 `unknown`，其它值归一为 `unrecognized`，不复制原值。诊断只消费既有客户端异常，不归档 URL、查询、路径、原始错误、响应或凭据，不增加请求、重试、身份或等待预算；成功报告即使该字段为空或 null 也必须拒绝。
 
 原生 Cleanup Hosted 通过公共镜像构建器既有 `--jobs 1` 模式实时输出各镜像及委托 Runtime 构建日志，避免双并发完成后才输出掩盖未返回子阶段。编译、镜像、各服务启动、身份准备和业务门禁只记录固定阶段及开始／返回码，不输出额外参数或凭据；返回失败必须保留原退出状态并进入既有销毁链。工作流120分钟、业务900秒及各阶段既有等待预算不变，未取得终态报告或清理证明不能计为通过。
 

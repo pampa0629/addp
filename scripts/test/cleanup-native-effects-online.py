@@ -43,6 +43,30 @@ def failure_diagnostics(error):
     return {'failure_kind': 'assertion_failed'}
 
 
+def model_prepare_diagnostics(error):
+    """Project an existing HTTP failure onto fixed model preparation labels."""
+    if failure_diagnostics(error).get('failure_kind') != 'http_unexpected_status':
+        return None
+    match = re.fullmatch(r'(GET|POST|PUT|PATCH|DELETE) (/[^\r\n]+) returned HTTP ([1-5][0-9]{2}) \(([^()\r\n]*)\)', str(error))
+    if not match:
+        return dict(operation='unrecognized', error_code='unrecognized')
+    method, path, _, code = match.groups()
+    path = path.split('?', 1)[0]
+    operations = {
+        '/api/v1/manager/model_3d_glb': 'manager_model_results_read',
+        '/api/v1/manager/tasks': 'manager_model_tasks_read',
+        '/api/v1/manager/downloads/file': 'manager_source_download',
+    }
+    operation = 'unrecognized'
+    if method == 'GET':
+        operation = ('meta_items_read' if re.fullmatch(r'/api/v1/meta/engines/[1-9][0-9]*/items', path)
+                     else operations.get(path, 'unrecognized'))
+    codes = {'permission_denied', 'security_protection_required', 'source_authorization_required',
+             'source_composition_incomplete', 'engine_unavailable', 'authorization_service_unavailable',
+             'download_bundle_invalid', 'download_source_changed', 'unknown'}
+    return dict(operation=operation, error_code=code if code in codes else 'unrecognized')
+
+
 def assert_proxy(value, run_id, key):
     require(type(value) is dict and set(value) == {'run_id', 'key', 'forwarded', 'upstream_response', 'blocked_replays'}
             and value['run_id'] == run_id and value['key'] == key
@@ -1126,6 +1150,10 @@ def main():
     except Exception as error:
         report.update(result='failed', error_type=type(error).__name__, failure_stage=report.get('stage', 'preflight'),
                       **failure_diagnostics(error))
+        if case.startswith('manager-') and report.get('stage') == 'manager_model_prepare':
+            diagnostic = model_prepare_diagnostics(error)
+            if diagnostic is not None:
+                report['model_prepare_diagnostic'] = diagnostic
     finally:
         if deployment is not None:
             try:

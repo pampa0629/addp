@@ -591,7 +591,12 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                         self.assertEqual(completed, [True] if mode == 'good' else [])
                         self.assertEqual(len(observed), 3 if mode in ('good', 'invalid_json') else 1)
                         self.assertTrue(all(auth == 'Bearer manager-token' for _, auth in observed))
-                        if mode == 'denied': self.assertEqual(report['failure_http_status'], 403)
+                        if mode == 'denied':
+                            self.assertEqual(report['failure_http_status'], 403)
+                            self.assertEqual(report['model_prepare_diagnostic'],
+                                dict(operation='manager_source_download', error_code='unrecognized'))
+                        else:
+                            self.assertNotIn('model_prepare_diagnostic', report)
         finally:
             server.shutdown(); server.server_close(); thread.join(timeout=5)
         self.assertFalse(thread.is_alive())
@@ -827,6 +832,30 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 self.assertEqual(result, expected)
                 self.assertNotIn('private', json.dumps(result))
                 self.assertNotIn('secret', json.dumps(result))
+
+    def test_model_prepare_diagnostic_retains_only_closed_operations_and_codes(self):
+        operations = {
+            '/api/v1/meta/engines/17/items': 'meta_items_read',
+            '/api/v1/manager/model_3d_glb?page=1&item_fingerprint=private': 'manager_model_results_read',
+            '/api/v1/manager/tasks?task_type=private': 'manager_model_tasks_read',
+            '/api/v1/manager/downloads/file?locator=private&token=secret': 'manager_source_download',
+            '/private?password=secret': 'unrecognized',
+        }
+        for path, operation in operations.items():
+            for code in ('permission_denied', 'security_protection_required', 'source_authorization_required',
+                         'source_composition_incomplete', 'engine_unavailable', 'authorization_service_unavailable',
+                         'download_bundle_invalid', 'download_source_changed', 'unknown', 'private_secret_code'):
+                with self.subTest(operation=operation, code=code):
+                    error = M.MANAGER.SuiteError(f'GET {path} returned HTTP 403 ({code})')
+                    diagnostic = M.model_prepare_diagnostics(error)
+                    self.assertEqual(diagnostic, dict(operation=operation,
+                        error_code='unrecognized' if code == 'private_secret_code' else code))
+                    self.assertNotIn('private', json.dumps(diagnostic))
+                    self.assertNotIn('secret', json.dumps(diagnostic))
+        for error in (RuntimeError('GET /api/v1/manager/tasks returned HTTP 403 (permission_denied)'),
+                      S.SuiteError('private assertion'), S.SuiteError('GET /private returned invalid JSON'),
+                      S.SuiteError('GET /private transport failed: secret')):
+            self.assertIsNone(M.model_prepare_diagnostics(error))
 
     def test_transfer_scan_failure_checkpoint_precedes_task_creation(self):
         for case in ('transfer-engine', 'transfer-capture-unknown', 'transfer-dlq-unknown'):

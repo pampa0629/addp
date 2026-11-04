@@ -64,6 +64,7 @@ class OnlineGateTest(unittest.TestCase):
             ('failure_stage', 'transfer_native_prepare'), ('error_type', 'SuiteError'),
             ('cleanup_error_type', 'SuiteError'),
             ('runtime_start_diagnostic', {'status': 'failed'}),
+            ('model_prepare_diagnostic', {'operation': 'manager_source_download', 'error_code': 'permission_denied'}),
             ('engine_readiness_diagnostic', {'engines': []}),
             ('task_create_diagnostic', {'reason': 'unrecognized'}),
             ('engine_assessment_diagnostic', {'status': 'failed'}),
