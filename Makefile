@@ -658,15 +658,21 @@ test-orchestrator-online-runner: ## 验证 Orchestrator Online 故障、权限�
 	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/orchestrator-execution-faults_test.py scripts/test/online-hosted-orchestrator-gate_test.py
 
 .PHONY: test-vector-pmtiles-online-runner
-test-vector-pmtiles-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证 PMTiles T4 场景、物理夹具与隔离生命周期
+.PHONY: test-vector-pmtiles-online-syntax
+test-vector-pmtiles-online-syntax:
 	@node --check console/frontend/e2e/online/vector-pmtiles-workflow.spec.js
+
+test-vector-pmtiles-online-runner: test-vector-pmtiles-online-syntax test-online-dispatcher-unit test-online-registration-unit ## 验证 PMTiles T4 场景、物理夹具与隔离生命周期
 	@bash -n scripts/test/online-hosted-vector-pmtiles-gate.sh
 	@python3 -m unittest scripts/test/vector-pmtiles-workflow-online_test.py scripts/test/online-vector-pmtiles-fixture_test.py scripts/test/online-hosted-vector-pmtiles-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-vector-topology-online-runner
-test-vector-topology-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证构面、几何修复、严格吸附、面叠面缝悬点线叠自叠及普通User的Hosted隔离生命周期
+.PHONY: test-vector-topology-online-syntax
+test-vector-topology-online-syntax:
 	@node --check console/frontend/e2e/online/vector-topology-persistence.spec.js
+
+test-vector-topology-online-runner: test-vector-topology-online-syntax test-online-dispatcher-unit test-online-registration-unit ## 验证构面、几何修复、严格吸附、面叠面缝悬点线叠自叠及普通User的Hosted隔离生命周期
 	@bash -n scripts/test/online-hosted-topology-gate.sh
 	@python3 -m unittest scripts/test/vector-topology-persistence-online_test.py scripts/test/online-vector-topology-fixture_test.py scripts/test/online-hosted-topology-gate_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
@@ -1098,8 +1104,11 @@ test-elasticsearch-online-runner: ## 验证 ES Spark T4 场景、物理夹具与
 	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py scripts/test/online-hosted-elasticsearch-gate_test.py scripts/test/online-elasticsearch-consumer-fixture_test.py
 
 .PHONY: test-node-metrics-online-runner
-test-node-metrics-online-runner: test-online-registration-unit ## 验证节点指标 Online 身份边界、浏览器证据与 Hosted 清理
+.PHONY: test-node-metrics-online-syntax
+test-node-metrics-online-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/platform-node-resources.spec.js
+
+test-node-metrics-online-runner: test-node-metrics-online-syntax test-online-registration-unit ## 验证节点指标 Online 身份边界、浏览器证据与 Hosted 清理
 	@bash -n scripts/test/online-hosted-node-metrics-gate.sh
 	@python3 -m unittest scripts/test/platform-node-metrics-online_test.py scripts/test/platform-node-metrics-fixture_test.py scripts/test/online-hosted-node-metrics-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run Metrics -count=1
@@ -1111,8 +1120,11 @@ test-quality-online-runner: ## 验证 Quality Hosted 准备、身份、事件及
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-transfer-online-runner
-test-transfer-online-runner: test-online-registration-unit ## 验证 Transfer Hosted 身份、只读预检、场景与清理契约
+.PHONY: test-transfer-online-syntax
+test-transfer-online-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/transfer-relational-sql-etl.spec.js
+
+test-transfer-online-runner: test-transfer-online-syntax test-online-registration-unit ## 验证 Transfer Hosted 身份、只读预检、场景与清理契约
 	@bash -n business/scripts/online-transfer-relational-sql-etl-fixture.sh
 	@python3 -m unittest scripts/test/online-hosted-transfer-gate_test.py scripts/test/online-transfer-relational-sql-etl-fixture_test.py scripts/test/transfer-relational-sql-etl-online_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
@@ -1152,7 +1164,7 @@ test-online-registration-unit:
 	@python3 -m unittest scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
-.NOTPARALLEL: test-catalog-domain-online-runner test-execution-online-ci-runner test-graph-online-runner test-manager-online-runner test-online-runner test-raster-online-runner test-security-online-runner
+.NOTPARALLEL: test-catalog-domain-online-runner test-execution-online-ci-runner test-graph-online-runner test-manager-online-runner test-online-runner test-raster-online-runner test-security-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-node-metrics-online-runner test-transfer-online-runner test-highgo-online-runner test-platform-administrator-online-runner
 
 test-online-runner: test-opengauss-online-runner test-execution-retention-online-runner test-execution-events-pagination-runner test-catalog-domain-online-runner test-workflow-runtime-health-online-runner test-starrocks-online-runner test-ftp-online-runner test-common-gaussdb-unit test-security-online-runner test-highgo-online-runner test-pg-authorization-online-runner test-transfer-continuous-online-runner test-transfer-online-runner test-node-metrics-online-runner test-platform-administrator-online-runner test-hdfs-online-runner test-raster-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-elasticsearch-online-runner test-orchestrator-online-runner test-manager-online-runner test-quality-online-runner test-online-dispatcher-unit test-online-registration-unit ## 运行 Online 分发器和预检器的确定性测试
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
@@ -1597,7 +1609,8 @@ test-monitor-redis-source: ## 复用独占 Redis 夹具验证专业采集与越�
 	@bash scripts/test/monitor-redis-source-gate.sh
 
 .PHONY: test-manager-online-runner
-test-manager-online-runner: test-online-registration-unit test-manager-sgm-local-runner ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
+.PHONY: test-manager-online-syntax
+test-manager-online-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-kml-export.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-filegdb.spec.js
@@ -1607,6 +1620,8 @@ test-manager-online-runner: test-online-registration-unit test-manager-sgm-local
 	@node --check --input-type=module < console/frontend/e2e/online/manager-orc.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-netcdf.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-grib.spec.js
+
+test-manager-online-runner: test-manager-online-syntax test-online-registration-unit test-manager-sgm-local-runner ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
 	@python3 -m unittest scripts/test/manager-netcdf-online_test.py scripts/test/manager-grib-online_test.py scripts/test/manager-envi-online_test.py scripts/test/online-engine-registration_test.py scripts/test/metadata-refresh-scope-online_test.py
 	@python3 -m unittest scripts/test/manager-filegdb-online_test.py
 	@python3 -m unittest scripts/test/manager-orc-online_test.py
@@ -1617,8 +1632,11 @@ test-manager-online-runner: test-online-registration-unit test-manager-sgm-local
 	@python3 -m unittest scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-manager-nfs-fixture_test.py scripts/test/meta-content-boundary-online_test.py scripts/test/online-hosted-manager-gate_test.py
 
 .PHONY: test-highgo-online-runner
-test-highgo-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证瀚高 Online 场景、普通身份、物理夹具和 Hosted 隔离清理
+.PHONY: test-highgo-online-syntax
+test-highgo-online-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/highgo-consumer-flow.spec.js
+
+test-highgo-online-runner: test-highgo-online-syntax test-online-dispatcher-unit test-online-registration-unit ## 验证瀚高 Online 场景、普通身份、物理夹具和 Hosted 隔离清理
 	@python3 -m unittest scripts/test/highgo-consumer-flow-online_test.py scripts/test/online-highgo-consumer-fixture_test.py scripts/test/online-hosted-highgo-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
@@ -1651,8 +1669,11 @@ test-graph-online-runner: test-execution-online-ci-runner ## 验证图保护和�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run GraphProtection -count=1
 
 .PHONY: test-execution-online-ci-runner
-test-execution-online-ci-runner: test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
+.PHONY: test-execution-online-ci-syntax
+test-execution-online-ci-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
+
+test-execution-online-ci-runner: test-execution-online-ci-syntax test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@bash -n scripts/test/online-hosted-security-gate.sh
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py
 
@@ -1666,8 +1687,11 @@ test-protection-deployment-runner: ## 验证保护消费者隔离部署、租户
 	@python3 -m unittest scripts/test/online-hosted-metric-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-hosted-public-origin-gate_test.py scripts/test/compose-public-origin-online_test.py
 
 .PHONY: test-platform-administrator-online-runner
-test-platform-administrator-online-runner: test-online-registration-unit ## 验证三员 Hosted 准入、身份矩阵、浏览器代码与退出清理
+.PHONY: test-platform-administrator-online-syntax
+test-platform-administrator-online-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/platform-administrator-governance.spec.js
+
+test-platform-administrator-online-runner: test-platform-administrator-online-syntax test-online-registration-unit ## 验证三员 Hosted 准入、身份矩阵、浏览器代码与退出清理
 	@bash -n scripts/test/online-hosted-administrator-governance-gate.sh
 	@python3 -m unittest scripts/test/platform-administrator-governance-online_test.py scripts/test/online-hosted-administrator-governance-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'AdministratorGovernanceFixture|MetricsBootstrap' -count=1

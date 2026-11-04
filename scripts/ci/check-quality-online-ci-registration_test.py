@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import shutil
 import sys
 import tempfile
@@ -38,14 +39,20 @@ class QualityOnlineRegistrationTest(unittest.TestCase):
         self.check()
         for relative, fragment in ((".github/workflows/online-t4-gates.yml", "&& inputs.suite != 'quality-dynamic-binding'"),
                                    (".github/workflows/online-t4-gates.yml", "github.event_name == 'workflow_dispatch' && inputs.suite == 'quality-dynamic-binding'"),
-                                   ("Makefile", "$(MAKE) test-quality-online-runner"),
+                                   ("Makefile", "test-quality-online-runner"),
                                    ("scripts/test/online-hosted-quality-gate.sh", "-model -meta -quality -orchestrator -monitor"),
                                    ("scripts/test/online-hosted-quality-gate.sh", "unset ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN"),
                                    ("business/scripts/online-quality-postgres-fixture.py", "container remains after cleanup")):
             path = self.repository / relative
             original = path.read_text()
             with self.subTest(fragment=fragment):
-                path.write_text(original.replace(fragment, "removed"))
+                if relative == 'Makefile':
+                    changed = re.sub(rf'(?m)^(test-online-runner:[^\n]*?)\b{re.escape(fragment)}\b',
+                                     r'\1removed', original, count=1)
+                else:
+                    changed = original.replace(fragment, "removed")
+                self.assertNotEqual(original, changed, fragment)
+                path.write_text(changed)
                 with self.assertRaises(CHECK.RegistrationError):
                     self.check()
                 path.write_text(original)

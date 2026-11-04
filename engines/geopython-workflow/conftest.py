@@ -2,6 +2,14 @@
 import pytest
 from osgeo import gdal
 
+_native_test_config = None
+
+
+def pytest_configure(config):
+    global _native_test_config
+    _native_test_config = config
+
+
 @pytest.fixture(autouse=True)
 def authoritative_raster_policy(monkeypatch):
     import api_server
@@ -18,13 +26,10 @@ def authoritative_raster_policy(monkeypatch):
     gdal.SetCacheMax(previous_cache)
 
 
-@pytest.hookimpl(hookwrapper=True, trylast=True)
-def pytest_runtest_makereport(item, call):
-    """Retain named failures even when the enclosing CI job ends before summary."""
-    outcome = yield
-    report = outcome.get_result()
-    if report.failed:
-        terminal = item.config.pluginmanager.getplugin('terminalreporter')
+def pytest_runtest_logreport(report):
+    """Print failures where reports are consumed, including distributed reports."""
+    if report.failed and _native_test_config is not None:
+        terminal = _native_test_config.pluginmanager.getplugin('terminalreporter')
         if terminal is not None:
             terminal.write_sep('=', f'NATIVE TEST FAILURE {report.nodeid} [{report.when}]')
-            terminal.write_line(report.longreprtext)
+            terminal.write_line(report.longreprtext, flush=True)

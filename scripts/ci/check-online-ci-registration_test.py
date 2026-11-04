@@ -4369,6 +4369,28 @@ test-comment:
         self.assertIn("scripts/test/online-raster-lineage_test.py",
                       CHECK.make_target_commands((root / "Makefile").read_text(), "test-raster-tpi-online-runner"))
 
+    def test_owner_syntax_preflight_fails_before_shared_tests_under_parallel_make(self):
+        root = SCRIPT.parents[2]
+        makefile = root / 'Makefile'
+        source = makefile.read_text()
+        owners = ('test-vector-pmtiles-online-runner', 'test-vector-topology-online-runner',
+                  'test-node-metrics-online-runner', 'test-transfer-online-runner',
+                  'test-manager-online-runner', 'test-highgo-online-runner',
+                  'test-execution-online-ci-runner', 'test-platform-administrator-online-runner')
+        for owner in owners:
+            with self.subTest(owner=owner), tempfile.TemporaryDirectory() as directory:
+                commands = CHECK.make_target_commands(source, owner)
+                syntax = re.search(r'(?m)^\t@node --check[^\n]*', commands)
+                self.assertIsNotNone(syntax)
+                script = Path(directory) / syntax.group().split()[-1]
+                script.parent.mkdir(parents=True)
+                script.write_text('const duplicate = 1; const duplicate = 2;\n')
+                result = subprocess.run(['make', '-j', '4', '-f', str(makefile), owner],
+                                        cwd=directory, capture_output=True, text=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('SyntaxError', result.stderr)
+                self.assertNotIn('ModuleNotFoundError', result.stderr)
+
     def test_geopython_keeps_two_processes_and_no_crash_retry(self):
         root = SCRIPT.parents[2]
         commands = CHECK.make_target_commands((root / "Makefile").read_text(), "test-geopython-workflow")

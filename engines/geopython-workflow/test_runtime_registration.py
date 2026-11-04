@@ -1,4 +1,5 @@
 import json
+import pytest
 
 
 def test_health_uses_structured_local_dependency_facts():
@@ -289,3 +290,46 @@ def test_native_failure_diagnostics_are_emitted_before_the_next_test(tmp_path):
     assert 'test_diagnostic_probe.py::test_first' in result.stdout
     assert result.stdout.index('NATIVE_SENTINEL_FAILURE') < result.stdout.index('NATIVE_LATER_TEST_RAN')
     assert '1 failed, 1 passed' in result.stdout
+
+
+@pytest.mark.parametrize('stage', ['setup', 'call', 'teardown'])
+def test_native_distributed_failure_diagnostics_precede_the_next_report(tmp_path, stage):
+    import sys
+    from pathlib import Path
+    from operators import _native_process
+    source = Path(__file__).with_name('conftest.py').read_text()
+    source += '''
+def pytest_sessionstart(session):
+    global probe_terminal
+    probe_terminal = session.config.pluginmanager.getplugin('terminalreporter')
+
+@pytest.hookimpl(specname='pytest_runtest_logreport')
+def pytest_probe_later_report(report):
+    if report.when == 'call' and report.passed and report.nodeid.endswith('::test_later') and probe_terminal is not None:
+        probe_terminal.write_line('NATIVE_LATER_REPORT_RAN')
+'''
+    source += f'''
+@pytest.fixture
+def failed_stage():
+    if {stage!r} == 'setup':
+        pytest.fail('NATIVE_SENTINEL_FAILURE')
+    yield
+    if {stage!r} == 'teardown':
+        pytest.fail('NATIVE_SENTINEL_FAILURE')
+'''
+    (tmp_path / 'conftest.py').write_text(source)
+    (tmp_path / 'test_diagnostic_probe.py').write_text(
+        f"def test_first(failed_stage):\n    assert {stage!r} != 'call', 'NATIVE_SENTINEL_FAILURE'\n"
+        "def test_later():\n    pass\n")
+    result = _native_process.run(
+        [sys.executable, '-m', 'pytest', '-q', '-n', '1', '--dist', 'worksteal',
+         '--max-worker-restart', '0', '--tb=short', str(tmp_path)],
+        cwd=Path(__file__).parent, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 1, result.stdout + result.stderr
+    marker = 'NATIVE TEST FAILURE '
+    assert marker in result.stdout, result.stdout + result.stderr
+    assert f'::test_first [{stage}]' in result.stdout
+    assert result.stdout.index(marker) < result.stdout.index('NATIVE_LATER_REPORT_RAN')
+    assert result.stdout.index('NATIVE_SENTINEL_FAILURE') < result.stdout.index('NATIVE_LATER_REPORT_RAN')
+    expected = '1 failed, 1 passed' if stage == 'call' else '1 error'
+    assert expected in result.stdout
