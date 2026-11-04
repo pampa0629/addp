@@ -1204,3 +1204,14 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 | 自查与登记 | AST仅public_build_failure_diagnostic及Lifecycle.command定义改变，并新增一个有界捕获协调函数；原取消finally AST不变，其他采样／互斥／构建／监测／恢复／清理定义不变，产品Dockerfile、Make及标准构建脚本未改。原HTTP／Trace Make聚合及CI自动发现命中，无新入口／workflow。共享登记文件有其他会话未提交的Security改动，未纳入本提交；登记通过是当时共享工作区结果，不声称本提交全仓CI通过 |
 
 原四秒、8 CPU／12 GiB、4 GiB停止线、60／55分钟、600秒及请求／失败清理边界保持。确定性只证明新诊断实现，不补齐历史Agent超时、目录消失根因或正式Agent／Copilot到Console／Monitor页面；旧失败报告不追填新字段。只读关联及冻结文件SHA256在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-agent-deadline-offline-20261104-we42ib19/correlation.json`，实现／输入／日志审核为同目录implementation-audit.json（0700／0600）；门禁日志`/tmp/addp-p19-timeout-diagnostic-{red,trace-final,http-final}-20261104.log`（0600）。本轮仅本地提交，不推送触发构建、不重试构建或新开窗口，不运行Hosted／容量／定时；更新60主题证据并回报维护会话。下一步建议在另行批准的原产品运行中使用超时诊断，再依据实际步骤讨论性能或网络修正，不预先放宽期限。
+
+
+### 2026-11-04 09:04 单次full授权在额外准备检查停止（正式入口未启动）
+
+用户明确批准一次60分钟full窗口使用新增超时诊断，准备北京时间2026-11-04 09:04:44.398400起计，冻结main为`f9737960ee2dd4b9dd44e9cabeef6574293468e4`；原55分钟工作截止09:59:44.398400、60分钟总截止10:04:44.398400。本次外部准备代码错误地要求三份共享集成文件也逐字节等于提交，在Makefile整文件比较处AssertionError而停止；这超出正式入口只对12项OWN_INPUTS核字节、对三份集成文件读取已提交标记的既有准入。错误由本会话添加的临时准备检查造成，不是产品构建、原资源守卫或正式入口拒绝，不能归因于无关会话功能。
+
+只读核对确认Makefile差异为其他主机采集恢复门禁，full／HTTP runner／Trace runner三个实际Make目标均与冻结提交相同，12项本专项文件字节一致，新增超时诊断已提交。并行开始的准备确定性门禁完成：HTTP44项／0.860秒及JS／登记／System身份Go退出0，Trace175项／4.568秒及JS／Online登记／System身份Go退出0；原离线TLS OpenSSL4.1.0、35命令／0.700918秒、125485字节、4次预期拒绝及清理完成。这些结果只证明确定性入口，没有运行make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full、没有原生产品构建／登录／API／浏览器或真实超时捕获。
+
+按本次失败即停、不自动重试或续窗边界，未在余时重新运行准备或full；full entry_started=false、build_attempts=0、runtime_run_id=null、isolated_runtime_created=false，未创建当次隔离运行资源，运行清理记not_required，不伪造zero_owned_resources成功回执。临时离线证书由原runner清理，不接管或重启用户开发环境。本轮没有运行Hosted／容量／定时，没有推送触发CI，没有修改产品、Make、预算或其他会话代码；正式产品闭环及真实超时诊断仍未验收。
+
+归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-timeout-window-20261104-mtufr_1s/`（0700／0600）含原launch、两组runner及completion中的停止事实／目标比较／12项SHA256／日志散列，不存在full entry.log或report。09:05:54记录停止事实，不把未执行步骤补作失败产品阶段。仅追加本专题及索引说明，主题仍60，回报维护会话保持部分实现／未验收；后续准备应严格复用原12项输入及集成标记规则，不再加共享文件整份一致要求，真实窗口另行确认。
