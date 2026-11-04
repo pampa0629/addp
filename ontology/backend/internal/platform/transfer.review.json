@@ -619,11 +619,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_agent_model_runner.py",
       "anchor": "async def test_short_request_discovers_builds_and_checks_owner_result(",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "2a3f61ab1716062f134083b3856b01b702e2381551c6a5cbcb7fc923fe9a42a4",
+      "commit": "660ffa3a0661a87d7169b085508a027966e64fb6",
+      "sha256": "41dfedb0e7940d9e68db3e20992095332ef7e56e8ed45252d1ce04ab276ff25b",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "复核长上下文精确选稿与错误选稿反证、当前目标优先、多候选正式暂停和v2报告校验测试；不改构建、确认或运行算法。",
+        "en": "Reviews exact long-context draft selection and wrong-choice counterexamples, current-goal priority, multi-source suspension and v2 report validation tests; construction, confirmation and run algorithms are unchanged."
       }
     },
     {
@@ -632,11 +632,11 @@
       "kind": "test",
       "path": "evals/agent-scenarios/model_runner.py",
       "anchor": "def fixture_executor(",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "da5995ef857d01a53501facf2e2aa63ce7bd6182e6e86a3166c08c80ed698a34",
+      "commit": "660ffa3a0661a87d7169b085508a027966e64fb6",
+      "sha256": "194086b3cf45a51ff56a885ad5a7dff0c9daed5a8c219f3394ba78de705f48d7",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "模型回归复用生产上下文预算；多候选等待沿v2报告核对完整正式候选，不伪造正文计数或后续恢复；仍隔离业务Owner并阻断写调用。",
+        "en": "Model regression reuses the production context budget; waiting cases verify exact formal candidates within v2 reports without inventing body counts or resumed completion; business owners remain isolated and writes blocked."
       }
     },
     {
@@ -645,11 +645,50 @@
       "kind": "test",
       "path": "evals/agent-scenarios/model_cases.py",
       "anchor": "result['responses']['data.search']",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "d26b728911ac3fab47e3cb4fd8226a40c8853fd27ff95b1332f8164d16dbcffe",
+      "commit": "660ffa3a0661a87d7169b085508a027966e64fb6",
+      "sha256": "0c5b2311d5c1298bcd26751beadbf2d775ce08ef2604138a9019e9c5dcd58515",
       "use": {
-        "zh-cn": "简短输入真实模型回归使用正式 results 搜索响应和受控 Owner 默认映射；夹具不代表真实业务读取或运行验收。",
-        "en": "Short-request real-model regression uses formal results search shape and controlled owner mapping defaults; fixtures do not prove business reads or execution."
+        "zh-cn": "新增多源候选与超过生产窗口的长会话夹具，合成摘要只测试消费与引用边界，不证明摘要模型质量或真实业务验收。",
+        "en": "Adds multi-source and beyond-window conversation fixtures; synthetic summaries test consumption and reference boundaries, not summarizer quality or real business acceptance."
+      }
+    },
+    {
+      "id": "parameter_source_choice_case",
+      "owner": "agent",
+      "kind": "contract",
+      "path": "evals/agent-scenarios/model-transfer-source-choice/scenario.yaml",
+      "anchor": "\"name\": \"model-transfer-source-choice\"",
+      "commit": "660ffa3a0661a87d7169b085508a027966e64fb6",
+      "sha256": "16696c646ddb1292f77787d2847a109fd2814b29f8e2b1df0f9e0cb2759d26aa",
+      "use": {
+        "zh-cn": "正式源候选必须与搜索结果一致并暂停；该场景禁止构建与预检，不代替后续恢复验收。",
+        "en": "Formal source choices must match search results and suspend; this case forbids construction and preflight and does not prove resumed acceptance."
+      }
+    },
+    {
+      "id": "parameter_long_history_case",
+      "owner": "agent",
+      "kind": "contract",
+      "path": "evals/agent-scenarios/model-historical-long-context/scenario.yaml",
+      "anchor": "\"name\": \"model-historical-long-context\"",
+      "commit": "660ffa3a0661a87d7169b085508a027966e64fb6",
+      "sha256": "cf97c6e70d17435c8bf8bb0cc27bd27eefec012e87fd2c1c58c83c4208901609",
+      "use": {
+        "zh-cn": "超过生产历史窗口后，以合成摘要辅助指代并读取精确历史草稿，不从摘要重建参数或授予权限。",
+        "en": "Beyond the production history window, a synthetic summary assists reference resolution to an exact historical draft, without reconstructing parameters or granting permission."
+      }
+    },
+    {
+      "id": "parameter_current_goal_case",
+      "owner": "agent",
+      "kind": "contract",
+      "path": "evals/agent-scenarios/model-current-goal-long-context/scenario.yaml",
+      "anchor": "\"name\": \"model-current-goal-long-context\"",
+      "commit": "660ffa3a0661a87d7169b085508a027966e64fb6",
+      "sha256": "6e940e61f670cf03e03ff9140b162f817653e2079e23757233c9672d16c7e61e",
+      "use": {
+        "zh-cn": "旧传输摘要不覆盖当前只读查询目标；不能继承旧任务领域、确认或运行意图。",
+        "en": "An old transfer summary cannot override the current read-only query goal or carry forward an old task domain, confirmation or run intent."
       }
     }
   ],
@@ -886,7 +925,8 @@
         "parameter_protocol",
         "parameter_model",
         "parameter_model_test",
-        "parameter_model_runner"
+        "parameter_model_runner",
+        "parameter_current_goal_case"
       ]
     },
     {
@@ -951,7 +991,8 @@
         "manifest",
         "conditions",
         "condition_test",
-        "parameter_model_facts"
+        "parameter_model_facts",
+        "parameter_source_choice_case"
       ]
     },
     {
@@ -963,7 +1004,8 @@
         "runtime",
         "batch_contract",
         "batch_boundary_test",
-        "parameter_model_facts"
+        "parameter_model_facts",
+        "parameter_source_choice_case"
       ]
     },
     {
@@ -1073,7 +1115,9 @@
         "parameter_protocol",
         "parameter_model",
         "parameter_model_test",
-        "parameter_model_runner"
+        "parameter_model_runner",
+        "parameter_long_history_case",
+        "parameter_current_goal_case"
       ]
     },
     {
@@ -1090,7 +1134,8 @@
         "parameter_protocol",
         "parameter_model",
         "parameter_model_test",
-        "parameter_model_runner"
+        "parameter_model_runner",
+        "parameter_long_history_case"
       ]
     },
     {
@@ -1284,7 +1329,8 @@
         "tool_test",
         "runtime",
         "batch_contract",
-        "batch_boundary_test"
+        "batch_boundary_test",
+        "parameter_source_choice_case"
       ]
     },
     {

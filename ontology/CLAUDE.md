@@ -1,5 +1,9 @@
 # Ontology 模块
 
+2026-11-04 创建修订 61 仅前向冻结 Agent 稳定提交 `660ffa3a0` 的评测来源。更新 `parameter_model_test`、`parameter_model_runner`、`parameter_model_facts`，独立登记多候选暂停、长历史精确选稿、当前目标优先三个场景契约，共 53 项来源；原 47 项、既有覆盖及绑定全部保留。创建定义除 revision 外逐字段相同，运行 7／读取 5 及全部来源未变，不增加能力、权限、输入条件或业务效果。
+
+只读复核确认：模型 Runner 使用生产消息／摘要预算，等待场景按正式候选及 v2 严格报告校验；SQLite 回归不证明 PostgreSQL 并发锁，合成摘要不证明压缩模型质量。主责的 18 场景离线报告通过，33/33 受控事实模型报告通过严格校验，冻结前全部场景摘要匹配当前输入；274 项运行输入前后不变的原记录保留，随后仅 Agent 状态文档更新，不升级为干净发布基线或当前业务／Hosted 通过。首轮两个模型失败及不完整报告继续保留。本轮 `GOFLAGS=-count=1 make test-platform-review` 先准确复现三项漂移，冻结后通过；`GOFLAGS=-count=1 make test-module MODULE=ontology GO_ONLY=1` 通过，53／19／8 项当前字节、真实固定提交、摘要和锚点全部一致。证据 `/tmp/addp-ontology-r61-{review-red.log,review-green.log,t1.log,source-audit.json}`。没有发布／投影内核、Schema、服务或依赖变化，未重复模型、PG／FalkorDB T2、页面或 Hosted 验收，不自行重启或宣称修订已激活；完整模块及自然 CI 由 Agent 主责另行收口。
+
 2026-11-04 平台 Transfer 创建修订 60 明确默认类型与多源确认：新草稿的多个搜索候选由 Agent Runtime 立即暂停并保存候选集合；恢复后的构建源必须匹配唯一用户确认。字段默认只提交 path/target，Transfer 从正式结构推导类型与可空性，保留数组默认使用 JSON；显式转换仍保持原参数与预检契约。普通完整用户配置及历史原稿继续原来源绑定，不新增授权、审批、API 或执行能力。创建冻结 50 项来源，运行修订 7／执行读取修订 5 仅前向审查同文件变化，分别为 19／8 项。
 
 本轮 `make test-agent-eval`、Transfer Backend、Ontology Go T1、`make test-platform-review` 通过，标准 Ontology PG → 独占 FalkorDB 门禁顺序通过。真实模型受控事实回归最终 8/8；首轮旧搜索夹具 items 被新边界拒绝，已纠正为正式 results，失败保留，不以重复运行抹除。真实共享 Tool 的独立 Owner 验证生成 Outdoor.Persons 的 16 字段，原 5 个 TEXT[] 反证改为默认 JSON，unsupported 为零，正式预检仍为 unknown，不证明可执行。没有创建／运行任务或业务写入。新 Runtime 的重启后聊天／浏览器验收、自然 CI 仍未完成；完整 Agent 模块既有共享 T0 OpenSSL 失败未在本轮修复或复跑，不计通过。证据 `/tmp/addp-r60-{agent-eval-current.log,transfer-t1.log,ontology-t1.log,review-green.log,pg.log,falkor.log,model-final.json,owner-acceptance.json,source-audit.json}`。标准入口和既有 CI 自动发现覆盖，无新增依赖或门禁路线。
