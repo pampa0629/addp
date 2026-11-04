@@ -1215,3 +1215,25 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 按本次失败即停、不自动重试或续窗边界，未在余时重新运行准备或full；full entry_started=false、build_attempts=0、runtime_run_id=null、isolated_runtime_created=false，未创建当次隔离运行资源，运行清理记not_required，不伪造zero_owned_resources成功回执。临时离线证书由原runner清理，不接管或重启用户开发环境。本轮没有运行Hosted／容量／定时，没有推送触发CI，没有修改产品、Make、预算或其他会话代码；正式产品闭环及真实超时诊断仍未验收。
 
 归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-timeout-window-20261104-mtufr_1s/`（0700／0600）含原launch、两组runner及completion中的停止事实／目标比较／12项SHA256／日志散列，不存在full entry.log或report。09:05:54记录停止事实，不把未执行步骤补作失败产品阶段。仅追加本专题及索引说明，主题仍60，回报维护会话保持部分实现／未验收；后续准备应严格复用原12项输入及集成标记规则，不再加共享文件整份一致要求，真实窗口另行确认。
+
+
+<a id="http-full-agent-timeout-over-budget-20261104"></a>
+
+## 2026-11-04 标准准入full窗口Agent再超时及诊断超预算
+
+用户明确批准另开一次60分钟full窗口，原四秒、8 CPU／12 GiB、4 GiB停止线及首次失败即停／不重试／不续窗保持。准备北京时间2026-11-04 10:46:03.114017起计，55分钟工作截止11:41:03.114017，总截止11:46:03.114017；冻结main为`3506802ce1e6708e919fcdc78a3e356fa7d0094b`。本次严格复用标准12项OWN_INPUTS字节及三份已提交集成标记规则，不再要求整份共享Makefile一致；15项保存摘要与最终原报告及冻结源码逐文件相同。标准Infra状态读取退出0，不接管用户环境；准备HTTP runner44项／0.908秒与Trace runner175项／4.596秒，连同JS／登记／System身份Go子门禁均退出0。原离线TLS OpenSSL4.1.0、35命令／0.812659秒、125485字节、4次预期拒绝及清理通过，不等同产品实链。
+
+唯一实际入口make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full于10:47:08.113855启动，run_id=`addp-http-local-846e85021cdf4cc5873e1f6c650522de`，11:01:37.241544结束，含准备934.103523秒、生命周期868.563010秒；make退出2／report failed。原55分钟信号未触发，整窗未超期。固定Nginx缓存／当次网络／私有TLS／配置及测量器准入通过，18.39秒进入Go编译；193.01秒完成编译进入缓存预检，预检0.356659秒及当次删除0.679694秒分别守原四秒，子进程退出且无遗留锁。System／Gateway／Monitor镜像构建命令成功返回，217.91／244.23／264.84秒依次进入后续阶段；尚未最终完成整批镜像身份清单，不宣称正式产品部署通过。
+
+264.84秒进入Agent构建，865.07秒开始清理，同一产品命令再次达到原600秒，stage=product_image_agent_backend／error_code=command_deadline_exceeded。新增诊断真实触发：command_failure.termination=deadline，output_status=over_budget，captured_bytes=131073，public_build.status=over_budget、limits_exceeded=[input_bytes]、progress=unavailable／unknown，diagnostic_seconds=0.000546；未保留output_sha256、原文或部分前缀分类。此字节数只是128 KiB＋1有界读取的结果，不是整份构建输出大小，不能反推超限幅度或构建步骤。原128 KiB上限未调整，诊断未重置超时、增加命令或把失败转为成功；超预算只能证明本次捕获超过解析上限，不能计“真实步骤定位通过”。
+
+| 守卫与退出核验 | 实际结果 |
+| --- | --- |
+| 完整样本 | 215次全部成功，含Go编译43次、Agent阶段150次；最长0.501020秒，开始最大间隔4.010097秒，读取重试均0；215条同run／phase／唯一command_id的原卷进入／管道返回检查点完整 |
+| 资源峰值 | 硬配额2.25 CPU／3288334336字节内存，卷／可写层／私有目录占用4031909888字节，约3.75 GiB且低于4294967296停止线；总数已含可写层，不重复加。无resource_guard_failure，首因不是资源读取超时或触线 |
+| 清理 | cleanup.zero_owned_resources=true、failures=[]；4条cleanup归属列表记录完整通过，当次工作目录0；标准入口及外部监督已退出，未重试／续窗或复用余时 |
+| 未运行 | assertions为空，无images最终身份、完整Python依赖、controlled_requests、browser或source_stop_summary回执。Copilot及前端镜像、真实密码／MFA、采集／API、Console／Monitor页面、一次停源及注销均尚未执行，不借构建分项／采样／清理通过反转整轮失败 |
+
+私有归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-standard-window-20261104-gvjti9if/`（0700／0600），包含launch／15项expected-inputs／Infra状态／准备runner／entry-started／entry.log／completion／原report及独立audit。报告2453810字节，SHA256=`a82c1e82a80bd1fe21d01758a7be66848ede6a2008a083272f6108efefdd6f91`；入口日志SHA256=`e0447a84141beaedcc5d1dcc9763b58d28db65921795295b5ee17952083a221f`。本轮仅更新61主题证据与索引、核对固定来源／全部样本／诊断拒绝边界／清理及文档链接，不修改诊断上限、构建或产品代码，也不额外推送触发CI。
+
+本轮严格不运行Hosted、容量或定时，无APT源／依赖／镜像／代理／签名策略调整。旧8a34ecb84超时及09:04未启动窗口各自保留，本次新增的是“新诊断真实触发但输入超预算”的证据，Agent耗尽位置及根因仍未确定，正式产品闭环仍未验收。单次授权已消费，更新证据并回报维护会话；下一步建议先只读评估构建输出为何超过现有限额及可行的有界步骤记录方案，讨论确认后再修规范／实现，不自动扩大读取上限或重跑。
