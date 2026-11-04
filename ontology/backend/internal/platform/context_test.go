@@ -14,6 +14,7 @@ func TestTransferConditionEvidenceAndDecisionSources(t *testing.T) {
 		{From: "confirmed_target_parent_and_name", Kind: "reads_via", To: "target_parent_discovery"}: true,
 		{From: "confirmed_target_parent_and_name", Kind: "configured_by", To: "target"}:              true,
 		{From: "confirmed_row_grain_and_fields", Kind: "reads_via", To: "source_discovery"}:          true,
+		{From: "confirmed_row_grain_and_fields", Kind: "reads_via", To: "draft_construction"}:        true,
 		{From: "confirmed_row_grain_and_fields", Kind: "configured_by", To: "field_mapping"}:         true,
 		{From: "bounded", Kind: "configured_by", To: "runtime_boundary"}:                             true,
 		{From: "snapshot", Kind: "configured_by", To: "load_mode"}:                                   true,
@@ -45,7 +46,7 @@ func TestPlatformDefinitionIsBoundedAndIndependentOfTenant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.KnowledgeKind != "platform_definition" || a.Availability != "not_observed" || a.Revision != 57 || len(a.Digest) != 64 || a.Operation.Tool != a.Capability {
+	if a.KnowledgeKind != "platform_definition" || a.Availability != "not_observed" || a.Revision != 58 || len(a.Digest) != 64 || a.Operation.Tool != a.Capability {
 		t.Fatalf("invalid platform binding: %+v", a)
 	}
 	ids := map[string]bool{}

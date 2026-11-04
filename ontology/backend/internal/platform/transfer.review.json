@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
-      "sha256": "d3887e0b185e1ea0079cdb5fa8029beaf05945a7fd1bcf9d5c07e6dd7a0605f7",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "150373cb7c4f3a6df74861bffd833bcc4d88b4094ac9549a7ea63e3ecfcfefd1",
       "use": {
-        "zh-cn": "补充采样源表示反证与 JSON／原生数组的区别；unknown 不构成写入保证，已观察不匹配优先拒绝；修改表示仍重新复核和审批。",
-        "en": "Clarifies sampled source counterexamples and JSON versus native arrays; unknown is no write guarantee, observed incompatibilities reject first, and representation changes require fresh review and approval."
+        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
+        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
       }
     },
     {
@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "56ab1c95f50b5279a75bafd3021024a25ab555bb527cb1bcbf4c65dcb499ef20",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "b1f574a1d2c85fd0dd9a50b674c30575f1b5ddea34e04a501b5a1040f6f5fa1b",
       "use": {
-        "zh-cn": "本次运行审批经唯一启动路径，在原任务 claim 事务内核对并消费；创建仍保存停止态定义。",
-        "en": "Run approval uses the sole start path and is verified and consumed in the existing task-claim transaction; creation still saves a stopped definition."
+        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
+        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
       }
     },
     {
@@ -60,11 +60,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.task.create\"",
-      "commit": "34faad72da00695f6ee51048651cc39e5f5ca470",
-      "sha256": "23dacb0f99a91e4d1181efcb27d5fc688ac48707cd6da33d198c2881d0af5d83",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "38bd01b60a1b712c74c9ac8ee41652a87bee7584ce576a9d84ffcb6e55707444",
       "use": {
-        "zh-cn": "创建 v3 与预检保持原边界；本次仅增加独立 start/get 契约及按确切能力身份读取上下文，不继承创建确认作为运行批准。",
-        "en": "Create v3 and precheck retain their boundaries; separate start/get contracts and exact-capability context reads do not turn creation confirmation into run approval."
+        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
+        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
       }
     },
     {
@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
-      "sha256": "2e0ff0df55efa15755657e63835eee5f98fe21e01fb4a831c43d54091e7785dc",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "15ce8fc4a2b789d14b0a216d88617fa6fe6d49fb210a79ae6692a2e55ca5a1b7",
       "use": {
-        "zh-cn": "整体保留对象、嵌套、混合或未知元素数组时生成 JSON 候选，再由正式预检和用户复核；不删字段、不字符串化，不沿用原运行批准。",
-        "en": "Retained object, nested, mixed or unknown-element arrays use a JSON candidate followed by formal checking and review; no field omission, stringification or reuse of run approval."
+        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
+        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
       }
     },
     {
@@ -151,11 +151,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
-      "sha256": "a2bf2c72fd61fa20e3a84d100473ff7d4a22b046e7423c91ea2934ddf7d4a97c",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "91d0e968298bdc12b5a00a78f634d672f4dbb8f1c57b91e0478f524712bdf639",
       "use": {
-        "zh-cn": "原 Runtime 预检、确认及提交边界不变；新增受控链路验证对象数组拒绝诊断交给模型、JSON 候选重新预检后才出现一次复核，零创建或运行。",
-        "en": "Existing Runtime precheck, confirmation and commit boundaries remain; a controlled Harness trace verifies object-array rejection feedback and a fresh JSON check before a single review, with no creation or run."
+        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
+        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
       }
     },
     {
@@ -411,11 +411,11 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "同批 Tool 按模型返回顺序进入唯一 Runtime 调用路径",
-      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
-      "sha256": "b128e88046ae3f6c8983028a117b6f16cfbe45677f6a7e96f494aab5dfadcc93",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "b66d83a390b12b1e8e8cae55850f2a29097c219e2b9a9cc5ac8c2e2625bcba05",
       "use": {
-        "zh-cn": "本次规定独立运行／读取 Tool、用户手动 Owner 审批与确定性恢复，并按已选能力收窄白名单；创建／预检仍不授运行权。",
-        "en": "Defines separate run/read tools, manual User owner approval and deterministic resume, with tools narrowed by selected capability; creation/precheck still confer no run authority."
+        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
+        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
       }
     },
     {
@@ -468,6 +468,97 @@
       "use": {
         "zh-cn": "验证采样源反证保留、不成为目标类型／精度约束，未观察字段不变成确定 NULL，原始字段映射来源保持。",
         "en": "Verifies sampled counterexamples survive without becoming target type/precision constraints; unobserved fields never become known NULL and mapping provenance is preserved."
+      }
+    },
+    {
+      "id": "draft_compiler",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/service/task_config_draft.go",
+      "anchor": "func buildTaskConfigDraft(",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "ab41dd4318f8cef2751e104e415be8fdf22c35a254fb26c348dca681dafd1bc4",
+      "use": {
+        "zh-cn": "从已确认选择只读编译配置，核验正式结构、四项权限和独立预检组合。草稿不保存任务、不授权运行。",
+        "en": "Read-only compilation of confirmed choices with formal facts, four permissions and independent preflight composition. Draft construction neither persists a task nor approves a run."
+      }
+    },
+    {
+      "id": "draft_owner",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/service/task_config_draft_owner.go",
+      "anchor": "func (s *TaskConfigDraftService) Build(",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "1865e1403e57a2e1bc28221d858f51d2282c6a71ba61252a3ecaf50e1f8101a7",
+      "use": {
+        "zh-cn": "从已确认选择只读编译配置，核验正式结构、四项权限和独立预检组合。草稿不保存任务、不授权运行。",
+        "en": "Read-only compilation of confirmed choices with formal facts, four permissions and independent preflight composition. Draft construction neither persists a task nor approves a run."
+      }
+    },
+    {
+      "id": "draft_handler",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/api/task_config_draft.go",
+      "anchor": "func (h *TaskHandler) BuildTaskConfigDraft(",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "a82befd6ab0868995e5632338399314fa033d96a1d268d05754f2e64a92e8d6a",
+      "use": {
+        "zh-cn": "从已确认选择只读编译配置，核验正式结构、四项权限和独立预检组合。草稿不保存任务、不授权运行。",
+        "en": "Read-only compilation of confirmed choices with formal facts, four permissions and independent preflight composition. Draft construction neither persists a task nor approves a run."
+      }
+    },
+    {
+      "id": "draft_test",
+      "owner": "transfer",
+      "kind": "test",
+      "path": "transfer/backend/internal/service/task_config_draft_test.go",
+      "anchor": "func TestTaskConfigDraftComposesWithOwnerPrecheck(",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "640cbff0ab6953955d76614bd6b0e2a0f9ccd4309c11cd9f5a93275afc8b4719",
+      "use": {
+        "zh-cn": "从已确认选择只读编译配置，核验正式结构、四项权限和独立预检组合。草稿不保存任务、不授权运行。",
+        "en": "Read-only compilation of confirmed choices with formal facts, four permissions and independent preflight composition. Draft construction neither persists a task nor approves a run."
+      }
+    },
+    {
+      "id": "draft_route_test",
+      "owner": "transfer",
+      "kind": "test",
+      "path": "transfer/backend/internal/api/task_config_draft_test.go",
+      "anchor": "func TestTaskConfigDraftRouteIsolatedScopeAndPermissions(",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "a722970cf41d4ba0dc962354e87ca7bb0e01385b2056f8fe662c60ce4749af35",
+      "use": {
+        "zh-cn": "从已确认选择只读编译配置，核验正式结构、四项权限和独立预检组合。草稿不保存任务、不授权运行。",
+        "en": "Read-only compilation of confirmed choices with formal facts, four permissions and independent preflight composition. Draft construction neither persists a task nor approves a run."
+      }
+    },
+    {
+      "id": "draft_sdk",
+      "owner": "common-python",
+      "kind": "implementation",
+      "path": "common-python/addp_common/client/transfer.py",
+      "anchor": "async def build_task_config_draft(",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "e003f04f491f1d5148c01e9e3d9718e07577870f134c72b44daa21e7566fc99a",
+      "use": {
+        "zh-cn": "从已确认选择只读编译配置，核验正式结构、四项权限和独立预检组合。草稿不保存任务、不授权运行。",
+        "en": "Read-only compilation of confirmed choices with formal facts, four permissions and independent preflight composition. Draft construction neither persists a task nor approves a run."
+      }
+    },
+    {
+      "id": "draft_sdk_test",
+      "owner": "common-python",
+      "kind": "test",
+      "path": "common-python/tests/test_transfer_draft_build.py",
+      "anchor": "def test_draft_tool_sdk_and_executor_return_exact_owner_arguments(",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "c61ab164265274c505235b6d966988f1e3310d565a398c512a5fc4a28f4dee16",
+      "use": {
+        "zh-cn": "从已确认选择只读编译配置，核验正式结构、四项权限和独立预检组合。草稿不保存任务、不授权运行。",
+        "en": "Read-only compilation of confirmed choices with formal facts, four permissions and independent preflight composition. Draft construction neither persists a task nor approves a run."
       }
     }
   ],
@@ -696,7 +787,9 @@
         "handler",
         "owner_test",
         "role_protection",
-        "current_user_roles"
+        "current_user_roles",
+        "draft_compiler",
+        "draft_owner"
       ]
     },
     {
@@ -1092,14 +1185,6 @@
       ]
     },
     {
-      "subject": "requirement/optional_draft_assistance",
-      "sources": [
-        "manifest",
-        "skill",
-        "tool_test"
-      ]
-    },
-    {
       "subject": "concept/optional_run",
       "sources": [
         "batch_contract",
@@ -1124,6 +1209,51 @@
         "skill",
         "manifest",
         "runtime"
+      ]
+    },
+    {
+      "subject": "concept/draft_construction",
+      "sources": [
+        "manifest",
+        "config",
+        "skill",
+        "draft_compiler",
+        "draft_owner",
+        "draft_handler",
+        "draft_test",
+        "draft_route_test",
+        "draft_sdk",
+        "draft_sdk_test"
+      ]
+    },
+    {
+      "subject": "relation/confirmed_row_grain_and_fields/reads_via/draft_construction",
+      "sources": [
+        "manifest",
+        "config",
+        "skill",
+        "draft_compiler",
+        "draft_owner",
+        "draft_handler",
+        "draft_test",
+        "draft_route_test",
+        "draft_sdk",
+        "draft_sdk_test"
+      ]
+    },
+    {
+      "subject": "requirement/draft_construction",
+      "sources": [
+        "manifest",
+        "config",
+        "skill",
+        "draft_compiler",
+        "draft_owner",
+        "draft_handler",
+        "draft_test",
+        "draft_route_test",
+        "draft_sdk",
+        "draft_sdk_test"
       ]
     }
   ],

@@ -1,5 +1,10 @@
 # Ontology 模块
 
+平台 Transfer 创建修订 58 接入 Owner 只读构建入口。`confirmed_row_grain_and_fields → draft_construction → transfer.task.draft.build` 由同版 FalkorDB 依赖投影返回，取代此切片的可选 Copilot 构建入口。Transfer 持有 MongoDB → PostgreSQL 的查询和映射编译，Agent 仅提交确认选择并原样使用返回参数。新入口要求创建、Meta 目录、System 引擎及 Manager 数据项读取四项 Permission，使用 Transfer audience 与精确 Tool Scope；服务身份读取 System/Meta，保留原主体和 Tenant 边界，不转发委托令牌。普通任务创建、独立预检和运行审批仍分别核验，不把构建当作运行授权。
+
+实现来源为 `5416461d7`，创建增加 7 项构建来源共 43 项，运行修订 5 与执行读取修订 3 仅前向复核同文件 Manifest/SDK/配置文档变化。`make test-platform-review`、Transfer/Ontology Go T1、`make test-common-python`（558 通过、1 跳过）、`make test-agent-eval`、`make test-authorization` 及 Transfer 42 路由 Swagger 校验通过。按顺序执行的 `make test-ontology-postgres` 与独占 `make test-ontology-falkor` 通过，包含真实 PG/图发布及清理。篡改夹具改为真实新入口并拒绝零行改动，避免旧入口删除后测试空跑。自然 CI、部署激活、真实模型和业务任务本轮未验收。证据位于 `/tmp/addp-draft-{review,pg,falkor,ontology-t1,api-test,common-python,agent-eval,authorization}.log`。
+
+
 Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model、Catalog 的事实所有权，也不读取业务数据库。总体边界见 [本体定义与发布规范](../docs/spec/addp本体定义与发布规范.md)。
 
 ## 已确认的设计与依赖边界

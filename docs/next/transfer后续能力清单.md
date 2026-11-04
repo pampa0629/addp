@@ -2,7 +2,7 @@
 
 状态：待评估能力
 
-更新时间：2026-11-02
+更新时间：2026-11-04
 
 本文只记录尚未进入 Transfer 当前支持范围的能力，不是排期或兼容路线。当前正式语义见 [Transfer 任务语义与同步模式](../../transfer/docs/transfer-任务语义与同步模式.md)，当前配置与限制见 [Transfer 模块基本概念及配置说明](../../transfer/docs/transfer-基本概念及配置说明.md)。
 
@@ -11,6 +11,10 @@
 验收说明：[验收范围与证据](#六验收范围与证据)。
 
 ## 一、Bounded 同步
+
+只读草稿构建的接口、字段、权限和读取范围已迁入 [正式配置文档](../../transfer/docs/transfer-基本概念及配置说明.md#只读草稿构建)。平台本体发布和 Agent 消费的后续验收见 [Ontology 设计](ADDP%20Ontology最小设计契约.md)。
+
+### 同步执行扩展
 
 现行 watermark 的源／目标、稳定键、单字段与复合游标范围统一见[watermark 配置](../../transfer/docs/transfer-基本概念及配置说明.md#七watermark-bounded-incremental)及[正式同步执行契约](../spec/tasks/Transfer同步执行.md#transfer-同步执行契约)。本节只列尚未开放的扩展。
 

@@ -1,5 +1,8 @@
 # Agent 模块
 
+2026-11-04，新 MongoDB → PostgreSQL bounded snapshot 草稿由 `transfer.task.draft.build` 编译。Skill 工具声明和平台创建修订 58 均指向该入口，LLM 提交已确认资源、行粒度、字段及写入选择，原样使用返回 `arguments` 进入既有预检和复核。查询编码与类型映射移交 Transfer，删除本切片手拼配置及 Copilot 构建指导；历史绑定原稿继续精确复核。共享 SDK 与 ToolExecutor 用同一 Owner API，四项权限和委托规则见 Tool 规范。离线 Agent eval 与共享 SDK 门禁通过，重启后的真实模型是否按新路径选择和调用仍须另验。
+
+
 Agent 模块是 ADDP 平台的**自然语言交互入口**，用户通过对话方式完成数据管理、分析和发布操作。
 
 ## 模块概述

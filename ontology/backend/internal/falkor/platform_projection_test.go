@@ -100,7 +100,7 @@ func TestPlatformPlan(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(p, q) || !strings.HasPrefix(p.key, prefix) || strings.Contains(p.key, "t0:") {
 		t.Fatal("unstable or unscoped plan", p, err)
 	}
-	if len(p.nodes) != 98 || len(p.edges) != 140 || len(p.dependencyRows) != 29 || len(p.conditionRows) != 9 {
+	if len(p.nodes) != 101 || len(p.edges) != 146 || len(p.dependencyRows) != 29 || len(p.conditionRows) != 10 {
 		t.Fatal("missing capability dependencies", len(p.nodes), len(p.edges), len(p.dependencyRows), len(p.conditionRows))
 	}
 	for _, want := range [][]any{
@@ -113,6 +113,8 @@ func TestPlatformPlan(t *testing.T) {
 		{"capability:transfer.task.create", "condition:readonly_config_check", "requires"},
 		{"condition:readonly_config_check", "concept:readonly_config_check", "described_by"},
 		{"condition:readonly_config_check", "requirement:config_precheck", "reads_via"},
+		{"condition:confirmed_row_grain_and_fields", "requirement:draft_construction", "reads_via"},
+		{"requirement:draft_construction", "tool:transfer.task.draft.build", "uses_tool"},
 		{"requirement:config_precheck", "concept:config_precheck", "described_by"},
 		{"requirement:config_precheck", "tool:transfer.task.config.check", "uses_tool"},
 		{"concept:user_review", "concept:user_confirmation", "confirmed_by"},
@@ -125,6 +127,7 @@ func TestPlatformPlan(t *testing.T) {
 		}
 	}
 	if !reflect.DeepEqual(p.conditionRows, [][]any{
+		{"confirmed_row_grain_and_fields", "draft_construction", "transfer.task.draft.build"},
 		{"confirmed_row_grain_and_fields", "source_discovery", "data.search"},
 		{"confirmed_row_grain_and_fields", "source_discovery", "resource.ancestors.get"},
 		{"confirmed_row_grain_and_fields", "source_discovery", "resource.facts.get"},

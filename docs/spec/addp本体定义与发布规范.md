@@ -182,7 +182,7 @@ FalkorDB 按显式关系投影并查询“能力 → 条件 → 读取入口组 
 
 Skill Runtime 装配用 `platform_routed=true` 声明该任务领域必须经平台语义选择，不在 Agent 维护另一套能力到 Skill 的映射。初始意图分类只决定是否进入该领域，不选择其中的 Skill 或能力；随后 Runtime 经正式 ToolExecutor 读取目录，LLM 根据用户短输入和返回语义选择一个 capability，Runtime 只接受目录中的身份，并核对定义所指 Skill 已装配、Tool 属于其白名单且 owner 与 Manifest 一致。空目录、无匹配或多义时解释限制或要求补充意图，不自动选第一项；目录读取失败终止当前相关请求，不能退回 Skill 描述路由。闲聊与其他尚未纳入平台语义的 Skill 不读取 Ontology，不改变 Ready 依赖。
 
-能力选择通过后仍由领域 Skill 读取当前确定能力上下文、获取真实 owner 资源事实和确认配置；目录不是执行授权，也不是保证后续读取版本不变的票据。Interaction 恢复沿用既有 Skill 与已观察事实，不重新选择能力。当前只纳入 Transfer 创建切片，不据此宣称持续同步、启动、暂停或重试已有平台语义。参数草稿仍可由 LLM 基于事实提出，受控组装的进一步改造不在当前机制实现。
+能力选择通过后仍由领域 Skill 读取当前确定能力上下文、获取真实 owner 资源事实和确认配置；目录不是执行授权，也不是保证后续读取版本不变的票据。Interaction 恢复沿用既有 Skill 与已观察事实，不重新选择能力。当前只纳入 Transfer 创建切片，不据此宣称持续同步、启动、暂停或重试已有平台语义。新 MongoDB 到 PostgreSQL 的快照草稿通过 Transfer 的 `transfer.task.draft.build` 编译。LLM 提交已确认的业务选择，Transfer 读取当前事实并构建完整参数；平台定义通过 `confirmed_row_grain_and_fields → draft_construction` 关联这一入口。原参数仍须正式预检和用户复核，具体覆盖以 Transfer 契约为准。
 
 目录读取记录为现有 Tool step，选择后的 Skill 沿用现有 run state；当前机制不新增专门的能力选择审计或版本绑定。验证使用现有授权、Swagger、Go/Python T1、Ontology PostgreSQL T2 与 Agent 评测入口；不新增权限、基础设施或 CI Job。确定性短输入测试证明代码消费链路，真实 LLM 的短输入验收须另行记录，不能用脚本化模型替代。
 

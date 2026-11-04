@@ -179,7 +179,7 @@ func TestReviewBoundToSnapshotAndNotAgentContext(t *testing.T) {
 	r, _ := s.Review()
 	d, _ := s.Context()
 	contextBytes, _ := json.Marshal(d)
-	if bytes.Contains(contextBytes, []byte("sources")) || bytes.Contains(contextBytes, []byte("coverage")) {
+	if bytes.Contains(contextBytes, []byte(`"sources":`)) || bytes.Contains(contextBytes, []byte(`"coverage":`)) {
 		t.Fatal("review inflated the Agent context")
 	}
 	if len(r.Bindings) != len(ReviewSubjects(d)) || r.Coverage[0].State != "modeled" {

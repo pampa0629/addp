@@ -2,7 +2,7 @@
   "schema_version": "addp.platform-capability-context/v1",
   "knowledge_kind": "platform_definition",
   "capability": "transfer.execution.get",
-  "revision": 2,
+  "revision": 3,
   "digest": "",
   "availability": "not_observed",
   "concepts": [

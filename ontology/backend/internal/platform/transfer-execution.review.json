@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "### 4.8 Transfer 运行审批与执行读取",
-      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
-      "sha256": "b128e88046ae3f6c8983028a117b6f16cfbe45677f6a7e96f494aab5dfadcc93",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "b66d83a390b12b1e8e8cae55850f2a29097c219e2b9a9cc5ac8c2e2625bcba05",
       "use": {
-        "zh-cn": "运行审批、精确委托与受限结果，受理不等于成功",
-        "en": "Owner approval, exact delegation and bounded results; admission is not success"
+        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
+        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
       }
     },
     {
@@ -21,11 +21,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.execution.get\"",
-      "commit": "34faad72da00695f6ee51048651cc39e5f5ca470",
-      "sha256": "23dacb0f99a91e4d1181efcb27d5fc688ac48707cd6da33d198c2881d0af5d83",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "38bd01b60a1b712c74c9ac8ee41652a87bee7584ce576a9d84ffcb6e55707444",
       "use": {
-        "zh-cn": "唯一 Tool 输入输出、风险和权限交集",
-        "en": "Sole Tool input/output, risk and permission intersection"
+        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
+        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
       }
     },
     {
@@ -47,11 +47,11 @@
       "kind": "implementation",
       "path": "common-python/addp_common/client/transfer.py",
       "anchor": "async def get_execution(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "4c7e67d4d651f3e7091892abcd4ba75f21932527edf85b8b892770ed99d0a5e3",
+      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
+      "sha256": "e003f04f491f1d5148c01e9e3d9718e07577870f134c72b44daa21e7566fc99a",
       "use": {
-        "zh-cn": "唯一 HTTP 映射，无启动重试，受限结果投影",
-        "en": "Sole HTTP mapping, no start retry, bounded result projection"
+        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
+        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
       }
     },
     {

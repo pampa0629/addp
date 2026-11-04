@@ -302,7 +302,7 @@ func TestFalkorIntegration(t *testing.T) {
 			"MATCH (a:Definition {id:'requirement:source_discovery'})-[r:Link {kind:'uses_tool'}]->() DELETE r RETURN count(*)",
 			"MATCH (n:Definition {kind:'effect'}) SET n.name='incorrect.effect' RETURN count(*)",
 			"MATCH (:Definition {kind:'condition'})-[r:Link {kind:'reads_via'}]->() DELETE r RETURN count(*)",
-			"MATCH (c:Definition {id:'condition:user_review'}),(r:Definition {id:'requirement:optional_draft_assistance'}) CREATE (c)-[:Link {kind:'reads_via'}]->(r) RETURN count(*)",
+			"MATCH (c:Definition {id:'condition:user_review'}),(r:Definition {id:'requirement:draft_construction'}) CREATE (c)-[:Link {kind:'reads_via'}]->(r) RETURN count(*)",
 		} {
 			snapshot, generation := platformFixture(t), uuid.NewString()
 			p, _ := PlanPlatform(snapshot, generation)
@@ -310,8 +310,12 @@ func TestFalkorIntegration(t *testing.T) {
 			if err := c.Build(ctx, p); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := c.query(ctx, p.key, mutate, nil, false, MaxQueryTime); err != nil {
+			rows, err := c.query(ctx, p.key, mutate, nil, false, MaxQueryTime)
+			if err != nil {
 				t.Fatal(err)
+			}
+			if len(rows) != 1 || len(rows[0]) != 1 || fmt.Sprint(rows[0][0]) == "0" {
+				t.Fatal("tampering fixture did not mutate a dependency", mutate, rows)
 			}
 			if _, err := c.PlatformContext(ctx, snapshot, generation); !errors.Is(err, ErrProtocol) {
 				t.Fatal("mutated dependency accepted", err)
