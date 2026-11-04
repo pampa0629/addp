@@ -316,3 +316,5 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 `get_area`、`get_length`及`split_by_area`遵循[统一量测契约](../../../docs/spec/workflow/矢量算子契约.md#面积长度与面积分流统一契约)：已知投影原单位、有效有限XY，NULL拒绝、EMPTY0保行；面积扣孔洞、周长计全部环，集合/重复部件按原生贡献累加不融合。普通area/length列更新，活动几何重名报错；面积分流复用唯一面积计算，有限非负threshold，large严格大于、small小于等于，每源恰入一端口。
 
 `distance_to`按[距离契约](../../../docs/spec/workflow/矢量算子契约.md#distance_to-活动几何列)逐源计算到目标整体的最近平面距离：双方有效非NULL/整体非EMPTY有限XY及相同已知投影，空目标拒绝，空源仍验全部输入后返回空结果；原单位、源字段（包括已有非活动几何列）及distance更新/几何重名规则保留，不输出最近目标ID或边界距离，不自动修复/投影或补无效距离。
+
+获取边界框 `get_bounds` 只追加原XY四极值，可用已知二维地理/投影CRS；NULL拒绝，合法EMPTY四值为空，活动几何与minx/miny/maxx/maxy重名拒绝，具体以[矢量算子契约](../../../docs/spec/workflow/矢量算子契约.md#获取边界框统一契约)为准。

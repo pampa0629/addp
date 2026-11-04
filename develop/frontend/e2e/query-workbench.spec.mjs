@@ -1420,3 +1420,27 @@ for(const locale of ['zh-cn','en'])for(const [reason,parameter,field]of [["opera
     await page.setViewportSize({width:390,height:844})
     expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
  })
+
+for(const locale of ['zh-cn','en'])for(const [reason,parameter,field]of [["operator_input_invalid", "input_gdf", ""], ["operator_crs_invalid", "", ""], ["operator_geometry_field_conflict", "input_gdf", "minx"], ["operator_geometry_field_conflict", "input_gdf", "miny"], ["operator_geometry_field_conflict", "input_gdf", "maxx"], ["operator_geometry_field_conflict", "input_gdf", "maxy"]])
+ test(`bounds admission diagnostics in develop (${reason}, ${field}, ${locale})`,async({page})=>{
+    await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
+    const details={category:'execution_failed',code:'develop.workflow.invalid_params',message:'PRIVATE_BIZ_FIELD private-password /private/input.gpkg',
+      diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id:'get_bounds',...(parameter?{parameter}:{}),...(field?{field}:{})}}}
+    await installMockBackend(page,{resultKind:'table',executionType:'workflow',locale,errorDetails:details})
+    await page.goto(`/executions/${EXECUTION_ID}`)
+    const panel=page.locator('.execution-failure')
+    const name=locale==='zh-cn'?'获取边界框':'Get bounds'
+    await expect(panel).toContainText(name)
+    await expect(panel).toContainText(locale==='zh-cn'?'定义中的第 2 个节点':'Node 2 in the workflow definition')
+    if(parameter)await expect(panel).toContainText(parameter)
+    if(reason==='operator_input_invalid'){await expect(panel).toContainText('NULL');await expect(panel).toContainText('EMPTY');await expect(panel).toContainText('Z/M')}
+    if(reason==='operator_crs_invalid')await expect(panel).toContainText(locale==='zh-cn'?'地理或投影CRS':'geographic or projected CRS')
+    if(field){await expect(panel).toContainText(field);await expect(panel).toContainText(locale==='zh-cn'?'手动重命名':'Rename')}
+    await expect(panel).not.toContainText('PRIVATE_BIZ_FIELD');await expect(panel).not.toContainText('private-password')
+    await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
+    const copied=await page.evaluate(()=>window.copiedDiagnostic)
+    expect(copied).toContain(name);if(parameter)expect(copied).toContain(parameter)
+    expect(copied).not.toMatch(/PRIVATE_BIZ_FIELD|private-password|\/private\/input.gpkg/)
+    await page.setViewportSize({width:390,height:844})
+    expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
+ })

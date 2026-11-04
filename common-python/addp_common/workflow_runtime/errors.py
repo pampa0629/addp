@@ -18,6 +18,13 @@ class WorkflowExecutionError(RuntimeError):
 
 # Closed protocol tuples; never classify arbitrary exception text as input errors.
 OPERATOR_INPUT_RULES = {
+    ('get_bounds', 'operator_input_invalid', ''): 'input_gdf',
+    ('get_bounds', 'operator_crs_invalid', ''): '',
+    ('get_bounds', 'operator_geometry_field_conflict', 'minx'): 'input_gdf',
+    ('get_bounds', 'operator_geometry_field_conflict', 'miny'): 'input_gdf',
+    ('get_bounds', 'operator_geometry_field_conflict', 'maxx'): 'input_gdf',
+    ('get_bounds', 'operator_geometry_field_conflict', 'maxy'): 'input_gdf',
+
     ('get_area', 'operator_input_invalid', ''): 'input_gdf',
     ('get_area', 'operator_crs_invalid', ''): '',
     ('get_area', 'operator_geometry_field_conflict', 'area'): 'input_gdf',

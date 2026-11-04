@@ -6,8 +6,9 @@
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import shapely
-from .geometric_operators import _geometry_for_output, _unary_frame_geometry, _finite_xy_geometry, _require_projected_xy_crs, _finite_real_scalar
+from .geometric_operators import _unary_frame_geometry, _finite_xy_geometry, _require_projected_xy_crs, _finite_real_scalar
 from .base import (
     OperatorType,
     OperatorMetadata, OperatorParam, OperatorCategory, register_operator
@@ -99,23 +100,61 @@ def get_length(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return _measure(input_gdf, 'length')
 
 
+class BoundsInputError(ValueError):
+    """Closed coordinate-bounds admissions, separate from native failures."""
+    _messages = {
+        'zh-cn': {
+            'source': '边界框要求唯一列名及活动几何，几何须有效且为有限二维XY；NULL拒绝，合法EMPTY保行且四值为空。请先显式整理源图层，不接受Z/M。',
+            'crs': '边界框要求已知二维地理或投影CRS；未知、地心、三维及复合CRS拒绝。不投影、换单位或交换XY，不计算日期变更线环绕范围。',
+            'field': '活动几何列{field}与固定边界框结果列冲突；请先手动重命名几何列，不自动改名或覆盖几何。',
+        },
+        'en': {
+            'source': 'Bounds require unique column names, an active geometry and valid finite XY geometries; NULL is rejected, while valid EMPTY rows retain four null values. Prepare the source explicitly; Z/M is rejected.',
+            'crs': 'Bounds require a known two-dimensional geographic or projected CRS; unknown, geocentric, 3D and compound CRS are rejected. No projection, unit conversion, XY swapping or antimeridian wrapping is performed.',
+            'field': 'Active geometry column {field} conflicts with a fixed bounds output; rename the geometry column manually first, without automatic renaming or geometry replacement.',
+        },
+    }
+
+    def __init__(self, code, field=''):
+        self.code, self.field = code, field
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code].format(field=self.field)
+
+
 def get_bounds(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    获取边界框（minx, miny, maxx, maxy）
-
-    Args:
-        input_gdf: 输入 GeoDataFrame
-
-    Returns:
-        GeoDataFrame 副本，追加或更新 minx、miny、maxx、maxy 四列，保留源几何和其他属性
-    """
-    geometry = _geometry_for_output(input_gdf, ('minx', 'miny', 'maxx', 'maxy'))
+    """Return per-source original XY bounds, retaining EMPTY as four nulls."""
+    try:
+        if not isinstance(input_gdf, gpd.GeoDataFrame) or not input_gdf.columns.is_unique:
+            raise ValueError('bounds require a GeoDataFrame with unique column names')
+        geometry = _finite_xy_geometry(input_gdf)
+        if geometry.isna().any() or not shapely.is_valid(geometry.array).all():
+            raise ValueError('bounds require valid non-missing geometry')
+    except (ValueError, TypeError) as exc:
+        raise BoundsInputError('source') from exc
+    fields = ('minx', 'miny', 'maxx', 'maxy')
+    if geometry.name in fields:
+        raise BoundsInputError('field', geometry.name)
+    crs = geometry.crs
+    if crs is None or crs.is_compound or len(crs.axis_info) != 2 or not (crs.is_geographic or crs.is_projected):
+        raise BoundsInputError('crs')
     result = input_gdf.copy()
-    bounds = geometry.bounds
-    result['minx'] = bounds['minx']
-    result['miny'] = bounds['miny']
-    result['maxx'] = bounds['maxx']
-    result['maxy'] = bounds['maxy']
+    if len(geometry) == 0:
+        for field in fields:
+            result[field] = pd.array([], dtype='Float64')
+        return result
+    values = np.asarray(shapely.bounds(geometry.array))
+    if values.shape != (len(geometry), 4) or values.dtype.kind not in 'fiu':
+        raise RuntimeError('bounds produced an invalid scalar matrix')
+    values = values.astype(float)
+    empty = shapely.is_empty(geometry.array)
+    if (not np.isnan(values[empty]).all() or not np.isfinite(values[~empty]).all()
+            or (values[~empty, 0] > values[~empty, 2]).any()
+            or (values[~empty, 1] > values[~empty, 3]).any()):
+        raise RuntimeError('bounds produced invalid or non-finite extrema')
+    for i, field in enumerate(fields):
+        result[field] = pd.arrays.FloatingArray(values[:, i].copy(), empty.copy())
     return result
 
 
@@ -249,7 +288,9 @@ GET_BOUNDS_METADATA = OperatorMetadata(
         "读取实际活动几何列；几何列名与四个输出名冲突时先显式重命名",
         "返回保留源几何和其他属性的GeoDataFrame副本，追加或更新minx、miny、maxx、maxy四列",
         "边界框是轴对齐矩形,不随几何旋转",
-        "坐标单位与输入坐标系一致",
+        "已知二维地理或投影CRS，沿原存储XY与单位，不交换轴/投影/日期变更线环绕；未知/地心/三维/复合CRS拒绝",
+        "NULL拒绝，合法EMPTY保行且四个Float64结果均为空值；有效有限XY，拒绝Z/M，不以0替代空范围",
+        "保留原几何、其它属性和索引；点/水平/垂直线允许对应极值相等，不扩宽或舍入",
         "点的边界框minx=maxx, miny=maxy"
     ],
 

@@ -9219,3 +9219,161 @@ def test_distance_admission_preserves_inactive_geometry_typed_columns_and_uses_o
     assert result['distance'].tolist()==[5.,10.]
     assert_geodataframe_equal(result.drop(columns='distance'),source)
     assert_geodataframe_equal(source,before_source);assert_geodataframe_equal(target,before_target)
+
+
+BOUNDS_FIELDS = ['minx','miny','maxx','maxy']
+BOUNDS_CASES = [('operator_input_invalid','input_gdf',''),('operator_crs_invalid','','')]+[('operator_geometry_field_conflict','input_gdf',f)for f in BOUNDS_FIELDS]
+
+
+def bounds_admission_source(shapes,crs='EPSG:3857'):
+    f=gpd.GeoDataFrame({'geometry':pd.array(['business']*len(shapes),dtype='string'),
+       'grade':pd.array([None if i%2==0 else 2**53+i for i in range(len(shapes))],dtype='Int64'),
+       'enabled':pd.array([None if i%2==0 else True for i in range(len(shapes))],dtype='boolean'),
+       'shape':gpd.GeoSeries(shapes,crs=crs)},geometry='shape')
+    f.index=pd.Index(['duplicate']*len(f),name='source-row')
+    return f
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:2263','EPSG:4326','OGC:CRS84','+proj=aeqd +lat_0=23 +lon_0=113 +datum=WGS84 +units=m +no_defs'])
+def test_bounds_admission_raw_xy_all_parts_degeneracies_and_empty(crs):
+    shapes=[Point(2,3),LineString([(-4,2),(7,2)]),LineString([(5,-2),(5,8)]),
+      Polygon([(0,0),(4,0),(4,4),(0,4),(0,0)], [[(1,1),(2,1),(2,2),(1,2),(1,1)]]),
+      shapely.MultiPoint([(-179,3),(179,-3)]),shapely.GeometryCollection([Point(),Point(-7,9),LineString([(-5,3),(8,-4)])]),Point(),Polygon(),shapely.GeometryCollection()]
+    source=bounds_admission_source(shapes,crs);source['minx']='replace';source['maxy']=-99
+    source['inactive_shape']=gpd.GeoSeries([Point(999,999)]*len(source),index=source.index,crs=crs)
+    before=source.copy(deep=True);result=get_operator('get_bounds')(source)
+    expected=[[2,3,2,3],[-4,2,7,2],[5,-2,5,8],[0,0,4,4],[-179,-3,179,3],[-7,-4,8,9]]
+    assert result[BOUNDS_FIELDS].iloc[:6].values.tolist()==expected
+    assert result[BOUNDS_FIELDS].iloc[6:].isna().all().all()
+    assert all(str(result[f].dtype)=='Float64'for f in BOUNDS_FIELDS)
+    assert_geodataframe_equal(source,before)
+    assert_geodataframe_equal(result.drop(columns=BOUNDS_FIELDS),source.drop(columns=['minx','maxy']))
+    from workflow_engine import _project
+    projected=_project(get_operator('get_bounds')(source.drop(columns='inactive_shape')))
+    assert all(feature['properties'][f]is None for feature in projected['features'][6:]for f in BOUNDS_FIELDS)
+    json.dumps(projected,allow_nan=False)
+
+
+@pytest.mark.parametrize('problem',['null','invalid','z','m','inf','nan','duplicate_columns','no_active','not_geoframe'])
+def test_bounds_admission_rejects_bad_source_atomically(problem):
+    from operators.properties_operators import BoundsInputError
+    shape={'null':None,'invalid':Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]),'z':Point(1,2,3),
+      'm':shapely.from_wkt('POINT M (1 2 3)'),'inf':Point(float('inf'),1),'nan':Point(float('nan'),1)}.get(problem,Point(1,2))
+    source=bounds_admission_source([Point(0,0),shape])
+    if problem=='duplicate_columns':source.columns=['geometry','grade','grade','shape']
+    elif problem=='no_active':source=source.drop(columns='shape')
+    elif problem=='not_geoframe':source=pd.DataFrame(source)
+    before=source.copy(deep=True)
+    with pytest.raises(BoundsInputError)as caught:get_operator('get_bounds')(source)
+    assert caught.value.code=='source'
+    pd.testing.assert_frame_equal(source,before)
+
+
+@pytest.mark.parametrize('crs',[None,'EPSG:4978','EPSG:4979','EPSG:7415'])
+@pytest.mark.parametrize('empty',[False,True])
+def test_bounds_admission_rejects_unknown_geocentric_3d_compound_crs(crs,empty):
+    from operators.properties_operators import BoundsInputError
+    source=bounds_admission_source([]if empty else[Point(1,2)],crs)
+    with pytest.raises(BoundsInputError)as caught:get_operator('get_bounds')(source)
+    assert caught.value.code=='crs'
+
+
+@pytest.mark.parametrize('field',BOUNDS_FIELDS)
+@pytest.mark.parametrize('empty',[False,True])
+def test_bounds_admission_active_field_conflicts_never_overwrite_geometry(field,empty):
+    from operators.properties_operators import BoundsInputError
+    source=bounds_admission_source([]if empty else[Point(1,2)]).rename_geometry(field);before=source.copy(deep=True)
+    with pytest.raises(BoundsInputError)as caught:get_operator('get_bounds')(source)
+    assert caught.value.code=='field'and caught.value.field==field
+    assert_geodataframe_equal(source,before)
+
+
+def test_bounds_admission_empty_batch_four_nullable_columns_and_metadata():
+    source=bounds_admission_source([],'OGC:CRS84');result=get_operator('get_bounds')(source)
+    assert len(result)==0 and all(str(result[f].dtype)=='Float64'for f in BOUNDS_FIELDS)
+    assert result.crs==source.crs and result.geometry.name=='shape'
+    meta=next(m for m in list_operators()if m['name']=='get_bounds')
+    assert meta['execution_modes']==['workflow']and meta['effects']==['read']
+    assert any('EMPTY' in n and 'NULL' in n for n in meta['detailed_description']['notes'])
+
+
+@pytest.mark.parametrize('fault',['raise','shape','rows','bool','text','nan','inf','reversed_x','reversed_y','empty_not_nan'])
+def test_bounds_admission_native_faults_remain_execution_failures(fault,monkeypatch):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    import workflow_engine
+    source=bounds_admission_source([Point(1,2),Point()]);native=shapely.bounds
+    def bad(*args):
+        if fault=='raise':raise RuntimeError('PRIVATE GEOS')
+        values=native(*args).copy()
+        if fault=='shape':return values[:,:3]
+        if fault=='rows':return values[:1]
+        if fault=='bool':return np.zeros((2,4),dtype=bool)
+        if fault=='text':return values.astype(str)
+        if fault in ['nan','inf']:values[0,0]=float(fault)
+        if fault=='reversed_x':values[0,0]=2
+        if fault=='reversed_y':values[0,1]=3
+        if fault=='empty_not_nan':values[1]=0
+        return values
+    monkeypatch.setattr(shapely,'bounds',bad)
+    lookup=workflow_engine.get_operator
+    def guarded(name):
+        if name=='load':return lambda **kw:source
+        if name=='save':raise AssertionError('invalid bounds reached save')
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    tasks=[{'id':'load','operator':'load','params':{},'depends_on':[]},
+      {'id':'get','operator':'get_bounds','params':{'input_gdf':{'$ref':'load'}},'depends_on':['load']},
+      {'id':'save','operator':'save','params':{},'depends_on':['get']}]
+    with pytest.raises(WorkflowExecutionError)as caught:workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':tasks})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('reason,parameter,field',BOUNDS_CASES)
+def test_bounds_admission_runtime_frozen_diagnostic_and_no_save(language,reason,parameter,field,monkeypatch):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    import workflow_engine
+    source=bounds_admission_source([Point(1,2)])
+    if reason=='operator_input_invalid':source['shape']=[None]
+    elif reason=='operator_crs_invalid':source=source.set_crs(None,allow_override=True)
+    else:source=source.rename_geometry(field)
+    lookup=workflow_engine.get_operator;calls=[]
+    def guarded(name):
+        calls.append(name)
+        if name=='load':return lambda **kw:source
+        if name=='save':raise AssertionError('bounds refusal reached save')
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    tasks=[{'id':'PRIVATE','operator':'get_bounds','params':{'input_gdf':{'$ref':'load'}},'depends_on':['load']},
+      {'id':'load','operator':'load','params':{},'depends_on':[]}, {'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]
+    with pytest.raises(WorkflowExecutionError)as caught:workflow_engine.GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert calls==['load','get_bounds']and caught.value.error_code=='INVALID_PARAMS'
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+      'operator':{'node_index':1,'operator_id':'get_bounds',**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}}
+    assert 'PRIVATE'not in json.dumps(caught.value.diagnostic)
+    from operators.properties_operators import BoundsInputError
+    code={'operator_input_invalid':'source','operator_crs_invalid':'crs','operator_geometry_field_conflict':'field'}[reason]
+    assert BoundsInputError(code,field).message(language) in str(caught.value)
+
+
+def test_bounds_admission_real_geopackage_null_scalars_geometry_and_attributes(tmp_path):
+    from osgeo import ogr
+    source=bounds_admission_source([box(-4,2,7,9),Polygon()]);before=source.copy(deep=True)
+    result=get_operator('get_bounds')(source)
+    conn={'storage_type':'nfs','mount_path':str(tmp_path)}
+    get_operator('save')(input_df=result,connection_info=conn,path='bounds.gpkg',mode='fail')
+    ds=ogr.Open(str(tmp_path/'bounds.gpkg'));layer=ds.GetLayer(0)
+    assert layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    rows=list(layer);assert len(rows)==2
+    assert [rows[0].GetField(f)for f in BOUNDS_FIELDS]==[-4,2,7,9]
+    assert all(rows[1].GetField(f)is None for f in BOUNDS_FIELDS)
+    assert all(layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex(f)).GetType()==ogr.OFTReal for f in BOUNDS_FIELDS)
+    for i,row in enumerate(rows):
+        assert row.GetField('geometry')=='business'and row.GetField('grade')==[None,2**53+1][i]
+        assert bytes(row.GetGeometryRef().ExportToIsoWkb())==source.geometry.to_wkb(byte_order=1,flavor='iso').iloc[i]
+    physical_geometry_name=layer.GetGeometryColumn();ds=None
+    loaded=get_operator('load')(connection_info=conn,path='bounds.gpkg')
+    assert loaded[BOUNDS_FIELDS].iloc[0].tolist()==[-4,2,7,9]and loaded[BOUNDS_FIELDS].iloc[1].isna().all()
+    assert loaded.geometry.to_wkb().tolist()==source.geometry.to_wkb().tolist()
+    assert loaded.geometry.name==physical_geometry_name and loaded.crs==source.crs
+    assert_geodataframe_equal(source,before)

@@ -576,3 +576,42 @@ func TestDistanceAdmissionDiagnosticsBindSourceTargetAndOriginalDefinition(t *te
 		}
 	}
 }
+
+func TestBoundsAdmissionDiagnosticsBindFieldsAndOriginalDefinition(t *testing.T) {
+	rows := []struct{ reason, parameter, field string }{
+		{"operator_input_invalid", "input_gdf", ""},
+		{"operator_crs_invalid", "", ""},
+		{"operator_geometry_field_conflict", "input_gdf", "minx"},
+		{"operator_geometry_field_conflict", "input_gdf", "miny"},
+		{"operator_geometry_field_conflict", "input_gdf", "maxx"},
+		{"operator_geometry_field_conflict", "input_gdf", "maxy"},
+	}
+	for _, row := range rows {
+		context := map[string]interface{}{"node_index": 1, "operator_id": "get_bounds"}
+		if row.parameter != "" {
+			context["parameter"] = row.parameter
+		}
+		if row.field != "" {
+			context["field"] = row.field
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": row.reason, "operator": context}
+		raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+		frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "PRIVATE", "operator": "get_bounds", "depends_on": []string{"load"}}, map[string]interface{}{"id": "load", "operator": "load"}}}
+		if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] == nil || got["code"] != "develop.workflow.invalid_params" {
+			t.Fatalf("lost bounds context %+v", got)
+		}
+		for _, patch := range []map[string]interface{}{{"field": "PRIVATE_FIELD"}, {"parameter": "reference_gdf"}, {"node_index": 2}, {"node_index": true}, {"node_id": "PRIVATE"}, {"operator_id": "unknown_bounds"}} {
+			forged := map[string]interface{}{}
+			for k, v := range context {
+				forged[k] = v
+			}
+			for k, v := range patch {
+				forged[k] = v
+			}
+			diagnostic["operator"] = forged
+			if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] != nil {
+				t.Fatalf("trusted wrong bounds context %+v", got)
+			}
+		}
+	}
+}

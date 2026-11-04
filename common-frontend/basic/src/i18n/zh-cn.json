@@ -452,7 +452,8 @@
         "distance_to": "距离计算",
         "check_line_proximity": "近接检查",
         "extract_polygon_rings": "面界提取",
-        "intersection": "相交叠加"
+        "intersection": "相交叠加",
+        "get_bounds": "获取边界框"
       },
       "operatorParameters": {
         "target_geom": "目标图层（target_geom）",
@@ -468,6 +469,18 @@
         "resolution": "圆弧段数（resolution）",
         "tolerance": "容差（tolerance）",
         "gdf_b": "图层 B（gdf_b）"
+      },
+      "bounds": {
+        "reasons": {
+          "operator_input_invalid": "源活动几何须有效、有限二维XY；NULL拒绝，合法EMPTY保行且四个边界值为空。",
+          "operator_crs_invalid": "边界框要求已知二维地理或投影CRS，拒绝未知、地心、三维和复合CRS。",
+          "operator_geometry_field_conflict": "活动几何列 {field} 与固定边界框结果字段冲突。"
+        },
+        "actions": {
+          "operator_input_invalid": "请显式整理源图层；列名必须唯一，拒绝Z/M或非有限坐标，不跳过坏行，也不将EMPTY范围填0。",
+          "operator_crs_invalid": "请先显式设置正确的二维CRS；结果沿原XY及单位，不自动投影、换单位、交换轴或做日期变更线环绕。",
+          "operator_geometry_field_conflict": "请先手动重命名活动几何列 {field}；普通同名结果列更新，不自动改名或覆盖几何。"
+        }
       }
     },
     "executionSteps": {

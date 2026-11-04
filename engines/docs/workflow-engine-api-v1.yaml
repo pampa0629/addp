@@ -876,14 +876,20 @@ components:
               description: 原workflow_def.tasks的1起始位置，不是拓扑调度顺序。
             operator_id:
               type: string
-              enum: [get_area, get_length, split_by_area, envelope, representative_point, centroid, convex_hull, minimum_rotated_rectangle, simplify, buffer, voronoi, contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
+              enum: [get_bounds, get_area, get_length, split_by_area, envelope, representative_point, centroid, convex_hull, minimum_rotated_rectangle, simplify, buffer, voronoi, contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
             parameter:
               type: string
               enum: [target_geom, threshold, input_gdf, reference_gdf, preserve_topology, distance, distances, resolution, tolerance, max_distance, gdf_b, mask_gdf, group_fields]
             field:
               type: string
-              enum: [area, length, distance, source_id, part_no, ring_no, ring_id, is_hole, node_id, degree, source_part_no, end]
+              enum: [minx, miny, maxx, maxy, area, length, distance, source_id, part_no, ring_no, ring_id, is_hole, node_id, degree, source_part_no, end]
       x-addp-operator-input-rules:
+        - ["get_bounds", "operator_input_invalid", "input_gdf", ""]
+        - ["get_bounds", "operator_crs_invalid", "", ""]
+        - ["get_bounds", "operator_geometry_field_conflict", "input_gdf", "minx"]
+        - ["get_bounds", "operator_geometry_field_conflict", "input_gdf", "miny"]
+        - ["get_bounds", "operator_geometry_field_conflict", "input_gdf", "maxx"]
+        - ["get_bounds", "operator_geometry_field_conflict", "input_gdf", "maxy"]
         - ["get_area", "operator_input_invalid", "input_gdf", ""]
         - ["get_area", "operator_crs_invalid", "", ""]
         - ["get_area", "operator_geometry_field_conflict", "input_gdf", "area"]
