@@ -87,12 +87,12 @@ class MetricsSourcesTest(unittest.TestCase):
         code, _, mocks = self.invoke('up', ['host'], apply={})
         self.assertEqual(code, 0); mocks['apply'].assert_not_called()
 
-    def test_recovery_never_uses_installation_for_unsupported_kinds(self):
+    def test_recovery_requires_explicit_host_selection(self):
         env = {value[1]+'_ENABLED':'true' for value in manager.PROVIDERS.values()}
         code, output, mocks = self.invoke('recover', env=env, apply={'return_value':'已恢复'})
-        self.assertEqual(code, 1)
-        self.assertEqual([(call.args[0],call.args[1],call.args[2]) for call in mocks['apply'].call_args_list], [(a,k,s) for s in ('infra','business') for k in ('postgresql','redis','minio') for a in ('recover',)])
-        self.assertIn('尚不支持无账号修改恢复', output)
+        self.assertEqual(code, 0)
+        self.assertEqual([(call.args[0],call.args[1],call.args[2]) for call in mocks['apply'].call_args_list], [('recover',kind,scope) for scope,kind in manager.selection((),()) if scope!='host'])
+        self.assertIn('主机须显式指定 --scope host',output)
 
     def test_invalid_selection_never_blocks_shutdown_or_other_sources(self):
         env = {'ADDP_POSTGRES_METRICS_ENABLED':'invalid'}
@@ -136,15 +136,26 @@ class MetricsSourcesTest(unittest.TestCase):
             manager.apply('up','postgresql','business',{})
 
     def test_image_recovery_failure_is_actionable_without_echoing_provider_output(self):
-        for kind in ('redis','minio'):
-            result=subprocess.CompletedProcess([],1,'private-output','[reason=source-image-unavailable] private-password')
+        for kind in ('redis','minio','node'):
+            result=subprocess.CompletedProcess([],1,'private-output','[reason=source-image-unavailable] [cleanup=failed] private-password')
             with patch.object(manager.subprocess,'run',return_value=result),self.assertRaisesRegex(ValueError,'原采集镜像不可用.*重新构建') as error:
                 manager.apply('recover',kind,'infra',{})
             self.assertNotIn('private',str(error.exception))
+            self.assertIn('清理未确认',str(error.exception))
         result=subprocess.CompletedProcess([],1,'','[reason=private-password]')
         with patch.object(manager.subprocess,'run',return_value=result),self.assertRaises(ValueError) as error:
             manager.apply('recover','minio','infra',{})
         self.assertEqual(str(error.exception),'操作失败')
+
+    def test_host_recovery_uses_provider_and_closed_proof_diagnosis(self):
+        code, output, calls = self.invoke('recover',['host'],['node'],env={'ADDP_NODE_METRICS_ENABLED':'true'},apply={'return_value':'已检查／恢复'})
+        self.assertEqual(code,0)
+        calls['apply'].assert_called_once_with('recover','node','host',{'ADDP_NODE_METRICS_ENABLED':'true'})
+        for reason in ('node-proof-unavailable','node-installation-changed'):
+            result = subprocess.CompletedProcess([],1,'private-output','[reason='+reason+'] private-password')
+            with patch.object(manager.subprocess,'run',return_value=result),self.assertRaisesRegex(ValueError,'安装证明.*显式执行 up') as error:
+                manager.apply('recover','node','host',{})
+            self.assertNotIn('private',str(error.exception))
 
     def test_standard_lifecycles_use_one_coordinator(self):
         infra = (ROOT/'scripts/infra/up.sh').read_text()

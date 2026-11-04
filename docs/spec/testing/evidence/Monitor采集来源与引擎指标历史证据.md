@@ -693,3 +693,14 @@ Redis核验精确启用ACL、已提交持久记录、密码摘要及私有安装
 用户再次执行`python3 scripts/infra/metrics-sources.py recover --scope infra --kind minio`，实际输出“来源运行正常，未重建（采集待验证）”，一项失败0；作为用户执行的本机实操证据，证明命令到达健康复用成功分支。后续本会话只读核验来源唯一且Running，当前来源StartedAt为2026-11-03T22:10:21.519864215Z；Prometheus同端口唯一目标UP，完整目标标签查询在线盘1，observed_at实际快照距今12.75秒。收据/tmp/addp-minio-healthy-recover-20261104.json。无该命令执行前的容器ID收据，因此不虚称独立工具前后逐字段对照，未重建依据为用户真实命令输出，采集正常依据为后续独立只读核验。
 
 此前新镜像／mTLS／Safari真实值与容量／请求曲线交互证据继续有效，本项只补齐健康recover用户实操及其后采集新鲜度，不重跑既有T1/T2或扩大为跨Docker停机故障恢复／全部来源已验。本轮仅文档与只读取证，git diff --check通过；个人服务未启停，CI／Hosted仍等专门会话回传，无定时任务。后续优先补统一管理的主机来源恢复边界，保持主机显式选择与现有安全部署约束。
+
+
+### 主机来源显式安全恢复（2026-11-04）
+
+按已确认的统一管理方向，先修订正式观测规范，再接通主机recover。标准up在仓库外工作区私有目录保存安装证明，与up／down／recover共用非阻塞锁；down或失败up使旧证明失效。证明核对Engine／内核、活动模板及证书内容和文件身份、完整容器集合、镜像ID、权限／资源／挂载配置、网络身份及可选容量卷，不读取Config.Env、不保存私钥内容。恢复只启动完全匹配证明的既有停止容器；健康来源不改动，只有容量采样器停止则只启动采样器。缺失／停用证明、缺失来源、镜像丢失或安装漂移均拒绝，不收养旧部署、不构建或重建来源。启动回执丢失／中断的清理只停止本轮启动的原停止容器，并保留清理未确认提示。统一入口删除原Node不支持分支；只有显式--scope host才恢复主机，默认批量recover和全量ADDP启动均不恢复主机。
+
+最终本地标准验证：`make test-metrics-sources test-monitor-metrics-config test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=node-recovery`退出0；共享恢复7项、主机14项、编排17项、启动守卫2项、配置136项通过。原生／Desktop输入签名、缺失／停用／漂移、私有文件与锁、镜像丢失、失败清理、Ctrl-C清理及其他操作已启动来源的保留均有T1覆盖。最终日志`/tmp/addp-node-recovery-final.log`。`make test-infra-runtime-log-lifecycle`及其HTTP／Trace runner、175项登记、145项生命周期回归通过；`make test-t2-ci-registration`的78项登记、9项runner及实际登记检查退出0。新增四个实现／测试输入均通过现有affected_modules矩阵验证选择Monitor，Release指标矩阵增加node-recovery，未触发或轮询远端CI。
+
+新T2复用正式node_exporter、容量采样器和固定镜像，只在随机独占项目使用桥接命名空间、回环随机端口及受限私有tmpfs卷；不使用宿主根／proc／sys绑定、host网络／PID或Docker Socket。实际证明健康容器与证明文件不变、仅采样器停止恢复、两容器全部停止恢复、真实start生效但回执丢失时回收本轮采样器且保留原健康exporter；恢复后内存和容量成功指标经严格mTLS可读，容器与网络／卷身份不变。证书漂移、删除采样器及安装退役均拒绝，已有exporter和容量卷保持；退出容器／网络／卷／临时私有状态清零。夹具编写期间曾因本机缺少默认OpenSSL配置、测试环境漏带PATH及新证书缺少严格X.509扩展失败；已限定命令环境并补全证书扩展后原TLS校验通过，未修改系统配置或放宽验证。
+
+T2通过的是受限桥接夹具中的真实恢复事务；其测试签名明确记录夹具文件，不冒充生产原生／Desktop输入签名联调。生产签名由T1覆盖，本机个人标准up生成证明及恢复后Monitor页面尚未操作，原生Linux宿主挂载实机恢复、CI／Hosted尚未验收。本机统一主机check一项失败0仅证明部署输入检查通过。个人服务／数据库／配置／凭据未改，未设置定时任务。下一步由部署者显式应用一次主机来源生成证明，再复验健康recover与Monitor真实采集。

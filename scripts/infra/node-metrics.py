@@ -1,16 +1,22 @@
 """Explicit Linux node / Docker Desktop VM metrics; independent of the center."""
 import argparse
+import hashlib
+import importlib.util
 import ipaddress
 import json
 import os
 from pathlib import Path
 import platform
 import re
+import stat
 import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = 'addp-node-metrics'
+_spec = importlib.util.spec_from_file_location('node_recovery', Path(__file__).with_name('node-recovery.py'))
+recovery = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(recovery)
 
 
 def deployment(env):
@@ -115,7 +121,45 @@ def write_admission(value):
     print(serialized)
 
 
-def run(action, env, *, node_kind=None, display_name=None, addresses=(), host_only=False, modules=()):
+def installation_inputs(env, docker):
+    directory = deployment(env)
+    if directory is None: raise ValueError('Node recovery requires explicit enablement')
+    capacity = capacity_enabled(env)
+    info = json.loads(docker.run(['info', '--format',
+        '{"id":{{json .ID}},"kernel":{{json .KernelVersion}},"os":{{json .OperatingSystem}},"type":{{json .OSType}}}']))
+    # Docker transport has already verified the local Unix endpoint.
+    runtime = deployment_runtime(platform.system(), info['kernel'], 'unix:///', info['os'])
+    if info['type'] != 'linux' or runtime == 'linux' and info['kernel'] != platform.release():
+        raise ValueError('Node recovery Docker kernel changed')
+    names = ['node-metrics.yml', f'node-metrics-{runtime}.yml', 'node-metrics-web.yml']
+    if capacity:
+        names += ['node-block-capacity.yml', 'block-capacity.py']
+        if runtime == 'linux': names.append('node-block-capacity-linux.yml')
+    def fingerprint(path):
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= 1 << 20:
+                raise ValueError('Invalid node recovery input')
+            digest = hashlib.sha256(stream.read((1 << 20) + 1)).hexdigest()
+            fields = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns, value.st_mode, value.st_uid, value.st_gid)
+            if fields(before) != fields(os.fstat(stream.fileno())) or fields(before) != fields(path.stat()):
+                raise ValueError('Node recovery input changed while reading')
+        return {'sha256':digest, 'metadata':list(fields(before))}
+    return {'engine':info, 'runtime':runtime, 'capacity':capacity,
+            'listen':env['ADDP_NODE_METRICS_LISTEN'], 'tls_directory':str(directory.resolve()),
+            'templates':{name:fingerprint(ROOT/'scripts/infra'/name) for name in names},
+            'tls':{name:fingerprint(directory/name) for name in ('ca.crt','server.crt','server.key')}}
+
+
+def run(action, env, **options):
+    if action in ('up', 'down', 'recover'):
+        if any(options.values()): raise ValueError('Admission options require export-admission')
+        if action != 'up' or deployment(env) is not None:
+            return recovery.manage(action, env, PROJECT, installation_inputs, lambda: _run(action, env))
+    return _run(action, env, **options)
+
+
+def _run(action, env, *, node_kind=None, display_name=None, addresses=(), host_only=False, modules=()):
     if (host_only or modules) and action != 'export-admission':
         raise ValueError('Admission options require export-admission')
     if host_only:
@@ -208,7 +252,7 @@ def run(action, env, *, node_kind=None, display_name=None, addresses=(), host_on
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('up', 'down', 'status', 'export-admission'))
+    parser.add_argument('action', choices=('up', 'down', 'status', 'recover', 'export-admission'))
     parser.add_argument('--host-only', action='store_true', help='Export the current native host without Docker or host collection')
     parser.add_argument('--module', action='append', default=[], help='Explicit ADDP module allowed on this host')
     parser.add_argument('--node-kind', choices=('physical', 'virtual'))
@@ -219,5 +263,10 @@ if __name__ == '__main__':
         parser.error('Host attributes are only accepted for export-admission')
     try:
         run(args.action, os.environ, node_kind=args.node_kind, display_name=args.display_name, addresses=args.address, host_only=args.host_only, modules=args.module)
-    except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
-        sys.exit('Node metrics deployment rejected; check deployment environment, explicit inputs and project ownership')
+    except KeyboardInterrupt as error:
+        sys.exit('Node metrics interrupted'+(' [cleanup=failed]' if getattr(error,'node_recovery_cleanup_failed',False) else ''))
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        cleanup = ' [cleanup=failed]' if getattr(error, 'node_recovery_cleanup_failed', False) else ''
+        reason = getattr(error, 'node_recovery_reason', '')
+        reason = ' [reason='+reason+']' if reason in ('node-proof-unavailable', 'node-installation-changed', 'source-image-unavailable') else ''
+        sys.exit('Node metrics deployment rejected'+reason+cleanup+'; check deployment environment, explicit inputs and project ownership')

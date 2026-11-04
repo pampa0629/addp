@@ -1168,7 +1168,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
         cases = re.search(r'^  monitor-metrics-cases:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
         self.assertIn('fail-fast: false', cases)
-        self.assertIn('case: [postgres-source, directory-publication, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, block-capacity]', cases)
+        self.assertIn('case: [postgres-source, directory-publication, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, block-capacity, node-recovery]', cases)
         self.assertIn('timeout-minutes: 20', cases)
         self.assertIn('MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}', cases)
         self.assertEqual(cases.count('run: make test-monitor-metrics\n'), 1)
@@ -1734,6 +1734,10 @@ node_spec.loader.exec_module(node_config)
 
 class NodeMetricsDeploymentTest(unittest.TestCase):
     def setUp(self):
+        # This class tests original Compose configuration; proof transactions have
+        # their own isolated tests and must never publish personal state here.
+        transaction = mock.patch.object(node_config.recovery, 'manage', side_effect=lambda action,env,project,signature,operation:operation())
+        transaction.start(); self.addCleanup(transaction.stop)
         self.temp = tempfile.TemporaryDirectory(prefix='addp-node-config-')
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
@@ -2562,6 +2566,8 @@ if __name__ == '__main__':
 
 class BlockCapacitySamplerTest(unittest.TestCase):
     def setUp(self):
+        transaction = mock.patch.object(node_config.recovery, 'manage', side_effect=lambda action,env,project,signature,operation:operation())
+        transaction.start(); self.addCleanup(transaction.stop)
         spec = importlib.util.spec_from_file_location('block_capacity', ROOT / 'scripts/infra/block-capacity.py')
         self.sampler = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.sampler)

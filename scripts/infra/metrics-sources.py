@@ -118,15 +118,18 @@ def apply(action, kind, scope, env):
     result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=600)
     # Provider logs may contain deployment information. Publish closed stages only.
     if result.returncode:
+        cleanup = '；清理未确认' if '[cleanup=failed]' in result.stderr else ''
         reason = re.search(r'\[reason=([a-z-]+)\]', result.stderr)
         if reason and reason[1] == 'source-image-unavailable':
-            raise ValueError('操作失败：原采集镜像不可用；请通过标准指标启动入口重新构建并应用来源')
+            raise ValueError('操作失败：原采集镜像不可用；请通过标准指标启动入口重新构建并应用来源'+cleanup)
+        if reason and reason[1] in {'node-proof-unavailable', 'node-installation-changed'}:
+            raise ValueError('操作失败：主机安装证明缺失、停用或配置已变化；请显式执行 up 重新应用'+cleanup)
         stage = re.search(r'\[stage=([a-z-]+)\]', result.stderr)
         detail = ('；阶段 '+stage[1]) if stage and stage[1] in {
             'session-check', 'transport-check', 'private-state', 'authentication-read', 'account-install',
             'authentication-update', 'account-enable', 'connection-check', 'source-files', 'identity-recheck',
             'source-start', 'source-health'} else ''
-        raise ValueError('操作失败'+detail+('；清理未确认' if '[cleanup=failed]' in result.stderr else ''))
+        raise ValueError('操作失败'+detail+cleanup)
     if action == 'recover':
         if 'healthy; source unchanged' in result.stdout:
             return '来源运行正常，未重建（采集待验证）'
@@ -170,8 +173,8 @@ def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
                 result = '部署输入检查通过（采集待验证）' if selected else '未启用'
             elif action == 'recover' and not selected:
                 result = '未选择恢复'
-            elif action == 'recover' and kind == 'node':
-                raise ValueError('尚不支持无账号修改恢复；请显式执行 up')
+            elif action == 'recover' and kind == 'node' and 'host' not in scopes:
+                result = '未选择恢复（主机须显式指定 --scope host）'
             elif action == 'up' and kind == 'node' and not selected:
                 result = '未启用（未改变现有来源）'
             else:

@@ -2221,7 +2221,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        case: [postgres-source, directory-publication, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, block-capacity]
+        case: [postgres-source, directory-publication, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, block-capacity, node-recovery]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
