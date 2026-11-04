@@ -11,6 +11,50 @@ const binding = { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64
 const requirement = { binding, engine_id: '2', catalog_path: path }
 const candidates = [{ id: '9007199254740993', name: 'Outdoor reader' }]
 const form = { action: 'read', recipientType: 'user', recipientID: candidates[0].id, expiryMode: 'until_revoked', expiresAt: null, reason: ' Explicit read ' }
+const collectionPath = { engine_id: '11', version: 'catalog.path/v1', segments: [
+  { term: 'server', kind: 'server', name: '' }, { term: 'database', kind: 'namespace', name: 'Outdoor' },
+  { term: 'collection', kind: 'collection', name: 'Persons' }
+] }
+const collectionRequirement = { engine_id: '11', catalog_path: collectionPath,
+  binding: { ...binding, native_target: collectionPath } }
+
+describe('exact native collection grant capture', () => {
+  it.each(['read', 'metadata_read'])('captures %s with the exact collection, subject, hash and one-hour expiry', action => {
+    const now = Date.UTC(2026, 10, 4), expiresAt = new Date(now + 3600000)
+    const captured = captureIndependentGrant('11', collectionRequirement, { ...form, action, expiryMode: 'at_time', expiresAt }, candidates, now)
+    expect(JSON.parse(captured.payload)).toEqual({ catalog_path: { ...collectionPath, engine_id: 11 },
+      item_fingerprint: binding.item_fingerprint, expected_boundary_hash: binding.boundary_hash,
+      request_id: captured.requestID, recipient_type: 'user', recipient_id: candidates[0].id,
+      action, expiry_mode: 'at_time', expires_at: expiresAt.toISOString(), reason: 'Explicit read' })
+    expect(captured.nodeRecursive).toBeUndefined()
+    expect(captured.targetLabel).toBe('Outdoor / Persons')
+    expect(Object.isFrozen(captured)).toBe(true)
+  })
+  it('rejects node substitution, wrong native identity, missing or malformed binding and expired commands', () => {
+    const changedPath = change => ({ ...collectionPath, ...change })
+    const wrongDatabase = changedPath({ segments: collectionPath.segments.map((part, i) => i === 1 ? { ...part, name: 'Other' } : part) })
+    const wrongCollection = changedPath({ segments: collectionPath.segments.map((part, i) => i === 2 ? { ...part, name: 'Other' } : part) })
+    for (const changed of [{ binding: null }, { node_recursive: false }, { engine_id: '12' },
+      { catalog_path: changedPath({ engine_id: '12' }) },
+      { catalog_path: changedPath({ segments: [...collectionPath.segments.slice(0, -1), { term: 'collection', kind: 'table', name: 'Persons' }] }) },
+      ...[{}, { item_fingerprint: '' }, { boundary_hash: '' }, { boundary_hash: 'not-a-hash' },
+        { native_target: wrongDatabase }, { native_target: wrongCollection },
+        { native_target: changedPath({ engine_id: '12' }) }].map(change => ({ binding: Object.keys(change).length ? { ...collectionRequirement.binding, ...change } : {} }))]) {
+      expect(() => captureIndependentGrant('11', { ...collectionRequirement, ...changed }, form, candidates)).toThrow()
+    }
+    for (const changed of [{ recipientID: 'unknown' }, { recipientType: 'service_principal' },
+      { expiryMode: 'at_time', expiresAt: new Date(1000) }, { expiryMode: 'at_time', expiresAt: new Date(NaN) }]) {
+      expect(() => captureIndependentGrant('11', collectionRequirement, { ...form, ...changed }, candidates, 1000)).toThrow()
+    }
+  })
+  it('allows metadata-only collection identity only for metadata_read', () => {
+    const metadata = { ...collectionRequirement, binding: { item_fingerprint: binding.item_fingerprint,
+      boundary_hash: binding.boundary_hash, metadata_target: { target: collectionPath, layout: 'single',
+        data_type: 'collection', format: 'mongodb', composition_digest: 'c'.repeat(64) } } }
+    expect(JSON.parse(captureIndependentGrant('11', metadata, { ...form, action: 'metadata_read' }, candidates).payload).action).toBe('metadata_read')
+    expect(() => captureIndependentGrant('11', metadata, form, candidates)).toThrow()
+  })
+})
 describe('independent read-grant command capture', () => {
   it('captures one whole file DataItem, lists its constituents and never submits caller composition', () => {
     const file = name => ({ engine_id: '33', version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }, { term: 'directory', kind: 'directory', name: 'Models' }, { term: 'file', kind: 'file', name }] })

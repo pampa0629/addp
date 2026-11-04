@@ -6,6 +6,8 @@ const permissions = ['system.engine.read', 'system.engine_catalog.read', 'system
 const rootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'server', kind: 'server', name: '' }] }
 const schemaPath = { ...rootPath, segments: [...rootPath.segments, { term: 'schema', kind: 'namespace', name: 'outdoor' }] }
 const tablePath = { ...rootPath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'activities' }] }
+const databasePath = { ...rootPath, segments: [...rootPath.segments, { term: 'database', kind: 'namespace', name: 'Outdoor' }] }
+const collectionPath = { ...rootPath, segments: [...databasePath.segments, { term: 'collection', kind: 'collection', name: 'Persons' }] }
 const ftpRootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] }
 const ftpDirectoryPath = { ...ftpRootPath, segments: [...ftpRootPath.segments, { term: 'directory', kind: 'directory', name: 'Models' }] }
 const ftpFilePath = name => ({ ...ftpRootPath, segments: [...ftpDirectoryPath.segments, { term: 'file', kind: 'file', name }] })
@@ -55,16 +57,18 @@ test('all records state filter applies before pagination and survives current vi
   await expect(page.getByTestId('engine-source-grants').locator('.el-pagination')).toContainText('共 25 条')
   expect(writes).toEqual([])
 })
-async function fixture(page, { allowed = permissions, conflict = false, denied = false, identityRows = null, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', ftp = '', sourceType = 'ftp', factsTarget = null, metadataOnly = false, wholeMetadata = false } = {}) {
+async function fixture(page, { allowed = permissions, conflict = false, denied = false, identityRows = null, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', ftp = '', sourceType = 'ftp', factsTarget = null, metadataOnly = false, wholeMetadata = false,
+  collection = false, factsHash = 'b'.repeat(64), grantBasisConflict = false } = {}) {
   const modelRoot = sourceType === 'minio' ? minioRootPath : ftpRootPath
   const modelBranch = sourceType === 'minio' ? minioBucketPath : ftpDirectoryPath
   const modelPath = wholeMetadata ? sourceType === 'minio' ? name => ({...minioObjectPath(name),segments:[...minioBucketPath.segments,{term:'prefix',kind:'prefix',name}]}) : gdbPath : ftp === 'gdb' ? gdbPath : sourceType === 'minio' ? minioObjectPath : ftpFilePath
   const modelKind = sourceType === 'minio' ? 'object' : 'file'
   const writes = [], reads = []
   const fingerprintOf = target => createHash('sha256').update(`2:${target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.')}`).digest('hex')
-  const rowFor = target => ({ engine_id: '2', item_fingerprint: fingerprintOf(target), full_name: target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.'), name: target.segments.at(-1).name, item_type: ftp ? modelKind : 'table' })
-  const items = ftp ? [modelPath(`model.${ftp}`)] : [tablePath, ...(secondTable ? [{ ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }] : [])]
-  let rows = (identityRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || (ftp ? [{ id: '1', name: '', node_type: sourceType === 'minio' ? 'service' : 'root' }, { id: '2', name: 'Models', node_type: sourceType === 'minio' ? 'bucket' : 'dir' }, ...(ftp === 'gdb' || wholeMetadata ? [{ id: '3', name: `model.${ftp}`, node_type: sourceType === 'minio' ? 'prefix' : 'dir' }] : [])] : [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: 'outdoor', node_type: 'schema' }]) })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
+  const rowFor = target => ({ engine_id: '2', item_fingerprint: fingerprintOf(target), full_name: target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.'), name: target.segments.at(-1).name, item_type: ftp ? modelKind : collection ? 'collection' : 'table' })
+  const nativeItems = collection ? [collectionPath] : [tablePath, ...(secondTable ? [{ ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }] : [])]
+  const items = ftp ? [modelPath(`model.${ftp}`)] : nativeItems
+  let rows = (identityRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || (ftp ? [{ id: '1', name: '', node_type: sourceType === 'minio' ? 'service' : 'root' }, { id: '2', name: 'Models', node_type: sourceType === 'minio' ? 'bucket' : 'dir' }, ...(ftp === 'gdb' || wholeMetadata ? [{ id: '3', name: `model.${ftp}`, node_type: sourceType === 'minio' ? 'prefix' : 'dir' }] : [])] : [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: collection ? 'Outdoor' : 'outdoor', node_type: collection ? 'database' : 'schema' }]) })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
   let grants = [...history], failedGrant = false
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
@@ -105,15 +109,17 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
             { target: primary, role: 'model', required: true, primary: true }
           ] } } : null })
       }
-      const candidates = [tablePath, { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }]
+      const candidates = collection ? nativeItems : [tablePath, { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }]
       const native = candidates.find(p => createHash('sha256').update(`2:${p.segments[1].name}.${p.segments[2].name}`).digest('hex') === fingerprint)
       if (!native || factsState === 'missing') return reply({ error: 'Missing DataItem', error_code: 'authorization_target_not_found' }, 404)
       if (factsState === 'failed') return reply({ error: 'Facts unavailable', error_code: 'authorization_facts_unavailable' }, 503)
       if (factsState === 'forbidden') return reply({ error: 'Forbidden', error_code: 'forbidden' }, 403)
       if (factsState === 'unknown404') return reply({ error: 'Endpoint not found' }, 404)
-      return reply({schema_version:'meta.data_item_authorization_facts/v1',engine_id:2,item_fingerprint:fingerprint,item_type:'table',
+      return reply({schema_version:'meta.data_item_authorization_facts/v1',engine_id:2,item_fingerprint:fingerprint,item_type:collection ? 'collection' : 'table',
       full_name:`${native.segments[1].name}.${native.segments[2].name}`,basis_state:factsState,observed_at:new Date().toISOString(),
-      boundary_hash:factsState === 'complete' ? 'b'.repeat(64) : null,boundary:factsState === 'complete' ? {layout:'single',native_target:factsTarget || native} : null})
+      boundary_hash:factsState === 'complete' ? factsHash : null,boundary:factsState === 'complete' ? collection && metadataOnly
+        ? {layout:'single',metadata_target:{target:factsTarget || native,layout:'single',data_type:'collection',format:'mongodb',composition_digest:'a'.repeat(64)}}
+        : {layout:'single',native_target:factsTarget || native} : null})
     }
     if (path.endsWith('/access_delegations')) {
       reads.push(path)
@@ -155,6 +161,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
         return reply({ data: filtered.slice((page - 1) * size, page * size), total: filtered.length, page, page_size: size, total_pages: Math.ceil(filtered.length / size) })
       }
       const body = request.postDataJSON(); writes.push({ path, body })
+      if (grantBasisConflict) return reply({ error: '数据项边界已变化，请重新核对' }, 409)
       if (grantDuplicate) return reply({ error: '该接收方已有此数据的有效读取授权，未重复发放', error_code: 'engine_access_grant_relation_exists' }, 409)
       if (conflict) return reply({ error: '本表已有批准安排，不能覆盖' }, 409)
       if (grantFailure && !failedGrant) { failedGrant = true; return reply({ error: '签发结果未知，请按原命令核对' }, 503) }
@@ -184,7 +191,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       }).map(({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }) => ({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }))
       return reply({ data: data.slice((page-1)*size,page*size), total:data.length,page,page_size:size,total_pages:Math.ceil(data.length/size) })
     }
-    const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: ftp ? sourceType : 'postgresql', engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
+    const engine = { id: '2', name: collection ? '授权验证 MongoDB' : '授权验证 PostgreSQL', engine_type: ftp ? sourceType : collection ? 'mongodb' : 'postgresql', engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
     if (path.endsWith('/engine-types')) return reply([])
     if (path.endsWith('/engines/2')) return reply(engine)
     if (path.endsWith('/engines')) return reply([engine])
@@ -624,6 +631,72 @@ async function grantDraft(page, action = '读取数据（含元数据）') {
   await page.getByRole('option', { name: '长期有效，直到撤销', exact: true }).click()
   await page.getByTestId('source-grant-reason').fill('Explicit read permission')
 }
+async function selectCollection(page) {
+  await page.goto('/engines/2?tab=data-authorization'); await openNewAuthorization(page)
+  const tree = page.getByTestId('approval-resource-tree')
+  await tree.getByRole('textbox').fill('Persons')
+  await resourceOption(tree, 'Persons').click()
+}
+for (const [action, label] of [['read', '读取数据（含元数据）'], ['metadata_read', '仅查看元数据']]) {
+  test(`MongoDB exact collection ${action} uses the actual grant form and one bound command`, async ({ page }, testInfo) => {
+    const { reads, writes } = await fixture(page, { allowed: grantPermissions, collection: true })
+    await selectCollection(page); await grantDraft(page, label)
+    await expect(page.getByTestId('approval-targets')).toContainText('Outdoor / Persons')
+    expect(writes).toEqual([])
+    await confirmGrant(page)
+    await expect(page.getByTestId('engine-source-grants')).toContainText('访问授权已签发')
+    expect(writes).toHaveLength(1)
+    expect(writes[0].body).toMatchObject({ catalog_path: collectionPath,
+      item_fingerprint: createHash('sha256').update('2:Outdoor.Persons').digest('hex'), expected_boundary_hash: 'b'.repeat(64),
+      recipient_type: 'user', recipient_id: '33', action, expiry_mode: 'until_revoked', expires_at: null })
+    expect(writes[0].body).not.toHaveProperty('node_recursive')
+    expect(writes[0].body).not.toHaveProperty('native_target')
+    expect(reads.some(url => url.includes('/authorization-facts'))).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`mongodb-exact-${action}.png`), fullPage: true })
+  })
+}
+for (const [name, options] of [
+  ['wrong database', { factsTarget: { ...collectionPath, segments: collectionPath.segments.map((p, i) => i === 1 ? { ...p, name: 'Other' } : p) } }],
+  ['wrong collection', { factsTarget: { ...collectionPath, segments: collectionPath.segments.map((p, i) => i === 2 ? { ...p, name: 'Other' } : p) } }],
+  ['wrong kind', { factsTarget: { ...collectionPath, segments: collectionPath.segments.map((p, i) => i === 2 ? { ...p, kind: 'table' } : p) } }],
+  ['wrong engine', { factsTarget: { ...collectionPath, engine_id: 3 } }],
+  ['malformed hash', { factsHash: 'not-a-hash' }],
+  ['missing binding', { factsState: 'incomplete' }]
+]) test(`MongoDB exact collection rejects ${name} before Grant POST`, async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, collection: true, ...options })
+  await selectCollection(page)
+  await expect(page.getByTestId('engine-data-authorization').locator('.el-alert--error')).toBeVisible()
+  await expect(page.getByTestId('approval-targets')).toHaveCount(0)
+  await expect(page.getByTestId('source-grant-confirm')).toHaveCount(0)
+  expect(writes).toEqual([])
+})
+test('MongoDB exact collection keeps metadata-only facts from content elevation', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, collection: true, metadataOnly: true })
+  await selectCollection(page)
+  await page.getByTestId('source-grant-action').click()
+  await expect(page.getByRole('option', { name: '读取数据（含元数据）', exact: true })).toHaveAttribute('aria-disabled', 'true')
+  expect(writes).toEqual([])
+})
+test('MongoDB exact collection refuses a server-side boundary conflict without automatic retry', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, collection: true, grantBasisConflict: true })
+  await selectCollection(page); await grantDraft(page); await confirmGrant(page)
+  await expect(page.getByTestId('source-grant-outcomes')).toContainText('数据项边界已变化，请重新核对')
+  await expect(page.getByTestId('engine-source-grants')).not.toContainText('访问授权已签发')
+  expect(writes).toHaveLength(1)
+  expect(writes[0].body.expected_boundary_hash).toBe('b'.repeat(64))
+})
+test('MongoDB exact collection expired date cannot submit a Grant', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, collection: true })
+  await selectCollection(page); await grantDraft(page)
+  await page.getByTestId('source-grant-expiry').click()
+  await page.getByRole('option', { name: '指定到期时间', exact: true }).click()
+  const date = page.getByTestId('source-grant-form').locator('.el-date-editor input')
+  await date.fill('2020-01-01 00:00:00'); await date.press('Enter'); await date.press('Tab')
+  await page.getByTestId('source-grant-confirm').click()
+  await expect(page.getByTestId('source-grant-form').locator('.el-alert--error')).toBeVisible()
+  await expect(page.getByRole('dialog').filter({ hasText: '即将授予 Outdoor reader' })).toHaveCount(0)
+  expect(writes).toEqual([])
+})
 async function confirmGrant(page, cancel = false) {
   await page.getByTestId('source-grant-confirm').click()
   const confirm = page.getByRole('dialog').filter({ hasText: '即将授予 Outdoor reader' })
