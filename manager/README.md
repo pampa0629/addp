@@ -4,13 +4,9 @@
 
 ## 📖 文档说明
 
-- **README.md** (本文件) - 快速入门和功能概览
-- **[CLAUDE.md](./CLAUDE.md)** - 模块定位、核心 API、开发规则和文档导航
-- **[manager/docs/数据预览与资源树实现规范.md](./docs/数据预览与资源树实现规范.md)** - 数据探查、资源树、预览 API、PreviewResolver 和 PreviewProvider 当前实现规范
-- **[manager/docs/数据预览语义协议.md](./docs/数据预览语义协议.md)** - `content.kind`、`preview_material`、`frontend_renderer` 等预览响应语义
-- **[manager/docs/数据剖析规范.md](./docs/数据剖析规范.md)** - 表格数据剖析的产品边界、采样执行、结果存储和前端呈现规范
-- **[manager/docs/三维模型、点云与高斯泼溅预览说明.md](./docs/三维模型、点云与高斯泼溅预览说明.md)** - 三维模型、3D Tiles、点云和 3DGS 预览、快显任务与状态说明
-- **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - `storage-stream`、`downloads/file` 与 DownloadPlan 语义
+本页提供快速入门与功能概览；模块契约、专题分工及验证证据统一从[相关文档](#-相关文档)进入。
+
+页内导航：[快速开始](#-快速开始) · [支持范围](#-支持的数据类型) · [API 速查](#-主要-api-端点) · [核心架构](#️-核心架构) · [常见问题](#-常见问题) · [导入导出专题](#导入导出专题)。
 
 ### 导入导出专题
 
@@ -181,20 +177,35 @@ PMTiles 是矢量瓦片归档格式，MVT 是归档内瓦片类型，分别进�
 
 ## 📚 相关文档
 
-- **[CLAUDE.md](./CLAUDE.md)** - Manager 模块定位、核心 API、开发规则和文档导航
-- **[manager/docs/数据预览与资源树实现规范.md](./docs/数据预览与资源树实现规范.md)** - Manager 数据探查、资源树、预览 API 和插件编排实现规范
-- **[manager/docs/数据预览语义协议.md](./docs/数据预览语义协议.md)** - Manager 预览响应材料和前端渲染语义
-- **[manager/docs/数据剖析规范.md](./docs/数据剖析规范.md)** - Manager 表格数据剖析的产品、owner、执行、结果和当前实现边界
-- **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - Manager 存储叶子流式预览和逻辑对象原始下载语义
-- **[manager/docs/快显概念说明.md](./docs/快显概念说明.md)** - Manager 快显、矢量物化视图和瓦片缓存的价值、概念、分工和边界
-- **[manager/docs/快显实现规范.md](./docs/快显实现规范.md)** - 快显、矢量物化视图、瓦片缓存结果和生成任务的表结构、API 契约、技术路线与验证记录
-- **[manager/docs/向量化概念说明.md](./docs/向量化概念说明.md)** - Manager 向量化价值、对象边界、任务边界和结果边界
-- **[manager/docs/向量化能力说明.md](./docs/向量化能力说明.md)** - Manager 向量化结果、任务、执行、检索和 UI 行为说明
-- **[manager/docs/数据库架构.md](./docs/数据库架构.md)** - Manager schema 表清单、关系、索引和数据流
-- **[../docs/spec/addp技术栈规约.md](../docs/spec/addp技术栈规约.md)** - 技术栈和依赖版本
-- **[../docs/spec/addp数据引擎扩展指南.md](../docs/spec/addp数据引擎扩展指南.md)** - 数据引擎扩展指南
-- **[../docs/spec/addp引擎插件接口规范.md](../docs/spec/addp引擎插件接口规范.md)** - 引擎插件接口规范
-- **[../common-frontend/README.md](../common-frontend/README.md)** - 前端共享组件使用指南
+### 模块规范与专题
+
+- [模块说明](./CLAUDE.md) — 模块定位、核心 API、开发规则与权限职责。
+- [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md) — 数据探查、资源树、预览 API、PreviewResolver 和 PreviewProvider 的当前契约。
+- [数据预览语义协议](./docs/数据预览语义协议.md) — `content.kind`、`preview_material`、`frontend_renderer` 等响应材料与渲染语义。
+- [数据剖析规范](./docs/数据剖析规范.md) — 表格剖析的产品边界、Owner、采样执行、结果存储与呈现。
+- [存储流与原始下载语义](./docs/存储流与原始下载语义.md) — `storage-stream`、`downloads/file`、DownloadPlan、身份保护与完整交付。
+- [快显概念说明](./docs/快显概念说明.md) — 快显、矢量物化视图和瓦片缓存的价值、概念与职责边界。
+- [快显实现规范](./docs/快显实现规范.md) — 各结果专题、表结构、任务、API、执行与清理规则的总入口。
+- [三维模型、点云与高斯泼溅预览说明](./docs/三维模型、点云与高斯泼溅预览说明.md) — 三维模型、3D Tiles、点云和 3DGS 的预览、快显任务、状态与当前限制。
+- [向量化概念说明](./docs/向量化概念说明.md) — 向量化价值、对象、任务和结果边界。
+- [向量化能力说明](./docs/向量化能力说明.md) — 向量化结果、任务、执行、检索与 UI 行为。
+- [数据库架构](./docs/数据库架构.md) — Manager schema 表清单、关系、索引与数据流。
+
+### 共享规范与扩展
+
+- [技术栈规约](../docs/spec/addp技术栈规约.md) — 技术栈与依赖版本。
+- [数据引擎扩展指南](../docs/spec/addp数据引擎扩展指南.md) — 新引擎的接入与消费分工。
+- [引擎插件接口规范](../docs/spec/addp引擎插件接口规范.md) — Engine Provider 接口与模块消费边界。
+- [共享前端模块](../common-frontend/README.md) — 共享组件接入与业务模块职责。
+
+### 验证与历史证据
+
+- [模块验证说明](./CLAUDE.md#开发与验证) — 标准门禁、运行环境与实际覆盖范围。
+- [Manager Online 场景](../docs/spec/testing/scenarios/Manager与空间成果.md) — 隔离链路的身份、固定断言及清理要求。
+- [Manager 私有导入场景](../docs/spec/testing/scenarios/同步与引擎消费.md#manager-私有导入) — 私有来源、传输、扫描与结果验证的专项范围。
+- [预览与私有导入历史证据](../docs/spec/testing/验收证据索引.md#manager-预览与私有导入历史证据) — 分版本结果与原始记录；其他专题的证据亦由该索引定位。
+
+权限与来源约束以对应契约正文为准；各场景分别认定源码版本、失败记录、清理结果与未覆盖项，历史通过不外推当前工作区。文档、用例或导航存在不代表实际验收通过。
 
 ---
 
