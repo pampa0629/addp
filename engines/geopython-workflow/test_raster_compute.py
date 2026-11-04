@@ -21169,10 +21169,30 @@ def test_line_density_unit_equivalence_subdivision_row_vertex_order_and_input_pr
 
 
 @pytest.mark.parametrize('shape,grid', [((2,515),(0,2,0,3,0,-.5)),((515,2),(0,1,.5,5,.25,-1))])
-def test_line_density_bounded_blocks_template_pixels_masks_alpha_ignored_full_cog_and_all_overviews(tmp_path,monkeypatch,shape,grid):
+@pytest.mark.parametrize('mask_default', ['NO', 'YES'])
+def test_line_density_bounded_blocks_template_pixels_masks_alpha_ignored_full_cog_and_all_overviews(tmp_path,monkeypatch,shape,grid,mask_default):
     import operators.raster_compute as c
     h,w=shape;path=create_raster(tmp_path/'ignored.tif',np.stack([np.full(shape,-9999.),np.zeros(shape)]),grid,'EPSG:3857')
-    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(1).SetScale(2.);ds.GetRasterBand(1).SetOffset(8.);ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET);ds.GetRasterBand(1).GetMaskBand().Fill(0);ds=None
+    previous_mask_option=gdal.GetConfigOption('GDAL_TIFF_INTERNAL_MASK')
+    # GDAL <=3.8 defaults to an external .msk; this template must be one file.
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK',mask_default):
+        ds=gdal.Open(str(path),gdal.GA_Update)
+        ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+        ds.GetRasterBand(1).SetScale(2.);ds.GetRasterBand(1).SetOffset(8.)
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):
+            assert ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET)==gdal.CE_None
+        assert gdal.GetConfigOption('GDAL_TIFF_INTERNAL_MASK')==mask_default
+        ds.GetRasterBand(1).GetMaskBand().Fill(0);ds=None
+    assert gdal.GetConfigOption('GDAL_TIFF_INTERNAL_MASK')==previous_mask_option
+    ds=gdal.Open(str(path));data=ds.GetRasterBand(1);alpha=ds.GetRasterBand(2)
+    assert ds.GetFileList()==[str(path)] and sorted(tmp_path.iterdir())==[path]
+    assert data.GetMaskFlags()==gdal.GMF_PER_DATASET
+    np.testing.assert_array_equal(data.GetMaskBand().ReadAsArray(),np.zeros(shape,np.uint8))
+    np.testing.assert_array_equal(data.ReadAsArray(),np.full(shape,-9999.))
+    np.testing.assert_array_equal(alpha.ReadAsArray(),np.zeros(shape))
+    assert data.GetNoDataValue()==-9999. and (data.GetScale(),data.GetOffset())==(2.,8.)
+    assert alpha.GetColorInterpretation()==gdal.GCI_AlphaBand
+    alpha=data=ds=None
     # Lines span the whole horizontal/vertical profile and yield nonconstant values.
     lines=_line_density_frame(['LINESTRING(-10 0,2000 0)','LINESTRING(0 -1000,1000 1000)'])
     raw=path.read_bytes();expected=_line_density_oracle(lines,grid,shape,4.);calls=[];write=gdal.Band.WriteRaster
