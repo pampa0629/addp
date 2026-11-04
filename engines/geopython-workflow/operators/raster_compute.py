@@ -1628,7 +1628,7 @@ def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres, mi
         dataset = None
 
 
-_POINT_DENSITY_WEIGHT_UNSET = object()
+_DENSITY_WEIGHT_UNSET = object()
 _POINT_DENSITY_MESSAGES = {
     'weight_field': ('点密度权重字段必须显式选择现有非几何数值列名', 'Point density weight field must name an existing non-geometry numeric column'),
     'weight': ('点密度权重必须为有限非布尔非负实数，缺失值不可跳过', 'Point density weights must be finite non-boolean nonnegative real numbers; missing values cannot be skipped'),
@@ -1659,17 +1659,17 @@ def _point_density_value(mass, area):
     return value
 
 
-def _point_density_weights(input_gdf, geometries, weight_field):
-    if weight_field is _POINT_DENSITY_WEIGHT_UNSET:
+def _density_weights(input_gdf, geometries, weight_field, error):
+    if weight_field is _DENSITY_WEIGHT_UNSET:
         return None
     if (not isinstance(weight_field, str) or not weight_field.strip()
             or weight_field not in input_gdf.columns or weight_field == geometries.name):
-        raise _point_density_error('weight_field')
+        raise error('weight_field')
     weights = []
     for raw in input_gdf[weight_field].array:
         try:
             if isinstance(raw, (bool, np.bool_)) or not isinstance(raw, Real) or raw < 0:
-                raise _point_density_error('weight')
+                raise error('weight')
             if isinstance(raw, Integral):
                 value = Fraction(int(raw))
             else:
@@ -1678,7 +1678,7 @@ def _point_density_weights(input_gdf, geometries, weight_field):
                 numerator, denominator = raw.as_integer_ratio()
                 value = Fraction(numerator, denominator)
         except (OverflowError, ValueError, TypeError, AttributeError, ZeroDivisionError) as cause:
-            raise _point_density_error('weight') from cause
+            raise error('weight') from cause
         weights.append(value)
     return weights
 
@@ -1693,14 +1693,14 @@ def _point_density_mass(sites, radius, method, weights=None):
                   for index, squared in sites), Fraction(0))
 
 
-def raster_point_density(input_gdf, reference_raster, radius_metres, method='uniform', weight_field=_POINT_DENSITY_WEIGHT_UNSET):
+def raster_point_density(input_gdf, reference_raster, radius_metres, method='uniform', weight_field=_DENSITY_WEIGHT_UNSET):
     """Exact metric point density with optional unnormalized nonnegative weights."""
     if not isinstance(method, str) or method not in ('uniform', 'quartic'):
         raise _point_density_error('method')
     radius_metres = _point_radius(radius_metres, _point_density_error)
     geometries = _point_geometries(input_gdf, _point_density_error)
     coordinates = [_point_xy(point, _point_density_error) for point in geometries]
-    weights = _point_density_weights(input_gdf, geometries, weight_field)
+    weights = _density_weights(input_gdf, geometries, weight_field, _point_density_error)
     dataset = None
     try:
         dataset = _open(reference_raster)
@@ -1717,6 +1717,8 @@ def raster_point_density(input_gdf, reference_raster, radius_metres, method='uni
 
 
 _LINE_DENSITY_MESSAGES = {
+    'weight_field': ('线密度权重字段必须显式选择现有非几何数值列名', 'Line density weight field must name an existing non-geometry numeric column'),
+    'weight': ('线密度权重必须为有限非布尔非负实数，缺失值不可跳过', 'Line density weights must be finite non-boolean nonnegative real numbers; missing values cannot be skipped'),
     'radius': ('线密度搜索半径必须为有限非布尔正米数', 'Line density search radius must be a finite positive number of metres, excluding booleans'),
     'gdf': ('线密度需要列名唯一且具有活动几何列的GeoDataFrame', 'Line density requires a GeoDataFrame with unique columns and an active geometry column'),
     'geometry': ('线密度仅接受非空、有效、有限XY且每个分量具有正长度的二维LineString或MultiLineString', 'Line density requires non-empty valid finite XY two-dimensional LineStrings or MultiLineStrings with positive length in every component'),
@@ -1731,9 +1733,9 @@ def _line_density_error(code):
     return ValueError(_LINE_DENSITY_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _line_density_parts(input_gdf):
-    parts, coordinates = [], []
-    for geometry in _point_geometries(input_gdf, _line_density_error):
+def _line_density_parts(geometries):
+    parts, coordinates, parents = [], [], []
+    for position, geometry in enumerate(geometries):
         if (geometry is None or geometry.is_empty or geometry.geom_type not in ('LineString', 'MultiLineString')
                 or has_z(geometry) or has_m(geometry) or not geometry.is_valid
                 or not np.isfinite(get_coordinates(geometry)).all()):
@@ -1742,8 +1744,8 @@ def _line_density_parts(input_gdf):
             vertices = [tuple(map(Fraction, xy)) for xy in part.coords]
             if not any(a != b for a, b in zip(vertices, vertices[1:])):
                 raise _line_density_error('geometry')
-            parts.append(part); coordinates.append(vertices)
-    return parts, coordinates
+            parts.append(part); coordinates.append(vertices); parents.append(position)
+    return parts, coordinates, parents
 
 
 def _line_density_add(groups, squared, coefficient):
@@ -1761,13 +1763,13 @@ def _line_density_add(groups, squared, coefficient):
     groups.append([squared, coefficient])
 
 
-def _line_density_segment(groups, start, end, x, y, radius_squared):
+def _line_density_segment(groups, start, end, x, y, radius_squared, weight):
     # z=b+a*t parameterizes distance along the original segment. Intersect
     # [b,b+a] with [-sqrt(D),sqrt(D)] using exact signs/squares first.
     px, py = start[0]-x, start[1]-y
     vx, vy = end[0]-start[0], end[1]-start[1]
     a = vx*vx+vy*vy
-    if not a:
+    if not a or not weight:
         return
     b = px*vx+py*vy
     discriminant = a*radius_squared-(px*vy-py*vx)**2
@@ -1785,8 +1787,8 @@ def _line_density_segment(groups, start, end, x, y, radius_squared):
         constant -= z0
     else:
         roots += 1
-    _line_density_add(groups, a, constant/a)
-    _line_density_add(groups, discriminant/a, Fraction(roots))
+    _line_density_add(groups, a, weight*constant/a)
+    _line_density_add(groups, discriminant/a, weight*roots)
 
 
 def _line_density_float(groups, scale):
@@ -1815,12 +1817,15 @@ def _line_density_float(groups, scale):
         bits *= 2
 
 
-def raster_line_density(input_gdf, reference_raster, radius_metres):
-    """Analytic circular line length / full circle area, counting every segment."""
+def raster_line_density(input_gdf, reference_raster, radius_metres, weight_field=_DENSITY_WEIGHT_UNSET):
+    """Analytic circular line density with optional unnormalized feature weights."""
     radius_metres = _point_radius(radius_metres, _line_density_error)
     if not radius_metres:
         raise _line_density_error('radius')
-    parts, coordinates = _line_density_parts(input_gdf)
+    geometries = _point_geometries(input_gdf, _line_density_error)
+    parts, coordinates, parents = _line_density_parts(geometries)
+    weights = _density_weights(input_gdf, geometries, weight_field, _line_density_error)
+    part_weights = [Fraction(1) if weights is None else weights[parent] for parent in parents]
     dataset = None
     try:
         dataset = _open(reference_raster)
@@ -1834,9 +1839,10 @@ def raster_line_density(input_gdf, reference_raster, radius_metres):
                                         _circle_index_bound(x+radius, True), _circle_index_bound(y+radius, True)))
             for index in candidates:
                 for start, end in zip(coordinates[index], coordinates[index][1:]):
-                    _line_density_segment(groups, start, end, x, y, radius*radius)
+                    _line_density_segment(groups, start, end, x, y, radius*radius, part_weights[index])
             return _line_density_float(groups, scale)
-        return _point_grid_output(dataset, transform, value_at, _line_density_error, unit='metre/m2')
+        return _point_grid_output(dataset, transform, value_at, _line_density_error,
+                                  unit='metre/m2' if weights is None else 'weight/metre')
     finally:
         dataset = None
 
@@ -6627,7 +6633,7 @@ _SPECS = [
     (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类集合，允许零、不可重复；北向矩形网格按实际米制距离选点，方形结果保持')], 'raster', ['read']),
     (raster_interpolate_idw, OperatorCategory.RASTER_CALCULATION, '点数据IDW插值', [_param('input_gdf', 'GeoDataFrame', '同CRS二维Point及有限数值字段；重复XY拒绝', role='input'), _param('reference_raster', 'raster', '仅提供网格和CRS，不读取或继承模板值／NoData／mask／alpha', role='input'), _param('field', 'str', '显式数值属性字段；合法零负值保留，整数须精确表示'), _param('radius_metres', 'float', '显式有限正米制圆半径；等号纳入，按power的距离反比加权'), _param('min_points', 'int', '非布尔正整数，默认1；非重合支撑不足为NoData，精确重合仍保留样本值', 1, False), _param('max_points', 'int', '省略不限；显式非布尔正整数且不小于min_points，按精确距离／X／Y取最近N点，精确重合保留原值', None, False), _param('power', 'int', '距离幂次1／2／3；默认2保持原结果，不改变半径／支撑点规则', 2, False)], 'raster', ['read']),
     (raster_point_density, OperatorCategory.RASTER_CALCULATION, '米制圆形点密度', [_param('input_gdf', 'GeoDataFrame', '二维Point逐要素贡献，重复XY保留；可选显式非负权重列', role='input'), _param('reference_raster', 'raster', '仅提供网格／CRS，原像元与mask／alpha不参与', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；无支持为0'), _param('method', 'str', 'uniform等权计数；quartic二维四次核，半径边界贡献0', 'uniform', False, enum=['uniform', 'quartic']), _param('weight_field', 'str', '可选现有非几何数值权重列；有限非负、不归一化，省略保持原结果，显式null非法', None, False)], 'raster', ['read']),
-    (raster_line_density, OperatorCategory.RASTER_CALCULATION, '米制圆形线密度', [_param('input_gdf', 'GeoDataFrame', '二维LineString／MultiLineString逐原始线段贡献，重复与重叠独立累计', role='input'), _param('reference_raster', 'raster', '仅提供尺寸／完整网格／CRS，不继承原像元或mask', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；圆内米制线长除完整圆面积，无支持为0')], 'raster', ['read']),
+    (raster_line_density, OperatorCategory.RASTER_CALCULATION, '米制圆形线密度', [_param('input_gdf', 'GeoDataFrame', '二维LineString／MultiLineString逐原始线段贡献，重复与重叠独立累计', role='input'), _param('reference_raster', 'raster', '仅提供尺寸／完整网格／CRS，不继承原像元或mask', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；圆内米制线长除完整圆面积，无支持为0'), _param('weight_field', 'str', '可选现有非几何数值权重列；有限非负、乘线长、不归一化，省略保持原结果，显式null非法', None, False)], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
     (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '正整数像元数阈值；与min_area_m2必须且只能提供一个，等于阈值保留', None, False), _param('min_area_m2', 'float', '有限正平方米阈值；与min_pixels互斥，北向无旋转投影网格、按CRS线性单位换算，精确比较且等于阈值保留', None, False), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结'), _param('protected_values', 'list[int]', '免于替换的安全整数分类，列表不可重复；空列表保持原结果，保护斑块作为供体仍须原始大小达标', [], False)], 'raster', ['read']),

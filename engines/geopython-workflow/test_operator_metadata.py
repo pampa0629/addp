@@ -1875,8 +1875,9 @@ def test_line_density_single_read_workflow_sources_radius_no_optional_shortcuts(
     import inspect
     spec=next(s for s in list_operators() if s['id']=='raster_line_density')
     params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_gdf','reference_raster','radius_metres'}
-    assert all(p['required'] and 'default' not in p for p in params.values())
+    assert set(params)=={'input_gdf','reference_raster','radius_metres','weight_field'}
+    assert all(params[n]['required'] and 'default' not in params[n] for n in ('input_gdf','reference_raster','radius_metres'))
+    assert params['weight_field']['type']=='string' and params['weight_field']['required'] is False and 'default' not in params['weight_field']
     assert params['input_gdf']['param_type']==params['reference_raster']['param_type']=='input'
     assert params['radius_metres']['type']=='float'
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
