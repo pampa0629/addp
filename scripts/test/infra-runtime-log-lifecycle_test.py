@@ -1,4 +1,5 @@
 import ast
+import importlib.util
 import json
 import os
 import shlex
@@ -12,6 +13,10 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 KEYS = ("LOKI_READ_TOKEN", "LOKI_WRITE_TOKEN", "LOKI_S3_SECRET_KEY", "LOG_OBSERVER_SERVICE_CLIENT_SECRET")
+_group_spec = importlib.util.spec_from_file_location('infra_fixture_metrics_project', ROOT/'scripts/utils/metrics-project.py')
+source_group = importlib.util.module_from_spec(_group_spec)
+_group_spec.loader.exec_module(source_group)
+
 
 
 class MetricsProbeReadinessTest(unittest.TestCase):
@@ -126,6 +131,9 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
         self.commands = self.root / "commands.argv"
         # up.sh invokes Docker around 90 times. Keep the fake in shell so the
         # fixture measures lifecycle behavior rather than Python startup cost.
+        members = {source_group.service(kind,'infra') for kind in ('postgres','redis','minio')}
+        members |= {source_group.service('postgres','infra')+'-web'}
+        members |= {source_group.service(kind,'infra')+'-init' for kind in ('redis','minio')}
         self.install_command('docker', r'''#!/bin/bash
 set -eu
 # Lifecycle Python children deliberately inherit no test/ADDP secrets. These
@@ -139,6 +147,16 @@ if [[ "${1-}" == info ]]; then
     if [[ "$(uname -s)" == Darwin ]]; then operating_system='Docker Desktop'; else operating_system=Linux; fi
     printf '{"id":"fixture","os_type":"linux","operating_system":"%s"}\n' "$operating_system"
     exit 0
+fi
+# This fixture owns no optional source containers. Recognize only the exact
+# production member query, before the branch requiring parent-only MOCK_* keys.
+if [[ "${1-}" == ps && "$*" == *label=com.docker.compose.project=addp-metrics-sources-* ]]; then
+    [[ "$#" == 7 && "${2-}" == -aq && "${3-}" == --no-trunc && "${4-}" == --filter &&
+       "${5-}" == @SOURCE_PROJECT_FILTER@ && "${6-}" == --filter ]] || exit 85
+    case "${7-}" in
+        @SOURCE_SERVICE_FILTERS@) exit 0 ;;
+        *) exit 86 ;;
+    esac
 fi
 if [[ "${1-}" == ps && "$*" == *com.docker.compose.project=addp-postgres-metrics-* ]]; then exit 0; fi
 args=("$@")
@@ -227,7 +245,8 @@ case "$1" in
         ;;
 esac
 exit 0
-''')
+'''.replace('@SOURCE_PROJECT_FILTER@',shlex.quote('label=com.docker.compose.project='+source_group.project(self.repo)))
+    .replace('@SOURCE_SERVICE_FILTERS@','|'.join(shlex.quote('label=com.docker.compose.service='+name) for name in sorted(members))))
         self.install_command('curl', '#!/bin/sh\nexit 0\n')
         self.install_command('lsof', "#!/bin/sh\n"
                         "printf '%s\\n' \"$*\" >> "
@@ -240,6 +259,29 @@ exit 0
         # without launching a serializer for each fake Docker invocation.
         fields = iter(self.commands.read_bytes().decode().split('\0')[:-1])
         return [[next(fields) for _ in range(int(count))] for count in fields]
+
+    def test_source_queries_are_closed_and_work_without_parent_mock_environment(self):
+        self.healthy_docker()
+        env = {'PATH': str(self.bin)+os.pathsep+os.environ['PATH']}
+        project = source_group.project(self.repo)
+        prefix = ['--context', 'fixture', 'ps', '-aq', '--no-trunc']
+        def request(filters):
+            return subprocess.run([str(self.bin/'docker'),*prefix,*filters],env=env,
+                                  capture_output=True,text=True,timeout=5)
+        for name in ('infra-postgres-metrics','infra-postgres-metrics-web'):
+            result=request(source_group.filters(project,{name}))
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(result.stdout,'')
+        for filters in (source_group.filters(project,{'business-postgres-metrics'}),
+                        source_group.filters(project,{'unknown-service'}),
+                        source_group.filters(project+'-foreign',{'infra-postgres-metrics'}),
+                        ['--filter','label=com.docker.compose.project='+project],
+                        [*source_group.filters(project,{'infra-postgres-metrics'}),'unexpected']):
+            with self.subTest(filters=filters):
+                result=request(filters)
+                self.assertNotEqual(result.returncode,0)
+                self.assertEqual(result.stdout,'')
+        self.assertFalse(self.commands.exists(),'metadata probe must not enter core/mutation fixture routes')
 
     def test_reinstall_preserves_open_command_versions(self):
         # A deployment observer may still execute a prior command between

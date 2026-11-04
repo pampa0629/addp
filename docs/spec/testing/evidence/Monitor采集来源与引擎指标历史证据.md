@@ -751,3 +751,18 @@ PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英�
 | `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` | 退出2，不能算整体通过。普通认证路径的Infra／Business安装、两个新服务名、mTLS、健康不动／停止与同容器重启恢复、账号／HBA不变、漂移及停用拒绝等子项已通过；之后目录认证分支在共享目录原子替换可见性前置失败，HBA正式验收未到达。该Desktop问题仍按既有独立Mac／Linux后续范围保留，未改设置、重启或降低断言。日志 `/tmp/addp-regroup-pg-t2-final.log`；首轮另因本机缺少OpenSSL配置而在临时PKI准备失败，已将当次夹具配置和证书扩展显式化 |
 
 个人来源没有被本会话迁移、重启或改配置。当前MinIO旧镜像缺失的历史根因仍未知，不把隔离构建或新代码视为个人恢复成功。下一步由用户在仓库根目录运行 `python3 scripts/infra/metrics-sources.py up`，按现有配置统一应用；该操作只针对采集来源，可能有短暂采集间断，之后再只读核对分组、当前数据库绑定和Monitor实际采样。个人迁移、Safari／Desktop效果、最终Linux目录认证、自然CI及Hosted仍未验；CI／Hosted等专门会话回传，不设置定时任务。
+
+
+### 统一分组后的标准生命周期夹具修复（2026-11-05）
+
+CI修复会话回传固定`3d0ccfcce`的Platform Run41867352427／Job126704897315：`test-infra-runtime-log-lifecycle`中六项disabled、metrics-only及父环境隔离用例预期0而实际1。保留[首次失败](https://github.com/pampa0629/addp/actions/runs/41867352427/job/126704897315)；原始日志 `/tmp/addp-ci-20261105-010000/job-126704897315.log` 的2510—2773行，输入一致性收据 `/tmp/addp-ci-20261105-010000/Metrics-lifecycle-current-input-identity.json`。
+
+本地从同一标准入口复现六项失败。根因为假Docker只对旧PostgreSQL采集项目查询返回空集；统一分组的新逐服务查询落入依赖`MOCK_COMMANDS`的核心服务分支。真实部署传输有意清除测试／ADDP父环境，新子进程缺少该测试变量而拒绝，进而导致来源up／预先down错误。生产up.sh和metrics-sources.py的独立中心／来源处理语义未变，不通过修改返回码或跳过来源操作消除失败。
+
+修复仅调整`infra-runtime-log-lifecycle_test.py`：复用产品共享内核生成当前夹具工作区的项目与Infra服务名；在父环境变量分支前，只接受精确七参数的只读来源列表查询并返回当前夹具确实为空的来源集合。明确拒绝Business服务、未知服务、另一工作区项目、缺少服务及额外参数。新增反例不带`MOCK_*`运行，确认不进入核心／变更分支。它在旧夹具上实际失败为`MOCK_COMMANDS: unbound variable`，修复后通过；六项原断言、凭据不生成、核心／数据卷保留、来源故障不阻止核心和父环境隔离均保留。未修改产品部署脚本、个人.env、服务、数据库、数据卷、IAM、Hosted用途、预算或超时。
+
+标准验证：`make test-infra-runtime-log-lifecycle`退出0，包含53项统一来源依赖、HTTP runner46项、Trace／登记183项及149项生命周期／预算／配置／PG生命周期组合回归，相关Go与登记步骤均通过；日志 `/tmp/addp-regroup-lifecycle-final-20261105.log`。`make test-monitor-metrics-config test-t2-ci-registration`退出0，配置137项及依赖、登记80项、runner9项与实际登记通过，日志 `/tmp/addp-regroup-lifecycle-registration-20261105.log`。新增测试沿原模块自动运行，原Platform consistency的`make test-platform`和Metrics T2输入清单已覆盖此文件，不新增workflow或测试路线。十项相关Make配方与已提交HEAD完全一致，未提交的其他会话Makefile调整不纳入本批。
+
+首次本地复现另外记录HTTP预算夹具原五秒编译断言超时，未修改该用例、预算或实现；后续完整标准入口149项通过，原失败保留在 `/tmp/addp-regroup-lifecycle-repro-20261105.log`，不倒填首次通过。针对新查询的单项先失败证据为 `/tmp/addp-regroup-fixture-contract-red-20261105.log`。
+
+本批只修复确定的T1夹具接线，不替代个人来源迁移、真实来源T2或Hosted；没有应用用户采集来源或启动个人服务。修复推送后仍等待专门CI会话回传唯一自然Platform结果，不设置定时、手工dispatch、rerun或轮询远端CI。工作簿仅由P0依据固定版本结果维护。
