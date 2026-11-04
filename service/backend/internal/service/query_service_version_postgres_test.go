@@ -7,6 +7,7 @@ import (
 	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	commonmodels "github.com/addp/common/models"
+	commonquery "github.com/addp/common/query"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -194,7 +195,7 @@ func TestQueryServiceVersionAgainstPostgres(t *testing.T) {
 		q := consumerDescriptorTestService()
 		q.ID, q.Version, q.ServiceName, q.Status = 0, 1, "sql-optional-default-update", "inactive"
 		q.SqlQuery = "SELECT id,value,location FROM persons WHERE id>=:minimum"
-		q.NamedParameters = []models.QueryServiceNamedParameter{{Name: "minimum", Type: datatype.FieldTypeInt, Default: float64(1)}}
+		q.NamedParameters = []models.QueryServiceNamedParameter{{Name: "minimum", Type: datatype.FieldTypeInt, Default: float64(1), Options: []commonquery.ParameterOption{{Value: float64(1), Labels: map[string]string{"zh-cn": "第一组", "en": "First"}}, {Value: float64(2), Labels: map[string]string{"zh-cn": "第二组", "en": "Second"}}}}}
 		if err := tx.Create(q).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -203,7 +204,7 @@ func TestQueryServiceVersionAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		oldVersion, beforeChanges := serviceDependencyVersion(before), changeCount()
-		for _, defaults := range []map[string]interface{}{{"minimum": nil}, {"minimum": "2"}, {"new": 2}} {
+		for _, defaults := range []map[string]interface{}{{"minimum": nil}, {"minimum": "2"}, {"new": 2}, {"minimum": float64(3)}} {
 			if _, err := svc.UpdateService(ctx, q.ID, q.TenantID, &models.UpdateQueryServiceRequest{Version: 1, NamedParameterDefaults: defaults}); !errors.Is(err, ErrInvalidNamedParameterDefaults) {
 				t.Fatalf("invalid defaults: %v", err)
 			}
@@ -217,7 +218,7 @@ func TestQueryServiceVersionAgainstPostgres(t *testing.T) {
 			t.Fatalf("persisted default: %+v %v", updated, err)
 		}
 		stored, err := repo.GetByID(q.ID)
-		if err != nil || stored.SqlQuery != before.SqlQuery || serviceDependencyVersion(stored) == oldVersion || !reflect.DeepEqual(stored.DataConfig, before.DataConfig) {
+		if err != nil || stored.SqlQuery != before.SqlQuery || !reflect.DeepEqual(stored.NamedParameters[0].Options, before.NamedParameters[0].Options) || serviceDependencyVersion(stored) == oldVersion || !reflect.DeepEqual(stored.DataConfig, before.DataConfig) {
 			t.Fatal("source changed or version did not change", err)
 		}
 		if _, err := svc.UpdateService(ctx, q.ID, q.TenantID, &models.UpdateQueryServiceRequest{Version: 1, NamedParameterDefaults: map[string]interface{}{"minimum": float64(3)}}); !errors.Is(err, commonapi.ErrConflict) {

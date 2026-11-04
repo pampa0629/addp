@@ -24,6 +24,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonmodels "github.com/addp/common/models"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/protection"
 	"github.com/addp/service/internal/repository"
@@ -180,7 +181,7 @@ func TestSQLRoleSelectionAgainstPostgres(t *testing.T) {
 		optional.ID = 0
 		optional.Version = 1
 		optional.ServiceName = "sql-default-role-revision"
-		optional.NamedParameters = []models.QueryServiceNamedParameter{{Name: "minimum", Type: datatype.FieldTypeBigInt, Default: float64(1)}}
+		optional.NamedParameters = []models.QueryServiceNamedParameter{{Name: "minimum", Type: datatype.FieldTypeBigInt, Default: float64(1), Options: []commonquery.ParameterOption{{Value: float64(1), Labels: map[string]string{"zh-cn": "第一组", "en": "First"}}, {Value: float64(2), Labels: map[string]string{"zh-cn": "第二组", "en": "Second"}}}}}
 		if err := ownerDB.Create(&optional).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -191,6 +192,17 @@ func TestSQLRoleSelectionAgainstPostgres(t *testing.T) {
 		first, err := executor.ExecuteQuery(ctx, original, &models.QueryExecutionRequest{Page: models.QueryPageRequest{Limit: 1}})
 		if err != nil || len(first.Data) != 1 || first.Data[0]["phone_alias"] != "***********" || !first.Page.HasMore {
 			t.Fatalf("optional baseline: %+v %v", first, err)
+		}
+		if _, err := owner.UpdateService(ctx, original.ID, tenant, &models.UpdateQueryServiceRequest{Version: 1, NamedParameterDefaults: map[string]interface{}{"minimum": float64(3)}}); !errors.Is(err, ErrInvalidNamedParameterDefaults) {
+			t.Fatalf("out-of-options default: %v", err)
+		}
+		unchanged, err := owner.repo.GetByIDAndTenant(optional.ID, tenant)
+		if err != nil || unchanged.Version != original.Version || unchanged.NamedParameters[0].Default != float64(1) {
+			t.Fatal("rejected default mutated state", err)
+		}
+		continuation, err := executor.ExecuteQuery(ctx, unchanged, &models.QueryExecutionRequest{Page: models.QueryPageRequest{Limit: 1, Cursor: first.Page.NextCursor}})
+		if err != nil || len(continuation.Data) != 1 || fmt.Sprint(continuation.Data[0]["id"]) != "2" || continuation.Data[0]["phone_alias"] != nil || continuation.ServiceVersion != first.ServiceVersion {
+			t.Fatalf("rejected option update invalidated the original protected cursor: %+v %v", continuation, err)
 		}
 		updated, err := owner.UpdateService(ctx, original.ID, tenant, &models.UpdateQueryServiceRequest{Version: 1, NamedParameterDefaults: map[string]interface{}{"minimum": float64(2)}})
 		if err != nil || updated.Version != 2 {

@@ -2430,6 +2430,23 @@ class ServiceRoleCursorClient:
                         return response(409, {"error": "Selected masking method unavailable", "error_code": "query_protection_choice_invalid"})
                 if "named_parameter_defaults" in body:
                     assert set(body) == {"version", "named_parameter_defaults"}
+                    proposed = body["named_parameter_defaults"]
+                    definitions = {item["name"]: item for item in self.service["named_parameters"]}
+                    outside = any(name not in definitions or not any(type(option["value"]) is type(value) and option["value"] == value
+                        for option in definitions[name].get("options", [])) for name, value in proposed.items())
+                    if outside:
+                        if self.fault == "invalid_default_interrupt": raise KeyboardInterrupt("controlled rejected-default interruption")
+                        if self.fault == "invalid_default_accepted": return response(200, copy.deepcopy(self.service))
+                        if self.fault == "invalid_default_mutates_version": self.service["version"] += 1
+                        if self.fault == "invalid_default_mutates_labels": self.service["named_parameters"][0]["options"][0]["labels"]["en"] = "changed"
+                        if self.fault == "invalid_default_rotates_cursor": self.cursor = "synthetic-wrong-cursor-after-rejection"
+                        if self.fault == "invalid_default_partial_applied" and len(proposed) == 2: self.service["named_parameters"][0]["default"] = 2
+                        error = {"error": "Published default must be in the allowed values", "error_code": "invalid_named_parameter_defaults"}
+                        if self.fault == "invalid_default_wrong_code": error["error_code"] = "invalid_structured_query"
+                        if self.fault == "invalid_default_result": error["data"] = []
+                        result = response(403 if self.fault == "invalid_default_wrong_status" else 400, error)
+                        if self.fault == "invalid_default_wrong_type": result.content_type = "text/plain"
+                        return result
                     if self.fault != "default_revision_not_persisted":
                         self.service["named_parameters"][0]["default"] = body["named_parameter_defaults"]["minimum_id"]
                     if self.fault != "default_revision_version_unchanged":
@@ -2891,7 +2908,11 @@ class ServiceRoleSQLOptionalDefaultCursorTest(ServiceRoleSQLCursorRevocationTest
 
     def test_omission_explicit_default_and_both_cursor_directions_share_csv(self):
         client=ServiceRoleCursorClient(); report=self.run_case(client)
-        self.assertEqual(report["named_parameters"],[{"name":"minimum_id","type":"int","required":False,"default":1},{"name":"minimum_code","type":"string","required":False,"default":"CUST-10001"}])
+        definitions = report["named_parameters"]
+        self.assertEqual([(p["name"], p["type"], p["required"], p["default"]) for p in definitions], [("minimum_id", "int", False, 1), ("minimum_code", "string", False, "CUST-10001")])
+        self.assertEqual([option["value"] for option in definitions[0]["options"]], [1, 2])
+        self.assertEqual([option["value"] for option in definitions[1]["options"]], ["CUST-10001", "CUST-10003"])
+        self.assertTrue(all(set(option["labels"]) == {"zh-cn", "en"} for p in definitions for option in p["options"]))
         self.assertEqual(set(report["parameter_boundary_checks"]),{"default_before_selection","role_selected","default_restored"})
         for checks in report["parameter_boundary_checks"].values():
             resolved=checks["default_resolution"]
@@ -2960,6 +2981,32 @@ class ServiceRoleSQLOptionalDefaultCursorTest(ServiceRoleSQLCursorRevocationTest
 
     def test_new_default_continuation_interrupt_cleans_exact_resources(self):
         client = ServiceRoleCursorClient("new_second_interrupt")
+        with self.assertRaises(KeyboardInterrupt): self.run_case(client)
+        self.assertTrue(client.deleted and client.policy["state"] == "revoked")
+
+
+    def test_option_default_refusals_preserve_definition_and_existing_cursor(self):
+        client = ServiceRoleCursorClient(); report = self.run_case(client)
+        revision = report["published_default_revision"]
+        self.assertTrue(revision["option_domains_preserved"])
+        self.assertEqual(set(revision["invalid_default_updates"]), {"integer_outside_options", "string_outside_options", "mixed_partial_invalid"})
+        self.assertTrue(all(value == {"http_status": 400, "error_code": "invalid_named_parameter_defaults", "result_absent": True, "complete_definition_unchanged": True} for value in revision["invalid_default_updates"].values()))
+        self.assertEqual(revision["unchanged_default_cursor"]["ids"], ["5"])
+        self.assertTrue(revision["unchanged_default_cursor"]["csv_pagination_headers_verified"])
+        self.assertNotEqual(revision["unchanged_default_cursor"]["service_version"], revision["new_default_output"]["service_version"])
+        self.assertEqual(client.service["named_parameters"][0]["options"], report["named_parameters"][0]["options"])
+        self.assertEqual(client.service["named_parameters"][1], report["named_parameters"][1])
+
+    def test_option_default_rejection_defects_fail_and_clean_exact_resources(self):
+        for fault in ("invalid_default_accepted", "invalid_default_mutates_version", "invalid_default_mutates_labels",
+                      "invalid_default_rotates_cursor", "invalid_default_partial_applied", "invalid_default_wrong_code",
+                      "invalid_default_wrong_status", "invalid_default_result", "invalid_default_wrong_type"):
+            client = ServiceRoleCursorClient(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError): self.run_case(client)
+            self.assertTrue(client.deleted and client.policy["state"] == "revoked")
+
+    def test_option_default_rejection_interrupt_cleans_exact_resources(self):
+        client = ServiceRoleCursorClient("invalid_default_interrupt")
         with self.assertRaises(KeyboardInterrupt): self.run_case(client)
         self.assertTrue(client.deleted and client.policy["state"] == "revoked")
 

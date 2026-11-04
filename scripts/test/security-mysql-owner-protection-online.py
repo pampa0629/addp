@@ -1807,7 +1807,12 @@ def bank_card_sql_service_payload(name: str, engine_id: int, source: Mapping[str
         payload["named_parameters"] = [{"name": parameter_name, "type": "int", "required": parameter_default is None,
                                          **({"default": parameter_default} if parameter_default is not None else {})}]
         if parameter_default is not None:
-            payload["named_parameters"].append({"name": "minimum_code", "type": "string", "required": False, "default": "CUST-10001"})
+            payload["named_parameters"][0]["options"] = [
+                {"value": 1, "labels": {"zh-cn": "第一组", "en": "First range"}},
+                {"value": 2, "labels": {"zh-cn": "第二组", "en": "Second range"}}]
+            payload["named_parameters"].append({"name": "minimum_code", "type": "string", "required": False, "default": "CUST-10001",
+                "options": [{"value": "CUST-10001", "labels": {"zh-cn": "起点一", "en": "First code"}},
+                            {"value": "CUST-10003", "labels": {"zh-cn": "起点三", "en": "Third code"}}]})
             payload["sql_query"] = payload["sql_query"].replace(" ORDER BY b.id", " AND b.customer_code>=:minimum_code ORDER BY b.id")
     payload["data_config"].pop("locator")
     payload["data_config"]["stable_key"] = ["id"]
@@ -2720,6 +2725,26 @@ def verify_service_published_default_revision(client: GatewayClient, service_pat
         output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 2, "minimum_code": "CUST-10001"}, page_limit=2, verify_pagination_headers=True)
     if control_version != old_version or control_last_version != old_version:
         raise SuiteError("pre-revision continuation changed the published version")
+    invalid_default_updates = {}
+    for label, values in (("integer_outside_options", {"minimum_id": 3}),
+                          ("string_outside_options", {"minimum_code": "CUST-10002"}),
+                          ("mixed_partial_invalid", {"minimum_id": 2, "minimum_code": "CUST-10002"})):
+        response = client.request("PUT", service_path, (400,), {"version": before["version"], "named_parameter_defaults": values})
+        error = _object(response.payload, "rejected option default update")
+        if (response.status != 400 or set(error) != {"error", "error_code"}
+                or error.get("error_code") != "invalid_named_parameter_defaults"
+                or not isinstance(error.get("error"), str) or not error["error"].strip()
+                or not isinstance(response.content_type, str)
+                or response.content_type.split(";", 1)[0].strip().lower() != "application/json"):
+            raise SuiteError("out-of-domain default must be exact localized 400 without result data")
+        if _object(client.request("GET", service_path, (200,)).payload, "unchanged rejected default definition") != before:
+            raise SuiteError("rejected option default update mutated the definition, labels or version")
+        invalid_default_updates[label] = {"http_status": 400, "error_code": "invalid_named_parameter_defaults",
+            "result_absent": True, "complete_definition_unchanged": True}
+    unchanged_default_cursor, _, unchanged_version = assert_service_role_page(client, query_path, ["5"], False, old_cursor,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, verify_pagination_headers=True)
+    if unchanged_version != old_version:
+        raise SuiteError("rejected option update invalidated the original default cursor")
     client.request("PUT", service_path, (200,), {"version": before["version"], "named_parameter_defaults": {"minimum_id": 2}})
     after = _object(client.request("GET", service_path, (200,)).payload, "updated published default")
     expected = copy.deepcopy(before)
@@ -2778,6 +2803,8 @@ def verify_service_published_default_revision(client: GatewayClient, service_pat
     if _object(client.request("GET", service_path, (200,)).payload, "default after queries") != after:
         raise SuiteError("runtime queries mutated the published default")
     return {"old_cursor_refusals": refusals, "new_default_output": omitted, "continuation_checks": continuation_checks,
+        "invalid_default_updates": invalid_default_updates, "unchanged_default_cursor": unchanged_default_cursor,
+        "option_domains_preserved": True,
         "explicit_new_default_output": explicit, "explicit_old_value_new_query": dict(prior, continuation=last),
         "immutable_declarations_preserved": True, "default_revision_persisted": True,
         "service_version_changed": True, "runtime_queries_unchanged": True}
@@ -4455,7 +4482,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v39",
+            "schema_version": "addp.security-mysql-owner-protection-online/v40",
             "result": "passed",
             "identity": identity,
             "governance": governance,

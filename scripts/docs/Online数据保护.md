@@ -10,7 +10,7 @@
 
 ## 现行契约与证据边界
 
-当前领域报告为 `addp.security-mysql-owner-protection-online/v39`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v39 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
+当前领域报告为 `addp.security-mysql-owner-protection-online/v40`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v40 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
 
 保护方式、角色资格及导出有效性的能力契约见[数据安全规范](../../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)。本文维护 suite 断言与版本差异；已归档的固定源码、运行尝试、失败和清理结果见[数据保护与执行血缘历史证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md)，不由版本号推导某次验收已通过。其中[四出口实际停机 v9](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)分别维护对应旧证据，不作为 v23～v33 新增范围的通过记录。
 
@@ -113,7 +113,7 @@ Hosted `security-mysql-owner-protection` 报告 v23 的 `bank_card_metadata.deve
 
 边界检查分别在初始默认、角色方式有效及显式移除后恢复默认阶段执行；方式撤销后的续读与无游标拒绝继续使用合法且不变的参数，避免用参数错误冒充保护拒绝。前后定义、命名参数声明、当前用户角色及默认 Baseline 保持；成功、失败或中断沿同一捕获 ID 撤销 Policy、删除本轮服务并确认 404。只增加一个私有 Service 的创建／删除计数，不新增账号、权限、引擎或部署，不归档参数取值、游标、令牌、原值或 CSV 正文。
 
-该阶段报告为 v35（现由 v39 接续），CI 登记必须约束新增场景的派发／报告、参数边界事实及服务计数。确定性门禁沿 `make test-security-online-runner`，不新增测试入口或工作流；实际 v35 Hosted/T4 尚未运行，仍由专门 CI 会话跟进。本切片只验证一个必填整数 SQL 输入，不扩展为全部参数类型、可选默认值、原值授权或角色资格变更的运行证据。
+该阶段报告为 v35（现由 v40 接续），CI 登记必须约束新增场景的派发／报告、参数边界事实及服务计数。确定性门禁沿 `make test-security-online-runner`，不新增测试入口或工作流；实际 v35 Hosted/T4 尚未运行，仍由专门 CI 会话跟进。本切片只验证一个必填整数 SQL 输入，不扩展为全部参数类型、可选默认值、原值授权或角色资格变更的运行证据。
 
 ### v36：SQL 角色资格撤销与自然到期
 
@@ -121,7 +121,7 @@ Hosted `security-mysql-owner-protection` 报告 v23 的 `bank_card_metadata.deve
 
 失效前两个服务分别完成4/1两页JSON/CSV正向对照；失效后保持各自服务定义、选择、Policy及保护投影不变，SQL旧游标及新请求的JSON/CSV均须精确403/`query_protection_roles_unavailable`，只有错误、JSON错误类型及单个no-store，不接受401、409或400。主动撤销仍先证明旧令牌401、正式重登同一普通User后资格403；自然到期仍保持同一有效会话、授权版本和主功能Permission，仅资格active/expired，不重登、续期、撤销或修改时钟。显式移除选择后两个服务分别恢复默认五行JSON/CSV。
 
-SQL定义只保存声明，不伪造Meta Source，不持久化调用值。报告记录SQL独立服务ID、字段、受控结果哈希、游标摘要、精确拒绝和恢复；不保存凭据、游标全文、CSV或源值。两个新增Service均立即捕获ID，任何失败或中断都逐一删除并核对404，即使一项清理失败仍尝试其他清理；同一Policy仅由原生命周期撤销。资源总计增加2。该阶段报告v36（现由v39接续），原浏览器v9不扩展；沿现有Makefile入口及CI自动登记，无新增工作流。本文为断言合同，v36实际Hosted/T4未运行，CI仍由专门会话跟进。
+SQL定义只保存声明，不伪造Meta Source，不持久化调用值。报告记录SQL独立服务ID、字段、受控结果哈希、游标摘要、精确拒绝和恢复；不保存凭据、游标全文、CSV或源值。两个新增Service均立即捕获ID，任何失败或中断都逐一删除并核对404，即使一项清理失败仍尝试其他清理；同一Policy仅由原生命周期撤销。资源总计增加2。该阶段报告v36（现由v40接续），原浏览器v9不扩展；沿现有Makefile入口及CI自动登记，无新增工作流。本文为断言合同，v36实际Hosted/T4未运行，CI仍由专门会话跟进。
 
 ### v37：可选默认参数的保护与游标
 
@@ -144,6 +144,14 @@ SQL定义只保存声明，不伪造Meta Source，不持久化调用值。报告
 本矩阵正向JSON／CSV及无游标四行参考共用既有读取与断言。CSV分页has-more和Service-version响应头必须各恰好一个，且与对应JSON一致；HTTP传输只额外保留这两个无凭据头的全部值，禁止采集完整游标或通用Header。新游标改int为1或改string下界为CUST-10003的JSON／CSV共四次请求须精确400/invalid_structured_query、无数据、JSON错误及单个no-store，不能替代旧版本拒绝。报告在published_default_revision下增加continuation_checks，仅保留计数、ID／CSV摘要、版本与布尔事实，不保存源值、CSV正文、完整游标或凭据。两方向第二页、四行参考、CSV分页头、拒绝状态／原因／缓存和失败／中断精确清理必须有确定性反例。
 
 领域唯一报告升级v39，浏览器仍v9、资源计数及领域／Infra清理边界不变。沿既有make test-security-online-runner及CI登记和删除派发／报告反例同步覆盖，不新增workflow或权限。新矩阵接入及确定性门禁不是Hosted通过；已有本地9项／9组JSON-CSV证据保留在Service测试专题，Hosted仍由专门CI会话跟进。
+
+### v40：允许值列表内的默认修订与失败不变性
+
+沿既有[参数允许值契约](../../service/docs/architecture/查询发布与执行.md#命名参数展示与固定选项)，同一可选参数服务发布int允许值1/2及固定string允许值CUST-10001/CUST-10003，并保留两种语言的选项标签。SQL、来源、角色生命周期和资源数量不变；v39的新游标改int=1或string=CUST-10003仍使用合法选项，必须因游标绑定而拒绝，不能被列表外错误替代。
+
+合法int默认1→2前，正式版本PUT分别提交列表外int=3、列表外string=CUST-10002、合法int与非法string混合的部分更新，均须400/invalid_named_parameter_defaults、只含本地化error/error_code且无结果。每次GET完整定义须与更新前相同，不推进版本、不修改默认／允许值／标签；旧默认真实游标在这些失败后仍可正常返回最后一行JSON/CSV，版本及单个no-store、分页头保持。随后合法默认更新必须持久化且只改默认，v39的新旧游标拒绝、双方向续页、默认保护、CSV空单元格及精确清理全部继续执行；报告在published_default_revision中增加invalid_default_updates、unchanged_default_cursor及option_domains_preserved，不记录凭据／游标全文／源值。
+
+领域唯一v40、浏览器v9及14+task_ids资源计数保持，沿现有Runner与CI登记门禁，不新增部署或权限。Service标准PostgreSQL补选项保留、列表外失败不落库及失败后旧游标继续可用；Console已有默认编辑用例增中英文固定选项变体，不替代自由标量用例。确定性、受控浏览器、个人环境HTTP与Hosted分别记录；本轮Hosted仍由专门会话跟进，不计未运行通过。
 
 ## 用户角色资格撤销
 

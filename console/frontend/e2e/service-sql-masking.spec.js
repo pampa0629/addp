@@ -73,10 +73,13 @@ for (const language of ['zh-cn', 'en']) {
   })
 }
 
-for (const language of ['zh-cn', 'en']) {
-  test(`published SQL default edits preserve immutable declarations (${language})`, async ({page}) => {
+for (const language of ['zh-cn', 'en']) for (const fixedOptions of [false, true]) {
+  test(`published SQL default edits preserve immutable declarations (${language}, ${fixedOptions ? 'options' : 'scalar'})`, async ({page}) => {
     const words=(language==='en'?en:zh).service.query
     let definition={id:41,version:3,service_name:'default_edit_fixture',title:'SQL optional defaults',config_type:'sql',engine_id:1,sql_query:'SELECT id FROM public.persons WHERE id >= :minimum AND :subject IS NOT NULL',named_parameters:[{name:'minimum',type:'int',required:false,default:1},{name:'subject',type:'string',required:true}],stable_key:['id'],max_features:100,protocols:{rest_api:{enabled:true},ogc_features:{enabled:false}},output_contract:{table:{fields:[{name:'id',type:'bigint',nullable:false}],primary_key:['id']}},data_config:{protection_choices:[]}}
+    const options=[{value:1,labels:{'zh-cn':'第一组',en:'First range'}},{value:2,labels:{'zh-cn':'第二组',en:'Second range'}}]
+    if(fixedOptions)definition.named_parameters[0].options=options
+    const selectedLabel=language==='en'?'Second range':'第二组'
     const writes=[];let fail=true
     await page.addInitScript(language=>localStorage.setItem('addp-lang',language),language)
     await page.route(url=>url.pathname.startsWith('/api/'),async route=>{
@@ -105,17 +108,24 @@ for (const language of ['zh-cn', 'en']) {
     await expect(rows.nth(0).getByRole('checkbox')).toBeDisabled()
     await expect(rows.nth(0).getByText(words.namedParameterDefault,{exact:true})).toBeVisible()
     await expect(rows.nth(1).locator('.named-parameter-value input')).toBeDisabled()
-    await expect(rows.nth(0).locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
+    await expect(rows.nth(0).locator('.named-parameter-type .el-select__wrapper')).toHaveClass(/is-disabled/)
     await expect(rows.nth(1).locator('.el-input__inner').first()).toBeDisabled()
-    const value=rows.nth(0).locator('.el-input-number input');await value.fill('2');await value.blur()
+    const value=rows.nth(0).locator(fixedOptions?'.named-parameter-value .el-select':'.el-input-number input')
+    if(fixedOptions){await value.click();await editor.getByRole('option',{name:selectedLabel,exact:true}).click()}
+    else{await value.fill('2');await value.blur()}
+
     await editor.getByRole('button',{name:words.updateBtn,exact:true}).click()
     await expect(editor.getByText(words.submitFailed+': fixture default invalid',{exact:true})).toBeVisible()
-    await expect(value).toHaveValue('2');expect(writes).toHaveLength(1);expect(writes[0].version).toBe(3)
+    if(fixedOptions)await expect(value).toContainText(selectedLabel)
+    else await expect(value).toHaveValue('2')
+    expect(writes).toHaveLength(1);expect(writes[0].version).toBe(3)
     fail=false;await editor.getByRole('button',{name:words.updateBtn,exact:true}).click()
     await expect(editor.getByRole('heading',{name:'Query service list',exact:true})).toBeVisible()
     await page.goto(url);await page.addStyleTag({content:'iframe { width:100%; height:960px; border:0; }'})
-    await expect(value).toHaveValue('2')
-    await rows.nth(0).screenshot({path:`/tmp/p145-default-edit-${language}.png`})
+    if(fixedOptions)await expect(value).toContainText(selectedLabel)
+    else await expect(value).toHaveValue('2')
+    await rows.nth(0).screenshot({path:`/tmp/p145-default-edit-${language}${fixedOptions?'-options':''}.png`})
+    if(fixedOptions)expect(definition.named_parameters[0].options).toEqual(options)
     expect(definition.named_parameters[1]).toEqual({name:'subject',type:'string',required:true})
     expect(writes[1].version).toBe(3)
   })
