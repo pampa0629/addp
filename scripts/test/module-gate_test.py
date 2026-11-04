@@ -245,7 +245,7 @@ class ModuleGateTest(unittest.TestCase):
         commands = [step.command for step in MODULE.plan_module(self.repository, "sample")]
         self.assertEqual(commands.count(("make", "test-sample-falkor")), 1)
 
-    def _run_common_postgres_group(self, arguments: list[str], output: str = COMMON_POSTGRES_SUCCESS_OUTPUT, extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    def _run_common_postgres_group(self, arguments: list[str], output: str = COMMON_POSTGRES_SUCCESS_OUTPUT, extra_env: dict[str, str] | None = None, snapshot_calls: list[list[str]] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         repository = SCRIPT.parents[2]
         with tempfile.TemporaryDirectory(dir=self.repository) as directory:
             fixture = Path(directory)
@@ -262,10 +262,25 @@ class ModuleGateTest(unittest.TestCase):
                 encoding="utf-8",
             )
             go.chmod(0o755)
+            python_calls = fixture / "python-calls"
+            python = fixture / "python3"
+            python.write_text(
+                f'#!{sys.executable}\n'
+                'import json, os, sys\n'
+                'if sys.argv[1:2] == ["-m"]:\n'
+                '    with open(os.environ["ADDP_GATE_TEST_PYTHON_CALLS"], "a") as calls:\n'
+                '        calls.write(json.dumps(sys.argv[1:]) + "\\n")\n'
+                '    if sys.argv[1:] != ["-m", "scripts.test.raster-workflow-capacity-online_test", "--postgres"]:\n'
+                '        sys.exit("unexpected Python module in deterministic fixture")\n'
+                '    sys.exit(int(os.environ["ADDP_GATE_TEST_SNAPSHOT_EXIT"]))\n'
+                'os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n',
+                encoding="utf-8",
+            )
+            python.chmod(0o755)
             environment = os.environ.copy()
             environment.update({
                 "PATH": str(fixture) + os.pathsep + environment["PATH"],
-                # Only mocked Go executes; no database or Docker operation is performed.
+                # Mock the Go and Python SQL children; no database or Docker access.
                 "GITHUB_ACTIONS": "true",
                 "ADDP_TEST_POSTGRES_HOST": "127.0.0.1",
                 "ADDP_TEST_POSTGRES_PORT": "5432",
@@ -273,6 +288,8 @@ class ModuleGateTest(unittest.TestCase):
                 "ADDP_TEST_POSTGRES_PASSWORD": "fixture-password",
                 "ADDP_GATE_TEST_GO_CALLS": str(calls),
                 "ADDP_GATE_TEST_GO_OUTPUT": output,
+                "ADDP_GATE_TEST_PYTHON_CALLS": str(python_calls),
+                "ADDP_GATE_TEST_SNAPSHOT_EXIT": "0",
             })
             environment.pop("ADDP_TEST_EXECUTION_POSTGRES_DSN", None)
             environment.pop("ADDP_GATE_TEST_EXECUTION_OUTPUT", None)
@@ -285,7 +302,31 @@ class ModuleGateTest(unittest.TestCase):
                 cwd=repository, env=environment, capture_output=True, text=True,
                 timeout=10, check=False,
             )
+            if snapshot_calls is not None and python_calls.exists():
+                snapshot_calls.extend(json.loads(line) for line in python_calls.read_text().splitlines())
             return result, calls.read_text().splitlines() if calls.exists() else []
+
+    def test_common_postgres_snapshot_selection_and_failure_propagation(self) -> None:
+        expected = [["-m", "scripts.test.raster-workflow-capacity-online_test", "--postgres"]]
+        for arguments, go_count, selected in (
+            ([], 8, True),
+            (["--test", "all"], 8, True),
+            (["--test", "online-capacity-snapshots"], 0, True),
+            (["--test", "query-read-set"], 1, False),
+        ):
+            with self.subTest(arguments=arguments):
+                snapshots = []
+                result, calls = self._run_common_postgres_group(arguments, snapshot_calls=snapshots)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(go_count, len(calls))
+                self.assertEqual(expected if selected else [], snapshots)
+                if selected:
+                    failed_snapshots = []
+                    result, calls = self._run_common_postgres_group(arguments,
+                        extra_env={"ADDP_GATE_TEST_SNAPSHOT_EXIT": "37"}, snapshot_calls=failed_snapshots)
+                    self.assertEqual(37, result.returncode)
+                    self.assertEqual([], calls)
+                    self.assertEqual(expected, failed_snapshots)
 
     def test_common_postgres_group_preserves_full_default_and_scopes_explicitly(self) -> None:
         result, calls = self._run_common_postgres_group([])
