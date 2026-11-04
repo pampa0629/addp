@@ -700,11 +700,13 @@ APT只解析唯一失败RUN步骤的带步骤编号输出。明确错误行及�
 
 本批仍限128 KiB整份输入、4 KiB整组诊断，保留原集合、首因／哈希、四秒、资源及清理边界。代理日志中的502只作为离线候选线索，不能回填构建APT状态、签名子类或FROM摘要；旧报告不追填新字段。先修规范与确定性门禁，不改任何产品Dockerfile、APT源／包／重试／签名校验、基础镜像或代理策略，不重试构建或新开本地窗口，不运行Hosted／容量／定时。
 
-2026-11-04用户确认产品镜像命令超时的有界取证：仅当非采样线程执行当次product_image_*对应的原make build-images精确命令，且首异常为command_deadline_exceeded时，在原取消／回收流程返回后、同一临时输出关闭前读取最多128 KiB＋1字节。不得扩大到身份、业务、采样、其他命令或其他错误，不增加等待／进程／Docker／网络探针，不改原600秒、取消流程及四秒／资源／清理预算。输出超过128 KiB记over_budget，未以完整换行结束记truncated，读取或解析异常记unavailable；这些状态不解析前缀或保存部分哈希，空捕获可记complete但进度unknown。complete只表示捕获快照可完整解析，不表示构建完成或网络正文完整。
+2026-11-04用户确认产品构建步骤的有界增量观测，替换超时后整份文本进度提取，不保留旧读取／哈希／截断分类路线。只限非采样线程、当次product_image_*服务和精确make build-images原命令；复用原等待循环，在同一捕获文件的连续字节偏移增量读取，每轮最多32 KiB、全命令累计8 MiB、单行含换行最多4 KiB、内部最多64个编号步骤。使用位置读取不改变原输出文件偏移；不新增进程、线程、Docker／网络请求，不改通用build-images脚本及日志转发。正常非零构建仍沿原128 KiB public_build错误分类，不用增量状态替代错误归属。
 
-复用唯一public_build分类器并明确termination=deadline／process_exit、output_status及progress；仅超时上下文从完整BuildKit编号步骤标题与DONE／CACHED／ERROR／CANCELED终态识别未完成候选。内部编号标题最多64项，超过记progress_steps超预算且不保留候选；唯一候选才保留固定类别apt／python_dependency／common_package／verification／other，无候选记unavailable／unknown、多个记ambiguous／unknown、重复或归属冲突记invalid／unknown，标题中的任意步骤号、命令、URL、路径、包名及正文不导出。APT须RUN apt-get，Python依赖与公共包安装／验证须匹配既有产品命令形状，不据代理CONNECT、下载消息或最后一行猜步骤。取消终态只表示日志观察，不能认定正常退出；超时首因及其诊断不被exit143或诊断异常覆盖。正常非零退出沿同一分类器原错误归属规则，不能以超时进度代替失败步骤。
+每个完整步骤标题只在内存分为apt／python_dependency／common_package／verification／other，状态为running／done／cached／error／canceled；标题重复、未知编号终态或观察到捕获缩短／偏移缺口记invalid，不根据最后一行、代理CONNECT或包下载正文猜步骤。DONE／CACHED／ERROR结束候选，CANCELED只表示取消观察，仍属未完成候选。摘要最多4 KiB，仅保留计数、封闭类别／状态、当次观测单调端点、扫描字节数和解析实际用量；不输出步骤号、命令、包名、URL、路径或原文。观测端点是宿主等待循环看到该行的时刻，不是BuildKit执行起止或实际网络耗时。
 
-超时回执只保留捕获完整时的SHA256、读取字节数／封闭状态、分类及诊断实际耗时；读取和分类失败仍如实记时，异常正文不导出，4 KiB整组public_build及原集合上限保持。诊断时间发生在已判失败之后，只计入实际总时长，不重置截止、转为成功或获得新增清理时间；原采样四秒、8 CPU／12 GiB、4 GiB、60／55分钟及首失败／强制清理要求不变。先修规范及HTTP／Trace确定性门禁，本批不推送触发构建、不重试构建或开窗口，不运行Hosted／容量／定时。旧Agent超时报告不追填新字段，不声称已定位历史pip／APT耗时或修复网络。
+解析CPU累计预算1秒，用当前线程CPU逐块前后检查，读／解析及摘要实际耗时分别记录并计入原600秒，不宣称内核硬限额。达到CPU／字节／行／步骤／摘要上限、读取异常后停止诊断观察，不能拖延或反转原构建；正常构建结果仍沿原退出码与业务断言。原取消流程返回后最多再读取一块已有输出，不等待更多日志；仍有未读尾部记unread、未完整换行记truncated、缺失记unavailable，任何超限／缺口／歧义不得用较早候选冒充当前步骤。只有连续完整读至所见EOF、没有截断或预算失败时，唯一未完成步骤才可定位；并行候选记ambiguous／unknown，无候选为unavailable／unknown。读取／分类异常不覆盖原超时异常，不把取消exit143改成构建正常退出，原600秒、四秒、8 CPU／12 GiB、4 GiB、60／55分钟及清理要求不变。
+
+超时回执只输出上述有界状态，不再读取128 KiB整份快照或保存构建输出哈希；正常非零错误原哈希及128 KiB分类职责不变。先修规范及HTTP／Trace确定性门禁，本批不推送触发构建、不重试构建或开窗口，不运行Hosted／容量／定时；旧超预算与超时报告不追填，不声称已解决历史Agent耗时或正式页面验收。
 
 新Tenant创建后，身份夹具必须在导出凭据前复用既有`waitForOwnerProtection`，只读等待当次Tenant的Develop持久保护初始化checkpoint，最长60秒并计入原窗口／身份准备预算。固定Owner为Develop，不开放额外Owner参数，不直接写投影或checkpoint，也不把业务拒绝重试为成功。实际Owner从Security完整消费后才可开始执行；实例`/health/ready`不能替代该Tenant状态。此要求沿数据安全规范既有初始化边界，不改变普通User权限、源读取授权或数据保护裁决。
 

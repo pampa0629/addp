@@ -17,49 +17,133 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 
+class IncrementalBuildProgressTests(unittest.TestCase):
+    def observe(self, raw, chunks=32768):
+        observer=m.BuildProgress()
+        with tempfile.TemporaryFile() as output:
+            for offset in range(0,len(raw),chunks):
+                output.seek(0,2);output.write(raw[offset:offset+chunks]);output.flush()
+                observer.poll(output)
+            result=observer.snapshot(output)
+        return result
+
+    def test_split_lines_and_large_body_preserve_only_the_unique_stage(self):
+        for command,stage in [('apt-get update','apt'),('pip install -r /tmp/SECRET','python_dependency'),
+                ('pip install --no-deps /tmp/common-python','common_package'),
+                ('python -m pip check','verification'),('echo SECRET','other')]:
+            raw=('#1 [1/2] RUN apt-get update\n#1 DONE 0.1s\n#2 [2/2] RUN '+command+'\n').encode()
+            for size in (1,7,32768):
+                with self.subTest(stage=stage,size=size):
+                    result=self.observe(raw,size)
+                    self.assertEqual(result['progress']['stage'],stage);self.assertEqual(result['progress']['status'],'unique')
+                    self.assertNotIn('SECRET',repr(result));self.assertNotIn('/tmp/',repr(result))
+            result=self.observe(raw+b'#2 1.0 SECRET body\n'*12000)
+            self.assertGreater(result['scanned_bytes'],131072);self.assertEqual(result['progress']['stage'],stage)
+            self.assertLessEqual(len(json.dumps(result).encode()),4096)
+
+    def test_parallel_duplicate_finished_unknown_and_canceled_steps_are_explicit(self):
+        for raw,status in [(b'#1 [1/2] RUN apt-get update\n#2 [2/2] RUN pip install SECRET\n','ambiguous'),
+                (b'#1 [1/1] RUN apt-get update\n#1 [1/1] RUN echo SECRET\n','invalid'),
+                (b'#1 [1/1] RUN apt-get update\n#10 DONE 0.1s\n','invalid'),
+                (b'#1 [1/1] RUN apt-get update\n#100000 [2/2] RUN echo SECRET\n','invalid'),
+                (b'#1 [1/1] RUN apt-get update\n#2 [2/2] RUN echo SECRET\r#3 [3/3] RUN apt-get update\n','invalid'),
+                (b'#1 [1/1] RUN apt-get update\n#1 DONE 0.1s\n','unavailable'),
+                (b'#1 [1/1] RUN apt-get update\n#1 CACHED\n','unavailable'),
+                (b'#1 [1/1] RUN apt-get update\n#1 ERROR: SECRET\n','unavailable')]:
+            with self.subTest(status=status):
+                value=self.observe(raw);self.assertEqual(value['progress'],{'status':status,'stage':'unknown'})
+        value=self.observe(b'#1 [1/1] RUN apt-get update\n#1 CANCELED\n')
+        self.assertEqual(value['progress']['stage'],'apt');self.assertEqual(value['progress']['state'],'canceled')
+
+    def test_line_step_byte_and_cpu_limits_never_report_stale_stage(self):
+        for raw in [b'#1 [1/1] RUN apt-get update\n'+b'X'*4096+b'\n',
+                    ''.join('#'+str(i)+' [1/1] RUN echo SECRET\n'for i in range(65)).encode(),
+                    b'#1 [1/1] RUN apt-get update\n'+b'body\n'*(8*1024**2//5+1)]:
+            value=self.observe(raw);self.assertEqual(value['status'],'over_budget');self.assertEqual(value['progress']['stage'],'unknown')
+        calls=[0]
+        def cpu():calls[0]+=1;return 0 if calls[0]==1 else 1.01
+        with mock.patch.object(m.time,'thread_time',side_effect=cpu):
+            value=self.observe(b'#1 [1/1] RUN apt-get update\n')
+        self.assertEqual(value['status'],'over_budget');self.assertEqual(value['progress']['stage'],'unknown')
+
+    def test_exact_byte_line_and_step_boundaries_and_summary_limit(self):
+        raw=b'#1 [1/1] RUN apt-get update\n'
+        size=8*1024**2-len(raw);raw+=(b'b'*4095+b'\n')*(size//4096)+b'b'*(size%4096-1)+b'\n'
+        value=self.observe(raw)
+        self.assertEqual(value['status'],'complete');self.assertEqual(value['scanned_bytes'],8*1024**2)
+        value=self.observe(b'#1 [1/1] RUN apt-get update\n'+b'b'*4095+b'\n')
+        self.assertEqual(value['progress']['stage'],'apt')
+        raw=''.join('#'+str(i)+' [1/1] RUN echo SECRET\n#'+str(i)+' DONE 0.1s\n'for i in range(63)).encode()
+        value=self.observe(raw+b'#63 [1/1] RUN apt-get update\n')
+        self.assertEqual(value['steps_observed'],64);self.assertEqual(value['progress']['stage'],'apt')
+        with mock.patch.object(m.json,'dumps',return_value='x'*4097):value=self.observe(b'#1 [1/1] RUN apt-get update\n')
+        self.assertEqual(value['status'],'over_budget');self.assertEqual(value['progress']['stage'],'unknown')
+
+    def test_unread_tail_truncation_shrink_and_read_failure_are_not_current_stage(self):
+        for mode in ('unread','truncated','shrink','read_error'):
+            with self.subTest(mode=mode),tempfile.TemporaryFile() as output:
+                o=m.BuildProgress();output.write(b'#1 [1/1] RUN apt-get update\n');output.flush();o.poll(output)
+                if mode=='unread':output.write(b'body\n'*20000);output.flush()
+                elif mode=='truncated':output.write(b'partial SECRET');output.flush()
+                elif mode=='shrink':output.truncate(0)
+                if mode=='read_error':
+                    with mock.patch.object(m.os,'pread',side_effect=OSError('SECRET')):value=o.snapshot(output)
+                else:value=o.snapshot(output)
+                self.assertEqual(value['status'],mode if mode in ('unread','truncated') else 'invalid' if mode=='shrink' else 'unavailable')
+                self.assertEqual(value['progress']['stage'],'unknown');self.assertNotIn('SECRET',repr(value))
+
+    def test_position_reads_are_bounded_and_do_not_change_writer_position(self):
+        with tempfile.TemporaryFile() as output:
+            output.write(b'body\n'*20000);output.flush();position=output.tell();o=m.BuildProgress()
+            with mock.patch.object(m.os,'pread',wraps=m.os.pread) as read:
+                o.poll(output);self.assertEqual(read.call_args.args[1],32768)
+            self.assertEqual(output.tell(),position);self.assertEqual(o.scanned_bytes,32768)
+
+    def test_exact_product_command_observes_in_original_loop_and_keeps_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.phase='product_image_gateway';clock=[0.0];events=[]
+            process=mock.Mock(pid=654321,returncode=-15);process.poll.side_effect=lambda: -15 if events else None
+            def start(*args,**kwargs):kwargs['stdout'].write(b'#1 [1/1] RUN pip install SECRET\n');kwargs['stdout'].flush();return process
+            def wait(**kwargs):clock[0]=601;raise m.subprocess.TimeoutExpired('SECRET',kwargs['timeout'])
+            process.wait.side_effect=lambda **kwargs: None if events else wait(**kwargs)
+            command=['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services gateway --registry localhost:5001 --tag '+life.run_id]
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]),mock.patch.object(m.time,'monotonic_ns',side_effect=lambda:round(clock[0]*1e9)),mock.patch.object(m.subprocess,'Popen',side_effect=start) as spawn,mock.patch.object(m.os,'killpg',side_effect=lambda *a:events.append('cancel')):
+                with self.assertRaisesRegex(m.GateError,'^command_deadline_exceeded$'):life.command(command,timeout=600)
+            self.assertEqual(spawn.call_count,1);self.assertEqual(events,['cancel'])
+            self.assertEqual(life.last_failure['termination'],'deadline');self.assertNotIn('output_sha256',life.last_failure)
+            self.assertEqual(life.last_failure['public_build']['progress']['stage'],'python_dependency')
+            self.assertNotIn('SECRET',repr(life.last_failure))
+
+    def test_scope_and_observer_errors_preserve_the_original_exception(self):
+        for sampling,command,error_text in [(True,['make','build-images'],'command_deadline_exceeded'),
+                (False,['private-login'],'command_deadline_exceeded'),(False,None,'owned_container_oom'),
+                (False,['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services gateway --registry localhost:5001 --tag OTHER'],'command_deadline_exceeded'),
+                (False,None,'command_deadline_exceeded')]:
+            with self.subTest(sampling=sampling,error=error_text),tempfile.TemporaryDirectory() as directory,tempfile.TemporaryFile() as output:
+                life=bare_lifecycle(directory);life.phase='product_image_gateway'
+                args=command or ['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services gateway --registry localhost:5001 --tag '+life.run_id]
+                original=m.GateError(error_text)
+                with mock.patch.object(m.os,'pread',side_effect=OSError('SECRET')):
+                    with self.assertRaises(m.GateError) as caught:
+                        with m.observe_product_build(life,args,output,sampling) as observer:
+                            if observer:observer.poll(output)
+                            raise original
+                self.assertIs(caught.exception,original)
+                if command is None and error_text=='command_deadline_exceeded':self.assertEqual(life.last_failure['public_build']['status'],'unavailable')
+                else:self.assertFalse(hasattr(life,'last_failure'))
+
+    def test_observation_time_exhausting_command_deadline_cancels_without_extra_wait(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.phase='product_image_gateway';clock=[0.0];events=[]
+            process=mock.Mock(pid=654321,returncode=-15);process.poll.side_effect=lambda: -15 if events else None
+            def consume(observer,output):clock[0]=601
+            command=['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services gateway --registry localhost:5001 --tag '+life.run_id]
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]),mock.patch.object(m.time,'monotonic_ns',side_effect=lambda:round(clock[0]*1e9)),mock.patch.object(m.subprocess,'Popen',return_value=process),mock.patch.object(m.os,'killpg',side_effect=lambda *a:events.append('cancel')),mock.patch.object(m.BuildProgress,'poll',consume):
+                with self.assertRaisesRegex(m.GateError,'^command_deadline_exceeded$'):life.command(command,timeout=600)
+            self.assertEqual(events,['cancel']);process.wait.assert_called_once_with(timeout=1)
+
+
 class PublicAPTBuildEvidence(unittest.TestCase):
-    def test_deadline_progress_uses_one_unfinished_numbered_build_step(self):
-        for command,stage in [('apt-get update && apt-get install -y gcc','apt'),
-                ('pip install --no-cache-dir -r /tmp/requirements.txt','python_dependency'),
-                ('pip install --no-cache-dir --no-build-isolation --no-deps /tmp/common-python','common_package'),
-                ('python -m pip check && python -c "PRIVATE"','verification'),('echo PRIVATE','other')]:
-            raw=('#1 [1/2] RUN apt-get update\n#1 DONE 1.0s\n#2 [2/2] RUN '+command+'\n#2 2.0 PRIVATE-TOKEN\n').encode()
-            v=m.public_build_failure_diagnostic(raw,termination='deadline')
-            self.assertEqual(v['progress'],{'status':'unique','stage':stage})
-            self.assertEqual(v['termination'],'deadline');self.assertEqual(v['output_status'],'complete')
-            self.assertNotIn('PRIVATE',repr(v))
-            self.assertEqual(m.public_build_failure_diagnostic(raw)['progress'],{'status':'unavailable','stage':'unknown'})
-
-    def test_deadline_progress_rejects_ambiguous_invalid_unframed_and_finished_steps(self):
-        cases=[(b'#1 [1/2] RUN apt-get update\n#2 [2/2] RUN pip install -r PRIVATE\n','ambiguous'),
-               (b'#1 [1/2] RUN apt-get update\n#1 [1/2] RUN echo PRIVATE\n','invalid'),
-               (b'RUN pip install PRIVATE\nCONNECT PRIVATE\n','unavailable'),
-               (b'#1 [1/2] RUN apt-get update\n#1 DONE 1.0s\n','unavailable'),
-               (b'#1 [1/2] RUN apt-get update\n#1 CACHED\n','unavailable'),
-               (b'#1 [1/2] RUN apt-get update\n#1 ERROR: PRIVATE\n','unavailable')]
-        for raw,status in cases:
-            with self.subTest(status=status,raw=raw):
-                v=m.public_build_failure_diagnostic(raw,termination='deadline')
-                self.assertEqual(v['progress'],{'status':status,'stage':'unknown'});self.assertNotIn('PRIVATE',repr(v))
-        v=m.public_build_failure_diagnostic(b'#1 [1/2] RUN apt-get update\n#1 CANCELED\n',termination='deadline')
-        self.assertEqual(v['progress'],{'status':'unique','stage':'apt'})
-        v=m.public_build_failure_diagnostic(b'#1 [1/2] RUN apt-get update\n#10 DONE 0.1s\n',termination='deadline')
-        self.assertEqual(v['progress'],{'status':'unique','stage':'apt'})
-        v=m.public_build_failure_diagnostic(b'#1 [1/1] RUN echo pip install PRIVATE\n',termination='deadline')
-        self.assertEqual(v['progress'],{'status':'unique','stage':'other'})
-        raw=''.join('#'+str(i)+' [1/1] RUN echo PRIVATE\n'for i in range(65)).encode()
-        v=m.public_build_failure_diagnostic(raw,termination='deadline')
-        self.assertEqual(v['status'],'over_budget');self.assertEqual(v['progress']['stage'],'unknown')
-
-    def test_deadline_output_incomplete_or_over_budget_never_parses_prefix(self):
-        for raw,status in [(b'#1 [1/1] RUN apt-get update','truncated'),(b'x'*131073,'over_budget')]:
-            v=m.public_build_failure_diagnostic(raw,termination='deadline')
-            self.assertEqual(v['output_status'],status);self.assertEqual(v['progress']['stage'],'unknown')
-            self.assertEqual(v['base']['status'],'unavailable')
-        with mock.patch.object(m.json,'dumps',return_value='x'*4097):
-            v=m.public_build_failure_diagnostic(b'#1 [1/1] RUN apt-get update\n',termination='deadline')
-        self.assertEqual(v['status'],'over_budget');self.assertEqual(v['progress']['stage'],'unknown')
-
     def output(self,body,*,prefix='',step='7'):
         return (prefix+'\n#'+step+' [3/9] RUN apt-get update && apt-get install -y gcc postgresql-client\n'+
                 '\n'.join('#'+step+' 1.0 '+line for line in body.splitlines())+'\n#'+step+
@@ -2063,59 +2147,6 @@ class LocalTraceCleanupTests(unittest.TestCase):
             self.assertEqual(life.last_failure['diagnostic_markers'],['permission denied'])
             self.assertRegex(life.last_failure['output_sha256'], r'^[a-f0-9]{64}$')
             self.assertNotIn('PRIVATE', repr(life.last_failure))
-
-    def test_product_deadline_captures_after_cancel_and_preserves_original_exception(self):
-        for raw,status in [(b'#7 [1/1] RUN apt-get update\n','complete'),(b'#7 [1/1] RUN apt-get update','truncated'),(b'x'*131073,'over_budget'),(b'','complete')]:
-            with self.subTest(status=status),tempfile.TemporaryDirectory() as directory:
-                life=bare_lifecycle(directory);life.phase='product_image_gateway';clock=[0.0];events=[]
-                failure=m.GateError('command_deadline_exceeded');process=mock.Mock(pid=654321,returncode=-15)
-                process.poll.side_effect=lambda:None if not events else -15
-                def start(*args,**kwargs):kwargs['stdout'].write(raw);clock[0]=601;return process
-                original=m.public_build_failure_diagnostic
-                def classify(*args,**kwargs):self.assertEqual(events,['cancel']);clock[0]+=.02;return original(*args,**kwargs)
-                def cancel(*args):events.append('cancel')
-                command=['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services gateway --registry localhost:5001 --tag '+life.run_id]
-                with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]),mock.patch.object(m.time,'monotonic_ns',side_effect=lambda:round(clock[0]*1e9)),mock.patch.object(m.subprocess,'Popen',side_effect=start) as spawn,mock.patch.object(m.os,'killpg',side_effect=cancel),mock.patch.object(m,'public_build_failure_diagnostic',side_effect=classify):
-                    with self.assertRaisesRegex(m.GateError,'^command_deadline_exceeded$'):life.command(command,timeout=600)
-                self.assertEqual(events,['cancel']);self.assertEqual(spawn.call_count,1)
-                v=life.last_failure;self.assertEqual(v['termination'],'deadline');self.assertEqual(v['output_status'],status)
-                self.assertEqual(v['captured_bytes'],min(len(raw),131073));self.assertIn('diagnostic_seconds',v)
-                self.assertEqual('output_sha256'in v,status=='complete');self.assertNotIn('exit_code',v)
-
-    def test_product_deadline_scope_and_diagnostic_errors_never_replace_first_error(self):
-        for phase,command,eligible in [('product_image_gateway',['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services gateway --registry localhost:5001 --tag '],True),
-                ('product_image_gateway',['make','build-images'],False),('product_image_gateway',['private-login'],False),
-                ('formal_login',['make','build-images'],False)]:
-            with self.subTest(phase=phase,command=command),tempfile.TemporaryDirectory() as directory:
-                life=bare_lifecycle(directory);life.phase=phase;clock=[0.0];process=mock.Mock(pid=654321,returncode=0);process.poll.return_value=0
-                if eligible:command=[*command[:-1],command[-1]+life.run_id]
-                def start(*args,**kwargs):kwargs['stdout'].write(b'PRIVATE\n');clock[0]=601;return process
-                with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]),mock.patch.object(m.time,'monotonic_ns',side_effect=lambda:round(clock[0]*1e9)),mock.patch.object(m.subprocess,'Popen',side_effect=start),mock.patch.object(m,'public_build_failure_diagnostic',side_effect=ValueError('PRIVATE')) as classify:
-                    with self.assertRaisesRegex(m.GateError,'^command_deadline_exceeded$'):life.command(command,timeout=600)
-                self.assertEqual(classify.call_count,int(eligible))
-                if eligible:self.assertEqual(life.last_failure['output_status'],'unavailable');self.assertNotIn('PRIVATE',repr(life.last_failure))
-                else:self.assertFalse(hasattr(life,'last_failure'))
-
-    def test_deadline_snapshot_read_is_bounded_and_unavailable_never_masks_first_error(self):
-        for sampling,error_text,read_error in [(False,'command_deadline_exceeded',False),
-                (False,'command_deadline_exceeded',True),(True,'command_deadline_exceeded',False),
-                (False,'owned_container_oom',False)]:
-            with self.subTest(sampling=sampling,error=error_text,read_error=read_error),tempfile.TemporaryDirectory() as directory:
-                life=bare_lifecycle(directory);life.phase='product_image_gateway';output=mock.Mock()
-                output.read.side_effect=OSError('PRIVATE') if read_error else None
-                output.read.return_value=b'#1 [1/1] RUN apt-get update\n'
-                command=['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services gateway --registry localhost:5001 --tag '+life.run_id]
-                error=m.GateError(error_text)
-                with self.assertRaises(m.GateError) as caught:
-                    with m.capture_product_deadline(life,command,output,sampling):raise error
-                self.assertIs(caught.exception,error)
-                eligible=not sampling and error_text=='command_deadline_exceeded'
-                self.assertEqual(output.read.call_count,int(eligible))
-                if eligible:
-                    output.read.assert_called_once_with(131073)
-                    self.assertEqual(life.last_failure['output_status'],'unavailable' if read_error else 'complete')
-                    self.assertNotIn('PRIVATE',repr(life.last_failure))
-                else:self.assertFalse(hasattr(life,'last_failure'))
 
     def test_build_failure_classification_excludes_arbitrary_output(self):
         cases = [

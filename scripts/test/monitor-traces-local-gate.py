@@ -440,34 +440,143 @@ def diagnostic_markers(raw):
 
 
 
+class BuildProgress:
+    """Bounded state from contiguous bytes already captured by one product command."""
+    CHUNK=32768
+    LIMIT=8*1024**2
+
+    def __init__(self):
+        self.scanned_bytes=0
+        self.pending=b''
+        self.steps={}
+        self.status='complete'
+        self.cpu_seconds=0.0
+        self.observation_seconds=0.0
+        self.started_ns=None
+        self.finished_ns=None
+
+    def reject(self, status):
+        self.status=status
+        self.pending=b''
+
+    @staticmethod
+    def stage(command):
+        if re.match(r'run apt-get(?:\s|$)',command):return 'apt'
+        if re.match(r'run (?:python -m )?pip install(?:\s|$)',command):
+            if re.search(r'(?:^|\s)--no-deps(?:\s|$)',command) and re.search(r'(?:^|\s)/tmp/common-python(?:\s|$)',command):return 'common_package'
+            return 'python_dependency'
+        if re.match(r'run (?:python -m pip check|python -c)(?:\s|$)',command):return 'verification'
+        if re.match(r'run grep -v ',command) and re.search(r'&& pip install(?:\s|$)',command):return 'python_dependency'
+        return 'other'
+
+    def line(self, raw, observed):
+        text=raw.decode(errors='replace').lower()
+        framed=re.match(r'#([0-9]+) \[',text)
+        if framed and (len(framed[1])>5 or '\r' in text or '\ufffd' in text):
+            self.reject('invalid');return
+        title=re.fullmatch(r'#([0-9]{1,5}) \[[^\]\n]+\] (.+)',text)
+        if framed and not title:self.reject('invalid');return
+        if title:
+            number,command=title.groups()
+            if number in self.steps:self.reject('invalid');return
+            if len(self.steps)>=64:self.reject('over_budget');return
+            self.steps[number]={'stage':self.stage(command),'state':'running',
+                                'first_observed_monotonic_ns':observed,'last_observed_monotonic_ns':observed}
+            return
+        end=re.match(r'#([0-9]{1,5}) (done(?:\s|$)|cached(?:\s|$)|error:|canceled(?:\s|$))',text)
+        if end:
+            if end[1] not in self.steps:self.reject('invalid');return
+            step=self.steps[end[1]]
+            if step['state']!='running':self.reject('invalid');return
+            step['state']=end[2].strip().rstrip(':')
+            step['last_observed_monotonic_ns']=observed
+        else:
+            body=re.match(r'#([0-9]{1,5}) ',text)
+            if body and body[1] in self.steps:self.steps[body[1]]['last_observed_monotonic_ns']=observed
+
+    def poll(self, output):
+        if self.status!='complete':return
+        began=time.monotonic();cpu=time.thread_time()
+        try:
+            if self.cpu_seconds>=1:self.reject('over_budget');return
+            size=os.fstat(output.fileno()).st_size
+            if size<self.scanned_bytes:self.reject('invalid');return
+            if self.scanned_bytes>=self.LIMIT:
+                if size>self.scanned_bytes:self.reject('over_budget')
+                return
+            raw=os.pread(output.fileno(),min(self.CHUNK,self.LIMIT-self.scanned_bytes),self.scanned_bytes)
+            self.scanned_bytes+=len(raw)
+            observed=time.monotonic_ns()
+            if self.started_ns is None:self.started_ns=observed
+            self.finished_ns=observed
+            # Keep only one bounded partial line, never retain the raw body.
+            for piece in raw.splitlines(keepends=True):
+                self.pending+=piece
+                if len(self.pending)>4096:self.reject('over_budget');break
+                if self.pending.endswith(b'\n'):
+                    line=self.pending[:-1].removesuffix(b'\r');self.pending=b''
+                    self.line(line,observed)
+                    if self.status!='complete':break
+            if self.scanned_bytes==self.LIMIT and size>self.scanned_bytes:self.reject('over_budget')
+        except Exception:
+            self.reject('unavailable')
+        finally:
+            self.cpu_seconds+=max(0,time.thread_time()-cpu)
+            self.observation_seconds+=max(0,time.monotonic()-began)
+            if self.cpu_seconds>=1:self.reject('over_budget')
+
+    def snapshot(self, output):
+        # Exactly one final existing chunk; never wait or catch up in a loop.
+        began=time.monotonic();cpu=time.thread_time()
+        prior_cpu=self.cpu_seconds;prior_wall=self.observation_seconds
+        self.poll(output)
+        if self.status=='complete':
+            try:
+                size=os.fstat(output.fileno()).st_size
+                if size<self.scanned_bytes:self.reject('invalid')
+                elif size>self.scanned_bytes:self.reject('unread')
+                elif self.pending:self.reject('truncated')
+            except Exception:self.reject('unavailable')
+        progress={'status':self.status if self.status!='complete' else 'unavailable','stage':'unknown'}
+        if self.status=='complete':
+            active=[x for x in self.steps.values() if x['state'] in ('running','canceled')]
+            if len(active)>1:progress={'status':'ambiguous','stage':'unknown'}
+            elif active:progress={'status':'unique',**active[0]}
+        result={'status':self.status,'progress':progress,'scanned_bytes':self.scanned_bytes,
+                'steps_observed':len(self.steps),'parser_cpu_seconds':round(self.cpu_seconds,6),
+                'observation_seconds':round(self.observation_seconds,6),
+                'observed_started_monotonic_ns':self.started_ns,'observed_finished_monotonic_ns':self.finished_ns}
+        if len(json.dumps(result,separators=(',',':')).encode())>4096:
+            self.reject('over_budget');result.update(status=self.status,progress={'status':self.status,'stage':'unknown'},steps_observed=0)
+        # Include final framing and serialization, without counting poll twice.
+        self.cpu_seconds=prior_cpu+max(0,time.thread_time()-cpu)
+        self.observation_seconds=prior_wall+max(0,time.monotonic()-began)
+        if self.cpu_seconds>=1:
+            self.reject('over_budget');result.update(status=self.status,progress={'status':self.status,'stage':'unknown'})
+        result.update(parser_cpu_seconds=round(self.cpu_seconds,6),observation_seconds=round(self.observation_seconds,6))
+        return result
+
+
 @contextmanager
-def capture_product_deadline(life, args, output, sampling):
+def observe_product_build(life, args, output, sampling):
     service=life.phase.removeprefix('product_image_').replace('_','-')
     eligible=(not sampling and life.phase.startswith('product_image_') and service in life.product_services and
               args==['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services '+service+
                      ' --registry localhost:5001 --tag '+life.run_id])
+    observer=BuildProgress() if eligible else None
     try:
-        yield
+        yield observer
     except GateError as error:
-        if eligible and str(error)=='command_deadline_exceeded':
+        if observer is not None and str(error)=='command_deadline_exceeded':
             began=time.monotonic()
-            receipt={'termination':'deadline','output_status':'unavailable','captured_bytes':0,'public_build':None}
-            try:
-                output.seek(0);raw=output.read(131073)
-                receipt['captured_bytes']=len(raw)
-                public=public_build_failure_diagnostic(raw,getattr(life,'build_proxy_provenance',None),termination='deadline')
-                receipt.update(output_status=public['output_status'],public_build=public)
-                if public['output_status']=='complete':receipt['output_sha256']=hashlib.sha256(raw).hexdigest()
-            except Exception:
-                receipt.update(output_status='unavailable',public_build=None)
-                receipt.pop('output_sha256',None)
-            finally:
-                receipt['diagnostic_seconds']=round(time.monotonic()-began,6)
-                life.last_failure=receipt
+            try:summary=observer.snapshot(output)
+            except Exception:summary={'status':'unavailable','progress':{'status':'unavailable','stage':'unknown'}}
+            life.last_failure={'termination':'deadline','public_build':summary,
+                               'diagnostic_seconds':round(time.monotonic()-began,6)}
         raise
 
 
-def public_build_failure_diagnostic(raw, proxy_provenance=None, *, termination='process_exit'):
+def public_build_failure_diagnostic(raw, proxy_provenance=None):
     """One bounded public BuildKit parser; never export arbitrary output or endpoints."""
     proxies={}
     proxy_provenance=proxy_provenance if isinstance(proxy_provenance,dict) else {}
@@ -479,8 +588,7 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None, *, termination='
         proxies[role]={'status':'observed',**item} if valid else {'status':'unavailable'}
     unknown_transport={'operation':'unknown','operation_status':'unavailable',
                        'endpoint':'unknown','endpoint_status':'unavailable'}
-    value={'status':'complete','termination':termination,'output_status':'complete',
-           'progress':{'status':'unavailable','stage':'unknown'},
+    value={'status':'complete',
            'limits_exceeded':[], 'reasons':['unclassified'],'steps':[], 'inputs':[],
            'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
            'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'signature_kinds':[], 'http_statuses':[], 'sources':[],
@@ -488,42 +596,12 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None, *, termination='
            'base':{'status':'unavailable','kind':None,'resolved_digest':None}, 'proxy_provenance':proxies}
     def over_budget(reason):
         return {**value,'status':'over_budget','limits_exceeded':[reason], 'reasons':['unclassified'],
-                'progress':{'status':'unavailable','stage':'unknown'},
                 'steps':[], 'inputs':[], 'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
                 'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'signature_kinds':[], 'http_statuses':[], 'sources':[],
                        'transport':dict(unknown_transport)},
                 'base':{'status':'unavailable','kind':None,'resolved_digest':None}}
-    if len(raw)>131072:
-        value['output_status']='over_budget'
-        return over_budget('input_bytes')
-    if termination=='deadline' and raw and not raw.endswith(b'\n'):
-        value.update(status='unavailable',output_status='truncated')
-        return value
+    if len(raw)>131072:return over_budget('input_bytes')
     text=raw.decode(errors='replace').lower()
-    if termination=='deadline':
-        titles={};finished=set();invalid=False
-        for line in text.splitlines():
-            title=re.fullmatch(r'#([0-9]+) \[[^\]\n]+\] (.+)',line)
-            if title:
-                number,command=title.groups()
-                if number in titles:invalid=True
-                titles[number]=command
-            end=re.match(r'#([0-9]+) (?:done(?:\s|$)|cached(?:\s|$)|error:)',line)
-            if end:finished.add(end[1])
-        if len(titles)>64:return over_budget('progress_steps')
-        active=[command for number,command in titles.items() if number not in finished]
-        if invalid:value['progress']={'status':'invalid','stage':'unknown'}
-        elif len(active)>1:value['progress']={'status':'ambiguous','stage':'unknown'}
-        elif active:
-            command=active[0]
-            stage='other'
-            if re.match(r'run apt-get(?:\s|$)',command):stage='apt'
-            elif re.match(r'run (?:python -m )?pip install(?:\s|$)',command):
-                if re.search(r'(?:^|\s)--no-deps(?:\s|$)',command) and re.search(r'(?:^|\s)/tmp/common-python(?:\s|$)',command):stage='common_package'
-                else:stage='python_dependency'
-            elif re.match(r'run (?:python -m pip check|python -c)(?:\s|$)',command):stage='verification'
-            elif re.match(r'run grep -v ',command) and re.search(r'&& pip install(?:\s|$)',command):stage='python_dependency'
-            value['progress']={'status':'unique','stage':stage}
     errors='\n'.join(line for line in text.splitlines() if 'error:' in line or 'failed to solve:' in line)
     frames='\n'.join(line.strip() for line in text.splitlines() if line.lstrip().startswith('> '))
     value['reasons']=[name for name,pattern in (
@@ -914,7 +992,7 @@ class Lifecycle:
         try:
             check_deadline()
             with tempfile.TemporaryFile() as output, capture_volume_checkpoints(args, self.run_id, output, timing, sampling), \
-                    capture_product_deadline(self,args,output,sampling):
+                    observe_product_build(self,args,output,sampling) as build_progress:
                 timing['spawn_started_monotonic_ns'] = time.monotonic_ns()
                 try:
                     p = subprocess.Popen(args, cwd=cwd or self.checkout if self.checkout.exists() else ROOT,
@@ -934,6 +1012,10 @@ class Lifecycle:
                             p.stdin.close()
                         while True:
                             check_deadline()
+                            if build_progress is not None:
+                                try:build_progress.poll(output)
+                                except Exception:build_progress.reject('unavailable')
+                                check_deadline()
                             if output_limit is not None:
                                 require(os.fstat(output.fileno()).st_size <= output_limit, 'command_output_limit_exceeded')
                             try:
