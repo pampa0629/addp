@@ -135,20 +135,16 @@ Manager 随根 Compose 的 `addp-platform` 部署；镜像准备、启动顺序�
 9. `gaussian_splat_ksplat` - 3DGS - KSplat 快显结果，TaskProvider `task_type=gaussian_splat_ksplat_generation`。
 10. `point_cloud_copc` - 点云 COPC 快显结果，TaskProvider `task_type=point_cloud_copc_generation`；源 `format=copc` 直接基础预览。
 11. PMTiles 是矢量瓦片归档格式，MVT 是归档内瓦片类型，分别进入 `config.tile.archive_format=pmtiles` 与 `config.tile.tile_type=mvt`，都不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
-12. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 构造标准 `addp.workflow.access-plan/v1` 源/目标访问计划，再通过 `WorkflowRuntimeProvider.InvokeOperator("raster_to_cog")` direct 调用 GeoPython Workflow，并直接写入 infra MinIO 的单一路线。点云 COPC 生成使用 Manager 预处理 PDAL `source.root_uri` 和 Manager infra MinIO 发布计划，再通过 `pointcloud_workflow` direct operator 读取源 URI、写入受控工作目录并发布为 Manager 私有 COPC artifact。
+12. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG／COPC 的 Runtime 调用与部署边界见下文[运行要求](#cogcopc-运行要求)。
 
-COG 生成运行要求：
+#### COG／COPC 运行要求
 
-- NFS / NAS 源：GeoPython Workflow 运行环境必须能访问 Manager 根据 engine `mount_path` / `export_path` 派生出的挂载路径。
-- MinIO / S3 源：Manager 为源对象生成 presigned URL，Python 通过 GDAL `/vsicurl/` 读取。
-- 目标 COG：Python 通过 GDAL `/vsis3/` 写入 Manager infra MinIO，Manager 负责登记 `raster_cog`。
+- **访问计划与发布**：Manager 构造 `addp.workflow.access-plan/v1` 源／目标计划，通过 Runtime direct operator 生成并发布 Manager infra MinIO 受管结果。COG 的 `raster_to_cog` 调用、受控目录、结构校验和失败状态见[COG 执行契约](./docs/quick-view/TIFF与COG.md#执行与租约)；PointCloud 的 direct 算子与产物归属见[点云职责边界](./docs/三维模型、点云与高斯泼溅预览说明.md#一职责边界)。源读取与目标发布细节统一由访问计划和 Runtime 契约维护。
+- **路径与端点可达**：NFS／NAS 源由 Manager 按 engine `mount_path`／`export_path` 派生的路径，必须在实际 Runtime 进程所在环境可读。原生开发使用宿主机路径；产品容器需提供对应挂载，并保证计划中的路径在容器内仍可访问。MinIO／S3 源和 infra 目标端点同样须从该 Runtime 可达，宿主机实际端点与 Docker 网络端点分别按[部署指南](../docs/guide/addp部署和开发步骤.md#第三步-构建模式-用于-docker-镜像构建)选择，不从 Manager 本机可达外推 Runtime 可达。
+- **原生开发与产品容器**：GeoPython 使用独立 venv 原生进程，PointCloud 使用隔离 Conda 原生进程；依赖准备、路径与监听归属分别见[GeoPython 本地开发](../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md#本地开发)、[PointCloud 开发启动](../engines/pointcloud-workflow/README.md#开发启动)。产品部署保留[GeoPython 产品镜像](../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md#产品镜像)与[PointCloud 产品容器](../engines/pointcloud-workflow/README.md#产品部署)，不作为开发启动的备选路线。
+- **COPC 工作目录**：开发工作目录由标准入口按 `POINTCLOUD_WORK_HOST_PATH` 解析并注入 `POINTCLOUD_WORK_DIR`／`CPL_TMPDIR`，需可写且空间充足；产品挂载以[Runtime Compose](../docker-compose.runtimes.yml)为准。COPC 先写本地临时文件，再按目标访问计划发布并由 Manager 登记 `point_cloud_copc`；工作目录规则与 PDAL 2.10.2 `writers.copc` 不能可靠直接写 `/vsis3/` 的既有记录统一见[PointCloud 运行约束](../engines/pointcloud-workflow/README.md)，不把 COPC 描述为纯流式写入。
 
-点云 COPC 生成运行要求：
-
-- NFS / NAS 源：PointCloud Workflow 容器必须能访问 Manager 根据 engine `mount_path` / `export_path` 派生出的挂载路径。
-- MinIO / S3 源：Manager 为源对象生成 presigned URL，PointCloud Workflow 通过 PDAL/GDAL `/vsicurl/` 读取。
-- 目标 COPC：PointCloud Workflow 先通过 PDAL 写入 `POINTCLOUD_WORK_DIR` 下的本地工作文件，再通过 Manager infra MinIO 发布计划上传 artifact，Manager 负责登记 `point_cloud_copc`。
-- COPC 写入不是纯流式写，容器必须配置可用的 `POINTCLOUD_WORK_DIR` / `CPL_TMPDIR` 工作目录。当前 PDAL 2.10.2 实测 `writers.copc` 不能可靠直接写 `/vsis3/` 目标，不能把 `/vsis3/` 直写作为当前单一路线。
+依赖预检、进程就绪、真实转换与发布、页面读取及清理分别验收；引擎验证范围见[GeoPython 验证](../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md#验证)、[PointCloud 测试](../engines/pointcloud-workflow/README.md#测试)，Manager 跨模块链路、固定版本证据与未覆盖项见[模块验证说明](./CLAUDE.md#开发与验证)。原生回归不替代产品容器验收，未运行、失败或未覆盖项不计通过。
 
 三维模型、3D Tiles、点云 COPC 和高斯泼溅的预览路线请查看 [三维模型、点云与高斯泼溅预览说明](./docs/三维模型、点云与高斯泼溅预览说明.md)。详细架构请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)。
 
