@@ -15,6 +15,7 @@ type vffSKCRestrictionProfile struct {
 	levels    [][]vffSKCEnumerationValue
 	facets    []vffSKCDeclarationWitness
 	bounds    map[string]string
+	fixed     map[string]string
 	known     bool
 }
 type vffSKCRestrictionChecker struct {
@@ -150,7 +151,7 @@ func (c *vffSKCRestrictionChecker) profile(node *vffXMLNode, depth int) (*vffSKC
 			if err := b.tick(0); err != nil {
 				return nil, err
 			}
-			if key != "value" && key != "id" {
+			if key != "value" && key != "id" && !(key == "fixed" && vffSKCBoundFacet(n.name.Local)) {
 				c.cache[node] = unknown
 				return unknown, nil
 			}

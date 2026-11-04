@@ -19,6 +19,13 @@ func vffSKCBoundFacet(name string) bool {
 // profiles remain immutable; every original facet witness is retained.
 func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, nodes []*vffXMLNode) (bool, error) {
 	p.bounds = make(map[string]string, len(base.bounds)+len(nodes))
+	p.fixed = make(map[string]string, len(base.fixed)+len(nodes))
+	for k, v := range base.fixed {
+		if err := c.b.tick(0); err != nil {
+			return false, err
+		}
+		p.fixed[k] = v
+	}
 	for k, v := range base.bounds {
 		if err := c.b.tick(0); err != nil {
 			return false, err
@@ -28,6 +35,7 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 	// integer and all its builtin descendants inherit fractionDigits fixed at 0.
 	if _, _, _, integer := vffSKCIntegerBounds(p.primitive.Local); integer {
 		p.bounds["fractionDigits"] = "0"
+		p.fixed["fractionDigits"] = "0"
 	}
 	local := make(map[string]string, len(nodes))
 	for _, n := range nodes {
@@ -68,6 +76,25 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 		}
 		if !known {
 			return false, nil
+		}
+		if locked, ok := p.fixed[kind]; ok {
+			cmp, err := c.b.compareDecimal(value.text, locked)
+			if err != nil {
+				return false, err
+			}
+			if cmp != 0 {
+				return false, fmt.Errorf("derived facet changes fixed %s", kind)
+			}
+		}
+		if rawFixed, present := n.attrs["fixed"]; present {
+			flag, _, err := c.b.scalar(n, xml.Name{Space: vffXSDNS, Local: "boolean"}, rawFixed)
+			if err != nil {
+				return false, err
+			}
+			if flag.text == "true" {
+				p.fixed[kind] = value.text
+			}
+			// false (or absence) never clears an inherited fixed component.
 		}
 		local[kind] = value.text
 	}

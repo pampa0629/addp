@@ -76,7 +76,7 @@ func TestVFFSKCRestrictionQNameEnumerationsUseEachValuesNamespace(t *testing.T) 
 }
 
 func TestVFFSKCRestrictionNeverDropsUnimplementedFacetsOrFinalFlags(t *testing.T) {
-	for _, body := range []string{`<x:pattern value="never"/>`, `<x:whiteSpace value="collapse"/>`, `<x:totalDigits value="1" fixed="false"/>`, `<x:enumeration value="1" fixed="false"/>`, `<x:enumeration value="1">opaque</x:enumeration>`, `<x:enumeration value="1"><x:annotation/><x:annotation/></x:enumeration>`} {
+	for _, body := range []string{`<x:pattern value="never"/>`, `<x:whiteSpace value="collapse"/>`, `<x:totalDigits value="1" fixed="false" opaque="unproved"/>`, `<x:enumeration value="1" fixed="false"/>`, `<x:enumeration value="1">opaque</x:enumeration>`, `<x:enumeration value="1"><x:annotation/><x:annotation/></x:enumeration>`} {
 		v := skcAttributeValue(t, skcEnumFiles(t, body, `<x:enumeration value="1"/>`, `1`, `1`))
 		if v.fixedValues[0].known || !strings.Contains(strings.Join(v.issues, " "), "typed value equality not proved") {
 			t.Fatal("unsupported facet silently dropped")

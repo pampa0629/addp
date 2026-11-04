@@ -70,7 +70,7 @@ func TestVFFSKCRangeAndLengthConstraints(t *testing.T) {
 }
 
 func TestVFFSKCBoundsUnknownNeverFallBack(t *testing.T) {
-	for _, body := range []string{`<x:minInclusive value="1" fixed="true"/>`, `<x:pattern value=".*"/><x:maxInclusive value="3"/>`} {
+	for _, body := range []string{`<x:minInclusive value="1" fixed="true" opaque="unproved"/>`, `<x:pattern value=".*"/><x:maxInclusive value="3"/>`} {
 		v := skcAttributeValue(t, skcEnumFiles(t, body, "", "2", "2"))
 		if v.fixedValues[0].known {
 			t.Fatal("unproved facet ignored")
@@ -206,7 +206,7 @@ func TestVFFSKCDigitsNoConstraintsAndUnknownFacets(t *testing.T) {
 			t.Fatal("invalid digits escaped without default/fixed")
 		}
 	}
-	for _, facets := range []string{`<x:totalDigits value="2" fixed="false"/>`, `<x:totalDigits value="2"/><x:pattern value=".*"/>`, `<x:totalDigits value="2"/><x:whiteSpace value="collapse"/>`} {
+	for _, facets := range []string{`<x:totalDigits value="2" fixed="false" opaque="unproved"/>`, `<x:totalDigits value="2"/><x:pattern value=".*"/>`, `<x:totalDigits value="2"/><x:whiteSpace value="collapse"/>`} {
 		v := skcAttributeValue(t, skcEnumFiles(t, facets, "", "1", "1"))
 		if v.fixedValues[0].known {
 			t.Fatal("unproved facet dropped by digits profile")
