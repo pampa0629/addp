@@ -21930,7 +21930,9 @@ def test_proximity_orthogonal_complete_world_affine_oracle_units_cog_and_input(t
         loaded=raster_load(source_plan(source));result=raster_proximity(loaded,1,[0,-3]);target=tmp_path/'rotated.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
         assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid']
         ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(band.ReadAsArray(),wanted);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),np.where(valid,255,0))
-        assert ds.GetGeoTransform()==grid and ds.GetSpatialRef().IsSame(osr.SpatialReference(f'EPSG:{epsg}'))and band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())and band.GetUnitType()=='metre'
+        expected_crs=osr.SpatialReference()
+        assert expected_crs.ImportFromEPSG(epsg)==0
+        assert ds.GetGeoTransform()==grid and ds.GetSpatialRef().IsSame(expected_crs)and band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())and band.GetUnitType()=='metre'
         assert band.GetScale()is None and band.GetOffset()is None;band=ds=None
         assert not list(loaded.workspace.glob('*.sites'))and not list(loaded.workspace.glob('*.distance'))
     assert source.read_bytes()==raw and not loaded.workspace.exists()
