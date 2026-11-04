@@ -37,25 +37,29 @@
 
 ## 🚀 快速开始
 
+环境准备与根 `.env` 配置沿[部署指南](../docs/guide/addp部署和开发步骤.md#快速开始)，以下开发命令在仓库根目录执行；源码开发与产品容器部署的区别见[运行模式说明](../scripts/docs/开发与容器部署.md)。
+
 ### 开发模式（推荐）
 
 ```bash
 # 启动基础设施
 bash scripts/infra/up.sh
 
-# 启动 Manager 模块（含依赖的 System、Meta、Gateway、Console）
+# 启动 Manager 及其标准依赖
 bash scripts/dev/start.sh -manager
 ```
 
-- 后端: http://localhost:8081
-- 前端: http://localhost:5174
+模块依赖、Runtime 显式选择及局部启停范围统一见[模块选择指南](../scripts/docs/模块选择启动指南.md)。源码开发使用标准开发生命周期，产品部署保留容器方式，不以容器部署命令接管开发进程。
+
+Manager Backend `8081`、Frontend `5174` 是本地开发首选端口，实际运行端口以启动输出和 `.dev-state/ports.env` 为准；Infra 的实际宿主机映射用 `bash scripts/infra/status.sh` 查询，不从 `.env` 首选值推断。Console 与模块直连的访问方式及完整端口规则见[端口规范](../docs/spec/addp端口分配.md)。
 
 ### Docker 部署
 
-```bash
-cd manager
-docker-compose up -d
-```
+Manager 随根 Compose 的 `addp-platform` 部署；镜像准备、启动顺序与失败边界分别沿[本地 Docker 指南](../scripts/local/README.md#快速启动)、[生产启动指南](../scripts/prod/README.md#startsh)，不在模块目录维护另一套启动命令。
+
+根 Compose 仅向宿主机发布 Nginx 统一入口，模块 Backend／Frontend 使用容器内部端口；公开入口由 `ADDP_PUBLIC_ORIGIN` 表达，`NGINX_PORT` 与 `NGINX_BIND_HOST` 分别控制发布端口和监听范围。域名、HTTPS 或上级反向代理部署应填写用户实际访问的 origin，不从开发端口或容器内部端口推断公开地址；统一规则见[部署端口与公开入口](../docs/spec/addp端口分配.md#前端-docker-端口规则)。
+
+镜像预检、容器状态、回环 HTTP 探测、公开 HTTPS 与业务就绪分别认定；实际检查范围见[Local 状态说明](../scripts/local/README.md#3-statussh---查看状态)、[Prod 健康检查](../scripts/prod/README.md#health-checksh)。启动或健康检查成功不替代认证、预览、下载与清理验收，Manager 的标准入口及覆盖边界见[模块验证说明](./CLAUDE.md#开发与验证)。
 
 ## 📊 支持的数据类型
 
