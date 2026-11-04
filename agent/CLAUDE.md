@@ -16,7 +16,9 @@
 
 本轮 `make test-agent-eval` 通过18项场景契约、Agent后端全量与common-python全量测试，报告 `/tmp/addp-agent-context-offline-20261104-final.json`。真实模型报告 `/tmp/addp-agent-context-model-20261104-r2.json` 为33/33，运行前后274项Agent／共享客户端／Skill／本体输入摘要未变，工作区仍有其他任务改动，不能当作干净发布基线。首轮日志及 `/tmp/addp-agent-context-model-20261104-r1-incomplete.json` 保留：33样本中一次InferenceError、一次候选场景失败，且新增等待断言未符合严格v2报告校验，未生成有效模型报告；修复报告适配并补完整校验测试后才运行r2，不能覆盖首轮失败。结构化通过仍需独立人工语义复核，不宣称所有回复质量通过。
 
-当前完整模块门禁在3项实际受影响的冻结来源处阻断，来源复核及对应CI待收口，不计整套通过。现有Agent eval和CI自动发现新增后端测试与场景，真实模型仍显式运行 `make test-agent-model`；前端、运行服务、迁移和权限未变，不新增CI入口或要求重启。后续优先补验明确修改字段范围后重新构建及旧草稿不变，仍不创建或运行；长期记忆、自动选择与审批继承不在本轮范围。
+Ontology已将本轮来源冻结为创建修订61（`f041e3ef9`）：3项更新、3项新增场景、47项不变，共53项；独立核对文件／提交SHA与锚点一致，能力定义仅修订号变化。来源门禁及Ontology Go T1通过。上述模型回归在来源元数据修订前完成，不宣称运行服务已激活修订61。
+
+完整 `make test-module MODULE=agent` 重跑已越过来源检查，但公共 `test-gdal-native-lifecycle` 的临时夹具缺少 `scripts/utils/metrics-project.py`，在T0失败；后续Agent阶段未执行，不能计整套通过。未改动该无关夹具；专项离线证据和远程CI结果分别记录。现有Agent eval和CI自动发现新增后端测试与场景，真实模型仍显式运行 `make test-agent-model`；前端、运行服务、迁移和权限未变，不新增CI入口或要求重启。后续优先补验明确修改字段范围后重新构建及旧草稿不变，仍不创建或运行；长期记忆、自动选择与审批继承不在本轮范围。
 
 ## 当前实现边界
 
