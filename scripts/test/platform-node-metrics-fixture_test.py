@@ -27,7 +27,7 @@ class MetricsFixtureTest(unittest.TestCase):
     def native_exporter(self):
         return {"Id": "a"*64, "State": {"Running": True},
                 "Config": {"User": "65534:65534", "Env": ["SECRET=not-for-artifacts"], "Labels": {
-                    "com.docker.compose.project": "addp-node-metrics", "com.docker.compose.service": "node-exporter",
+                    "com.docker.compose.project": FIXTURE.metrics_project_name(), "com.docker.compose.service": "node-exporter",
                     "io.addp.node-metrics.owner": str(FIXTURE.ROOT)},
                     "Cmd": ["--path.rootfs=/host", "--path.procfs=/host/proc", "--path.sysfs=/host/sys",
                             "--collector.disable-defaults", "--collector.filesystem", "--collector.textfile", "--collector.textfile.directory=/textfile"]},
@@ -590,7 +590,7 @@ class EngineSourceCommandTest(unittest.TestCase):
         for folder in ("scripts/test", "scripts/utils", "scripts/infra/postgres-observation", "business/postgres"):
             (self.repo / folder).mkdir(parents=True)
         for relative in ("scripts/test/platform-node-metrics-fixture.py", "scripts/utils/deployment-inventory.py",
-                         "scripts/utils/private-state.py", "scripts/utils/deployment-docker.py", "scripts/utils/metrics-source.py", "scripts/infra/redis-metrics.py",
+                         "scripts/utils/metrics-project.py", "scripts/utils/private-state.py", "scripts/utils/deployment-docker.py", "scripts/utils/metrics-source.py", "scripts/infra/redis-metrics.py",
                          "scripts/infra/postgres-observation/authentication.py", "scripts/infra/postgres-observation/source.py",
                          "scripts/infra/postgres-observation/lifecycle.py", "scripts/infra/postgres-observation/000002_lifecycle.sql",
                          "business/postgres/pg_hba.conf"):
@@ -618,9 +618,9 @@ if args[:2] == ["context", "show"]: print("default")
 elif args[:2] == ["context", "inspect"]: print(json.dumps("unix:///var/run/docker.sock"))
 elif args[0] == "info": print(json.dumps(dict(id="fixture-daemon", os_type="linux", operating_system="Linux")))
 elif args[0] == "ps":
-    if state.exists() and not any("addp-postgres-metrics-" in arg or "addp-redis-metrics-" in arg for arg in args): print("a" * 64)
+    if state.exists() and not any("addp-metrics-sources-" in arg for arg in args): print("a" * 64)
 elif args[0] in ("network", "volume"):
-    if state.exists() and not any("addp-redis-metrics-" in arg for arg in args): print("owned-resource")
+    if state.exists() and not any("addp-metrics-sources-" in arg for arg in args): print("owned-resource")
 elif args[0] == "inspect":
     import os
     service = "redis" if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "redis-engine-admission" else "postgres"
@@ -790,9 +790,9 @@ class NativeBlockCapacityProofTest(unittest.TestCase):
         self.secret = Path(self.temp.name)
         self.program = FIXTURE.hashlib.sha256((FIXTURE.ROOT / 'scripts/infra/block-capacity.py').read_bytes()).hexdigest()
         self.cid = 'b'*64
-        self.volume_name = 'addp-node-metrics_block-capacity'
+        self.volume_name = FIXTURE.metrics_project_name()+'_block-capacity'
         self.volume = {'Name':self.volume_name, 'Driver':'local', 'Mountpoint':'/var/lib/docker/volumes/'+self.volume_name+'/_data',
-                       'Labels':{'com.docker.compose.project':'addp-node-metrics','com.docker.compose.volume':'block-capacity','io.addp.node-metrics.owner':str(FIXTURE.ROOT)},
+                       'Labels':{'com.docker.compose.project':FIXTURE.metrics_project_name(),'com.docker.compose.volume':'block-capacity','io.addp.node-metrics.owner':str(FIXTURE.ROOT)},
                        'Options':{'type':'tmpfs','device':'tmpfs','o':'size=1m,uid=65534,gid=65534,mode=0700'}}
         def bind(source, destination, propagation='rprivate'):
             return {'Type':'bind','Source':source,'Destination':destination,'Propagation':propagation,'RW':False}
@@ -801,7 +801,7 @@ class NativeBlockCapacityProofTest(unittest.TestCase):
         self.exporter = {'Mounts':[bind('/', '/host', 'rslave'),bind(str(FIXTURE.ROOT/'scripts/infra/node-metrics-web.yml'),'/etc/addp/node-metrics/web.yml'),
             *[bind(str(self.secret/'node-tls'/name),'/etc/addp/node-metrics/tls/'+name) for name in ('ca.crt','server.crt','server.key')],volume(False)]}
         self.sampler = {'Id':self.cid,'State':{'Running':True},'Config':{'User':'65534:65534',
-            'Labels':{'com.docker.compose.project':'addp-node-metrics','com.docker.compose.service':'block-capacity','io.addp.node-metrics.owner':str(FIXTURE.ROOT)},
+            'Labels':{'com.docker.compose.project':FIXTURE.metrics_project_name(),'com.docker.compose.service':'block-capacity','io.addp.node-metrics.owner':str(FIXTURE.ROOT)},
             'Image':'python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254',
             'Cmd':['python3','-B','/sampler.py','--kernel','test-kernel','--sysfs','/source-sys','--proc','/source-proc']},
             'HostConfig':{'ReadonlyRootfs':True,'Privileged':False,'CapDrop':['ALL'],'SecurityOpt':['no-new-privileges:true'],

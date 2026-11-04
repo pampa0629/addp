@@ -18,6 +18,7 @@ PROVIDERS = {
 SCOPES = ('host', 'infra', 'business')
 OS_KEYS = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST')
 FAILURE_REASONS = {
+    'source-layout-changed': '采集来源部署分组已变更；请显式执行 up 应用当前来源',
     'source-image-unavailable': '原采集镜像不可用；请通过标准指标启动入口重新构建并应用来源',
     'node-proof-missing': '主机安装证明缺失；请核对后显式执行 up 重新应用',
     'node-proof-disabled': '主机安装已停用；如需重新启用，请显式执行 up',
@@ -103,16 +104,16 @@ def status(kind, scope, env):
     """Metadata only: container presence cannot prove successful scraping."""
     deployment = load(ROOT/'scripts/utils/deployment-docker.py')
     docker = deployment.Docker(env)
-    project = ('addp-node-metrics' if kind == 'node' else 'addp-postgres-metrics-'+scope if kind == 'postgresql'
-               else deployment.inventory.engine_metrics_project(kind, scope))
+    group = deployment.inventory.metrics_project
+    project = group.project(ROOT)
     namespace = 'io.addp.'+('node' if kind == 'node' else 'postgres' if kind == 'postgresql' else kind)+'-metrics'
-    service = {'node': 'node-exporter', 'postgresql': 'postgres-metrics'}.get(kind, kind+'-metrics')
+    service = group.service('postgres' if kind == 'postgresql' else kind, scope)
     expected = {service}
     if kind == 'postgresql':
-        expected.add('postgres-metrics-web')
+        expected.add(service+'-web')
     if kind == 'node' and env.get('ADDP_NODE_BLOCK_CAPACITY_ENABLED', 'false') == 'true':
         expected.add('block-capacity')
-    ids = docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+project]).split()
+    ids = group.container_ids(docker.run,project,expected)
     if not ids:
         return '未部署', False
     facts = [docker.fact(identity) for identity in ids]
@@ -151,7 +152,7 @@ def apply(action, kind, scope, env):
         cleanup = '；清理未确认' if '[cleanup=failed]' in result.stderr else ''
         reason = re.search(r'\[reason=([a-z-]+)\]', result.stderr)
         if reason and reason[1] in FAILURE_REASONS:
-            raise ValueError('操作失败：'+FAILURE_REASONS[reason[1]]+cleanup)
+            raise ValueError('操作失败：'+FAILURE_REASONS[reason[1]]+cleanup+'；命令：python3 scripts/infra/metrics-sources.py up --scope '+scope+' --kind '+kind)
         stage = re.search(r'\[stage=([a-z-]+)\]', result.stderr)
         detail = ('：'+FAILURE_STAGES[stage[1]]) if stage and stage[1] in FAILURE_STAGES else ''
         raise ValueError('操作失败'+detail+cleanup)

@@ -235,14 +235,14 @@ def owned_action(service, action):
 def source_action(action):
     require(action in {"stop", "start"}, "invalid source action")
     FIXTURE.boundary()
-    ids = FIXTURE.command(["docker", "ps", "-aq", "--no-trunc", "--filter", "label=com.docker.compose.project=addp-node-metrics",
+    ids = FIXTURE.command(["docker", "ps", "-aq", "--no-trunc", "--filter", "label=com.docker.compose.project="+FIXTURE.metrics_project_name(),
                            "--filter", "label=com.docker.compose.service=node-exporter"]).split()
     require(len(ids) == 1 and re.fullmatch(r"[0-9a-f]{64}", ids[0]), "expected exactly one owned node exporter")
     rows = json.loads(FIXTURE.command(["docker", "inspect", ids[0]]))
     require(len(rows) == 1 and rows[0].get("Id") == ids[0], "node exporter inspection mismatch")
     labels = rows[0].get("Config", {}).get("Labels", {})
     require(labels.get("io.addp.node-metrics.owner") == str(FIXTURE.ROOT)
-            and labels.get("com.docker.compose.project") == "addp-node-metrics"
+            and labels.get("com.docker.compose.project") == FIXTURE.metrics_project_name()
             and labels.get("com.docker.compose.service") == "node-exporter", "refusing an unowned node exporter")
     FIXTURE.command(["docker", action, ids[0]])
 

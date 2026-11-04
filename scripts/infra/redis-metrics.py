@@ -175,7 +175,7 @@ class Lifecycle:
     def __init__(self, docker, scope, state, database, *, project=None):
         self.docker, self.scope, self.state, self.database = docker, scope, Path(state), database
         self.project = project or inventory.redis_metrics_project(scope)
-        self.config_volume = self.project+'-private'
+        self.config_volume = self.container_source().config_volume
 
     def container_source(self):
         return sources.Source(self.docker,self.scope,self.state,ROOT,'redis',self.project,Error)
@@ -270,6 +270,8 @@ class Lifecycle:
 
     def _run(self, action, env):
         with private.locked(self.state):
+            if action == 'up' and env.get('ADDP_REDIS_METRICS_ENABLED') == 'true' and self.project == sources.group.project(ROOT):
+                sources.group.retire(self.docker, ROOT, 'redis', self.scope)
             self.stop_sources()
             if action=='down' or env.get('ADDP_REDIS_METRICS_ENABLED','false')=='false':
                 if not os.path.lexists(self.state/'owner.json'): return

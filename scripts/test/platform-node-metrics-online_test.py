@@ -2423,7 +2423,7 @@ class BlockCapacityBrowserContractTest(unittest.TestCase):
 class CapacitySourceLifecycleTest(unittest.TestCase):
     def test_only_the_exact_owned_exporter_is_stopped_when_a_sampler_also_exists(self):
         cid="a"*64
-        labels={"io.addp.node-metrics.owner":str(ONLINE.FIXTURE.ROOT),"com.docker.compose.project":"addp-node-metrics","com.docker.compose.service":"node-exporter"}
+        labels={"io.addp.node-metrics.owner":str(ONLINE.FIXTURE.ROOT),"com.docker.compose.project":ONLINE.FIXTURE.metrics_project_name(),"com.docker.compose.service":"node-exporter"}
         with patch.object(ONLINE.FIXTURE,"boundary"), patch.object(ONLINE.FIXTURE,"command",side_effect=[cid,json.dumps([{"Id":cid,"Config":{"Labels":labels}}]),""]) as command:
             ONLINE.source_action("stop")
             self.assertIn("label=com.docker.compose.service=node-exporter",command.call_args_list[0].args[0])

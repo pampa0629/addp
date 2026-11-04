@@ -32,7 +32,7 @@ inventory = load('postgres_deployment_inventory', ROOT / 'scripts/utils/deployme
 SQL = Path(__file__).with_name('000002_lifecycle.sql')
 OWNER = 'io.addp.postgres-metrics.owner'
 SCOPE = 'io.addp.postgres-metrics.scope'
-SERVICES = {'postgres-metrics', 'postgres-metrics-web'}
+group = inventory.metrics_project
 ACTIVATION_STAGES = frozenset({'session-check', 'transport-check', 'private-state', 'authentication-read',
     'account-install', 'authentication-update', 'account-enable', 'connection-check',
     'source-files', 'identity-recheck', 'source-start', 'source-health'})
@@ -347,16 +347,19 @@ class SourceLifecycle:
         if scope not in ('infra', 'business'):
             raise LifecycleError('Unsupported PostgreSQL observation scope')
         self.docker, self.scope, self.state, self.database_factory = docker, scope, Path(state), database_factory
-        self.project = project or 'addp-postgres-metrics-' + scope
+        self.project = project or group.project(ROOT)
+        self.exporter = group.service('postgres', scope)
+        self.web = self.exporter+'-web'
+        self.services = {self.exporter, self.web}
 
     def source_containers(self):
-        identities = self.docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+self.project]).split()
+        identities = group.container_ids(self.docker.run,self.project,self.services)
         selected = []
         for identity in identities:
             fact = self.docker.fact(identity)
             labels = fact['labels']
-            if labels.get('com.docker.compose.service') not in SERVICES:
-                continue
+            if labels.get('com.docker.compose.service') not in self.services:
+                raise LifecycleError('Unexpected PostgreSQL source service')
             if (labels.get(OWNER) != str(ROOT) or labels.get(SCOPE) != self.scope
                     or labels.get('com.docker.compose.project') != self.project
                     or labels.get('com.docker.compose.oneoff', '').lower() != 'false'):
@@ -390,10 +393,11 @@ class SourceLifecycle:
                   'io.addp.postgres-metrics.database-started-at': started_at or database.facts['started_at']}
         template = str(ROOT / 'scripts/infra/postgres-metrics.yml')
         compose = {'services': {
-            'postgres-metrics': {'extends': {'file': template, 'service': 'postgres-metrics'},
+            self.exporter: {'extends': {'file': template, 'service': 'postgres-metrics'},
                 'labels': labels, 'networks': ['database'],
                 'ports': [{'host_ip': ip, 'published': str(port), 'target': 9443}]},
-            'postgres-metrics-web': {'extends': {'file': template, 'service': 'postgres-metrics-web'}, 'labels': labels}},
+            self.web: {'extends': {'file': template, 'service': 'postgres-metrics-web'},
+                'network_mode':'service:'+self.exporter,'depends_on':[self.exporter], 'labels': labels}},
             'networks': {'database': {'external': True, 'name': database.network}}}
         return compose
 
@@ -418,8 +422,8 @@ class SourceLifecycle:
             uid, gid = (os.getuid(), os.getgid()) if os.getuid() else (65534, 65534)
             stage = 'source-start'
             self.docker.run(['compose', '--env-file', '/dev/null', '-p', self.project, '-f', str(compose_file),
-                             'up', '-d', '--force-recreate', '--no-deps', 'postgres-metrics', 'postgres-metrics-web'],
-                            timeout=180, extra_env={'ADDP_POSTGRES_METRICS_USER': f'{uid}:{gid}',
+                             'up', '-d', '--force-recreate', '--no-deps', self.exporter, self.web],
+                            timeout=180, extra_env={'COMPOSE_IGNORE_ORPHANS':'true','ADDP_POSTGRES_METRICS_USER': f'{uid}:{gid}',
                             'ADDP_POSTGRES_METRICS_SOURCE_DIR': str(runtime/'source'),
                             'ADDP_POSTGRES_METRICS_WEB_DIR': str(runtime/'web')})
             # A running source is not evidence of a successful scrape.
@@ -443,7 +447,11 @@ class SourceLifecycle:
                 raise LifecycleError('PostgreSQL recovery ownership mismatch; use the standard deployment entry')
             tls, ip, port = transport(env)
             document = read_json(self.state / 'compose.json')
-            previous = document['services']['postgres-metrics']['labels']
+            if not isinstance(document,dict) or not isinstance(document.get('services'),dict) or set(document['services']) != self.services:
+                error = LifecycleError('PostgreSQL source layout changed; explicitly apply the standard up entry')
+                error.source_recovery_reason = 'source-layout-changed'
+                raise error
+            previous = document['services'][self.exporter]['labels']
             old_start = previous['io.addp.postgres-metrics.database-started-at']
             if (previous.get('io.addp.postgres-metrics.database-id') != database.identity
                     or not isinstance(old_start, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z', old_start)
@@ -474,12 +482,12 @@ class SourceLifecycle:
             for fact in facts.values():
                 if any(fact['labels'].get(key) != value for key, value in previous.items()):
                     raise LifecycleError('PostgreSQL recovery source ownership drift')
-            healthy = (set(facts) == SERVICES and all(fact['running'] for fact in facts.values())
+            healthy = (set(facts) == self.services and all(fact['running'] for fact in facts.values())
                        and old_start == database.facts['started_at'] and old_host == database.address
-                       and facts['postgres-metrics-web']['network_mode'] == 'container:'+facts['postgres-metrics']['id']
-                       and facts['postgres-metrics']['network_mode'] == database.network
-                       and facts['postgres-metrics']['ports'] == {'9443/tcp': [{'HostIp': ip, 'HostPort': str(port)}]}
-                       and not facts['postgres-metrics-web']['ports'])
+                       and facts[self.web]['network_mode'] == 'container:'+facts[self.exporter]['id']
+                       and facts[self.exporter]['network_mode'] == database.network
+                       and facts[self.exporter]['ports'] == {'9443/tcp': [{'HostIp': ip, 'HostPort': str(port)}]}
+                       and not facts[self.web]['ports'])
             if self.docker.fact(database.identity) != database.facts:
                 raise LifecycleError('PostgreSQL recovery database facts changed')
             if healthy:
@@ -503,6 +511,8 @@ class SourceLifecycle:
 
     def up(self, env):
         with auth.locked(self.state):
+            if self.project == group.project(ROOT):
+                group.retire(self.docker, ROOT, 'postgres', self.scope)
             self.stop_sources()
             database = self.database_factory()
             with database.locked():
@@ -613,6 +623,8 @@ def main():
         reason = str(error) if isinstance(error, (LifecycleError, auth.AuthenticationError)) else 'deployment ownership, authentication or source configuration failed'
         stage = getattr(error, 'observation_stage', None)
         detail = ' [stage=' + stage + ']' if stage in ACTIVATION_STAGES else ''
+        if getattr(error, 'source_recovery_reason', '') == 'source-layout-changed':
+            detail += ' [reason=source-layout-changed]'
         if isinstance(error, OSError) and type(error.errno) is int:
             detail += ' [errno=' + str(error.errno) + ']'
         if getattr(error, 'observation_cleanup_failed', False) is True:

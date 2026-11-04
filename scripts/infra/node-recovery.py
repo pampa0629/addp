@@ -16,6 +16,7 @@ def load(name):
 
 private = load('private-state.py')
 deployment = load('deployment-docker.py')
+group = load('metrics-project.py')
 OWNER = 'io.addp.node-metrics.owner'
 REASONS = frozenset({'node-proof-missing', 'node-proof-disabled', 'node-proof-invalid',
                      'node-source-incomplete', 'node-ownership-rejected', 'node-inputs-changed',
@@ -53,7 +54,7 @@ def decode(text):
 
 
 def containers(docker, project):
-    ids = docker.run(['ps','-aq','--filter','label=com.docker.compose.project='+project]).split()
+    ids = group.container_ids(docker.run,project,{'node-exporter','block-capacity'})
     result = {}
     for identity in ids:
         item = decode(docker.run(['inspect','--format',FACT,identity]))

@@ -1761,6 +1761,8 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
     def setUp(self):
         # This class tests original Compose configuration; proof transactions have
         # their own isolated tests and must never publish personal state here.
+        retirement = mock.patch.object(node_config.group, 'retire'); retirement.start(); self.addCleanup(retirement.stop)
+        transport = mock.patch.object(node_config.recovery.deployment, 'Docker'); transport.start(); self.addCleanup(transport.stop)
         transaction = mock.patch.object(node_config.recovery, 'manage', side_effect=lambda action,env,project,signature,operation:operation())
         transaction.start(); self.addCleanup(transaction.stop)
         self.temp = tempfile.TemporaryDirectory(prefix='addp-node-config-')
@@ -1893,14 +1895,14 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
                 patch.object(node_config.subprocess, 'check_output', return_value=''), \
                 patch.object(node_config.subprocess, 'run') as execute:
             node_config.run('down', {'ADDP_NODE_METRICS_ENABLED': 'false'})
-            self.assertEqual(execute.call_args.args[0][-1], 'down')
+            self.assertEqual(execute.call_args.args[0][-4:], ['rm','-sf','node-exporter','block-capacity'])
             self.assertNotIn('--volumes', execute.call_args.args[0])
 
     def test_native_launch_overrides_untrusted_root_paths_and_profiles(self):
         from unittest.mock import patch
         values = dict(self.env, DOCKER_HOST='unix:///var/run/docker.sock',
                       ADDP_NODE_METRICS_ROOTFS='/wrong', ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--no-collector',
-                      COMPOSE_PROFILES='unexpected')
+                      COMPOSE_PROFILES='unexpected',COMPOSE_REMOVE_ORPHANS='true')
         info = {'KernelVersion': '6.8.0', 'OperatingSystem': 'Ubuntu', 'OSType': 'linux'}
         with patch.object(node_config, 'docker_json', return_value=info), \
                 patch.object(node_config.platform, 'system', return_value='Linux'), \
@@ -1914,6 +1916,8 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
             self.assertEqual(env['ADDP_NODE_METRICS_PROCFS'], '/host/proc')
             self.assertEqual(env['ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX'], '--collector')
             self.assertNotIn('COMPOSE_PROFILES', env)
+            self.assertNotIn('COMPOSE_REMOVE_ORPHANS', env)
+            self.assertEqual(env['COMPOSE_IGNORE_ORPHANS'],'true')
 
     def test_desktop_launch_overrides_paths_collectors_and_maps_explicit_ipv6_port(self):
         from unittest.mock import patch
@@ -1921,7 +1925,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
                       ADDP_NODE_METRICS_LISTEN='[::1]:19100',
                       ADDP_NODE_METRICS_ROOTFS='/host', ADDP_NODE_METRICS_PROCFS='/host/proc',
                       ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--collector', ADDP_NODE_METRICS_PUBLISH_PORT='9999',
-                      COMPOSE_PROFILES='unexpected')
+                      COMPOSE_PROFILES='unexpected',COMPOSE_REMOVE_ORPHANS='true')
         info = {'KernelVersion': '6.10.14-linuxkit', 'OperatingSystem': 'Docker Desktop', 'OSType': 'linux'}
         with patch.object(node_config, 'docker_json', return_value=info), \
                 patch.object(node_config.platform, 'system', return_value='Darwin'), \
@@ -1938,6 +1942,8 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
             self.assertEqual(env['ADDP_NODE_METRICS_SYSFS'], '/sys')
             self.assertEqual(env['ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX'], '--no-collector')
             self.assertNotIn('COMPOSE_PROFILES', env)
+            self.assertNotIn('COMPOSE_REMOVE_ORPHANS', env)
+            self.assertEqual(env['COMPOSE_IGNORE_ORPHANS'],'true')
 
     def test_desktop_stop_does_not_require_valid_listen_or_certificates(self):
         from unittest.mock import patch
@@ -1947,7 +1953,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
                 patch.object(node_config.subprocess, 'check_output', return_value=''), \
                 patch.object(node_config.subprocess, 'run') as execute:
             node_config.run('down', {'ADDP_NODE_METRICS_LISTEN': 'invalid', 'ADDP_NODE_METRICS_TLS_DIR': '/missing'})
-            self.assertEqual(execute.call_args.args[0][-1], 'down')
+            self.assertEqual(execute.call_args.args[0][-4:], ['rm','-sf','node-exporter','block-capacity'])
             self.assertNotIn('--volumes', execute.call_args.args[0])
 
     def test_native_kernel_mismatch_and_non_linux_engine_do_not_launch(self):
@@ -2257,6 +2263,7 @@ class ServiceExpectationPublicationTest(unittest.TestCase):
         (root/'scripts/utils').mkdir(parents=True)
         import shutil
         shutil.copy2(ROOT/'scripts/utils/deployment-inventory.py', root/'scripts/utils/deployment-inventory.py')
+        shutil.copy2(ROOT/'scripts/utils/metrics-project.py', root/'scripts/utils/metrics-project.py')
         compose = root/'platform.yml'; compose.write_text('services:\n  meta-worker:\n    image: busybox\n')
         target = root/'private-intent'
         env = dict(os.environ, ADDP_DEPLOYMENT_DISCOVERY_DIR=str(target), ADDP_OBSERVABILITY_METRICS_ENABLED='false')
@@ -2309,6 +2316,7 @@ class ServiceExpectationPublicationTest(unittest.TestCase):
             shutil.copy2(ROOT/'scripts/dev'/name, root/'scripts/dev'/name)
         shutil.copy2(ROOT/'scripts'/kind/'stop.sh', root/'scripts'/kind/'stop.sh')
         shutil.copy2(ROOT/'scripts/utils/deployment-inventory.py', root/'scripts/utils/deployment-inventory.py')
+        shutil.copy2(ROOT/'scripts/utils/metrics-project.py', root/'scripts/utils/metrics-project.py')
         (root/'scripts/utils/colors.sh').write_text('RED= GREEN= YELLOW= NC=\n')
         target = root/'private-intent'
         (root/'.env').write_text('ADDP_DEPLOYMENT_DISCOVERY_DIR='+str(target)+'\n')
@@ -2591,6 +2599,8 @@ if __name__ == '__main__':
 
 class BlockCapacitySamplerTest(unittest.TestCase):
     def setUp(self):
+        retirement = mock.patch.object(node_config.group, 'retire'); retirement.start(); self.addCleanup(retirement.stop)
+        transport = mock.patch.object(node_config.recovery.deployment, 'Docker'); transport.start(); self.addCleanup(transport.stop)
         transaction = mock.patch.object(node_config.recovery, 'manage', side_effect=lambda action,env,project,signature,operation:operation())
         transaction.start(); self.addCleanup(transaction.stop)
         spec = importlib.util.spec_from_file_location('block_capacity', ROOT / 'scripts/infra/block-capacity.py')
@@ -2706,7 +2716,8 @@ class BlockCapacitySamplerTest(unittest.TestCase):
                     disabled = dict(env, ADDP_NODE_BLOCK_CAPACITY_ENABLED='false')
                     if owner == str(ROOT):
                         node_config.run('up', disabled)
-                        self.assertIn('--remove-orphans', execute.call_args_list[0].args[0])
+                        self.assertNotIn('--remove-orphans', execute.call_args_list[0].args[0])
+                        self.assertIn('--no-deps', execute.call_args_list[0].args[0])
                         self.assertEqual(execute.call_args_list[-1].args[0], ['docker', 'volume', 'rm', volume])
                     else:
                         with self.assertRaises(ValueError): node_config.run('up', disabled)

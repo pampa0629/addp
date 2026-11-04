@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,block-capacity,metrics-control,postgres,postgres-metrics,postgres-metrics-web,python-http-agent,python-http-copilot
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/node-recovery.py scripts/test/node-metrics-recovery_test.py scripts/test/node-metrics-recovery-probe.py scripts/test/node-recovery-fixture.sh scripts/infra/metrics-sources.py scripts/test/metrics-sources_test.py common-python/ agent/backend/main.py agent/backend/requirements.txt copilot/backend/main.py copilot/backend/requirements.txt scripts/test/python-http-metrics-source.py scripts/test/python-http-metrics-probe.py scripts/test/metrics-http-budget.py scripts/test/postgres-metrics-lifecycle_test.py scripts/test/postgres-lifecycle-probe.py business/scripts/stop.sh business/docker-compose.yml business/scripts/start.sh business/.env.example scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/test/directory-publication-probe.py scripts/utils/deployment-inventory.py scripts/utils/container-proof.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/block-capacity.py scripts/infra/node-block-capacity.yml scripts/infra/node-block-capacity-linux.yml scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py scripts/dev/worker-units.sh scripts/dev/ports.sh scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/generate-process-metrics-platform.py scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/httpmetrics/ common/modulelifecycle/ common/config/process_metrics.go common/models/process_metrics.go common/models/container_observation.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go common/models/service_expectations.go common/models/engine_metrics.go common/client/system_engine_deployments.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/ scripts/utils/private-state.py scripts/utils/deployment-docker.py
+# ADDP_T2_INPUT_FILES=scripts/utils/metrics-project.py scripts/test/metrics-project_test.py scripts/infra/node-recovery.py scripts/test/node-metrics-recovery_test.py scripts/test/node-metrics-recovery-probe.py scripts/test/node-recovery-fixture.sh scripts/infra/metrics-sources.py scripts/test/metrics-sources_test.py common-python/ agent/backend/main.py agent/backend/requirements.txt copilot/backend/main.py copilot/backend/requirements.txt scripts/test/python-http-metrics-source.py scripts/test/python-http-metrics-probe.py scripts/test/metrics-http-budget.py scripts/test/postgres-metrics-lifecycle_test.py scripts/test/postgres-lifecycle-probe.py business/scripts/stop.sh business/docker-compose.yml business/scripts/start.sh business/.env.example scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/test/directory-publication-probe.py scripts/utils/deployment-inventory.py scripts/utils/container-proof.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/block-capacity.py scripts/infra/node-block-capacity.yml scripts/infra/node-block-capacity-linux.yml scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py scripts/dev/worker-units.sh scripts/dev/ports.sh scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/generate-process-metrics-platform.py scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/httpmetrics/ common/modulelifecycle/ common/config/process_metrics.go common/models/process_metrics.go common/models/container_observation.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go common/models/service_expectations.go common/models/engine_metrics.go common/client/system_engine_deployments.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/ scripts/utils/private-state.py scripts/utils/deployment-docker.py
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 [[ $# -le 1 ]] || { echo 'Metrics T2: unexpected arguments' >&2; exit 2; }
@@ -195,7 +195,9 @@ if [[ "$metrics_case" == postgres-observation ]]; then
 fi
 mkdir -m 755 "$WORK_DIR/tls" "$WORK_DIR/source" "$WORK_DIR/deployment" "$WORK_DIR/node-tls" "$WORK_DIR/control" "$WORK_DIR/query-tests"
 # A one-run CA and deployer client; never install these in a personal environment.
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Metrics-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/ca.key" -out "$ADDP_METRICS_TLS_DIR/ca.crt" >/dev/null 2>&1
+# Every extension is explicit; do not depend on the workstation OpenSSL installation.
+export OPENSSL_CONF=/dev/null
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Metrics-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -addext subjectKeyIdentifier=hash -keyout "$WORK_DIR/ca.key" -out "$ADDP_METRICS_TLS_DIR/ca.crt" >/dev/null 2>&1
 for identity in server health; do
   openssl req -new -newkey rsa:2048 -nodes -subj "/CN=$identity" -keyout "$ADDP_METRICS_TLS_DIR/$identity.key" -out "$WORK_DIR/$identity.csr" >/dev/null 2>&1
   if [[ "$identity" == server ]]; then
@@ -203,6 +205,7 @@ for identity in server health; do
   else
     printf 'extendedKeyUsage=clientAuth\n' >"$WORK_DIR/extensions"
   fi
+  printf 'basicConstraints=critical,CA:FALSE\nauthorityKeyIdentifier=keyid:always\nsubjectKeyIdentifier=hash\nkeyUsage=critical,digitalSignature,keyEncipherment\n' >>"$WORK_DIR/extensions"
   openssl x509 -req -in "$WORK_DIR/$identity.csr" -CA "$ADDP_METRICS_TLS_DIR/ca.crt" -CAkey "$WORK_DIR/ca.key" -CAcreateserial -days 1 -extfile "$WORK_DIR/extensions" -out "$ADDP_METRICS_TLS_DIR/$identity.crt" >/dev/null 2>&1
   # Ephemeral fixture files only; the parent directory remains owner-private.
   chmod 644 "$ADDP_METRICS_TLS_DIR/$identity.key"
@@ -211,10 +214,11 @@ done
 mkdir -m 700 "$WORK_DIR/query-tls"
 openssl req -new -newkey rsa:2048 -nodes -subj /CN=addp-monitor-query -keyout "$WORK_DIR/query-tls/client.key" -out "$WORK_DIR/query.csr" >/dev/null 2>&1
 printf 'extendedKeyUsage=clientAuth\n' >"$WORK_DIR/query-extensions"
+printf 'basicConstraints=critical,CA:FALSE\nauthorityKeyIdentifier=keyid:always\nsubjectKeyIdentifier=hash\nkeyUsage=critical,digitalSignature,keyEncipherment\n' >>"$WORK_DIR/query-extensions"
 openssl x509 -req -in "$WORK_DIR/query.csr" -CA "$ADDP_METRICS_TLS_DIR/ca.crt" -CAkey "$WORK_DIR/ca.key" -CAserial "$ADDP_METRICS_TLS_DIR/ca.srl" -days 1 -extfile "$WORK_DIR/query-extensions" -out "$WORK_DIR/query-tls/client.crt" >/dev/null 2>&1
 chmod 600 "$WORK_DIR/query-tls/client.key"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=Untrusted -keyout "$WORK_DIR/untrusted.key" -out "$WORK_DIR/untrusted.crt" >/dev/null 2>&1
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Source-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/source-ca.key" -out "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" >/dev/null 2>&1
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Source-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -addext subjectKeyIdentifier=hash -keyout "$WORK_DIR/source-ca.key" -out "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" >/dev/null 2>&1
 for identity in source-server collector admission; do
   openssl req -new -newkey rsa:2048 -nodes -subj "/CN=$identity" -keyout "$WORK_DIR/$identity.key" -out "$WORK_DIR/$identity.csr" >/dev/null 2>&1
   if [[ "$identity" != source-server ]]; then
@@ -222,6 +226,7 @@ for identity in source-server collector admission; do
   else
     printf 'subjectAltName=DNS:localhost,DNS:metrics-source,DNS:postgres-metrics,DNS:host.docker.internal,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/source-extensions"
   fi
+  printf 'basicConstraints=critical,CA:FALSE\nauthorityKeyIdentifier=keyid:always\nsubjectKeyIdentifier=hash\nkeyUsage=critical,digitalSignature,keyEncipherment\n' >>"$WORK_DIR/source-extensions"
   openssl x509 -req -in "$WORK_DIR/$identity.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -CAcreateserial -days 1 -extfile "$WORK_DIR/source-extensions" -out "$WORK_DIR/$identity.crt" >/dev/null 2>&1
 done
 cp "$WORK_DIR/collector.crt" "$WORK_DIR/collector.key" "$ADDP_METRICS_DEPLOYMENT_DIR/"
@@ -240,9 +245,10 @@ chmod 644 "$ADDP_METRICS_DEPLOYMENT_DIR/prometheus-client-secret"
 touch "$WORK_DIR/source/requests.log"
 chmod 666 "$WORK_DIR/source/requests.log"
 # Control-plane trust is separate from center query/health and node source trust.
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Control-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/control-ca.key" -out "$ADDP_METRICS_DEPLOYMENT_DIR/control-ca.crt" >/dev/null 2>&1
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Control-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -addext subjectKeyIdentifier=hash -keyout "$WORK_DIR/control-ca.key" -out "$ADDP_METRICS_DEPLOYMENT_DIR/control-ca.crt" >/dev/null 2>&1
 openssl req -new -newkey rsa:2048 -nodes -subj /CN=metrics-control -keyout "$ADDP_METRICS_CONTROL_DIR/server.key" -out "$WORK_DIR/control.csr" >/dev/null 2>&1
 printf 'subjectAltName=DNS:localhost,DNS:metrics-control\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/control-extensions"
+printf 'basicConstraints=critical,CA:FALSE\nauthorityKeyIdentifier=keyid:always\nsubjectKeyIdentifier=hash\nkeyUsage=critical,digitalSignature,keyEncipherment\n' >>"$WORK_DIR/control-extensions"
 openssl x509 -req -in "$WORK_DIR/control.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/control-ca.crt" -CAkey "$WORK_DIR/control-ca.key" -set_serial 1 -days 1 -extfile "$WORK_DIR/control-extensions" -out "$ADDP_METRICS_CONTROL_DIR/server.crt" >/dev/null 2>&1
 chmod 644 "$ADDP_METRICS_CONTROL_DIR/server.key"
 python3 "$ROOT_DIR/scripts/infra/generate-metrics-config.py"
@@ -333,6 +339,7 @@ fi
 compose up -d --wait --wait-timeout 90 metrics-source node-exporter postgres
 node_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(compose ps -q node-exporter)")
 printf 'subjectAltName=DNS:localhost,IP:%s\nextendedKeyUsage=serverAuth\n' "$node_ip" >"$WORK_DIR/node-extensions"
+printf 'basicConstraints=critical,CA:FALSE\nauthorityKeyIdentifier=keyid:always\nsubjectKeyIdentifier=hash\nkeyUsage=critical,digitalSignature,keyEncipherment\n' >>"$WORK_DIR/node-extensions"
 openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -days 1 -extfile "$WORK_DIR/node-extensions" -out "$WORK_DIR/node-tls/server.crt" >/dev/null 2>&1
 # Use the owned container's current IP, as the Monitor projection does; no static subnet.
 source_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(compose ps -q metrics-source)")
@@ -345,6 +352,7 @@ Path(sys.argv[2]).write_text(json.dumps([{'targets':[address+':9443'],'labels':{
  'addp_source':'node_exporter','__meta_addp_target_version':'1'}}]))
 Path(sys.argv[3]).write_text('subjectAltName=DNS:localhost,IP:'+address+'\nextendedKeyUsage=serverAuth\n')
 CONFIG
+printf 'basicConstraints=critical,CA:FALSE\nauthorityKeyIdentifier=keyid:always\nsubjectKeyIdentifier=hash\nkeyUsage=critical,digitalSignature,keyEncipherment\n' >>"$WORK_DIR/source-extensions"
 openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -CAcreateserial -days 1 -extfile "$WORK_DIR/source-extensions" -out "$WORK_DIR/source-server-final.crt" >/dev/null 2>&1
 publication_state=$(compose exec -T metrics-source sh -ec '
 tls_dir=$1
@@ -402,6 +410,7 @@ mkdir -m 755 "$WORK_DIR/source/process-tls"
 # Native admission and SD use the inspected IP; Desktop rewrites only its
 # explicitly published loopback transport. The source validates its declaration.
 printf 'subjectAltName=DNS:localhost,DNS:metrics-source,DNS:host.docker.internal,IP:127.0.0.1,IP:%s\nextendedKeyUsage=serverAuth\n' "$source_ip" >"$WORK_DIR/process-extensions"
+printf 'basicConstraints=critical,CA:FALSE\nauthorityKeyIdentifier=keyid:always\nsubjectKeyIdentifier=hash\nkeyUsage=critical,digitalSignature,keyEncipherment\n' >>"$WORK_DIR/process-extensions"
 openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -days 1 -extfile "$WORK_DIR/process-extensions" -out "$WORK_DIR/source/process-tls/server.crt" >/dev/null 2>&1
 cp "$WORK_DIR/source-server.key" "$WORK_DIR/source/process-tls/server.key"
 cp "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" "$WORK_DIR/source/process-tls/ca.crt"

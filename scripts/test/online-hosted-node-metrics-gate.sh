@@ -13,19 +13,16 @@ esac
 HOSTED_FIXTURE_CONTAINERS=()
 HOSTED_FIXTURE_IMAGES=()
 HOSTED_FIXTURE_VOLUMES=()
-HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-node-metrics addp-metrics-online)
+metrics_project=$(python3 -B -c 'import runpy; from pathlib import Path; m=runpy.run_path("scripts/utils/metrics-project.py"); print(m["project"](Path.cwd()))')
+[[ "$metrics_project" =~ ^addp-metrics-sources-[a-f0-9]{16}$ ]] || exit 2
+HOSTED_FIXTURE_COMPOSE_PROJECTS=("$metrics_project" addp-metrics-online)
 node_owned=0
 engine_owned=0
-if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ]; then
-  HOSTED_FIXTURE_COMPOSE_PROJECTS+=(business addp-postgres-metrics-infra addp-postgres-metrics-business)
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then
+  HOSTED_FIXTURE_COMPOSE_PROJECTS+=(business)
 fi
 if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then
-  # Read-only names from the production owner; never duplicate its hash scheme.
-  redis_projects=$(python3 -B -c 'import importlib.util; s=importlib.util.spec_from_file_location("inventory","scripts/utils/deployment-inventory.py"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.redis_metrics_project("infra"),m.redis_metrics_project("business"))')
-  read -r redis_infra_project redis_business_project <<< "$redis_projects"
-  [[ "$redis_infra_project" =~ ^addp-redis-metrics-[a-f0-9]{16}-infra$ && "$redis_business_project" =~ ^addp-redis-metrics-[a-f0-9]{16}-business$ ]] || exit 2
-  HOSTED_FIXTURE_COMPOSE_PROJECTS+=(business "$redis_infra_project" "$redis_business_project")
-  HOSTED_FIXTURE_VOLUMES+=("$redis_infra_project-private" "$redis_business_project-private")
+  HOSTED_FIXTURE_VOLUMES+=("$metrics_project-infra-redis-private" "$metrics_project-business-redis-private")
 fi
 stop_online_fixture() {
   local status=0
@@ -42,8 +39,8 @@ stop_online_fixture() {
     run_logged python3 scripts/infra/node-metrics.py down || status=1
     for kind in container network volume; do
       case "$kind" in
-        container) remaining=$(docker ps -aq --filter label=com.docker.compose.project=addp-node-metrics) || status=1 ;;
-        *) remaining=$(docker "$kind" ls -q --filter label=com.docker.compose.project=addp-node-metrics) || status=1 ;;
+        container) remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$metrics_project") || status=1 ;;
+        *) remaining=$(docker "$kind" ls -q --filter "label=com.docker.compose.project=$metrics_project") || status=1 ;;
       esac
       [ -z "$remaining" ] || status=1
     done

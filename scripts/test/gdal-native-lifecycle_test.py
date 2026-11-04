@@ -313,7 +313,7 @@ if os.environ.get("FAIL_START") == "1": sys.exit(1)
 http.server.HTTPServer(("127.0.0.1", int(os.environ["PORT"])), http.server.SimpleHTTPRequestHandler).serve_forever()
 ''')
         # Exercise the standard Manager stop entry against disposable processes.
-        for relative in ("scripts/dev/stop.sh", "scripts/dev/ports.sh", "scripts/dev/lifecycle-lock.sh", "scripts/utils/colors.sh", "scripts/utils/deployment-inventory.py"):
+        for relative in ("scripts/dev/stop.sh", "scripts/dev/ports.sh", "scripts/dev/lifecycle-lock.sh", "scripts/utils/colors.sh", "scripts/utils/deployment-inventory.py", "scripts/utils/metrics-project.py"):
             target = self.work / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / relative, target)

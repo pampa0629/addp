@@ -90,6 +90,15 @@ class RecoveryTest(unittest.TestCase):
                 self.assertNotIn('private',str(failure.exception))
                 source.stop.assert_not_called();source.start.assert_not_called();source.build.assert_not_called()
 
+    def test_old_or_malformed_source_layout_requires_explicit_up_without_mutation(self):
+        for kind in ('redis','minio'):
+            for document in ([], {'services':{kind+'-metrics':{}}}):
+                with self.subTest(kind=kind,document=document),self.fixture(kind) as (source,db,config,fact,commands,check,recover):
+                    M.write(source.state/'compose.json',json.dumps(document))
+                    with self.assertRaises(ValueError) as failure:recover()
+                    self.assertEqual(failure.exception.source_recovery_reason,'source-layout-changed')
+                    source.stop.assert_not_called();source.start.assert_not_called();source.build.assert_not_called()
+
     @contextmanager
     def fixture(self, kind='redis'):
         with tempfile.TemporaryDirectory() as temporary:

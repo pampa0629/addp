@@ -18,6 +18,7 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.host.prepare_run_fixture()
         shutil.copy2(SCRIPT, self.host.repository / "scripts/test" / SCRIPT.name)
         shutil.copy2(SCRIPT.parents[1] / "utils/deployment-inventory.py", self.host.repository / "scripts/utils/deployment-inventory.py")
+        shutil.copy2(SCRIPT.parents[1] / "utils/metrics-project.py", self.host.repository / "scripts/utils/metrics-project.py")
         self.host._executable("python3", '''
             #!/usr/bin/env bash
             if [[ "${1:-}" == *platform-node-metrics-fixture.py ]]; then
@@ -61,7 +62,7 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.host._executable("docker", '''
             #!/usr/bin/env bash
             if [ "$1 $2" = "container inspect" ]; then exit 1; fi
-            if [ -f "$ADDP_ONLINE_SECRET_DIR/node-stopped" ] && [[ "$*" == *label=com.docker.compose.project=addp-node-metrics* ]]; then
+            if [ -f "$ADDP_ONLINE_SECRET_DIR/node-stopped" ] && [[ "$*" == *label=com.docker.compose.project=addp-metrics-sources-* ]]; then
               [ "${ADDP_TEST_INSPECTION_FAIL:-0}" != 1 ] || exit 2
               [ "${ADDP_TEST_RESIDUAL_NODE:-0}" != 1 ] || echo residual
             fi
@@ -71,6 +72,10 @@ class HostedMetricsGateTest(unittest.TestCase):
         ''')
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
         subprocess.run(["git", "commit", "-qm", "metrics fixture"], cwd=self.host.repository, check=True)
+
+    def metrics_project(self):
+        import hashlib
+        return 'addp-metrics-sources-'+hashlib.sha256(str(self.host.repository.resolve()).encode()).hexdigest()[:16]
 
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f"{self.host.bin}:{os.environ['PATH']}", GITHUB_ACTIONS="true", RUNNER_OS="Linux",
@@ -85,7 +90,7 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
         self.assertFalse(self.host.trace.exists())
         self.assertFalse(self.host.secrets.exists())
-        for project in ("addp-node-metrics", "addp-metrics-online"):
+        for project in (self.metrics_project(), "addp-metrics-online"):
             result = self.run_gate(check=True, ADDP_TEST_OCCUPIED_PROJECT=project)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.host.trace.exists())
@@ -183,14 +188,14 @@ class HostedMetricsGateTest(unittest.TestCase):
             self.assertIn("metrics-fixture:engine-up",trace);self.assertIn("metrics-fixture:engine-down",trace);self.assertIn("infra-down",trace)
             if failure!="ADDP_TEST_ENGINE_UP_FAIL":self.assertIn("start:-monitor -system",trace)
             self.assertFalse(self.host.secrets.exists())
-        for project in ("business", "addp-postgres-metrics-infra", "addp-postgres-metrics-business"):
+        for project in ("business", self.metrics_project()):
             with self.subTest(occupied=project):
                 result=self.run_gate(check=True,ADDP_ONLINE_NODE_METRICS_CASE="engine-admission",ADDP_TEST_OCCUPIED_PROJECT=project)
                 self.assertNotEqual(result.returncode,0)
 
     def test_redis_admission_keeps_an_independent_profile_and_private_volume_closure(self):
         import hashlib
-        prefix = "addp-redis-metrics-" + hashlib.sha256(str(self.host.repository).encode()).hexdigest()[:16]
+        prefix = self.metrics_project()
         for failure in (None, "ADDP_TEST_ENGINE_UP_FAIL", "ADDP_TEST_ENGINE_DOWN_FAIL", "ADDP_TEST_SUITE_FAIL"):
             with self.subTest(failure=failure):
                 self.host.trace.unlink(missing_ok=True)
@@ -203,7 +208,7 @@ class HostedMetricsGateTest(unittest.TestCase):
                 self.assertFalse(self.host.secrets.exists())
                 if failure != "ADDP_TEST_ENGINE_UP_FAIL": self.assertIn("start:-monitor -system", trace)
         for scope in ("infra", "business"):
-            for variable, value in (("ADDP_TEST_OCCUPIED_PROJECT", prefix+"-"+scope), ("ADDP_TEST_OCCUPIED_VOLUME", prefix+"-"+scope+"-private")):
+            for variable, value in (("ADDP_TEST_OCCUPIED_PROJECT", prefix), ("ADDP_TEST_OCCUPIED_VOLUME", prefix+"-"+scope+"-redis-private")):
                 with self.subTest(variable=variable, scope=scope):
                     result = self.run_gate(check=True, ADDP_ONLINE_NODE_METRICS_CASE="redis-engine-admission", **{variable:value})
                     self.assertNotEqual(result.returncode, 0, result.stdout+result.stderr)

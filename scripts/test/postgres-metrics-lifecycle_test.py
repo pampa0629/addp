@@ -41,13 +41,13 @@ class LifecycleTest(unittest.TestCase):
             manager = module.SourceLifecycle(docker, 'infra', state, lambda:database)
             document = manager.source_document(database, '127.0.0.1', 9443, started_at='2026-11-01T00:00:00Z')
             def populate(document):
-                for index, service in enumerate(sorted(module.SERVICES)):
+                for index, service in enumerate(sorted(manager.services)):
                     identity = str(index+1)*64
                     labels = dict(document['services'][service]['labels'], **{
                         'com.docker.compose.project':manager.project,'com.docker.compose.service':service,'com.docker.compose.oneoff':'False'})
                     objects[identity] = {'id':identity,'labels':labels,'running':running,
-                        'network_mode':database.network if service=='postgres-metrics' else 'container:'+'1'*64,
-                        'ports':{'9443/tcp':[{'HostIp':'127.0.0.1','HostPort':'9443'}]} if service=='postgres-metrics' else {}}
+                        'network_mode':database.network if service==manager.exporter else 'container:'+'1'*64,
+                        'ports':{'9443/tcp':[{'HostIp':'127.0.0.1','HostPort':'9443'}]} if service==manager.exporter else {}}
             populate(document)
             def run(args, **kwargs):
                 commands.append(args)
@@ -374,7 +374,7 @@ class LifecycleTest(unittest.TestCase):
     def test_foreign_source_is_never_stopped_or_replaced(self):
         docker = mock.Mock()
         docker.run.return_value = 'a' * 64
-        docker.fact.return_value = {'labels': {'com.docker.compose.project': 'addp-postgres-metrics-infra',
+        docker.fact.return_value = {'labels': {'com.docker.compose.project': module.group.project(ROOT),
             'com.docker.compose.service': 'postgres-metrics', module.OWNER: '/foreign', module.SCOPE: 'infra'}}
         lifecycle = module.SourceLifecycle(docker, 'infra', Path('/private/unused'), mock.Mock())
         with self.assertRaises(ValueError):

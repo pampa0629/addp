@@ -13,7 +13,9 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-PROJECT = 'addp-node-metrics'
+_group_spec = importlib.util.spec_from_file_location('node_metrics_group', ROOT/'scripts/utils/metrics-project.py')
+group = importlib.util.module_from_spec(_group_spec); _group_spec.loader.exec_module(group)
+PROJECT = group.project(ROOT)
 _spec = importlib.util.spec_from_file_location('node_recovery', Path(__file__).with_name('node-recovery.py'))
 recovery = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(recovery)
@@ -186,8 +188,7 @@ def _run(action, env, *, node_kind=None, display_name=None, addresses=(), host_o
         if (info['OSType'] != 'linux'
                 or runtime == 'linux' and info['KernelVersion'] != platform.release()):
             raise ValueError('Node metrics Docker Engine must share the current Linux kernel')
-    ids = subprocess.check_output(['docker', 'ps', '-aq', '--filter',
-                                  'label=com.docker.compose.project=' + PROJECT], text=True).split()
+    ids = group.container_ids(lambda args:subprocess.check_output(['docker',*args],text=True),PROJECT,{'node-exporter','block-capacity'})
     containers = docker_json('inspect', *ids) if ids else []
     for item in containers:
         if (item['Config']['Labels'].get('io.addp.node-metrics.owner') != str(ROOT)
@@ -219,7 +220,8 @@ def _run(action, env, *, node_kind=None, display_name=None, addresses=(), host_o
                       ADDP_NODE_METRICS_PUBLISH_IP=address.strip('[]'),
                       ADDP_NODE_METRICS_PUBLISH_PORT=port)
     # Do not inherit arbitrary profile activation or source paths from the caller.
-    values.pop('COMPOSE_PROFILES', None)
+    values = {key:value for key,value in values.items() if not key.startswith('COMPOSE_')}
+    values['COMPOSE_IGNORE_ORPHANS'] = 'true'
     args = ['docker', 'compose', '--env-file', '/dev/null', '-p', PROJECT,
             '-f', str(ROOT / 'scripts/infra/node-metrics.yml'),
             '-f', str(ROOT / f'scripts/infra/node-metrics-{runtime}.yml')]
@@ -230,8 +232,8 @@ def _run(action, env, *, node_kind=None, display_name=None, addresses=(), host_o
         args += ['-f', str(ROOT / 'scripts/infra/node-block-capacity.yml')]
         if not desktop:
             args += ['-f', str(ROOT / 'scripts/infra/node-block-capacity-linux.yml')]
-    commands = {'up': ['up', '-d', '--remove-orphans', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter'] + (['block-capacity'] if capacity else []),
-                'down': ['down'], 'status': ['ps']}
+    commands = {'up': ['up', '-d', '--no-deps', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter'] + (['block-capacity'] if capacity else []),
+                'down': ['rm', '-sf', 'node-exporter', 'block-capacity'], 'status': ['ps','node-exporter','block-capacity']}
     # Validate ownership before any mutation, including removal of a volume left
     # after an interrupted previous deployment. The name is project-local.
     volume_name = PROJECT + '_block-capacity'
@@ -242,9 +244,29 @@ def _run(action, env, *, node_kind=None, display_name=None, addresses=(), host_o
         volume = docker_json('volume', 'inspect', volume_name)[0]
         if (volume.get('Labels') or {}).get('io.addp.node-metrics.owner') != str(ROOT):
             raise ValueError('Node capacity volume belongs to another workspace')
+    if action == 'up':
+        if PROJECT == group.project(ROOT):
+            group.retire(recovery.deployment.Docker(env), ROOT, 'node', 'host')
+        # Capacity deselection removes only this member, never project orphans.
+        if not capacity:
+            for item in containers:
+                if item['Config']['Labels'].get('com.docker.compose.service') == 'block-capacity':
+                    subprocess.run(['docker','rm','-f',item['Id']],env=values,check=True)
     subprocess.run(args + commands[action], env=values, check=True)
     if volumes and (action == 'down' or action == 'up' and not capacity):
         subprocess.run(['docker', 'volume', 'rm', volume_name], env=values, check=True)
+    if action == 'down':
+        network_name = PROJECT+'_default'
+        names = subprocess.check_output(['docker','network','ls','-q','--filter','name=^'+network_name+'$'],text=True).split()
+        if names:
+            facts = docker_json('network','inspect',*names)
+            if len(facts) != 1 or facts[0].get('Name') != network_name:
+                raise ValueError('Unexpected node source network')
+            network = facts[0]; labels = network.get('Labels') or {}
+            if (labels.get('com.docker.compose.project') != PROJECT or labels.get('com.docker.compose.network') != 'default'
+                    or labels.get('io.addp.node-metrics.owner') != str(ROOT) or network.get('Containers')):
+                raise ValueError('Refusing foreign or attached node source network')
+            subprocess.run(['docker','network','rm',network['Id']],env=values,check=True)
     if action == 'up':
         scope = 'Docker Desktop VM (kernel-global metrics only)' if desktop else 'native Linux node'
         print(f'Node metrics: deployed {scope}; source readiness and Monitor admission require mTLS verification')

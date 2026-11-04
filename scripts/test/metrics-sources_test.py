@@ -231,11 +231,12 @@ class MetricsSourcesTest(unittest.TestCase):
 
     def test_status_uses_only_local_metadata_and_rejects_foreign_or_changed_identity(self):
         deployment = Mock(); docker = deployment.Docker.return_value
-        project = 'addp-postgres-metrics-business'; node='a'*64; source='b'*64; web='c'*64
+        group=manager.load(ROOT/'scripts/utils/metrics-project.py');deployment.inventory.metrics_project=group
+        project = group.project(ROOT); node='a'*64; source='b'*64; web='c'*64
         deployment.inventory.SCOPES={'business':('business',ROOT/'business')}
         database={'running':True,'started_at':'2026-11-03T00:00:00Z','labels':{'com.docker.compose.project':'business','com.docker.compose.service':'postgres','com.docker.compose.project.working_dir':str(ROOT/'business')}}
         labels={'com.docker.compose.project':project,'io.addp.postgres-metrics.owner':str(ROOT),'io.addp.postgres-metrics.scope':'business','io.addp.postgres-metrics.database-id':node,'io.addp.postgres-metrics.database-started-at':database['started_at']}
-        objects={node:database,source:{'running':True,'labels':dict(labels,**{'com.docker.compose.service':'postgres-metrics'})},web:{'running':True,'labels':dict(labels,**{'com.docker.compose.service':'postgres-metrics-web'})}}
+        objects={node:database,source:{'running':True,'labels':dict(labels,**{'com.docker.compose.service':'business-postgres-metrics'})},web:{'running':True,'labels':dict(labels,**{'com.docker.compose.service':'business-postgres-metrics-web'})}}
         commands=[]
         def read(args):
             commands.append(args);self.assertEqual(args[0],'ps');return source+'\n'+web

@@ -729,3 +729,25 @@ PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英�
 `make test-monitor-redis-source`退出0（含Redis生命周期15项T1、Go固定协议T1），双域真实ACL／固定快照、十五项PromQL、只读复用／停止恢复／同一数据库容器重启后的来源重建、mTLS、发现、持久化及越权拒绝通过；自有来源和配置卷、私有文件清零。`make test-monitor-minio-observation`退出0（含MinIO生命周期25项T1及Go协议T1），双域仅指标授权、S3／管理拒绝、过期／停用、只读复用恢复、mTLS、固定投影及失败清理通过；独立作用域和容器替换后的账号持久化、四十六项PromQL通过；外层容器／网络／卷／私有状态清零。日志`/tmp/addp-engine-stage-redis-t2.log`、`/tmp/addp-engine-stage-minio-t2.log`。实源T2证明诊断加入后的既有生命周期回归；全部失败阶段的注入及中文展示仍是T1，不声称每个阶段均在实源制造过故障。
 
 本批未修改个人来源、账号、数据库、Docker设置或启停个人服务，未操作Safari；PostgreSQL未重跑实库安装或T2，复用其未改的原阶段，仅经本地生命周期与提示T1验证。远端CI和Hosted等专门会话回传，未手动调度或轮询验收，未设置定时任务。下一步优先补主机Safari连续前台刷新及原生缩放保持的剩余真实交互证据。
+
+
+### 采集来源统一 Compose 分组（2026-11-05）
+
+用户确认先收拢部署分组，保留 PostgreSQL Exporter／mTLS 分容器。本批先修订《平台运行观测规范》的“采集来源统一部署分组”，再统一为工作区摘要隔离的 `addp-metrics-sources-*` 项目。引擎服务按scope区分，主机来源不独占Infra或Business；各账号、私有卷、证书、原数据库网络及资源限制不合并。原私有声明继续是唯一输入，不增加集中配置副本；中心、数据库、业务卷、指标历史不移动。显式up核验并精确退役旧来源，普通recover不迁移、不构建、不重装账号；旧布局与镜像不可用均给出明确应用入口。
+
+每次操作限定明确服务集，删除节点来源的项目级down／remove-orphans，并清除继承的COMPOSE控制变量。Docker对重复服务标签采用交集，已改为逐服务精确查询后去重，避免双来源被误判为空。发现协议／公开API／生产权限不变。标准T2输入清单同步登记共享命名与迁移内核、测试；原Hosted准备与退出检查按同一项目、精确服务和专属卷适配，不触发远端验收。
+
+| 层级／命令 | 结果与范围 |
+| --- | --- |
+| `make test-metrics-sources` | 退出0；项目／隔离6项、共享恢复11项、主机恢复15项、统一入口19项、标准启动选择2项。旧布局拒绝不迁移、不修改；陌生容器／卷／网络附着在移除前拒绝。日志 `/tmp/addp-regroup-layout-final.log` |
+| `make test-monitor-metrics-config` | 最终退出0，137项配置检查及上述依赖通过；包含Node去除COMPOSE_REMOVE_ORPHANS继承、准确服务启停与Desktop／Linux声明。日志 `/tmp/addp-regroup-node-env-final.log` |
+| `make test-deployment-discovery` | 45项发现／原子发布与6项容器证明、shell语法通过。首轮观察者夹具在marker刚创建但内容尚空时读PID失败，原样复验通过；未以当前正常改写首次失败。日志 `/tmp/addp-regroup-discovery2.log`、`/tmp/addp-regroup-core-final.log` |
+| `make test-t2-ci-registration test-gdal-native-lifecycle` | 退出0；登记80项、runner9项、实际门禁登记及24项原生生命周期通过。复制部署读取工具的隔离夹具已同时复制新增依赖。日志 `/tmp/addp-regroup-boundaries-final.log` |
+| 原node Online runner的本批准备／清理组件 | 56项退出0，命令为 `python3 -m unittest scripts/test/platform-node-metrics-fixture_test.py scripts/test/online-hosted-node-metrics-gate_test.py scripts.test.platform-node-metrics-online_test.CapacitySourceLifecycleTest`；日志 `/tmp/addp-regroup-owned-online-final.log`。证书夹具显式配置与SKI／AKI，不依赖本机缺失的OpenSSL配置，不放宽TLS |
+| `make test-node-metrics-online-runner` | 完整入口退出2，172项中168通过、4项重复回调语法预检用例失败：其嵌套公共登记入口先因 `scripts/ci/check-online-ci-registration_test` 导入失败，未到预期SyntaxError。公共入口由其他会话调整，本批未修改；不计完整runner通过，后续System Go步骤未执行。日志 `/tmp/addp-regroup-online3.log` |
+| `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=node-recovery` | 退出0，独占桥接来源验证双组件精确查询、健康不动、仅采样器／全停止恢复、丢失回执清理、mTLS、漂移／缺失／退休证明拒绝，容器／网络／卷／私有状态清零；不等于个人宿主采集迁移或Linux宿主挂载验收。日志 `/tmp/addp-regroup-node-t2.log` |
+| `make test-monitor-redis-source` | 退出0；两scope真实最小ACL、固定INFO、mTLS、精确发现、健康恢复／同容器重启、持久化与零残留。日志 `/tmp/addp-regroup-redis-t2.log`；跨scope同组保留另由下项共享内核验证 |
+| `make test-monitor-minio-observation` | 最终退出0；双scope真实来源共用同一独占采集项目，单来源更新／停止／恢复／拒绝后对等来源完整运行事实不变；账号持久化、mTLS、原生拒绝、计数代际、46项固定查询及退出容器／网络／卷／私有状态清零。日志 `/tmp/addp-regroup-minio-t2-final.log` |
+| `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` | 退出2，不能算整体通过。普通认证路径的Infra／Business安装、两个新服务名、mTLS、健康不动／停止与同容器重启恢复、账号／HBA不变、漂移及停用拒绝等子项已通过；之后目录认证分支在共享目录原子替换可见性前置失败，HBA正式验收未到达。该Desktop问题仍按既有独立Mac／Linux后续范围保留，未改设置、重启或降低断言。日志 `/tmp/addp-regroup-pg-t2-final.log`；首轮另因本机缺少OpenSSL配置而在临时PKI准备失败，已将当次夹具配置和证书扩展显式化 |
+
+个人来源没有被本会话迁移、重启或改配置。当前MinIO旧镜像缺失的历史根因仍未知，不把隔离构建或新代码视为个人恢复成功。下一步由用户在仓库根目录运行 `python3 scripts/infra/metrics-sources.py up`，按现有配置统一应用；该操作只针对采集来源，可能有短暂采集间断，之后再只读核对分组、当前数据库绑定和Monitor实际采样。个人迁移、Safari／Desktop效果、最终Linux目录认证、自然CI及Hosted仍未验；CI／Hosted等专门会话回传，不设置定时任务。

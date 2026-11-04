@@ -21,7 +21,6 @@ services:
     user: "${ADDP_POSTGRES_METRICS_USER:?Explicit source UID:GID required}"
     entrypoint: [nginx, -g, "daemon off;"]
     network_mode: service:postgres-metrics
-    depends_on: [postgres-metrics]
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

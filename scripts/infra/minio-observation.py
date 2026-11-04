@@ -357,6 +357,8 @@ class Lifecycle:
 
     def run(self, enabled, env):
         with private.locked(self.directory/'source'):
+            if enabled and self.source.project == sources.group.project(ROOT):
+                sources.group.retire(self.source.docker, ROOT, 'minio', self.scope)
             self.source.stop()
             try:
                 if not enabled:

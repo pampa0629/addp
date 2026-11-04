@@ -5,6 +5,7 @@ import argparse
 import hashlib
 from importlib.util import module_from_spec, spec_from_file_location
 import ipaddress
+import importlib.util
 import json
 import os
 import platform
@@ -91,6 +92,12 @@ def command(args, *, timeout=120):
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=timeout).stdout
 
 
+def metrics_project_name():
+    spec = importlib.util.spec_from_file_location('fixture_metrics_project', ROOT/'scripts/utils/metrics-project.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    return module.project(ROOT)
+
+
 def native_node_source_proof():
     """Verify the actual owned exporter, not only a rendered Compose declaration."""
     boundary()
@@ -101,7 +108,7 @@ def native_node_source_proof():
             or "Docker Desktop" in info.get("OperatingSystem", "")):
         raise ValueError("native node evidence requires the current host kernel")
     ids = command(["docker", "ps", "-aq", "--no-trunc", "--filter",
-                   "label=com.docker.compose.project=addp-node-metrics", "--filter",
+                   "label=com.docker.compose.project="+metrics_project_name(), "--filter",
                    "label=com.docker.compose.service=node-exporter"], timeout=5).split()
     if len(ids) != 1 or not re.fullmatch(r"[0-9a-f]{64}", ids[0]):
         raise ValueError("native node source ownership is ambiguous")
@@ -110,7 +117,7 @@ def native_node_source_proof():
         raise ValueError("native node source inspection is incomplete")
     row = rows[0]
     labels = row.get("Config", {}).get("Labels", {})
-    expected = {"com.docker.compose.project": "addp-node-metrics",
+    expected = {"com.docker.compose.project": metrics_project_name(),
                 "com.docker.compose.service": "node-exporter", "io.addp.node-metrics.owner": str(ROOT)}
     if (row.get("Id") != ids[0] or any(labels.get(k) != v for k, v in expected.items())
             or row.get("State", {}).get("Running") is not True):
@@ -201,7 +208,7 @@ def validate_block_capacity_frame(value, expected_program, checked_at):
 
 def native_block_capacity_proof(exporter, kernel):
     ids = command(["docker", "ps", "-aq", "--no-trunc", "--filter",
-                   "label=com.docker.compose.project=addp-node-metrics", "--filter",
+                   "label=com.docker.compose.project="+metrics_project_name(), "--filter",
                    "label=com.docker.compose.service=block-capacity"], timeout=5).split()
     if len(ids) != 1 or not re.fullmatch(r"[0-9a-f]{64}", ids[0]):
         raise ValueError("native capacity sampler ownership ambiguous")
@@ -211,7 +218,7 @@ def native_block_capacity_proof(exporter, kernel):
     row = inspected[0]; config = row.get("Config", {}); host = row.get("HostConfig", {})
     labels = config.get("Labels") or {}
     if (row.get("Id") != ids[0] or row.get("State", {}).get("Running") is not True
-            or labels.get("com.docker.compose.project") != "addp-node-metrics"
+            or labels.get("com.docker.compose.project") != metrics_project_name()
             or labels.get("com.docker.compose.service") != "block-capacity"
             or labels.get("io.addp.node-metrics.owner") != str(ROOT)
             or config.get("User") != "65534:65534"
@@ -223,14 +230,14 @@ def native_block_capacity_proof(exporter, kernel):
             or host.get("NanoCpus") != 250000000 or host.get("Memory") != 64*1024**2
             or host.get("PidsLimit") != 16 or host.get("Devices") or host.get("DeviceRequests") or host.get("CapAdd")):
         raise ValueError("native capacity sampler deployment mismatch")
-    volume_name = "addp-node-metrics_block-capacity"
+    volume_name = metrics_project_name()+"_block-capacity"
     volumes = json.loads(command(["docker", "volume", "inspect", volume_name], timeout=5))
     if len(volumes) != 1:
         raise ValueError("native capacity volume missing")
     volume = volumes[0]; vl = volume.get("Labels") or {}
     if (volume.get("Name") != volume_name or volume.get("Driver") != "local"
             or not isinstance(volume.get("Mountpoint"), str) or not volume["Mountpoint"].startswith("/") or volume["Mountpoint"] == "/"
-            or vl.get("com.docker.compose.project") != "addp-node-metrics"
+            or vl.get("com.docker.compose.project") != metrics_project_name()
             or vl.get("com.docker.compose.volume") != "block-capacity"
             or vl.get("io.addp.node-metrics.owner") != str(ROOT)
             or volume.get("Options") != {"type": "tmpfs", "device": "tmpfs", "o": "size=1m,uid=65534,gid=65534,mode=0700"}):
@@ -268,7 +275,8 @@ def compose(directory, *args):
 
 
 def openssl(*args):
-    command(["openssl", *args])
+    # Disposable PKI supplies every subject/extension; never depend on host openssl.cnf.
+    command(["openssl", *args, *(["-config", "/dev/null"] if args[0] == "req" else [])])
 
 
 def prepare(directory):
@@ -293,6 +301,7 @@ def prepare(directory):
         path = directory / name
         openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN="+name,
                 "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+                "-addext", "subjectKeyIdentifier=hash",
                 "-keyout", str(path)+".key", "-out", str(path)+".crt")
         return path
 
@@ -300,7 +309,7 @@ def prepare(directory):
         key, cert = folder / (name+".key"), folder / (name+".crt")
         csr = directory / (folder.name+"-"+name+".csr")
         extensions = directory / "extensions"
-        extensions.write_text("extendedKeyUsage=" + ("serverAuth\nsubjectAltName=IP:127.0.0.1,IP:"+address+",DNS:localhost\n" if server else "clientAuth\n"))
+        extensions.write_text("basicConstraints=critical,CA:FALSE\nauthorityKeyIdentifier=keyid:always\nsubjectKeyIdentifier=hash\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=" + ("serverAuth\nsubjectAltName=IP:127.0.0.1,IP:"+address+",DNS:localhost\n" if server else "clientAuth\n"))
         openssl("req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN="+name,
                 "-keyout", str(key), "-out", str(csr))
         openssl("x509", "-req", "-in", str(csr), "-CA", str(issuer)+".crt", "-CAkey", str(issuer)+".key",

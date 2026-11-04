@@ -40,7 +40,7 @@ class Source:
         if args[2] == 'info':
             return json.dumps(self.info)
         if args[2] == 'ps':
-            if any(prefix in ' '.join(args) for prefix in ('label=com.docker.compose.project=addp-postgres-metrics-','label=com.docker.compose.project=addp-redis-metrics-','label=com.docker.compose.project=addp-minio-metrics-')):
+            if any(prefix in ' '.join(args) for prefix in ('label=com.docker.compose.project=addp-metrics-sources-',)):
                 return ''
             return self.ids
         if args[2] == 'inspect':
@@ -55,15 +55,15 @@ class MetricsSource(Source):
     def __init__(self):
         super().__init__()
         self.metrics = {}
-        for name, cid in [('postgres-metrics', 'b'*64), ('postgres-metrics-web', 'c'*64)]:
+        for name, cid in [('business-postgres-metrics', 'b'*64), ('business-postgres-metrics-web', 'c'*64)]:
             self.metrics[cid] = dict(self.container, id=cid, service=name,
-                project='addp-postgres-metrics-business', owner=str(ROOT), scope='business',
+                project=inventory.metrics_project.project(ROOT), owner=str(ROOT), scope='business',
                 database_id=CID, database_started_at=self.container['started_at'],
                 network_mode='container:'+'b'*64 if name.endswith('-web') else 'fixture-database',
                 ports={} if name.endswith('-web') else {'9399/tcp': None, '9443/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '19443'}]})
 
     def __call__(self, *args):
-        if len(args) > 2 and args[2] == 'ps' and 'addp-postgres-metrics-business' in ' '.join(args):
+        if len(args) > 2 and args[2] == 'ps' and any('label=com.docker.compose.service='+name in args for name in ('business-postgres-metrics','business-postgres-metrics-web')):
             self.commands.append(args)
             return '\n'.join(self.metrics)
         if len(args) > 2 and args[2] == 'inspect' and args[-1] in self.metrics:
@@ -77,11 +77,12 @@ class RedisMetricsSource(Source):
         super().__init__()
         self.container.update(service='redis',project=inventory.SCOPES[scope][0],working_dir=str(inventory.SCOPES[scope][1]),networks={'private':{'NetworkID':'e'*64}})
         self.container['ports']={'6379/tcp':[{'HostIp':'127.0.0.1','HostPort':'16379'}]}
-        self.project='addp-redis-metrics-'+inventory.hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]+'-'+scope
-        self.metrics=dict(self.container,id='b'*64,project=self.project,service='redis-metrics',owner=str(ROOT),scope=scope,database_id=CID,database_started_at=self.container['started_at'],ports={'9443/tcp':[{'HostIp':'127.0.0.1','HostPort':'19443'}]})
+        self.project=inventory.metrics_project.project(ROOT)
+        self.metrics=dict(self.container,id='b'*64,project=self.project,service=scope+'-redis-metrics',owner=str(ROOT),scope=scope,database_id=CID,database_started_at=self.container['started_at'],ports={'9443/tcp':[{'HostIp':'127.0.0.1','HostPort':'19443'}]})
         self.source_ids='b'*64
+        self.selected_service=self.metrics['service']
     def __call__(self,*args):
-        if len(args)>2 and args[2]=='ps' and self.project in ' '.join(args):
+        if len(args)>2 and args[2]=='ps' and self.project in ' '.join(args) and 'label=com.docker.compose.service='+self.selected_service in args:
             self.commands.append(args);return self.source_ids
         if len(args)>2 and args[2]=='inspect' and args[-1]=='b'*64:
             self.commands.append(args);return json.dumps(self.metrics)
@@ -93,7 +94,8 @@ class MinIOMetricsSource(RedisMetricsSource):
         super().__init__(scope)
         self.container.update(service='minio', ports={'9000/tcp':[{'HostIp':'127.0.0.1','HostPort':'19000'}], '9001/tcp':[{'HostIp':'127.0.0.1','HostPort':'19001'}]})
         self.project = inventory.minio_metrics_project(scope)
-        self.metrics.update(project=self.project, service='minio-metrics')
+        self.metrics.update(project=self.project, service=scope+'-minio-metrics')
+        self.selected_service=self.metrics['service']
         self.metrics['networks'] = copy.deepcopy(self.metrics['networks'])
         self.container['networks']['unrelated'] = {'NetworkID':'f'*64}
         self.network = {'id':'e'*64,'name':'private','driver':'bridge','project':inventory.SCOPES[scope][0],'network':{'infra':'addp-network','business':'business-network'}[scope]}

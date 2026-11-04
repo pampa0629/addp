@@ -18,7 +18,10 @@ from urllib.parse import urlsplit
 spec=importlib.util.spec_from_file_location('metrics_source_private',Path(__file__).with_name('private-state.py'))
 private=importlib.util.module_from_spec(spec);spec.loader.exec_module(private)
 
-RECOVERY_REASONS = frozenset({'source-image-unavailable'})
+spec=importlib.util.spec_from_file_location('source_metrics_project',Path(__file__).with_name('metrics-project.py'))
+group=importlib.util.module_from_spec(spec);spec.loader.exec_module(group)
+
+RECOVERY_REASONS = frozenset({'source-image-unavailable','source-layout-changed'})
 OBSERVATION_STAGES = frozenset({'transport-check', 'private-state', 'identity-recheck',
     'connection-check', 'deployment-check', 'account-plan', 'account-update',
     'source-check', 'source-stop', 'source-build', 'source-start'})
@@ -94,8 +97,8 @@ class Source:
         self.docker,self.scope,self.state,self.root,self.kind,self.project,self.error=docker,scope,Path(state),Path(root),kind,project,error
         self.namespace='io.addp.'+kind+'-metrics'
         self.owner,self.scope_label=self.namespace+'.owner',self.namespace+'.scope'
-        self.service=kind+'-metrics'
-        self.config_volume=project+'-private'
+        self.service=group.service(kind,scope)
+        self.config_volume=project+'-'+scope+'-'+kind+'-private'
 
     def document(self, database, image, ip, port, *, started_at=None):
         labels = {self.owner:str(self.root), self.scope_label:self.scope, self.namespace+'.database-id':database.identity,
@@ -189,6 +192,10 @@ class Source:
                 result[key] = value
             return result
         document = json.loads(private.read(self.state/'compose.json',0o600)[0], object_pairs_hook=unique)
+        if not isinstance(document,dict) or not isinstance(document.get('services'),dict) or set(document['services']) != {self.service}:
+            error = self.error('Metrics source layout changed; explicitly apply the standard up entry')
+            error.source_recovery_reason = 'source-layout-changed'
+            raise error
         service = document['services'][self.service]
         image = service['image']
         previous = service['labels']
@@ -200,7 +207,7 @@ class Source:
         if expected_image is not None and image != expected_image:
             raise self.error('Metrics recovery account image changed')
         self.installed_image(image)
-        ids = self.docker.run(['ps','-aq','--filter','label=com.docker.compose.project='+self.project]).split()
+        ids = self.docker.run(['ps','-aq',*group.filters(self.project,{self.service})]).split()
         if len(ids) > 1:
             raise self.error('Metrics recovery source is not unique')
         fact = self.docker.fact(ids[0]) if ids else None
@@ -252,18 +259,18 @@ class Source:
     @observed('source-stop')
     def stop(self):
         ROOT, OWNER, SCOPE, Error = self.root, self.owner, self.scope_label, self.error
-        identities = self.docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+self.project]).split()
+        identities = group.container_ids(self.docker.run,self.project,{self.service,self.service+'-init'})
         for identity in identities:
             labels = self.docker.fact(identity)['labels']
-            if labels.get(OWNER) != str(ROOT) or labels.get(SCOPE) != self.scope or labels.get('com.docker.compose.service') not in (self.service, self.service+'-init'):
+            if labels.get(OWNER) != str(ROOT) or labels.get(SCOPE) != self.scope or labels.get('com.docker.compose.project') != self.project or labels.get('com.docker.compose.service') not in (self.service, self.service+'-init'):
                 raise Error('Refusing foreign metrics source containers')
-        for identity in identities:
-            self.docker.run(['rm', '-f', identity], timeout=20)
         volumes = self.docker.run(['volume', 'ls', '-q', '--filter', 'name=^'+self.config_volume+'$']).split()
         for volume in volumes:
             fact = decode(self.docker.run(['volume', 'inspect', volume]))[0]
             if volume != self.config_volume or (fact.get('Labels') or {}).get(OWNER) != str(ROOT) or (fact.get('Labels') or {}).get(SCOPE) != self.scope:
                 raise Error('Refusing foreign metrics source volume')
+        for identity in identities:
+            self.docker.run(['rm', '-f', identity], timeout=20)
         for volume in volumes:
             self.docker.run(['volume', 'rm', volume])
 
@@ -306,7 +313,7 @@ class Source:
         document = self.document(database,image,ip,port)
         write(self.state/'compose.json',json.dumps(document,sort_keys=True))
         check()
-        self.docker.run(['compose','--env-file','/dev/null','-p',self.project,'-f',str(self.state/'compose.json'),'up','-d','--no-deps',self.service],timeout=60)
+        self.docker.run(['compose','--env-file','/dev/null','-p',self.project,'-f',str(self.state/'compose.json'),'up','-d','--no-deps',self.service],timeout=60,extra_env={'COMPOSE_IGNORE_ORPHANS':'true'})
         check()
         ids=self.docker.run(['ps','-aq','--filter','label=com.docker.compose.project='+self.project,'--filter','label=com.docker.compose.service='+self.service]).split()
         if len(ids)!=1 or not self.docker.fact(ids[0])['running']:

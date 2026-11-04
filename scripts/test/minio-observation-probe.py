@@ -33,7 +33,7 @@ tls = importlib.util.module_from_spec(tls_spec); tls_spec.loader.exec_module(tls
 
 
 def source(scope):
-    return M.sources.Source(docker, scope, state_root/scope/'source', ROOT, 'minio', project+'-metrics-'+scope, M.Error)
+    return M.sources.Source(docker, scope, state_root/scope/'source', ROOT, 'minio', project+'-metrics', M.Error)
 
 
 def cleanup_sources():
@@ -41,8 +41,8 @@ def cleanup_sources():
     for scope in ('infra', 'business'):
         try:
             owned = source(scope); owned.stop()
-            for args in (['ps', '-aq'], ['network', 'ls', '-q']):
-                assert not docker.run([*args, '--filter', 'label=com.docker.compose.project='+owned.project]).strip(), 'owned source residue'
+            for args in (['ps', '-aq',*M.sources.group.filters(owned.project,{owned.service})], ['network', 'ls', '-q','--filter','label=com.docker.compose.project='+owned.project]):
+                assert not docker.run(args).strip(), 'owned source residue'
             assert not docker.run(['volume', 'ls', '-q', '--filter', 'name=^'+owned.config_volume+'$']).strip(), 'owned private volume residue'
         except Exception: failed = True
     if failed: raise AssertionError('MinIO source cleanup could not be verified')
@@ -136,7 +136,7 @@ def source_read(scope, manager, environment, context):
     assert re.search(r'addp_minio_drives_online [1-9]', body), 'real health metric missing'
     epoch = re.search(r'counter_epoch="([0-9a-f]{64})"', body)
     assert epoch, 'counter generation missing'
-    ids = docker.run(['ps', '-q', '--filter', 'label=com.docker.compose.project='+manager.source.project]).split()
+    ids = docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).split()
     assert len(ids) == 1, 'unexpected source process count'
     detail = json.loads(docker.run(['inspect', '--format', '{{json .}}', ids[0]]))
     assert detail['Config']['User'] == '65532:65532' and detail['HostConfig']['ReadonlyRootfs'] and not detail['HostConfig']['Privileged'], 'source privilege changed'
@@ -153,28 +153,31 @@ def source_contracts(managers, environments, contexts, roots):
     epochs = {}
     for scope in ('infra', 'business'):
         manager, environment, ctx = managers[scope], environments[scope], contexts[scope]
+        peer = managers['business' if scope=='infra' else 'infra'].source
+        peer_ids = docker.run(['ps','-aq',*M.sources.group.filters(peer.project,{peer.service})]).split()
+        peer_before = {identity:docker.fact(identity) for identity in peer_ids}
         epoch, port = source_read(scope, manager, environment, ctx); epochs[scope] = epoch
         before=(manager.directory/'owner.json').read_bytes()
-        ids=docker.run(['ps','-q','--filter','label=com.docker.compose.project='+manager.source.project]).split()
+        ids=docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).split()
         with mock.patch.object(M.Database,'enable',side_effect=AssertionError('recovery attempted account enable')), mock.patch.object(M.Database,'create',side_effect=AssertionError('recovery attempted account creation')), mock.patch.object(manager.source,'build',side_effect=AssertionError('recovery attempted source build')):
             assert manager.recover(environment)=='healthy; source unchanged', 'healthy source not reused'
-            assert docker.run(['ps','-q','--filter','label=com.docker.compose.project='+manager.source.project]).split()==ids, 'healthy source rebuilt'
+            assert docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).split()==ids, 'healthy source rebuilt'
             docker.run(['stop',ids[0]])
             assert 'source recovered' in manager.recover(environment), 'stopped source not recovered'
             ready(port,ctx)
-            source=docker.run(['ps','-q','--filter','label=com.docker.compose.project='+manager.source.project]).strip()
+            source=docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).strip()
             docker.run(['rm','-f',source])
             assert 'source recovered' in manager.recover(environment), 'missing source not recovered'
             ready(port,ctx)
         assert (manager.directory/'owner.json').read_bytes()==before, 'recovery changed native private account state'
         service='minio-'+scope
         compose=['docker','compose','--project-name',project,'--project-directory',str(working),'-f',str(working/'docker-compose.minio-observation-t2.yml')]
-        source=docker.run(['ps','-q','--filter','label=com.docker.compose.project='+manager.source.project]).strip()
+        source=docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).strip()
         subprocess.run([*compose,'stop',service],check=True,stdout=subprocess.DEVNULL)
         try: manager.recover(environment)
         except ValueError: pass
         else: raise AssertionError('recovery started stopped MinIO')
-        assert docker.run(['ps','-q','--filter','label=com.docker.compose.project='+manager.source.project]).strip()==source, 'rejected recovery changed source'
+        assert docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).strip()==source, 'rejected recovery changed source'
         subprocess.run([*compose,'up','-d','--no-recreate','--no-build','--wait','--wait-timeout','90',service],check=True,stdout=subprocess.DEVNULL)
         assert 'source recovered' in manager.recover(environment), 'same-container restart not recovered'
         ready(port,ctx); discover_source(scope,manager,'available')
@@ -202,7 +205,7 @@ def source_contracts(managers, environments, contexts, roots):
         manager.account.run(True)
         assert ready(port, ctx), 're-enabled observer failed to recover'
         manager.run(False, environment)
-        assert not docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+manager.source.project]).strip(), 'disabled source remains'
+        assert not docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).strip(), 'disabled source remains'
         discover_source(scope, manager, 'not_deployed')
         assert database(scope).probe(M.jwt(manager.account.read()['access_key'], manager.account.read()['secret_key'])) == 403, 'stop left native identity enabled'
         manager.run(True, environment); ready(port, ctx)
@@ -211,10 +214,11 @@ def source_contracts(managers, environments, contexts, roots):
             assert not getattr(error, 'minio_cleanup_failed', False), 'failure compensation was incomplete'
         else: raise AssertionError('missing TLS material accepted')
         assert manager.account.read()['phase'] == 'disabled', 'TLS failure left observer enabled'
-        assert not docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+manager.source.project]).strip(), 'TLS failure left source running'
+        assert not docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).strip(), 'TLS failure left source running'
         assert s3(database(scope), database(scope).parent, database(scope).config['aliases']['owned']['secretKey'], 'GET', '/permission-fixture/fixture') == (200, None), 'optional failure changed object service'
         manager.run(True,environment);ready(port,ctx)
-        print('MinIO '+scope+': read-only reuse/recovery, stopped database/identity rejection, fixed projection, isolated mTLS, native disable -> 503 and failure cleanup PASS', flush=True)
+        assert {identity:docker.fact(identity) for identity in peer_ids} == peer_before, 'selected-source operations changed peer source'
+        print('MinIO '+scope+': shared group peer preserved; read-only reuse/recovery, stopped database/identity rejection, fixed projection, isolated mTLS, native disable -> 503 and failure cleanup PASS', flush=True)
     return epochs
 
 
@@ -226,7 +230,7 @@ def main():
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
         environments[scope] = {'ADDP_MINIO_METRICS_LISTEN': '127.0.0.1:'+str(port), 'ADDP_MINIO_METRICS_TLS_DIR': str(directory)}
-        managers[scope] = M.Lifecycle(docker, scope, state_root/scope, lambda scope=scope: database(scope), project+'-metrics-'+scope, network_key='default')
+        managers[scope] = M.Lifecycle(docker, scope, state_root/scope, lambda scope=scope: database(scope), project+'-metrics', network_key='default')
 
 
     states = {}

@@ -203,14 +203,20 @@ def discovery_container(value, project, root):
                      'restart_count': value['restart_count'], 'published_ports': published}
 
 
+_spec_project = importlib.util.spec_from_file_location('inventory_metrics_project', Path(__file__).with_name('metrics-project.py'))
+metrics_project = importlib.util.module_from_spec(_spec_project)
+_spec_project.loader.exec_module(metrics_project)
+
+
 def postgres_metrics(docker, scope, containers):
     """A missing/invalid optional source never invalidates core deployment facts."""
     missing = {'state': 'not_deployed'}
     unavailable = {'state': 'unavailable'}
     try:
-        project = 'addp-postgres-metrics-' + scope
-        ids = docker('ps', '--all', '--no-trunc', '--filter',
-                     'label=com.docker.compose.project='+project, '--format', '{{.ID}}').splitlines()
+        project = metrics_project.project(REPOSITORY)
+        exporter_service = metrics_project.service('postgres', scope)
+        web_service = exporter_service+'-web'
+        ids = metrics_project.container_ids(lambda args:docker(*args),project,{exporter_service,web_service})
         if not ids:
             return missing
         if len(ids) != 2 or len(set(ids)) != 2 or any(not identifier(cid) for cid in ids):
@@ -228,10 +234,10 @@ def postgres_metrics(docker, scope, containers):
                     or value.get('database_id') != database['container_id']
                     or value.get('database_started_at') != database['started_at']
                     or value.get('running') is not True or value.get('status') != 'running'
-                    or service not in ('postgres-metrics', 'postgres-metrics-web') or service in sources):
+                    or service not in (exporter_service, web_service) or service in sources):
                 return unavailable
             sources[service] = value
-        exporter, web = sources['postgres-metrics'], sources['postgres-metrics-web']
+        exporter, web = sources[exporter_service], sources[web_service]
         if web.get('network_mode') != 'container:'+exporter['id']:
             return unavailable
         ports = exporter.get('ports')
@@ -261,7 +267,8 @@ def metrics_endpoint(binding):
 
 
 def engine_metrics_project(kind, scope):
-    return 'addp-'+kind+'-metrics-'+hashlib.sha256(str(REPOSITORY).encode()).hexdigest()[:16]+'-'+scope
+    metrics_project.service(kind, scope)  # validate the fixed member
+    return metrics_project.project(REPOSITORY)
 
 def redis_metrics_project(scope):
     return engine_metrics_project('redis', scope)
@@ -279,7 +286,8 @@ def minio_metrics(docker, scope, containers, *, network_key=None):
 def single_engine_metrics(docker, scope, containers, kind, project, *, network_key=None):
     unavailable = {'state':'unavailable'}
     try:
-        ids=docker('ps','--all','--no-trunc','--filter','label=com.docker.compose.project='+project,'--format','{{.ID}}').splitlines()
+        member = metrics_project.service(kind, scope)
+        ids=docker('ps','--all','--no-trunc',*metrics_project.filters(project, {member}),'--format','{{.ID}}').splitlines()
         if not ids:return {'state':'not_deployed'}
         if len(ids)!=1 or not identifier(ids[0]):return unavailable
         databases=[value for service,value in containers.values() if service==kind]
@@ -288,7 +296,7 @@ def single_engine_metrics(docker, scope, containers, kind, project, *, network_k
         inspection = {'redis': REDIS_METRICS_CONTAINER, 'minio': MINIO_METRICS_CONTAINER}[kind]
         source=json.loads(docker('inspect','--type','container','--format',inspection,ids[0]))
         if (not isinstance(source, dict) or source.get('id')!=ids[0] or source.get('project')!=project or source.get('oneoff')!='False'
-            or source.get('owner')!=str(REPOSITORY) or source.get('scope')!=scope or source.get('service')!=kind+'-metrics'
+            or source.get('owner')!=str(REPOSITORY) or source.get('scope')!=scope or source.get('service')!=member
             or source.get('database_id')!=database['container_id'] or source.get('database_started_at')!=database['started_at']
             or source.get('running') is not True or source.get('status')!='running'):return unavailable
         current=json.loads(docker('inspect','--type','container','--format',inspection,database['container_id']))

@@ -5,3 +5,7 @@ services:
         published: "${ADDP_NODE_METRICS_PUBLISH_PORT:-9100}"
         host_ip: ${ADDP_NODE_METRICS_PUBLISH_IP:-127.0.0.1}
         protocol: tcp
+networks:
+  default:
+    labels:
+      io.addp.node-metrics.owner: ${ADDP_NODE_METRICS_OWNER:?Explicit owner required}
