@@ -1378,7 +1378,7 @@ class MetaCollectionScenario:
             self.recover_tasks()
         rows = [row for row in self.task_rows() if row.get('id') == owned['id']]
         require(len(rows) == 1 and rows[0].get('enabled') is False
-                and rows[0].get('schedule') == owned['body']['schedule'], 'collection schedule did not stop')
+                and rows[0].get('schedule', '') == owned['body']['schedule'], 'collection schedule did not stop')
         owned['body']['enabled'] = False
 
     def scheduled_run(self, owned, allowed, evidence, label):

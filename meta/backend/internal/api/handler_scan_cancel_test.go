@@ -59,7 +59,7 @@ func TestScanCancelChecksExactUserAndEngineBeforeRecordingIntent(t *testing.T) {
 					t.Fatal("lost exact target or credential")
 				}
 				if test.remote != 0 {
-					return nil, &client.TenantAPIError{StatusCode: test.remote, Path: "must-not-leak"}
+					return nil, &client.SystemAPIError{StatusCode: test.remote, Path: "must-not-leak"}
 				}
 				membership := int64(1)
 				if test.wrongIdentity {

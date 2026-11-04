@@ -2274,6 +2274,21 @@ class CentralScanControllerTest(unittest.TestCase):
         self.assertTrue(server.tasks)
         self.assertFalse(any(method=='DELETE' for _,method,_,_ in server.calls))
 
+    def test_cleanup_accepts_the_omitted_empty_schedule_from_the_scan_task_dto(self):
+        server, scenario = self.scenario()
+        task = scenario.create_task('_empty_schedule')
+        original = scenario.life.operator.request
+        def without_empty_schedule(method, path, expected, body=None, **kwargs):
+            response = original(method, path, expected, body, **kwargs)
+            if method == 'GET' and path == '/api/v1/meta/scan/tasks':
+                for row in response.payload:
+                    if row.get('schedule') == '':
+                        del row['schedule']
+            return response
+        scenario.life.operator.request = without_empty_schedule
+        scenario.cleanup()
+        self.assertNotIn(task['id'], server.tasks)
+
     def test_cleanup_failure_is_not_reported_as_success(self):
         for fault in ('delete_failure','pause_not_persisted'):
             with self.subTest(fault=fault):
@@ -2282,6 +2297,20 @@ class CentralScanControllerTest(unittest.TestCase):
                 server.tasks[task['id']]['enabled']=True
                 with self.assertRaises(ONLINE.SuiteError):scenario.cleanup()
                 self.assertTrue(server.tasks)
+
+    def test_cleanup_does_not_treat_a_null_schedule_as_an_omitted_empty_schedule(self):
+        server, scenario = self.scenario()
+        scenario.create_task('_null_schedule')
+        original = scenario.life.operator.request
+        def null_schedule(method, path, expected, body=None, **kwargs):
+            response = original(method, path, expected, body, **kwargs)
+            if method == 'GET' and path == '/api/v1/meta/scan/tasks':
+                for row in response.payload:
+                    row['schedule'] = None
+            return response
+        scenario.life.operator.request = null_schedule
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'collection pause/cancel cleanup failed'):
+            scenario.cleanup()
 
     def test_cancelled_terminal_must_preserve_exact_admitted_count(self):
         server,scenario=self.scenario()

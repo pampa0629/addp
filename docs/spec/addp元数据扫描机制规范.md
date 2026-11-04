@@ -97,6 +97,8 @@ PG／NFS 的 node 刷新先取得可信 typed node 身份，再与当前用户�
 
 关闭定时不取消已入队／运行中的执行。停止在途扫描使用显式取消，并由下述 Worker 枚举边界约束后续源读取；租户任务不借用历史操作人或其个人 Grant／Deny 作为运行身份。
 
+人员扫描管理核验通过 System Client 的结构化 `SystemAPIError` 保留上游状态：权限／管理范围拒绝向调用方返回 `403/permission_denied`，不能误报为 500；上游故障映射为 503，不伪装成拒绝，也不透传上游正文。`ScanTask.schedule` 为空时按现有 DTO 省略该可选字段，表示未配置定时；清理仍须核对 `enabled=false`、配置未扩大、任务删除和无活跃执行，不能因空值省略误报清理失败。
+
 - **精确目标采集**仅覆盖指定 DataItem 及其经核验的合法组成；item、leaf 或显式 refs 不因位于同一目录而获得兄弟项权限。
 - **完整范围采集**在允许管理的 Engine、schema 或目录边界内发现当前及未来新增项，不把普通 node 变为 whole，不自动向人员授予元数据或内容权限。首期集中计划限定 PG 整引擎，basic／deep 权限一致；结果出口隔离与 deep 准入的实际完成范围见上述实施状态，不从目标规范外推已可执行。
 - Worker 在实际读取及重试／接管前，沿上述 System Runtime 核验入口核对固定 Runtime、Tenant、真实任务、当前引擎、冻结计划、Common execution／attempt 与有效 lease，以及取消／删除状态；计划变化不得让旧执行扩大读取，不缓存 Allow。当前 PG 一次 `EngineCatalogProvider.ListChildren` 是读取单元，已放行枚举可结束，下一次枚举须重核；不承诺逐 SQL 中断。

@@ -30,7 +30,8 @@ type scanManagementScopeClient interface {
 // @Security BearerAuth
 // @Param execution_id path string true "执行 ID | Execution ID"
 // @Success 202 {object} models.ScanExecutionResponse "取消已受理或执行已结束 | Cancellation accepted or execution already ended"
-// @Failure 400,401,403,404,409,503 {object} map[string]interface{} "请求失败 | Request failed"
+// @Failure 400,401,404,409,503 {object} map[string]interface{} "请求失败 | Request failed"
+// @Failure 403 {object} map[string]interface{} "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.scan_task.cancel"]
 // @Router /executions/{execution_id}/cancel [post]
@@ -84,10 +85,11 @@ func respondScanManagementError(c *gin.Context, err error) {
 	if errors.Is(err, service.ErrScanPlanFactsUnavailable) {
 		status = http.StatusServiceUnavailable
 	}
-	if remote, ok := client.TenantAPIStatusCode(err); ok {
-		switch remote {
+	var remote *client.SystemAPIError
+	if errors.As(err, &remote) {
+		switch remote.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict:
-			status = remote
+			status = remote.StatusCode
 		default:
 			status = http.StatusServiceUnavailable
 		}
@@ -97,7 +99,8 @@ func respondScanManagementError(c *gin.Context, err error) {
 	case http.StatusUnauthorized:
 		key = commoni18n.MsgUnauthorized
 	case http.StatusForbidden:
-		key = commoni18n.MsgForbidden
+		c.JSON(status, gin.H{"error": commoni18n.T(c, commoni18n.MsgForbidden), "error_code": "permission_denied"})
+		return
 	case http.StatusBadRequest:
 		key = commoni18n.MsgInvalidParams
 	case http.StatusNotFound:

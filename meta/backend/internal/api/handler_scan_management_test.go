@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +21,44 @@ import (
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+func TestScanManagementPreservesActualSystemClientErrors(t *testing.T) {
+	for _, status := range []int{401, 403, 404, 409, 429, 500, 503} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			calls := 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v1/system/engines/9/scan_execute_scope" || r.Header.Get("Authorization") != "Bearer addp_at_exact_user" {
+					t.Error("scan management changed its User or target")
+				}
+				w.WriteHeader(status)
+				json.NewEncoder(w).Encode(map[string]string{"error": "private-upstream-body", "error_code": "private_upstream_code"})
+			}))
+			defer upstream.Close()
+			upstreamClient := client.NewSystemServiceClient(upstream.URL, nil, upstream.Client())
+			_, err := upstreamClient.GetMetaScanManagementScope(context.Background(), 9, "execute", "addp_at_exact_user")
+			if err == nil || calls != 1 {
+				t.Fatal("denial swallowed or retried", calls, err)
+			}
+			router := gin.New()
+			router.Use(commoni18n.I18nMiddleware())
+			router.GET("/result", func(c *gin.Context) { respondScanManagementError(c, fmt.Errorf("scope: %w", err)) })
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/result", nil))
+			want := status
+			if status == 429 || status >= 500 {
+				want = http.StatusServiceUnavailable
+			}
+			var body map[string]any
+			if json.Unmarshal(response.Body.Bytes(), &body) != nil || response.Code != want || strings.Contains(response.Body.String(), "private") || strings.Contains(response.Body.String(), "scan_execute_scope") {
+				t.Fatal(response.Code, response.Body.String())
+			}
+			if status == 403 && (len(body) != 2 || body["error_code"] != "permission_denied") {
+				t.Fatal("management denial needs its stable code without upstream details", body)
+			}
+		})
+	}
+}
 
 func TestCentralScanCreateRequiresCurrentScopeAndBasicConfiguration(t *testing.T) {
 	for _, test := range []struct {
@@ -64,7 +103,7 @@ func TestCentralScanCreateRequiresCurrentScopeAndBasicConfiguration(t *testing.T
 					t.Fatal("current user/operation/target lost")
 				}
 				if test.remote != 0 {
-					return nil, &client.TenantAPIError{StatusCode: test.remote, Path: "secret-upstream-details"}
+					return nil, &client.SystemAPIError{StatusCode: test.remote, Path: "secret-upstream-details"}
 				}
 				user := int64(91)
 				if test.wrongIdentity {
@@ -138,7 +177,7 @@ func TestPGPolicyDisableUsesCurrentUserScopeAndTrustedEngineFacts(t *testing.T) 
 			t.Fatal("wrong scope request", id, op, token)
 		}
 		if !allowed {
-			return nil, &client.TenantAPIError{StatusCode: 403}
+			return nil, &client.SystemAPIError{StatusCode: 403}
 		}
 		return &authorization.EngineAccessHandlingScope{TenantID: 7, EngineID: 9, Operator: authorization.SharingFulfillmentOperator{PrincipalID: 91, MembershipID: 1, AuthorizationVersion: 1}, VerifiedAt: time.Now()}, nil
 	})}

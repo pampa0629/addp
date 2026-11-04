@@ -562,7 +562,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "请求失败 | Request failed",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3326,7 +3326,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3417,7 +3417,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3516,7 +3516,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3602,7 +3602,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3702,7 +3702,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3788,7 +3788,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3875,7 +3875,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4098,7 +4098,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4192,7 +4192,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4291,7 +4291,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "当前身份、权限或目标范围不满足 | Current identity, permission or target scope rejected",
+                        "description": "权限或管理范围拒绝，error_code=permission_denied | Permission or management scope denied, error_code=permission_denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
