@@ -1,17 +1,19 @@
-import { expect, request, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { identity, json, login } from './transfer-browser-support.js'
+import { browserAPIFromNavigation, browserAPIFromResponse, json, login } from './transfer-browser-support.js'
 
 // This is invoked only by the HDFS owner runner, never against a personal cluster.
 test('同一个 Runtime 经真实查询和工作流页面路由两套集群', async ({ page, context }) => {
   test.setTimeout(420_000)
   const expected = JSON.parse(process.env.ADDP_ONLINE_HDFS_EXPECTATIONS)
   const clusters = expected.multicluster.clusters
-  const token = await login(page, process.env.ADDP_ONLINE_TEST_USER_USERNAME,
+  await login(page, process.env.ADDP_ONLINE_TEST_USER_USERNAME,
     process.env.ADDP_ONLINE_TEST_USER_PASSWORD, '/develop/workflow?action=create')
-  const api = await request.newContext({ baseURL: process.env.GATEWAY_URL,
-    extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
+  const expectedIdentity = { principalID: expected.principal_id, tenantID: String(expected.tenant_id),
+    permissions: new Set(expected.multicluster.permissions) }
+  const apiContexts = new Set()
+  let api
   const peer = await context.newPage()
   let managerNoSpark = false
   const observations = []
@@ -43,14 +45,16 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
     await option.click()
     await expect(selector).toContainText(name)
   }
+  async function bindResponseAPI(response) {
+    const current = await browserAPIFromResponse(response, process.env.GATEWAY_URL, expectedIdentity)
+    apiContexts.add(current)
+    api = current
+  }
   async function assertIdentity(target, navigate) {
-    const received = target.waitForResponse(response => pathIs(response, '/api/v1/system/auth/context', 'GET') && response.ok())
-    await navigate()
-    const actual = identity(await json(await received, 'page identity'))
-    expect(actual.principalType).toBe('user')
-    expect(actual.principalID).toBe(expected.principal_id)
-    expect(actual.tenantID).toBe(String(expected.tenant_id))
-    expect([...actual.permissions].sort()).toEqual(expected.multicluster.permissions)
+    const current = await browserAPIFromNavigation(target, process.env.GATEWAY_URL, expectedIdentity,
+      navigate, response => pathIs(response, '/api/v1/system/auth/context', 'GET') && response.ok())
+    apiContexts.add(current)
+    api = current
   }
   async function queryPage(target, cluster) {
     await assertIdentity(target, () => target.goto('/develop/sql?action=create'))
@@ -77,6 +81,7 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
     const accepted = await submitted
     expect(accepted.request().postDataJSON()).toMatchObject({ dev_type: 'query', execution_config: { engine_id: clusters[cluster].id }, content: { query: sql } })
     const started = await json(accepted, 'page query submission')
+    await bindResponseAPI(accepted)
     await expect.poll(async () => (await readExecution(started.execution_id)).status,
       { timeout: 120_000 }).toBe(failing ? 'failed' : 'success')
     const execution = await readExecution(started.execution_id)
@@ -135,6 +140,7 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
     const id = create ? task.id : savedTasks[key]
     expect(Number.isInteger(id) && id > 0).toBe(true)
     savedTasks[key] = id
+    await bindResponseAPI(response)
     const stored = await json(await api.get(`/api/v1/develop/task-definitions/${id}`), 'stored workflow')
     expect(stored.execution_config).toEqual(payload.execution_config)
     expect(stored.content.workflow_definition).toEqual(payload.content.workflow_definition)
@@ -151,24 +157,29 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
     const response = await received
     expect(response.request().postDataJSON()).toEqual({ parameters: {} })
     const started = await json(response, 'workflow page execute')
+    await bindResponseAPI(response)
     await expect.poll(async () => (await readExecution(started.execution_id)).status,
       { timeout: 120_000 }).toBe(failing ? 'failed' : 'success')
     const execution = await readExecution(started.execution_id)
     expect(execution.source_task_id).toBe(String(id))
     expect(execution.execution_config.engine_id).toBe(expected.runtime_id)
     expect(execution.execution_config.engine_specific.spark_cluster_id).toBe(clusters[key].id)
-    await target.goto(`/develop/executions/${started.execution_id}`)
+    return { cluster: key, status: failing ? 'failed' : 'success', execution_id: started.execution_id, task_id: id }
+  }
+  async function inspectWorkflowResult(target, operation) {
+    await assertIdentity(target, () => target.goto(`/develop/executions/${operation.execution_id}`))
+    const execution = await readExecution(operation.execution_id)
+    expect(execution.status).toBe(operation.status)
     const detail = frame(target).locator('.execution-detail-page')
-    await expect(detail).toContainText(started.execution_id)
-    if (!failing) {
+    await expect(detail).toContainText(operation.execution_id)
+    if (operation.status === 'success') {
       const result = execution.metadata.result.final_result
       expect(result.preview_rows).toEqual([{ marker: 'dual-workflow', rows: 4 }])
       await expect.poll(async () => JSON.parse(await detail.locator('.workflow-final-result-json').innerText())).toEqual(result)
     } else {
       await expect(detail).toContainText(/失败|Failed/i)
     }
-    await screenshot(target, `workflow-${key}-${started.execution_id}`)
-    return { cluster: key, status: failing ? 'failed' : 'success', execution_id: started.execution_id, task_id: id }
+    await screenshot(target, `workflow-${operation.cluster}-${operation.execution_id}`)
   }
   async function batch(kind, phase, actions, concurrent = false) {
     const before = await masters()
@@ -205,6 +216,11 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
         expect(app.name).toBe(kind === 'workflow' ? `ADDP-Workflow-Engine-${clusters[key].id}` : 'ADDP-federated-query')
       }
     }
+    // Finish both concurrent API reads before any full-page detail navigation
+    // can rotate the shared browser session. Each detail then rebinds its identity.
+    if (kind === 'workflow') {
+      for (const operation of operations) await inspectWorkflowResult(page, operation)
+    }
     observations.push({ kind, phase, operations, before: { a: ids(before.a), b: ids(before.b) }, applications, overlap })
     // Keep partial, non-secret receipts even if a later assertion fails.
     writeFileSync(process.env.ADDP_ONLINE_SPARK_DUAL_BROWSER_REPORT, JSON.stringify({
@@ -213,9 +229,6 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
     }))
   }
   try {
-    const auth = identity(await json(await api.get('/api/v1/system/auth/context'), 'dual cluster identity'))
-    expect(auth.principalID).toBe(expected.principal_id)
-    expect([...auth.permissions].sort()).toEqual(expected.multicluster.permissions)
     await assertIdentity(page, () => page.goto('/manager/data-explorer'))
     await expect(frame(page).getByText('Hosted HDFS', { exact: true })).toBeVisible()
     for (const cluster of Object.values(clusters)) await expect(frame(page).getByText(cluster.name, { exact: true })).toHaveCount(0)
@@ -253,7 +266,6 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
     await batch('query', 'failure-isolation', [() => startQuery(page, 'a', true), () => startQuery(peer, 'b')], true)
     await batch('query', 'recovery', [() => startQuery(page, 'a')])
   } finally {
-    await peer.close()
-    await api.dispose()
+    await Promise.all([peer.close(), ...[...apiContexts].map(current => current.dispose())])
   }
 })

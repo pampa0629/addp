@@ -47,7 +47,7 @@ describe('current browser session API binding', () => {
         deliver = response => { expect(predicate(response)).toBe(true); resolve(response) }
       }) }
       try {
-        for (const phase of ['ifc-generation', 'ifc-cache-reload', '3ds-generation', '3ds-cache-reload', 'withdrawn-ifc', 'withdrawn-3ds']) {
+        for (const phase of ['ifc-generation', 'ifc-cache-reload', '3ds-generation', '3ds-cache-reload', 'withdrawn-ifc', 'withdrawn-3ds', 'spark-save', 'spark-workflow-batch', 'spark-query-batch', 'spark-detail-readback']) {
           const previous = current
           current = await browserAPIFromNavigation(page, gateway, expected, async () => {
             authority.credential = `Bearer current-${phase}`
@@ -156,24 +156,38 @@ describe('read-only task configuration check safety guard', () => {
 })
 
 describe('Online login target route', () => {
-  it('Spark dual-cluster login requests the canonical workflow creation page', () => {
+  function sparkHostedCalls() {
     const file = ts.createSourceFile('spark-multicluster.spec.js', readFileSync(
       new URL('../../e2e/online/spark-multicluster.spec.js', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
-    const redirects = []
+    const calls = []
     function visit(node) {
-      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'login') {
-        expect(node.arguments).toHaveLength(4)
-        expect(ts.isStringLiteral(node.arguments[3])).toBe(true)
-        redirects.push(node.arguments[3].text)
-      }
+      if (ts.isCallExpression(node)) calls.push(node)
       ts.forEachChild(node, visit)
     }
     visit(file)
+    return calls
+  }
+
+  it('Spark dual-cluster login requests the canonical workflow creation page', () => {
+    const redirects = sparkHostedCalls().filter(node => ts.isIdentifier(node.expression) && node.expression.text === 'login')
+      .map(node => {
+        expect(node.arguments).toHaveLength(4)
+        expect(ts.isStringLiteral(node.arguments[3])).toBe(true)
+        return node.arguments[3].text
+      })
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/workflow', component: {} }] })
     const canonical = `/develop${router.resolve(buildDevelopTaskEditorLocation('workflow')).fullPath}`
     expect(redirects).toEqual([canonical])
     expect(matchesRedirectURL(new URL(canonical, base), new URL(redirects[0], base))).toBe(true)
     expect(matchesRedirectURL(new URL(canonical, base), new URL('/develop/workflow', base))).toBe(false)
+  })
+
+  it('Spark dual-cluster reads bind verified browser requests instead of pinning a login credential', () => {
+    const calls = sparkHostedCalls()
+    expect(calls.filter(node => ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'newContext')).toHaveLength(0)
+    for (const helper of ['browserAPIFromNavigation', 'browserAPIFromResponse']) {
+      expect(calls.some(node => ts.isIdentifier(node.expression) && node.expression.text === helper), helper).toBe(true)
+    }
   })
 
   it('accepts the same full locator after Vue Router serializes its query', () => {

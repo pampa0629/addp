@@ -55,6 +55,8 @@ Meta 手动扫描组件回归复用本模块的隔离浏览器入口，在 Meta 
 
 Spark 双集群 Hosted 登录必须直接请求 Develop 的 canonical 新建工作流地址（`action=create`）。Console 的既有登录目标回归从实际 Hosted 调用读取静态参数，并与 Develop 的正式 `buildDevelopTaskEditorLocation` 及真实 Vue Router 结果比较；保留共享登录 helper 对完整 query 的严格校验。该纯路由工具变化通过共享影响矩阵选中 Console，无需启动 Develop 后端或增设前端夹具。
 
+Spark 双集群页面的回查复用 `browserAPIFromNavigation`／`browserAPIFromResponse`，从真实页面当前请求绑定临时API，并核对同一User、Tenant与精确十五项权限；禁止缓存登录Bearer建立贯穿多次导航的独立客户端。并发工作流先完成同批终态与Master差集，再依次打开详情并重新绑定会话，避免一页导航刷新干扰另一页在途验证；执行、并发观察、结果与截图断言保持。所有临时API在场景结束统一释放，不改产品认证或权限。
+
 ## 开发与验证
 
 ```bash
