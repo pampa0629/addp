@@ -786,3 +786,13 @@ CI会话回传固定`7d8ad061e`的两项后续阻断，不能与此前六项夹�
 - 四个本轮独占Metrics项目的容器／网络／卷均另行只读确认剩余0，收据 `/tmp/addp-ci-network-all-owned-cleanup-20261105.json`；清理不作为业务验收通过。
 
 本批未操作个人服务、keepalive、采集来源应用、配置或数据卷。两个已确认的输入／闭包缺陷已在代码中收敛，网络实际切换及完整开发门禁仍有上述未闭环失败；修复提交的自然Platform和host-resources终态仍等专门CI会话回传，不触发Hosted、rerun、dispatch、远端轮询或定时。新证据必须按固定提交及具体层级继续补充，不能将配置候选当实源验收完成。
+
+### 统一分组的固定版本实源结果与语法入口阻断（2026-11-05）
+
+专门CI会话回传后，本会话只读复核固定源码 `f9a91928eaedffbe8a1627bd238b43bddfbb000f` 的 [Release Run41889180935／Job126782168039](https://github.com/pampa0629/addp/actions/runs/41889180935/job/126782168039)：attempt1、`Monitor metrics infrastructure (host-resources)`、selected=true，实际 `Verify isolated metrics lifecycle` 步骤成功。原日志98182字节，SHA256为 `48374d5beb1af8469b8afbc04bd3b7df47e82edd1863cd15d233b64ce6863c5a`，与Job元数据及收据一致；其中实际执行网络声明／Owner／身份保持、严格limited mount、资源查询、六来源总览／预算、告警生命周期和自有容器／网络／卷清零。因此前节“网络切换新增断言尚未执行”的缺口在该固定版本的Linux T2关闭；本机失败原样保留，不能扩大为个人Desktop迁移、完整Platform或Hosted通过。证据目录 `/tmp/addp-ci-20261105-030000/`，含 `Root-f9-host-resources-actual-pass-proof.json`、`run-41889180935-jobs.json` 及 `later-host-resources-job-126782168039.log`。
+
+同源码 [Platform Run41889180973／Job126781670842](https://github.com/pampa0629/addp/actions/runs/41889180973/job/126781670842) 仍失败，精确新阻断是既有四个重复声明语法负例。已提交Make入口先执行共享登记依赖，临时仓库因此报ModuleNotFoundError，未到真实Node语法检查；负例要求的“语法先行”未失效，不能靠补入无关登记夹具、删除负例或改调语法子目标解决。原日志 `job-126781670842.log` 第4410—4444行保留。
+
+本次以临时文件分别复制已提交Makefile和工作区既有共享Makefile WIP，保持原四个坏语法变体及真实owner入口，对串行／`make -j4`各执行一次：已提交版8项均复现前置导入失败，WIP版8项均由真实Node首先报SyntaxError及already been declared，且无ModuleNotFoundError。收据 `/tmp/addp-syntax-order-proof-20261105/proof.json` 保存两份Makefile摘要及逐项输出。本会话未修改或提交共享Makefile、共享登记测试、CI规范，也未放宽原断言。
+
+完整标准命令 `make test-node-metrics-online-runner` 在上述**工作区共享WIP**下退出0：登记144项、实际登记一致性、原runner172项及System身份Go夹具均通过，日志 `/tmp/addp-node-online-syntax-wip-full-20261105.log`。这仅是待提交入口修正的本地验证，不能记作已提交main修复或新的CI通过；共享改动归属及正式提交仍待核对。本会话不重跑远端CI、不触发Hosted、不设置定时，个人服务与来源均未启停。
