@@ -795,4 +795,4 @@ CI会话回传固定`7d8ad061e`的两项后续阻断，不能与此前六项夹�
 
 本次以临时文件分别复制已提交Makefile和工作区既有共享Makefile WIP，保持原四个坏语法变体及真实owner入口，对串行／`make -j4`各执行一次：已提交版8项均复现前置导入失败，WIP版8项均由真实Node首先报SyntaxError及already been declared，且无ModuleNotFoundError。收据 `/tmp/addp-syntax-order-proof-20261105/proof.json` 保存两份Makefile摘要及逐项输出。本会话未修改或提交共享Makefile、共享登记测试、CI规范，也未放宽原断言。
 
-完整标准命令 `make test-node-metrics-online-runner` 在上述**工作区共享WIP**下退出0：登记144项、实际登记一致性、原runner172项及System身份Go夹具均通过，日志 `/tmp/addp-node-online-syntax-wip-full-20261105.log`。这仅是待提交入口修正的本地验证，不能记作已提交main修复或新的CI通过；共享改动归属及正式提交仍待核对。本会话不重跑远端CI、不触发Hosted、不设置定时，个人服务与来源均未启停。
+完整标准命令 `make test-node-metrics-online-runner` 在上述**工作区共享WIP**下退出0：登记144项、实际登记一致性、原runner172项及System身份Go夹具均通过，日志 `/tmp/addp-node-online-syntax-wip-full-20261105.log`。随后原负责人已提交共享入口修正 `9b97d1b83`；本会话核对其已提交Makefile摘要与上述8项通过的候选完全相同，相关Make／登记／原语法测试工作区无差异，并在已提交版本重新执行原四变体方法退出0。因此该阻断已有正式代码及本地通过证据；新的自然Platform结果仍等专门CI会话回传，不以本地通过替代远端终态。本会话未重复修改共享入口，不重跑远端CI、不触发Hosted、不设置定时，个人服务与来源均未启停。
