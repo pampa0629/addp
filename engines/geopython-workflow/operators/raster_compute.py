@@ -1360,6 +1360,7 @@ def _polygon_geometries(input_gdf):
 
 _IDW_MAX_POINTS_UNSET = object()
 _IDW_MESSAGES = {
+    'power': ('IDW距离幂次必须为非布尔整数1、2或3', 'IDW distance power must be the integer 1, 2 or 3, excluding booleans'),
     'max_points': ('IDW最多支撑点数必须为非布尔正整数，省略时不限', 'IDW maximum support count must be a positive integer, excluding booleans; omit it for unlimited support'),
     'point_counts': ('IDW最多支撑点数不得小于最少支撑点数', 'IDW maximum support count must not be less than minimum support count'),
     'min_points': ('IDW最少支撑点数必须为非布尔正整数', 'IDW minimum support count must be a positive integer, excluding booleans'),
@@ -1486,7 +1487,72 @@ def _point_grid_output(dataset, transform, value_at, error, *, unit=''):
             output_path.unlink(missing_ok=True)
 
 
-def _idw_value(x, y, radius, tree, coordinates, values, min_points, max_points):
+def _idw_float(exact):
+    value = float(exact)
+    if not math.isfinite(value) or (exact and value == 0):
+        raise _idw_error('result')
+    return value
+
+
+def _idw_radical_add(groups, squared, value, power):
+    # q_i/q_j is a rational square exactly when their inverse-root weights
+    # belong to the same radical class. No integer factorization is needed.
+    for group in groups:
+        ratio = group[0] / squared
+        n, d = math.isqrt(ratio.numerator), math.isqrt(ratio.denominator)
+        if n*n == ratio.numerator and d*d == ratio.denominator:
+            scale = Fraction(n, d) ** power
+            group[1] += value * scale
+            group[2] += scale
+            return
+    groups.append([squared, value, Fraction(1)])
+
+
+def _idw_inverse_root_bounds(squared, power, bits):
+    # Relative binary bounds on sqrt(q); even tiny or huge q never passes
+    # through a floating point root, reciprocal or intermediate weight.
+    n, d = squared.numerator, squared.denominator
+    shift = bits - (n.bit_length() - d.bit_length()) // 2
+    scaled_n, scaled_d = (n << (2*shift), d) if shift >= 0 else (n, d << (-2*shift))
+    root = math.isqrt(scaled_n // scaled_d)
+    lower = Fraction(root, 1 << shift) if shift >= 0 else Fraction(root << -shift)
+    upper = lower if root*root*scaled_d == scaled_n else (Fraction(root+1, 1 << shift) if shift >= 0 else Fraction((root+1) << -shift))
+    factor = squared ** (power // 2)
+    return 1/(upper*factor), 1/(lower*factor)
+
+
+def _idw_radical_mean(groups, power):
+    # Distinct rational-square classes are linearly independent over Q.
+    # A rational quotient exists iff all class numerator/denominator ratios
+    # agree; this recognizes exact cancellation and binary halfway ties.
+    exact = groups[0][1] / groups[0][2]
+    if all(numerator == exact*denominator for _, numerator, denominator in groups):
+        return _idw_float(exact)
+    bits = 64
+    while True:
+        numerator_lower = numerator_upper = denominator_lower = denominator_upper = Fraction(0)
+        for squared, numerator, denominator in groups:
+            low, high = _idw_inverse_root_bounds(squared, power, bits)
+            numerator_lower += numerator*(low if numerator >= 0 else high)
+            numerator_upper += numerator*(high if numerator >= 0 else low)
+            denominator_lower += denominator*low
+            denominator_upper += denominator*high
+        corners = [n/d for n in (numerator_lower, numerator_upper) for d in (denominator_lower, denominator_upper)]
+        endpoints = []
+        for endpoint in (min(corners), max(corners)):
+            try:
+                endpoints.append(float(endpoint))
+            except OverflowError:
+                endpoints.append(-math.inf if endpoint < 0 else math.inf)
+        low, high = endpoints
+        if low == high:
+            if low == 0 or not math.isfinite(low):
+                raise _idw_error('result')
+            return low
+        bits *= 2
+
+
+def _idw_value(x, y, radius, tree, coordinates, values, min_points, max_points, power=2):
     def nearby():
         for index, squared in _circle_sites(x, y, radius, tree, coordinates):
             px, py = coordinates[index]
@@ -1495,25 +1561,28 @@ def _idw_value(x, y, radius, tree, coordinates, values, min_points, max_points):
     if max_points is not _IDW_MAX_POINTS_UNSET:
         support = heapq.nsmallest(max_points, support, key=lambda sample: sample[:3])
     total, weight_sum = Fraction(0), Fraction(0)
+    groups = []
     support_count = 0
     for squared, px, py, value in support:
         if not squared:
             return float(value)
         support_count += 1
-        weight = 1 / squared
-        total += value * weight
-        weight_sum += weight
+        if power == 2:
+            weight = 1 / squared
+            total += value * weight
+            weight_sum += weight
+        else:
+            _idw_radical_add(groups, squared, value, power)
     if support_count < min_points:
         return float('nan')
-    exact = total / weight_sum
-    value = float(exact)
-    if not math.isfinite(value) or (exact and value == 0):
-        raise _idw_error('result')
-    return value
+    return _idw_float(total / weight_sum) if power == 2 else _idw_radical_mean(groups, power)
 
 
-def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres, min_points=1, max_points=_IDW_MAX_POINTS_UNSET):
-    """Exact power-two IDW; optional nearest support ranks by distance, X and Y."""
+def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres, min_points=1, max_points=_IDW_MAX_POINTS_UNSET, power=2):
+    """IDW powers 1/2/3; shared exact radius and nearest distance/X/Y selection."""
+    if isinstance(power, (bool, np.bool_)) or not isinstance(power, Integral) or power not in (1, 2, 3):
+        raise _idw_error('power')
+    power = int(power)
     if isinstance(min_points, (bool, np.bool_)) or not isinstance(min_points, Integral) or min_points <= 0:
         raise _idw_error('min_points')
     min_points = int(min_points)
@@ -1549,7 +1618,7 @@ def raster_interpolate_idw(input_gdf, reference_raster, field, radius_metres, mi
         radius = radius_metres / factor
         tree = STRtree(list(geometries))
         return _point_grid_output(dataset, transform,
-            lambda x, y: _idw_value(x, y, radius, tree, coordinates, values, min_points, max_points), _idw_error)
+            lambda x, y: _idw_value(x, y, radius, tree, coordinates, values, min_points, max_points, power), _idw_error)
     finally:
         dataset = None
 
@@ -6426,7 +6495,7 @@ _SPECS = [
     (raster_band_math, OperatorCategory.RASTER_CALCULATION, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
     (raster_reclassify, OperatorCategory.RASTER_CLASSIFICATION, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
     (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类集合，允许零、不可重复；北向矩形网格按实际米制距离选点，方形结果保持')], 'raster', ['read']),
-    (raster_interpolate_idw, OperatorCategory.RASTER_CALCULATION, '点数据IDW插值', [_param('input_gdf', 'GeoDataFrame', '同CRS二维Point及有限数值字段；重复XY拒绝', role='input'), _param('reference_raster', 'raster', '仅提供网格和CRS，不读取或继承模板值／NoData／mask／alpha', role='input'), _param('field', 'str', '显式数值属性字段；合法零负值保留，整数须精确表示'), _param('radius_metres', 'float', '显式有限正米制圆半径；等号纳入、全部样本、固定距离平方反比'), _param('min_points', 'int', '非布尔正整数，默认1；非重合支撑不足为NoData，精确重合仍保留样本值', 1, False), _param('max_points', 'int', '省略不限；显式非布尔正整数且不小于min_points，按精确距离／X／Y取最近N点，精确重合保留原值', None, False)], 'raster', ['read']),
+    (raster_interpolate_idw, OperatorCategory.RASTER_CALCULATION, '点数据IDW插值', [_param('input_gdf', 'GeoDataFrame', '同CRS二维Point及有限数值字段；重复XY拒绝', role='input'), _param('reference_raster', 'raster', '仅提供网格和CRS，不读取或继承模板值／NoData／mask／alpha', role='input'), _param('field', 'str', '显式数值属性字段；合法零负值保留，整数须精确表示'), _param('radius_metres', 'float', '显式有限正米制圆半径；等号纳入，按power的距离反比加权'), _param('min_points', 'int', '非布尔正整数，默认1；非重合支撑不足为NoData，精确重合仍保留样本值', 1, False), _param('max_points', 'int', '省略不限；显式非布尔正整数且不小于min_points，按精确距离／X／Y取最近N点，精确重合保留原值', None, False), _param('power', 'int', '距离幂次1／2／3；默认2保持原结果，不改变半径／支撑点规则', 2, False)], 'raster', ['read']),
     (raster_point_density, OperatorCategory.RASTER_CALCULATION, '米制圆形点密度', [_param('input_gdf', 'GeoDataFrame', '二维Point逐要素贡献，重复XY保留；可选显式非负权重列', role='input'), _param('reference_raster', 'raster', '仅提供网格／CRS，原像元与mask／alpha不参与', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；无支持为0'), _param('method', 'str', 'uniform等权计数；quartic二维四次核，半径边界贡献0', 'uniform', False, enum=['uniform', 'quartic']), _param('weight_field', 'str', '可选现有非几何数值权重列；有限非负、不归一化，省略保持原结果，显式null非法', None, False)], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
@@ -6539,7 +6608,7 @@ for function, category, label, params, output, effects in _SPECS:
     if name == 'raster_polygonize':
         examples.update({'band': 1, 'connectivity': 4})
     if name == 'raster_interpolate_idw':
-        examples = {'input_gdf': {'$ref': 'points'}, 'reference_raster': {'$ref': 'reference'}, 'field': 'value', 'radius_metres': 100., 'min_points': 1}
+        examples = {'input_gdf': {'$ref': 'points'}, 'reference_raster': {'$ref': 'reference'}, 'field': 'value', 'radius_metres': 100., 'min_points': 1, 'power': 2}
     if name == 'raster_point_density':
         examples = {'input_gdf': {'$ref': 'points'}, 'reference_raster': {'$ref': 'reference'}, 'radius_metres': 100., 'method': 'uniform'}
     if name == 'vector_rasterize':

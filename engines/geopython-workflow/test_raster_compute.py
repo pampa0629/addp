@@ -20862,3 +20862,200 @@ def test_point_density_weights_exact_ratio_before_final_float_conversion(tmp_pat
         numerator,denominator=value.as_integer_ratio();wanted=float(Q(numerator,denominator)*(3 if method=='quartic'else 1)/(Q(math.pi)*Q(radius)**2))
         assert actual==wanted and actual>0
     assert points.equals(before)
+
+
+# Independent all-point Euclidean IDW oracle; no product index, root or weight helpers.
+def _idw_power_oracle(points, transform, shape, radius, power, minimum=1, maximum=None):
+    from decimal import Decimal,localcontext
+    from fractions import Fraction as Q
+    def dec(q):return Decimal(q.numerator)/Decimal(q.denominator)
+    gt=list(map(Q,transform));unit=Q(points.crs.axis_info[0].unit_conversion_factor);answer=np.full(shape,np.nan)
+    with localcontext()as context:
+        context.prec=2000
+        for row,col in np.ndindex(shape):
+            u,v=Q(2*col+1,2),Q(2*row+1,2);x,y=gt[0]+gt[1]*u+gt[2]*v,gt[3]+gt[4]*u+gt[5]*v;support=[]
+            for point,value in zip(points.geometry,points.value):
+                px,py=Q(point.x),Q(point.y);d2=((px-x)**2+(py-y)**2)*unit**2
+                if d2<=Q(radius)**2:support.append((d2,px,py,Q(float(value))))
+            support.sort()
+            if maximum is not None:support=support[:maximum]
+            if support and support[0][0]==0:answer[row,col]=float(support[0][3])
+            elif len(support)>=minimum:
+                # Power 2 is independently exact, so halfway rounding is not defined by Decimal precision.
+                if power==2:answer[row,col]=float(sum((z/q for q,_,_,z in support),Q(0))/sum((1/q for q,_,_,_ in support),Q(0)))
+                else:
+                    weights=[1/dec(q).sqrt()**power for q,_,_,_ in support]
+                    answer[row,col]=float(sum((dec(z)*w for (_,_,_,z),w in zip(support,weights)),Decimal(0))/sum(weights))
+    return answer
+
+
+@pytest.mark.parametrize('power',[1,2,3])
+def test_idw_power_analytic_influence_and_default_two_original_values(tmp_path,power):
+    import operators.raster_compute as c
+    points=_idw_points([(1.,0.),(2.,0.)],[0.,9.]);path=create_raster(tmp_path/'powers.tif',np.zeros((1,1)),(-.5,1,0,.5,0,-1),'EPSG:3857')
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=c.raster_interpolate_idw(points,source,'value',3.,power=power);ds=gdal.Open(str(result.path));assert ds.ReadAsArray()[0,0]=={1:3.,2:1.8,3:1.}[power];ds=None
+        if power==2:
+            original=c.raster_interpolate_idw(points,source,'value',3.);ds=gdal.Open(str(original.path));assert ds.ReadAsArray()[0,0]==1.8;ds=None
+
+
+@pytest.mark.parametrize('power',[1,2,3])
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+@pytest.mark.parametrize('maximum',[None,1,3])
+@pytest.mark.parametrize('reverse',[False,True])
+def test_idw_power_complete_independent_oracle_grid_units_order_and_support(tmp_path,power,epsg,maximum,reverse):
+    import operators.raster_compute as c
+    grid=(.25,1.5,.125,3.,.25,-1.);xy=[(-1.,0.),(1.,0.),(0.,-1.),(0.,1.),(.25,.75),(3.,2.)];z=[-4.,0.,7.,2.,19.,-3.]
+    points=_idw_points(xy,z,epsg)
+    if reverse:points=points.iloc[::-1].copy()
+    points.index=[4]*len(points);before=points.copy(deep=True);radius=4.*points.crs.axis_info[0].unit_conversion_factor
+    path=create_raster(tmp_path/'grid.tif',np.full((3,4),-9999.),grid,'EPSG:'+str(epsg));raw=path.read_bytes();wanted=_idw_power_oracle(points,grid,(3,4),radius,power,1,maximum)
+    with raster_workspace():
+        result=c.raster_interpolate_idw(points,raster_load(source_plan(path)),'value',radius,power=power,**({}if maximum is None else{'max_points':maximum}));ds=gdal.Open(str(result.path));assert ds.GetGeoTransform()==grid;np.testing.assert_array_equal(ds.ReadAsArray(),wanted);np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(wanted));ds=None
+    assert path.read_bytes()==raw and points.equals(before)and points.index.equals(before.index)
+
+
+@pytest.mark.parametrize('power',[None,True,False,np.bool_(True),0,-1,4,100,1.,2.,3.,1.5,float('nan'),float('inf'),'2',[],{},[2]])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_idw_power_invalid_is_bilingual_before_any_source_or_coincidence(tmp_path,monkeypatch,power,language):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda*a:pytest.fail('invalid power opened a source'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_interpolate_idw(_idw_points([(0.,0.)],[0.]),None,'value',1.,power=power)
+    assert str(error.value)==('IDW距离幂次必须为非布尔整数1、2或3'if language=='zh-cn'else'IDW distance power must be the integer 1, 2 or 3, excluding booleans')
+
+
+@pytest.mark.parametrize('power',[1,2,3])
+def test_idw_power_exact_support_selection_radius_and_coincident_shortfall(tmp_path,power):
+    import operators.raster_compute as c
+    grid=(-.5,1,0,.5,0,-1);path=create_raster(tmp_path/'support.tif',np.zeros((1,1)),grid,'EPSG:3857')
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        for points,radius,minimum,maximum,wanted in [(_idw_points([(-1.,0.),(1.,0.),(0.,1.),(0.,-1.)],[12.,8.,4.,16.]),1.,2,2,14.),(_idw_points([(-1.,0.),(1.,0.)],[0.,8.]),math.nextafter(1.,0.),2,2,np.nan),(_idw_points([(0.,0.)],[-7.]),1.,3,3,-7.),(_idw_points([],[]),1.,1,2,np.nan)]:
+            result=c.raster_interpolate_idw(points,source,'value',radius,min_points=minimum,max_points=maximum,power=power);ds=gdal.Open(str(result.path));actual=ds.ReadAsArray()[0,0];ds=None
+            assert np.isnan(actual)if np.isnan(wanted)else actual==wanted
+        with pytest.raises(ValueError,match='最多|maximum'):c.raster_interpolate_idw(_idw_points([(0.,0.)],[0.]),source,'value',1.,min_points=3,max_points=2,power=power)
+
+
+@pytest.mark.parametrize('power',[1,3])
+def test_idw_power_multiple_radical_classes_exact_zero_and_halfway_ties(tmp_path,power):
+    import operators.raster_compute as c
+    from fractions import Fraction as Q
+    path=create_raster(tmp_path/'ties.tif',np.zeros((1,1)),(-.5,1,0,.5,0,-1),'EPSG:3857')
+    sets=[(_idw_points([(1.,1.),(2.,2.),(1.,2.),(2.,4.)],[1.,-float(2**power),5.,-float(5*2**power)]),0.),(_idw_points([(-1.,1.),(1.,1.),(-1.,2.),(1.,2.)],[1.,math.nextafter(1.,math.inf),1.,math.nextafter(1.,math.inf)]),1.)]
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        for points,wanted in sets:
+            result=c.raster_interpolate_idw(points,source,'value',8.,power=power);ds=gdal.Open(str(result.path));assert ds.ReadAsArray()[0,0]==wanted;ds=None
+
+
+@pytest.mark.parametrize('power',[1,2,3])
+def test_idw_power_extreme_distance_valid_subnormal_and_true_underflow(tmp_path,power):
+    import operators.raster_compute as c
+    from fractions import Fraction as Q
+    grid=(-.5,1,0,.5,0,-1);path=create_raster(tmp_path/'extreme.tif',np.zeros((1,1)),grid,'EPSG:3857');tiny=math.nextafter(0.,1.)
+    cases=[(_idw_points([(1e-200,0.),(1.,0.)],[0.,1e308]),2.),(_idw_points([(1e-200,1e-200),(1.,0.)],[0.,1e308]),2.),(_idw_points([(1e200,0.),(2e200,0.)],[3.,-7.]),3e200),(_idw_points([(1e-200,1e-200)], [tiny]),1.),(_idw_points([(-1.,1.),(1.,1.)],[-np.finfo(float).max,np.finfo(float).max]),2.)]
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        for points,radius in cases:
+            wanted=_idw_power_oracle(points,grid,(1,1),radius,power);result=c.raster_interpolate_idw(points,source,'value',radius,power=power);ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),wanted);ds=None
+        files=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match='Float64'):c.raster_interpolate_idw(_idw_points([(1.,0.),(2.,0.)],[0.,tiny]),source,'value',3.,power=power)
+        assert set(source.workspace.iterdir())==files
+
+
+@pytest.mark.parametrize('power',[1,3])
+def test_idw_power_near_cancellation_refines_without_epsilon(tmp_path,power):
+    import operators.raster_compute as c
+    grid=(-.5,1,0,.5,0,-1);points=_idw_points([(1.,1.),(1.,math.nextafter(1.,math.inf))],[1.,-1.]);path=create_raster(tmp_path/'close.tif',np.zeros((1,1)),grid,'EPSG:3857');wanted=_idw_power_oracle(points,grid,(1,1),2.,power)
+    assert wanted[0,0]>0
+    with raster_workspace():
+        result=c.raster_interpolate_idw(points,raster_load(source_plan(path)),'value',2.,power=power);ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),wanted);ds=None
+
+
+@pytest.mark.parametrize('power',[1,3])
+@pytest.mark.parametrize('shape',[(2,515),(515,2)])
+@pytest.mark.parametrize('minimum',[1,3])
+def test_idw_power_bounded_blocks_complete_cog_and_all_overviews(tmp_path,monkeypatch,power,shape,minimum):
+    import operators.raster_compute as c
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    grid=(0,1,.25,0,.125,-1);h,w=shape;points=_idw_points([(.625,-.4375),(w+.25*h,h*.125-w)],[-7.,19.]);path=create_raster(tmp_path/'source.tif',np.full(shape,-9999.),grid,'EPSG:3857');raw=path.read_bytes();radius=10000.;wanted=_idw_power_oracle(points,grid,shape,radius,power,minimum);calls=[];write=gdal.Band.WriteRaster
+    def bounded(self,x,y,bw,bh,raw,*args,**kwargs):
+        assert 0<bw<=512 and 0<bh<=512;calls.append((x,y,bw,bh));return write(self,x,y,bw,bh,raw,*args,**kwargs)
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        with monkeypatch.context()as patch:
+            patch.setattr(gdal.Band,'WriteRaster',bounded);result=c.raster_interpolate_idw(points,source,'value',radius,power=power,min_points=minimum)
+        target=tmp_path/'output.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128);assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(band.ReadAsArray(),wanted);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(wanted));assert ds.GetGeoTransform()==grid and band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue());assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG'
+        previous=wanted;dimensions=[];oh,ow=shape
+        while max(oh,ow)>128:oh,ow=max(1,oh//2),max(1,ow//2);dimensions.append((oh,ow))
+        assert band.GetOverviewCount()==len(dimensions)
+        for i,(oh,ow)in enumerate(dimensions):
+            level=band.GetOverview(i)
+            # GDALRegenerateOverviewsMultiBand uses the previous level only
+            # while its X size is larger. A one-column vertical overview is
+            # regenerated from the original band; no product helper is used.
+            # https://github.com/OSGeo/gdal/blob/v3.12.1/gcore/overview.cpp
+            base=previous if previous.shape[1]>ow else wanted
+            ys=np.floor(.5+np.arange(oh)*base.shape[0]/oh).astype(int);xs=np.floor(.5+np.arange(ow)*base.shape[1]/ow).astype(int);expected=base[np.ix_(ys,xs)]
+            np.testing.assert_array_equal(level.ReadAsArray(),expected);np.testing.assert_array_equal(level.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));previous=expected
+        assert validate(ds,full_check=True)[1]==[];level=band=ds=None
+    assert len(calls)==2 and sum(bw*bh for _,_,bw,bh in calls)==h*w and path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('power',[1,2,3])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['success','insufficient','coincident','invalid-power','duplicate','calculation-failure','save-existing','write-failure'])
+def test_idw_power_actual_async_language_cog_target_protection_and_cleanup(tmp_path,monkeypatch,power,language,case):
+    import api_server,workflow_engine,operators.raster_compute as c
+    from shapely.geometry import Point
+    points=_idw_points([(.5,2.5),(2.5,.5)],[0.,12.]);grid=(0,1,0,3,0,-1);minimum=3 if case in('insufficient','coincident')else 1;maximum=3
+    if case=='duplicate':points=_idw_points([(.5,2.5)]*2,[0.,12.])
+    if case=='coincident':points=_idw_points([(.5,2.5)],[-7.])
+    path=create_raster(tmp_path/'reference.tif',np.full((3,3),-9999.),grid,'EPSG:3857');before=path.read_bytes();target=tmp_path/'result.cog.tif';prior=tmp_path/'prior.tif';prior.write_bytes(b'prior unchanged')
+    if case=='save-existing':target.write_bytes(b'existing target unchanged')
+    tasks=[{'id':'reference','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
+        {'id':'points','operator':'load_from_wkt','depends_on':[],'params':{'wkt_list':[p.wkt for p in points.geometry],'properties':[{'value':v}for v in points.value],'crs':'EPSG:3857'}},
+        {'id':'idw','operator':'raster_interpolate_idw','depends_on':['reference','points'],'params':{'input_gdf':{'$ref':'points'},'reference_raster':{'$ref':'reference'},'field':'value','radius_metres':4.,'power':0 if case=='invalid-power'else power,'min_points':minimum,'max_points':maximum}},
+        {'id':'save','operator':'raster_save','depends_on':['idw'],'params':{'input_raster':{'$ref':'idw'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}]
+    workspaces=[];execute=workflow_engine._execute_operator
+    def track(name,params):
+        if name=='raster_interpolate_idw':workspaces.append(params['reference_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',track)
+    if case=='calculation-failure':
+        def fail(*a,**kw):raise RuntimeError('injected power calculation failure')
+        monkeypatch.setattr(c,'_idw_value',fail)
+    if case=='write-failure':monkeypatch.setattr(gdal.Band,'WriteRaster',lambda*a,**kw:gdal.CE_Failure)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    success=case in('success','insufficient','coincident');assert status['status']==('success'if success else'failed'),status
+    assert workspaces and all(not p.exists()for p in workspaces)
+    if success:
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(ds.ReadAsArray(),_idw_power_oracle(points,grid,(3,3),4.,power,minimum,maximum));assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG';ds=None
+    elif case=='save-existing':assert target.read_bytes()==b'existing target unchanged'
+    else:
+        assert not target.exists()
+        with raster_error_language(language):cause=str(c._idw_error('power'if case=='invalid-power'else'duplicate'if case=='duplicate'else'write'))if case!='calculation-failure'else'injected power calculation failure'
+        assert cause in status['error']
+    assert path.read_bytes()==before and prior.read_bytes()==b'prior unchanged'
+
+
+@pytest.mark.parametrize('power',[1,3])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('problem',['outside-duplicate','unselected-nan','unselected-unsafe'])
+def test_idw_power_still_validates_unselected_and_outside_inputs(tmp_path,power,language,problem):
+    import operators.raster_compute as c
+    points=_idw_points([(0.,0.),(999.,999.)],[0.,np.nan]);code='value'
+    if problem=='outside-duplicate':points=_idw_points([(0.,0.),(999.,999.),(999.,999.)],[0.,1.,1.]);code='duplicate'
+    if problem=='unselected-unsafe':points=_idw_points([(0.,0.),(1.,0.)],[0,2**53+1])
+    path=create_raster(tmp_path/'strict.tif',np.zeros((1,1)),(-.5,1,0,.5,0,-1),'EPSG:3857');raw=path.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));files=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as error:c.raster_interpolate_idw(points,source,'value',2.,max_points=1,power=power)
+        assert str(error.value)==str(c._idw_error(code))and set(source.workspace.iterdir())==files
+    assert path.read_bytes()==raw

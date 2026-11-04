@@ -1718,7 +1718,7 @@ def test_idw_single_workflow_read_entry_two_sources_and_no_extra_parameters():
     from operators import list_operators
     spec=next(s for s in list_operators()if s['id']=='raster_interpolate_idw')
     params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_gdf','reference_raster','field','radius_metres','min_points','max_points'}
+    assert set(params)=={'input_gdf','reference_raster','field','radius_metres','min_points','max_points','power'}
     assert all(params[n]['required']for n in('input_gdf','reference_raster','field','radius_metres'))
     assert params['min_points']['type']=='integer'and params['min_points']['default']==1 and not params['min_points']['required']
     assert '精确重合' in params['min_points']['description']
@@ -1735,6 +1735,10 @@ def test_idw_single_workflow_read_entry_two_sources_and_no_extra_parameters():
     assert spec['category_path']==['栅格处理','基础计算']and spec['attributes']['resource_groups']==['raster']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
 
+
+    assert params['power']['type']=='integer'and params['power']['default']==2 and not params['power']['required']
+    assert not params['power'].get('enum')and '1／2／3'in params['power']['description']
+    assert inspect.signature(get_operator('raster_interpolate_idw')).parameters['power'].default==2
 
 def test_voronoi_metadata_requires_station_identity_and_explicit_range_only():
     spec=next(s for s in list_operators()if s['id']=='voronoi')
