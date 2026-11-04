@@ -1477,9 +1477,46 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                             missing_enabled='transfer_retained_task_read', created_enabled_true='transfer_task_create')
                         self.assertEqual(report['stage'], expected[mutation])
 
+    def test_native_object_consumes_manager_json_reference_without_uri_decoding(self):
+        key = f'tenant_2/model3d-quick-view/executions/{ID}/model +%2Fé.glb'
+        reference = json.dumps(dict(type='object', provider='addp_object_storage', bucket='manager', object=key))
+        calls = []
+        def stat(bucket, actual):
+            calls.append((bucket, actual)); return SimpleNamespace(size=9)
+        sdk = SimpleNamespace(Minio=lambda *args, **kwargs: SimpleNamespace(stat_object=stat))
+        controls = M.NativeControls.__new__(M.NativeControls)
+        controls.tenant = 2
+        controls.manifest = {'native': {'minio': {'endpoint': '127.0.0.1:1', 'access_key': 'private', 'secret_key': 'private'}}}
+        with patch.dict(sys.modules, {'minio': sdk, 'minio.error': SimpleNamespace(S3Error=RuntimeError)}), \
+                patch.object(M.GRANTS, 'object_ref', wraps=M.GRANTS.object_ref) as parse:
+            actual = controls.object(reference, present=True)
+        self.assertEqual(calls, [('manager', key)])
+        self.assertEqual(actual, f'/manager/tenant_2/model3d-quick-view/executions/{ID}/model%20%2B%252F%C3%A9.glb')
+        parse.assert_called_once_with(reference)
+
+    def test_native_object_rejects_locator_and_foreign_or_malformed_refs_before_sdk(self):
+        reference = dict(type='object', provider='addp_object_storage', bucket='manager', object='tenant_2/output.glb')
+        values = ['addp-infra://minio/manager/tenant_2/output.glb?type=object', 'not JSON', '[]',
+                  *[json.dumps({**reference, **change}) for change in (
+                      {'type': 'file'}, {'provider': 'foreign'}, {'bucket': 'business'},
+                      {'object': 'tenant_3/output.glb'}, {'object': 'tenant_2/../output.glb'},
+                      {'object': 'tenant_2//output.glb'}, {'object': None}, {'url': 'private'})],
+                  json.dumps({k: v for k, v in reference.items() if k != 'provider'})]
+        controls = M.NativeControls.__new__(M.NativeControls)
+        controls.tenant = 2
+        controls.manifest = {}
+        def connect(*args, **kwargs): self.fail('invalid reference reached the native SDK')
+        sdk = SimpleNamespace(Minio=connect)
+        for value in values:
+            with self.subTest(reference=value), \
+                    patch.dict(sys.modules, {'minio': sdk, 'minio.error': SimpleNamespace(S3Error=RuntimeError)}), \
+                    self.assertRaises(S.SuiteError):
+                controls.object(value, present=False)
+
     def test_native_object_never_treats_auth_failure_or_missing_bucket_as_absence(self):
         class S3Error(Exception):
             def __init__(self, code): self.code = code
+        reference = dict(type='object', provider='addp_object_storage', bucket='manager', object='tenant_2/output.glb')
         for code in ('present', 'NoSuchKey', 'NoSuchBucket', 'AccessDenied'):
             def stat(*_):
                 if code != 'present': raise S3Error(code)
@@ -1490,11 +1527,11 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             controls.manifest = {'native': {'minio': {'endpoint': '127.0.0.1:1', 'access_key': 'private', 'secret_key': 'private'}}}
             with patch.dict(sys.modules, {'minio': sdk, 'minio.error': SimpleNamespace(S3Error=S3Error)}):
                 if code == 'NoSuchKey':
-                    self.assertEqual(controls.object('addp-infra://minio/manager/tenant_2/output.glb?type=object', present=False), '/manager/tenant_2/output.glb')
+                    self.assertEqual(controls.object(json.dumps(reference), present=False), '/manager/tenant_2/output.glb')
                 else:
                     with self.subTest(code=code), self.assertRaises(S.SuiteError):
-                        controls.object('addp-infra://minio/manager/tenant_2/output.glb?type=object', present=False)
-                with self.assertRaises(S.SuiteError): controls.object('addp-infra://minio/manager/tenant_3/output.glb', present=False)
+                        controls.object(json.dumps(reference), present=False)
+                with self.assertRaises(S.SuiteError): controls.object(json.dumps({**reference, 'object': 'tenant_3/output.glb'}), present=False)
 
     def test_late_writer_requires_real_old_attempt_failed_assessment_and_unpublished_native_upload(self):
         for mutation in ('none', 'not_running', 'wrong_failure', 'replayed', 'cleanup_passed', 'other_owner_failed',

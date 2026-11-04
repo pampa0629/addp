@@ -730,14 +730,14 @@ with urllib.request.urlopen(request,timeout=5) as response: print(response.read(
         return result['total']
 
     def object(self, storage_ref, *, present, verify_glb=False):
-        from urllib.parse import urlsplit, unquote
         from minio import Minio
         from minio.error import S3Error
-        url = urlsplit(storage_ref)
-        require(url.scheme == 'addp-infra' and url.netloc == 'minio' and not url.fragment,
-                'artifact is outside the native Infra object store')
-        bucket, key = unquote(url.path).lstrip('/').split('/', 1)
-        require(bucket == 'manager' and key.startswith(f'tenant_{self.tenant}/') and '..' not in key.split('/'),
+        try:
+            location = GRANTS.object_ref(storage_ref)
+        except (TypeError, ValueError, GRANTS.SuiteError):
+            raise S.SuiteError('native artifact requires the canonical Manager object reference') from None
+        bucket, key = location['bucket'], location['object']
+        require(bucket == 'manager' and key.startswith(f'tenant_{self.tenant}/'),
                 'artifact is outside this Tenant output scope')
         config = self.manifest['native']['minio']
         client = Minio(config['endpoint'], access_key=config['access_key'], secret_key=config['secret_key'], secure=False)
