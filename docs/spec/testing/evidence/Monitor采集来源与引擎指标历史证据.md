@@ -766,3 +766,23 @@ CI修复会话回传固定`3d0ccfcce`的Platform Run41867352427／Job12670489731
 首次本地复现另外记录HTTP预算夹具原五秒编译断言超时，未修改该用例、预算或实现；后续完整标准入口149项通过，原失败保留在 `/tmp/addp-regroup-lifecycle-repro-20261105.log`，不倒填首次通过。针对新查询的单项先失败证据为 `/tmp/addp-regroup-fixture-contract-red-20261105.log`。
 
 本批只修复确定的T1夹具接线，不替代个人来源迁移、真实来源T2或Hosted；没有应用用户采集来源或启动个人服务。修复推送后仍等待专门CI会话回传唯一自然Platform结果，不设置定时、手工dispatch、rerun或轮询远端CI。工作簿仅由P0依据固定版本结果维护。
+
+
+### 统一分组的独立仓库闭包与网络声明修复（2026-11-05）
+
+CI会话回传固定`7d8ad061e`的两项后续阻断，不能与此前六项夹具修复混为一项：Platform [Run41877661034／Job126741448659](https://github.com/pampa0629/addp/actions/runs/41877661034/job/126741448659) 已通过208项首组及149项生命周期组合，后在独立repo停用场景因缺少`metrics-project.py`退出；Metrics [Run41877661118／Job126748083306](https://github.com/pampa0629/addp/actions/runs/41877661118/job/126748083306) 的host-resources在原生资源查询、压力证据及exporter恢复后，切换Desktop overlay时因默认网络仍有其他服务端点而退出。原始日志位于 `/tmp/addp-ci-20261105-020000/` 的对应job文件；未调查或处理同批其他Owner失败。
+
+**修复范围。** 独立repo固定复制清单补齐共享命名模块，包括`infra-port-resolution.sh`和`dev-lifecycle-and-build.sh`内两个复制点；前者假Docker改为从复制后的真实模块生成工作区项目，严格接受项目＋明确Infra PG服务的只读列表形状，不依赖传输刻意清除的父MOCK变量。保留真实源码加载、来源停用检查、陌生工作区拒绝及禁止个人删卷断言，没有捕获忽略缺文件。另将该共享部署读取依赖补入原Falkor／System日志T2输入声明，沿既有自动选择与门禁执行，不新增入口或workflow。
+
+保留生产Desktop网络Owner标签，在独占T2基底首次创建默认网络时即声明同一Owner。配置层反例比较真实完整base及Desktop overlay的整个networks对象，修复前因新增标签而失败，修复后相等；不通过删除标签、停用其他服务、放宽资源／mTLS／挂载断言或重试解决。实源probe新增切换前Owner与网络声明核验及切换后网络ID相同的检查，防止同类输入变化再发生。对既有bind断言仅增加不含路径／凭据的目的端及类型／规范来源／传播方式匹配布尔诊断，拒绝条件不变；新增T1明确验证shared传播仍被拒绝、诊断不含私有路径。
+
+**已验证及失败，分别保留。**
+
+- `make test-dev-lifecycle`修复前退出2，完整走到独立repo停用场景并复现FileNotFoundError，日志 `/tmp/addp-ci-closure-dev-red-20261105.log`。修复后两个受影响shell标准入口 `bash scripts/test/infra-port-resolution.sh`、`bash scripts/test/dev-lifecycle-and-build.sh` 均通过，含停用零失败及全部既有锁、真实临时监听／进程、deregister次序与原子构建检查；日志 `/tmp/addp-ci-port-closure-green-20261105.log`、`/tmp/addp-ci-dev-closure-shell-green-20261105.log`。
+- 完整`make test-dev-lifecycle`修复后确实运行，仍未通过：首轮208项中一项Transfer Worker启动超时，串行复验208项中一项Meta Worker启动超时，均尚未到shell闭包修复点。Worker实现／测试未改，未增加预算或假定休眠根因；日志 `/tmp/addp-ci-closure-dev-green-20261105.log`、`/tmp/addp-ci-closure-dev-serial-20261105.log`。不得以shell子项绿记完整开发门禁通过。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`修复前在本机独占项目实际复现相同active-endpoints错误，日志 `/tmp/addp-ci-network-host-red-20261105.log`；三项原始输入摘要 `/tmp/addp-ci-network-baseline-inputs-20261105.json`。配置反例先失败／后通过日志 `/tmp/addp-ci-network-config-red-20261105.log`、`/tmp/addp-ci-network-config-green-20261105.log`。
+- 同一host-resources标准入口修复后均退出2，**没有获得完整实源通过，也尚未实际到达新增网络切换断言**：并行轮在budget recovery超时，串行轮在既有limited_source_bind_mismatch拒绝，补诊断后的轮次在更早的sample overflow超时。日志依次 `/tmp/addp-ci-network-host-green-20261105.log`、`/tmp/addp-ci-network-host-serial-20261105.log`、`/tmp/addp-ci-network-host-diagnostic-20261105.log`。这些缺口不能用配置相等代替或认定已解决；本批不再盲跑相同标准入口，不改Docker设置、断言或预算。绑定诊断代码的T1已过，但本轮后续实源未执行到绑定失败的详细诊断输出。
+- 最终`make test-monitor-metrics-config`退出0，138项配置／证据检查及来源依赖通过；日志 `/tmp/addp-ci-network-config-final-20261105.log`。`make test-t2-ci-registration`退出0，80项登记、9项runner及实际登记通过；日志 `/tmp/addp-ci-closure-registration-green-20261105.log`。语法、编译、仅本批diff检查通过；受影响Make入口与已提交HEAD配方相同，其他会话的Makefile WIP不提交。
+- 四个本轮独占Metrics项目的容器／网络／卷均另行只读确认剩余0，收据 `/tmp/addp-ci-network-all-owned-cleanup-20261105.json`；清理不作为业务验收通过。
+
+本批未操作个人服务、keepalive、采集来源应用、配置或数据卷。两个已确认的输入／闭包缺陷已在代码中收敛，网络实际切换及完整开发门禁仍有上述未闭环失败；修复提交的自然Platform和host-resources终态仍等专门CI会话回传，不触发Hosted、rerun、dispatch、远端轮询或定时。新证据必须按固定提交及具体层级继续补充，不能将配置候选当实源验收完成。

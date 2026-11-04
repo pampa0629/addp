@@ -71,7 +71,13 @@ def verify_limited_node_mounts(node, volume, work, root, project):
                     or not Path(source).is_absolute()
                     or Path(source).resolve() != binds[destination].resolve()
                     or mount.get('Propagation') != 'rprivate'):
-                raise ValueError('limited_source_bind_mismatch')
+                error = ValueError('limited_source_bind_mismatch')
+                error.binding_diagnostic = {'destination':destination,
+                    'bind_type_matches':mount.get('Type') == 'bind',
+                    'canonical_source_matches':isinstance(source,str) and Path(source).is_absolute()
+                        and Path(source).resolve() == binds[destination].resolve(),
+                    'propagation_matches':mount.get('Propagation') == 'rprivate'}
+                raise error
         elif (mount.get('Type') != 'volume' or mount.get('Name') != expected_volume
                 or mount.get('Driver') != 'local' or mount.get('Source') != mountpoint):
             raise ValueError('limited_source_volume_mount_mismatch')
@@ -84,7 +90,13 @@ def inspect_limited_node_mounts(node):
         ['docker', 'volume', 'inspect', PROJECT + '_block-capacity'], text=True, timeout=5))
     if len(volumes) != 1:
         raise ValueError('limited_source_volume_count_mismatch')
-    return verify_limited_node_mounts(node, volumes[0], WORK, Path(__file__).resolve().parents[2], PROJECT)
+    try:
+        return verify_limited_node_mounts(node, volumes[0], WORK, Path(__file__).resolve().parents[2], PROJECT)
+    except ValueError as error:
+        if hasattr(error,'binding_diagnostic'):
+            print('Metrics T2: limited source binding comparison '+json.dumps(error.binding_diagnostic,sort_keys=True),flush=True)
+        raise
+
 
 
 def port(service, internal):
@@ -1056,12 +1068,25 @@ eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance +
 # Reuse the same owned source and mTLS template, now with the Desktop VM
 # deployment layer. A new projected node identity keeps the prior full-source
 # history out of this limited-view check; this remains a T2 protocol fixture.
+network_config_before = json.loads(compose('config','--format','json'))['networks']
+node_network_ids = {name:value['NetworkID'] for name,value in node['NetworkSettings']['Networks'].items()}
+assert len(node_network_ids) == 1, 'owned resource source requires one private fixture network'
+for identity in node_network_ids.values():
+    labels = json.loads(subprocess.check_output(['docker','network','inspect','--format','{{json .Labels}}',identity],text=True))
+    assert labels.get('io.addp.node-metrics.owner') == 't2', 'fixture network owner must be set before the view switch'
 FILES.append(str(Path(__file__).resolve().parents[1] / 'infra/node-metrics-desktop.yml'))
+assert json.loads(compose('config','--format','json'))['networks'] == network_config_before, \
+    'Desktop view switch must not redefine an active shared network'
+
 os.environ.update(ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--no-collector',
                   ADDP_NODE_METRICS_TEXTFILE='--no-collector.textfile',
                   ADDP_NODE_METRICS_PUBLISH_IP='127.0.0.1', ADDP_NODE_METRICS_PUBLISH_PORT=port('node-exporter', 9100))
 compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter')
 limited = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'node-exporter')], text=True))[0]
+assert {name:value['NetworkID'] for name,value in limited['NetworkSettings']['Networks'].items()} == node_network_ids, \
+    'Desktop view switch must preserve the existing private network identity'
+print('Metrics T2: Desktop view switch preserved network declaration, owner and identity', flush=True)
+
 assert limited['HostConfig']['NetworkMode'] != 'host' and limited['HostConfig']['PidMode'] != 'host'
 assert limited['HostConfig']['ReadonlyRootfs'] and limited['HostConfig']['CapDrop'] == ['ALL']
 assert limited['HostConfig']['SecurityOpt'] == ['no-new-privileges:true']

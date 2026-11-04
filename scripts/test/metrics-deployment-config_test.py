@@ -2839,6 +2839,19 @@ class LimitedNodeMountEvidenceTest(unittest.TestCase):
             with self.subTest(index=index), self.assertRaises(ValueError):
                 self.verify(self.node, volume, self.work, ROOT, self.project)
 
+    def test_bind_failure_diagnostic_preserves_rejection_without_paths(self):
+        node = json.loads(json.dumps(self.node))
+        mount = next(m for m in node['Mounts'] if m['Type']=='bind')
+        mount['Propagation']='shared'
+        with self.assertRaisesRegex(ValueError,'limited_source_bind_mismatch') as failure:
+            self.verify(node,self.volume,self.work,ROOT,self.project)
+        proof=failure.exception.binding_diagnostic
+        self.assertTrue(proof['bind_type_matches'])
+        self.assertTrue(proof['canonical_source_matches'])
+        self.assertFalse(proof['propagation_matches'])
+        self.assertNotIn(str(self.work),json.dumps(proof))
+        self.assertNotIn(str(ROOT),json.dumps(proof))
+
     def test_real_compose_layers_keep_exact_readonly_capacity_volume_and_disable_textfile(self):
         env = dict(os.environ, METRICS_T2_WORK=str(self.work), ADDP_METRICS_TLS_DIR=str(self.work / 'tls'),
                    ADDP_METRICS_DEPLOYMENT_DIR=str(self.work / 'deployment'), ADDP_METRICS_CONTROL_DIR=str(self.work / 'control'),
@@ -2848,11 +2861,17 @@ class LimitedNodeMountEvidenceTest(unittest.TestCase):
                    ADDP_NODE_METRICS_PROCFS='/proc', ADDP_NODE_METRICS_SYSFS='/sys', ADDP_NODE_METRICS_TEXTFILE='--no-collector.textfile',
                    ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--no-collector', ADDP_NODE_METRICS_PUBLISH_IP='127.0.0.1',
                    ADDP_NODE_METRICS_PUBLISH_PORT='19100', ADDP_NODE_METRICS_KERNEL='unused', ADDP_NODE_CAPACITY_SYSFS='/sys', ADDP_NODE_CAPACITY_PROCFS='/proc')
-        result = subprocess.run(['docker', 'compose', '--env-file', '/dev/null', '-p', self.project,
-                                 '-f', str(ROOT / 'scripts/test/docker-compose.monitor-metrics-t2.yml'),
-                                 '-f', str(ROOT / 'scripts/infra/node-metrics-desktop.yml'), 'config', '--format', 'json'],
-                                env=env, text=True, capture_output=True, check=True, timeout=15)
+        command = ['docker', 'compose', '--env-file', '/dev/null', '-p', self.project,
+                   '-f', str(ROOT / 'scripts/test/docker-compose.monitor-metrics-t2.yml')]
+        before = subprocess.run([*command,'config','--format','json'],env=env,
+                                text=True,capture_output=True,check=True,timeout=15)
+        result = subprocess.run([*command,'-f',str(ROOT / 'scripts/infra/node-metrics-desktop.yml'),
+                                 'config','--format','json'],env=env,
+                                text=True,capture_output=True,check=True,timeout=15)
         config = json.loads(result.stdout)
+        self.assertEqual(json.loads(before.stdout)['networks'],config['networks'],
+                         'Switching the owned source view must not redefine an active shared network')
+        self.assertEqual(config['networks']['default']['labels']['io.addp.node-metrics.owner'],'t2')
         source = config['services']['node-exporter']
         mounts = source['volumes']
         self.assertEqual(len(mounts), 5)

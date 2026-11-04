@@ -116,6 +116,13 @@ services:
       HTTP_T2_INDEX: "2"
     ports: ["127.0.0.1::19445"]
 
+# Both native-view and Desktop-view phases use this existing private network.
+# The production overlay must not change its declaration while peers are attached.
+networks:
+  default:
+    labels:
+      io.addp.node-metrics.owner: ${ADDP_NODE_METRICS_OWNER:-t2}
+
 volumes:
   block-capacity:
     driver: local

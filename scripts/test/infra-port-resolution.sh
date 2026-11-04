@@ -217,7 +217,7 @@ cp -R "${SCRIPT_DIR}/../infra/minio-observation" "$TEST_DIR/repo/scripts/infra/"
 printf 'ADDP_POSTGRES_METRICS_ENABLED=false\nADDP_REDIS_METRICS_ENABLED=false\nADDP_MINIO_METRICS_ENABLED=false\nADDP_POSTGRES_METRICS_STATE_DIR="%s"\nADDP_REDIS_METRICS_STATE_DIR="%s"\nADDP_MINIO_METRICS_STATE_DIR="%s"\n' \
   "$TEST_DIR/postgres-state" "$TEST_DIR/redis-state" "$TEST_DIR/minio-state" > "$TEST_DIR/online.env"
 mkdir -p "$TEST_DIR/repo/scripts/utils"
-for dependency in deployment-inventory.py private-state.py deployment-docker.py metrics-source.py; do
+for dependency in deployment-inventory.py metrics-project.py private-state.py deployment-docker.py metrics-source.py; do
   cp "${SCRIPT_DIR}/../utils/$dependency" "$TEST_DIR/repo/scripts/utils/$dependency"
 done
 export ADDP_DEPLOYMENT_DISCOVERY_DIR="$TEST_DIR/repo/.dev-state/deployment-discovery"
@@ -240,7 +240,15 @@ case "$1" in
     if [[ "$(uname)" == Darwin ]]; then os='Docker Desktop'; else os='Linux'; fi
     printf '{"id":"fixture-engine","os_type":"linux","operating_system":"%s"}\n' "$os" ;;
   ps)
-    [[ "$*" == *label=com.docker.compose.project=addp-postgres-metrics-infra* ]] || exit 2
+    # The real transport strips MOCK_* and ADDP_* values. Derive the owned
+    # workspace through the same copied module, never through parent mock state.
+    owned_project=$(python3 -c 'import runpy; from pathlib import Path; print(runpy.run_path("scripts/utils/metrics-project.py")["project"](Path.cwd()))')
+    [[ "$#" == 7 && "$2" == -aq && "$3" == --no-trunc && "$4" == --filter &&
+       "$5" == "label=com.docker.compose.project=$owned_project" && "$6" == --filter ]] || exit 2
+    case "$7" in
+      label=com.docker.compose.service=infra-postgres-metrics|label=com.docker.compose.service=infra-postgres-metrics-web) ;;
+      *) exit 2 ;;
+    esac
     # This cleanup fixture has never deployed an optional PG metrics source.
     ;;
   compose)
