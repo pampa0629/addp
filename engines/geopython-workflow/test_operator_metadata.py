@@ -1926,3 +1926,14 @@ def test_vertices_extraction_metadata_one_read_entry_original_occurrences_and_ex
     for alias in ['get_vertices','extract_vertex','extract_nodes']:
         assert alias not in {m['id']for m in list_operators()}
         with pytest.raises(ValueError,match='Unknown operator'):get_operator(alias)
+
+
+def test_proximity_orthogonal_stays_one_read_entry_without_nibble_admission_change():
+    import inspect
+    from operators import get_operator
+    spec=next(v for v in list_operators()if v['id']=='raster_proximity')
+    assert len([v for v in list_operators()if v['id']=='raster_proximity'])==1
+    assert set(inspect.signature(get_operator('raster_proximity')).parameters)=={'input_raster','band','target_values'}
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']and spec['category_path']==['栅格处理','基础计算']
+    assert spec['attributes']['resource_groups']==['raster']
+    assert '正交旋转'in next(p['description']for p in spec['parameters']if p['name']=='target_values')

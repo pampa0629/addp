@@ -5597,6 +5597,9 @@ def test_raster_proximity_failure_closes_files_and_cleans_private_intermediates(
             def SetUnitType(self,*a):pass
             WriteArray=fail
         class FailingOutput:
+            def __init__(self):
+                self.path=compute._path('.tif');self.path.write_bytes(b'partial')
+            def GetDescription(self):return str(self.path)
             def GetRasterBand(self,*a):return FailingBand()
         monkeypatch.setattr(compute,'_numeric_output',lambda *a:FailingOutput())
     with raster_workspace():
@@ -5693,7 +5696,7 @@ def test_raster_proximity_truncated_intermediate_fails_and_is_removed(tmp_path,m
 
 def test_raster_proximity_overflow_fails_only_for_valid_distance_values(tmp_path,monkeypatch):
     import operators.raster_compute as compute
-    monkeypatch.setattr(compute,'_projected_north_up_grid',lambda dataset:1e308)
+    monkeypatch.setattr(compute,'_proximity_grid_units',lambda dataset:1e308)
     for invalid_far in (False,True):
         values=np.array([[1,9,-9999 if invalid_far else 9]],dtype=np.int16)
         source=proximity_source(tmp_path/f'source-{invalid_far}.tif',values,transform=(0,1,0,0,0,-1))
@@ -17743,7 +17746,7 @@ def test_proximity_rectangular_unrepresentable_steps_fail_bilingually_before_tra
     import operators.raster_compute as c
     grid=(0,.25,0,0,0,-.5)if units==5e-324 else(0,2,0,0,0,-5)
     source=proximity_source(tmp_path/'v.tif',np.array([[1,9]],np.int16),transform=grid)
-    monkeypatch.setattr(c,'_projected_north_up_grid',lambda _:units)
+    monkeypatch.setattr(c,'_proximity_grid_units',lambda _:units)
     monkeypatch.setattr(c,'_nearest_pixel_sites',lambda *a,**k:pytest.fail('invalid steps reached transform'))
     with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:raster_proximity(raster_load(source_plan(source)),1,[1])
     assert str(error.value)==c._PROXIMITY_MESSAGES['step'][language=='en']
@@ -17754,7 +17757,7 @@ def test_proximity_rectangular_unrepresentable_steps_fail_bilingually_before_tra
 def test_proximity_rectangular_range_rejects_only_valid_outputs_and_cleans(tmp_path,monkeypatch,language,invalid_far):
     import operators.raster_compute as c
     values=np.array([[1,9,-9999 if invalid_far else 9]],np.int16);source=proximity_source(tmp_path/'v.tif',values,transform=(0,1,0,0,0,-.5))
-    monkeypatch.setattr(c,'_projected_north_up_grid',lambda _:1e308)
+    monkeypatch.setattr(c,'_proximity_grid_units',lambda _:1e308)
     with raster_workspace(),raster_error_language(language):
         loaded=raster_load(source_plan(source));workspace=loaded.workspace
         if not invalid_far:
@@ -17786,6 +17789,9 @@ def test_proximity_rectangular_failure_closes_streams_and_private_files(tmp_path
             def SetUnitType(self,*a):pass
             WriteArray=broken
         class Output:
+            def __init__(self):
+                self.path=c._path('.tif');self.path.write_bytes(b'partial')
+            def GetDescription(self):return str(self.path)
             def GetRasterBand(self,*a):return Band()
         monkeypatch.setattr(c,'_numeric_output',lambda *a:Output())
     with raster_workspace():
@@ -17837,7 +17843,7 @@ def test_proximity_rectangular_keeps_private_32_byte_disk_reservation(tmp_path,m
 def test_proximity_rectangular_async_full_cog_frozen_language_source_and_cleanup(tmp_path,monkeypatch,language,case):
     import api_server,workflow_engine,operators.raster_compute as c
     values=np.array([[1,9,9],[9,9,1]],np.int16);grid=(0,2,0,0,0,-5)
-    if case=='range':values[-1,-1]=9;grid=(0,1,0,0,0,-.5);monkeypatch.setattr(c,'_projected_north_up_grid',lambda _:1e308)
+    if case=='range':values[-1,-1]=9;grid=(0,1,0,0,0,-.5);monkeypatch.setattr(c,'_proximity_grid_units',lambda _:1e308)
     path=proximity_source(tmp_path/'source.tif',values,transform=grid);before=path.read_bytes();target=tmp_path/'result.cog.tif'
     if case=='save-existing':target.write_bytes(b'previous original result')
     tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];prior='source';classified=values
@@ -21874,3 +21880,189 @@ def test_line_kernel_weights_async_cog_frozen_language_and_all_failure_cleanup(t
         failed_task='save'if case=='encode-failure'else'density'
         assert state['error']=='任务 '+failed_task+' 执行失败: '+cause
     assert work and all(not p.exists()for p in work)and prior.read_bytes()==b'prior untouched'and path.read_bytes()==raw
+
+
+
+def _orthogonal_proximity_oracle(values,codes,valid,grid,units):
+    """Enumerate full affine world centres with exact input ratios; no EDT."""
+    from fractions import Fraction as Q
+    from decimal import Decimal as D,localcontext
+    gt=list(map(Q,grid));factor=Q(units);targets=np.argwhere(valid&np.isin(values,codes));out=np.full(values.shape,np.nan)
+    def center(row,col):
+        return(gt[0]+gt[1]*(Q(int(col))+Q(1,2))+gt[2]*(Q(int(row))+Q(1,2)),gt[3]+gt[4]*(Q(int(col))+Q(1,2))+gt[5]*(Q(int(row))+Q(1,2)))
+    centres=[center(row,col)for row,col in targets]
+    with localcontext()as context:
+        context.prec=2000
+        for row,col in zip(*np.nonzero(valid)):
+            x,y=center(row,col);sq=min(((x-a)**2+(y-b)**2)*factor*factor for a,b in centres)
+            out[row,col]=float((D(sq.numerator)/D(sq.denominator)).sqrt())
+    return out
+
+
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+@pytest.mark.parametrize('shape',[(1,1),(1,9),(9,1),(5,7)])
+@pytest.mark.parametrize('grid',[(100.,3.,8.,200.,4.,-6.),(0.,0.,5.,0.,2.,0.),(0.,-2.,0.,0.,0.,5.),(0.,0.,-5.,0.,-2.,0.),(float(2**60),1.,2.,float(2**60),1.,-2.)])
+def test_proximity_orthogonal_complete_world_affine_oracle_units_cog_and_input(tmp_path,epsg,shape,grid):
+    values=np.full(shape,9,np.int16);values.flat[0]=0;values.flat[-1]=-3
+    if values.size>3:values.flat[2]=-9999
+    source=proximity_source(tmp_path/'rotated.tif',values,transform=grid,crs=f'EPSG:{epsg}');raw=source.read_bytes();ds=gdal.Open(str(source));units=ds.GetSpatialRef().GetLinearUnits();ds=None;valid=values!=-9999;wanted=_orthogonal_proximity_oracle(values,[0,-3],valid,grid,units)
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));result=raster_proximity(loaded,1,[0,-3]);target=tmp_path/'rotated.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(band.ReadAsArray(),wanted);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),np.where(valid,255,0))
+        assert ds.GetGeoTransform()==grid and ds.GetSpatialRef().IsSame(osr.SpatialReference(f'EPSG:{epsg}'))and band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())and band.GetUnitType()=='metre'
+        assert band.GetScale()is None and band.GetOffset()is None;band=ds=None
+        assert not list(loaded.workspace.glob('*.sites'))and not list(loaded.workspace.glob('*.distance'))
+    assert source.read_bytes()==raw and not loaded.workspace.exists()
+
+
+@pytest.mark.parametrize('grid,sites',[( (0.,3.,12.,0.,4.,-9.),[(0,2),(1,0)] ),( (0.,9.,4.,0.,12.,-3.),[(0,1),(2,0)] )])
+def test_proximity_orthogonal_physical_nearest_reverses_pixel_nearest(tmp_path,grid,sites):
+    values=np.full((4,4),9,np.int16)
+    for row,col in sites:values[row,col]=1
+    source=proximity_source(tmp_path/'choice.tif',values,transform=grid)
+    with raster_workspace():
+        result=raster_proximity(raster_load(source_plan(source)),1,[1]);ds=gdal.Open(str(result.path));actual=ds.ReadAsArray();ds=None
+        assert actual[0,0]==10.;np.testing.assert_array_equal(actual,_orthogonal_proximity_oracle(values,[1],np.ones(values.shape,bool),grid,1.))
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('grid',[(0.,3.,8.,0.,4.,math.nextafter(-6.,-math.inf)),(0.,1.,1e-300,0.,0.,-1.),(0.,2.,0.,0.,0.,2.),(0.,-2.,0.,0.,0.,-2.),(0.,1.,2.,0.,1.,2.)])
+def test_proximity_orthogonal_exact_rejection_of_shear_mirror_and_degenerate_grid(tmp_path,language,grid):
+    import operators.raster_compute as c
+    source=proximity_source(tmp_path/'rejected.tif',np.array([[1,9]],np.int16),transform=grid);raw=source.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        loaded=raster_load(source_plan(source));files=set(loaded.workspace.iterdir())
+        with pytest.raises(ValueError):raster_proximity(loaded,1,[1])
+        assert set(loaded.workspace.iterdir())==files
+    assert source.read_bytes()==raw
+
+
+def test_proximity_orthogonal_rounded_float_dot_zero_is_not_exact_orthogonality(tmp_path):
+    from fractions import Fraction as Q
+    import operators.raster_compute as c
+    witness=None
+    for u in(.1,.2,.3,.7,1.1):
+        for v in(.1,.3,.9,1.3):
+            w=math.nextafter(-u,math.inf)
+            if u*v+v*w==0. and Q(u)*Q(v)+Q(v)*Q(w)!=0:
+                witness=(0.,u,v,0.,v,w);break
+        if witness is not None:break
+    assert witness is not None,'the fixed binary64 search must witness rounded dot cancellation'
+    source=proximity_source(tmp_path/'false-orthogonal.tif',np.array([[1,9]],np.int16),transform=witness)
+    with raster_workspace(),raster_error_language('en'),pytest.raises(ValueError,match='orthogonal'):
+        raster_proximity(raster_load(source_plan(source)),1,[1])
+
+
+@pytest.mark.parametrize('fault',['mask','alpha','nodata'])
+def test_proximity_orthogonal_second_band_validity_holes_and_all_integer_sources(tmp_path,fault):
+    values=np.array([[0,9,-3],[9,9,9],[9,9,9]],np.int16);alpha=np.full_like(values,255);mask=np.full(values.shape,255,np.uint8)
+    if fault=='mask':mask[1,1]=0
+    elif fault=='alpha':alpha[1,1]=0;alpha[0,0]=128
+    else:values[1,1]=-9999
+    grid=(100.,3.,8.,200.,4.,-6.);source=proximity_source(tmp_path/'coverage.tif',np.stack([np.full_like(values,-9999),values,alpha]),transform=grid);ds=gdal.Open(str(source),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(2).SetScale(17);ds.GetRasterBand(2).SetOffset(500)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(2).GetMaskBand().WriteArray(mask);ds=None;raw=source.read_bytes();valid=(mask>0)&(alpha>0)&(values!=-9999)
+    with raster_workspace():
+        result=raster_proximity(raster_load(source_plan(source)),2,[0,-3]);ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),_orthogonal_proximity_oracle(values,[0,-3],valid,grid,1.));ds=None
+    assert source.read_bytes()==raw
+
+
+def test_proximity_orthogonal_two_axis_blocks_cog_overviews_and_32_byte_reservation(tmp_path,monkeypatch):
+    import operators.raster_compute as c
+    h,w=515,519;grid=(100.,3.,8.,200.,4.,-6.);values=np.full((h,w),9,np.int16);values[0,0]=1;values[-1,-1]=1;values[512,511]=-9999
+    source=proximity_source(tmp_path/'blocks.tif',values,transform=grid);raw=source.read_bytes();yy,xx=np.indices((h,w));sq=np.minimum((3*xx+8*yy)**2+(4*xx-6*yy)**2,(3*(xx-w+1)+8*(yy-h+1))**2+(4*(xx-w+1)-6*(yy-h+1))**2);expected=np.sqrt(sq.astype(np.float64));expected[values==-9999]=np.nan;reads=[];oldread=c._read_values;oldline=c._nearest_line_sites;budgets=[]
+    def bounded(band,x,y,width,height):
+        assert width<=512 and height<=512;reads.append((width,height));return oldread(band,x,y,width,height)
+    def tracked(*a,**kw):
+        reserved=[budget for _,budget,paths in c._DISK_RESERVATIONS.values()if len(paths)==5];assert reserved==[32*h*w];budgets.extend(reserved);return oldline(*a,**kw)
+    monkeypatch.setattr(c,'_read_values',bounded);monkeypatch.setattr(c,'_nearest_line_sites',tracked)
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));result=raster_proximity(loaded,1,[1]);target=tmp_path/'blocks.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128);assert artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid'];ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(band.ReadAsArray(),expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),np.where(values!=-9999,255,0));assert ds.GetGeoTransform()==grid and band.GetUnitType()=='metre'
+        dimensions=[];oh,ow=h,w
+        while max(oh,ow)>128:ow,oh=max(1,ow//2),max(1,oh//2);dimensions.append((ow,oh))
+        assert band.GetOverviewCount()==len(dimensions);previous=expected
+        for level,(ow,oh)in enumerate(dimensions):
+            src=previous if previous.shape[1]>ow else expected;sy=np.floor(.5+np.arange(oh)*src.shape[0]/oh).astype(int);sx=np.floor(.5+np.arange(ow)*src.shape[1]/ow).astype(int);wanted=src[np.ix_(sy,sx)];overview=band.GetOverview(level);np.testing.assert_array_equal(overview.ReadAsArray(),wanted);np.testing.assert_array_equal(overview.GetMaskBand().ReadAsArray(),np.where(np.isfinite(wanted),255,0));previous=wanted
+        band=ds=None;assert not list(loaded.workspace.glob('*.sites'))and not list(loaded.workspace.glob('*.distance'))
+    assert budgets and(512,512)in reads and not c._DISK_RESERVATIONS and source.read_bytes()==raw
+
+
+@pytest.mark.parametrize('grid',[(0.,1.,1.,0.,1.,-1.),(0.,0.,2.,0.,2.,0.),(0.,-2.,0.,0.,0.,2.)])
+def test_proximity_orthogonal_does_not_relax_nibble_or_north_up_consumers(tmp_path,grid):
+    import operators.raster_compute as c
+    source=proximity_source(tmp_path/'nibble.tif',np.array([[1,2]],np.int16),transform=grid)
+    with raster_workspace():
+        loaded=raster_load(source_plan(source))
+        with pytest.raises(ValueError,match='north-up'):c.raster_nibble(loaded,1,[1])
+        assert not list(loaded.workspace.glob('*.sites'))and not list(loaded.workspace.glob('*.distance'))
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['direct','reclassify','bad-target','bad-grid','range','save-existing'])
+def test_proximity_orthogonal_async_full_cog_frozen_language_source_and_cleanup(tmp_path,monkeypatch,language,case):
+    import api_server,workflow_engine,operators.raster_compute as c
+    values=np.array([[1,9,9],[9,9,1]],np.int16);grid=(0.,3.,8.,0.,4.,-6.)
+    if case=='range':values[-1,-1]=9;grid=(0.,0.,.5,0.,1.,0.);monkeypatch.setattr(c,'_proximity_grid_units',lambda _:1e308)
+    if case=='bad-grid':grid=(0.,3.,math.nextafter(8.,math.inf),0.,4.,-6.)
+    path=proximity_source(tmp_path/'source.tif',values,transform=grid);before=path.read_bytes();target=tmp_path/'result.cog.tif'
+    if case=='save-existing':target.write_bytes(b'previous original result')
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];prior='source';classified=values
+    if case=='reclassify':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'rules':[{'value':1,'class':0},{'value':9,'class':7}]}});prior='classes';classified=np.where(values==1,0,7)
+    tasks.extend([{'id':'distance','operator':'raster_proximity','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'target_values':[{}]if case=='bad-target'else[0 if case=='reclassify'else 1]}},
+                  {'id':'save','operator':'raster_save','depends_on':['distance'],'params':{'input_raster':{'$ref':'distance'},'access_plan':target_plan(target),'profile':'cog'}}])
+    workspaces=[];original=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_proximity':workspaces.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture);client=api_server.app.test_client()
+    assert client.post('/api/operators/raster_proximity/invoke',json={'params':{}}).status_code==403
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    success=case=='direct';assert status['status']==('success'if success else'failed'),status
+    assert workspaces and all(not workspace.exists()for workspace in workspaces)and path.read_bytes()==before
+    if success:
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1);expected=_orthogonal_proximity_oracle(classified,[0 if case=='reclassify'else 1],np.ones(values.shape,bool),grid,1.)
+        np.testing.assert_array_equal(read_band_values(band),expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        assert ds.GetGeoTransform()==grid and ds.GetSpatialRef().GetAuthorityCode(None)=='3857'and band.GetUnitType()=='metre'
+        assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG';band=ds=None
+        assert json.loads(status['result'])['size_bytes']==target.stat().st_size>0
+    elif case=='save-existing':assert target.read_bytes()==b'previous original result'
+    else:
+        assert not target.exists()
+        cause=c._PROXIMITY_MESSAGES['grid'][language=='en']if case=='bad-grid'else c._PROXIMITY_MESSAGES['numeric'][language=='en']if case=='range'else'Proximity requires a non-alpha integer data band of at most 32 bits'if case=='reclassify'else'target_values must be distinct integers within the selected band type'
+        assert status['error']=='任务 distance 执行失败: '+cause
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('invalid_far',[False,True])
+def test_proximity_orthogonal_final_range_checks_only_valid_outputs(tmp_path,monkeypatch,language,invalid_far):
+    import operators.raster_compute as c
+    values=np.array([[1,9,-9999 if invalid_far else 9]],np.int16);grid=(0.,1.,1.,0.,1.,-1.);source=proximity_source(tmp_path/'range-rotated.tif',values,transform=grid);raw=source.read_bytes()
+    monkeypatch.setattr(c,'_proximity_grid_units',lambda _:1e308)
+    with raster_workspace(),raster_error_language(language):
+        loaded=raster_load(source_plan(source));files=set(loaded.workspace.iterdir())
+        if invalid_far:
+            result=raster_proximity(loaded,1,[1]);ds=gdal.Open(str(result.path));wanted=_orthogonal_proximity_oracle(values,[1],values!=-9999,grid,1e308);np.testing.assert_array_equal(ds.ReadAsArray(),wanted);assert wanted[0,1]>0 and math.isfinite(wanted[0,1]);ds=None
+        else:
+            with pytest.raises(ValueError)as error:raster_proximity(loaded,1,[1])
+            assert str(error.value)==c._PROXIMITY_MESSAGES['numeric'][language=='en']and set(loaded.workspace.iterdir())==files
+        assert not list(loaded.workspace.glob('*.sites'))and not list(loaded.workspace.glob('*.distance'))
+    assert source.read_bytes()==raw
+
+
+def test_proximity_orthogonal_equal_weight_sites_keep_original_row_column_tie(tmp_path):
+    import operators.raster_compute as c
+    values=np.full((3,3),9,np.int16);values[0,2]=values[2,0]=1;source=proximity_source(tmp_path/'tie.tif',values,transform=(0.,1.,1.,0.,1.,-1.))
+    with raster_workspace():
+        ds=gdal.Open(str(source))
+        with c._nearest_pixel_sites(ds,1,[1],axis_weights=(1,1))as(distances,sites):
+            assert distances is None;records=np.fromfile(sites,np.int64).reshape(3,3,2);np.testing.assert_array_equal(records[1,1],[0,2])
+        ds=None

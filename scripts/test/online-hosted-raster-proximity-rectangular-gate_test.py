@@ -22,3 +22,19 @@ class HostedProximityRectangularGateTest(base.HostedContourGateTest):
         self.assertNotEqual(result.returncode,0)
         trace=self.host.trace.read_text();self.assertIn('lineage-owner:prepare',trace)
         self.assertNotIn('make:test-online',trace);self.assertFalse(self.host.secrets.exists())
+
+    def run_gate(self, check=False, **overrides):
+        import subprocess
+        try:
+            return super().run_gate(check, **overrides)
+        except subprocess.TimeoutExpired:
+            trace=self.host.trace.read_text() if self.host.trace.exists() else 'no lifecycle trace'
+            self.fail('Hosted simulation exceeded existing 60s limit; last lifecycle trace: '+trace)
+
+    def test_timeout_retains_existing_limit_and_exposes_lifecycle_stage(self):
+        import subprocess
+        from unittest.mock import patch
+        self.host.trace.write_text('proximity-rectangular:start\nmake:test-online\n')
+        with patch.object(base.HostedContourGateTest,'run_gate',side_effect=subprocess.TimeoutExpired(['bash'],60)):
+            with self.assertRaisesRegex(AssertionError,'existing 60s limit; last lifecycle trace: proximity-rectangular:start'):
+                self.run_gate()

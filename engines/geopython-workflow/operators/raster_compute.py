@@ -4375,6 +4375,7 @@ def _nearest_pixel_sites(dataset, band, target_values, *, non_targets=False, axi
 
 
 _PROXIMITY_MESSAGES = {
+    'grid': ('邻近距离需要已知线性单位的二维投影及保持北向轴手性的正交网格，请显式重投影', 'Proximity requires a two-dimensional projected orthogonal grid with known linear units and north-up handedness; reproject explicitly'),
     'step': ('邻近距离横纵米制步长必须为有限正数', 'Proximity horizontal and vertical metre steps must be finite and positive'),
     'numeric': ('邻近距离结果超出有限Float64米制范围', 'Proximity exceeds the finite Float64 metre distance range'),
 }
@@ -4384,30 +4385,56 @@ def _proximity_error(code):
     return ValueError(_PROXIMITY_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
+def _proximity_grid_units(dataset):
+    """Admission belongs to proximity; other north-up consumers are unchanged."""
+    _, _, transform = _grid(dataset)
+    reference = _crs(dataset.GetProjection())
+    units = reference.GetLinearUnits()
+    ux, uy, vx, vy = map(Fraction, (transform[1], transform[4], transform[2], transform[5]))
+    if (not reference.IsProjected() or reference.IsCompound() or reference.GetAxesCount() != 2
+            or not math.isfinite(units) or units <= 0
+            or reference.GetLinearUnitsName().lower() in ('unknown', '')
+            or ux*vx + uy*vy != 0 or ux*vy - uy*vx >= 0):
+        raise _proximity_error('grid')
+    return units
+
+
 def _proximity_rectangular_distances(identities, valid, x, y, transform, units):
     """Project selected original sites to metres, without a rounded squared cost."""
-    dx2 = (Fraction(transform[1]) * Fraction(units)) ** 2
-    dy2 = (Fraction(-transform[5]) * Fraction(units)) ** 2
+    ux, uy, vx, vy = map(Fraction, (transform[1], transform[4], transform[2], transform[5]))
+    factor = Fraction(units)
     result = np.full(valid.shape, np.nan, dtype=np.float64)
     for row, column in zip(*np.nonzero(valid)):
         dr = y + int(row) - int(identities[row, column, 0])
         dc = x + int(column) - int(identities[row, column, 1])
-        result[row, column] = _sqrt_fraction(dc*dc*dx2 + dr*dr*dy2,
+        dx, dy = dc*ux + dr*vx, dc*uy + dr*vy
+        result[row, column] = _sqrt_fraction((dx*dx + dy*dy)*factor*factor,
                                             error=lambda: _proximity_error('numeric'))
     return result
 
 
 def raster_proximity(input_raster, band, target_values):
     dataset = _open(input_raster)
-    horizontal_metres = _projected_north_up_grid(dataset)
+    horizontal_metres = _proximity_grid_units(dataset)
     width, height, transform = _grid(dataset)
-    step_metres = transform[1] * horizontal_metres
-    vertical_metres = -transform[5] * horizontal_metres
+    if not math.isfinite(horizontal_metres) or horizontal_metres <= 0:
+        raise _proximity_error('step')
+    ux, uy, vx, vy = map(Fraction, (transform[1], transform[4], transform[2], transform[5]))
+    column_squared, row_squared = ux*ux + uy*uy, vx*vx + vy*vy
+    north_up = transform[2] == 0 and transform[4] == 0 and transform[1] > 0 and transform[5] < 0
+    if north_up:
+        # Preserve original north-up step admission and square output bits.
+        step_metres = transform[1] * horizontal_metres
+        vertical_metres = -transform[5] * horizontal_metres
+    else:
+        factor_squared = Fraction(horizontal_metres)**2
+        step_metres = _sqrt_fraction(column_squared*factor_squared, error=lambda: _proximity_error('step'))
+        vertical_metres = _sqrt_fraction(row_squared*factor_squared, error=lambda: _proximity_error('step'))
     if any(not math.isfinite(v) or v <= 0 for v in (step_metres, vertical_metres)):
         raise _proximity_error('step')
     axis_weights = None
-    if transform[1] != -transform[5]:
-        ratio = (Fraction(transform[1]) / Fraction(-transform[5])) ** 2
+    if not north_up or column_squared != row_squared:
+        ratio = column_squared/row_squared
         axis_weights = (ratio.numerator, ratio.denominator)
     selected = _band(dataset, band)
     ranges = {gdal.GDT_Byte: (0, 255), gdal.GDT_Int8: (-128, 127),
@@ -4426,9 +4453,11 @@ def raster_proximity(input_raster, band, target_values):
     _DISK_PROTECTED.set(True)
     with _disk_budget(_raster_disk_bytes(dataset, numeric=True), 'distance output'):
         output = destination = None
+        output_path, completed = None, False
         try:
             with _nearest_pixel_sites(dataset, band, target_values, axis_weights=axis_weights) as (columns_path, sites_path):
                 output = _numeric_output(dataset, 1)
+                output_path = Path(output.GetDescription())
                 destination = output.GetRasterBand(1)
                 destination.SetUnitType('metre')
                 with (columns_path if columns_path is not None else sites_path).open('rb') as intermediate:
@@ -4459,9 +4488,13 @@ def raster_proximity(input_raster, band, target_values):
             destination = None
             output.FlushCache()
             output = None
-            return _raster(path)
+            result = _raster(path)
+            completed = True
+            return result
         finally:
             destination = output = None
+            if output_path is not None and not completed:
+                output_path.unlink(missing_ok=True)
 
 
 def raster_nibble(input_raster, band, target_values):
@@ -6645,7 +6678,7 @@ _SPECS = [
     (raster_select_bands, OperatorCategory.RASTER_BAND, '栅格波段选择', [_INPUT(), _param('bands', 'list[int]', '按顺序选择原始数据波段，序号从 1 开始，可重复'), _param('color_model', 'str', '输出波段颜色解释', 'multispectral', False, enum=['multispectral', 'rgb'])], 'raster', ['read']),
     (raster_band_math, OperatorCategory.RASTER_CALCULATION, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
     (raster_reclassify, OperatorCategory.RASTER_CLASSIFICATION, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
-    (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类集合，允许零、不可重复；北向矩形网格按实际米制距离选点，方形结果保持')], 'raster', ['read']),
+    (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类集合，允许零、不可重复；北向矩形／正交旋转网格按完整仿射米制距离选点，原北向方形结果保持')], 'raster', ['read']),
     (raster_interpolate_idw, OperatorCategory.RASTER_CALCULATION, '点数据IDW插值', [_param('input_gdf', 'GeoDataFrame', '同CRS二维Point及有限数值字段；重复XY拒绝', role='input'), _param('reference_raster', 'raster', '仅提供网格和CRS，不读取或继承模板值／NoData／mask／alpha', role='input'), _param('field', 'str', '显式数值属性字段；合法零负值保留，整数须精确表示'), _param('radius_metres', 'float', '显式有限正米制圆半径；等号纳入，按power的距离反比加权'), _param('min_points', 'int', '非布尔正整数，默认1；非重合支撑不足为NoData，精确重合仍保留样本值', 1, False), _param('max_points', 'int', '省略不限；显式非布尔正整数且不小于min_points，按精确距离／X／Y取最近N点，精确重合保留原值', None, False), _param('power', 'int', '距离幂次1／2／3；默认2保持原结果，不改变半径／支撑点规则', 2, False)], 'raster', ['read']),
     (raster_point_density, OperatorCategory.RASTER_CALCULATION, '米制圆形点密度', [_param('input_gdf', 'GeoDataFrame', '二维Point逐要素贡献，重复XY保留；可选显式非负权重列', role='input'), _param('reference_raster', 'raster', '仅提供网格／CRS，原像元与mask／alpha不参与', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；无支持为0'), _param('method', 'str', 'uniform等权计数；quartic二维四次核，半径边界贡献0', 'uniform', False, enum=['uniform', 'quartic']), _param('weight_field', 'str', '可选现有非几何数值权重列；有限非负、不归一化，省略保持原结果，显式null非法', None, False)], 'raster', ['read']),
     (raster_line_density, OperatorCategory.RASTER_CALCULATION, '米制圆形线密度', [_param('input_gdf', 'GeoDataFrame', '二维LineString／MultiLineString逐原始线段贡献，重复与重叠独立累计', role='input'), _param('reference_raster', 'raster', '仅提供尺寸／完整网格／CRS，不继承原像元或mask', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；圆内米制线长除完整圆面积，无支持为0'), _param('method', 'str', 'uniform圆内线长；quartic固定二维四次核沿原始段积分，边界0、不离散或归一化', 'uniform', False, enum=['uniform', 'quartic']), _param('weight_field', 'str', '可选现有非几何数值权重列；有限非负、乘线长、不归一化，省略保持原结果，显式null非法', None, False)], 'raster', ['read']),

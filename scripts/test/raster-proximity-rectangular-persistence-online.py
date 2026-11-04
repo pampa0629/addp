@@ -34,7 +34,8 @@ fixed(('alpha_band','float','int64','uint64'),'Proximity requires a non-alpha in
 fixed(('complex',),'Complex-valued bands are not supported by numeric analysis')
 fixed(('targets_empty','targets_duplicate','targets_boolean','targets_fraction','targets_object','targets_range','targets_nonlist'),'target_values must be distinct integers within the selected band type')
 fixed(('no_target','invalid_targets'),'Raster distance transform requires at least one valid target pixel')
-fixed(('geographic','compound','unknown_unit','rotated_x','rotated_y','orientation'),'Raster analysis requires a projected north-up grid with known linear units; reproject explicitly')
+for problem in ('geographic','compound','unknown_unit','rotated_x','rotated_y','orientation'):
+    MESSAGES[problem]=('邻近距离需要已知线性单位的二维投影及保持北向轴手性的正交网格，请显式重投影', 'Proximity requires a two-dimensional projected orthogonal grid with known linear units and north-up handedness; reproject explicitly')
 fixed(('missing_crs',),'CRS must be explicit and non-empty')
 fixed(('missing_grid',),'Raster requires a geotransform')
 fixed(('singular',),'Raster grid must have a finite invertible geotransform')
