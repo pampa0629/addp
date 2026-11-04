@@ -2904,7 +2904,7 @@ def main():
             lifecycle.grants.append(body['request_id'])
             if body['catalog_path'] not in lifecycle.paths:
                 lifecycle.paths.append(body['catalog_path'])
-        lifecycle.scoped_refresh = REFRESH.ScopedRefreshScenario(operator, reader, tenant, recipient, engine,
+        lifecycle.scoped_refresh = REFRESH.ScopedRefreshScenario(operator, lifecycle.reader, tenant, recipient, engine,
             'postgresql', REFRESH.PersistedScanObservation(tenant, engine, 'postgresql'),
             report.setdefault('scoped_refresh', {}), register=register_refresh)
         lifecycle.scoped_refresh.precise_and_node_flow('public', 'public.metric_people',

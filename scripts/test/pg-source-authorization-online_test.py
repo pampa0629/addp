@@ -1072,10 +1072,19 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 ADDP_ONLINE_TEST_USER_PASSWORD='private-password',
                 ADDP_ONLINE_FIXTURE_DEPARTMENT_ID='41', ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID='51')
             life = Mock(grants=[], paths=[])
+            def after_member_exit(report):
+                # The existing membership scenario formally reauthenticates the same reader.
+                life.reader = server.client('reader-after-exit')
+                server.current_reader_token = life.reader.token
+            life.run.side_effect = after_member_exit
             collection = Mock()
             collection.run.side_effect = lambda report: report.update(meta_collection={})
             completed = []
             def refresh(*args, **kwargs):
+                self.assertIs(args[1], life.reader)
+                current = args[1].request('GET', '/api/v1/system/auth/context', (200,)).payload
+                self.assertEqual(current['principal']['id'], '33')
+                self.assertEqual(args[1].token, server.current_reader_token)
                 proof = args[7]
                 scenario = Mock()
                 scenario.precise_and_node_flow.side_effect = lambda *a, **k: completed.append('ranges')
