@@ -102,7 +102,7 @@ manager/
 - **进度接入**：瓦片缓存、业务瓦片集、镶嵌与 COPC 的既有进度更新和仅含百分比的 `progress` 事件同事务提交，镶嵌等待扫描的 99% 阶段同样记录。不把自由文本 `current_step` 当作 `step_id`。
 - **Runtime 与安全投影**：通用 `current_step` 只由 Manager 生成受控说明和计数，不回显 Runtime 的 message、任意 phase 或回调正文；原始回调只保留在 Owner 专业事实中，现有接入不新增 Runtime 节点历史。专业响应采用[Manager 显式安全 DTO](../docs/spec/tasks/执行监控.md#manager-专业执行读取与响应)，通用禁出字段、Owner 重裁与留存均以上述正式规范为准。
 
-文件上传后的扫描提交使用当前请求 User 的同步 BFF 身份，不使用 Meta Service Client。上传入口在写入前同时要求 `manager.data_item.create`、`meta.scan_task.execute` 与 `meta.scan_task.read`；Meta 独立认证并记录发起人，Worker 不接收用户凭据。响应仅提供 `scan_execution_id`，前端按唯一字段回查 Meta 安全执行详情；不返回内部执行配置。完整身份与失败边界见平台《授权上下文规范》5.1。验证由既有 `make test-manager-backend`、`make test-manager-frontend`、`make test-go` 和 Swagger 门禁覆盖。
+文件上传由当前 Tenant User 发起；NFS 的限定识别与初始授权以[上传回执与同步 BFF 契约](../docs/spec/addp授权上下文规范.md#51-同步-bff-授权)为准，其他引擎的扫描条件及响应字段沿[上传接口声明](backend/internal/api/upload_handler.go)核对。NFS 流程的上传、识别和授权分别表达，扫描提交或完成不替代 Grant 签发；已提交文件在后续识别或授权失败时保留，续办不重新上传。上传回执不作为读取凭据，状态响应不返回内部执行配置。标准门禁与实际覆盖范围见[开发与验证](#开发与验证)。
 
 - 数据源连接信息必须通过 System 获取，不要在 Manager 中保存或硬编码连接配置。
 - 元数据树与数据项优先通过 Meta 查询，Manager 只做预览、检索和快显侧的缓存与呈现。
