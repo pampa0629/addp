@@ -98,7 +98,7 @@ def browser(life,env,report,instances,stopped_at=None):
     require(phase not in receipts and (phase=='live' or receipts.get('live',{}).get('result')=='passed'),
         'browser_phase_order_invalid')
     remaining=80-life.request_budget.browser
-    require(remaining>0 and life.request_budget.control+remaining<=200,'browser_control_reserve_insufficient')
+    require(remaining>=2 and life.request_budget.control+remaining<=200,'browser_control_reserve_insufficient')
     input={'schema':'addp.http-quality-browser/v1','run_id':life.run_id,'phase':phase,'request_limit':remaining,
         'stopped_at':stopped_at.isoformat() if stopped_at else None,
         'instances':[{k:row[k] for k in ('id','module_name','instance_id','role')} for row in instances]}
@@ -138,7 +138,10 @@ def browser(life,env,report,instances,stopped_at=None):
         and receipt.get('run_id')==life.run_id and receipt.get('phase')==phase,'formal_browser_receipt_failed')
     required={'real_password_mfa','summary_ranking_trend_api_values','agent_sample_after_stop','stopped_page_empty'} if stopped_at else {
         'real_password_mfa','summary_ranking_trend_api_values','url_reload_restored','chinese_and_english'}
+    required.add('browser_logout_old_session_denied')
     require(all(receipt.get('assertions',{}).get(key) is True for key in required),'formal_browser_assertions_incomplete')
+    require(type(receipt.get('logout_api_requests')) is int and receipt['logout_api_requests']==2
+        and receipt['api_requests']>=2,'browser_logout_requests_invalid')
 
 
 def source_counts(life,phase):

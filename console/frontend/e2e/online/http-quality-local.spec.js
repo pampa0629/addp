@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { localConsoleLogin } from './local-identity-support.mjs'
-import { httpResponses, assertHTTPPage, assertHTTPRestored, assertHTTPStoppedPage } from '../http-quality-page-support.mjs'
+import { httpResponses, assertHTTPPage, assertHTTPRestored, assertHTTPStoppedPage, assertHTTPBrowserLogout } from '../http-quality-page-support.mjs'
 
 test.use({ screenshot: 'off', trace: 'off', video: 'off', locale: 'zh-CN' })
 
@@ -87,9 +87,15 @@ test('formal Python products to real Console HTTP quality', async ({ page }) => 
       await expect(monitor.getByTestId('http-quality')).toContainText('Interfaces and trends')
       report.assertions.chinese_and_english = true
     }
+    report.stage = 'browser-logout'
+    const logoutStart = report.api_requests
+    await assertHTTPBrowserLogout(page, expect, input.request_limit - report.api_requests)
     // Freeze successful counts only after this page can issue no more reads.
     await page.close()
     if (requestFailure) throw new Error(requestFailure)
+    report.logout_api_requests = report.api_requests - logoutStart
+    if (report.logout_api_requests !== 2) throw new Error('http_browser_logout_request_count_invalid')
+    report.assertions.browser_logout_old_session_denied = true
     report.result = 'passed'; report.stage = 'complete'
   } catch (error) {
     report.error_code = /^[a-z0-9_]+$/.test(error.message || '') ? error.message : 'formal_http_browser_assertion_failed'

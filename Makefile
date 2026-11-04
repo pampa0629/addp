@@ -1905,6 +1905,7 @@ test-monitor-http-local: ## 人工运行正式 Agent/Copilot 到接口质量页�
 test-monitor-http-local-runner: ## 验证本地 Python HTTP 产品准入、预算及页面契约，不启动服务
 	@command -v openssl >/dev/null
 	@python3 -m unittest scripts/test/monitor-http-local-gate_test.py scripts/test/monitor-http-local-online_test.py scripts/ci/check-http-quality-local-registration_test.py
+	@node --test scripts/test/http-quality-local-browser_test.mjs
 	@node --check --input-type=module < console/frontend/e2e/online/http-quality-local.spec.js
 	@node --check console/frontend/e2e/online/local-identity-support.mjs
 	@python3 -c "import importlib.util; from pathlib import Path; p=Path('scripts/ci/check-online-ci-registration.py'); s=importlib.util.spec_from_file_location('registration',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); m.validate_local_http_quality_profile(Path.cwd())"

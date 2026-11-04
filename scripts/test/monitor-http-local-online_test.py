@@ -80,9 +80,9 @@ class HTTPBrowserPhases(unittest.TestCase):
         def docker(*args,**kwargs):
             phase='stopped' if args[args.index('--name')+1].endswith('-stopped') else 'live'
             receipt={'schema':'addp.http-quality-browser-receipt/v1','run_id':'owned','phase':phase,'result':'passed',
-                'api_requests':35 if phase=='live' else 25,'assertions':{key:True for key in (
+                'api_requests':37 if phase=='live' else 27,'logout_api_requests':2,'assertions':{key:True for key in (
                     'real_password_mfa','summary_ranking_trend_api_values','url_reload_restored','chinese_and_english',
-                    'agent_sample_after_stop','stopped_page_empty')}}
+                    'agent_sample_after_stop','stopped_page_empty','browser_logout_old_session_denied')}}
             (life.work/('http-browser-'+phase+'-report.json')).write_text(json.dumps(receipt))
         life.docker=mock.Mock(side_effect=docker)
         return life
@@ -93,9 +93,9 @@ class HTTPBrowserPhases(unittest.TestCase):
             m.browser(life,{},report,[])
             stop=datetime.now(timezone.utc)
             m.browser(life,{},report,[],stopped_at=stop)
-            self.assertEqual(life.request_budget.browser,60);self.assertEqual(life.request_budget.control,80)
+            self.assertEqual(life.request_budget.browser,64);self.assertEqual(life.request_budget.control,84)
             self.assertEqual(set(report['browser']),{'live','stopped'})
-            self.assertEqual(json.loads((life.work/'http-browser-stopped.json').read_text())['request_limit'],45)
+            self.assertEqual(json.loads((life.work/'http-browser-stopped.json').read_text())['request_limit'],43)
             self.assertEqual(len({call.args[call.args.index('--name')+1] for call in life.docker.call_args_list}),2)
             self.assertTrue(all(call.kwargs['timeout']==300 for call in life.docker.call_args_list))
             self.assertEqual(json.loads((life.work/'http-browser-stopped.json').read_text())['stopped_at'],stop.isoformat())
@@ -105,7 +105,7 @@ class HTTPBrowserPhases(unittest.TestCase):
             life=self.fixture(directory)
             with self.assertRaisesRegex(m.auth.LocalTraceAssertionFailure,'phase_order'):
                 m.browser(life,{}, {},[],stopped_at=datetime.now(timezone.utc))
-            for count,control in ((80,100),(0,121)):
+            for count,control in ((80,100),(79,100),(0,121)):
                 life.request_budget.browser=count;life.request_budget.control=control
                 with self.assertRaisesRegex(m.auth.LocalTraceAssertionFailure,'reserve_insufficient'):m.browser(life,{}, {},[])
             life.docker.assert_not_called()
@@ -130,6 +130,24 @@ class HTTPBrowserPhases(unittest.TestCase):
             life=self.fixture(directory);life.docker.side_effect=None
             with self.assertRaisesRegex(m.auth.LocalTraceAssertionFailure,'receipt_failed'):m.browser(life,{}, {},[])
 
+    def test_each_phase_requires_browser_logout_and_two_counted_requests(self):
+        for phase in ('live','stopped'):
+            for field,value in (('logout_api_requests',None),('logout_api_requests',1),('logout_api_requests',True),('browser_logout_old_session_denied',False)):
+                with self.subTest(phase=phase,field=field,value=value),tempfile.TemporaryDirectory() as directory:
+                    life=self.fixture(directory);report={}
+                    if phase=='stopped':m.browser(life,{},report,[])
+                    original=life.docker.side_effect
+                    def docker(*args,**kwargs):
+                        original(*args,**kwargs)
+                        path=life.work/('http-browser-'+phase+'-report.json');receipt=json.loads(path.read_text())
+                        if field=='logout_api_requests':receipt[field]=value
+                        else:receipt['assertions'][field]=value
+                        path.write_text(json.dumps(receipt))
+                    life.docker.side_effect=docker
+                    with self.assertRaises(m.auth.LocalTraceAssertionFailure):
+                        m.browser(life,{},report,[],stopped_at=datetime.now(timezone.utc) if phase=='stopped' else None)
+                    self.assertEqual(life.request_budget.browser,64 if phase=='stopped' else 37)
+
     def test_failed_transport_counts_attempts_and_preserves_first_failure(self):
         for malformed in (False,True):
             with self.subTest(malformed=malformed),tempfile.TemporaryDirectory() as directory:
@@ -140,7 +158,7 @@ class HTTPBrowserPhases(unittest.TestCase):
                     raise RuntimeError('first_transport_failure')
                 life.docker.side_effect=docker;report={}
                 with self.assertRaisesRegex(RuntimeError,'first_transport_failure'):m.browser(life,{},report,[])
-                self.assertEqual(life.request_budget.browser,0 if malformed else 35)
+                self.assertEqual(life.request_budget.browser,0 if malformed else 37)
                 self.assertEqual(life.docker.call_count,1)
                 if malformed:self.assertEqual(report['browser_receipt_error'],'browser_receipt_invalid')
 

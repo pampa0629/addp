@@ -105,3 +105,41 @@ export async function assertHTTPStoppedPage(expect, frame, owner) {
   await expect(frame.getByTestId('http-trend')).toHaveCount(0)
   await expect(frame.getByTestId('http-detail-error')).toContainText('请从列表重新选择')
 }
+
+// Observe the actual UI logout credential; replay only in one explicit request,
+// never in the UI's auth state. The caller's page route counts both requests.
+export async function assertHTTPBrowserLogout(page, expect, remaining) {
+  if (!Number.isInteger(remaining) || remaining < 2 || remaining > 80) throw new Error('http_browser_logout_budget_insufficient')
+  let authorization
+  let failure = 'http_browser_logout_transport_failed'
+  try {
+    const loggedOut = page.waitForResponse(response => new URL(response.url()).origin === 'http://nginx' &&
+      new URL(response.url()).pathname === '/api/v1/system/logout' && response.request().method() === 'POST')
+    loggedOut.catch(() => {})
+    await page.locator('.user-dropdown').hover()
+    await page.getByRole('menuitem', { name: /退出登录|Logout|Log out/i }).click()
+    const response = await loggedOut
+    failure = 'http_browser_logout_status_invalid'
+    if (response.status() !== 204) throw new Error(failure)
+    failure = 'http_browser_logout_credential_invalid'
+    authorization = response.request().headers().authorization
+    if (typeof authorization !== 'string' || !/^Bearer [A-Za-z0-9._~-]{16,4096}$/.test(authorization)) throw new Error(failure)
+    failure = 'http_browser_logout_redirect_failed'
+    await expect(page).toHaveURL(/\/login(?:\?|$)/)
+    failure = 'http_browser_logout_replay_failed'
+    const status = await page.evaluate(async credential => {
+      const result = await fetch('/api/v1/system/auth/context', {
+        headers: { Authorization: credential }, credentials: 'omit', redirect: 'error', cache: 'no-store'
+      })
+      return result.status
+    }, authorization)
+    failure = 'http_browser_logout_rejection_unproven'
+    if (status !== 401) throw new Error(failure)
+    return 2
+  } catch {
+    // Playwright errors can include request details. Export only a closed code.
+    throw new Error(failure)
+  } finally {
+    authorization = undefined
+  }
+}

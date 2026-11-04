@@ -32,6 +32,7 @@ LIMITS={name:(.025,32) for name in FRONTENDS}|{
 SAMPLER_IMAGE='nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284'
 CASE_LIMITS={'full':(3600,3300),'compile-checkpoints':(900,780)}
 OWN_INPUTS=('scripts/test/monitor-http-local-gate.py','scripts/test/monitor-http-local-gate_test.py',
+    'scripts/test/http-quality-local-browser_test.mjs',
     'scripts/test/monitor-http-local-online.py','scripts/test/monitor-http-local-online_test.py',
     'scripts/test/monitor-traces-local-gate.py','scripts/test/monitor-traces-local-online.py',
     'system/backend/cmd/online-test-fixture/http_quality_local.go',

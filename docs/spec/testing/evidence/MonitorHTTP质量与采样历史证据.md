@@ -1362,3 +1362,20 @@ HTTP Job北京时间19:31:13—19:46:12，Verify isolated metrics lifecycle于19
 受控请求Go148、Python67／26，总241次，原失败／恢复阶段预算回执用现有complete_request_traffic核验完整，未超过300。Go真实HTTP来源、自然分钟窗口、告警打开、事件／outbox、签名503重试及恢复实际PASS；Python日志明确两个实际ASGI SDK来源、身份隔离、Monitor查询／历史趋势、签名重试恢复及停源隔离通过。两Python来源startup passed／native_imported=true，依赖挂载exec／nosuid／nodev符合；回收无stop／wait／nonzero错误，discovery_restored／traffic_available=true。mTLS localhost叶证书和实际IP检查均passed、无TLS错误，原子换证identity改变且passed=true。cleanup_verified／private_directory_removed=true，compile_cleanup_error／request_traffic_error／cleanup_overdue均无错误；清理与业务通过分别核验。
 
 原始选择／Job元数据、ZIP、JSON、日志及逐项verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-fixture-natural-20261104-6jtlv6sc/（私有目录／文件）。本轮仅跟进已有自然CI，不手动重跑、不新开窗口，不运行Hosted、容量或定时。上次两个配置前置失败及更早go_tmp失败原件继续保留，不被本次覆盖；本次证明这一次Linux HTTP四阶段／采样／功能／清理通过，不证明具体历史删除进程已直接定位或长期偶发已根除。正式Agent/Copilot产品镜像、真实密码/MFA及Console/Monitor页面full仍未验收。同源Platform Job126528774946的最后一次只读快照仍in_progress，本批不据此宣称远端Platform整轮或HTTP／Trace确定性runner已实际通过；本地原137／148及HTTP44／Trace183有效结果保持独立。下一步优先回到正式产品页面闭环的准入核对，真实本地窗口另行确认。
+
+
+<a id="http-browser-logout-contract-20261104"></a>
+
+## 2026-11-04 正式HTTP浏览器两阶段注销：确定性补齐，真实窗口待确认
+
+用户确认先补浏览器注销规范与门禁，真实60分钟full另行确认。本批没有启动真实窗口、Docker部署、产品镜像构建、Hosted、容量或定时，也未为本批推送触发自然CI。上条自然Linux SDK HTTP通过仍独立有效，不能替代正式产品浏览器退出及会话撤销。此前只读核对发现API三身份已有logout／旧会话401，存活／停源两个真实浏览器阶段原先只关页，缺少各自会话撤销断言。
+
+先修运行观测／T0–T3规范，并对齐Linux四阶段及完整四秒从等待采样锁起计的旧文字；不改实际预算。HTTP页面验收支持代码新增唯一assertHTTPBrowserLogout，存活／停源两阶段共用：经Console现有账号菜单真实退出，绑定当次同源确切POST /api/v1/system/logout响应204及实际请求Authorization；在System仍运行时，以裸fetch仅重放一次GET /api/v1/system/auth/context，须401。拒绝匿名、其他会话、关页或销毁库替代；旧凭证仅函数局部内存使用，裸请求credentials=omit、redirect=error、cache=no-store，既不注入页面状态，也不经自动刷新／重试。只读响应状态，不留正文或凭证；失败只输出封闭错误码，非401一律记拒绝未证明，不将500推断为旧会话仍可用。
+
+退出前至少预留两次原浏览器请求余量；两次检查都经过原页面请求范围／全局计数守卫。关闭页面后冻结全量次数，logout_api_requests为该阶段实际增量且必须整数2，之后才写browser_logout_old_session_denied=true；多出请求、预算不足、logout非204、旧会话非401或传输异常均失败，不重试。父入口对live／stopped两份回执均强制新增断言与计数（且不超过原总请求），失败回执的api_requests仍累计扣减，首因保留。全局浏览器80／控制面200不变，新增最多4次已包含其中；API三身份原注销检查独立保持。共享localConsoleLogin／Trace登录协议、产品API／权限／角色及正式退出实现未由本批修改。
+
+新增Node内置纯逻辑测试纳入原make test-monitor-http-local-runner，不新增标准入口或依赖，覆盖204／401、同源方法路径绑定、实际旧凭证、剩余不足零发送、缺凭证、logout失败、旧会话200／204／403／500拒绝、传输异常脱敏及最多两次／无重试。正式源代码接线回归确认退出先于关页、实际增量在关页后冻结、无浏览器Token状态注入或独立API Context绕过原计数。CI登记拒绝删除测试文件、删除命令或用echo／注释伪装执行；既有Platform已提供Node并调用同一runner，不改workflow。该Node文件加入full的OWN_INPUTS，专项输入从12项增至13项，连同原三份已提交集成标记共16项；真实运行仍要求这些输入与冻结提交匹配，不接受未提交门禁文件。
+
+旧回执验证受控反证make test-monitor-http-local-runner：45项中8个live／stopped反例失败，退出2，证明旧实现未裁决注销。随后保留缺失检查实现的Node反证沿同一标准入口执行，Python46项通过、Node7项中6失败／1接线通过，退出2。最终make test-monitor-http-local-runner完整退出0：Python46项／1.207秒、Node7项全通过，JS／HTTP登记／System身份Go子门禁通过；离线TLS T1为OpenSSL4.1.0、35命令／1.035431秒、125473字节、4次预期拒绝与清理完成。make test-monitor-traces-local-runner完整退出0：183项／5.887秒、JS／Online登记及System身份Go子门禁通过。原80／200跨阶段总预算、失败计数、阶段顺序、13项固定输入、四秒及全部原资源反例继续通过。Node使用受控Page／fetch替身，不启动真实浏览器或System，不记为真实204／401撤销验收。
+
+本批源快照基准37f9724376ca7ac5f72dc5461da610259595f016；快照、输入摘要、红绿门禁日志散列及verification.json位于/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-browser-logout-20261104-hz6vb_p7/，日志/tmp/addp-p19-browser-logout-{red,node-red,http-final,trace-final}-20261104.log。共享Makefile、CI登记和规范中的他会话改动不纳入本批提交。真实full仍须另行批准原60／55分钟、8 CPU／12 GiB、4 GiB停止线、完整四秒及单镜像600秒；五后端正式构建／完整依赖、真实密码/MFA、采集/API、两阶段页面、浏览器与API会话撤销及零残留均通过才可验收。动态Docker／固定Nginx缓存／代理及依赖准入尚未运行；历史Mac四秒偶发、构建下载和接近4 GiB风险仍保留，不自动放宽、补跑或续窗。

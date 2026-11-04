@@ -11,9 +11,9 @@ class LocalHTTPRegistrationTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
         (self.root/'.github/workflows').mkdir(parents=True)
-        for relative in ('scripts/test/monitor-http-local-gate.py','scripts/test/monitor-http-local-online.py','console/frontend/e2e/online/http-quality-local.spec.js','console/frontend/e2e/http-quality-page-support.mjs','console/frontend/e2e/online/local-identity-support.mjs','system/backend/cmd/online-test-fixture/http_quality_local.go'):
+        for relative in ('scripts/test/http-quality-local-browser_test.mjs','scripts/test/monitor-http-local-gate.py','scripts/test/monitor-http-local-online.py','console/frontend/e2e/online/http-quality-local.spec.js','console/frontend/e2e/http-quality-page-support.mjs','console/frontend/e2e/online/local-identity-support.mjs','system/backend/cmd/online-test-fixture/http_quality_local.go'):
             path=self.root/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('owned fixture')
-        self.make='test-monitor-http-local:\n\t@python3 scripts/test/monitor-http-local-gate.py --case=$(or $(MONITOR_HTTP_LOCAL_CASE),full)\ntest-monitor-http-local-runner:\n\t@command -v openssl >/dev/null\n\t@$(MAKE) test-monitor-http-local-runner\n\t@python3 -m unittest scripts/test/monitor-http-local-gate_test.py scripts/test/monitor-http-local-online_test.py\n'
+        self.make='test-monitor-http-local:\n\t@python3 scripts/test/monitor-http-local-gate.py --case=$(or $(MONITOR_HTTP_LOCAL_CASE),full)\ntest-monitor-http-local-runner:\n\t@node --test scripts/test/http-quality-local-browser_test.mjs\n\t@command -v openssl >/dev/null\n\t@$(MAKE) test-monitor-http-local-runner\n\t@python3 -m unittest scripts/test/monitor-http-local-gate_test.py scripts/test/monitor-http-local-online_test.py\n'
         (self.root/'Makefile').write_text(self.make)
         self.workflow='jobs:\n  platform-consistency:\n    steps:\n      - run: |\n          sudo apt-get install -y --no-install-recommends openssl\n          command -v openssl\n      - run: make test-platform\n'
         (self.root/'.github/workflows/platform-ci.yml').write_text(self.workflow)
@@ -47,6 +47,14 @@ class LocalHTTPRegistrationTests(unittest.TestCase):
                 self.workflow.replace('      - run: make test-platform\n','').replace('    steps:\n','    steps:\n      - run: make test-platform\n')):
             path.write_text(content)
             with self.assertRaisesRegex(m.RegistrationError,'CI preparation'):m.validate_local_http_quality_profile(self.root)
+
+    def test_browser_logout_regression_cannot_be_removed_from_the_existing_runner(self):
+        for replacement in ('@true','@echo node --test scripts/test/http-quality-local-browser_test.mjs','@true # node --test scripts/test/http-quality-local-browser_test.mjs'):
+            (self.root/'Makefile').write_text(self.make.replace('@node --test scripts/test/http-quality-local-browser_test.mjs',replacement))
+            with self.subTest(replacement=replacement),self.assertRaisesRegex(m.RegistrationError,'deterministic Node'):m.validate_local_http_quality_profile(self.root)
+        (self.root/'Makefile').write_text(self.make)
+        (self.root/'scripts/test/http-quality-local-browser_test.mjs').unlink()
+        with self.assertRaisesRegex(m.RegistrationError,'input missing'):m.validate_local_http_quality_profile(self.root)
 
     def test_public_workflows_cannot_dispatch_real_local_gate(self):
         path=self.root/'.github/workflows/rejected.yml'

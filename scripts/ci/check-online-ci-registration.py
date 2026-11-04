@@ -6258,6 +6258,8 @@ def validate_local_http_quality_profile(repository: Path) -> None:
         if marker not in make:
             raise RegistrationError("local HTTP quality requires manual entry and deterministic lifecycle registration")
     commands=make_target_commands(make,"test-monitor-http-local-runner")
+    if "node --test scripts/test/http-quality-local-browser_test.mjs" not in [line.strip().removeprefix("@") for line in commands.splitlines()]:
+        raise RegistrationError("local HTTP browser logout requires its deterministic Node regression")
     probe=commands.find("command -v openssl")
     tests=commands.find("python3 -m unittest")
     workflow_path=repository / ".github/workflows/platform-ci.yml"
@@ -6269,7 +6271,7 @@ def validate_local_http_quality_profile(repository: Path) -> None:
     verify=body.find("command -v openssl")
     if not (0<=probe<tests and install and install.end()<verify<gate):
         raise RegistrationError("local HTTP TLS requires OpenSSL admission and CI preparation before the gate")
-    for relative in (entry, "scripts/test/monitor-http-local-online.py",
+    for relative in (entry, "scripts/test/http-quality-local-browser_test.mjs", "scripts/test/monitor-http-local-online.py",
                      "console/frontend/e2e/online/http-quality-local.spec.js",
                      "console/frontend/e2e/http-quality-page-support.mjs",
                      "console/frontend/e2e/online/local-identity-support.mjs",
