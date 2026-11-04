@@ -30,6 +30,8 @@ Ontology已将本轮来源冻结为创建修订61（`f041e3ef9`）：3项更新�
 
 协调会话在既有只读验收范围内安排一次有界同场景第二复验；启动前会话62全部4个Run均为终态，四项既有权限和能力61／digest未变，不修改模型、Provider、代理、SSL、凭据或权限。仅新增Run `8cb248bf-033e-4d07-88d6-1045f5d02971`：搜索返回10个可见候选后Runtime先暂停，既定Outdoor.Persons是唯一匹配原locator且不是首项，按正式选项确认后恢复同一Run，不默认选源。最终completed、12步骤，两次正式Context与checkpoint均等于修订61、digest `dff0a0b8c729869a1a7d5eb4fef1d6cf6e29923a4e69127db2ca7655598efeb2`；Owner构建arguments与正式预检input完整相等，`_id`／`groups`只提交path/target，groups默认JSON，报告和展示／回放同为unknown。目标表名含r60来自原指定名称，不代表运行能力版本。旧16稿／旧2字段Run／旧消息／回放及首轮失败Run、7份首轮交付原件SHA均不变；无业务任务保存／执行、审批、采样、扫描或数据写入。30项核对见 `/tmp/addp-agent-r61-second-attempt-20261104/acceptance-audit.json`。协调会话随后仅只读刷新并展开当前精确Run及新草稿 `outdoor_persons_to_ontology_r60_persons_check_62`，两行映射、unknown、12步骤及末尾构建／预检已结束均可见，原件 `/tmp/addp-agent-r61-second-ui-{check-20261104.json,rows-20261104.json,final-20261104.txt,final-20261104.png}` 已核对。独立控制面收尾 `/tmp/addp-agent-r61-live-readonly-control-final-20261104.json` 的业务及授权不变断言全部通过，23个Transfer任务、7份审批、107条执行记录、Task55配置与500批大小及当前用户既有Grant集合均保持原样。本轮只读切片收口，无第三次Run、产品变更、新冻结、重启或额外Provider探测；首轮503网络根因仍未证实修复。
 
+本次新结果首次可见后又执行一次独立刷新：精确8cb Run、completed、两行映射、unknown及构建／预检步骤均保留，映射刷新前后逐字相同。补充原件 `/tmp/addp-agent-r61-second-ui-refresh-check-20261104.json`、`/tmp/addp-agent-r61-second-ui-refreshed-final-20261104.txt` 与同名 `.png`，不覆盖先前页面或失败原件；最终交付索引为 `/tmp/addp-agent-r61-second-attempt-20261104/final-delivery.json`。
+
 ## 当前实现边界
 
 2026-11-04 新 Transfer 草稿对多源候选采用 Runtime 暂停：正式搜索返回多个 locator 即保存当前候选集合并生成持久资源选择，搜索与构建同批时先搜索；恢复后构建源须匹配该集合中唯一的用户确认，未确认或改选重新澄清，不把 observed 当作 confirmed。用户完整配置与历史原稿保留原参数绑定路线。默认字段选择只提交 path/target，类型与可空性由 Transfer 按正式事实推导；显式用户转换继续经原契约预检，不静默覆盖。已有 Agent eval 自动发现新候选与恢复回归，标准 Tool、Interaction、权限和公共 API 路线不变。
