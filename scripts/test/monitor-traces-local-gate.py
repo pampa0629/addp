@@ -980,6 +980,8 @@ class Lifecycle:
         timing['entered_monotonic_ns'] = entered_ns
         timing['result'] = 'failed'
         if sampling:
+            timing['wait_poll'] = {'calls': 0, 'timeouts': 0,
+                'timeout_overrun_total_ns': 0, 'timeout_overrun_max_ns': 0}
             self.sample_step['commands'].append(timing)
 
         def check_deadline():
@@ -1018,11 +1020,23 @@ class Lifecycle:
                                 check_deadline()
                             if output_limit is not None:
                                 require(os.fstat(output.fileno()).st_size <= output_limit, 'command_output_limit_exceeded')
+                            poll_timeout = min(.05, deadline-time.monotonic())
+                            if sampling:
+                                poll_started_ns = time.monotonic_ns()
+                                timing['wait_poll']['calls'] += 1
                             try:
-                                p.wait(timeout=min(.05, deadline-time.monotonic()))
+                                p.wait(timeout=poll_timeout)
                                 timing['exit_observed_monotonic_ns'] = time.monotonic_ns()
                                 break
                             except subprocess.TimeoutExpired:
+                                if sampling:
+                                    # Host-side call enclosure only, never daemon
+                                    # timing or a measurement of scheduler delay.
+                                    overrun = max(0, time.monotonic_ns()-poll_started_ns-round(poll_timeout*1e9))
+                                    summary = timing['wait_poll']
+                                    summary['timeouts'] += 1
+                                    summary['timeout_overrun_total_ns'] += overrun
+                                    summary['timeout_overrun_max_ns'] = max(summary['timeout_overrun_max_ns'], overrun)
                                 continue
                     finally:
                         timing['wait_finished_monotonic_ns'] = time.monotonic_ns()

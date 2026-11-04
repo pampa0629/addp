@@ -1912,6 +1912,100 @@ class LocalTraceCommandBudgetTests(unittest.TestCase):
         clock.start()
         self.addCleanup(clock.stop)
 
+    def wait_poll_case(self, actions, *, start_ns=0, error=None, sampling=True, spawn_error=False, command_count=1):
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            life.sample_thread_id = threading.get_ident() if sampling else -1
+            life.sample_phase = 'synthetic'
+            life.sample_deadline = 4
+            life.sample_step = {'commands': []}
+            clock = [start_ns]
+            process = mock.Mock(pid=654321, returncode=0)
+            process.poll.return_value = None
+            pending = iter(actions)
+            calls = []
+            def wait(*, timeout):
+                calls.append(timeout)
+                if timeout == 1:  # Original cancellation wait, never a poll.
+                    clock[0] += 200_000_000
+                    process.poll.return_value = 0
+                    return 0
+                outcome, duration_ns = next(pending)
+                clock[0] += duration_ns
+                if outcome == 'timeout':
+                    raise m.subprocess.TimeoutExpired('PRIVATE-TOKEN', timeout)
+                if outcome == 'error':
+                    raise RuntimeError('PRIVATE-TOKEN')
+                process.poll.return_value = 0
+                return 0
+            process.wait.side_effect = wait
+            command = ['docker', 'container', 'ls', '-a', '-q', '--filter', f'label={m.LABEL}={life.run_id}']
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]/1e9), \
+                 mock.patch.object(m.time, 'monotonic_ns', side_effect=lambda: clock[0]), \
+                 mock.patch.object(m.subprocess, 'Popen', side_effect=OSError('PRIVATE-TOKEN') if spawn_error else None, return_value=process), \
+                 mock.patch.object(m.os, 'killpg') as kill:
+                if error is None:
+                    for _ in range(command_count):
+                        self.assertEqual(life.command(command, guarded=False, timeout=4), '')
+                else:
+                    with self.assertRaisesRegex(error[0], error[1]):
+                        life.command(command, guarded=False, timeout=4)
+            record = life.command_evidence.snapshot()[-1]
+            return record, calls, kill.call_args_list
+
+    def test_wait_poll_summarizes_repeated_timeouts_and_early_return(self):
+        record, calls, killed = self.wait_poll_case([
+            ('timeout', 70_000_000), ('timeout', 55_000_000),
+            ('timeout', 40_000_000), ('success', 80_000_000)])
+        summary = record['wait_poll']
+        self.assertEqual(summary, {'calls': 4, 'timeouts': 3,
+            'timeout_overrun_total_ns': 25_000_000, 'timeout_overrun_max_ns': 20_000_000})
+        self.assertEqual(calls, [.05]*4)
+        self.assertEqual(killed, [])
+        self.assertLessEqual(len(json.dumps(summary).encode()), 512)
+        self.assertTrue(all(type(v) is int for v in summary.values()))
+        self.assertNotIn('PRIVATE', json.dumps(summary))
+        # Successful observation after a long wait is not a TimeoutExpired overrun.
+        self.assertEqual(record['result'], 'passed')
+
+    def test_wait_poll_immediate_exit_and_commands_have_independent_zero_counts(self):
+        slow, _, _ = self.wait_poll_case([('timeout', 60_000_000), ('success', 0)])
+        fast, _, _ = self.wait_poll_case([('timeout', 60_000_000), ('success', 0), ('success', 0)], command_count=2)
+        self.assertEqual(slow['wait_poll']['timeout_overrun_total_ns'], 10_000_000)
+        self.assertEqual(fast['wait_poll'], {'calls': 1, 'timeouts': 0,
+            'timeout_overrun_total_ns': 0, 'timeout_overrun_max_ns': 0})
+
+    def test_wait_poll_uses_short_remaining_budget_and_excludes_cancellation(self):
+        record, calls, killed = self.wait_poll_case([('timeout', 23_000_000)],
+            start_ns=3_980_000_000, error=(m.GateError, '^command_deadline_exceeded$'))
+        self.assertAlmostEqual(calls[0], .02)
+        self.assertEqual(calls[1:], [1])
+        self.assertEqual(record['wait_poll'], {'calls': 1, 'timeouts': 1,
+            'timeout_overrun_total_ns': 3_000_000, 'timeout_overrun_max_ns': 3_000_000})
+        self.assertEqual(record['result'], 'failed')
+        self.assertEqual(len(killed), 1)
+        self.assertGreater(record['cancel_cleanup_seconds'], 0)
+
+    def test_wait_poll_exception_retains_first_error_and_counts_only_original_poll(self):
+        record, calls, killed = self.wait_poll_case([('error', 5_000_000)],
+            error=(RuntimeError, '^PRIVATE-TOKEN$'))
+        self.assertEqual(record['wait_poll'], {'calls': 1, 'timeouts': 0,
+            'timeout_overrun_total_ns': 0, 'timeout_overrun_max_ns': 0})
+        self.assertEqual(calls, [.05, 1])
+        self.assertEqual(record['result'], 'failed')
+        self.assertEqual(len(killed), 1)
+        self.assertNotIn('PRIVATE', json.dumps(record))
+
+    def test_wait_poll_spawn_failure_is_zero_and_non_sampling_has_no_summary(self):
+        record, calls, killed = self.wait_poll_case([], spawn_error=True,
+            error=(OSError, '^PRIVATE-TOKEN$'))
+        self.assertEqual(record['wait_poll'], {'calls': 0, 'timeouts': 0,
+            'timeout_overrun_total_ns': 0, 'timeout_overrun_max_ns': 0})
+        self.assertEqual(calls, [])
+        self.assertEqual(killed, [])
+        record, _, _ = self.wait_poll_case([('success', 0)], sampling=False)
+        self.assertNotIn('wait_poll', record)
+
     def test_other_threads_do_not_inherit_observer_deadline_or_diagnostics(self):
         with tempfile.TemporaryDirectory() as directory:
             life = bare_lifecycle(directory)
@@ -2039,6 +2133,8 @@ class LocalTraceCommandBudgetTests(unittest.TestCase):
             self.assertEqual(command['result'], 'failed')
             self.assertEqual(command['spawn_seconds'], .01)
             self.assertEqual(command['wait_seconds'], 3.99)
+            self.assertEqual(command['wait_poll'], {'calls': 1, 'timeouts': 1,
+                'timeout_overrun_total_ns': 3_940_000_000, 'timeout_overrun_max_ns': 3_940_000_000})
             self.assertEqual(command['cancel_cleanup_seconds'], .2)
             self.assertEqual(command['entered_monotonic_ns'],0)
             self.assertEqual(command['cancel_started_monotonic_ns'],4_000_000_000)

@@ -1289,3 +1289,16 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 原始归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-stream-window-20261104-65cs6cc3/`（0700／0600），含launch（分别保存prepared_commit／source_commit）、15项expected-inputs、未复用门禁说明、准备门禁、Infra状态、entry-started／entry.log／completion、原report及独立audit。报告991343字节，SHA256=`bbbed09f1db3f07a9417b39b6fa5a7753ce6d530b8aec0c0e17ff62333857a98`；入口日志SHA256=`4b189503cf9f87b48a26624ff580e94bae8e60b24da65a4180ba57cd35eb70d4`。核对固定15项来源、所有已完成样本、失败分步／标记／缺失计量、原时限及清理，更新63主题证据与索引并回报维护会话，代码未改也不额外推送触发CI。
 
 本次没有手动重跑／续窗、Hosted、容量或定时，不接管个人环境，不改APT源／依赖／镜像／代理策略，原600秒／四秒及全部资源预算保持。先前Agent命令超时与本次资源守卫失败分别保留；正式产品闭环及增量步骤真实定位均未验收。单次授权已消费，建议下一步先只读关联本次串行CLI等待及已有Docker记录，给出保持原四秒口径的最小方案后讨论，不自动放宽或重跑。
+
+
+<a id="http-resource-wait-poll-deterministic-20261104"></a>
+
+## 2026-11-04 资源检查等待返回汇总：确定性门禁通过，真实采集待授权
+
+按用户确认先修规范，仅在原资源采样命令的p.wait循环增加wait_poll四个固定整数：调用次数、TimeoutExpired次数、累计及最大非负返回超出量（纳秒），摘要≤512字节，不保留逐次明细。使用包围原调用的主机单调端点，扣除当次实际timeout；原min(0.05, deadline-now)及四秒剩余预算不变。成功等待或其他异常只计调用次数，取消回收中的一秒等待排除；非采样命令不新增字段。首次失败、原取消与清理继续传播，不以完整诊断放行失败。不新增进程／线程／Docker请求、采样范围、并发或第二路线；原600秒、完整四秒、8 CPU／12 GiB、4 GiB停止线保持。源文件AST对照仅Lifecycle.command改变，原其他函数、Dockerfile、根Make与workflow未由本批修改；既有test-platform→生命周期→HTTP／Trace local runner及登记校验已覆盖，未新增CI入口。
+
+本批旧实现反证运行make test-monitor-traces-local-runner：183项中新增5项因缺少wait_poll而错误，退出2，符合预期。实现后最终make test-monitor-traces-local-runner 183项／6.477秒，make test-monitor-http-local-runner 44项／1.169秒，两组完整入口均退出0；JS语法、Online／HTTP登记和System身份Go子门禁均通过。HTTP附带原离线TLS T1：OpenSSL4.1.0、35命令／0.935208秒、125493字节、4次预期拒绝与cleanup_removed=true，不连接真实Docker。回归覆盖连续／提前TimeoutExpired、成功长等待不误计超出、即时退出、同一生命周期不同命令清零、剩余20毫秒按实际timeout、其他异常保留、创建前失败零计量、取消排除、脱敏及≤512字节。原完整检查4.2秒失败反例保留首因、进程组回收及空成功样本，新增汇总不会反转失败。
+
+只读前置关联仍指向上条固定8b320fb8e／run_id=addp-http-local-29078910b1d34180b764f66260daacc8及原报告SHA256 bbbed09f1db3f07a9417b39b6fa5a7753ce6d530b8aec0c0e17ff62333857a98：四秒由串行CLI等待累计耗尽，不能唯一归因卷扫描。已有Desktop候选03:37—03:38 UTC日志中apiproxy仅55条usage记录，没有可归属API路径起止；现存dockerd／containerd归档日期未覆盖本轮。缺可信跨时钟对齐及请求归属，卷测量零字节检查点只能记未观测到，不能证明未执行。本次汇总仅观察主机调用返回，包含包围开销；既不是线程调度延迟或daemon时间，也不能从总等待中扣除后把余量归给daemon。历史报告没有wait_poll，不能补算新指标。
+
+收尾只读核对共享HEAD=cc4c7de44e1503091dd36ebc2eb7c2ea1196398c；共享main其他改动不纳入本批验收。输入快照、AST审核及verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-wait-poll-20261104-kzwedobr/；原只读摘要在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-resource-wait-readonly-20261104-ftrmi7kn/assessment.json（SHA256 1f87aad85b589ece787b09fbe013b65ee75150df07c7e28c2eceed1754d8e53c）。门禁日志/tmp/addp-p19-wait-poll-{red,trace-final,http-final}-20261104.log。仅本地实现与确定性验证，不推送、不重试镜像构建、不开真实窗口，不运行Hosted、容量或定时；真实等待计量、物理根因、繁忙稳定性及正式Agent/Copilot到Console/Monitor页面闭环均未验收。优先下一步是在另行授权的原有运行中随行采集，先读新汇总再决定性能修正，不自动续窗或重跑。
