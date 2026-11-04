@@ -101,17 +101,20 @@ def fixture_executor(fixture, violations):
             async def respond(arguments, delegated_token):
                 for key, value in fixture['expected'].get(name, {}).items():
                     if arguments.get(key) != value:
-                        raise ToolExecutionError('model_parameters_changed', 'fixture parameter mismatch')
+                        code = 'model_build_' + key + '_changed' if name == 'transfer.task.draft.build' else 'model_parameters_changed'
+                        raise ToolExecutionError(code, 'fixture parameter mismatch')
                 if name == 'transfer.task.draft.build':
                     selected = arguments['fields']
                     if [(field['path'],field['target']) for field in selected] != [(['_id'],'_id'),(['members'],'members')]:
-                        raise ToolExecutionError('model_parameters_changed','fixture field choices mismatch')
+                        raise ToolExecutionError('model_build_fields_changed','fixture field choices mismatch')
                     for field, expected_type in zip(selected, ('string','json')):
                         if ('target_type' in field and field['target_type'] != expected_type
-                                or 'nullable' in field and field['nullable'] is not False
                                 or 'precision' in field or 'scale' in field):
-                            raise ToolExecutionError('model_parameters_changed','fixture type choices mismatch')
+                            raise ToolExecutionError('model_build_types_changed','fixture type choices mismatch')
                     result = copy.deepcopy(fixture['responses'][name])
+                    for selected_field, output_field in zip(selected, result['arguments']['config']['transforms'][0]['fields']):
+                        if 'nullable' in selected_field:
+                            output_field['nullable'] = selected_field['nullable']
                     for key in ('name','description','batch_size'):
                         result['arguments'].pop(key,None)
                         if key in arguments:
@@ -289,6 +292,7 @@ def _safe_tools(tools):
         'invalid_tool_arguments', 'model_parameters_changed', 'model_tool_blocked',
         'platform_condition_unsatisfied', 'tool_not_allowed', 'draft_reference_unavailable',
         'transfer_parameter_source_mismatch', 'transfer_parameter_rebuild_requires_user', 'transfer_parameter_source_ambiguous',
+        'model_build_source_locator_changed', 'model_build_target_changed', 'model_build_row_grain_changed', 'model_build_fields_changed', 'model_build_types_changed',
     }
     return [{'name': t['name'] if t['name'] in known else 'unknown', 'status': t['status'],
              'error_code': t['error_code'] if t['error_code'] in codes or t['error_code'] is None else 'runtime_error'}
@@ -311,7 +315,8 @@ def validate_report(report):
     error_codes = sorted({c for t in load_manifest().tools for c in t.errors} | {
         'invalid_tool_arguments', 'model_parameters_changed', 'model_tool_blocked',
         'platform_condition_unsatisfied', 'tool_not_allowed', 'draft_reference_unavailable',
-        'transfer_parameter_source_mismatch', 'transfer_parameter_rebuild_requires_user', 'transfer_parameter_source_ambiguous', 'runtime_error',
+        'transfer_parameter_source_mismatch', 'transfer_parameter_rebuild_requires_user', 'transfer_parameter_source_ambiguous',
+        'model_build_source_locator_changed', 'model_build_target_changed', 'model_build_row_grain_changed', 'model_build_fields_changed', 'model_build_types_changed', 'runtime_error',
     })
     sample = obj({
         'name': {'enum': list(CASE_NAMES)}, 'sample': {'type': 'integer', 'minimum': 1, 'maximum': 3},
