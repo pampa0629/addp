@@ -10,7 +10,7 @@
 
 ## 现行契约与证据边界
 
-当前领域报告为 `addp.security-mysql-owner-protection-online/v41`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v41 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
+当前领域报告为 `addp.security-mysql-owner-protection-online/v42`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v42 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
 
 保护方式、角色资格及导出有效性的能力契约见[数据安全规范](../../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)。本文维护 suite 断言与版本差异；已归档的固定源码、运行尝试、失败和清理结果见[数据保护与执行血缘历史证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md)，不由版本号推导某次验收已通过。其中[四出口实际停机 v9](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)分别维护对应旧证据，不作为 v23～v33 新增范围的通过记录。
 
@@ -113,7 +113,7 @@ Hosted `security-mysql-owner-protection` 报告 v23 的 `bank_card_metadata.deve
 
 边界检查分别在初始默认、角色方式有效及显式移除后恢复默认阶段执行；方式撤销后的续读与无游标拒绝继续使用合法且不变的参数，避免用参数错误冒充保护拒绝。前后定义、命名参数声明、当前用户角色及默认 Baseline 保持；成功、失败或中断沿同一捕获 ID 撤销 Policy、删除本轮服务并确认 404。只增加一个私有 Service 的创建／删除计数，不新增账号、权限、引擎或部署，不归档参数取值、游标、令牌、原值或 CSV 正文。
 
-该阶段报告为 v35（现由 v41 接续），CI 登记必须约束新增场景的派发／报告、参数边界事实及服务计数。确定性门禁沿 `make test-security-online-runner`，不新增测试入口或工作流；实际 v35 Hosted/T4 尚未运行，仍由专门 CI 会话跟进。本切片只验证一个必填整数 SQL 输入，不扩展为全部参数类型、可选默认值、原值授权或角色资格变更的运行证据。
+该阶段报告为 v35（现由 v42 接续），CI 登记必须约束新增场景的派发／报告、参数边界事实及服务计数。确定性门禁沿 `make test-security-online-runner`，不新增测试入口或工作流；实际 v35 Hosted/T4 尚未运行，仍由专门 CI 会话跟进。本切片只验证一个必填整数 SQL 输入，不扩展为全部参数类型、可选默认值、原值授权或角色资格变更的运行证据。
 
 ### v36：SQL 角色资格撤销与自然到期
 
@@ -121,7 +121,7 @@ Hosted `security-mysql-owner-protection` 报告 v23 的 `bank_card_metadata.deve
 
 失效前两个服务分别完成4/1两页JSON/CSV正向对照；失效后保持各自服务定义、选择、Policy及保护投影不变，SQL旧游标及新请求的JSON/CSV均须精确403/`query_protection_roles_unavailable`，只有错误、JSON错误类型及单个no-store，不接受401、409或400。主动撤销仍先证明旧令牌401、正式重登同一普通User后资格403；自然到期仍保持同一有效会话、授权版本和主功能Permission，仅资格active/expired，不重登、续期、撤销或修改时钟。显式移除选择后两个服务分别恢复默认五行JSON/CSV。
 
-SQL定义只保存声明，不伪造Meta Source，不持久化调用值。报告记录SQL独立服务ID、字段、受控结果哈希、游标摘要、精确拒绝和恢复；不保存凭据、游标全文、CSV或源值。两个新增Service均立即捕获ID，任何失败或中断都逐一删除并核对404，即使一项清理失败仍尝试其他清理；同一Policy仅由原生命周期撤销。资源总计增加2。该阶段报告v36（现由v41接续），原浏览器v9不扩展；沿现有Makefile入口及CI自动登记，无新增工作流。本文为断言合同，v36实际Hosted/T4未运行，CI仍由专门会话跟进。
+SQL定义只保存声明，不伪造Meta Source，不持久化调用值。报告记录SQL独立服务ID、字段、受控结果哈希、游标摘要、精确拒绝和恢复；不保存凭据、游标全文、CSV或源值。两个新增Service均立即捕获ID，任何失败或中断都逐一删除并核对404，即使一项清理失败仍尝试其他清理；同一Policy仅由原生命周期撤销。资源总计增加2。该阶段报告v36（现由v42接续），原浏览器v9不扩展；沿现有Makefile入口及CI自动登记，无新增工作流。本文为断言合同，v36实际Hosted/T4未运行，CI仍由专门会话跟进。
 
 ### v37：可选默认参数的保护与游标
 
@@ -184,6 +184,14 @@ SQL定义只保存声明，不伪造Meta Source，不持久化调用值。报告
 仅失败或中断时清理尚有效的本轮 Assignment；成功不撤销、不重新登录、不续期。沿用精确 Policy 撤销、凭据隔离和 existing suite/Makefile 门禁，新增查询执行与审计事实随隔离 Infra 销毁，不新增产品接口或浏览器专项。验证层级与待回传范围沿[统一结果认定](#统一门禁与结果认定)。
 
 ## Transfer 资格自然到期与旧文件
+
+### v42：扫描准备身份与业务精确刷新
+
+用户已确认本切片仅适配Hosted隔离夹具。现有独立source initializer在原11项源准备功能之上，仅对security-mysql-owner-protection追加meta.scan_task.execute/read，沿其已有正式引擎管理范围完成PG整引擎basic初识别；首次扫描成功后按原正式接口签发addp_online_security内既有7张表的精确read Grants，随后才由consumer等待检索可用。准备身份须在任何扫描／授权写入前核验为同一临时Tenant内与consumer不同的当前User，权限精确为原集合加两项；任一身份或权限不符即停止，不自动补权。
+
+消费User保持原角色与功能权限。初始化后的PG扫描只通过原7张表中的精确Meta item_id请求deep刷新，显式携带对应engine_id，不请求整引擎、不使用父schema范围、不留准备Token到业务Runner或浏览器。精确项必须由consumer自己的正常目录解析后证明名称、table类型及正整数ID；目标不在原7表、身份解析不明或扫描失败时明确停止。MySQL／MongoDB来源扫描和源授权范围保持既有契约，不对其新增数据项授权。MongoDB查询三个PG目标分别刷新并归档逐表真实扫描UUID映射，删除旧的单个目标scan字段；其他单目标扫描UUID保持其实际精确项语义，报告明确PG精确刷新范围，领域唯一v42，浏览器v9与14+task_ids资源计数保持。
+
+门禁沿System夹具Go及现有make test-security-online-runner：覆盖准备／消费角色分离、basic初识别先于7表授权、消费检索在授权后、扫描失败无授权写入、缺少／多余权限停止、精确item请求体、越表拒绝、三个目标均刷新、无消费侧PG整引擎路径和失败／中断清理。CI登记同步当前领域版本与派发／报告断言，不新增workflow、产品API或备用路线。四出口、六计算、Mongo、角色资格生命周期、int/string默认修订、浏览器及完整清理断言全部保留。本切片的门禁和真实Hosted结果分别记录，不自动追加派发或把原v41初始化失败改记通过。
 
 ### v30：资格到期与旧错误投影
 

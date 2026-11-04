@@ -228,13 +228,19 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
     }
 
 
-def wait_for_scan(client: GatewayClient, engine_id: int, deadline: float) -> str:
+def wait_for_scan(client: GatewayClient, engine_id: int, deadline: float, *,
+                  item_id: int | None = None, scan_depth: str = "deep") -> str:
+    if scan_depth not in {"basic", "deep"}:
+        raise SuiteError("Meta scan depth must be basic or deep")
+    request = {"engine_id": engine_id, "scan_depth": scan_depth, "trigger_type": "manual", "force": True}
+    if item_id is not None:
+        request["item_id"] = positive_int(item_id, "Meta exact item id")
     run = _object(
         client.request(
             "POST",
             "/api/v1/meta/scan/run/manual",
             (201,),
-            {"engine_id": engine_id, "scan_depth": "deep", "trigger_type": "manual", "force": True},
+            request,
         ).payload,
         "Meta scan execution",
     )

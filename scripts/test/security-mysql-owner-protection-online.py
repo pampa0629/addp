@@ -81,6 +81,7 @@ CONSTANT_ALGORITHM = "addp.mask.constant/v1"
 SM3_ALGORITHM = "addp.mask.sm3/v1"
 SPATIAL_SOURCE = "spatial_algorithm_source"
 SPATIAL_TARGET = "spatial_algorithm_transfer"
+POSTGRES_READ_TARGETS = (*MONGODB_TRANSFER_TARGETS, SPATIAL_SOURCE, SPATIAL_TARGET, TARGET_TABLE, BANK_TARGET)
 SPATIAL_FIELDS = ["id", "value_a", "value_b", "value_c", "location_point"]
 SOURCE_VALUES = {"1": "13812345678", "2": "张三abc", "3": "abc", "4": None, "5": ""}
 # Independent OpenSSL SM3 vectors, including UTF-8 and the empty string.
@@ -1125,6 +1126,17 @@ def verify_mysql_outage_transfer(client: GatewayClient, engine_id: int, locator:
                                           name, identity, deadline, tasks), "target_empty_before": True}
 
 
+def wait_for_postgres_item_scan(client: GatewayClient, engine_id: int, table: str, deadline: float) -> str:
+    """Refresh only an already identified and precisely granted fixture table."""
+    if table not in POSTGRES_READ_TARGETS:
+        raise SuiteError("PostgreSQL refresh target is outside the original seven read Grants")
+    full_name = TARGET_SCHEMA + "." + table
+    item = find_item(client, engine_id, full_name, "table")
+    if item.get("full_name") != full_name or item.get("item_type") != "table":
+        raise SuiteError("PostgreSQL exact refresh cannot prove its table identity")
+    return wait_for_scan(client, engine_id, deadline, item_id=positive_int(item.get("id"), "PostgreSQL refresh item id"))
+
+
 def verify_mysql_transfer_output(client: GatewayClient, engine_id: int, locator: str,
                                 parent_locator: str, name: str, identity: Mapping[str, object],
                                 deadline: float, tasks: list[int]) -> dict[str, object]:
@@ -1145,7 +1157,7 @@ def verify_mysql_transfer_output(client: GatewayClient, engine_id: int, locator:
             or nonnegative_int(execution.get("records_read"), "Transfer rows read") != 5
             or nonnegative_int(execution.get("records_written"), "Transfer rows written") != 5):
         raise SuiteError("MySQL Transfer execution provenance or counts differ")
-    scan = wait_for_scan(client, engine_id, deadline)
+    scan = wait_for_postgres_item_scan(client, engine_id, TARGET_TABLE, deadline)
     target = find_item(client, engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table")
     columns, rows = preview_rows(client, build_item_locator(engine_id, target))
     evidence = assert_mysql_customer_rows(rows, "Transfer protected output", columns)
@@ -1303,7 +1315,7 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
             develop = assert_spatial_rows(develop_rows(client, engine_id, locator, deadline, query), "develop", expected_by_owner["develop"])
             service = assert_spatial_rows(service_rows(client, service_name, SPATIAL_FIELDS), "service", expected_by_owner["service"])
             _, execution = create_and_run_task(client, transfer_payload("addp_online_security_spatial_" + run_suffix(run_id, "_") + "_" + str(index), locator, build_schema_locator(engine_id, target), SPATIAL_TARGET), deadline, task_ids)
-            wait_for_scan(client, engine_id, deadline)
+            wait_for_postgres_item_scan(client, engine_id, SPATIAL_TARGET, deadline)
             target = find_item(client, engine_id, f"{TARGET_SCHEMA}.{SPATIAL_TARGET}", "table")
             assert_spatial_item(target)
             _, transferred = preview_rows(client, build_item_locator(engine_id, target))
@@ -1504,7 +1516,9 @@ def prepare_mongodb_source(client: GatewayClient, engine_id: int, deadline: floa
 
 
 def prepare_mongodb_transfer_targets(client: GatewayClient, engine_id: int, deadline: float) -> dict[str, object]:
-    scan = wait_for_scan(client, engine_id, deadline)
+    scans = {name: wait_for_postgres_item_scan(client, engine_id, name, deadline) for name in MONGODB_TRANSFER_TARGETS}
+    if len(set(scans.values())) != len(MONGODB_TRANSFER_TARGETS):
+        raise SuiteError("MongoDB query target refreshes require distinct executions for all three exact PG tables")
     items = {name: find_item(client, engine_id, TARGET_SCHEMA + "." + name, "table")
              for name in MONGODB_TRANSFER_TARGETS}
     locators = {name: build_item_locator(engine_id, item) for name, item in items.items()}
@@ -1512,7 +1526,7 @@ def prepare_mongodb_transfer_targets(client: GatewayClient, engine_id: int, dead
         columns, rows = preview_rows(client, locator)
         if columns != list(MONGODB_TRANSFER_FIELDS) or rows:
             raise SuiteError("MongoDB query targets must start with the exact empty fixture structure")
-    return {"scan_execution_id": scan, "parent_locator": build_schema_locator(engine_id, items[MONGODB_TRANSFER_TARGETS[0]]),
+    return {"scan_execution_ids": scans, "parent_locator": build_schema_locator(engine_id, items[MONGODB_TRANSFER_TARGETS[0]]),
             "locators": locators}
 
 
@@ -1728,7 +1742,7 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared:
     return {"source_collection": MONGODB_SOURCE, "component_key": MONGODB_FIELD, "enrollment_id": enrollment_id,
             "unprotected_derived_query": unprotected_derived,
             "unprotected_derived_transfer": unprotected_transfer,
-            "target_scan_execution_id": transfer_targets["scan_execution_id"],
+            "target_scan_execution_ids": transfer_targets["scan_execution_ids"],
             "query_transfer_cleanup": {"created_tasks": 10, "deleted_tasks": 10, "residual_tasks": 0},
             "initial_technical_field_search": prepared["technical_field_search"],
             "component": component,
@@ -2387,7 +2401,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
                 or nonnegative_int(execution.get("records_read"), "bank rows read") != 5
                 or nonnegative_int(execution.get("records_written"), "bank rows written") != 5):
             raise SuiteError("bank-card Transfer execution provenance or counts differ")
-        scan = wait_for_scan(client, target_engine_id, deadline)
+        scan = wait_for_postgres_item_scan(client, target_engine_id, BANK_TARGET, deadline)
         target = find_item(client, target_engine_id, TARGET_SCHEMA + "." + BANK_TARGET, "table")
         columns, rows = preview_rows(client, build_item_locator(target_engine_id, target))
         outputs["transfer"] = {**assert_bank_card_rows(rows, "Transfer bank-card target", columns),
@@ -4471,7 +4485,7 @@ def run_scenario(
         positive_int(governance.get("security_grade_id"), "governance security grade id"),
     )
     source_scan = wait_for_scan(client, source_engine_id, deadline)
-    target_scan = wait_for_scan(client, target_engine_id, deadline)
+    target_scan = wait_for_postgres_item_scan(client, target_engine_id, TARGET_TABLE, deadline)
     enrolling_refusal = exercise_unready_source(client, target_engine_id, positive_int(identity["principal_id"], "ordinary principal"), deadline)
     spatial_algorithms = exercise_spatial_algorithms(client, target_engine_id, run_id, deadline, timeout)
     bank_card_metadata = exercise_bank_card_metadata(
@@ -4553,7 +4567,7 @@ def run_scenario(
             deadline,
             task_ids,
         )
-        target_rescan = wait_for_scan(client, target_engine_id, deadline)
+        target_rescan = wait_for_postgres_item_scan(client, target_engine_id, TARGET_TABLE, deadline)
         current_target = find_item(
             client, target_engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table"
         )
@@ -4580,7 +4594,9 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v41",
+            "schema_version": "addp.security-mysql-owner-protection-online/v42",
+            "postgres_refresh_scope": {"mode": "exact_items", "initializer_depth": "basic",
+                "schema": TARGET_SCHEMA, "tables": list(POSTGRES_READ_TARGETS)},
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -4655,18 +4671,14 @@ def initialize_postgres_read_grants(
 ) -> None:
     """Prepare only the PostgreSQL reads consumed by the protection scenario."""
     validate_user_identity(consumer, tenant_id)
-    targets = [(postgres_engine_id, "schema", TARGET_SCHEMA, name) for name in MONGODB_TRANSFER_TARGETS] + [
-        (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_SOURCE),
-        (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_TARGET),
-        (postgres_engine_id, "schema", TARGET_SCHEMA, TARGET_TABLE),
-        (postgres_engine_id, "schema", TARGET_SCHEMA, BANK_TARGET),
-    ]
-    wait_for_manager_search_ready(consumer, postgres_engine_id, "value_c", time.monotonic() + 60)
-    wait_for_scan(consumer, postgres_engine_id, time.monotonic() + 180)
+    targets = [(postgres_engine_id, "schema", TARGET_SCHEMA, name) for name in POSTGRES_READ_TARGETS]
     try:
-        REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets)
+        REGISTRATION.source_grant_participants(authorizer, consumer, tenant_id, scan_preparation=True)
+        wait_for_scan(authorizer, postgres_engine_id, time.monotonic() + 180, scan_depth="basic")
+        REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, scan_preparation=True)
     except REGISTRATION.RegistrationError as error:
         raise SuiteError(str(error)) from error
+    wait_for_manager_search_ready(consumer, postgres_engine_id, "value_c", time.monotonic() + 60)
 
 
 def initialize_governance(client: GatewayClient, tenant_id: int) -> None:

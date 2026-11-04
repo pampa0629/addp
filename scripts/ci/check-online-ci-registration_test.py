@@ -3181,7 +3181,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/security-mysql-owner-protection-online.py", '"target_empty_before_and_after"', "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", '"query_output_lineage_unresolved"', "must dispatch and validate"),
             ("business/scripts/online-security-owner-fixture.sh", "addp_online_security.mongodb_query_denied", "fixture contract is missing"),
-            ("scripts/test/security-mysql-owner-protection-online.py", '"addp.security-mysql-owner-protection-online/v41"', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", '"addp.security-mysql-owner-protection-online/v42"', "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", 'service_role_membership_expiry = exercise_service_role_membership_expiry(', "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", 'develop_role_membership_expiry = exercise_develop_role_membership_expiry(', "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", 'transfer_role_membership_expiry = exercise_transfer_role_membership_expiry(', "must dispatch and validate"),
@@ -3240,6 +3240,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/security-mysql-owner-protection-online.py", 'def verify_service_string_default_revision(', "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", 'string_revision = verify_service_string_default_revision(', "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", '"string_default_revision"', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", 'def wait_for_postgres_item_scan(', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", '"postgres_refresh_scope"', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", '"target_scan_execution_ids"', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", 'scan_preparation=True', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", 'wait_for_scan(authorizer,', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", 'scan_depth="basic"', "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", '"integer_outside_options"', "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", '"string_outside_options"', "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", '"mixed_partial_invalid"', "must dispatch and validate"),
@@ -3332,8 +3338,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for before, after in (
             ("postgres_engine_id: int,\n", "postgres_engine_id: int, mysql_engine_id: int,\n"),
             ("postgres_engine_id: int,\n", "postgres_engine_id: int, mongodb_engine_id: int,\n"),
-            ("REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets)",
-             "REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, item_term='collection')"),
+            ("REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, scan_preparation=True)",
+             "REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, scan_preparation=True, item_term='collection')"),
         ):
             with self.subTest(reintroduced_source_dependency=after):
                 self.assertIn(before, original)

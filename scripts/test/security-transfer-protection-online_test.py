@@ -319,5 +319,23 @@ class SecurityTransferProtectionOnlineTest(unittest.TestCase):
         cleanup.assert_called_once_with(unittest.mock.ANY, [11, 12])
 
 
+
+
+
+class ScanRequestScopeTest(unittest.TestCase):
+    def test_exact_refresh_and_initial_basic_share_one_manual_route(self):
+        for kwargs, expected in [({"item_id": 42}, {"item_id":42,"scan_depth":"deep"}),
+                                 ({"scan_depth":"basic"}, {"scan_depth":"basic"})]:
+            client=Mock();client.request.side_effect=[ONLINE.Response(201,{"execution_id":"scan"}),ONLINE.Response(200,{"status":"success"})]
+            with self.subTest(kwargs=kwargs):
+                self.assertEqual(ONLINE.wait_for_scan(client,17,ONLINE.time.monotonic()+30,**kwargs),"scan")
+                call=client.request.call_args_list[0]
+                self.assertEqual(call.args,("POST","/api/v1/meta/scan/run/manual",(201,),{"engine_id":17,"trigger_type":"manual","force":True,**expected}))
+    def test_invalid_item_does_not_fall_back_to_engine_root(self):
+        for kwargs in [{"item_id":0},{"item_id":-1},{"item_id":False},{"scan_depth":"unknown"}]:
+            client=Mock()
+            with self.subTest(kwargs=kwargs),self.assertRaises(ONLINE.SuiteError):ONLINE.wait_for_scan(client,17,999,**kwargs)
+            client.request.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()

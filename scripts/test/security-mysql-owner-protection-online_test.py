@@ -484,11 +484,14 @@ class MongoAlgorithmTest(unittest.TestCase):
              patch.object(ONLINE.subprocess, "run", return_value=Mock(returncode=0)), \
              patch.object(ONLINE, "exercise_owner_unavailability", side_effect=lambda client, tenant, probes, deadline:
                  {"outputs": {name: probe() for name, probe in probes.items()}}) as outage, \
-             patch.object(ONLINE, "wait_for_scan", return_value="mongo-scan") as scan:
+             patch.object(ONLINE, "wait_for_scan", side_effect=["mongo-scan","pg-one","pg-two","pg-three"]) as scan:
             prepared = ONLINE.prepare_mongodb_source(client, 29, time.monotonic() + 60)
             targets = ONLINE.prepare_mongodb_transfer_targets(client, 17, time.monotonic() + 60)
             result = ONLINE.exercise_mongodb_algorithms(client, 29, prepared, targets, time.monotonic() + 60, 60)
-            self.assertEqual(scan.call_count, 2)
+            self.assertEqual(scan.call_count, 4)
+            self.assertEqual(set(targets["scan_execution_ids"]),set(ONLINE.MONGODB_TRANSFER_TARGETS))
+            self.assertNotIn("scan_execution_id",targets)
+            self.assertTrue(all(call.kwargs.get("item_id") for call in scan.call_args_list[1:]))
             outage.assert_called_once()
             self.assertEqual(set(outage.call_args.args[2]), {"develop", "develop_query_boundaries", "transfer", "derived_transfer_denied"})
             return result
@@ -579,7 +582,7 @@ class MongoAlgorithmTest(unittest.TestCase):
                          "allow_derived", "denied_writes", "denied_bytes", "unrelated_failure", "generic_denial", "wrong_gate", "reason_shape", "denied_target", "legacy_error", "raw_text"):
             client = MongoClient()
             client.confirmed = True
-            with patch.object(ONLINE, "wait_for_scan", return_value="target-scan"):
+            with patch.object(ONLINE, "wait_for_scan", side_effect=["target-one","target-two","target-three"]):
                 targets = ONLINE.prepare_mongodb_transfer_targets(client, 17, time.monotonic() + 60)
             client.transfer_mutation = mutation
             denied = mutation in {"allow_derived", "denied_writes", "denied_bytes", "unrelated_failure", "generic_denial", "wrong_gate", "reason_shape", "denied_target", "legacy_error", "raw_text"}
@@ -592,7 +595,7 @@ class MongoAlgorithmTest(unittest.TestCase):
     def test_targets_must_start_empty_and_denied_target_must_be_empty_before_execution(self):
         client = MongoClient()
         client.transfer_targets[ONLINE.MONGODB_TRANSFER_TARGETS[2]] = [{"_id": "stale"}]
-        with patch.object(ONLINE, "wait_for_scan", return_value="target-scan"), \
+        with patch.object(ONLINE, "wait_for_scan", side_effect=["target-one","target-two","target-three"]), \
              self.assertRaisesRegex(ONLINE.SuiteError, "exact empty fixture"):
             ONLINE.prepare_mongodb_transfer_targets(client, 17, time.monotonic() + 60)
         target = ONLINE.MONGODB_TRANSFER_TARGETS[2]
@@ -1838,7 +1841,7 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             if path == '/api/v1/system/auth/context':
                 return ONLINE.SUPPORT.Response(200, {"principal": {"type": "user", "id": "8"},
                     "context": {"type": "tenant", "tenant_id": "2"},
-                    "authorization": {"role_assignments": [{"role_key": ONLINE.REGISTRATION.SOURCE_INITIALIZER_ROLE, "permissions": sorted(ONLINE.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)}]}})
+                    "authorization": {"role_assignments": [{"role_key": ONLINE.REGISTRATION.SOURCE_INITIALIZER_ROLE, "permissions": sorted(ONLINE.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {"meta.scan_task.execute", "meta.scan_task.read"})}]}})
             if method == 'GET':
                 fingerprint = path.split('/')[-2]
                 engine = int(path.split('/')[5])
@@ -1877,7 +1880,9 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
         order.attach_mock(self.search_ready, "ready")
         order.attach_mock(self.scan, "scan")
         ONLINE.initialize_postgres_read_grants(authorizer, consumer, 2, 17)
-        self.assertEqual([call[0] for call in order.mock_calls], ["ready", "scan"])
+        self.assertEqual([call[0] for call in order.mock_calls], ["scan", "ready"])
+        self.assertIs(self.scan.call_args.args[0], authorizer)
+        self.assertEqual(self.scan.call_args.kwargs, {"scan_depth":"basic"})
         writes = [call for call in authorizer.request.call_args_list if call.args[0] == "POST"]
         self.assertEqual([call.args[1] for call in self.scan.call_args_list], [17])
         self.assertEqual(len(writes), 7)
@@ -1911,13 +1916,39 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             (17, "schema", "addp_online_security", "bank_card_transfer"),
         })
 
-    def test_initial_checkpoint_failure_stops_before_scan_or_grant_writes(self):
+    def test_initial_scan_failure_stops_before_grants_or_consumer_search(self):
         authorizer, consumer = self.source_clients()
-        self.search_ready.side_effect = ONLINE.SuiteError("Manager startup refused")
-        with self.assertRaisesRegex(ONLINE.SuiteError, "Manager startup refused"):
+        self.scan.side_effect = ONLINE.SuiteError("preparation scan refused")
+        with self.assertRaisesRegex(ONLINE.SuiteError, "preparation scan refused"):
             ONLINE.initialize_postgres_read_grants(authorizer, consumer, 2, 17)
-        self.scan.assert_not_called()
-        authorizer.request.assert_not_called()
+        self.search_ready.assert_not_called()
+        self.assertFalse(any(call.args[0] == "POST" for call in authorizer.request.call_args_list))
+
+    def test_preparer_exact_scan_permissions_are_checked_before_any_scan(self):
+        for mutation in ("missing_execute", "missing_read", "extra_management"):
+            authorizer, consumer = self.source_clients()
+            original = authorizer.request.side_effect
+            def changed(method,path,expected,body=None):
+                response = original(method,path,expected,body)
+                if path == "/api/v1/system/auth/context":
+                    permissions=response.payload["authorization"]["role_assignments"][0]["permissions"]
+                    if mutation == "missing_execute": permissions.remove("meta.scan_task.execute")
+                    elif mutation == "missing_read": permissions.remove("meta.scan_task.read")
+                    else: permissions.append("system.engine.update")
+                return response
+            authorizer.request.side_effect=changed
+            with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.initialize_postgres_read_grants(authorizer,consumer,2,17)
+            self.scan.assert_not_called();self.search_ready.assert_not_called()
+            self.assertFalse(any(call.args[0] == "POST" for call in authorizer.request.call_args_list))
+
+    def test_consumer_search_is_after_all_seven_grants(self):
+        authorizer, consumer = self.source_clients()
+        def ready(*args):
+            self.assertEqual(sum(call.args[0]=="POST" for call in authorizer.request.call_args_list),7)
+            self.assertIs(args[0],consumer)
+        self.search_ready.side_effect=ready
+        ONLINE.initialize_postgres_read_grants(authorizer,consumer,2,17)
 
     def test_initializer_does_not_require_mysql_or_mongodb_authorization_inputs(self):
         environment = {
@@ -2202,7 +2233,7 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
         def transfer(*args):
             args[3].append(51)
             return 51, execution
-        with (patch.object(ONLINE, "find_item", return_value=self.source_item()),
+        with (patch.object(ONLINE, "find_item", side_effect=lambda client, engine, name, kind: self.source_item() if engine == 23 else dict(self.source_item(), id=302, full_name=name, item_type=kind)),
               patch.object(ONLINE, "build_item_locator", side_effect=lambda engine, item: "locator-" + str(engine)),
               patch.object(ONLINE, "build_schema_locator", return_value="parent-locator"),
               patch.object(ONLINE, "preview_rows", side_effect=[(["id"], []), (ONLINE.BANK_FIELDS, self.rows(False)),
@@ -4402,6 +4433,57 @@ class DefaultExportProtectionTest(unittest.TestCase):
         self.assertEqual(backend.policy["state"],"active")
         self.assertFalse(any(method=="DELETE" for method,_,_,_ in backend.events))
 
+
+
+
+
+class PostgresExactRefreshContractTest(unittest.TestCase):
+    def test_three_mongodb_targets_cannot_share_a_scan_or_continue_after_failure(self):
+        for replies, expected_calls, message in [(["same", "same", "same"],3,"distinct executions"),
+                (["one", ONLINE.SuiteError("exact scan failed")],2,"exact scan failed")]:
+            client=MongoClient()
+            with patch.object(ONLINE,"wait_for_scan",side_effect=replies) as scan, self.subTest(message=message):
+                with self.assertRaisesRegex(ONLINE.SuiteError,message):
+                    ONLINE.prepare_mongodb_transfer_targets(client,17,time.monotonic()+60)
+                self.assertEqual(scan.call_count,expected_calls)
+                self.assertTrue(all(call.kwargs.get("item_id") for call in scan.call_args_list))
+
+    def test_original_seven_tables_only_and_precise_item_request(self):
+        client = Mock()
+        for table in ONLINE.POSTGRES_READ_TARGETS:
+            item = {"id": 301, "full_name": ONLINE.TARGET_SCHEMA + "." + table, "item_type": "table"}
+            with patch.object(ONLINE, "find_item", return_value=item) as find, patch.object(ONLINE, "wait_for_scan", return_value="execution") as scan:
+                self.assertEqual(ONLINE.wait_for_postgres_item_scan(client, 17, table, 999), "execution")
+            find.assert_called_once_with(client, 17, ONLINE.TARGET_SCHEMA + "." + table, "table")
+            scan.assert_called_once_with(client, 17, 999, item_id=301)
+        self.assertEqual(set(ONLINE.POSTGRES_READ_TARGETS), set(ONLINE.MONGODB_TRANSFER_TARGETS) | {ONLINE.SPATIAL_SOURCE, ONLINE.SPATIAL_TARGET, ONLINE.TARGET_TABLE, ONLINE.BANK_TARGET})
+
+    def test_unapproved_or_unresolved_item_never_scans_parent(self):
+        client = Mock()
+        for item in [{"id":0,"full_name":ONLINE.TARGET_SCHEMA+"."+ONLINE.TARGET_TABLE,"item_type":"table"},
+                     {"id":1,"full_name":"other.table","item_type":"table"},
+                     {"id":1,"full_name":ONLINE.TARGET_SCHEMA+"."+ONLINE.TARGET_TABLE,"item_type":"node"}]:
+            with patch.object(ONLINE,"find_item",return_value=item), patch.object(ONLINE,"wait_for_scan") as scan:
+                with self.assertRaises(ONLINE.SuiteError): ONLINE.wait_for_postgres_item_scan(client,17,ONLINE.TARGET_TABLE,999)
+                scan.assert_not_called()
+        with patch.object(ONLINE,"find_item") as find, patch.object(ONLINE,"wait_for_scan") as scan:
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.wait_for_postgres_item_scan(client,17,"not_granted",999)
+            find.assert_not_called(); scan.assert_not_called()
+
+    def test_business_postgres_scan_sites_use_the_exact_helper(self):
+        import ast
+        tree=ast.parse(SCRIPT.read_text());sites=[]
+        for fn in tree.body:
+            if not isinstance(fn,ast.FunctionDef):continue
+            for call in ast.walk(fn):
+                if isinstance(call,ast.Call) and isinstance(call.func,ast.Name) and call.func.id=="wait_for_scan":sites.append((fn.name,call))
+        self.assertEqual({name for name,_ in sites},{"wait_for_postgres_item_scan","prepare_mongodb_source","run_scenario","initialize_postgres_read_grants"})
+        for name,call in sites:
+            if name=="run_scenario":self.assertEqual(ast.unparse(call.args[1]),"source_engine_id")
+            if name=="initialize_postgres_read_grants":
+                self.assertEqual(ast.unparse(call.args[0]),"authorizer")
+                self.assertEqual({kw.arg:ast.literal_eval(kw.value) for kw in call.keywords},{"scan_depth":"basic"})
+            if name=="wait_for_postgres_item_scan":self.assertEqual({kw.arg for kw in call.keywords},{"item_id"})
 
 if __name__ == "__main__":
     unittest.main()

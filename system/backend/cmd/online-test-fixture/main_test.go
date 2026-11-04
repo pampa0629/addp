@@ -1500,7 +1500,7 @@ func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 	if !slices.Equal(suiteSourceInitializerPermissions("ftp-consumer-flow"), wantIssuer) || len(sourceInitializerPermissions) != 11 {
 		t.Fatal("FTP-specific lifecycle permissions must not mutate the shared initializer")
 	}
-	for _, suite := range []string{"highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access"} {
+	for _, suite := range []string{"highgo-consumer-flow", "security-plaintext-access"} {
 		if !slices.Equal(suiteSourceInitializerPermissions(suite), sourceInitializerPermissions) {
 			t.Fatalf("FTP issuer permissions leaked into %s", suite)
 		}
@@ -1736,5 +1736,29 @@ func TestRasterCapacitySeparatesBoundedMetadataIssuerFromConsumer(t *testing.T) 
 		if slices.Contains(permissions, permission) {
 			t.Fatalf("capacity consumer gained issuer permission %s", permission)
 		}
+	}
+}
+
+func TestSecurityFixtureScanPreparationKeepsConsumerUnprivileged(t *testing.T) {
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	got := suiteSourceInitializerPermissions("security-mysql-owner-protection")
+	if !slices.Equal(got, want) || len(sourceInitializerPermissions) != 11 {
+		t.Fatalf("Security preparation must add only scan functions: %v", got)
+	}
+	consumer, err := suitePermissions("security-mysql-owner-protection")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"system.engine_access_delegation.create", "system.engine_access_grant.create", "system.engine.create", "system.engine.update"} {
+		if slices.Contains(consumer, key) {
+			t.Fatalf("consumer received preparation authority: %s", key)
+		}
+	}
+	got[0] = "mutated"
+	if !slices.Equal(suiteSourceInitializerPermissions("security-mysql-owner-protection"), want) {
+		t.Fatal("shared initializer mutated")
+	}
+	if !slices.Equal(suiteSourceInitializerPermissions("security-plaintext-access"), sourceInitializerPermissions) {
+		t.Fatal("scan preparation leaked to plaintext suite")
 	}
 }
