@@ -67,28 +67,11 @@
 
 ## 六、与瓦片缓存结果的关系
 
-快显能力 API 查询 `vector_tile_cache` 后返回当前推荐用于快显的瓦片缓存结果 ID。
-
-推荐结果选择规则：
-
-1. 选择 `status=ready` 且适用于快显的最新产物。
-2. 如果没有可用产物但可优化，预览页优先跳转矢量物化视图页面创建任务。
-3. 如果需要稳定低层级或大范围浏览，预览页或矢量物化视图结果列表跳转瓦片缓存页面创建任务。
+当前推荐的瓦片缓存结果 ID 属于快显能力响应，不保存在偏好表；结果选择统一见[渲染源选择](../quick-view/共用契约.md#渲染源选择)，优化与瓦片生成的跳转条件见[矢量物化视图任务和结果](../quick-view/矢量快显与物化视图.md#矢量物化视图任务和结果)。
 
 ## 七、与任务和 execution 的关系
 
-瓦片缓存生成必须先创建 `manager.task_definitions` 中 `task_type=vector_tile_cache_generation` 的定义，再执行。
-
-执行过程：
-
-```text
-创建 vector_tile_cache_task
-  -> 执行 vector_tile_cache_generation
-  -> 写入 common.task_executions
-  -> 创建或更新 vector_tile_cache
-```
-
-`preview_state` 不保存执行历史，也不保存当前快显能力状态和推荐结果。
+`preview_state` 不保存任务定义、执行历史、当前快显能力或推荐结果。瓦片生成的定义与执行入口统一见[瓦片缓存任务和结果](../quick-view/矢量快显与物化视图.md#瓦片缓存任务和结果)；语义身份、覆盖确认及并发执行约束见[受管快显任务语义身份](../quick-view/共用契约.md#受管快显任务语义身份)。
 
 ## 八、预览交互状态
 
