@@ -318,3 +318,38 @@ func TestRasterTilesPublicValidationRequiresWorkflowReference(t *testing.T) {
 		})
 	}
 }
+
+func TestScalarPublicationRequiresCompletedNodeReceipt(t *testing.T) {
+	for _, tc := range []struct {
+		name, status, raw string
+		order             []string
+		want              bool
+	}{
+		{"committed_before_later_failure", "failed", `{"uploaded_files":1}`, []string{"save", "fail"}, true},
+		{"failing_node_partial_is_not_commit", "failed", `{"uploaded_files":1}`, []string{"save"}, false},
+		{"missing_order_is_unknown", "failed", `{"uploaded_files":1}`, nil, false},
+		{"rolled_back_receipt_absent", "failed", "", []string{"save", "fail"}, false},
+		{"successful_task_needs_node_receipt", "success", "", nil, false},
+		{"successful_commit", "success", `{"uploaded_files":1}`, nil, true},
+		{"null_is_not_publication", "success", "null", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &WorkflowResponse{Status: tc.status, AllResults: map[string]string{}, RuntimeStatus: map[string]interface{}{"task_order": tc.order}}
+			if tc.raw != "" {
+				resp.AllResults["save"] = tc.raw
+			}
+			targets, err := resolveWorkflowRasterTileTargets([]WorkflowProducedTarget{{TaskID: "save", Locator: "confirmed-target"}}, resp)
+			if (err != nil) != (tc.status == "success" && !tc.want) || (len(targets) == 1) != tc.want {
+				t.Fatalf("targets=%v error=%v want committed=%v", targets, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestInvalidBatchDoesNotDiscardEarlierIndependentCommit(t *testing.T) {
+	resp := &WorkflowResponse{Status: "failed", AllResults: map[string]string{"save": `{"uploaded_files":1}`, "batch": `{"invalid":true}`}, RuntimeStatus: map[string]interface{}{"task_order": []string{"save", "batch"}}}
+	targets, err := resolveWorkflowRasterTileTargets([]WorkflowProducedTarget{{TaskID: "save", Locator: "committed"}, {TaskID: "batch", BatchScope: true}}, resp)
+	if err == nil || len(targets) != 1 || targets[0].Locator != "committed" {
+		t.Fatalf("targets=%v error=%v", targets, err)
+	}
+}

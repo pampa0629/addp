@@ -241,10 +241,10 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 	}
 	applyWorkflowRuntimeStatus(resp, runtimeStatus)
 	actualTargets, targetErr := resolveWorkflowRasterTileTargets(producedTargets, resp)
-	if targetErr != nil {
-		return nil, targetErr
-	}
 	resp.ProducedTargets = actualTargets
+	if targetErr != nil {
+		return resp, targetErr
+	}
 	return resp, err
 }
 

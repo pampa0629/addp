@@ -21,7 +21,7 @@ import (
 
 // CollectExecutionLineage immediately consumes one persisted execution lineage fact.
 // @Summary 采集单次执行血缘 | Collect execution lineage
-// @Description 采集指定成功执行中已持久化的 lineage_facts；重复调用是幂等的 | Collect persisted lineage_facts from one successful execution; repeated calls are idempotent
+// @Description 采集指定终态执行中已确认提交的 lineage_facts；整体失败不撤销已提交产物；重复调用幂等 | Collect confirmed commit lineage_facts from a terminal execution; overall failure preserves committed outputs; repeated calls are idempotent
 // @Tags Meta Lineage
 // @Produce json
 // @Param execution_id path string true "执行 ID | Execution ID"

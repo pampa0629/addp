@@ -267,7 +267,7 @@
 | lineage | 数据血缘 | 数据项之间的来源、派生和服务依赖关系的关系视图。 | 归 Meta 管理关系事实和查询投影；不是新的数据资产实体或独立图数据库。完整边界见 [数据血缘能力规范](../spec/addp数据血缘能力规范.md)。 |
 | lineage observation | 血缘关系证据 | Meta 根据执行事实或服务发布事实解析出的不可变关系证据。 | 保存来源快照、采集方式、执行 / 发布引用和时间；证据清理后仍可审计。 |
 | lineage projection | 血缘当前投影 | 从关系证据维护的当前有效上游、下游和服务依赖关系。 | 支持 replace、append、upsert 等写入语义和时态查询；不是事实源。用户图按当前元数据查看权逐端点裁决；可仅告知存在因权限隐藏的关系，不返回隐藏主体身份、数量或证据，也不穿过隐藏节点继续遍历。 |
-| lineage facts | 血缘执行事实 | 真实读写 owner 在统一 execution 结果中写入的版本化输入、输出和操作事实。 | 使用 ResourceLocator 和 item fingerprint；Runtime 不构造 ADDP 资源身份。 |
+| lineage facts | 血缘执行事实 | 真实读写 owner 在统一 execution 结果中写入的版本化输入、输出和操作事实。 | 使用 ResourceLocator 和 item fingerprint；以已确认提交的持久化单元为边界，后续节点失败不撤销已提交事实，只有确认原子事务整体回滚的写入才排除；Runtime 不构造 ADDP 资源身份。 |
 | lineage collector | 血缘采集器 | Meta 消费 owner execution / publication fact，解析资源身份并写入关系证据和当前投影的单一路径。 | 立即通知与周期漏采 / 重试都调用同一个 `LineageService.CollectExecution`；不反向解析模块私有 metadata。 |
 | published service | 已发布服务版本 | Service 一次通过验证并对外生效的不可变服务发布主体。 | 身份为 `service_id + published_revision`；不是 data item，但可作为血缘图主体。 |
 | query service definition version | 查询服务定义并发版本 | Service 查询服务聚合根的正整数 `version`，用于编辑、启停、删除、刷新快照和指标来源重绑。 | 创建为 1；同一事务校验并递增，跨租户不可探测；不依赖可执行快照，也不是查询契约版本。 |

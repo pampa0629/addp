@@ -167,7 +167,7 @@ Develop 将该算子显示为“矢量切片”，位于“矢量处理 / 成果
 5. 访问计划只在执行期存在，可以携带临时连接信息；用户任务定义只保存 `locator`、`target_parent_locator + target_name` 和公开业务参数。
 6. 调用方必须同时生成不含密钥的 audit plan，用于领域结果或统一执行记录；不得把运行时访问计划原文长期保存。
 7. Manager infra 目标和 Develop 业务目标分别在调用方领域边界内解析，再进入同一个访问计划构造器。Develop 的源和目标存储必须是当前租户的业务 Engine Instance，不得选择 `tenant_id=nil` 的平台 infra 存储；Manager 可按私有 artifact 生命周期显式构造 infra 目标。访问计划不表达 owner module、artifact/data item 归属或 Meta 扫描策略。
-8. Runtime 完成写入后只返回转换结果事实。Manager 负责登记私有 artifact；Develop 负责记录 `produced_targets`，在统一 execution 成功结果中写入 `lineage_facts`，随后立即通知 Meta 采集并提交 Meta scan。工作流血缘根据本次冻结的实际参数和 `$ref` 数据流按产出节点生成，输入、输出端口分别绑定读取节点、产出节点；独立分支不能共享来源，单纯 `depends_on` 不生成来源边。Meta scan 是异步的，目标 Item 尚未落库时由周期 collector 负责重试；用户 Item refresh 不承担血缘触发职责。
+8. Runtime 完成写入后只返回转换结果事实。Manager 负责登记私有 artifact；Develop 负责记录 `produced_targets`，在统一 execution 终态结果中为已确认提交的产物写入 `lineage_facts`，随后立即通知 Meta 采集并提交 Meta scan。工作流血缘根据本次冻结的实际参数和 `$ref` 数据流按产出节点生成，输入、输出端口分别绑定读取节点、产出节点；独立分支不能共享来源，单纯 `depends_on` 不生成来源边。Meta scan 是异步的，目标 Item 尚未落库时由周期 collector 负责重试；用户 Item refresh 不承担血缘触发职责。
 9. 每个 Runtime Operator Spec 必须显式声明 `effects`；允许值与效果含义统一见[算子元数据规范](算子元数据与实现.md#算子描述结构)。
 10. Develop 在执行前按整个 DAG 汇总效果，并结合源/目标 locator 和当前 User AuthContext 创建 Execution Authorization。客户端提交的效果、Runtime 返回值或 Engine 创建人均不能替代服务端汇总结果。
 11. Workflow Access Plan 只承载本次运行所需的临时访问参数；其允许效果不得超过 Execution Authorization。Runtime 收到计划后必须按算子声明再次拒绝越权效果，不得把连接信息、访问计划或 Token写入运行时状态、统一 execution 或用户任务定义。
@@ -194,7 +194,7 @@ Python 实现的 Workflow Runtime 应共享 `common-python` 中的协议执行�
 
 跨任务输出只允许声明可持久定位、可序列化且能在任务边界外重新解析的稳定结果，例如保存算子生成的 ResourceLocator。DataFrame、GeoDataFrame、Spark DataFrame、SuperMap 内存句柄和其他 Runtime 私有对象只能通过当前工作流内部连线传递，不得进入 TaskProvider 输出契约。每个可编排输出必须使用稳定输出名而不是数组下标；Develop execution 结果应按产生节点返回命名输出，并继续保留 `produced_targets` 作为产物摘要。资源输出的 `resource` 包含 `locator`、`type` 和可选 `write_mode`，输出 Schema 必须声明该已有写入事实以供血缘消费；模式为 `create/replace/append/upsert`，栅格访问计划仅允许 `create/replace`。
 
-GeoPython 通用文件保存的公开 `mode=fail` 表示目标已存在时失败，成功保存后的文件稳定输出和血缘事实必须记录标准 `write_mode=create`。该映射以已确认的 `file` 目标为边界，不改变运行时原有拒绝覆盖行为，不将未知写入模式或表目标推断为 `create`。多个保存节点分别保留各自写入事实；Meta 继续对缺少已知模式的 derive 只保存观察、不投影当前关系。
+GeoPython 通用文件保存的公开 `mode=fail` 表示目标已存在时失败，成功保存后的文件稳定输出和血缘事实必须记录标准 `write_mode=create`。该映射以已确认的 `file` 目标为边界，不改变运行时原有拒绝覆盖行为，不将未知写入模式或表目标推断为 `create`。多个保存节点分别保留各自已确认提交的写入事实，后续节点失败不丢弃前面的产物血缘；批量失败只包含逐项发布清单已确认的子产物。整个工作流保持真实失败终态，只有确认原子事务整体回滚的写入才不记录。血缘 inputs 只包含这些产物实际引用的来源。Meta 继续对缺少已知模式的 derive 只保存观察、不投影当前关系。
 
 Orchestrator 为每个执行输入只允许三种互斥来源：使用任务保存值、设置 Step 固定覆盖值、引用显式 `depends_on` 上游 Step 的已声明稳定输出。不得继续让用户手写未校验的结果路径或把整个上游原始响应作为下游输入。
 

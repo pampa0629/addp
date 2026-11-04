@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -99,11 +100,14 @@ func decodeRasterTileFacts(raw []byte, destination interface{}) error {
 
 func resolveWorkflowRasterTileTargets(planned []WorkflowProducedTarget, resp *WorkflowResponse) ([]WorkflowProducedTarget, error) {
 	actual := make([]WorkflowProducedTarget, 0, len(planned))
+	var confirmationErrors []error
 	for _, target := range planned {
 		raw, exists := resp.AllResults[target.TaskID]
 		if !target.BatchScope {
-			if resp.Status == "success" || exists {
+			if exists && workflowScalarTargetCommitted(resp, target.TaskID, raw) {
 				actual = append(actual, target)
+			} else if resp.Status == "success" {
+				confirmationErrors = append(confirmationErrors, fmt.Errorf("workflow publication receipt is missing or invalid for node %s", target.TaskID))
 			}
 			continue
 		}
@@ -112,11 +116,28 @@ func resolveWorkflowRasterTileTargets(planned []WorkflowProducedTarget, resp *Wo
 		}
 		children, err := workflowRasterTileTargets(target, raw, resp.Status == "success")
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", commoni18n.ForLanguage("", developi18n.MsgRasterTileManifestInvalid), err)
+			confirmationErrors = append(confirmationErrors, fmt.Errorf("%s: %w", commoni18n.ForLanguage("", developi18n.MsgRasterTileManifestInvalid), err))
+			continue
 		}
 		actual = append(actual, children...)
 	}
-	return actual, nil
+	return actual, errors.Join(confirmationErrors...)
+}
+
+// A failed node may expose a partial result. Only preceding completed nodes
+// prove scalar commits; the failing batch's items use their publication manifest.
+func workflowScalarTargetCommitted(resp *WorkflowResponse, taskID, raw string) bool {
+	if !json.Valid([]byte(raw)) || string(bytes.TrimSpace([]byte(raw))) == "null" {
+		return false
+	}
+	if resp.Status == "success" {
+		return true
+	}
+	order, ok := resp.RuntimeStatus["task_order"].([]string)
+	if !ok || len(order) < 2 || order[len(order)-1] == taskID {
+		return false
+	}
+	return slices.Contains(order[:len(order)-1], taskID)
 }
 
 func workflowRasterTileTargets(scope WorkflowProducedTarget, raw string, success bool) ([]WorkflowProducedTarget, error) {

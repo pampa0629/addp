@@ -5,7 +5,8 @@ import (
 )
 
 // LineageFacts 是执行 owner 写入 common.task_executions.metadata 的统一血缘事实。
-// 事实只在执行成功后由 Meta collector 解析并投影为当前关系。
+// 事实只包含已确认提交的持久化效果，任务整体失败不撤销这些提交。
+// Owner 将完整事实与真实终态原子落库后，Meta collector 再解析并投影。
 type LineageFacts struct {
 	SchemaVersion      string               `json:"schema_version"`
 	Inputs             []LineageResourceRef `json:"inputs"`

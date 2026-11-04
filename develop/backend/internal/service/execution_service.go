@@ -83,6 +83,10 @@ func (s *ExecutionService) Execute(ctx context.Context, item *commonExecution.Ta
 		// Notebook dispatch remains fail-closed until its queued execution permit is confirmed.
 		return s.fail(ctx, item, lease, startedAt, "authorization_unavailable", fmt.Errorf("Notebook queued execution permit is unavailable"))
 	}
+	return s.completeWorkflowExecution(ctx, item, lease, task, result, outputs, message, runCtx.Err() == context.DeadlineExceeded)
+}
+
+func (s *ExecutionService) completeWorkflowExecution(ctx context.Context, item *commonExecution.TaskExecution, lease commonExecution.Lease, task *models.DevTask, result, outputs commonModels.JSONMap, message string, timedOut bool) error {
 	metadata := queryExecutionMetadata(result)
 	for key, value := range item.Metadata {
 		metadata[key] = value
@@ -95,12 +99,15 @@ func (s *ExecutionService) Execute(ctx context.Context, item *commonExecution.Ta
 	if message != "" {
 		status = commonExecution.ExecutionStatusFailed
 		suffix := "execution_failed"
-		if runCtx.Err() == context.DeadlineExceeded {
+		if timedOut {
 			status = commonExecution.ExecutionStatusTimeout
 			suffix = "execution_timeout"
 		}
 		fields["error_details"] = executionFailureDetails(item.TaskType, suffix, message, result, workflowDefinition(task))
-	} else if facts := developLineageFacts(task, outputs); facts != nil {
+	}
+	// Outputs have already been restricted to confirmed publication units. A
+	// later node's failure does not roll back an earlier independent commit.
+	if facts := developLineageFacts(task, outputs); facts != nil {
 		metadata["lineage_facts"] = facts
 	}
 	if err := s.queue.CompleteWithLease(ctx, item, lease, status, time.Now().UTC(), fields); err != nil {

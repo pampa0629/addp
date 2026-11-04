@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,7 +30,7 @@ func NewLineageService(db *gorm.DB, engineCatalog lineageEngineCatalog) *Lineage
 	return &LineageService{db: db, engineCatalog: engineCatalog}
 }
 
-// RunCollector periodically consumes successful executions that declare lineage facts.
+// RunCollector consumes terminal executions with owner-confirmed commit facts.
 func (s *LineageService) RunCollector(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		interval = time.Minute
@@ -57,7 +58,7 @@ func (s *LineageService) CollectPendingExecutions(ctx context.Context, batchSize
 	}
 	eligible := func() *gorm.DB {
 		return s.db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).
-			Where("status = ? AND metadata IS NOT NULL AND metadata ? 'lineage_facts'", commonExecution.ExecutionStatusSuccess).
+			Where("status IN ? AND metadata IS NOT NULL AND metadata ? 'lineage_facts'", lineageTerminalStatuses()).
 			// CollectExecution persists all observations and projections atomically;
 			// an existing observation therefore proves consumption of that execution.
 			Where(`NOT EXISTS (SELECT 1 FROM meta.lineage_observations AS observation
@@ -111,7 +112,12 @@ func (s *LineageService) CollectPendingExecutions(ctx context.Context, batchSize
 
 type LineageCollectionResult = models.LineageCollectionResult
 
-// CollectExecution consumes only successful executions with top-level metadata.lineage_facts.
+func lineageTerminalStatuses() []string {
+	return []string{commonExecution.ExecutionStatusSuccess, commonExecution.ExecutionStatusFailed,
+		commonExecution.ExecutionStatusTimeout, commonExecution.ExecutionStatusCancelled}
+}
+
+// CollectExecution consumes immutable, confirmed commits from terminal owners.
 func (s *LineageService) CollectExecution(ctx context.Context, tenantID uint, executionID string) (LineageCollectionResult, error) {
 	var execution commonExecution.TaskExecution
 	if err := s.db.WithContext(ctx).
@@ -119,8 +125,8 @@ func (s *LineageService) CollectExecution(ctx context.Context, tenantID uint, ex
 		First(&execution).Error; err != nil {
 		return LineageCollectionResult{}, err
 	}
-	if execution.Status != commonExecution.ExecutionStatusSuccess {
-		return LineageCollectionResult{}, fmt.Errorf("execution %s is not successful", executionID)
+	if !slices.Contains(lineageTerminalStatuses(), execution.Status) {
+		return LineageCollectionResult{}, fmt.Errorf("execution %s is not terminal", executionID)
 	}
 	facts, err := decodeLineageFacts(execution.Metadata)
 	if err != nil {

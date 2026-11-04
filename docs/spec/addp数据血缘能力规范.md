@@ -222,17 +222,21 @@ owner execution/publication fact
   -> current projection
 ```
 
-正式关系只在成功完成的持久化效果可确认后建立。部分提交、失败和取消必须由 owner 提供明确提交事实，否则只记录诊断，不建立成功关系。
+正式关系以 owner 已确认提交的持久化单元为边界，不以整个任务是否成功为边界。工作流先将 a 保存为 b、后续生成 c 失败时，已提交的 a → b 仍必须记录；c 没有提交则不新增其关系，也不关闭其旧关系。已提交的 replace 按现有规则更新该目标的当前来源，历史证据保留。只有经真实原子事务确认整体回滚的写入才排除；不能从任务 failed、异常、超时或取消推断回滚。提交结果未知、未执行及回滚产物仅保留诊断，不进入正式血缘。
+
+Runtime 必须区分已完成节点结果与失败节点的部分结果。标量持久化节点只有正常返回已提交结果才能确认；失败节点即使有部分返回值，也不能把它整体认定为提交。批量保存沿既有逐项发布清单，只确认清单中已提交的子产物，publication=unknown 的失败项不包含在确认集合中。Runtime 的 task_order 包含实际尝试节点，failed/error 快照的末项是失败节点，不是完成证明。Develop 使用冻结 DAG 和已确认产物集合生成单一 lineage_facts，inputs 仅保留 operations 实际引用的来源；纯 depends_on、未执行节点和无关输入不参与解析。outputs 与 produced_targets 使用同一确认集合。
+
+任务终态仍如实记录 failed、timeout 或 cancelled；已提交事实不授予下游绕过失败继续执行的资格。持有效 lease 的 owner 将终态和完整、不可追加的 lineage_facts 原子落库后通知 Meta。进程失联、缺少可信回执或终态落库失败不补造事实，也不提供跨系统原子事务或崩溃恢复承诺。
 
 执行事实的采集触发遵循单一处理路径：
 
-1. owner 必须先把成功状态和 `lineage_facts` 原子地持久化到统一 execution，再通知 Meta 采集指定 execution。
+1. owner 必须先把真实终态和仅含已确认提交效果的 `lineage_facts` 原子地持久化到统一 execution，再通知 Meta 采集指定 execution。
 2. Develop 通过 `POST /api/v1/meta/lineage/executions/{execution_id}/collect` 通知；该入口只接受 `addp-develop` Service Principal 和 `meta.lineage.create` Permission。该 Permission 必须在内置 `tenant.develop_runtime` Role 的发布清单及数据库迁移中同时声明；不能依赖管理员身份或周期补采掩盖即时通知权限缺失。
 3. 立即通知与周期 collector 必须共同调用 `LineageService.CollectExecution`，不得分别实现两套解析或投影逻辑。
 4. 通知失败不得把已成功的数据执行改为失败；Meta 周期 collector 负责漏采和失败重试。
 5. Item 元数据刷新只更新资源元数据，不触发血缘采集；血缘事实的触发依据始终是 owner execution，而不是用户刷新行为。
 
-周期 collector 的批量参数只限制单次数据库分页大小，不限制一轮采集总量。每轮先冻结成功且声明 `lineage_facts`、尚无 observation 的 execution ID 上界，再按 `created_at ASC, id ASC` 使用键集游标遍历该上界内的待采集执行；禁止反复只取最早一页，也不使用 OFFSET 分页。单个执行的全部 observation 与投影在同一事务内保存，因此周期查询按 Tenant 和 execution ID 排除已有 observation 的执行，不逐轮重放已完成历史，也不新增完成标记或第二套采集状态。未能解析 DataItem 时不写 observation，下一轮从头重试，确保目标延迟扫描后能够补采；轮内新增执行或已越过游标后才成功的执行由下一轮覆盖。单条执行采集失败应汇总报告并继续处理后续执行，数据库分页失败或上下文取消则终止本轮。立即通知的重复调用仍通过同一幂等路径处理，保持旧关系关闭及字段快照时态，不得重新激活已被后续写入替代的关系。
+周期 collector 的批量参数只限制单次数据库分页大小，不限制一轮采集总量。每轮先冻结已终态且声明 `lineage_facts`、尚无 observation 的 execution ID 上界，再按 `created_at ASC, id ASC` 使用键集游标遍历该上界内的待采集执行；禁止反复只取最早一页，也不使用 OFFSET 分页。单个执行的全部 observation 与投影在同一事务内保存，因此周期查询按 Tenant 和 execution ID 排除已有 observation 的执行，不逐轮重放已完成历史，也不新增完成标记或第二套采集状态。未能解析 DataItem 时不写 observation，下一轮从头重试，确保目标延迟扫描后能够补采；轮内新增执行或已越过游标后才终态的执行由下一轮覆盖。单条执行采集失败应汇总报告并继续处理后续执行，数据库分页失败或上下文取消则终止本轮。立即通知的重复调用仍通过同一幂等路径处理，保持旧关系关闭及字段快照时态，不得重新激活已被后续写入替代的关系。
 
 上述契约由 `make test-meta-postgres` 覆盖超过 500 条执行、同创建时间的分页边界、目标延迟扫描、重复采集幂等性、单条错误隔离及轮内新增执行的下一轮采集；沿用已有 Release/T2 的 Meta PostgreSQL 门禁，不新增部署依赖或公开 API。
 
@@ -261,7 +265,7 @@ PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派�
 - `lineage_facts` 保持 `addp.lineage-facts/v1`；资源引用的 `schema_snapshot` 使用 `{hash, fields}`，fields 来自同一次真实读取和目标写入结构，hash 复用 Common 的 `TableSchemaSnapshotHash`。不回查当前结构补造执行快照。
 - 查询源冻结 Provider 的原始来源结构及精确路径绑定，查询结果列不能充当原始来源快照。普通关系列的可选 path 按 Provider 原样冻结，省略时不补造单段路径；嵌套字段只按快照中的唯一字段名引用，完整 path 参与结构哈希，点号不会被 collector 或查询 API 再次拆分。查询保护准备同时返回实际受转换影响的结果字段名，与同次保护规则绑定；这些字段经过别名及后续 field mapping 后仍须记为 derived，抑制列不产生映射。
 - operation 增加 `field_lineage_status=complete|unavailable` 和 `field_mappings`。每条映射明确 `input_port`、`output_port`、`source_field`、`target_field` 和 `transformation=direct|derived|generated`。generated 没有输入端口或源字段，只证明常量/默认值生成，不生成虚假的字段来源边。非空默认值会改变源值语义，记为 derived；数据保护准备阶段同时返回实际受转换影响的字段名，脱敏字段记为 derived，受抑制字段不产生目标映射；按运行时顺序组合多步映射与覆盖，透传字段来自实际源结构。
-- 成功执行才采集；字段快照与映射必须校验哈希、端口和字段存在性。无法证明时记录 unavailable，不按同名字段猜测。缺少字段契约的其他 owner 事实也属于 unavailable，而不是 complete 或无依赖。
+- 仅采集 owner 已确认提交且与真实终态一起冻结的效果；字段快照与映射必须校验哈希、端口和字段存在性。无法证明时记录 unavailable，不按同名字段猜测。缺少字段契约的其他 owner 事实也属于 unavailable，而不是 complete 或无依赖。
 - `lineage_item_relations` 统一存储 item 和 field 两种粒度，field 行保存两端字段名与结构快照 hash；唯一键包含两端字段身份。observation 保存对应快照和转换语义。字段不是新增 DataItem，不新增第二套 collector。
 - replace 在一次目标更新中关闭旧字段入边，即使两端仍是同两张表、字段映射已经改变；append/upsert 合并。未知写入模式只保存证据。迟到执行与重复采集不能恢复已关闭关系。字段快照不匹配时禁止跨版本串接；当前结构变化后旧快照关系标记 stale，重新扫描不重新激活。
 - 已验证且包含完整字段映射的执行事实可以先于 deep 扫描形成字段关系。Meta 当前表结构没有声明 `fields` 时表示尚未采集，不能据此判定执行结构快照已经过时；查询仍须指定由执行证据证明的结构 hash，不把执行快照写成 Meta 当前结构，也不隐式扫描源。当前字段已声明但为空、无效或与执行快照不一致时保留 stale 判定。已有 stale 投影在当前结构未知时不能由追加观察恢复；旧执行重放及重新扫描不能恢复 stale／closed 关系。新的执行继续沿原 replace／append／upsert 生命周期处理。展示的是对应执行所证明的结构与来源，不保证未再次采集的实时源结构没有变化。当前用户的端点可见性、撤权及历史查询过滤均保持原规则。
@@ -360,7 +364,7 @@ GET /api/v1/meta/lineage/graph
 
 ### 7.1 执行事实采集 API
 
-真实读写 owner 在成功 execution 和 `lineage_facts` 持久化后，可通知 Meta 立即采集指定 execution：
+真实读写 owner 在真实终态和已确认提交的 `lineage_facts` 持久化后，可通知 Meta 立即采集指定 execution：
 
 ```http
 POST /api/v1/meta/lineage/executions/{execution_id}/collect

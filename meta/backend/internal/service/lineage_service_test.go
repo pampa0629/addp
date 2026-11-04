@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metatest"
@@ -465,5 +466,79 @@ func TestServicePublicationDisplaysCurrentNameAndRejectsStaleReplay(t *testing.T
 	db.Model(&models.LineageServiceDependency{}).Where("status = 'active'").Count(&active)
 	if active != 0 {
 		t.Fatalf("inactive replay restored %d dependencies", active)
+	}
+}
+
+func TestCommittedEffectsSurviveFailedExecutionWithoutChangingUnwrittenTarget(t *testing.T) {
+	db := openLineageTestDB(t)
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	old := createLineageItem(t, db, 7, "old", "old-fp")
+	src := createLineageItem(t, db, 7, "new", "new-fp")
+	b := createLineageItem(t, db, 7, "b", "b-fp")
+	c := createLineageItem(t, db, 7, "c", "c-fp")
+	at := time.Now().UTC().Add(-time.Hour)
+	for _, entry := range []struct {
+		id     string
+		target uint
+	}{{"old-b", b.ID}, {"old-c", c.ID}} {
+		insertLineageExecution(t, db, entry.id, 7, old.ID, entry.target, "replace")
+		db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", entry.id).Update("completed_at", at)
+		if _, err := svc.CollectExecution(t.Context(), 7, entry.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insertLineageExecution(t, db, "partial-failed", 7, src.ID, b.ID, "replace")
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", "partial-failed").Updates(map[string]interface{}{"status": "failed", "completed_at": at.Add(time.Minute)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []int{1, 0} {
+		result, err := svc.CollectExecution(t.Context(), 7, "partial-failed")
+		if err != nil || result.Observed != want {
+			t.Fatalf("collect %d: %+v %v", i, result, err)
+		}
+	}
+	for _, expect := range []struct {
+		source, target uint
+		status         string
+	}{{old.ID, b.ID, "closed"}, {src.ID, b.ID, "active"}, {old.ID, c.ID, "active"}} {
+		var relation models.LineageItemRelation
+		if err := db.Where("source_item_id = ? AND target_item_id = ?", expect.source, expect.target).First(&relation).Error; err != nil || relation.Status != expect.status {
+			t.Fatalf("relation=%+v err=%v want=%s", relation, err, expect.status)
+		}
+	}
+	var failed commonExecution.TaskExecution
+	db.Where("execution_id = ?", "partial-failed").First(&failed)
+	if failed.Status != "failed" {
+		t.Fatal("lineage changed execution outcome")
+	}
+}
+
+func TestLineageDoesNotCollectInFlightOrUnconfirmedEffects(t *testing.T) {
+	for _, status := range []string{"pending", "running", "failed", "timeout", "cancelled"} {
+		t.Run(status, func(t *testing.T) {
+			db := openLineageTestDB(t)
+			svc := NewLineageService(db, lineageTestEngineCatalog{})
+			a := createLineageItem(t, db, 7, "a", "a-fp")
+			b := createLineageItem(t, db, 7, "b", "b-fp")
+			insertLineageExecution(t, db, "outcome", 7, a.ID, b.ID, "replace")
+			fields := map[string]interface{}{"status": status}
+			if status != "pending" && status != "running" {
+				fields["metadata"] = commonModels.JSONMap{}
+			}
+			db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", "outcome").Updates(fields)
+			result, err := svc.CollectExecution(t.Context(), 7, "outcome")
+			if status == "pending" || status == "running" {
+				if err == nil {
+					t.Fatal("in-flight facts collected")
+				}
+			} else if err != nil || result.Observed != 0 {
+				t.Fatalf("unconfirmed effects: %+v %v", result, err)
+			}
+			var count int64
+			db.Model(&models.LineageObservation{}).Count(&count)
+			if count != 0 {
+				t.Fatal("invented observation")
+			}
+		})
 	}
 }

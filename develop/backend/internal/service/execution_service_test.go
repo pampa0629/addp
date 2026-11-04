@@ -249,3 +249,97 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 		})
 	}
 }
+
+func TestFailedWorkflowAtomicallyPersistsConfirmedCommitFacts(t *testing.T) {
+	testWorkflowCommittedEffects(t, "")
+}
+
+func TestWorkflowCommittedEffectsAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("DEVELOP_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("DEVELOP_POSTGRES_TEST_DSN is not set")
+	}
+	testWorkflowCommittedEffects(t, dsn)
+}
+
+func testWorkflowCommittedEffects(t *testing.T, dsn string) {
+	for _, scenario := range []string{"later_failure", "rollback", "unknown_commit", "lease_lost"} {
+		t.Run(scenario, func(t *testing.T) {
+			var db *gorm.DB
+			var err error
+			if dsn == "" {
+				db, err = gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+			} else {
+				db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			sqlDB, _ := db.DB()
+			t.Cleanup(func() { sqlDB.Close() })
+			if dsn == "" {
+				if err := executiontest.EnsureSQLiteStore(db); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				db = db.Begin()
+				if db.Error != nil {
+					t.Fatal(db.Error)
+				}
+				t.Cleanup(func() {
+					if err := db.Rollback().Error; err != nil {
+						t.Error(err)
+					}
+				})
+				if err := commonExecution.EnsureStore(db); err != nil {
+					t.Fatal(err)
+				}
+			}
+			queue := repository.NewExecutionRepository(db)
+			item := &commonExecution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: 7, Module: "develop", TaskType: "workflow", Source: "develop", Status: "pending", ExecutionBoundary: "bounded", TriggerType: "manual", MaxAttempts: 1}
+			if err := db.Create(item).Error; err != nil {
+				t.Fatal(err)
+			}
+			claimed, lease, err := queue.ClaimNext("workflow", t.Context(), "owner", time.Now(), time.Minute, nil)
+			if err != nil || lease == nil {
+				t.Fatalf("claim %v", err)
+			}
+			task := lineageWorkflowTask(lineageWorkflowNode("load", "raster_load", map[string]interface{}{"locator": "source"}), lineageWorkflowNode("save", "raster_save", map[string]interface{}{"input_raster": map[string]interface{}{"$ref": "load"}}, "load"))
+			outputs := workflowExecutionOutputs([]WorkflowProducedTarget{{TaskID: "save", Locator: "committed-output", WriteMode: "create"}})
+			if scenario == "rollback" || scenario == "unknown_commit" {
+				outputs = nil
+			}
+			if scenario == "lease_lost" {
+				db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("lease_expires_at", time.Now().Add(-time.Minute))
+			}
+			svc := &ExecutionService{queue: queue, executor: &DevExecutor{}}
+			err = svc.completeWorkflowExecution(t.Context(), claimed, *lease, task, commonModels.JSONMap{"status": "failed"}, outputs, "later node failed", false)
+			var stored commonExecution.TaskExecution
+			db.Where("execution_id = ?", item.ExecutionID).First(&stored)
+			if scenario == "lease_lost" {
+				if err == nil || stored.Status != "running" || stored.Metadata["lineage_facts"] != nil {
+					t.Fatalf("lost lease published facts: status=%s metadata=%v err=%v", stored.Status, stored.Metadata, err)
+				}
+				return
+			}
+			if err != nil || stored.Status != "failed" {
+				t.Fatalf("terminal status=%s err=%v", stored.Status, err)
+			}
+			if scenario != "later_failure" {
+				if stored.Metadata["lineage_facts"] != nil {
+					t.Fatal("unconfirmed write has lineage")
+				}
+				return
+			}
+			encoded, _ := json.Marshal(stored.Metadata["lineage_facts"])
+			var facts commonExecution.LineageFacts
+			if err := json.Unmarshal(encoded, &facts); err != nil {
+				t.Fatal(err)
+			}
+			assertWorkflowLineageEdges(t, &facts, "source -> committed-output")
+			if stored.Metadata["outputs"] == nil || stored.ErrorDetails == nil {
+				t.Fatal("terminal lost committed output or original failure")
+			}
+		})
+	}
+}

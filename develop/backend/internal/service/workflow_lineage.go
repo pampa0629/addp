@@ -35,7 +35,6 @@ func workflowLineageFacts(definition interface{}, outputs commonModels.JSONMap) 
 		if strings.TrimSpace(locator) != "" {
 			ref := commonExecution.LineageResourceRef{Port: "input." + id, Locator: locator}
 			directInputs[id] = []commonExecution.LineageResourceRef{ref}
-			facts.Inputs = append(facts.Inputs, ref)
 		}
 	}
 
@@ -89,6 +88,21 @@ func workflowLineageFacts(definition interface{}, outputs commonModels.JSONMap) 
 	}
 	if len(facts.Operations) == 0 {
 		return nil
+	}
+	// A failed workflow may never have attempted the other read nodes. Only
+	// resolve sources that contribute to a confirmed, persisted output.
+	used := make(map[string]bool)
+	for _, operation := range facts.Operations {
+		for _, port := range operation.InputPorts {
+			used[port] = true
+		}
+	}
+	for _, id := range workflowLineageMapKeys(directInputs) {
+		for _, ref := range directInputs[id] {
+			if used[ref.Port] {
+				facts.Inputs = append(facts.Inputs, ref)
+			}
+		}
 	}
 	return facts
 }

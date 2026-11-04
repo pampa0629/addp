@@ -1127,7 +1127,12 @@ test-raster-image-export-online-runner: ## 验证普通 PNG/JPEG 导出、真实
 	@python3 -m unittest scripts/test/raster-workflow-online_test.py -k editor
 	@node --check --input-type=module < console/frontend/e2e/online/raster-workflow.spec.js
 
+.PHONY: test-raster-workflow-online-runner
+test-raster-workflow-online-runner: ## 验证栅格工作流 Online runner 的成功、部分提交与失败契约
+	@python3 -m unittest scripts/test/raster-workflow-online_test.py $(RASTER_WORKFLOW_ONLINE_TEST_ARGS)
+
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
+	@$(MAKE) test-raster-workflow-online-runner
 	@$(MAKE) test-raster-image-export-online-runner
 	@$(MAKE) test-raster-boundary-clean-online-runner
 	@$(MAKE) test-raster-thin-online-runner
@@ -1206,7 +1211,7 @@ test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生�
 	@$(MAKE) test-raster-zonal-statistics-online-runner
 	@$(MAKE) test-vector-rasterize-online-runner
 	@bash -n scripts/test/online-hosted-raster-polygonize-gate.sh
-	@python3 -m unittest scripts/test/raster-polygonize-persistence-online_test.py scripts/test/online-raster-polygonize-fixture_test.py scripts/test/online-hosted-raster-polygonize-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_polygonize_requires_manual_nfs_identity_and_registered_regressions scripts/test/raster-contour-persistence-online_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py scripts/test/raster-workflow-online_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_capacity_requires_full_scene_resource_profile_and_owner_regressions scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_contour_requires_manual_nfs_identity_and_registered_regressions
+	@python3 -m unittest scripts/test/raster-polygonize-persistence-online_test.py scripts/test/online-raster-polygonize-fixture_test.py scripts/test/online-hosted-raster-polygonize-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_polygonize_requires_manual_nfs_identity_and_registered_regressions scripts/test/raster-contour-persistence-online_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_capacity_requires_full_scene_resource_profile_and_owner_regressions scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_contour_requires_manual_nfs_identity_and_registered_regressions
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 HDFS_ONLINE_TEST_ARGS ?=

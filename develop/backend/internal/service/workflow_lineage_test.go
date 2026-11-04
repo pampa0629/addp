@@ -206,3 +206,17 @@ func TestWorkflowLineageRejectsUnresolvableDataReferences(t *testing.T) {
 		})
 	}
 }
+
+func TestPartialWorkflowLineageExcludesUnexecutedAndOrderingOnlyReads(t *testing.T) {
+	task := lineageWorkflowTask(
+		lineageWorkflowNode("load", "raster_load", map[string]interface{}{"locator": "committed-source"}),
+		lineageWorkflowNode("save", "raster_save", map[string]interface{}{"input_raster": map[string]interface{}{"$ref": "load"}}, "load", "ordering"),
+		lineageWorkflowNode("ordering", "raster_load", map[string]interface{}{"locator": "unrelated-source"}),
+		lineageWorkflowNode("unexecuted", "raster_load", map[string]interface{}{"locator": "unresolvable-unexecuted-source"}, "save"),
+	)
+	facts := developLineageFacts(task, workflowExecutionOutputs([]WorkflowProducedTarget{{TaskID: "save", Locator: "committed-output", WriteMode: "create"}}))
+	assertWorkflowLineageEdges(t, facts, "committed-source -> committed-output")
+	if len(facts.Inputs) != 1 || facts.Inputs[0].Port != "input.load" {
+		t.Fatalf("unexecuted or ordering input leaked into facts: %#v", facts.Inputs)
+	}
+}

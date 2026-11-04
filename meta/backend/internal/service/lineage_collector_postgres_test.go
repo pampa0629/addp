@@ -55,7 +55,7 @@ func TestLineageCollectorRetriesUnresolvedTargetAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	targetLocator := "addp://engine/2/path/raster-target/result.cog.tif?type=object"
-	execution := commonExecution.TaskExecution{TenantID: int(source.TenantID), ExecutionID: runID, Module: "develop", TaskType: "workflow", Source: "develop", Status: "success", TriggerType: "manual", CreatedAt: time.Unix(1, 0), Metadata: commonModels.JSONMap{
+	execution := commonExecution.TaskExecution{TenantID: int(source.TenantID), ExecutionID: runID, Module: "develop", TaskType: "workflow", Source: "develop", Status: "failed", TriggerType: "manual", CreatedAt: time.Unix(1, 0), Metadata: commonModels.JSONMap{
 		"lineage_facts": commonExecution.LineageFacts{SchemaVersion: commonExecution.LineageFactsSchemaVersion,
 			Inputs:     []commonExecution.LineageResourceRef{{Port: "input", ItemID: &source.ID}},
 			Outputs:    []commonExecution.LineageResourceRef{{Port: "output", Locator: targetLocator, WriteMode: "create"}},
@@ -71,6 +71,7 @@ func TestLineageCollectorRetriesUnresolvedTargetAgainstPostgres(t *testing.T) {
 	for i := 0; i < 600; i++ {
 		row := execution
 		row.ExecutionID = fmt.Sprintf("%s-%03d", runID, i)
+		row.Status = lineageTerminalStatuses()[i%len(lineageTerminalStatuses())]
 		row.Metadata = commonModels.JSONMap{"lineage_facts": commonExecution.LineageFacts{
 			SchemaVersion: commonExecution.LineageFactsSchemaVersion,
 			Inputs:        []commonExecution.LineageResourceRef{{Port: "input", ItemID: &source.ID}},

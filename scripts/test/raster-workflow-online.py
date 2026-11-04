@@ -681,18 +681,14 @@ def validate_tiles_publication(execution, source_locator, target_engine, write_m
         validate_raster_artifact(fact, fixture.tile_expectation(key))
         if resources[key] != {'resource': {'locator': locators[key], 'type': 'object', 'write_mode': write_mode}}:
             raise SuiteError('tile resource locator/type/write mode differs')
-    if failed:
-        if metadata.get('lineage_facts'):
-            raise SuiteError('failed tiling must not claim successful lineage facts')
-    else:
-        facts = obj(metadata.get('lineage_facts'), 'tiling lineage facts')
-        if (facts.get('schema_version') != 'addp.lineage-facts/v1'
-            or [item.get('locator') for item in array(facts.get('inputs'), 'tile inputs')] != [source_locator]):
-            raise SuiteError('tiling lineage source differs')
-        lineage_outputs = array(facts.get('outputs'), 'tile lineage outputs')
-        if (len(lineage_outputs) != 4 or {item.get('locator') for item in lineage_outputs} != set(locators.values())
-            or any(item.get('write_mode') != write_mode for item in lineage_outputs)):
-            raise SuiteError('tiling lineage does not identify the four actual writes')
+    facts = obj(metadata.get('lineage_facts'), 'tiling lineage facts')
+    if (facts.get('schema_version') != 'addp.lineage-facts/v1'
+        or [item.get('locator') for item in array(facts.get('inputs'), 'tile inputs')] != [source_locator]):
+        raise SuiteError('tiling lineage source differs')
+    lineage_outputs = array(facts.get('outputs'), 'tile lineage outputs')
+    if (len(lineage_outputs) != len(keys) or {item.get('locator') for item in lineage_outputs} != set(locators.values())
+        or any(item.get('write_mode') != write_mode for item in lineage_outputs)):
+        raise SuiteError('tiling lineage does not identify exactly the confirmed writes')
     targets = array(result.get('produced_targets'), 'tiling produced targets')
     if (len(targets) != len(keys) or {item.get('locator') for item in targets} != set(locators.values())
         or any(item.get('task_id') != 'save_tiles' or item.get('tile_key') not in tiles or item.get('type') != 'object' for item in targets)):
@@ -1302,7 +1298,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         manifest, locators, scans = validate_tiles_publication(execution, source_locator, target_engine, failure_prefix=prefix)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'failed tiling Monitor')
         if (monitor.get('status') != 'failed' or monitor.get('module') != 'develop'
-            or monitor.get('metadata', {}).get('lineage_facts')):
+            or monitor.get('metadata', {}).get('lineage_facts') != execution['metadata']['lineage_facts']):
             raise SuiteError('Monitor failed tiling status/owner or lineage differs')
         if {scan['execution_id'] for scan in scans} & previous_scans:
             raise SuiteError('failed tiling reused an earlier automatic scan')
@@ -1335,7 +1331,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 raise SuiteError('confirmed partial tile physical facts differ')
             target = support.find_fixture_item(client, target_engine, 'raster-target/'+prefix+'/'+key+'.tif', 'confirmed partial tile')
             size_evidence.setdefault(identifier, {})[prefix+'/'+key+'.tif'] = strict_sizes(fact, tile, target, prefix+'/'+key+'.tif')
-            confirmed_items[key] = {'target_item_id': target['id'], 'data_item_size_bytes': target['size_bytes']}
+            confirmed_items[key] = {'target_item_id': target['id'], 'data_item_size_bytes': target['size_bytes'],
+                'lineage': wait_lineage(client, source['id'], target['id'], identifier, timeout)}
         items = array(client.request('GET', f'/api/v1/meta/engines/{target_engine}/items', (200,)).payload, 'target items')
         partial_names = [item['full_name'] for item in items if item.get('full_name', '').startswith('raster-target/'+prefix+'/') and item.get('item_type') == 'object']
         if set(partial_names) != {'raster-target/'+prefix+'/'+key+'.tif' for key in manifest['tiles']} or len(partial_names) != len(manifest['tiles']):

@@ -3340,6 +3340,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/online-hosted-raster-gate.sh", "unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN", "true"),
             ("Makefile", "scripts/test/online-raster-minio-fixture_test.py", ""),
             ("Makefile", "@$(MAKE) test-raster-image-export-online-runner", ""),
+            ("Makefile", "@$(MAKE) test-raster-workflow-online-runner", ""),
             ("scripts/test/raster-image-export-online.py", "preserved_sha256", "omitted"),
             ("scripts/test/raster-workflow-online.py", "report['image_exports']", "omitted_image_phase"),
             ("console/frontend/e2e/online/raster-workflow.spec.js", "auth.principalID", "other"),
