@@ -1248,6 +1248,16 @@ A显式唯一非空来源ID与FID不同且在JSON安全整数内；输出每源�
 
 1.0与1的原始类型区别、非有限JSON、numpy整数、数值极限、无法可靠持久化的非法网格及故障注入单列Native，不修改产品格式支持。只记录准备／本地验证，不冒充Linux全量、真实Hosted、UI或容量通过。
 
+## 点密度显式非负权重独立 Hosted 验收
+
+独立手工suite为`raster-point-density-weighted-persistence`，准备门禁`make test-raster-point-density-weighted-online-runner`。复用NFS、同源产品默认入口Runtime、普通User原12权限及4CPU／2GiB／无额外swap，业务预算固定600秒，包含首次预期生成、运行、核验、归档与清理。Linux全量和实际Hosted由CI协调，不自行触发、不重试、不扩预算；原两套无权重套件保持。
+
+uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、混合非负权重、混合点序倒置、整数权重、同位置实际重复记录、混合权重乘8、全零、保留所选字段的空批、全无效mask／alpha模板、国际英尺矩形横跨512块、美制测量英尺旋转／剪切纵跨512块。实际文件核全1原数值／mask保持、点序／模板隔离相等、整数重复等价及绝对权重比例。夹具独立覆盖精确圆边界及相邻浮点、中心／模板外支持和局部无支持，uniform边界纳入，quartic边界准确零；不按权重总和归一化。省略字段points/m2，选字段weight/m2。
+
+每方法16类各中英文提交，共64次准确density失败：字段null／空／全空白／布尔／数字／列表／对象／缺失字段／活动几何列9类；权重缺失／负数／字符串及范围外缺失／范围外负数5类；零权重非法几何／CRS冲突2类。必须到达指定算子并核原始双语原因，读取／提交前置失败不得充数，反向查询不改冻结语言。布尔／复数／非有限原始权重、宽整数及数值极限、故障注入单列Native，不扩持久化格式。
+
+独立全点Fraction米制距离及2000位Decimal展开核公式预期，不复用产品索引／距离／核助手；冻结预期绑定root／run、全部源hash及夹具源码。核完整像元／mask／合法零、Float64／NaN定义、单位、原网格／CRS、COG布局及所有实际nearest概览；artifact＝物理＝Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前点源及模板两源实际内外血缘／Monitor、源及先前成果字节／Meta不变、失败零发布／新增扫描血缘、部分启动及全部退出清理。成功阶段重检300次，失败阶段1536次，共1836次成果全检、89次物理调用。归档24份COG原字节、全部源、冻结oracle、大小／hash清单及88执行的176份Develop／Monitor原始终态响应。准备与本地门禁不计实际Linux全量／Hosted，不计UI、容量或吞吐。
+
 ## 米制点核密度独立 Hosted 验收
 
 独立手工suite为`raster-point-kernel-density-persistence`，准备门禁`make test-raster-point-kernel-density-online-runner`。复用NFS、同源产品默认入口Runtime、普通User原12权限及4CPU／2GiB／无额外swap，业务预算固定600秒；Linux全量和实际Hosted继续由CI会话协调，不自行触发、不重试、不扩预算，不改产品或原uniform套件。
