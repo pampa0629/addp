@@ -1,6 +1,7 @@
-"""Read-only references to persisted, formally checked task arguments.
+"""Read-only references to persisted Transfer parameter evidence.
 
-There is no editable draft store, business API, approval or checkpoint reuse.
+Candidates come from owner construction, original user input or checked drafts.
+References never confer current resource facts, permissions or approvals.
 """
 import copy
 import json
