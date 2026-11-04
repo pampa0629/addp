@@ -9,7 +9,7 @@ import (
 
 func vffSKCBoundFacet(name string) bool {
 	switch name {
-	case "minInclusive", "minExclusive", "maxInclusive", "maxExclusive", "length", "minLength", "maxLength":
+	case "minInclusive", "minExclusive", "maxInclusive", "maxExclusive", "length", "minLength", "maxLength", "totalDigits", "fractionDigits":
 		return true
 	}
 	return false
@@ -25,6 +25,10 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 		}
 		p.bounds[k] = v
 	}
+	// integer and all its builtin descendants inherit fractionDigits fixed at 0.
+	if _, _, _, integer := vffSKCIntegerBounds(p.primitive.Local); integer {
+		p.bounds["fractionDigits"] = "0"
+	}
 	local := make(map[string]string, len(nodes))
 	for _, n := range nodes {
 		kind := n.name.Local
@@ -36,8 +40,17 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 			return false, fmt.Errorf("%s requires a value", kind)
 		}
 		length := strings.Contains(kind, "Length") || kind == "length"
+		digits := kind == "totalDigits" || kind == "fractionDigits"
 		typ := p.primitive
-		if length {
+		if digits {
+			if _, _, _, ok := vffSKCIntegerBounds(typ.Local); !ok && typ.Local != "decimal" {
+				return false, fmt.Errorf("digits facet not applicable to %s", typ.Local)
+			}
+			typ = xml.Name{Space: vffXSDNS, Local: "nonNegativeInteger"}
+			if kind == "totalDigits" {
+				typ.Local = "positiveInteger"
+			}
+		} else if length {
 			switch typ.Local {
 			case "string", "normalizedString", "token":
 			case "QName":
@@ -82,7 +95,17 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 	for _, n := range nodes {
 		kind := n.name.Local
 		v := local[kind]
-		if strings.Contains(kind, "Length") || kind == "length" {
+		if kind == "totalDigits" || kind == "fractionDigits" {
+			if old, ok := p.bounds[kind]; ok {
+				cmp, err := c.b.compareDecimal(v, old)
+				if err != nil {
+					return false, err
+				}
+				if cmp > 0 {
+					return false, fmt.Errorf("digits restriction widens base")
+				}
+			}
+		} else if strings.Contains(kind, "Length") || kind == "length" {
 			if old, ok := base.bounds[kind]; ok {
 				cmp, err := c.b.compareDecimal(v, old)
 				if err != nil {
@@ -123,6 +146,17 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 		p.bounds[kind] = v
 		p.facets = append(p.facets, c.b.witness(n))
 	}
+	if total, ok := p.bounds["totalDigits"]; ok {
+		if fraction, ok := p.bounds["fractionDigits"]; ok {
+			cmp, err := c.b.compareDecimal(fraction, total)
+			if err != nil {
+				return false, err
+			}
+			if cmp > 0 {
+				return false, fmt.Errorf("fractionDigits exceeds totalDigits")
+			}
+		}
+	}
 	for _, lo := range []string{"minInclusive", "minExclusive"} {
 		for _, hi := range []string{"maxInclusive", "maxExclusive"} {
 			a, aok := p.bounds[lo]
@@ -157,12 +191,32 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 
 func (c *vffSKCRestrictionChecker) checkBounds(p *vffSKCRestrictionProfile, value vffSKCScalar) error {
 	length := ""
-	for _, kind := range []string{"minInclusive", "minExclusive", "maxInclusive", "maxExclusive", "length", "minLength", "maxLength"} {
+	for _, kind := range []string{"minInclusive", "minExclusive", "maxInclusive", "maxExclusive", "length", "minLength", "maxLength", "totalDigits", "fractionDigits"} {
 		bound, ok := p.bounds[kind]
 		if !ok {
 			continue
 		}
 		actual := value.text
+		if kind == "totalDigits" || kind == "fractionDigits" {
+			// Canonical decimal from scalar(): no sign/leading whole zeroes or
+			// trailing fractional zeroes. Count the minimum coefficient AND scale,
+			// per XSD 1.0 4.3.11: i*10^-n, |i| < 10^t and 0 <= n <= t.
+			for range len(value.text) {
+				if err := c.b.tick(0); err != nil {
+					return err
+				}
+			}
+			whole, fraction, _ := strings.Cut(strings.TrimPrefix(value.text, "-"), ".")
+			count := len(fraction)
+			if kind == "totalDigits" {
+				coefficient := len(whole) + len(fraction)
+				if whole == "0" {
+					coefficient = len(strings.TrimLeft(fraction, "0"))
+				}
+				count = max(1, count, coefficient)
+			}
+			actual = strconv.Itoa(count)
+		}
 		isLength := strings.Contains(kind, "Length") || kind == "length"
 		if isLength {
 			if length == "" {
@@ -187,7 +241,7 @@ func (c *vffSKCRestrictionChecker) checkBounds(p *vffSKCRestrictionProfile, valu
 			invalid = cmp < 0
 		case "minExclusive":
 			invalid = cmp <= 0
-		case "maxInclusive", "maxLength":
+		case "maxInclusive", "maxLength", "totalDigits", "fractionDigits":
 			invalid = cmp > 0
 		case "maxExclusive":
 			invalid = cmp >= 0

@@ -125,3 +125,126 @@ func TestVFFSKCExactDecimalComparisonAndBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestVFFSKCDigitConstraints(t *testing.T) {
+	cases := []struct {
+		name, primitive, base, derived, value string
+		reject                                bool
+	}{
+		{"canonical zeros", "decimal", "", `<x:totalDigits value="3"/><x:fractionDigits value="2"/>`, "+0001.23000", false},
+		{"integer trailing zeros count", "decimal", "", `<x:totalDigits value="2"/>`, "100", true},
+		{"integer boundary", "integer", "", `<x:totalDigits value="3"/>`, "-100", false},
+		{"zero", "decimal", "", `<x:totalDigits value="1"/><x:fractionDigits value="0"/>`, "-000.000", false},
+		{"scale fits", "decimal", "", `<x:totalDigits value="3"/>`, "0.00100", false},
+		{"scale exceeds total", "decimal", "", `<x:totalDigits value="2"/>`, "0.001", true},
+		{"coefficient exceeds total", "decimal", "", `<x:totalDigits value="3"/>`, "1.234", true},
+		{"fraction exceeds", "decimal", "", `<x:fractionDigits value="2"/>`, "-0.001", true},
+		{"fraction no rounding", "decimal", "", `<x:fractionDigits value="16"/>`, "9007199254740993.0000000000000001", false},
+		{"precision exceeds", "decimal", "", `<x:totalDigits value="31"/>`, "9007199254740993.0000000000000001", true},
+		{"huge declaration", "decimal", "", `<x:totalDigits value="184467440737095516160000"/><x:fractionDigits value="184467440737095516160000"/>`, "0.00001", false},
+		{"narrow inherited", "decimal", `<x:totalDigits value="4"/><x:fractionDigits value="3"/>`, `<x:totalDigits value="3"/><x:fractionDigits value="2"/>`, "1.23", false},
+		{"total widen", "decimal", `<x:totalDigits value="3"/>`, `<x:totalDigits value="4"/>`, "1", true},
+		{"fraction widen", "decimal", `<x:fractionDigits value="2"/>`, `<x:fractionDigits value="3"/>`, "1", true},
+		{"inherited total conflict", "decimal", `<x:totalDigits value="2"/>`, `<x:fractionDigits value="3"/>`, "1", true},
+		{"inherited fraction conflict", "decimal", `<x:fractionDigits value="3"/>`, `<x:totalDigits value="2"/>`, "1", true},
+		{"integer fraction fixed", "int", "", `<x:fractionDigits value="1"/>`, "1", true},
+		{"integer fraction zero", "unsignedLong", "", `<x:fractionDigits value="0"/><x:totalDigits value="20"/>`, "18446744073709551615", false},
+		{"enum and digits", "decimal", `<x:enumeration value="1.23"/>`, `<x:totalDigits value="3"/>`, "1.2300", false},
+		{"enum violates inherited digits", "decimal", `<x:totalDigits value="2"/>`, `<x:enumeration value="1.23"/>`, "1", true},
+		{"range violates inherited digits", "decimal", `<x:totalDigits value="2"/>`, `<x:maxInclusive value="123"/>`, "1", true},
+		{"bounds retained", "decimal", `<x:minInclusive value="1"/><x:maxExclusive value="2"/>`, `<x:totalDigits value="3"/>`, "1.23", false},
+		{"bounds not bypassed", "decimal", `<x:maxInclusive value="1"/>`, `<x:totalDigits value="3"/>`, "1.23", true},
+		{"missing value", "decimal", "", `<x:totalDigits/>`, "1", true},
+		{"zero total", "decimal", "", `<x:totalDigits value="0"/>`, "0", true},
+		{"negative fraction", "decimal", "", `<x:fractionDigits value="-1"/>`, "1", true},
+		{"nonintegral total", "decimal", "", `<x:totalDigits value="2.0"/>`, "1", true},
+		{"exponent value", "decimal", "", `<x:totalDigits value="3"/>`, "1e0", true},
+		{"duplicate total", "decimal", "", `<x:totalDigits value="2"/><x:totalDigits value="2"/>`, "1", true},
+		{"duplicate fraction", "decimal", "", `<x:fractionDigits value="2"/><x:fractionDigits value="2"/>`, "1", true},
+		{"string inapplicable", "string", "", `<x:totalDigits value="3"/>`, "abc", true},
+		{"boolean inapplicable", "boolean", "", `<x:fractionDigits value="0"/>`, "true", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := skcEnumFiles(t, tc.derived, tc.base, tc.value, tc.value)
+			f["Schemas/extra.xsd"] = []byte(strings.Replace(string(f["Schemas/extra.xsd"]), `base="x:int"`, `base="x:`+tc.primitive+`"`, 1))
+			got, err := readVFFClassificationBindings(context.Background(), skcGraphContainer(t, f), skcBindingLimits())
+			if tc.reject {
+				if err == nil || got != nil {
+					t.Fatal("invalid digit declaration/value accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			v := skcAttributeValue(t, f)
+			if !v.fixedValues[0].known || len(v.fixedValues[0].facets) == 0 {
+				t.Fatal("digits not proved or witness lost")
+			}
+			for _, w := range v.fixedValues[0].facets {
+				if w.member != "Schemas/extra.xsd" || w.sha256 != sha256.Sum256(f[w.member][w.begin:w.end]) {
+					t.Fatal("digits lost exact declaration witness")
+				}
+			}
+			for _, fact := range v.constraintValues {
+				if !fact.known {
+					t.Fatal("single constraint failed to follow digits profile")
+				}
+			}
+		})
+	}
+}
+
+func TestVFFSKCDigitsNoConstraintsAndUnknownFacets(t *testing.T) {
+	for _, facets := range []string{`<x:totalDigits value="0"/>`, `<x:fractionDigits value="-1"/>`, `<x:totalDigits value="2"/><x:fractionDigits value="3"/>`} {
+		f := skcEnumFiles(t, facets, "", "1", "1")
+		for _, name := range []string{"Schemas/extra.xsd", "Schemas/shared.xsd"} {
+			f[name] = []byte(strings.ReplaceAll(string(f[name]), ` fixed="1"`, ""))
+		}
+		if got, err := readVFFClassificationBindings(context.Background(), skcGraphContainer(t, f), skcBindingLimits()); err == nil || got != nil {
+			t.Fatal("invalid digits escaped without default/fixed")
+		}
+	}
+	for _, facets := range []string{`<x:totalDigits value="2" fixed="false"/>`, `<x:totalDigits value="2"/><x:pattern value=".*"/>`, `<x:totalDigits value="2"/><x:whiteSpace value="collapse"/>`} {
+		v := skcAttributeValue(t, skcEnumFiles(t, facets, "", "1", "1"))
+		if v.fixedValues[0].known {
+			t.Fatal("unproved facet dropped by digits profile")
+		}
+		for _, fact := range v.constraintValues {
+			if fact.known {
+				t.Fatal("single constraint bypassed unproved facet")
+			}
+		}
+	}
+}
+
+func TestVFFSKCDigitsSingleDefaultAndBudget(t *testing.T) {
+	f := skcSimpleContentFiles(t, `<x:attribute name="A" default="1.2300"><x:simpleType><x:restriction base="x:decimal"><x:totalDigits value="3"/><x:fractionDigits value="2"/></x:restriction></x:simpleType></x:attribute>`, "")
+	v := skcAttributeValue(t, f)
+	if len(v.fixedValues) != 0 || len(v.constraintValues) != 2 {
+		t.Fatal("single default did not retain declaration/use facts")
+	}
+	for _, fact := range v.constraintValues {
+		if !fact.known || fact.value.text != "1.23" || len(fact.facets) != 2 {
+			t.Fatal("single default did not consume digits")
+		}
+	}
+	f["Schemas/shared.xsd"] = []byte(strings.Replace(string(f["Schemas/shared.xsd"]), `default="1.2300"`, `default="1.234"`, 1))
+	if got, err := readVFFClassificationBindings(context.Background(), skcGraphContainer(t, f), skcBindingLimits()); err == nil || got != nil {
+		t.Fatal("single default bypassed digit constraints")
+	}
+	for _, cancel := range []bool{false, true} {
+		ctx, stop := context.WithCancel(context.Background())
+		if cancel {
+			stop()
+		}
+		b := &vffSKCBinder{ctx: ctx, budget: &vffSKCBindingBudget{remaining: 1, depth: 8}}
+		c := &vffSKCRestrictionChecker{b: b}
+		err := c.checkBounds(&vffSKCRestrictionProfile{bounds: map[string]string{"totalDigits": "1000"}}, vffSKCScalar{text: strings.Repeat("1", 100)})
+		stop()
+		if cancel && !errors.Is(err, context.Canceled) || !cancel && err == nil {
+			t.Fatal("digit counting bypassed budget/cancel")
+		}
+	}
+}
