@@ -257,7 +257,8 @@
         "operator_crs_mismatch": "The input projected CRSs differ.",
         "operator_crs_invalid": "Both layers require the same known projected CRS and matching horizontal units.",
         "operator_geometry_invalid": "The input layer contains geometry that failed the validity check.",
-        "operator_overlay_fields_conflict": "Overlay business fields conflict with each other, fixed source fields or the result geometry column."
+        "operator_overlay_fields_conflict": "Overlay business fields conflict with each other, fixed source fields or the result geometry column.",
+        "operator_output_fields_invalid": "Geometry checking output fields are invalid, identical or conflict with source columns."
       },
       "actions": {
         "operator_group_fields_invalid": "Explicitly select distinct existing non-geometry scalar fields; [] means global dissolve and null groups are retained.",
@@ -323,7 +324,8 @@
         "operator_crs_mismatch": "Explicitly align the projected CRSs; equal units alone do not make the CRSs equivalent.",
         "operator_crs_invalid": "Explicitly align both projected CRSs and horizontal units before submitting a new execution.",
         "operator_geometry_invalid": "Run geometry checks first, explicitly repair confirmed issues, and verify the result meets the operator requirements before submitting a new execution.",
-        "operator_overlay_fields_conflict": "Manually rename conflicting source fields upstream; fields are not suffixed, replaced or discarded automatically."
+        "operator_overlay_fields_conflict": "Manually rename conflicting source fields upstream; fields are not suffixed, replaced or discarded automatically.",
+        "operator_output_fields_invalid": "Set valid_field and reason_field explicitly to non-empty strings without surrounding whitespace, distinct from each other and every source column; no automatic renaming or replacement."
       },
       "write": "Write column",
       "writeColumn": "Write column {column_index} (declared type: {declared_type})",
@@ -455,7 +457,9 @@
         "intersection": "Intersection overlay",
         "get_bounds": "Get bounds",
         "split_multipart": "Multipart split",
-        "extract_vertices": "Extract vertices"
+        "extract_vertices": "Extract vertices",
+        "check_geometry": "Check geometry",
+        "repair_geometry": "Repair geometry"
       },
       "operatorParameters": {
         "target_geom": "Target layer (target_geom)",
@@ -506,6 +510,16 @@
           "operator_input_invalid": "Prepare the source and id_field explicitly with unique column names and unique non-null non-geometry scalar identifiers; reject Z/M without dropping empty rows. Closing and repeated coordinates are retained separately, without computing network nodes.",
           "operator_crs_invalid": "Set the correct two-dimensional CRS explicitly first; retain original XY and units without projection, conversion or axis swapping.",
           "operator_field_conflict": "Rename field {field} manually upstream first to preserve attributes; vertex_id is unique only within this result, without automatic replacement or renaming."
+        }
+      },
+      "geometryValidity": {
+        "reasons": {
+          "operator_input_invalid": "Geometry checking and repair require a GeoDataFrame with an active geometry and finite XY coordinates, without Z/M.",
+          "operator_output_fields_invalid": "Geometry checking output fields are invalid, identical or conflict with source columns."
+        },
+        "actions": {
+          "operator_input_invalid": "Check the input type, active geometry and finite XY coordinates; NULL/EMPTY and unknown CRS retain their existing rules. Invalid geometries may still be checked or explicitly repaired, without automatic projection.",
+          "operator_output_fields_invalid": "Set valid_field and reason_field explicitly to non-empty strings without surrounding whitespace, distinct from each other and every source column; no automatic renaming or replacement."
         }
       }
     },

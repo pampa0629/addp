@@ -666,3 +666,26 @@ def test_vertices_extraction_closed_contract_and_runtime_order(operator,reason,p
     assert d['operator']=={'node_index':1,'operator_id':operator,**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}
     for patch in [{'field':'area'},{'field':'PRIVATE_FIELD'},{'parameter':'reference_gdf'},{'node_index':True},{'operator_id':'foreign_vertices'},{'extra':'PRIVATE'}]:
         bad=copy.deepcopy(d);bad['operator'].update(patch);assert validated_operator_diagnostic(bad)is None
+
+
+GEOMETRY_VALIDITY_RULES = [['check_geometry', 'operator_input_invalid', 'input_gdf', ''], ['check_geometry', 'operator_output_fields_invalid', '', ''], ['repair_geometry', 'operator_input_invalid', 'input_gdf', '']]
+
+@pytest.mark.parametrize('operator,reason,parameter,field',GEOMETRY_VALIDITY_RULES)
+def test_geometry_validity_closed_diagnostics_never_contain_user_field_names(operator,reason,parameter,field):
+    import copy
+    from addp_common.workflow_runtime import OperatorInputError
+    from addp_common.workflow_runtime.errors import validated_operator_diagnostic,OPERATOR_INPUT_RULES
+    assert [(op,r,p,f)for(op,r,f),p in OPERATOR_INPUT_RULES.items()if op in ('check_geometry','repair_geometry')]==[tuple(r)for r in GEOMETRY_VALIDITY_RULES]
+    calls=[]
+    def execute(name,params):
+        calls.append(name)
+        if name==operator:raise OperatorInputError(reason,'PRIVATE_FIELD private-password')
+        return {'kept':True}
+    tasks=[{'id':'PRIVATE_NODE','operator':operator,'params':{},'depends_on':['load']},{'id':'load','operator':'load','params':{},'depends_on':[]},{'id':'save','operator':'save','params':{},'depends_on':['PRIVATE_NODE']}]
+    with pytest.raises(WorkflowExecutionError)as caught:WorkflowRunner({'load',operator,'save'},execute).execute({'tasks':tasks})
+    assert calls==['load',operator]and caught.value.error_code=='INVALID_PARAMS'
+    expected={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':operator,**({'parameter':parameter}if parameter else{})}}
+    assert caught.value.diagnostic==expected
+    for change in [{'field':'geometry_valid'},{'field':'PRIVATE_FIELD'},{'parameter':'valid_field'},{'parameter_value':'PRIVATE'},{'node_index':True},{'operator_id':'foreign'}]:
+        value=copy.deepcopy(expected);value['operator'].update(change);assert validated_operator_diagnostic(value)is None
+    wrong=copy.deepcopy(expected);wrong['operator']['operator_id']='repair_geometry';wrong['reason']='operator_output_fields_invalid';assert validated_operator_diagnostic(wrong)is None

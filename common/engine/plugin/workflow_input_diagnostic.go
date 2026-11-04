@@ -27,6 +27,14 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	}
 	parameter, field, ok := "", "", false
 	switch o.OperatorID {
+	case "check_geometry", "repair_geometry":
+		switch reason {
+		case "operator_input_invalid":
+			parameter, ok = "input_gdf", true
+		case "operator_output_fields_invalid":
+			ok = o.OperatorID == "check_geometry"
+		}
+
 	case "extract_vertices":
 		switch reason {
 		case "operator_input_invalid":

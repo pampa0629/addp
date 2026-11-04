@@ -9888,3 +9888,96 @@ def test_vertex_extraction_t4_three_saves_seven_refusals_and_independent_ogr(tmp
         assert failure.value.error_code=='INVALID_PARAMS'
         assert failure.value.diagnostic==owner.vertices_diagnostic(spec)
         assert fixture.vertices_worker('verify',root)==before
+
+
+@pytest.mark.parametrize('operator',['check_geometry','repair_geometry'])
+@pytest.mark.parametrize('kind',['none','table','inactive','z','m','infinite'])
+def test_geometry_validity_typed_admission_only_for_existing_rejections(operator,kind):
+    from operators.geometric_operators import GeometryValidityInputError
+    source=None if kind=='none' else pd.DataFrame({'x':[1]}) if kind=='table' else gpd.GeoDataFrame({'x':[1]}) if kind=='inactive' else lines([shapely.from_wkt({'z':'POINT Z (1 2 3)','m':'POINT M (1 2 3)','infinite':'POINT (Infinity 2)'}[kind])])
+    with pytest.raises(GeometryValidityInputError)as error:get_operator(operator)(source)
+    assert error.value.code=='source'
+
+
+@pytest.mark.parametrize('params',[{'valid_field':None},{'reason_field':[]},{'valid_field':True},{'valid_field':''},{'reason_field':' reason '},
+    {'valid_field':'same','reason_field':'same'},{'valid_field':'boundary'},{'reason_field':'boundary'},
+    {'valid_field':'PRIVATE_BIZ_FIELD'},{'reason_field':'PRIVATE_BIZ_FIELD'}])
+def test_geometry_validity_output_fields_typed_without_disclosing_configured_names(params):
+    from operators.geometric_operators import GeometryValidityInputError
+    source=lines([Point(1,2)]);source['PRIVATE_BIZ_FIELD']='PRIVATE_VALUE';before=source.copy(deep=True)
+    with pytest.raises(GeometryValidityInputError)as error:get_operator('check_geometry')(source,**params)
+    assert error.value.code=='fields'
+    for locale in ['zh-cn','en']:
+        assert 'PRIVATE'not in error.value.message(locale)and 'valid_field'in error.value.message(locale)and 'reason_field'in error.value.message(locale)
+    assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('locale',['zh-cn','en'])
+@pytest.mark.parametrize('operator,reason,parameter',[('check_geometry','operator_input_invalid','input_gdf'),('check_geometry','operator_output_fields_invalid',''),('repair_geometry','operator_input_invalid','input_gdf')])
+def test_geometry_validity_runtime_controlled_context_and_save_barrier(locale,operator,reason,parameter,monkeypatch):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=lines([Point(1,2)]);source['PRIVATE_FIELD']='PRIVATE_VALUE';before=source.copy(deep=True)
+    if reason=='operator_input_invalid':source.loc[source.index[0],source.geometry.name]=shapely.from_wkt('POINT Z (1 2 3)')
+    params={'input_gdf':{'$ref':'load'},**({'valid_field':'PRIVATE_FIELD'}if reason=='operator_output_fields_invalid'else{})}
+    original=workflow_engine.get_operator;calls=[]
+    def resolve(name):
+        calls.append(name)
+        if name=='load':return lambda **kw:source
+        if name=='save':pytest.fail('invalid geometry-check batch reached save')
+        return original(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',resolve)
+    tasks=[{'id':'PRIVATE_NODE','operator':operator,'params':params,'depends_on':['load']},{'id':'load','operator':'load','params':{},'depends_on':[]},{'id':'save','operator':'save','params':{},'depends_on':['PRIVATE_NODE']}]
+    with pytest.raises(WorkflowExecutionError)as error:workflow_engine.GeoPythonWorkflowRunner(language=locale).execute({'tasks':tasks})
+    assert calls==['load',operator]and error.value.error_code=='INVALID_PARAMS'
+    assert error.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':operator,**({'parameter':parameter}if parameter else{})}}
+    assert 'PRIVATE'not in json.dumps(error.value.diagnostic)
+    if reason=='operator_output_fields_invalid':assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('operator,operation',[('check_geometry','has_z'),('repair_geometry','has_m'),('check_geometry','get_coordinates'),
+    ('check_geometry','is_valid'),('check_geometry','is_valid_reason'),('repair_geometry','is_valid'),('repair_geometry','make_valid')])
+def test_geometry_validity_native_valueerrors_remain_execution_failures(operator,operation,monkeypatch):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    bow=Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]);source=lines([bow]);before=source.geometry.to_wkb().tolist();original=workflow_engine.get_operator;calls=[]
+    def resolve(name):
+        calls.append(name)
+        if name=='load':return lambda **kw:source
+        if name=='save':pytest.fail('native geometry failure reached save')
+        function=original(name)
+        def execute(*args,**kwargs):
+            with monkeypatch.context()as scope:
+                scope.setattr(shapely,operation,fail)
+                return function(*args,**kwargs)
+        return execute
+    monkeypatch.setattr(workflow_engine,'get_operator',resolve)
+    def fail(*a,**kw):raise ValueError('PRIVATE_FIELD finite XY geometry_valid Z/M invalid field')
+    with pytest.raises(WorkflowExecutionError)as error:workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':[
+      {'id':'PRIVATE','operator':operator,'params':{'input_gdf':{'$ref':'load'}},'depends_on':['load']},
+      {'id':'load','operator':'load','params':{},'depends_on':[]},{'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]})
+    assert error.value.error_code=='EXECUTION_FAILED'and error.value.diagnostic is None and calls==['load',operator]
+    assert source.geometry.to_wkb().tolist()==before
+
+
+def test_geometry_validity_invalid_repair_result_is_not_parameter_error(monkeypatch):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=lines([Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)])]);original=workflow_engine.get_operator
+    monkeypatch.setattr(workflow_engine,'get_operator',lambda name:(lambda **kw:source) if name=='load'else original(name))
+    monkeypatch.setattr(shapely,'make_valid',lambda values,**kw:values)
+    with pytest.raises(WorkflowExecutionError)as error:workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':[{'id':'load','operator':'load','params':{},'depends_on':[]},{'id':'repair','operator':'repair_geometry','params':{'input_gdf':{'$ref':'load'}},'depends_on':['load']}]})
+    assert error.value.error_code=='EXECUTION_FAILED'and error.value.diagnostic is None
+
+
+@pytest.mark.parametrize('crs',[None,'EPSG:4326','OGC:CRS84','EPSG:3857'])
+def test_geometry_validity_retains_null_empty_collections_invalid_and_source_layout(crs):
+    source=lines([None,Point(),shapely.GeometryCollection([Point(2,3),LineString([(0,0),(1,1)])]),Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)])],crs=crs)
+    source.index=[7,7,2,9];source['PRIVATE_FIELD']=pd.array([None,True,False,True],dtype='boolean');before=source.copy(deep=True)
+    checked=get_operator('check_geometry')(source,valid_field='valid_custom',reason_field='why_custom')
+    assert checked.valid_custom.tolist()==[False,True,True,False]and checked.why_custom.iloc[0]=='Missing Geometry'
+    assert_geodataframe_equal(checked.drop(columns=['valid_custom','why_custom']),before)
+    repaired=get_operator('repair_geometry')(source)
+    assert len(repaired)==4 and repaired.index.equals(source.index)and repaired.crs==source.crs and repaired.geometry.name==source.geometry.name
+    assert repaired.geometry.iloc[0] is None and repaired.geometry.iloc[1].is_empty and repaired.geometry.iloc[2].equals_exact(source.geometry.iloc[2],0)and repaired.geometry.iloc[3].is_valid
+    pd.testing.assert_series_equal(repaired['PRIVATE_FIELD'],source['PRIVATE_FIELD']);assert_geodataframe_equal(source,before)

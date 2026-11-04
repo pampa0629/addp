@@ -257,7 +257,8 @@
         "operator_crs_mismatch": "两个输入的投影坐标系不同。",
         "operator_crs_invalid": "两个图层须使用相同的已知投影坐标系和匹配的水平单位。",
         "operator_geometry_invalid": "输入图层包含未通过有效性检查的几何。",
-        "operator_overlay_fields_conflict": "叠加分析的业务字段、固定来源字段或结果几何列发生重名。"
+        "operator_overlay_fields_conflict": "叠加分析的业务字段、固定来源字段或结果几何列发生重名。",
+        "operator_output_fields_invalid": "几何检查的输出字段配置不合法、彼此同名或与源字段重名。"
       },
       "actions": {
         "operator_group_fields_invalid": "显式选择无重复的现有非几何标量字段；[]表示全局融合，空值组会保留。",
@@ -323,7 +324,8 @@
         "operator_crs_mismatch": "先显式统一两个输入的投影坐标系；不能仅因单位相同就直接计算。",
         "operator_crs_invalid": "先显式统一两个图层的投影坐标系与水平单位，再重新执行。",
         "operator_geometry_invalid": "先运行几何检查，确认问题后显式修复；修复结果须满足算子说明，再提交新的执行。",
-        "operator_overlay_fields_conflict": "先在上游手动重命名冲突字段；不会自动加后缀、覆盖或丢弃字段。"
+        "operator_overlay_fields_conflict": "先在上游手动重命名冲突字段；不会自动加后缀、覆盖或丢弃字段。",
+        "operator_output_fields_invalid": "请显式修改valid_field和reason_field：使用非空、无首尾空白、彼此不同且不与源列重名的字符串；不自动改名或覆盖。"
       },
       "write": "写入字段",
       "writeColumn": "本次写入第 {column_index} 列（声明类型：{declared_type}）",
@@ -455,7 +457,9 @@
         "intersection": "相交叠加",
         "get_bounds": "获取边界框",
         "split_multipart": "多部拆分",
-        "extract_vertices": "顶点提取"
+        "extract_vertices": "顶点提取",
+        "check_geometry": "几何检查",
+        "repair_geometry": "几何修复"
       },
       "operatorParameters": {
         "target_geom": "目标图层（target_geom）",
@@ -506,6 +510,16 @@
           "operator_input_invalid": "请显式整理源图层和id_field，列名唯一、来源为非几何唯一非空标量；拒绝Z/M，不丢弃空行。闭环首尾和重复坐标会分别保留，不计算网络节点。",
           "operator_crs_invalid": "请先显式设置正确的二维CRS；保持原XY和单位，不自动投影、换单位或交换轴。",
           "operator_field_conflict": "请先在上游手动重命名字段 {field}，保留原属性；vertex_id仅在本次成果内唯一，不自动覆盖或改名。"
+        }
+      },
+      "geometryValidity": {
+        "reasons": {
+          "operator_input_invalid": "几何检查与修复要求GeoDataFrame及活动几何，坐标须为有限二维XY，不接受Z/M。",
+          "operator_output_fields_invalid": "几何检查的输出字段配置不合法、彼此同名或与源字段重名。"
+        },
+        "actions": {
+          "operator_input_invalid": "请检查输入类型、活动几何与有限二维XY；NULL/EMPTY和未知CRS保持原规则，无效几何仍可检查或显式修复，不自动投影。",
+          "operator_output_fields_invalid": "请显式修改valid_field和reason_field：使用非空、无首尾空白、彼此不同且不与源列重名的字符串；不自动改名或覆盖。"
         }
       }
     },

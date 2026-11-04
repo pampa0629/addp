@@ -413,3 +413,30 @@ func TestDissolveObservationRetainsOnlyClosedAdmissionFacts(t *testing.T) {
 		}
 	}
 }
+
+func TestGeometryValidityDiagnosticsSurviveObservationWithoutConfiguredNames(t *testing.T) {
+	for _, tc := range []struct{ op, reason, param string }{
+		{"check_geometry", "operator_input_invalid", "input_gdf"},
+		{"check_geometry", "operator_output_fields_invalid", ""},
+		{"repair_geometry", "operator_input_invalid", "input_gdf"},
+	} {
+		context := map[string]interface{}{"node_index": 1, "operator_id": tc.op}
+		if tc.param != "" {
+			context["parameter"] = tc.param
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": tc.reason, "operator": context}
+		item := &execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"message": "PRIVATE_FIELD GEOS password=value", "diagnostic": diagnostic}}
+		got := execution.Observe(item).ErrorDetails
+		if got["diagnostic"] == nil {
+			t.Fatalf("lost validity diagnostic: %+v", got)
+		}
+		wire, _ := json.Marshal(got)
+		if strings.Contains(string(wire), "PRIVATE_FIELD") || strings.Contains(string(wire), "GEOS") || strings.Contains(string(wire), "password") {
+			t.Fatal("private configured field leaked")
+		}
+		context["field"] = "geometry_valid"
+		if execution.Observe(item).ErrorDetails["diagnostic"] != nil {
+			t.Fatal("accepted dynamic output field")
+		}
+	}
+}

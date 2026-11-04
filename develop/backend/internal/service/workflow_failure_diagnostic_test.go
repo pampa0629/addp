@@ -692,3 +692,32 @@ func TestVertexExtractionDiagnosticsBindOriginalDefinitionAndFiveFields(t *testi
 		}
 	}
 }
+
+func TestGeometryValidityDiagnosticBindsFrozenDefinitionAndHidesOutputNames(t *testing.T) {
+	for _, tc := range []struct{ op, reason, param string }{
+		{"check_geometry", "operator_input_invalid", "input_gdf"},
+		{"check_geometry", "operator_output_fields_invalid", ""},
+		{"repair_geometry", "operator_input_invalid", "input_gdf"},
+	} {
+		context := map[string]interface{}{"node_index": 1, "operator_id": tc.op}
+		if tc.param != "" {
+			context["parameter"] = tc.param
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": tc.reason, "operator": context}
+		raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+		frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "PRIVATE_NODE", "operator": tc.op, "depends_on": []string{"load"}}, map[string]interface{}{"operator": "load"}}}
+		details := executionFailureDetails("workflow", "execution_failed", "PRIVATE_FIELD GEOS password=value", raw, frozen)
+		if details["diagnostic"] == nil || details["code"] != "develop.workflow.invalid_params" {
+			t.Fatalf("lost controlled validity diagnostic: %+v", details)
+		}
+		context["node_index"] = 2
+		if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+			t.Fatal("trusted scheduling index")
+		}
+		context["node_index"] = 1
+		context["field"] = "PRIVATE_FIELD"
+		if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+			t.Fatal("trusted custom field value")
+		}
+	}
+}

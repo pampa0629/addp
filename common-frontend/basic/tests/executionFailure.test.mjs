@@ -135,14 +135,14 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 108)
+  assert.equal(canonical.length, 111)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
     const operator = { node_index: 2, operator_id, ...(parameter ? { parameter } : {}), ...(field ? { field } : {}) }
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
-    const profiles = { extract_vertices:'vertices', split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
+    const profiles = { check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices:'vertices', split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
       envelope:'construction', centroid:'construction', convex_hull:'construction', minimum_rotated_rectangle:'construction',
       representative_point:'interiorPoint',
       'buffer:operator_input_invalid':'buffer', 'buffer:operator_crs_invalid':'buffer', 'batch_buffer:operator_crs_invalid':'buffer',
@@ -723,6 +723,27 @@ test("vertices extraction closes seven facts and retains coordinate occurrences"
     assert.equal(bad.stage,'');assert.equal(bad.operator,'')
    }
    assert.doesNotMatch(JSON.stringify(got),/PRIVATE_FIELD|private-password|\/private\/input.gpkg/)
+  }
+ }
+})
+
+
+test('geometry validity diagnostics retain old geometry rules and hide configured names',()=>{
+ const rows=[["check_geometry", "operator_input_invalid", "input_gdf", ""], ["check_geometry", "operator_output_fields_invalid", "", ""], ["repair_geometry", "operator_input_invalid", "input_gdf", ""]]
+ assert.deepEqual(operatorInputRules.filter(([op])=>['check_geometry','repair_geometry'].includes(op)),rows)
+ for(const locale of ['zh-cn','en']){
+  const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+  const translate=(key,args={})=>key.split('.').slice(2).reduce((v,k)=>v[k],messages).replace(/\{(\w+)\}/g,(_,k)=>args[k])
+  for(const [operator_id,reason,parameter]of rows){
+   const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:1,operator_id,...(parameter?{parameter}:{})}}
+   const got=executionFailurePresentation({code:'develop.workflow.invalid_params',message:'PRIVATE_FIELD /private/geometry password=value',diagnostic},translate)
+   assert.equal(got.operator,messages.operatorNames[operator_id]);assert.equal(got.reason,messages.geometryValidity.reasons[reason]);assert.equal(got.action,messages.geometryValidity.actions[reason]);assert.equal(got.field,'')
+   assert.doesNotMatch(JSON.stringify(got),/PRIVATE_FIELD|password|\/private\//)
+   if(reason==='operator_input_invalid'){assert.match(got.action,/NULL\/EMPTY/);assert.match(got.reason,/XY/);assert.match(got.reason,/Z\/M/)}
+   else{assert.match(got.action,/valid_field/);assert.match(got.action,/reason_field/)}
+   for(const change of [{field:'PRIVATE_FIELD'},{parameter:'valid_field'},{parameter_value:'PRIVATE'},{node_index:true}]){
+    const invalid=executionFailurePresentation({diagnostic:{...diagnostic,operator:{...diagnostic.operator,...change}},message:'PRIVATE_FIELD'},translate);assert.equal(invalid.operator,'');assert.doesNotMatch(JSON.stringify(invalid),/PRIVATE_FIELD/)
+   }
   }
  }
 })

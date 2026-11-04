@@ -7,7 +7,7 @@ export const failureReasons = Object.freeze([
   'type_mismatch', 'permission_denied', 'connection_failed',
   'json_invalid', 'array_invalid', 'bytes_invalid', 'table_write_failed', 'execution_failed',
   'target_exists',
-  'operator_group_fields_invalid', 'operator_dissolve_fields_conflict',
+  'operator_output_fields_invalid', 'operator_group_fields_invalid', 'operator_dissolve_fields_conflict',
   'operator_input_overlap', 'operator_reference_overlap',
   'operator_overlay_fields_conflict', 'operator_endpoint_network_invalid', 'operator_distance_limit_invalid', 'operator_source_topology_invalid', 'operator_trim_conflict',
   'operator_input_invalid', 'operator_mask_invalid', 'operator_reference_invalid', 'operator_field_conflict', 'operator_geometry_field_conflict',
@@ -22,7 +22,7 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'resource_exhausted', 'invalid_input', 'execution_failed', 'submission_uncertain',
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
-const operatorFailureTemplates = Object.freeze({ extract_vertices: 'vertices', split_multipart: 'multipart', get_bounds: 'bounds', distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
+const operatorFailureTemplates = Object.freeze({ check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices: 'vertices', split_multipart: 'multipart', get_bounds: 'bounds', distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
   envelope: 'construction', centroid: 'construction', convex_hull: 'construction', minimum_rotated_rectangle: 'construction',
   representative_point: 'interiorPoint',
   'buffer:operator_input_invalid': 'buffer', 'buffer:operator_crs_invalid': 'buffer',
@@ -64,6 +64,10 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["check_geometry", "operator_input_invalid", "input_gdf", ""],
+  ["check_geometry", "operator_output_fields_invalid", "", ""],
+  ["repair_geometry", "operator_input_invalid", "input_gdf", ""],
+
         ["extract_vertices", "operator_input_invalid", "input_gdf", ""],
   ["extract_vertices", "operator_crs_invalid", "", ""],
   ["extract_vertices", "operator_field_conflict", "input_gdf", "source_id"],

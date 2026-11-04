@@ -668,3 +668,28 @@ for(const locale of ['zh-cn','en'])for(const [reason,parameter,field]of [["opera
     await page.setViewportSize({width:390,height:844})
     expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
  })
+
+
+for(const locale of ['zh-cn','en'])for(const [operator_id,reason,parameter,field]of [["check_geometry", "operator_input_invalid", "input_gdf", ""], ["check_geometry", "operator_output_fields_invalid", "", ""], ["repair_geometry", "operator_input_invalid", "input_gdf", ""]])
+ test(`geometry validity diagnostics in monitor (${operator_id}, ${reason}, ${locale})`,async({page})=>{
+    await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
+    const details={category:'execution_failed',code:'develop.workflow.invalid_params',message:'PRIVATE_BIZ_FIELD private-password /private/input.gpkg',
+      diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,...(parameter?{parameter}:{}),...(field?{field}:{})}}}
+    await installBackend(page,{locale,empty:true,targetExists:true,errorDetails:details})
+    await page.goto('/executions?execution_id=diagnostic-run')
+    const panel=page.locator('.execution-detail-content > .execution-failure')
+    const name=operator_id==='check_geometry'?(locale==='zh-cn'?'几何检查':'Check geometry'):(locale==='zh-cn'?'几何修复':'Repair geometry')
+    await expect(panel).toContainText(name)
+    await expect(panel).toContainText(locale==='zh-cn'?'定义中的第 2 个节点':'Node 2 in the workflow definition')
+    if(parameter)await expect(panel).toContainText(parameter)
+    if(reason==='operator_input_invalid'){for(const token of ['NULL/EMPTY','XY','Z/M'])await expect(panel).toContainText(token)}
+    if(reason==='operator_output_fields_invalid'){await expect(panel).toContainText('valid_field');await expect(panel).toContainText('reason_field')}
+    if(field){await expect(panel).toContainText(field);await expect(panel).toContainText(locale==='zh-cn'?'手动重命名':'Rename')}
+    await expect(panel).not.toContainText('PRIVATE_BIZ_FIELD');await expect(panel).not.toContainText('private-password')
+    await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
+    const copied=await page.evaluate(()=>window.copiedDiagnostic)
+    expect(copied).toContain(name);if(parameter)expect(copied).toContain(parameter)
+    expect(copied).not.toMatch(/PRIVATE_BIZ_FIELD|private-password|\/private\/input.gpkg/)
+    await page.setViewportSize({width:390,height:844})
+    expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
+ })

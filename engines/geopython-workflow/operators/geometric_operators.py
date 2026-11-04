@@ -647,13 +647,38 @@ def dissolve(input_gdf: gpd.GeoDataFrame, id_field: str, group_fields: list) -> 
     return {'result':result,'members':members}
 
 
-def _active_geometry(input_gdf: gpd.GeoDataFrame, name: str = "input_gdf") -> gpd.GeoSeries:
+class GeometryValidityInputError(ValueError):
+    """Only intentional geometry-check/repair admissions, never GEOS text."""
+    _messages = {
+        'zh-cn': {
+            'source': '几何检查和几何修复要求GeoDataFrame及实际活动几何，坐标须为有限二维XY，不接受Z/M；NULL和EMPTY按原规则保留，不自动投影或修复输入准入。',
+            'fields': '几何检查的valid_field和reason_field须为非空、无首尾空白且彼此不同的字符串，并且不能与源列重名；请显式修改字段配置，不自动改名或覆盖。',
+        },
+        'en': {
+            'source': 'Geometry checking and repair require a GeoDataFrame with an active geometry and finite XY coordinates, without Z/M. NULL and EMPTY retain their existing rules; no automatic projection or admission repair is performed.',
+            'fields': 'Geometry checking requires valid_field and reason_field to be non-empty strings without surrounding whitespace, distinct from each other and every source column. Change the field configuration explicitly; no automatic renaming or replacement is performed.',
+        },
+    }
+
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
+
+    @classmethod
+    def source(cls, _message):
+        return cls('source')
+
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
+def _active_geometry(input_gdf: gpd.GeoDataFrame, name: str = "input_gdf", *, input_error=ValueError) -> gpd.GeoSeries:
     if not isinstance(input_gdf, gpd.GeoDataFrame):
-        raise ValueError(f"{name} must be a GeoDataFrame")
+        raise input_error(f"{name} must be a GeoDataFrame")
     try:
         return input_gdf.geometry
     except AttributeError as exc:
-        raise ValueError(f"{name} requires an active geometry column") from exc
+        raise input_error(f"{name} requires an active geometry column") from exc
 
 
 def _geometry_for_output(input_gdf: gpd.GeoDataFrame, fields) -> gpd.GeoSeries:
@@ -664,12 +689,12 @@ def _geometry_for_output(input_gdf: gpd.GeoDataFrame, fields) -> gpd.GeoSeries:
     return geometry
 
 
-def _finite_xy_geometry(input_gdf: gpd.GeoDataFrame, name: str = "input_gdf") -> gpd.GeoSeries:
-    geometry = _active_geometry(input_gdf, name)
+def _finite_xy_geometry(input_gdf: gpd.GeoDataFrame, name: str = "input_gdf", *, input_error=ValueError) -> gpd.GeoSeries:
+    geometry = _active_geometry(input_gdf, name, input_error=input_error)
     if shapely.has_z(geometry.array).any() or shapely.has_m(geometry.array).any():
-        raise ValueError(f"{name} requires two-dimensional XY geometries")
+        raise input_error(f"{name} requires two-dimensional XY geometries")
     if not np.isfinite(shapely.get_coordinates(geometry.array)).all():
-        raise ValueError(f"{name} requires finite XY coordinates")
+        raise input_error(f"{name} requires finite XY coordinates")
     return geometry
 
 
@@ -679,12 +704,12 @@ def check_geometry(
     reason_field: str = "geometry_reason",
 ) -> gpd.GeoDataFrame:
     """Annotate each source feature's planar validity without changing geometry."""
-    geometry = _finite_xy_geometry(input_gdf)
+    geometry = _finite_xy_geometry(input_gdf, input_error=GeometryValidityInputError.source)
     fields = (valid_field, reason_field)
     if any(not isinstance(field, str) or not field or field != field.strip() for field in fields):
-        raise ValueError("output field names must be non-empty strings without surrounding whitespace")
+        raise GeometryValidityInputError('fields')
     if valid_field == reason_field or any(field in input_gdf.columns for field in fields):
-        raise ValueError("output field names must be distinct and must not overwrite source fields")
+        raise GeometryValidityInputError('fields')
     result = input_gdf.copy()
     result[valid_field] = shapely.is_valid(geometry.array)
     reasons = shapely.is_valid_reason(geometry.array)
@@ -696,7 +721,7 @@ def check_geometry(
 
 def repair_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Repair invalid XY geometries using linework, retaining collapsed components."""
-    geometry = _finite_xy_geometry(input_gdf)
+    geometry = _finite_xy_geometry(input_gdf, input_error=GeometryValidityInputError.source)
     values = geometry.array.copy()
     invalid = ~shapely.is_missing(values) & ~shapely.is_valid(values)
     values[invalid] = shapely.make_valid(values[invalid], method="linework", keep_collapsed=True)
