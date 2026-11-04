@@ -986,7 +986,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         import os
         repository=Path(__file__).resolve().parents[2]
         run=m.subprocess.run
-        titles={m.fixture.RINGS_DIAGNOSTIC_CASE:m.fixture.RINGS_DIAGNOSTIC_TITLE,m.fixture.RINGS_CASE:m.fixture.RINGS_TITLE,m.fixture.ENDPOINT_CASE:m.fixture.ENDPOINT_TITLE,m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+        titles={m.fixture.VERTICES_CASE:m.fixture.VERTICES_TITLE,m.fixture.RINGS_DIAGNOSTIC_CASE:m.fixture.RINGS_DIAGNOSTIC_TITLE,m.fixture.RINGS_CASE:m.fixture.RINGS_TITLE,m.fixture.ENDPOINT_CASE:m.fixture.ENDPOINT_TITLE,m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
             m.fixture.COMPOSITION_CASE:'重合规整链路合并独立普通User三成果与字段拒绝',
             'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
         for case,title in titles.items():
@@ -2756,4 +2756,173 @@ const result=await check({evaluate:async(fn,arg)=>fn({__vueParentComponent:{setu
 const good=await run();assert.deepEqual(good.members.map(v=>v.kind),['polygon','polygon','line','line','point','point']);for(let i=0;i<6;i++)await assert.rejects(run(i));"""
         shape=next(r['geometry']for r in m.fixture.difference_features('result')if r['geometry']['type']=='GeometryCollection')
         result=subprocess.run(['node','--input-type=module','-e',script,str(repo/'console/frontend/e2e/online/vector-topology-persistence.spec.js')],cwd=repo/'manager/frontend',input=json.dumps(shape),capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+
+def vertices_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{n:{'size_bytes':98304,'sha256':n} for n in m.fixture.VERTICES_SOURCES},
+        'targets':{name:{'size_bytes':98304,'sha256':name,'feature_count':len(m.fixture.vertices_features(port+'-result')),'layer_name':name[:-5],
+            'geometry_column':'geom','fid_column':'fid','features':m.fixture.vertices_features(port+'-result')}
+            for port,name in zip(m.fixture.VERTICES_FAMILIES,m.fixture.VERTICES_TARGETS)}}
+
+
+class VerticesClient(InputDiagnosticClient):
+    def __init__(self):
+        super().__init__();self.permissions=sorted(m.PERMISSIONS);self.sources=[];self.outputs=[];self.mutate_failed=None;self.failed_graph=None;self.mutate_graph=None;self.scan_actor=33;self.scan_tenant=2
+        for i,(name,kind) in enumerate(zip(m.fixture.VERTICES_SOURCES,m.fixture.VERTICES_KINDS)):
+            rows=m.fixture.vertices_features(kind);item=base.item(name,10+i);item['full_name']=name
+            item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.sources.append(item)
+        for i,(name,port) in enumerate(zip(m.fixture.VERTICES_TARGETS,m.fixture.VERTICES_FAMILIES)):
+            rows=m.fixture.vertices_features(port+'-result');item=base.item(name,30+i)
+            item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.outputs.append(item)
+        self.scans=['scan-'+n for n in m.fixture.VERTICES_SOURCES]
+        self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}' for i,n in enumerate(m.fixture.VERTICES_SOURCES)]
+        self.parent='addp://engine/3/path/outputs?type=directory'
+        targets={p:f'addp://engine/3/path/outputs/{n}?type=file' for p,n in zip(m.fixture.VERTICES_FAMILIES,m.fixture.VERTICES_TARGETS)}
+        self.success={'execution_id':'vertices-run','status':'success','triggered_by':33,
+            'outputs':{'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()},
+            'execution_config':{'content':{'workflow_definition':m.vertices_definition(self.locators,self.parent)}},
+            'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.load_'+p,'locator':self.locators[i]} for i,p in enumerate(m.fixture.VERTICES_FAMILIES)],
+              'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]},'result':{'meta_scan_runs':[{'execution_id':'output-scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}}
+    def request(self,method,path,expected,body=None):
+        if path.endswith('/auth/context'):
+            return SimpleNamespace(payload={'principal':{'id':33,'type':'user'},'context':{'type':'tenant','tenant_id':'2'},'token':{'type':'first_party_access_token'},'authorization':{'role_assignments':[{'role_key':'topology-consumer','permissions':self.permissions}]}})
+        if method=='POST' and path.endswith('/develop/executions'):
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
+            if name.startswith('failed-'):
+                spec=next(v for v in m.fixture.VERTICES_FAILURES if name=='failed-'+v[0]+'.gpkg')
+                value={'execution_id':'failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},
+                    'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':m.vertices_diagnostic(spec)}}
+                if self.mutate_failed:self.mutate_failed(value)
+            else:value=self.success;self.scans.extend(['output-scan-'+p for p in m.fixture.VERTICES_FAMILIES])
+            self.executions[value['execution_id']]=value;data={'execution_id':value['execution_id']}
+        elif path.endswith('/engines/3/items'):data=[*self.sources,*self.outputs]
+        elif path.startswith('/api/v1/meta/items/'):
+            item_id=int(path.rsplit('/',1)[1]);data=next(v for v in [*self.sources,*self.outputs] if v['id']==item_id)
+        elif '/meta/executions/' in path:data={'status':'success','tenant_id':self.scan_tenant,'triggered_by':self.scan_actor}
+        elif path.startswith('/api/v1/meta/lineage/graph?'):
+            if 'direction=downstream' in path:
+                data={'truncated':False,'permission_filtered':False,'nodes':[],'edges':[]}
+                if self.failed_graph:self.failed_graph(data)
+            else:
+                target=int(path.split('item_id=')[1].split('&')[0]);data={'truncated':False,'permission_filtered':False,'nodes':[],'edges':[{'source':{'item_id':target-20},'target':{'item_id':target},'relation_kind':'derive','status':'active','evidence':{'execution_id':'vertices-run'}}]}
+                if self.mutate_graph:self.mutate_graph(data)
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+
+
+class VerticesOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.VERTICES_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=vertices_physical,browser=lambda *a:a[2]):
+        return m.run_scenario(Path('.'),self.env,client or VerticesClient(),physical,browser,diagnostic_runner=lambda *a,**k:self.fail('no private log oracle'))
+    def test_vertices_one_success_seven_failures_three_point_scans_exact_sources(self):
+        c=VerticesClient();report=self.run_case(c)
+        self.assertEqual((report['result'],report['schema_version']),('passed','addp.vertex-extraction/v1'))
+        self.assertEqual([len(report['browser']['expected'][p]) for p in m.fixture.VERTICES_FAMILIES],[3,8,20])
+        self.assertEqual([len(report[k]) for k in ['initial_scan_inventory','final_scan_inventory','meta_after']],[10,13,13])
+        self.assertEqual(sum(len(g['edges']) for g in report['raw_lineage'].values()),3)
+        self.assertEqual(len(report['source_authorization_preflight']),10)
+        self.assertEqual([f['key'] for f in report['failures']],[s[0] for s in m.fixture.VERTICES_FAILURES])
+        self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in c.calls),8)
+        self.assertEqual(len({report['execution_id'],*[f['execution_id'] for f in report['failures']]}),8)
+    def test_vertices_formal_resource_visibility_precedes_any_business_execution(self):
+        c=VerticesClient();original=c.request
+        def deny(method,path,expected,body=None):
+            if '/meta/lineage/graph?' in path:raise m.SuiteError('formal resource grant missing')
+            return original(method,path,expected,body)
+        c.request=deny
+        with self.assertRaisesRegex(m.SuiteError,'formal resource'):self.run_case(c)
+        self.assertFalse(any(method=='POST' and path.endswith('/develop/executions') for method,path,_ in c.calls))
+    def test_vertices_identity_exact_permissions_ports_sizes_and_wrong_source_edges_rejected(self):
+        mutations=[lambda c:setattr(c,'scan_actor',True),lambda c:setattr(c,'scan_tenant','2'),lambda c:c.outputs[0].update(size_bytes=True),
+          lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(port='input.other'),
+          lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
+          lambda c:c.success['outputs'].update(extra={}),lambda c:c.permissions.append('extra.read'),
+          lambda c:setattr(c,'mutate_graph',lambda g:g['edges'].append(copy.deepcopy(g['edges'][0])))]
+        for mutate in mutations:
+            c=VerticesClient();mutate(c)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(c)
+    def test_vertices_failures_reject_publication_wrong_tuple_and_private_values(self):
+        mutations=[lambda v:v.update(outputs={'save':{}}),lambda v:v['metadata'].update(result={'meta_scan_runs':[{}]}),
+            lambda v:v['metadata'].update(lineage_facts={'outputs':[{}]}),lambda v:v['error_details']['diagnostic']['operator'].update(node_index=True),
+            lambda v:v['error_details'].update(message='PRIVATE_DIAGNOSTIC_SOURCE_VALUE'),lambda v:v['error_details']['diagnostic'].update(reason='other')]
+        for mutate in mutations:
+            c=VerticesClient();c.mutate_failed=mutate
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(c)
+    def test_vertices_browser_failure_keeps_incomplete_not_final_pass(self):
+        with self.assertRaisesRegex(m.SuiteError,'browser broke'):self.run_case(browser=lambda *a:(_ for _ in ()).throw(m.SuiteError('browser broke')))
+        checkpoint=json.loads((Path(self.directory.name)/'topology-vertices-checkpoint.json').read_text())
+        self.assertEqual((checkpoint['result'],checkpoint['stage']),('incomplete','before_browser'));self.assertEqual(len(checkpoint['failures']),7)
+    def test_vertices_final_files_scans_and_meta_cannot_change(self):
+        calls=[]
+        def physical(*a):
+            value=vertices_physical();calls.append(1)
+            if len(calls)>8:value['targets'][m.fixture.VERTICES_TARGETS[0]]['sha256']='changed'
+            return value
+        with self.assertRaisesRegex(m.SuiteError,'physical files'):self.run_case(physical=physical)
+        c=VerticesClient()
+        def browser(*args):c.sources[0]['size_bytes']=1;return args[2]
+        with self.assertRaisesRegex(m.SuiteError,'Meta changed'):self.run_case(c,browser=browser)
+
+    def raw_witness(self):
+        import base64,struct
+        report=self.run_case();e=report['browser'];c=VerticesClient()
+        raw={'schema_version':m.fixture.VERTICES_SCHEMA+'-browser-raw/v1','result':'passed','stage':'complete',**{k:e[k] for k in ('case','run_id','execution_id')},'execution':c.success,'observations':[],'failures':[]}
+        for output in e['outputs']:
+            expected=e['expected'][output['port']];fields=list(expected[0]['properties']);rows=[]
+            for i,row in enumerate(expected,1):
+                wire=base64.b64encode(struct.pack('<BIIdd',1,0x20000001,3857,*row['geometry']['coordinates'])).decode()
+                rows.append({output['fid_column']:i,output['geometry_column']:wire,**row['properties']})
+            graph=report['raw_lineage'][output['port']]
+            preview={'preview_type':'table','data':{'total':len(rows),'source_srid':3857,'source_crs':'EPSG:3857','transform_status':'not_transformed','preview_hint':'frontend_transform_required',
+                'columns':[output['fid_column'],output['geometry_column'],*fields],'geometry_columns':[output['geometry_column']],'rows':rows}}
+            raw['observations'].append({'port':output['port'],'output_item_id':output['item_id'],'sources':[{'item_id':s['id'],'item':s['before']} for s in e['sources']],
+                'output':output['before'],'graph':graph,'lineage_rendered':{'edges':graph['edges']},'preview':preview,'preview_text':json.dumps(preview),
+                'rendered':{'projection':'EPSG:3857','painted_pixels':31,'features':[{'type':'Point','coordinates':r['geometry']['coordinates'],'properties':r['properties']} for r in expected]}})
+        for failed in report['failures']:
+            raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],'observations':[{'owner':owner,'locale':locale,'execution':failed['execution'] if owner=='develop' else {'execution':failed['monitor']},'clipboard':m.vertices_clipboard(failed,locale)} for owner in ('develop','monitor') for locale in ('zh-cn','en')]})
+        return raw,e
+    def test_vertices_raw_three_maps_wire_types_numbering_duplicates_and_bilingual_binding(self):
+        raw,e=self.raw_witness();m.validate_vertices_browser_raw(raw,e)
+        mutations=[lambda v:v.update(stage='incomplete'),lambda v:v['observations'].pop(),lambda v:v['observations'][2]['preview']['data']['rows'].pop(),
+            lambda v:v['observations'][0].update(preview_text='{}'),lambda v:v['observations'][0]['preview']['data']['rows'][0].update(vertex_id=True),
+            lambda v:v['observations'][1]['rendered']['features'].pop(),lambda v:v['observations'][0]['rendered'].update(painted_pixels=0),
+            lambda v:v['observations'][0]['graph']['edges'][0]['source'].update(item_id=11),
+            lambda v:v['failures'][0]['observations'].pop(),lambda v:v['failures'][0]['observations'][0].update(locale='other'),lambda v:v['failures'][0]['observations'][0].update(clipboard='controlled'),lambda v:v['observations'][0]['graph'].update(permission_filtered=True)]
+        for mutate in mutations:
+            value=copy.deepcopy(raw);mutate(value)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):m.validate_vertices_browser_raw(value,e)
+    def test_vertices_browser_panel_and_point_map_reuse_exact_occurrences(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r"""
+import assert from 'node:assert/strict';import fs from 'node:fs';
+const source=fs.readFileSync(process.argv[1],'utf8'),groups=JSON.parse(process.argv[2]),specs=JSON.parse(process.argv[3]);
+const expect=value=>({toBe:other=>assert.equal(value,other),toHaveLength:other=>assert.equal(value.length,other)});
+expect.poll=callback=>({toEqual:async other=>assert.deepEqual(await callback(),other),toBeGreaterThan:async n=>assert.ok(await callback()>n)});
+const {webMercatorPreviewCoordinate}=await import(process.argv[4]);
+const a=source.indexOf('function proximityPointExpectation('),b=source.indexOf('function assertProximityLineage(',a);
+const run=new Function('expect','webMercatorPreviewCoordinate',source.slice(a,b)+';return assertProximityPointMap')(expect,webMercatorPreviewCoordinate);
+for(const rows of groups){let step=0;const observed={projection:'EPSG:3857',features:rows.map(r=>({type:'Point',properties:r.properties,coordinates:webMercatorPreviewCoordinate(r.geometry.coordinates)}))};
+ const renderer={evaluate:async()=>step++===0?observed:40};await run(renderer,rows);
+ const bad={...observed,features:observed.features.slice(1)};let n=0;await assert.rejects(()=>run({evaluate:async()=>n++===0?bad:40},rows));
+}
+const start=source.indexOf('function nodesPanelExpectation('),end=source.indexOf('async function verifyNodesCase(',start);
+const panel=new Function('expect',source.slice(start,end)+';return nodesPanelExpectation')(expect);
+for(const spec of specs)for(const locale of ['zh-cn','en']){
+ const failure={execution_id:'current-'+spec[0],expected_diagnostic:{reason:spec[1],operator:{node_index:1,operator_id:'extract_vertices',...(spec[0]==='crs'?{}:{parameter:'input_gdf'}),...(spec[2]?{field:spec[2]}:{})}}};
+ const value=panel(failure,locale,true);assert.ok(value.clipboard.includes(locale==='en'?'Extract vertices':'顶点提取'));assert.ok(value.clipboard.includes(failure.execution_id));assert.ok(!value.clipboard.includes('PRIVATE'));
+ if(spec[2])assert.ok(value.action.includes(spec[2]));if(spec[0]==='crs')assert.ok(!value.clipboard.includes('input_gdf'));
+}
+const body=source.slice(source.indexOf('async function verifyPointExtractionCase('),source.indexOf("test('节点提取"));
+assert.ok(body.indexOf('const observation=')<body.indexOf('if(vertices)observation.preview_text='));
+assert.equal(source.slice(0,source.indexOf('async function verifyPointExtractionCase')).includes('if(vertices)observation.preview_text='),false);
+assert.ok(body.includes('vertices&&expected.length>10'));assert.ok(body.includes('sources:vertices?[evidence.sources[outputIndex]]'));
+"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),
+            json.dumps([m.fixture.vertices_features(p+'-result') for p in m.fixture.VERTICES_FAMILIES]),json.dumps(m.fixture.VERTICES_FAILURES),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],text=True,capture_output=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)

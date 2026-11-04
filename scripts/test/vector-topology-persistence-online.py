@@ -660,6 +660,53 @@ def validate_overlay_failure(execution,identifier,principal,spec):
     return details
 
 
+def vertices_definition(sources,parent,failure=None):
+    if failure is not None:
+        index=3+[v[0] for v in fixture.VERTICES_FAILURES].index(failure)
+        return {'tasks':[{'id':'vertices','operator':'extract_vertices','params':{'input_gdf':{'$ref':'load_source'},'id_field':'feature_key'},'depends_on':['load_source']},
+          {'id':'load_source','operator':'load','params':{'locator':sources[index]},'depends_on':[]},
+          {'id':'save_result','operator':'save','params':{'input_df':{'$ref':'vertices'},'target_parent_locator':parent,'target_name':'failed-'+failure+'.gpkg','mode':'fail'},'depends_on':['vertices']}]}
+    tasks=[]
+    for index,(family,name) in enumerate(zip(fixture.VERTICES_FAMILIES,fixture.VERTICES_TARGETS)):
+        tasks.extend([{'id':'load_'+family,'operator':'load','params':{'locator':sources[index]},'depends_on':[]},
+          {'id':'vertices_'+family,'operator':'extract_vertices','params':{'input_gdf':{'$ref':'load_'+family},'id_field':'feature_key'},'depends_on':['load_'+family]},
+          {'id':'save_'+family,'operator':'save','params':{'input_df':{'$ref':'vertices_'+family},'target_parent_locator':parent,'target_name':name,'mode':'fail'},'depends_on':['vertices_'+family]}])
+    return {'tasks':tasks}
+
+
+def vertices_diagnostic(spec):
+    return {'schema_version':'addp.execution-failure/v3','stage':'execution','reason':spec[1],
+            'operator':{'node_index':1,'operator_id':'extract_vertices',**({} if spec[0]=='crs' else {'parameter':'input_gdf'}),**({'field':spec[2]} if spec[2] else {})}}
+
+
+def validate_vertices_failure(execution,identifier,principal,spec):
+    if type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('vertex failure User differs')
+    details=validate_input_failure(execution,(spec[0],'extract_vertices',spec[1],'' if spec[0]=='crs' else 'input_gdf',spec[2]),identifier)
+    if any(word in json.dumps(details,ensure_ascii=False) for word in (*DIAGNOSTIC_PRIVATE,'source_shape','feature_key','完整属性',*fixture.VERTICES_SOURCES)):raise SuiteError('vertex diagnostic leaked private input')
+    return details
+
+
+def validate_vertices_graph(graph,sources,target,identifier):
+    if graph.get('permission_filtered') is not False:raise SuiteError('vertex lineage is permission filtered or lacks visibility evidence')
+    edges=validate_nodes_graph(graph,sources,target,identifier)
+    active=[e for e in graph['edges'] if e.get('relation_kind')=='derive' and e.get('status')=='active']
+    if len(active)!=1 or any(type(e.get(side,{}).get('item_id')) is not int for e in edges for side in ('source','target')):raise SuiteError('vertex lineage has foreign edges or invalid endpoint identities')
+    return edges
+
+
+def vertices_clipboard(failure,locale):
+    messages=json.loads((Path(__file__).resolve().parents[2]/'common-frontend/basic/src/i18n'/f'{locale}.json').read_text())['common']['executionFailure']
+    diagnostic=failure['expected_diagnostic'];operator=diagnostic['operator'];field=operator.get('field','');reason=diagnostic['reason']
+    values=[messages['vertices']['reasons'][reason].format(field=field),messages['stages']['execution'],messages['operatorNames']['extract_vertices'],
+            messages['operatorNodeIndex'].format(index=1),messages['operatorParameters']['input_gdf'] if operator.get('parameter') else '',field,
+            messages['vertices']['actions'][reason].format(field=field),'develop.workflow.invalid_params',failure['execution_id']]
+    return '\n'.join(value for value in values if value)
+
+
+def run_vertices_scenario(repository,env,client,physical_runner,browser_runner):
+    return run_point_outputs_scenario(repository,env,client,physical_runner,browser_runner,fixture.VERTICES_CASE)
+
+
 def nodes_definition(sources,parent,failure=None):
     index=0 if failure is None else 1+[s[0] for s in fixture.NODES_FAILURES].index(failure)
     return {'tasks':[
@@ -798,9 +845,23 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
 
 
 def run_nodes_scenario(repository,env,client,physical_runner,browser_runner):
-    case=fixture.NODES_CASE;names=fixture.NODES_SOURCES;kinds=fixture.NODES_KINDS
-    ports=fixture.NODES_PORTS;targets_names=fixture.NODES_TARGETS;schema=fixture.NODES_SCHEMA;prefix="nodes"
-    expected=fixture.nodes_features;definition=nodes_definition
+    return run_point_outputs_scenario(repository,env,client,physical_runner,browser_runner,fixture.NODES_CASE)
+
+
+def run_point_outputs_scenario(repository,env,client,physical_runner,browser_runner,case):
+    vertices=case==fixture.VERTICES_CASE
+    names=fixture.VERTICES_SOURCES if vertices else fixture.NODES_SOURCES
+    kinds=fixture.VERTICES_KINDS if vertices else fixture.NODES_KINDS
+    ports=fixture.VERTICES_FAMILIES if vertices else fixture.NODES_PORTS
+    targets_names=fixture.VERTICES_TARGETS if vertices else fixture.NODES_TARGETS
+    schema=fixture.VERTICES_SCHEMA if vertices else fixture.NODES_SCHEMA
+    prefix='vertices' if vertices else 'nodes'
+    expected=lambda kind:fixture.vertices_features(kind+'-result' if kind in ports else kind) if vertices else fixture.nodes_features(kind)
+    definition=vertices_definition if vertices else nodes_definition
+    validate_failure=validate_vertices_failure if vertices else validate_nodes_failure
+    diagnostic_for=vertices_diagnostic if vertices else nodes_diagnostic
+    specs=fixture.VERTICES_FAILURES if vertices else fixture.NODES_FAILURES
+    source_count=3 if vertices else 1
     tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
     if tenant<=1:raise SuiteError('nodes forbids default Tenant')
     identity=raster.validate_identity(client,tenant,required_permissions=PERMISSIONS);principal=int(identity['principal_id'])
@@ -816,6 +877,12 @@ def run_nodes_scenario(repository,env,client,physical_runner,browser_runner):
         item=support.find_fixture_item(client,engine,name,'nodes source')
         before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
         sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
+    preflight=[]
+    if vertices:
+        for source in sources:
+            graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={source["id"]}&direction=downstream',(200,)).payload,'vertex authorized source lineage')
+            if graph.get('truncated') is not False or graph.get('permission_filtered') is not False:raise SuiteError('vertices require complete formally authorized source lineage before execution')
+            preflight.append({'source_item_id':source['id'],'graph':graph})
     initial=scan_ids(client)
     if initial!=sorted(s['scan_execution_id'] for s in sources):raise SuiteError('nodes initial scan inventory differs')
     runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes') if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
@@ -826,7 +893,8 @@ def run_nodes_scenario(repository,env,client,physical_runner,browser_runner):
     identifier=raster.submit(client,runtime,workflow);execution=raster.wait_execution(client,'develop',identifier,remaining())
     if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('nodes execution actor differs')
     if obj(obj(execution.get('execution_config'),'nodes frozen config').get('content'),'nodes content').get('workflow_definition')!=workflow:raise SuiteError('nodes frozen DAG differs')
-    facts,scans=validate_saved_success(execution,[("input.load_source",sources[0]['locator'])],targets,2)
+    inputs=[('input.load_'+family,sources[index]['locator']) for index,family in enumerate(ports)] if vertices else [('input.load_source',sources[0]['locator'])]
+    facts,scans=validate_saved_success(execution,inputs,targets,len(ports))
     observed=[]
     for scan in scans:
         value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
@@ -837,7 +905,7 @@ def run_nodes_scenario(repository,env,client,physical_runner,browser_runner):
     native=physical_runner(repository,env)
     if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(names) or set(native.get('targets',{}))!=set(targets_names):raise SuiteError('nodes physical inventory differs')
     for source,kind in zip(sources,kinds):
-        rows=expected(kind);count=len(rows);columns=len(rows[0]['properties'])+2
+        rows=fixture.vertices_features(kind) if vertices else expected(kind);count=len(rows);columns=len(rows[0]['properties'])+2
         before=source['before'];size=before.get('size_bytes');children=before.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
         if type(size) is not int or size<=0 or size!=native['sources'][source['name']]['size_bytes'] or len(children)!=1 or type(children[0].get('row_count')) is not int or children[0]['row_count']!=count or type(children[0].get('column_count')) is not int or children[0]['column_count']!=columns:raise SuiteError('nodes source Meta size/rows/columns differ')
     outputs=[]
@@ -849,33 +917,33 @@ def run_nodes_scenario(repository,env,client,physical_runner,browser_runner):
         outputs.append({'name':name,'port':port,'locator':targets[port],'item_id':item['id'],**physical,'before':detail,'size_evidence':sizes})
     directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
     checkpoint={'schema_version':schema+'-checkpoint/v1','case':case,'result':'incomplete','stage':'before_lineage','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
-        'identity':identity,'execution_id':identifier,'definition':workflow,'execution':execution,'sources':sources,'outputs':outputs,'physical':native,'automatic_scans':observed,'monitor':monitor,'stable_outputs':execution['outputs'],'lineage_facts':facts}
+        'identity':identity,'execution_id':identifier,'definition':workflow,'execution':execution,'sources':sources,'outputs':outputs,'physical':native,'automatic_scans':observed,'monitor':monitor,'stable_outputs':execution['outputs'],'lineage_facts':facts,**({'source_authorization_preflight':preflight} if vertices else {})}
     path=directory/('topology-'+prefix+'-checkpoint.json');path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
     graphs={}
-    for output in outputs:
-        for source in sources[:1]:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
+    for output_index,output in enumerate(outputs):
+        bound_sources=[sources[output_index]] if vertices else sources[:1]
+        for source in bound_sources:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
         graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'nodes original graph')
-        validate_nodes_graph(graph,sources,output['item_id'],identifier);graphs[output['port']]=graph
+        (validate_vertices_graph if vertices else validate_nodes_graph)(graph,bound_sources,output['item_id'],identifier);graphs[output['port']]=graph
     expected_scans=sorted([*initial,*[s['execution_id'] for s in scans]])
     if scan_ids(client)!=expected_scans:raise SuiteError('nodes scan inventory differs before failure')
     failures=[]
-    specs=fixture.NODES_FAILURES
     checkpoint['failures']=failures
     for spec in specs:
         key=spec[0]
         failed_workflow=definition([s['locator'] for s in sources],parent,failure=key)
         failed_id=raster.submit(client,runtime,failed_workflow);failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed')
-        validate_nodes_failure(failed,failed_id,principal,spec)
+        validate_failure(failed,failed_id,principal,spec)
         if obj(obj(failed.get('execution_config'),'nodes failed config').get('content'),'nodes failed content').get('workflow_definition')!=failed_workflow:raise SuiteError('nodes failed frozen DAG differs')
-        diagnostic=nodes_diagnostic(spec)
+        diagnostic=diagnostic_for(spec)
         failed_monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{failed_id}',(200,)).payload,'failed Monitor')
         if failed_monitor.get('execution_id')!=failed_id or failed_monitor.get('status')!='failed' or failed_monitor.get('module')!='develop' or type(failed_monitor.get('triggered_by')) is not int or failed_monitor['triggered_by']!=principal:raise SuiteError('failure Monitor identity differs')
         failure={'key':key,'execution_id':failed_id,'definition':failed_workflow,'execution':failed,'monitor':failed_monitor,'diagnostic':diagnostic,'no_publication_or_scan':True}
-        validate_nodes_failure(failed_monitor,failed_id,principal,spec)
+        validate_failure(failed_monitor,failed_id,principal,spec)
         if failed_monitor.get('error_details')!=failed.get('error_details'):raise SuiteError('nodes Monitor diagnostic differs')
         failure['expected_diagnostic']=diagnostic
         failure['source_lineage']=[]
-        source=sources[1+[v[0] for v in specs].index(key)]
+        source=sources[source_count+[v[0] for v in specs].index(key)]
         graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={source["id"]}&direction=downstream',(200,)).payload,'nodes failed source graph')
         if graph.get('truncated') is not False or any(e.get('relation_kind')=='derive' and e.get('evidence',{}).get('execution_id')==failed_id for e in array(graph.get('edges'),'nodes failed edges')):raise SuiteError('nodes failure published derive or incomplete graph')
         failure['source_lineage'].append({'source_item_id':source['id'],'graph':graph})
@@ -883,7 +951,7 @@ def run_nodes_scenario(repository,env,client,physical_runner,browser_runner):
         checkpoint.update(stage='failure_'+key+'_verified',raw_lineage=graphs)
         path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
         if scan_ids(client)!=expected_scans or physical_runner(repository,env)!=native:raise SuiteError('failure changed physical files or scans')
-    if len({f['execution_id'] for f in failures})!=len(specs):raise SuiteError('failure executions must be distinct')
+    if len({identifier,*[f['execution_id'] for f in failures]})!=len(specs)+1:raise SuiteError('failure executions must be distinct')
     checkpoint.update(stage='before_browser',raw_lineage=graphs)
     path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
     evidence={'case':case,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'execution_id':identifier,'sources':sources,'outputs':outputs,
@@ -1310,17 +1378,35 @@ def validate_trim_browser_raw(raw,evidence):
 
 
 def validate_nodes_browser_raw(raw,evidence):
+    return validate_point_outputs_browser_raw(raw,evidence,False)
+
+
+def validate_vertices_browser_raw(raw,evidence):
+    return validate_point_outputs_browser_raw(raw,evidence,True)
+
+
+def validate_point_outputs_browser_raw(raw,evidence,vertices):
+    schema=fixture.VERTICES_SCHEMA if vertices else fixture.NODES_SCHEMA
+    ports=fixture.VERTICES_FAMILIES if vertices else fixture.NODES_PORTS
+    specs=fixture.VERTICES_FAILURES if vertices else fixture.NODES_FAILURES
+    validate_failure=validate_vertices_failure if vertices else validate_nodes_failure
     import base64,struct
-    if (raw.get('schema_version')!=fixture.NODES_SCHEMA+'-browser-raw/v1' or raw.get('stage')!='complete' or raw.get('result')!='passed'
+    if (raw.get('schema_version')!=schema+'-browser-raw/v1' or raw.get('stage')!='complete' or raw.get('result')!='passed'
         or any(raw.get(k)!=evidence.get(k) for k in ('case','run_id','execution_id'))):raise SuiteError('nodes browser raw incomplete or foreign')
     principal=positive(evidence['principal_id'],'nodes browser principal')
-    validate_saved_success(obj(raw.get('execution'),'nodes browser execution'),[('input.load_source',evidence['sources'][0]['locator'])],{o['port']:o['locator'] for o in evidence['outputs']},2)
+    inputs=[('input.load_'+family,evidence['sources'][i]['locator']) for i,family in enumerate(ports)] if vertices else [('input.load_source',evidence['sources'][0]['locator'])]
+    validate_saved_success(obj(raw.get('execution'),'Point browser execution'),inputs,{o['port']:o['locator'] for o in evidence['outputs']},len(ports))
     if raw['execution'].get('execution_id')!=evidence['execution_id'] or type(raw['execution'].get('triggered_by')) is not int or raw['execution']['triggered_by']!=principal:raise SuiteError('nodes browser execution identity differs')
     observations=array(raw.get('observations'),'nodes browser maps')
-    if [v.get('port') for v in observations]!=list(fixture.NODES_PORTS):raise SuiteError('nodes browser requires exactly both Point maps')
-    for value,output in zip(observations,evidence['outputs']):
+    if [v.get('port') for v in observations]!=list(ports):raise SuiteError('nodes browser requires exactly both Point maps')
+    for index,(value,output) in enumerate(zip(observations,evidence['outputs'])):
+        bound_sources=[evidence['sources'][index]] if vertices else evidence['sources']
         expected=evidence['expected'][output['port']];fields=list(expected[0]['properties'])
         if value.get('output_item_id')!=output['item_id'] or value.get('output')!=output['before'] or value.get('sources')!=[{'item_id':s['id'],'item':s['before']} for s in evidence['sources']]:raise SuiteError('nodes browser source/output Meta changed')
+        if vertices:
+            try:wire_preview=json.loads(value['preview_text'])
+            except (KeyError,TypeError,ValueError) as exc:raise SuiteError('vertex raw preview wire missing') from exc
+            if wire_preview!=value.get('preview'):raise SuiteError('vertex raw preview wire disagrees with parsed response')
         data=obj(obj(value.get('preview'),'nodes preview').get('data'),'nodes preview data')
         if (value['preview'].get('preview_type')!='table' or [data.get(k) for k in ('total','source_srid','source_crs','transform_status','preview_hint')]!=[len(expected),3857,'EPSG:3857','not_transformed','frontend_transform_required']
             or data.get('geometry_columns')!=[output['geometry_column']] or sorted(data.get('columns',[]))!=sorted([output['fid_column'],output['geometry_column'],*fields])):raise SuiteError('nodes actual preview metadata differs')
@@ -1334,22 +1420,23 @@ def validate_nodes_browser_raw(raw,evidence):
                 point=list(struct.unpack(order+'dd',wire[9:]))
             except (KeyError,ValueError,TypeError,struct.error) as e:raise SuiteError('nodes preview canonical EPSG3857 Point EWKB missing') from e
             if point!=wanted['geometry']['coordinates']:raise SuiteError('nodes preview exact original coordinate differs')
-        validate_nodes_graph(value['graph'],evidence['sources'],output['item_id'],evidence['execution_id'])
-        validate_nodes_graph({**value['graph'],'edges':value['lineage_rendered']['edges']},evidence['sources'],output['item_id'],evidence['execution_id'])
+        (validate_vertices_graph if vertices else validate_nodes_graph)(value['graph'],bound_sources,output['item_id'],evidence['execution_id'])
+        (validate_vertices_graph if vertices else validate_nodes_graph)({**value['graph'],'edges':value['lineage_rendered']['edges']},bound_sources,output['item_id'],evidence['execution_id'])
         rendered=obj(value.get('rendered'),'nodes actual Point layer');features=array(rendered.get('features'),'nodes OL features')
         if rendered.get('projection')!='EPSG:3857' or len(features)!=len(expected) or type(rendered.get('painted_pixels')) is not int or rendered['painted_pixels']<=30 or any(v.get('type')!='Point' for v in features):raise SuiteError('nodes Point rendering incomplete')
         # Browser independently asserts exact Mercator handoff coordinates; owner also preserves all repeated property rows.
         def key(props):return json.dumps(props,sort_keys=True,ensure_ascii=False)
         if sorted(key(v.get('properties')) for v in features)!=sorted(key(v['properties']) for v in expected):raise SuiteError('nodes OL original property rows differ')
     failures=array(raw.get('failures'),'nodes browser failure list')
-    if [f.get('key') for f in failures]!=[s[0] for s in fixture.NODES_FAILURES]:raise SuiteError('nodes browser must prove all nine failures')
-    for record,failed,spec in zip(failures,evidence['failures'],fixture.NODES_FAILURES):
+    if [f.get('key') for f in failures]!=[s[0] for s in specs]:raise SuiteError('nodes browser must prove all nine failures')
+    for record,failed,spec in zip(failures,evidence['failures'],specs):
         if record.get('execution_id')!=failed['execution_id']:raise SuiteError('nodes browser failed UUID differs')
         reads=array(record.get('observations'),'nodes failure bilingual owner pages')
         if len(reads)!=4 or {(v.get('owner'),v.get('locale')) for v in reads}!={(o,l) for o in ('develop','monitor') for l in ('zh-cn','en')}:raise SuiteError('nodes failure requires both owners and locales')
         for read in reads:
             value=obj(read.get('execution'),'nodes failed page raw');execution=value if read['owner']=='develop' else obj(value.get('execution'),'nodes Monitor raw')
-            validate_nodes_failure(execution,failed['execution_id'],principal,spec)
+            validate_failure(execution,failed['execution_id'],principal,spec)
+            if vertices and read.get('clipboard')!=vertices_clipboard(failed,read['locale']):raise SuiteError('vertex exact clipboard differs')
             if execution.get('error_details')!=failed['error_details'] or not isinstance(read.get('clipboard'),str) or not read['clipboard'] or any(t in read['clipboard'] for t in (*DIAGNOSTIC_PRIVATE,'route_key','source_shape','节点业务几何')):raise SuiteError('nodes browser error/copy differs or leaks')
 
 
@@ -1514,6 +1601,8 @@ def browser(repository, env, evidence):
         validate_dissolve_browser_raw(obj(json.loads((path.parent/'topology-dissolve-browser-raw.json').read_text()),'dissolve browser raw'),evidence)
     if case==fixture.OVERLAY_CASE:
         validate_overlay_browser_raw(obj(json.loads((path.parent/'topology-overlay-browser-raw.json').read_text()),'intersection browser raw'),evidence)
+    if case==fixture.VERTICES_CASE:
+        validate_vertices_browser_raw(obj(json.loads((path.parent/'topology-vertices-browser-raw.json').read_text()),'vertices browser raw'),evidence)
     if case==fixture.NODES_CASE:
         validate_nodes_browser_raw(obj(json.loads((path.parent/'topology-nodes-browser-raw.json').read_text()),'nodes browser raw'),evidence)
     if case==fixture.TRIM_CASE:
@@ -1527,6 +1616,8 @@ def browser(repository, env, evidence):
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
+    if fixture.topology_case(env)==fixture.VERTICES_CASE:
+        return run_vertices_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.DIFFERENCE_CASE:
         return run_difference_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.DISSOLVE_CASE:

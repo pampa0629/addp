@@ -411,6 +411,125 @@ def rings_diagnostic_worker(action,root):
     return {'sources':{name:digest(root/name) for name in RINGS_DIAGNOSTIC_SOURCES},'targets':{},'exact_inventory_verified':True}
 
 
+VERTICES_CASE = 'vertex-extraction'
+VERTICES_SCHEMA = 'addp.vertex-extraction'
+VERTICES_TITLE = '顶点提取独立普通User三Point成果及七失败保护'
+VERTICES_FAMILIES = ('point','line','polygon')
+VERTICES_FIELDS = ('source_id','part_no','ring_no','vertex_no','vertex_id')
+VERTICES_FAILURES = tuple((f,'operator_field_conflict',f) for f in VERTICES_FIELDS) + (('collection','operator_input_invalid',''),('crs','operator_crs_invalid',''))
+VERTICES_KINDS = (*VERTICES_FAMILIES,*(s[0] for s in VERTICES_FAILURES))
+VERTICES_SOURCES = tuple('vertices-'+k+'-source.gpkg' for k in VERTICES_KINDS)
+VERTICES_TARGETS = tuple('vertices-'+k+'.gpkg' for k in VERTICES_FAMILIES)
+
+
+def vertices_features(kind):
+    """Literal original coordinate occurrences, not output from the product algorithm."""
+    result=kind.endswith('-result');family=kind.removesuffix('-result')
+    if family not in VERTICES_FAMILIES:family='line'
+    props=[{'feature_key':2**40+3+i if family=='line' else '来源'+family+str(i),
+            'grade':None if i==0 else 2**40+1,'enabled':None if i==0 else True,
+            'note':None if i==0 else '完整属性','geometry':None if i==0 else '普通业务几何'} for i in range(2)]
+    if family=='point':
+        shapes=[{'type':'MultiPoint','coordinates':[[1,2],[1,2]]},{'type':'Point','coordinates':[3,4]}]
+        xy=[[1,2],[1,2],[3,4]];parents=[0,0,1];parts=[1,2,1];rings=[0]*3;vertices=[1]*3
+    elif family=='line':
+        shapes=[{'type':'MultiLineString','coordinates':[[[1,2],[3,4],[1,2]],[[5,6],[5,6],[7,8]]]},{'type':'LineString','coordinates':[[9,10],[11,12]]}]
+        xy=[[1,2],[3,4],[1,2],[5,6],[5,6],[7,8],[9,10],[11,12]];parents=[0]*6+[1]*2;parts=[1]*3+[2]*3+[1]*2;rings=[0]*8;vertices=[1,2,3,1,2,3,1,2]
+    else:
+        rings_xy=[[[0,0],[0,5],[5,5],[5,0],[0,0]],[[1,1],[2,1],[2,2],[1,2],[1,1]],
+                  [[10,0],[11,0],[11,2],[10,2],[10,0]],[[-4,0],[-2,0],[-2,1],[-4,1],[-4,0]]]
+        shapes=[{'type':'MultiPolygon','coordinates':[rings_xy[:2],[rings_xy[2]]]},{'type':'Polygon','coordinates':[rings_xy[3]]}]
+        xy=[p for ring in rings_xy for p in ring];parents=[0]*15+[1]*5;parts=[1]*10+[2]*5+[1]*5;rings=[1]*5+[2]*5+[1]*10;vertices=list(range(1,6))*4
+    if result:return [{'properties':{**props[parent],'source_id':props[parent]['feature_key'],'part_no':part,'ring_no':ring,'vertex_no':number,'vertex_id':i+1},'geometry':{'type':'Point','coordinates':point}}
+                      for i,(point,parent,part,ring,number) in enumerate(zip(xy,parents,parts,rings,vertices))]
+    rows=[{'properties':p,'geometry':s} for p,s in zip(props,shapes)]
+    if kind in VERTICES_FIELDS:
+        for row in rows:row['properties'][kind]=99
+    if kind=='collection':rows[0]['geometry']={'type':'GeometryCollection','geometries':[{'type':'Point','coordinates':[1,2]}]}
+    if kind not in VERTICES_KINDS:raise FixtureError('unknown vertex fixture kind')
+    return rows
+
+
+def vertices_field_types(kind):
+    from osgeo import ogr
+    family=kind.removesuffix('-result');numeric_id=family not in ('point','polygon')
+    return {name:(ogr.OFTInteger if name=='enabled' else ogr.OFTInteger64 if name=='grade' or name in VERTICES_FIELDS[1:] or name in ('feature_key','source_id') and numeric_id else ogr.OFTString,
+                  ogr.OFSTBoolean if name=='enabled' else ogr.OFSTNone) for name in vertices_features(kind)[0]['properties']}
+
+
+def seed_vertices(path,kind):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,None if kind=='crs' else crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=source_shape'])
+    for name,(native,subtype) in vertices_field_types(kind).items():
+        field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
+        if layer.CreateField(field)!=0:raise FixtureError('cannot seed vertex field')
+    for row in vertices_features(kind):
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in row['properties'].items():
+            if value is not None:feature.SetField(name,int(value) if type(value) is bool else value)
+        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(feature)!=0:raise FixtureError('cannot seed vertex source')
+        feature=None
+    layer=ds=None
+
+
+def vertices_geometry(shape):
+    if shape is None or shape.IsEmpty() or shape.GetCoordinateDimension()!=2 or shape.IsMeasured() or not shape.IsValid():raise FixtureError('vertex geometry dimension or validity differs')
+    name=shape.GetGeometryName()
+    if name=='GEOMETRYCOLLECTION':return {'type':'GeometryCollection','geometries':[vertices_geometry(shape.GetGeometryRef(i)) for i in range(shape.GetGeometryCount())]}
+    def coords(g):
+        if g.GetGeometryName()=='POINT':return list(g.GetPoint_2D())
+        if g.GetGeometryName() in ('LINESTRING','LINEARRING'):return [list(p) for p in g.GetPoints()]
+        return [coords(g.GetGeometryRef(i)) for i in range(g.GetGeometryCount())]
+    return {'type':{'POINT':'Point','MULTIPOINT':'MultiPoint','LINESTRING':'LineString','MULTILINESTRING':'MultiLineString','POLYGON':'Polygon','MULTIPOLYGON':'MultiPolygon'}[name],'coordinates':coords(shape)}
+
+
+def validate_vertices_features(rows,kind):
+    expected=vertices_features(kind)
+    if rows!=expected or len(rows)!=len(expected) or any(set(r)!=set(e) or set(r['properties'])!=set(e['properties']) or any(type(r['properties'][k]) is not type(e['properties'][k]) for k in e['properties']) for r,e in zip(rows,expected)):
+        raise FixtureError('vertex exact coordinate occurrences attributes types numbering or order differ')
+
+
+def verify_vertices(path,kind):
+    from osgeo import ogr,osr
+    ds=ogr.Open(str(path),0)
+    if not ds or ds.GetLayerCount()!=1:raise FixtureError('vertex requires exactly one physical layer')
+    layer=ds.GetLayer(0);schema=layer.GetLayerDefn();fields=vertices_field_types(kind);sr=layer.GetSpatialRef()
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    if kind=='crs':
+        if sr and sr.GetAuthorityCode(None) not in (None,'0'):raise FixtureError('vertex unknown CRS source acquired an identity')
+    elif not sr or not sr.IsSame(crs):raise FixtureError('vertex source CRS differs')
+    if [f.name for f in layer.schema]!=list(fields):raise FixtureError('vertex fields or order differ')
+    for name,(native,subtype) in fields.items():
+        field=schema.GetFieldDefn(schema.GetFieldIndex(name))
+        if (field.GetType(),field.GetSubType())!=(native,subtype):raise FixtureError('vertex physical field type differs')
+    geom=layer.GetGeometryColumn()
+    if not geom or geom in fields or not kind.endswith('-result') and geom!='source_shape':raise FixtureError('vertex real and business geometry differ')
+    rows=[]
+    for i,feature in enumerate(layer,1):
+        if feature.GetFID()!=i:raise FixtureError('vertex physical FID order differs')
+        props={name:feature.GetField(name) for name in fields}
+        if props.get('enabled') is not None:
+            if type(props['enabled']) not in (int,bool) or props['enabled'] not in (0,1):raise FixtureError('vertex Boolean differs')
+            props['enabled']=bool(props['enabled'])
+        rows.append({'properties':props,'geometry':vertices_geometry(feature.GetGeometryRef())})
+    validate_vertices_features(rows,kind)
+    if kind.endswith('-result') and schema.GetGeomFieldDefn(0).GetType()!=ogr.wkbPoint:raise FixtureError('vertex output must physically declare Point')
+    return {**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geom,'fid_column':layer.GetFIDColumn(),'features':rows,'source_crs':None if kind=='crs' else 'EPSG:3857'}
+
+
+def vertices_worker(action,root):
+    if action=='seed':
+        if any((root/n).exists() for n in VERTICES_SOURCES) or list((root/'outputs').iterdir()):raise FixtureError('refusing existing vertex data')
+        for name,kind in zip(VERTICES_SOURCES,VERTICES_KINDS):seed_vertices(root/name,kind)
+        return {'sources':{name:digest(root/name) for name in VERTICES_SOURCES}}
+    if action!='verify':raise FixtureError('unknown vertex action')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*VERTICES_SOURCES]) or sorted(p.name for p in (root/'outputs').iterdir())!=sorted(VERTICES_TARGETS):raise FixtureError('vertex exact three target inventory differs')
+    return {'sources':{name:digest(root/name) for name in VERTICES_SOURCES},'source_tables':{name:verify_vertices(root/name,kind) for name,kind in zip(VERTICES_SOURCES,VERTICES_KINDS)},
+            'targets':{name:verify_vertices(root/'outputs'/name,kind+'-result') for name,kind in zip(VERTICES_TARGETS,VERTICES_FAMILIES)},'exact_inventory_verified':True}
+
+
 NODES_CASE = 'line-nodes'
 NODES_SCHEMA = 'addp.line-nodes'
 NODES_TITLE = '节点提取独立普通User节点与来源明细双Point及九失败保护'
@@ -863,7 +982,7 @@ def dissolve_worker(action,root):
         'targets':{n:verify_dissolve(root/'outputs'/n,n.removesuffix('.gpkg'))for n in targets},'exact_inventory_verified':True}
 
 
-INDEPENDENT_CASES = (DIFFERENCE_CASE, DISSOLVE_CASE, OVERLAY_CASE, NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+INDEPENDENT_CASES = (VERTICES_CASE, DIFFERENCE_CASE, DISSOLVE_CASE, OVERLAY_CASE, NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -877,6 +996,7 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==VERTICES_CASE:return {"ports":VERTICES_FAMILIES,"targets":VERTICES_TARGETS,"sources":VERTICES_SOURCES,"schema":VERTICES_SCHEMA,"title":VERTICES_TITLE}
     if case==DIFFERENCE_CASE:return {"ports":("result",),"targets":(DIFFERENCE_TARGET,),"sources":DIFFERENCE_SOURCES,"schema":DIFFERENCE_SCHEMA,"title":DIFFERENCE_TITLE}
     if case==DISSOLVE_CASE:return {"ports":DISSOLVE_PORTS,"targets":DISSOLVE_TARGETS,"sources":DISSOLVE_SOURCES,"schema":DISSOLVE_SCHEMA,"title":DISSOLVE_TITLE}
     if case==OVERLAY_CASE:return {"ports":("result",),"targets":(OVERLAY_TARGET,),"sources":OVERLAY_SOURCES,"schema":OVERLAY_SCHEMA,"title":OVERLAY_TITLE}
@@ -2227,6 +2347,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==VERTICES_CASE:return vertices_worker(action,root)
     if case==DIFFERENCE_CASE:return difference_worker(action,root)
     if case==DISSOLVE_CASE:return dissolve_worker(action,root)
     if case==OVERLAY_CASE:return overlay_worker(action,root)
@@ -2344,7 +2465,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(DIFFERENCE_SOURCES,(DIFFERENCE_TARGET,)) if case==DIFFERENCE_CASE else (DISSOLVE_SOURCES,tuple(result["targets"])) if case==DISSOLVE_CASE else (OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(VERTICES_SOURCES,VERTICES_TARGETS) if case==VERTICES_CASE else (DIFFERENCE_SOURCES,(DIFFERENCE_TARGET,)) if case==DIFFERENCE_CASE else (DISSOLVE_SOURCES,tuple(result["targets"])) if case==DISSOLVE_CASE else (OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')

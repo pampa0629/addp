@@ -1349,3 +1349,14 @@ uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、�
 40类列表／元素／顺序／波段／复数与alpha／覆盖开关／前缀／首项与后项列冲突／CRS与网格／权重与面积及频数冲突各中英文提交，共80次准确analysis失败，反向查询不改提交语言。每个终态重读全部先前实际GeoPackage，共1416次全检／97次物理调用；独立像元面覆盖／标量排序／Fraction插值oracle，实际批量与六份实际单项／原八列逐表比较。归档16份原GeoPackage、全部源、绑定源／本轮／路径／夹具源码的冻结oracle及大小／hash清单、192份Develop／Monitor原始终态响应。
 
 严格核真实矢量声明目标／类型／写入方式、物理＝Meta正整数大小、精确扫描父执行／用户／租户／引擎、当前实际输入内外血缘及Monitor、源与全部先前成果／Meta不变、失败零发布／新增扫描血缘和部分启动／全部退出零残留；存储FID不冒充用户索引，归档大小不冒充产品声明size_bytes。数值极限、重复索引／活动几何名、混合类型复数alpha、内部读取／排序／归并计数及故障注入继续单列Native。仅准备／登记／本地回归，不计实际Hosted或Linux全量、UI、容量；实际运行由CI会话协调。
+
+
+## 顶点提取独立场景
+
+用户确认新增 `vertex-extraction` case，沿 `vector-topology-persistence` 既有入口、Hosted 隔离生命周期、非默认租户普通 User 精确11功能权限及600秒总业务预算，仅一次成功与七次失败，不执行full、旧业务T4或容量。功能权限不替代正式资源授权；真实派发须等待共享血缘专项具备源／成果正式授权与必要证据，公共门禁仍归对应owner，不为本场景加权限、NFS例外或管理员业务调用。
+
+同一成功DAG三条 `load→extract_vertices(id_field=feature_key)→save(mode=fail)` 分支，分别Point/MultiPoint、LineString/MultiLineString、Polygon/MultiPolygon来源，各输出3／8／20条Point，三个成果各自vertex_id从1连续，不将其当跨成果或跨执行身份。手写逐行XY与来源／部件／环／位置编号，保闭环首尾、连续重复坐标、重复位置、多面孔洞与原始方向；来源ID及全部可空Int64／Boolean／String属性保留，真实source_shape与业务geometry分离。读取本轮原文件用独立OGR原生坐标逐行核Schema/类型/值/CRS，不调用生产提取生成期望，不舍入或去重。
+
+七失败为source_id、part_no、ring_no、vertex_no、vertex_id分别冲突，以及GeometryCollection、缺失CRS；固定v3诊断，冻结算子置tasks首位而load先调度，准确绑定定义节点、当前UUID、同User/Tenant，Develop/Monitor中英文页面与复制内容不泄漏私有字段／值／路径／原生异常；下游save不执行、无成果／扫描／输出facts／本次derive，失败前后物理及Meta／扫描库存不变。
+
+三成果物理与Meta严格正整数大小相等、三自动扫描公开严格整数tenant_id/triggered_by同主体，稳定outputs/facts均create，三条对应来源→成果当前execution active derive及Monitor一致；保存预览原始EWKB／FID与业务ID、完整OL数据与Point蓝色像素、三幅地图及失败页。重合Point的数据行分别存在，不要求重复位置呈现分离符号。保留incomplete检查点与唯一最终报告、原始图／Meta／浏览器响应／原文件及前后SHA大小，最后隔离NFS/export/ownedroot/Runtime/registry/部署/Infra清0，不外推业务DELETE。

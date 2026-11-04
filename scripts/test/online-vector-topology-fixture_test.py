@@ -584,3 +584,19 @@ class DifferenceFixtureTest(unittest.TestCase):
     def test_difference_dispatch_is_independent_and_never_runs_old_overlay(self):
         with patch.object(m,'difference_worker',return_value={'only':'difference'})as worker,patch.object(m,'overlay_worker',side_effect=AssertionError('old business')):
             self.assertEqual(m.worker('seed',Path('/unused'),m.DIFFERENCE_CASE),{'only':'difference'});worker.assert_called_once()
+
+
+class VerticesFixtureTest(unittest.TestCase):
+    def test_vertices_literal_occurrences_and_numbering_do_not_deduplicate(self):
+        self.assertEqual([len(m.vertices_features(k+'-result')) for k in m.VERTICES_FAMILIES],[3,8,20])
+        for family in m.VERTICES_FAMILIES:
+            rows=m.vertices_features(family+'-result');self.assertEqual([r['properties']['vertex_id'] for r in rows],list(range(1,len(rows)+1)))
+            for change in [lambda r:r.pop(),lambda r:r.reverse(),lambda r:r[0]['properties'].update(vertex_id=True),lambda r:r[0]['properties'].update(note='lost'),lambda r:r[0]['geometry']['coordinates'].__setitem__(0,99)]:
+                value=copy.deepcopy(rows);change(value)
+                with self.subTest(family=family,change=change),self.assertRaises(m.FixtureError):m.validate_vertices_features(value,family+'-result')
+        line=m.vertices_features('line-result');self.assertEqual(line[0]['geometry'],line[2]['geometry']);self.assertNotEqual(line[0]['properties']['vertex_no'],line[2]['properties']['vertex_no'])
+        self.assertEqual(line[3]['geometry'],line[4]['geometry']);self.assertEqual([v['properties']['ring_no'] for v in m.vertices_features('polygon-result')],[1]*5+[2]*5+[1]*10)
+    def test_vertices_case_dispatch_uses_only_owned_fixture_and_inventory(self):
+        self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':m.VERTICES_CASE}),m.VERTICES_CASE)
+        with patch.object(m,'vertices_worker',return_value={'owned':True}) as worker,patch.object(m,'seed_snap',side_effect=AssertionError('old scenario')):
+            self.assertEqual(m.worker('seed',Path('/unused'),m.VERTICES_CASE),{'owned':True});worker.assert_called_once_with('seed',Path('/unused'))

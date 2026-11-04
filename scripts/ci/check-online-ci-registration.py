@@ -2389,6 +2389,20 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in extension_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology extension case contract incomplete: '+relative)
+    vertices_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - vertex-extraction',),
+        'scripts/test/online-hosted-topology-gate.sh': ('vertex-extraction|geometry-difference',),
+        'business/scripts/online-vector-topology-fixture.py': ('def vertices_features(', 'def verify_vertices(', 'def vertices_worker(', 'VERTICES_FAILURES'),
+        'scripts/test/vector-topology-persistence-online.py': ('def vertices_definition(', 'def run_vertices_scenario(', 'def validate_vertices_browser_raw(', 'vertices require complete formally authorized source lineage before execution'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('顶点提取独立普通User三Point成果及七失败保护', 'async function verifyVerticesCase(', 'topology-vertices-browser-raw.json', 'if(vertices)observation.preview_text=await previewResponse.text()'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_vertex_extraction_t4_three_saves_seven_refusals_and_independent_ogr',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class VerticesOnlineTest', 'test_vertices_formal_resource_visibility_precedes_any_business_execution'),
+        'scripts/test/online-vector-topology-fixture_test.py': ('class VerticesFixtureTest',),
+        'scripts/test/online-hosted-topology-gate_test.py': ('test_vertices_case_is_bound_without_old_business_or_capacity',),
+    }
+    for relative,fragments in vertices_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology vertex extraction case contract incomplete: '+relative)
     rings_required = {
         '.github/workflows/online-t4-gates.yml': ('          - polygon-rings',),
         'scripts/test/online-hosted-topology-gate.sh': ('endpoint-snapping|polygon-rings',),

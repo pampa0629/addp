@@ -96,6 +96,13 @@ class HostedTopologyGateTest(unittest.TestCase):
         self.assertNotIn('capacity',self.host.trace.read_text())
         self.assertFalse(self.host.secrets.exists())
 
+    def test_vertices_case_is_bound_without_old_business_or_capacity(self):
+        result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='vertex-extraction')
+        self.assertEqual(result.returncode,0,result.stderr+result.stdout)
+        import json
+        self.assertEqual(json.loads((self.host.artifacts/'topology-case.json').read_text()),{'suite':'vector-topology-persistence','case':'vertex-extraction'})
+        self.assertNotIn('capacity',self.host.trace.read_text());self.assertFalse(self.host.secrets.exists())
+
     def test_rings_case_is_bound_without_old_business_or_capacity(self):
         result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='polygon-rings')
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)

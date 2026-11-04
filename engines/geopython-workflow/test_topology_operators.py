@@ -9832,3 +9832,59 @@ def test_vertices_extraction_real_geopackage_source_independent_ogr_point_order_
     for field in VERTEX_FIELDS[1:]:expected[field]=pd.array(expected[field],dtype='Int64')
     pd.testing.assert_frame_equal(reloaded.drop(columns=physical_name),expected)
     assert_geodataframe_equal(loaded,before)
+
+
+def test_vertex_extraction_t4_three_saves_seven_refusals_and_independent_ogr(tmp_path):
+    """Runs the proposed DAG against real GPKG bytes; no Online/T4 authentication claimed."""
+    import importlib
+    from workflow_engine import GeoPythonWorkflowRunner
+    from operators.geometric_operators import VertexInputError
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    owner=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    root=tmp_path/'vertices';root.mkdir();(root/'outputs').mkdir();(root/'.addp-online-owner').write_text('native-only')
+    seeded=fixture.vertices_worker('seed',root)
+    connection={'storage_type':'nfs','mount_path':str(root)}
+    sources=[]
+    for kind,name in zip(fixture.VERTICES_KINDS,fixture.VERTICES_SOURCES):
+        fixture.verify_vertices(root/name,kind)
+        sources.append(get_operator('load')(connection_info=connection,path=name))
+    assert sources[-1].crs is None
+    workflow=owner.vertices_definition(list(fixture.VERTICES_SOURCES),'unused')
+    for task in workflow['tasks']:
+        if task['operator']=='load':task['params']={'connection_info':connection,'path':task['params']['locator']}
+        elif task['operator']=='save':task['params']={'input_df':task['params']['input_df'],'connection_info':connection,'path':'outputs/'+task['params']['target_name'],'mode':'fail'}
+    GeoPythonWorkflowRunner().execute(workflow)
+    for family,source,name in zip(fixture.VERTICES_FAMILIES,sources[:3],fixture.VERTICES_TARGETS):
+        before=source.copy(deep=True);result=get_operator('extract_vertices')(source,'feature_key')
+        expected=fixture.vertices_features(family+'-result')
+        assert len(result)==len(expected)and result.geometry.name=='source_shape'
+        assert result.geometry.to_wkb().tolist()==[Point(*row['geometry']['coordinates']).wkb for row in expected]
+        assert result.vertex_id.tolist()==list(range(1,len(expected)+1))
+        for i,row in enumerate(expected):
+            for field in fixture.VERTICES_FIELDS:assert result.iloc[i][field]==row['properties'][field]
+        observed=fixture.verify_vertices(root/'outputs'/name,family+'-result')
+        assert observed['features']==expected
+        reloaded=get_operator('load')(connection_info=connection,path='outputs/'+name)
+        assert reloaded.geometry.to_wkb().tolist()==result.geometry.to_wkb().tolist()
+        assert_geodataframe_equal(source,before)
+    before=fixture.vertices_worker('verify',root)
+    assert before['sources']==seeded['sources']and [before['targets'][n]['feature_count'] for n in fixture.VERTICES_TARGETS]==[3,8,20]
+    for index,spec in enumerate(fixture.VERTICES_FAILURES,3):
+        with pytest.raises(VertexInputError) as failure:get_operator('extract_vertices')(sources[index],'feature_key')
+        assert failure.value.code=={'operator_field_conflict':'field','operator_input_invalid':'source','operator_crs_invalid':'crs'}[spec[1]]
+        assert fixture.vertices_worker('verify',root)==before
+    # Real Runtime failure protocol and dependent save barrier for every rejection.
+    import workflow_engine
+    original=workflow_engine.get_operator
+    def resolve(name):
+        if name=='load':return lambda locator:sources[int(locator)]
+        if name=='save':return lambda **kw:pytest.fail('vertex rejected batch must never reach save')
+        return original(name)
+    from unittest.mock import patch
+    for index,spec in enumerate(fixture.VERTICES_FAILURES,3):
+        tasks=owner.vertices_definition([str(i) for i in range(10)],'unused',spec[0])['tasks']
+        with patch.object(workflow_engine,'get_operator',resolve),pytest.raises(WorkflowExecutionError) as failure:GeoPythonWorkflowRunner().execute({'tasks':tasks})
+        assert failure.value.error_code=='INVALID_PARAMS'
+        assert failure.value.diagnostic==owner.vertices_diagnostic(spec)
+        assert fixture.vertices_worker('verify',root)==before

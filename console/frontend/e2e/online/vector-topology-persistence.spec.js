@@ -1326,7 +1326,7 @@ function assertNodesLineage(graph,evidence) {
   expect(edges.map(e=>[e.source.item_id,e.target.item_id])).toEqual([[evidence.sources[0].id,evidence.output.item_id]])
 }
 
-function nodesPanelExpectation(failure,locale) {
+function nodesPanelExpectation(failure,locale,vertices=false) {
   const en=locale==='en',d=failure.expected_diagnostic,field=d.operator.field
   const reason={
     operator_endpoint_network_invalid:en?'Line parts have internal self-intersections, positive-length overlaps or unsplit intersections; the network is not connected only at both endpoints.':'线部件存在内部自交、正长度重合或未打断的交会，未构成仅在双方端点连接的线网。',
@@ -1340,43 +1340,62 @@ function nodesPanelExpectation(failure,locale) {
     operator_input_invalid:en?'Check the source layer type, active geometry, fields and identifiers against the operator requirements, then submit a new execution.':'按算子说明检查源图层的类型、活动几何列、字段及标识；修正后重新执行。',
     operator_projected_crs_required:en?'Explicitly reproject both inputs to the same suitable projected CRS before submitting a new execution.':'先显式重投影到符合要求的同一投影坐标系，再重新执行。',
   }
+  if(vertices){const profile={"en": {"reasons": {"operator_input_invalid": "Vertex extraction requires valid finite XY Point/LineString/Polygon or Multi types and a unique non-null id_field; GeometryCollection, NULL, EMPTY and empty parts/rings are rejected.", "operator_crs_invalid": "Vertex extraction requires a known two-dimensional geographic or projected CRS; unknown, geocentric, 3D and compound CRS are rejected.", "operator_field_conflict": "Fixed vertex field {field} conflicts with an input field."}, "actions": {"operator_input_invalid": "Prepare the source and id_field explicitly with unique column names and unique non-null non-geometry scalar identifiers; reject Z/M without dropping empty rows. Closing and repeated coordinates are retained separately, without computing network nodes.", "operator_crs_invalid": "Set the correct two-dimensional CRS explicitly first; retain original XY and units without projection, conversion or axis swapping.", "operator_field_conflict": "Rename field {field} manually upstream first to preserve attributes; vertex_id is unique only within this result, without automatic replacement or renaming."}}, "zh-cn": {"reasons": {"operator_input_invalid": "顶点提取要求有效有限二维XY点/线/面或Multi类型及唯一非空来源id_field；GeometryCollection、NULL、EMPTY、空部件/环拒绝。", "operator_crs_invalid": "顶点提取要求已知二维地理或投影CRS，拒绝未知、地心、三维和复合CRS。", "operator_field_conflict": "固定顶点字段 {field} 与输入字段冲突。"}, "actions": {"operator_input_invalid": "请显式整理源图层和id_field，列名唯一、来源为非几何唯一非空标量；拒绝Z/M，不丢弃空行。闭环首尾和重复坐标会分别保留，不计算网络节点。", "operator_crs_invalid": "请先显式设置正确的二维CRS；保持原XY和单位，不自动投影、换单位或交换轴。", "operator_field_conflict": "请先在上游手动重命名字段 {field}，保留原属性；vertex_id仅在本次成果内唯一，不自动覆盖或改名。"}}}[locale];for(const [key,value] of Object.entries(profile.reasons))reason[key]=value.replaceAll('{field}',field||'');for(const [key,value] of Object.entries(profile.actions))action[key]=value.replaceAll('{field}',field||'')}
   expect(Object.hasOwn(reason,d.reason)).toBe(true)
-  const values=[reason[d.reason],en?'Execute operation':'执行操作',en?'Extract line nodes':'节点提取',en?'Node 1 in the workflow definition':'定义中的第 1 个节点',d.operator.parameter?(en?'Source layer (input_gdf)':'源图层（input_gdf）'):'',field,action[d.reason],'develop.workflow.invalid_params',failure.execution_id].filter(Boolean)
+  const values=[reason[d.reason],en?'Execute operation':'执行操作',vertices?(en?'Extract vertices':'顶点提取'):(en?'Extract line nodes':'节点提取'),en?'Node 1 in the workflow definition':'定义中的第 1 个节点',d.operator.parameter?(en?'Source layer (input_gdf)':'源图层（input_gdf）'):'',field,action[d.reason],'develop.workflow.invalid_params',failure.execution_id].filter(Boolean)
   return {reason:reason[d.reason],action:action[d.reason],values,clipboard:values.join('\n'),copyButton:en?'Copy diagnostics':'复制诊断信息'}
 }
 
 async function verifyNodesCase(page,evidence,directory) {
-  const prefix='line-nodes',schema='addp.line-nodes'
+  return verifyPointExtractionCase(page,evidence,directory,false)
+}
+
+function assertVerticesLineage(graph,evidence) {
+  expect(graph.permission_filtered).toBe(false)
+  assertNodesLineage(graph,evidence)
+  expect(graph.edges.filter(e=>e.relation_kind==='derive'&&e.status==='active')).toHaveLength(1)
+}
+
+async function verifyVerticesCase(page,evidence,directory) {
+  return verifyPointExtractionCase(page,evidence,directory,true)
+}
+
+async function verifyPointExtractionCase(page,evidence,directory,vertices) {
+  const prefix=vertices?'vertex-extraction':'line-nodes',schema=vertices?'addp.vertex-extraction':'addp.line-nodes'
+  const ports=vertices?['point','line','polygon']:['result','members']
+  const assertPointLineage=vertices?assertVerticesLineage:assertNodesLineage
+  const failureKeys=vertices?['source_id','part_no','ring_no','vertex_no','vertex_id','collection','crs']:['reverse','parts-overlap','tee','cross','self','field','geometry','id','crs']
   expect(evidence.case).toBe(prefix);expect(evidence.sources).toHaveLength(10)
-  expect(evidence.outputs.map(o=>o.port)).toEqual(['result','members'])
-  expect(evidence.expected.result).toHaveLength(15);expect(evidence.expected.members).toHaveLength(22)
-  expect(evidence.expected.result.reduce((n,r)=>n+r.properties.degree,0)).toBe(22)
+  expect(evidence.outputs.map(o=>o.port)).toEqual(ports)
+  if(vertices){expect(ports.map(p=>evidence.expected[p].length)).toEqual([3,8,20]);for(const port of ports)expect(evidence.expected[port].map(r=>r.properties.vertex_id)).toEqual(Array.from({length:evidence.expected[port].length},(_,i)=>i+1))}
+  else{expect(evidence.expected.result).toHaveLength(15);expect(evidence.expected.members).toHaveLength(22);expect(evidence.expected.result.reduce((n,r)=>n+r.properties.degree,0)).toBe(22)}
   const identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
   const raw={schema_version:schema+'-browser-raw/v1',case:evidence.case,run_id:evidence.run_id,execution_id:evidence.execution_id,observations:[]}
-  const persist=(stage,result='incomplete')=>writeFileSync(resolve(directory,'topology-nodes-browser-raw.json'),JSON.stringify({...raw,stage,result},null,2)+'\n')
+  const persist=(stage,result='incomplete')=>writeFileSync(resolve(directory,vertices?'topology-vertices-browser-raw.json':'topology-nodes-browser-raw.json'),JSON.stringify({...raw,stage,result},null,2)+'\n')
   const writes=[]
   page.on('request',request=>{const path=new URL(request.url()).pathname
     if(!['GET','HEAD','OPTIONS'].includes(request.method())&&/^\/api\/v1\/(develop|meta|manager)\//.test(path))writes.push({method:request.method(),path})})
   const read=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/develop/executions/${evidence.execution_id}`)
   await login(page,process.env.ADDP_ONLINE_TEST_USER_USERNAME,process.env.ADDP_ONLINE_TEST_USER_PASSWORD,`/develop/executions/${evidence.execution_id}`)
   const response=await read,executionAPI=await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)
-  try{raw.execution=await json(response,'extension success');expect(raw.execution.execution_id).toBe(evidence.execution_id);expect(raw.execution.triggered_by).toBe(Number(evidence.principal_id));expect(raw.execution.status).toBe('success');expect(Object.keys(raw.execution.outputs).sort()).toEqual(['save_members','save_result'])}finally{await executionAPI.dispose()}
+  try{raw.execution=await json(response,'extension success');expect(raw.execution.execution_id).toBe(evidence.execution_id);expect(raw.execution.triggered_by).toBe(Number(evidence.principal_id));expect(raw.execution.status).toBe('success');expect(Object.keys(raw.execution.outputs).sort()).toEqual(ports.map(p=>'save_'+p).sort())}finally{await executionAPI.dispose()}
   const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(frame.getByText('成功',{exact:true})).toBeVisible()
   for(const output of evidence.outputs)await expect(frame.locator('.workflow-result')).toContainText(output.name)
   await page.screenshot({path:resolve(directory,`${prefix}-execution.png`)});persist('execution_verified')
-  for(const output of evidence.outputs){
+  for(const [outputIndex,output] of evidence.outputs.entries()){
     const expected=evidence.expected[output.port],fields=Object.keys(expected[0].properties),locator=`${output.locator}&item_id=${output.item_id}`
     const previewRead=page.waitForResponse(r=>{const url=new URL(r.url());return r.request().method()==='GET'&&url.pathname==='/api/v1/manager/preview'&&url.searchParams.get('locator')===locator&&url.searchParams.get('child_name')===output.layer_name})
     await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
     let previewResponse=await previewRead
-    if(output.port==='members'){
+    if(output.port==='members'||vertices&&expected.length>10){
       const fullRead=page.waitForResponse(r=>{const u=new URL(r.url());return r.request().method()==='GET'&&u.pathname==='/api/v1/manager/preview'&&u.searchParams.get('locator')===locator&&u.searchParams.get('child_name')===output.layer_name&&u.searchParams.get('page')==='1'&&u.searchParams.get('page_size')==='50'})
       await frame.locator('.table-preview .el-pagination__sizes .el-select').click()
       await frame.getByRole('option',{name:/^50(?:\D|$)/}).click();previewResponse=await fullRead
     }
     const api=await browserAPIFromResponse(previewResponse,process.env.GATEWAY_URL,identity)
     const observation={port:output.port,output_item_id:output.item_id,sources:[]};raw.observations.push(observation)
+    if(vertices)observation.preview_text=await previewResponse.text()
     try{
       observation.preview=await json(previewResponse,'extension actual preview')
       for(const source of evidence.sources){const item=await json(await api.get(`/api/v1/meta/items/${source.id}`),'unchanged extension source');expect(item).toEqual(source.before);observation.sources.push({item_id:source.id,item})}
@@ -1401,15 +1420,15 @@ async function verifyNodesCase(page,evidence,directory) {
     const graphResponse=await graphRead,graphAPI=await browserAPIFromResponse(graphResponse,process.env.GATEWAY_URL,identity)
     try{observation.graph=await json(graphResponse,'extension actual lineage tab')}finally{await graphAPI.dispose()}
     persist(output.port+'_graph_observed')
-    const binding={...evidence,sources:evidence.sources.slice(0,1),output}
-    assertNodesLineage(observation.graph,binding)
+    const binding={...evidence,sources:vertices?[evidence.sources[outputIndex]]:evidence.sources.slice(0,1),output}
+    assertPointLineage(observation.graph,binding)
     expect(observation.graph.edges.filter(e=>e.relation_kind==='derive'&&e.status==='active')).toHaveLength(1)
     const viewer=frame.locator('.lineage-viewer'),canvas=viewer.locator('.lineage-canvas canvas').first();await expect(canvas).toBeVisible()
     await expect.poll(async()=>{
       observation.lineage_rendered=await viewer.evaluate(element=>{const ref=element.__vueParentComponent?.setupState?.graphInstance,graph=ref?.value||ref;return graph?{nodes:graph.getNodes().map(i=>i.getModel()._node),edges:graph.getEdges().map(i=>i.getModel()._edge)}:null})
       return observation.lineage_rendered?.edges?.length||0
     }).toBe(1)
-    assertNodesLineage({...observation.graph,edges:observation.lineage_rendered.edges},binding)
+    assertPointLineage({...observation.graph,edges:observation.lineage_rendered.edges},binding)
     persist(output.port+'_graph_rendered')
     await expect.poll(async()=>{observation.lineage_canvas=await lineageCanvasSnapshot(canvas);return [...binding.sources.map(s=>s.name),output.name].every(name=>observation.lineage_canvas.rows.some(r=>r.text.includes(name)))}).toBe(true)
     expect(observation.lineage_canvas.paths.length).toBeGreaterThanOrEqual(1)
@@ -1417,8 +1436,8 @@ async function verifyNodesCase(page,evidence,directory) {
   }
   raw.failures=[]
   const failures=evidence.failures
-  expect(failures.map(f=>f.key)).toEqual(['reverse','parts-overlap','tee','cross','self','field','geometry','id','crs'])
-  expect(new Set(failures.map(f=>f.execution_id)).size).toBe(9)
+  expect(failures.map(f=>f.key)).toEqual(failureKeys)
+  expect(new Set([evidence.execution_id,...failures.map(f=>f.execution_id)]).size).toBe(failureKeys.length+1)
   raw.failures=[]
   await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:process.env.CONSOLE_URL})
   for(const failure of failures){
@@ -1439,17 +1458,17 @@ async function verifyNodesCase(page,evidence,directory) {
         expect(execution.triggered_by).toBe(Number(evidence.principal_id));expect(execution.status).toBe('failed')
         expect(execution.outputs||{}).toEqual({});expect(execution.metadata?.lineage_facts||null).toBe(null)
         expect(execution.error_details).toEqual(failure.error_details);expect(execution.error_details.diagnostic).toEqual(failure.expected_diagnostic)
-        const expected=nodesPanelExpectation(failure,locale)
+        const expected=nodesPanelExpectation(failure,locale,vertices)
         await expect(panel).toBeVisible();await expect(panel.locator('h4')).toHaveText(expected.reason)
-        await expect(panel.locator('dd')).toHaveText(expected.values.slice(1));await expect(panel).toContainText(expected.action);await expect(panel).toContainText(locale==='en'?'Extract line nodes':'节点提取')
+        await expect(panel.locator('dd')).toHaveText(expected.values.slice(1));await expect(panel).toContainText(expected.action);await expect(panel).toContainText(vertices?(locale==='en'?'Extract vertices':'顶点提取'):(locale==='en'?'Extract line nodes':'节点提取'))
         await expect(panel).toContainText(failure.execution_id);await expect(panel).toContainText('develop.workflow.invalid_params')
         await expect(panel).toContainText(locale==='en'?'Node 1 in the workflow definition':'定义中的第 1 个节点')
-        await expect(panel).not.toContainText(/source_shape|route_key|节点业务几何|Traceback|site-packages|\/tmp\//)
+        await expect(panel).not.toContainText(/source_shape|feature_key|完整属性|route_key|节点业务几何|Traceback|site-packages|\/tmp\//)
         await page.evaluate(()=>navigator.clipboard.writeText('NODES_CLIPBOARD_NOT_WRITTEN'))
         await panel.getByRole('button',{name:expected.copyButton,exact:true}).click()
         await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(expected.clipboard)
         const clipboard=await page.evaluate(()=>navigator.clipboard.readText())
-        const screenshot=`line-nodes-${failure.key}-${owner}-${locale}.png`;await page.screenshot({path:resolve(directory,screenshot)})
+        const screenshot=`${prefix}-${failure.key}-${owner}-${locale}.png`;await page.screenshot({path:resolve(directory,screenshot)})
         record.observations.push({owner,locale,execution:value,clipboard,screenshot})
       }
     }
@@ -1730,3 +1749,9 @@ async function verifyDissolveCase(page) {
 test('融合几何独立普通User分组全局双成果及八失败保护',async({page})=>verifyDissolveCase(page))
 
 test('几何差集独立普通User双源混合成果及四失败保护',async({page})=>verifyDifferenceCase(page))
+
+
+test('顶点提取独立普通User三Point成果及七失败保护',async({page})=>{
+  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}');await observeLineageCanvas(page)
+  await verifyVerticesCase(page,evidence,process.env.ADDP_ONLINE_ARTIFACT_DIR)
+})
