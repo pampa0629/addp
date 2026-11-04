@@ -1094,7 +1094,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "网格处理"), "raster_reproject raster_resample raster_align"),
         (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint"),
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
-        (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity raster_interpolate_idw raster_point_density"),
+        (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity raster_interpolate_idw raster_point_density raster_line_density"),
         (("栅格处理", "分类处理"), "raster_reclassify raster_nibble raster_boundary_clean raster_sieve raster_region_group raster_thin"),
         (("栅格处理", "地形分析"), "raster_slope raster_aspect raster_hillshade raster_curvature raster_tpi raster_tri raster_roughness raster_twi raster_spi raster_contour"),
         (("栅格处理", "水流分析"), "raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8"),
@@ -1868,6 +1868,22 @@ def test_distance_admission_metadata_describes_empty_targets_sources_and_complet
     for marker in ['NULL','EMPTY','目标0行拒绝','空源','distance','英尺','不自动换算米','包含','不输出最近目标ID']:
         assert marker in text
     assert len(spec['output_ports'])==1
+
+
+def test_line_density_single_read_workflow_sources_radius_no_optional_shortcuts():
+    from operators import get_operator
+    import inspect
+    spec=next(s for s in list_operators() if s['id']=='raster_line_density')
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_gdf','reference_raster','radius_metres'}
+    assert all(p['required'] and 'default' not in p for p in params.values())
+    assert params['input_gdf']['param_type']==params['reference_raster']['param_type']=='input'
+    assert params['radius_metres']['type']=='float'
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['category_path']==['栅格处理','基础计算'] and spec['attributes']['resource_groups']==['raster']
+    assert spec['output_ports'][0]['type']=='raster'
+    assert len([s for s in list_operators() if s['id']=='raster_line_density'])==1
+    assert set(inspect.signature(get_operator('raster_line_density')).parameters)==set(params)
 
 
 def test_split_multipart_has_one_workflow_read_entry_with_explicit_source_and_no_recursive_alias():
