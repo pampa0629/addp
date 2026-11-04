@@ -135,18 +135,20 @@ Manager 随根 Compose 的 `addp-platform` 部署；镜像准备、启动顺序�
 5. Meilisearch 负责全文和属性检索，pgvector 负责向量命中，Manager 搜索服务负责融合结果。
 
 ### 快显、矢量物化视图与瓦片缓存
-1. `preview_state` - 预览状态，只记录 item 的预览模式偏好和基础预览 / 快显各自的视角状态。
-2. `vector_materialized_view` - 矢量物化视图结果，只登记 Manager 创建并拥有生命周期的 3857 优化目标。
-3. `task_definitions` - 快显管理与空间任务的统一定义表；`task_type` 选择强类型校验、执行器和结果策略。
-4. `task_resource_bindings` - 派生任务源/目标资源的规范化绑定，供引擎生命周期和资源回收使用。
-5. `raster_cog` - 栅格快显 COG生成结果，只登记 Manager 创建并上传到 infra MinIO 的 COG 副本。
-6. `vector_tile_cache` - 瓦片缓存结果状态，记录存储引用、格式、范围和层级。
-7. `model_3d_glb` - 单体三维模型 GLB 快显结果，TaskProvider `task_type=model_3d_glb_generation`。
-8. `model3d_tiles` - 分块三维模型瓦片结果，TaskProvider `task_type=model3d_tiles_generation`，`target_format=3d_tiles|s3m`。
-9. `gaussian_splat_ksplat` - 3DGS - KSplat 快显结果，TaskProvider `task_type=gaussian_splat_ksplat_generation`。
-10. `point_cloud_copc` - 点云 COPC 快显结果，TaskProvider `task_type=point_cloud_copc_generation`；源 `format=copc` 直接基础预览。
-11. PMTiles 是矢量瓦片归档格式，MVT 是归档内瓦片类型，分别进入 `config.tile.archive_format=pmtiles` 与 `config.tile.tile_type=mvt`，都不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
-12. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG／COPC 的 Runtime 调用与部署边界见下文[运行要求](#cogcopc-运行要求)。
+
+预览偏好、任务定义、资源绑定、执行记录与当前结果分别管理，目标落点以[快显目标模型](./docs/quick-view/共用契约.md#目标模型)为准；表清单、关系及表级约束统一见[数据库架构](./docs/数据库架构.md#二数据库表清单)与[关系说明](./docs/数据库架构.md#32-关系说明)。
+
+Manager 受管产物与 Business PMTiles／Raster mosaic 业务 item 分属不同生命周期；结果清理不扩大到源文件、源表或外部只读目标，见[源事实与派生产物分离](./docs/数据库架构.md#71-源事实与派生产物分离)。源 `format=copc` 直接基础预览，不创建转换任务或登记生成结果，详见[对应关系](./docs/数据库架构.md#32-关系说明)。
+
+按结果类型进入权威正文：
+
+- 矢量物化视图、infra PMTiles 缓存与业务瓦片集：[矢量快显与物化视图](./docs/quick-view/矢量快显与物化视图.md)。
+- 受管 COG 与 Raster mosaic 业务数据集：[TIFF 与 COG](./docs/quick-view/TIFF与COG.md)、[Raster mosaic](./docs/quick-view/Raster-mosaic.md)。
+- GLB、3D Tiles／S3M、KSplat 与 COPC：[模型与点云专题](./docs/三维模型、点云与高斯泼溅预览说明.md#三快显结果与业务结果)；PPTX 静态 PDF：[快显共用契约](./docs/quick-view/共用契约.md#pptx-静态-pdf-预览)。
+
+PMTiles 是矢量瓦片归档格式，MVT 是归档内瓦片类型，分别进入 `config.tile.archive_format=pmtiles` 与 `config.tile.tile_type=mvt`，都不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
+
+当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG／COPC 的 Runtime 调用与部署边界见下文[运行要求](#cogcopc-运行要求)。
 
 #### COG／COPC 运行要求
 
