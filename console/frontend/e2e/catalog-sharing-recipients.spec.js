@@ -138,11 +138,13 @@ test('Catalog recipient options show names and mark only the exact current user 
   await catalog.getByRole('option', { name: '账号', exact: true }).click()
   await expect(selects.nth(1)).toContainText('按名称或编码查找并选择接收方')
   await selects.nth(1).click()
+  const beforeSearch = fixture.reads.length
   await selects.nth(1).getByRole('combobox').fill('catalog-reader')
+  // Remote filtering is debounced; cached or loading options do not prove the query was sent.
+  await expect.poll(() => fixture.reads.slice(beforeSearch).some(read => read.suffix === '/sharing_recipient_candidates' &&
+    read.params.recipient_type === 'user' && read.params.search === 'catalog-reader' && read.params.page === '1' && read.params.page_size === '50')).toBe(true)
   await expect(catalog.getByRole('option', { name: cases[1].label, exact: true })).toBeVisible()
   await expect(catalog.getByRole('option', { name: cases[0].label, exact: true })).toHaveCount(0)
-  expect(fixture.reads.some(read => read.suffix === '/sharing_recipient_candidates' &&
-    read.params.recipient_type === 'user' && read.params.search === 'catalog-reader' && read.params.page === '1' && read.params.page_size === '50')).toBe(true)
   fixture.verifyNoCommands()
 })
 
