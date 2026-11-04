@@ -194,8 +194,12 @@ func TestQueryServiceVersionAgainstPostgres(t *testing.T) {
 	t.Run("optional-defaults-persist-atomically", func(t *testing.T) {
 		q := consumerDescriptorTestService()
 		q.ID, q.Version, q.ServiceName, q.Status = 0, 1, "sql-optional-default-update", "inactive"
-		q.SqlQuery = "SELECT id,value,location FROM persons WHERE id>=:minimum"
+		q.SqlQuery = "SELECT id,value,location FROM persons WHERE id>=:minimum AND value>=:minimum_code"
 		q.NamedParameters = []models.QueryServiceNamedParameter{{Name: "minimum", Type: datatype.FieldTypeInt, Default: float64(1), Options: []commonquery.ParameterOption{{Value: float64(1), Labels: map[string]string{"zh-cn": "第一组", "en": "First"}}, {Value: float64(2), Labels: map[string]string{"zh-cn": "第二组", "en": "Second"}}}}}
+		q.NamedParameters = append(q.NamedParameters, models.QueryServiceNamedParameter{Name: "minimum_code", Type: datatype.FieldTypeString, Default: "A", Options: []commonquery.ParameterOption{
+			{Value: "A", Labels: map[string]string{"zh-cn": "起点一", "en": "First code"}},
+			{Value: "C", Labels: map[string]string{"zh-cn": "起点三", "en": "Third code"}},
+		}})
 		if err := tx.Create(q).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -221,10 +225,31 @@ func TestQueryServiceVersionAgainstPostgres(t *testing.T) {
 		if err != nil || stored.SqlQuery != before.SqlQuery || !reflect.DeepEqual(stored.NamedParameters[0].Options, before.NamedParameters[0].Options) || serviceDependencyVersion(stored) == oldVersion || !reflect.DeepEqual(stored.DataConfig, before.DataConfig) {
 			t.Fatal("source changed or version did not change", err)
 		}
+		intVersion, intChanges := serviceDependencyVersion(stored), changeCount()
+		for _, defaults := range []map[string]interface{}{{"minimum_code": nil}, {"minimum_code": float64(3)}, {"minimum_code": true}, {"minimum_code": ""}, {"minimum_code": "B"}, {"minimum": float64(1), "minimum_code": "B"}} {
+			if _, err := svc.UpdateService(ctx, q.ID, q.TenantID, &models.UpdateQueryServiceRequest{Version: 2, NamedParameterDefaults: defaults}); !errors.Is(err, ErrInvalidNamedParameterDefaults) {
+				t.Fatalf("invalid string default: %v", err)
+			}
+			after, _ := repo.GetByID(q.ID)
+			if !reflect.DeepEqual(stored, after) || changeCount() != intChanges {
+				t.Fatal("invalid string default mutated published state or catalog changes")
+			}
+		}
+		stringUpdated, err := svc.UpdateService(ctx, q.ID, q.TenantID, &models.UpdateQueryServiceRequest{Version: 2, NamedParameterDefaults: map[string]interface{}{"minimum_code": "C"}})
+		if err != nil || stringUpdated.Version != 3 || stringUpdated.NamedParameters[0].Default != float64(2) || stringUpdated.NamedParameters[1].Default != "C" {
+			t.Fatalf("persisted string default: %+v %v", stringUpdated, err)
+		}
+		finalString, err := repo.GetByID(q.ID)
+		expectedParameters := append([]models.QueryServiceNamedParameter(nil), stored.NamedParameters...)
+		expectedParameters[1].Default = "C"
+		if err != nil || finalString.SqlQuery != stored.SqlQuery || !reflect.DeepEqual(finalString.NamedParameters, expectedParameters) || !reflect.DeepEqual(finalString.DataConfig, stored.DataConfig) || serviceDependencyVersion(finalString) == intVersion {
+			t.Fatal("string default changed immutable declarations or did not change dependency version", err)
+		}
+		stored = finalString
 		if _, err := svc.UpdateService(ctx, q.ID, q.TenantID, &models.UpdateQueryServiceRequest{Version: 1, NamedParameterDefaults: map[string]interface{}{"minimum": float64(3)}}); !errors.Is(err, commonapi.ErrConflict) {
 			t.Fatalf("stale edit: %v", err)
 		}
-		if _, err := svc.UpdateService(ctx, q.ID, q.TenantID+1, &models.UpdateQueryServiceRequest{Version: 2, NamedParameterDefaults: map[string]interface{}{"minimum": float64(3)}}); !errors.Is(err, commonapi.ErrNotFound) {
+		if _, err := svc.UpdateService(ctx, q.ID, q.TenantID+1, &models.UpdateQueryServiceRequest{Version: 3, NamedParameterDefaults: map[string]interface{}{"minimum_code": "A"}}); !errors.Is(err, commonapi.ErrNotFound) {
 			t.Fatalf("foreign Tenant: %v", err)
 		}
 		final, _ := repo.GetByID(q.ID)

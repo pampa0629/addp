@@ -1,6 +1,8 @@
 Service SQL 角色方式（2026-11-03）：已按[查询发布与执行规范](../service/docs/architecture/查询发布与执行.md)接入非联邦、Provider 可证明唯一普通表的直接字段及别名；候选统一为 POST，保存仅准备元数据并复用保护编译器，实际执行与交付核验当前本人角色。Common 保留资格失效与方式失效的具体原因，不改变授权规则。默认保护及已有原生表方式保持原契约。
 
-允许值列表默认修订验收已接入v40（2026-11-04）：限定本地#33／MySQL真实HTTP及独立审计通过，10项／43条受控响应／11组JSON及CSV；非法默认不改变定义／版本和原游标，合法int默认修订后旧游标拒绝、新默认两方向续页及保护响应通过。临时#13按version2删除404、#7不变、已注销。所属177、Security原定组384、登记CLI、Service Go、PostgreSQL 11顶层及Console6项受控浏览器门禁仍有效；总入口本轮未重跑，前轮无关TiDB超时不计通过，Hosted未运行。string默认本身修订、活动角色专用方式及其他引擎未由本轮覆盖。事实与证据统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#允许值列表默认修订的验收接入v402026-11-04)，索引`/tmp/p145-default-options-20261104/verification.json`。
+字符串默认值修订已接入v41（2026-11-04）：沿同一可选参数Service、int默认保持，增加string默认合法修订、非法更新不变性、旧游标拒绝、两方向续页及CSV保护，资源和浏览器v9保持。Service Go、PostgreSQL11顶层及所属Runner180项通过，临时本地HTTP／独立审计5组离线流程通过；标准make test-security-online-runner完整通过（41／80／198／188／388项及登记CLI）；个人环境正式HTTP待登录，Hosted未运行，不计通过。产品代码未改，无需重启。事实统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#字符串默认值修订的验收接入v412026-11-04)，索引`/tmp/p145-string-default-20261104/verification.json`。
+
+允许值列表int默认修订的限定本地#33／MySQL真实HTTP及独立审计通过：10项／43条受控响应／11组JSON及CSV；临时#13带version2删除404、#7不变、已注销。该历史证据不代替string默认修订的真实HTTP，详细范围统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#允许值列表默认修订的验收接入v402026-11-04)。
 
 新默认续页Runner v39已接入（2026-11-04）：同一五行合成来源以2＋2／4行参考，固定string默认仅用于普通谓词，int默认1→2；两方向参数省略／显式续页、CSV分页头、改int/string拒绝均沿单一服务／Policy及精确清理，领域v39／浏览器v9，资源数不变。所属174项通过；完整总入口在未修改TiDB部署夹具处20秒超时、退出2，未记通过；根Makefile原定Security组380项独立退出0，登记CLI退出0；不替代完整总入口通过，未执行的Graph/Cleanup等阶段不计通过。固定摘要及日志见`/tmp/p145-hosted-pagination-20261104/verification.json`。规范与证据统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#新默认续页的隔离runner接入v392026-11-04)；实际Hosted未运行，CI专门会话跟进，无需重启。
 

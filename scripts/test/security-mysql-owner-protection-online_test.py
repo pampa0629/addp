@@ -2418,7 +2418,11 @@ class ServiceRoleCursorClient:
                 self.deleted = True
                 return response(200, {"message": "deleted"})
             if method == "PUT":
-                assert body["version"] == self.service["version"]
+                if body["version"] != self.service["version"]:
+                    if self.fault == "string_stale_mutates": self.service["version"] += 1
+                    result = response(409, {"error": "Service version conflict", "error_code": "resource_version_conflict"})
+                    if self.fault == "string_stale_wrong_code": result.payload["error_code"] = "invalid_structured_query"
+                    return result
                 unavailable = bool(self.policy and self.policy["state"] == "revoked" and self.service["data_config"].get("protection_choices"))
                 pure_stop = set(body) == {"version", "status"} and body["status"] == "inactive"
                 explicit_clear = body.get("data_config", {}).get("protection_choices") == []
@@ -2432,9 +2436,16 @@ class ServiceRoleCursorClient:
                     assert set(body) == {"version", "named_parameter_defaults"}
                     proposed = body["named_parameter_defaults"]
                     definitions = {item["name"]: item for item in self.service["named_parameters"]}
+                    string_stage = definitions["minimum_id"].get("default") == 2
                     outside = any(name not in definitions or not any(type(option["value"]) is type(value) and option["value"] == value
                         for option in definitions[name].get("options", [])) for name, value in proposed.items())
                     if outside:
+                        if string_stage:
+                            if self.fault == "string_invalid_accepted": return response(200, copy.deepcopy(self.service))
+                            if self.fault == "string_invalid_mutates_labels": definitions["minimum_code"]["options"][0]["labels"]["en"] = "changed"
+                            if self.fault == "string_invalid_partial_applied" and len(proposed) == 2: definitions["minimum_id"]["default"] = 1
+                            if self.fault == "string_invalid_rotates_cursor": self.cursor = "invalidated-string-default-cursor"
+                            if self.fault == "string_invalid_interrupt": raise KeyboardInterrupt("controlled string-default rejection interruption")
                         if self.fault == "invalid_default_interrupt": raise KeyboardInterrupt("controlled rejected-default interruption")
                         if self.fault == "invalid_default_accepted": return response(200, copy.deepcopy(self.service))
                         if self.fault == "invalid_default_mutates_version": self.service["version"] += 1
@@ -2448,13 +2459,18 @@ class ServiceRoleCursorClient:
                         if self.fault == "invalid_default_wrong_type": result.content_type = "text/plain"
                         return result
                     if self.fault != "default_revision_not_persisted":
-                        self.service["named_parameters"][0]["default"] = body["named_parameter_defaults"]["minimum_id"]
+                        for name, value in proposed.items():
+                            if name == "minimum_code" and self.fault == "string_default_not_persisted": continue
+                            definitions[name]["default"] = value
                     if self.fault != "default_revision_version_unchanged":
-                        self.service["service_version"] = "default-revised-version"
+                        if not string_stage or self.fault != "string_version_unchanged":
+                            self.service["service_version"] = "string-revised-version" if string_stage else "default-revised-version"
+                    if string_stage and self.fault == "string_mutates_integer": definitions["minimum_id"]["default"] = 1
                     if self.fault == "default_revision_source_changed":
                         self.service["sql_query"] += " LIMIT 5"
                     if self.fault != "default_revision_old_cursor_accepted":
-                        self.cursor = "synthetic-revised-cursor-do-not-archive"
+                        if not string_stage or self.fault != "string_old_cursor_accepted":
+                            self.cursor = "synthetic-string-revised-cursor" if string_stage else "synthetic-revised-cursor-do-not-archive"
                 self.service.update(copy.deepcopy({key: value for key, value in body.items() if key not in {"data_config", "named_parameter_defaults"}}))
                 self.service["version"] += 1
                 if "data_config" in body:
@@ -2484,7 +2500,9 @@ class ServiceRoleCursorClient:
                 required = definition["required"]
                 bound = values.get("minimum_id", definition.get("default"))
                 string_parameter = len(self.service["named_parameters"]) > 1
-                code_bound = values.get("minimum_code", "CUST-10001")
+                code_bound = values.get("minimum_code", self.service["named_parameters"][1]["default"] if string_parameter else "CUST-10001")
+                string_revised = string_parameter and self.service["named_parameters"][1]["default"] == "CUST-10003"
+                if string_revised and self.fault == "string_default_ignored" and "minimum_code" not in values: code_bound = "CUST-10001"
                 invalid = (bool(set(values) - ({"minimum_id", "minimum_code"} if string_parameter else {"minimum_id"}))
                            or (required and "minimum_id" not in values) or type(bound) is not int
                            or string_parameter and type(code_bound) is not str)
@@ -2495,6 +2513,7 @@ class ServiceRoleCursorClient:
                     changed_cursor = False
                 if revised and page_limit == 2 and self.fault == "new_cursor_parameter_ignored":
                     changed_cursor = False
+                if string_revised and cursor_base == self.cursor and self.fault == "string_new_cursor_parameter_ignored": changed_cursor = False
                 if self.fault == "cursor_binds_raw_parameters" and body["page"].get("cursor") and values != {"minimum_id":1}:
                     changed_cursor = True
                 if (invalid and self.fault != "bad_parameter_accepted") or (changed_cursor and self.fault != "cursor_parameter_ignored"):
@@ -2539,10 +2558,14 @@ class ServiceRoleCursorClient:
                 if self.fault == "new_second_duplicate": cursor_after = 1
                 if self.fault == "new_second_skip": cursor_after = 4
                 if self.fault == "new_second_interrupt": raise KeyboardInterrupt("controlled new-default continuation interruption")
+                if self.service["named_parameters"][1]["default"] == "CUST-10003":
+                    if self.fault == "string_second_duplicate": cursor_after = 2
+                    if self.fault == "string_second_skip": cursor_after = 5
+                    if self.fault == "string_second_interrupt": raise KeyboardInterrupt("controlled string continuation interruption")
             available = [str(i) for i in range(minimum, 6) if i > cursor_after and (not self.service.get("named_parameters") or "CUST-1000" + str(i) >= code_bound)]
             more = len(available) > page_limit
             ids = available[:page_limit]
-            pagination_versions = ("chosen-version" if self.service["data_config"].get("protection_choices") else ("default-revised-version" if self.service["service_version"] == "default-revised-version" else "default-version"),)
+            pagination_versions = ("chosen-version" if self.service["data_config"].get("protection_choices") else self.service["service_version"],)
             pagination_has_more = (str(more).lower(),)
             if self.fault == "duplicate_rows":
                 ids = ["1", "1", "3", "4"]
@@ -2554,6 +2577,7 @@ class ServiceRoleCursorClient:
                 value = ("*" * len(original) if original else None) if chosen else ONLINE.BANK_MASKED[key]
                 if self.fault == "plaintext" or revised_page and self.fault == "new_page_plaintext":
                     value = original
+                if self.service.get("service_version") == "string-revised-version" and self.fault == "string_page_plaintext": value = original
                 if self.fault == "recovery_stays_full_mask" and self.policy and self.policy["state"] == "revoked" and not chosen:
                     value = "*" * len(original) if original else None
                 source_row = {"id": int(key), "customer_code": "CUST-1000" + key, ONLINE.BANK_FIELD: value,
@@ -2569,6 +2593,7 @@ class ServiceRoleCursorClient:
                     row["card_alias"] = ""
                 rows.append(row)
             if raw_response:
+                if self.service.get("service_version") == "string-revised-version" and self.fault == "string_csv_mismatch": rows[0]["bank_account_no"] = "wrong-csv"
                 if revised_page and cursor and self.fault == "new_second_csv_mismatch":
                     rows[0]["bank_account_no"] = "changed-csv-only"
                 output = io.StringIO()
@@ -2584,7 +2609,7 @@ class ServiceRoleCursorClient:
                 if self.fault == "recovery_csv_bytes_changed" and self.policy and self.policy["state"] == "revoked" and not chosen:
                     data = data.replace("\r\n", "\n")
                 return response(200, data.encode())
-            return response(200, {"data": rows, "service_version": "chosen-version" if chosen else ("default-revised-version" if self.service["service_version"] == "default-revised-version" else "default-version"),
+            return response(200, {"data": rows, "service_version": "chosen-version" if chosen else self.service["service_version"],
                 "page": {"has_more": more, "next_cursor": (self.cursor if page_limit == 4 and minimum == 1 else f"{self.cursor}:limit={page_limit}:minimum={minimum}:code={code_bound}:after={ids[-1]}") if more else ""}})
         raise AssertionError((method, path, expected))
 
@@ -2995,7 +3020,7 @@ class ServiceRoleSQLOptionalDefaultCursorTest(ServiceRoleSQLCursorRevocationTest
         self.assertTrue(revision["unchanged_default_cursor"]["csv_pagination_headers_verified"])
         self.assertNotEqual(revision["unchanged_default_cursor"]["service_version"], revision["new_default_output"]["service_version"])
         self.assertEqual(client.service["named_parameters"][0]["options"], report["named_parameters"][0]["options"])
-        self.assertEqual(client.service["named_parameters"][1], report["named_parameters"][1])
+        self.assertEqual(client.service["named_parameters"][1], dict(report["named_parameters"][1], default="CUST-10003"))
 
     def test_option_default_rejection_defects_fail_and_clean_exact_resources(self):
         for fault in ("invalid_default_accepted", "invalid_default_mutates_version", "invalid_default_mutates_labels",
@@ -3009,6 +3034,42 @@ class ServiceRoleSQLOptionalDefaultCursorTest(ServiceRoleSQLCursorRevocationTest
         client = ServiceRoleCursorClient("invalid_default_interrupt")
         with self.assertRaises(KeyboardInterrupt): self.run_case(client)
         self.assertTrue(client.deleted and client.policy["state"] == "revoked")
+
+    def test_string_default_revision_preserves_domains_and_masked_continuations(self):
+        client = ServiceRoleCursorClient(); report = self.run_case(client)
+        checks = report["published_default_revision"]["string_default_revision"]
+        self.assertEqual(checks["combined_ids"], ["3", "4", "5"])
+        self.assertEqual(checks["reference_output"]["ids"], checks["combined_ids"])
+        self.assertEqual(checks["explicit_old_value_new_query"]["csv_sha256"], report["published_default_revision"]["new_default_output"]["csv_sha256"])
+        self.assertEqual(set(checks["invalid_default_updates"]), {"null", "numeric", "boolean", "empty", "outside_options", "mixed_partial_invalid"})
+        self.assertEqual(checks["unchanged_default_cursor"]["ids"], ["4", "5"])
+        for flag in ("reference_rows_verified", "csv_pagination_headers_verified", "option_domains_preserved",
+                     "immutable_declarations_preserved", "service_version_changed", "runtime_queries_unchanged"):
+            self.assertTrue(checks[flag])
+        for names in (("before_revision_first", "omitted_first", "explicit_first"),
+                      ("before_revision_second", "omitted_cursor_explicit_second", "explicit_cursor_omitted_second")):
+            self.assertEqual(len({checks[name]["csv_sha256"] for name in names}), 1)
+        self.assertNotEqual(checks["before_revision_first"]["service_version"], checks["omitted_first"]["service_version"])
+        self.assertEqual(checks["stale_update"]["error_code"], "resource_version_conflict")
+        self.assertEqual(client.service["named_parameters"][0]["default"], 2)
+        self.assertEqual(client.service["named_parameters"][1]["default"], "CUST-10003")
+        self.assertTrue(client.deleted and client.policy["state"] == "revoked")
+
+    def test_string_revision_defects_fail_and_clean_exact_resources(self):
+        for fault in ("string_invalid_accepted", "string_invalid_mutates_labels", "string_invalid_partial_applied",
+                      "string_invalid_rotates_cursor", "string_default_not_persisted", "string_version_unchanged",
+                      "string_mutates_integer", "string_old_cursor_accepted", "string_default_ignored",
+                      "string_new_cursor_parameter_ignored", "string_second_duplicate", "string_second_skip",
+                      "string_page_plaintext", "string_csv_mismatch", "string_stale_mutates", "string_stale_wrong_code"):
+            client = ServiceRoleCursorClient(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError): self.run_case(client)
+            self.assertTrue(client.deleted and client.policy["state"] == "revoked")
+
+    def test_string_revision_interrupt_cleans_exact_resources(self):
+        for fault in ("string_invalid_interrupt", "string_second_interrupt"):
+            client = ServiceRoleCursorClient(fault)
+            with self.subTest(fault=fault), self.assertRaises(KeyboardInterrupt): self.run_case(client)
+            self.assertTrue(client.deleted and client.policy["state"] == "revoked")
 
 
 class MembershipBackend(ServiceRoleCursorClient):

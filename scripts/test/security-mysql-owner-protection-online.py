@@ -2717,6 +2717,101 @@ def service_role_parameter_boundaries(client: GatewayClient, query_path: str, cu
             **({"default_resolution": default_resolution} if defaulted else {})}
 
 
+def verify_service_string_default_revision(client: GatewayClient, service_path: str,
+        query_path: str, before: dict[str, object], old_cursor: str, old_version: str,
+        prior_output: Mapping[str, object]) -> dict[str, object]:
+    old_values = {"minimum_id": 2, "minimum_code": "CUST-10001"}
+    new_values = {"minimum_id": 2, "minimum_code": "CUST-10003"}
+
+    def read(ids, values=None, cursor="", limit=2):
+        return assert_service_role_page(client, query_path, ids, False, cursor,
+            output_sources=BANK_ROLE_SQL_OUTPUTS, parameters=values, page_limit=limit,
+            verify_pagination_headers=True)
+
+    control, control_cursor, control_version = read(["3", "4"], new_values)
+    control_last, _, control_last_version = read(["5"], new_values, control_cursor)
+    reference, _, reference_version = read(["3", "4", "5"], new_values, limit=4)
+    if any(value != old_version for value in (control_version, control_last_version, reference_version)):
+        raise SuiteError("string default control changed the published version")
+    invalid_updates = {}
+    for label, values in (("null", {"minimum_code": None}), ("numeric", {"minimum_code": 3}),
+            ("boolean", {"minimum_code": True}), ("empty", {"minimum_code": ""}),
+            ("outside_options", {"minimum_code": "CUST-10002"}),
+            ("mixed_partial_invalid", {"minimum_id": 1, "minimum_code": "CUST-10002"})):
+        response = client.request("PUT", service_path, (400,), {"version": before["version"], "named_parameter_defaults": values})
+        error = _object(response.payload, "rejected string default update")
+        if (response.status != 400 or set(error) != {"error", "error_code"}
+                or error.get("error_code") != "invalid_named_parameter_defaults"
+                or not isinstance(error.get("error"), str) or not error["error"].strip()
+                or not isinstance(response.content_type, str)
+                or response.content_type.split(";", 1)[0].strip().lower() != "application/json"):
+            raise SuiteError("invalid string default must be exact localized 400 without results")
+        if _object(client.request("GET", service_path, (200,)).payload, "unchanged string definition") != before:
+            raise SuiteError("invalid string default mutated the definition or version")
+        invalid_updates[label] = {"http_status": 400, "error_code": "invalid_named_parameter_defaults",
+            "result_absent": True, "complete_definition_unchanged": True}
+    retained, _, retained_version = read(["4", "5"], cursor=old_cursor)
+    if retained_version != old_version:
+        raise SuiteError("rejected string default invalidated the original cursor")
+    client.request("PUT", service_path, (200,), {"version": before["version"],
+        "named_parameter_defaults": {"minimum_code": "CUST-10003"}})
+    after = _object(client.request("GET", service_path, (200,)).payload, "updated string default")
+    expected = copy.deepcopy(before)
+    expected["named_parameters"][1]["default"] = "CUST-10003"
+    ignored = {"version", "updated_at", "service_version"}
+    if (positive_int(after.get("version"), "string default Service version") <= before["version"]
+            or {k: v for k, v in after.items() if k not in ignored} != {k: v for k, v in expected.items() if k not in ignored}):
+        raise SuiteError("string default update changed immutable declarations or did not persist")
+    old_refusals = {}
+    for label, values in (("omitted", None), ("explicit_old_defaults", old_values)):
+        old_refusals[label] = {}
+        for fmt in ("json", "csv"):
+            old_refusals[label][fmt] = assert_service_parameter_refusal(client.request("POST", query_path, (400,),
+                service_role_query_request(BANK_ROLE_SQL_OUTPUTS, old_cursor, parameters=values, format_name=fmt, page_limit=2)))
+    omitted, omitted_cursor, version = read(["3", "4"])
+    omitted_last, _, last_version = read(["5"], new_values, omitted_cursor)
+    explicit, explicit_cursor, explicit_version = read(["3", "4"], new_values)
+    explicit_last, _, explicit_last_version = read(["5"], cursor=explicit_cursor)
+    new_reference, _, new_reference_version = read(["3", "4", "5"], limit=4)
+    prior, _, prior_version = read(["2", "3", "4", "5"], old_values, limit=4)
+    joined = omitted["ids"] + omitted_last["ids"]
+    if (version == old_version or any(value != version for value in (last_version, explicit_version,
+            explicit_last_version, new_reference_version, prior_version))
+            or joined != reference["ids"] or joined != new_reference["ids"] or len(set(joined)) != 3
+            or joined != sorted(joined, key=int) or explicit["ids"] + explicit_last["ids"] != joined
+            or len({control["csv_sha256"], omitted["csv_sha256"], explicit["csv_sha256"]}) != 1
+            or len({control_last["csv_sha256"], omitted_last["csv_sha256"], explicit_last["csv_sha256"]}) != 1
+            or reference["csv_sha256"] != new_reference["csv_sha256"] or prior["csv_sha256"] != prior_output["csv_sha256"]):
+        raise SuiteError("string default output or continuation differs from protected reference")
+    changed_refusals = {}
+    for label, values in (("integer_parameter_changed", {**new_values, "minimum_id": 1}),
+                          ("string_parameter_changed", old_values)):
+        changed_refusals[label] = {}
+        for fmt in ("json", "csv"):
+            changed_refusals[label][fmt] = assert_service_parameter_refusal(client.request("POST", query_path, (400,),
+                service_role_query_request(BANK_ROLE_SQL_OUTPUTS, omitted_cursor, parameters=values, format_name=fmt, page_limit=2)))
+    response = client.request("PUT", service_path, (409,), {"version": before["version"],
+        "named_parameter_defaults": {"minimum_code": "CUST-10001"}})
+    error = _object(response.payload, "stale string default revision")
+    if (response.status != 409 or set(error) != {"error", "error_code"}
+            or error.get("error_code") != "resource_version_conflict"
+            or not isinstance(error.get("error"), str) or not error["error"].strip()
+            or not isinstance(response.content_type, str)
+            or response.content_type.split(";", 1)[0].strip().lower() != "application/json"
+            or _object(client.request("GET", service_path, (200,)).payload, "final string default") != after):
+        raise SuiteError("stale string default must reject without mutating published state")
+    return {"invalid_default_updates": invalid_updates, "unchanged_default_cursor": retained,
+        "old_cursor_refusals": old_refusals, "omitted_first": omitted, "omitted_cursor_explicit_second": omitted_last,
+        "explicit_first": explicit, "explicit_cursor_omitted_second": explicit_last,
+        "before_revision_first": control, "before_revision_second": control_last,
+        "reference_output": new_reference, "explicit_old_value_new_query": prior,
+        "changed_parameter_refusals": changed_refusals, "combined_ids": joined,
+        "reference_rows_verified": True, "csv_pagination_headers_verified": True,
+        "option_domains_preserved": True, "immutable_declarations_preserved": True,
+        "service_version_changed": True, "runtime_queries_unchanged": True,
+        "stale_update": {"http_status": 409, "error_code": "resource_version_conflict", "complete_definition_unchanged": True}}
+
+
 def verify_service_published_default_revision(client: GatewayClient, service_path: str,
         query_path: str, before: dict[str, object], old_cursor: str, old_version: str) -> dict[str, object]:
     control_first, control_cursor, control_version = assert_service_role_page(client, query_path, ["2", "3"], False,
@@ -2802,7 +2897,10 @@ def verify_service_published_default_revision(client: GatewayClient, service_pat
         "csv_pagination_headers_verified": True, "changed_parameter_refusals": changed_parameter_refusals}
     if _object(client.request("GET", service_path, (200,)).payload, "default after queries") != after:
         raise SuiteError("runtime queries mutated the published default")
+    string_revision = verify_service_string_default_revision(client, service_path, query_path, after,
+        omitted_cursor, version, omitted)
     return {"old_cursor_refusals": refusals, "new_default_output": omitted, "continuation_checks": continuation_checks,
+        "string_default_revision": string_revision,
         "invalid_default_updates": invalid_default_updates, "unchanged_default_cursor": unchanged_default_cursor,
         "option_domains_preserved": True,
         "explicit_new_default_output": explicit, "explicit_old_value_new_query": dict(prior, continuation=last),
@@ -4482,7 +4580,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v40",
+            "schema_version": "addp.security-mysql-owner-protection-online/v41",
             "result": "passed",
             "identity": identity,
             "governance": governance,
