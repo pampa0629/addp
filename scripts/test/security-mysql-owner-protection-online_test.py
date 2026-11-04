@@ -2329,10 +2329,22 @@ class ServiceRoleCursorClient:
 
     def request(self, method, path, expected, body=None, *, raw_response=False):
         self.calls.append((method, path, copy.deepcopy(body)))
+        pagination_versions, pagination_has_more = (), ()
         def response(status, payload):
             cache = () if self.fault == "missing_cache_control" or self.fault == "refusal_cache_control" and status == 409 else ("no-store",)
             content_type = "text/plain" if self.fault == "wrong_content_type" else ("text/csv" if raw_response else "application/json")
-            return ONLINE.SUPPORT.Response(status, payload, cache_control=cache, content_type=content_type)
+            versions, more_headers = pagination_versions, pagination_has_more
+            revised_page = (raw_response and isinstance(body, dict) and body.get("page", {}).get("limit") == 2
+                            and self.service and self.service.get("named_parameters", [{}])[0].get("default") == 2)
+            if revised_page:
+                if self.fault == "new_csv_version_missing": versions = ()
+                if self.fault == "new_csv_version_duplicate": versions = versions + versions
+                if self.fault == "new_csv_version_wrong": versions = ("foreign-version",)
+                if self.fault == "new_csv_more_missing": more_headers = ()
+                if self.fault == "new_csv_more_duplicate": more_headers = more_headers + more_headers
+                if self.fault == "new_csv_more_wrong": more_headers = ("false" if more_headers == ("true",) else "true",)
+            return ONLINE.SUPPORT.Response(status, payload, cache_control=cache, content_type=content_type,
+                pagination_versions=versions, pagination_has_more=more_headers)
         if path == "/api/v1/system/auth/subject-roles":
             now = ONLINE.datetime.now(ONLINE.timezone.utc)
             roles = {"tenant_id": "2", "actor_principal_id": "7", "tenant_membership_id": "8", "authorization_version": "1", "role_keys": ["online.security_mysql_owner_protection"],
@@ -2376,7 +2388,7 @@ class ServiceRoleCursorClient:
             else:
                 assert set(body) == {"config_type", "engine_id", "sql", "parameters"}
                 assert body["config_type"] == "sql" and body["engine_id"] == 23
-                assert body["parameters"] == ({"minimum_id": 1} if ":minimum_id" in body["sql"] else {})
+                assert body["parameters"] == ({"minimum_id": 1, **({"minimum_code": "CUST-10001"} if ":minimum_code" in body["sql"] else {})} if ":minimum_id" in body["sql"] else {})
                 if self.service.get("config_type") == "sql":
                     assert body["sql"] == self.service["sql_query"]
             field = {"target": self.target, "component_key": ONLINE.BANK_FIELD, "policy_id": "owned-policy",
@@ -2440,17 +2452,32 @@ class ServiceRoleCursorClient:
             return response(404 if self.deleted else 200, result)
         if path.startswith("/api/query/"):
             minimum = 1
+            cursor = body["page"].get("cursor")
+            page_limit = body["page"]["limit"]
+            cursor_base, cursor_limit, cursor_minimum, cursor_after, cursor_code = cursor, 4, 1, 4 if cursor else 0, "CUST-10001"
+            if cursor and ":limit=" in cursor:
+                cursor_base, suffix = cursor.split(":limit=", 1)
+                cursor_limit, suffix = suffix.split(":minimum=", 1)
+                cursor_minimum, suffix = suffix.split(":code=", 1)
+                cursor_code, cursor_after = suffix.split(":after=", 1)
+                cursor_limit, cursor_minimum, cursor_after = int(cursor_limit), int(cursor_minimum), int(cursor_after)
             if self.service.get("named_parameters"):
                 values = body.get("parameters", {})
                 definition = self.service["named_parameters"][0]
                 required = definition["required"]
                 bound = values.get("minimum_id", definition.get("default"))
-                invalid = bool(set(values) - {"minimum_id"}) or (required and "minimum_id" not in values) or type(bound) is not int
+                string_parameter = len(self.service["named_parameters"]) > 1
+                code_bound = values.get("minimum_code", "CUST-10001")
+                invalid = (bool(set(values) - ({"minimum_id", "minimum_code"} if string_parameter else {"minimum_id"}))
+                           or (required and "minimum_id" not in values) or type(bound) is not int
+                           or string_parameter and type(code_bound) is not str)
                 probe_cursor = body["page"].get("cursor")
                 revised = definition.get("default") == 2 and not required
-                changed_cursor = bool(probe_cursor) and (probe_cursor != self.cursor or bound != 1)
-                if revised and probe_cursor != self.cursor and probe_cursor:
-                    changed_cursor = self.fault != "default_revision_old_cursor_accepted"
+                changed_cursor = bool(probe_cursor) and (cursor_base != self.cursor or bound != cursor_minimum or page_limit != cursor_limit or code_bound != cursor_code)
+                if revised and cursor_base != self.cursor and probe_cursor and self.fault == "default_revision_old_cursor_accepted":
+                    changed_cursor = False
+                if revised and page_limit == 2 and self.fault == "new_cursor_parameter_ignored":
+                    changed_cursor = False
                 if self.fault == "cursor_binds_raw_parameters" and body["page"].get("cursor") and values != {"minimum_id":1}:
                     changed_cursor = True
                 if (invalid and self.fault != "bad_parameter_accepted") or (changed_cursor and self.fault != "cursor_parameter_ignored"):
@@ -2488,12 +2515,18 @@ class ServiceRoleCursorClient:
                 if self.fault == "denial_rows":
                     error["data"] = []
                 return response(status, error)
-            cursor = body["page"].get("cursor")
             if cursor:
-                assert cursor == self.cursor or self.fault == "default_revision_old_cursor_accepted"
-            available = [str(i) for i in range(minimum, 6) if not cursor or i > 4]
-            more = len(available) > 4
-            ids = available[:4]
+                assert cursor_base == self.cursor or self.fault == "default_revision_old_cursor_accepted"
+            revised_page = page_limit == 2 and self.service.get("named_parameters", [{}])[0].get("default") == 2
+            if revised_page and cursor:
+                if self.fault == "new_second_duplicate": cursor_after = 1
+                if self.fault == "new_second_skip": cursor_after = 4
+                if self.fault == "new_second_interrupt": raise KeyboardInterrupt("controlled new-default continuation interruption")
+            available = [str(i) for i in range(minimum, 6) if i > cursor_after and (not self.service.get("named_parameters") or "CUST-1000" + str(i) >= code_bound)]
+            more = len(available) > page_limit
+            ids = available[:page_limit]
+            pagination_versions = ("chosen-version" if self.service["data_config"].get("protection_choices") else ("default-revised-version" if self.service["service_version"] == "default-revised-version" else "default-version"),)
+            pagination_has_more = (str(more).lower(),)
             if self.fault == "duplicate_rows":
                 ids = ["1", "1", "3", "4"]
             if self.fault == "interrupt_selected" and chosen:
@@ -2502,7 +2535,7 @@ class ServiceRoleCursorClient:
             for key in ids:
                 original = ONLINE.BANK_SOURCE_VALUES[key]
                 value = ("*" * len(original) if original else None) if chosen else ONLINE.BANK_MASKED[key]
-                if self.fault == "plaintext":
+                if self.fault == "plaintext" or revised_page and self.fault == "new_page_plaintext":
                     value = original
                 if self.fault == "recovery_stays_full_mask" and self.policy and self.policy["state"] == "revoked" and not chosen:
                     value = "*" * len(original) if original else None
@@ -2519,6 +2552,8 @@ class ServiceRoleCursorClient:
                     row["card_alias"] = ""
                 rows.append(row)
             if raw_response:
+                if revised_page and cursor and self.fault == "new_second_csv_mismatch":
+                    rows[0]["bank_account_no"] = "changed-csv-only"
                 output = io.StringIO()
                 writer = csv.DictWriter(output, fieldnames=body["select"])
                 writer.writeheader()
@@ -2533,7 +2568,7 @@ class ServiceRoleCursorClient:
                     data = data.replace("\r\n", "\n")
                 return response(200, data.encode())
             return response(200, {"data": rows, "service_version": "chosen-version" if chosen else ("default-revised-version" if self.service["service_version"] == "default-revised-version" else "default-version"),
-                "page": {"has_more": more, "next_cursor": self.cursor if more else ""}})
+                "page": {"has_more": more, "next_cursor": (self.cursor if page_limit == 4 and minimum == 1 else f"{self.cursor}:limit={page_limit}:minimum={minimum}:code={code_bound}:after={ids[-1]}") if more else ""}})
         raise AssertionError((method, path, expected))
 
 
@@ -2746,7 +2781,7 @@ class ServiceRoleSQLCursorRevocationTest(unittest.TestCase):
         self.assertEqual((method, path), ("POST", "/api/v1/service/query-protection-options"))
         self.assertEqual(set(body), {"config_type", "engine_id", "sql", "parameters"})
         self.assertEqual((body["config_type"], body["engine_id"], body["parameters"]),
-                         ("sql", 23, {"minimum_id": 1} if client.service.get("named_parameters") else {}))
+                         ("sql", 23, {"minimum_id": 1, **({"minimum_code": "CUST-10001"} if len(client.service.get("named_parameters", [])) > 1 else {})} if client.service.get("named_parameters") else {}))
         self.assertIn("b.bank_card_number AS card_alias,b.bank_card_number AS card_copy", body["sql"])
         first_query = next(i for i, call in enumerate(client.calls) if call[1].startswith("/api/query/"))
         policy_create = next(i for i, call in enumerate(client.calls) if call[:2] == ("POST", "/api/v1/security/protection-policies"))
@@ -2856,7 +2891,7 @@ class ServiceRoleSQLOptionalDefaultCursorTest(ServiceRoleSQLCursorRevocationTest
 
     def test_omission_explicit_default_and_both_cursor_directions_share_csv(self):
         client=ServiceRoleCursorClient(); report=self.run_case(client)
-        self.assertEqual(report["named_parameters"],[{"name":"minimum_id","type":"int","required":False,"default":1}])
+        self.assertEqual(report["named_parameters"],[{"name":"minimum_id","type":"int","required":False,"default":1},{"name":"minimum_code","type":"string","required":False,"default":"CUST-10001"}])
         self.assertEqual(set(report["parameter_boundary_checks"]),{"default_before_selection","role_selected","default_restored"})
         for checks in report["parameter_boundary_checks"].values():
             resolved=checks["default_resolution"]
@@ -2872,7 +2907,7 @@ class ServiceRoleSQLOptionalDefaultCursorTest(ServiceRoleSQLCursorRevocationTest
         self.assertEqual(revision["new_default_output"]["ids"],["2","3","4","5"])
         self.assertEqual(set(revision["old_cursor_refusals"]),{"omitted","explicit_old_default"})
         options=[body for method,path,body in client.calls if path == "/api/v1/service/query-protection-options"]
-        self.assertEqual(options[0]["parameters"],{"minimum_id":1})
+        self.assertEqual(options[0]["parameters"],{"minimum_id":1,"minimum_code":"CUST-10001"})
         self.assertEqual(set(report["explicit_default_parameter_refusals"]),{"json","csv"})
         self.assertTrue(all(set(v)=={"old_cursor","new_query"} for v in report["explicit_default_parameter_refusals"].values()))
         queries=[body for method,path,body in client.calls if path.startswith("/api/query/")]
@@ -2890,6 +2925,43 @@ class ServiceRoleSQLOptionalDefaultCursorTest(ServiceRoleSQLCursorRevocationTest
                 self.run_case(client)
             self.assertTrue(client.deleted)
             if client.policy:self.assertEqual(client.policy["state"],"revoked")
+
+
+    def test_new_default_continuations_match_reference_and_csv_headers(self):
+        client = ServiceRoleCursorClient(); report = self.run_case(client)
+        checks = report["published_default_revision"]["continuation_checks"]
+        self.assertEqual(checks["combined_ids"], ["2", "3", "4", "5"])
+        self.assertEqual(checks["reference_output"]["ids"], checks["combined_ids"])
+        self.assertEqual(checks["reference_rows"], 4)
+        for flag in ("reference_rows_verified", "no_overlap_verified", "strict_order_verified", "csv_pagination_headers_verified"):
+            self.assertTrue(checks[flag])
+        first = [checks[name] for name in ("before_revision_first", "omitted_first", "explicit_first")]
+        second = [checks[name] for name in ("before_revision_second", "omitted_cursor_explicit_second", "explicit_cursor_omitted_second")]
+        self.assertEqual(len({page["csv_sha256"] for page in first}), 1)
+        self.assertEqual(len({page["csv_sha256"] for page in second}), 1)
+        self.assertNotEqual(first[0]["service_version"], first[1]["service_version"])
+        self.assertEqual(first[1]["service_version"], second[1]["service_version"])
+        for page in first + second:
+            self.assertEqual(page["page_limit"], 2)
+            self.assertTrue(page["csv_pagination_headers_verified"])
+        self.assertTrue(all(page["has_more"] for page in first))
+        self.assertTrue(all(not page["has_more"] for page in second))
+        self.assertEqual(set(checks["changed_parameter_refusals"]), {"integer_parameter_changed", "string_parameter_changed"})
+        self.assertTrue(all(value["http_status"] == 400 and value["error_code"] == "invalid_structured_query" and value["cache_control"] == "no-store" for formats in checks["changed_parameter_refusals"].values() for value in formats.values()))
+        self.assertTrue(client.deleted and client.policy["state"] == "revoked")
+
+    def test_new_default_continuation_defects_fail_without_leftovers(self):
+        for fault in ("new_second_duplicate", "new_second_skip", "new_second_csv_mismatch", "new_cursor_parameter_ignored",
+                      "new_csv_version_missing", "new_csv_version_duplicate", "new_csv_version_wrong", "new_csv_more_missing",
+                      "new_csv_more_duplicate", "new_csv_more_wrong", "new_page_plaintext"):
+            client = ServiceRoleCursorClient(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError): self.run_case(client)
+            self.assertTrue(client.deleted and client.policy["state"] == "revoked")
+
+    def test_new_default_continuation_interrupt_cleans_exact_resources(self):
+        client = ServiceRoleCursorClient("new_second_interrupt")
+        with self.assertRaises(KeyboardInterrupt): self.run_case(client)
+        self.assertTrue(client.deleted and client.policy["state"] == "revoked")
 
 
 class MembershipBackend(ServiceRoleCursorClient):

@@ -10,7 +10,7 @@
 
 ## 现行契约与证据边界
 
-当前领域报告为 `addp.security-mysql-owner-protection-online/v38`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v38 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
+当前领域报告为 `addp.security-mysql-owner-protection-online/v39`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v39 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
 
 保护方式、角色资格及导出有效性的能力契约见[数据安全规范](../../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)。本文维护 suite 断言与版本差异；已归档的固定源码、运行尝试、失败和清理结果见[数据保护与执行血缘历史证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md)，不由版本号推导某次验收已通过。其中[四出口实际停机 v9](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)分别维护对应旧证据，不作为 v23～v33 新增范围的通过记录。
 
@@ -18,7 +18,7 @@
 
 确定性入口为 `make test-security-online-runner`，由 `make test-online-runner` 与既有 Platform CI 覆盖；共享存储与 Provider 的 PostgreSQL／MySQL 门禁仍各自认定 T2。真实 HTTP／浏览器使用既有 `security-mysql-owner-protection` Hosted suite，由专门 CI 会话安排与回传。本次文档整理不新增部署、账号、角色、权限、产品接口或 CI 路线；各场景明确列出的最小身份和权限仍是独立前提。
 
-确定性回归、协议单元格、旧版本结果与实际 T4 分开记录。本文没有新增或刷新运行证据，各新增断言原有的“未运行／待回传”状态仍保留；尤其 v27 不证明自然到期或其他出口、v30 不证明 v31 的新错误区分、v24 不证明 v25 的新增 runtime 单元格，v37可选默认参数及v38默认值修订范围仍待独立Hosted证据。未运行、失败、跳过或清理失败均不能计为通过，身份、敏感信息和清理要求继续按各主题执行。
+确定性回归、协议单元格、旧版本结果与实际 T4 分开记录。本文没有新增或刷新运行证据，各新增断言原有的“未运行／待回传”状态仍保留；尤其 v27 不证明自然到期或其他出口、v30 不证明 v31 的新错误区分、v24 不证明 v25 的新增 runtime 单元格，v37可选默认参数、v38默认值修订及v39新默认续页范围仍待独立Hosted证据。未运行、失败、跳过或清理失败均不能计为通过，身份、敏感信息和清理要求继续按各主题执行。
 
 ## Transfer 保护与原值访问
 
@@ -113,7 +113,7 @@ Hosted `security-mysql-owner-protection` 报告 v23 的 `bank_card_metadata.deve
 
 边界检查分别在初始默认、角色方式有效及显式移除后恢复默认阶段执行；方式撤销后的续读与无游标拒绝继续使用合法且不变的参数，避免用参数错误冒充保护拒绝。前后定义、命名参数声明、当前用户角色及默认 Baseline 保持；成功、失败或中断沿同一捕获 ID 撤销 Policy、删除本轮服务并确认 404。只增加一个私有 Service 的创建／删除计数，不新增账号、权限、引擎或部署，不归档参数取值、游标、令牌、原值或 CSV 正文。
 
-该阶段报告为 v35（现由 v37 接续），CI 登记必须约束新增场景的派发／报告、参数边界事实及服务计数。确定性门禁沿 `make test-security-online-runner`，不新增测试入口或工作流；实际 v35 Hosted/T4 尚未运行，仍由专门 CI 会话跟进。本切片只验证一个必填整数 SQL 输入，不扩展为全部参数类型、可选默认值、原值授权或角色资格变更的运行证据。
+该阶段报告为 v35（现由 v39 接续），CI 登记必须约束新增场景的派发／报告、参数边界事实及服务计数。确定性门禁沿 `make test-security-online-runner`，不新增测试入口或工作流；实际 v35 Hosted/T4 尚未运行，仍由专门 CI 会话跟进。本切片只验证一个必填整数 SQL 输入，不扩展为全部参数类型、可选默认值、原值授权或角色资格变更的运行证据。
 
 ### v36：SQL 角色资格撤销与自然到期
 
@@ -121,7 +121,7 @@ Hosted `security-mysql-owner-protection` 报告 v23 的 `bank_card_metadata.deve
 
 失效前两个服务分别完成4/1两页JSON/CSV正向对照；失效后保持各自服务定义、选择、Policy及保护投影不变，SQL旧游标及新请求的JSON/CSV均须精确403/`query_protection_roles_unavailable`，只有错误、JSON错误类型及单个no-store，不接受401、409或400。主动撤销仍先证明旧令牌401、正式重登同一普通User后资格403；自然到期仍保持同一有效会话、授权版本和主功能Permission，仅资格active/expired，不重登、续期、撤销或修改时钟。显式移除选择后两个服务分别恢复默认五行JSON/CSV。
 
-SQL定义只保存声明，不伪造Meta Source，不持久化调用值。报告记录SQL独立服务ID、字段、受控结果哈希、游标摘要、精确拒绝和恢复；不保存凭据、游标全文、CSV或源值。两个新增Service均立即捕获ID，任何失败或中断都逐一删除并核对404，即使一项清理失败仍尝试其他清理；同一Policy仅由原生命周期撤销。资源总计增加2。该阶段报告v36（现由v37接续），原浏览器v9不扩展；沿现有Makefile入口及CI自动登记，无新增工作流。本文为断言合同，v36实际Hosted/T4未运行，CI仍由专门会话跟进。
+SQL定义只保存声明，不伪造Meta Source，不持久化调用值。报告记录SQL独立服务ID、字段、受控结果哈希、游标摘要、精确拒绝和恢复；不保存凭据、游标全文、CSV或源值。两个新增Service均立即捕获ID，任何失败或中断都逐一删除并核对404，即使一项清理失败仍尝试其他清理；同一Policy仅由原生命周期撤销。资源总计增加2。该阶段报告v36（现由v39接续），原浏览器v9不扩展；沿现有Makefile入口及CI自动登记，无新增工作流。本文为断言合同，v36实际Hosted/T4未运行，CI仍由专门会话跟进。
 
 ### v37：可选默认参数的保护与游标
 
@@ -136,6 +136,14 @@ SQL定义只保存声明，不伪造Meta Source，不持久化调用值。报告
 沿[正式默认值修改入口](../../service/docs/architecture/查询发布与执行.md#已发布-sql-参数默认值修改)，在v37可选参数服务已完成角色撤销、主动清除及初始默认CSV恢复后，使用同一Service的版本PUT将minimum_id默认值从1改为2。定义必须持久化新默认并推进管理版本；SQL、来源、其他声明和空角色选择保持，运行查询不得反向写入默认。旧恢复游标在省略参数及显式旧默认1时，JSON／CSV都精确400/invalid_structured_query、无结果、JSON错误正文和单个no-store；显式旧值也拒绝以证明服务版本绑定，不能只验证改参数错误。
 
 新查询省略参数与显式新默认2的JSON／CSV均返回2～5行且CSV字节一致；新查询显式旧值1仍可正常分页1～5，所有输出继续按当前默认保护核对双别名、NULL及空单元格。服务依赖版本须变化；既有角色事实和Baseline复核仍执行。报告新增published_default_revision，沿原摘要规则，不保存凭据、源值、CSV正文或游标全文；不增加Service／Policy／角色／部署数量，领域唯一v38、浏览器仍v9，继续既有失败／中断精确清理。确定性反例覆盖默认未持久化、版本未变、SQL被改及旧游标放行。现有标准门禁和CI登记同步覆盖，`make test-security-online-runner`退出0（41／80／198／185／376项及登记CLI），所属171项通过；新增Hosted/T4尚未运行，仍由专门CI会话跟进，不把T1/T2/T3当作Hosted结果。
+
+### v39：新默认值游标的连续第二页
+
+沿v38同一默认修订服务，新增固定可选string参数minimum_code（默认CUST-10001，谓词作用于原customer_code），仍仅修订int默认值；候选显式绑定两项，实际查询分别验证省略与显式两项默认。保留四次旧版本游标拒绝及显式旧值新查询。当前合成来源共5行，默认minimum_id从1改2后恰有4行，故用两页各2行与单次4行作参考；对应本地Persons两页5行与10行对照的同一契约，不新增样本或Service。修订前显式替代值取得第二页，修订后分别验证省略默认的新游标＋显式新默认续读、显式新默认的新游标＋省略默认续读。两页ID稳定排序、不重复、合并等于四行参考；各行的普通字段、双别名默认掩码、NULL／移除及CSV空单元格继续按独立合成值验证，三组第二页CSV字节须一致，Service依赖版本保持修订后值。
+
+本矩阵正向JSON／CSV及无游标四行参考共用既有读取与断言。CSV分页has-more和Service-version响应头必须各恰好一个，且与对应JSON一致；HTTP传输只额外保留这两个无凭据头的全部值，禁止采集完整游标或通用Header。新游标改int为1或改string下界为CUST-10003的JSON／CSV共四次请求须精确400/invalid_structured_query、无数据、JSON错误及单个no-store，不能替代旧版本拒绝。报告在published_default_revision下增加continuation_checks，仅保留计数、ID／CSV摘要、版本与布尔事实，不保存源值、CSV正文、完整游标或凭据。两方向第二页、四行参考、CSV分页头、拒绝状态／原因／缓存和失败／中断精确清理必须有确定性反例。
+
+领域唯一报告升级v39，浏览器仍v9、资源计数及领域／Infra清理边界不变。沿既有make test-security-online-runner及CI登记和删除派发／报告反例同步覆盖，不新增workflow或权限。新矩阵接入及确定性门禁不是Hosted通过；已有本地9项／9组JSON-CSV证据保留在Service测试专题，Hosted仍由专门CI会话跟进。
 
 ## 用户角色资格撤销
 

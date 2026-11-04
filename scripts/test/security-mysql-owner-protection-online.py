@@ -1806,6 +1806,9 @@ def bank_card_sql_service_payload(name: str, engine_id: int, source: Mapping[str
     if parameter_name:
         payload["named_parameters"] = [{"name": parameter_name, "type": "int", "required": parameter_default is None,
                                          **({"default": parameter_default} if parameter_default is not None else {})}]
+        if parameter_default is not None:
+            payload["named_parameters"].append({"name": "minimum_code", "type": "string", "required": False, "default": "CUST-10001"})
+            payload["sql_query"] = payload["sql_query"].replace(" ORDER BY b.id", " AND b.customer_code>=:minimum_code ORDER BY b.id")
     payload["data_config"].pop("locator")
     payload["data_config"]["stable_key"] = ["id"]
     payload["output_contract"] = {"table": contract}
@@ -2446,9 +2449,9 @@ def wait_role_projection(client: GatewayClient, enrollment_id: str,
 
 
 def service_role_query_request(fields: Iterable[str], cursor: str = "", *,
-                               parameters: Mapping[str, object] | None = None, format_name: str = "json") -> dict[str, object]:
+                               parameters: Mapping[str, object] | None = None, format_name: str = "json", page_limit: int = 4) -> dict[str, object]:
     request = {"select": list(fields), "order_by": [{"field": "id", "direction": "asc"}],
-               "page": {"limit": 4, **({"cursor": cursor} if cursor else {})}, "format": format_name}
+               "page": {"limit": page_limit, **({"cursor": cursor} if cursor else {})}, "format": format_name}
     if parameters is not None:
         request["parameters"] = dict(parameters)
     return request
@@ -2457,10 +2460,11 @@ def service_role_query_request(fields: Iterable[str], cursor: str = "", *,
 def assert_service_role_page(client: GatewayClient, path: str, expected_ids: list[str],
                              role_selected: bool, cursor: str = "", *,
                              output_sources: Mapping[str, str] | None = None,
-                             parameters: Mapping[str, object] | None = None) -> tuple[dict[str, object], str, str]:
+                             parameters: Mapping[str, object] | None = None, page_limit: int = 4,
+                             verify_pagination_headers: bool = False) -> tuple[dict[str, object], str, str]:
     output_sources = output_sources if output_sources is not None else {field: field for field in BANK_FIELDS}
     fields = list(output_sources)
-    request = service_role_query_request(fields, cursor, parameters=parameters)
+    request = service_role_query_request(fields, cursor, parameters=parameters, page_limit=page_limit)
     response = client.request("POST", path, (200,), request)
     json_cache = export_no_store(response)
     if not isinstance(response.content_type, str) or response.content_type.split(";", 1)[0].strip().lower() != "application/json":
@@ -2495,6 +2499,9 @@ def assert_service_role_page(client: GatewayClient, path: str, expected_ids: lis
     csv_cache = export_no_store(csv_response)
     if not isinstance(csv_response.content_type, str) or csv_response.content_type.split(";", 1)[0].strip().lower() != "text/csv":
         raise SuiteError("role cursor CSV response has an incorrect Content-Type")
+    if verify_pagination_headers and (csv_response.pagination_versions != (version,)
+            or csv_response.pagination_has_more != (str(more).lower(),)):
+        raise SuiteError("CSV pagination headers must uniquely match the corresponding JSON page")
     if not isinstance(csv_response.payload, bytes):
         raise SuiteError("role cursor CSV response must be bytes")
     try:
@@ -2510,7 +2517,8 @@ def assert_service_role_page(client: GatewayClient, path: str, expected_ids: lis
              "csv_sha256": hashlib.sha256(csv_response.payload).hexdigest(),
              "rows": len(rows), "ids": expected_ids, "protected_values_verified": True,
              "non_sensitive_fields_preserved": True, "csv_empty_cells_verified": True,
-             "has_more": more, "service_version": version}, next_cursor, version)
+             "has_more": more, "service_version": version, "page_limit": page_limit,
+             **({"csv_pagination_headers_verified": True} if verify_pagination_headers else {})}, next_cursor, version)
 
 
 def assert_service_role_refusal(response: SUPPORT.Response) -> dict[str, object]:
@@ -2706,6 +2714,12 @@ def service_role_parameter_boundaries(client: GatewayClient, query_path: str, cu
 
 def verify_service_published_default_revision(client: GatewayClient, service_path: str,
         query_path: str, before: dict[str, object], old_cursor: str, old_version: str) -> dict[str, object]:
+    control_first, control_cursor, control_version = assert_service_role_page(client, query_path, ["2", "3"], False,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 2, "minimum_code": "CUST-10001"}, page_limit=2, verify_pagination_headers=True)
+    control_second, _, control_last_version = assert_service_role_page(client, query_path, ["4", "5"], False, control_cursor,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 2, "minimum_code": "CUST-10001"}, page_limit=2, verify_pagination_headers=True)
+    if control_version != old_version or control_last_version != old_version:
+        raise SuiteError("pre-revision continuation changed the published version")
     client.request("PUT", service_path, (200,), {"version": before["version"], "named_parameter_defaults": {"minimum_id": 2}})
     after = _object(client.request("GET", service_path, (200,)).payload, "updated published default")
     expected = copy.deepcopy(before)
@@ -2722,7 +2736,7 @@ def verify_service_published_default_revision(client: GatewayClient, service_pat
                 BANK_ROLE_SQL_OUTPUTS, old_cursor, parameters=parameters, format_name=format_name))
             refusals[label][format_name] = assert_service_parameter_refusal(response)
     omitted, _, version = assert_service_role_page(client, query_path, ["2", "3", "4", "5"], False,
-        output_sources=BANK_ROLE_SQL_OUTPUTS)
+        output_sources=BANK_ROLE_SQL_OUTPUTS, verify_pagination_headers=True)
     explicit, _, explicit_version = assert_service_role_page(client, query_path, ["2", "3", "4", "5"], False,
         output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 2})
     prior, cursor, prior_version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], False,
@@ -2732,9 +2746,38 @@ def verify_service_published_default_revision(client: GatewayClient, service_pat
     if (version == old_version or any(v != version for v in (explicit_version, prior_version, last_version))
             or omitted["csv_sha256"] != explicit["csv_sha256"]):
         raise SuiteError("updated defaults must change cursor version and retain current masking for all inputs")
+    omitted_first, omitted_cursor, first_version = assert_service_role_page(client, query_path, ["2", "3"], False,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, page_limit=2, verify_pagination_headers=True)
+    omitted_second, _, second_version = assert_service_role_page(client, query_path, ["4", "5"], False, omitted_cursor,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 2, "minimum_code": "CUST-10001"}, page_limit=2, verify_pagination_headers=True)
+    explicit_first, explicit_cursor, explicit_first_version = assert_service_role_page(client, query_path, ["2", "3"], False,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 2, "minimum_code": "CUST-10001"}, page_limit=2, verify_pagination_headers=True)
+    explicit_second, _, explicit_second_version = assert_service_role_page(client, query_path, ["4", "5"], False, explicit_cursor,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, page_limit=2, verify_pagination_headers=True)
+    joined = omitted_first["ids"] + omitted_second["ids"]
+    if (joined != omitted["ids"] or len(set(joined)) != 4 or joined != sorted(joined, key=int)
+            or explicit_first["ids"] + explicit_second["ids"] != joined
+            or any(v != version for v in (first_version, second_version, explicit_first_version, explicit_second_version))
+            or len({control_first["csv_sha256"], omitted_first["csv_sha256"], explicit_first["csv_sha256"]}) != 1
+            or len({control_second["csv_sha256"], omitted_second["csv_sha256"], explicit_second["csv_sha256"]}) != 1):
+        raise SuiteError("new-default continuation differs from the independent four-row reference or prior CSV")
+    changed_parameter_refusals = {}
+    for label, values in (("integer_parameter_changed", {"minimum_id": 1}),
+                          ("string_parameter_changed", {"minimum_id": 2, "minimum_code": "CUST-10003"})):
+        changed_parameter_refusals[label] = {}
+        for format_name in ("json", "csv"):
+            response = client.request("POST", query_path, (400,), service_role_query_request(BANK_ROLE_SQL_OUTPUTS,
+                omitted_cursor, parameters=values, format_name=format_name, page_limit=2))
+            changed_parameter_refusals[label][format_name] = assert_service_parameter_refusal(response)
+    continuation_checks = {"before_revision_first": control_first, "before_revision_second": control_second,
+        "omitted_first": omitted_first, "omitted_cursor_explicit_second": omitted_second,
+        "explicit_first": explicit_first, "explicit_cursor_omitted_second": explicit_second,
+        "reference_output": omitted, "reference_rows": 4, "combined_ids": joined,
+        "reference_rows_verified": True, "no_overlap_verified": True, "strict_order_verified": True,
+        "csv_pagination_headers_verified": True, "changed_parameter_refusals": changed_parameter_refusals}
     if _object(client.request("GET", service_path, (200,)).payload, "default after queries") != after:
         raise SuiteError("runtime queries mutated the published default")
-    return {"old_cursor_refusals": refusals, "new_default_output": omitted,
+    return {"old_cursor_refusals": refusals, "new_default_output": omitted, "continuation_checks": continuation_checks,
         "explicit_new_default_output": explicit, "explicit_old_value_new_query": dict(prior, continuation=last),
         "immutable_declarations_preserved": True, "default_revision_persisted": True,
         "service_version_changed": True, "runtime_queries_unchanged": True}
@@ -2811,7 +2854,7 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
         installed = wait_role_projection(client, enrollment_id, previous, deadline)
         choice = owner_role_choice(client, locator, source, policy, engine_id=engine_id,
                                    service_sql=body["sql_query"] if config_type == "sql" else None,
-                                   parameters={"minimum_id": parameter_default} if parameter_default is not None else parameters)
+                                   parameters={"minimum_id": parameter_default, "minimum_code": "CUST-10001"} if parameter_default is not None else parameters)
         client.request("PUT", service_path, (200,), {"version": initial["version"],
                        "data_config": {"protection_choices": [choice]}})
         selected = definition()
@@ -4412,7 +4455,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v38",
+            "schema_version": "addp.security-mysql-owner-protection-online/v39",
             "result": "passed",
             "identity": identity,
             "governance": governance,

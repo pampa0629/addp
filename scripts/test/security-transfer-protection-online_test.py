@@ -70,6 +70,9 @@ class GatewayDownloadTest(unittest.TestCase):
                 with self.subTest(status=status, raw_response=raw_response, values=values):
                     headers = Message()
                     for value in values:headers.add_header("Cache-Control", value)
+                    for index, _ in enumerate(values):
+                        headers.add_header("X-ADDP-Service-Version", "service-" + str(index))
+                        headers.add_header("X-ADDP-Has-More", "true" if index == 0 else "false")
                     headers.add_header("Set-Cookie", "private-session-cookie")
                     headers.add_header("Content-Type", "text/csv" if raw_response else "application/json")
                     headers.add_header("X-Request-ID", "request-one")
@@ -91,6 +94,8 @@ class GatewayDownloadTest(unittest.TestCase):
                     self.assertEqual(result.content_type, "text/csv" if raw_response else "application/json")
                     self.assertEqual(result.content_disposition, "attachment; filename=fixture.csv" if raw_response else None)
                     self.assertEqual(result.request_id, ("request-one", "request-two"))
+                    self.assertEqual(result.pagination_versions, tuple("service-" + str(index) for index in range(len(values))))
+                    self.assertEqual(result.pagination_has_more, tuple("true" if index == 0 else "false" for index in range(len(values))))
                     self.assertEqual(opened.call_args.args[0].get_header("Accept-language"), "en")
                     self.assertNotIn("private-session-cookie", repr(result))
 

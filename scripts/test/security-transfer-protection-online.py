@@ -57,6 +57,8 @@ class Response:
     content_type: str | None = None
     content_disposition: str | None = None
     request_id: tuple[str, ...] = ()
+    pagination_versions: tuple[str, ...] = ()
+    pagination_has_more: tuple[str, ...] = ()
 
 
 class GatewayClient:
@@ -98,6 +100,8 @@ class GatewayClient:
                 content_type = response.headers.get("Content-Type")
                 content_disposition = response.headers.get("Content-Disposition")
                 request_id = tuple(response.headers.get_all("X-Request-ID", []))
+                pagination_versions = tuple(response.headers.get_all("X-ADDP-Service-Version", []))
+                pagination_has_more = tuple(response.headers.get_all("X-ADDP-Has-More", []))
         except urllib.error.HTTPError as error:
             status = error.code
             raw = error.read()
@@ -105,11 +109,13 @@ class GatewayClient:
             content_type = error.headers.get("Content-Type")
             content_disposition = error.headers.get("Content-Disposition")
             request_id = tuple(error.headers.get_all("X-Request-ID", []))
+            pagination_versions = tuple(error.headers.get_all("X-ADDP-Service-Version", []))
+            pagination_has_more = tuple(error.headers.get_all("X-ADDP-Has-More", []))
         except (urllib.error.URLError, TimeoutError) as error:
             raise SuiteError(f"{method} {path} transport failed: {error}") from error
         expected_statuses = set(expected)
         if raw_response and status in expected_statuses:
-            return Response(status, raw, cache_control, content_type, content_disposition, request_id)
+            return Response(status, raw, cache_control, content_type, content_disposition, request_id, pagination_versions, pagination_has_more)
         try:
             payload = json.loads(raw) if raw else {}
         except json.JSONDecodeError as error:
@@ -117,7 +123,7 @@ class GatewayClient:
         if status not in expected_statuses:
             code = payload.get("error_code", "unknown") if isinstance(payload, dict) else "unknown"
             raise SuiteError(f"{method} {path} returned HTTP {status} ({code})")
-        return Response(status, payload, cache_control, content_type, content_disposition, request_id)
+        return Response(status, payload, cache_control, content_type, content_disposition, request_id, pagination_versions, pagination_has_more)
 
 
 def _object(payload: Any, resource: str) -> dict[str, object]:

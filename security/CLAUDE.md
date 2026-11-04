@@ -1,6 +1,8 @@
 Service SQL 角色方式（2026-11-03）：已按[查询发布与执行规范](../service/docs/architecture/查询发布与执行.md)接入非联邦、Provider 可证明唯一普通表的直接字段及别名；候选统一为 POST，保存仅准备元数据并复用保护编译器，实际执行与交付核验当前本人角色。Common 保留资格失效与方式失效的具体原因，不改变授权规则。默认保护及已有原生表方式保持原契约。
 
-新默认续页本地HTTP独立审计通过（2026-11-04）：#33/addp-web/MySQL #3，9项检查／36条受控响应／9组JSON与CSV；两种省略／显式参数续页与更新前同参数第二页CSV一致，两页逐行等于10行参考、稳定排序不重叠，逐页版本／has-more头一致；旧游标4次、新游标改参数4次均400/no-store，脱敏和CSV空单元格保持。#12按version2删除404、#7不变、已注销。事实与边界统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)；索引verification.json的new_default_pagination_passed。仍是限定本地默认保护，不是活动角色方式或Hosted证据；下一步接入既有隔离Runner，CI专门会话跟进。
+新默认续页Runner v39已接入（2026-11-04）：同一五行合成来源以2＋2／4行参考，固定string默认仅用于普通谓词，int默认1→2；两方向参数省略／显式续页、CSV分页头、改int/string拒绝均沿单一服务／Policy及精确清理，领域v39／浏览器v9，资源数不变。所属174项通过；完整总入口在未修改TiDB部署夹具处20秒超时、退出2，未记通过；根Makefile原定Security组380项独立退出0，登记CLI退出0；不替代完整总入口通过，未执行的Graph/Cleanup等阶段不计通过。固定摘要及日志见`/tmp/p145-hosted-pagination-20261104/verification.json`。规范与证据统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#新默认续页的隔离runner接入v392026-11-04)；实际Hosted未运行，CI专门会话跟进，无需重启。
+
+新默认续页本地HTTP独立审计通过（2026-11-04）：#33/addp-web/MySQL #3，9项检查／36条受控响应／9组JSON与CSV；两种省略／显式参数续页与更新前同参数第二页CSV一致，两页逐行等于10行参考、稳定排序不重叠，逐页版本／has-more头一致；旧游标4次、新游标改参数4次均400/no-store，脱敏和CSV空单元格保持。#12按version2删除404、#7不变、已注销。事实与边界统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)；索引verification.json的new_default_pagination_passed。仍是限定本地默认保护，不是活动角色方式或Hosted证据；已按上段v39接入既有隔离Runner，实际Hosted仍由专门会话跟进。
 
 SQL默认值本地HTTP独立审计通过（2026-11-04）：#33/addp-web/MySQL #3，正式可选int默认1→2更新，7项检查／24条受控响应／5组第一页JSON及CSV，旧游标两格式四次400、非法更新三次400、版本冲突409、双别名默认掩码及CSV空单元格均核对。#11按version=2删除404，#9/#10前后清理证据闭合，#7不变、已注销。前两轮临时夹具失败及修正保留在[唯一测试正文](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)，不再代表当前状态；索引`/tmp/p145-published-default-edit-20261104/verification.json`。该轮只验默认保护／第一页；上段已补续页结果，仍不扩展为角色选择、string默认修改或Hosted已验。
 
