@@ -773,6 +773,7 @@ func (s *QueryServiceService) ListServices(tenantID uint, offset int, limit int,
 func onlyDeactivatesQueryService(req *models.UpdateQueryServiceRequest) bool {
 	return req != nil && req.Status != nil && *req.Status == "inactive" &&
 		req.Title == nil && req.Description == nil && req.Keywords == nil &&
+		req.NamedParameterDefaults == nil &&
 		req.DataConfig == nil && req.Protocols == nil &&
 		req.PublicAccess == nil && req.MaxFeatures == nil
 }
@@ -783,6 +784,13 @@ func (s *QueryServiceService) UpdateService(ctx context.Context, id, tenantID ui
 		return nil, ErrInvalidStructuredQuery
 	}
 	item, err := s.repo.UpdateVersioned(ctx, id, tenantID, req.Version, func(item *models.QueryService) error {
+		if req.NamedParameterDefaults != nil {
+			definitions, err := queryServiceUpdatedParameterDefaults(item, req.NamedParameterDefaults)
+			if err != nil {
+				return err
+			}
+			item.NamedParameters = definitions
+		}
 		if req.Title != nil {
 			item.Title = *req.Title
 		}

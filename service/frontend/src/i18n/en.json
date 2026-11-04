@@ -405,7 +405,8 @@
       "executionQueryType": "Type",
       "executionQueryValue": "Value (canonical text)",
       "maskingUnsupported": "Role-specific masking supports native single-table services and SQL services with provable direct fields from one ordinary table. Other sources retain default protection; explicitly remove any saved selection.",
-      "maskingLoadFailed": "Failed to load field masking methods"
+      "maskingLoadFailed": "Failed to load field masking methods",
+      "namedParametersEditHelp": "Only optional parameter defaults can be changed after publication; all other declarations stay unchanged."
     },
     "published": {
       "recentVisitTitle": "Data Service",

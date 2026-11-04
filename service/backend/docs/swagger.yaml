@@ -1706,6 +1706,11 @@ definitions:
         maximum: 10000
         minimum: 1
         type: integer
+      named_parameter_defaults:
+        additionalProperties: true
+        description: 仅修改已发布 SQL 可选参数的默认值，不更改参数声明 | Defaults of published optional
+          SQL parameters only.
+        type: object
       protocols:
         additionalProperties: true
         description: 协议配置更新
@@ -3933,10 +3938,9 @@ paths:
     put:
       consumes:
       - application/json
-      description: 仅提交版本和停用状态时保留失效脱敏选择并允许停用，重新启用或任何其他配置更新仍核验当前角色方式 | A version and
-        inactive-status-only update preserves invalid masking choices and permits
-        deactivation; reactivation and all other configuration updates verify current
-        role methods
+      description: |-
+        仅提交版本和停用状态时保留失效脱敏选择并允许停用，重新启用或任何其他配置更新仍核验当前角色方式 | A version and inactive-status-only update preserves invalid masking choices and permits deactivation; reactivation and all other configuration updates verify current role methods
+        named_parameter_defaults 仅修改既有 SQL 可选参数默认值，其他参数声明和 SQL 不变。 | named_parameter_defaults changes only existing optional SQL defaults; declarations and SQL remain immutable.
       parameters:
       - description: 服务ID | Service ID
         in: path

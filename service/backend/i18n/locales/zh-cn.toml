@@ -115,3 +115,6 @@ other = "无法确认当前登录账号有资格使用所选脱敏方式。请�
 
 [service.protection.options_unavailable]
 other = "暂时无法读取字段脱敏方式，请稍后重试。"
+
+[service.err.invalid_named_parameter_defaults]
+other = "只能修改 SQL 服务已有可选参数的默认值，请核对参数类型和允许值范围"

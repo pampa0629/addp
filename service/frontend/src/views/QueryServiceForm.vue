@@ -203,45 +203,6 @@
               </div>
             </el-form-item>
 
-            <el-form-item :label="t('service.query.namedParametersLabel')">
-              <div class="named-parameters-editor">
-                <div class="named-parameters-help">{{ t('service.query.namedParametersHelp') }}</div>
-                <div v-for="(parameter, index) in sqlNamedParameters" :key="index" class="named-parameter-row">
-                  <el-input
-                    v-model="parameter.name"
-                    :placeholder="t('service.query.namedParameterName')"
-                    maxlength="64"
-                    @input="resetSQLOutputContract"
-                  />
-                  <el-select v-model="parameter.type" @change="parameter.options = []; handleNamedParameterDefinitionChange(parameter)" class="named-parameter-type">
-                    <el-option v-for="type in sqlNamedParameterTypes" :key="type" :label="type" :value="type" />
-                  </el-select>
-                  <el-checkbox v-model="parameter.required" @change="handleNamedParameterDefinitionChange(parameter)">
-                    {{ t('service.query.namedParameterRequired') }}
-                  </el-checkbox>
-                  <ParameterValueInput v-model="parameter.value" :control-type="parameterControlType(parameter.type)" :options="parameter.options" @update:model-value="resetSQLOutputContract" />
-                  <el-input
-                    v-model="parameter.description"
-                    :placeholder="t('service.query.namedParameterDescription')"
-                    maxlength="500"
-                  />
-                  <el-button link type="danger" @click="removeSQLNamedParameter(index)">{{ t('service.common.delete') }}</el-button>
-                  <div class="parameter-options-editor">
-                    <div v-for="(option, optionIndex) in parameter.options" :key="optionIndex" class="parameter-option-row">
-                      <ParameterValueInput v-model="option.value" :control-type="parameterControlType(parameter.type)" @update:model-value="resetSQLOutputContract" />
-                      <el-input v-model="option.labels['zh-cn']" :placeholder="t('service.query.optionLabelZh')" maxlength="100" />
-                      <el-input v-model="option.labels.en" :placeholder="t('service.query.optionLabelEn')" maxlength="100" />
-                      <el-button link type="danger" @click="parameter.options.splice(optionIndex, 1); resetSQLOutputContract()">{{ t('service.common.delete') }}</el-button>
-                    </div>
-                    <el-button link type="primary" :disabled="parameter.options.length >= 100" @click="parameter.options.push({ value: null, labels: { 'zh-cn': '', en: '' } }); resetSQLOutputContract()">{{ t('service.query.addParameterOption') }}</el-button>
-                  </div>
-                </div>
-                <el-button type="primary" plain @click="addSQLNamedParameter">
-                  {{ t('service.query.addNamedParameter') }}
-                </el-button>
-              </div>
-            </el-form-item>
-
 			<el-form-item :label="t('service.query.stableKeyLabel')" required>
 			  <el-select
 				v-model="sqlStableKey"
@@ -304,6 +265,54 @@
         </el-card>
       </div>
     </div>
+
+    <el-card v-if="form.config_type === 'sql' && (isEdit || currentStep === 1)" style="margin-bottom: 20px">
+      <el-form label-width="140px">
+        <el-form-item :label="t('service.query.namedParametersLabel')">
+          <div class="named-parameters-editor">
+            <div class="named-parameters-help">{{ t(isEdit ? 'service.query.namedParametersEditHelp' : 'service.query.namedParametersHelp') }}</div>
+            <div v-for="(parameter, index) in sqlNamedParameters" :key="index" class="named-parameter-row">
+              <el-input
+                v-model="parameter.name"
+                :disabled="isEdit"
+                :placeholder="t('service.query.namedParameterName')"
+                maxlength="64"
+                @input="resetSQLOutputContract"
+              />
+              <el-select :disabled="isEdit" v-model="parameter.type" @change="parameter.options = []; handleNamedParameterDefinitionChange(parameter)" class="named-parameter-type">
+                <el-option v-for="type in sqlNamedParameterTypes" :key="type" :label="type" :value="type" />
+              </el-select>
+              <el-checkbox :disabled="isEdit" v-model="parameter.required" @change="handleNamedParameterDefinitionChange(parameter)">
+                {{ t('service.query.namedParameterRequired') }}
+              </el-checkbox>
+              <label class="named-parameter-value">
+                <span>{{ t(parameter.required ? 'service.query.namedParameterSample' : 'service.query.namedParameterDefault') }}</span>
+              <ParameterValueInput v-model="parameter.value" :disabled="isEdit && parameter.required" :control-type="parameterControlType(parameter.type)" :options="parameter.options" @update:model-value="!isEdit && resetSQLOutputContract()" />
+              </label>
+              <el-input
+                v-model="parameter.description"
+                :disabled="isEdit"
+                :placeholder="t('service.query.namedParameterDescription')"
+                maxlength="500"
+              />
+              <el-button :disabled="isEdit" link type="danger" @click="removeSQLNamedParameter(index)">{{ t('service.common.delete') }}</el-button>
+              <div class="parameter-options-editor">
+                <div v-for="(option, optionIndex) in parameter.options" :key="optionIndex" class="parameter-option-row">
+                  <ParameterValueInput :disabled="isEdit" v-model="option.value" :control-type="parameterControlType(parameter.type)" @update:model-value="resetSQLOutputContract" />
+                  <el-input v-model="option.labels['zh-cn']" :disabled="isEdit" :placeholder="t('service.query.optionLabelZh')" maxlength="100" />
+                  <el-input v-model="option.labels.en" :disabled="isEdit" :placeholder="t('service.query.optionLabelEn')" maxlength="100" />
+                  <el-button :disabled="isEdit" link type="danger" @click="parameter.options.splice(optionIndex, 1); resetSQLOutputContract()">{{ t('service.common.delete') }}</el-button>
+                </div>
+                <el-button link type="primary" :disabled="isEdit || parameter.options.length >= 100" @click="parameter.options.push({ value: null, labels: { 'zh-cn': '', en: '' } }); resetSQLOutputContract()">{{ t('service.query.addParameterOption') }}</el-button>
+              </div>
+            </div>
+            <el-button :disabled="isEdit" type="primary" plain @click="addSQLNamedParameter">
+              {{ t('service.query.addNamedParameter') }}
+            </el-button>
+          </div>
+        </el-form-item>
+      </el-form>
+    </el-card>
 
     <!-- Step 2: 配置服务信息 -->
     <div v-if="isEdit || currentStep === 2">
@@ -735,7 +744,9 @@ const validSQLNamedParameters = computed(() => {
     const name = String(parameter.name || '').trim()
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || names.has(name) || !sqlNamedParameterTypes.includes(parameter.type)) return false
     names.add(name)
-    if (!validParameterOptions(parameter.options, parameter.type) || !parameterOptionsAllow(parameter.options, parameter.value)) return false
+    if (!validParameterOptions(parameter.options, parameter.type)) return false
+    if (isEdit.value && parameter.required) return true
+    if (!parameterOptionsAllow(parameter.options, parameter.value)) return false
 	if (parameter.value === '' || parameter.value === null || parameter.value === undefined) return false
 	if (numericSQLNamedParameterTypes.has(parameter.type)) {
 	  const number = Number(parameter.value)
@@ -754,7 +765,7 @@ const normalizeSQLNamedParameterValue = parameter => {
 }
 
 const sqlNamedParameterValues = () => Object.fromEntries(
-  sqlNamedParameters.value.map(parameter => [String(parameter.name || '').trim(), normalizeSQLNamedParameterValue(parameter)])
+  sqlNamedParameters.value.map(parameter => [String(parameter.name || '').trim(), (isEdit.value && parameter.required) ? null : normalizeSQLNamedParameterValue(parameter)])
 )
 
 const sqlOutputContractRequestKey = () => `${form.execution_engine_id}\n${form.sql_query}\n${JSON.stringify(sqlNamedParameterValues())}`
@@ -1044,6 +1055,10 @@ const handleSubmit = async () => {
     ElMessage.warning(t('service.query.metricSourceRequired'))
     return
   }
+  if (form.config_type === 'sql' && !validSQLNamedParameters.value) {
+    ElMessage.warning(t('service.query.namedParametersInvalid'))
+    return
+  }
   const version = editorVersion
   const submittedDraft = captureDraft()
   submitting.value = true
@@ -1123,6 +1138,9 @@ const handleSubmit = async () => {
     if (isEdit.value) {
       const updated = await queryServiceAPI.updateService(route.params.id, {
         version: form.version,
+        ...(form.config_type === 'sql' && sqlNamedParameters.value.some(parameter => !parameter.required)
+          ? { named_parameter_defaults: Object.fromEntries(sqlNamedParameters.value.filter(parameter => !parameter.required)
+            .map(parameter => [parameter.name, normalizeSQLNamedParameterValue(parameter)])) } : {}),
         title: requestData.title,
         description: requestData.description,
         keywords: requestData.keywords,
@@ -1283,6 +1301,14 @@ onBeforeUnmount(() => {
 .named-parameters-help {
   color: var(--addp-text-secondary);
   font-size: 13px;
+}
+
+.named-parameter-value {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
 }
 
 .named-parameter-row {

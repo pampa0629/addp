@@ -88,7 +88,7 @@ function submission(type, fail = false) {
     versionConflict: { value: false }, submitting: { value: false }, isEdit: { value: false },
     loading: { value: false }, editorVersion: 0, captureDraft: () => '', markSaved() {},
     tableUsesRuntime: { value: false }, defaultFieldsInput: { value: '' }, filterableFieldsInput: { value: '' },
-    parseFieldInput: () => [], sqlNamedParameters: { value: [] }, sqlStableKey: { value: ['value'] },
+    validSQLNamedParameters: { value: true }, parseFieldInput: () => [], sqlNamedParameters: { value: [] }, sqlStableKey: { value: ['value'] },
     buildSQLOutputContract: () => ({ fields: [{ name: 'value' }] }), enableOgcFeatures: { value: true },
     queryServiceAPI: { createService: async payload => { sent.push(JSON.parse(JSON.stringify(payload))); if (fail) throw new Error('revision withdrawn'); return { id: 41 } } },
     ElMessage: Object.fromEntries(['success', 'warning', 'error'].map(kind => [kind, text => messages.push({ kind, text })])),

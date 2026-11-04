@@ -138,6 +138,10 @@ make test-module MODULE=service
 - [表说明](docs/tables/)：当前表字段与管理入口。
 - [Gateway 架构](../gateway/docs/gateway架构说明.md)：统一路由与消费凭据边界。
 
+## 已发布 SQL 参数默认值
+
+现有版本更新API及编辑页只开放可选参数默认值，沿[发布与执行规则](docs/architecture/查询发布与执行.md#已发布-sql-参数默认值修改)实现；其他声明和SQL只读，不另建默认值存储或更新路线。编辑创建共用一个参数区及共享ParameterValueInput，沿现有草稿／并发版本／角色核验；分层证据与未验范围见[测试专题](docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)。
+
 ## 前端公开路由
 
 - `App.vue` 只渲染路由，`Layout.vue` 是模块布局唯一所有者；独立访问只显示一套导航，菜单名称、顺序、图标和目标以 Console 数据服务菜单为准（查询服务、瓦片服务、图查询服务、服务注册、服务目录）。iframe 模式从首次渲染起只显示业务内容。

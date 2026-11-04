@@ -2416,7 +2416,17 @@ class ServiceRoleCursorClient:
                         if self.fault == "rejected_save_mutated":
                             self.service["version"] += 1
                         return response(409, {"error": "Selected masking method unavailable", "error_code": "query_protection_choice_invalid"})
-                self.service.update(copy.deepcopy({key: value for key, value in body.items() if key != "data_config"}))
+                if "named_parameter_defaults" in body:
+                    assert set(body) == {"version", "named_parameter_defaults"}
+                    if self.fault != "default_revision_not_persisted":
+                        self.service["named_parameters"][0]["default"] = body["named_parameter_defaults"]["minimum_id"]
+                    if self.fault != "default_revision_version_unchanged":
+                        self.service["service_version"] = "default-revised-version"
+                    if self.fault == "default_revision_source_changed":
+                        self.service["sql_query"] += " LIMIT 5"
+                    if self.fault != "default_revision_old_cursor_accepted":
+                        self.cursor = "synthetic-revised-cursor-do-not-archive"
+                self.service.update(copy.deepcopy({key: value for key, value in body.items() if key not in {"data_config", "named_parameter_defaults"}}))
                 self.service["version"] += 1
                 if "data_config" in body:
                     assert set(body["data_config"]) == {"protection_choices"}, "published source facts are read-only"
@@ -2436,7 +2446,11 @@ class ServiceRoleCursorClient:
                 required = definition["required"]
                 bound = values.get("minimum_id", definition.get("default"))
                 invalid = bool(set(values) - {"minimum_id"}) or (required and "minimum_id" not in values) or type(bound) is not int
-                changed_cursor = bool(body["page"].get("cursor")) and bound != 1
+                probe_cursor = body["page"].get("cursor")
+                revised = definition.get("default") == 2 and not required
+                changed_cursor = bool(probe_cursor) and (probe_cursor != self.cursor or bound != 1)
+                if revised and probe_cursor != self.cursor and probe_cursor:
+                    changed_cursor = self.fault != "default_revision_old_cursor_accepted"
                 if self.fault == "cursor_binds_raw_parameters" and body["page"].get("cursor") and values != {"minimum_id":1}:
                     changed_cursor = True
                 if (invalid and self.fault != "bad_parameter_accepted") or (changed_cursor and self.fault != "cursor_parameter_ignored"):
@@ -2476,7 +2490,7 @@ class ServiceRoleCursorClient:
                 return response(status, error)
             cursor = body["page"].get("cursor")
             if cursor:
-                assert cursor == self.cursor
+                assert cursor == self.cursor or self.fault == "default_revision_old_cursor_accepted"
             available = [str(i) for i in range(minimum, 6) if not cursor or i > 4]
             more = len(available) > 4
             ids = available[:4]
@@ -2518,7 +2532,7 @@ class ServiceRoleCursorClient:
                 if self.fault == "recovery_csv_bytes_changed" and self.policy and self.policy["state"] == "revoked" and not chosen:
                     data = data.replace("\r\n", "\n")
                 return response(200, data.encode())
-            return response(200, {"data": rows, "service_version": "chosen-version" if chosen else "default-version",
+            return response(200, {"data": rows, "service_version": "chosen-version" if chosen else ("default-revised-version" if self.service["service_version"] == "default-revised-version" else "default-version"),
                 "page": {"has_more": more, "next_cursor": self.cursor if more else ""}})
         raise AssertionError((method, path, expected))
 
@@ -2852,7 +2866,11 @@ class ServiceRoleSQLOptionalDefaultCursorTest(ServiceRoleSQLCursorRevocationTest
             self.assertEqual(checks["alternate_value_output"]["ids"],["2","3","4","5"])
             self.assertEqual(set(checks["refusals"]),{"cursor_parameter_changed","undeclared","invalid_scalar","explicit_null","boolean_scalar","empty_string"})
         self.assertTrue(report["default_csv_restored_exactly"] and client.deleted)
-        self.assertEqual(client.service["named_parameters"][0]["default"],1)
+        self.assertEqual(client.service["named_parameters"][0]["default"],2)
+        revision=report["published_default_revision"]
+        self.assertTrue(revision["immutable_declarations_preserved"] and revision["service_version_changed"])
+        self.assertEqual(revision["new_default_output"]["ids"],["2","3","4","5"])
+        self.assertEqual(set(revision["old_cursor_refusals"]),{"omitted","explicit_old_default"})
         options=[body for method,path,body in client.calls if path == "/api/v1/service/query-protection-options"]
         self.assertEqual(options[0]["parameters"],{"minimum_id":1})
         self.assertEqual(set(report["explicit_default_parameter_refusals"]),{"json","csv"})
@@ -2865,7 +2883,8 @@ class ServiceRoleSQLOptionalDefaultCursorTest(ServiceRoleSQLCursorRevocationTest
         for fault in ("default_ignored","default_lost_on_csv","cursor_binds_raw_parameters","runtime_value_overwrites_default",
                       "parameter_ignored","parameter_lost_on_csv","cursor_parameter_ignored","bad_parameter_accepted",
                       "parameter_wrong_status","parameter_wrong_code","parameter_error_rows","parameter_error_cache",
-                      "explicit_default_revocation_bypass"):
+                      "explicit_default_revocation_bypass", "default_revision_not_persisted",
+                      "default_revision_version_unchanged", "default_revision_source_changed", "default_revision_old_cursor_accepted"):
             client=ServiceRoleCursorClient(fault)
             with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
                 self.run_case(client)

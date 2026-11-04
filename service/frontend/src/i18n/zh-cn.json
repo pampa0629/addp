@@ -405,7 +405,8 @@
       "executionQueryType": "类型",
       "executionQueryValue": "值（规范文本）",
       "maskingUnsupported": "角色专用脱敏方式支持原生单表及可证明为单表直接字段的 SQL 查询服务。其他来源继续采用默认保护；已有选择请主动移除。",
-      "maskingLoadFailed": "读取字段脱敏方式失败"
+      "maskingLoadFailed": "读取字段脱敏方式失败",
+      "namedParametersEditHelp": "已发布参数只能修改可选参数的默认值；其余声明保持不变。"
     },
     "published": {
       "recentVisitTitle": "数据服务",

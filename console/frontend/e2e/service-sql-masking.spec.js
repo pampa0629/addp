@@ -72,3 +72,51 @@ for (const language of ['zh-cn', 'en']) {
     expect(candidateRequests).toHaveLength(2)
   })
 }
+
+for (const language of ['zh-cn', 'en']) {
+  test(`published SQL default edits preserve immutable declarations (${language})`, async ({page}) => {
+    const words=(language==='en'?en:zh).service.query
+    let definition={id:41,version:3,service_name:'default_edit_fixture',title:'SQL optional defaults',config_type:'sql',engine_id:1,sql_query:'SELECT id FROM public.persons WHERE id >= :minimum AND :subject IS NOT NULL',named_parameters:[{name:'minimum',type:'int',required:false,default:1},{name:'subject',type:'string',required:true}],stable_key:['id'],max_features:100,protocols:{rest_api:{enabled:true},ogc_features:{enabled:false}},output_contract:{table:{fields:[{name:'id',type:'bigint',nullable:false}],primary_key:['id']}},data_config:{protection_choices:[]}}
+    const writes=[];let fail=true
+    await page.addInitScript(language=>localStorage.setItem('addp-lang',language),language)
+    await page.route(url=>url.pathname.startsWith('/api/'),async route=>{
+      const request=route.request(),path=new URL(request.url()).pathname
+      if(path==='/api/v1/meta/engines')return route.fulfill({json:[]})
+      if(path==='/api/v1/system/engine-catalog/engines')return route.fulfill({json:[{id:1,name:'fixture-postgres',engine_type:'postgresql',lifecycle_state:'active',connection_status:'online',capabilities:{compute:{query:{supported:true,languages:['sql']}}}}]})
+      if(path==='/api/v1/service/query/41'&&request.method()==='GET')return route.fulfill({json:definition})
+      if(path==='/api/v1/service/query/41'&&request.method()==='PUT'){
+        const body=request.postDataJSON();writes.push(body)
+        expect(body.named_parameter_defaults).toEqual({minimum:2})
+        expect(body).not.toHaveProperty('named_parameters');expect(body).not.toHaveProperty('sql_query')
+        if(fail)return route.fulfill({status:400,json:{error_code:'invalid_named_parameter_defaults',error:'fixture default invalid'}})
+        definition={...definition,version:4,named_parameters:definition.named_parameters.map(p=>p.name==='minimum'?{...p,default:2}:p)}
+        return route.fulfill({json:definition})
+      }
+      throw Error(`Unexpected default edit request ${request.method()} ${path}`)
+    })
+    const url='/e2e/fixtures/leave-guard.html?editor=query-service#/service/query-services/41/edit'
+    const editor=page.frameLocator('iframe')
+    await page.goto(url)
+    await page.addStyleTag({content:'iframe { width:100%; height:960px; border:0; }'})
+    await expect(editor.getByRole('heading',{name:words.formEditTitle,exact:true})).toBeVisible()
+    const rows=editor.locator('.named-parameter-row');await expect(rows).toHaveCount(2)
+    await expect(editor.getByText(words.namedParametersEditHelp,{exact:true})).toBeVisible()
+    await expect(rows.nth(0).locator('.el-input__inner').first()).toBeDisabled()
+    await expect(rows.nth(0).getByRole('checkbox')).toBeDisabled()
+    await expect(rows.nth(0).getByText(words.namedParameterDefault,{exact:true})).toBeVisible()
+    await expect(rows.nth(1).locator('.named-parameter-value input')).toBeDisabled()
+    await expect(rows.nth(0).locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
+    await expect(rows.nth(1).locator('.el-input__inner').first()).toBeDisabled()
+    const value=rows.nth(0).locator('.el-input-number input');await value.fill('2');await value.blur()
+    await editor.getByRole('button',{name:words.updateBtn,exact:true}).click()
+    await expect(editor.getByText(words.submitFailed+': fixture default invalid',{exact:true})).toBeVisible()
+    await expect(value).toHaveValue('2');expect(writes).toHaveLength(1);expect(writes[0].version).toBe(3)
+    fail=false;await editor.getByRole('button',{name:words.updateBtn,exact:true}).click()
+    await expect(editor.getByRole('heading',{name:'Query service list',exact:true})).toBeVisible()
+    await page.goto(url);await page.addStyleTag({content:'iframe { width:100%; height:960px; border:0; }'})
+    await expect(value).toHaveValue('2')
+    await rows.nth(0).screenshot({path:`/tmp/p145-default-edit-${language}.png`})
+    expect(definition.named_parameters[1]).toEqual({name:'subject',type:'string',required:true})
+    expect(writes[1].version).toBe(3)
+  })
+}

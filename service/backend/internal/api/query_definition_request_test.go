@@ -1,9 +1,13 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	commonapi "github.com/addp/common/api"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/service/internal/models"
+	svc "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
@@ -101,6 +105,50 @@ func TestQueryServiceMetricReferenceFilter(t *testing.T) {
 		}
 		if tc.valid && tc.query != "" && (filter.ImplementationID != 1 || filter.RevisionID != 6) {
 			t.Fatalf("wrong reference: %#v", filter)
+		}
+	}
+}
+
+func TestQueryDefaultUpdateRequestDoesNotOpenParameterSchemaEditing(t *testing.T) {
+	for _, tc := range []struct {
+		body  string
+		valid bool
+	}{
+		{`{"version":1,"named_parameter_defaults":{"minimum":2}}`, true},
+		{`{"version":1,"named_parameters":[{"name":"new","type":"string"}]}`, false},
+		{`{"version":1,"sql_query":"SELECT 1"}`, false},
+	} {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("PUT", "/query/1", strings.NewReader(tc.body))
+		var req models.UpdateQueryServiceRequest
+		err := bindQueryDefinition(c, &req)
+		if (err == nil) != tc.valid {
+			t.Fatalf("default update request: %s %v", tc.body, err)
+		}
+	}
+}
+
+func TestQueryDefaultErrorsAreLocalizedAndSafe(t *testing.T) {
+	for _, language := range []string{"zh-cn", "en"} {
+		router := gin.New()
+		router.Use(commoni18n.I18nMiddleware())
+		router.GET("/error", func(c *gin.Context) {
+			writeQueryParameterDefaultsError(c, errors.Join(svc.ErrInvalidNamedParameterDefaults, errors.New("private-sql-and-credential")))
+		})
+		request := httptest.NewRequest("GET", "/error", nil)
+		request.Header.Set("Accept-Language", language)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		var body map[string]string
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		expected := "可选参数"
+		if language == "en" {
+			expected = "optional SQL parameters"
+		}
+		if response.Code != 400 || body["error_code"] != "invalid_named_parameter_defaults" || len(body) != 2 || !strings.Contains(body["error"], expected) || strings.Contains(response.Body.String(), "private-sql") {
+			t.Fatalf("unsafe or wrong default error: %d %s", response.Code, response.Body.String())
 		}
 	}
 }

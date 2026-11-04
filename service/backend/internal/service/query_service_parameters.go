@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,30 @@ import (
 const maxQueryServiceNamedParameters = 32
 
 var ErrInvalidParameterOptions = fmt.Errorf("%w: invalid parameter options", ErrInvalidStructuredQuery)
+var ErrInvalidNamedParameterDefaults = errors.New("invalid named parameter defaults")
+
+func queryServiceUpdatedParameterDefaults(service *models.QueryService, defaults map[string]interface{}) ([]models.QueryServiceNamedParameter, error) {
+	if service == nil || service.ConfigType != "sql" || len(defaults) == 0 {
+		return nil, ErrInvalidNamedParameterDefaults
+	}
+	definitions := service.GetNamedParameters()
+	indices := make(map[string]int, len(definitions))
+	for i, definition := range definitions {
+		indices[definition.Name] = i
+	}
+	for name, value := range defaults {
+		i, exists := indices[name]
+		if !exists || definitions[i].Required || value == nil {
+			return nil, ErrInvalidNamedParameterDefaults
+		}
+		definitions[i].Default = value
+	}
+	validated, err := validateQueryServiceNamedParameters(service.ConfigType, service.SqlQuery, definitions)
+	if err != nil {
+		return nil, ErrInvalidNamedParameterDefaults
+	}
+	return validated, nil
+}
 
 func validateQueryServiceNamedParameters(configType, query string, definitions []models.QueryServiceNamedParameter) ([]models.QueryServiceNamedParameter, error) {
 	if configType != "sql" {

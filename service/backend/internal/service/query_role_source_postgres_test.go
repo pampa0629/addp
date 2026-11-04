@@ -175,6 +175,55 @@ func TestSQLRoleSelectionAgainstPostgres(t *testing.T) {
 	if q.SourceSnapshot().Source != nil {
 		t.Fatal("SQL invented a Meta source snapshot")
 	}
+	t.Run("optional-default-revision-preserves-masking", func(t *testing.T) {
+		optional := *q
+		optional.ID = 0
+		optional.Version = 1
+		optional.ServiceName = "sql-default-role-revision"
+		optional.NamedParameters = []models.QueryServiceNamedParameter{{Name: "minimum", Type: datatype.FieldTypeBigInt, Default: float64(1)}}
+		if err := ownerDB.Create(&optional).Error; err != nil {
+			t.Fatal(err)
+		}
+		original, err := owner.repo.GetByIDAndTenant(optional.ID, tenant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		first, err := executor.ExecuteQuery(ctx, original, &models.QueryExecutionRequest{Page: models.QueryPageRequest{Limit: 1}})
+		if err != nil || len(first.Data) != 1 || first.Data[0]["phone_alias"] != "***********" || !first.Page.HasMore {
+			t.Fatalf("optional baseline: %+v %v", first, err)
+		}
+		updated, err := owner.UpdateService(ctx, original.ID, tenant, &models.UpdateQueryServiceRequest{Version: 1, NamedParameterDefaults: map[string]interface{}{"minimum": float64(2)}})
+		if err != nil || updated.Version != 2 {
+			t.Fatalf("role default edit: %+v %v", updated, err)
+		}
+		current, err := owner.repo.GetByIDAndTenant(optional.ID, tenant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, parameters := range []map[string]interface{}{nil, {"minimum": int64(1)}} {
+			if _, err := executor.ExecuteQuery(ctx, current, &models.QueryExecutionRequest{Parameters: parameters, Page: models.QueryPageRequest{Limit: 1, Cursor: first.Page.NextCursor}}); !errors.Is(err, ErrInvalidQueryCursor) {
+				t.Fatalf("old cursor survived default revision: %v", err)
+			}
+		}
+		next, err := executor.ExecuteQuery(ctx, current, &models.QueryExecutionRequest{Page: models.QueryPageRequest{Limit: 1}})
+		if err != nil || len(next.Data) != 1 || fmt.Sprint(next.Data[0]["id"]) != "2" || next.Data[0]["phone_alias"] != nil || next.Data[0]["phone_copy"] != nil || next.ServiceVersion == first.ServiceVersion {
+			t.Fatalf("new default SQL: %+v %v", next, err)
+		}
+		explicit, err := executor.ExecuteQuery(ctx, current, &models.QueryExecutionRequest{Parameters: map[string]interface{}{"minimum": int64(1)}, Page: models.QueryPageRequest{Limit: 1}})
+		if err != nil || explicit.Data[0]["phone_alias"] != "***********" || explicit.Data[0]["phone_copy"] != "***********" {
+			t.Fatalf("role protection after revision: %+v %v", explicit, err)
+		}
+		ineligible.Store(true)
+		_, err = owner.UpdateService(ctx, current.ID, tenant, &models.UpdateQueryServiceRequest{Version: 2, NamedParameterDefaults: map[string]interface{}{"minimum": float64(1)}})
+		ineligible.Store(false)
+		if !errors.Is(err, dataprotection.ErrRoleOptionIneligible) {
+			t.Fatalf("ineligible default edit: %v", err)
+		}
+		persisted, _ := owner.repo.GetByID(current.ID)
+		if persisted.Version != 2 || persisted.NamedParameters[0].Default != float64(2) {
+			t.Fatal("role refusal mutated default/version")
+		}
+	})
 	if _, err := db.Exec(`ALTER TABLE ` + qualified + ` ADD COLUMN note text`); err != nil {
 		t.Fatal(err)
 	}

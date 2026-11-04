@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import hashlib
 import io
@@ -2648,6 +2649,18 @@ def cleanup_service_role_resources(client: GatewayClient, policy_id: str | None,
     return final_policy
 
 
+def assert_service_parameter_refusal(response: SUPPORT.Response) -> dict[str, object]:
+    error = _object(response.payload, "SQL parameter refusal")
+    if (response.status != 400 or set(error) != {"error", "error_code"}
+            or error.get("error_code") != "invalid_structured_query"
+            or not isinstance(error.get("error"), str) or not error["error"].strip()
+            or not isinstance(response.content_type, str)
+            or response.content_type.split(";", 1)[0].strip().lower() != "application/json"):
+        raise SuiteError("SQL parameter error must be exact 400 structured-query, not a protection refusal or result")
+    return {"http_status": 400, "error_code": "invalid_structured_query",
+            "result_absent": True, "cache_control": export_no_store(response)}
+
+
 def service_role_parameter_boundaries(client: GatewayClient, query_path: str, cursor: str,
                                       version: str, selected: bool, *, defaulted: bool = False) -> dict[str, object]:
     default_resolution = {}
@@ -2685,18 +2698,46 @@ def service_role_parameter_boundaries(client: GatewayClient, query_path: str, cu
         for format_name in ("json", "csv"):
             response = client.request("POST", query_path, (400,), service_role_query_request(
                 BANK_ROLE_SQL_OUTPUTS, probe_cursor, parameters=values, format_name=format_name))
-            error = _object(response.payload, "SQL parameter refusal")
-            if (response.status != 400 or set(error) != {"error", "error_code"}
-                    or error.get("error_code") != "invalid_structured_query"
-                    or not isinstance(error.get("error"), str) or not error["error"].strip()
-                    or not isinstance(response.content_type, str)
-                    or response.content_type.split(";", 1)[0].strip().lower() != "application/json"):
-                raise SuiteError("SQL parameter error must be exact 400 structured-query, not a protection refusal or result")
-            refusals[name][format_name] = {"http_status": 400, "error_code": "invalid_structured_query",
-                                          "result_absent": True, "cache_control": export_no_store(response)}
+            refusals[name][format_name] = assert_service_parameter_refusal(response)
     return {"alternate_value_output": alternate, "refusals": refusals,
             "published_service_version_unchanged": True, "continuation_parameters_bound": True,
             **({"default_resolution": default_resolution} if defaulted else {})}
+
+
+def verify_service_published_default_revision(client: GatewayClient, service_path: str,
+        query_path: str, before: dict[str, object], old_cursor: str, old_version: str) -> dict[str, object]:
+    client.request("PUT", service_path, (200,), {"version": before["version"], "named_parameter_defaults": {"minimum_id": 2}})
+    after = _object(client.request("GET", service_path, (200,)).payload, "updated published default")
+    expected = copy.deepcopy(before)
+    expected["named_parameters"][0]["default"] = 2
+    ignored = {"version", "updated_at", "service_version"}
+    if (positive_int(after.get("version"), "updated Service version") <= before["version"]
+            or {k: v for k, v in after.items() if k not in ignored} != {k: v for k, v in expected.items() if k not in ignored}):
+        raise SuiteError("published default edit changed immutable declarations or did not persist")
+    refusals = {}
+    for label, parameters in (("omitted", None), ("explicit_old_default", {"minimum_id": 1})):
+        refusals[label] = {}
+        for format_name in ("json", "csv"):
+            response = client.request("POST", query_path, (400,), service_role_query_request(
+                BANK_ROLE_SQL_OUTPUTS, old_cursor, parameters=parameters, format_name=format_name))
+            refusals[label][format_name] = assert_service_parameter_refusal(response)
+    omitted, _, version = assert_service_role_page(client, query_path, ["2", "3", "4", "5"], False,
+        output_sources=BANK_ROLE_SQL_OUTPUTS)
+    explicit, _, explicit_version = assert_service_role_page(client, query_path, ["2", "3", "4", "5"], False,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 2})
+    prior, cursor, prior_version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], False,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 1})
+    last, _, last_version = assert_service_role_page(client, query_path, ["5"], False, cursor,
+        output_sources=BANK_ROLE_SQL_OUTPUTS, parameters={"minimum_id": 1})
+    if (version == old_version or any(v != version for v in (explicit_version, prior_version, last_version))
+            or omitted["csv_sha256"] != explicit["csv_sha256"]):
+        raise SuiteError("updated defaults must change cursor version and retain current masking for all inputs")
+    if _object(client.request("GET", service_path, (200,)).payload, "default after queries") != after:
+        raise SuiteError("runtime queries mutated the published default")
+    return {"old_cursor_refusals": refusals, "new_default_output": omitted,
+        "explicit_new_default_output": explicit, "explicit_old_value_new_query": dict(prior, continuation=last),
+        "immutable_declarations_preserved": True, "default_revision_persisted": True,
+        "service_version_changed": True, "runtime_queries_unchanged": True}
 
 
 def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: int, database: str,
@@ -2833,13 +2874,17 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
             parameter_checks["default_restored"] = service_role_parameter_boundaries(client, query_path, recovery_cursor, recovered_version, False, defaulted=parameter_default is not None)
             if definition() != recovered:
                 raise SuiteError("SQL parameter probes changed the recovered definition")
+        default_revision = {}
+        if parameter_default is not None:
+            default_revision = verify_service_published_default_revision(
+                client, service_path, query_path, recovered, recovery_cursor, recovered_version)
         if service_subject_roles(client, identity) != roles:
             raise SuiteError("role cursor recovery changed current User eligibility facts")
         if definition_array(client, "/api/v1/security/protection-baselines") != baseline_before:
             raise SuiteError("role cursor acceptance changed a default Baseline")
         result = {"source_locator": locator, "service_id": service_id, "policy_id": policy_id,
                   "config_type": config_type, "named_parameters": body.get("named_parameters", []),
-                  "parameter_boundary_checks": parameter_checks, "protected_output_fields": [name for name, source in output_sources.items() if source == BANK_FIELD],
+                  "parameter_boundary_checks": parameter_checks, "published_default_revision": default_revision, "protected_output_fields": [name for name, source in output_sources.items() if source == BANK_FIELD],
                   "principal_id": identity["principal_id"], "tenant_id": identity["tenant_id"],
                   "choice": choice, "installed_projection": installed, "revoked_projection": revoked,
                   "default_before_selection": dict(default_first, continuation=default_last, total_rows=5),
@@ -4367,7 +4412,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v37",
+            "schema_version": "addp.security-mysql-owner-protection-online/v38",
             "result": "passed",
             "identity": identity,
             "governance": governance,

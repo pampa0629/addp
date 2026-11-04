@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import * as Vue from 'vue'
+import * as ParameterInput from '../../../common-frontend/basic/src/utils/parameterInput.mjs'
 import { parse, compileScript } from '@vue/compiler-sfc'
 import { createLatestRequestCoordinator } from '../../../common-frontend/basic/src/utils/latestRequest.js'
 
@@ -34,7 +35,7 @@ function harness(api = {}, params = {}, metadata = async () => ({ has_geometry: 
     '@/utils/moduleNavigation': { navigateServiceRoute: async (_router, path) => { navigations.push({ path, dirty: guard.isDirty() }) } },
     '../components/PublishedMetricSourcePicker.vue': {},
     '../../../../common-frontend/basic/src/components/ParameterValueInput.vue': {},
-    '../../../../common-frontend/basic/src/utils/parameterInput.mjs': {}
+    '../../../../common-frontend/basic/src/utils/parameterInput.mjs': ParameterInput
   }
   const state = scope.run(() => create(modules).setup({}, { expose() {} }))
   return { state, guard, route, navigations, messages,
@@ -283,5 +284,32 @@ test('SQL candidates bind the current SQL source and parameters while saved choi
   assert.deepEqual(JSON.parse(JSON.stringify(captured)), {config_type:'sql',engine_id:11,sql:'SELECT id, phone AS phone_alias FROM persons WHERE id >= :minimum',parameters:{minimum:7}})
   await h.state.handleSubmit()
   assert.deepEqual(saved.data_config.protection_choices,[roleChoice])
+  h.unmount()
+})
+
+test('editing sends only optional defaults, preserves drafts on rejection and never edits declarations', async () => {
+  const writes=[]
+  const definition={...service(41),sql_query:'SELECT id FROM sample WHERE id >= :minimum AND :subject IS NOT NULL',named_parameters:[{name:'minimum',type:'int',required:false,default:1},{name:'subject',type:'string',required:true}]}
+  let reject=true
+  const h=harness({getService:async()=>definition,updateService:async(id,body)=>{writes.push(body);if(reject)throw {response:{data:{error:'invalid defaults'}}};return {...definition,version:3}}},{id:'41'})
+  await h.mount()
+  assert.equal(h.state.validSQLNamedParameters.value,true,'required sample is not an editable published default')
+  assert.equal(h.state.sqlNamedParameterValues().subject,null)
+  h.state.sqlNamedParameters.value[0].value=2
+  await h.state.handleSubmit()
+  assert.deepEqual(writes[0].named_parameter_defaults,{minimum:2})
+  assert.equal(writes[0].version,2)
+  assert.equal('named_parameters' in writes[0],false)
+  assert.equal('sql_query' in writes[0],false)
+  assert.equal(h.guard.isDirty(),true)
+  assert.equal(h.state.sqlNamedParameters.value[0].value,2)
+  h.state.sqlNamedParameters.value[0].value=null
+  await h.state.handleSubmit()
+  assert.equal(writes.length,1,'cleared numeric default must not normalize to zero')
+  h.state.sqlNamedParameters.value[0].value=2
+  reject=false
+  await h.state.handleSubmit()
+  assert.equal(writes.length,2)
+  assert.equal(h.guard.isDirty(),false)
   h.unmount()
 })

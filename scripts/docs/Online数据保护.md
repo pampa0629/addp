@@ -10,7 +10,7 @@
 
 ## 现行契约与证据边界
 
-当前领域报告为 `addp.security-mysql-owner-protection-online/v37`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v37 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
+当前领域报告为 `addp.security-mysql-owner-protection-online/v38`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v38 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
 
 保护方式、角色资格及导出有效性的能力契约见[数据安全规范](../../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)。本文维护 suite 断言与版本差异；已归档的固定源码、运行尝试、失败和清理结果见[数据保护与执行血缘历史证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md)，不由版本号推导某次验收已通过。其中[四出口实际停机 v9](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)分别维护对应旧证据，不作为 v23～v33 新增范围的通过记录。
 
@@ -18,7 +18,7 @@
 
 确定性入口为 `make test-security-online-runner`，由 `make test-online-runner` 与既有 Platform CI 覆盖；共享存储与 Provider 的 PostgreSQL／MySQL 门禁仍各自认定 T2。真实 HTTP／浏览器使用既有 `security-mysql-owner-protection` Hosted suite，由专门 CI 会话安排与回传。本次文档整理不新增部署、账号、角色、权限、产品接口或 CI 路线；各场景明确列出的最小身份和权限仍是独立前提。
 
-确定性回归、协议单元格、旧版本结果与实际 T4 分开记录。本文没有新增或刷新运行证据，各新增断言原有的“未运行／待回传”状态仍保留；尤其 v27 不证明自然到期或其他出口、v30 不证明 v31 的新错误区分、v24 不证明 v25 的新增 runtime 单元格，当前 v37 的新增可选默认参数范围仍待独立 Hosted 证据。未运行、失败、跳过或清理失败均不能计为通过，身份、敏感信息和清理要求继续按各主题执行。
+确定性回归、协议单元格、旧版本结果与实际 T4 分开记录。本文没有新增或刷新运行证据，各新增断言原有的“未运行／待回传”状态仍保留；尤其 v27 不证明自然到期或其他出口、v30 不证明 v31 的新错误区分、v24 不证明 v25 的新增 runtime 单元格，v37可选默认参数及v38默认值修订范围仍待独立Hosted证据。未运行、失败、跳过或清理失败均不能计为通过，身份、敏感信息和清理要求继续按各主题执行。
 
 ## Transfer 保护与原值访问
 
@@ -130,6 +130,12 @@ SQL定义只保存声明，不伪造Meta Source，不持久化调用值。报告
 在默认保护、角色全遮盖、恢复默认三个阶段，分别验证省略整个parameters成员、空参数映射、显式默认值和合法改值。省略与显式默认值的两页JSON／CSV须返回同样行／列及CSV字节；由省略参数产生的游标可带显式默认值续读，由显式默认值产生的游标也可省略参数续读，服务版本保持。改为另一合法值须真实筛选出不同ID，拿旧游标改值则精确400/`invalid_structured_query`、无结果、JSON错误类型、单个no-store。显式null、布尔、对象、空字符串及未声明参数同样拒绝，不能把显式null当作未传而套默认值。
 
 服务定义中保存的是发布默认值，不是本次调用值；任意读取后声明、默认值、SQL及保存选择均不变，不伪造Meta Source。方式撤销后，省略和显式默认值的新查询及旧游标JSON／CSV都精确409/`query_protection_choice_invalid`，不能用400参数错误替代保护拒绝，也不静默默认恢复。主动移除角色选择后恢复初始默认CSV。新增一个私有Service的创建／删除计数，当前唯一报告v37，浏览器v9保持；报告不归档运行参数取值、源值、CSV正文、游标全文或凭据。确定性入口及CI登记沿已有Makefile，不新增工作流。此为验收合同，不表示新增Hosted/T4已运行，仍由专门CI会话跟进。
+
+### v38：发布默认值修订与旧游标拒绝
+
+沿[正式默认值修改入口](../../service/docs/architecture/查询发布与执行.md#已发布-sql-参数默认值修改)，在v37可选参数服务已完成角色撤销、主动清除及初始默认CSV恢复后，使用同一Service的版本PUT将minimum_id默认值从1改为2。定义必须持久化新默认并推进管理版本；SQL、来源、其他声明和空角色选择保持，运行查询不得反向写入默认。旧恢复游标在省略参数及显式旧默认1时，JSON／CSV都精确400/invalid_structured_query、无结果、JSON错误正文和单个no-store；显式旧值也拒绝以证明服务版本绑定，不能只验证改参数错误。
+
+新查询省略参数与显式新默认2的JSON／CSV均返回2～5行且CSV字节一致；新查询显式旧值1仍可正常分页1～5，所有输出继续按当前默认保护核对双别名、NULL及空单元格。服务依赖版本须变化；既有角色事实和Baseline复核仍执行。报告新增published_default_revision，沿原摘要规则，不保存凭据、源值、CSV正文或游标全文；不增加Service／Policy／角色／部署数量，领域唯一v38、浏览器仍v9，继续既有失败／中断精确清理。确定性反例覆盖默认未持久化、版本未变、SQL被改及旧游标放行。现有标准门禁和CI登记同步覆盖，`make test-security-online-runner`退出0（41／80／198／185／376项及登记CLI），所属171项通过；新增Hosted/T4尚未运行，仍由专门CI会话跟进，不把T1/T2/T3当作Hosted结果。
 
 ## 用户角色资格撤销
 

@@ -227,6 +227,7 @@ func (h *QueryServiceHandler) GetService(c *gin.Context) {
 // @Produce json
 // @Param id path int true "服务ID | Service ID"
 // @Param request body models.UpdateQueryServiceRequest true "更新请求 | Update request"
+// @Description named_parameter_defaults 仅修改既有 SQL 可选参数默认值，其他参数声明和 SQL 不变。 | named_parameter_defaults changes only existing optional SQL defaults; declarations and SQL remain immutable.
 // @Success 200 {object} models.QueryServiceDTO
 // @Failure 403 {object} map[string]string "角色资格或数据保护拒绝 | Role eligibility or data protection refusal"
 // @Failure 400 {object} map[string]string
@@ -252,6 +253,9 @@ func (h *QueryServiceHandler) UpdateService(c *gin.Context) {
 
 	result, err := h.svc.UpdateService(queryProtectionContext(c), uint(id), tenantIDValue(c), &req)
 	if err != nil {
+		if writeQueryParameterDefaultsError(c, err) {
+			return
+		}
 		if writeQueryProtectionError(c, err) {
 			return
 		}
@@ -267,6 +271,14 @@ func (h *QueryServiceHandler) UpdateService(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+func writeQueryParameterDefaultsError(c *gin.Context, err error) bool {
+	if !errors.Is(err, svc.ErrInvalidNamedParameterDefaults) {
+		return false
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidNamedParameterDefaults), "error_code": "invalid_named_parameter_defaults"})
+	return true
 }
 
 // DeleteService 删除服务

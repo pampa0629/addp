@@ -1,7 +1,9 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
+	commonquery "github.com/addp/common/query"
 	"reflect"
 	"strings"
 	"testing"
@@ -87,5 +89,39 @@ func TestBindQueryServiceNamedParametersUsesDriverArguments(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidStructuredQuery) || !strings.Contains(err.Error(), "extra") {
 		t.Fatalf("extra parameter error = %v", err)
+	}
+}
+
+func TestQueryServiceUpdatesOnlyOptionalDefaults(t *testing.T) {
+	q := &models.QueryService{ConfigType: "sql", SqlQuery: "SELECT :minimum,:required,:label", NamedParameters: []models.QueryServiceNamedParameter{
+		{Name: "minimum", Type: datatype.FieldTypeInt, Default: float64(1), Description: "unchanged", Options: []commonquery.ParameterOption{{Value: float64(1), Labels: map[string]string{"zh-cn": "一", "en": "One"}}, {Value: float64(2), Labels: map[string]string{"zh-cn": "二", "en": "Two"}}}},
+		{Name: "required", Type: datatype.FieldTypeString, Required: true},
+		{Name: "label", Type: datatype.FieldTypeString, Default: "kept"},
+	}}
+	before, _ := json.Marshal(q)
+	updated, err := queryServiceUpdatedParameterDefaults(q, map[string]interface{}{"minimum": float64(2)})
+	if err != nil || updated[0].Default != float64(2) || updated[2].Default != "kept" || updated[0].Description != q.NamedParameters[0].Description || !reflect.DeepEqual(updated[0].Options, q.NamedParameters[0].Options) {
+		t.Fatalf("updated declarations: %+v %v", updated, err)
+	}
+	for name, values := range map[string]map[string]interface{}{"empty": {}, "required": {"required": "x"}, "unknown": {"missing": 2}, "null": {"minimum": nil}, "type": {"minimum": "2"}, "bool": {"minimum": true}, "outside options": {"minimum": 3}, "partial invalid": {"label": "new", "minimum": 3}} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := queryServiceUpdatedParameterDefaults(q, values); !errors.Is(err, ErrInvalidNamedParameterDefaults) {
+				t.Fatalf("invalid defaults accepted: %v", err)
+			}
+		})
+	}
+	after, _ := json.Marshal(q)
+	if string(before) != string(after) {
+		t.Fatal("default validation mutated original declarations")
+	}
+	for _, kind := range []string{"table", "analytical"} {
+		copy := *q
+		copy.ConfigType = kind
+		if _, err := queryServiceUpdatedParameterDefaults(&copy, map[string]interface{}{"minimum": 2}); !errors.Is(err, ErrInvalidNamedParameterDefaults) {
+			t.Fatalf("non-SQL defaults accepted: %s", kind)
+		}
+	}
+	if onlyDeactivatesQueryService(&models.UpdateQueryServiceRequest{Status: func() *string { v := "inactive"; return &v }(), NamedParameterDefaults: map[string]interface{}{"minimum": 2}}) {
+		t.Fatal("default edit bypassed role checks as a pure stop")
 	}
 }

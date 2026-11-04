@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	commonclient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	commonmodels "github.com/addp/common/models"
 	"net/http"
 	"net/http/httptest"
@@ -189,5 +190,46 @@ func TestQueryServiceVersionAgainstPostgres(t *testing.T) {
 	if saved.Version != 3 || saved.Title != "Concurrent edit" || reads != 2 {
 		t.Fatal("snapshot refresh overwrote the concurrent edit")
 	}
+	t.Run("optional-defaults-persist-atomically", func(t *testing.T) {
+		q := consumerDescriptorTestService()
+		q.ID, q.Version, q.ServiceName, q.Status = 0, 1, "sql-optional-default-update", "inactive"
+		q.SqlQuery = "SELECT id,value,location FROM persons WHERE id>=:minimum"
+		q.NamedParameters = []models.QueryServiceNamedParameter{{Name: "minimum", Type: datatype.FieldTypeInt, Default: float64(1)}}
+		if err := tx.Create(q).Error; err != nil {
+			t.Fatal(err)
+		}
+		before, err := repo.GetByIDAndTenant(q.ID, q.TenantID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		oldVersion, beforeChanges := serviceDependencyVersion(before), changeCount()
+		for _, defaults := range []map[string]interface{}{{"minimum": nil}, {"minimum": "2"}, {"new": 2}} {
+			if _, err := svc.UpdateService(ctx, q.ID, q.TenantID, &models.UpdateQueryServiceRequest{Version: 1, NamedParameterDefaults: defaults}); !errors.Is(err, ErrInvalidNamedParameterDefaults) {
+				t.Fatalf("invalid defaults: %v", err)
+			}
+			after, _ := repo.GetByID(q.ID)
+			if !reflect.DeepEqual(before, after) || changeCount() != beforeChanges {
+				t.Fatal("invalid default update mutated published state")
+			}
+		}
+		updated, err := svc.UpdateService(ctx, q.ID, q.TenantID, &models.UpdateQueryServiceRequest{Version: 1, NamedParameterDefaults: map[string]interface{}{"minimum": float64(2)}})
+		if err != nil || updated.Version != 2 || updated.NamedParameters[0].Default != float64(2) {
+			t.Fatalf("persisted default: %+v %v", updated, err)
+		}
+		stored, err := repo.GetByID(q.ID)
+		if err != nil || stored.SqlQuery != before.SqlQuery || serviceDependencyVersion(stored) == oldVersion || !reflect.DeepEqual(stored.DataConfig, before.DataConfig) {
+			t.Fatal("source changed or version did not change", err)
+		}
+		if _, err := svc.UpdateService(ctx, q.ID, q.TenantID, &models.UpdateQueryServiceRequest{Version: 1, NamedParameterDefaults: map[string]interface{}{"minimum": float64(3)}}); !errors.Is(err, commonapi.ErrConflict) {
+			t.Fatalf("stale edit: %v", err)
+		}
+		if _, err := svc.UpdateService(ctx, q.ID, q.TenantID+1, &models.UpdateQueryServiceRequest{Version: 2, NamedParameterDefaults: map[string]interface{}{"minimum": float64(3)}}); !errors.Is(err, commonapi.ErrNotFound) {
+			t.Fatalf("foreign Tenant: %v", err)
+		}
+		final, _ := repo.GetByID(q.ID)
+		if !reflect.DeepEqual(stored, final) {
+			t.Fatal("rejected default edit mutated persisted state")
+		}
+	})
 
 }

@@ -338,6 +338,8 @@ type UpdateQueryServiceRequest struct {
 	Title       *string  `json:"title,omitempty"`
 	Description *string  `json:"description,omitempty"`
 	Keywords    []string `json:"keywords,omitempty"`
+	// 仅修改已发布 SQL 可选参数的默认值，不更改参数声明 | Defaults of published optional SQL parameters only.
+	NamedParameterDefaults map[string]interface{} `json:"named_parameter_defaults,omitempty"`
 
 	// 数据配置更新
 	DataConfig map[string]interface{} `json:"data_config,omitempty"`
