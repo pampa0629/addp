@@ -124,11 +124,12 @@ Manager 随根 Compose 的 `addp-platform` 部署；镜像准备、启动顺序�
 - 预览响应按 `frontend_renderer -> preview_material -> content.kind` 选择前端组件
 
 ### 向量化与混合检索
-1. 向量化对象是 data item，资源树 node 只作为批量选择范围。
-2. 资源树 item / node 向量化是一次性 execution，不创建任务定义。
-3. 从“数据任务 → 向量化任务”入口创建 `manager.embedding_tasks`，TaskProvider `task_type=embedding`。
-4. 向量化结果写入 `manager.embeddings`，搜索只消费 `status=ready` 且模型、维度匹配的结果。
-5. Meilisearch 负责全文和属性检索，pgvector 负责向量命中，Manager 搜索服务负责融合结果。
+
+向量化以 data item 为对象，node 只作为批量选择范围。资源树触发的一次性 execution、任务入口创建的持久配置及 item 当前结果分别按[对象边界](./docs/向量化概念说明.md#对象边界)、[任务与执行边界](./docs/向量化概念说明.md#任务与执行边界)管理；结果状态不能由 execution 成功推定。
+
+搜索只消费当前租户、模型绑定与维度匹配的 `ready` 结果；结果身份、状态与快照字段统一见[数据模型](./docs/向量化能力说明.md#数据模型)。Meilisearch 的全文／属性检索、pgvector 的向量结果及 Manager 的融合、分页和降级规则统一见[检索消费](./docs/向量化能力说明.md#检索消费)。
+
+接口身份与 Permission 分工见[模块 API 说明](./CLAUDE.md#核心-api)，模型场景绑定与配置权限见[模型配置归属](./docs/向量化概念说明.md#模型配置归属)；配置权限、索引存在或向量就绪不代替内容访问授权。真实混合检索的前置资源、断言和清理范围见[Online 验收](./docs/向量化能力说明.md#online-验收)，标准入口及分层边界见[模块验证说明](./CLAUDE.md#开发与验证)。不同源码、环境与场景分别认定，未运行、失败或未覆盖项不计通过。
 
 ### 快显、矢量物化视图与瓦片缓存
 
