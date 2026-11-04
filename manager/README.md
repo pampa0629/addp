@@ -92,18 +92,29 @@ Manager 随根 Compose 的 `addp-platform` 部署；镜像准备、启动顺序�
 导出数据:     POST /api/v1/manager/exports
 导出下载:     GET  /api/v1/manager/exports/{id}/file
 快显能力:     GET  /api/v1/manager/quick-view/capability?locator={ResourceLocator}
+来源驱动生成: POST /api/v1/manager/quick-view/actions
 快显FlatGeobuf: GET  /api/v1/manager/quick-view/flatgeobuf?locator={ResourceLocator}
 快显GeoJSON调试: GET  /api/v1/manager/quick-view/geojson?locator={ResourceLocator}
 快显MVT瓦片: GET  /api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?locator={ResourceLocator}
 栅格快显 COG内容:  GET  /api/v1/manager/raster_cog/{id}/content
-派生任务列表:         GET  /api/v1/manager/tasks?category=managed_quick_view|spatial_business
-派生任务维护:         POST|GET|PUT|DELETE /api/v1/manager/tasks/{task_type}[/{id}]
+派生任务列表: GET    /api/v1/manager/tasks?category={category}
+派生任务创建: POST   /api/v1/manager/tasks/{task_type}
+派生任务详情: GET    /api/v1/manager/tasks/{task_type}/{id}
+派生任务更新: PUT    /api/v1/manager/tasks/{task_type}/{id}
+派生任务删除: DELETE /api/v1/manager/tasks/{task_type}/{id}
+派生任务执行: POST   /api/v1/manager/tasks/{task_type}/{id}/execute
+失效任务重绑: POST   /api/v1/manager/tasks/{task_type}/{id}/rebind
+执行状态:     GET    /api/v1/manager/executions/{execution_id}
 栅格快显 COG结果:  GET  /api/v1/manager/raster_cog
 点云 COPC 内容:     GET  /api/v1/manager/point_cloud_copc/{id}/content
 点云 COPC 结果:     GET  /api/v1/manager/point_cloud_copc
 瓦片缓存结果: GET  /api/v1/manager/vector_tile_cache
 数据检索:     GET  /api/v1/manager/search
 ```
+
+任务列表的 `category` 可取 `managed_quick_view` 或 `spatial_business`，只用于后端分类筛选；统一强类型 CRUD 与任务身份见[快显共用契约](./docs/quick-view/共用契约.md#目标模型)。受管快显的产品入口按源 ResourceLocator 与 capability action 生成任务并展示只读定义，不能从通用 CRUD 清单推导页面可编辑私有生成配置，见[Manager 开发规则](./CLAUDE.md#开发规则)及[COG 产品入口](./docs/quick-view/TIFF与COG.md#产品入口与只读任务定义)。
+
+重绑仅恢复失效来源，不自动执行，范围及版本要求见[失效任务重绑](./docs/quick-view/共用契约.md#失效任务重绑)；执行中的并发拒绝与已有结果覆盖确认见[受管任务执行规则](./docs/quick-view/共用契约.md#受管快显任务语义身份)。用户 API 与 Orchestrator 专用 TaskProvider 的身份、Permission 边界见[模块 API 说明](./CLAUDE.md#核心-api)，标准入口及实际验收范围见[开发与验证](./CLAUDE.md#开发与验证)。路由登记不代表权限、任务执行、结果交付或清理已通过验收。
 
 完整 API 文档和请求示例请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)、[数据剖析规范](./docs/数据剖析规范.md) 和 [快显实现规范](./docs/快显实现规范.md)。 导入导出按[专题导航](#导入导出专题)定位来源核验、执行进度与完成导航。
 
