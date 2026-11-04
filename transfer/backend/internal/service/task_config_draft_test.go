@@ -165,7 +165,7 @@ func (f *draftMetadataFixture) GetNodeByCatalogPath(context.Context, uint, strin
 }
 
 func TestTaskConfigDraftOwnerReadsAndAuthorization(t *testing.T) {
-	for _, name := range []string{"user", "delegated", "missing_manager_permission", "extra_scope", "tenant_mismatch", "source_mismatch", "source_path_collision", "parent_mismatch", "missing_structure", "untrusted_schema", "dependency"} {
+	for _, name := range []string{"user", "delegated", "missing_manager_permission", "extra_scope", "tenant_mismatch", "source_mismatch", "source_path_collision", "source_dotted_name", "parent_mismatch", "missing_structure", "untrusted_schema", "dependency"} {
 		t.Run(name, func(t *testing.T) {
 			_, engines, subject, _ := configCheckFixture(t)
 			subject.Authorization.RoleAssignments[0].Permissions = append([]string{}, draftPermissions...)
@@ -209,6 +209,11 @@ func TestTaskConfigDraftOwnerReadsAndAuthorization(t *testing.T) {
 				item.Name = "extra.source"
 				item.FullName = "synthetic.extra.source"
 				metadata.ancestors.Item = *item
+			case "source_dotted_name":
+				request.SourceLocator = "addp://engine/1/path/synthetic/extra.source?type=collection"
+				item.Name = "extra.source"
+				item.FullName = "synthetic.extra.source"
+				metadata.ancestors.Item = *item
 			case "parent_mismatch":
 				metadata.parent.EngineID++
 			case "missing_structure":
@@ -226,13 +231,20 @@ func TestTaskConfigDraftOwnerReadsAndAuthorization(t *testing.T) {
 				body, _ = json.Marshal(obj)
 			}
 			result, err := svc.Build(context.Background(), subject, body)
-			if name == "user" || name == "delegated" {
+			if name == "user" || name == "delegated" || name == "source_dotted_name" {
 				if err != nil || result == nil {
 					t.Fatal(err)
 				}
 				if metadata.calls != 3 {
 					t.Fatal(metadata.calls)
 				}
+				var command map[string]interface{}
+				source := result.Arguments["config"].(map[string]interface{})["source"].(map[string]interface{})
+				statement := source["query"].(map[string]interface{})["statement"].(string)
+				if json.Unmarshal([]byte(statement), &command) != nil || command["aggregate"] != item.Name {
+					t.Fatal("query name was not derived from owner identity", command)
+				}
+
 				return
 			}
 			if err == nil || result != nil {
