@@ -1629,6 +1629,11 @@ class Lifecycle:
         self.collection = None
         self.scoped_refresh = None
 
+    def production_history(self, path, *, state=None):
+        # Path history includes covering node Grants. Narrow candidates using
+        # the unique output name; ownership still requires the full bindings.
+        return self.listing(history=True, state=state, table_search=path['segments'][-1]['name'])
+
     def collect_production_grants(self):
         # Resolve even an unknown start response using only executions of our
         # captured task definition, never an arbitrary output Grant or prefix.
@@ -1636,7 +1641,7 @@ class Lifecycle:
             executions = self.reader.request('GET', f'/api/v1/transfer/task-definitions/{task}/executions?page_size=100', (200,)).payload
             require(executions.get('total') == len(executions.get('data', [])), 'production history was truncated')
             ids = {row['execution_id'] for row in executions['data'] if row.get('task_id') == task}
-            rows = self.listing(history=True, catalog_path=path)
+            rows = self.production_history(path)
             require(rows.get('total') == len(rows.get('data', [])), 'production Grant history was truncated')
             for row in rows['data']:
                 require(row.get('approval_mode') == 'task_production' and row.get('producer_owner') == 'transfer'
@@ -1686,7 +1691,7 @@ class Lifecycle:
         else:
             raise SuiteError('initial production authorization exceeded its deadline')
         self.collect_production_grants()
-        rows = self.listing(history=True, state='active', catalog_path=path)
+        rows = self.production_history(path, state='active')
         require(rows.get('total') == 1 and len(rows.get('data', [])) == 1, 'initial output needs exactly one active Grant')
         row = rows['data'][0]
         output = item(self.reader, self.engine, name)
@@ -1721,11 +1726,11 @@ class Lifecycle:
         lineage.source_withdrawn()
         preview(self.reader, locator(self.engine, 'metric_people', source['id']), False)
         preview(self.reader, target, True, 2)
-        require(self.listing(history=True, state='active', catalog_path=path) == rows,
+        require(self.production_history(path, state='active') == rows,
                 'source withdrawal changed the output Grant')
         self.revoke(row['request_id'])
         preview(self.reader, target, False)
-        revoked = self.listing(history=True, state='revoked', catalog_path=path)
+        revoked = self.production_history(path, state='revoked')
         require(revoked['total'] == 1 and revoked['data'][0]['request_id'] == row['request_id']
                 and revoked['data'][0].get('revocation'), 'output revocation history missing')
         report['initial_production'] = {'task_id': task_id, 'execution_id': execution,
@@ -1736,10 +1741,15 @@ class Lifecycle:
         report['checks'].extend(PRODUCTION_CHECKS)
         lineage.output_withdrawn(report)
 
-    def listing(self, *, history=False, state=None, recipient_type='user', recipient_id=None, catalog_path=None):
-        query = {'catalog_path': json.dumps(self.path if catalog_path is None else catalog_path, separators=(',', ':')),
-                 'recipient_type': recipient_type, 'recipient_id': self.recipient if recipient_id is None else recipient_id,
+    def listing(self, *, history=False, state=None, recipient_type='user', recipient_id=None,
+                catalog_path=None, table_search=None):
+        query = {'recipient_type': recipient_type, 'recipient_id': self.recipient if recipient_id is None else recipient_id,
                  'page_size': 100}
+        if table_search is not None:
+            require(catalog_path is None, 'Grant filters must not combine path and search')
+            query['table_search'] = table_search
+        else:
+            query['catalog_path'] = json.dumps(self.path if catalog_path is None else catalog_path, separators=(',', ':'))
         if state:
             query['state'] = state
         return self.operator.request('GET', self.base + '/access_grants' + ('/history' if history else '')

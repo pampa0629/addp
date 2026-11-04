@@ -2050,8 +2050,16 @@ class InitialProductionOnlineTest(unittest.TestCase):
         return SimpleNamespace(status=status, payload=result)
 
     def listing(self, **options):
-        if options.get('catalog_path') == getattr(self, 'path', None):
+        path = getattr(self, 'path', None)
+        exact_search = path and options.get('table_search') == path['segments'][-1]['name']
+        if exact_search or (path and options.get('catalog_path') == path):
             rows = [self.row()]
+            if options.get('history') and options.get('state') != 'active' and not exact_search:
+                # Formal path history also includes a covering ancestor Grant.
+                rows.append(dict(request_id='ancestor-node-grant', approval_mode='independent',
+                                 catalog_path={'engine_id': 2, 'segments': [{'type': 'schema', 'name': 'public'}]},
+                                 node_recursive=True, recipient_type='user', recipient_id='33',
+                                 revocation={'reason': 'prior isolated node scenario'}))
             if options.get('state') == 'active' and self.output_revoked:
                 rows = []
             if options.get('state') == 'revoked' and not self.output_revoked:
@@ -2096,6 +2104,33 @@ class InitialProductionOnlineTest(unittest.TestCase):
                          [(self.lifecycle.path, self.source_command), (self.path, self.command)])
         self.lifecycle.require_batch_denied.assert_called_once_with(self.reader, [self.lifecycle.path, self.path])
         self.assertTrue(report['authorization_load']['mixed_withdrawn_batch_denied'])
+
+    def test_output_candidate_search_is_literal_and_still_rejects_wrong_full_path(self):
+        self.lifecycle.production_flow({'checks': []})
+        searches = [call.kwargs for call in self.lifecycle.listing.call_args_list
+                    if call.kwargs.get('history')]
+        self.assertEqual(len(searches), 4)
+        for query in searches:
+            self.assertEqual(query['table_search'], self.path['segments'][-1]['name'])
+            self.assertNotIn('catalog_path', query)
+        self.bad = {'catalog_path': dict(self.path, segments=[
+            {'type': 'schema', 'name': 'another_schema'}, self.path['segments'][-1]])}
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'foreign output Grant'):
+            self.lifecycle.collect_production_grants()
+
+    def test_output_search_uses_existing_history_filter_without_path_or_extra_request(self):
+        self.operator.request.side_effect = None
+        self.operator.request.return_value = SimpleNamespace(payload={'total': 0, 'data': []})
+        result = ONLINE.Lifecycle.listing(self.lifecycle, history=True, state='revoked',
+                                         table_search='pg_initial_100%_literal')
+        self.assertEqual(result, {'total': 0, 'data': []})
+        self.operator.request.assert_called_once()
+        method, url, expected = self.operator.request.call_args.args
+        self.assertEqual((method, expected), ('GET', (200,)))
+        self.assertTrue(urlsplit(url).path.endswith('/access_grants/history'))
+        self.assertEqual(parse_qs(urlsplit(url).query), {
+            'table_search': ['pg_initial_100%_literal'], 'recipient_type': ['user'],
+            'recipient_id': ['33'], 'page_size': ['100'], 'state': ['revoked']})
 
     def test_initial_grant_rejects_wrong_target_origin_source_or_expiry(self):
         for invalid in ({'approval_mode': 'independent'}, {'producer_owner': 'develop'},
