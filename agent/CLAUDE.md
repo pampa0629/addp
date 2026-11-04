@@ -10,7 +10,8 @@
 | 正文增量、取消保留、历史草稿固定说明与受限字段解释 | 已实施；会话55完成自然指代、bounded 与授权区分、混合字段、取消及刷新保留的本地真实切片 | 不等于 Hosted 或所有模型措辞质量通过 |
 | Transfer 新草稿构建与参数绑定 | Agent 只提交用户业务选择，Transfer 编译；Runtime 按正式来源精确绑定参数，多候选先确认 | 不推导预检 unknown 为可执行或授权通过 |
 | 最新短输入与刷新恢复 | 会话62：真实模型、正式 Agent API 和 Owner 链路完成，4候选先选源、16映射、构建与预检同参；服务端消息／回放／参数恢复一致，用户截图补齐页面可见性 | 该轮没有创建、运行、样本或扫描调用；截图与 API 证据分别记录 |
-| 修改字段范围与旧稿保留 | 会话62新增独立Run：16字段改为仅 `_id`／`groups`，重新取证、构建并同参预检；原源／目标／行粒度／策略不变，旧消息、原参数、报告和回放不变；随后自然指代旧稿仅执行 `draft.inspect` 并恢复原16字段快照 | API／真实模型／Owner与回放核对通过；本轮新增内容的页面观察因浏览器控制连接超时尚未补齐，预检仍为unknown |
+| 修改字段范围与旧稿保留 | 会话62新增独立Run：16字段改为仅 `_id`／`groups`，重新取证、构建并同参预检；原源／目标／行粒度／策略不变，旧消息、原参数、报告和回放不变；随后自然指代旧稿仅执行 `draft.inspect` 并恢复原16字段快照 | API／真实模型／Owner与回放核对通过；用户截图已确认旧16字段卡片、unknown报告及历史说明可见，新2字段卡片不在截图范围，尚未完成该项页面观察 |
+| 修订61激活与重启后复验 | 正式Tenant能力API返回create61／start7／get5；revision／digest与Ontology负责人的active generation、PG快照及图元数据原件一致，现有四项构建权限经共享AuthContext确认 | 唯一新增模型Run在路由阶段InferenceError失败、零Tool；尚未验证重启后的Agent61构建／预检路径，不以控制面激活或旧60成功代替 |
 | 模型稳定性与长会话 | 本轮11场景各3轮，33/33真实模型受控事实回归通过；含多候选短输入、生产上下文预算及长会话指代／目标切换；摘要水位、失败、旧结果覆盖和完整消息筛选的4项SQL回归通过 | 合成摘要不证明真实压缩模型的语义质量；SQLite不证明PostgreSQL并发锁；固定事实不等于真实Owner、完整CI或Hosted |
 
 会话62证据：`/tmp/addp-r60-chat/acceptance-audit.json`、`/tmp/addp-r60-restore/acceptance-audit.json`；这两份机器记录生成时浏览器控制超时，页面可见性由随后用户截图独立补证，不能改写成工具自动刷新成功。历史说明切片见 `/tmp/addp-agent-history-live-acceptance-20261103.json`。所有验收仍区分模型受控事实、正式 API、页面观察与 CI。
@@ -19,9 +20,11 @@
 
 Ontology已将本轮来源冻结为创建修订61（`f041e3ef9`）：3项更新、3项新增场景、47项不变，共53项；独立核对文件／提交SHA与锚点一致，能力定义仅修订号变化。来源门禁及Ontology Go T1通过。上述模型回归在来源元数据修订前完成，不宣称运行服务已激活修订61。
 
-完整 `make test-module MODULE=agent` 重跑已越过来源检查，但公共 `test-gdal-native-lifecycle` 的临时夹具缺少 `scripts/utils/metrics-project.py`，在T0失败；后续Agent阶段未执行，不能计整套通过。未改动该无关夹具。远程CI `41828173748` 的Agent离线Job `126568189212` 与前端Job `126568188871` 已实际执行标准门禁并成功，非选择跳过；原始Job日志核对18场景契约及两套后端检查通过，前端142项单测、37项受控浏览器及构建通过。不能由两个Job外推Platform或整套CI通过。现有Agent eval和CI自动发现新增后端测试与场景，真实模型仍显式运行 `make test-agent-model`；前端、运行服务、迁移和权限未变，不新增CI入口或要求重启。
+完整 `make test-module MODULE=agent` 重跑已越过来源检查，但公共 `test-gdal-native-lifecycle` 的临时夹具缺少 `scripts/utils/metrics-project.py`，在T0失败；后续Agent阶段未执行，不能计整套通过。未改动该无关夹具。远程CI `41828173748` 的Agent离线Job `126568189212` 与前端Job `126568188871` 已实际执行标准门禁并成功，非选择跳过；原始Job日志核对18场景契约及两套后端检查通过，前端142项单测、37项受控浏览器及构建通过。Platform Job `126568188861` 最终失败于公共 `raster-workflow-capacity-online_test.py` 的PostgreSQL快照检查／清理，不属于本轮Agent来源变更，不在本会话修复或重跑；整套CI为failure，不能由两个Agent Job外推通过。现有Agent eval和CI自动发现新增后端测试与场景，真实模型仍显式运行 `make test-agent-model`；本轮只补证据与记录，未改运行实现或权限，不新增CI入口或要求重启。
 
-2026-11-04会话62的字段修改切片见 `/tmp/addp-agent-field-change-20261104/acceptance-audit.json`，28项API／持久化／回放断言通过。新构建Run `64549416-c3c1-4efe-9b2b-f7dbb58f9b47` 只保留 `_id` 与 `groups`，字段仅提交path/target，groups由Transfer默认生成JSON；源身份、完整目标及replace、一文档一行与bounded/snapshot保持原样，Owner构建结果与预检完整入参相等。新草稿另取名称并增加字段范围说明，不能声称全部顶层参数与旧稿相等；配置差异仅为字段映射和对应查询投影。新引用独立，旧16字段稿、旧消息、原报告和安全回放逐项不变。随后Run `bf94d441-7242-4ee4-b3a0-ad38b4be1ed1` 以“修改前16字段的旧草稿”精确选原引用，仅审计私有 `draft.inspect`；旧groups映射仍为field_9→JSON、可空，bounded与授权的固定说明正确，未重读Owner或预检。两轮无创建／运行／样本／扫描Tool，无创建确认或运行审批；正式预检仍unknown，不是通过。实际运行能力仍为修订60，本次没有重启或声称修订61已激活。浏览器控制两次连接超时，不能将正式API重读与回放等同于页面刷新验收；待独立补齐页面观察。
+2026-11-04会话62的字段修改切片见 `/tmp/addp-agent-field-change-20261104/acceptance-audit.json`，28项API／持久化／回放断言通过。新构建Run `64549416-c3c1-4efe-9b2b-f7dbb58f9b47` 只保留 `_id` 与 `groups`，字段仅提交path/target，groups由Transfer默认生成JSON；源身份、完整目标及replace、一文档一行与bounded/snapshot保持原样，Owner构建结果与预检完整入参相等。新草稿另取名称并增加字段范围说明，不能声称全部顶层参数与旧稿相等；配置差异仅为字段映射和对应查询投影。新引用独立，旧16字段稿、旧消息、原报告和安全回放逐项不变。随后Run `bf94d441-7242-4ee4-b3a0-ad38b4be1ed1` 以“修改前16字段的旧草稿”精确选原引用，仅审计私有 `draft.inspect`；旧groups映射仍为field_9→JSON、可空，bounded与授权的固定说明正确，未重读Owner或预检。两轮无创建／运行／样本／扫描Tool，无创建确认或运行审批；正式预检仍unknown，不是通过。该切片完成时运行能力为修订60，不因后续重启改写成61证据。浏览器控制连接超时；用户随后截图只补齐旧16字段卡片、unknown与历史说明，不能外推新2字段卡片或自动刷新通过。截图观察独立存于 `/tmp/addp-agent-field-change-20261104/user-screenshot-observation.json`，原API审计与delivery摘要保持不变；顶部导航图标与账号文字重叠另属Console布局，未跨模块修改。
+
+用户在协调会话确认System／Transfer／Ontology／Agent已重启后，正式Tenant能力读取与 `/tmp/addp-ontology-r61-active-read.json` 逐项核对61／7／5的revision、digest；generation通过Ontology发布原件关联，不新增Agent Context字段。当前构建四项既有权限通过生产共享AuthContext解析器确认，未新增授权或Grant。会话62仅新增一次Run `ec8f2165-a99e-45f6-8561-3748c8a40f97`：路由模型阶段返回InferenceError，持久为failed／runtime_exception，四个安全事件、零Tool／正文，无业务任务或审批。脱敏日志显示同窗口唯一Inference chat的上游stage=transport、HTTP状态0，随后Inference API返回503；Agent与Inference request ID不同，关联依据限于时间／路径／状态，不伪称完整trace。源码对应HTTP transport未取得上游响应的分支，不能据此归因DNS、TLS、代理或模型请求Schema。只读Provider元数据为active且已配凭据，未读取凭据、探测上游、重发模型、改配置或重启。故障原件在 `/tmp/addp-agent-r61-live-20261104/{read-inspection.json,failed-case-audit.json,failure-diagnostic.json}`。旧Run／消息／回放未变；当前尚不能宣称Agent61与新Transfer构建路径真实复验通过，由协调会话跟进Inference依赖诊断。
 
 ## 当前实现边界
 
