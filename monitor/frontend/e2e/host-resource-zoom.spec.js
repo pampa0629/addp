@@ -181,6 +181,40 @@ test('automatic refresh retains scalar zoom while a new metric or identity reset
   expect((await resourceChartState(page)).start).toBeCloseTo(loadZoom, 2)
 })
 
+test('token renewal clears the host chart until authority is reread, including its local viewport', async ({ page }) => {
+  const state = await resourceBackend(page, { trendResponse: completeTrend })
+  await page.goto(`/node-resources/${node}?metric=node.disk.read_bytes_per_second&device=sda&range=1h&refresh=off`)
+  const chart = page.getByTestId('resource-chart')
+  await expect(chart.locator('canvas')).toBeVisible()
+  await dragResourceChartZoom(page, 0.6)
+  await expect.poll(async () => (await resourceChartState(page)).start).toBeGreaterThan(50)
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0)
+  const before = state.reads.length
+  let releaseAuthority, authorityReads = 0
+  const heldAuthority = new Promise(resolve => { releaseAuthority = resolve })
+  await page.route('**/api/v1/system/auth/context', async route => {
+    authorityReads++
+    await heldAuthority
+    await route.fulfill({ json: state.identity })
+  })
+  await page.route('**/api/v1/system/refresh', route => route.fulfill({ json: { access_token: 'fixture-renewed-token', expires_in: 3600 } }))
+  try {
+    // Exercise the real shared token subscription, without directly mutating AuthContext.
+    await page.evaluate(() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('monitor-auth').refreshAccessToken({ force: true }))
+    await expect.poll(() => authorityReads).toBe(1)
+    await expect(chart).toHaveCount(0)
+    await expect(page.locator('.resource-cards')).toHaveCount(0)
+    expect(state.reads).toHaveLength(before)
+    expect(await page.evaluate(() => scrollY)).toBe(0)
+  } finally {
+    releaseAuthority()
+  }
+  await expect(chart.locator('canvas')).toBeVisible()
+  expect(trendReads(state)).toHaveLength(2)
+  expect((await resourceChartState(page)).start).toBe(0)
+  expect(await page.evaluate(() => scrollY)).toBe(0)
+})
+
 
 test('filesystem zoom stays with the full mount identity and resets across metrics', async ({ page }) => {
   const secondMount = { device: '/dev/archive', mountpoint: '/archive', fstype: 'xfs' }
