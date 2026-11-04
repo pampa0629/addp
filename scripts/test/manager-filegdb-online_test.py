@@ -33,6 +33,7 @@ def authorization():
     auth.target = lambda _: M.target(7)
     auth.operator = '9'; auth.recipient = '11'; auth.frozen = None
     auth.grants = []; auth.confirmed = set(); auth.denies = []; auth.confirmed_denies = set()
+    auth.node_receipts = {}
     auth.issuer = Mock()
     return auth
 
