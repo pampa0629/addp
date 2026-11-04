@@ -24,6 +24,8 @@ def new_checkpoint() -> dict[str, Any]:
     return {
         "schema": CHECKPOINT_SCHEMA,
         "draft_ref": None,
+        "parameter_source": None,
+        "parameter_source_issue": False,
         "platform_capability": None,
         "reply_detail": "standard",
         "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}, "config_checks": {}, "run_approval": None},
@@ -45,6 +47,14 @@ def normalize_checkpoint(value: Any) -> dict[str, Any]:
     if reference is not None and not isinstance(reference, str):
         raise ValueError("invalid_draft_reference")
     checkpoint["draft_ref"] = reference
+    from agents.transfer_parameters import validate_parameter_reference
+    source = value.get("parameter_source")
+    validate_parameter_reference(source)
+    checkpoint["parameter_source"] = copy.deepcopy(source)
+    issue = value.get("parameter_source_issue", False)
+    if type(issue) is not bool or (issue and source is not None):
+        raise ValueError("transfer_parameter_source_invalid")
+    checkpoint["parameter_source_issue"] = issue
     capability = value.get("platform_capability")
     if capability is not None:
         if not isinstance(capability, str):

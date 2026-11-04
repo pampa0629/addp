@@ -84,6 +84,7 @@ evals/agent-scenarios/<scenario-name>/scenario.yaml
 | `model-engine-inventory` | 真实模型回归 | 普通引擎查询不误入本体目录，保留离线引擎，不请求多余澄清。 |
 | `model-query-draft` | 真实模型回归 | 保留当前引擎、语言及资源事实，生成查询候选但不执行。 |
 | `model-transfer-precheck` | 真实模型回归 | 经平台语义路由按完整原参数预检，不创建或运行，不改写正式报告。 |
+| `model-transfer-short-precheck` | 真实模型回归 | 简短业务输入经平台路由、正式资源发现、Owner 草稿构建及同参预检，不由提示词附带完整配置，禁止 Copilot、创建和运行。工具事实仍为受控夹具，不能代替真实业务环境。 |
 | `model-historical-draft` | 真实模型回归 | 无 Skill 路由（契约标记 `none`），仅私有 `draft.inspect`，不重新读取资源或预检。 |
 | `model-historical-boundaries` | 真实模型回归 | 多轮上下文下“刚才的草稿”只问关键主题，按历史 unsupported、append、bounded 固定说明，不调用正文模型。 |
 | `model-historical-named` | 真实模型回归 | 长业务名称精确选取历史草稿，固定说明不冒充当前授权。 |

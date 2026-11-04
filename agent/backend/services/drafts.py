@@ -208,3 +208,49 @@ async def read_review_draft(db, *, agent_run_id: UUID, tool_call_id: str,
         raise DraftReferenceError("draft_snapshot_invalid")
     validate_create(snapshot["arguments"], checkpoint)
     return snapshot
+
+
+async def read_parameter_source(db, reference: dict, *, agent_run_id: UUID,
+                                session_id: int, user_id: int, tenant_id: int) -> dict:
+    """Restore only the source attached to this owned Run, never a recent step."""
+    from agents.transfer_parameters import BUILD_TOOL, explicit_user_arguments, validate_parameter_reference, validate_parameter_arguments
+    from models.message import Message
+
+    validate_parameter_reference(reference)
+    owned = select(AgentRun).where(AgentRun.id == agent_run_id, AgentRun.session_id == session_id,
+                                  AgentRun.user_id == user_id, AgentRun.tenant_id == tenant_id)
+    run = (await db.execute(owned)).scalar_one_or_none()
+    if run is None or run.checkpoint.get("parameter_source") != reference:
+        raise DraftReferenceError("transfer_parameter_source_unavailable")
+    if reference["kind"] == "build":
+        result = await db.execute(select(AgentRunStep).where(
+            AgentRunStep.agent_run_id == agent_run_id, AgentRunStep.tool_call_id == reference["id"],
+            AgentRunStep.tool_name == BUILD_TOOL, AgentRunStep.status == "completed").limit(2))
+        steps = result.scalars().all()
+        if len(steps) != 1:
+            raise DraftReferenceError("transfer_parameter_source_unavailable")
+        evidence = steps[0].facts.get("constructed_draft")
+        if not isinstance(evidence, dict) or evidence.get("reference") != reference:
+            raise DraftReferenceError("transfer_parameter_source_invalid")
+        arguments = evidence.get("arguments")
+    elif reference["id"].startswith("message:"):
+        result = await db.execute(select(Message).where(Message.session_id == session_id,
+            Message.protocol_message_id == reference["id"][len("message:"):], Message.role == "user", Message.is_complete.is_(True)).limit(2))
+        messages = result.scalars().all()
+        if len(messages) != 1:
+            raise DraftReferenceError("transfer_parameter_source_unavailable")
+        arguments = explicit_user_arguments(messages[0].content)
+    elif reference["id"].startswith("reply:"):
+        from models.interaction import Interaction
+        result = await db.execute(select(Interaction).where(
+            Interaction.id == UUID(reference["id"][len("reply:"):]), Interaction.agent_run_id == agent_run_id,
+            Interaction.session_id == session_id, Interaction.user_id == user_id, Interaction.tenant_id == tenant_id,
+            Interaction.kind == "clarification", Interaction.status == "completed"))
+        interaction = result.scalar_one_or_none()
+        if interaction is None or not isinstance(interaction.answer, dict) or not isinstance(interaction.answer.get("text"), str):
+            raise DraftReferenceError("transfer_parameter_source_unavailable")
+        arguments = explicit_user_arguments(interaction.answer["text"])
+    else:
+        raise DraftReferenceError("transfer_parameter_source_invalid")
+    validate_parameter_arguments(reference, arguments)
+    return copy.deepcopy(arguments)

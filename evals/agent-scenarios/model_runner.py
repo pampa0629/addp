@@ -102,6 +102,22 @@ def fixture_executor(fixture, violations):
                 for key, value in fixture['expected'].get(name, {}).items():
                     if arguments.get(key) != value:
                         raise ToolExecutionError('model_parameters_changed', 'fixture parameter mismatch')
+                if name == 'transfer.task.draft.build':
+                    selected = arguments['fields']
+                    if [(field['path'],field['target']) for field in selected] != [(['_id'],'_id'),(['members'],'members')]:
+                        raise ToolExecutionError('model_parameters_changed','fixture field choices mismatch')
+                    for field, expected_type in zip(selected, ('string','json')):
+                        if ('target_type' in field and field['target_type'] != expected_type
+                                or 'nullable' in field and field['nullable'] is not False
+                                or 'precision' in field or 'scale' in field):
+                            raise ToolExecutionError('model_parameters_changed','fixture type choices mismatch')
+                    result = copy.deepcopy(fixture['responses'][name])
+                    for key in ('name','description','batch_size'):
+                        result['arguments'].pop(key,None)
+                        if key in arguments:
+                            result['arguments'][key] = copy.deepcopy(arguments[key])
+                    fixture['expected']['transfer.task.config.check'] = copy.deepcopy(result['arguments'])
+                    return result
                 # The check request is compared in full, including omitted/extra fields.
                 if name == 'transfer.task.config.check' and arguments != fixture['expected'][name]:
                     raise ToolExecutionError('model_parameters_changed', 'fixture parameter mismatch')
@@ -123,9 +139,11 @@ def fixture_executor(fixture, violations):
                             source_parent if engine_id == 311 else target)]}
                     parents = {311: source_parent, 312: target}
                     parent = parents.get(engine_id)
-                    if not parent or arguments.get('parent_locator') not in {None, parent['locator']}:
+                    root = {'locator':f'addp://engine/{engine_id}/path?type=engine',
+                            'type':'engine','children':[copy.deepcopy(parent)]} if parent else None
+                    if not parent or arguments.get('parent_locator') not in {None, root['locator'], parent['locator']}:
                         raise ToolExecutionError('model_parameters_changed', 'fixture parent mismatch')
-                    return copy.deepcopy(parent) if arguments.get('parent_locator') else {'children': [copy.deepcopy(parent)]}
+                    return copy.deepcopy(parent) if arguments.get('parent_locator') == parent['locator'] else root
                 return copy.deepcopy(fixture['responses'][name])
             return respond
 
@@ -226,7 +244,7 @@ async def run_case(name, tenant_id, model, *, timeout=180):
     text = ''.join(body)
     report_preserved = True
     ambiguous = bool(fixture.get('other_snapshot'))
-    if name == 'model-transfer-precheck' or snapshot:
+    if name in {'model-transfer-precheck','model-transfer-short-precheck'} or snapshot:
         expected_reports = ([] if ambiguous else [snapshot['report']] if snapshot else
                             [transfer_config_check_presentation(transfer_facts()[4])['report']])
         reports = [e.payload.get('report') for e in events
@@ -270,6 +288,7 @@ def _safe_tools(tools):
     codes = {code for t in load_manifest().tools for code in t.errors} | {
         'invalid_tool_arguments', 'model_parameters_changed', 'model_tool_blocked',
         'platform_condition_unsatisfied', 'tool_not_allowed', 'draft_reference_unavailable',
+        'transfer_parameter_source_mismatch', 'transfer_parameter_rebuild_requires_user', 'transfer_parameter_source_ambiguous',
     }
     return [{'name': t['name'] if t['name'] in known else 'unknown', 'status': t['status'],
              'error_code': t['error_code'] if t['error_code'] in codes or t['error_code'] is None else 'runtime_error'}
@@ -291,7 +310,8 @@ def validate_report(report):
     tool_names = [t.name for t in load_manifest().tools] + ['draft.inspect', 'request_clarification', 'write_todos', 'unknown']
     error_codes = sorted({c for t in load_manifest().tools for c in t.errors} | {
         'invalid_tool_arguments', 'model_parameters_changed', 'model_tool_blocked',
-        'platform_condition_unsatisfied', 'tool_not_allowed', 'draft_reference_unavailable', 'runtime_error',
+        'platform_condition_unsatisfied', 'tool_not_allowed', 'draft_reference_unavailable',
+        'transfer_parameter_source_mismatch', 'transfer_parameter_rebuild_requires_user', 'transfer_parameter_source_ambiguous', 'runtime_error',
     })
     sample = obj({
         'name': {'enum': list(CASE_NAMES)}, 'sample': {'type': 'integer', 'minimum': 1, 'maximum': 3},

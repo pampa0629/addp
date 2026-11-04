@@ -89,6 +89,7 @@ async def create_agent_run(
     tenant_id: int,
     protocol_run_id: str,
     reply_detail: str = "standard",
+    submitted_message_id: str | None = None, submitted_content: str | None = None,
 ) -> AgentRun:
     run = AgentRun(
         session_id=session_id,
@@ -98,6 +99,12 @@ async def create_agent_run(
         status="running",
         checkpoint=normalize_checkpoint({**new_checkpoint(), "reply_detail": reply_detail}),
     )
+    if submitted_message_id is not None and submitted_content is not None:
+        from agents.transfer_parameters import explicit_user_arguments, parameter_reference
+        arguments = explicit_user_arguments(submitted_content)
+        run.checkpoint = {**run.checkpoint, "parameter_source_issue": arguments is None and any(mark in submitted_content for mark in ("{", "["))}
+        if arguments is not None:
+            run.checkpoint = {**run.checkpoint, "parameter_source": parameter_reference("user", "message:" + submitted_message_id, arguments)}
     db.add(run)
     await db.flush()
     return run
@@ -153,6 +160,13 @@ async def resume_agent_run(
             confirm_run_review(checkpoint, interaction)
             continue
         if isinstance(interaction.answer, dict) and "text" in interaction.answer:
+            from agents.transfer_parameters import explicit_user_arguments, parameter_reference
+            arguments = explicit_user_arguments(interaction.answer["text"])
+            checkpoint["parameter_source_issue"] = arguments is None and any(mark in interaction.answer["text"] for mark in ("{", "["))
+            if arguments is not None:
+                checkpoint["draft_ref"] = None
+            checkpoint["parameter_source"] = (parameter_reference("user", "reply:" + str(interaction.id), arguments)
+                                                if arguments is not None else None)
             # A changed requirement can never reuse an earlier write approval.
             checkpoint["observed"]["operation_reviews"].clear()
             checkpoint["confirmed"]["operation_reviews"].clear()

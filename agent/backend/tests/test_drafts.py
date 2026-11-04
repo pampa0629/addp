@@ -84,7 +84,8 @@ class DraftScopeTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.engine = create_engine("sqlite:///:memory:")
         metadata = MetaData()
-        for model in (Session, AgentRun, AgentRunStep):
+        from models.message import Message
+        for model in (Session, AgentRun, AgentRunStep, Message, Interaction):
             table = model.__table__.to_metadata(metadata)
             for column in table.columns:
                 if isinstance(column.type, JSONB): column.type = JSON()
@@ -170,6 +171,48 @@ class DraftScopeTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(DraftReferenceError):
             await resume_agent_run(self.db, interactions=[interaction], session_id=self.sessions[0], user_id=1, tenant_id=1)
         self.assertEqual(run.status, "waiting")
+
+    async def test_parameter_sources_restore_owned_steps_and_raw_user_messages(self):
+        from agents.transfer_parameters import BUILD_TOOL, parameter_reference, build_parameter_evidence
+        from services.drafts import read_parameter_source
+        from models.message import Message
+
+        run = self.database.query(AgentRun).filter_by(session_id=self.sessions[0]).one()
+        arguments = checked_step().input_data
+        reference, evidence = build_parameter_evidence(arguments, "constructed-call")
+        step = AgentRunStep(id=uuid.uuid4(), agent_run_id=run.id, sequence=2, step_type="tool_call",
+            protocol_invocation_id="build-invocation", tool_call_id=reference["id"], tool_name=BUILD_TOOL,
+            status="completed", input_data={"choices":"fixture"}, facts={"constructed_draft":evidence})
+        self.database.add(step)
+        run.checkpoint = {"parameter_source":reference}
+        self.database.commit()
+        kwargs = dict(agent_run_id=run.id,session_id=self.sessions[0],user_id=1,tenant_id=1)
+        self.assertEqual(await read_parameter_source(self.db,reference,**kwargs),arguments)
+        for changes in ({"user_id":2},{"tenant_id":2},{"session_id":self.sessions[3]}):
+            with self.assertRaises(DraftReferenceError):
+                await read_parameter_source(self.db,reference,**{**kwargs,**changes})
+        step.status="running";self.database.commit()
+        with self.assertRaises(DraftReferenceError):await read_parameter_source(self.db,reference,**kwargs)
+        step.status="completed"
+        step.facts={"constructed_draft":{**evidence,"arguments":{**arguments,"name":"changed"}}}
+        self.database.commit()
+        with self.assertRaises(ValueError):await read_parameter_source(self.db,reference,**kwargs)
+        user_ref=parameter_reference("user","message:user-configuration",arguments)
+        self.database.add(Message(session_id=self.sessions[0],role="user",protocol_message_id="user-configuration",
+                                  content="按原参数只预检\n"+json.dumps(arguments),is_complete=True))
+        run.checkpoint={"parameter_source":user_ref};self.database.commit()
+        self.assertEqual(await read_parameter_source(self.db,user_ref,**kwargs),arguments)
+        with self.assertRaises(DraftReferenceError):
+            await read_parameter_source(self.db,reference,**kwargs)
+        interaction = Interaction(id=uuid.uuid4(),session_id=self.sessions[0],user_id=1,tenant_id=1,
+            agent_run_id=run.id,kind="clarification",status="completed",prompt="old config "+json.dumps(arguments),
+            options=[],answer={"text":json.dumps(arguments)})
+        self.database.add(interaction)
+        reply_ref=parameter_reference("user","reply:"+str(interaction.id),arguments)
+        run.checkpoint={"parameter_source":reply_ref};self.database.commit()
+        self.assertEqual(await read_parameter_source(self.db,reply_ref,**kwargs),arguments)
+        interaction.status="pending";self.database.commit()
+        with self.assertRaises(DraftReferenceError):await read_parameter_source(self.db,reply_ref,**kwargs)
 
     async def test_query_enforces_user_tenant_session_and_exact_version(self):
         scope = dict(session_id=self.sessions[0], user_id=1, tenant_id=1)

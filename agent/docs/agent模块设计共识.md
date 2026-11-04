@@ -144,6 +144,10 @@ AgentRun 可观测事实分为：
 
 写入和破坏性操作的 approval 不归 Agent 持有。`workflow.run` 的权威审批由 Develop 持有；Agent 不保存完整 workflow payload，只保存 owner approval 的可恢复投影。`ApprovalRequest` 的“检查审批状态”动作只提交 `{action:"check"}`，不能产生批准事实。
 
+### Transfer 参数来源职责
+
+Transfer 负责查询和字段映射编译。Runtime 在原 Tool、协议步骤和检查点路径上绑定候选参数来源，模型负责澄清与选择。来源仅限正式构建步骤、已绑定历史草稿、当前 User 消息明确附带的唯一完整配置。三种来源共享同一预检与复核入口，不创建第二套参数存储或 SDK。完整来源、恢复身份、同批隔离及拒绝审计规则以 [交互协议](../../docs/spec/addp智能体交互协议规范.md) 为准。
+
 ## 四、前端边界
 
 共享前端收口：登录页组合 `AuthLoginFlow`，仅在 `session_issued` 后导航，MFA 与租户上下文选择沿共享登录流程；会话列表及过程面板使用受控 `DataPagination`，分页请求仍归 Agent。执行 ResultRef 保留 Develop 领域详情目标，使用共享 Console 地址解析生成新窗口入口，不拼接当前 iframe 的相对地址。Markdown 文本统一组合共享 `MarkdownContent`，Agent 不再维护解析、HTML 净化与代码复制。会话管理、使用偏好、计划和 AgentRun 协议适配仍属 Agent，不映射成业务 execution。

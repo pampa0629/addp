@@ -73,6 +73,12 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
         result = await executor.call('resource.children.list', {'engine_id': 312, 'parent_locator': target['locator']},
                                      agent_run_id='fixture', tool_call_id='call')
         self.assertEqual(result, target)
+        root = await executor.call('resource.children.list', {'engine_id':312},agent_run_id='fixture',tool_call_id='root')
+        self.assertEqual(root['locator'],'addp://engine/312/path?type=engine')
+        self.assertEqual(root['children'],[target])
+        repeated = await executor.call('resource.children.list', {'engine_id':312,'parent_locator':root['locator']},
+                                       agent_run_id='fixture',tool_call_id='root-again')
+        self.assertEqual(repeated,root)
         with self.assertRaises(ToolExecutionError):
             await executor.call('resource.children.list', {'engine_id': 999}, agent_run_id='fixture', tool_call_id='call')
         self.assertEqual(violations, ['model_parameters_changed'])
@@ -161,6 +167,23 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
         ])
         sample = await model_runner.run_case('model-transfer-precheck', 1, _model(client))
         self.assertEqual(sample['status'], 'passed', sample)
+        self.assertTrue(sample['assertions']['report_preserved'])
+
+    async def test_short_request_discovers_builds_and_checks_owner_result(self):
+        fixture = case_fixture('model-transfer-short-precheck')
+        definition,source,parent,_,_ = transfer_facts()
+        arguments = fixture['responses']['transfer.task.draft.build']['arguments']
+        choices = {**fixture['expected']['transfer.task.draft.build'], 'name':arguments['name'],
+                   'fields':[{'path':['_id'],'target':'_id'},{'path':['members'],'target':'members'}]}
+        client = _InferenceFixture([
+            route(needs_platform_semantics=True),
+            Message(role='assistant',tool_calls=[ToolCall(id='platform-route',name='PlatformRouteDecision',arguments={'capability':'transfer.task.create'})]),
+            Message(role='assistant',tool_calls=[_call('resource.facts.get',{'locator':source['locator']})]),
+            Message(role='assistant',tool_calls=[_call('transfer.task.draft.build',choices)]),
+            Message(role='assistant',tool_calls=[_call('transfer.task.config.check',arguments)]),
+        ])
+        sample=await model_runner.run_case('model-transfer-short-precheck',1,_model(client))
+        self.assertEqual(sample['status'],'passed',sample)
         self.assertTrue(sample['assertions']['report_preserved'])
 
     async def test_failed_call_not_erased_when_model_recovers(self):

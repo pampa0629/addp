@@ -1,0 +1,48 @@
+{
+  "schema": "addp.agent-scenario/v1",
+  "name": "model-transfer-short-precheck",
+  "category": "business_capability",
+  "skill": "transfer-generation",
+  "prompt": "把 MongoDB 的 demo.events 传到 PostgreSQL 的 demo.new_events，一文档一行，保留 _id 和 members，replace，只预检。",
+  "expectations": {
+    "phases": {
+      "model": {
+        "status": "completed",
+        "required_tools": [
+          "platform.capabilities.list",
+          "platform.capability.context",
+          "resource.facts.get",
+          "transfer.task.draft.build",
+          "transfer.task.config.check"
+        ],
+        "forbidden_tools": [
+          "workflow.run",
+          "transfer.task.create",
+          "transfer.task.start",
+          "transfer.draft.generate"
+        ],
+        "required_errors": [],
+        "interactions": [],
+        "presentations": [
+          "TransferConfigCheckReport"
+        ],
+        "result_refs": {
+          "count": 0,
+          "kinds": []
+        },
+        "owner_effects": {
+          "tasks_created": 0,
+          "executions_created": 0
+        },
+        "allowed_tool_risks": [
+          "read"
+        ]
+      }
+    },
+    "forbidden_persisted_fields": [
+      "authorization",
+      "token",
+      "sample_rows"
+    ]
+  }
+}

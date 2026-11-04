@@ -99,7 +99,7 @@ from services.runs import (
 from services.runtime import run_cancellation_registry
 from services.sessions import archived_response, get_owned_session as _get_owned_session
 from services.plans import PLAN_ACTIVITY, PLAN_TOOL, plan_todos, read_run_plan
-from services.drafts import DRAFT_INSPECT, list_session_drafts, read_session_draft, read_checked_draft_step, draft_presentation
+from services.drafts import DRAFT_INSPECT, list_session_drafts, read_session_draft, read_checked_draft_step, draft_presentation, read_parameter_source
 from agents.platform_conditions import CHECK_TOOL
 from utils.summary import maybe_update_summary
 
@@ -468,6 +468,8 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
                     tenant_id=tenant_id,
                     protocol_run_id=body.run_id,
                     reply_detail=preferences.reply_detail,
+                    submitted_message_id=next(message.id for message in reversed(body.messages) if message.role == "user"),
+                    submitted_content=next(_plain_text(message.content) for message in reversed(body.messages) if message.role == "user"),
                 )
         current_plan = await read_run_plan(db, agent_run.id, user_id, tenant_id) if (resumed_from_interaction or retry_run_id) else []
     except AgentRunNotFoundError as exc:
@@ -490,6 +492,11 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
     async def draft_reader(reference):
         async with AsyncSessionLocal() as draft_db:
             return await read_session_draft(draft_db, reference, session_id=session_id, user_id=user_id, tenant_id=tenant_id)
+
+    async def parameter_reader(reference):
+        async with AsyncSessionLocal() as source_db:
+            return await read_parameter_source(source_db, reference, agent_run_id=agent_run_id,
+                session_id=session_id, user_id=user_id, tenant_id=tenant_id)
 
     encoder = EventEncoder(request.headers.get("accept"))
     async with AsyncSessionLocal() as metrics_db:
@@ -579,7 +586,7 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
                 checkpoint=run_checkpoint,
                 forced_skill_name=(agent_run.skill_name if resumed_from_interaction else None),
                 accept_language=request.headers.get("accept-language", "zh-cn"),
-                draft_catalog=draft_catalog, draft_reader=draft_reader, plan=current_plan,
+                draft_catalog=draft_catalog, draft_reader=draft_reader, parameter_reader=parameter_reader, plan=current_plan,
             ), cancellation_signal)
             async for event in events:
                 if await request.is_disconnected():

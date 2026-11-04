@@ -14,7 +14,7 @@ from services.drafts import draft_snapshot
 ROOT = Path(__file__).resolve().parents[2]
 CASE_NAMES = (
     'model-engine-inventory', 'model-query-draft',
-    'model-transfer-precheck', 'model-historical-draft',
+    'model-transfer-precheck', 'model-transfer-short-precheck', 'model-historical-draft',
     'model-historical-boundaries', 'model-historical-named', 'model-historical-ambiguous',
 )
 HISTORY_NAME = 'outdoors_mongodb_to_pg_agent_historical_regression_20261103'
@@ -112,7 +112,7 @@ def case_fixture(name):
             'query.draft.generate': {'engine_id': 321, 'query_language': 'sql'},
         }
         result['body_facts'] = ['public.orders', 'status']
-    elif name == 'model-transfer-precheck':
+    elif name in {'model-transfer-precheck', 'model-transfer-short-precheck'}:
         source_parent = {'locator': 'addp://engine/311/path/demo?type=database&node_id=3111',
                          'type': 'database', 'children': [source]}
         result['responses'] = {
@@ -136,6 +136,21 @@ def case_fixture(name):
             'transfer.task.config.check': arguments,
         }
         result['body_facts'] = ['unknown']
+        if name == 'model-transfer-short-precheck':
+            result['responses']['data.search'] = {'items':[source], 'total':1}
+            built = copy.deepcopy(arguments)
+            built['config']['source']['query']['statement'] = json.dumps({'aggregate':'events','pipeline':[
+                {'$project':{'_id':0,'field_0':'$_id','field_1':'$members'}}]},separators=(',',':'))
+            built['config']['transforms'][0]['fields'] = [
+                {'source':'field_0','target':'_id','target_type':'string','nullable':False},
+                {'source':'field_1','target':'members','target_type':'json','nullable':False}]
+            result['responses']['transfer.task.draft.build'] = {'arguments':built}
+            result['expected']['transfer.task.config.check'] = built
+            result['expected']['transfer.task.draft.build'] = {
+                'source_locator':source['locator'],
+                'target':{'parent_locator':parent['locator'],'name':'new_events','apply_mode':'replace'},
+                'row_grain':{'mode':'document'}}
+
     else:
         result['snapshot'] = historical_snapshot()
         result['expected_scope'] = {'topics':['status','policy','boundary','authorization','fields'], 'fields':['members']}

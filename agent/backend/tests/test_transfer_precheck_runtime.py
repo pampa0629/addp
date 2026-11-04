@@ -56,6 +56,9 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(self.facts_status, request=request, json=self.formal_facts[kwargs["params"]["locator"]])
         if path == "/api/v1/meta/resource-tree/12/node":
             return httpx.Response(self.facts_status, request=request, json=self.target_parent)
+        if path == "/api/v1/transfer/task-config-drafts":
+            return httpx.Response(getattr(self, "build_status", 200), request=request,
+                                  json=getattr(self, "build_result", {"arguments": self.arguments}))
         if path == "/api/v1/transfer/task-config-checks":
             if self.cancel_check:
                 self.check_started.set()
@@ -68,7 +71,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "desired_state": "stopped", "schedule": "", "enabled": False,
         })
 
-    async def run_factory(self, responses, allowed=None, accept_language="zh-cn", user_request="先建任务，不要运行", skill_body="fixture", draft_arguments=None, resuming=False, commit=True):
+    async def run_factory(self, responses, allowed=None, accept_language="zh-cn", user_request="先建任务，不要运行", skill_body="fixture", draft_arguments=None, resuming=False, commit=True, parameter_reader=None):
         client = _InferenceFixture(responses)
         events = []
         async def transport(owner, method, path, **kwargs):
@@ -81,6 +84,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     "checkpoint": self.checkpoint, "accept_language": accept_language,
                     "platform_capability": CREATE_TOOL,
                     "resuming": resuming,
+                    "parameter_reader": parameter_reader,
                     **({"draft_arguments": draft_arguments} if draft_arguments is not None else {}),
                 }, skill_body=skill_body, allowed_tool_names=allowed or ["platform.capability.context", CHECK_TOOL, CREATE_TOOL],
                 max_iterations=len(responses)+1, llm=_model(client),

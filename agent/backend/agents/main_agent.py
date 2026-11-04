@@ -358,6 +358,7 @@ async def stream_agent_response(
     accept_language: str = "zh-cn",
     draft_catalog: Optional[List[Dict[str, str]]] = None,
     draft_reader: Any = None,
+    parameter_reader: Any = None,
     plan: Optional[List[Dict[str, str]]] = None,
 ) -> AsyncIterator[AgentEvent]:
     """
@@ -487,6 +488,7 @@ async def stream_agent_response(
             "agent_run_id": agent_run_id,
             "checkpoint": checkpoint or {},
             "resuming": bool(forced_skill_name),
+            "parameter_reader": parameter_reader,
             **({"platform_capability": state["platform_capability"]} if state.get("platform_capability") else {}),
             "plan": plan or [],
             "accept_language": accept_language,

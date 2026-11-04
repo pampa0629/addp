@@ -17,6 +17,8 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 
 ## 核心流程
 
+用户在当前请求中明确附带唯一完整配置并要求按原参数只预检时，直接使用该原配置，不调用构建器改名、补参数或重新映射。完整 JSON 缺失、多个配置或外层损坏时先澄清，不从内层对象或模型复述恢复配置。Runtime 绑定正式构建步骤、用户原始输入或历史草稿来源，模型不能改写绑定参数；需要修改先取得明确要求并重新构建。
+
 Runtime 已明确绑定原草稿时，只沿用恢复的候选参数，不重建任务名、描述、目标表名、查询、映射或可选参数，不新增 batch_size 等默认值。重新读取当前平台能力及必要资源事实，不把历史参数当作已确认资源或权限。最终 `transfer_create_review` 的 `operation_review` 只提交 `{tool:"transfer.task.create"}`，不提交 arguments；Runtime 使用原参数预检和复核。确认后的正式创建输入同样由 Runtime 绑定，不能借模型输入改写参数。不额外调用 draft.generate 或显式预检来重建原稿。若当前定义不支持原参数，明确解释；需要改配置时结束原参数创建，再按用户要求进入修改和新的复核流程。
 
 1. 理解 Runtime 在本次 Harness 进入时经 `platform.capability.context` 读取并保存的所选能力：创建为 `transfer.task.create`，运行为 `transfer.task.start`，结果查询为 `transfer.execution.get`；无需重复读取。Runtime 按该操作与本体依赖收窄 Skill 的 Tool 白名单，不强制其他操作已发布。需要主动刷新，或进入已声明的可选后续操作时，仍用同一正式 Tool 读取对应定义，失败不能沿用旧结果。理解其概念、条件和效果；`availability=not_observed` 不是可用性或权限证明，不假装其他模块存在。

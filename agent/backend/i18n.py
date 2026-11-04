@@ -252,3 +252,15 @@ def transfer_run_result(accept_language, result):
 def reply_preference_resume_error(language: str) -> str:
     return ("Reply preferences apply to new messages only" if language.lower().startswith("en")
             else "回复偏好只能用于新消息")
+
+
+def transfer_parameter_error(accept_language: str) -> str:
+    return ("Transfer 参数来源缺失或与原配置不一致。请明确修改要求，重新构建或提供唯一完整配置。"
+            if not accept_language.lower().startswith("en") else
+            "Transfer parameters are missing a trusted source or differ from the original. Clarify the change and rebuild, or supply one complete configuration.")
+
+
+def transfer_parameter_clarification(accept_language: str) -> tuple[str, str]:
+    if accept_language.lower().startswith("en"):
+        return ("Please supply exactly one complete Transfer configuration, or describe your business choices. Multiple or incomplete JSON configurations cannot be selected automatically.", "Describe business choices")
+    return ("请提供唯一一份完整的 Transfer 配置，或改用业务描述。多个配置或不完整 JSON 不能自动择一。", "改用业务描述")
