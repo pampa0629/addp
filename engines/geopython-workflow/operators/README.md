@@ -8,7 +8,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 `raster_point_density`统一提供`method=uniform/quartic`，默认uniform按圆内点数除完整圆面积，保留原结果；quartic固定二维四次核，中心贡献最大、半径边界准确0。可选weight_field显式选有限非负权重，两方法均乘权重且不按总权重归一化；省略保持原结果，全1数值／mask一致，缺失／负权重整次失败，原生整数精确累计。选字段单位weight/m2，否则points/m2。两者均显式米制半径、重复XY逐条贡献，无支持／空批有效0；模板仅提供网格／CRS，允许矩形／旋转／剪切。共用精确圆筛选、分块及COG保存／清理，无新增入口、权限或依赖；[完整点密度契约](../../../docs/spec/workflow/栅格算子契约.md#米制圆形点密度栅格)。
 
-`raster_line_density`以像元中心圆内米制线长除完整圆面积，重复／重叠／折返逐原始段累计，相切或无支持有效0；二维LineString／MultiLineString先全量严格校验，同投影CRS／显式米制半径，模板仅网格与CRS，允许旋转／剪切／矩形。解析裁圆与有理区间最终舍入，不用buffer近似或epsilon；Float64单位metre/m2，沿原分块／COG及失败清理，可选weight_field为有限非负线长乘数，不归一化，省略保持原结果／单位，全1数值与mask一致，缺失／负权重包括范围外均失败；选字段单位weight/metre，全部多部分量沿原要素权重累计。无核密度／新依赖或权限。[完整线密度契约](../../../docs/spec/workflow/栅格算子契约.md#米制圆形线密度栅格)。
+`raster_line_density`以像元中心圆内米制线长除完整圆面积，重复／重叠／折返逐原始段累计，相切或无支持有效0；二维LineString／MultiLineString先全量严格校验，同投影CRS／显式米制半径，模板仅网格与CRS，允许旋转／剪切／矩形。解析裁圆与有理区间最终舍入，不用buffer近似或epsilon；Float64单位metre/m2，沿原分块／COG及失败清理，可选weight_field为有限非负线长乘数，不归一化，省略保持原结果／单位，全1数值与mask一致，缺失／负权重包括范围外均失败；选字段单位weight/metre，全部多部分量沿原要素权重累计。同一入口method=uniform/quartic，默认uniform保持原结果；quartic固定二维四次核，沿原始线段解析积分，半径边界贡献0、不离散成点或重新归一化，单位与权重规则保持。无新依赖或权限。[完整线密度契约](../../../docs/spec/workflow/栅格算子契约.md#米制圆形线密度栅格)。
 
 矢量面分区统计沿原入口使用非空严格递增`percentiles`列表：原八列保持，每面一行，按请求顺序追加带原前缀的percentile_i／percentile_value_i列对；覆盖、孔洞、重叠面独立、原属性／几何／索引及CRS保持，每面共享一次覆盖读取／排序／归并。旧单值参数及列删除，旧DAG须显式改写；原单项套件只迁移单元素列表／列名，既有矩阵／预算保持。完整边界见栅格算子契约，Linux全量与实际Hosted分别记账。
 

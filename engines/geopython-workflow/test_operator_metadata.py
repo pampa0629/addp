@@ -1875,7 +1875,7 @@ def test_line_density_single_read_workflow_sources_radius_no_optional_shortcuts(
     import inspect
     spec=next(s for s in list_operators() if s['id']=='raster_line_density')
     params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_gdf','reference_raster','radius_metres','weight_field'}
+    assert set(params)=={'input_gdf','reference_raster','radius_metres','weight_field','method'}
     assert all(params[n]['required'] and 'default' not in params[n] for n in ('input_gdf','reference_raster','radius_metres'))
     assert params['weight_field']['type']=='string' and params['weight_field']['required'] is False and 'default' not in params['weight_field']
     assert params['input_gdf']['param_type']==params['reference_raster']['param_type']=='input'
@@ -1885,6 +1885,9 @@ def test_line_density_single_read_workflow_sources_radius_no_optional_shortcuts(
     assert spec['output_ports'][0]['type']=='raster'
     assert len([s for s in list_operators() if s['id']=='raster_line_density'])==1
     assert set(inspect.signature(get_operator('raster_line_density')).parameters)==set(params)
+
+    assert params['method']['type']=='string'and params['method']['required']is False and params['method']['default']=='uniform'and params['method']['enum']==['uniform','quartic']
+    assert inspect.signature(get_operator('raster_line_density')).parameters['method'].default=='uniform'
 
 
 def test_split_multipart_has_one_workflow_read_entry_with_explicit_source_and_no_recursive_alias():

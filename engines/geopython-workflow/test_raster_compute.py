@@ -21567,3 +21567,310 @@ def test_line_density_weights_async_cog_frozen_language_and_all_failure_cleanup(
         failed_task='save'if case=='encode-failure'else'density'
         assert state['error']=='任务 '+failed_task+' 执行失败: '+cause
     assert work and all(not p.exists()for p in work)and prior.read_bytes()==b'prior untouched'and path.read_bytes()==raw
+
+
+
+def _line_kernel_oracle(frame,grid,shape,radius,field=None):
+    """Independent original-t polynomial integral; no product clipping or radicals."""
+    from decimal import Decimal as D,localcontext
+    from fractions import Fraction as Q
+    def dec(v):
+        q=Q(int(v))if isinstance(v,(int,np.integer))else Q(*v.as_integer_ratio())
+        return D(q.numerator)/D(q.denominator)
+    output=np.zeros(shape)
+    with localcontext()as context:
+        context.prec=4000
+        gt=list(map(dec,grid));factor=dec(frame.crs.axis_info[0].unit_conversion_factor);R=dec(float(radius));r2=(R/factor)**2
+        for row,col in np.ndindex(shape):
+            u,v=D(col)+D('.5'),D(row)+D('.5');x,y=gt[0]+gt[1]*u+gt[2]*v,gt[3]+gt[4]*u+gt[5]*v;total=D(0)
+            weights=[1]*len(frame)if field is None else frame[field].array
+            for geometry,weight in zip(frame.geometry,weights):
+                mass=dec(weight)
+                for part in(geometry.geoms if geometry.geom_type=='MultiLineString'else[geometry]):
+                    vertices=[tuple(map(dec,xy))for xy in part.coords]
+                    for (ax,ay),(bx,by)in zip(vertices,vertices[1:]):
+                        dx,dy=bx-ax,by-ay;a=dx*dx+dy*dy
+                        if not a:continue
+                        b=2*((ax-x)*dx+(ay-y)*dy);c=(ax-x)**2+(ay-y)**2;disc=b*b-4*a*(c-r2)
+                        if disc<=0:continue
+                        left=max(D(0),(-b-disc.sqrt())/(2*a));right=min(D(1),(-b+disc.sqrt())/(2*a))
+                        if right<=left:continue
+                        A,B,C=1-c/r2,-b/r2,-a/r2
+                        coefficients=(A*A,A*B,(B*B+2*A*C)/3,B*C/2,C*C/5)
+                        area=sum(co*(right**i-left**i)for i,co in enumerate(coefficients,1))
+                        total+=mass*a.sqrt()*factor*area
+            output[row,col]=float(3*total/(D.from_float(math.pi)*R*R))
+    return output
+
+
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+@pytest.mark.parametrize('grid',[(0.,1.,0.,4.,0.,-1.),(0.,2.,.5,4.,.25,-3.)])
+@pytest.mark.parametrize('weighted',[False,True])
+def test_line_kernel_complete_independent_original_segment_integral_grid_units_and_order(tmp_path,epsg,grid,weighted):
+    import operators.raster_compute as c,pandas as pd
+    wkts=['LINESTRING(-2 1,8 1)','LINESTRING(0 1,3 1,1 1)','MULTILINESTRING((0 0,3 3),(0 3,3 0))',
+          'LINESTRING(1 1,2 1,2 2,1 1)','LINESTRING(-2 1,8 1)','LINESTRING(1 1,1 1,2 2)']
+    frame=_line_density_frame(wkts,epsg);frame['mass']=pd.array([.5,3.,.25,1.25,2.,0.],dtype='Float64');frame.index=[9,9,4,9,4,4];before=frame.copy(deep=True)
+    path=create_raster(tmp_path/'kernel-source.tif',np.full((3,4),-9999.),grid,f'EPSG:{epsg}');raw=path.read_bytes();expected=_line_kernel_oracle(frame,grid,(3,4),3.,'mass'if weighted else None)
+    with raster_workspace():
+        source=raster_load(source_plan(path));arrays=[]
+        for lines in(frame,frame.iloc[::-1].copy()):
+            result=c.raster_line_density(lines,source,3.,method='quartic',**({'weight_field':'mass'}if weighted else{}));ds=gdal.Open(str(result.path));arrays.append(ds.ReadAsArray())
+            np.testing.assert_array_equal(arrays[-1],expected);np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),np.full((3,4),255))
+            assert ds.GetGeoTransform()==grid and osr.SpatialReference(wkt=ds.GetProjection()).GetAuthorityCode(None)==str(epsg)
+            assert ds.GetRasterBand(1).GetUnitType()==('weight/metre'if weighted else'metre/m2')and math.isnan(ds.GetRasterBand(1).GetNoDataValue());ds=None
+        np.testing.assert_array_equal(*arrays)
+    pd.testing.assert_frame_equal(frame,before);assert path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('case',['diameter','inside','one-side','chord','diagonal','retrace','multi','tangent','below','above','endpoint','outside','empty','zero','near-end','near-end-huge'])
+def test_line_kernel_analytic_profiles_exact_boundary_zeros_and_endpoint_cancellation(tmp_path,case):
+    import operators.raster_compute as c
+    from decimal import Decimal as D,localcontext
+    y=math.nextafter(1.,0.)if case=='below'else math.nextafter(1.,math.inf)if case=='above'else 1.
+    wkts={'diameter':['LINESTRING(-2 0,2 0)'],'inside':['LINESTRING(-.25 0,.25 0)'],'one-side':['LINESTRING(0 0,2 0)'],
+          'chord':['LINESTRING(-2 .5,2 .5)'],'diagonal':['LINESTRING(-2 -2,2 2)'],'retrace':['LINESTRING(-2 0,2 0,-2 0)'],
+          'multi':['MULTILINESTRING((-2 0,2 0),(0 -2,0 2))'],'tangent':[f'LINESTRING(-2 {y},2 {y})'],'below':[f'LINESTRING(-2 {y},2 {y})'],'above':[f'LINESTRING(-2 {y},2 {y})'],
+          'endpoint':['LINESTRING(1 0,2 0)'],'outside':['LINESTRING(999 999,1000 1000)'],'empty':[],'zero':['LINESTRING(-2 0,2 0)'],
+          'near-end':[f'LINESTRING({math.nextafter(1.,0.)} 0,10 0)'],'near-end-huge':[f'LINESTRING({math.nextafter(1.,0.)} 0,1e308 0)']}[case]
+    frame=_line_density_frame(wkts);frame['mass']=[0 if case=='zero'else 1]*len(frame);grid=(-.5,1.,0.,.5,0.,-1.);path=create_raster(tmp_path/'profile.tif',np.zeros((1,1)),grid,'EPSG:3857')
+    with raster_workspace():
+        result=c.raster_line_density(frame,raster_load(source_plan(path)),1.,weight_field='mass',method='quartic');ds=gdal.Open(str(result.path));actual=ds.ReadAsArray()[0,0];assert ds.GetRasterBand(1).GetMaskBand().ReadAsArray()[0,0]==255;ds=None
+    expected=_line_kernel_oracle(frame,grid,(1,1),1.,'mass')[0,0];assert actual==expected
+    if case in('tangent','above','endpoint','outside','empty','zero'):assert actual==0.
+    else:assert actual>0.
+    with localcontext()as context:
+        context.prec=4000;pi=D.from_float(math.pi)
+        if case in('diameter','diagonal'):assert actual==float(D(16)/(5*pi))
+        if case=='one-side':assert actual==float(D(8)/(5*pi))
+        if case in('retrace','multi'):assert actual==float(D(32)/(5*pi))
+        if case=='chord':assert actual==float(D(16)*(D(3)/4)**(D(5)/2)/(5*pi))
+
+
+@pytest.mark.parametrize('bad',[None,True,False,0,1.,[],{},'', 'Quartic','gaussian'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_line_kernel_method_is_explicit_enum_before_geometry_or_reference(bad,language,monkeypatch):
+    import operators.raster_compute as c
+    monkeypatch.setattr(c,'_open',lambda*a:pytest.fail('invalid method opened reference'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_line_density(object(),object(),1.,method=bad)
+    assert str(error.value)==('线密度方法必须为uniform或quartic'if language=='zh-cn'else'Line density method must be uniform or quartic')
+
+
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+def test_line_kernel_actual_cog_controls_default_uniform_weights_replication_subdivision_and_scaling(tmp_path,epsg):
+    import operators.raster_compute as c
+    from shapely.geometry import LineString,MultiLineString
+    frame=_line_density_frame(['LINESTRING(-3 1,5 1)','MULTILINESTRING((0 0,2 2),(0 2,2 0))'],epsg);frame['mass']=[1,1];grid=(0.,1.,.5,3.,.25,-1.);path=create_raster(tmp_path/'control.tif',np.zeros((3,3)),grid,f'EPSG:{epsg}');records={}
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        for case in('default','uniform','quartic','ones','integer','replicated','scaled','retrace','subdivided'):
+            lines=frame.copy(deep=True);kwargs={}if case=='default'else{'method':'uniform'if case=='uniform'else'quartic'}
+            if case in('ones','integer','scaled','retrace','subdivided'):kwargs['weight_field']='mass'
+            if case=='integer':lines['mass']=[2,3]
+            elif case=='replicated':lines=lines.iloc[[0,0,1,1,1]].copy()
+            elif case=='scaled':lines['mass']=[8,8]
+            elif case in('retrace','subdivided'):
+                geoms=[]
+                for g in lines.geometry:
+                    parts=[]
+                    for part in(g.geoms if g.geom_type=='MultiLineString'else[g]):
+                        vs=list(part.coords)
+                        if case=='retrace':coords=[*vs,*vs[-2::-1]]
+                        else:
+                            coords=[]
+                            for a,b in zip(vs,vs[1:]):coords.extend([a,((a[0]+b[0])/2,(a[1]+b[1])/2)])
+                            coords=[*coords,vs[-1]][::-1]
+                        parts.append(LineString(coords))
+                    geoms.append(parts[0]if len(parts)==1 else MultiLineString(parts))
+                lines[lines.geometry.name]=geoms
+            result=c.raster_line_density(lines,source,2.,**kwargs);target=tmp_path/(case+'.cog.tif');artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128);ds=gdal.Open(str(target));records[case]=ds.ReadAsArray()
+            assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0 and ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG'
+            np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),np.full((3,3),255));assert ds.GetRasterBand(1).GetUnitType()==('weight/metre'if 'weight_field'in kwargs else'metre/m2');ds=None
+        np.testing.assert_array_equal(records['default'],_line_density_oracle(frame,grid,(3,3),2.));np.testing.assert_array_equal(records['uniform'],records['default'])
+        np.testing.assert_array_equal(records['quartic'],records['ones']);np.testing.assert_array_equal(records['integer'],records['replicated']);np.testing.assert_array_equal(records['scaled'],records['ones']*8)
+        np.testing.assert_array_equal(records['retrace'],records['ones']*2);np.testing.assert_array_equal(records['subdivided'],records['ones']);assert np.any(records['quartic']!=records['uniform'])
+
+
+@pytest.mark.parametrize('case',['huge-integer','tiny-rational','float32','underflow','overflow','subnormal','zero-extreme','tangent-extreme'])
+def test_line_kernel_native_exact_weights_and_final_range_only(tmp_path,case):
+    import operators.raster_compute as c,pandas as pd
+    from fractions import Fraction as Q
+    value=10**400 if case in('huge-integer','overflow','tangent-extreme')else Q(1,10**400)if case=='tiny-rational'else np.float32(.1)if case=='float32'else 0 if case=='zero-extreme'else 1e-200
+    radius=1e200 if case in('huge-integer','zero-extreme','tangent-extreme')else 1e-200 if case=='tiny-rational'else 1e100 if case=='underflow'else 1e55 if case=='subnormal'else 1.
+    extent=radius if case in('tiny-rational','tangent-extreme')else .5;y=radius if case=='tangent-extreme'else 0.
+    lines=_line_density_frame([f'LINESTRING({-extent} {y},{extent} {y})']);lines['mass']=pd.Series([value],dtype=object);path=create_raster(tmp_path/'extreme-kernel.tif',np.zeros((1,1)),(-.5,1.,0.,.5,0.,-1.),'EPSG:3857');raw=path.read_bytes()
+    with raster_workspace(),raster_error_language('en'):
+        source=raster_load(source_plan(path));files=set(source.workspace.iterdir())
+        if case in('underflow','overflow'):
+            with pytest.raises(ValueError,match='Line density result is outside'):c.raster_line_density(lines,source,radius,weight_field='mass',method='quartic')
+            assert set(source.workspace.iterdir())==files
+        else:
+            result=c.raster_line_density(lines,source,radius,weight_field='mass',method='quartic');ds=gdal.Open(str(result.path));actual=ds.ReadAsArray()[0,0];ds=None
+            assert actual==_line_kernel_oracle(lines,(-.5,1.,0.,.5,0.,-1.),(1,1),radius,'mass')[0,0]
+            if case not in('zero-extreme','tangent-extreme'):assert actual>0 and math.isfinite(actual)
+    assert path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('problem',['radius-null','radius-bool','radius-string','radius-zero','radius-negative','radius-nan','radius-inf','radius-huge','gdf','columns','no-active',
+ 'geometry-null','geometry-empty','geometry-point','geometry-polygon','geometry-collection','geometry-z','geometry-m','geometry-nan','geometry-inf','geometry-zero','geometry-multizero','invalid-outside',
+ 'crs-missing','crs-different','crs-geographic','crs-geocentric','crs-compound','crs-unknown-unit','grid-missing','grid-singular','grid-nonfinite'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_line_kernel_exact_bilingual_admission_no_partial_and_source_unchanged(tmp_path,problem,language):
+    import operators.raster_compute as c
+    import geopandas as gpd
+    from shapely import from_wkt
+    frame=_line_density_frame(['LINESTRING(-2 0,2 0)']);radius=1.;grid=(-.5,1,0,.5,0,-1);epsg='EPSG:3857';code=None
+    radii={'radius-null':None,'radius-bool':True,'radius-string':'1','radius-zero':0,'radius-negative':-1,'radius-nan':np.nan,'radius-inf':np.inf,'radius-huge':10**400}
+    if problem in radii:radius=radii[problem];code='radius'
+    elif problem=='gdf':frame={};code='gdf'
+    elif problem=='columns':frame.columns=['route_shape','route_shape'];code='gdf'
+    elif problem=='no-active':frame=gpd.GeoDataFrame({'dummy':[]});code='gdf'
+    elif problem.startswith('geometry-') or problem=='invalid-outside':
+        bad={'geometry-null':None,'geometry-empty':'LINESTRING EMPTY','geometry-point':'POINT(0 0)',
+         'geometry-polygon':'POLYGON((0 0,1 0,1 1,0 0))','geometry-collection':'GEOMETRYCOLLECTION(LINESTRING(0 0,1 1))',
+         'geometry-z':'LINESTRING Z(0 0 0,1 1 1)','geometry-m':'LINESTRING M(0 0 0,1 1 1)',
+         'geometry-nan':'LINESTRING(NaN 0,1 1)','geometry-inf':'LINESTRING(Infinity 0,1 1)',
+         'geometry-zero':'LINESTRING(0 0,0 0)','geometry-multizero':'MULTILINESTRING((0 0,1 1),(2 2,2 2))',
+         'invalid-outside':'LINESTRING(900 900,Infinity 901)'}[problem]
+        frame.loc[0,'route_shape']=None if bad is None else from_wkt(bad);code='geometry'
+    elif problem.startswith('crs-'):
+        if problem=='crs-missing':frame=frame.set_crs(None,allow_override=True)
+        elif problem=='crs-different':frame=frame.set_crs(32650,allow_override=True)
+        elif problem=='crs-geographic':frame=frame.set_crs(4326,allow_override=True);epsg='EPSG:4326'
+        elif problem=='crs-geocentric':frame=frame.set_crs(4978,allow_override=True);epsg='EPSG:4978'
+        elif problem=='crs-compound':frame=frame.set_crs(7405,allow_override=True);epsg='EPSG:7405'
+        else:
+            text=frame.crs.to_wkt().replace('LENGTHUNIT["metre",1]','LENGTHUNIT["unknown",1]');frame=frame.set_crs(text,allow_override=True);epsg=text
+        code='crs'
+    else:code='grid';grid=None if problem=='grid-missing' else (0,1,1,0,1,1) if problem=='grid-singular' else (0,float('nan'),0,0,0,-1)
+    path=create_raster(tmp_path/'bad-line.tif',np.zeros((1,1)),grid,epsg);raw=path.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));files=set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as exc:c.raster_line_density(frame,source,radius,method='quartic')
+        expected={
+          'radius':('线密度搜索半径必须为有限非布尔正米数','Line density search radius must be a finite positive number of metres, excluding booleans'),
+          'gdf':('线密度需要列名唯一且具有活动几何列的GeoDataFrame','Line density requires a GeoDataFrame with unique columns and an active geometry column'),
+          'geometry':('线密度仅接受非空、有效、有限XY且每个分量具有正长度的二维LineString或MultiLineString','Line density requires non-empty valid finite XY two-dimensional LineStrings or MultiLineStrings with positive length in every component'),
+          'crs':('线密度线与模板必须具有相同的明确二维投影CRS及相同已知水平线性单位','Line density lines and template must share an explicit two-dimensional projected CRS with equal known horizontal linear units'),
+          'grid':('线密度模板必须具有有限可逆的完整仿射网格','Line density template requires a complete finite invertible affine grid')}[code][language=='en']
+        assert str(exc.value)==expected and set(source.workspace.iterdir())==files
+    assert path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('selector',[None,'',' ','missing','route_shape',1,True,[],{},2.])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_line_kernel_weights_invalid_field_before_reference_open(tmp_path,monkeypatch,selector,language):
+    import operators.raster_compute as c
+    lines=_line_density_frame(['LINESTRING(0 0,1 1)']);lines['mass']=[1]
+    monkeypatch.setattr(c,'_open',lambda*a:pytest.fail('invalid weight field opened reference'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_line_density(lines,object(),1.,weight_field=selector,method='quartic')
+    assert str(error.value)==('线密度权重字段必须显式选择现有非几何数值列名'if language=='zh-cn'else'Line density weight field must name an existing non-geometry numeric column')
+
+
+@pytest.mark.parametrize('bad',[None,float('nan'),float('inf'),float('-inf'),-1.,True,False,'3',1+0j])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_line_kernel_weights_bad_values_outside_circle_are_not_skipped(tmp_path,monkeypatch,bad,language):
+    import operators.raster_compute as c,pandas as pd
+    lines=_line_density_frame(['LINESTRING(0 0,1 1)','LINESTRING(999 999,1000 1000)']);lines['mass']=pd.Series([1.,bad],dtype=object)
+    monkeypatch.setattr(c,'_open',lambda*a:pytest.fail('invalid outside weight opened reference'))
+    with raster_error_language(language),pytest.raises(ValueError)as error:c.raster_line_density(lines,object(),1.,weight_field='mass',method='quartic')
+    assert str(error.value)==('线密度权重必须为有限非布尔非负实数，缺失值不可跳过'if language=='zh-cn'else'Line density weights must be finite non-boolean nonnegative real numbers; missing values cannot be skipped')
+
+
+@pytest.mark.parametrize('dtype',['Int64','Float64'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_line_kernel_weights_nullable_missing_is_not_skipped(tmp_path,monkeypatch,dtype,language):
+    import operators.raster_compute as c,pandas as pd
+    lines=_line_density_frame(['LINESTRING(0 0,1 1)','LINESTRING(999 999,1000 1000)']);lines['mass']=pd.array([1,pd.NA],dtype=dtype)
+    monkeypatch.setattr(c,'_open',lambda*a:pytest.fail('nullable missing opened reference'))
+    with raster_error_language(language),pytest.raises(ValueError)as exc:c.raster_line_density(lines,object(),1.,weight_field='mass',method='quartic')
+    assert str(exc.value)==('线密度权重必须为有限非布尔非负实数，缺失值不可跳过'if language=='zh-cn'else'Line density weights must be finite non-boolean nonnegative real numbers; missing values cannot be skipped')
+
+
+@pytest.mark.parametrize('case',['geometry','crs','grid'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_line_kernel_weights_zero_never_bypasses_geometry_crs_or_grid(tmp_path,case,language):
+    import operators.raster_compute as c
+    lines=_line_density_frame(['POINT(999 999)']if case=='geometry'else['LINESTRING(0 0,1 1)'],4326 if case=='crs'else 3857);lines['mass']=[0]
+    grid=(0,1,1,0,1,1)if case=='grid'else(-.5,1,0,.5,0,-1);path=create_raster(tmp_path/'zero-bad-source.tif',np.zeros((1,1)),grid,'EPSG:3857');raw=path.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));files=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as exc:c.raster_line_density(lines,source,1.,weight_field='mass',method='quartic')
+        assert str(exc.value)==str(c._line_density_error(case)) and set(source.workspace.iterdir())==files
+    assert path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('shape',[(2,515),(515,2)])
+def test_line_kernel_weights_bounded_blocks_ignore_template_and_complete_actual_overviews(tmp_path,monkeypatch,shape):
+    import operators.raster_compute as c
+    h,w=shape;grid=(0,1,.5,h,.25,-1);path=create_raster(tmp_path/'weighted-blocks.tif',np.full((3,h,w),np.nan),grid,'EPSG:3857')
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(1).SetScale(17.);ds.GetRasterBand(1).SetOffset(500.);ds.GetRasterBand(1).SetUnitType('ft')
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().Fill(0);ds=None
+    lines=_line_density_frame(['LINESTRING(-10 0,2000 0)','MULTILINESTRING((-10 600,300 -50),(0 -1000,1000 1000))']);lines['mass']=[.5,3.]
+    expected=_line_kernel_oracle(lines,grid,shape,4.,'mass');raw=path.read_bytes();calls=[];write=gdal.Band.WriteRaster
+    def bounded(self,x,y,w,h,*a,**kw):
+        assert 0<w<=512 and 0<h<=512;calls.append((x,y,w,h));return write(self,x,y,w,h,*a,**kw)
+    def forbidden(*a,**kw):pytest.fail('weighted line density read template pixels or masks')
+    with raster_workspace():
+        loaded=raster_load(source_plan(path))
+        with monkeypatch.context()as patch:
+            patch.setattr(gdal.Band,'ReadAsArray',forbidden);patch.setattr(gdal.Band,'ReadRaster',forbidden);patch.setattr(gdal.Band,'WriteRaster',bounded)
+            result=c.raster_line_density(lines,loaded,4.,weight_field='mass',method='quartic')
+        assert len(calls)==2 and sum(bw*bh for _,_,bw,bh in calls)==h*w
+        target=tmp_path/'weighted-lines.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(band.ReadAsArray(),expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),np.full(shape,255))
+        assert ds.GetGeoTransform()==grid and band.GetUnitType()=='weight/metre' and band.GetScale()is None and band.GetOffset()is None
+        previous=expected;oh,ow=shape;dimensions=[]
+        while max(oh,ow)>128:ow,oh=max(1,ow//2),max(1,oh//2);dimensions.append((ow,oh))
+        assert band.GetOverviewCount()==len(dimensions)
+        for i,(ow,oh)in enumerate(dimensions):
+            src=previous if previous.shape[1]>ow else expected;yy=np.floor(.5+np.arange(oh)*src.shape[0]/oh).astype(int);xx=np.floor(.5+np.arange(ow)*src.shape[1]/ow).astype(int);wanted=src[np.ix_(yy,xx)]
+            level=band.GetOverview(i);assert(level.XSize,level.YSize)==(ow,oh);np.testing.assert_array_equal(level.ReadAsArray(),wanted);np.testing.assert_array_equal(level.GetMaskBand().ReadAsArray(),np.full((oh,ow),255));previous=wanted
+        level=band=ds=None
+    assert path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['success','all-zero','negative','outside-negative','missing','field-null','geometry-zero','zero-crs','write-failure','calculation-failure','encode-failure','save-existing'])
+def test_line_kernel_weights_async_cog_frozen_language_and_all_failure_cleanup(tmp_path,monkeypatch,language,case):
+    import api_server,workflow_engine,operators.raster_compute as c
+    wkts=['LINESTRING(-2 1,4 1)','MULTILINESTRING((0 0,2 2),(0 2,2 0))','LINESTRING(999 999,1000 1000)'];weights=[.5,3.,0.]
+    if case in('all-zero','zero-crs'):weights=[0.,0.,0.]
+    if case=='negative':weights[0]=-1.
+    if case=='outside-negative':weights[-1]=-1.
+    if case=='missing':weights[-1]=None
+    if case=='geometry-zero':weights[0]=0.
+    lines=_line_density_frame(wkts);lines['mass']=weights;grid=(0,1,0,3,0,-1);path=create_raster(tmp_path/'weighted-async.tif',np.full((3,3),-9999.),grid,'EPSG:3857');raw=path.read_bytes()
+    prior=tmp_path/'prior.tif';prior.write_bytes(b'prior untouched');target=tmp_path/'weighted.cog.tif'
+    if case=='save-existing':target.write_bytes(b'existing owned target')
+    dag={'tasks':[{'id':'reference','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
+      {'id':'lines','operator':'load_from_wkt','depends_on':[],'params':{'wkt_list':['POINT(999 999)'if case=='geometry-zero'and i==0 else w for i,w in enumerate(wkts)],'properties':[{'mass':v}for v in weights],'crs':'EPSG:4326'if case=='zero-crs'else'EPSG:3857'}},
+      {'id':'density','operator':'raster_line_density','depends_on':['lines','reference'],'params':{'input_gdf':{'$ref':'lines'},'reference_raster':{'$ref':'reference'},'radius_metres':2.,'method':'quartic','weight_field':None if case=='field-null'else'mass'}},
+      {'id':'save','operator':'raster_save','depends_on':['density'],'params':{'input_raster':{'$ref':'density'},'access_plan':target_plan(target),'profile':'cog'}}]}
+    work=[];execute=workflow_engine._execute_operator
+    def track(name,params):
+        if name=='raster_line_density':work.append(params['reference_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',track)
+    def fail(*a,**kw):raise RuntimeError('injected weighted line density failure')
+    if case=='write-failure':monkeypatch.setattr(gdal.Band,'WriteRaster',lambda*a,**kw:gdal.CE_Failure)
+    if case=='calculation-failure':monkeypatch.setattr(c,'_line_density_float',fail)
+    if case=='encode-failure':monkeypatch.setattr(c,'_cog',fail)
+    client=api_server.app.test_client();submitted=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':dag,'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert submitted.status_code==202,submitted.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        state=client.get('/api/executions/'+submitted.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if state['status']in('success','failed'):break
+        time.sleep(.01)
+    assert state['status']==('success'if case in('success','all-zero')else'failed'),state
+    if case in('success','all-zero'):
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(ds.ReadAsArray(),_line_kernel_oracle(lines,grid,(3,3),2.,'mass'));assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG'and ds.GetRasterBand(1).GetUnitType()=='weight/metre';ds=None
+    elif case=='save-existing':assert target.read_bytes()==b'existing owned target'
+    else:
+        assert not target.exists()and not state.get('final_result')
+        with raster_error_language(language):cause='injected weighted line density failure'if case in('calculation-failure','encode-failure')else str(c._line_density_error({'negative':'weight','outside-negative':'weight','missing':'weight','field-null':'weight_field','geometry-zero':'geometry','zero-crs':'crs','write-failure':'write'}[case]))
+        failed_task='save'if case=='encode-failure'else'density'
+        assert state['error']=='任务 '+failed_task+' 执行失败: '+cause
+    assert work and all(not p.exists()for p in work)and prior.read_bytes()==b'prior untouched'and path.read_bytes()==raw
