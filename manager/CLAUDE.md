@@ -98,7 +98,9 @@ manager/
 
 通用事件存储、读取授权与留存按[过程事件契约](../docs/spec/tasks/执行监控.md#通用执行读取与过程事件)和[概览保留与清理契约](../docs/spec/tasks/执行监控.md#概览保留与清理契约)维护；以下只约束 Manager 的写入与事务接入。
 
-Manager 有界执行的租户过程事件复用 `common.execution_events`：真实 claim 同事务写入 `started`，原有成功／失败／超时／取消路径写唯一对应终态，过期租约由 Owner 收敛并写 `failed`。执行、任务摘要及当前专业结果保持原事务；事件存储失败必须全部回滚，过期或错配 lease 的运行体不得追加。没有完整 lease 的历史记录只收敛概览，不补造过程；授权附加、心跳、专业回执不产生事件。已有瓦片缓存／业务瓦片集／镶嵌／COPC 的进度更新与仅含百分比的 `progress` 事件同事务提交，镶嵌等待扫描的既有 99% 阶段同样记录；不把自由文本 current_step 当作 step_id，也不复制 Runtime 回调正文。通用 current_step 仅由 Manager 生成受控说明和计数，不能直接回显 Runtime 的 message 或任意 phase；原始回调只保留在 Owner 的专业事实中。本切片不新增 Runtime 节点历史，不复制配置、参数、Runtime 正文、业务样本或授权信息。Monitor 沿既有 Owner 重裁与公共事件读取展示，30 天维护不影响专业结果及操作审计。验证使用 `make test-manager-backend` 和 `make test-manager-postgres`，新增 PostgreSQL 用例必须以 `TestIntegrationPostgresManager` 命名，由现有 CI 自动发现；该门禁按包串行执行共用 Manager schema 的 repository／service／preview，避免测试初始化 DDL 互锁；未运行真实 T4 时不计为通过。
+- **写入与终态事务**：真实 claim 同事务写入 `started`，成功／失败／超时／取消路径写唯一对应终态，过期租约由 Owner 收敛并写 `failed`。执行、任务摘要及当前专业结果保持原事务；事件写入失败全部回滚，过期或错配 lease 不得追加。没有完整 lease 的历史记录只收敛概览、不补造过程；授权附加、心跳和专业回执不产生事件。
+- **进度接入**：瓦片缓存、业务瓦片集、镶嵌与 COPC 的既有进度更新和仅含百分比的 `progress` 事件同事务提交，镶嵌等待扫描的 99% 阶段同样记录。不把自由文本 `current_step` 当作 `step_id`。
+- **Runtime 与安全投影**：通用 `current_step` 只由 Manager 生成受控说明和计数，不回显 Runtime 的 message、任意 phase 或回调正文；原始回调只保留在 Owner 专业事实中，现有接入不新增 Runtime 节点历史。专业响应采用[Manager 显式安全 DTO](../docs/spec/tasks/执行监控.md#manager-专业执行读取与响应)，通用禁出字段、Owner 重裁与留存均以上述正式规范为准。
 
 文件上传后的扫描提交使用当前请求 User 的同步 BFF 身份，不使用 Meta Service Client。上传入口在写入前同时要求 `manager.data_item.create`、`meta.scan_task.execute` 与 `meta.scan_task.read`；Meta 独立认证并记录发起人，Worker 不接收用户凭据。响应仅提供 `scan_execution_id`，前端按唯一字段回查 Meta 安全执行详情；不返回内部执行配置。完整身份与失败边界见平台《授权上下文规范》5.1。验证由既有 `make test-manager-backend`、`make test-manager-frontend`、`make test-go` 和 Swagger 门禁覆盖。
 
@@ -180,6 +182,8 @@ bash scripts/dev/restart.sh -manager
 make test-module MODULE=manager
 make test-manager-online-runner
 ```
+
+过程事件验证使用 `make test-manager-backend` 和 `make test-manager-postgres`，新增 PostgreSQL 用例必须以 `TestIntegrationPostgresManager` 命名，由现有 CI 自动发现；该门禁按包串行执行共用 Manager schema 的 repository／service／preview，避免测试初始化 DDL 互锁；未运行真实 T4 时不计为通过。
 
 共享依赖变更按真实影响扩散；确定性 runner 不替代真实 T4。Manager 内部产物、混合检索和 Transfer 私有导入各按已登记 suite 认定，不共用通过结论。仅调整 Markdown 时核对内容、链接和锚点，并执行 `git diff --check`。
 
