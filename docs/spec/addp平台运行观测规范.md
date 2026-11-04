@@ -690,6 +690,12 @@ APT只解析唯一失败RUN步骤的带步骤编号输出。明确错误行及�
 
 本批仍限128 KiB整份输入、4 KiB整组诊断，保留原集合、首因／哈希、四秒、资源及清理边界。代理日志中的502只作为离线候选线索，不能回填构建APT状态、签名子类或FROM摘要；旧报告不追填新字段。先修规范与确定性门禁，不改任何产品Dockerfile、APT源／包／重试／签名校验、基础镜像或代理策略，不重试构建或新开本地窗口，不运行Hosted／容量／定时。
 
+2026-11-04用户确认产品镜像命令超时的有界取证：仅当非采样线程执行当次product_image_*对应的原make build-images精确命令，且首异常为command_deadline_exceeded时，在原取消／回收流程返回后、同一临时输出关闭前读取最多128 KiB＋1字节。不得扩大到身份、业务、采样、其他命令或其他错误，不增加等待／进程／Docker／网络探针，不改原600秒、取消流程及四秒／资源／清理预算。输出超过128 KiB记over_budget，未以完整换行结束记truncated，读取或解析异常记unavailable；这些状态不解析前缀或保存部分哈希，空捕获可记complete但进度unknown。complete只表示捕获快照可完整解析，不表示构建完成或网络正文完整。
+
+复用唯一public_build分类器并明确termination=deadline／process_exit、output_status及progress；仅超时上下文从完整BuildKit编号步骤标题与DONE／CACHED／ERROR／CANCELED终态识别未完成候选。内部编号标题最多64项，超过记progress_steps超预算且不保留候选；唯一候选才保留固定类别apt／python_dependency／common_package／verification／other，无候选记unavailable／unknown、多个记ambiguous／unknown、重复或归属冲突记invalid／unknown，标题中的任意步骤号、命令、URL、路径、包名及正文不导出。APT须RUN apt-get，Python依赖与公共包安装／验证须匹配既有产品命令形状，不据代理CONNECT、下载消息或最后一行猜步骤。取消终态只表示日志观察，不能认定正常退出；超时首因及其诊断不被exit143或诊断异常覆盖。正常非零退出沿同一分类器原错误归属规则，不能以超时进度代替失败步骤。
+
+超时回执只保留捕获完整时的SHA256、读取字节数／封闭状态、分类及诊断实际耗时；读取和分类失败仍如实记时，异常正文不导出，4 KiB整组public_build及原集合上限保持。诊断时间发生在已判失败之后，只计入实际总时长，不重置截止、转为成功或获得新增清理时间；原采样四秒、8 CPU／12 GiB、4 GiB、60／55分钟及首失败／强制清理要求不变。先修规范及HTTP／Trace确定性门禁，本批不推送触发构建、不重试构建或开窗口，不运行Hosted／容量／定时。旧Agent超时报告不追填新字段，不声称已定位历史pip／APT耗时或修复网络。
+
 新Tenant创建后，身份夹具必须在导出凭据前复用既有`waitForOwnerProtection`，只读等待当次Tenant的Develop持久保护初始化checkpoint，最长60秒并计入原窗口／身份准备预算。固定Owner为Develop，不开放额外Owner参数，不直接写投影或checkpoint，也不把业务拒绝重试为成功。实际Owner从Security完整消费后才可开始执行；实例`/health/ready`不能替代该Tenant状态。此要求沿数据安全规范既有初始化边界，不改变普通User权限、源读取授权或数据保护裁决。
 
 采样 v2 和所有查询预算保持；失败终态须实际可查，普通阶段或 Link 目标独立未保留可以按规范查无数据，不强制全采样或凭空补链。真实 Console/Monitor 页面必须经密码／MFA 登录，不 mock API／注入 Token。验证 Tenant 无新增私有观测字段，负例无权访问平台 Trace／日志，正式退出后旧令牌拒绝；不将会话撤销冒充单实例撤权。

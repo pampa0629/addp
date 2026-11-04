@@ -440,7 +440,34 @@ def diagnostic_markers(raw):
 
 
 
-def public_build_failure_diagnostic(raw, proxy_provenance=None):
+@contextmanager
+def capture_product_deadline(life, args, output, sampling):
+    service=life.phase.removeprefix('product_image_').replace('_','-')
+    eligible=(not sampling and life.phase.startswith('product_image_') and service in life.product_services and
+              args==['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services '+service+
+                     ' --registry localhost:5001 --tag '+life.run_id])
+    try:
+        yield
+    except GateError as error:
+        if eligible and str(error)=='command_deadline_exceeded':
+            began=time.monotonic()
+            receipt={'termination':'deadline','output_status':'unavailable','captured_bytes':0,'public_build':None}
+            try:
+                output.seek(0);raw=output.read(131073)
+                receipt['captured_bytes']=len(raw)
+                public=public_build_failure_diagnostic(raw,getattr(life,'build_proxy_provenance',None),termination='deadline')
+                receipt.update(output_status=public['output_status'],public_build=public)
+                if public['output_status']=='complete':receipt['output_sha256']=hashlib.sha256(raw).hexdigest()
+            except Exception:
+                receipt.update(output_status='unavailable',public_build=None)
+                receipt.pop('output_sha256',None)
+            finally:
+                receipt['diagnostic_seconds']=round(time.monotonic()-began,6)
+                life.last_failure=receipt
+        raise
+
+
+def public_build_failure_diagnostic(raw, proxy_provenance=None, *, termination='process_exit'):
     """One bounded public BuildKit parser; never export arbitrary output or endpoints."""
     proxies={}
     proxy_provenance=proxy_provenance if isinstance(proxy_provenance,dict) else {}
@@ -452,19 +479,51 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
         proxies[role]={'status':'observed',**item} if valid else {'status':'unavailable'}
     unknown_transport={'operation':'unknown','operation_status':'unavailable',
                        'endpoint':'unknown','endpoint_status':'unavailable'}
-    value={'status':'complete','limits_exceeded':[], 'reasons':['unclassified'],'steps':[], 'inputs':[],
+    value={'status':'complete','termination':termination,'output_status':'complete',
+           'progress':{'status':'unavailable','stage':'unknown'},
+           'limits_exceeded':[], 'reasons':['unclassified'],'steps':[], 'inputs':[],
            'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
            'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'signature_kinds':[], 'http_statuses':[], 'sources':[],
                   'transport':dict(unknown_transport)},
            'base':{'status':'unavailable','kind':None,'resolved_digest':None}, 'proxy_provenance':proxies}
     def over_budget(reason):
         return {**value,'status':'over_budget','limits_exceeded':[reason], 'reasons':['unclassified'],
+                'progress':{'status':'unavailable','stage':'unknown'},
                 'steps':[], 'inputs':[], 'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
                 'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'signature_kinds':[], 'http_statuses':[], 'sources':[],
                        'transport':dict(unknown_transport)},
                 'base':{'status':'unavailable','kind':None,'resolved_digest':None}}
-    if len(raw)>131072:return over_budget('input_bytes')
+    if len(raw)>131072:
+        value['output_status']='over_budget'
+        return over_budget('input_bytes')
+    if termination=='deadline' and raw and not raw.endswith(b'\n'):
+        value.update(status='unavailable',output_status='truncated')
+        return value
     text=raw.decode(errors='replace').lower()
+    if termination=='deadline':
+        titles={};finished=set();invalid=False
+        for line in text.splitlines():
+            title=re.fullmatch(r'#([0-9]+) \[[^\]\n]+\] (.+)',line)
+            if title:
+                number,command=title.groups()
+                if number in titles:invalid=True
+                titles[number]=command
+            end=re.match(r'#([0-9]+) (?:done(?:\s|$)|cached(?:\s|$)|error:)',line)
+            if end:finished.add(end[1])
+        if len(titles)>64:return over_budget('progress_steps')
+        active=[command for number,command in titles.items() if number not in finished]
+        if invalid:value['progress']={'status':'invalid','stage':'unknown'}
+        elif len(active)>1:value['progress']={'status':'ambiguous','stage':'unknown'}
+        elif active:
+            command=active[0]
+            stage='other'
+            if re.match(r'run apt-get(?:\s|$)',command):stage='apt'
+            elif re.match(r'run (?:python -m )?pip install(?:\s|$)',command):
+                if re.search(r'(?:^|\s)--no-deps(?:\s|$)',command) and re.search(r'(?:^|\s)/tmp/common-python(?:\s|$)',command):stage='common_package'
+                else:stage='python_dependency'
+            elif re.match(r'run (?:python -m pip check|python -c)(?:\s|$)',command):stage='verification'
+            elif re.match(r'run grep -v ',command) and re.search(r'&& pip install(?:\s|$)',command):stage='python_dependency'
+            value['progress']={'status':'unique','stage':stage}
     errors='\n'.join(line for line in text.splitlines() if 'error:' in line or 'failed to solve:' in line)
     frames='\n'.join(line.strip() for line in text.splitlines() if line.lstrip().startswith('> '))
     value['reasons']=[name for name,pattern in (
@@ -854,7 +913,8 @@ class Lifecycle:
 
         try:
             check_deadline()
-            with tempfile.TemporaryFile() as output, capture_volume_checkpoints(args, self.run_id, output, timing, sampling):
+            with tempfile.TemporaryFile() as output, capture_volume_checkpoints(args, self.run_id, output, timing, sampling), \
+                    capture_product_deadline(self,args,output,sampling):
                 timing['spawn_started_monotonic_ns'] = time.monotonic_ns()
                 try:
                     p = subprocess.Popen(args, cwd=cwd or self.checkout if self.checkout.exists() else ROOT,
