@@ -137,7 +137,7 @@ def case_fixture(name):
         }
         result['body_facts'] = ['unknown']
         if name == 'model-transfer-short-precheck':
-            result['responses']['data.search'] = {'items':[source], 'total':1}
+            result['responses']['data.search'] = {'results':[source], 'total':1, 'page':1, 'page_size':10}
             built = copy.deepcopy(arguments)
             built['config']['source']['query']['statement'] = json.dumps({'aggregate':'events','pipeline':[
                 {'$project':{'_id':0,'field_0':'$_id','field_1':'$members'}}]},separators=(',',':'))

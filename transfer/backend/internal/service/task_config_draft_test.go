@@ -28,9 +28,20 @@ func draftFixture(t *testing.T) (TaskConfigDraftRequest, taskConfigDraftFacts) {
 }
 
 func TestTaskConfigDraftComposesWithOwnerPrecheck(t *testing.T) {
-	for _, mode := range []string{"document", "array_element"} {
+	for _, mode := range []string{"document", "scalar_array", "unknown_array", "nested_array", "array_element"} {
 		t.Run(mode, func(t *testing.T) {
 			r, facts := draftFixture(t)
+			switch mode {
+			case "scalar_array":
+				facts.source.Fields[0].Element = &datatype.FieldInfo{Type: datatype.FieldTypeString}
+				facts.source.Fields[0].ElementType = datatype.FieldTypeString
+			case "unknown_array":
+				facts.source.Fields[0].Element = nil
+				facts.source.Fields[0].ElementType = datatype.FieldTypeUnknown
+			case "nested_array":
+				facts.source.Fields[0].Element = &datatype.FieldInfo{Type: datatype.FieldTypeArray, ElementType: datatype.FieldTypeJSON}
+				facts.source.Fields[0].ElementType = datatype.FieldTypeArray
+			}
 			if mode == "array_element" {
 				r.RowGrain = TaskConfigDraftRowGrain{Mode: mode, Path: []string{"members"}}
 				r.Fields = []TaskConfigDraftField{{Path: []string{"members", "name"}, Target: "member_name"}}

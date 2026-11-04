@@ -28,7 +28,7 @@ def new_checkpoint() -> dict[str, Any]:
         "parameter_source_issue": False,
         "platform_capability": None,
         "reply_detail": "standard",
-        "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}, "config_checks": {}, "run_approval": None},
+        "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}, "config_checks": {}, "run_approval": None, "transfer_source_candidates": []},
         "confirmed": {"workflow_engine": None, "resources": {}, "operation_reviews": {}, "run_approval": None},
     }
 
@@ -70,6 +70,12 @@ def normalize_checkpoint(value: Any) -> dict[str, Any]:
     workflow_engines = observed.get("workflow_engines")
     resources = observed.get("resources")
     confirmed_resources = confirmed.get("resources")
+    candidates = observed.get("transfer_source_candidates", [])
+    if (not isinstance(candidates, list) or len(candidates) > 100
+            or any(not isinstance(x, str) or not x.startswith("addp://") for x in candidates)
+            or len(set(candidates)) != len(candidates)):
+        raise ValueError("invalid_transfer_source_candidates")
+    checkpoint["observed"]["transfer_source_candidates"] = list(candidates)
     if isinstance(workflow_engines, dict):
         checkpoint["observed"]["workflow_engines"] = copy.deepcopy(workflow_engines)
     if isinstance(resources, dict):
@@ -298,6 +304,8 @@ def canonicalize_clarification_options(
             if fact is None:
                 raise ValueError(f"资源 locator 未由 owner Tool 返回: {locator}")
             label = fact.get("full_name") or fact.get("name") or locator
+            if reason == "transfer_source_selection" and fact.get("engine_name"):
+                label = str(fact["engine_name"]) + " · " + str(label)
             canonical.append({"label": str(label), "value": locator, "candidate": fact})
         return canonical
 

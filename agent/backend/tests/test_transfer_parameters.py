@@ -194,3 +194,73 @@ class TransferParameterRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(r[1].endswith('task-config-drafts') for r in self.h.requests))
         self.assertEqual(self.owner_checks(),[])
         self.assertTrue(any(e.kind=='run_failed' for e in events))
+
+class TransferSourceSelectionRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        import httpx
+        self.h = _RuntimeHarness(); self.h.setUp()
+        self.allowed = ['platform.capability.context', 'data.search', BUILD_TOOL, CHECK_TOOL, CREATE_TOOL]
+        source = self.h.arguments['config']['source']['locator']
+        self.locators = [source, 'addp://engine/11/path/demo/other?type=collection&item_id=43']
+        self.h.checkpoint['observed']['resources'][source].update(engine_name='Synthetic Mongo', full_name='demo.events')
+        self.choices = {'name':'fixture','source_locator':source,
+            'target':{'parent_locator':self.h.arguments['config']['target']['parent_locator'],'name':'new_events','apply_mode':'replace'},
+            'row_grain':{'mode':'document'},'fields':[{'path':['_id'],'target':'id'}]}
+        original = self.h.transport
+        async def transport(owner, method, path, **kwargs):
+            if path == '/api/v1/manager/search':
+                self.h.requests.append((method,path,copy.deepcopy(kwargs)))
+                rows=[{'locator':loc,'engine_id':11,'engine_name':'Synthetic Mongo','name':name,'full_name':'demo.'+name}
+                      for loc,name in zip(self.locators,('events','other'))]
+                return httpx.Response(200,request=httpx.Request(method,'http://fixture'+path),
+                                      json={'data':{'results':rows,'total':len(rows),'page':1,'page_size':10}})
+            return await original(owner,method,path,**kwargs)
+        self.h.transport = transport
+
+    def build_calls(self):
+        return [x for x in self.h.requests if x[1]=='/api/v1/transfer/task-config-drafts']
+
+    async def search(self, batch=False):
+        calls=[_call('data.search',{'query':'demo','engine_id':11})]
+        if batch:calls.append(_call(BUILD_TOOL,self.choices))
+        return await self.h.run_factory([Message(role='assistant',tool_calls=calls)],allowed=self.allowed)
+
+    async def test_multiple_candidates_pause_without_model_choice_and_drop_same_batch_build(self):
+        for batch in (False,True):
+            self.setUp()
+            events,client=await self.search(batch)
+            self.assertEqual(len(client.calls),1)
+            self.assertEqual(self.build_calls(),[])
+            interaction=next(e.payload for e in events if e.kind=='interaction_required')
+            self.assertEqual(interaction['reason'],'transfer_source_selection')
+            self.assertEqual([x['value'] for x in interaction['candidates']],self.locators)
+            self.assertTrue(all('Synthetic Mongo' in x['label'] for x in interaction['candidates']))
+            starts={e.payload['tool_call_id'] for e in events if e.kind=='tool_start'}
+            self.assertTrue(all(e.payload['tool_call_id'] in starts for e in events if e.kind=='tool_result'))
+            self.assertEqual(self.h.writes(),[])
+
+    async def test_restored_unconfirmed_or_wrong_source_cannot_build(self):
+        from agents.checkpoint import normalize_checkpoint,confirm_selection
+        events,_=await self.search()
+        checkpoint=next(e.payload['checkpoint'] for e in reversed(events) if e.kind=='checkpoint')
+        for mode in ('none','wrong','exact'):
+            self.h.requests.clear()
+            self.h.checkpoint=normalize_checkpoint(checkpoint)
+            if mode!='none':
+                loc=self.locators[mode=='wrong']
+                confirm_selection(self.h.checkpoint,{'candidate':{'locator':loc},'value':loc})
+            responses=[Message(role='assistant',tool_calls=[_call(BUILD_TOOL,self.choices)])]
+            if mode=='exact':responses.append(Message(role='assistant',tool_calls=[_call(CHECK_TOOL,self.h.arguments)]))
+            events,_=await self.h.run_factory(responses,allowed=self.allowed,resuming=True)
+            self.assertEqual(len(self.build_calls()),int(mode=='exact'))
+            if mode!='exact':self.assertTrue(any(e.kind=='interaction_required' for e in events))
+
+    async def test_one_candidate_does_not_force_selection(self):
+        self.locators=self.locators[:1]
+        events,_=await self.h.run_factory([
+            Message(role='assistant',tool_calls=[_call('data.search',{'query':'events','engine_id':11})]),
+            Message(role='assistant',tool_calls=[_call(BUILD_TOOL,self.choices)]),
+            Message(role='assistant',tool_calls=[_call(CHECK_TOOL,self.h.arguments)]),
+        ],allowed=self.allowed)
+        self.assertEqual(len(self.build_calls()),1)
+        self.assertFalse(any(e.kind=='interaction_required' for e in events))

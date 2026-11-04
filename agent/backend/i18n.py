@@ -264,3 +264,9 @@ def transfer_parameter_clarification(accept_language: str) -> tuple[str, str]:
     if accept_language.lower().startswith("en"):
         return ("Please supply exactly one complete Transfer configuration, or describe your business choices. Multiple or incomplete JSON configurations cannot be selected automatically.", "Describe business choices")
     return ("请提供唯一一份完整的 Transfer 配置，或改用业务描述。多个配置或不完整 JSON 不能自动择一。", "改用业务描述")
+
+
+def transfer_source_selection_prompt(accept_language: str) -> str:
+    if accept_language.lower().startswith("en"):
+        return "Multiple source candidates were returned. Choose one observed source before building the Transfer draft, or refine your request."
+    return "发现多个源候选。请先选择一个已观察的源再构建 Transfer 草稿，或补充更精确的要求。"

@@ -659,7 +659,7 @@ Transfer 不直接写目标 Meta attributes。
 | `source_locator` | 已选源数据项的正式 locator。Transfer 按当前主体核实身份和结构。 |
 | `target.parent_locator`、`target.name`、`target.apply_mode` | 已选目标父节点、表名、显式选择的 `append` 或 `replace`。即使目标表尚未创建也须确认父节点。仅凭目录未命中不能承诺目标为空或保证运行时只会新建表。 |
 | `row_grain` | `{"mode":"document"}` 或 `{"mode":"array_element","path":["成员数组字段"]}`。路径为区分大小写的字段名段；展开模式下必须引用已观察的数组。 |
-| `fields[]` | 1 至 128 项，数组顺序即目标字段顺序。每项须有 `path`（源字段名段）及 `target`（目标列名）。可选 `target_type` 使用 ADDP 标准类型；可选 `nullable`、`precision`、`scale` 沿用现有字段映射约束。调用方表达字段选择与转换意图，实际源类型以 owner 事实为准。 |
+| `fields[]` | 1 至 128 项，数组顺序即目标字段顺序。每项须有 `path`（源字段名段）及 `target`（目标列名）。默认只提交 `path` 与 `target`，由 Transfer 根据正式源结构决定类型与可空性；整体保留数组默认使用 JSON，标量保留标准类型。只有用户明确要求转换或列约束时才传可选 `target_type`、`nullable`、`precision`、`scale`，不把源结构的同名属性复制成覆盖参数。显式 `target_type` 使用 ADDP 标准类型并沿现有映射约束核验，不以默认映射覆盖显式意图。 |
 
 请求示例使用占位符表示资源发现结果，实际调用须原样传入正式 locator。此例仅选择一个字段，不能作为“保留全部字段”的请求。
 
@@ -673,7 +673,7 @@ Transfer 不直接写目标 Meta attributes。
     "apply_mode": "append"
   },
   "row_grain": {"mode": "document"},
-  "fields": [{"path": ["_id"], "target": "person_id", "target_type": "string"}]
+  "fields": [{"path": ["_id"], "target": "person_id"}]
 }
 ```
 

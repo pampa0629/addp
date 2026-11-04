@@ -35,7 +35,7 @@ from i18n import bound_draft_review_error, invocation_stopped, transfer_config_c
 from services.drafts import validate_draft_arguments
 from agents.transfer_parameters import BUILD_TOOL, explicit_user_arguments, build_parameter_evidence, validate_parameter_arguments, parameter_reference
 from services.plans import PLAN_TOOL, PlanInput, plan_todos
-from i18n import workspace_message, transfer_parameter_error, transfer_parameter_clarification
+from i18n import workspace_message, transfer_parameter_error, transfer_parameter_clarification, transfer_source_selection_prompt
 from protocol.a2ui import preview_presentations, transfer_config_check_presentation
 from tools.langchain_tools import create_agent_tools, stable_tool_name
 from utils.llm import get_llm
@@ -180,7 +180,11 @@ class _PlatformBoundary(AgentMiddleware):
             raise RuntimeError('answer_phase_required')
         builds = [call for call in message.tool_calls if self.names.get(call["name"]) == BUILD_TOOL]
         checks = [call for call in message.tool_calls if self.names.get(call["name"]) == CHECK_TOOL]
-        if builds:
+        searches = [call for call in message.tool_calls if self.names.get(call["name"]) == "data.search"]
+        if searches and builds and self._new_transfer_draft():
+            # Discovery must finish, and any ambiguity must pause, before building.
+            selected = searches[:1]
+        elif builds:
             # No same-batch check can consume a result before it arrives.
             selected = builds[:1]
         elif checks:
@@ -239,6 +243,12 @@ class _PlatformBoundary(AgentMiddleware):
         if name in {BUILD_TOOL, CHECK_TOOL, CREATE_TOOL} and self.checkpoint["parameter_source_issue"]:
             return await self._ask_parameter_source(call, name)
         if name == BUILD_TOOL:
+            if self._source_selection_required(call["args"].get("source_locator")):
+                content = json.dumps({"error": {"code": "transfer_source_selection_required",
+                    "message": transfer_source_selection_prompt(self.accept_language)}}, ensure_ascii=False)
+                _emit("tool_result", tool_call_id=call["id"], tool_name=name, content=content, is_error=True,
+                      error_source="runtime", error_code="transfer_source_selection_required")
+                return await self._ask_transfer_source(call, content, failed=True)
             if self.draft_arguments is not None or self.build_used or (self.checkpoint["parameter_source"] or {}).get("kind") == "user":
                 return self._error(call, name, "transfer_parameter_rebuild_requires_user", transfer_parameter_error(self.accept_language))
             self.build_used = True
@@ -338,7 +348,7 @@ class _PlatformBoundary(AgentMiddleware):
             raise RuntimeError("invalid_tool_adapter_result")
         if message.status == "error":
             return self._error(call, name, "invalid_tool_arguments", "工具参数不符合 Schema")
-        approval = self._owner_result(call, name, message.content)
+        approval = await self._owner_result(call, name, message.content)
         if isinstance(approval, Command):
             return approval
         if approval is not None:
@@ -513,6 +523,29 @@ class _PlatformBoundary(AgentMiddleware):
         result.update["messages"].insert(0,ToolMessage(content=content,tool_call_id=parent_call["id"],name=parent_call["name"],status="error"))
         return result
 
+    def _new_transfer_draft(self):
+        return (BUILD_TOOL in self.platform_tools and self.draft_arguments is None
+                and self.checkpoint["parameter_source"] is None)
+
+    def _source_selection_required(self, locator=None):
+        candidates = self.checkpoint["observed"]["transfer_source_candidates"]
+        selected = [x for x in candidates if x in self.checkpoint["confirmed"]["resources"]]
+        return (self._new_transfer_draft() and len(candidates) > 1
+                and (len(selected) != 1 or locator is not None and locator != selected[0]))
+
+    async def _ask_transfer_source(self, parent, content, *, failed=False):
+        for locator in self.checkpoint["observed"]["transfer_source_candidates"]:
+            self.checkpoint["confirmed"]["resources"].pop(locator, None)
+        _emit("checkpoint", checkpoint=copy.deepcopy(self.checkpoint), facts={})
+        call = {"id": str(uuid.uuid4()), "name": "request_clarification", "args": {
+            "prompt": transfer_source_selection_prompt(self.accept_language), "reason": "transfer_source_selection",
+            "options": [{"value": locator, "label": locator} for locator in
+                        self.checkpoint["observed"]["transfer_source_candidates"]]}}
+        _emit("tool_start", tool_call_id=call["id"], tool_name=call["name"], args=call["args"])
+        result = await self._clarify(call)
+        result.update["messages"].insert(0, ToolMessage(content=content, tool_call_id=parent["id"], name=parent["name"], status="error" if failed else "success"))
+        return result
+
     def _require_parameter_source(self, arguments):
         if self.draft_arguments is not None:
             if config_arguments_digest(arguments) != config_arguments_digest(self.draft_arguments):
@@ -539,7 +572,7 @@ class _PlatformBoundary(AgentMiddleware):
                 raise RuntimeError("invalid_tool_adapter_result")
             if message.status == "error":
                 return self._error(call, CHECK_TOOL, "invalid_tool_arguments", transfer_config_check_error(self.accept_language), parent_call)
-            return self._owner_result(call, CHECK_TOOL, message.content, parent_call)
+            return await self._owner_result(call, CHECK_TOOL, message.content, parent_call)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -592,7 +625,7 @@ class _PlatformBoundary(AgentMiddleware):
         _emit("interaction_required", tool_call_id=call["id"], prompt=args.prompt, reason=args.reason, candidates=options)
         return Command(update={"messages": [ToolMessage(content=content, tool_call_id=call["id"])]}, goto=END)
 
-    def _owner_result(self, call, name, content, parent_call=None):
+    async def _owner_result(self, call, name, content, parent_call=None):
         if not isinstance(content, str):
             raise RuntimeError("invalid_tool_adapter_result")
         try:
@@ -608,6 +641,15 @@ class _PlatformBoundary(AgentMiddleware):
             } else "tool"
         if result is not None:
             facts = capture_owner_facts(name, result, self.checkpoint)
+            if name == "data.search" and not code and self._new_transfer_draft():
+                rows = result.get("results")
+                if (not isinstance(rows, list) or len(rows) > 20 or any(
+                    not isinstance(x, dict) or not isinstance(x.get("locator"), str)
+                    or x["locator"] not in self.checkpoint["observed"]["resources"] for x in rows)):
+                    raise ValueError("invalid_transfer_source_candidates")
+                candidates = list(dict.fromkeys(x["locator"] for x in rows))
+                self.checkpoint["observed"]["transfer_source_candidates"] = candidates
+                facts["transfer_source_candidates"] = candidates
             if name == START_TOOL and not code and result.get("status") == "approval_required":
                 capture_run_review(result, self.checkpoint)
                 facts["run_approval"] = [copy.deepcopy(self.checkpoint["observed"]["run_approval"])]
@@ -639,6 +681,8 @@ class _PlatformBoundary(AgentMiddleware):
         )
         if halted is not None:
             return halted
+        if name == "data.search" and not code and self._source_selection_required():
+            return await self._ask_transfer_source(call, content)
         if code and parent_call is not None:
             return self._finish_config_parent(parent_call)
         if name == CHECK_TOOL and not code and parent_call is None:

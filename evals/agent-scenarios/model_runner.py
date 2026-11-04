@@ -107,14 +107,11 @@ def fixture_executor(fixture, violations):
                     selected = arguments['fields']
                     if [(field['path'],field['target']) for field in selected] != [(['_id'],'_id'),(['members'],'members')]:
                         raise ToolExecutionError('model_build_fields_changed','fixture field choices mismatch')
-                    for field, expected_type in zip(selected, ('string','json')):
-                        if ('target_type' in field and field['target_type'] != expected_type
-                                or 'precision' in field or 'scale' in field):
-                            raise ToolExecutionError('model_build_types_changed','fixture type choices mismatch')
+                    # This scenario requests no type/column-constraint overrides.
+                    # The real owner, rather than copied source attributes, supplies defaults.
+                    if any(set(field) != {'path', 'target'} for field in selected):
+                        raise ToolExecutionError('model_build_types_changed','unrequested field overrides')
                     result = copy.deepcopy(fixture['responses'][name])
-                    for selected_field, output_field in zip(selected, result['arguments']['config']['transforms'][0]['fields']):
-                        if 'nullable' in selected_field:
-                            output_field['nullable'] = selected_field['nullable']
                     for key in ('name','description','batch_size'):
                         result['arguments'].pop(key,None)
                         if key in arguments:

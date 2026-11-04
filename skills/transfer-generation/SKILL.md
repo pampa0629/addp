@@ -22,7 +22,7 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 Runtime 已明确绑定原草稿时，只沿用恢复的候选参数，不重建任务名、描述、目标表名、查询、映射或可选参数，不新增 batch_size 等默认值。重新读取当前平台能力及必要资源事实，不把历史参数当作已确认资源或权限。最终 `transfer_create_review` 的 `operation_review` 只提交 `{tool:"transfer.task.create"}`，不提交 arguments；Runtime 使用原参数预检和复核。确认后的正式创建输入同样由 Runtime 绑定，不能借模型输入改写参数。不额外调用 draft.generate 或显式预检来重建原稿。若当前定义不支持原参数，明确解释；需要改配置时结束原参数创建，再按用户要求进入修改和新的复核流程。
 
 1. 理解 Runtime 在本次 Harness 进入时经 `platform.capability.context` 读取并保存的所选能力：创建为 `transfer.task.create`，运行为 `transfer.task.start`，结果查询为 `transfer.execution.get`；无需重复读取。Runtime 按该操作与本体依赖收窄 Skill 的 Tool 白名单，不强制其他操作已发布。需要主动刷新，或进入已声明的可选后续操作时，仍用同一正式 Tool 读取对应定义，失败不能沿用旧结果。理解其概念、条件和效果；`availability=not_observed` 不是可用性或权限证明，不假装其他模块存在。
-2. 用 `engine.list` 确认用户可访问的源/目标引擎。按 `data-discovery` 只搜索源侧数据项，必要时限定源 engine_id；多个集合或引擎候选等待用户选择。搜索失败时明确报告并终止当前运行，不能把失败当作零召回，也不能静默改用源目录枚举来继续生成或创建。
+2. 用 `engine.list` 确认用户可访问的源/目标引擎。按 `data-discovery` 只搜索源侧数据项，必要时限定源 engine_id；多个集合或引擎候选等待用户选择，不能用排序、相似度、单复数或名称更相近来代替确认。Runtime 对新草稿的多源搜索结果会直接暂停并展示正式选项，收到选择后只使用确认的 locator。搜索失败时明确报告并终止当前运行，不能把失败当作零召回，也不能静默改用源目录枚举来继续生成或创建。
 3. 通过 `resource.ancestors.get → resource.facts.get` 确认源身份和最新结构，不用样本猜 Schema。缺扫描事实则要求补扫描，不能读取原始行兜底。
 4. 用 `resource.children.list(engine_id=<目标>)` 从 owner 返回的真实根节点开始逐层浏览；后续父 locator 只取自返回结果。让用户确认目标 `parent_locator + name`，目标尚不存在时不能把它当成已有输入搜索。不可假定 PostgreSQL schema 是 public。
 5. 根据能力定义分别确认行粒度和字段保留范围，再补齐写入策略、目标字段及转换意图。不展开数组不等于删除数组字段。缺少业务决定时澄清，不能静默删字段或改行粒度。复杂计算交给 Develop。
@@ -44,7 +44,7 @@ Runtime 已明确绑定原草稿时，只沿用恢复的候选参数，不重建
 
 ## 草稿构建要求
 
-- 当前 MongoDB → PostgreSQL 切片的查询编码与字段类型规则由 Transfer 构建器持有。LLM 提交字段选择和转换意图，完整配置以正式 Tool 的 `arguments` 为准。`target_type` 如有指定，使用 ADDP 标准字段类型，物理 DDL 类型由 Provider 处理。
+- 当前 MongoDB → PostgreSQL 切片的查询编码与字段类型规则由 Transfer 构建器持有。LLM 提交字段选择和转换意图，完整配置以正式 Tool 的 `arguments` 为准。默认每个字段只提交 `path` 和 `target`；不复制源 `type` 为 `target_type`，也不主动填写 `nullable`、`precision` 或 `scale`。Transfer 根据事实选择默认类型，保留的数组由 Owner 默认映射为 JSON。只有用户明确要求类型转换或列约束时才提交这些可选覆盖参数；`target_type` 使用 ADDP 标准类型，物理 DDL 类型由 Provider 处理。
 - 整体保留对象数组、嵌套数组、混合数组或元素类型未知的数组时，让构建器选择可表达的表示，再交正式预检。源 `element_type` 不是目标可写性证明，unknown 不是通过。不得删除数组字段或擅自改变用户确认的表示以规避诊断。
 - 目标父节点用目录和祖先入口确认，尚未创建的目标表没有可供事实读取的虚拟 locator。字段缺失、结构覆盖不完整或多个候选必须明确处理，不用自报 schema 补齐。
 - 构建成功仅表示生成了候选参数。只有正式预检返回才展示预检结果，只有创建 Tool 成功才报告任务已创建。

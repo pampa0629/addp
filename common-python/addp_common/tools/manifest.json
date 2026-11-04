@@ -1338,9 +1338,10 @@
                     "uuid",
                     "geometry"
                   ],
-                  "description": "ADDP 标准字段类型标识，不是目标数据库 DDL 类型名；具体类型可写性和实际值转换仍由 Transfer/Provider 校验。"
+                  "description": "可选的用户明确类型转换要求，使用 ADDP 标准类型。未要求转换时必须省略，由 Transfer 根据正式结构推导默认类型（保留数组使用 JSON）；不可复制源 type。不是数据库 DDL 类型名。"
                 },
                 "nullable": {
+                  "description": "仅用户明确要求可空性时填写；默认省略，使用 Owner 事实。",
                   "type": "boolean"
                 },
                 "precision": {

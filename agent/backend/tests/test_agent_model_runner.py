@@ -169,17 +169,20 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sample['status'], 'passed', sample)
         self.assertTrue(sample['assertions']['report_preserved'])
 
-    async def test_short_fixture_honors_supported_nullable_choice_without_relaxing_fields(self):
+    async def test_short_fixture_requires_owner_defaults_and_exact_field_choices(self):
         fixture=case_fixture('model-transfer-short-precheck')
         violations=[]
         executor=model_runner.fixture_executor(fixture,violations)('http://unused','')
         choices={**fixture['expected']['transfer.task.draft.build'],'name':'confirmed name',
-                 'fields':[{'path':['_id'],'target':'_id','nullable':True},
-                           {'path':['members'],'target':'members','nullable':True}]}
+                 'fields':[{'path':['_id'],'target':'_id'},{'path':['members'],'target':'members'}]}
         result=await executor.call('transfer.task.draft.build',choices,agent_run_id='run',tool_call_id='build')
-        self.assertTrue(all(f['nullable'] for f in result['arguments']['config']['transforms'][0]['fields']))
+        self.assertEqual(result['arguments']['config']['transforms'][0]['fields'][1]['target_type'],'json')
         await executor.call('transfer.task.config.check',result['arguments'],agent_run_id='run',tool_call_id='check')
-        self.assertEqual(violations,[])
+        for key,value in [('target_type','array'),('target_type','json'),('nullable',True),('precision',18),('scale',2)]:
+            changed=copy.deepcopy(choices);changed['fields'][1][key]=value
+            with self.assertRaises(ToolExecutionError) as caught:
+                await executor.call('transfer.task.draft.build',changed,agent_run_id='run',tool_call_id='wrong')
+            self.assertEqual(caught.exception.code,'model_build_types_changed')
         choices['fields'][0]['target']='invented'
         with self.assertRaises(ToolExecutionError) as caught:
             await executor.call('transfer.task.draft.build',choices,agent_run_id='run',tool_call_id='wrong')
@@ -187,6 +190,7 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_short_request_discovers_builds_and_checks_owner_result(self):
         fixture = case_fixture('model-transfer-short-precheck')
+        self.assertEqual(fixture['responses']['data.search']['results'], [transfer_facts()[1]])
         definition,source,parent,_,_ = transfer_facts()
         arguments = fixture['responses']['transfer.task.draft.build']['arguments']
         choices = {**fixture['expected']['transfer.task.draft.build'], 'name':arguments['name'],

@@ -1,5 +1,9 @@
 # Agent 模块
 
+2026-11-04 新 Transfer 草稿对多源候选采用 Runtime 暂停：正式搜索返回多个 locator 即保存当前候选集合并生成持久资源选择，搜索与构建同批时先搜索；恢复后构建源须匹配该集合中唯一的用户确认，未确认或改选重新澄清，不把 observed 当作 confirmed。用户完整配置与历史原稿保留原参数绑定路线。默认字段选择只提交 path/target，类型与可空性由 Transfer 按正式事实推导；显式用户转换继续经原契约预检，不静默覆盖。已有 Agent eval 自动发现新候选与恢复回归，标准 Tool、Interaction、权限和公共 API 路线不变。
+
+本轮 `make test-agent-eval`、`make test-transfer-backend` 通过；真实模型受控事实回归最终 8/8 通过，默认映射场景拒绝无请求的类型/约束覆盖。首轮模型失败因旧夹具搜索响应使用 items，已改为正式 results，失败报告保留。正式共享 Tool 对真实 Outdoor.Persons 的独立 Owner 验证返回 16 个映射，5 个原 TEXT[] 反证字段默认改为 JSON，unsupported 为零，报告仍为 unknown；没有创建或运行。该证据不等于重启后 Agent 聊天或浏览器通过；服务重启及新会话仍待用户操作。证据 `/tmp/addp-r60-{agent-eval-current.log,transfer-t1.log,model.json,model-recheck.json,owner-acceptance.json}`。无前端、迁移、权限或新 CI 入口变更，沿现有自动发现；完整 Agent 模块共享 T0 的既有 OpenSSL 失败未在本轮修复或算作通过。
+
 2026-11-04，用户确认 Transfer 参数来源由 Runtime 确定性绑定。正式构建步骤、已绑定历史草稿和当前用户明确附带的唯一完整 JSON 配置是三个合法来源。检查点仅保存 `parameter_source` 身份/摘要及输入歧义标志；构建原结果保存在原步骤事实中。恢复按同 User/Tenant/Session/Run 读取步骤、消息或原生澄清回答，不从格式化回复、摘要、最近记录或模型复述重建。预检和复核核对完整参数后使用原来源，名称、描述、可选批大小有无、字段顺序及查询全文都受约束。多个/损坏/不完整 JSON 先澄清，构建失败和同批后续检查不得换路；拒绝也有完整开始/结果审计。旧历史原参数路径保留。
 
 
