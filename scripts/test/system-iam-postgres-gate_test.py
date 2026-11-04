@@ -144,6 +144,17 @@ elif args[:2] != ["volume", "ls"]:
         result = self.run_gate(arguments=('--package', 'api', '--test', 'task-authorization'))
         self.assertEqual(result.returncode, 2)
 
+    def test_browser_login_filter_selects_real_mfa_and_tenant_selection_tests(self):
+        for package, pattern in [
+            ('iam', '^Test(BrowserLoginAndContextOptions|ContextSelectionServices|MFAService|MFASessionClosure|ContextSwitchService)AgainstPostgres$'),
+            ('api', '^TestBootstrapBrowserLoginAgainstPostgres$'),
+        ]:
+            result = self.run_gate(arguments=('--package', package, '--test', 'browser-login'))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f'./internal/{package} -run {pattern}', (self.root / 'trace-1').read_text())
+        result = self.run_gate(arguments=('--package', 'migration', '--test', 'browser-login'))
+        self.assertEqual(result.returncode, 2)
+
     def test_crash_recovery_owns_its_database_and_never_resets_external_dsn(self):
         result = self.run_gate(arguments=("--package", "api", "--test", "database-crash-recovery"),
                                ADDP_SYSTEM_POSTGRES_TEST_DSN="", GITHUB_ACTIONS="")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -182,6 +183,118 @@ func TestBootstrapBrowserLoginAgainstPostgres(t *testing.T) {
 	)
 	if replay.Code != http.StatusUnauthorized {
 		t.Fatalf("replayed TOTP status=%d body=%s", replay.Code, replay.Body.String())
+	}
+
+	// Exercise the production HTTP composition with both tenant choices. Each
+	// case owns its credential, so real TOTP anti-replay never requires sleeps.
+	for chosen := 0; chosen < 2; chosen++ {
+		t.Run("MFA_then_explicit_tenant_"+strconv.Itoa(chosen), func(t *testing.T) {
+			username := "browser-mfa-multi-" + strconv.Itoa(chosen)
+			user, err := runtime.IdentityService.CreateLocalUser(ctx, iam.CreateLocalUserInput{
+				Username: username, Password: "Browser-multi-password-2026!", DisplayName: username,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var memberships []int64
+			var tenants []int64
+			for _, suffix := range []string{"a", "b"} {
+				tenant := &iam.Tenant{Code: username + "-" + suffix, Name: "Login tenant " + suffix, Status: iam.TenantStatusActive}
+				if err := db.Create(tenant).Error; err != nil {
+					t.Fatal(err)
+				}
+				membership, err := runtime.TenantMembershipService.EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
+					TenantID: tenant.ID, PrincipalID: user.PrincipalID, SourceType: iam.TenantMembershipSourceManual,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				memberships = append(memberships, membership.Membership.ID)
+				tenants = append(tenants, tenant.ID)
+			}
+			ciphertext, nonce, version, err := cipher.EncryptTOTPSecret(user.PrincipalID, systemSecret)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := runtime.Repository.CreateMFACredential(ctx, &iam.MFACredential{
+				UserID: user.PrincipalID, Method: "totp", Status: iam.MFACredentialStatusActive,
+				SecretCiphertext: ciphertext, SecretNonce: nonce, KeyVersion: version,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			assertNoFamily := func() {
+				t.Helper()
+				var count int64
+				if err := db.Table("system.refresh_token_families").Where("principal_id = ?", user.PrincipalID).Count(&count).Error; err != nil {
+					t.Fatal(err)
+				}
+				if count != 0 {
+					t.Fatal("session family issued before MFA and tenant choice completed")
+				}
+			}
+			password := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/login", map[string]any{
+				"username": username, "password": "Browser-multi-password-2026!",
+			}, nil)
+			var challenge IAMBrowserLoginResponse
+			decodeIAMResponse(t, password, &challenge)
+			if password.Code != http.StatusOK || challenge.NextAction != "verify_mfa" || challenge.MFA == nil ||
+				challenge.Session != nil || challenge.Selection != nil || len(password.Result().Cookies()) != 0 {
+				t.Fatalf("password did not stop at MFA: status %d", password.Code)
+			}
+			assertNoFamily()
+			code, err := totp.GenerateCode(systemSecret, time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			mfa := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/auth/mfa-verifications", map[string]any{
+				"challenge_token": challenge.MFA.ChallengeToken, "code": code,
+			}, nil)
+			var selection IAMBrowserLoginResponse
+			decodeIAMResponse(t, mfa, &selection)
+			if mfa.Code != http.StatusOK || selection.NextAction != "select_context" || selection.Selection == nil ||
+				selection.Session != nil || len(selection.Selection.Contexts) != 2 || len(mfa.Result().Cookies()) != 0 {
+				t.Fatalf("MFA did not stop at tenant choice: status %d", mfa.Code)
+			}
+			assertNoFamily()
+			choice := map[string]any{
+				"selection_ticket": selection.Selection.SelectionTicket, "context_type": "tenant",
+				"tenant_membership_id": strconv.FormatInt(memberships[chosen], 10),
+			}
+			selected := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/auth/context-selections", choice, nil)
+			var session IAMAccessTokenResponse
+			decodeIAMResponse(t, selected, &session)
+			var refreshCookie *http.Cookie
+			for _, cookie := range selected.Result().Cookies() {
+				if cookie.Name == iamRefreshCookieName {
+					refreshCookie = cookie
+				}
+			}
+			if selected.Code != http.StatusOK || session.AccessToken == "" || refreshCookie == nil ||
+				!refreshCookie.HttpOnly || refreshCookie.Path != "/api/v1/system" {
+				t.Fatalf("tenant choice did not issue a browser session: status %d", selected.Code)
+			}
+			refreshed := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/refresh", nil,
+				map[string]string{"Cookie": refreshCookie.Name + "=" + refreshCookie.Value})
+			var renewed IAMAccessTokenResponse
+			decodeIAMResponse(t, refreshed, &renewed)
+			if refreshed.Code != http.StatusOK || renewed.AccessToken == "" || renewed.AccessToken == session.AccessToken {
+				t.Fatalf("selected session could not be refreshed: status %d", refreshed.Code)
+			}
+			resolved := performIAMJSONRequest(t, router, http.MethodGet, "/api/v1/system/auth/context", nil,
+				map[string]string{"Authorization": "Bearer " + renewed.AccessToken})
+			var actual commonauth.AuthContext
+			decodeIAMResponse(t, resolved, &actual)
+			if resolved.Code != http.StatusOK || actual.Context.Type != "tenant" || actual.Context.TenantID == nil ||
+				*actual.Context.TenantID != strconv.FormatInt(tenants[chosen], 10) || actual.Context.TenantMembershipID == nil ||
+				*actual.Context.TenantMembershipID != strconv.FormatInt(memberships[chosen], 10) || actual.Authentication.AssuranceLevel != "aal2" ||
+				strings.Join(actual.Authentication.Methods, ",") != "password,totp" {
+				t.Fatalf("selected session lost MFA or tenant isolation: status %d", resolved.Code)
+			}
+			reused := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/auth/context-selections", choice, nil)
+			if reused.Code != http.StatusConflict || len(reused.Result().Cookies()) != 0 {
+				t.Fatalf("selection ticket replay was not rejected: status %d", reused.Code)
+			}
+		})
 	}
 }
 

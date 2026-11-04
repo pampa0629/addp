@@ -46,8 +46,9 @@ for (const [path, load] of Object.entries(pages)) {
     it('waits for MFA and context selection before restoring the complete original route', async () => {
       query.redirect = '/fixture/resource?filter=active#details'
       auth.login.mockResolvedValue({ next_action: 'verify_mfa', mfa: { challenge_token: 'challenge' } })
-      const tenant = { type: 'tenant', tenant_membership_id: 'membership', tenant_id: 'tenant', tenant_name: 'Fixture Tenant' }
-      auth.verifyMFA.mockResolvedValue({ next_action: 'select_context', selection: { selection_ticket: 'selection', contexts: [tenant] } })
+      const tenantA = { type: 'tenant', tenant_membership_id: 'membership-a', tenant_id: 'tenant-a', tenant_name: 'Fixture Tenant A' }
+      const tenant = { type: 'tenant', tenant_membership_id: 'membership-b', tenant_id: 'tenant-b', tenant_name: 'Fixture Tenant B' }
+      auth.verifyMFA.mockResolvedValue({ next_action: 'select_context', selection: { selection_ticket: 'selection', contexts: [tenantA, tenant] } })
       auth.selectContext.mockResolvedValue({ next_action: 'session_issued' })
       const wrapper = render()
       try {
@@ -59,7 +60,12 @@ for (const [path, load] of Object.entries(pages)) {
         await flushPromises()
         expect(auth.verifyMFA).toHaveBeenCalledWith('challenge', '123456')
         expect(router.replace).not.toHaveBeenCalled()
-        await wrapper.findAll('button').find(button => button.text() === common.auth.login.continue).trigger('click')
+        const continueButton = wrapper.findAll('button').find(button => button.text() === common.auth.login.continue)
+        expect(continueButton.element.disabled).toBe(true)
+        expect(auth.selectContext).not.toHaveBeenCalled()
+        await wrapper.findAll('input[type=radio]')[1].setValue(true)
+        expect(continueButton.element.disabled).toBe(false)
+        await continueButton.trigger('click')
         await flushPromises()
         expect(auth.selectContext).toHaveBeenCalledWith('selection', tenant)
         expect(router.replace).toHaveBeenCalledExactlyOnceWith('/fixture/resource?filter=active#details')

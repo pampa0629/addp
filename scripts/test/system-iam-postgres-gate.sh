@@ -23,6 +23,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
+            echo "Browser password/MFA/tenant selection: --package iam|api --test browser-login" >&2
             echo "Engine deployment declarations/publication: --package repository|migration --test engine-deployments" >&2
             echo "Host inventory type/state filters: --package repository --test host-nodes" >&2
             echo "Engine credential/JSONB address regression: --package repository --test engine-address" >&2
@@ -190,6 +191,13 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    browser-login)
+        case "$PACKAGE_FILTER" in
+            iam) test_pattern='^Test(BrowserLoginAndContextOptions|ContextSelectionServices|MFAService|MFASessionClosure|ContextSwitchService)AgainstPostgres$' ;;
+            api) test_pattern='^TestBootstrapBrowserLoginAgainstPostgres$' ;;
+            *) echo "browser-login requires --package iam or api" >&2; exit 2 ;;
+        esac
+        ;;
     cleanup-authorization)
         test_pattern='^TestCleanupAuthorizationAgainstPostgres$'
         ;;
