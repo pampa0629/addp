@@ -150,6 +150,67 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sample['tools'],[])
         self.assertEqual(sample['body']['model_characters'],0)
 
+    async def test_long_context_selects_exact_draft_using_summary_not_full_history(self):
+        from agents.context import HISTORY_MESSAGE_LIMIT
+        from agents.main_agent import stream_agent_response
+        fixture = case_fixture('model-historical-long-context')
+        seen = {}
+        async def stream(**kwargs):
+            seen.update(copy.deepcopy({key: kwargs[key] for key in ('messages', 'session_summary')}))
+            async for event in stream_agent_response(**kwargs):
+                yield event
+        client = _InferenceFixture([route(draft_action='inspect', draft_ref=fixture['snapshot']['reference'],
+                                         draft_explanation=fixture['expected_scope'])])
+        with patch('agents.main_agent.stream_agent_response', new=stream):
+            sample = await model_runner.run_case('model-historical-long-context', 1, _model(client))
+        self.assertEqual(sample['status'], 'passed', sample)
+        self.assertEqual(len(seen['messages']), HISTORY_MESSAGE_LIMIT)
+        self.assertEqual(seen['session_summary'], fixture['summary'])
+        self.assertNotIn(fixture['snapshot']['name'], str(seen['messages']))
+        self.assertEqual([tool['name'] for tool in sample['tools']], ['draft.inspect'])
+        self.assertEqual(sample['body']['model_characters'], 0)
+
+    async def test_long_context_wrong_catalog_choice_is_a_failure(self):
+        fixture = case_fixture('model-historical-long-context')
+        client = _InferenceFixture([route(draft_action='inspect', draft_ref=fixture['other_snapshot']['reference'],
+                                         draft_explanation=fixture['expected_scope'])])
+        sample = await model_runner.run_case('model-historical-long-context', 1, _model(client))
+        self.assertEqual(sample['status'], 'failed', sample)
+        self.assertFalse(sample['assertions']['historical_read_only'])
+        self.assertFalse(sample['assertions']['report_preserved'])
+
+    async def test_old_transfer_summary_does_not_prevent_current_readonly_skill(self):
+        client = _InferenceFixture([
+            route('workflow-analysis'),
+            Message(role='assistant', tool_calls=[_call('engine.list', {'capability': 'workflow'})]),
+            Message(role='assistant', content='VECTOR_FIXTURE_ONLINE online; VECTOR_FIXTURE_OFFLINE offline'),
+        ])
+        sample = await model_runner.run_case('model-current-goal-long-context', 1, _model(client))
+        self.assertEqual(sample['status'], 'passed', sample)
+        self.assertEqual([tool['name'] for tool in sample['tools']], ['engine.list'])
+
+    async def test_vague_short_goal_pauses_on_exact_owner_candidates_without_build(self):
+        from model_cases import transfer_facts
+        fixture = case_fixture('model-transfer-source-choice')
+        source = transfer_facts()[1]
+        client = _InferenceFixture([
+            route(needs_platform_semantics=True),
+            Message(role='assistant', tool_calls=[ToolCall(id='platform-route', name='PlatformRouteDecision',
+                    arguments={'capability': 'transfer.task.create'})]),
+            Message(role='assistant', tool_calls=[_call('data.search', {'query': 'MongoDB', 'engine_id': 311})]),
+        ])
+        sample = await model_runner.run_case('model-transfer-source-choice', 1, _model(client))
+        self.assertEqual(sample['status'], 'passed', sample)
+        self.assertTrue(sample['assertions']['trace_contract'])
+        self.assertNotIn('transfer.task.draft.build', [tool['name'] for tool in sample['tools']])
+        self.assertEqual(sample['body']['model_characters'], 0)
+        serialized = json.dumps(sample)
+        self.assertNotIn(source['locator'], serialized)
+        self.assertNotIn(fixture['expected_candidates'][1]['locator'], serialized)
+        report = self.empty_failure_report()
+        report['samples'] = [{**sample, 'sample': 1}]
+        model_runner.validate_report(report)
+
     def test_v1_model_report_is_rejected_without_compatibility_parser(self):
         report = self.empty_failure_report()
         report['schema'] = 'addp.agent-model-regression/v1'

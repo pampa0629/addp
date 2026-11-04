@@ -1,6 +1,6 @@
 # Agent 模块设计共识
 
-更新时间：2026-11-03
+更新时间：2026-11-04
 
 本文只记录 Agent 模块内部边界。平台级 Tool、AG-UI / A2UI 和评测契约分别以 `docs/spec/addp智能体Tool开放规范.md`、`docs/spec/addp智能体交互协议规范.md`、`docs/spec/addp智能体评测规范.md` 为事实源；Skill 与认证分别引用各自既有规范。专题文档只保留架构决策和实施历史。
 
@@ -141,6 +141,8 @@ AgentRun 可观测事实分为：
 - `sessions.summary_message_id`：已压缩的早期消息水位，摘要只合并水位后的新早期消息。
 
 上下文唯一预算为最近 20 条消息、单条 6000 字符、消息总计 24000 字符和摘要 2000 字符，从最新消息向前分配。错误字段唯一使用 `error_source=client|runtime|tool|owner|protocol` + `error_code` + 最多 1000 字符的受限 `error_message`，不保留 `error_type`。
+
+长会话验证沿用上述预算与水位，不增加记忆实体或另一套上下文路线。取消／失败的部分正文仍可查看，但不进入历史窗口或摘要；摘要生成失败或返回空内容时保留原摘要与水位，并发较旧结果不得覆盖已提交的较新水位。模型回归的合成摘要只验证消费和引用边界，不能当作真实摘要模型的语义质量验收；当前用户目标优先，摘要不得成为参数、确认或授权来源。
 
 写入和破坏性操作的 approval 不归 Agent 持有。`workflow.run` 的权威审批由 Develop 持有；Agent 不保存完整 workflow payload，只保存 owner approval 的可恢复投影。`ApprovalRequest` 的“检查审批状态”动作只提交 `{action:"check"}`，不能产生批准事实。
 

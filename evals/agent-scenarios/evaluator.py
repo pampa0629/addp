@@ -135,7 +135,7 @@ def _validate_expectations(expectations: Any, location: str) -> None:
             phase["presentations"],
             f"{location}.expectations.phases.{name}.presentations",
         )
-        if any(component not in {"WorkflowDag", "MapView", "TablePreview", "ResourcePicker", "TransferConfigCheckReport", "TransferDraftSnapshot"} for component in presentations):
+        if any(component not in {"WorkflowDag", "MapView", "TablePreview", "ResourcePicker", "ClarificationChoice", "TransferConfigCheckReport", "TransferDraftSnapshot"} for component in presentations):
             raise ScenarioContractError(f"{location}.expectations.phases.{name}.presentations: 未知组件")
         result_refs = phase["result_refs"]
         if not isinstance(result_refs, dict):

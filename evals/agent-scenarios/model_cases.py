@@ -16,6 +16,7 @@ CASE_NAMES = (
     'model-engine-inventory', 'model-query-draft',
     'model-transfer-precheck', 'model-transfer-short-precheck', 'model-historical-draft',
     'model-historical-boundaries', 'model-historical-named', 'model-historical-ambiguous',
+    'model-transfer-source-choice', 'model-historical-long-context', 'model-current-goal-long-context',
 )
 HISTORY_NAME = 'outdoors_mongodb_to_pg_agent_historical_regression_20261103'
 QUERY_LOCATOR = 'addp://engine/321/path/public/orders?type=table&item_id=3210'
@@ -84,8 +85,9 @@ def case_fixture(name):
         raise ValueError('unknown_model_case')
     definition, source, parent, arguments, report = transfer_facts()
     result = {'responses': {}, 'expected': {}, 'snapshot': None, 'body_facts': [], 'history': [],
-              'expects_model_body': name in {'model-engine-inventory', 'model-query-draft', 'model-historical-draft'}}
-    if name == 'model-engine-inventory':
+              'expects_model_body': name in {'model-engine-inventory', 'model-query-draft', 'model-historical-draft',
+                                            'model-current-goal-long-context'}}
+    if name in {'model-engine-inventory', 'model-current-goal-long-context'}:
         result['responses'] = {'engine.list': [
             {'id': 301, 'name': 'VECTOR_FIXTURE_ONLINE', 'engine_type': 'geopython_workflow',
              'lifecycle_state': 'active', 'connection_status': 'online'},
@@ -94,6 +96,9 @@ def case_fixture(name):
         ]}
         result['expected'] = {'engine.list': {'capability': 'workflow'}}
         result['body_facts'] = ['VECTOR_FIXTURE_ONLINE', 'VECTOR_FIXTURE_OFFLINE']
+        if name == 'model-current-goal-long-context':
+            result['history'] = long_history()
+            result['summary'] = '用户此前要把 MongoDB 数据传到 PostgreSQL，只做草稿和预检，尚未创建或运行。'
     elif name == 'model-query-draft':
         fact = {'locator': QUERY_LOCATOR, 'engine_id': 321, 'item_id': 3210,
                 'source_engine_type': 'postgresql', 'item_type': 'table', 'full_name': 'public.orders',
@@ -112,7 +117,7 @@ def case_fixture(name):
             'query.draft.generate': {'engine_id': 321, 'query_language': 'sql'},
         }
         result['body_facts'] = ['public.orders', 'status']
-    elif name in {'model-transfer-precheck', 'model-transfer-short-precheck'}:
+    elif name in {'model-transfer-precheck', 'model-transfer-short-precheck', 'model-transfer-source-choice'}:
         source_parent = {'locator': 'addp://engine/311/path/demo?type=database&node_id=3111',
                          'type': 'database', 'children': [source]}
         result['responses'] = {
@@ -136,7 +141,7 @@ def case_fixture(name):
             'transfer.task.config.check': arguments,
         }
         result['body_facts'] = ['unknown']
-        if name == 'model-transfer-short-precheck':
+        if name in {'model-transfer-short-precheck', 'model-transfer-source-choice'}:
             result['responses']['data.search'] = {'results':[source], 'total':1, 'page':1, 'page_size':10}
             built = copy.deepcopy(arguments)
             built['config']['source']['query']['statement'] = json.dumps({'aggregate':'events','pipeline':[
@@ -150,12 +155,27 @@ def case_fixture(name):
                 'source_locator':source['locator'],
                 'target':{'parent_locator':parent['locator'],'name':'new_events','apply_mode':'replace'},
                 'row_grain':{'mode':'document'}}
+            if name == 'model-transfer-source-choice':
+                other = copy.deepcopy(source)
+                other.update(locator='addp://engine/311/path/demo/other?type=collection&item_id=3112',
+                             item_id=3112, full_name='demo.other', item_fingerprint='synthetic-other',
+                             query_references={'mql': {'parts': ['other']}})
+                candidates = [source, other]
+                result['responses']['data.search'] = {'results': candidates, 'total': 2, 'page': 1, 'page_size': 10}
+                result['source_parent']['children'] = candidates
+                # Search candidates use the existing compact discovery projection;
+                # formal schema/type facts are deliberately not carried by choices.
+                result['expected_candidates'] = [{key: candidate[key] for key in
+                    ('locator', 'engine_id', 'item_type', 'full_name')} for candidate in candidates]
+                for tool in ('transfer.task.draft.build', 'transfer.task.config.check'):
+                    result['responses'].pop(tool)
+                result['body_facts'] = []
 
     else:
         result['snapshot'] = historical_snapshot()
         result['expected_scope'] = {'topics':['status','policy','boundary','authorization','fields'], 'fields':['members']}
         result['body_facts'] = ['members']
-        if name in {'model-historical-boundaries', 'model-historical-named'}:
+        if name in {'model-historical-boundaries', 'model-historical-named', 'model-historical-long-context'}:
             result['snapshot'] = historical_snapshot(status='unsupported', policy='append')
             result['expected_scope'] = {'topics':['status','policy','boundary','authorization'], 'fields':[]}
             result['body_facts'] = ['unsupported', 'append', 'bounded']
@@ -169,4 +189,18 @@ def case_fixture(name):
             result['history'] = []
             result['body_facts'] = [snapshot['name']]
             result['expected_scope'] = None
+        if name == 'model-historical-long-context':
+            result['other_snapshot'] = historical_snapshot(name='unrelated_inventory_draft',
+                step_id='00000000-0000-4000-8000-000000000003')
+            result['history'] += long_history()
+            result['summary'] = (f"用户要继续解释成员迁移草稿 {snapshot['name']}，该稿已正式预检，"
+                                 '仅解释原报告。另一份 unrelated_inventory_draft 是无关的库存草稿。'
+                                 '历史摘要不能代替原参数、正式报告或授权。')
     return copy.deepcopy(result)
+
+
+def long_history():
+    """Earlier business input is genuinely outside the production message window."""
+    return [{'role': role, 'content': f'界面操作讨论第{index}轮：{text}'}
+            for index in range(16)
+            for role, text in [('user', '怎样查看会话列表？'), ('assistant', '可使用会话栏查看。')]]

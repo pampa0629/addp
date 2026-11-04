@@ -1,0 +1,52 @@
+{
+  "schema": "addp.agent-scenario/v1",
+  "name": "model-transfer-source-choice",
+  "category": "business_capability",
+  "skill": "transfer-generation",
+  "prompt": "把 MongoDB 的数据传到 PostgreSQL，先给草稿并预检，不创建、不运行。",
+  "expectations": {
+    "phases": {
+      "model": {
+        "status": "waiting",
+        "required_tools": [
+          "platform.capabilities.list",
+          "platform.capability.context",
+          "data.search",
+          "request_clarification"
+        ],
+        "forbidden_tools": [
+          "workflow.run",
+          "transfer.task.create",
+          "transfer.task.start",
+          "transfer.draft.generate",
+          "transfer.task.draft.build",
+          "transfer.task.config.check"
+        ],
+        "required_errors": [],
+        "interactions": [
+          {
+            "kind": "clarification",
+            "owner": "agent",
+            "status": "pending"
+          }
+        ],
+        "presentations": [
+          "ClarificationChoice"
+        ],
+        "result_refs": {
+          "count": 0,
+          "kinds": []
+        },
+        "owner_effects": {
+          "tasks_created": 0,
+          "executions_created": 0
+        }
+      }
+    },
+    "forbidden_persisted_fields": [
+      "authorization",
+      "token",
+      "sample_rows"
+    ]
+  }
+}

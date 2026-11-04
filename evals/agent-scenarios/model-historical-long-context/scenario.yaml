@@ -1,0 +1,41 @@
+{
+  "schema": "addp.agent-scenario/v1",
+  "name": "model-historical-long-context",
+  "category": "business_capability",
+  "skill": "none",
+  "prompt": "继续解释前面说的那份成员迁移草稿：原预检状态、写入策略，以及 bounded 和当前运行授权的区别。只解释，不重新预检或读取业务资源，不创建、不运行。",
+  "expectations": {
+    "phases": {
+      "model": {
+        "status": "completed",
+        "required_tools": [
+          "draft.inspect"
+        ],
+        "forbidden_tools": [
+          "workflow.run",
+          "transfer.task.create",
+          "transfer.task.start"
+        ],
+        "required_errors": [],
+        "interactions": [],
+        "presentations": [
+          "TransferDraftSnapshot",
+          "TransferConfigCheckReport"
+        ],
+        "result_refs": {
+          "count": 0,
+          "kinds": []
+        },
+        "owner_effects": {
+          "tasks_created": 0,
+          "executions_created": 0
+        }
+      }
+    },
+    "forbidden_persisted_fields": [
+      "authorization",
+      "token",
+      "sample_rows"
+    ]
+  }
+}

@@ -1,13 +1,33 @@
 # Agent 模块
 
+## 当前状态（2026-11-04）
+
+本节是当前实施与验收状态入口；下文有日期的失败、等待重启和待讨论记录属于当时切片，不覆盖本节。正式行为边界以模块设计共识及平台规范为准，不以验收日志定义另一条实现路线。
+
+| 能力 | 当前证据 | 尚未覆盖 |
+| --- | --- | --- |
+| DeerFlow 内核、会话组织、设置／偏好、文字草稿移交 | 已实施，沿既有 Agent 离线及前端门禁验证；设置复用 Console 配置页，偏好按浏览器 User/Tenant 隔离 | 不宣称跨设备同步或长期记忆 |
+| 正文增量、取消保留、历史草稿固定说明与受限字段解释 | 已实施；会话55完成自然指代、bounded 与授权区分、混合字段、取消及刷新保留的本地真实切片 | 不等于 Hosted 或所有模型措辞质量通过 |
+| Transfer 新草稿构建与参数绑定 | Agent 只提交用户业务选择，Transfer 编译；Runtime 按正式来源精确绑定参数，多候选先确认 | 不推导预检 unknown 为可执行或授权通过 |
+| 最新短输入与刷新恢复 | 会话62：真实模型、正式 Agent API 和 Owner 链路完成，4候选先选源、16映射、构建与预检同参；服务端消息／回放／参数恢复一致，用户截图补齐页面可见性 | 该轮没有创建、运行、样本或扫描调用；截图与 API 证据分别记录 |
+| 模型稳定性与长会话 | 本轮11场景各3轮，33/33真实模型受控事实回归通过；含多候选短输入、生产上下文预算及长会话指代／目标切换；摘要水位、失败、旧结果覆盖和完整消息筛选的4项SQL回归通过 | 合成摘要不证明真实压缩模型的语义质量；SQLite不证明PostgreSQL并发锁；固定事实不等于真实Owner、完整CI或Hosted |
+
+会话62证据：`/tmp/addp-r60-chat/acceptance-audit.json`、`/tmp/addp-r60-restore/acceptance-audit.json`；这两份机器记录生成时浏览器控制超时，页面可见性由随后用户截图独立补证，不能改写成工具自动刷新成功。历史说明切片见 `/tmp/addp-agent-history-live-acceptance-20261103.json`。所有验收仍区分模型受控事实、正式 API、页面观察与 CI。
+
+本轮 `make test-agent-eval` 通过18项场景契约、Agent后端全量与common-python全量测试，报告 `/tmp/addp-agent-context-offline-20261104-final.json`。真实模型报告 `/tmp/addp-agent-context-model-20261104-r2.json` 为33/33，运行前后274项Agent／共享客户端／Skill／本体输入摘要未变，工作区仍有其他任务改动，不能当作干净发布基线。首轮日志及 `/tmp/addp-agent-context-model-20261104-r1-incomplete.json` 保留：33样本中一次InferenceError、一次候选场景失败，且新增等待断言未符合严格v2报告校验，未生成有效模型报告；修复报告适配并补完整校验测试后才运行r2，不能覆盖首轮失败。结构化通过仍需独立人工语义复核，不宣称所有回复质量通过。
+
+当前完整模块门禁在3项实际受影响的冻结来源处阻断，来源复核及对应CI待收口，不计整套通过。现有Agent eval和CI自动发现新增后端测试与场景，真实模型仍显式运行 `make test-agent-model`；前端、运行服务、迁移和权限未变，不新增CI入口或要求重启。后续优先补验明确修改字段范围后重新构建及旧草稿不变，仍不创建或运行；长期记忆、自动选择与审批继承不在本轮范围。
+
+## 当前实现边界
+
 2026-11-04 新 Transfer 草稿对多源候选采用 Runtime 暂停：正式搜索返回多个 locator 即保存当前候选集合并生成持久资源选择，搜索与构建同批时先搜索；恢复后构建源须匹配该集合中唯一的用户确认，未确认或改选重新澄清，不把 observed 当作 confirmed。用户完整配置与历史原稿保留原参数绑定路线。默认字段选择只提交 path/target，类型与可空性由 Transfer 按正式事实推导；显式用户转换继续经原契约预检，不静默覆盖。已有 Agent eval 自动发现新候选与恢复回归，标准 Tool、Interaction、权限和公共 API 路线不变。
 
-本轮 `make test-agent-eval`、`make test-transfer-backend` 通过；真实模型受控事实回归最终 8/8 通过，默认映射场景拒绝无请求的类型/约束覆盖。首轮模型失败因旧夹具搜索响应使用 items，已改为正式 results，失败报告保留。正式共享 Tool 对真实 Outdoor.Persons 的独立 Owner 验证返回 16 个映射，5 个原 TEXT[] 反证字段默认改为 JSON，unsupported 为零，报告仍为 unknown；没有创建或运行。该证据不等于重启后 Agent 聊天或浏览器通过；服务重启及新会话仍待用户操作。证据 `/tmp/addp-r60-{agent-eval-current.log,transfer-t1.log,model.json,model-recheck.json,owner-acceptance.json}`。无前端、迁移、权限或新 CI 入口变更，沿现有自动发现；完整 Agent 模块共享 T0 的既有 OpenSSL 失败未在本轮修复或算作通过。
+该实现切片的 `make test-agent-eval`、`make test-transfer-backend` 通过；真实模型受控事实回归最终 8/8 通过，默认映射场景拒绝无请求的类型/约束覆盖。首轮模型失败因旧夹具搜索响应使用 items，已改为正式 results，失败报告保留。正式共享 Tool 对真实 Outdoor.Persons 的独立 Owner 验证返回 16 个映射，5 个原 TEXT[] 反证字段默认改为 JSON，unsupported 为零，报告仍为 unknown；没有创建或运行。随后已重启并完成会话62及恢复切片，见当前状态。旧证据 `/tmp/addp-r60-{agent-eval-current.log,transfer-t1.log,model.json,model-recheck.json,owner-acceptance.json}`。完整 Agent 模块共享 T0 的既有 OpenSSL 失败未在该切片修复或算作通过。
 
 2026-11-04，用户确认 Transfer 参数来源由 Runtime 确定性绑定。正式构建步骤、已绑定历史草稿和当前用户明确附带的唯一完整 JSON 配置是三个合法来源。检查点仅保存 `parameter_source` 身份/摘要及输入歧义标志；构建原结果保存在原步骤事实中。恢复按同 User/Tenant/Session/Run 读取步骤、消息或原生澄清回答，不从格式化回复、摘要、最近记录或模型复述重建。预检和复核核对完整参数后使用原来源，名称、描述、可选批大小有无、字段顺序及查询全文都受约束。多个/损坏/不完整 JSON 先澄清，构建失败和同批后续检查不得换路；拒绝也有完整开始/结果审计。旧历史原参数路径保留。
 
 
-2026-11-04，新 MongoDB → PostgreSQL bounded snapshot 草稿由 `transfer.task.draft.build` 编译。Skill 工具声明和平台创建修订 58 均指向该入口，LLM 提交已确认资源、行粒度、字段及写入选择，原样使用返回 `arguments` 进入既有预检和复核。查询编码与类型映射移交 Transfer，删除本切片手拼配置及 Copilot 构建指导；历史绑定原稿继续精确复核。共享 SDK 与 ToolExecutor 用同一 Owner API，四项权限和委托规则见 Tool 规范。离线 Agent eval 与共享 SDK 门禁通过，重启后的真实模型是否按新路径选择和调用仍须另验。
+2026-11-04，新 MongoDB → PostgreSQL bounded snapshot 草稿由 `transfer.task.draft.build` 编译。Skill 工具声明和平台创建修订 58 起指向该入口，LLM 提交已确认资源、行粒度、字段及写入选择，原样使用返回 `arguments` 进入既有预检和复核。查询编码与类型映射移交 Transfer，删除本切片手拼配置及 Copilot 构建指导；历史绑定原稿继续精确复核。共享 SDK 与 ToolExecutor 用同一 Owner API，四项权限和委托规则见 Tool 规范。离线 Agent eval 与共享 SDK 门禁通过；重启后的真实新路径由会话62切片补验，不外推业务执行。
 
 
 Agent 模块是 ADDP 平台的**自然语言交互入口**，用户通过对话方式完成数据管理、分析和发布操作。
@@ -40,7 +60,7 @@ Transfer 的行粒度和字段保留范围分开处理：不展开数组不授�
 
 Transfer 决定失败反馈按交互协议的封闭 HTTP 状态／错误码对本地化：仅识别 `409 + approval_request_mismatch` 与 `410 + approval_expired`，其余保留通用失败，不裸显 Owner 正文。反馈处理不额外发起状态检查、resume、业务重试、新审批或启动，也不改变原卡状态；共享客户端既有 401 认证刷新语义保持。受控前端验证与 Task55 原始拒绝码现场缺口分别记录；本次不重放或操作真实旧审批。
 
-## 原参数创建（修订 21）
+## 历史实施记录：原参数创建（修订 21）
 
 2026-10-14 本地真实会话 32 验证修订 21：简短只读请求经源集合、行粒度及目标澄清，21 个步骤和一次正式预检生成 16 条映射、unknown/35 条诊断。随后“按刚才草稿的原参数创建任务，不运行”确切选择原引用，每次 Harness 恢复重新执行私有 `draft.inspect`；全部四次创建阶段预检参数与原稿深相等，名称、描述、目标、映射和缺省 batch_size 均未漂移。创建阶段前两次复核因当前源事实、目标父节点事实缺失被拒绝，模型补齐后取得正式复核；用户授权的知情确认后，模型又提交同身份复核，两次 Interaction 身份精确相等，`prepare_review` 再次清空本 Run 的确认，进入重复确认。创建验收未通过：没有 `transfer.task.create` 或执行/扫描/查询/样本 Tool，对应目标任务定义为零。不是旧草稿确认被继承，也没有证据指向本体读取或 Provider 故障；问题是确认恢复仍让模型决定是否重新复核。Runtime 是否应在已确认参数仍有效时推进正式创建，属于下一项待讨论的职责收口，未实施旁路或继续反复确认。证据在仓库外 `/tmp/addp-agent-r21-live.3isaFB`，核对脚本退出 0 仅证明上述本地切片，不是 Hosted T4 或创建成功。
 

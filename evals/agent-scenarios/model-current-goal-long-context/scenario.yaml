@@ -1,0 +1,41 @@
+{
+  "schema": "addp.agent-scenario/v1",
+  "name": "model-current-goal-long-context",
+  "category": "business_capability",
+  "skill": "workflow-analysis",
+  "prompt": "现在查询当前全部工作流引擎的名称和连接状态，离线的也列出。只查询，不创建或运行任务。",
+  "expectations": {
+    "phases": {
+      "model": {
+        "status": "completed",
+        "required_tools": [
+          "engine.list"
+        ],
+        "forbidden_tools": [
+          "workflow.run",
+          "transfer.task.create",
+          "transfer.task.start"
+        ],
+        "required_errors": [],
+        "interactions": [],
+        "presentations": [],
+        "result_refs": {
+          "count": 0,
+          "kinds": []
+        },
+        "owner_effects": {
+          "tasks_created": 0,
+          "executions_created": 0
+        },
+        "allowed_tool_risks": [
+          "read"
+        ]
+      }
+    },
+    "forbidden_persisted_fields": [
+      "authorization",
+      "token",
+      "sample_rows"
+    ]
+  }
+}

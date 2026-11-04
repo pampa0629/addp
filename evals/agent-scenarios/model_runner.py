@@ -172,6 +172,7 @@ async def run_case(name, tenant_id, model, *, timeout=180):
     from model_cases import case_fixture, transfer_facts
     from services.drafts import DRAFT_INSPECT, build_draft_explanation
     from protocol.a2ui import transfer_config_check_presentation
+    from agents.context import build_context_window
 
     scenario = load_scenario(Path(__file__).with_name(name))
     fixture = case_fixture(name)
@@ -189,6 +190,8 @@ async def run_case(name, tenant_id, model, *, timeout=180):
     if name == 'model-transfer-precheck':
         prompt += '\n已确认一文档一行，members整体保留为json，目标覆盖策略已选择。完整原参数：\n'
         prompt += json.dumps(transfer_facts()[3], ensure_ascii=False)
+    history, session_summary, _ = build_context_window(
+        [*fixture['history'], {'role': 'user', 'content': prompt}], fixture.get('summary'))
 
     async def draft_reader(reference):
         draft_reads.append(reference)
@@ -204,7 +207,7 @@ async def run_case(name, tenant_id, model, *, timeout=180):
     async def collect():
         nonlocal first_text_ms
         async with aclosing(stream_agent_response(
-            messages=[*fixture['history'], {'role': 'user', 'content': prompt}], user_id=1, tenant_id=tenant_id,
+            messages=history, session_summary=session_summary, user_id=1, tenant_id=tenant_id,
             token='synthetic-no-user-access', agent_run_id=str(uuid.uuid4()),
             draft_catalog=[{'name':s['name'], 'reference':s['reference'], 'observed_at':s['report']['observed_at']}
                            for s in snapshots.values()], draft_reader=draft_reader,
@@ -243,7 +246,7 @@ async def run_case(name, tenant_id, model, *, timeout=180):
         trace_passed = False
     text = ''.join(body)
     report_preserved = True
-    ambiguous = bool(fixture.get('other_snapshot'))
+    ambiguous = name == 'model-historical-ambiguous'
     if name in {'model-transfer-precheck','model-transfer-short-precheck'} or snapshot:
         expected_reports = ([] if ambiguous else [snapshot['report']] if snapshot else
                             [transfer_config_check_presentation(transfer_facts()[4])['report']])
@@ -267,6 +270,18 @@ async def run_case(name, tenant_id, model, *, timeout=180):
                                  and [t['name'] for t in phase['tools']] == ([] if ambiguous else [DRAFT_INSPECT])) if snapshot else True,
         'model_identity_observed': bool(identity_recorder.identities),
     }
+    if 'expected_candidates' in fixture:
+        # A structured question is the intended response; body counters still
+        # count text events only. Preserve the single v2 assertion contract.
+        interactions = [e.payload for e in events if e.kind == 'interaction_required']
+        expected = fixture['expected_candidates']
+        actual = interactions[0] if len(interactions) == 1 else {}
+        candidates = actual.get('candidates', [])
+        assertions['response_body_nonempty'] = bool(str(actual.get('prompt') or '').strip())
+        assertions['trace_contract'] = assertions['trace_contract'] and (
+            actual.get('reason') == 'transfer_source_selection'
+            and [c.get('value') for c in candidates] == [c['locator'] for c in expected]
+            and [c.get('candidate') for c in candidates] == expected)
     return {
         'name': name, 'contract_sha256': _contract_digest(name), 'skill': actual_skill,
         'status': 'passed' if not error_code and all(assertions.values()) else 'failed',
