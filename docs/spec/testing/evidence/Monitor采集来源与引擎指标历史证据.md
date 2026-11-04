@@ -798,3 +798,11 @@ CI会话回传固定`7d8ad061e`的两项后续阻断，不能与此前六项夹�
 完整标准命令 `make test-node-metrics-online-runner` 在上述**工作区共享WIP**下退出0：登记144项、实际登记一致性、原runner172项及System身份Go夹具均通过，日志 `/tmp/addp-node-online-syntax-wip-full-20261105.log`。随后原负责人已提交共享入口修正 `9b97d1b83`；本会话核对其已提交Makefile摘要与上述8项通过的候选完全相同，相关Make／登记／原语法测试工作区无差异，并在已提交版本重新执行原四变体方法退出0。因此该阻断已有正式代码及本地通过证据；新的自然Platform结果仍等专门CI会话回传，不以本地通过替代远端终态。本会话未重复修改共享入口，不重跑远端CI、不触发Hosted、不设置定时，个人服务与来源均未启停。
 
 **后续自然CI已闭环。** 专门会话回传包含上述共享修复的固定源码 `338bfb3780a57b0baa1cb2a8af9779007db68d56`：[Platform Run41897329087／Job126810251735](https://github.com/pampa0629/addp/actions/runs/41897329087/job/126810251735)，attempt1、selected=true，完整 `Run platform consistency gate` 实际成功。本会话只读复核原日志566422字节及SHA256 `e93758d9931acf260c9fbcede7db62abd99b8aabe37401690ae7f90538dbbd04`，确认登记144项、监控runner172项及身份Go夹具实际运行；失败f9与通过338的原四变体方法AST完全相同。因此本节语法入口阻断的Linux标准复验缺口关闭，原失败保留；个人Desktop迁移及Hosted不在此结论内。收据 `/tmp/addp-ci-20261105-040000/Root-338-shared-syntax-actual-Platform-pass-proof.json`，原日志同目录 `later-platform-job-126810251735.log`；未重跑、轮询远端CI或操作个人来源。
+
+### 个人 Desktop 统一分组应用与恢复复验（2026-11-05）
+
+用户已亲自执行统一入口的三组显式应用：`up --scope host --kind node`、`up --scope infra --scope business --kind postgresql`、`up --scope infra --kind minio`，并确认成功。本会话随后只读检查，四项已启用来源均运行于唯一 `addp-metrics-sources-7bb4e5ee77e15388` 项目，共六个容器；四个旧项目残留容器为0。`python3 scripts/infra/metrics-sources.py status` 七项零失败，Redis及Business MinIO仍停用／未部署。应用前已核对旧容器归属；Infra MinIO旧镜像确实缺失，故先前普通recover不能恢复，显式up后来源已恢复。不据此声称数据库内容、账号权限或来源故障注入场景全部重新验收。
+
+沿当前Monitor查询证书只读访问Prometheus，`up{job="addp_nodes"}`九个目标全部为1（主机1、引擎3、进程5）；另查 `timestamp(up{job="addp_nodes"})` 核对真实抓取时间，九项距核验均小于15秒，未以即时查询的评估时间代替采样时间。Safari真实页面确认Business PostgreSQL详情及趋势存在、Infra PostgreSQL与MinIO卡片显示正在采集及有效数值；主机CPU、内存、磁盘IO有效，查询时间与采样时间自然推进，截图可见真实页面与自动刷新开启。当前Desktop视图的文件系统、网卡、TCP仍明确不可用，不作为已恢复或零值。此复验不含停用／恢复故障注入、缩放重新拖动、Hosted或完整租户功能。
+
+只读收据 `/tmp/addp-personal-metrics-preapply-20261105.json`、`/tmp/addp-personal-metrics-postapply-20261105.json` 保存前后容器分组、归属摘要及抓取时效。源码为当次main `052104faf`（包含分组与共享语法修复），本次仅补证据；未自行执行来源up/down/recover、重启数据库或ADDP、修改配置或Docker设置，也未轮询CI或设置定时。
