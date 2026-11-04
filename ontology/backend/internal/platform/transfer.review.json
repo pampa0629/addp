@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
-      "sha256": "150373cb7c4f3a6df74861bffd833bcc4d88b4094ac9549a7ea63e3ecfcfefd1",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "2fe98f882bd3c34cb0a97e29a4aa0ec37cc77276006ec97948d3e941a3ca0ab4",
       "use": {
-        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
-        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -60,11 +60,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.task.create\"",
-      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
-      "sha256": "38bd01b60a1b712c74c9ac8ee41652a87bee7584ce576a9d84ffcb6e55707444",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "670b1e7dc92d42150735dd5bc1b0d257300117d349e6f22a5b747b15186d8072",
       "use": {
-        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
-        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
-      "sha256": "b8dbe3b6fe2ac454c3f32b90480e59045fff22d3c350bd394f9b9d8f888402e9",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "f322f443fbe0ff7936a038367abf6e4ee909e872aacd7d9cba738e3a4cc6c584",
       "use": {
-        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
-        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
-      "sha256": "be266aed74b426356017a77dbfb0f588a15a2d99cfe99887a1c0fa040293e00f",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "0a1ded1d37cbb6f48c419cc1e2ef5a19d025ab6dc3be7008b16d219b27e8da9e",
       "use": {
-        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
-        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -164,11 +164,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
-      "sha256": "d216c43f68ae1af3eb5bfab2cae992abc3ce26f237dce259ece008b7666b5abf",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "d2aed7de4319bbc8f9af25b0400e70db3120995c9a62d75a8f06c939472f23be",
       "use": {
-        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
-        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -333,11 +333,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/checkpoint.py",
       "anchor": "def normalize_checkpoint(",
-      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
-      "sha256": "106c02fa38ecf24ad9f1abff5e1ad5793932ff54bca12aa227406f4410e1bbbc",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "94fe36f6ab9ff56a6c8794e0e0088a2d70e0ae3bdd5ed4799b776e9c6b1382e3",
       "use": {
-        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
-        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -515,11 +515,11 @@
       "kind": "test",
       "path": "transfer/backend/internal/service/task_config_draft_test.go",
       "anchor": "func TestTaskConfigDraftComposesWithOwnerPrecheck(",
-      "commit": "c9bafc6035995f729a6ff24881af27cfaf985a6f",
-      "sha256": "8cf430f66b5ca600da8aa6b166b727a9fa2c2ed58995d6d7aac5411bfdedf864",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "e06560e5e30a9cf264e13c885f0ad682b7e08275f7c25b598a4f0345af9da1b1",
       "use": {
-        "zh-cn": "按正式祖先链核验完整分段身份，拒绝含点名称的 full_name 碰撞；构建与预检仍只读，三种参数来源保留。",
-        "en": "Verify complete owner ancestor identity segments and reject flattened full_name collisions for dotted names, retaining read-only compilation/preflight and the three parameter sources."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -580,11 +580,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_parameters.py",
       "anchor": "class TransferParameterRuntimeTests(",
-      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
-      "sha256": "5e3bd68bd5b8446cfceb486417649d8b3fadfe56a0c66f564758ff10f7e0a85e",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "d44d345a401b783f7835efe387b51c3699eba44fb7d25a02504a30cb393c866e",
       "use": {
-        "zh-cn": "核验三种原参数来源、同身份恢复、拒绝改写及短输入构建预检链。受控测试不代替真实业务环境。",
-        "en": "Verifies three exact parameter sources, identity-bound recovery, mutation rejection and short-request construction/preflight. Controlled tests do not replace real business acceptance."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -593,11 +593,11 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体交互协议规范.md",
       "anchor": "Transfer 参数来源只接受三种受信任输入",
-      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
-      "sha256": "2889ccfae7f911735496f7781b23bd526fb3b9b1658ade9e5baa4a9fc03e3144",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "34ca230ed2738b80420707b6f82d5764c15239a1a85bec62a59de320f6aef4c3",
       "use": {
-        "zh-cn": "核验三种原参数来源、同身份恢复、拒绝改写及短输入构建预检链。受控测试不代替真实业务环境。",
-        "en": "Verifies three exact parameter sources, identity-bound recovery, mutation rejection and short-request construction/preflight. Controlled tests do not replace real business acceptance."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -619,11 +619,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_agent_model_runner.py",
       "anchor": "async def test_short_request_discovers_builds_and_checks_owner_result(",
-      "commit": "92424b9624b1086b6a1522c52ec6c6ea78c516f7",
-      "sha256": "9f2f3c826ba7b9498398b29edbd5dae2db881cda76a8e6343f5d244d90c938e4",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "2a3f61ab1716062f134083b3856b01b702e2381551c6a5cbcb7fc923fe9a42a4",
       "use": {
-        "zh-cn": "核验三种原参数来源、同身份恢复、拒绝改写及短输入构建预检链。受控测试不代替真实业务环境。",
-        "en": "Verifies three exact parameter sources, identity-bound recovery, mutation rejection and short-request construction/preflight. Controlled tests do not replace real business acceptance."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -632,11 +632,24 @@
       "kind": "test",
       "path": "evals/agent-scenarios/model_runner.py",
       "anchor": "def fixture_executor(",
-      "commit": "92424b9624b1086b6a1522c52ec6c6ea78c516f7",
-      "sha256": "1f343ac5d76eab23f2f67e9b18b9b174bb9934e89a59f932aab3a13c97b949f0",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "da5995ef857d01a53501facf2e2aa63ce7bd6182e6e86a3166c08c80ed698a34",
       "use": {
-        "zh-cn": "受控模型夹具提供正式目录根节点，并按 Owner 契约回显可选 nullable 选择；字段、类型和参数变化仍精确拒绝。报告不含原始参数。",
-        "en": "Controlled model fixtures provide formal catalog roots and honor optional nullable choices as the owner does, while rejecting changed fields, types and arguments. Reports exclude raw parameters."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+      }
+    },
+    {
+      "id": "parameter_model_facts",
+      "owner": "agent",
+      "kind": "test",
+      "path": "evals/agent-scenarios/model_cases.py",
+      "anchor": "result['responses']['data.search']",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "d26b728911ac3fab47e3cb4fd8226a40c8853fd27ff95b1332f8164d16dbcffe",
+      "use": {
+        "zh-cn": "简短输入真实模型回归使用正式 results 搜索响应和受控 Owner 默认映射；夹具不代表真实业务读取或运行验收。",
+        "en": "Short-request real-model regression uses formal results search shape and controlled owner mapping defaults; fixtures do not prove business reads or execution."
       }
     }
   ],
@@ -937,7 +950,8 @@
       "sources": [
         "manifest",
         "conditions",
-        "condition_test"
+        "condition_test",
+        "parameter_model_facts"
       ]
     },
     {
@@ -948,7 +962,8 @@
         "skill",
         "runtime",
         "batch_contract",
-        "batch_boundary_test"
+        "batch_boundary_test",
+        "parameter_model_facts"
       ]
     },
     {
@@ -1324,7 +1339,8 @@
         "parameter_test",
         "parameter_protocol",
         "parameter_model",
-        "parameter_model_test"
+        "parameter_model_test",
+        "parameter_model_facts"
       ]
     },
     {
@@ -1360,7 +1376,8 @@
         "parameter_protocol",
         "parameter_model",
         "parameter_model_test",
-        "parameter_model_runner"
+        "parameter_model_runner",
+        "parameter_model_facts"
       ]
     }
   ],

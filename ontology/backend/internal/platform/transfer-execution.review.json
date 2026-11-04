@@ -21,11 +21,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.execution.get\"",
-      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
-      "sha256": "38bd01b60a1b712c74c9ac8ee41652a87bee7584ce576a9d84ffcb6e55707444",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "670b1e7dc92d42150735dd5bc1b0d257300117d349e6f22a5b747b15186d8072",
       "use": {
-        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
-        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
@@ -86,11 +86,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _resume_confirmed_start(",
-      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
-      "sha256": "be266aed74b426356017a77dbfb0f588a15a2d99cfe99887a1c0fa040293e00f",
+      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
+      "sha256": "0a1ded1d37cbb6f48c419cc1e2ef5a19d025ab6dc3be7008b16d219b27e8da9e",
       "use": {
-        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
-        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
       }
     },
     {
