@@ -1,6 +1,6 @@
 # Manager 模块说明
 
-本文件维护模块职责、开发约束和阅读入口。详细契约在对应规范中维护；跨模块验收规则和历史证据分别见[场景规范](../docs/spec/testing/scenarios/Manager与空间成果.md)与[验收证据索引](../docs/spec/testing/验收证据索引.md)。
+本文件维护模块职责、开发约束和阅读入口。详细契约在对应规范中维护；标准门禁、场景要求与分版本证据统一见[开发与验证](#开发与验证)。
 
 ## 模块定位
 
@@ -96,9 +96,9 @@ manager/
 
 ## 开发规则
 
-Manager 有界执行的租户过程事件复用 `common.execution_events`：真实 claim 同事务写入 `started`，原有成功／失败／超时／取消路径写唯一对应终态，过期租约由 Owner 收敛并写 `failed`。执行、任务摘要及当前专业结果保持原事务；事件存储失败必须全部回滚，过期或错配 lease 的运行体不得追加。没有完整 lease 的历史记录只收敛概览，不补造过程；授权附加、心跳、专业回执不产生事件。已有瓦片缓存／业务瓦片集／镶嵌／COPC 的进度更新与仅含百分比的 `progress` 事件同事务提交，镶嵌等待扫描的既有 99% 阶段同样记录；不把自由文本 current_step 当作 step_id，也不复制 Runtime 回调正文。通用 current_step 仅由 Manager 生成受控说明和计数，不能直接回显 Runtime 的 message 或任意 phase；原始回调只保留在 Owner 的专业事实中。本切片不新增 Runtime 节点历史，不复制配置、参数、Runtime 正文、业务样本或授权信息。Monitor 沿既有 Owner 重裁与公共事件读取展示，30 天维护不影响专业结果及操作审计。验证使用 `make test-manager-backend` 和 `make test-manager-postgres`，新增 PostgreSQL 用例必须以 `TestIntegrationPostgresManager` 命名，由现有 CI 自动发现；该门禁按包串行执行共用 Manager schema 的 repository／service／preview，避免测试初始化 DDL 互锁；未运行真实 T4 时不计为通过。
+通用事件存储、读取授权与留存按[过程事件契约](../docs/spec/tasks/执行监控.md#通用执行读取与过程事件)和[概览保留与清理契约](../docs/spec/tasks/执行监控.md#概览保留与清理契约)维护；以下只约束 Manager 的写入与事务接入。
 
-2026-10-19 租户事件有限范围 T4 已核验：[Hosted 39143850265 / Manager Job 117723580769](https://github.com/pampa0629/addp/actions/runs/39143850265/job/117723580769)，精确源码 `830a9dbfda817c0289856582686edacc261d5849`，归档 `online-t4-manager-internal-artifact-lineage-39143850265`（ID `12148787773`）。普通 Tenant 2 / Principal 33 沿原有十项权限，经 Gateway 读取 Manager 专业执行及 Monitor 公共事件；`addp.manager-execution-events/v1` 收据与 Owner v13 报告一致，11 个 UUID 均匹配实际创建的执行。覆盖 `model_3d_glb_generation` 八份模型源，以及 `point_cloud_copc_generation`、`pptx_pdf_generation`、`raster_cog_generation` 各一次成功执行，共 26 条事件、attempt 均为 1；每次恰有一个 started 和一个 completed，COPC 本次另有四条仅含百分比的 progress。实际响应按闭合字段、身份、时间及游标校验，不保存原始事件正文；全部读取均为单页。事件时间落在返回窗口且距读取时不超过 30 天，不等于已经验收自动保留清理。归档退出摘要为 `cleanup=passed`、`infra_cleanup=zero_residuals`。本轮不证明其余八类任务、失败／超时／取消／过期恢复、多页、每日预算截断、完整进度回调场景或生产 T5，也不证明 180 天概览清理；不因 Owner v13 整体通过扩大上述租户事件范围。
+Manager 有界执行的租户过程事件复用 `common.execution_events`：真实 claim 同事务写入 `started`，原有成功／失败／超时／取消路径写唯一对应终态，过期租约由 Owner 收敛并写 `failed`。执行、任务摘要及当前专业结果保持原事务；事件存储失败必须全部回滚，过期或错配 lease 的运行体不得追加。没有完整 lease 的历史记录只收敛概览，不补造过程；授权附加、心跳、专业回执不产生事件。已有瓦片缓存／业务瓦片集／镶嵌／COPC 的进度更新与仅含百分比的 `progress` 事件同事务提交，镶嵌等待扫描的既有 99% 阶段同样记录；不把自由文本 current_step 当作 step_id，也不复制 Runtime 回调正文。通用 current_step 仅由 Manager 生成受控说明和计数，不能直接回显 Runtime 的 message 或任意 phase；原始回调只保留在 Owner 的专业事实中。本切片不新增 Runtime 节点历史，不复制配置、参数、Runtime 正文、业务样本或授权信息。Monitor 沿既有 Owner 重裁与公共事件读取展示，30 天维护不影响专业结果及操作审计。验证使用 `make test-manager-backend` 和 `make test-manager-postgres`，新增 PostgreSQL 用例必须以 `TestIntegrationPostgresManager` 命名，由现有 CI 自动发现；该门禁按包串行执行共用 Manager schema 的 repository／service／preview，避免测试初始化 DDL 互锁；未运行真实 T4 时不计为通过。
 
 文件上传后的扫描提交使用当前请求 User 的同步 BFF 身份，不使用 Meta Service Client。上传入口在写入前同时要求 `manager.data_item.create`、`meta.scan_task.execute` 与 `meta.scan_task.read`；Meta 独立认证并记录发起人，Worker 不接收用户凭据。响应仅提供 `scan_execution_id`，前端按唯一字段回查 Meta 安全执行详情；不返回内部执行配置。完整身份与失败边界见平台《授权上下文规范》5.1。验证由既有 `make test-manager-backend`、`make test-manager-frontend`、`make test-go` 和 Swagger 门禁覆盖。
 
@@ -151,6 +151,8 @@ Manager 有界执行的租户过程事件复用 `common.execution_events`：真�
 - 业务矢量瓦片集页面复用同一候选瓦片估算能力，但不把快显预算作为业务生成硬限制；后端推荐层级与用户当前选择必须分开显示，用户超过推荐层级时提示预计生成规模和成本风险。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh manager` 和 `bash scripts/swagger/check-route-coverage.sh manager`。
 
+Cleanup 使用 Common 持久 Runner，专业结果由 Manager 独占读取。Manager 直接核验并治理自有索引中的失效 Engine 投影，包括 Meta 已无记录的残留；Meta Cleanup 不替 Manager 删除索引。索引与派生产物外部效果先登记准确目标与持久隔离，未知回执、重启和最终事务失败都不自动释放。原请求的 PreviewState／Embedding／生成写入使用准备或入队前捕获的目标代际，禁止迟到返回后重新取代际。范围及证据详见[资源回收规范](../docs/spec/addp-cleanup体系规范.md)。验证沿 `make test-manager-backend`、`make test-manager-postgres`，新增 Owner 原子性场景自动由 `TestIntegrationPostgresManager` 前缀命中；环境切换与新的 Hosted 分开验收。
+
 ## 前端公开路由
 
 - Manager 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`，不得直接形成 iframe 私有历史。
@@ -180,6 +182,17 @@ make test-manager-online-runner
 ```
 
 共享依赖变更按真实影响扩散；确定性 runner 不替代真实 T4。Manager 内部产物、混合检索和 Transfer 私有导入各按已登记 suite 认定，不共用通过结论。仅调整 Markdown 时核对内容、链接和锚点，并执行 `git diff --check`。
+
+场景要求与历史结果分别维护：
+
+| 入口 | 正文归属 |
+| --- | --- |
+| [Manager Online 场景](../docs/spec/testing/scenarios/Manager与空间成果.md) | 现行 suite／case、身份、断言及清理要求；不表示已运行。 |
+| [Transfer 私有导入场景](../docs/spec/testing/scenarios/同步与引擎消费.md#manager-私有导入) | 上传者私有来源与传输、扫描的专项验收要求。 |
+| [预览与私有导入历史证据](../docs/spec/testing/验收证据索引.md#manager-预览与私有导入历史证据) | 分版本结果、失败与修复、清理和未覆盖项。 |
+| [租户过程事件有限范围 T4](../docs/spec/testing/evidence/资源读取与预览历史证据.md#manager-租户过程事件有限范围-t42026-10-19) | 固定源码下四种成功任务类型的 11 个执行；与格式复验及事件留存维护分别认定。 |
+
+历史记录不代替现行契约，也不证明当前工作区、其他任务类型或新的 Hosted 通过；未运行、失败、取消、跳过及未覆盖项不计通过。
 
 常用日志：
 
@@ -216,8 +229,5 @@ make test-manager-online-runner
 - [Meta 模块说明](../meta/CLAUDE.md)
 - [平台任务与执行规范](../docs/spec/addp任务体系规范.md)
 - [数据安全与保护投影](../docs/spec/addp数据安全与隐私保护实现规范.md)
-- [Manager Online 场景](../docs/spec/testing/scenarios/Manager与空间成果.md)
-- [Transfer 私有导入场景](../docs/spec/testing/scenarios/同步与引擎消费.md#manager-私有导入)
-- [验收证据索引](../docs/spec/testing/验收证据索引.md#manager-预览与私有导入历史证据)
-
-Cleanup 使用 Common 持久 Runner，专业结果由 Manager 独占读取。Manager 直接核验并治理自有索引中的失效 Engine 投影，包括 Meta 已无记录的残留；Meta Cleanup 不替 Manager 删除索引。索引与派生产物外部效果先登记准确目标与持久隔离，未知回执、重启和最终事务失败都不自动释放。原请求的 PreviewState／Embedding／生成写入使用准备或入队前捕获的目标代际，禁止迟到返回后重新取代际。范围及证据详见[资源回收规范](../docs/spec/addp-cleanup体系规范.md)。验证沿 `make test-manager-backend`、`make test-manager-postgres`，新增 Owner 原子性场景自动由 `TestIntegrationPostgresManager` 前缀命中；环境切换与新的 Hosted 分开验收。
+- [资源回收规范](../docs/spec/addp-cleanup体系规范.md#4-manager)
+- [验证与历史证据导航](#开发与验证)
