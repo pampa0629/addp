@@ -2445,16 +2445,18 @@ def test_reference_snap_rejects_unknown_geographic_and_mismatched_crs(source_crs
 
 
 @pytest.mark.parametrize('side', ['input', 'reference'])
-@pytest.mark.parametrize('geometry,message', [
-    (Point(1, 2, 3), 'two-dimensional'),
-    (shapely.from_wkt('POINT M (1 2 3)'), 'two-dimensional'),
-    (Point(np.inf, 0), 'finite'),
-    (Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)]), 'valid'),
+@pytest.mark.parametrize('geometry', [
+    Point(1, 2, 3),
+    shapely.from_wkt('POINT M (1 2 3)'),
+    Point(np.inf, 0),
+    Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)]),
 ])
-def test_reference_snap_rejects_unsupported_geometry_on_either_side(side, geometry, message):
+def test_reference_snap_rejects_unsupported_geometry_on_either_side(side, geometry):
+    from operators.geometric_operators import ReferenceSnapInputError
     bad, good = lines([geometry]), lines([Point(0, 0)])
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ReferenceSnapInputError) as error:
         snap(bad if side == 'input' else good, bad if side == 'reference' else good, 1)
+    assert error.value.code == ('source' if side == 'input' else 'reference')
 
 
 @pytest.mark.parametrize('side', ['input', 'reference'])
@@ -9981,3 +9983,121 @@ def test_geometry_validity_retains_null_empty_collections_invalid_and_source_lay
     assert len(repaired)==4 and repaired.index.equals(source.index)and repaired.crs==source.crs and repaired.geometry.name==source.geometry.name
     assert repaired.geometry.iloc[0] is None and repaired.geometry.iloc[1].is_empty and repaired.geometry.iloc[2].equals_exact(source.geometry.iloc[2],0)and repaired.geometry.iloc[3].is_valid
     pd.testing.assert_series_equal(repaired['PRIVATE_FIELD'],source['PRIVATE_FIELD']);assert_geodataframe_equal(source,before)
+
+@pytest.mark.parametrize('side',['source','reference'])
+@pytest.mark.parametrize('kind',['none','table','inactive','z','m','infinite','invalid'])
+def test_reference_snap_typed_existing_source_and_reference_admissions(side,kind):
+    from operators.geometric_operators import ReferenceSnapInputError
+    value=None if kind=='none' else pd.DataFrame({'x':[1]}) if kind=='table' else gpd.GeoDataFrame({'x':[1]}) if kind=='inactive' else lines([Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)])if kind=='invalid'else shapely.from_wkt({'z':'POINT Z (1 2 3)','m':'POINT M (1 2 3)','infinite':'POINT (Infinity 2)'}[kind])])
+    source,reference=(value,lines([Point(0,0)]))if side=='source'else(lines([Point(1,1)]),value)
+    with pytest.raises(ReferenceSnapInputError)as error:get_operator('snap_geometry')(source,reference,0.5)
+    assert error.value.code==side
+
+
+@pytest.mark.parametrize('value',[None,True,np.bool_(False),'0.5',[],float('nan'),float('inf'),-0.1,10**400])
+def test_reference_snap_typed_tolerance_keeps_zero_admitted(value):
+    from operators.geometric_operators import ReferenceSnapInputError
+    with pytest.raises(ReferenceSnapInputError)as error:get_operator('snap_geometry')(lines([Point(0,0)]),lines([Point(1,0)]),value)
+    assert error.value.code=='tolerance'
+    assert '123.456'not in error.value.message('en')
+
+
+@pytest.mark.parametrize('source_crs,reference_crs',[(None,None),('EPSG:4326','EPSG:4326'),('EPSG:3857','EPSG:32650'),('EPSG:3857',None)])
+def test_reference_snap_typed_crs_admissions_preserve_known_projection_rule(source_crs,reference_crs):
+    from operators.geometric_operators import ReferenceSnapInputError
+    with pytest.raises(ReferenceSnapInputError)as error:get_operator('snap_geometry')(lines([Point(0,0)],crs=source_crs),lines([Point(1,0)],crs=reference_crs),0.5)
+    assert error.value.code=='crs'
+
+
+@pytest.mark.parametrize('locale',['zh-cn','en'])
+@pytest.mark.parametrize('reason,parameter',[('operator_input_invalid','input_gdf'),('operator_reference_invalid','reference_gdf'),('operator_crs_invalid',''),('operator_nonnegative_number_required','tolerance')])
+def test_reference_snap_runtime_controlled_context_and_save_barrier(locale,reason,parameter,monkeypatch):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=lines([Point(0,0)]);reference=lines([Point(1,0)]);tolerance=0.5
+    if reason=='operator_input_invalid':source=lines([shapely.from_wkt('POINT Z (1 2 3)')])
+    if reason=='operator_reference_invalid':reference=lines([shapely.from_wkt('POINT M (1 2 3)')])
+    if reason=='operator_crs_invalid':reference=reference.to_crs('EPSG:4326')
+    if reason=='operator_nonnegative_number_required':tolerance=-123.456
+    before_source=source.copy(deep=True);before_reference=reference.copy(deep=True);original=workflow_engine.get_operator;calls=[]
+    def resolve(name):
+        calls.append(name)
+        if name=='load':return lambda **kw:source if kw['which']=='source'else reference
+        if name=='save':pytest.fail('invalid reference-snap batch reached save')
+        return original(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',resolve)
+    tasks=[{'id':'PRIVATE_NODE','operator':'snap_geometry','params':{'input_gdf':{'$ref':'load_source'},'reference_gdf':{'$ref':'load_reference'},'tolerance':tolerance},'depends_on':['load_source','load_reference']},
+      {'id':'load_source','operator':'load','params':{'which':'source'},'depends_on':[]},{'id':'load_reference','operator':'load','params':{'which':'reference'},'depends_on':[]},
+      {'id':'save','operator':'save','params':{},'depends_on':['PRIVATE_NODE']}]
+    with pytest.raises(WorkflowExecutionError)as error:workflow_engine.GeoPythonWorkflowRunner(language=locale).execute({'tasks':tasks})
+    assert calls==['load','load','snap_geometry']and error.value.error_code=='INVALID_PARAMS'
+    assert error.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':{'node_index':1,'operator_id':'snap_geometry',**({'parameter':parameter}if parameter else{})}}
+    assert 'PRIVATE'not in json.dumps(error.value.diagnostic)and '123.456'not in json.dumps(error.value.diagnostic)
+    assert_geodataframe_equal(source,before_source);assert_geodataframe_equal(reference,before_reference)
+
+
+@pytest.mark.parametrize('operation',['has_z','has_m','get_coordinates','is_valid','points','STRtree','box','set_coordinates'])
+def test_reference_snap_native_valueerrors_remain_execution_failures(operation,monkeypatch):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=lines([Point(0,0)]);reference=lines([Point(0.5,0)]);before=source.copy(deep=True);original=workflow_engine.get_operator;calls=[]
+    def fail(*a,**kw):raise ValueError('PRIVATE_REFERENCE tolerance finite projected CRS invalid XY')
+    def resolve(name):
+        calls.append(name)
+        if name=='load':return lambda **kw:source if kw['which']=='source'else reference
+        if name=='save':pytest.fail('native snap failure reached save')
+        function=original(name)
+        def execute(*args,**kwargs):
+            with monkeypatch.context()as scope:
+                scope.setattr(shapely,operation,fail)
+                return function(*args,**kwargs)
+        return execute
+    monkeypatch.setattr(workflow_engine,'get_operator',resolve)
+    tasks=[{'id':'source','operator':'load','params':{'which':'source'},'depends_on':[]},{'id':'reference','operator':'load','params':{'which':'reference'},'depends_on':[]},
+      {'id':'snap','operator':'snap_geometry','params':{'input_gdf':{'$ref':'source'},'reference_gdf':{'$ref':'reference'},'tolerance':1.0},'depends_on':['source','reference']},
+      {'id':'save','operator':'save','params':{},'depends_on':['snap']}]
+    with pytest.raises(WorkflowExecutionError)as error:workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':tasks})
+    assert error.value.error_code=='EXECUTION_FAILED'and error.value.diagnostic is None and calls==['load','load','snap_geometry']
+    assert_geodataframe_equal(source,before)
+
+
+def test_reference_snap_collapsed_output_remains_execution_failure(monkeypatch):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=lines([LineString([(0,0),(0.5,0)])]);reference=lines([Point(0,0)]);before=source.copy(deep=True);original=workflow_engine.get_operator
+    monkeypatch.setattr(workflow_engine,'get_operator',lambda name:(lambda **kw:source if kw['which']=='source'else reference)if name=='load'else original(name))
+    tasks=[{'id':'source','operator':'load','params':{'which':'source'},'depends_on':[]},{'id':'reference','operator':'load','params':{'which':'reference'},'depends_on':[]},
+      {'id':'snap','operator':'snap_geometry','params':{'input_gdf':{'$ref':'source'},'reference_gdf':{'$ref':'reference'},'tolerance':1.0},'depends_on':['source','reference']}]
+    with pytest.raises(WorkflowExecutionError)as error:workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':tasks})
+    assert error.value.error_code=='EXECUTION_FAILED'and error.value.diagnostic is None
+    assert 'snapping produced invalid geometries'in str(error.value)
+    assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:2263'])
+def test_reference_snap_diagnostics_keep_null_empty_collections_zero_and_empty_reference(crs):
+    source=lines([None,Point(),shapely.GeometryCollection([Point(2,3),LineString([(0,0),(1,1)])])],crs=crs);source.index=[7,7,2];source['PRIVATE_FIELD']=pd.array([None,True,False],dtype='boolean');before=source.copy(deep=True)
+    for reference,tolerance in [(lines([Point(2.1,3)],crs=crs),0),(lines([None,Point()],crs=crs),1),(lines([],crs=crs),1)]:
+        original=reference.copy(deep=True);result=get_operator('snap_geometry')(source,reference,tolerance)
+        assert_geodataframe_equal(result,before);assert_geodataframe_equal(reference,original);assert_geodataframe_equal(source,before)
+    empty=lines([],crs=crs);assert_geodataframe_equal(get_operator('snap_geometry')(empty,lines([Point(0,0)],crs=crs),1),empty)
+
+
+@pytest.mark.parametrize('units',[[],[1],[1,2],[float('nan'),float('nan')],[0,0],[-1,-1]])
+def test_reference_snap_projected_unit_admission_is_typed_only_at_explicit_rejection(units):
+    from types import SimpleNamespace
+    from operators.geometric_operators import ReferenceSnapInputError,_require_projected_xy_crs
+    crs=SimpleNamespace(is_projected=True,axis_info=[SimpleNamespace(unit_conversion_factor=u)for u in units])
+    with pytest.raises(ReferenceSnapInputError)as caught:_require_projected_xy_crs(crs,input_error=ReferenceSnapInputError.crs)
+    assert caught.value.code=='crs'
+    with pytest.raises(ValueError)as original:_require_projected_xy_crs(crs)
+    assert type(original.value)is ValueError
+
+
+def test_reference_snap_projected_crs_native_property_error_is_not_typed():
+    from operators.geometric_operators import ReferenceSnapInputError,_require_projected_xy_crs
+    class NativeCRS:
+        @property
+        def is_projected(self):raise ValueError('PRIVATE_PROJECTED_CRS')
+    with pytest.raises(ValueError)as caught:_require_projected_xy_crs(NativeCRS(),input_error=ReferenceSnapInputError.crs)
+    assert type(caught.value)is ValueError

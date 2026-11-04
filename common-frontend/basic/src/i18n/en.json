@@ -459,7 +459,8 @@
         "split_multipart": "Multipart split",
         "extract_vertices": "Extract vertices",
         "check_geometry": "Check geometry",
-        "repair_geometry": "Repair geometry"
+        "repair_geometry": "Repair geometry",
+        "snap_geometry": "Reference snap"
       },
       "operatorParameters": {
         "target_geom": "Target layer (target_geom)",
@@ -520,6 +521,20 @@
         "actions": {
           "operator_input_invalid": "Check the input type, active geometry and finite XY coordinates; NULL/EMPTY and unknown CRS retain their existing rules. Invalid geometries may still be checked or explicitly repaired, without automatic projection.",
           "operator_output_fields_invalid": "Set valid_field and reason_field explicitly to non-empty strings without surrounding whitespace, distinct from each other and every source column; no automatic renaming or replacement."
+        }
+      },
+      "referenceSnap": {
+        "reasons": {
+          "operator_input_invalid": "The reference-snapping source requires an active geometry with valid finite XY coordinates, without Z/M.",
+          "operator_reference_invalid": "The reference-snapping reference requires an active geometry with valid finite XY coordinates, without Z/M.",
+          "operator_crs_invalid": "Reference snapping requires the same known projected CRS and matching finite positive horizontal units.",
+          "operator_nonnegative_number_required": "Reference-snapping tolerance must be a finite non-negative number, not a boolean."
+        },
+        "actions": {
+          "operator_input_invalid": "Check the source GeoDataFrame and active geometry for valid finite XY coordinates; NULL/EMPTY remain unchanged. Repair explicitly when needed.",
+          "operator_reference_invalid": "Check the reference GeoDataFrame and active geometry for valid finite XY coordinates; NULL/EMPTY provide no vertices, and an empty reference leaves input unchanged.",
+          "operator_crs_invalid": "Reproject explicitly to the same known projected CRS with matching horizontal axis units. Tolerance uses the original units; no automatic projection.",
+          "operator_nonnegative_number_required": "Set a finite non-negative tolerance in CRS units. Zero does not move vertices; positive tolerance accepts only a strictly smaller original distance."
         }
       }
     },

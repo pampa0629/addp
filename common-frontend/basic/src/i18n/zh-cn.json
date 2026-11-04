@@ -459,7 +459,8 @@
         "split_multipart": "多部拆分",
         "extract_vertices": "顶点提取",
         "check_geometry": "几何检查",
-        "repair_geometry": "几何修复"
+        "repair_geometry": "几何修复",
+        "snap_geometry": "参考吸附"
       },
       "operatorParameters": {
         "target_geom": "目标图层（target_geom）",
@@ -520,6 +521,20 @@
         "actions": {
           "operator_input_invalid": "请检查输入类型、活动几何与有限二维XY；NULL/EMPTY和未知CRS保持原规则，无效几何仍可检查或显式修复，不自动投影。",
           "operator_output_fields_invalid": "请显式修改valid_field和reason_field：使用非空、无首尾空白、彼此不同且不与源列重名的字符串；不自动改名或覆盖。"
+        }
+      },
+      "referenceSnap": {
+        "reasons": {
+          "operator_input_invalid": "参考吸附源图层不满足活动几何、有效有限二维XY和无Z/M的原有准入。",
+          "operator_reference_invalid": "参考吸附的参考图层不满足活动几何、有效有限二维XY和无Z/M的原有准入。",
+          "operator_crs_invalid": "参考吸附要求双方使用相同已知投影CRS及匹配的有限正水平单位。",
+          "operator_nonnegative_number_required": "参考吸附的tolerance必须为有限非负数，不能为布尔值。"
+        },
+        "actions": {
+          "operator_input_invalid": "请检查源GeoDataFrame及活动几何，准备有效有限二维XY；NULL/EMPTY保持，需修复时请显式处理。",
+          "operator_reference_invalid": "请检查参考GeoDataFrame及活动几何，准备有效有限二维XY；NULL/EMPTY不提供顶点，空参考不移动输入。",
+          "operator_crs_invalid": "请先显式重投影到相同已知投影CRS，确认两个水平轴单位匹配；容差沿原单位，不自动投影。",
+          "operator_nonnegative_number_required": "请显式设置有限非负tolerance，单位沿CRS；零容差不移动，正容差只接受严格小于上限的原始距离。"
         }
       }
     },

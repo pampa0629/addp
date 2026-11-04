@@ -732,12 +732,12 @@ def repair_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return result
 
 
-def _require_projected_xy_crs(crs) -> None:
+def _require_projected_xy_crs(crs, *, input_error=ValueError) -> None:
     if crs is None or not crs.is_projected:
-        raise ValueError("input requires a known projected CRS; reproject explicitly")
+        raise input_error("input requires a known projected CRS; reproject explicitly")
     units = [axis.unit_conversion_factor for axis in crs.axis_info[:2]]
     if len(units) != 2 or not all(np.isfinite(unit) and unit > 0 for unit in units) or units[0] != units[1]:
-        raise ValueError("projected CRS requires matching known horizontal coordinate units")
+        raise input_error("projected CRS requires matching known horizontal coordinate units")
 
 
 class MultipartInputError(ValueError):
@@ -2319,29 +2319,66 @@ def check_polygon_gap(input_gdf: gpd.GeoDataFrame, coverage_gdf: gpd.GeoDataFram
     )
 
 
+class ReferenceSnapInputError(ValueError):
+    """Explicit reference-snap admission facts; native failures are not wrapped."""
+    _messages = {
+        'zh-cn': {
+            'source': '参考吸附源输入须为具有活动几何的GeoDataFrame，使用有效有限二维XY，不接受Z/M；NULL/EMPTY保留原样，请显式修复无效输入。',
+            'reference': '参考吸附的参考输入须为具有活动几何的GeoDataFrame，使用有效有限二维XY，不接受Z/M；NULL/EMPTY不提供参考顶点，空参考不移动输入。',
+            'crs': '参考吸附的双方须使用相同已知投影CRS，两个水平轴单位须匹配且换算因子有限为正；请显式重投影，容差沿原单位。',
+            'tolerance': '参考吸附的tolerance须为有限非负数，不能为布尔值，单位沿投影CRS；零容差不移动，正容差仅移动原始距离严格小于上限的顶点。',
+        },
+        'en': {
+            'source': 'Reference snapping requires a source GeoDataFrame with an active geometry and valid finite XY coordinates, without Z/M. NULL/EMPTY remain unchanged; repair invalid input explicitly.',
+            'reference': 'Reference snapping requires a reference GeoDataFrame with an active geometry and valid finite XY coordinates, without Z/M. NULL/EMPTY provide no vertices; an empty reference leaves the input unchanged.',
+            'crs': 'Reference snapping requires the same known projected CRS on both inputs and matching horizontal units with finite positive conversion factors. Reproject explicitly; tolerance uses the original CRS units.',
+            'tolerance': 'Reference snapping requires tolerance to be a finite non-negative number, not a boolean, in the projected CRS units. Zero does not move vertices; positive tolerance requires a strictly smaller original distance.',
+        },
+    }
+
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
+
+    @classmethod
+    def source(cls, _message):
+        return cls('source')
+
+    @classmethod
+    def reference(cls, _message):
+        return cls('reference')
+
+    @classmethod
+    def crs(cls, _message):
+        return cls('crs')
+
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
 def snap_geometry(
     input_gdf: gpd.GeoDataFrame,
     reference_gdf: gpd.GeoDataFrame,
     tolerance: float,
 ) -> gpd.GeoDataFrame:
     """Snap against a fixed reference vertex set in shared projected CRS units."""
-    geometry = _finite_xy_geometry(input_gdf)
-    reference = _finite_xy_geometry(reference_gdf, "reference_gdf")
+    geometry = _finite_xy_geometry(input_gdf, input_error=ReferenceSnapInputError.source)
+    reference = _finite_xy_geometry(reference_gdf, "reference_gdf", input_error=ReferenceSnapInputError.reference)
     if isinstance(tolerance, (bool, np.bool_)) or not isinstance(tolerance, Real):
-        raise ValueError("tolerance must be a finite non-negative number in CRS units")
+        raise ReferenceSnapInputError('tolerance')
     try:
         tolerance = float(tolerance)
     except OverflowError as exc:
-        raise ValueError("tolerance must be a finite non-negative number in CRS units") from exc
+        raise ReferenceSnapInputError('tolerance') from exc
     if not np.isfinite(tolerance) or tolerance < 0:
-        raise ValueError("tolerance must be a finite non-negative number in CRS units")
+        raise ReferenceSnapInputError('tolerance')
     crs = geometry.crs
     if crs is None or reference.crs is None or not crs.is_projected or not crs.equals(reference.crs):
-        raise ValueError("both inputs require the same known projected CRS; reproject explicitly")
-    _require_projected_xy_crs(crs)
+        raise ReferenceSnapInputError('crs')
+    _require_projected_xy_crs(crs, input_error=ReferenceSnapInputError.crs)
     for name, values in [("input_gdf", geometry.array), ("reference_gdf", reference.array)]:
         if (~shapely.is_missing(values) & ~shapely.is_valid(values)).any():
-            raise ValueError(f"{name} requires valid geometries; repair explicitly before snapping")
+            raise ReferenceSnapInputError('source' if name == 'input_gdf' else 'reference')
     # Query immutable original coordinates once. GEOS snap can move a vertex
     # repeatedly along reference chains and exceed its original tolerance.
     vertices = np.unique(shapely.get_coordinates(reference.array), axis=0)
