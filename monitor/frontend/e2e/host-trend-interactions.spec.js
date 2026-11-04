@@ -63,6 +63,25 @@ const interactionCases = [
   ...['total', 'free', 'used'].map(kind => [`inode-${kind}`, `node.filesystem.inodes_${kind}`, mount, ['inodes'], [1008]]),
   ['inode-percent', 'node.filesystem.inodes_used_percent', mount, ['%'], [8.25]],
 ]
+for (const locale of ['zh-cn', 'en']) test(`disk throughput axis labels both directions and follows the display scale (${locale})`, async ({ page }) => {
+  let divisor = 1
+  await resourceBackend(page, { locale, trendResponse(body, params) {
+    interactionTrend(body, params)
+    for (const line of body.series) for (const point of line.points) if (point.value !== null) point.value /= divisor
+  } })
+  for (const direction of ['read', 'write']) {
+    await page.goto(`/node-resources/${node}?metric=node.disk.${direction}_bytes_per_second&device=sda&range=5m&refresh=off`)
+    await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+    const name = locale === 'en' ? 'Disk read / write throughput' : '磁盘读写吞吐'
+    await expect.poll(async () => (await resourceChartState(page)).axes).toEqual([{ name: locale === 'en' ? `${name} (MiB/s)` : `${name}（MiB/s）`, min: 0 }])
+  }
+  divisor = 1024
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect.poll(async () => (await resourceChartState(page)).axes).toEqual([{ name: locale === 'en' ? 'Disk read / write throughput (KiB/s)' : '磁盘读写吞吐（KiB/s）', min: 0 }])
+  const props = await resourceChartProps(page)
+  expect(props.config.field_presentations.slice(1).map(field => field.unit)).toEqual(['KiB/s','KiB/s'])
+  expect(props.config.measures.map(measure => props.rows[8][measure])).toEqual([2,4])
+})
 for (const locale of ['zh-cn', 'en']) for (const [family, key, dimensions, units, sample] of interactionCases) test(`${family} legend and hover retain exact values, gaps and scope (${locale})`, async ({ page }) => {
   const state = await resourceBackend(page, { locale, trendResponse: interactionTrend })
   await page.setViewportSize({ width: 620, height: 900 })

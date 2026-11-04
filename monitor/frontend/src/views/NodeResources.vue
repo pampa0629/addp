@@ -200,7 +200,8 @@ const presentation = metric => ({ field: 'value', label: t(`monitor.resources.me
 const chartAxes = computed(() => memoryTrend.value ? [
   { measures: byteMetrics.value.map(metric => metric.name), label: t('monitor.resources.memoryCapacity'), min: 0 },
   { measures: ['memoryUsed'], min: 0, max: 100 },
-] : networkTrend.value ? [{ measures: chartMetrics.value.map(metric => metric.name), label: t('monitor.resources.networkAxis'), min: 0 }] : [])
+] : networkTrend.value ? [{ measures: chartMetrics.value.map(metric => metric.name), label: t('monitor.resources.networkAxis'), min: 0 }]
+  : state.value.metric.startsWith('node.disk.') && byteMetrics.value.length ? [{ measures: chartMetrics.value.map(metric => metric.name), label: t('monitor.resources.diskAxis'), min: 0 }] : [])
 const chartConfig = computed(() => ({ chart_type: networkTrend.value ? 'bar' : 'line', dimension: 'evaluated_at', measures: chartMetrics.value.map(metric => metric.name), field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, ...chartMetrics.value.map(metric => ({ ...presentation(metric), field: metric.name, ...(byteMetrics.value.includes(metric) ? { unit: chartScale.value.unit + (metric.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}), ...(metric.unit === 'seconds' ? { unit: t(`monitor.resources.durationUnits.${durationScale.value.unit}`), precision: 2 } : {}) }))] }))
 function scalarHelp(metric) {
   if (metric.name === 'cpuBusy') return t('monitor.resources.cpuBusyHint')

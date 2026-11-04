@@ -38,7 +38,7 @@ export const resourceChartState = (page, pointIndex = null, locator = page.locat
     })
     const grid = model.getComponent('grid', 0).coordinateSystem.getRect()
     const point = pointIndex === null ? null : { x: chart.convertToPixel({ xAxisIndex: 0 }, pointIndex), y: grid.y + grid.height / 2 }
-    return { finished: chart.getZr().animation.isFinished(), handles, start: zoom?.start ?? null, end: zoom?.end ?? null,
+    return { finished: chart.getZr().animation.isFinished(), axes: option.yAxis.map(axis => ({ name: axis.name, min: axis.min })), handles, start: zoom?.start ?? null, end: zoom?.end ?? null,
       borderColor: zoom?.borderColor, handleRange: view ? [...view._range] : null, lengths: option.series.map(series => series.data.length), legend, point,
       active: model.getSeries().filter(series => !model.isSeriesFiltered(series)).map(series => series.name) }
   }, { moduleURL: source, pointIndex })
