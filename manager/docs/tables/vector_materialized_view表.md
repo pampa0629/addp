@@ -54,16 +54,27 @@
 
 这些状态属于 artifact state，不属于统一 execution status。
 
-## 四、索引建议
+<a id="四索引建议"></a>
 
-| 索引名 | 字段 | 说明 |
+## 四、索引声明与核验边界
+
+以下是 Manager 结果表的索引；业务 PG 中物化视图目标及 GiST 索引的条件与归属见[PG 目标契约](../quick-view/矢量快显与物化视图.md#pg-表要求与矢量物化视图路线)。两层索引分别核验。
+
+| 索引名 | 字段 | 声明来源与语义 |
 | --- | --- | --- |
-| `idx_vector_materialized_view_tenant_item_fingerprint` | `tenant_id, item_fingerprint` | 查询某 item 的优化结果 |
-| `idx_vector_materialized_view_tenant_item` | `tenant_id, item_id` | 按当前 Meta item 行引用辅助回查 |
-| `idx_vector_materialized_view_task` | `task_id` | 查询某任务产生的优化结果 |
-| `idx_vector_materialized_view_execution` | `last_execution_id` | execution 回溯 |
-| `idx_vector_materialized_view_status` | `status` | 按结果状态过滤 |
-| `idx_vector_materialized_view_current_unique` | `tenant_id, item_fingerprint, source_geometry_column, target_srid` | 同一 item、几何列和目标 SRID 只允许一个当前目标 |
+| `idx_vector_materialized_view_tenant_item_fingerprint` | `tenant_id, item_fingerprint` | [VectorMaterializedView 模型](../../backend/internal/models/vector_materialized_view.go)的普通索引，查询某 item 的优化结果。 |
+| `idx_vector_materialized_view_tenant_item` | `tenant_id, item_id` | 模型普通索引，按当前 Meta item 行引用辅助回查。 |
+| `idx_vector_materialized_view_task` | `task_id` | 模型普通索引，查询某任务产生的优化结果。 |
+| `idx_vector_materialized_view_execution` | `last_execution_id` | 模型普通索引，execution 回溯。 |
+| `idx_vector_materialized_view_status` | `status` | 模型普通索引，按结果状态过滤。 |
+| `idx_vector_materialized_view_deleted_at` | `deleted_at` | 模型普通索引，软删除字段索引声明。 |
+| `idx_vector_materialized_view_current_unique` | `tenant_id, item_fingerprint, source_geometry_column, target_srid` | 初始化 SQL 的部分唯一索引，仅覆盖 `deleted_at IS NULL` 的结果记录。 |
+
+当前启动经 [InitDatabase／ensureVectorMaterializedViewSchema](../../backend/internal/repository/database.go)先执行模型 `AutoMigrate`，再通过显式 SQL 创建部分唯一索引；该链还包含记录更新和字段 DDL，不是只读核验入口。[历史 018 SQL](../../backend/migrations/018_create_vector_materialized_view.sql)具有相同四列与删除谓词的定义，但文件存在不能证明目标环境已执行；不以重启或重放 SQL 代替实际约束核验。
+
+部分唯一约束不按 `status` 过滤。[GetCurrentResult](../../backend/internal/repository/vector_materialized_view_repository.go)在业务读取时排除 `abandoned_external`，不表示尚未软删除的该记录已退出唯一约束；`deleted` 状态也不能替代 `deleted_at` 事实。删除与放弃外部对象仍按[删除语义](#五删除语义)处理，索引占位不证明外部目标已删除或可读。实际数据库须核对所属表、字段组合、唯一性、有效状态及删除谓词，不能只核对索引名称。
+
+现有 [VectorMaterializedViewConcurrentClaimAndStart 用例](../../backend/internal/repository/tile_cache_repository_postgres_integration_test.go)显式调用模型 `AutoMigrate`，断言同任务并发领取与开始状态，不在该用例显式建立或核验上述部分唯一索引。其结果不能代替重复未软删除结果拒绝、软删除后复用、`abandoned_external` 占位或当前运行库迁移生效的独立证据。标准入口为 `make test-manager-postgres`，用例由现有命名筛选命中；门禁与分版本证据见[Manager 开发与验证](../../CLAUDE.md#开发与验证)，源码和用例存在不计为数据库或运行验收通过。
 
 ## 五、删除语义
 
