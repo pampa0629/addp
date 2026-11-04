@@ -208,6 +208,9 @@ def source_contract_contains(source: str, fragment: str, repository: Path | None
     if not any(match[0] == target for match in definitions):
         return False
     for match in definitions:
+        # Make special targets declare attributes, not executable owner edges.
+        if match[0].startswith('.'):
+            continue
         dependencies = re.findall(r"\btest-[a-z0-9-]+\b", match[1].split("#", 1)[0])
         dependencies += re.findall(r"\$\(MAKE\)\s+(test-[a-z0-9-]+)", match[2])
         if target in dependencies:

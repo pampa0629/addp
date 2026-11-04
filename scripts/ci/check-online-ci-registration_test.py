@@ -4335,6 +4335,10 @@ test-comment:
         changed = source.replace("test-online-runner: test-owner", "test-online-runner:")
         self.assertFalse(CHECK.source_contract_contains(changed, "$(MAKE) test-owner"))
         self.assertTrue(CHECK.source_contract_contains(source, "$(MAKE) test-owner"))
+        for attribute in ('.PHONY', '.NOTPARALLEL', '.SECONDARY'):
+            with self.subTest(attribute=attribute):
+                metadata_only = f"{attribute}: test-owner\n\n" + changed
+                self.assertFalse(CHECK.source_contract_contains(metadata_only, "$(MAKE) test-owner"))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             tests = root / "scripts/ci/check-online-ci-registration_test.py"

@@ -1,4 +1,5 @@
 import importlib
+import re
 from pathlib import Path
 import unittest
 from datetime import datetime,timezone,timedelta
@@ -30,11 +31,16 @@ class EventPaginationOnlineTest(unittest.TestCase):
    root=Path(tmp)
    for n in ('.github/workflows/online-t4-gates.yml','Makefile','scripts/test/online-hosted-event-pagination-gate.sh'):
     p=root/n;p.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(M.ROOT/n,p)
+   check.validate_event_pagination_profile(root,{M.SUITE})
    for n,part in [('.github/workflows/online-t4-gates.yml',"inputs.suite != 'execution-events-pagination'"),
                   ('scripts/test/online-hosted-event-pagination-gate.sh','scripts/dev/start.sh -meta -monitor'),
                   ('Makefile','ADDP_EXECUTION_EVENT_FIXTURE=1'),
-                  ('Makefile','$(MAKE) test-execution-events-pagination-runner')]:
-    p=root/n;original=p.read_text();p.write_text(original.replace(part,'removed'))
+                  ('Makefile','test-execution-events-pagination-runner')]:
+    p=root/n;original=p.read_text()
+    if part=='test-execution-events-pagination-runner':
+     changed=re.sub(rf'(?m)^(test-online-runner:[^\n]*?)\b{re.escape(part)}\b',r'\1removed',original,count=1)
+    else:changed=original.replace(part,'removed')
+    self.assertNotEqual(original,changed,part);p.write_text(changed)
     with self.subTest(part=part),self.assertRaises(check.RegistrationError):check.validate_event_pagination_profile(root,{M.SUITE})
     p.write_text(original)
  def test_private_process_timeout_reaps_only_its_owned_process_group(self):

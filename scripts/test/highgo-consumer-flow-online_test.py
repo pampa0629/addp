@@ -1,6 +1,7 @@
 """Reject incomplete facts, broadened identities, and silent protocol substitution."""
 from importlib import import_module
 from pathlib import Path
+import re
 import shutil
 import tempfile
 from types import SimpleNamespace
@@ -112,12 +113,20 @@ class HighGoRegistrationTest(unittest.TestCase):
             root = Path(temp)
             for path in paths:
                 dest = root / path; dest.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(ROOT / path, dest)
-            faults = [('Makefile', '$(MAKE) test-highgo-online-runner'),
+            CHECK.validate_highgo_profile(root, {'highgo-consumer-flow'})
+            faults = [('Makefile', 'test-highgo-online-runner'),
                       ('business/scripts/online-highgo-consumer-fixture.py', "'volume', 'inspect'"),
                       ('scripts/test/highgo-consumer-flow-online.py', 'SUPPORT.cleanup_tasks'),
                       ('.github/workflows/online-t4-gates.yml', "inputs.suite != 'highgo-consumer-flow'")]
             for path, fragment in faults:
-                dest = root / path; original = dest.read_text(); dest.write_text(original.replace(fragment, 'removed'))
+                dest = root / path; original = dest.read_text()
+                if path == 'Makefile':
+                    changed = re.sub(rf'(?m)^(test-online-runner:[^\n]*?)\b{re.escape(fragment)}\b',
+                                     r'\1removed', original, count=1)
+                else:
+                    changed = original.replace(fragment, 'removed')
+                self.assertNotEqual(original, changed, fragment)
+                dest.write_text(changed)
                 with self.subTest(path=path), self.assertRaises(CHECK.RegistrationError):
                     CHECK.validate_highgo_profile(root, {'highgo-consumer-flow'})
                 dest.write_text(original)
