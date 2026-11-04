@@ -53,6 +53,8 @@ Catalog 接收方远程搜索回归须等待本次输入后出现精确的接收
 
 Meta 手动扫描组件回归复用本模块的隔离浏览器入口，在 Meta 自身 Vite 夹具中挂载真实 `ManualScanDialog.vue` 与 Element Plus 样式。中文／英文、初始选中／未选中的强制识别选项共用 Hosted 的 `checkLabeledCheckbox`：点击可见 label，保留已选中状态，核对精确 scope/basic/force 载荷只提交一次。HTTP 后端不被调用，不使用个人会话或扫描服务。Meta 前端变化通过共享影响矩阵选中 Console，CI 同步安装 Meta 锁定依赖；端口、缓存及进程退出仍归既有共享浏览器隔离入口。
 
+Spark 双集群 Hosted 登录必须直接请求 Develop 的 canonical 新建工作流地址（`action=create`）。Console 的既有登录目标回归从实际 Hosted 调用读取静态参数，并与 Develop 的正式 `buildDevelopTaskEditorLocation` 及真实 Vue Router 结果比较；保留共享登录 helper 对完整 query 的严格校验。该纯路由工具变化通过共享影响矩阵选中 Console，无需启动 Develop 后端或增设前端夹具。
+
 ## 开发与验证
 
 ```bash

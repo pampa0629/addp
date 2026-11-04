@@ -186,6 +186,17 @@ class ChangedGateTest(unittest.TestCase):
             self.assertEqual(["console", "service"], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual(["service"], MODULE.affected_modules(self.repository, ["service/backend/internal/service/query.go"]))
 
+    def test_develop_editor_route_builder_selects_console_login_contract(self) -> None:
+        for name in ("console", "develop"):
+            path = self.repository / name / "frontend" / "package.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        self.assertEqual(["console", "develop"], MODULE.affected_modules(self.repository,
+            ["develop/frontend/src/utils/developTaskRoute.js"]))
+        self.assertEqual(["develop"], MODULE.affected_modules(self.repository,
+            ["develop/frontend/src/utils/workflowResourceBindings.js"]))
+
     def test_meta_frontend_changes_include_console_manual_scan_dialog_gate(self) -> None:
         for name in ("console", "meta"):
             path = self.repository / name / "frontend" / "package.json"

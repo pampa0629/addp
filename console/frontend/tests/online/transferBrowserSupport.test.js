@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createServer } from 'node:http'
+import { readFileSync } from 'node:fs'
+import ts from 'typescript'
+import { buildDevelopTaskEditorLocation } from '../../../../develop/frontend/src/utils/developTaskRoute.js'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { browserAPIFromResponse, browserAPIFromNavigation, identity, isAnonymousRefreshConsoleError, matchesRedirectURL, isReadonlyTaskConfigCheckRequest } from '../../e2e/online/transfer-browser-support.js'
 
@@ -153,6 +156,26 @@ describe('read-only task configuration check safety guard', () => {
 })
 
 describe('Online login target route', () => {
+  it('Spark dual-cluster login requests the canonical workflow creation page', () => {
+    const file = ts.createSourceFile('spark-multicluster.spec.js', readFileSync(
+      new URL('../../e2e/online/spark-multicluster.spec.js', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+    const redirects = []
+    function visit(node) {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'login') {
+        expect(node.arguments).toHaveLength(4)
+        expect(ts.isStringLiteral(node.arguments[3])).toBe(true)
+        redirects.push(node.arguments[3].text)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(file)
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/workflow', component: {} }] })
+    const canonical = `/develop${router.resolve(buildDevelopTaskEditorLocation('workflow')).fullPath}`
+    expect(redirects).toEqual([canonical])
+    expect(matchesRedirectURL(new URL(canonical, base), new URL(redirects[0], base))).toBe(true)
+    expect(matchesRedirectURL(new URL(canonical, base), new URL('/develop/workflow', base))).toBe(false)
+  })
+
   it('accepts the same full locator after Vue Router serializes its query', () => {
     const locator = 'addp://2/security_fixture/customers?item_id=7&fingerprint=abc'
     const expected = new URL(`/manager/data-explorer?locator=${encodeURIComponent(locator)}`, base)

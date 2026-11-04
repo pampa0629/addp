@@ -9,7 +9,7 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
   const expected = JSON.parse(process.env.ADDP_ONLINE_HDFS_EXPECTATIONS)
   const clusters = expected.multicluster.clusters
   const token = await login(page, process.env.ADDP_ONLINE_TEST_USER_USERNAME,
-    process.env.ADDP_ONLINE_TEST_USER_PASSWORD, '/develop/workflow')
+    process.env.ADDP_ONLINE_TEST_USER_PASSWORD, '/develop/workflow?action=create')
   const api = await request.newContext({ baseURL: process.env.GATEWAY_URL,
     extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
   const peer = await context.newPage()
