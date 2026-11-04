@@ -1,6 +1,13 @@
 import { expect, request } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 
+export async function checkLabeledCheckbox(checkbox) {
+  if (!await checkbox.isChecked()) {
+    await checkbox.locator('xpath=ancestor::label[1]').click()
+  }
+  await expect(checkbox).toBeChecked()
+}
+
 export async function json(response, operation) {
   const payload = await response.json()
   if (!response.ok()) {

@@ -41,6 +41,10 @@
         "base": "/e2e/service-fixture/"
       },
       {
+        "module": "meta",
+        "readyPath": "/module-ui/meta/e2e/manual-scan.html"
+      },
+      {
         "module": "catalog",
         "readyPath": "/module-ui/catalog/login"
       },

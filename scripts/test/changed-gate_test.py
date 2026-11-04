@@ -186,6 +186,16 @@ class ChangedGateTest(unittest.TestCase):
             self.assertEqual(["console", "service"], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual(["service"], MODULE.affected_modules(self.repository, ["service/backend/internal/service/query.go"]))
 
+    def test_meta_frontend_changes_include_console_manual_scan_dialog_gate(self) -> None:
+        for name in ("console", "meta"):
+            path = self.repository / name / "frontend" / "package.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for path in ("meta/frontend/src/components/ManualScanDialog.vue", "meta/frontend/e2e/manual-scan.js", "meta/frontend/package-lock.json"):
+            self.assertEqual(["console", "meta"], MODULE.affected_modules(self.repository, [path]))
+        self.assertEqual(["meta"], MODULE.affected_modules(self.repository, ["meta/backend/internal/service/scan.go"]))
+
     def test_catalog_frontend_changes_include_console_coverage_navigation_gate(self) -> None:
         for name in ("catalog", "console"):
             path = self.repository / name / "frontend" / "package.json"

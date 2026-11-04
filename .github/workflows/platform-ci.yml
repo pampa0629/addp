@@ -1135,6 +1135,11 @@ jobs:
         working-directory: service/frontend
         run: npm ci
 
+      - name: Install Meta dependencies for Console manual-scan dialog integration
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        working-directory: meta/frontend
+        run: npm ci
+
       - name: Install Catalog dependencies for Console coverage navigation
         if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
         working-directory: catalog/frontend

@@ -1,9 +1,10 @@
 import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
-export default defineConfig(withModuleFrontend('meta', {
+export default defineConfig(withModuleFrontend('meta', withFrontendTestIsolation('meta', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -31,4 +32,4 @@ export default defineConfig(withModuleFrontend('meta', {
       ]
     }
   }
-}))
+})))

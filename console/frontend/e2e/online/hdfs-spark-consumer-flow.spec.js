@@ -1,7 +1,7 @@
 import { expect, request, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { identity, json, login } from './transfer-browser-support.js'
+import { checkLabeledCheckbox, identity, json, login } from './transfer-browser-support.js'
 
 test('HDFS 扫描、四个文件预览及正式 Spark 结果通过 Console 收敛', async ({ page }) => {
   const expected = JSON.parse(process.env.ADDP_ONLINE_HDFS_EXPECTATIONS)
@@ -20,17 +20,17 @@ test('HDFS 扫描、四个文件预览及正式 Spark 结果通过 Console 收�
     await expect(meta.locator('.left-panel .el-table__body-wrapper tr').filter({ hasText: 'Hosted HDFS' })).toHaveCount(1)
     const samples = meta.locator('.right-panel .el-table__body-wrapper tr').filter({ hasText: 'samples' })
     await expect(samples).toHaveCount(1)
-    const submitted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/meta/scan/run/manual' && response.request().method() === 'POST')
     await samples.getByTestId('scan-catalog-entry').click()
     const scopeDialog = meta.getByRole('dialog', { name: /^(确认扫描范围与深度|Confirm scan scope and depth)$/i })
     await expect(scopeDialog).toBeVisible()
     await expect(scopeDialog).toContainText('Hosted HDFS')
     await expect(scopeDialog).toContainText('samples')
     await expect(scopeDialog.getByRole('radio', { name: /^(基础扫描|Basic Scan)/i })).toBeChecked()
-    await scopeDialog.getByRole('checkbox').check()
-    await expect(scopeDialog.getByRole('checkbox')).toBeChecked()
-    await scopeDialog.getByRole('button', { name: /^(确认并开始扫描|Confirm and start scan)$/i }).click()
-    const scanResponse = await submitted
+    await checkLabeledCheckbox(scopeDialog.getByRole('checkbox'))
+    const [scanResponse] = await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/meta/scan/run/manual' && response.request().method() === 'POST'),
+      scopeDialog.getByRole('button', { name: /^(确认并开始扫描|Confirm and start scan)$/i }).click()
+    ])
     expect(scanResponse.request().postDataJSON()).toEqual({
       engine_id: expected.engine_id, scan_depth: 'basic', force: true,
       trigger_type: 'manual', source: 'meta', catalog_paths: ['samples']

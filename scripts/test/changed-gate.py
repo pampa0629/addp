@@ -203,6 +203,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if any(path.startswith("service/frontend/") for path in files):
         affected.add("console")
 
+    # Console's browser gate mounts Meta's production manual-scan dialog.
+    if any(path.startswith("meta/frontend/") for path in files):
+        affected.add("console")
+
     # Console's deterministic browser gate mounts the real Catalog coverage page.
     if any(path.startswith("catalog/frontend/") for path in files):
         affected.add("console")
