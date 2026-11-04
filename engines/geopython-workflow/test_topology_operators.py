@@ -9377,3 +9377,231 @@ def test_bounds_admission_real_geopackage_null_scalars_geometry_and_attributes(t
     assert loaded.geometry.to_wkb().tolist()==source.geometry.to_wkb().tolist()
     assert loaded.geometry.name==physical_geometry_name and loaded.crs==source.crs
     assert_geodataframe_equal(source,before)
+
+
+MULTIPART_CASES = [('operator_input_invalid','input_gdf',''),('operator_crs_invalid','',''),('operator_field_conflict','input_gdf','source_id'),('operator_field_conflict','input_gdf','part_no')]
+
+
+def multipart_source(shapes,crs='EPSG:3857',id_type='Int64'):
+    n=len(shapes);ids=[2**53+3+i for i in range(n)]if id_type!='string'else[f'feature-{i}'for i in range(n)]
+    f=gpd.GeoDataFrame({'feature_key':pd.array(ids,dtype=id_type),'geometry':pd.array(['business'if i%2 else None for i in range(n)],dtype='string'),
+       'grade':pd.array([None if i%2==0 else 2**53+i for i in range(n)],dtype='Int64'),
+       'enabled':pd.array([None if i%2==0 else True for i in range(n)],dtype='boolean'),
+       'fid':pd.array([None if i%2==0 else 4 for i in range(n)],dtype='Int64'),
+       'shape':gpd.GeoSeries(shapes,crs=crs)},geometry='shape')
+    f.index=pd.Index(['same-index']*n,name='original-row');return f
+
+
+def multipart_mixed_witness():
+    p=Point(2,3);p1=Point(4,5);p2=Point(-1,-2)
+    line=LineString([(0,0),(2,1),(0,0)]);a=LineString([(9,8),(7,6),(7,6),(3,2)]);b=LineString([(5,0),(5,4)])
+    hole=Polygon([(10,10),(10,18),(18,18),(18,10),(10,10)], [[(11,11),(13,11),(13,13),(11,13),(11,11)]])
+    face_a=Polygon([(30,0),(33,0),(33,2),(30,2),(30,0)]);face_b=box(20,0,21,1)
+    return [p,shapely.MultiPoint([p1,p1,p2]),line,MultiLineString([a,a,b]),hole,shapely.MultiPolygon([face_a,face_b])], [p,p1,p1,p2,line,a,a,b,hole,face_a,face_b], [0,1,1,1,2,3,3,3,4,5,5], [1,1,2,3,1,1,2,3,1,1,2]
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:4326','OGC:CRS84','EPSG:2263','+proj=aeqd +lat_0=23 +lon_0=113 +datum=WGS84 +units=m +no_defs'])
+@pytest.mark.parametrize('id_type',['Int64','UInt64','string'])
+def test_multipart_split_exact_original_parts_attributes_ids_holes_repeats_and_order(crs,id_type):
+    shapes,expected,source_rows,part_no=multipart_mixed_witness();source=multipart_source(shapes,crs,id_type);before=source.copy(deep=True)
+    result=get_operator('split_multipart')(source,'feature_key')
+    assert result.geometry.to_wkb().tolist()==[p.wkb for p in expected]
+    assert result.geometry.name=='shape'and result.crs==source.crs
+    assert result.part_no.tolist()==part_no and str(result.part_no.dtype)=='int64'
+    assert result.source_id.tolist()==source.feature_key.iloc[source_rows].tolist()and str(result.source_id.dtype)==id_type
+    assert len(result)==11 and result.index.equals(pd.RangeIndex(11))
+    assert list(result.columns)==list(source.columns)+['source_id','part_no']
+    pd.testing.assert_frame_equal(result.drop(columns=['shape','source_id','part_no']),source.iloc[source_rows].drop(columns='shape').reset_index(drop=True))
+    assert len(result.geometry.iloc[8].interiors)==1
+    assert not result[['source_id','part_no']].duplicated().any()
+    assert_geodataframe_equal(source,before)
+
+
+def test_multipart_split_preserves_nonactive_geometry_without_using_it():
+    source=multipart_source([shapely.MultiPoint([(0,0),(1,1)])]);source['inactive_shape']=gpd.GeoSeries([Point(99,99)],index=source.index,crs=3857)
+    before=source.copy(deep=True);result=get_operator('split_multipart')(source,'feature_key')
+    assert result.geometry.to_wkt().tolist()==['POINT (0 0)','POINT (1 1)']
+    assert result.inactive_shape.to_wkt().tolist()==['POINT (99 99)','POINT (99 99)']
+    assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('wkt',['GEOMETRYCOLLECTION (POINT (1 2))','GEOMETRYCOLLECTION EMPTY','POINT EMPTY','LINESTRING EMPTY','POLYGON EMPTY','MULTIPOINT EMPTY','MULTILINESTRING EMPTY','MULTIPOLYGON EMPTY','MULTIPOINT (EMPTY,(1 2))','MULTILINESTRING (EMPTY,(0 0,1 1))','MULTIPOLYGON (EMPTY,((0 0,1 0,1 1,0 0)))','POINT Z (1 2 3)','POINT M (1 2 3)','POINT (Infinity 2)','POINT (NaN 2)','POLYGON ((0 0,2 2,0 2,2 0,0 0))','MULTIPOLYGON (((0 0,2 0,2 2,0 2,0 0)),((1 1,3 1,3 3,1 3,1 1)))',None])
+def test_multipart_split_rejects_collection_missing_empty_invalid_and_dimensions_atomically(wkt):
+    from operators.geometric_operators import MultipartInputError
+    source=multipart_source([Point(8,9),shapely.from_wkt(wkt)if wkt else None]);before=source.copy(deep=True)
+    with pytest.raises(MultipartInputError)as caught:get_operator('split_multipart')(source,'feature_key')
+    assert caught.value.code=='source'
+    assert source.geometry.to_wkb().tolist()==before.geometry.to_wkb().tolist()
+    assert source.geometry.name==before.geometry.name and source.crs==before.crs
+    pd.testing.assert_frame_equal(source.drop(columns=source.geometry.name),before.drop(columns=before.geometry.name))
+
+
+@pytest.mark.parametrize('problem',['unknown_id','geometry_id','empty_id_name','non_string_id','null_id','duplicate_id','blank_id','container_id','duplicate_columns','no_active','plain_frame'])
+@pytest.mark.parametrize('empty',[False,True])
+def test_multipart_split_checks_source_schema_and_explicit_id_even_on_empty_batches(problem,empty):
+    from operators.geometric_operators import MultipartInputError
+    source=multipart_source([Point(1,2),Point(3,4)]);id_field='feature_key'
+    if problem=='unknown_id':id_field='PRIVATE_FIELD'
+    elif problem=='geometry_id':id_field='shape'
+    elif problem=='empty_id_name':id_field=''
+    elif problem=='non_string_id':id_field=False
+    elif problem=='null_id':source['feature_key']=pd.array([None,2],dtype='Int64')
+    elif problem=='duplicate_id':source['feature_key']=pd.array([2,2],dtype='Int64')
+    elif problem=='blank_id':source['feature_key']=pd.array(['ok','  '],dtype='string')
+    elif problem=='container_id':source['feature_key']=[[1],[2]]
+    elif problem=='duplicate_columns':source.columns=['feature_key','geometry','grade','grade','fid','shape']
+    elif problem=='no_active':source=source.drop(columns='shape')
+    elif problem=='plain_frame':source=pd.DataFrame(source)
+    if empty:source=source.iloc[:0]
+    # Value-only problems have no invalid records in an actually empty batch.
+    if empty and problem in ['null_id','duplicate_id','blank_id','container_id']:
+        result=get_operator('split_multipart')(source,id_field);assert len(result)==0;return
+    before=source.copy(deep=True)
+    with pytest.raises(MultipartInputError)as caught:get_operator('split_multipart')(source,id_field)
+    assert caught.value.code=='source';pd.testing.assert_frame_equal(source,before)
+
+
+@pytest.mark.parametrize('crs',[None,'EPSG:4978','EPSG:4979','EPSG:7415'])
+@pytest.mark.parametrize('empty',[False,True])
+def test_multipart_split_rejects_unproven_or_non2d_horizontal_crs(crs,empty):
+    from operators.geometric_operators import MultipartInputError
+    source=multipart_source([]if empty else[Point(1,2)],crs)
+    with pytest.raises(MultipartInputError)as caught:get_operator('split_multipart')(source,'feature_key')
+    assert caught.value.code=='crs'
+
+
+@pytest.mark.parametrize('field',['source_id','part_no'])
+@pytest.mark.parametrize('active',[False,True])
+@pytest.mark.parametrize('empty',[False,True])
+def test_multipart_split_never_overwrites_reserved_source_or_active_geometry(field,active,empty):
+    from operators.geometric_operators import MultipartInputError
+    source=multipart_source([]if empty else[Point(1,2)])
+    if active:source=source.rename_geometry(field)
+    else:source[field]='business'
+    before=source.copy(deep=True)
+    with pytest.raises(MultipartInputError)as caught:get_operator('split_multipart')(source,'feature_key')
+    assert caught.value.code=='field'and caught.value.field==field
+    assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('id_type',['Int64','UInt64','string'])
+def test_multipart_split_empty_batch_retains_full_schema_and_source_type(id_type):
+    source=multipart_source([],id_type=id_type);result=get_operator('split_multipart')(source,'feature_key')
+    assert len(result)==0 and result.geometry.name=='shape'and result.crs==source.crs
+    assert list(result.columns)==list(source.columns)+['source_id','part_no']
+    assert str(result.source_id.dtype)==id_type and str(result.part_no.dtype)=='int64'
+    assert result.index.equals(pd.RangeIndex(0))
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('reason,parameter,field',MULTIPART_CASES)
+def test_multipart_split_runtime_typed_diagnostic_original_index_and_no_partial_save(language,reason,parameter,field,monkeypatch):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from operators.geometric_operators import MultipartInputError
+    import workflow_engine
+    source=multipart_source([Point(1,2)])
+    if reason=='operator_input_invalid':source['shape']=[None]
+    elif reason=='operator_crs_invalid':source=source.set_crs(None,allow_override=True)
+    else:source[field]='PRIVATE'
+    lookup=workflow_engine.get_operator;calls=[]
+    def guarded(name):
+        calls.append(name)
+        if name=='load':return lambda **kw:source
+        if name=='save':raise AssertionError('multipart refusal reached save')
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    tasks=[{'id':'PRIVATE','operator':'split_multipart','params':{'input_gdf':{'$ref':'load'},'id_field':'feature_key'},'depends_on':['load']},
+      {'id':'load','operator':'load','params':{},'depends_on':[]},{'id':'save','operator':'save','params':{},'depends_on':['PRIVATE']}]
+    with pytest.raises(WorkflowExecutionError)as caught:workflow_engine.GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert calls==['load','split_multipart']and caught.value.error_code=='INVALID_PARAMS'
+    assert caught.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+      'operator':{'node_index':1,'operator_id':'split_multipart',**({'parameter':parameter}if parameter else{}),**({'field':field}if field else{})}}
+    assert 'PRIVATE'not in json.dumps(caught.value.diagnostic)
+    assert MultipartInputError({'operator_input_invalid':'source','operator_crs_invalid':'crs','operator_field_conflict':'field'}[reason],field).message(language) in str(caught.value)
+
+
+@pytest.mark.parametrize('fault',['exception','wrong_count','wrong_rows','rows_float','count_shape','count_negative','multi_part','nonfinite_part'])
+def test_multipart_split_native_faults_stay_execution_failures_and_block_save(fault,monkeypatch):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    import workflow_engine
+    source=multipart_source([shapely.MultiPoint([(0,0),(1,2)])]);native=shapely.get_parts;native_counts=shapely.get_num_geometries
+    def broken(*a,**kw):
+        if fault=='exception':raise RuntimeError('PRIVATE native error')
+        parts,positions=native(*a,**kw)
+        if fault=='wrong_count':return parts[:1],positions[:1]
+        if fault=='wrong_rows':return parts,np.array([1,0],dtype=np.int64)
+        if fault=='rows_float':return parts,positions.astype(float)
+        if fault=='multi_part':parts[0]=shapely.MultiPoint([(0,0),(2,2)])
+        if fault=='nonfinite_part':parts[0]=Point(float('inf'),2)
+        return parts,positions
+    monkeypatch.setattr(shapely,'get_parts',broken)
+    if fault=='count_shape':monkeypatch.setattr(shapely,'get_num_geometries',lambda *a:np.array([[2]]))
+    if fault=='count_negative':monkeypatch.setattr(shapely,'get_num_geometries',lambda *a:np.array([-1]))
+    lookup=workflow_engine.get_operator
+    def guarded(name):
+        if name=='load':return lambda **kw:source
+        if name=='save':raise AssertionError('native multipart fault reached save')
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    tasks=[{'id':'load','operator':'load','params':{},'depends_on':[]},
+      {'id':'split','operator':'split_multipart','params':{'input_gdf':{'$ref':'load'},'id_field':'feature_key'},'depends_on':['load']},
+      {'id':'save','operator':'save','params':{},'depends_on':['split']}]
+    with pytest.raises(WorkflowExecutionError)as caught:workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':tasks})
+    assert caught.value.error_code=='EXECUTION_FAILED'and caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize('family',['point','line','polygon'])
+def test_multipart_split_real_geopackage_loaded_source_independent_ogr_and_reload(tmp_path,family):
+    from osgeo import ogr
+    if family=='point':a,b=Point(3,5),Point(3,5);multi=shapely.MultiPoint([a,b]);single=Point(-1,8)
+    elif family=='line':a,b=LineString([(5,0),(2,2)]),LineString([(1,1),(2,3),(1,1)]);multi=MultiLineString([a,b]);single=LineString([(9,9),(10,10)])
+    else:
+        a=Polygon([(0,0),(0,5),(5,5),(5,0),(0,0)], [[(1,1),(2,1),(2,2),(1,2),(1,1)]]);b=box(10,0,11,2);multi=shapely.MultiPolygon([a,b]);single=box(-4,0,-2,1)
+    expected=[a,b,single];source=multipart_source([multi,single]);conn={'storage_type':'nfs','mount_path':str(tmp_path)}
+    get_operator('save')(input_df=source,connection_info=conn,path='source.gpkg',mode='fail')
+    loaded_source=get_operator('load')(connection_info=conn,path='source.gpkg');before=loaded_source.copy(deep=True)
+    result=get_operator('split_multipart')(loaded_source,'feature_key')
+    assert result.geometry.to_wkb().tolist()==[x.wkb for x in expected]
+    get_operator('save')(input_df=result,connection_info=conn,path='parts.gpkg',mode='fail')
+    ds=ogr.Open(str(tmp_path/'parts.gpkg'));layer=ds.GetLayer(0);records=list(layer)
+    assert layer.GetSpatialRef().GetAuthorityCode(None)=='3857'and len(records)==3
+    for i,row in enumerate(records):
+        parent=[0,0,1][i]
+        assert row.GetField('source_id')==[2**53+3,2**53+3,2**53+4][i]and row.GetField('part_no')==[1,2,1][i]
+        assert row.GetField('feature_key')==row.GetField('source_id')
+        assert row.GetField('grade')==[None,None,2**53+1][i]and row.GetField('enabled')==[None,None,True][i]
+        assert row.GetField('geometry')==[None,None,'business'][i]and row.GetField('fid')==[None,None,4][i]
+        assert bytes(row.GetGeometryRef().ExportToIsoWkb())==shapely.to_wkb(expected[i],byte_order=1,flavor='iso')
+    physical_name=layer.GetGeometryColumn();ds=None
+    reloaded=get_operator('load')(connection_info=conn,path='parts.gpkg')
+    assert reloaded.geometry.name==physical_name and reloaded.crs==loaded_source.crs
+    assert reloaded.geometry.to_wkb().tolist()==[p.wkb for p in expected]
+    expected_attributes=result.drop(columns=result.geometry.name).copy()
+    expected_attributes['part_no']=pd.array(result.part_no,dtype='Int64')
+    pd.testing.assert_frame_equal(reloaded.drop(columns=physical_name),expected_attributes)
+    assert_geodataframe_equal(loaded_source,before)
+
+
+@pytest.mark.parametrize('explicit_port',[False,True])
+def test_multipart_split_successful_runtime_implicit_and_explicit_result_refs(explicit_port,monkeypatch):
+    import workflow_engine
+    source=multipart_source([shapely.MultiPoint([(1,2),(3,4)]),Point(5,6)])
+    lookup=workflow_engine.get_operator;calls=[]
+    def guarded(name):
+        calls.append(name)
+        if name=='load':return lambda **kw:source
+        return lookup(name)
+    monkeypatch.setattr(workflow_engine,'get_operator',guarded)
+    ref={'$ref':'parts',**({'port':'result'}if explicit_port else{})}
+    tasks=[{'id':'load','operator':'load','params':{},'depends_on':[]},
+      {'id':'parts','operator':'split_multipart','params':{'input_gdf':{'$ref':'load'},'id_field':'feature_key'},'depends_on':['load']},
+      {'id':'bounds','operator':'get_bounds','params':{'input_gdf':ref},'depends_on':['parts']}]
+    run=workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':tasks})
+    assert calls==['load','split_multipart','get_bounds']and run.task_order==['load','parts','bounds']
+    result=json.loads(run.final_result)
+    assert len(result['features'])==3
+    assert [f['properties']['source_id']for f in result['features']]==[2**53+3,2**53+3,2**53+4]
+    assert [f['properties']['part_no']for f in result['features']]==[1,2,1]
+    assert [f['properties']['minx']for f in result['features']]==[1,3,5]
+    assert [f['geometry']['coordinates']for f in result['features']]==[[1,2],[3,4],[5,6]]
+    assert all('geometry'in f['properties']for f in result['features'])

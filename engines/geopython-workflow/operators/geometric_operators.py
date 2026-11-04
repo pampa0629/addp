@@ -715,6 +715,71 @@ def _require_projected_xy_crs(crs) -> None:
         raise ValueError("projected CRS requires matching known horizontal coordinate units")
 
 
+class MultipartInputError(ValueError):
+    """Fixed multipart admissions; native failures stay execution failures."""
+    _messages = {
+        'zh-cn': {
+            'source': '多部拆分要求唯一列名、明确活动几何及显式id_field唯一非空标量来源列；仅接受有效有限二维XY的点、线、面及对应Multi类型。GeometryCollection、NULL、EMPTY、空部件和Z/M整批拒绝。',
+            'crs': '多部拆分要求已知二维地理或投影CRS；未知、地心、三维及复合CRS拒绝，不自动投影、换单位或交换XY。',
+            'field': '多部拆分固定输出字段{field}与输入字段冲突；请先手动重命名，不覆盖或自动改名。',
+        },
+        'en': {
+            'source': 'Multipart split requires unique column names, an active geometry and an explicit id_field containing unique non-null scalar source identifiers. Only valid finite XY Point, LineString, Polygon and their Multi types are accepted; GeometryCollection, NULL, EMPTY, empty parts and Z/M are rejected for the whole batch.',
+            'crs': 'Multipart split requires a known two-dimensional geographic or projected CRS; unknown, geocentric, 3D and compound CRS are rejected, without projection, unit conversion or XY swapping.',
+            'field': 'Fixed multipart output field {field} conflicts with an input field; rename it manually first, without replacement or automatic renaming.',
+        },
+    }
+
+    def __init__(self, code, field=''):
+        self.code, self.field = code, field
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code].format(field=self.field)
+
+
+def split_multipart(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Split original single-level parts, preserving every source attribute."""
+    try:
+        if not isinstance(input_gdf, gpd.GeoDataFrame) or not input_gdf.columns.is_unique:
+            raise ValueError('multipart split requires unique columns')
+        geometry = _finite_xy_geometry(input_gdf)
+        allowed = {'Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'}
+        if (geometry.isna().any() or shapely.is_empty(geometry.array).any()
+                or not geometry.geom_type.isin(allowed).all() or not shapely.is_valid(geometry.array).all()):
+            raise ValueError('multipart split requires valid non-empty single or Multi geometry')
+        ids = _source_identifiers(input_gdf, id_field)
+    except (ValueError, TypeError) as exc:
+        raise MultipartInputError('source') from exc
+    for field in ('source_id', 'part_no'):
+        if field in input_gdf.columns:
+            raise MultipartInputError('field', field)
+    crs = geometry.crs
+    if crs is None or crs.is_compound or len(crs.axis_info) != 2 or not (crs.is_geographic or crs.is_projected):
+        raise MultipartInputError('crs')
+    parts, source_rows = shapely.get_parts(geometry.array, return_index=True)
+    parts, source_rows = np.asarray(parts), np.asarray(source_rows)
+    counts = np.asarray(shapely.get_num_geometries(geometry.array))
+    if (parts.ndim != 1 or source_rows.shape != parts.shape or source_rows.dtype.kind not in 'iu'
+            or counts.shape != (len(geometry),) or counts.dtype.kind not in 'iu'
+            or (counts < 1).any() or counts.sum(dtype=np.int64) != len(parts)):
+        raise RuntimeError('multipart split produced invalid part counts or source mapping')
+    counts = counts.astype(np.int64)
+    if not np.array_equal(source_rows, np.repeat(np.arange(len(geometry), dtype=np.int64), counts)):
+        raise RuntimeError('multipart split changed original source order')
+    if shapely.is_empty(parts).any():
+        raise MultipartInputError('source')
+    if (shapely.is_missing(parts).any() or not np.isin(shapely.get_type_id(parts), [0, 1, 3]).all()
+            or not shapely.is_valid(parts).all() or shapely.has_z(parts).any() or shapely.has_m(parts).any()
+            or not np.isfinite(shapely.get_coordinates(parts)).all()):
+        raise RuntimeError('multipart split produced invalid single parts')
+    result = input_gdf.iloc[source_rows].copy().reset_index(drop=True)
+    result[geometry.name] = gpd.GeoSeries(parts, index=result.index, crs=crs)
+    result['source_id'] = ids.iloc[source_rows].reset_index(drop=True)
+    result['part_no'] = np.arange(len(parts), dtype=np.int64) - np.repeat(np.cumsum(counts) - counts, counts) + 1
+    return result
+
+
 def _source_identifiers(input_gdf: gpd.GeoDataFrame, id_field: str) -> pd.Series:
     if (not isinstance(id_field, str) or not id_field or not input_gdf.columns.is_unique
             or id_field not in input_gdf.columns or isinstance(input_gdf[id_field].dtype, gpd.array.GeometryDtype)):
@@ -2885,6 +2950,20 @@ MINIMUM_ROTATED_RECTANGLE_METADATA = OperatorMetadata(
 )
 
 
+SPLIT_MULTIPART_METADATA = OperatorMetadata(
+    name="split_multipart", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
+    description="多部拆分", brief_description="按原始部件顺序拆成单部件，完整保留来源属性及部件编号",
+    execution_modes=["workflow"], effects=["read"],
+    overview="单部件保留一行，Multi点/线/面逐原始部件输出；面孔洞随面保留。原列和来源类型不变，追加source_id/part_no，不去重、融合、修复或递归展开集合。",
+    params=[OperatorParam(name="input_gdf",type="input",data_type="GeoDataFrame",required=True,description="有效非空有限二维源图层",notes="实际活动几何，Point/LineString/Polygon及对应Multi，可跨行混合；拒绝GeometryCollection、NULL/EMPTY、空部件、Z/M；允许空表"),
+            OperatorParam(name="id_field",type="param",data_type="str",required=True,description="唯一非空来源标识字段",notes="显式非几何标量列，保留类型；不推断索引/FID")],
+    output_ports=[OutputPort(name="result",type="geodataframe",description="完整源属性及单部件几何、原类型source_id和每源1起始int64 part_no",is_default=True)],
+    use_cases=["多面逐面加工并保留孔洞和原属性", "多线分部件保存而不打断交点", "重复多点按原始位置编号追溯"],
+    notes=["已知二维地理或投影CRS，不投影、换单位或交换XY；无CRS/地心/三维/复合拒绝", "按源行/原部件顺序输出，重建RangeIndex；原坐标、方向、重复坐标和部件保留，源不变", "source_id/part_no重名须上游手动改名，空表也拒绝，不覆盖或自动改名", "NULL/EMPTY/GeometryCollection整批拒绝，不静默删行；0行空表仍验证结构/来源/CRS", "混合几何或多几何列保存由现有save与目标格式裁决，不扩格式能力；无跨文件事务或固定容量承诺"],
+    workflow_example={'id':'parts','operator':'split_multipart','params':{'input_gdf':{'$ref':'load'},'id_field':'feature_id'},'depends_on':['load']},
+)
+
+
 DISSOLVE_METADATA = OperatorMetadata(
     name="dissolve", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
     description="融合几何", brief_description="按显式字段分组求面并集，输出融合成果和完整来源明细",
@@ -2928,6 +3007,7 @@ OPERATORS = dict([
     register_operator(MINIMUM_ROTATED_RECTANGLE_METADATA, minimum_rotated_rectangle),
     register_operator(ENVELOPE_METADATA, envelope),
     register_operator(DISSOLVE_METADATA, dissolve),
+    register_operator(SPLIT_MULTIPART_METADATA, split_multipart),
     register_operator(POLYGONIZE_METADATA, polygonize),
     register_operator(CHECK_GEOMETRY_METADATA, check_geometry),
     register_operator(REPAIR_GEOMETRY_METADATA, repair_geometry),

@@ -455,6 +455,7 @@
 | convex hull | 凸包 | 包含单个源要素全部部件坐标的最小凸几何。 | 可为Point、LineString或Polygon；逐源一行，不把不同源点行隐式汇总成面，不以凹包或缓冲替代。 |
 | nearest planar distance | 最近平面距离 | 从源几何到目标整体集合的最小笛卡尔距离，沿相同投影CRS的原单位。 | 算子distance_to：NULL及整体EMPTY记录拒绝，空目标表拒绝，空源表先验证全部输入；相交/接触/包含可为0，EMPTY不能用0替代，不是边界专用距离或测地距离。 |
 | planar geometry measurement | 平面几何量测 | 沿源投影坐标的原始水平单位逐源计算面积或长度。 | 面面积扣孔洞，周长包含全部环；多部件及混合集合累加原生贡献，不融合去重。合法EMPTY为0，NULL拒绝；不同于测地量测。 |
+| multipart split | 多部拆分 | 按单个源要素的原始部件顺序拆出单部件要素。 | 唯一算子split_multipart，保留完整来源属性及source_id/part_no；单部件仍一行。拒绝GeometryCollection、NULL及EMPTY，不去重、融合、修复或拆出面孔洞。 |
 | axis-aligned coordinate bounds | 轴对齐坐标边界 | 单个源几何全部非空部件的原始XY极值minx/miny/maxx/maxy。 | 算子get_bounds保留原几何，仅更新四个可空Float64字段；合法EMPTY四值为空、NULL拒绝。已知二维地理/投影CRS均可，不旋转、不跨日期变更线环绕，不等于生成外包几何。 |
 | envelope | 外包矩形 | 包含源要素、边平行于源坐标轴的外包几何。 | 算子envelope逐源取全部部件范围；双轴同位为Point、单轴同位为水平/垂直LineString、双轴均有跨度为Polygon。仅精确极值分型，不扩宽、不旋转；斜向共线仍为面。 |
 | minimum-area bounding rectangle | 最小外接矩形 | 包含单个源要素、允许旋转且面积最小的外接矩形。 | 唯一算子标识minimum_rotated_rectangle；合法点或共线点集保留Point/LineString，不扩宽成面；最优方向可能不唯一，不等于最小周长或轴对齐范围。 |

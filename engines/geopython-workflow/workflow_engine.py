@@ -12,7 +12,7 @@ from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.properties_operators import MeasurementInputError, BoundsInputError
 from operators.spatial_relations import DistanceInputError, RelationInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError, VoronoiInputError
-from operators.geometric_operators import InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
+from operators.geometric_operators import MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -83,8 +83,9 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
             return _execute_workflow_operator(operator, params)
         except (EndpointSnapError, LineExtensionError, GeoPackageSaveError) as exc:
             raise ValueError(exc.message(self.language)) from exc
-        except (BoundsInputError, MeasurementInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, VoronoiInputError, RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
+        except (MultipartInputError, BoundsInputError, MeasurementInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, VoronoiInputError, RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
             reasons = {
+                MultipartInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid','field':'operator_field_conflict'},
                 BoundsInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid','field':'operator_geometry_field_conflict'},
                 MeasurementInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid','area':'operator_geometry_field_conflict','length':'operator_geometry_field_conflict','threshold':'operator_nonnegative_number_required'},
                 InteriorPointInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid'},
@@ -119,7 +120,7 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
             }
             reason = reasons[type(exc)].get(exc.code)
             if reason is not None:
-                field = exc.code if isinstance(exc, MeasurementInputError) and exc.code in {"area", "length"} else exc.field if isinstance(exc, (BoundsInputError, PolygonRingInputError, LineNodeInputError)) else "distance" if reason in {"operator_field_conflict", "operator_geometry_field_conflict"} else ""
+                field = exc.code if isinstance(exc, MeasurementInputError) and exc.code in {"area", "length"} else exc.field if isinstance(exc, (MultipartInputError, BoundsInputError, PolygonRingInputError, LineNodeInputError)) else "distance" if reason in {"operator_field_conflict", "operator_geometry_field_conflict"} else ""
                 message = str(exc) if isinstance(exc, PolygonRingInputError) else exc.message(self.language)
                 raise OperatorInputError(reason, message, field=field) from exc
             # A numerical calculation failure is not a parameter admission failure.

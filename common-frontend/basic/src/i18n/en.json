@@ -453,7 +453,8 @@
         "check_line_proximity": "Line proximity check",
         "extract_polygon_rings": "Extract polygon rings",
         "intersection": "Intersection overlay",
-        "get_bounds": "Get bounds"
+        "get_bounds": "Get bounds",
+        "split_multipart": "Multipart split"
       },
       "operatorParameters": {
         "target_geom": "Target layer (target_geom)",
@@ -480,6 +481,18 @@
           "operator_input_invalid": "Prepare the source explicitly with unique column names; reject Z/M and non-finite coordinates, without skipping bad rows or substituting zero bounds for EMPTY.",
           "operator_crs_invalid": "Set the correct two-dimensional CRS explicitly first; retain original XY and units, without projection, conversion, axis swapping or antimeridian wrapping.",
           "operator_geometry_field_conflict": "Rename active geometry column {field} manually first; ordinary result columns are updated, without automatic renaming or geometry replacement."
+        }
+      },
+      "multipart": {
+        "reasons": {
+          "operator_input_invalid": "Multipart split requires valid finite XY Point/LineString/Polygon or their Multi types and a unique non-null id_field; GeometryCollection, NULL, EMPTY and empty parts are rejected.",
+          "operator_crs_invalid": "Multipart split requires a known two-dimensional geographic or projected CRS; unknown, geocentric, 3D and compound CRS are rejected.",
+          "operator_field_conflict": "Fixed split field {field} conflicts with an input field."
+        },
+        "actions": {
+          "operator_input_invalid": "Prepare the source and id_field explicitly: unique column names and unique non-null non-geometry scalar identifiers; reject Z/M without recursive collection expansion or dropping empty rows.",
+          "operator_crs_invalid": "Set the correct two-dimensional CRS explicitly first; preserve original XY and units, without projection, conversion or axis swapping.",
+          "operator_field_conflict": "Rename field {field} manually upstream first, without replacing original attributes or automatic renaming."
         }
       }
     },

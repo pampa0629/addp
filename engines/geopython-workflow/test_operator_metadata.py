@@ -1080,7 +1080,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("通用处理", "数据筛选"), "filter_by_attribute sort_by_field select_top_n sample random_split"),
         (("通用处理", "数值统计"), "normalize_field encode_categorical bin_field aggregate"),
         (("矢量处理", "几何构造"), "buffer centroid representative_point convex_hull envelope minimum_rotated_rectangle voronoi batch_buffer"),
-        (("矢量处理", "几何整理"), "simplify dissolve check_geometry repair_geometry snap_geometry snap_line_endpoints extend_line_endpoints trim_line_endpoints"),
+        (("矢量处理", "几何整理"), "simplify dissolve check_geometry repair_geometry snap_geometry snap_line_endpoints extend_line_endpoints trim_line_endpoints split_multipart"),
         (("矢量处理", "拓扑检查"), "check_polygon_overlap check_polygon_gap check_dangling_points check_line_proximity check_line_overlap check_line_self_overlap check_line_intersection check_line_self_intersection"),
         (("矢量处理", "线网处理"), "polygonize extract_polygon_rings split_line_intersections group_line_components merge_line_chains normalize_line_network extract_line_nodes"),
         (("矢量处理", "叠加分析"), "intersection union difference clip"),
@@ -1250,10 +1250,10 @@ def test_dem_tri_single_workflow_explicit_band_unit_metres_and_complete_window_m
 
 
 def test_vector_geometry_groups_have_expected_counts_and_clear_display_names():
-    expected = {'几何构造': 8, '几何整理': 8, '拓扑检查': 8, '线网处理': 7}
+    expected = {'几何构造': 8, '几何整理': 9, '拓扑检查': 8, '线网处理': 7}
     operators = list_operators()
     moved = [op for op in operators if op['category_path'][0] == '矢量处理' and op['category'] in expected]
-    assert len(moved) == len({op['id'] for op in moved}) == 31
+    assert len(moved) == len({op['id'] for op in moved}) == 32
     assert {group: sum(op['category'] == group for op in moved) for group in expected} == expected
     assert not any(op['category_path'] == ['矢量处理', '几何处理'] for op in operators)
     names = {op['id']: op['display_name'] for op in moved}
@@ -1868,3 +1868,23 @@ def test_distance_admission_metadata_describes_empty_targets_sources_and_complet
     for marker in ['NULL','EMPTY','目标0行拒绝','空源','distance','英尺','不自动换算米','包含','不输出最近目标ID']:
         assert marker in text
     assert len(spec['output_ports'])==1
+
+
+def test_split_multipart_has_one_workflow_read_entry_with_explicit_source_and_no_recursive_alias():
+    from operators import get_operator, split_multipart
+    import inspect
+    spec=next(item for item in list_operators()if item['id']=='split_multipart')
+    assert sum(item['id']=='split_multipart'for item in list_operators())==1
+    assert spec['description']=='多部拆分'and spec['category_path']==['矢量处理','几何整理']
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert get_operator('split_multipart')is split_multipart
+    assert set(inspect.signature(split_multipart).parameters)=={'input_gdf','id_field'}
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_gdf','id_field'}and all(p['required']for p in params.values())
+    assert params['input_gdf']['param_type']=='input'and params['id_field']['param_type']=='param'
+    assert [(p['name'],p['type'],p['is_default'])for p in spec['output_ports']]==[('result','geodataframe',True)]
+    for text in ['GeometryCollection','NULL','EMPTY','source_id','part_no','RangeIndex','孔洞']:
+        assert text in str(spec['detailed_description'])
+    for alias in ['explode','multipart_to_singlepart','split_geometry_collection']:
+        assert alias not in {m['id']for m in list_operators()}
+        with pytest.raises(ValueError,match='Unknown operator'):get_operator(alias)
