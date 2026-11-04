@@ -13,6 +13,7 @@ import re
 import runpy
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 import subprocess
 import tempfile
 import unittest
@@ -886,9 +887,33 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'
         tree = ast.parse(path.read_text())
         function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'check_resource_windows')
-        namespace = {'WORK': work, 'Path': Path, '__file__': str(path), 'os': os, 'subprocess': subprocess}
+        environment = {key: value for key, value in os.environ.items() if key != 'ADDP_HTTP_BUDGET_RECEIPT'}
+        namespace = {'WORK': work, 'Path': Path, '__file__': str(path),
+                     'os': SimpleNamespace(environ=environment), 'subprocess': subprocess}
         exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
         return namespace['check_resource_windows']
+
+    def test_resource_window_fixture_does_not_use_an_outer_cli_receipt(self):
+        for content in (None, 'foreign fixture content'):
+            with self.subTest(published=content is not None), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                work = root / 'work'
+                work.mkdir()
+                outer = root / 'ownership.json'
+                if content is not None:
+                    outer.write_text(content)
+                before = set(root.iterdir())
+                with mock.patch.dict(os.environ, {'ADDP_HTTP_BUDGET_RECEIPT': str(outer), 'GOWORK': 'parent-sentinel'}), \
+                     mock.patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, \
+                     mock.patch.object(subprocess, 'Popen', side_effect=AssertionError('unit fixture must not start a compiler')):
+                    self.resource_window_check(work)()
+                    self.assertEqual(os.environ['ADDP_HTTP_BUDGET_RECEIPT'], str(outer))
+                    self.assertEqual(os.environ['GOWORK'], 'parent-sentinel')
+                self.assertEqual([c.kwargs['timeout'] for c in run.call_args_list], [180, 60])
+                self.assertTrue(all('ADDP_HTTP_BUDGET_RECEIPT' not in c.kwargs['env'] for c in run.call_args_list))
+                self.assertTrue(all(c.kwargs['env']['GOWORK'] == 'off' for c in run.call_args_list))
+                self.assertEqual(set(root.iterdir()), before)
+                self.assertEqual(outer.read_text() if outer.exists() else None, content)
 
     def test_cold_resource_window_build_does_not_consume_execution_deadline(self):
         calls = []

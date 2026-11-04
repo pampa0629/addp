@@ -1321,3 +1321,18 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 旧实现受控反证沿make test-infra-runtime-log-lifecycle执行，最终148项中6项断言失败／2项错误，命中新增阶段、正式窗口函数仍直编译及新阶段不被原内核接纳，退出2。修正后make test-monitor-metrics-config退出0，136项／16.281秒及来源恢复前置通过；make test-infra-runtime-log-lifecycle完整退出0，最终148项／69.597秒。后者含HTTP runner44项／1.086秒、Trace runner183项／5.916秒、JS／登记／System身份Go子门禁全部通过；原离线TLS T1为OpenSSL4.1.0、35命令／0.943794秒、125493字节、4次预期拒绝及清理完成。回归从正式源码提取并执行窗口函数，验证受管调用先于两个HTTP编译、同一内核、确切参数／预算及仅执行编译后的二进制；失败／信号／超时／取消不执行旧文件、缺窗口阶段和前序失败不能通过。同一原生小型替身分别覆盖process_source和resource_windows：采样期间写入不变，模拟du失败仍传播，恢复后阶段成功结束；原超时／取消／组回收及严格du失败反例继续通过。替身不是真实Go构建或Docker负载。
 
 本批实施快照、AST审核及verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-resource-windows-20261104-oubmruea/，日志/tmp/addp-p19-resource-windows-{red,config,lifecycle}-20261104.log；输入基准共享HEAD为5f4984a6c671facdad5024a413e719d9b01a2f5d，独立文件摘要绑定本次门禁。既有Platform→生命周期及Release Linux http-quality矩阵已覆盖，无需新增Make／workflow。结论仅为受管覆盖缺口已本地修正、确定性门禁通过；自然Linux四阶段真实运行、历史删除者／间歇稳定性及正式Agent/Copilot到页面full仍未验收。下一步须用户另行允许推送后跟进自然Linux HTTP及原始预算归档，不手动重跑或追加窗口。
+
+
+<a id="http-window-fixture-outer-receipt-20261104"></a>
+
+## 2026-11-04 四阶段CI配置前置回归：测试环境隔离的本地修正
+
+前次只读排队状态已被实际终态替代：Run41792712024／Job126473639226／固定4786f12ace3fe9e619db710210e8b61a88f0344c／attempt1及后续Run41792903360／Job126477749395均为failure，均在metrics-deployment-config_test.py的窗口配置检查报四项ERROR，未进入真实HTTP四阶段。原日志分别在/tmp/addp-ci-20261104-resume-patrol/job-126473639226.log（SHA256 5e59b24645c165e4259bc59a3924cc018267235dcc64cfc6fbfa8cf4817deb47）、job-126477749395.log（797c385597e13252d6043102e9e672ea6d7ca0dbf2b7f6b2575faff9d1fe295c）；本轮再次只读GET两个实际Job均completed／failure，首Job的Verify isolated metrics lifecycle步骤failure。未手动重跑、重复下载日志或启动真实环境。
+
+这是b6c669022遗漏的测试隔离，不是旧go_tmp后代消失，也不是四秒预算耗尽：CLI预算内核先将ADDP_HTTP_BUDGET_RECEIPT指向尚未发布的ownership.json再启动shell；shell先运行配置单元测试，之后才创建产品私有目录并发布回执。配置夹具提取check_resource_windows却直接使用进程os.environ；窗口编译改为受管后，该夹具把外层未发布回执传入run_owned_compile，在cleaning读取文件时报FileNotFoundError，未达到其原mock subprocess.run。冷准备一项、编译失败两个subtest及执行超时一项共四错误，两个Job均136项配置测试未通过；原预算stdout分别10.148212／9.127820秒失败，compile_stages、request_counts、cleanup_verified和private_directory_removed均null，不能填作真实四阶段、业务或零残留通过。
+
+本次仅修配置测试夹具：以私有环境快照作为提取函数的os.environ，排除ADDP_HTTP_BUDGET_RECEIPT；父进程环境、外层文件及锁均不改，不在产品新增缺文件跳过或降级。原180秒准备、60秒执行及旧二进制失败拒绝断言保持。增加未发布回执和已有非本夹具内容两种反例，并禁止该单元夹具启动编译器；验证两次模拟命令、180／60秒、GOWORK=off、无外层回执字段、父环境不变、外层目录清单和正文不变。真实受管分支仍由原预算测试自建回执／小型原生替身覆盖，未加入兼容路径。产品metrics-http-budget.py与monitor-metrics-probe.py逐字节保持b6c669022的四阶段实现，所有四秒、1200秒、资源、业务、身份及失败清理语义不变。
+
+旧夹具反证运行make test-monitor-metrics-config，137项／13.114秒中新增两种输入各报一项ERROR，退出2；不启动Go或Docker。修正后向标准配置入口局部注入一个本次未发布的外层回执路径，make test-monitor-metrics-config完整退出0，137项／11.928秒及来源恢复前置通过，注入的外层文件和锁均未被创建。make test-infra-runtime-log-lifecycle完整退出0：最终148项／63.688秒，含HTTP44项／1.072秒、Trace183项／5.979秒及JS／登记／System身份Go子门禁通过；离线TLS T1为OpenSSL4.1.0、35命令／0.918689秒、125485字节、4次预期拒绝及清理完成。最小修正沿原配置／Platform生命周期／自然Linux HTTP路径自动覆盖，不新增标准入口或workflow。
+
+本批快照基准HEAD=2d35280aafc2e86463df4f6f8054c9ba1779c546；快照、产品不变审核与verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-window-fixture-20261104-uukj5y5k/，日志/tmp/addp-p19-window-fixture-{red,config,lifecycle}-20261104.log。仍仅本地确定性修正，未推送、未手动重跑CI、未新增本地窗口，不运行Hosted、容量或定时；其他会话要求推送不替代用户此前“本批不推送”的边界。两个自然Job的失败不被本地通过覆盖；修正后的自然Linux配置前置、四阶段／预算／清理、历史删除者与正式产品页面闭环仍未验收。下一步须用户明确允许推送后，跟进新输入的自然HTTP结果及原始预算报告。
