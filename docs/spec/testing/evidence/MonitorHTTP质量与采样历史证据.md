@@ -1302,3 +1302,22 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 只读前置关联仍指向上条固定8b320fb8e／run_id=addp-http-local-29078910b1d34180b764f66260daacc8及原报告SHA256 bbbed09f1db3f07a9417b39b6fa5a7753ce6d530b8aec0c0e17ff62333857a98：四秒由串行CLI等待累计耗尽，不能唯一归因卷扫描。已有Desktop候选03:37—03:38 UTC日志中apiproxy仅55条usage记录，没有可归属API路径起止；现存dockerd／containerd归档日期未覆盖本轮。缺可信跨时钟对齐及请求归属，卷测量零字节检查点只能记未观测到，不能证明未执行。本次汇总仅观察主机调用返回，包含包围开销；既不是线程调度延迟或daemon时间，也不能从总等待中扣除后把余量归给daemon。历史报告没有wait_poll，不能补算新指标。
 
 收尾只读核对共享HEAD=cc4c7de44e1503091dd36ebc2eb7c2ea1196398c；共享main其他改动不纳入本批验收。输入快照、AST审核及verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-wait-poll-20261104-kzwedobr/；原只读摘要在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-resource-wait-readonly-20261104-ftrmi7kn/assessment.json（SHA256 1f87aad85b589ece787b09fbe013b65ee75150df07c7e28c2eceed1754d8e53c）。门禁日志/tmp/addp-p19-wait-poll-{red,trace-final,http-final}-20261104.log。仅本地实现与确定性验证，不推送、不重试镜像构建、不开真实窗口，不运行Hosted、容量或定时；真实等待计量、物理根因、繁忙稳定性及正式Agent/Copilot到Console/Monitor页面闭环均未验收。优先下一步是在另行授权的原有运行中随行采集，先读新汇总再决定性能修正，不自动续窗或重跑。
+
+
+<a id="http-linux-resource-windows-managed-20261104"></a>
+
+## 2026-11-04 Linux HTTP漏管指标窗口编译：本地确定性修正
+
+用户先授权只读调查Job126260838041，再确认四阶段最小修正；本批不推送、不手动重跑CI、不新开窗口，不运行Hosted、容量或定时。原Release push Run41731193298／attempt1／固定04ad3e809fdd8e986a093c455f5aace6862052b4的原日志SHA256为429d31702c824503b29640404bd10bfd7a72dcc85b7dba340bac24fb77e77f9f；官方归档HTTP-13281545392.zip为21026字节，SHA256 03ebfdf971cf25a01763412fa7ce0cd5ac81928964118e9a45a165931463d228，CRC通过，内含monitor-http-budget.json的SHA256 e99921a3fd587db1175bb8382448f3eec65ef8daa24349bde2aaca7e6354cf10。原件在/tmp/addp-ci-20261104-073221/，本轮只读核验本地原始归档，不刷新远端Job状态。
+
+失败为126.532236秒时http_budget_sample_command_failed，private_directory_size／path_disappeared；du命令0.018746秒、整次采样0.598849秒，尚余命令预算3.420006秒，不是四秒或1200秒耗尽。目录类别go_tmp，已知go-tmp根目录的当次域散列不匹配，故只能定位其后代；私有根目录仍为directory，原始子路径未保留，不能由哈希反推出名称。failure_during_cleanup=false、HTTP请求0、最终cleanup_verified及private_directory_removed为true，不把清理成功反转采样失败。
+
+固定源码的check_resource_windows在正式probe顶层无条件调用，内部原先直接subprocess.run执行go test -c ./internal/resourcequery，未接入run_owned_compile。原日志北京时间07:41:08.8235109记录窗口二进制编译开始，随后07:41:29.5153736为Terminated，没有对应执行已编译检查的完成后标记。失败采样快照只记process_source在主机单调135453284000ns成功结束、http_query／http_alert未开始；采样开始156.152423103秒、du开始156.732417397秒，分别晚于Common编译完成20.699139103／21.279133397秒。由于漏管窗口编译未登记组，采样在没有compile_group时走普通读取。这是已确认的编排覆盖缺口，解释了三阶段回执不能代表全部活动编译；并未直接观测具体删除进程或精确删除时刻，不将stdout墙钟与主机单调时钟直接校准。28个完整样本中16个含原编译协调，历史故障仍独立保留。
+
+核对时共享HEAD c97ae1a543ab62fcfde314d4641cbce3bcbd06a7与原370项输入为358项相同／12项不同，不能称全输入一致；sampler、其测试及probe当时逐字节相同，shell新增node-recovery分支／输入声明，原HTTP编译正文未变。既往369／370匹配属于当时快照，也不覆盖本次共享HEAD。只读方案证据在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-linux-go-tmp-readonly-20261104-cxfar_va/assessment.json。
+
+本次先修运行观测及T0–T3规范，再将唯一COMPILE_STAGES改为process_source→resource_windows→http_query→http_alert，窗口编译复用已有run_owned_compile，不保留直接编译旁路。Go argv、cwd、环境、180秒准备期限及后续二进制60秒不变，编译／执行均计入原1200秒。原暂停、出生身份／会话／组校验、锁、完整读取、finally恢复、首因及清理函数均未改；源AST对照仅probe的check_resource_windows函数改变，预算内核仅阶段枚举变化。完整四秒、4 CPU／4 GiB、私有可写<2 GiB、du失败语义、统计范围及全部身份／请求／清理断言保持。旧报告按历史事实保存，不补造第四阶段回执或按新标准追认通过。
+
+旧实现受控反证沿make test-infra-runtime-log-lifecycle执行，最终148项中6项断言失败／2项错误，命中新增阶段、正式窗口函数仍直编译及新阶段不被原内核接纳，退出2。修正后make test-monitor-metrics-config退出0，136项／16.281秒及来源恢复前置通过；make test-infra-runtime-log-lifecycle完整退出0，最终148项／69.597秒。后者含HTTP runner44项／1.086秒、Trace runner183项／5.916秒、JS／登记／System身份Go子门禁全部通过；原离线TLS T1为OpenSSL4.1.0、35命令／0.943794秒、125493字节、4次预期拒绝及清理完成。回归从正式源码提取并执行窗口函数，验证受管调用先于两个HTTP编译、同一内核、确切参数／预算及仅执行编译后的二进制；失败／信号／超时／取消不执行旧文件、缺窗口阶段和前序失败不能通过。同一原生小型替身分别覆盖process_source和resource_windows：采样期间写入不变，模拟du失败仍传播，恢复后阶段成功结束；原超时／取消／组回收及严格du失败反例继续通过。替身不是真实Go构建或Docker负载。
+
+本批实施快照、AST审核及verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-resource-windows-20261104-oubmruea/，日志/tmp/addp-p19-resource-windows-{red,config,lifecycle}-20261104.log；输入基准共享HEAD为5f4984a6c671facdad5024a413e719d9b01a2f5d，独立文件摘要绑定本次门禁。既有Platform→生命周期及Release Linux http-quality矩阵已覆盖，无需新增Make／workflow。结论仅为受管覆盖缺口已本地修正、确定性门禁通过；自然Linux四阶段真实运行、历史删除者／间歇稳定性及正式Agent/Copilot到页面full仍未验收。下一步须用户另行允许推送后跟进自然Linux HTTP及原始预算归档，不手动重跑或追加窗口。

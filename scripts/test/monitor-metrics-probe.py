@@ -304,14 +304,18 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'host-resources':
 
 # Evaluate fixed-counter semantics first, before the longer discovery/outage cycle.
 def check_resource_windows():
+    import runpy
     backend = Path(__file__).resolve().parents[2] / 'monitor/backend'
     binary = WORK / 'resource-windows.test'
     environment = dict(os.environ, GOWORK='off')
     selection = '^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes|BlockCapacity)$'
     if os.environ.get('ADDP_METRICS_T2_CASE') == 'block-capacity': selection = '^TestIntegrationMetricsBlockCapacity$'
     print('Metrics window T2: build test binary (preparation limit 180s)', flush=True)
-    subprocess.run(['go', 'test', '-c', './internal/resourcequery', '-o', str(binary)],
-                   cwd=backend, env=environment, check=True, timeout=180)
+    receipt = os.environ.get('ADDP_HTTP_BUDGET_RECEIPT')
+    compile_go = runpy.run_path(str(Path(__file__).with_name('metrics-http-budget.py')))['run_owned_compile']
+    compile_go(Path(receipt) if receipt else None, 'resource_windows',
+               ['go', 'test', '-c', './internal/resourcequery', '-o', str(binary)],
+               backend, environment, timeout=180)
     print('Metrics window T2: execute prepared checks (Go/process limit 60s)', flush=True)
     subprocess.run([str(binary), '-test.run=' + selection,
                     '-test.count=1', '-test.timeout=60s', '-test.v'],

@@ -152,7 +152,7 @@ def directory_objects(stderr, ownership):
     return {'status':'partial' if unparsed and objects else 'unparsed' if unparsed else 'parsed' if objects else 'none','objects':objects}
 
 
-COMPILE_STAGES=('process_source','http_query','http_alert')
+COMPILE_STAGES=('process_source','resource_windows','http_query','http_alert')
 RESUME_RESERVE=.05
 PROCESS_STATES=('R','S','D','T','t','Z','X','I','other')
 WAIT_CATEGORIES=('process_start_wait_candidate','io_wait_candidate','completion_wait','other','zero','empty',

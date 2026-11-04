@@ -191,12 +191,12 @@ class CompileWaitEvidence(unittest.TestCase):
                 self.assertEqual(m.owned_wait_channel(proof,rows[0],m.time.monotonic()+4),'read_error')
 
 
-def prepare_function(work):
+def prepare_function(work,name='prepare_http_test_binaries'):
     path=Path(m.__file__).with_name('monitor-metrics-probe.py')
-    node=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='prepare_http_test_binaries')
-    namespace={'os':os,'Path':Path,'subprocess':subprocess,'__file__':str(path),'WORK':work}
+    node=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef) and n.name==name)
+    namespace={'os':os,'Path':Path,'subprocess':subprocess,'__file__':str(path),'WORK':work,'print':Mock()}
     exec(compile(ast.Module(body=[node],type_ignores=[]),str(path),'exec'),namespace)
-    return namespace['prepare_http_test_binaries']
+    return namespace[name]
 
 
 class HTTPBudget(unittest.TestCase):
@@ -359,9 +359,9 @@ class HTTPBudget(unittest.TestCase):
             self.assertEqual(value['compile_stages']['process_source'],{'started_monotonic_ns':100})
 
     def test_native_owned_compiler_is_stopped_during_read_and_resumed_after_du_failure(self):
-        for fail_read in (False,True):
-            with self.subTest(fail_read=fail_read),tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
-                work=Path(directory);receipt=work/'receipt.json';owner={'project':'addp-metrics-t2-'+'a'*32,'work':directory};receipt.write_text(json.dumps(owner))
+        for stage,fail_read in ((stage,fail) for stage in ('process_source','resource_windows') for fail in (False,True)):
+            with self.subTest(stage=stage,fail_read=fail_read),tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
+                work=Path(directory);receipt=work/'receipt.json';owner={'project':'addp-metrics-t2-'+'a'*32,'work':directory};receipt.write_text(json.dumps({**owner,**({'compile_stages':{'process_source':{'started_monotonic_ns':1,'finished_monotonic_ns':2,'exit_code':0}}} if stage=='resource_windows' else {})}))
                 go=work/'go';go.write_text('#!'+sys.executable+'\nimport os,time,pathlib\np=pathlib.Path(os.environ["STABLE_FIXTURE_WORK"])\n(p/"ready").touch()\nfor n in range(80):\n (p/"counter").write_text(str(n))\n (p/"volatile").write_bytes(b"x"*128)\n (p/"volatile").unlink()\n time.sleep(.02)\n');go.chmod(0o700)
                 errors=[];readings=[];failure=m.BudgetFailure('first_du_failure','private_directory_size','command_failed')
                 def observe():
@@ -381,12 +381,12 @@ class HTTPBudget(unittest.TestCase):
                 observer=threading.Thread(target=observe)
                 with patch.object(m,'sample',side_effect=read):
                     observer.start()
-                    try:m.run_owned_compile(receipt,'process_source',['go','test','-c','./processmetrics','-o',str(work/'out')],work,dict(os.environ,PATH=directory+os.pathsep+os.environ['PATH'],STABLE_FIXTURE_WORK=directory),timeout=5)
+                    try:m.run_owned_compile(receipt,stage,['go','test','-c','./processmetrics','-o',str(work/'out')],work,dict(os.environ,PATH=directory+os.pathsep+os.environ['PATH'],STABLE_FIXTURE_WORK=directory),timeout=5)
                     finally:observer.join(5)
                 self.assertFalse(observer.is_alive());self.assertEqual(errors,[failure] if fail_read else [])
                 if not fail_read:self.assertTrue(readings[0]['compile_coordination']['resumed'])
                 raw=json.loads(receipt.read_text());self.assertNotIn('compile_group',raw)
-                self.assertEqual(raw['compile_stages']['process_source']['exit_code'],0)
+                self.assertEqual(raw['compile_stages'][stage]['exit_code'],0)
 
     def test_native_timeout_reaps_owned_group_without_completing_the_stage(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -425,10 +425,10 @@ class HTTPBudget(unittest.TestCase):
                     if proof and proof['state']=='active':m.terminate_group(proof,time.monotonic()+2)
                     os.killpg(caller.pid,m.signal.SIGTERM);caller.communicate(timeout=3)
 
-    def test_three_stages_keep_order_history_and_no_dual_receipt_fields(self):
+    def test_four_stages_keep_order_history_and_no_dual_receipt_fields(self):
         with tempfile.TemporaryDirectory() as directory:
             receipt=Path(directory)/'receipt.json';receipt.write_text(json.dumps({'project':'owned','work':directory}))
-            with patch.object(m.time,'monotonic_ns',side_effect=[100,150,200,250,300,350]):
+            with patch.object(m.time,'monotonic_ns',side_effect=[100,150,200,250,300,350,400,450]):
                 for stage in m.COMPILE_STAGES:
                     m.record_compile_boundary(receipt,stage,'start');m.record_compile_boundary(receipt,stage,'finish',0)
             raw=json.loads(receipt.read_text());self.assertEqual(raw['compile_stages'],compile_history())
@@ -447,6 +447,54 @@ class HTTPBudget(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'boundary_invalid'):m.record_compile_boundary(receipt,'process_source','start')
             receipt.write_text(json.dumps({'process_compile':{'started_monotonic_ns':1}}))
             with self.assertRaisesRegex(RuntimeError,'boundary_invalid'):m.record_compile_boundary(receipt,'process_source','start')
+
+    def test_all_http_compilation_includes_the_unconditional_window_preparation(self):
+        import runpy
+        self.assertEqual(m.COMPILE_STAGES, ('process_source','resource_windows','http_query','http_alert'))
+        path=Path(m.__file__).with_name('monitor-metrics-probe.py')
+        nodes=ast.parse(path.read_text()).body
+        window=next(i for i,n in enumerate(nodes) if isinstance(n,ast.Expr) and
+                    isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Name) and n.value.func.id=='check_resource_windows')
+        following=next(i for i,n in enumerate(nodes) if isinstance(n,ast.If) and
+                       any(isinstance(c,ast.Call) and isinstance(c.func,ast.Name) and c.func.id=='prepare_http_test_binaries' for c in ast.walk(n)))
+        self.assertLess(window,following)
+        compile_go=Mock()
+        with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,{'ADDP_HTTP_BUDGET_RECEIPT':directory+'/receipt.json'}),patch.object(runpy,'run_path',return_value={'run_owned_compile':compile_go}),patch.object(subprocess,'run') as execute:
+            work=Path(directory)
+            prepare_function(work,'check_resource_windows')()
+            prepare_function(work)()
+            self.assertEqual([c.args[1] for c in compile_go.call_args_list],['resource_windows','http_query','http_alert'])
+            first=compile_go.call_args_list[0]
+            self.assertEqual(first.args[0],work/'receipt.json')
+            self.assertEqual(first.args[2],['go','test','-c','./internal/resourcequery','-o',str(work/'resource-windows.test')])
+            self.assertEqual(first.args[3],path.resolve().parents[2]/'monitor/backend')
+            self.assertEqual(first.args[4],dict(os.environ,GOWORK='off'))
+            self.assertEqual(first.kwargs,{'timeout':180})
+            execute.assert_called_once()
+            self.assertEqual(execute.call_args.args[0][0],str(work/'resource-windows.test'))
+            self.assertEqual(execute.call_args.kwargs['timeout'],60)
+
+    def test_window_preparation_failure_never_executes_a_stale_binary(self):
+        import runpy
+        for failure in (subprocess.CalledProcessError(17,['owned']),subprocess.CalledProcessError(-15,['owned']),subprocess.TimeoutExpired('owned',180),KeyboardInterrupt()):
+            with self.subTest(kind=type(failure).__name__),patch.object(runpy,'run_path',return_value={'run_owned_compile':Mock(side_effect=failure)}) as load,patch.object(subprocess,'run') as execute:
+                with self.assertRaises(type(failure)) as caught:prepare_function(Path('/tmp/owned'),'check_resource_windows')()
+                self.assertIs(caught.exception,failure)
+                execute.assert_not_called()
+                self.assertEqual(load.return_value['run_owned_compile'].call_count,1)
+
+    def test_window_stage_is_required_before_http_query_and_after_successful_source(self):
+        stages=compile_history()
+        self.assertIn('resource_windows',stages)
+        omitted={k:v for k,v in stages.items() if k!='resource_windows'}
+        self.assertEqual(m.compile_stages_observation(omitted),{'status':'invalid','stages':{}})
+        failed={**stages,'resource_windows':{**stages['resource_windows'],'exit_code':17}}
+        self.assertEqual(m.compile_stages_observation(failed),{'status':'invalid','stages':{}})
+        incomplete={'process_source':stages['process_source'],'resource_windows':{'started_monotonic_ns':200}}
+        observed=m.compile_stages_observation(incomplete)
+        self.assertEqual(observed['status'],'valid')
+        self.assertEqual(observed['stages']['resource_windows']['status'],'incomplete')
+        self.assertEqual(observed['stages']['http_query']['status'],'not_started')
 
     def test_both_formal_http_compile_calls_use_the_same_atomic_recorder(self):
         import runpy
