@@ -49,11 +49,19 @@
 
 动态状态与矢量瓦片按钮规则统一见[矢量瓦片状态与页面动作](../quick-view/共用契约.md#矢量瓦片状态与页面动作)。这些状态由能力判断服务动态计算，不写入 `manager.preview_state`。
 
-## 四、索引建议
+<a id="四索引建议"></a>
 
-| 索引名 | 字段 | 说明 |
+## 四、索引声明与核验边界
+
+| 索引名 | 字段顺序 | 模型声明 |
 | --- | --- | --- |
-| `idx_preview_state_tenant_fingerprint` | `tenant_id, item_fingerprint` | 按标准 item 指纹保存唯一偏好 |
+| `idx_preview_state_tenant_fingerprint` | `tenant_id, item_fingerprint` | [PreviewState 模型](../../backend/internal/models/preview_state.go)声明的联合唯一索引，两列均声明 `NOT NULL`。 |
+
+[偏好写入](../../backend/internal/repository/preview_state_repository.go)以这两列作为 `ON CONFLICT` 目标。声明和写入依赖不等于实际运行库约束已核验；目标数据库仍须核对索引所属表、字段组合、唯一性和有效状态，不能仅凭同名索引认定符合要求。
+
+当前启动经 [InitDatabase／ensureTileCacheStateSchema](../../backend/internal/repository/database.go) 的 Go 初始化链调用 `AutoMigrate`；旧结构检查包含删除并重建 `preview_state` 的分支。[历史 030 SQL](../../backend/migrations/030_rename_quick_view_to_preview_state.sql)也定义了该唯一索引并包含旧表删除，不能据文件存在认定目标库已执行，也不能以启动初始化或重放 SQL 代替只读索引核验。
+
+现有 [IndependentWrites PostgreSQL 用例](../../backend/internal/repository/preview_state_postgres_integration_test.go)由 `make test-manager-postgres` 的现有命名筛选命中；它在隔离 Schema 中自行创建联合唯一键后验证独立写入和并发保存，不验证当前运行库的索引名称或启动迁移是否生效。标准门禁与分版本证据见[Manager 开发与验证](../../CLAUDE.md#开发与验证)，源码和用例存在不计为数据库约束或运行验收通过。
 
 ## 五、UI 行为
 
