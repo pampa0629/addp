@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 17 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 59 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 60 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -930,3 +930,10 @@ b0420db65已随共享main发布，固定dfeff7c9b自然Linux原始日志确认HT
 ### 2026-11-04 本机 Infra MinIO 健康recover实操通过
 
 用户命令实际返回来源正常未重建、失败0；后续独立只读核验来源唯一Running、Prometheus唯一目标UP、在线盘1及12.75秒新鲜快照。没有命令前ID收据，不将用户输出冒充工具前后完整对照；跨Docker故障恢复和其他来源实操未验。[完整记录](Monitor采集来源与引擎指标历史证据.md#本机-infra-minio-健康来源恢复实操2026-11-04)。
+
+
+### 2026-11-04 Agent超时只读关联与有界构建诊断门禁
+
+[关联线索、超时捕获及确定性边界](MonitorHTTP质量与采样历史证据.md#http-product-timeout-bounded-diagnostics-20261104)
+
+既有代理时段先见Debian200、后有Python包站点CONNECT延续至截止，缺构建归属及正文，Agent具体耗时阶段仍未知。467957be4修唯一产品命令超时的同一输出有界捕获／固定未完成步骤分类，保留原期限与取消／采样／清理；旧实现反证失败，最终Trace175／HTTP44及子门禁通过。只认本地诊断实现，不计历史根因修复或产品页面通过；未推送／构建重试／新窗口／Hosted／容量／定时。

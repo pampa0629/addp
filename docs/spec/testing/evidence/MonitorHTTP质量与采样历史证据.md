@@ -1182,3 +1182,25 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 本次完整四秒、8 CPU／12 GiB、4 GiB停止线及业务／控制面／浏览器预算未改变，无重试、续窗、Hosted、容量、定时或个人环境接管；没有修改APT源、包、基础镜像、代理或签名校验策略。此前固定64a6a3b16自然Linux HTTP T2通过保持独立范围，不代替正式产品构建和页面闭环。本单次授权已经消费，后续真实运行仍待新授权。
 
 私有归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-window-20261104-ycdtsdrn/`（0700／0600），包括launch、expected-inputs、Infra状态、两组准备runner日志、entry-started／entry.log／completion、原report及独立audit。报告2758017字节，SHA256=`ebe06bd937ca2c63a8be205908eaf5f9e6f1cb552b0f6c505c2f37ff2f4d6c25`；入口日志SHA256=`b887005af98378dd29939272f264afe0810a07f30ac461d256014646a23de8d8`。本轮只补59主题证据与索引，核对固定15项来源、原哈希、全部样本／检查点／清理及文档链接，代码未改且不额外触发CI。更新证据并回报维护会话，保留部分实现／正式产品未验收；建议下一步先只读关联既有Agent构建和代理记录，判断600秒耗尽位置及超时输出缺口，再讨论最小取证或修正，不现在放宽超时或重试构建。
+
+
+<a id="http-product-timeout-bounded-diagnostics-20261104"></a>
+
+## 2026-11-04 Agent超时只读关联与有界构建诊断门禁
+
+先按用户要求只读关联上条固定8a34ecb84／run_id=addp-http-local-711a69cbda83495383c2a33b08cc62b5原报告及ebe06bd9哈希、冻结Agent Dockerfile和标准构建调度。Agent阶段候选UTC时段为2026-11-03 22:25:45.895965—22:35:46.495965（由入口时间及舍入阶段耗时形成）；既有Desktop httpproxy.log选中240行／45639字节，片段SHA256=`4f725583e18cbff68f4a15f1014a73e9ea3a8d9041cd4e3949b9f6773252fd23`，仅保存封闭计数和哈希。官方Debian GET状态67条均200，最后22:27:11.685694；随后Python包站点相关30行自22:27:36.851383至22:35:46.153004，主要为HTTPS CONNECT活动。未见该候选时段明确错误词或4xx／5xx状态，但无构建Owner归属、host／VM校时及HTTPS正文，不能据此证明APT完整成功、pip具体阶段或网络正常，也不能把隧道successful当包下载完成。
+
+冻结Agent构建先APT，再升级pip／安装第三方依赖、安装Common源码包、pip check及导入验证；候选代理时序支持调查Python依赖相关活动，尚不足以把600秒唯一分配给下载／解析／安装。源码确认超时异常在原等待循环触发，经过原取消finally后直接离开临时输出上下文，未执行正常退出之后的读取及public_build；标准构建调度的临时日志也在退出时清理。历史报告无构建正文及输出哈希，不能恢复细阶段或补造APT／pip错误。
+
+用户随后明确确认先修规范与确定性门禁，不运行真实构建。实现`467957be45c8e0c920fed1e2c33cf90121a27e4e`包含两份规范与原共享解析器／测试四个路径：原command仅增加同一临时输出上下文的捕获协调，限非采样线程、精确product_image服务及当次make build-images命令、原command_deadline_exceeded异常。在原取消流程返回后、输出关闭前最多读取131073字节；不增加等待、进程、Docker或网络命令，不改600秒或取消顺序。完整捕获才保存SHA256并沿唯一public_build解析；超128 KiB明确over_budget、无完整末尾换行记truncated、读取／分类异常记unavailable，均不解析前缀或保留部分哈希；空捕获可complete且progress未知，complete不表示构建完成。
+
+唯一分类器补termination／output_status／progress：正常非零沿原process_exit错误归属规则，deadline只从完整带编号标题及DONE／CACHED／ERROR终态排除已完成候选，CANCELED仅为取消观察仍属未完成；内部标题最多64项。唯一候选输出apt／python_dependency／common_package／verification／other固定类别，无候选unavailable、多候选ambiguous、重复编号invalid，后三种stage均unknown。不导出步骤号、命令、包名、URL、路径或原文，不据CONNECT、成功消息或最后一行猜阶段；4 KiB整组诊断及原集合上限保持。超时回执记读取字节数和诊断实际耗时，不输出取消造成的exit143替代超时首因，诊断异常不覆盖原异常对象，既有四秒／资源／清理期限不重置。
+
+| 本地确定性验证 | 实际结果及边界 |
+| --- | --- |
+| 旧实现反证 | 原Trace runner新增初轮5项用例后174项／4.547秒，预期1 failure／13 subtest errors，包括缺超时捕获与新上下文参数；不计通过 |
+| 最终Trace runner | make test-monitor-traces-local-runner退出0，175项／4.564秒；两项JS语法、Online登记、System身份Go子门禁通过。新增6项并扩展子例覆盖各固定阶段、已完成／取消／并行／重复／编号碰撞／伪命令／64项上限、完整／空／截断／超限／读取和解析异常、精确命令／run归属、非目标线程和错误拒绝、取消先于解析、131073读取上限、首异常及脱敏 |
+| 最终HTTP runner | make test-monitor-http-local-runner退出0，44项／0.913秒、JS／HTTP登记／System身份Go子门禁通过；离线TLS OpenSSL4.1.0、35命令／0.782257秒、材料与输出预留125469字节、4次预期拒绝、cleanup_removed=true，不是产品验收 |
+| 自查与登记 | AST仅public_build_failure_diagnostic及Lifecycle.command定义改变，并新增一个有界捕获协调函数；原取消finally AST不变，其他采样／互斥／构建／监测／恢复／清理定义不变，产品Dockerfile、Make及标准构建脚本未改。原HTTP／Trace Make聚合及CI自动发现命中，无新入口／workflow。共享登记文件有其他会话未提交的Security改动，未纳入本提交；登记通过是当时共享工作区结果，不声称本提交全仓CI通过 |
+
+原四秒、8 CPU／12 GiB、4 GiB停止线、60／55分钟、600秒及请求／失败清理边界保持。确定性只证明新诊断实现，不补齐历史Agent超时、目录消失根因或正式Agent／Copilot到Console／Monitor页面；旧失败报告不追填新字段。只读关联及冻结文件SHA256在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-agent-deadline-offline-20261104-we42ib19/correlation.json`，实现／输入／日志审核为同目录implementation-audit.json（0700／0600）；门禁日志`/tmp/addp-p19-timeout-diagnostic-{red,trace-final,http-final}-20261104.log`（0600）。本轮仅本地提交，不推送触发构建、不重试构建或新开窗口，不运行Hosted／容量／定时；更新60主题证据并回报维护会话。下一步建议在另行批准的原产品运行中使用超时诊断，再依据实际步骤讨论性能或网络修正，不预先放宽期限。
