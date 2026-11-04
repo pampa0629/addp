@@ -26,8 +26,8 @@
 
 ## 🎯 核心功能
 
-- **数据探查**: 浏览 8 种存储引擎中的数据（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）
-- **数据预览**: 插件化架构，支持多种格式（CSV、JSON、Parquet、Shapefile、图片等）
+- **数据探查**: 基于 System 引擎目录与 Meta 已扫描资源树开展探查，实际范围见[支持的数据类型](#-支持的数据类型)
+- **数据预览**: 按已注册 PreviewProvider 生成前端展示材料，格式与渲染边界见[预览语义协议](./docs/数据预览语义协议.md#推荐组合矩阵)
 - **数据剖析**: 对表格型 data item 按需执行有界采样，展示字段完整性、基数、统计指标、分布和描述性观察
 - **空间数据可视化**: 基础预览 + 快显模式 + 中小规模 FlatGeobuf + 大规模 MVT/瓦片缓存 + TIFF/COG 栅格快显
 - **三维与点云快显**: GLB、3D Tiles、KSplat 和 COPC 受管 artifact 预览，源点云 COPC 直接基础预览
@@ -59,16 +59,21 @@ docker-compose up -d
 
 ## 📊 支持的数据类型
 
+引擎实例能力与 Manager 适配范围分别认定：能力声明以[引擎能力规范](../docs/spec/addp引擎能力声明规范.md#一基本原则)为准，Manager 按当前 Provider 和资源事实选择预览路线，不在本入口维护固定引擎数量或完整格式清单。
+
 ### 数据库
-PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark
+
+表格、动态 schema 集合、图与键值等数据库来源按实际读取能力与已注册 Provider 匹配；职责与模式见[PreviewRegistry 与 PreviewProvider](./docs/数据预览与资源树实现规范.md#3-previewregistry-与-previewprovider)。事件流 Topic 等其他来源也有对应的内置路线，统一见[Provider 加载入口](./backend/internal/preview/preview_plugin_loader.go)。Apache Spark 是[计算目标](../docs/concepts/addp引擎体系图.md#spark-集群与内置运行时边界)，不列为 Manager 存储引擎。
 
 ### 对象存储
-MinIO、S3
+
+对象与文件源包括 MinIO／S3、NFS／FTP 等，实际目录与内容访问依赖实例能力和已扫描的 Meta 身份；目录发现、快照与预览的职责见[引擎体系边界](../docs/concepts/addp引擎体系图.md#实时-engine-catalog元数据快照和数据预览的边界)。原始下载仍须通过[下载计划准入](./docs/存储流与原始下载语义.md#下载能力声明)，不从源类型直接推导。
 
 ### 文件格式
-CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 
-详细预览契约请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md) 和 [数据预览语义协议](./docs/数据预览语义协议.md)。
+格式识别及解析实现以[格式能力规范](../docs/spec/addp数据类型与格式能力规范.md#formatdescriptor-与能力分层)为准；可展示材料与 renderer 组合以[预览语义矩阵](./docs/数据预览语义协议.md#推荐组合矩阵)为准，识别到格式不等于当前已具备在线预览。模型、点云和 3DGS 的独有约束见[对应专题](./docs/三维模型、点云与高斯泼溅预览说明.md)。
+
+页面准入、内容 Permission 与数据保护分别沿[预览权限边界](./docs/数据预览与资源树实现规范.md#一定位)核验。引擎可见、Meta 已扫描或 Provider 已注册都不授予内容读取权限，也不证明真实链路已通过；测试分层、固定版本证据与未覆盖项见[模块验证说明](./CLAUDE.md#开发与验证)。
 
 ## 📡 主要 API 端点
 
@@ -104,7 +109,6 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 - 资源树事实、搜索和刷新统一由 Meta resource-tree API 提供
 - Manager 预览、下载、快显和任务入口统一以 ResourceLocator 定位
 - 通过 PreviewResolver 选择 PreviewProvider
-- 支持 PostgreSQL、MySQL、MongoDB、ClickHouse 等
 - 支持外部插件动态加载
 - 预览响应按 `frontend_renderer -> preview_material -> content.kind` 选择前端组件
 
