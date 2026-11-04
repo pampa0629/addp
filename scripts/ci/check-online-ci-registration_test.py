@@ -1389,6 +1389,33 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_line_density(self.repository, {'raster-line-density-persistence'})
             target.write_text(original)
+    def test_line_density_weighted_requires_exact_cog_matrix_budget_and_regressions(self):
+        source = Path(__file__).resolve().parents[2]
+        required = CHECK.LINE_DENSITY_WEIGHTED_REQUIRED
+        for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml', *required):
+            target = self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source/relative,target)
+        CHECK.validate_line_density_weighted(self.repository, {'raster-line-density-weighted-persistence'})
+        for relative, fragments in required.items():
+            target=self.repository/relative; original=target.read_text()
+            for fragment in fragments:
+                target.write_text(original.replace(fragment, 'omitted'))
+                with self.subTest(relative=relative,fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_line_density_weighted(self.repository, {'raster-line-density-weighted-persistence'})
+                target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-line-density-weighted-fixture.py';original=target.read_text()
+        for before,after in [("'omitted.cog.tif'","'extra.gpkg'"),("'field_null'","'field_omitted'"),("4.0, None)","5.0, None)"),("'replicated.gpkg'","'changed.gpkg'"),("'zero_component'","'ordinary_multiline'"),("'mass')","None)")]:
+            self.assertIn(before,original);target.write_text(original.replace(before,after,1))
+            with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_line_density_weighted(self.repository, {'raster-line-density-weighted-persistence'})
+            target.write_text(original)
+        target=self.repository/'scripts/test/raster-line-density-weighted-persistence-online.py';original=target.read_text()
+        for before,after in [("'field_bool':True","'field_bool':1"),("'field_null':None","'field_null':0")]:
+            self.assertIn(before,original);target.write_text(original.replace(before,after,1))
+            with self.subTest(field=before),self.assertRaises(CHECK.RegistrationError):CHECK.validate_line_density_weighted(self.repository, {'raster-line-density-weighted-persistence'})
+            target.write_text(original)
+
     def test_point_kernel_density_requires_exact_cog_matrix_budget_and_regressions(self):
         source = Path(__file__).resolve().parents[2]
         required = CHECK.POINT_KERNEL_DENSITY_REQUIRED
