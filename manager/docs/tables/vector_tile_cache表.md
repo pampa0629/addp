@@ -51,15 +51,27 @@
 
 这些状态属于 artifact state，不属于统一 execution status。
 
-## 四、索引建议
+<a id="四索引建议"></a>
 
-| 索引名 | 字段 | 说明 |
+## 四、索引声明与核验边界
+
+[TileCache 模型](../../backend/internal/models/tile_cache.go)声明查询索引；当前结果的部分唯一索引由 [InitDatabase／ensureTileCacheStateSchema](../../backend/internal/repository/database.go) 在 `AutoMigrate` 后显式创建：
+
+| 索引名 | 字段 | 声明来源与语义 |
 | --- | --- | --- |
-| `idx_vector_tile_cache_tenant_item_fingerprint` | `tenant_id, item_fingerprint` | 查询某 item 的瓦片缓存结果 |
-| `idx_vector_tile_cache_tenant_fingerprint_profile_unique` | `tenant_id, item_fingerprint, profile_hash` | 同一 item 和生成 profile 只保留一条当前结果 |
-| `idx_vector_tile_cache_status` | `status` | 按产物状态过滤 |
-| `idx_vector_tile_cache_task` | `task_id` | 查询某任务产生的产物 |
-| `idx_vector_tile_cache_execution` | `last_execution_id` | 从 execution 回溯产物 |
+| `idx_vector_tile_cache_tenant_item_fingerprint` | `tenant_id, item_fingerprint` | 模型普通索引，查询某 item 的瓦片缓存结果。 |
+| `idx_vector_tile_cache_tenant_fingerprint_profile_unique` | `tenant_id, item_fingerprint, profile_hash` | 初始化 SQL 的部分唯一索引，仅覆盖 `deleted_at IS NULL` 的记录。 |
+| `idx_vector_tile_cache_tenant_item` | `tenant_id, item_id` | 模型普通索引，按当前 Meta item 行引用辅助回查。 |
+| `idx_vector_tile_cache_status` | `status` | 模型普通索引，按产物状态过滤。 |
+| `idx_vector_tile_cache_task` | `task_id` | 模型普通索引，查询某任务产生的产物。 |
+| `idx_vector_tile_cache_execution` | `last_execution_id` | 模型普通索引，从 execution 回溯产物。 |
+| 模型未显式命名 | `deleted_at` | 模型声明普通索引；实际名称与落库状态需核验。 |
+
+部分唯一约束针对未软删除的当前结果，不按 `status` 过滤；不能仅因 `status=deleted` 就认定该记录已退出唯一约束。实际数据库须核对所属表、字段组合、唯一性、有效状态及 `deleted_at IS NULL` 谓词，不能只核对索引名称。
+
+[历史 014 SQL](../../backend/migrations/014_recreate_vector_tile_cache_state.sql)使用 `tile_format` 参与唯一键；[历史 039 SQL](../../backend/migrations/039_recreate_vector_tile_cache_as_pmtiles.sql)和当前 Go 初始化使用 `profile_hash`，并包含表重建或记录清理。历史文件存在不表示目标环境已执行，不以重启初始化或重放历史 SQL 代替只读约束核验。
+
+现有 [ManagedTaskSemanticIdentityIndexes 用例](../../backend/internal/repository/tile_cache_repository_postgres_integration_test.go)会调用初始化，但直接反例断言的是任务定义的 `uq_manager_task_definition_semantic`，不能把它计为本结果表部分唯一索引的重复记录拒绝、软删除后复用或当前运行库约束已生效的独立证据。该用例由 `make test-manager-postgres` 的现有命名筛选命中；标准门禁与分版本证据统一见[Manager 开发与验证](../../CLAUDE.md#开发与验证)，源码与用例存在不计为数据库或运行验收通过。
 
 ## 五、相关文档
 
