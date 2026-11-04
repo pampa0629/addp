@@ -1,79 +1,29 @@
 <template>
-  <div class="login-container">
-    <el-card class="login-card">
-      <template #header>
-        <h2>{{ t('manager.login.title') }}</h2>
-      </template>
-      <el-form :model="form" @submit.prevent="handleLogin">
-        <el-form-item :label="t('manager.login.username')">
-          <el-input v-model="form.username" :placeholder="t('manager.login.usernamePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="t('manager.login.password')">
-          <el-input v-model="form.password" type="password" :placeholder="t('manager.login.passwordPlaceholder')" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" native-type="submit" :loading="loading" style="width: 100%">
-            {{ t('manager.login.submit') }}
-          </el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
-  </div>
+  <AuthLoginFlow
+    :title="t('manager.login.title')"
+    :login="login"
+    :verify-mfa="verifyMFA"
+    :select-context="selectContext"
+    @authenticated="handleAuthenticated"
+  />
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { AuthLoginFlow, resolveLoginRedirect } from '@common-ui'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
-import { ElMessage } from 'element-plus'
-import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-const router = useRouter()
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 
-const form = ref({
-  username: '',
-  password: ''
-})
+const login = (username, password) => authStore.login(username, password)
+const verifyMFA = (challengeToken, code) => authStore.verifyMFA(challengeToken, code)
+const selectContext = (selectionTicket, context) => authStore.selectContext(selectionTicket, context)
 
-const loading = ref(false)
-
-const handleLogin = async () => {
-  if (!form.value.username || !form.value.password) {
-    ElMessage.warning(t('manager.login.required'))
-    return
-  }
-
-  loading.value = true
-  try {
-    await authStore.login(form.value.username, form.value.password)
-    ElMessage.success(t('manager.login.success'))
-    await router.push(route.query.redirect || '/')
-  } catch (error) {
-    ElMessage.error(error.response?.data?.error || t('manager.login.failed'))
-  } finally {
-    loading.value = false
-  }
+function handleAuthenticated() {
+  router.replace(resolveLoginRedirect(route.query.redirect, '/'))
 }
 </script>
-
-<style scoped>
-.login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  background: var(--addp-primary-gradient);
-}
-
-.login-card {
-  width: 400px;
-}
-
-h2 {
-  text-align: center;
-  margin: 0;
-}
-</style>

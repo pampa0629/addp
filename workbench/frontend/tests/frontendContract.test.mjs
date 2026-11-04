@@ -59,6 +59,15 @@ test('localizes the standalone module name instead of using one language for eve
   assert.equal(en.workbench.previewApplication, 'Preview application')
 })
 
+test('Workbench delegates the entire browser login flow to the shared owner', () => {
+  const login = readSource('../src/views/Login.vue')
+  assert.match(login, /<AuthLoginFlow\b/)
+  assert.match(login, /:verify-mfa="verifyMFA"/)
+  assert.match(login, /:select-context="selectContext"/)
+  assert.match(login, /@authenticated="handleAuthenticated"/)
+  assert.doesNotMatch(login, /<el-form\b|<el-input\b|next_action|ElMessage/)
+})
+
 test('spatial exploration wizard compiles existing application concepts without a template runtime path', () => {
   const editor = readSource('../src/views/DataApplicationEditor.vue')
   const wizard = readSource('../src/components/SpatialExplorationWizard.vue')

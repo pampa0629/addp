@@ -108,6 +108,8 @@ Chart 的可选 `result_name_field` 显式选择已查询的 string 输出字段
 
 ### 运行展示
 
+`frontend/e2e/runtime-login.spec.js` 使用独立匿名浏览器上下文和内存 HTTP 夹具，覆盖中英文密码登录后的上下文选择、必要 MFA、登录页刷新、直接签发会话以及运行页刷新，核对原始应用路径、`preset` 和 fragment 回跳。Workbench 只组合共享 `AuthLoginFlow`，登录地址固定为同源 `/module-ui/workbench/login`，不复制登录状态机；测试随既有 Workbench 前端门禁与 CI 自动发现运行，不写开发数据库。
+
 `frontend/e2e/runtime-fullscreen.spec.js` 通过真实 Fullscreen API 和鼠标滚轮验证已发布 desktop 应用在宽屏、窄屏下的全屏滚动、下方组件可达和退出后整页滚动恢复，并验证 wallboard 全屏仍将组件约束在视口内。
 
 全期数字卡片在桌面运行与整页预览中仅对独立同高横排收紧：Host 通知实际呈现模式，Canvas 将该排投影为内容自适应行并移动后续行，原 placement 不变。混合图表/表格或跨排组件保留固定网格，编辑画布和大屏不压缩。Node 布局测试覆盖空隙、跨排、还原和快照不变；中英文浏览器回归覆盖全期/月度高度切换、混排、窄屏长说明和四项数值不裁切、大屏隔离。无新增依赖或测试入口。

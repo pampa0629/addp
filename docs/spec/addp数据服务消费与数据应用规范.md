@@ -1130,7 +1130,7 @@ Workbench 第一阶段的 Data Application 是 Tenant 内的已认证数据应�
 
 顶层运行端的交付体验固定为以下单一路线：
 
-1. 匿名用户打开运行链接时进入统一登录，登录成功后返回原始 `fullPath`，包括已发布的 `preset` key；登录回跳只接受当前 origin 的站内路径，不接受协议相对 URL 或外部 URL。
+1. 匿名用户打开运行链接时进入同源 `/module-ui/workbench/login`，复用共享 `AuthLoginFlow` 完成密码、必要 MFA 与上下文选择；只有 System 返回 `session_issued` 后才离开登录页。登录地址可刷新，登录成功后以顶层文档导航返回原始 `fullPath`（包括已发布的 `preset` key 和 fragment），由 `/data-apps/` 的 Workbench 运行入口重新加载；登录回跳只接受当前 origin 的站内路径，不接受协议相对 URL 或外部 URL。
 2. 已登录用户缺少 `workbench.data_application.execute` 或当前 Data Application 的有效 Grant 时，运行端显示稳定的受限访问状态，提供 Portal 资产搜索、“我的申请与授权”和当页重试入口；Workbench 不因此在线查询 Asset ACL，也不根据 Application ID 推断 Asset。
 3. 应用运行授权生效后，Component 仍使用当前 User Bearer 请求 Service；某个 Service 拒绝访问时只阻断相应 Component，不改用 Workbench 或创建者身份代理查询。
 4. 交付界面必须明示链接的访问范围：接收者需登录当前 Tenant，并具备应用运行权限、有效应用授权和各 Component 依赖的 Service 数据权限。

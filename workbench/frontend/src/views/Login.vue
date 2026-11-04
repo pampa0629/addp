@@ -1,48 +1,35 @@
 <template>
-  <div class="login">
-    <el-card class="card">
-      <template #header><h2>{{ t('workbench.login.title') }}</h2></template>
-      <el-form ref="formRef" :model="form" @submit.prevent="submit">
-        <el-form-item><el-input v-model="form.username" :placeholder="t('workbench.login.username')" /></el-form-item>
-        <el-form-item><el-input v-model="form.password" type="password" show-password :placeholder="t('workbench.login.password')" /></el-form-item>
-        <el-button type="primary" native-type="submit" :loading="loading" class="full">{{ t('workbench.login.submit') }}</el-button>
-      </el-form>
-    </el-card>
-  </div>
+  <AuthLoginFlow
+    :title="t('workbench.login.title')"
+    :login="login"
+    :verify-mfa="verifyMFA"
+    :select-context="selectContext"
+    @authenticated="handleAuthenticated"
+  />
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { AuthLoginFlow, resolveLoginRedirect } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { resolveLoginRedirect } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
-const form = reactive({ username: '', password: '' })
-const loading = ref(false)
 
-async function submit() {
-  if (!form.username || !form.password) return
-  loading.value = true
-  try {
-    await auth.login(form.username, form.password)
-    await router.replace(resolveLoginRedirect(route.query.redirect, '/applications'))
-  } catch (error) {
-    ElMessage.error(error?.message || t('workbench.login.failed'))
-  } finally {
-    loading.value = false
+const login = (username, password) => auth.login(username, password)
+const verifyMFA = (challengeToken, code) => auth.verifyMFA(challengeToken, code)
+const selectContext = (selectionTicket, context) => auth.selectContext(selectionTicket, context)
+
+function handleAuthenticated() {
+  const target = resolveLoginRedirect(route.query.redirect, '/applications')
+  // The runtime and module entry use different history bases; reload its owner document.
+  if (target.startsWith('/data-apps/')) {
+    window.location.replace(target)
+    return
   }
+  router.replace(target)
 }
 </script>
-
-<style scoped>
-.login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--addp-bg-secondary)}
-.card{width:min(400px,calc(100vw - 32px))}
-.full{width:100%}
-h2{margin:0;color:var(--addp-text-primary)}
-</style>

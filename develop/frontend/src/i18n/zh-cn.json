@@ -13,15 +13,7 @@
       "tasks": "任务管理"
     },
     "login": {
-      "title": "数据开发 - 登录",
-      "usernamePlaceholder": "用户名",
-      "passwordPlaceholder": "密码",
-      "submit": "登录",
-      "success": "登录成功",
-      "failed": "登录失败，请检查用户名和密码",
-      "redirectFailed": "登录后跳转失败，请刷新页面重试",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码"
+      "title": "数据开发 - 登录"
     },
     "query": {
       "queryMaskingTab": "查询方式",

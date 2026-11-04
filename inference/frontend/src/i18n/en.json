@@ -1,13 +1,7 @@
 {
   "inference": {
     "login": {
-      "title": "ADDP Inference",
-      "username": "Username",
-      "password": "Password",
-      "usernameRequired": "Enter username",
-      "passwordRequired": "Enter password",
-      "submit": "Sign in",
-      "failed": "Sign in failed"
+      "title": "ADDP Inference"
     },
     "settings": { "title": "AI Model Services" },
     "common": {

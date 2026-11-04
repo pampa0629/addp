@@ -50,15 +50,7 @@
       "optional": "可选"
     },
     "login": {
-      "title": "知识图谱",
-      "subtitle": "知识图谱模块",
-      "username": "用户名",
-      "password": "密码",
-      "loginBtn": "登录",
-      "loggingIn": "登录中...",
-      "loginFailed": "登录失败",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码"
+      "title": "知识图谱"
     },
     "layout": {
       "force": "力导向",

@@ -59,15 +59,7 @@
       "issues": "问题工单"
     },
     "login": {
-      "title": "数据质量管理",
-      "username": "请输入用户名",
-      "password": "请输入密码",
-      "submit": "登录",
-      "loading": "登录中...",
-      "success": "登录成功",
-      "failed": "登录失败，请检查用户名和密码",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码"
+      "title": "数据质量管理"
     },
     "domain": {
       "all": "全部业务域（含租户公共）",

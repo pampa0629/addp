@@ -180,6 +180,17 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if "skills" in roots:
         affected.add("agent")
 
+    # Agent's component gate mounts every module's real shared-login adapter.
+    if any(
+        path.split("/", 1)[0] in registered
+        and path.split("/", 1)[-1] in {
+            "frontend/src/views/Login.vue",
+            "frontend/src/i18n/zh-cn.json",
+        }
+        for path in files
+    ):
+        affected.add("agent")
+
     # Agent model fixtures consume this owner definition, including its revision.
     if "ontology/backend/internal/platform/transfer.json" in files:
         affected.add("agent")

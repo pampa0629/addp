@@ -14,10 +14,7 @@
       "logout": "退出登录"
     },
     "login": {
-      "title": "数据安全登录",
-      "username": "用户名",
-      "password": "密码",
-      "submit": "登录"
+      "title": "数据安全登录"
     },
     "resources": {
       "classificationGrading": "分类分级体系",

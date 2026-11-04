@@ -616,16 +616,7 @@
       "copyFailed": "复制失败"
     },
     "login": {
-      "title": "数据标准中心",
-      "subtitle": "统一治理数据标准",
-      "usernamePlaceholder": "请输入用户名",
-      "passwordPlaceholder": "请输入密码",
-      "loggingIn": "登录中...",
-      "login": "登录",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码",
-      "loginSuccess": "登录成功",
-      "loginFailed": "登录失败，请检查用户名和密码"
+      "title": "数据标准中心"
     }
   }
 }

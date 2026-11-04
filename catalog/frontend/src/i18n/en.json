@@ -176,16 +176,7 @@
       "logout": "Sign out"
     },
     "login": {
-      "title": "Enterprise Catalog",
-      "subtitle": "Catalog",
-      "username": "Username",
-      "password": "Password",
-      "usernameRequired": "Enter a username",
-      "passwordRequired": "Enter a password",
-      "loading": "Signing in…",
-      "submit": "Sign in",
-      "success": "Signed in",
-      "failed": "Sign-in failed"
+      "title": "Enterprise Catalog"
     },
     "mapping": {
       "title": "Field standard mappings",

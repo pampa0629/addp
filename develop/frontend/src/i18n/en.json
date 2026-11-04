@@ -13,15 +13,7 @@
       "tasks": "Task Management"
     },
     "login": {
-      "title": "Data Development - Login",
-      "usernamePlaceholder": "Username",
-      "passwordPlaceholder": "Password",
-      "submit": "Login",
-      "success": "Login successful",
-      "failed": "Login failed, please check your username and password",
-      "redirectFailed": "Redirect failed after login, please refresh the page",
-      "usernameRequired": "Please enter username",
-      "passwordRequired": "Please enter password"
+      "title": "Data Development - Login"
     },
     "query": {
       "queryMaskingTab": "Query method",

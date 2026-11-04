@@ -17,15 +17,7 @@
       "user": "用户"
     },
     "login": {
-      "title": "数据资产门户",
-      "usernamePlaceholder": "请输入用户名",
-      "passwordPlaceholder": "请输入密码",
-      "loggingIn": "登录中...",
-      "login": "登录",
-      "loginSuccess": "登录成功",
-      "loginFailed": "登录失败，请检查用户名和密码",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码"
+      "title": "数据资产门户"
     },
     "home": {
       "title": "资产门户",

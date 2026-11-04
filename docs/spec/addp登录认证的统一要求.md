@@ -246,6 +246,8 @@ BroadcastChannel 和 Refresh Token Family 协调域，不需要在新窗口 URL�
 
 ### 6.1 登录
 
+所有前端模块（含 Console、Portal 与独立运行入口）的登录页必须复用 `common-frontend/basic/src/components/AuthLoginFlow.vue`。密码输入、必要 MFA、上下文选择、提交状态与认证错误反馈由该组件唯一拥有；模块只接入自己的 Auth Store、标题和成功后的导航，不得保留私有登录表单或登录步骤状态机。只有收到 `session_issued` 才执行登录完成导航；回跳统一使用共享 `resolveLoginRedirect()` 校验，并替换登录历史项。模块是否可访问及其默认落点仍由既有路由与权限规则决定。
+
 1. 用户提交用户名和密码到 System `/login`；
 2. System 验证 User、Local Account、认证策略和必要 MFA；
 3. System 计算可进入的 Platform Realm 和有效 Tenant Membership；

@@ -246,6 +246,18 @@ class ChangedGateTest(unittest.TestCase):
             self.assertEqual(["agent", "console"], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual(["agent"], MODULE.affected_modules(self.repository, ["agent/backend/api/chat.py"]))
 
+    def test_login_adapter_changes_select_cross_module_component_gate(self) -> None:
+        for name in ("agent", "manager", "portal"):
+            path = self.repository / name / "frontend/package.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for name in ("manager", "portal"):
+            for suffix in ("frontend/src/views/Login.vue", "frontend/src/i18n/zh-cn.json"):
+                with self.subTest(module=name, suffix=suffix):
+                    self.assertEqual(["agent", name], MODULE.affected_modules(self.repository, [f"{name}/{suffix}"]))
+        self.assertEqual(["manager"], MODULE.affected_modules(self.repository, ["manager/frontend/src/views/Explorer.vue"]))
+
     def test_console_delivery_route_changes_include_workbench_browser_gate(self) -> None:
         console_manifest = self.repository / "console/frontend/package.json"
         console_manifest.parent.mkdir(parents=True)

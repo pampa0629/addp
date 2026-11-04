@@ -13,15 +13,7 @@
       "graphService": "Graph Services"
     },
     "login": {
-      "title": "Data Service Login",
-      "usernamePlaceholder": "Enter username",
-      "passwordPlaceholder": "Enter password",
-      "loginBtn": "Login",
-      "loggingIn": "Logging in...",
-      "success": "Login successful",
-      "failed": "Login failed",
-      "usernameRequired": "Please enter username",
-      "passwordRequired": "Please enter password"
+      "title": "Data Service Login"
     },
     "common": {
       "search": "Search",

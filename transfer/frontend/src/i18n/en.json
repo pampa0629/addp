@@ -18,15 +18,7 @@
       "dataTransfer": "Data Transfer"
     },
     "login": {
-      "title": "Data Transfer Login",
-      "usernamePlaceholder": "Enter username",
-      "passwordPlaceholder": "Enter password",
-      "loggingIn": "Logging in...",
-      "submit": "Login",
-      "success": "Login successful",
-      "failed": "Login failed",
-      "usernameRequired": "Please enter username",
-      "passwordRequired": "Please enter password"
+      "title": "Data Transfer Login"
     },
     "continuousStartDisabled": {
       "schema_blocked": "A source schema change blocked this sync. Review its schema change request first; ineligible changes require a permanent stop and a new task.",

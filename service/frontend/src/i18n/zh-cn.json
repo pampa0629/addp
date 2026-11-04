@@ -13,15 +13,7 @@
       "graphService": "图查询服务"
     },
     "login": {
-      "title": "数据服务登录",
-      "usernamePlaceholder": "请输入用户名",
-      "passwordPlaceholder": "请输入密码",
-      "loginBtn": "登录",
-      "loggingIn": "登录中...",
-      "success": "登录成功",
-      "failed": "登录失败",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码"
+      "title": "数据服务登录"
     },
     "common": {
       "search": "搜索",

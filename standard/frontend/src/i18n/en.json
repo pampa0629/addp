@@ -617,16 +617,7 @@
       "copyFailed": "Copy failed"
     },
     "login": {
-      "title": "Data Standards Center",
-      "subtitle": "Unified data standards governance",
-      "usernamePlaceholder": "Enter username",
-      "passwordPlaceholder": "Enter password",
-      "loggingIn": "Logging in...",
-      "login": "Login",
-      "usernameRequired": "Please enter username",
-      "passwordRequired": "Please enter password",
-      "loginSuccess": "Login successful",
-      "loginFailed": "Login failed, please check your credentials"
+      "title": "Data Standards Center"
     }
   }
 }

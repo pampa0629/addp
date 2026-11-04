@@ -7,16 +7,7 @@
       "orchestrations": "任务编排"
     },
     "login": {
-      "title": "编排引擎登录",
-      "subtitle": "Orchestration Engine",
-      "usernamePlaceholder": "请输入用户名",
-      "passwordPlaceholder": "请输入密码",
-      "loggingIn": "登录中...",
-      "submit": "登录",
-      "success": "登录成功",
-      "failed": "登录失败",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码"
+      "title": "编排引擎登录"
     },
     "orchestrationList": {
       "title": "任务编排",

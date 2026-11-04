@@ -12,15 +12,7 @@
       "dashboard": "Dashboard"
     },
     "login": {
-      "title": "Asset Management",
-      "usernamePlaceholder": "Enter username",
-      "passwordPlaceholder": "Enter password",
-      "loggingIn": "Logging in...",
-      "submit": "Login",
-      "usernameRequired": "Please enter username",
-      "passwordRequired": "Please enter password",
-      "success": "Login successful",
-      "failed": "Login failed, please check your credentials"
+      "title": "Asset Management"
     },
     "assetManager": {
       "uncategorized": "Uncategorized",

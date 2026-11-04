@@ -1,7 +1,29 @@
-<template><div class="login"><el-card><h2>{{ t('security.login.title') }}</h2><el-form @submit.prevent="submit"><el-input v-model="username" :placeholder="t('security.login.username')"/><el-input v-model="password" type="password" show-password :placeholder="t('security.login.password')"/><el-button native-type="submit" type="primary" :loading="loading">{{ t('security.login.submit') }}</el-button></el-form></el-card></div></template>
+<template>
+  <AuthLoginFlow
+    :title="t('security.login.title')"
+    :login="login"
+    :verify-mfa="verifyMFA"
+    :select-context="selectContext"
+    @authenticated="handleAuthenticated"
+  />
+</template>
+
 <script setup>
-import { ref } from 'vue'; import { useRouter, useRoute } from 'vue-router'; import { useI18n } from 'vue-i18n'; import { ElMessage } from 'element-plus'; import { useAuthStore } from '../store/auth'
-const username=ref(''), password=ref(''), loading=ref(false), auth=useAuthStore(), router=useRouter(), route=useRoute(); const {t}=useI18n()
-async function submit(){loading.value=true;try{await auth.login(username.value,password.value);await router.push(route.query.redirect || '/')}catch(e){ElMessage.error(e.message||t('security.common.failed'))}finally{loading.value=false}}
+import { AuthLoginFlow, resolveLoginRedirect } from '@common-ui'
+import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '../store/auth'
+
+const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+
+const login = (username, password) => authStore.login(username, password)
+const verifyMFA = (challengeToken, code) => authStore.verifyMFA(challengeToken, code)
+const selectContext = (selectionTicket, context) => authStore.selectContext(selectionTicket, context)
+
+function handleAuthenticated() {
+  router.replace(resolveLoginRedirect(route.query.redirect, '/'))
+}
 </script>
-<style scoped>.login{min-height:100vh;display:grid;place-items:center;background:var(--addp-bg-secondary)}.el-card{width:380px}.el-form{display:grid;gap:16px}</style>

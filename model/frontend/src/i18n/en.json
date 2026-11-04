@@ -12,15 +12,7 @@
       "target_field": "Referenced Field"
     },
     "login": {
-      "title": "Data Standards & Modeling",
-      "username_placeholder": "Enter username",
-      "password_placeholder": "Enter password",
-      "logging_in": "Logging in...",
-      "login": "Login",
-      "login_success": "Login successful",
-      "login_failed": "Login failed, please check your credentials",
-      "username_required": "Please enter username",
-      "password_required": "Please enter password"
+      "title": "Data Standards & Modeling"
     },
     "common": {
       "save": "Save",

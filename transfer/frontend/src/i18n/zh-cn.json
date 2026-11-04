@@ -18,15 +18,7 @@
       "dataTransfer": "数据传输"
     },
     "login": {
-      "title": "数据传输登录",
-      "usernamePlaceholder": "请输入用户名",
-      "passwordPlaceholder": "请输入密码",
-      "loggingIn": "登录中...",
-      "submit": "登录",
-      "success": "登录成功",
-      "failed": "登录失败",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码"
+      "title": "数据传输登录"
     },
     "continuousStartDisabled": {
       "schema_blocked": "源表结构变化已阻塞当前同步；请先检查结构变更请求，不可审批的变化需永久停止后新建任务。",

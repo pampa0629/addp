@@ -32,15 +32,7 @@
       }
     },
     "login": {
-      "title": "Runtime Monitor Login",
-      "username_placeholder": "Enter username",
-      "password_placeholder": "Enter password",
-      "username_required": "Please enter username",
-      "password_required": "Please enter password",
-      "submit": "Login",
-      "submitting": "Logging in...",
-      "success": "Login successful",
-      "failed": "Login failed, please check your credentials"
+      "title": "Runtime Monitor Login"
     },
     "execution": {
       "recentDetailTitle": "Monitored Execution",

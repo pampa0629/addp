@@ -15,13 +15,7 @@
       "logoutSuccess": "已退出登录"
     },
     "login": {
-      "title": "元数据管理登录",
-      "usernamePlaceholder": "请输入用户名",
-      "passwordPlaceholder": "请输入密码",
-      "loggingIn": "登录中...",
-      "submit": "登录",
-      "success": "登录成功",
-      "failed": "登录失败"
+      "title": "元数据管理登录"
     },
     "scan": {
       "manual": {

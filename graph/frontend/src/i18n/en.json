@@ -50,15 +50,7 @@
       "optional": "Optional"
     },
     "login": {
-      "title": "Knowledge Graph",
-      "subtitle": "Graph Module",
-      "username": "Username",
-      "password": "Password",
-      "loginBtn": "Login",
-      "loggingIn": "Logging in...",
-      "loginFailed": "Login failed",
-      "usernameRequired": "Please enter username",
-      "passwordRequired": "Please enter password"
+      "title": "Knowledge Graph"
     },
     "layout": {
       "force": "Force",

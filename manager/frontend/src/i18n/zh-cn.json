@@ -258,15 +258,7 @@
       "detectFailed": "无法识别该数据项的完整空间信息"
     },
     "login": {
-      "title": "数据管理模块 - 登录",
-      "username": "用户名",
-      "password": "密码",
-      "usernamePlaceholder": "请输入用户名",
-      "passwordPlaceholder": "请输入密码",
-      "submit": "登录",
-      "required": "请输入用户名和密码",
-      "success": "登录成功",
-      "failed": "登录失败"
+      "title": "数据管理模块 - 登录"
     },
     "vectorization": {
       "title": "向量化",

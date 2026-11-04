@@ -1,13 +1,7 @@
 {
   "inference": {
     "login": {
-      "title": "ADDP 推理管理",
-      "username": "用户名",
-      "password": "密码",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码",
-      "submit": "登录",
-      "failed": "登录失败"
+      "title": "ADDP 推理管理"
     },
     "settings": { "title": "AI 模型服务" },
     "common": {

@@ -258,15 +258,7 @@
       "detectFailed": "Unable to resolve complete spatial facts for this item"
     },
     "login": {
-      "title": "Data Management - Login",
-      "username": "Username",
-      "password": "Password",
-      "usernamePlaceholder": "Enter username",
-      "passwordPlaceholder": "Enter password",
-      "submit": "Login",
-      "required": "Please enter username and password",
-      "success": "Login successful",
-      "failed": "Login failed"
+      "title": "Data Management - Login"
     },
     "vectorization": {
       "title": "Vectorization",

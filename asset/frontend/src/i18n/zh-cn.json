@@ -12,15 +12,7 @@
       "dashboard": "运营看板"
     },
     "login": {
-      "title": "数据资产管理",
-      "usernamePlaceholder": "请输入用户名",
-      "passwordPlaceholder": "请输入密码",
-      "loggingIn": "登录中...",
-      "submit": "登录",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码",
-      "success": "登录成功",
-      "failed": "登录失败，请检查用户名和密码"
+      "title": "数据资产管理"
     },
     "assetManager": {
       "uncategorized": "未分类",

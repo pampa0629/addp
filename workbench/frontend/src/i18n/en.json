@@ -303,11 +303,7 @@
       "unsupported_crs": "The declared CRS is unsupported by this client, so map rendering is blocked"
     },
     "login": {
-      "title": "Sign in to Workbench",
-      "username": "Username",
-      "password": "Password",
-      "submit": "Sign in",
-      "failed": "Sign-in failed"
+      "title": "Sign in to Workbench"
     },
     "parameterOptionsUnavailable": "Parameter contract unavailable or conflicting: {components}",
     "parameterOptionsInvalid": "Parameter values do not satisfy the bound service contracts. Check parameters and options.",

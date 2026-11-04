@@ -14,7 +14,7 @@ export function resolveLoginRedirect(value, fallbackRoute = '/') {
 
   const redirect = `${target.pathname}${target.search}${target.hash}`
   // Match Vue Router's default case-insensitive, optional trailing slash rule.
-  if (/^\/login\/?$/i.test(target.pathname)) {
+  if (/^\/(?:portal\/|module-ui\/[^/]+\/)?login\/?$/i.test(target.pathname)) {
     return fallbackRoute
   }
   return redirect

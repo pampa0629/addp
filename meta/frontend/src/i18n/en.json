@@ -15,13 +15,7 @@
       "logoutSuccess": "Logged out"
     },
     "login": {
-      "title": "Metadata Management Login",
-      "usernamePlaceholder": "Enter username",
-      "passwordPlaceholder": "Enter password",
-      "loggingIn": "Logging in...",
-      "submit": "Login",
-      "success": "Login successful",
-      "failed": "Login failed"
+      "title": "Metadata Management Login"
     },
     "scan": {
       "manual": {

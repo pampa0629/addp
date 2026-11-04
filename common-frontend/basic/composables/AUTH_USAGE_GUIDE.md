@@ -82,9 +82,11 @@ router.beforeEach(createAuthGuard(useAuthStore, {
 
 ### 3.2 登录落点与安全回跳
 
+所有模块的 `Login.vue` 只组合公共导出的 `AuthLoginFlow`：将 Store 的 `login`、`verifyMFA` 和 `selectContext` 接入组件，仅在 `authenticated` 事件中执行成功导航。用户名密码、MFA、上下文选择、加载状态、错误消息和输入校验全部由共享组件实现；模块不另建表单或按 `next_action` 编排步骤。模块标题继续使用自己的 i18n 词条，通用登录词条由共享 `auth.login` 提供。
+
 `createAuthGuard` 的 `homeRoute` 默认 `/`；公开路径带模块前缀的独立应用显式指定自身根路径，已认证用户访问登录页时返回该根路径。
 
-登录完成后的目标统一使用 `resolveLoginRedirect()`，再交给各入口既有导航能力。只接受单一站内绝对路径，保留合法的 path、query 和 hash；外部地址、协议相对地址、反斜线、重复 query 形成的数组等歧义输入回到入口默认首页。登录页自身及 Vue Router 默认匹配规则下等价的大小写、末尾斜线形式均不得作为登录后目标；检查发生在 URL 路径规范化之后。Agent 模块首页 `/` 与 `/sessions/:session_id` 深链保持独立，不从会话列表推断目标。
+登录完成后的目标统一使用 `resolveLoginRedirect()`，再交给各入口既有导航能力并替换登录历史项。只接受单一站内绝对路径，保留合法的 path、query 和 hash；外部地址、协议相对地址、反斜线、重复 query 形成的数组等歧义输入回到入口默认首页。模块内 `/login`、Portal `/portal/login`、模块正式 `/module-ui/{frontend}/login` 及 Vue Router 默认匹配规则下等价的大小写、末尾斜线形式均不得作为登录后目标；检查发生在 URL 路径规范化之后。Agent 模块首页 `/` 与 `/sessions/:session_id` 深链保持独立，不从会话列表推断目标。
 
 ## 四、API 请求
 
@@ -152,5 +154,7 @@ make test-agent-frontend
 ```
 
 Console 合同测试验证共享调用边界及路由语义，Agent 组件测试验证实际登录完成后使用同一解析器，不再要求私有源码中重复出现安全检查。
+
+共享 `loginOwnership.test.mjs` 自动发现所有登记登录路由，拒绝私有表单与状态机。Agent 前端门禁的 `moduleLogin.test.js` 动态挂载全部模块的真实 `Login.vue`，仅替换 Store 与导航边界，逐一验证密码、MFA、上下文选择、完整路径回跳和不安全目标拒绝；模块登录适配器及其中文词条变化由共用影响计算自动选中该门禁，不新增外部服务或模块依赖安装。Portal、Workbench 的真实入口与文档切换继续由各自浏览器门禁验证。
 
 同时扫描运行时代码，确保没有重新引入 `localStorage.token`、query Token 或 Console iframe Token URL。构建、确定性组件／浏览器回归和真实 System／Gateway 会话验收分别记录；未运行、失败或跳过项不计为通过，完整验收范围见[认证完成检查](../../../docs/spec/addp登录认证的统一要求.md#九完成检查)与[测试分层](../../../docs/spec/addp测试与验收规范.md#二测试分层)。

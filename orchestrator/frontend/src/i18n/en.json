@@ -7,16 +7,7 @@
       "orchestrations": "Orchestrations"
     },
     "login": {
-      "title": "Orchestration Engine Login",
-      "subtitle": "Orchestration Engine",
-      "usernamePlaceholder": "Enter username",
-      "passwordPlaceholder": "Enter password",
-      "loggingIn": "Logging in...",
-      "submit": "Login",
-      "success": "Login successful",
-      "failed": "Login failed",
-      "usernameRequired": "Please enter username",
-      "passwordRequired": "Please enter password"
+      "title": "Orchestration Engine Login"
     },
     "orchestrationList": {
       "title": "Orchestrations",

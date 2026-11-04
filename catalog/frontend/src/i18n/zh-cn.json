@@ -176,16 +176,7 @@
       "logout": "退出登录"
     },
     "login": {
-      "title": "企业资源目录",
-      "subtitle": "Catalog",
-      "username": "用户名",
-      "password": "密码",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码",
-      "loading": "登录中…",
-      "submit": "登录",
-      "success": "登录成功",
-      "failed": "登录失败"
+      "title": "企业资源目录"
     },
     "mapping": {
       "title": "字段标准映射",

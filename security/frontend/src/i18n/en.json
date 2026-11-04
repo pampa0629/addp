@@ -14,10 +14,7 @@
       "logout": "Sign out"
     },
     "login": {
-      "title": "Security Sign In",
-      "username": "Username",
-      "password": "Password",
-      "submit": "Sign in"
+      "title": "Security Sign In"
     },
     "resources": {
       "classificationGrading": "Classification & Grading",

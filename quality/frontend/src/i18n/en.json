@@ -59,15 +59,7 @@
       "issues": "Issues"
     },
     "login": {
-      "title": "Data Quality Management",
-      "username": "Enter username",
-      "password": "Enter password",
-      "submit": "Login",
-      "loading": "Logging in...",
-      "success": "Login successful",
-      "failed": "Login failed, please check your credentials",
-      "usernameRequired": "Please enter username",
-      "passwordRequired": "Please enter password"
+      "title": "Data Quality Management"
     },
     "domain": {
       "all": "All domains (including tenant-public)",
