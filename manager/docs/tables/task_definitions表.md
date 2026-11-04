@@ -28,11 +28,51 @@
 | `config` | 任务类型专有配置，只能由对应校验器解释 |
 | `created_by` / `created_at` / `updated_at` / `deleted_at` | 审计与生命周期字段 |
 
-活跃定义按 `(tenant_id, task_type, semantic_key)` 唯一；空 `semantic_key` 不参与该唯一约束。
+语义唯一的适用范围、模型索引与初始化 SQL 声明统一见[索引声明与唯一性边界](#索引声明与唯一性边界)。
 
 `binding_status` 与 `last_execution_status` 正交：前者是 Manager cleanup 对当前绑定的持久化结论，后者只保存最近 execution 状态。任务创建或重新保存有效配置时，必须把 `binding_status` 重置为 `active` 并清空 `binding_issue`；逻辑回收不得覆盖已有执行摘要。
 
 受管快显任务只允许对 `binding_status=missing` 的定义执行显式源重绑。重绑请求携带当前 `version` 与新的 ResourceLocator，由 Manager 校验源能力并重建强类型配置；重绑不创建 execution。新语义身份若已存在任务，则返回该规范任务并删除旧失效定义，避免重复语义身份。
+
+### 索引声明与唯一性边界
+
+#### 模型索引与通用 SQL 约束
+
+[TaskDefinition 模型](../../backend/internal/models/task_definition.go)声明查询索引；[InitDatabase／ensureTaskDefinitionSchema](../../backend/internal/repository/database.go)在 `AutoMigrate` 后创建绑定查询索引和通用部分唯一索引：
+
+| 索引名 | 字段 | 声明来源与语义 |
+| --- | --- | --- |
+| `idx_manager_task_definitions_tenant_type` | `tenant_id, task_type` | 模型普通索引，按租户与任务类型查询。 |
+| `idx_manager_task_definitions_last_execution` | `last_execution_id` | 模型普通索引，最近执行回溯。 |
+| `idx_manager_task_definitions_deleted_at` | `deleted_at` | 模型普通索引，软删除字段索引声明。 |
+| `idx_manager_task_definitions_tenant_binding_status` | `tenant_id, binding_status` | 初始化 SQL 的普通索引，按绑定状态查询。 |
+| `uq_manager_task_definition_semantic` | `tenant_id, task_type, semantic_key` | 初始化 SQL 的部分唯一索引，谓词为 `deleted_at IS NULL AND semantic_key <> ''`。 |
+
+通用唯一约束不按 `enabled`、`binding_status` 或 `last_execution_status` 过滤，停用或绑定失效本身不释放占位。该谓词不将 NULL 或空字符串纳入通用唯一范围；模型也未为 `semantic_key` 声明 `NOT NULL`，不能据此认定语义身份已经有效。各类型的 key 构造、规范任务复用与业务结果边界分别沿[受管快显语义身份](../quick-view/共用契约.md#受管快显任务语义身份)、[业务派生语义身份](../quick-view/共用契约.md#业务派生任务语义身份)，不以底层唯一拒绝替代各类型的产品创建契约。
+
+#### 类型专用表达式索引
+
+当前 Go 初始化还在同一 `manager.task_definitions` 上创建以下部分唯一索引。它们均限定 `deleted_at IS NULL` 和对应 `task_type`；名称包含 `_tasks` 不表示保留独立任务表。精确表达式以初始化源码为准：
+
+| 索引名 | 限定任务类型 | 配置身份与额外谓词摘要 |
+| --- | --- | --- |
+| `idx_vector_tile_set_tasks_semantic_unique` | `vector_tile_set_generation` | `config.semantic_hash`。 |
+| `idx_vector_tile_cache_tasks_source_profile_unique` | `vector_tile_cache_generation` | `config.target.item_fingerprint` 与 `config.profile_hash`。 |
+| `idx_raster_cog_tasks_source_unique` | `raster_cog_generation` | `config.target.item_fingerprint`。 |
+| `idx_model3d_tiles_tasks_source_format_unique` | `model3d_tiles_generation` | `config.source.item_fingerprint` 与 `config.target_format`；两者各要求 `COALESCE(..., '') <> ''`。 |
+| `idx_model_3d_glb_tasks_source_unique` | `model_3d_glb_generation` | `config.source.item_fingerprint`，并要求 `COALESCE(..., '') <> ''`。 |
+| `idx_gaussian_splat_ksplat_tasks_source_unique` | `gaussian_splat_ksplat_generation` | `config.source.item_fingerprint`，并要求 `COALESCE(..., '') <> ''`。 |
+| `idx_point_cloud_copc_tasks_source_unique` | `point_cloud_copc_generation` | `config.source.item_fingerprint`，并要求 `COALESCE(..., '') <> ''`。 |
+
+因此，空 `semantic_key` 不参与通用索引，不等于绕过全部数据库唯一约束；类型专用索引仍按配置表达式独立判断。索引保护也不替代各类型配置校验、版本校验或资源授权。
+
+#### 初始化、测试与实际约束
+
+当前 Go 初始化在检测到旧任务表时包含结果关联清理、Manager 派生执行清理与旧表删除，再维护统一表和索引；它不是只读核验入口。[历史 046 SQL](../../backend/migrations/046_add_task_binding_status.sql)仅对应绑定字段、状态归一化及绑定查询索引，不能据该文件存在认定所有语义索引已生效。
+
+[ManagedTaskSemanticIdentityIndexes 用例](../../backend/internal/repository/tile_cache_repository_postgres_integration_test.go)对瓦片缓存与 COG 任务直接断言通用唯一索引名；[UnifiedTaskDefinitionLifecycle 用例](../../backend/internal/repository/task_definition_postgres_integration_test.go)包含统一初始化、重复业务任务拒绝、绑定状态归一化与清理。它们不自动扩展为所有任务类型、通用 key 与配置表达式的一致性、空／NULL key、软删除后复用或当前运行库约束的独立验收证据。
+
+实际数据库须分别核对表、字段／表达式、唯一性、有效状态及各自谓词，不能只看索引名称。标准入口为 `make test-manager-postgres`，上述用例由现有命名筛选命中；门禁与分版本证据见[Manager 开发与验证](../../CLAUDE.md#开发与验证)。源码和用例存在不计为数据库或运行验收通过，不以重启初始化或重放历史 SQL 代替只读核验。
 
 ## 三、资源与结果边界
 
