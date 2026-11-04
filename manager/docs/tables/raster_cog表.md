@@ -13,7 +13,7 @@ raster COG 的生成任务定义写入 `manager.task_definitions`，TaskProvider
 | 字段 | 说明 |
 | --- | --- |
 | `tenant_id` | 租户。 |
-| `item_fingerprint` | 源 item 当前身份指纹。当前唯一结果按 `tenant_id + item_fingerprint` 收敛。 |
+| `item_fingerprint` | 源 item 当前身份指纹。当前结果身份按 `tenant_id + item_fingerprint` 收敛，约束范围见[索引声明与核验边界](#索引声明与核验边界)。 |
 | `locator` | 源 item ResourceLocator，用于回跳和判断 stale。 |
 | `source_engine_id` | 生成 COG 结果时的源引擎事实，用于判断 stale。 |
 | `task_id` | 产生或最近刷新该 COG 结果的 `manager.task_definitions.id`。 |
@@ -26,6 +26,44 @@ raster COG 的生成任务定义写入 `manager.task_definitions`，TaskProvider
 | `status` | COG 结果状态，取值见下文。 |
 | `metadata` | 转换过程的补充事实、渲染统计和 direct 调用审计信息。 |
 | `last_execution_id` | 最近一次生成执行。 |
+
+## 索引声明与核验边界
+
+除 `id` 主键外，[RasterCOG 模型](../../backend/internal/models/raster_cog.go)与[初始化 `ensureRasterCOGSchema`](../../backend/internal/repository/database.go)的索引声明如下：
+
+| 来源 | 索引 | 字段与用途 |
+| --- | --- | --- |
+| GORM 普通索引 | `idx_raster_cog_tenant_item_fingerprint` | `(tenant_id, item_fingerprint)`；按源 item 身份回查 |
+| GORM 普通索引 | `idx_raster_cog_tenant_item` | `(tenant_id, item_id)`；按当前 Meta item 行引用回查 |
+| GORM 普通索引 | `idx_raster_cog_task` | `task_id`；按产生或最近刷新结果的任务回查 |
+| GORM 普通索引 | `idx_raster_cog_execution` | `last_execution_id`；回查最近一次生成执行 |
+| GORM 普通索引 | `idx_raster_cog_status` | `status`；结果状态过滤 |
+| GORM 普通索引 | `idx_raster_cog_deleted_at` | `deleted_at`；软删除字段索引 |
+| 初始化显式 SQL 部分唯一索引 | `idx_raster_cog_current_unique` | `(tenant_id, item_fingerprint)`，仅覆盖 `deleted_at IS NULL AND status <> 'deleted'` |
+
+模型未以 `uniqueIndex` 声明该部分唯一索引；初始化先执行模型 `AutoMigrate`，再运行显式 SQL。`building`、`ready`、`failed` 和 `stale` 均在占位范围内，不能将其理解为“仅 ready 结果唯一”。SQL 没有排除空指纹；字段 `NOT NULL` 也不等于非空业务身份校验。源引擎、任务、execution、内容版本及生成参数均不参与该结果唯一键。
+
+[GetCurrentByFingerprint](../../backend/internal/repository/raster_cog_repository.go)读取未软删除且状态不是 `deleted` 的当前结果；`GetLatestReadyByFingerprint` 进一步要求 `ready`。唯一占位不证明 COG 对象存在、来源仍有效或当前用户有权读取，消费条件仍见[消费规则](#消费规则)及[内容与任务接口](../quick-view/TIFF与COG.md#内容与任务接口)。结果删除仍须履行[删除语义](#删除语义)，不能为释放占位单独改状态或删除数据库记录。
+
+[历史 022 SQL](../../backend/migrations/022_create_raster_cog.sql)包含同列、同谓词的结果唯一索引，但还创建旧 `raster_cog_tasks`；[024 SQL](../../backend/migrations/024_normalize_raster_cog_task_result_config.sql)也操作旧任务表，[025 SQL](../../backend/migrations/025_drop_raster_cog_source_locator.sql)只删除重复的 `source_locator` 字段。这些文件不证明当前部署已迁移到统一任务表。初始化还更新任务配置和字段，不是只读检查入口；启动与历史 SQL 的归属统一见[Schema 收敛方式](../数据库架构.md#schema-收敛方式)。
+
+### 任务与执行引用
+
+`task_id`、`last_execution_id` 在模型中均可空，分别是统一任务与执行事实的应用引用；普通索引不保证被引用对象存在，当前模型与上述 SQL 未声明外键、复合租户／任务类型约束或 `ON DELETE CASCADE`。任务类型固定为 `raster_cog_generation` 的约束由应用链路维护，不是结果唯一索引的能力。
+
+[`prepareResult`](../../backend/internal/service/raster_cog_task_service.go)生成或刷新当前结果时写入本次任务 ID 和 execution ID；刷新复用当前结果行，不按 execution 新建一份唯一身份。完成时的结果写入还受 Tenant、结果 ID、`last_execution_id` 和当前 lease 核验约束，完整事务与 fencing 见[执行与租约](../quick-view/TIFF与COG.md#执行与租约)，不将普通索引当成执行归属证明。
+
+任务删除与结果删除是独立动作：统一任务删除事务处理定义与资源绑定，不自动删除 COG 结果／对象，也不自动清空结果中的旧任务引用；结果删除不删除任务或 execution 历史。失效任务合并不将旧结果改挂给替代任务。任务及绑定的软／硬删除范围分别见[任务资源与结果边界](task_definitions表.md#三资源与结果边界)、[投影替换与删除边界](task_resource_bindings表.md#投影替换与删除边界)，单对象清理与失败保留规则见[共用清理契约](../quick-view/共用契约.md#单对象结果清理)。
+
+### 测试与实际数据库边界
+
+- PostgreSQL `TestIntegrationPostgresManagerRasterCOGConcurrentClaimAndStart` 显式执行模型 `AutoMigrate`，断言同任务两次并发领取只有一次成功，以及 pending／running 与任务摘要；该用例没有显式创建或核验结果部分唯一索引。
+- `TestIntegrationPostgresManagerManagedTaskSemanticIdentityIndexes` 调用 COG 初始化，但重复拒绝断言针对统一任务的 `uq_manager_task_definition_semantic`，不证明 COG 结果唯一性。任务专用表达式索引与通用任务唯一键统一见[任务定义索引说明](task_definitions表.md#索引声明与唯一性边界)。
+- SQLite `TestRasterCOGPrepareResultReturnsUpdatedExistingResult` 验证已有 stale 结果更新后返回新的存储引用、栅格事实及 building 状态；它不构成 PostgreSQL 约束或真实对象交付证据。
+
+标准回归沿 [Manager 开发与验证](../../CLAUDE.md#开发与验证)的 `make test-manager-backend`、`make test-manager-postgres`。上述断言不覆盖结果重复插入的数据库拒绝、各状态占位、软删除后复用及任务删除后结果引用保留的完整矩阵；不从用例名称或源码存在推定通过。
+
+实际部署须只读核对索引所属表、列顺序、唯一性、有效性、完整谓词，以及引用相关真实约束与数据；同名索引或历史 SQL 存在不足以证明落库结果。文档静态检查不替代当前数据库、权限、COG 内容读取及真实生成／清理验收。
 
 ## metadata 审计结构
 
