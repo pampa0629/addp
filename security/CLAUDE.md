@@ -1,5 +1,7 @@
 Service SQL 角色方式（2026-11-03）：已按[查询发布与执行规范](../service/docs/architecture/查询发布与执行.md)接入非联邦、Provider 可证明唯一普通表的直接字段及别名；候选统一为 POST，保存仅准备元数据并复用保护编译器，实际执行与交付核验当前本人角色。Common 保留资格失效与方式失效的具体原因，不改变授权规则。默认保护及已有原生表方式保持原契约。
 
+SQL默认值本地首轮HTTP未通过（2026-11-04）：临时脚本把源非NULL等同于保护输出非NULL，失败在默认值修改前；删除漏传version，遗留私有测试Service #9，#7未改且会话注销。修正普通字段筛选与精确带版本清理，4组离线夹具回归通过；正式重跑待登录，不能记HTTP通过。完整事实及失败证据见[默认值修改验收](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)。
+
 Service SQL发布默认值修改（2026-11-04，v38）：用户已批准仅修改可选参数默认值。正式版本PUT及真实编辑页已接入，SQL和其他声明只读，拒绝／事务／保护边界沿[Service规范](../service/docs/architecture/查询发布与执行.md#已发布-sql-参数默认值修改)。真实PG存储与源读取门禁、Go T1、Service前端单元／构建及中英文受控浏览器已通过；隔离Runner新增默认1→2的旧游标拒绝／新默认输出，沿[v38合同](../scripts/docs/Online数据保护.md#v38发布默认值修订与旧游标拒绝)。完整`make test-security-online-runner`退出0（41／80／198／185／376项及登记CLI），所属171项通过；Service前端120单元／构建通过，12项受控浏览器通过（4项中英文角色／默认编辑、8项SQL创建／草稿回归）。固定文件摘要与验证日志见`/tmp/p145-published-default-edit-20261104/verification.json`；本地正式服务新版HTTP和新增Hosted未验，CI仍由专门会话跟进。
 
 本轮 Go T1、Service PostgreSQL 11 项及 Common 投影存储 PostgreSQL 子门禁 8 项、Service 119 单元／构建和相关 10 项受控浏览器回归通过；不是 Common 全部 PostgreSQL 门禁或个人环境／Hosted T4。全 Console 门禁仍有非本功能导航失败，未计通过。证据 `/tmp/p145-service-sql-role-20261103/verification.json`；用户已全量重启；本地 #33 的默认／全遮盖两页 JSON／CSV、方式撤销拒绝及主动默认恢复合并独立审计通过，共十二项和六份实际 CSV；恢复文件与最初默认文件逐字节一致。#7 最终私有、停用、空选择，临时策略保持 revoked，会话注销，原失败报告保留；不外推新 SQL Hosted/T4。详见 [SQL 单表角色方式本地验收](../service/docs/testing/查询与要素协议.md#sql-单表角色方式本地验收2026-11-03)。CI 仍由专门会话跟进。当前状态与剩余边界统一维护于[后续工作专题](../docs/sessions/数据脱敏与保护后续工作专题.md)。
