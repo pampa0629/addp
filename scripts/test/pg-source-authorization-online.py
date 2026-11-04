@@ -24,6 +24,7 @@ from urllib.parse import urlencode, urlsplit, parse_qs
 API = import_module('scripts.utils.online-api')
 PREFLIGHT = import_module('scripts.test.online-preflight')
 REGISTRATION = import_module('scripts.test.online-engine-registration')
+REFRESH = import_module('scripts.test.metadata-refresh-scope-online')
 SuiteError = API.SuiteError
 SUITE = 'pg-source-authorization'
 READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.lineage.read', 'meta.scan_task.execute', 'meta.scan_task.read'}
@@ -1064,7 +1065,9 @@ class PGCollectionReadBarrier:
                 'refusing a foreign source barrier container')
         self.container = owner['Id']
 
-    def open(self):
+    def open(self, *, tables=('metric_people',)):
+        require(type(tables) is tuple and tables and len(set(tables)) == len(tables)
+                and set(tables) <= {'metric_people', 'metric_events'}, 'source lock requires exact owned fixture tables')
         self.admit()
         prior = self.query(f"SELECT json_build_object('exists',to_regnamespace('{self.schema}') IS NOT NULL);")
         require(prior == {'exists': False}, 'source barrier schema already exists')
@@ -1079,9 +1082,9 @@ class PGCollectionReadBarrier:
             ' -c idle_in_transaction_session_timeout=30000 -c application_name=' + self.application)
         self.process = subprocess.Popen(self.command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=subprocess.DEVNULL, env=environment)
-        self.process.stdin.write(b'''BEGIN; LOCK TABLE public.metric_people IN ACCESS EXCLUSIVE MODE;
+        self.process.stdin.write(('BEGIN; LOCK TABLE ' + ','.join('public.' + name for name in tables) + ''' IN ACCESS EXCLUSIVE MODE;
             SELECT json_build_object('pid',pg_backend_pid(),'locked',true,'at',clock_timestamp());
-''')
+''').encode())
         self.process.stdin.flush()
         locked = self.read_lock_reply()
         require(locked.get('locked') is True and type(locked.get('pid')) is int and locked['pid'] > 0,
@@ -1624,6 +1627,7 @@ class Lifecycle:
         self.expiry_grant = None
         self.production_tasks = {}
         self.collection = None
+        self.scoped_refresh = None
 
     def collect_production_grants(self):
         # Resolve even an unknown start response using only executions of our
@@ -2098,6 +2102,11 @@ class Lifecycle:
 
     def cleanup(self):
         errors = []
+        if self.scoped_refresh is not None:
+            try:
+                self.scoped_refresh.close()
+            except Exception:
+                errors.append('scoped refresh cleanup failed')
         if self.collection is not None:
             try:
                 self.collection.cleanup()
@@ -2889,6 +2898,21 @@ def main():
         del controller
         lifecycle.collection.run_inflight(report)
         lifecycle.node_scope_flow(report)
+        report['phase'] = 'authorized_pg_metadata_refresh'
+        def register_refresh(body):
+            lifecycle.grants.append(body['request_id'])
+            if body['catalog_path'] not in lifecycle.paths:
+                lifecycle.paths.append(body['catalog_path'])
+        lifecycle.scoped_refresh = REFRESH.ScopedRefreshScenario(operator, reader, tenant, recipient, engine,
+            'postgresql', REFRESH.PersistedScanObservation(tenant, engine, 'postgresql'),
+            report.setdefault('scoped_refresh', {}), register=register_refresh)
+        lifecycle.scoped_refresh.precise_and_node_flow('public', 'public.metric_people',
+            ['public.metric_events', 'public.metric_facts', 'public.metric_areas'])
+        for cutoff in ('withdrawal', 'expiry'):
+            barrier = PGCollectionReadBarrier()
+            lifecycle.collection.source_barriers.append(barrier)
+            lifecycle.scoped_refresh.inflight_items('public', ['public.metric_people', 'public.metric_events'],
+                                                   cutoff, barrier)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)

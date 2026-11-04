@@ -1256,6 +1256,7 @@ test-transfer-continuous-online-runner: ## 验证连续任务 Hosted 生命周�
 
 .PHONY: test-pg-authorization-online-runner
 test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔离和清理
+	@python3 -m unittest scripts/test/metadata-refresh-scope-online_test.py
 	@node --check --input-type=module < console/frontend/e2e/online/pg-source-authorization.spec.js
 	@bash -n scripts/test/online-hosted-pg-authorization-gate.sh business/scripts/online-metric-postgres-fixture.sh
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
@@ -1742,7 +1743,7 @@ test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物�
 	@node --check --input-type=module < console/frontend/e2e/online/manager-orc.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-netcdf.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-grib.spec.js
-	@python3 -m unittest scripts/test/manager-netcdf-online_test.py scripts/test/manager-grib-online_test.py scripts/test/manager-envi-online_test.py scripts/test/online-engine-registration_test.py
+	@python3 -m unittest scripts/test/manager-netcdf-online_test.py scripts/test/manager-grib-online_test.py scripts/test/manager-envi-online_test.py scripts/test/online-engine-registration_test.py scripts/test/metadata-refresh-scope-online_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@python3 -m unittest scripts/test/manager-filegdb-online_test.py
 	@python3 -m unittest scripts/test/manager-orc-online_test.py

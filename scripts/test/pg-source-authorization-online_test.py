@@ -2417,6 +2417,17 @@ class PGCollectionBarrierTest(unittest.TestCase):
     def setUp(self):
         self.barrier = ONLINE.PGCollectionReadBarrier()
 
+    def test_refresh_barrier_only_accepts_exact_owned_table_set(self):
+        for tables in ((), ('metric_people', 'metric_people'), ('metric_people;DROP SCHEMA public',),
+                       ('other_table',), ['metric_people']):
+            with self.subTest(tables=tables), patch.object(self.barrier, 'admit') as admit:
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.barrier.open(tables=tables)
+                admit.assert_not_called()
+        with patch.object(self.barrier, 'admit', side_effect=RuntimeError('admitted fixed fixture')):
+            with self.assertRaisesRegex(RuntimeError, 'admitted fixed fixture'):
+                self.barrier.open(tables=('metric_people', 'metric_events'))
+
     def test_refuses_personal_context_before_any_docker_operation(self):
         with patch.dict(ONLINE.os.environ, {}, clear=True), patch.object(ONLINE.subprocess, 'run') as run:
             with self.assertRaises(ONLINE.SuiteError): self.barrier.open()

@@ -348,12 +348,21 @@ class ENVIHostedCaseTest(unittest.TestCase):
             wait_for_meta_scan=scan,find_fixture_item=find,ArtifactFixture=OWNER.ArtifactFixture,build_item_locator=OWNER.build_item_locator,
             validate_model_bundle=OWNER.validate_model_bundle,generate_raster_cog=generate,cleanup_managed_artifact=cleanup,RASTER_TASK_TYPE=OWNER.RASTER_TASK_TYPE)
         env=dict(ADDP_ONLINE_MANAGER_CASE='native-envi',ADDP_ONLINE_ARTIFACT_DIR=directory,ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='envi-test',GATEWAY_URL='http://fixture',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='engine',ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
-        with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE.MEDIA,'run_browser',browser),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}):
+        def refresh(actor,scanner,tenant,principal,engine,environment,evidence,*,initializer):
+            self.assertIs(actor,issuer)
+            self.assertIs(scanner,client)
+            self.assertEqual((tenant,principal,engine,initializer),(2,'33',14,'34'))
+            self.assertIs(environment,env)
+            evidence.update(result='passed',cleanup='zero_current_source_rules_and_active_executions')
+            events.append(('scoped-refresh',))
+        with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE.MEDIA,'run_browser',browser),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}),mock.patch.object(CASE.REFRESH,'run_nfs_refresh',side_effect=refresh):
             if browser_failure:
                 with self.assertRaisesRegex(RuntimeError,'owned browser failure'):CASE.run(Path('/repo'),env,owner,physical_runner=physical)
                 report=json.loads(Path(directory,'manager-envi.json').read_text())
             else:report=CASE.run(Path('/repo'),env,owner,physical_runner=physical)
         self.assertEqual(active,{});self.assertEqual(len(receipts),20)
+        self.assertEqual(sum(e[0]=='scoped-refresh' for e in events),1)
+        self.assertEqual(report['nfs_scoped_refresh']['cleanup'],'zero_current_source_rules_and_active_executions')
         self.assertEqual(len(CASE.ENVI_INITIALIZER_PERMISSIONS),13)
         self.assertEqual(report['source_authorization']['initializer_permissions_verified'],sorted(CASE.ENVI_INITIALIZER_PERMISSIONS))
         self.assertEqual(len(scans),10);self.assertEqual(len(report['source_scans']),10)

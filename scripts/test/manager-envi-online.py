@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 FIXTURE=importlib.import_module('business.scripts.online-envi-fixture')
 GRANTS=importlib.import_module('scripts.test.ftp-consumer-flow-online')
 MEDIA=importlib.import_module('scripts.test.manager-img-online')
+REFRESH=importlib.import_module('scripts.test.metadata-refresh-scope-online')
 ENVI_INITIALIZER_PERMISSIONS=frozenset(GRANTS.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)|{'meta.scan_task.execute','meta.scan_task.read'}
 
 def require(value,message):
@@ -213,6 +214,10 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 node_report=report['minio_node_scope']=dict(checks={},commands=[],cleanup={})
                 verify_minio_node_scope(client,grant,engine,
                     environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET'],seed['sources'][0],owner,physical,timeout,evidence=node_report)
+            else:
+                stage='nfs-authorized-refresh'
+                REFRESH.run_nfs_refresh(issuer,client,tenant,grant.recipient,engine,environment,
+                    report.setdefault('nfs_scoped_refresh',{}),initializer=grant.operator)
             for spec in seed['sources']:
                 name=prefix+'envi/'+spec['name'];header=prefix+'envi/'+spec['header']
                 stage='source_approval'
