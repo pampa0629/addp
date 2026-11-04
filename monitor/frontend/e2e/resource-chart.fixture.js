@@ -1,5 +1,3 @@
-import { expect } from '@playwright/test'
-
 const chartModules = new WeakMap()
 
 export function trackResourceChart(page) {
@@ -55,10 +53,20 @@ export async function dragResourceChartZoom(page, fraction = 0.95, chart = page.
   await page.mouse.up()
   // Slider input is applied through ECharts' throttled dataZoom dispatch.
   // Wait for the actual model to reach the painted handle range before capture.
-  await expect.poll(async () => {
-    const { start, end, handleRange } = await resourceChartState(page, null, chart)
-    return Math.abs(start - handleRange[0]) < 1e-6 && Math.abs(end - handleRange[1]) < 1e-6
-  }).toBe(true)
+  const element = await chart.elementHandle(), frame = await element.ownerFrame()
+  const getInstance = await frame.evaluateHandle(async source => (await import(source)).getInstanceByDom, chartModules.get(page))
+  try {
+    const settled = await frame.waitForFunction(({ element, getInstance }) => {
+      const instance = getInstance(element), zoom = instance.getOption().dataZoom[0]
+      const view = instance.getViewOfComponentModel(instance.getModel().getComponent('dataZoom', 0))
+      return Math.abs(zoom.start - view._range[0]) < 1e-6 && Math.abs(zoom.end - view._range[1]) < 1e-6
+    }, { element, getInstance }, { timeout: 5000 })
+    await settled.dispose()
+  } catch (error) {
+    const current = await resourceChartState(page, null, chart)
+    error.message += `; slider ${JSON.stringify({ start: current.start, end: current.end, handleRange: current.handleRange })}`
+    throw error
+  } finally { await getInstance.dispose(); await element.dispose() }
 }
 
 

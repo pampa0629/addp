@@ -181,14 +181,16 @@ test('automatic refresh retains scalar zoom while a new metric or identity reset
   expect((await resourceChartState(page)).start).toBeCloseTo(loadZoom, 2)
 })
 
-test('token renewal clears the host chart until authority is reread, including its local viewport', async ({ page }) => {
+test('token renewal clears data then restores the host viewport only after the same authority is reread', async ({ page }) => {
   const state = await resourceBackend(page, { trendResponse: completeTrend })
   await page.goto(`/node-resources/${node}?metric=node.disk.read_bytes_per_second&device=sda&range=1h&refresh=off`)
   const chart = page.getByTestId('resource-chart')
   await expect(chart.locator('canvas')).toBeVisible()
   await dragResourceChartZoom(page, 0.6)
   await expect.poll(async () => (await resourceChartState(page)).start).toBeGreaterThan(50)
-  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0)
+  const previousZoom = (await resourceChartState(page)).start
+  const previousScroll = await page.evaluate(() => scrollY)
+  expect(previousScroll).toBeGreaterThan(0)
   const before = state.reads.length
   let releaseAuthority, authorityReads = 0
   const heldAuthority = new Promise(resolve => { releaseAuthority = resolve })
@@ -207,12 +209,93 @@ test('token renewal clears the host chart until authority is reread, including i
     expect(state.reads).toHaveLength(before)
     expect(await page.evaluate(() => scrollY)).toBe(0)
   } finally {
+    state.serverEnd = '2026-10-07T00:00:15Z'
+    state.holdTrend()
     releaseAuthority()
   }
+  await expect.poll(() => trendReads(state).length).toBe(2)
+  await expect(chart).toHaveCount(0)
+  expect(await page.evaluate(() => scrollY)).toBe(0)
+  state.releaseTrend()
   await expect(chart.locator('canvas')).toBeVisible()
   expect(trendReads(state)).toHaveLength(2)
+  expect(trendReads(state).at(-1).query.end).toBe('2026-10-07T00:00:15.000Z')
+  expect((await resourceChartState(page)).start).toBeCloseTo(previousZoom, 2)
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(previousScroll)
+})
+
+for (const change of ['principal', 'context', 'permissions', 'host-version', 'host-name', 'host-enabled', 'observation-version', 'query', 'trend-error', 'resource-error', 'filesystem-error', 'network-error', 'authority-error', 'second-renewal']) test(`token renewal discards the host viewport after ${change}`, async ({ page }) => {
+  const host = { node_id: node, display_name: '节点甲', addresses: [], enabled: true, version: 1 }
+  let observationDrift = false
+  const state = await resourceBackend(page, {
+    nodes: [host],
+    observationResponse(body) { body.node_version = host.version + Number(observationDrift) },
+    trendResponse(body, params) { completeTrend(body, params); body.node_version = host.version },
+  })
+  await page.goto(`/node-resources/${node}?metric=node.disk.read_bytes_per_second&device=sda&range=1h&refresh=off`)
+  const chart = page.getByTestId('resource-chart')
+  await expect(chart.locator('canvas')).toBeVisible()
+  await dragResourceChartZoom(page, 0.6)
+  await expect.poll(async () => (await resourceChartState(page)).start).toBeGreaterThan(50)
+  let releaseAuthority, authorityReads = 0, tokenVersion = 0, authorityFails = change === 'authority-error'
+  const heldAuthority = new Promise(resolve => { releaseAuthority = resolve })
+  await page.route('**/api/v1/system/auth/context', async route => {
+    authorityReads++
+    await heldAuthority
+    await route.fulfill({ status: authorityFails ? 503 : 200, json: authorityFails ? { error: 'authority unavailable' } : state.identity })
+  })
+  await page.route('**/api/v1/system/refresh', route => route.fulfill({ json: { access_token: `fixture-renewed-token-${++tokenVersion}`, expires_in: 3600 } }))
+  try {
+    await page.evaluate(() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('monitor-auth').refreshAccessToken({ force: true }))
+    await expect.poll(() => authorityReads).toBe(1)
+    await expect(chart).toHaveCount(0)
+    if (change === 'principal') state.identity = { ...state.identity, principal: { id: 'another-user', type: 'user' } }
+    if (change === 'context') state.identity = identity(resourcePermissions, { type: 'tenant', tenant_id: 2 })
+    if (change === 'permissions') state.identity = identity([...resourcePermissions, 'monitor.platform_alert.read'])
+    if (change === 'host-version') host.version++
+    if (change === 'host-name') host.display_name = '本轮新名称'
+    if (change === 'host-enabled') host.enabled = false
+    if (change === 'observation-version') observationDrift = true
+    if (change === 'query') state.holdTrend()
+    if (change === 'trend-error') state.trendMode = 'budget'
+    if (change === 'resource-error') state.mode = 'unavailable'
+    if (change === 'filesystem-error') state.filesystemMode = 'unavailable'
+    if (change === 'network-error') state.networkMode = 'unavailable'
+    if (change === 'second-renewal') {
+      await page.evaluate(() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('monitor-auth').refreshAccessToken({ force: true }))
+      await expect.poll(() => authorityReads).toBe(2)
+    }
+  } finally {
+    releaseAuthority()
+  }
+  if (change === 'context') {
+    await expect.poll(() => page.evaluate(() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('monitor-auth').contextType)).toBe('tenant')
+    await expect(chart).toHaveCount(0)
+    expect(trendReads(state)).toHaveLength(1)
+    return
+  }
+  if (authorityFails) {
+    await expect.poll(() => page.evaluate(() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('monitor-auth').authContextLoadPromise === null)).toBe(true)
+    await expect(chart).toHaveCount(0)
+    expect(trendReads(state)).toHaveLength(1)
+    authorityFails = false
+    await page.evaluate(() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('monitor-auth').fetchAuthContext())
+  }
+  if (change === 'query') {
+    await expect.poll(() => trendReads(state).length).toBe(2)
+    await page.getByTestId('resource-range').click()
+    await page.getByRole('option', { name: '近 5 分钟', exact: true }).click()
+    state.releaseTrend()
+    await expect(page).toHaveURL(/range=5m/)
+  }
+  if (['trend-error', 'resource-error'].includes(change)) {
+    await expect(page.getByTestId('node-resources').locator('.el-alert--error')).toBeVisible()
+    await expect(chart).toHaveCount(0)
+    state.mode = ''; state.trendMode = ''
+    await refresh(page)
+  }
+  await expect(chart.locator('canvas')).toBeVisible()
   expect((await resourceChartState(page)).start).toBe(0)
-  expect(await page.evaluate(() => scrollY)).toBe(0)
 })
 
 

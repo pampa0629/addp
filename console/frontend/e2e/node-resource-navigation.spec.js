@@ -1,11 +1,60 @@
 import { expect, test } from '@playwright/test'
 import { readFilesystemMountTable, readResourceHeatmap, readBlockCapacityTable } from './online/node-resource-receipts.js'
-import { identity, mount, node, observations, resourceBackend, resourcePermissions, secondNode } from '../../../monitor/frontend/e2e/node-resources.fixture'
+import { identity, mount, node, observations, resourceBackend, resourcePermissions, secondNode, completeComparisonTrend } from '../../../monitor/frontend/e2e/node-resources.fixture'
+import { trackResourceChart, resourceChartState, dragResourceChartZoom } from '../../../monitor/frontend/e2e/resource-chart.fixture'
 
 const isCapacityRequest = request => {
   const url = new URL(request.url())
   return url.pathname === '/api/v1/monitor/platform/resource_observations' && url.searchParams.get('metrics') === 'node.block.capacity_bytes'
 }
+
+for (const lateConsole of [false, true]) test(`host viewport returns in the same Console iframe after credentials renew (Console authority late: ${lateConsole})`, async ({ page }) => {
+  trackResourceChart(page)
+  const state = await resourceBackend(page, { trendResponse: completeComparisonTrend })
+  await page.goto(`/monitor/node-resources/${node}?range=1h&refresh=off`)
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const chart = monitor.locator('.chart-renderer')
+  await expect(monitor.getByTestId('node-resources')).toHaveAttribute('aria-busy', 'false')
+  await expect(chart.locator('canvas')).toBeVisible()
+  const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin)
+  await dragResourceChartZoom(page, 0.6, chart)
+  const zoom = (await resourceChartState(page, null, chart)).start
+  expect(zoom).toBeGreaterThan(50)
+  const scroll = await monitor.locator('body').evaluate(() => scrollY)
+  expect(scroll).toBeGreaterThan(0)
+  let releaseAuthority, releaseConsole, authorityReads = 0
+  const heldAuthority = new Promise(resolve => { releaseAuthority = resolve })
+  const heldConsole = new Promise(resolve => { releaseConsole = resolve })
+  await page.route('**/api/v1/system/auth/context', async route => {
+    authorityReads++
+    await heldAuthority
+    if (lateConsole && route.request().frame() === page.mainFrame()) await heldConsole
+    await route.fulfill({ json: state.identity })
+  })
+  await page.route('**/api/v1/system/refresh', route => route.fulfill({ json: { access_token: 'fixture-renewed-token', expires_in: 3600 } }))
+  try {
+    await page.evaluate(() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('console-auth').refreshAccessToken({ force: true }))
+    await expect.poll(() => authorityReads).toBeGreaterThan(0)
+    await expect(page.locator('.authorized-content')).toBeHidden()
+  } finally {
+    state.serverEnd = '2026-10-07T00:00:15Z'
+    releaseAuthority()
+  }
+  try {
+    if (lateConsole) {
+      await expect.poll(() => state.reads.filter(read => read.path.endsWith('resource_trends')).at(-1).query.end).toBe('2026-10-07T00:00:15.000Z')
+      await expect(monitor.getByTestId('node-resources')).toHaveAttribute('aria-busy', 'false')
+      await expect(page.locator('.authorized-content')).toBeHidden()
+    }
+  } finally { releaseConsole() }
+  await expect(page.locator('.authorized-content')).toBeVisible()
+  await expect(chart.locator('canvas')).toBeVisible()
+  await expect.poll(async () => (await resourceChartState(page, null, chart)).start).toBeCloseTo(zoom, 2)
+  await expect.poll(() => monitor.locator('body').evaluate(() => scrollY)).toBe(scroll)
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+  await expect(monitor.getByTestId('node-resources')).toHaveAttribute('aria-busy', 'false')
+  expect(state.reads.filter(read => read.path.endsWith('resource_trends')).at(-1).query.end).toBe('2026-10-07T00:00:15.000Z')
+})
 
 test('host detail tips translate in the same Console iframe without querying or hiding current states', async ({ page }) => {
   const state = await resourceBackend(page)

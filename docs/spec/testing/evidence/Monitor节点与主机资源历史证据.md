@@ -628,3 +628,23 @@ Safari通过“窗口→当前控制台窗口”确认过“自动刷新已开�
 后续建议仅在重新确认相同账号／平台上下文／权限、查询及System主机事实后，从内存恢复临时滚动与缩放；旧资源仍清除、全部数据重新查询，真实身份／权限／事实变化及失败继续清空，不写URL或持久存储。该范围与现行“身份变化清空视口”的细分待用户确认，未提前实现。CI／Hosted仍等专门会话回传，不查询、调度或设置定时任务；个人数据库、配置、登录状态和服务均未操作。
 
 相关回归`npm run test:e2e -- e2e/host-resource-zoom.spec.js e2e/resource-inplace-refresh.spec.js --workers=1`38项全部通过（2.1分钟），含新增续期、已有撤权／迟到响应、主机事实变化、各类缩放及手动／自动原位刷新；日志`/tmp/addp-host-renewal-regression.log`。`node --check monitor/frontend/e2e/host-resource-zoom.spec.js`及本批`git diff --check`通过。只修改测试和证据，不修改产品输入，沿用此前135项单元及构建证据但不计为本轮重跑；完整Monitor／Console前端及CI／Hosted未运行。既有Monitor前端门禁及Platform CI按e2e目录自动发现该用例，无新增入口或编排。
+
+
+### 主机同身份续期后的临时视口恢复（2026-11-04）
+
+用户确认仅优化主机详情的同身份续期视口，先补正式规范6.3，再实现组件内唯一临时快照。Token轮换前仅记滚动、缩放及原身份／有效权限、规范查询与System主机四项事实的核对依据，不保留资源数据、凭据或持久化状态。原权限等待继续清空数据、取消请求；相同账号／平台上下文／委托／完整权限重核成功，且主机UUID／名称／版本／纳管状态和查询未变、各组新观测及趋势均合法且版本一致，才一次恢复位置和缩放。身份／权限／事实／查询变化、任一读取／校验或重核失败、授权未恢复又轮换及离页均丢弃；合法缺样仍沿原显示。共享认证、IAM、指标口径和其他页面行为未改。
+
+Console等待重核时隐藏既有iframe，所以采集位置使用页面仍可布局时的最后坐标，避免把隐藏导致的0当作用户位置；原位数据清空规则仍保留。重核成功后先全量重读，再恢复；两个Console确定性场景分别让Console先恢复，以及模块已取完新数据而Console稍后恢复，均验证同一iframe、正确临时缩放／滚动及新窗口数据。主机专项覆盖相同身份、等待趋势时不提前恢复，账号／租户／有效权限变化，主机名称／版本／停用与观测版本变化，查询变化、趋势／即时／文件系统／网络失败、重核失败及二次续期。
+
+新恢复断言在原实现红测失败；实现后通过。跨模块测试助手移除Monitor专属Playwright导入，使用所属frame的同步谓词等待实际图表模型与绘制滑块区间一致，保留原5秒预算和1e-6一致性；不再额外要求实际拖动等于理想像素百分比。曾加入该多余几何断言，导致窄图18项失败；已删除，未修改产品统计或扩大等待预算。该助手仍只有一份实现，未复制到Console。
+
+验证分层如下：
+
+- 首轮标准`make test-monitor-frontend`：135项单元通过；浏览器735项中717通过、18项因上述测试助手断言失败，make退出2，构建未在该次执行。日志`/tmp/addp-host-renewal-monitor-full.log`，失败证据`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-jCn5ht`。不能记为单次完整门禁通过。
+- 修订后沿标准共享入口重跑全部8个直接消费助手的spec：`npm run test:e2e -- e2e/engine-resources.spec.js e2e/host-resource-zoom.spec.js e2e/host-trend-interactions.spec.js e2e/network-bars.spec.js e2e/process-comparison.spec.js e2e/process-trend-zoom.spec.js e2e/redis-resources.spec.js e2e/uptime-units.spec.js --workers=1`，177项全部通过（9.8分钟），日志`/tmp/addp-host-renewal-chart-consumers-final.log`。测试ID核对18项原失败全部被覆盖，最终分批证据累计735项不同用例，不重复计算159项；回执`/tmp/addp-host-renewal-coverage-20261104.json`。其余有效结果不盲目重跑。
+- Console同一真实iframe的主机页面专项`npm run test:e2e -- e2e/node-resource-navigation.spec.js --workers=1`30项通过；助手最终修订后新增两项续期顺序再经`--grep 'host viewport returns'`复验通过。日志`/tmp/addp-host-renewal-console-host-suite.log`及`/tmp/addp-host-renewal-console-final-sync.log`。未运行完整Console前端门禁。
+- `npm run build`退出0（4.54秒，保留原分包大小提示）；`make test-frontend-ci-registration`27项通过并核对21个前端登记。仅前端组件／测试变更，现有Monitor和Console门禁自动发现，无新增API、Swagger、权限、依赖或编排；JS语法、本批diff及链接检查通过。最终范围摘要`/tmp/addp-host-renewal-final-inputs-20261104.json`在验证后核对未变。
+
+原生Safari第二个标签页登录后，真实vda读写曲线及单位可见。早先窗口不可拖动并报告hidden；用户激活后原生拖动成功，16:42:57建立约一半局部窗口，左手柄约x1800／右约x2910，滚动条0.947323。至16:46:31无本会话额外输入，自然刷新窗口前移214秒、滚动和相对缩放保持；实际图内开始时间16:14:27→16:18:01。该段既有System日志未记录refresh请求，因此只认自然资源刷新，不计Safari真实凭据续期闭环。原生AX／截图在本会话，`/tmp/addp-host-renewal-safari-20261104.json`为人工摘要；公开模块脚本也已只读确认包含新增守卫，不以脚本存在替代交互验收。
+
+未触发CI／Hosted或设置定时任务，继续由专门会话回传；未自行重启／应用服务、修改个人账号、数据库、配置或Docker设置。原生Safari真实续期恢复与全程无闪仍未验收，下一步优先补该闭环；本批不把先前单次历史Safari事件唯一归因于续期。

@@ -1,5 +1,5 @@
 <template>
-  <main v-if="canRead" class="node-resources" data-testid="node-resources" :aria-busy="loading">
+  <main v-if="canRead" ref="resourcePage" class="node-resources" data-testid="node-resources" :aria-busy="loading">
     <header class="resource-toolbar">
       <h2>{{ t('monitor.resources.title') }}</h2>
       <el-button v-if="nodeID" @click="navigate('/node-resources', listQuery)">{{ t('monitor.resources.back') }}</el-button>
@@ -171,12 +171,14 @@ const collectionMessage = computed(() => !instant.value ? '' : instant.value.col
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.value)))
+const observationContext = computed(() => JSON.stringify([nodeID.value, { ...state.value.query, refresh: undefined }]))
 const listMetrics = computed(() => hostListMetricSets[state.value.listView])
 const listQuery = computed(() => { const { range, metric, compare, end, device, mountpoint, fstype, ...query } = state.value.query; return query })
 const nodes = ref([]), total = ref(null), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
 const showBlockCapacity = ref(false), blockObservation = ref(null), expandedObservation = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
-const showAllDisks = ref(false), trendSection = ref(null)
+const resourceErrors = [errorKey, trendErrorKey, filesystemErrorKey, inodeErrorKey, diskErrorKey, networkErrorKey]
+const showAllDisks = ref(false), trendSection = ref(null), resourcePage = ref(null)
 const summaries = ref(new Map()), summaryErrorKey = ref(''), expandedDetail = ref(null)
 const comparison = ref(null)
 const trendZoom = ref(null)
@@ -226,7 +228,14 @@ const comparisonChange = computed(() => {
 })
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
-let epoch = 0, disposed = false, dataContext = '', confirmedNodeFacts = null
+let epoch = 0, disposed = false, dataContext = '', confirmedNodeFacts = null, renewalViewport = null
+let renderedScroll = { left: window.scrollX, top: window.scrollY }
+const nodeFactKeys = ['node_id', 'display_name', 'version', 'enabled']
+const nodeFacts = value => nodeFactKeys.map(key => value?.[key])
+function rememberScroll() {
+  if (canRead.value && !renewalViewport && resourcePage.value?.offsetWidth > 0) renderedScroll = { left: window.scrollX, top: window.scrollY }
+}
+window.addEventListener('scroll', rememberScroll, { passive: true })
 const requestScope = createLatestRequestScope()
 useConsolePageDescriptor(router, 'monitor', { title: computed(() => t('monitor.resources.detailTitle')), subject: computed(() => node.value?.display_name || ''), ready: computed(() => Boolean(node.value)) })
 function date(value) { return formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value) }
@@ -317,7 +326,7 @@ async function reload({ automatic = false } = {}) {
   invalidate()
   if (!automatic) refreshBlocked.value = false
   const ticket = epoch
-  const context = JSON.stringify([nodeID.value, { ...state.value.query, refresh: undefined }, identity.value])
+  const context = JSON.stringify([observationContext.value, identity.value])
   if (context !== dataContext) {
     dataContext = context
     expandedDetail.value = null; summaries.value = new Map(); summaryErrorKey.value = ''; comparison.value = null
@@ -360,7 +369,8 @@ async function reload({ automatic = false } = {}) {
       if (!requestScope.current(ticket)) return
       if (value.node_id !== id) throw new Error('invalid_resource_response')
       // Query changes clear rendered data; compare against the last System facts.
-      if (['node_id', 'display_name', 'version', 'enabled'].some(key => value[key] !== confirmedNodeFacts?.[key])) {
+      if (renewalViewport && nodeFacts(value).some((fact, index) => fact !== renewalViewport.facts[index])) renewalViewport = null
+      if (nodeFactKeys.some(key => value[key] !== confirmedNodeFacts?.[key])) {
         instant.value = null; trend.value = null; comparison.value = null; trendZoom.value = null
         filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
       }
@@ -418,12 +428,19 @@ async function reload({ automatic = false } = {}) {
         validateResourceTrendWindow(history, params)
         resourceTrendChartRows(history, state.value.metric)
         const compared = state.value.compare ? resourceTrendComparison(history, state.value.range) : null
+        const viewport = renewalViewport?.waiting && renewalViewport.identity === identity.value && renewalViewport.context === observationContext.value &&
+          [instant.value, filesystems.value, inodes.value, disks.value, networks.value, history].every(observation => observation?.node_version === value.version) ? renewalViewport : null
+        renewalViewport = null
+        if (viewport) trendZoom.value = viewport.zoom
         trend.value = history; comparison.value = compared
-        if (state.value.end) {
+        if (viewport || state.value.end) {
           await nextTick()
           if (!requestScope.current(ticket)) return
-          trendSection.value?.scrollIntoView({ block: 'start' })
-          trendSection.value?.focus({ preventScroll: true })
+          if (viewport) window.scrollTo({ left: viewport.left, top: viewport.top, behavior: 'instant' })
+          else {
+            trendSection.value?.scrollIntoView({ block: 'start' })
+            trendSection.value?.focus({ preventScroll: true })
+          }
         }
       } catch (error) {
         if (!requestScope.current(ticket)) return
@@ -441,12 +458,30 @@ async function reload({ automatic = false } = {}) {
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; nodes.value = []; total.value = null; summaries.value = new Map() }
   } finally { if (requestScope.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
 }
-watch([() => JSON.stringify([nodeID.value, state.value.range, state.value.end, state.value.dimensions, state.value.compare, chartMetrics.value.map(metric => metric.key)]), identity], () => { trendZoom.value = null }, { flush: 'sync' })
+// Retain only local view coordinates before the shared authority clears its context.
+// The old observations and requests still follow the existing fail-closed path.
+watch(() => auth.token, (token, previous) => {
+  renewalViewport = null
+  if (!token || !previous || !canRead.value || !nodeID.value || !node.value || !instant.value || !trend.value || resourceErrors.some(error => error.value) || refreshBlocked.value) return
+  if (dataContext !== JSON.stringify([observationContext.value, identity.value])) return
+  rememberScroll()
+  renewalViewport = { identity: identity.value, context: observationContext.value, facts: nodeFacts(confirmedNodeFacts), zoom: trendZoom.value ? { ...trendZoom.value } : null, ...renderedScroll, waiting: false }
+}, { flush: 'sync' })
+watch(observationContext, () => { renewalViewport = null }, { flush: 'sync' })
+watch(() => auth.authContextLoadPromise, (pending, previous) => { if (!pending && previous && !auth.authContext) renewalViewport = null }, { flush: 'sync' })
+watch([() => JSON.stringify([nodeID.value, state.value.range, state.value.end, state.value.dimensions, state.value.compare, chartMetrics.value.map(metric => metric.key)]), identity], () => {
+  trendZoom.value = null
+  if (renewalViewport) {
+    if (!auth.authContext) renewalViewport.waiting = true
+    else if (identity.value !== renewalViewport.identity) renewalViewport = null
+  }
+}, { flush: 'sync' })
+watch(resourceErrors, errors => { if (errors.some(Boolean)) renewalViewport = null }, { flush: 'sync' })
 watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = null }, { flush: 'sync' })
 watch(refreshBlocked, blocked => { if (blocked) capacityRuleEditor.value?.close() }, { flush: 'sync' })
 watch([nodeID, identity], () => { confirmedNodeFacts = null; showAllDisks.value = false }, { flush: 'sync' })
 watch([() => route.fullPath, identity], () => { capacityRuleEditor.value?.close(); reload() }, { immediate: true, flush: 'sync' })
-onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); invalidate(); requestScope.dispose() })
+onBeforeUnmount(() => { disposed = true; renewalViewport = null; window.removeEventListener('scroll', rememberScroll); filterInput.dispose(); refreshCycle.dispose(); invalidate(); requestScope.dispose() })
 </script>
 
 <style scoped>
