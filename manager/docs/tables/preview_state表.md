@@ -47,14 +47,7 @@
 
 ## 三、动态状态语义
 
-| 状态 | 含义 |
-| --- | --- |
-| `unavailable` | 当前不可快显 |
-| `available` | 当前可切换快显 |
-| `generating` | 关联瓦片缓存任务正在生成，快显能力等待产物完成 |
-| `failed` | 最近一次关联生成失败，当前快显不可用或不可可靠使用 |
-
-状态来源由快显能力判断服务统一计算，不写入 `manager.preview_state`。
+动态状态与矢量瓦片按钮规则统一见[矢量瓦片状态与页面动作](../quick-view/共用契约.md#矢量瓦片状态与页面动作)。这些状态由能力判断服务动态计算，不写入 `manager.preview_state`。
 
 ## 四、索引建议
 
@@ -64,26 +57,13 @@
 
 ## 五、UI 行为
 
-空间预览页读取快显能力后：
+模式偏好与交互状态写入遵循以下规则：
 
 首次保存交互状态时，模式初值沿用 Quick View Capability 根据源事实计算的 `preferred_mode`，不得固定写成 `basic_preview`。已有记录的交互状态写入只更新 `view_state`，不覆盖模式偏好；模式偏好写入也不得清空交互状态。两类写入按 `tenant_id + item_fingerprint` 原子 upsert，首次并发保存也必须保留明确的模式选择。
 
 预览页生成成果成功且当前数据项、用户模式选择均未变化时，自动进入快显必须同时通过既有模式偏好接口保存 `map_quick_view`，不能只修改页面局部模式。生成等待期间已切换数据项或明确选择其他模式时，不自动切换或覆盖该选择。同一数据项的模式保存按动作顺序串行发送，自动保存晚返回不得覆盖随后手动选择。任务页或后台生成不改变用户预览偏好。
 
-| 条件 | UI 行为 |
-| --- | --- |
-| `can_use_quick_view=true` 且 `render_source=cached_tile/direct_flatgeobuf` | 展示“切换快显”，不展示“生成瓦片缓存”按钮 |
-| `can_use_quick_view=true` 且 `render_source=realtime_tile` | 展示“切换快显”；当 `optimization.status=stale`、`realtime_tile.performance_mode=source_transform_path` 或瓦片返回 `X-ADDP-Tile-Recommendation=vector_materialized_view_generation` 时展示“执行矢量物化视图”；当瓦片返回 `X-ADDP-Tile-Recommendation=vector_tile_cache_generation` 时使用节流消息提示生成瓦片缓存；需要稳定低层级浏览时保留“生成瓦片缓存”入口 |
-| `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=true` | 展示“生成瓦片缓存”；如果 capability 或瓦片响应提示矢量物化视图，优先展示“执行矢量物化视图”入口 |
-| `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=false` | 不展示生成按钮，只展示不可用原因 |
-
-从预览页跳转时，统一“数据任务”页应自动带入当前 item 上下文、产品分类和 `task_type`；任务定义统一写入 `manager.task_definitions`。
-
-预览页和 Explorer 内嵌预览都必须按同一规则展示矢量物化视图诊断：
-
-1. `optimization.target_kind=external_3857_materialized_view` 时展示“已识别外部 3857 物化视图目标”，不展示“执行矢量物化视图”入口。
-2. `optimization.status=stale` 时展示“矢量物化视图结果需刷新”，并提供“执行矢量物化视图”入口。
-3. 有可索引 3857 目标但动态 MVT 仍超时时，节流提示“生成瓦片缓存”，不把高层级放大误判为慢路径。
+页面按钮、数据任务上下文与矢量物化视图诊断分别沿[页面动作](../quick-view/共用契约.md#矢量瓦片状态与页面动作)、[矢量任务与结果入口](../quick-view/矢量快显与物化视图.md#矢量物化视图任务和结果)及[目标与超时边界](../quick-view/矢量快显与物化视图.md#pg-表要求与矢量物化视图路线)维护；不由偏好记录推导生成能力。
 
 ## 六、与瓦片缓存结果的关系
 
