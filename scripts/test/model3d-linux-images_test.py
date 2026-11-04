@@ -16,6 +16,48 @@ SCRIPT = ROOT / 'engines/model3d-workflow/scripts/build-linux-images.sh'
 
 
 class Model3DLinuxImagesTest(unittest.TestCase):
+    def test_product_triplets_build_only_release_and_preserve_target_linkage(self):
+        source = (ROOT / 'engines/model3d-workflow/docker/converter/Dockerfile').read_text()
+        commands = re.findall(r'^RUN (.*?(?:\\\n.*?)*)(?=\n(?:[^ \n]|\n)|\Z)', source, re.M)
+        policies = [command for command in commands if 'VCPKG_BUILD_TYPE release' in command]
+        self.assertEqual(len(policies), 1, 'one explicit product Release policy is required')
+        command = policies[0].replace('\\\n', '')
+        self.assertLess(source.index('VCPKG_BUILD_TYPE release'), source.index('cargo build --locked --release'))
+        targets = [('triplets/x64-linux.cmake', 'x64'), ('triplets/community/arm64-linux.cmake', 'arm64')]
+        for missing in (None, targets[0][0], targets[1][0]):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory(prefix='addp-product-triplets-') as directory:
+                root = Path(directory)
+                for name, arch in targets:
+                    if name == missing:
+                        continue
+                    path = root / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(f'set(VCPKG_TARGET_ARCHITECTURE {arch})\n'
+                                    'set(VCPKG_CRT_LINKAGE dynamic)\nset(VCPKG_LIBRARY_LINKAGE static)\n'
+                                    'set(VCPKG_CMAKE_SYSTEM_NAME Linux)\n')
+                unrelated = root / 'triplets/x64-windows.cmake'
+                unrelated.parent.mkdir(parents=True, exist_ok=True)
+                unrelated.write_bytes(b'untouched Windows triplet\n')
+                result = subprocess.run(['bash', '-c', command], env={**os.environ, 'VCPKG_ROOT': directory},
+                                        capture_output=True, text=True, timeout=5)
+                if missing:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse((root / missing).exists(), 'missing pinned triplet must not be created')
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    for name, arch in targets:
+                        harness = root / 'check.cmake'
+                        harness.write_text(f'include("{(root / name).as_posix()}")\n'
+                            f'if(NOT VCPKG_TARGET_ARCHITECTURE STREQUAL "{arch}" OR '
+                            'NOT VCPKG_CRT_LINKAGE STREQUAL "dynamic" OR '
+                            'NOT VCPKG_LIBRARY_LINKAGE STREQUAL "static" OR '
+                            'NOT VCPKG_CMAKE_SYSTEM_NAME STREQUAL "Linux" OR '
+                            'NOT VCPKG_BUILD_TYPE STREQUAL "release")\n'
+                            'message(FATAL_ERROR "product triplet policy differs")\nendif()\n')
+                        checked = subprocess.run(['cmake', '-P', str(harness)], capture_output=True, text=True, timeout=10)
+                        self.assertEqual(checked.returncode, 0, checked.stderr)
+                self.assertEqual(unrelated.read_bytes(), b'untouched Windows triplet\n')
+
     def test_skp_repair_is_shared_by_ci_runtime_and_product_smoke(self):
         runtime = (ROOT / 'engines/model3d-workflow/docker/runtime/Dockerfile').read_text()
         ci = (ROOT / '.github/workflows/platform-ci.yml').read_text()

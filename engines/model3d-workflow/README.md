@@ -90,6 +90,8 @@ Linux mesh 转换器固定使用 Assimp 5.4.3 源码归档（SHA-256 `66dfbaee28
 
 vcpkg baseline 保持上游固定版本。tinygltf `2.9.7` 通过唯一的 overlay port 固定到发布提交 `488a70a3df62a4df1a736e9e56fb8836580c4888`，下载提交归档并执行 SHA-512 校验，替换 baseline 中已无法通过校验的 tag 归档；不关闭完整性检查，也不升级其他原生依赖。构建入口与 overlay 安装契约由 `make test-dev-lifecycle` 验证，完整 Linux amd64 编译及实际转换由 Hosted Manager T4 验收。
 
+Linux 产品只链接和打包 Release 库。Converter 在固定 vcpkg 的 `x64-linux` 与 `arm64-linux` triplet 中显式设置 `VCPKG_BUILD_TYPE=release`，避免默认额外编译未使用的 Debug ports；保留原架构、静态链接、全部依赖版本和转换 smoke。此设置采用 [vcpkg 官方 triplet 契约](https://learn.microsoft.com/en-us/vcpkg/users/triplets#vcpkg_build_type)，不改变 macOS 原生工具包准备方式。`make test-dev-lifecycle` 执行实际 Dockerfile 配置片段并用 CMake 核对两种架构、链接策略和缺失 triplet 拒绝；完整新 Linux 镜像及 smoke 仍由已有 Product binary build 验证，不能以确定性测试代替，也不保证一次冷构建必然落在 Hosted 预算内。
+
 标准构建入口按宿主机 CPU 选择 `linux/amd64` 或 `linux/arm64`，一次仅构建一个平台；内部构建脚本通过 `MODEL3D_DOCKER_PLATFORM` 接收选定目标，其他架构明确拒绝。GitHub Hosted Ubuntu x86_64 使用 amd64，不通过 QEMU 运行 arm64 转换器。IfcConvert 固定同一上游版本并按 Docker 目标架构下载官方二进制；两个架构共用一个 Dockerfile 和 Linux 构建 patch。
 
 从仓库根目录构建并验证产品镜像：

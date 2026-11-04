@@ -35,6 +35,13 @@ RUN git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg \
   && git checkout "${VCPKG_COMMIT}" \
   && ./bootstrap-vcpkg.sh
 
+# Product linking, compression smoke and packaging consume release libraries only.
+RUN set -eu; \
+    for triplet_file in "$VCPKG_ROOT/triplets/x64-linux.cmake" "$VCPKG_ROOT/triplets/community/arm64-linux.cmake"; do \
+      test -f "$triplet_file"; \
+      printf '\nset(VCPKG_BUILD_TYPE release)\n' >> "$triplet_file"; \
+    done
+
 COPY engines/model3d-workflow/docker/converter/vcpkg-overlays/ /opt/addp/vcpkg-overlays/
 ENV VCPKG_OVERLAY_PORTS=/opt/addp/vcpkg-overlays
 
