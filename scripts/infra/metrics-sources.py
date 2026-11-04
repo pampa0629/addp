@@ -17,6 +17,16 @@ PROVIDERS = {
 }
 SCOPES = ('host', 'infra', 'business')
 OS_KEYS = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST')
+FAILURE_REASONS = {
+    'source-image-unavailable': '原采集镜像不可用；请通过标准指标启动入口重新构建并应用来源',
+    'node-proof-missing': '主机安装证明缺失；请核对后显式执行 up 重新应用',
+    'node-proof-disabled': '主机安装已停用；如需重新启用，请显式执行 up',
+    'node-proof-invalid': '主机安装证明读取或校验失败；请核对私有安装文件的归属、保护及完整性',
+    'node-source-incomplete': '主机来源组件不完整；请核对后显式执行 up 重新应用',
+    'node-ownership-rejected': '主机资源归属校验失败；请核对当前工作区及来源容器、容量卷的归属',
+    'node-inputs-changed': '主机部署输入已变化（配置、证书、模板或 Docker 环境）；请核对后显式执行 up 重新应用',
+    'node-installation-changed': '主机安装身份或安全配置已变化；请核对后显式执行 up 重新应用',
+}
 
 
 def load(path):
@@ -120,10 +130,8 @@ def apply(action, kind, scope, env):
     if result.returncode:
         cleanup = '；清理未确认' if '[cleanup=failed]' in result.stderr else ''
         reason = re.search(r'\[reason=([a-z-]+)\]', result.stderr)
-        if reason and reason[1] == 'source-image-unavailable':
-            raise ValueError('操作失败：原采集镜像不可用；请通过标准指标启动入口重新构建并应用来源'+cleanup)
-        if reason and reason[1] in {'node-proof-unavailable', 'node-installation-changed'}:
-            raise ValueError('操作失败：主机安装证明缺失、停用或配置已变化；请显式执行 up 重新应用'+cleanup)
+        if reason and reason[1] in FAILURE_REASONS:
+            raise ValueError('操作失败：'+FAILURE_REASONS[reason[1]]+cleanup)
         stage = re.search(r'\[stage=([a-z-]+)\]', result.stderr)
         detail = ('；阶段 '+stage[1]) if stage and stage[1] in {
             'session-check', 'transport-check', 'private-state', 'authentication-read', 'account-install',

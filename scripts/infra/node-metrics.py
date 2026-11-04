@@ -268,5 +268,5 @@ if __name__ == '__main__':
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         cleanup = ' [cleanup=failed]' if getattr(error, 'node_recovery_cleanup_failed', False) else ''
         reason = getattr(error, 'node_recovery_reason', '')
-        reason = ' [reason='+reason+']' if reason in ('node-proof-unavailable', 'node-installation-changed', 'source-image-unavailable') else ''
+        reason = ' [reason='+reason+']' if reason in recovery.REASONS else ''
         sys.exit('Node metrics deployment rejected'+reason+cleanup+'; check deployment environment, explicit inputs and project ownership')

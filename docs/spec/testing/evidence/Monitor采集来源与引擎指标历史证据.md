@@ -711,3 +711,11 @@ T2通过的是受限桥接夹具中的真实恢复事务；其测试签名明确
 用户在具体命令已展示后要求本会话直接执行，本次限定授权执行`python3 scripts/infra/metrics-sources.py up --scope host --kind node`，并立即核验同范围recover；不扩展其他模块生命周期操作。up退出0、一项失败0，原node_exporter容器3d7e52c64c9f更换为4d48bf365796，唯一来源Running，仓库外addp.node-recovery/v1安装证明enabled=true；当前未启用容量采样器，无新增其他服务。recover退出0并明确“来源运行正常，未重建”，工具独立前后对照完整容器事实一致。两条命令均走正式统一入口，补齐生产Desktop输入签名与私有证明的本机实际联调。
 
 随后使用现有Monitor专用mTLS查询身份只读核对：该主机UUID仅有一个host_resources目标，UP且lastError为空；up=1，内存总量67,304,611,840字节，load1=7.33，node_time_seconds所示来源时间距核验6.73秒。即时查询点的时间是评估时刻，不把该点与当前时间之差作为原始样本新鲜度；新鲜度依据为来源时钟与目标真实抓取信息。收据`/tmp/addp-node-recovery-live-20261104.json`保存up前后及recover后容器事实、证明状态和限定主机指标。未停止来源制造故障，个人停止恢复仍仅有既有隔离T2证据；本轮未操作Safari，不把后台UP包装为页面验收，原生Linux实机及CI／Hosted仍待验。未改配置、数据库或凭据，未启停其他业务与中心，未设置定时任务。
+
+### 主机恢复失败原因的安全诊断（2026-11-04）
+
+原恢复事务已有拒绝检查，但缺失和停用证明共用原因码，来源缺失／归属失败等错误丢失具体诊断。先补正式规范与操作指南，再把原检查结果通过固定原因码传给统一入口：区分证明缺失、已停用、读取校验失败、组件不完整、归属不符、部署输入变化、安装身份／安全配置变化及原镜像不可用。删除原合并原因码；未知码仍只有操作失败，保留独立清理未确认标记，不输出提供方原始日志、标识、私有路径或凭据。读取失败保留原异常类型，检查顺序、拒绝条件及启动／回收范围不变，不新增读取、自动修复或重试。测试夹具的注入字段同步避开unittest.fail方法，避免断言失败被同名字段遮蔽。
+
+本地验证：新增原因断言先在旧实现失败（缺少／合并原因码），修正后`make test-monitor-metrics-config`退出0，涵盖共享恢复7项、主机恢复15项、编排18项、启动守卫2项和配置136项；最终主机15项还由下述T2入口再次执行，包含损坏／重复字段／错误类型证明和原私有文件拒绝路径。`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=node-recovery`退出0，真实桥接隔离来源精确断言证明缺失、证书输入变化、组件被删除、安装停用四类原因；健康不变、仅采样器及全部停止恢复、回执丢失清理和恢复后mTLS指标均通过，容器／网络／卷／临时私有状态清零。日志分别为`/tmp/addp-node-recovery-diagnosis-config.log`、`/tmp/addp-node-recovery-diagnosis-t2.log`。
+
+`make test-infra-runtime-log-lifecycle`退出0（HTTP44、Trace175及生命周期145项等）；`make test-t2-ci-registration`退出0（登记78、runner9项及实际门禁登记检查）。日志`/tmp/addp-node-recovery-diagnosis-lifecycle.log`、`/tmp/addp-node-recovery-diagnosis-registration.log`。现有Monitor指标门禁输入和node-recovery矩阵已登记这些实现／测试，不新增测试入口或workflow。未知／退役原因码的原始输出不透传且清理提示保留由T1验证；T2是受限桥接来源，不外推为个人故障恢复、原生Linux实机或Hosted验收。本轮未启停个人来源、改配置／账号／数据库、操作Safari或查询远程CI／Hosted，未设置定时任务。

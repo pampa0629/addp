@@ -23,7 +23,7 @@ class NodeRecoveryTest(unittest.TestCase):
         self.project = 'owned-node-test'; self.env = {'ADDP_NODE_METRICS_ENABLED':'true'}
         self.inputs = {'capacity':False, 'engine':'engine-1', 'template':'sha256-1'}
         self.items = {'node-exporter':self.fact('node-exporter')}; self.vol = None
-        self.commands = []; self.fail = None
+        self.commands = []; self.start_failure = None
         self.docker = Mock(); self.docker.run.side_effect = self.command
         for target, name, value in ((M,'state_directory',lambda:self.folder), (M.deployment,'Docker',lambda env:self.docker)):
             change = patch.object(target,name,value); change.start(); self.addCleanup(change.stop)
@@ -45,7 +45,7 @@ class NodeRecoveryTest(unittest.TestCase):
         if args[:2]==['image','inspect']: return json.dumps(args[-1])
         if args[0] in ('start','stop'):
             next(item for item in self.items.values() if item['id']==args[-1])['running'] = args[0]=='start'
-            if self.fail: self.fail(args)
+            if self.start_failure: self.start_failure(args)
             return args[-1]
         raise AssertionError(args)
 
@@ -81,10 +81,12 @@ class NodeRecoveryTest(unittest.TestCase):
         self.assertEqual(self.mutations(),[['start','block-capacity-identity'],['start','node-exporter-identity']])
 
     def test_absent_disabled_or_retired_proof_never_adopts(self):
-        with self.assertRaisesRegex(ValueError,'proof missing'): self.manage('recover')
+        with self.assertRaisesRegex(ValueError,'proof missing') as result: self.manage('recover')
+        self.assertEqual(result.exception.node_recovery_reason,'node-proof-missing')
         self.assertFalse(self.folder.exists()); self.assertEqual(self.commands,[])
         self.manage('up'); self.manage('down'); self.commands.clear()
-        with self.assertRaisesRegex(ValueError,'disabled'): self.manage('recover')
+        with self.assertRaisesRegex(ValueError,'disabled') as result: self.manage('recover')
+        self.assertEqual(result.exception.node_recovery_reason,'node-proof-disabled')
         self.assertEqual(self.commands,[])
         self.env['ADDP_NODE_METRICS_ENABLED']='false'
         self.assertIn('not selected',self.manage('recover')); self.assertEqual(self.commands,[])
@@ -100,10 +102,21 @@ class NodeRecoveryTest(unittest.TestCase):
                    lambda:self.items['node-exporter']['mounts'][0].update(RW=True),
                    lambda:self.items['node-exporter']['labels'].update({M.OWNER:'/foreign'}),
                    lambda:self.items.pop('block-capacity'),lambda:self.vol.update(CreatedAt='recreated')]
-        for change in changes:
+        reasons = ['node-inputs-changed']*2 + ['node-installation-changed']*5 + [
+            'node-ownership-rejected','node-source-incomplete','node-installation-changed']
+        for change,reason in zip(changes,reasons):
             self.inputs,self.items,self.vol = copy.deepcopy(original); change(); self.commands.clear()
-            with self.assertRaises(ValueError): self.manage('recover')
+            with self.assertRaises(ValueError) as result: self.manage('recover')
+            self.assertEqual(result.exception.node_recovery_reason,reason)
             self.assertEqual(self.mutations(),[])
+
+    def test_invalid_proof_has_closed_diagnosis_without_docker_reads(self):
+        self.manage('up'); path=self.folder/'installation.json'
+        for text in ('private-invalid-json', '{"enabled":true,"enabled":false}', '[]', '{}', '{"enabled":"true"}'):
+            path.write_text(text); self.commands.clear()
+            with self.assertRaises(ValueError) as result:self.manage('recover')
+            self.assertEqual(result.exception.node_recovery_reason,'node-proof-invalid')
+            self.assertEqual(self.commands,[])
 
     def test_missing_image_has_closed_reason(self):
         self.manage('up'); base=self.command
@@ -119,7 +132,7 @@ class NodeRecoveryTest(unittest.TestCase):
         self.capacity(); self.manage('up'); self.items['block-capacity']['running']=False
         def fail(args):
             if args[0]=='start': raise ValueError('lost reply')
-        self.fail=fail
+        self.start_failure=fail
         with self.assertRaisesRegex(ValueError,'lost reply') as result: self.manage('recover')
         self.assertFalse(getattr(result.exception,'node_recovery_cleanup_failed',False))
         self.assertEqual(self.mutations(),[['start','block-capacity-identity'],['stop','--time','5','block-capacity-identity']])
@@ -131,7 +144,7 @@ class NodeRecoveryTest(unittest.TestCase):
             if args[0]=='start':
                 self.items['node-exporter']['host']['Privileged']=True
                 raise ValueError('lost reply')
-        self.fail=fail
+        self.start_failure=fail
         with self.assertRaises(ValueError) as result:self.manage('recover')
         self.assertTrue(result.exception.node_recovery_cleanup_failed)
         self.assertEqual(self.mutations(),[['start','node-exporter-identity']])
@@ -140,7 +153,7 @@ class NodeRecoveryTest(unittest.TestCase):
         self.manage('up');self.items['node-exporter']['running']=False
         def fail(args):
             if args[0]=='start':raise KeyboardInterrupt()
-        self.fail=fail
+        self.start_failure=fail
         with self.assertRaises(KeyboardInterrupt):self.manage('recover')
         self.assertFalse(self.items['node-exporter']['running'])
         self.assertEqual(self.mutations(),[['start','node-exporter-identity'],['stop','--time','5','node-exporter-identity']])
@@ -169,9 +182,11 @@ class NodeRecoveryTest(unittest.TestCase):
         self.manage('up'); self.commands.clear()
         with M.private.locked(self.folder),self.assertRaisesRegex(ValueError,'busy'):self.manage('recover')
         path=self.folder/'installation.json'; path.chmod(0o644)
-        with self.assertRaises(ValueError):self.manage('recover')
+        with self.assertRaises(ValueError) as result:self.manage('recover')
+        self.assertEqual(result.exception.node_recovery_reason,'node-proof-invalid')
         path.unlink(); path.symlink_to(self.folder/'control.lock')
-        with self.assertRaises(OSError):self.manage('recover')
+        with self.assertRaises(OSError) as result:self.manage('recover')
+        self.assertEqual(result.exception.node_recovery_reason,'node-proof-invalid')
         self.assertEqual(self.mutations(),[])
 
     def test_provider_signature_binds_files_engine_and_kernel_without_secret_content(self):

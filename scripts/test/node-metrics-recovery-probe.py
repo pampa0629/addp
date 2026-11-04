@@ -51,9 +51,11 @@ def main():
                     'kernel':config['ADDP_NODE_METRICS_KERNEL'],
                     'files':{str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}}
         def inspect():return M.containers(docker,project)
-        def expect_rejected(operation):
+        def expect_rejected(operation, reason=None):
             try:operation()
-            except ValueError:return
+            except ValueError as error:
+                if reason is not None:assert getattr(error,'node_recovery_reason',None)==reason
+                return
             raise AssertionError('Node recovery accepted unproven installation')
         def collected():
             port=json.loads(docker.run(['inspect','--format','{{json .NetworkSettings.Ports}}',inspect()['node-exporter']['id']]))['9100/tcp'][0]['HostPort']
@@ -72,7 +74,7 @@ def main():
         try:
             with patch.object(M,'state_directory',return_value=work/'proof'):
                 def manage(action,op=lambda:None):M.manage(action,config,project,inputs,op)
-                expect_rejected(lambda:manage('recover'))
+                expect_rejected(lambda:manage('recover'), 'node-proof-missing')
                 manage('up',lambda:compose('up','-d','--wait','--wait-timeout','30','node-exporter','block-capacity'))
                 facts=inspect(); original=M.stable(facts)
                 for name,fact in facts.items():
@@ -104,13 +106,13 @@ def main():
                 assert M.stable(inspect())==original;assert all(x['running'] for x in inspect().values());collected()
                 # Drift is read-only; neither an existing healthy source nor its volume is replaced.
                 prior=(tls/'server.crt').read_bytes();(tls/'server.crt').write_bytes(prior+b'\n')
-                before=inspect();expect_rejected(lambda:manage('recover'));assert inspect()==before
+                before=inspect();expect_rejected(lambda:manage('recover'), 'node-inputs-changed');assert inspect()==before
                 (tls/'server.crt').write_bytes(prior)
                 volume=M.volume(docker,project)
-                compose('rm','-f','-s','block-capacity');expect_rejected(lambda:manage('recover'))
+                compose('rm','-f','-s','block-capacity');expect_rejected(lambda:manage('recover'), 'node-source-incomplete')
                 assert M.volume(docker,project)==volume
                 assert inspect()=={'node-exporter':before['node-exporter']}
-                manage('down');expect_rejected(lambda:manage('recover'))
+                manage('down');expect_rejected(lambda:manage('recover'), 'node-proof-disabled')
                 print('Node recovery T2: healthy unchanged, sampler-only/full stop recovery, lost-reply cleanup, exact identities, mTLS, drift/missing-source/retired-proof rejection PASS')
         finally:
             compose('down','--volumes','--remove-orphans')

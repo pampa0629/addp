@@ -151,11 +151,24 @@ class MetricsSourcesTest(unittest.TestCase):
         code, output, calls = self.invoke('recover',['host'],['node'],env={'ADDP_NODE_METRICS_ENABLED':'true'},apply={'return_value':'已检查／恢复'})
         self.assertEqual(code,0)
         calls['apply'].assert_called_once_with('recover','node','host',{'ADDP_NODE_METRICS_ENABLED':'true'})
-        for reason in ('node-proof-unavailable','node-installation-changed'):
+        reasons = {
+            'node-proof-missing':'安装证明缺失', 'node-proof-disabled':'安装已停用',
+            'node-proof-invalid':'安装证明读取或校验失败', 'node-source-incomplete':'来源组件不完整',
+            'node-ownership-rejected':'资源归属校验失败', 'node-inputs-changed':'部署输入已变化',
+            'node-installation-changed':'安装身份或安全配置已变化',
+        }
+        for reason,message in reasons.items():
             result = subprocess.CompletedProcess([],1,'private-output','[reason='+reason+'] private-password')
-            with patch.object(manager.subprocess,'run',return_value=result),self.assertRaisesRegex(ValueError,'安装证明.*显式执行 up') as error:
+            with patch.object(manager.subprocess,'run',return_value=result),self.assertRaisesRegex(ValueError,message) as error:
                 manager.apply('recover','node','host',{})
             self.assertNotIn('private',str(error.exception))
+
+    def test_unknown_failure_never_invents_a_diagnosis_and_preserves_cleanup_warning(self):
+        for reason in ('unknown-secret','node-proof-unavailable'):
+            result = subprocess.CompletedProcess([],1,'private-output','[reason='+reason+'] [cleanup=failed] /private/secret')
+            with patch.object(manager.subprocess,'run',return_value=result),self.assertRaises(ValueError) as error:
+                manager.apply('recover','node','host',{})
+            self.assertEqual(str(error.exception),'操作失败；清理未确认')
 
     def test_standard_lifecycles_use_one_coordinator(self):
         infra = (ROOT/'scripts/infra/up.sh').read_text()

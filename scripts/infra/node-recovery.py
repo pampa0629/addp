@@ -17,6 +17,9 @@ def load(name):
 private = load('private-state.py')
 deployment = load('deployment-docker.py')
 OWNER = 'io.addp.node-metrics.owner'
+REASONS = frozenset({'node-proof-missing', 'node-proof-disabled', 'node-proof-invalid',
+                     'node-source-incomplete', 'node-ownership-rejected', 'node-inputs-changed',
+                     'node-installation-changed', 'source-image-unavailable'})
 FACT = ('{"id":{{json .Id}},"image":{{json .Image}},"running":{{json .State.Running}},'
         '"command":{{json .Config.Cmd}},"entrypoint":{{json .Config.Entrypoint}},'
         '"user":{{json .Config.User}},"labels":{{json .Config.Labels}},'
@@ -57,7 +60,7 @@ def containers(docker, project):
         labels = item['labels'] or {}; service = labels.get('com.docker.compose.service')
         if (labels.get(OWNER) != str(ROOT) or labels.get('com.docker.compose.project') != project
                 or service not in {'node-exporter','block-capacity'} or service in result):
-            raise ValueError('Node recovery ownership or service set rejected')
+            raise rejected('Node recovery ownership or service set rejected', 'node-ownership-rejected')
         item['mounts'] = sorted(item['mounts'],key=lambda value:json.dumps(value,sort_keys=True))
         # Addresses/endpoint IDs legitimately change on restart; attached network
         # identities must remain the installation's exact set.
@@ -74,38 +77,48 @@ def volume(docker,project):
     name = project+'_block-capacity'
     names = docker.run(['volume','ls','-q','--filter','name=^'+name+'$']).split()
     if not names: return None
-    if names != [name]: raise ValueError('Unexpected node capacity volume')
+    if names != [name]: raise rejected('Unexpected node capacity volume', 'node-ownership-rejected')
     value = decode(docker.run(['volume','inspect',name]))[0]
     if (value.get('Name') != name or (value.get('Labels') or {}).get(OWNER) != str(ROOT)
             or value.get('Driver') != 'local'):
-        raise ValueError('Node recovery volume ownership rejected')
+        raise rejected('Node recovery volume ownership rejected', 'node-ownership-rejected')
     return value
 
 
 def snapshot(docker,project,inputs):
     items = containers(docker,project)
     expected = {'node-exporter','block-capacity'} if inputs['capacity'] else {'node-exporter'}
-    if set(items) != expected: raise ValueError('Node recovery installation is incomplete; explicitly apply up')
+    if set(items) != expected:
+        raise rejected('Node recovery installation is incomplete; explicitly apply up', 'node-source-incomplete')
     vol = volume(docker,project)
     if (vol is not None) != inputs['capacity']:
-        raise ValueError('Node recovery capacity volume set changed')
+        raise rejected('Node recovery capacity volume set changed', 'node-installation-changed')
     return {'schema':'addp.node-recovery/v1','workspace':str(ROOT),'project':project,
             'inputs':inputs,'containers':stable(items),'volume':vol},items
 
 
 def recover(docker,project,env,signature,path):
-    if not path.exists(): raise rejected('Node recovery installation proof missing; explicitly apply up', 'node-proof-unavailable')
-    saved = decode(private.read(path,0o600)[0])
+    if not path.exists(): raise rejected('Node recovery installation proof missing; explicitly apply up', 'node-proof-missing')
+    try:
+        saved = decode(private.read(path,0o600)[0])
+    except (OSError,ValueError) as error:
+        error.node_recovery_reason = 'node-proof-invalid'
+        raise
     if not isinstance(saved,dict) or saved.get('enabled') is not True:
-        raise rejected('Node recovery installation is disabled', 'node-proof-unavailable')
+        if isinstance(saved,dict) and saved.get('enabled') is False:
+            raise rejected('Node recovery installation is disabled', 'node-proof-disabled')
+        raise rejected('Node recovery installation proof invalid', 'node-proof-invalid')
     inputs = signature(env,docker)
     desired,items = snapshot(docker,project,inputs)
     if saved != dict(desired,enabled=True):
-        raise rejected('Node recovery installation or inputs changed; explicitly apply up', 'node-installation-changed')
+        reason = 'node-inputs-changed' if saved.get('inputs') != inputs else 'node-installation-changed'
+        raise rejected('Node recovery installation or inputs changed; explicitly apply up', reason)
     started = []
     def unchanged():
         current,current_items = snapshot(docker,project,signature(env,docker))
-        if current != desired: raise ValueError('Node recovery facts changed')
+        if current != desired:
+            reason = 'node-inputs-changed' if current['inputs'] != desired['inputs'] else 'node-installation-changed'
+            raise rejected('Node recovery facts changed', reason)
         for item in current_items.values():
             try:
                 image = decode(docker.run(['image','inspect','--format','{{json .Id}}',item['image']]))
@@ -148,7 +161,7 @@ def manage(action,env,project,signature,operation):
     if action == 'recover':
         if env.get('ADDP_NODE_METRICS_ENABLED','false') == 'false':
             print('Node metrics: recovery not selected'); return
-        if not folder.exists(): raise rejected('Node recovery installation proof missing; explicitly apply up', 'node-proof-unavailable')
+        if not folder.exists(): raise rejected('Node recovery installation proof missing; explicitly apply up', 'node-proof-missing')
     with private.locked(folder):
         path = folder/'installation.json'
         if action == 'recover':
