@@ -108,13 +108,22 @@
 
 ## Monitor 前端整套门禁超时复核（2026-11-01，0e69a25b1）
 
-专门会话回传固定源码 `0e69a25b17e18fbb9a6a0b29b88c0827eb50d714` 的 [Platform run41304702173／Monitor job124842615491](https://github.com/pampa0629/addp/actions/runs/41304702173/job/124842615491)。已只读核对归档job／annotations／receipt与原始日志哈希 `02abf702b4c2d3df615ccdb9b386b49a252215f2a9dc345224c1e5c50d0ad826`，三者源码一致。Job为completed/cancelled，annotation明确超过30分钟最大执行时间；不是人工取消，不计整套门禁通过。
+固定 `0e69a25b17e18fbb9a6a0b29b88c0827eb50d714` 的 [Monitor Job 124842615491](https://github.com/pampa0629/addp/actions/runs/41304702173/job/124842615491) 最终为 `completed/cancelled`。归档 annotation 指明超过当时的 30 分钟 Job 上限。
 
-日志131项单测通过。浏览器声明561项、单Worker，连续启动序号为1至560；最后启动uptime-units的中文用例，未启动561、没有最终浏览器成功汇总，后续build未执行。仅凭启动序号不能为任一新增场景或整套补认成功。最大相邻启动间隔12.84853秒，未见断言失败块；不能把最后打印位置推断为该用例挂死或产品回归。
+| 阶段 | 实际记录 |
+| --- | --- |
+| Checkout | 12:10:40–12:15:32 UTC，共 292 秒，含全分支及标签历史获取。 |
+| 前端门禁 | 12:15:59–12:40:53，共 1494 秒。131 项单测通过。 |
+| 浏览器 | 单 Worker 声明 561 项，日志仅记录第 1 至 560 项启动。首末启动时刻为 12:16:04.025356 和 12:40:50.612102，跨度 1486.586746 秒。最大相邻启动间隔 12.84853 秒。最后启动的是 `uptime-units` 中文用例，第 561 项未启动，未产生浏览器终态汇总。 |
+| 构建 | 未执行，整套门禁未通过。 |
 
-耗时拆分：checkout为12:10:40—12:15:32 UTC（292秒），含全分支／标签历史fetch；正式门禁步为12:15:59—12:40:53（1494秒）。浏览器首项12:16:04.025356、末项12:40:50.612102，启动跨度1486.586746秒。证据说明仓库获取与大套串行运行共同耗尽30分钟上限；不证明冷checkout的具体网络／对象耗时根因，也不将“接近跑完”算作通过。后续应先核对如何减少仓库获取开销、保留固定事件before/head及完整变更选择；当前不改预算、Worker数、断言、用例集合或共享CI编排。
+仓库获取和串行门禁合计耗尽当时预算。日志未见断言失败块，最后一条启动记录不足以定位用例挂死或产品回归，冷 checkout 的具体网络或对象耗时也未确认。
 
-原始文件在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-line-nodes-q5rkxkgn/terminal-ci/124842615491/`，独立有界审计为 `/tmp/addp-monitor-0e69-frontend-timeout-audit.json`。审计脚本验证日志哈希、固定SHA、序号连续性和时间差；本次证据增量另经 `git diff --check`。未查询／重跑CI、Hosted或容量验收，未设置定时任务；不把本地Redis专项证据升级为该旧输入的整套Linux前端通过。
+原归档位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-line-nodes-q5rkxkgn/terminal-ci/124842615491/`，原日志 SHA-256 为 `02abf702b4c2d3df615ccdb9b386b49a252215f2a9dc345224c1e5c50d0ad826`。独立审计 `/tmp/addp-monitor-0e69-frontend-timeout-audit.json` 核对归档源码、日志摘要、启动序号及时间差。
+
+后续 `0911` 输入的 133 项单测和 602 项浏览器通过，构建仍在旧 30 分钟上限取消。现行 Monitor 前端 Job 上限为 40 分钟，继续沿 `make test-monitor-frontend`、单 Worker 及既有用例和重试规则。[前端门禁预算](../CI与交付规范.md#frontend-deterministic-job-budget)
+
+另一次固定 `2cd45ec2` 运行的前端步骤含构建实际通过，整 Job 仍因 30 分钟上限取消。各轮按自己的固定源码和终态认定。[前端步骤通过与 Job 取消记录](Monitor采集来源与引擎指标历史证据.md#linux-完整前端产品步骤回传2026-11-022cd45ec2)
 
 ## Redis 必填认证与 MinIO 隔离构建闭包修复（2026-11-01）
 
