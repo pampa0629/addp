@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 17 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 68 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 69 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -1037,3 +1037,10 @@ HTTP Job126473639226与126477749395已实际失败，配置测试继承未发布
 [真实退出契约、原请求预算及确定性证据](MonitorHTTP质量与采样历史证据.md#http-browser-logout-contract-20261104)
 
 存活／停源两阶段均要求Console正式logout204及该次旧凭证401，关页后冻结实际增量2；共享原浏览器80／控制面200，不留凭证、不重试。新增Node测试及CI强制登记，full专项输入13项；HTTP46＋Node7、Trace183及子门禁通过。仅本地确定性补齐，无产品构建／真实窗口／Hosted／容量／定时；真实页面会话撤销及全链full仍待另行授权，历史Linux SDK通过不替代它。
+
+
+### 2026-11-05 正式 HTTP full 卷读取首失败
+
+[固定源码、预算原件及清理复核](MonitorHTTP质量与采样历史证据.md#http-full-logout-agent-volume-read-failed-20261105)
+
+单次窗口含准备708.839秒，System／Gateway／Monitor 镜像命令完成，Agent 构建期间卷读取报路径消失，完整扫描用时0.261156秒，按首失败停止。176次先前完整检查最长1.955384秒，清理后当次资源零残留。Copilot 及正式身份、采集/API、页面、停源与两阶段浏览器注销均未执行，full 仍未通过。

@@ -1379,3 +1379,18 @@ HTTP Job北京时间19:31:13—19:46:12，Verify isolated metrics lifecycle于19
 旧回执验证受控反证make test-monitor-http-local-runner：45项中8个live／stopped反例失败，退出2，证明旧实现未裁决注销。随后保留缺失检查实现的Node反证沿同一标准入口执行，Python46项通过、Node7项中6失败／1接线通过，退出2。最终make test-monitor-http-local-runner完整退出0：Python46项／1.207秒、Node7项全通过，JS／HTTP登记／System身份Go子门禁通过；离线TLS T1为OpenSSL4.1.0、35命令／1.035431秒、125473字节、4次预期拒绝与清理完成。make test-monitor-traces-local-runner完整退出0：183项／5.887秒、JS／Online登记及System身份Go子门禁通过。原80／200跨阶段总预算、失败计数、阶段顺序、13项固定输入、四秒及全部原资源反例继续通过。Node使用受控Page／fetch替身，不启动真实浏览器或System，不记为真实204／401撤销验收。
 
 本批源快照基准37f9724376ca7ac5f72dc5461da610259595f016；快照、输入摘要、红绿门禁日志散列及verification.json位于/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-browser-logout-20261104-hz6vb_p7/，日志/tmp/addp-p19-browser-logout-{red,node-red,http-final,trace-final}-20261104.log。共享Makefile、CI登记和规范中的他会话改动不纳入本批提交。真实full仍须另行批准原60／55分钟、8 CPU／12 GiB、4 GiB停止线、完整四秒及单镜像600秒；五后端正式构建／完整依赖、真实密码/MFA、采集/API、两阶段页面、浏览器与API会话撤销及零残留均通过才可验收。动态Docker／固定Nginx缓存／代理及依赖准入尚未运行；历史Mac四秒偶发、构建下载和接近4 GiB风险仍保留，不自动放宽、补跑或续窗。
+
+
+<a id="http-full-logout-agent-volume-read-failed-20261105"></a>
+
+## 2026-11-05 正式 HTTP full 在 Agent 构建期间遇到卷读取错误
+
+用户批准一次60分钟本地窗口，含准备和清理，55分钟停止新业务。沿 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full` 只启动一次，固定已提交源码 `e30f04c2dc3764d39ff7d899ae748de6db519050`。16项入口输入与该提交及原报告逐一匹配。复用北京时间11月5日已通过的同输入门禁，HTTP Python46项、Node注销7项、Trace183项及附属检查。Docker 本机 Unix Socket、ARM64、固定 Nginx 缓存身份、无凭据代理及只读 Go 缓存布局均通过准入。
+
+北京时间13:32:36.363214开始准备，13:32:36.838816进入标准入口，13:44:25.210174收尾，含准备708.839秒，入口退出2。Go 编译和私有缓存预检／删除完成，System、Gateway、Monitor 镜像命令结束，314.30秒进入 Agent 镜像构建。704.94秒出现首失败，阶段 `product_image_agent_backend`，操作 `measure_owned_volumes`，错误 `owned_resource_measurement_failed`。此码在固定源码中要求 `du:` 诊断均以 `No such file or directory` 结尾且严格禁重试。该次扫描用时0.261156秒，卷测量子步骤0.163843秒，进入及管道返回检查点均完整，已读1351字节，报告只保留13行／诊断存在及输出摘要。首次失败即转清理，距离 Agent 阶段开始约391秒，单镜像600秒或完整扫描四秒截止均未耗尽。报告未保留缺失路径或写入方身份，无法定位具体文件及删除者。
+
+176次已完成完整扫描最长1.955384秒，开始间隔最大4.006524秒，读取重试0。已完成扫描的CPU／内存硬配额峰值2.25核／3288334336字节，私有可写完整统计峰值4034666496字节（约3.76 GiB，已含容器可写层）。失败样本缺完整卷与私有目录读数，峰值仅代表已完成样本。失败样本的卷命令等待记录4次轮询、3次轮询返回超时、累计超额7267082纳秒，完整扫描仍远低于四秒。该记录不复现前次 Gateway 累计四秒超时，也不能沿用独立 Linux HTTP T2 的路径归属。
+
+标准清理成功，另按当次标签、构建器名称和镜像标签只读核验容器、网络、卷、构建器容器及镜像标签均为0，私有目录不存在。Agent 构建被终止，Copilot 与后续产品构建、真实密码/MFA、采集/API、Console/Monitor 页面、停源和两阶段浏览器注销／旧会话401均未执行，报告断言为空。Hosted、容量、定时及重复构建均无运行。
+
+私有归档 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-logout-20261105.9aKCoSAd` 保存窗口、入口、输入、准入、预算原件及清理核对。run_id `addp-http-local-35fa4d468ba04931861d6947cbdc1775`，原报告2246119字节，SHA256 `1aa4a76e11df1245505a5ba0455a34f4701e66693f33ea80ae1b0cd2d7404a03`，入口日志5136字节，SHA256 `f78a12e86f8ee466999209c55a93ee36ae498ec6d98198c9d5f64b84a76b0331`。本次正式 full 失败，先前确定性门禁及 Linux SDK 验收保留各自结论。
