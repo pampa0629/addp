@@ -209,6 +209,14 @@ def transfer_creation_stopped(accept_language: str) -> str:
 
 
 _WORKSPACE_MESSAGES = {
+    'invalid_transfer_target_parent_option': {
+        'zh-cn': '目标父节点选项须使用目录返回的 schema 或 database locator',
+        'en': 'Each target parent option must use a schema or database locator returned by the resource directory',
+    },
+    'duplicate_resource_clarification_option': {
+        'zh-cn': '每个正式资源 locator 只能作为一个选项',
+        'en': 'Each observed resource locator can appear in only one option',
+    },
     'owner_approval_forbidden': {'zh-cn': '当前身份或权限不能使用原运行确认，请重新核对后发起。', 'en': 'The current identity or permissions cannot use the original run review. Verify access before requesting another review.'},
     'transfer_run_stopped': {'zh-cn': '运行提交流程已终止，请核对原审批和执行记录；未自动重试。', 'en': 'Run submission stopped. Check the original approval and execution; no automatic retry was performed.'},
     'transfer_run_rejected': {'zh-cn': '你已拒绝本次运行，未提交启动。', 'en': 'You rejected this run. No start was submitted.'},

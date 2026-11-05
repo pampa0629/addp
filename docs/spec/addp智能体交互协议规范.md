@@ -166,6 +166,8 @@ parts 按可见事件到达顺序构建，实时展示、持久消息和安全�
 
 ### 5.1 用文字回答当前澄清
 
+资源澄清选项使用正式 Tool 返回的资源 locator。同一澄清内，规范化后的资源选项值必须唯一。Transfer 目标父节点待选时，`transfer_target_parent` 的选项值只接受已观察的 schema 或 database locator，选项显示以目录事实为准。表名与写入策略通过独立的配置回答补齐，资源选择只确认父节点。
+
 会话只有一个 pending 的 Agent-owned clarification 时，聊天输入框发送文字必须走同一 `/chat` 的 `resume`，显式携带该 Interaction ID 与 `payload={"text":"用户回答"}`，不创建新的 AgentRun。原始文字最多 2000 字符，去除首尾空白后不能为空，不得混入选项值、候选事实或批准字段。存在多个 pending 澄清时，客户端不能猜测回答对象；用户可在对应卡片选择选项。刷新后仍从消息的 InteractionRef 状态识别当前澄清。
 
 服务端只在文字与当前 Interaction 的某个选项名称、值或已观察候选的 `name/full_name` 唯一、区分大小写地精确匹配时，采用持久选项的规范事实，不接受客户端提供候选身份。其余文字作为用户补充要求恢复同一 Run，不写入 `checkpoint.confirmed`；模型必须结合当前问题、已观察事实与原 Skill 继续澄清，不把文字中的 locator 或 ID 当作 owner 事实。消息展示此时只保留用户回答，不输出内部提示或候选事实。

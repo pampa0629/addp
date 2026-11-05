@@ -611,6 +611,7 @@ class _PlatformBoundary(AgentMiddleware):
                     raise ValueError("invalid_operation_review_reason")
                 options = canonicalize_clarification_options(
                     args.reason, [option.model_dump() for option in args.options], self.checkpoint,
+                    accept_language=self.accept_language,
                 )
         except ConfigCheckUnsupported as exc:
             return self._reject_config_check(call, "request_clarification", exc)

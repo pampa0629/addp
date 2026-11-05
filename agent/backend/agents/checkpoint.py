@@ -8,6 +8,7 @@ from addp_common.resources import query_reference_parts
 
 
 from agents.reply_preferences import REPLY_DETAILS
+from i18n import workspace_message
 
 
 CHECKPOINT_SCHEMA = "addp.agent-checkpoint/v1"
@@ -268,6 +269,8 @@ def canonicalize_clarification_options(
     reason: str,
     options: list[dict[str, Any]],
     checkpoint: dict[str, Any],
+    *,
+    accept_language: str = "zh-cn",
 ) -> list[dict[str, Any]]:
     canonical: list[dict[str, Any]] = []
     observed = checkpoint["observed"]
@@ -292,17 +295,26 @@ def canonicalize_clarification_options(
         or isinstance(option.get("candidate"), dict) and resource_locator(option["candidate"]) is not None
         for option in options
     )
-    if "data_source" in reason or "resource" in reason or has_resource_option:
+    target_parent = reason == "transfer_target_parent"
+    if target_parent or "data_source" in reason or "resource" in reason or has_resource_option:
+        seen_locators: set[str] = set()
         for option in options:
             candidate = option.get("candidate") if isinstance(option.get("candidate"), dict) else {}
             locator = option.get("value") if isinstance(option.get("value"), str) else None
             if not locator or not locator.startswith("addp://"):
+                if target_parent:
+                    raise ValueError(workspace_message(accept_language, "invalid_transfer_target_parent_option"))
                 locator = resource_locator(candidate)
             if not locator:
                 raise ValueError("数据候选缺少 locator")
             fact = observed["resources"].get(locator)
+            if target_parent and (fact is None or fact.get("item_type") not in {"schema", "database"}):
+                raise ValueError(workspace_message(accept_language, "invalid_transfer_target_parent_option"))
             if fact is None:
                 raise ValueError(f"资源 locator 未由 owner Tool 返回: {locator}")
+            if locator in seen_locators:
+                raise ValueError(workspace_message(accept_language, "duplicate_resource_clarification_option"))
+            seen_locators.add(locator)
             label = fact.get("full_name") or fact.get("name") or locator
             if reason == "transfer_source_selection" and fact.get("engine_name"):
                 label = str(fact["engine_name"]) + " · " + str(label)

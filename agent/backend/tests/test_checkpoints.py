@@ -154,6 +154,42 @@ class AgentCheckpointTests(unittest.TestCase):
                 new_checkpoint(),
             )
 
+    def test_transfer_target_parent_options_reject_composites_and_repeated_schema(self):
+        checkpoint = new_checkpoint()
+        outdoor = "addp://engine/2/path/outdoor?type=schema&node_id=3"
+        public = "addp://engine/2/path/public?type=schema&node_id=4"
+        table = "addp://engine/2/path/outdoor/persons?type=table&item_id=10"
+        for locator, label, node_type in ((outdoor, "outdoor", "schema"), (public, "public", "schema"),
+                                          (table, "persons", "table")):
+            capture_owner_facts("resource.children.list", {"locator": locator, "label": label, "type": node_type},
+                                checkpoint)
+
+        for reason, values in (
+            ("transfer_target_parent", [outdoor + "|persons_snapshot", public]),
+            ("transfer_target_parent", [outdoor, outdoor]),
+            ("transfer_target_parent", [table, public]),
+            ("transfer_target_parent", ["outdoor"]),
+            ("transfer_target_parent_and_name", [outdoor, outdoor, public]),
+        ):
+            with self.subTest(reason=reason, values=values), self.assertRaises(ValueError):
+                canonicalize_clarification_options(reason, [{"value": value} for value in values], checkpoint)
+
+        with self.assertRaisesRegex(ValueError, "can appear in only one option"):
+            canonicalize_clarification_options(
+                "transfer_target_parent", [{"value": outdoor}, {"value": outdoor}], checkpoint,
+                accept_language="en",
+            )
+
+        options = canonicalize_clarification_options(
+            "transfer_target_parent", [{"value": outdoor, "label": "猜测表名", "candidate": {"name": "guessed"}},
+                                       {"value": public}], checkpoint,
+        )
+        self.assertEqual([(option["value"], option["label"]) for option in options],
+                         [(outdoor, "outdoor"), (public, "public")])
+        confirm_selection(checkpoint, options[0])
+        self.assertEqual(checkpoint["confirmed"]["resources"],
+                         {outdoor: {"locator": outdoor, "name": "outdoor", "item_type": "schema"}})
+
     def test_formal_resource_facts_survive_resume_without_rows_or_expressions(self):
         checkpoint = new_checkpoint()
         locator = "addp://engine/9/path/outdoor/routes?type=collection&item_id=66"
