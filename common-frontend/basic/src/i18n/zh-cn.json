@@ -875,6 +875,17 @@
     "page": "页"
   },
   "tabularResult": {
+    "geometryTypes": {
+      "POINT": "点 Point",
+      "LINESTRING": "线 LineString",
+      "POLYGON": "面 Polygon",
+      "MULTIPOINT": "多点 MultiPoint",
+      "MULTILINESTRING": "多线 MultiLineString",
+      "MULTIPOLYGON": "多面 MultiPolygon",
+      "GEOMETRYCOLLECTION": "几何集合 GeometryCollection"
+    },
+    "emptyGeometry": "空几何",
+    "geometrySrid": "SRID {srid}",
     "array": "数组",
     "object": "对象",
     "emptyArray": "空数组",

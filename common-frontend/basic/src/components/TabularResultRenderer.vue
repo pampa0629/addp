@@ -30,10 +30,10 @@
             type="button"
             class="structured-cell"
             @click.stop="openStructuredCell(scope.row, column)"
-            @dblclick.stop="copyCellValue(cellValue(scope.row, column))"
+            @dblclick.stop="copyCellValue(cellValue(scope.row, column), column)"
           >
-            <span class="structured-cell__kind">{{ structuredValueKind(cellValue(scope.row, column)) }}</span>
-            <span class="structured-cell__summary">{{ structuredValueSummary(cellValue(scope.row, column)) }}</span>
+            <span class="structured-cell__kind">{{ structuredValueKind(cellValue(scope.row, column), column) }}</span>
+            <span class="structured-cell__summary">{{ structuredValueSummary(cellValue(scope.row, column), column) }}</span>
           </button>
           <span
             v-else
@@ -76,6 +76,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import {
   formatResultCell,
+  geometryResultValue,
   isStructuredResultValue,
   normalizeTabularColumns,
   presentResultCell,
@@ -138,11 +139,15 @@ const cellClass = value => ({
   'is-number': typeof value === 'number'
 })
 
-const structuredValueKind = value => Array.isArray(value)
-  ? t('tabularResult.array')
-  : t('tabularResult.object')
+const structuredValueKind = (value, column) => {
+  const geometry = geometryResultValue(value, column)
+  if (geometry) return t(`tabularResult.geometryTypes.${geometry.kind}`)
+  return Array.isArray(value) ? t('tabularResult.array') : t('tabularResult.object')
+}
 
-const structuredValueSummary = (value) => {
+const structuredValueSummary = (value, column) => {
+  const geometry = geometryResultValue(value, column)
+  if (geometry) return [geometry.empty ? t('tabularResult.emptyGeometry') : '', t('tabularResult.geometrySrid', { srid: geometry.srid })].filter(Boolean).join(' · ')
   if (Array.isArray(value)) {
     if (value.length === 0) return t('tabularResult.emptyArray')
     return t('tabularResult.arraySummary', { count: value.length })
@@ -157,7 +162,8 @@ const structuredValueSummary = (value) => {
 
 const openStructuredCell = (row, column) => {
   structuredDialogTitle.value = column.label
-  structuredDialogJSON.value = safeStructuredResultJSON(cellValue(row, column))
+  const value = cellValue(row, column)
+  structuredDialogJSON.value = geometryResultValue(value, column)?.wkt || safeStructuredResultJSON(value)
   structuredDialogVisible.value = true
 }
 
@@ -172,7 +178,7 @@ const copyText = async (value) => {
 
 const copyCellValue = (value, column) => {
   if (!props.copyOnDblclick) return
-  copyText(isStructuredResultValue(value) ? safeStructuredResultJSON(value) : formatCell(value, column))
+  copyText(geometryResultValue(value, column)?.wkt || (isStructuredResultValue(value) ? safeStructuredResultJSON(value) : formatCell(value, column)))
 }
 
 defineExpose({

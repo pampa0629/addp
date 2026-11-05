@@ -333,6 +333,17 @@ func (p *PostgreSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, 
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
+	if p.identity == nil {
+		db, err := p.openQueryDB(connInfo)
+		if err != nil {
+			return nil, err
+		}
+		pool, err := plugin.OpenGORMPool(postgres.New(postgres.Config{Conn: db}), poolConfig)
+		if err != nil {
+			_ = db.Close()
+		}
+		return pool, err
+	}
 	config := postgres.Config{DSN: connStr}
 	if p.identity != nil {
 		config.DriverName = p.identity.DriverName

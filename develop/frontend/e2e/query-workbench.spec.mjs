@@ -1545,3 +1545,26 @@ for(const locale of ['zh-cn','en'])for(const [operator_id,reason,parameter,field
     await page.setViewportSize({width:390,height:844})
     expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
  })
+
+for (const locale of ['zh-cn','en']) {
+ test(`geometry query summary and WKT details preserve masking (${locale})`, async ({page,context}) => {
+  await context.grantPermissions(['clipboard-read','clipboard-write'])
+  await installMockBackend(page,{resultKind:'table',locale})
+  const geometry={wkt:'POLYGON EMPTY',srid:32650}
+  await page.route(`**/api/v1/develop/executions/${EXECUTION_ID}`,route=> {
+   const value=executionResult('table',[{shape:geometry},{shape:'***'},{shape:null}])
+   value.metadata.result.columns=['shape']
+   value.metadata.result.fields=[{name:'shape',type:'geometry'}]
+   return fulfillJSON(route,{...value,module:'develop',task_type:'query'})
+  })
+  await page.goto(`/executions/${EXECUTION_ID}`)
+  const cell=page.getByRole('button').filter({hasText:locale==='zh-cn'?'面 Polygon':'Polygon'}).filter({hasText:'SRID 32650'})
+  await expect(cell).toBeVisible()
+  await expect(page.locator('.scalar-cell').filter({hasText:'***'})).toBeVisible()
+  await cell.click()
+  const dialog=page.getByRole('dialog')
+  await expect(dialog.locator('pre')).toHaveText('POLYGON EMPTY')
+  await dialog.getByRole('button',{name:locale==='zh-cn'?'复制':'Copy',exact:true}).click()
+  await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe('POLYGON EMPTY')
+ })
+}

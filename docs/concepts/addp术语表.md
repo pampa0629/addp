@@ -120,6 +120,7 @@
 | logical table table-creation task | 逻辑表建表任务 | Model 从已审批 LogicalTable 投影出的建表任务，支持人工与编排触发；机器任务类型保持 `logical_table_materialization`。 | 任务定义复用逻辑表，不复制字段或目标配置；只创建或校验目标表，不计算数据、不自动改表。 |
 | Data Validation Task | 数据校验任务 | Quality 对显式绑定的同一引擎正式表执行字段、关联和集合断言。 | 读取 ResourceLocator，不依赖 Model；失败可阻止编排下游，不回滚已提交的数据。 |
 | logical table physical target deletion | 逻辑表目标表删除 | Model 删除某个 LogicalTable 已登记、已确认且仍由该 LogicalTable 管理的物理表；逻辑表及其物理目标配置保持不变。 | 这是 Model owner 的高风险同步命令，不是可编排任务；请求只提交逻辑表并发版本和精确目标确认，不接受 SQL、动态 Locator 或跨模块引用检查。 |
+| query geometry value | 查询几何值 | 有界查询与连续查询读取统一使用带 SRID 的 EWKB 字节；面向 JSON 的结果统一投影为 `{wkt, srid}`。 | Provider 依据真实输出类型解码原生几何；共享展示只消费已授权投影，不猜字段名、原生字节格式或坐标系。SQL NULL、合法 EMPTY 与脱敏文本分别保留。 |
 | query parameter | 查询参数 | Develop 查询任务声明的命名输入，统一保存在 `content.query_parameters[]`。 | `type=relation` 表示绑定 ResourceLocator 的数据表参数；`string`、`integer`、`number`、`boolean` 表示类型化值参数。全部参数共享同一命名空间、默认值与单次执行覆盖语义，且名称唯一。 |
 | relation query parameter | 关系查询参数 | 查询参数中代表关系型数据表的 `relation` 类型参数。 | 声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言引擎 SQL 直接使用未加引号、未限定 schema 的裸参数名引用；当前包括 PostgreSQL 与 openGauss。可保存已有表 ResourceLocator 作为默认绑定，也可由手动执行或 Orchestrator 覆盖。Develop 通过 PostgreSQL AST 把该关系节点编译为方言安全的物理表标识符。它不是表名字符串参数，也不绑定 LogicalTable ID。 |
 | PreparedQuery | 已准备查询 | Engine Provider 从一次 `QueryRequest` 生成的不可变、一次性查询计划，绑定 Engine、语言、参数、目标路径和 Provider 原生解析结果。 | 读取集合解析、安全门禁和真实执行必须绑定同一个 PreparedQuery；门禁后不再接受新的查询文本或参数。 |

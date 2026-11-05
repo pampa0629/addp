@@ -82,10 +82,7 @@ func (s *sqlRowsTableReadSession) ReadBatch(_ context.Context, limit int) (*Batc
 		}
 		row := make(map[string]interface{}, len(s.columns))
 		for index, column := range s.columns {
-			value := values[index]
-			if raw, ok := value.([]byte); ok && s.fields[index].Type != datatype.FieldTypeBytes {
-				value = string(raw)
-			}
+			value := SQLQueryValue(s.fields[index], values[index])
 			row[column] = value
 		}
 		batch.Rows = append(batch.Rows, row)

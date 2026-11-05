@@ -394,10 +394,17 @@ func (s *QueryExecutionService) completeQueryResult(ctx context.Context, executi
 		}
 	}
 	err := s.completeSuccess(ctx, execution, lease, metadata, rowsAffected)
-	if err != nil && s.executor.queryResults != nil {
-		s.executor.queryResults.remove(execution.ExecutionID, lease.Token)
+	if err != nil {
+		if s.executor.queryResults != nil {
+			s.executor.queryResults.remove(execution.ExecutionID, lease.Token)
+		}
+		// Never retry the failed result payload or the query. Persist only the
+		// safe result-stage failure, still fenced by the original lease.
+		if failureErr := s.completeFailure(ctx, execution, lease, err, "develop.query.result_invalid"); failureErr != nil {
+			return errors.Join(err, failureErr)
+		}
 	}
-	return err
+	return nil
 }
 
 func (s *QueryExecutionService) attachAuthorization(

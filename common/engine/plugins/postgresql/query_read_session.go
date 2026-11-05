@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -21,11 +20,7 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 	if err := validatePostgresQueryReadSession(request); err != nil {
 		return nil, err
 	}
-	dsn, err := p.BuildDSN(connInfo)
-	if err != nil {
-		return nil, fmt.Errorf("build PostgreSQL query read DSN: %w", err)
-	}
-	db, err := sql.Open(p.sqlDriverName(), dsn)
+	db, err := p.openQueryDB(connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("open PostgreSQL query read database: %w", err)
 	}
@@ -62,18 +57,16 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 	}
 	columns := make([]string, len(columnTypes))
 	fields := make([]datatype.FieldInfo, len(columnTypes))
-	binaryColumns := make([]bool, len(columnTypes))
 	for index, columnType := range columnTypes {
 		columns[index] = columnType.Name()
 		fields[index] = SQLResultField(columnType)
-		binaryColumns[index] = strings.EqualFold(columnType.DatabaseTypeName(), "BYTEA")
 	}
 	if err := rows.Close(); err != nil {
 		_ = tx.Rollback()
 		_ = db.Close()
 		return nil, err
 	}
-	return &postgresQueryReadSession{db: db, tx: tx, cursor: cursor, readSet: readSet, columns: columns, fields: fields, binding: binding, binaryColumns: binaryColumns}, nil
+	return &postgresQueryReadSession{db: db, tx: tx, cursor: cursor, readSet: readSet, columns: columns, fields: fields, binding: binding, provider: p}, nil
 }
 
 func validatePostgresQueryReadSession(request plugin.QueryRequest) error {
@@ -87,16 +80,16 @@ func validatePostgresQueryReadSession(request plugin.QueryRequest) error {
 }
 
 type postgresQueryReadSession struct {
-	db            *sql.DB
-	tx            *sql.Tx
-	cursor        string
-	readSet       *plugin.QueryReadSet
-	columns       []string
-	fields        []datatype.FieldInfo
-	binding       *plugin.SQLPreparedReadSession
-	binaryColumns []bool
-	offset        int64
-	closed        bool
+	db       *sql.DB
+	tx       *sql.Tx
+	cursor   string
+	readSet  *plugin.QueryReadSet
+	columns  []string
+	fields   []datatype.FieldInfo
+	binding  *plugin.SQLPreparedReadSession
+	offset   int64
+	provider *PostgreSQLPlugin
+	closed   bool
 }
 
 func (s *postgresQueryReadSession) ReadSet(context.Context) (*plugin.QueryReadSet, error) {
@@ -133,16 +126,11 @@ func (s *postgresQueryReadSession) ReadBatch(ctx context.Context, limit int) (*p
 		}
 		row := make(map[string]interface{}, len(s.columns))
 		for index, column := range s.columns {
-			value := values[index]
-			if bytes, ok := value.([]byte); ok {
-				if s.binaryColumns[index] {
-					// SQL NULL is a nil interface; an empty BYTEA remains non-nil.
-					copied := make([]byte, len(bytes))
-					copy(copied, bytes)
-					value = copied
-				} else {
-					value = string(bytes)
-				}
+			value, err := s.provider.DecodeSQLQueryValue(s.fields[index], plugin.SQLQueryValue(s.fields[index], values[index]))
+			if err != nil {
+				_ = rows.Close()
+				_ = s.abort()
+				return nil, err
 			}
 			row[column] = value
 		}

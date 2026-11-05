@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   formatResultCell,
+  geometryResultValue,
   presentResultCell,
   lastPage,
   normalizeTabularColumns,
@@ -74,4 +75,14 @@ test('maps a clicked table row to the original result index', () => {
   const rows = [{ id: 1 }, { id: 2 }]
   assert.deepEqual(resultSelectionFromRow(rows, rows[1]), { row_index: 1 })
   assert.equal(resultSelectionFromRow(rows, { id: 2 }), null)
+})
+
+test('geometry cells require typed canonical values and preserve protected text', () => {
+ const [column] = normalizeTabularColumns({ columns:['renamed'], fields:[{name:'renamed',type:'geometry'}] })
+ const value = {wkt:'POLYGON EMPTY',srid:32650}
+ assert.deepEqual(geometryResultValue(value,column),{...value,kind:'POLYGON',empty:true})
+ assert.equal(geometryResultValue(value,{type:'json'}),null)
+ for (const input of [null,'***','AQEAACDmEAAA',{}, {wkt:'POINT (1 2)',srid:'4326'}, {wkt:'POINT (1 2)',srid:4326,raw:'secret'}]) assert.equal(geometryResultValue(input,column),null)
+ assert.equal(geometryResultValue({wkt:'POINT Z (1 2 3)',srid:0},column).kind,'POINT')
+ assert.doesNotThrow(() => normalizeTabularColumns({columns:['shape'],fields:null}))
 })

@@ -296,3 +296,40 @@ func TestDM8UpsertRejectsJSONBeforeOpeningDriver(t *testing.T) {
 		}
 	}
 }
+
+func TestDM8QueryResultsPreserveDeclaredBinaryTypes(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("CREATE TABLE sample (PAYLOAD BLOB, EMPTY_VALUE BLOB, NULL_VALUE BLOB, LABEL TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO sample VALUES(?,?,NULL,?)", []byte{0, 255, 128}, []byte{}, "中文"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.Query("SELECT PAYLOAD AS ALIAS, EMPTY_VALUE, NULL_VALUE, LABEL FROM sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanRows(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Fields) != 4 || result.Fields[0].Type != datatype.FieldTypeBytes {
+		t.Fatalf("DM8 result schema missing: %+v", result.Fields)
+	}
+	value, ok := result.Rows[0]["ALIAS"].([]byte)
+	if !ok || !bytes.Equal(value, []byte{0, 255, 128}) {
+		t.Fatal("DM8 binary query value changed")
+	}
+}
+
+func TestDM8NativeDecimalResultTypeNames(t *testing.T) {
+	for _, name := range []string{"DEC", "DEC(18,2)", "DECIMAL(18,2)", "NUMERIC", "NUMBER"} {
+		if got := commonFieldType(name); got != datatype.FieldTypeDecimal {
+			t.Fatalf("%s = %s", name, got)
+		}
+	}
+}

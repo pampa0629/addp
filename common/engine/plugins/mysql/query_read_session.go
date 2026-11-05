@@ -93,13 +93,10 @@ func (s *mysqlQueryReadSession) ReadBatch(ctx context.Context, limit int) (*plug
 		}
 		row := make(map[string]any, len(values))
 		for i, field := range s.fields {
-			value := values[i]
-			if bytes, ok := value.([]byte); ok {
-				if field.Type == datatype.FieldTypeBytes {
-					value = append([]byte{}, bytes...)
-				} else {
-					value = string(bytes)
-				}
+			value, err := (&MySQLPlugin{}).DecodeSQLQueryValue(field, plugin.SQLQueryValue(field, values[i]))
+			if err != nil {
+				_ = s.Close(ctx)
+				return nil, err
 			}
 			row[field.Name] = value
 		}

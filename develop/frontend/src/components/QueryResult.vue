@@ -82,6 +82,7 @@
         <TabularResultRenderer
           :rows="pagedRows"
           :columns="tableColumns"
+          :fields="result.fields || []"
           height="100%"
           null-text="NULL"
           copy-on-dblclick

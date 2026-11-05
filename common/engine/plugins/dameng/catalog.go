@@ -308,6 +308,9 @@ func (p *Plugin) listColumns(ctx context.Context, connInfo plugin.ConnectionInfo
 }
 
 func commonFieldType(native string) datatype.FieldType {
+	if i := strings.Index(native, "("); i >= 0 {
+		native = native[:i]
+	}
 	switch strings.ToUpper(strings.TrimSpace(native)) {
 	case "CHAR", "CHARACTER", "NCHAR", "VARCHAR", "VARCHAR2", "NVARCHAR", "NVARCHAR2", "TEXT", "CLOB":
 		return datatype.FieldTypeString
@@ -323,7 +326,7 @@ func commonFieldType(native string) datatype.FieldType {
 		return datatype.FieldTypeFloat
 	case "DOUBLE", "DOUBLE PRECISION":
 		return datatype.FieldTypeDouble
-	case "DECIMAL", "NUMERIC", "NUMBER":
+	case "DEC", "DECIMAL", "NUMERIC", "NUMBER":
 		return datatype.FieldTypeDecimal
 	case "DATE":
 		return datatype.FieldTypeDate

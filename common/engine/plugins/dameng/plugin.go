@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 )
@@ -215,35 +216,7 @@ func (p *Plugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo,
 }
 
 func scanRows(rows *sql.Rows) (*plugin.QueryResult, error) {
-	defer rows.Close()
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, fmt.Errorf("read DM8 query columns: %w", err)
-	}
-	result := &plugin.QueryResult{Columns: columns, Rows: make([]map[string]interface{}, 0)}
-	for rows.Next() {
-		values := make([]interface{}, len(columns))
-		pointers := make([]interface{}, len(columns))
-		for index := range values {
-			pointers[index] = &values[index]
-		}
-		if err := rows.Scan(pointers...); err != nil {
-			return nil, fmt.Errorf("scan DM8 query row: %w", err)
-		}
-		row := make(map[string]interface{}, len(columns))
-		for index, column := range columns {
-			value := values[index]
-			if bytes, ok := value.([]byte); ok {
-				value = string(bytes)
-			}
-			row[column] = value
-		}
-		result.Rows = append(result.Rows, row)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate DM8 query rows: %w", err)
-	}
-	return result, nil
+	return plugin.ScanSQLRows(rows, plugin.SQLResultFieldMapper(commonFieldType), nil)
 }
 
 func (p *Plugin) OpenQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery) (plugin.QueryReadSession, error) {
@@ -269,7 +242,18 @@ func (p *Plugin) OpenQueryReadSession(ctx context.Context, prepared plugin.Prepa
 		db.Close()
 		return nil, fmt.Errorf("open DM8 query read session: %w", err)
 	}
-	return plugin.NewSQLTransactionRowsTableReadSession(db, tx, rows, nil)
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		_ = rows.Close()
+		_ = tx.Rollback()
+		_ = db.Close()
+		return nil, err
+	}
+	fields := make([]datatype.FieldInfo, len(types))
+	for i, column := range types {
+		fields[i] = plugin.SQLResultFieldMapper(commonFieldType)(column)
+	}
+	return plugin.NewSQLTransactionRowsTableReadSession(db, tx, rows, fields)
 }
 
 func (p *Plugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {

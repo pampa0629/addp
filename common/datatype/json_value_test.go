@@ -1,7 +1,10 @@
 package datatype
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"github.com/twpayne/go-geom/encoding/ewkb"
+	"github.com/twpayne/go-geom/encoding/wkt"
 	"reflect"
 	"testing"
 )
@@ -92,5 +95,70 @@ func TestDeclaredNestedJSONPreservesExactNumbersAndNullContainers(t *testing.T) 
 	restored := TableInfoFromPayload(TableInfoPayload(&TableInfo{Fields: fields}), "")
 	if restored.Fields[0].Fields[0].Element.Type != FieldTypeBigInt {
 		t.Fatal("nested schema lost in payload")
+	}
+}
+
+func TestRowsForJSONGeometryUsesEWKBAndPreservesMasking(t *testing.T) {
+	// EWKB POINT(1 2), SRID 4326.
+	encoded, _ := hex.DecodeString("0101000020e6100000000000000000f03f0000000000000040")
+	fields := []FieldInfo{{Name: "shape_alias", Type: FieldTypeGeometry}}
+	rows, err := QueryRowsForJSON(fields, []map[string]interface{}{{"shape_alias": encoded}, {"shape_alias": "***"}, {"shape_alias": nil}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, _ := json.Marshal(rows)
+	var decoded []map[string]interface{}
+	if err := json.Unmarshal(wire, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	shape, ok := decoded[0]["shape_alias"].(map[string]interface{})
+	if !ok || shape["wkt"] != "POINT (1 2)" || shape["srid"] != float64(4326) {
+		t.Fatalf("geometry JSON = %s", wire)
+	}
+	if decoded[1]["shape_alias"] != "***" || decoded[2]["shape_alias"] != nil {
+		t.Fatal("masked or NULL geometry changed")
+	}
+	if _, err := QueryRowsForJSON(fields, []map[string]interface{}{{"shape_alias": []byte{0, 255}}}); err == nil {
+		t.Fatal("invalid EWKB accepted")
+	}
+}
+
+func TestRowsForJSONGeometryPreservesTopologyDimensionsAndPrecision(t *testing.T) {
+	for _, text := range []string{"POINT EMPTY", "POINT Z (1.2345678901234567 2 3)", "POINT M (1 2 7)", "POINT ZM (1 2 3 4)", "LINESTRING (1 2, 3 4)", "POLYGON ((0 0,4 0,4 4,0 0),(1 1,2 1,1 2,1 1))", "MULTIPOINT ((1 2),(3 4))", "MULTILINESTRING ((1 2,3 4))", "MULTIPOLYGON EMPTY", "GEOMETRYCOLLECTION (POINT (1 2),LINESTRING (1 2,3 4))"} {
+		t.Run(text, func(t *testing.T) {
+			geometry, err := wkt.Unmarshal(text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := ewkb.Marshal(geometry, ewkb.NDR)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows, err := QueryRowsForJSON([]FieldInfo{{Name: "any_name", Type: FieldTypeGeometry}}, []map[string]interface{}{{"any_name": encoded}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			value := rows[0]["any_name"].(GeometryValue)
+			decoded, err := wkt.Unmarshal(value.WKT)
+			if err != nil {
+				t.Fatal(err)
+			}
+			roundtrip, err := ewkb.Marshal(decoded, ewkb.NDR)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(encoded, roundtrip) || value.SRID != 0 {
+				t.Fatal("geometry value changed topology, dimensions, or precision")
+			}
+		})
+	}
+}
+
+func TestTablePreviewGeometryKeepsItsExplicitWireContract(t *testing.T) {
+	geometry := map[string]interface{}{"type": "Point", "coordinates": []interface{}{1, 2}}
+	fields := []FieldInfo{{Name: "shape", Type: FieldTypeGeometry}}
+	rows, err := RowsForJSON(fields, []map[string]interface{}{{"shape": geometry}})
+	if err != nil || !reflect.DeepEqual(rows[0]["shape"], geometry) {
+		t.Fatal("query projection changed a table-preview value")
 	}
 }

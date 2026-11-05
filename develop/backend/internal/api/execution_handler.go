@@ -487,6 +487,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Summary 获取当次查询结果 | Get current query result
 // @Description 仅本人查询；原值仅从有界进程内暂存按当前授权返回。历史详情始终脱敏；暂存失效后需重新查询。| Own queries only. Plaintext is reauthorized from bounded process memory; history stays protected and expired delivery requires a new query.
 // @Description 共享 SQL Runtime 的结果含真实输出 fields；bigint/decimal 单元格以精确字符串表示。| Shared SQL Runtime results include native output fields; bigint/decimal cells use exact strings.
+// @Description MySQL/PostGIS 几何单元格统一为 {wkt,srid}，保留原坐标、EMPTY 与 SQL NULL；脱敏文本不恢复几何。| MySQL/PostGIS geometry cells use {wkt,srid}, preserving coordinates, EMPTY and SQL NULL; masked text is never restored as geometry.
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"

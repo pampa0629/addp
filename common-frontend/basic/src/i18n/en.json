@@ -875,6 +875,17 @@
     "page": "Page"
   },
   "tabularResult": {
+    "geometryTypes": {
+      "POINT": "Point",
+      "LINESTRING": "LineString",
+      "POLYGON": "Polygon",
+      "MULTIPOINT": "MultiPoint",
+      "MULTILINESTRING": "MultiLineString",
+      "MULTIPOLYGON": "MultiPolygon",
+      "GEOMETRYCOLLECTION": "GeometryCollection"
+    },
+    "emptyGeometry": "Empty geometry",
+    "geometrySrid": "SRID {srid}",
     "array": "Array",
     "object": "Object",
     "emptyArray": "Empty array",

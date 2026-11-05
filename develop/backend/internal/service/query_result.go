@@ -220,7 +220,7 @@ func (e *DevExecutor) queryResultResponse(ctx context.Context, response *models.
 		return nil, protection.ErrResultRequired
 	}
 	visible["columns"], visible["rows_count"], visible["truncated"] = result.Columns, len(result.Rows), item.value.Truncated
-	wireRows, err := datatype.RowsForJSON(result.Fields, result.Rows)
+	wireRows, err := datatype.QueryRowsForJSON(result.Fields, result.Rows)
 	if err != nil {
 		return nil, protection.ErrResultRequired
 	}

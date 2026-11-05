@@ -23,6 +23,7 @@ function basicResultCell(value, nullText) {
 }
 
 export function normalizeTabularColumns({ columns = [], fields = [], rows = [], presentations = [] } = {}) {
+  const fieldTypes = new Map((Array.isArray(fields) ? fields : []).filter(field => field?.name).map(field => [field.name, field.type]))
   const fieldLabels = new Map(
     (Array.isArray(fields) ? fields : [])
       .filter(field => field?.name)
@@ -40,6 +41,7 @@ export function normalizeTabularColumns({ columns = [], fields = [], rows = [], 
         const presentation = fieldPresentationFor(column, presentations)
         return {
           key: column,
+          ...(fieldTypes.get(column) === 'geometry' ? { type: 'geometry' } : {}),
           label: fieldPresentationLabel(column, presentations, fields),
           path: [column],
           ...(presentation ? { presentation, ...(presentation.width ? { width: presentation.width } : {}) } : {})
@@ -50,6 +52,7 @@ export function normalizeTabularColumns({ columns = [], fields = [], rows = [], 
       if (!key) return null
       return {
         ...column,
+        ...(fieldTypes.get(key) === 'geometry' ? { type: 'geometry' } : {}),
         key,
         label: column.label || fieldPresentationLabel(key, presentations, fields) || fieldLabels.get(key) || key,
         path: Array.isArray(column.path) && column.path.length > 0 ? column.path : [key],
@@ -96,4 +99,14 @@ export function lastPage(total, pageSize) {
 export function resultSelectionFromRow(rows, row) {
   const rowIndex = Array.isArray(rows) ? rows.indexOf(row) : -1
   return rowIndex >= 0 ? { row_index: rowIndex } : null
+}
+
+// Only declared geometry fields consume the canonical JSON projection. Never
+// decode legacy Base64/hex, or interpret masked text as an original geometry.
+export function geometryResultValue(value, column) {
+  if (column?.type !== 'geometry' || !value || typeof value !== 'object' || Array.isArray(value)) return null
+  if (Object.keys(value).length !== 2 || typeof value.wkt !== 'string' || !Number.isSafeInteger(value.srid) || value.srid < 0) return null
+  const match = /^(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON|GEOMETRYCOLLECTION)(?:\s+(?:ZM|Z|M))?\s*(?:\(|EMPTY\s*$)/.exec(value.wkt)
+  if (!match) return null
+  return { wkt: value.wkt, srid: value.srid, kind: match[1], empty: /\bEMPTY\s*$/.test(value.wkt) }
 }

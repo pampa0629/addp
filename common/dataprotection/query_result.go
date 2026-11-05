@@ -47,5 +47,38 @@ func CloneQueryResult(result *plugin.QueryResult) (*plugin.QueryResult, error) {
 	if err := decoder.Decode(&clone); err != nil {
 		return nil, err
 	}
+	for i, row := range result.Rows {
+		if row != nil {
+			restoreQueryBytes(row, clone.Rows[i])
+		}
+	}
 	return &clone, nil
+}
+
+// JSON detaches ordinary values and preserves exact numbers, but erases byte
+// types. Restore independently owned bytes from the original value tree;
+// masked strings are never decoded or replaced with originals.
+func restoreQueryBytes(original, cloned interface{}) interface{} {
+	switch value := original.(type) {
+	case []byte:
+		if value == nil {
+			return []byte(nil)
+		}
+		return append([]byte{}, value...)
+	case map[string]interface{}:
+		copy, ok := cloned.(map[string]interface{})
+		if ok {
+			for key, item := range value {
+				copy[key] = restoreQueryBytes(item, copy[key])
+			}
+		}
+	case []interface{}:
+		copy, ok := cloned.([]interface{})
+		if ok {
+			for i, item := range value {
+				copy[i] = restoreQueryBytes(item, copy[i])
+			}
+		}
+	}
+	return cloned
 }

@@ -394,6 +394,7 @@ export function queryResultFromExecution(execution) {
     progress: Number(execution?.progress || 0),
     execution_id: execution?.execution_id || '',
     columns: Array.isArray(result.columns) ? result.columns : [],
+    fields: Array.isArray(result.fields) ? result.fields : [],
     rows: Array.isArray(summary.preview_rows) ? summary.preview_rows : [],
     rows_count: Number(result.rows_count || 0),
     rows_affected: result.rows_affected,

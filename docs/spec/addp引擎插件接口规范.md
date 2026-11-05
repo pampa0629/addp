@@ -697,7 +697,13 @@ type QueryReadSession interface {
 
 MySQL 查询读取会话同样只消费一次 PreparedQuery，在数据库强制的 repeatable-read 只读事务内校验输出保护前置条件并打开单一流式结果集；不使用预览循环或追加分页，不在内存聚合完整结果。各批必须执行该 PreparedQuery 的输出 finalizer，保留 decimal／bigint 精度、SQL NULL 和二进制值，取消、失败或提前关闭须回收结果集、事务与连接。未提供事务内真实来源证明时，不声明 ReadSessionEvidence，不把预查 ReadSet 伪装为生产来源证据。
 
-PostgreSQL 查询读取会话按实际结果列的数据库类型保留值表示：BYTEA（包括别名和返回 BYTEA 的表达式）必须返回独立的 `[]byte`，SQL NULL、非 NULL 空字节与非 UTF-8 字节不得混同；文本、精确 numeric、JSON 和空间结果沿用各自原有表示，不能把所有驱动字节切片一律转为字符串。字段映射仅声明目标类型，不能修复读取时已丢失的二进制语义。
+共享 SQL 有界查询结果与连续查询读取按实际输出列的 Provider 类型映射保留值表示：`bytes` 返回独立 `[]byte`，SQL NULL、非 NULL 空字节与非 UTF-8 字节分别保留，JSON 使用 Base64。文本、精确 numeric 和 JSON 字节仍按原文本表示返回，不根据字段名称、样本或驱动值猜测类型。达梦使用同一结果扫描器，并由原生输出元数据填充字段类型和精度。
+
+**查询几何值**：已接入的 MySQL／PostGIS Provider 在原查询执行中，根据原生输出类型把几何归一为 EWKB `[]byte`，有界结果和连续读取使用相同解码器；MySQL 消费自身的 SRID 前缀与 WKB，PostGIS 通过实际连接目录核实扩展类型 OID 后解码，不从十六进制样本推断类型，不重写／重放业务查询。PostGIS 的 geometry／geography 原坐标、维度和逐值 SRID 保留；普通 BYTEA、原生 point 和文本结果不冒充 PostGIS 几何。共享 `QueryRowsForJSON` 在保护处理之后将 EWKB 投影为 `{wkt: string, srid: integer}`，保留完整精度与合法 EMPTY，SRID 0 表示原值未声明；NULL 仍为 null，已脱敏的字符串保持字符串，不恢复几何或生成额外摘要。保护快照克隆保留独立字节值，不将其提前降格为 Base64 字符串。未接入的 Provider 不因协议复用取得空间能力。表预览继续通过通用 `RowsForJSON` 保留自身已声明的空间编码，不隐式套用查询几何投影。
+
+共享表格按 `fields[].type=geometry` 和规范几何对象展示类型／SRID 摘要，复用唯一详情弹窗查看与复制完整 WKT；不在前端解析原生二进制或读取额外源字段，不提供无坐标转换证明的地图显示。历史原生编码不回填，不保留前端兼容解码路线。
+
+PostgreSQL 查询读取会话按实际结果列的数据库类型保留值表示：BYTEA（包括别名和返回 BYTEA 的表达式）必须返回独立的 `[]byte`，SQL NULL、非 NULL 空字节与非 UTF-8 字节不得混同；文本、精确 numeric 和 JSON 仍按原有表示返回，空间查询值遵循上述 EWKB 契约；不能把所有驱动字节切片一律转为字符串。字段映射仅声明目标类型，不能修复读取时已丢失的二进制语义。
 
 PostgreSQL 表和查询读取均使用同一只读 repeatable-read 事务中的服务器游标。打开游标后以该事务目录事实核验 `ReadSessionEvidence`，而不是把 `PreparedQuery.ReadSet()` 的预查结果当作实际读取证据；原计划的预执行保护门禁仍然独立保留。证明失败通过事务内 savepoint 回收证明查询的失败，不污染已有游标或补造来源；查询读取仍消费原一次性 PreparedQuery，不重新绑定参数或提交另一份业务查询。
 

@@ -16,6 +16,12 @@ import (
 // unspecified precision instead of publishing those bits as schema facts.
 func SQLResultField(column *sql.ColumnType) datatype.FieldInfo {
 	field := plugin.SQLResultFieldMapper((&pgmapping.TypeMapper{}).ToCommon)(column)
+	if strings.EqualFold(field.NativeType, "GEOGRAPHY") {
+		field.Type = datatype.FieldTypeGeometry
+	}
+	if strings.EqualFold(field.NativeType, "POINT") {
+		field.Type = datatype.FieldTypeString
+	}
 	if strings.EqualFold(field.NativeType, "NUMERIC") && field.Precision == 65535 && field.Scale == 65531 {
 		field.Precision, field.Scale = 0, 0
 	}

@@ -61,7 +61,7 @@ func NewRouter(cfg RouterConfig, executor *runtime.Executor) (*gin.Engine, error
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.ErrorMessage(c, err)})
 			return
 		}
-		rows, err := datatype.RowsForJSON(result.Fields, result.Rows)
+		rows, err := datatype.QueryRowsForJSON(result.Fields, result.Rows)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, "engine.query_runtime.output_invalid")})
 			return

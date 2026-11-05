@@ -3,6 +3,7 @@
 package dameng
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"os"
@@ -19,6 +20,38 @@ func TestIntegrationDM8ProviderContract(t *testing.T) {
 		t.Skip("set ADDP_DAMENG_INTEGRATION=1 to run DM8 integration test")
 	}
 	t.Run("quoted_identifiers", testDM8QuotedIdentifiers)
+	t.Run("typed_query_results", func(t *testing.T) {
+		p := &Plugin{}
+		ctx := t.Context()
+		conn := integrationConnInfo()
+		query := `SELECT CAST(? AS VARBINARY(8)) AS PAYLOAD, CAST(NULL AS VARBINARY(8)) AS ABSENT, CAST(123.45 AS DECIMAL(18,2)) AS AMOUNT FROM DUAL`
+		result, err := p.ExecuteSQL(ctx, conn, query, plugin.QueryOptions{ReadOnly: true, Args: []interface{}{[]byte{0, 255, 128}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Fields) != 3 || result.Fields[0].Type != datatype.FieldTypeBytes || result.Fields[2].Type != datatype.FieldTypeDecimal || result.Fields[2].Precision != 18 || result.Fields[2].Scale != 2 {
+			t.Fatalf("native DM8 result schema: %+v", result.Fields)
+		}
+		if !bytes.Equal(result.Rows[0]["PAYLOAD"].([]byte), []byte{0, 255, 128}) || result.Rows[0]["ABSENT"] != nil {
+			t.Fatal("native DM8 binary/NULL values changed")
+		}
+		prepared, err := p.PrepareQuery(ctx, conn, plugin.QueryRequest{Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true, Args: []interface{}{[]byte{0, 255, 128}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := p.OpenQueryReadSession(ctx, prepared)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer session.Close(ctx)
+		batch, err := session.ReadBatch(ctx, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(batch.Fields) != 3 || batch.Fields[0].Type != datatype.FieldTypeBytes || !bytes.Equal(batch.Rows[0]["PAYLOAD"].([]byte), []byte{0, 255, 128}) {
+			t.Fatal("native DM8 cursor binary/schema changed")
+		}
+	})
 	const engineID uint = 98001
 	const schemaName = "ADDP_BUSINESS"
 	const tableName = "ADDP_DM8_PROVIDER_CONTRACT"

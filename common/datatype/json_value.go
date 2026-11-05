@@ -6,7 +6,17 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+
+	"github.com/twpayne/go-geom/encoding/ewkb"
+	"github.com/twpayne/go-geom/encoding/wkt"
 )
+
+// GeometryValue is the public, coordinate-system-preserving query projection.
+// Provider values remain EWKB until the already-protected JSON boundary.
+type GeometryValue struct {
+	WKT  string `json:"wkt"`
+	SRID int    `json:"srid"`
+}
 
 // BigintJSONText preserves exact native integers and already protected text.
 func BigintJSONText(value interface{}) (string, error) {
@@ -30,6 +40,16 @@ func BigintJSONText(value interface{}) (string, error) {
 // RowsForJSON copies an already protected result into its public representation.
 // It never changes Provider values or infers a column type from a Go value.
 func RowsForJSON(fields []FieldInfo, rows []map[string]interface{}) ([]map[string]interface{}, error) {
+	return rowsForJSON(fields, rows, false)
+}
+
+// QueryRowsForJSON additionally projects canonical query EWKB after protection.
+// Table previews keep their independently declared spatial wire format.
+func QueryRowsForJSON(fields []FieldInfo, rows []map[string]interface{}) ([]map[string]interface{}, error) {
+	return rowsForJSON(fields, rows, true)
+}
+
+func rowsForJSON(fields []FieldInfo, rows []map[string]interface{}, queryGeometry bool) ([]map[string]interface{}, error) {
 	types := make(map[string]FieldInfo, len(fields))
 	for _, field := range fields {
 		types[field.Name] = field
@@ -43,7 +63,7 @@ func RowsForJSON(fields []FieldInfo, rows []map[string]interface{}) ([]map[strin
 		for name, value := range row {
 			if value != nil {
 				var err error
-				value, err = fieldValueForJSON(types[name], value, 0)
+				value, err = fieldValueForJSON(types[name], value, 0, queryGeometry)
 				if err != nil {
 					return nil, fmt.Errorf("serialize field %q: %w", name, err)
 				}
@@ -55,7 +75,7 @@ func RowsForJSON(fields []FieldInfo, rows []map[string]interface{}) ([]map[strin
 	return result, nil
 }
 
-func fieldValueForJSON(field FieldInfo, value interface{}, depth int) (interface{}, error) {
+func fieldValueForJSON(field FieldInfo, value interface{}, depth int, queryGeometry bool) (interface{}, error) {
 	if value == nil {
 		return nil, nil
 	}
@@ -67,6 +87,23 @@ func fieldValueForJSON(field FieldInfo, value interface{}, depth int) (interface
 		return value, nil
 	}
 	switch field.Type {
+	case FieldTypeGeometry:
+		if !queryGeometry {
+			return value, nil
+		}
+		encoded, ok := value.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("geometry requires provider-normalized EWKB")
+		}
+		geometry, err := ewkb.Unmarshal(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("invalid query geometry EWKB")
+		}
+		text, err := wkt.Marshal(geometry)
+		if err != nil {
+			return nil, fmt.Errorf("encode query geometry WKT")
+		}
+		return GeometryValue{WKT: text, SRID: geometry.SRID()}, nil
 	case FieldTypeBigInt:
 		return BigintJSONText(value)
 	case FieldTypeDecimal:
@@ -85,7 +122,7 @@ func fieldValueForJSON(field FieldInfo, value interface{}, depth int) (interface
 			byName[child.Name] = child
 		}
 		for name, item := range object {
-			converted, err := fieldValueForJSON(byName[name], item, depth+1)
+			converted, err := fieldValueForJSON(byName[name], item, depth+1, queryGeometry)
 			if err != nil {
 				return nil, err
 			}
@@ -103,7 +140,7 @@ func fieldValueForJSON(field FieldInfo, value interface{}, depth int) (interface
 		result := make([]interface{}, len(array))
 		for i, item := range array {
 			var err error
-			result[i], err = fieldValueForJSON(*field.Element, item, depth+1)
+			result[i], err = fieldValueForJSON(*field.Element, item, depth+1, queryGeometry)
 			if err != nil {
 				return nil, err
 			}

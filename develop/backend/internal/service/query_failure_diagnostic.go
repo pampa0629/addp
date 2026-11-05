@@ -51,6 +51,8 @@ func queryErrorCode(err error) string {
 func queryFailureDiagnostic(code, message string, cause error) *commonExecution.FailureDiagnostic {
 	stage, reason := "validation", "configuration_invalid"
 	switch code {
+	case "develop.query.result_invalid":
+		stage, reason = "result", "result_invalid"
 	case "develop.query.protection_required":
 		stage, reason = "preparation", commonExecution.ProtectionFailureReason(cause)
 		if errors.Is(cause, protection.ErrResultRequired) {

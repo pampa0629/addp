@@ -1043,7 +1043,7 @@ func (e *DevExecutor) queryResult(
 	if truncated {
 		rows = rows[:limit]
 	}
-	wireRows, err := datatype.RowsForJSON(fields, rows)
+	wireRows, err := datatype.QueryRowsForJSON(fields, rows)
 	if err != nil {
 		return nil, nil, err
 	}

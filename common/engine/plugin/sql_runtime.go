@@ -130,6 +130,12 @@ func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 		}
 	}
 
+	var decode func(datatype.FieldInfo, interface{}) (interface{}, error)
+	if provider, ok := any(poolPlugin).(interface {
+		DecodeSQLQueryValue(datatype.FieldInfo, interface{}) (interface{}, error)
+	}); ok {
+		decode = provider.DecodeSQLQueryValue
+	}
 	if singleStatement {
 		sqlDB, err := db.DB()
 		if err != nil {
@@ -139,7 +145,7 @@ func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 		if err != nil {
 			return nil, &sqlStatementFailure{statement: querySQL, cause: err}
 		}
-		result, err := scanRuntimeSQLRows(rows, mapField)
+		result, err := ScanSQLRows(rows, mapField, decode)
 		if err != nil {
 			return nil, &sqlStatementFailure{statement: querySQL, cause: err}
 		}
@@ -156,20 +162,20 @@ func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 				return validator.ValidateAnalyticalExecution(ctx, tx, opts.analytical.sourceBindings())
 			}
 		}
-		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, querySQL, opts.Args, preflight, mapField)
+		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, querySQL, opts.Args, preflight, mapField, decode)
 	}
 	rows, err := db.WithContext(ctx).Raw(querySQL, opts.Args...).Rows()
 	if err != nil {
 		return nil, &sqlStatementFailure{statement: querySQL, cause: err}
 	}
-	result, err := scanRuntimeSQLRows(rows, mapField)
+	result, err := ScanSQLRows(rows, mapField, decode)
 	if err != nil {
 		return nil, &sqlStatementFailure{statement: querySQL, cause: err}
 	}
 	return result, nil
 }
 
-func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}, preflight func(context.Context, *sql.Tx) error, mapField func(*sql.ColumnType) datatype.FieldInfo) (*QueryResult, error) {
+func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}, preflight func(context.Context, *sql.Tx) error, mapField func(*sql.ColumnType) datatype.FieldInfo, decode func(datatype.FieldInfo, interface{}) (interface{}, error)) (*QueryResult, error) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
@@ -200,7 +206,7 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, bounda
 	if err != nil {
 		return nil, &sqlStatementFailure{statement: query, cause: err}
 	}
-	result, err := scanRuntimeSQLRows(rows, mapField)
+	result, err := ScanSQLRows(rows, mapField, decode)
 	if err != nil {
 		return nil, &sqlStatementFailure{statement: query, cause: err}
 	}
@@ -254,7 +260,9 @@ func BeginControlledReadOnlySQLTransaction(ctx context.Context, db *sql.DB, dial
 	}
 }
 
-func scanRuntimeSQLRows(rows *sql.Rows, mapField func(*sql.ColumnType) datatype.FieldInfo) (*QueryResult, error) {
+// ScanSQLRows is the single bounded SQL result scanner. The Provider supplies
+// native field facts and, when needed, its engine-specific value decoder.
+func ScanSQLRows(rows *sql.Rows, mapField func(*sql.ColumnType) datatype.FieldInfo, decode func(datatype.FieldInfo, interface{}) (interface{}, error)) (*QueryResult, error) {
 	defer rows.Close()
 
 	columns, err := rows.Columns()
@@ -292,12 +300,14 @@ func scanRuntimeSQLRows(rows *sql.Rows, mapField func(*sql.ColumnType) datatype.
 		}
 		row := make(map[string]interface{}, len(columns))
 		for i, col := range columns {
-			val := values[i]
-			if b, ok := val.([]byte); ok {
-				row[col] = string(b)
-			} else {
-				row[col] = val
+			value := SQLQueryValue(fields[i], values[i])
+			if decode != nil {
+				value, err = decode(fields[i], value)
+				if err != nil {
+					return nil, err
+				}
 			}
+			row[col] = value
 		}
 		resultRows = append(resultRows, row)
 	}
@@ -686,4 +696,19 @@ func queryResultValueFieldType(value interface{}) datatype.FieldType {
 		}
 		return datatype.FieldTypeUnknown
 	}
+}
+
+// SQLQueryValue preserves native binary semantics using the actual output type.
+// Engine decoders run afterwards, before protection and result delivery.
+func SQLQueryValue(field datatype.FieldInfo, value interface{}) interface{} {
+	if raw, ok := value.([]byte); ok {
+		if field.Type == datatype.FieldTypeBytes || field.Type == datatype.FieldTypeGeometry {
+			if raw == nil {
+				return []byte(nil)
+			}
+			return append([]byte{}, raw...)
+		}
+		return string(raw)
+	}
+	return value
 }
