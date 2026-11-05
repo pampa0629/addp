@@ -255,18 +255,19 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ### 8.43 Manager 原生成功基线准备
 
-先验收 `manager-success`，再分别验证对象／索引未知效果和旧 Runtime 迟到写入；Graph 高级恢复继续暂缓。沿原三业务 User、独立源办理员、精确权限、九项断言及独占 Hosted 部署推进。120分钟总预算、900秒业务预算、扫描与 MinIO 就绪共用的180秒窗口不变；完整协议以 [T4 原生 Cleanup 契约](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)为准。
+先验收 `manager-success`，再分别验证对象／索引未知效果和旧 Runtime 迟到写入；Graph 高级恢复继续暂缓。沿原三业务 User、独立源办理员、精确权限、九项断言及独占 Hosted 部署推进。120分钟总预算、900秒业务预算、保护投影、扫描与 MinIO 就绪共用的180秒窗口不变；完整协议以 [T4 原生 Cleanup 契约](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)为准。
 
-**最新真实结果。** 第六轮 `46eab920` 于 2026-11-05 18:36（Asia/Shanghai）以失败结束。16 个镜像、全部 Model3D smoke、14 服务准入、模型准备与 GLB 生成及授权下载通过。`manager_native_inventory` 断言失败，未发起 Engine 删除，九项通过记录为空。控制恢复、显式清理和零残留均通过。归档只记录总阶段，无法确定是私有引用、对象、索引还是记录状态探针失败。139 秒的业务用时与索引等待耗尽相符，尚无确证。[第六轮 Hosted](https://github.com/pampa0629/addp/actions/runs/41999442501/job/127150683595)
+**最新真实结果。** 第七轮 `dd57c699` 于 2026-11-05 22:47（Asia/Shanghai）以失败结束。16 个镜像、全部 Model3D smoke、14 服务准入、GLB 生成及授权下载通过。库存探针先通过私有引用和原生对象检查，再以 `index_projection/index_not_observed` 失败。尚未发起 Engine 删除，九项通过记录为空。控制恢复、显式清理和零残留均通过。[第七轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42039158037/job/127285084068)
 
 | 已落地的收口 | 验证证据及边界 |
 | --- | --- |
-| 准确源 Grant 前置；Meta 只取结构身份；统一 GatewayClient 保留 ZIP／GLB raw、响应头及 JSON；OBJ／MTL／纹理逐项核验长度和摘要 | `a641b1b6e` [Linux 专项](https://github.com/pampa0629/addp/actions/runs/41677128582/job/126241760694)198＋182项通过，不替代本轮403的定位与完整业务验收。 |
+| 准确源 Grant 前置；Meta 只取结构身份；统一 GatewayClient 保留 ZIP／GLB raw、响应头及 JSON；OBJ／MTL／纹理逐项核验长度和摘要 | `a641b1b6e` [Linux 专项](https://github.com/pampa0629/addp/actions/runs/41677128582/job/126241760694)198＋182项通过。 |
 | 既有 `--jobs 1` 实时委托日志、固定阶段及返回码；固定 vcpkg 仅构建产品消费的 Release，保留依赖版本和全部 smoke | `f5bd7b905` [Product build](https://github.com/pampa0629/addp/actions/runs/41758545081/job/126340402757)真实 Linux amd64 Converter／Runtime 及全部 smoke 通过，不外推 arm64 或保证后续冷构建时长。 |
-| Manager 私有 `storage_ref` 的唯一四字段 JSON 协议，复用已有 `object_ref`；保留 Manager 桶／本 Tenant 围栏及对象名的字面百分号、空格和 Unicode；删除误用 infra locator 的 URL 路线 | `277c8f6c5` 本地及[同提交 Linux 专项](https://github.com/pampa0629/addp/actions/runs/41815464385/job/126524957842)均200＋189项通过；第六轮进入库存核验，单个探针结果尚无独立证据。 |
-| 模型准备 HTTP 失败只记录闭集操作及白名单错误码；成功报告拒绝该诊断，即使为空或 null；不加请求、重试、身份或等待窗口 | `3eae16d39` 本地及[同提交 Linux 专项](https://github.com/pampa0629/addp/actions/runs/41852005816/job/126650489413)均201＋190项通过、登记一致；Linux selected=true，未追加 Hosted。 |
+| Manager 私有 `storage_ref` 的唯一四字段 JSON 协议，复用已有 `object_ref`；保留 Manager 桶／本 Tenant 围栏及对象名的字面百分号、空格和 Unicode；删除误用 infra locator 的 URL 路线 | `277c8f6c5` 本地及[同提交 Linux 专项](https://github.com/pampa0629/addp/actions/runs/41815464385/job/126524957842)均200＋189项通过；第七轮已通过真实引用及对象探针。 |
+| 模型准备 HTTP 失败只记录闭集操作及白名单错误码；成功报告拒绝该诊断，即使为空或 null；不加请求、重试、身份或等待窗口 | `3eae16d39` 本地及[同提交 Linux 专项](https://github.com/pampa0629/addp/actions/runs/41852005816/job/126650489413)均201＋190项通过、登记一致；Linux selected=true。 |
 | 原生库存失败按首个未通过的探针记录闭集原因，成功报告拒绝该字段 | `8b03c91c` 本地及 Linux 专项均 401 项通过，登记一致。[同提交 Linux 专项](https://github.com/pampa0629/addp/actions/runs/42014953009/job/127203046053) |
+| 首次 Meta 扫描先等待 Manager 的 Tenant 保护投影。原 User 对本轮模型指纹执行既有 GLB 列表 GET，原 180 秒内只等待明确的保护未就绪响应 | 首扫早于保护就绪的反例及拒绝边界已覆盖。本地标准专项 403 项通过，登记一致。 |
 
-**历史范围。** [首轮](https://github.com/pampa0629/addp/actions/runs/41586728539/job/125753855807)及[第三轮](https://github.com/pampa0629/addp/actions/runs/41736284282/job/126266219326)构建超时取消；[第二轮](https://github.com/pampa0629/addp/actions/runs/41639055422/job/125927590186)遇到 ZIP 解码错误；[第四轮](https://github.com/pampa0629/addp/actions/runs/41791842460/job/126446790438)已完成 GLB 生成／授权下载，但库存引用解析失败。[第五轮](https://github.com/pampa0629/addp/actions/runs/41833476102/job/126586309842)模型准备返回 403，原调用和错误码未归档，第六轮未复现。各轮清理结果独立核验，九项完整业务通过证据仍缺。
+**历史范围。** [首轮](https://github.com/pampa0629/addp/actions/runs/41586728539/job/125753855807)及[第三轮](https://github.com/pampa0629/addp/actions/runs/41736284282/job/126266219326)构建超时取消；[第二轮](https://github.com/pampa0629/addp/actions/runs/41639055422/job/125927590186)遇到 ZIP 解码错误；[第四轮](https://github.com/pampa0629/addp/actions/runs/41791842460/job/126446790438)已完成 GLB 生成／授权下载，但库存引用解析失败。[第五轮](https://github.com/pampa0629/addp/actions/runs/41833476102/job/126586309842)模型准备返回 403，原调用和错误码未归档，第六轮未复现。[第六轮](https://github.com/pampa0629/addp/actions/runs/41999442501/job/127150683595)库存失败，未记录具体探针。各轮清理结果独立核验，九项完整业务通过证据仍缺。
 
-**剩余工作。** 在另行确认的新 `manager-success` Hosted 中读取新增诊断、核验库存并完成 Engine 删除后的九项业务断言。未知效果、迟到写入和其他 Hosted 不自动追加；身份权限、精确 DataItem Grant、操作范围及预算保持。最新私有原件与修复门禁位于 `/tmp/addp-manager-success-hosted-sixth-20261105/`。
+**剩余工作。** Meta 技术投影投递失败可与扫描成功并存，Manager 初始保护投影的异步时序是已证实的准备缺口。第七轮未归档实际投递回执，不能确认索引缺失仅由该缺口导致。下一轮 `manager-success` 需单独确认，核验首扫后投影、完整删除链和九项业务断言。私有证据位于 `/tmp/addp-manager-success-hosted-seventh-20261105/`。

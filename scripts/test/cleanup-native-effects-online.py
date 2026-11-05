@@ -864,15 +864,31 @@ with urllib.request.urlopen(request,timeout=5) as response: print(response.read(
         return value['storage_ref']
 
 
+def wait_manager_projection_ready(manager, fingerprint, deadline):
+    # Meta's initial technical metadata write crosses the same Manager protection boundary.
+    path = f'/api/v1/manager/model_3d_glb?item_fingerprint={fingerprint}&page=1&page_size=1'
+    while (remaining := deadline - time.monotonic()) > 0:
+        reader = MANAGER.GatewayClient(manager.base_url, manager.token, min(manager.timeout, remaining))
+        response = reader.request('GET', path, (200, 403))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        payload = response.payload
+        if response.status == 200:
+            require(type(payload) is dict and type(payload.get('total')) is int and payload['total'] >= 0,
+                    'Manager protection readiness response is invalid')
+            return
+        require(type(payload) is dict and payload.get('error_code') == 'security_protection_required',
+                'Manager protection readiness read was denied')
+        time.sleep(min(1, remaining))
+    raise S.SuiteError('Manager protection projection was not ready before the source preparation deadline')
+
+
 def prepare_manager(manager, workflow, controls, source, report, checkpoint):
     report['stage'] = 'manager_native_prepare'; checkpoint()
     controls.source_objects()
     engine_id = workflow.register(controls.descriptor('minio'))
-    report['stage'] = 'manager_source_scan'; checkpoint()
     preparation_deadline = time.monotonic() + 180
-    MANAGER.wait_for_meta_scan(manager, engine_id, preparation_deadline)
-    report['stage'] = 'manager_engine_readiness'; checkpoint()
-    wait_native_engines(workflow, [(engine_id, 'minio')], preparation_deadline, report, checkpoint)
     bucket = controls.manifest['source_bucket']
     require(isinstance(bucket, str) and re.fullmatch(r'[a-z0-9.-]+', bucket), 'invalid owned source bucket')
     full_name = bucket + '/model3d/obj/model.obj'
@@ -880,6 +896,12 @@ def prepare_manager(manager, workflow, controls, source, report, checkpoint):
     # authorization or proof that the source exists. The consumer cannot
     # enumerate the ungranted source through Meta.
     fingerprint = hashlib.sha256(f'{engine_id}:{full_name}'.encode()).hexdigest()
+    report['stage'] = 'manager_protection_readiness'; checkpoint()
+    wait_manager_projection_ready(manager, fingerprint, preparation_deadline)
+    report['stage'] = 'manager_source_scan'; checkpoint()
+    MANAGER.wait_for_meta_scan(manager, engine_id, preparation_deadline)
+    report['stage'] = 'manager_engine_readiness'; checkpoint()
+    wait_native_engines(workflow, [(engine_id, 'minio')], preparation_deadline, report, checkpoint)
     report['stage'] = 'manager_source_grant'; checkpoint()
     grants = GRANTS.ModelSourceAuthorization(source, manager,
         dict(tenant_id=controls.tenant, engine_id=engine_id, principal_id=report['principals']['manager']),

@@ -1238,6 +1238,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             source_objects=lambda: None, descriptor=lambda _: {})
         with patch.object(M.time, 'monotonic', side_effect=[5, 6, 7]), \
                 patch.object(M.time, 'sleep', side_effect=lambda seconds: sleeps.append(seconds)), \
+                patch.object(M, 'wait_manager_projection_ready') as protection, \
                 patch.object(M.MANAGER, 'wait_for_meta_scan', side_effect=lambda user, identity, deadline: deadlines.append(deadline)), \
                 patch.object(M.GRANTS, 'ModelSourceAuthorization', return_value=SimpleNamespace(grant=lambda _: None)), \
                 patch.object(M.MANAGER, 'find_fixture_item', return_value={'fingerprint': M.hashlib.sha256(b'9:source/model3d/obj/model.obj').hexdigest()}), \
@@ -1245,6 +1246,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             report = {'principals': {'manager': '18'}}
             self.assertEqual(M.prepare_manager(object(), workflow, controls, object(), report, lambda: None), (9, model))
         self.assertEqual(deadlines, [185])
+        self.assertEqual(protection.call_args.args[2], deadlines[0])
         self.assertEqual(observed, [9, 9])
         self.assertEqual(sleeps, [1])
         self.assertNotIn('private', json.dumps(report))
@@ -1255,6 +1257,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             source_objects=lambda: None, descriptor=lambda _: {})
         report = {'principals': {'manager': '18'}}
         with patch.object(M.time, 'monotonic', side_effect=[0, 180]), \
+                patch.object(M, 'wait_manager_projection_ready'), \
                 patch.object(M.MANAGER, 'wait_for_meta_scan') as scan, \
                 patch.object(M.GRANTS, 'ModelSourceAuthorization') as authorization, \
                 patch.object(M.MANAGER, 'prepare_model_fixture') as prepare:
@@ -1267,6 +1270,58 @@ class NativeCleanupRunnerTest(unittest.TestCase):
         self.assertEqual(report['stage'], 'manager_engine_readiness')
         self.assertEqual(report['engine_readiness_diagnostic'], {'engines': [
             {'engine_id': 9, 'engine_type': 'minio', 'observation': 'not_observed'}]})
+
+    def test_manager_first_scan_requires_protection_readiness_within_the_shared_deadline(self):
+        user = SimpleNamespace(base_url='http://127.0.0.1:8000', token='original-manager', timeout=60)
+        controls = SimpleNamespace(tenant=2, manifest={'source_bucket': 'source'},
+            source_objects=lambda: None, descriptor=lambda _: {})
+        fingerprint = M.hashlib.sha256(b'9:source/model3d/obj/model.obj').hexdigest()
+        workflow = SimpleNamespace(register=lambda _: 9)
+        model = SimpleNamespace(result_id=7)
+        for case in ('ready_after_pending', 'permission_denied', 'late_ready', 'still_pending'):
+            report, requests, now = {'principals': {'manager': '18'}}, [], 0
+            def observe(method, path, accepted):
+                nonlocal now
+                self.assertEqual((method, path, accepted), ('GET',
+                    f'/api/v1/manager/model_3d_glb?item_fingerprint={fingerprint}&page=1&page_size=1', (200, 403)))
+                requests.append('read')
+                if case == 'permission_denied':
+                    return SimpleNamespace(status=403, payload={'error_code': 'permission_denied'})
+                if case == 'late_ready':
+                    now = 180
+                if len(requests) == 1 and case in {'ready_after_pending', 'still_pending'}:
+                    now = 179.5 if case == 'still_pending' else 178.5
+                    return SimpleNamespace(status=403, payload={'error_code': 'security_protection_required'})
+                return SimpleNamespace(status=200, payload={'total': 0})
+            def sleep(seconds):
+                nonlocal now
+                now += seconds
+            def scan(actor, engine, deadline):
+                self.assertEqual((actor, engine, deadline), (user, 9, 180))
+                self.assertEqual(requests, ['read', 'read'])
+                requests.append('scan')
+            with self.subTest(case=case), patch.object(M.time, 'monotonic', side_effect=lambda: now), \
+                 patch.object(M.time, 'sleep', side_effect=sleep), \
+                 patch.object(M.MANAGER, 'GatewayClient', return_value=SimpleNamespace(request=observe)) as reader, \
+                 patch.object(M.MANAGER, 'wait_for_meta_scan', side_effect=scan) as scan_mock, \
+                 patch.object(M, 'wait_native_engines') as engine_ready, \
+                 patch.object(M.GRANTS, 'ModelSourceAuthorization') as grant, \
+                 patch.object(M.MANAGER, 'find_fixture_item', return_value={'fingerprint': fingerprint}), \
+                 patch.object(M.MANAGER, 'prepare_model_fixture', return_value=model):
+                if case == 'ready_after_pending':
+                    self.assertEqual(M.prepare_manager(user, workflow, controls, None, report, lambda: None), (9, model))
+                    scan_mock.assert_called_once()
+                    self.assertEqual(engine_ready.call_args.args[2], 180)
+                    self.assertEqual([c.args for c in reader.call_args_list],
+                        [(user.base_url, user.token, 60), (user.base_url, user.token, .5)])
+                else:
+                    with self.assertRaises(S.SuiteError):
+                        M.prepare_manager(user, workflow, controls, None, report, lambda: None)
+                    self.assertEqual(requests, ['read'])
+                    self.assertEqual(report['stage'], 'manager_protection_readiness')
+                    scan_mock.assert_not_called()
+                    engine_ready.assert_not_called()
+                    grant.assert_not_called()
 
     def test_manager_grants_before_consumer_catalog_and_validates_same_source(self):
         import hashlib
@@ -1333,6 +1388,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 prepared.append(1)
                 return model
             with self.subTest(mutation=mutation), patch.object(M.MANAGER, 'wait_for_meta_scan'), \
+                    patch.object(M, 'wait_manager_projection_ready'), \
                     patch.object(M.MANAGER, 'prepare_model_fixture', side_effect=prepare):
                 invoke = lambda: M.prepare_manager(manager, workflow, controls, issuer, report,
                     lambda: checkpoints.append(report['stage']))
@@ -1342,7 +1398,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     browse_pos = next(i for i, call in enumerate(calls) if call[2] == '/api/v1/meta/engines/9/items')
                     self.assertLess(grant_pos, browse_pos)
                     self.assertEqual(prepared, [1])
-                    self.assertEqual(checkpoints, ['manager_native_prepare', 'manager_source_scan', 'manager_engine_readiness',
+                    self.assertEqual(checkpoints, ['manager_native_prepare', 'manager_protection_readiness', 'manager_source_scan', 'manager_engine_readiness',
                         'manager_source_grant', 'manager_source_identity', 'manager_model_prepare'])
                 else:
                     with self.assertRaises((S.SuiteError, M.GRANTS.SuiteError, M.MANAGER.SuiteError)):
@@ -1402,6 +1458,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     value = read(); M.require(predicate(value), message); return value
                 snapshots = []
                 with patch.object(M.MANAGER, 'wait_for_meta_scan'), patch.object(M.MANAGER, 'find_fixture_item', return_value={'fingerprint': M.hashlib.sha256(b'9:source/model3d/obj/model.obj').hexdigest()}), \
+                     patch.object(M, 'wait_manager_projection_ready'), \
                      patch.object(M.MANAGER, 'prepare_model_fixture', side_effect=prepare), patch.object(M.MANAGER, 'generate_model_glb'), \
                      patch.object(M.GRANTS, 'ModelSourceAuthorization', return_value=SimpleNamespace(grant=lambda value: granted.append(value))), \
                      patch.object(M, 'professional', return_value={'summary': {'deleted_physical_artifacts': 1}}), patch.object(S, 'wait_for', side_effect=wait):

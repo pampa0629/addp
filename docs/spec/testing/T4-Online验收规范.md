@@ -135,6 +135,8 @@ Manager 源准备先沿当前扫描权限生成本轮元数据，再由独立授
 
 `manager_native_inventory` 失败时可记录 `manager_inventory_diagnostic`。`probe` 仅取 `storage_reference`、`native_object`、`index_projection`、`artifact_state`；`reason` 仅取 `private_read_failed`、`storage_reference_missing`、`storage_reference_invalid`、`storage_reference_outside_scope`、`object_empty`、`object_unproven`、`index_response_incomplete`、`index_scope_mismatch`、`index_not_observed`、`artifact_not_live`、`http_error` 或 `unrecognized`。HTTP 异常可附数字 `http_status`。只归类已有失败，保留原读取顺序、范围和等待时间。成功报告须拒绝该字段，失败报告不保存私有引用、请求、响应、原始错误或凭据。
 
+Manager 原生场景在首次 Meta 扫描之前进入 `manager_protection_readiness`。原 Manager User 使用既有 `manager.derived_artifact.read`，只查询本轮模型指纹的 GLB 结果列表。该列表和 Meta 向 Manager 投递技术元数据都经过 Manager 的 Tenant 保护投影检查。只在 HTTP 403 且错误码为 `security_protection_required` 时继续等待，其他拒绝或异常立即停止。观察 HTTP 200 后方可发起一次原扫描。保护就绪、扫描及 MinIO active／online 共用原 180 秒截止时间，就绪读的单次超时取原 60 秒上限和剩余时间的较小值，晚到响应不能启动扫描。该只读准入不消费源内容，源 Grant、原生库存及后续业务断言仍按原链路验证。
+
 原生 Cleanup Hosted 通过公共镜像构建器既有 `--jobs 1` 模式实时输出各镜像及委托 Runtime 构建日志，避免双并发完成后才输出掩盖未返回子阶段。编译、镜像、各服务启动、身份准备和业务门禁只记录固定阶段及开始／返回码，不输出额外参数或凭据；返回失败必须保留原退出状态并进入既有销毁链。工作流120分钟、业务900秒及各阶段既有等待预算不变，未取得终态报告或清理证明不能计为通过。
 
 Manager 的 Meta 列表只消费结构身份，不要求返回 size_bytes、网格统计或其他内容派生字段；OBJ／FBX 源完整性沿原 Manager User 下载接口核验固定长度与摘要，OBJ 逐项严格核验完整模型／MTL／纹理 ZIP，不以目录大小替代原始字节证据。四个 Manager case 的领域调用统一复用 Manager 场景现有的 GatewayClient，保留二进制 raw／响应头和按 Content-Type 解析 JSON 的契约；沿用已经核验的 loopback 地址、原 User token 和60秒单次上限，不把 ZIP／GLB 交给控制面 JSON 客户端，不新增身份、重试或下载旁路。Manager MinIO 的扫描和 active／online 就绪观察共用原180秒准备截止时间，由原 Engine User 仅 GET 本轮准确实例；不强制探测、不增加权限或窗口；Engine 观察单次 HTTP timeout 不超过原上限和窗口余额，窗口耗尽不补读、晚返回拒绝，不准备模型。就绪失败沿既有 engine_readiness_diagnostic 记录本 case 唯一 MinIO 的安全观察，不归档连接或原始文案。
