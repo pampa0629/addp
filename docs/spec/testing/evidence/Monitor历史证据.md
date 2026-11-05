@@ -315,11 +315,15 @@ System 从已确认部署来源项目派生只读 `scope`，在计数与分页�
 
 ### 2026-11-04 Infra MinIO 原采集镜像不可用（诊断修正，实际应用待执行）
 
-用户recover失败已只读定位：账号、JWT认证、TLS、Compose均有效，运行容器仍在，但原完整镜像ID无法image inspect并明确No such image。新增白名单reason和可执行的重新构建提示，保持拒绝自动接管／重建；共享7、编排16、启动守卫2、Redis14／MinIO24项及Go专项通过。本机新诊断已只读复验且来源fact不变，个人实际重建与CI／Hosted未验。[完整证据](Monitor采集来源与引擎指标历史证据.md#infra-minio-恢复的原镜像不可用诊断2026-11-04)。
+用户执行 recover 失败。只读检查确认账号、JWT 认证、TLS 和 Compose 声明匹配，容器仍在运行，原完整镜像 ID 的 `image inspect` 返回 `No such image`。镜像何时或由谁移除未确认。诊断修正仅增加白名单原因码与重新应用提示，仍拒绝自动接管或重建。共享恢复 7 项、编排 16 项、启动守卫 2 项、Redis 14 项、MinIO 24 项及 Go 专项通过。本机只读复验前后来源事实一致，CI／Hosted 当时未验。[诊断与门禁证据](Monitor采集来源与引擎指标历史证据.md#infra-minio-恢复的原镜像不可用诊断2026-11-04)。
+
+标题中的“实际应用待执行”是诊断阶段的状态。用户随后通过统一 up 重新应用来源，[后台采集恢复](#2026-11-04-用户重新应用后-infra-minio-后台采集恢复)与 [Safari 页面复验](#2026-11-04-infra-minio-safari真实页面与趋势交互通过)分别留证。
 
 ### 2026-11-04 用户重新应用后 Infra MinIO 后台采集恢复
 
-用户已通过统一up重建来源。只读复验新镜像／Owner可核验，原数据库ID和启动时刻匹配，mTLS200／14项实际指标；Prometheus唯一目标UP、在线盘数1，真实scrape／来源快照分别约2.8／3.44秒新鲜。后台采集恢复已证，Safari页面及recover不重建实操未验。[完整运行证据](Monitor采集来源与引擎指标历史证据.md#用户重新应用后的-infra-minio-采集恢复2026-11-04)。
+用户通过统一 up 重建来源后，只读复验确认新镜像与 Owner 可核验，数据库 ID 和启动时刻仍匹配原实例。mTLS 返回 200 和 14 项实际指标，Prometheus 唯一目标为 UP，在线盘数为 1。真实 scrape 和来源快照距核验分别约 2.80 秒和 3.44 秒。[后台采集证据](Monitor采集来源与引擎指标历史证据.md#用户重新应用后的-infra-minio-采集恢复2026-11-04)。
+
+该轮只核对后台采集。后续[原生 Safari 页面与趋势交互](#2026-11-04-infra-minio-safari真实页面与趋势交互通过)和[健康来源 recover 实操](#2026-11-04-本机-infra-minio-健康recover实操通过)各有独立记录。
 
 - <a id="2026-11-04-单次正式产品full窗口在agent镜像命令期限失败"></a>[2026-11-04 单次正式产品full窗口在Agent镜像命令期限失败](MonitorHTTP质量与采样历史证据.md#http-full-agent-build-deadline-20261104)
 
