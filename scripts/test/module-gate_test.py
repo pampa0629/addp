@@ -22,12 +22,15 @@ assert SPEC.loader is not None
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
+POSTGRES_SHARED_POOL_PASS = "--- PASS: TestIntegrationPostgresSharedSQLPool (0.01s)\n"
+POSTGRES_OUTPUT_REWRITE_PASS = "--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\n"
 COMMON_POSTGRES_SUCCESS_OUTPUT = (
     "--- PASS: TestProjectionStoreSchemaContractAgainstPostgres (0.01s)\n"
     "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n"
     "--- PASS: TestIntegrationPostgresKMLWriter (0.01s)\n"
     "--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\n"
-    "--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\n"
+    f"{POSTGRES_SHARED_POOL_PASS}"
+    f"{POSTGRES_OUTPUT_REWRITE_PASS}"
     "--- PASS: TestExecutionRetentionAssessmentAgainstPostgres (0.01s)\n"
     "--- PASS: TestExecutionLifecycleAgainstPostgres (0.01s)\n"
     "--- PASS: TestPostgresCleanupProfessionalResultAtomicity (0.01s)\n"
@@ -336,6 +339,7 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite)", calls[0])
         self.assertIn("TestIntegrationPostgresQueryReadSession", calls[0])
+        self.assertIn("TestIntegrationPostgresSharedSQLPool", calls[0])
         self.assertIn("./engine/plugins/highgo", calls[0])
         self.assertIn("./format/plugins/kml", calls[0])
         self.assertIn("TestIntegrationPostgresKMLWriter", calls[0])
@@ -408,9 +412,17 @@ class ModuleGateTest(unittest.TestCase):
     def test_common_postgres_requires_output_rewrite_equivalence_in_full_and_read_groups(self) -> None:
         for arguments in ([], ["--test", "query-read-set"]):
             with self.subTest(arguments=arguments):
-                result, _ = self._run_common_postgres_group(arguments, "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\nPASS")
+                output = COMMON_POSTGRES_SUCCESS_OUTPUT.replace(POSTGRES_OUTPUT_REWRITE_PASS, "")
+                result, _ = self._run_common_postgres_group(arguments, output)
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("requires the real output rewrite equivalence test", result.stderr)
+
+    def test_common_postgres_full_gate_requires_native_shared_pool_evidence(self) -> None:
+        output = COMMON_POSTGRES_SUCCESS_OUTPUT.replace(POSTGRES_SHARED_POOL_PASS, "")
+        result, calls = self._run_common_postgres_group([], output)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("requires the native shared SQL pool test", result.stderr)
+        self.assertEqual(1, len(calls))
 
     def test_common_postgres_source_checkout_keeps_the_same_registered_test(self) -> None:
         result, calls = self._run_common_postgres_group(["--source-root", str(SCRIPT.parents[2]), "--test", "query-read-set"])
