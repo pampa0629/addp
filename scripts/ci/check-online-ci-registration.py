@@ -59,12 +59,17 @@ def execution_runner_ci_inputs(repository: Path) -> set[str]:
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         bindings.setdefault(target.id, []).append(node.value)
-        def strings(node, seen=frozenset()):
-            values = [item.value for item in ast.walk(node) if isinstance(item, ast.Constant) and isinstance(item.value, str)]
-            for item in ast.walk(node):
-                if isinstance(item, ast.Name) and item.id not in seen:
-                    for value in bindings.get(item.id, []):
-                        values.extend(strings(value, seen | {item.id}))
+        def strings(node):
+            values = set()
+            pending_nodes = [node]
+            seen_names = set()
+            while pending_nodes:
+                for item in ast.walk(pending_nodes.pop()):
+                    if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                        values.add(item.value)
+                    elif isinstance(item, ast.Name) and item.id not in seen_names:
+                        seen_names.add(item.id)
+                        pending_nodes.extend(bindings.get(item.id, []))
             return values
         candidates = [(value, False) for value in re.findall(r"[\w.-]+(?:/[\w.*-]+)+", text)]
         for node in ast.walk(tree):
