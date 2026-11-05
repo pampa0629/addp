@@ -943,17 +943,28 @@ echo ""
 
 source "${ROOT_DIR}/scripts/infra/ports.sh"
 infra_optional_result=0
+infra_optional_failures=()
 if addp_infra_ready core; then
   echo -e "${GREEN}✓ 核心 Infra 容器健康，复用现有容器，跳过镜像构建和 Compose 更新${NC}"
-  if ! { addp_runtime_log_preflight && addp_metrics_preflight && addp_infra_ready; }; then
+  if ! addp_runtime_log_preflight; then
     infra_optional_result=1
-    echo -e "${YELLOW}⚠️  可选观测设施配置或容器未就绪；继续启动业务，设施修复请显式运行 bash scripts/infra/up.sh${NC}"
+    infra_optional_failures+=('日志配置预检')
+  elif ! addp_metrics_preflight; then
+    infra_optional_result=1
+    infra_optional_failures+=('指标配置预检')
+  elif ! addp_infra_ready; then
+    infra_optional_result=1
+    infra_optional_failures+=('可选Infra容器健康检查')
+  fi
+  if [[ "$infra_optional_result" != 0 ]]; then
+    echo -e "${YELLOW}⚠️  ${infra_optional_failures[0]}未通过；继续启动业务，设施修复请显式运行 bash scripts/infra/up.sh${NC}"
   fi
 else
   echo -e "${YELLOW}启动基础设施服务...${NC}"
   if ! bash "${ROOT_DIR}/scripts/infra/up.sh"; then
     if addp_infra_ready core; then
       infra_optional_result=1
+      infra_optional_failures+=('可选Infra设施应用')
       echo -e "${YELLOW}⚠️  可选观测设施未就绪；业务所需 Infra 健康，继续启动应用${NC}"
     else
       echo -e "${RED}✗ 基础设施启动失败,请检查 Docker 是否运行${NC}"
@@ -974,6 +985,7 @@ fi
 ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
 if addp_runtime_logs_enabled && ! ADDP_INFRA_PORT_SCOPE=logs addp_infra_read_actual_ports; then
   infra_optional_result=1
+  infra_optional_failures+=('日志端口读取')
   export LOKI_URL=''
   echo 'Cannot read optional runtime log mappings; business ports remain available' >&2
 fi
@@ -994,6 +1006,7 @@ if [[ "$START_ALL" == true && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
   source "$ROOT_DIR/scripts/utils/observability-env.sh"
   if ! addp_recover_metrics_sources; then
     infra_optional_result=1
+    infra_optional_failures+=('采集来源恢复')
     echo 'Metrics source recovery unavailable; business startup continues' >&2
   fi
 fi
@@ -2594,9 +2607,16 @@ fi
 
 # Full local startup monitoring summary; partial and Hosted launches stay scoped.
 if [[ "$START_ALL" == true && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
-  addp_startup_metrics_summary || infra_optional_result=1
+  if ! addp_startup_metrics_summary; then
+    infra_optional_result=1
+    infra_optional_failures+=('末尾监控摘要')
+  fi
   if [[ "$infra_optional_result" != 0 ]]; then
-    echo '可选观测检查未完全通过；业务已启动，请核对以上恢复及监控摘要。' >&2
+    echo '业务已启动；本次启动保留以下观测失败记录，具体原因见对应阶段原输出：' >&2
+    for observation_failure in "${infra_optional_failures[@]}"; do
+      echo "  - ${observation_failure}" >&2
+    done
+    echo '以上为启动阶段记录，不等同于当前采集仍失败；当前状态见只读摘要，有效指标见 Monitor。' >&2
   fi
 fi
 exit "$infra_optional_result"

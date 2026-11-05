@@ -146,11 +146,12 @@ class LifecycleTest(unittest.TestCase):
         script=(ROOT/'scripts/dev/start.sh').read_text()
         block=script[script.index('# Only full local startup may recover'):script.index('# Refresh deployment-side facts')]
         for full,online,selected in [('true','0',True),('false','0',False),('true','1',False)]:
-            command="infra_optional_result=0; source() { :; }; addp_recover_metrics_sources() { echo RECOVER; return 1; };\n"+block+'\necho CONTINUED; exit "$infra_optional_result"'
+            command="infra_optional_result=0; infra_optional_failures=(); source() { :; }; addp_recover_metrics_sources() { echo RECOVER; return 1; };\n"+block+'\necho CONTINUED; printf "%s\\n" "${infra_optional_failures[*]-}"; exit "$infra_optional_result"'
             result=subprocess.run(['bash','-eu','-c',command],env=dict(os.environ,START_ALL=full,ADDP_ONLINE_HOST=online,ROOT_DIR='/fixture'),capture_output=True,text=True,timeout=5)
             self.assertEqual('RECOVER' in result.stdout,selected)
             self.assertIn('CONTINUED',result.stdout)
             self.assertEqual(result.returncode,int(selected))
+            self.assertEqual('采集来源恢复' in result.stdout,selected)
 
     def test_recovery_uses_unified_entry_for_both_scopes_and_preserves_failure(self):
         with tempfile.TemporaryDirectory() as temporary:

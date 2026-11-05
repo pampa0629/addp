@@ -255,12 +255,15 @@ addp_startup_metrics_summary
             for previous in (0,1):
                 for failure in (0,1):
                     with self.subTest(full=full,online=online,previous=previous,failure=failure):
-                        command=f'infra_optional_result={previous}; addp_startup_metrics_summary() {{ echo SUMMARY; return {failure}; }};\n'+block
+                        reasons="('采集来源恢复')" if previous else '()'
+                        command=f'infra_optional_result={previous}; infra_optional_failures={reasons}; addp_startup_metrics_summary() {{ echo SUMMARY; return {failure}; }};\n'+block
                         result=subprocess.run(['bash','-eu','-c',command],env=dict(os.environ,START_ALL=full,ADDP_ONLINE_HOST=online),capture_output=True,text=True,timeout=5)
                         expected=int(bool(previous or selected and failure))
                         self.assertEqual(result.returncode,expected,result.stdout+result.stderr)
                         self.assertEqual('SUMMARY' in result.stdout,selected)
                         self.assertEqual('业务已启动' in result.stderr,bool(selected and expected))
+                        self.assertEqual('采集来源恢复' in result.stderr,bool(selected and previous))
+                        self.assertEqual('末尾监控摘要' in result.stderr,bool(selected and failure))
 
     def test_resolved_environment_is_single_scope_and_not_silently_reloaded(self):
         for scopes in ((), ['infra','business']):

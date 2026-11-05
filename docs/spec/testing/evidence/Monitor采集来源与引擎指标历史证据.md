@@ -814,3 +814,11 @@ CI会话回传固定`7d8ad061e`的两项后续阻断，不能与此前六项夹�
 标准验证均退出0：`make test-metrics-sources`最终55项（含21项统一管理、健康／停机／不健康／归属拒绝／关闭／无效配置／独立失败和12组全量／局部／Hosted及早期失败保持组合），日志 `/tmp/addp-startup-monitor-summary-final-20261105.log`；`make test-monitor-metrics-config test-t2-ci-registration`含138项配置、80项登记、9项runner及实际登记检查，日志 `/tmp/addp-startup-monitor-config-final-20261105.log`；`make test-dev-lifecycle`包含24项原生依赖、209项准备检查、原有真实临时进程／监听／全量与局部重启隔离及编译门禁，日志 `/tmp/addp-startup-monitor-dev-final-20261105.log`；`make test-infra-runtime-log-lifecycle`的149项生命周期组合及依赖通过，日志 `/tmp/addp-startup-monitor-infra-final-20261105.log`。最初新断言在实现前沿标准来源入口失败，日志 `/tmp/addp-startup-monitor-summary-red-20261105.log`。末尾失败提示及早期失败保持已由最终55项标准入口补验，未放宽原预算或断言。
 
 本地只读执行 `addp_startup_metrics_summary` 退出0，中心与控制入口运行、七类来源零失败且明确提示Monitor核验采样，日志 `/tmp/addp-startup-monitor-summary-readonly-20261105.log`；未自行执行恢复或重启。`bash -n`及本批diff检查通过。现有根Make依赖、Platform consistency和Metrics T2输入声明已覆盖修改文件，无新入口、依赖或workflow。个人真实全量启动中的自动恢复及末尾摘要尚待用户执行后复验，不能以只读摘要和隔离T1代替；自然CI／Hosted仍等专门会话回传，无轮询、重试或定时。
+
+### 启动前序失败与末尾现况的提示归因（2026-11-05）
+
+用户执行后回传：末尾中心／控制入口运行、七类来源零失败，但仍有“可选观测检查未完全通过”。代码确认该提示沿启动进程内累计标志触发，可能来自日志／指标配置预检、Infra设施、日志端口或采集恢复；原摘要未保存阶段名称，无法由末尾零失败反推早期原因。本会话只读核对当前日志预检、核心／完整Infra健康均通过，指标配置在截住唯一原子发布边界、只读渲染的条件下校验通过；**没有执行文件写入、来源恢复、启停或重启，也未证明当次早期失败已解决**。已请求用户提供前段基础设施与来源恢复输出，具体原始根因尚未确认。收据 `/tmp/addp-startup-warning-current-readonly-20261105.log`、`/tmp/addp-startup-warning-readonly-render-20261105.json`。
+
+修复限定为归因：保留原预检短路顺序和继续启动／非零结果，以本次进程内的固定阶段名称记录各失败，末尾分别列出前序失败和摘要自身失败，提示历史阶段结果不等同于当前仍采集失败。当前正常不清除原失败，阶段名称不含原始错误、地址或凭据，不持久化或自动重试。规范先修订；无新增概念、权限、API、依赖或CI入口，既有Platform／Metrics输入登记覆盖修改脚本与原测试。
+
+验证分层保留：新阶段断言实现前沿 `make test-metrics-sources` 失败，日志 `/tmp/addp-startup-warning-stage-red-20261105.log`；实现后首轮同入口在原五秒假命令接线测试超时，日志 `/tmp/addp-startup-warning-stage-final-20261105.log`，未改预算；完整开发门禁退出2，在未修改的GDAL并发准备测试30秒超时，尚未进入后续开发生命周期，日志 `/tmp/addp-startup-warning-dev-final-20261105.log`，不计完整通过，也未归因为休眠。该并行运行结束后，串行 `make test-metrics-sources` 55项退出0，日志 `/tmp/addp-startup-warning-stage-serial-20261105.log`；受影响的标准脚本 `bash scripts/test/dev-lifecycle-and-build.sh` 退出0，覆盖原有真实临时进程／监听、完整与局部重启、配置失败／健康复用阶段归因，日志 `/tmp/addp-startup-warning-shell-final-20261105.log`。语法及本批diff检查通过；不以子项通过替代完整门禁，CI／Hosted仍等专门会话回传。

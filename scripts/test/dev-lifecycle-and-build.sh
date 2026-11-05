@@ -985,7 +985,7 @@ printf 'up\n' >> "$ROOT_DIR/infra-up-calls"
                        'ADDP_OBSERVABILITY_LOGS_ENABLED': logs,
                        'ADDP_OBSERVABILITY_METRICS_ENABLED': metrics}
         result = subprocess.run(['bash', '-c', 'set -euo pipefail\nYELLOW= GREEN= RED= NC=\n' + phase +
-                                 '\nprintf "optional_result=%s\\n" "$infra_optional_result"\n'],
+                                 '\nprintf "optional_result=%s\\n" "$infra_optional_result"\nprintf "optional_failures=%s\\n" "${infra_optional_failures[*]-}"\n'],
                                 env=environment, cwd=workspace, capture_output=True, text=True, timeout=5)
         assert calls.exists() == (mode in ['cold', 'core-failed']), (logs, metrics, mode, result.stdout, result.stderr)
         assert result.returncode == (1 if mode == 'core-failed' else 0), (mode, result.stdout, result.stderr)
@@ -994,6 +994,10 @@ printf 'up\n' >> "$ROOT_DIR/infra-up-calls"
                            (mode == 'invalid-logs' and logs == 'true') or
                            (mode == 'invalid-metrics' and metrics == 'true'))
             assert f'optional_result={expected}' in result.stdout, (mode, result.stdout, result.stderr)
+            reason = ('日志配置预检' if mode == 'invalid-logs' and logs == 'true' else
+                      '指标配置预检' if mode == 'invalid-metrics' and metrics == 'true' else
+                      '可选Infra容器健康检查' if mode == 'observability-down' and 'true' in (logs, metrics) else '')
+            assert f'optional_failures={reason}\n' in result.stdout, (mode, result.stdout, result.stderr)
 print('PASS: healthy core Infra is reused across observability selections and failures; cold startup stays explicit')
 PY
 }
