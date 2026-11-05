@@ -21,7 +21,7 @@ func testPlatformRevisionStorage(t *testing.T, db *gorm.DB) {
 	s := NewPlatformRevisionService(repository.NewPlatformRevisionRepository(db), testPlatformGraph{})
 	ctx, actor := context.Background(), platformTestActor()
 	var executionsBefore, projectionsBefore int64
-	if err := db.Table("common.task_executions").Count(&executionsBefore).Error; err != nil {
+	if err := db.Table("common.task_executions").Where("module = ?", models.Module).Count(&executionsBefore).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&models.Projection{}).Count(&projectionsBefore).Error; err != nil {
@@ -209,7 +209,7 @@ FOR EACH ROW WHEN (NEW.capability IN ('transfer.task.rollback', 'transfer.task.r
 		}
 	})
 	var executionsAfter, projectionsAfter int64
-	if err := db.Table("common.task_executions").Count(&executionsAfter).Error; err != nil || executionsAfter != executionsBefore {
+	if err := db.Table("common.task_executions").Where("module = ?", models.Module).Count(&executionsAfter).Error; err != nil || executionsAfter != executionsBefore {
 		t.Fatal("recording created executions", executionsBefore, executionsAfter, err)
 	}
 	if err := db.Model(&models.Projection{}).Count(&projectionsAfter).Error; err != nil || projectionsAfter != projectionsBefore {

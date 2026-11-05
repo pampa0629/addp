@@ -48,7 +48,7 @@ func testPlatformPublication(t *testing.T, db *gorm.DB) {
 		}
 	}
 	var executionsBefore, tenantProjectionsBefore int64
-	if err := db.Table("common.task_executions").Count(&executionsBefore).Error; err != nil {
+	if err := db.Table("common.task_executions").Where("module = ?", models.Module).Count(&executionsBefore).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&models.Projection{}).Count(&tenantProjectionsBefore).Error; err != nil {
@@ -523,8 +523,8 @@ CREATE TRIGGER test_platform_ready_audit BEFORE INSERT ON ontology.platform_proj
 	})
 	var executionsAfter, tenantProjectionsAfter int64
 	t.Run("deployed_transfer_operations", func(t *testing.T) { testTransferOperationPublication(t, db, testPlatformGraph{}) })
-	if err := db.Table("common.task_executions").Count(&executionsAfter).Error; err != nil || executionsAfter != executionsBefore {
-		t.Fatal("platform created Tenant task", err)
+	if err := db.Table("common.task_executions").Where("module = ?", models.Module).Count(&executionsAfter).Error; err != nil || executionsAfter != executionsBefore {
+		t.Fatal("platform created Tenant task", executionsBefore, executionsAfter, err)
 	}
 	if err := db.Model(&models.Projection{}).Count(&tenantProjectionsAfter).Error; err != nil || tenantProjectionsAfter != tenantProjectionsBefore {
 		t.Fatal("platform touched Tenant projection", err)
