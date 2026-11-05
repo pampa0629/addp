@@ -25,6 +25,7 @@ API = import_module('scripts.utils.online-api')
 PREFLIGHT = import_module('scripts.test.online-preflight')
 REGISTRATION = import_module('scripts.test.online-engine-registration')
 REFRESH = import_module('scripts.test.metadata-refresh-scope-online')
+CGROUP = import_module('scripts.utils.capacity_resources')
 SuiteError = API.SuiteError
 SUITE = 'pg-source-authorization'
 READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.lineage.read', 'meta.scan_task.execute', 'meta.scan_task.read'}
@@ -72,6 +73,15 @@ AUDIT_ACTIVITY_SQL = '''SELECT json_build_object(
  SELECT pid, backend_start, xact_start, query_start, state_change, state, wait_event_type, wait_event,
  pg_blocking_pids(pid) AS blocking_pids,
  CASE WHEN ltrim(query) ILIKE 'INSERT INTO "system"."audit_logs"%' THEN 'audit_insert'
+      WHEN query ~* '^[[:space:]]*WITH input AS MATERIALIZED[[:space:]]*[(]'
+           AND query LIKE '%AS targets, clock_timestamp() AS observed_at%' THEN 'source_rules'
+      WHEN query ~* '^[[:space:]]*SELECT[[:space:]]+(access_token|ticket|delegated)[.]id AS credential_id'
+           OR query ~* '^[[:space:]]*WITH RECURSIVE direct_memberships AS'
+           OR (query ~* '^[[:space:]]*SELECT[[:space:]]+membership[.]id AS membership_id'
+               AND query LIKE '%FROM system.project_group_memberships membership%')
+           OR (query ~* '^[[:space:]]*SELECT[[:space:]]+assignment[.]id AS assignment_id'
+               AND query LIKE '%FROM system.role_assignments assignment%')
+           THEN 'auth_context'
       WHEN lower(btrim(query)) IN ('commit', 'commit;', 'rollback', 'rollback;') THEN 'transaction_end'
       ELSE 'other' END AS query_class
  FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()
@@ -97,6 +107,74 @@ def disk_observation():
             'cpu': Path('/proc/stat').read_text().splitlines()[0]}
 
 
+def process_cpu(pid):
+    # Linux /proc/PID/stat: comm may contain spaces and parentheses.
+    fields = (Path('/proc') / str(pid) / 'stat').read_text().rsplit(')', 1)[1].split()
+    if fields[0] in {'Z', 'X'}:
+        raise ValueError('process exited')
+    return {'pid': pid, 'parent_pid': int(fields[1]), 'user_ticks': int(fields[11]),
+            'system_ticks': int(fields[12]), 'start_ticks': int(fields[19])}
+
+
+class LoadCPUObservation:
+    """Passive counters from the exact Hosted checkout and its owned PG container."""
+    def __init__(self, root, postgres_pid, container_id):
+        self.processes = {'runner_with_observer': process_cpu(os.getpid())}
+        for unit in ('system', 'meta', 'gateway'):
+            self.processes[unit] = self.processes[unit + '_capture'] = None
+            try:
+                raw = (root / '.dev-pids' / (unit + '.pid')).read_text().strip()
+                if not re.fullmatch(r'[1-9][0-9]*', raw) or int(raw) <= 1:
+                    continue
+                pid = int(raw)
+                proc = Path('/proc') / raw
+                if (proc / 'exe').resolve() != root / '.dev-bins' / ('addp-' + unit) or (proc / 'cwd').resolve() != root:
+                    continue
+                self.processes[unit] = process_cpu(pid)
+                captures = []
+                for children in (proc / 'task').glob('*/children'):
+                    for child in children.read_text().split():
+                        if (Path('/proc') / child / 'exe').resolve() == root / '.dev-bins' / 'addp-runtime-log':
+                            record = process_cpu(int(child))
+                            if record['parent_pid'] == pid:
+                                captures.append(record)
+                if len(captures) == 1:
+                    self.processes[unit + '_capture'] = captures[0]
+            except (OSError, ValueError, IndexError):
+                # A missing or raced process is an explicit gap, not zero CPU.
+                continue
+        self.postgres = None
+        if type(postgres_pid) is int and postgres_pid > 1:
+            try:
+                group = CGROUP.cgroup_directory(postgres_pid)
+                if group.name in {container_id, 'docker-' + container_id + '.scope'}:
+                    self.postgres = group
+            except (OSError, ValueError, CGROUP.ResourceError):
+                pass
+
+    def sample(self):
+        at = time.time_ns()
+        result = {}
+        for name, identity in self.processes.items():
+            result[name] = None
+            if identity is not None:
+                try:
+                    current = process_cpu(identity['pid'])
+                    if current['start_ticks'] == identity['start_ticks']:
+                        result[name] = current
+                except (OSError, ValueError, IndexError):
+                    pass
+        postgres = None
+        if self.postgres is not None:
+            try:
+                counters = dict(line.split() for line in (self.postgres / 'cpu.stat').read_text().splitlines())
+                postgres = {key: int(counters[key]) for key in ('usage_usec', 'user_usec', 'system_usec')}
+                postgres.update({key: int(counters[key]) for key in ('nr_throttled', 'throttled_usec') if key in counters})
+            except (OSError, ValueError, KeyError):
+                pass
+        return {'at_unix_ns': at, 'finished_unix_ns': time.time_ns(), 'processes': result, 'postgres_cgroup': postgres}
+
+
 class AuditLatencyObservation:
     """One bounded, read-only psql session; never touches a personal deployment."""
     def __init__(self, evidence, principal, *, phase='serial'):
@@ -112,6 +190,8 @@ class AuditLatencyObservation:
         self.buffer = b''
         self.samples, self.bytes, self.query_max_ms, self.max_gap_ms = 0, 0, 0, 0
         self.last_sample_ns = None
+        self.cpu = None
+        self.last_cpu_ns = 0
         self.started = datetime.now(timezone.utc).isoformat()
         evidence.update(result='failed', target_interval_ms=50, samples=0, connection_closed=False,
                         scope='disposable_infra_instance_and_host_disks', audit_rows=[],
@@ -138,6 +218,11 @@ class AuditLatencyObservation:
         require(self.samples < 2000, 'audit observation sample budget exceeded')
         started = time.monotonic_ns()
         snapshot = {'started_unix_ns': time.time_ns(), 'db': self.query(AUDIT_ACTIVITY_SQL), 'host': disk_observation()}
+        if self.cpu is not None and started - self.last_cpu_ns >= 250_000_000:
+            snapshot['cpu_resources'] = self.cpu.sample()
+            if threading.current_thread() is self.thread:
+                snapshot['cpu_resources']['observer_thread_cpu_ns'] = time.thread_time_ns()
+            self.last_cpu_ns = started
         snapshot['finished_unix_ns'] = time.time_ns()
         snapshot['observer_ms'] = (time.monotonic_ns() - started) / 1000000
         require(type(snapshot['db'].get('connections')) is int and 0 < snapshot['db']['connections'] <= 257
@@ -218,6 +303,9 @@ class AuditLatencyObservation:
             require(bool(candidates), 'PostgreSQL volume filesystem could not be mapped')
             _, device, filesystem = max(candidates)
             self.evidence.update(volume=mounts[0]['Name'], volume_host_device=device, volume_host_filesystem=filesystem)
+            if self.file == 'pg-load-waits.jsonl':
+                self.cpu = LoadCPUObservation(Path(__file__).resolve().parents[2], container['State'].get('Pid'), identifier)
+                self.evidence.update(cpu_clock_ticks_per_second=os.sysconf('SC_CLK_TCK'), cpu_sample_interval_ms=250)
             self.sample()
             self.thread = threading.Thread(target=self.collect, name='pg-audit-observation', daemon=True)
             self.thread.start()
@@ -307,6 +395,53 @@ def verify_load_audit_windows(result, audits):
         matched.update(selected)
     require(len(matched) == expected, 'read load audit outside measurement windows')
     result['audit_correlation'] = 'cell_time_windows_only_not_individual_requests'
+
+
+def collect_system_load_tail(directory, audits, *, wait_seconds=60):
+    """Match existing redacted System HTTP records after load and rule cleanup."""
+    if not audits or any(not isinstance(row, dict) for row in audits):
+        return {'result': 'not_observed'}
+    expected = {row.get('request_id') for row in audits}
+    if any(not isinstance(value, str) or not re.fullmatch('[a-f0-9-]{36}', value) for value in expected):
+        return {'result': 'not_observed'}
+    directory = directory.resolve()
+    deadline = time.monotonic() + wait_seconds
+    matched, offsets = set(), {}
+    read_bytes = 0
+    reason = 'deadline'
+    try:
+        while True:
+            for path in sorted(directory.glob('*/*.jsonl')):
+                if path.is_symlink() or not path.resolve().is_relative_to(directory):
+                    continue
+                with path.open('rb') as stream:
+                    stream.seek(offsets.get(path, 0))
+                    while len(matched) < len(expected):
+                        raw = stream.readline(512 * 1024 + 1)
+                        read_bytes += len(raw)
+                        if len(raw) > 512 * 1024 or read_bytes > 64 * 1024 * 1024:
+                            raise ValueError('source log read budget exceeded')
+                        if not raw.endswith(b'\n'):
+                            break
+                        offsets[path] = stream.tell()
+                        if b'http.request.completed' not in raw or READ_CHECK.encode() not in raw:
+                            continue
+                        entry = json.loads(raw)
+                        request = entry.get('request_id')
+                        if request not in expected or entry.get('module_name') != 'system' or entry.get('role') != 'backend':
+                            continue
+                        message = json.loads(entry['message'])
+                        if (message.get('request_id'), message.get('msg'), message.get('method'), message.get('route')) == (
+                                request, 'http.request.completed', 'POST', READ_CHECK):
+                            matched.add(request)
+            if matched == expected or time.monotonic() >= deadline:
+                break
+            time.sleep(min(.25, max(0, deadline - time.monotonic())))
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        reason = 'read_failed_or_budget'
+    return {'result': 'matched' if matched == expected else 'incomplete',
+            'expected': len(expected), 'matched': len(matched),
+            'reason': 'all_load_audit_ids' if matched == expected else reason}
 
 
 def require(condition, message):
@@ -2942,6 +3077,12 @@ def main():
                 report.update(result='failed', cleanup='failed')
         if evidence is not None:
             evidence.write_text(json.dumps(report, sort_keys=True) + '\n')
+            load = report.get('authorization_load')
+            if load is not None:
+                audits = load.get('audit_observation', {}).get('audit_rows', [])
+                system_logs = Path(__file__).resolve().parents[2] / 'logs/runtime/system'
+                load['system_log_tail'] = collect_system_load_tail(system_logs, audits)
+                evidence.write_text(json.dumps(report, sort_keys=True) + '\n')
     print(json.dumps(report, sort_keys=True))
     return 0 if report['result'] == 'passed' else 1
 

@@ -293,6 +293,43 @@ class AuditLatencyObservationTest(unittest.TestCase):
         self.assertEqual(sample['cpu_pressure'], documents['/proc/pressure/cpu'])
         self.assertEqual(sample['load_average'], documents['/proc/loadavg'])
 
+    def test_load_cpu_uses_pid_start_identity_and_stat_ticks(self):
+        fields = ['S', '12'] + ['0'] * 18
+        fields[11], fields[12], fields[19] = '55', '13', '9001'
+        with patch.object(Path, 'read_text', return_value='40 (process ) test) ' + ' '.join(fields)):
+            process = ONLINE.process_cpu(40)
+        self.assertEqual(process, {'pid': 40, 'parent_pid': 12, 'user_ticks': 55,
+                                   'system_ticks': 13, 'start_ticks': 9001})
+        observer = ONLINE.LoadCPUObservation.__new__(ONLINE.LoadCPUObservation)
+        observer.processes, observer.postgres = {'system': process, 'system_capture': None}, None
+        with patch.object(ONLINE, 'process_cpu', return_value={**process, 'user_ticks': 65}):
+            self.assertEqual(observer.sample()['processes']['system']['user_ticks'], 65)
+        with patch.object(ONLINE, 'process_cpu', return_value={**process, 'start_ticks': 9002}):
+            self.assertEqual(observer.sample()['processes'], {'system': None, 'system_capture': None})
+
+    def test_system_tail_requires_exact_audit_id_and_main_post(self):
+        request = 'a' * 36
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            instance = root / 'instance'
+            instance.mkdir()
+            path = instance / '1.jsonl'
+            message = {'request_id': request, 'msg': 'http.request.completed', 'method': 'GET',
+                       'route': ONLINE.READ_CHECK, 'private': 'must not be projected'}
+            entry = {'module_name': 'system', 'role': 'backend', 'request_id': request,
+                     'message': json.dumps(message)}
+            path.write_text(json.dumps(entry) + '\n')
+            audits = [{'request_id': request}]
+            self.assertEqual(ONLINE.collect_system_load_tail(root, audits, wait_seconds=0),
+                             {'result': 'incomplete', 'expected': 1, 'matched': 0, 'reason': 'deadline'})
+            entry['message'] = json.dumps({**message, 'method': 'POST'})
+            def publish_tail(_):
+                with path.open('a') as stream:
+                    stream.write(json.dumps(entry) + '\n')
+            with patch.object(ONLINE.time, 'sleep', side_effect=publish_tail):
+                self.assertEqual(ONLINE.collect_system_load_tail(root, audits),
+                                 {'result': 'matched', 'expected': 1, 'matched': 1, 'reason': 'all_load_audit_ids'})
+
     def test_read_only_session_ownership_settings_and_cleanup(self):
         class Process:
             def __init__(self):
