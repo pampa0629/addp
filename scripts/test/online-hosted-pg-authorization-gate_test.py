@@ -31,12 +31,13 @@ class PGSourcePinWorkflowTest(unittest.TestCase):
         return subprocess.check_output(['git', '-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid',
                                         *args], cwd=self.repository, text=True).strip()
 
-    def guard(self, name, selected, dispatch=None):
+    def guard(self, name, selected, dispatch=None, *, comparison=False):
         step = re.search(r'      - name: ' + re.escape(name) + r'\n(.*?)(?=\n      - name:|\Z)', self.job, re.S)
         self.assertIsNotNone(step, 'missing source pin admission step')
         body = step.group(1).split('        run: |\n', 1)[1]
         return subprocess.run(['bash', '-eu', '-o', 'pipefail', '-c', textwrap.dedent(body)], cwd=self.repository,
-            env=dict(os.environ, PG_SOURCE_COMMIT=selected, PG_DISPATCH_COMMIT=dispatch or self.dispatch),
+            env=dict(os.environ, PG_SOURCE_COMMIT=selected, PG_DISPATCH_COMMIT=dispatch or self.dispatch,
+                     PG_CPU_COMPARISON=str(comparison).lower()),
             capture_output=True, text=True, timeout=5)
 
     def test_pin_format_is_validated_before_checkout_without_expression_execution(self):
@@ -59,6 +60,23 @@ class PGSourcePinWorkflowTest(unittest.TestCase):
         self.assertNotEqual(self.guard('Verify PG source ancestry', self.foreign).returncode, 0)
         self.git('checkout', '-q', '--detach', self.dispatch)
         self.assertNotEqual(self.guard('Verify PG source ancestry', self.dispatch, self.ancestor).returncode, 0)
+
+
+    def test_cpu_comparison_requires_support_in_the_pinned_source_and_keeps_both_arms_in_one_job(self):
+        self.assertNotEqual(self.guard('Verify PG source ancestry', '', comparison=True).returncode, 0)
+        gate = self.repository / 'scripts/test' / SCRIPT.name
+        gate.parent.mkdir(parents=True)
+        shutil.copy2(SCRIPT, gate)
+        self.git('add', '.')
+        self.git('commit', '-qm', 'PG CPU comparison support')
+        self.dispatch = self.git('rev-parse', 'HEAD')
+        self.assertEqual(self.guard('Verify PG source ancestry', '', comparison=True).returncode, 0)
+        self.assertIn("ADDP_ONLINE_PG_CPU_ARM: ${{ inputs.pg_cpu_comparison && '4' || '' }}", self.job)
+        self.assertIn("if: inputs.pg_cpu_comparison", self.job)
+        self.assertIn("ADDP_ONLINE_PG_CPU_ARM: '3'", self.job)
+        self.assertIn('git checkout --detach "$selected"', self.job)
+        self.assertIn('/addp-online-${{ github.run_id }}-cpu3/', self.job)
+        self.assertIn('/addp-pg-cpu3-${{ github.run_id }}/logs/', self.job)
 
 
 class HostedPGAuthorizationTest(unittest.TestCase):
@@ -124,6 +142,77 @@ class HostedPGAuthorizationTest(unittest.TestCase):
         result = self.run_gate(check=True, GITHUB_ACTIONS='false')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.host.trace.exists())
+
+    def simulate_cpu(self):
+        self.host._executable('cat', '''
+            #!/usr/bin/env bash
+            if [ "$*" = /sys/devices/system/cpu/online ]; then
+              echo "$(<"$ADDP_TEST_CPU_STATE")"
+            else
+              exec /bin/cat "$@"
+            fi
+        ''')
+        self.host._executable('sudo', '''
+            #!/usr/bin/env bash
+            if [ "$*" = '-n tee /sys/devices/system/cpu/cpu3/online' ]; then
+              read -r value
+              echo "cpu-write:$value" >> "$ADDP_TEST_GATE_TRACE"
+              [ "$value" != "${ADDP_TEST_CPU_WRITE_FAIL:-}" ] || exit 25
+              case "$value" in
+                0) echo 0-2 > "$ADDP_TEST_CPU_STATE" ;;
+                1) echo 0-3 > "$ADDP_TEST_CPU_STATE" ;;
+                *) exit 26 ;;
+              esac
+            fi
+        ''')
+        self.host._executable('make', '''
+            #!/usr/bin/env bash
+            echo "cpu-at-suite:$(<"$ADDP_TEST_CPU_STATE")" >> "$ADDP_TEST_GATE_TRACE"
+            [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
+        ''')
+        cpu_state = self.host.root / 'cpu-state'
+        cpu_state.write_text('0-3\n')
+        return cpu_state
+
+    def test_cpu_comparison_honors_arm_and_restores_before_infra_cleanup(self):
+        cpu_state = self.simulate_cpu()
+        for arm, expected, suite_fails in (('4', '0-3', False), ('3', '0-2', True)):
+            with self.subTest(arm=arm):
+                self.host.trace.unlink(missing_ok=True)
+                result = self.run_gate(ADDP_ONLINE_PG_CPU_ARM=arm, ADDP_TEST_CPU_STATE=str(cpu_state),
+                                       ADDP_TEST_SUITE_FAIL='1' if suite_fails else '0')
+                self.assertEqual(result.returncode == 0, not suite_fails, result.stderr)
+                trace = self.host.trace.read_text()
+                self.assertIn(f'cpu-at-suite:{expected}', trace)
+                if arm == '3':
+                    self.assertLess(trace.index('cpu-write:0'), trace.index('cpu-at-suite:'))
+                    self.assertLess(trace.index('cpu-at-suite:'), trace.index('cpu-write:1'))
+                    self.assertLess(trace.index('cpu-write:1'), trace.index('infra-down'))
+                else:
+                    self.assertNotIn('cpu-write:', trace)
+                self.assertEqual(cpu_state.read_text(), '0-3\n')
+                self.assertEqual((self.host.artifacts / 'cpu-arm.txt').read_text(),
+                                 f'requested_vcpus={arm}\nbefore=0-3\nduring_start={expected}\n'
+                                 f'during_end={expected}\nafter=0-3\n')
+
+    def test_cpu_comparison_rejects_failed_switch_without_entering_the_suite(self):
+        cpu_state = self.simulate_cpu()
+        result = self.run_gate(ADDP_ONLINE_PG_CPU_ARM='3', ADDP_TEST_CPU_STATE=str(cpu_state),
+                               ADDP_TEST_CPU_WRITE_FAIL='0')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertNotIn('cpu-at-suite:', trace)
+        self.assertIn('infra-down', trace)
+        self.assertEqual(cpu_state.read_text(), '0-3\n')
+
+    def test_cpu_comparison_fails_closed_if_cpu_cannot_be_restored(self):
+        cpu_state = self.simulate_cpu()
+        result = self.run_gate(ADDP_ONLINE_PG_CPU_ARM='3', ADDP_TEST_CPU_STATE=str(cpu_state),
+                               ADDP_TEST_CPU_WRITE_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('PG CPU availability was not restored', result.stderr)
+        self.assertIn('infra-down', self.host.trace.read_text())
+        self.assertIn('after=0-2', (self.host.artifacts / 'cpu-arm.txt').read_text())
 
     def test_requires_security_before_manager_and_in_readiness_scope(self):
         gate = importlib.import_module('scripts.test.online-gate')

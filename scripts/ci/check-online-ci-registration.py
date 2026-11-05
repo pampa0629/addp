@@ -2028,13 +2028,13 @@ def load_workflow_suites(
             "Online T4 workflow must not use the step-only runner context in job-level env"
         )
     artifact_assignment = (
-        "ADDP_ONLINE_ARTIFACT_DIR: "
+        "          ADDP_ONLINE_ARTIFACT_DIR: "
         "${{ runner.temp }}/addp-online-${{ github.run_id }}"
     )
     expected_artifact_assignments = 2 * (
         1 + len(hosted_gates) + len(owner_managed_gates)
     )
-    if text.count(artifact_assignment) != expected_artifact_assignments:
+    if text.splitlines().count(artifact_assignment) != expected_artifact_assignments:
         raise RegistrationError(
             "Online T4 workflow must configure the Runner temp artifact directory "
             "on both lifecycle steps for every Runner profile"
@@ -6824,6 +6824,17 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
         'git merge-base --is-ancestor "$selected" "$PG_DISPATCH_COMMIT"',
     )):
         raise RegistrationError("PG fixed source must validate exact SHA, checkout and dispatch ancestry")
+    if '      pg_cpu_comparison:\n' not in workflow or any(not source_contract_contains(job.group('body'), fragment, repository) for fragment in (
+        "if: inputs.pg_cpu_comparison",
+        "ADDP_ONLINE_PG_CPU_ARM: ${{ inputs.pg_cpu_comparison && '4' || '' }}",
+        "ADDP_ONLINE_PG_CPU_ARM: '3'",
+        'git checkout --detach "$selected"',
+        'ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}-cpu3',
+        'ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}-cpu3',
+        '${{ runner.temp }}/addp-online-${{ github.run_id }}-cpu3/',
+        '${{ runner.temp }}/addp-pg-cpu3-${{ github.run_id }}/logs/',
+    )):
+        raise RegistrationError("PG CPU comparison must pair the fixed source and archive the isolated three-vCPU arm")
     required = {
         "scripts/test/online-hosted-pg-authorization-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite pg-source-authorization',

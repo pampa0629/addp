@@ -145,6 +145,11 @@ on:
         required: false
         type: string
         default: ''
+      pg_cpu_comparison:
+        description: Run the PG authorization CPU comparison on one disposable Runner
+        required: false
+        type: boolean
+        default: false
       quality_case:
         description: Quality acceptance scope (bounded-recovery runs only its new cases)
         required: true
@@ -274,10 +279,15 @@ jobs:
         env:
           PG_SOURCE_COMMIT: ${{ inputs.pg_source_commit }}
           PG_DISPATCH_COMMIT: ${{ github.sha }}
+          PG_CPU_COMPARISON: ${{ inputs.pg_cpu_comparison }}
         run: |
           selected="${PG_SOURCE_COMMIT:-$PG_DISPATCH_COMMIT}"
           [ "$(git rev-parse HEAD)" = "$selected" ] || { echo 'PG source checkout mismatch' >&2; exit 1; }
           git merge-base --is-ancestor "$selected" "$PG_DISPATCH_COMMIT"
+          if [ "${PG_CPU_COMPARISON:-false}" = true ]; then
+            grep -Fxq 'run_pg_cpu_arm() (' scripts/test/online-hosted-pg-authorization-gate.sh ||
+              { echo 'Selected PG source does not support the CPU comparison' >&2; exit 1; }
+          fi
           printf 'PG source commit=%s; dispatch commit=%s\n' "$selected" "$PG_DISPATCH_COMMIT"
 
       - name: Set up Go
@@ -303,7 +313,23 @@ jobs:
         env:
           ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
           ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+          ADDP_ONLINE_PG_CPU_ARM: ${{ inputs.pg_cpu_comparison && '4' || '' }}
         run: bash scripts/test/online-hosted-pg-authorization-gate.sh
+
+      - name: Run paired Hosted PG authorization gate with three vCPUs
+        if: inputs.pg_cpu_comparison
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}-cpu3
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}-cpu3
+          ADDP_ONLINE_PG_CPU_ARM: '3'
+          PG_CPU3_CHECKOUT: ${{ runner.temp }}/addp-pg-cpu3-${{ github.run_id }}
+        run: |
+          selected="$(git rev-parse HEAD)"
+          git clone --shared --no-checkout -- "$GITHUB_WORKSPACE" "$PG_CPU3_CHECKOUT"
+          cd "$PG_CPU3_CHECKOUT"
+          git checkout --detach "$selected"
+          bash scripts/test/online-hosted-pg-authorization-gate.sh --check-only
+          bash scripts/test/online-hosted-pg-authorization-gate.sh
 
       - name: Upload Hosted PG authorization evidence
         if: always()
@@ -312,6 +338,8 @@ jobs:
           name: online-t4-pg-source-authorization-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}-cpu3/
+            ${{ runner.temp }}/addp-pg-cpu3-${{ github.run_id }}/logs/
             logs/
           if-no-files-found: warn
           retention-days: 14
