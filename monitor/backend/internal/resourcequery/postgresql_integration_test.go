@@ -5,7 +5,10 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http/httptrace"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -66,7 +69,7 @@ func TestIntegrationMetricsPostgreSQLSource(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		result, err = c.EngineQuery(context.Background(), p, scope, budget)
+		result, err = queryPostgreSQLSnapshot(t, c, p, scope, budget)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -170,6 +173,29 @@ func TestIntegrationMetricsPostgreSQLSource(t *testing.T) {
 			}
 		}
 	}
+}
+
+func queryPostgreSQLSnapshot(t *testing.T, c *Client, p Plan, scope EngineScope, budget Budget) (Summary, error) {
+	t.Helper()
+	var handshakeTimeout, handshakeFailed atomic.Bool
+	var responses atomic.Int32
+	ctx := httptrace.WithClientTrace(context.Background(), &httptrace.ClientTrace{
+		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
+			if err != nil {
+				handshakeFailed.Store(true)
+				if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+					handshakeTimeout.Store(true)
+				}
+			}
+		},
+		GotFirstResponseByte: func() { responses.Add(1) },
+	})
+	result, err := c.EngineQuery(ctx, p, scope, budget)
+	if err != nil {
+		t.Logf("owned PostgreSQL query transport: tls_failed=%t tls_timeout=%t response_count=%d",
+			handshakeFailed.Load(), handshakeTimeout.Load(), responses.Load())
+	}
+	return result, err
 }
 
 func logPostgreSQLWindowEvidence(t *testing.T, c *Client, scope EngineScope, at time.Time, budget Budget) {

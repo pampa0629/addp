@@ -102,6 +102,14 @@
 
 [Release 40048425338 / job 120741235374](https://github.com/pampa0629/addp/actions/runs/40048425338/job/120741235374) attempt 2，实际 `Verify isolated metrics lifecycle` 成功，准备 51 项及上述真实 PG／mTLS／查询全部执行，输入及断言未改。通过及首失败原件分别见 `/tmp/addp-ci-20261024-020017/`、`/tmp/addp-ci-20261024-013016/`。范围只到固定版本 PG 来源 T2，七天留存、容量、新 Online T4 未覆盖。
 
+### 采集分组改名后的 PostgreSQL 查询与来源复验（2026-11-05）
+
+改名后本机 `postgres-source` 首次在专业查询约 3 秒处返回 `resource query backend unavailable`。同期 Prometheus 记录 TLS 握手 EOF，缺少请求级对应证据，不能确认首败根因。只在隔离 Go 查询测试记录失败时的 TLS 失败／超时布尔值和收到首响应字节的次数，保留原查询、TLS、样本要求与超时。首次加诊断复跑在独立启停夹具 10 秒超时处退出，未进入实源。
+
+第二次执行 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`，138 项配置和 27 项生命周期用例通过。十二项专业指标、摘要、当前容器趋势、统计重置留空、SQL 失效与新样恢复均通过。Infra／Business 的原生认证、mTLS、来源启停及同容器重启后的恢复也通过。原查询错误此次未复现。
+
+完整 T2 仍在 Docker Desktop 只读共享目录前置失败。宿主原子替换的 inode 与内容均已更新，容器首次读取返回 1，HBA 两侧原内容均未变化。随后同进程目录枚举只立即恢复被枚举一侧，较后两侧均读到新内容，原 HBA 正向验收仍未进入。精确核对项目 `addp-metrics-t2-78b65bfe1256402fa4bdeda8235409d1` 的容器、网络和卷均为零。Monitor Go 门禁和仓库 T2 登记检查通过。原件 `/tmp/addp-metrics-fixed-group-postgres-t2.log`、`/tmp/addp-postgres-source-query-transport-20261105.log`、`/tmp/addp-postgres-source-query-transport-full-20261105.log`。CI 与 Hosted 等专门会话回传。
+
 ### 观测身份投影 PostgreSQL 断言误报修复（2026-10-23）
 
 CI `39775896930`／System IAM Job `119824550350` 的原始失败是 `private field leaked: 5433`。旧用例对整个 JSON 搜索端口数字，允许投影的随机 UUID 同样可能命中；原 CI 没有保存当次完整快照，不能还原具体命中的身份。将测试主机固定为合法 UUID `54330000-0000-4000-8000-000000000001`，沿标准 PostgreSQL 入口稳定复现相同误报。现改为解码 JSON 后比较完整预期结构和字段值，包括节点、进程、引擎、来源键及无专业来源时的 `metrics.state=unavailable`；任何额外字段仍拒绝，不删除私有字段的否定验证，不修改产品代码、IAM、投影或授权范围。
