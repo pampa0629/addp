@@ -9870,9 +9870,7 @@ def test_vertex_extraction_t4_three_saves_seven_refusals_and_independent_ogr(tmp
     for kind,name in zip(fixture.VERTICES_KINDS,fixture.VERTICES_SOURCES):
         fixture.verify_vertices(root/name,kind)
         sources.append(get_operator('load')(connection_info=connection,path=name))
-    unknown=sources[-1].crs
-    assert unknown is not None and unknown.is_engineering and unknown.to_authority() is None
-    assert not unknown.is_geographic and not unknown.is_projected
+    assert sources[-1].crs is None
     workflow=owner.vertices_definition(list(fixture.VERTICES_SOURCES),'unused')
     for task in workflow['tasks']:
         if task['operator']=='load':task['params']={'connection_info':connection,'path':task['params']['locator']}

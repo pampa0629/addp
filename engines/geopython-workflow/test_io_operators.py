@@ -409,6 +409,55 @@ def _native_geometry_identity_source(path,fmt,empty=False,null_geometry=False):
     layer=ds=None
 
 
+@pytest.mark.parametrize("first_srs,second_srs", [(0, 4326), (-1, 4326), (4326, 0), ("custom", 0)])
+def test_load_gpkg_resolves_crs_from_selected_layer_registration(tmp_path, first_srs, second_srs):
+    import sqlite3
+    from pyproj import CRS
+
+    path = tmp_path / "source #登记.gpkg"
+    custom_wkt = ('GEOGCS["Custom geographic test",DATUM["Custom datum",'
+                  'SPHEROID["Custom sphere",6370997,0]],PRIMEM["Greenwich",0],'
+                  'UNIT["degree",0.0174532925199433]]')
+    ds = ogr.GetDriverByName("GPKG").CreateDataSource(str(path))
+    for name, srid in [("z_first", first_srs), ("a_second", second_srs)]:
+        srs = osr.SpatialReference()
+        if srid == "custom":
+            assert srs.ImportFromWkt(custom_wkt) == 0
+        else:
+            assert srs.ImportFromEPSG(4326) == 0
+        layer = ds.CreateLayer(name, srs, ogr.wkbPoint, options=["GEOMETRY_NAME=real_shape"])
+        assert layer.CreateField(ogr.FieldDefn("record_id", ogr.OFTInteger64)) == 0
+        row = ogr.Feature(layer.GetLayerDefn())
+        row.SetField("record_id", 2**53 + (1 if name == "z_first" else 3))
+        row.SetGeometry(ogr.CreateGeometryFromWkt("POINT (1 2)"))
+        assert layer.CreateFeature(row) == 0
+        row = layer = None
+        if srid in (0, -1):
+            ds.ExecuteSQL(f'UPDATE "{name}" SET real_shape=SetSRID(real_shape,{srid})', dialect="SQLITE")
+            ds.ExecuteSQL(f"UPDATE gpkg_geometry_columns SET srs_id={srid} WHERE table_name='{name}'", dialect="SQLITE")
+            ds.ExecuteSQL(f"UPDATE gpkg_contents SET srs_id={srid} WHERE table_name='{name}'", dialect="SQLITE")
+    ds = None
+    before = path.read_bytes()
+    with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
+        for name, srid in [("z_first", first_srs), ("a_second", second_srs)]:
+            registered, = db.execute("SELECT srs_id FROM gpkg_geometry_columns WHERE table_name=? AND column_name='real_shape'", (name,)).fetchone()
+            blob, = db.execute(f'SELECT real_shape FROM "{name}"').fetchone()
+            assert int.from_bytes(blob[4:8], "little" if blob[3] & 1 else "big", signed=True) == registered
+            assert registered not in (0, -1, 4326) if srid == "custom" else registered == srid
+
+    loaded = _load_local(path)
+    assert loaded.geometry.name == "real_shape" and loaded.geometry.iloc[0].wkt == "POINT (1 2)"
+    assert loaded.record_id.dtype == "Int64" and loaded.record_id.tolist() == [2**53 + 1]
+    if first_srs in (0, -1):
+        assert loaded.crs is None
+    elif first_srs == "custom":
+        assert loaded.crs.to_authority() is None
+        assert loaded.crs.equals(CRS.from_wkt(custom_wkt), ignore_axis_order=True)
+    else:
+        assert loaded.crs.to_epsg() == 4326
+    assert path.read_bytes() == before
+
+
 @pytest.mark.parametrize("fmt",["gpkg","shp","geojson","kml","gml","fgb"])
 def test_load_spatial_geometry_identity_keeps_real_geometry_and_every_business_field(tmp_path,fmt):
     import pyogrio
@@ -476,7 +525,7 @@ def test_load_spatial_geometry_identity_rejects_ambiguous_or_conflicting_schema(
     else:request=""
     table=pa.Table.from_arrays(values,schema=pa.schema(fields))
     monkeypatch.setattr(pyogrio,"read_arrow",lambda *a,**kw:(meta,table))
-    with pytest.raises(ValueError):io_operators._read_file("file.gpkg","gpkg",request)
+    with pytest.raises(ValueError):io_operators._read_file("file.fgb","fgb",request)
 
 
 @pytest.mark.parametrize("extension",[b"geoarrow.wkb",b"ogc.wkb"])
@@ -485,7 +534,7 @@ def test_load_spatial_geometry_identity_geometry_marker_is_not_a_column_name_gue
     table=pa.Table.from_arrays([pa.array([b"ordinary blob"]),pa.array(["business"]),pa.array([shapely.Point(1,2).wkb])],schema=pa.schema([
         pa.field("wkb_geometry",pa.binary()),pa.field("geometry",pa.string()),pa.field("real_shape",pa.binary(),metadata={b"ARROW:extension:name":extension})]))
     monkeypatch.setattr(pyogrio,"read_arrow",lambda *a,**kw:({"crs":None,"geometry_name":"real_shape","geometry_type":"Point"},table))
-    loaded=io_operators._read_file("file.gpkg","gpkg")
+    loaded=io_operators._read_file("file.fgb","fgb")
     assert loaded.geometry.name=="real_shape" and loaded["geometry"].tolist()==["business"] and loaded["wkb_geometry"].tolist()==[b"ordinary blob"]
     assert loaded.geometry.iloc[0].wkt=="POINT (1 2)" and loaded.crs is None
 
@@ -511,7 +560,7 @@ def test_load_spatial_geometry_identity_invalid_wkb_fails_without_ignoring(monke
     import pyogrio,shapely
     table=pa.Table.from_arrays([pa.array([b"invalid WKB"])],schema=pa.schema([pa.field("shape",pa.binary(),metadata={b"ARROW:extension:name":b"geoarrow.wkb"})]))
     monkeypatch.setattr(pyogrio,"read_arrow",lambda *a,**kw:({"geometry_name":"shape","geometry_type":"Point","crs":None},table))
-    with pytest.raises(shapely.errors.GEOSException):io_operators._read_file("file.gpkg","gpkg")
+    with pytest.raises(shapely.errors.GEOSException):io_operators._read_file("file.fgb","fgb")
     assert table.column("shape").to_pylist()==[b"invalid WKB"]
 
 
@@ -614,7 +663,7 @@ def test_load_spatial_geometry_identity_read_failure_has_no_alternate_reader(mon
     monkeypatch.setattr(pyogrio,"read_arrow",read)
     monkeypatch.setattr(pyogrio,"read_dataframe",forbidden)
     monkeypatch.setattr(gpd,"read_file",forbidden)
-    with pytest.raises(RuntimeError,match="original Arrow read failure"):io_operators._read_file("file.gpkg","gpkg")
+    with pytest.raises(RuntimeError,match="original Arrow read failure"):io_operators._read_file("file.fgb","fgb")
     assert calls==[1]
 
 

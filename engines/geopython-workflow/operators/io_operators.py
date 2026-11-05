@@ -7,7 +7,9 @@ I/O 算子模块
 
 import logging
 import os
+import sqlite3
 import tempfile
+from contextlib import closing
 from pathlib import Path
 import pandas as pd
 import geopandas as gpd
@@ -51,10 +53,29 @@ def _map_loopback_host(host: str) -> str:
         return shared_host
     return host
 
+def _geopackage_crs(path: str, layer: str, geometry: str, reader_crs):
+    """Use the registered geometry's SRS identity, not synthetic driver WKT."""
+    uri = Path(path).resolve().as_uri() + "?mode=ro"
+    with closing(sqlite3.connect(uri, uri=True)) as db:
+        registered = db.execute(
+            "SELECT srs_id FROM gpkg_geometry_columns WHERE table_name=? AND column_name=?",
+            (layer, geometry),
+        ).fetchone()
+    if registered is None:
+        raise ValueError("GeoPackage geometry column is not registered for the selected layer")
+    return None if registered[0] in (0, -1) else reader_crs
+
+
 def _read_file(full_path: str, fmt: str, geom_column: str = None):
     """根据格式读取文件，返回 DataFrame 或 GeoDataFrame"""
     if fmt in _SPATIAL_FORMATS:
-        metadata, table = pyogrio.read_arrow(full_path)
+        layer = None
+        if fmt == 'gpkg':
+            layers = pyogrio.list_layers(full_path)
+            if not len(layers):
+                raise ValueError("GeoPackage has no readable layer")
+            layer = layers[0, 0]
+        metadata, table = pyogrio.read_arrow(full_path, layer=layer)
         if len(set(table.column_names)) != len(table.column_names):
             raise ValueError("spatial file requires unique field names")
         if geom_column is not None and (not isinstance(geom_column, str) or not geom_column.strip()):
@@ -77,12 +98,16 @@ def _read_file(full_path: str, fmt: str, geom_column: str = None):
         if output_name != geometry_field and output_name in table.column_names:
             raise ValueError("geometry field name conflicts with a source business field")
 
+        crs = metadata.get('crs')
+        if fmt == 'gpkg':
+            crs = _geopackage_crs(full_path, layer, geometry_field, crs)
+
         # Bypass read_dataframe's forced df['geometry'] assignment. Decode only
         # the tagged geometry field, preserving every scalar attribute and name.
         frame = table.to_pandas(types_mapper=_NULLABLE_ARROW_TYPES.get)
         del table
         frame[geometry_field] = gpd.GeoSeries.from_wkb(
-            frame[geometry_field].to_numpy(na_value=None), index=frame.index, crs=metadata.get('crs'))
+            frame[geometry_field].to_numpy(na_value=None), index=frame.index, crs=crs)
         if output_name != geometry_field:
             frame = frame.rename(columns={geometry_field: output_name})
         return gpd.GeoDataFrame(frame, geometry=output_name)
