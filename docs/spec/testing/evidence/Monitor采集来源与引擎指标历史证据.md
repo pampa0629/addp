@@ -831,4 +831,6 @@ CI会话回传固定`7d8ad061e`的两项后续阻断，不能与此前六项夹�
 
 新增反例先沿 `make test-node-metrics-recovery` 失败（`/tmp/addp-node-dns-proof-red-20261105.log`），保留双向空表示、逐字段和三字段共同变化／证明inode与mtime及内容不变断言，以及非空／缺失／非法类型／非DNS空字段变化拒绝。修复后 `make test-metrics-sources test-t2-ci-registration` 通过57项来源及80项登记／9项runner和实际登记检查，日志 `/tmp/addp-node-dns-proof-final-20261105.log`。`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=node-recovery` 独占实源T2退出0，验证健康不动、采样器单独恢复／全部恢复、丢失回执清理、mTLS及原漂移／缺源／停用证明拒绝，容器／网络／卷和私有状态均清零，日志 `/tmp/addp-node-dns-proof-t2-20261105.log`。
 
-个人环境仅再次只读比较，修复后规范化安装事实完全一致、来源正在运行，证明内容／inode／mtime未变；收据 `/tmp/addp-node-dns-proof-readonly-fixed-20261105.json`。未执行个人recover/up、重启或改写证明，尚未把用户下次真实全量启动计为通过；CI／Hosted等专门会话回传，沿现有node-recovery标准入口及Metrics自动选择，不新建门禁或定时。
+个人环境先进行只读比较。修复后规范化安装事实完全一致，来源正在运行，证明内容、inode 和 mtime 均未变。收据见 `/tmp/addp-node-dns-proof-readonly-fixed-20261105.json`。
+
+修复 `ca6c675ad` 推送后，用户在本机执行 `python3 scripts/infra/metrics-sources.py recover --scope host --kind node` 并确认成功。本次验收覆盖主机来源的单项恢复命令。完整 `restart.sh -all` 仍待下次实际执行时复验，CI／Hosted 等专门会话回传。
