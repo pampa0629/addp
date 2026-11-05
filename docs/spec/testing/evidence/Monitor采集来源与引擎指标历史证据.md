@@ -822,3 +822,13 @@ CI会话回传固定`7d8ad061e`的两项后续阻断，不能与此前六项夹�
 修复限定为归因：保留原预检短路顺序和继续启动／非零结果，以本次进程内的固定阶段名称记录各失败，末尾分别列出前序失败和摘要自身失败，提示历史阶段结果不等同于当前仍采集失败。当前正常不清除原失败，阶段名称不含原始错误、地址或凭据，不持久化或自动重试。规范先修订；无新增概念、权限、API、依赖或CI入口，既有Platform／Metrics输入登记覆盖修改脚本与原测试。
 
 验证分层保留：新阶段断言实现前沿 `make test-metrics-sources` 失败，日志 `/tmp/addp-startup-warning-stage-red-20261105.log`；实现后首轮同入口在原五秒假命令接线测试超时，日志 `/tmp/addp-startup-warning-stage-final-20261105.log`，未改预算；完整开发门禁退出2，在未修改的GDAL并发准备测试30秒超时，尚未进入后续开发生命周期，日志 `/tmp/addp-startup-warning-dev-final-20261105.log`，不计完整通过，也未归因为休眠。该并行运行结束后，串行 `make test-metrics-sources` 55项退出0，日志 `/tmp/addp-startup-warning-stage-serial-20261105.log`；受影响的标准脚本 `bash scripts/test/dev-lifecycle-and-build.sh` 退出0，覆盖原有真实临时进程／监听、完整与局部重启、配置失败／健康复用阶段归因，日志 `/tmp/addp-startup-warning-shell-final-20261105.log`。语法及本批diff检查通过；不以子项通过替代完整门禁，CI／Hosted仍等专门会话回传。
+
+### 主机恢复的空DNS表示差异误拒绝（2026-11-05）
+
+用户补充原输出确认：Step1核心健康，主机恢复报node-installation-changed，三个已启用引擎来源均健康未重建。只读比较原私有安装证明与当前Docker快照，输入完整相同，容器／镜像／挂载／网络及其他HostConfig无差异；仅node-exporter的HostConfig.Dns、DnsOptions、DnsSearch从证明中的null变为当前空数组。Docker服务端28.5.1；其[Moby网络配置](https://github.com/moby/moby/blob/v28.5.1/daemon/container_operations.go#L63-L76)仅在对应列表长度大于0时使用容器覆盖，因此此次为事实比较误拒绝，未发现真实DNS或安全配置变更，亦未证明Docker何时转换表示。原只读差异收据 `/tmp/addp-node-recovery-proof-diff-20261105.json`。
+
+规范先明确唯一规范化比较，再仅对三个已存在字段的null转空数组；快照、证明内存比较及原清理身份比较沿同一路径，不修改私有证明、不采用未知身份。非空值、字段缺失、非法类型、CapAdd等其他字段及容器／输入／卷变化继续拒绝。原证明无须重新应用，原schema／字段不增加兼容分支。
+
+新增反例先沿 `make test-node-metrics-recovery` 失败（`/tmp/addp-node-dns-proof-red-20261105.log`），保留双向空表示、逐字段和三字段共同变化／证明inode与mtime及内容不变断言，以及非空／缺失／非法类型／非DNS空字段变化拒绝。修复后 `make test-metrics-sources test-t2-ci-registration` 通过57项来源及80项登记／9项runner和实际登记检查，日志 `/tmp/addp-node-dns-proof-final-20261105.log`。`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=node-recovery` 独占实源T2退出0，验证健康不动、采样器单独恢复／全部恢复、丢失回执清理、mTLS及原漂移／缺源／停用证明拒绝，容器／网络／卷和私有状态均清零，日志 `/tmp/addp-node-dns-proof-t2-20261105.log`。
+
+个人环境仅再次只读比较，修复后规范化安装事实完全一致、来源正在运行，证明内容／inode／mtime未变；收据 `/tmp/addp-node-dns-proof-readonly-fixed-20261105.json`。未执行个人recover/up、重启或改写证明，尚未把用户下次真实全量启动计为通过；CI／Hosted等专门会话回传，沿现有node-recovery标准入口及Metrics自动选择，不新建门禁或定时。

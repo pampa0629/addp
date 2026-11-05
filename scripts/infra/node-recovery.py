@@ -70,8 +70,24 @@ def containers(docker, project):
     return result
 
 
+def canonical_containers(items):
+    result = {}
+    for name,item in items.items():
+        if not isinstance(item,dict) or not isinstance(item.get('host'),dict):
+            result[name] = item
+            continue
+        host = dict(item['host'])
+        # Moby applies these overrides only when len > 0. Preserve missing keys,
+        # nonempty values, invalid types and every other HostConfig field exactly.
+        for field in ('Dns','DnsOptions','DnsSearch'):
+            if field in host and host[field] is None:
+                host[field] = []
+        result[name] = dict(item,host=host)
+    return result
+
+
 def stable(items):
-    return {name:{k:v for k,v in item.items() if k!='running'} for name,item in items.items()}
+    return canonical_containers({name:{k:v for k,v in item.items() if k!='running'} for name,item in items.items()})
 
 
 def volume(docker,project):
@@ -109,6 +125,8 @@ def recover(docker,project,env,signature,path):
         if isinstance(saved,dict) and saved.get('enabled') is False:
             raise rejected('Node recovery installation is disabled', 'node-proof-disabled')
         raise rejected('Node recovery installation proof invalid', 'node-proof-invalid')
+    if isinstance(saved.get('containers'),dict):
+        saved = dict(saved,containers=canonical_containers(saved['containers']))
     inputs = signature(env,docker)
     desired,items = snapshot(docker,project,inputs)
     if saved != dict(desired,enabled=True):

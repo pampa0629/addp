@@ -80,6 +80,46 @@ class NodeRecoveryTest(unittest.TestCase):
         self.manage('recover')
         self.assertEqual(self.mutations(),[['start','block-capacity-identity'],['start','node-exporter-identity']])
 
+    def test_empty_dns_representations_preserve_identity_and_proof(self):
+        fields=('Dns','DnsOptions','DnsSearch')
+        original=copy.deepcopy(self.items)
+        for selected in [(name,) for name in fields]+[fields]:
+            for saved_value,current_value in ((None,[]),([],None)):
+                with self.subTest(fields=selected,saved=saved_value,current=current_value):
+                    self.items=copy.deepcopy(original)
+                    self.items['node-exporter']['host'].update({name:None for name in fields})
+                    self.manage('up');path=self.folder/'installation.json'
+                    document=json.loads(path.read_text())
+                    for name in selected:document['containers']['node-exporter']['host'][name]=saved_value
+                    M.write(path,document)
+                    before=(path.read_bytes(),path.stat().st_ino,path.stat().st_mtime_ns)
+                    for name in selected:self.items['node-exporter']['host'][name]=current_value
+                    self.commands.clear()
+                    self.assertIn('healthy; source unchanged',self.manage('recover'))
+                    self.assertEqual(self.mutations(),[])
+                    self.assertEqual(before,(path.read_bytes(),path.stat().st_ino,path.stat().st_mtime_ns))
+                    self.assertEqual(self.items['node-exporter']['host'][selected[0]],current_value)
+
+    def test_dns_normalization_keeps_real_changes_and_missing_fields_rejected(self):
+        original=copy.deepcopy(self.items)
+        for field in ('Dns','DnsOptions','DnsSearch','CapAdd'):
+            for changed in (['nonempty'],False,{},'',0,'missing'):
+                with self.subTest(field=field,changed=changed):
+                    self.items=copy.deepcopy(original)
+                    self.items['node-exporter']['host'][field]=None
+                    self.manage('up')
+                    if changed=='missing':self.items['node-exporter']['host'].pop(field)
+                    else:self.items['node-exporter']['host'][field]=changed
+                    self.commands.clear()
+                    with self.assertRaises(ValueError) as result:self.manage('recover')
+                    self.assertEqual(result.exception.node_recovery_reason,'node-installation-changed')
+                    self.assertEqual(self.mutations(),[])
+        self.items=copy.deepcopy(original)
+        self.items['node-exporter']['host']['CapAdd']=None;self.manage('up')
+        self.items['node-exporter']['host']['CapAdd']=[];self.commands.clear()
+        with self.assertRaises(ValueError):self.manage('recover')
+        self.assertEqual(self.mutations(),[])
+
     def test_absent_disabled_or_retired_proof_never_adopts(self):
         with self.assertRaisesRegex(ValueError,'proof missing') as result: self.manage('recover')
         self.assertEqual(result.exception.node_recovery_reason,'node-proof-missing')
