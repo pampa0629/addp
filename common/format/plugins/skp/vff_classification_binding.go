@@ -274,23 +274,59 @@ func (b *vffSKCBinder) expand(n *vffXMLNode, via []vffSKCDeclarationWitness, dep
 			}
 			fields = append(fields, local...)
 		case "complexContent":
-			if len(child.children) != 1 || child.children[0].name.Local != "extension" {
+			if len(child.children) != 1 {
 				b.issues = append(b.issues, "unsupported complex content derivation")
 				continue
 			}
-			extension := child.children[0]
-			base, err := b.lookup(extension, extension.attrs["base"], "complexType")
+			derivation := child.children[0]
+			restricted := derivation.name.Local == "restriction"
+			if restricted {
+				ok, err := b.particleOnlyRestriction(child, derivation, depth)
+				if err != nil {
+					return nil, err
+				}
+				if !ok {
+					b.issues = append(b.issues, "unsupported complex content restriction shape")
+					continue
+				}
+			} else if derivation.name.Local != "extension" {
+				b.issues = append(b.issues, "unsupported complex content derivation")
+				continue
+			}
+			base, err := b.lookup(derivation, derivation.attrs["base"], "complexType")
 			if err != nil {
 				return nil, err
 			}
 			if base != nil {
+				groupStart := len(b.groupUses)
 				inherited, err := b.expand(base, via, depth+1)
 				if err != nil {
 					return nil, err
 				}
-				fields = append(fields, inherited...)
+				if restricted {
+					for _, field := range inherited {
+						if err := b.tick(depth); err != nil {
+							return nil, err
+						}
+						if field.declaration.kind == "attribute" {
+							fields = append(fields, field)
+						}
+					}
+					groups := b.groupUses[:groupStart]
+					for _, use := range b.groupUses[groupStart:] {
+						if err := b.tick(depth); err != nil {
+							return nil, err
+						}
+						if use.declaration.kind == "attributeGroup" {
+							groups = append(groups, use)
+						}
+					}
+					b.groupUses = groups
+				} else {
+					fields = append(fields, inherited...)
+				}
 			}
-			local, err := b.expand(extension, via, depth+1)
+			local, err := b.expand(derivation, via, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -368,6 +404,47 @@ func (b *vffSKCBinder) expand(n *vffXMLNode, via []vffSKCDeclarationWitness, dep
 		}
 	}
 	return fields, nil
+}
+
+func (b *vffSKCBinder) particleOnlyRestriction(content, restriction *vffXMLNode, depth int) (bool, error) {
+	if content.parent.name.Local != "complexType" || strings.TrimSpace(content.text) != "" || strings.TrimSpace(restriction.text) != "" {
+		return false, nil
+	}
+	if mixed, declared := content.parent.attrs["mixed"]; declared && mixed != "false" && mixed != "0" {
+		return false, nil
+	}
+	for _, sibling := range content.parent.children {
+		if err := b.tick(depth); err != nil {
+			return false, err
+		}
+		if sibling != content && sibling.name.Local != "annotation" {
+			return false, nil
+		}
+	}
+	for name := range content.attrs {
+		if name != "id" {
+			return false, nil
+		}
+	}
+	for name := range restriction.attrs {
+		if name != "id" && name != "base" {
+			return false, nil
+		}
+	}
+	seenSequence := false
+	for _, child := range restriction.children {
+		if err := b.tick(depth); err != nil {
+			return false, err
+		}
+		if child.name.Local == "annotation" {
+			continue
+		}
+		if child.name.Local != "sequence" || seenSequence {
+			return false, nil
+		}
+		seenSequence = true
+	}
+	return true, nil
 }
 
 func (b *vffSKCBinder) expandSimpleContent(content *vffXMLNode, via []vffSKCDeclarationWitness, depth int) ([]vffSKCFieldCandidate, error) {

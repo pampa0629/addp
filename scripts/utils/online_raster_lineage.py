@@ -31,7 +31,7 @@ SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persist
     'raster-line-kernel-density-persistence': 'raster-line-kernel-density-lineage',
     'raster-point-kernel-density-persistence': 'raster-point-kernel-density-lineage',
     'raster-point-density-weighted-persistence': 'raster-point-density-weighted-lineage',
-    'raster-focal-percentiles-persistence': 'raster-focal-percentiles-lineage', 'vector-zonal-weighted-persistence': 'vector-zonal-weighted-lineage', 'vector-zonal-weighted-stddev-persistence': 'vector-zonal-weighted-stddev-lineage', 'vector-zonal-area-weighted-persistence': 'vector-zonal-area-weighted-lineage', 'vector-zonal-area-weighted-stddev-persistence': 'vector-zonal-area-weighted-stddev-lineage'}
+    'raster-focal-percentiles-persistence': 'raster-focal-percentiles-lineage', 'raster-focal-square-seven-persistence': 'raster-focal-square-seven-lineage', 'vector-zonal-weighted-persistence': 'vector-zonal-weighted-lineage', 'vector-zonal-weighted-stddev-persistence': 'vector-zonal-weighted-stddev-lineage', 'vector-zonal-area-weighted-persistence': 'vector-zonal-area-weighted-lineage', 'vector-zonal-area-weighted-stddev-persistence': 'vector-zonal-area-weighted-stddev-lineage'}
 RECEIPT = 'raster-lineage-owner.json'
 FIELDS = {'schema_version', 'inputs', 'outputs', 'operations'}
 
