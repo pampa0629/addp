@@ -104,33 +104,36 @@
 
 ## Redis 必填认证与 MinIO 隔离构建闭包修复（2026-11-01）
 
-专门会话移交 [Infra MinIO run41298861954／fixed-source job124825429970](https://github.com/pampa0629/addp/actions/runs/41298861954/job/124825429970)，源 `4803bb7221f4dc505aea8dba8b097469c47ecc0a`。原始日志 `/tmp/addp-ci-20261101-200009/job-124825429970.log` 的固定检出SHA一致；650—665行表明builder已构建成功，正式Infra Compose的MinIO build随后在完整模型插值时拒绝未提供的REDIS_PASSWORD，cache-save跳过。不是镜像拉取、缓存淘汰或可盲重试的瞬时错误。
+[MinIO Job 124825429970](https://github.com/pampa0629/addp/actions/runs/41298861954/job/124825429970) 固定 `4803bb7221f4dc505aea8dba8b097469c47ecc0a`。原日志 `/tmp/addp-ci-20261101-200009/job-124825429970.log` 第 650—665 行显示 builder 构建通过，随后正式 Infra Compose 的 MinIO build 在插值阶段因缺 `REDIS_PASSWORD` 失败，cache-save 跳过。
 
-唯一修复沿既有minio-build-cache.py执行入口：每次Compose子进程为INFRA_FALKORDB_PASSWORD和REDIS_PASSWORD分别生成独立随机、仅解析用途的值，覆盖而不复用继承的部署密码；父环境、正式Redis必填认证和真实Infra Compose构建路线不变，不把随机值加入命令参数或MinIO构建定义。未读取个人.env、安装账号、改镜像／权限、启动数据库、调用keepalive或操作数据卷。
+修复沿 `minio-build-cache.py`，由每个 Compose 子进程独立生成 `INFRA_FALKORDB_PASSWORD` 和 `REDIS_PASSWORD` 的随机解析值。值只供插值，隔离继承的部署密码，保留父环境、正式 Redis 必填认证及原 Compose 构建入口。构建登记同时补齐 `Dockerfile.redis-metrics`，按已有辅助镜像规则校验。
 
-标准 `make test-infra-minio-cache` 红绿验证：修复前新增约束准确捕获REDIS_PASSWORD仍等于继承输入，`/tmp/addp-minio-redis-input-red.log`；修复后最终15项全部通过，`/tmp/addp-minio-redis-input-final.log`。覆盖每次独立值、不沿用父值、父环境不变、命令／输出不含生成值，以及原冷／热缓存、精确输入、二进制一致、损坏与失败传播。
-
-仓库外 `/tmp/addp-minio-compose-input-proof.py` 使用当前真实Infra Compose与其extends YAML副本，清除两个必填输入、显式--env-file /dev/null，经同一execute调用原生 `docker compose config --format json`。修复前准确复现缺少REDIS_PASSWORD（`/tmp/addp-minio-compose-input-red.log`），最终修复后完整模型解析通过、两随机值不同且非空、MinIO build仅保留原context／Dockerfile且不含这些值（`/tmp/addp-minio-compose-input-green.log`）。只解析配置，不连接daemon或执行build／up；临时目录退出删除，完整渲染模型不写日志。验证脚本中Compose警告与JSON分离、macOS路径规范化的两次审计失败未计为通过，最终保留严格同目录与字段断言。
-
-同次执行 `make test-build-registration` 发现既有4803的Dockerfile.redis-metrics未登记，按已有辅助镜像目录精确补登记及文件缺失拒绝用例，没有将任意Dockerfile豁免。新用例先红（`/tmp/addp-redis-observer-build-registration-red.log`），修复后60项登记器测试＋9项选择测试及实际仓库检查全部通过，26个Go服务／Worker与59个产品镜像登记一致（`/tmp/addp-minio-redis-build-registration-final.log`）。构建相关Dockerfile、Makefile、正式workflow没有其他工作区差异。现有Platform T0、MinIO fixed-source workflow的脚本／测试路径触发和缓存key已覆盖本次改动，注册测试同时核验唯一双Runner与精确cache-hit路线；不新增CI Job／Hosted用途，未扩时或放宽缓存断言。
-
-本地已证明输入解析回归及登记缺口修复；没有在macOS伪装GitHub Runner运行完整MinIO冷／热源码构建，也没有查询／重跑旧Job。推送后的唯一自然MinIO构建与新Runner复用仍等专门CI会话回传，不能把T0／原生解析通过计为镜像／cache-save／Hosted成功。此修复独立于未提交的Redis查询与261迁移，不包含其他会话前置迁移或共享功能WIP。
+- **脚本回归**。`make test-infra-minio-cache` 先复现继承 Redis 输入，修正后 15 项通过，覆盖子进程值隔离、参数及输出保密、冷／热缓存和失败传播。日志 `/tmp/addp-minio-redis-input-red.log`、`/tmp/addp-minio-redis-input-final.log`。
+- **原生 Compose 解析**。`/tmp/addp-minio-compose-input-proof.py` 以真实 Compose／extends 副本和 `--env-file /dev/null` 运行 `docker compose config --format json`。修前复现缺变量，修后完整解析、两个值独立且未进入 MinIO 构建定义，临时目录已删除。警告与 JSON 分离、macOS 路径规范化的两次审计失败保留。日志 `/tmp/addp-minio-compose-input-red.log`、`/tmp/addp-minio-compose-input-green.log`。
+- **构建登记**。`make test-build-registration` 的缺文件反例先失败，修后 60 项登记、9 项选择及仓库核查通过，26 个 Go 服务／Worker 与 59 个产品镜像一致。日志 `/tmp/addp-redis-observer-build-registration-red.log`、`/tmp/addp-minio-redis-build-registration-final.log`。
 
 ### 92dcfe06f 的 MinIO Linux 实际构建回传
 
-专门CI会话回传 [run41311505167／fixed-source job124862692691](https://github.com/pampa0629/addp/actions/runs/41311505167/job/124862692691)，push／attempt1，固定 `92dcfe06fdfbaf98884946b76b06aa476472bc5f`，selected=true、completed/success。独立核对 `/tmp/addp-ci-20261101-220010/MinIO-92dc-actual-Linux-proof.json` 与原始日志 `/tmp/addp-ci-20261101-220010/pass-job-124862692691.log`，SHA-256为 `2fbee89b572afbc5f1e3920b1e12723a85d4e4c8a608ab3a1fcb0ad54b5cee13`。日志固定检出一致，builder／正式MinIO Compose构建、离线MinIO和mc二进制摘要及版本、普通Compose缓存核验、inline元数据导出、image save、Actions Cache save和artifact upload均实际执行成功。最终构建回执cache_hit=false、ordinary_compose_cached=true、两个预期镜像身份完整；这是当次冷准备及同Runner暖构建，不是另一次Run恢复命中。
+[MinIO Job 124862692691](https://github.com/pampa0629/addp/actions/runs/41311505167/job/124862692691) 为 push／attempt 1，固定 `92dcfe06fdfbaf98884946b76b06aa476472bc5f`，已选中且实际成功。
 
-关闭旧4803引出的Redis必填插值与MinIO固定源码Linux构建缺口；保留跨Run缓存恢复尚未获得本次证据的边界，不将该单Job扩大为整个workflow、新Runnerreuse、Hosted或当前共享工作区全部通过。
+| 核对项 | 该次结果 |
+| --- | --- |
+| 镜像构建 | builder、正式 Infra Compose 构建、离线 MinIO／mc 二进制版本和摘要、两个预期镜像身份均核对通过。 |
+| 同 Runner 暖构建及缓存保存 | `ordinary_compose_cached=true`。原样 Compose 缓存核验、inline 元数据导出、image save、Actions Cache save 和 artifact upload 均通过。 |
+| 跨运行缓存恢复 | 本次 `cache_hit=false`，只覆盖当次冷准备和同 Runner 暖构建。新 Runner 恢复及业务 Hosted 另行验收。 |
+
+原日志 `/tmp/addp-ci-20261101-220010/pass-job-124862692691.log` 的 SHA-256 为 `2fbee89b572afbc5f1e3920b1e12723a85d4e4c8a608ab3a1fcb0ad54b5cee13`，审计见 `/tmp/addp-ci-20261101-220010/MinIO-92dc-actual-Linux-proof.json`。精确键恢复、镜像身份与热构建判定见 [CI 与交付规范](../CI与交付规范.md#ci-编排与登记)。
 
 ## 独立引擎 CLI 临时树依赖闭包修复（2026-11-01）
 
-同固定92dc自然 [Platform run41311505152／job124862693255](https://github.com/pampa0629/addp/actions/runs/41311505152/job/124862693255) 的 `make test-platform → test-online-runner → test-node-metrics-online-runner` 失败，原始日志 `/tmp/addp-ci-20261101-220010/job-124862693255.log` 记录162项中的两项EngineSourceCommandTest失败：独立engine-up返回1、部分启动失败前缺少owner文件；未打印凭据。不能据外层安全错误猜测生产权限或改宽归属准入。
+[Platform Job 124862693255](https://github.com/pampa0629/addp/actions/runs/41311505152/job/124862693255) 同样固定 `92dcfe06f`。`make test-platform → test-online-runner → test-node-metrics-online-runner` 在 162 项中的两项 `EngineSourceCommandTest` 失败。独立 engine-up 返回 1，部分启动失败用例缺 owner 文件。原日志 `/tmp/addp-ci-20261101-220010/job-124862693255.log`。
 
-标准 `make test-node-metrics-online-runner` 本地复现同两失败，日志 `/tmp/addp-platform-engine-cli-red.log`。有界临时诊断沿原独立CLI树和fake Docker执行，只报告固定阶段／依赖名：认证子进程在加载private-state.py时FileNotFoundError，发生在owner发布前。现有夹具复制了PG认证／生命周期代码，却漏掉4803抽取后的scripts/utils/private-state.py与deployment-docker.py，后者也是退出清理的必需依赖。修复仅在EngineSourceCommandTest的临时树复制这两个真实文件；不改生产CLI、动态加载器、错误脱敏、私有状态、精确所有权、fake Docker、原断言或任何期限，不设置PYTHONPATH兜底。
+本地沿同一入口复现两项失败（`/tmp/addp-platform-engine-cli-red.log`）。临时 CLI 树的认证子进程在发布 owner 前加载 `private-state.py` 时触发 `FileNotFoundError`，该树也漏了退出清理所需的 `deployment-docker.py`。修复提交 `7347b36c808358abc3665419a1b872a0dc8cfafb` 仅补复制这两份 `scripts/utils/` 真实依赖，保留原归属、错误脱敏及清理断言。
 
-初次本地标准聚合还存在系统LibreSSL3.3.6不支持证书-addext参数的六项环境错误，保留失败记录；未改系统配置／测试证书规则。仅为最终测试命令在PATH前置已安装OpenSSL3.6.4，执行 `PATH=/opt/homebrew/opt/openssl@3/bin:$PATH make test-node-metrics-online-runner`，162项及随后System Metrics身份Go夹具全部通过，日志 `/tmp/addp-platform-engine-cli-green.log`。原两项用例保留：无PYTHONPATH的真实新进程CLI启动／重启发现／清理，失败后owner保留、错误run／attempt拒绝、外来service拒绝且不回收，恢复本方事实后零fake资源；未连接个人Docker／数据库。
+- **本地标准聚合**。初轮另有 LibreSSL 3.3.6 缺少 `-addext` 的六项环境错误。最终仅对命令前置 OpenSSL 3.6.4，执行 `PATH=/opt/homebrew/opt/openssl@3/bin:$PATH make test-node-metrics-online-runner`，162 项及 System Metrics 身份 Go 夹具通过。原用例继续验证无 `PYTHONPATH` 启动／重启发现、失败后保留 owner、错误 run／attempt 与外来 service 拒绝且不回收，以及恢复本方归属后清理至零个模拟资源。日志 `/tmp/addp-platform-engine-cli-green.log`。
+- **冻结输入复核**。仓库外仅叠加本项修复，两项 `EngineSourceCommandTest` 在 4.076 秒内通过，退出删除冻结目录。日志 `/tmp/addp-platform-engine-cli-frozen.log`。
 
-另以仓库外冻结HEAD仅叠加该单文件修复，执行同一Python包的EngineSourceCommandTest两项，4.076秒全部通过，日志 `/tmp/addp-platform-engine-cli-frozen.log`，冻结目录退出删除；未依赖未提交Redis查询／261或其他会话WIP。现有标准入口已在Platform T0与Online runner登记并实际覆盖该测试文件和原注册约束，无新增测试入口、权限、CI Job或Hosted用途。差异格式检查通过；新自然Platform终态仍等专门会话回传，本地确定性夹具不计真实Hosted或整套Linux Platform已通过，不重跑旧CI、不设置定时任务或操作个人服务。
+本节只归档 CLI 夹具的本地复验。原 Platform Job 仍为失败，后继自然 Platform 终态及真实 Hosted 结果需要独立证据。
 
 ## 后续本机浏览器三项失败的独立诊断（2026-11-02）
 
