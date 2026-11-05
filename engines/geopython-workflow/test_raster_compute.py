@@ -18141,18 +18141,26 @@ def test_vector_area_stddev_async_full_geopackage_preview_failures_and_cleanup(t
 
 
 # Metre circle: independent centre enumeration; never call the product offset helper.
-def _focal_circle_oracle(values, valid, dx, dy, units, radius, method, percentile=25.):
+def _focal_circle_oracle(values, valid, transform, units, radius, method, percentile=25.):
     from decimal import Decimal, localcontext
     from collections import Counter
     def d(value): return Decimal.from_float(float(value))
     result = np.full(values.shape, np.nan)
     with localcontext() as ctx:
         ctx.prec = 2000
-        xstep, ystep, limit = d(dx)*d(units), d(dy)*d(units), d(radius)**2
+        _, g1, g2, _, g4, g5 = map(d, transform)
+        metres = d(units)
+        limit = d(radius)**2
+
+        def distance_squared(dr, dc):
+            x = (dc*g1 + dr*g2)*metres
+            y = (dc*g4 + dr*g5)*metres
+            return x*x + y*y
+
         for row, col in zip(*np.nonzero(valid)):
             samples = [float(values[y,x]) for y in range(max(0,row-2),min(values.shape[0],row+3))
                        for x in range(max(0,col-2),min(values.shape[1],col+3))
-                       if valid[y,x] and ((int(x-col)*xstep)**2+(int(y-row)*ystep)**2 <= limit)]
+                       if valid[y,x] and distance_squared(int(y-row), int(x-col)) <= limit]
             if method == 'mode':
                 counts=Counter(samples); modes=[v for v,n in counts.items()if n==max(counts.values())]
                 answer=float(values[row,col])if values[row,col]in modes else min(modes)
@@ -18172,14 +18180,24 @@ def _focal_circle_oracle(values, valid, dx, dy, units, radius, method, percentil
 
 
 @pytest.mark.parametrize('method',['sum','mean','min','max','stddev','mode','median','percentile','variety'])
-@pytest.mark.parametrize('crs,dx,dy,radius_units',[
-    ('EPSG:3857',3.,4.,5.), ('EPSG:3857',1.,2.,2.),
-    ('EPSG:3857',2.,1.,2.), ('EPSG:3857',1.,1.,.25),
-    ('EPSG:2222',1.,1.,2.), ('EPSG:2277',1.,1.,2.),
+@pytest.mark.parametrize('crs,transform,radius_units', [
+    ('EPSG:3857',(200.,3.,0.,300.,0.,-4.),5.),
+    ('EPSG:3857',(200.,1.,0.,300.,0.,-2.),2.),
+    ('EPSG:3857',(200.,2.,0.,300.,0.,-1.),2.),
+    ('EPSG:3857',(200.,1.,0.,300.,0.,-1.),.25),
+    ('EPSG:2222',(200.,1.,0.,300.,0.,-1.),2.),
+    ('EPSG:2277',(200.,1.,0.,300.,0.,-1.),2.),
+    ('EPSG:3857',(200.,0.,4.,300.,3.,0.),5.),
+    ('EPSG:3857',(200.,-3.,0.,300.,0.,4.),5.),
+    ('EPSG:2222',(200.,0.,-4.,300.,-3.,0.),5.),
+    ('EPSG:3857',(200.,1.,.1,300.,.1,-1.),2.),
+    ('EPSG:2277',(2.**60,3.,8.,-2.**60,4.,-6.),11.),
 ])
-def test_focal_circle_full_oracle_units_rectangles_band_mask_and_old_source(tmp_path,method,crs,dx,dy,radius_units):
-    reference=osr.SpatialReference();reference.SetFromUserInput(crs);units=reference.GetLinearUnits()
-    radius=radius_units*units;transform=(200.,dx,0.,300.,0.,-dy)
+def test_focal_circle_full_oracle_units_rectangles_band_mask_and_old_source(tmp_path,method,crs,transform,radius_units):
+    reference=osr.SpatialReference()
+    assert reference.SetFromUserInput(crs)==0
+    units=reference.GetLinearUnits()
+    radius=radius_units*units
     values=(np.arange(56).reshape(7,8)%11-5).astype(float)
     values[1,1]=-9999;values[2,1]=np.nan;values[2,2]=np.inf
     alpha=np.full(values.shape,128.);alpha[3,1]=0.;alpha[3,2]=np.inf;alpha[3,3]=-1.
@@ -18190,7 +18208,7 @@ def test_focal_circle_full_oracle_units_rectangles_band_mask_and_old_source(tmp_
     with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
     ds.GetRasterBand(2).GetMaskBand().WriteArray(mask);ds=None;before=source.read_bytes()
     valid=np.isfinite(values)&(values!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
-    expected=_focal_circle_oracle(values,valid,dx,dy,units,radius,method)
+    expected=_focal_circle_oracle(values,valid,transform,units,radius,method)
     with raster_workspace():
         result=raster_focal_statistics(raster_load(source_plan(source)),2,method=method,
             window_type='circle_metres',radius_metres=radius,**({'percentiles':[25.]}if method=='percentile'else{}))
@@ -18205,9 +18223,14 @@ def test_focal_circle_full_oracle_units_rectangles_band_mask_and_old_source(tmp_
     assert source.read_bytes()==before
 
 
-@pytest.mark.parametrize('radius,expected_center',[(np.nextafter(5.,0.),5.),(5.,9.),(np.nextafter(5.,np.inf),9.)])
-def test_focal_circle_boundary_exact_equality_and_one_ulp_no_epsilon(tmp_path,radius,expected_center):
-    source=create_raster(tmp_path/'boundary.tif',np.ones((5,5)),(1e12,3.,0.,-1e12,0.,-4.),'EPSG:3857')
+@pytest.mark.parametrize('transform,boundary', [
+    ((1e12,3.,0.,-1e12,0.,-4.),5.),
+    ((1e12,9.,16.,-1e12,12.,-12.),25.),
+])
+@pytest.mark.parametrize('side,expected_center',[(-1,5.),(0,9.),(1,9.)])
+def test_focal_circle_boundary_exact_equality_and_one_ulp_no_epsilon(tmp_path,transform,boundary,side,expected_center):
+    radius = math.nextafter(boundary, 0. if side < 0 else math.inf) if side else boundary
+    source=create_raster(tmp_path/'boundary.tif',np.ones((5,5)),transform,'EPSG:3857')
     with raster_workspace():
         result=raster_focal_statistics(raster_load(source_plan(source)),1,method='sum',window_type='circle_metres',radius_metres=float(radius))
         ds=gdal.Open(str(result.path));assert ds.ReadAsArray()[2,2]==expected_center;ds=None
@@ -18228,7 +18251,7 @@ def test_focal_circle_five_by_five_bound_not_clipped_and_exact_step_products(tmp
         class Grid:
             def GetGeoTransform(self):return(0,pitch,0,0,0,-pitch)
         from unittest.mock import patch
-        with patch.object(c,'_projected_north_up_grid',return_value=.5 if case=='underflow-step'else 2.):
+        with patch.object(c,'_projected_orthogonal_grid_units',return_value=.5 if case=='underflow-step'else 2.):
             size,offsets=c._focal_circle_window(Grid(),radius)
         assert (size,len(offsets))==((5,13)if case=='underflow-step'else(1,1));return
     with raster_workspace():
@@ -18268,7 +18291,7 @@ def test_focal_circle_exact_bilingual_parameter_errors_before_source_or_output(p
     assert str(caught.value)==c._FOCAL_MESSAGES[code][language=='en']
 
 
-@pytest.mark.parametrize('kind',['geographic','compound','missing-crs','missing-grid','rotated','reverse-x','reverse-y','singular','unknown-units'])
+@pytest.mark.parametrize('kind',['geographic','compound','missing-crs','missing-grid','shear','tiny-shear','rounded-dot','rotated-mirror','reverse-x','reverse-y','singular','unknown-units'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_focal_circle_exact_bilingual_grid_rejection_before_output(tmp_path,monkeypatch,kind,language):
     import operators.raster_compute as c
@@ -18277,7 +18300,15 @@ def test_focal_circle_exact_bilingual_grid_rejection_before_output(tmp_path,monk
     elif kind=='compound':crs='EPSG:7415'
     elif kind=='missing-crs':crs=None
     elif kind=='missing-grid':transform=None
-    elif kind=='rotated':transform=(0,1,.1,5,.1,-1)
+    elif kind=='shear':transform=(0,1,.25,5,.5,-1)
+    elif kind=='tiny-shear':transform=(0,1,2.**-40,5,0,-1)
+    elif kind=='rounded-dot':
+        from fractions import Fraction
+        transform=(0,.1,1.3,5,1.3,math.nextafter(-.1,math.inf))
+        _, ux, vx, _, uy, vy = transform
+        assert ux*vx + uy*vy == 0
+        assert Fraction(ux)*Fraction(vx) + Fraction(uy)*Fraction(vy) != 0
+    elif kind=='rotated-mirror':transform=(0,3,-4,5,4,3)
     elif kind=='reverse-x':transform=(0,-1,0,5,0,-1)
     elif kind=='reverse-y':transform=(0,1,0,5,0,1)
     elif kind=='singular':transform=(0,1,1,5,1,1)
@@ -18290,12 +18321,16 @@ def test_focal_circle_exact_bilingual_grid_rejection_before_output(tmp_path,monk
     assert str(caught.value)==c._FOCAL_MESSAGES['circle_grid'][language=='en']and path.read_bytes()==before
 
 
-@pytest.mark.parametrize('method',['mean','median','mode','variety','percentile','stddev'])
-def test_focal_circle_both_block_axes_full_oracle_bounded_reads(tmp_path,monkeypatch,method):
+@pytest.mark.parametrize('method,rotated', [
+    *((method, False) for method in ('mean','median','mode','variety','percentile','stddev')),
+    ('mean', True),
+])
+def test_focal_circle_both_block_axes_full_oracle_bounded_reads(tmp_path,monkeypatch,method,rotated):
     import operators.raster_compute as c
     shape=(515,519);rows,cols=np.indices(shape);values=((cols+3*rows)%13-6).astype(float)
     values[(cols%101==0)&(rows%67==0)]=-9999
-    valid=values!=-9999;source=create_raster(tmp_path/'blocks.tif',values,(10,1,0,20,0,-2),'EPSG:3857')
+    transform = (10,0,2,20,1,0) if rotated else (10,1,0,20,0,-2)
+    valid=values!=-9999;source=create_raster(tmp_path/'blocks.tif',values,transform,'EPSG:3857')
     # Independent scalar oracle only for a small repeating pattern and full-image neighbourhood shifts.
     from fractions import Fraction
     offsets=[(dr,dc)for dr in range(-2,3)for dc in range(-2,3)if dc*dc+4*dr*dr<=4]
@@ -18326,12 +18361,13 @@ def test_focal_circle_both_block_axes_full_oracle_bounded_reads(tmp_path,monkeyp
         if window:assert window[2]<=512 and window[3]<=512
 
 
+@pytest.mark.parametrize('transform', [(0,3,0,0,0,-4),(0,0,4,0,3,0)])
 @pytest.mark.parametrize('failure',[None,'radius','read','write'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_focal_circle_async_cog_and_all_exit_cleanup(tmp_path,monkeypatch,failure,language):
+def test_focal_circle_async_cog_and_all_exit_cleanup(tmp_path,monkeypatch,failure,language,transform):
     import api_server,workflow_engine,operators.raster_compute as c
     values=(np.arange(56).reshape(7,8)-20).astype(float);values[2,3]=-9999
-    source=create_raster(tmp_path/'async.tif',values,(0,3,0,0,0,-4),'EPSG:3857');before=source.read_bytes()
+    source=create_raster(tmp_path/'async.tif',values,transform,'EPSG:3857');before=source.read_bytes()
     previous=tmp_path/'previous.tif';previous.write_bytes(b'prior artifact');target=tmp_path/'circle.cog.tif'
     params={'input_raster':{'$ref':'source'},'band':1,'method':'mean','window_type':'circle_metres','radius_metres':9. if failure=='radius'else 5.}
     tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
@@ -18360,7 +18396,7 @@ def test_focal_circle_async_cog_and_all_exit_cleanup(tmp_path,monkeypatch,failur
     else:
         artifact=json.loads(status['result']);assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0
         with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
-        ds=gdal.Open(str(target));np.testing.assert_allclose(ds.ReadAsArray(),_focal_circle_oracle(values,values!=-9999,3,4,1.,5.,'mean'),equal_nan=True);assert ds.GetGeoTransform()==(0,3,0,0,0,-4);ds=None
+        ds=gdal.Open(str(target));np.testing.assert_allclose(ds.ReadAsArray(),_focal_circle_oracle(values,values!=-9999,transform,1.,5.,'mean'),equal_nan=True);assert ds.GetGeoTransform()==transform;ds=None
     assert client.post('/api/operators/raster_focal_statistics/invoke',json={'params':{}}).status_code==403
 
 

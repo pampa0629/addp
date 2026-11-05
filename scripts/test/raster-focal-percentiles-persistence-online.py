@@ -37,7 +37,7 @@ MESSAGES.update({
  'circle_window':('米制圆窗不得提供window_size','Metre circle windows do not accept window_size'),
  'circle_radius_missing':('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值','Circular focal radius_metres must be an explicit finite positive number, excluding booleans'),
  'circle_size':('米制圆窗的候选像元外接窗口不得超过5×5，不能截断半径','The candidate pixel bounding window of a metre circle must not exceed 5x5; the radius cannot be truncated'),
- 'circle_geographic':('米制圆窗要求已知线性单位的二维投影和北向无旋转有限可逆网格，请显式重投影','Metre circle windows require a two-dimensional projection with known linear units and a finite invertible north-up unrotated grid; reproject explicitly'),
+ 'circle_geographic':('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影','Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'),
 })
 
 class DiagnosticClient(base.DiagnosticClient):
