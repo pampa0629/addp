@@ -833,4 +833,6 @@ CI会话回传固定`7d8ad061e`的两项后续阻断，不能与此前六项夹�
 
 个人环境先进行只读比较。修复后规范化安装事实完全一致，来源正在运行，证明内容、inode 和 mtime 均未变。收据见 `/tmp/addp-node-dns-proof-readonly-fixed-20261105.json`。
 
-修复 `ca6c675ad` 推送后，用户在本机执行 `python3 scripts/infra/metrics-sources.py recover --scope host --kind node` 并确认成功。本次验收覆盖主机来源的单项恢复命令。完整 `restart.sh -all` 仍待下次实际执行时复验，CI／Hosted 等专门会话回传。
+修复 `ca6c675ad` 推送后，用户在本机执行 `python3 scripts/infra/metrics-sources.py recover --scope host --kind node` 并确认成功。
+
+用户随后回传本机全量启动的末尾只读摘要。指标中心和采集控制入口均运行中，主机、Infra PostgreSQL、Infra MinIO 和 Business PostgreSQL 均启用并运行中，其余三项停用且未部署。摘要共 7 项、失败 0 项，所贴输出未出现前序观测失败提示。此次复验覆盖本机全量启动的监控摘要，实际采样、主机关联和有效指标仍需在 Monitor 核对。CI／Hosted 结果由专门会话回传。
