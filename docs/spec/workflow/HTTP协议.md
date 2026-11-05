@@ -91,6 +91,8 @@ Spark `save` 声明 `write` 和 `ddl` 效果，因为暂存表和新目标涉及
 }
 ```
 
+Spark 工作流 SQL 算子的原生 `TABLE_OR_VIEW_NOT_FOUND` 以 HTTP 500 返回 `status=failed`、`execution_id` 和 `error_code=SQL_TABLE_OR_VIEW_NOT_FOUND`，并保存同 ID、同失败码的终态供状态查询。该响应只携带固定消息和执行标识，诊断映射见[租户执行诊断](../tasks/执行监控.md#租户执行诊断)。
+
 ### 调用单个算子
 
 单算子调用用于业务模块受控消费扩展引擎能力，例如 Manager 触发 `raster_to_cog` 生成 COG 结果。它不是任务执行入口，不创建 Develop 工作流任务，不进入 Orchestrator 编排，也不进入 Monitor 通用任务监控；调用方模块必须负责自己的领域状态、审计和失败处理。

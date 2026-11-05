@@ -66,7 +66,7 @@ func HTTPPrepareFederatedQuery(ctx context.Context, conn ConnectionInfo, req Fed
 			return nil, 0, fmt.Errorf("query runtime output invalid")
 		}
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			return nil, response.StatusCode, fmt.Errorf("query runtime returned HTTP %d", response.StatusCode)
+			return raw, response.StatusCode, fmt.Errorf("query runtime returned HTTP %d", response.StatusCode)
 		}
 		return raw, response.StatusCode, nil
 	}
@@ -175,6 +175,9 @@ func HTTPPrepareFederatedQuery(ctx context.Context, conn ConnectionInfo, req Fed
 		func(ctx context.Context) (*QueryResult, error) {
 			raw, status, err := call(ctx, http.MethodPost, path+"/execute", struct{}{})
 			if err != nil {
+				if status == http.StatusBadRequest && isPreparedQueryMissingColumn(raw) {
+					return nil, NewQueryError(QueryErrorCodeColumnNotFound, nil)
+				}
 				return nil, err
 			}
 			return decodeFederatedQueryResult(status, raw)
@@ -184,4 +187,15 @@ func HTTPPrepareFederatedQuery(ctx context.Context, conn ConnectionInfo, req Fed
 	}
 	failed = false
 	return &remotePreparedQuery{PreparedQuery: prepared, models: models, close: close}, nil
+}
+
+func isPreparedQueryMissingColumn(raw []byte) bool {
+	var failure struct {
+		Code    string `json:"error_code"`
+		Message string `json:"error"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(&failure) == nil && decoder.Decode(new(interface{})) == io.EOF &&
+		failure.Code == "query_column_not_found" && failure.Message != ""
 }

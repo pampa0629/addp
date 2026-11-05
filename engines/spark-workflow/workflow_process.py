@@ -7,6 +7,7 @@ from operator_metadata import get_operator_metadata
 from query_process import QueryDriverError, run_driver
 from spark_connector import cluster_master_url
 from system_client import get_engine
+from workflow_engine import SQL_RELATION_NOT_FOUND
 
 
 def _dispatch(engine_id, tenant_id, invocation):
@@ -25,7 +26,10 @@ def _dispatch(engine_id, tenant_id, invocation):
     if result.get('status') not in {'success', 'failed'}:
         raise ValueError('invalid Spark Driver result')
     if result['status'] == 'failed':
-        return {'status': 'failed', 'error_code': 'EXECUTION_FAILED', 'driver_failure': 'failed'}
+        code = 'EXECUTION_FAILED'
+        if invocation['mode'] == 'workflow' and result == {'status': 'failed', 'error_code': SQL_RELATION_NOT_FOUND}:
+            code = SQL_RELATION_NOT_FOUND
+        return {'status': 'failed', 'error_code': code, 'driver_failure': 'failed'}
     return result
 
 

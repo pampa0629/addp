@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 from spark_connector import invocation_session
-from workflow_engine import run_operator, run_workflow
+from workflow_engine import SQL_RELATION_NOT_FOUND, run_operator, run_workflow
 from workflow_result import serialize_workflow_value
 
 
@@ -27,7 +27,7 @@ def main():
     try:
         request = json.loads(sys.stdin.buffer.read(1024 * 1024 + 1))
         result = execute_invocation(request)
-        if result.get('status') != 'success':
+        if result.get('status') != 'success' and result != {'status': 'failed', 'error_code': SQL_RELATION_NOT_FOUND}:
             raise ValueError('Spark invocation failed')
     except Exception:
         result = {'status': 'failed', 'error_code': 'EXECUTION_FAILED'}

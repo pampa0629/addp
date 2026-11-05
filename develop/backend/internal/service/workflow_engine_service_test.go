@@ -16,6 +16,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
@@ -721,6 +722,48 @@ func TestExecuteWorkflowSendsCanonicalSparkHTTPRuntimeRequest(t *testing.T) {
 	assertCanonicalWorkflowRuntimeAuthorization(t, runtime.captured)
 }
 
+func TestSparkWorkflowMissingViewRequiresMatchingFailedRuntimeReceipt(t *testing.T) {
+	for _, matches := range []bool{true, false} {
+		t.Run(strconv.FormatBool(matches), func(t *testing.T) {
+			id := uuid.NewString()
+			status := map[string]interface{}{"status": "failed", "execution_id": id,
+				"error_code": sparkSQLRelationNotFound, "error": "private raw diagnostic", "details": "private candidate view"}
+			if !matches {
+				status["error_code"] = "EXECUTION_FAILED"
+			}
+			runtime := newWorkflowRuntimeContractServer(t, "spark_workflow", status)
+			svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+				91: {ID: 91, Name: "test-spark-workflow", EngineType: "spark_workflow", LifecycleState: "active",
+					ConnectionInfo: runtime.connectionInfo, Capabilities: workflowRuntimeCapabilitiesForTest(t, "spark_workflow")},
+				34: testEngine(34, "spark", true),
+			})
+			definition := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
+				"id": "contract", "operator": "contract_op", "params": map[string]interface{}{}, "depends_on": []interface{}{},
+			}}}
+			resp, err := svc.ExecuteWorkflow(t.Context(), 7, definition, nil, `{"engine_id":91,"engine_specific":{"spark_cluster_id":34}}`)
+			if err == nil || !matches && resp != nil {
+				t.Fatalf("response=%+v error=%v", resp, err)
+			}
+			if !matches {
+				return
+			}
+			if resp == nil || resp.Status != "failed" || resp.ExecutionID != id {
+				t.Fatalf("failed receipt not retained: %+v", resp)
+			}
+			encoded, marshalErr := json.Marshal(resp.RuntimeStatus)
+			if marshalErr != nil || strings.Contains(string(encoded)+err.Error(), "private") {
+				t.Fatalf("runtime error contents reached Develop: %s, %v", encoded, err)
+			}
+			details := executionFailureDetails("workflow", "execution_failed", err.Error(),
+				map[string]interface{}{"runtime_status": resp.RuntimeStatus}, definition)
+			diagnostic, _ := details["diagnostic"].(*commonExecution.FailureDiagnostic)
+			if diagnostic == nil || diagnostic.Stage != "execution" || diagnostic.Reason != "table_not_found" || diagnostic.SQL != nil {
+				t.Fatalf("unexpected missing view diagnostic: %+v", details)
+			}
+		})
+	}
+}
+
 func workflowRuntimeCapabilitiesForTest(t *testing.T, engineType string) *commonModels.JSONString {
 	t.Helper()
 	payload, err := plugin.MarshalEngineCapabilities(plugin.NewWorkflowCapabilities(engineType, plugin.WorkflowRuntimeAPIAddpV1))
@@ -790,7 +833,7 @@ type workflowRuntimeContractServer struct {
 	connectionInfo commonModels.ConnectionInfo
 }
 
-func newWorkflowRuntimeContractServer(t *testing.T, engineType string) *workflowRuntimeContractServer {
+func newWorkflowRuntimeContractServer(t *testing.T, engineType string, failure ...map[string]interface{}) *workflowRuntimeContractServer {
 	t.Helper()
 	fixture := &workflowRuntimeContractServer{}
 	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -815,6 +858,12 @@ func newWorkflowRuntimeContractServer(t *testing.T, engineType string) *workflow
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
+			if len(failure) == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "failed", "execution_id": failure[0]["execution_id"],
+					"error_code": sparkSQLRelationNotFound, "error": "Spark workflow execution failed."})
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status": "success", "execution_id": "runtime-contract-exec",
 			})
@@ -823,6 +872,10 @@ func newWorkflowRuntimeContractServer(t *testing.T, engineType string) *workflow
 				"status": "success", "execution_id": "runtime-contract-exec", "progress": 100,
 			})
 		default:
+			if len(failure) == 1 && r.URL.Path == "/api/executions/"+failure[0]["execution_id"].(string) {
+				_ = json.NewEncoder(w).Encode(failure[0])
+				return
+			}
 			http.NotFound(w, r)
 		}
 	}))

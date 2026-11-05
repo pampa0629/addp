@@ -86,7 +86,10 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
       { timeout: 120_000 }).toBe(failing ? 'failed' : 'success')
     const execution = await readExecution(started.execution_id)
     if (failing) {
-      await expect(frame(target).locator('.query-result')).toContainText(/执行失败|Execution failed/i)
+      expect(execution.error_details.diagnostic).toEqual({
+        schema_version: 'addp.execution-failure/v3', stage: 'execution', reason: 'column_not_found'
+      })
+      await expect(frame(target).locator('.query-result .execution-failure')).toContainText(/字段不存在|column.*(does not exist|could not be resolved)/i)
     } else {
       expect(execution.metadata.result.summary.preview_rows).toEqual(expected.multicluster.query_rows)
       await expect(frame(target).locator('.query-result .el-table__body-wrapper tr')).toHaveCount(2)
@@ -95,7 +98,8 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
       }
     }
     await screenshot(target, `query-${cluster}-${started.execution_id}`)
-    return { cluster, status: failing ? 'failed' : 'success', execution_id: started.execution_id, query: sql }
+    return { cluster, status: failing ? 'failed' : 'success', execution_id: started.execution_id, query: sql,
+      ...(failing ? { diagnostic: execution.error_details.diagnostic } : {}) }
   }
 
   async function workflowPage(target, key, id) {
@@ -177,7 +181,11 @@ test('同一个 Runtime 经真实查询和工作流页面路由两套集群', as
       expect(result.preview_rows).toEqual([{ marker: 'dual-workflow', rows: 4 }])
       await expect.poll(async () => JSON.parse(await detail.locator('.workflow-final-result-json').innerText())).toEqual(result)
     } else {
-      await expect(detail).toContainText(/失败|Failed/i)
+      expect(execution.error_details.diagnostic).toEqual({
+        schema_version: 'addp.execution-failure/v3', stage: 'execution', reason: 'table_not_found'
+      })
+      await expect(detail.locator('.execution-failure')).toContainText(/表或视图不存在|table or view does not exist/i)
+      operation.diagnostic = execution.error_details.diagnostic
     }
     await screenshot(target, `workflow-${operation.cluster}-${operation.execution_id}`)
   }

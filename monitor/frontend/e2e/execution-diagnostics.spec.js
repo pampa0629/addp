@@ -129,7 +129,7 @@ for (const locale of ['zh-cn', 'en']) test(`shows query failure at the top and o
   await installBackend(page, { locale, queryFailure: true, empty: true })
   await page.goto('/executions?execution_id=diagnostic-run')
   const diagnostic = page.locator('.execution-detail-content > .execution-failure')
-  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '查询引用的数据表不存在' : 'A referenced table does not exist')
+  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '查询引用的表或视图不存在' : 'A referenced table or view does not exist')
   await expect(diagnostic).toContainText('table_not_found')
   await expect(diagnostic).toContainText('diagnostic-run')
   await expect(diagnostic).toContainText(locale === 'zh-cn' ? '准备执行' : 'Prepare execution')

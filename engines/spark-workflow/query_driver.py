@@ -171,9 +171,15 @@ def execute(request, approve):
             # owner decides whether an unknown read can be admitted at all.
             if facts['read_set'] is None:
                 raise QueryValidationError('query_source_not_supported')
-            result = spark.sql(request['query'], args=request['args']).limit(request['limit'])
             if not approve(facts):
                 raise QueryValidationError('query_permission_denied')
+            from pyspark.errors import AnalysisException
+            try:
+                result = spark.sql(request['query'], args=request['args']).limit(request['limit'])
+            except AnalysisException as error:
+                if error.getErrorClass() in {'UNRESOLVED_COLUMN.WITH_SUGGESTION', 'UNRESOLVED_COLUMN.WITHOUT_SUGGESTION'}:
+                    raise QueryValidationError('query_column_not_found') from None
+                raise
             columns, fields = result_schema(result.schema)
             rows = [{field['name']: result_value(field, row[i]) for i, field in enumerate(fields)}
                     for row in result.collect()]

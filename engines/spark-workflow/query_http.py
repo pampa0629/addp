@@ -299,11 +299,11 @@ def register_query_routes(app):
                 try:
                     _recheck(entry)
                     result = entry['driver'].execute()
+                    _recheck(entry)
                     if set(result) == {'error'}:
                         code = result['error']
                         raise QueryRequestError(code if code in MESSAGES else 'query_driver_failed')
                     result = _http_result(result, entry['limit'])
-                    _recheck(entry)
                     return jsonify(result), 200
                 finally:
                     _release(query_id)

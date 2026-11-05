@@ -257,6 +257,27 @@ class QueryHTTPTest(unittest.TestCase):
         self.assertNotIn(key, query_http._queries)
         self.assertEqual(self.client.delete('/api/v1/queries/' + key, headers={'Authorization': 'Bearer fixture'}).status_code, 204)
 
+    def test_missing_column_diagnostic_requires_current_execution_access(self):
+        self.output = {'error': 'query_column_not_found'}
+        response = self.post(headers={'Accept-Language': 'en'})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json, {'error_code': 'query_column_not_found',
+                                         'error': 'A referenced column could not be resolved.'})
+
+        query_id = self.post(prepare_only=True).json['query_id']
+        driver = query_http._queries[query_id]['driver']
+
+        def change_source_identity():
+            self.engines[11]['connection_info']['port'] = 5434
+            return self.output
+
+        driver.execute.side_effect = change_source_identity
+        denied = self.client.post(f'/api/v1/queries/{query_id}/execute', data='{}', content_type='application/json',
+                                  headers={'Authorization': 'Bearer fixture'})
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.json['error_code'], 'query_permission_denied')
+        self.assertNotIn(query_id, query_http._queries)
+
     def test_retained_plan_is_one_shot_and_bound_to_principal_and_tenant(self):
         key = self.post(prepare_only=True).json['query_id']
         path = '/api/v1/queries/' + key + '/execute'

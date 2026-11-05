@@ -2,11 +2,17 @@
 import logging
 from typing import Any
 
-from addp_common.workflow_runtime import WorkflowRunner, WorkflowValidationError
+from addp_common.workflow_runtime import WorkflowExecutionError, WorkflowRunner, WorkflowValidationError
 from operator_metadata import get_operator_metadata
 from operators import get_operator
+from pyspark.errors import AnalysisException
 
 logger = logging.getLogger(__name__)
+SQL_RELATION_NOT_FOUND = 'SQL_TABLE_OR_VIEW_NOT_FOUND'
+
+
+class _SQLRelationNotFound(Exception):
+    """The SQL operator could not resolve a table or view in this invocation."""
 
 
 def _execute_operator(engine_id: int, tenant_id: int, operator: str, params: dict[str, Any]):
@@ -26,7 +32,12 @@ class SparkWorkflowRunner(WorkflowRunner):
         super().__init__(set(self._metadata), self._execute_workflow_operator)
 
     def _execute_workflow_operator(self, operator, params):
-        result = _execute_operator(self.engine_id, self.tenant_id, operator, params)
+        try:
+            result = _execute_operator(self.engine_id, self.tenant_id, operator, params)
+        except AnalysisException as error:
+            if operator == 'sql' and error.getErrorClass() == 'TABLE_OR_VIEW_NOT_FOUND':
+                raise _SQLRelationNotFound() from None
+            raise
         ports = [port['name'] for port in self._metadata[operator]['output_ports']]
         if len(ports) == 1:
             return {'__ports__': {ports[0]: result}}
@@ -44,6 +55,8 @@ def run_workflow(engine_id: int, tenant_id: int, workflow_def: dict[str, Any], i
     except WorkflowValidationError as exc:
         return {'status': 'failed', 'error_code': 'WORKFLOW_INVALID', 'error': str(exc)}
     except Exception as exc:
+        if isinstance(exc, WorkflowExecutionError) and isinstance(exc.__cause__, _SQLRelationNotFound):
+            return {'status': 'failed', 'error_code': SQL_RELATION_NOT_FOUND}
         logger.exception('Workflow execution failed')
         return {'status': 'failed', 'error_code': 'EXECUTION_FAILED', 'error': str(exc)}
 

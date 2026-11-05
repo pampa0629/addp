@@ -14,6 +14,7 @@ MESSAGES = {
     'query_runtime_unavailable': ('查询运行时暂不可用。', 'The query runtime is unavailable.'),
     'query_runtime_busy': ('查询运行时繁忙，请稍后重试。', 'The query runtime is busy. Try again later.'),
     'query_driver_failed': ('查询执行失败，未返回结果。', 'Query execution failed without returning results.'),
+    'query_column_not_found': ('查询引用的字段不存在。', 'A referenced column could not be resolved.'),
     'query_result_invalid': ('查询结果无效，未返回数据。', 'The query result is invalid. No data was returned.'),
 }
 

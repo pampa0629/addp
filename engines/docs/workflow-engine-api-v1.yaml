@@ -178,7 +178,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: 执行失败
+          description: 执行失败。Spark SQL 表或视图无法解析时返回 SQL_TABLE_OR_VIEW_NOT_FOUND 和 execution_id。 | Execution failed. Spark SQL reports an unresolved table or view with SQL_TABLE_OR_VIEW_NOT_FOUND and execution_id.
           content:
             application/json:
               schema:
@@ -830,7 +830,7 @@ components:
           description: 错误信息(失败时)
         error_code:
           type: string
-          enum: [INVALID_PARAMS, WORKFLOW_INVALID, EXECUTION_FAILED, TARGET_ALREADY_EXISTS, INTERNAL_ERROR]
+          enum: [INVALID_PARAMS, WORKFLOW_INVALID, EXECUTION_FAILED, TARGET_ALREADY_EXISTS, SQL_TABLE_OR_VIEW_NOT_FOUND, INTERNAL_ERROR]
         diagnostic:
           $ref: '#/components/schemas/WorkflowInputDiagnostic'
         progress:
@@ -1010,6 +1010,10 @@ components:
         - status
         - error
       properties:
+        execution_id:
+          type: string
+          format: uuid
+          description: 已开始执行时的运行时执行 ID。 | Runtime execution ID when execution has started.
         status:
           type: string
           enum: [failed, error]
@@ -1027,6 +1031,7 @@ components:
             - EXECUTION_NOT_FOUND
             - INVALID_PARAMS
             - EXECUTION_FAILED
+            - SQL_TABLE_OR_VIEW_NOT_FOUND
             - WORKFLOW_INVALID
             - INTERNAL_ERROR
           example: INVALID_PARAMS

@@ -1,15 +1,46 @@
 """Result-schema precision and the private Driver request boundary, without JVM."""
 import copy
+from contextlib import nullcontext
 from datetime import date, datetime
 from decimal import Decimal
 import unittest
+from unittest.mock import Mock, patch
 
+from pyspark.errors import AnalysisException
 from pyspark.sql import Row, types
 
-from query_driver import result_field, result_schema, result_value, validate_request
+from query_driver import execute, result_field, result_schema, result_value, validate_request
+from query_guard import QueryValidationError
 
 
 class QueryDriverTest(unittest.TestCase):
+    def test_missing_column_is_only_analyzed_after_protection_allows(self):
+        facts = {'read_set': {'paths': []}, 'engine_read_scope': None}
+        request = dict(self.request(), query='SELECT missing_column FROM source.public.orders')
+        missing = AnalysisException('private column and suggestions')
+        missing.getErrorClass = Mock(return_value='UNRESOLVED_COLUMN.WITH_SUGGESTION')
+        with patch('pyspark.sql.SparkSession') as session, patch('query_driver.verified_artifact'), \
+             patch('query_driver.validate_query'), patch('query_read_plan.lock_read_plan', return_value=nullcontext(facts)), \
+             patch.dict('os.environ'):
+            spark = session.builder.appName.return_value.master.return_value
+            spark.config.return_value = spark
+            driver = spark.getOrCreate.return_value
+            driver.sql.side_effect = missing
+            deny = Mock(return_value=False)
+            with self.assertRaisesRegex(QueryValidationError, '^query_permission_denied$'):
+                execute(request, deny)
+            deny.assert_called_once_with(facts)
+            driver.sql.assert_not_called()
+
+            def allow(proven):
+                self.assertEqual(proven, facts)
+                driver.sql.assert_not_called()
+                return True
+
+            with self.assertRaisesRegex(QueryValidationError, '^query_column_not_found$'):
+                execute(request, allow)
+            driver.sql.assert_called_once()
+
     def request(self):
         return {'master_url': 'spark://cluster:7077', 'driver_host': 'driver',
                 'catalogs': [{'engine_id': 11, 'engine_type': 'postgresql', 'alias': 'source', 'url': 'jdbc:postgresql://db:5432/data',

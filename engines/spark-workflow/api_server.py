@@ -21,7 +21,7 @@ from dotenv import load_dotenv, find_dotenv
 # 自动向上搜索 .env 文件（类似 common/config/loader.go 的 LoadEnv）
 load_dotenv(find_dotenv())
 
-from workflow_process import execute_workflow, execute_single_operator
+from workflow_process import SQL_RELATION_NOT_FOUND, execute_workflow, execute_single_operator
 from workflow_result import serialize_json_value, serialize_workflow_value
 from addp_common.workflow_runtime import (
     ExecutionRegistry, ExecutionSnapshot, WorkflowValidationError, validate_execution_authorization,
@@ -278,7 +278,7 @@ def execute_workflow_endpoint():
                 ))
                 return jsonify(response), 400
             response.update(error_response(
-                ErrorCode.EXECUTION_FAILED,
+                SQL_RELATION_NOT_FOUND if error_code == SQL_RELATION_NOT_FOUND else ErrorCode.EXECUTION_FAILED,
                 result.get('error', '工作流执行失败')
             ))
 

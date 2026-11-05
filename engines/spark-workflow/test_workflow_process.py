@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
+
+from pyspark.errors import AnalysisException
 
 import spark_connector
 import workflow_driver
@@ -25,6 +27,26 @@ def engine(identifier):
 
 
 class WorkflowProcessTest(unittest.TestCase):
+    def test_missing_workflow_view_survives_driver_and_http_snapshot(self):
+        import api_server
+        from workflow_engine import run_workflow
+
+        missing = AnalysisException('private view and query')
+        missing.getErrorClass = Mock(return_value='TABLE_OR_VIEW_NOT_FOUND')
+        body = {'engine_id': 19, 'workflow_def': definition(), 'runtime': {
+            'tenant_id': 7, 'execution_authorization': {'id': 8, 'effects': ['read']}}}
+        with patch('spark_connector.current_session') as session, \
+             patch('workflow_process.get_engine', return_value=engine(19)), \
+             patch('workflow_process.run_driver', side_effect=lambda *_a, **_k: run_workflow(19, 7, definition())), \
+             api_server.app.test_client() as client:
+            session.return_value.sql.side_effect = missing
+            response = client.post('/api/workflow', json=body)
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.json['error_code'], 'SQL_TABLE_OR_VIEW_NOT_FOUND')
+            saved = client.get('/api/executions/' + response.json['execution_id'])
+            self.assertEqual(saved.json['error_code'], response.json['error_code'])
+            self.assertNotIn('private view', response.get_data(as_text=True) + saved.get_data(as_text=True))
+
     def test_http_freezes_localized_driver_failure_without_private_fields(self):
         import api_server
         body = {'engine_id': 19, 'workflow_def': definition(), 'runtime': {

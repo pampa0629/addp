@@ -197,7 +197,11 @@ def verify_multicluster():
         assert response.status_code == (500 if failing else 200), response.json
         result = response.json
         if failing:
-            assert result['status'] == 'failed' and result['error_code'] == 'EXECUTION_FAILED', result
+            assert result['status'] == 'failed' and result['error_code'] == 'SQL_TABLE_OR_VIEW_NOT_FOUND', result
+            with api_server.app.test_client() as client:
+                terminal = client.get('/api/executions/' + result['execution_id']).json
+            assert terminal['error_code'] == result['error_code'], terminal
+            assert 'nonexistent_invocation_view' not in json.dumps([result, terminal])
         else:
             assert result['status'] == 'success', result
             assert result['all_results']['clean']['preview_rows'] == [], 'previous invocation view leaked'
@@ -211,19 +215,24 @@ def verify_multicluster():
         return {'engine': engines[identifier], 'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()}
 
     headers = {'Authorization': 'Bearer owned-t2-fixture'}
-    def prepare(key, invalid=False):
+    def prepare(key, counterexample=None):
         from uuid import uuid4
+        queries = {
+            None: 'SELECT id FROM Business_PostgreSQL.public.orders ORDER BY id',
+            'column': 'SELECT nonexistent_test_column FROM Business_PostgreSQL.public.orders',
+            'table': 'SELECT id FROM Business_PostgreSQL.public.missing_table',
+        }
         body = {'target_engine_id': key, 'source_engine_ids': [11],
                 'execution_id': str(uuid4()), 'execution_authorization_id': '8',
-                'query': ('SELECT id FROM Business_PostgreSQL.public.missing_table' if invalid else
-                          'SELECT id FROM Business_PostgreSQL.public.orders ORDER BY id'),
+                'query': queries[counterexample],
                 'language': 'sql', 'options': {'read_only': True, 'limit': 10}}
         with api_server.app.test_client() as client:
             response = client.post('/api/v1/queries', json=body, headers=headers)
-        if invalid:
+        if counterexample == 'table':
             assert response.status_code == 400 and response.json['error_code'] == 'query_source_not_supported', response.json
             return None
         assert response.status_code == 201, response.json
+        assert set(response.json) == {'query_id', 'sources', 'engine_read_scope', 'read_set'}, response.json
         return response.json['query_id']
 
     def execute(query_id):
@@ -274,14 +283,20 @@ def verify_multicluster():
             list(pool.map(execute, handles))
         for key in hosts:
             finished(key, bound[key])
-        # Cancelling A and a failing new A preparation must leave the retained B plan usable.
+        # Cancelling A and an admitted A query that fails SQL analysis must leave B usable.
         before = snapshot()
-        a, b = prepare(21), prepare(22)
+        a, b = prepare(21, counterexample='column'), prepare(22)
         app_a, app_b = new_app(before, 21), new_app(before, 22)
         with api_server.app.test_client() as client:
             assert client.delete('/api/v1/queries/' + a, headers=headers).status_code == 204
         wait(lambda: app_a not in apps(21, True), 'cancelled A Driver remains active')
-        prepare(21, invalid=True)
+        prepare(21, counterexample='table')
+        missing = prepare(21, counterexample='column')
+        with api_server.app.test_client() as client:
+            failure = client.post('/api/v1/queries/' + missing + '/execute', data='{}',
+                                  content_type='application/json', headers=headers)
+        assert failure.status_code == 400 and failure.json['error_code'] == 'query_column_not_found', failure.json
+        assert 'nonexistent_test_column' not in json.dumps(failure.json), failure.json
         assert app_b in apps(22, True), 'A failure stopped the B Driver'
         execute(b)
         finished(22, app_b)

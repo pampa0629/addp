@@ -57,8 +57,13 @@ func TestFederatedPreparedExecutionErrorPropagatesAndClosesWithoutNilResultPanic
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"query_id": id, "sources": []map[string]interface{}{{"engine_id": 12, "engine_type": "postgresql"}}, "engine_read_scope": map[string]interface{}{"engine_ids": []uint{12}}, "read_set": &plugin.QueryReadSet{Paths: []plugin.EngineCatalogPath{plugin.TabularItemPath(12, "schema", "public", "example")}}})
 		case "/api/v1/queries/" + id + "/execute":
 			executes++
-			w.WriteHeader(http.StatusBadGateway)
-			_, _ = w.Write([]byte(`{"error_code":"query_driver_failed","error":"fixture driver failure"}`))
+			if executes == 1 {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"error_code":"query_driver_failed","error":"fixture driver failure"}`))
+			} else {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error_code":"query_column_not_found","error":"private candidate columns"}`))
+			}
 		case "/api/v1/queries/" + id:
 			closes++
 			w.WriteHeader(http.StatusNoContent)
@@ -81,5 +86,14 @@ func TestFederatedPreparedExecutionErrorPropagatesAndClosesWithoutNilResultPanic
 	}
 	if closes != 1 || executes != 1 {
 		t.Fatalf("execute=%d close=%d", executes, closes)
+	}
+	result, err = service.ExecuteQuery(t.Context(), 7, frozen, uuid.New(), 8, "SELECT missing FROM source.public.example", 30, 3)
+	if result != nil || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeColumnNotFound ||
+		strings.Contains(err.Error(), "private") || closes != 2 || executes != 2 {
+		t.Fatalf("result=%+v error=%v execute=%d close=%d", result, err, executes, closes)
+	}
+	diagnostic := queryFailureDiagnostic("develop.query.execution_failed", err.Error(), err)
+	if diagnostic == nil || diagnostic.Stage != "execution" || diagnostic.Reason != "column_not_found" || diagnostic.SQL != nil {
+		t.Fatalf("unexpected missing column diagnostic: %+v", diagnostic)
 	}
 }

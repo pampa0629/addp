@@ -222,13 +222,23 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 		Runtime:         runtimeContext,
 	}
 	result, err := dbbridge.ExecuteWorkflow(ctx, engine, workflowReq)
-	if err != nil {
+	// Spark synchronously reports this classified failure with a persisted Runtime receipt.
+	// Confirm the same terminal receipt before treating the failure as a domain result.
+	sparkRelationFailure := err != nil && engine.EngineType == "spark_workflow" && result != nil &&
+		result.Status == "failed" && result.ErrorCode == sparkSQLRelationNotFound
+	if err != nil && !sparkRelationFailure {
 		return nil, fmt.Errorf("调用工作流引擎 %s 失败: %w", engine.Name, err)
 	}
 
 	resp := toWorkflowResponse(result)
 	if strings.TrimSpace(resp.ExecutionID) == "" {
 		return nil, fmt.Errorf("工作流运行时未返回 execution_id")
+	}
+	if sparkRelationFailure {
+		id, parseErr := uuid.Parse(resp.ExecutionID)
+		if parseErr != nil || id == uuid.Nil || id.String() != resp.ExecutionID {
+			return nil, fmt.Errorf("Spark 工作流失败响应的执行 ID 无效")
+		}
 	}
 	if record, ok := ctx.Value(workflowReceiptKey{}).(workflowReceiptRecorder); ok {
 		if err := record(ctx, resp.ExecutionID); err != nil {
@@ -238,6 +248,16 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 	runtimeStatus, err := s.waitWorkflowRuntimeTerminalStatus(ctx, engine, resp.ExecutionID)
 	if runtimeStatus == nil {
 		return nil, err
+	}
+	if sparkRelationFailure || runtimeStatus.ErrorCode == sparkSQLRelationNotFound {
+		if !sparkRelationFailure || runtimeStatus.ExecutionID != resp.ExecutionID ||
+			runtimeStatus.Status != "failed" || runtimeStatus.ErrorCode != sparkSQLRelationNotFound {
+			return nil, fmt.Errorf("Spark 工作流失败响应与运行时终态不一致")
+		}
+		resp = &WorkflowResponse{ExecutionID: resp.ExecutionID}
+		runtimeStatus = &plugin.WorkflowExecutionStatus{Status: "failed", ExecutionID: resp.ExecutionID,
+			ErrorCode: sparkSQLRelationNotFound, Progress: runtimeStatus.Progress, ExecutionTimeMs: runtimeStatus.ExecutionTimeMs}
+		err = fmt.Errorf("Spark 工作流执行失败")
 	}
 	applyWorkflowRuntimeStatus(resp, runtimeStatus)
 	actualTargets, targetErr := resolveWorkflowRasterTileTargets(producedTargets, resp)

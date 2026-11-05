@@ -489,10 +489,13 @@ func (p *retainedFederatedFixture) Close(context.Context) error { p.closed++; re
 
 func TestFederatedPreparedGateProtectsBeforeCollectAndReleasesDeniedDriver(t *testing.T) {
 	for _, tc := range []struct {
-		name, table string
-		known, deny bool
+		name, table                string
+		known, deny, missingColumn bool
 	}{
-		{"neighbor", "public", true, false}, {"managed", "protected", true, true}, {"unknown", "public", false, true},
+		{"neighbor", "public", true, false, false},
+		{"neighbor_with_missing_column", "public", true, false, true},
+		{"managed_with_missing_column", "protected", true, true, true},
+		{"unknown", "public", false, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := developProjectionStore(t)
@@ -513,7 +516,13 @@ func TestFederatedPreparedGateProtectsBeforeCollectAndReleasesDeniedDriver(t *te
 					}
 					return plugin.NewQueryReadSet(plugin.TabularItemPath(11, "schema", "exact", tc.table))
 				}, nil,
-				func(context.Context) (*plugin.QueryResult, error) { f.executed++; return &plugin.QueryResult{}, nil })
+				func(context.Context) (*plugin.QueryResult, error) {
+					f.executed++
+					if tc.missingColumn {
+						return nil, plugin.NewQueryError(plugin.QueryErrorCodeColumnNotFound, nil)
+					}
+					return &plugin.QueryResult{}, nil
+				})
 			prepared, finish, err := gate.BeginFederatedQuery(t.Context(), 7, func(context.Context) (plugin.PreparedFederatedQuery, error) {
 				if !gate.HasActiveExecutionsForTenant(7) {
 					t.Fatal("preparation escaped installation barrier")
@@ -524,14 +533,19 @@ func TestFederatedPreparedGateProtectsBeforeCollectAndReleasesDeniedDriver(t *te
 				t.Fatal("gate collected rows")
 			}
 			if tc.deny {
-				if !errors.Is(err, ErrRequired) || f.closed != 1 || gate.HasActiveExecutionsForTenant(7) {
+				if !errors.Is(err, ErrRequired) || plugin.QueryErrorCodeOf(err) != "" || f.closed != 1 || gate.HasActiveExecutionsForTenant(7) {
 					t.Fatalf("err=%v close=%d", err, f.closed)
 				}
 			} else {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := prepared.Execute(t.Context()); err != nil {
+				_, err = prepared.Execute(t.Context())
+				if tc.missingColumn {
+					if plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeColumnNotFound {
+						t.Fatalf("authorized plan did not reach the missing-column analysis: %v", err)
+					}
+				} else if err != nil {
 					t.Fatal(err)
 				}
 				finish()

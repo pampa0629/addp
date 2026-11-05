@@ -6,12 +6,18 @@ import (
 	commonModels "github.com/addp/common/models"
 )
 
+const sparkSQLRelationNotFound = "SQL_TABLE_OR_VIEW_NOT_FOUND"
+
 func executionFailureDetails(taskType, suffix, message string, result map[string]interface{}, definition map[string]interface{}) commonModels.JSONMap {
 	details := commonModels.JSONMap{"code": "develop." + taskType + "." + suffix, "message": message}
 	if taskType != commonExecution.TaskTypeWorkflow || suffix != "execution_failed" {
 		return details
 	}
 	runtime, ok := result["runtime_status"].(map[string]interface{})
+	if ok && runtime["status"] == "failed" && runtime["error_code"] == sparkSQLRelationNotFound {
+		details["diagnostic"] = commonExecution.NewFailureDiagnostic("execution", "table_not_found")
+		return details
+	}
 	if ok && (runtime["status"] == "failed" || runtime["status"] == "error") && runtime["error_code"] == "INVALID_PARAMS" {
 		diagnostic := plugin.ParseWorkflowInputDiagnostic(runtime["diagnostic"])
 		if diagnostic != nil && workflowInputDiagnosticMatches(diagnostic, definition) {
