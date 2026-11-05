@@ -37,6 +37,7 @@ PERMISSIONS = {'system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_tas
                'meta.lineage.read', 'system.execution_authorization.create', 'develop.task.create', 'develop.task.update'}
 FILES = {'csv': 'samples/orders.csv', 'json': 'samples/orders.json', 'parquet': 'samples/orders.parquet',
          'original': '订单 100%.csv'}
+BASE62_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 
 def table_host():
@@ -190,6 +191,17 @@ def persistence_workflow(locators, target_engine_id, target_type="table"):
     return definition
 
 
+def minio_result_item_path(execution_id):
+    number = uuid.UUID(execution_id).int
+    digits = []
+    for _ in range(22):
+        number, digit = divmod(number, 62)
+        digits.append(BASE62_ALPHABET[digit])
+    execution_code = ''.join(reversed(digits))
+    # The persistence fixture appends save after the eight compute nodes.
+    return f'result/results/hdfs_totals/hdfs_totals__{execution_code}__n09'
+
+
 def submit_and_wait(client, definition, runtime_id, cluster_id, deadline):
     started = support._object(client.request('POST', '/api/v1/develop/executions', (200,), {
         'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': 300,
@@ -261,8 +273,7 @@ def publish_persistence(client, report, target_engine_id, timeout, target_type="
     execution_id, execution = submit_and_wait(client, definition,
                                             report['runtime_id'], report['cluster_id'], deadline)
     if target_type == 'file':
-        leaf = execution_id + '-' + str(uuid.uuid5(uuid.NAMESPACE_OID, 'save'))
-        target_locator = f'addp://engine/{target_engine_id}/path/result/results/hdfs_totals/{leaf}?type=object'
+        target_locator = f'addp://engine/{target_engine_id}/path/{minio_result_item_path(execution_id)}?type=object'
         final, scan_id = validate_persistence(execution, report['locators'], target_locator, target_type)
     else:
         final, scan_id = validate_persistence(execution, report['locators'], target_locator)
@@ -294,8 +305,7 @@ def publication_item_path(publication, engine, target_type):
     execution_id = publication.get('execution_id')
     if not isinstance(execution_id, str) or not execution_id:
         raise SuiteError('prepared publication execution identity is missing')
-    item_path = ('result/results/hdfs_totals/' + execution_id + '-' + str(uuid.uuid5(uuid.NAMESPACE_OID, 'save'))
-                 if target_type == 'file' else 'results/hdfs_totals')
+    item_path = minio_result_item_path(execution_id) if target_type == 'file' else 'results/hdfs_totals'
     expected = f'addp://engine/{engine}/path/{item_path}?type=' + ('object' if target_type == 'file' else 'table')
     if publication.get('target_locator') != expected:
         raise SuiteError('prepared publication target differs from its original execution and Engine')
@@ -615,8 +625,14 @@ def validate_metadata_journal(journal, identity):
                 parts = [segment['name'] for segment in target['segments'][1:]]
                 if len(parts) != 4 or parts[:3] != ['result', 'results', 'hdfs_totals']:
                     raise ValueError('not a run result')
-                execution_id = parts[-1][:-37]
-                if str(uuid.UUID(execution_id)) != execution_id or parts[-1] != execution_id + '-' + str(uuid.uuid5(uuid.NAMESPACE_OID, 'save')):
+                _, execution_code, _ = parts[-1].split('__')
+                if len(execution_code) != 22:
+                    raise ValueError('invalid execution code width')
+                number = 0
+                for digit in execution_code:
+                    number = number * 62 + BASE62_ALPHABET.index(digit)
+                execution_id = str(uuid.UUID(int=number))
+                if number == 0 or '/'.join(parts) != minio_result_item_path(execution_id):
                     raise ValueError('not the original publication')
                 expected = REGISTRATION.ExactFileMetadataGrants.target(row['engine'], '/'.join(parts), 'minio', layout='whole')
                 if target != expected:

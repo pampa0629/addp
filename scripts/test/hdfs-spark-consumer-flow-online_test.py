@@ -33,9 +33,11 @@ def preparation_fixture():
                 'cluster_id': 18, 'minio_engine_id': 20}
     sources = [MODULE.REGISTRATION.ExactFileMetadataGrants.target(17, name, 'hdfs') for name in MODULE.FILES.values()]
     publications = []
-    for number in (1, 2):
-        execution = str(uuid.UUID(int=number))
-        name = 'result/results/hdfs_totals/' + execution + '-' + str(uuid.uuid5(uuid.NAMESPACE_OID, 'save'))
+    for execution, code in (
+        ('00000000-0000-0000-0000-000000000001', '0000000000000000000001'),
+        ('aac163d5-d39f-42b4-a894-078cb451ab89', '5cd4Ew0VZU4tPm3L7oXf17'),
+    ):
+        name = f'result/results/hdfs_totals/hdfs_totals__{code}__n09'
         sources.append(MODULE.REGISTRATION.ExactFileMetadataGrants.target(20, name, 'minio', layout='whole'))
         publications.append({'execution_id': execution, 'target_locator': f'addp://engine/20/path/{name}?type=object',
                              'remaining_seconds': 60})
@@ -82,12 +84,23 @@ class HDFSOnlineTest(unittest.TestCase):
             preview.assert_not_called(); submit.assert_not_called()
 
     def test_metadata_journal_refuses_extra_scope_cross_run_and_duplicate_commands(self):
-        for mutation in ('run', 'tenant', 'user', 'engine', 'source', 'broad', 'duplicate', 'unconfirmed_type', 'count', ''):
+        for mutation in ('run', 'tenant', 'user', 'engine', 'source', 'broad', 'wrong_name',
+                         'wrong_node', 'short_execution', 'invalid_execution', 'overflow_execution',
+                         'duplicate', 'unconfirmed_type', 'count', ''):
             identity, journal, _ = preparation_fixture()
             if mutation in ('run', 'tenant', 'engine'): journal[{'run':'run_id','tenant':'tenant_id','engine':'engine_id'}[mutation]] = 'other'
             if mutation == 'user': journal['principal_id'] = 'other'
             if mutation == 'source': journal['pending'][0]['target']['segments'][-1]['name'] = 'other.csv'
             if mutation == 'broad': journal['pending'][-1]['target']['segments'].pop()
+            if mutation in ('wrong_name', 'wrong_node', 'short_execution', 'invalid_execution', 'overflow_execution'):
+                leaf = journal['pending'][-1]['target']['segments'][-1]
+                name, execution, ordinal = leaf['name'].split('__')
+                if mutation == 'wrong_name': name = 'other'
+                if mutation == 'wrong_node': ordinal = 'n08'
+                if mutation == 'short_execution': execution = execution[:8]
+                if mutation == 'invalid_execution': execution = '-' + execution[1:]
+                if mutation == 'overflow_execution': execution = 'Z' * 22
+                leaf['name'] = f'{name}__{execution}__{ordinal}'
             if mutation == 'duplicate': journal['pending'][1]['request_id'] = journal['pending'][0]['request_id']
             if mutation == 'unconfirmed_type': journal['pending'][0]['confirmed'] = 1
             if mutation == 'count': journal['issued_count'] = 7
@@ -587,19 +600,20 @@ class HDFSOnlineTest(unittest.TestCase):
 
     def test_minio_auto_scan_preview_lineage_and_downstream_use_the_real_directory(self):
         from unittest.mock import Mock
+        execution = 'aac163d5-d39f-42b4-a894-078cb451ab89'
         report = {'engine_id': 7, 'cluster_id': 8, 'runtime_id': 10,
                   'locators': {name: 'addp://engine/7/path/orders.' + name + '?type=file' for name in ('csv', 'json', 'parquet')},
                   'item_ids': {'csv': 1, 'json': 2, 'parquet': 3}, 'final_result': final_result()}
         saved = {'status': 'success', 'metadata': {'result': {'runtime_execution_id': 'runtime-save'}}}
         reused = {'metadata': {'result': {'runtime_execution_id': 'runtime-reuse', 'final_result': final_result()}}}
         graph = {'edges': [{'source': {'item_id': source}, 'target': {'item_id': 5},
-                 'evidence': {'execution_id': 'saved'}, 'status': 'active', 'relation_kind': 'derive'} for source in (1, 2, 3)]}
+                 'evidence': {'execution_id': execution}, 'status': 'active', 'relation_kind': 'derive'} for source in (1, 2, 3)]}
         for layout in ('whole', 'single'):
             client = Mock()
             client.request.side_effect = [SimpleNamespace(payload={'status': 'success'}), SimpleNamespace(payload=saved), SimpleNamespace(payload=graph)]
             item = {'id': 5, 'attributes': {'item': {'data_type': 'table', 'format': 'parquet', 'layout': layout}}}
             with self.subTest(layout=layout), patch.dict(os.environ, ADDP_ONLINE_SPARK_RUNTIME_URL='http://runtime'), \
-                 patch.object(MODULE, 'submit_and_wait', side_effect=[('saved', saved), ('reused', reused)]) as submit, \
+                 patch.object(MODULE, 'submit_and_wait', side_effect=[(execution, saved), ('reused', reused)]) as submit, \
                  patch.object(MODULE, 'validate_persistence', return_value=({'status': 'success', 'rows': 2}, 'scan')), \
                  patch.object(MODULE.SPARK, 'runtime_status_evidence', return_value={}), \
                  patch.object(MODULE.support, 'find_item', return_value=item) as find, \
@@ -610,7 +624,8 @@ class HDFSOnlineTest(unittest.TestCase):
                         persistence_flow(client, report, 9, 30, 'file')
                 else:
                     result = persistence_flow(client, report, 9, 30, 'file')
-                    self.assertIn('/hdfs_totals/saved-', result['target_locator'])
+                    self.assertEqual(result['target_locator'],
+                                     'addp://engine/9/path/result/results/hdfs_totals/hdfs_totals__5cd4Ew0VZU4tPm3L7oXf17__n09?type=object')
                     self.assertEqual(result['lineage_sources'], [1, 2, 3])
                     self.assertEqual(find.call_args.args[-1], 'object')
                     load = submit.call_args.args[1]['tasks'][0]['params']

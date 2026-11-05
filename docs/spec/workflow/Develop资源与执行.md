@@ -222,7 +222,11 @@ Copilot 在生成工作流前做数据源理解时也必须遵守同一资源契
 
 ## Spark 对象存储 Parquet 成果
 
-Spark 保存到 MinIO 时，公开定义保存 `target_parent_locator + target_name`，执行期由 Develop 按 execution UUID 和算子节点身份派生独占子目录。每次执行创建一份新的普通 Parquet 成果，不覆盖或追加既有目录；公开保存模式为 `create`，拒绝 `overwrite`、`append` 和其他输出格式。多个保存节点不能共用同一个成果目录。
+Spark 保存到 MinIO 时，公开定义保存 `target_parent_locator + target_name`，两者共同定位成果分组目录。Develop 在该分组下生成独占子目录，名称为 `<目标名称末段>__<22 位执行编码>__n<节点序号>`。执行编码将 UUID 的 16 字节按大端序解释为无符号整数，使用区分大小写的 Base62 字符表 `0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ`，左侧用字符 `0` 补齐至 22 位。该编码可还原完整 UUID，执行记录仍使用原 UUID。
+
+节点序号按冻结工作流的 `tasks` 数组从 1 开始计数，至少两位十进制数字。目标名称末段使用原名称，保留中文、空格和扩展名。相同执行和冻结工作流始终派生相同路径，不同执行或不同保存节点各有独立目录。例如，目标名称为 `日报/订单汇总`、执行 UUID 为 `aac163d5-d39f-42b4-a894-078cb451ab89`、保存节点为第 3 个节点时，实际成果根名称为 `订单汇总__5cd4Ew0VZU4tPm3L7oXf17__n03`。
+
+该真实目录名用于 whole 数据项和资源树。Develop 在派发前要求成果根为字面对象前缀，且根下的 `_SUCCESS` 对象键不超过 1024 个 UTF-8 字节。每次新执行创建一份普通 Parquet 成果，公开保存模式为 `create`，拒绝 `overwrite`、`append` 和其他输出格式。命名规则用于新派生的目标，已提交的产物和执行输出保留原路径。
 
 成果复用已有 `table + format=parquet + layout=whole`。ResourceLocator 定位完整 scope 的 data item；Meta 精确扫描另按同一范围的 prefix 定位，prefix 是扫描范围，不是第二份成果身份。Develop 在请求自动扫描前，必须同时持久化现有 `metadata.outputs` 和 `metadata.result.produced_targets`；Meta 只有在同一输出节点的产物摘要声明 `layout=whole`，且 Engine、对象 Locator 和完整路径均与稳定输出一致时，才允许将该对象身份转换为同一路径的 prefix 扫描范围。普通单对象不得借此扫描其同名前缀，父目录、兄弟目录及多目标范围均不接受。Spark 下游文件加载从 Meta 的正式 item facts 派生 format/layout，不从目录名称后缀猜测格式。
 

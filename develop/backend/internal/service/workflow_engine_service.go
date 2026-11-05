@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"net/url"
 	"path"
 	"slices"
@@ -713,15 +714,22 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 				if len(targets) != 1 || resolver.executionID == uuid.Nil {
 					return nil, nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgSparkObjectResultIdentity))
 				}
-				for _, part := range strings.Split(stringParam(params, "path"), "/") {
+				resultPath := strings.Split(stringParam(params, "path"), "/")
+				for _, part := range resultPath {
 					if part == "" || part == "." || part == ".." || strings.ContainsAny(part, "*?[]{}\\\x00") {
 						return nil, nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgSparkResultLiteralPath))
 					}
 				}
-				leaf := resolver.executionID.String() + "-" + uuid.NewSHA1(uuid.NameSpaceOID, []byte(taskID)).String()
-				params["path"] = stringParam(params, "path") + "/" + leaf
+				executionCode := new(big.Int).SetBytes(resolver.executionID[:]).Text(62)
+				leaf := fmt.Sprintf("%s__%022s__n%02d", lastPathSegment(resultPath), executionCode, i+1)
+				resultPath = append(resultPath, leaf)
+				// The generated prefix must leave space for the mandatory commit marker in a MinIO object key.
+				if len(strings.Join(resultPath[1:], "/"))+len("/_SUCCESS") > 1024 {
+					return nil, nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgWorkflowTargetLocatorInvalid))
+				}
+				params["path"] = strings.Join(resultPath, "/")
 				params["format"], params["mode"] = "parquet", "create"
-				targets[0] = workflowProducedTarget(engineID, resourcetree.TypeObject, strings.Split(stringParam(params, "path"), "/"))
+				targets[0] = workflowProducedTarget(engineID, resourcetree.TypeObject, resultPath)
 				targets[0].Layout, targets[0].WriteMode = "whole", "create"
 			}
 		}

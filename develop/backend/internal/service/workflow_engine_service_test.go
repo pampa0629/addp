@@ -331,6 +331,7 @@ func TestPreprocessWorkflowParamsDerivesFileTargetFromParentLocator(t *testing.T
 }
 func TestPreprocessWorkflowParamsDerivesObjectTargetFromBucketLocator(t *testing.T) {
 	svc := newWorkflowEngineServiceForTest(t, 4, "minio")
+	svc.resolver.executionID = uuid.MustParse("aac163d5-d39f-42b4-a894-078cb451ab89")
 	workflow := map[string]interface{}{
 		"tasks": []interface{}{
 			map[string]interface{}{
@@ -338,24 +339,34 @@ func TestPreprocessWorkflowParamsDerivesObjectTargetFromBucketLocator(t *testing
 				"operator": "save",
 				"params": map[string]interface{}{
 					"target_parent_locator": "addp://engine/4/path/addp?type=bucket&node_id=32",
-					"target_name":           "result/output.parquet",
+					"target_name":           "result/订单 汇总__v1.parquet",
 				},
 				"depends_on": []interface{}{},
 			},
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow)
+	got, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
 
 	params := firstTaskParams(t, got)
-	wantPath := "s3a://addp/result/output.parquet/" + svc.resolver.executionID.String() + "-" + uuid.NewSHA1(uuid.NameSpaceOID, []byte("save_object")).String()
-	if params["path"] != wantPath || params["mode"] != "create" || params["format"] != "parquet" {
+	encodedName := "%E8%AE%A2%E5%8D%95%20%E6%B1%87%E6%80%BB__v1.parquet"
+	wantPath := "addp/result/" + encodedName + "/" + encodedName + "__5cd4Ew0VZU4tPm3L7oXf17__n01"
+	if params["path"] != "s3a://"+wantPath || params["mode"] != "create" || params["format"] != "parquet" {
 		t.Fatalf("unexpected MinIO result params: %#v", params)
 	}
+	if len(targets) != 1 || targets[0].Locator != "addp://engine/4/path/"+wantPath+"?type=object" ||
+		targets[0].TaskID != "save_object" || targets[0].Layout != "whole" || targets[0].WriteMode != "create" {
+		t.Fatalf("unexpected MinIO result target: %#v", targets)
+	}
 	assertConnectionInfo(t, params, "minio")
+
+	firstTaskParams(t, workflow)["target_name"] = strings.Repeat("界", 170)
+	if _, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", workflow); err == nil || len(targets) != 0 {
+		t.Fatalf("oversized MinIO result path = %#v, %v", targets, err)
+	}
 }
 
 func TestPreprocessWorkflowParamsRequiresTargetNameWithParentLocator(t *testing.T) {
@@ -398,13 +409,23 @@ func TestSparkWholeScopeUsesMetaFormatAndIndependentExecutionDirectories(t *test
 		map[string]interface{}{"id": "first", "operator": "save", "params": map[string]interface{}{"target_parent_locator": "addp://engine/4/path/addp/results?type=prefix", "target_name": "orders"}},
 		map[string]interface{}{"id": "second", "operator": "save", "params": map[string]interface{}{"target_parent_locator": "addp://engine/4/path/addp/results?type=prefix", "target_name": "orders"}},
 	}}
+	svc.resolver.executionID = uuid.UUID{15: 1}
 	_, first, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", definition)
-	if err != nil || len(first) != 2 || first[0].Locator == first[1].Locator || first[0].Layout != "whole" || first[0].WriteMode != "create" {
+	if err != nil || len(first) != 2 ||
+		!strings.HasSuffix(first[0].Locator, "/orders__0000000000000000000001__n01?type=object") ||
+		!strings.HasSuffix(first[1].Locator, "/orders__0000000000000000000001__n02?type=object") ||
+		first[0].Layout != "whole" || first[0].WriteMode != "create" {
 		t.Fatalf("independent node outputs = %#v, %v", first, err)
 	}
-	svc.resolver.executionID = uuid.New()
+	_, repeated, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", definition)
+	if err != nil || len(repeated) != 2 || repeated[0].Locator != first[0].Locator || repeated[1].Locator != first[1].Locator {
+		t.Fatalf("repeated preparation of the same execution = %#v, %v", repeated, err)
+	}
+	svc.resolver.executionID = uuid.UUID{15: 2}
 	_, second, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", definition)
-	if err != nil || first[0].Locator == second[0].Locator {
+	if err != nil || len(second) != 2 ||
+		!strings.HasSuffix(second[0].Locator, "/orders__0000000000000000000002__n01?type=object") ||
+		!strings.HasSuffix(second[1].Locator, "/orders__0000000000000000000002__n02?type=object") {
 		t.Fatalf("successive execution outputs = %#v, %v", second, err)
 	}
 	for _, mode := range []string{"overwrite", "append"} {
