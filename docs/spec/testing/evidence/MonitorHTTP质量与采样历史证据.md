@@ -8,7 +8,7 @@
 
 本轮归并前的逐次快照、归档摘要和完整诊断见[固定快照 `90d13c254`](https://github.com/pampa0629/addp/blob/90d13c2545c602eddcc17a81621a135ab64fa540/docs/spec/testing/evidence/MonitorHTTP%E8%B4%A8%E9%87%8F%E4%B8%8E%E9%87%87%E6%A0%B7%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
-[本地一期、公共 mTLS 与 SDK 来源](#http-history-sources) · [私有目录采样与 Go 编译协调](#http-history-sampling) · [自然 Linux 轮询与归档复核](#http-history-ci-polls) · [正式产品窗口、准入与失败诊断](#http-history-product-windows)
+[本地一期、公共 mTLS 与 SDK 来源](#http-history-sources) · [私有目录采样与 Go 编译协调](#http-history-sampling) · [自然 Linux 轮询与归档复核](#http-history-ci-polls) · [正式产品窗口、准入与失败诊断](#http-history-product-windows) · [停源实例 HTTP 历史趋势首期](#停源实例-http-历史趋势首期)
 
 <a id="http-history-sources"></a>
 
@@ -1224,6 +1224,8 @@ System 镜像及后续 Agent／Copilot 构建、正式密码／MFA、采集／AP
 `make test-monitor-http-local-runner` 与 `make test-monitor-traces-local-runner` 均退出 0，分别覆盖 HTTP Python 47 项、Node 7 项、Trace Python 190 项，以及既有身份、登记和离线 TLS 子门禁。归属的可靠分支仅有确定性回归证据。无真实校时、构建重试、新窗口、Hosted、容量或定时。
 
 ## 停源实例 HTTP 历史趋势首期
+
+实现与以下本地结果归档于 `3de409013281be94adf19387189196d6c05df6f2`。
 
 现有趋势 API 支持单个已停源实例的明确离线前区间。当前 User 精确读取 System 已有历史实例事实，Monitor 在同一查询预算内核验留存样本的唯一采集序列和进程启动时刻。保持 `not_active`，历史可用性单列。离线页面保存绝对区间与原实例 ID，缺样保留断点。实时摘要、排行及告警沿现有实时采集口径。详情见[停源历史契约](../../addp平台运行观测规范.md#停源实例的-http-历史趋势)。
 
