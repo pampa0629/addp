@@ -335,6 +335,23 @@ def check_resource_windows():
                    env=dict(environment, ADDP_METRICS_QUERY_INTEGRATION='1'),
                    check=True, timeout=60)
 
+def prepare_resource_pressure(work, backend, environment):
+    binary = work / 'resource-pressure.test'
+    print('Resource pressure T2: build test binary (preparation limit 180s)', flush=True)
+    subprocess.run(['go', 'test', '-c', './internal/service', '-o', str(binary)],
+                   cwd=backend, env=environment, check=True, timeout=180)
+    return binary
+
+
+def check_resource_pressure(binary, backend, environment, *, source_down):
+    timeout = 30 if source_down else 90
+    if source_down:
+        environment = dict(environment, ADDP_RESOURCE_RULE_SOURCE_DOWN='1')
+    print(f'Resource pressure T2: execute prepared test (execution limit {timeout}s)', flush=True)
+    subprocess.run([str(binary), '-test.run=^TestIntegrationMetricsResourcePressureEvidence$',
+                    '-test.count=1', f'-test.timeout={timeout}s', '-test.v'],
+                   cwd=backend / 'internal/service', env=environment, check=True, timeout=timeout)
+
 
 original_discovery = (WORK / 'source/discovery.json').read_text()
 def discovery_text(text):
@@ -1046,20 +1063,19 @@ def node_resource_samples():
 eventually(node_resource_samples, 'real exporter resource samples enter the sole HTTP SD job')
 query_env = resource_query_environment()
 query_env.update(ADDP_METRICS_QUERY_NODE_ID=projection[0]['labels']['addp_node_id'], ADDP_METRICS_QUERY_INSTANCE=node_instance)
+backend = Path(__file__).resolve().parents[2] / 'monitor/backend'
 subprocess.run(['go', 'test', './internal/resourcequery', '-run',
                 '^TestIntegrationMetricsResourceQueries$', '-count=1', '-v'],
-               cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+               cwd=backend,
                env=query_env, check=True, timeout=180)
-subprocess.run(['go', 'test', './internal/service', '-run', '^TestIntegrationMetricsResourcePressureEvidence$', '-count=1', '-v'],
-               cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=query_env, check=True, timeout=90)
+pressure_binary = prepare_resource_pressure(WORK, backend, query_env)
+check_resource_pressure(pressure_binary, backend, query_env, source_down=False)
 print('Metrics T2: native fixed catalog instant/range and source isolation', flush=True)
 
 compose('stop', 'node-exporter')
 eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance + '"} == 0')),
            'node exporter outage is visible without stopping the center')
-subprocess.run(['go', 'test', './internal/service', '-run', '^TestIntegrationMetricsResourcePressureEvidence$', '-count=1', '-v'],
-               cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
-               env=dict(query_env, ADDP_RESOURCE_RULE_SOURCE_DOWN='1'), check=True, timeout=30)
+check_resource_pressure(pressure_binary, backend, query_env, source_down=True)
 assert get(base + '/-/ready')
 compose('start', 'node-exporter')
 eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance + '"} == 1')),

@@ -967,6 +967,40 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertEqual(error.exception.timeout, 60)
         self.assertEqual(len(calls), 2)
 
+    def test_cold_pressure_build_keeps_both_execution_deadlines(self):
+        path = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        tree = ast.parse(path.read_text())
+        names = {'prepare_resource_pressure', 'check_resource_pressure'}
+        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
+        self.assertEqual({function.name for function in functions}, names)
+        namespace = {'subprocess': subprocess}
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(path), 'exec'), namespace)
+
+        def run(command, **options):
+            elapsed = 100 if command[0] == 'go' else 1
+            if elapsed > options['timeout']:
+                raise subprocess.TimeoutExpired(command, options['timeout'])
+            return subprocess.CompletedProcess(command, 0)
+
+        backend = ROOT / 'monitor/backend'
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(subprocess, 'run', side_effect=run) as command:
+            work = Path(directory)
+            query_env = {'GOWORK': 'off', 'ADDP_METRICS_QUERY_INTEGRATION': '1'}
+            binary = namespace['prepare_resource_pressure'](work, backend, query_env)
+            namespace['check_resource_pressure'](binary, backend, query_env, source_down=False)
+            namespace['check_resource_pressure'](binary, backend, query_env, source_down=True)
+        build, healthy, outage = command.call_args_list
+        self.assertEqual(build.args[0], ['go', 'test', '-c', './internal/service', '-o', str(binary)])
+        self.assertEqual(binary.parent, work)
+        self.assertEqual([call.kwargs['timeout'] for call in (build, healthy, outage)], [180, 90, 30])
+        for call, timeout in ((healthy, 90), (outage, 30)):
+            self.assertEqual(call.args[0], [str(binary), '-test.run=^TestIntegrationMetricsResourcePressureEvidence$',
+                                           '-test.count=1', f'-test.timeout={timeout}s', '-test.v'])
+            self.assertEqual(call.kwargs['cwd'], backend / 'internal/service')
+        self.assertNotIn('ADDP_RESOURCE_RULE_SOURCE_DOWN', healthy.kwargs['env'])
+        self.assertEqual(outage.kwargs['env']['ADDP_RESOURCE_RULE_SOURCE_DOWN'], '1')
+        self.assertTrue(all(call.kwargs['check'] for call in command.call_args_list))
+
     def test_cold_admission_build_does_not_consume_the_test_execution_deadline(self):
         calls = []
 
@@ -1501,7 +1535,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertTrue({'CPUWindow', 'ProcessWindow', 'DiskWindow', 'DiskIOWindow', 'NetworkWindow',
                          'Filesystem', 'FilesystemInodes'}.issubset(set(selected[0].split('|'))))
         self.assertIn("'^TestIntegrationMetricsResourceOverview$'", probe)
-        self.assertEqual(probe.count("'^TestIntegrationMetricsResourcePressureEvidence$'"), 2)
+        self.assertEqual(probe.count("'-test.run=^TestIntegrationMetricsResourcePressureEvidence$'"), 1)
         self.assertIn("'^TestIntegrationMetricsResourceAlertLifecycle$'", probe)
         self.assertIn("'^TestIntegrationMetricsFilesystemAlertLifecycle$'", probe)
         self.assertIn('postgres', re.search(r'^# ADDP_T2_OWNED_SERVICES=(.+)$', script, re.M).group(1).split(','))

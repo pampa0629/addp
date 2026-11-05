@@ -140,6 +140,14 @@ Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项
 
 <a id="node-evidence-capacity"></a>
 
+### host-resources 压力探针的编译与执行预算（2026-11-06）
+
+固定 `3de409013` 的 [Linux host-resources Job](https://github.com/pampa0629/addp/actions/runs/42051463127/job/127363354578) 在压力探针的 `go test` 整体 90 秒到期。日志出现依赖下载，未记录该用例启动，无法从旧日志细分下载与编译耗时。早先 `62f5e9a51` 的同分项通过及同版同行 `http-quality` 通过各自保留。原件 `/tmp/addp-ci-20261106-020018/job-127363354578.log`。
+
+在当次隔离目录以 180 秒上限准备一个测试二进制，分别复用于在线和停源断言。执行仍各限 90 秒／30 秒，原业务断言未改。模拟 100 秒冷编译的回归先失败、修正后通过，既有 Release 分项登记命中。
+
+基于 `93f97aabf` 的隔离源码仅叠加本专项，运行 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`。139 项配置通过，真实在线及停源压力用例各实际执行并通过（均 0.01 秒）。整轮随后在受限 VM exporter 的 mTLS 抓取超时失败，日志记录 `tls: bad record MAC`，其根因未确认。容器、网络、卷按精确项目标签核对均为零。本机日志 `/tmp/addp-host-pressure-20261106-t2.log`。这轮只补压力阶段证据，完整 Linux 专项待新源码自然 CI 回传。
+
 ## 容量状态
 
 逐设备容量的只读取证、实源 T2 和 Console 受控状态分开查阅。关闭、过期、故障、迟到响应及当前撤权各有独立判定。
