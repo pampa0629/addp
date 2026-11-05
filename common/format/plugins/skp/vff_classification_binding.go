@@ -49,6 +49,7 @@ type vffSKCBinder struct {
 	member, namespace string
 	raw               []byte
 	definitions       map[string]map[string]*vffXMLNode
+	anonymousTypes    []*vffXMLNode
 	budget            *vffSKCBindingBudget
 	active            map[*vffXMLNode]bool
 	witnesses         map[*vffXMLNode]vffSKCDeclarationWitness
@@ -129,9 +130,6 @@ func (b *vffSKCBinder) readFilterBindings(filter vffSKCFilterFact) (*vffSKCFilte
 					if node := b.definitions[kind][name]; node != nil {
 						field.candidates = append(field.candidates, vffSKCFieldCandidate{source: b.witness(node), declaration: b.witness(node)})
 					}
-				}
-				if len(field.candidates) != 1 {
-					b.issues = append(b.issues, "blacklist global declaration missing or ambiguous: "+name)
 				}
 				fact.fields = append(fact.fields, field)
 			}

@@ -53,20 +53,40 @@ func newVFFSKCBindingGraph(ctx context.Context, files map[string][]byte, doc vff
 		}
 		g.binders[fact.member] = b
 		g.facts[fact.member] = fact
-		var index func(*vffXMLNode) error
-		index = func(n *vffXMLNode) error {
+		var index func(*vffXMLNode, bool) error
+		index = func(n *vffXMLNode, inAnnotation bool) error {
 			if err := b.tick(0); err != nil {
 				return err
 			}
 			g.owners[n] = b
+			if !inAnnotation && n.name.Local == "complexType" && n.parent != nil && n.parent.name.Local == "element" {
+				if _, named := n.attrs["name"]; !named {
+					parent := n.parent
+					_, typed := parent.attrs["type"]
+					_, referenced := parent.attrs["ref"]
+					if !vffSKCBindingName(parent.attrs["name"]) || typed || referenced {
+						return fmt.Errorf("conflicting anonymous XSD type owner")
+					}
+					for _, sibling := range parent.children {
+						if err := b.tick(0); err != nil {
+							return err
+						}
+						if sibling != n && (sibling.name.Local == "simpleType" || sibling.name.Local == "complexType") {
+							return fmt.Errorf("multiple inline XSD types for one element")
+						}
+					}
+					b.anonymousTypes = append(b.anonymousTypes, n)
+				}
+			}
+			inAnnotation = inAnnotation || n.name.Local == "annotation"
 			for _, child := range n.children {
-				if err := index(child); err != nil {
+				if err := index(child, inAnnotation); err != nil {
 					return err
 				}
 			}
 			return nil
 		}
-		if err := index(root); err != nil {
+		if err := index(root, false); err != nil {
 			return nil, err
 		}
 		for _, child := range root.children {

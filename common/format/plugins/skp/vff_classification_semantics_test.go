@@ -47,6 +47,61 @@ func TestVFFSKCBlacklistScopesExcludeOnlyExplicitWhiteTypes(t *testing.T) {
 	}
 }
 
+func TestVFFSKCBlacklistSeparatesAnonymousAndGlobalDeclarations(t *testing.T) {
+	schema := `<x:schema xmlns:x="` + vffXSDNS + `" xmlns:t="urn:t" targetNamespace="urn:t">
+<x:annotation><x:appinfo><x:element name="Example"><x:complexType/></x:element></x:appinfo></x:annotation>
+<x:attribute name="Clash" type="x:string"/><x:element name="Clash" type="x:int"/>
+<x:attributeGroup name="Audit"><x:attribute name="Shared" type="x:string"/></x:attributeGroup>
+<x:complexType name="Named"><x:attribute name="Shared" type="x:boolean"/></x:complexType>
+<x:complexType name="White"><x:sequence><x:element name="Owner"><x:complexType>
+<x:sequence><x:element name="Nested"><x:complexType><x:attribute name="Shared" type="x:int"/></x:complexType></x:element></x:sequence>
+<x:attributeGroup ref="t:Audit"/></x:complexType></x:element></x:sequence></x:complexType>
+</x:schema>`
+	got := skcSemanticsRead(t, schema, "White {}\n{ Shared Audit Clash Missing }")
+	rule := got[0].rules[1]
+	if len(rule.scopes) != 3 || len(rule.fields[0].candidates) != 0 || len(rule.fields[2].candidates) != 2 ||
+		strings.Join(rule.issues, "|") != "blacklist global declaration ambiguous: Clash|blacklist declaration not found: Missing" {
+		t.Fatalf("unexpected blacklist witnesses: %#v", rule)
+	}
+	for i, scope := range rule.scopes {
+		field := scope.fields[0]
+		wantType := []string{"boolean", "string", "int"}[i]
+		if len(scope.issues) != 0 || len(field.candidates) != 1 || field.candidates[0].value == nil || len(field.candidates[0].value.terminals) != 1 ||
+			field.candidates[0].value.terminals[0].Local != wantType {
+			t.Fatalf("scope %d mixed local fields: %#v", i, field)
+		}
+		if i == 0 {
+			if scope.element != nil || scope.typeDeclaration.name != "Named" {
+				t.Fatal("named scope replaced by anonymous owner")
+			}
+			continue
+		}
+		owner := scope.element
+		if owner == nil || owner.name != []string{"", "Owner", "Nested"}[i] || scope.typeDeclaration.name != "" || owner.member != scope.typeDeclaration.member ||
+			owner.begin >= scope.typeDeclaration.begin || owner.end <= scope.typeDeclaration.end || owner.sha256 != sha256.Sum256([]byte(schema[owner.begin:owner.end])) {
+			t.Fatalf("missing precise anonymous scope owner: %#v", owner)
+		}
+	}
+	if len(rule.scopes[1].groups[1].uses) != 1 || len(rule.scopes[2].groups[1].uses) != 0 {
+		t.Fatal("group use leaked across nested scopes")
+	}
+}
+
+func TestVFFSKCBlacklistRejectsConflictingAnonymousTypeOwners(t *testing.T) {
+	for _, element := range []string{
+		`<x:element name="Owner" type="x:string"><x:complexType/></x:element>`,
+		`<x:element name="Owner"><x:complexType/><x:simpleType/></x:element>`,
+	} {
+		files := skcDocumentFiles(t)
+		files["Schemas/root.xsd"] = []byte(`<x:schema xmlns:x="` + vffXSDNS + `">` + element + `</x:schema>`)
+		files["Schemas/root.xsd.filter"] = []byte("{ Shared }")
+		got, err := readVFFClassificationBindings(context.Background(), skcDocumentContainer(t, files), skcBindingLimits())
+		if err == nil || got != nil {
+			t.Fatalf("conflicting anonymous owner accepted: %s", element)
+		}
+	}
+}
+
 func TestVFFSKCValueGraphsRetainNamedInlineUnionAndFacets(t *testing.T) {
 	schema := `<x:schema xmlns:x="` + vffXSDNS + `" xmlns:t="urn:t" targetNamespace="urn:t"><x:simpleType name="Label"><x:restriction base="x:string"><x:enumeration value="not validated"/></x:restriction></x:simpleType><x:simpleType name="Numbers"><x:list itemType="x:int"/></x:simpleType><x:complexType name="Holder"><x:attribute name="A" type="t:Label"/><x:attribute name="B" type="t:Numbers"/><x:attribute name="C"><x:simpleType><x:union memberTypes="t:Label x:boolean"><x:simpleType><x:restriction base="x:decimal"/></x:simpleType></x:union></x:simpleType></x:attribute></x:complexType></x:schema>`
 	got := skcSemanticsRead(t, schema, "Holder { A B C }")

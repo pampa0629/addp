@@ -12,6 +12,7 @@ type vffSKCBlacklistGroup struct {
 }
 type vffSKCBlacklistScope struct {
 	typeDeclaration vffSKCDeclarationWitness
+	element         *vffSKCDeclarationWitness
 	fields          []vffSKCFieldBinding
 	groups          []vffSKCBlacklistGroup
 	issues          []string
@@ -41,20 +42,30 @@ func (b *vffSKCBinder) bindSemantics(filter vffSKCFilterFact, result *vffSKCFilt
 		}
 	}
 	sort.Strings(names)
+	types := make([]*vffXMLNode, 0, len(names)+len(b.anonymousTypes))
+	for _, name := range names {
+		types = append(types, b.definitions["complexType"][name])
+	}
+	types = append(types, b.anonymousTypes...)
 	for i, rule := range filter.rules {
 		if rule.typeName != "" {
 			continue
 		}
-		for _, name := range names {
+		binding := &result.rules[i]
+		scoped := make([]bool, len(rule.attributes))
+		for _, node := range types {
 			b.issues = nil
 			b.groupUses = nil
-			node := b.definitions["complexType"][name]
 			candidates, err := b.expand(node, nil, 1)
 			if err != nil {
 				return err
 			}
 			scope := vffSKCBlacklistScope{typeDeclaration: b.witness(node), issues: append([]string(nil), b.issues...)}
-			for _, fieldName := range rule.attributes {
+			if scope.typeDeclaration.name == "" {
+				element := b.witness(node.parent)
+				scope.element = &element
+			}
+			for j, fieldName := range rule.attributes {
 				if err := b.tick(0); err != nil {
 					return err
 				}
@@ -79,10 +90,19 @@ func (b *vffSKCBinder) bindSemantics(filter vffSKCFilterFact, result *vffSKCFilt
 				if err := b.bindValues(&field); err != nil {
 					return err
 				}
+				scoped[j] = scoped[j] || len(field.candidates) > 0 || len(group.uses) > 0
 				scope.fields = append(scope.fields, field)
 				scope.groups = append(scope.groups, group)
 			}
-			result.rules[i].scopes = append(result.rules[i].scopes, scope)
+			binding.scopes = append(binding.scopes, scope)
+		}
+		for j, field := range binding.fields {
+			switch count := len(field.candidates); {
+			case count > 1:
+				binding.issues = append(binding.issues, "blacklist global declaration ambiguous: "+field.name)
+			case count == 0 && !scoped[j]:
+				binding.issues = append(binding.issues, "blacklist declaration not found: "+field.name)
+			}
 		}
 	}
 	return nil
