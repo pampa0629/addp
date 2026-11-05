@@ -108,7 +108,8 @@ func bearerToken(c *gin.Context) string {
 // @Param page_size query int false "每页数量，默认20，最大2000 | Page size, default 20, max 2000"
 // @Param trajectory_selection query string false "单文件轨迹范围 JSON：device_field,time_field,time_encoding,devices,start,end；page=1、page_size=2000；时间左闭右开；最多2000点、32MiB、250000行、15秒 | Single-file trajectory selection JSON; device_field,time_field,time_encoding,devices,start,end; page=1,page_size=2000; half-open time range; budgets 2000 points,32MiB,250000 rows,15 seconds"
 // @Description 范围成功返回 data.trajectory_scope 的 selection/complete/scanned_rows；只有完整扫描才返回结果，不返回部分路线。设备/时间字段受保护时拒绝筛选 | A successful range response includes data.trajectory_scope selection/complete/scanned_rows; partial scans publish no rows; protected device/time predicates are rejected
-// @Failure 422 {object} map[string]interface{} "轨迹点数或扫描预算超限，或源数据无效 | Trajectory point/scan budget exceeded or invalid source data"
+// @Description ClickHouse 已声明的二进制列在保护后以 Base64 字符串返回，空字节为空串，SQL NULL 为 null，保护文本保持原样 | Declared ClickHouse binary cells use Base64 strings after protection, empty bytes use an empty string, SQL NULL remains null, and protected text is unchanged
+// @Failure 422 {object} map[string]interface{} "轨迹点数或扫描预算超限、源数据无效，或 ClickHouse 可见文本编码无效（preview_text_encoding_invalid） | Trajectory budget exceeded, invalid source data, or invalid visible ClickHouse text encoding (preview_text_encoding_invalid)"
 // @Param grid_slice query string false "数值容器网格切片JSON：variable/indices/x/y/width/height，最多4096格；另需manager.content.read | Numeric container grid selection JSON, at most 4096 cells; additionally requires manager.content.read"
 // @Param child_name query string false "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet"
 // @Param ref_path query string false "multi child 内的 ref 路径 | Ref path inside a multi child"

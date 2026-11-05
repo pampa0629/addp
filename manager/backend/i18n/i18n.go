@@ -43,6 +43,7 @@ const (
 	MsgPreviewFailed                         = "manager.error.preview_failed"
 	MsgPreviewSourceRefreshRequired          = "manager.error.preview_source_refresh_required"
 	MsgPreviewSourceUnavailable              = "manager.error.preview_source_unavailable"
+	MsgPreviewTextEncodingInvalid            = "manager.error.preview_text_encoding_invalid"
 	MsgPreviewResourceNotFound               = "manager.error.preview_resource_not_found"
 	MsgPreviewUnsupported                    = "manager.error.preview_unsupported"
 	MsgMissingEngineIDOrStorageRef           = "manager.error.missing_engine_id_or_storage_ref"

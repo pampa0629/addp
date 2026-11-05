@@ -151,7 +151,7 @@ func TestClickHouseJSONSessionCancelledBatchDoesNotWrite(t *testing.T) {
 func TestClickHouseJSONSchemaValidationUsesWriteStorageMapping(t *testing.T) {
 	for _, typ := range []datatype.FieldType{datatype.FieldTypeJSON, datatype.FieldTypeBytes, datatype.FieldTypeTime} {
 		field := datatype.FieldInfo{Name: "value", Type: typ, Nullable: true}
-		if !clickhouseColumnCompatibleWithField(clickhouseWriteColumnInfo{NativeType: "Nullable(String)"}, field) {
+		if !clickhouseColumnCompatibleWithField(clickhouseWriteColumnInfo{NativeType: "Nullable(String)", Bytes: typ == datatype.FieldTypeBytes}, field) {
 			t.Errorf("%s rejected its own String storage mapping", typ)
 		}
 	}

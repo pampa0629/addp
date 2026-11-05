@@ -118,14 +118,19 @@ func (s *sqlRowsTableReadSession) Close(context.Context) error {
 
 func alignSQLReadFields(columns []string, fields []datatype.FieldInfo) []datatype.FieldInfo {
 	byName := make(map[string]datatype.FieldInfo, len(fields))
+	byFoldedName := make(map[string]datatype.FieldInfo, len(fields))
 	for _, field := range fields {
 		if name := strings.TrimSpace(field.Name); name != "" {
-			byName[strings.ToLower(name)] = field
+			byName[field.Name] = field
+			byFoldedName[strings.ToLower(name)] = field
 		}
 	}
 	result := make([]datatype.FieldInfo, 0, len(columns))
 	for _, column := range columns {
-		field, ok := byName[strings.ToLower(column)]
+		field, ok := byName[column]
+		if !ok {
+			field, ok = byFoldedName[strings.ToLower(column)]
+		}
 		if !ok {
 			field = datatype.FieldInfo{Type: datatype.FieldTypeUnknown, Nullable: true}
 		}

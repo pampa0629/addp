@@ -117,7 +117,16 @@ func (p *ClickHousePlugin) ResolvePath(ctx context.Context, connInfo plugin.Conn
 }
 
 func (p *ClickHousePlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
-	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	facts, err := plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	if err == nil && facts != nil && facts.Table != nil && facts.Kind != plugin.EngineCatalogKindTable {
+		for i := range facts.Table.Fields {
+			field := &facts.Table.Fields[i]
+			if field.Type == datatype.FieldTypeBytes {
+				field.Type = clickhouseCommonFieldType(field.NativeType)
+			}
+		}
+	}
+	return facts, err
 }
 
 func (p *ClickHousePlugin) QueryLanguages() []string {
@@ -145,7 +154,16 @@ func (p *ClickHousePlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Conne
 }
 
 func (p *ClickHousePlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
-	return plugin.ReadSQLBatch(ctx, p, connInfo, path, opts)
+	if strings.TrimSpace(opts.Query) != "" {
+		return plugin.ReadSQLBatch(ctx, p, connInfo, path, opts)
+	}
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 1000
+	}
+	return p.ReadCatalogTablePage(ctx, connInfo, path, plugin.CatalogTablePageOptions{
+		Limit: limit, Offset: opts.Offset, Args: opts.Args,
+	})
 }
 
 // ValidateConnectionInfo 验证连接信息
@@ -345,12 +363,16 @@ type clickhouseColumnRow struct {
 }
 
 func clickhouseFieldInfo(row clickhouseColumnRow) datatype.FieldInfo {
+	isBinary, comment := clickhouseBinaryColumnDeclaration(row.NativeType, row.Comment)
 	field := datatype.FieldInfo{
 		Name:       row.Name,
 		Type:       clickhouseCommonFieldType(row.NativeType),
 		NativeType: row.NativeType,
 		Nullable:   row.Nullable,
-		Comment:    row.Comment,
+		Comment:    comment,
+	}
+	if isBinary {
+		field.Type = datatype.FieldTypeBytes
 	}
 	if field.Type == datatype.FieldTypeDecimal {
 		if precision, scale, ok := clickhouseDecimalPrecisionScale(row.NativeType); ok {

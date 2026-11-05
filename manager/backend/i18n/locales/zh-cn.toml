@@ -34,6 +34,9 @@ other = "源文件已变化或索引缺少源版本信息，请刷新元数据�
 [manager.error.preview_source_unavailable]
 other = "暂时无法核验源文件版本，已暂停预览，请稍后重试"
 
+[manager.error.preview_text_encoding_invalid]
+other = "ClickHouse 预览包含无效的 UTF-8 文本，请核对源列的文本编码或二进制类型声明"
+
 [manager.error.security_protection_required]
 other = "该数据项已纳入安全保护，当前保护规则尚未就绪，禁止读取原始数据"
 

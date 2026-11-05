@@ -1165,7 +1165,7 @@ jobs:
   common-clickhouse-decimal:
     name: Common typed-write Provider integration (ClickHouse 25.12.1.649)
     needs: selection
-    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.transfer == 'true'
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.manager == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

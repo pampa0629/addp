@@ -329,3 +329,25 @@ func fieldNames(fields []datatype.FieldInfo) []string {
 	}
 	return names
 }
+
+func TestClickHouseBinaryColumnDeclaration(t *testing.T) {
+	for _, tc := range []struct {
+		native, comment, display string
+		kind                     datatype.FieldType
+	}{
+		{"String", "description\naddp:type=bytes", "description", datatype.FieldTypeBytes},
+		{"Nullable(String)", "addp:type=bytes", "", datatype.FieldTypeBytes},
+		{"String", "description addp:type=bytes", "description addp:type=bytes", datatype.FieldTypeString},
+		{"FixedString(4)", "addp:type=bytes", "", datatype.FieldTypeString},
+		{"LowCardinality(String)", "addp:type=bytes", "", datatype.FieldTypeString},
+	} {
+		field := clickhouseFieldInfo(clickhouseColumnRow{Name: "value", NativeType: tc.native, Comment: tc.comment})
+		if field.Type != tc.kind || field.NativeType != tc.native || field.Comment != tc.display {
+			t.Errorf("native=%q comment=%q produced %+v", tc.native, tc.comment, field)
+		}
+	}
+	if clickhouseColumnCompatibleWithField(clickhouseWriteColumnInfo{NativeType: "String", Bytes: true},
+		datatype.FieldInfo{Type: datatype.FieldTypeString}) {
+		t.Fatal("declared binary column accepted a text target definition")
+	}
+}

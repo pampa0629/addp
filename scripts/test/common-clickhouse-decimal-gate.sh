@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# common-clickhouse-decimal-gate.sh - Verify ClickHouse decimal and typed JSON/bytes writes against a disposable database.
+# common-clickhouse-decimal-gate.sh - Verify ClickHouse typed writes, binary reads and Manager preview on a disposable database.
 # ADDP_T2_HOSTED_ONLY=clickhouse
 
 set -euo pipefail
@@ -86,18 +86,24 @@ case "$host_port" in
         ;;
 esac
 
-cd "$ROOT_DIR/common"
-ADDP_CLICKHOUSE_INTEGRATION=1 \
-ADDP_TEST_CLICKHOUSE_HOST=127.0.0.1 \
-ADDP_TEST_CLICKHOUSE_PORT="$host_port" \
-ADDP_TEST_CLICKHOUSE_DATABASE="$DATABASE_NAME" \
-ADDP_TEST_CLICKHOUSE_USER=default \
-ADDP_TEST_CLICKHOUSE_PASSWORD="$DATABASE_PASSWORD" \
-    go test ./engine/plugins/clickhouse \
-    -run '^TestIntegrationClickHouse(DecimalTableWriteDefinition|TypedJSONWrites)$' \
+export ADDP_CLICKHOUSE_INTEGRATION=1
+export ADDP_TEST_CLICKHOUSE_HOST=127.0.0.1
+export ADDP_TEST_CLICKHOUSE_PORT="$host_port"
+export ADDP_TEST_CLICKHOUSE_DATABASE="$DATABASE_NAME"
+export ADDP_TEST_CLICKHOUSE_USER=default
+export ADDP_TEST_CLICKHOUSE_PASSWORD="$DATABASE_PASSWORD"
+
+go -C "$ROOT_DIR/common" test ./engine/plugins/clickhouse \
+    -run '^TestIntegrationClickHouse(BinaryTableRead|DecimalTableWriteDefinition|TypedJSONWrites)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-clickhouse-decimal.log"
 
-if grep -q -- '--- SKIP:' "$WORK_DIR/common-clickhouse-decimal.log"; then
-    echo "Common ClickHouse decimal gate refuses skipped tests" >&2
+go -C "$ROOT_DIR/manager/backend" test ./internal/api \
+    -run '^TestIntegrationManagerClickHouseBinaryPreview$' \
+    -count=1 -v 2>&1 | tee "$WORK_DIR/manager-clickhouse-preview.log"
+
+if grep -q -- '--- SKIP:' "$WORK_DIR/common-clickhouse-decimal.log" "$WORK_DIR/manager-clickhouse-preview.log" ||
+    ! grep -q '^--- PASS: TestIntegrationClickHouseBinaryTableRead ' "$WORK_DIR/common-clickhouse-decimal.log" ||
+    ! grep -q '^--- PASS: TestIntegrationManagerClickHouseBinaryPreview ' "$WORK_DIR/manager-clickhouse-preview.log"; then
+    echo "ClickHouse gate requires the Provider and Manager binary regressions without skips" >&2
     exit 1
 fi

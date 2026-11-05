@@ -111,11 +111,12 @@ func evolveClickHouseTableSchema(ctx context.Context, db *sql.DB, database, tabl
 type clickhouseWriteColumnInfo struct {
 	Name       string
 	NativeType string
+	Bytes      bool
 }
 
 func clickhouseTableColumns(ctx context.Context, db *sql.DB, database, table string) ([]clickhouseWriteColumnInfo, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT name, type
+		SELECT name, type, comment
 		FROM system.columns
 		WHERE database = ? AND table = ?
 		ORDER BY position
@@ -128,9 +129,11 @@ func clickhouseTableColumns(ctx context.Context, db *sql.DB, database, table str
 	columns := make([]clickhouseWriteColumnInfo, 0)
 	for rows.Next() {
 		var column clickhouseWriteColumnInfo
-		if err := rows.Scan(&column.Name, &column.NativeType); err != nil {
+		var comment string
+		if err := rows.Scan(&column.Name, &column.NativeType, &comment); err != nil {
 			return nil, fmt.Errorf("scan clickhouse table column: %w", err)
 		}
+		column.Bytes, _ = clickhouseBinaryColumnDeclaration(column.NativeType, comment)
 		columns = append(columns, column)
 	}
 	if err := rows.Err(); err != nil {
@@ -156,6 +159,9 @@ func clickhouseSchemaEvolutionStatements(database, table string, fields []dataty
 		column, exists := existingByName[field.Name]
 		if exists {
 			if !clickhouseColumnCompatibleWithField(column, field) {
+				if column.Bytes != (field.Type == datatype.FieldTypeBytes) {
+					return nil, fmt.Errorf("clickhouse target column %q binary declaration does not match the requested type", field.Name)
+				}
 				return nil, fmt.Errorf("clickhouse target column %q has type %q, expected %q", field.Name, column.NativeType, clickhouseSQLTypeForField(field))
 			}
 			continue
@@ -199,6 +205,16 @@ func clickhouseColumnDefinition(field datatype.FieldInfo) string {
 	if strings.TrimSpace(field.DefaultExpression) != "" {
 		definition += " DEFAULT " + strings.TrimSpace(field.DefaultExpression)
 	}
+	_, comment := clickhouseBinaryColumnDeclaration("", field.Comment)
+	if field.Type == datatype.FieldTypeBytes {
+		if comment != "" {
+			comment += "\n"
+		}
+		comment += clickhouseBinaryColumnMarker
+	}
+	if comment != "" {
+		definition += " COMMENT '" + clickhouseCommentEscaper.Replace(comment) + "'"
+	}
 	return definition
 }
 
@@ -208,6 +224,10 @@ func clickhouseMissingColumnCanBeAdded(field datatype.FieldInfo) bool {
 
 func clickhouseColumnCompatibleWithField(column clickhouseWriteColumnInfo, field datatype.FieldInfo) bool {
 	expected := datatype.ParseFieldType(string(field.Type))
+	if column.Bytes || expected == datatype.FieldTypeBytes {
+		return column.Bytes && expected == datatype.FieldTypeBytes &&
+			clickhouseBinaryColumnStorage(column.NativeType)
+	}
 	existing := clickhouseCommonFieldType(column.NativeType)
 	if expected == datatype.FieldTypeUnknown {
 		return existing == datatype.FieldTypeString || existing == datatype.FieldTypeUnknown
@@ -215,7 +235,7 @@ func clickhouseColumnCompatibleWithField(column clickhouseWriteColumnInfo, field
 	// These logical types use binary String storage. Require that physical
 	// mapping: native JSON/Array and padded FixedString are different contracts.
 	switch expected {
-	case datatype.FieldTypeJSON, datatype.FieldTypeBytes, datatype.FieldTypeTime:
+	case datatype.FieldTypeJSON, datatype.FieldTypeTime:
 		return clickhouseNormalizeTypeName(column.NativeType) == clickhouseNormalizeTypeName(clickhouseSQLTypeForField(field))
 	}
 	if expected == datatype.FieldTypeDecimal && existing == datatype.FieldTypeDecimal {

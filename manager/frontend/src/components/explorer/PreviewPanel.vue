@@ -623,6 +623,7 @@ const previewFailureKind = computed(() => {
   const status = store.previewError?.status
   if (status === 409 && store.previewError.code === 'preview_source_refresh_required') return 'sourceRefresh'
   if (status === 503 && store.previewError.code === 'preview_source_unavailable') return 'sourceUnavailable'
+  if (status === 422 && store.previewError.code === 'preview_text_encoding_invalid') return 'textEncoding'
   if (status === 403) {
     return store.previewError.code === 'security_protection_required' ? 'protected' : 'forbidden'
   }

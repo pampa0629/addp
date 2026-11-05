@@ -3,10 +3,12 @@ package api
 import (
 	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
@@ -29,6 +31,13 @@ func writePreviewResult(c *gin.Context, result *preview.PreviewResult, rules []d
 		protectionRequired(c)
 		return
 	}
+	if table, ok := result.Data.(*models.TablePreview); ok && table != nil && table.EngineType == "clickhouse" && !clickHousePreviewTextIsValid(table) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error":      commoni18n.T(c, manageri18n.MsgPreviewTextEncodingInvalid),
+			"error_code": "preview_text_encoding_invalid",
+		})
+		return
+	}
 	wireResult, err := previewResultForJSON(result)
 	if err != nil {
 		logger.L().Error("数据预览序列化失败", "error_type", "bigint_representation")
@@ -37,6 +46,19 @@ func writePreviewResult(c *gin.Context, result *preview.PreviewResult, rules []d
 	}
 	logger.L().Info("数据预览成功", "locator", c.Query("locator"), "preview_type", result.PreviewType)
 	c.JSON(http.StatusOK, wireResult)
+}
+
+// Validate visible strings after protection. The JSON encoder otherwise
+// replaces invalid UTF-8 without reporting a failure.
+func clickHousePreviewTextIsValid(table *models.TablePreview) bool {
+	for _, row := range table.Rows {
+		for _, value := range row {
+			if text, ok := value.(string); ok && !utf8.ValidString(text) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // applyPreviewProtection is the Manager response-boundary executor. Providers
