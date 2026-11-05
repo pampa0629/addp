@@ -36,6 +36,7 @@ export const useExplorerStore = defineStore('explorer', {
     engineTreeDepths: {},
     engineTreeRequestSeq: {},
     loadingEngineIds: {},
+    treeRevision: 0,
 
     // 节点选择
     selectedLocator: null,
@@ -238,6 +239,91 @@ export const useExplorerStore = defineStore('explorer', {
       return task
     },
 
+    async refreshCatalog() {
+      const engines = await this.loadEngines({ silent: true })
+      const expanded = new Set(this.expandedLocators)
+      const previousTrees = this.engineTrees
+      const initialSelection = this.selectedLocator
+      const selectionEngineId = initialSelection ? parseLocator(initialSelection)?.engineId : null
+      const selectionPath = findResourcePath(previousTrees[selectionEngineId], resourceIdentity(initialSelection))
+      const selectedPathKeys = new Set(selectionPath.map(node => resourceIdentity(node.locator)))
+      const trees = {}
+      const depths = {}
+      const nextExpanded = new Set()
+      const checkedRoots = new Set()
+
+      const readVisibleBranch = async (engineId, node) => {
+        const locator = node.locator
+        if (!node.hasChildren || (!expanded.has(locator) && !selectedPathKeys.has(resourceIdentity(locator)))) return node
+        const fresh = await readVisibleResource(() => dataExplorerAPI.getNodeChildren(engineId, locator))
+        if (!fresh) return null
+        this.normalizeResourceSubtree(fresh)
+        fresh.loaded = true
+        await readVisibleChildren(engineId, fresh)
+        if (fresh.hasChildren && expanded.has(locator)) nextExpanded.add(fresh.locator)
+        return fresh
+      }
+      const readVisibleChildren = async (engineId, node) => {
+        node.children = (await Promise.all((node.children || []).map(child => readVisibleBranch(engineId, child)))).filter(Boolean)
+        node.hasChildren = node.children.length > 0
+      }
+
+      await Promise.all(engines.map(async engine => {
+        const engineId = engine.id
+        const placeholder = engineRootLocator(engine)
+        const oldRoot = previousTrees[engineId]?.locator || placeholder
+        const rootExpanded = expanded.has(oldRoot) || expanded.has(placeholder)
+        if (!rootExpanded && engineId !== selectionEngineId) return
+        checkedRoots.add(engineId)
+        const root = await readVisibleResource(() => dataExplorerAPI.getTree(engineId, 1))
+        if (!root) return
+        this.normalizeResourceSubtree(root)
+        root.loaded = true
+        await readVisibleChildren(engineId, root)
+        if (rootExpanded && root.hasChildren) nextExpanded.add(root.locator)
+        trees[engineId] = root
+        depths[engineId] = 1
+      }))
+
+      let previousLocator
+      let selected
+      do {
+        previousLocator = this.selectedLocator
+        selected = null
+        if (!previousLocator) break
+        const loc = parseLocator(previousLocator)
+        const engine = engines.find(({ id }) => id === loc?.engineId)
+        if (engine) {
+          const tree = trees[engine.id]
+          selected = previousLocator === engineRootLocator(engine) ? tree : findResourcePath(tree, resourceIdentity(previousLocator)).at(-1)
+          const checkedSelection = checkedRoots.has(engine.id) && (!tree ||
+            (previousLocator === initialSelection && selectionPath.length > 0))
+          if (!selected && !checkedSelection && (loc.nodeId || loc.itemId)) {
+            // 上下文选择不一定已进入树，例如从右侧详情打开的资源。
+            // 只校验精确身份，不把祖先链混回刚重查过的分支。
+            const facts = await readVisibleResource(() => dataExplorerAPI.getTreeAncestors(engine.id, previousLocator))
+            selected = facts?.ancestors?.at(-1) || null
+          }
+        }
+      } while (previousLocator !== this.selectedLocator)
+
+      // 一次性替换快照。旧的根、子节点、祖先和搜索请求不能再写回缓存。
+      this.treeRevision += 1
+      nodeLoadRequests.delete(toRaw(this))
+      this.engineTrees = trees
+      this.engineTreeDepths = depths
+      this.nodeChildrenCache = {}
+      this.searchResultsCache = {}
+      this.expandedLocators = nextExpanded
+      if (previousLocator && !selected) {
+        this.reset()
+      } else if (selected) {
+        this.selectedLocator = selected.locator
+        this.selectedNodeContext = findNodeByLocator(trees[parseLocator(selected.locator)?.engineId], selected.locator) ? null : selected
+      }
+      return { previousLocator, locator: this.selectedLocator }
+    },
+
     /**
      * 加载资源树（懒加载某个引擎的内容）
      * @param {number} engineId - 引擎 ID
@@ -247,6 +333,7 @@ export const useExplorerStore = defineStore('explorer', {
      * @param {boolean} forceRefresh - 是否强制刷新（忽略缓存）
      */
     async loadTree(engineId, expandDepth = 2, forceRefresh = false) {
+      const revision = this.treeRevision
       const cachedDepth = this.engineTreeDepths[engineId] || 0
 
       // 如果已经加载过，且当前缓存深度 >= 需要的深度，直接返回缓存
@@ -267,6 +354,7 @@ export const useExplorerStore = defineStore('explorer', {
 
       try {
         const response = await dataExplorerAPI.getTree(engineId, expandDepth)
+        if (revision !== this.treeRevision) return this.engineTrees[engineId] || null
         // 后端直接返回 tree 对象（符合 API 规范）
         // API 客户端的 extractData 已提取了 response.data
         const tree = response
@@ -297,6 +385,7 @@ export const useExplorerStore = defineStore('explorer', {
 
         return tree
       } catch (error) {
+        if (revision !== this.treeRevision) return this.engineTrees[engineId] || null
         console.error('加载资源树失败:', error)
         throw error
       } finally {
@@ -666,9 +755,10 @@ export const useExplorerStore = defineStore('explorer', {
 
     async fetchNodeChildren(locator, forceRefresh) {
       const loc = parseLocator(locator)
+      const revision = this.treeRevision
       const requestSeq = (this.nodeChildrenRequestSeq[locator] || 0) + 1
       this.nodeChildrenRequestSeq[locator] = requestSeq
-      const current = () => this.nodeChildrenRequestSeq[locator] === requestSeq
+      const current = () => this.treeRevision === revision && this.nodeChildrenRequestSeq[locator] === requestSeq
       const cache = !forceRefresh && this.nodeChildrenCache[locator]
       const cached = cache && Date.now() - cache.timestamp < this.cacheConfig.maxAge
 
@@ -676,10 +766,10 @@ export const useExplorerStore = defineStore('explorer', {
         if (forceRefresh) {
           // 上传、导入和扫描都可能改变整个祖先链的统计；不能只更新当前目录。
           const { chain } = await this.loadAncestorFacts(locator, { current })
+          if (!current()) return this.nodeChildrenCache[locator]?.children || []
           for (const ancestor of chain) {
             delete this.nodeChildrenCache[ancestor.locator]
           }
-          if (!current()) return this.nodeChildrenCache[locator]?.children || []
         }
         // 3. 调用后端 API
         const response = cached
@@ -739,6 +829,7 @@ export const useExplorerStore = defineStore('explorer', {
 
     // 定位与强制重载共用同一事实合并路径；本动作不改变选择或展开状态。
     async loadAncestorFacts(locator, { current = () => true } = {}) {
+      const revision = this.treeRevision
       const loc = parseLocator(locator)
       if (!loc?.engineId) {
         throw new Error('invalid locator')
@@ -750,8 +841,9 @@ export const useExplorerStore = defineStore('explorer', {
       if (!this.engineTrees[loc.engineId]) {
         await this.loadTree(loc.engineId, 1)
       }
+      if (!current() || revision !== this.treeRevision) return { chain: [], merged: null }
       const response = await dataExplorerAPI.getTreeAncestors(loc.engineId, locator)
-      if (!current()) return { response, chain: [], merged: null }
+      if (!current() || revision !== this.treeRevision) return { response, chain: [], merged: null }
       const chain = Array.isArray(response?.ancestors) ? response.ancestors : []
       if (chain.length === 0) {
         throw new Error('ancestor chain is empty')
@@ -784,7 +876,8 @@ export const useExplorerStore = defineStore('explorer', {
      */
     async revealLocator(locator) {
       const requestSeq = ++this.selectionRequestSeq
-      const current = () => requestSeq === this.selectionRequestSeq
+      const revision = this.treeRevision
+      const current = () => revision === this.treeRevision && requestSeq === this.selectionRequestSeq
       try {
         const loc = parseLocator(locator)
         const { response, chain, merged } = await this.loadAncestorFacts(locator, { current })
@@ -836,6 +929,7 @@ export const useExplorerStore = defineStore('explorer', {
       }
 
       // 生成缓存 key
+      const revision = this.treeRevision
       const cacheKey = `${engineId}:${keyword}:${nodeTypes?.join(',') || ''}:${limit}`
 
       // 检查缓存
@@ -853,6 +947,7 @@ export const useExplorerStore = defineStore('explorer', {
         }
 
         const response = await dataExplorerAPI.searchNodes(engineId, keyword, nodeTypes, limit)
+        if (revision !== this.treeRevision) return []
         // API 客户端已经通过 extractData 提取了 response.data
         // 后端返回 { keyword: ..., total: ..., results: [...] }
         const rawResults = response.results || []
@@ -868,6 +963,7 @@ export const useExplorerStore = defineStore('explorer', {
 
         return results
       } catch (error) {
+        if (revision !== this.treeRevision) return []
         console.error('搜索节点失败:', error)
         throw error
       }
@@ -1023,6 +1119,33 @@ function findNodeByLocator(tree, locator) {
   }
 
   return null
+}
+
+function resourceIdentity(locator) {
+  if (!locator) return ''
+  const loc = parseLocator(locator)
+  if (loc?.itemId) return `${loc.engineId}:item:${loc.itemId}`
+  if (loc?.nodeId) return `${loc.engineId}:node:${loc.nodeId}`
+  return locator
+}
+
+function findResourcePath(node, identity) {
+  if (!node || !identity) return []
+  if (resourceIdentity(node.locator) === identity) return [node]
+  for (const child of node.children || []) {
+    const path = findResourcePath(child, identity)
+    if (path.length) return [node, ...path]
+  }
+  return []
+}
+
+async function readVisibleResource(read) {
+  try {
+    return await read()
+  } catch (error) {
+    if ([403, 404].includes(error.response?.status)) return null
+    throw error
+  }
 }
 
 function delay(ms) {

@@ -7,11 +7,12 @@ const engines = [25, 29].map(id => ({
 }))
 const rootKey = id => `addp://engine/${id}/path/?type=server&node_id=${id * 10}`
 const branchKey = id => `addp://engine/${id}/path/business?type=schema&node_id=${id * 10 + 1}`
+const customerKey = id => `addp://engine/${id}/path/business/customers?type=table&item_id=${id * 10 + 2}`
 const branch = (id, loaded = false) => ({
   id: branchKey(id), locator: branchKey(id), label: `schema ${id}`, type: 'schema', hasChildren: true,
   children: loaded ? [{
-    id: `addp://engine/${id}/path/business/customers?type=table&item_id=${id * 10 + 2}`,
-    locator: `addp://engine/${id}/path/business/customers?type=table&item_id=${id * 10 + 2}`,
+    id: customerKey(id),
+    locator: customerKey(id),
     label: `customers ${id}`, type: 'table', hasChildren: false, children: [],
     metadata: { item_id: id * 10 + 2, has_children: false }
   }] : []
@@ -26,12 +27,15 @@ async function installBackend(page) {
   const state = {
     holdChildren: false, releaseChildren: null, rootRequests: [], rootGates: new Map(),
     searchGates: new Map(), searchRequests: [], ancestorGates: new Map(),
-    engines, nodeRequests: [], childGates: new Map(), root, node: id => branch(id, true)
+    engines, nodeRequests: [], childGates: new Map(), root, node: id => branch(id, true), writes: []
   }
   await page.route('**/plugins/manifest.json', route => route.fulfill({ json: { scripts: [] } }))
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const send = json => route.fulfill({ json })
+    if (route.request().method() !== 'GET' && /^\/api\/v1\/(meta|manager)\//.test(url.pathname)) {
+      state.writes.push(url.pathname)
+    }
     if (url.pathname === '/api/v1/system/refresh') return send({ access_token: 'expansion-test', expires_in: 3600 })
     if (url.pathname === '/api/v1/system/users/me') return send({ id: '1', display_name: 'expansion-test' })
     if (url.pathname === '/api/v1/system/auth/context') return send(managerAuthContext)
@@ -55,10 +59,11 @@ async function installBackend(page) {
       if (match[2] === '/node') {
         const locator = url.searchParams.get('locator')
         state.nodeRequests.push(locator)
+        const node = state.node(id, locator)
         const gate = state.childGates.get(locator)
         if (gate) await new Promise(resolve => { gate.release = resolve })
         if (state.holdChildren) await new Promise(resolve => { state.releaseChildren = resolve })
-        return send(state.node(id, locator))
+        return send(node)
       }
       state.rootRequests.push(id)
       const gate = state.rootGates.get(id)
@@ -293,7 +298,7 @@ test('a pending URL locator does not replace a later tree selection', async ({ p
   await expanded(page, engines[0].name, false)
 })
 
-test('catalog refresh preserves loaded subtrees and never fetches unopened engines', async ({ page }) => {
+test('catalog refresh reads open branches and retains a visible selection without opening other engines', async ({ page }) => {
   const backend = await installBackend(page)
   await page.goto('/data-explorer')
   await row(page, engines[0].name).click()
@@ -305,7 +310,73 @@ test('catalog refresh preserves loaded subtrees and never fetches unopened engin
   await expanded(page, engines[0].name, true)
   await expanded(page, 'schema 25', true)
   await expect(row(page, 'schema 25').locator('..')).toHaveClass(/is-current/)
-  expect(backend.rootRequests).toEqual([25])
+  expect(backend.rootRequests).toEqual([25, 25])
+  expect(backend.nodeRequests).toEqual([branchKey(25), branchKey(25)])
+  expect(backend.writes).toEqual([])
+})
+
+test('one catalog refresh clears revoked selection, details and locator but keeps its visible sibling', async ({ page }) => {
+  const backend = await installBackend(page)
+  const authorized = branch(25, true)
+  const sibling = { ...authorized.children[0], id: customerKey(25).replace('customers', 'members').replace('252', '253'),
+    label: 'members 25', metadata: { item_id: 253, has_children: false } }
+  sibling.locator = sibling.id
+  backend.node = () => ({ ...authorized, children: [...authorized.children, sibling] })
+  await page.goto('/data-explorer')
+  await arrow(page, engines[0].name).click()
+  await arrow(page, 'schema 25').click()
+  await row(page, 'customers 25').click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('locator')).toBe(customerKey(25))
+  await expect(page.locator('.preview-container').getByText(/business\/customers/)).toBeVisible()
+
+  backend.node = () => ({ ...authorized, children: [sibling] })
+  await page.locator('.tree-header button').click()
+  await expect(page.locator('.el-message--success')).toBeVisible()
+  await expect(row(page, 'customers 25')).toHaveCount(0)
+  await expect(row(page, 'members 25')).toBeVisible()
+  await expect(page.locator('.preview-container').getByText(/business\/customers/)).toHaveCount(0)
+  await expect.poll(() => new URL(page.url()).searchParams.has('locator')).toBe(false)
+  await expanded(page, 'schema 25', true)
+  expect(backend.writes).toEqual([])
+})
+
+test('a child response started before catalog refresh cannot restore a revoked item', async ({ page }) => {
+  const backend = await installBackend(page)
+  const gate = {}
+  backend.childGates.set(branchKey(25), gate)
+  await page.goto('/data-explorer')
+  await arrow(page, engines[0].name).click()
+  await arrow(page, 'schema 25').click()
+  await expect.poll(() => typeof gate.release).toBe('function')
+
+  backend.childGates.delete(branchKey(25))
+  backend.node = () => ({ ...branch(25), hasChildren: false })
+  await page.locator('.tree-header button').click()
+  await expect(page.locator('.el-message--success')).toBeVisible()
+  const late = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/25/node'))
+  gate.release()
+  await late
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  await expect(row(page, 'customers 25')).toHaveCount(0)
+})
+
+test('catalog refresh checks a selected item under a collapsed engine without reopening it', async ({ page }) => {
+  const backend = await installBackend(page)
+  await page.goto('/data-explorer')
+  await arrow(page, engines[0].name).click()
+  await arrow(page, 'schema 25').click()
+  await row(page, 'customers 25').click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('locator')).toBe(customerKey(25))
+  await arrow(page, engines[0].name).click()
+  await expanded(page, engines[0].name, false)
+
+  await page.locator('.tree-header button').click()
+  await expect(page.locator('.el-message--success')).toBeVisible()
+  await expanded(page, engines[0].name, false)
+  expect(new URL(page.url()).searchParams.get('locator')).toBe(customerKey(25))
+  await expect(page.locator('.preview-container').getByText(/business\/customers/)).toBeVisible()
+  expect(backend.rootRequests).toEqual([25, 25])
+  expect(backend.nodeRequests).toEqual([branchKey(25), branchKey(25)])
 })
 
 for (const selection of ['schema', 'customers']) {

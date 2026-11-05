@@ -17,6 +17,8 @@
         <ExplorerTree
           ref="treeRef"
           :loading="store.loadingEngines"
+          :refreshing-catalog="refreshingCatalog"
+          @refresh="handleCatalogRefresh"
           @node-select="handleNodeSelect"
           @item-refreshed="handleItemRefreshed"
         />
@@ -133,6 +135,7 @@ const router = useRouter()
 const store = useExplorerStore()
 const activeTab = ref(resolveDataExplorerRouteState(route.query).tab)
 const itemMetadataRevision = ref(0)
+const refreshingCatalog = ref(false)
 const ENGINE_STATUS_REFRESH_INTERVAL_MS = 15000
 let engineStatusTimer = 0
 let engineInitializationPromise = null
@@ -237,6 +240,23 @@ const replaceDataExplorerRoute = async (locator, tab = activeTab.value) => {
   }
 }
 
+const handleCatalogRefresh = async () => {
+  if (refreshingCatalog.value) return
+  refreshingCatalog.value = true
+  try {
+    const { previousLocator, locator } = await store.refreshCatalog()
+    if (locator !== previousLocator && store.selectedLocator === locator && route.name === 'DataExplorer' &&
+        (!route.query.locator || route.query.locator === previousLocator)) {
+      await replaceDataExplorerRoute(locator)
+    }
+    ElMessage.success(t('manager.explorer.refreshSuccess'))
+  } catch (error) {
+    ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))
+  } finally {
+    refreshingCatalog.value = false
+  }
+}
+
 // 事件处理：节点选择（从 ExplorerTree 组件触发）
 const handleNodeSelect = async ({ node, locator }, options = {}) => {
   try {
@@ -262,6 +282,7 @@ const handleNodeSelect = async ({ node, locator }, options = {}) => {
       }
     }
   } catch (error) {
+    if (store.selectedLocator !== locator) return
     console.error('加载节点数据失败:', error)
     const errorMessage = error.response?.data?.error || error.message
     ElMessage.error(errorMessage)
@@ -446,6 +467,7 @@ const refreshEngineStatuses = async () => {
   try {
     await store.loadEngines({ silent: true })
     if (!targetEngineID) return
+    if (refreshingCatalog.value || targetLocator !== String(store.selectedLocator || route.query.locator || '').trim()) return
 
     const isAvailable = store.isEngineAvailable(targetEngineID)
     if (!isAvailable) {
@@ -511,6 +533,7 @@ watch(() => route.query.locator, async (locator) => {
     return
   }
 
+  if (route.query.locator !== targetLocator) return
   try {
     await ensureEnginesLoaded()
   } catch {

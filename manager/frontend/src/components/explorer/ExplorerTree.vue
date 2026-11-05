@@ -114,15 +114,15 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false
-  }
+  },
+  refreshingCatalog: Boolean
 })
 
 // Emits
-const emit = defineEmits(['node-select', 'item-refreshed'])
+const emit = defineEmits(['node-select', 'item-refreshed', 'refresh'])
 
 const store = useExplorerStore()
 const resourceTreeRef = ref(null)
-const refreshingCatalog = ref(false)
 const catalogRootLoadPromises = new Map()
 let selectionRequestSeq = 0
 let scanStatusTimer = 0
@@ -182,6 +182,7 @@ const expandedKeys = computed({
     return Array.from(store.expandedLocators)
   },
   set: (keys) => {
+    if (props.refreshingCatalog) return
     store.expandedLocators = new Set(keys)
   }
 })
@@ -195,26 +196,17 @@ const refreshingNodeIds = computed(() => {
 const currentNodeKey = computed(() => store.selectedLocator || '')
 
 
-// 事件处理：刷新整个引擎列表
-const handleRefresh = async () => {
-  if (refreshingCatalog.value) return
-  refreshingCatalog.value = true
-  try {
-    await store.loadEngines({ silent: true })
-    ElMessage.success(t('manager.explorer.refreshSuccess'))
-  } catch (error) {
-    ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))
-  } finally {
-    refreshingCatalog.value = false
-  }
-}
+const handleRefresh = () => emit('refresh')
 
 // 事件处理：节点点击
 const handleNodeClick = async (node) => {
+  if (props.refreshingCatalog) return
   const requestSeq = ++selectionRequestSeq
   store.cancelLocatorReveal()
   const locatorRequestSeq = store.selectionRequestSeq
-  const selectionIsCurrent = () => requestSeq === selectionRequestSeq && locatorRequestSeq === store.selectionRequestSeq
+  const treeRevision = store.treeRevision
+  const selectionIsCurrent = () => requestSeq === selectionRequestSeq &&
+    locatorRequestSeq === store.selectionRequestSeq && treeRevision === store.treeRevision
   let selectedNode = node
   let locator = node.locator || node.id
 
@@ -273,6 +265,8 @@ const handleNodeAction = async ({ node, action }) => {
 
 // 事件处理：节点展开（优化版 - 使用增量加载）
 const handleNodeExpand = async (node) => {
+  if (props.refreshingCatalog) return
+  const treeRevision = store.treeRevision
   const locator = node.locator || node.id
   store.expandNode(locator)
 
@@ -280,8 +274,10 @@ const handleNodeExpand = async (node) => {
   if (isCatalogRootNode(node) && node.engineId && !node.loaded) {
     try {
       const catalogRoot = await loadCatalogRoot(node.engineId)
+      if (treeRevision !== store.treeRevision) return
       replaceExpandedLocator(locator, catalogRoot?.locator || catalogRoot?.id)
     } catch (error) {
+      if (treeRevision !== store.treeRevision) return
       store.collapseNode(locator)
       console.error('加载引擎内容失败:', error)
       ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
@@ -303,6 +299,7 @@ const handleNodeExpand = async (node) => {
 
 // 事件处理：节点折叠
 const handleNodeCollapse = (node) => {
+  if (props.refreshingCatalog) return
   store.cancelLocatorReveal()
   const locator = node.locator || node.id
   store.collapseNode(locator)
@@ -323,13 +320,14 @@ const replaceExpandedLocator = (previousLocator, nextLocator) => {
 }
 
 const loadCatalogRoot = (engineId) => {
-  const key = Number(engineId)
+  const id = Number(engineId)
+  const key = `${store.treeRevision}:${id}`
   const existing = catalogRootLoadPromises.get(key)
   if (existing) return existing
 
-  const request = store.loadTree(key).then((root) => {
+  const request = store.loadTree(id).then((root) => {
     const loc = parseLocator(root?.locator || root?.id || '')
-    if (loc?.engineId !== key || !loc.nodeId) {
+    if (loc?.engineId !== id || !loc.nodeId) {
       throw new Error('resource tree root is missing node_id')
     }
     return root

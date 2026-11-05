@@ -1606,53 +1606,76 @@ test('NFS GeoPackage 同一普通用户撤权血缘', async ({ page }) => {
     report.resource_tree.after_lineage_requery = { requests: treeReads.slice(beforeWithdrawal), labels: await treeLabels() }
     persist()
 
-    const beforeToolbar = treeReads.length
-    const engineRead = page.waitForResponse(response => response.request().method() === 'GET' &&
-      new URL(response.url()).pathname === '/api/v1/manager/engines')
-    await tree.locator('.tree-header .header-actions button').click()
-    const engineResponse = await engineRead
-    sameSessionAndDocument(engineResponse)
-    expect(engineResponse.status()).toBe(200)
-    await expect(frame.getByText('刷新成功', { exact: true })).toBeVisible()
-    report.resource_tree.toolbar = { status: engineResponse.status(), requests: treeReads.slice(beforeToolbar), labels: await treeLabels() }
-    await page.screenshot({ path: resolve(directory, 'topology-tree-toolbar-refresh.png') })
-    persist()
+    for (const name of [source.name, output.name, sibling]) {
+      await expect(tree.getByText(name, { exact: true })).toBeVisible()
+    }
+    const readManagerDocument = () => tree.evaluate(() => ({
+      timeOrigin: performance.timeOrigin,
+      locator: new URL(location.href).searchParams.get('locator'),
+      tab: new URL(location.href).searchParams.get('tab')
+    }))
+    const originalConsoleDocument = await page.evaluate(() => performance.timeOrigin)
+    const originalManagerDocument = await readManagerDocument()
+    expect(originalManagerDocument.locator).toBe(output.locator)
 
-    const beforeReload = treeReads.length
-    const treeRead = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === treePath)
-    await page.reload()
-    const treeResponse = await treeRead
-    const treeAPI = await browserAPIFromResponse(treeResponse, process.env.GATEWAY_URL, {
-      principalID: binding.principal_id, tenantID: binding.tenant_id, permissions: binding.permissions_verified
+    const beforeToolbar = treeReads.length
+    const scanWrites = []
+    const staleOpens = []
+    page.on('request', request => {
+      const url = new URL(request.url())
+      if (request.method() !== 'GET' && /^\/api\/v1\/(meta|manager)\//.test(url.pathname)) {
+        scanWrites.push(url.pathname)
+      }
+      if ((url.pathname === '/api/v1/meta/lineage/graph' &&
+          url.searchParams.get('item_id') === String(output.item_id)) ||
+          url.searchParams.get('locator') === output.locator) {
+        staleOpens.push(url.pathname)
+      }
     })
-    try {
-      const fullTree = await treeAPI.get(treePath, { params: { expand_depth: -1 } })
-      const data = await capture('fresh_tree', fullTree)
-      expect(fullTree.status()).toBe(200)
-      const labels = []
-      const walk = node => {
-        labels.push(node.label)
-        for (const child of node.children || []) walk(child)
-      }
-      walk(data)
-      expect(labels).toContain(sibling)
-      expect(labels).not.toContain(source.name)
-      expect(labels).not.toContain(output.name)
-    } finally {
-      await treeAPI.dispose()
+    const waitForRead = matches => page.waitForResponse(response => response.request().method() === 'GET' &&
+      matches(new URL(response.url())))
+    const engineRead = waitForRead(url => url.pathname === '/api/v1/manager/engines')
+    const rootRead = waitForRead(url => url.pathname === treePath && url.searchParams.get('expand_depth') === '1')
+    const outputsRead = waitForRead(url => url.pathname === treePath + '/node' &&
+      url.searchParams.get('locator')?.includes('/path/outputs?'))
+
+    await tree.locator('.tree-header .header-actions button').click()
+    const [engineResponse, rootResponse, outputsResponse] = await Promise.all([engineRead, rootRead, outputsRead])
+    for (const response of [engineResponse, rootResponse, outputsResponse]) {
+      expect(response.status()).toBe(200)
+      expect(response.request().frame() === originalDocument).toBe(true)
+      expect(response.request().headers().authorization === before.request().headers().authorization).toBe(true)
     }
-    for (const name of ['Hosted topology NFS', 'outputs']) {
-      const row = tree.locator('.el-tree-node__content').filter({ has: frame.getByText(name, { exact: true }) })
-      await expect(row).toBeVisible()
-      if (await row.locator('..').getAttribute('aria-expanded') !== 'true') {
-        await row.locator(':scope > .el-tree-node__expand-icon').click()
-      }
-    }
+    const root = await capture('toolbar_visible_root', rootResponse)
+    const outputs = await capture('toolbar_visible_outputs', outputsResponse)
+    expect(root.children.map(node => node.label)).not.toContain(source.name)
+    expect(outputs.children.map(node => node.label)).toContain(sibling)
+    expect(outputs.children.map(node => node.label)).not.toContain(output.name)
+
+    await expect(frame.getByText('刷新成功', { exact: true })).toBeVisible()
     await expect(tree.getByText(sibling, { exact: true })).toBeVisible()
     await expect(tree.getByText(source.name, { exact: true })).toHaveCount(0)
     await expect(tree.getByText(output.name, { exact: true })).toHaveCount(0)
-    report.resource_tree.reload = { status: treeResponse.status(), requests: treeReads.slice(beforeReload), labels: await treeLabels() }
-    await page.screenshot({ path: resolve(directory, 'topology-tree-browser-reload.png') })
+    await expect(tree.locator('.el-tree-node.is-current')).toHaveCount(0)
+    await expect(frame.locator('.preview-container').getByRole('tab', { name: '血缘', exact: true })).toHaveCount(0)
+    await expect(frame.locator('.preview-container').getByText(output.name)).toHaveCount(0)
+    await expect(viewer).toHaveCount(0)
+    await expect.poll(readManagerDocument).toEqual({
+      timeOrigin: originalManagerDocument.timeOrigin, locator: null, tab: null
+    })
+    await expect.poll(() => {
+      const { searchParams } = new URL(page.url())
+      return [searchParams.get('locator'), searchParams.get('tab')]
+    }).toEqual([null, null])
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(originalConsoleDocument)
+    expect(scanWrites).toEqual([])
+    expect(staleOpens).toEqual([])
+    report.resource_tree.toolbar = {
+      statuses: [engineResponse.status(), rootResponse.status(), outputsResponse.status()],
+      requests: treeReads.slice(beforeToolbar), labels: await treeLabels(),
+      same_documents: true, cleared_selection_and_route: true, writes: scanWrites, stale_opens: staleOpens
+    }
+    await page.screenshot({ path: resolve(directory, 'topology-tree-toolbar-refresh.png') })
     report.result = 'passed'
     persist()
   } finally {
