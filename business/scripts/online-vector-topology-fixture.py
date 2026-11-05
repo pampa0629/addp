@@ -459,8 +459,12 @@ def vertices_field_types(kind):
 
 def seed_vertices(path,kind):
     from osgeo import ogr,osr
-    crs=osr.SpatialReference();crs.ImportFromEPSG(3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,None if kind=='crs' else crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=source_shape'])
+    crs=osr.SpatialReference()
+    if kind=='crs':
+        crs.SetLocalCS('Undefined Cartesian SRS');crs.SetLinearUnits('Meter',1)
+    else:crs.ImportFromEPSG(3857)
+    crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=source_shape'])
     for name,(native,subtype) in vertices_field_types(kind).items():
         field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
         if layer.CreateField(field)!=0:raise FixtureError('cannot seed vertex field')
@@ -498,7 +502,14 @@ def verify_vertices(path,kind):
     layer=ds.GetLayer(0);schema=layer.GetLayerDefn();fields=vertices_field_types(kind);sr=layer.GetSpatialRef()
     crs=osr.SpatialReference();crs.ImportFromEPSG(3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
     if kind=='crs':
-        if sr and sr.GetAuthorityCode(None) not in (None,'0'):raise FixtureError('vertex unknown CRS source acquired an identity')
+        import sqlite3
+        with sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True) as physical:
+            geometry_srs=physical.execute('SELECT srs_id FROM gpkg_geometry_columns').fetchall()
+            content_srs=physical.execute("SELECT srs_id FROM gpkg_contents WHERE data_type='features'").fetchall()
+            definition=physical.execute('SELECT organization,organization_coordsys_id,definition FROM gpkg_spatial_ref_sys WHERE srs_id=-1').fetchall()
+        if (geometry_srs!=[(-1,)] or content_srs!=[(-1,)] or definition!=[('NONE',-1,'undefined')]
+                or not sr or not sr.IsLocal() or sr.GetAuthorityCode(None) is not None):
+            raise FixtureError('vertex unknown CRS source acquired an identity')
     elif not sr or not sr.IsSame(crs):raise FixtureError('vertex source CRS differs')
     if [f.name for f in layer.schema]!=list(fields):raise FixtureError('vertex fields or order differ')
     for name,(native,subtype) in fields.items():

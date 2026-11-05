@@ -9836,6 +9836,25 @@ def test_vertices_extraction_real_geopackage_source_independent_ogr_point_order_
     assert_geodataframe_equal(loaded,before)
 
 
+@pytest.mark.parametrize('statement',[
+    'UPDATE gpkg_geometry_columns SET srs_id=0',
+    "UPDATE gpkg_contents SET srs_id=0 WHERE data_type='features'",
+    "UPDATE gpkg_spatial_ref_sys SET organization='EPSG' WHERE srs_id=-1",
+    "UPDATE gpkg_spatial_ref_sys SET definition='not an undefined SRS' WHERE srs_id=-1",
+])
+def test_vertex_unknown_crs_fixture_rejects_physical_identity_drift(tmp_path,statement):
+    import importlib
+    import sqlite3
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    path=tmp_path/'unknown.gpkg'
+    fixture.seed_vertices(path,'crs')
+    assert fixture.verify_vertices(path,'crs')['source_crs'] is None
+    with sqlite3.connect(path) as physical:
+        physical.execute(statement)
+    with pytest.raises(fixture.FixtureError,match='unknown CRS source acquired an identity'):
+        fixture.verify_vertices(path,'crs')
+
+
 def test_vertex_extraction_t4_three_saves_seven_refusals_and_independent_ogr(tmp_path):
     """Runs the proposed DAG against real GPKG bytes; no Online/T4 authentication claimed."""
     import importlib
@@ -9851,7 +9870,9 @@ def test_vertex_extraction_t4_three_saves_seven_refusals_and_independent_ogr(tmp
     for kind,name in zip(fixture.VERTICES_KINDS,fixture.VERTICES_SOURCES):
         fixture.verify_vertices(root/name,kind)
         sources.append(get_operator('load')(connection_info=connection,path=name))
-    assert sources[-1].crs is None
+    unknown=sources[-1].crs
+    assert unknown is not None and unknown.is_engineering and unknown.to_authority() is None
+    assert not unknown.is_geographic and not unknown.is_projected
     workflow=owner.vertices_definition(list(fixture.VERTICES_SOURCES),'unused')
     for task in workflow['tasks']:
         if task['operator']=='load':task['params']={'connection_info':connection,'path':task['params']['locator']}
