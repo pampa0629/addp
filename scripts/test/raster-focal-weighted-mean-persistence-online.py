@@ -26,14 +26,14 @@ obj, array, positive, SuiteError = base.obj, base.array, base.positive, base.Sui
 SUITE, FAILURES = fixture.SUITE, fixture.FAILURES
 SubmittedLanguageClient, BudgetClient = base.SubmittedLanguageClient, base.BudgetClient
 encoded, immutable, archive_response = base.encoded, base.immutable, base.archive_response
-_WEIGHTS=('weighted_mean的weights必须为与3或5窗口同尺寸的二维列表，元素为有限非负数且至少一个为正，不能为布尔值',
-          'weighted_mean weights must be a square list matching the 3 or 5 window, containing finite nonnegative numbers with at least one positive value, excluding booleans')
+_WEIGHTS=('weighted_mean的weights必须为与3、5或7窗口同尺寸的二维列表，元素为有限非负数且至少一个为正，不能为布尔值',
+          'weighted_mean weights must be a square list matching the 3, 5 or 7 window, containing finite nonnegative numbers with at least one positive value, excluding booleans')
 MESSAGES={
  **{name:_WEIGHTS for name in FAILURES if name.startswith('weights_')},
  **{name:('只有method=weighted_mean、weighted_stddev或weighted_sum时才能提供weights参数','weights is only accepted when method=weighted_mean, weighted_stddev or weighted_sum')for name in ('unused_mean','unused_variety_null')},
  'unused_percentile':('只有method=percentile时才能提供percentiles参数','percentiles is only accepted when method=percentile'),
  'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean、weighted_stddev或weighted_sum','method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean, weighted_stddev or weighted_sum'),
- **{name:('window_size must be the integer 3 or 5',)*2 for name in FAILURES if name.startswith('window_')},
+ **{name:('window_size必须为整数3、5或7', 'window_size must be the integer 3, 5 or 7') for name in FAILURES if name.startswith('window_')},
  **{name:('band must be a valid one-based index',)*2 for name in FAILURES if name.startswith('band_')},
  'alpha':('Focal statistics require a data band, not alpha',)*2,
  'complex':('Complex-valued bands are not supported by numeric analysis',)*2,

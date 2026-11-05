@@ -33,7 +33,7 @@ MESSAGES={
  **{name:('band must be a valid one-based index',)*2 for name in FAILURES if name.startswith('band_')},
  'alpha':('Focal statistics require a data band, not alpha',)*2,
  'complex':('Complex-valued bands are not supported by numeric analysis',)*2,
- **{name:('window_size must be the integer 3 or 5',)*2 for name in FAILURES if name.startswith('window_')},
+ **{name:('window_size必须为整数3、5或7', 'window_size must be the integer 3, 5 or 7') for name in FAILURES if name.startswith('window_')},
  'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean、weighted_stddev或weighted_sum','method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean, weighted_stddev or weighted_sum'),
  'unused':('只有method=percentile时才能提供percentiles参数','percentiles is only accepted when method=percentile'),
 }

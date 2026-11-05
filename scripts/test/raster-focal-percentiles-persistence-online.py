@@ -32,7 +32,7 @@ MESSAGES.update({
  **{p:('只有method=percentile时才能提供percentiles参数','percentiles is only accepted when method=percentile')for p in('unused','unused_null')},
  **{p:('band must be a valid one-based index',)*2 for p in('band_zero','band_high','band_boolean')},
  'band_alpha':('Focal statistics require a data band, not alpha',)*2,
- 'square_size':('window_size must be the integer 3 or 5',)*2,
+ 'square_size':('window_size必须为整数3、5或7', 'window_size must be the integer 3, 5 or 7'),
  'square_radius':('像元方窗不得提供radius_metres','Pixel square windows do not accept radius_metres'),
  'circle_window':('米制圆窗不得提供window_size','Metre circle windows do not accept window_size'),
  'circle_radius_missing':('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值','Circular focal radius_metres must be an explicit finite positive number, excluding booleans'),

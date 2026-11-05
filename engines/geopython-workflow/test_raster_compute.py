@@ -5047,7 +5047,7 @@ def _focal_oracle(values, valid, window_size, method):
     return result
 
 
-@pytest.mark.parametrize('window_size', [3,5])
+@pytest.mark.parametrize('window_size', [3, 5, 7])
 @pytest.mark.parametrize('method', ['sum','mean','min','max','stddev','mode','median','percentile','variety'])
 def test_focal_statistics_selected_band_rotated_validity_edges_and_scalar_oracle(tmp_path, window_size, method):
     values = np.arange(56,dtype=float).reshape(7,8)-21
@@ -5084,7 +5084,7 @@ def test_focal_statistics_selected_band_rotated_validity_edges_and_scalar_oracle
     assert path.read_bytes()==snapshot
 
 
-@pytest.mark.parametrize('window_size', [3,5])
+@pytest.mark.parametrize('window_size', [3, 5, 7])
 @pytest.mark.parametrize('method', ['sum','mean','min','max','stddev','median'])
 def test_focal_statistics_full_image_analytic_plane_across_both_block_axes(tmp_path,monkeypatch,window_size,method):
     height,width = 515,519
@@ -5104,7 +5104,7 @@ def test_focal_statistics_full_image_analytic_plane_across_both_block_axes(tmp_p
         loaded=raster_load(source_plan(path))
         original=gdal.Band.ReadRaster; reads=[]
         def bounded(self,x=0,y=0,xsize=None,ysize=None,*args,**kwargs):
-            assert xsize is not None and ysize is not None and xsize<=512 and ysize<=512
+            assert xsize is not None and ysize is not None and max(xsize, ysize) <= (366 if window_size == 7 else 512)
             reads.append((x,y,xsize,ysize))
             return original(self,x,y,xsize,ysize,*args,**kwargs)
         with monkeypatch.context() as scoped:
@@ -5155,7 +5155,7 @@ def test_focal_statistics_numerical_stability(tmp_path,case):
                 np.testing.assert_allclose(actual,expected,rtol=1e-14,atol=0)
 
 
-@pytest.mark.parametrize('parameter,value', [('window_size',True),('window_size',3.),('window_size',1),('window_size',7),
+@pytest.mark.parametrize('parameter,value', [('window_size',True),('window_size',3.),('window_size',1),('window_size',9),
     ('window_size',None),('band',True),('band',0),('band',1.),('band',4),('method','percentile'),('method',None)])
 def test_focal_statistics_rejects_invalid_parameters(tmp_path,parameter,value):
     path=create_raster(tmp_path/'source.tif',np.ones((2,3)))
@@ -5219,12 +5219,32 @@ def test_focal_statistics_async_cog_save_and_cleanup(tmp_path,monkeypatch,invali
     assert client.post('/api/operators/raster_focal_statistics/invoke',json={'params':{}}).status_code==403
 
 
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_focal_seven_rejects_unsupported_square_size_and_mismatched_weights_before_source(monkeypatch, language):
+    import operators.raster_compute as compute
+
+    monkeypatch.setattr(compute, '_open', lambda _: pytest.fail('invalid square window opened its source'))
+    with raster_error_language(language):
+        with pytest.raises(ValueError) as error:
+            raster_focal_statistics(None, 1, 9, 'mean')
+        expected = 'window_size必须为整数3、5或7' if language == 'zh-cn' else 'window_size must be the integer 3, 5 or 7'
+        assert str(error.value) == expected
+        for method, error_code in [('weighted_mean', 'weights'), ('weighted_stddev', 'stddev_weights'),
+                                   ('weighted_sum', 'sum_weights')]:
+            with pytest.raises(ValueError) as error:
+                raster_focal_statistics(None, 1, 7, method, weights=[[1] * 5 for _ in range(5)])
+            assert str(error.value) == str(compute._focal_error(error_code))
+
+
 def test_focal_statistics_metadata_and_executable_example(tmp_path):
     spec=next(item for item in list_operators() if item['id']=='raster_focal_statistics')
     params={p['name']:p for p in spec['parameters']}
     assert params['input_raster']['param_type']=='input' and params['input_raster']['type']=='raster'
     assert all(params[key]['required'] for key in ('band','method'))
     assert not params['window_size']['required'] and params['window_size']['show_when']=={'window_type':['square_pixels']}
+    assert '3、5或7' in params['window_size']['description']
+    assert '7×7' in params['weights']['description']
+    assert '最多5×5' in params['radius_metres']['description']
     assert 'mode' in params['method']['description'] and '并列' in params['method']['description']
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
     assert spec['attributes']['resource_groups']==['raster'] and spec['output_ports'][0]['type']=='raster'
@@ -5752,7 +5772,7 @@ def test_focal_mode_thin_edges_all_invalid_and_missing_location(tmp_path,window_
     assert not workspace.exists() and source.read_bytes()==before
 
 
-@pytest.mark.parametrize('window_size',[3,5])
+@pytest.mark.parametrize('window_size', [3, 5, 7])
 def test_focal_mode_full_classification_across_blocks_independent_counter_and_cog(tmp_path,monkeypatch,window_size):
     import operators.raster_compute as compute
     y,x=np.indices((515,519));classes=np.array([-3.,0.,7.])[(x//11+y//13)%3]
@@ -5768,7 +5788,7 @@ def test_focal_mode_full_classification_across_blocks_independent_counter_and_co
     before=path.read_bytes();valid=np.isfinite(classes)&(classes!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
     expected=_focal_oracle(classes,valid,window_size,'mode');original=compute._read_values;reads=[]
     def bounded(band,x,y,width,height):
-        assert width<=512 and height<=512
+        assert max(width, height) <= (366 if window_size == 7 else 512)
         reads.append((x,y,width,height));return original(band,x,y,width,height)
     monkeypatch.setattr(compute,'_read_values',bounded)
     with raster_workspace():
@@ -14699,14 +14719,16 @@ def test_focal_variety_complete_scalar_sets_counts_zero_negative_and_safe_endpoi
         assert np.isnan(band.GetNoDataValue()) and band.GetUnitType()=='';band=ds=None
     assert not workspace.exists() and path.read_bytes()==before
 
-@pytest.mark.parametrize('window_size',[3,5])
+@pytest.mark.parametrize('window_size', [3, 5, 7])
 @pytest.mark.parametrize('all_same',[False,True])
 def test_focal_variety_known_full_distinct_and_repeated_classes(tmp_path,window_size,all_same):
-    values=np.zeros((5,5)) if all_same else np.arange(25,dtype=float).reshape(5,5)
+    width = max(5, window_size)
+    values=np.zeros((width,width)) if all_same else np.arange(width**2,dtype=float).reshape(width,width)
     path=create_raster(tmp_path/'classes.tif',values)
     with raster_workspace():
         result=raster_focal_statistics(raster_load(source_plan(path)),1,window_size,'variety');ds=gdal.Open(str(result.path));actual=ds.ReadAsArray();ds=None
-    assert actual[2,2]==(1 if all_same else window_size**2)
+    center = max(2, window_size // 2)
+    assert actual[center, center]==(1 if all_same else window_size**2)
     assert actual[0,0]==(1 if all_same else (window_size//2+1)**2)
 
 @pytest.mark.parametrize('window_size',[3,5])
@@ -15330,7 +15352,7 @@ def _weighted_focal_result(path, weights, band=1):
     return raster_focal_statistics(raster_load(source_plan(path)),band,len(weights),'weighted_mean',weights=weights)
 
 
-@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('size', [3, 5, 7])
 @pytest.mark.parametrize('seed',[7,19,31])
 def test_focal_weighted_mean_exact_decimal_random_asymmetric_zeros_masks_edges(tmp_path,size,seed):
     rng=np.random.default_rng(seed);values=rng.normal(size=(11,13))*31.25;valid=rng.random(values.shape)>.23
@@ -15343,7 +15365,7 @@ def test_focal_weighted_mean_exact_decimal_random_asymmetric_zeros_masks_edges(t
     assert path.read_bytes()==before
 
 
-@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('size', [3, 5, 7])
 @pytest.mark.parametrize('constant',[1.,2.,float(np.nextafter(0.,1.)),np.finfo(float).max])
 def test_focal_weighted_mean_equal_positive_weights_use_existing_mean_exactly(tmp_path,size,constant):
     values=np.array([[0.,1.,-3.,1e308],[1e-300,-1e308,7.,9.],[2.,-9999.,4.,-0.]])
@@ -15422,16 +15444,18 @@ def test_focal_weighted_mean_native_nodata_adjacent_valid_values_survive_all_num
         np.testing.assert_array_equal(actual[0,1:], [wanted,wanted])
 
 
-@pytest.mark.parametrize('size',[3,5])
-@pytest.mark.parametrize('located',[True,False])
+@pytest.mark.parametrize('size, located', [(3, True), (3, False), (5, True), (5, False), (7, True)])
 def test_focal_weighted_mean_complete_cross_block_cog_exact_oracle_mask_grid_and_cleanup(tmp_path,monkeypatch,size,located):
     import operators.raster_compute as compute
-    rows,cols=np.indices((515,519));values=((rows*3+cols*5)%17-8).astype(float);valid=np.ones(values.shape,bool);valid[510,511]=False
+    shape = (367, 369) if size == 7 else (515, 519)
+    seam = 360 if size == 7 else 510
+    rows,cols=np.indices(shape);values=((rows*3+cols*5)%17-8).astype(float);valid=np.ones(values.shape,bool);valid[seam,seam+1]=False
     path=create_raster(tmp_path/'blocks.tif',np.where(valid,values,-9999),(100,2,.25,200,-.5,-3)if located else None,'EPSG:3857'if located else None)
     weights=((np.arange(size*size).reshape(size,size)*3+1)%7).astype(float).tolist();expected=_weighted_focal_reference(values,valid,weights);before=path.read_bytes();reads=[];blocks=compute._blocks
     def bounded(*args,**kwargs):
         for x,y,arrays,masks in blocks(*args,**kwargs):
-            assert kwargs.get('native')is True and arrays[0].shape[0]<=512 and arrays[0].shape[1]<=512
+            assert kwargs.get('native') is True
+            assert max(arrays[0].shape) <= (366 if size == 7 else 512)
             reads.append((x,y));yield x,y,arrays,masks
     monkeypatch.setattr(compute,'_blocks',bounded)
     with raster_workspace():
@@ -15545,7 +15569,7 @@ def _weighted_focal_stddev_result(path,weights,band=1):
     return raster_focal_statistics(raster_load(source_plan(path)),band,len(weights),'weighted_stddev',weights=weights)
 
 
-@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('size', [3, 5, 7])
 @pytest.mark.parametrize('seed',[7,19,31])
 def test_focal_weighted_stddev_exact_decimal_random_asymmetric_zeros_masks_edges(tmp_path,size,seed):
     rng=np.random.default_rng(seed);values=rng.normal(size=(11,13))*31.25;valid=rng.random(values.shape)>.23
@@ -15558,7 +15582,7 @@ def test_focal_weighted_stddev_exact_decimal_random_asymmetric_zeros_masks_edges
     assert path.read_bytes()==before
 
 
-@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('size', [3, 5, 7])
 @pytest.mark.parametrize('constant',[1.,2.,float(np.nextafter(0.,1.)),np.finfo(float).max])
 def test_focal_weighted_stddev_equal_positive_weights_use_existing_stddev_exactly(tmp_path,size,constant):
     values=np.array([[0.,1.,-3.,1e308],[1e-300,-1e308,7.,9.],[2.,-9999.,4.,-0.]])
@@ -15623,16 +15647,18 @@ def test_focal_weighted_stddev_missing_weights_bilingual_and_other_methods_rejec
                 assert str(error.value)==str(compute._focal_error('weights_unused'))
 
 
-@pytest.mark.parametrize('size',[3,5])
-@pytest.mark.parametrize('located',[True,False])
+@pytest.mark.parametrize('size, located', [(3, True), (3, False), (5, True), (5, False), (7, True)])
 def test_focal_weighted_stddev_complete_cross_block_cog_exact_oracle_mask_grid_and_cleanup(tmp_path,monkeypatch,size,located):
     import operators.raster_compute as compute
-    rows,cols=np.indices((515,519));values=((rows*3+cols*5)%17-8).astype(float);valid=np.ones(values.shape,bool);valid[510,511]=False
+    shape = (367, 369) if size == 7 else (515, 519)
+    seam = 360 if size == 7 else 510
+    rows,cols=np.indices(shape);values=((rows*3+cols*5)%17-8).astype(float);valid=np.ones(values.shape,bool);valid[seam,seam+1]=False
     path=create_raster(tmp_path/'blocks.tif',np.where(valid,values,-9999),(100,2,.25,200,-.5,-3)if located else None,'EPSG:3857'if located else None)
     weights=((np.arange(size*size).reshape(size,size)*3+1)%7).astype(float).tolist();expected=_weighted_stddev_reference(values,valid,weights);before=path.read_bytes();reads=[];blocks=compute._blocks
     def bounded(*args,**kwargs):
         for x,y,arrays,masks in blocks(*args,**kwargs):
-            assert kwargs.get('native')is True and arrays[0].shape[0]<=512 and arrays[0].shape[1]<=512
+            assert kwargs.get('native') is True
+            assert max(arrays[0].shape) <= (366 if size == 7 else 512)
             reads.append((x,y));yield x,y,arrays,masks
     monkeypatch.setattr(compute,'_blocks',bounded)
     with raster_workspace():
@@ -15784,7 +15810,7 @@ def _weighted_focal_sum_result(path,weights,band=1):
     return raster_focal_statistics(raster_load(source_plan(path)),band,len(weights),'weighted_sum',weights=weights)
 
 
-@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('size', [3, 5, 7])
 @pytest.mark.parametrize('seed',[7,19,31])
 def test_focal_weighted_sum_exact_decimal_random_asymmetric_zeros_masks_edges(tmp_path,size,seed):
     rng=np.random.default_rng(seed);values=rng.normal(size=(11,13))*31.25;valid=rng.random(values.shape)>.23
@@ -15797,7 +15823,7 @@ def test_focal_weighted_sum_exact_decimal_random_asymmetric_zeros_masks_edges(tm
     assert path.read_bytes()==before
 
 
-@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('size', [3, 5, 7])
 @pytest.mark.parametrize('case',['ordinary','overflow','subnormal'])
 def test_focal_weighted_sum_all_one_uses_existing_sum_exactly(tmp_path,size,case):
     values=np.array([[0.,1.,-3.,7.],[4.,5.,-9999.,-0.]])
@@ -15868,16 +15894,18 @@ def test_focal_weighted_sum_missing_weights_bilingual_and_other_methods_reject_e
                 assert str(error.value)==str(compute._focal_error('weights_unused'))
 
 
-@pytest.mark.parametrize('size',[3,5])
-@pytest.mark.parametrize('located',[True,False])
+@pytest.mark.parametrize('size, located', [(3, True), (3, False), (5, True), (5, False), (7, True)])
 def test_focal_weighted_sum_complete_cross_block_cog_exact_oracle_mask_grid_and_cleanup(tmp_path,monkeypatch,size,located):
     import operators.raster_compute as compute
-    rows,cols=np.indices((515,519));values=((rows*3+cols*5)%17-8).astype(float);valid=np.ones(values.shape,bool);valid[510,511]=False
+    shape = (367, 369) if size == 7 else (515, 519)
+    seam = 360 if size == 7 else 510
+    rows,cols=np.indices(shape);values=((rows*3+cols*5)%17-8).astype(float);valid=np.ones(values.shape,bool);valid[seam,seam+1]=False
     path=create_raster(tmp_path/'blocks.tif',np.where(valid,values,-9999),(100,2,.25,200,-.5,-3)if located else None,'EPSG:3857'if located else None)
     weights=((np.arange(size*size).reshape(size,size)*3+1)%7).astype(float).tolist();expected=_weighted_sum_reference(values,valid,weights);before=path.read_bytes();reads=[];blocks=compute._blocks
     def bounded(*args,**kwargs):
         for x,y,arrays,masks in blocks(*args,**kwargs):
-            assert kwargs.get('native')is True and arrays[0].shape[0]<=512 and arrays[0].shape[1]<=512
+            assert kwargs.get('native') is True
+            assert max(arrays[0].shape) <= (366 if size == 7 else 512)
             reads.append((x,y));yield x,y,arrays,masks
     monkeypatch.setattr(compute,'_blocks',bounded)
     with raster_workspace():
@@ -20051,7 +20079,7 @@ def test_idw_max_points_near_ties_near_zero_and_extreme_distances_are_not_rounde
         assert set(source.workspace.iterdir())==before
 
 
-@pytest.mark.parametrize('window', ['square3','square5','circle-metre','circle-foot','circle-survey'])
+@pytest.mark.parametrize('window', ['square3','square5','square7','circle-metre','circle-foot','circle-survey'])
 def test_focal_percentiles_complete_multiband_order_singletons_endpoints_and_median(tmp_path,window):
     from fractions import Fraction as Q
     from pyproj import CRS
@@ -20061,7 +20089,7 @@ def test_focal_percentiles_complete_multiband_order_singletons_endpoints_and_med
     data[~valid]=-9999.;data[3,4]=0.;valid[3,4]=True
     source=create_raster(tmp_path/'many.tif',data,grid,f'EPSG:{epsg}');before=source.read_bytes();percentiles=[0.,12.5,33.3,50.,75.,100.];requested=percentiles.copy()
     if window.startswith('square'):
-        size=3 if window=='square3'else 5;kwargs={'window_size':size}
+        size=int(window[-1]);kwargs={'window_size':size}
         expected=[_focal_percentile_oracle(data,valid,size,p)for p in percentiles]
     else:
         factor=CRS.from_epsg(epsg).axis_info[0].unit_conversion_factor;radius=float(3.1*factor);kwargs={'window_type':'circle_metres','radius_metres':radius};expected=[np.full(data.shape,np.nan)for _ in percentiles]
@@ -20106,27 +20134,37 @@ def test_focal_percentiles_other_eleven_methods_reject_even_explicit_null(method
     with pytest.raises(TypeError,match='percentile'):raster_focal_statistics(object(),1,3,method,percentile=50)
 
 
-def test_focal_percentiles_share_bounded_reads_and_sort_per_block_and_full_cog(tmp_path,monkeypatch):
+@pytest.mark.parametrize('size', [5, 7])
+def test_focal_percentiles_share_bounded_reads_and_sort_per_block_and_full_cog(tmp_path,monkeypatch,size):
     import operators.raster_compute as c
-    height,width=515,519;row=(np.arange(width)%19-9).astype(float)/4;row[[1,509,512]]=-9999.;row[511]=0.;values=np.repeat(row[None],height,axis=0)
+    height, width = 515, 519
+    radius = size // 2
+    seam = 360 if size == 7 else 508
+    row=(np.arange(width)%19-9).astype(float)/4;row[[1,seam+1,seam+4]]=-9999.;row[seam+3]=0.;values=np.repeat(row[None],height,axis=0)
     source=create_raster(tmp_path/'cross.tif',values,(100.,2.,.5,200.,.25,-3.));before=source.read_bytes();reads=[];sorts=[];read=c._blocks;sort=c._focal_ordered_values
     def bounded(ds,bands,**kwargs):
-        assert kwargs['native']and max(kwargs['window'][2:])<=512;reads.append(kwargs['window']);yield from read(ds,bands,**kwargs)
-    def ordered(*args):sorts.append(1);return sort(*args)
+        assert kwargs['native']and max(kwargs['window'][2:]) <= (366 if size == 7 else 512);reads.append(kwargs['window']);yield from read(ds,bands,**kwargs)
+    def ordered(*args):
+        samples, count = sort(*args)
+        sorts.append(samples.nbytes)
+        assert samples.shape[0] == size**2
+        if size == 7:
+            assert samples.nbytes <= 49 * 360 * 360 * 8
+        return samples, count
     with raster_workspace():
         loaded=raster_load(source_plan(source))
         with monkeypatch.context()as patch:
             patch.setattr(c,'_blocks',bounded);patch.setattr(c,'_focal_ordered_values',ordered)
-            many=raster_focal_statistics(loaded,1,5,'percentile',[0.,25.,50.,100.])
+            many=raster_focal_statistics(loaded,1,size,'percentile',[0.,25.,50.,100.])
         assert len(reads)==len(sorts)==4 and any(w[0]>0 for w in reads)and any(w[1]>0 for w in reads)
         path=tmp_path/'many.cog.tif';artifact=raster_save(many,target_plan(path),profile='cog',blocksize=128);ds=gdal.Open(str(path))
         assert ds.RasterCount==4 and artifact['size_bytes']==path.stat().st_size>0 and validate_cog(raster_load(source_plan(path)))['valid']
         for index,p in enumerate((0.,25.,50.,100.),1):
             band=ds.GetRasterBand(index);cache={};expected=np.empty(values.shape)
             for y in range(height):
-                repeats=min(height,y+3)-max(0,y-2)
+                repeats=min(height,y+radius+1)-max(0,y-radius)
                 if repeats not in cache:
-                    strip=np.repeat(row[None],repeats,axis=0);cache[repeats]=_focal_percentile_oracle(strip,strip!=-9999.,5,p)[repeats//2]
+                    strip=np.repeat(row[None],repeats,axis=0);cache[repeats]=_focal_percentile_oracle(strip,strip!=-9999.,size,p)[repeats//2]
                 expected[y]=cache[repeats]
             np.testing.assert_array_equal(band.ReadAsArray(),expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,values!=-9999.)
             assert band.GetDescription()=='percentile='+repr(p)and band.GetOverviewCount()==3 and band.GetColorInterpretation()!=gdal.GCI_AlphaBand
@@ -20134,13 +20172,16 @@ def test_focal_percentiles_share_bounded_reads_and_sort_per_block_and_full_cog(t
             for i in range(3):
                 overview=band.GetOverview(i);ys=np.floor(.5+np.arange(overview.YSize)*previous.shape[0]/overview.YSize).astype(int);xs=np.floor(.5+np.arange(overview.XSize)*previous.shape[1]/overview.XSize).astype(int);previous=previous[np.ix_(ys,xs)]
                 np.testing.assert_array_equal(overview.ReadAsArray(),previous);np.testing.assert_array_equal(overview.GetMaskBand().ReadAsArray()!=0,np.isfinite(previous))
+        median = raster_focal_statistics(loaded, 1, size, 'median')
+        np.testing.assert_array_equal(ds.GetRasterBand(3).ReadAsArray(), _twi_read(median))
         overview=band=ds=None
     assert source.read_bytes()==before
 
 
 @pytest.mark.parametrize('language',['zh-cn','en'])
 @pytest.mark.parametrize('fault',['rank','write'])
-def test_focal_percentiles_later_band_failure_no_partial_file_and_preserves_source(tmp_path,monkeypatch,language,fault):
+@pytest.mark.parametrize('size', [3, 7])
+def test_focal_percentiles_later_band_failure_no_partial_file_and_preserves_source(tmp_path,monkeypatch,language,fault,size):
     import operators.raster_compute as c
     source=create_raster(tmp_path/'late.tif',np.array([[0.,1.,7.]]));before=source.read_bytes();calls=[]
     with raster_workspace(),raster_error_language(language):
@@ -20152,7 +20193,7 @@ def test_focal_percentiles_later_band_failure_no_partial_file_and_preserves_sour
                 return gdal.CE_Failure
             return original(*args,**kwargs)
         monkeypatch.setattr(c if fault=='rank'else gdal.Band,'_focal_rank_values'if fault=='rank'else'WriteRaster',fail_second)
-        with pytest.raises(RuntimeError if fault=='rank'else ValueError)as error:raster_focal_statistics(loaded,1,3,'percentile',[25.,75.])
+        with pytest.raises(RuntimeError if fault=='rank'else ValueError)as error:raster_focal_statistics(loaded,1,size,'percentile',[25.,75.])
         assert len(calls)==2 and set(loaded.workspace.iterdir())==files
         assert str(error.value)==('second percentile failed'if fault=='rank'else str(c._focal_error('write')))
     assert source.read_bytes()==before
