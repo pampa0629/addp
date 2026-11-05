@@ -17,7 +17,7 @@
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 |
 | [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接，另见[正式 full 失败入口](#正式-http-full-失败入口)和[停源历史趋势](#停源实例-http-历史趋势) |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL、Redis、MinIO、来源准入、引擎身份与专业观测 |
-| [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 |
+| [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存，见[按验收范围查阅](Monitor执行监控与留存历史证据.md#按验收范围查阅) |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时，见[按诊断问题查阅](Monitor部署与前置诊断历史证据.md#按诊断问题查阅) |
 
 各专题按固定源码、环境和尝试记录结果。失败、取消、跳过、未运行与分项成功分别认定。
