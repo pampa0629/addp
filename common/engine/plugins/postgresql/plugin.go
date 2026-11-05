@@ -130,7 +130,7 @@ func (p *PostgreSQLPlugin) EngineOrigin() string {
 }
 
 func (p *PostgreSQLPlugin) ConnectionSpec() plugin.ConnectionSpec {
-	return plugin.NewConnectionSpec(
+	spec := plugin.NewConnectionSpec(
 		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
 		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 5432, Min: plugin.Int(1), Max: plugin.Int(65535)},
 		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.database", Input: plugin.ConnectionFieldText, Required: true, Identity: true, PlaceholderKey: "storageEngine.databasePlaceholder"},
@@ -141,6 +141,10 @@ func (p *PostgreSQLPlugin) ConnectionSpec() plugin.ConnectionSpec {
 			{Value: "verify-ca", LabelKey: "storageEngine.sslVerifyCa"}, {Value: "verify-full", LabelKey: "storageEngine.sslVerifyFull"},
 		}},
 	)
+	if p.Type() == "postgresql" {
+		return plugin.WithSharedSQLPoolFields(spec)
+	}
+	return spec
 }
 
 // DefaultPort 返回默认端口
@@ -299,6 +303,9 @@ func (p *PostgreSQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.Connec
 
 // ValidateConnectionInfo 验证连接信息
 func (p *PostgreSQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
+	if err := plugin.ValidateSharedSQLPoolSettings(p.Type(), connInfo); err != nil {
+		return err
+	}
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 

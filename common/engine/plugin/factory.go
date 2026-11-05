@@ -217,7 +217,7 @@ func DescribeEngineCatalogFacts(ctx context.Context, resource *Engine, path Engi
 		path.EngineID = resource.ID
 	}
 
-	return factsProvider.DescribeEngineCatalogFacts(ctx, resource.ConnectionInfo, path, opts)
+	return factsProvider.DescribeEngineCatalogFacts(WithPoolEngineVersion(ctx, resource.ID, resource.Version), resource.ConnectionInfo, path, opts)
 }
 
 // CountEngineCatalogItemRows 获取 tabular catalog leaf 的行数。

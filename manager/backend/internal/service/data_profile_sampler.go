@@ -245,7 +245,11 @@ func (p *PreviewDataProfileSampleProvider) Sample(
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		result, err := query.Execute(ctx)
+		readCtx := ctx
+		if engine := target.resolved.Engine; engine != nil {
+			readCtx = plugin.WithPoolEngineVersion(ctx, engine.ID, engine.Version)
+		}
+		result, err := query.Execute(readCtx)
 		if err != nil {
 			return nil, err
 		}

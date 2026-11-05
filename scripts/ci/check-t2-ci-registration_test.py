@@ -886,6 +886,7 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 "pattern = args[args.index('-run') + 1]\n"
                 "names = [\n"
                 "    'TestIntegrationResolvePostgresQueryOutputRewrite',\n"
+                "    'TestIntegrationPostgresSharedSQLPool',\n"
                 "    'TestIntegrationHighGoTableWrite', 'TestIntegrationPostgresKMLWriter',\n"
                 "    'TestExecutionAuthorizationFactsMigrationAgainstPostgres',\n"
                 "    'TestExecutionEventsAgainstPostgres', 'TestExecutionEventRetentionAgainstPostgres',\n"
@@ -950,6 +951,17 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
             )
             self.assertTrue(trace.is_file(), result.stdout + result.stderr)
             return result, [json.loads(line) for line in trace.read_text().splitlines()]
+
+    def test_shared_sql_pool_group_runs_only_the_native_pool_test(self):
+        name = "TestIntegrationPostgresSharedSQLPool"
+        result, calls = self.run_gate_fixture("pass", "shared-sql-pool", name)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("./engine/plugins/postgresql", calls[0])
+        self.assertEqual(calls[0][calls[0].index("-run") + 1], f"^{name}$")
+        result, _ = self.run_gate_fixture("missing", "shared-sql-pool", name)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires the native shared SQL pool test", result.stderr)
 
     def test_capacity_snapshots_run_in_full_and_focused_groups_and_fail_closed(self):
         for group in ('all','online-capacity-snapshots'):

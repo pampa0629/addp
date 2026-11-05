@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"errors"
 	"runtime"
 	"strings"
@@ -48,6 +49,104 @@ func poolFixture(t *testing.T, create func(ConnectionInfo, *PoolConfig) (*gorm.D
 	pm := &PoolManager{pools: make(map[uint]*ManagedPool)}
 	t.Cleanup(func() { pm.CloseAll(); Unregister(p.Type()) })
 	return pm, &Engine{ID: 8401, EngineType: p.Type(), ConnectionInfo: ConnectionInfo{"host": "first", "password": "fixture-secret"}}
+}
+
+type configuredPoolTestPlugin struct{ poolLifecyclePlugin }
+
+func (*configuredPoolTestPlugin) Type() string { return "configured_sql_pool_fixture" }
+func (*configuredPoolTestPlugin) ConnectionSpec() ConnectionSpec {
+	return WithSharedSQLPoolFields(NewConnectionSpec())
+}
+
+func TestSharedSQLPoolConfigValidatesNumbersAndPreservesZero(t *testing.T) {
+	p := &configuredPoolTestPlugin{}
+	Register(p)
+	t.Cleanup(func() { Unregister(p.Type()) })
+	for _, info := range []ConnectionInfo{
+		{poolMaxOpen: 0}, {poolMaxOpen: 1001}, {poolMaxOpen: 4},
+		{poolMaxIdle: -1}, {poolMaxIdle: 1.25},
+		{poolIdleSeconds: "0"}, {poolIdleSeconds: nil},
+		{poolLifeSeconds: 86401}, {poolLifeSeconds: json.Number("1.5")},
+	} {
+		if err := ValidateSharedSQLPoolSettings(p.Type(), info); err == nil {
+			t.Errorf("accepted invalid settings: %v", info)
+		}
+	}
+	if err := ValidateSharedSQLPoolSettings("missing_driver", ConnectionInfo{poolMaxIdle: 0}); err == nil {
+		t.Error("unsupported driver accepted pool settings")
+	}
+	defaults, err := sharedSQLPoolConfig(nil)
+	if err != nil || defaults != (PoolConfig{MaxOpenConns: 10, MaxIdleConns: 5, ConnMaxLifetime: time.Hour}) {
+		t.Fatalf("unexpected defaults: %+v (%v)", defaults, err)
+	}
+	config, err := sharedSQLPoolConfig(ConnectionInfo{
+		poolMaxOpen: json.Number("1"), poolMaxIdle: float64(0), poolIdleSeconds: int64(7), poolLifeSeconds: 0,
+	})
+	if err != nil || config != (PoolConfig{MaxOpenConns: 1, ConnMaxIdleTime: 7 * time.Second}) {
+		t.Fatalf("explicit settings lost: %+v (%v)", config, err)
+	}
+}
+
+func TestPoolManagerFencesStaleSharedSQLConfiguration(t *testing.T) {
+	var settings []PoolConfig
+	var native *sql.DB
+	fixtureErr := errors.New("test creation failed")
+	p := &configuredPoolTestPlugin{poolLifecyclePlugin{create: func(_ ConnectionInfo, config *PoolConfig) (*gorm.DB, error) {
+		settings = append(settings, *config)
+		if config.MaxOpenConns == 3 {
+			return nil, fixtureErr
+		}
+		var db *gorm.DB
+		db, native = poolTestDB()
+		return db, nil
+	}}}
+	Register(p)
+	t.Cleanup(func() { Unregister(p.Type()) })
+	pm := &PoolManager{}
+	t.Cleanup(pm.CloseAll)
+	resource := func(version int64, open, idle int) *Engine {
+		return &Engine{ID: 8402, EngineType: p.Type(), Version: version,
+			ConnectionInfo: ConnectionInfo{poolMaxOpen: open, poolMaxIdle: idle}}
+	}
+	first, err := pm.GetOrCreatePool(resource(1, 10, 5), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An omitted setting and an explicit default have the same effective policy.
+	unchanged := &Engine{ID: 8402, EngineType: p.Type(), Version: 2}
+	unchanged.ConnectionInfo = ConnectionInfo{}
+	if same, err := pm.GetOrCreatePool(unchanged, nil); err != nil || same != first {
+		t.Fatalf("version-only update replaced the pool: %v", err)
+	}
+	if same, err := pm.GetOrCreatePool(resource(0, 10, 5), nil); err != nil || same != first {
+		t.Fatalf("matching unversioned call failed to reuse pool: %v", err)
+	}
+	if _, err := pm.GetOrCreatePool(resource(2, 6, 0), nil); !errors.Is(err, ErrStalePoolConfiguration) {
+		t.Fatalf("different settings at the same version were accepted: %v", err)
+	}
+	if _, err := pm.GetOrCreatePool(resource(3, 3, 0), nil); !errors.Is(err, fixtureErr) {
+		t.Fatalf("expected failed replacement: %v", err)
+	}
+	if err := native.Ping(); err == nil {
+		t.Fatal("old pool remained open after failed replacement")
+	}
+	for _, version := range []int64{0, 1, 2} {
+		if _, err := pm.GetOrCreatePool(resource(version, 10, 5), nil); !errors.Is(err, ErrStalePoolConfiguration) {
+			t.Fatalf("stale version %d could resurrect the old pool: %v", version, err)
+		}
+	}
+	if _, err := pm.GetOrCreatePool(resource(4, 10, 5), nil); err != nil {
+		t.Fatalf("a newer version could not restore earlier settings: %v", err)
+	}
+	if err := pm.ClosePool(8402); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pm.GetOrCreatePool(resource(2, 10, 5), nil); !errors.Is(err, ErrStalePoolConfiguration) {
+		t.Fatalf("close removed the version fence: %v", err)
+	}
+	if len(settings) != 3 || settings[1].MaxOpenConns != 3 || settings[1].MaxIdleConns != 0 {
+		t.Fatalf("unexpected pool creations: %+v", settings)
+	}
 }
 
 func TestPoolManagerCloseReleasesSQLDB(t *testing.T) {

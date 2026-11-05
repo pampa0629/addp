@@ -107,6 +107,7 @@ func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 	if opts.EngineID != 0 && opts.EngineType != "" {
 		pooled, err := GetOrCreatePoolFromFactory(&Engine{
 			ID:             opts.EngineID,
+			Version:        PoolEngineVersion(ctx, opts.EngineID),
 			EngineType:     opts.EngineType,
 			ConnectionInfo: connInfo,
 		}, DefaultPoolConfig())

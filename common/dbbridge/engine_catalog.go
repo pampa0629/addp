@@ -37,7 +37,7 @@ func ListEngineCatalogChildren(ctx context.Context, engine *models.Engine, paren
 		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported,
 			fmt.Errorf("plugin %s does not implement EngineCatalogProvider", pluginEngine.EngineType))
 	}
-	return catalogProvider.ListChildren(ctx, pluginEngine.ConnectionInfo, parent, opts)
+	return catalogProvider.ListChildren(plugin.WithPoolEngineVersion(ctx, engine.ID, engine.Version), pluginEngine.ConnectionInfo, parent, opts)
 }
 
 // ResolveEngineCatalogPath 精确解析实时目录节点，不读取样本或详情。
@@ -51,7 +51,7 @@ func ResolveEngineCatalogPath(ctx context.Context, engine *models.Engine, path p
 		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported,
 			fmt.Errorf("plugin %s does not implement EngineCatalogProvider", engine.EngineType))
 	}
-	return provider.ResolvePath(ctx, toPluginEngine(engine).ConnectionInfo, path)
+	return provider.ResolvePath(plugin.WithPoolEngineVersion(ctx, engine.ID, engine.Version), toPluginEngine(engine).ConnectionInfo, path)
 }
 
 // DescribeEngineCatalogFacts 描述 catalog leaf 的 engine-native facts。

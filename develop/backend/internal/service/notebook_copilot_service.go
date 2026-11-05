@@ -540,6 +540,7 @@ func (s *NotebookSessionService) describeCatalogFactsForSession(
 	}
 	return plugin.DescribeEngineCatalogFacts(executionCtx, &plugin.Engine{
 		ID: access.Engine.ID, EngineType: access.Engine.EngineType,
+		Version:        access.Engine.Version,
 		ConnectionInfo: plugin.ConnectionInfo(access.Engine.ConnectionInfo),
 	}, notebookPluginCatalogPath(path), plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
 }

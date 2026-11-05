@@ -14,10 +14,16 @@ import (
 // PoolManager 按引擎配置缓存 SQL 连接池，拥有底层连接池的关闭责任。
 // 同一引擎的创建、替换与关闭串行执行，不阻塞其他引擎的连接建立。
 type PoolManager struct {
-	mu      sync.RWMutex
-	pools   map[uint]*ManagedPool
-	pending map[uint]chan struct{}
-	closing chan struct{}
+	mu       sync.RWMutex
+	pools    map[uint]*ManagedPool
+	pending  map[uint]chan struct{}
+	versions map[uint]poolSnapshot
+	closing  chan struct{}
+}
+
+type poolSnapshot struct {
+	version   int64
+	signature [sha256.Size]byte
 }
 
 // ManagedPool 托管的连接池。字段仅在 PoolManager 锁下访问。
@@ -69,11 +75,28 @@ func (pm *PoolManager) GetOrCreatePool(resource *Engine, config *PoolConfig) (in
 		config = DefaultPoolConfig()
 	}
 	settings := *config
+	connection := resource.ConnectionInfo
+	registered, _ := Get(resource.EngineType)
+	configurable := usesSharedSQLPoolPolicy(registered)
+	if configurable {
+		var err error
+		settings, err = sharedSQLPoolConfig(connection)
+		if err != nil {
+			return nil, err
+		}
+		connection = make(ConnectionInfo, len(resource.ConnectionInfo))
+		for key, value := range resource.ConnectionInfo {
+			connection[key] = value
+		}
+		for _, field := range sharedSQLPoolFields {
+			delete(connection, field.key)
+		}
+	}
 	encoded, err := json.Marshal(struct {
 		EngineType     string
 		ConnectionInfo ConnectionInfo
 		Config         PoolConfig
-	}{resource.EngineType, resource.ConnectionInfo, settings})
+	}{resource.EngineType, connection, settings})
 	if err != nil {
 		return nil, errors.New("cannot encode connection pool configuration")
 	}
@@ -83,6 +106,24 @@ func (pm *PoolManager) GetOrCreatePool(resource *Engine, config *PoolConfig) (in
 
 	pm.mu.Lock()
 	pool := pm.pools[resource.ID]
+	if configurable {
+		latest := pm.versions[resource.ID]
+		version := resource.Version
+		if latest.version > 0 {
+			reusesCurrent := version == 0 && pool != nil && pool.signature == signature
+			if (version < latest.version && !reusesCurrent) ||
+				(version == latest.version && signature != latest.signature) {
+				pm.mu.Unlock()
+				return nil, ErrStalePoolConfiguration
+			}
+		}
+		if version > latest.version {
+			if pm.versions == nil {
+				pm.versions = make(map[uint]poolSnapshot)
+			}
+			pm.versions[resource.ID] = poolSnapshot{version: version, signature: signature}
+		}
+	}
 	if pool != nil && pool.signature == signature {
 		pool.LastAccess = time.Now()
 		pm.mu.Unlock()
