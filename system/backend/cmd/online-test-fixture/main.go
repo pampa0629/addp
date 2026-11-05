@@ -121,7 +121,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
 	case "vector-topology-persistence":
 		if topologyLineagePermissions(suite) {
-			return append([]string{}, sourceInitializerPermissions...)
+			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		return nil
 	case "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow":

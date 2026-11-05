@@ -1176,7 +1176,7 @@ A显式唯一非空来源ID与FID不同且在JSON安全整数内；输出每源�
 
 ### NFS GeoPackage 血缘权限专项验收
 
-使用现有 Hosted 门禁 `vector-topology-persistence` 的 `line-nodes-lineage-permissions` 入口。沿用原 `nodes-source.gpkg` 和一次成功节点提取，生成 `nodes.gpkg`、`node-members.gpkg`。独立授权操作员仅向普通读者签发这三个文件的 `metadata_read` Grant。普通读者在两个成果上都须看见同一次执行的来源边。
+使用现有 Hosted 门禁 `vector-topology-persistence` 的 `line-nodes-lineage-permissions` 入口。具备引擎管理范围的测试初始化员通过 Meta 集中采集入口精确登记原 `nodes-source.gpkg`，再沿用一次成功节点提取生成 `nodes.gpkg`、`node-members.gpkg`。初始化员仅向普通读者签发这三个文件的 `metadata_read` Grant。普通读者在两个成果上都须看见同一次执行的来源边。
 
 保持同一个普通用户的 Manager 页面和会话，先撤源文件 Grant，改变显示深度触发重查。核对 HTTP 200、隐藏提示、仅保留成果节点、零关系，以及响应没有隐藏源的计数、身份或执行证据。再撤当前成果的 Grant，重查须返回 `404 lineage_subject_not_found`，页面清除画布与上一次隐藏提示。保留原始响应和三阶段截图，核对物理文件不变并撤销本轮 Grant。专项范围限于数据项血缘，使用一次成功执行，省略拓扑诊断、地图及发布服务节点。
 

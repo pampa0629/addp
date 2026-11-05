@@ -1727,6 +1727,18 @@ func TestENVIInitializerHasOnlyApprovedThirteenPermissions(t *testing.T) {
 	}
 }
 
+func TestTopologyLineageInitializerUsesManagedScanPermissionsOnlyInItsCase(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS", "0")
+	if len(suiteSourceInitializerPermissions("vector-topology-persistence")) != 0 {
+		t.Fatal("the original topology cases must not acquire a source initializer")
+	}
+	t.Setenv("ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS", "1")
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if !slices.Equal(suiteSourceInitializerPermissions("vector-topology-persistence"), want) {
+		t.Fatal("the lineage source initializer must have the existing managed scan profile")
+	}
+}
+
 func TestRasterCapacitySeparatesBoundedMetadataIssuerFromConsumer(t *testing.T) {
 	permissions, err := suitePermissions("raster-workflow-capacity")
 	if err != nil || len(permissions) != 12 || !slices.Equal(suiteSourceInitializerPermissions("raster-workflow-capacity"), sourceInitializerPermissions) {
