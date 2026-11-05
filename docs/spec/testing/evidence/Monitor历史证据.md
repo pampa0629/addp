@@ -395,3 +395,4 @@ Job126260838041原件确认go_tmp后代消失，采样0.599秒，非四秒超时
 
 - <a id="2026-11-04-http浏览器两阶段注销断言补齐"></a>[2026-11-04 HTTP浏览器两阶段注销断言补齐](MonitorHTTP质量与采样历史证据.md#http-browser-logout-contract-20261104)
 - <a id="2026-11-05-正式-http-full-卷读取首失败"></a>[2026-11-05 正式 HTTP full 卷读取首失败](MonitorHTTP质量与采样历史证据.md#http-full-logout-agent-volume-read-failed-20261105)
+- <a id="2026-11-05-正式-http-full-system-资源检查超时"></a>[2026-11-05 正式 HTTP full 在 System 构建期间耗尽四秒检查预算](MonitorHTTP质量与采样历史证据.md#http-full-system-list-inspect-deadline-20261105)

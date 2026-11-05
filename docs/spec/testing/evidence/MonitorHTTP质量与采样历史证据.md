@@ -1200,3 +1200,17 @@ Go 编译、缓存回收及 System 镜像命令成功后进入 Gateway 构建。
 前 176 次完整检查最长 1.955384 秒，读取重试 0，已完成样本私有占用峰值约 3.76 GiB。失败样本缺完整卷及目录读数。标准退出和独立归属复核确认容器、网络、卷、构建器及镜像标签零残留，私有工作目录已移除。
 
 Copilot 与后续构建、正式密码／MFA、采集／API、真实页面、停源、两阶段浏览器注销及旧会话 401 均未执行。Hosted 与容量未运行。原确定性和 Linux SDK 通过各按其范围认定。Run `addp-http-local-35fa4d468ba04931861d6947cbdc1775`，预算原件、输入及清理收据在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-logout-20261105.9aKCoSAd`。
+
+<a id="http-full-system-list-inspect-deadline-20261105"></a>
+
+### 2026-11-05 正式 HTTP full 在 System 镜像构建期间耗尽四秒检查预算
+
+本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full`，固定源码 `6018887ac4426821941be0003c672ea8b1955d77` 包含卷归属与取消前取证提交 `9b64c5367`。13 项专项输入和 3 项集成输入与报告摘要一致，Docker Unix socket、固定摘要 Nginx 缓存及代理准入通过。Go 编译和当次缓存回收完成，System 镜像构建期间遇到首失败。含准备及清理共 256.178 秒，入口退出 2。
+
+首因是 `resource_sample_deadline_exceeded`，落在 `inspect_owned_containers`。同一检查先用 3.889191 秒完成容器列表，其中 Docker CLI 等待 3.880109 秒，71 次等待超时返回累计比其请求等待时长多约 284 毫秒。随后 inspect 等待 0.103160 秒并取消回收 0.035402 秒。含取消的失败检查耗时 4.038941 秒。该计量来自宿主等待，daemon 内部耗时和根因未定位。失败样本在卷列表和测量前中止，卷路径消失未复现，卷归属无本轮实测回执。
+
+取消前冻结回执与当次 run、System 构建阶段及命令 337 匹配。单调时间核对为构建已启动、失败检查开始和结束、冻结。冻结时该命令已运行约 26.490 秒，已扫描 2355 字节、观察 5 步，摘要为 `invalid`，未完成的具体 BuildKit 步骤为 `unknown`。首因仍为资源检查超时。
+
+57 次完整检查最长 2.237384 秒、最大开始间隔 4.006694 秒，峰值 2.25 CPU、3288334336 字节内存及 4215373824 字节私有可写（约 3.93 GiB），读取重试 0。失败样本缺完整占用数据。标准清理和独立只读复核均确认当次容器、网络、卷、构建器容器及状态卷、镜像标签和私有工作目录零残留。
+
+System 镜像及后续 Agent／Copilot 构建、正式密码／MFA、采集／API、页面、停源、两阶段注销及旧会话 401 均无本轮通过证据。未续窗、重试、运行 Hosted、容量或定时。Run `addp-http-local-29ed3ed8637d409e884211e4418f57c6`，报告 SHA256 `d9e077b448d4d445c4417dbe05d1b24ac9797724b77d12776aa544f3bb977667`。原始报告、输入、首因关联与清理复核在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-volume-attribution-20261105.GxTJctoW/`。
