@@ -1222,3 +1222,11 @@ System 镜像及后续 Agent／Copilot 构建、正式密码／MFA、采集／AP
 以原报告和此前从 VM `init.log` 提取的归一化事件值离线回放。命令 363 的单调等待区间为 `1499365815179000–1499369695288083` ns。当次归属标签、GET 路径及签名相符的代理记录为 `2026-11-05T13:56:18.032072760Z–13:56:20.501664219Z`，两条原日志片段 SHA256 为 `34dcf8d4d85deabbc7ef2e830fe826bca1fda57f34daf08b08de51eee9469368`。结论只记 `unique_candidate`，代理日志跨度 2469591459 ns，客户端、转发及 daemon 的分段耗时未确认。回放未改写原报告，首因仍为 `inspect_owned_containers` 中的 `resource_sample_deadline_exceeded`，整轮仍失败。脱敏回放收据位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-offline-apiproxy.g9lgSFfA/archive-replay.json`。
 
 `make test-monitor-http-local-runner` 与 `make test-monitor-traces-local-runner` 均退出 0，分别覆盖 HTTP Python 47 项、Node 7 项、Trace Python 190 项，以及既有身份、登记和离线 TLS 子门禁。归属的可靠分支仅有确定性回归证据。无真实校时、构建重试、新窗口、Hosted、容量或定时。
+
+## 停源实例 HTTP 历史趋势首期
+
+现有趋势 API 支持单个已停源实例的明确离线前区间。当前 User 精确读取 System 已有历史实例事实，Monitor 在同一查询预算内核验留存样本的唯一采集序列和进程启动时刻。保持 `not_active`，历史可用性单列。离线页面保存绝对区间与原实例 ID，缺样保留断点。实时摘要、排行及告警沿现有实时采集口径。详情见[停源历史契约](../../addp平台运行观测规范.md#停源实例的-http-历史趋势)。
+
+本地 Common client、Monitor Go 全包、Swagger 96 路由、Metrics 配置 138 项、HTTP local runner Python 47 项／Node 7 项及身份夹具、Monitor 前端 Node 136 项、接口质量受控浏览器 10 项及前端构建通过。全量 Monitor 浏览器在专项验证后主动停止，185 项通过、1 项中断、566 项未运行，不计整套通过。
+
+既有 Linux Metrics `http-quality` 的 Go／Python 来源分支在原停源检查后回读先前通过的 Prometheus 窗口，同时保留实时查询为空的断言。该项真实结果待自然 Linux CI 单列，未启动新的本地验收窗口、Hosted、容量或定时。

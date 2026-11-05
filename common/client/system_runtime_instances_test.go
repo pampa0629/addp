@@ -13,7 +13,7 @@ import (
 func TestRuntimeInstanceReferencesUseOnlyCurrentUserAndExactIDs(t *testing.T) {
 	yes := true
 	now := time.Now().UTC()
-	row := RuntimeInstanceReference{ID: 7, ModuleName: "monitor", InstanceID: "worker-a", Role: "worker", Status: "up", LeaseExpiresAt: now.Add(time.Minute), ProcessStartedAt: &now, ProcessMetricsDeclared: &yes}
+	row := RuntimeInstanceReference{ID: 7, ModuleName: "monitor", InstanceID: "worker-a", Role: "worker", Status: "up", LeaseExpiresAt: now.Add(time.Minute), ProcessStartedAt: &now, RegisteredAt: now, ProcessMetricsDeclared: &yes}
 	for _, tc := range []struct {
 		name   string
 		status int
@@ -22,6 +22,10 @@ func TestRuntimeInstanceReferencesUseOnlyCurrentUserAndExactIDs(t *testing.T) {
 		valid  bool
 	}{
 		{"current unbound process", 200, nil, 1, true},
+		{"offline process", 200, func(r *RuntimeInstanceReference) {
+			stopped := now.Add(5 * time.Second)
+			r.Status, r.LeaseExpiresAt, r.StoppedAt = "down", stopped, &stopped
+		}, 1, true},
 		{"wrong row", 200, func(r *RuntimeInstanceReference) { r.ID = 8 }, 1, false},
 		{"missing declaration state", 200, func(r *RuntimeInstanceReference) { r.ProcessMetricsDeclared = nil }, 1, false},
 		{"bad role", 200, func(r *RuntimeInstanceReference) { r.Role = "other" }, 1, false},
@@ -37,7 +41,7 @@ func TestRuntimeInstanceReferencesUseOnlyCurrentUserAndExactIDs(t *testing.T) {
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
-				if r.URL.Path != "/api/v1/system/platform/module-instances" || r.Header.Get("Authorization") != "Bearer addp_at_current_user" || r.URL.Query().Get("ids") != "7" || r.URL.Query().Get("page_size") != "100" {
+				if r.URL.Path != "/api/v1/system/platform/module-instances" || r.Header.Get("Authorization") != "Bearer addp_at_current_user" || r.URL.Query().Get("ids") != "7" || r.URL.Query().Get("page_size") != "100" || r.URL.Query().Has("status") {
 					t.Error("owner path/token/scope changed")
 				}
 				w.WriteHeader(tc.status)
@@ -48,6 +52,9 @@ func TestRuntimeInstanceReferencesUseOnlyCurrentUserAndExactIDs(t *testing.T) {
 			refs, err := c.GetRuntimeInstancesForUser(context.Background(), []uint{7}, "addp_at_current_user")
 			if (err == nil) != tc.valid || calls != 1 {
 				t.Fatalf("valid=%v calls=%d refs=%+v err=%v", tc.valid, calls, refs, err)
+			}
+			if tc.valid && (!refs[0].RegisteredAt.Equal(now) || (current.Status == "down" && (refs[0].StoppedAt == nil || !refs[0].StoppedAt.Equal(*current.StoppedAt)))) {
+				t.Fatalf("System registration or stop time lost: %+v", refs)
 			}
 			if tc.status == 403 {
 				var status *SystemAPIError

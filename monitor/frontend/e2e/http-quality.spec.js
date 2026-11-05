@@ -35,6 +35,24 @@ test('HTTP quality discards foreign identity and stops automatic reads after per
   expect(state.calls.filter(call => call.kind === 'http_observations')).toHaveLength(count)
 })
 
+test('explicit offline history keeps the same instance and absolute trend after reload', async ({ page }) => {
+  const state = await httpBackend(page)
+  state.stop(1)
+  await page.goto('/http-quality?status=down')
+  await expect(page.getByTestId('http-instances')).toContainText('http-1')
+  await expect(page.getByTestId('http-instances')).not.toContainText('http-2')
+  await page.getByRole('button', { name: '停源前趋势', exact: true }).click()
+  await expect(page.getByTestId('http-trend').locator('canvas')).toBeVisible()
+  const fixed = { instance_ids: '1', start: '2026-10-19T23:00:00.000Z', end: '2026-10-20T00:00:00.000Z' }
+  expect(state.calls.filter(call => call.kind === 'http_trends').at(-1)).toMatchObject(fixed)
+  await page.reload()
+  await expect(page.getByTestId('http-trend').locator('canvas')).toBeVisible()
+  expect(state.calls.filter(call => call.kind === 'http_trends').at(-1)).toMatchObject(fixed)
+  expect(state.calls.some(call => ['http_observations', 'http_interfaces'].includes(call.kind))).toBe(false)
+  await setIdentity(page, identity([]))
+  await expect(page.getByTestId('http-trend')).toHaveCount(0)
+})
+
 test('a pending HTTP response cannot return after current-user permissions are removed', async ({ page }) => {
   const state = await httpBackend(page)
   state.hold()

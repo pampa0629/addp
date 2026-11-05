@@ -1240,6 +1240,16 @@
       "collection": "采集状态",
       "details": "接口与趋势",
       "empty": "没有符合条件的当前实例",
+      "instanceScope": "实例范围",
+      "onlineInstances": "在线实例",
+      "stoppedInstances": "已停源实例",
+      "noStoppedInstances": "没有符合条件的已停源实例",
+      "historyTrend": "停源前趋势",
+      "historyStates": {
+        "no_data": "没有可用历史样本",
+        "outside_instance": "请选择离线判定前的时段",
+        "outside_retention": "所选时段已超出历史回看范围"
+      },
       "sort": "排行依据",
       "route": "路由模板",
       "unmatched": "未匹配路由",

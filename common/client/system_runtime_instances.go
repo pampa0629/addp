@@ -25,6 +25,8 @@ type RuntimeInstanceReference struct {
 	Status                 string     `json:"status"`
 	LeaseExpiresAt         time.Time  `json:"lease_expires_at"`
 	ProcessStartedAt       *time.Time `json:"process_started_at"`
+	RegisteredAt           time.Time  `json:"registered_at"`
+	StoppedAt              *time.Time `json:"stopped_at"`
 	ProcessMetricsDeclared *bool      `json:"process_metrics_declared"`
 }
 

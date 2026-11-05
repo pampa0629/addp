@@ -2,7 +2,10 @@ package resourcequery
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
+	"net/netip"
 	"net/url"
 	"sort"
 	"strconv"
@@ -11,6 +14,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 )
+
+const HTTPHistoryAge = 7 * 24 * time.Hour
 
 var httpDefinitions = []Definition{
 	{"http.requests.per_second", "requests_per_second", 60},
@@ -31,6 +36,7 @@ type HTTPPlan struct {
 	Route         *string
 	Method        string
 	Rank          string
+	historyLower  time.Time
 }
 
 func HTTPCatalog() []Definition { return append([]Definition(nil), httpDefinitions...) }
@@ -103,6 +109,11 @@ func (s ProcessScope) httpExpression(p HTTPPlan) (string, error) {
 		` and (max(timestamp(` + total + `))>=time()-16) and (max(timestamp(` + total + offset + `))>=time()-` + strconv.Itoa(p.WindowSeconds+16) + `)` +
 		` and (abs(max(timestamp(` + total + `))-max(timestamp(` + total + offset + `))-` + strconv.Itoa(p.WindowSeconds) + `)<=1)` +
 		` and (max(resets(` + total + `[` + w + `]))==0)`
+	if !p.historyLower.IsZero() {
+		lower := strconv.FormatFloat(float64(p.historyLower.Unix())+float64(p.historyLower.Nanosecond())/1e9, 'f', 9, 64)
+		currentGuard += ` and (max(timestamp(` + total + `))>=` + lower + `)`
+		guard += ` and (max(timestamp(` + total + offset + `))>=` + lower + `)`
+	}
 	group := "()"
 	if p.Grouped {
 		group = "(http_route,http_request_method)"
@@ -272,6 +283,111 @@ func (c *Client) HTTP(ctx context.Context, p HTTPPlan, scope ProcessScope, b Bud
 		return nil, err
 	}
 	return normalizeHTTP(data, p, b)
+}
+
+// HTTPHistory resolves the private address from stored evidence for the exact
+// System-authorized process. The same budget covers both Prometheus reads.
+func (c *Client) HTTPHistory(ctx context.Context, p HTTPPlan, scope ProcessScope, lower time.Time, b Budget) ([]HTTPObservation, error) {
+	if c == nil {
+		return nil, ErrUnavailable
+	}
+	if scope.validateIdentity() != nil || scope.Instance != "" || (scope.Role != "backend" && scope.Role != "ingress") ||
+		b.Validate() != nil || !p.Trend || p.Grouped || lower.IsZero() || lower.Before(scope.StartedAt) || p.End.Before(lower) {
+		return nil, ErrInvalid
+	}
+	checked, err := NewHTTPPlan(p.Start, p.End, p.End, true, false, p.Route, p.Method, p.WindowSeconds, b)
+	if err != nil || checked.Points != p.Points || checked.StepSeconds != p.StepSeconds {
+		return nil, ErrInvalid
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(b.TimeoutSeconds)*time.Second)
+	defer cancel()
+	start := p.Start.Add(-time.Duration(p.WindowSeconds) * time.Second)
+	if lower.After(start) {
+		start = lower
+	}
+	seconds := p.End.Unix() - start.Unix() + 1
+	if seconds < 1 || seconds > int64(HTTPHistoryAge/time.Second)+1 {
+		return nil, ErrBudget
+	}
+	duration := "[" + strconv.FormatInt(seconds, 10) + "s]"
+	identity := scope.processSelector("addp_process_identity_info") + "}" + duration
+	started := scope.processSelector("process_start_time_seconds") + "}" + duration
+	expr := `label_replace(count by(instance)(count_over_time(` + identity + `)),"addp_history_signal","identity","","") or ` +
+		`label_replace(min by(instance)(min_over_time(` + started + `)),"addp_history_signal","min","","") or ` +
+		`label_replace(max by(instance)(max_over_time(` + started + `)),"addp_history_signal","max","","")`
+	data, err := c.readPlanExpression(ctx, Plan{End: p.End}, expr, b)
+	if err != nil {
+		return nil, err
+	}
+	scope.Instance, err = historicalHTTPAddress(data, p.End, scope.StartedAt)
+	if err != nil || scope.Instance == "" {
+		return nil, err
+	}
+	p.historyLower = lower
+	rows, err := c.HTTP(ctx, p, scope, b)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		for j := range rows[i].Series {
+			series := &rows[i].Series[j]
+			for k, point := range series.Points {
+				window := time.Duration(series.WindowSeconds) * time.Second
+				if point.EvaluatedAt.Add(-window).Before(lower) ||
+					(point.SampledAt != nil && point.SampledAt.Add(-window).Before(lower)) {
+					series.Points[k] = Point{EvaluatedAt: point.EvaluatedAt, DataState: "no_data"}
+				}
+			}
+		}
+	}
+	return rows, nil
+}
+
+func historicalHTTPAddress(data envelope, at, startedAt time.Time) (string, error) {
+	if data.Data.ResultType != "vector" || data.Data.Result == nil {
+		return "", ErrUnavailable
+	}
+	if len(data.Data.Result) == 0 {
+		return "", nil
+	}
+	if len(data.Data.Result) != 3 {
+		return "", ErrUnavailable
+	}
+	var address string
+	seen := map[string]bool{}
+	expected := float64(startedAt.Unix()) + float64(startedAt.Nanosecond())/1e9
+	for _, row := range data.Data.Result {
+		instance, signal := row.Metric["instance"], row.Metric["addp_history_signal"]
+		endpoint, err := netip.ParseAddrPort(instance)
+		if err != nil || endpoint.Port() == 0 || endpoint.Addr().Zone() != "" || len(row.Metric) != 2 ||
+			(address != "" && address != instance) || seen[signal] || row.Value == nil || row.Values != nil ||
+			len(row.Histogram) != 0 || len(row.Histograms) != 0 {
+			return "", ErrUnavailable
+		}
+		var stamp float64
+		var raw string
+		if json.Unmarshal(row.Value[0], &stamp) != nil || stamp != float64(at.Unix()) || json.Unmarshal(row.Value[1], &raw) != nil {
+			return "", ErrUnavailable
+		}
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+			return "", ErrUnavailable
+		}
+		switch signal {
+		case "identity":
+			if value != 1 {
+				return "", ErrUnavailable
+			}
+		case "min", "max":
+			if math.Abs(value-expected) > 0.000001 {
+				return "", ErrUnavailable
+			}
+		default:
+			return "", ErrUnavailable
+		}
+		address, seen[signal] = instance, true
+	}
+	return address, nil
 }
 
 func normalizeHTTP(data envelope, p HTTPPlan, b Budget) ([]HTTPObservation, error) {

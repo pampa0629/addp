@@ -123,11 +123,11 @@ func (h HTTPObservationHandler) Interfaces(c *gin.Context) { h.read(c, true, fal
 
 // Trend godoc
 // @Summary 读取实例或接口质量趋势 | Read instance or route quality trends
-// @Description route/method 必须同时提供；省略时读取整个实例，活动请求数仅属于实例，窗口固定，复用受限时间范围和采样预算 | Supply route and method together, or omit both for the process. Active requests are process-scoped; fixed windows and bounded range/point budgets apply
+// @Description route/method 必须同时提供；省略时读取整个实例。离线实例仅查询严格早于离线判定的显式时间区间，采集状态保持 not_active，history_state 表达历史可用性 | Supply route and method together, or omit both for the process. Offline history requires an explicit range ending before the offline determination, retains not_active collection, and reports availability in history_state
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
-// @Param instance_ids query string true "恰好一个当前实例 ID | Exactly one current instance ID"
+// @Param instance_ids query string true "恰好一个当前用户获授权的 System 实例登记 ID | Exactly one System instance record ID authorized for the current user"
 // @Param window_seconds query int false "固定统计窗口 | Fixed request window" Enums(60,300,900) default(60)
 // @Param route query string false "框架模板；空值表示未匹配路由 | Framework template; empty selects unmatched routes"
 // @Param method query string false "固定 HTTP 方法 | Fixed HTTP method"

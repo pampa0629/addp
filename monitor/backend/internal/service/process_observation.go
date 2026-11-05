@@ -81,7 +81,7 @@ func (s *ResourceObservationService) ProcessTrend(ctx context.Context, principal
 // observeProcesses is the single owner authorization, identity, admission and
 // completion-time lease check for current process resources.
 func (s *ResourceObservationService) observeProcesses(ctx context.Context, principal, token string, ids []uint, start, end time.Time, trend bool) (ProcessResourceSummaryResponse, resourcequery.Plan, error) {
-	return s.observeProcessesUsing(ctx, principal, token, ids, start, end, trend, nil, nil)
+	return s.observeProcessesUsing(ctx, principal, token, ids, start, end, trend, nil, nil, nil)
 }
 
 // observeProcessesUsing keeps current-user authorization, private identity,
@@ -90,6 +90,7 @@ func (s *ResourceObservationService) observeProcesses(ctx context.Context, princ
 func (s *ResourceObservationService) observeProcessesUsing(ctx context.Context, principal, token string, ids []uint, start, end time.Time, trend bool,
 	planFor func(int, time.Time, time.Time, time.Time, bool, resourcequery.Budget) (resourcequery.Plan, error),
 	read func(context.Context, resourcequery.Plan, []resourcequery.ProcessScope, resourcequery.Budget) (map[uint]resourcequery.Summary, error),
+	readStopped func(context.Context, client.RuntimeInstanceReference, time.Time, resourcequery.Budget) error,
 ) (ProcessResourceSummaryResponse, resourcequery.Plan, error) {
 	result := ProcessResourceSummaryResponse{}
 	var plan resourcequery.Plan
@@ -154,6 +155,24 @@ func (s *ResourceObservationService) observeProcessesUsing(ctx context.Context, 
 	}
 	if !s.enabled {
 		return result, plan, metricsdiscovery.ErrDisabled
+	}
+	if readStopped != nil && len(ids) == 1 && users[ids[0]].Status == "down" {
+		r := users[ids[0]]
+		if err := readStopped(ctx, r, now, cfg.Budget); err != nil {
+			return result, plan, err
+		}
+		if err := ctx.Err(); err != nil {
+			return result, plan, err
+		}
+		completed := s.now().UTC()
+		if completed.Before(now) {
+			return result, plan, resourcequery.ErrUnavailable
+		}
+		result.Data = []ProcessResourceObservation{{
+			Subject:    ProcessResourceSubject{Kind: "module_instance", ID: r.ID, ModuleName: r.ModuleName, InstanceID: r.InstanceID, Role: r.Role},
+			Collection: ProcessCollection{State: "not_active"}, PolicyVersion: cfg.Version, QueriedAt: completed,
+		}}
+		return result, plan, nil
 	}
 	if s.process.Identities == nil || s.policy == nil || s.process.Backend == nil {
 		return result, plan, metricsdiscovery.ErrUnconfigured

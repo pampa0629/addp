@@ -3062,7 +3062,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "route/method 必须同时提供；省略时读取整个实例，活动请求数仅属于实例，窗口固定，复用受限时间范围和采样预算 | Supply route and method together, or omit both for the process. Active requests are process-scoped; fixed windows and bounded range/point budgets apply",
+                "description": "route/method 必须同时提供；省略时读取整个实例。离线实例仅查询严格早于离线判定的显式时间区间，采集状态保持 not_active，history_state 表达历史可用性 | Supply route and method together, or omit both for the process. Offline history requires an explicit range ending before the offline determination, retains not_active collection, and reports availability in history_state",
                 "produces": [
                     "application/json"
                 ],
@@ -3073,7 +3073,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "恰好一个当前实例 ID | Exactly one current instance ID",
+                        "description": "恰好一个当前用户获授权的 System 实例登记 ID | Exactly one System instance record ID authorized for the current user",
                         "name": "instance_ids",
                         "in": "query",
                         "required": true
@@ -8504,6 +8504,15 @@
             "properties": {
                 "collection": {
                     "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProcessCollection"
+                },
+                "history_state": {
+                    "type": "string",
+                    "enum": [
+                        "available",
+                        "no_data",
+                        "outside_instance",
+                        "outside_retention"
+                    ]
                 },
                 "observations": {
                     "type": "array",

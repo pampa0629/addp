@@ -1,11 +1,84 @@
 package resourcequery
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestHTTPHistoryUsesOneStoredAddressAndPreservesWindowGaps(t *testing.T) {
+	scope := httpScope()
+	scope.Instance = ""
+	scope.StartedAt = time.Unix(1, 0)
+	p, err := NewHTTPPlan(testTime.Add(-15*time.Second), testTime, testTime, true, false, nil, "", 60, DefaultBudget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := func(signal, addr, value string) string {
+		return fmt.Sprintf(`{"metric":{"instance":%q,"addp_history_signal":%q},"value":%s}`, addr, signal, pair(testTime.Unix(), value))
+	}
+	address := "127.0.0.1:9443"
+	prefix := candidate("identity", address, "1") + "," + candidate("min", address, "1") + ","
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		if r.URL.Path == "/api/v1/query" {
+			query := r.URL.Query().Get("query")
+			if !strings.Contains(query, `addp_instance_id="ingress-one"`) || strings.Contains(query, address) {
+				t.Error("historical lookup relied on a current source address")
+			}
+			evidence := prefix + candidate("max", address, "1")
+			switch call {
+			case 3:
+				evidence = prefix + candidate("max", address, "2")
+			case 4:
+				evidence = prefix + candidate("max", "127.0.0.2:9443", "1")
+			case 5:
+				evidence = ""
+			}
+			fmt.Fprint(w, data(evidence, false))
+			return
+		}
+		if err := r.ParseForm(); err != nil || r.URL.Path != "/api/v1/query_range" ||
+			!strings.Contains(r.Form.Get("query"), `instance="127.0.0.1:9443"`) ||
+			!strings.Contains(r.Form.Get("query"), `offset 60s))>=1799999940.000000000`) {
+			t.Error("range query did not use the verified source", err)
+		}
+		row := func(component, before, at string) string {
+			return fmt.Sprintf(`{"metric":{"addp_metric":"http.requests.per_second","addp_component":%q},"values":[%s,%s]}`,
+				component, pair(p.Start.Unix(), before), pair(p.End.Unix(), at))
+		}
+		fmt.Fprint(w, data(row("value", "1", "0")+","+row("sampled_at", "1799999985", "1800000000"), true))
+	}))
+	defer server.Close()
+	client := &Client{origin: server.URL, http: server.Client()}
+	query := func() ([]HTTPObservation, error) {
+		return client.HTTPHistory(context.Background(), p, scope, testTime.Add(-60*time.Second), DefaultBudget())
+	}
+	rows, err := query()
+	if err != nil || len(rows) != 1 || calls.Load() != 2 {
+		t.Fatal(rows, err, calls.Load())
+	}
+	points := rows[0].Series[0].Points
+	if points[0].DataState != "no_data" || points[0].Value != nil || points[1].Value == nil || *points[1].Value != 0 {
+		t.Fatal("out-of-bounds or real-zero point misclassified", points)
+	}
+	if _, err = query(); !errors.Is(err, ErrUnavailable) || calls.Load() != 3 {
+		t.Fatal("reused address and foreign startup reached range query", err, calls.Load())
+	}
+	if _, err = query(); !errors.Is(err, ErrUnavailable) || calls.Load() != 4 {
+		t.Fatal("multiple addresses reached range query", err, calls.Load())
+	}
+	if rows, err = query(); err != nil || len(rows) != 0 || calls.Load() != 5 {
+		t.Fatal("absent history was inferred", rows, err, calls.Load())
+	}
+}
 
 func httpScope() ProcessScope {
 	return ProcessScope{ID: 1, ModuleName: "gateway", InstanceID: "ingress-one", Role: "ingress", Instance: "fixture:9443", StartedAt: time.Unix(0, 0)}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/addp/common/client"
 	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/resourcequery"
 )
@@ -11,6 +12,10 @@ import (
 type HTTPResourceBackend interface {
 	HTTP(context.Context, resourcequery.HTTPPlan, resourcequery.ProcessScope, resourcequery.Budget) ([]resourcequery.HTTPObservation, error)
 	HTTPCollection(context.Context, resourcequery.ProcessScope, time.Time, resourcequery.Budget) (resourcequery.Collection, error)
+}
+
+type httpHistoryBackend interface {
+	HTTPHistory(context.Context, resourcequery.HTTPPlan, resourcequery.ProcessScope, time.Time, resourcequery.Budget) ([]resourcequery.HTTPObservation, error)
 }
 
 type HTTPObservationRequest struct {
@@ -30,6 +35,7 @@ type HTTPProcessObservation struct {
 	PolicyVersion uint64                          `json:"policy_version"`
 	QueriedAt     time.Time                       `json:"queried_at"`
 	Observations  []resourcequery.HTTPObservation `json:"observations"`
+	HistoryState  string                          `json:"history_state,omitempty" enums:"available,no_data,outside_instance,outside_retention"`
 }
 
 type HTTPObservationResponse struct {
@@ -114,17 +120,76 @@ func (s *ResourceObservationService) HTTP(ctx context.Context, principal, token 
 		}
 		return result, nil
 	}
-	current, plan, err := s.observeProcessesUsing(ctx, principal, token, request.IDs, request.Start, request.End, request.Trend, planFor, read)
+	var historyState string
+	var readStopped func(context.Context, client.RuntimeInstanceReference, time.Time, resourcequery.Budget) error
+	if request.Trend {
+		readStopped = func(ctx context.Context, owner client.RuntimeInstanceReference, now time.Time, b resourcequery.Budget) error {
+			state, rows, err := readStoppedHTTP(ctx, s.process.Backend, httpPlan, owner, now, b)
+			historyState, data[owner.ID] = state, rows
+			return err
+		}
+	}
+	current, plan, err := s.observeProcessesUsing(ctx, principal, token, request.IDs, request.Start, request.End, request.Trend, planFor, read, readStopped)
 	if err != nil {
 		return response, err
 	}
 	response.Start, response.End, response.StepSeconds = plan.Start, plan.End, plan.StepSeconds
 	for _, row := range current.Data {
 		observations := data[row.Subject.ID]
-		if observations == nil || row.Collection.State != "collecting" {
+		if observations == nil || (row.Collection.State != "collecting" && historyState != "available") {
 			observations = []resourcequery.HTTPObservation{}
 		}
-		response.Data = append(response.Data, HTTPProcessObservation{Subject: row.Subject, Collection: row.Collection, PolicyVersion: row.PolicyVersion, QueriedAt: row.QueriedAt, Observations: observations})
+		response.Data = append(response.Data, HTTPProcessObservation{Subject: row.Subject, Collection: row.Collection, PolicyVersion: row.PolicyVersion, QueriedAt: row.QueriedAt, Observations: observations, HistoryState: historyState})
 	}
 	return response, nil
+}
+
+func readStoppedHTTP(ctx context.Context, backend ProcessResourceBackend, plan resourcequery.HTTPPlan, owner client.RuntimeInstanceReference, now time.Time, b resourcequery.Budget) (string, []resourcequery.HTTPObservation, error) {
+	if owner.Role != "backend" && owner.Role != "ingress" {
+		return "", nil, resourcequery.ErrInvalid
+	}
+	if owner.StoppedAt == nil || owner.StoppedAt.IsZero() || owner.StoppedAt.After(now) {
+		return "", nil, metricsdiscovery.ErrIdentityUnavailable
+	}
+	if !plan.End.Before(*owner.StoppedAt) {
+		return "outside_instance", nil, nil
+	}
+	oldest := now.UTC().Truncate(time.Second).Add(-resourcequery.HTTPHistoryAge)
+	if plan.End.Before(oldest) {
+		return "outside_retention", nil, nil
+	}
+	if !*owner.ProcessMetricsDeclared {
+		return "no_data", nil, nil
+	}
+	if owner.RegisteredAt.IsZero() || owner.ProcessStartedAt == nil || owner.ProcessStartedAt.IsZero() ||
+		owner.RegisteredAt.After(*owner.StoppedAt) || owner.ProcessStartedAt.After(*owner.StoppedAt) {
+		return "", nil, metricsdiscovery.ErrIdentityUnavailable
+	}
+	for _, candidate := range []time.Time{owner.RegisteredAt, *owner.ProcessStartedAt} {
+		if candidate.After(oldest) {
+			oldest = candidate
+		}
+	}
+	if plan.End.Before(oldest) {
+		return "outside_instance", nil, nil
+	}
+	history, ok := backend.(httpHistoryBackend)
+	if !ok {
+		return "", nil, metricsdiscovery.ErrUnconfigured
+	}
+	scope := resourcequery.ProcessScope{ID: owner.ID, ModuleName: owner.ModuleName, InstanceID: owner.InstanceID, Role: owner.Role, StartedAt: *owner.ProcessStartedAt}
+	rows, err := history.HTTPHistory(ctx, plan, scope, oldest, b)
+	if err != nil {
+		return "", nil, err
+	}
+	for _, row := range rows {
+		for _, series := range row.Series {
+			for _, point := range series.Points {
+				if point.DataState == "valid" && point.Value != nil {
+					return "available", rows, nil
+				}
+			}
+		}
+	}
+	return "no_data", nil, nil
 }

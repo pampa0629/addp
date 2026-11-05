@@ -53,7 +53,7 @@ func (s *ResourceObservationService) ContainerObservation(ctx context.Context, p
 		value, err := backend.ContainerObservation(ctx, scope, at, b)
 		return map[uint]resourcequery.Summary{scope.ID: value}, err
 	}
-	rows, _, err := s.observeProcessesUsing(ctx, principal, token, []uint{id}, time.Time{}, time.Time{}, false, resourcequery.NewContainerPlan, read)
+	rows, _, err := s.observeProcessesUsing(ctx, principal, token, []uint{id}, time.Time{}, time.Time{}, false, resourcequery.NewContainerPlan, read, nil)
 	if err != nil {
 		return ContainerResourceResponse{}, err
 	}

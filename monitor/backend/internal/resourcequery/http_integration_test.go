@@ -193,6 +193,7 @@ func TestIntegrationMetricsHTTPRealSource(t *testing.T) {
 	r := records[0]
 	id, _ := strconv.ParseUint(r.ID, 10, 63)
 	scope := ProcessScope{ID: uint(id), ModuleName: r.Module, InstanceID: r.InstanceID, Role: r.Role, StartedAt: r.Started, Instance: r.Address}
+	anchorPath := os.Getenv("ADDP_PROCESS_T2_RECORDS") + ".http-anchor"
 	if os.Getenv("ADDP_PROCESS_T2_STOPPED") == "1" {
 		at := time.Now().UTC().Truncate(time.Second)
 		p, _ := NewHTTPPlan(at, at, at, false, false, nil, "", 60, DefaultBudget())
@@ -205,6 +206,25 @@ func TestIntegrationMetricsHTTPRealSource(t *testing.T) {
 				t.Fatal("stopped HTTP source retained value")
 			}
 		}
+		anchor, err := time.Parse(time.RFC3339, string(read(anchorPath)))
+		if err != nil || !anchor.Before(at) {
+			t.Fatal("invalid pre-stop HTTP anchor", err)
+		}
+		history, err := NewHTTPPlan(anchor.Add(-15*time.Second), anchor, at, true, false, nil, "", 60, DefaultBudget())
+		if err != nil {
+			t.Fatal(err)
+		}
+		scope.Instance = ""
+		rows, err = client.HTTPHistory(context.Background(), history, scope, r.Started, DefaultBudget())
+		if err != nil || len(rows) != 1 || len(rows[0].Series) != len(HTTPCatalog()) {
+			t.Fatal("stopped HTTP history unavailable", err)
+		}
+		qps := rows[0].Series[0]
+		if qps.MetricKey != "http.requests.per_second" || len(qps.Points) != 2 ||
+			qps.Points[1].DataState != "valid" || qps.Points[1].Value == nil || *qps.Points[1].Value <= 0 {
+			t.Fatal("stopped HTTP source lost the previously valid window", qps)
+		}
+		t.Log("HTTP stopped-source history: earlier Prometheus window retained, live query empty")
 		return
 	}
 	deadline := time.Now().Add(100 * time.Second)
@@ -248,6 +268,9 @@ func TestIntegrationMetricsHTTPRealSource(t *testing.T) {
 				if line.Points[0].Value != nil {
 					t.Fatal("HTTP source identity leak")
 				}
+			}
+			if err := os.WriteFile(anchorPath, []byte(at.Format(time.RFC3339)), 0600); err != nil {
+				t.Fatal(err)
 			}
 			return
 		}

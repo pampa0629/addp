@@ -1240,6 +1240,16 @@
       "collection": "Collection",
       "details": "Interfaces and trends",
       "empty": "No matching current instances",
+      "instanceScope": "Instance scope",
+      "onlineInstances": "Online instances",
+      "stoppedInstances": "Offline instances",
+      "noStoppedInstances": "No matching offline instances",
+      "historyTrend": "Pre-stop trends",
+      "historyStates": {
+        "no_data": "No historical samples available",
+        "outside_instance": "Choose a time range before the offline determination",
+        "outside_retention": "The selected time range is outside the historical lookback"
+      },
       "sort": "Rank by",
       "route": "Route template",
       "unmatched": "Unmatched route",

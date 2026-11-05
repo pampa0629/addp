@@ -266,7 +266,7 @@ def run(life,env,report):
     verify_stopped_sources(after,instances,stopped_at)
     report['source_stop_summary']=after
     report['assertions']['single_source_stop_isolation']=True
-    report['stopped_history_readback']='not_accepted_product_gap'
+    report['stopped_history_readback']='outside_full_scope'
     browser(life,env,report,instances,stopped_at=stopped_at)
     life.phase='formal_logout_and_revocation'
     logout(life,env,clients)

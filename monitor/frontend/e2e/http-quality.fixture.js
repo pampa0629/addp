@@ -11,7 +11,9 @@ export async function httpBackend(page, options = {}) {
   let mode = 'valid', release, held, rule = options.rule || null, conflict = false
   await page.route('**/api/v1/system/platform/module-instances?**', async route => {
     const params = Object.fromEntries(new URL(route.request().url()).searchParams); calls.push({ kind: 'instances', ...params })
-    const rows = instances.filter(row => !stopped.has(row.id) && row.role === params.role && (!params.module_name || row.module_name === params.module_name))
+    const rows = instances.filter(row => stopped.has(row.id) === (params.status === 'down') && row.role === params.role &&
+      (!params.module_name || row.module_name === params.module_name) && (!params.ids || params.ids === String(row.id)))
+      .map(row => stopped.has(row.id) ? { ...row, status: 'down', stopped_at: '2026-10-20T00:00:01Z' } : row)
     await route.fulfill({ json: { data: rows, total: rows.length, page: Number(params.page), page_size: Number(params.page_size) } })
   })
   await page.route('**/api/v1/monitor/platform/http_*', async route => {
@@ -20,7 +22,8 @@ export async function httpBackend(page, options = {}) {
     const end = params.end || '2026-10-20T00:00:00Z', start = params.start || end, step = 15, window = Number(params.window_seconds || 60)
     const grouped = kind === 'http_interfaces', filtered = Object.hasOwn(params, 'route')
     const selected = instances.filter(row => params.instance_ids.split(',').includes(String(row.id)))
-    const data = selected.map(owner => ({ subject: { ...owner, kind: 'module_instance' }, policy_version: 1, queried_at: end, collection: { state: stopped.has(owner.id) ? 'not_active' : 'collecting', sampled_at: stopped.has(owner.id) ? null : end }, observations: (stopped.has(owner.id) ? [] : grouped ? [{ route: '/fast/:id', method: 'GET', mean: .5, qps: 50 }, { route: '/slow/:id', method: 'GET', mean: 2, qps: 20 }] : [{ route: params.route || '', method: params.method || '', mean: 1, qps: owner.id === 2 ? 0 : 10 }]).map(row => ({ route: row.route, method: row.method, series: (grouped || filtered ? httpMetrics.slice(0, -1) : httpMetrics).map(metric => {
+    const historical = owner => stopped.has(owner.id) && kind === 'http_trends' && Date.parse(end) < Date.parse('2026-10-20T00:00:01Z')
+    const data = selected.map(owner => ({ subject: { ...owner, kind: 'module_instance' }, policy_version: 1, queried_at: end, collection: { state: stopped.has(owner.id) ? 'not_active' : 'collecting', sampled_at: stopped.has(owner.id) ? null : end }, ...(historical(owner) ? { history_state: 'available' } : {}), observations: (stopped.has(owner.id) && !historical(owner) ? [] : grouped ? [{ route: '/fast/:id', method: 'GET', mean: .5, qps: 50 }, { route: '/slow/:id', method: 'GET', mean: 2, qps: 20 }] : [{ route: params.route || '', method: params.method || '', mean: 1, qps: owner.id === 2 ? 0 : 10 }]).map(row => ({ route: row.route, method: row.method, series: (grouped || filtered ? httpMetrics.slice(0, -1) : httpMetrics).map(metric => {
       const missing = row.qps === 0 && !['qps','active'].includes(metric.name)
       return { metric_key: metric.key, unit: metric.unit, window_seconds: metric.name === 'active' ? 0 : window, dimensions: {}, points: Array.from({ length: Math.floor((Date.parse(end) - Date.parse(start)) / (step * 1000)) + 1 }, (_, index) => {
         const time = new Date(Date.parse(start) + index * step * 1000).toISOString()

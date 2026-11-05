@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveHTTPRoute, validateHTTPResponse, httpMetrics, httpValue, sortHTTPInterfaces } from '../src/utils/httpQuality.js'
+import { resolveHTTPRoute, stoppedHTTPWindow, validateHTTPResponse, httpMetrics, httpValue, sortHTTPInterfaces } from '../src/utils/httpQuality.js'
 
 const stamp = '2026-10-20T00:00:00Z', owner = { id: 1, module_name: 'gateway', instance_id: 'ingress-one', role: 'ingress' }
 const response = () => ({ start: stamp, end: stamp, step_seconds: 15, window_seconds: 60, data: [{ subject: { ...owner, kind: 'module_instance' }, policy_version: 1, queried_at: stamp, collection: { state: 'collecting', sampled_at: stamp }, observations: [{ route: '', method: '', series: httpMetrics.map(metric => ({ metric_key: metric.key, unit: metric.unit, window_seconds: metric.name === 'active' ? 0 : 60, dimensions: {}, points: [{ evaluated_at: stamp, sampled_at: metric.name === 'qps' || metric.name === 'active' ? stamp : null, value: metric.name === 'qps' || metric.name === 'active' ? 0 : null, data_state: metric.name === 'qps' || metric.name === 'active' ? 'valid' : 'no_data' }] })) }] }] })
@@ -34,4 +34,27 @@ test('HTTP evidence binds the requested template, collection freshness and serve
   assert.throws(() => validateHTTPResponse(stale, [owner], 60))
   const future = response(); future.data[0].queried_at = '2026-10-19T23:59:59Z'
   assert.throws(() => validateHTTPResponse(future, [owner], 60))
+})
+
+test('offline trend URLs retain an exact pre-stop range and authorize only the selected history response', () => {
+  const offline = { ...owner, status: 'down', stopped_at: '2026-10-20T00:00:01Z' }
+  const bounds = stoppedHTTPWindow(offline, '5m')
+  assert.deepEqual(bounds, { start: '2026-10-19T23:55:00.000Z', end: '2026-10-20T00:00:00.000Z' })
+  const route = resolveHTTPRoute({ status: 'down', instance_id: '1', range: '5m', ...bounds })
+  assert.deepEqual(route.history, bounds)
+  assert.equal(route.params.status, 'down')
+  assert.equal(route.refresh, 'off')
+  assert.equal(resolveHTTPRoute({ ...route.query, end: [bounds.end, bounds.end] }).history, null)
+
+  const value = response()
+  value.data[0].collection = { state: 'not_active', sampled_at: null }
+  value.data[0].history_state = 'available'
+  const fixed = { start: stamp, end: stamp }
+  assert.equal(validateHTTPResponse(value, [offline], 60, false, null, fixed), value)
+  assert.throws(() => validateHTTPResponse(value, [offline], 60))
+  assert.throws(() => validateHTTPResponse(value, [offline], 60, false, null, bounds))
+  value.data[0].history_state = 'no_data'
+  assert.throws(() => validateHTTPResponse(value, [offline], 60, false, null, fixed))
+  value.data[0].observations = []
+  assert.equal(validateHTTPResponse(value, [offline], 60, false, null, fixed), value)
 })

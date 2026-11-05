@@ -12,34 +12,71 @@ export const httpMetrics = [
 ]
 const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'CONNECT', 'TRACE', 'QUERY', '_OTHER']
 const invalid = () => { throw new Error('invalid_http_quality_response') }
+const ranges = { '5m': 300, '1h': 3600, '24h': 86400 }
+
+export function stoppedHTTPWindow(instance, range) {
+  const stopped = Date.parse(instance.stopped_at), seconds = ranges[range]
+  if (!Number.isFinite(stopped) || !seconds) return null
+  const end = (Math.ceil(stopped / 1000) - 1) * 1000
+  return { start: new Date(end - seconds * 1000).toISOString(), end: new Date(end).toISOString() }
+}
+
 export function resolveHTTPRoute(query = {}) {
   const page = typeof query.page === 'string' && /^[1-9]\d{0,5}$/.test(query.page) ? Number(query.page) : 1
   const module = typeof query.module_name === 'string' ? query.module_name.trim().slice(0, 50) : ''
   const role = query.role === 'ingress' ? 'ingress' : 'backend'
   const window = ['60', '300', '900'].includes(query.window) ? Number(query.window) : 60
-  const refresh = autoRefreshOptions.includes(query.refresh) ? query.refresh : '15'
+  const stopped = query.status === 'down'
+  const refresh = stopped ? 'off' : autoRefreshOptions.includes(query.refresh) ? query.refresh : '15'
   const instanceID = typeof query.instance_id === 'string' && /^[1-9]\d{0,14}$/.test(query.instance_id) ? Number(query.instance_id) : null
   const route = instanceID && typeof query.route === 'string' && query.route.length <= 1024 && !/[\x00-\x1f\x7f]/.test(query.route) && (query.route === '' || query.route.startsWith('/')) && methods.includes(query.method) ? query.route : null
   const method = route !== null ? query.method : ''
   const sort = query.sort === 'qps' ? 'qps' : 'mean'
-  const range = ['5m', '1h', '24h'].includes(query.range) ? query.range : '1h'
-  const canonical = { ...(page === 1 ? {} : { page: String(page) }), ...(module ? { module_name: module } : {}), ...(role === 'backend' ? {} : { role }), ...(window === 60 ? {} : { window: String(window) }), ...(refresh === '15' ? {} : { refresh }), ...(sort === 'mean' ? {} : { sort }), ...(instanceID ? { instance_id: String(instanceID), ...(range === '1h' ? {} : { range }), ...(route !== null ? { route, method } : {}) } : {}) }
-  return { page, module, role, window, refresh, instanceID, route, method, sort, range, query: canonical, changed: JSON.stringify(Object.entries(query).sort()) !== JSON.stringify(Object.entries(canonical).sort()), params: { page, page_size: 10, role, status: 'up', ...(module ? { module_name: module } : {}) } }
+  const range = typeof query.range === 'string' && Object.hasOwn(ranges, query.range) ? query.range : '1h'
+  const start = typeof query.start === 'string' ? Date.parse(query.start) : NaN
+  const end = typeof query.end === 'string' ? Date.parse(query.end) : NaN
+  const history = stopped && instanceID && Number.isFinite(start) && Number.isFinite(end) && start >= 0 &&
+    start % 1000 === 0 && end % 1000 === 0 && end - start === ranges[range] * 1000
+    ? { start: new Date(start).toISOString(), end: new Date(end).toISOString() } : null
+  const canonical = {
+    ...(page === 1 ? {} : { page: String(page) }),
+    ...(module ? { module_name: module } : {}),
+    ...(role === 'backend' ? {} : { role }),
+    ...(window === 60 ? {} : { window: String(window) }),
+    ...(stopped ? { status: 'down' } : refresh === '15' ? {} : { refresh }),
+    ...(sort === 'mean' || stopped ? {} : { sort }),
+    ...(instanceID ? {
+      instance_id: String(instanceID),
+      ...(range === '1h' ? {} : { range }),
+      ...(route !== null ? { route, method } : {}),
+      ...history
+    } : {})
+  }
+  const params = {
+    page, page_size: 10, role, status: stopped ? 'down' : 'up',
+    ...(stopped ? { process_metrics_declared: 'true' } : {}),
+    ...(module ? { module_name: module } : {})
+  }
+  const changed = JSON.stringify(Object.entries(query).sort()) !== JSON.stringify(Object.entries(canonical).sort())
+  return { page, module, role, window, refresh, instanceID, route, method, sort, range, stopped, history, query: canonical, changed, params }
 }
 
-export function validateHTTPResponse(value, instances, window, grouped = false, filtered = null) {
+export function validateHTTPResponse(value, instances, window, grouped = false, filtered = null, history = null) {
   const start = Date.parse(value?.start), end = Date.parse(value?.end), step = value?.step_seconds
   if (!Array.isArray(value?.data) || value.data.length !== instances.length || value.window_seconds !== window || !Number.isFinite(start) || !Number.isFinite(end) || start % 1000 || end % 1000 || start > end || !Number.isInteger(step) || step < 15 || step % 15 || (grouped && (!Number.isInteger(value.ranking_limit) || value.ranking_limit < 1 || value.ranking_limit > 10))) invalid()
+  if (history && (start !== Date.parse(history.start) || end !== Date.parse(history.end))) invalid()
   const expected = new Map(instances.map(row => [row.id, row])), seen = new Set()
   for (const process of value.data) {
     const subject = process?.subject, owner = expected.get(subject?.id), sampled = Date.parse(process.collection?.sampled_at), queried = Date.parse(process.queried_at)
     if (!owner || seen.has(subject.id) || subject.kind !== 'module_instance' || subject.module_name !== owner.module_name || subject.instance_id !== owner.instance_id || subject.role !== owner.role || !Number.isSafeInteger(process.policy_version) || process.policy_version < 0 || !Number.isFinite(queried) || end > queried || process.policy_version !== value.data[0].policy_version || process.queried_at !== value.data[0].queried_at) invalid()
     seen.add(subject.id)
     const state = process.collection?.state
+    if (history ? (state !== 'not_active' || owner.status !== 'down' || !['available', 'no_data', 'outside_instance', 'outside_retention'].includes(process.history_state)) : process.history_state !== undefined) invalid()
     if (!['collecting', 'failed', 'stale', 'identity_mismatch', 'not_active', 'not_connected', 'not_instrumented', 'no_sample'].includes(state) || !Array.isArray(process.observations) || process.observations.length > 16) invalid()
     if (['collecting', 'failed', 'stale', 'identity_mismatch', 'not_instrumented'].includes(state) ? !Number.isFinite(sampled) || sampled > queried || (state === 'stale' ? queried - sampled <= 60000 : queried - sampled > 60000) : process.collection.sampled_at !== null) invalid()
-    if (state !== 'collecting' && process.observations.length) invalid()
-    if ((!grouped && state === 'collecting' && process.observations.length !== 1) || (grouped && process.observations.length > value.ranking_limit)) invalid()
+    const readable = state === 'collecting' || (history && process.history_state === 'available')
+    if (!readable && process.observations.length) invalid()
+    if ((!grouped && readable && process.observations.length !== 1) || (grouped && process.observations.length > value.ranking_limit)) invalid()
     const routes = new Set()
     for (const row of process.observations) {
       const identity = JSON.stringify([row.route, row.method]), catalog = grouped || filtered ? httpMetrics.slice(0, -1) : httpMetrics

@@ -75,13 +75,20 @@ type ProcessScope struct {
 }
 
 func (s ProcessScope) Validate() error {
+	if s.Instance == "" || len(s.Instance) > 512 || strings.ContainsAny(s.Instance, "\r\n") {
+		return ErrInvalid
+	}
+	return s.validateIdentity()
+}
+
+func (s ProcessScope) validateIdentity() error {
 	validName := func(value string, max int) bool {
 		return value != "" && strings.TrimSpace(value) == value && utf8.ValidString(value) && utf8.RuneCountInString(value) <= max && strings.IndexFunc(value, unicode.IsControl) < 0
 	}
 	if _, err := models.ParseRuntimeInstanceIDs(strconv.FormatUint(uint64(s.ID), 10)); err != nil {
 		return ErrInvalid
 	}
-	if !validName(s.ModuleName, 50) || !validName(s.InstanceID, 100) || s.Instance == "" || len(s.Instance) > 512 || strings.ContainsAny(s.Instance, "\r\n") || s.StartedAt.IsZero() {
+	if !validName(s.ModuleName, 50) || !validName(s.InstanceID, 100) || s.StartedAt.IsZero() {
 		return ErrInvalid
 	}
 	switch s.Role {
@@ -92,8 +99,12 @@ func (s ProcessScope) Validate() error {
 	return nil
 }
 
+func (s ProcessScope) processSelector(metric string) string {
+	return metric + `{job="addp_nodes",addp_monitor_kind="process_resources",addp_source="application",addp_module_name=` + strconv.Quote(s.ModuleName) + `,addp_instance_id=` + strconv.Quote(s.InstanceID) + `,addp_runtime_role=` + strconv.Quote(s.Role)
+}
+
 func (s ProcessScope) selector(metric string) string {
-	selector := metric + `{job="addp_nodes",addp_monitor_kind="process_resources",addp_source="application",addp_module_name=` + strconv.Quote(s.ModuleName) + `,addp_instance_id=` + strconv.Quote(s.InstanceID) + `,addp_runtime_role=` + strconv.Quote(s.Role) + `,instance=` + strconv.Quote(s.Instance)
+	selector := s.processSelector(metric) + `,instance=` + strconv.Quote(s.Instance)
 	if strings.HasPrefix(metric, "addp_cgroup_") && s.Cgroup != nil {
 		selector += `,kernel_boot_id=` + strconv.Quote(s.Cgroup.BootID) + `,cgroup_id=` + strconv.Quote(s.Cgroup.CgroupID) + `,pid_namespace_id=` + strconv.Quote(s.Cgroup.PIDNamespaceID)
 	}
