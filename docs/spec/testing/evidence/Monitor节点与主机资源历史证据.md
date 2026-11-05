@@ -6,21 +6,322 @@
 
 原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E8%8A%82%E7%82%B9%E4%B8%8E%E4%B8%BB%E6%9C%BA%E8%B5%84%E6%BA%90%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
-## 主机固定窗口探针的准备与执行期限
+逐次操作、原始日志摘要与收据清单见[本轮整理前的固定快照 `90d13c254`](https://github.com/pampa0629/addp/blob/90d13c2545c602eddcc17a81621a135ab64fa540/docs/spec/testing/evidence/Monitor%E8%8A%82%E7%82%B9%E4%B8%8E%E4%B8%BB%E6%9C%BA%E8%B5%84%E6%BA%90%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
-2026-10-22，专门 CI 会话回传 [6e55a4fad 的 host-resources / Job 119600712786](https://github.com/pampa0629/addp/actions/runs/39708924861/job/119600712786) 实际失败。原始日志 `/tmp/addp-ci-20261022-030015/job-119600712786.log` 显示同一 Python 60 秒包住依赖下载、Go 编译及真实执行：命令从 02:53:52 UTC 开始，约 02:54:46 才进入首项 Go 测试；DiskIO、Disk、Network、HTTP、Process、CPU、Filesystem 七项已通过，FilesystemInodes 开始后被外层终止。不能称测试未启动或产品断言失败。当前源码未有替代修复，现将同一八项选择器改为当次私有目录 `go test -c` 准备最多 180 秒，再直接执行二进制，Go／外层真实执行上限均为原有效 60 秒；保持 count=1、原八项断言、后续故障／告警／清理及 Job 20 分钟。构建失败／超时禁止运行旧产物，执行超时不重试，不改产品公式、窗口或权限。
+[采集与挂载](#node-evidence-collection) · [容量状态](#node-evidence-capacity) · [前台刷新](#node-evidence-refresh) · [Safari 缩放](#node-evidence-safari)
 
-沿标准 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources` 增加确定性红绿验证：模拟 70 秒冷准备与 8 秒执行，以及构建失败／超时、旧产物拒绝、实际执行超时不重试。原合并计时在配置阶段出现三项失败、一项错误，日志 `/tmp/addp-host-window-budget-red.log`。随后配置回归暴露旧选择器源码约束仍要求单个裸模式字面量，保留唯一选择目录再组合二进制参数后，最终 48 项配置回归全部通过；中间失败日志 `/tmp/addp-host-window-budget-green.log`，未计通过。T2 CI 登记检查通过，现有 Make、原 probe／配置回归的输入登记与三分组 Release 已覆盖，无需新脚本或 workflow。
+<a id="node-evidence-collection"></a>
 
-真实本地 T2 在冻结基线 `a190663c261a7e63ff00885d006138571c41610e` 仅叠加本方三项输入，以 `GOMAXPROCS=2 GOFLAGS=-p=2` 调用同一标准入口，**未通过**，日志 `/tmp/addp-host-window-budget-final.log`。这次编译已独立完成，但首项 DiskIO 的 Docker promtool 调用在既有 30 秒 Context 内未完成（signal killed）；随后 Disk／Network 分别在 3.26／13.82 秒通过，HTTP 开始后达到独立执行的 60 秒上限。与云端的冷准备占用预算分别记录；伴随观测为本机同时运行其他门禁、18 个逻辑核且 load average 51.19／134.64／115.96，尚未证明它是执行变慢的唯一根因，未放宽期限或盲目重复运行。该次初始清理遇到异步一次性 promtool 资源仍占用网络／卷，不能计零残留；仅对精确项目 `addp-metrics-t2-d2a7516da2b74f4ab03fb83404308598` 复用原门禁的 compose／cleanup 函数完成后续清理，独立读取容器、网络、卷均为空，日志 `/tmp/addp-host-window-owned-cleanup-final.log`。首次复用清理因缺少当次 TLS 路径参数而未执行 Compose，补齐清理私有路径后成功；不接触个人服务、配置或其他项目。
+## 采集与挂载
 
-三个最终输入与隔离副本逐字节一致；指纹、日志摘要及清理核验记录为 `/tmp/addp-host-window-budget-audit.json`。本轮仅将计时修复和 48 项 T0 回归落地，不计完整本地 T2、原生 Linux 或 Hosted T4 通过；新输入原生 Linux 结果继续由专门 CI 会话回传，没有查询、重跑或设置定时。来信同时附带的 PostgreSQL 来源 `6d42e4621` 三次真实准入成功及退出清零已核对原始日志哈希，与 P0 已记录的更新 `c7ef8ea0e` 三分组通过不冲突，不重跑或重复回填 PG，既有专业 T4 边界保留。
+固定 Linux／本机隔离来源的采样、挂载和清理，分别记录。受控 inspect、收据单元与浏览器仅证明验收准备或页面契约。
 
-2026-10-22 原生 Linux 复验终态：专门 CI 会话回传精确源码 `9a2b3d28691741397f171b94866c125722bbe388` 的 [host-resources / Job 119660741437](https://github.com/pampa0629/addp/actions/runs/39727468958/job/119660741437)，push、attempt 1，实际 `Verify isolated metrics lifecycle` 成功。本会话复核本地保存的完整原始日志：真实准备编译约 46.67 秒，与保留的 Go／进程 60 秒执行上限分离；DiskIO、Disk、Network、HTTP、Process、CPU、Filesystem、Inodes 八项逐项 PASS。后续 ResourceQueries 两次、PressureEvidence 两次、ResourceOverview 和 ResourceAlertLifecycle 均真实通过，十四项 Go 运行零 FAIL／SKIP；完整门禁仍覆盖 mTLS 拒绝、溢出、来源故障／恢复、HTTP SD 失败／重定向／空集、OAuth、受限节点、中心 SIGKILL／持久样本、六源排行与查询前预算。告警在同一事件上由真实低样本恢复，签名 resolved 投递落库，`events=2 delivered=2 HTTP attempts=3`；末尾明确当次容器、网络、卷及临时文件清零。required Metrics 汇总 `119670125126` 成功由专门 CI 审计回传，本次未自行查询云端或重跑。
+### 主机固定窗口探针的准备与执行期限
 
-原始日志 `/tmp/addp-ci-20261022-063001/job-119660741437.log` 的 SHA-256 为 `54634e180dbd8d850f77e553ff9ec1206761ff73674b7d0c06aab3a2ceed4084`；中央独立审计为同目录 `monitor-9a2-linux-independent-audit.json`，本会话复核记录 `/tmp/addp-host-window-linux-receipt-audit.json` 保存两份证据指纹、八项窗口／十四项通过、零失败跳过、选择成功及清零回执。当前两个探针输入与已验源码字节一致；本轮只补证据，`git diff --check` 通过，不重复运行有效 T2。由此关闭该输入的原生 Linux host-resources 计时修复验收缺口；此前本地 promtool 30 秒／执行 60 秒失败与补清理记录仍按原结果保留，云端成功不证明其唯一根因或已修复。本结论不外推最新共享工作区、原生 macOS、72 小时留存、全部观测功能或生产验收；既有 PostgreSQL 专业 T4 与来源通过记录不变，未设置定时或操作个人服务。
+[6e55a4fad 的 host-resources / Job 119600712786](https://github.com/pampa0629/addp/actions/runs/39708924861/job/119600712786) 首败于准备和执行共用的 60 秒期限。约 54 秒后才进首项测试，前七项通过，在 FilesystemInodes 开始后被外层终止。修正保持同一八项，隔离编译限 180 秒、执行仍限 60 秒，拒绝旧二进制和超时重试。旧计时反例 3 失败／1 错误，随后旧选择器约束亦失败，修正后配置 48 项及登记通过。
 
-## 同设备双向吞吐同图（2026-10-23）
+本地冻结 `a190663c261a7e63ff00885d006138571c41610e` 叠加三项输入。编译独立完成，DiskIO 的 promtool 首先超过原 30 秒，随后 HTTP 阶段耗尽整体执行 60 秒，负载只是伴随观察。项目 `addp-metrics-t2-d2a7516da2b74f4ab03fb83404308598` 初次清理被异步 promtool 占用；首次补清理缺当次 TLS 参数未执行 Compose，补齐后按精确项目核验容器／网络／卷清零。原件 `/tmp/addp-host-window-*.log` 与 `/tmp/addp-host-window-budget-audit.json`。
+
+固定 `9a2b3d28691741397f171b94866c125722bbe388` 的 [host-resources / Job 119660741437](https://github.com/pampa0629/addp/actions/runs/39727468958/job/119660741437) 自然首轮。独立编译约 46.67 秒，实际生命周期成功，八项固定窗口及后续查询、压力、总览、告警共 14 项 Go 运行无失败或跳过。mTLS、来源故障恢复、六来源、预算、同事件恢复和签名通知通过，日志确认容器／网络／卷／临时文件零残留；required Metrics 汇总 `119670125126` 的成功由专门会话回传。原件 `/tmp/addp-ci-20261022-063001/` 和 `/tmp/addp-host-window-linux-receipt-audit.json`。
+
+本次关闭该固定源码的 Linux 探针计时缺口，前述本地失败与补清理独立保留。另行核对的 PG 来源 `6d42e4621` 三次准入与清理，以及 `c7ef8ea0e` 三分组各沿其原证据。原生 macOS、72 小时留存、完整 Hosted T4 或生产验收不由本段覆盖。
+
+### 主机 TCP 当前连接数（本地）
+
+2026-10-23，按用户确认口径新增固定主机标量 `node.tcp.current_connections`，单位 `connections`，只读当前宿主网络命名空间的 ESTABLISHED＋CLOSE_WAIT，不含监听／TIME_WAIT。复用唯一 `resourcequery` gauge、节点与来源身份、预算、新鲜度、即时和趋势 API；固定主机目录由 25 项增至 26 项，标量由九项增至十项。整数须在 0～2^53−1，合法零值保留，缺样不变成零；采集器缺失、重复原始序列及外来节点不能构造有效值。受限 Docker Desktop 来源不开放 netstat，不补容器命名空间统计，返回 `no_data`。页面新增就近口径／缺样提示、即时卡片及同一趋势、缩放、图例与悬停能力。CPU／内存摘要、TOP5、告警、生产权限及身份不变。
+
+冻结产品基线 `3f0105d08bf2fa632f1888c5a9331c062cf89240`，仅叠加本批文件，证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-tcp-current-7nslrz9k`；`inputs.json` 记录本批文件，`product-inputs-sha256.json` 记录 2118 项产品、测试及共享依赖输入，提交前与共享工作区一致。登记检查另同步当时最新已提交编排输入，版本见 `registration-head.txt`；未混入其他会话未提交实现。实际验证：
+
+- `make test-module MODULE=monitor GO_ONLY=1`：Monitor Go T1 通过（`go-t1.log`）。固定目录、节点／来源隔离、整数／安全上限、负值／非有限值、缺样／陈旧／未来样本均有确定性用例；默认跳过的集成用例不算 T2。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`：退出 0（`host-resources-t2.log`）。真实 node_exporter／Prometheus 的全来源即时及趋势、受限 Desktop 的 TCP 无数据分支通过；同一入口执行五个固定 promtool 场景：有效零、有效数量、重复来源、外来节点和缺失采集器。原有主机来源故障恢复及预算回归通过，退出核验当次容器／网络／卷和临时文件零残留。这是本地隔离 T2，不是原生 Linux 正式身份页面 T4，亦不作为服务实例 CPU／RSS 告警实源验收结果。
+- Node v24.19.0 下 `make test-monitor-frontend`：111 项 T1、405 项浏览器 T3 及构建全部通过（`frontend-full.log`）。覆盖 TCP 中英文整数／零值、来源缺失后恢复、错误小数／负数／越界拒绝，及真实鼠标图例／悬停／缩放；其余主机、服务和错误／撤权场景一并回归。`screenshots/` 保留中英文 TCP 窄屏趋势实图，中文精确整数与单位已人工核对。页面测试使用受控 HTTP 夹具，不冒充真实来源页面。
+- `bash scripts/swagger/gen-swagger.sh monitor` 与 `bash scripts/swagger/check-route-coverage.sh monitor`：最终生成成功，90 个公开路由方法覆盖一致（`swagger-generation-final.log`、`swagger-coverage.log`）；生成工具固定 module v1.16.6。首次未复制根 go.work 的生成失败仅为临时副本准备错误，保留在 `swagger-generation.log`，不计为通过证据。
+- `make test-node-metrics-online-runner`：最终 139 项本地入口／身份／收据守卫及 System 既有 Metrics Go 夹具通过（`online-runner-final.log`）；`make test-frontend-ci-registration`：20 项检查、21 个前端登记通过（`registration-final.log`）。
+- `npm test -- --testNamePattern='Online scalar resource receipt identity'`（Console frontend）：最终 8 项指定收据测试通过（`console-receipts-final.log`），包含精确十项且拒绝旧九项请求；其余 186 项因过滤未执行，不计为 Console 全量通过。
+
+用户同日确认原一次性 `platform-node-metrics` 临时平台管理员限定用途增加当次主机 TCP 当前值、趋势和同一真实 Console 页面。规范与标准 runner 已同步精确十项标量；仅为多出的 TCP 选中与恢复两轮各六读，将原 174 项收据上限调整为 186，仍严格拒绝未授权指标、重复／缺失、错误节点或 query。总预算、密码／MFA、独立 Prometheus、节点范围、无租户业务及退出清零保持原约束。本会话没有触发或轮询 CI／Hosted，没有设置定时任务或重启个人服务；真实身份／来源 T4 及 CI 等专门会话回传，生产 T5 未运行。原表第 37 行（B36，主机实时资源总览列表）的 TCP 指标能力已落地，但主机列表仍只展示核心摘要，综合健康评分与完整总览列仍未实现；第 38 行（B37，资源趋势曲线图）新增 TCP 本地证据，不由本次结果推导留存、长期比较或其他真实运行范围通过。
+
+### 主机资源热力面板（本地）
+
+2026-10-23，主机详情新增 Monitor 领域组合组件 `HostResourceHeatmap.vue`，复用已授权的即时 CPU 忙碌率、内存使用率和每个完整设备／挂载点／文件系统身份的使用率；不新增采集、接口、查询、权限或持久状态。百分比沿原指标与共享格式化，不从容量重新推导；CPU 保留一分钟窗口，每项就近展示原状态与采样时间。有效使用率按 0～100% 连续混合现有主题绿／红色，基础进度条复用 Element Plus；合法零和 100% 有效，陈旧／缺样不着色、不补零。未采集分区和来源失败显示原原因，分区不可用不抹除可读 CPU／内存。完整挂载身份保留于色块及趋势导航，CPU／内存导航清除挂载维度。没有综合健康分、颜色告警阈值或新增资源规则。
+
+冻结基线及本批文件见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-heatmap-s0n4pjbs/final-inputs.json`；最终 436 项前端／共享／浏览器入口输入记录在 `final-frontend-inputs-sha256.json`。初始完整回归的产品输入相同，仅本次新增测试的刷新同步／截图检查和服务环比测试的请求同步随后修订，完整回归输入另记 `full-frontend-inputs-sha256.json`，不把两次输入混为一份。
+
+- `make test-monitor-frontend`：完整批次执行 111 项 T1，通过 407 项浏览器用例、失败 2 项，命令退出 2，未执行其后的构建（`frontend-full.log`）。两项分别为新热力用例在刷新完成前挂起下一轮，以及既有服务环比用例在取消比较后、尚未取得新摘要与趋势请求前断言上一条请求。最后仅修正这两个测试文件，产品及共享输入未变；最终 `npm --prefix monitor/frontend run test:e2e -- host-resource-heatmap.spec.js process-comparison.spec.js` 的 19/19 项通过（`final-affected-browser.log`，4 项热力及 15 项服务比较）。其余 390 项未变用例复用上述完整批次有效结果，不将完整入口先前的非零结果写成最终全量重新通过，也不重复累计交叠用例。服务用例用受控挂起唯一 `process_resource_summaries` 响应，证明 UI 已取消比较时旧请求仍在；释放后必须新增且只新增一条正确五分钟趋势请求，再核对起点。受控探针初轮误指向不存在的 observations 端点，失败记录保留在 `final-affected-browser-before-endpoint-fix.log`，已改为 API 客户端实际使用的 summaries，未改产品请求或数据口径。
+- `npm --prefix monitor/frontend test`：111 项 T1 通过（`unit.log`）。
+- 最终标准 `npm --prefix monitor/frontend run test:e2e -- host-resource-heatmap.spec.js`：4/4 浏览器 T3 通过（`heatmap-final-verified.log`），覆盖中英文精确数值／原挂载比例、相同挂载点的不同设备／文件系统、窄屏、主题变量动态变化、合法零／满量程、无额外请求、当前指标／完整挂载导航、陈旧／缺样不着色、分区故障后恢复、未采集、权限拒绝及身份切换后迟到响应清除。初轮失败为测试对 URL 编码和现有缺源文案的错误预期、夹具改写未采集状态，以及在上一轮刷新完成前挂起下一轮所造成的测试自锁；最终使用解析后的 URL、原文案／数据状态并在挂起前等待既有刷新按钮可用，未增加产品重试或改变刷新逻辑。
+- `npm --prefix monitor/frontend run build`：最终构建通过（`build-final.log`）；未修改后端/API/Swagger，无需重建后端或新增 T2。
+- `make test-frontend-ci-registration`：20 项检查及 21 个前端登记通过（`registration.log`）。原 Monitor Playwright glob 和前端 CI 自动覆盖新增组件／用例，无新增标准入口或 workflow；未触发或轮询 CI。
+
+`screenshots/` 保留最终中英文浅色／深色窄屏面板实图，已人工核对中文浅色布局与单位。T3 使用受控 HTTP 夹具与真实组件，未操作个人 Safari 或重启个人服务；未运行真实身份／来源页面 Hosted、T4 或生产 T5，CI 和 Hosted 等专门会话回传，未设置定时任务。原表第 39 行（B38，主机底层资源明细）的热力面板能力已实现；该行的完整硬件汇总／分区健康判定及新增页面真实运行证据仍需分别核对，不能由本批界面色彩推定健康判定或告警通过。
+
+### 主机列表负载与连接视图（2026-10-26）
+
+主机列表默认保留核心资源五项，新增“负载与连接”视图，仅请求 1／5／15 分钟系统平均负载及 TCP 当前连接数。复用既有指标公式、单位、新鲜度、当前用户逐主机授权及同一批量摘要；后端摘要白名单同步为这两组共九项标量的非空无重复子集，不新增接口或权限。每页默认 20 台，新视图请求 80 条序列，继续在 Owner 裁决和来源查询前校验原整批预算。TOP5／采集配置仍只请求原两项。
+
+唯一 URL 参数为 `list_view=load-connections`，默认核心资源省略；切换保留已提交筛选、分页和刷新，不提交搜索草稿；详情返回、重载及重置筛选保留视图。列标题就近解释负载为任务数而非百分比、TCP 为 ESTABLISHED＋CLOSE_WAIT。有效零、缺样、失败及撤权不混淆，迟到响应不能覆盖新视图。
+
+本地验证：
+
+- Node `v24.11.1` 下 `make test-monitor-frontend` 退出 0：124 项单元测试、450 项浏览器场景（含新增六项）与 Vite 生产构建通过。中英 20 台主机验证单批精确四指标／80 条序列、响应乱序、TCP 有效零和独立缺样；另覆盖窄屏、视图切换、详情返回／重载、重置、超限／撤权、15 秒定时刷新（测试时钟）和身份切换后的迟到响应清除。既有构建大 chunk 提示不影响构建成功。日志 `/tmp/addp-host-list-final-gate.log`；浏览器结果目录见日志 `Browser gate monitor` 行，截图 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-load-6wzJX2/zh-cn.png` 与同轮完整门禁截图路径见日志。首轮六项专项有两项因脚本点击 Element Plus 透明 radio 输入框被标签遮挡而失败；改为点击可见标签后，最终完整门禁全部通过，原失败日志 `/tmp/addp-host-load-e2e.log` 保留。
+- `make test-module MODULE=monitor GO_ONLY=1` 退出 0，覆盖两组摘要的预算、逐用户授权、停用排除、未知／新鲜度及批量身份隔离；新增四指标 25 台可规划、26 台在 Owner／来源读取前拒绝。日志 `/tmp/addp-host-load-go.log`。本地 Go T1 不替代真实来源 T2。
+- `bash scripts/swagger/gen-swagger.sh monitor` 及 `bash scripts/swagger/check-route-coverage.sh monitor` 均退出 0，96 个公开路由方法一致；日志 `/tmp/addp-host-load-swagger.log`。
+
+实源缺口：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources` 退出 2，在公共 mTLS 初次采样前置报 `Timed out: real mTLS scrape and controlled job label`，封闭诊断为 `error_kind=tls/health=down`。八项固定窗口 promtool 测试通过不等于整门禁通过；本批新增四指标真实摘要断言尚未执行。与本专题既有公共采样失败边界一致，不由现有诊断推断具体证书根因，不改 TLS／等待时长、不盲目重跑。日志 `/tmp/addp-host-load-t2.log`；项目 `addp-metrics-t2-786570fda5424602a680465383cd9092` 的容器／网络／卷在退出后分别按 Compose project 标签只读核验均为空，临时目录由标准入口清理。
+
+个人 Safari 初次复验曾因运行中的旧 Monitor 后端仍按五项白名单拒绝新摘要而失败；2026-10-26 用户自行执行 `./scripts/dev/restart.sh -monitor` 后，沿原平台管理员会话只读复验，新视图能读取真实三档系统负载。初次为 8.21／9.07／10.83 个任务，点击页面“刷新”后为 8.32／8.84／10.58 个任务，采集状态为“正在采集”，不再出现摘要读取失败。详情导航保持同一主机 `755953df-488c-410a-88d4-0ecc47eb1351` 及 `list_view=load-connections`，返回列表和整页重新载入仍选中该视图并重新读取负载。
+
+TCP 在列表及详情均为“—／缺失”，详情就近明确“当前来源未提供可用的宿主 TCP 统计，不代表连接数为 0”；仅验证受限 Docker Desktop 来源的缺样表达，不计真实 TCP 有效数值通过。AX 原始证据为 `/tmp/addp-host-load-safari-e8AXcN/load-refreshed.ax.txt`、`host-detail.ax.txt`、`load-reloaded.ax.txt`。截图能见真实负载，但按钮着色与 AX 选中状态存在滞后，右侧横向滚动返回 `noWindowsAvailable`，页面持续报告隐藏；故右侧 TCP 实际截图、前台自然自动刷新不计本轮通过，也不把个人单 VM／管理员会话结果外推为多主机、TCP 有效来源、此前失败的隔离 T2 或正式 Hosted。未操作个人数据库、权限或服务进程，未手工触发／轮询 CI 或 Hosted，未设置定时任务；正式结果仍等专门会话回传。
+
+### 主机列表按设备展开（2026-10-26）
+
+2026-10-26 用户确认先做主机行内按设备展开，不计算跨设备整机摘要。列表及详情的磁盘／网卡表格、单位、列旁解释、缺样状态、活动磁盘排序／无活动设备展开、精确设备趋势入口唯一归属 `monitor/frontend/src/components/HostDeviceResources.vue`，删除 `NodeResources.vue` 原内联设备表格和重复派生；列表读取组合由 `HostDeviceObservation.vue` 消费既有 `resource_observations`。最多打开当前授权页一台主机的一类明细，未展开无设备请求；磁盘固定五项、网络固定两项，沿原一分钟窗口、单次预算及授权，不新增接口、权限、指标或设备总量。
+
+展开只属于临时页面状态；筛选、分页、列视图切换、详情导航、整页重载及身份变化关闭展开。刷新在主机仍处于当前授权页时保留选择、重读数据；切换／收起／离页取消在途请求，迟到结果不恢复旧内容。普通失败／超限清除设备值并保留仍授权的标量列表；设备 401／403／404 清空列表并停止自动读取。原始 node_version 必须与当前行版本相同；未知、未提供、陈旧与真实零分别显示。展开面板按列表可视宽度布局，窄屏刷新按钮可见，宽设备表保留自身横向滚动。
+
+验证使用 Node `v24.11.1` 和原标准入口 `make test-monitor-frontend`：最终退出 0，125 项单元测试、459 项 Playwright 场景、Vite 生产构建全部通过；既有 chunk 大小提示不影响构建。新增九项浏览器场景覆盖中英和窄屏边界、无预取、单主机／单类别精确请求、默认箭头、折叠与有效零、类别切换的迟到旧响应、预算／版本错误及方向独立缺样、采集未提供、全局手动刷新、临时状态清除、精确设备趋势及列表回跳、测试时钟的15秒刷新／隐藏暂停、当前主机离页与撤权停止。旧详情页折叠、说明弹层、设备／网络趋势与交互也在同一完整门禁中通过；组件唯一所有权约束同步。没有重跑未变化的后端或此前公共 mTLS 前置，也未手工触发／轮询 CI 或 Hosted、设置定时任务或重启个人服务。
+
+最终日志 `/tmp/addp-host-devices-final-gate-v2.log`，新增专项 `/tmp/addp-host-device-expansion-responsive.log` 九项通过。窄屏中英截图 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-device-list-te3HaS/zh-cn.png` 与 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-device-list-PZiaVK/en.png` 已目视检查。首轮 `/tmp/addp-host-devices-final-gate.log` 因目视发现展开区域继承外层宽表宽度、刷新按钮离开可视范围而主动中止，119 项通过／1 项中断／339 项未运行，未计为完整通过；修正宽度后从标准入口完整重跑。早期静态断言仍指向旧内联设备循环，已同步为唯一组件归属，不保留旧实现。
+
+个人 Safari 已从现有管理员会话读取到“设备明细／磁盘 IO／网卡吞吐”入口；工具展开操作被 `ScreenCaptureKit -3811`／`noWindowsAvailable` 阻断。用户随后手动激活并明确反馈“已展开磁盘 IO”，但工具仍返回未展开且报告隐藏的页面。窗口菜单只列一个控制台窗口，重新选中同一窗口后，AX 与截图仍未显示展开；这是用户反馈与工具观测不一致，不直接判为产品失败，也不计为实机通过。只读证据 `/tmp/addp-host-device-safari-jUB6Y1/current.ax.txt`、`after-user-expanded.ax.txt`、`after-user-expanded.png`。真实单 VM 磁盘读数、真实网卡缺样、收起／刷新／面板像素和前台自然刷新均尚未独立验收；本地受控浏览器通过不替代个人实机或正式 Hosted，其他验证仍等专门会话回传。
+
+### 主机列表文件系统容量与 inode 展开（2026-10-26）
+
+沿已确认的按主机行内展开方案新增“文件系统”入口；最多展开当前授权页一台主机的一类资源。容量五项与 inode 四项沿既有顺序分别读取，按完整 `device／mountpoint／fstype` 对齐，保留各自查询／采样时间和错误，不改公式、不跨挂载汇总、不拆分超限组。列表和详情只使用 `HostFilesystemResources.vue` 这一份挂载表格；原内联实现删除，原设备读取组件收敛为 `HostResourceDetailObservation.vue`，旧文件及旧翻译命名删除。沿精确挂载进入既有趋势并保留列表上下文。
+
+本批同时修复行内读取组合漏传共享 `createAutoRefresh` 必需的 `visibilityChanged` 回调：原实现在隐藏／恢复时抛错，切回前台未重读；现按原契约补齐调用，不修改共享工具。新增场景验证隐藏暂停、恢复后两组重读且无浏览器异常，以及收起第一组时不继续读 inode、切换时迟到第二组不回填、第二组拒绝后清空列表并停读。
+
+Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项通过；进一步补充截图后的文件系统专项八项再次通过。覆盖中英／窄屏／横向滚动、同挂载点的设备或文件系统类型差异、乱序对齐、容量与 inode 独立预算／不可用错误、版本拒绝、合法零／缺样、未提供能力、精确趋势与返回、自动刷新及身份撤销。首轮三项失败为两项新测试漏写既有 inode 单位与上述回调问题，保留原失败日志，不计通过。最终标准入口 `make test-monitor-frontend` 退出0：127项单元测试、467项Playwright场景与Vite生产构建全部通过（保留原chunk大小提示）；前端源码及测试输入摘要在门禁前后核对一致，日志 `/tmp/addp-host-filesystem-final-gate.log`。
+
+日志：`/tmp/addp-host-filesystem-targeted.log`（14通过／3失败）、`/tmp/addp-host-filesystem-targeted-v2.log`（17通过）、`/tmp/addp-host-filesystem-visual.log`（8通过）。截图目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-filesystem-list-NgAnEN`（中）与 `addp-host-filesystem-list-7grzkp`（英），已目视检查宽屏、窄屏及 inode 横向滚动。既有个人 Safari 工具观测限制未解除，且 Desktop VM 来源不提供 filesystem／inode，不能以受控数据证明个人环境真实分区读数。未运行新的后端／实源 T2、个人 Safari 或 Hosted 验收，未触发／轮询 CI、未设定时任务、未重启服务；当时 CI 与 Hosted 待专门会话回传；Linux 前端结果现已按下段独立复核，Hosted 仍待回传。
+
+2026-10-27 独立复核专门 CI 会话回传的 [Linux Monitor frontend Job](https://github.com/pampa0629/addp/actions/runs/40351996188/job/121674238730)：push／attempt 1，实际 checkout `e5391ca36843cd0d99233ea3f63949abb45d81d0`。GitHub Job 与实际 `Run Monitor frontend gate` 步骤均为 success，`make test-monitor-frontend` 原始日志确认 tests/pass 各127、fail 0、467 browser passed（23.3分钟），生产构建10.55秒完成。产品 `12d3eba1f6d9294ca16c2bfe9204e046e2d872e6` 至该实际提交的 `monitor/frontend`、`common-frontend`、根 Makefile、标准前端／浏览器入口、prepare-frontend-gate 与 Platform workflow 均无差异，因此覆盖本批实现。
+
+通过 `gh api repos/pampa0629/addp/actions/jobs/121674238730` 及对应 run 的只读请求核对终态，再独立下载原始日志至 `/tmp/addp-monitor-e539-independent-job.log`；与回传归档逐字节相同，SHA256 为 `2665d7996277041d5b79bf80c985e6f223a4b944f4b0b69130f1d170df985511`。回传审计 `/tmp/addp-ci-20261026-180018/Monitor_e539_actual_frontend_audit.json`。父 Platform run 的终态为 cancelled，不计整套 workflow 通过；旧超时保留，不能据此认定其根因已修。后继作业若实际跳过也不计第二轮复验。这一证据仅证明固定源码的 Linux 标准前端门禁，不替代 Safari、个人实源、正式身份 Hosted 或生产验收，不扩展文件系统告警范围；本轮未重跑或调度任何验收。
+
+### 真实 Linux 采集与挂载页面验收准备（2026-10-28）
+
+既有 `platform-node-metrics` regression／complete-comparison 在浏览器前核验当次原生 Linux exporter 的项目／服务／仓库、同内核、host 网络／PID、非特权只读、只读 rslave 宿主根与 proc／sys、显式 filesystem collector。拒绝 Desktop、容器根、挂载覆盖、重复／反向参数及 textfile 替代。前置失败清除旧成功收据并阻止浏览器；`node-native-source.json` 只保留封闭证明。
+
+同页 5 容量＋4 inode 响应按完整 device／mountpoint／fstype 绑定可见列、单位和趋势，`filesystem_mount` 记录响应／行索引及 DOM 文本。中央拒绝旧收据、错主机／范围／类型／单位，并验证乱序与合法零。
+
+本地 Online runner 151 项及身份 Go、Console 202 单元（含 15 项收据）通过；前一轮 201／202 在未改 devPorts 的 Vite 清理断言失败，记录 `7102.pid`／`addp-system-vite-test-7102`，复跑通过但根因未定。Playwright --list 仅发现一个场景。原件 `/tmp/addp-native-{node-runner-final,mount-console-unit-final}.log`。真实 Linux 挂载、正式登录页面及 Hosted 清理尚未执行。
+
+#### 列表展开、手工刷新与收起的验收准备（2026-10-28）
+
+同一场景新增列表展开、关闭自动后的手工刷新及收起。唯一九项 DOM 读数函数要求两轮各自新响应、URL 与 iframe 保持，允许共享评估时点。收据上限 186→190，保留列表 PNG，查询及场景期限不变。
+
+本地 runner 152 项及身份 Go、Console 单元 202、受控 iframe 5 项通过。受控刷新 inode 20%→30%、空闲量 80→70，验证仅四次当前节点读取及收起；Online --list 仅发现。原件 `/tmp/addp-native-filesystem-list-*.log`。真实 Linux、Safari、正式密码／MFA 与 Hosted 未执行。
+
+#### 热力面板实源页面验收准备（2026-10-28）
+
+同一挂载阶段复用十项标量和五项容量响应，`resource_heatmap`／截图记录 CPU、内存和完整挂载，中央要求与挂载表共享容量响应及精确身份。受控值验证 0%／100%、同挂载点不同设备／类型，陈旧与缺样保持中性、无进度且无额外请求，190 条收据上限不变。
+
+本地 runner 153 项及身份 Go、Console 单元 207（含 20 收据）、受控 iframe 6 项通过；隔离入口退出 0，Online --list 仅发现。原件 `/tmp/addp-native-heatmap-*.log`。原生 Linux、正式身份页面、Safari 与 Hosted 零残留未覆盖。
+
+### 主机 CPU 空闲率辅助展示（2026-10-28）
+
+原图硬件信息中的CPU空闲率补在详情原“CPU忙碌率（1分钟）”卡内，使用同一有效观测的 `100 - busy_percent` 并复用共享百分比格式化；非空闲率原本由各核idle计数的完整一分钟速率反推，因此不另加采集或新口径。预热缺样、陈旧和未接入显示“—”，合法忙碌0%／100%分别显示空闲100%／0%；中英文就近显示。不新增指标、独立卡片、列表列、趋势或规则，不改26项目录、五项列表摘要、API／权限／预算；前端只组合现有同源数据。
+
+- `make test-monitor-frontend` 退出0：130项单元测试、490项浏览器场景及Vite生产构建通过（保留原chunk大小提示），日志 `/tmp/addp-cpu-idle-monitor-frontend.log`。新增中英文场景覆盖13.37%忙碌对应86.63%空闲、合法零／满量程、陈旧／缺样及恢复，确认每轮仍仅五组原观测、没有idle查询；原CPU预热场景增加空闲占位及恢复断言。
+- 标准专项 `npm run test:e2e -- node-resources.spec.js --grep 'CPU idle companion'` 在Monitor frontend执行，两项通过；日志 `/tmp/addp-cpu-idle-focused-browser.log`。420px中英卡片截图已目视核对：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cpu-idle-onOjxY/zh-cn.png`、`addp-cpu-idle-FSL23E/en.png`（同一父临时目录），不另计独立实源验收。
+- Console 标准 `npm run test:e2e -- node-resource-navigation.spec.js` 六项受控iframe场景通过，核对主机空闲辅助值及陈旧／缺样不补零；日志 `/tmp/addp-cpu-idle-console-browser.log`。
+- `make test-node-metrics-online-runner`：153项确定性测试及System Go Metrics夹具通过，日志 `/tmp/addp-cpu-idle-online-runner.log`；既有真实Console脚本增加同一有效CPU响应的空闲文本核对与强制展示收据，不增加请求或身份用途。
+
+沿既有 Monitor／Console frontend 自动发现与 Online runner，未新增依赖、标准入口或CI路线。此次只改前端及验收，没有后端重启、IAM、个人配置或数据库操作；真实Linux、Safari及正式密码／MFA Hosted仍未据此通过，继续等专门会话回传。未触发／轮询CI或Hosted、未设置定时任务。磁盘分区容量继续按完整挂载展示，不把该补项外推为整机物理磁盘容量或整个硬件信息卡已完整验收。
+
+### host-resources 受限来源挂载断言修复（2026-10-29）
+
+[Release/T2 40701610871 的 host-resources 实际步骤](https://github.com/pampa0629/addp/actions/runs/40701610871/job/122862998720) 首败在受限来源重建后的 `len(limited['Mounts']) == 4`，原生查询与停机／恢复已执行，原 CI 无完整 inspect。固定 `3f66f3521` 对照两层 Compose 为四只读绑定＋一只读 `/textfile` 专属卷，受限视图仍关闭 Textfile；产品默认关闭容量的四绑定不变。
+
+唯一 `verify_limited_node_mounts` 在准备及受限重建两处核对精确源、只读／rprivate、目标唯一、项目／服务／owner 标签、local 1 MiB tmpfs 与同卷 Mountpoint；拒绝多余／可写／宿主根／Socket／外来卷。新增五项 T1 与 27 变体，旧实现红例失败。
+
+本机 Desktop VM 首轮先在 budget recovery 的原 65 秒等待失败，清理已执行但未到本次断言。最终 host-resources 整轮通过，120 脚本检查、两份精确挂载、原查询／恢复／SIGKILL／总览及告警均执行，退出容器、网络、卷及临时文件清零。原件 `/tmp/addp-limited-host-resources-*.log` 与 `/tmp/addp-ci-20261028-160001/job-122862998720.log`。原 Linux Job 仍失败，替代固定 Job、原生 Linux 容量、正式 Console 与 Hosted 单列。
+
+<a id="node-evidence-capacity"></a>
+
+## 容量状态
+
+逐设备容量的只读取证、实源 T2 和 Console 受控状态分开查阅。关闭、过期、故障、迟到响应及当前撤权各有独立判定。
+
+### 块设备容量只读前置核对（2026-10-28）
+
+本轮仅调查原图硬件容量的数据来源与设备层级，没有产品实现或正式测试。仓库锁定node_exporter v1.12.1的diskstats源码与现有固定目录只提供IO及设备信息，当前文件系统容量不能当物理总量。官方Textfile Collector支持节点绑定的扩展指标，但旧文件在每次抓取时仍会出现，因此正式实现还须独立源采样时间和失败／完整性保护，不能只按Prometheus抓取时间判断新鲜。
+
+只读核对当前唯一归属本仓库的node-exporter容器，保持原User 65534:65534、非特权、只读根及无宿主根挂载，仅使用固定的/sys/class/block元数据与/proc/diskstats／内核版本；未读业务文件、序列号或凭据，未写容器文件、挂载或修改配置。Desktop来源与Docker daemon内核一致，43个可见块对象中24个size为0；诊断取样见vda=3,996,276,228,096B、vda1=2,199,022,206,976B、vdb=600,440,832B，三者设备号均匹配同一VM的diskstats，sysfs父关系确认vda1属于vda。另有RAM设备，故既不能将所有条目算物理盘，也不能将盘和分区直接求和。诊断取样中的名称过滤不是生产设备选择算法。
+
+封闭元数据收据 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-block-capacity-probe-cij4zyyg/observations.json`（0600）仅保留配置布尔项、容器身份摘要与上述元数据，没有原始inspect／环境。结果标记read_only_feasibility；新采集器未安装、Prometheus查询及正式页面未验证，不能计T1／T2／T3／T4通过。首期提案见[运行监控后续事项](../../../next/ADDP平台运行监控与可观测性设计.md#磁盘与卷容量首期)，用户随后确认该范围，产品实现及分层验证见下节；此前置阶段不计产品门禁。文档只做差异／链接及事实核对，不重复旧产品门禁；未调度CI／Hosted、未设置定时任务、未重启个人服务或修改来源。
+
+### 磁盘与卷容量首期实现与本地分层验证（2026-10-28）
+
+首期为默认关闭的部署侧只读 `node.block.capacity_bytes`，逐 device／kind 展示，27 项固定目录。不计算整机总量、使用率、趋势或告警。原生 Linux 只读 sysfs／四个 proc 白名单，Desktop 仅 VM 元数据；非 root、只读根、无网络、特权及 Socket。15 秒原子帧，100 设备／4096 对象及精确整数上限，按源时间、启动及帧完整性校验。列表／详情复用延迟查询与 IEC 单位，关闭／停止清理专属临时卷。
+
+| 层级 | 实际结果 |
+| --- | --- |
+| 本机实源 T2 | 标准 block-capacity 最终通过，115 项入口、9 个固定公式及真实采集器→Textfile／node_exporter→mTLS→Prometheus→Monitor。逐设备与同来源 sysfs 匹配，容器／网络／卷／临时文件清零。环境为 Docker Desktop Linux VM。 |
+| 确定性及页面 | Monitor Go、前端 131、容量受控浏览器 3／3、独立构建、Online runner 154＋身份 Go、生命周期及 Swagger 96 路由通过。仅证明受控页面与 runner 准备。 |
+| 整体门禁 | Platform 首轮两项旧清理参数断言失败，加入 profile 后相关子项通过，整批未重跑。完整 Monitor 前端先 485／493，后 425／493，均失败且未到构建；后轮 Mac 多次睡眠／唤醒，具体失败根因未全部确认。 |
+
+T2 前序首败包括新分支变量未初始化和退出未含 profile，修正后核验遗留容器／卷清零。后续两轮来源已采样而发现目标未切换，根因未定；旧受控生产停止夹具还曾超时 10 秒，单项及最终入口通过。原件 `/tmp/addp-block-*.log`；浏览器失败目录 `addp-monitor-playwright-results-jJp4jp`。个人开关、原生 Linux 容量来源证明、真实 Console／Safari 及正式 Hosted 当时未验。
+
+### 磁盘与卷容量原生来源证明与Console收据准备（2026-10-29）
+
+原生来源证明 v2 要求同内核 exporter 与唯一受管容量采集器；核验非特权、限额、无网络／Socket／设备、白名单 sysfs／proc、受管程序摘要及同一专属 1 MiB 卷的写／读权限。当前 sysfs 与唯一完整帧对照，拒绝陈旧、外来、缺帧、重复或不一致。场景只在当次启用容量扩展，故障操作只停／启 exporter。
+
+Console 收据核对打开、手工刷新、收起时全部 device／kind、IEC、状态和新响应，并与原生证明一致。两次既有容量 GET，收据上限 190→192；不要求刷新跨下一次源采样，身份及预算不变。
+
+本地 runner 162＋身份 Go、Console 单元 219（含容量收据 12）、受控 iframe 7 项通过。受控两设备 1 TiB→512 GiB，验证精确读数及 URL／iframe 保持。原件 `/tmp/addp-capacity-{online-runner,console-unit,console-browser}.log`。这是验收准备，正式 Linux 来源、真实身份 Console、Safari、Hosted 与零残留尚无本批运行证据，原完整前端长回归失败保留。
+
+### 容量来源 T2 的固定查询时点交接修复（2026-10-29）
+
+[Release block-capacity 失败](https://github.com/pampa0629/addp/actions/runs/40827356196/job/123293546488) 的固定公式与即时 up／success 先通过，首败为 `TestIntegrationMetricsBlockCapacitySource` 返回 no_sample、Go 退出 1。原日志缺查询／抓取时刻，无法确认后来发现的竞态是该次唯一原因。原件 `/tmp/addp-ci-20261029-063318/job-123293546488.log`。
+
+夹具原由 Python 查询当前时刻、Go 重取整秒，首个小数秒样本可能只在前者可见。沿原 65 秒在同一整秒确认同次抓取的 up 和容量 success，再把时点交 Go；缺失、非整数、未来或陈旧拒绝。四项 promtool 断言先因分组错误两项 nil，按[该固定版本加载实现](https://github.com/prometheus/prometheus/blob/v3.13.4/cmd/promtool/unittest.go)改正加载范围后通过；原时间、权限和完整帧断言保持。
+
+本地配置红阶段两项缺函数，修正后 122 项及 Go 通过。Desktop VM 标准 block-capacity 实源通过，查询 1793261272、同次抓取 1793261271.757、两设备匹配；两项目按标签核对容器／网络／卷清零，通过轮私有目录删除。原件 `/tmp/addp-block-snapshot-*.log` 和清理收据 `/tmp/addp-block-snapshot-cleanup.json`。
+
+固定 `efc577aa69fc0a190dddba2bc9bff4903fc99f88` 的 [Release run40841858063／block-capacity Job123340144076](https://github.com/pampa0629/addp/actions/runs/40841858063/job/123340144076) 自然首轮 completed／success，实际生命周期 selected=true；公式及真实容量查询执行、无跳过，查询 08:31:31Z、抓取 1793262690.69，collecting／available、一设备核验，容器／网络／卷／临时文件零残留。原件与独立审计 `/tmp/addp-ci-20261029-100020/`。仅关闭该固定 Linux T2 缺口，未覆盖 Safari／UI、Hosted、整 Release 或物理容量总量。
+
+### 容量关闭故障与恢复的Console状态验收（2026-10-29）
+
+受控 Console 列表展开／详情共用同一场景。初始有效后分别返回未启用、采集失败、过期、HTTP 503 和不完整响应；各次清除旧行、保留明确局部状态、不补 0 B，再以新 device／kind、IEC 和响应索引验证恢复。暂缓 HTTP 时核对加载禁用及旧行清除。两入口各 11 次当前节点容量 GET，保持摘要、URL、刷新偏好和同 iframe。
+
+定向 9／9 与完整 Console 219 单元／242 浏览器／构建通过，原件 `/tmp/addp-capacity-console-states-*.log`。该结果覆盖受控状态与恢复，个人采集故障、原生 Linux、正式身份 Hosted 及旧 Monitor 长回归各自认定。
+
+### 容量明细自动刷新与隐藏恢复的Console验收（2026-10-29）
+
+受控时钟按 URL 的 10 秒间隔验证两入口。首次及自动刷新有新值；隐藏 60 秒无读取、可见立即读取。暂缓的 8 TiB 旧请求无重叠，隐藏精确触发该请求的 requestfailed，释放旧帧无污染；恢复后立即及下一计时轮各有新值。off 后计时／可见切换无自动请求，手工刷新仍可用，收起停止读取。列表路由变化时的临时展开行为仅属当时版本，后继同上下文的展开保持断言见[主机详情就近提示](#主机详情就近提示2026-10-31)。每入口 8 次 GET，含 1 次取消。
+
+定向 11／11、独立构建通过。完整 Console 在 `devPorts.test.js:243` 先失败（218 通过／1 失败），观察到 50446／50475 的 Vite PID 文件和临时目录仍在，根因未定；后续完整浏览器与该次构建未执行。原件 `/tmp/addp-capacity-console-auto-*.log`。受控 visibilitychange 及计时不覆盖 Safari 后台或真实采集。
+
+### 容量迟到响应的Console范围隔离验收（2026-10-29）
+
+六项受控场景覆盖列表换主机时的旧 200／403，以及列表／详情的收起重开和离页返回。旧 8 TiB 帧在边界固定，精确确认原请求取消；新 32／64 GiB 与响应索引先落地，再释放旧帧，当前读数／授权不受影响。离页确认旧 Frame detached、60 秒无读取，Back 恢复 URL／分页／偏好并创建新 iframe，展开才重读；每场景两次容量请求、一份有效新收据。
+
+定向 17／17 和独立构建通过，原件 `/tmp/addp-capacity-console-isolation-*.log`。原 Console 聚合清理失败未复跑；旧 403 为废弃请求，当前撤权另见下一节。真实来源、Safari 与正式身份未覆盖。
+
+### 容量读取撤权与身份切换的Console验收（2026-10-29）
+
+列表／详情各验当前 403。第二次读取拒绝后清除页面读数、提示无权并停刷；推进 60 秒无资源请求，显式刷新并重新展开后才恢复。六项另外覆盖撤权、同权限新 Principal 与带相同权限字符串的 Tenant，走正式 store 的强制 Token 刷新与受控 AuthContext。重核期间隐藏同 iframe、取消精确在途请求并清表；拒绝或新身份卸载旧 Frame，释放旧 8 TiB 不恢复读数。平台授权后新 iframe 用新 Token，三次请求和两份有效收据，保持 URL／分页／偏好。
+
+定向 25／25、独立构建通过，原件 `/tmp/addp-capacity-console-authority-*.log`。原 Console 聚合清理失败仍未闭环。这里是受控 T3，未验证 System 真实权限发布、真实登录／MFA、跨租户 T4、原生 Linux 容量或 Safari。
+
+<a id="node-evidence-refresh"></a>
+
+## 前台刷新
+
+受控 T3 验证请求、同一 DOM 和失效清理。Safari 记录真实前台可见与自然时间推进，按当次实际观察认定。
+
+### 主机列表五项核心摘要（本地）
+
+2026-10-23，按用户确认范围，主机列表展示 CPU 逻辑核数／一分钟忙碌率、内存总量／使用率与运行时长，默认每页 20 台。复用原单位、当前节点身份／版本、采样新鲜度、采集状态和列表生命周期；容量用 IEC 单位，运行时长用复合时长。固定主机与操作列、标题允许换行，每项保留独立状态。当前页只进行一次摘要 API 请求，不逐台读取详情或补齐失败列；返回乱序仍按节点身份映射，单项陈旧不抹除其他有效值，整批缺项拒绝并清空旧摘要，主机列表仍保留。
+
+`/platform/resource_summaries` 唯一契约现在显式携带 `node_ids` 和 `metrics`，只接受上述五项的非空无重复子集，不保留省略参数的旧请求。唯一批量内核复用原公式、两次固定 Prometheus 请求、整批期限／并发和逐节点 User 授权；在 Owner 读取与指标查询前按节点数乘指标数预检预算。默认 20 × 5 = 100，21 台五项请求整批拒绝，不拆批或提高预算；TOP5 与采集配置页显式保持 CPU／内存百分比两项，原 50 台 TOP5 上限、比较和热力指标范围不变。API、调用方、Swagger 及既有 Hosted 收据／拒绝测试同步，仍只在原已确认十项节点指标的读取范围内选五项，不新增权限、角色或身份用途。
+
+冻结基线 `d798875a0732cb18e42d1772799d7c91b007542e`，仅叠加本批文件。证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-list-core-v8j8u6ci`，`inputs.json` 记录最终本批文件，`frontend-inputs-sha256.json` 记录 437 项前端／共享／浏览器入口输入。其他会话的 engineApprovalInitialization 两项共享未提交 WIP 未混入冻结副本；本任务源码及其余前端输入与工作区核对一致，不外推整个共享工作区的 WIP。实际验证：
+
+- `make test-module MODULE=monitor GO_ONLY=1`：Monitor Go T1 通过（`go-t1.log`）。五项／两项显式投影共用内核；20 台五项、50 台两项边界通过，21 台五项在任何 Owner／来源读取前拒绝；空／重复／未知／分组／不在摘要范围的指标拒绝，停用、跨节点、当前用户 Token 与完成时新鲜度沿原规则核验。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`：退出 0（`host-resources-t2.log`）。真实 node_exporter／Prometheus 上五项摘要的完整来源及受限 Desktop VM 读取、外来节点缺样隔离通过；原 TOP5 的受控多源覆盖／预算及来源故障恢复回归通过。退出核验当次容器／网络／卷和临时文件零残留；该结果是本地隔离 T2，不是多真实主机、正式身份页面 T4 或生产 T5。
+- Node v24.19.0 下，`npm --prefix monitor/frontend run test:e2e -- host-list-core.spec.js`：20 台主机的 2 项中英文专项通过（`core-list-browser.log`），验证一次精确五项批量读取、默认每页20台、CPU 核数／百分比、IEC 容量、复合时长、乱序身份匹配、单项陈旧、整批缺项后的清除／恢复及无逐行详情查询。后续完整门禁另覆盖最终表头换行。
+- 最终 `make test-monitor-frontend`：112 项 T1、411/411 浏览器 T3 及构建全部通过，命令退出0（`frontend-full.log`，浏览器约15分钟，构建4.46秒）；本次输入下无失败或跳过。覆盖主机／采集列表的投影隔离、TOP5、详情、热力、趋势与服务／告警回归；不把前面的专项与整批交叠用例重复累计。`screenshots/` 保留最终五项列表中英文实图，已人工核对中文布局、单位与可读表头。
+- 首轮 `npm --prefix monitor/frontend run test:e2e -- node-resources.spec.js monitoring-target-list.spec.js resource-overview.spec.js`：89 通过、3 失败（`focused-browser.log`）；失败是旧列表用例仍断言两列数值或不带 metrics 的请求，已按精确五项和必填选择修订，不放宽采集配置页两项断言或产品校验。
+- `make test-node-metrics-online-runner`：139 项本地入口／身份／收据守卫及 System Metrics Go 夹具通过（`online-runner.log`）；新增拒绝省略指标选择、旧两项列表请求及缺失核心列的反例。仅为准备好的正式入口本地检查，没有运行 Hosted。
+- `bash scripts/swagger/gen-swagger.sh monitor` 和 `bash scripts/swagger/check-route-coverage.sh monitor`：生成成功，90 个公开路由方法覆盖一致（`swagger-generation.log`、`swagger-coverage.log`）。固定 Swag module v1.16.6。`make test-frontend-ci-registration`：20 项检查与21个前端登记通过（`registration.log`）。
+
+因摘要请求契约同次更新，个人环境体验需由用户按标准入口重启 Monitor 后端；前端改动不要求重启其他后端。原表第37行（B36，主机实时资源总览列表）仍是部分实现：本批核心五项已具备，三档负载、TCP 与存储／网卡明细仍在主机详情，未补完整列表或综合健康评分；新列表的真实身份页面 Hosted 与生产规模证据继续待专门会话回传。
+
+### Safari 主机列表右侧列与前台自动刷新（2026-10-24）
+
+沿用户已重启的个人环境及现有平台系统管理员会话，只读复验 `http://localhost:5170/monitor/node-resources`。最初辅助功能树仍报告页面隐藏／自动刷新暂停，原生横向滚动返回 `noWindowsAvailable`；AX Raise／窗口菜单操作未使其恢复。用户手动激活当前 Safari 标签并保持前台后，树显示焦点在当前 HTML、自动刷新已开启，原生滚动条拖动可用。该前后观察说明这次验收所需的现场条件已恢复，不能反推全部历史窗口／截图问题的根因。
+
+已实际截图核对内存使用率与运行时长的表头和值，两列可读、百分比和复合时长单位正确，固定主机名称及查看资源入口仍保留。08:30:23（Asia/Shanghai）显示 43.20%、3 天 12 小时 21 分钟；08:31:35 显示 42.46%、3 天 12 小时 23 分钟，且自动刷新仍开启。整个前台记录区间没有点击手动刷新、重载或修改每 15 秒的选择；仅横向滚动、拖动表格滚动条及临时收起／恢复 Safari 侧栏，中间另留 18 秒一次性观察等待。08:29:19～08:31:58 的六份辅助功能文本记录多次 CPU／内存数值自然变化和时长推进，恢复原侧栏后两列仍可读，默认每页 20 台、当前一台 VM。由此确认本次单机页面前台自动更新及右侧列视觉复验通过；没有网络瀑布证据，不推断精确请求次数、重入并发或隐藏期间网络取消已在此实测。
+
+证据目录 `/tmp/addp-safari-host-list-Su1V5L/`：`foreground-before.txt`、`scrolled.txt`、`right-actual.txt`、`right-columns-final.txt`、`automatic-after-cycle.txt`、`restored-sidebar.txt` 及对应原生 JPEG 截图；`verification.json` 保存采样时间、读数、动作与限制。`health-ready.json` 记录 Monitor HTTP 200、ready／registered、实际后端构建 `e931905933bab26701e2586eb8df9a49d9da4a30`。本次文本／状态／时长推进／观察间隔及截图格式完整性断言通过；首次记录脚本误把原生 JPEG 当作 PNG 校验而失败，已按实际格式改名并核对，未修改截图像素或产品代码。不重启个人服务、不改配置或凭据，没有 CI／Hosted 查询、调度或定时任务。此结果仅为个人单台 Desktop VM 的页面现场复验，不计一次性隔离 Hosted／T4、多真实主机、其他角色／撤权、长窗或生产 T5。
+
+### 主机监控类型／纳管状态筛选与分页回跳修正（2026-10-25）
+
+Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地址交集查询，类型／状态选择同时提交名称草稿并回首页；重置保留每页数量及刷新偏好。详情、返回、刷新和 Console 单历史保留已提交条件，指标请求仍只有匹配当前页的五项摘要，空页不请求指标。共享前端唯一 `HostNodeFilters`／`resolveHostNodeFilters` 替换 System 原控件及类型／状态解析分支，删除迁出的“全部类型／状态”词条；不新增后端接口、权限、指标、数据库或部署依赖，System API／Swagger 契约不变。
+
+新增真实分页用例暴露原页面缺陷：切第二页后重读立即将未知总数设为零，Element Plus 的页数监听自动回写第一页。诊断实际记录 `1 → 2 → 1` 三次 System 列表请求，见 `/tmp/addp-host-list-pagination-diagnostic.log`；没有将其归因为查询慢或来源异常。修正为未知总数使用 `null`、只用成功返回的总数发布分页；不加重试、延迟或改写服务端分页。最终八项专项覆盖中英文390px组合筛选、停用字符串false、翻页与每页数量、当前页唯一摘要、空结果无指标读取、失败／旧响应／身份变化清除、自动刷新不提交草稿，以及第二页空结果／失败不回写第一页。
+
+本轮最终命令显式将已核验的 Node `24.19.0` 加入当次 PATH（路径 `/Users/pampa/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin`），不更改个人运行环境。实际结果：
+
+| 标准入口 | 结果及范围 |
+| --- | --- |
+| `make test-common-frontend` | 277项共享T1通过，无失败／跳过，含规范值、双语和唯一所有权；原System重复路径已删除。 |
+| `make test-system-frontend` | 172项单测、240项受控API浏览器回归及构建通过；保留原主机管理的检索、编辑、权限与响应隔离契约。 |
+| `make test-monitor-frontend` | 119项单测、436项受控API浏览器回归（16.6分钟）及构建通过；新增八项含上述分页红灯的最终回归。 |
+| `make test-console-frontend` | 195项单测、222项受控iframe浏览器回归（10.1分钟）及构建通过。 |
+| Console标准browser launcher，`e2e/node-resource-navigation.spec.js e2e/host-node-navigation.spec.js` | 最终六项通过，模块内导航保持文档，浏览器历史按Console既有机制恢复当前iframe和条件，不要求跨外层历史永久保持原Frame对象。 |
+| `make test-frontend-ci-registration`；`changed-gate.py --dry-run` | 22项登记回归通过，21个前端登记完整；现有共享／System／Monitor／Console路径已命中，无新Make入口或workflow。干跑包含共享工作区其他owner，仅计路径发现，不计实际门禁通过。 |
+
+保留先前失败：Select内部输入值及空态文案的测试断言错误；Console新增用例错误要求浏览器历史后原Frame不卸载，纠正为已有单历史契约后六项专项和上述完整门禁均通过。分页回跳是真实产品缺陷，已由真实请求序列定位并通过最终回归。首轮误用系统Node25的结果及主动中断轮次不计标准通过；该版本下Console曾有Vite退出缓存未清零失败，未证实根因、不因Node24后继通过宣称修复。所有旧轮均不由局部成功覆盖。
+
+关键16项实现／测试摘要及日志摘要在 `/tmp/addp-host-list-final-receipt.json`，SHA-256 `ec59a5a6613d572360515e95daac332ab8109bef3b52b3d6ec4e9bb10f38f48c`；最终日志为 `/tmp/addp-host-list-{common-node24-final,system-node24,monitor-node24-final,console-node24-corrected-full,console-navigation-node24-corrected,frontend-registration}.log`。这些是本地共享工作区T1／受控T3／构建证据，不代表固定提交CI、个人Safari、真实System身份T4／Hosted、多真实主机或生产T5；本批未运行后端T2（后端未变）。未重启个人服务、操作个人数据库、轮询／派发／重跑CI或Hosted，也未设置定时任务。功能清单第36行仍部分实现，数据库／任务／角色／网卡关联筛选及真实运行验收保留；第37行的其他总览列与健康评分缺口不变。
+
+### 主机与引擎自动筛选统一（2026-10-29）
+
+主机、服务、引擎列表统一复用Common Frontend的createAutoFilter：文本300毫秒防抖，清空和Enter立即提交，删除主机／引擎搜索按钮；主机类型及纳管状态原本即选即查，继续合并当前名称条件。相同URL不重复读取并恢复刷新；筛选回第一页，主机保留页大小／列视图，引擎保留刷新间隔。原System匹配、授权、批量摘要、查询预算与服务趋势边界均保持，无API或Swagger变更。
+
+共享调度唯一负责等待／立即提交、待提交状态、取消与隐藏暂停／前台恢复；服务页原本地防抖生命周期删除，三页只保留领域查询、权限和路由组合。重置、清空、手动刷新、切换视图／页面及身份变化不被旧文本延迟覆盖；中文输入法继续沿原控件确认后提交。自动刷新只读已提交范围，待提交时暂停旧调度；不另建指标解释、错误或缺样提示路线。
+
+本地实际验证：
+
+- `make test-monitor-frontend`：131项单元测试、503个浏览器场景及构建全部通过，含主机／引擎新增6项和服务原46项；原时间、分页、趋势与撤权边界保留。
+- `npm --prefix monitor/frontend run test:e2e -- e2e/automatic-filter-enter.spec.js`：三页独立3项通过（10.5秒）；当时只安装受控时钟、未显式暂停，不能单独证明Enter在防抖前提交。后续显式暂停后的失败与共享修复见[告警自动筛选证据](Monitor告警与规则历史证据.md#平台告警自动筛选与字段提示2026-10-29)。原文件在完整套件发现之后加入，单独执行，不把原聚合计数冒写为506项。
+- `make test-console-frontend`：219项单元测试、263个浏览器场景及构建通过；新增主机／引擎中英文各两项，验证自动合并查询、清空／重置、System原参数、回第一页、URL replace与同iframe。
+- `make test-common-frontend`：290项中289项通过、1项失败；新增三项自动筛选／可取消调度／唯一归属测试通过。唯一失败仍是上一批ResourceTree直接组合所有权清单未登记其他会话的System组件，本批不修改该组件或清单，不能将共享聚合计为通过。
+
+新用例沿既有测试目录自动发现，Console原浏览器夹具已包含Monitor，模块Frontend标准入口与Platform矩阵继续覆盖，无需修改Make或Workflow。未运行未变的后端、数据库或Online runner；不重启个人服务、不操作个人身份或配置。上述仅为本地确定性T1／受控HTTP与时钟下的真实前端T3，不证明真实Safari登录、实际System筛选数据或Hosted。CI与Hosted仍等专门会话回传，未触发／重跑／轮询、不设置定时任务。
+
+日志：`/tmp/addp-host-engine-filters-{common,monitor-full,console-full,enter}.log`。上一批及本批共享失败分别保留，不将后续局部通过回填为旧失败通过；清单完整功能的原正式验收缺口不因这次交互统一而消失。
+
+### 主机与服务原位刷新（2026-10-30）
+
+同一对象／身份／已提交范围的请求在途保留读数、分页、设备表、图表及比较，按钮与 aria-busy 表示在途。首次加载仍有反馈；上下文、撤权或独立资源组失败清除相应旧值。手工刷新重读已展开设备；挂载告警按钮保留但禁用，第二页空结果不得触发第一页查询。
+
+13 项受控 T3 暂缓 HTTP，覆盖原 DOM／canvas、自动／手工刷新、设备重读和迟到拒绝。相关首轮 147／149，失败于旧图即完成及旧比较清空断言；完整首轮 531／534，首败组含旧挂载按钮移除、空结果分页跳回及服务比较等待，未到构建。修正后定向三项通过，完整 131 单元／534 浏览器／构建通过；12 项输入复核一致。原件 `/tmp/addp-host-service-inplace-*`。
+
+Safari 另验个人 Desktop VM 主机手工刷新和内存曲线自然推进，服务页当前 Monitor 实例的 CPU／RSS 曲线也实际推进并可悬停。采集不支持的文件系统／网络／TCP 与原生 macOS 资源组仍缺。Safari 离散观察只证明真实值与窗口更新；同一 canvas 与延迟响应隔离由受控 T3 覆盖。正式来源 T2、Hosted 及全程无闪未覆盖。
+
+### 主机详情就近提示（2026-10-31）
+
+复用 FieldHelp 将 CPU、负载、文件系统、网卡、设备容量及趋势说明移到对应指标、标题和选择器。数据、轴、窗口、固定历史说明和异常仍直显。Console 验证先桌面切换语言再缩至 620px，保持同 iframe、URL、请求数及当前来源状态。
+
+Monitor 131 单元、构建通过。浏览器首轮 143／144，旧用例等待已迁移的 CPU 比较正文；改为聚焦提示并等 aria-busy 结束后单项通过。Console 首轮 23／28，提示未退出产生两个 tooltip，四个容量用例仍要求在途清空；修正后定向 3／5，余两项为窄屏隐藏语言控件、列表切换刷新偏好误断应收起。桌面切换再缩窄、同上下文保留展开并重读后，两项分别通过；聚合失败保留。原件 `/tmp/addp-host-detail-tips-*.log`。
+
+个人 Safari 实际看到磁盘表头提示、逐设备读数及内存双轴／缩放提示，未提供的文件系统和网络仍直显。仅覆盖当前显示与提示，未覆盖原生 Linux、整套前端门禁或正式 Hosted。
+
+#### Console 窄屏 tip 回归的语言弹层退出同步（2026-10-31）
+
+| 固定源码和实际 Job | 结果 |
+| --- | --- |
+| `5cb1a9980a1829fc1250834f3a5d3fcb95e6580c` · [Console失败Job](https://github.com/pampa0629/addp/actions/runs/41149596599/job/124382684316) | 自然首轮，271／272 浏览器；620px 外层宽度断言首败，构建未执行。截图不足以定位溢出，邻近 ECONNRESET 未归因为首败。 |
+| `f8a1b435ce18597aa7a6eaa1233362bc4b72d7f6` · [Console成功Job](https://github.com/pampa0629/addp/actions/runs/41150779367/job/124386516227) | 272 项及构建通过，相关三前端目录字节无差异；仍不能证明旧失败根因修复。 |
+
+本机同标准场景复现，620px 时 scrollWidth 1171，桌面语言菜单尚在退出（right=1170.75），主内容和 iframe 仍 620。两条测试改为等实际 English 弹层 display:none 才缩窄，原宽度、iframe、URL 和请求断言保留。定向两项通过，隔离服务已清理。原件 `/tmp/addp-ci-20261031-092302/`、`/tmp/addp-host-tip-geometry-diagnostic.log` 和 `/tmp/addp-host-engine-tip-exit-sync.log`。个人来源不可用为独立问题；修正后的固定 Job 见下一节。
+
+#### 菜单退出同步修复的 Linux Console 门禁回传（2026-10-31）
+
+固定 `4a6a7a4fa574ddda204b61d73acbdb5c397e1e52` 的 [Platform CI run41156059896的Console Job124402993366](https://github.com/pampa0629/addp/actions/runs/41156059896/job/124402993366) 自然首轮 completed／success，实际 `make test-console-frontend` 执行 222 单元／272 浏览器及构建，selected=true。原件 `/tmp/addp-ci-20261031-100003/`。
+
+这是退出同步修正自身的 Linux 完整 Console Job，5cb 首败与 f8 后继通过仍各自保留；整个 Platform workflow、Hosted 及个人 Infra／Business 来源恢复未由本 Job 证明。
+
+### 主机详情当前对象变化的原位刷新保护（2026-11-02）
+
+沿原位刷新及6.3的对象失效契约，主机详情在重读System后、等待资源时也可能将新纳管状态与旧读数并列。新增UUID／名称／版本／enabled事实核对：变化后先清空标量、挂载容量／inode、磁盘／网卡、趋势、比较与缩放，再消费本轮结果；独立设备观察组件复用现有node.version／enabled守卫。本批不改变主机列表的整份快照更新方式，也不把每次HTTP返回的新引用当作变化；事实相同时沿原刷新保持行为，不扩大指标、采集、权限或API。
+
+新增停用／版本变更×手动／自动刷新4项，使用暂缓资源响应验证当前事实已重读但旧卡片／canvas尚不可保留，随后释放并核对缺样或新读数。修复前4项均失败（`/tmp/addp-host-owner-refresh-red.log`）；修复后标准 `npm run test:e2e -- e2e/node-resources.spec.js` 整份73项T3通过（2.4分钟，`/tmp/addp-host-owner-refresh-green.log`）。包括原位刷新、隐藏暂停／恢复、当前页摘要、热力、设备／挂载、双轴、缩放、比较、故障撤权及CPU空闲率旧场景，未删改原断言。前端132项T1通过，最终两页构建通过，日志分别`/tmp/addp-engine-owner-refresh-unit.log`、`/tmp/addp-owner-refresh-build-final.log`。
+
+同批[PG／Redis引擎页](Monitor采集来源与引擎指标历史证据.md#引擎当前对象变化的原位刷新保护2026-11-02)46项独立通过。标准脚本独占测试端口，没有启停个人服务；这些为受控T3，不外推个人Safari、真实来源或Hosted，不宣称完整Monitor浏览器门禁通过。CI 与 Hosted 结果在该记录中尚未认定。
+
+<a id="node-evidence-safari"></a>
+
+## Safari 缩放
+
+共享图表的受控回归、固定 Linux 产品步骤及原生 Safari 操作分列。真实缩放／刷新与真实凭据续期是不同场景。
+
+### 同设备双向吞吐同图（2026-10-23）
 
 主机资源页对同一磁盘的读／写、同一网卡的收／发使用一次现有趋势查询，同图显示两条独立折线；按全部有效点共同选择图表单位，并在图旁明确单位及末次评估值。所选方向仍决定采样明细，响应数组乱序不改变方向；真实零值保留，陈旧／缺样各自断开，缺序列、错误设备或评估网格错位拒绝整幅趋势。复用共享 ChartRenderer、格式化和请求隔离，没有新增采集、接口、权限、插值或设备汇总；其他标量、文件系统、磁盘 IO 耗时及 CPU／内存比较保持原单指标路径。规范见平台运行观测 6.3。
 
@@ -34,7 +335,7 @@
 
 第三次在 product_compile 阶段由守卫自动报 `owned_volume_stop_line_reached`，业务部署／身份／查询均未执行；报告 `local-report-window-final.json` 明确失败且 zero_owned_resources=true。最近成功样本为 4,235,309,056 字节（低于 4 GiB），独立只读 du 随后观察到私有目录 4,266,260 KiB（约 4.07 GiB）；旧守卫在触线断言前未追加触线样本，不能用最近成功样本冒充峰值，已将样本落盘移到断言之前并增回归。只读主仓库 `.git` 约 1.2 GiB，因此快照唯一切换为同提交的 file:// 浅克隆（depth=1、no-local），不复制无关历史，也不放宽资源／时间／验收断言；标准 runner 仍通过。下一次继续沿首次绝对截止时间与同样停止线，不能计为容量或正式身份已通过。
 
-## 内存容量与使用率双 Y 轴（2026-10-23）
+### 内存容量与使用率双 Y 轴（2026-10-23）
 
 主机资源页选择任一内存指标时，沿一次既有固定查询取得总量、可用量和使用率。共享 ChartRenderer 的显式 `valueAxes` 展示属性统一绘图：左轴为按有效容量样本选择的 IEC 单位，右轴固定 0–100%；只换算字节值，百分比不缩放。各序列按指标身份与同一评估网格对齐，缺样各自断线，错位或缺序列拒绝整图；采样明细仍由 URL 所选指标决定。相邻时段比较只读取使用率，容量缺样不伪造比例或阻止本已完整的使用率比较。不新增指标、接口、权限、采集或 Workbench 持久化配置，不推定内存泄漏。
 
@@ -58,7 +359,7 @@
 
 代码提交 `d4b31264dc7308ca7b1b7479e9b697a97580b16b` 推送后单次只读核对：[Platform CI 39881617580](https://github.com/pampa0629/addp/actions/runs/39881617580) 与 [Release/T2 39881617528](https://github.com/pampa0629/addp/actions/runs/39881617528) 均为 queued，不计为通过；安全回执 `ci-receipt.json`。没有手工调度任何 workflow 或设置后续跟踪。
 
-## 网卡收发速率柱状展示与局部缩放（2026-10-23）
+### 网卡收发速率柱状展示与局部缩放（2026-10-23）
 
 主机网卡趋势复用共享 ChartRenderer，以并排柱状显示同一网卡的接收／发送速率。保持现有完整一分钟平均字节速率、原时段、原步长和评估点，不换算累计量、分钟分桶流量或带宽利用率；图旁说明口径与末次值，轴显示 IEC 速率单位。真实零值保留，陈旧／缺样独立为 null；错误设备、网格错位、预算错误及撤权继续清除旧趋势。磁盘保持折线，内存保持双轴。共享展示属性 maxRows 显式允许该有界视图最多 1,000 行，其他柱图默认仍为 500，Workbench 持久化契约不变。密集常显数值标签关闭，tooltip 与采样明细保留数值及单位。
 
@@ -75,7 +376,7 @@
 
 以上为本地 T1/T3，不计真实来源与身份的 Hosted T4 或生产 T5；未运行完整 Monitor 其他领域浏览器全集，不外推其结果。CI 和 Hosted 结果等专门会话回传。清单第 38 行仅补网络柱图的局部缩放，第 39 行补网卡速率柱图；不能将全部图表拖拽缩放、图例筛选、资源热力面板及原行其他缺口同时标为完成。
 
-## CPU、内存与磁盘趋势复用共享时间缩放（2026-10-23）
+### CPU、内存与磁盘趋势复用共享时间缩放（2026-10-23）
 
 主机 CPU、内存和磁盘折线趋势接入既有共享 ChartRenderer 滑块，与网卡柱图沿同一路径保存临时视口。缩放只改变图中可见范围，完整 rows／series、查询窗口／步长、采样明细及相邻时段比较保持不变；说明紧邻图表展示。视口绑定主机、指标组、设备维度、时段、固定锚点、比较模式和当前身份，刷新及主题重绘保留；同组内存指标、同设备读写方向切换保留，不同组或上述范围变化以及查询失败时清空。不新增指标、API、权限、依赖或持久化配置；负载、运行时长、文件系统、服务及引擎图表不在本批接入范围。
 
@@ -90,7 +391,7 @@
 
 以上为本地 T1/T3 与构建／登记证据，浏览器使用受控 HTTP 夹具，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；本批未新跑 T2，原指标口径和来源未变。未查询、触发或重跑 CI／Hosted，未设置定时任务、重启个人服务或修改个人数据库；云端结果等专门会话回传。清单第 38 行仅补 CPU／内存／磁盘共享时间缩放子项，不能将所有图表缩放、完整图例交互验收或原行其他缺口一并记为完成。
 
-## 主机趋势图例筛选与悬停交互验收（2026-10-23）
+### 主机趋势图例筛选与悬停交互验收（2026-10-23）
 
 沿现有共享 ChartRenderer 补齐主机 CPU、内存、磁盘及网卡趋势的真实鼠标交互验收，产品渲染器、页面、指标、API、权限及查询均未修改。测试共用唯一 `resource-chart.fixture.js`，将原缩放专用状态读取统一为图表状态读取，按真实绘制图例的边界点击，并用图引擎坐标转换定位原始评估点后移动鼠标；不以 dispatchAction 模拟点击或直接调用 tooltip formatter 代替交互。已有缩放与网卡测试同步使用该 helper，旧函数路径删除。
 
@@ -104,7 +405,7 @@
 
 本批仅为受控 HTTP 夹具的本地 T1/T3、构建及登记证据，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；未新跑 T2 或其余领域浏览器全集，未重跑输入未变的共享组件单测。未查询／触发／重跑 CI 或 Hosted，未设置定时任务、重启个人服务或修改个人数据库。清单第 38 行可补上述四类主机图表的图例筛选与悬停本地验收，不代表所有图表、真实运行及原行其他缺口均已完成；CI 和 Hosted 等专门会话回传。
 
-## 负载、运行时长与文件系统趋势统一时间缩放（2026-10-23）
+### 负载、运行时长与文件系统趋势统一时间缩放（2026-10-23）
 
 主机页全部既有趋势统一开启现有共享 ChartRenderer 滑块，删除原 CPU／内存／磁盘／网络类别开关；新增覆盖负载、运行时长、文件系统容量／比例及 inode 数量／比例，不新增 renderer、指标、API、查询或权限。沿既有相对视口、图旁说明、原查询步长和完整结果；刷新保留，指标组、主机、时间、比较模式或身份改变及查询失败时重置。文件系统沿完整 device／mountpoint／fstype 区分对象，容量与 inode 的不同指标切换重置；不按挂载名猜同一资源。原有负载任务数、时长秒、容量 IEC、比例与数量口径均未改变。
 
@@ -119,7 +420,7 @@
 
 以上为本地 T1/T3、构建及登记证据，浏览器为受控 HTTP 夹具，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；未新跑 T2 或未涉及 owner 的门禁，未把缩放接入外推为专业图表或全部原始功能完成。未查询／触发／重跑 CI 或 Hosted、设置定时任务、重启个人服务或修改个人数据库。清单第 38 行可补主机负载／时长／文件系统共享缩放的本地结果；真实页面与来源验收仍等专门会话回传。
 
-## 主机运行时长趋势的自适应显示单位（2026-10-23）
+### 主机运行时长趋势的自适应显示单位（2026-10-23）
 
 主机运行时长曲线按完整已加载时窗内有效点的最大秒数选择秒／分钟／小时／天，纵轴与 tooltip 使用同一单位、两位小数；缩放不重选量级，刷新跨量级可以更新。共享 `scaleDurationValue` 与原复合时长格式化共用唯一 day／hour／minute／second 换算表，不读取时区或舍弃原始精度；Monitor 只换算图表 rows 与字段呈现。API 秒值、采样证据、重启判断、当前卡片及采样明细的原复合时长格式均不变。零值有效，陈旧／缺样不选级且保持 null，全缺样默认秒；不新增配置、依赖、API 或权限。
 
@@ -137,7 +438,7 @@
 
 CI 专门会话回传补充（2026-10-23）：固定提交 `2cd3e278fc00c19183f3508f45253d31e9eef9f8` 的 [Platform Monitor frontend Job 120242877828](https://github.com/pampa0629/addp/actions/runs/39901181026/job/120242877828) 已实际执行 `Run Monitor frontend gate` 并成功。Owner 已核对 Job 的提交身份／实际步骤及原始日志：101 项单测、339 项浏览器均通过，失败／跳过为零，构建 10.36 秒；包含 memory／disk／network 中英文六项图例／悬停／缩放及新增两项时长单位场景。原始材料为 `/tmp/addp-ci-20261023-070013/critical-120242877828.json`、`job-120242877828.log`、`Monitor-2cd3-frontend-actual-pass-audit.json`。这是该固定输入的前端 CI 证据，不表示父 Platform workflow 全部通过，不覆盖后续服务独立缩放／进程环比提交、实源告警 T2 或 Hosted；旧输入失败及尚未复现的加载／动画偶发根因继续保留，未重跑任何门禁。
 
-## 主机固定目录全部图例与悬停交互（2026-10-23）
+### 主机固定目录全部图例与悬停交互（2026-10-23）
 
 本批只补齐既有主机资源交互的本地验收，不新增产品指标、算法、权限、接口或部署变更。`host-trend-interactions.spec.js` 沿同一鼠标／图例／缩放 helper，覆盖当前全部 25 项固定指标：CPU 核数／忙碌率、内存三项、1／5／15 分钟负载、运行时长、五项文件系统容量、四项 inode、五项磁盘及两项网卡指标。每种组合实际读取对应采样时间／数值／单位，验证零与缺样／陈旧值、图例隐藏至全隐藏及恢复、缩放后精确悬停、原始图表点／URL／采样明细不变且无额外查询；负载按任务数、inode 与核数按整数，容量／速率和时长沿现有单位。错误／撤权清除补到负载与字节／inode 挂载分支。
 
@@ -145,467 +446,61 @@ CI 专门会话回传补充（2026-10-23）：固定提交 `2cd3e278fc00c19183f3
 
 本批仅为受控 HTTP 夹具加真实图表的本地 T3 与 T1／登记证据；产品源码未变，未重建或重跑输入未变的其余模块／前端全集。未运行 T2、真实身份／来源 T4、Hosted 或生产 T5，未追查／重跑 CI、设置定时任务或重启个人服务。历史加载／动画偶发失败仍不能由本次通过推定根因已修复。原表第 38 行图例／悬停本地专项缺口可关闭，真实运行、留存与原行其他缺口保留。
 
-## 主机 TCP 当前连接数（本地）
+### 同组主机趋势切换的事实比较修复（2026-11-02）
 
-2026-10-23，按用户确认口径新增固定主机标量 `node.tcp.current_connections`，单位 `connections`，只读当前宿主网络命名空间的 ESTABLISHED＋CLOSE_WAIT，不含监听／TIME_WAIT。复用唯一 `resourcequery` gauge、节点与来源身份、预算、新鲜度、即时和趋势 API；固定主机目录由 25 项增至 26 项，标量由九项增至十项。整数须在 0～2^53−1，合法零值保留，缺样不变成零；采集器缺失、重复原始序列及外来节点不能构造有效值。受限 Docker Desktop 来源不开放 netstat，不补容器命名空间统计，返回 `no_data`。页面新增就近口径／缺样提示、即时卡片及同一趋势、缩放、图例与悬停能力。CPU／内存摘要、TOP5、告警、生产权限及身份不变。
+固定 `aee6bcc427f714aefb97b58090789a8e6acb3fab` 的 [Monitor前端Job125032898526](https://github.com/pampa0629/addp/actions/runs/41368234803/job/125032898526) 584／590，六项双语内存／磁盘／网络的同组切换使缩放归零，本地同六项复现。根因为查询切换先清空展示 node，再以空展示值比较 System 响应。修正用最近确认的主机事实比较；换主机／身份即清空，真实事实、查询范围、设备、指标组、失败或撤权仍按原规则重置。
 
-冻结产品基线 `3f0105d08bf2fa632f1888c5a9331c062cf89240`，仅叠加本批文件，证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-tcp-current-7nslrz9k`；`inputs.json` 记录本批文件，`product-inputs-sha256.json` 记录 2118 项产品、测试及共享依赖输入，提交前与共享工作区一致。登记检查另同步当时最新已提交编排输入，版本见 `registration-head.txt`；未混入其他会话未提交实现。实际验证：
+六项通过后加入真实名称／版本变化两反例，定向 8 项、132 单元和构建通过。18 个 spec 扩散回归 261／266，失败涉及挂载过滤第二请求、设备列表、英语初次筛选、热力初次显示及英语内存动画等待；后者已通过缩放值断言，与旧 CI 的缩放归零不同。前四定向补验通过，组合原失败和未定根因保留。原件 `/tmp/addp-ci-20261102-090015/`、`/tmp/addp-monitor-zoom-*.log`，失败目录 `addp-monitor-playwright-results-n4OP7X`。个人 Safari 与 Hosted 未覆盖。
 
-- `make test-module MODULE=monitor GO_ONLY=1`：Monitor Go T1 通过（`go-t1.log`）。固定目录、节点／来源隔离、整数／安全上限、负值／非有限值、缺样／陈旧／未来样本均有确定性用例；默认跳过的集成用例不算 T2。
-- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`：退出 0（`host-resources-t2.log`）。真实 node_exporter／Prometheus 的全来源即时及趋势、受限 Desktop 的 TCP 无数据分支通过；同一入口执行五个固定 promtool 场景：有效零、有效数量、重复来源、外来节点和缺失采集器。原有主机来源故障恢复及预算回归通过，退出核验当次容器／网络／卷和临时文件零残留。这是本地隔离 T2，不是原生 Linux 正式身份页面 T4，亦不作为服务实例 CPU／RSS 告警实源验收结果。
-- Node v24.19.0 下 `make test-monitor-frontend`：111 项 T1、405 项浏览器 T3 及构建全部通过（`frontend-full.log`）。覆盖 TCP 中英文整数／零值、来源缺失后恢复、错误小数／负数／越界拒绝，及真实鼠标图例／悬停／缩放；其余主机、服务和错误／撤权场景一并回归。`screenshots/` 保留中英文 TCP 窄屏趋势实图，中文精确整数与单位已人工核对。页面测试使用受控 HTTP 夹具，不冒充真实来源页面。
-- `bash scripts/swagger/gen-swagger.sh monitor` 与 `bash scripts/swagger/check-route-coverage.sh monitor`：最终生成成功，90 个公开路由方法覆盖一致（`swagger-generation-final.log`、`swagger-coverage.log`）；生成工具固定 module v1.16.6。首次未复制根 go.work 的生成失败仅为临时副本准备错误，保留在 `swagger-generation.log`，不计为通过证据。
-- `make test-node-metrics-online-runner`：最终 139 项本地入口／身份／收据守卫及 System 既有 Metrics Go 夹具通过（`online-runner-final.log`）；`make test-frontend-ci-registration`：20 项检查、21 个前端登记通过（`registration-final.log`）。
-- `npm test -- --testNamePattern='Online scalar resource receipt identity'`（Console frontend）：最终 8 项指定收据测试通过（`console-receipts-final.log`），包含精确十项且拒绝旧九项请求；其余 186 项因过滤未执行，不计为 Console 全量通过。
+#### 缩放修复的固定 Linux 产品门禁回传（2026-11-02）
 
-用户同日确认原一次性 `platform-node-metrics` 临时平台管理员限定用途增加当次主机 TCP 当前值、趋势和同一真实 Console 页面。规范与标准 runner 已同步精确十项标量；仅为多出的 TCP 选中与恢复两轮各六读，将原 174 项收据上限调整为 186，仍严格拒绝未授权指标、重复／缺失、错误节点或 query。总预算、密码／MFA、独立 Prometheus、节点范围、无租户业务及退出清零保持原约束。本会话没有触发或轮询 CI／Hosted，没有设置定时任务或重启个人服务；真实身份／来源 T4 及 CI 等专门会话回传，生产 T5 未运行。原表第 37 行（B36，主机实时资源总览列表）的 TCP 指标能力已落地，但主机列表仍只展示核心摘要，综合健康评分与完整总览列仍未实现；第 38 行（B37，资源趋势曲线图）新增 TCP 本地证据，不由本次结果推导留存、长期比较或其他真实运行范围通过。
+固定 `74edeb978bd6a8c2874401b0df336bf050a2e0e5` 的 [Platform Run41375543514／Monitor前端Job125054853600](https://github.com/pampa0629/addp/actions/runs/41375543514/job/125054853600)（attempt 1）实际产品步骤成功，592 浏览器与构建通过，含六项同组反例和两项真实对象变化。整 Job 在随后 Post Prepare 的 Node 缓存 tar 阶段取消；原 aee 六失败、`7e2` 未运行完及本机扩散五失败各自保留。原件 `/tmp/addp-ci-20261102-104553/`。
 
-## 主机资源热力面板（本地）
-
-2026-10-23，主机详情新增 Monitor 领域组合组件 `HostResourceHeatmap.vue`，复用已授权的即时 CPU 忙碌率、内存使用率和每个完整设备／挂载点／文件系统身份的使用率；不新增采集、接口、查询、权限或持久状态。百分比沿原指标与共享格式化，不从容量重新推导；CPU 保留一分钟窗口，每项就近展示原状态与采样时间。有效使用率按 0～100% 连续混合现有主题绿／红色，基础进度条复用 Element Plus；合法零和 100% 有效，陈旧／缺样不着色、不补零。未采集分区和来源失败显示原原因，分区不可用不抹除可读 CPU／内存。完整挂载身份保留于色块及趋势导航，CPU／内存导航清除挂载维度。没有综合健康分、颜色告警阈值或新增资源规则。
-
-冻结基线及本批文件见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-heatmap-s0n4pjbs/final-inputs.json`；最终 436 项前端／共享／浏览器入口输入记录在 `final-frontend-inputs-sha256.json`。初始完整回归的产品输入相同，仅本次新增测试的刷新同步／截图检查和服务环比测试的请求同步随后修订，完整回归输入另记 `full-frontend-inputs-sha256.json`，不把两次输入混为一份。
-
-- `make test-monitor-frontend`：完整批次执行 111 项 T1，通过 407 项浏览器用例、失败 2 项，命令退出 2，未执行其后的构建（`frontend-full.log`）。两项分别为新热力用例在刷新完成前挂起下一轮，以及既有服务环比用例在取消比较后、尚未取得新摘要与趋势请求前断言上一条请求。最后仅修正这两个测试文件，产品及共享输入未变；最终 `npm --prefix monitor/frontend run test:e2e -- host-resource-heatmap.spec.js process-comparison.spec.js` 的 19/19 项通过（`final-affected-browser.log`，4 项热力及 15 项服务比较）。其余 390 项未变用例复用上述完整批次有效结果，不将完整入口先前的非零结果写成最终全量重新通过，也不重复累计交叠用例。服务用例用受控挂起唯一 `process_resource_summaries` 响应，证明 UI 已取消比较时旧请求仍在；释放后必须新增且只新增一条正确五分钟趋势请求，再核对起点。受控探针初轮误指向不存在的 observations 端点，失败记录保留在 `final-affected-browser-before-endpoint-fix.log`，已改为 API 客户端实际使用的 summaries，未改产品请求或数据口径。
-- `npm --prefix monitor/frontend test`：111 项 T1 通过（`unit.log`）。
-- 最终标准 `npm --prefix monitor/frontend run test:e2e -- host-resource-heatmap.spec.js`：4/4 浏览器 T3 通过（`heatmap-final-verified.log`），覆盖中英文精确数值／原挂载比例、相同挂载点的不同设备／文件系统、窄屏、主题变量动态变化、合法零／满量程、无额外请求、当前指标／完整挂载导航、陈旧／缺样不着色、分区故障后恢复、未采集、权限拒绝及身份切换后迟到响应清除。初轮失败为测试对 URL 编码和现有缺源文案的错误预期、夹具改写未采集状态，以及在上一轮刷新完成前挂起下一轮所造成的测试自锁；最终使用解析后的 URL、原文案／数据状态并在挂起前等待既有刷新按钮可用，未增加产品重试或改变刷新逻辑。
-- `npm --prefix monitor/frontend run build`：最终构建通过（`build-final.log`）；未修改后端/API/Swagger，无需重建后端或新增 T2。
-- `make test-frontend-ci-registration`：20 项检查及 21 个前端登记通过（`registration.log`）。原 Monitor Playwright glob 和前端 CI 自动覆盖新增组件／用例，无新增标准入口或 workflow；未触发或轮询 CI。
-
-`screenshots/` 保留最终中英文浅色／深色窄屏面板实图，已人工核对中文浅色布局与单位。T3 使用受控 HTTP 夹具与真实组件，未操作个人 Safari 或重启个人服务；未运行真实身份／来源页面 Hosted、T4 或生产 T5，CI 和 Hosted 等专门会话回传，未设置定时任务。原表第 39 行（B38，主机底层资源明细）的热力面板能力已实现；该行的完整硬件汇总／分区健康判定及新增页面真实运行证据仍需分别核对，不能由本批界面色彩推定健康判定或告警通过。
-
-## 主机列表五项核心摘要（本地）
-
-2026-10-23，按用户确认范围，主机列表展示 CPU 逻辑核数／一分钟忙碌率、内存总量／使用率与运行时长，默认每页 20 台。复用原单位、当前节点身份／版本、采样新鲜度、采集状态和列表生命周期；容量用 IEC 单位，运行时长用复合时长。固定主机与操作列、标题允许换行，每项保留独立状态。当前页只进行一次摘要 API 请求，不逐台读取详情或补齐失败列；返回乱序仍按节点身份映射，单项陈旧不抹除其他有效值，整批缺项拒绝并清空旧摘要，主机列表仍保留。
-
-`/platform/resource_summaries` 唯一契约现在显式携带 `node_ids` 和 `metrics`，只接受上述五项的非空无重复子集，不保留省略参数的旧请求。唯一批量内核复用原公式、两次固定 Prometheus 请求、整批期限／并发和逐节点 User 授权；在 Owner 读取与指标查询前按节点数乘指标数预检预算。默认 20 × 5 = 100，21 台五项请求整批拒绝，不拆批或提高预算；TOP5 与采集配置页显式保持 CPU／内存百分比两项，原 50 台 TOP5 上限、比较和热力指标范围不变。API、调用方、Swagger 及既有 Hosted 收据／拒绝测试同步，仍只在原已确认十项节点指标的读取范围内选五项，不新增权限、角色或身份用途。
-
-冻结基线 `d798875a0732cb18e42d1772799d7c91b007542e`，仅叠加本批文件。证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-list-core-v8j8u6ci`，`inputs.json` 记录最终本批文件，`frontend-inputs-sha256.json` 记录 437 项前端／共享／浏览器入口输入。其他会话的 engineApprovalInitialization 两项共享未提交 WIP 未混入冻结副本；本任务源码及其余前端输入与工作区核对一致，不外推整个共享工作区的 WIP。实际验证：
-
-- `make test-module MODULE=monitor GO_ONLY=1`：Monitor Go T1 通过（`go-t1.log`）。五项／两项显式投影共用内核；20 台五项、50 台两项边界通过，21 台五项在任何 Owner／来源读取前拒绝；空／重复／未知／分组／不在摘要范围的指标拒绝，停用、跨节点、当前用户 Token 与完成时新鲜度沿原规则核验。
-- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`：退出 0（`host-resources-t2.log`）。真实 node_exporter／Prometheus 上五项摘要的完整来源及受限 Desktop VM 读取、外来节点缺样隔离通过；原 TOP5 的受控多源覆盖／预算及来源故障恢复回归通过。退出核验当次容器／网络／卷和临时文件零残留；该结果是本地隔离 T2，不是多真实主机、正式身份页面 T4 或生产 T5。
-- Node v24.19.0 下，`npm --prefix monitor/frontend run test:e2e -- host-list-core.spec.js`：20 台主机的 2 项中英文专项通过（`core-list-browser.log`），验证一次精确五项批量读取、默认每页20台、CPU 核数／百分比、IEC 容量、复合时长、乱序身份匹配、单项陈旧、整批缺项后的清除／恢复及无逐行详情查询。后续完整门禁另覆盖最终表头换行。
-- 最终 `make test-monitor-frontend`：112 项 T1、411/411 浏览器 T3 及构建全部通过，命令退出0（`frontend-full.log`，浏览器约15分钟，构建4.46秒）；本次输入下无失败或跳过。覆盖主机／采集列表的投影隔离、TOP5、详情、热力、趋势与服务／告警回归；不把前面的专项与整批交叠用例重复累计。`screenshots/` 保留最终五项列表中英文实图，已人工核对中文布局、单位与可读表头。
-- 首轮 `npm --prefix monitor/frontend run test:e2e -- node-resources.spec.js monitoring-target-list.spec.js resource-overview.spec.js`：89 通过、3 失败（`focused-browser.log`）；失败是旧列表用例仍断言两列数值或不带 metrics 的请求，已按精确五项和必填选择修订，不放宽采集配置页两项断言或产品校验。
-- `make test-node-metrics-online-runner`：139 项本地入口／身份／收据守卫及 System Metrics Go 夹具通过（`online-runner.log`）；新增拒绝省略指标选择、旧两项列表请求及缺失核心列的反例。仅为准备好的正式入口本地检查，没有运行 Hosted。
-- `bash scripts/swagger/gen-swagger.sh monitor` 和 `bash scripts/swagger/check-route-coverage.sh monitor`：生成成功，90 个公开路由方法覆盖一致（`swagger-generation.log`、`swagger-coverage.log`）。固定 Swag module v1.16.6。`make test-frontend-ci-registration`：20 项检查与21个前端登记通过（`registration.log`）。
-
-因摘要请求契约同次更新，个人环境体验需由用户按标准入口重启 Monitor 后端；前端改动不要求重启其他后端。原表第37行（B36，主机实时资源总览列表）仍是部分实现：本批核心五项已具备，三档负载、TCP 与存储／网卡明细仍在主机详情，未补完整列表或综合健康评分；新列表的真实身份页面 Hosted 与生产规模证据继续待专门会话回传。
-
-## Safari 主机列表右侧列与前台自动刷新（2026-10-24）
-
-沿用户已重启的个人环境及现有平台系统管理员会话，只读复验 `http://localhost:5170/monitor/node-resources`。最初辅助功能树仍报告页面隐藏／自动刷新暂停，原生横向滚动返回 `noWindowsAvailable`；AX Raise／窗口菜单操作未使其恢复。用户手动激活当前 Safari 标签并保持前台后，树显示焦点在当前 HTML、自动刷新已开启，原生滚动条拖动可用。该前后观察说明这次验收所需的现场条件已恢复，不能反推全部历史窗口／截图问题的根因。
-
-已实际截图核对内存使用率与运行时长的表头和值，两列可读、百分比和复合时长单位正确，固定主机名称及查看资源入口仍保留。08:30:23（Asia/Shanghai）显示 43.20%、3 天 12 小时 21 分钟；08:31:35 显示 42.46%、3 天 12 小时 23 分钟，且自动刷新仍开启。整个前台记录区间没有点击手动刷新、重载或修改每 15 秒的选择；仅横向滚动、拖动表格滚动条及临时收起／恢复 Safari 侧栏，中间另留 18 秒一次性观察等待。08:29:19～08:31:58 的六份辅助功能文本记录多次 CPU／内存数值自然变化和时长推进，恢复原侧栏后两列仍可读，默认每页 20 台、当前一台 VM。由此确认本次单机页面前台自动更新及右侧列视觉复验通过；没有网络瀑布证据，不推断精确请求次数、重入并发或隐藏期间网络取消已在此实测。
-
-证据目录 `/tmp/addp-safari-host-list-Su1V5L/`：`foreground-before.txt`、`scrolled.txt`、`right-actual.txt`、`right-columns-final.txt`、`automatic-after-cycle.txt`、`restored-sidebar.txt` 及对应原生 JPEG 截图；`verification.json` 保存采样时间、读数、动作与限制。`health-ready.json` 记录 Monitor HTTP 200、ready／registered、实际后端构建 `e931905933bab26701e2586eb8df9a49d9da4a30`。本次文本／状态／时长推进／观察间隔及截图格式完整性断言通过；首次记录脚本误把原生 JPEG 当作 PNG 校验而失败，已按实际格式改名并核对，未修改截图像素或产品代码。不重启个人服务、不改配置或凭据，没有 CI／Hosted 查询、调度或定时任务。此结果仅为个人单台 Desktop VM 的页面现场复验，不计一次性隔离 Hosted／T4、多真实主机、其他角色／撤权、长窗或生产 T5。
-
-## 主机监控类型／纳管状态筛选与分页回跳修正（2026-10-25）
-
-Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地址交集查询，类型／状态选择同时提交名称草稿并回首页；重置保留每页数量及刷新偏好。详情、返回、刷新和 Console 单历史保留已提交条件，指标请求仍只有匹配当前页的五项摘要，空页不请求指标。共享前端唯一 `HostNodeFilters`／`resolveHostNodeFilters` 替换 System 原控件及类型／状态解析分支，删除迁出的“全部类型／状态”词条；不新增后端接口、权限、指标、数据库或部署依赖，System API／Swagger 契约不变。
-
-新增真实分页用例暴露原页面缺陷：切第二页后重读立即将未知总数设为零，Element Plus 的页数监听自动回写第一页。诊断实际记录 `1 → 2 → 1` 三次 System 列表请求，见 `/tmp/addp-host-list-pagination-diagnostic.log`；没有将其归因为查询慢或来源异常。修正为未知总数使用 `null`、只用成功返回的总数发布分页；不加重试、延迟或改写服务端分页。最终八项专项覆盖中英文390px组合筛选、停用字符串false、翻页与每页数量、当前页唯一摘要、空结果无指标读取、失败／旧响应／身份变化清除、自动刷新不提交草稿，以及第二页空结果／失败不回写第一页。
-
-本轮最终命令显式将已核验的 Node `24.19.0` 加入当次 PATH（路径 `/Users/pampa/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin`），不更改个人运行环境。实际结果：
-
-| 标准入口 | 结果及范围 |
-| --- | --- |
-| `make test-common-frontend` | 277项共享T1通过，无失败／跳过，含规范值、双语和唯一所有权；原System重复路径已删除。 |
-| `make test-system-frontend` | 172项单测、240项受控API浏览器回归及构建通过；保留原主机管理的检索、编辑、权限与响应隔离契约。 |
-| `make test-monitor-frontend` | 119项单测、436项受控API浏览器回归（16.6分钟）及构建通过；新增八项含上述分页红灯的最终回归。 |
-| `make test-console-frontend` | 195项单测、222项受控iframe浏览器回归（10.1分钟）及构建通过。 |
-| Console标准browser launcher，`e2e/node-resource-navigation.spec.js e2e/host-node-navigation.spec.js` | 最终六项通过，模块内导航保持文档，浏览器历史按Console既有机制恢复当前iframe和条件，不要求跨外层历史永久保持原Frame对象。 |
-| `make test-frontend-ci-registration`；`changed-gate.py --dry-run` | 22项登记回归通过，21个前端登记完整；现有共享／System／Monitor／Console路径已命中，无新Make入口或workflow。干跑包含共享工作区其他owner，仅计路径发现，不计实际门禁通过。 |
-
-保留先前失败：Select内部输入值及空态文案的测试断言错误；Console新增用例错误要求浏览器历史后原Frame不卸载，纠正为已有单历史契约后六项专项和上述完整门禁均通过。分页回跳是真实产品缺陷，已由真实请求序列定位并通过最终回归。首轮误用系统Node25的结果及主动中断轮次不计标准通过；该版本下Console曾有Vite退出缓存未清零失败，未证实根因、不因Node24后继通过宣称修复。所有旧轮均不由局部成功覆盖。
-
-关键16项实现／测试摘要及日志摘要在 `/tmp/addp-host-list-final-receipt.json`，SHA-256 `ec59a5a6613d572360515e95daac332ab8109bef3b52b3d6ec4e9bb10f38f48c`；最终日志为 `/tmp/addp-host-list-{common-node24-final,system-node24,monitor-node24-final,console-node24-corrected-full,console-navigation-node24-corrected,frontend-registration}.log`。这些是本地共享工作区T1／受控T3／构建证据，不代表固定提交CI、个人Safari、真实System身份T4／Hosted、多真实主机或生产T5；本批未运行后端T2（后端未变）。未重启个人服务、操作个人数据库、轮询／派发／重跑CI或Hosted，也未设置定时任务。功能清单第36行仍部分实现，数据库／任务／角色／网卡关联筛选及真实运行验收保留；第37行的其他总览列与健康评分缺口不变。
-
-## 主机列表负载与连接视图（2026-10-26）
-
-主机列表默认保留核心资源五项，新增“负载与连接”视图，仅请求 1／5／15 分钟系统平均负载及 TCP 当前连接数。复用既有指标公式、单位、新鲜度、当前用户逐主机授权及同一批量摘要；后端摘要白名单同步为这两组共九项标量的非空无重复子集，不新增接口或权限。每页默认 20 台，新视图请求 80 条序列，继续在 Owner 裁决和来源查询前校验原整批预算。TOP5／采集配置仍只请求原两项。
-
-唯一 URL 参数为 `list_view=load-connections`，默认核心资源省略；切换保留已提交筛选、分页和刷新，不提交搜索草稿；详情返回、重载及重置筛选保留视图。列标题就近解释负载为任务数而非百分比、TCP 为 ESTABLISHED＋CLOSE_WAIT。有效零、缺样、失败及撤权不混淆，迟到响应不能覆盖新视图。
-
-本地验证：
-
-- Node `v24.11.1` 下 `make test-monitor-frontend` 退出 0：124 项单元测试、450 项浏览器场景（含新增六项）与 Vite 生产构建通过。中英 20 台主机验证单批精确四指标／80 条序列、响应乱序、TCP 有效零和独立缺样；另覆盖窄屏、视图切换、详情返回／重载、重置、超限／撤权、15 秒定时刷新（测试时钟）和身份切换后的迟到响应清除。既有构建大 chunk 提示不影响构建成功。日志 `/tmp/addp-host-list-final-gate.log`；浏览器结果目录见日志 `Browser gate monitor` 行，截图 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-load-6wzJX2/zh-cn.png` 与同轮完整门禁截图路径见日志。首轮六项专项有两项因脚本点击 Element Plus 透明 radio 输入框被标签遮挡而失败；改为点击可见标签后，最终完整门禁全部通过，原失败日志 `/tmp/addp-host-load-e2e.log` 保留。
-- `make test-module MODULE=monitor GO_ONLY=1` 退出 0，覆盖两组摘要的预算、逐用户授权、停用排除、未知／新鲜度及批量身份隔离；新增四指标 25 台可规划、26 台在 Owner／来源读取前拒绝。日志 `/tmp/addp-host-load-go.log`。本地 Go T1 不替代真实来源 T2。
-- `bash scripts/swagger/gen-swagger.sh monitor` 及 `bash scripts/swagger/check-route-coverage.sh monitor` 均退出 0，96 个公开路由方法一致；日志 `/tmp/addp-host-load-swagger.log`。
-
-实源缺口：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources` 退出 2，在公共 mTLS 初次采样前置报 `Timed out: real mTLS scrape and controlled job label`，封闭诊断为 `error_kind=tls/health=down`。八项固定窗口 promtool 测试通过不等于整门禁通过；本批新增四指标真实摘要断言尚未执行。与本专题既有公共采样失败边界一致，不由现有诊断推断具体证书根因，不改 TLS／等待时长、不盲目重跑。日志 `/tmp/addp-host-load-t2.log`；项目 `addp-metrics-t2-786570fda5424602a680465383cd9092` 的容器／网络／卷在退出后分别按 Compose project 标签只读核验均为空，临时目录由标准入口清理。
-
-个人 Safari 初次复验曾因运行中的旧 Monitor 后端仍按五项白名单拒绝新摘要而失败；2026-10-26 用户自行执行 `./scripts/dev/restart.sh -monitor` 后，沿原平台管理员会话只读复验，新视图能读取真实三档系统负载。初次为 8.21／9.07／10.83 个任务，点击页面“刷新”后为 8.32／8.84／10.58 个任务，采集状态为“正在采集”，不再出现摘要读取失败。详情导航保持同一主机 `755953df-488c-410a-88d4-0ecc47eb1351` 及 `list_view=load-connections`，返回列表和整页重新载入仍选中该视图并重新读取负载。
-
-TCP 在列表及详情均为“—／缺失”，详情就近明确“当前来源未提供可用的宿主 TCP 统计，不代表连接数为 0”；仅验证受限 Docker Desktop 来源的缺样表达，不计真实 TCP 有效数值通过。AX 原始证据为 `/tmp/addp-host-load-safari-e8AXcN/load-refreshed.ax.txt`、`host-detail.ax.txt`、`load-reloaded.ax.txt`。截图能见真实负载，但按钮着色与 AX 选中状态存在滞后，右侧横向滚动返回 `noWindowsAvailable`，页面持续报告隐藏；故右侧 TCP 实际截图、前台自然自动刷新不计本轮通过，也不把个人单 VM／管理员会话结果外推为多主机、TCP 有效来源、此前失败的隔离 T2 或正式 Hosted。未操作个人数据库、权限或服务进程，未手工触发／轮询 CI 或 Hosted，未设置定时任务；正式结果仍等专门会话回传。
-
-## 主机列表按设备展开（2026-10-26）
-
-2026-10-26 用户确认先做主机行内按设备展开，不计算跨设备整机摘要。列表及详情的磁盘／网卡表格、单位、列旁解释、缺样状态、活动磁盘排序／无活动设备展开、精确设备趋势入口唯一归属 `monitor/frontend/src/components/HostDeviceResources.vue`，删除 `NodeResources.vue` 原内联设备表格和重复派生；列表读取组合由 `HostDeviceObservation.vue` 消费既有 `resource_observations`。最多打开当前授权页一台主机的一类明细，未展开无设备请求；磁盘固定五项、网络固定两项，沿原一分钟窗口、单次预算及授权，不新增接口、权限、指标或设备总量。
-
-展开只属于临时页面状态；筛选、分页、列视图切换、详情导航、整页重载及身份变化关闭展开。刷新在主机仍处于当前授权页时保留选择、重读数据；切换／收起／离页取消在途请求，迟到结果不恢复旧内容。普通失败／超限清除设备值并保留仍授权的标量列表；设备 401／403／404 清空列表并停止自动读取。原始 node_version 必须与当前行版本相同；未知、未提供、陈旧与真实零分别显示。展开面板按列表可视宽度布局，窄屏刷新按钮可见，宽设备表保留自身横向滚动。
-
-验证使用 Node `v24.11.1` 和原标准入口 `make test-monitor-frontend`：最终退出 0，125 项单元测试、459 项 Playwright 场景、Vite 生产构建全部通过；既有 chunk 大小提示不影响构建。新增九项浏览器场景覆盖中英和窄屏边界、无预取、单主机／单类别精确请求、默认箭头、折叠与有效零、类别切换的迟到旧响应、预算／版本错误及方向独立缺样、采集未提供、全局手动刷新、临时状态清除、精确设备趋势及列表回跳、测试时钟的15秒刷新／隐藏暂停、当前主机离页与撤权停止。旧详情页折叠、说明弹层、设备／网络趋势与交互也在同一完整门禁中通过；组件唯一所有权约束同步。没有重跑未变化的后端或此前公共 mTLS 前置，也未手工触发／轮询 CI 或 Hosted、设置定时任务或重启个人服务。
-
-最终日志 `/tmp/addp-host-devices-final-gate-v2.log`，新增专项 `/tmp/addp-host-device-expansion-responsive.log` 九项通过。窄屏中英截图 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-device-list-te3HaS/zh-cn.png` 与 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-device-list-PZiaVK/en.png` 已目视检查。首轮 `/tmp/addp-host-devices-final-gate.log` 因目视发现展开区域继承外层宽表宽度、刷新按钮离开可视范围而主动中止，119 项通过／1 项中断／339 项未运行，未计为完整通过；修正宽度后从标准入口完整重跑。早期静态断言仍指向旧内联设备循环，已同步为唯一组件归属，不保留旧实现。
-
-个人 Safari 已从现有管理员会话读取到“设备明细／磁盘 IO／网卡吞吐”入口；工具展开操作被 `ScreenCaptureKit -3811`／`noWindowsAvailable` 阻断。用户随后手动激活并明确反馈“已展开磁盘 IO”，但工具仍返回未展开且报告隐藏的页面。窗口菜单只列一个控制台窗口，重新选中同一窗口后，AX 与截图仍未显示展开；这是用户反馈与工具观测不一致，不直接判为产品失败，也不计为实机通过。只读证据 `/tmp/addp-host-device-safari-jUB6Y1/current.ax.txt`、`after-user-expanded.ax.txt`、`after-user-expanded.png`。真实单 VM 磁盘读数、真实网卡缺样、收起／刷新／面板像素和前台自然刷新均尚未独立验收；本地受控浏览器通过不替代个人实机或正式 Hosted，其他验证仍等专门会话回传。
-
-## 主机列表文件系统容量与 inode 展开（2026-10-26）
-
-沿已确认的按主机行内展开方案新增“文件系统”入口；最多展开当前授权页一台主机的一类资源。容量五项与 inode 四项沿既有顺序分别读取，按完整 `device／mountpoint／fstype` 对齐，保留各自查询／采样时间和错误，不改公式、不跨挂载汇总、不拆分超限组。列表和详情只使用 `HostFilesystemResources.vue` 这一份挂载表格；原内联实现删除，原设备读取组件收敛为 `HostResourceDetailObservation.vue`，旧文件及旧翻译命名删除。沿精确挂载进入既有趋势并保留列表上下文。
-
-本批同时修复行内读取组合漏传共享 `createAutoRefresh` 必需的 `visibilityChanged` 回调：原实现在隐藏／恢复时抛错，切回前台未重读；现按原契约补齐调用，不修改共享工具。新增场景验证隐藏暂停、恢复后两组重读且无浏览器异常，以及收起第一组时不继续读 inode、切换时迟到第二组不回填、第二组拒绝后清空列表并停读。
-
-Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项通过；进一步补充截图后的文件系统专项八项再次通过。覆盖中英／窄屏／横向滚动、同挂载点的设备或文件系统类型差异、乱序对齐、容量与 inode 独立预算／不可用错误、版本拒绝、合法零／缺样、未提供能力、精确趋势与返回、自动刷新及身份撤销。首轮三项失败为两项新测试漏写既有 inode 单位与上述回调问题，保留原失败日志，不计通过。最终标准入口 `make test-monitor-frontend` 退出0：127项单元测试、467项Playwright场景与Vite生产构建全部通过（保留原chunk大小提示）；前端源码及测试输入摘要在门禁前后核对一致，日志 `/tmp/addp-host-filesystem-final-gate.log`。
-
-日志：`/tmp/addp-host-filesystem-targeted.log`（14通过／3失败）、`/tmp/addp-host-filesystem-targeted-v2.log`（17通过）、`/tmp/addp-host-filesystem-visual.log`（8通过）。截图目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-filesystem-list-NgAnEN`（中）与 `addp-host-filesystem-list-7grzkp`（英），已目视检查宽屏、窄屏及 inode 横向滚动。既有个人 Safari 工具观测限制未解除，且 Desktop VM 来源不提供 filesystem／inode，不能以受控数据证明个人环境真实分区读数。未运行新的后端／实源 T2、个人 Safari 或 Hosted 验收，未触发／轮询 CI、未设定时任务、未重启服务；当时 CI 与 Hosted 待专门会话回传；Linux 前端结果现已按下段独立复核，Hosted 仍待回传。
-
-2026-10-27 独立复核专门 CI 会话回传的 [Linux Monitor frontend Job](https://github.com/pampa0629/addp/actions/runs/40351996188/job/121674238730)：push／attempt 1，实际 checkout `e5391ca36843cd0d99233ea3f63949abb45d81d0`。GitHub Job 与实际 `Run Monitor frontend gate` 步骤均为 success，`make test-monitor-frontend` 原始日志确认 tests/pass 各127、fail 0、467 browser passed（23.3分钟），生产构建10.55秒完成。产品 `12d3eba1f6d9294ca16c2bfe9204e046e2d872e6` 至该实际提交的 `monitor/frontend`、`common-frontend`、根 Makefile、标准前端／浏览器入口、prepare-frontend-gate 与 Platform workflow 均无差异，因此覆盖本批实现。
-
-通过 `gh api repos/pampa0629/addp/actions/jobs/121674238730` 及对应 run 的只读请求核对终态，再独立下载原始日志至 `/tmp/addp-monitor-e539-independent-job.log`；与回传归档逐字节相同，SHA256 为 `2665d7996277041d5b79bf80c985e6f223a4b944f4b0b69130f1d170df985511`。回传审计 `/tmp/addp-ci-20261026-180018/Monitor_e539_actual_frontend_audit.json`。父 Platform run 的终态为 cancelled，不计整套 workflow 通过；旧超时保留，不能据此认定其根因已修。后继作业若实际跳过也不计第二轮复验。这一证据仅证明固定源码的 Linux 标准前端门禁，不替代 Safari、个人实源、正式身份 Hosted 或生产验收，不扩展文件系统告警范围；本轮未重跑或调度任何验收。
-
-## 真实 Linux 采集与挂载页面验收准备（2026-10-28）
-
-本批增强既有 `platform-node-metrics` 的资源 regression／complete-comparison 浏览器阶段，不新增 profile、权限、接口、读取轮次或超时预算。浏览器启动前只读核对当次标准 node-exporter：唯一项目／服务／仓库归属、运行态、Linux 同内核、host 网络与 PID、非特权只读运行、只读 `rslave` 宿主根挂载、宿主 proc／sys 路径和显式 filesystem collector。拒绝 Desktop、容器根、挂载覆盖、重复／反向参数和 textfile 替代。`node-native-source.json` 仅保存封闭布尔结果和容器 ID 摘要，不导出环境、凭据或完整 inspect；前置失败清除旧部署／浏览器成功收据，并阻止浏览器启动。
-
-真实 Console 脚本使用同一主机的精确五项容量与四项 inode 响应，按完整 `device／mountpoint／fstype` 定位有效挂载，逐列核对身份、横向滚动后的可见数值及单位；格式化复用既有共享函数和指标／翻译定义。`filesystem_mount` 收据保存响应索引、行索引、完整身份和实际 DOM 文本，中央校验再次核对指标、读数和单位，并要求容量／inode 恢复趋势属于同一挂载。并发响应乱序、同设备或挂载点的类型差异、合法零值、旧成功后新缺样／陈旧、错主机／请求范围、错误索引／单位／读数等都有拒绝回归。
-
-本地验证：
-
-- `make test-node-metrics-online-runner`：151 项确定性测试及 System 正式身份夹具 `go test ./cmd/online-test-fixture -run Metrics -count=1` 通过；日志 `/tmp/addp-native-node-runner-final.log`。Docker 部署检查使用受控 inspect 反例，不计真实 Linux 采集通过。
-- `npm --prefix console/frontend test`：30 个文件、202 项单元测试通过，其中收据专项 15 项；日志 `/tmp/addp-native-mount-console-unit-final.log`。前一轮全量为 201 通过／1 失败，失败在本批未改的 `devPorts.test.js` 临时 Vite 清理断言，残留名称为 `7102.pid`／`addp-system-vite-test-7102`；最终复跑通过，未修该路径，未确认首次失败根因，不能据此宣称其清理问题已修复。
-- 在 `console/frontend` 执行 `npm exec -- playwright test --config=playwright.online.config.js --list e2e/online/platform-node-resources.spec.js`：发现唯一既有场景，导入解析成功；仅发现，不计浏览器执行通过。
-
-本轮不改产品前端／后端、Swagger、个人配置或服务，不重跑既有受控产品前端门禁。本机仍为 Darwin／Docker Desktop，真实原生 Linux、正式登录后的挂载读数及完整 Hosted 零残留尚未运行；CI 和 Hosted 由专门会话安排并回传，不在本会话调度或设定时任务。这是验收实现与本地准备证据，不能填为真实采集／正式页面已验收。
-
-### 列表展开、手工刷新与收起的验收准备（2026-10-28）
-
-沿同一真实 Linux regression，补主机列表关闭自动刷新后的“文件系统”展开、一次手工刷新和收起。首次与刷新分别只读当前节点容量／inode两组，资源收据总上限由186增加至190；产品查询预算、接口、权限、对象范围、suite／浏览器超时不变，不添加等待窗口、规则读取或写入。列表与详情复用唯一 `readFilesystemMountTable` 九项 DOM 读数核对，不复制格式化或选择逻辑。中央要求两轮各自的新响应索引，拒绝以打开时旧响应充当刷新、错挂载／错读数、缺失收起及 URL／iframe 保持证明；允许新请求共享同一评估时刻，不强求即时手工刷新跨过采样步长。新增 `node-resources-list-filesystem.png` 列表截图随原证据归档并核验 PNG。
-
-本地 `make test-node-metrics-online-runner`：152项确定性测试及 System Go Metrics 正式身份夹具通过，日志 `/tmp/addp-native-filesystem-list-runner-final.log`。`npm --prefix console/frontend test`：30文件202项单元测试通过，日志 `/tmp/addp-native-filesystem-list-console-unit.log`。在 `console/frontend` 执行标准 `npm run test:e2e -- node-resource-navigation.spec.js`：5项受控浏览器T3通过，日志 `/tmp/addp-native-filesystem-list-console-browser-final.log`；新增场景沿实际 Console／Monitor iframe，使用同一个 DOM 读数核对函数，刷新后将 inode 使用率20%改为30%、空闲量80改为70，核对值更新、完整身份、仅四次当前节点观测、收起、URL及原 iframe 文档保持。标准隔离浏览器入口退出0，未启动或接管个人服务。Online Playwright `--list` 发现唯一既有场景，导入解析通过，仅计测试发现。
-
-本批只改验收实现及证据，既有 Online runner、Console frontend 单元与浏览器自动发现覆盖，无新依赖、入口或 workflow。上述T3为受控HTTP数据，不计真实Linux来源、正式密码／MFA、Safari或Hosted通过；未触发／轮询CI及Hosted、未设置定时任务。正式运行仍等专门会话安排与回传，原失败及前一批验证范围保留。
-
-### 热力面板实源页面验收准备（2026-10-28）
-
-既有 `platform-node-metrics` 资源 regression 在挂载详情阶段复用该页已读取的十项标量与五项容量响应，逐格核对 CPU／内存使用率、所有完整挂载的使用率、0～100进度条及原数据状态，记录 `resource_heatmap` DOM 收据和 `node-resources-heatmap.png`。容量响应索引须与同页挂载表一致，设备／挂载点／文件系统类型均精确匹配；合法零值保留有效进度，陈旧／缺样／未接入保持中性占位，不补零或继续着色。只复用原始百分比与共享格式化，不引入健康分、阈值或第二条采集路径；不增加查询、等待、身份用途、原有190条收据上限或时限。
-
-Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒绝反例覆盖并发顺序、错误主机／请求集合、同挂载点不同设备和类型、最新陈旧／缺样不得借用旧有效值。中央再核对两项标量、全部分区身份／状态、精确进度值、百分比文本及与挂载表的同响应绑定。
-
-- `make test-node-metrics-online-runner`：153项确定性测试与 System Go Metrics 夹具通过，日志 `/tmp/addp-native-heatmap-runner-final.log`。
-- `npm --prefix console/frontend test`：30文件207项通过，收据专项20项；日志 `/tmp/addp-native-heatmap-console-unit.log`。
-- Console 标准 `npm run test:e2e -- node-resource-navigation.spec.js`：6项受控浏览器T3通过，日志 `/tmp/addp-native-heatmap-console-browser.log`。新增场景在实际Console／Monitor iframe 用同一函数检查0%／100%、同挂载点不同设备／类型，随后刷新为陈旧和缺样，分别核对中性状态、无进度条、占位文本及核对过程无额外请求。原列表刷新场景保留。隔离浏览器入口退出0，不接管个人服务。
-- Online Playwright `--list` 发现唯一既有场景并完成导入解析，仅计发现，不计执行。
-
-本批只改验收与既有证据，沿原 Online runner 和 Console frontend 的单元／浏览器自动发现；未改产品代码、Swagger或依赖，未重跑完整Monitor产品前端门禁。真实原生Linux、正式密码／MFA页面、Safari、Hosted及零残留仍待专门会话执行／回传；本地确定性与受控HTTP T3不计这些层级通过。未触发／轮询CI或Hosted、未设置定时任务、未修改个人配置或重启个人服务。
-
-## 主机 CPU 空闲率辅助展示（2026-10-28）
-
-原图硬件信息中的CPU空闲率补在详情原“CPU忙碌率（1分钟）”卡内，使用同一有效观测的 `100 - busy_percent` 并复用共享百分比格式化；非空闲率原本由各核idle计数的完整一分钟速率反推，因此不另加采集或新口径。预热缺样、陈旧和未接入显示“—”，合法忙碌0%／100%分别显示空闲100%／0%；中英文就近显示。不新增指标、独立卡片、列表列、趋势或规则，不改26项目录、五项列表摘要、API／权限／预算；前端只组合现有同源数据。
-
-- `make test-monitor-frontend` 退出0：130项单元测试、490项浏览器场景及Vite生产构建通过（保留原chunk大小提示），日志 `/tmp/addp-cpu-idle-monitor-frontend.log`。新增中英文场景覆盖13.37%忙碌对应86.63%空闲、合法零／满量程、陈旧／缺样及恢复，确认每轮仍仅五组原观测、没有idle查询；原CPU预热场景增加空闲占位及恢复断言。
-- 标准专项 `npm run test:e2e -- node-resources.spec.js --grep 'CPU idle companion'` 在Monitor frontend执行，两项通过；日志 `/tmp/addp-cpu-idle-focused-browser.log`。420px中英卡片截图已目视核对：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cpu-idle-onOjxY/zh-cn.png`、`addp-cpu-idle-FSL23E/en.png`（同一父临时目录），不另计独立实源验收。
-- Console 标准 `npm run test:e2e -- node-resource-navigation.spec.js` 六项受控iframe场景通过，核对主机空闲辅助值及陈旧／缺样不补零；日志 `/tmp/addp-cpu-idle-console-browser.log`。
-- `make test-node-metrics-online-runner`：153项确定性测试及System Go Metrics夹具通过，日志 `/tmp/addp-cpu-idle-online-runner.log`；既有真实Console脚本增加同一有效CPU响应的空闲文本核对与强制展示收据，不增加请求或身份用途。
-
-沿既有 Monitor／Console frontend 自动发现与 Online runner，未新增依赖、标准入口或CI路线。此次只改前端及验收，没有后端重启、IAM、个人配置或数据库操作；真实Linux、Safari及正式密码／MFA Hosted仍未据此通过，继续等专门会话回传。未触发／轮询CI或Hosted、未设置定时任务。磁盘分区容量继续按完整挂载展示，不把该补项外推为整机物理磁盘容量或整个硬件信息卡已完整验收。
-
-## 块设备容量只读前置核对（2026-10-28）
-
-本轮仅调查原图硬件容量的数据来源与设备层级，没有产品实现或正式测试。仓库锁定node_exporter v1.12.1的diskstats源码与现有固定目录只提供IO及设备信息，当前文件系统容量不能当物理总量。官方Textfile Collector支持节点绑定的扩展指标，但旧文件在每次抓取时仍会出现，因此正式实现还须独立源采样时间和失败／完整性保护，不能只按Prometheus抓取时间判断新鲜。
-
-只读核对当前唯一归属本仓库的node-exporter容器，保持原User 65534:65534、非特权、只读根及无宿主根挂载，仅使用固定的/sys/class/block元数据与/proc/diskstats／内核版本；未读业务文件、序列号或凭据，未写容器文件、挂载或修改配置。Desktop来源与Docker daemon内核一致，43个可见块对象中24个size为0；诊断取样见vda=3,996,276,228,096B、vda1=2,199,022,206,976B、vdb=600,440,832B，三者设备号均匹配同一VM的diskstats，sysfs父关系确认vda1属于vda。另有RAM设备，故既不能将所有条目算物理盘，也不能将盘和分区直接求和。诊断取样中的名称过滤不是生产设备选择算法。
-
-封闭元数据收据 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-block-capacity-probe-cij4zyyg/observations.json`（0600）仅保留配置布尔项、容器身份摘要与上述元数据，没有原始inspect／环境。结果标记read_only_feasibility；新采集器未安装、Prometheus查询及正式页面未验证，不能计T1／T2／T3／T4通过。首期提案见[运行监控后续事项](../../../next/ADDP平台运行监控与可观测性设计.md#磁盘与卷容量首期)，用户随后确认该范围，产品实现及分层验证见下节；此前置阶段不计产品门禁。文档只做差异／链接及事实核对，不重复旧产品门禁；未调度CI／Hosted、未设置定时任务、未重启个人服务或修改来源。
-
-## 磁盘与卷容量首期实现与本地分层验证（2026-10-28）
-
-用户已确认逐设备容量明细、默认关闭的部署侧只读采集及当次隔离 Hosted 只读用途。术语与正式规范先行，产品沿唯一节点入口、专属 Textfile、原 mTLS／Prometheus 和当前 User／主机读取裁决接入 `node.block.capacity_bytes`，device／kind 为封闭维度；固定主机目录总计27项。只提供当前设备容量，不提供物理总量、使用率、趋势或告警，不改 System 后台投影、IAM 或查询预算。
-
-标准节点生命周期精确核验本工作区容器／专属卷归属；显式启用后启动非 root、只读根、无网络／特权／Socket 的采集器。原生 Linux 只读 sysfs 与四个白名单 proc 文件；Desktop 不新增宿主根、PID 或设备挂载，只读自身 VM 元数据。每十五秒原子替换专属文件，按驱动 major、partition 与映射属性筛选，排除 RAM／loop／分区／零容量。整帧100就绪设备、4096对象和精确整数上限，超限不截断。源时间、启动、设备号、采样变化、Textfile 解析及完整帧共同核验；缺文件与未启用区分，过期／失败／不可核验／成功空集合分别表达。容量证据只随请求该指标读取，原标量、列表摘要及告警不增加本项查询。关闭扩展／停止节点时清理其受管临时卷。
-
-主机列表按设备展开及详情中的“查看设备容量”共用唯一 `HostBlockCapacity` 和原 `HostResourceDetailObservation` 请求／自动刷新内核，延迟读取、不汇总、IEC单位；就近说明映射卷与底层设备不可相加、Desktop只是VM视图。失败、撤权、身份变化和迟到响应不保留旧容量；原趋势入口不接受容量指标。API、Swagger、原 Metrics T2 的 block-capacity 分项、Owned service／输入登记和 Release 矩阵同批同步；不另建 CI 或调度路线。
-
-本地工作区证据分别认定（最终提交号以本次交付与维护会话汇报为准）：
-
-- Go T1：`make test-module MODULE=monitor GO_ONLY=1` 通过，含即时限制、维度／整组预算、采样状态、API query、当前 User 路径及容量查询不扩散至标量的回归。日志 `/tmp/addp-block-monitor-go-final.log`。
-- 来源／查询 T2：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=block-capacity` 最终通过；115项标准脚本回归、锁定 Prometheus 的9项容量公式／旧文件／缺帧／移除／启动／未来时间／解析错误场景，以及真实非特权采集器→node_exporter→mTLS→Prometheus→Monitor 固定查询。逐设备数值与同一来源当前 sysfs 读取一致；本机环境为 Docker Desktop Linux VM，不能外推原生 Linux 部署层。结束输出全部当次容器、网络、卷及私有临时文件清零。日志 `/tmp/addp-block-metrics-t2.log`。
-- 新增前端 T1：标准前端入口的131项确定性检查通过。独立页面 T3：`npm --prefix monitor/frontend run test:e2e -- e2e/block-capacity.spec.js` 最终3/3通过（8.5秒），核对中英文窄屏、延迟读取、2 TiB逐项而不求和、状态、失败清除、恢复、折叠和撤权；日志 `/tmp/addp-block-browser-final.log`。受控截图 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-block-capacity-zh-cn.png`、同目录 `addp-block-capacity-en.png` 已目视核对；不是实际主机容量或正式身份页面证据。
-- 构建：`npm --prefix monitor/frontend run build` 通过（3.31秒），日志 `/tmp/addp-block-build.log`；原大 chunk 提示不计失败。
-- Online runner：`make test-node-metrics-online-runner` 154项及 System Go 身份夹具通过；仅证明既有验收边界与默认关闭 Textfile 的原生节点证明适配，不证明容量扩展 Hosted 已准备或运行。日志 `/tmp/addp-block-online-runner.log`。
-- 部署与登记：`make test-infra-runtime-log-lifecycle` 通过（含88项生命周期／预算、相关23／136项登记回归），日志 `/tmp/addp-block-infra-lifecycle.log`。`make test-platform` 首轮在两项旧清理参数断言失败，本批同步加入 block-capacity profile 后上述受影响子门禁通过；完整 Platform 未再重跑，不将该子门禁替代整批通过。
-- Swagger：`bash scripts/swagger/gen-swagger.sh monitor` 与 `bash scripts/swagger/check-route-coverage.sh monitor` 通过，96个公开路由方法；日志 `/tmp/addp-block-swagger-gen-final.log`、`/tmp/addp-block-swagger-check-final.log`。
-
-失败与限制保留：完整 `make test-monitor-frontend` 首轮485/493通过、8失败（26.6分钟），第二轮425/493通过、68失败（约3.7小时），均未通过且构建阶段未执行；独立构建另计。第二轮保留目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-jJp4jp`，日志 `/tmp/addp-block-monitor-frontend-final.log`。只读电源事件核对发现该时窗 Mac 反复睡眠／唤醒，不能作为连续长回归环境；也不能仅据此断言所有失败皆为环境原因。没有改电源设置、增加测试超时或删除失败案例；稳定环境的完整前端仍待核验。
-
-容量 T2 曾在新分支变量初始化及退出 profile 清理失败，已修正并核验当次遗留容器／卷清零；后续两轮出现发现目标未切换到 node-exporter（来源已成功采样、原目标仍UP、证书IP匹配），尚未稳定复现根因。保留封闭文件／容器／HTTP／目标匹配诊断，未放宽TLS或增加等待预算；最终真实链路及清理通过只按当次结果认定，不宣称间歇性发现问题已经修复。标准脚本中受控生产停止测试另曾10秒超时，单项原条件复验及后续标准115项通过，未放宽时限或修改生产停止实现。
-
-本批没有应用个人节点开关、重启服务、读取个人业务数据、触发／轮询 CI／Hosted 或设置定时任务。CI／Hosted等专门会话回传；原生 Linux 容量扩展的受管来源证明、真实 Console／Safari 及正式身份 Hosted 仍未验，容量对应的原生证明和页面收据准备也仍需补齐。不得以默认关闭容量的旧文件系统 Hosted 或本机 VM T2 外推这些范围。
-
-## host-resources 受限来源挂载断言修复（2026-10-29）
-
-专门CI会话回传 [Release/T2 40701610871 的 host-resources 实际步骤](https://github.com/pampa0629/addp/actions/runs/40701610871/job/122862998720) 失败于旧 `len(limited['Mounts']) == 4`（原始日志 `/tmp/addp-ci-20261028-160001/job-122862998720.log` 第833—836行）。原生资源查询、来源停机／恢复已走到，受限来源重建后在该检查退出；原CI没有归档完整inspect，不能只凭数量认定当时没有权限回归。
-
-核对3f66f3521及当前两层Compose，真实 `docker compose config --format json` 渲染为四个只读文件绑定（固定Web配置、当次三份TLS文件），加一个只读 `/textfile` 容量专属卷，共五项；host-resources仍关闭Textfile且容量producer profile未启用。产品默认关闭容量时的四绑定部署没有改变。本次不改产品Compose、挂载、IAM或权限，也不以 `>=4` 代替旧断言。
-
-唯一 `verify_limited_node_mounts` 对运行容器与当次volume inspect逐项核对：目标集合唯一且恰好五项，四个绑定源精确匹配当前仓库固定Web文件和当次TLS目录、只读且rprivate；Textfile卷名／Compose项目／service／owner／volume标签、local驱动及1 MiB tmpfs的uid／gid／mode均精确匹配，其实际Source必须等于同一volume inspect的Mountpoint并只读。拒绝额外、缺少、重复、可写、根目录／Socket、错源、影子目标或外来卷；不保存原始inspect、宿主路径、环境或凭据。仅输出封闭布尔及4绑定／1卷计数。来源初次准备后即核验，后续原受限来源重建位置仍再次核验，不跳过预算、查询、重启或恢复阶段。
-
-受限阶段显式关闭Textfile，避免默认all在早先容量专项启用后把该采集器带入限定七采集器的视图；all先前容量验证及host-resources其他检查不删除。本批5项新增确定性回归包含真实Compose叠加和现有all／host-resources状态下的该关闭输入；27种错误对象／命令变体拒绝。
-
-本地验证：新增五项 `python3 -m unittest scripts.test.metrics-deployment-config_test.LimitedNodeMountEvidenceTest` 通过，日志 `/tmp/addp-limited-mount-unit.log`。此前新测试在旧代码因缺少精确证明函数失败，真实叠加配置也证实旧四项断言必失败；不是删除安全条件后的空回归。
-
-标准链路使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`。首轮在更早的旧fixture“budget recovery”65秒等待超时，未到本次目标；当次清理执行，不能计整轮通过，日志 `/tmp/addp-limited-host-resources-t2.log`。未修改预算、TLS、采样标准或等待时限；随后新增首个来源准备检查点的同一精确证明，以实际inspect在前后两处覆盖挂载边界。最终结果待下述终态记录，不据局部通过外推完整门禁。
-
-最终同一标准命令通过（退出0），日志 `/tmp/addp-limited-host-resources-final.log`：120项脚本回归；初次来源与受限重建后的两份精确挂载证明均为4绑定／1卷、只读／精确源／受管tmpfs／Textfile关闭；既有固定窗口、mTLS、预算恢复、普通／受限资源查询、来源停机恢复、中心SIGKILL持久化、六来源总览及资源告警生命周期全部沿原链路运行。资源查询两阶段分别56.77／29.39秒，总览85.75秒，资源告警生命周期195.62秒；退出验证全部当次容器、网络、卷与临时文件清零。此次仅本机Docker Desktop Linux VM上的标准T2；[原Linux CI失败](https://github.com/pampa0629/addp/actions/runs/40701610871/job/122862998720)保持失败历史，替代提交的自然Linux host-resources Job实际步骤仍等专门会话回传，不据本地结果提前认定远端通过。原生Linux容量／Console／Hosted与完整前端缺口保持原记录。本轮没有API、Swagger或产品代码变更，无需重启业务；不调度／重跑／取消CI或Hosted、不设置定时任务、不向个人服务或共享数据卷施加操作。
-
-## 磁盘与卷容量原生来源证明与Console收据准备（2026-10-29）
-
-承接已确认的容量只读用途，本批只完善既有隔离验收准备及本地回归，不修改产品 API、IAM、来源默认开关或个人部署。先同步正式观测规范与场景，再将原生来源证明升级为唯一 v2：必须是当次同内核原生 Linux exporter 与唯一受管容量采集器；精确核验双方非特权、容量采集器资源上限及无网络／Socket／设备、sysfs及四个proc白名单只读绑定、受管程序摘要、两端同一专属1 MiB tmpfs及写／读权限。只读命令核对当前sysfs快照和唯一原子容量帧的全部设备、结构、整数容量、启动及源时间，拒绝陈旧、外来前缀、缺帧、重复与不一致。封闭收据仅保留公共设备容量、摘要及边界布尔，不保存原始inspect／环境／帧正文。
-
-regression／complete-comparison 在当次私有部署显式开启原容量扩展，Worker等其他profile保持关闭。来源故障入口改为精确核验后只停／启 node-exporter，不再按整个节点项目必须单容器作判断；容量采集器不成为故障目标，不扩大到个人来源。全部操作仍受原一次性Hosted边界保护。
-
-同一真实Console脚本新增打开／手工刷新／收起容量的收据流程，由受控Console测试复用唯一DOM读数函数。逐行核对完整device／kind集合、IEC容量与状态，页面／API与上述原生来源证明一致；刷新必须是紧接的新响应，保持iframe并收起，不以旧数据或截图存在代替读数。不要求两次源采样时间递增，也不虚称刷新已取得下一轮采样。只增加两次既有容量GET，验收资源收据上限190改192，原身份、产品查询预算、并发、240秒页面／300秒子进程和总时限均不变。
-
-本地验证分层记录：
-
-- 标准 `make test-node-metrics-online-runner` 退出0：162项确定性测试及System Go Metrics身份夹具通过（42.585秒／0.777秒）；日志 `/tmp/addp-capacity-online-runner.log`。覆盖精确来源归属与挂载／卷／程序／帧拒绝、profile选择、Exporter限定故障对象、全设备页面收据、旧响应／错单位／缺行／重复／容量趋势拒绝，以及既有身份／生命周期回归。仅为确定性验收代码与身份夹具验证，不是原生Linux来源运行。
-- `npm --prefix console/frontend test`：30文件219项通过，日志 `/tmp/addp-capacity-console-unit.log`；新增12项容量收据回归核对IEC、完整性、最后一次响应与无效状态拒绝。
-- `npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js`：7/7受控iframe场景通过（50.9秒），日志 `/tmp/addp-capacity-console-browser.log`。新增容量场景覆盖两设备逐项1 TiB、刷新后512 GiB、完整DOM读数、仅两个容量请求、收起、URL与同iframe不变；使用受控API，不是正式密码／MFA或真实主机证据。
-
-未重跑未变的Monitor产品门禁，原完整前端长回归失败仍保留，稳定环境复验未完成。原生Linux容量实源、正式身份Console／Safari、Hosted与该层零残留尚未实际执行／回传，不计通过；旧关闭Textfile的文件系统通过也不补作容量通过。未触发／轮询CI或Hosted、未设置定时任务、未修改个人开关或重启服务；当前仅可将“验收准备缺口”更新为已补，不能更新“真实运行验收”为完成。
-
-## 容量关闭故障与恢复的Console状态验收（2026-10-29）
-
-本批沿现有容量状态口径、唯一 `HostBlockCapacity`／请求内核和共享DOM读数函数，仅新增 Console 受控iframe验收；没有产品、API、权限、采集开关或Hosted用途变更。列表行“磁盘与卷容量”展开和主机详情“查看设备容量”分别走同一场景：有效两设备容量后，依次验证未启用、采集失败、样本过期、HTTP查询失败和不完整响应，每次都恢复为新设备名／新容量。
-
-关闭／来源失败保持各自提示，查询失败与非法结构类型显示对应局部错误。每个异常阶段确认设备表无数据行、显示“暂无有效设备容量”，不残留旧设备、不补0 B；过期响应即使携带旧容量也不能显示。HTTP失败使用受控门闩暂缓响应，确认请求尚在进行时旧行已清除、按钮处于加载禁用状态，再返回503；门闩失败也在finally释放，不用固定睡眠或加大超时。五次恢复都通过上一批同一共享DOM函数逐行核对完整新device／kind、IEC容量、有效状态及新响应索引，同时确认错误提示清除。
-
-两入口各恰好11次容量GET（首次一次、五组失败／恢复各两次），查询仅当前node_id及固定容量指标，不新增其他资源读取、写操作或轮询。CPU核数摘要保持原值；Console URL、同一iframe的timeOrigin及手工刷新选择保持。结束收起设备表，不把局部来源问题扩为主机页整体错误。
-
-验证记录：标准隔离浏览器入口 `npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 首轮9/9通过（1.1分钟），日志 `/tmp/addp-capacity-console-states-browser.log`；覆盖原7项及本次列表／详情两项。随后按最终文件运行根 `make test-console-frontend`，退出0：30文件219项单元测试、242项浏览器回归（7.0分钟）及Vite生产构建（1.93秒）全部通过，日志 `/tmp/addp-capacity-console-states-full.log`。未修改Monitor产品代码、共享读数函数或Online协议，不重跑未变的Go、来源T2及Online runner。
-
-本批只证明受控HTTP响应下的真实Console／Monitor iframe交互；没有关闭或破坏个人采集器，不读取个人数据、不重启服务，不运行真实Linux故障或正式身份Hosted。原生来源／Hosted与Linux CI结果仍等专门会话回传，未触发／重跑／轮询CI或Hosted，未设置定时任务。旧完整Monitor前端长回归失败保持原记录，不由本批Console结果代替。
-
-## 容量明细自动刷新与隐藏恢复的Console验收（2026-10-29）
-
-本批仅在既有Console浏览器文件增加列表展开／主机详情各一个状态序列，复用正式 `createAutoRefresh`、`createLatestRequestScope`、唯一容量组件与上一批DOM读数函数；没有修改共享内核、产品组件、API、权限或采集配置。既有10秒间隔由URL选择，Playwright受控时钟推进，iframe内派发受控visibilitychange；不缩短产品间隔或用手工调用刷新替代自动触发。此受控可见性不计真实Safari或操作系统后台标签页证据。
-
-各入口首次展开只读一次；自动计时后容量由1 TiB更新为512 GiB。隐藏后推进60秒，容量和其他Monitor资源读取均不增加；恢复可见不推进计时即重读256 GiB。后续自动请求在HTTP夹具处暂缓，保存当时8 TiB的独立旧响应；推进60秒仍无第二个容量请求，证明加载时不重叠。隐藏触发真实浏览器requestfailed，核对被取消对象就是该在途容量请求，再释放旧响应；隐藏期间继续推进60秒仍无新读取，8 TiB不能显示。恢复可见立即读取128 GiB，下一计时轮再更新64 GiB；新DOM与API索引核对沿唯一共享函数，不复用被取消的旧响应。
-
-通过正式刷新控件选择off，Console URL与同一iframe保持既有规则：列表路由变化关闭临时展开，重新展开仍只读一次；详情沿同一页面重新读取。关闭后推进两轮60秒并切换隐藏／可见，不产生自动请求；手工刷新仍更新16 GiB，收起后再推进60秒无容量读取。每入口总共8次当前主机固定容量GET，其中1次被隐藏取消；正常刷新、恢复及手工阶段逐次核对新IEC容量／源时间与同iframe，查询只含原node_id与固定指标，不增加写入、权限或采集范围。
-
-验证记录：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 退出0，11/11通过（59.5秒），日志 `/tmp/addp-capacity-console-auto-browser.log`；包含原9项和新增两个入口的自动刷新／取消／恢复／off场景。最终文件的根 `make test-console-frontend` 退出2、未通过：218项单元测试通过／1项失败，失败在本批未改的 `tests/devPorts.test.js:243` Vite临时目录清理断言，目录中仍列出 `50446.pid`、`50475.pid`、`addp-console-vite-test-50446`、`addp-system-vite-test-50475`；日志 `/tmp/addp-capacity-console-auto-full.log`。后续完整浏览器和该入口的构建阶段未运行，不计通过；未修改清理实现、放宽断言或盲目重跑，未确认此次清理时序根因。另行执行既有 `npm --prefix console/frontend run build` 退出0（1.57秒），日志 `/tmp/addp-capacity-console-auto-build.log`；专项与独立构建不替代完整Console门禁通过。
-
-本批只证明受控HTTP和时钟下的真实Console／Monitor iframe交互，未操作个人采集器、真实来源或账号，不重启服务、不改变个人配置。CI／Hosted与真实Linux／正式身份验收继续等专门会话回传；未触发／重跑／轮询CI或Hosted、未设置定时任务。既有Monitor完整前端长回归失败保持原记录，不由Console结果代替。
-
-## 容量迟到响应的Console范围隔离验收（2026-10-29）
-
-本批只在既有Console浏览器文件补6个受控场景，沿唯一容量组件、请求取消／代数隔离与共享DOM读数；没有产品、API、权限或来源配置变更。请求识别函数在同一文件内复用，旧自动刷新场景同步走该函数，未保留重复识别路线。HTTP边界固定保存旧主机8 TiB／discarded-capacity的独立响应，正常新读取按当前主机分别返回32／64 GiB和current-a／current-b，避免旧夹具在释放时读取新变量而掩盖污染。
-
-列表切换主机分别覆盖旧成功200与旧403：A的容量尚未返回时切换到B，核对requestfailed精确对应A的请求，B仅有一个展开与当前容量；B读数有效后才释放旧响应。释放后B的共享DOM收据索引、值和设备不变，旧拒绝不能触发新主机整体无权或局部错误；推进60秒仍只有A／B两次容量读取，Console地址与同一iframe保持。
-
-列表／详情分别覆盖收起重开及离页返回。收起取消在途请求，重新展开从同主机的新请求取得容量，再释放旧403；不恢复旧设备、旧错误或旧观测。离页使用正式Console Logo返回首页，核对旧iframe卸载及原Frame detached，释放旧403并推进60秒不再读容量；浏览器Back回原URL创建新iframe，临时容量保持收起，重新展开才发第二次读取。恢复保留原分页与刷新偏好，不把旧页面内存或请求带入新Frame。各场景只有旧／新两次容量读取及一份有效响应收据，不写业务数据或修改真实授权。
-
-本地验证：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 退出0，17/17通过（1.4分钟），日志 `/tmp/addp-capacity-console-isolation-browser.log`；包含原11项及新增6项，覆盖提取后的请求识别函数和原刷新路径。`npm --prefix console/frontend run build` 退出0（4.05秒），日志 `/tmp/addp-capacity-console-isolation-build.log`。
-
-本批不盲目重跑上节已记录的完整Console门禁清理断言失败，不修改无关devPorts清理实现；该门禁本轮未运行，不能由专项／构建计通过。未改未变的Go、来源T2、共享内核或Online协议，不重复其既有验证。当前只计受控HTTP／时钟下真实Console和Monitor iframe的T3，不计真实Safari、Linux来源或正式密码/MFA Hosted；旧403是废弃请求的模拟响应，不是当前身份撤权验收。CI／Hosted继续等专门会话回传；未调度／重跑／轮询CI或Hosted、不设置定时任务、不修改个人配置或重启服务。
-
-## 容量读取撤权与身份切换的Console验收（2026-10-29）
-
-本批只补Console受控浏览器验收，不修改IAM、权限发布、账户、组件、API或授权共享内核。先读取可见有效容量，再把第二次自动容量请求固定为独立8 TiB旧帧；沿原HTTP夹具验证当前读取拒绝与AuthContext刷新两个不同边界。原暂缓响应夹具支持在首次／第二次请求暂停，旧17场景仍走同一夹具与产品路径，没有备用产品实现。
-
-列表／详情各一项当前403场景：第二次容量读取返回permission_denied，清除容量及当前页资源观测，显示无权错误与停止自动刷新；推进60秒不再读取资源。显式刷新重新读取当前主机及资源后，容量仍须展开再读，有效值与局部错误恢复，URL、间隔偏好及同iframe保持。该403是受控服务端拒绝，不更改真实权限或数据库。
-
-两入口各覆盖权限撤销、同权限下Principal变化、带相同权限字符串的Tenant上下文，共6项。通过正式Console store的强制Token刷新动作和受控AuthContext响应验证消费链，不直接赋值业务模块AuthContext；每次刷新返回不同的测试Token。权威结果尚未返回时，Console隐藏并保留原iframe，容量在途请求出现精确requestfailed、旧表消失；确认权限撤销或Tenant上下文后拒绝当前平台页面并卸载旧Frame，同权限的新Principal也创建新Frame。此后释放旧8 TiB帧，推进60秒不产生容量读取或恢复旧表。
-
-被拒绝的上下文后续得到权威平台授权时，新建iframe而非复用已撤销实例；新Principal路径也只在显式展开后读取容量。核对Console当前Principal／Context及已有读取权限，新容量请求使用不同于旧读取的测试Token、属于新响应索引；各场景只有最初有效、被取消、重新展开三次容量请求和两份有效响应。分页、刷新偏好及原URL保持，不让Tenant进入平台主机页，不把宿主资源归为Tenant数据。
-
-本地验证：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js`退出0，25/25通过（1.4分钟），包含旧17项及新增8项，日志 `/tmp/addp-capacity-console-authority-browser.log`。`npm --prefix console/frontend run build`退出0（1.69秒），日志 `/tmp/addp-capacity-console-authority-build.log`；差异格式检查通过。未改未变的Go、来源T2、共享内核或Online，不重复其既有验证；完整Console门禁本轮未重跑，上述开发端口清理断言失败仍未闭环，不计整批通过。
-
-本批只计受控HTTP／时钟下的真实Console和Monitor iframe T3，不是System真实权限发布、上下文选择／切换接口、真实登录/MFA或跨租户数据隔离T4。个人账户、采集器、数据库和配置未改动，不重启服务；CI／Hosted继续等专门会话回传，未触发／重跑／轮询CI或Hosted、不设置定时任务。原生Linux容量／Safari／Hosted与Monitor长回归的既有缺口保留。
-
-## 主机与引擎自动筛选统一（2026-10-29）
-
-主机、服务、引擎列表统一复用Common Frontend的createAutoFilter：文本300毫秒防抖，清空和Enter立即提交，删除主机／引擎搜索按钮；主机类型及纳管状态原本即选即查，继续合并当前名称条件。相同URL不重复读取并恢复刷新；筛选回第一页，主机保留页大小／列视图，引擎保留刷新间隔。原System匹配、授权、批量摘要、查询预算与服务趋势边界均保持，无API或Swagger变更。
-
-共享调度唯一负责等待／立即提交、待提交状态、取消与隐藏暂停／前台恢复；服务页原本地防抖生命周期删除，三页只保留领域查询、权限和路由组合。重置、清空、手动刷新、切换视图／页面及身份变化不被旧文本延迟覆盖；中文输入法继续沿原控件确认后提交。自动刷新只读已提交范围，待提交时暂停旧调度；不另建指标解释、错误或缺样提示路线。
-
-本地实际验证：
-
-- `make test-monitor-frontend`：131项单元测试、503个浏览器场景及构建全部通过，含主机／引擎新增6项和服务原46项；原时间、分页、趋势与撤权边界保留。
-- `npm --prefix monitor/frontend run test:e2e -- e2e/automatic-filter-enter.spec.js`：三页独立3项通过（10.5秒）；当时只安装受控时钟、未显式暂停，不能单独证明Enter在防抖前提交。后续显式暂停后的失败与共享修复见[告警自动筛选证据](Monitor告警与规则历史证据.md#平台告警自动筛选与字段提示2026-10-29)。原文件在完整套件发现之后加入，单独执行，不把原聚合计数冒写为506项。
-- `make test-console-frontend`：219项单元测试、263个浏览器场景及构建通过；新增主机／引擎中英文各两项，验证自动合并查询、清空／重置、System原参数、回第一页、URL replace与同iframe。
-- `make test-common-frontend`：290项中289项通过、1项失败；新增三项自动筛选／可取消调度／唯一归属测试通过。唯一失败仍是上一批ResourceTree直接组合所有权清单未登记其他会话的System组件，本批不修改该组件或清单，不能将共享聚合计为通过。
-
-新用例沿既有测试目录自动发现，Console原浏览器夹具已包含Monitor，模块Frontend标准入口与Platform矩阵继续覆盖，无需修改Make或Workflow。未运行未变的后端、数据库或Online runner；不重启个人服务、不操作个人身份或配置。上述仅为本地确定性T1／受控HTTP与时钟下的真实前端T3，不证明真实Safari登录、实际System筛选数据或Hosted。CI与Hosted仍等专门会话回传，未触发／重跑／轮询、不设置定时任务。
-
-日志：`/tmp/addp-host-engine-filters-{common,monitor-full,console-full,enter}.log`。上一批及本批共享失败分别保留，不将后续局部通过回填为旧失败通过；清单完整功能的原正式验收缺口不因这次交互统一而消失。
-
-## 容量来源 T2 的固定查询时点交接修复（2026-10-29）
-
-专门 CI 会话回传 [Release block-capacity 失败](https://github.com/pampa0629/addp/actions/runs/40827356196/job/123293546488)。原始 `/tmp/addp-ci-20261029-063318/job-123293546488.log:817` 起记录固定公式 TestIntegrationMetricsBlockCapacity 通过，随后即时 up／success 探针通过，但 TestIntegrationMetricsBlockCapacitySource 得到 no_sample、Go 退出1；后续聚合失败由此矩阵项传递，不另计独立故障。原日志没有样本／查询时刻，不能据此认定本次发现的时间竞态已被证明为该远程失败的唯一根因。
-
-已确认夹具存在两个时间口径：Python 就绪查询省略 time，而 Go 另取 floor(now) 整秒查询。首个抓取位于小数秒时，前者可见而后者不可见。新增固定版本 promtool 四个断言，证明 0.9 秒首次样本在 0 秒缺失，在 0.95／1／15 秒可见；同组包含共享15秒加载节拍，避免 LazyLoader 尚未加载输入而误判。首次新增用例误拆为不同组，真实运行两项返回 nil，失败日志 `/tmp/addp-block-snapshot-t2.log` 保留，未进入容量来源验证；按[该固定版本加载实现](https://github.com/prometheus/prometheus/blob/v3.13.4/cmd/promtool/unittest.go)改正组内加载范围后全部通过，没有放宽期望。
-
-就绪路径仍沿原65秒有界轮询，改为对精确节点／instance 的成功 up 与容量 success 在同一整秒查询，并要求两者属于同次抓取；把已证明的整秒交给 Go，不再重新取时钟。Go 拒绝缺失、非整数、未来及超过原新鲜度期限的交接时间，产品 Collection／Query、身份标签、boot／整帧／设备全集／容量与新鲜度断言全部保留。新增日志只记查询及采样时刻、状态与设备数量，不输出目标地址、证书或凭据。仅改验收代码，不改产品 API、权限、采集实现、镜像或正式实例；没有增加 sleep、轮询期限或失败重试路线。
-
-实际本地结果：`python3 -m unittest scripts/test/metrics-deployment-config_test.py` 最初122项中新增2项因尚无交接函数报错（`/tmp/addp-block-snapshot-red.log`），实现后122项通过（`/tmp/addp-block-snapshot-green.log`）；`make test-module MODULE=monitor GO_ONLY=1` 通过（`/tmp/addp-block-snapshot-go.log`）。最终 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=block-capacity` 退出0，含122项入口回归、原容量公式及新增四项时间边界、真实只读采集／Textfile／mTLS／Prometheus／Monitor查询和逐设备容量核对。查询时点1793261272（08:07:52Z）、同次抓取1793261271.757，Collection 为 collecting／available，两个当前可见设备容量完全匹配；日志 `/tmp/addp-block-snapshot-t2-final.log`。这仅为 Docker Desktop Linux VM 上的隔离来源 T2，不是原生 Linux 远程 CI、个人 Safari、Hosted 或整机物理容量总量通过。
-
-两轮项目均沿标准 trap 清理；随后按两个精确 Compose 项目 label 独立核对容器／网络／卷全部为0，回执 `/tmp/addp-block-snapshot-cleanup.json`，成功轮也确认临时目录删除。标准 `python3 scripts/ci/check-t2-ci-registration.py` 通过（`/tmp/addp-block-snapshot-registration.log`）；既有 metrics 输入声明、配置测试自动发现及 Release block-capacity 矩阵已覆盖，无新入口或workflow。限定文件 diff 检查通过，未处理共享工作区其他会话的改动。后续自然 CI 仍等专门会话回传，不自行查询、调度、重跑CI／Hosted或设置定时任务；个人服务、主机挂载与数据卷均未操作。
-
-2026-10-29 18:07 补充远程固定源码证据：专门 CI 会话回传 [Release run40841858063／block-capacity Job123340144076](https://github.com/pampa0629/addp/actions/runs/40841858063/job/123340144076)，源码为 efc577aa69fc0a190dddba2bc9bff4903fc99f88、push／attempt1、completed／success，实际 selected=true 的 Verify isolated metrics lifecycle 成功。已独立核对回传原始日志 `/tmp/addp-ci-20261029-100020/job-123340144076.log` 的 SHA256 为 f6a8f755a872ca3e3be400a5805b03873e8488907141df134925c29995b76335；803—816行显示原公式及 TestIntegrationMetricsBlockCapacitySource 实际通过、无跳过，固定查询08:31:31Z、抓取1793262690.69，collecting／available，当前一个设备完整核对，并确认自有容器／网络／卷／临时文件零残留。独立审计为同目录 `P12-efc-block-capacity-actual-Linux-pass-audit.json`。本次时点交接修复的固定源码 Linux T2 验收据此关闭，不重复运行有效门禁；不倒推原 no_sample 唯一根因，不外推为当前其他源码、Safari／UI／Hosted或整个Release通过。本轮仅补证据，未轮询远程、重跑或新增运行窗口。
-## 主机与服务原位刷新（2026-10-30）
-
-同一对象、当前身份及已提交查询范围内，主机列表／详情／按设备展开和服务列表／当前实例趋势不再在每次请求开始时清空成功内容。保留现有读数、分页、设备表、图表及比较结果，用刷新按钮和 aria-busy 表示在途；首次读取仍有加载反馈。沿既有共享请求代数、自动刷新和领域组件更新，不新增API、缓存或调度。主机手动刷新可重读已展开设备和容量，不通过重建子组件触发读取。
-
-上下文改变仍立即清空；独立资源组失败清除对应旧值，服务摘要失败或实例失效不保留旧趋势／容器证明。撤权、身份变化及迟到响应继续沿原隔离路径。挂载创建告警按钮在容量重读期间保留但禁用，不能用待核验容量提交。已知不支持／未采集提示在刷新期间保留，不把缺样当零。修复保留分页后暴露的空结果联动：第二页刷新为空时，分页控件不得自动改写到第一页或发起越界的新查询。
-
-新增 resource-inplace-refresh.spec.js 的13项受控浏览器场景，暂缓真实前端所用HTTP夹具响应，覆盖手动／自动刷新、原DOM／canvas保持、容量与设备展开重读、失败清理、撤权迟到拒绝及服务退出清理。比较数据复用原完整时段夹具；原测试改为等待 aria-busy 结束，不再用“旧图已被卸载”判断请求完成，未放宽样本、身份或权限断言。
-
-本地实际验证：
-
-- 首轮相关149项中147通过、2失败，分别为原图可见即请求结束的等待竞态和旧比较应在刷新开始移除的断言，日志 `/tmp/addp-host-service-inplace-regression.log`。按新契约修正等待与断言，仍保留撤权时清空检查。
-- 首轮完整 `make test-monitor-frontend`：T1为131通过，T3为531通过／3失败，未运行构建，日志 `/tmp/addp-host-service-inplace-full.log`。失败为挂载按钮旧移除断言、第二页空结果自动跳页，以及服务比较等待竞态；分别修正禁用断言、产品分页事件边界和等待完成条件，未缩减用例。
-- 三项失败的标准专项复验全部通过（18.6秒），日志 `/tmp/addp-host-service-inplace-three.log`。
-- 最终 `make test-monitor-frontend` 退出0：131项T1、534项T3全部通过，构建成功（8.32秒），日志 `/tmp/addp-host-service-inplace-final.log`。输入摘要 `/tmp/addp-host-service-inplace-final-inputs.sha256` 的12项产品／测试文件在结束后全部校验一致。构建仍有既有大chunk提示，不属于失败。
-
-Safari真实运行只操作获准的第二个标签页，前端普通组件地址已提供新版，无需重启。Docker Desktop Linux VM主机详情手动刷新后查询23:35:38、CPU9.65%、可用内存51.63GiB；后续无额外手动刷新，内存曲线窗口推进到23:35:18—23:40:18，实际截图可见容量／比例三条曲线及双轴。当前来源不支持的文件系统、网络及TCP保持明确不可用；不计这些来源通过。
-
-服务页实际打开当前Monitor后端实例的趋势弹窗，前台自动刷新把窗口从23:44:19—23:49:19推进到23:54:03—23:59:03，CPU曲线实际可见；随后点击弹窗刷新，窗口为23:54:34—23:59:34。继续滚动核对RSS真实曲线，窗口推进到23:55:02—次日00:00:02，悬停显示23:58:32为66.98MiB。原生macOS明确未接入资源组采集，不计容器配额验收。Safari的离散观察证明真实数据推进及结果可见，不声称逐帧无闪烁或原canvas身份；后两项由受控T3暂缓响应场景证明。
-
-本批只改前端及对应规范／证据，不重复未变的Go、来源T2、权限或Online验证；未触发、轮询或重跑CI／Hosted，不设置定时任务，仍等专门会话回传。个人服务、数据库、身份、凭据及配置未改动。原正式来源／Hosted缺口保留，不能将本地T1／T3和个人Safari替代正式验收。
-
-## 主机详情就近提示（2026-10-31）
-
-主机详情复用共享FieldHelp：CPU／负载详细统计含义移到指标标题旁，采样折叠区保留实际时间；文件系统范围、磁盘排序、网卡口径移到各自标题旁，设备容量及Desktop VM范围移到容量列旁。磁盘列删除原独立点击Popover与重复短说明，并删除两语言中仅供旧展示使用的metricHelp和五项summary词条，完整detail保留。趋势的双轴／双向单位、断点、缩放与CPU比较滚动窗口说明随当前指标在选择器旁提示，不常驻重复段落。图轴、方向末次值、查询窗口、固定历史说明、短负载／TCP口径、设备数量及当前异常／缺样原因保持可见。列表展开复用同一设备／挂载组件；不改指标公式、数据、查询、权限、身份或刷新路线。
-
-测试沿原标准入口验证中英文悬停／键盘提示、容量边界、表头与设备展开、缺样／撤权、内存双轴、网络柱状、全量采样／缩放／比较和原位刷新。新增Console场景从正式语言控件切换，再检查同一Monitor iframe里的实际提示翻译、620像素宽度、URL不变、无新增指标读取及来源未提供的状态仍可见。窄屏原本隐藏语言控件，故先在桌面切换再缩窄验证，不修改产品响应式布局。
-
-本地结果与原失败分别保留：
-
-- `npm --prefix monitor/frontend test`：131项T1通过，日志 `/tmp/addp-host-detail-tips-unit.log`；`npm --prefix monitor/frontend run build`退出0（3.71秒），日志 `/tmp/addp-host-detail-tips-build.log`，既有大chunk提示保留。
-- `npm --prefix monitor/frontend run test:e2e -- node-resources.spec.js block-capacity.spec.js host-resource-zoom.spec.js network-bars.spec.js resource-comparison.spec.js host-device-expansion.spec.js host-filesystem-expansion.spec.js resource-inplace-refresh.spec.js`：143通过／1失败（5.8分钟），日志 `/tmp/addp-host-detail-tips-browser.log`。唯一失败仍等待已移走的CPU比较正文；改为聚焦指标旁提示读取原解释，并显式等aria-busy结束再核对刷新锚点。原入口 `resource-comparison.spec.js --grep 'historical comparison keeps'` 专项1项通过（6.2秒），日志 `/tmp/addp-host-detail-tips-history.log`；其余143项相关产品／测试输入未变，不重复运行。初轮仍为退出1，不冒写整批退出0。
-- `npm --prefix console/frontend run test:e2e -- node-resource-navigation.spec.js`：23通过／5失败（1.8分钟），日志 `/tmp/addp-host-detail-tips-console.log`。新增场景未等待前一提示隐藏，导致短暂两条tooltip的严格匹配失败；补原提示隐藏同步。四项容量场景仍要求在途清空，改为逐行核对保留原内容，失败后清空、身份撤销、精确响应收据、取消及迟到隔离断言保留。
-- 这五项第一次专项为3通过／2失败（1.5分钟），日志 `/tmp/addp-host-detail-tips-console-fixed.log`：新增提示场景在620像素时点击已隐藏的语言控件，按上述桌面切换后缩窄修正；列表容量场景仍要求仅切刷新偏好就关闭展开，按既有同上下文契约改为保持展开并重读。随后标准入口 `--grep 'host detail tips'` 为1项通过（33.2秒），日志 `/tmp/addp-host-detail-tips-console-tip.log`；`--grep 'capacity automatic refresh.*Console list iframe'` 为1项通过（37.5秒），日志 `/tmp/addp-host-detail-tips-console-list.log`。已通过的23项及3项相关输入未变，复用有效结果，不将任一失败轮改判通过或跳过后续断言。
-
-个人Safari仅操作已获准的第二个标签页，经菜单进入当前Desktop Linux VM主机详情。实际截图可见新的磁盘表头问号、设备数量和逐设备读数，文件系统／网络未提供的状态仍直显；点击内存趋势选择器旁问号后，实际弹出GiB容量／百分比双轴、断点及缩放范围解释，查询窗口及末次值仍在。页面直接提供新版，无需重启；本轮仅计当前个人来源的显示与提示可见，不外推全部来源、原生Linux、逐帧刷新或正式Hosted。
-
-根Make的Monitor／Console前端入口、现有浏览器目录自动发现及Monitor变更扩散至Console的路径登记已覆盖，无新依赖、目标或Workflow。未改共享组件内核、API、Swagger、后端、部署、IAM或个人配置。上述是本次显示变更的最小充分T1／相关T3与构建，不计整套Monitor／Console聚合、未运行的Go／来源T2／Online或新CI通过；CI及Hosted仍等专门会话回传，未自行触发、轮询、重跑或设置定时任务，也未重启个人服务。
-
-### Console 窄屏 tip 回归的语言弹层退出同步（2026-10-31）
-
-专门CI会话回传固定`5cb1a9980a1829fc1250834f3a5d3fcb95e6580c`的[Console失败Job](https://github.com/pampa0629/addp/actions/runs/41149596599/job/124382684316)，push／attempt1、selected=true：`node-resource-navigation.spec.js`的`host detail tips translate...`在620像素的外层文档宽度断言失败；浏览器271通过／1失败，构建未运行。原始日志`/tmp/addp-ci-20261031-092302/job-124382684316.log:864`及同目录`console-browser-artifact/addp-console-playwright-results-13bpEJ/node-resource-navigation-h-75080-ng-or-hiding-current-states/`保留。失败截图显示英文tip完整可见，截图自身不足以确认溢出元素，也不把相邻ECONNRESET日志当根因。
-
-同时核验唯一后继固定`f8a1b435ce18597aa7a6eaa1233362bc4b72d7f6`的[Console成功Job](https://github.com/pampa0629/addp/actions/runs/41150779367/job/124386516227)：272项浏览器实际通过（10.9分钟），构建完成（3.20秒），末尾selected=true／status=success。专门会话提供的原始pass日志`/tmp/addp-ci-20261031-092302/pass-job-124386516227.log`本轮重新核对，SHA256为`8558e032eb0a11aca5e4510eec3d4317b90d90da80a52674ffd55c53557e19f5`。`git diff 5cb1a9980 f8a1b435c -- console/frontend monitor/frontend common-frontend`为空，复用该固定版本真实Linux通过，不重复调度或重跑有效CI；后继通过本身不证明首失败根因已修，也不扩为当前所有模块／Hosted通过。
-
-沿原标准入口对唯一失败场景做一次测量：`npm --prefix console/frontend run test:e2e -- node-resource-navigation.spec.js --grep 'host detail tips translate'`，日志`/tmp/addp-host-tip-geometry-diagnostic.log`，实际退出1，保留原宽度断言失败。临时测量只在既有测试里记录resize后30次几何快照，不写产品；随后全部删除测量代码。620px视口中document.scrollWidth为1171，超出的是Console语言菜单的`el-dropdown__popper el-zoom-in-top-leave-active`，仍位于桌面坐标right=1170.75；主内容区和iframe右界始终为620。侧栏从240收缩至72后，外层溢出仍随退出中的语言弹层存在，故不是侧栏宽度或Monitor图表挤出。测量覆盖233.2毫秒的退出阶段，不据此推断持续溢出。
-
-根因为测试在点击English后立即缩窄视口，尚未等语言菜单退出动画结束；不应把尚在桌面位置退出的菜单计作后续稳定窄屏tip布局。仅在主机和同样流程的引擎两项用例中，缩窄前定位实际含English项的语言弹层，并用`toHaveCSS('display', 'none')`确认退出完成。仍保留620px宽度、原`scrollWidth <= innerWidth`断言、同iframe timeOrigin、URL和无额外请求检查；不以aria隐藏／透明度代替退出完成，不加固定sleep、重试或时限，不改产品布局或共享组件。
-
-最终最小充分验证：`npm --prefix console/frontend run test:e2e -- node-resource-navigation.spec.js engine-resource-navigation.spec.js --grep 'host detail tips translate|engine detail tips follow'`，2项通过（36.2秒），日志`/tmp/addp-host-engine-tip-exit-sync.log`；`git diff --check`通过。标准浏览器入口隔离并清理本轮服务，不操作个人部署。只改变两项测试的操作同步，不重跑产品未变的单测、构建、来源T2、全量Linux或Hosted；修正后的自然CI继续等专门会话回传，不自行轮询／重跑或设置定时任务。本轮UI测试修复与个人Infra／Business“采集来源不可用”是不同事实，后者未由此恢复。
-
-### 菜单退出同步修复的 Linux Console 门禁回传（2026-10-31）
-
-专门CI会话回传后，本会话重新读取原始日志及proof并核对SHA256：固定修复提交`4a6a7a4fa574ddda204b61d73acbdb5c397e1e52`，push／attempt1，[Platform CI run41156059896的Console Job124402993366](https://github.com/pampa0629/addp/actions/runs/41156059896/job/124402993366)，selected=true，整个Console Job completed／success，运行01:41:56—01:59:16 UTC。实际执行`make test-console-frontend`（raw686）：30文件／222项单元测试通过（732—733），272项浏览器通过（1034，15.1分钟），构建通过（1065，4.82秒），末尾selected=true／status=success（1070—1071）。
-
-原始日志`/tmp/addp-ci-20261031-100003/console-4a-job-124402993366.log`，SHA256为`321de09d045ad951ebda479d9525bac22e13a4ea7f57d94f632de6d0562f5cb7`；回执`/tmp/addp-ci-20261031-100003/console-4a-actual-proof.json`。本次为菜单退出同步修复本身的真实Linux完整Console门禁，不沿用此前f8同输入通过代替；5cb首失败、f8后继通过及本次修复通过分别保留，不倒改历史。此结论仅覆盖该固定提交的Console Job，不声明整个Platform workflow通过；未调查其他owner失败。
-
-本轮仅补证据，`git diff --check`通过，产品和测试未变，不重跑有效本地、CI或Hosted，不轮询／调度、不设置定时任务、不启停个人服务。Infra／Business来源不可用仍是另一项个人环境缺口，未由本次Console门禁恢复；下一步优先只读定位来源状态。
-
-## 主机详情当前对象变化的原位刷新保护（2026-11-02）
-
-沿原位刷新及6.3的对象失效契约，主机详情在重读System后、等待资源时也可能将新纳管状态与旧读数并列。新增UUID／名称／版本／enabled事实核对：变化后先清空标量、挂载容量／inode、磁盘／网卡、趋势、比较与缩放，再消费本轮结果；独立设备观察组件复用现有node.version／enabled守卫。本批不改变主机列表的整份快照更新方式，也不把每次HTTP返回的新引用当作变化；事实相同时沿原刷新保持行为，不扩大指标、采集、权限或API。
-
-新增停用／版本变更×手动／自动刷新4项，使用暂缓资源响应验证当前事实已重读但旧卡片／canvas尚不可保留，随后释放并核对缺样或新读数。修复前4项均失败（`/tmp/addp-host-owner-refresh-red.log`）；修复后标准 `npm run test:e2e -- e2e/node-resources.spec.js` 整份73项T3通过（2.4分钟，`/tmp/addp-host-owner-refresh-green.log`）。包括原位刷新、隐藏暂停／恢复、当前页摘要、热力、设备／挂载、双轴、缩放、比较、故障撤权及CPU空闲率旧场景，未删改原断言。前端132项T1通过，最终两页构建通过，日志分别`/tmp/addp-engine-owner-refresh-unit.log`、`/tmp/addp-owner-refresh-build-final.log`。
-
-同批[PG／Redis引擎页](Monitor采集来源与引擎指标历史证据.md#引擎当前对象变化的原位刷新保护2026-11-02)46项独立通过。标准脚本独占测试端口，没有启停个人服务；这些为受控T3，不外推个人Safari、真实来源或Hosted，不宣称完整Monitor浏览器门禁通过。CI 与 Hosted 结果在该记录中尚未认定。
-
-## 同组主机趋势切换的事实比较修复（2026-11-02）
-
-专门CI会话回传精确源码`aee6bcc427f714aefb97b58090789a8e6acb3fab`的[Monitor前端Job125032898526](https://github.com/pampa0629/addp/actions/runs/41368234803/job/125032898526)实际失败：590项浏览器中584通过、6失败；内存／磁盘双语在同组切换后缩放起点由79.58015267175573变为0，网络双语由94.65648854961832变为0。本会话只读取回传原日志，没有查询或重跑CI；`/tmp/addp-ci-20261102-090015/job-125032898526.log`的SHA256核对为`1831005d361722e660df47d1b61ba57fe8814e3f37652924088ff01eb9e154ef`。
-
-本机标准`npm run test:e2e -- e2e/host-resource-zoom.spec.js e2e/network-bars.spec.js --grep '(memory time zoom|disk time zoom|network grouped bars)'`先原样复现同6项失败（`/tmp/addp-monitor-zoom-repro.log`）。根因在NodeResources：查询参数改变会先清空展示用node，随后新增的System事实比较拿响应与空展示值比较，误判对象变化并清除宿主保存的缩放；不是仅断言太早或滑块输入未完成。现在只在页面内部保留最近一次System确认的主机事实作为比较依据，换主机或当前身份时同步清空，迟到响应仍受原epoch守卫。查询结果仍在原时机清除；UUID／名称／版本／enabled真实变化、不同指标组／范围／设备／比较、错误及撤权仍按原规范重置。没有改共享ChartRenderer、原始点、查询、权限或现有图表契约。
-
-原6项修复后独立通过（`/tmp/addp-monitor-zoom-fixed-six.log`）；另新增主机版本／名称真实变化两项反例，暂缓资源响应核对旧canvas清空，再释放核对缩放为0及完整21点。最终同一标准入口以原筛选加`same-group metric changes`、`--trace=retain-on-failure`运行8项通过（57.2秒，`/tmp/addp-monitor-zoom-eight-traced.log`）。原host-resource-zoom与network-bars的全部旧字节分别完整保留为文件前缀及原文件；原精度2、URL／样本／空值与反例均未删改，未添加sleep、容差、自动重试或预算放宽。前端132项T1及构建通过（`/tmp/addp-monitor-zoom-unit.log`、`/tmp/addp-monitor-zoom-build.log`）。
-
-另对引用同一主机夹具的18份浏览器spec作266项扩散检查，实际261通过、5失败，退出1（15.4分钟，`/tmp/addp-monitor-zoom-affected-browser.log`）。失败包括告警挂载过滤第二次请求未发出、主机设备列表空白、英语主机筛选初始请求未发出、热力面板初始未出现，以及英语内存场景已通过原缩放值断言后、在第102行动画finished等待失败；该第五项不同于旧CI第100行缩放变0。保留失败截图／上下文，目录`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-n4OP7X`。独立8项含最后一项的完整场景；其余4项再沿原标准入口加`--trace=on`作一次取证，4项通过（10秒，`/tmp/addp-monitor-zoom-extra-failures-traced.log`），无产品／测试修改。此复核没有确认组合失败根因，不归因于环境，也不将原266项退出1改写为通过；不把原6项独立通过外推完整Monitor浏览器门禁。
-
-本次只改Monitor主机页与本领域浏览器反例；既有Platform CI Monitor前端路径选择和标准E2E自动发现覆盖，无需新增Makefile或workflow。共享前端及其他消费者没有产品变更，不重跑无关门禁。个人服务未启停，Safari未操作；精确替代提交的Linux结果及Hosted继续等专门会话回传，没有设置定时任务。下一步回到已确认的MinIO17项固定指标来源及mTLS输出，账号阶段证据不变。
-
-### 缩放修复的固定 Linux 产品门禁回传（2026-11-02）
-
-专门CI会话回传固定源码`74edeb978bd6a8c2874401b0df336bf050a2e0e5`的[Platform Run41375543514／Monitor前端Job125054853600](https://github.com/pampa0629/addp/actions/runs/41375543514/job/125054853600)，attempt1。本会话独立读取原始日志并核对SHA256：`/tmp/addp-ci-20261102-104553/job-125054853600.log`为`56ebc6bf57caa2241a942bc87a4c11c07fdd882431c1d912f3d7b62992fddb10`。标准`make test-monitor-frontend`实际执行，592项浏览器全部通过（28.7分钟），包含原内存／磁盘／网络双语6项反例和新增System版本／名称变化2项；随后Vite构建通过（10.88秒），产品步骤及gate summary均为success。
-
-整Job在其后的`Post Prepare Monitor frontend environment`归档Node缓存tar时取消；因此只认定“固定源码的Linux产品门禁通过、整Job取消”，不改为Job或父workflow通过，不重复运行有效验收。独立结论文件为`/tmp/addp-ci-20261102-104553/Monitor74-independent-product-pass-job-post-cancel-proof.json`。旧584通过／6失败、7e2原Job未运行完以及本机266项组合的5项失败全部保留，不把新固定版本成功倒写为旧记录成功。
-
-另逐字节比较本工作区的`NodeResources.vue`、`host-resource-zoom.spec.js`、`network-bars.spec.js`与受验74ed，三文件完全一致；协调会话也已核对远端固定`4243aefa676f93c71916872dda30c6127aa91546`的同三文件（`/tmp/addp-ci-20261102-123449/Monitor-current-owned-input-recheck.json`）。该一致性只支持复用缩放修复的Linux证据，不外推当前main全部前端输入、个人Safari、Hosted或新增`59d4adaee`MinIO来源的CI／正式验收。此次只核验回传材料及同步进展，没有查询、触发或重跑CI／Hosted，没有设置定时任务。
+三份主机实现／测试输入与固定 `4243aefa676f93c71916872dda30c6127aa91546` 一致，独立回执 `/tmp/addp-ci-20261102-123449/Monitor-current-owned-input-recheck.json`。只支持复用缩放产品步骤证据，未覆盖整 Job／workflow、全部新 main 输入、Safari、Hosted 或 `59d4adaee` MinIO 来源。
 
 ### 主机恢复后的Safari复验与缺样提示修正（2026-11-04）
 
-在正式主机来源up／健康recover已验基础上，Safari沿Console平台管理员正式会话核对列表及详情：18核、62.68GiB、CPU忙碌率／内存使用率及vda吞吐均有真实值，点击详情刷新后查询时间与读数更新。通过可访问滚动条定位资源趋势，实际截图呈现内存总量、可用内存和使用率三曲线、左右GiB／%双轴及图例；休眠时段保留缺样断点。TCP、文件系统和网卡沿当前Desktop来源能力显示缺失／未提供，不补零；当前容量采样器未启用，不将此页当作新增容量来源验收。
+个人 Safari 管理员页实见 18 核、62.68 GiB、CPU／内存／vda，手工刷新时间和数值更新，内存三曲线及双轴可见。休眠缺样保留断点，TCP／文件系统／网卡未提供，容量采样器关闭。旧汇总把全部 no_data 暗示为等待可恢复；新双语提示引导查看对应指标原因，两项受控红绿验证缺样与合法零恢复。
 
-发现汇总提示在任意标量no_data时一律写“尚未形成有效样本或完整统计窗口”，会误导来源长期未提供的TCP也能靠等待恢复。本批仅修订Monitor中英文词条为“部分指标暂无有效值，具体原因见对应指标说明”，不变更判定、指标或权限；原因仍在相应指标旁。Safari实际AX和截图已看到新版提示。新增中英文T3覆盖采集成功而TCP缺样、其他有效内存保留、TCP恢复为有效零后提示消失及正常单位。有效红测两项均因旧提示失败，修订后两项通过；测试钩子仅处理响应中实际存在的TCP序列。
+Monitor 135 单元通过。完整浏览器首轮 534 通过／8 失败／1 中断／141 未运行，观察到 Clamshell Sleep 与多次 DarkWake；经归属核验中止自有 runner，退出 130／Make 2，隔离目录和端口租约已回收。唤醒后原样定向 8 项和余下 144 项通过，其中 2 项重叠，合计 684 个不同场景有分批证据；独立构建通过，原整轮失败保留。原件 `/tmp/addp-node-collection-*`，失败截图 `addp-monitor-playwright-results-dsytDF`。
 
-`make test-monitor-frontend`中135项单元通过；完整浏览器首轮受环境休眠干扰出现8项失败，随后验证唯一自有Monitor runner／cwd／npm父链，发送SIGINT并由标准入口清理，浏览器入口退出130、make退出2，结果为534通过、8失败、1中断、141未运行，不记整条命令通过。只读pmset日志确认09:41:23发生Clamshell Sleep，随后反复Maintenance Sleep／DarkWake；六项趋势失败截图时间09:42:14、09:43:44、09:46:15、09:46:45、09:47:38、09:50:04逐一对应唤醒点，身份用例09:54:18也对应唤醒，文件系统用例09:55:06处于短暂DarkWake中。09:55:11恢复FullWake，后续只读核验开盖；未改电源设置或添加唤醒断言。
-
-保持唤醒后，通过原标准`npm run test:e2e`入口，仅选择上述8项、原预算／源码／断言不变，8项全部通过（40.7秒）；再按原文件顺序选择process-resources起至uptime-units的11个文件，144项全部通过（4.8分钟），其中2项是首轮已通过项的文件边界重复。程序按完整测试名集合核对，534＋8＋144－2＝684个不同浏览器场景均有通过证据；这是分批覆盖结论，不改写首轮退出状态，也不作为单次完整命令或CI通过。单独`npm run build`退出0（7.65秒）。原自有浏览器运行目录和端口租约已回收；失败截图保留。
-
-日志：`/tmp/addp-node-collection-copy-red.log`、`/tmp/addp-node-collection-copy-frontend.log`、`/tmp/addp-node-collection-awake-recheck.log`、`/tmp/addp-node-collection-remaining.log`、`/tmp/addp-node-collection-copy-build.log`；测试集合收据`/tmp/addp-node-collection-browser-coverage.json`，只读电源记录`/tmp/addp-node-collection-power-20261104.log`。首轮浏览器失败证据目录为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-dsytDF`。
-
-Safari通过“窗口→当前控制台窗口”确认过“自动刷新已开启”，非手工刷新期间查询时间亦前移，但后续观察再次报告隐藏，尚无稳定连续前台定时、视觉无闪及缩放刷新保持的充分个人证据。原生拖拽仍报noWindowsAvailable，不用受控T3替代个人拖拽验收；真实数值、手工刷新、双轴图展示与上述缺口分别记录。本轮未重启服务、改个人配置／凭据／数据库，未查询或手动触发CI／Hosted、未设置定时任务。下一步优先细化统一采集恢复的失败诊断，保留Safari剩余交互复验。
+个人 Safari 曾看到自动刷新开启与时间推进，后又报告隐藏；拖动报 noWindowsAvailable。当时仅确认真实读数、手工刷新和双轴展示，持续前台、原生拖动及缩放保持另见下一节，正式 Hosted 未覆盖。
 
 ### 主机Safari前台刷新及原生缩放保持复验（2026-11-04）
 
-约11:29—11:35（Asia/Shanghai），沿既有Safari无痕窗口及平台系统管理员会话，复验Docker Desktop Linux VM主机详情。页面持续报告“自动刷新已开启”，本轮原生拖拽正常，未出现此前的hidden或noWindowsAvailable；这只是当前环境复验，不认定历史窗口错误根因已修复。未调整Safari／电源／Docker设置，未切换账号或重启服务。主机18核、62.68GiB及CPU／内存／vda真实数值继续有效；当前未接入的TCP、文件系统和网卡仍按能力显示缺失，不补零。
+11:29–11:35 的个人 Safari 管理员会话实际保持前台，原生拖动可用。Desktop VM CPU／内存／vda 有真实值；TCP、文件系统及网卡仍未接入。此次恢复可操作性未定位历史 hidden／noWindowsAvailable 的根因。
 
-内存使用率选择近一小时，原生拖动底部左滑块约从x495移至x940（截图1692×1898），右端保持x1613，实际呈现局部时段，仍有总量／可用内存／使用率三曲线和GiB／%双轴。随后无手工刷新或窗口激活动作，完整查询窗口末端11:30:16→11:31:02，前移46秒；截图中左滑块比例、图表位置及三曲线保持，横轴随时间平移。点击刷新后查询时间11:31:34，再定位图表时窗口末端11:31:50，缩放仍保持，三曲线及新数值可见。各次截图的首个横轴标签不是视口精确起点，不据标签反算精确缩放比例。
+| 实际操作 | 现场结果 |
+| --- | --- |
+| 内存近一小时，原生拖动左柄 | 保持三曲线和 GiB／% 双轴，无手工输入时窗口末端 11:30:16→11:31:02，缩放保持；手工刷新后至 11:31:50 仍保持。 |
+| CPU 忙碌率近一小时，原生拖动 | 无手工输入时 11:33:12→11:34:14，视口保持；AX 有一帧刷新按钮禁用且原图仍可见。实际悬停 11:16:33 为 48.75%，手工刷新后至 11:35:43 保持。 |
 
-通过原趋势选择器切换CPU忙碌率近一小时，原生拖动左滑块约至x1050。未手工刷新或激活窗口期间，窗口末端11:33:12→11:34:14，前移62秒，局部缩放与图表位置保持；11:34:14的AX还捕获到刷新按钮disabled而原曲线／数值仍可见的单帧。其后原生指针点击曲线，提示11:16:33的CPU忙碌率48.75%；点击页面刷新得到11:35:12，再定位图表时窗口末端11:35:43，左滑块及局部时段仍保留，真实曲线继续更新。
-
-证据为本会话CUA的AX、实际输入和截图；人工整理摘要`/tmp/addp-safari-host-trend-20261104.json`不冒充原始工具日志。补齐的是本轮CPU／内存的短时前台自动更新、原生拖拽及手动／自动刷新缩放保持；静态帧不能证明全程无闪、DOM节点身份或长期稳定性。工具点击顶部刷新按钮会将页面滚到按钮处，重新滚到图表只核对缩放，不作为手动刷新滚动位置保持证据。磁盘、负载、运行时长、文件系统、网卡图及其他浏览器未在本轮逐项操作，沿各自已有分层证据；不外推正式Hosted、生产或当前全部功能通过。
-
-本批只补既有证据文档，`git diff --check`及新锚点核对通过；无产品代码／API／测试入口变更，不重跑未变化的前端门禁，不要求重启。CI／Hosted仍等专门会话回传，未查询或手动调度，未设置定时任务。下一步优先复验磁盘IO趋势的原生缩放、提示及刷新保持。
+原生 AX、截图与实际输入支持本次短时前台自动更新、拖动与刷新缩放保持。人工摘要 `/tmp/addp-safari-host-trend-20261104.json`。点击顶部刷新会滚至按钮，返回图表只核对缩放；没有证明手工刷新滚动位置、全程无闪、DOM 节点身份或长期稳定。磁盘等其余图、其他浏览器和 Hosted 未覆盖。
 
 ### 磁盘吞吐纵轴单位与Safari交互（2026-11-04）
 
-沿Safari平台管理员真实主机详情，由vda行“查看趋势”进入近一小时读写双曲线。原生左滑块从约x495拖至x1050后，未手动刷新时窗口末端11:45:34→11:46:20，前移46秒，局部比例及双曲线保持；数据提示11:37:05读取0.00MiB/s、写入0.75MiB/s。点击刷新后查询11:47:13，再定位图表时末端11:47:28且缩放保持。实际Screenshot发现纵轴只有刻度数值；单位虽然在tip与数据提示中，但图面无法直接识别吞吐。
+Safari 实际 vda 近一小时双曲线，原生缩放后 11:45:34→11:46:20 自然推进，手工刷新后 11:47:28 保持。11:37:05 的读／写为 0.00／0.75 MiB/s；首个页面问题是图上纵轴只有数值，单位只在提示。
 
-先补正式规范，再在NodeResources复用共享ChartRenderer的valueAxes声明“磁盘读写吞吐”单轴；共享实现自动追加当前IEC速率单位，两方向共轴，最小值0。只增加模块中英文词条，不另造图表、改共享渲染器或指标查询／缩放公式；CPU、内存双轴、网络柱状、时长及挂载仍走原配置。新增中英文T3从读、写两种入口核对实际ECharts纵轴，刷新后由MiB/s切至KiB/s时名称／单位同步，数据与两条序列的比例保持。旧实现红测两项均因缺少轴名与min失败；修订后通过。
+复用共享轴声明，单轴最小值 0，双向使用同一 IEC 单位。两项中英文 T3 的首败是旧轴缺名称和 min，红绿通过后另验刷新 MiB/s→KiB/s；135 单元、89 定向浏览器与构建通过。原件 `/tmp/addp-disk-axis-*.log`，失败目录 `addp-monitor-playwright-results-D4iyCr`。未执行完整前端／CI。
 
-本地`npm test`135项通过，`npm run build`退出0（5.74秒，沿原有分包大小提示）；标准隔离浏览器入口`npm run test:e2e -- e2e/host-trend-interactions.spec.js e2e/host-resource-zoom.spec.js e2e/resource-inplace-refresh.spec.js --workers=1`89项全部通过（6.3分钟），涵盖新增两项、各类指标图例／数据提示、缩放与原位刷新隔离。日志`/tmp/addp-disk-axis-red.log`、`/tmp/addp-disk-axis-browser.log`，红测证据目录`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-D4iyCr`。范围限本批专项，完整 Monitor 前端、Console 和远端 CI 另计。
-
-修订后Safari实际截图已出现“磁盘读写吞吐（MiB/s）”，再次原生缩放成功。首次等待中11:55:38出现页面滚回顶部和局部缩放复位，原因尚未确认，不以其后正常认定已解决。随后11:57:25重新选择局部区间，手动刷新11:57:59后保持，至11:58:45无进一步输入自动前移46秒仍保持，双曲线与轴名均可见；仅证明这一后续短时区间。此前还出现页面隐藏并按原行为暂停，手动刷新后恢复；不修改可见性规则或声称历史hidden根因修复。工具点击顶部刷新会定位到按钮，重新滚回只核对缩放，不计滚动位置保持。原始AX／截图在本会话，`/tmp/addp-safari-disk-trend-20261104.json`为人工整理摘要。
-
-个人采集、数据库、账号／配置／权限及服务未变，未重启；Desktop磁盘仍为VM内核视图，不代表Mac物理盘或引擎独占消耗。全程无闪、长期稳定、其他设备／磁盘指标及正式Hosted不在本批结论；CI／Hosted等专门会话回传，不轮询或设置定时任务。下一步优先只读取证定位此次偶发滚动与视口复位，不将当前正常当作历史问题解决。
+修订后 Safari 实见“磁盘读写吞吐（MiB/s）”且可拖动。11:55:38 首次等待时回顶部并复位，原因未定；11:57:25 重建视口，手工刷新后至 11:58:45 的 46 秒自动推进仍保持。此前隐藏暂停及手工恢复各自保留，滚回图表不计滚动位置保持。人工摘要 `/tmp/addp-safari-disk-trend-20261104.json`。仅当前 Desktop VM、当前设备和短时观察；Mac 物理盘、全程无闪、长期稳定、其他设备和正式 Hosted 未覆盖。
 
 ### 主机视口复位与凭据续期隔离复现（2026-11-04）
 
-只读核对上述11:55:38现象前后的既有日志。Monitor前端日志在11:52:12记录两份翻译文件的page reload及NodeResources的HMR通知，11:54—11:56无新重载通知；只能证明服务端发出通知，不能证明Safari实际接收／执行时刻。11:54—11:57的Monitor资源观测60次、趋势12次均HTTP200，Monitor及System分别只有一个运行实例；HTTP200不证明响应内容校验成功或主机版本未变。System在11:55:06.956和11:55:11.472各记录一次成功的refresh。原日志没有对应Safari的权限结果、主机事实响应或重载应用链，因此不能唯一归因历史事件，也不把同时间的其他接口失败归为监控原因。脱敏汇总在`/tmp/addp-host-viewport-renewal-20261104.json`。
+对 11:55:38 历史现象只读关联：11:52:12 有前端 reload／HMR 通知，11:54–11:56 无新增；11:54–11:57 资源／趋势 HTTP 200，System 在 11:55:06.956 和 11:55:11.472 有 refresh。没有 Safari 实际应用重载、AuthContext 或主机事实响应，无法唯一归因。收据 `/tmp/addp-host-viewport-renewal-20261104.json`。
 
-代码链路为：共享useAuth在Token轮换后将AuthContext暂置空并重核当前权限；NodeResources按identity与canRead立即清除数据和缩放，页面高度收缩；同一身份重新核验成功后重新查询。Console也按授权身份守卫iframe。普通同事实资源刷新保留视口，与凭据轮换期间权限未知的路径不同；不修改共享认证逻辑或保留未经当前授权的数据。
-
-新增标准隔离T3从真实store.refreshAccessToken入口轮换夹具Token，拦住后续AuthContext响应，不直接改写AuthContext。原生拖拽得到局部磁盘视口且滚动位置大于0后，权限等待期间图表／资源卡片消失、滚动归0，未发出新的资源读取；释放与原来完全相同的身份／权限后重新查询，图表回到完整范围且滚动仍为0。单项`npm run test:e2e -- e2e/host-resource-zoom.spec.js --grep 'token renewal' --workers=1`通过（7.4秒），日志`/tmp/addp-host-token-renewal-diagnostic.log`。这证明当前实现存在可确定复现的同身份续期复位路径，不等同正式身份Safari的历史因果证明；本批只增加隔离测试及证据，产品行为未改。
-
-后续建议仅在重新确认相同账号／平台上下文／权限、查询及System主机事实后，从内存恢复临时滚动与缩放；旧资源仍清除、全部数据重新查询，真实身份／权限／事实变化及失败继续清空，不写URL或持久存储。该范围与现行“身份变化清空视口”的细分待用户确认，未提前实现。CI／Hosted仍等专门会话回传，不查询、调度或设置定时任务；个人数据库、配置、登录状态和服务均未操作。
-
-相关回归`npm run test:e2e -- e2e/host-resource-zoom.spec.js e2e/resource-inplace-refresh.spec.js --workers=1`38项全部通过（2.1分钟），含新增续期、已有撤权／迟到响应、主机事实变化、各类缩放及手动／自动原位刷新；日志`/tmp/addp-host-renewal-regression.log`。`node --check monitor/frontend/e2e/host-resource-zoom.spec.js`及本批`git diff --check`通过。只修改测试和证据，不修改产品输入，沿用此前135项单元及构建证据但不计为本轮重跑；完整Monitor／Console前端及CI／Hosted未运行。
+受控 T3 经真实 store.refreshAccessToken 暂缓夹具 AuthContext；局部视口与非零滚动在权限未知时清空、停止新请求，同身份释放后重新查询，视口与滚动仍复位。隔离单项及相关 38 项通过，原件 `/tmp/addp-host-{token-renewal-diagnostic,renewal-regression}.log`。这证明受控续期复位路径，未证明历史 Safari 事件由此引起。本批只增测试，视口恢复实现另见下一节；完整前端、实际 Safari 续期和 Hosted 未运行。
 
 ### 主机同身份续期后的临时视口恢复（2026-11-04）
 
-用户确认仅优化主机详情的同身份续期视口，先补正式规范6.3，再实现组件内唯一临时快照。Token轮换前仅记滚动、缩放及原身份／有效权限、规范查询与System主机四项事实的核对依据，不保留资源数据、凭据或持久化状态。原权限等待继续清空数据、取消请求；相同账号／平台上下文／委托／完整权限重核成功，且主机UUID／名称／版本／纳管状态和查询未变、各组新观测及趋势均合法且版本一致，才一次恢复位置和缩放。身份／权限／事实／查询变化、任一读取／校验或重核失败、授权未恢复又轮换及离页均丢弃；合法缺样仍沿原显示。共享认证、IAM、指标口径和其他页面行为未改。
+同身份续期只暂存滚动、缩放与核对依据。权限等待仍清旧数据及取消请求；仅相同账号／平台上下文／委托／完整权限、同查询及同主机四项事实，且所有新读数合法、版本一致时，一次恢复临时位置。身份、权限、事实、查询或任何读取变化／失败、二次轮换与离页均丢弃。不保留凭据、旧数据或持久化状态。
 
-Console等待重核时隐藏既有iframe，所以采集位置使用页面仍可布局时的最后坐标，避免把隐藏导致的0当作用户位置；原位数据清空规则仍保留。重核成功后先全量重读，再恢复；两个Console确定性场景分别让Console先恢复，以及模块已取完新数据而Console稍后恢复，均验证同一iframe、正确临时缩放／滚动及新窗口数据。主机专项覆盖相同身份、等待趋势时不提前恢复，账号／租户／有效权限变化，主机名称／版本／停用与观测版本变化，查询变化、趋势／即时／文件系统／网络失败、重核失败及二次续期。
+Console 等待时隐藏同 iframe，以隐藏前可布局坐标为准。两个受控场景分别覆盖 Console 先恢复、模块先读完，均核验新数据和临时视口。旧恢复断言先失败；后续测试助手额外要求理想像素比例，引发 18 项失败，删除该要求后仍以实际图表模型／滑块和原 5 秒、1e-6 断言核对。
 
-新恢复断言在原实现红测失败；实现后通过。跨模块测试助手移除Monitor专属Playwright导入，使用所属frame的同步谓词等待实际图表模型与绘制滑块区间一致，保留原5秒预算和1e-6一致性；不再额外要求实际拖动等于理想像素百分比。曾加入该多余几何断言，导致窄图18项失败；已删除，未修改产品统计或扩大等待预算。该助手仍只有一份实现，未复制到Console。
+| 门禁 | 实际结果 |
+| --- | --- |
+| Monitor 完整入口首轮 | 135 单元通过、717／735 浏览器，18 项助手断言失败，退出 2，未到构建。 |
+| 分批复验 | 8 个直接消费者 177 项通过，覆盖原 18 项失败。扣除 159 项重叠，累计 735 个不同场景有通过证据；首轮仍失败。 |
+| Console 与构建 | 主机定向 30 项通过，助手修订后两个续期顺序再验通过；独立构建、登记 27＋21 通过，完整 Console 未运行。 |
 
-验证分层如下：
-
-- 首轮标准`make test-monitor-frontend`：135项单元通过；浏览器735项中717通过、18项因上述测试助手断言失败，make退出2，构建未在该次执行。日志`/tmp/addp-host-renewal-monitor-full.log`，失败证据`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-jCn5ht`。不能记为单次完整门禁通过。
-- 修订后沿标准共享入口重跑全部8个直接消费助手的spec：`npm run test:e2e -- e2e/engine-resources.spec.js e2e/host-resource-zoom.spec.js e2e/host-trend-interactions.spec.js e2e/network-bars.spec.js e2e/process-comparison.spec.js e2e/process-trend-zoom.spec.js e2e/redis-resources.spec.js e2e/uptime-units.spec.js --workers=1`，177项全部通过（9.8分钟），日志`/tmp/addp-host-renewal-chart-consumers-final.log`。测试ID核对18项原失败全部被覆盖，最终分批证据累计735项不同用例，不重复计算159项；回执`/tmp/addp-host-renewal-coverage-20261104.json`。其余有效结果不盲目重跑。
-- Console同一真实iframe的主机页面专项`npm run test:e2e -- e2e/node-resource-navigation.spec.js --workers=1`30项通过；助手最终修订后新增两项续期顺序再经`--grep 'host viewport returns'`复验通过。日志`/tmp/addp-host-renewal-console-host-suite.log`及`/tmp/addp-host-renewal-console-final-sync.log`。未运行完整Console前端门禁。
-- `npm run build`退出0（4.54秒，保留原分包大小提示）；`make test-frontend-ci-registration`27项通过并核对21个前端登记。仅前端组件／测试变更，现有Monitor和Console门禁自动发现，无新增API、Swagger、权限、依赖或编排；JS语法、本批diff及链接检查通过。最终范围摘要`/tmp/addp-host-renewal-final-inputs-20261104.json`在验证后核对未变。
-
-原生Safari第二个标签页登录后，真实vda读写曲线及单位可见。早先窗口不可拖动并报告hidden；用户激活后原生拖动成功，16:42:57建立约一半局部窗口，左手柄约x1800／右约x2910，滚动条0.947323。至16:46:31无本会话额外输入，自然刷新窗口前移214秒、滚动和相对缩放保持；实际图内开始时间16:14:27→16:18:01。该段既有System日志未记录refresh请求，因此只认自然资源刷新，不计Safari真实凭据续期闭环。原生AX／截图在本会话，`/tmp/addp-host-renewal-safari-20261104.json`为人工摘要；公开模块脚本也已只读确认包含新增守卫，不以脚本存在替代交互验收。
-
-未触发CI／Hosted或设置定时任务，继续由专门会话回传；未自行重启／应用服务、修改个人账号、数据库、配置或Docker设置。原生Safari真实续期恢复与全程无闪仍未验收，下一步优先补该闭环；本批不把先前单次历史Safari事件唯一归因于续期。
+原件 `/tmp/addp-host-renewal-*`，首轮失败目录 `addp-monitor-playwright-results-jCn5ht`。Safari 真实 vda 曲线及轴单位可见，用户激活后原生拖动成功；16:42:57→16:46:31 无额外输入，查询前移 214 秒，滚动及相对视口保持。既有 System 日志该段无 refresh，故只认自然资源刷新。人工摘要 `/tmp/addp-host-renewal-safari-20261104.json`。真实 Safari 凭据续期、全程无闪、正式 Hosted 仍未验收。
