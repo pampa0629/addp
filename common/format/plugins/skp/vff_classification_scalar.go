@@ -3,6 +3,7 @@ package skp
 import (
 	"encoding/xml"
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -48,6 +49,24 @@ func (b *vffSKCBinder) scalar(n *vffXMLNode, typ xml.Name, raw string) (vffSKCVa
 		value.text = strings.NewReplacer("\t", " ", "\r", " ", "\n", " ").Replace(raw)
 	case "token":
 		value.text = strings.Join(strings.FieldsFunc(raw, func(r rune) bool { return r == ' ' || r == '\t' || r == '\r' || r == '\n' }), " ")
+	case "ID", "IDREF", "NMTOKEN":
+		if text == "" {
+			return value, false, fmt.Errorf("empty XSD name value")
+		}
+		token := typ.Local == "NMTOKEN"
+		for i := range len(text) {
+			ch := text[i]
+			if ch >= 128 {
+				return value, false, nil
+			}
+			if !vffSKCFilterNameByte(ch, i == 0 && !token) && !(token && ch == ':') {
+				return value, false, fmt.Errorf("invalid XSD %s name value", typ.Local)
+			}
+		}
+		value.text = text
+	case "anyURI":
+		known, err := vffSKCURIReference(text)
+		return vffSKCValue{text: text}, known, err
 	case "boolean":
 		switch text {
 		case "true", "1":
@@ -83,6 +102,30 @@ func (b *vffSKCBinder) scalar(n *vffXMLNode, typ xml.Name, raw string) (vffSKCVa
 		value.text = canonical
 	}
 	return value, true, nil
+}
+
+// Checks only URI references that need no XLink escaping. The parser's result
+// is discarded so URI comparison retains the original lexical representation.
+func vffSKCURIReference(text string) (bool, error) {
+	const hex = "0123456789abcdefABCDEF"
+	for i := 0; i < len(text); i++ {
+		ch := text[i]
+		if ch == '%' {
+			if i+2 >= len(text) || !strings.ContainsRune(hex, rune(text[i+1])) || !strings.ContainsRune(hex, rune(text[i+2])) {
+				return false, fmt.Errorf("invalid XSD URI percent escape")
+			}
+			i += 2
+			continue
+		}
+		if !vffSKCFilterNameByte(ch, false) && !strings.ContainsRune("~:/?#@!$&'()*+,;=", rune(ch)) {
+			return false, nil
+		}
+	}
+	if strings.Count(text, "#") > 1 {
+		return false, fmt.Errorf("multiple XSD URI fragment separators")
+	}
+	parsed, err := url.Parse(text)
+	return err == nil && (parsed.Scheme == "" || parsed.Opaque != "" || parsed.Host != "" || parsed.Path != ""), nil
 }
 
 func vffSKCDecimal(raw string, integer bool) (string, error) {

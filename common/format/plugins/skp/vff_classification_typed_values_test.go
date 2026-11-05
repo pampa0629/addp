@@ -2,6 +2,7 @@ package skp
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"strings"
 	"testing"
@@ -20,6 +21,9 @@ func TestVFFSKCFixedScalarsKeepExactPrecisionAndDatatypeWhitespace(t *testing.T)
 		{"decimal", ".0100", "0.01", "0.01"}, {"decimal", "1.", "+1", "1"},
 		{"boolean", " 0 ", "false", "false"}, {"token", " a&#xA; b ", "a b", "a b"},
 		{"normalizedString", "a&#xA;b", "a b", "a b"}, {"string", "", "", ""},
+		{"IDREF", "&#x9;_abc-01&#xA;", "_abc-01", "_abc-01"},
+		{"anyURI", " ../a%2Fb?q=%23#id ", "../a%2Fb?q=%23#id", "../a%2Fb?q=%23#id"},
+		{"anyURI", " ", "", ""},
 	} {
 		v := skcAttributeValue(t, skcTypedFixedFiles(t, tc.typ, tc.left, tc.right))
 		if len(v.issues) != 0 || len(v.fixedValues) != 1 || !v.fixedValues[0].known || v.fixedValues[0].typeName.Space != vffXSDNS || v.fixedValues[0].typeName.Local != tc.typ || v.fixedValues[0].useValue.text != tc.value || v.fixedValues[0].baseValue.text != tc.value || v.fixedValues[0].source == v.fixedValues[0].declaration {
@@ -29,6 +33,8 @@ func TestVFFSKCFixedScalarsKeepExactPrecisionAndDatatypeWhitespace(t *testing.T)
 	for _, tc := range []struct{ typ, left, right string }{
 		{"integer", "9007199254740993", "9007199254740992"}, {"decimal", "0.00000000000000000001", "0.00000000000000000002"},
 		{"boolean", "false", "true"}, {"string", " a ", "a"}, {"token", "a b", "a b"},
+		{"anyURI", "a%2Fb", "a%2fb"}, {"anyURI", "a%41", "aA"},
+		{"NMTOKENS", "1:a b", "b 1:a"},
 	} {
 		if got, err := readVFFClassificationBindings(context.Background(), skcGraphContainer(t, skcTypedFixedFiles(t, tc.typ, tc.left, tc.right)), skcBindingLimits()); err == nil || got != nil || !strings.Contains(err.Error(), "disagrees") {
 			t.Fatalf("different exact typed values accepted: %#v %v", tc, err)
@@ -44,6 +50,9 @@ func TestVFFSKCFixedScalarsRejectLexicalAndBuiltinRangeErrors(t *testing.T) {
 		{"int", "2147483647", "2147483648"}, {"short", "-32768", "-32769"}, {"byte", "127", "128"},
 		{"unsignedLong", "18446744073709551615", "18446744073709551616"}, {"unsignedInt", "4294967295", "4294967296"},
 		{"unsignedShort", "65535", "65536"}, {"unsignedByte", "255", "256"}, {"unsignedByte", "-0", "-1"},
+		{"IDREF", "id-1", "prefix:id"}, {"IDREF", "id-1", "1id"}, {"IDREF", "id-1", "x y"},
+		{"anyURI", "path?x=%20#id", "path?x=%Q0"}, {"anyURI", "path#id", "path#one#two"},
+		{"NMTOKENS", "1:a 1:a", " &#x9; "}, {"NMTOKENS", "1:a b", "a/b"},
 	} {
 		v := skcAttributeValue(t, skcTypedFixedFiles(t, tc.typ, tc.valid, tc.valid))
 		if len(v.fixedValues) != 1 || !v.fixedValues[0].known {
@@ -58,7 +67,7 @@ func TestVFFSKCFixedScalarsRejectLexicalAndBuiltinRangeErrors(t *testing.T) {
 }
 
 func TestVFFSKCFixedUnknownTypesAndFacetsRemainUnproved(t *testing.T) {
-	for _, typ := range []string{"float", "double", "dateTime", "anyURI"} {
+	for _, typ := range []string{"float", "double", "dateTime"} {
 		v := skcAttributeValue(t, skcTypedFixedFiles(t, typ, "same", "same"))
 		if len(v.fixedValues) != 1 || v.fixedValues[0].known || !strings.Contains(strings.Join(v.issues, " "), "typed value equality not proved") {
 			t.Fatal("unsupported builtin guessed by matching strings")
@@ -70,6 +79,34 @@ func TestVFFSKCFixedUnknownTypesAndFacetsRemainUnproved(t *testing.T) {
 	v := skcAttributeValue(t, f)
 	if len(v.fixedValues) != 1 || v.fixedValues[0].known || v.fixedValues[0].typeName.Space != "urn:b" || v.fixedValues[0].typeName.Local != "Restricted" || !strings.Contains(strings.Join(v.issues, " "), "typed value equality not proved") {
 		t.Fatal("named restriction/facet silently treated as builtin")
+	}
+}
+
+func TestVFFSKCBuiltinNamesAndURIsKeepProofBoundaries(t *testing.T) {
+	b := &vffSKCBinder{ctx: context.Background(), budget: &vffSKCBindingBudget{remaining: 1000, depth: 8}}
+	for _, tc := range []struct {
+		typ, raw, want string
+		known, reject  bool
+	}{
+		{"ID", "\t_id.0\r", "_id.0", true, false},
+		{"ID", "id:0", "", false, true},
+		{"ID", "编号", "", false, false},
+		{"NMTOKEN", " :1.a ", ":1.a", true, false},
+		{"anyURI", "https://Example.org:443/a/../b", "https://Example.org:443/a/../b", true, false},
+		{"anyURI", "#local", "#local", true, false},
+		{"anyURI", "path with spaces", "", false, false},
+		{"anyURI", "地图", "", false, false},
+		{"anyURI", "https://[::1]/", "", false, false},
+	} {
+		v, known, err := b.scalar(nil, xml.Name{Space: vffXSDNS, Local: tc.typ}, tc.raw)
+		if known != tc.known || (err != nil) != tc.reject || known && v.text != tc.want {
+			t.Fatalf("incorrect bounded %s value %q: %#v, known=%t, %v", tc.typ, tc.raw, v, known, err)
+		}
+	}
+	v := skcAttributeValue(t, skcTypedFixedFiles(t, "NMTOKENS", " 1:a&#x9;b 1:a ", "1:a b 1:a"))
+	fixed := v.fixedValues[0]
+	if !fixed.known || !fixed.useValue.list || fixed.useValue.items != 3 || fixed.useValue.text != "1:a b 1:a" || fixed.itemPrimitive != (xml.Name{Space: vffXSDNS, Local: "NMTOKEN"}) {
+		t.Fatalf("NMTOKENS lost its list value or item type: %#v", fixed)
 	}
 }
 

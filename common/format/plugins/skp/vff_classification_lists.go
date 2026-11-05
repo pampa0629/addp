@@ -9,6 +9,10 @@ import (
 // Only projects type edges already resolved by readValueType.
 func (c *vffSKCRestrictionChecker) referenceProfile(ref vffSKCValueReference, depth int) (*vffSKCRestrictionProfile, error) {
 	if ref.name.Space == vffXSDNS {
+		if ref.name.Local == "NMTOKENS" {
+			item := &vffSKCRestrictionProfile{primitive: xml.Name{Space: vffXSDNS, Local: "NMTOKEN"}, known: true}
+			return &vffSKCRestrictionProfile{item: item, bounds: map[string]string{"minLength": "1"}, known: true}, nil
+		}
 		return &vffSKCRestrictionProfile{primitive: ref.name, known: vffSKCSupportedScalar(ref.name)}, nil
 	}
 	if ref.target != nil && ref.target.kind == "simpleType" {

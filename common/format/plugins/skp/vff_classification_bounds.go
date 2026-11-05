@@ -61,7 +61,7 @@ func (c *vffSKCRestrictionChecker) addBounds(p, base *vffSKCRestrictionProfile, 
 		} else if length {
 			if p.item == nil {
 				switch typ.Local {
-				case "string", "normalizedString", "token":
+				case "string", "normalizedString", "token", "ID", "IDREF", "NMTOKEN", "anyURI":
 				case "QName":
 					return false, nil // Deprecated QName length semantics remain unproved.
 				default:

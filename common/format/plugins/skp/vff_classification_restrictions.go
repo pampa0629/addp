@@ -280,7 +280,7 @@ func vffSKCSupportedScalar(name xml.Name) bool {
 		return false
 	}
 	switch name.Local {
-	case "string", "normalizedString", "token", "boolean", "QName", "decimal":
+	case "string", "normalizedString", "token", "boolean", "QName", "decimal", "ID", "IDREF", "NMTOKEN", "anyURI":
 		return true
 	}
 	_, _, _, supported := vffSKCIntegerBounds(name.Local)
