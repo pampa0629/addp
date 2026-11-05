@@ -5881,27 +5881,31 @@ def test_focal_mode_result_connects_existing_classification_polygonize_without_f
 
 
 # Boundary clean uses an independent scalar oracle: immutable full stages, not halos.
-def _boundary_clean_oracle(values, valid):
+def _boundary_clean_oracle(values, valid, rounds=1):
     from collections import Counter
     counts = Counter(int(value) for value in values[valid])
     height, width = values.shape
     def neighbours(y, x):
         return ((ny, nx) for ny in range(max(0, y-1), min(height, y+2))
                 for nx in range(max(0, x-1), min(width, x+2)) if valid[ny, nx])
-    expanded = np.full(values.shape, np.nan)
-    result = expanded.copy()
-    for y, x in np.argwhere(valid):
-        choices = [int(values[ny, nx]) for ny, nx in neighbours(y, x)]
-        expanded[y, x] = max(choices, key=lambda value: (counts[value], -value))
-    for y, x in np.argwhere(valid):
-        original = values[y, x]
-        result[y, x] = (original if any(expanded[ny, nx] == original for ny, nx in neighbours(y, x))
-                        else expanded[y, x])
-    return result
+    baseline = values
+    for _ in range(rounds):
+        expanded = np.full(values.shape, np.nan)
+        result = expanded.copy()
+        for y, x in np.argwhere(valid):
+            choices = [int(baseline[ny, nx]) for ny, nx in neighbours(y, x)]
+            expanded[y, x] = max(choices, key=lambda value: (counts[value], -value))
+        for y, x in np.argwhere(valid):
+            category = baseline[y, x]
+            result[y, x] = (category if any(expanded[ny, nx] == category for ny, nx in neighbours(y, x))
+                            else expanded[y, x])
+        baseline = result
+    return baseline
 
 
+@pytest.mark.parametrize('rounds', [1, 2])
 @pytest.mark.parametrize('shape', [(1,1), (1,17), (19,1), (8,11), (513,517)])
-def test_boundary_clean_complete_oracle_edges_halos_and_stage_snapshot(tmp_path, shape, monkeypatch):
+def test_boundary_clean_complete_oracle_edges_halos_and_stage_snapshot(tmp_path, shape, rounds, monkeypatch):
     import operators.raster_compute as compute
     rng = np.random.default_rng(811)
     values = rng.choice([0., -7., 42.], size=shape, p=[.55,.35,.1])
@@ -5918,10 +5922,10 @@ def test_boundary_clean_complete_oracle_edges_halos_and_stage_snapshot(tmp_path,
             windows.append((x,y,arrays[0].shape))
             yield x,y,arrays,masks
     monkeypatch.setattr(compute,'_blocks',bounded)
-    expected = _boundary_clean_oracle(values,valid)
+    expected = _boundary_clean_oracle(values, valid, rounds)
     with raster_workspace():
         source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
-        result = compute.raster_boundary_clean(source,1)
+        result = compute.raster_boundary_clean(source, 1, rounds=rounds)
         assert set(source.workspace.iterdir()) == prior | {result.path}
         ds = gdal.Open(str(result.path)); band = ds.GetRasterBand(1)
         np.testing.assert_array_equal(read_band_values(band),expected)
@@ -5942,6 +5946,35 @@ def test_boundary_clean_complete_oracle_edges_halos_and_stage_snapshot(tmp_path,
             assert saved.GetOverviewCount()>0
             saved=ds=None
     assert windows and path.read_bytes() == before
+
+
+@pytest.mark.parametrize('start, first, second', [
+    (['000', '011', '021'], ['000', '011', '001'], ['000', '000', '000']),
+    (['000', '111', '222'], ['000', '111', '111'], ['000', '111', '111']),
+])
+def test_boundary_clean_default_and_two_rounds_use_the_complete_previous_baseline_and_frozen_rank(
+        tmp_path, start, first, second):
+    import operators.raster_compute as compute
+
+    def array(rows):
+        return np.array([list(row) for row in rows], dtype=np.float64)
+
+    path = create_raster(tmp_path/'source.tif', array(start))
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        original = set(source.workspace.iterdir())
+        for options, expected in (({}, first), ({'rounds': 1}, first), ({'rounds': 2}, second)):
+            result = compute.raster_boundary_clean(source, 1, **options)
+            assert set(source.workspace.iterdir()) == original | {result.path}
+            dataset = gdal.Open(str(result.path))
+            np.testing.assert_array_equal(dataset.ReadAsArray(), array(expected))
+            np.testing.assert_array_equal(dataset.GetRasterBand(1).GetMaskBand().ReadAsArray(), 255)
+            dataset = None
+            result.path.unlink()
+    if first == second:
+        # Recounting after round one gives class 1 priority and changes the second result.
+        reranked = _boundary_clean_oracle(array(first), np.ones((3, 3), dtype=bool))
+        np.testing.assert_array_equal(reranked, 1.)
 
 
 def test_boundary_clean_global_disconnected_counts_override_code_and_local_majority(tmp_path):
@@ -5974,19 +6007,21 @@ def test_boundary_clean_equal_global_counts_smaller_exact_class_wins(tmp_path, c
 
 
 @pytest.mark.parametrize('position', ['none','crs-only','transform-only'])
-def test_boundary_clean_preserves_missing_location_and_all_invalid(tmp_path, position):
+@pytest.mark.parametrize('rounds', [1, 2])
+def test_boundary_clean_preserves_missing_location_and_all_invalid(tmp_path, position, rounds):
     import operators.raster_compute as compute
     path=create_raster(tmp_path/'empty.tif',np.full((4,6),-9999.),
                        None if position!='transform-only' else (0,2,.5,0,.2,-3),
                        'EPSG:4326' if position=='crs-only' else '')
     with raster_workspace():
         source=raster_load(source_plan(path));facts=raster_info(source)
-        result=compute.raster_boundary_clean(source,1);info=raster_info(result)
+        result=compute.raster_boundary_clean(source,1,rounds=rounds);info=raster_info(result)
         for key in ('width','height','crs','transform','extent'):assert info[key]==facts[key]
         ds=gdal.Open(str(result.path));assert np.isnan(read_band_values(ds.GetRasterBand(1))).all();ds=None
 
 
-def test_boundary_clean_selected_band_mask_alpha_nonfinite_and_raw_classes(tmp_path):
+@pytest.mark.parametrize('rounds', [1, 2])
+def test_boundary_clean_selected_band_mask_alpha_nonfinite_and_raw_classes(tmp_path, rounds):
     import operators.raster_compute as compute
     values=np.array([[0,2,.5,2**53,1],[2,0,-3,1,np.inf],[0,1,-3,2,np.nan]],dtype=float)
     alpha=np.full(values.shape,255.);alpha[0,3]=0;alpha[1,4]=np.nan;alpha[2,4]=-1;alpha[1,1]=128
@@ -5999,8 +6034,8 @@ def test_boundary_clean_selected_band_mask_alpha_nonfinite_and_raw_classes(tmp_p
     ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
     valid=np.isfinite(values)&np.isfinite(alpha)&(alpha>0)&(mask>0)
     with raster_workspace():
-        result=compute.raster_boundary_clean(raster_load(source_plan(path)),2)
-        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_boundary_clean_oracle(values,valid));ds=None
+        result=compute.raster_boundary_clean(raster_load(source_plan(path)),2,rounds=rounds)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_boundary_clean_oracle(values,valid,rounds));ds=None
 
 
 @pytest.mark.parametrize('value', [.5,2**53,-2**53])
@@ -6033,26 +6068,45 @@ def test_boundary_clean_rejects_complex_and_alpha_data(tmp_path,case):
         compute.raster_boundary_clean(raster_load(source_plan(path)),2 if case=='selected-alpha' else 1)
 
 
-@pytest.mark.parametrize('stage', ['expand','shrink'])
-def test_boundary_clean_intermediate_and_failed_output_removed(tmp_path,monkeypatch,stage):
+@pytest.mark.parametrize('rounds, stage', [(1, 1), (1, 2), (2, 3), (2, 4)])
+def test_boundary_clean_intermediate_and_failed_output_removed(tmp_path,monkeypatch,rounds,stage):
     import operators.raster_compute as compute
     path=create_raster(tmp_path/'source.tif',np.ones((6,7)))
     windows=compute._cell_neighbourhood_blocks
+    visited = 0
     def fail(dataset,band):
-        # A read-only reopened dataset is the complete expansion snapshot.
-        expanding=dataset.GetRasterBand(1).GetNoDataValue()==-9999
+        nonlocal visited
+        visited += 1
         for block in windows(dataset,band):
             yield block
-            if expanding == (stage=='expand'):raise RuntimeError('injected stage failure')
+            if visited == stage:raise RuntimeError('injected stage failure')
     monkeypatch.setattr(compute,'_cell_neighbourhood_blocks',fail)
     with raster_workspace():
         source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
-        with pytest.raises(RuntimeError,match='injected'):compute.raster_boundary_clean(source,1)
+        with pytest.raises(RuntimeError,match='injected'):compute.raster_boundary_clean(source,1,rounds=rounds)
         assert set(source.workspace.iterdir())==before
 
 
-@pytest.mark.parametrize('case',['direct','reclassified','invalid'])
-def test_boundary_clean_async_cog_reclassification_and_failure_cleanup(tmp_path,monkeypatch,case):
+@pytest.mark.parametrize('language, message', [
+    ('zh-cn', '边界清理的 rounds 必须为整数 1 或 2'),
+    ('en', 'Boundary cleaning rounds must be the integer 1 or 2'),
+])
+def test_boundary_clean_rounds_require_exact_integer_before_reading_source(monkeypatch, language, message):
+    import operators.raster_compute as compute
+    monkeypatch.setattr(compute, '_open', lambda _: pytest.fail('source opened before rounds validation'))
+    with raster_error_language(language):
+        for value in (True, False, 1., 2., '1', '2', None, -1, 0, 3, [], {}):
+            with pytest.raises(ValueError) as error:
+                compute.raster_boundary_clean(None, 1, rounds=value)
+            assert str(error.value) == message
+
+
+@pytest.mark.parametrize('case, rounds, language', [
+    ('direct', None, 'zh-cn'), ('reclassified', None, 'zh-cn'), ('invalid', None, 'zh-cn'),
+    ('direct', 2, 'zh-cn'), ('reclassified', 2, 'en'),
+    ('rounds', 1., 'zh-cn'), ('rounds', True, 'en'), ('write', 2, 'en'),
+])
+def test_boundary_clean_async_cog_reclassification_and_failure_cleanup(tmp_path,monkeypatch,case,rounds,language):
     import api_server,workflow_engine
     values=np.array([[0,0,8,8],[0,-9999,4,8],[4,4,4,8]],dtype=float)
     if case=='invalid':values[0,0]=.5
@@ -6063,27 +6117,49 @@ def test_boundary_clean_async_cog_reclassification_and_failure_cleanup(tmp_path,
         tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{
             'input_raster':{'$ref':'source'},'band':1,'rules':[{'value':0,'class':-3},{'value':4,'class':0},{'value':8,'class':7}]}})
         source='classes';classified=np.select([values==0,values==4,values==8],[-3.,0.,7.],default=np.nan)
-    tasks += [{'id':'clean','operator':'raster_boundary_clean','depends_on':[source],'params':{'input_raster':{'$ref':source},'band':1}},
+    params = {'input_raster': {'$ref': source}, 'band': 1}
+    if rounds is not None:
+        params['rounds'] = rounds
+    tasks += [{'id':'clean','operator':'raster_boundary_clean','depends_on':[source],'params':params},
               {'id':'save','operator':'raster_save','depends_on':['clean'],'params':{'input_raster':{'$ref':'clean'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}]
     paths=[];original=workflow_engine._execute_operator
     def execute(name,params):
         if name=='raster_boundary_clean':paths.append(params['input_raster'].workspace)
         return original(name,params)
     monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
-    client=api_server.app.test_client();response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{
+    if case == 'write':
+        write_array = gdal.Band.WriteArray
+        writes = 0
+        def fail_last_write(band, *args, **kwargs):
+            nonlocal writes
+            writes += 1
+            return gdal.CE_Failure if writes == 4 else write_array(band, *args, **kwargs)
+        monkeypatch.setattr(gdal.Band, 'WriteArray', fail_last_write)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{
         'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
     assert response.status_code==202,response.json
     deadline=time.monotonic()+10
     while time.monotonic()<deadline:
-        status=client.get('/api/executions/'+response.json['execution_id']).json
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
         if status['status'] in ('success','failed'):break
         time.sleep(.01)
-    assert status['status']==('failed' if case=='invalid' else 'success'),status
+    failed = case in ('invalid', 'rounds', 'write')
+    assert status['status']==('failed' if failed else 'success'),status
     assert paths and all(not p.exists() for p in paths) and path.read_bytes()==before
-    if case=='invalid':assert not target.exists()
+    if failed:
+        assert not target.exists()
+        if case == 'rounds':
+            message = '边界清理的 rounds 必须为整数 1 或 2' if language == 'zh-cn' else 'Boundary cleaning rounds must be the integer 1 or 2'
+            assert status['error'] == '任务 clean 执行失败: ' + message
+        if case == 'write':
+            assert status['error'] == '任务 clean 执行失败: Boundary cleaning could not write a stage raster'
     else:
         with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
-        ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_boundary_clean_oracle(classified,np.isfinite(classified)&(classified!=-9999)));ds=None
+        ds = gdal.Open(str(target))
+        valid = np.isfinite(classified) & (classified != -9999)
+        np.testing.assert_array_equal(ds.ReadAsArray(), _boundary_clean_oracle(classified, valid, rounds or 1))
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(), valid*255)
+        ds = None
         artifact=json.loads(status['result']);assert artifact['size_bytes']==target.stat().st_size>0
     assert client.post('/api/operators/raster_boundary_clean/invoke',json={'params':{}}).status_code==403
 
@@ -6093,8 +6169,12 @@ def test_boundary_clean_discovery_single_required_band_and_workflow_resource_con
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
     assert spec['attributes']['resource_groups']==['raster']
     assert spec['category_path']==['栅格处理','分类处理']
-    assert [p['name'] for p in spec['parameters']]==['input_raster','band']
-    assert all(p['required'] for p in spec['parameters'])
+    assert [p['name'] for p in spec['parameters']]==['input_raster','band','rounds']
+    source, band, rounds = spec['parameters']
+    assert source['required'] and band['required']
+    assert not rounds['required'] and rounds['type'] == 'integer'
+    assert rounds['default'] == 1 and 'enum' not in rounds
+    assert '整数 1 或 2' in rounds['description']
     assert spec['detailed_description']['workflow_example']['params']['band']==1
 
 

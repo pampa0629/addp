@@ -3453,6 +3453,8 @@ def raster_focal_statistics(input_raster, band, window_size=_FOCAL_WINDOW_UNSET,
 
 
 _BOUNDARY_MESSAGES = {
+    'rounds': {'zh-cn': '边界清理的 rounds 必须为整数 1 或 2',
+               'en': 'Boundary cleaning rounds must be the integer 1 or 2'},
     'band': {'zh-cn': '边界清理必须显式选择有效的一基数据波段',
              'en': 'Boundary cleaning requires a valid explicit one-based data band'},
     'complex': {'zh-cn': '边界清理不支持复数数据或复数 alpha 波段',
@@ -3461,6 +3463,10 @@ _BOUNDARY_MESSAGES = {
               'en': 'Boundary cleaning requires a classification data band, not alpha'},
     'classes': {'zh-cn': '边界清理的有效分类值必须为 ±(2^53−1) 内的精确整数',
                 'en': 'Boundary cleaning classification values must be exact safe integers within ±(2^53−1)'},
+    'read': {'zh-cn': '边界清理无法读取已完成的阶段栅格',
+             'en': 'Boundary cleaning could not read a completed stage raster'},
+    'write': {'zh-cn': '边界清理无法写入阶段栅格',
+              'en': 'Boundary cleaning could not write a stage raster'},
 }
 
 
@@ -3789,8 +3795,10 @@ def raster_region_group(input_raster, band, connectivity):
             output_path.unlink(missing_ok=True)
 
 
-def raster_boundary_clean(input_raster, band):
-    """Frozen global class priorities, followed by one synchronous expand/shrink."""
+def raster_boundary_clean(input_raster, band, rounds=1):
+    """Synchronous expand/shrink rounds with frozen source class priorities."""
+    if type(rounds) is not int or rounds not in (1, 2):
+        raise _boundary_error('rounds')
     dataset = _open(input_raster)
     if isinstance(band, bool) or not isinstance(band, int) or not 1 <= band <= dataset.RasterCount:
         raise _boundary_error('band')
@@ -3817,6 +3825,31 @@ def raster_boundary_clean(input_raster, band):
     rank = {value: index for index, value in enumerate(order)}
     classes = np.asarray(sorted(counts), dtype=np.float64)
     priorities = np.asarray([rank[int(value)] for value in classes], dtype=np.int64)
+    first_path = output_path = None
+    try:
+        output_path = _boundary_clean_round(dataset, band, classes, priorities)
+        if rounds == 2:
+            first_path, output_path = output_path, None
+            dataset = gdal.Open(str(first_path))
+            if dataset is None:
+                raise _boundary_error('read')
+            output_path = _boundary_clean_round(dataset, 1, classes, priorities)
+            dataset = None
+            first_path.unlink()
+            first_path = None
+        result = _raster(output_path)
+        output_path = None
+        return result
+    finally:
+        dataset = None
+        if first_path is not None:
+            first_path.unlink(missing_ok=True)
+        if output_path is not None:
+            output_path.unlink(missing_ok=True)
+
+
+def _boundary_clean_round(dataset, band, classes, priorities):
+    """Read the complete round baseline and return a closed private result."""
     expanded = output = destination = None
     expanded_path = output_path = None
     completed = False
@@ -3836,30 +3869,35 @@ def raster_boundary_clean(input_raster, band):
                 np.copyto(result, sample, where=take)
                 np.copyto(best, candidate, where=take)
             result[~np.isfinite(center)] = np.nan
-            destination.WriteArray(result, x, y)
+            if destination.WriteArray(result, x, y) != gdal.CE_None:
+                raise _boundary_error('write')
         destination = None
-        expanded.FlushCache()
+        if expanded.FlushCache() not in (None, gdal.CE_None):
+            raise _boundary_error('write')
         expanded = None
         expanded = gdal.Open(str(expanded_path))
+        if expanded is None:
+            raise _boundary_error('read')
         output = _numeric_output(dataset, 1)
         output_path = Path(output.GetDescription())
         destination = output.GetRasterBand(1)
         for x, y, values in _cell_neighbourhood_blocks(expanded, 1):
             height, width = values.shape[0]-2, values.shape[1]-2
             _, _, arrays, masks = next(_blocks(dataset, [band], window=(x, y, width, height)))
-            original = arrays[0]
-            restore = np.zeros(original.shape, dtype=bool)
+            baseline = arrays[0]
+            restore = np.zeros(baseline.shape, dtype=bool)
             for sample in _boundary_neighbours(values):
-                restore |= sample == original
-            result = np.where(restore, original, values[1:-1, 1:-1])
+                restore |= sample == baseline
+            result = np.where(restore, baseline, values[1:-1, 1:-1])
             result[~masks[0]] = np.nan
-            destination.WriteArray(result, x, y)
+            if destination.WriteArray(result, x, y) != gdal.CE_None:
+                raise _boundary_error('write')
         destination = None
-        output.FlushCache()
+        if output.FlushCache() not in (None, gdal.CE_None):
+            raise _boundary_error('write')
         output = None
-        result = _raster(output_path)
         completed = True
-        return result
+        return output_path
     finally:
         destination = output = expanded = dataset = None
         if expanded_path is not None:
@@ -6701,7 +6739,7 @@ _SPECS = [
     (raster_point_density, OperatorCategory.RASTER_CALCULATION, '米制圆形点密度', [_param('input_gdf', 'GeoDataFrame', '二维Point逐要素贡献，重复XY保留；可选显式非负权重列', role='input'), _param('reference_raster', 'raster', '仅提供网格／CRS，原像元与mask／alpha不参与', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；无支持为0'), _param('method', 'str', 'uniform等权计数；quartic二维四次核，半径边界贡献0', 'uniform', False, enum=['uniform', 'quartic']), _param('weight_field', 'str', '可选现有非几何数值权重列；有限非负、不归一化，省略保持原结果，显式null非法', None, False)], 'raster', ['read']),
     (raster_line_density, OperatorCategory.RASTER_CALCULATION, '米制圆形线密度', [_param('input_gdf', 'GeoDataFrame', '二维LineString／MultiLineString逐原始线段贡献，重复与重叠独立累计', role='input'), _param('reference_raster', 'raster', '仅提供尺寸／完整网格／CRS，不继承原像元或mask', role='input'), _param('radius_metres', 'float', '显式有限正米制半径；圆内米制线长除完整圆面积，无支持为0'), _param('method', 'str', 'uniform圆内线长；quartic固定二维四次核沿原始段积分，边界0、不离散或归一化', 'uniform', False, enum=['uniform', 'quartic']), _param('weight_field', 'str', '可选现有非几何数值权重列；有限非负、乘线长、不归一化，省略保持原结果，显式null非法', None, False)], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
-    (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
+    (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段，保留无效覆盖'), _param('rounds', 'int', '八邻域扩张和收缩轮数，仅接受整数 1 或 2，默认 1；两轮共用原始类别优先级，以完整首轮结果为第二轮基准', 1, False)], 'raster', ['read']),
     (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '正整数像元数阈值；与min_area_m2必须且只能提供一个，等于阈值保留', None, False), _param('min_area_m2', 'float', '有限正平方米阈值；与min_pixels互斥，北向无旋转投影网格、按CRS线性单位换算，精确比较且等于阈值保留', None, False), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结'), _param('protected_values', 'list[int]', '免于替换的安全整数分类，列表不可重复；空列表保持原结果，保护斑块作为供体仍须原始大小达标', [], False)], 'raster', ['read']),
     (raster_region_group, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格连通斑块编号', [_INPUT(), _param('band', 'int', '显式分类数据波段，安全整数；零和负分类有效，不应用scale/offset'), _param('connectivity', 'int', '显式4或8邻接；同类连通斑块按最前行列从1编号，保留无效覆盖')], 'raster', ['read']),
     (raster_thin, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格细化', [_INPUT(), _param('band', 'int', '显式分类数据波段，不能选择 alpha'), _param('foreground_value', 'float', '单个精确安全整数前景分类；Guo–Hall 八邻域收敛，输出骨架1／背景0／原无效NaN')], 'raster', ['read']),
