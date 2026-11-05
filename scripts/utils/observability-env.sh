@@ -193,5 +193,44 @@ addp_metrics_query_preflight() {
 # Full local development startup only. Each deployment owns its configuration;
 # neither scope inherits the other scope's selection or secret-file locations.
 addp_recover_metrics_sources() {
-  python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" recover --scope infra --scope business --kind postgresql --kind redis --kind minio
+  python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" recover --scope host --scope infra --scope business --kind node --kind postgresql --kind redis --kind minio
+}
+
+# Reuse Infra ownership checks; a running container is not proof of valid samples.
+addp_metrics_component_summary() {
+  local label="$1" service="$2" container="$3" state
+  if ! addp_infra_verify_container "$service" "$container" >/dev/null 2>&1; then
+    echo "${label}：未部署或无法确认当前工作区归属"
+    return 1
+  fi
+  state=$(docker inspect --format '{{.State.Running}}:{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" 2>/dev/null) || {
+    echo "${label}：状态读取失败"
+    return 1
+  }
+  case "$state" in
+    true:healthy|true:) echo "${label}：运行中（未验证实际采样）" ;;
+    *) echo "${label}：未运行或健康检查未通过"; return 1 ;;
+  esac
+}
+
+addp_startup_metrics_summary() {
+  local result=0
+  echo ''
+  echo 'ADDP 启动监控摘要（只读检查）'
+  case "${ADDP_OBSERVABILITY_METRICS_ENABLED-false}" in
+    false) echo '指标中心：未启用' ;;
+    true)
+      addp_metrics_component_summary '指标中心' prometheus addp-prometheus || result=1
+      case "${ADDP_METRICS_CONTROL_ENABLED-false}" in
+        false) echo '采集控制入口：未启用' ;;
+        true) addp_metrics_component_summary '采集控制入口' metrics-control addp-metrics-control || result=1 ;;
+        *) echo '采集控制入口：配置无效'; result=1 ;;
+      esac
+      ;;
+    *) echo '指标中心：配置无效'; result=1 ;;
+  esac
+  python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" status || result=1
+  echo '服务进程：运行状态由启动入口检查；运行就绪不代表指标采样成功。'
+  echo '实际采样、主机关联及有效指标请在 Monitor 的主机／引擎／服务监控中核对。'
+  return "$result"
 }

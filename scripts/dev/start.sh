@@ -992,7 +992,10 @@ echo ""
 # Only full local startup may recover already-installed optional sources.
 if [[ "$START_ALL" == true && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
   source "$ROOT_DIR/scripts/utils/observability-env.sh"
-  addp_recover_metrics_sources || echo 'Metrics source recovery unavailable; business startup continues' >&2
+  if ! addp_recover_metrics_sources; then
+    infra_optional_result=1
+    echo 'Metrics source recovery unavailable; business startup continues' >&2
+  fi
 fi
 
 # Refresh deployment-side facts even when healthy Infra was reused above.
@@ -2589,4 +2592,11 @@ echo -e "${GREEN}✓ ADDP 开发环境启动完成！${NC}"
   echo ""
 fi
 
+# Full local startup monitoring summary; partial and Hosted launches stay scoped.
+if [[ "$START_ALL" == true && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
+  addp_startup_metrics_summary || infra_optional_result=1
+  if [[ "$infra_optional_result" != 0 ]]; then
+    echo '可选观测检查未完全通过；业务已启动，请核对以上恢复及监控摘要。' >&2
+  fi
+fi
 exit "$infra_optional_result"

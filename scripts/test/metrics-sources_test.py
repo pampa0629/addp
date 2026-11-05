@@ -204,10 +204,63 @@ class MetricsSourcesTest(unittest.TestCase):
         self.assertIn('metrics-sources.py" up --resolved-env --scope business', business)
         self.assertNotIn('lifecycle.py" up --scope business', business)
         recovery = (ROOT/'scripts/utils/observability-env.sh').read_text().split('addp_recover_metrics_sources() {')[1]
-        self.assertIn('metrics-sources.py" recover --scope infra --scope business --kind postgresql --kind redis --kind minio', recovery)
+        self.assertIn('metrics-sources.py" recover --scope host --scope infra --scope business --kind node --kind postgresql --kind redis --kind minio', recovery)
         self.assertNotIn('source "$config"', recovery)
         for path in ('scripts/infra/up.sh','scripts/infra/down.sh','business/scripts/start.sh','business/scripts/stop.sh','scripts/utils/observability-env.sh'):
             subprocess.run(['bash','-n',str(ROOT/path)],check=True,capture_output=True)
+
+    def test_startup_summary_is_read_only_and_preserves_independent_failures(self):
+        library = ROOT/'scripts/utils/observability-env.sh'
+        command = '''source "$1"
+addp_infra_verify_container() { printf '%s\\n' "verify:$*" >> "$CALLS"; [[ "$MODE" != foreign ]]; }
+docker() {
+  [[ "$1" == inspect && "$2" == --format && $# == 4 ]] || exit 88
+  printf '%s\\n' "inspect:${4}" >> "$CALLS"
+  case "$MODE" in stopped) echo false:healthy ;; unhealthy) echo true:unhealthy ;; *) echo true:healthy ;; esac
+}
+python3() {
+  [[ "$*" == "$PROJECT_ROOT/scripts/infra/metrics-sources.py status" ]] || exit 89
+  echo sources-status >> "$CALLS"
+  echo 'fixture sources status'
+  [[ "$MODE" != sources-failed ]]
+}
+addp_startup_metrics_summary
+'''
+        for mode in ('healthy','stopped','unhealthy','foreign','sources-failed','disabled','invalid'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                calls=Path(directory)/'calls'
+                env=dict(os.environ,PROJECT_ROOT='/fixture',CALLS=str(calls),MODE=mode,
+                         ADDP_OBSERVABILITY_METRICS_ENABLED='false' if mode=='disabled' else 'invalid' if mode=='invalid' else 'true',
+                         ADDP_METRICS_CONTROL_ENABLED='true')
+                result=subprocess.run(['bash','-eu','-c',command,'test',str(library)],env=env,capture_output=True,text=True,timeout=5)
+                self.assertEqual(result.returncode,int(mode not in ('healthy','disabled')),result.stdout+result.stderr)
+                self.assertIn('fixture sources status',result.stdout)
+                self.assertIn('采样',result.stdout)
+                self.assertIn('Monitor',result.stdout)
+                values=calls.read_text().splitlines()
+                self.assertEqual(values.count('sources-status'),1)
+                if mode in ('disabled','invalid'):
+                    self.assertEqual(values,['sources-status'])
+                elif mode=='foreign':
+                    self.assertFalse(any(x.startswith('inspect:') for x in values))
+                else:
+                    self.assertIn('inspect:addp-prometheus',values)
+                    self.assertIn('inspect:addp-metrics-control',values)
+
+    def test_full_start_summary_is_guarded_at_end_and_does_not_mask_failure(self):
+        source=(ROOT/'scripts/dev/start.sh').read_text()
+        block=source[source.index('# Full local startup monitoring summary'):]
+        self.assertGreater(source.index('# Full local startup monitoring summary'),source.rindex('require_started_backends || exit 1'))
+        for full,online,selected in [('true','0',True),('false','0',False),('true','1',False)]:
+            for previous in (0,1):
+                for failure in (0,1):
+                    with self.subTest(full=full,online=online,previous=previous,failure=failure):
+                        command=f'infra_optional_result={previous}; addp_startup_metrics_summary() {{ echo SUMMARY; return {failure}; }};\n'+block
+                        result=subprocess.run(['bash','-eu','-c',command],env=dict(os.environ,START_ALL=full,ADDP_ONLINE_HOST=online),capture_output=True,text=True,timeout=5)
+                        expected=int(bool(previous or selected and failure))
+                        self.assertEqual(result.returncode,expected,result.stdout+result.stderr)
+                        self.assertEqual('SUMMARY' in result.stdout,selected)
+                        self.assertEqual('业务已启动' in result.stderr,bool(selected and expected))
 
     def test_resolved_environment_is_single_scope_and_not_silently_reloaded(self):
         for scopes in ((), ['infra','business']):

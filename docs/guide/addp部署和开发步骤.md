@@ -84,6 +84,8 @@ bash scripts/dev/start.sh
 
 核心 Infra 健康时，应用启动和重启直接复用现有容器，不构建 Infra 镜像、不执行 Compose 更新。日志或指标关闭不会触发 Infra 启动；所选观测能力异常会单独提示并返回非零，业务启动继续，需要修复设施时显式运行 `bash scripts/infra/up.sh`。
 
+完整本地启动／`restart.sh -all` 会恢复已启用且安装证明有效的既有主机、Infra／Business专业采集来源，正常来源不重建；不会首次安装、自动迁移、改账号或启动停用的业务引擎。末尾统一汇总指标中心、控制入口及各来源的运行状态，恢复或检查异常保留非零退出但业务继续启动。容器运行不等于有效采样，实际指标仍在Monitor核对。局部模块启动／重启及Hosted精确进程入口不执行此跨来源恢复和汇总；安装／配置变更由各部署入口显式应用，详见[指标中心与来源](../../scripts/infra/docs/指标中心与来源.md)。
+
 模块依赖清单和 Asset 等例外统一见[模块选择启动指南](../../scripts/docs/模块选择启动指南.md#如何合并依赖)。普通模块选择保留 System Backend、Gateway 和 Console；Meta 和其他业务依赖按选择结果合并，不统一拉起全部模块前端。Engine Runtime 需[显式选择](../../scripts/docs/模块选择启动指南.md#显式选择-runtime-联调)，无参数全量启动和 Manager 自有 Raster Mosaic 的规则也见该节。
 
 SuperMap Workflow Engine 开发与产品部署均使用与 SDK 平台匹配的 Docker 环境；SDK 母版、两层镜像、构建指纹和运行参数统一见[SuperMap README](../../engines/supermap-workflow/README.md#本地依赖与两层镜像)。首次安装或更新许可时须准备或重建基础镜像，许可限制见[许可边界](../../engines/supermap-workflow/README.md#许可边界)；日常启动和重启使用：

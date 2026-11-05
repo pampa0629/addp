@@ -806,3 +806,11 @@ CI会话回传固定`7d8ad061e`的两项后续阻断，不能与此前六项夹�
 沿当前Monitor查询证书只读访问Prometheus，`up{job="addp_nodes"}`九个目标全部为1（主机1、引擎3、进程5）；另查 `timestamp(up{job="addp_nodes"})` 核对真实抓取时间，九项距核验均小于15秒，未以即时查询的评估时间代替采样时间。Safari真实页面确认Business PostgreSQL详情及趋势存在、Infra PostgreSQL与MinIO卡片显示正在采集及有效数值；主机CPU、内存、磁盘IO有效，查询时间与采样时间自然推进，截图可见真实页面与自动刷新开启。当前Desktop视图的文件系统、网卡、TCP仍明确不可用，不作为已恢复或零值。此复验不含停用／恢复故障注入、缩放重新拖动、Hosted或完整租户功能。
 
 只读收据 `/tmp/addp-personal-metrics-preapply-20261105.json`、`/tmp/addp-personal-metrics-postapply-20261105.json` 保存前后容器分组、归属摘要及抓取时效。源码为当次main `052104faf`（包含分组与共享语法修复），本次仅补证据；未自行执行来源up/down/recover、重启数据库或ADDP、修改配置或Docker设置，也未轮询CI或设置定时。
+
+### 全量开发启动的主机恢复与监控摘要（2026-11-05）
+
+用户确认后，先修订运行观测规范与操作指南，再扩展原全量本地启动：统一恢复显式选择host/node及原两域引擎，沿既有主机安装证明和来源拒绝边界执行，不新增安装、改账号、迁移或引擎启停。正常来源不动，局部和Hosted启动不处理。来源恢复失败保留可选观测非零结果但继续业务启动，末尾复用Infra归属／健康检查和唯一来源status输出摘要，服务运行与指标采样明确区分；先前失败不会被摘要成功清除。没有新增HTTP查询、凭据、API或另一套指标有效性判定。
+
+标准验证均退出0：`make test-metrics-sources`最终55项（含21项统一管理、健康／停机／不健康／归属拒绝／关闭／无效配置／独立失败和12组全量／局部／Hosted及早期失败保持组合），日志 `/tmp/addp-startup-monitor-summary-final-20261105.log`；`make test-monitor-metrics-config test-t2-ci-registration`含138项配置、80项登记、9项runner及实际登记检查，日志 `/tmp/addp-startup-monitor-config-final-20261105.log`；`make test-dev-lifecycle`包含24项原生依赖、209项准备检查、原有真实临时进程／监听／全量与局部重启隔离及编译门禁，日志 `/tmp/addp-startup-monitor-dev-final-20261105.log`；`make test-infra-runtime-log-lifecycle`的149项生命周期组合及依赖通过，日志 `/tmp/addp-startup-monitor-infra-final-20261105.log`。最初新断言在实现前沿标准来源入口失败，日志 `/tmp/addp-startup-monitor-summary-red-20261105.log`。末尾失败提示及早期失败保持已由最终55项标准入口补验，未放宽原预算或断言。
+
+本地只读执行 `addp_startup_metrics_summary` 退出0，中心与控制入口运行、七类来源零失败且明确提示Monitor核验采样，日志 `/tmp/addp-startup-monitor-summary-readonly-20261105.log`；未自行执行恢复或重启。`bash -n`及本批diff检查通过。现有根Make依赖、Platform consistency和Metrics T2输入声明已覆盖修改文件，无新入口、依赖或workflow。个人真实全量启动中的自动恢复及末尾摘要尚待用户执行后复验，不能以只读摘要和隔离T1代替；自然CI／Hosted仍等专门会话回传，无轮询、重试或定时。
