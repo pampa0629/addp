@@ -701,6 +701,11 @@ func queryResultValueFieldType(value interface{}) datatype.FieldType {
 // SQLQueryValue preserves native binary semantics using the actual output type.
 // Engine decoders run afterwards, before protection and result delivery.
 func SQLQueryValue(field datatype.FieldInfo, value interface{}) interface{} {
+	if field.Type == datatype.FieldTypeBytes {
+		if text, ok := value.(string); ok {
+			return []byte(text)
+		}
+	}
 	if raw, ok := value.([]byte); ok {
 		if field.Type == datatype.FieldTypeBytes || field.Type == datatype.FieldTypeGeometry {
 			if raw == nil {

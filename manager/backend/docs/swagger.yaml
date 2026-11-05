@@ -5286,6 +5286,7 @@ paths:
         表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure
         bigint 单元格统一为十进制字符串，列类型仍为 bigint；decimal 保持精确字符串，null 不变，保护后的文本不重新转为数值 | Bigint cells use decimal strings while column types remain bigint; decimal strings and null remain exact, and protected text is not reinterpreted as numeric
         范围成功返回 data.trajectory_scope 的 selection/complete/scanned_rows；只有完整扫描才返回结果，不返回部分路线。设备/时间字段受保护时拒绝筛选 | A successful range response includes data.trajectory_scope selection/complete/scanned_rows; partial scans publish no rows; protected device/time predicates are rejected
+        ClickHouse 已声明的二进制列在保护后以 Base64 字符串返回，空字节为空串，SQL NULL 为 null，保护文本保持原样 | Declared ClickHouse binary cells use Base64 strings after protection, empty bytes use an empty string, SQL NULL remains null, and protected text is unchanged
       parameters:
       - description: 键空间浏览游标 | Keyspace browse cursor
         in: query
@@ -5420,8 +5421,9 @@ paths:
             additionalProperties: true
             type: object
         "422":
-          description: 轨迹点数或扫描预算超限，或源数据无效 | Trajectory point/scan budget exceeded
-            or invalid source data
+          description: 轨迹点数或扫描预算超限、源数据无效，或 ClickHouse 可见文本编码无效（preview_text_encoding_invalid）
+            | Trajectory budget exceeded, invalid source data, or invalid visible
+            ClickHouse text encoding (preview_text_encoding_invalid)
           headers:
             Cache-Control:
               description: no-store；预览响应禁止缓存 | no-store; do not cache preview responses

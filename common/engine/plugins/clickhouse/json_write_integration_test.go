@@ -237,7 +237,8 @@ func openClickHouseFailureIntegrationSession(t *testing.T) (plugin.TableWriteSes
 		{Name: "label", Type: datatype.FieldTypeString, Nullable: true},
 	}
 	qualified := clickhouseDialect().QualifiedTable(database, table)
-	if _, err := db.ExecContext(ctx, "CREATE TABLE "+qualified+` (id Int64, document Nullable(String), payload Nullable(String), label Nullable(String), CONSTRAINT fixture_label_length CHECK length(label) <= 8) ENGINE=MergeTree ORDER BY tuple()`); err != nil {
+	if _, err := db.ExecContext(ctx, "CREATE TABLE "+qualified+" (id Int64, document Nullable(String), "+
+		clickhouseColumnDefinition(fields[2])+", label Nullable(String), CONSTRAINT fixture_label_length CHECK length(label) <= 8) ENGINE=MergeTree ORDER BY tuple()"); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: fields}); err != nil {

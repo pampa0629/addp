@@ -51,8 +51,9 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		return nil, ErrSourceAuthorizationRequired
 	}
 	batchReader, ok := plug.(plugin.BatchReadableProvider)
+	pageReader, hasPageReader := plug.(plugin.CatalogTablePageReader)
 	sessionReader, hasSession := plug.(plugin.TableReadSessionProvider)
-	if plug.Type() != "postgresql" && !ok && !hasSession {
+	if plug.Type() != "postgresql" && !ok && !hasSession && !hasPageReader {
 		return nil, fmt.Errorf("engine %s does not implement a table read provider", req.Engine.EngineType)
 	}
 	catalogFactsProvider, _ := plug.(plugin.EngineCatalogFactsProvider)
@@ -75,7 +76,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
-	if plug.Type() != "postgresql" && req.CheckTableSchema != nil {
+	if plug.Type() != "postgresql" && !hasPageReader && req.CheckTableSchema != nil {
 		if err := req.CheckTableSchema(columns); err != nil {
 			return nil, err
 		}
@@ -109,17 +110,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		// 检测几何列
 		geometryColumns = databaseGeometryColumns(catalogSpatial, columns)
 
-		// 转换列元数据
-		columnMetadata = make([]models.ColumnMetadata, len(columns))
-		for i, col := range columns {
-			columnMetadata[i] = models.ColumnMetadata{
-				ColumnName:   col.Name,
-				Type:         databaseFieldNativeType(col),
-				IsNullable:   col.Nullable,
-				IsPrimaryKey: col.PrimaryKey,
-				Comment:      col.Comment,
-			}
-		}
+		columnMetadata = databasePreviewColumnMetadata(columns)
 	}
 
 	// 4. 获取总行数，优先使用 Meta / EngineCatalogFacts 中已知的估算值。
@@ -175,6 +166,33 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 				return nil, ErrSourceAuthorizationRequired
 			}
 			rows, columnNames = result.Rows, result.Columns
+		}
+	} else if hasPageReader {
+		sqlProvider, ok := plug.(plugin.SQLDialectProvider)
+		if !ok {
+			return nil, fmt.Errorf("catalog table page provider requires a SQL dialect")
+		}
+		predicate, args, scopeErr := profilefilter.SQL(req.DataScope, commonquery.ForDialect(sqlProvider.SQLDialect()), "")
+		if scopeErr != nil {
+			return nil, scopeErr
+		}
+		var batch *plugin.BatchData
+		batch, err = pageReader.ReadCatalogTablePage(ctx, connInfo, req.ProviderPath, plugin.CatalogTablePageOptions{
+			Limit: limit, Offset: int64(offset), Predicate: predicate, Args: args, CheckSchema: req.CheckTableSchema,
+		})
+		if err == nil {
+			if batch == nil {
+				return nil, fmt.Errorf("catalog table page provider returned no result")
+			}
+			rows, profileFields = batch.Rows, batch.Fields
+			columnMetadata = databasePreviewColumnMetadata(profileFields)
+			columnNames = make([]string, len(profileFields))
+			for i, field := range profileFields {
+				columnNames[i] = field.Name
+				if field.Type == datatype.FieldTypeBytes {
+					columnMetadata[i].Type = string(field.Type)
+				}
+			}
 		}
 	} else {
 		rows, err = p.queryData(ctx, batchReader, sessionReader, connInfo, req.ProviderPath, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns, req.DataScope)
@@ -379,6 +397,17 @@ const (
 	databasePreviewKeyCTEAlias = "__addp_page_keys"
 	databasePreviewKeyAlias    = "__addp_keys"
 )
+
+func databasePreviewColumnMetadata(fields []datatype.FieldInfo) []models.ColumnMetadata {
+	metadata := make([]models.ColumnMetadata, len(fields))
+	for i, field := range fields {
+		metadata[i] = models.ColumnMetadata{
+			ColumnName: field.Name, Type: databaseFieldNativeType(field),
+			IsNullable: field.Nullable, IsPrimaryKey: field.PrimaryKey, Comment: field.Comment,
+		}
+	}
+	return metadata
+}
 
 func databaseFieldNativeType(field datatype.FieldInfo) string {
 	nativeType := strings.TrimSpace(field.NativeType)

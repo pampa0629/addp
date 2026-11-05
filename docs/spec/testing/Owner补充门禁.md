@@ -315,6 +315,8 @@ Spark MySQL/Doris 暂存发布由原生 Linux x86_64 Hosted 门禁 `make test-co
 
 Doris／ClickHouse 会话失败回归分别沿用 `make test-common-doris-decimal`、`make test-common-clickhouse-decimal` 和现有 Release/T2 Job；T1 使用同一断言矩阵验证会话状态和参数绑定，不能代替原生 T2。每个引擎必须覆盖非法 JSON、后续 chunk 执行失败、写入取消、关闭取消、Abort、正常关闭和空会话七个场景，核对首次错误保留、失败后拒绝续写（含空批次）、重复关闭及提交标记。原生 T2 须从独立连接核对实际数据：先成功写入一行，再让下一批的前 1000 行提交、后一个 chunk 执行失败，必须保留已提交的 1001 行，同时会话失败且无成功标记；此前提交行的 JSON、bytes 与普通文本须保持原值。每个合成表先确认名称未占用，退出逐表清理并验证零残留；门禁独占固定摘要容器、随机回环端口及全部退出路径的容器／卷清理，不连接业务实例、不运行已保存的 Transfer 任务或触发扫描。ClickHouse 就绪检查必须等待镜像初始化结束后的正式服务，不能以初始化临时服务响应成功作为就绪证明。
 
+ClickHouse 二进制声明及读取的 T2 沿用 `make test-common-clickhouse-decimal` 和同一 Release/T2 Job。临时实例验证建表、加列、实时目录、原始字节、表页与游标读取，同时运行 Manager 预览 HTTP handler，检查 Base64 逐字节往返、文本、空字节、NULL、真实保护规则和非法文本诊断。Manager HTTP 测试的 System、Meta 与请求身份使用受控夹具。
+
 写入安全诊断扩展使用统一执行失败诊断 v3。Common T1 覆盖错误链、实际列序号及严格投影拒绝（未知键、错误类型、非法序号、伪造类型、旧版本和不合法风险值）；既有 PostgreSQL JSON、Doris／ClickHouse JSON 与会话失败 T2 同时验证类型化错误，不修改原有物理行数、bytes 或空间保真断言。Transfer T1 在真实完成持久化边界验证诊断，并覆盖纯定义／源打开拒绝无风险事实，以及删除、准备、替换、写入和写后源读取／进度／关闭失败的风险事实。共享前端 T1 和 Transfer T3 验证中英文实际模板与隐藏原始正文。现有 Hosted 四失败场景追加稳定原因码、非法 JSON 的第 2 写入列及目标可能已改变的 API／浏览器断言；runner 不替代新版 Hosted T4 证据。所有新 Go 文件沿原有 `./...` 自动发现，复用现有 Make 入口和 Hosted Job，不新增权限、API 或外部服务依赖。
 
 Oracle／达梦的同一类型化诊断由 Common T1 和既有 JSON／会话原生门禁验证。Oracle 使用 `make test-common-oracle-decimal` 的 Hosted Slim／Spatial 配置，达梦使用本机官方驱动入口 `make test-common-dameng`，不将达梦登记为 Hosted。回归须核对 NULL 不占绑定参数时的实际写入列、达梦 MERGE 的实际字段顺序、冻结类型、原生驱动错误链及不猜列；编码失败和 SQL 执行失败分别保留原有回滚、关闭及提交标记断言。达梦清理参数的范围拒绝与活跃测试容器保护由现有 `dameng-official-media-release-gate_test.py` 验证，沿 `make test-business-config`／平台 T0 自动发现；此检查及显式残留清理均不能替代原生 T2。

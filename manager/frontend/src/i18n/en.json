@@ -1548,6 +1548,10 @@
           "title": "Source version temporarily unverifiable",
           "description": "Preview is paused. Please retry later. No data from this page has been returned."
         },
+        "textEncoding": {
+          "title": "Invalid text encoding",
+          "description": "Check the source column encoding or its binary type declaration before previewing again."
+        },
         "protected": {
           "title": "Preview blocked by data protection",
           "description": "Current data protection requirements are not met. Check the protection rules, synchronization status, and validity period."

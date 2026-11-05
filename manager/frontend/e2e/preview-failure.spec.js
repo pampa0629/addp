@@ -14,6 +14,7 @@ for (const locale of ['zh-cn', 'en']) {
     [409, 'preview_source_refresh_required', '请刷新元数据后继续预览', 'Refresh metadata to continue previewing'],
     [409, 'other_conflict', '数据预览失败', 'Data preview failed'],
     [503, 'preview_source_unavailable', '源文件版本暂时无法核验', 'Source version temporarily unverifiable'],
+    [422, 'preview_text_encoding_invalid', '源数据文本编码无效', 'Invalid text encoding'],
     [500, '', '数据预览失败', 'Data preview failed']
   ]) {
     test(`keeps HTTP ${status} ${code || 'without code'} visible instead of an empty preview in ${locale}`, async ({ page }) => {
@@ -31,6 +32,9 @@ for (const locale of ['zh-cn', 'en']) {
       if (code === 'preview_source_refresh_required') {
         await expect(failure).toContainText(locale === 'zh-cn' ? '刷新当前数据项的元数据' : "Refresh this data item's metadata")
         await expect(failure).toContainText(locale === 'zh-cn' ? '重建索引' : 'rebuild the index')
+      }
+      if (code === 'preview_text_encoding_invalid') {
+        await expect(failure).toContainText(locale === 'zh-cn' ? '二进制类型声明' : 'binary type declaration')
       }
       await expect(page.getByText(locale === 'zh-cn' ? '暂无可预览数据' : 'No preview data available', { exact: true })).toHaveCount(0)
       await page.reload()

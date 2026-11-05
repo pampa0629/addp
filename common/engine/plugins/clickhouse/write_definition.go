@@ -143,7 +143,9 @@ func clickhouseExistingDefinition(field datatype.FieldInfo, existing *datatype.T
 	if strings.TrimSpace(observed.NativeType) == "" {
 		return plugin.DefinitionUnknown, "existing_native_type_missing"
 	}
-	column := clickhouseWriteColumnInfo{Name: observed.Name, NativeType: observed.NativeType}
+	column := clickhouseWriteColumnInfo{
+		Name: observed.Name, NativeType: observed.NativeType, Bytes: observed.Type == datatype.FieldTypeBytes,
+	}
 	if field.Type == datatype.FieldTypeDecimal && clickhouseCommonFieldType(column.NativeType) == datatype.FieldTypeDecimal {
 		if _, _, ok := clickhouseDecimalPrecisionScale(column.NativeType); !ok {
 			return plugin.DefinitionUnknown, "existing_numeric_facts_missing"
