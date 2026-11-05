@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"slices"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataitem/authorizationfacts"
@@ -19,15 +20,44 @@ type AuthorizationFactsReader interface {
 
 // Single-item consumers use the same batch owner contract, with no alternate HTTP route.
 func (s *Service) readAuthorizationFact(ctx context.Context, tenant uint, fp string) (*authorizationfacts.AuthorizationFacts, error) {
-	query := authorizationfacts.AuthorizationFactsQuery{Fingerprints: []string{fp}}
-	batch, err := s.authorizationFacts.ReadAuthorizationFacts(ctx, tenant, query.Fingerprints)
-	if err != nil || batch.Validate(query) != nil {
+	facts, err := s.readAuthorizationFacts(ctx, tenant, []string{fp})
+	if err != nil {
 		return nil, ErrAuthorizationFactsUnavailable
 	}
-	if batch.Data[0].Facts == nil {
+	if facts[fp] == nil {
 		return nil, commonapi.ErrNotFound
 	}
-	return batch.Data[0].Facts, nil
+	return facts[fp], nil
+}
+
+// Deduplicate candidate lookups within this request. Consumers still prove
+// each typed target independently before observing any current source rules.
+func (s *Service) readAuthorizationFacts(ctx context.Context, tenant uint, fingerprints []string) (map[string]*authorizationfacts.AuthorizationFacts, error) {
+	facts := make(map[string]*authorizationfacts.AuthorizationFacts, len(fingerprints))
+	unique := make([]string, 0, len(fingerprints))
+	for _, fp := range fingerprints {
+		if _, seen := facts[fp]; !seen {
+			facts[fp] = nil
+			unique = append(unique, fp)
+		}
+	}
+	for chunk := range slices.Chunk(unique, authorizationfacts.MaxAuthorizationFactsQueryItems) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		query := authorizationfacts.AuthorizationFactsQuery{Fingerprints: chunk}
+		batch, err := s.authorizationFacts.ReadAuthorizationFacts(ctx, tenant, chunk)
+		if err != nil || batch.Validate(query) != nil {
+			return nil, ErrAuthorizationFactsUnavailable
+		}
+		for _, entry := range batch.Data {
+			facts[entry.ItemFingerprint] = entry.Facts
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return facts, nil
 }
 
 func (s *Service) WithAuthorizationFactsReader(reader AuthorizationFactsReader) *Service {
@@ -39,21 +69,23 @@ func (s *Service) resolveReadBindings(ctx context.Context, tenantID int64, paths
 	if s == nil || s.authorizationFacts == nil || tenantID <= 0 {
 		return nil, ErrAuthorizationFactsUnavailable
 	}
-	result := make([]authorizationfacts.Binding, 0, len(paths))
-	for _, path := range paths {
+	fingerprints := make([]string, len(paths))
+	for i, path := range paths {
 		candidate, err := authorizationfacts.PrimaryCandidateFingerprint(path)
 		if err != nil {
 			return nil, ErrAuthorizationBoundaryChanged
 		}
-		facts, err := s.readAuthorizationFact(ctx, uint(tenantID), candidate)
-		if err != nil {
-			if errors.Is(err, commonapi.ErrNotFound) {
-				return nil, ErrAuthorizationBoundaryChanged
-			}
-			return nil, ErrAuthorizationFactsUnavailable
-		}
-		if facts == nil || facts.Validate() != nil || facts.ItemFingerprint != candidate {
-			return nil, ErrAuthorizationFactsUnavailable
+		fingerprints[i] = candidate
+	}
+	factsByFingerprint, err := s.readAuthorizationFacts(ctx, uint(tenantID), fingerprints)
+	if err != nil {
+		return nil, ErrAuthorizationFactsUnavailable
+	}
+	result := make([]authorizationfacts.Binding, 0, len(paths))
+	for i, path := range paths {
+		facts := factsByFingerprint[fingerprints[i]]
+		if facts == nil {
+			return nil, ErrAuthorizationBoundaryChanged
 		}
 		binding, err := facts.ProvePrimaryTarget(path)
 		if err != nil {

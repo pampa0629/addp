@@ -3,7 +3,10 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -106,6 +109,82 @@ func TestDataItemReadBindingsRequireCompleteTrustedNativeProof(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestContentBindingsUseBoundedOwnerBatches(t *testing.T) {
+	paths := make([]plugin.EngineCatalogPath, 200)
+	factsByFingerprint := make(map[string]*authorizationfacts.AuthorizationFacts, len(paths))
+	for i := range paths {
+		paths[i] = plugin.TabularItemPath(2+uint(i%2), "schema", "public", fmt.Sprintf("item_%03d", i))
+		facts := factstest.Single(paths[i])
+		factsByFingerprint[facts.ItemFingerprint] = &facts
+	}
+	for _, mode := range []string{"complete", "missing_tail", "unavailable_tail", "reordered_tail"} {
+		t.Run(mode, func(t *testing.T) {
+			var batches []int
+			svc := NewService(nil, nil).WithAuthorizationFactsReader(metadataBatchReaderFunc(func(_ context.Context, tenant uint, fps []string) (*authorizationfacts.AuthorizationFactsBatch, error) {
+				if tenant != 7 || (authorizationfacts.AuthorizationFactsQuery{Fingerprints: fps}).Validate() != nil {
+					t.Fatal("invalid owner query")
+				}
+				batches = append(batches, len(fps))
+				batch := &authorizationfacts.AuthorizationFactsBatch{}
+				for _, fp := range fps {
+					batch.Data = append(batch.Data, authorizationfacts.AuthorizationFactsResult{ItemFingerprint: fp, Facts: factsByFingerprint[fp]})
+				}
+				if len(batches) == 7 {
+					switch mode {
+					case "missing_tail":
+						batch.Data[len(batch.Data)-1].Facts = nil
+					case "unavailable_tail":
+						return nil, errors.New("Meta offline")
+					case "reordered_tail":
+						slices.Reverse(batch.Data)
+					}
+				}
+				return batch, nil
+			}))
+			bindings, err := svc.resolveReadBindings(t.Context(), 7, paths)
+			if !slices.Equal(batches, []int{32, 32, 32, 32, 32, 32, 8}) {
+				t.Fatalf("owner batches have sizes %v, expected six full batches and eight final items", batches)
+			}
+			if mode != "complete" {
+				want := ErrAuthorizationFactsUnavailable
+				if mode == "missing_tail" {
+					want = ErrAuthorizationBoundaryChanged
+				}
+				if !errors.Is(err, want) || bindings != nil {
+					t.Fatalf("failed batch returned a partial binding set: count=%d err=%v", len(bindings), err)
+				}
+				return
+			}
+			if err != nil || len(bindings) != len(paths) {
+				t.Fatalf("incomplete binding set: count=%d err=%v", len(bindings), err)
+			}
+			for i, binding := range bindings {
+				if !reflect.DeepEqual(binding.NativeTarget, paths[i]) {
+					t.Fatalf("binding %d lost its typed target or request order", i)
+				}
+			}
+		})
+	}
+}
+
+func TestContentBindingBatchDoesNotAuthorizeFingerprintCollision(t *testing.T) {
+	actual := plugin.TabularItemPath(2, "schema", "a.b", "c")
+	collision := plugin.TabularItemPath(2, "schema", "a", "b.c")
+	facts := factstest.Single(actual)
+	calls := 0
+	svc := NewService(nil, nil).WithAuthorizationFactsReader(bindingFactsReaderFunc(func(_ context.Context, tenant uint, fp string) (*authorizationfacts.AuthorizationFacts, error) {
+		calls++
+		if tenant != 7 || fp != facts.ItemFingerprint {
+			t.Fatal("wrong owner lookup")
+		}
+		return &facts, nil
+	}))
+	bindings, err := svc.resolveReadBindings(t.Context(), 7, []plugin.EngineCatalogPath{actual, collision})
+	if calls != 1 || !errors.Is(err, ErrAuthorizationBoundaryChanged) || bindings != nil {
+		t.Fatalf("fingerprint sharing bypassed typed proof: calls=%d count=%d err=%v", calls, len(bindings), err)
 	}
 }
 

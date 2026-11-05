@@ -17,37 +17,19 @@ func (s *Service) resolveMetadataBindings(ctx context.Context, tenant int64, pat
 		return nil, ErrAuthorizationFactsUnavailable
 	}
 	result := make([]authorizationfacts.Binding, len(paths))
-	fingerprints := []string{}
+	fingerprints := make([]string, 0, len(paths))
 	keys := make([]string, len(paths))
-	seen := map[string]bool{}
 	for i, target := range paths {
 		fingerprint, err := authorizationfacts.PrimaryCandidateFingerprint(target)
 		if err != nil {
 			continue
 		}
 		keys[i] = fingerprint
-		if !seen[fingerprint] {
-			fingerprints = append(fingerprints, fingerprint)
-			seen[fingerprint] = true
-		}
+		fingerprints = append(fingerprints, fingerprint)
 	}
-	factsByKey := map[string]*authorizationfacts.AuthorizationFacts{}
-	for offset := 0; offset < len(fingerprints); offset += authorizationfacts.MaxAuthorizationFactsQueryItems {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		end := offset + authorizationfacts.MaxAuthorizationFactsQueryItems
-		if end > len(fingerprints) {
-			end = len(fingerprints)
-		}
-		query := authorizationfacts.AuthorizationFactsQuery{Fingerprints: fingerprints[offset:end]}
-		batch, err := s.authorizationFacts.ReadAuthorizationFacts(ctx, uint(tenant), query.Fingerprints)
-		if err != nil || batch.Validate(query) != nil {
-			return nil, ErrAuthorizationFactsUnavailable
-		}
-		for _, entry := range batch.Data {
-			factsByKey[entry.ItemFingerprint] = entry.Facts
-		}
+	factsByKey, err := s.readAuthorizationFacts(ctx, uint(tenant), fingerprints)
+	if err != nil {
+		return nil, err
 	}
 	catalogModels := map[uint]plugin.EngineCatalogModelSpec{}
 	for index, target := range paths {
