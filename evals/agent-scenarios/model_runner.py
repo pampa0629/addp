@@ -94,11 +94,14 @@ def fixture_executor(fixture, violations):
     class FixtureExecutor(ToolExecutor):
         def __init__(self, base_url, source_token):
             super().__init__(base_url, source_token)
+            self.engine_inventory_read = False
             self._handlers = {definition.name: self._response(definition.name)
                               for definition in load_manifest().tools}
 
         def _response(self, name):
             async def respond(arguments, delegated_token):
+                if name == 'data.search' and name in fixture['expected'] and not self.engine_inventory_read:
+                    raise ToolExecutionError('model_parameters_changed', 'source search preceded the engine inventory')
                 for key, value in fixture['expected'].get(name, {}).items():
                     if arguments.get(key) != value:
                         code = 'model_build_' + key + '_changed' if name == 'transfer.task.draft.build' else 'model_parameters_changed'
@@ -156,7 +159,10 @@ def fixture_executor(fixture, violations):
                 definition = get_tool(name)
                 if definition.risk == 'write' or name not in fixture['responses']:
                     raise ToolExecutionError('model_tool_blocked', 'tool not admitted by fixture')
-                return await super().call(name, arguments, **kwargs)
+                result = await super().call(name, arguments, **kwargs)
+                if name == 'engine.list':
+                    self.engine_inventory_read = True
+                return result
             except ToolExecutionError as exc:
                 violations.append(exc.code)
                 raise

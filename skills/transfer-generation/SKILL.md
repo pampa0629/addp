@@ -15,6 +15,12 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 
 先读取平台能力语义，再复用数据发现方法确认源资源和真实目标父节点。条件、效果和支持边界以 `platform.capability.context` 为唯一语义来源；本 Skill 只说明获取事实、补齐缺口和组织交互的方法。不要求用户已有领域本体、Standard、Model、Quality 或 Catalog 内容。
 
+## 源引擎限定
+
+先调用 `engine.list(capability="all")` 并读取结果，再发现新草稿的数据源。以本轮明确的源引擎名称或类型匹配正式 `name` 或 `engine_type`，两者都给出时两项都须匹配。只有一个匹配项时，调用 `data.search` 前检查参数中同时有源集合关键词 `query` 和该匹配项的数字 `engine_id`。例如“把 MongoDB 的集合传到 PostgreSQL”里，`engine_id` 取自唯一匹配的 MongoDB 项，PostgreSQL 项仅用于目标目录。首次和后续搜索都沿用该源范围。
+
+明确限定的引擎无法匹配时说明缺口，匹配多个引擎时先澄清。限定搜索零召回时说明当前范围并请用户补充。用户未限定源引擎且需要搜索候选时，`data.search` 可省略 `engine_id`。
+
 ## 核心流程
 
 用户在当前请求中明确附带唯一完整配置并要求按原参数只预检时，直接使用该原配置，不调用构建器改名、补参数或重新映射。完整 JSON 缺失、多个配置或外层损坏时先澄清，不从内层对象或模型复述恢复配置。Runtime 绑定正式构建步骤、用户原始输入或历史草稿来源，模型不能改写绑定参数；需要修改先取得明确要求并重新构建。
@@ -22,7 +28,7 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 Runtime 已明确绑定原草稿时，只沿用恢复的候选参数，不重建任务名、描述、目标表名、查询、映射或可选参数，不新增 batch_size 等默认值。重新读取当前平台能力及必要资源事实，不把历史参数当作已确认资源或权限。最终 `transfer_create_review` 的 `operation_review` 只提交 `{tool:"transfer.task.create"}`，不提交 arguments；Runtime 使用原参数预检和复核。确认后的正式创建输入同样由 Runtime 绑定，不能借模型输入改写参数。不额外调用 draft.generate 或显式预检来重建原稿。若当前定义不支持原参数，明确解释；需要改配置时结束原参数创建，再按用户要求进入修改和新的复核流程。
 
 1. 理解 Runtime 在本次 Harness 进入时经 `platform.capability.context` 读取并保存的所选能力：创建为 `transfer.task.create`，运行为 `transfer.task.start`，结果查询为 `transfer.execution.get`；无需重复读取。Runtime 按该操作与本体依赖收窄 Skill 的 Tool 白名单，不强制其他操作已发布。需要主动刷新，或进入已声明的可选后续操作时，仍用同一正式 Tool 读取对应定义，失败不能沿用旧结果。理解其概念、条件和效果；`availability=not_observed` 不是可用性或权限证明，不假装其他模块存在。
-2. 用 `engine.list` 确认用户可访问的源/目标引擎。按 `data-discovery` 只搜索源侧数据项，必要时限定源 engine_id；多个集合或引擎候选等待用户选择，不能用排序、相似度、单复数或名称更相近来代替确认。Runtime 对新草稿的多源搜索结果会直接暂停并展示正式选项，收到选择后只使用确认的 locator。搜索失败时明确报告并终止当前运行，不能把失败当作零召回，也不能静默改用源目录枚举来继续生成或创建。
+2. 按[源引擎限定](#源引擎限定)搜索源侧数据项。多个集合候选由 Runtime 暂停并展示正式选项，收到选择后只使用确认的 locator。排序、相似度或名称接近都不能代替确认。搜索失败明确终止当前运行，保留失败与零召回的区别。
 3. 通过 `resource.ancestors.get → resource.facts.get` 确认源身份和最新结构，不用样本猜 Schema。缺扫描事实则要求补扫描，不能读取原始行兜底。
 4. 用 `resource.children.list(engine_id=<目标>)` 从 owner 返回的真实根节点开始逐层浏览；后续父 locator 只取自返回结果。让用户确认目标 `parent_locator + name`，目标尚不存在时不能把它当成已有输入搜索。不可假定 PostgreSQL schema 是 public。
 5. 根据能力定义分别确认行粒度和字段保留范围，再补齐写入策略、目标字段及转换意图。不展开数组不等于删除数组字段。缺少业务决定时澄清，不能静默删字段或改行粒度。复杂计算交给 Develop。

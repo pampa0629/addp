@@ -11,6 +11,8 @@
         "required_tools": [
           "platform.capabilities.list",
           "platform.capability.context",
+          "engine.list",
+          "data.search",
           "resource.facts.get",
           "transfer.task.draft.build",
           "transfer.task.config.check"

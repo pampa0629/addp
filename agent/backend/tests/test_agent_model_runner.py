@@ -197,6 +197,7 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
             route(needs_platform_semantics=True),
             Message(role='assistant', tool_calls=[ToolCall(id='platform-route', name='PlatformRouteDecision',
                     arguments={'capability': 'transfer.task.create'})]),
+            Message(role='assistant', tool_calls=[_call('engine.list', {'capability': 'all'})]),
             Message(role='assistant', tool_calls=[_call('data.search', {'query': 'MongoDB', 'engine_id': 311})]),
         ])
         sample = await model_runner.run_case('model-transfer-source-choice', 1, _model(client))
@@ -210,6 +211,27 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
         report = self.empty_failure_report()
         report['samples'] = [{**sample, 'sample': 1}]
         model_runner.validate_report(report)
+
+    async def test_source_search_requires_observed_engine_scope_only_when_specified(self):
+        for name, accepted_scope, rejected_scope in (
+            ('model-transfer-source-choice', {'engine_id': 311}, {}),
+            ('model-transfer-source-unscoped', {}, {'engine_id': 311}),
+        ):
+            with self.subTest(name=name):
+                violations = []
+                fixture = case_fixture(name)
+                executor = model_runner.fixture_executor(fixture, violations)('http://unused', '')
+                async def search(scope):
+                    return await executor.call('data.search', {'query': 'events', **scope},
+                                               agent_run_id='run', tool_call_id='search')
+
+                with self.assertRaises(ToolExecutionError):
+                    await search(accepted_scope)
+                await executor.call('engine.list', {'capability': 'all'}, agent_run_id='run', tool_call_id='engines')
+                with self.assertRaises(ToolExecutionError):
+                    await search(rejected_scope)
+                self.assertEqual(await search(accepted_scope), fixture['responses']['data.search'])
+                self.assertEqual(violations, ['model_parameters_changed', 'model_parameters_changed'])
 
     def test_v1_model_report_is_rejected_without_compatibility_parser(self):
         report = self.empty_failure_report()
@@ -259,6 +281,12 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
         client = _InferenceFixture([
             route(needs_platform_semantics=True),
             Message(role='assistant',tool_calls=[ToolCall(id='platform-route',name='PlatformRouteDecision',arguments={'capability':'transfer.task.create'})]),
+            Message(role='assistant', tool_calls=[_call('write_todos', {'todos': [
+                {'content': '发现源', 'status': 'pending'},
+                {'content': '构建并预检', 'status': 'pending'},
+            ]}, 'plan')]),
+            Message(role='assistant',tool_calls=[_call('engine.list',{'capability':'all'})]),
+            Message(role='assistant',tool_calls=[_call('data.search',{'query':'demo.events','engine_id':source['engine_id']})]),
             Message(role='assistant',tool_calls=[_call('resource.facts.get',{'locator':source['locator']})]),
             Message(role='assistant',tool_calls=[_call('transfer.task.draft.build',choices)]),
             Message(role='assistant',tool_calls=[_call('transfer.task.config.check',arguments)]),
@@ -266,6 +294,7 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
         sample=await model_runner.run_case('model-transfer-short-precheck',1,_model(client))
         self.assertEqual(sample['status'],'passed',sample)
         self.assertTrue(sample['assertions']['report_preserved'])
+        self.assertIn('write_todos', [tool['name'] for tool in sample['tools']])
 
     async def test_failed_call_not_erased_when_model_recovers(self):
         client = _InferenceFixture([

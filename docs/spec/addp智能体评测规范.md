@@ -1,6 +1,6 @@
 # ADDP 智能体评测规范
 
-回答阶段的私有 `answer_ready` 在运行步骤中仍完整审计；离线轨迹单列 `runtime_actions`（名称、完成状态和错误），不将其伪装为平台 Manifest Tool 或业务 read 风险。场景可声明 `required_runtime_actions` 并精确比较动作顺序，已启动动作必须具有终态；公开 Tool 的风险、输入字段、顺序及 owner 副作用断言保持原检查。
+回答阶段的私有 `answer_ready` 在运行步骤中仍完整审计；离线轨迹单列 `runtime_actions`（名称、完成状态和错误）。场景可声明 `required_runtime_actions` 并精确比较动作顺序，已启动动作必须具有终态。既有私有计划动作 `write_todos` 保留在步骤轨迹中，检查成功终态和 Runtime 已脱敏的空输入。两种私有动作均无需匹配公开 Tool 的 Manifest 风险，其他调用继续核对风险、输入字段、顺序及 owner 副作用。
 
 更新日期：2026-11-04
 
@@ -61,6 +61,8 @@ User Access Token 只能通过正式 `addp` OAuth 登录保存在 OS Keychain �
 
 只给业务目标的多候选场景以正式待答 Interaction 作为本轮成功终态：候选必须与正式搜索结果精确一致，不能提前构建、预检或默认选择首项。此场景不要求模型补充正文，不自动回答或冒充后续恢复完成；恢复的确认身份和参数保真仍由原 Runtime 回归及真实会话分开验证。
 
+新 Transfer 草稿的源搜索遵循 Transfer Skill 的引擎限定规则。回归覆盖三种输入：本轮明确源引擎且正式列表唯一匹配时，首次搜索必须携带该 `engine_id`；限定后仍有多个同名集合时，精确呈现正式候选并暂停；用户未限定源引擎且要求先搜索候选时，允许全范围搜索并等待选择。夹具分别校验正式引擎事实读取、搜索参数和候选集合，保留首次越界搜索的失败，即使后续纠正也不能算通过。
+
 等待场景沿用 v2 报告：候选身份约束并入 `trace_contract`，`response_body_nonempty` 验证正式澄清提示非空；正文字符／块计数仍只统计文本事件，不把卡片提示计为 Runtime 或模型正文。新增场景的样本必须经过现有完整报告校验，不能只验证内存中的布尔断言。
 
 报告严格输出源码身份、场景/夹具契约摘要、实际 Skill、工具名称与状态、断言布尔值、稳定错误码及实际耗时/首正文耗时。模型身份只保存实际响应的 deployment 摘要和 profile_version，不保存 Provider 配置。不保存输入输出全文、Tool 参数值、原始结果、历史草稿引用、Tenant ID、凭据或异常原文。报告必须在仓库外原子写入；失败同样生成报告并返回非零。不设置耗时阈值、综合分或自动重跑至通过。每次显式执行保留全部样本，个例修复前后的失败证据不能覆盖。
@@ -91,7 +93,8 @@ evals/agent-scenarios/<scenario-name>/scenario.yaml
 | `model-query-draft` | 真实模型回归 | 保留当前引擎、语言及资源事实，生成查询候选但不执行。 |
 | `model-transfer-precheck` | 真实模型回归 | 经平台语义路由按完整原参数预检，不创建或运行，不改写正式报告。 |
 | `model-transfer-short-precheck` | 真实模型回归 | 简短业务输入经平台路由、正式资源发现、Owner 草稿构建及同参预检，不由提示词附带完整配置，禁止 Copilot、创建和运行。工具事实仍为受控夹具，不能代替真实业务环境。 |
-| `model-transfer-source-choice` | 真实模型回归 | 仅给源目标引擎与草稿目标，正式搜索返回多个集合后必须暂停并呈现精确候选，不调用构建或预检。 |
+| `model-transfer-source-choice` | 真实模型回归 | 明确源引擎类型和集合短名，限定搜索返回多个同名集合后必须暂停并呈现精确候选，不调用构建或预检。 |
+| `model-transfer-source-unscoped` | 真实模型回归 | 用户未限定源引擎且要求搜索候选时，可搜索跨引擎的同名集合，并暂停等待源选择。 |
 | `model-historical-draft` | 真实模型回归 | 无 Skill 路由（契约标记 `none`），仅私有 `draft.inspect`，不重新读取资源或预检。 |
 | `model-historical-boundaries` | 真实模型回归 | 多轮上下文下“刚才的草稿”只问关键主题，按历史 unsupported、append、bounded 固定说明，不调用正文模型。 |
 | `model-historical-named` | 真实模型回归 | 长业务名称精确选取历史草稿，固定说明不冒充当前授权。 |

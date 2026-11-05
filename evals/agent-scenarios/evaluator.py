@@ -334,6 +334,10 @@ def evaluate_trace(
         for tool in tools:
             if tool.get("status") == "started":
                 failures.append(f"{phase_name}.tools: {tool.get('name')} 缺少结束结果")
+            if tool.get("name") == "write_todos" and (
+                tool.get("status") != "succeeded" or tool.get("input_fields")
+            ):
+                failures.append(f"{phase_name}.tools: invalid or incomplete plan action")
         for tool_name, expected_fields in expected.get("tool_input_fields", {}).items():
             matching_tools = [tool for tool in tools if tool.get("name") == tool_name]
             if not matching_tools:
@@ -353,6 +357,8 @@ def evaluate_trace(
         if "allowed_tool_risks" in expected:
             allowed_risks = set(expected["allowed_tool_risks"])
             for tool_name in tool_names:
+                if tool_name == "write_todos":
+                    continue  # Private plan action, validated above.
                 risk = risks.get(str(tool_name))
                 if risk is None:
                     failures.append(f"{phase_name}.tools: Manifest 不存在 {tool_name}")

@@ -55,6 +55,7 @@ class AgentEvaluationGateTests(unittest.TestCase):
                 "model-transfer-precheck",
                 "model-transfer-short-precheck",
                 "model-transfer-source-choice",
+                "model-transfer-source-unscoped",
                 "ontology-definition",
                 "platform-transfer-create",
                 "platform-transfer-draft-check",
@@ -69,7 +70,7 @@ class AgentEvaluationGateTests(unittest.TestCase):
         self.assertTrue(all(len(entry["contract_sha256"]) == 64 for entry in report["scenarios"]))
         self.assertEqual(
             {key: value for key, value in report["checks"][0].items() if key != "duration_ms"},
-            {"name": "scenario_contracts", "status": "passed", "count": 18},
+            {"name": "scenario_contracts", "status": "passed", "count": 19},
         )
         self.assertGreaterEqual(report["checks"][0]["duration_ms"], 0)
 

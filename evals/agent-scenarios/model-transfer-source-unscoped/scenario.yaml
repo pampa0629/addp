@@ -1,0 +1,53 @@
+{
+  "schema": "addp.agent-scenario/v1",
+  "name": "model-transfer-source-unscoped",
+  "category": "business_capability",
+  "skill": "transfer-generation",
+  "prompt": "帮我准备把 events 传到 PostgreSQL 的 demo.new_events 的传输配置草稿并预检。源引擎不限，先查 events 的候选，有多个就让我选。只做草稿，不创建、不运行。",
+  "expectations": {
+    "phases": {
+      "model": {
+        "status": "waiting",
+        "required_tools": [
+          "platform.capabilities.list",
+          "platform.capability.context",
+          "engine.list",
+          "data.search",
+          "request_clarification"
+        ],
+        "forbidden_tools": [
+          "workflow.run",
+          "transfer.task.create",
+          "transfer.task.start",
+          "transfer.draft.generate",
+          "transfer.task.draft.build",
+          "transfer.task.config.check"
+        ],
+        "required_errors": [],
+        "interactions": [
+          {
+            "kind": "clarification",
+            "owner": "agent",
+            "status": "pending"
+          }
+        ],
+        "presentations": [
+          "ClarificationChoice"
+        ],
+        "result_refs": {
+          "count": 0,
+          "kinds": []
+        },
+        "owner_effects": {
+          "tasks_created": 0,
+          "executions_created": 0
+        }
+      }
+    },
+    "forbidden_persisted_fields": [
+      "authorization",
+      "token",
+      "sample_rows"
+    ]
+  }
+}

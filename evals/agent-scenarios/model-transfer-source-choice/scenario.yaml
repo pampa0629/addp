@@ -3,7 +3,7 @@
   "name": "model-transfer-source-choice",
   "category": "business_capability",
   "skill": "transfer-generation",
-  "prompt": "把 MongoDB 的数据传到 PostgreSQL，先给草稿并预检，不创建、不运行。",
+  "prompt": "把 MongoDB 的 events 集合传到 PostgreSQL，先给草稿并预检，不创建、不运行。",
   "expectations": {
     "phases": {
       "model": {
@@ -11,6 +11,7 @@
         "required_tools": [
           "platform.capabilities.list",
           "platform.capability.context",
+          "engine.list",
           "data.search",
           "request_clarification"
         ],
