@@ -15,12 +15,37 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接，另见[正式 full 失败入口](#正式-http-full-失败入口) |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL、Redis、MinIO、来源准入、引擎身份与专业观测 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 |
 
 各专题按固定源码、环境和尝试记录结果。失败、取消、跳过、未运行与分项成功分别认定。
+
+## 正式 HTTP full 失败入口
+
+以下为实际启动的本机正式 full 窗口，按运行顺序排列。固定源码、运行标识、报告和清理回执见每轮记录。表中的镜像构建完成以对应命令返回成功为准。
+
+| 日期与记录 | 首个失败 | 该轮已完成的阶段 |
+| --- | --- | --- |
+| [10-27 首轮投影](#2026-10-27-正式-python-http-首轮本地窗口失败并清理产品-profile-投影缺项) | 指标投影缺少 `prometheus`，触发 `KeyError` | 源码快照、隔离网络和私有证书／配置准备 |
+| [10-28 采样镜像](MonitorHTTP质量与采样历史证据.md#formal-python-http-local-20261028-image-auth) | 准备卷阶段拉取 Nginx，获取匿名令牌失败 | 配置投影及当次卷准备 |
+| [10-28 编译后测量](MonitorHTTP质量与采样历史证据.md#formal-python-http-local-20261028-cache-reclaim) | 缓存回收时 `measure_private_bindings` 的 `du` 遇到路径消失，检查耗时 0.404 秒 | 固定镜像准入、采样辅助启动、初始资源检查、Go 编译 |
+| [10-28 编译期间检查](MonitorHTTP质量与采样历史证据.md#formal-python-http-local-20261028-resource-list-deadline) | 列出并检查容器的累计等待耗尽四秒，Go 编译中止 | 镜像准入、配置投影、构建器／采样辅助及初始检查 |
+| [10-31 指标投影](MonitorHTTP质量与采样历史证据.md#http-formal-page-window-projection-failed-20261031) | 指标投影子命令退出 1，报告仅记录路径不存在标记 | 源码快照、固定镜像缓存与隔离网络准入 |
+| [11-01 Agent 系统包](MonitorHTTP质量与采样历史证据.md#http-formal-product-window-agent-apt-failed-20261101) | Agent 镜像 APT 退出 100，未到 pip，具体子步骤未知 | Go 编译、缓存回收、System／Gateway／Monitor 镜像 |
+| [11-02 Copilot 软件包下载](MonitorHTTP质量与采样历史证据.md#http-formal-product-window-copilot-apt-failed-20261102) | Copilot 镜像 APT `deb_download` 超时，APT 退出 100 | Go 编译、缓存回收、System／Gateway／Monitor／Agent 镜像 |
+| [11-03 编译期间卷测量](MonitorHTTP质量与采样历史证据.md#http-formal-product-window-resource-timeout-20261103) | 资源检查累计耗尽四秒，末步骤为卷测量，Go 编译中止 | 运行准入 |
+| [11-03 Monitor 软件包索引](MonitorHTTP质量与采样历史证据.md#http-full-monitor-apt-index-failed-20261103) | Monitor 镜像 APT `index_download` 报签名／下载失败，APT 退出 100 | Go 编译、缓存回收、System／Gateway 镜像 |
+| [11-04 Agent 首次命令超时](MonitorHTTP质量与采样历史证据.md#http-full-agent-build-deadline-20261104) | Agent 构建达到 600 秒期限，未归档构建输出 | Go 编译、缓存回收、System／Gateway／Monitor 镜像 |
+| [11-04 Agent 再次命令超时](MonitorHTTP质量与采样历史证据.md#http-full-agent-timeout-over-budget-20261104) | Agent 构建再次达到 600 秒期限，诊断仅确认输出超出读取预算 | Go 编译、缓存回收、System／Gateway／Monitor 镜像 |
+| [11-04 Gateway 构建期间检查](MonitorHTTP质量与采样历史证据.md#http-full-stream-resource-deadline-20261104) | 资源检查累计耗尽四秒，末步骤为卷测量 | Go 编译、缓存回收、System 镜像 |
+| [11-05 Agent 构建期间卷读取](MonitorHTTP质量与采样历史证据.md#http-full-logout-agent-volume-read-failed-20261105) | `measure_owned_volumes` 读卷失败，`du` 报路径消失，删除者未知 | Go 编译、缓存回收、System／Gateway／Monitor 镜像 |
+| [11-05 System 构建期间检查](MonitorHTTP质量与采样历史证据.md#http-full-system-list-inspect-deadline-20261105) | 容器列表耗去大部分四秒预算，`inspect_owned_containers` 耗尽余量 | Go 编译、缓存回收 |
+
+表中各轮均为运行失败、当次资源零残留。正式密码／MFA、采集与 API、Console／Monitor 页面、停源、两阶段注销及旧会话拒绝均未执行。[自然 Linux HTTP 四阶段 T2](MonitorHTTP质量与采样历史证据.md#http-natural-four-stage-budget-passed-20261104)、Hosted 和容量验收按各自证据认定。
+
+[11-04 09:04 的准备记录](MonitorHTTP质量与采样历史证据.md#2026-11-04-0904-单次full授权在额外准备检查停止正式入口未启动)止于额外的 Makefile 比对断言。正式入口未启动，没有运行标识或隔离资源，运行清理为 `not_required`，离线证书已清理。
 
 ## 原记录入口
 
