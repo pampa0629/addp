@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, request, test } from '@playwright/test'
 import { observeLineageCanvas, lineageCanvasSnapshot } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -1481,6 +1481,119 @@ async function verifyPointExtractionCase(page,evidence,directory,vertices) {
 test('节点提取独立普通User节点与来源明细双Point及九失败保护',async({page})=>{
   const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}');await observeLineageCanvas(page)
   await verifyNodesCase(page,evidence,process.env.ADDP_ONLINE_ARTIFACT_DIR)
+})
+
+test('NFS GeoPackage 同一普通用户撤权血缘', async ({ page }) => {
+  const binding = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE)
+  const directory = process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const { source, output } = binding
+  const report = { binding, result: 'incomplete', observations: [] }
+  const persist = () => writeFileSync(resolve(directory, 'topology-lineage-permissions-browser.json'), JSON.stringify(report, null, 2))
+  const waitForGraph = depth => page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET' && url.pathname === '/api/v1/meta/lineage/graph' &&
+      url.searchParams.get('item_id') === String(output.item_id) && url.searchParams.get('direction') === 'both' &&
+      url.searchParams.get('depth') === String(depth)
+  })
+  const iframe = page.locator('iframe[data-testid="module-iframe"]')
+  const frame = iframe.contentFrame()
+  const viewer = frame.locator('.lineage-viewer')
+  const canvas = viewer.locator('.lineage-canvas canvas').first()
+  const marker = viewer.getByTestId('lineage-permission-filtered')
+  const summary = viewer.locator('.lineage-summary')
+  const changeDepth = async depth => {
+    const response = waitForGraph(depth)
+    await viewer.locator('.lineage-depth .el-select__wrapper').click()
+    await frame.getByRole('option', { name: `${depth} 层`, exact: true }).click()
+    return response
+  }
+  const capture = async (phase, response) => {
+    const observation = { phase, status: response.status(), payload: await response.json() }
+    report.observations.push(observation)
+    persist()
+    return observation.payload
+  }
+  const issuer = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: {
+    Authorization: `Bearer ${process.env.ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN}`
+  } })
+  const revoke = async grantId => {
+    const path = `/api/v1/system/engines/${binding.engine_id}/access_grants/${grantId}/revoke`
+    const response = await issuer.post(path, { data: { reason: 'Disposable Online metadata cleanup' } })
+    const payload = await json(response, 'withdraw exact metadata Grant')
+    report.observations.push({ phase: 'revoke', grant_id: grantId, status: response.status(), payload })
+    persist()
+  }
+  try {
+    await observeLineageCanvas(page)
+    const beforeRead = waitForGraph(2)
+    const redirect = `/manager/data-explorer?locator=${encodeURIComponent(output.locator)}&tab=lineage`
+    await login(page, process.env.ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_USERNAME,
+      process.env.ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_PASSWORD, redirect)
+    const before = await beforeRead
+    const graph = await capture('authorized', before)
+    const api = await browserAPIFromResponse(before, process.env.GATEWAY_URL, {
+      principalID: binding.principal_id, tenantID: binding.tenant_id, permissions: binding.permissions_verified
+    })
+    await api.dispose()
+    expect(graph.permission_filtered).toBe(false)
+    assertNodesLineage(graph, { ...binding, sources: [source] })
+    await expect(marker).toHaveCount(0)
+    await expect(summary).toContainText('2 个节点 · 1 条关系')
+    await expect(canvas).toBeVisible()
+    await expect.poll(async () => {
+      const { rows, paths } = await lineageCanvasSnapshot(canvas)
+      return paths.length > 0 && [source.name, output.name].every(name => rows.some(row => row.text.includes(name)))
+    }).toBe(true)
+    await page.screenshot({ path: resolve(directory, 'topology-lineage-authorized.png') })
+    const originalDocument = before.request().frame()
+    const navigations = []
+    page.on('framenavigated', frame => {
+      if (frame === originalDocument || frame === page.mainFrame()) navigations.push(frame)
+    })
+    const sameSessionAndDocument = response => {
+      expect(navigations).toHaveLength(0)
+      expect(response.request().frame() === originalDocument).toBe(true)
+      expect(response.request().headers().authorization === before.request().headers().authorization).toBe(true)
+    }
+
+    await revoke(source.grant_id)
+    const after = await changeDepth(3)
+    const filtered = await capture('source_revoked', after)
+    expect(after.status()).toBe(200)
+    sameSessionAndDocument(after)
+    expect(filtered.permission_filtered).toBe(true)
+    expect(filtered.truncated).toBe(false)
+    expect(filtered.nodes.map(node => node.item_id)).toEqual([output.item_id])
+    expect(filtered.nodes.map(node => [node.hidden_upstream_count, node.hidden_downstream_count])).toEqual([[0, 0]])
+    expect(filtered.edges).toEqual([])
+    expect(JSON.stringify(filtered)).not.toContain(source.name)
+    expect(JSON.stringify(filtered)).not.toContain(binding.execution_id)
+    await expect(marker).toHaveText('当前无可显示的上下游关系，部分关系因数据权限限制已隐藏。')
+    await expect(summary).toContainText('1 个节点 · 0 条关系')
+    await expect.poll(async () => {
+      const { rows } = await lineageCanvasSnapshot(canvas)
+      return rows.some(row => row.text.includes(output.name)) && rows.every(row => !row.text.includes(source.name))
+    }).toBe(true)
+    await page.screenshot({ path: resolve(directory, 'topology-lineage-source-revoked.png') })
+
+    await revoke(output.grant_id)
+    const denied = await changeDepth(5)
+    const error = await capture('root_revoked', denied)
+    expect(denied.status()).toBe(404)
+    sameSessionAndDocument(denied)
+    expect(error.error_code).toBe('lineage_subject_not_found')
+    await expect(frame.locator('.lineage-tab-pane .el-alert')).toContainText('加载数据项血缘失败')
+    await expect(marker).toHaveCount(0)
+    await expect(summary).toContainText('0 个节点 · 0 条关系')
+    await expect(canvas).toHaveCount(0)
+    await page.screenshot({ path: resolve(directory, 'topology-lineage-root-revoked.png') })
+    report.result = 'passed'
+    report.same_browser_credential = true
+    report.same_manager_frame = true
+    persist()
+  } finally {
+    await issuer.dispose()
+  }
 })
 
 async function assertOverlayMap(renderer, expected) {

@@ -848,6 +848,128 @@ def run_nodes_scenario(repository,env,client,physical_runner,browser_runner):
     return run_point_outputs_scenario(repository,env,client,physical_runner,browser_runner,fixture.NODES_CASE)
 
 
+def run_nodes_lineage_permissions(repository, env, client, physical_runner):
+    if any(env.get(key) != value for key, value in {
+        'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1', 'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux',
+    }.items()):
+        raise SuiteError('nodes lineage permissions requires the disposable Hosted runner')
+    registration = importlib.import_module('scripts.test.online-engine-registration')
+    tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'disposable Tenant')
+    actor = raster.validate_identity(client, tenant, required_permissions=PERMISSIONS)
+    reader = raster.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_ACCESS_TOKEN'], 30)
+    issuer = raster.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+    identity = raster.validate_identity(reader, tenant, required_permissions={
+        'manager.data_item.read', 'meta.catalog.read', 'meta.lineage.read'})
+    if identity['principal_id'] == actor['principal_id']:
+        raise SuiteError('the lineage reader must be separate from the execution User')
+    engine = positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'], 'NFS engine')
+    deadline = time.monotonic() + float(env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS'])
+
+    def remaining():
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            raise SuiteError('nodes lineage permissions business budget exhausted')
+        return seconds
+
+    directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
+    report = dict(schema_version='addp.line-nodes-lineage-permissions/v1',
+                  run_id=env['ADDP_ONLINE_TEST_RUN_ID'], engine_id=engine,
+                  identity=identity, execution_actor=actor, result='incomplete')
+    path = directory/'topology-lineage-permissions.json'
+
+    def persist():
+        path.write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n')
+
+    grants = registration.ExactFileMetadataGrants(issuer, reader, tenant)
+    report['issuer_id'] = grants.operator
+    report['grants'] = {}
+
+    def grant(name):
+        receipt = grants.grant(engine, name, 'nfs', data_type='container', format_name='geopackage', layout='single')
+        report['grants'][name] = receipt['request_id']
+        persist()
+        return receipt['request_id']
+
+    persist()
+    try:
+        source_name = fixture.NODES_SOURCES[0]
+        source_scope = f'addp://engine/{engine}/path/{source_name}?type=file'
+        report['source_scan'] = support.wait_for_meta_scan(client, engine, deadline, scope={'targets': [source_scope]})
+        source_grant = grant(source_name)
+        source = support.find_fixture_item(reader, engine, source_name, 'nodes source')
+        source_locator = support.build_item_locator(engine, source)
+        runtimes = [r for r in array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
+                    if r.get('engine_type') == 'geopython_workflow' and r.get('connection_status') == 'online']
+        if len(runtimes) != 1:
+            raise SuiteError('nodes requires one product Runtime')
+        parent = f'addp://engine/{engine}/path/outputs?type=directory'
+        workflow = nodes_definition([source_locator], parent)
+        identifier = raster.submit(client, positive(runtimes[0]['id'], 'Runtime'), workflow)
+        report['execution_id'] = identifier
+        persist()
+        execution = raster.wait_execution(client, 'develop', identifier, remaining())
+        if execution.get('triggered_by') != int(actor['principal_id']):
+            raise SuiteError('nodes execution actor differs')
+        targets = {port: f'addp://engine/{engine}/path/outputs/{name}?type=file'
+                   for port, name in zip(fixture.NODES_PORTS, fixture.NODES_TARGETS)}
+        _, scans = validate_saved_success(execution, [('input.load_source', source_locator)], targets, len(targets))
+        report['outputs'] = []
+        for scan in scans:
+            raster.wait_execution(client, 'meta', scan['execution_id'], remaining())
+        for name in fixture.NODES_TARGETS:
+            full_name = 'outputs/'+name
+            request_id = grant(full_name)
+            item = support.find_fixture_item(reader, engine, full_name, 'nodes output')
+            raster.wait_lineage(reader, source['id'], item['id'], identifier, remaining())
+            graph_path = f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item["id"]}&direction=upstream'
+            graph = reader.request('GET', graph_path, (200,)).payload
+            validate_nodes_graph(graph, [source], item['id'], identifier)
+            if graph.get('permission_filtered') is not False:
+                raise SuiteError('the authorized baseline omitted a lineage relationship')
+            report['outputs'].append(dict(name=name, item_id=item['id'], grant_id=request_id,
+                                          locator=support.build_item_locator(engine, item), graph=graph))
+        report['source'] = dict(id=source['id'], name=source_name, grant_id=source_grant)
+        native = physical_runner(repository, env)
+        persist()
+        binding = {**identity, **{key: report[key] for key in ('run_id', 'execution_id', 'engine_id', 'source')},
+                   'output': {key: value for key, value in report['outputs'][0].items() if key != 'graph'}}
+        browser_path = directory/'topology-lineage-permissions-browser.json'
+        browser_path.unlink(missing_ok=True)
+        browser_env = dict(env, ADDP_ONLINE_TOPOLOGY_EVIDENCE=json.dumps(binding))
+        for key in ('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_USER_USERNAME',
+                    'ADDP_ONLINE_TEST_USER_PASSWORD', 'ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_ACCESS_TOKEN'):
+            browser_env.pop(key, None)
+        result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test',
+            'e2e/online/vector-topology-persistence.spec.js', '--config=playwright.online.config.js',
+            '--grep', 'NFS GeoPackage 同一普通用户撤权血缘$'], cwd=repository/'console/frontend',
+            env=browser_env, stdout=sys.stderr, stderr=sys.stderr,
+            timeout=min(200, remaining()))
+        if result.returncode or not browser_path.is_file():
+            raise SuiteError('nodes lineage permissions browser evidence missing or failed')
+        browser_report = obj(json.loads(browser_path.read_text()), 'nodes lineage permissions browser evidence')
+        if browser_report.get('binding') != binding or browser_report.get('result') != 'passed':
+            raise SuiteError('nodes lineage permissions browser evidence did not bind the exact scene')
+        if physical_runner(repository, env) != native:
+            raise SuiteError('nodes lineage permission checks changed physical files')
+        report['browser'] = browser_report
+        report['physical_unchanged'] = True
+    except Exception as error:
+        report['failure'] = registration.metadata_error_evidence(error, grants.phase)
+        raise
+    finally:
+        try:
+            report['cleanup'] = grants.cleanup()
+        except Exception as error:
+            report['cleanup_error'] = registration.metadata_error_evidence(error, grants.phase)
+            if 'failure' not in report:
+                raise
+        finally:
+            persist()
+    report['result'] = 'passed'
+    persist()
+    return report
+
+
 def run_point_outputs_scenario(repository,env,client,physical_runner,browser_runner,case):
     vertices=case==fixture.VERTICES_CASE
     names=fixture.VERTICES_SOURCES if vertices else fixture.NODES_SOURCES
@@ -1616,6 +1738,10 @@ def browser(repository, env, evidence):
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
+    if env.get('ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS') == '1':
+        if fixture.topology_case(env) != fixture.NODES_CASE:
+            raise SuiteError('the lineage permission acceptance requires the original nodes fixture')
+        return run_nodes_lineage_permissions(repository, env, client, physical_runner)
     if fixture.topology_case(env)==fixture.VERTICES_CASE:
         return run_vertices_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.DIFFERENCE_CASE:

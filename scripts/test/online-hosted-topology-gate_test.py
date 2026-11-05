@@ -142,6 +142,15 @@ class HostedTopologyGateTest(unittest.TestCase):
         self.assertEqual(json.loads((self.host.artifacts/'topology-case.json').read_text()),{'suite':'vector-topology-persistence','case':'line-nodes'})
         self.assertNotIn('capacity',self.host.trace.read_text())
 
+    def test_nodes_lineage_permissions_case_reuses_owned_fixture(self):
+        result = self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='line-nodes-lineage-permissions')
+        self.assertEqual(result.returncode, 0, result.stderr+result.stdout)
+        import json
+        self.assertEqual(json.loads((self.host.artifacts/'topology-case.json').read_text()),
+                         {'suite': 'vector-topology-persistence', 'case': 'line-nodes-lineage-permissions'})
+        self.assertIn('topology:stop', self.host.trace.read_text())
+        self.assertFalse(self.host.secrets.exists())
+
     def test_trim_case_is_bound_without_old_business_or_capacity(self):
         result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='line-trimming')
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)

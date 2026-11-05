@@ -119,6 +119,11 @@ var sourceInitializerPermissions = []string{
 
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
+	case "vector-topology-persistence":
+		if topologyLineagePermissions(suite) {
+			return append([]string{}, sourceInitializerPermissions...)
+		}
+		return nil
 	case "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow":
 		permissions := append([]string{}, sourceInitializerPermissions...)
 		if suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || (suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-envi") {
@@ -128,6 +133,10 @@ func suiteSourceInitializerPermissions(suite string) []string {
 	default:
 		return nil
 	}
+}
+
+func topologyLineagePermissions(suite string) bool {
+	return suite == "vector-topology-persistence" && os.Getenv("ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS") == "1"
 }
 
 func managerFileGDBOutsiderPermissions(suite string) []string {
@@ -986,6 +995,17 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = sourceInitializer.AccessToken
+	}
+	if topologyLineagePermissions(*suite) {
+		reader, _, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-topology-lineage-reader",
+			[]string{"manager.data_item.read", "meta.catalog.read", "meta.lineage.read"})
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_ACCESS_TOKEN"] = reader.AccessToken
+		values["ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_USERNAME"] = "external-online-topology-lineage-reader"
+		values["ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_PASSWORD"] = password
 	}
 	if *suite == "catalog-domain-overview" {
 		for _, fixture := range []struct {

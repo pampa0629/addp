@@ -1174,6 +1174,12 @@ A显式唯一非空来源ID与FID不同且在JSON安全整数内；输出每源�
 九次失败分别为反向重复边、同源部件部分重合、未打断T形、未打断十字、内部自交、业务node_id冲突、活动几何degree冲突、重复来源ID及地理CRS。严格绑定冻结节点的既有v3诊断，在Develop／Monitor同一UUID核中英文原因、操作建议和复制内容；无保存文件、输出facts、派生边或新增成果扫描，所有源及成功成果不变。最终保存阶段checkpoint、原始API／Meta／血缘／浏览器证据、合成原文件SHA与大小以及领域／部署／Infra清理零残留；incomplete或局部成功不替代最终报告。两个独立save没有跨文件事务承诺，失败保护限于算子准入失败未进入save。本case不新增API、权限、suite、生命周期或容量预算。
 
 
+### NFS GeoPackage 血缘权限专项验收
+
+使用现有 Hosted 门禁 `vector-topology-persistence` 的 `line-nodes-lineage-permissions` 入口。沿用原 `nodes-source.gpkg` 和一次成功节点提取，生成 `nodes.gpkg`、`node-members.gpkg`。独立授权操作员仅向普通读者签发这三个文件的 `metadata_read` Grant。普通读者在两个成果上都须看见同一次执行的来源边。
+
+保持同一个普通用户的 Manager 页面和会话，先撤源文件 Grant，改变显示深度触发重查。核对 HTTP 200、隐藏提示、仅保留成果节点、零关系，以及响应没有隐藏源的计数、身份或执行证据。再撤当前成果的 Grant，重查须返回 `404 lineage_subject_not_found`，页面清除画布与上一次隐藏提示。保留原始响应和三阶段截图，核对物理文件不变并撤销本轮 Grant。专项范围限于数据项血缘，使用一次成功执行，省略拓扑诊断、地图及发布服务节点。
+
 ### 矢量面分区面积加权总体标准差独立验收
 
 `vector-zonal-area-weighted-stddev-persistence`沿同源默认入口Runtime、NFS和普通User原12权限，独立600秒业务预算；16成功／50类各中英提交共100准确失败／1736次GeoPackage全检，成功后复查全部已有成果、每次失败复查全部16份，117次物理调用含首次冻结预期。14条开启标准差、原八列／十一列两条关闭对照；覆盖孔洞／重叠／多部件、细小交叠与无中心覆盖、米／两英尺、旋转／反向、重分类／转面接统计、零负值／常量／单有效像元／全无效／空批。独立闭式面积和Decimal中心偏差公式在执行前冻结；完整几何／属性／统计／null／字段类型，16份原GeoPackage及大小／hash归档，三方相等正整数大小、精确扫描身份／父执行、当前执行实际输入内外血缘／Monitor、源及全部成果原字节和Meta快照保持；失败零发布／新增扫描血缘及所有退出清理。数值极限和active geometry名称冲突沿Native单列，不改产品、安全投影或权限。准备／本地门禁不计实际Hosted，Linux全量及实际运行仍由CI会话协调，不重试、不扩预算。

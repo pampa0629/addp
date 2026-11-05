@@ -172,6 +172,7 @@ on:
           - polygon-rings-input-diagnostics
           - line-trimming
           - line-nodes
+          - line-nodes-lineage-permissions
           - geometry-difference
           - polygon-dissolve
           - intersection-overlay

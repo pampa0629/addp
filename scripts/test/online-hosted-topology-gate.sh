@@ -7,9 +7,12 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=vector-topology-persistence
 export ADDP_ONLINE_TOPOLOGY_CASE=${ADDP_ONLINE_TOPOLOGY_CASE-full}
+export ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS=0
 case "$ADDP_ONLINE_TOPOLOGY_CASE" in
+  line-nodes-lineage-permissions)
+    export ADDP_ONLINE_TOPOLOGY_CASE=line-nodes ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS=1 ;;
   vertex-extraction|geometry-difference|polygon-dissolve|intersection-overlay|line-nodes|line-trimming|full|line-network-normalize|line-network-normalize-chains|multi-distance-buffer|operator-input-diagnostics|line-proximity|line-extension|endpoint-snapping|polygon-rings|polygon-rings-input-diagnostics) ;;
-  *) echo 'ADDP_ONLINE_TOPOLOGY_CASE must be vertex-extraction, geometry-difference, polygon-dissolve, intersection-overlay, line-nodes, line-trimming, full, line-network-normalize, line-network-normalize-chains, multi-distance-buffer operator-input-diagnostics line-proximity, line-extension, endpoint-snapping or polygon-rings, polygon-rings-input-diagnostics' >&2; exit 1 ;;
+  *) echo 'ADDP_ONLINE_TOPOLOGY_CASE must be vertex-extraction, geometry-difference, polygon-dissolve, intersection-overlay, line-nodes, line-nodes-lineage-permissions, line-trimming, full, line-network-normalize, line-network-normalize-chains, multi-distance-buffer operator-input-diagnostics line-proximity, line-extension, endpoint-snapping or polygon-rings, polygon-rings-input-diagnostics' >&2; exit 1 ;;
 esac
 RUNTIME_CONTAINER=addp-topology-runtime
 RUNTIME_TAG=topology
@@ -40,7 +43,10 @@ export MONITOR_URL=http://127.0.0.1:8100 SECURITY_URL=http://127.0.0.1:8194
 python3 - <<'PYCASE'
 import json,os
 from pathlib import Path
-(Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-case.json').write_text(json.dumps({'suite':'vector-topology-persistence','case':os.environ['ADDP_ONLINE_TOPOLOGY_CASE']}))
+case = os.environ['ADDP_ONLINE_TOPOLOGY_CASE']
+if os.environ['ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS'] == '1':
+    case = 'line-nodes-lineage-permissions'
+(Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-case.json').write_text(json.dumps({'suite':'vector-topology-persistence','case':case}))
 PYCASE
 fixture_owned=1
 registry_owned=1
