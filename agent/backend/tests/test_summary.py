@@ -7,42 +7,12 @@ from sqlalchemy import JSON, MetaData, create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session as DatabaseSession
 
-from agents.context import HISTORY_MESSAGE_LIMIT
+from agents.context import HISTORY_CHAR_LIMIT, HISTORY_MESSAGE_LIMIT, MESSAGE_CHAR_LIMIT
 from api.chat import _load_agent_history
 from models.message import Message
 from models.session import Session
 from tests.test_session_tenant_isolation import AsyncDatabaseAdapter
-from utils.summary import _select_incremental_messages, maybe_update_summary
-
-
-class IncrementalSummaryTests(unittest.TestCase):
-    def test_watermark_advances_without_recompressing_previous_messages(self):
-        first_batch = [SimpleNamespace(id=index) for index in range(1, HISTORY_MESSAGE_LIMIT + 6)]
-
-        first_messages, first_watermark = _select_incremental_messages(first_batch)
-
-        self.assertEqual([message.id for message in first_messages], [1, 2, 3, 4, 5])
-        self.assertEqual(first_watermark, 5)
-
-        second_batch = [
-            SimpleNamespace(id=index)
-            for index in range(first_watermark + 1, HISTORY_MESSAGE_LIMIT + 8)
-        ]
-        second_messages, second_watermark = _select_incremental_messages(second_batch)
-
-        self.assertEqual([message.id for message in second_messages], [6, 7])
-        self.assertEqual(second_watermark, 7)
-
-    def test_does_not_advance_watermark_inside_recent_window(self):
-        recent_messages = [
-            SimpleNamespace(id=index)
-            for index in range(1, HISTORY_MESSAGE_LIMIT + 1)
-        ]
-
-        messages, watermark = _select_incremental_messages(recent_messages)
-
-        self.assertEqual(messages, [])
-        self.assertIsNone(watermark)
+from utils.summary import maybe_update_summary
 
 
 class SummaryPersistenceTests(unittest.IsolatedAsyncioTestCase):
@@ -132,6 +102,39 @@ class SummaryPersistenceTests(unittest.IsolatedAsyncioTestCase):
                 await maybe_update_summary(1)
             self.assertEqual(self.persisted(), ('existing goal', None))
             self.assertNotIn('private-provider-error', str(logs.output))
+
+    async def test_backlog_bounds_prompt_and_advances_only_over_sent_messages(self):
+        long_content = '界' * MESSAGE_CHAR_LIMIT + 'private-tail'
+        with DatabaseSession(self.engine) as database:
+            database.query(Message).filter_by(session_id=1).delete()
+            database.add_all([
+                Message(id=index, session_id=1, role='user',
+                        content=f'item-{index} ' + (long_content if index <= 205 else 'short'))
+                for index in range(201, 246)
+            ])
+            database.commit()
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content='merged goal')))
+        with patch('utils.summary.AsyncSessionLocal', new=self.database), \
+             patch('utils.summary.get_llm', return_value=model):
+            for last, count in ((203, 3), (223, 20), (225, 2)):
+                await maybe_update_summary(1)
+                self.assertEqual(self.persisted(), ('merged goal', last))
+                prompt = model.ainvoke.await_args.args[0][0].content
+                self.assertLessEqual(len(prompt), HISTORY_CHAR_LIMIT)
+                self.assertEqual(prompt.count('用户: item-'), count)
+                self.assertIn(f'用户: item-{last} ', prompt)
+                self.assertNotIn(f'用户: item-{last + 1} ', prompt)
+                self.assertNotIn('private-tail', prompt)
+                if last == 203:
+                    self.assertEqual(prompt.count('...[上下文已截断]'), 3)
+                if last == 223:
+                    self.assertIn('用户: item-204 ', prompt)
+                    self.assertNotIn('用户: item-203 ', prompt)
+            await maybe_update_summary(1)
+            await maybe_update_summary(2)
+            self.assertEqual(model.ainvoke.await_count, 3)
+        with DatabaseSession(self.engine) as database:
+            self.assertTrue(database.get(Message, 201).content.endswith('private-tail'))
 
     async def test_older_inflight_result_does_not_overwrite_newer_committed_summary(self):
         async def newer_result(_messages):

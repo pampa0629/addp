@@ -3,9 +3,15 @@
 import logging
 
 from langchain_core.messages import HumanMessage
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from agents.context import HISTORY_MESSAGE_LIMIT, SUMMARY_CHAR_LIMIT
+from agents.context import (
+    HISTORY_CHAR_LIMIT,
+    HISTORY_MESSAGE_LIMIT,
+    MESSAGE_CHAR_LIMIT,
+    SUMMARY_CHAR_LIMIT,
+    truncate_context_text,
+)
 from database import AsyncSessionLocal
 from models.message import Message
 from models.session import Session
@@ -26,11 +32,18 @@ _COMPRESS_PROMPT = """\
 输出合并后的摘要（直接输出，不加标题）："""
 
 
-def _select_incremental_messages(uncompressed: list[Message]) -> tuple[list[Message], int | None]:
-    if len(uncompressed) <= HISTORY_MESSAGE_LIMIT:
-        return [], None
-    messages = uncompressed[:-HISTORY_MESSAGE_LIMIT]
-    return messages, int(messages[-1].id)
+def _build_summary_prompt(messages, existing_summary: str) -> tuple[str, int]:
+    remaining = HISTORY_CHAR_LIMIT - len(_COMPRESS_PROMPT.format(existing_summary=existing_summary, history=""))
+    lines = []
+    for message in messages:
+        content, _ = truncate_context_text(message.content, MESSAGE_CHAR_LIMIT)
+        line = f"{'用户' if message.role == 'user' else '助手'}: {content}"
+        size = len(line) + bool(lines)  # Separator before each subsequent line.
+        if size > remaining:
+            break
+        lines.append(line)
+        remaining -= size
+    return _COMPRESS_PROMPT.format(existing_summary=existing_summary, history="\n".join(lines)), len(lines)
 
 
 async def maybe_update_summary(session_id: int) -> None:
@@ -40,24 +53,32 @@ async def maybe_update_summary(session_id: int) -> None:
             if session is None:
                 return
             watermark = int(session.summary_message_id or 0)
-            result = await db.execute(
-                select(Message)
-                .where(Message.session_id == session_id, Message.id > watermark, Message.is_complete.is_(True))
-                .order_by(Message.id.asc())
+            uncompressed = (
+                Message.session_id == session_id,
+                Message.id > watermark,
+                Message.is_complete.is_(True),
             )
-            uncompressed = list(result.scalars().all())
-            new_older_messages, target_watermark = _select_incremental_messages(uncompressed)
-            if target_watermark is None:
+            last_eligible_id = (
+                select(Message.id).where(*uncompressed).order_by(Message.id.desc())
+                .offset(HISTORY_MESSAGE_LIMIT).limit(1).correlate(None).scalar_subquery()
+            )
+            result = await db.execute(
+                select(Message.id, Message.role, func.substr(Message.content, 1, MESSAGE_CHAR_LIMIT + 1).label("content"))
+                .where(*uncompressed, Message.id <= last_eligible_id)
+                .order_by(Message.id.asc()).limit(HISTORY_MESSAGE_LIMIT)
+            )
+            messages = result.all()
+            if not messages:
                 return
-            existing_summary = session.summary or "（无）"
+            existing_summary, _ = truncate_context_text(session.summary or "（无）", SUMMARY_CHAR_LIMIT)
             tenant_id = int(session.tenant_id)
 
-        history = "\n".join(
-            f"{'用户' if message.role == 'user' else '助手'}: {message.content}"
-            for message in new_older_messages
-        )
+        prompt, message_count = _build_summary_prompt(messages, existing_summary)
+        if not message_count:
+            return
+        target_watermark = messages[message_count - 1].id
         response = await get_llm(tenant_id, "general-chat").ainvoke(
-            [HumanMessage(content=_COMPRESS_PROMPT.format(existing_summary=existing_summary, history=history))]
+            [HumanMessage(content=prompt)]
         )
         summary = str(response.content or "").strip()[:SUMMARY_CHAR_LIMIT]
         if not summary:
@@ -70,7 +91,7 @@ async def maybe_update_summary(session_id: int) -> None:
                     select(Session).where(Session.id == session_id).with_for_update()
                 )
                 session = result.scalar_one_or_none()
-                if session is None or int(session.summary_message_id or 0) >= target_watermark:
+                if session is None or int(session.summary_message_id or 0) != watermark:
                     return
                 session.summary = summary
                 session.summary_message_id = target_watermark
@@ -78,7 +99,7 @@ async def maybe_update_summary(session_id: int) -> None:
             "[SUMMARY] session_id=%d 摘要水位更新至 message_id=%d，新增压缩 %d 条消息",
             session_id,
             target_watermark,
-            len(new_older_messages),
+            message_count,
         )
     except Exception as exc:
         logger.error(

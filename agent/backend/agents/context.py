@@ -7,7 +7,7 @@ HISTORY_CHAR_LIMIT = 24000
 SUMMARY_CHAR_LIMIT = 2000
 
 
-def _truncate(value: str, limit: int) -> tuple[str, bool]:
+def truncate_context_text(value: str, limit: int) -> tuple[str, bool]:
     if len(value) <= limit:
         return value, False
     marker = "\n...[上下文已截断]"
@@ -31,7 +31,7 @@ def build_context_window(
         if remaining <= 0:
             break
         content = str(message.get("content") or "")
-        content, truncated = _truncate(content, min(MESSAGE_CHAR_LIMIT, remaining))
+        content, truncated = truncate_context_text(content, min(MESSAGE_CHAR_LIMIT, remaining))
         if truncated:
             truncated_messages += 1
         selected_reversed.append({"role": str(message.get("role") or ""), "content": content})
@@ -40,7 +40,7 @@ def build_context_window(
     selected = list(reversed(selected_reversed))
     summary = None
     if session_summary:
-        summary, _ = _truncate(session_summary, SUMMARY_CHAR_LIMIT)
+        summary, _ = truncate_context_text(session_summary, SUMMARY_CHAR_LIMIT)
     total_messages = max(len(messages), int(input_message_count or 0))
     metrics = {
         "input_message_count": total_messages,

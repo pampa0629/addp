@@ -6,7 +6,7 @@
 
 ## PostgreSQL database 清单
 
-Agent 使用 `make test-agent-postgres` 和显式 `AGENT_POSTGRES_TEST_DSN`，本地仅接入已核实的 `addp_test`。门禁拒绝已存在的 agent Schema，所有初始化、历史升级和失败迁移夹具在事务内回滚，并检查零残留；CI 使用 Job 独占 PostgreSQL Service。该入口由模块门禁、串行集成与 Hosted T2 登记发现。
+Agent 使用 `make test-agent-postgres` 和显式 `AGENT_POSTGRES_TEST_DSN`，本地仅接入已核实的 `addp_test`。门禁拒绝已存在的 agent Schema，初始化、历史升级和失败迁移夹具在事务内回滚，并检查零残留。摘要并发用例用两个连接读取同一个已提交的独立测试 Schema，退出时只清理本轮创建的 Schema 并核对零残留。CI 使用 Job 独占 PostgreSQL Service。该入口由模块门禁、串行集成与 Hosted T2 登记发现。
 
 `addp-postgres` 实例只长期保留以下非模板 database：
 

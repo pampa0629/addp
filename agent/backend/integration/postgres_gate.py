@@ -6,9 +6,11 @@ import shutil
 import tempfile
 from unittest.mock import AsyncMock, patch
 from types import SimpleNamespace
+from uuid import uuid4
 
 from sqlalchemy import text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.schema import CreateSchema, DropSchema
 
 from services.schema import migrate, MIGRATION_ROOT
 from api.sessions import SessionUpdate, VersionInput, get_session, list_sessions, update_session, delete_session, list_session_runs
@@ -19,8 +21,10 @@ from models.run_event import AgentRunEvent
 from models.session import Session
 from models.message import Message
 from api.chat import _project_assistant_message, _load_agent_history
+from agents.context import HISTORY_MESSAGE_LIMIT
 from services.run_events import append_run_event
 from starlette.requests import Request
+from utils.summary import maybe_update_summary
 
 
 def request():
@@ -64,7 +68,6 @@ async def check_partial_messages(db, run):
         db.add(Message(session_id=1, role='user', content=f'complete-{index}', is_complete=True))
     await db.commit()
     model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content='safe summary')))
-    from utils.summary import maybe_update_summary
     with patch('utils.summary.AsyncSessionLocal', side_effect=lambda: AsyncSession(
             bind=db.bind, expire_on_commit=False, join_transaction_mode='create_savepoint')), \
          patch('utils.summary.get_llm', return_value=model):
@@ -72,6 +75,80 @@ async def check_partial_messages(db, run):
     model.ainvoke.assert_awaited_once()
     prompt = model.ainvoke.await_args.args[0][0].content
     assert '你🙂好' not in prompt and 'complete' in prompt
+
+
+async def check_summary_concurrency(engine):
+    # Separate committed fixture so two real connections see the same rows.
+    schema = f'agent_summary_test_{uuid4().hex}'
+    isolated = engine.execution_options(schema_translate_map={'agent': schema})
+    async with isolated.begin() as setup:
+        await setup.execute(CreateSchema(schema))
+        await setup.run_sync(lambda db: Session.metadata.create_all(
+            db, tables=[Session.__table__, Message.__table__]))
+    try:
+        async with isolated.connect() as first_connection, isolated.connect() as second_connection:
+            first_requested, late_requested = asyncio.Event(), asyncio.Event()
+            release_first, release_late = asyncio.Event(), asyncio.Event()
+            first = late = None
+
+            def database():
+                bind = first_connection if asyncio.current_task() is first else second_connection
+                return AsyncSession(bind=bind, expire_on_commit=False)
+
+            async def append_messages(start, stop):
+                async with database() as db, db.begin():
+                    db.add_all(Message(id=i, session_id=1, role='user', content=f'fixture message {i}')
+                               for i in range(start, stop))
+
+            async def invoke(messages):
+                prompt = messages[0].content
+                if 'summary-first' in prompt:
+                    assert '用户: fixture message 1\n' not in prompt
+                    assert '用户: fixture message 3\n' in prompt
+                    return SimpleNamespace(content='summary-merged')
+                if '用户: fixture message 3\n' in prompt:
+                    late_requested.set()
+                    await release_late.wait()
+                    return SimpleNamespace(content='summary-from-stale-base')
+                first_requested.set()
+                await release_first.wait()
+                return SimpleNamespace(content='summary-first')
+
+            async def stored_summary():
+                async with database() as db:
+                    row = await db.get(Session, 1)
+                    return row.summary, row.summary_message_id
+
+            async with database() as db, db.begin():
+                db.add(Session(id=1, user_id=7, tenant_id=10))
+            await append_messages(1, HISTORY_MESSAGE_LIMIT + 3)
+            model = SimpleNamespace(ainvoke=AsyncMock(side_effect=invoke))
+            with patch('utils.summary.AsyncSessionLocal', new=database), \
+                 patch('utils.summary.get_llm', return_value=model):
+                try:
+                    first = asyncio.create_task(maybe_update_summary(1))
+                    await asyncio.wait_for(first_requested.wait(), timeout=5)
+                    await append_messages(HISTORY_MESSAGE_LIMIT + 3, HISTORY_MESSAGE_LIMIT + 5)
+                    late = asyncio.create_task(maybe_update_summary(1))
+                    await asyncio.wait_for(late_requested.wait(), timeout=5)
+                    release_first.set()
+                    await asyncio.wait_for(first, timeout=5)
+                    release_late.set()
+                    await asyncio.wait_for(late, timeout=5)
+                    assert await stored_summary() == ('summary-first', 2)
+                    await asyncio.wait_for(maybe_update_summary(1), timeout=5)
+                    assert await stored_summary() == ('summary-merged', 4)
+                    assert model.ainvoke.await_count == 3
+                finally:
+                    tasks = [task for task in (first, late) if task is not None]
+                    for task in tasks:
+                        task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        async with engine.begin() as cleanup:
+            await cleanup.execute(DropSchema(schema, cascade=True))
+            assert (await cleanup.execute(text('SELECT to_regnamespace(:schema)'), {'schema': schema})).scalar_one() is None
+    print('PASS summary concurrency rejects a stale base, resumes from committed watermark and leaves zero fixture schema residue')
 
 
 async def main():
@@ -171,6 +248,7 @@ async def main():
             finally:
                 await connection.execute(text("SELECT pg_advisory_unlock(hashtextextended('addp:agent:postgres-gate',0))"))
                 await connection.commit()
+        await check_summary_concurrency(engine)
     finally:
         await engine.dispose()
 
