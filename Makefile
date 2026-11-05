@@ -1588,7 +1588,7 @@ test-monitor-metrics-config: test-metrics-sources ## 验证指标配置与服务
 .PHONY: test-metrics-sources
 test-metrics-sources: test-metrics-project test-metrics-source-recovery test-node-metrics-recovery ## 验证统一采集管理的范围、配置隔离、只读状态与失败汇总
 	@python3 -m unittest scripts/test/metrics-sources_test.py
-	@python3 -m unittest scripts.test.postgres-metrics-lifecycle_test.LifecycleTest.test_full_start_recovery_selection_and_optional_failure_are_executable scripts.test.postgres-metrics-lifecycle_test.LifecycleTest.test_recovery_uses_unified_entry_for_both_scopes_and_preserves_failure
+	@python3 -m unittest scripts.test.postgres-metrics-lifecycle_test.LifecycleTest.test_full_start_recovery_selection_and_optional_failure_are_executable scripts.test.postgres-metrics-lifecycle_test.LifecycleTest.test_recovery_uses_unified_entry_for_both_scopes_and_preserves_failure scripts.test.postgres-metrics-lifecycle_test.LifecycleTest.test_recovery_requires_explicit_up_after_project_rename
 
 .PHONY: test-metrics-project
 test-metrics-project: ## 验证统一项目的精确服务选择与旧来源显式退役边界

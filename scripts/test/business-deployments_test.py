@@ -40,7 +40,7 @@ class Source:
         if args[2] == 'info':
             return json.dumps(self.info)
         if args[2] == 'ps':
-            if any(prefix in ' '.join(args) for prefix in ('label=com.docker.compose.project=addp-metrics-sources-',)):
+            if 'label=com.docker.compose.project='+inventory.metrics_project.PROJECT in args:
                 return ''
             return self.ids
         if args[2] == 'inspect':
@@ -57,7 +57,7 @@ class MetricsSource(Source):
         self.metrics = {}
         for name, cid in [('business-postgres-metrics', 'b'*64), ('business-postgres-metrics-web', 'c'*64)]:
             self.metrics[cid] = dict(self.container, id=cid, service=name,
-                project=inventory.metrics_project.project(ROOT), owner=str(ROOT), scope='business',
+                project=inventory.metrics_project.PROJECT, owner=str(ROOT), scope='business',
                 database_id=CID, database_started_at=self.container['started_at'],
                 network_mode='container:'+'b'*64 if name.endswith('-web') else 'fixture-database',
                 ports={} if name.endswith('-web') else {'9399/tcp': None, '9443/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '19443'}]})
@@ -77,7 +77,7 @@ class RedisMetricsSource(Source):
         super().__init__()
         self.container.update(service='redis',project=inventory.SCOPES[scope][0],working_dir=str(inventory.SCOPES[scope][1]),networks={'private':{'NetworkID':'e'*64}})
         self.container['ports']={'6379/tcp':[{'HostIp':'127.0.0.1','HostPort':'16379'}]}
-        self.project=inventory.metrics_project.project(ROOT)
+        self.project=inventory.metrics_project.PROJECT
         self.metrics=dict(self.container,id='b'*64,project=self.project,service=scope+'-redis-metrics',owner=str(ROOT),scope=scope,database_id=CID,database_started_at=self.container['started_at'],ports={'9443/tcp':[{'HostIp':'127.0.0.1','HostPort':'19443'}]})
         self.source_ids='b'*64
         self.selected_service=self.metrics['service']

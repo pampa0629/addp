@@ -62,7 +62,7 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.host._executable("docker", '''
             #!/usr/bin/env bash
             if [ "$1 $2" = "container inspect" ]; then exit 1; fi
-            if [ -f "$ADDP_ONLINE_SECRET_DIR/node-stopped" ] && [[ "$*" == *label=com.docker.compose.project=addp-metrics-sources-* ]]; then
+            if [ -f "$ADDP_ONLINE_SECRET_DIR/node-stopped" ] && [[ " $* " == *" label=com.docker.compose.project=addp-metrics-sources "* ]]; then
               [ "${ADDP_TEST_INSPECTION_FAIL:-0}" != 1 ] || exit 2
               [ "${ADDP_TEST_RESIDUAL_NODE:-0}" != 1 ] || echo residual
             fi
@@ -75,7 +75,7 @@ class HostedMetricsGateTest(unittest.TestCase):
 
     def metrics_project(self):
         import hashlib
-        return 'addp-metrics-sources-'+hashlib.sha256(str(self.host.repository.resolve()).encode()).hexdigest()[:16]
+        return 'addp-metrics-sources'
 
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f"{self.host.bin}:{os.environ['PATH']}", GITHUB_ACTIONS="true", RUNNER_OS="Linux",

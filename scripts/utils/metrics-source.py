@@ -103,7 +103,7 @@ class Source:
     def document(self, database, image, ip, port, *, started_at=None):
         labels = {self.owner:str(self.root), self.scope_label:self.scope, self.namespace+'.database-id':database.identity,
                   self.namespace+'.database-started-at':started_at or database.facts['started_at']}
-        return {'services':{self.service:{'image':image,'user':'65532:65532','read_only':True,'cap_drop':['ALL'],
+        return {'name':self.project,'services':{self.service:{'image':image,'user':'65532:65532','read_only':True,'cap_drop':['ALL'],
             'security_opt':['no-new-privileges:true'],'cpus':.25,'mem_limit':'128m','pids_limit':32,'restart':'no',
             'labels':labels,'networks':['database'],'ports':[{'host_ip':ip,'published':str(port),'target':9443}],
             'volumes':[{'type':'volume','source':'private','target':'/source','read_only':True,'volume':{'nocopy':True}}]}},
@@ -192,7 +192,8 @@ class Source:
                 result[key] = value
             return result
         document = json.loads(private.read(self.state/'compose.json',0o600)[0], object_pairs_hook=unique)
-        if not isinstance(document,dict) or not isinstance(document.get('services'),dict) or set(document['services']) != {self.service}:
+        if (not isinstance(document, dict) or document.get('name') != self.project
+                or not isinstance(document.get('services'), dict) or set(document['services']) != {self.service}):
             error = self.error('Metrics source layout changed; explicitly apply the standard up entry')
             error.source_recovery_reason = 'source-layout-changed'
             raise error

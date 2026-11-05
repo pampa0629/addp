@@ -115,6 +115,18 @@ class LifecycleTest(unittest.TestCase):
                 with self.assertRaises((ValueError,OSError,KeyError)):manager.recover({})
                 self.assertFalse(any(c[0] in ('rm','compose') for c in commands))
 
+    def test_recovery_requires_explicit_up_after_project_rename(self):
+        with self.recovery_fixture() as (manager, db, docker, objects, commands):
+            path = manager.state/'compose.json'
+            document = module.read_json(path)
+            document.pop('name')  # the previous shared group did not persist a Compose name
+            module.file_write(path, json.dumps(document), 0o600)
+            with self.assertRaises(module.LifecycleError) as failure:
+                manager.recover({})
+            self.assertEqual(failure.exception.source_recovery_reason, 'source-layout-changed')
+            self.assertFalse(commands)
+            db.authenticate.assert_not_called()
+
     def test_recovery_cleans_new_sources_after_racing_database_change_without_admin(self):
         with self.recovery_fixture(running=False) as (manager,db,docker,objects,commands):
             # Capture startup facts separately; changing the live fact must not change the expected snapshot.
@@ -376,7 +388,7 @@ class LifecycleTest(unittest.TestCase):
     def test_foreign_source_is_never_stopped_or_replaced(self):
         docker = mock.Mock()
         docker.run.return_value = 'a' * 64
-        docker.fact.return_value = {'labels': {'com.docker.compose.project': module.group.project(ROOT),
+        docker.fact.return_value = {'labels': {'com.docker.compose.project': module.group.PROJECT,
             'com.docker.compose.service': 'postgres-metrics', module.OWNER: '/foreign', module.SCOPE: 'infra'}}
         lifecycle = module.SourceLifecycle(docker, 'infra', Path('/private/unused'), mock.Mock())
         with self.assertRaises(ValueError):

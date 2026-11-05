@@ -347,7 +347,7 @@ class SourceLifecycle:
         if scope not in ('infra', 'business'):
             raise LifecycleError('Unsupported PostgreSQL observation scope')
         self.docker, self.scope, self.state, self.database_factory = docker, scope, Path(state), database_factory
-        self.project = project or group.project(ROOT)
+        self.project = project or group.PROJECT
         self.exporter = group.service('postgres', scope)
         self.web = self.exporter+'-web'
         self.services = {self.exporter, self.web}
@@ -392,7 +392,7 @@ class SourceLifecycle:
                   'io.addp.postgres-metrics.database-id': database.identity,
                   'io.addp.postgres-metrics.database-started-at': started_at or database.facts['started_at']}
         template = str(ROOT / 'scripts/infra/postgres-metrics.yml')
-        compose = {'services': {
+        compose = {'name': self.project, 'services': {
             self.exporter: {'extends': {'file': template, 'service': 'postgres-metrics'},
                 'labels': labels, 'networks': ['database'],
                 'ports': [{'host_ip': ip, 'published': str(port), 'target': 9443}]},
@@ -447,7 +447,8 @@ class SourceLifecycle:
                 raise LifecycleError('PostgreSQL recovery ownership mismatch; use the standard deployment entry')
             tls, ip, port = transport(env)
             document = read_json(self.state / 'compose.json')
-            if not isinstance(document,dict) or not isinstance(document.get('services'),dict) or set(document['services']) != self.services:
+            if (not isinstance(document, dict) or document.get('name') != self.project
+                    or not isinstance(document.get('services'), dict) or set(document['services']) != self.services):
                 error = LifecycleError('PostgreSQL source layout changed; explicitly apply the standard up entry')
                 error.source_recovery_reason = 'source-layout-changed'
                 raise error
@@ -511,7 +512,8 @@ class SourceLifecycle:
 
     def up(self, env):
         with auth.locked(self.state):
-            if self.project == group.project(ROOT):
+            if self.project == group.PROJECT:
+                self.source_containers()
                 group.retire(self.docker, ROOT, 'postgres', self.scope)
             self.stop_sources()
             database = self.database_factory()

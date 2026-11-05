@@ -1,11 +1,10 @@
-"""One workspace Compose group; exact member selection and explicit retirement only."""
+"""One deployment Compose group; exact member selection and explicit retirement only."""
 import hashlib
 import json
 from pathlib import Path
 
 
-def project(root):
-    return 'addp-metrics-sources-'+hashlib.sha256(str(Path(root).resolve()).encode()).hexdigest()[:16]
+PROJECT = 'addp-metrics-sources'
 
 
 def service(kind, scope):
@@ -31,55 +30,60 @@ def container_ids(run, project_name, services):
     return sorted(identities)
 
 
-def legacy_project(root, kind, scope):
-    # Used exclusively by explicit up to retire the old deployment, never discovery/recovery.
-    if kind == 'node': return 'addp-node-metrics'
-    if kind == 'postgres': return 'addp-postgres-metrics-'+scope
-    return 'addp-'+kind+'-metrics-'+hashlib.sha256(str(Path(root).resolve()).encode()).hexdigest()[:16]+'-'+scope
+def previous_project(root):
+    digest = hashlib.sha256(str(Path(root).resolve()).encode()).hexdigest()[:16]
+    return PROJECT+'-'+digest
 
 
 def retire(docker, root, kind, scope):
-    service(kind,scope)
-    old = legacy_project(root, kind, scope)
+    # Only explicit up retires the selected member of the former shared group.
+    old = previous_project(root)
+    member = service(kind, scope)
     namespace = 'io.addp.'+kind+'-metrics'
-    services = {'node-exporter', 'block-capacity'} if kind == 'node' else {kind+'-metrics'}
-    if kind == 'postgres': services.add('postgres-metrics-web')
-    ids = docker.run(['ps', '-aq', '--no-trunc', '--filter', 'label=com.docker.compose.project='+old]).split()
-    seen = set()
+    services = {member}
+    if kind == 'node':
+        services.add('block-capacity')
+    elif kind == 'postgres':
+        services.add(member+'-web')
+    ids = container_ids(docker.run, old, services)
+    selected = {}
     for identity in ids:
         fact = docker.fact(identity); labels = fact.get('labels') or {}
         name = labels.get('com.docker.compose.service')
         if (labels.get('com.docker.compose.project') != old or labels.get(namespace+'.owner') != str(root)
-                or name not in services or name in seen
+                or name not in services or name in selected
                 or labels.get('com.docker.compose.oneoff', '').lower() != 'false'
                 or kind != 'node' and labels.get(namespace+'.scope') != scope):
-            raise ValueError('Legacy metrics source ownership rejected; no migration performed')
-        seen.add(name)
-    volume = old+'_block-capacity' if kind == 'node' else old+'-private' if kind in {'redis','minio'} else None
+            raise ValueError('Previous metrics source ownership rejected; no migration performed')
+        selected[name] = identity
+    volume = old+'_block-capacity' if kind == 'node' else (
+        old+'-'+scope+'-'+kind+'-private' if kind in {'redis','minio'} else None)
     volumes = docker.run(['volume','ls','-q','--filter','name=^'+volume+'$']).split() if volume else []
     for name in volumes:
         fact = json.loads(docker.run(['volume','inspect',name]))[0]; labels = fact.get('Labels') or {}
         if (name != volume or fact.get('Name') != name or fact.get('Driver') != 'local'
                 or labels.get(namespace+'.owner') != str(root)
                 or kind != 'node' and labels.get(namespace+'.scope') != scope):
-            raise ValueError('Legacy metrics volume ownership rejected; no migration performed')
+            raise ValueError('Previous metrics volume ownership rejected; no migration performed')
     network = None
-    if kind == 'node' and ids:
+    if kind == 'node':
         names = docker.run(['network','ls','-q','--filter','name=^'+old+'_default$']).split()
         if names:
             facts = json.loads(docker.run(['network','inspect',*names]))
-            if len(facts) != 1: raise ValueError('Legacy node network ownership rejected')
+            if len(facts) != 1: raise ValueError('Previous node network ownership rejected')
             network = facts[0]; labels = network.get('Labels') or {}
             if (network.get('Name') != old+'_default' or network.get('Driver') != 'bridge'
                     or labels.get('com.docker.compose.project') != old or labels.get('com.docker.compose.network') != 'default'
+                    or labels.get(namespace+'.owner') != str(root)
                     or not set(network.get('Containers') or {}).issubset(ids)):
-                raise ValueError('Legacy node network ownership rejected; no migration performed')
+                raise ValueError('Previous node network ownership rejected; no migration performed')
     # Validate the entire old member and its volume before any removal.
-    for identity in ids: docker.run(['rm','-f',identity], timeout=20)
+    for name in sorted(selected, key=lambda name: (name == member, name)):
+        docker.run(['rm','-f',selected[name]], timeout=20)
     for name in volumes: docker.run(['volume','rm',name])
     if network is not None:
         current = json.loads(docker.run(['network','inspect',network['Id']]))[0]
         if (current.get('Id') != network['Id'] or current.get('Labels') != network.get('Labels')
                 or current.get('Containers')):
-            raise ValueError('Legacy node network changed during retirement')
+            raise ValueError('Previous node network changed during retirement')
         docker.run(['network','rm',network['Id']])

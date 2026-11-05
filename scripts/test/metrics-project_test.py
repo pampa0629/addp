@@ -12,8 +12,8 @@ M = importlib.util.module_from_spec(spec); spec.loader.exec_module(M)
 
 
 class ProjectTest(unittest.TestCase):
-    def test_one_workspace_project_and_unique_services(self):
-        self.assertNotEqual(M.project(ROOT),M.project(ROOT/'another'))
+    def test_fixed_project_and_unique_services(self):
+        self.assertEqual(M.PROJECT, 'addp-metrics-sources')
         members = [M.service(k,s) for k in ('postgres','redis','minio') for s in ('infra','business')]
         self.assertEqual(len(set(members)),6)
         self.assertNotIn(M.service('node','host'),members)
@@ -33,14 +33,15 @@ class ProjectTest(unittest.TestCase):
         with self.assertRaises(ValueError):M.filters('one',{'a','b'})
 
     def fixture(self,kind='minio'):
-        project=M.legacy_project(ROOT,kind,'infra');namespace='io.addp.'+kind+'-metrics'
-        fact={'labels':{'com.docker.compose.project':project,'com.docker.compose.service':kind+'-metrics',
+        project=M.previous_project(ROOT);namespace='io.addp.'+kind+'-metrics'
+        fact={'labels':{'com.docker.compose.project':project,'com.docker.compose.service':M.service(kind,'infra'),
             'com.docker.compose.oneoff':'False',namespace+'.owner':str(ROOT),namespace+'.scope':'infra'}}
-        volume={'Name':project+'-private','Driver':'local','Labels':{namespace+'.owner':str(ROOT),namespace+'.scope':'infra'}}
+        volume={'Name':project+'-infra-'+kind+'-private','Driver':'local','Labels':{namespace+'.owner':str(ROOT),namespace+'.scope':'infra'}}
         commands=[];docker=Mock();docker.fact.side_effect=lambda _:copy.deepcopy(fact)
         def run(args,**kw):
             commands.append(args)
-            if args[0]=='ps':return 'a'*64
+            if args[0]=='ps':
+                return 'a'*64 if args[-1].endswith('='+M.service(kind,'infra')) else ''
             if args[:2]==['volume','ls']:return volume['Name']
             if args[:2]==['volume','inspect']:return json.dumps([volume])
             if args[0]=='rm' or args[:2]==['volume','rm']:return ''
@@ -53,7 +54,34 @@ class ProjectTest(unittest.TestCase):
         M.retire(docker,ROOT,'minio','infra')
         self.assertEqual([c for c in commands if c[0]=='rm' or c[:2]==['volume','rm']],
             [['rm','-f','a'*64],['volume','rm',volume['Name']]])
+        self.assertIn(['ps','-aq','--no-trunc',*M.filters(M.previous_project(ROOT),{'infra-minio-metrics'})], commands)
         self.assertFalse(any(c[0] in ('compose','start','build','pull','exec') for c in commands))
+
+    def test_postgres_retirement_preserves_other_members_of_previous_group(self):
+        old = M.previous_project(ROOT)
+        exporter = M.service('postgres', 'infra')
+        objects = {'exporter': exporter, 'web': exporter+'-web',
+                   'peer': M.service('postgres', 'business'), 'node': 'node-exporter'}
+        commands = []
+        docker = Mock()
+        docker.fact.side_effect = lambda identity: {'labels': {
+            'com.docker.compose.project': old, 'com.docker.compose.service': objects[identity],
+            'com.docker.compose.oneoff': 'False', 'io.addp.postgres-metrics.owner': str(ROOT),
+            'io.addp.postgres-metrics.scope': 'infra'}}
+        def run(args, **kwargs):
+            commands.append(args)
+            if args[0] == 'ps':
+                self.assertIn('label=com.docker.compose.project='+old, args)
+                return '\n'.join(identity for identity, service in objects.items()
+                                 if 'label=com.docker.compose.service='+service in args)
+            if args[0] == 'rm':
+                objects.pop(args[-1])
+                return ''
+            raise AssertionError(args)
+        docker.run.side_effect = run
+        M.retire(docker, ROOT, 'postgres', 'infra')
+        self.assertEqual(list(objects), ['peer', 'node'])
+        self.assertEqual([args[-1] for args in commands if args[0] == 'rm'], ['web', 'exporter'])
 
     def test_foreign_container_or_volume_prevents_all_removal(self):
         for target,key in [('container','io.addp.minio-metrics.owner'),('container','io.addp.minio-metrics.scope'),
@@ -88,17 +116,17 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual([c for c in commands if c[0]=='rm'],[['rm','-f','mine']])
 
     def test_node_retirement_rejects_a_foreign_network_attachment_before_removal(self):
-        docker=Mock();old=M.legacy_project(ROOT,'node','host');commands=[]
+        docker=Mock();old=M.previous_project(ROOT);commands=[]
         labels={'com.docker.compose.project':old,'com.docker.compose.service':'node-exporter',
             'com.docker.compose.oneoff':'False','io.addp.node-metrics.owner':str(ROOT)}
         docker.fact.return_value={'labels':labels}
         def run(args,**kw):
             commands.append(args)
-            if args[0]=='ps':return 'a'*64
+            if args[0]=='ps':return 'a'*64 if args[-1].endswith('=node-exporter') else ''
             if args[:2]==['volume','ls']:return ''
             if args[:2]==['network','ls']:return 'n'
             if args[:2]==['network','inspect']:return json.dumps([{'Name':old+'_default','Driver':'bridge',
-                'Labels':{'com.docker.compose.project':old,'com.docker.compose.network':'default'},'Containers':{'foreign':{}}}])
+                'Labels':{'com.docker.compose.project':old,'com.docker.compose.network':'default','io.addp.node-metrics.owner':str(ROOT)},'Containers':{'foreign':{}}}])
             raise AssertionError(args)
         docker.run.side_effect=run
         with self.assertRaises(ValueError):M.retire(docker,ROOT,'node','host')

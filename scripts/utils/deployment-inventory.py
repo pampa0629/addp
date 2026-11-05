@@ -213,7 +213,7 @@ def postgres_metrics(docker, scope, containers):
     missing = {'state': 'not_deployed'}
     unavailable = {'state': 'unavailable'}
     try:
-        project = metrics_project.project(REPOSITORY)
+        project = metrics_project.PROJECT
         exporter_service = metrics_project.service('postgres', scope)
         web_service = exporter_service+'-web'
         ids = metrics_project.container_ids(lambda args:docker(*args),project,{exporter_service,web_service})
@@ -268,7 +268,7 @@ def metrics_endpoint(binding):
 
 def engine_metrics_project(kind, scope):
     metrics_project.service(kind, scope)  # validate the fixed member
-    return metrics_project.project(REPOSITORY)
+    return metrics_project.PROJECT
 
 def redis_metrics_project(scope):
     return engine_metrics_project('redis', scope)

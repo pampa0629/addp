@@ -95,7 +95,7 @@ def command(args, *, timeout=120):
 def metrics_project_name():
     spec = importlib.util.spec_from_file_location('fixture_metrics_project', ROOT/'scripts/utils/metrics-project.py')
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-    return module.project(ROOT)
+    return module.PROJECT
 
 
 def native_node_source_proof():

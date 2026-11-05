@@ -150,7 +150,7 @@ if [[ "${1-}" == info ]]; then
 fi
 # This fixture owns no optional source containers. Recognize only the exact
 # production member query, before the branch requiring parent-only MOCK_* keys.
-if [[ "${1-}" == ps && "$*" == *label=com.docker.compose.project=addp-metrics-sources-* ]]; then
+if [[ "${1-}" == ps && " $* " == *" label=com.docker.compose.project=addp-metrics-sources "* ]]; then
     [[ "$#" == 7 && "${2-}" == -aq && "${3-}" == --no-trunc && "${4-}" == --filter &&
        "${5-}" == @SOURCE_PROJECT_FILTER@ && "${6-}" == --filter ]] || exit 85
     case "${7-}" in
@@ -245,7 +245,7 @@ case "$1" in
         ;;
 esac
 exit 0
-'''.replace('@SOURCE_PROJECT_FILTER@',shlex.quote('label=com.docker.compose.project='+source_group.project(self.repo)))
+'''.replace('@SOURCE_PROJECT_FILTER@',shlex.quote('label=com.docker.compose.project='+source_group.PROJECT))
     .replace('@SOURCE_SERVICE_FILTERS@','|'.join(shlex.quote('label=com.docker.compose.service='+name) for name in sorted(members))))
         self.install_command('curl', '#!/bin/sh\nexit 0\n')
         self.install_command('lsof', "#!/bin/sh\n"
@@ -263,7 +263,7 @@ exit 0
     def test_source_queries_are_closed_and_work_without_parent_mock_environment(self):
         self.healthy_docker()
         env = {'PATH': str(self.bin)+os.pathsep+os.environ['PATH']}
-        project = source_group.project(self.repo)
+        project = source_group.PROJECT
         prefix = ['--context', 'fixture', 'ps', '-aq', '--no-trunc']
         def request(filters):
             return subprocess.run([str(self.bin/'docker'),*prefix,*filters],env=env,

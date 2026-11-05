@@ -242,7 +242,7 @@ case "$1" in
   ps)
     # The real transport strips MOCK_* and ADDP_* values. Derive the owned
     # workspace through the same copied module, never through parent mock state.
-    owned_project=$(python3 -c 'import runpy; from pathlib import Path; print(runpy.run_path("scripts/utils/metrics-project.py")["project"](Path.cwd()))')
+    owned_project=$(python3 -c 'import runpy; print(runpy.run_path("scripts/utils/metrics-project.py")["PROJECT"])')
     [[ "$#" == 7 && "$2" == -aq && "$3" == --no-trunc && "$4" == --filter &&
        "$5" == "label=com.docker.compose.project=$owned_project" && "$6" == --filter ]] || exit 2
     case "$7" in

@@ -13,8 +13,8 @@ esac
 HOSTED_FIXTURE_CONTAINERS=()
 HOSTED_FIXTURE_IMAGES=()
 HOSTED_FIXTURE_VOLUMES=()
-metrics_project=$(python3 -B -c 'import runpy; from pathlib import Path; m=runpy.run_path("scripts/utils/metrics-project.py"); print(m["project"](Path.cwd()))')
-[[ "$metrics_project" =~ ^addp-metrics-sources-[a-f0-9]{16}$ ]] || exit 2
+metrics_project=$(python3 -B -c 'import runpy; m=runpy.run_path("scripts/utils/metrics-project.py"); print(m["PROJECT"])')
+[[ "$metrics_project" == addp-metrics-sources ]] || exit 2
 HOSTED_FIXTURE_COMPOSE_PROJECTS=("$metrics_project" addp-metrics-online)
 node_owned=0
 engine_owned=0

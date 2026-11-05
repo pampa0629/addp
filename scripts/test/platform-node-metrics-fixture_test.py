@@ -618,9 +618,13 @@ if args[:2] == ["context", "show"]: print("default")
 elif args[:2] == ["context", "inspect"]: print(json.dumps("unix:///var/run/docker.sock"))
 elif args[0] == "info": print(json.dumps(dict(id="fixture-daemon", os_type="linux", operating_system="Linux")))
 elif args[0] == "ps":
-    if state.exists() and not any("addp-metrics-sources-" in arg for arg in args): print("a" * 64)
+    if state.exists() and "label=com.docker.compose.project=addp-metrics-sources" not in args: print("a" * 64)
 elif args[0] in ("network", "volume"):
-    if state.exists() and not any("addp-metrics-sources-" in arg for arg in args): print("owned-resource")
+    metrics_selectors = ("label=com.docker.compose.project=addp-metrics-sources",
+                         "name=^addp-metrics-sources-business-redis-private$",
+                         "name=^addp-metrics-sources-infra-redis-private$")
+    if state.exists() and not any(selector in args for selector in metrics_selectors):
+        print("owned-resource")
 elif args[0] == "inspect":
     import os
     service = "redis" if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "redis-engine-admission" else "postgres"

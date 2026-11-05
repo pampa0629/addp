@@ -270,7 +270,7 @@ class Lifecycle:
 
     def _run(self, action, env):
         with private.locked(self.state):
-            if action == 'up' and env.get('ADDP_REDIS_METRICS_ENABLED') == 'true' and self.project == sources.group.project(ROOT):
+            if action == 'up' and env.get('ADDP_REDIS_METRICS_ENABLED') == 'true' and self.project == sources.group.PROJECT:
                 sources.group.retire(self.docker, ROOT, 'redis', self.scope)
             self.stop_sources()
             if action=='down' or env.get('ADDP_REDIS_METRICS_ENABLED','false')=='false':

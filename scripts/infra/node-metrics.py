@@ -15,7 +15,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 _group_spec = importlib.util.spec_from_file_location('node_metrics_group', ROOT/'scripts/utils/metrics-project.py')
 group = importlib.util.module_from_spec(_group_spec); _group_spec.loader.exec_module(group)
-PROJECT = group.project(ROOT)
+PROJECT = group.PROJECT
 _spec = importlib.util.spec_from_file_location('node_recovery', Path(__file__).with_name('node-recovery.py'))
 recovery = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(recovery)
@@ -245,7 +245,7 @@ def _run(action, env, *, node_kind=None, display_name=None, addresses=(), host_o
         if (volume.get('Labels') or {}).get('io.addp.node-metrics.owner') != str(ROOT):
             raise ValueError('Node capacity volume belongs to another workspace')
     if action == 'up':
-        if PROJECT == group.project(ROOT):
+        if PROJECT == group.PROJECT:
             group.retire(recovery.deployment.Docker(env), ROOT, 'node', 'host')
         # Capacity deselection removes only this member, never project orphans.
         if not capacity:

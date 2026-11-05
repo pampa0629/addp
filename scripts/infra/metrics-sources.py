@@ -105,7 +105,7 @@ def status(kind, scope, env):
     deployment = load(ROOT/'scripts/utils/deployment-docker.py')
     docker = deployment.Docker(env)
     group = deployment.inventory.metrics_project
-    project = group.project(ROOT)
+    project = group.PROJECT
     namespace = 'io.addp.'+('node' if kind == 'node' else 'postgres' if kind == 'postgresql' else kind)+'-metrics'
     service = group.service('postgres' if kind == 'postgresql' else kind, scope)
     expected = {service}
