@@ -102,6 +102,49 @@ func TestVFFSKCBlacklistRejectsConflictingAnonymousTypeOwners(t *testing.T) {
 	}
 }
 
+func TestVFFSKCFilterExpandsSimpleContentAttributeGroups(t *testing.T) {
+	schema := `<x:schema xmlns:x="` + vffXSDNS + `" xmlns:t="urn:t" targetNamespace="urn:t">
+<x:attributeGroup name="Inner"><x:attribute name="First" type="x:string"/></x:attributeGroup>
+<x:attributeGroup name="Outer"><x:attributeGroup ref="t:Inner"/></x:attributeGroup>
+<x:simpleType name="Text"><x:restriction base="x:string"/></x:simpleType>
+<x:complexType name="Base"><x:simpleContent><x:extension base="t:Text"><x:attributeGroup ref="t:Outer"/></x:extension></x:simpleContent></x:complexType>
+<x:element name="Owner"><x:complexType><x:simpleContent><x:annotation/><x:extension base="t:Base"><x:attribute name="Second" type="x:int"/></x:extension></x:simpleContent></x:complexType></x:element>
+</x:schema>`
+	rule := skcSemanticsRead(t, schema, "Base { First }\n{ First Second Outer Inner }")[0].rules
+	if len(rule[0].issues) != 0 || len(rule[0].fields[0].candidates) != 1 || len(rule[1].issues) != 0 || len(rule[1].scopes) != 1 {
+		t.Fatalf("unexpected simple content rules: %#v", rule)
+	}
+	scope := rule[1].scopes[0]
+	if scope.element == nil || scope.element.name != "Owner" || len(scope.issues) != 0 || len(scope.fields[0].candidates) != 1 || len(scope.fields[1].candidates) != 1 || len(scope.groups[2].uses) != 1 || len(scope.groups[3].uses) != 1 {
+		t.Fatalf("inherited or local simple content attributes missing: %#v", scope)
+	}
+	use := scope.groups[3].uses[0]
+	if use.declaration.name != "Inner" || !strings.Contains(schema[use.reference.begin:use.reference.end], `ref="t:Inner"`) || len(use.via) != 5 || use.via[2].kind != "simpleContent" || use.via[3].kind != "extension" || use.via[4].name != "Outer" {
+		t.Fatalf("incorrect group reference path: %#v", use)
+	}
+}
+
+func TestVFFSKCFilterKeepsUnsupportedSimpleContentExplicit(t *testing.T) {
+	for _, tc := range []struct {
+		body, issue string
+		count       int
+	}{
+		{`<x:restriction base="x:string"><x:attribute name="A" type="x:string"/></x:restriction>`, "unsupported simple content field derivation", 0},
+		{`<x:extension base="t:Missing"><x:attribute name="A" type="x:string"/></x:extension>`, "unresolved simple content base QName: t:Missing", 1},
+		{`<x:extension base="x:string"><x:sequence><x:element name="A" type="x:string"/></x:sequence></x:extension>`, "unsupported simple content extension field: sequence", 0},
+		{`<x:extension base="x:string"><x:anyAttribute/><x:attribute name="A" type="x:string"/></x:extension>`, "unsupported simple content extension field: anyAttribute", 1},
+		{`<x:extension base="x:string">unexpected<x:attribute name="A" type="x:string"/></x:extension>`, "unexpected text in simple content declaration", 0},
+	} {
+		t.Run(tc.issue, func(t *testing.T) {
+			schema := `<x:schema xmlns:x="` + vffXSDNS + `" xmlns:t="urn:t" targetNamespace="urn:t"><x:complexType name="Type"><x:simpleContent>` + tc.body + `</x:simpleContent></x:complexType></x:schema>`
+			scope := skcSemanticsRead(t, schema, "{ A }")[0].rules[0].scopes[0]
+			if len(scope.issues) != 1 || scope.issues[0] != tc.issue || len(scope.fields[0].candidates) != tc.count {
+				t.Fatalf("incorrect partial simple content evidence: %#v", scope)
+			}
+		})
+	}
+}
+
 func TestVFFSKCValueGraphsRetainNamedInlineUnionAndFacets(t *testing.T) {
 	schema := `<x:schema xmlns:x="` + vffXSDNS + `" xmlns:t="urn:t" targetNamespace="urn:t"><x:simpleType name="Label"><x:restriction base="x:string"><x:enumeration value="not validated"/></x:restriction></x:simpleType><x:simpleType name="Numbers"><x:list itemType="x:int"/></x:simpleType><x:complexType name="Holder"><x:attribute name="A" type="t:Label"/><x:attribute name="B" type="t:Numbers"/><x:attribute name="C"><x:simpleType><x:union memberTypes="t:Label x:boolean"><x:simpleType><x:restriction base="x:decimal"/></x:simpleType></x:union></x:simpleType></x:attribute></x:complexType></x:schema>`
 	got := skcSemanticsRead(t, schema, "Holder { A B C }")

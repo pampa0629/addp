@@ -259,8 +259,20 @@ func (b *vffSKCBinder) expand(n *vffXMLNode, via []vffSKCDeclarationWitness, dep
 		if err := b.tick(depth); err != nil {
 			return nil, err
 		}
-		switch kind := child.name.Local; kind {
+		kind := child.name.Local
+		if n.name.Local == "extension" && n.parent != nil && n.parent.name.Local == "simpleContent" &&
+			kind != "annotation" && kind != "attribute" && kind != "attributeGroup" {
+			b.issues = append(b.issues, "unsupported simple content extension field: "+kind)
+			continue
+		}
+		switch kind {
 		case "annotation":
+		case "simpleContent":
+			local, err := b.expandSimpleContent(child, via, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, local...)
 		case "complexContent":
 			if len(child.children) != 1 || child.children[0].name.Local != "extension" {
 				b.issues = append(b.issues, "unsupported complex content derivation")
@@ -356,4 +368,79 @@ func (b *vffSKCBinder) expand(n *vffXMLNode, via []vffSKCDeclarationWitness, dep
 		}
 	}
 	return fields, nil
+}
+
+func (b *vffSKCBinder) expandSimpleContent(content *vffXMLNode, via []vffSKCDeclarationWitness, depth int) ([]vffSKCFieldCandidate, error) {
+	if err := b.tick(depth); err != nil {
+		return nil, err
+	}
+	onlyContent, err := b.simpleContentType(content.parent)
+	if err != nil {
+		return nil, err
+	}
+	var extension *vffXMLNode
+	for _, child := range content.children {
+		if err := b.tick(depth); err != nil {
+			return nil, err
+		}
+		if child.name.Local == "annotation" {
+			continue
+		}
+		if extension != nil || child.name.Local != "extension" {
+			b.issues = append(b.issues, "unsupported simple content field derivation")
+			return nil, nil
+		}
+		extension = child
+	}
+	if content.parent.name.Local != "complexType" || !onlyContent || extension == nil {
+		b.issues = append(b.issues, "unsupported simple content field shape")
+		return nil, nil
+	}
+	if strings.TrimSpace(content.text) != "" || strings.TrimSpace(extension.text) != "" {
+		b.issues = append(b.issues, "unexpected text in simple content declaration")
+		return nil, nil
+	}
+	for name := range content.attrs {
+		if name != "id" {
+			b.issues = append(b.issues, "unsupported simple content declaration attribute")
+			return nil, nil
+		}
+	}
+	for name := range extension.attrs {
+		if name != "id" && name != "base" {
+			b.issues = append(b.issues, "unsupported simple content extension attribute")
+			return nil, nil
+		}
+	}
+	name, err := b.qname(extension, extension.attrs["base"])
+	if err != nil {
+		return nil, err
+	}
+	owner := b.graph.owners[extension]
+	var inherited []vffSKCFieldCandidate
+	switch {
+	case name.Space == vffXSDNS && vffSKCBuiltinType(name.Local) && name.Local != "anyType" && name.Local != "anySimpleType":
+	case name.Space == owner.namespace && owner.definitions["simpleType"][name.Local] != nil:
+	case name.Space == owner.namespace && owner.definitions["complexType"][name.Local] != nil:
+		base := owner.definitions["complexType"][name.Local]
+		simple, err := b.simpleContentType(base)
+		if err != nil {
+			return nil, err
+		}
+		if simple {
+			inherited, err = b.expand(base, via, depth+1)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			b.issues = append(b.issues, "base is not a simple-content complex type")
+		}
+	default:
+		b.issues = append(b.issues, "unresolved simple content base QName: "+extension.attrs["base"])
+	}
+	local, err := b.expand(extension, append(append([]vffSKCDeclarationWitness(nil), via...), b.witness(content)), depth+1)
+	if err != nil {
+		return nil, err
+	}
+	return append(inherited, local...), nil
 }
