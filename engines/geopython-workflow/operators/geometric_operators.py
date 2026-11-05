@@ -10,6 +10,7 @@ import pandas as pd
 import shapely
 from collections import Counter
 from fractions import Fraction
+from functools import partial
 from itertools import pairwise
 from math import fsum, hypot, nextafter
 from numbers import Real, Integral
@@ -2246,15 +2247,53 @@ def _trim_line_endpoints(input_gdf, reference_gdf, id_field, reference_id_field,
     return {'result': result, 'details': details}
 
 
+class PolygonCheckInputError(ValueError):
+    """Explicit input rejections shared by overlap and gap checking."""
+    _messages = {
+        'overlap_source': (
+            '面叠检查要求有效的有限二维面图层和显式 id_field。标识列必须为非几何列，值须非空、唯一且为标量。',
+            'Polygon overlap checking requires a valid finite XY polygon layer and an explicit id_field with unique, non-empty scalar values in a non-geometry column.',
+        ),
+        'overlap_crs': (
+            '面叠检查要求已知投影 CRS，两个水平轴的单位须一致且换算因子有限为正。',
+            'Polygon overlap checking requires a known projected CRS with matching finite positive horizontal unit factors.',
+        ),
+        'gap_source': (
+            '面缝检查要求有效的有限二维面图层。待检查图层允许空批和空面。',
+            'Polygon gap checking requires a valid finite XY polygon layer. The layer being checked may contain empty polygons or have no rows.',
+        ),
+        'coverage': (
+            '面缝检查须显式提供覆盖范围（coverage_gdf），且至少含一个非空有效的有限二维面。',
+            'Polygon gap checking requires an explicit coverage layer (coverage_gdf) with at least one non-empty, valid finite XY polygon.',
+        ),
+        'gap_crs': (
+            '面缝检查要求待检查图层和覆盖范围使用相同的已知投影 CRS，水平单位须一致且换算因子有限为正。',
+            'Polygon gap checking requires the same known projected CRS on both layers, with matching finite positive horizontal unit factors.',
+        ),
+    }
+
+    def __init__(self, code, detail):
+        super().__init__(detail)
+        self.code = code
+
+    def message(self, language):
+        return self._messages[self.code][language == 'en']
+
+
+def _check_polygon_input(geometry, name, input_error, purpose):
+    if geometry.isna().any() or not geometry.geom_type.isin(["Polygon", "MultiPolygon"]).all():
+        raise input_error(f"{name} requires non-null Polygon or MultiPolygon geometries")
+    if not shapely.is_valid(geometry.array).all():
+        raise input_error(f"{name} requires valid polygons; repair explicitly before checking {purpose}")
+
+
 def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report each positive-area polygon pair once, retaining explicit source IDs."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    ids = _source_identifiers(input_gdf, id_field)
-    if geometry.isna().any() or not geometry.geom_type.isin(["Polygon", "MultiPolygon"]).all():
-        raise ValueError("input_gdf requires non-null Polygon or MultiPolygon geometries")
-    if not shapely.is_valid(geometry.array).all():
-        raise ValueError("input_gdf requires valid polygons; repair explicitly before checking overlaps")
+    source_error = partial(PolygonCheckInputError, 'overlap_source')
+    geometry = _finite_xy_geometry(input_gdf, input_error=source_error)
+    _require_projected_xy_crs(geometry.crs, input_error=partial(PolygonCheckInputError, 'overlap_crs'))
+    ids = _source_identifiers(input_gdf, id_field, input_error=source_error)
+    _check_polygon_input(geometry, "input_gdf", source_error, "overlaps")
 
     left, right, areas, overlaps = [], [], [], []
     tree = shapely.STRtree(geometry.array)
@@ -2291,18 +2330,19 @@ def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
 
 def check_polygon_gap(input_gdf: gpd.GeoDataFrame, coverage_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Report uncovered polygon components inside an explicit coverage boundary."""
-    geometry = _finite_xy_geometry(input_gdf)
-    coverage = _finite_xy_geometry(coverage_gdf, "coverage_gdf")
-    for name, values in [("input_gdf", geometry), ("coverage_gdf", coverage)]:
-        _require_projected_xy_crs(values.crs)
-        if values.isna().any() or not values.geom_type.isin(["Polygon", "MultiPolygon"]).all():
-            raise ValueError(f"{name} requires non-null Polygon or MultiPolygon geometries")
-        if not shapely.is_valid(values.array).all():
-            raise ValueError(f"{name} requires valid polygons; repair explicitly before checking gaps")
+    source_error = partial(PolygonCheckInputError, 'gap_source')
+    coverage_error = partial(PolygonCheckInputError, 'coverage')
+    crs_error = partial(PolygonCheckInputError, 'gap_crs')
+    geometry = _finite_xy_geometry(input_gdf, input_error=source_error)
+    coverage = _finite_xy_geometry(coverage_gdf, "coverage_gdf", input_error=coverage_error)
+    for name, values, input_error in [("input_gdf", geometry, source_error),
+                                      ("coverage_gdf", coverage, coverage_error)]:
+        _require_projected_xy_crs(values.crs, input_error=crs_error)
+        _check_polygon_input(values, name, input_error, "gaps")
     if not geometry.crs.equals(coverage.crs):
-        raise ValueError("both inputs require the same known projected CRS; reproject explicitly")
+        raise crs_error("both inputs require the same known projected CRS; reproject explicitly")
     if coverage.empty or coverage.is_empty.all():
-        raise ValueError("coverage_gdf requires at least one non-empty polygon")
+        raise coverage_error("coverage_gdf requires at least one non-empty polygon")
 
     # Reuse the geometry-only kernel, without per-feature overlay attributes
     # or implicit make_valid. A coverage hole is an explicit excluded region.

@@ -461,6 +461,8 @@
         "check_geometry": "几何检查",
         "repair_geometry": "几何修复",
         "snap_geometry": "参考吸附",
+        "check_polygon_overlap": "面叠检查",
+        "check_polygon_gap": "面缝检查",
         "polygonize": "拓扑构面",
         "snap_line_endpoints": "端点吸附",
         "extend_line_endpoints": "线端延伸"
@@ -472,6 +474,7 @@
         "distance": "缓冲距离（distance）",
         "group_fields": "分组字段（group_fields）",
         "mask_gdf": "裁剪掩膜（mask_gdf）",
+        "coverage_gdf": "覆盖范围（coverage_gdf）",
         "max_distance": "最大修剪路径距离（max_distance）",
         "input_gdf": "源图层（input_gdf）",
         "reference_gdf": "参考图层（reference_gdf）",
@@ -479,6 +482,28 @@
         "resolution": "圆弧段数（resolution）",
         "tolerance": "容差（tolerance）",
         "gdf_b": "图层 B（gdf_b）"
+      },
+      "polygonOverlap": {
+        "reasons": {
+          "operator_input_invalid": "待检查的面图层或来源标识配置不符合要求。",
+          "operator_crs_invalid": "面叠检查要求已知投影坐标系和匹配、有限且为正的水平单位换算因子。"
+        },
+        "actions": {
+          "operator_input_invalid": "请提供具有活动几何列的有效有限二维面图层，并将 id_field 指向值非空、唯一的非几何标量列。",
+          "operator_crs_invalid": "请确认源坐标系，并显式重投影到符合要求的投影坐标系。"
+        }
+      },
+      "polygonGap": {
+        "reasons": {
+          "operator_input_invalid": "待检查图层须具有活动几何列，几何须为有效有限二维面或多面。",
+          "operator_mask_invalid": "覆盖范围缺失或不合规，须至少包含一个非空有效的有限二维面。",
+          "operator_crs_invalid": "待检查图层和覆盖范围须使用相同的已知投影坐标系及匹配、有限且为正的水平单位换算因子。"
+        },
+        "actions": {
+          "operator_input_invalid": "请检查源活动几何列，修正缺失或无效的几何记录。空表和合法空面可以参与检查。",
+          "operator_mask_invalid": "请将合规的面图层接入覆盖范围（coverage_gdf），确认其中至少有一个非空面。",
+          "operator_crs_invalid": "请核对两个图层的投影坐标系和水平单位，并显式统一后再执行。"
+        }
       },
       "bounds": {
         "reasons": {

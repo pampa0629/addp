@@ -461,6 +461,8 @@
         "check_geometry": "Check geometry",
         "repair_geometry": "Repair geometry",
         "snap_geometry": "Reference snap",
+        "check_polygon_overlap": "Check polygon overlaps",
+        "check_polygon_gap": "Check polygon gaps",
         "polygonize": "Polygonize linework",
         "snap_line_endpoints": "Snap line endpoints",
         "extend_line_endpoints": "Extend line endpoints"
@@ -472,6 +474,7 @@
         "distance": "Buffer distance (distance)",
         "group_fields": "Group fields (group_fields)",
         "mask_gdf": "Clip mask (mask_gdf)",
+        "coverage_gdf": "Coverage area (coverage_gdf)",
         "max_distance": "Maximum trim path distance (max_distance)",
         "input_gdf": "Source layer (input_gdf)",
         "reference_gdf": "Reference layer (reference_gdf)",
@@ -479,6 +482,28 @@
         "resolution": "Arc segments (resolution)",
         "tolerance": "Tolerance (tolerance)",
         "gdf_b": "Input layer B (gdf_b)"
+      },
+      "polygonOverlap": {
+        "reasons": {
+          "operator_input_invalid": "The polygon layer or its source identifier configuration is invalid.",
+          "operator_crs_invalid": "Polygon overlap checking requires a known projected CRS with matching finite positive horizontal unit factors."
+        },
+        "actions": {
+          "operator_input_invalid": "Provide a valid finite XY polygon layer with active geometry, and set id_field to a non-geometry column with unique non-empty scalar values.",
+          "operator_crs_invalid": "Check the source CRS and explicitly reproject to a suitable projected CRS."
+        }
+      },
+      "polygonGap": {
+        "reasons": {
+          "operator_input_invalid": "The layer being checked requires active geometry with valid finite XY Polygon or MultiPolygon values.",
+          "operator_mask_invalid": "Coverage is missing or invalid and must contain at least one non-empty valid finite XY polygon.",
+          "operator_crs_invalid": "The layer being checked and the coverage area require the same known projected CRS with matching finite positive horizontal unit factors."
+        },
+        "actions": {
+          "operator_input_invalid": "Check the active geometry column and correct missing or invalid geometries. A layer with no rows or with valid empty polygons can still be checked.",
+          "operator_mask_invalid": "Connect a valid polygon layer to the coverage area (coverage_gdf) and ensure it contains at least one non-empty polygon.",
+          "operator_crs_invalid": "Check the projected CRS and horizontal units on both layers, then explicitly make them match before rerunning."
+        }
       },
       "bounds": {
         "reasons": {

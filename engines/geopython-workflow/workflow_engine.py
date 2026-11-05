@@ -12,7 +12,7 @@ from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.properties_operators import MeasurementInputError, BoundsInputError
 from operators.spatial_relations import DistanceInputError, RelationInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError, VoronoiInputError
-from operators.geometric_operators import PolygonizeInputError, ReferenceSnapInputError, GeometryValidityInputError, VertexInputError, MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
+from operators.geometric_operators import PolygonCheckInputError, PolygonizeInputError, ReferenceSnapInputError, GeometryValidityInputError, VertexInputError, MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,13 @@ def _project(value):
 
 
 def _execute_workflow_operator(operator, params):
+    if operator == 'check_polygon_overlap' and not {'input_gdf', 'id_field'} <= params.keys():
+        raise PolygonCheckInputError('overlap_source', 'input_gdf and id_field are required')
+    if operator == 'check_polygon_gap':
+        if 'input_gdf' not in params:
+            raise PolygonCheckInputError('gap_source', 'input_gdf is required')
+        if 'coverage_gdf' not in params:
+            raise PolygonCheckInputError('coverage', 'coverage_gdf is required')
     result = _execute_operator(operator, params)
     if isinstance(result, dict) and '__ports__' in result:
         return result
@@ -81,6 +88,15 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
     def _execute_operator(self, operator, params):
         try:
             return _execute_workflow_operator(operator, params)
+        except PolygonCheckInputError as exc:
+            reason = {
+                'overlap_source': 'operator_input_invalid',
+                'overlap_crs': 'operator_crs_invalid',
+                'gap_source': 'operator_input_invalid',
+                'coverage': 'operator_mask_invalid',
+                'gap_crs': 'operator_crs_invalid',
+            }[exc.code]
+            raise OperatorInputError(reason, exc.message(self.language)) from exc
         except PolygonizeInputError as exc:
             message = str(exc) if self.language == "en" else "拓扑构面需要带活动几何列的图层，几何须为有效、非空且坐标有限的二维线或多线。"
             raise OperatorInputError("operator_input_invalid", message) from exc

@@ -2743,7 +2743,12 @@ def test_polygon_overlap_invalid_id_fails_workflow_before_publishing_a_file(tmp_
         {"id": "check", "operator": "check_polygon_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "parcel_id"}, "depends_on": ["load"]},
         {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "check"}, "connection_info": connection, "path": "must-not-exist.gpkg", "mode": "fail"}, "depends_on": ["check"]},
     ]})
-    assert result["status"] == "failed" and "unique scalar identifiers" in str(result)
+    assert result["status"] == "failed" and result["error_code"] == "INVALID_PARAMS"
+    assert result["diagnostic"] == {
+        "schema_version": "addp.execution-failure/v3", "stage": "execution",
+        "reason": "operator_input_invalid",
+        "operator": {"node_index": 2, "operator_id": "check_polygon_overlap", "parameter": "input_gdf"},
+    }
     assert not (tmp_path / "must-not-exist.gpkg").exists()
     assert (tmp_path / "invalid-ids.gpkg").read_bytes() == before
 
@@ -2983,16 +2988,101 @@ def test_polygon_gap_invalid_or_missing_coverage_fails_before_publishing(tmp_pat
     connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
     lines([box(0, 0, 1, 1)]).to_file(tmp_path / "source.gpkg", driver="GPKG")
     lines([]).to_file(tmp_path / "empty.gpkg", driver="GPKG")
-    for extra_params, message in [({}, "coverage_gdf"), ({"coverage_gdf": {"$ref": "coverage"}}, "non-empty")]:
+    for extra_params in [{}, {"coverage_gdf": {"$ref": "coverage"}}]:
         result = execute_workflow({"tasks": [
             {"id": "source", "operator": "load", "params": {"connection_info": connection, "path": "source.gpkg"}, "depends_on": []},
             {"id": "coverage", "operator": "load", "params": {"connection_info": connection, "path": "empty.gpkg"}, "depends_on": []},
             {"id": "check", "operator": "check_polygon_gap", "params": {"input_gdf": {"$ref": "source"}, **extra_params}, "depends_on": ["source", "coverage"]},
             {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "check"}, "connection_info": connection, "path": "must-not-exist.gpkg", "mode": "fail"}, "depends_on": ["check"]},
         ]})
-        assert result["status"] == "failed"
-        assert message in str(result)
+        assert result["status"] == "failed" and result["error_code"] == "INVALID_PARAMS"
+        assert result["diagnostic"] == {
+            "schema_version": "addp.execution-failure/v3", "stage": "execution",
+            "reason": "operator_mask_invalid",
+            "operator": {"node_index": 3, "operator_id": "check_polygon_gap", "parameter": "coverage_gdf"},
+        }
         assert not (tmp_path / "must-not-exist.gpkg").exists()
+
+
+@pytest.mark.parametrize("operator,problem", [
+    (operator, problem)
+    for operator in ("check_polygon_overlap", "check_polygon_gap")
+    for problem in ("source", "missing_source", "crs", "native_check", "native_compute", "area")
+] + [("check_polygon_overlap", "missing_id"), ("check_polygon_gap", "invalid_result")])
+def test_polygon_check_classification_blocks_result_save(monkeypatch, operator, problem):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+
+    overlap_check = operator == "check_polygon_overlap"
+    geometry = [box(0, 0, 2, 2), box(1, 1, 3, 3)]
+    if problem == "source":
+        geometry[0] = Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)])
+    source = overlap_frame(geometry)
+    params = {"input_gdf": source, **({"id_field": "parcel_id"} if overlap_check else {
+        "coverage_gdf": lines([box(0, 0, 4, 4)]),
+    })}
+    if problem == "missing_source":
+        del params["input_gdf"]
+    elif problem == "missing_id":
+        del params["id_field"]
+    elif problem == "crs":
+        if overlap_check:
+            params["input_gdf"] = source.set_crs(None, allow_override=True)
+        else:
+            params["coverage_gdf"] = params["coverage_gdf"].set_crs("EPSG:2263", allow_override=True)
+    function = get_operator(operator)
+    saves = []
+    original = workflow_engine.get_operator
+
+    def resolve(name):
+        if name == "save":
+            return lambda **kwargs: saves.append(kwargs)
+        if name != operator:
+            return original(name)
+
+        def invoke(**kwargs):
+            def native_failure(*_args, **_kwargs):
+                raise ValueError("input_gdf requires valid polygons")
+
+            with monkeypatch.context() as scope:
+                if problem == "native_check":
+                    scope.setattr(shapely, "is_valid", native_failure)
+                elif problem == "native_compute":
+                    scope.setattr(shapely, "intersection" if overlap_check else "difference", native_failure)
+                elif problem == "area":
+                    scope.setattr(shapely, "area", lambda values: np.full(np.shape(values), np.inf))
+                elif problem == "invalid_result":
+                    scope.setattr(shapely, "difference", lambda *_args: Point(0, 0))
+                return function(**kwargs)
+
+        return invoke
+
+    monkeypatch.setattr(workflow_engine, "get_operator", resolve)
+    tasks = [
+        {"id": "operation", "operator": operator, "params": params, "depends_on": []},
+        {"id": "save_result", "operator": "save", "depends_on": ["operation"],
+         "params": {"input_df": {"$ref": "operation", "port": "result"}}},
+    ]
+    with pytest.raises(WorkflowExecutionError) as error:
+        workflow_engine.GeoPythonWorkflowRunner(language="en").execute({"tasks": tasks})
+    assert not saves
+    if problem in {"source", "missing_source", "missing_id", "crs"}:
+        context = {"node_index": 1, "operator_id": operator}
+        if problem != "crs":
+            context["parameter"] = "input_gdf"
+        assert error.value.error_code == "INVALID_PARAMS"
+        assert error.value.diagnostic == {
+            "schema_version": "addp.execution-failure/v3", "stage": "execution",
+            "reason": "operator_crs_invalid" if problem == "crs" else "operator_input_invalid",
+            "operator": context,
+        }
+    else:
+        assert error.value.error_code == "EXECUTION_FAILED"
+        assert error.value.diagnostic is None
+        if problem == "area":
+            assert "finite positive Float64 area" in str(error.value)
+        elif problem == "invalid_result":
+            assert "did not produce valid polygon components" in str(error.value)
 
 
 @pytest.mark.parametrize("crs,authority", [("EPSG:3857", "3857"), ("EPSG:2263", "2263")])
