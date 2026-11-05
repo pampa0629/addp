@@ -182,32 +182,54 @@ test.describe('production public login', () => {
       const target = entry === 'workbench' ? workbench : portal
       const other = entry === 'workbench' ? portal : workbench
       const system = suffix => '/api/v1/system/' + suffix
-      const refreshCookie = async () => (await context.cookies(origin)).find(cookie => cookie.name === 'addp_refresh_token')
+      const refreshCookie = async () => (await context.cookies(origin + system('refresh')))
+        .find(cookie => cookie.name === 'addp_refresh_token')
       const primary = page.locator('.auth-login-primary')
-      const responseFor = (tab, path, method = 'GET') => tab.waitForResponse(response => {
+      const responseFor = (tab, path, method = 'GET', documentPath) => tab.waitForResponse(response => {
         const url = new URL(response.url())
-        return url.origin === origin && url.pathname === path && response.request().method() === method
+        const request = response.request()
+        if (url.origin !== origin || url.pathname !== path || request.method() !== method) return false
+        const referer = request.headers().referer
+        return !documentPath || Boolean(referer && new URL(referer).pathname === documentPath)
       }, { timeout: 20000 })
-      const assertIdentity = async response => {
-        expect(response.status()).toBe(200)
-        const identity = await response.json()
-        expect(identity.principal.id).toBe(principalID)
-        expect(identity.principal.type).toBe('user')
-        expect(identity.context.type).toBe('tenant')
-        expect(identity.context.tenant_id).toBe(tenantID)
-        expect(identity.context.tenant_membership_id).toBe(membershipID)
-        expect(identity.authentication.assurance_level).toBe('aal2')
-        expect(identity.authentication.methods).toEqual(['password', 'totp'])
+      // Workbench replaces the document after login. Start reading the
+      // response body as soon as headers arrive, before waiting for landing.
+      const captureJSON = async response => {
+        try {
+          return { response, payload: await response.json() }
+        } catch {
+          return { response, payload: undefined }
+        }
       }
-      const assertLanding = async (tab, destination, response) => {
-        await expect(tab).toHaveURL(origin + destination.url)
-        expect(response.status()).toBe(destination.status)
+      let stage = 'anonymous redirect'
+      const check = (label, assertion) => {
+        stage = label
+        return assertion()
+      }
+      const assertIdentity = (phase, { response, payload }) => {
+        check(`${phase}: AuthContext status`, () => expect(response.status()).toBe(200))
+        check(`${phase}: AuthContext response body`, () => expect(Boolean(payload)).toBe(true))
+        check(`${phase}: selected principal`, () => expect(payload.principal).toMatchObject({ id: principalID, type: 'user' }))
+        check(`${phase}: selected tenant and membership`, () => expect(payload.context).toMatchObject({
+          type: 'tenant', tenant_id: tenantID, tenant_membership_id: membershipID,
+        }))
+        check(`${phase}: assurance and methods`, () => expect(payload.authentication).toMatchObject({
+          assurance_level: 'aal2', methods: ['password', 'totp'],
+        }))
+      }
+      const assertLanding = async (phase, tab, destination, response) => {
+        await check(`${phase}: complete return URL`, () => expect(tab).toHaveURL(origin + destination.url))
+        check(`${phase}: landing API status`, () => expect(response.status()).toBe(destination.status))
         if (destination === workbench) {
-          await expect(tab.getByTestId('data-application-runtime').getByRole('alert')).toContainText('数据应用不存在')
+          await check(`${phase}: Workbench missing application message`, () =>
+            expect(tab.getByTestId('data-application-runtime').getByRole('alert')).toContainText('数据应用不存在'))
         } else {
-          expect((await response.json()).total_published).toBe(0)
-          await expect(tab.getByRole('heading', { name: '资产门户', exact: true })).toBeVisible()
-          await expect(tab.getByText('暂无已上架资产', { exact: true })).toBeVisible()
+          await check(`${phase}: Portal empty fixture response`, async () =>
+            expect((await response.json()).total_published).toBe(0))
+          await check(`${phase}: Portal home heading`, () =>
+            expect(tab.getByRole('heading', { name: '资产门户', exact: true })).toBeVisible())
+          await check(`${phase}: Portal empty fixture message`, () =>
+            expect(tab.getByText('暂无已上架资产', { exact: true })).toBeVisible())
         }
       }
       let businessRequests = 0
@@ -237,7 +259,6 @@ test.describe('production public login', () => {
         expect(businessRequests).toBe(0)
       }
 
-      let stage = 'anonymous redirect'
       try {
         await page.goto(target.url, { timeout: 20000 })
         await assertAnonymous()
@@ -275,37 +296,42 @@ test.describe('production public login', () => {
         const tenant = choices.find(option => option.tenant_membership_id === membershipID)
         await page.getByText(tenant.tenant_name, { exact: true }).click()
         await expect(page.getByRole('radio', { name: tenant.tenant_name, exact: true })).toBeChecked()
-        const [selection, identity, landing] = await Promise.all([
-          responseFor(page, system('auth/context-selections'), 'POST'),
-          responseFor(page, system('auth/context')),
+        // The Workbench login document also requests AuthContext before
+        // leaving. Verify the runtime document's session after the return.
+        const identityDocument = entry === 'workbench' ? new URL(target.url, origin).pathname : undefined
+        const [{ response: selection, payload: session }, identity, landing] = await Promise.all([
+          responseFor(page, system('auth/context-selections'), 'POST').then(captureJSON),
+          responseFor(page, system('auth/context'), 'GET', identityDocument).then(captureJSON),
           responseFor(page, target.api),
           primary.click(),
         ])
-        expect(selection.status()).toBe(200)
+        check('selection status', () => expect(selection.status()).toBe(200))
+        stage = 'submitted tenant choice'
         const choice = selection.request().postDataJSON()
         expect(choice.tenant_membership_id).toBe(membershipID)
         expect(choice.context_type).toBe('tenant')
-        const session = await selection.json()
-        expect(Boolean(session.access_token?.startsWith('addp_at_'))).toBe(true)
-        expect(session.token_type).toBe('Bearer')
-        expect(session.expires_in).toBeGreaterThan(0)
+        check('selection response body', () => expect(Boolean(session)).toBe(true))
+        check('selection access token prefix', () => expect(Boolean(session.access_token?.startsWith('addp_at_'))).toBe(true))
+        check('selection token type', () => expect(session.token_type).toBe('Bearer'))
+        check('selection token expiry', () => expect(session.expires_in).toBeGreaterThan(0))
 
-        stage = 'selected identity and full return URL'
-        await assertIdentity(identity)
-        await assertLanding(page, target, landing)
+        assertIdentity('after login', identity)
+        await assertLanding('after login', page, target, landing)
+        stage = 'issued HttpOnly refresh cookie at System endpoint'
         const cookie = await refreshCookie()
         expect(Boolean(cookie?.httpOnly && cookie.path === '/api/v1/system')).toBe(true)
 
         stage = 'reload and rotate the session'
         const [refresh, reloadedIdentity, reloadedLanding] = await Promise.all([
           responseFor(page, system('refresh'), 'POST'),
-          responseFor(page, system('auth/context')),
+          responseFor(page, system('auth/context')).then(captureJSON),
           responseFor(page, target.api),
           page.reload({ timeout: 20000 }),
         ])
-        expect(refresh.status()).toBe(200)
-        await assertIdentity(reloadedIdentity)
-        await assertLanding(page, target, reloadedLanding)
+        check('reload refresh status', () => expect(refresh.status()).toBe(200))
+        assertIdentity('after reload', reloadedIdentity)
+        await assertLanding('after reload', page, target, reloadedLanding)
+        stage = 'rotated HttpOnly refresh cookie at System endpoint'
         const renewedCookie = await refreshCookie()
         expect(Boolean(renewedCookie?.httpOnly && renewedCookie.value !== cookie.value)).toBe(true)
 
@@ -313,15 +339,16 @@ test.describe('production public login', () => {
         const before = refreshRequests
         const otherPage = await context.newPage()
         const [sharedIdentity, sharedLanding] = await Promise.all([
-          responseFor(otherPage, system('auth/context')),
+          responseFor(otherPage, system('auth/context')).then(captureJSON),
           responseFor(otherPage, other.api),
           otherPage.goto(other.url, { timeout: 20000 }),
         ])
-        await assertIdentity(sharedIdentity)
-        await assertLanding(otherPage, other, sharedLanding)
+        assertIdentity('other module', sharedIdentity)
+        await assertLanding('other module', otherPage, other, sharedLanding)
+        stage = 'other module uses the same bearer'
         const bearer = await reloadedLanding.request().headerValue('authorization')
         expect(Boolean(bearer?.startsWith('Bearer ') && bearer === await sharedLanding.request().headerValue('authorization'))).toBe(true)
-        expect(refreshRequests).toBe(before)
+        check('other module opens without another refresh', () => expect(refreshRequests).toBe(before))
 
         stage = 'write public login evidence'
         writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `public-origin-${entry}-login.json`), JSON.stringify({
