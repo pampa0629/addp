@@ -1586,6 +1586,8 @@ def test_focal_circle_single_entry_conditional_windows_preserves_twelve_methods(
     assert params['radius_metres']['type']=='float'and '5×5'in params['radius_metres']['description']and 'epsilon'in params['radius_metres']['description']
     assert params['method']['enum']==['sum','mean','min','max','stddev','mode','median','percentile','variety','weighted_mean','weighted_stddev','weighted_sum']
     assert params['percentiles']['show_when']=={'method':['percentile']}and params['weights']['show_when']=={'method':['weighted_mean','weighted_stddev','weighted_sum']}
+    assert '两种窗口均支持十二种方法' in params['window_type']['description']
+    assert all(term in params['weights']['description'] for term in ('最小正方形', '1×1', '圆外显式为零'))
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']and len(spec['output_ports'])==1
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'band':1,'window_size':3,'method':'mean'}
     assert not any(s['id']in('raster_focal_circle','raster_circle_statistics')for s in list_operators())

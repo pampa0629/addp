@@ -277,7 +277,7 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 
 `extract_line_nodes`对已打断且无重合线网，按原始部件首尾提取Point节点、度数及完整端部来源Point明细。闭环首尾计两次，同源多部件分别计，拒绝未打断交会／自交／正长度重合，不去重或修复。两端口及原属性、来源与诊断边界见[节点提取契约](../../../docs/spec/workflow/矢量算子契约.md#节点提取契约)。
 
-`raster_focal_statistics`通过`window_type=circle_metres`及显式正`radius_metres`支持米制圆窗，按实际中心距离精确纳入边界，候选外接窗口最多5×5；九种非加权方法共用原halo／归约／输出。支持已知线性单位二维投影的北向矩形及保持北向轴手性的正交旋转网格，轴点积精确为0、行列式为负，半径与window_size互斥；默认square_pixels保持原十二方法、3／5窗口及原结果。完整数值、有效性与失败边界见栅格算子契约，Linux／Hosted分别验收。
+`raster_focal_statistics`通过`window_type=circle_metres`及显式正`radius_metres`支持米制圆窗，按实际中心距离精确纳入边界，候选外接窗口最多5×5；十二种方法共用原halo／归约／输出。三种加权方法须提交派生的最小正方形权重矩阵（1×1、3×3或5×5），圆外显式为零、圆内至少一个正值。支持已知线性单位二维投影的北向矩形及保持北向轴手性的正交旋转网格，轴点积精确为0、行列式为负，半径与window_size互斥；默认square_pixels保持原十二方法、3／5窗口及原结果。完整数值、有效性与失败边界见栅格算子契约，Linux／Hosted分别验收。
 
 
 `raster_sample_points`以同CRS二维Point命中的原始像元读取显式波段，保留全部点、属性、顺序、索引和active geometry，追加nullable Float64 `sample_value`及`sample_status=ok/outside/nodata`。支持旋转网格，以原存储坐标／仿射精确判半开像元边界，不插值或隐式应用scale／offset；原生NoData／mask／alpha先判定，不精确可表达的有效命中值明确拒绝。输出沿现有GeoDataFrame／GeoPackage保存，不新增权限、配置或Hosted脚本；详见[点位栅格采样契约](../../../docs/spec/workflow/栅格算子契约.md#点位栅格采样)。

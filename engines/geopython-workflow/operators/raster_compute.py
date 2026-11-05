@@ -3076,8 +3076,8 @@ _FOCAL_MESSAGES = {
                       'Pixel square windows do not accept radius_metres'),
     'window_unused': ('米制圆窗不得提供window_size',
                       'Metre circle windows do not accept window_size'),
-    'circle_method': ('米制圆窗仅支持九种非加权邻域方法',
-                      'Metre circle windows support only the nine unweighted focal methods'),
+    'circle_weights': ('米制圆窗的weights必须为与派生最小正方形同尺寸的二维列表，元素为有限非负数且不能为布尔值，圆外必须为零，圆内至少一个为正',
+                       'Metre circle weights must be a square list matching the derived smallest square, with finite nonnegative non-boolean values, zeros outside the circle and at least one positive value inside'),
     'circle_grid': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影',
                     'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'),
     'circle_size': ('米制圆窗的候选像元外接窗口不得超过5×5，不能截断半径',
@@ -3164,8 +3164,9 @@ def _focal_rank_values(ordered, count, percentile):
     return result
 
 
-def _focal_weight_kernel(weights, window_size, *, method='weighted_mean'):
-    error = {'weighted_mean': 'weights', 'weighted_stddev': 'stddev_weights', 'weighted_sum': 'sum_weights'}[method]
+def _focal_weight_kernel(weights, window_size, *, method='weighted_mean', circle_offsets=None):
+    error = ('circle_weights' if circle_offsets is not None else
+             {'weighted_mean': 'weights', 'weighted_stddev': 'stddev_weights', 'weighted_sum': 'sum_weights'}[method])
     if (not isinstance(weights, list) or len(weights) != window_size
             or any(not isinstance(row, list) or len(row) != window_size for row in weights)):
         raise _focal_error(error)
@@ -3183,11 +3184,18 @@ def _focal_weight_kernel(weights, window_size, *, method='weighted_mean'):
             values.append(value)
     if not any(values):
         raise _focal_error(error)
+    member_weights = tuple(values)
+    if circle_offsets is not None:
+        radius = window_size // 2
+        members = {(dy + radius) * window_size + dx + radius for dy, dx in circle_offsets}
+        if any(value and index not in members for index, value in enumerate(values)):
+            raise _focal_error(error)
+        member_weights = tuple(value for index, value in enumerate(values) if index in members)
     ratios = [value.as_integer_ratio() for value in values]
     shift = max(denominator.bit_length() - 1 for _, denominator in ratios)
     units = [numerator << (shift - (denominator.bit_length() - 1)) for numerator, denominator in ratios]
     divisor = math.gcd(*units)
-    return tuple(values), tuple(value // divisor for value in units), Fraction(divisor, 1 << shift)
+    return member_weights, tuple(value // divisor for value in units), Fraction(divisor, 1 << shift)
 
 
 def _focal_weighted_values(values, valid, cx, cy, shape, window_size, units, center_valid, *, method, weight_scale):
@@ -3285,20 +3293,11 @@ def raster_focal_statistics(input_raster, band, window_size=_FOCAL_WINDOW_UNSET,
             raise _focal_error('percentiles') from cause
     elif percentiles is not _PERCENTILE_UNSET:
         raise _focal_error('unused')
-    if window_type == 'circle_metres' and method in ('weighted_mean', 'weighted_stddev', 'weighted_sum'):
-        raise _focal_error('circle_method')
-    reduce_method = method
-    kernel_units = None
-    if method in ('weighted_mean', 'weighted_stddev', 'weighted_sum'):
-        kernel, kernel_units, weight_scale = _focal_weight_kernel(weights, window_size, method=method)
-        # Only all-one sums may discard the absolute weight scale.
-        if method == 'weighted_sum':
-            if all(value == 1. for value in kernel):
-                reduce_method = 'sum'
-        elif len(set(kernel)) == 1:
-            reduce_method = 'mean' if method == 'weighted_mean' else 'stddev'
-    elif weights is not _FOCAL_WEIGHTS_UNSET:
+    weighted = method in ('weighted_mean', 'weighted_stddev', 'weighted_sum')
+    if not weighted and weights is not _FOCAL_WEIGHTS_UNSET:
         raise _focal_error('weights_unused')
+    if weighted and window_type == 'square_pixels':
+        kernel, kernel_units, weight_scale = _focal_weight_kernel(weights, window_size, method=method)
     dataset = _open(input_raster)
     if _band(dataset, band).GetColorInterpretation() == gdal.GCI_AlphaBand:
         raise ValueError('Focal statistics require a data band, not alpha')
@@ -3307,9 +3306,20 @@ def raster_focal_statistics(input_raster, band, window_size=_FOCAL_WINDOW_UNSET,
             _band(dataset, index)
     if window_type == 'circle_metres':
         window_size, offsets = _focal_circle_window(dataset, radius_metres)
+        if weighted:
+            kernel, kernel_units, weight_scale = _focal_weight_kernel(
+                weights, window_size, method=method, circle_offsets=offsets)
     else:
         r = window_size // 2
         offsets = tuple((dy, dx) for dy in range(-r, r+1) for dx in range(-r, r+1))
+    reduce_method = method
+    if weighted:
+        # Uniformity uses window members only. Sum also preserves absolute scale.
+        if method == 'weighted_sum':
+            if all(value == 1. for value in kernel):
+                reduce_method = 'sum'
+        elif len(set(kernel)) == 1:
+            reduce_method = 'mean' if method == 'weighted_mean' else 'stddev'
     output = _numeric_output(dataset, len(percentiles) if method == 'percentile' else 1)
     destination = None
     output_path = Path(output.GetDescription())
@@ -6703,7 +6713,7 @@ _SPECS = [
     (raster_cut_fill, OperatorCategory.RASTER_STATISTICS, '双DEM填挖方统计', [_INPUT(), _param('after_raster', 'raster', '施工后DEM，须与施工前同CRS、尺寸和完整网格，由用户保证相同高程基准', role='input'), _param('band', 'int', '显式施工前高程数据波段'), _param('after_band', 'int', '显式施工后高程数据波段'), _param('elevation_unit', 'str', '显式施工前高程单位', enum=list(_ELEVATION_METRES)), _param('after_elevation_unit', 'str', '显式施工后高程单位；挖填体积各非负，净增加为填方减挖方，统一立方米', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('method', 'str', 'summary保留原数值统计；class_frequency按分区／类别计数，以有效分类数为比例分母，全无效分区保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对显式提供；有限非负，缺失权重不补零，与percentiles互斥', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；追加权重总和、加权求和与加权均值，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用加权总体标准差，须提供权重；总体分母，全1沿用原stddev，全零为null，原统计保持', False, False), _param('percentiles', 'list[float]', '可选非空严格递增且不重复的0至100有限百分位列表；每区全量固定线性插值、共享一次排序归并，50为中位数；按顺序追加百分位与结果列对，未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
-    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_type', 'str', 'square_pixels为像元方窗，circle_metres为米制圆窗；保留原十二方法，圆窗仅九种非加权方法', 'square_pixels', False, enum=['square_pixels', 'circle_metres']), _param('window_size', 'int', 'square_pixels时必须显式提供以像元为单位的正方形窗口边长3或5；圆窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['square_pixels']}}), _param('radius_metres', 'float', 'circle_metres时必须显式提供有限正米制半径；北向矩形或保持北向轴手性的正交旋转网格按完整仿射距离筛选，中心距离等于半径纳入、不设epsilon，候选外接窗口最多5×5；方窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['circle_metres']}}), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）/weighted_stddev（非负矩阵加权总体标准差）/weighted_sum（非负矩阵加权求和；不归一化）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev', 'weighted_sum']), _param('percentiles', 'list[float]', 'method=percentile时必须显式指定非空严格递增且不重复的0至100有限百分位列表；固定线性插值，50与median一致；按顺序输出多波段，其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean/weighted_stddev/weighted_sum必填：同窗口3×3或5×5有限非负二维权重，至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean', 'weighted_stddev', 'weighted_sum']}})], 'raster', ['read']),
+    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_type', 'str', 'square_pixels为像元方窗，circle_metres为米制圆窗；两种窗口均支持十二种方法', 'square_pixels', False, enum=['square_pixels', 'circle_metres']), _param('window_size', 'int', 'square_pixels时必须显式提供以像元为单位的正方形窗口边长3或5；圆窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['square_pixels']}}), _param('radius_metres', 'float', 'circle_metres时必须显式提供有限正米制半径；北向矩形或保持北向轴手性的正交旋转网格按完整仿射距离筛选，中心距离等于半径纳入、不设epsilon，候选外接窗口最多5×5；方窗不得提供', None, False).model_copy(update={'show_when': {'window_type': ['circle_metres']}}), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）/weighted_stddev（非负矩阵加权总体标准差）/weighted_sum（非负矩阵加权求和；不归一化）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev', 'weighted_sum']), _param('percentiles', 'list[float]', 'method=percentile时必须显式指定非空严格递增且不重复的0至100有限百分位列表；固定线性插值，50与median一致；按顺序输出多波段，其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean/weighted_stddev/weighted_sum必填：有限非负二维权重；方窗为3×3或5×5，圆窗为派生最小正方形（1×1、3×3或5×5），圆外显式为零，窗口内至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean', 'weighted_stddev', 'weighted_sum']}})], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('method', 'str', 'summary保持原统计；class_frequency按面／类别展开并保留诊断行', 'summary', False, enum=['summary', 'class_frequency']), _param('id_field', 'str', 'class_frequency须显式选择现有非空唯一面编号；保留原类型，不从索引推断', None, False).model_copy(update={'show_when': {'method': ['class_frequency']}}), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('weights_raster', 'raster', '可选同网格权重栅格，须与weights_band成对提供且与percentiles互斥；沿原面覆盖，重叠面独立统计，缺失权重不补零', None, False, role='input'), _param('weights_band', 'int', '提供weights_raster时必填的一基权重数据波段；有限非负，追加三项加权统计，原统计不改写', None, False), _param('include_weighted_stddev', 'bool', '显式启用逐面加权总体标准差，须提供权重；全1沿用原stddev，全零null，原统计和重叠面独立规则保持', False, False), _param('include_area_weighted', 'bool', '显式追加覆盖平方米、有效覆盖平方米及面积加权均值；原八列保持，新面积独立于all_touched；与外部权重、百分位及加权标准差互斥', False, False), _param('include_area_weighted_stddev', 'bool', '仅面积模式显式启用总体标准差；正有效面积常量0、无有效面积null，单位沿数值，保留原十一列及重叠独立规则', False, False), _param('percentiles', 'list[float]', '可选非空严格递增且不重复的0至100有限百分位列表；逐面固定线性插值、共享一次读取排序归并，50为中位数；按顺序追加百分位与结果列对，未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
     (raster_sample_points, OperatorCategory.RASTER_STATISTICS, '点位栅格采样', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同CRS的有效二维Point，保留全部点、几何及属性；新增列冲突拒绝', role='input'), _param('band', 'int', '显式一基数据波段；sample_status区分ok／outside／nodata'), _param('method', 'str', 'cell取所在像元原值；bilinear按像元中心插值，正权重支持须全部有效，不补值或重新归一化', 'cell', False, enum=['cell', 'bilinear'])], 'GeoDataFrame', ['read']),
     (raster_sample_lines, OperatorCategory.RASTER_STATISTICS, '沿线栅格采样', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同投影CRS的有效二维LineString；保留显式编号和全部属性', role='input'), _param('band', 'int', '显式一基数据波段；沿既有原值域和有效性规则'), _param('id_field', 'str', '显式现有非几何非空唯一标量编号字段，不用索引或FID推断'), _param('spacing_metres', 'float', '显式有限正米制间距，保留起终点；结果追加distance_m及采样值／状态'), _param('method', 'str', '复用cell原像元值或bilinear中心插值；无效和范围外采样点保留', 'cell', False, enum=['cell', 'bilinear'])], 'GeoDataFrame', ['read']),

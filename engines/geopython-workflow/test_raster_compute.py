@@ -18281,7 +18281,7 @@ def test_focal_circle_thin_all_invalid_and_radius_limit_even_on_small_image(tmp_
     *[({'window_type':'circle_metres','radius_metres':v},'radius') for v in (None,True,False,0,-1,'1',[],{},float('nan'),float('inf'),-float('inf'),10**1000)],
     *[({'window_type':'circle_metres','radius_metres':1.,'window_size':v},'window_unused') for v in (None,3,5)],
     ({'window_size':3,'radius_metres':None},'radius_unused'),({'window_size':3,'radius_metres':1.},'radius_unused'),
-    *[({'window_type':'circle_metres','radius_metres':1.,'method':m},'circle_method') for m in ('weighted_mean','weighted_stddev','weighted_sum')],
+    ({'window_type':'circle_metres','radius_metres':1.,'weights':None},'weights_unused'),
 ])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_focal_circle_exact_bilingual_parameter_errors_before_source_or_output(params,code,language):
@@ -18289,6 +18289,103 @@ def test_focal_circle_exact_bilingual_parameter_errors_before_source_or_output(p
     args={'method':'mean',**params}
     with raster_error_language(language),pytest.raises(ValueError)as caught:raster_focal_statistics(None,1,**args)
     assert str(caught.value)==c._FOCAL_MESSAGES[code][language=='en']
+
+
+@pytest.mark.parametrize('method', ['weighted_mean', 'weighted_stddev', 'weighted_sum'])
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_focal_circle_weighted_exact_bilingual_rejections_before_output(tmp_path, monkeypatch, method, language):
+    import operators.raster_compute as c
+    source = create_raster(tmp_path/'circle.tif', np.ones((2, 2)), (0, 0, 4, 0, 3, 0), 'EPSG:3857')
+    before = source.read_bytes()
+    monkeypatch.setattr(c, '_numeric_output', lambda *a, **kw: pytest.fail('created output before weight admission'))
+    inside, outside = 5., math.nextafter(5., 0.)
+    cases = [({}, inside), *[({'weights': weights}, inside) for weights in
+             (None, 'matrix', [[1]], [[1]*5 for _ in range(5)], [[1, 1], [1]*3, [1]*3], [[0]*3 for _ in range(3)])],
+             ({'weights': [[1]*3 for _ in range(3)]}, outside)]
+    for value in (True, '1', None, {}, -1., math.nan, math.inf, 10**1000):
+        cases.append(({'weights': [[0, 0, 0], [0, 1, 0], [0, 0, value]]}, inside))
+    with raster_workspace(), raster_error_language(language):
+        for arguments, radius in cases:
+            with pytest.raises(ValueError) as caught:
+                raster_focal_statistics(raster_load(source_plan(source)), 1, method=method,
+                                        window_type='circle_metres', radius_metres=radius, **arguments)
+            assert str(caught.value) == c._FOCAL_MESSAGES['circle_weights'][language == 'en']
+    assert source.read_bytes() == before
+
+
+_CIRCLE_WEIGHTED_REFERENCES = {
+    'weighted_mean': _weighted_focal_reference,
+    'weighted_stddev': _weighted_stddev_reference,
+    'weighted_sum': _weighted_sum_reference,
+}
+
+
+@pytest.mark.parametrize('method', _CIRCLE_WEIGHTED_REFERENCES)
+def test_focal_circle_weighted_asymmetric_full_oracle_crosses_both_block_axes(tmp_path, monkeypatch, method):
+    import operators.raster_compute as c
+    rows, columns = np.indices((511, 513))
+    values = ((columns + 2*rows) % 7 - 3).astype(float)
+    valid = (columns % 17 != 0) | (rows % 17 != 0)
+    # Column length 5, row length 10. Radius 10 includes both axial boundaries.
+    transform = (2.**60, 3., 8., -2.**60, 4., -6.)
+    weights = [[0, 0, 0, 0, 0], [0, 0, .5, 0, 0], [2, 0, 0, 3, 1],
+               [0, 0, 4, 0, 0], [0, 0, 0, 0, 0]]
+    expected = _CIRCLE_WEIGHTED_REFERENCES[method](values, valid, weights)
+    path = create_raster(tmp_path/'rotated.tif', np.where(valid, values, -9999), transform, 'EPSG:3857')
+    original = c._blocks
+    reads = []
+
+    def observe(*args, **kwargs):
+        reads.append(kwargs['window'])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(c, '_blocks', observe)
+    with raster_workspace():
+        result = raster_focal_statistics(raster_load(source_plan(path)), 1, method=method,
+                                         window_type='circle_metres', radius_metres=10., weights=weights)
+        dataset = gdal.Open(str(result.path))
+        assert dataset.GetGeoTransform() == transform
+        assert dataset.GetSpatialRef().GetAuthorityCode(None) == '3857'
+        np.testing.assert_array_equal(dataset.ReadAsArray(), expected)
+        np.testing.assert_array_equal(dataset.GetRasterBand(1).GetMaskBand().ReadAsArray(), np.isfinite(expected)*255)
+        dataset = None
+    assert len(reads) == 4 and all(width <= 512 and height <= 512 for _, _, width, height in reads)
+
+
+@pytest.mark.parametrize('method', _CIRCLE_WEIGHTED_REFERENCES)
+@pytest.mark.parametrize('radius, weights', [
+    (.25, [[1]]),
+    (4., [[0, 1, 0], [1, 1, 1], [0, 1, 0]]),
+    (5., [[1]*3 for _ in range(3)]),
+    (6., [[0]*5, [0, 1, 1, 1, 0], [1]*5, [0, 1, 1, 1, 0], [0]*5]),
+])
+def test_focal_circle_weighted_members_all_one_match_unweighted(tmp_path, monkeypatch, method, radius, weights):
+    import operators.raster_compute as c
+    values = np.array([[0., 1., -9999., 3.], [-4., 0., 6., 7.], [8., 9., 10., -11.]])
+    path = create_raster(tmp_path/'uniform.tif', values, (0, 0, 4, 0, 3, 0), 'EPSG:3857')
+    monkeypatch.setattr(c, '_focal_weighted_values', lambda *a, **kw: pytest.fail('did not reuse unweighted reduction'))
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        options = {'window_type': 'circle_metres', 'radius_metres': radius}
+        reference = raster_focal_statistics(source, 1, method=method.removeprefix('weighted_'), **options)
+        result = raster_focal_statistics(source, 1, method=method, weights=weights, **options)
+        np.testing.assert_array_equal(_twi_read(result), _twi_read(reference))
+
+
+@pytest.mark.parametrize('method', _CIRCLE_WEIGHTED_REFERENCES)
+def test_focal_circle_weighted_extremes_and_missing_positive_support(tmp_path, method):
+    extreme = np.finfo(np.float64).max
+    tiny = math.nextafter(0., 1.)
+    values = np.array([[extreme, -extreme, tiny, -tiny, 0., -9999., 7.]])
+    valid = values != -9999.
+    weights = [[0, 0, 0], [2., 0, tiny], [0, 0, 0]]
+    path = create_raster(tmp_path/'extremes.tif', values, (0, 0, 4, 0, 3, 0), 'EPSG:3857')
+    expected = _CIRCLE_WEIGHTED_REFERENCES[method](values, valid, weights)
+    with raster_workspace():
+        result = raster_focal_statistics(raster_load(source_plan(path)), 1, method=method,
+                                         window_type='circle_metres', radius_metres=3., weights=weights)
+        np.testing.assert_array_equal(_twi_read(result), expected)
+    assert math.isnan(expected[0, 6])
 
 
 @pytest.mark.parametrize('kind',['geographic','compound','missing-crs','missing-grid','shear','tiny-shear','rounded-dot','rotated-mirror','reverse-x','reverse-y','singular','unknown-units'])
@@ -18362,14 +18459,24 @@ def test_focal_circle_both_block_axes_full_oracle_bounded_reads(tmp_path,monkeyp
 
 
 @pytest.mark.parametrize('transform', [(0,3,0,0,0,-4),(0,0,4,0,3,0)])
-@pytest.mark.parametrize('failure',[None,'radius','read','write'])
+@pytest.mark.parametrize('method, failure', [
+    *(('mean', failure) for failure in (None, 'radius', 'read', 'write')),
+    *((method, None) for method in _CIRCLE_WEIGHTED_REFERENCES),
+    ('weighted_mean', 'weights'),
+    ('weighted_mean', 'read'),
+    ('weighted_stddev', 'reduce'),
+    ('weighted_sum', 'write'),
+])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_focal_circle_async_cog_and_all_exit_cleanup(tmp_path,monkeypatch,failure,language,transform):
+def test_focal_circle_async_cog_and_all_exit_cleanup(tmp_path,monkeypatch,method,failure,language,transform):
     import api_server,workflow_engine,operators.raster_compute as c
     values=(np.arange(56).reshape(7,8)-20).astype(float);values[2,3]=-9999
     source=create_raster(tmp_path/'async.tif',values,transform,'EPSG:3857');before=source.read_bytes()
     previous=tmp_path/'previous.tif';previous.write_bytes(b'prior artifact');target=tmp_path/'circle.cog.tif'
-    params={'input_raster':{'$ref':'source'},'band':1,'method':'mean','window_type':'circle_metres','radius_metres':9. if failure=='radius'else 5.}
+    params={'input_raster':{'$ref':'source'},'band':1,'method':method,'window_type':'circle_metres','radius_metres':9. if failure=='radius'else 5.}
+    weights = [[0, .5, 0], [2, 0, 4], [0, 0, 0]]
+    if method in _CIRCLE_WEIGHTED_REFERENCES:
+        params['weights'] = [[1]] if failure == 'weights' else weights
     tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
            {'id':'circle','operator':'raster_focal_statistics','depends_on':['source'],'params':params},
            {'id':'save','operator':'raster_save','depends_on':['circle'],'params':{'input_raster':{'$ref':'circle'},'access_plan':target_plan(target),'profile':'cog'}}]
@@ -18379,6 +18486,7 @@ def test_focal_circle_async_cog_and_all_exit_cleanup(tmp_path,monkeypatch,failur
         return execute(name,arguments)
     monkeypatch.setattr(workflow_engine,'_execute_operator',observe)
     if failure=='read':monkeypatch.setattr(c,'_blocks',lambda *a,**kw:(_ for _ in ()).throw(OSError('injected source read failure')))
+    if failure=='reduce':monkeypatch.setattr(c,'_focal_weighted_values',lambda *a,**kw:(_ for _ in ()).throw(OSError('injected weighted reduction failure')))
     if failure=='write':monkeypatch.setattr(c,'translate_cog',lambda *a,**kw:(_ for _ in ()).throw(OSError('injected COG failure')))
     client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
     assert response.status_code==202,response.json
@@ -18392,11 +18500,27 @@ def test_focal_circle_async_cog_and_all_exit_cleanup(tmp_path,monkeypatch,failur
     assert source.read_bytes()==before and previous.read_bytes()==b'prior artifact'
     if failure:
         assert not target.exists()
-        if failure=='radius':assert c._FOCAL_MESSAGES['circle_size'][language=='en']in status['error']
+        if failure in ('radius', 'weights'):
+            code = 'circle_size' if failure == 'radius' else 'circle_weights'
+            assert status['error'] == '任务 circle 执行失败: ' + c._FOCAL_MESSAGES[code][language=='en']
+            assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error'] == status['error']
+        else:
+            cause = {'read': 'injected source read failure', 'reduce': 'injected weighted reduction failure',
+                     'write': 'injected COG failure'}[failure]
+            assert cause in status['error']
     else:
         artifact=json.loads(status['result']);assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0
         with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
-        ds=gdal.Open(str(target));np.testing.assert_allclose(ds.ReadAsArray(),_focal_circle_oracle(values,values!=-9999,transform,1.,5.,'mean'),equal_nan=True);assert ds.GetGeoTransform()==transform;ds=None
+        ds = gdal.Open(str(target))
+        if method in _CIRCLE_WEIGHTED_REFERENCES:
+            expected = _CIRCLE_WEIGHTED_REFERENCES[method](values, values != -9999, weights)
+            np.testing.assert_array_equal(ds.ReadAsArray(), expected)
+            np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(), np.isfinite(expected)*255)
+            assert ds.GetSpatialRef().GetAuthorityCode(None) == '3857'
+        else:
+            np.testing.assert_allclose(ds.ReadAsArray(), _focal_circle_oracle(values, values != -9999, transform, 1., 5., method), equal_nan=True)
+        assert ds.GetGeoTransform() == transform
+        ds = None
     assert client.post('/api/operators/raster_focal_statistics/invoke',json={'params':{}}).status_code==403
 
 
