@@ -92,6 +92,39 @@ def volume_measurement_checkpoints(raw, *, over_limit=False):
     return summary
 
 
+def volume_path_disappearance(raw, run_id, roles):
+    """Bind only exact du paths to the mount order of this sampler."""
+    lines = raw.split(b'\n')
+    if lines[0] != VOLUME_SCAN_ENTERED.encode() or lines[-2:] != [VOLUME_SCAN_RETURNED.encode(), b'']:
+        return {'status': 'unknown', 'reason': 'invalid_frame'}
+    diagnostics = [line for line in lines[1:-2]
+                   if not re.fullmatch(rb'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?', line)]
+    if not diagnostics:
+        return None
+    if len(diagnostics) > 16:
+        return {'status': 'unknown', 'reason': 'diagnostic_limit'}
+    paths = {}
+    for line in diagnostics:
+        match = re.fullmatch(rb"du: (?:(?:cannot access|can't stat) '([^']+)'|([^']+)): No such file or directory", line)
+        if not match:
+            return {'status': 'unknown', 'reason': 'unrecognized_diagnostic'}
+        path = match[1] or match[2]
+        slot = re.fullmatch(rb'/space/(0|[1-9][0-9]{0,3})(/[^\x00-\x1f\x7f]*)?', path)
+        if (not slot or re.search(rb'["\\]', path) or
+                (slot[2] and any(part in (b'', b'.', b'..') for part in slot[2][1:].split(b'/')))):
+            return {'status': 'unknown', 'reason': 'invalid_path'}
+        index = int(slot[1])
+        if index >= len(roles):
+            return {'status': 'unknown', 'reason': 'unowned_slot'}
+        paths[path] = (index, bool(slot[2]))
+    counts = {}
+    for index, descendant in paths.values():
+        count = counts.setdefault(index, [0, 0])
+        count[int(descendant)] += 1
+    return {'status': 'attributed', 'slots': [[i, roles[i], *counts[i]] for i in sorted(counts)],
+            'object_set_sha256': hashlib.sha256(run_id.encode()+b'\0'+b'\0'.join(sorted(paths))).hexdigest()}
+
+
 class GateError(RuntimeError):
     """Only fixed, non-secret diagnostics cross the private evidence boundary."""
 
@@ -102,23 +135,45 @@ def require(condition, code):
 
 
 @contextmanager
-def capture_volume_checkpoints(args, run_id, output, timing, sampling):
+def capture_volume_checkpoints(args, run_id, output, timing, sampling, *, volume_roles=(), deadline=None):
     enabled = sampling and list(args) == ['docker', 'exec', run_id+'-space', '/bin/sh', '-ec', VOLUME_SCAN_COMMAND]
     try:
         yield
     finally:
         if enabled:
             began = time.monotonic_ns()
-            summary = volume_measurement_checkpoints(None)
+            unavailable = {'fragment_status': 'unavailable', 'measurement_entered': 'unavailable',
+                           'pipeline_returned': 'unavailable', 'examined_bytes': 0}
             try:
                 size = os.fstat(output.fileno()).st_size
                 output.seek(0)
-                summary = volume_measurement_checkpoints(output.read(min(size, 4096)), over_limit=size > 4096)
+                raw = output.read(min(size, 4096))
+                summary = volume_measurement_checkpoints(raw, over_limit=size > 4096)
+                if volume_roles:
+                    status = summary['fragment_status']
+                    attribution = {'status': 'unknown', 'reason': status}
+                    if deadline is not None and time.monotonic() >= deadline:
+                        attribution['reason'] = 'deadline'
+                    elif status == 'complete' and len(raw) == size:
+                        try:
+                            attribution = volume_path_disappearance(raw, run_id, volume_roles)
+                        except Exception:
+                            attribution = {'status': 'unknown', 'reason': 'unavailable'}
+                        if deadline is not None and time.monotonic() >= deadline:
+                            attribution = {'status': 'unknown', 'reason': 'deadline'}
+                    elif status == 'complete':
+                        attribution['reason'] = 'truncated'
+                    if attribution is not None:
+                        summary['path_disappearance'] = attribution
+                    if len(json.dumps(summary, separators=(',', ':')).encode()) > 512:
+                        summary['path_disappearance'] = {'status': 'unknown', 'reason': 'summary_limit'}
                 require(len(json.dumps(summary, separators=(',', ':')).encode()) <= 512,
                         'volume_checkpoint_summary_limit')
             except Exception:
                 # Diagnostics must not replace the command's first failure.
-                summary = volume_measurement_checkpoints(None)
+                summary = unavailable
+                if volume_roles:
+                    summary['path_disappearance'] = {'status': 'unknown', 'reason': 'unavailable'}
             timing['volume_measurement_checkpoints'] = summary
             timing['checkpoint_processing_seconds'] = round((time.monotonic_ns()-began)/1e9, 6)
 
@@ -525,11 +580,13 @@ class BuildProgress:
             self.observation_seconds+=max(0,time.monotonic()-began)
             if self.cpu_seconds>=1:self.reject('over_budget')
 
-    def snapshot(self, output):
-        # Exactly one final existing chunk; never wait or catch up in a loop.
+    def snapshot(self, output, *, final_read=True):
+        # Deadline evidence may read one final chunk. Cancellation evidence
+        # freezes only the prefix already observed by the original wait loop.
         began=time.monotonic();cpu=time.thread_time()
         prior_cpu=self.cpu_seconds;prior_wall=self.observation_seconds
-        self.poll(output)
+        if final_read:
+            self.poll(output)
         if self.status=='complete':
             try:
                 size=os.fstat(output.fileno()).st_size
@@ -539,9 +596,9 @@ class BuildProgress:
             except Exception:self.reject('unavailable')
         progress={'status':self.status if self.status!='complete' else 'unavailable','stage':'unknown'}
         if self.status=='complete':
-            active=[x for x in self.steps.values() if x['state'] in ('running','canceled')]
+            active=[x for x in self.steps.values() if x['state']=='running' or (final_read and x['state']=='canceled')]
             if len(active)>1:progress={'status':'ambiguous','stage':'unknown'}
-            elif active:progress={'status':'unique',**active[0]}
+            elif active and (final_read or active[0]['stage']!='other'):progress={'status':'unique',**active[0]}
         result={'status':self.status,'progress':progress,'scanned_bytes':self.scanned_bytes,
                 'steps_observed':len(self.steps),'parser_cpu_seconds':round(self.cpu_seconds,6),
                 'observation_seconds':round(self.observation_seconds,6),
@@ -555,6 +612,33 @@ class BuildProgress:
             self.reject('over_budget');result.update(status=self.status,progress={'status':self.status,'stage':'unknown'})
         result.update(parser_cpu_seconds=round(self.cpu_seconds,6),observation_seconds=round(self.observation_seconds,6))
         return result
+
+
+def record_build_before_resource_cancel(life, observer, output, timing, deadline, error):
+    failure = getattr(life, 'resource_failure', None)
+    if not isinstance(error, GateError) or not failure or str(error) != life.failure:
+        return
+    frozen = time.monotonic_ns()
+    summary = {'status': 'unavailable', 'progress': {'status': 'unavailable', 'stage': 'unknown'}}
+    try:
+        sample_start = round(failure['sample_started_monotonic'] * 1e9)
+        sample_end = round(failure['sample_finished_monotonic'] * 1e9)
+        if (failure.get('error_code') != str(error) or failure.get('phase') != timing['phase'] or
+                not timing['spawn_finished_monotonic_ns'] <= sample_start <= sample_end <= frozen):
+            summary['status'] = summary['progress']['status'] = 'unattributed'
+        elif time.monotonic() >= deadline:
+            summary['status'] = summary['progress']['status'] = 'deadline'
+        else:
+            summary = observer.snapshot(output, final_read=False)
+            if time.monotonic() >= deadline:
+                summary = {'status': 'deadline', 'progress': {'status': 'deadline', 'stage': 'unknown'}}
+    except Exception:
+        summary = {'status': 'unavailable', 'progress': {'status': 'unavailable', 'stage': 'unknown'}}
+    life.last_failure = {
+        'termination': 'resource_guard', 'public_build': summary,
+        'build_command': {key: timing[key] for key in ('run_id', 'phase', 'command_id', 'spawn_finished_monotonic_ns')},
+        'frozen_monotonic_ns': frozen, 'diagnostic_seconds': round((time.monotonic_ns()-frozen)/1e9, 6),
+    }
 
 
 @contextmanager
@@ -942,6 +1026,7 @@ class Lifecycle:
         self.thread = None
         self.sample_lock = threading.Lock()
         self.sampler_volumes = ()
+        self.sampler_volume_roles = ()
         self.sampler_started = False
         self.sample_deadline = None
         self.sample_thread_id = None
@@ -993,7 +1078,9 @@ class Lifecycle:
 
         try:
             check_deadline()
-            with tempfile.TemporaryFile() as output, capture_volume_checkpoints(args, self.run_id, output, timing, sampling), \
+            with tempfile.TemporaryFile() as output, capture_volume_checkpoints(
+                    args, self.run_id, output, timing, sampling,
+                    volume_roles=self.sampler_volume_roles if sampling else (), deadline=deadline), \
                     observe_product_build(self,args,output,sampling) as build_progress:
                 timing['spawn_started_monotonic_ns'] = time.monotonic_ns()
                 try:
@@ -1044,6 +1131,8 @@ class Lifecycle:
                     check_deadline()
                 finally:
                     if p.poll() is None:
+                        if guarded and build_progress is not None:
+                            record_build_before_resource_cancel(self, build_progress, output, timing, deadline, sys.exc_info()[1])
                         timing['cancel_started_monotonic_ns'] = time.monotonic_ns()
                         try:
                             os.killpg(p.pid, signal.SIGTERM)
@@ -1130,6 +1219,13 @@ class Lifecycle:
         self.docker(*args,guarded=False,timeout=timeout)
         self.sampler_started=True
         self.sampler_volumes=volumes
+        product_roles = {
+            'postgres_data': 'postgres_data', 'prometheus_data': 'prometheus_data', 'redis_data': 'redis_data',
+            'runtime-logs': 'runtime_logs', 'sdk-agent-tls': 'agent_tls', 'sdk-copilot-tls': 'copilot_tls',
+        }
+        roles_by_name = {self.run_id+'_'+logical: role for logical, role in product_roles.items()}
+        roles_by_name.update(dict.fromkeys(self.builder_volumes, 'buildkit_state'))
+        self.sampler_volume_roles = tuple(roles_by_name.get(name, 'owned_volume') for name in volumes)
 
     def sample(self, *, deadline=None):
         waiting = time.monotonic()

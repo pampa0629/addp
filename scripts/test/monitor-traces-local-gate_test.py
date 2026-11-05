@@ -142,6 +142,80 @@ class IncrementalBuildProgressTests(unittest.TestCase):
                 with self.assertRaisesRegex(m.GateError,'^command_deadline_exceeded$'):life.command(command,timeout=600)
             self.assertEqual(events,['cancel']);process.wait.assert_called_once_with(timeout=1)
 
+    def test_resource_cancel_freezes_the_same_build_before_signalling_without_reading(self):
+        failure_code = 'owned_resource_measurement_failed'
+        for scenario, status, stage in (
+            ('unique', 'unique', 'python_dependency'),
+            ('competing', 'ambiguous', 'unknown'),
+            ('unread', 'unread', 'unknown'),
+            ('truncated', 'truncated', 'unknown'),
+            ('foreign_phase', 'unattributed', 'unknown'),
+            ('stale_sample', 'unattributed', 'unknown'),
+            ('deadline', 'deadline', 'unknown'),
+            ('diagnostic_error', 'unavailable', 'unknown'),
+        ):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                life = bare_lifecycle(directory)
+                life.phase = 'product_image_agent_backend'
+                life.product_services = ('agent-backend',)
+                command = ['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services agent-backend'
+                           ' --registry localhost:5001 --tag '+life.run_id]
+                clock = [1.0]
+                process = mock.Mock(pid=654321, returncode=-15)
+                output = []
+                events = []
+                process.poll.side_effect = lambda: -15 if events else None
+                def start(*args, **kwargs):
+                    output.append(kwargs['stdout'])
+                    output[0].write(b'#1 [1/2] RUN pip install PRIVATE\n')
+                    if scenario == 'competing':
+                        output[0].write(b'#2 [2/2] RUN apt-get update\n')
+                    if scenario == 'truncated':
+                        output[0].write(b'#2 [2/')
+                    output[0].flush()
+                    return process
+                def wait(**kwargs):
+                    if events:
+                        return -15
+                    if scenario == 'unread':
+                        output[0].write(b'#1 DONE\n')
+                        output[0].flush()
+                    clock[0] = 602.0 if scenario == 'deadline' else 2.0
+                    life.resource_failure = {'error_code': failure_code,
+                        'phase': 'foreign' if scenario == 'foreign_phase' else life.phase,
+                        'sample_started_monotonic': 0.2 if scenario == 'stale_sample' else 1.2,
+                        'sample_finished_monotonic': 1.8}
+                    life.failure = failure_code
+                    raise m.subprocess.TimeoutExpired('synthetic', kwargs['timeout'])
+                process.wait.side_effect = wait
+                def kill(*args):
+                    events.append(('cancel', copy.deepcopy(life.last_failure)))
+                    output[0].write(b'#1 CANCELED\n')
+                    output[0].flush()
+                def snapshot(observer, out, *, final_read):
+                    if scenario == 'diagnostic_error':
+                        raise OSError('PRIVATE')
+                    return original_snapshot(observer, out, final_read=final_read)
+                original_snapshot = m.BuildProgress.snapshot
+                with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     mock.patch.object(m.time, 'monotonic_ns', side_effect=lambda: round(clock[0]*1e9)), \
+                     mock.patch.object(m.subprocess, 'Popen', side_effect=start), \
+                     mock.patch.object(m.os, 'killpg', side_effect=kill), \
+                     mock.patch.object(m.os, 'pread', wraps=m.os.pread) as reads, \
+                     mock.patch.object(m.BuildProgress, 'snapshot', snapshot):
+                    with self.assertRaisesRegex(m.GateError, '^'+failure_code+'$'):
+                        life.command(command, timeout=600)
+                self.assertEqual(reads.call_count, 1)
+                self.assertEqual(events, [('cancel', life.last_failure)])
+                diagnostic = life.last_failure
+                self.assertEqual(diagnostic['termination'], 'resource_guard')
+                self.assertEqual(diagnostic['build_command']['run_id'], life.run_id)
+                self.assertEqual(diagnostic['build_command']['command_id'], 1)
+                self.assertEqual(diagnostic['build_command']['phase'], life.phase)
+                self.assertEqual(diagnostic['public_build']['progress']['status'], status)
+                self.assertEqual(diagnostic['public_build']['progress']['stage'], stage)
+                self.assertNotIn('PRIVATE', repr(diagnostic))
+
 
 class PublicAPTBuildEvidence(unittest.TestCase):
     def output(self,body,*,prefix='',step='7'):
@@ -437,6 +511,7 @@ def bare_lifecycle(directory):
     life.thread = None
     life.sample_lock = threading.Lock()
     life.sampler_volumes = ()
+    life.sampler_volume_roles = ()
     life.sampler_started = False
     life.sample_thread_id = None
     life.sample_deadline = None
@@ -1740,6 +1815,105 @@ class CommandBoundaryEvidenceTests(unittest.TestCase):
 
 
 class VolumeCheckpointTests(unittest.TestCase):
+    def capture_attribution(self, body, roles, *, deadline=None, complete=True):
+        with tempfile.TemporaryFile() as output:
+            raw = (m.VOLUME_SCAN_ENTERED+'\n'+body+'\n1024\n').encode()
+            if complete:
+                raw += (m.VOLUME_SCAN_RETURNED+'\n').encode()
+            output.write(raw)
+            output.flush()
+            timing = {}
+            run_id = 'addp-http-local-synthetic'
+            args = ['docker','exec',run_id+'-space','/bin/sh','-ec',m.VOLUME_SCAN_COMMAND]
+            with m.capture_volume_checkpoints(args,run_id,output,timing,True,volume_roles=roles,deadline=deadline):
+                pass
+            summary = timing['volume_measurement_checkpoints']
+            self.assertLessEqual(len(json.dumps(summary, separators=(',', ':')).encode()), 512)
+            self.assertNotIn('PRIVATE', repr(summary))
+            return summary['path_disappearance']
+
+    def test_attribution_uses_exact_sorted_sampler_slots_and_deduplicates_objects(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            builder = 'buildx_buildkit_'+life.run_id+'0_state'
+            postgres = life.run_id+'_postgres_data'
+            life.builder_volumes.add(builder)
+            life.docker = mock.Mock()
+            life.prepare_volume_sampler([builder, postgres], timeout=30)
+            args = life.docker.call_args.args
+            self.assertIn(f'type=volume,source={postgres},target=/space/0,readonly', args)
+            self.assertIn(f'type=volume,source={builder},target=/space/1,readonly', args)
+            body = ("du: /space/0: No such file or directory\n"
+                    "du: can't stat '/space/1/PRIVATE': No such file or directory\n"
+                    "du: /space/1/PRIVATE: No such file or directory")
+            result = self.capture_attribution(body, life.sampler_volume_roles)
+        self.assertEqual(result['status'], 'attributed')
+        self.assertEqual(result['slots'], [[0, 'postgres_data', 1, 0], [1, 'buildkit_state', 0, 1]])
+        self.assertEqual(result['object_set_sha256'], m.hashlib.sha256(
+            b'addp-http-local-synthetic\0/space/0\0/space/1/PRIVATE').hexdigest())
+
+    def test_volume_attribution_rejects_untrusted_or_over_budget_output_as_a_group(self):
+        line = 'du: /space/0/PRIVATE: No such file or directory'
+        for body, reason in (
+            (line+'\ndu: /space/0/other: Permission denied', 'unrecognized_diagnostic'),
+            (line.replace('/space/0/', '/space/1/'), 'unowned_slot'),
+            (line.replace('/space/0/', '/space/0/../'), 'invalid_path'),
+            (line.replace('/space/0/', '/space/00/'), 'invalid_path'),
+            (line.replace('/space/0/', '/space/0/a//'), 'invalid_path'),
+            (line.replace('/space/0/', '/space/0/\\'), 'invalid_path'),
+            ('\n'.join([line]*17), 'diagnostic_limit'),
+            (line.replace('PRIVATE', 'P'*4096), 'over_limit'),
+        ):
+            with self.subTest(reason=reason):
+                self.assertEqual(self.capture_attribution(body, ('buildkit_state',)),
+                                 {'status': 'unknown', 'reason': reason})
+        self.assertEqual(self.capture_attribution('\n'.join([line]*16), ('buildkit_state',))['slots'],
+                         [[0, 'buildkit_state', 0, 1]])
+        self.assertEqual(self.capture_attribution(line, ('buildkit_state',), complete=False),
+                         {'status': 'unknown', 'reason': 'partial'})
+        many = '\n'.join(line.replace('/space/0/', f'/space/{i}/') for i in range(16))
+        self.assertEqual(self.capture_attribution(many, ('prometheus_data',)*16),
+                         {'status': 'unknown', 'reason': 'summary_limit'})
+        self.assertEqual(self.capture_attribution(line, ('buildkit_state',), deadline=0),
+                         {'status': 'unknown', 'reason': 'deadline'})
+        with mock.patch.object(m, 'volume_path_disappearance', side_effect=OSError('PRIVATE')):
+            self.assertEqual(self.capture_attribution(line, ('buildkit_state',)),
+                             {'status': 'unknown', 'reason': 'unavailable'})
+
+    def test_attributed_disappearance_keeps_the_strict_sample_failure(self):
+        raw = (m.VOLUME_SCAN_ENTERED+'\ndu: /space/0/PRIVATE: No such file or directory\n1024\n'
+               +m.VOLUME_SCAN_RETURNED+'\n').encode()
+        with tempfile.TemporaryDirectory() as directory:
+            life, _ = LocalTraceResourceGuardTests().sample_lifecycle(directory, 1024)
+            life.started = m.time.monotonic()
+            life.strict_resources = True
+            life.sampler_volumes = ('owned-volume',)
+            life.sampler_volume_roles = ('buildkit_state',)
+            original = life.docker
+            def docker(*args, **kwargs):
+                if args[0] == 'exec':
+                    return m.Lifecycle.docker(life,*args,**kwargs)
+                if args[0] == 'inspect':
+                    return json.dumps([dict(row(), SizeRw=0)])
+                return original(*args,**kwargs)
+            life.docker = docker
+            life.owned_bind_bytes = mock.Mock(side_effect=AssertionError('do not continue'))
+            process = mock.Mock(pid=654321, returncode=0)
+            process.poll.return_value = 0
+            def start(*args, **kwargs):
+                kwargs['stdout'].write(raw)
+                kwargs['stdout'].flush()
+                return process
+            with mock.patch.object(m.subprocess, 'Popen', side_effect=start) as spawn:
+                life.monitor()
+            spawn.assert_called_once()
+            self.assertEqual(life.failure, 'owned_resource_measurement_failed')
+            self.assertEqual(life.samples, [])
+            life.owned_bind_bytes.assert_not_called()
+            evidence = life.resource_failure['steps'][-1]['commands'][0]['volume_measurement_checkpoints']
+            self.assertEqual(evidence['path_disappearance']['slots'], [[0,'buildkit_state',0,1]])
+            self.assertNotIn('PRIVATE', repr(life.resource_failure))
+
     def test_shell_frames_the_same_pipeline_and_return_is_not_du_success(self):
         for failed in (False,True):
             du="du() { printf '1 /space/0\\n2 /space/1\\n'; }; "
