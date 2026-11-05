@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_REQUIRED_ENV=ADDP_SYSTEM_POSTGRES_TEST_DSN
+# ADDP_T2_INPUT_FILES=.node-version .github/actions/prepare-frontend-gate/ scripts/utils/node-runtime.sh scripts/test/system-iam-postgres-gate_test.py scripts/test/system-iam-browser-login.mjs console/frontend/e2e/online/local-identity-support.mjs workbench/frontend/src/ workbench/frontend/public/ workbench/frontend/index.html workbench/frontend/vite.config.js workbench/frontend/package.json workbench/frontend/package-lock.json workbench/frontend/e2e/fixtures/metricApplication.js portal/frontend/src/ portal/frontend/public/ portal/frontend/index.html portal/frontend/vite.config.js portal/frontend/package.json portal/frontend/package-lock.json common-frontend/basic/src/ common-frontend/chart/src/ common-frontend/map/src/
 # system-iam-postgres-gate.sh - Run destructive System IAM tests against a disposable PostgreSQL database.
 
 set -euo pipefail
@@ -23,6 +24,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
+            echo "Real Chromium login against System IAM: --test browser-login-e2e" >&2
             echo "Browser password/MFA/tenant selection: --package iam|api --test browser-login" >&2
             echo "Engine deployment declarations/publication: --package repository|migration --test engine-deployments" >&2
             echo "Host inventory type/state filters: --package repository --test host-nodes" >&2
@@ -51,14 +53,30 @@ if [ "$TEST_FILTER" = cleanup-authorization ] && [ "$PACKAGE_FILTER" != iam ]; t
     echo "cleanup-authorization requires --package iam" >&2
     exit 2
 fi
+if [ "$TEST_FILTER" = browser-login-e2e ] && [ -n "$PACKAGE_FILTER" ] && [ "$PACKAGE_FILTER" != api ]; then
+    echo "browser-login-e2e requires --package api or no package filter" >&2
+    exit 2
+fi
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-system-iam-postgres.XXXXXX")
+BROWSER_FIXTURE_ACTIVE=0
 
 cleanup() {
     status=$?
     cleanup_failed=0
     trap - EXIT
+    if [ "$BROWSER_FIXTURE_ACTIVE" = 1 ]; then
+        # If the test process failed or was interrupted, still own the IAM
+        # lock while resetting its disposable schemas.
+        if ! go test ./internal/testsupport -run '^TestResetDisposablePostgresForGate$' \
+            -count=1 -timeout=1m -v > "$WORK_DIR/browser-cleanup.log" 2>&1 ||
+           ! grep -q -- '^--- PASS: TestResetDisposablePostgresForGate ' "$WORK_DIR/browser-cleanup.log"; then
+            echo "System IAM browser fixture cleanup failed" >&2
+            status=1
+            cleanup_failed=1
+        fi
+    fi
     if [ -f "$WORK_DIR/crash-recovery-owner" ]; then
         # The Go test normally removes its container. This owner-marked sweep
         # also handles an interrupted/failed test process or partial creation.
@@ -94,7 +112,7 @@ if set(volumes).intersection(remaining):
 PY
     fi
     if [ "$cleanup_failed" = 1 ]; then
-        echo "IAM crash-recovery cleanup evidence retained: $WORK_DIR" >&2
+        echo "System IAM cleanup evidence retained: $WORK_DIR" >&2
     else
         rm -rf "$WORK_DIR"
     fi
@@ -165,6 +183,29 @@ run_without_skips() {
         }
     fi
 }
+
+run_browser_login() {
+    bash "$SOURCE_ROOT/scripts/utils/node-runtime.sh"
+    for frontend in workbench portal; do
+        npm --prefix "$SOURCE_ROOT/$frontend/frontend" run build -- --outDir "$WORK_DIR/$frontend"
+    done
+    run_without_skips ./internal/testsupport '^TestResetDisposablePostgresForGate$'
+    BROWSER_FIXTURE_ACTIVE=1
+    ADDP_SYSTEM_LOGIN_BROWSER_BUILD_DIR="$WORK_DIR" \
+        run_without_skips ./internal/api '^TestBrowserLoginE2E$'
+    for name in Workbench Portal; do
+        grep -q -- "^    --- PASS: TestBrowserLoginE2E/$name " "$WORK_DIR/__internal_api.log" || {
+            echo "PostgreSQL release gate requires successful real browser login through $name" >&2
+            exit 1
+        }
+    done
+    BROWSER_FIXTURE_ACTIVE=0
+}
+
+if [ "$TEST_FILTER" = browser-login-e2e ]; then
+    run_browser_login
+    exit 0
+fi
 
 if [ "$TEST_FILTER" = database-crash-recovery ] || { [ -z "$PACKAGE_FILTER" ] && [ -z "$TEST_FILTER" ]; }; then
     ADDP_SYSTEM_DATABASE_CRASH_RECOVERY_INTEGRATION=1 ADDP_SYSTEM_DATABASE_CRASH_RECOVERY_STATE_DIR="$WORK_DIR" \
@@ -598,3 +639,7 @@ esac
 for package in "${packages[@]}"; do
     run_without_skips "$package" "$test_pattern"
 done
+
+if [ -z "$PACKAGE_FILTER" ] && [ -z "$TEST_FILTER" ]; then
+    run_browser_login
+fi

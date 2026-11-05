@@ -39,6 +39,7 @@ class SystemIAMGateLockTest(unittest.TestCase):
             log_utility = checkout / "scripts/utils/observability-env.sh"
             log_utility.parent.mkdir(parents=True)
             shutil.copyfile(Path(__file__).parents[1] / "utils/observability-env.sh", log_utility)
+            (checkout / "scripts/utils/node-runtime.sh").write_text("exit 0\n")
             (checkout / "system/backend/go.mod").write_text("module github.com/addp/system\n")
             subprocess.run(["git", "init", "-q"], cwd=checkout, check=True)
             subprocess.run(["git", "add", "."], cwd=checkout, check=True)
@@ -67,6 +68,13 @@ if os.environ.get("TEST_GO_ORPHAN") == "1":
     Path(os.environ["TEST_DOCKER_STATE"]).touch()
 if os.environ.get("TEST_GO_SKIP") == "1":
     print("--- SKIP: TestIAMDatabaseCrashRecovery")
+if "^TestBrowserLoginE2E$" in sys.argv:
+    assert Path(os.environ["ADDP_SYSTEM_LOGIN_BROWSER_BUILD_DIR"]).is_dir()
+    print("    --- PASS: TestBrowserLoginE2E/Workbench (0.01s)")
+    if os.environ.get("TEST_PORTAL_UNEXECUTED") != "1":
+        print("    --- PASS: TestBrowserLoginE2E/Portal (0.01s)")
+if "^TestResetDisposablePostgresForGate$" in sys.argv:
+    print("--- PASS: TestResetDisposablePostgresForGate (0.01s)")
 if "./internal/iam" in sys.argv:
     import re
     pattern = sys.argv[sys.argv.index("-run") + 1]
@@ -84,6 +92,13 @@ if "./internal/iam" in sys.argv:
 sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
 ''')
         go.chmod(0o755)
+        npm = bin_dir / "npm"
+        npm.write_text('''#!/usr/bin/env python3
+import os, sys
+with open(os.environ["TEST_GO_TRACE"], "a") as trace:
+    trace.write("npm " + " ".join(sys.argv[1:]) + "\\n")
+''')
+        npm.chmod(0o755)
         docker = bin_dir / "docker"
         docker.write_text('''#!/usr/bin/env python3
 import json, os, sys
@@ -173,6 +188,26 @@ elif args[:2] != ["volume", "ls"]:
         trace = (self.root / "trace-1").read_text()
         self.assertLess(trace.index("^TestIAMDatabaseCrashRecovery$"), trace.index("^TestResetDisposablePostgresForGate$"))
         self.assertEqual(trace.count("owned-crash-recovery-enabled"), 1)
+        self.assertEqual(trace.count("^TestBrowserLoginE2E$"), 1)
+        self.assertLess(trace.rindex("^TestResetDisposablePostgresForGate$"), trace.index("^TestBrowserLoginE2E$"))
+
+    def test_browser_login_e2e_builds_both_frontends_and_requires_both_subtests(self):
+        arguments = ("--package", "", "--test", "browser-login-e2e")
+        result = self.run_gate(arguments=arguments)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = (self.root / "trace-1").read_text().splitlines()
+        self.assertEqual(len(trace), 4, trace)
+        self.assertIn("workbench/frontend run build -- --outDir", trace[0])
+        self.assertIn("portal/frontend run build -- --outDir", trace[1])
+        self.assertIn("./internal/testsupport -run ^TestResetDisposablePostgresForGate$", trace[2])
+        self.assertIn("./internal/api -run ^TestBrowserLoginE2E$", trace[3])
+        result = self.run_gate(arguments=arguments, TEST_PORTAL_UNEXECUTED="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires successful real browser login through Portal", result.stderr)
+        self.assertIn("./internal/testsupport -run ^TestResetDisposablePostgresForGate$", (self.root / "trace-1").read_text().splitlines()[-1])
+        self.assertNotIn("cleanup failed", result.stderr)
+        result = self.run_gate(arguments=("--package", "iam", "--test", "browser-login-e2e"))
+        self.assertEqual(result.returncode, 2)
 
     def test_failed_crash_test_cleans_only_its_owned_partial_container(self):
         result = self.run_gate(arguments=("--package", "api", "--test", "database-crash-recovery"),
@@ -360,7 +395,7 @@ elif args[:2] != ["volume", "ls"]:
     def test_full_gate_sets_a_finite_timeout_for_every_package(self):
         result = self.run_gate(arguments=("--package", ""))
         self.assertEqual(result.returncode, 0, result.stderr)
-        commands = (self.root / "trace-1").read_text().splitlines()
+        commands = [line for line in (self.root / "trace-1").read_text().splitlines() if line.startswith("test ")]
         self.assertTrue(commands)
         for command in commands:
             arguments = shlex.split(command)

@@ -552,7 +552,7 @@ test-manager-postgres: ## 使用测试 PostGIS 数据库运行 Manager 统一任
 test-manager-mongodb-security: ## 使用 MongoDB Outdoor/Persons 运行 Manager 数据保护集成门禁
 	@bash scripts/test/manager-mongodb-security-gate.sh
 
-test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System IAM 发布门禁
+test-system-iam-postgres: ## 使用一次性 PostgreSQL 运行 System IAM 与真实浏览器登录门禁
 	@bash scripts/test/system-iam-postgres-gate.sh $(SYSTEM_IAM_POSTGRES_TEST_ARGS)
 
 .PHONY: test-system-iam-runner

@@ -152,6 +152,18 @@ class ChangedGateTest(unittest.TestCase):
         self.assertEqual(["sample"], MODULE.affected_modules(self.repository, ["docker-compose.infra.yml"]))
         self.assertEqual(["sample"], MODULE.affected_modules(self.repository, [".env.example"]))
 
+    def test_system_browser_login_inputs_select_system_iam(self) -> None:
+        repository = Path(__file__).resolve().parents[2]
+        for path in (
+            "scripts/test/system-iam-browser-login.mjs",
+            "console/frontend/e2e/online/local-identity-support.mjs",
+            "workbench/frontend/src/views/Login.vue",
+            "portal/frontend/package-lock.json",
+            "common-frontend/basic/src/components/AuthLoginFlow.vue",
+        ):
+            with self.subTest(path=path):
+                self.assertIn("system", MODULE.affected_modules(repository, [path]))
+
     def test_declared_subtree_selects_owner_for_deleted_input_without_prefix_collision(self) -> None:
         path = self.repository / "scripts/test/sample-graph-gate.sh"
         path.parent.mkdir(parents=True, exist_ok=True)

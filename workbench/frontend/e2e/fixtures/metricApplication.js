@@ -1,5 +1,5 @@
 import { browserTestOrigin } from '../../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
-// In-memory API boundary for browser tests. No request reaches a running ADDP service.
+// In-memory business API boundary for browser tests.
 export const applicationID = '38ef4190-0101-4000-8000-000000000001'
 export const applicationPath = `/module-ui/workbench/applications/${applicationID}`
 export const runtimePath = `${browserTestOrigin('console')}/data-apps/${applicationID}`
@@ -57,7 +57,7 @@ function component(id, rebound) {
   }
 }
 
-export async function installMetricApplicationBackend(context, { rebound = false, locale = 'zh-cn', deferDescriptors = false, configure = () => {}, permissions = ['workbench.data_application.read', 'workbench.data_application.create', 'workbench.data_application.update', 'workbench.data_application.publish', 'workbench.data_application.execute'], runtimeGranted = true } = {}) {
+export async function installMetricApplicationBackend(context, { rebound = false, locale = 'zh-cn', deferDescriptors = false, configure = () => {}, permissions = ['workbench.data_application.read', 'workbench.data_application.create', 'workbench.data_application.update', 'workbench.data_application.publish', 'workbench.data_application.execute'], runtimeGranted = true, mockSystem = true } = {}) {
   const components = [component(71, rebound), component(72, rebound)]
   let draft = {
     id: applicationID, name: '指标应用回归', description: 'Isolated browser contract fixture', version: 4,
@@ -81,7 +81,7 @@ export async function installMetricApplicationBackend(context, { rebound = false
   const pending = new Map()
   let hasRuntimeGrant = runtimeGranted
   await context.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
-  await context.route(url => url.pathname.startsWith('/api/'), async route => {
+  await context.route(url => url.pathname.startsWith('/api/') && (mockSystem || !url.pathname.startsWith('/api/v1/system/')), async route => {
     const request = route.request(), path = new URL(request.url()).pathname, method = request.method()
     const send = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
     if (path === '/api/v1/system/refresh') return send({ access_token: 'isolated-e2e-token', expires_in: 3600 })

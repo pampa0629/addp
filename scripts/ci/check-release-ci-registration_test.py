@@ -63,7 +63,15 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
             "  system-iam-postgres-verification:\n"
             "    steps:\n"
             "      - name: Audit release workflow\n"
-            "        run: make test-workflow-security\n",
+            "        run: make test-workflow-security\n"
+            "      - uses: ./.github/actions/prepare-frontend-gate\n"
+            "        with:\n"
+            "          frontend-directory: workbench/frontend\n"
+            "      - working-directory: portal/frontend\n"
+            "        run: npm ci\n"
+            "      - working-directory: workbench/frontend\n"
+            "        run: npm exec --offline -- playwright install --with-deps chromium\n"
+            "      - run: make test-system-iam-postgres\n",
         )
 
     def tearDown(self) -> None:
@@ -94,6 +102,18 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
 
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_requires_browser_setup_and_full_system_gate(self) -> None:
+        relative = ".github/workflows/release-and-t2-gates.yml"
+        original = (self.repository / relative).read_text(encoding="utf-8")
+        for step in ("frontend-directory: workbench/frontend", "working-directory: portal/frontend",
+                     "playwright install --with-deps chromium", "run: make test-system-iam-postgres"):
+            with self.subTest(step=step):
+                self._write(relative, original.replace(step, "# removed"))
+                self.assertIn(
+                    "System IAM job must prepare both locked frontends and Chromium before the complete PostgreSQL gate",
+                    MODULE.validate_registration(self.repository),
+                )
 
     def test_cli_wheel_tests_require_declared_inference_test_dependencies(self) -> None:
         gate = self.repository / "scripts/test/common-python-cli-release-gate.sh"

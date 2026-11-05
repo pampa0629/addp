@@ -465,6 +465,19 @@ jobs:
           go-version-file: system/backend/go.mod
           cache: false
 
+      - name: Prepare Workbench login browser dependencies
+        uses: ./.github/actions/prepare-frontend-gate
+        with:
+          frontend-directory: workbench/frontend
+
+      - name: Install Portal locked frontend dependencies
+        working-directory: portal/frontend
+        run: npm ci
+
+      - name: Install Workbench Playwright Chromium
+        working-directory: workbench/frontend
+        run: npm exec --offline -- playwright install --with-deps chromium
+
       - name: Run System IAM PostgreSQL gate
         env:
           ADDP_SYSTEM_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_iam_test?sslmode=disable

@@ -164,6 +164,15 @@ def validate_registration(repository: Path) -> list[str]:
     iam_job = workflow_job(workflow, "system-iam-postgres-verification")
     if not re.search(r"(?m)^\s*-\s*name: Audit release workflow\n\s+run: make test-workflow-security\s*$", iam_job):
         errors.append("System IAM job must call the shared workflow security gate")
+    iam_browser_steps = (
+        r"uses: \./\.github/actions/prepare-frontend-gate\n\s+with:\n\s+frontend-directory: workbench/frontend",
+        r"working-directory: portal/frontend\n\s+run: npm ci\s*$",
+        r"working-directory: workbench/frontend\n\s+run: npm exec --offline -- playwright install --with-deps chromium\s*$",
+        r"run: make test-system-iam-postgres\s*$",
+    )
+    positions = [re.search(step, iam_job, re.MULTILINE) for step in iam_browser_steps]
+    if not all(positions) or [match.start() for match in positions] != sorted(match.start() for match in positions):
+        errors.append("System IAM job must prepare both locked frontends and Chromium before the complete PostgreSQL gate")
     if "zizmorcore/zizmor-action@" in workflow:
         errors.append("workflow must not duplicate the shared zizmor audit")
     for suite, registration in sorted(suites.items()):
