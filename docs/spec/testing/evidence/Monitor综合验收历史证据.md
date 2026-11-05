@@ -20,7 +20,7 @@
 | 磁盘吞吐与单位 | `5c490bf5c` | [37740681212](https://github.com/pampa0629/addp/actions/runs/37740681212)、[37740647211](https://github.com/pampa0629/addp/actions/runs/37740647211) | Hosted T4 / Platform CI 通过：真实 sda 读写、精确趋势、IEC/经过时长/负载数量、MFA/URL、故障恢复及零残留；六截图无敏感归档。本地 32 runner、150 Console 单元/119 浏览器、构建和平台门禁通过。 |
 | 网络接口吞吐 | `193c0e82e` | [37791100970](https://github.com/pampa0629/addp/actions/runs/37791100970)、[37791001755](https://github.com/pampa0629/addp/actions/runs/37791001755)、[37791001784](https://github.com/pampa0629/addp/actions/runs/37791001784) | Hosted T4、Platform CI、Monitor PostgreSQL/metrics 通过：16 接口/32 序列，两趋势各 21 点，84 响应/七截图、故障恢复/停用历史及零残留；36 归档无敏感模式。原模块入口曾在两个五秒超时退出，宿主 39 项及平台独立复跑通过，不抹去首轮失败。 |
 | 磁盘 IO 时间 | `839ef8338e；生产实现 88d7ade1d` | [37808051558](https://github.com/pampa0629/addp/actions/runs/37808051558)、[37808006295](https://github.com/pampa0629/addp/actions/runs/37808006295)、[37808006338](https://github.com/pampa0629/addp/actions/runs/37808006338)、[37803604603](https://github.com/pampa0629/addp/actions/runs/37803604603) | 最终标准 Monitor 模块门禁返回 0；21 IO 场景、完整/受限 T2 通过。生产实现的 PostgreSQL/metrics CI 通过，修正后路径跳过不计重跑；修正 Hosted T4 / Platform CI / Release 通过：25 项目录、102 响应、七截图、三条时间趋势、恢复及零残留。首轮 EFI inode 选样失败、先前 mTLS 超时和跨 Owner 预检失败保留。 |
-| Desktop 七采集器个人应用 | `51d7a66bfb` | [37877201811](https://github.com/pampa0629/addp/actions/runs/37877201811)、[37877201781](https://github.com/pampa0629/addp/actions/runs/37877201781) | 原记录为 Platform CI / Release-T2 排队，未记通过。用户标准 up 已应用七采集器；18 设备、vda 五指标与约 13 秒新鲜样本的只读 mTLS 诊断不等于 Monitor 完整窗口/页面；Safari 会话过期，页面当时未验。 |
+| Desktop 七采集器 | 见专题 | [分项记录](#desktop-七采集器) | 个人应用、独占 Metrics T2、Safari 与当时的 CI 状态。 |
 | 当前实例 CPU/RSS 趋势 | `原文未单列 SHA` | [38227755626](https://github.com/pampa0629/addp/actions/runs/38227755626) | Hosted T4 通过：当前实例两序列、启动后裁剪、URL、刷新恢复、来源/中心/控制故障、停用历史与零残留；个人 Safari 两曲线复核。上一轮故障断言未复现，根因未确证；旧单次通过不证明长期无故障。 |
 | 服务自动刷新 | `7f365279b` | [38329665208](https://github.com/pampa0629/addp/actions/runs/38329665208) | Hosted T4 通过：自然定时/关闭恢复、25 项节点与进程协议、中心/来源/控制面恢复、停用/删除及零残留。38325976574 的 System CPU 缺窗口未复现、固定时刻诊断未触发，根因未确认，不记作故障修复。 |
 | 主机列表自然刷新 | `4e9fe672f` | [38340694203](https://github.com/pampa0629/addp/actions/runs/38340694203) | Hosted T4 通过：自然刷新、关闭恢复、原故障链及零残留；前次导航 Test ended 未复现，根因未确认，安全耗时诊断保留。 |
@@ -30,6 +30,19 @@
 ## 平台资源与主机接入专项
 
 本节保留[运行监控后续专题](../../../next/ADDP平台运行监控与可观测性设计.md#三验收状态与剩余缺口)原有的专项细节；上表是历史索引，本节补充预算、观测数量、身份和清理边界。记录未在本次整理中重跑或刷新状态。
+
+### Desktop 七采集器
+
+2026-10-09 的磁盘采集实现为 `4acd466e796921806eda092015149e462fb16e53`。Desktop 来源的七采集器及 VM 内核设备口径见[部署与运行环境](../../addp平台运行观测规范.md#52-部署与运行环境)。
+
+| 证据范围 | 当时结果 |
+| --- | --- |
+| 个人环境应用 | 用户通过标准节点 `up` 重建原来源。只读 mTLS 核对中心同一节点，七采集器均成功，磁盘计数覆盖 18 个设备。活跃设备 `vda` 有五项一分钟原生计算值，原始读取样本距核对时约 13 秒。此次只读诊断核验来源至中心的数据到达，Monitor 完整窗口另行验收。 |
+| 独占 Metrics T2 与 PostgreSQL | 最终 `make test-monitor-metrics` 和 `make test-monitor-postgres` 分别通过。独占来源核对七采集器、18 个设备的七项原始计数与独立 PID／挂载／网络命名空间快照一致，并核对所选设备五项趋势、故障恢复后新样本及容器／网络／卷／临时文件零残留。文件系统、inode 和网络缺样边界保持。 |
+| Safari 页面 | 旧六采集器运行时，Safari 已读到九项主机概览，五项磁盘目录正常加载但无设备数据。七采集器应用后的复核遇到 Safari 会话过期，新版磁盘页面当时未验。 |
+| 固定源码 CI | 推送后的 `51d7a66bfb12fcb8c8363627ef7ca7ee8b450e63` 含本批实现。[Platform CI 37877201811](https://github.com/pampa0629/addp/actions/runs/37877201811) 和 [Release/T2 37877201781](https://github.com/pampa0629/addp/actions/runs/37877201781) 在首次核对时均为排队。归档保留该时点的状态。 |
+
+完整模块入口的失败分列。首次为个人指标开关进入端口夹具，隔离该输入后复验通过。第二次为 10 秒 Infra 生命周期超时，单项原样通过，根因未定。第三次通过平台 T0、Monitor Go T1、47 项单测、61 项浏览器和构建，随后首轮资源读取约 3 秒报 `backend unavailable`，Desktop 阶段未执行。最终独占 T2 通过，未复现该错误。约 3 秒查询失败和此前 mTLS 超时均未确认根因。
 
 ## 时段比较与资源告警
 
@@ -45,7 +58,6 @@
 ## 分项与未通过范围
 
 - 2026-10-15 的 `make test-module MODULE=monitor GO_ONLY=1` 记录为 T1 通过。`TestExecutionReadAPIReauthenticatesThroughOwnerForEveryRequest` 使用真实 Monitor 路由/Owner HTTP Client/共享范围 Handler 和独立身份夹具，覆盖逐请求重认证、跨/同租户、无定义本人/缺主体、父子隔离、删定义历史、列表/统计、动态撤权和 Owner503/恢复；响应不含业务载荷。故意保留旧权限时应 404 实得 200，恢复后通过；不是 System IAM、PostgreSQL T2、完整模块或新增 T4。
-- Desktop 来源的独占 metrics T2 与 Monitor PostgreSQL 分项记录为通过：实际七采集器、18 设备/七原始计数及独立命名空间、五趋势、故障后新样本和零残留。第三次模块运行的 T0/Go/47 单元/61 浏览器/构建通过，但后续 backend unavailable 导致整入口失败；个人开关的端口夹具已隔离并复验，十秒生命周期超时、约三秒查询失败与此前 mTLS 超时未确认根因。最终独占重跑通过不覆盖整轮失败；个人 mTLS 诊断不等于正式页面。
 - 资源告警联合 `make test-monitor-metrics` T2 使用受控 mTLS、真实 Prometheus/PostgreSQL 和临时 TLS 签名接收端，覆盖 503 自动重试、缺样不恢复、低值恢复与 outbox；同一临时 Compose 只初始化 addp_test，退出清理。System 身份是夹具，不代替正式身份 T4 或真实群通知。
 - 全部早期“目录九项/十八项/二十项/二十二项”仅表示各次验收切片，当前目录与 Desktop 七采集器以正式规范为准。历史六采集器、文件系统/inode/网卡空值记录不改写为最新功能。
 - 各次默认跨 Owner test-changed 预检缺依赖均未计为通过。真实多主机 TOP5、独立 Owner 撤权、全平台容量、生产宿主/物理身份与 T5 仍需各自独立证据；不把单主机 T4、六个受控来源 T2 或历史 CI 排队合并为通过。
