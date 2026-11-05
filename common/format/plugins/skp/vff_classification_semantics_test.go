@@ -145,6 +145,40 @@ func TestVFFSKCFilterKeepsUnsupportedSimpleContentExplicit(t *testing.T) {
 	}
 }
 
+func TestVFFSKCFilterRestrictionKeepsOnlyInheritedAttributes(t *testing.T) {
+	schema := `<x:schema xmlns:x="` + vffXSDNS + `" xmlns:t="urn:t" targetNamespace="urn:t">
+<x:group name="EdgeEnds"><x:sequence><x:element name="EdgeStart" type="x:int" minOccurs="0"/><x:element name="EdgeEnd" type="x:int" minOccurs="0"/></x:sequence></x:group>
+<x:attributeGroup name="Instance"><x:attribute name="id" type="x:ID"/></x:attributeGroup>
+<x:complexType name="Edge"><x:group ref="t:EdgeEnds"/><x:attributeGroup ref="t:Instance"/><x:attribute name="EdgeEnd" type="x:string"/></x:complexType>
+<x:complexType name="Restricted"><x:complexContent><x:restriction base="t:Edge"><x:sequence/></x:restriction></x:complexContent></x:complexType>
+<x:complexType name="Oriented"><x:complexContent><x:extension base="t:Restricted"><x:sequence><x:element name="Orientation" type="x:boolean"/></x:sequence></x:extension></x:complexContent></x:complexType>
+</x:schema>`
+	scope := skcSemanticsRead(t, schema, "Edge {}\nRestricted {}\n{ EdgeStart EdgeEnd id Orientation EdgeEnds Instance }")[0].rules[2].scopes[0]
+	if scope.typeDeclaration.name != "Oriented" || len(scope.issues) != 0 || len(scope.fields[0].candidates) != 0 || len(scope.fields[1].candidates) != 1 ||
+		scope.fields[1].candidates[0].declaration.kind != "attribute" || len(scope.fields[2].candidates) != 1 || len(scope.fields[3].candidates) != 1 ||
+		len(scope.groups[4].uses) != 0 || len(scope.groups[5].uses) != 1 {
+		t.Fatalf("restriction mixed removed elements with retained attributes: %#v", scope)
+	}
+	use := scope.groups[5].uses[0]
+	if len(use.via) != 3 || use.via[0].name != "Oriented" || use.via[1].name != "Restricted" || use.via[2].name != "Edge" {
+		t.Fatalf("lost inherited group path: %#v", use)
+	}
+}
+
+func TestVFFSKCFilterKeepsUnsupportedComplexRestrictionsUnproved(t *testing.T) {
+	const prefix = `<x:schema xmlns:x="` + vffXSDNS + `" xmlns:t="urn:t" targetNamespace="urn:t">
+<x:complexType name="Base"><x:attribute name="A" type="x:string"/></x:complexType>`
+	for _, derived := range []string{
+		`<x:complexType name="Derived"><x:complexContent><x:restriction base="t:Base"><x:attribute name="A" use="prohibited"/></x:restriction></x:complexContent></x:complexType>`,
+		`<x:complexType name="Derived" mixed="true"><x:complexContent><x:restriction base="t:Base"/></x:complexContent></x:complexType>`,
+	} {
+		scope := skcSemanticsRead(t, prefix+derived+`</x:schema>`, "Base {}\n{ A }")[0].rules[1].scopes[0]
+		if len(scope.issues) != 1 || scope.issues[0] != "unsupported complex content restriction shape" || len(scope.fields[0].candidates) != 0 {
+			t.Fatalf("unsupported restriction presented an effective attribute: %#v", scope)
+		}
+	}
+}
+
 func TestVFFSKCValueGraphsRetainNamedInlineUnionAndFacets(t *testing.T) {
 	schema := `<x:schema xmlns:x="` + vffXSDNS + `" xmlns:t="urn:t" targetNamespace="urn:t"><x:simpleType name="Label"><x:restriction base="x:string"><x:enumeration value="not validated"/></x:restriction></x:simpleType><x:simpleType name="Numbers"><x:list itemType="x:int"/></x:simpleType><x:complexType name="Holder"><x:attribute name="A" type="t:Label"/><x:attribute name="B" type="t:Numbers"/><x:attribute name="C"><x:simpleType><x:union memberTypes="t:Label x:boolean"><x:simpleType><x:restriction base="x:decimal"/></x:simpleType></x:union></x:simpleType></x:attribute></x:complexType></x:schema>`
 	got := skcSemanticsRead(t, schema, "Holder { A B C }")
