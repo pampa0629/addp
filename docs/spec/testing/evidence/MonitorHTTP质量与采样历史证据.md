@@ -1231,4 +1231,8 @@ System 镜像及后续 Agent／Copilot 构建、正式密码／MFA、采集／AP
 
 本地 Common client、Monitor Go 全包、Swagger 96 路由、Metrics 配置 138 项、HTTP local runner Python 47 项／Node 7 项及身份夹具、Monitor 前端 Node 136 项、接口质量受控浏览器 10 项及前端构建通过。全量 Monitor 浏览器在专项验证后主动停止，185 项通过、1 项中断、566 项未运行，不计整套通过。
 
-既有 Linux Metrics `http-quality` 的 Go／Python 来源分支在原停源检查后回读先前通过的 Prometheus 窗口，同时保留实时查询为空的断言。该项真实结果待自然 Linux CI 单列，未启动新的本地验收窗口、Hosted、容量或定时。
+自然 push 的 Linux Metrics `http-quality` 在上述固定源码实际通过。Run 42051463127、attempt 1、Job 127363429153 于北京时间 2026-11-06 01:46:21 完成。原始日志分别在 Go 后端与首个 Python SDK 来源停止后记录 `TestIntegrationMetricsHTTPRealSource` 通过，两个分支均确认实时查询为空，并从同一真实 Prometheus 回读停源前已有的完整窗口。Python 分支同时验证另一个来源保持在线。父 workflow 整体失败，按上述已执行分项认定。[Linux HTTP 作业](https://github.com/pampa0629/addp/actions/runs/42051463127/job/127363429153)
+
+官方预算归档 13439382065 的 ZIP SHA256 为 `1a703c060bfbc3640982638661abc861a84f9110ecd1a11c84b7007ccaa46ca0`，与 GitHub 元数据一致，CRC 正常，377 项输入与固定源码逐项匹配。四阶段编译退出 0，241 次受控请求（Go 148、两 Python 源 67／26）。整轮 879.867 秒，213 次完整资源检查最长 0.847 秒，硬配额峰值 3.25 CPU／3.75 GiB，私有可写保守上界峰值 1547116607 字节，均在原 1200 秒／四秒／4 CPU／4 GiB／2 GiB 边界内。日志及回执确认当次容器、网络、卷和私有目录零残留。[预算归档](https://github.com/pampa0629/addp/actions/runs/42051463127/artifacts/13439382065)
+
+该实测覆盖既有 Linux SDK／Prometheus 停源历史读取和实时空观测。正式 Agent／Copilot 产品到 Console／Monitor 的真实身份页面闭环仍单列。本次未手动重跑、开启新的本地验收窗口或运行 Hosted、容量、定时任务。

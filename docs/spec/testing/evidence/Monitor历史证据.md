@@ -51,7 +51,7 @@
 
 - **本地专项通过**。现有趋势 API 可按原实例及绝对离线前区间读取，精确核验当前用户权限。离线状态保持 `not_active`，历史可用性单列。Common／Monitor 相关门禁、10 项接口质量受控浏览器及前端构建通过。
 - **浏览器全量中断**。专项验证后停止全量运行，185 项通过、1 项中断、566 项未运行，整套未通过。
-- **Linux 实际回读待归档**。既有 Metrics `http-quality` 专项需在 Go／Python 来源停用后，从真实 Prometheus 回读离线前窗口，并确认实时查询为空。已有 Linux HTTP 四阶段证据未覆盖该新增断言。
+- **Linux 实际回读通过**。固定 `3de409013` 的自然 Metrics `http-quality` 作业中，Go 后端和首个 Python SDK 来源各自在停用后读回真实 Prometheus 中的离线前窗口，实时查询为空。原始预算归档核验通过，清理零残留。父 workflow 失败及正式身份页面 full 缺口仍单列。[Linux HTTP 作业](https://github.com/pampa0629/addp/actions/runs/42051463127/job/127363429153)
 
 [固定源码与分项记录](MonitorHTTP质量与采样历史证据.md#停源实例-http-历史趋势首期) · [权限、离线边界与样本口径](../../addp平台运行观测规范.md#停源实例的-http-历史趋势)
 
