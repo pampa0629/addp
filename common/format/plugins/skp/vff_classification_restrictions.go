@@ -232,7 +232,7 @@ func (c *vffSKCRestrictionChecker) evaluate(p *vffSKCRestrictionProfile, n *vffX
 	var known bool
 	var err error
 	if p.item != nil {
-		value, known, err = c.integerList(p.item, n, raw)
+		value, known, err = c.listValue(p.item, n, raw)
 	} else {
 		value, known, err = c.b.scalar(n, p.primitive, raw)
 	}

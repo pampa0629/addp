@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func skcIntegerListFiles(t *testing.T, item, base, derived, use, declaration string) map[string][]byte {
+func skcListFiles(t *testing.T, item, base, derived, use, declaration string) map[string][]byte {
 	t.Helper()
 	f := skcEnumFiles(t, derived, base, use, declaration)
 	f["Schemas/extra.xsd"] = []byte(strings.Replace(string(f["Schemas/extra.xsd"]), `<x:simpleType name="Base"><x:restriction base="x:int">`, `<x:simpleType name="Items"><x:list itemType="`+item+`"/></x:simpleType><x:simpleType name="Base"><x:restriction base="c:Items">`, 1))
@@ -42,7 +42,7 @@ func TestVFFSKCIntegerListValues(t *testing.T) {
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
-			f := skcIntegerListFiles(t, row.item, row.base, row.derived, row.use, row.declaration)
+			f := skcListFiles(t, row.item, row.base, row.derived, row.use, row.declaration)
 			got, err := readVFFClassificationBindings(context.Background(), skcGraphContainer(t, f), skcBindingLimits())
 			if row.reject {
 				if err == nil || got != nil {
@@ -70,7 +70,7 @@ func TestVFFSKCIntegerListValues(t *testing.T) {
 }
 
 func TestVFFSKCIntegerListDerivedItemsAndWitnesses(t *testing.T) {
-	f := skcIntegerListFiles(t, "c:Entry", "", `<x:length value="2"/>`, "02 -0", "2 0")
+	f := skcListFiles(t, "c:Entry", "", `<x:length value="2"/>`, "02 -0", "2 0")
 	f["Schemas/extra.xsd"] = []byte(strings.Replace(string(f["Schemas/extra.xsd"]), `<x:simpleType name="Items">`, `<x:simpleType name="Entry"><x:restriction base="x:integer"><x:minInclusive value="0"/><x:maxInclusive value="2"/><x:enumeration value="0"/><x:enumeration value="2"/></x:restriction></x:simpleType><x:simpleType name="Items">`, 1))
 	v := skcAttributeValue(t, f)
 	fact := v.fixedValues[0]
@@ -91,7 +91,7 @@ func TestVFFSKCIntegerListDerivedItemsAndWitnesses(t *testing.T) {
 			t.Fatal("list item bypassed its derived profile", bad)
 		}
 	}
-	f = skcIntegerListFiles(t, "x:integer", "", "", "0 2", "00 +2")
+	f = skcListFiles(t, "x:integer", "", "", "0 2", "00 +2")
 	f["Schemas/extra.xsd"] = []byte(strings.Replace(string(f["Schemas/extra.xsd"]), `<x:list itemType="x:integer"/>`, `<x:list><x:simpleType><x:restriction base="x:byte"><x:maxInclusive value="2"/></x:restriction></x:simpleType></x:list>`, 1))
 	if !skcAttributeValue(t, f).fixedValues[0].known {
 		t.Fatal("inline integer item profile not proved")
@@ -100,18 +100,18 @@ func TestVFFSKCIntegerListDerivedItemsAndWitnesses(t *testing.T) {
 
 func TestVFFSKCIntegerListUnknownAndMalformedTypes(t *testing.T) {
 	for _, item := range []string{"x:string", "x:decimal", "x:anyURI", "x:ID", "c:Absent"} {
-		f := skcIntegerListFiles(t, item, "", "", "1", "1")
+		f := skcListFiles(t, item, "", "", "1", "1")
 		if skcAttributeValue(t, f).fixedValues[0].known {
 			t.Fatal("unsupported list item guessed integer", item)
 		}
 	}
 	for _, facet := range []string{`<x:pattern value=".*"/>`, `<x:whiteSpace value="collapse"/>`, `<x:maxLength value="2" opaque="unknown"/>`} {
-		f := skcIntegerListFiles(t, "x:integer", "", facet, "1", "1")
+		f := skcListFiles(t, "x:integer", "", facet, "1", "1")
 		if skcAttributeValue(t, f).fixedValues[0].known {
 			t.Fatal("unknown list facet discarded")
 		}
 	}
-	f := skcIntegerListFiles(t, "c:Inner", "", "", "1", "1")
+	f := skcListFiles(t, "c:Inner", "", "", "1", "1")
 	f["Schemas/extra.xsd"] = []byte(strings.Replace(string(f["Schemas/extra.xsd"]), `<x:simpleType name="Items">`, `<x:simpleType name="Inner"><x:list itemType="x:integer"/></x:simpleType><x:simpleType name="Items">`, 1))
 	if got, err := readVFFClassificationBindings(context.Background(), skcGraphContainer(t, f), skcBindingLimits()); err == nil || got != nil {
 		t.Fatal("list of lists admitted")
@@ -120,7 +120,7 @@ func TestVFFSKCIntegerListUnknownAndMalformedTypes(t *testing.T) {
 		{`<x:list itemType="x:integer"/>`, `<z:list xmlns:z="urn:foreign" itemType="x:integer"/>`},
 		{`<x:length value="1"/>`, `<z:length xmlns:z="urn:foreign" value="1"/>`},
 	} {
-		f = skcIntegerListFiles(t, "x:integer", "", `<x:length value="1"/>`, "1", "1")
+		f = skcListFiles(t, "x:integer", "", `<x:length value="1"/>`, "1", "1")
 		f["Schemas/extra.xsd"] = []byte(strings.Replace(string(f["Schemas/extra.xsd"]), replacement.from, replacement.to, 1))
 		got, err := readVFFClassificationBindings(context.Background(), skcGraphContainer(t, f), skcBindingLimits())
 		if err == nil && got[0].rules[0].fields[0].candidates[0].value.fixedValues[0].known {
@@ -160,7 +160,7 @@ func TestVFFSKCIntegerListBudgetCancelAndValueKinds(t *testing.T) {
 		if cancel {
 			raw = ""
 		}
-		_, _, err := c.integerList(item, nil, raw)
+		_, _, err := c.listValue(item, nil, raw)
 		stop()
 		if cancel && !errors.Is(err, context.Canceled) || !cancel && err == nil {
 			t.Fatal("list bypassed cumulative budget or cancellation")

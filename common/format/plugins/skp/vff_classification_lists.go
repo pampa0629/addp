@@ -61,7 +61,11 @@ func (c *vffSKCRestrictionChecker) listProfile(node *vffXMLNode, depth int) (*vf
 	if item.item != nil {
 		return nil, fmt.Errorf("list item type cannot be a list")
 	}
-	if _, _, _, integer := vffSKCIntegerBounds(item.primitive.Local); !integer || item.primitive.Space != vffXSDNS {
+	// Both supported item varieties preserve token boundaries in their
+	// canonical text. Text items must have a proved enumeration layer.
+	_, _, _, integer := vffSKCIntegerBounds(item.primitive.Local)
+	enumText := item.primitive.Local == "normalizedString" && len(item.levels) > 0
+	if item.primitive.Space != vffXSDNS || (!integer && !enumText) {
 		c.cache[node] = unknown
 		return unknown, nil
 	}
@@ -86,7 +90,7 @@ func (b *vffSKCBinder) profileFacets(p *vffSKCRestrictionProfile) ([]vffSKCDecla
 	return facets, items, err
 }
 
-func (c *vffSKCRestrictionChecker) integerList(item *vffSKCRestrictionProfile, node *vffXMLNode, raw string) (vffSKCValue, bool, error) {
+func (c *vffSKCRestrictionChecker) listValue(item *vffSKCRestrictionProfile, node *vffXMLNode, raw string) (vffSKCValue, bool, error) {
 	value := vffSKCValue{list: true}
 	if err := c.b.tick(0); err != nil {
 		return value, false, err
